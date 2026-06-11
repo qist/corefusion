@@ -77,6 +77,7 @@ const menuItems = [
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
   { path: '/users', title: 'menu.users', icon: 'User' },
   { path: '/proxy', title: 'menu.proxy', icon: 'Monitor' },
+  { path: '/log-manage', title: 'menu.logManage', icon: 'Document' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting' },
 ]
 

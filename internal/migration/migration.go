@@ -88,6 +88,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.DNSChannel{},
 		&entity.ACMEAccountConfig{},
 
+		// Log Rotation
+		&entity.LogRotationPolicy{},
+		&entity.LogRotationJob{},
+
 		// System Settings
 		&entity.SystemSetting{},
 		&entity.NotificationTemplate{},

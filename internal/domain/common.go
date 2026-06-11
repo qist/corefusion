@@ -143,6 +143,15 @@ const (
 	RuntimeConfigObjectTypeSystemProxy  RuntimeConfigObjectType = "system_proxy_config"
 )
 
+// LogSourceType represents the source of a log file.
+type LogSourceType string
+
+const (
+	LogSourceNginx  LogSourceType = "nginx"
+	LogSourceCaddy  LogSourceType = "caddy"
+	LogSourceCustom LogSourceType = "custom"
+)
+
 // TimeRange represents a time range.
 type TimeRange struct {
 	Start time.Time `json:"start"`

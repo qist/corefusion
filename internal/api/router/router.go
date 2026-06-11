@@ -15,6 +15,7 @@ import (
 	binariesHandler "corefusion/internal/api/handlers/binaries"
 	certsHandler "corefusion/internal/api/handlers/certificates"
 	geoRuleHandler "corefusion/internal/api/handlers/georule"
+	logManageHandler "corefusion/internal/api/handlers/logmanage"
 	metricsHandler "corefusion/internal/api/handlers/metrics"
 	nodesHandler "corefusion/internal/api/handlers/nodes"
 	securityHandler "corefusion/internal/api/handlers/security"
@@ -31,6 +32,7 @@ import (
 	binariesSvc "corefusion/internal/service/binaries"
 	certService "corefusion/internal/service/certificate"
 	geoRuleSvc "corefusion/internal/service/georule"
+	logManageSvc "corefusion/internal/service/logmanage"
 	nodeService "corefusion/internal/service/node"
 	svcService "corefusion/internal/service/service"
 	subService "corefusion/internal/service/subscription"
@@ -116,6 +118,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyMgr := proxySvc.NewCaddyManager(dataDir, caddySiteRepo, systemSettingRepo)
 	nginxMgr := proxySvc.NewNginxManager(dataDir, nginxSiteRepo, systemSettingRepo)
 
+	// Log management
+	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
+	logJobRepo := repository.NewLogRotationJobRepository(database)
+	logManageSvc := logManageSvc.NewService(logPolicyRepo, logJobRepo, systemSettingRepo, caddySiteRepo, dataDir)
+
 	// Wire config generators so auto-start uses the new separated managers
 	proxyMgr.SetCaddyConfigGen(caddyMgr.GenerateConfig)
 	proxyMgr.SetNginxConfigGen(nginxMgr.GenerateConfig)
@@ -147,6 +154,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
+	logManageH := logManageHandler.NewHandler(logManageSvc)
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -573,6 +581,23 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nginxGroup.DELETE("/l4-rules", nginxH.DeleteAllL4)
 			}
 
+			// Log management
+			logManageGroup := protected.Group("/log-manage")
+			{
+				logManageGroup.GET("/status", logManageH.GetStatus)
+				logManageGroup.GET("/policies", logManageH.ListPolicies)
+				logManageGroup.POST("/policies", logManageH.CreatePolicy)
+				logManageGroup.GET("/policies/:id", logManageH.GetPolicy)
+				logManageGroup.PUT("/policies/:id", logManageH.UpdatePolicy)
+				logManageGroup.DELETE("/policies/:id", logManageH.DeletePolicy)
+				logManageGroup.POST("/policies/:id/rotate", logManageH.Rotate)
+				logManageGroup.GET("/policies/:id/jobs", logManageH.ListPolicyJobs)
+				logManageGroup.POST("/discover", logManageH.DiscoverLogs)
+				logManageGroup.POST("/sync", logManageH.SyncPolicies)
+				logManageGroup.GET("/policies/:id/log", logManageH.GetLog)
+				logManageGroup.GET("/policies/:id/log-stream", logManageH.StreamLog)
+			}
+
 			// Placeholder routes for remaining modules
 			registerPlaceholderRoutes(protected)
 		}
@@ -585,6 +610,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	processMgr.SeedCores(nil)
 	go processMgr.Reconcile(nil)
 	go proxyMgr.AutoStartManaged()
+	logManageSvc.Start()
 
 	return r
 }
@@ -734,6 +760,7 @@ func isSPARoute(path string) bool {
 		"/certificates",
 		"/users",
 		"/proxy",
+		"/log-manage",
 		"/settings",
 	}
 

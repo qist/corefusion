@@ -38,6 +38,7 @@ const routes = [
       { path: 'certificates', name: 'Certificates', component: () => import('../views/Certificates.vue'), meta: { title: '证书管理', icon: 'Lock' } },
       { path: 'users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', icon: 'User' } },
       { path: 'proxy', name: 'Proxy', component: () => import('../views/Proxy.vue'), meta: { title: '代理管理', icon: 'Monitor' } },
+      { path: 'log-manage', name: 'LogManage', component: () => import('../views/LogManage.vue'), meta: { title: '日志管理', icon: 'Document' } },
       { path: 'settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: '系统设置', icon: 'Setting' } },
     ],
   },

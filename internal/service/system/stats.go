@@ -1,0 +1,285 @@
+package system
+
+import (
+	"bufio"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+var (
+	panelStartTime time.Time
+	initOnce       sync.Once
+)
+
+// InitStartTime records the panel start time (call once at startup).
+func InitStartTime() {
+	initOnce.Do(func() {
+		panelStartTime = time.Now()
+	})
+}
+
+// SystemStats contains system resource information.
+type SystemStats struct {
+	// Version
+	Version string `json:"version"`
+
+	// CPU
+	CPUUsage float64 `json:"cpu_usage"`
+	CPUCores int     `json:"cpu_cores"`
+
+	// Memory
+	MemTotal int64   `json:"mem_total"`
+	MemUsed  int64   `json:"mem_used"`
+	MemFree  int64   `json:"mem_free"`
+	MemUsage float64 `json:"mem_usage"`
+
+	// Swap
+	SwapTotal int64   `json:"swap_total"`
+	SwapUsed  int64   `json:"swap_used"`
+	SwapFree  int64   `json:"swap_free"`
+	SwapUsage float64 `json:"swap_usage"`
+
+	// Disk
+	DiskTotal int64   `json:"disk_total"`
+	DiskUsed  int64   `json:"disk_used"`
+	DiskFree  int64   `json:"disk_free"`
+	DiskUsage float64 `json:"disk_usage"`
+
+	// System
+	Hostname  string  `json:"hostname"`
+	OS        string  `json:"os"`
+	Arch      string  `json:"arch"`
+	Uptime    int64   `json:"uptime"`     // system uptime in seconds
+	PanelUptime int64 `json:"panel_uptime"` // panel uptime in seconds
+	LoadAvg1  float64 `json:"load_avg_1"`
+	LoadAvg5  float64 `json:"load_avg_5"`
+	LoadAvg15 float64 `json:"load_avg_15"`
+
+	// Network
+	TCPConnections int   `json:"tcp_connections"`
+	UDPConnections int   `json:"udp_connections"`
+	NetBytesSent   int64 `json:"net_bytes_sent"`
+	NetBytesRecv   int64 `json:"net_bytes_recv"`
+
+	// Runtime
+	Goroutines int `json:"goroutines"`
+
+	// Time
+	CurrentTime time.Time `json:"current_time"`
+}
+
+// StatsService provides system statistics.
+type StatsService struct {
+	version string
+}
+
+// NewStatsService creates a new stats service.
+func NewStatsService(version string) *StatsService {
+	return &StatsService{version: version}
+}
+
+// GetStats returns current system statistics.
+func (s *StatsService) GetStats() *SystemStats {
+	stats := &SystemStats{
+		Version:     s.version,
+		CPUCores:    runtime.NumCPU(),
+		Hostname:    getHostname(),
+		OS:          runtime.GOOS,
+		Arch:        runtime.GOARCH,
+		CurrentTime: time.Now(),
+	}
+
+	// Panel uptime
+	if !panelStartTime.IsZero() {
+		stats.PanelUptime = int64(time.Since(panelStartTime).Seconds())
+	}
+
+	// Goroutines
+	stats.Goroutines = runtime.NumGoroutine()
+
+	s.readCPU(stats)
+	s.readMemory(stats)
+	s.readDisk(stats)
+	s.readLoadAvg(stats)
+	s.readNetwork(stats)
+	s.readConnections(stats)
+	s.readUptime(stats)
+
+	return stats
+}
+
+func (s *StatsService) readCPU(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "cpu ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 5 {
+				user, _ := strconv.ParseInt(fields[1], 10, 64)
+				system, _ := strconv.ParseInt(fields[3], 10, 64)
+				idle, _ := strconv.ParseInt(fields[4], 10, 64)
+				total := user + system + idle
+				if total > 0 {
+					stats.CPUUsage = float64(user+system) / float64(total) * 100
+				}
+			}
+			break
+		}
+	}
+}
+
+func (s *StatsService) readMemory(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return
+	}
+	info := make(map[string]int64)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) >= 2 {
+			key := strings.TrimSuffix(parts[0], ":")
+			val, _ := strconv.ParseInt(parts[1], 10, 64)
+			info[key] = val * 1024
+		}
+	}
+	stats.MemTotal = info["MemTotal"]
+	stats.MemFree = info["MemAvailable"]
+	stats.MemUsed = stats.MemTotal - stats.MemFree
+	if stats.MemTotal > 0 {
+		stats.MemUsage = float64(stats.MemUsed) / float64(stats.MemTotal) * 100
+	}
+	stats.SwapTotal = info["SwapTotal"]
+	stats.SwapFree = info["SwapFree"]
+	stats.SwapUsed = stats.SwapTotal - stats.SwapFree
+	if stats.SwapTotal > 0 {
+		stats.SwapUsage = float64(stats.SwapUsed) / float64(stats.SwapTotal) * 100
+	}
+}
+
+func (s *StatsService) readDisk(stats *SystemStats) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs("/", &stat); err != nil {
+		return
+	}
+	stats.DiskTotal = int64(stat.Blocks) * int64(stat.Bsize)
+	stats.DiskFree = int64(stat.Bavail) * int64(stat.Bsize)
+	stats.DiskUsed = stats.DiskTotal - stats.DiskFree
+	if stats.DiskTotal > 0 {
+		stats.DiskUsage = float64(stats.DiskUsed) / float64(stats.DiskTotal) * 100
+	}
+}
+
+func (s *StatsService) readLoadAvg(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) >= 3 {
+		stats.LoadAvg1, _ = strconv.ParseFloat(fields[0], 64)
+		stats.LoadAvg5, _ = strconv.ParseFloat(fields[1], 64)
+		stats.LoadAvg15, _ = strconv.ParseFloat(fields[2], 64)
+	}
+}
+
+func (s *StatsService) readNetwork(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, ":") && !strings.Contains(line, "lo:") {
+			parts := strings.Fields(strings.Replace(line, ":", " ", 1))
+			if len(parts) >= 10 {
+				recv, _ := strconv.ParseInt(parts[1], 10, 64)
+				sent, _ := strconv.ParseInt(parts[9], 10, 64)
+				stats.NetBytesRecv += recv
+				stats.NetBytesSent += sent
+			}
+		}
+	}
+}
+
+func (s *StatsService) readConnections(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/net/tcp")
+	if err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+		first := true
+		count := 0
+		for scanner.Scan() {
+			if first {
+				first = false
+				continue
+			}
+			fields := strings.Fields(scanner.Text())
+			if len(fields) >= 4 && fields[3] == "01" {
+				count++
+			}
+		}
+		stats.TCPConnections = count
+	}
+	data, err = os.ReadFile("/proc/net/tcp6")
+	if err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+		first := true
+		for scanner.Scan() {
+			if first {
+				first = false
+				continue
+			}
+			fields := strings.Fields(scanner.Text())
+			if len(fields) >= 4 && fields[3] == "01" {
+				stats.TCPConnections++
+			}
+		}
+	}
+	data, err = os.ReadFile("/proc/net/udp")
+	if err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+		first := true
+		count := 0
+		for scanner.Scan() {
+			if first {
+				first = false
+				continue
+			}
+			fields := strings.Fields(scanner.Text())
+			if len(fields) >= 4 && fields[3] == "07" {
+				count++
+			}
+		}
+		stats.UDPConnections = count
+	}
+}
+
+func (s *StatsService) readUptime(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) >= 1 {
+		uptime, _ := strconv.ParseFloat(fields[0], 64)
+		stats.Uptime = int64(uptime)
+	}
+}
+
+func getHostname() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return hostname
+}

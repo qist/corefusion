@@ -1,0 +1,1042 @@
+<template>
+  <div>
+    <h2 style="margin-bottom:20px">Nginx {{ t('proxy.management') || '管理' }}</h2>
+
+    <!-- Status Card -->
+    <el-card shadow="hover" style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:18px;font-weight:600">Nginx</span>
+            <el-tag v-if="proxyInfo.installed" :type="proxyInfo.status==='running'?'success':'info'" size="small">
+              {{ proxyInfo.status || 'unknown' }}
+            </el-tag>
+            <el-tag v-else type="danger" size="small">{{ t('proxy.notInstalled') }}</el-tag>
+          </div>
+          <div style="display:flex;gap:8px">
+            <el-button size="small" type="danger" plain @click="$emit('back')">{{ t('proxy.switch') || '切换' }}</el-button>
+          </div>
+        </div>
+      </template>
+      <el-row :gutter="24">
+        <el-col :span="12">
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+            <div style="display:flex;justify-content:space-between">
+              <span style="color:#909399">{{ t('proxy.version') }}</span>
+              <span style="font-weight:600">{{ proxyInfo.version || '-' }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="color:#909399">{{ t('proxy.path') }}</span>
+              <span style="font-weight:600;font-size:12px">{{ proxyInfo.path || '-' }}</span>
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="12">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <template v-if="!proxyInfo.installed">
+              <el-button type="primary" :loading="releasesLoading" @click="showReleases">{{ t('proxy.download') }}</el-button>
+            </template>
+            <template v-else>
+              <el-button v-if="proxyInfo.status!=='running'" type="success" @click="proxyAction('start')">{{ t('proxy.start') }}</el-button>
+              <el-button v-else type="danger" @click="proxyAction('stop')">{{ t('proxy.stop') }}</el-button>
+              <el-button @click="proxyAction('restart')">{{ t('proxy.restart') }}</el-button>
+              <el-button type="warning" plain @click="showReleases">{{ t('proxy.switchVersion') || '更新' }}</el-button>
+              <el-button plain @click="viewConfig">{{ t('proxy.viewConfig') }}</el-button>
+            </template>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <!-- Nginx Settings -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <span>Nginx {{ t('proxy.settings') || '设置' }}</span>
+      </template>
+      <el-tabs v-model="settingsTab">
+        <el-tab-pane label="Worker" name="worker">
+          <el-form :model="settings" label-width="180px" size="small">
+            <el-form-item label="worker_processes">
+              <el-input v-model="settings.worker_processes" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="worker_rlimit_nofile">
+              <el-input v-model="settings.worker_rlimit_nofile" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="worker_connections">
+              <el-input v-model="settings.worker_connections" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="worker_priority">
+              <el-input v-model="settings.worker_priority" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="daemon">
+              <el-switch v-model="settings.daemon" />
+            </el-form-item>
+            <el-form-item label="multi_accept">
+              <el-switch v-model="settings.multi_accept" />
+            </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.defaultPorts') || '默认端口' }}</el-divider>
+            <el-form-item :label="t('proxy.defaultHttpPort') || 'HTTP 默认端口'">
+              <el-input v-model="settings.default_http_port" style="width:200px" placeholder="80" />
+            </el-form-item>
+            <el-form-item :label="t('proxy.defaultHttpsPort') || 'HTTPS 默认端口'">
+              <el-input v-model="settings.default_https_port" style="width:200px" placeholder="443" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxLog') || '日志'" name="log">
+          <el-form :model="settings" label-width="150px" size="small">
+            <el-form-item :label="t('proxy.errorLog') || 'error_log'">
+              <el-switch v-model="settings.error_log" />
+            </el-form-item>
+            <el-form-item v-if="settings.error_log" :label="t('proxy.errorLogPath') || 'error_log path'">
+              <el-input v-model="settings.error_log_path" style="width:300px" placeholder="logs/error.log" />
+            </el-form-item>
+            <el-form-item v-if="settings.error_log" :label="t('proxy.errorLogLevel') || 'error_log level'">
+              <el-select v-model="settings.error_log_level" style="width:200px">
+                <el-option label="debug" value="debug" />
+                <el-option label="info" value="info" />
+                <el-option label="notice" value="notice" />
+                <el-option label="warn" value="warn" />
+                <el-option label="error" value="error" />
+                <el-option label="crit" value="crit" />
+                <el-option label="alert" value="alert" />
+                <el-option label="emerg" value="emerg" />
+              </el-select>
+            </el-form-item>
+            <el-divider />
+            <el-form-item :label="t('proxy.accessLog') || 'access_log'">
+              <el-switch v-model="settings.access_log" />
+            </el-form-item>
+            <el-form-item v-if="settings.access_log" :label="t('proxy.accessLogPath') || 'access_log path'">
+              <el-input v-model="settings.access_log_path" style="width:300px" placeholder="logs/access.log" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxHttp') || 'HTTP'" name="http">
+          <el-form :model="settings" label-width="200px" size="small">
+            <el-form-item label="client_max_body_size">
+              <el-input v-model="settings.client_max_body_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="keepalive_timeout">
+              <el-input v-model="settings.keepalive_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="keepalive_requests">
+              <el-input v-model="settings.keepalive_requests" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="server_tokens">
+              <el-switch v-model="settings.server_tokens" />
+            </el-form-item>
+            <el-form-item label="sendfile">
+              <el-switch v-model="settings.sendfile" />
+            </el-form-item>
+            <el-form-item label="tcp_nopush">
+              <el-switch v-model="settings.tcp_nopush" />
+            </el-form-item>
+            <el-form-item label="tcp_nodelay">
+              <el-switch v-model="settings.tcp_nodelay" />
+            </el-form-item>
+            <el-form-item label="underscores_in_headers">
+              <el-switch v-model="settings.underscores_in_headers" />
+            </el-form-item>
+            <el-form-item label="charset">
+              <el-input v-model="settings.charset" style="width:200px" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxProxy') || 'Proxy'" name="proxy">
+          <el-form :model="settings" label-width="200px" size="small">
+            <el-form-item label="proxy_connect_timeout">
+              <el-input v-model="settings.proxy_connect_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_read_timeout">
+              <el-input v-model="settings.proxy_read_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_send_timeout">
+              <el-input v-model="settings.proxy_send_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_buffer_size">
+              <el-input v-model="settings.proxy_buffer_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_buffers">
+              <el-input v-model="settings.proxy_buffers" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_busy_buffers_size">
+              <el-input v-model="settings.proxy_busy_buffers_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_ignore_client_abort">
+              <el-switch v-model="settings.proxy_ignore_client_abort" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxGzip') || 'Gzip'" name="gzip">
+          <el-form :model="settings" label-width="200px" size="small">
+            <el-form-item label="gzip">
+              <el-switch v-model="settings.gzip" />
+            </el-form-item>
+            <el-form-item label="gzip_comp_level">
+              <el-input v-model="settings.gzip_comp_level" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="gzip_min_length">
+              <el-input v-model="settings.gzip_min_length" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="gzip_types">
+              <el-input v-model="settings.gzip_types" type="textarea" :rows="3" style="width:100%" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxBrotli') || 'Brotli'" name="brotli">
+          <el-form :model="settings" label-width="200px" size="small">
+            <el-form-item label="brotli">
+              <el-switch v-model="settings.brotli" />
+            </el-form-item>
+            <el-form-item label="brotli_comp_level">
+              <el-input v-model="settings.brotli_comp_level" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="brotli_min_length">
+              <el-input v-model="settings.brotli_min_length" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="brotli_types">
+              <el-input v-model="settings.brotli_types" type="textarea" :rows="3" style="width:100%" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxHttp23') || 'HTTP/2 & HTTP/3'" name="http23">
+          <el-form :model="settings" label-width="250px" size="small">
+            <el-form-item label="http2_max_concurrent_streams">
+              <el-input v-model="settings.http2_max_concurrent_streams" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="http3">
+              <el-switch v-model="settings.http3" />
+            </el-form-item>
+            <el-form-item label="http3_max_concurrent_streams">
+              <el-input v-model="settings.http3_max_concurrent_streams" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="quic_retry">
+              <el-switch v-model="settings.quic_retry" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxLimit') || 'Limit'" name="limit">
+          <el-form :model="settings" label-width="200px" size="small">
+            <el-form-item label="limit_conn_zone">
+              <el-input v-model="settings.limit_conn_zone" style="width:400px" />
+            </el-form-item>
+            <el-form-item label="limit_conn">
+              <el-input v-model="settings.limit_conn" style="width:200px" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxCustom') || '自定义'" name="custom">
+          <el-input v-model="settings.custom_config" type="textarea" :rows="10" style="font-family:monospace" :placeholder="t('proxy.nginxCustomHint') || '# 自定义全局指令'" />
+        </el-tab-pane>
+      </el-tabs>
+      <div style="margin-top:12px;text-align:right">
+        <el-button type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
+        <el-button @click="fetchSettings">{{ t('common.reset') || '重置' }}</el-button>
+      </div>
+    </el-card>
+
+    <!-- SNI Routing -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span>SNI {{ t('proxy.routing') || '分流' }}</span>
+            <el-switch v-model="settings.stream_sni_enabled" @change="onSNIToggle" />
+          </div>
+          <div v-if="settings.stream_sni_enabled" style="display:flex;gap:8px;align-items:center">
+            <el-button size="small" type="primary" @click="showAddSNI">+ SNI {{ t('proxy.rule') || '规则' }}</el-button>
+          </div>
+        </div>
+      </template>
+      <template v-if="settings.stream_sni_enabled">
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">SNI {{ t('proxy.listenPort') || '监听端口' }}</div>
+            <el-input v-model="sniListenPort" size="small" style="width:100px" placeholder="443" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.localHttpsPort') || '本地 HTTPS 端口' }}</div>
+            <el-input v-model="sniLocalPort" size="small" style="width:100px" placeholder="8443" />
+          </div>
+          <el-button size="small" type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
+          <el-button size="small" type="warning" @click="batchMigrate">{{ t('proxy.batchMigrate') || '一键迁移' }}</el-button>
+        </div>
+        <!-- Stream settings inline -->
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:#f5f7fa;border-radius:4px">
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">SNI ssl_preread cache</div>
+            <el-input v-model="settings.stream_sni_cache_size" size="small" style="width:100px" placeholder="64" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">Proxy Protocol</div>
+            <el-switch v-model="settings.stream_proxy_protocol" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">IPv6</div>
+            <el-switch v-model="settings.stream_ipv6" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_connect_timeout</div>
+            <el-input v-model="settings.stream_connect_timeout" size="small" style="width:100px" placeholder="1s" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_timeout</div>
+            <el-input v-model="settings.stream_timeout" size="small" style="width:100px" placeholder="3s" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">Stream {{ t('proxy.accessLog') || '日志' }}</div>
+            <el-switch v-model="settings.stream_log" />
+          </div>
+          <div v-if="settings.stream_log">
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.logFormat') || '格式' }}</div>
+            <el-select v-model="settings.stream_log_format" size="small" style="width:100px">
+              <el-option label="basic" value="basic" />
+              <el-option label="json" value="json" />
+            </el-select>
+          </div>
+          <el-button size="small" type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
+        </div>
+        <el-table :data="sniRules" stripe size="small">
+          <el-table-column :label="t('common.status')" width="70">
+            <template #default="{row}">
+              <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="domain" label="SNI Domain" min-width="160" />
+          <el-table-column label="Target" min-width="160">
+            <template #default="{row}">{{ row.sni_target || row.upstream || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="PP" width="60">
+            <template #default="{row}"><el-tag v-if="row.proxy_protocol" size="small">v2</el-tag><span v-else>-</span></template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="160">
+            <template #default="{row}">
+              <div style="display:inline-flex;gap:6px">
+                <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div style="margin-top:12px;font-size:12px;color:#909399">
+          {{ t('proxy.sniFallback') || '兜底规则' }}: 127.0.0.1:{{ sniLocalPort || '8443' }}
+        </div>
+      </template>
+    </el-card>
+
+    <!-- L4 Routing -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>L4 {{ t('proxy.routing') || '转发' }}</span>
+          <el-button size="small" @click="showAddSite('l4')">+ L4</el-button>
+        </div>
+      </template>
+      <el-table :data="l4Sites" stripe size="small">
+        <el-table-column :label="t('common.status')" width="70">
+          <template #default="{row}">
+            <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="domain" label="Name" width="120" />
+        <el-table-column label="Upstream" min-width="140">
+          <template #default="{row}">{{ row.upstream || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="Port" width="80">
+          <template #default="{row}">
+            <span style="color:#409eff;font-weight:600">:{{ row.listen_port || row.path || '443' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="Protocol" width="80">
+          <template #default="{row}">{{ (row.l4_protocol || 'tcp').toUpperCase() }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="160">
+          <template #default="{row}">
+            <div style="display:inline-flex;gap:6px">
+              <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- HTTP Site List -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>{{ t('proxy.sites') }}</span>
+          <div style="display:flex;gap:8px">
+            <el-button size="small" @click="showAddSite('http')">+ HTTP</el-button>
+            <el-button size="small" @click="showAddSite('websocket')">+ WS</el-button>
+            <el-button size="small" @click="showAddSite('grpc')">+ gRPC</el-button>
+            <el-button size="small" type="primary" @click="showPanelProxy">{{ t('proxy.proxyPanel') }}</el-button>
+          </div>
+        </div>
+      </template>
+      <el-table :data="httpSites" stripe>
+        <el-table-column :label="t('common.status')" width="70">
+          <template #default="{row}">
+            <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="domain" :label="t('proxy.domain')" min-width="120" />
+        <el-table-column prop="upstream" label="Upstream" min-width="120" />
+        <el-table-column label="Path" min-width="100">
+          <template #default="{row}">
+            <span v-if="row.listen_port" style="color:#409eff;font-weight:600">:{{ row.listen_port }}</span>
+            <span v-if="row.path"> {{ row.path }}</span>
+            <span v-if="!row.path && !row.listen_port" style="color:#c0c4cc">/</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="template" :label="t('proxy.template')" width="90">
+          <template #default="{row}"><el-tag size="small">{{ row.template || 'http' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="TLS" width="60">
+          <template #default="{row}">
+            <el-tag v-if="row.cert_path" type="success" size="small">✓</el-tag>
+            <el-tag v-else type="info" size="small">-</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="160" fixed="right">
+          <template #default="{row}">
+            <div style="display:inline-flex;gap:6px">
+              <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- Config View Dialog -->
+    <el-dialog v-model="configViewVisible" title="nginx.conf" width="700">
+      <el-input v-model="configViewContent" type="textarea" :rows="20" readonly style="font-family:monospace;font-size:13px" />
+      <template #footer>
+        <el-button @click="copyConfig">{{ t('proxy.copyConfig') }}</el-button>
+        <el-button @click="configViewVisible=false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- SNI Dialog -->
+    <el-dialog v-model="sniDialogVisible" :title="t('proxy.addSNIRule')" width="500">
+      <el-form :model="sniForm" label-width="120px">
+        <el-form-item label="Domain">
+          <el-input v-model="sniForm.domain" placeholder="www.example.com" />
+        </el-form-item>
+        <el-form-item :label="t('proxy.sniTarget')">
+          <el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443" />
+        </el-form-item>
+        <el-form-item :label="t('proxy.proxyProtocol')">
+          <el-switch v-model="sniForm.proxy_protocol" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="sniDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveSNIRule">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Site Dialog -->
+    <el-dialog v-model="siteDialogVisible" :title="siteDialogTitle" width="600">
+      <div style="margin-bottom:12px">
+        <el-radio-group v-model="siteForm.editMode" size="small">
+          <el-radio-button value="form">{{ t('proxy.formEdit') }}</el-radio-button>
+          <el-radio-button value="text">{{ t('proxy.textEdit') }}</el-radio-button>
+        </el-radio-group>
+      </div>
+      <el-form v-if="siteForm.editMode==='form'" :model="siteForm" label-width="100px">
+        <el-form-item label="Domain">
+          <el-input v-model="siteForm.domain" placeholder="example.com" />
+        </el-form-item>
+        <el-form-item label="Upstream">
+          <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+            <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
+            <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
+          </div>
+          <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') || '添加' }}</el-button>
+        </el-form-item>
+        <el-form-item v-if="siteForm.template==='l4'" :label="t('proxy.listenPort') || 'Listen Port'">
+          <el-input v-model="siteForm.listen_port" placeholder="443" style="width:120px" />
+        </el-form-item>
+        <el-form-item v-else :label="t('proxy.listenPort') || 'Listen Port'">
+          <el-input v-model="siteForm.listen_port" placeholder="80" style="width:120px" />
+        </el-form-item>
+        <el-form-item v-if="siteForm.template==='sni'" label="SNI Domain">
+          <el-input v-model="siteForm.domain" placeholder="www.example.com" />
+        </el-form-item>
+        <el-form-item v-else label="Path">
+          <el-input v-model="siteForm.path" placeholder="/api (留空转发全部)" />
+        </el-form-item>
+        <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
+          <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443" />
+        </el-form-item>
+        <el-form-item v-if="siteForm.template==='l4'" label="Protocol">
+          <el-select v-model="siteForm.l4_protocol" style="width:100%">
+            <el-option label="TCP" value="tcp" />
+            <el-option label="UDP" value="udp" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="siteForm.template!=='sni'" :label="t('proxy.template')">
+          <el-select v-model="siteForm.template" style="width:100%">
+            <el-option label="HTTP" value="http" />
+            <el-option label="WebSocket" value="websocket" />
+            <el-option label="gRPC" value="grpc" />
+            <el-option :label="t('proxy.templateL4')" value="l4" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('proxy.proxyProtocol')">
+          <el-switch v-model="siteForm.proxy_protocol" />
+        </el-form-item>
+        <el-form-item label="IPv6">
+          <el-switch v-model="siteForm.enable_ipv6" />
+        </el-form-item>
+        <el-form-item :label="t('proxy.useCertificate')">
+          <el-switch v-model="siteForm.use_cert" @change="onToggleCert" />
+        </el-form-item>
+        <el-form-item v-if="siteForm.use_cert" :label="t('certificate.tlsCert')">
+          <el-select v-model="siteForm.cert_id" style="width:100%" @change="onSiteCertSelect" :placeholder="t('proxy.selectCert')">
+            <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <template v-if="siteForm.use_cert">
+          <el-divider content-position="left">TLS {{ t('proxy.settings') || '配置' }}</el-divider>
+          <el-form-item label="HTTP/2">
+            <el-switch v-model="siteForm.enable_http2" />
+          </el-form-item>
+          <el-form-item label="QUIC">
+            <el-switch v-model="siteForm.enable_quic" />
+          </el-form-item>
+          <el-form-item label="ssl_early_data">
+            <el-switch v-model="siteForm.enable_early_data" />
+          </el-form-item>
+          <el-form-item label="ssl_stapling">
+            <el-switch v-model="siteForm.enable_stapling" />
+          </el-form-item>
+          <el-form-item label="ssl_protocols">
+            <el-select v-model="siteForm.ssl_protocols" style="width:100%" allow-filter>
+              <el-option label="TLSv1.2 TLSv1.3 (默认)" value="TLSv1.2 TLSv1.3" />
+              <el-option label="TLSv1 TLSv1.1 TLSv1.2 TLSv1.3 (兼容)" value="TLSv1 TLSv1.1 TLSv1.2 TLSv1.3" />
+              <el-option label="TLSv1.3 (最安全)" value="TLSv1.3" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="ssl_ciphers">
+            <el-select v-model="siteForm.ssl_ciphers" style="width:100%" allow-filter clearable placeholder="留空使用默认">
+              <el-option label="现代 (TLS1.2+1.3)" value="ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305" />
+              <el-option label="兼容 (HTTP/1.1)" value="ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305" />
+              <el-option label="全兼容 (含旧客户端)" value="@SECLEVEL=0:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="ssl_ecdh_curve">
+            <el-select v-model="siteForm.ssl_ecdh_curve" style="width:100%" allow-filter clearable placeholder="留空使用默认">
+              <el-option label="X25519:prime256v1:secp384r1 (默认)" value="X25519:prime256v1:secp384r1" />
+              <el-option label="X25519:P-384:P-256" value="X25519:P-384:P-256" />
+              <el-option label="prime256v1:secp384r1" value="prime256v1:secp384r1" />
+              <el-option label="X25519MLKEM768:SecP384r1MLKEM1024:SecP256r1MLKEM768:X25519:P-384:P-256 (PQC)" value="X25519MLKEM768:SecP384r1MLKEM1024:SecP256r1MLKEM768:X25519:P-384:P-256" />
+            </el-select>
+          </el-form-item>
+        </template>
+      </el-form>
+      <div v-else>
+        <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('proxy.configPreview') || '配置预览' }}</div>
+        <el-input :model-value="generatePreview(siteForm)" type="textarea" :rows="10" readonly style="font-family:monospace;font-size:13px;background:#f5f7fa" />
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.serverConfig') || 'Server 块指令' }}</div>
+          <el-input v-model="siteForm.server_config" type="textarea" :rows="3" style="font-family:monospace;font-size:13px" placeholder="add_header X-Frame-Options SAMEORIGIN;" />
+        </div>
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.locationConfig') || 'Location 块指令' }}</div>
+          <el-input v-model="siteForm.location_config" type="textarea" :rows="3" style="font-family:monospace;font-size:13px" placeholder="proxy_connect_timeout 60;" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="siteDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="siteSaving" @click="saveSite">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Version Dialog -->
+    <el-dialog v-model="releasesVisible" :title="t('proxy.selectVersion')" width="600">
+      <div v-loading="releasesLoading" style="min-height:100px">
+        <div v-if="releases.length === 0 && !releasesLoading" style="text-align:center;color:#999;padding:20px">{{ t('common.noData') }}</div>
+        <div v-for="r in releases" :key="r.tag_name" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <el-tag :type="r.prerelease?'warning':'success'" size="small">{{ r.prerelease ? 'Pre' : 'Rel' }}</el-tag>
+            <span style="font-weight:600">{{ r.tag_name }}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <el-button v-for="a in r.assets" :key="a.name" size="small" :loading="downloadingAsset===a.name" @click="downloadVersion(a.browser_download_url, r.tag_name)">
+              {{ a.name }} <span style="color:#999;font-size:11px;margin-left:4px">({{ formatSize(a.size) }})</span>
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import client from '../api/client'
+
+const { t } = useI18n()
+const emit = defineEmits(['back'])
+
+const proxyInfo = ref({})
+const allSites = ref([])
+const certificates = ref([])
+const settings = ref({})
+const settingsTab = ref('worker')
+
+const httpSites = computed(() => allSites.value.filter(s => s.template !== 'sni' && s.template !== 'l4'))
+const l4Sites = computed(() => allSites.value.filter(s => s.template === 'l4'))
+const sniRules = computed(() => allSites.value.filter(s => s.template === 'sni'))
+
+const sniListenPort = ref('443')
+const sniLocalPort = ref('8443')
+
+// Releases
+const releasesVisible = ref(false)
+const releasesLoading = ref(false)
+const releases = ref([])
+const downloadingAsset = ref('')
+
+// Site dialog
+const siteDialogVisible = ref(false)
+const siteDialogTitle = ref('')
+const siteSaving = ref(false)
+const siteForm = ref({
+  domain: '', upstreams: [''], path: '', template: 'http',
+  listen_port: '80', listen_socket: '',
+  use_cert: false, cert_id: null, cert_path: '', key_path: '',
+  custom_config: '', server_config: '', location_config: '',
+  l4_protocol: 'tcp', sni_target: '', local_port: '8443',
+  proxy_protocol: false, is_panel: false,
+  enable_http2: true, enable_ipv6: false, enable_quic: false,
+  enable_early_data: false, enable_stapling: false,
+  ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
+  editMode: 'form'
+})
+
+// Panel port
+const panelPort = ref('8080')
+
+// Config view
+const configViewVisible = ref(false)
+const configViewContent = ref('')
+
+// SNI
+const sniDialogVisible = ref(false)
+const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false })
+
+function formatSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / 1048576).toFixed(1) + ' MB'
+}
+
+async function fetchProxyInfo() {
+  try {
+    const status = await client.get('/proxy/status')
+    proxyInfo.value = status.nginx || {}
+    if (status.panel_port) panelPort.value = status.panel_port
+  } catch (e) {}
+}
+
+async function fetchSites() {
+  try {
+    allSites.value = await client.get('/nginx/sites') || []
+  } catch (e) { allSites.value = [] }
+}
+
+async function fetchCertificates() {
+  try { certificates.value = (await client.get('/certificates', { params: { limit: 100 } })).items || [] } catch (e) {}
+}
+
+async function fetchSettings() {
+  try {
+    const data = await client.get('/nginx/settings')
+    if (data) settings.value = data
+  } catch (e) {}
+}
+
+async function saveSettings() {
+  try {
+    await client.post('/nginx/settings', settings.value)
+    await applyConfig()
+    ElMessage.success(t('common.success'))
+  } catch (e) {}
+}
+
+async function onSNIToggle(enabled) {
+  try {
+    settings.value.stream_sni_enabled = enabled
+    await saveSettings()
+    if (enabled) {
+      await client.post('/nginx/sni-rules/toggle', { enabled: true })
+      const localPort = sniLocalPort.value || '8443'
+      settings.value.default_https_port = localPort
+      await saveSettings()
+      const existing = await client.get('/nginx/sites')
+      const hasFallback = (existing || []).some(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
+      if (!hasFallback) {
+        await client.post('/nginx/sites', {
+          domain: 'fallback', upstream: '', template: 'sni',
+          sni_target: `127.0.0.1:${localPort}`, local_port: localPort,
+          proxy_protocol: true, is_panel: false, priority: 999,
+          listen_port: sniListenPort.value || '443'
+        })
+      }
+      const res = await client.post('/nginx/batch-update-ports', { port: localPort, enable: true })
+      ElMessage.success(`SNI 已开启，迁移 ${res.updated || 0} 个站点`)
+    } else {
+      settings.value.default_https_port = '443'
+      await saveSettings()
+      await client.post('/nginx/sni-rules/toggle', { enabled: false })
+      await client.post('/nginx/batch-update-ports', { port: '443', enable: false })
+      ElMessage.success('SNI 已关闭，规则已保留（禁用）')
+    }
+    await applyConfig()
+    fetchSites()
+  } catch (e) {}
+}
+
+async function batchMigrate() {
+  const port = sniLocalPort.value || '8443'
+  try {
+    settings.value.default_https_port = port
+    await saveSettings()
+    const existing = await client.get('/nginx/sites')
+    const hasFallback = (existing || []).some(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
+    if (!hasFallback) {
+      await client.post('/nginx/sites', {
+        domain: 'fallback', upstream: '', template: 'sni',
+        sni_target: `127.0.0.1:${port}`, local_port: port,
+        proxy_protocol: true, is_panel: false, priority: 999,
+        listen_port: sniListenPort.value || '443'
+      })
+    }
+    const res = await client.post('/nginx/batch-update-ports', { port, enable: true })
+    await applyConfig()
+    ElMessage.success(`迁移完成，更新 ${res.updated || 0} 个站点`)
+    fetchSites()
+  } catch (e) {}
+}
+
+async function showReleases() {
+  releasesVisible.value = true
+  releasesLoading.value = true
+  try {
+    releases.value = await client.get('/proxy/releases', { params: { type: 'nginx' } }) || []
+  } catch (e) { releases.value = [] } finally { releasesLoading.value = false }
+}
+
+async function downloadVersion(url, tagName) {
+  downloadingAsset.value = url.split('/').pop()
+  try {
+    await client.post('/proxy/download', { type: 'nginx', download_url: url, tag_name: tagName })
+    ElMessage.success(t('proxy.downloadSuccess'))
+    releasesVisible.value = false
+    fetchProxyInfo()
+  } catch (e) {} finally { downloadingAsset.value = '' }
+}
+
+async function proxyAction(action) {
+  try {
+    await client.post(`/proxy/${action}?type=nginx`)
+    ElMessage.success(t('common.success'))
+    fetchProxyInfo()
+  } catch (e) {}
+}
+
+function showAddSite(template) {
+  siteDialogTitle.value = t('proxy.addSite')
+  const defaultPort = settings.value.default_http_port || '80'
+  siteForm.value = {
+    domain: '', upstreams: [''], path: '', template,
+    listen_port: template === 'l4' ? '443' : defaultPort, listen_socket: '',
+    use_cert: false, cert_id: null, cert_path: '', key_path: '',
+    custom_config: '', server_config: '', location_config: '',
+    l4_protocol: 'tcp', sni_target: '', local_port: '8443',
+    proxy_protocol: false, is_panel: false,
+    enable_http2: true, enable_ipv6: false, enable_quic: false,
+    enable_early_data: false, enable_stapling: false,
+    ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
+    editMode: 'form'
+  }
+  siteDialogVisible.value = true
+}
+
+function showPanelProxy() {
+  siteDialogTitle.value = t('proxy.proxyPanel')
+  const defaultPort = settings.value.default_http_port || '80'
+  siteForm.value = {
+    domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'http',
+    listen_port: defaultPort, listen_socket: '',
+    use_cert: false, cert_id: null, cert_path: '', key_path: '',
+    custom_config: '', server_config: '', location_config: '',
+    l4_protocol: 'tcp', sni_target: '', local_port: '8443',
+    proxy_protocol: false, is_panel: true,
+    enable_http2: true, enable_ipv6: false, enable_quic: false,
+    enable_early_data: false, enable_stapling: false,
+    ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
+    editMode: 'form'
+  }
+  siteDialogVisible.value = true
+}
+
+function onSiteCertSelect(id) {
+  const cert = certificates.value.find(c => c.id === id)
+  if (cert) {
+    siteForm.value.cert_path = cert.cert_path
+    siteForm.value.key_path = cert.key_path
+  }
+}
+
+function onToggleCert(enabled) {
+  const defaultHttp = settings.value.default_http_port || '80'
+  const defaultHttps = settings.value.default_https_port || '443'
+  if (enabled && (siteForm.value.listen_port === defaultHttp || siteForm.value.listen_port === '')) {
+    siteForm.value.listen_port = defaultHttps
+  } else if (!enabled && siteForm.value.listen_port === defaultHttps) {
+    siteForm.value.listen_port = defaultHttp
+  }
+}
+
+function editSite(row) {
+  siteDialogTitle.value = t('common.edit')
+  let certId = null
+  if (row.cert_path) {
+    const match = certificates.value.find(c => c.cert_path === row.cert_path)
+    if (match) certId = match.id
+  }
+  let upstreams = ['']
+  if (row.upstream) {
+    upstreams = row.upstream.split(/[,\n]/).map(s => s.trim()).filter(s => s)
+    if (upstreams.length === 0) upstreams = ['']
+  }
+  const listenPort = row.template === 'l4' ? (row.path || row.listen_port || '') : (row.listen_port || '')
+  siteForm.value = {
+    id: row.id, domain: row.domain, upstreams, path: row.path || '',
+    template: row.template || 'http', listen_port: listenPort,
+    listen_socket: row.listen_socket || '',
+    use_cert: !!row.cert_path, cert_id: certId,
+    cert_path: row.cert_path || '', key_path: row.key_path || '',
+    custom_config: row.custom_config || '',
+    server_config: row.server_config || '',
+    location_config: row.location_config || '',
+    l4_protocol: row.l4_protocol || 'tcp',
+    sni_target: row.sni_target || '', local_port: row.local_port || '8443',
+    proxy_protocol: row.proxy_protocol || false, is_panel: row.is_panel,
+    enable_http2: row.enable_http2 !== false,
+    enable_ipv6: row.enable_ipv6 || false,
+    enable_quic: row.enable_quic || false,
+    enable_early_data: row.enable_early_data || false,
+    enable_stapling: row.enable_stapling || false,
+    ssl_protocols: row.ssl_protocols || '',
+    ssl_ciphers: row.ssl_ciphers || '',
+    ssl_ecdh_curve: row.ssl_ecdh_curve || '',
+    editMode: 'form'
+  }
+  siteDialogVisible.value = true
+}
+
+function generatePreview(site) {
+  let lines = []
+  const domain = site.domain || ':80'
+  // L4 preview
+  if (site.template === 'l4') {
+    const port = site.listen_port || '443'
+    const proto = site.l4_protocol || 'tcp'
+    const upstreams = (site.upstreams || []).filter(u => u.trim())
+    if (upstreams.length === 0) upstreams.push('127.0.0.1:8080')
+    const upstreamName = 'l4_' + (site.domain || 'default').replace(/[^a-zA-Z0-9_]/g, '_')
+    lines.push(`upstream ${upstreamName} {`)
+    for (const up of upstreams) { lines.push(`    server ${up};`) }
+    lines.push(`}`, ``)
+    lines.push(`server {`)
+    lines.push(`    listen ${port} so_keepalive=on;`)
+    if (site.enable_ipv6) lines.push(`    listen [::]:${port} ipv6only=on so_keepalive=on;`)
+    lines.push(`    proxy_socket_keepalive on;`)
+    lines.push(`    proxy_buffer_size 512k;`)
+    if (site.proxy_protocol) lines.push(`    proxy_protocol on;`)
+    lines.push(`    proxy_pass ${upstreamName};`)
+    lines.push(`    proxy_timeout 5m;`)
+    lines.push(`    proxy_connect_timeout 2s;`)
+    lines.push(`}`)
+    return lines.join('\n')
+  }
+  // HTTP preview
+  const path = site.path || '/'
+  const upstreams = (site.upstreams || []).filter(u => u.trim())
+  if (upstreams.length === 0) upstreams.push('127.0.0.1:8080')
+  const upstreamStr = upstreams.join(',')
+  lines.push(`server {`)
+  const port = site.listen_port || '80'
+  if (site.cert_path && site.key_path) {
+    lines.push(`    listen ${port} ssl;`)
+    if (site.enable_ipv6) lines.push(`    listen [::]:${port} ssl;`)
+  } else {
+    lines.push(`    listen ${port};`)
+    if (site.enable_ipv6) lines.push(`    listen [::]:${port};`)
+  }
+  lines.push(`    server_name ${domain};`)
+  if (site.cert_path && site.key_path) {
+    lines.push(`    ssl_certificate ${site.cert_path};`)
+    lines.push(`    ssl_certificate_key ${site.key_path};`)
+    lines.push(`    ssl_protocols TLSv1.2 TLSv1.3;`)
+  }
+  lines.push(``)
+  if (upstreams.length > 1) {
+    lines.push(`    upstream backend {`)
+    for (const up of upstreams) { lines.push(`        server ${up};`) }
+    lines.push(`    }`, ``)
+  }
+  lines.push(`    location ${path} {`)
+  const passTarget = upstreams.length > 1 ? 'http://backend' : `http://${upstreamStr}`
+  if (site.template === 'websocket') {
+    lines.push(`        proxy_pass ${passTarget};`)
+    lines.push(`        proxy_http_version 1.1;`)
+    lines.push(`        proxy_set_header Upgrade $http_upgrade;`)
+    lines.push(`        proxy_set_header Connection "upgrade";`)
+    lines.push(`        proxy_set_header Host $host;`)
+    lines.push(`        proxy_set_header X-Forwarded-Proto $scheme;`)
+    lines.push(`        proxy_set_header X-Real-IP $remote_addr;`)
+    lines.push(`        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`)
+  } else if (site.template === 'grpc') {
+    lines.push(`        grpc_pass grpc://${upstreamStr};`)
+    lines.push(`        proxy_set_header X-Real-IP $remote_addr;`)
+    lines.push(`        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`)
+  } else {
+    lines.push(`        proxy_pass ${passTarget};`)
+    lines.push(`        proxy_http_version 1.1;`)
+    lines.push(`        proxy_set_header Accept-Encoding "";`)
+    lines.push(`        proxy_set_header Host $host;`)
+    lines.push(`        proxy_set_header X-Real-IP $remote_addr;`)
+    lines.push(`        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`)
+    lines.push(`        proxy_set_header X-Forwarded-Proto $scheme;`)
+  }
+  lines.push(`    }`, `}`)
+  return lines.join('\n')
+}
+
+async function applyConfig() {
+  try {
+    await client.post('/nginx/generate-config')
+    if (proxyInfo.value.status === 'running') {
+      await client.post('/proxy/reload?type=nginx')
+    }
+    fetchProxyInfo()
+  } catch (e) {}
+}
+
+async function saveSite() {
+  siteSaving.value = true
+  try {
+    const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
+    const pathValue = siteForm.value.template === 'l4' ? (siteForm.value.listen_port || '') : (siteForm.value.path || '')
+    const payload = {
+      domain: siteForm.value.domain,
+      upstream: upstream,
+      path: pathValue,
+      template: siteForm.value.template,
+      listen_port: siteForm.value.listen_port || '',
+      listen_socket: siteForm.value.listen_socket || '',
+      cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
+      key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
+      server_config: siteForm.value.server_config || '',
+      location_config: siteForm.value.location_config || '',
+      l4_protocol: siteForm.value.l4_protocol || '',
+      sni_target: siteForm.value.sni_target || '',
+      local_port: siteForm.value.local_port || '8443',
+      proxy_protocol: siteForm.value.proxy_protocol || false,
+      is_panel: siteForm.value.is_panel,
+      priority: siteForm.value.is_panel ? 0 : 100,
+      enable_http2: siteForm.value.enable_http2 !== false,
+      enable_ipv6: siteForm.value.enable_ipv6 || false,
+      enable_quic: siteForm.value.enable_quic || false,
+      enable_early_data: siteForm.value.enable_early_data || false,
+      enable_stapling: siteForm.value.enable_stapling || false,
+      ssl_protocols: siteForm.value.ssl_protocols || 'TLSv1.2 TLSv1.3',
+      ssl_ciphers: siteForm.value.ssl_ciphers || '',
+      ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve || ''
+    }
+    if (siteForm.value.id) {
+      await client.put(`/nginx/sites/${siteForm.value.id}`, payload)
+    } else {
+      await client.post('/nginx/sites', payload)
+    }
+    await applyConfig()
+    ElMessage.success(t('proxy.siteSaved'))
+    siteDialogVisible.value = false
+    fetchSites()
+  } catch (e) {} finally { siteSaving.value = false }
+}
+
+async function toggleSite(row) {
+  try {
+    await client.put(`/nginx/sites/${row.id}`, { enabled: row.enabled })
+    await applyConfig()
+    fetchSites()
+  } catch (e) { row.enabled = !row.enabled }
+}
+
+async function deleteSite(row) {
+  await ElMessageBox.confirm(t('common.confirm'))
+  try {
+    await client.delete(`/nginx/sites/${row.id}`)
+    await applyConfig()
+    ElMessage.success(t('common.success'))
+    fetchSites()
+  } catch (e) {}
+}
+
+async function viewConfig() {
+  try {
+    const data = await client.get('/proxy/config?type=nginx')
+    configViewContent.value = data.config || ''
+    configViewVisible.value = true
+  } catch (e) {}
+}
+
+function copyConfig() {
+  navigator.clipboard.writeText(configViewContent.value)
+  ElMessage.success(t('proxy.configCopied'))
+}
+
+function showAddSNI() {
+  sniForm.value = { domain: '', sni_target: '', proxy_protocol: false }
+  sniDialogVisible.value = true
+}
+
+async function saveSNIRule() {
+  try {
+    await client.post('/nginx/sites', {
+      domain: sniForm.value.domain,
+      upstream: '',
+      template: 'sni',
+      sni_target: sniForm.value.sni_target,
+      local_port: sniLocalPort.value || '8443',
+      proxy_protocol: sniForm.value.proxy_protocol,
+      is_panel: false,
+      priority: 50,
+      listen_port: sniListenPort.value || '443'
+    })
+    await applyConfig()
+    ElMessage.success(t('common.success'))
+    sniDialogVisible.value = false
+    fetchSites()
+  } catch (e) {}
+}
+
+onMounted(() => {
+  fetchProxyInfo()
+  fetchSites()
+  fetchCertificates()
+  fetchSettings()
+})
+</script>

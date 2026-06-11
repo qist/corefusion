@@ -1,0 +1,391 @@
+<template>
+  <div>
+    <!-- Sources -->
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+      <h3>{{ t('service.rules.sources') }}</h3>
+      <div>
+        <el-button @click="showAddSource">{{ t('service.rules.addSource') }}</el-button>
+        <el-button type="primary" @click="handleSyncAll" :loading="syncAllLoading">{{ t('service.rules.syncAll') }}</el-button>
+      </div>
+    </div>
+    <el-card style="margin-bottom:20px">
+      <el-table :data="sources" v-loading="sourcesLoading" stripe>
+        <el-table-column prop="name" :label="t('common.name')" width="200" />
+        <el-table-column prop="repo_url" label="Repo" />
+        <el-table-column prop="sync_cron" :label="t('service.rules.syncCron')" width="140" />
+        <el-table-column :label="t('service.rules.scheduleEnabled')" width="100">
+          <template #default="{row}">
+            <el-switch v-model="row.enabled" @change="handleToggleSchedule(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="last_sync_tag" label="Version" width="140" />
+        <el-table-column :label="t('common.status')" width="100">
+          <template #default="{row}">
+            <el-tag :type="row.status==='syncing'?'warning':'success'" size="small">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="300">
+          <template #default="{row}">
+            <el-button size="small" :disabled="row.repo_url.startsWith('http')" @click="showFetchAssets(row)">{{ t('service.rules.browseFiles') }}</el-button>
+            <el-button size="small" type="success" @click="handleSyncSource(row)" :loading="row._syncing">{{ t('service.rules.sync') }}</el-button>
+            <el-button size="small" @click="showEditSource(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="handleDeleteSource(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- Selected Files -->
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+      <h3>{{ t('service.rules.selectedFiles') }}</h3>
+    </div>
+    <el-card>
+      <el-table :data="files" v-loading="filesLoading" stripe>
+        <el-table-column prop="name" label="File" width="250" />
+        <el-table-column :label="t('service.rules.fileSize')" width="120">
+          <template #default="{row}">{{ row.file_size ? formatSize(row.file_size) : '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="version" label="Version" width="140" />
+        <el-table-column :label="t('service.rules.lastUpdated')" width="180">
+          <template #default="{row}">{{ row.last_updated && row.last_updated !== '0001-01-01T00:00:00Z' ? new Date(row.last_updated).toLocaleString() : '-' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.status')" width="100">
+          <template #default="{row}">
+            <el-tag :type="row.status==='available'?'success':row.status==='downloading'?'warning':'danger'" size="small">
+              {{ row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="200">
+          <template #default="{row}">
+            <el-button size="small" type="primary" @click="handleDownload(row)" :loading="row._loading">{{ t('service.rules.download') }}</el-button>
+            <el-button size="small" type="danger" @click="handleDeleteFile(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- Add/Edit Source Dialog -->
+    <el-dialog v-model="sourceDialogVisible" :title="editingSource ? t('common.edit') : t('service.rules.addSource')" width="600">
+      <el-form :model="sourceForm" label-width="100px">
+        <el-form-item :label="t('common.name')"><el-input v-model="sourceForm.name" /></el-form-item>
+        <el-form-item label="Repo URL">
+          <el-input v-model="sourceForm.repo_url" :placeholder="t('service.rules.repoUrlPlaceholder')" @blur="fetchAssetsForSource" />
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('service.rules.repoUrlHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('service.rules.syncCron')">
+          <el-select v-model="sourceForm.sync_cron" filterable allow-create style="width:100%">
+            <el-option label="关闭" value="" />
+            <el-option :label="t('service.rules.cronEvery6h')" value="0 */6 * * *" />
+            <el-option :label="t('service.rules.cronEvery12h')" value="0 */12 * * *" />
+            <el-option :label="t('service.rules.cronDaily3am')" value="0 3 * * *" />
+            <el-option :label="t('service.rules.cronDailyMidnight')" value="0 0 * * *" />
+            <el-option :label="t('service.rules.cronWeekly')" value="0 0 * * 0" />
+            <el-option label="@every 1h" value="@every 1h" />
+            <el-option label="@every 6h" value="@every 6h" />
+            <el-option label="@every 12h" value="@every 12h" />
+            <el-option label="@every 24h" value="@every 24h" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="!editingSource && !isDirectUrl" :label="t('service.rules.selectFiles')">
+          <div v-if="sourceAssetsLoading" style="color:#999">{{ t('common.loading') }}</div>
+          <div v-else-if="sourceAssets.length === 0" style="color:#999;font-size:12px">{{ t('service.rules.enterRepoHint') }}</div>
+          <el-checkbox-group v-model="sourceSelectedFiles" v-else>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              <el-checkbox v-for="a in sourceAssets" :key="a.name" :label="a.name" border size="small">
+                {{ a.name }} <span style="color:#999;font-size:11px">({{ formatSize(a.size) }})</span>
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item v-if="!editingSource && isDirectUrl" :label="t('service.rules.directUrlInfo')">
+          <span style="font-size:12px;color:#67c23a">{{ t('service.rules.directUrlAutoFile') }}</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="sourceDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="sourceSaving" @click="handleSaveSource">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Browse Assets Dialog -->
+    <el-dialog v-model="assetsDialogVisible" :title="t('service.rules.selectFiles')" width="600">
+      <div style="margin-bottom:12px">
+        <el-tag v-if="assetsTag">{{ t('service.rules.latestVersion') }}: {{ assetsTag }}</el-tag>
+      </div>
+      <el-table ref="assetsTableRef" :data="assets" v-loading="assetsLoading" stripe @selection-change="handleAssetSelect" max-height="400">
+        <el-table-column type="selection" width="50" />
+        <el-table-column prop="name" label="File" />
+        <el-table-column :label="t('service.rules.fileSize')" width="100">
+          <template #default="{row}">{{ formatSize(row.size) }}</template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="assetsDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="selectSaving" @click="handleConfirmSelect">{{ t('service.rules.addSelected') }}</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import client from '../../api/client'
+
+const { t } = useI18n()
+
+// Sources
+const sources = ref([])
+const sourcesLoading = ref(false)
+const syncAllLoading = ref(false)
+const sourceDialogVisible = ref(false)
+const sourceSaving = ref(false)
+const editingSource = ref(null)
+const sourceForm = ref({ name: '', repo_url: '', sync_cron: '0 3 * * *' })
+const sourceAssets = ref([])
+const sourceAssetsLoading = ref(false)
+const sourceSelectedFiles = ref([])
+let lastFetchedRepo = ''
+
+const isDirectUrl = computed(() => {
+  const url = (sourceForm.value.repo_url || '').trim()
+  return url.startsWith('http://') || url.startsWith('https://')
+})
+
+// Files
+const files = ref([])
+const filesLoading = ref(false)
+
+// Assets
+const assetsDialogVisible = ref(false)
+const assetsLoading = ref(false)
+const assets = ref([])
+const assetsTag = ref('')
+const selectedSourceId = ref(null)
+const selectedAssets = ref([])
+const assetsTableRef = ref(null)
+const selectSaving = ref(false)
+
+function formatSize(bytes) {
+  if (!bytes) return '-'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1048576).toFixed(1) + ' MB'
+}
+
+// --- Sources ---
+async function fetchSources() {
+  sourcesLoading.value = true
+  try {
+    const data = await client.get('/geo-rules/sources')
+    sources.value = (data || []).map(s => ({ ...s, _syncing: false }))
+  } finally { sourcesLoading.value = false }
+}
+
+function showAddSource() {
+  editingSource.value = null
+  sourceForm.value = { name: '', repo_url: '', sync_cron: '' }
+  sourceAssets.value = []
+  sourceSelectedFiles.value = []
+  lastFetchedRepo = ''
+  sourceDialogVisible.value = true
+}
+
+function showEditSource(row) {
+  editingSource.value = row
+  sourceForm.value = { name: row.name, repo_url: row.repo_url, sync_cron: row.sync_cron || '' }
+  sourceAssets.value = []
+  sourceSelectedFiles.value = []
+  sourceDialogVisible.value = true
+}
+
+async function fetchAssetsForSource() {
+  const repo = sourceForm.value.repo_url.trim()
+  if (!repo || repo === lastFetchedRepo || editingSource.value) return
+  if (repo.startsWith('http://') || repo.startsWith('https://')) return
+  lastFetchedRepo = repo
+  sourceAssetsLoading.value = true
+  sourceAssets.value = []
+  sourceSelectedFiles.value = []
+  try {
+    // Fetch releases directly from GitHub API via client
+    const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`)
+    if (!resp.ok) return
+    const data = await resp.json()
+    sourceAssets.value = (data.assets || []).map(a => ({ name: a.name, size: a.size, download_url: a.browser_download_url }))
+    sourceSelectedFiles.value = []
+  } catch (e) {} finally { sourceAssetsLoading.value = false }
+}
+
+async function handleSaveSource() {
+  sourceSaving.value = true
+  try {
+    if (editingSource.value) {
+      await client.put(`/geo-rules/sources/${editingSource.value.id}`, sourceForm.value)
+    } else {
+      const src = await client.post('/geo-rules/sources', sourceForm.value)
+      // If files were selected, save them
+      if (sourceSelectedFiles.value.length > 0 && src && src.id) {
+        await client.post(`/geo-rules/sources/${src.id}/select`, {
+          files: sourceSelectedFiles.value
+        })
+      }
+    }
+    ElMessage.success(t('common.success'))
+    sourceDialogVisible.value = false
+    fetchSources()
+    fetchFiles()
+  } finally { sourceSaving.value = false }
+}
+
+async function handleDeleteSource(row) {
+  await ElMessageBox.confirm(t('service.rules.deleteSourceConfirm', { name: row.name }), t('common.confirm'))
+  await client.delete(`/geo-rules/sources/${row.id}`)
+  ElMessage.success(t('common.success'))
+  fetchSources()
+  fetchFiles()
+}
+
+async function pollSyncStatus(jobKey, callback) {
+  const poll = async () => {
+    try {
+      const job = await client.get(`/geo-rules/sync-status/${jobKey}`)
+      if (job.status === 'running') {
+        setTimeout(poll, 1500)
+      } else {
+        callback(job)
+      }
+    } catch (e) {
+      callback({ status: 'error', error: 'poll failed' })
+    }
+  }
+  poll()
+}
+
+async function handleSyncSource(row) {
+  row._syncing = true
+  try {
+    const { job_key } = await client.post(`/geo-rules/sources/${row.id}/sync`)
+    pollSyncStatus(job_key, (job) => {
+      row._syncing = false
+      if (job.status === 'done' && job.results && job.results.length > 0) {
+        const r = job.results[0]
+        ElMessage.success(t('service.rules.syncDone', { downloaded: r.downloaded, total: r.total, tag: r.tag }))
+      } else {
+        ElMessage.error(job.error || t('common.failed'))
+      }
+      fetchSources()
+      fetchFiles()
+    })
+  } catch (e) { row._syncing = false }
+}
+
+async function handleToggleSchedule(row) {
+  try {
+    await client.put(`/geo-rules/sources/${row.id}/schedule`, {
+      enabled: row.enabled,
+      sync_cron: row.sync_cron || ''
+    })
+    ElMessage.success(t('common.success'))
+  } catch (e) {
+    row.enabled = !row.enabled
+  }
+}
+
+async function handleSyncAll() {
+  syncAllLoading.value = true
+  try {
+    const { job_key } = await client.post('/geo-rules/sync-all')
+    pollSyncStatus(job_key, (job) => {
+      syncAllLoading.value = false
+      if (job.status === 'done' && job.results) {
+        const total = job.results.reduce((sum, r) => sum + (r.downloaded || 0), 0)
+        ElMessage.success(t('service.rules.syncAllDone', { count: total }))
+      } else {
+        ElMessage.error(job.error || t('common.failed'))
+      }
+      fetchSources()
+      fetchFiles()
+    })
+  } catch (e) { syncAllLoading.value = false }
+}
+
+// --- Browse & Select Assets ---
+async function showFetchAssets(row) {
+  selectedSourceId.value = row.id
+  assetsDialogVisible.value = true
+  assetsLoading.value = true
+  selectedAssets.value = []
+  try {
+    const data = await client.get(`/geo-rules/sources/${row.id}/assets`)
+    assets.value = data.assets || []
+    assetsTag.value = data.tag || ''
+    // Pre-select files already added
+    const existingNames = new Set((files.value || []).filter(f => f.source_id === row.id).map(f => f.name))
+    selectedAssets.value = [...existingNames]
+    // Toggle table row selection after DOM update
+    setTimeout(() => {
+      if (assetsTableRef.value) {
+        assets.value.forEach(a => {
+          if (existingNames.has(a.name)) {
+            assetsTableRef.value.toggleRowSelection(a, true)
+          }
+        })
+      }
+    }, 0)
+  } catch (e) {
+    assets.value = []
+  } finally { assetsLoading.value = false }
+}
+
+function handleAssetSelect(selection) {
+  selectedAssets.value = selection.map(a => a.name)
+}
+
+async function handleConfirmSelect() {
+  if (selectedAssets.value.length === 0) return
+  const fileNames = selectedAssets.value
+  selectSaving.value = true
+  try {
+    await client.post(`/geo-rules/sources/${selectedSourceId.value}/select`, {
+      files: fileNames
+    })
+    ElMessage.success(t('common.success'))
+    assetsDialogVisible.value = false
+    fetchFiles()
+  } finally { selectSaving.value = false }
+}
+
+// --- Files ---
+async function fetchFiles() {
+  filesLoading.value = true
+  try {
+    const data = await client.get('/geo-rules/files')
+    files.value = (data || []).map(f => ({ ...f, _loading: false }))
+  } finally { filesLoading.value = false }
+}
+
+async function handleDownload(row) {
+  row._loading = true
+  try {
+    await client.post(`/geo-rules/files/${row.id}/download`)
+    ElMessage.success(t('common.success'))
+    fetchFiles()
+  } catch (e) {} finally { row._loading = false }
+}
+
+async function handleDeleteFile(row) {
+  await ElMessageBox.confirm(t('service.rules.deleteConfirm', { name: row.name }), t('common.confirm'))
+  await client.delete(`/geo-rules/files/${row.id}`)
+  ElMessage.success(t('common.success'))
+  fetchFiles()
+}
+
+
+onMounted(() => {
+  fetchSources()
+  fetchFiles()
+})
+</script>

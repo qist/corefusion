@@ -1,0 +1,49 @@
+package networkpolicy
+
+import (
+	"context"
+	"time"
+)
+
+// AccessGate checks if a connection should be allowed based on access policies.
+type AccessGate interface {
+	Check(ctx context.Context, ac AccessContext) error
+	OnAccepted(ctx context.Context, ac AccessContext) error
+	OnClosed(ctx context.Context, ac AccessContext) error
+}
+
+// AccessContext is the context for an access check.
+type AccessContext struct {
+	ServiceID         int64
+	EndpointID        int64
+	UserID            *int64
+	SubscriptionID    *int64
+	RemoteIP          string
+	Protocol          string
+	CurrentConcurrent int
+	AttemptAt         time.Time
+}
+
+// AccessStateMachine evaluates access control state.
+type AccessStateMachine interface {
+	Evaluate(ctx context.Context, ac AccessContext, snapshot AccessRuntimeSnapshot) AccessControlDecision
+}
+
+// AccessRuntimeSnapshot is the current access state for an IP.
+type AccessRuntimeSnapshot struct {
+	CurrentState          string
+	NewConnectionsPerMin  int
+	ConcurrentConnections int
+	ViolationCount        int
+	RiskScore             int
+	BanExpiresAt          *time.Time
+}
+
+// AccessControlDecision is the result of an access evaluation.
+type AccessControlDecision struct {
+	NextState   string
+	Allowed     bool
+	Reason      string
+	AutoBan     bool
+	BanDuration time.Duration
+}

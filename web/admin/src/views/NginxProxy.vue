@@ -110,6 +110,19 @@
             <el-form-item v-if="settings.access_log" :label="t('proxy.accessLogPath') || 'access_log path'">
               <el-input v-model="settings.access_log_path" style="width:300px" placeholder="logs/access.log" />
             </el-form-item>
+            <el-divider content-position="left">Stream {{ t('proxy.accessLog') || '日志' }}</el-divider>
+            <el-form-item label="stream access_log">
+              <el-switch v-model="settings.stream_log" />
+            </el-form-item>
+            <el-form-item v-if="settings.stream_log" :label="t('proxy.logPath') || '日志路径'">
+              <el-input v-model="settings.stream_log_path" style="width:300px" placeholder="logs/stream.log" />
+            </el-form-item>
+            <el-form-item v-if="settings.stream_log" :label="t('proxy.logFormat') || '格式'">
+              <el-select v-model="settings.stream_log_format" style="width:200px">
+                <el-option label="basic" value="basic" />
+                <el-option label="json" value="json" />
+              </el-select>
+            </el-form-item>
           </el-form>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxHttp') || 'HTTP'" name="http">
@@ -284,18 +297,6 @@
             <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_timeout</div>
             <el-input v-model="settings.stream_timeout" size="small" style="width:100px" placeholder="3s" />
           </div>
-          <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">Stream {{ t('proxy.accessLog') || '日志' }}</div>
-            <el-switch v-model="settings.stream_log" />
-          </div>
-          <div v-if="settings.stream_log">
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.logFormat') || '格式' }}</div>
-            <el-select v-model="settings.stream_log_format" size="small" style="width:100px">
-              <el-option label="basic" value="basic" />
-              <el-option label="json" value="json" />
-            </el-select>
-          </div>
-          <el-button size="small" type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
         </div>
         <el-table :data="sniRules" stripe size="small">
           <el-table-column :label="t('common.status')" width="70">

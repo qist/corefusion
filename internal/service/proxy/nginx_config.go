@@ -703,9 +703,6 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 				sb.WriteString("    preread_buffer_size 128k;\n")
 				sb.WriteString(fmt.Sprintf("    proxy_connect_timeout %s;\n", connectTimeout))
 				sb.WriteString(fmt.Sprintf("    proxy_timeout %s;\n", streamTimeout))
-				if s.StreamLog {
-					sb.WriteString(fmt.Sprintf("    access_log logs/stream_%s.log stream_%s buffer=32k;\n", port, logFmt))
-				}
 				sb.WriteString("    proxy_pass $sni_backend;\n")
 				sb.WriteString("}\n\n")
 			}
@@ -754,9 +751,6 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 				}
 				sb.WriteString("    proxy_socket_keepalive on;\n")
 				sb.WriteString("    proxy_buffer_size 512k;\n")
-				if s.StreamLog {
-					sb.WriteString(fmt.Sprintf("    access_log logs/stream.log stream_%s buffer=32k;\n", logFmt))
-				}
 				if site.ProxyProtocol {
 					sb.WriteString("    proxy_protocol on;\n")
 				}

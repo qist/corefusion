@@ -1,5 +1,5 @@
-data/*
-web/admin/dist/*
-web/admin/node_modules/*
-internal/app/embed/dist/*
+data
+web/admin/dist
+web/admin/node_modules
+internal/app/embed/dist
 corefusion

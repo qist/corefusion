@@ -11,27 +11,50 @@ import (
 )
 
 // TailLog reads the last N lines from a log file.
+// If the file doesn't exist, falls back to proxy stdout broker.
 func (s *Service) TailLog(ctx context.Context, logPath string, lastLines int) ([]string, error) {
 	if lastLines <= 0 {
 		lastLines = 500
 	}
 
 	resolved := s.resolveLogPath(logPath)
-	f, err := os.Open(resolved)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", resolved, err)
-	}
-	defer f.Close()
 
-	lines, err := readLastLines(f, lastLines)
-	if err != nil {
-		return nil, err
+	// If file exists, read from it
+	if _, err := os.Stat(resolved); err == nil {
+		f, err := os.Open(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("open %s: %w", resolved, err)
+		}
+		defer f.Close()
+		return readLastLines(f, lastLines)
 	}
-	return lines, nil
+
+	// File doesn't exist - try proxy stdout broker
+	if s.proxyBroker != nil {
+		for _, pType := range []string{"nginx", "caddy"} {
+			broker := s.proxyBroker.GetLogBroker(pType)
+			if broker != nil {
+				lines := broker.Snapshot()
+				if len(lines) > 0 {
+					if len(lines) > lastLines {
+						lines = lines[len(lines)-lastLines:]
+					}
+					return lines, nil
+				}
+			}
+		}
+	}
+
+	return []string{
+		fmt.Sprintf("[日志文件不存在] %s", resolved),
+		"[提示] 代理可能正在输出到标准输出(stdout)",
+		"[提示] 请在日志管理中心点击「接管捕获」，或在代理管理页面切换为「输出到文件」",
+	}, nil
 }
 
-// TailLogStream streams new log lines via SSE. It sends the last N lines first,
-// then watches for new content and sends增量 lines.
+// TailLogStream streams new log lines via SSE.
+// For file-based logs: sends initial lines then polls for new content.
+// For stdout logs: subscribes to the broker for real-time streaming.
 func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines int, ch chan<- string) error {
 	defer close(ch)
 
@@ -41,18 +64,38 @@ func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines i
 
 	resolved := s.resolveLogPath(logPath)
 
-	// Send initial lines
-	f, err := os.Open(resolved)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", resolved, err)
+	// Check if file exists
+	if _, err := os.Stat(resolved); err == nil {
+		// File-based: send initial lines then poll
+		return s.streamFromFile(ctx, resolved, lastLines, ch)
 	}
 
+	// File doesn't exist - try broker for real-time streaming
+	if s.proxyBroker != nil {
+		for _, pType := range []string{"nginx", "caddy"} {
+			broker := s.proxyBroker.GetLogBroker(pType)
+			if broker != nil {
+				return s.streamFromBroker(ctx, broker, lastLines, ch)
+			}
+		}
+	}
+
+	// No source available
+	ch <- "[无可用日志源]"
+	return nil
+}
+
+// streamFromFile streams from a log file using polling.
+func (s *Service) streamFromFile(ctx context.Context, resolved string, lastLines int, ch chan<- string) error {
+	f, err := os.Open(resolved)
+	if err != nil {
+		return err
+	}
 	lines, err := readLastLines(f, lastLines)
 	f.Close()
 	if err != nil {
 		return err
 	}
-
 	for _, line := range lines {
 		select {
 		case <-ctx.Done():
@@ -61,12 +104,7 @@ func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines i
 		}
 	}
 
-	// Watch for new content using polling
-	// Start from the current file size
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return nil // file might have been rotated
-	}
+	info, _ := os.Stat(resolved)
 	lastSize := info.Size()
 	lastMod := info.ModTime()
 
@@ -80,7 +118,7 @@ func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines i
 		case <-ticker.C:
 			newLines, newSize, newMod, err := s.readNewContent(resolved, lastSize, lastMod)
 			if err != nil {
-				continue // file might be rotating
+				continue
 			}
 			if len(newLines) > 0 {
 				lastSize = newSize
@@ -92,6 +130,42 @@ func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines i
 					case ch <- line:
 					}
 				}
+			}
+		}
+	}
+}
+
+// streamFromBroker streams from a proxy log broker using pub/sub.
+func (s *Service) streamFromBroker(ctx context.Context, broker LogBrokerReader, lastLines int, ch chan<- string) error {
+	// Send snapshot first
+	snapshot := broker.Snapshot()
+	if len(snapshot) > lastLines {
+		snapshot = snapshot[len(snapshot)-lastLines:]
+	}
+	for _, line := range snapshot {
+		select {
+		case <-ctx.Done():
+			return nil
+		case ch <- line:
+		}
+	}
+
+	// Subscribe for live updates
+	liveCh, cancel := broker.Subscribe()
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case line, ok := <-liveCh:
+			if !ok {
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case ch <- line:
 			}
 		}
 	}

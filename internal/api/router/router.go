@@ -1,7 +1,9 @@
 package router
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -121,7 +123,19 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Log management
 	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
 	logJobRepo := repository.NewLogRotationJobRepository(database)
-	logManageSvc := logManageSvc.NewService(logPolicyRepo, logJobRepo, systemSettingRepo, caddySiteRepo, dataDir)
+	proxyBrokerAdapter := &logManageSvc.ProxyBrokerAdapter{
+		GetBrokerFn: func(proxyType string) *logManageSvc.LogBrokerWrapper {
+			broker := proxyMgr.GetLogBroker(proxySvc.ProxyType(proxyType))
+			if broker == nil {
+				return nil
+			}
+			return &logManageSvc.LogBrokerWrapper{
+				SnapshotFn:  broker.Snapshot,
+				SubscribeFn: broker.Subscribe,
+			}
+		},
+	}
+	logManageSvc := logManageSvc.NewService(logPolicyRepo, logJobRepo, systemSettingRepo, caddySiteRepo, dataDir, proxyBrokerAdapter)
 
 	// Wire config generators so auto-start uses the new separated managers
 	proxyMgr.SetCaddyConfigGen(caddyMgr.GenerateConfig)
@@ -596,6 +610,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				logManageGroup.POST("/sync", logManageH.SyncPolicies)
 				logManageGroup.GET("/policies/:id/log", logManageH.GetLog)
 				logManageGroup.GET("/policies/:id/log-stream", logManageH.StreamLog)
+				logManageGroup.GET("/log-output", logManageH.GetLogOutput)
+				logManageGroup.PUT("/log-output", logManageH.SaveLogOutput)
+				logManageGroup.POST("/log-output/takeover/:type", logManageH.TakeoverStdout)
+				logManageGroup.POST("/log-output/release/:type", logManageH.ReleaseStdout)
+				logManageGroup.GET("/proxy/:type/stdout-log", logManageH.ProxyStdoutLog)
+				logManageGroup.GET("/proxy/:type/stdout-stream", logManageH.ProxyStdoutStream)
+				logManageGroup.GET("/writers", logManageH.GetWriterStatus)
+				logManageGroup.POST("/writers/:type/start", logManageH.StartWriter)
+				logManageGroup.POST("/writers/:type/stop", logManageH.StopWriter)
+				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
+				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
 			}
 
 			// Placeholder routes for remaining modules
@@ -609,7 +634,26 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Seed default cores and reconcile processes on startup
 	processMgr.SeedCores(nil)
 	go processMgr.Reconcile(nil)
-	go proxyMgr.AutoStartManaged()
+
+	// Set callback to reload proxy config when log output mode is switched
+	logManageSvc.SetOnModeSwitch(func(proxyType string) {
+		log.Printf("router: reloading %s config after log mode switch", proxyType)
+		bgCtx := context.Background()
+		switch proxyType {
+		case "nginx":
+			nginxMgr.SaveAndApply(bgCtx)
+			proxyMgr.ReloadProxy(bgCtx, proxySvc.ProxyNginx)
+		case "caddy":
+			caddyMgr.SaveAndApply(bgCtx)
+			proxyMgr.ReloadProxy(bgCtx, proxySvc.ProxyCaddy)
+		}
+	})
+
+	go func() {
+		proxyMgr.AutoStartManaged()
+		// Start auto-writers after proxy is started (broker is available)
+		logManageSvc.StartAutoWriters()
+	}()
 	logManageSvc.Start()
 
 	return r

@@ -213,19 +213,40 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 		}
 
 		// Per-site log block (from first site that has it)
-		for _, site := range siteList {
-			if site.LogEnabled {
-				sb.WriteString("\tlog {\n")
-				logPath := site.LogPath
-				if logPath == "" {
-					logPath = fmt.Sprintf("logs/%s.log", sanitizeLogName(domain))
+		// Check global log output mode
+		caddyLogMode := "file"
+		if m.settingStore != nil {
+			if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+				var cfg struct {
+					Caddy struct {
+						Mode string `json:"mode"`
+					} `json:"caddy"`
 				}
-				sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
-				if site.LogFormat == "json" {
-					sb.WriteString("\t\tformat json\n")
+				if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
+					caddyLogMode = cfg.Caddy.Mode
 				}
-				sb.WriteString("\t}\n")
-				break
+			}
+		}
+		if caddyLogMode != "off" {
+			for _, site := range siteList {
+				if site.LogEnabled {
+					sb.WriteString("\tlog {\n")
+					switch caddyLogMode {
+					case "stdout":
+						sb.WriteString("\t\toutput stdout\n")
+					default: // "file"
+						logPath := site.LogPath
+						if logPath == "" {
+							logPath = fmt.Sprintf("logs/%s.log", sanitizeLogName(domain))
+						}
+						sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
+					}
+					if site.LogFormat == "json" {
+						sb.WriteString("\t\tformat json\n")
+					}
+					sb.WriteString("\t}\n")
+					break
+				}
 			}
 		}
 

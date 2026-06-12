@@ -58,6 +58,8 @@ type Manager struct {
 	// Config generators (set by router to use new separated managers)
 	caddyConfigGen func(ctx context.Context) (string, error)
 	nginxConfigGen func(ctx context.Context) (string, error)
+	// Stdout log broker for real-time log viewing
+	logBrokers map[ProxyType]*LogBroker
 }
 
 // SetCaddyConfigGen sets the Caddy config generator function.
@@ -68,6 +70,49 @@ func (m *Manager) SetCaddyConfigGen(fn func(ctx context.Context) (string, error)
 // SetNginxConfigGen sets the Nginx config generator function.
 func (m *Manager) SetNginxConfigGen(fn func(ctx context.Context) (string, error)) {
 	m.nginxConfigGen = fn
+}
+
+// getNginxAccessLogPath returns the nginx access log path from settings.
+func (m *Manager) getNginxAccessLogPath() string {
+	if m.settingStore == nil {
+		return filepath.Join(m.dataDir, "logs", "access.log")
+	}
+	v, err := m.settingStore.GetByKey(context.Background(), "proxy.nginx_settings")
+	if err != nil || v == "" {
+		return filepath.Join(m.dataDir, "logs", "access.log")
+	}
+	var settings struct {
+		AccessLog     bool   `json:"access_log"`
+		AccessLogPath string `json:"access_log_path"`
+	}
+	if json.Unmarshal([]byte(v), &settings) == nil && settings.AccessLog && settings.AccessLogPath != "" {
+		if filepath.IsAbs(settings.AccessLogPath) {
+			return settings.AccessLogPath
+		}
+		return filepath.Join(m.dataDir, settings.AccessLogPath)
+	}
+	return filepath.Join(m.dataDir, "logs", "access.log")
+}
+
+// GetLogBroker returns the log broker for a proxy type, or nil if not running.
+func (m *Manager) GetLogBroker(proxyType ProxyType) *LogBroker {
+	if m.logBrokers == nil {
+		return nil
+	}
+	return m.logBrokers[proxyType]
+}
+
+// lookupNginxUser returns the UID and GID of the nginx user.
+func lookupNginxUser() (int, int, error) {
+	u, err := user.Lookup("nginx")
+	if err != nil {
+		return 0, 0, err
+	}
+	uid := 0
+	gid := 0
+	fmt.Sscanf(u.Uid, "%d", &uid)
+	fmt.Sscanf(u.Gid, "%d", &gid)
+	return uid, gid, nil
 }
 
 // NewManager creates a new proxy manager.
@@ -84,6 +129,7 @@ func NewManager(dataDir string, siteRepo *repository.ProxySiteRepository, settin
 		configDir:    filepath.Join(absDir, "proxy"),
 		siteRepo:     siteRepo,
 		settingStore: settingStore,
+		logBrokers:   make(map[ProxyType]*LogBroker),
 	}
 }
 
@@ -296,7 +342,20 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t}\n")
 	}
-	// Log configuration
+	// Log configuration - check log output mode
+	caddyLogMode := "file"
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+			var cfg struct {
+				Caddy struct {
+					Mode string `json:"mode"`
+				} `json:"caddy"`
+			}
+			if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
+				caddyLogMode = cfg.Caddy.Mode
+			}
+		}
+	}
 	logOutput := "stdout"
 	logPath := ""
 	if m.settingStore != nil {
@@ -307,14 +366,22 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 			logPath = v
 		}
 	}
-	sb.WriteString("\n\tlog {\n")
-	if logOutput == "file" && logPath != "" {
-		// Use relative path as-is, Caddy resolves from cmd.Dir (dataDir)
-		sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
-	} else {
+	switch caddyLogMode {
+	case "off":
+		// no global log block
+	case "stdout":
+		sb.WriteString("\n\tlog {\n")
 		sb.WriteString("\t\toutput stdout\n")
+		sb.WriteString("\t}\n")
+	default: // "file"
+		sb.WriteString("\n\tlog {\n")
+		if logOutput == "file" && logPath != "" {
+			sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
+		} else {
+			sb.WriteString("\t\toutput stdout\n")
+		}
+		sb.WriteString("\t}\n")
 	}
-	sb.WriteString("\t}\n")
 	if hasL4 {
 		sb.WriteString("\n\tlayer4 {\n")
 		// L4 sites - each is its own block
@@ -655,9 +722,19 @@ func (m *Manager) ensureNginxDependencies() error {
 		filepath.Join(m.dataDir, "temp", "scgi_temp"),
 	}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0750); err != nil {
+		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("create dir %s: %w", dir, err)
 		}
+	}
+	// Set temp directory ownership to nginx user
+	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+		tempDir := filepath.Join(m.dataDir, "temp")
+		filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				os.Chown(path, nginxUID, nginxGID)
+			}
+			return nil
+		})
 	}
 
 	// Ensure mime.types exists in proxy config directory (same as nginx.conf)
@@ -757,6 +834,42 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	}
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = m.dataDir
+
+	// Create log broker for real-time viewing
+	broker := NewLogBroker()
+	m.logBrokers[proxyType] = broker
+
+	// Check log output mode
+	logMode := "file"
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(context.Background(), "proxy.log_output_config"); err == nil && v != "" {
+			var cfg struct {
+				Nginx struct{ Mode string `json:"mode"` } `json:"nginx"`
+				Caddy struct{ Mode string `json:"mode"` } `json:"caddy"`
+			}
+			if json.Unmarshal([]byte(v), &cfg) == nil {
+				switch proxyType {
+				case ProxyNginx:
+					logMode = cfg.Nginx.Mode
+				case ProxyCaddy:
+					logMode = cfg.Caddy.Mode
+				}
+			}
+		}
+	}
+
+	if logMode == "stdout" {
+		// Stdout mode: capture via pipe
+		broker.AttachCmd(cmd)
+	} else {
+		// File mode: tail the access log file
+		if proxyType == ProxyNginx {
+			logPath := m.getNginxAccessLogPath()
+			if logPath != "" {
+				broker.TailFile(logPath)
+			}
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start: %w", err)

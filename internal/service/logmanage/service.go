@@ -18,6 +18,42 @@ type SettingStore interface {
 	Set(ctx context.Context, key, value string) error
 }
 
+// LogBrokerReader is the interface for reading from a proxy log broker.
+type LogBrokerReader interface {
+	Snapshot() []string
+	Subscribe() (<-chan string, func())
+}
+
+// ProxyLogBroker provides access to proxy stdout log broker.
+type ProxyLogBroker interface {
+	GetLogBroker(proxyType string) LogBrokerReader
+}
+
+// ProxyBrokerAdapter adapts proxy.Manager to ProxyLogBroker interface.
+type ProxyBrokerAdapter struct {
+	GetBrokerFn func(proxyType string) *LogBrokerWrapper
+}
+
+func (a *ProxyBrokerAdapter) GetLogBroker(proxyType string) LogBrokerReader {
+	if a == nil || a.GetBrokerFn == nil {
+		return nil
+	}
+	w := a.GetBrokerFn(proxyType)
+	if w == nil {
+		return nil
+	}
+	return w
+}
+
+// LogBrokerWrapper wraps the proxy LogBroker for the logmanage package.
+type LogBrokerWrapper struct {
+	SnapshotFn  func() []string
+	SubscribeFn func() (<-chan string, func())
+}
+
+func (w *LogBrokerWrapper) Snapshot() []string        { return w.SnapshotFn() }
+func (w *LogBrokerWrapper) Subscribe() (<-chan string, func()) { return w.SubscribeFn() }
+
 // Service provides log management operations.
 type Service struct {
 	policyRepo    *repository.LogRotationPolicyRepository
@@ -26,6 +62,9 @@ type Service struct {
 	caddySiteRepo *repository.CaddySiteRepository
 	dataDir       string
 	scheduler     *Scheduler
+	proxyBroker   ProxyLogBroker
+	writers       map[string]*LogWriter
+	onModeSwitch  func(proxyType string) // callback when output mode is switched
 }
 
 // NewService creates a new log management service.
@@ -35,6 +74,7 @@ func NewService(
 	settingStore SettingStore,
 	caddySiteRepo *repository.CaddySiteRepository,
 	dataDir string,
+	proxyBroker ProxyLogBroker,
 ) *Service {
 	svc := &Service{
 		policyRepo:    policyRepo,
@@ -42,9 +82,35 @@ func NewService(
 		settingStore:  settingStore,
 		caddySiteRepo: caddySiteRepo,
 		dataDir:       dataDir,
+		proxyBroker:   proxyBroker,
+		writers:       make(map[string]*LogWriter),
 	}
 	svc.scheduler = NewScheduler(policyRepo, svc)
 	return svc
+}
+
+// StartAutoWriters starts writers that were previously enabled.
+func (s *Service) StartAutoWriters() {
+	for _, pType := range []string{"nginx", "caddy"} {
+		key := settingKeyLogWriters + "." + pType
+		if s.settingStore == nil {
+			continue
+		}
+		v, err := s.settingStore.GetByKey(context.Background(), key)
+		if err != nil || v == "" {
+			continue
+		}
+		// If config exists, the writer was previously enabled
+		cfg := s.loadWriterConfig(pType)
+		if err := s.StartWriter(pType, cfg.Mode); err != nil {
+			log.Printf("logmanage: auto-start writer for %s failed: %v", pType, err)
+		}
+	}
+}
+
+// SetOnModeSwitch sets the callback for when output mode is switched.
+func (s *Service) SetOnModeSwitch(fn func(proxyType string)) {
+	s.onModeSwitch = fn
 }
 
 // Start starts the background scheduler.
@@ -115,6 +181,167 @@ func (s *Service) ListJobs(ctx context.Context, limit, offset int) ([]entity.Log
 		limit = 20
 	}
 	return s.jobRepo.List(ctx, limit, offset)
+}
+
+// --- Log Writer Management ---
+
+const settingKeyLogWriters = "proxy.log_writers"
+
+// LogWriterStatus represents the status of a log writer.
+type LogWriterStatus struct {
+	ProxyType  string `json:"proxy_type"`
+	Mode       string `json:"mode"`
+	Active     bool   `json:"active"`
+	FilePath   string `json:"file_path"`
+	LogDir     string `json:"log_dir"`
+	RetainDays int    `json:"retain_days"`
+	Compress   bool   `json:"compress"`
+	MaxSizeMB  int    `json:"max_size_mb"`
+}
+
+// StartWriter starts the log writer for a proxy type with the given mode.
+func (s *Service) StartWriter(proxyType string, mode string) error {
+	cfg := s.loadWriterConfig(proxyType)
+	cfg.Mode = mode
+
+	writer := NewLogWriter(cfg, s.dataDir)
+	if err := writer.SetMode(mode); err != nil {
+		return err
+	}
+	s.writers[proxyType] = writer
+
+	// Save config
+	s.saveWriterConfig(proxyType, cfg)
+
+	// Reload proxy so it reopens log files through the new symlink
+	if s.onModeSwitch != nil {
+		s.onModeSwitch(proxyType)
+	}
+
+	log.Printf("logmanage: started writer for %s mode=%s", proxyType, mode)
+	return nil
+}
+
+// StopWriter stops the log writer for a proxy type.
+func (s *Service) StopWriter(proxyType string) error {
+	writer, ok := s.writers[proxyType]
+	if !ok {
+		return fmt.Errorf("writer for %s not found", proxyType)
+	}
+	writer.Stop()
+	delete(s.writers, proxyType)
+
+	// Update config
+	cfg := s.loadWriterConfig(proxyType)
+	cfg.ProxyType = proxyType
+	s.saveWriterConfig(proxyType, cfg)
+
+	return nil
+}
+
+// GetWriterStatus returns the status of all log writers.
+func (s *Service) GetWriterStatus() []LogWriterStatus {
+	var statuses []LogWriterStatus
+	for _, pType := range []string{"nginx", "caddy"} {
+		cfg := s.loadWriterConfig(pType)
+		mode := cfg.Mode
+		if mode == "" {
+			mode = "file"
+		}
+		active := false
+		if w, ok := s.writers[pType]; ok {
+			active = w.IsActive()
+		}
+		logDir := filepath.Join("logs", pType)
+		filePath := filepath.Join("logs", pType, "access.log")
+		if w, ok := s.writers[pType]; ok {
+			logDir = w.GetLogDir()
+		}
+		statuses = append(statuses, LogWriterStatus{
+			ProxyType:  pType,
+			Mode:       mode,
+			Active:     active,
+			FilePath:   filePath,
+			LogDir:     logDir,
+			RetainDays: cfg.RetainDays,
+			Compress:   cfg.Compress,
+			MaxSizeMB:  cfg.MaxSizeMB,
+		})
+	}
+	return statuses
+}
+
+// UpdateWriterConfig updates the writer configuration and restarts if active.
+func (s *Service) UpdateWriterConfig(proxyType string, cfg LogWriterConfig) error {
+	cfg.ProxyType = proxyType
+
+	// If mode is empty, load from saved config
+	if cfg.Mode == "" {
+		saved := s.loadWriterConfig(proxyType)
+		cfg.Mode = saved.Mode
+	}
+
+	s.saveWriterConfig(proxyType, cfg)
+
+	// Restart writer if it was active
+	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
+		w.Stop()
+		delete(s.writers, proxyType)
+		return s.StartWriter(proxyType, cfg.Mode)
+	}
+	return nil
+}
+
+// ListWriterFiles returns the log files for a proxy type's writer.
+func (s *Service) ListWriterFiles(proxyType string) []LogFileInfo {
+	w, ok := s.writers[proxyType]
+	if !ok {
+		return nil
+	}
+	return w.ListLogFiles()
+}
+
+func (s *Service) loadWriterConfig(proxyType string) LogWriterConfig {
+	cfg := LogWriterConfig{
+		ProxyType:  proxyType,
+		Mode:       "file",
+		RetainDays: 30,
+		Compress:   false,
+		MaxSizeMB:  100,
+	}
+	if s.settingStore == nil {
+		return cfg
+	}
+	key := settingKeyLogWriters + "." + proxyType
+	v, err := s.settingStore.GetByKey(context.Background(), key)
+	if err != nil || v == "" {
+		return cfg
+	}
+	var saved LogWriterConfig
+	if json.Unmarshal([]byte(v), &saved) == nil {
+		if saved.Mode != "" {
+			cfg.Mode = saved.Mode
+		}
+		if saved.RetainDays > 0 {
+			cfg.RetainDays = saved.RetainDays
+		}
+		if saved.MaxSizeMB > 0 {
+			cfg.MaxSizeMB = saved.MaxSizeMB
+		}
+		cfg.Compress = saved.Compress
+	}
+	return cfg
+}
+
+func (s *Service) saveWriterConfig(proxyType string, cfg LogWriterConfig) {
+	if s.settingStore == nil {
+		return
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return
+	}
+	s.settingStore.Set(context.Background(), settingKeyLogWriters+"."+proxyType, string(data))
 }
 
 // --- Discovery ---
@@ -306,6 +533,7 @@ type Status struct {
 
 // GetStatus returns the log management system status.
 func (s *Service) GetStatus(ctx context.Context) (*Status, error) {
+
 	policies, err := s.policyRepo.List(ctx)
 	if err != nil {
 		return nil, err
@@ -321,6 +549,51 @@ func (s *Service) GetStatus(ctx context.Context) (*Status, error) {
 		}
 	}
 	return status, nil
+}
+
+// GetProxyStdoutLog returns the last N lines from a proxy's stdout broker.
+func (s *Service) GetProxyStdoutLog(ctx context.Context, proxyType string, lastLines int) ([]string, error) {
+	if s.proxyBroker == nil {
+		return []string{"[日志代理未配置]"}, nil
+	}
+	broker := s.proxyBroker.GetLogBroker(proxyType)
+	if broker == nil {
+		return []string{fmt.Sprintf("[%s 未运行或未产生标准输出]", proxyType)}, nil
+	}
+	lines := broker.Snapshot()
+	if len(lines) > lastLines {
+		lines = lines[len(lines)-lastLines:]
+	}
+	return lines, nil
+}
+
+// StreamProxyStdout streams a proxy's stdout via the broker's pub/sub.
+func (s *Service) StreamProxyStdout(ctx context.Context, proxyType string, ch chan<- string) {
+	defer close(ch)
+	if s.proxyBroker == nil {
+		return
+	}
+	broker := s.proxyBroker.GetLogBroker(proxyType)
+	if broker == nil {
+		return
+	}
+	liveCh, cancel := broker.Subscribe()
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case line, ok := <-liveCh:
+			if !ok {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- line:
+			}
+		}
+	}
 }
 
 // resolveLogPath resolves a relative log path against dataDir.

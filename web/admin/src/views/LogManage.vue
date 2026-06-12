@@ -52,6 +52,29 @@
       </div>
     </div>
 
+    <!-- Stdout Proxy Status (only show when in stdout mode) -->
+    <el-row :gutter="16" style="margin-bottom:16px">
+      <el-col :span="12" v-for="p in stdoutProxies" :key="p.type">
+        <el-card shadow="hover">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="font-weight:600;font-size:15px">{{ p.label }}</span>
+              <el-tag type="warning" size="small" style="margin-left:8px">{{ t('logManage.modeStdout') }}</el-tag>
+              <el-tag v-if="getWriterStatus(p.type)?.active" type="success" size="small" style="margin-left:4px">{{ t('logManage.writerActive') }}</el-tag>
+            </div>
+            <div style="display:flex;gap:8px">
+              <el-button size="small" type="primary" @click="showStdoutViewer(p.type)">
+                <el-icon><View /></el-icon>{{ t('logManage.viewRealtime') }}
+              </el-button>
+              <el-button size="small" type="warning" @click="showWriterConfig(p.type)">
+                <el-icon><Setting /></el-icon>{{ t('logManage.writerConfig') }}
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- Discovered Logs (collapsible) -->
     <el-collapse-transition>
       <el-card v-if="discoveredLogs.length > 0" style="margin-bottom:16px">
@@ -253,7 +276,7 @@
       </el-table>
     </el-dialog>
 
-    <!-- Log Viewer Dialog -->
+    <!-- Log Viewer Dialog (file-based) -->
     <el-dialog v-model="logViewerVisible" :title="t('logManage.viewLog') + ' - ' + logViewerPath" width="80%" top="5vh" :close-on-click-modal="false" @close="closeLogViewer">
       <div class="log-toolbar">
         <el-tag :type="logStreamConnected ? 'success' : 'info'" size="small">
@@ -271,14 +294,64 @@
         <div v-if="logLines.length === 0 && !logLoading" class="log-empty">{{ t('logManage.noLogContent') }}</div>
       </div>
     </el-dialog>
+
+    <!-- Stdout Viewer Dialog -->
+    <el-dialog v-model="stdoutViewerVisible" :title="stdoutViewerType.toUpperCase() + ' ' + t('logManage.realtimeLog')" width="80%" top="5vh" :close-on-click-modal="false" @close="closeLogViewer">
+      <div class="log-toolbar">
+        <el-tag :type="logStreamConnected ? 'success' : 'info'" size="small">
+          {{ logStreamConnected ? t('logManage.liveStreaming') : t('logManage.disconnected') }}
+        </el-tag>
+        <el-tag size="small" type="warning">{{ t('logManage.lineCount', { count: logLines.length }) }}</el-tag>
+        <div style="flex:1"></div>
+        <el-button size="small" :type="logAutoScroll ? 'primary' : 'default'" @click="logAutoScroll = !logAutoScroll">
+          {{ logAutoScroll ? t('logManage.autoScrollOn') : t('logManage.autoScrollOff') }}
+        </el-button>
+        <el-button size="small" @click="clearLogLines">{{ t('logManage.clearLog') }}</el-button>
+      </div>
+      <div ref="logContainerRef" class="log-container" @scroll="onLogScroll">
+        <div v-for="(line, i) in logLines" :key="i" class="log-line">{{ line }}</div>
+        <div v-if="logLines.length === 0 && !logLoading" class="log-empty">{{ t('logManage.noLogContent') }}</div>
+      </div>
+    </el-dialog>
+
+    <!-- Writer Config Dialog -->
+    <el-dialog v-model="writerConfigVisible" :title="writerConfigType.toUpperCase() + ' ' + t('logManage.writerConfig')" width="550">
+      <el-form label-width="120px" size="small">
+        <el-form-item :label="t('logManage.writerEnabled')">
+          <el-switch v-model="writerFormActive" @change="toggleWriter" />
+          <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('logManage.writerEnabledHint') }}</span>
+        </el-form-item>
+
+        <el-divider content-position="left">{{ t('logManage.fileSettings') }}</el-divider>
+        <el-form-item :label="t('logManage.filePath')">
+          <el-input v-model="writerForm.file_path" :placeholder="`logs/${writerConfigType}/access.log`" />
+        </el-form-item>
+        <el-form-item :label="t('logManage.maxSizeMB')">
+          <el-input-number v-model="writerForm.max_size_mb" :min="1" :max="10240" />
+          <span style="margin-left:8px;font-size:12px;color:#909399">MB</span>
+        </el-form-item>
+
+        <el-divider content-position="left">{{ t('logManage.retention') }}</el-divider>
+        <el-form-item :label="t('logManage.retainDays')">
+          <el-input-number v-model="writerForm.retain_days" :min="1" :max="365" />
+        </el-form-item>
+        <el-form-item :label="t('logManage.compress')">
+          <el-switch v-model="writerForm.compress" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="writerConfigVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="writerConfigSaving" @click="handleSaveWriterConfig">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { Plus, Refresh, Search, RefreshRight, View, CircleCheck } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, RefreshRight, View, CircleCheck, Setting } from '@element-plus/icons-vue'
 import client from '../api/client'
 
 const { t } = useI18n()
@@ -306,6 +379,26 @@ const syncing = ref(false)
 const rotatingId = ref(null)
 const discoveredOptions = ref([])
 const addingPath = ref(null)
+const logOutputConfig = ref({ nginx: { mode: 'file' }, caddy: { mode: 'file' } })
+const stdoutProxies = computed(() => {
+  const list = []
+  if (logOutputConfig.value.nginx.mode === 'stdout') list.push({ type: 'nginx', label: 'Nginx' })
+  if (logOutputConfig.value.caddy.mode === 'stdout') list.push({ type: 'caddy', label: 'Caddy' })
+  return list
+})
+const stdoutViewerVisible = ref(false)
+const stdoutViewerType = ref('')
+const writerConfigVisible = ref(false)
+const writerConfigType = ref('')
+const writerConfigSaving = ref(false)
+const writerFormActive = ref(false)
+const writerForm = ref({
+  file_path: '',
+  retain_days: 30,
+  compress: false,
+  max_size_mb: 100,
+})
+const writerStatuses = ref([])
 
 const jobsVisible = ref(false)
 const jobsLoading = ref(false)
@@ -604,9 +697,121 @@ function onLogScroll() {
   logAutoScroll.value = scrollHeight - scrollTop - clientHeight < 50
 }
 
+async function fetchLogOutputConfig() {
+  try {
+    const r = await client.get('/log-manage/log-output')
+    if (r?.nginx) logOutputConfig.value.nginx = r.nginx
+    if (r?.caddy) logOutputConfig.value.caddy = r.caddy
+  } catch {}
+}
+
+function showStdoutViewer(type) {
+  stdoutViewerType.value = type
+  stdoutViewerVisible.value = true
+  // Load stdout log from broker
+  loadStdoutLog(type)
+}
+
+async function loadStdoutLog(type) {
+  logLoading.value = true
+  logLines.value = []
+  logAutoScroll.value = true
+  try {
+    // Try to read from the proxy's stdout broker via the log-stream endpoint
+    const token = localStorage.getItem('access_token')
+    const base = client.defaults.baseURL || '/api/v1'
+    const url = `${base}/log-manage/proxy/${type}/stdout-log?lines=500&token=${encodeURIComponent(token)}`
+    const resp = await fetch(url)
+    const data = await resp.json()
+    logLines.value = data?.data?.lines || []
+    await nextTick()
+    scrollToBottom()
+    // Start SSE for real-time
+    startStdoutStream(type)
+  } catch {
+    logLines.value = ['[无法获取标准输出日志]']
+  } finally {
+    logLoading.value = false
+  }
+}
+
+function startStdoutStream(type) {
+  closeLogStream()
+  const token = localStorage.getItem('access_token')
+  const base = client.defaults.baseURL || '/api/v1'
+  const url = `${base}/log-manage/proxy/${type}/stdout-stream?token=${encodeURIComponent(token)}`
+  eventSource = new EventSource(url)
+  eventSource.addEventListener('log', (e) => {
+    logLines.value.push(e.data)
+    if (logLines.value.length > 5000) logLines.value = logLines.value.slice(-3000)
+    if (logAutoScroll.value) nextTick(scrollToBottom)
+  })
+  eventSource.onopen = () => { logStreamConnected.value = true }
+  eventSource.onerror = () => {
+    logStreamConnected.value = false
+    setTimeout(() => { if (stdoutViewerVisible.value) startStdoutStream(type) }, 3000)
+  }
+}
+
+function getWriterStatus(type) {
+  return writerStatuses.value.find(w => w.proxy_type === type)
+}
+
+async function fetchWriterStatuses() {
+  try {
+    const r = await client.get('/log-manage/writers')
+    writerStatuses.value = Array.isArray(r) ? r : []
+  } catch {}
+}
+
+function showWriterConfig(type) {
+  writerConfigType.value = type
+  writerConfigVisible.value = true
+  // Load existing config
+  const status = getWriterStatus(type)
+  writerFormActive.value = status?.active || false
+  writerForm.value = {
+    file_path: status?.file_path || `logs/${type}/access.log`,
+    retain_days: status?.retain_days || 30,
+    compress: status?.compress || false,
+    max_size_mb: status?.max_size_mb || 100,
+  }
+}
+
+async function toggleWriter(active) {
+  const type = writerConfigType.value
+  try {
+    if (active) {
+      await client.post(`/log-manage/writers/${type}/start`, { mode: 'file' })
+      ElMessage.success(t('logManage.writerStarted', { type }))
+    } else {
+      await client.post(`/log-manage/writers/${type}/stop`)
+      ElMessage.success(t('logManage.writerStopped', { type }))
+    }
+    await fetchWriterStatuses()
+  } catch {
+    writerFormActive.value = !active
+  }
+}
+
+async function handleSaveWriterConfig() {
+  writerConfigSaving.value = true
+  try {
+    const type = writerConfigType.value
+    await client.put(`/log-manage/writers/${type}/config`, writerForm.value)
+    ElMessage.success(t('common.success'))
+    writerConfigVisible.value = false
+    await fetchWriterStatuses()
+  } finally {
+    writerConfigSaving.value = false
+  }
+}
+
 onMounted(() => {
   fetchData()
   fetchStatus()
+  fetchLogOutputConfig()
+  fetchWriterStatuses()
 })
 
 onUnmounted(() => {
@@ -665,4 +870,5 @@ onUnmounted(() => {
   text-align: center;
   padding: 40px 0;
 }
+
 </style>

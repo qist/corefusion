@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,12 @@ import (
 
 	"corefusion/internal/model/entity"
 )
+
+// ensureSymlink creates a symlink, removing existing file/symlink first.
+func ensureSymlink(path, target string) {
+	os.Remove(path)
+	os.Symlink(target, path)
+}
 
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
 // GenerateConfig assembles an nginx.conf from settings and sites.
@@ -26,9 +33,9 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	var sb strings.Builder
 
 	// Ensure directories
-	os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0750)
-	os.MkdirAll(filepath.Join(m.dataDir, "runtime"), 0750)
-	os.MkdirAll(filepath.Join(m.dataDir, "temp"), 0750)
+	os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0755)
+	os.MkdirAll(filepath.Join(m.dataDir, "runtime"), 0755)
+	os.MkdirAll(filepath.Join(m.dataDir, "temp"), 0755)
 
 	// Main block
 	sb.WriteString(fmt.Sprintf("worker_processes  %s;\n", s.WorkerProcesses))
@@ -45,11 +52,33 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	} else {
 		sb.WriteString("master_process off;\n")
 	}
-	// Error log
-	if s.ErrorLog {
-		sb.WriteString(fmt.Sprintf("error_log %s %s;\n", s.ErrorLogPath, s.ErrorLogLevel))
-	} else {
+	// Error log - check log output mode
+	logOutputMode := "file"
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+			var cfg struct {
+				Nginx struct {
+					Mode string `json:"mode"`
+				} `json:"nginx"`
+			}
+			if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Nginx.Mode != "" {
+				logOutputMode = cfg.Nginx.Mode
+			}
+		}
+	}
+	switch logOutputMode {
+	case "stdout":
+		// Symlink logs/error.log -> /dev/stderr
+		ensureSymlink(filepath.Join(m.dataDir, "logs", "error.log"), "/dev/stderr")
+		sb.WriteString("error_log logs/error.log warn;\n")
+	case "off":
 		sb.WriteString("error_log /dev/null;\n")
+	default: // "file"
+		if s.ErrorLog {
+			sb.WriteString(fmt.Sprintf("error_log %s %s;\n", s.ErrorLogPath, s.ErrorLogLevel))
+		} else {
+			sb.WriteString("error_log /dev/null;\n")
+		}
 	}
 	sb.WriteString("pid runtime/nginx.pid;\n")
 	sb.WriteString("\n")
@@ -81,13 +110,25 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	sb.WriteString("    }\n\n")
 
 	// Log format
-	if s.AccessLog {
-		sb.WriteString("    log_format main escape=json '$clientRealIp $remote_addr $proxy_protocol_addr - $remote_user [$time_local] \"$request\" '\n")
-		sb.WriteString("    '$status $body_bytes_sent \"$http_referer\" '\n")
-		sb.WriteString("    '\"$http_user_agent\" \"$http_x_forwarded_for\" \"$http_host\" \"$http3\" '\n")
-		sb.WriteString("    'ups_add: $upstream_addr ups_resp_time: $upstream_response_time '\n")
-		sb.WriteString("    'request_time: $request_time ups_status: $upstream_status ';\n")
-		sb.WriteString(fmt.Sprintf("    access_log  %s main;\n", s.AccessLogPath))
+	logFmt := "    log_format main escape=json '$clientRealIp $remote_addr $proxy_protocol_addr - $remote_user [$time_local] \"$request\" '\n" +
+		"    '$status $body_bytes_sent \"$http_referer\" '\n" +
+		"    '\"$http_user_agent\" \"$http_x_forwarded_for\" \"$http_host\" \"$http3\" '\n" +
+		"    'ups_add: $upstream_addr ups_resp_time: $upstream_response_time '\n" +
+		"    'request_time: $request_time ups_status: $upstream_status ';\n"
+
+	switch logOutputMode {
+	case "stdout":
+		// Symlink logs/access.log -> /dev/stdout
+		ensureSymlink(filepath.Join(m.dataDir, "logs", "access.log"), "/dev/stdout")
+		sb.WriteString(logFmt)
+		sb.WriteString("    access_log logs/access.log main;\n")
+	case "off":
+		// no access log
+	default: // "file"
+		if s.AccessLog {
+			sb.WriteString(logFmt)
+			sb.WriteString(fmt.Sprintf("    access_log  %s main;\n", s.AccessLogPath))
+		}
 	}
 
 	// Vhost traffic status (not on Windows)
@@ -571,22 +612,34 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 		if logPath == "" {
 			logPath = "logs/stream.log"
 		}
-		if s.StreamLog {
-			if logFmt == "json" {
-				sb.WriteString("    log_format stream_json escape=json\n")
-				sb.WriteString("        '$realip_remote_addr [$remote_addr] [$time_local] '\n")
-				sb.WriteString("        '$protocol $status $bytes_sent $bytes_received '\n")
-				sb.WriteString("        '$session_time \"$upstream_addr\" '\n")
-				sb.WriteString("        '\"$upstream_bytes_sent\" \"$upstream_bytes_received\" '\n")
-				sb.WriteString("        '\"$upstream_connect_time\" $ssl_preread_server_name;\n")
-			} else {
-				sb.WriteString("    log_format stream_basic\n")
-				sb.WriteString("        '$realip_remote_addr [$remote_addr] [$time_local] '\n")
-				sb.WriteString("        '$protocol $status $bytes_sent $bytes_received '\n")
-				sb.WriteString("        '$session_time $ssl_preread_server_name';\n")
+		// Stream log format
+		streamFmtStr := ""
+		if logFmt == "json" {
+			streamFmtStr = "    log_format stream_json escape=json\n" +
+				"        '$realip_remote_addr [$remote_addr] [$time_local] '\n" +
+				"        '$protocol $status $bytes_sent $bytes_received '\n" +
+				"        '$session_time \"$upstream_addr\" '\n" +
+				"        '\"$upstream_bytes_sent\" \"$upstream_bytes_received\" '\n" +
+				"        '\"$upstream_connect_time\" $ssl_preread_server_name;\n"
+		} else {
+			streamFmtStr = "    log_format stream_basic\n" +
+				"        '$realip_remote_addr [$remote_addr] [$time_local] '\n" +
+				"        '$protocol $status $bytes_sent $bytes_received '\n" +
+				"        '$session_time $ssl_preread_server_name';\n"
+		}
+
+		switch logOutputMode {
+		case "stdout":
+			ensureSymlink(filepath.Join(m.dataDir, "logs", "stream.log"), "/dev/stdout")
+			sb.WriteString(streamFmtStr)
+			sb.WriteString(fmt.Sprintf("    access_log logs/stream.log stream_%s buffer=32k;\n", logFmt))
+		case "off":
+			// no stream log
+		default: // "file"
+			if s.StreamLog {
+				sb.WriteString(streamFmtStr)
+				sb.WriteString(fmt.Sprintf("    access_log %s stream_%s buffer=32k;\n", logPath, logFmt))
 			}
-			sb.WriteString(fmt.Sprintf("    access_log %s stream_%s buffer=32k;\n", logPath, logFmt))
-			sb.WriteString("    open_log_file_cache off;\n\n")
 		}
 
 		// Collect all stream upstreams

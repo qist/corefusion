@@ -48,6 +48,24 @@
       </el-row>
     </el-card>
 
+    <!-- Log Output Mode -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:600">{{ t('proxy.logOutputMode') || '日志输出方式' }}</span>
+          <el-button type="primary" size="small" :loading="logModeSaving" @click="saveCaddyLogMode">{{ t('common.save') }}</el-button>
+        </div>
+      </template>
+      <el-radio-group v-model="caddyLogMode" @change="onCaddyLogModeChange">
+        <el-radio-button value="file">{{ t('proxy.logToFile') || '输出到文件' }}</el-radio-button>
+        <el-radio-button value="stdout">{{ t('proxy.logToStdout') || '标准输出' }}</el-radio-button>
+        <el-radio-button value="off">{{ t('proxy.logOff') || '关闭日志' }}</el-radio-button>
+      </el-radio-group>
+      <div style="margin-top:8px;font-size:12px;color:#909399">
+        {{ caddyLogModeHint }}
+      </div>
+    </el-card>
+
     <!-- SNI Routing -->
     <el-card style="margin-bottom:20px">
       <template #header>
@@ -343,6 +361,14 @@ const emit = defineEmits(['back'])
 const proxyInfo = ref({})
 const allSites = ref([])
 const certificates = ref([])
+const caddyLogMode = ref('file')
+const logModeSaving = ref(false)
+const caddyLogModeHint = computed(() => {
+  const m = caddyLogMode.value
+  if (m === 'stdout') return t('proxy.caddyHintStdout') || '所有站点日志输出到标准输出'
+  if (m === 'off') return t('proxy.caddyHintLogOff') || '不生成任何日志配置（Caddy 默认行为）'
+  return t('proxy.caddyHintFile') || '每个站点日志写入到各自的文件路径'
+})
 
 const httpSites = computed(() => allSites.value.filter(s => s.template !== 'sni' && s.template !== 'l4'))
 const l4Sites = computed(() => allSites.value.filter(s => s.template === 'l4'))
@@ -391,6 +417,29 @@ async function fetchSites() {
   try {
     allSites.value = await client.get('/caddy/sites') || []
   } catch (e) { allSites.value = [] }
+  // Load log output mode
+  try {
+    const cfg = await client.get('/log-manage/log-output')
+    if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
+  } catch (e) {}
+}
+
+async function saveCaddyLogMode() {
+  logModeSaving.value = true
+  try {
+    await client.put('/log-manage/log-output', {
+      nginx: { mode: 'file' },
+      caddy: { mode: caddyLogMode.value },
+    })
+    await applyConfig()
+    ElMessage.success(t('common.success'))
+  } finally {
+    logModeSaving.value = false
+  }
+}
+
+function onCaddyLogModeChange(mode) {
+  caddyLogMode.value = mode
 }
 
 async function fetchCertificates() {

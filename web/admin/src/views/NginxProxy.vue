@@ -85,6 +85,18 @@
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxLog') || '日志'" name="log">
           <el-form :model="settings" label-width="150px" size="small">
+            <el-form-item :label="t('proxy.logOutputMode') || '日志输出方式'">
+              <el-radio-group v-model="nginxLogMode" @change="onNginxLogModeChange">
+                <el-radio-button value="file">{{ t('proxy.logToFile') || '输出到文件' }}</el-radio-button>
+                <el-radio-button value="stdout">{{ t('proxy.logToStdout') || '标准输出' }}</el-radio-button>
+                <el-radio-button value="off">{{ t('proxy.logOff') || '关闭日志' }}</el-radio-button>
+              </el-radio-group>
+              <div style="margin-top:4px;font-size:12px;color:#909399">
+                {{ nginxLogModeHint }}
+              </div>
+            </el-form-item>
+            <el-divider />
+            <template v-if="nginxLogMode === 'file'">
             <el-form-item :label="t('proxy.errorLog') || 'error_log'">
               <el-switch v-model="settings.error_log" />
             </el-form-item>
@@ -123,6 +135,7 @@
                 <el-option label="json" value="json" />
               </el-select>
             </el-form-item>
+            </template>
           </el-form>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxHttp') || 'HTTP'" name="http">
@@ -591,6 +604,13 @@ const allSites = ref([])
 const certificates = ref([])
 const settings = ref({})
 const settingsTab = ref('worker')
+const nginxLogMode = ref('file')
+const nginxLogModeHint = computed(() => {
+  const m = nginxLogMode.value
+  if (m === 'stdout') return t('proxy.hintStdout') || '日志输出到标准输出（stdout/stderr）'
+  if (m === 'off') return t('proxy.hintLogOff') || '所有日志输出到 /dev/null（黑洞）'
+  return t('proxy.hintFile') || '日志写入到下方配置的文件路径'
+})
 
 const httpSites = computed(() => allSites.value.filter(s => s.template !== 'sni' && s.template !== 'l4'))
 const l4Sites = computed(() => allSites.value.filter(s => s.template === 'l4'))
@@ -663,14 +683,28 @@ async function fetchSettings() {
     const data = await client.get('/nginx/settings')
     if (data) settings.value = data
   } catch (e) {}
+  // Load log output mode
+  try {
+    const cfg = await client.get('/log-manage/log-output')
+    if (cfg?.nginx?.mode) nginxLogMode.value = cfg.nginx.mode
+  } catch (e) {}
 }
 
 async function saveSettings() {
   try {
     await client.post('/nginx/settings', settings.value)
+    // Save log output mode
+    await client.put('/log-manage/log-output', {
+      nginx: { mode: nginxLogMode.value },
+      caddy: { mode: 'file' },
+    })
     await applyConfig()
     ElMessage.success(t('common.success'))
   } catch (e) {}
+}
+
+async function onNginxLogModeChange(mode) {
+  nginxLogMode.value = mode
 }
 
 async function onSNIToggle(enabled) {

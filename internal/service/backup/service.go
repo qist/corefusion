@@ -40,8 +40,17 @@ func (s *Service) CreateBackup(ctx context.Context, name, backupType string) (*e
 	fileName := name + ".tar.gz"
 	filePath := filepath.Join(backupDir, fileName)
 
-	if err := s.createTarGz(s.dataDir, filePath, []string{"backup", "rules_tmp", "cache"}); err != nil {
+	// Create backup in a temporary file first, then rename to avoid including it in the archive
+	tmpPath := filePath + ".tmp"
+	if err := s.createTarGz(s.dataDir, tmpPath, []string{"backup", "rules_tmp", "cache", "logs"}); err != nil {
+		os.Remove(tmpPath)
 		return nil, fmt.Errorf("create backup: %w", err)
+	}
+
+	// Rename temp file to final path
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("move backup file: %w", err)
 	}
 
 	stat, _ := os.Stat(filePath)
@@ -263,13 +272,25 @@ func (s *Service) createTarGz(source, dest string, excludeDirs []string) error {
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
+	// Normalize paths for comparison
+	absSource, _ := filepath.Abs(source)
+	absDest, _ := filepath.Abs(dest)
+
 	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
+		// Get absolute path for comparison
+		absPath, _ := filepath.Abs(path)
+
+		// Skip the destination file itself
+		if absPath == absDest {
+			return nil
+		}
+
 		// Skip excluded directories
-		rel, _ := filepath.Rel(source, path)
+		rel, _ := filepath.Rel(absSource, absPath)
 		for _, excl := range excludeDirs {
 			if rel == excl || strings.HasPrefix(rel, excl+"/") {
 				if info.IsDir() {
@@ -279,19 +300,19 @@ func (s *Service) createTarGz(source, dest string, excludeDirs []string) error {
 			}
 		}
 
-		// Skip the dest file itself
-		if path == dest {
+		// Skip symlinks to avoid issues
+		if info.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
 
 		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
-			return err
+			return nil // Skip files that can't be read
 		}
 		header.Name = rel
 
 		if err := tw.WriteHeader(header); err != nil {
-			return err
+			return nil // Skip files that can't be written
 		}
 
 		if info.IsDir() {
@@ -300,12 +321,15 @@ func (s *Service) createTarGz(source, dest string, excludeDirs []string) error {
 
 		file, err := os.Open(path)
 		if err != nil {
-			return err
+			return nil // Skip files that can't be opened
 		}
 		defer file.Close()
 
 		_, err = io.Copy(tw, file)
-		return err
+		if err != nil {
+			return nil // Skip files that can't be copied
+		}
+		return nil
 	})
 }
 

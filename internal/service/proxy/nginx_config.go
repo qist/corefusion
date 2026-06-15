@@ -502,6 +502,16 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 			}
 		}
 
+		// ACME HTTP-01 challenge support
+		sb.WriteString("        # ACME HTTP-01 challenge support\n")
+		sb.WriteString("        location /.well-known/acme-challenge/ {\n")
+		sb.WriteString("            proxy_pass http://127.0.0.1:8080;\n")
+		sb.WriteString("            proxy_set_header Host $host;\n")
+		sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
+		sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+		sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+		sb.WriteString("        }\n")
+
 		// Locations
 		for _, site := range siteList {
 			path := site.Path

@@ -191,7 +191,14 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	sb.WriteString("}\n\n")
 
 	if len(httpSites) == 0 && !hasL4 {
-		sb.WriteString(":80 {\n\trespond \"CoreFusion\" 200\n}\n")
+		sb.WriteString(":80 {\n")
+		sb.WriteString("\t# ACME HTTP-01 challenge support\n")
+		sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+		sb.WriteString("\thandle @acme {\n")
+		sb.WriteString("\t\treverse_proxy 127.0.0.1:8080\n")
+		sb.WriteString("\t}\n")
+		sb.WriteString("\trespond \"CoreFusion\" 200\n")
+		sb.WriteString("}\n")
 		return sb.String(), nil
 	}
 
@@ -211,6 +218,13 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 				break
 			}
 		}
+
+		// ACME HTTP-01 challenge support
+		sb.WriteString("\t# ACME HTTP-01 challenge support\n")
+		sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+		sb.WriteString("\thandle @acme {\n")
+		sb.WriteString("\t\treverse_proxy 127.0.0.1:8080\n")
+		sb.WriteString("\t}\n")
 
 		// Per-site log block (from first site that has it)
 		// Check global log output mode

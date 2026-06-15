@@ -73,11 +73,12 @@ const (
 
 // ACMEClient handles ACME certificate operations using go-acme/lego.
 type ACMEClient struct {
-	dataDir    string
-	email      string
-	caProvider CAProvider
-	caURL      string
-	accountDir string
+	dataDir       string
+	email         string
+	caProvider    CAProvider
+	caURL         string
+	accountDir    string
+	http01Provider *HTTP01Provider // Custom HTTP-01 provider for Gin integration
 }
 
 // NewACMEClient creates a new ACME client.
@@ -99,6 +100,14 @@ func NewACMEClient(dataDir, email string, caProvider CAProvider) *ACMEClient {
 		caURL:      caURL,
 		accountDir: filepath.Join(dataDir, "acme", "accounts"),
 	}
+}
+
+// NewACMEClientWithHTTP01 creates a new ACME client with a custom HTTP-01 provider.
+// The http01Provider integrates with the existing Gin router to serve ACME challenges.
+func NewACMEClientWithHTTP01(dataDir, email string, caProvider CAProvider, http01Provider *HTTP01Provider) *ACMEClient {
+	client := NewACMEClient(dataDir, email, caProvider)
+	client.http01Provider = http01Provider
+	return client
 }
 
 // IssueResult contains the result of a certificate issuance.
@@ -298,6 +307,13 @@ func (c *ACMEClient) createClient(user *ACMEUser) (*lego.Client, error) {
 func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType ChallengeType, dnsConfig *DNSProviderConfig) error {
 	switch challengeType {
 	case ChallengeHTTP01, "":
+		// Use custom HTTP-01 provider that integrates with Gin router if available
+		if c.http01Provider != nil {
+			log.Printf("[ACME] Using integrated HTTP-01 provider (serves via existing web server)")
+			return client.Challenge.SetHTTP01Provider(c.http01Provider)
+		}
+		// Fallback to lego's built-in provider server on port 80
+		log.Printf("[ACME] Using built-in HTTP-01 provider on port 80")
 		return client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", "80"))
 
 	case ChallengeDNS01:

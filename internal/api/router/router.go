@@ -29,6 +29,7 @@ import (
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/app/embed"
+	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
@@ -101,6 +102,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
 	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
+	// Initialize HTTP-01 challenge provider for ACME certificate issuance
+	// This integrates with the Gin router to serve challenges at /.well-known/acme-challenge/
+	http01Provider := cert.NewHTTP01Provider()
+	certSvc.SetHTTP01Provider(http01Provider)
 	// Sync cert content from DB to disk on startup
 	certSvc.SyncCertsToDisk(nil)
 	binaryResolver := binariesSvc.NewResolver(dataDir)
@@ -174,6 +179,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	// ACME HTTP-01 challenge endpoint
+	// This serves challenge responses at /.well-known/acme-challenge/<token>
+	// Compatible with acme.sh and all ACME clients
+	r.GET("/.well-known/acme-challenge/:token", http01Provider.Handler())
 
 	// Serve embedded frontend static files
 	adminFSBytes := embed.AdminFSBytes()

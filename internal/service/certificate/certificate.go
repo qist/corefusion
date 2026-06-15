@@ -26,10 +26,11 @@ import (
 
 // Service handles certificate business logic.
 type Service struct {
-	repo       *repository.CertificateRepository
-	dataDir    string
-	acmeEmail  string
-	caProvider cert.CAProvider
+	repo          *repository.CertificateRepository
+	dataDir       string
+	acmeEmail     string
+	caProvider    cert.CAProvider
+	http01Provider *cert.HTTP01Provider // Custom HTTP-01 provider for Gin integration
 }
 
 // NewService creates a new certificate service.
@@ -42,10 +43,28 @@ func NewService(repo *repository.CertificateRepository, dataDir, acmeEmail strin
 	}
 }
 
+// SetHTTP01Provider sets the custom HTTP-01 provider for ACME challenges.
+// This should be called before issuing certificates to enable Gin router integration.
+func (s *Service) SetHTTP01Provider(provider *cert.HTTP01Provider) {
+	s.http01Provider = provider
+}
+
+// GetHTTP01Provider returns the HTTP-01 provider, creating one if needed.
+func (s *Service) GetHTTP01Provider() *cert.HTTP01Provider {
+	if s.http01Provider == nil {
+		s.http01Provider = cert.NewHTTP01Provider()
+	}
+	return s.http01Provider
+}
+
 // getACMEClient returns an ACME client for the given CA provider.
 func (s *Service) getACMEClient(caProvider cert.CAProvider) *cert.ACMEClient {
 	if caProvider == "" {
 		caProvider = s.caProvider
+	}
+	// Use custom HTTP-01 provider if available for Gin router integration
+	if s.http01Provider != nil {
+		return cert.NewACMEClientWithHTTP01(s.dataDir, s.acmeEmail, caProvider, s.http01Provider)
 	}
 	return cert.NewACMEClient(s.dataDir, s.acmeEmail, caProvider)
 }
@@ -445,6 +464,40 @@ func (s *Service) FindExpiringSoon(ctx context.Context, within time.Duration) ([
 	return s.repo.FindExpiringSoon(ctx, within)
 }
 
+// checkPort80ForHTTP01 checks port 80 status for HTTP-01 challenges.
+// Returns error if port 80 is occupied by an external service.
+func (s *Service) checkPort80ForHTTP01() error {
+	if s.http01Provider == nil {
+		return nil
+	}
+
+	status, err := s.http01Provider.CheckPort80Status()
+	if err != nil {
+		return fmt.Errorf("check port 80: %w", err)
+	}
+
+	switch status.Strategy {
+	case cert.Port80StrategyDirect:
+		// Port 80 is free, will start temporary server
+		s.http01Provider.SetStrategy(cert.Port80StrategyDirect)
+		log.Printf("[ACME] Port 80 is free, will start temporary HTTP server for ACME challenge")
+		return nil
+
+	case cert.Port80StrategyProxy:
+		// Panel's proxy is on port 80, use Gin router
+		s.http01Provider.SetStrategy(cert.Port80StrategyProxy)
+		log.Printf("[ACME] Panel proxy manages port 80, using integrated HTTP-01 provider")
+		return nil
+
+	case cert.Port80StrategyConflict:
+		// Port 80 is occupied by external service
+		return fmt.Errorf("port 80 is occupied by %s, please stop it before issuing HTTP-01 certificate, or use DNS-01 challenge instead", status.Process)
+
+	default:
+		return fmt.Errorf("unknown port 80 strategy")
+	}
+}
+
 // IssueACMEInput is the input for ACME certificate issuance.
 type IssueACMEInput struct {
 	Domains       []string                  `json:"domains" binding:"required"`
@@ -464,6 +517,13 @@ type DNSProvider = cert.DNSProvider
 func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.Certificate, error) {
 	if len(input.Domains) == 0 {
 		return nil, errors.New("at least one domain required")
+	}
+
+	// For HTTP-01 challenges, check port 80 status
+	if input.ChallengeType == "" || input.ChallengeType == string(cert.ChallengeHTTP01) {
+		if err := s.checkPort80ForHTTP01(); err != nil {
+			return nil, err
+		}
 	}
 
 	caProvider := input.CAProvider

@@ -104,12 +104,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Sync cert content from DB to disk on startup
 	certSvc.SyncCertsToDisk(nil)
 	binaryResolver := binariesSvc.NewResolver(dataDir)
-	geoRuleSvcInst := geoRuleSvc.NewService(ruleSourceRepo, geoRuleRepo, dataDir)
+	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
+	geoRuleSvcInst := geoRuleSvc.NewService(ruleSourceRepo, geoRuleRepo, dataDir, systemSettingSvc)
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
 	warpSvcInst := warpSvc.NewService(warpRepo, dataDir)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)
-	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
 	notifier := systemSvc.NewNotifier(systemSettingSvc)
 	backupSvcInst := backupService.NewService(backupRepo, dataDir)
 	_ = notifier // TODO: integrate with scheduler for template notifications
@@ -163,7 +163,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	proxyH := systemHandler.NewProxyHandler(proxyMgr, caddyMgr, nginxMgr)
 	caddyH := systemHandler.NewCaddyHandler(caddyMgr, proxyMgr)
 	nginxH := systemHandler.NewNginxHandler(nginxMgr, proxyMgr)
-	binariesH := binariesHandler.NewHandler(binaryResolver, dataDir)
+	binariesH := binariesHandler.NewHandler(binaryResolver, dataDir, systemSettingSvc)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
@@ -417,6 +417,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// Geo Rules
 			geoRulesGroup := protected.Group("/geo-rules")
 			{
+				geoRulesGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
 				geoRulesGroup.GET("/sources", geoRuleH.ListSources)
 				geoRulesGroup.POST("/sources", geoRuleH.CreateSource)
 				geoRulesGroup.PUT("/sources/:id", geoRuleH.UpdateSource)
@@ -523,6 +524,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.POST("/restart", systemH.Restart)
 				systemGroup.POST("/migrate-data", systemH.MigrateData)
 				systemGroup.POST("/upload-mtls-ca", systemH.UploadMTLSCA)
+				systemGroup.GET("/github-config", systemH.GetGitHubConfig)
+				systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
 				systemGroup.PUT("/notification-templates/:id", systemH.UpdateTemplate)
@@ -555,6 +558,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				proxyGroup.GET("/l4-settings", proxyH.GetL4Settings)
 				proxyGroup.POST("/l4-settings", proxyH.SaveL4Settings)
 				proxyGroup.DELETE("/l4-rules", proxyH.DeleteAllL4)
+				proxyGroup.POST("/guardian", proxyH.UpdateGuardian)
 				proxyGroup.GET("/log-settings", proxyH.GetLogSettings)
 				proxyGroup.POST("/log-settings", proxyH.SaveLogSettings)
 				proxyGroup.GET("/nginx-settings", proxyH.GetNginxSettings)

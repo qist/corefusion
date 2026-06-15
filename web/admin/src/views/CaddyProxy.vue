@@ -29,6 +29,31 @@
               <span style="color:#909399">{{ t('proxy.path') }}</span>
               <span style="font-weight:600;font-size:12px">{{ proxyInfo.path || '-' }}</span>
             </div>
+            <template v-if="guardian.state && guardian.state !== 'no_guardian'">
+              <el-divider style="margin:4px 0" />
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                <span style="color:#909399;font-size:13px">{{ t('proxy.autoRestart') || '异常自动重启' }}</span>
+                <el-switch v-model="guardianConfig.autoRestart" @change="saveGuardianConfig" />
+                <el-input-number v-model="guardianConfig.maxRestarts" :min="1" :max="100" size="small" style="width:100px" @change="saveGuardianConfig" />
+                <span style="font-size:12px;color:#909399">{{ t('proxy.maxRestarts') || '次' }}</span>
+              </div>
+              <div style="display:flex;gap:16px;font-size:13px">
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span style="color:#909399">{{ t('proxy.restartStatus') || '状态' }}</span>
+                  <el-tag :type="guardian.current_restarts > 0 ? 'warning' : 'success'" size="small">
+                    {{ guardian.current_restarts > 0 ? (t('proxy.restarted') || '已重启') : (t('proxy.normal') || '正常') }}
+                  </el-tag>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span style="color:#909399">{{ t('proxy.restartCount') || '次数' }}</span>
+                  <span>{{ guardian.current_restarts }}/{{ guardian.max_restarts }}</span>
+                </div>
+                <div v-if="guardian.last_crash_at && guardian.last_crash_at !== '0001-01-01T00:00:00Z'" style="display:flex;gap:6px;align-items:center">
+                  <span style="color:#909399">{{ t('proxy.lastCrash') || '上次崩溃' }}</span>
+                  <span style="color:#F56C6C">{{ formatTime(guardian.last_crash_at) }}</span>
+                </div>
+              </div>
+            </template>
           </div>
         </el-col>
         <el-col :span="12">
@@ -359,6 +384,8 @@ const { t } = useI18n()
 const emit = defineEmits(['back'])
 
 const proxyInfo = ref({})
+const guardian = ref({})
+const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
 const allSites = ref([])
 const certificates = ref([])
 const caddyLogMode = ref('file')
@@ -409,8 +436,26 @@ async function fetchProxyInfo() {
   try {
     const status = await client.get('/proxy/status')
     proxyInfo.value = status.caddy || {}
+    guardian.value = status.caddy_guardian || {}
+    guardianConfig.value.autoRestart = guardian.value.auto_restart !== false
+    guardianConfig.value.maxRestarts = guardian.value.max_restarts || 5
     if (status.panel_port) panelPort.value = status.panel_port
   } catch (e) {}
+}
+
+async function saveGuardianConfig() {
+  try {
+    await client.post('/proxy/guardian?type=caddy', {
+      auto_restart: guardianConfig.value.autoRestart,
+      max_restarts: guardianConfig.value.maxRestarts
+    })
+    fetchProxyInfo()
+  } catch (e) {}
+}
+
+function formatTime(ts) {
+  if (!ts || ts === '0001-01-01T00:00:00Z') return '-'
+  return new Date(ts).toLocaleString()
 }
 
 async function fetchSites() {
@@ -427,8 +472,9 @@ async function fetchSites() {
 async function saveCaddyLogMode() {
   logModeSaving.value = true
   try {
+    const current = await client.get('/log-manage/log-output')
     await client.put('/log-manage/log-output', {
-      nginx: { mode: 'file' },
+      nginx: current?.nginx || { mode: 'file' },
       caddy: { mode: caddyLogMode.value },
     })
     await applyConfig()

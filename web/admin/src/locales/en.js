@@ -406,6 +406,17 @@ export default {
       userEmails: 'User Emails',
       acmeEmails: 'ACME Emails',
     },
+    github: {
+      title: 'GitHub Acceleration',
+      enabled: 'Enable Acceleration',
+      enabledHint: 'When enabled, GitHub requests will be proxied through acceleration domains',
+      domains: 'Acceleration Domains',
+      addDomain: 'Add Domain',
+      editDomain: 'Edit Domain',
+      domainName: 'Name',
+      domainUrl: 'Acceleration URL',
+      domainEnabled: 'Enabled',
+    },
     proxy: {
       title: 'Proxy Management',
       notInstalled: 'Not Installed',
@@ -516,6 +527,14 @@ export default {
     editConfig: 'Edit Config',
     viewConfig: 'View Config',
     switch: 'Switch Proxy',
+    // Guardian
+    autoRestart: 'Auto Restart',
+    maxRestarts: 'Max Restarts',
+    restartStatus: 'Status',
+    restartCount: 'Count',
+    restarted: 'Restarted',
+    normal: 'Normal',
+    lastCrash: 'Last Crash',
   },
   logManage: {
     title: 'Log Management',

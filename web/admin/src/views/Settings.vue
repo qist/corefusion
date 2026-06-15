@@ -235,6 +235,42 @@
           </el-table>
         </el-card>
       </el-tab-pane>
+
+      <!-- GitHub Acceleration -->
+      <el-tab-pane :label="t('settings.github.title')" name="github">
+        <el-card>
+          <el-form label-width="140px" style="max-width:600px">
+            <el-form-item :label="t('settings.github.enabled')">
+              <el-switch v-model="githubForm.enabled" />
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.github.enabledHint') }}</div>
+            </el-form-item>
+          </el-form>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <span style="font-weight:500">{{ t('settings.github.domains') }}</span>
+            <el-button type="primary" size="small" @click="showAddDomain">{{ t('settings.github.addDomain') }}</el-button>
+          </div>
+          <el-table :data="githubForm.domains" stripe>
+            <el-table-column prop="name" :label="t('settings.github.domainName')" width="150" />
+            <el-table-column prop="url" :label="t('settings.github.domainUrl')" />
+            <el-table-column :label="t('settings.github.domainEnabled')" width="100">
+              <template #default="{row}">
+                <el-switch v-model="row.enabled" size="small" />
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.actions')" width="140">
+              <template #default="{row, $index}">
+                <el-button size="small" @click="showEditDomain(row, $index)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click="handleDeleteDomain($index)">{{ t('common.delete') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div style="margin-top:20px;text-align:right">
+            <el-button type="primary" :loading="githubSaving" @click="saveGitHubConfig">{{ t('common.save') }}</el-button>
+          </div>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Schedule Dialog -->
@@ -329,6 +365,18 @@
       </template>
     </el-dialog>
 
+    <!-- GitHub Domain Dialog -->
+    <el-dialog v-model="domainDialogVisible" :title="editingDomainIndex !== null ? t('settings.github.editDomain') : t('settings.github.addDomain')" width="500">
+      <el-form :model="domainForm" label-width="100px">
+        <el-form-item :label="t('settings.github.domainName')"><el-input v-model="domainForm.name" placeholder="ghproxy.com" /></el-form-item>
+        <el-form-item :label="t('settings.github.domainUrl')"><el-input v-model="domainForm.url" placeholder="https://ghproxy.com" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="domainDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSaveDomain">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
     <!-- Restart -->
     <el-card style="margin-top:20px">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -386,6 +434,13 @@ const tmplDialogVisible = ref(false)
 const editingTmpl = ref(null)
 const tmplForm = ref({ name: '', type: 'telegram', recipients: '', subject: '', content: '', cron: '', enabled: false })
 const tmplRecipients = ref([])
+
+// GitHub acceleration
+const githubForm = ref({ enabled: false, domains: [] })
+const githubSaving = ref(false)
+const domainDialogVisible = ref(false)
+const editingDomainIndex = ref(null)
+const domainForm = ref({ name: '', url: '' })
 
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 
@@ -520,5 +575,20 @@ async function handleSaveStorage() {
 }
 async function handleDeleteStorage(row) { await ElMessageBox.confirm(t('common.confirm')); await client.delete(`/backups/storages/${row.id}`); ElMessage.success(t('common.success')); fetchStorages() }
 
-onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages() })
+// GitHub acceleration
+async function fetchGitHubConfig() { try { const d = await client.get('/system/github-config'); if (d) githubForm.value = { ...githubForm.value, ...d } } catch (e) {} }
+async function saveGitHubConfig() { githubSaving.value = true; try { await client.put('/system/github-config', githubForm.value); ElMessage.success(t('common.success')) } catch (e) {} finally { githubSaving.value = false } }
+function showAddDomain() { editingDomainIndex.value = null; domainForm.value = { name: '', url: '' }; domainDialogVisible.value = true }
+function showEditDomain(row, index) { editingDomainIndex.value = index; domainForm.value = { ...row }; domainDialogVisible.value = true }
+function handleSaveDomain() {
+  if (!domainForm.value.name || !domainForm.value.url) return
+  const domains = [...githubForm.value.domains]
+  if (editingDomainIndex.value !== null) { domains[editingDomainIndex.value] = { ...domainForm.value } }
+  else { domains.push({ ...domainForm.value, enabled: true }) }
+  githubForm.value.domains = domains
+  domainDialogVisible.value = false
+}
+function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
+
+onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig() })
 </script>

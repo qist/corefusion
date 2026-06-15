@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/smtp"
@@ -38,6 +39,32 @@ type PanelConfig struct {
 	WebPath     string `json:"web_path"`
 	Timezone    string `json:"timezone"`
 	DataDir     string `json:"data_dir"`
+}
+
+// GitHubDomain represents a single GitHub acceleration domain.
+type GitHubDomain struct {
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Enabled bool   `json:"enabled"`
+}
+
+// GitHubConfig contains GitHub acceleration configuration.
+type GitHubConfig struct {
+	Enabled bool           `json:"enabled"`
+	Domains []GitHubDomain `json:"domains"`
+}
+
+// DefaultGitHubConfig returns default GitHub acceleration configuration.
+func DefaultGitHubConfig() *GitHubConfig {
+	return &GitHubConfig{
+		Enabled: false,
+		Domains: []GitHubDomain{
+			{Name: "gh-proxy.com", URL: "https://gh-proxy.com", Enabled: true},
+			{Name: "geekertao", URL: "https://ghfile.geekertao.top", Enabled: false},
+			{Name: "llkk.cc", URL: "https://gh.llkk.cc", Enabled: false},
+			{Name: "ghfast.top", URL: "https://ghfast.top", Enabled: false},
+		},
+	}
 }
 
 // NotificationConfig contains notification configuration fields.
@@ -255,6 +282,43 @@ func (s *SettingService) UpdateNotificationConfig(ctx context.Context, config *N
 		}
 	}
 	return nil
+}
+
+// GetGitHubConfig retrieves GitHub acceleration configuration from database.
+func (s *SettingService) GetGitHubConfig(ctx context.Context) (*GitHubConfig, error) {
+	val, err := s.repo.GetByKey(ctx, "github.acceleration")
+	if err != nil || val == "" {
+		return DefaultGitHubConfig(), nil
+	}
+
+	config := DefaultGitHubConfig()
+	if err := json.Unmarshal([]byte(val), config); err != nil {
+		return DefaultGitHubConfig(), nil
+	}
+	return config, nil
+}
+
+// UpdateGitHubConfig saves GitHub acceleration configuration to database.
+func (s *SettingService) UpdateGitHubConfig(ctx context.Context, config *GitHubConfig) error {
+	data, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("marshal github config: %w", err)
+	}
+	return s.repo.Set(ctx, "github.acceleration", string(data))
+}
+
+// GetActiveGitHubDomain returns the first enabled acceleration domain URL, or empty string.
+func (s *SettingService) GetActiveGitHubDomain(ctx context.Context) string {
+	config, err := s.GetGitHubConfig(ctx)
+	if err != nil || !config.Enabled {
+		return ""
+	}
+	for _, d := range config.Domains {
+		if d.Enabled {
+			return d.URL
+		}
+	}
+	return ""
 }
 
 // SaveMTLSCAFile saves an uploaded CA certificate file.

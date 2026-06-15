@@ -117,6 +117,22 @@ func (h *Handler) ToggleSchedule(c *gin.Context) {
 	response.OK(c, src)
 }
 
+// FetchGitHubAssets handles GET /api/v1/geo-rules/github-assets?repo=...
+// Proxies GitHub API calls with acceleration for frontend asset preview.
+func (h *Handler) FetchGitHubAssets(c *gin.Context) {
+	repo := c.Query("repo")
+	if repo == "" {
+		response.BadRequest(c, "INVALID_REQUEST", "repo is required")
+		return
+	}
+	assets, tag, err := h.svc.FetchGitHubReleaseAssets(c.Request.Context(), repo)
+	if err != nil {
+		response.InternalError(c, "FETCH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"assets": assets, "tag": tag})
+}
+
 // FetchReleaseAssets handles GET /api/v1/geo-rules/sources/:id/assets.
 func (h *Handler) FetchReleaseAssets(c *gin.Context) {
 	id := parseIntParam(c, "id")

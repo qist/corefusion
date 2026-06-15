@@ -68,9 +68,8 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	}
 	switch logOutputMode {
 	case "stdout":
-		// Symlink logs/error.log -> /dev/stderr
-		ensureSymlink(filepath.Join(m.dataDir, "logs", "error.log"), "/dev/stderr")
-		sb.WriteString("error_log logs/error.log warn;\n")
+		ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_error.log"), "/dev/stderr")
+		sb.WriteString("error_log logs/stdout_error.log warn;\n")
 	case "off":
 		sb.WriteString("error_log /dev/null;\n")
 	default: // "file"
@@ -118,10 +117,9 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 
 	switch logOutputMode {
 	case "stdout":
-		// Symlink logs/access.log -> /dev/stdout
-		ensureSymlink(filepath.Join(m.dataDir, "logs", "access.log"), "/dev/stdout")
+		ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_access.log"), "/dev/stdout")
 		sb.WriteString(logFmt)
-		sb.WriteString("    access_log logs/access.log main;\n")
+		sb.WriteString("    access_log logs/stdout_access.log main;\n")
 	case "off":
 		// no access log
 	default: // "file"
@@ -630,9 +628,9 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 
 		switch logOutputMode {
 		case "stdout":
-			ensureSymlink(filepath.Join(m.dataDir, "logs", "stream.log"), "/dev/stdout")
+			ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_stream.log"), "/dev/stdout")
 			sb.WriteString(streamFmtStr)
-			sb.WriteString(fmt.Sprintf("    access_log logs/stream.log stream_%s buffer=32k;\n", logFmt))
+			sb.WriteString(fmt.Sprintf("    access_log logs/stdout_stream.log stream_%s buffer=32k;\n", logFmt))
 		case "off":
 			// no stream log
 		default: // "file"

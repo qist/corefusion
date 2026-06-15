@@ -126,6 +126,32 @@ func (h *Handler) TestTelegram(c *gin.Context) {
 	response.OK(c, gin.H{"message": "test message sent"})
 }
 
+// --- GitHub Config ---
+
+// GetGitHubConfig handles GET /api/v1/system/github-config.
+func (h *Handler) GetGitHubConfig(c *gin.Context) {
+	config, err := h.settingSvc.GetGitHubConfig(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "GET_FAILED", err.Error())
+		return
+	}
+	response.OK(c, config)
+}
+
+// UpdateGitHubConfig handles PUT /api/v1/system/github-config.
+func (h *Handler) UpdateGitHubConfig(c *gin.Context) {
+	var config system.GitHubConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.settingSvc.UpdateGitHubConfig(c.Request.Context(), &config); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "github config updated"})
+}
+
 // --- Notification Templates ---
 
 // ListTemplates handles GET /api/v1/system/notification-templates.

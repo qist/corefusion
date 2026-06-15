@@ -3,6 +3,7 @@ package binaries
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,13 +12,20 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
 	binariesSvc "corefusion/internal/service/binaries"
+	"corefusion/pkg/netutil"
 )
+
+// SettingStore provides access to system settings.
+type SettingStore interface {
+	GetByKey(ctx context.Context, key string) (string, error)
+}
 
 // GitHubRelease represents a GitHub release.
 type GitHubRelease struct {
@@ -31,13 +39,41 @@ type GitHubRelease struct {
 
 // Handler handles binary management HTTP requests.
 type Handler struct {
-	resolver *binariesSvc.Resolver
-	dataDir  string
+	resolver   *binariesSvc.Resolver
+	dataDir    string
+	settingSvc SettingStore
 }
 
 // NewHandler creates a new binary handler.
-func NewHandler(resolver *binariesSvc.Resolver, dataDir string) *Handler {
-	return &Handler{resolver: resolver, dataDir: dataDir}
+func NewHandler(resolver *binariesSvc.Resolver, dataDir string, settingSvc SettingStore) *Handler {
+	return &Handler{resolver: resolver, dataDir: dataDir, settingSvc: settingSvc}
+}
+
+// githubAccelDomain reads the active GitHub acceleration domain from settings.
+func (h *Handler) githubAccelDomain(ctx context.Context) string {
+	if h.settingSvc == nil {
+		return ""
+	}
+	val, err := h.settingSvc.GetByKey(ctx, "github.acceleration")
+	if err != nil || val == "" {
+		return ""
+	}
+	var cfg struct {
+		Enabled bool `json:"enabled"`
+		Domains []struct {
+			URL     string `json:"url"`
+			Enabled bool   `json:"enabled"`
+		} `json:"domains"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil || !cfg.Enabled {
+		return ""
+	}
+	for _, d := range cfg.Domains {
+		if d.Enabled && d.URL != "" {
+			return d.URL
+		}
+	}
+	return ""
 }
 
 // List handles GET /api/v1/binaries.
@@ -62,8 +98,11 @@ func (h *Handler) ListReleases(c *gin.Context) {
 	}
 
 	// Fetch releases from GitHub API
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repoURL)
-	client := &http.Client{}
+	apiURL := netutil.AccelerateGitHubURL(
+		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repoURL),
+		h.githubAccelDomain(c.Request.Context()),
+	)
+	client := netutil.GitHubHTTPClient(30*time.Second, h.githubAccelDomain(c.Request.Context()))
 	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -206,9 +245,10 @@ func filterAssets(coreType string, assets []struct {
 }
 
 // downloadAndExtract downloads a tar.gz binary and extracts it.
-func (h *Handler) downloadAndExtract(url, destDir, coreType string) error {
-	client := &http.Client{}
-	resp, err := client.Get(url)
+func (h *Handler) downloadAndExtract(rawURL, destDir, coreType string) error {
+	accelURL := netutil.AccelerateGitHubURL(rawURL, h.githubAccelDomain(context.Background()))
+	client := netutil.GitHubHTTPClient(300*time.Second, h.githubAccelDomain(context.Background()))
+	resp, err := client.Get(accelURL)
 	if err != nil {
 		return err
 	}

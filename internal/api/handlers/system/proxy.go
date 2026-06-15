@@ -40,11 +40,16 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 			panelPort = port
 		}
 	}
+	// Guardian status
+	nginxGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyNginx)
+	caddyGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyCaddy)
 	response.OK(c, gin.H{
 		"active_proxy": active,
 		"nginx":        nginx,
 		"caddy":        caddy,
 		"panel_port":   panelPort,
+		"nginx_guardian": nginxGuardian,
+		"caddy_guardian": caddyGuardian,
 	})
 }
 
@@ -645,4 +650,31 @@ func (h *ProxyHandler) DeleteAllL4(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"deleted": count})
+}
+
+// UpdateGuardian handles POST /api/v1/proxy/guardian.
+func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
+	proxyType := proxy.ProxyType(c.Query("type"))
+	if proxyType == "" {
+		response.BadRequest(c, "INVALID_TYPE", "type is required")
+		return
+	}
+	var req struct {
+		AutoRestart *bool `json:"auto_restart"`
+		MaxRestarts *int  `json:"max_restarts"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if g, ok := h.proxyMgr.GetGuardian(proxyType); ok {
+		maxRestarts := 5
+		if req.MaxRestarts != nil {
+			maxRestarts = *req.MaxRestarts
+		}
+		g.UpdateConfig(true, maxRestarts)
+		response.OK(c, g.Status())
+	} else {
+		response.NotFound(c, "NOT_FOUND", "guardian not found")
+	}
 }

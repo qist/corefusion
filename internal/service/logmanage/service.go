@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
@@ -192,6 +193,7 @@ type LogWriterStatus struct {
 	ProxyType  string `json:"proxy_type"`
 	Mode       string `json:"mode"`
 	Active     bool   `json:"active"`
+	Paused     bool   `json:"paused"`
 	FilePath   string `json:"file_path"`
 	LogDir     string `json:"log_dir"`
 	RetainDays int    `json:"retain_days"`
@@ -199,27 +201,72 @@ type LogWriterStatus struct {
 	MaxSizeMB  int    `json:"max_size_mb"`
 }
 
-// StartWriter starts the log writer for a proxy type with the given mode.
+// StartWriter starts or updates the log writer for a proxy type.
+// If already active, just toggles pause state instead of restarting.
 func (s *Service) StartWriter(proxyType string, mode string) error {
+	// Save config
 	cfg := s.loadWriterConfig(proxyType)
 	cfg.Mode = mode
+	s.saveWriterConfig(proxyType, cfg)
 
+	// If writer already exists, just toggle pause
+	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
+		if mode == "stdout" {
+			w.SetPaused(false)
+			log.Printf("logmanage: resumed writer for %s", proxyType)
+		} else {
+			w.SetPaused(true)
+			log.Printf("logmanage: paused writer for %s (mode=%s)", proxyType, mode)
+		}
+		return nil
+	}
+
+	// Create new writer
 	writer := NewLogWriter(cfg, s.dataDir)
 	if err := writer.SetMode(mode); err != nil {
 		return err
 	}
 	s.writers[proxyType] = writer
 
-	// Save config
-	s.saveWriterConfig(proxyType, cfg)
+	// Always subscribe to LogBroker (keeps running even when paused)
+	go s.subscribeToBroker(proxyType, writer)
 
-	// Reload proxy so it reopens log files through the new symlink
-	if s.onModeSwitch != nil {
-		s.onModeSwitch(proxyType)
+	if mode != "stdout" {
+		writer.SetPaused(true)
 	}
 
 	log.Printf("logmanage: started writer for %s mode=%s", proxyType, mode)
 	return nil
+}
+
+// subscribeToBroker subscribes to the proxy's LogBroker and writes lines to the writer.
+// Keeps retrying and re-subscribing as long as the writer exists.
+func (s *Service) subscribeToBroker(proxyType string, writer *LogWriter) {
+	for {
+		if s.proxyBroker == nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		broker := s.proxyBroker.GetLogBroker(proxyType)
+		if broker == nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		ch, cancel := broker.Subscribe()
+		writer.SetCancel(cancel)
+		log.Printf("logmanage: subscribed to %s log broker", proxyType)
+
+		// Read lines until channel closes
+		for line := range ch {
+			writer.WriteLine(line) // respects pause state internally
+		}
+
+		// Channel closed (broker restarted), re-subscribe
+		cancel()
+		log.Printf("logmanage: %s broker channel closed, re-subscribing...", proxyType)
+		time.Sleep(1 * time.Second)
+	}
 }
 
 // StopWriter stops the log writer for a proxy type.
@@ -249,11 +296,13 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 			mode = "file"
 		}
 		active := false
+		paused := true
 		if w, ok := s.writers[pType]; ok {
 			active = w.IsActive()
+			paused = w.IsPaused()
 		}
-		logDir := filepath.Join("logs", pType)
-		filePath := filepath.Join("logs", pType, "access.log")
+		logDir := filepath.Join(s.dataDir, "logs")
+		filePath := filepath.Join("logs", pType+"-stdout.log")
 		if w, ok := s.writers[pType]; ok {
 			logDir = w.GetLogDir()
 		}
@@ -261,6 +310,7 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 			ProxyType:  pType,
 			Mode:       mode,
 			Active:     active,
+			Paused:     paused,
 			FilePath:   filePath,
 			LogDir:     logDir,
 			RetainDays: cfg.RetainDays,
@@ -398,6 +448,27 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 	if s.settingStore == nil {
 		return nil, nil
 	}
+
+	// Check log output mode
+	logMode := "file"
+	if v, err := s.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+		var cfg struct {
+			Nginx struct {
+				Mode string `json:"mode"`
+			} `json:"nginx"`
+		}
+		if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Nginx.Mode != "" {
+			logMode = cfg.Nginx.Mode
+		}
+	}
+
+	// In stdout mode, all nginx logs go to nginx-stdout.log
+	if logMode == "stdout" {
+		return []DiscoveredLog{
+			{SourceType: "nginx", Domain: "stdout", LogPath: s.resolveLogPath("logs/nginx-stdout.log")},
+		}, nil
+	}
+
 	v, err := s.settingStore.GetByKey(ctx, "proxy.nginx_settings")
 	if err != nil || v == "" {
 		return nil, nil

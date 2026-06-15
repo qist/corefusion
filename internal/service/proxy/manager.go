@@ -20,6 +20,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // ProxyType represents the type of reverse proxy.
@@ -60,6 +61,8 @@ type Manager struct {
 	nginxConfigGen func(ctx context.Context) (string, error)
 	// Stdout log broker for real-time log viewing
 	logBrokers map[ProxyType]*LogBroker
+	// Process guardian for auto-restart on crash
+	guardians map[ProxyType]*ProxyGuardian
 }
 
 // SetCaddyConfigGen sets the Caddy config generator function.
@@ -102,6 +105,38 @@ func (m *Manager) GetLogBroker(proxyType ProxyType) *LogBroker {
 	return m.logBrokers[proxyType]
 }
 
+// githubAccelDomain reads the active GitHub acceleration domain from settings.
+func (m *Manager) githubAccelDomain() string {
+	if m.settingStore == nil {
+		return ""
+	}
+	val, err := m.settingStore.GetByKey(context.Background(), "github.acceleration")
+	if err != nil || val == "" {
+		return ""
+	}
+	var cfg struct {
+		Enabled bool `json:"enabled"`
+		Domains []struct {
+			URL     string `json:"url"`
+			Enabled bool   `json:"enabled"`
+		} `json:"domains"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil || !cfg.Enabled {
+		return ""
+	}
+	for _, d := range cfg.Domains {
+		if d.Enabled && d.URL != "" {
+			return d.URL
+		}
+	}
+	return ""
+}
+
+// githubHTTPClient creates an HTTP client with GitHub acceleration.
+func (m *Manager) githubHTTPClient(timeout time.Duration) *http.Client {
+	return netutil.GitHubHTTPClient(timeout, m.githubAccelDomain())
+}
+
 // lookupNginxUser returns the UID and GID of the nginx user.
 func lookupNginxUser() (int, int, error) {
 	u, err := user.Lookup("nginx")
@@ -130,6 +165,7 @@ func NewManager(dataDir string, siteRepo *repository.ProxySiteRepository, settin
 		siteRepo:     siteRepo,
 		settingStore: settingStore,
 		logBrokers:   make(map[ProxyType]*LogBroker),
+		guardians:    make(map[ProxyType]*ProxyGuardian),
 	}
 }
 
@@ -884,6 +920,12 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 		}
 	}
 
+	// Start guardian for crash detection and auto-restart
+	guardian := NewProxyGuardian(proxyType, m)
+	m.guardians[proxyType] = guardian
+	guardian.StartMonitoring(cmd.Process.Pid)
+	log.Printf("proxy %s: guardian started (pid %d)", proxyType, cmd.Process.Pid)
+
 	return nil
 }
 
@@ -899,6 +941,12 @@ func (m *Manager) stopExisting(proxyType ProxyType) {
 
 // StopProxy stops a proxy service and marks it as manually stopped.
 func (m *Manager) StopProxy(ctx context.Context, proxyType ProxyType) error {
+	// Stop guardian to prevent auto-restart
+	if g, ok := m.guardians[proxyType]; ok {
+		g.Stop()
+		delete(m.guardians, proxyType)
+	}
+
 	if m.settingStore != nil {
 		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "true")
 	}
@@ -915,6 +963,29 @@ func (m *Manager) ClearManuallyStopped(ctx context.Context, proxyType ProxyType)
 	if m.settingStore != nil {
 		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "false")
 	}
+	// Also clear guardian's manually stopped flag
+	if g, ok := m.guardians[proxyType]; ok {
+		g.ClearStopped()
+	}
+}
+
+// GetGuardianStatus returns the guardian status for a proxy type.
+func (m *Manager) GetGuardianStatus(proxyType ProxyType) map[string]interface{} {
+	if g, ok := m.guardians[proxyType]; ok {
+		return g.Status()
+	}
+	return map[string]interface{}{
+		"proxy_type":       string(proxyType),
+		"state":            "no_guardian",
+		"current_restarts": 0,
+		"max_restarts":     5,
+	}
+}
+
+// GetGuardian returns the guardian for a proxy type.
+func (m *Manager) GetGuardian(proxyType ProxyType) (*ProxyGuardian, bool) {
+	g, ok := m.guardians[proxyType]
+	return g, ok
 }
 
 // GetSetting reads a setting value from the store.
@@ -995,14 +1066,17 @@ type GitHubAsset struct {
 }
 
 func (m *Manager) ListReleases(repo string) ([]GitHubRelease, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repo)
+	apiURL := netutil.AccelerateGitHubURL(
+		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repo),
+		m.githubAccelDomain(),
+	)
 	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := m.githubHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1109,14 +1183,17 @@ func (m *Manager) isMatchingNginxBinary(name string) bool {
 
 // ListNginxReleases fetches nginx releases from qist/nginx-binaries with platform filtering.
 func (m *Manager) ListNginxReleases(repo string) ([]GitHubRelease, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repo)
+	apiURL := netutil.AccelerateGitHubURL(
+		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repo),
+		m.githubAccelDomain(),
+	)
 	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := m.githubHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1150,8 +1227,9 @@ func (m *Manager) DownloadAsset(ctx context.Context, downloadURL, name string) (
 	binaryName := m.binaryName(name)
 	destPath := filepath.Join(m.binDir, binaryName)
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
-	client := &http.Client{Timeout: 300 * time.Second}
+	accelURL := netutil.AccelerateGitHubURL(downloadURL, m.githubAccelDomain())
+	req, _ := http.NewRequestWithContext(ctx, "GET", accelURL, nil)
+	client := m.githubHTTPClient(300 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err

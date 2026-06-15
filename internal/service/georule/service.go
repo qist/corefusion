@@ -15,7 +15,13 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
+
+// SettingStore provides access to system settings.
+type SettingStore interface {
+	GetByKey(ctx context.Context, key string) (string, error)
+}
 
 // GitHubRelease represents a GitHub release with assets.
 type GitHubRelease struct {
@@ -39,17 +45,49 @@ type Service struct {
 	sourceRepo *repository.RuleSourceRepository
 	fileRepo   *repository.GeoRuleRepository
 	dataDir    string
-	httpClient *http.Client
+	settingSvc SettingStore
 }
 
 // NewService creates a new geo rule service.
-func NewService(sourceRepo *repository.RuleSourceRepository, fileRepo *repository.GeoRuleRepository, dataDir string) *Service {
+func NewService(sourceRepo *repository.RuleSourceRepository, fileRepo *repository.GeoRuleRepository, dataDir string, settingSvc SettingStore) *Service {
 	return &Service{
 		sourceRepo: sourceRepo,
 		fileRepo:   fileRepo,
 		dataDir:    dataDir,
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		settingSvc: settingSvc,
 	}
+}
+
+// githubAccelDomain reads the active GitHub acceleration domain from settings.
+func (s *Service) githubAccelDomain(ctx context.Context) string {
+	if s.settingSvc == nil {
+		return ""
+	}
+	val, err := s.settingSvc.GetByKey(ctx, "github.acceleration")
+	if err != nil || val == "" {
+		return ""
+	}
+	var cfg struct {
+		Enabled bool `json:"enabled"`
+		Domains []struct {
+			URL     string `json:"url"`
+			Enabled bool   `json:"enabled"`
+		} `json:"domains"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil || !cfg.Enabled {
+		return ""
+	}
+	for _, d := range cfg.Domains {
+		if d.Enabled && d.URL != "" {
+			return d.URL
+		}
+	}
+	return ""
+}
+
+// httpClientWithAccel returns an HTTP client with GitHub acceleration applied.
+func (s *Service) httpClientWithAccel(ctx context.Context) *http.Client {
+	return netutil.GitHubHTTPClient(120*time.Second, s.githubAccelDomain(ctx))
 }
 
 // SeedDefaults creates the default Loyalsoldier source if not exists.
@@ -193,17 +231,57 @@ func (s *Service) DeleteSource(ctx context.Context, id int64) error {
 
 // --- Fetch Release Assets from GitHub ---
 
+// FetchGitHubReleaseAssets fetches the latest release assets for any GitHub repo URL.
+// Unlike FetchReleaseAssets, this does not require a saved source.
+func (s *Service) FetchGitHubReleaseAssets(ctx context.Context, repoURL string) ([]ReleaseAsset, string, error) {
+	apiURL := netutil.AccelerateGitHubURL(
+		fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repoURL),
+		s.githubAccelDomain(ctx),
+	)
+	req, _ := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := s.httpClientWithAccel(ctx).Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch releases: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var release GitHubRelease
+	if err := json.Unmarshal(body, &release); err != nil {
+		return nil, "", fmt.Errorf("parse response: %w", err)
+	}
+
+	var assets []ReleaseAsset
+	for _, a := range release.Assets {
+		assets = append(assets, ReleaseAsset{
+			Name:        a.Name,
+			Size:        a.Size,
+			DownloadURL: a.BrowserDownloadURL,
+		})
+	}
+	return assets, release.TagName, nil
+}
+
 func (s *Service) FetchReleaseAssets(ctx context.Context, sourceID int64) ([]ReleaseAsset, string, error) {
 	src, err := s.sourceRepo.GetByID(ctx, sourceID)
 	if err != nil {
 		return nil, "", err
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", src.RepoURL)
+	apiURL := netutil.AccelerateGitHubURL(
+		fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", src.RepoURL),
+		s.githubAccelDomain(ctx),
+	)
 	req, _ := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClientWithAccel(ctx).Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch releases: %w", err)
 	}
@@ -312,14 +390,15 @@ func (s *Service) Download(ctx context.Context, fileID int64) (*entity.GeoRuleFi
 	rule.Status = "downloading"
 	s.fileRepo.Update(ctx, rule)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", rule.DownloadURL, nil)
+	downloadURL := netutil.AccelerateGitHubURL(rule.DownloadURL, s.githubAccelDomain(ctx))
+	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
 		rule.Status = "error"
 		s.fileRepo.Update(ctx, rule)
 		return nil, err
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClientWithAccel(ctx).Do(req)
 	if err != nil {
 		rule.Status = "error"
 		s.fileRepo.Update(ctx, rule)

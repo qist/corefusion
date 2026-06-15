@@ -60,7 +60,8 @@
             <div>
               <span style="font-weight:600;font-size:15px">{{ p.label }}</span>
               <el-tag type="warning" size="small" style="margin-left:8px">{{ t('logManage.modeStdout') }}</el-tag>
-              <el-tag v-if="getWriterStatus(p.type)?.active" type="success" size="small" style="margin-left:4px">{{ t('logManage.writerActive') }}</el-tag>
+              <el-tag v-if="getWriterStatus(p.type)?.active && !getWriterStatus(p.type)?.paused" type="success" size="small" style="margin-left:4px">{{ t('logManage.writerActive') }}</el-tag>
+              <el-tag v-else-if="getWriterStatus(p.type)?.paused" type="warning" size="small" style="margin-left:4px">{{ t('logManage.writerPaused') || '已暂停' }}</el-tag>
             </div>
             <div style="display:flex;gap:8px">
               <el-button size="small" type="primary" @click="showStdoutViewer(p.type)">
@@ -324,7 +325,7 @@
 
         <el-divider content-position="left">{{ t('logManage.fileSettings') }}</el-divider>
         <el-form-item :label="t('logManage.filePath')">
-          <el-input v-model="writerForm.file_path" :placeholder="`logs/${writerConfigType}/access.log`" />
+          <el-input v-model="writerForm.file_path" :placeholder="`logs/${writerConfigType}-stdout.log`" />
         </el-form-item>
         <el-form-item :label="t('logManage.maxSizeMB')">
           <el-input-number v-model="writerForm.max_size_mb" :min="1" :max="10240" />
@@ -769,7 +770,7 @@ function showWriterConfig(type) {
   writerConfigVisible.value = true
   // Load existing config
   const status = getWriterStatus(type)
-  writerFormActive.value = status?.active || false
+  writerFormActive.value = status ? !status.paused : false
   writerForm.value = {
     file_path: status?.file_path || `logs/${type}/access.log`,
     retain_days: status?.retain_days || 30,
@@ -782,10 +783,12 @@ async function toggleWriter(active) {
   const type = writerConfigType.value
   try {
     if (active) {
-      await client.post(`/log-manage/writers/${type}/start`, { mode: 'file' })
+      // Resume writing to stdout log
+      await client.post(`/log-manage/writers/${type}/start`, { mode: 'stdout' })
       ElMessage.success(t('logManage.writerStarted', { type }))
     } else {
-      await client.post(`/log-manage/writers/${type}/stop`)
+      // Pause writing (subscription stays active)
+      await client.post(`/log-manage/writers/${type}/start`, { mode: 'file' })
       ElMessage.success(t('logManage.writerStopped', { type }))
     }
     await fetchWriterStatuses()

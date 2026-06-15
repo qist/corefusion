@@ -406,6 +406,17 @@ export default {
       userEmails: '用户邮箱',
       acmeEmails: 'ACME 邮箱',
     },
+    github: {
+      title: 'GitHub 加速',
+      enabled: '启用加速',
+      enabledHint: '开启后，系统访问 GitHub 时将通过加速域名代理',
+      domains: '加速域名',
+      addDomain: '添加域名',
+      editDomain: '编辑域名',
+      domainName: '名称',
+      domainUrl: '加速地址',
+      domainEnabled: '启用',
+    },
     proxy: {
       title: '代理管理',
       notInstalled: '未安装',
@@ -522,6 +533,14 @@ export default {
     editConfig: '编辑配置',
     viewConfig: '查看配置',
     switch: '切换代理',
+    // Guardian
+    autoRestart: '异常自动重启',
+    maxRestarts: '最大重启次数',
+    restartStatus: '状态',
+    restartCount: '次数',
+    restarted: '已重启',
+    normal: '正常',
+    lastCrash: '上次崩溃',
   },
   logManage: {
     title: '日志管理',

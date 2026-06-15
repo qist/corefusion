@@ -210,11 +210,9 @@ async function fetchAssetsForSource() {
   sourceAssets.value = []
   sourceSelectedFiles.value = []
   try {
-    // Fetch releases directly from GitHub API via client
-    const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`)
-    if (!resp.ok) return
-    const data = await resp.json()
-    sourceAssets.value = (data.assets || []).map(a => ({ name: a.name, size: a.size, download_url: a.browser_download_url }))
+    // Fetch releases via backend API (with GitHub acceleration)
+    const data = await client.get('/geo-rules/github-assets', { params: { repo } })
+    sourceAssets.value = (data.assets || []).map(a => ({ name: a.name, size: a.size, download_url: a.download_url }))
     sourceSelectedFiles.value = []
   } catch (e) {} finally { sourceAssetsLoading.value = false }
 }

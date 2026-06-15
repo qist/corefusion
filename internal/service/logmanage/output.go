@@ -3,6 +3,7 @@ package logmanage
 import (
 	"context"
 	"encoding/json"
+	"log"
 )
 
 // LogOutputConfig defines the log capture and output mode for nginx and caddy.
@@ -58,9 +59,6 @@ func (s *Service) SaveLogOutput(ctx context.Context, cfg *LogOutputConfig) error
 		return nil
 	}
 
-	// Get current config to detect mode changes
-	current, _ := s.GetLogOutput(ctx)
-
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
@@ -69,24 +67,15 @@ func (s *Service) SaveLogOutput(ctx context.Context, cfg *LogOutputConfig) error
 		return err
 	}
 
-	// If mode changed, update symlinks and reload
-	if current != nil {
-		if current.Nginx.Mode != cfg.Nginx.Mode {
-			writer := NewLogWriter(LogWriterConfig{ProxyType: "nginx"}, s.dataDir)
-			writer.SetMode(cfg.Nginx.Mode)
-			if s.onModeSwitch != nil {
-				s.onModeSwitch("nginx")
-			}
-		}
-		if current.Caddy.Mode != cfg.Caddy.Mode {
-			writer := NewLogWriter(LogWriterConfig{ProxyType: "caddy"}, s.dataDir)
-			writer.SetMode(cfg.Caddy.Mode)
-			if s.onModeSwitch != nil {
-				s.onModeSwitch("caddy")
-			}
-		}
+	// Start/stop log writers (doesn't affect nginx/caddy processes)
+	if err := s.StartWriter("nginx", cfg.Nginx.Mode); err != nil {
+		log.Printf("logmanage: failed to start nginx writer: %v", err)
+	}
+	if err := s.StartWriter("caddy", cfg.Caddy.Mode); err != nil {
+		log.Printf("logmanage: failed to start caddy writer: %v", err)
 	}
 
+	// Note: proxy config reload is handled by the caller (frontend)
 	return nil
 }
 

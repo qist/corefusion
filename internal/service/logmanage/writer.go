@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-// LogWriter manages log output mode using symlinks (like Docker nginx image).
-// stdout mode: logs/access.log -> /dev/stdout
-// file mode:   logs/access.log -> logs/nginx/access.current.log (real file)
+// LogWriter manages log output mode and file rotation.
+// stdout mode: captures from LogBroker, writes to nginx-stdout.log with rotation
+// file mode:   manages rotation of proxy log files
 type LogWriter struct {
 	mu         sync.Mutex
 	proxyType  string
@@ -23,8 +23,11 @@ type LogWriter struct {
 	compress   bool
 	maxSizeMB  int
 	active     bool
+	paused     bool     // true = subscription active but not writing
 	stopCh     chan struct{}
 	ticker     *time.Ticker
+	logFile    *os.File // open file for writing in stdout mode
+	cancelSub  func()   // cancel LogBroker subscription
 }
 
 // LogWriterConfig configures a LogWriter.
@@ -54,7 +57,7 @@ func NewLogWriter(cfg LogWriterConfig, dataDir string) *LogWriter {
 	}
 }
 
-// SetMode switches the log output mode (stdout or file).
+// SetMode switches the log output mode (stdout, file, or off).
 func (w *LogWriter) SetMode(mode string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -64,35 +67,32 @@ func (w *LogWriter) SetMode(mode string) error {
 
 	switch mode {
 	case "stdout":
-		// Symlink logs/access.log -> /dev/stdout
-		accessLog := filepath.Join(logDir, "access.log")
-		w.symlink(accessLog, "/dev/stdout")
-		log.Printf("logwriter %s: mode=stdout, symlinked to /dev/stdout", w.proxyType)
-
-	case "file":
-		// Create proxy-specific directory for rotation
-		proxyDir := filepath.Join(logDir, w.proxyType)
-		os.MkdirAll(proxyDir, 0755)
-
-		accessCurrent := filepath.Join(proxyDir, "access.current.log")
-		if _, err := os.Stat(accessCurrent); os.IsNotExist(err) {
-			os.WriteFile(accessCurrent, []byte{}, 0644)
+		// stdout mode: open nginx-stdout.log for writing
+		logPath := filepath.Join(logDir, w.proxyType+"-stdout.log")
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", logPath, err)
 		}
-
-		// Only nginx creates symlinks (caddy writes to stdout)
-		if w.proxyType == "nginx" {
-			accessLog := filepath.Join(logDir, "access.log")
-			relPath, _ := filepath.Rel(logDir, accessCurrent)
-			w.symlink(accessLog, relPath)
-			log.Printf("logwriter %s: mode=file, symlinked to %s", w.proxyType, relPath)
-		}
-
-		// Start rotation checker
+		w.logFile = f
 		if !w.active {
 			w.active = true
 			w.ticker = time.NewTicker(1 * time.Minute)
 			go w.checkLoop()
 		}
+		log.Printf("logwriter %s: mode=stdout, writing to %s", w.proxyType, logPath)
+
+	case "file":
+		// File mode: nginx writes to its configured log paths
+		// We manage rotation of those files
+		if !w.active {
+			w.active = true
+			w.ticker = time.NewTicker(1 * time.Minute)
+			go w.checkLoop()
+		}
+		log.Printf("logwriter %s: mode=file", w.proxyType)
+
+	case "off":
+		log.Printf("logwriter %s: mode=off", w.proxyType)
 
 	default:
 		return fmt.Errorf("unknown mode: %s", mode)
@@ -101,7 +101,7 @@ func (w *LogWriter) SetMode(mode string) error {
 	return nil
 }
 
-// Stop stops the rotation checker.
+// Stop stops the rotation checker and closes the log file.
 func (w *LogWriter) Stop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -113,24 +113,66 @@ func (w *LogWriter) Stop() {
 	if w.ticker != nil {
 		w.ticker.Stop()
 	}
+	if w.cancelSub != nil {
+		w.cancelSub()
+		w.cancelSub = nil
+	}
+	if w.logFile != nil {
+		w.logFile.Close()
+		w.logFile = nil
+	}
 }
 
-// IsActive returns whether the writer is active (file mode with rotation).
+// SetCancel sets the cancel function for the LogBroker subscription.
+func (w *LogWriter) SetCancel(cancel func()) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.cancelSub = cancel
+}
+
+// SetPaused pauses or resumes writing (subscription stays active).
+func (w *LogWriter) SetPaused(paused bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.paused = paused
+	if !paused && w.logFile == nil {
+		// Reopen file if needed
+		logDir := filepath.Join(w.dataDir, "logs")
+		logPath := filepath.Join(logDir, w.proxyType+"-stdout.log")
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err == nil {
+			w.logFile = f
+		}
+	}
+}
+
+// WriteLine writes a log line to the output file (for stdout mode).
+func (w *LogWriter) WriteLine(line string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.paused || w.logFile == nil {
+		return
+	}
+	w.logFile.WriteString(line + "\n")
+}
+
+// IsActive returns whether the writer is active (not stopped).
 func (w *LogWriter) IsActive() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.active
 }
 
-// symlink creates a symlink, removing existing file/symlink first.
-func (w *LogWriter) symlink(path, target string) {
-	os.Remove(path)
-	os.Symlink(target, path)
+// IsPaused returns whether writing is paused.
+func (w *LogWriter) IsPaused() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.paused
 }
 
-// GetLogDir returns the proxy-specific log directory.
+// GetLogDir returns the log directory.
 func (w *LogWriter) GetLogDir() string {
-	return filepath.Join(w.dataDir, "logs", w.proxyType)
+	return filepath.Join(w.dataDir, "logs")
 }
 
 // checkLoop periodically checks for rotation.
@@ -154,7 +196,16 @@ func (w *LogWriter) checkAndRotate() {
 		return
 	}
 
-	currentPath := filepath.Join(w.dataDir, "logs", w.proxyType, "access.current.log")
+	// Determine which file to rotate
+	stdoutPath := filepath.Join(w.dataDir, "logs", w.proxyType+"-stdout.log")
+
+	var currentPath string
+	if _, err := os.Stat(stdoutPath); err == nil {
+		currentPath = stdoutPath
+	} else {
+		return
+	}
+
 	info, err := os.Stat(currentPath)
 	if err != nil {
 		return
@@ -233,16 +284,21 @@ func (w *LogWriter) compressFile(path string) {
 
 // cleanExpired removes rotated files older than retainDays.
 func (w *LogWriter) cleanExpired() {
-	dir := filepath.Join(w.dataDir, "logs", w.proxyType)
-	entries, err := os.ReadDir(dir)
+	logDir := filepath.Join(w.dataDir, "logs")
+	entries, err := os.ReadDir(logDir)
 	if err != nil {
 		return
 	}
 
+	prefix := w.proxyType + "-stdout."
 	cutoff := time.Now().AddDate(0, 0, -w.retainDays)
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasPrefix(name, "access.") || strings.HasSuffix(name, "current.log") {
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		// Skip the current log file
+		if name == w.proxyType+"-stdout.log" {
 			continue
 		}
 		info, err := entry.Info()
@@ -250,21 +306,25 @@ func (w *LogWriter) cleanExpired() {
 			continue
 		}
 		if info.ModTime().Before(cutoff) {
-			os.Remove(filepath.Join(dir, name))
+			os.Remove(filepath.Join(logDir, name))
 			log.Printf("logwriter %s: cleaned %s", w.proxyType, name)
 		}
 	}
 }
 
-// ListLogFiles returns log files in the proxy directory.
+// ListLogFiles returns log files for this writer.
 func (w *LogWriter) ListLogFiles() []LogFileInfo {
-	dir := filepath.Join(w.dataDir, "logs", w.proxyType)
-	entries, err := os.ReadDir(dir)
+	logDir := filepath.Join(w.dataDir, "logs")
+	entries, err := os.ReadDir(logDir)
 	if err != nil {
 		return nil
 	}
+	prefix := w.proxyType + "-stdout"
 	var files []LogFileInfo
 	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
 		info, err := e.Info()
 		if err != nil {
 			continue

@@ -359,6 +359,8 @@ export default {
       retainDays: 'Retain Days',
       remoteStorage: 'Remote Storage',
       addStorage: 'Add Storage',
+      localOnly: 'Local only',
+      storageHint: 'Optional: select remote storage to upload backup after creation',
     },
     panel: {
       title: 'Panel Config',

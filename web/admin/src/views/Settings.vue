@@ -207,6 +207,12 @@
           <el-table :data="schedules" stripe>
             <el-table-column prop="name" :label="t('common.name')" width="150" />
             <el-table-column prop="cron" label="Cron" width="140" />
+            <el-table-column :label="t('settings.backup.remoteStorage')" width="150">
+              <template #default="{row}">
+                <span v-if="row.storage_id">{{ getStorageName(row.storage_id) }}</span>
+                <span v-else style="color:#999">{{ t('settings.backup.localOnly') }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="retain_days" :label="t('settings.backup.retainDays')" width="100" />
             <el-table-column label="Enabled" width="80">
               <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled ? 'ON' : 'OFF' }}</el-tag></template>
@@ -294,6 +300,12 @@
             <el-option label="每周日 3:00" value="0 3 * * 0" />
             <el-option label="每 12 小时" value="0 */12 * * *" />
           </el-select>
+        </el-form-item>
+        <el-form-item :label="t('settings.backup.remoteStorage')">
+          <el-select v-model="schedForm.storage_id" clearable style="width:100%" :placeholder="t('settings.backup.localOnly')">
+            <el-option v-for="s in storages" :key="s.id" :label="`${s.name} (${s.type})`" :value="s.id" />
+          </el-select>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.backup.storageHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('settings.backup.retainDays')"><el-input-number v-model="schedForm.retain_days" :min="1" :max="365" /></el-form-item>
         <el-form-item label="Enabled"><el-switch v-model="schedForm.enabled" /></el-form-item>
@@ -612,7 +624,12 @@ async function handleUploadRestore(file) {
   try { await client.post('/backups/upload-restore', formData, { headers: { 'Content-Type': 'multipart/form-data' } }); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) {}
 }
 
-function showAddSchedule() { editingSched.value = null; schedForm.value = { name: '', cron: '0 3 * * *', retain_days: 30, enabled: true }; schedDialogVisible.value = true }
+function getStorageName(storageId) {
+  const s = storages.value.find(s => s.id === storageId)
+  return s ? `${s.name} (${s.type})` : '-'
+}
+
+function showAddSchedule() { editingSched.value = null; schedForm.value = { name: '', cron: '0 3 * * *', storage_id: null, retain_days: 30, enabled: true }; schedDialogVisible.value = true }
 function showEditSchedule(row) { editingSched.value = row; schedForm.value = { ...row }; schedDialogVisible.value = true }
 async function handleSaveSchedule() {
   try {

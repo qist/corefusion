@@ -359,6 +359,8 @@ export default {
       retainDays: '保留天数',
       remoteStorage: '远程存储',
       addStorage: '添加存储',
+      localOnly: '仅本地',
+      storageHint: '可选：选择远程存储，备份创建后自动上传',
     },
     panel: {
       title: '面板配置',

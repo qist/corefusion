@@ -75,6 +75,15 @@ func (r *BackupRepository) ListStorages(ctx context.Context) ([]entity.BackupSto
 	return list, err
 }
 
+func (r *BackupRepository) GetStorageByID(ctx context.Context, id int64) (*entity.BackupStorage, error) {
+	var s entity.BackupStorage
+	err := r.db.WithContext(ctx).First(&s, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 func (r *BackupRepository) UpdateStorage(ctx context.Context, s *entity.BackupStorage) error {
 	return r.db.WithContext(ctx).Save(s).Error
 }

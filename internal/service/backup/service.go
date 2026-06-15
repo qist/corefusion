@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -483,4 +484,144 @@ func (s *Service) extractTarGz(archive, dest string) error {
 		}
 	}
 	return nil
+}
+
+// --- Scheduler ---
+
+// BackupScheduler handles scheduled backup execution.
+type BackupScheduler struct {
+	svc     *Service
+	stopCh  chan struct{}
+	running bool
+}
+
+// NewBackupScheduler creates a new backup scheduler.
+func NewBackupScheduler(svc *Service) *BackupScheduler {
+	return &BackupScheduler{
+		svc:    svc,
+		stopCh: make(chan struct{}),
+	}
+}
+
+// Start starts the backup scheduler.
+func (s *BackupScheduler) Start() {
+	if s.running {
+		return
+	}
+	s.running = true
+	go s.run()
+	log.Printf("[BackupScheduler] Started")
+}
+
+// Stop stops the backup scheduler.
+func (s *BackupScheduler) Stop() {
+	if !s.running {
+		return
+	}
+	close(s.stopCh)
+	s.running = false
+	log.Printf("[BackupScheduler] Stopped")
+}
+
+func (s *BackupScheduler) run() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.checkAndRun()
+		}
+	}
+}
+
+func (s *BackupScheduler) checkAndRun() {
+	ctx := context.Background()
+	schedules, err := s.svc.ListSchedules(ctx)
+	if err != nil {
+		log.Printf("[BackupScheduler] List schedules error: %v", err)
+		return
+	}
+
+	now := time.Now()
+	for _, sched := range schedules {
+		if !sched.Enabled {
+			continue
+		}
+
+		// Simple cron check: run if last run was more than 24 hours ago
+		// In production, use a proper cron library
+		if !sched.LastRunAt.IsZero() && now.Sub(sched.LastRunAt) < 24*time.Hour {
+			continue
+		}
+
+		// Run the backup
+		log.Printf("[BackupScheduler] Running scheduled backup: %s", sched.Name)
+		s.runScheduledBackup(ctx, &sched)
+	}
+}
+
+func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.BackupSchedule) {
+	// Create backup
+	name := fmt.Sprintf("scheduled_%s_%s", sched.Name, time.Now().Format("20060102_150405"))
+	rec, err := s.svc.CreateBackup(ctx, name, "scheduled")
+	if err != nil {
+		log.Printf("[BackupScheduler] Create backup error: %v", err)
+		return
+	}
+
+	// Upload to remote storage if configured
+	if sched.StorageID != nil && *sched.StorageID > 0 {
+		storage, err := s.svc.GetStorage(ctx, *sched.StorageID)
+		if err != nil {
+			log.Printf("[BackupScheduler] Get storage error: %v", err)
+			return
+		}
+
+		if err := s.uploadToStorage(ctx, rec.ID, storage); err != nil {
+			log.Printf("[BackupScheduler] Upload to %s error: %v", storage.Type, err)
+			return
+		}
+		log.Printf("[BackupScheduler] Uploaded to %s storage: %s", storage.Type, storage.Name)
+	}
+
+	// Update last run time
+	sched.LastRunAt = time.Now()
+	if err := s.svc.UpdateSchedule(ctx, sched); err != nil {
+		log.Printf("[BackupScheduler] Update schedule error: %v", err)
+	}
+
+	log.Printf("[BackupScheduler] Scheduled backup completed: %s", name)
+}
+
+func (s *BackupScheduler) uploadToStorage(ctx context.Context, backupID int64, storage *entity.BackupStorage) error {
+	switch storage.Type {
+	case "s3":
+		var cfg S3Config
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			return err
+		}
+		return s.svc.UploadToS3(ctx, backupID, cfg)
+	case "webdav":
+		var cfg WebDAVConfig
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			return err
+		}
+		return s.svc.UploadToWebDAV(ctx, backupID, cfg)
+	case "ftp":
+		var cfg FTPConfig
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			return err
+		}
+		return s.svc.UploadToFTP(ctx, backupID, cfg)
+	default:
+		return fmt.Errorf("unsupported storage type: %s", storage.Type)
+	}
+}
+
+// GetStorage returns a storage by ID.
+func (s *Service) GetStorage(ctx context.Context, id int64) (*entity.BackupStorage, error) {
+	return s.repo.GetStorageByID(ctx, id)
 }

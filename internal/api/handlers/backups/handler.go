@@ -406,3 +406,69 @@ func (h *Handler) DeleteStorage(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }
+
+// UploadToFTP handles POST /api/v1/backups/:id/upload-ftp.
+func (h *Handler) UploadToFTP(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+
+	var config backupSvc.FTPConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	if err := h.svc.UploadToFTP(c.Request.Context(), id, config); err != nil {
+		response.InternalError(c, "UPLOAD_FAILED", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"message": "uploaded to FTP successfully"})
+}
+
+// UploadToS3 handles POST /api/v1/backups/:id/upload-s3.
+func (h *Handler) UploadToS3(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+
+	var config backupSvc.S3Config
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	if err := h.svc.UploadToS3(c.Request.Context(), id, config); err != nil {
+		response.InternalError(c, "UPLOAD_FAILED", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"message": "uploaded to S3 successfully"})
+}
+
+// UploadToWebDAV handles POST /api/v1/backups/:id/upload-webdav.
+func (h *Handler) UploadToWebDAV(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+
+	var config backupSvc.WebDAVConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	if err := h.svc.UploadToWebDAV(c.Request.Context(), id, config); err != nil {
+		response.InternalError(c, "UPLOAD_FAILED", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"message": "uploaded to WebDAV successfully"})
+}

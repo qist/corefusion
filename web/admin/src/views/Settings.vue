@@ -176,10 +176,20 @@
             <el-table-column :label="t('common.createdAt')" width="180">
               <template #default="{row}">{{ new Date(row.created_at).toLocaleString() }}</template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="240">
+            <el-table-column :label="t('common.actions')" width="400">
               <template #default="{row}">
                 <el-button size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
                 <el-button size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
+                <el-dropdown trigger="click" style="margin:0 8px">
+                  <el-button size="small" type="success">{{ t('settings.backup.uploadTo') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click="showUploadS3(row)">S3 / MinIO</el-dropdown-item>
+                      <el-dropdown-item @click="showUploadWebDAV(row)">WebDAV</el-dropdown-item>
+                      <el-dropdown-item @click="showUploadFTP(row)">FTP</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
                 <el-button size="small" type="danger" @click="handleDeleteBackup(row)">{{ t('common.delete') }}</el-button>
               </template>
             </el-table-column>
@@ -302,6 +312,7 @@
           <el-select v-model="storageForm.type" style="width:100%">
             <el-option label="S3 / MinIO" value="s3" />
             <el-option label="WebDAV" value="webdav" />
+            <el-option label="FTP" value="ftp" />
           </el-select>
         </el-form-item>
         <template v-if="storageForm.type==='s3'">
@@ -315,11 +326,60 @@
           <el-form-item label="Username"><el-input v-model="storageForm.config.username" /></el-form-item>
           <el-form-item label="Password"><el-input v-model="storageForm.config.password" type="password" show-password /></el-form-item>
         </template>
+        <template v-if="storageForm.type==='ftp'">
+          <el-form-item label="Host"><el-input v-model="storageForm.config.host" placeholder="ftp.example.com" /></el-form-item>
+          <el-form-item label="Port"><el-input-number v-model="storageForm.config.port" :min="1" :max="65535" /></el-form-item>
+          <el-form-item label="Username"><el-input v-model="storageForm.config.username" /></el-form-item>
+          <el-form-item label="Password"><el-input v-model="storageForm.config.password" type="password" show-password /></el-form-item>
+          <el-form-item label="Path"><el-input v-model="storageForm.config.path" placeholder="/backups" /></el-form-item>
+        </template>
         <el-form-item label="Enabled"><el-switch v-model="storageForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="storageDialogVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleSaveStorage">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- FTP Upload Dialog -->
+    <el-dialog v-model="ftpDialogVisible" :title="'Upload to FTP'" width="500">
+      <el-form :model="ftpForm" label-width="100px">
+        <el-form-item label="Host"><el-input v-model="ftpForm.host" placeholder="ftp.example.com" /></el-form-item>
+        <el-form-item label="Port"><el-input-number v-model="ftpForm.port" :min="1" :max="65535" /></el-form-item>
+        <el-form-item label="Username"><el-input v-model="ftpForm.username" /></el-form-item>
+        <el-form-item label="Password"><el-input v-model="ftpForm.password" type="password" show-password /></el-form-item>
+        <el-form-item label="Path"><el-input v-model="ftpForm.path" placeholder="/backups" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ftpDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="ftpUploading" @click="handleUploadFTP">{{ t('common.upload') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- S3 Upload Dialog -->
+    <el-dialog v-model="s3DialogVisible" :title="'Upload to S3 / MinIO'" width="500">
+      <el-form :model="s3Form" label-width="100px">
+        <el-form-item label="Endpoint"><el-input v-model="s3Form.endpoint" placeholder="https://s3.amazonaws.com" /></el-form-item>
+        <el-form-item label="Bucket"><el-input v-model="s3Form.bucket" /></el-form-item>
+        <el-form-item label="Access Key"><el-input v-model="s3Form.access_key" /></el-form-item>
+        <el-form-item label="Secret Key"><el-input v-model="s3Form.secret_key" type="password" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="s3DialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="s3Uploading" @click="handleUploadS3">{{ t('common.upload') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- WebDAV Upload Dialog -->
+    <el-dialog v-model="webdavDialogVisible" :title="'Upload to WebDAV'" width="500">
+      <el-form :model="webdavForm" label-width="100px">
+        <el-form-item label="URL"><el-input v-model="webdavForm.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
+        <el-form-item label="Username"><el-input v-model="webdavForm.username" /></el-form-item>
+        <el-form-item label="Password"><el-input v-model="webdavForm.password" type="password" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="webdavDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="webdavUploading" @click="handleUploadWebDAV">{{ t('common.upload') }}</el-button>
       </template>
     </el-dialog>
 
@@ -574,6 +634,72 @@ async function handleSaveStorage() {
   } catch (e) {}
 }
 async function handleDeleteStorage(row) { await ElMessageBox.confirm(t('common.confirm')); await client.delete(`/backups/storages/${row.id}`); ElMessage.success(t('common.success')); fetchStorages() }
+
+// FTP Upload
+const ftpDialogVisible = ref(false)
+const ftpUploading = ref(false)
+const ftpBackupId = ref(null)
+const ftpForm = ref({ host: '', port: 21, username: '', password: '', path: '/backups' })
+
+function showUploadFTP(row) {
+  ftpBackupId.value = row.id
+  ftpForm.value = { host: '', port: 21, username: '', password: '', path: '/backups' }
+  ftpDialogVisible.value = true
+}
+
+async function handleUploadFTP() {
+  if (!ftpForm.value.host) { ElMessage.error('Host is required'); return }
+  ftpUploading.value = true
+  try {
+    await client.post(`/backups/${ftpBackupId.value}/upload-ftp`, ftpForm.value)
+    ElMessage.success('Uploaded to FTP successfully')
+    ftpDialogVisible.value = false
+  } catch (e) {} finally { ftpUploading.value = false }
+}
+
+// S3 Upload
+const s3DialogVisible = ref(false)
+const s3Uploading = ref(false)
+const s3BackupId = ref(null)
+const s3Form = ref({ endpoint: '', bucket: '', access_key: '', secret_key: '' })
+
+function showUploadS3(row) {
+  s3BackupId.value = row.id
+  s3Form.value = { endpoint: '', bucket: '', access_key: '', secret_key: '' }
+  s3DialogVisible.value = true
+}
+
+async function handleUploadS3() {
+  if (!s3Form.value.endpoint || !s3Form.value.bucket) { ElMessage.error('Endpoint and Bucket are required'); return }
+  s3Uploading.value = true
+  try {
+    await client.post(`/backups/${s3BackupId.value}/upload-s3`, s3Form.value)
+    ElMessage.success('Uploaded to S3 successfully')
+    s3DialogVisible.value = false
+  } catch (e) {} finally { s3Uploading.value = false }
+}
+
+// WebDAV Upload
+const webdavDialogVisible = ref(false)
+const webdavUploading = ref(false)
+const webdavBackupId = ref(null)
+const webdavForm = ref({ url: '', username: '', password: '' })
+
+function showUploadWebDAV(row) {
+  webdavBackupId.value = row.id
+  webdavForm.value = { url: '', username: '', password: '' }
+  webdavDialogVisible.value = true
+}
+
+async function handleUploadWebDAV() {
+  if (!webdavForm.value.url) { ElMessage.error('URL is required'); return }
+  webdavUploading.value = true
+  try {
+    await client.post(`/backups/${webdavBackupId.value}/upload-webdav`, webdavForm.value)
+    ElMessage.success('Uploaded to WebDAV successfully')
+    webdavDialogVisible.value = false
+  } catch (e) {} finally { webdavUploading.value = false }
+}
 
 // GitHub acceleration
 async function fetchGitHubConfig() { try { const d = await client.get('/system/github-config'); if (d) githubForm.value = { ...githubForm.value, ...d } } catch (e) {} }

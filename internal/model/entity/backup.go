@@ -33,7 +33,7 @@ func (BackupSchedule) TableName() string { return "backup_schedules" }
 type BackupStorage struct {
 	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name      string    `json:"name" gorm:"size:128;not null"`
-	Type      string    `json:"type" gorm:"size:32;not null"` // local, s3, webdav
+	Type      string    `json:"type" gorm:"size:32;not null"` // local, s3, webdav, ftp
 	Config    string    `json:"config" gorm:"type:text"`      // JSON config
 	Enabled   bool      `json:"enabled" gorm:"not null;default:false"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`

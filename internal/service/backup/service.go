@@ -15,6 +15,12 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jlaffaye/ftp"
 )
 
 // Service handles backup business logic.
@@ -159,42 +165,74 @@ func (s *Service) DeleteStorage(ctx context.Context, id int64) error {
 }
 
 // UploadToS3 uploads a backup to S3-compatible storage.
-func (s *Service) UploadToS3(ctx context.Context, backupID int64, config S3Config) error {
+func (s *Service) UploadToS3(ctx context.Context, backupID int64, cfg S3Config) error {
 	rec, err := s.repo.GetRecordByID(ctx, backupID)
 	if err != nil {
 		return err
 	}
 
+	// Open the backup file
 	f, err := os.Open(rec.FilePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("open backup file: %w", err)
 	}
 	defer f.Close()
 
-	// Simple S3 PUT request
-	url := fmt.Sprintf("%s/%s/%s", config.Endpoint, config.Bucket, filepath.Base(rec.FilePath))
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, f)
+	// Get file info for content length
+	fileInfo, err := f.Stat()
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/gzip")
-
-	// Add S3 auth headers (simplified - in production use AWS SDK)
-	if config.AccessKey != "" && config.SecretKey != "" {
-		// For now, just set basic auth or S3 signature
-		// In production, implement AWS Signature V4
+		return fmt.Errorf("stat backup file: %w", err)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Build S3 client options
+	var opts []func(*config.LoadOptions) error
+
+	// Set credentials if provided
+	if cfg.AccessKey != "" && cfg.SecretKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+		))
+	}
+
+	// Set region if provided
+	if cfg.Region != "" {
+		opts = append(opts, config.WithRegion(cfg.Region))
+	}
+
+	// Load AWS config
+	awsCfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("load AWS config: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("S3 upload failed: HTTP %d", resp.StatusCode)
+	// Create S3 client options
+	s3Opts := []func(*s3.Options){}
+
+	// Set custom endpoint if provided (for S3-compatible services like MinIO)
+	if cfg.Endpoint != "" {
+		s3Opts = append(s3Opts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+		})
 	}
+
+	// Create S3 client
+	s3Client := s3.NewFromConfig(awsCfg, s3Opts...)
+
+	// Build the object key
+	key := filepath.Base(rec.FilePath)
+
+	// Upload the file
+	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(cfg.Bucket),
+		Key:           aws.String(key),
+		Body:          f,
+		ContentLength: aws.Int64(fileInfo.Size()),
+		ContentType:   aws.String("application/gzip"),
+	})
+	if err != nil {
+		return fmt.Errorf("S3 upload: %w", err)
+	}
+
 	return nil
 }
 
@@ -248,6 +286,72 @@ type WebDAVConfig struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+// FTPConfig contains FTP storage configuration.
+type FTPConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Path     string `json:"path"` // Remote directory path
+}
+
+// UploadToFTP uploads a backup to FTP storage.
+func (s *Service) UploadToFTP(ctx context.Context, backupID int64, config FTPConfig) error {
+	rec, err := s.repo.GetRecordByID(ctx, backupID)
+	if err != nil {
+		return err
+	}
+
+	// Set default port if not specified
+	port := config.Port
+	if port == 0 {
+		port = 21
+	}
+
+	// Connect to FTP server
+	addr := fmt.Sprintf("%s:%d", config.Host, port)
+	conn, err := ftp.Dial(addr, ftp.DialWithTimeout(10*time.Second))
+	if err != nil {
+		return fmt.Errorf("FTP connect: %w", err)
+	}
+	defer conn.Quit()
+
+	// Login
+	if err := conn.Login(config.Username, config.Password); err != nil {
+		return fmt.Errorf("FTP login: %w", err)
+	}
+
+	// Set default path if not specified
+	remotePath := config.Path
+	if remotePath == "" {
+		remotePath = "/"
+	}
+
+	// Create remote directory if it doesn't exist
+	if remotePath != "/" {
+		if err := conn.MakeDir(remotePath); err != nil {
+			// Ignore error if directory already exists
+		}
+	}
+
+	// Open the backup file
+	f, err := os.Open(rec.FilePath)
+	if err != nil {
+		return fmt.Errorf("open backup file: %w", err)
+	}
+	defer f.Close()
+
+	// Build remote file path
+	remoteFile := strings.TrimRight(remotePath, "/") + "/" + filepath.Base(rec.FilePath)
+
+	// Upload file
+	if err := conn.Stor(remoteFile, f); err != nil {
+		return fmt.Errorf("FTP upload: %w", err)
+	}
+
+	return nil
 }
 
 // ParseStorageConfig parses storage config JSON.

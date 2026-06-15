@@ -501,6 +501,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				backupsGroup.POST("/:id/restore", backupsH.RestoreBackup)
 				backupsGroup.DELETE("/:id", backupsH.DeleteBackup)
 				backupsGroup.POST("/upload-restore", backupsH.UploadRestore)
+				backupsGroup.POST("/:id/upload-ftp", backupsH.UploadToFTP)
+				backupsGroup.POST("/:id/upload-s3", backupsH.UploadToS3)
+				backupsGroup.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
 
 				// Schedules
 				backupsGroup.GET("/schedules", backupsH.ListSchedules)

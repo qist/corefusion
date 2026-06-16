@@ -2,10 +2,12 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -26,6 +28,7 @@ import (
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
+	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/app/embed"
@@ -43,6 +46,7 @@ import (
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
 	warpSvc "corefusion/internal/service/warp"
+	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/repository"
 )
 
@@ -60,6 +64,41 @@ func NewWithSecret(database *gorm.DB, jwtSecret string) *gin.Engine {
 // NewWithConfig creates a new Gin engine with config.
 func NewWithConfig(database *gorm.DB, jwtSecret string, webPath string) *gin.Engine {
 	return NewWithFullConfig(database, jwtSecret, webPath, "data", "unknown")
+}
+
+// cleanEmpty removes empty strings, empty arrays, and empty objects recursively from a map.
+func cleanEmpty(m map[string]interface{}) {
+	for k, v := range m {
+		if v == nil {
+			delete(m, k)
+			continue
+		}
+		switch val := v.(type) {
+		case string:
+			if val == "" {
+				delete(m, k)
+			}
+		case []interface{}:
+			if len(val) == 0 {
+				delete(m, k)
+			}
+		case map[string]interface{}:
+			cleanEmpty(val)
+			if len(val) == 0 {
+				delete(m, k)
+			}
+		}
+	}
+}
+
+// processMgr is the global process manager for graceful shutdown.
+var processMgr *process.Manager
+
+// Shutdown stops all managed processes. Call this when the panel exits.
+func Shutdown() {
+	if processMgr != nil {
+		processMgr.StopAll(context.Background())
+	}
 }
 
 // NewWithFullConfig creates a new Gin engine with full config including data directory and version.
@@ -94,6 +133,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	systemSettingRepo := repository.NewSystemSettingRepository(database)
 	notifTmplRepo := repository.NewNotificationTemplateRepository(database)
 	backupRepo := repository.NewBackupRepository(database)
+
+	coreConfigRepo := repository.NewCoreConfigRepository(database)
+	coreConfigSvc := coreconfigSvc.NewService(coreConfigRepo)
+	if err := coreConfigSvc.SeedDefaults(context.Background()); err != nil {
+		log.Printf("WARNING: seed core configs failed: %v", err)
+	}
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -156,10 +201,33 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	authH := authHandler.NewHandler(authSvc)
 	userH := usersHandler.NewHandler(userSvc)
 	nodeH := nodesHandler.NewHandler(nodeSvc)
+	coreConfigH := coreconfigHandler.NewHandler(coreConfigSvc)
 	svcH := servicesHandler.NewHandler(svcSvc)
 	subH := subsHandler.NewHandler(subSvc)
 	certH := certsHandler.NewHandler(certSvc)
-	processMgr := process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
+	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
+
+	// Set config generator: reads from core_configs and writes merged config file
+	processMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
+		fullConfig, err := coreConfigSvc.GetFull(ctx, coreType)
+		if err != nil {
+			return err
+		}
+		// Clean empty values recursively
+		cleanEmpty(fullConfig)
+		// Remove empty sections and deprecated top-level transport
+		for k, v := range fullConfig {
+			if v == nil {
+				delete(fullConfig, k)
+			}
+		}
+		delete(fullConfig, "transport")
+		data, err := json.MarshalIndent(fullConfig, "", "  ")
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(configPath, data, 0640)
+	})
 	processH := servicesHandler.NewProcessHandler(processMgr, svcRepo, crashLogRepo, dataDir)
 	metricsH := metricsHandler.NewHandler(database)
 	securityH := securityHandler.NewHandler(database)
@@ -331,6 +399,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodesGroup.GET("/:id", nodeH.GetByID)
 				nodesGroup.PUT("/:id", nodeH.Update)
 				nodesGroup.DELETE("/:id", nodeH.Delete)
+			}
+
+			// Protocols (Core Config)
+			protocolsGroup := protected.Group("/protocols")
+			{
+				protocolsGroup.GET("", coreConfigH.List)
+				protocolsGroup.GET("/:coreType", coreConfigH.Get)
+				protocolsGroup.PUT("/:coreType", coreConfigH.Save)
+				protocolsGroup.GET("/:coreType/section/:section", coreConfigH.GetSection)
+				protocolsGroup.PUT("/:coreType/section/:section", coreConfigH.SaveSection)
+				protocolsGroup.POST("/:coreType/validate", coreConfigH.Validate)
 			}
 
 			// Services
@@ -651,6 +730,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Seed default cores and reconcile processes on startup
 	processMgr.SeedCores(nil)
 	go processMgr.Reconcile(nil)
+	processMgr.StartHealthCheck(context.Background())
 
 	// Set callback to reload proxy config when log output mode is switched
 	logManageSvc.SetOnModeSwitch(func(proxyType string) {
@@ -816,6 +896,7 @@ func isSPARoute(path string) bool {
 		"/login",
 		"/dashboard",
 		"/nodes",
+		"/protocols",
 		"/services",
 		"/subscriptions",
 		"/certificates",

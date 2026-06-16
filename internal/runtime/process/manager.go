@@ -26,6 +26,16 @@ type Manager struct {
 	guardRepo  *repository.ProcessGuardianRepository
 	crashRepo  *repository.CrashLogRepository
 	resolver   BinaryResolver
+	configGen  ConfigGenerator
+}
+
+// ConfigGenerator generates a config file for a core type before starting.
+// It should write the config to configPath and return nil on success.
+type ConfigGenerator func(ctx context.Context, coreType string, configPath string) error
+
+// SetConfigGenerator sets the config generator callback.
+func (m *Manager) SetConfigGenerator(gen ConfigGenerator) {
+	m.configGen = gen
 }
 
 // BinaryResolver resolves binary paths for core types.
@@ -112,7 +122,7 @@ func (m *Manager) SeedCores(ctx context.Context) {
 	}
 }
 
-// Reconcile reattaches to running processes and restarts auto-start services.
+// Reconcile kills old processes and starts auto-start services fresh.
 func (m *Manager) Reconcile(ctx context.Context) {
 	// Load all guardians
 	guardians, err := m.guardRepo.List(ctx)
@@ -121,23 +131,18 @@ func (m *Manager) Reconcile(ctx context.Context) {
 		return
 	}
 
-	// Check if any existing processes are running on the system
+	// Kill all old processes and reset status
 	for _, g := range guardians {
-		if g.PID > 0 && g.ProcessStatus == "running" {
-			if isProcessAlive(g.PID) {
-				// Reattach to the running process
-				m.reattach(g)
-				log.Printf("reconcile: reattached service %d (pid %d)", g.ServiceID, g.PID)
-				continue
-			}
-			// Process is dead, update status
-			g.ProcessStatus = "crashed"
-			g.PID = 0
-			m.guardRepo.Update(ctx, &g)
+		if g.PID > 0 && isProcessAlive(g.PID) {
+			killProcess(g.PID)
+			log.Printf("reconcile: killed old process %d (service %d)", g.PID, g.ServiceID)
 		}
+		g.ProcessStatus = "stopped"
+		g.PID = 0
+		m.guardRepo.Update(ctx, &g)
 	}
 
-	// Start auto-start services that are not manually stopped
+	// Start auto-start services fresh
 	autoStartList, err := m.guardRepo.ListAutoStart(ctx)
 	if err != nil {
 		log.Printf("reconcile: failed to load auto-start list: %v", err)
@@ -145,9 +150,6 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	}
 
 	for _, g := range autoStartList {
-		if m.isRunning(g.ServiceID) {
-			continue
-		}
 		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
 		if err != nil {
 			continue
@@ -162,6 +164,86 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	log.Printf("reconcile: done, %d processes managed", len(m.processes))
 }
 
+// StartHealthCheck starts a background goroutine that checks service health every 30 seconds.
+// If a service with auto_restart enabled has crashed, it will be restarted automatically.
+func (m *Manager) StartHealthCheck(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		failCount := make(map[int64]int)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.checkAndRestart(ctx, failCount)
+			}
+		}
+	}()
+}
+
+func (m *Manager) checkAndRestart(ctx context.Context, failCount map[int64]int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	guardians, err := m.guardRepo.List(ctx)
+	if err != nil {
+		return
+	}
+
+	for _, g := range guardians {
+		if g.ProcessStatus != "running" || g.PID <= 0 {
+			continue
+		}
+
+		// Skip manually stopped services
+		if g.ManuallyStopped {
+			continue
+		}
+
+		// Check if process is still alive
+		if isProcessAlive(g.PID) {
+			failCount[g.ServiceID] = 0
+			continue
+		}
+
+		// Process is dead
+		failCount[g.ServiceID]++
+		log.Printf("health: service %d (pid %d) is dead, check %d/2", g.ServiceID, g.PID, failCount[g.ServiceID])
+
+		if failCount[g.ServiceID] < 2 {
+			continue
+		}
+
+		// Update status to crashed
+		g.ProcessStatus = "crashed"
+		g.PID = 0
+		m.guardRepo.Update(ctx, &g)
+		delete(m.processes, g.ServiceID)
+
+		// Check if auto-restart is enabled
+		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
+		if err != nil {
+			continue
+		}
+
+		if !g.AutoRestart {
+			log.Printf("health: service %d crashed but auto_restart is disabled", g.ServiceID)
+			continue
+		}
+
+		// Restart the service
+		log.Printf("health: restarting service %d (%s)", g.ServiceID, svc.CoreType)
+		if err := m.Start(ctx, g.ServiceID, svc.CoreType); err != nil {
+			log.Printf("health: failed to restart service %d: %v", g.ServiceID, err)
+		} else {
+			log.Printf("health: service %d restarted successfully", g.ServiceID)
+			failCount[g.ServiceID] = 0
+		}
+	}
+}
+
 // reattach reattaches to an already-running process.
 func (m *Manager) reattach(g entity.ProcessGuardian) {
 	svc, err := m.svcRepo.GetByID(nil, g.ServiceID)
@@ -169,8 +251,8 @@ func (m *Manager) reattach(g entity.ProcessGuardian) {
 		return
 	}
 	binaryPath, _, _ := m.resolver.Resolve(svc.CoreType)
-	configPath := filepath.Join(m.dataDir, "runtime", fmt.Sprintf("service_%d.json", g.ServiceID))
-	logPath := filepath.Join(m.dataDir, "logs", fmt.Sprintf("%d.log", g.ServiceID))
+	configPath := filepath.Join(m.dataDir, "runtime", svc.CoreType+".jsonc")
+	logPath := filepath.Join(m.dataDir, "logs", svc.CoreType+".log")
 
 	p := &managedProcess{
 		ServiceID:  g.ServiceID,
@@ -193,8 +275,12 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if p, ok := m.processes[serviceID]; ok && p.state == "running" {
-		return fmt.Errorf("service %d is already running (pid %d)", serviceID, p.pid)
+	// Kill existing process if any
+	if p, ok := m.processes[serviceID]; ok {
+		if p.cmd != nil && p.cmd.Process != nil {
+			killProcess(p.cmd.Process.Pid)
+		}
+		delete(m.processes, serviceID)
 	}
 
 	// Resolve binary
@@ -203,18 +289,24 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		return fmt.Errorf("binary not found for %s: %w", coreType, err)
 	}
 
-	// Config path
+	// Config path - always regenerate from core_configs on start
 	configDir := filepath.Join(m.dataDir, "runtime")
 	os.MkdirAll(configDir, 0750)
-	configPath := filepath.Join(configDir, fmt.Sprintf("service_%d.json", serviceID))
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("config not found: %s", configPath)
+	configPath := filepath.Join(configDir, coreType+".jsonc")
+	if m.configGen != nil {
+		if err := m.configGen(ctx, coreType, configPath); err != nil {
+			return fmt.Errorf("generate config: %w", err)
+		}
+	} else {
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			return fmt.Errorf("config not found: %s", configPath)
+		}
 	}
 
 	// Log file
 	logDir := filepath.Join(m.dataDir, "logs")
 	os.MkdirAll(logDir, 0750)
-	logPath := filepath.Join(logDir, fmt.Sprintf("%d.log", serviceID))
+	logPath := filepath.Join(logDir, coreType+".log")
 
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
 	if err != nil {
@@ -381,24 +473,29 @@ func (m *Manager) GetUptime(serviceID int64) int64 {
 // StopAll gracefully stops all running processes (called on CoreFusion shutdown).
 // IMPORTANT: Does NOT kill child processes - they continue as daemon processes.
 func (m *Manager) StopAll(ctx context.Context) {
-	// Just update database status - don't kill processes
-	m.mu.RLock()
-	ids := make([]int64, 0)
-	for id, p := range m.processes {
-		if p.state == "running" {
-			ids = append(ids, id)
-		}
-	}
-	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for _, id := range ids {
-		// Update guardian with current PID but keep status as running
-		if g, err := m.guardRepo.GetByServiceID(ctx, id); err == nil {
-			g.ProcessStatus = "running"
-			m.guardRepo.Update(ctx, g)
+	for id, p := range m.processes {
+		if p.state == "running" && p.cmd != nil && p.cmd.Process != nil {
+			killProcess(p.pid)
+			log.Printf("stopall: killed service %d (pid %d)", id, p.pid)
+		}
+		p.state = "stopped"
+	}
+
+	// Update all guardians to stopped status
+	guardians, err := m.guardRepo.List(ctx)
+	if err == nil {
+		for _, g := range guardians {
+			g.ProcessStatus = "stopped"
+			g.PID = 0
+			m.guardRepo.Update(ctx, &g)
 		}
 	}
-	log.Printf("stopall: %d processes left running as daemons", len(ids))
+
+	m.processes = make(map[int64]*managedProcess)
+	log.Printf("stopall: all processes stopped")
 }
 
 // monitor monitors a process and handles crashes.

@@ -9,8 +9,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"corefusion/internal/api/middleware"
@@ -199,7 +201,7 @@ func runServer(args []string) {
 		tlsEnabled = false
 	}
 
-	// Phase 8: Start server
+	// Phase 8: Start server with graceful shutdown
 	srv := &http.Server{
 		Addr:         listenAddr,
 		Handler:      r,
@@ -207,6 +209,18 @@ func runServer(args []string) {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
+
+	// Handle graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		log.Println("shutting down...")
+		router.Shutdown()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+	}()
 
 	if tlsEnabled {
 		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}

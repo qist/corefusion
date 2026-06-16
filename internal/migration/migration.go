@@ -17,6 +17,9 @@ func AutoMigrate(db *gorm.DB) error {
 		// Nodes
 		&entity.Node{},
 
+		// Core Configs
+		&entity.CoreConfig{},
+
 		// Services
 		&entity.InboundService{},
 		&entity.ServiceEndpoint{},

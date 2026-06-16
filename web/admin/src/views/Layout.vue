@@ -71,7 +71,7 @@ const currentLocaleName = computed(() => {
 
 const menuItems = [
   { path: '/dashboard', title: 'menu.dashboard', icon: 'Odometer' },
-  { path: '/nodes', title: 'menu.nodes', icon: 'Connection' },
+  { path: '/protocols', title: 'menu.protoCenter', icon: 'Connection' },
   { path: '/services', title: 'menu.services', icon: 'Monitor' },
   { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link' },
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },

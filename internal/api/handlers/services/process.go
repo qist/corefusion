@@ -1,7 +1,6 @@
 package services
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -288,10 +287,10 @@ func (h *ProcessHandler) GetCrashLog(c *gin.Context) {
 }
 
 // ensureConfig ensures a config file exists for a service.
-func (h *ProcessHandler) ensureConfig(serviceID int64, configJSON string) string {
+func (h *ProcessHandler) ensureConfig(coreType string, configJSON string) string {
 	configDir := filepath.Join(h.dataDir, "runtime")
 	os.MkdirAll(configDir, 0750)
-	configPath := filepath.Join(configDir, fmt.Sprintf("service_%d.json", serviceID))
+	configPath := filepath.Join(configDir, coreType+".jsonc")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) && configJSON != "" {
 		os.WriteFile(configPath, []byte(configJSON), 0640)
 	}

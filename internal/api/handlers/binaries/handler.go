@@ -2,6 +2,8 @@ package binaries
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -148,6 +150,7 @@ func (h *Handler) Download(c *gin.Context) {
 	var req struct {
 		CoreType string `json:"core_type" binding:"required"`
 		Version  string `json:"version" binding:"required"`
+		Asset    string `json:"asset"` // optional: specific asset name
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -160,17 +163,18 @@ func (h *Handler) Download(c *gin.Context) {
 		return
 	}
 
-	// Determine asset name
-	osName := runtime.GOOS
-	archName := runtime.GOARCH
-	if archName == "amd64" {
-		archName = "64"
-	} else if archName == "arm64" {
-		archName = "arm64-v8a"
+	var downloadURL string
+	if req.Asset != "" {
+		// Download specific asset
+		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, req.Version, req.Asset)
+	} else {
+		// Auto-detect based on current OS/arch
+		downloadURL = h.buildDownloadURL(req.CoreType, repoURL, req.Version)
 	}
-
-	assetName := fmt.Sprintf("%s-%s-%s", req.CoreType, osName, archName)
-	downloadURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, req.Version, assetName)
+	if downloadURL == "" {
+		response.BadRequest(c, "INVALID_CORE_TYPE", "cannot determine download URL for: "+req.CoreType)
+		return
+	}
 
 	// Download and extract
 	destDir := filepath.Join(h.dataDir, "binaries", "active", req.CoreType)
@@ -213,6 +217,46 @@ func (h *Handler) githubRepo(coreType string) string {
 		"tuic":       "Itsusinn/tuic",
 	}
 	return repos[coreType]
+}
+
+// buildDownloadURL constructs the correct download URL for each core type.
+func (h *Handler) buildDownloadURL(coreType, repoURL, version string) string {
+	osName := runtime.GOOS // linux, darwin, windows
+	arch := runtime.GOARCH // amd64, arm64
+
+	switch coreType {
+	case "xray":
+		// Xray: Xray-linux-64.zip, Xray-linux-arm64-v8a.zip
+		archName := "64"
+		if arch == "arm64" {
+			archName = "arm64-v8a"
+		}
+		asset := fmt.Sprintf("Xray-%s-%s.zip", osName, archName)
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
+
+	case "singbox":
+		// sing-box: sing-box-{version}-linux-amd64.tar.gz
+		if arch == "amd64" {
+			arch = "amd64"
+		}
+		asset := fmt.Sprintf("sing-box-%s-%s-%s.tar.gz", strings.TrimPrefix(version, "v"), osName, arch)
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
+
+	case "hysteria2":
+		// Hysteria: hysteria-linux-amd64
+		asset := fmt.Sprintf("hysteria-%s-%s", osName, arch)
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
+
+	case "tuic":
+		// TUIC: tuic-server-linux-x86_64
+		archName := "x86_64"
+		if arch == "arm64" {
+			archName = "aarch64"
+		}
+		asset := fmt.Sprintf("tuic-server-%s-%s", osName, archName)
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
+	}
+	return ""
 }
 
 // filterAssets filters release assets to only include relevant binaries.
@@ -258,24 +302,29 @@ func (h *Handler) downloadAndExtract(rawURL, destDir, coreType string) error {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	// Try tar.gz extraction
-	gz, err := gzip.NewReader(resp.Body)
+	// Read entire response body into memory for format detection
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		// Not a gzip, save directly
-		binaryName := coreType
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	// Try zip extraction first (Xray uses .zip)
+	if len(bodyBytes) >= 2 && bodyBytes[0] == 'P' && bodyBytes[1] == 'K' {
+		return h.extractZip(bodyBytes, destDir, coreType)
+	}
+
+	// Try tar.gz extraction
+	gz, err := gzip.NewReader(bytes.NewReader(bodyBytes))
+	if err != nil {
+		// Not gzip either, save directly as binary
+		binaryName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
 		if runtime.GOOS == "windows" {
 			binaryName += ".exe"
 		}
 		destPath := filepath.Join(destDir, binaryName)
-		f, err := os.Create(destPath)
-		if err != nil {
+		if err := os.WriteFile(destPath, bodyBytes, 0755); err != nil {
 			return err
 		}
-		defer f.Close()
-		if _, err := io.Copy(f, resp.Body); err != nil {
-			return err
-		}
-		os.Chmod(destPath, 0755)
 		return nil
 	}
 
@@ -293,7 +342,7 @@ func (h *Handler) downloadAndExtract(rawURL, destDir, coreType string) error {
 		// Look for the binary
 		name := header.Name
 		if strings.Contains(name, coreType) && !strings.HasSuffix(name, "/") {
-			binaryName := coreType
+			binaryName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
 			if runtime.GOOS == "windows" {
 				binaryName += ".exe"
 			}
@@ -313,4 +362,49 @@ func (h *Handler) downloadAndExtract(rawURL, destDir, coreType string) error {
 	}
 
 	return fmt.Errorf("binary not found in archive")
+}
+
+// extractZip extracts a binary from a zip archive.
+func (h *Handler) extractZip(data []byte, destDir, coreType string) error {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return fmt.Errorf("open zip: %w", err)
+	}
+
+	binaryName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+
+	for _, f := range r.File {
+		// Skip directories
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		// Look for the binary (match by coreType name or Xray/xray)
+		name := filepath.Base(f.Name)
+		lowerName := strings.ToLower(name)
+		if lowerName == coreType || lowerName == coreType+".exe" || name == "xray" || name == "xray.exe" {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+
+			destPath := filepath.Join(destDir, binaryName)
+			outFile, err := os.Create(destPath)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+
+			if _, err := io.Copy(outFile, rc); err != nil {
+				return err
+			}
+			os.Chmod(destPath, 0755)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("binary not found in zip archive")
 }

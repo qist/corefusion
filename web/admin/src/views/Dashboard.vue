@@ -207,7 +207,7 @@ const stats = ref({
 })
 
 const cards = ref([
-  { label: 'dashboard.nodeCount', value: 0, icon: '🖥' },
+  { label: 'dashboard.protoCenterCount', value: 0, icon: '🖥' },
   { label: 'dashboard.coreCount', value: 4, icon: '⚡' },
   { label: 'dashboard.subscriptionCount', value: 0, icon: '📋' },
   { label: 'dashboard.certCount', value: 0, icon: '🔒' },

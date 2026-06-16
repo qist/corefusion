@@ -10,7 +10,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'nodes', 'services', 'subscriptions', 'certificates', 'users', 'settings']
+    const knownRoutes = ['login', 'dashboard', 'protocols', 'services', 'subscriptions', 'certificates', 'users', 'settings']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -32,7 +32,7 @@ const routes = [
     redirect: '/dashboard',
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '仪表盘', icon: 'Odometer' } },
-      { path: 'nodes', name: 'Nodes', component: () => import('../views/Nodes.vue'), meta: { title: '节点管理', icon: 'Connection' } },
+      { path: 'protocols', name: 'Protocols', component: () => import('../views/protocols/ProtocolCenter.vue'), meta: { title: 'menu.protoCenter', icon: 'Connection' } },
       { path: 'services', name: 'Services', component: () => import('../views/Services.vue'), meta: { title: '服务管理', icon: 'Monitor' } },
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('../views/Subscriptions.vue'), meta: { title: '订阅管理', icon: 'Link' } },
       { path: 'certificates', name: 'Certificates', component: () => import('../views/Certificates.vue'), meta: { title: '证书管理', icon: 'Lock' } },

@@ -61,7 +61,7 @@ func (r *Resolver) ListInstalled() []BinaryInfo {
 
 // binaryPath returns the expected binary path for a core type.
 func (r *Resolver) binaryPath(coreType string) string {
-	name := coreType
+	name := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

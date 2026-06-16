@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"corefusion/internal/runtime/healthcheck"
+
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
@@ -61,8 +63,8 @@ type Manager struct {
 	nginxConfigGen func(ctx context.Context) (string, error)
 	// Stdout log broker for real-time log viewing
 	logBrokers map[ProxyType]*LogBroker
-	// Process guardian for auto-restart on crash
-	guardians map[ProxyType]*ProxyGuardian
+	// Process guardian for auto-restart on crash (shared healthcheck)
+	guardians map[ProxyType]*healthcheck.Guardian
 }
 
 // SetCaddyConfigGen sets the Caddy config generator function.
@@ -165,7 +167,7 @@ func NewManager(dataDir string, siteRepo *repository.ProxySiteRepository, settin
 		siteRepo:     siteRepo,
 		settingStore: settingStore,
 		logBrokers:   make(map[ProxyType]*LogBroker),
-		guardians:    make(map[ProxyType]*ProxyGuardian),
+		guardians:    make(map[ProxyType]*healthcheck.Guardian),
 	}
 }
 
@@ -921,9 +923,19 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	}
 
 	// Start guardian for crash detection and auto-restart
-	guardian := NewProxyGuardian(proxyType, m)
+	proxyTypeStr := string(proxyType)
+	guardian := healthcheck.New(
+		healthcheck.DefaultConfig(proxyTypeStr, 0),
+		func() bool {
+			info := m.DetectProxy(proxyType)
+			return info.Status == "running"
+		},
+		func(ctx context.Context) error {
+			return m.StartProxy(ctx, proxyType)
+		},
+	)
 	m.guardians[proxyType] = guardian
-	guardian.StartMonitoring(cmd.Process.Pid)
+	guardian.Start(cmd.Process.Pid)
 	log.Printf("proxy %s: guardian started (pid %d)", proxyType, cmd.Process.Pid)
 
 	return nil
@@ -950,11 +962,26 @@ func (m *Manager) StopProxy(ctx context.Context, proxyType ProxyType) error {
 	if m.settingStore != nil {
 		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "true")
 	}
+	return m.killProxyProcess(proxyType)
+}
+
+// StopProxyForShutdown stops a proxy without marking as manually stopped.
+// Used when the panel exits so proxy can auto-start on next panel start.
+func (m *Manager) StopProxyForShutdown(ctx context.Context, proxyType ProxyType) error {
+	// Stop guardian
+	if g, ok := m.guardians[proxyType]; ok {
+		g.Stop()
+		delete(m.guardians, proxyType)
+	}
+	return m.killProxyProcess(proxyType)
+}
+
+func (m *Manager) killProxyProcess(proxyType ProxyType) error {
 	switch runtime.GOOS {
 	case "windows":
-		return exec.CommandContext(ctx, "taskkill", "/IM", string(proxyType)+".exe", "/F").Run()
+		return exec.Command("taskkill", "/IM", string(proxyType)+".exe", "/F").Run()
 	default:
-		return exec.CommandContext(ctx, "pkill", "-f", string(proxyType)).Run()
+		return exec.Command("pkill", "-f", string(proxyType)).Run()
 	}
 }
 
@@ -963,10 +990,7 @@ func (m *Manager) ClearManuallyStopped(ctx context.Context, proxyType ProxyType)
 	if m.settingStore != nil {
 		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "false")
 	}
-	// Also clear guardian's manually stopped flag
-	if g, ok := m.guardians[proxyType]; ok {
-		g.ClearStopped()
-	}
+	// Guardian will be recreated on next start
 }
 
 // GetGuardianStatus returns the guardian status for a proxy type.
@@ -983,7 +1007,7 @@ func (m *Manager) GetGuardianStatus(proxyType ProxyType) map[string]interface{} 
 }
 
 // GetGuardian returns the guardian for a proxy type.
-func (m *Manager) GetGuardian(proxyType ProxyType) (*ProxyGuardian, bool) {
+func (m *Manager) GetGuardian(proxyType ProxyType) (*healthcheck.Guardian, bool) {
 	g, ok := m.guardians[proxyType]
 	return g, ok
 }

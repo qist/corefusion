@@ -19,7 +19,7 @@ const basePath = getBasePath()
 
 const client = axios.create({
   baseURL: '/api/v1',
-  timeout: 10000,
+  timeout: 300000, // 5 minutes for large downloads
 })
 
 // Request interceptor

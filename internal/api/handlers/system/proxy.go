@@ -672,7 +672,10 @@ func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 		if req.MaxRestarts != nil {
 			maxRestarts = *req.MaxRestarts
 		}
-		g.UpdateConfig(true, maxRestarts)
+		g.SetMaxRestarts(maxRestarts)
+		if req.AutoRestart != nil {
+			g.SetAutoRestart(*req.AutoRestart)
+		}
 		response.OK(c, g.Status())
 	} else {
 		response.NotFound(c, "NOT_FOUND", "guardian not found")

@@ -3,7 +3,10 @@
 package process
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 )
 
@@ -22,11 +25,20 @@ func forceKillProcess(pid int) error {
 	return syscall.Kill(-pid, syscall.SIGKILL)
 }
 
-// isProcessAlive checks if a process is still running.
+// isProcessAlive checks if a process is still running (not zombie).
 func isProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
+	// First check if process exists
 	err := syscall.Kill(pid, 0)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	// Check if process is zombie
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return false
+	}
+	return !strings.Contains(string(data), "State:\tZ")
 }

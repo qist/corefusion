@@ -103,11 +103,11 @@ func Shutdown() {
 	if processMgr != nil {
 		processMgr.StopAll(ctx)
 	}
-	// Stop managed proxies (nginx, caddy) when service stops
+	// Stop managed proxies without marking as manually stopped
 	if proxyMgr != nil {
 		log.Println("stopping managed proxies...")
-		proxyMgr.StopProxy(ctx, proxySvc.ProxyNginx)
-		proxyMgr.StopProxy(ctx, proxySvc.ProxyCaddy)
+		proxyMgr.StopProxyForShutdown(ctx, proxySvc.ProxyNginx)
+		proxyMgr.StopProxyForShutdown(ctx, proxySvc.ProxyCaddy)
 	}
 }
 
@@ -740,7 +740,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Seed default cores and reconcile processes on startup
 	processMgr.SeedCores(nil)
 	go processMgr.Reconcile(nil)
-	processMgr.StartHealthCheck(context.Background())
 
 	// Set callback to reload proxy config when log output mode is switched
 	logManageSvc.SetOnModeSwitch(func(proxyType string) {

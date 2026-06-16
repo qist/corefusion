@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/store/repository"
 )
 
 // Manager manages core process lifecycle with persistence and daemon support.
 type Manager struct {
 	processes  map[int64]*managedProcess
+	guardians  map[int64]*healthcheck.Guardian
 	mu         sync.RWMutex
 	dataDir    string
 	svcRepo    *repository.ServiceRepository
@@ -76,6 +78,7 @@ type ProcessInfo struct {
 func NewManager(dataDir string, svcRepo *repository.ServiceRepository, guardRepo *repository.ProcessGuardianRepository, crashRepo *repository.CrashLogRepository, resolver BinaryResolver) *Manager {
 	return &Manager{
 		processes: make(map[int64]*managedProcess),
+		guardians: make(map[int64]*healthcheck.Guardian),
 		dataDir:   dataDir,
 		svcRepo:   svcRepo,
 		guardRepo: guardRepo,
@@ -135,6 +138,8 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	for _, g := range guardians {
 		if g.PID > 0 && isProcessAlive(g.PID) {
 			killProcess(g.PID)
+			// Wait a bit for process to exit and reap zombie
+			time.Sleep(500 * time.Millisecond)
 			log.Printf("reconcile: killed old process %d (service %d)", g.PID, g.ServiceID)
 		}
 		g.ProcessStatus = "stopped"
@@ -164,85 +169,6 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	log.Printf("reconcile: done, %d processes managed", len(m.processes))
 }
 
-// StartHealthCheck starts a background goroutine that checks service health every 30 seconds.
-// If a service with auto_restart enabled has crashed, it will be restarted automatically.
-func (m *Manager) StartHealthCheck(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		failCount := make(map[int64]int)
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				m.checkAndRestart(ctx, failCount)
-			}
-		}
-	}()
-}
-
-func (m *Manager) checkAndRestart(ctx context.Context, failCount map[int64]int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	guardians, err := m.guardRepo.List(ctx)
-	if err != nil {
-		return
-	}
-
-	for _, g := range guardians {
-		if g.ProcessStatus != "running" || g.PID <= 0 {
-			continue
-		}
-
-		// Skip manually stopped services
-		if g.ManuallyStopped {
-			continue
-		}
-
-		// Check if process is still alive
-		if isProcessAlive(g.PID) {
-			failCount[g.ServiceID] = 0
-			continue
-		}
-
-		// Process is dead
-		failCount[g.ServiceID]++
-		log.Printf("health: service %d (pid %d) is dead, check %d/2", g.ServiceID, g.PID, failCount[g.ServiceID])
-
-		if failCount[g.ServiceID] < 2 {
-			continue
-		}
-
-		// Update status to crashed
-		g.ProcessStatus = "crashed"
-		g.PID = 0
-		m.guardRepo.Update(ctx, &g)
-		delete(m.processes, g.ServiceID)
-
-		// Check if auto-restart is enabled
-		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
-		if err != nil {
-			continue
-		}
-
-		if !g.AutoRestart {
-			log.Printf("health: service %d crashed but auto_restart is disabled", g.ServiceID)
-			continue
-		}
-
-		// Restart the service
-		log.Printf("health: restarting service %d (%s)", g.ServiceID, svc.CoreType)
-		if err := m.Start(ctx, g.ServiceID, svc.CoreType); err != nil {
-			log.Printf("health: failed to restart service %d: %v", g.ServiceID, err)
-		} else {
-			log.Printf("health: service %d restarted successfully", g.ServiceID)
-			failCount[g.ServiceID] = 0
-		}
-	}
-}
 
 // reattach reattaches to an already-running process.
 func (m *Manager) reattach(g entity.ProcessGuardian) {
@@ -339,11 +265,34 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	// Persist to database
 	m.persistState(serviceID, "running", cmd.Process.Pid, false)
 
-	// Start monitor
-	go m.monitor(p, entity.ProcessGuardian{})
+	// Create and start guardian for health check
+	guardian := m.createGuardian(serviceID, coreType)
+	m.guardians[serviceID] = guardian
+	guardian.Start(cmd.Process.Pid)
 
 	log.Printf("started service %d (core=%s, pid=%d)", serviceID, coreType, p.pid)
 	return nil
+}
+
+// createGuardian creates a health check guardian for a service.
+func (m *Manager) createGuardian(serviceID int64, coreType string) *healthcheck.Guardian {
+	cfg := healthcheck.DefaultConfig(coreType, serviceID)
+	return healthcheck.New(cfg,
+		func() bool {
+			m.mu.RLock()
+			p, ok := m.processes[serviceID]
+			m.mu.RUnlock()
+			if !ok || p.cmd == nil || p.cmd.Process == nil {
+				return false
+			}
+			return isProcessAlive(p.pid)
+		},
+		func(ctx context.Context) error {
+			// Reap zombie before restart
+			m.reapZombies(serviceID)
+			return m.Start(ctx, serviceID, coreType)
+		},
+	)
 }
 
 // Stop stops a core process.
@@ -359,6 +308,12 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 		return fmt.Errorf("service %d is not running", serviceID)
 	}
 	p.state = "stopping"
+
+	// Stop guardian to prevent auto-restart
+	if g, ok := m.guardians[serviceID]; ok {
+		g.Stop()
+		delete(m.guardians, serviceID)
+	}
 	m.mu.Unlock()
 
 	// Send SIGTERM to process group
@@ -366,7 +321,7 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 		killProcess(p.pid)
 	}
 
-	// Wait for graceful shutdown
+	// Wait for graceful shutdown and reap zombie
 	done := make(chan error, 1)
 	go func() {
 		if p.cmd != nil {
@@ -392,6 +347,27 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 	m.persistState(serviceID, "stopped", 0, true)
 	log.Printf("stopped service %d", serviceID)
 	return nil
+}
+
+// reapZombies cleans up zombie processes for a service.
+func (m *Manager) reapZombies(serviceID int64) {
+	m.mu.RLock()
+	p, ok := m.processes[serviceID]
+	m.mu.RUnlock()
+	if !ok || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	// Try to reap the process (non-blocking)
+	done := make(chan error, 1)
+	go func() {
+		done <- p.cmd.Wait()
+	}()
+	select {
+	case <-done:
+		// Process reaped
+	case <-time.After(100 * time.Millisecond):
+		// Timeout, process might not be a zombie
+	}
 }
 
 // Restart restarts a core process.
@@ -471,10 +447,15 @@ func (m *Manager) GetUptime(serviceID int64) int64 {
 }
 
 // StopAll gracefully stops all running processes (called on CoreFusion shutdown).
-// IMPORTANT: Does NOT kill child processes - they continue as daemon processes.
 func (m *Manager) StopAll(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Stop all health check guardians
+	for id, g := range m.guardians {
+		g.Stop()
+		delete(m.guardians, id)
+	}
 
 	for id, p := range m.processes {
 		if p.state == "running" && p.cmd != nil && p.cmd.Process != nil {

@@ -107,7 +107,7 @@ func (g *ProxyGuardian) monitorLoop() {
 		select {
 		case <-g.stopCh:
 			return
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			if !g.isProcessRunning() {
 				g.handleCrash()
 				return

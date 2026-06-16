@@ -93,11 +93,21 @@ func cleanEmpty(m map[string]interface{}) {
 
 // processMgr is the global process manager for graceful shutdown.
 var processMgr *process.Manager
+// proxyMgr is the global proxy manager for graceful shutdown.
+var proxyMgr *proxySvc.Manager
 
 // Shutdown stops all managed processes. Call this when the panel exits.
 func Shutdown() {
+	ctx := context.Background()
+	// Stop core processes
 	if processMgr != nil {
-		processMgr.StopAll(context.Background())
+		processMgr.StopAll(ctx)
+	}
+	// Stop managed proxies (nginx, caddy) when service stops
+	if proxyMgr != nil {
+		log.Println("stopping managed proxies...")
+		proxyMgr.StopProxy(ctx, proxySvc.ProxyNginx)
+		proxyMgr.StopProxy(ctx, proxySvc.ProxyCaddy)
 	}
 }
 
@@ -166,7 +176,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	proxySiteRepo := repository.NewProxySiteRepository(database)
 	caddySiteRepo := repository.NewCaddySiteRepository(database)
 	nginxSiteRepo := repository.NewNginxSiteRepository(database)
-	proxyMgr := proxySvc.NewManager(dataDir, proxySiteRepo, systemSettingRepo)
+	proxyMgr = proxySvc.NewManager(dataDir, proxySiteRepo, systemSettingRepo)
 	caddyMgr := proxySvc.NewCaddyManager(dataDir, caddySiteRepo, systemSettingRepo)
 	nginxMgr := proxySvc.NewNginxManager(dataDir, nginxSiteRepo, systemSettingRepo)
 

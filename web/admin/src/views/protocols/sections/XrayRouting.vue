@@ -3,31 +3,30 @@
     <!-- Geo files warning -->
     <el-alert v-if="!geoStatus['geoip.dat'] || !geoStatus['geosite.dat']" type="warning" :closable="false" style="margin-bottom:16px">
       <template #title>
-        <span>Missing geo files: </span>
+        <span>{{ t('protoCenter.routing.geoWarning') }}</span>
         <span v-if="!geoStatus['geoip.dat']" style="color:#e6a23c;font-weight:600">geoip.dat </span>
         <span v-if="!geoStatus['geosite.dat']" style="color:#e6a23c;font-weight:600">geosite.dat </span>
-        <span>— Download from </span>
-        <el-link type="primary" href="/settings" target="_blank">Rule Management</el-link>
-        <span> before using geoip:/geosite: rules</span>
+        <span>— {{ t('protoCenter.routing.geoWarningHint') }}</span>
       </template>
     </el-alert>
 
     <!-- Global Settings -->
-    <el-divider content-position="left">Global Settings</el-divider>
+    <el-divider content-position="left">{{ t('protoCenter.routing.globalSettings') }}</el-divider>
     <el-form label-width="140px" label-position="left">
-      <el-form-item label="Domain Strategy">
+      <el-form-item :label="t('protoCenter.routing.domainStrategy')">
         <el-select v-model="form.domainStrategy" style="width:100%" @change="emit">
           <el-option label="AsIs" value="AsIs" />
           <el-option label="IPIfNonMatch" value="IPIfNonMatch" />
           <el-option label="IPOnDemand" value="IPOnDemand" />
         </el-select>
+        <div class="hint">{{ t('protoCenter.routing.domainStrategyHint') }}</div>
       </el-form-item>
     </el-form>
 
     <!-- Routing Rules -->
     <el-divider content-position="left">
-      Routing Rules
-      <el-button size="small" type="primary" @click="showAddRule" style="margin-left:12px">+ Add Rule</el-button>
+      {{ t('protoCenter.routing.rules') }}
+      <el-button size="small" type="primary" @click="showAddRule" style="margin-left:12px">{{ t('protoCenter.routing.addRule') }}</el-button>
     </el-divider>
 
     <div v-for="(r, i) in form.rules" :key="i" class="rule-item">
@@ -46,7 +45,7 @@
           <span v-if="r.webhook" style="font-size:12px;color:#909399">webhook</span>
         </div>
         <div>
-          <el-button size="small" @click="editRule(i)">Edit</el-button>
+          <el-button size="small" @click="editRule(i)">{{ t('common.edit') }}</el-button>
           <el-button size="small" type="danger" text @click="rmRule(i)">X</el-button>
         </div>
       </div>
@@ -54,61 +53,60 @@
 
     <!-- Balancers -->
     <el-divider content-position="left">
-      Balancers
-      <el-button size="small" @click="addBalancer" style="margin-left:12px">+ Add</el-button>
+      {{ t('protoCenter.routing.balancers') }}
+      <el-button size="small" type="primary" @click="showAddBalancer" style="margin-left:12px">{{ t('protoCenter.routing.addBalancer') }}</el-button>
     </el-divider>
     <div v-for="(b, i) in form.balancers" :key="'b'+i" class="rule-item">
-      <div style="display:flex;gap:8px;align-items:center">
-        <el-input v-model="b.tag" placeholder="Tag" style="width:20%" @change="emit" />
-        <el-input v-model="b.selectorStr" placeholder="Selectors (comma-sep)" style="width:35%" @change="emit" />
-        <el-select v-model="b.strategyType" style="width:20%" @change="emit">
-          <el-option label="random" value="random" /><el-option label="leastPing" value="leastPing" /><el-option label="leastLoad" value="leastLoad" />
-        </el-select>
-        <el-button size="small" type="danger" text @click="rmBalancer(i)">X</el-button>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-switch v-model="b.enabled" @change="emit" style="margin-right:4px" />
+          <el-tag size="small">{{ b.tag }}</el-tag>
+          <el-tag size="small" type="info">{{ b.strategyType }}</el-tag>
+          <span v-if="b.selectorArr && b.selectorArr.length" style="font-size:12px;color:#909399">selector: {{ b.selectorArr.join(', ') }}</span>
+          <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">fallback: {{ b.fallbackTag }}</span>
+        </div>
+        <div>
+          <el-button size="small" @click="editBalancer(i)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" text @click="rmBalancer(i)">X</el-button>
+        </div>
       </div>
     </div>
 
     <!-- Rule Dialog -->
-    <el-dialog v-model="dlg" :title="editIdx >= 0 ? 'Edit Rule' : 'Add Rule'" width="700">
+    <el-dialog v-model="dlg" :title="editIdx >= 0 ? t('protoCenter.routing.editRule') : t('protoCenter.routing.addRule')" width="700">
       <el-form label-width="120px" label-position="left">
-        <!-- Rule Name -->
-        <el-form-item label="Rule Name">
+        <el-form-item :label="t('protoCenter.routing.ruleName')">
           <el-input v-model="rf.ruleTag" />
         </el-form-item>
-
-        <!-- Rule Type -->
-        <el-form-item label="Rule Type">
+        <el-form-item :label="t('protoCenter.routing.ruleType')">
           <el-select v-model="rf._type" style="width:100%" @change="onTypeChange">
-            <el-option label="Domain" value="domain" />
-            <el-option label="IP" value="ip" />
-            <el-option label="Port" value="port" />
-            <el-option label="Source Port" value="sourcePort" />
-            <el-option label="Local Port" value="localPort" />
-            <el-option label="Network" value="network" />
-            <el-option label="Protocol" value="protocol" />
-            <el-option label="Source IP" value="sourceIP" />
-            <el-option label="Local IP" value="localIP" />
-            <el-option label="Process" value="process" />
-            <el-option label="User" value="user" />
-            <el-option label="Attrs" value="attrs" />
-            <el-option label="VLESS Route" value="vlessRoute" />
-            <el-option label="Webhook" value="webhook" />
+            <el-option label="domain" value="domain" />
+            <el-option label="ip" value="ip" />
+            <el-option label="port" value="port" />
+            <el-option label="sourcePort" value="sourcePort" />
+            <el-option label="localPort" value="localPort" />
+            <el-option label="network" value="network" />
+            <el-option label="protocol" value="protocol" />
+            <el-option label="sourceIP" value="sourceIP" />
+            <el-option label="localIP" value="localIP" />
+            <el-option label="inboundTag" value="inboundTag" />
+            <el-option label="process" value="process" />
+            <el-option label="user" value="user" />
+            <el-option label="attrs" value="attrs" />
+            <el-option label="vlessRoute" value="vlessRoute" />
+            <el-option label="webhook" value="webhook" />
           </el-select>
         </el-form-item>
 
         <!-- Domain -->
         <template v-if="rf._type === 'domain'">
-          <el-form-item label="Domains">
-            <el-select v-model="rf._domain" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.domain')">
+            <el-select v-model="rf._domain" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option-group label="Geosite">
-                <el-option label="geosite:cn" value="geosite:cn" />
-                <el-option label="geosite:geolocation-cn" value="geosite:geolocation-cn" />
-                <el-option label="geosite:google" value="geosite:google" />
-                <el-option label="geosite:github" value="geosite:github" />
-                <el-option label="geosite:telegram" value="geosite:telegram" />
-                <el-option label="geosite:openai" value="geosite:openai" />
-                <el-option label="geosite:netflix" value="geosite:netflix" />
-                <el-option label="geosite:category-ads-all" value="geosite:category-ads-all" />
+                <el-option label="geosite:cn" value="geosite:cn" /><el-option label="geosite:geolocation-cn" value="geosite:geolocation-cn" />
+                <el-option label="geosite:google" value="geosite:google" /><el-option label="geosite:github" value="geosite:github" />
+                <el-option label="geosite:telegram" value="geosite:telegram" /><el-option label="geosite:openai" value="geosite:openai" />
+                <el-option label="geosite:netflix" value="geosite:netflix" /><el-option label="geosite:category-ads-all" value="geosite:category-ads-all" />
               </el-option-group>
             </el-select>
           </el-form-item>
@@ -116,13 +114,11 @@
 
         <!-- IP -->
         <template v-if="rf._type === 'ip'">
-          <el-form-item label="IP / CIDR">
-            <el-select v-model="rf._ip" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.ip')">
+            <el-select v-model="rf._ip" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option-group label="GeoIP">
-                <el-option label="geoip:cn" value="geoip:cn" />
-                <el-option label="geoip:us" value="geoip:us" />
-                <el-option label="geoip:telegram" value="geoip:telegram" />
-                <el-option label="geoip:private" value="geoip:private" />
+                <el-option label="geoip:cn" value="geoip:cn" /><el-option label="geoip:us" value="geoip:us" />
+                <el-option label="geoip:telegram" value="geoip:telegram" /><el-option label="geoip:private" value="geoip:private" />
                 <el-option label="geoip:!cn" value="geoip:!cn" />
               </el-option-group>
             </el-select>
@@ -131,22 +127,18 @@
 
         <!-- Port -->
         <template v-if="rf._type === 'port'">
-          <el-form-item label="Port Range"><el-input v-model="rf._port" placeholder="53,443,1000-2000" /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.port')"><el-input v-model="rf._port" placeholder="53,443,1000-2000" /></el-form-item>
         </template>
-
-        <!-- Source Port -->
         <template v-if="rf._type === 'sourcePort'">
-          <el-form-item label="Source Port"><el-input v-model="rf._sourcePort" placeholder="53,443,1000-2000" /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.sourcePort')"><el-input v-model="rf._sourcePort" placeholder="53,443,1000-2000" /></el-form-item>
         </template>
-
-        <!-- Local Port -->
         <template v-if="rf._type === 'localPort'">
-          <el-form-item label="Local Port"><el-input v-model="rf._localPort" placeholder="53,443,1000-2000" /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.localPort')"><el-input v-model="rf._localPort" placeholder="53,443,1000-2000" /></el-form-item>
         </template>
 
         <!-- Network -->
         <template v-if="rf._type === 'network'">
-          <el-form-item label="Network">
+          <el-form-item :label="t('protoCenter.routing.network')">
             <el-select v-model="rf._network" style="width:100%">
               <el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" />
             </el-select>
@@ -155,7 +147,7 @@
 
         <!-- Protocol -->
         <template v-if="rf._type === 'protocol'">
-          <el-form-item label="Protocol">
+          <el-form-item :label="t('protoCenter.routing.protocol')">
             <el-select v-model="rf._protocol" multiple style="width:100%">
               <el-option label="http" value="http" /><el-option label="tls" value="tls" />
               <el-option label="quic" value="quic" /><el-option label="bittorrent" value="bittorrent" />
@@ -164,46 +156,52 @@
           </el-form-item>
         </template>
 
-        <!-- Source IP -->
+        <!-- Source IP / Local IP -->
         <template v-if="rf._type === 'sourceIP'">
-          <el-form-item label="Source IP">
-            <el-select v-model="rf._sourceIP" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.sourceIP')">
+            <el-select v-model="rf._sourceIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option label="geoip:cn" value="geoip:cn" /><el-option label="geoip:private" value="geoip:private" />
             </el-select>
           </el-form-item>
         </template>
-
-        <!-- Local IP -->
         <template v-if="rf._type === 'localIP'">
-          <el-form-item label="Local IP">
-            <el-select v-model="rf._localIP" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.localIP')">
+            <el-select v-model="rf._localIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option label="192.168.0.0/16" value="192.168.0.0/16" /><el-option label="10.0.0.0/8" value="10.0.0.0/8" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <!-- Inbound Tag -->
+        <template v-if="rf._type === 'inboundTag'">
+          <el-form-item :label="t('protoCenter.routing.inboundTag')">
+            <el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
+              <el-option v-for="t in inboundTags" :key="t" :label="t" :value="t" />
             </el-select>
           </el-form-item>
         </template>
 
         <!-- Process -->
         <template v-if="rf._type === 'process'">
-          <el-form-item label="Process Name">
-            <el-select v-model="rf._process" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.process')">
+            <el-select v-model="rf._process" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option label="curl" value="curl" /><el-option label="wget" value="wget" />
-              <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
             </el-select>
           </el-form-item>
         </template>
 
         <!-- User -->
         <template v-if="rf._type === 'user'">
-          <el-form-item label="User Email">
-            <el-select v-model="rf._user" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.user')">
+            <el-select v-model="rf._user" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option v-for="t in userTags" :key="t" :label="t" :value="t" />
             </el-select>
           </el-form-item>
         </template>
 
-        <!-- Attrs (multiple key-value) -->
+        <!-- Attrs -->
         <template v-if="rf._type === 'attrs'">
-          <el-form-item label="Attributes">
+          <el-form-item :label="t('protoCenter.routing.attrs')">
             <div v-for="(a, i) in rf._attrs" :key="i" style="display:flex;gap:8px;margin-bottom:6px">
               <el-input v-model="a.key" placeholder=":method" style="width:40%" />
               <el-input v-model="a.value" placeholder="GET" style="width:40%" />
@@ -215,17 +213,13 @@
 
         <!-- VLESS Route -->
         <template v-if="rf._type === 'vlessRoute'">
-          <el-form-item label="VLESS Route"><el-input v-model="rf._vlessRoute" placeholder="53,443,1000-2000" /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.vlessRoute')"><el-input v-model="rf._vlessRoute" placeholder="53,443,1000-2000" /></el-form-item>
         </template>
 
         <!-- Webhook -->
         <template v-if="rf._type === 'webhook'">
-          <el-form-item label="URL">
-            <el-input v-model="rf._webhookUrl" placeholder="https://api.example.com/alert" />
-          </el-form-item>
-          <el-form-item label="Deduplication (s)">
-            <el-input-number v-model="rf._webhookDedup" :min="0" />
-          </el-form-item>
+          <el-form-item label="URL"><el-input v-model="rf._webhookUrl" placeholder="https://api.example.com/alert" /></el-form-item>
+          <el-form-item label="Deduplication (s)"><el-input-number v-model="rf._webhookDedup" :min="0" /></el-form-item>
           <el-form-item label="Headers">
             <div v-for="(h, i) in rf._webhookHeaders" :key="i" style="display:flex;gap:8px;margin-bottom:6px">
               <el-input v-model="h.key" placeholder="Header name" style="width:40%" />
@@ -236,24 +230,16 @@
           </el-form-item>
         </template>
 
-        <el-divider content-position="left">Action</el-divider>
+        <el-divider content-position="left">{{ t('protoCenter.routing.action') }}</el-divider>
 
-        <!-- Outbound (required) -->
-        <el-form-item label="Outbound">
-          <el-select v-model="rf.outboundTag" style="width:100%">
+        <el-form-item :label="t('protoCenter.routing.outbound')">
+          <el-select v-model="rf.outboundTag" style="width:100%" clearable>
+            <el-option label="" value="" />
             <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
           </el-select>
+          <div class="hint">Optional when using Balancer</div>
         </el-form-item>
-
-        <!-- Inbound Tag (optional, multi-select from existing) -->
-        <el-form-item label="Inbound Tag">
-          <el-select v-model="rf._actionInboundTag" multiple filterable allow-create default-first-option placeholder="Optional" style="width:100%" clearable>
-            <el-option v-for="t in inboundTags" :key="t" :label="t" :value="t" />
-          </el-select>
-        </el-form-item>
-
-        <!-- Balancer (optional) -->
-        <el-form-item label="Balancer">
+        <el-form-item :label="t('protoCenter.routing.balancer')">
           <el-select v-model="rf.balancerTag" style="width:100%" clearable>
             <el-option label="None" value="" />
             <el-option v-for="b in form.balancers" :key="b.tag" :label="b.tag" :value="b.tag" />
@@ -261,8 +247,58 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dlg=false">Cancel</el-button>
-        <el-button type="primary" @click="saveRule">Save</el-button>
+        <el-button @click="dlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveRule">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Balancer Dialog -->
+    <el-dialog v-model="balDlg" :title="balIdx >= 0 ? t('protoCenter.routing.editBalancer') : t('protoCenter.routing.addBalancer')" width="500">
+      <el-form label-width="120px" label-position="left">
+        <el-form-item label="Tag"><el-input v-model="bf.tag" placeholder="balancer-tag" /></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.selector')">
+          <el-select v-model="bf.selectorArr" multiple filterable allow-create default-first-option placeholder="Outbound tag prefixes" style="width:100%">
+            <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
+          </el-select>
+          <div class="hint">{{ t('protoCenter.routing.selectorHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('protoCenter.routing.fallbackTag')">
+          <el-select v-model="bf.fallbackTag" style="width:100%" clearable>
+            <el-option label="None" value="" />
+            <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
+          </el-select>
+          <div class="hint">{{ t('protoCenter.routing.fallbackTagHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('protoCenter.routing.strategy')">
+          <el-select v-model="bf.strategyType" style="width:100%">
+            <el-option label="random" value="random" /><el-option label="roundRobin" value="roundRobin" />
+            <el-option label="leastPing" value="leastPing" /><el-option label="leastLoad" value="leastLoad" />
+          </el-select>
+          <div class="hint">{{ t('protoCenter.routing.strategyHint') }}</div>
+        </el-form-item>
+        <template v-if="bf.strategyType === 'leastLoad'">
+          <el-divider content-position="left">{{ t('protoCenter.routing.strategySettings') }}</el-divider>
+          <el-form-item :label="t('protoCenter.routing.expected')">
+            <el-input-number v-model="bf._expected" :min="0" />
+            <div class="hint">{{ t('protoCenter.routing.expectedHint') }}</div>
+          </el-form-item>
+          <el-form-item :label="t('protoCenter.routing.maxRTT')">
+            <el-input v-model="bf._maxRTT" placeholder="1s" />
+            <div class="hint">{{ t('protoCenter.routing.maxRTTHint') }}</div>
+          </el-form-item>
+          <el-form-item :label="t('protoCenter.routing.tolerance')">
+            <el-input-number v-model="bf._tolerance" :min="0" :max="1" :step="0.01" />
+            <div class="hint">{{ t('protoCenter.routing.toleranceHint') }}</div>
+          </el-form-item>
+          <el-form-item :label="t('protoCenter.routing.baselines')">
+            <el-input v-model="bf._baselinesStr" placeholder="1s, 2s" />
+            <div class="hint">{{ t('protoCenter.routing.baselinesHint') }}</div>
+          </el-form-item>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="balDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveBalancer">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -270,7 +306,9 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import client from '../../../api/client'
+const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String })
 const emitFn = defineEmits(['update'])
 
@@ -282,6 +320,9 @@ const geoStatus = ref({ 'geoip.dat': false, 'geosite.dat': false })
 
 const dlg = ref(false)
 const editIdx = ref(-1)
+const balDlg = ref(false)
+const balIdx = ref(-1)
+const bf = reactive({ tag: '', selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '' })
 const rf = reactive({
   ruleTag: '', _type: 'domain',
   _domain: [], _ip: [], _port: '', _sourcePort: '', _localPort: '',
@@ -300,6 +341,8 @@ function onTypeChange() {
   rf._process = []; rf._user = []
   rf._attrs = []; rf._vlessRoute = ''
   rf._webhookUrl = ''; rf._webhookDedup = 0; rf._webhookHeaders = []
+  // Clear outbound when selecting inboundTag (usually used with balancer)
+  if (rf._type === 'inboundTag') rf.outboundTag = ''
 }
 
 function resetForm() {
@@ -319,47 +362,47 @@ function showAddRule() { editIdx.value = -1; resetForm(); dlg.value = true }
 function editRule(i) {
   editIdx.value = i
   const r = form.rules[i]
-  let t = 'domain'
-  if (r.ip && r.ip.length) t = 'ip'
-  else if (r.port) t = 'port'
-  else if (r.sourcePort) t = 'sourcePort'
-  else if (r.localPort) t = 'localPort'
-  else if (r.network) t = 'network'
-  else if (r.protocol && r.protocol.length) t = 'protocol'
-  else if (r.source && r.source.length) t = 'sourceIP'
-  else if (r.localIP && r.localIP.length) t = 'localIP'
-  else if (r.process && r.process.length) t = 'process'
-  else if (r.user && r.user.length) t = 'user'
-  else if (r.attrs) t = 'attrs'
-  else if (r.vlessRoute) t = 'vlessRoute'
-  else if (r.webhook) t = 'webhook'
+  let tp = 'domain'
+  if (r.ip && r.ip.length) tp = 'ip'
+  else if (r.port) tp = 'port'
+  else if (r.sourcePort) tp = 'sourcePort'
+  else if (r.localPort) tp = 'localPort'
+  else if (r.network) tp = 'network'
+  else if (r.protocol && r.protocol.length) tp = 'protocol'
+  else if (r.source && r.source.length) tp = 'sourceIP'
+  else if (r.localIP && r.localIP.length) tp = 'localIP'
+  else if (r.inboundTag && r.inboundTag.length) tp = 'inboundTag'
+  else if (r.process && r.process.length) tp = 'process'
+  else if (r.user && r.user.length) tp = 'user'
+  else if (r.attrs) tp = 'attrs'
+  else if (r.vlessRoute) tp = 'vlessRoute'
+  else if (r.webhook) tp = 'webhook'
 
   const attrs = r.attrs ? Object.entries(r.attrs).map(([k,v]) => ({key:k,value:v})) : []
   const whHeaders = r.webhook && r.webhook.headers ? Object.entries(r.webhook.headers).map(([k,v]) => ({key:k,value:v})) : []
 
   Object.assign(rf, {
-    ruleTag: r.ruleTag || genTag(), _type: t,
+    ruleTag: r.ruleTag || genTag(), _type: tp,
     _domain: r.domain || [], _ip: r.ip || [],
     _port: r.port || '', _sourcePort: r.sourcePort || '', _localPort: r.localPort || '',
     _network: r.network || '', _protocol: r.protocol || [],
     _sourceIP: r.source || [], _localIP: r.localIP || [],
+    _inboundTag: r.inboundTag || [],
     _process: r.process || [], _user: r.user || [],
     _attrs: attrs, _vlessRoute: r.vlessRoute || '',
     _webhookUrl: r.webhook ? r.webhook.url || '' : '',
     _webhookDedup: r.webhook ? r.webhook.deduplication || 0 : 0,
     _webhookHeaders: whHeaders,
-    outboundTag: r.outboundTag || 'direct',
-    _actionInboundTag: r.inboundTag || [],
+    outboundTag: r.outboundTag || '',
     balancerTag: r.balancerTag || '',
   })
   dlg.value = true
 }
 
 function saveRule() {
-  const rule = { type: 'field', enabled: true, ruleTag: rf.ruleTag, outboundTag: rf.outboundTag }
+  const rule = { type: 'field', enabled: true, ruleTag: rf.ruleTag }
+  if (rf.outboundTag) rule.outboundTag = rf.outboundTag
   if (rf.balancerTag) rule.balancerTag = rf.balancerTag
-  if (rf._actionInboundTag && rf._actionInboundTag.length) rule.inboundTag = [...rf._actionInboundTag]
-
   if (rf._type === 'domain' && rf._domain.length) rule.domain = [...rf._domain]
   if (rf._type === 'ip' && rf._ip.length) rule.ip = [...rf._ip]
   if (rf._type === 'port' && rf._port) rule.port = rf._port
@@ -369,82 +412,73 @@ function saveRule() {
   if (rf._type === 'protocol' && rf._protocol.length) rule.protocol = [...rf._protocol]
   if (rf._type === 'sourceIP' && rf._sourceIP.length) rule.source = [...rf._sourceIP]
   if (rf._type === 'localIP' && rf._localIP.length) rule.localIP = [...rf._localIP]
+  if (rf._type === 'inboundTag' && rf._inboundTag.length) rule.inboundTag = [...rf._inboundTag]
   if (rf._type === 'process' && rf._process.length) rule.process = [...rf._process]
   if (rf._type === 'user' && rf._user.length) rule.user = [...rf._user]
   if (rf._type === 'attrs' && rf._attrs.length) {
-    const attrs = {}
-    rf._attrs.forEach(a => { if (a.key) attrs[a.key] = a.value })
+    const attrs = {}; rf._attrs.forEach(a => { if (a.key) attrs[a.key] = a.value })
     if (Object.keys(attrs).length) rule.attrs = attrs
   }
   if (rf._type === 'vlessRoute' && rf._vlessRoute) rule.vlessRoute = rf._vlessRoute
   if (rf._type === 'webhook' && rf._webhookUrl) {
-    const wh = { url: rf._webhookUrl }
-    if (rf._webhookDedup) wh.deduplication = rf._webhookDedup
-    if (rf._webhookHeaders.length) {
-      const headers = {}
-      rf._webhookHeaders.forEach(h => { if (h.key) headers[h.key] = h.value })
-      if (Object.keys(headers).length) wh.headers = headers
-    }
+    const wh = { url: rf._webhookUrl }; if (rf._webhookDedup) wh.deduplication = rf._webhookDedup
+    if (rf._webhookHeaders.length) { const h = {}; rf._webhookHeaders.forEach(x => { if (x.key) h[x.key] = x.value }); if (Object.keys(h).length) wh.headers = h }
     rule.webhook = wh
   }
-
   if (editIdx.value >= 0) form.rules[editIdx.value] = rule
   else form.rules.push(rule)
   dlg.value = false
   emit()
 }
 
-async function loadTags() {
-  try {
-    const obs = await client.get(`/protocols/${props.coreType}/section/outbounds`)
-    if (Array.isArray(obs)) outboundTags.value = [...new Set(['direct', 'blocked', ...obs.map(o => o.tag).filter(Boolean)])]
-  } catch {}
-  try {
-    const ibs = await client.get(`/protocols/${props.coreType}/section/inbounds`)
-    if (Array.isArray(ibs)) inboundTags.value = ibs.map(i => i.tag).filter(Boolean)
-  } catch {}
+function showAddBalancer() {
+  balIdx.value = -1
+  Object.assign(bf, { tag: 'balancer-' + Math.random().toString(36).substring(2, 6), selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '' })
+  balDlg.value = true
 }
+function editBalancer(i) {
+  balIdx.value = i; const b = form.balancers[i]; const s = b.settings || {}
+  Object.assign(bf, { tag: b.tag, selectorArr: [...(b.selectorArr || [])], fallbackTag: b.fallbackTag || '', strategyType: b.strategyType, _expected: s.expected || 0, _maxRTT: s.maxRTT || '', _tolerance: s.tolerance || 0, _baselinesStr: (s.baselines || []).join(', ') })
+  balDlg.value = true
+}
+function saveBalancer() {
+  const bal = { tag: bf.tag, selectorArr: [...bf.selectorArr], fallbackTag: bf.fallbackTag, strategyType: bf.strategyType, settings: null }
+  if (bf.strategyType === 'leastLoad') {
+    const s = {}; if (bf._expected) s.expected = bf._expected; if (bf._maxRTT) s.maxRTT = bf._maxRTT
+    if (bf._tolerance) s.tolerance = bf._tolerance; if (bf._baselinesStr) s.baselines = bf._baselinesStr.split(',').map(x => x.trim()).filter(Boolean)
+    if (Object.keys(s).length) bal.settings = s
+  }
+  if (balIdx.value >= 0) form.balancers[balIdx.value] = bal; else form.balancers.push(bal)
+  balDlg.value = false; emit()
+}
+function rmBalancer(i) { form.balancers.splice(i, 1); emit() }
+
+async function loadTags() {
+  try { const obs = await client.get(`/protocols/${props.coreType}/section/outbounds`); if (Array.isArray(obs)) outboundTags.value = [...new Set(['direct', 'blocked', ...obs.map(o => o.tag).filter(Boolean)])] } catch {}
+  try { const ibs = await client.get(`/protocols/${props.coreType}/section/inbounds`); if (Array.isArray(ibs)) inboundTags.value = ibs.map(i => i.tag).filter(Boolean) } catch {}
+}
+async function loadGeoStatus() { try { const d = await client.get('/geo-rules/status'); if (d) geoStatus.value = d } catch {} }
 
 function sync() {
   if (!props.data) return
   form.domainStrategy = props.data.domainStrategy || 'IPIfNonMatch'
   form.rules = (props.data.rules || []).map(r => ({ ...r, enabled: r.enabled !== false }))
-  form.balancers = (props.data.balancers || []).map(b => ({
-    tag: b.tag || '', selectorStr: (b.selector || []).join(', '), strategyType: b.strategy?.type || 'random',
-  }))
+  form.balancers = (props.data.balancers || []).map(b => ({ tag: b.tag || '', selectorArr: b.selector || [], fallbackTag: b.fallbackTag || '', strategyType: b.strategy?.type || 'random', settings: b.strategy?.settings || null, enabled: b.enabled !== false }))
 }
-
 function build() {
   return {
     domainStrategy: form.domainStrategy,
-    rules: form.rules.filter(r => r.enabled !== false).map(r => {
-      const rule = { ...r }
-      delete rule.enabled
-      return rule
-    }),
-    balancers: form.balancers.filter(b => b.tag).map(b => ({
-      tag: b.tag,
-      selector: b.selectorStr ? b.selectorStr.split(',').map(s => s.trim()).filter(Boolean) : [],
-      strategy: { type: b.strategyType },
-    })),
+    rules: form.rules.filter(r => r.enabled !== false).map(r => { const rule = { ...r }; delete rule.enabled; return rule }),
+    balancers: form.balancers.filter(b => b.enabled !== false && b.tag).map(b => { const bal = { tag: b.tag, selector: b.selectorArr || [], strategy: { type: b.strategyType } }; if (b.fallbackTag) bal.fallbackTag = b.fallbackTag; if (b.settings) bal.strategy.settings = b.settings; return bal }),
   }
 }
-
 function emit() { emitFn('update', build()) }
 function rmRule(i) { form.rules.splice(i, 1); emit() }
-function addBalancer() { form.balancers.push({ tag: '', selectorStr: '', strategyType: 'random' }); emit() }
-function rmBalancer(i) { form.balancers.splice(i, 1); emit() }
-
-async function loadGeoStatus() {
-  try {
-    const data = await client.get('/geo-rules/status')
-    if (data) geoStatus.value = data
-  } catch {}
-}
 
 onMounted(function() { sync(); loadTags(); loadGeoStatus() })
 </script>
 
 <style scoped>
 .rule-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+.hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
 </style>

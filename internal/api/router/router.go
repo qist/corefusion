@@ -268,7 +268,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				if d, e := m["_disabled"]; e && d == true { delete(fullConfig, k) }
 			}
 		}
-		delete(fullConfig, "transport")
+
+		// Ensure stats is present (empty object enables stats engine)
+		if _, exists := fullConfig["stats"]; !exists {
+			fullConfig["stats"] = map[string]interface{}{}
+		}
 
 		// Handle API config: if listen is empty, add inbound + routing
 		if apiRaw, ok := fullConfig["api"]; ok {

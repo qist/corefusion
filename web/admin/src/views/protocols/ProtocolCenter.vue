@@ -127,10 +127,8 @@ import XrayRouting from './sections/XrayRouting.vue'
 import XrayInbounds from './sections/XrayInbounds.vue'
 import XrayOutbounds from './sections/XrayOutbounds.vue'
 import XrayPolicy from './sections/XrayPolicy.vue'
-import XrayTransport from './sections/XrayTransport.vue'
 import XrayStats from './sections/XrayStats.vue'
 import XrayMetrics from './sections/XrayMetrics.vue'
-import XrayReverse from './sections/XrayReverse.vue'
 import XrayFakeDns from './sections/XrayFakeDns.vue'
 import XrayObservatory from './sections/XrayObservatory.vue'
 import XrayApi from './sections/XrayApi.vue'
@@ -166,8 +164,8 @@ const cores = [
 const SECTIONS = {
   xray: [
     {key:'log',label:'日志'},{key:'api',label:'API'},{key:'dns',label:'DNS'},{key:'routing',label:'路由'},{key:'policy',label:'策略'},
-    {key:'inbounds',label:'入站'},{key:'outbounds',label:'出站'},{key:'transport',label:'传输'},
-    {key:'stats',label:'统计'},{key:'metrics',label:'指标'},{key:'reverse',label:'反向代理'},
+    {key:'inbounds',label:'入站'},{key:'outbounds',label:'出站'},
+    {key:'stats',label:'统计'},{key:'metrics',label:'指标'},
     {key:'fakedns',label:'FakeDNS'},{key:'observatory',label:'健康检测'},{key:'burstObservatory',label:'突发检测'},
     {key:'version',label:'版本限制'},{key:'geodata',label:'Geo数据'},{key:'_preview',label:'配置预览'},
   ],
@@ -188,7 +186,7 @@ const SECTIONS = {
 }
 
 const COMPS = {
-  xray: {log:XrayLog,api:XrayApi,dns:XrayDns,routing:XrayRouting,policy:XrayPolicy,inbounds:XrayInbounds,outbounds:XrayOutbounds,transport:XrayTransport,stats:XrayStats,metrics:XrayMetrics,reverse:XrayReverse,fakedns:XrayFakeDns,observatory:XrayObservatory,burstObservatory:XrayBurstObs,version:XrayVersion,geodata:XrayGeodata,_preview:JsonPreview},
+  xray: {log:XrayLog,api:XrayApi,dns:XrayDns,routing:XrayRouting,policy:XrayPolicy,inbounds:XrayInbounds,outbounds:XrayOutbounds,stats:XrayStats,metrics:XrayMetrics,fakedns:XrayFakeDns,observatory:XrayObservatory,burstObservatory:XrayBurstObs,version:XrayVersion,geodata:XrayGeodata,_preview:JsonPreview},
   singbox: {log:SingboxLog,dns:SingboxDns,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,experimental:SingboxExperimental,_preview:JsonPreview},
   hysteria2: {listen:Hy2Listen,tls:Hy2Tls,auth:Hy2Auth,bandwidth:Hy2Bandwidth,quic:Hy2Quic,trafficStats:Hy2TrafficStats,_preview:JsonPreview},
   tuic: {server:TuicServer,users:TuicUsers,certificate:TuicTls,congestion_control:TuicCongestion,_preview:JsonPreview},

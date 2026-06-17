@@ -15,7 +15,7 @@ var SupportedCoreTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
 
 // CoreSections defines the ordered sections for each core type.
 var CoreSections = map[string][]string{
-	"xray":       {"log", "dns", "routing", "policy", "inbounds", "outbounds", "transport", "stats", "metrics", "api", "reverse", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
+	"xray":       {"log", "dns", "routing", "policy", "inbounds", "outbounds", "stats", "metrics", "api", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
 	"singbox":    {"log", "dns", "route", "inbounds", "outbounds", "experimental"},
 	"hysteria2":  {"listen", "tls", "auth", "bandwidth", "quic", "trafficStats"},
 	"tuic":       {"server", "users", "certificate", "congestion_control"},
@@ -42,14 +42,8 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"policy": `{
   "levels": {
     "0": {
-      "handshake": 4,
-      "connIdle": 300,
-      "uplinkOnly": 2,
-      "downlinkOnly": 5,
       "statsUserUplink": true,
-      "statsUserDownlink": true,
-      "statsOnline": true,
-      "bufferSize": 10240
+      "statsUserDownlink": true
     }
   },
   "system": {
@@ -64,66 +58,17 @@ var DefaultSectionJSON = map[string]map[string]string{
   {"protocol": "freedom", "tag": "direct"},
   {"protocol": "blackhole", "tag": "blocked"}
 ]`,
-		"transport": `{
-  "network": "tcp",
-  "security": "none",
-  "tlsSettings": {},
-  "tcpSettings": {},
-  "kcpSettings": {},
-  "wsSettings": {},
-  "httpSettings": {},
-  "quicSettings": {},
-  "grpcSettings": {},
-  "httpupgradeSettings": {},
-  "splithttpSettings": {},
-  "sockopt": {}
-}`,
 		"stats": `{}`,
-		"metrics": `{
-  "tag": "metrics_out",
-  "listen": "127.0.0.1:11111"
-}`,
-		"reverse": `{
-  "bridges": [],
-  "portals": []
-}`,
-		"fakedns": `{
-  "ipPool": "198.18.0.0/15",
-  "poolSize": 65535
-}`,
-		"observatory": `{
-  "subjectSelector": [],
-  "probeURL": "http://www.google.com/generate_204",
-  "probeInterval": "120s",
-  "enableConcurrency": false
-}`,
-		"burstObservatory": `{
-  "subjectSelector": [],
-  "pingConfig": {
-    "destination": "http://www.google.com/generate_204",
-    "connectivity": "",
-    "interval": "120s",
-    "sampling": 5,
-    "timeout": "16s",
-    "httpMethod": "HEAD"
-  }
-}`,
+		"metrics": `{}`,
+		"fakedns": `{}`,
+		"observatory":  `{}`,
+		"burstObservatory": `{}`,
 		"api": `{
   "tag": "api",
   "services": ["HandlerService", "LoggerService", "StatsService"]
 }`,
-		"version": `{
-  "min": "",
-  "max": ""
-}`,
-		"geodata": `{
-  "cron": "0 4 * * *",
-  "outbound": "direct",
-  "assets": [
-    {"url": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat", "file": "geoip.dat"},
-    {"url": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat", "file": "geosite.dat"}
-  ]
-}`,
+		"version":    `{}`,
+		"geodata":   `{}`,
 	},
 	"singbox": {
 		"log":         `{"level":"info","timestamp":true}`,

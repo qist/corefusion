@@ -23,7 +23,14 @@ type Resolver struct {
 
 // NewResolver creates a new binary resolver.
 func NewResolver(dataDir string) *Resolver {
-	return &Resolver{dataDir: dataDir}
+	// Convert to absolute path so it works from any directory
+	absDir := dataDir
+	if !filepath.IsAbs(dataDir) {
+		if abs, err := filepath.Abs(dataDir); err == nil {
+			absDir = abs
+		}
+	}
+	return &Resolver{dataDir: absDir}
 }
 
 // Resolve returns the binary path and version for a given core type.

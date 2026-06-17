@@ -128,6 +128,13 @@ func runServer(args []string) {
 		dataDir = "data"
 	}
 
+	// Convert to absolute path (relative to current working directory, same as proxy)
+	if !filepath.IsAbs(dataDir) {
+		if abs, err := filepath.Abs(dataDir); err == nil {
+			dataDir = abs
+		}
+	}
+
 	// Ensure data directory structure
 	initDataDir(dataDir)
 

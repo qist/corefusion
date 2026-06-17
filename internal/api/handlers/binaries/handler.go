@@ -55,7 +55,14 @@ type Handler struct {
 
 // NewHandler creates a new binary handler.
 func NewHandler(resolver *binariesSvc.Resolver, dataDir string, settingSvc SettingStore) *Handler {
-	return &Handler{resolver: resolver, dataDir: dataDir, settingSvc: settingSvc}
+	// Convert to absolute path so it works from any directory
+	absDir := dataDir
+	if !filepath.IsAbs(dataDir) {
+		if abs, err := filepath.Abs(dataDir); err == nil {
+			absDir = abs
+		}
+	}
+	return &Handler{resolver: resolver, dataDir: absDir, settingSvc: settingSvc}
 }
 
 // SetProcessManager sets the process manager for stop/start during updates.

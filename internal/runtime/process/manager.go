@@ -76,10 +76,17 @@ type ProcessInfo struct {
 
 // NewManager creates a new process manager.
 func NewManager(dataDir string, svcRepo *repository.ServiceRepository, guardRepo *repository.ProcessGuardianRepository, crashRepo *repository.CrashLogRepository, resolver BinaryResolver) *Manager {
+	// Convert to absolute path so it works from any directory
+	absDir := dataDir
+	if !filepath.IsAbs(dataDir) {
+		if abs, err := filepath.Abs(dataDir); err == nil {
+			absDir = abs
+		}
+	}
 	return &Manager{
 		processes: make(map[int64]*managedProcess),
 		guardians: make(map[int64]*healthcheck.Guardian),
-		dataDir:   dataDir,
+		dataDir:   absDir,
 		svcRepo:   svcRepo,
 		guardRepo: guardRepo,
 		crashRepo: crashRepo,
@@ -239,7 +246,12 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		return fmt.Errorf("open log file: %w", err)
 	}
 
-	cmd := exec.CommandContext(context.Background(), binaryPath, "-c", configPath)
+	// Use relative paths from dataDir (same as proxy)
+	relBinPath, _ := filepath.Rel(m.dataDir, binaryPath)
+	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
+
+	cmd := exec.CommandContext(context.Background(), relBinPath, "-c", relConfigPath)
+	cmd.Dir = m.dataDir
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	setProcessGroup(cmd)

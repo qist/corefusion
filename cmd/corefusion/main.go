@@ -128,7 +128,7 @@ func runServer(args []string) {
 		dataDir = "data"
 	}
 
-	// Convert to absolute path (relative to current working directory, same as proxy)
+	// Convert to absolute path (relative to cwd, same as proxy)
 	if !filepath.IsAbs(dataDir) {
 		if abs, err := filepath.Abs(dataDir); err == nil {
 			dataDir = abs
@@ -307,6 +307,11 @@ func runMigrate(args []string) {
 	dataDir := env["SAFE_PATHS"]
 	if dataDir == "" {
 		dataDir = "data"
+	}
+	if !filepath.IsAbs(dataDir) {
+		if abs, err := filepath.Abs(dataDir); err == nil {
+			dataDir = abs
+		}
 	}
 
 	dbCfg := db.DefaultConfig()

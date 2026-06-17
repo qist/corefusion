@@ -32,7 +32,7 @@ var DefaultSectionJSON = map[string]map[string]string{
   "timestamp": true,
   "maskAddress": ""
 }`,
-		"dns": `{}`,
+		"dns":         `{}`,
 		"routing": `{
   "domainStrategy": "IPIfNonMatch",
   "domainMatcher": "",

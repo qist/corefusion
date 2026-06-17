@@ -355,8 +355,12 @@
     </el-dialog>
 
     <!-- Version Dialog -->
-    <el-dialog v-model="releasesVisible" :title="t('proxy.selectVersion')" width="600">
-      <div v-loading="releasesLoading" style="min-height:100px">
+    <el-dialog v-model="releasesVisible" :title="t('proxy.selectVersion')" width="600" :close-on-click-modal="!downloading">
+      <div v-if="downloading" style="text-align:center;padding:40px 20px">
+        <el-icon class="is-loading" :size="32" color="#409eff"><Loading /></el-icon>
+        <div style="margin-top:16px;font-size:14px;color:#606266">{{ downloadProgress }}</div>
+      </div>
+      <div v-else v-loading="releasesLoading" style="min-height:100px">
         <div v-if="releases.length === 0 && !releasesLoading" style="text-align:center;color:#999;padding:20px">{{ t('common.noData') }}</div>
         <div v-for="r in releases" :key="r.tag_name" style="margin-bottom:16px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -377,6 +381,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
 
@@ -406,6 +411,8 @@ const releasesVisible = ref(false)
 const releasesLoading = ref(false)
 const releases = ref([])
 const downloadingAsset = ref('')
+const downloading = ref(false)
+const downloadProgress = ref('')
 
 // Site dialog
 const siteDialogVisible = ref(false)
@@ -568,13 +575,20 @@ async function showReleases() {
 }
 
 async function downloadVersion(url, tagName) {
-  downloadingAsset.value = url.split('/').pop()
+  downloading.value = true
+  downloadProgress.value = '正在下载 ' + tagName + '...'
   try {
     await client.post('/proxy/download', { type: 'caddy', download_url: url, tag_name: tagName })
+    try { await client.post('/proxy/start?type=caddy') } catch {}
     ElMessage.success(t('proxy.downloadSuccess'))
     releasesVisible.value = false
     fetchProxyInfo()
-  } catch (e) {} finally { downloadingAsset.value = '' }
+  } catch (e) {
+    ElMessage.error(t('error.networkError'))
+  } finally {
+    downloading.value = false
+    downloadingAsset.value = ''
+  }
 }
 
 async function proxyAction(action) {

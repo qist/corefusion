@@ -39,16 +39,28 @@ type GitHubRelease struct {
 	} `json:"assets"`
 }
 
+// ProcessManager provides process start/stop capabilities.
+type ProcessManager interface {
+	Stop(ctx context.Context, serviceID int64) error
+	Start(ctx context.Context, serviceID int64, coreType string) error
+}
+
 // Handler handles binary management HTTP requests.
 type Handler struct {
 	resolver   *binariesSvc.Resolver
 	dataDir    string
 	settingSvc SettingStore
+	processMgr ProcessManager
 }
 
 // NewHandler creates a new binary handler.
 func NewHandler(resolver *binariesSvc.Resolver, dataDir string, settingSvc SettingStore) *Handler {
 	return &Handler{resolver: resolver, dataDir: dataDir, settingSvc: settingSvc}
+}
+
+// SetProcessManager sets the process manager for stop/start during updates.
+func (h *Handler) SetProcessManager(pm ProcessManager) {
+	h.processMgr = pm
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -165,10 +177,8 @@ func (h *Handler) Download(c *gin.Context) {
 
 	var downloadURL string
 	if req.Asset != "" {
-		// Download specific asset
 		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, req.Version, req.Asset)
 	} else {
-		// Auto-detect based on current OS/arch
 		downloadURL = h.buildDownloadURL(req.CoreType, repoURL, req.Version)
 	}
 	if downloadURL == "" {
@@ -176,13 +186,48 @@ func (h *Handler) Download(c *gin.Context) {
 		return
 	}
 
-	// Download and extract
-	destDir := filepath.Join(h.dataDir, "binaries", "active", req.CoreType)
-	os.MkdirAll(destDir, 0750)
-
-	if err := h.downloadAndExtract(downloadURL, destDir, req.CoreType); err != nil {
+	// Download to temp directory first
+	tmpDir := filepath.Join(h.dataDir, "binaries", "tmp")
+	os.MkdirAll(tmpDir, 0750)
+	if err := h.downloadAndExtract(downloadURL, tmpDir, req.CoreType); err != nil {
 		response.InternalError(c, "DOWNLOAD_FAILED", err.Error())
 		return
+	}
+
+	// Find the downloaded binary in temp
+	srcName := req.CoreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		srcName += ".exe"
+	}
+	srcPath := filepath.Join(tmpDir, srcName)
+	if _, err := os.Stat(srcPath); err != nil {
+		response.InternalError(c, "DOWNLOAD_FAILED", "downloaded binary not found")
+		return
+	}
+
+	// Stop process before replacing
+	serviceID := h.getServiceID(req.CoreType)
+	if h.processMgr != nil && serviceID > 0 {
+		h.processMgr.Stop(c.Request.Context(), serviceID)
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Move from temp to final location
+	destDir := filepath.Join(h.dataDir, "binaries", "active", req.CoreType)
+	os.MkdirAll(destDir, 0750)
+	destPath := filepath.Join(destDir, srcName)
+	os.Remove(destPath)
+	if err := os.Rename(srcPath, destPath); err != nil {
+		// Try copy if rename fails (cross-device)
+		data, _ := os.ReadFile(srcPath)
+		os.WriteFile(destPath, data, 0755)
+		os.Remove(srcPath)
+	}
+	os.Chmod(destPath, 0755)
+
+	// Start process with new binary
+	if h.processMgr != nil && serviceID > 0 {
+		h.processMgr.Start(c.Request.Context(), serviceID, req.CoreType)
 	}
 
 	response.OK(c, gin.H{
@@ -206,6 +251,12 @@ func (h *Handler) Update(c *gin.Context) {
 // Rollback handles POST /api/v1/binaries/rollback.
 func (h *Handler) Rollback(c *gin.Context) {
 	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED", "message": "binary rollback not yet implemented"})
+}
+
+// getServiceID returns the service ID for a core type.
+func (h *Handler) getServiceID(coreType string) int64 {
+	ids := map[string]int64{"xray": 1, "singbox": 2, "hysteria2": 3, "tuic": 4}
+	return ids[coreType]
 }
 
 // githubRepo maps core type to GitHub repo path.

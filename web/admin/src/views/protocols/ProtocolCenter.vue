@@ -20,12 +20,16 @@
           <div style="display:flex;gap:6px;align-items:center">
             <span style="color:#909399">版本</span>
             <span v-if="!svc.binary_installed" style="color:#f56c6c;cursor:pointer" @click="showVersions">未安装</span>
-            <el-link v-else type="primary" @click="showVersions">{{ svc.version || '...' }}</el-link>
+            <el-tooltip v-else :content="svc.version" placement="bottom">
+              <el-link type="primary" @click="showVersions" style="max-width:none;white-space:normal">{{ svc.version || '...' }}</el-link>
+            </el-tooltip>
           </div>
           <div style="display:flex;gap:6px;align-items:center" v-if="svc.state==='running'">
             <span style="color:#909399">PID</span><span>{{ svc.pid }}</span>
             <span style="color:#909399;margin-left:8px">CPU</span><span>{{ svc.cpu?.toFixed(1) }}%</span>
             <span style="color:#909399;margin-left:8px">内存</span><span>{{ fmtSize(svc.mem) }}</span>
+            <span style="color:#909399;margin-left:8px">运行时间</span><span>{{ fmtUptime(svc.uptime) }}</span>
+            <span style="color:#909399;margin-left:8px">启动时间</span><span>{{ fmtTime(svc.started_at) }}</span>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px">
             <template v-if="!svc.binary_installed">
@@ -78,8 +82,12 @@
       </el-card>
 
       <!-- Version Dialog -->
-      <el-dialog v-model="verVisible" title="选择版本" width="600">
-        <div v-loading="verLoading" style="min-height:80px">
+      <el-dialog v-model="verVisible" title="选择版本" width="600" :close-on-click-modal="!downloading">
+        <div v-if="downloading" style="text-align:center;padding:40px 20px">
+          <el-icon class="is-loading" :size="32" color="#409eff"><Loading /></el-icon>
+          <div style="margin-top:16px;font-size:14px;color:#606266">{{ downloadProgress }}</div>
+        </div>
+        <div v-else v-loading="verLoading" style="min-height:80px">
           <div v-if="!releases.length && !verLoading" style="text-align:center;color:#999;padding:16px">暂无版本</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <div v-for="r in releases" :key="r.version" class="ver-card" @click="doDownload(r)">
@@ -110,6 +118,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 import client from '../../api/client'
 
 import XrayLog from './sections/XrayLog.vue'
@@ -197,6 +206,8 @@ const acting = ref(false)
 const verVisible = ref(false)
 const verLoading = ref(false)
 const releases = ref([])
+const downloading = ref(false)
+const downloadProgress = ref('')
 let timer = null
 
 const sections = ref([])
@@ -206,6 +217,8 @@ function getCoreLabel(t){return cores.find(c=>c.type===t)?.label||t}
 function getLabel(k){return sections.value.find(s=>s.key===k)?.label||k}
 function getComp(k){return COMPS[selectedCore.value]?.[k]||null}
 function fmtSize(b){if(!b)return'-';return b<1024?b+'B':b<1048576?(b/1024).toFixed(0)+'KB':(b/1048576).toFixed(1)+'MB'}
+function fmtTime(ts){if(!ts||ts==='0001-01-01T00:00:00Z')return'-';return new Date(ts).toLocaleString()}
+function fmtUptime(s){if(!s)return'-';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);let r='';if(d>0)r+=d+'天 ';if(h>0)r+=h+'小时 ';r+=m+'分钟';return r.trim()}
 
 async function selectCore(t){
   selectedCore.value=t
@@ -265,7 +278,46 @@ async function doRestart(){if(!svc.service_id)return;acting.value=true;try{await
 
 async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get('/binaries/releases',{params:{core_type:selectedCore.value,limit:20,offset:0}});releases.value=(d.items||[]).map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
 function isOdd(v){const p=(v||'').replace(/^v/,'').split('.');const n=parseInt(p[p.length-1]);return!isNaN(n)&&n%2!==0}
-async function doDownload(r){await ElMessageBox.confirm(`下载 ${r.version}？`,'确认');verVisible.value=false;try{await client.post('/binaries/download',{core_type:selectedCore.value,version:r.version});ElMessage.success('下载完成');fetchStatus()}catch{ElMessage.error('下载失败')}}
+async function doDownload(r){
+  await ElMessageBox.confirm(`下载 ${r.version}？`,'确认')
+  downloading.value=true
+  downloadProgress.value='正在下载 '+r.version+'...'
+  try{
+    await client.post('/binaries/download',{core_type:selectedCore.value,version:r.version})
+    downloadProgress.value='下载完成，正在启动服务...'
+    // Start service
+    try{await client.post(`/services/${svc.service_id}/start`)}catch{}
+    // Check immediately
+    await new Promise(resolve=>setTimeout(resolve,500))
+    try{
+      const data=await client.get('/services/process-status')
+      const s=(data||[]).find(x=>x.core_type===selectedCore.value)
+      if(s&&s.state==='running'){
+        ElMessage.success('更新完成')
+        verVisible.value=false
+        fetchStatus()
+        return
+      }
+    }catch{}
+    // Wait a bit more if not running yet
+    for(let i=0;i<5;i++){
+      await new Promise(resolve=>setTimeout(resolve,1000))
+      try{
+        const data=await client.get('/services/process-status')
+        const s=(data||[]).find(x=>x.core_type===selectedCore.value)
+        if(s&&s.state==='running'){
+          ElMessage.success('更新完成')
+          verVisible.value=false
+          fetchStatus()
+          return
+        }
+      }catch{}
+    }
+    ElMessage.success('下载完成')
+    verVisible.value=false
+    fetchStatus()
+  }catch{ElMessage.error('下载失败')}finally{downloading.value=false}
+}
 
 onMounted(()=>{const s=localStorage.getItem('active_core');if(s&&cores.some(c=>c.type===s))selectCore(s);timer=setInterval(fetchStatus,10000)})
 onUnmounted(()=>{if(timer)clearInterval(timer)})

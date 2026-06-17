@@ -247,6 +247,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyH := systemHandler.NewCaddyHandler(caddyMgr, proxyMgr)
 	nginxH := systemHandler.NewNginxHandler(nginxMgr, proxyMgr)
 	binariesH := binariesHandler.NewHandler(binaryResolver, dataDir, systemSettingSvc)
+	binariesH.SetProcessManager(processMgr)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)

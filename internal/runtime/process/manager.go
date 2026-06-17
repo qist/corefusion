@@ -249,6 +249,9 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		return fmt.Errorf("start process: %w", err)
 	}
 
+	// Reap zombie when process exits
+	go cmd.Wait()
+
 	p := &managedProcess{
 		ServiceID:  serviceID,
 		CoreType:   coreType,

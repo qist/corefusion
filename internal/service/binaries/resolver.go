@@ -75,16 +75,13 @@ func (r *Resolver) detectVersion(binaryPath string) string {
 		cmd := exec.Command(binaryPath, flag)
 		out, err := cmd.Output()
 		if err == nil && len(out) > 0 {
-			// Return first line, truncated
+			// Return first line only
 			version := string(out)
 			for i, c := range version {
 				if c == '\n' || c == '\r' {
 					version = version[:i]
 					break
 				}
-			}
-			if len(version) > 64 {
-				version = version[:64]
 			}
 			return version
 		}

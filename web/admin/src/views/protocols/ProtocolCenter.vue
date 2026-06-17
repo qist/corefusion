@@ -250,14 +250,19 @@ async function saveSection(){
   saving.value=true
   try{
     if(secData.value===null){
-      // Section disabled - remove from config
       delete fullConfig.value[activeSection.value]
       await client.put(`/protocols/${selectedCore.value}`,fullConfig.value)
     } else {
       await client.put(`/protocols/${selectedCore.value}/section/${activeSection.value}`,secData.value)
       fullConfig.value[activeSection.value]=secData.value
     }
-    ElMessage.success('保存成功')
+    // Auto-restart if service is running
+    if(svc.state==='running' && svc.service_id){
+      try{await client.post(`/services/${svc.service_id}/restart`)}catch{}
+      ElMessage.success('保存成功，服务已重启')
+    } else {
+      ElMessage.success('保存成功')
+    }
   }catch{ElMessage.error('保存失败')}finally{saving.value=false}
 }
 

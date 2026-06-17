@@ -1,6 +1,7 @@
 package coreconfig
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 
@@ -10,14 +11,25 @@ import (
 	"corefusion/internal/service/coreconfig"
 )
 
+// ProcessManager provides process restart capabilities.
+type ProcessManager interface {
+	Restart(ctx context.Context, serviceID int64, coreType string) error
+}
+
 // Handler handles core config HTTP requests.
 type Handler struct {
-	svc *coreconfig.Service
+	svc        *coreconfig.Service
+	processMgr ProcessManager
 }
 
 // NewHandler creates a new core config handler.
 func NewHandler(svc *coreconfig.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetProcessManager sets the process manager for auto-restart.
+func (h *Handler) SetProcessManager(pm ProcessManager) {
+	h.processMgr = pm
 }
 
 // List handles GET /api/v1/protocols.
@@ -121,7 +133,20 @@ func (h *Handler) SaveSection(c *gin.Context) {
 		response.InternalError(c, "SAVE_SECTION_FAILED", err.Error())
 		return
 	}
+
+	// Auto-restart service if running
+	serviceID := h.getServiceID(coreType)
+	if h.processMgr != nil && serviceID > 0 {
+		h.processMgr.Restart(c.Request.Context(), serviceID, coreType)
+	}
+
 	response.OK(c, gin.H{"message": "saved"})
+}
+
+// getServiceID returns the service ID for a core type.
+func (h *Handler) getServiceID(coreType string) int64 {
+	ids := map[string]int64{"xray": 1, "singbox": 2, "hysteria2": 3, "tuic": 4}
+	return ids[coreType]
 }
 
 // Validate handles POST /api/v1/protocols/:coreType/validate.

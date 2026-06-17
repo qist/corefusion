@@ -32,19 +32,15 @@
         </el-form-item>
         <el-form-item :label="t('protoCenter.dns.disableFallback')">
           <el-switch v-model="form.disableFallback" @change="emit" />
-          <div class="hint">{{ t('protoCenter.dns.disableFallbackHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.dns.disableFallbackIfMatch')">
           <el-switch v-model="form.disableFallbackIfMatch" @change="emit" />
-          <div class="hint">{{ t('protoCenter.dns.disableFallbackIfMatchHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.dns.enableParallelQuery')">
           <el-switch v-model="form.enableParallelQuery" @change="emit" />
-          <div class="hint">{{ t('protoCenter.dns.enableParallelQueryHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.dns.useSystemHosts')">
           <el-switch v-model="form.useSystemHosts" @change="emit" />
-          <div class="hint">{{ t('protoCenter.dns.useSystemHostsHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.dns.clientIp')">
           <el-input v-model="form.clientIp" placeholder="1.2.3.4" @change="emit" />
@@ -70,31 +66,43 @@
       <!-- Rule Servers -->
       <el-divider content-position="left">
         {{ t('protoCenter.dns.ruleServers') }}
-        <el-button size="small" type="primary" @click="addRule" style="margin-left:12px">{{ t('protoCenter.dns.addRule') }}</el-button>
+        <el-button size="small" type="primary" @click="showAddRule" style="margin-left:12px">{{ t('protoCenter.dns.addRule') }}</el-button>
       </el-divider>
       <div class="hint" style="margin-bottom:8px">{{ t('protoCenter.dns.ruleServerHint') }}</div>
 
-      <div v-for="(s, i) in form.ruleServers" :key="'r'+i" class="server-block">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-weight:600;font-size:13px">{{ t('protoCenter.dns.ruleServer') }} #{{ i + 1 }}</span>
-          <el-button size="small" type="danger" text @click="rmRule(i)">{{ t('common.delete') }}</el-button>
+      <!-- Rule list -->
+      <div v-for="(s, i) in form.ruleServers" :key="'r'+i" class="rule-item">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:12px">
+            <el-switch v-model="s.enabled" @change="emit" />
+            <span style="font-weight:600;font-size:13px">{{ s.address || 'New Rule' }}</span>
+            <el-tag v-if="s.domains && s.domains.length" size="small">{{ s.domains.length }} domains</el-tag>
+            <el-tag v-if="s.queryStrategy" size="small" type="info">{{ s.queryStrategy }}</el-tag>
+          </div>
+          <div>
+            <el-button size="small" @click="editRule(i)">Edit</el-button>
+            <el-button size="small" type="danger" text @click="rmRule(i)">Delete</el-button>
+          </div>
         </div>
-        <el-form label-width="120px" label-position="left" size="small">
-          <el-form-item :label="t('protoCenter.dns.dnsServers')">
-            <el-input v-model="s.address" placeholder="https://8.8.8.8/dns-query" @change="emit" />
+      </div>
+
+      <!-- Rule Edit Dialog -->
+      <el-dialog v-model="ruleDialogVisible" :title="editingRuleIndex >= 0 ? 'Edit Rule Server' : 'Add Rule Server'" width="600">
+        <el-form label-width="120px" label-position="left">
+          <el-form-item label="Address">
+            <el-input v-model="ruleForm.address" placeholder="https://8.8.8.8/dns-query" />
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.domains')">
             <el-input
-              v-model="s._domainsStr"
+              v-model="ruleForm._domainsStr"
               type="textarea"
-              :rows="2"
+              :rows="3"
               placeholder="geosite:openai&#10;domain:example.com&#10;keyword:google"
-              @change="onDomainsChange(s)"
             />
             <div class="hint">{{ t('protoCenter.dns.domainsHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.queryStrategy')">
-            <el-select v-model="s.queryStrategy" style="width:100%" clearable @change="emit">
+            <el-select v-model="ruleForm.queryStrategy" style="width:100%" clearable>
               <el-option label="Inherit" value="" />
               <el-option label="UseIP (A+AAAA)" value="UseIP" />
               <el-option label="UseIPv4 (A only)" value="UseIPv4" />
@@ -103,48 +111,36 @@
             </el-select>
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.expectedIPs')">
-            <el-input
-              v-model="s._expectedIPsStr"
-              type="textarea"
-              :rows="2"
-              placeholder="geoip:cn&#10;geoip:us"
-              @change="onExpectedIPsChange(s)"
-            />
+            <el-input v-model="ruleForm._expectedIPsStr" type="textarea" :rows="2" placeholder="geoip:cn" />
             <div class="hint">{{ t('protoCenter.dns.expectedIPsHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.unexpectedIPs')">
-            <el-input
-              v-model="s._unexpectedIPsStr"
-              type="textarea"
-              :rows="2"
-              placeholder="geoip:cloudflare"
-              @change="onUnexpectedIPsChange(s)"
-            />
+            <el-input v-model="ruleForm._unexpectedIPsStr" type="textarea" :rows="2" placeholder="geoip:cloudflare" />
             <div class="hint">{{ t('protoCenter.dns.unexpectedIPsHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.clientIP')">
-            <el-input v-model="s.clientIP" placeholder="1.2.3.4" @change="emit" />
-            <div class="hint">{{ t('protoCenter.dns.clientIPHint') }}</div>
+            <el-input v-model="ruleForm.clientIP" placeholder="1.2.3.4" />
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.port')">
-            <el-input-number v-model="s.port" :min="0" :max="65535" @change="emit" />
-            <div class="hint">{{ t('protoCenter.dns.portHint') }}</div>
+            <el-input-number v-model="ruleForm.port" :min="0" :max="65535" />
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.timeoutMs')">
-            <el-input-number v-model="s.timeoutMs" :min="0" @change="emit" />
-            <div class="hint">{{ t('protoCenter.dns.timeoutMsHint') }}</div>
+            <el-input-number v-model="ruleForm.timeoutMs" :min="0" />
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.tag')">
-            <el-input v-model="s.tag" placeholder="dns-tag" @change="emit" />
-            <div class="hint">{{ t('protoCenter.dns.tagHint') }}</div>
+            <el-input v-model="ruleForm.tag" placeholder="dns-tag" />
           </el-form-item>
-          <div style="display:flex;gap:16px;margin-top:4px">
-            <el-checkbox v-model="s.skipFallback" @change="emit">{{ t('protoCenter.dns.skipFallback') }}</el-checkbox>
-            <el-checkbox v-model="s.finalQuery" @change="emit">{{ t('protoCenter.dns.finalQuery') }}</el-checkbox>
-            <el-checkbox v-model="s.disableCache" @change="emit">{{ t('protoCenter.dns.disableCachePerServer') }}</el-checkbox>
+          <div style="display:flex;gap:16px">
+            <el-checkbox v-model="ruleForm.skipFallback">{{ t('protoCenter.dns.skipFallback') }}</el-checkbox>
+            <el-checkbox v-model="ruleForm.finalQuery">{{ t('protoCenter.dns.finalQuery') }}</el-checkbox>
+            <el-checkbox v-model="ruleForm.disableCache">{{ t('protoCenter.dns.disableCachePerServer') }}</el-checkbox>
           </div>
         </el-form>
-      </div>
+        <template #footer>
+          <el-button @click="ruleDialogVisible=false">Cancel</el-button>
+          <el-button type="primary" @click="saveRule">Save</el-button>
+        </template>
+      </el-dialog>
 
       <!-- Static Hosts -->
       <el-divider content-position="left">
@@ -162,7 +158,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const props = defineProps({ data: Object })
@@ -176,34 +172,66 @@ const form = reactive({
   simpleServers: [], ruleServers: [], hostsList: [],
 })
 
-function parseServer(s) {
-  if (typeof s === 'string') {
-    return { _type: 'simple', address: s }
-  }
-  return {
-    _type: 'rule',
-    address: s.address || '',
-    _domainsStr: (s.domains || []).join('\n'),
-    queryStrategy: s.queryStrategy || '',
-    _expectedIPsStr: (s.expectedIPs || []).join('\n'),
-    _unexpectedIPsStr: (s.unexpectedIPs || []).join('\n'),
-    clientIP: s.clientIP || '',
-    port: s.port || 0,
-    timeoutMs: s.timeoutMs || 0,
-    tag: s.tag || '',
-    skipFallback: s.skipFallback || false,
-    finalQuery: s.finalQuery || false,
-    disableCache: s.disableCache || false,
-  }
+// Rule dialog
+const ruleDialogVisible = ref(false)
+const editingRuleIndex = ref(-1)
+const ruleForm = reactive({
+  address: '', _domainsStr: '', queryStrategy: '',
+  _expectedIPsStr: '', _unexpectedIPsStr: '',
+  clientIP: '', port: 0, timeoutMs: 0, tag: '',
+  skipFallback: false, finalQuery: false, disableCache: false,
+  enabled: true,
+})
+
+function showAddRule() {
+  editingRuleIndex.value = -1
+  Object.assign(ruleForm, {
+    address: '', _domainsStr: '', queryStrategy: '',
+    _expectedIPsStr: '', _unexpectedIPsStr: '',
+    clientIP: '', port: 0, timeoutMs: 0, tag: '',
+    skipFallback: false, finalQuery: false, disableCache: false, enabled: true,
+  })
+  ruleDialogVisible.value = true
 }
 
-function buildServer(s) {
-  if (s._type === 'simple') return s.address
+function editRule(i) {
+  editingRuleIndex.value = i
+  const s = form.ruleServers[i]
+  Object.assign(ruleForm, { ...s, _domainsStr: (s.domains || []).join('\n'), _expectedIPsStr: (s.expectedIPs || []).join('\n'), _unexpectedIPsStr: (s.unexpectedIPs || []).join('\n') })
+  ruleDialogVisible.value = true
+}
+
+function saveRule() {
+  const rule = {
+    enabled: ruleForm.enabled,
+    address: ruleForm.address,
+    domains: ruleForm._domainsStr ? ruleForm._domainsStr.split('\n').map(d => d.trim()).filter(Boolean) : [],
+    queryStrategy: ruleForm.queryStrategy || '',
+    expectedIPs: ruleForm._expectedIPsStr ? ruleForm._expectedIPsStr.split('\n').map(d => d.trim()).filter(Boolean) : [],
+    unexpectedIPs: ruleForm._unexpectedIPsStr ? ruleForm._unexpectedIPsStr.split('\n').map(d => d.trim()).filter(Boolean) : [],
+    clientIP: ruleForm.clientIP || '',
+    port: ruleForm.port || 0,
+    timeoutMs: ruleForm.timeoutMs || 0,
+    tag: ruleForm.tag || '',
+    skipFallback: ruleForm.skipFallback,
+    finalQuery: ruleForm.finalQuery,
+    disableCache: ruleForm.disableCache,
+  }
+  if (editingRuleIndex.value >= 0) {
+    form.ruleServers[editingRuleIndex.value] = rule
+  } else {
+    form.ruleServers.push(rule)
+  }
+  ruleDialogVisible.value = false
+  emit()
+}
+
+function buildRuleServer(s) {
   const obj = { address: s.address }
-  if (s._domainsStr) obj.domains = s._domainsStr.split('\n').map(d => d.trim()).filter(Boolean)
+  if (s.domains && s.domains.length) obj.domains = s.domains
   if (s.queryStrategy) obj.queryStrategy = s.queryStrategy
-  if (s._expectedIPsStr) obj.expectedIPs = s._expectedIPsStr.split('\n').map(d => d.trim()).filter(Boolean)
-  if (s._unexpectedIPsStr) obj.unexpectedIPs = s._unexpectedIPsStr.split('\n').map(d => d.trim()).filter(Boolean)
+  if (s.expectedIPs && s.expectedIPs.length) obj.expectedIPs = s.expectedIPs
+  if (s.unexpectedIPs && s.unexpectedIPs.length) obj.unexpectedIPs = s.unexpectedIPs
   if (s.clientIP) obj.clientIP = s.clientIP
   if (s.port) obj.port = s.port
   if (s.timeoutMs) obj.timeoutMs = s.timeoutMs
@@ -216,6 +244,8 @@ function buildServer(s) {
 
 function sync() {
   if (!props.data || Object.keys(props.data).length === 0) { enabled.value = false; return }
+  // Check if disabled
+  if (props.data._disabled) { enabled.value = false; return }
   enabled.value = true
   form.queryStrategy = props.data.queryStrategy || 'UseIP'
   form.clientIp = props.data.clientIp || ''
@@ -227,10 +257,23 @@ function sync() {
   form.disableFallbackIfMatch = props.data.disableFallbackIfMatch || false
   form.enableParallelQuery = props.data.enableParallelQuery || false
   form.useSystemHosts = props.data.useSystemHosts !== false
-  const all = (props.data.servers || []).map(parseServer)
-  form.simpleServers = all.filter(s => s._type === 'simple').map(s => s.address)
-  form.ruleServers = all.filter(s => s._type === 'rule')
-  // Convert hosts object to array (supports string and array values)
+  const all = (props.data.servers || [])
+  form.simpleServers = all.filter(s => typeof s === 'string').map(s => s)
+  form.ruleServers = all.filter(s => typeof s === 'object').map(s => ({
+    enabled: true,
+    address: s.address || '',
+    domains: s.domains || [],
+    queryStrategy: s.queryStrategy || '',
+    expectedIPs: s.expectedIPs || [],
+    unexpectedIPs: s.unexpectedIPs || [],
+    clientIP: s.clientIP || '',
+    port: s.port || 0,
+    timeoutMs: s.timeoutMs || 0,
+    tag: s.tag || '',
+    skipFallback: s.skipFallback || false,
+    finalQuery: s.finalQuery || false,
+    disableCache: s.disableCache || false,
+  }))
   const hosts = props.data.hosts || {}
   form.hostsList = Object.entries(hosts).map(([domain, ip]) => ({
     domain,
@@ -241,9 +284,8 @@ function sync() {
 function build() {
   const servers = [
     ...form.simpleServers.filter(s => s),
-    ...form.ruleServers.filter(s => s.address).map(buildServer),
+    ...form.ruleServers.filter(s => s.enabled && s.address).map(buildRuleServer),
   ]
-  // Convert hosts array to object (supports single IP string or multiple IP array)
   const hosts = {}
   form.hostsList.forEach(h => {
     if (!h.domain) return
@@ -268,36 +310,29 @@ function build() {
 
 function onToggle() {
   if (!enabled.value) {
-    emitFn('update', null)
-  } else {
-    if (form.simpleServers.length === 0 && form.ruleServers.length === 0) {
-      form.simpleServers = ['https://1.1.1.1/dns-query', '8.8.8.8', 'https://8.8.8.8/dns-query']
-    }
-    emit()
+    // Save current data with disabled marker
+    const data = build()
+    data._disabled = true
+    emitFn('update', data)
+    return
   }
+  if (form.simpleServers.length === 0 && form.ruleServers.length === 0) {
+    form.simpleServers = ['https://1.1.1.1/dns-query', '8.8.8.8', 'https://8.8.8.8/dns-query']
+  }
+  emit()
 }
 
 function emit() { if (enabled.value) emitFn('update', build()) }
 function addSimple() { form.simpleServers.push(''); emit() }
 function rmSimple(i) { form.simpleServers.splice(i, 1); emit() }
-function addRule() {
-  form.ruleServers.push({
-    _type: 'rule', address: '', _domainsStr: '', queryStrategy: '',
-    _expectedIPsStr: '', _unexpectedIPsStr: '',
-    clientIP: '', port: 0, timeoutMs: 0, tag: '',
-    skipFallback: false, finalQuery: false, disableCache: false,
-  })
-  emit()
-}
 function rmRule(i) { form.ruleServers.splice(i, 1); emit() }
-function onDomainsChange(s) { s.domains = s._domainsStr.split('\n').map(d => d.trim()).filter(Boolean); emit() }
 function addHost() { form.hostsList.push({ domain: '', ip: '' }); emit() }
 function rmHost(i) { form.hostsList.splice(i, 1); emit() }
 onMounted(sync)
 </script>
 
 <style scoped>
-.server-block { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.rule-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
 .sub-item { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
 </style>

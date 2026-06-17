@@ -216,26 +216,98 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subH := subsHandler.NewHandler(subSvc)
 	certH := certsHandler.NewHandler(certSvc)
 	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
+	coreConfigH.SetProcessManager(processMgr)
 
 	// Set config generator: reads from core_configs and writes merged config file
 	processMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
+		if coreType != "xray" {
+			// Non-xray cores: simple merge
+			fullConfig, err := coreConfigSvc.GetFull(ctx, coreType)
+			if err != nil {
+				return err
+			}
+			cleanEmpty(fullConfig)
+			for k, v := range fullConfig {
+				if v == nil { delete(fullConfig, k); continue }
+				if m, ok := v.(map[string]interface{}); ok {
+					if d, e := m["_disabled"]; e && d == true { delete(fullConfig, k) }
+				}
+			}
+			data, _ := json.MarshalIndent(fullConfig, "", "  ")
+			return os.WriteFile(configPath, data, 0640)
+		}
+
+		// Xray: full config generation with API inbound/routing support
 		fullConfig, err := coreConfigSvc.GetFull(ctx, coreType)
 		if err != nil {
 			return err
 		}
-		// Clean empty values recursively
 		cleanEmpty(fullConfig)
-		// Remove empty sections and deprecated top-level transport
+
+		// Strip _disabled and enabled fields from rules
+		if routing, ok := fullConfig["routing"].(map[string]interface{}); ok {
+			if rules, ok := routing["rules"].([]interface{}); ok {
+				var filtered []interface{}
+				for _, r := range rules {
+					if rm, ok := r.(map[string]interface{}); ok {
+						if en, exists := rm["enabled"]; exists && en == false {
+							continue // skip disabled rules
+						}
+						delete(rm, "enabled")
+						filtered = append(filtered, rm)
+					}
+				}
+				routing["rules"] = filtered
+			}
+		}
+
+		// Remove disabled sections
 		for k, v := range fullConfig {
-			if v == nil {
-				delete(fullConfig, k)
+			if v == nil { delete(fullConfig, k); continue }
+			if m, ok := v.(map[string]interface{}); ok {
+				if d, e := m["_disabled"]; e && d == true { delete(fullConfig, k) }
 			}
 		}
 		delete(fullConfig, "transport")
-		data, err := json.MarshalIndent(fullConfig, "", "  ")
-		if err != nil {
-			return err
+
+		// Handle API config: if listen is empty, add inbound + routing
+		if apiRaw, ok := fullConfig["api"]; ok {
+			if apiMap, ok := apiRaw.(map[string]interface{}); ok {
+				listen, _ := apiMap["listen"].(string)
+				tag, _ := apiMap["tag"].(string)
+				if tag == "" {
+					tag = "api"
+				}
+				if listen == "" {
+					// Add API inbound
+					apiInbound := map[string]interface{}{
+						"listen": "127.0.0.1",
+						"port":   62789,
+						"protocol": "dokodemo-door",
+						"settings": map[string]interface{}{"address": "127.0.0.1"},
+						"tag":    tag,
+					}
+					inbounds, _ := fullConfig["inbounds"].([]interface{})
+					fullConfig["inbounds"] = append(inbounds, apiInbound)
+
+					// Add routing rule for API
+					apiRule := map[string]interface{}{
+						"type":        "field",
+						"inboundTag":  []string{tag},
+						"outboundTag": tag,
+					}
+					routing, _ := fullConfig["routing"].(map[string]interface{})
+					if routing == nil {
+						routing = map[string]interface{}{"domainStrategy": "IPIfNonMatch"}
+					}
+					rules, _ := routing["rules"].([]interface{})
+					routing["rules"] = append([]interface{}{apiRule}, rules...)
+					fullConfig["routing"] = routing
+				}
+			}
 		}
+
+		data, _ := json.MarshalIndent(fullConfig, "", "  ")
 		return os.WriteFile(configPath, data, 0640)
 	})
 	processH := servicesHandler.NewProcessHandler(processMgr, svcRepo, crashLogRepo, dataDir)
@@ -532,6 +604,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				geoRulesGroup.POST("/files/:id/download", geoRuleH.Download)
 				geoRulesGroup.DELETE("/files/:id", geoRuleH.DeleteFile)
 				geoRulesGroup.PUT("/files/:id/auto-sync", geoRuleH.SetAutoSync)
+				geoRulesGroup.GET("/status", geoRuleH.Status)
 			}
 
 			// WARP

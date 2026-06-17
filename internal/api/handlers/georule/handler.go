@@ -240,3 +240,23 @@ func parseIntParam(c *gin.Context, name string) int64 {
 	fmt.Sscanf(c.Param(name), "%d", &id)
 	return id
 }
+
+// Status handles GET /api/v1/geo-rules/status.
+// Returns which geo files exist and are usable.
+func (h *Handler) Status(c *gin.Context) {
+	files, err := h.svc.ListFiles(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "STATUS_FAILED", err.Error())
+		return
+	}
+	result := map[string]bool{
+		"geoip.dat":    false,
+		"geosite.dat":  false,
+	}
+	for _, f := range files {
+		if _, ok := result[f.FileName]; ok {
+			result[f.FileName] = true
+		}
+	}
+	response.OK(c, result)
+}

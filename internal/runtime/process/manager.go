@@ -254,6 +254,8 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	cmd.Dir = m.dataDir
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+	// Set resource path for geoip/geosite files
+	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Join(m.dataDir, "rules"))
 	setProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {

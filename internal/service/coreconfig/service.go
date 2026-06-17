@@ -36,14 +36,7 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"routing": `{
   "domainStrategy": "IPIfNonMatch",
   "domainMatcher": "",
-  "rules": [
-    {
-      "type": "field",
-      "inboundTag": ["api"],
-      "outboundTag": "api",
-      "ruleTag": "api-rule"
-    }
-  ],
+  "rules": [],
   "balancers": []
 }`,
 		"policy": `{
@@ -66,15 +59,7 @@ var DefaultSectionJSON = map[string]map[string]string{
     "statsOutboundDownlink": false
   }
 }`,
-		"inbounds": `[
-  {
-    "listen": "127.0.0.1",
-    "port": 62789,
-    "protocol": "dokodemo-door",
-    "settings": {"address": "127.0.0.1"},
-    "tag": "api"
-  }
-]`,
+		"inbounds": `[]`,
 		"outbounds": `[
   {"protocol": "freedom", "tag": "direct"},
   {"protocol": "blackhole", "tag": "blocked"}
@@ -125,7 +110,6 @@ var DefaultSectionJSON = map[string]map[string]string{
 }`,
 		"api": `{
   "tag": "api",
-  "listen": "127.0.0.1:10085",
   "services": ["HandlerService", "LoggerService", "StatsService"]
 }`,
 		"version": `{
@@ -133,9 +117,12 @@ var DefaultSectionJSON = map[string]map[string]string{
   "max": ""
 }`,
 		"geodata": `{
-  "cron": "",
+  "cron": "0 4 * * *",
   "outbound": "direct",
-  "assets": []
+  "assets": [
+    {"url": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat", "file": "geoip.dat"},
+    {"url": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat", "file": "geosite.dat"}
+  ]
 }`,
 	},
 	"singbox": {
@@ -247,6 +234,13 @@ func (s *Service) SaveSection(ctx context.Context, coreType, section string, dat
 
 // SaveFull replaces all sections for a core type from a merged JSON object.
 func (s *Service) SaveFull(ctx context.Context, coreType string, fullJSON map[string]interface{}) error {
+	// Get existing sections
+	existing, err := s.repo.GetAllSections(ctx, coreType)
+	if err != nil {
+		return err
+	}
+
+	// Save new/updated sections
 	for section, val := range fullJSON {
 		data, err := json.Marshal(val)
 		if err != nil {
@@ -256,6 +250,14 @@ func (s *Service) SaveFull(ctx context.Context, coreType string, fullJSON map[st
 			return err
 		}
 	}
+
+	// Delete sections that are no longer in the config
+	for _, cfg := range existing {
+		if _, ok := fullJSON[cfg.Section]; !ok {
+			s.repo.DeleteSection(ctx, coreType, cfg.Section)
+		}
+	}
+
 	return nil
 }
 

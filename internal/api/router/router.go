@@ -29,6 +29,7 @@ import (
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
 	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
+	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/app/embed"
@@ -45,6 +46,7 @@ import (
 	systemSvc "corefusion/internal/service/system"
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
+	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	warpSvc "corefusion/internal/service/warp"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/repository"
@@ -149,6 +151,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if err := coreConfigSvc.SeedDefaults(context.Background()); err != nil {
 		log.Printf("WARNING: seed core configs failed: %v", err)
 	}
+
+	// Inbound config service (separate table for inbound configurations)
+	inboundConfigRepo := repository.NewInboundConfigRepository(database)
+	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo)
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -309,6 +315,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					fullConfig["routing"] = routing
 				}
 			}
+		}
+
+		// Add enabled inbounds from inbound_configs table
+		enabledInbounds, err := inboundConfigSvc.GetEnabledInbounds(ctx, coreType)
+		if err != nil {
+			log.Printf("WARNING: failed to load inbounds: %v", err)
+		} else if len(enabledInbounds) > 0 {
+			existingInbounds, _ := fullConfig["inbounds"].([]interface{})
+			for _, ib := range enabledInbounds {
+				var inbound map[string]interface{}
+				if json.Unmarshal(ib, &inbound) == nil {
+					existingInbounds = append(existingInbounds, inbound)
+				}
+			}
+			fullConfig["inbounds"] = existingInbounds
 		}
 
 		data, _ := json.MarshalIndent(fullConfig, "", "  ")
@@ -499,6 +520,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				protocolsGroup.POST("/:coreType/validate", coreConfigH.Validate)
 			}
 
+			// Inbound Configs (separate table)
+			inboundCfgH := inboundconfigHandler.NewHandler(inboundConfigSvc)
+			inboundCfgGroup := protected.Group("/inbound-configs")
+			{
+				inboundCfgGroup.GET("", inboundCfgH.List)
+				inboundCfgGroup.POST("", inboundCfgH.Create)
+				inboundCfgGroup.GET("/:id", inboundCfgH.Get)
+				inboundCfgGroup.PUT("/:id", inboundCfgH.Update)
+				inboundCfgGroup.DELETE("/:id", inboundCfgH.Delete)
+			}
+
 			// Services
 			servicesGroup := protected.Group("/services")
 			{
@@ -588,6 +620,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				binariesGroup.POST("/install", binariesH.Install)
 				binariesGroup.POST("/update", binariesH.Update)
 				binariesGroup.POST("/rollback", binariesH.Rollback)
+				binariesGroup.POST("/wg-key", binariesH.GenerateWgKey)
 			}
 
 			// Geo Rules

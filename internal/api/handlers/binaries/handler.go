@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -101,6 +102,44 @@ func (h *Handler) githubAccelDomain(ctx context.Context) string {
 func (h *Handler) List(c *gin.Context) {
 	binaries := h.resolver.ListInstalled()
 	response.OK(c, binaries)
+}
+
+// GenerateWgKey handles POST /api/v1/binaries/wg-key.
+// Generates a WireGuard key pair using the xray binary.
+func (h *Handler) GenerateWgKey(c *gin.Context) {
+	coreType := c.Query("core_type")
+	if coreType == "" {
+		coreType = "xray"
+	}
+	binaryPath, _, err := h.resolver.Resolve(coreType)
+	if err != nil {
+		response.NotFound(c, "BINARY_NOT_FOUND", err.Error())
+		return
+	}
+
+	cmd := exec.Command(binaryPath, "wg")
+	out, err := cmd.Output()
+	if err != nil {
+		response.InternalError(c, "WG_KEY_FAILED", err.Error())
+		return
+	}
+
+	// Parse output: "PrivateKey: ...\nPassword (PublicKey): ...\nHash32: ...\n"
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	result := map[string]string{}
+	for _, line := range lines {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			if key == "PrivateKey" {
+				result["privateKey"] = val
+			} else if strings.Contains(key, "PublicKey") {
+				result["publicKey"] = val
+			}
+		}
+	}
+	response.OK(c, result)
 }
 
 // ListReleases handles GET /api/v1/binaries/releases.

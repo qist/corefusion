@@ -478,14 +478,14 @@
     </el-dialog>
 
     <!-- Site Dialog -->
-    <el-dialog v-model="siteDialogVisible" :title="siteDialogTitle" width="600">
+    <el-dialog v-model="siteDialogVisible" :title="siteDialogTitle" width="750px" top="5vh">
       <div style="margin-bottom:12px">
         <el-radio-group v-model="siteForm.editMode" size="small">
           <el-radio-button value="form">{{ t('proxy.formEdit') }}</el-radio-button>
           <el-radio-button value="text">{{ t('proxy.textEdit') }}</el-radio-button>
         </el-radio-group>
       </div>
-      <el-form v-if="siteForm.editMode==='form'" :model="siteForm" label-width="100px">
+      <el-form v-if="siteForm.editMode==='form'" :model="siteForm" label-width="120px">
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" placeholder="example.com" />
         </el-form-item>
@@ -534,10 +534,16 @@
         <el-form-item :label="t('proxy.useCertificate')">
           <el-switch v-model="siteForm.use_cert" @change="onToggleCert" />
         </el-form-item>
-        <el-form-item v-if="siteForm.use_cert" :label="t('certificate.tlsCert')">
-          <el-select v-model="siteForm.cert_id" style="width:100%" @change="onSiteCertSelect" :placeholder="t('proxy.selectCert')">
+        <el-form-item v-if="siteForm.use_cert" :label="t('proxy.selectCert')">
+          <el-select v-model="siteForm.cert_id" style="width:100%" clearable @change="onSiteCertSelect" :placeholder="t('proxy.selectCert')">
             <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="siteForm.use_cert" :label="t('proxy.certPath')">
+          <el-input v-model="siteForm.cert_path" placeholder="/path/to/cert.pem" />
+        </el-form-item>
+        <el-form-item v-if="siteForm.use_cert" :label="t('proxy.keyPath')">
+          <el-input v-model="siteForm.key_path" placeholder="/path/to/key.pem" />
         </el-form-item>
         <template v-if="siteForm.use_cert">
           <el-divider content-position="left">TLS {{ t('proxy.settings') || '配置' }}</el-divider>
@@ -1135,3 +1141,6 @@ onMounted(() => {
   fetchSettings()
 })
 </script>
+<style scoped>
+:deep(.el-dialog__body) { max-height: calc(100vh - 200px); overflow-y: auto; }
+</style>

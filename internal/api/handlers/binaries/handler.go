@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -102,6 +103,112 @@ func (h *Handler) githubAccelDomain(ctx context.Context) string {
 func (h *Handler) List(c *gin.Context) {
 	binaries := h.resolver.ListInstalled()
 	response.OK(c, binaries)
+}
+
+// GenerateEchKeys handles POST /api/v1/binaries/ech-generate.
+// Generates ECH server keys using the xray binary.
+func (h *Handler) GenerateEchKeys(c *gin.Context) {
+	var req struct {
+		ServerName string `json:"server_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.ServerName == "" {
+		response.BadRequest(c, "INVALID_PARAMS", "server_name is required")
+		return
+	}
+
+	binaryPath, _, err := h.resolver.Resolve("xray")
+	if err != nil {
+		response.NotFound(c, "BINARY_NOT_FOUND", err.Error())
+		return
+	}
+
+	cmd := exec.Command(binaryPath, "tls", "ech", "--serverName", req.ServerName)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		response.InternalError(c, "ECH_GENERATE_FAILED", strings.TrimSpace(string(out)))
+		return
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 4 {
+		response.InternalError(c, "ECH_GENERATE_FAILED", "invalid ech output")
+		return
+	}
+
+	// Line 1: echConfigList, Line 3: echServerKeys
+	result := map[string]string{
+		"echConfigList": strings.TrimSpace(lines[1]),
+		"echServerKeys": strings.TrimSpace(lines[3]),
+	}
+	response.OK(c, result)
+}
+
+// GenerateX25519Key handles POST /api/v1/binaries/x25519-key.
+// Generates an X25519 key pair for REALITY using the xray binary.
+func (h *Handler) GenerateX25519Key(c *gin.Context) {
+	binaryPath, _, err := h.resolver.Resolve("xray")
+	if err != nil {
+		response.NotFound(c, "BINARY_NOT_FOUND", err.Error())
+		return
+	}
+
+	cmd := exec.Command(binaryPath, "x25519")
+	out, err := cmd.Output()
+	if err != nil {
+		response.InternalError(c, "X25519_FAILED", err.Error())
+		return
+	}
+
+	result := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		switch {
+		case strings.Contains(key, "PrivateKey"):
+			result["privateKey"] = val
+		case strings.Contains(key, "PublicKey") || strings.Contains(key, "Password"):
+			result["password"] = val
+		}
+	}
+	response.OK(c, result)
+}
+
+// GenerateMldsa65Key handles POST /api/v1/binaries/mldsa65-key.
+// Generates an ML-DSA-65 key pair for REALITY using the xray binary.
+func (h *Handler) GenerateMldsa65Key(c *gin.Context) {
+	binaryPath, _, err := h.resolver.Resolve("xray")
+	if err != nil {
+		response.NotFound(c, "BINARY_NOT_FOUND", err.Error())
+		return
+	}
+
+	cmd := exec.Command(binaryPath, "mldsa65")
+	out, err := cmd.Output()
+	if err != nil {
+		response.InternalError(c, "MLDSA65_FAILED", err.Error())
+		return
+	}
+
+	result := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		switch key {
+		case "Seed":
+			result["seed"] = val
+		case "Verify":
+			result["verify"] = val
+		}
+	}
+	response.OK(c, result)
 }
 
 // GenerateWgKey handles POST /api/v1/binaries/wg-key.
@@ -504,4 +611,22 @@ func (h *Handler) extractZip(data []byte, destDir, coreType string) error {
 	}
 
 	return fmt.Errorf("binary not found in zip archive")
+}
+
+// ListInterfaces handles GET /api/v1/binaries/interfaces.
+// Returns a list of network interface names.
+func (h *Handler) ListInterfaces(c *gin.Context) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		response.InternalError(c, "INTERFACES_FAILED", err.Error())
+		return
+	}
+	names := []string{}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		names = append(names, iface.Name)
+	}
+	response.OK(c, names)
 }

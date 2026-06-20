@@ -621,6 +621,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				binariesGroup.POST("/update", binariesH.Update)
 				binariesGroup.POST("/rollback", binariesH.Rollback)
 				binariesGroup.POST("/wg-key", binariesH.GenerateWgKey)
+				binariesGroup.POST("/ech-generate", binariesH.GenerateEchKeys)
+				binariesGroup.POST("/x25519-key", binariesH.GenerateX25519Key)
+				binariesGroup.POST("/mldsa65-key", binariesH.GenerateMldsa65Key)
+				binariesGroup.GET("/interfaces", binariesH.ListInterfaces)
 			}
 
 			// Geo Rules
@@ -743,6 +747,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
 				systemGroup.PUT("/notification-templates/:id", systemH.UpdateTemplate)
 				systemGroup.DELETE("/notification-templates/:id", systemH.DeleteTemplate)
+				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
+				systemGroup.PUT("/reality-targets", systemH.UpdateRealityTargets)
+				systemGroup.POST("/reality-targets/reset", systemH.ResetRealityTargets)
 			}
 
 			// Proxy management

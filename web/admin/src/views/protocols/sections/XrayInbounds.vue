@@ -529,26 +529,239 @@
               <div v-if="rf.streamSettings.security === 'reality'" class="hint">Reality 仅支持 raw、xhttp、grpc</div>
             </el-form-item>
             <template v-if="rf.streamSettings.security === 'tls'">
-              <el-form-item label="Server Name"><el-input v-model="rf.streamSettings.tls.serverName" @change="emit" /></el-form-item>
-              <el-form-item label="ALPN"><el-input v-model="rf.streamSettings.tls.alpnStr" placeholder="h2, http/1.1" @change="emit" /></el-form-item>
-              <el-form-item label="Fingerprint">
+              <el-form-item :label="t('protoCenter.tls.serverName')"><el-input v-model="rf.streamSettings.tls.serverName" @change="emit" /></el-form-item>
+              <el-form-item :label="t('protoCenter.tls.alpn')">
+                <el-select v-model="rf.streamSettings.tls._alpn" style="width:100%" multiple clearable @change="emit">
+                  <el-option label="h2" value="h2" /><el-option label="http/1.1" value="http/1.1" /><el-option label="h3" value="h3" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.minVersion')">
+                <el-select v-model="rf.streamSettings.tls.minVersion" style="width:100%" clearable @change="emit">
+                  <el-option label="TLS 1.0" value="1.0" /><el-option label="TLS 1.1" value="1.1" />
+                  <el-option label="TLS 1.2" value="1.2" /><el-option label="TLS 1.3" value="1.3" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.maxVersion')">
+                <el-select v-model="rf.streamSettings.tls.maxVersion" style="width:100%" clearable @change="emit">
+                  <el-option label="TLS 1.2" value="1.2" /><el-option label="TLS 1.3" value="1.3" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.cipherSuites')">
+                <el-select v-model="rf.streamSettings.tls._cipherSuites" style="width:100%" multiple clearable @change="emit" :placeholder="t('protoCenter.tls.cipherSuitesHint')">
+                  <el-option label="TLS_AES_128_GCM_SHA256" value="TLS_AES_128_GCM_SHA256" />
+                  <el-option label="TLS_AES_256_GCM_SHA384" value="TLS_AES_256_GCM_SHA384" />
+                  <el-option label="TLS_CHACHA20_POLY1305_SHA256" value="TLS_CHACHA20_POLY1305_SHA256" />
+                  <el-option label="TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA" value="TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA" />
+                  <el-option label="TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA" value="TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA" />
+                  <el-option label="TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" value="TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" />
+                  <el-option label="TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" value="TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" />
+                  <el-option label="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" value="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" />
+                  <el-option label="TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" value="TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" />
+                  <el-option label="TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256" value="TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256" />
+                  <el-option label="TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" value="TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.curvePreferences')">
+                <el-select v-model="rf.streamSettings.tls._curves" style="width:100%" multiple clearable @change="onCurvesChange">
+                  <el-option label="CurveP256" value="CurveP256" /><el-option label="CurveP384" value="CurveP384" />
+                  <el-option label="CurveP521" value="CurveP521" /><el-option label="X25519" value="X25519" />
+                  <el-option label="X25519MLKEM768" value="X25519MLKEM768" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.rejectUnknownSni')">
+                <el-switch v-model="rf.streamSettings.tls.rejectUnknownSni" @change="emit" />
+                <div class="hint">{{ t('protoCenter.tls.rejectUnknownSniHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.disableSystemRoot')">
+                <el-switch v-model="rf.streamSettings.tls.disableSystemRoot" @change="emit" />
+                <div class="hint">{{ t('protoCenter.tls.disableSystemRootHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.enableSessionResumption')">
+                <el-switch v-model="rf.streamSettings.tls.enableSessionResumption" @change="emit" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.masterKeyLog')">
+                <el-input v-model="rf.streamSettings.tls.masterKeyLog" @change="emit" />
+                <div class="hint">{{ t('protoCenter.tls.masterKeyLogHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.fingerprint')">
                 <el-select v-model="rf.streamSettings.tls.fingerprint" style="width:100%" clearable @change="emit">
                   <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
                   <el-option label="safari" value="safari" /><el-option label="edge" value="edge" />
-                  <el-option label="random" value="random" />
+                  <el-option label="random" value="random" /><el-option label="randomized" value="randomized" />
+                  <el-option label="unsafe" value="unsafe" />
                 </el-select>
               </el-form-item>
             </template>
+
+            <!-- TLS Certificates -->
+            <template v-if="rf.streamSettings.security === 'tls'">
+              <el-divider content-position="left">{{ t('protoCenter.tls.certsSection') }}</el-divider>
+              <el-form label-width="160px" label-position="left">
+                <el-form-item :label="t('protoCenter.tls.certSource')">
+                  <el-radio-group v-model="rf.streamSettings.tls._certMode" @change="onCertModeChange(rf)">
+                    <el-radio value="file">{{ t('protoCenter.tls.certSourceFile') }}</el-radio>
+                    <el-radio value="content">{{ t('protoCenter.tls.certSourceContent') }}</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.tls.selectCert')">
+                  <el-select v-model="rf.streamSettings.tls._certId" style="width:100%" clearable @change="onCertSelect(rf)" :placeholder="t('protoCenter.tls.selectCertPlaceholder')">
+                    <el-option v-for="c in certList" :key="c.id" :label="c.name + ' (' + c.domain + ')'" :value="c.id" />
+                  </el-select>
+                </el-form-item>
+                <template v-if="rf.streamSettings.tls._certMode === 'file'">
+                  <el-form-item :label="t('protoCenter.tls.certificateFile')">
+                    <el-input v-model="rf.streamSettings.tls._certificateFile" placeholder="certs/example.com/cert.pem" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.tls.keyFile')">
+                    <el-input v-model="rf.streamSettings.tls._keyFile" placeholder="certs/example.com/key.pem" @change="emit" />
+                  </el-form-item>
+                </template>
+                <template v-if="rf.streamSettings.tls._certMode === 'content'">
+                  <el-form-item :label="t('protoCenter.tls.certificate')">
+                    <el-input v-model="rf.streamSettings.tls._certificateContent" type="textarea" :rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.tls.key')">
+                    <el-input v-model="rf.streamSettings.tls._keyContent" type="textarea" :rows="4" placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----" @change="emit" />
+                  </el-form-item>
+                </template>
+                <el-form-item :label="t('protoCenter.tls.usage')">
+                  <el-select v-model="rf.streamSettings.tls._certUsage" style="width:100%" clearable @change="emit">
+                    <el-option :label="t('protoCenter.tls.usageEncipherment')" value="encipherment" /><el-option :label="t('protoCenter.tls.usageVerify')" value="verify" /><el-option :label="t('protoCenter.tls.usageIssue')" value="issue" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item v-if="rf.streamSettings.tls._certUsage === 'issue'" :label="t('protoCenter.tls.buildChain')">
+                  <el-switch v-model="rf.streamSettings.tls._buildChain" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.tls.buildChainHint') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.tls.ocspStapling')">
+                  <el-input-number v-model="rf.streamSettings.tls._ocspStapling" :min="0" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.tls.ocspStaplingHint') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.tls.oneTimeLoading')">
+                  <el-switch v-model="rf.streamSettings.tls._oneTimeLoading" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.tls.oneTimeLoadingHint') }}</div>
+                </el-form-item>
+              </el-form>
+            </template>
+
+            <!-- ECH -->
+            <template v-if="rf.streamSettings.security === 'tls'">
+              <el-divider content-position="left">
+                {{ t('protoCenter.tls.echSection') }}
+                <el-button v-if="rf.streamSettings.tls.echServerKeys || rf.streamSettings.tls.echConfigList" size="small" type="danger" text style="margin-left:12px" @click="rf.streamSettings.tls.echServerKeys='';rf.streamSettings.tls.echConfigList='';emit()">{{ t('protoCenter.tls.clearEch') }}</el-button>
+              </el-divider>
+              <el-form label-width="160px" label-position="left">
+                <el-form-item :label="t('protoCenter.tls.echServerKeys')">
+                  <div style="display:flex;gap:8px;flex:1">
+                    <el-input v-model="rf.streamSettings.tls.echServerKeys" style="flex:1" @change="emit" />
+                    <el-button size="small" @click="generateEchKeys(rf)">{{ t('protoCenter.tls.generate') }}</el-button>
+                  </div>
+                  <div class="hint">{{ t('protoCenter.tls.echServerKeysHint') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.tls.echConfigList')">
+                  <el-input v-model="rf.streamSettings.tls.echConfigList" type="textarea" :rows="2" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.tls.echConfigListHint') }}</div>
+                </el-form-item>
+              </el-form>
+            </template>
+
             <template v-if="rf.streamSettings.security === 'reality'">
-              <el-form-item label="Target"><el-input v-model="rf.streamSettings.reality.target" placeholder="www.microsoft.com:443" @change="emit" /></el-form-item>
-              <el-form-item label="Server Names"><el-input v-model="rf.streamSettings.reality.serverNamesStr" placeholder="www.microsoft.com" @change="emit" /></el-form-item>
-              <el-form-item label="Private Key"><el-input v-model="rf.streamSettings.reality.privateKey" @change="emit" /></el-form-item>
-              <el-form-item label="Short ID"><el-input v-model="rf.streamSettings.reality.shortId" @change="emit" /></el-form-item>
-              <el-form-item label="Fingerprint">
-                <el-select v-model="rf.streamSettings.reality.fingerprint" style="width:100%" @change="emit">
-                  <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
-                </el-select>
-              </el-form-item>
+              <el-form label-width="160px" label-position="left">
+                <el-form-item label="Target">
+                  <div style="display:flex;gap:8px;width:100%">
+                    <el-select v-model="rf.streamSettings.reality.target" style="flex:1" filterable allow-create default-first-option @change="onTargetChange">
+                      <el-option v-for="t in realityTargets" :key="t.target" :label="t.target + ' (' + t.sni + ')'" :value="t.target" />
+                    </el-select>
+                    <el-button size="small" @click="showTargetMgr=true">{{ t('protoCenter.reality.manage') }}</el-button>
+                  </div>
+                  <div v-if="defaultTarget" class="hint">{{ t('protoCenter.reality.defaultPreset') }}：{{ defaultTarget.target }}（{{ t('protoCenter.reality.defaultPresetHint') }}）</div>
+                </el-form-item>
+                <el-form-item label="Server Names">
+                  <el-input v-model="rf.streamSettings.reality.serverNamesStr" type="textarea" :rows="3" :placeholder="t('protoCenter.reality.serverNamesPlaceholder')" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.reality.serverNamesHint') }}</div>
+                </el-form-item>
+                <el-form-item label="Private Key">
+                  <div style="display:flex;gap:8px;flex:1">
+                    <el-input v-model="rf.streamSettings.reality.privateKey" style="flex:1" @change="emit" />
+                    <el-button size="small" @click="genRealityKey(rf)">{{ t('protoCenter.reality.generate') }}</el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.reality.password')">
+                  <el-input v-model="rf.streamSettings.reality._password" readonly />
+                  <div class="hint">{{ t('protoCenter.reality.passwordHint') }}</div>
+                </el-form-item>
+                <el-form-item label="Short IDs">
+                  <el-input v-model="rf.streamSettings.reality.shortIdsStr" type="textarea" :rows="4" :placeholder="t('protoCenter.reality.shortIdsPlaceholder')" @change="emit" />
+                  <el-button size="small" style="margin-top:4px" @click="genRandomShortId(rf)">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
+                  <div class="hint">{{ t('protoCenter.reality.shortIdsHint') }}</div>
+                </el-form-item>
+                <el-form-item label="Fingerprint">
+                  <el-select v-model="rf.streamSettings.reality._fingerprint" style="width:100%" clearable @change="emit">
+                    <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
+                    <el-option label="safari" value="safari" /><el-option label="ios" value="ios" />
+                    <el-option label="android" value="android" /><el-option label="edge" value="edge" />
+                    <el-option label="random" value="random" /><el-option label="randomized" value="randomized" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="Show">
+                  <el-switch v-model="rf.streamSettings.reality.show" @change="emit" />
+                </el-form-item>
+                <el-form-item label="Xver">
+                  <el-select v-model="rf.streamSettings.reality.xver" style="width:100%" filterable allow-create default-first-option @change="emit">
+                    <el-option label="0 (禁用)" :value="0" />
+                    <el-option label="1" :value="1" />
+                    <el-option label="2" :value="2" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="Min Client Ver">
+                  <el-input v-model="rf.streamSettings.reality.minClientVer" placeholder="x.y.z" @change="emit" />
+                </el-form-item>
+                <el-form-item label="Max Client Ver">
+                  <el-input v-model="rf.streamSettings.reality.maxClientVer" placeholder="x.y.z" @change="emit" />
+                </el-form-item>
+                <el-form-item label="Max Time Diff (ms)">
+                  <el-input-number v-model="rf.streamSettings.reality.maxTimeDiff" :min="0" @change="emit" />
+                </el-form-item>
+              </el-form>
+
+              <!-- ML-DSA-65 -->
+              <el-divider content-position="left">{{ t('protoCenter.reality.mldsa65') }}</el-divider>
+              <el-form label-width="160px" label-position="left">
+                <el-form-item label="Seed">
+                  <div style="display:flex;gap:8px;flex:1">
+                    <el-input v-model="rf.streamSettings.reality.mldsa65Seed" style="flex:1" @change="emit" />
+                    <el-button size="small" @click="genMldsa65(rf)">{{ t('protoCenter.reality.generate') }}</el-button>
+                    <el-button v-if="rf.streamSettings.reality.mldsa65Seed" size="small" type="danger" text @click="rf.streamSettings.reality.mldsa65Seed='';rf.streamSettings.reality._mldsa65Verify='';emit()">{{ t('protoCenter.reality.clear') }}</el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.reality.mldsa65Verify')">
+                  <el-input v-model="rf.streamSettings.reality._mldsa65Verify" type="textarea" :rows="2" readonly />
+                  <div class="hint">{{ t('protoCenter.reality.mldsa65VerifyHint') }}</div>
+                </el-form-item>
+              </el-form>
+
+              <!-- Limit Fallback -->
+              <el-divider content-position="left">{{ t('protoCenter.reality.limitFallback') }}</el-divider>
+              <el-form label-width="160px" label-position="left">
+                <el-form-item label="Limit Upload">
+                  <el-switch v-model="rf.streamSettings.reality._showLimitUpload" @change="emit" />
+                </el-form-item>
+              </el-form>
+              <el-form v-if="rf.streamSettings.reality._showLimitUpload" label-width="180px" label-position="left" style="margin-bottom:12px;padding-left:20px">
+                <el-form-item label="After Bytes"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.afterBytes" :min="0" @change="emit" /></el-form-item>
+                <el-form-item label="Bytes Per Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.bytesPerSec" :min="0" @change="emit" /></el-form-item>
+                <el-form-item label="Burst Bytes/Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.burstBytesPerSec" :min="0" @change="emit" /></el-form-item>
+              </el-form>
+              <el-form label-width="160px" label-position="left">
+                <el-form-item label="Limit Download">
+                  <el-switch v-model="rf.streamSettings.reality._showLimitDownload" @change="emit" />
+                </el-form-item>
+              </el-form>
+              <el-form v-if="rf.streamSettings.reality._showLimitDownload" label-width="180px" label-position="left" style="padding-left:20px">
+                <el-form-item label="After Bytes"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.afterBytes" :min="0" @change="emit" /></el-form-item>
+                <el-form-item label="Bytes Per Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.bytesPerSec" :min="0" @change="emit" /></el-form-item>
+                <el-form-item label="Burst Bytes/Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.burstBytesPerSec" :min="0" @change="emit" /></el-form-item>
+              </el-form>
             </template>
           </el-form>
 
@@ -814,6 +1027,10 @@
                 </div>
                 <el-button size="small" @click="rf.streamSettings.xhttp.extra._headers.push({key:'',value:''})">+ Add Header</el-button>
               </el-form-item>
+              <el-form-item label="x Padding Bytes">
+                <el-input v-model="rf.streamSettings.xhttp.extra.xPaddingBytes" placeholder="100-1000" style="width:200px" @change="emit" />
+                <div class="hint">范围字符串或整数，随机化 HTTP 头长度</div>
+              </el-form-item>
             </el-form>
             <template v-if="!rf.streamSettings.xhttp.mode || rf.streamSettings.xhttp.mode === 'packet-up'">
               <el-divider content-position="left">Scamper (packet-up only)</el-divider>
@@ -855,6 +1072,10 @@
               </el-form-item>
               <el-form-item label="H Max Reusable Secs">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.hMaxReusableSecs" placeholder="1800-3000" style="width:200px" @change="emit" />
+              </el-form-item>
+              <el-form-item label="H Keep Alive Period">
+                <el-input-number v-model="rf.streamSettings.xhttp.extra.xmux.hKeepAlivePeriod" :min="-1" @change="emit" />
+                <div class="hint">0 使用默认值，-1 禁用</div>
               </el-form-item>
             </el-form>
           </template>
@@ -921,8 +1142,8 @@
             <template v-if="rf.sniffing.enabled">
               <el-form-item label="Dest Override">
                 <el-checkbox-group v-model="rf.sniffing.destOverride">
-                  <el-checkbox label="http" /><el-checkbox label="tls" />
-                  <el-checkbox label="quic" /><el-checkbox label="fakedns" />
+                  <el-checkbox value="http" /><el-checkbox value="tls" />
+                  <el-checkbox value="quic" /><el-checkbox value="fakedns" />
                 </el-checkbox-group>
               </el-form-item>
               <el-form-item label="Metadata Only">
@@ -944,6 +1165,549 @@
             </template>
           </el-form>
         </el-tab-pane>
+
+        <!-- Sockopt Tab -->
+        <el-tab-pane :label="t('protoCenter.sockopt.title')" name="sockopt">
+          <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+            <span style="font-weight:500">{{ t('protoCenter.sockopt.enable') }}</span>
+            <el-switch v-model="rf.sockopt._enabled" />
+            <span v-if="!rf.sockopt._enabled" style="font-size:12px;color:#909399">{{ t('protoCenter.sockopt.enableHint') }}</span>
+          </div>
+          <el-form v-if="rf.sockopt._enabled" label-width="180px" label-position="left">
+            <el-form-item label="Mark">
+              <el-input-number v-model="rf.sockopt.mark" :min="0" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP Fast Open">
+              <el-switch v-model="rf.sockopt.tcpFastOpen" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TProxy">
+              <el-select v-model="rf.sockopt.tproxy" style="width:100%" clearable @change="emit">
+                <el-option label="off" value="off" /><el-option label="redirect" value="redirect" /><el-option label="tproxy" value="tproxy" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Domain Strategy">
+              <el-select v-model="rf.sockopt.domainStrategy" style="width:100%" clearable @change="emit">
+                <el-option label="AsIs" value="AsIs" /><el-option label="UseIP" value="UseIP" />
+                <el-option label="UseIPv4" value="UseIPv4" /><el-option label="UseIPv6" value="UseIPv6" />
+                <el-option label="ForceIP" value="ForceIP" /><el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Interface">
+              <div style="display:flex;gap:8px;width:100%">
+                <el-select v-model="rf.sockopt.interface" style="flex:1" filterable allow-create clearable @change="emit" :placeholder="t('protoCenter.sockopt.interfaceHint')">
+                  <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
+                </el-select>
+                <el-button size="small" @click="loadInterfaces">刷新</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="V6 Only">
+              <el-switch v-model="rf.sockopt.v6only" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP Keep Alive Idle (s)">
+              <el-input-number v-model="rf.sockopt.tcpKeepAliveIdle" :min="0" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP Keep Alive Interval (s)">
+              <el-input-number v-model="rf.sockopt.tcpKeepAliveInterval" :min="0" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP User Timeout (ms)">
+              <el-input-number v-model="rf.sockopt.tcpUserTimeout" :min="0" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP Congestion">
+              <el-select v-model="rf.sockopt.tcpcongestion" style="width:100%" clearable @change="emit">
+                <el-option label="(默认)" value="" /><el-option label="bbr" value="bbr" /><el-option label="cubic" value="cubic" /><el-option label="reno" value="reno" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="TCP Max Seg">
+              <el-input-number v-model="rf.sockopt.tcpMaxSeg" :min="0" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP Window Clamp">
+              <el-input-number v-model="rf.sockopt.tcpWindowClamp" :min="0" @change="emit" />
+            </el-form-item>
+            <el-form-item label="TCP MPTCP">
+              <el-switch v-model="rf.sockopt.tcpMptcp" @change="emit" />
+            </el-form-item>
+            <el-form-item label="Accept Proxy Protocol">
+              <el-switch v-model="rf.sockopt.acceptProxyProtocol" @change="emit" />
+            </el-form-item>
+            <el-form-item label="Dialer Proxy">
+              <el-input v-model="rf.sockopt.dialerProxy" placeholder="出站标签" @change="emit" />
+            </el-form-item>
+            <el-form-item label="Address Port Strategy">
+              <el-select v-model="rf.sockopt.addressPortStrategy" style="width:100%" clearable @change="emit">
+                <el-option label="(无)" value="" /><el-option label="SrvPortOnly" value="SrvPortOnly" />
+                <el-option label="SrvAddressOnly" value="SrvAddressOnly" /><el-option label="SrvPortAndAddress" value="SrvPortAndAddress" />
+                <el-option label="TxtPortOnly" value="TxtPortOnly" /><el-option label="TxtAddressOnly" value="TxtAddressOnly" />
+                <el-option label="TxtPortAndAddress" value="TxtPortAndAddress" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Trusted X-Forwarded-For">
+              <el-input v-model="rf.sockopt._trustedXffStr" type="textarea" :rows="2" placeholder="一行一个 IP/CIDR" @change="emit" />
+            </el-form-item>
+          </el-form>
+
+          <!-- Happy Eyeballs -->
+          <template v-if="rf.sockopt._enabled">
+          <el-divider content-position="left">
+            {{ t('protoCenter.sockopt.happyEyeballs') }}
+            <el-switch v-model="rf.sockopt._showHappyEyeballs" style="margin-left:12px" @change="onHappyEyeballsToggle" />
+          </el-divider>
+          <el-form v-if="rf.sockopt._showHappyEyeballs" label-width="180px" label-position="left">
+            <el-form-item :label="t('protoCenter.sockopt.tryDelayMs')">
+              <el-input-number v-model="rf.sockopt.happyEyeballs.tryDelayMs" :min="1" @change="emit" />
+              <div class="hint">{{ t('protoCenter.sockopt.tryDelayMsHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('protoCenter.sockopt.prioritizeIPv6')">
+              <el-switch v-model="rf.sockopt.happyEyeballs.prioritizeIPv6" @change="emit" />
+              <div class="hint">{{ t('protoCenter.sockopt.prioritizeIPv6Hint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('protoCenter.sockopt.interleave')">
+              <el-input-number v-model="rf.sockopt.happyEyeballs.interleave" :min="1" @change="emit" />
+              <div class="hint">{{ t('protoCenter.sockopt.interleaveHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('protoCenter.sockopt.maxConcurrentTry')">
+              <el-input-number v-model="rf.sockopt.happyEyeballs.maxConcurrentTry" :min="1" @change="emit" />
+              <div class="hint">{{ t('protoCenter.sockopt.maxConcurrentTryHint') }}</div>
+            </el-form-item>
+          </el-form>
+
+          <!-- Custom Sockopt -->
+          <el-divider content-position="left">
+            {{ t('protoCenter.sockopt.customSockopt') }}
+            <el-switch v-model="rf.sockopt._showCustomSockopt" style="margin-left:12px" />
+          </el-divider>
+          <template v-if="rf.sockopt._showCustomSockopt">
+            <div style="font-size:12px;color:#909399;margin-bottom:8px">
+              {{ t('protoCenter.sockopt.customSockoptHint') }}
+            </div>
+            <el-form label-width="180px" label-position="left">
+              <div v-for="(cs, i) in rf.sockopt._customSockopt" :key="i" style="border:1px solid #e4e7ed;border-radius:4px;padding:8px;margin-bottom:8px">
+                <div style="display:flex;gap:8px;margin-bottom:6px">
+                  <el-select v-model="cs.system" style="flex:1" clearable filterable allow-create :placeholder="t('protoCenter.sockopt.customSystem')">
+                    <el-option label="linux" value="linux" /><el-option label="windows" value="windows" />
+                    <el-option label="darwin" value="darwin" /><el-option label="android" value="android" />
+                  </el-select>
+                  <el-select v-model="cs.network" style="flex:1" clearable filterable allow-create :placeholder="t('protoCenter.sockopt.customNetwork')">
+                    <el-option label="tcp" value="tcp" /><el-option label="tcp4" value="tcp4" /><el-option label="tcp6" value="tcp6" />
+                    <el-option label="udp" value="udp" /><el-option label="udp4" value="udp4" /><el-option label="udp6" value="udp6" />
+                  </el-select>
+                  <el-select v-model="cs.type" style="width:80px">
+                    <el-option label="str" value="str" /><el-option label="int" value="int" />
+                  </el-select>
+                  <el-button size="small" type="danger" text @click="rf.sockopt._customSockopt.splice(i,1);emit()">X</el-button>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <el-input v-model="cs.level" :placeholder="t('protoCenter.sockopt.customLevelHint')" style="flex:1" />
+                  <el-input v-model="cs.opt" :placeholder="t('protoCenter.sockopt.customOptHint')" style="flex:1" />
+                  <el-input v-model="cs.value" :placeholder="cs.type === 'int' ? '12345' : 'bbr'" style="flex:1" />
+                </div>
+              </div>
+              <el-button size="small" @click="rf.sockopt._customSockopt.push({system:'',network:'',type:'str',level:'6',opt:'',value:''})">+ Add</el-button>
+            </el-form>
+          </template>
+          </template>
+        </el-tab-pane>
+
+        <!-- FinalMask Tab -->
+        <el-tab-pane :label="t('protoCenter.finalmask.title')" name="finalmask">
+          <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+            <span style="font-weight:500">{{ t('protoCenter.finalmask.enable') }}</span>
+            <el-switch v-model="rf.finalmask._enabled" />
+            <span v-if="!rf.finalmask._enabled" style="font-size:12px;color:#909399">{{ t('protoCenter.finalmask.enableHint') }}</span>
+          </div>
+          <template v-if="rf.finalmask._enabled">
+
+            <!-- TCP Mask -->
+            <el-divider content-position="left">{{ t('protoCenter.finalmask.tcpMask') }}</el-divider>
+            <div class="hint" style="margin-bottom:8px">{{ t('protoCenter.finalmask.tcpMaskHint') }}</div>
+            <div v-for="(entry, i) in rf.finalmask.tcp" :key="'tcp-'+i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:12px">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <el-select v-model="entry.type" style="flex:1" @change="onMaskTypeChange(entry, 'tcp')">
+                  <el-option label="(无)" value="" />
+                  <el-option label="fragment" value="fragment" />
+                  <el-option label="sudoku" value="sudoku" />
+                  <el-option label="header-custom" value="header-custom" />
+                </el-select>
+                <el-button size="small" type="danger" text @click="rf.finalmask.tcp.splice(i,1)">X</el-button>
+              </div>
+              <!-- fragment -->
+              <template v-if="entry.type === 'fragment'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.packets')">
+                    <el-input v-model="entry.settings.packets" placeholder="tlshello 或 1-3" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.packetsHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.length')">
+                    <el-input v-model="entry.settings.length" placeholder="100-200" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.lengthHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.delay')">
+                    <el-input v-model="entry.settings.delay" placeholder="10-20" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.delayHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.maxSplit')">
+                    <el-input v-model="entry.settings.maxSplit" placeholder="3-6" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.maxSplitHint') }}</div>
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- sudoku -->
+              <template v-if="entry.type === 'sudoku'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.password')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings.password" style="flex:1" @change="emit" />
+                      <el-button size="small" @click="entry.settings.password = genPassword(); emit()">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
+                    </div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.ascii')">
+                    <el-input v-model="entry.settings.ascii" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.customTable')">
+                    <el-input v-model="entry.settings.customTable" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.customTables')">
+                    <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
+                    <el-input-number v-model="entry.settings.paddingMin" :min="0" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
+                    <el-input-number v-model="entry.settings.paddingMax" :min="0" @change="emit" />
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- header-custom (TCP) -->
+              <template v-if="entry.type === 'header-custom'">
+                <div v-for="(group, gKey) in {clients:t('protoCenter.finalmask.clients'), servers:t('protoCenter.finalmask.servers'), errors:t('protoCenter.finalmask.errors')}" :key="gKey">
+                  <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+                    <span style="font-weight:500;font-size:13px">{{ group }}</span>
+                    <el-button size="small" text @click="(entry.settings[gKey] = entry.settings[gKey] || []).push([newClientServerItem()]);emit()">{{ t('protoCenter.finalmask.addGroup') }}</el-button>
+                  </div>
+                  <div v-for="(grp, gi) in (entry.settings[gKey] || [])" :key="gi" style="border:1px dashed #dcdfe6;border-radius:4px;padding:8px;margin-bottom:6px;margin-left:12px">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                      <span style="font-size:12px;color:#909399">{{ t('protoCenter.finalmask.groupNum') }} {{ gi+1 }}</span>
+                      <el-button size="small" text type="danger" @click="entry.settings[gKey].splice(gi,1);emit()">X</el-button>
+                      <el-button size="small" text @click="grp.push(newClientServerItem());emit()">{{ t('protoCenter.finalmask.addItem') }}</el-button>
+                    </div>
+                    <div v-for="(item, ii) in grp" :key="ii" style="display:flex;gap:6px;margin-bottom:4px;align-items:center">
+                      <el-input-number v-model="item.delay" :min="0" size="small" :placeholder="t('protoCenter.finalmask.delay')" style="width:90px" @change="emit" />
+                      <el-input-number v-model="item.rand" :min="0" size="small" :placeholder="t('protoCenter.finalmask.rand')" style="width:90px" @change="onRandChange(item)" />
+                      <el-input v-model="item.randRange" size="small" placeholder="0-255" style="width:80px" @change="emit" />
+                      <el-select v-model="item.type" size="small" style="width:80px" @change="emit">
+                        <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
+                      </el-select>
+                      <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packet')" :disabled="!!item.rand" style="flex:1" @change="onPacketChange(item)" />
+                      <el-button size="small" type="danger" text @click="grp.splice(ii,1);emit()">X</el-button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <el-button size="small" @click="rf.finalmask.tcp.push({type:'',settings:{},_json:''})">{{ t('protoCenter.finalmask.addTcpMask') }}</el-button>
+
+            <!-- UDP Mask -->
+            <el-divider content-position="left">{{ t('protoCenter.finalmask.udpMask') }}</el-divider>
+            <div class="hint" style="margin-bottom:8px">{{ t('protoCenter.finalmask.udpMaskHint') }}</div>
+            <div v-for="(entry, i) in rf.finalmask.udp" :key="'udp-'+i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:12px">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <el-select v-model="entry.type" style="flex:1" @change="onMaskTypeChange(entry, 'udp')">
+                  <el-option label="(无)" value="" />
+                  <el-option label="header-custom (自定义头)" value="header-custom" />
+                  <el-option label="mkcp-legacy (旧 mKCP 伪装)" value="mkcp-legacy" />
+                  <el-option label="noise (噪声)" value="noise" />
+                  <el-option label="salamander (Hysteria2 混淆)" value="salamander" />
+                  <el-option label="sudoku (加密混淆)" value="sudoku" />
+                  <el-option label="xdns (DNS 隧道)" value="xdns" />
+                  <el-option label="xicmp (ICMP 隧道)" value="xicmp" />
+                  <el-option label="realm (Realm 代理)" value="realm" />
+                </el-select>
+                <el-button size="small" type="danger" text @click="rf.finalmask.udp.splice(i,1)">X</el-button>
+              </div>
+              <!-- header-custom (UDP) -->
+              <template v-if="entry.type === 'header-custom'">
+                <div v-for="(group, gKey) in {client:t('protoCenter.finalmask.client'), server:t('protoCenter.finalmask.server')}" :key="gKey">
+                  <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+                    <span style="font-weight:500;font-size:13px">{{ group }}</span>
+                    <el-button size="small" text @click="(entry.settings[gKey] = entry.settings[gKey] || []).push(newUdpClientServerItem());emit()">{{ t('protoCenter.finalmask.addItem') }}</el-button>
+                  </div>
+                  <div v-for="(item, ii) in (entry.settings[gKey] || [])" :key="ii" style="display:flex;gap:6px;margin-bottom:4px;margin-left:12px;align-items:center">
+                    <el-input-number v-model="item.rand" :min="0" size="small" :placeholder="t('protoCenter.finalmask.rand')" style="width:90px" @change="onRandChange(item)" />
+                    <el-input v-model="item.randRange" size="small" placeholder="0-255" style="width:80px" @change="emit" />
+                    <el-select v-model="item.type" size="small" style="width:80px" @change="emit">
+                      <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
+                    </el-select>
+                    <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packet')" :disabled="!!item.rand" style="flex:1" @change="onPacketChange(item)" />
+                    <el-button size="small" type="danger" text @click="entry.settings[gKey].splice(ii,1);emit()">X</el-button>
+                  </div>
+                </div>
+              </template>
+              <!-- mkcp-legacy -->
+              <template v-if="entry.type === 'mkcp-legacy'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.header')">
+                    <el-select v-model="entry.settings.header" style="width:100%" clearable @change="emit">
+                      <el-option :label="t('protoCenter.finalmask.headerDefault')" value="" /><el-option label="dns" value="dns" /><el-option label="dtls" value="dtls" />
+                      <el-option label="srtp" value="srtp" /><el-option label="utp" value="utp" />
+                      <el-option label="wechat" value="wechat" /><el-option label="wireguard" value="wireguard" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.value')">
+                    <el-input v-model="entry.settings.value" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.valueHint') }}</div>
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- noise -->
+              <template v-if="entry.type === 'noise'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.reset')">
+                    <el-input v-model="entry.settings.reset" placeholder="30-60" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.resetHint') }}</div>
+                  </el-form-item>
+                </el-form>
+                <div v-for="(n, ni) in entry.settings._noise" :key="ni" style="border:1px dashed #dcdfe6;border-radius:4px;padding:8px;margin-bottom:6px;margin-left:12px">
+                  <div style="display:flex;gap:6px;margin-bottom:4px;align-items:center">
+                    <span style="font-size:12px;color:#909399">{{ t('protoCenter.finalmask.noiseNum') }} {{ ni+1 }}</span>
+                    <el-button size="small" type="danger" text @click="entry.settings._noise.splice(ni,1);emit()">X</el-button>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <el-select v-model="n.type" size="small" style="width:80px" @change="emit">
+                      <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
+                    </el-select>
+                    <el-input v-model="n.rand" size="small" placeholder="rand (1-8192)" style="flex:1" @change="onRandChange(n)" />
+                    <el-input v-model="n.randRange" size="small" placeholder="0-255" style="width:80px" @change="emit" />
+                    <el-input v-model="n.delay" size="small" placeholder="delay (10-20)" style="width:100px" @change="emit" />
+                  </div>
+                  <div style="margin-top:4px">
+                    <el-input v-model="n._packetStr" size="small" :placeholder="n.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packetHint')" :disabled="!!n.rand" @change="onPacketChange(n)" />
+                  </div>
+                </div>
+                <el-button size="small" style="margin-left:12px" @click="entry.settings._noise.push({type:'array',rand:'1-8192',randRange:'0-255',delay:'10-20',_packetStr:''})">{{ t('protoCenter.finalmask.addNoise') }}</el-button>
+              </template>
+              <!-- salamander -->
+              <template v-if="entry.type === 'salamander'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.password')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings.password" style="flex:1" @change="emit" />
+                      <el-button size="small" @click="entry.settings.password = genPassword(); emit()">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
+                    </div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.geckoMode')">
+                    <el-switch v-model="entry.settings._gecko" @change="onGeckoToggle(entry)" />
+                    <div class="hint">{{ t('protoCenter.finalmask.geckoModeHint') }}</div>
+                  </el-form-item>
+                  <el-form-item v-if="entry.settings._gecko" :label="t('protoCenter.finalmask.packetSize')">
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <el-input-number v-model="entry.settings._geckoMin" :min="1" :max="2048" size="small" style="width:100px" @change="onGeckoSizeChange(entry)" />
+                      <span>-</span>
+                      <el-input-number v-model="entry.settings._geckoMax" :min="1" :max="2048" size="small" style="width:100px" @change="onGeckoSizeChange(entry)" />
+                    </div>
+                    <div class="hint">{{ t('protoCenter.finalmask.packetSizeHint') }}</div>
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- sudoku -->
+              <template v-if="entry.type === 'sudoku'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.password')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings.password" style="flex:1" @change="emit" />
+                      <el-button size="small" @click="entry.settings.password = genPassword(); emit()">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
+                    </div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.ascii')">
+                    <el-input v-model="entry.settings.ascii" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.customTable')">
+                    <el-input v-model="entry.settings.customTable" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.customTables')">
+                    <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
+                    <el-input-number v-model="entry.settings.paddingMin" :min="0" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
+                    <el-input-number v-model="entry.settings.paddingMax" :min="0" @change="emit" />
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- xdns -->
+              <template v-if="entry.type === 'xdns'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.domains')">
+                    <el-input v-model="entry.settings._domainsStr" type="textarea" :rows="2" placeholder="t.example.com&#10;domain:method (txt/a/aaaa)" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.domainsHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.resolvers')">
+                    <el-input v-model="entry.settings._resolversStr" type="textarea" :rows="2" placeholder="t.example.com+udp://8.8.8.8:53" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.resolversHint') }}</div>
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- xicmp -->
+              <template v-if="entry.type === 'xicmp'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.dgram')">
+                    <el-switch v-model="entry.settings.dgram" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.dgramHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.ips')">
+                    <el-input v-model="entry.settings._ipsStr" type="textarea" :rows="2" placeholder="IP/CIDR" @change="emit" />
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- realm -->
+              <template v-if="entry.type === 'realm'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.realmUrl')">
+                    <el-input v-model="entry.settings.url" :placeholder="t('protoCenter.finalmask.realmUrlHint')" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.stunServers')">
+                    <el-input v-model="entry.settings._stunServersStr" type="textarea" :rows="2" placeholder="stun.nextcloud.com:3478" @change="emit" />
+                  </el-form-item>
+                </el-form>
+                <el-divider content-position="left" style="margin:8px 0">{{ t('protoCenter.finalmask.realmTls') }}</el-divider>
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.serverName')">
+                    <el-input v-model="entry.settings._tlsServerName" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.alpn')">
+                    <el-select v-model="entry.settings._tlsAlpn" style="width:100%" multiple clearable @change="emit">
+                      <el-option label="h3" value="h3" /><el-option label="h2" value="h2" /><el-option label="http/1.1" value="http/1.1" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.fingerprint')">
+                    <el-select v-model="entry.settings._tlsFingerprint" style="width:100%" clearable @change="emit">
+                      <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
+                      <el-option label="safari" value="safari" /><el-option label="random" value="random" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.allowInsecure')">
+                    <el-switch v-model="entry.settings._tlsAllowInsecure" @change="emit" />
+                  </el-form-item>
+                </el-form>
+              </template>
+            </div>
+            <el-button size="small" @click="rf.finalmask.udp.push({type:'',settings:{},_json:''})">{{ t('protoCenter.finalmask.addUdpMask') }}</el-button>
+
+            <!-- QUIC Params -->
+            <el-divider content-position="left">{{ t('protoCenter.finalmask.quicParams') }}</el-divider>
+            <el-form label-width="180px" label-position="left">
+              <el-form-item :label="t('protoCenter.finalmask.congestion')">
+                <el-select v-model="rf.finalmask.quicParams.congestion" style="width:100%" clearable @change="onCongestionChange">
+                  <el-option label="reno" value="reno" /><el-option label="bbr" value="bbr" />
+                  <el-option label="brutal" value="brutal" /><el-option label="force-brutal" value="force-brutal" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="rf.finalmask.quicParams.congestion === 'bbr'" :label="t('protoCenter.finalmask.bbrProfile')">
+                <el-select v-model="rf.finalmask.quicParams.bbrProfile" style="width:100%" clearable @change="emit">
+                  <el-option label="conservative" value="conservative" /><el-option label="standard" value="standard" /><el-option label="aggressive" value="aggressive" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.debug')">
+                <el-switch v-model="rf.finalmask.quicParams.debug" @change="emit" />
+              </el-form-item>
+              <template v-if="rf.finalmask.quicParams.congestion === 'brutal' || rf.finalmask.quicParams.congestion === 'force-brutal'">
+                <el-form-item :label="t('protoCenter.finalmask.brutalUp')">
+                  <el-input v-model="rf.finalmask.quicParams.brutalUp" placeholder="60 mbps" @change="emit" />
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.finalmask.brutalDown')">
+                  <el-input v-model="rf.finalmask.quicParams.brutalDown" placeholder="100 mbps" @change="emit" />
+                </el-form-item>
+              </template>
+              <!-- UDP Hop -->
+              <el-form-item :label="t('protoCenter.finalmask.udpHop')">
+                <el-switch v-model="rf.finalmask.quicParams._showUdpHop" @change="onQuicUdpHopToggle" />
+              </el-form-item>
+              <template v-if="rf.finalmask.quicParams._showUdpHop">
+                <el-form-item :label="t('protoCenter.finalmask.hopPorts')">
+                  <el-input v-model="rf.finalmask.quicParams.udpHop.ports" :placeholder="t('protoCenter.finalmask.hopPortsHint')" @change="emit" />
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.finalmask.hopInterval')">
+                  <el-input v-model="rf.finalmask.quicParams.udpHop.interval" :placeholder="t('protoCenter.finalmask.hopIntervalHint')" @change="emit" />
+                </el-form-item>
+              </template>
+              <el-form-item :label="t('protoCenter.finalmask.maxIdleTimeout')">
+                <el-input-number v-model="rf.finalmask.quicParams.maxIdleTimeout" :min="4" :max="120" @change="emit" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.keepAlivePeriod')">
+                <el-input-number v-model="rf.finalmask.quicParams.keepAlivePeriod" :min="2" :max="60" @change="emit" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.disablePathMTU')">
+                <el-switch v-model="rf.finalmask.quicParams.disablePathMTUDiscovery" @change="emit" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.maxIncomingStreams')">
+                <el-input-number v-model="rf.finalmask.quicParams.maxIncomingStreams" :min="8" @change="emit" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.initStreamWindow')">
+                <el-input-number v-model="rf.finalmask.quicParams.initStreamReceiveWindow" :min="16384" @change="emit" />
+                <div class="hint">{{ t('protoCenter.finalmask.initStreamWindowHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.maxStreamWindow')">
+                <el-input-number v-model="rf.finalmask.quicParams.maxStreamReceiveWindow" :min="16384" @change="emit" />
+                <div class="hint">{{ t('protoCenter.finalmask.maxStreamWindowHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.initConnWindow')">
+                <el-input-number v-model="rf.finalmask.quicParams.initConnectionReceiveWindow" :min="16384" @change="emit" />
+                <div class="hint">{{ t('protoCenter.finalmask.initConnWindowHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.maxConnWindow')">
+                <el-input-number v-model="rf.finalmask.quicParams.maxConnectionReceiveWindow" :min="16384" @change="emit" />
+                <div class="hint">{{ t('protoCenter.finalmask.maxConnWindowHint') }}</div>
+              </el-form-item>
+            </el-form>
+          </template>
+        </el-tab-pane>
+
+        <!-- Fallback Tab -->
+        <el-tab-pane :label="t('protoCenter.fallback.title')" name="fallback">
+          <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+            <span style="font-weight:500">{{ t('protoCenter.fallback.enable') }}</span>
+            <el-switch v-model="rf._fallbackEnabled" />
+            <span v-if="!rf._fallbackEnabled" style="font-size:12px;color:#909399">{{ t('protoCenter.fallback.enableHint') }}</span>
+          </div>
+          <template v-if="rf._fallbackEnabled">
+            <div class="hint" style="margin-bottom:12px">{{ t('protoCenter.fallback.desc') }}</div>
+            <div v-for="(fb, i) in rf.fallbacks" :key="i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-weight:500;font-size:13px">{{ t('protoCenter.fallback.entry') }} {{ i+1 }}</span>
+                <el-button size="small" type="danger" text @click="rf.fallbacks.splice(i,1);emit()">X</el-button>
+              </div>
+              <el-form label-width="140px" label-position="left" size="small">
+                <el-form-item :label="t('protoCenter.fallback.name')">
+                  <el-input v-model="fb.name" :placeholder="t('protoCenter.fallback.nameHint')" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.fallback.nameDesc') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.fallback.alpn')">
+                  <el-select v-model="fb._alpn" style="width:100%" clearable @change="emit">
+                    <el-option label="(任意)" value="" />
+                    <el-option label="h2" value="h2" /><el-option label="http/1.1" value="http/1.1" /><el-option label="h3" value="h3" />
+                  </el-select>
+                  <div class="hint">{{ t('protoCenter.fallback.alpnDesc') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.fallback.path')">
+                  <el-input v-model="fb.path" placeholder="/path" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.fallback.pathDesc') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.fallback.dest')">
+                  <el-input v-model="fb.dest" placeholder="80 或 addr:port 或 ＠vless-grpc" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.fallback.destDesc') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.fallback.xver')">
+                  <el-select v-model="fb.xver" style="width:100%" @change="emit">
+                    <el-option label="0 (不发送)" :value="0" />
+                    <el-option label="1" :value="1" />
+                    <el-option label="2" :value="2" />
+                  </el-select>
+                  <div class="hint">{{ t('protoCenter.fallback.xverDesc') }}</div>
+                </el-form-item>
+              </el-form>
+            </div>
+            <el-button size="small" @click="rf.fallbacks.push({name:'',_alpn:'',path:'',dest:80,xver:0})">+ {{ t('protoCenter.fallback.add') }}</el-button>
+          </template>
+        </el-tab-pane>
       </el-tabs>
 
       <template #footer>
@@ -951,11 +1715,38 @@
         <el-button type="primary" @click="saveInbound">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Target Management Dialog -->
+    <el-dialog v-model="showTargetMgr" title="管理 Target 预设" width="600px" top="10vh">
+      <div style="margin-bottom:8px;font-size:12px;color:#909399">
+        点击 ☆ 设为默认（★），新建入站时固定使用该预设。再次点击 ★ 取消默认（恢复随机选择）。
+      </div>
+      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <el-input v-model="newTarget.target" placeholder="host:port 或 socket 路径" style="flex:2" />
+        <el-input v-model="newTarget.sni" placeholder="SNI (域名)" style="flex:1" />
+        <el-select v-model="newTarget.type" style="width:90px">
+          <el-option label="TCP" value="tcp" /><el-option label="Sock" value="sock" />
+        </el-select>
+        <el-button size="small" type="primary" @click="addTarget">添加</el-button>
+        <el-button size="small" @click="resetTargets">重置</el-button>
+      </div>
+      <div style="max-height:400px;overflow-y:auto">
+        <div v-for="(t, i) in realityTargets" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;padding:4px 0" :style="t.default ? 'background:#ecf5ff;border-radius:4px;padding:4px 8px' : ''">
+          <el-button size="small" :type="t.default ? 'primary' : 'info'" text @click="setDefaultTarget(i)" :title="'设为默认'">
+            {{ t.default ? '★' : '☆' }}
+          </el-button>
+          <span style="flex:1;font-size:13px">{{ t.target }}</span>
+          <span style="flex:1;font-size:13px;color:#909399">{{ t.sni }}</span>
+          <el-tag size="small" :type="t.type === 'sock' ? 'warning' : ''">{{ t.type || 'tcp' }}</el-tag>
+          <el-button size="small" type="danger" text @click="removeTarget(i)">删除</el-button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
@@ -967,6 +1758,41 @@ const form = ref([])
 const dlg = ref(false)
 const editIdx = ref(-1)
 const activeTab = ref('basic')
+const certList = ref([])
+const realityTargets = ref([])
+const defaultTarget = computed(() => realityTargets.value.find(t => t.default))
+const showTargetMgr = ref(false)
+const newTarget = ref({ target: '', sni: '', type: 'tcp', default: false })
+async function loadTargets() {
+  try {
+    const data = await client.get('/system/reality-targets')
+    if (Array.isArray(data)) realityTargets.value = data
+  } catch {}
+}
+async function saveTargets() {
+  try { await client.put('/system/reality-targets', realityTargets.value) } catch {}
+}
+function addTarget() {
+  if (!newTarget.value.target) return
+  if (!realityTargets.value.find(t => t.target === newTarget.value.target)) {
+    realityTargets.value.push({ ...newTarget.value })
+    saveTargets()
+  }
+  newTarget.value = { target: '', sni: '', type: 'tcp', default: false }
+}
+function removeTarget(i) { realityTargets.value.splice(i, 1); saveTargets() }
+function setDefaultTarget(i) {
+  const isDefault = realityTargets.value[i].default
+  realityTargets.value.forEach(t => { t.default = false })
+  if (!isDefault) realityTargets.value[i].default = true
+  saveTargets()
+}
+async function resetTargets() {
+  try {
+    const data = await client.post('/system/reality-targets/reset')
+    if (Array.isArray(data)) realityTargets.value = data
+  } catch {}
+}
 const rf = reactive(getDefaultInbound())
 
 function genRemark() { return 'Node-' + Math.random().toString(36).substring(2, 8) }
@@ -1003,8 +1829,11 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { users: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'none', tls: { serverName: '', alpnStr: '', fingerprint: '' }, reality: { target: '', serverNamesStr: '', privateKey: '', shortId: '', fingerprint: 'chrome' }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: 'POST', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, auth: genBase64Password(), udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'none', tls: { serverName: '', _alpn: [], minVersion: '', maxVersion: '', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: '', _certMode: 'content', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: 'POST', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, auth: genBase64Password(), udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
+    _fallbackEnabled: false, fallbacks: [],
+    sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
+    finalmask: { _enabled: false, tcp: [], udp: [], quicParams: { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 } },
     _wgAddressesStr: '', _tunGatewayStr: '', _tunDnsStr: '', _tunAutoRoutingStr: '',
   }
 }
@@ -1073,6 +1902,136 @@ function onXmuxConnections() {
   emit()
 }
 
+function onCurvesChange() { emit() }
+
+async function genRealityKey(rf) {
+  try {
+    const data = await client.post('/binaries/x25519-key')
+    if (data && data.privateKey) {
+      rf.streamSettings.reality.privateKey = data.privateKey
+      rf.streamSettings.reality._password = data.password || ''
+      // Also generate short IDs
+      genRandomShortId(rf)
+      emit()
+      ElMessage.success(t('protoCenter.tls.generateSuccess'))
+    }
+  } catch (e) { ElMessage.error(t('protoCenter.tls.generateFailed') + ': ' + (e.message || e)) }
+}
+
+function genRandomShortId(rf) {
+  const ids = [''] // first line empty
+  for (let i = 0; i < 12; i++) {
+    const len = Math.random() > 0.5 ? 8 : 16
+    ids.push(Array.from(crypto.getRandomValues(new Uint8Array(len / 2))).map(b => b.toString(16).padStart(2, '0')).join(''))
+  }
+  rf.streamSettings.reality.shortIdsStr = ids.join('\n')
+  emit()
+}
+
+function onTargetChange() {
+  const t = realityTargets.value.find(rt => rt.target === rf.streamSettings.reality.target)
+  if (t) rf.streamSettings.reality.serverNamesStr = t.sni
+  emit()
+}
+
+const ifaceList = ref([])
+async function loadInterfaces() {
+  try {
+    const data = await client.get('/binaries/interfaces')
+    if (Array.isArray(data)) ifaceList.value = data
+  } catch { ifaceList.value = ['eth0', 'wg0', 'lo'] }
+}
+
+function onHappyEyeballsToggle(val) {
+  if (val && rf.sockopt.happyEyeballs.tryDelayMs === 0) {
+    rf.sockopt.happyEyeballs.tryDelayMs = 250
+  }
+}
+
+function onCustomSockoptToggle(val) {
+  if (val && rf.sockopt._customSockopt && !rf.sockopt._customSockopt.length) {
+    rf.sockopt._customSockopt.push({ system: 'linux', network: 'tcp', type: 'str', level: '6', opt: '13', value: 'bbr' })
+  }
+}
+
+async function genMldsa65(rf) {
+  try {
+    const data = await client.post('/binaries/mldsa65-key')
+    if (data && data.seed) {
+      rf.streamSettings.reality.mldsa65Seed = data.seed
+      rf.streamSettings.reality._mldsa65Verify = data.verify || ''
+      emit()
+      ElMessage.success(t('protoCenter.tls.generateSuccess'))
+    }
+  } catch (e) { ElMessage.error(t('protoCenter.tls.generateFailed') + ': ' + (e.message || e)) }
+}
+
+function onCertModeChange(rf) {
+  rf.streamSettings.tls._certId = ''
+  rf.streamSettings.tls._certificateFile = ''
+  rf.streamSettings.tls._keyFile = ''
+  rf.streamSettings.tls._certificateContent = ''
+  rf.streamSettings.tls._keyContent = ''
+  emit()
+}
+
+function onCertSelect(rf) {
+  const certId = rf.streamSettings.tls._certId
+  if (!certId) { rf.streamSettings.tls._certName = ''; emit(); return }
+  const cert = certList.value.find(c => c.id === certId)
+  if (!cert) return
+  const tls = rf.streamSettings.tls
+  tls._certName = cert.name + ' (' + cert.domain + ')'
+  if (tls._certMode === 'file') {
+    tls._certificateFile = cert.cert_path || cert.fullchain_path || ''
+    tls._keyFile = cert.key_path || ''
+    tls._certificateContent = ''
+    tls._keyContent = ''
+  } else {
+    tls._certificateContent = cert.cert_content || ''
+    tls._keyContent = cert.key_content || ''
+    tls._certificateFile = ''
+    tls._keyFile = ''
+  }
+  emit()
+}
+
+async function generateEchKeys(rf) {
+  try {
+    const sni = rf.streamSettings.tls.serverName || 'example.com'
+    const data = await client.post('/binaries/ech-generate', { server_name: sni })
+    if (data) {
+      if (data.echServerKeys) rf.streamSettings.tls.echServerKeys = data.echServerKeys
+      if (data.echConfigList) rf.streamSettings.tls.echConfigList = data.echConfigList
+      emit()
+      ElMessage.success(t('protoCenter.tls.generateSuccess'))
+    }
+  } catch (e) {
+    ElMessage.error(t('protoCenter.tls.generateFailed') + ': ' + (e.message || e))
+  }
+}
+
+async function loadCertList() {
+  try {
+    const res = await client.get('/certificates', { params: { limit: 100 } })
+    const items = (res && res.items) || (res && res.data && res.data.items) || (Array.isArray(res) ? res : [])
+    certList.value = items
+    // Match cert ID for existing configs so select shows the name
+    form.value.forEach(ib => {
+      const tls = ib.streamSettings && ib.streamSettings.tls
+      if (!tls || tls._certId) return
+      const certFile = tls._certificateFile || ''
+      if (!certFile) return
+      const matchPath = certFile.replace(/^(\.\.\/)+/, '')
+      const found = items.find(c => c.cert_path === matchPath || c.fullchain_path === matchPath)
+      if (found) {
+        tls._certId = found.id
+        tls._certName = found.name + ' (' + found.domain + ')'
+      }
+    })
+  } catch (e) { console.error('loadCertList failed:', e) }
+}
+
 function onRawHeaderChange(val) {
   if (val === 'http') {
     rf.streamSettings.raw.request = { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [{ key: 'Host', value: 'www.baidu.com' }, { key: 'User-Agent', value: 'Mozilla/5.0' }] }
@@ -1083,13 +2042,208 @@ function onRawHeaderChange(val) {
   }
 }
 
-function parseRealitySettings(reality) {
+function parseTlsSettings(tls) {
+  const certs = tls.certificates || []
+  const cert = certs[0] || {}
+  const settingsArr = tls.settings || []
+  const clientSettings = settingsArr[0] || {}
+  let certMode = 'content'
+  if (cert.certificateFile) certMode = 'file'
+  // Strip ../../../ prefix for display
+  const stripPrefix = (p) => p ? p.replace(/^(\.\.\/)+/, '') : ''
   return {
-    target: reality.target || '',
-    serverNamesStr: (reality.serverNames || []).join(', '),
+    serverName: tls.serverName || '', _alpn: tls.alpn || [],
+    minVersion: tls.minVersion || '', maxVersion: tls.maxVersion || '',
+    _cipherSuites: tls.cipherSuites ? tls.cipherSuites.split(':') : [], _curves: tls.curvePreferences || [],
+    rejectUnknownSni: tls.rejectUnknownSni || false, disableSystemRoot: tls.disableSystemRoot || false,
+    enableSessionResumption: tls.enableSessionResumption || false, masterKeyLog: tls.masterKeyLog || '',
+    fingerprint: clientSettings.fingerprint || '',
+    _certMode: certMode, _certId: '', _certName: '',
+    _certificateFile: stripPrefix(cert.certificateFile || ''), _keyFile: stripPrefix(cert.keyFile || ''),
+    _certificateContent: (cert.certificate || []).join('\n'), _keyContent: (cert.key || []).join('\n'),
+    _certUsage: cert.usage || 'encipherment', _buildChain: cert.buildChain || false,
+    _ocspStapling: cert.ocspStapling || 3600, _oneTimeLoading: cert.oneTimeLoading || false,
+    echServerKeys: tls.echServerKeys || '', echConfigList: clientSettings.echConfigList || '',
+  }
+}
+
+function parseRealitySettings(reality) {
+  const settingsArr = reality.settings || []
+  const cs = settingsArr[0] || {}
+  const lfu = reality.limitFallbackUpload || {}
+  const lfd = reality.limitFallbackDownload || {}
+  return {
+    target: reality.target || 'www.amazon.com:443',
+    serverNamesStr: (reality.serverNames || []).join('\n'),
     privateKey: reality.privateKey || '',
-    shortId: reality.shortId || '',
-    fingerprint: reality.fingerprint || 'chrome',
+    _password: cs.password || '',
+    _fingerprint: cs.fingerprint || 'chrome',
+    shortIdsStr: (reality.shortIds || []).join('\n'),
+    show: reality.show || false,
+    xver: reality.xver || 0,
+    minClientVer: reality.minClientVer || '',
+    maxClientVer: reality.maxClientVer || '',
+    maxTimeDiff: reality.maxTimeDiff || 0,
+    mldsa65Seed: reality.mldsa65Seed || '',
+    _mldsa65Verify: cs.mldsa65Verify || '',
+    _showLimitUpload: !!reality.limitFallbackUpload,
+    limitFallbackUpload: { afterBytes: lfu.afterBytes || 0, bytesPerSec: lfu.bytesPerSec || 0, burstBytesPerSec: lfu.burstBytesPerSec || 0 },
+    _showLimitDownload: !!reality.limitFallbackDownload,
+    limitFallbackDownload: { afterBytes: lfd.afterBytes || 0, bytesPerSec: lfd.bytesPerSec || 0, burstBytesPerSec: lfd.burstBytesPerSec || 0 },
+  }
+}
+
+function parseFinalmask(fm) {
+  const defQuic = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
+  if (!fm || Object.keys(fm).length === 0) return { _enabled: false, tcp: [], udp: [], quicParams: defQuic }
+  const qp = fm.quicParams || {}
+  // Parse TCP entry
+  const parseTcpEntry = e => {
+    const s = e.settings || {}
+    if (e.type === 'header-custom') {
+      return { type: 'header-custom', settings: {
+        clients: (s.clients || []).map(g => (g || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))),
+        servers: (s.servers || []).map(g => (g || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))),
+        errors: (s.errors || []).map(g => (g || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))),
+      }, _json: '' }
+    }
+    return { type: e.type || '', settings: s, _json: '' }
+  }
+  // Parse UDP entry
+  const parseUdpEntry = e => {
+    const s = e.settings || {}
+    if (e.type === 'header-custom') {
+      return { type: 'header-custom', settings: {
+        client: (s.client || []).map(i => ({ rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') })),
+        server: (s.server || []).map(i => ({ rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') })),
+      }, _json: '' }
+    }
+    const base = { type: e.type || '', settings: { ...s }, _json: '' }
+    if (e.type === 'noise') base.settings._noise = (s.noise || []).map(n => ({ type: n.type || 'array', rand: n.rand || '', randRange: n.randRange || '0-255', delay: n.delay || '', _packetStr: Array.isArray(n.packet) ? n.packet.join(',') : (n.packet || '') }))
+    if (e.type === 'xdns') { base.settings._domainsStr = (s.domains || []).join('\n'); base.settings._resolversStr = (s.resolvers || []).join('\n') }
+    if (e.type === 'xicmp') base.settings._ipsStr = (s.ips || []).join('\n')
+    if (e.type === 'realm') {
+      const tls = s.tlsConfig || {}
+      base.settings._stunServersStr = (s.stunServers || []).join('\n')
+      base.settings._tlsServerName = tls.serverName || ''
+      base.settings._tlsAlpn = tls.alpn || []
+      base.settings._tlsFingerprint = tls.fingerprint || ''
+      base.settings._tlsAllowInsecure = tls.allowInsecure || false
+    }
+    if (e.type === 'sudoku') base.settings._customTablesStr = (s.customTables || []).join('\n')
+    if (e.type === 'salamander') {
+      const ps = s.packetSize || ''
+      const match = /^(\d+)-(\d+)$/.exec(ps)
+      base.settings._gecko = !!match
+      base.settings._geckoMin = match ? Number(match[1]) : 512
+      base.settings._geckoMax = match ? Number(match[2]) : 1200
+    }
+    return base
+  }
+  return {
+    _enabled: true,
+    tcp: (fm.tcp || []).map(parseTcpEntry),
+    udp: (fm.udp || []).map(parseUdpEntry),
+    quicParams: {
+      congestion: qp.congestion || '', bbrProfile: qp.bbrProfile || 'standard', debug: qp.debug || false,
+      brutalUp: qp.brutalUp || '', brutalDown: qp.brutalDown || '',
+      _showUdpHop: !!qp.udpHop,
+      udpHop: qp.udpHop || { ports: '20000-50000', interval: '5-10' },
+      maxIdleTimeout: qp.maxIdleTimeout || 30, keepAlivePeriod: qp.keepAlivePeriod || 10,
+      disablePathMTUDiscovery: qp.disablePathMTUDiscovery || false, maxIncomingStreams: qp.maxIncomingStreams || 1024,
+      initStreamReceiveWindow: qp.initStreamReceiveWindow || 8388608, maxStreamReceiveWindow: qp.maxStreamReceiveWindow || 8388608,
+      initConnectionReceiveWindow: qp.initConnectionReceiveWindow || 20971520, maxConnectionReceiveWindow: qp.maxConnectionReceiveWindow || 20971520,
+    },
+  }
+}
+
+function newClientServerItem() { return { delay: 0, rand: 0, randRange: '0-255', type: 'array', _packetStr: '' } }
+function newUdpClientServerItem() { return { rand: 0, randRange: '0-255', type: 'array', _packetStr: '' } }
+function newNoiseItem() { return { type: 'array', rand: '1-8192', randRange: '0-255', delay: '10-20', _packetStr: '' } }
+// rand 与 packet 互斥
+function onRandChange(item) { if (item.rand) item._packetStr = ''; emit() }
+function onPacketChange(item) { if (item._packetStr) item.rand = 0; emit() }
+
+function onMaskTypeChange(entry, protocol) {
+  entry.settings = {}
+  entry._json = ''
+  if (entry.type === 'header-custom') {
+    if (protocol === 'tcp') entry.settings = { clients: [[newClientServerItem()]], servers: [[]], errors: [[]] }
+    else entry.settings = { client: [newUdpClientServerItem()], server: [newUdpClientServerItem()] }
+  }
+  if (entry.type === 'fragment') entry.settings = { packets: 'tlshello', length: '100-200', delay: '', maxSplit: '' }
+  if (entry.type === 'sudoku') entry.settings = { password: genPassword(), ascii: '', customTable: '', _customTablesStr: '', paddingMin: 0, paddingMax: 0 }
+  if (entry.type === 'salamander') entry.settings = { password: genPassword(), _gecko: false, _geckoMin: 512, _geckoMax: 1200 }
+  if (entry.type === 'mkcp-legacy') entry.settings = { header: '', value: '' }
+  if (entry.type === 'noise') entry.settings = { reset: 0, _noise: [newNoiseItem()] }
+  if (entry.type === 'xdns') entry.settings = { _domainsStr: '', _resolversStr: '' }
+  if (entry.type === 'xicmp') entry.settings = { dgram: false, _ipsStr: '' }
+  if (entry.type === 'realm') entry.settings = { url: '', _stunServersStr: '', _tlsServerName: '', _tlsAlpn: [], _tlsFingerprint: '', _tlsAllowInsecure: false }
+}
+
+function onQuicUdpHopToggle(val) {
+  if (val && !rf.finalmask.quicParams.udpHop) {
+    rf.finalmask.quicParams.udpHop = { ports: '20000-50000', interval: '5-10' }
+  }
+}
+
+function onCongestionChange(val) {
+  if (val === 'brutal' || val === 'force-brutal') {
+    if (!rf.finalmask.quicParams.brutalUp) rf.finalmask.quicParams.brutalUp = '60 mbps'
+    if (!rf.finalmask.quicParams.brutalDown && rf.finalmask.quicParams.brutalDown !== 0) rf.finalmask.quicParams.brutalDown = '100 mbps'
+  }
+  emit()
+}
+
+function onGeckoToggle(entry) {
+  if (entry.settings._gecko) {
+    entry.settings._geckoMin = 512
+    entry.settings._geckoMax = 1200
+    entry.settings.packetSize = '512-1200'
+  } else {
+    delete entry.settings.packetSize
+    delete entry.settings._geckoMin
+    delete entry.settings._geckoMax
+  }
+  emit()
+}
+
+function onGeckoSizeChange(entry) {
+  const min = entry.settings._geckoMin || 1
+  const max = entry.settings._geckoMax || 2048
+  entry.settings.packetSize = min + '-' + max
+  emit()
+}
+
+function parseSockopt(s) {
+  if (!s || Object.keys(s).length === 0) return { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 250, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] }
+  const he = s.happyEyeballs || {}
+  const cs = s.customSockopt || []
+  const hasHe = he.tryDelayMs > 0
+  const hasCs = Array.isArray(cs) && cs.length > 0
+  return {
+    _enabled: true,
+    mark: s.mark !== undefined ? s.mark : 0,
+    tcpFastOpen: s.tcpFastOpen === true,
+    tproxy: s.tproxy || 'off',
+    domainStrategy: s.domainStrategy !== undefined ? s.domainStrategy : '',
+    interface: s.interface || '',
+    v6only: s.V6Only === true || s.v6only === true,
+    tcpKeepAliveIdle: s.tcpKeepAliveIdle !== undefined ? s.tcpKeepAliveIdle : 0,
+    tcpKeepAliveInterval: s.tcpKeepAliveInterval !== undefined ? s.tcpKeepAliveInterval : 0,
+    tcpUserTimeout: s.tcpUserTimeout !== undefined ? s.tcpUserTimeout : 10000,
+    tcpcongestion: s.tcpcongestion || '',
+    tcpMaxSeg: s.tcpMaxSeg !== undefined ? s.tcpMaxSeg : 1440,
+    tcpWindowClamp: s.tcpWindowClamp !== undefined ? s.tcpWindowClamp : 600,
+    tcpMptcp: s.tcpMptcp === true,
+    acceptProxyProtocol: s.acceptProxyProtocol === true,
+    dialerProxy: s.dialerProxy || '',
+    addressPortStrategy: s.addressPortStrategy || '',
+    _trustedXffStr: (s.trustedXForwardedFor || []).join('\n'),
+    _showHappyEyeballs: hasHe,
+    happyEyeballs: hasHe ? { tryDelayMs: he.tryDelayMs, prioritizeIPv6: he.prioritizeIPv6 || false, interleave: he.interleave || 1, maxConcurrentTry: he.maxConcurrentTry || 4 } : { tryDelayMs: 250, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 },
+    _showCustomSockopt: hasCs,
+    _customSockopt: Array.isArray(cs) ? cs.map(c => ({ system: c.system || '', network: c.network || '', type: c.type || 'str', level: c.level || '6', opt: c.opt || '', value: c.value || '' })) : [],
   }
 }
 
@@ -1265,7 +2419,7 @@ function parseInbound(ib) {
     _portMap: ib.settings && ib.settings.portMap ? Object.entries(ib.settings.portMap).map(([local, remote]) => ({ local, remote })) : [],
     streamSettings: {
       network: ss.network || 'raw', security: ss.security || 'none',
-      tls: { serverName: tls.serverName || '', alpnStr: (tls.alpn || []).join(', '), fingerprint: tls.fingerprint || '' },
+      tls: parseTlsSettings(tls),
       reality: parseRealitySettings(ss.realitySettings || {}),
       raw: parseRawSettings(ss.rawSettings || ss.tcpSettings || {}),
       ws: parseWsSettings(ss.wsSettings || {}),
@@ -1284,6 +2438,10 @@ function parseInbound(ib) {
       _ipsExcludedStr: (ib.sniffing.ipsExcluded || []).join('\n'),
       routeOnly: ib.sniffing.routeOnly || false,
     } : { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
+    sockopt: parseSockopt(ib.streamSettings?.sockopt),
+    finalmask: parseFinalmask(ib.streamSettings?.finalmask),
+    _fallbackEnabled: !!(ib.settings?.fallbacks && ib.settings.fallbacks.length),
+    fallbacks: (ib.settings?.fallbacks || []).map(f => ({ name: f.name || '', _alpn: f.alpn || '', path: f.path || '', dest: f.dest || 80, xver: f.xver || 0 })),
     _wgAddressesStr: (ib.settings?.address || []).join(', '),
     _wgPublicKey: ib._wgPublicKey || '',
     _tunGatewayStr: (ib.settings?.gateway || []).join(', '),
@@ -1306,6 +2464,46 @@ function buildInbound(ib) {
       routeOnly: ib.sniffing.routeOnly || false,
     },
   }
+  // Add sockopt only if enabled
+  const sk = ib.sockopt || {}
+  const sockopt = {}
+  if (sk._enabled) {
+  if (sk.mark) sockopt.mark = sk.mark
+  if (sk.tcpFastOpen) sockopt.tcpFastOpen = true
+  if (sk.tproxy && sk.tproxy !== 'off') sockopt.tproxy = sk.tproxy
+  if (sk.domainStrategy) sockopt.domainStrategy = sk.domainStrategy
+  if (sk.interface) sockopt.interface = sk.interface
+  if (sk.v6only) sockopt.V6Only = true
+  sockopt.tcpKeepAliveIdle = sk.tcpKeepAliveIdle || 0
+  sockopt.tcpKeepAliveInterval = sk.tcpKeepAliveInterval || 0
+  sockopt.tcpUserTimeout = sk.tcpUserTimeout || 10000
+  if (sk.tcpcongestion) sockopt.tcpcongestion = sk.tcpcongestion
+  sockopt.tcpMaxSeg = sk.tcpMaxSeg || 1440
+  sockopt.tcpWindowClamp = sk.tcpWindowClamp || 600
+  if (sk.tcpMptcp) sockopt.tcpMptcp = true
+  if (sk.acceptProxyProtocol) sockopt.acceptProxyProtocol = true
+  if (sk.dialerProxy) sockopt.dialerProxy = sk.dialerProxy
+  if (sk.addressPortStrategy) sockopt.addressPortStrategy = sk.addressPortStrategy
+  if (sk._trustedXffStr) sockopt.trustedXForwardedFor = sk._trustedXffStr.split('\n').map(s => s.trim()).filter(Boolean)
+  // happyEyeballs: write full config when enabled
+  if (sk._showHappyEyeballs && sk.happyEyeballs && sk.happyEyeballs.tryDelayMs > 0) {
+    sockopt.happyEyeballs = {
+      tryDelayMs: sk.happyEyeballs.tryDelayMs || 250,
+      prioritizeIPv6: sk.happyEyeballs.prioritizeIPv6 || false,
+      interleave: sk.happyEyeballs.interleave || 1,
+      maxConcurrentTry: sk.happyEyeballs.maxConcurrentTry || 4,
+    }
+  }
+  // customSockopt: only write when enabled and has entries
+  if (sk._showCustomSockopt && sk._customSockopt && sk._customSockopt.filter(c => c.opt).length) {
+    sockopt.customSockopt = sk._customSockopt.filter(c => c.opt).map(c => {
+      const obj = { type: c.type || 'str', level: c.level || '6', opt: c.opt, value: c.value || '' }
+      if (c.system) obj.system = c.system
+      if (c.network) obj.network = c.network
+      return obj
+    })
+  }
+  } // end sockopt._enabled
   // Only add streamSettings for protocols that use transport layer
   const noStreamProtocols = ['wireguard', 'tun', 'socks', 'http', 'tunnel', 'dokodemo-door']
   if (!noStreamProtocols.includes(ib.protocol)) {
@@ -1313,6 +2511,79 @@ function buildInbound(ib) {
       network: ib.streamSettings.network,
       security: ib.streamSettings.security,
     }
+    if (sk._enabled && Object.keys(sockopt).length) result.streamSettings.sockopt = sockopt
+  }
+  // Add finalmask only if enabled
+  const fm = ib.finalmask || {}
+  if (fm._enabled) {
+    const finalmask = {}
+    // Helper: convert _packetStr to packet array
+    const toPacket = (s) => { const p = s._packetStr; if (!p) return []; return p.split(',').map(v => { const n = Number(v); return isNaN(n) ? v : n }) }
+    const cleanInternal = (s) => { const r = {}; Object.keys(s).forEach(k => { if (!k.startsWith('_') && s[k] !== '' && s[k] !== undefined) r[k] = s[k] }); return r }
+    // TCP mask
+    if (fm.tcp && fm.tcp.length) {
+      finalmask.tcp = fm.tcp.filter(e => e.type).map(e => {
+        const s = { ...e.settings }
+        if (e.type === 'header-custom') {
+          const convertGroup = grp => (grp || []).map(items => (items || []).map(i => { const item = cleanInternal(i); if (i._packetStr) item.packet = toPacket(i); return item }))
+          return { type: 'header-custom', settings: { clients: convertGroup(s.clients), servers: convertGroup(s.servers), errors: convertGroup(s.errors) } }
+        }
+        delete s._customTablesStr
+        return { type: e.type, settings: s }
+      })
+    }
+    // UDP mask
+    if (fm.udp && fm.udp.length) {
+      finalmask.udp = fm.udp.filter(e => e.type).map(e => {
+        const s = { ...e.settings }
+        if (e.type === 'header-custom') {
+          const convertArr = arr => (arr || []).map(i => { const item = cleanInternal(i); if (i._packetStr) item.packet = toPacket(i); return item })
+          return { type: 'header-custom', settings: { client: convertArr(s.client), server: convertArr(s.server) } }
+        }
+        if (e.type === 'noise') {
+          s.noise = (s._noise || []).filter(n => n.rand).map(n => { const item = cleanInternal(n); if (n._packetStr) item.packet = toPacket(n); return item })
+          delete s._noise
+        }
+        if (e.type === 'xdns') {
+          if (s._domainsStr) s.domains = s._domainsStr.split('\n').map(d => d.trim()).filter(Boolean)
+          if (s._resolversStr) s.resolvers = s._resolversStr.split('\n').map(d => d.trim()).filter(Boolean)
+          delete s._domainsStr; delete s._resolversStr
+        }
+        if (e.type === 'xicmp') { if (s._ipsStr) s.ips = s._ipsStr.split('\n').map(d => d.trim()).filter(Boolean); delete s._ipsStr }
+        if (e.type === 'realm') {
+          if (s._stunServersStr) s.stunServers = s._stunServersStr.split('\n').map(d => d.trim()).filter(Boolean)
+          const tlsCfg = {}
+          if (s._tlsServerName) tlsCfg.serverName = s._tlsServerName
+          if (s._tlsAlpn && s._tlsAlpn.length) tlsCfg.alpn = s._tlsAlpn
+          if (s._tlsFingerprint) tlsCfg.fingerprint = s._tlsFingerprint
+          if (s._tlsAllowInsecure) tlsCfg.allowInsecure = true
+          if (Object.keys(tlsCfg).length) s.tlsConfig = tlsCfg
+          delete s._stunServersStr; delete s._tlsServerName; delete s._tlsAlpn; delete s._tlsFingerprint; delete s._tlsAllowInsecure
+        }
+        if (e.type === 'sudoku' && s._customTablesStr) { s.customTables = s._customTablesStr.split('\n').map(d => d.trim()).filter(Boolean); delete s._customTablesStr }
+        return { type: e.type, settings: cleanInternal(s) }
+      })
+    }
+    // QUIC params
+    // quicParams: always write when finalmask is enabled
+    const qp = fm.quicParams || {}
+    const quicObj = {}
+    if (qp.congestion) quicObj.congestion = qp.congestion
+    if (qp.bbrProfile) quicObj.bbrProfile = qp.bbrProfile
+    if (qp.debug) quicObj.debug = true
+    if (qp.brutalUp !== undefined && qp.brutalUp !== '') quicObj.brutalUp = qp.brutalUp
+    if (qp.brutalDown !== undefined && qp.brutalDown !== '') quicObj.brutalDown = qp.brutalDown || 0
+    if (qp._showUdpHop && qp.udpHop) quicObj.udpHop = qp.udpHop
+    quicObj.maxIdleTimeout = qp.maxIdleTimeout || 30
+    quicObj.keepAlivePeriod = qp.keepAlivePeriod || 10
+    if (qp.disablePathMTUDiscovery) quicObj.disablePathMTUDiscovery = true
+    quicObj.maxIncomingStreams = qp.maxIncomingStreams || 1024
+    quicObj.initStreamReceiveWindow = qp.initStreamReceiveWindow || 8388608
+    quicObj.maxStreamReceiveWindow = qp.maxStreamReceiveWindow || 8388608
+    quicObj.initConnectionReceiveWindow = qp.initConnectionReceiveWindow || 20971520
+    quicObj.maxConnectionReceiveWindow = qp.maxConnectionReceiveWindow || 20971520
+    finalmask.quicParams = quicObj
+    if (Object.keys(finalmask).length) result.streamSettings.finalmask = finalmask
   }
   // Handle listen/port based on type
   if (ib._listenType === 'sock') {
@@ -1329,20 +2600,66 @@ function buildInbound(ib) {
       const tls = ib.streamSettings.tls || {}
       const tlsSettings = {}
       if (tls.serverName) tlsSettings.serverName = tls.serverName
-      if (tls.alpnStr) tlsSettings.alpn = tls.alpnStr.split(',').map(s => s.trim()).filter(Boolean)
-      if (tls.fingerprint) tlsSettings.fingerprint = tls.fingerprint
+      if (tls._alpn && tls._alpn.length) tlsSettings.alpn = tls._alpn
+      if (tls.minVersion) tlsSettings.minVersion = tls.minVersion
+      if (tls.maxVersion) tlsSettings.maxVersion = tls.maxVersion
+      if (tls._cipherSuites && tls._cipherSuites.length) tlsSettings.cipherSuites = tls._cipherSuites.join(':')
+      if (tls._curves && tls._curves.length) tlsSettings.curvePreferences = tls._curves
+      if (tls.rejectUnknownSni) tlsSettings.rejectUnknownSni = true
+      if (tls.disableSystemRoot) tlsSettings.disableSystemRoot = true
+      if (tls.enableSessionResumption) tlsSettings.enableSessionResumption = true
+      if (tls.masterKeyLog) tlsSettings.masterKeyLog = tls.masterKeyLog
+      if (tls.echServerKeys) tlsSettings.echServerKeys = tls.echServerKeys
+      // Client params in settings array
+      const settingsObj = {}
+      if (tls.fingerprint) settingsObj.fingerprint = tls.fingerprint
+      if (tls.echConfigList) settingsObj.echConfigList = tls.echConfigList
+      if (Object.keys(settingsObj).length) tlsSettings.settings = [settingsObj]
+      // Certificates with ../../../ prefix
+      const hasCert = (tls._certMode === 'file' && (tls._certificateFile || tls._keyFile)) || (tls._certMode === 'content' && (tls._certificateContent || tls._keyContent))
+      if (hasCert) {
+        const certObj = {}
+        certObj.usage = tls._certUsage || 'encipherment'
+        if (tls._buildChain) certObj.buildChain = true
+        certObj.ocspStapling = tls._ocspStapling || 3600
+        if (tls._oneTimeLoading) certObj.oneTimeLoading = true
+        if (tls._certMode === 'file') {
+          const prefix = '../../../'
+          if (tls._certificateFile) certObj.certificateFile = tls._certificateFile.startsWith('/') ? tls._certificateFile : prefix + tls._certificateFile.replace(/^(\.\.\/)+/, '')
+          if (tls._keyFile) certObj.keyFile = tls._keyFile.startsWith('/') ? tls._keyFile : prefix + tls._keyFile.replace(/^(\.\.\/)+/, '')
+        } else {
+          if (tls._certificateContent) certObj.certificate = tls._certificateContent.split('\n').filter(Boolean)
+          if (tls._keyContent) certObj.key = tls._keyContent.split('\n').filter(Boolean)
+        }
+        tlsSettings.certificates = [certObj]
+      }
       result.streamSettings.tlsSettings = tlsSettings
     }
     // Add Reality settings if security is reality
     if (ib.streamSettings.security === 'reality') {
       const r = ib.streamSettings.reality || {}
-      const realitySettings = {}
-      if (r.target) realitySettings.target = r.target
-      if (r.serverNamesStr) realitySettings.serverNames = r.serverNamesStr.split(',').map(s => s.trim()).filter(Boolean)
-      if (r.privateKey) realitySettings.privateKey = r.privateKey
-      if (r.shortId) realitySettings.shortId = r.shortId
-      if (r.fingerprint) realitySettings.fingerprint = r.fingerprint
-      result.streamSettings.realitySettings = realitySettings
+      const rs = {}
+      if (r.target) rs.target = r.target
+      const names = r.serverNamesStr ? r.serverNamesStr.split('\n').map(s => s.trim()).filter(Boolean) : []
+      if (names.length) rs.serverNames = names
+      if (r.privateKey) rs.privateKey = r.privateKey
+      const sids = r.shortIdsStr ? r.shortIdsStr.split('\n').map(s => s.trim()).filter(s => s !== '') : []
+      if (sids.length) rs.shortIds = sids
+      if (r.show) rs.show = true
+      if (r.xver) rs.xver = r.xver
+      if (r.minClientVer) rs.minClientVer = r.minClientVer
+      if (r.maxClientVer) rs.maxClientVer = r.maxClientVer
+      if (r.maxTimeDiff) rs.maxTimeDiff = r.maxTimeDiff
+      if (r.mldsa65Seed) rs.mldsa65Seed = r.mldsa65Seed
+      if (r._showLimitUpload) rs.limitFallbackUpload = r.limitFallbackUpload
+      if (r._showLimitDownload) rs.limitFallbackDownload = r.limitFallbackDownload
+      // Client params in settings array
+      const settingsObj = {}
+      if (r._fingerprint) settingsObj.fingerprint = r._fingerprint
+      if (r._password) settingsObj.password = r._password
+      if (r._mldsa65Verify) settingsObj.mldsa65Verify = r._mldsa65Verify
+      if (Object.keys(settingsObj).length) rs.settings = [settingsObj]
+      result.streamSettings.realitySettings = rs
     }
     // Add RAW settings if network is raw
     if (ib.streamSettings.network === 'raw' && ib.streamSettings.raw) {
@@ -1567,6 +2884,20 @@ function buildInbound(ib) {
       if (!result.settings[key].length) delete result.settings[key]
     }
   }
+  // Add fallbacks if enabled, otherwise remove
+  if (ib._fallbackEnabled && ib.fallbacks && ib.fallbacks.length) {
+    result.settings.fallbacks = ib.fallbacks.filter(f => f.dest).map(f => {
+      const fb = { dest: f.dest }
+      if (f.name) fb.name = f.name
+      if (f._alpn) fb.alpn = f._alpn
+      if (f.path) fb.path = f.path
+      if (f.xver) fb.xver = f.xver
+      return fb
+    })
+    if (!result.settings.fallbacks.length) delete result.settings.fallbacks
+  } else {
+    delete result.settings.fallbacks
+  }
   return result
 }
 
@@ -1585,12 +2916,22 @@ function showAdd() {
   rf.settings = d.settings
   rf.streamSettings = d.streamSettings
   rf.sniffing = d.sniffing
+  rf.sockopt = JSON.parse(JSON.stringify(d.sockopt))
+  rf.finalmask = JSON.parse(JSON.stringify(d.finalmask))
+  rf._fallbackEnabled = d._fallbackEnabled || false
+  rf.fallbacks = JSON.parse(JSON.stringify(d.fallbacks || []))
   rf._wgAddressesStr = d._wgAddressesStr
   rf._tunGatewayStr = d._tunGatewayStr
   rf._tunDnsStr = d._tunDnsStr
   rf._tunAutoRoutingStr = d._tunAutoRoutingStr
   activeTab.value = 'basic'
   dlg.value = true
+  // Auto-select default target or random
+  const def = realityTargets.value.find(t => t.default)
+  const rt = def || realityTargets.value[Math.floor(Math.random() * realityTargets.value.length)]
+  rf.streamSettings.reality.target = rt.target
+  rf.streamSettings.reality.serverNamesStr = rt.sni
+  genRealityKey(rf)
 }
 
 function showEdit(i) {
@@ -1610,6 +2951,10 @@ function showEdit(i) {
   rf.settings = JSON.parse(JSON.stringify(ib.settings || {}))
   rf.streamSettings = JSON.parse(JSON.stringify(ib.streamSettings || {}))
   rf.sniffing = JSON.parse(JSON.stringify(ib.sniffing || { enabled: false, destOverride: ['http', 'tls'], routeOnly: false }))
+  rf.sockopt = JSON.parse(JSON.stringify(ib.sockopt || { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 250, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] }))
+  rf.finalmask = JSON.parse(JSON.stringify(ib.finalmask || { _enabled: false, tcp: [], udp: [], quicParams: { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 } }))
+  rf._fallbackEnabled = ib._fallbackEnabled || false
+  rf.fallbacks = JSON.parse(JSON.stringify(ib.fallbacks || []))
   rf._wgAddressesStr = ib._wgAddressesStr || ''
   rf._wgPublicKey = ib._wgPublicKey || ''
   rf._tunGatewayStr = ib._tunGatewayStr || ''
@@ -1702,7 +3047,7 @@ async function loadInbounds() {
 
 function emit() { /* no longer needed, saves directly to API */ }
 
-onMounted(loadInbounds)
+onMounted(() => { loadInbounds(); loadCertList(); loadTargets(); loadInterfaces() })
 </script>
 
 <style scoped>

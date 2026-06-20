@@ -15,12 +15,12 @@
     </el-form-item>
     <el-form-item :label="t('protoCenter.api.services')">
       <el-checkbox-group v-model="form.services" @change="emit">
-        <el-checkbox label="HandlerService" />
-        <el-checkbox label="LoggerService" />
-        <el-checkbox label="StatsService" />
-        <el-checkbox label="ObservatoryService" />
-        <el-checkbox label="RoutingService" />
-        <el-checkbox label="BalancerService" />
+        <el-checkbox value="HandlerService" />
+        <el-checkbox value="LoggerService" />
+        <el-checkbox value="StatsService" />
+        <el-checkbox value="ObservatoryService" />
+        <el-checkbox value="RoutingService" />
+        <el-checkbox value="BalancerService" />
       </el-checkbox-group>
       <div class="hint">{{ t('protoCenter.api.servicesHint') }}</div>
     </el-form-item>

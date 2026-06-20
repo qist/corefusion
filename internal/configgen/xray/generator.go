@@ -85,9 +85,10 @@ type InboundSettings struct {
 }
 
 type ClientConfig struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	AlterID int  `json:"alterId,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Password string `json:"password,omitempty"`
+	Email    string `json:"email,omitempty"`
+	AlterID  int    `json:"alterId,omitempty"`
 }
 
 type StreamSettings struct {
@@ -101,10 +102,34 @@ type StreamSettings struct {
 }
 
 type TLSSettings struct {
-	ServerName string   `json:"serverName"`
-	ALPN       []string `json:"alpn,omitempty"`
-	Fingerprint string  `json:"fingerprint,omitempty"`
-	AllowInsecure bool  `json:"allowInsecure,omitempty"`
+	ServerName              string            `json:"serverName,omitempty"`
+	ALPN                    []string          `json:"alpn,omitempty"`
+	Fingerprint             string            `json:"fingerprint,omitempty"`
+	AllowInsecure           bool              `json:"allowInsecure,omitempty"`
+	VerifyPeerCertByName    string            `json:"verifyPeerCertByName,omitempty"`
+	RejectUnknownSni        bool              `json:"rejectUnknownSni,omitempty"`
+	MinVersion              string            `json:"minVersion,omitempty"`
+	MaxVersion              string            `json:"maxVersion,omitempty"`
+	CipherSuites            string            `json:"cipherSuites,omitempty"`
+	DisableSystemRoot       bool              `json:"disableSystemRoot,omitempty"`
+	EnableSessionResumption bool              `json:"enableSessionResumption,omitempty"`
+	PinnedPeerCertSha256    []string          `json:"pinnedPeerCertSha256,omitempty"`
+	CurvePreferences        []string          `json:"curvePreferences,omitempty"`
+	MasterKeyLog            string            `json:"masterKeyLog,omitempty"`
+	EchServerKeys           string            `json:"echServerKeys,omitempty"`
+	EchConfigList           string            `json:"echConfigList,omitempty"`
+	Certificates            []TLSCertificate  `json:"certificates,omitempty"`
+}
+
+type TLSCertificate struct {
+	Usage          string   `json:"usage,omitempty"`
+	BuildChain     bool     `json:"buildChain,omitempty"`
+	OcspStapling   int      `json:"ocspStapling,omitempty"`
+	OneTimeLoading bool     `json:"oneTimeLoading,omitempty"`
+	CertificateFile string  `json:"certificateFile,omitempty"`
+	Certificate    []string `json:"certificate,omitempty"`
+	KeyFile        string   `json:"keyFile,omitempty"`
+	Key            []string `json:"key,omitempty"`
 }
 
 type WSSettings struct {

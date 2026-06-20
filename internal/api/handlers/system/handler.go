@@ -1,6 +1,7 @@
 package system
 
 import (
+	"encoding/json"
 	"io"
 	"strconv"
 	"time"
@@ -302,4 +303,71 @@ func (h *Handler) SystemRollback(c *gin.Context) {
 
 func (h *Handler) ListUpdateJobs(c *gin.Context) {
 	response.OK(c, []interface{}{})
+}
+
+const realityTargetsKey = "reality.targets"
+
+var defaultRealityTargets = `[
+  {"target":"www.amazon.com:443","sni":"www.amazon.com"},
+  {"target":"aws.amazon.com:443","sni":"aws.amazon.com"},
+  {"target":"www.oracle.com:443","sni":"www.oracle.com"},
+  {"target":"www.nvidia.com:443","sni":"www.nvidia.com"},
+  {"target":"www.amd.com:443","sni":"www.amd.com"},
+  {"target":"www.intel.com:443","sni":"www.intel.com"},
+  {"target":"www.sony.com:443","sni":"www.sony.com"},
+  {"target":"www.microsoft.com:443","sni":"www.microsoft.com"},
+  {"target":"www.google.com:443","sni":"www.google.com"},
+  {"target":"dl.google.com:443","sni":"dl.google.com"},
+  {"target":"www.apple.com:443","sni":"www.apple.com"},
+  {"target":"www.cloudflare.com:443","sni":"www.cloudflare.com"}
+]`
+
+// GetRealityTargets handles GET /api/v1/system/reality-targets.
+func (h *Handler) GetRealityTargets(c *gin.Context) {
+	val, err := h.db.WithContext(c.Request.Context()).Raw(
+		"SELECT value FROM system_settings WHERE key = ?", realityTargetsKey,
+	).Rows()
+	if err != nil || !val.Next() {
+		if val != nil {
+			val.Close()
+		}
+		c.Data(200, "application/json", []byte(defaultRealityTargets))
+		return
+	}
+	var v string
+	val.Scan(&v)
+	val.Close()
+	if v == "" {
+		c.Data(200, "application/json", []byte(defaultRealityTargets))
+		return
+	}
+	c.Data(200, "application/json", []byte(v))
+}
+
+// UpdateRealityTargets handles PUT /api/v1/system/reality-targets.
+func (h *Handler) UpdateRealityTargets(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		response.BadRequest(c, "INVALID_BODY", "failed to read body")
+		return
+	}
+	// Validate JSON
+	var arr []interface{}
+	if err := json.Unmarshal(body, &arr); err != nil {
+		response.BadRequest(c, "INVALID_JSON", "must be a JSON array")
+		return
+	}
+	h.db.WithContext(c.Request.Context()).Exec(
+		"INSERT INTO system_settings (key, value, created_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+		realityTargetsKey, string(body),
+	)
+	response.OK(c, arr)
+}
+
+// ResetRealityTargets handles POST /api/v1/system/reality-targets/reset.
+func (h *Handler) ResetRealityTargets(c *gin.Context) {
+	h.db.WithContext(c.Request.Context()).Exec(
+		"DELETE FROM system_settings WHERE key = ?", realityTargetsKey,
+	)
+	c.Data(200, "application/json", []byte(defaultRealityTargets))
 }

@@ -438,6 +438,15 @@ export default {
       trafficStats: 'Traffic Stats', server: 'Listen', users: 'Users', congestion: 'Congestion Control',
       advanced: 'Advanced',
     },
+    preview: {
+      loadFromFile: 'Load from file',
+      loadedFromFile: 'Loaded from',
+      loaded: 'Config file loaded successfully',
+      loadFailed: 'Failed to load',
+      copyJson: 'Copy JSON',
+      copied: 'Copied',
+      download: 'Download',
+    },
     tls: {
       serverName: 'Server Name',
       verifyPeerCertByName: 'Verify Peer Cert By Name',

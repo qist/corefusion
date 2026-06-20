@@ -3,6 +3,8 @@ package system
 import (
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -370,4 +372,24 @@ func (h *Handler) ResetRealityTargets(c *gin.Context) {
 		"DELETE FROM system_settings WHERE key = ?", realityTargetsKey,
 	)
 	c.Data(200, "application/json", []byte(defaultRealityTargets))
+}
+
+// GetConfigFile handles GET /api/v1/system/config-file/:coreType.
+// Reads the actual config file from disk (runtime/xray.jsonc etc.)
+func (h *Handler) GetConfigFile(c *gin.Context) {
+	coreType := c.Param("coreType")
+	if coreType == "" {
+		coreType = "xray"
+	}
+	configPath := filepath.Join(h.dataDir, "runtime", coreType+".jsonc")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			response.NotFound(c, "CONFIG_NOT_FOUND", "config file not found: "+configPath)
+			return
+		}
+		response.InternalError(c, "READ_FAILED", err.Error())
+		return
+	}
+	c.Data(200, "application/json", data)
 }

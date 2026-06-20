@@ -750,6 +750,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
 				systemGroup.PUT("/reality-targets", systemH.UpdateRealityTargets)
 				systemGroup.POST("/reality-targets/reset", systemH.ResetRealityTargets)
+				systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
 			}
 
 			// Proxy management

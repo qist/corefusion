@@ -439,6 +439,15 @@ export default {
       trafficStats: '流量统计', server: '监听', users: '用户', congestion: '拥塞控制',
       advanced: '高级设置',
     },
+    preview: {
+      loadFromFile: '读取配置文件',
+      loadedFromFile: '已加载自',
+      loaded: '配置文件加载成功',
+      loadFailed: '加载失败',
+      copyJson: '复制 JSON',
+      copied: '已复制',
+      download: '下载',
+    },
     tls: {
       serverName: 'Server Name',
       verifyPeerCertByName: 'Verify Peer Cert By Name',

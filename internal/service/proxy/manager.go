@@ -816,6 +816,12 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 		return fmt.Errorf("%s is not installed", proxyType)
 	}
 
+	// Check if already running
+	if info.Status == "running" {
+		log.Printf("proxy %s: already running, skipping start", proxyType)
+		return nil
+	}
+
 	// Ensure nginx dependencies before starting
 	if proxyType == ProxyNginx {
 		if err := checkNginxUser(); err != nil {
@@ -946,9 +952,15 @@ func (m *Manager) stopExisting(proxyType ProxyType) {
 	case "windows":
 		exec.Command("taskkill", "/IM", string(proxyType)+".exe", "/F").Run()
 	default:
+		// First try graceful stop via signal
 		exec.Command("pkill", "-f", string(proxyType)).Run()
+		time.Sleep(1 * time.Second)
+		// Force kill any remaining processes
+		exec.Command("pkill", "-9", "-f", string(proxyType)).Run()
+		time.Sleep(500 * time.Millisecond)
 	}
-	time.Sleep(500 * time.Millisecond)
+	// Wait for process to fully exit
+	time.Sleep(1 * time.Second)
 }
 
 // StopProxy stops a proxy service and marks it as manually stopped.

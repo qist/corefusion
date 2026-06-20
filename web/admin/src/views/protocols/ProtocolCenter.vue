@@ -7,39 +7,39 @@
           <span style="font-size:20px">{{ getCoreIcon(selectedCore) }}</span>
           <span style="font-size:18px;font-weight:600">{{ getCoreLabel(selectedCore) }}</span>
           <el-tag v-if="svc.binary_installed" :type="svc.state==='running'?'success':(svc.state==='crashed'?'danger':'info')" size="small">
-            {{ svc.state==='running'?'运行中':svc.state==='crashed'?'已崩溃':svc.state==='stopped'?'已停止':'未知' }}
+            {{ svc.state==='running'?t('protoCenter.status.running'):svc.state==='crashed'?t('protoCenter.status.crashed'):svc.state==='stopped'?t('protoCenter.status.stopped'):t('protoCenter.status.unknown') }}
           </el-tag>
-          <el-tag v-else type="danger" size="small">未安装</el-tag>
+          <el-tag v-else type="danger" size="small">{{ t('protoCenter.status.notInstalled') }}</el-tag>
         </div>
-        <el-button plain @click="goBack">返回协议中心</el-button>
+        <el-button plain @click="goBack">{{ t('protoCenter.status.backToCenter') }}</el-button>
       </div>
 
       <!-- Status Bar -->
       <el-card shadow="hover" style="margin-bottom:16px" body-style="padding:12px 20px">
         <div style="display:flex;align-items:center;gap:24px;font-size:13px;flex-wrap:wrap">
           <div style="display:flex;gap:6px;align-items:center">
-            <span style="color:#909399">版本</span>
-            <span v-if="!svc.binary_installed" style="color:#f56c6c;cursor:pointer" @click="showVersions">未安装</span>
+            <span style="color:#909399">{{ t('protoCenter.status.version') }}</span>
+            <span v-if="!svc.binary_installed" style="color:#f56c6c;cursor:pointer" @click="showVersions">{{ t('protoCenter.status.notInstalled') }}</span>
             <el-tooltip v-else :content="svc.version" placement="bottom">
               <el-link type="primary" @click="showVersions" style="max-width:none;white-space:normal">{{ svc.version || '...' }}</el-link>
             </el-tooltip>
           </div>
           <div style="display:flex;gap:6px;align-items:center" v-if="svc.state==='running'">
             <span style="color:#909399">PID</span><span>{{ svc.pid }}</span>
-            <span style="color:#909399;margin-left:8px">CPU</span><span>{{ svc.cpu?.toFixed(1) }}%</span>
-            <span style="color:#909399;margin-left:8px">内存</span><span>{{ fmtSize(svc.mem) }}</span>
-            <span style="color:#909399;margin-left:8px">运行时间</span><span>{{ fmtUptime(svc.uptime) }}</span>
-            <span style="color:#909399;margin-left:8px">启动时间</span><span>{{ fmtTime(svc.started_at) }}</span>
+            <span style="color:#909399;margin-left:8px">{{ t('protoCenter.status.cpu') }}</span><span>{{ svc.cpu?.toFixed(1) }}%</span>
+            <span style="color:#909399;margin-left:8px">{{ t('protoCenter.status.memory') }}</span><span>{{ fmtSize(svc.mem) }}</span>
+            <span style="color:#909399;margin-left:8px">{{ t('protoCenter.status.uptime') }}</span><span>{{ fmtUptime(svc.uptime) }}</span>
+            <span style="color:#909399;margin-left:8px">{{ t('protoCenter.status.startTime') }}</span><span>{{ fmtTime(svc.started_at) }}</span>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px">
             <template v-if="!svc.binary_installed">
-              <el-button type="primary" size="small" :loading="acting" @click="showVersions">下载安装</el-button>
+              <el-button type="primary" size="small" :loading="acting" @click="showVersions">{{ t('protoCenter.status.install') }}</el-button>
             </template>
             <template v-else>
-              <el-button v-if="svc.state!=='running'" type="success" size="small" :loading="acting" @click="doStart">启动</el-button>
-              <el-button v-else type="danger" size="small" :loading="acting" @click="doStop">停止</el-button>
-              <el-button size="small" :loading="acting" @click="doRestart">重启</el-button>
-              <el-button type="warning" size="small" plain @click="showVersions">切换版本</el-button>
+              <el-button v-if="svc.state!=='running'" type="success" size="small" :loading="acting" @click="doStart">{{ t('protoCenter.status.start') }}</el-button>
+              <el-button v-else type="danger" size="small" :loading="acting" @click="doStop">{{ t('protoCenter.status.stop') }}</el-button>
+              <el-button size="small" :loading="acting" @click="doRestart">{{ t('protoCenter.status.restart') }}</el-button>
+              <el-button type="warning" size="small" plain @click="showVersions">{{ t('protoCenter.status.switchVersion') }}</el-button>
             </template>
           </div>
         </div>
@@ -63,8 +63,8 @@
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <span style="font-size:15px;font-weight:600">{{ getLabel(activeSection) }}</span>
             <div v-if="activeSection !== '_preview'">
-              <el-button size="small" @click="resetSection">重置</el-button>
-              <el-button size="small" type="primary" :loading="saving" @click="saveSection">保存</el-button>
+              <el-button size="small" @click="resetSection">{{ t('common.reset') }}</el-button>
+              <el-button size="small" type="primary" :loading="saving" @click="saveSection">{{ t('common.save') }}</el-button>
             </div>
           </div>
           <!-- Component -->
@@ -117,6 +117,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import client from '../../api/client'
@@ -154,35 +155,39 @@ import TuicCongestion from './sections/TuicCongestion.vue'
 import TuicAdvanced from './sections/TuicAdvanced.vue'
 import JsonPreview from './sections/JsonPreview.vue'
 
+const { t } = useI18n()
+
 const cores = [
-  { type:'xray', label:'Xray', icon:'⚡', desc:'VLESS/VMess/Trojan/Shadowsocks 等多协议' },
-  { type:'singbox', label:'sing-box', icon:'📦', desc:'模块化通用代理平台，支持 TUN' },
-  { type:'hysteria2', label:'Hysteria 2', icon:'🚀', desc:'基于 QUIC 的高速代理，抗丢包' },
-  { type:'tuic', label:'TUIC', icon:'🌊', desc:'基于 QUIC 的轻量低延迟代理' },
+  { type:'xray', label:'Xray', icon:'⚡', desc:t('protoCenter.cores.xrayDesc') },
+  { type:'singbox', label:'sing-box', icon:'📦', desc:t('protoCenter.cores.singboxDesc') },
+  { type:'hysteria2', label:'Hysteria 2', icon:'🚀', desc:t('protoCenter.cores.hysteria2Desc') },
+  { type:'tuic', label:'TUIC', icon:'🌊', desc:t('protoCenter.cores.tuicDesc') },
 ]
 
-const SECTIONS = {
-  xray: [
-    {key:'log',label:'日志'},{key:'api',label:'API'},{key:'dns',label:'DNS'},{key:'routing',label:'路由'},{key:'policy',label:'策略'},
-    {key:'inbounds',label:'入站'},{key:'outbounds',label:'出站'},
-    {key:'stats',label:'统计'},{key:'metrics',label:'指标'},
-    {key:'fakedns',label:'FakeDNS'},{key:'observatory',label:'健康检测'},{key:'burstObservatory',label:'突发检测'},
-    {key:'version',label:'版本限制'},{key:'geodata',label:'Geo数据'},{key:'_preview',label:'配置预览'},
-  ],
-  singbox: [
-    {key:'log',label:'日志'},{key:'dns',label:'DNS'},{key:'route',label:'路由'},
-    {key:'inbounds',label:'入站'},{key:'outbounds',label:'出站'},{key:'experimental',label:'实验功能'},
-    {key:'_preview',label:'配置预览'},
-  ],
-  hysteria2: [
-    {key:'listen',label:'监听'},{key:'tls',label:'TLS'},{key:'auth',label:'认证'},
-    {key:'bandwidth',label:'带宽'},{key:'quic',label:'QUIC'},{key:'trafficStats',label:'流量统计'},
-    {key:'_preview',label:'配置预览'},
-  ],
-  tuic: [
-    {key:'server',label:'监听'},{key:'users',label:'用户'},{key:'certificate',label:'TLS'},
-    {key:'congestion_control',label:'拥塞控制'},{key:'_preview',label:'配置预览'},
-  ],
+function getSections() {
+  return {
+    xray: [
+      {key:'log',label:t('protoCenter.sections.log')},{key:'api',label:t('protoCenter.sections.api')},{key:'dns',label:t('protoCenter.sections.dns')},{key:'routing',label:t('protoCenter.sections.routing')},{key:'policy',label:t('protoCenter.sections.policy')},
+      {key:'inbounds',label:t('protoCenter.sections.inbounds')},{key:'outbounds',label:t('protoCenter.sections.outbounds')},
+      {key:'stats',label:t('protoCenter.sections.stats')},{key:'metrics',label:t('protoCenter.sections.metrics')},
+      {key:'fakedns',label:t('protoCenter.sections.fakedns')},{key:'observatory',label:t('protoCenter.sections.observatory')},{key:'burstObservatory',label:t('protoCenter.sections.burstObservatory')},
+      {key:'version',label:t('protoCenter.sections.version')},{key:'geodata',label:t('protoCenter.sections.geodata')},{key:'_preview',label:t('protoCenter.sections.preview')},
+    ],
+    singbox: [
+      {key:'log',label:t('protoCenter.sections.log')},{key:'dns',label:t('protoCenter.sections.dns')},{key:'route',label:t('protoCenter.sections.route')},
+      {key:'inbounds',label:t('protoCenter.sections.inbounds')},{key:'outbounds',label:t('protoCenter.sections.outbounds')},{key:'experimental',label:t('protoCenter.sections.experimental')},
+      {key:'_preview',label:t('protoCenter.sections.preview')},
+    ],
+    hysteria2: [
+      {key:'listen',label:t('protoCenter.sections.listen')},{key:'tls',label:t('protoCenter.sections.tls')},{key:'auth',label:t('protoCenter.sections.auth')},
+      {key:'bandwidth',label:t('protoCenter.sections.bandwidth')},{key:'quic',label:t('protoCenter.sections.quic')},{key:'trafficStats',label:t('protoCenter.sections.trafficStats')},
+      {key:'_preview',label:t('protoCenter.sections.preview')},
+    ],
+    tuic: [
+      {key:'server',label:t('protoCenter.sections.server')},{key:'users',label:t('protoCenter.sections.users')},{key:'certificate',label:t('protoCenter.sections.tls')},
+      {key:'congestion_control',label:t('protoCenter.sections.congestion')},{key:'_preview',label:t('protoCenter.sections.preview')},
+    ],
+  }
 }
 
 const COMPS = {
@@ -216,12 +221,12 @@ function getLabel(k){return sections.value.find(s=>s.key===k)?.label||k}
 function getComp(k){return COMPS[selectedCore.value]?.[k]||null}
 function fmtSize(b){if(!b)return'-';return b<1024?b+'B':b<1048576?(b/1024).toFixed(0)+'KB':(b/1048576).toFixed(1)+'MB'}
 function fmtTime(ts){if(!ts||ts==='0001-01-01T00:00:00Z')return'-';return new Date(ts).toLocaleString()}
-function fmtUptime(s){if(!s)return'-';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);let r='';if(d>0)r+=d+'天 ';if(h>0)r+=h+'小时 ';r+=m+'分钟';return r.trim()}
+function fmtUptime(s){if(!s)return'-';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);let r='';if(d>0)r+=d+t('protoCenter.status.days')+' ';if(h>0)r+=h+t('protoCenter.status.hours')+' ';r+=m+t('protoCenter.status.minutes');return r.trim()}
 
 async function selectCore(t){
   selectedCore.value=t
   activeSection.value=''
-  sections.value=SECTIONS[t]||[]
+  sections.value=getSections()[t]||[]
   localStorage.setItem('active_core',t)
   await loadConfig(t)
   await fetchStatus()

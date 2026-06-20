@@ -282,7 +282,7 @@
           <el-input v-model="siteForm.path" placeholder="443" />
         </el-form-item>
         <el-form-item v-else label="Path">
-          <el-input v-model="siteForm.path" placeholder="/api (留空转发全部)" />
+          <el-input v-model="siteForm.path" :placeholder="t('proxy.pathHint')" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
           <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443" />
@@ -301,13 +301,13 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4'" label="lb_policy">
-          <el-select v-model="siteForm.lb_policy" style="width:100%" clearable placeholder="留空使用默认">
-            <el-option label="round_robin (轮询)" value="round_robin" />
-            <el-option label="least_conn (最少连接)" value="least_conn" />
-            <el-option label="ip_hash (IP哈希)" value="ip_hash" />
-            <el-option label="first (第一个)" value="first" />
-            <el-option label="random (随机)" value="random" />
-            <el-option label="uri (URI哈希)" value="uri" />
+          <el-select v-model="siteForm.lb_policy" style="width:100%" clearable :placeholder="t('proxy.lbPolicyHint')">
+            <el-option :label="t('proxy.lbRoundRobin')" value="round_robin" />
+            <el-option :label="t('proxy.lbLeastConn')" value="least_conn" />
+            <el-option :label="t('proxy.lbIpHash')" value="ip_hash" />
+            <el-option :label="t('proxy.lbFirst')" value="first" />
+            <el-option :label="t('proxy.lbRandom')" value="random" />
+            <el-option :label="t('proxy.lbUri')" value="uri" />
             <el-option label="cookie (Cookie)" value="cookie" />
           </el-select>
         </el-form-item>
@@ -534,13 +534,13 @@ async function onSNIToggle(enabled) {
       // Batch migrate HTTPS sites
       const port = sniSettings.value.local_port || '8443'
       const res = await client.post('/caddy/batch-update-ports', { port, enable: true })
-      ElMessage.success(`SNI 已开启，迁移 ${res.updated || 0} 个站点`)
+      ElMessage.success(t('proxy.sniEnabled', { count: res.updated || 0 }))
     } else {
       // Disable SNI rules (keep in DB)
       await client.post('/caddy/sni-rules/toggle', { enabled: false })
       // Restore sites to port 443
       await client.post('/caddy/batch-update-ports', { port: '443', enable: false })
-      ElMessage.success('SNI 已关闭，规则已保留（禁用）')
+      ElMessage.success(t('proxy.sniDisabled'))
     }
     await applyConfig()
     fetchSites()
@@ -561,7 +561,7 @@ async function batchMigrate() {
     }
     const res = await client.post('/caddy/batch-update-ports', { port, enable: true })
     await applyConfig()
-    ElMessage.success(`迁移完成，更新 ${res.updated || 0} 个站点`)
+    ElMessage.success(t('proxy.migrateDone', { count: res.updated || 0 }))
     fetchSites()
   } catch (e) {}
 }
@@ -576,7 +576,7 @@ async function showReleases() {
 
 async function downloadVersion(url, tagName) {
   downloading.value = true
-  downloadProgress.value = '正在下载 ' + tagName + '...'
+  downloadProgress.value = t('proxy.downloading', { name: tagName })
   try {
     await client.post('/proxy/download', { type: 'caddy', download_url: url, tag_name: tagName })
     try { await client.post('/proxy/start?type=caddy') } catch {}

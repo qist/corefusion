@@ -6,21 +6,21 @@
     </el-form-item>
     <el-form-item :label="t('protoCenter.api.listen')">
       <el-select v-model="form.listen" style="width:100%" clearable filterable allow-create @change="emit">
-        <el-option label="不启用 (自动添加 Inbound + Routing)" value="" />
+        <el-option :label="t('protoCenter.api.listenDisabled')" value="" />
         <el-option label="127.0.0.1:62789" value="127.0.0.1:62789" />
         <el-option label="127.0.0.1:10085" value="127.0.0.1:10085" />
       </el-select>
       <div class="hint">{{ t('protoCenter.api.listenHint') }}</div>
-      <div class="hint">{{ t('protoCenter.api.listenHint') }}</div>
+      <div class="hint">{{ t('protoCenter.api.listenDesc') }}</div>
     </el-form-item>
     <el-form-item :label="t('protoCenter.api.services')">
       <el-checkbox-group v-model="form.services" @change="emit">
-        <el-checkbox value="HandlerService" />
-        <el-checkbox value="LoggerService" />
-        <el-checkbox value="StatsService" />
-        <el-checkbox value="ObservatoryService" />
-        <el-checkbox value="RoutingService" />
-        <el-checkbox value="BalancerService" />
+        <el-checkbox value="HandlerService" label="HandlerService" />
+        <el-checkbox value="LoggerService" label="LoggerService" />
+        <el-checkbox value="StatsService" label="StatsService" />
+        <el-checkbox value="ObservatoryService" label="ObservatoryService" />
+        <el-checkbox value="RoutingService" label="RoutingService" />
+        <el-checkbox value="BalancerService" label="BalancerService" />
       </el-checkbox-group>
       <div class="hint">{{ t('protoCenter.api.servicesHint') }}</div>
     </el-form-item>

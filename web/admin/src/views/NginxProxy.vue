@@ -506,7 +506,7 @@
           <el-input v-model="siteForm.domain" placeholder="www.example.com" />
         </el-form-item>
         <el-form-item v-else label="Path">
-          <el-input v-model="siteForm.path" placeholder="/api (留空转发全部)" />
+          <el-input v-model="siteForm.path" :placeholder="t('proxy.pathHint')" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
           <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443" />

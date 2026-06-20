@@ -365,11 +365,11 @@
               </el-form-item>
               <el-form-item label="Public Key">
                 <el-input v-model="rf._wgPublicKey" readonly />
-                <div class="hint">从私钥自动派生</div>
+                <div class="hint">{{ t('protoCenter.transport.autoDerive') }}</div>
               </el-form-item>
               <el-form-item label="MTU">
                 <el-input-number v-model="rf.settings.mtu" :min="0" />
-                <div class="hint">默认 1420</div>
+                <div class="hint">{{ t('protoCenter.transport.defaultMtu') }}</div>
               </el-form-item>
               <el-form-item label="No Kernel TUN">
                 <el-switch v-model="rf.settings.noKernelTun" />
@@ -387,7 +387,7 @@
                   <el-form-item label="Public Key"><el-input v-model="p.publicKey" /></el-form-item>
                   <el-form-item label="Allowed IPs"><el-input v-model="p._allowedIPsStr" placeholder="0.0.0.0/0, ::/0" /></el-form-item>
                   <el-form-item label="Keep Alive"><el-input-number v-model="p.keepAlive" :min="0" /></el-form-item>
-                  <el-form-item label="Comment"><el-input v-model="p.comment" placeholder="备注，如 iPhone、笔记本" /></el-form-item>
+                  <el-form-item label="Comment"><el-input v-model="p.comment" placeholder="e.g. iPhone, Laptop" /></el-form-item>
                 </el-form>
               </div>
               <el-button size="small" @click="rf.settings.peers.push({publicKey:'',_allowedIPsStr:'0.0.0.0/0, ::/0',keepAlive:0,comment:''})">+ Add Peer</el-button>
@@ -445,30 +445,30 @@
             <el-form label-width="180px" label-position="left">
               <el-form-item label="Name">
                 <el-input v-model="rf.settings.name" placeholder="xray0" />
-                <div class="hint">TUN 接口名，默认 xray0</div>
+                <div class="hint">{{ t('protoCenter.transport.tunNameHint') }}</div>
               </el-form-item>
               <el-form-item label="MTU">
                 <el-input-number v-model="rf.settings.mtu" :min="0" />
-                <div class="hint">默认 1500</div>
+                <div class="hint">{{ t('protoCenter.transport.tunMtu') }}</div>
               </el-form-item>
               <el-form-item label="Gateway">
                 <el-input v-model="rf._tunGatewayStr" placeholder="10.0.0.1/16, fc00::1/64" />
-                <div class="hint">逗号分隔，IPv4/IPv6 地址前缀</div>
+                <div class="hint">{{ t('protoCenter.transport.tunAddresses') }}</div>
               </el-form-item>
               <el-form-item label="DNS">
                 <el-input v-model="rf._tunDnsStr" placeholder="1.1.1.1, 8.8.8.8" />
-                <div class="hint">逗号分隔，TUN 接口 DNS 服务器</div>
+                <div class="hint">{{ t('protoCenter.transport.tunDns') }}</div>
               </el-form-item>
               <el-form-item label="User Level">
                 <el-input-number v-model="rf.settings.userLevel" :min="0" />
               </el-form-item>
               <el-form-item label="Auto System Routing Table">
                 <el-input v-model="rf._tunAutoRoutingStr" placeholder="0.0.0.0/0, ::/0" />
-                <div class="hint">逗号分隔，仅 Windows，自动写入系统路由表</div>
+                <div class="hint">{{ t('protoCenter.transport.tunAutoRoute') }}</div>
               </el-form-item>
               <el-form-item label="Auto Outbounds Interface">
                 <el-input v-model="rf.settings.autoOutboundsInterface" placeholder="auto" />
-                <div class="hint">避免回环，auto = 自动选择</div>
+                <div class="hint">{{ t('protoCenter.transport.tunStrictRoute') }}</div>
               </el-form-item>
             </el-form>
           </template>
@@ -483,15 +483,15 @@
               </el-form-item>
               <el-form-item label="Rewrite Address">
                 <el-input v-model="rf.settings.rewriteAddress" placeholder="8.8.8.8 or domain.com" />
-                <div class="hint">转发目标地址，留空为 localhost</div>
+                <div class="hint">{{ t('protoCenter.transport.tunnelDest') }}</div>
               </el-form-item>
               <el-form-item label="Rewrite Port">
                 <el-input-number v-model="rf.settings.rewritePort" :min="0" :max="65535" />
-                <div class="hint">转发目标端口，0 = 监听端口</div>
+                <div class="hint">{{ t('protoCenter.transport.tunnelPort') }}</div>
               </el-form-item>
               <el-form-item label="Follow Redirect">
                 <el-switch v-model="rf.settings.followRedirect" />
-                <div class="hint">识别 iptables 转发的数据</div>
+                <div class="hint">{{ t('protoCenter.transport.tunnelFollowRedirect') }}</div>
               </el-form-item>
               <el-form-item label="User Level">
                 <el-input-number v-model="rf.settings.userLevel" :min="0" />
@@ -503,7 +503,7 @@
                   <el-button size="small" type="danger" text @click="rf._portMap.splice(i,1)">X</el-button>
                 </div>
                 <el-button size="small" @click="rf._portMap.push({local:'',remote:''})">+ Add Mapping</el-button>
-                <div class="hint">本地端口 → 远程地址:端口</div>
+                <div class="hint">{{ t('protoCenter.transport.tunnelPortMap') }}</div>
               </el-form-item>
             </el-form>
           </template>
@@ -526,7 +526,7 @@
                 <el-option label="tls" value="tls" />
                 <el-option v-if="['raw','xhttp','grpc'].includes(rf.streamSettings.network)" label="reality" value="reality" />
               </el-select>
-              <div v-if="rf.streamSettings.security === 'reality'" class="hint">Reality 仅支持 raw、xhttp、grpc</div>
+              <div v-if="rf.streamSettings.security === 'reality'" class="hint">{{ t('protoCenter.transport.realityOnly') }}</div>
             </el-form-item>
             <template v-if="rf.streamSettings.security === 'tls'">
               <el-form-item :label="t('protoCenter.tls.serverName')"><el-input v-model="rf.streamSettings.tls.serverName" @change="emit" /></el-form-item>
@@ -708,7 +708,7 @@
                 </el-form-item>
                 <el-form-item label="Xver">
                   <el-select v-model="rf.streamSettings.reality.xver" style="width:100%" filterable allow-create default-first-option @change="emit">
-                    <el-option label="0 (禁用)" :value="0" />
+                    <el-option label="0 (disabled)" :value="0" />
                     <el-option label="1" :value="1" />
                     <el-option label="2" :value="2" />
                   </el-select>
@@ -832,10 +832,10 @@
                   <el-input v-model="rf.streamSettings.ws.path" placeholder="/" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.ws.path = '/' + genId(12) + '?ed=2560'">Random</el-button>
                 </div>
-                <div class="hint">包含 ?ed=2560 启用 Early Data 降低延迟</div>
+                <div class="hint">{{ t('protoCenter.transport.wsEarlyData') }}</div>
               </el-form-item>
               <el-form-item label="Host">
-                <el-input v-model="rf.streamSettings.ws.host" placeholder="留空不验证" />
+                <el-input v-model="rf.streamSettings.ws.host" />
               </el-form-item>
             </el-form>
             <el-divider content-position="left">Client Settings</el-divider>
@@ -900,10 +900,10 @@
                   <el-input v-model="rf.streamSettings.httpupgrade.path" placeholder="/" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.httpupgrade.path = '/' + genId(12) + '?ed=2560'">Random</el-button>
                 </div>
-                <div class="hint">包含 ?ed=2560 启用 Early Data</div>
+                <div class="hint">{{ t('protoCenter.transport.httpupgradeEarlyData') }}</div>
               </el-form-item>
               <el-form-item label="Host">
-                <el-input v-model="rf.streamSettings.httpupgrade.host" placeholder="留空不验证" />
+                <el-input v-model="rf.streamSettings.httpupgrade.host" />
               </el-form-item>
             </el-form>
             <el-divider content-position="left">Client Settings</el-divider>
@@ -931,18 +931,18 @@
                   <el-input v-model="rf.streamSettings.hysteria.auth" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.hysteria.auth = genBase64Password()">Generate</el-button>
                 </div>
-                <div class="hint">搭配 hysteria inbound 时会被 users 覆盖</div>
+                <div class="hint">{{ t('protoCenter.transport.hysteriaAuth') }}</div>
               </el-form-item>
               <el-form-item label="UDP Idle Timeout">
                 <el-input-number v-model="rf.streamSettings.hysteria.udpIdleTimeout" :min="0" @change="emit" />
-                <div class="hint">秒，默认 60</div>
+                <div class="hint">{{ t('protoCenter.transport.hysteriaIdleTimeout') }}</div>
               </el-form-item>
             </el-form>
             <el-divider content-position="left">Masquerade</el-divider>
             <el-form label-width="140px" label-position="left">
               <el-form-item label="Type">
                 <el-select v-model="rf.streamSettings.hysteria.masquerade.type" style="width:100%" clearable @change="emit">
-                  <el-option label="默认 404" value="" />
+                  <el-option label="Default 404" value="" />
                   <el-option label="file" value="file" />
                   <el-option label="proxy" value="proxy" />
                   <el-option label="string" value="string" />
@@ -992,7 +992,7 @@
                 </div>
               </el-form-item>
               <el-form-item label="Host">
-                <el-input v-model="rf.streamSettings.xhttp.host" placeholder="留空不配置" @change="emit" />
+                <el-input v-model="rf.streamSettings.xhttp.host" @change="emit" />
               </el-form-item>
               <el-form-item label="Mode">
                 <el-select v-model="rf.streamSettings.xhttp.mode" style="width:100%" clearable @change="emit">
@@ -1003,7 +1003,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="Uplink HTTP Method">
-                <el-checkbox v-model="rf.streamSettings.xhttp.extra._showMethod" @change="emit">启用</el-checkbox>
+                <el-checkbox v-model="rf.streamSettings.xhttp.extra._showMethod" @change="emit">{{ t('protoCenter.transport.xhttpEnable') }}</el-checkbox>
                 <el-select v-if="rf.streamSettings.xhttp.extra._showMethod" v-model="rf.streamSettings.xhttp.extra.uplinkHTTPMethod" style="width:100%;margin-top:4px" @change="emit">
                   <el-option label="POST" value="POST" /><el-option label="GET" value="GET" />
                 </el-select>
@@ -1016,7 +1016,7 @@
                 <div class="hint">Server only</div>
               </el-form-item>
               <el-form-item label="Server Max Header Bytes">
-                <el-checkbox v-model="rf.streamSettings.xhttp.extra._showMaxHeader" @change="emit">启用</el-checkbox>
+                <el-checkbox v-model="rf.streamSettings.xhttp.extra._showMaxHeader" @change="emit">{{ t('protoCenter.transport.xhttpEnable') }}</el-checkbox>
                 <el-input-number v-if="rf.streamSettings.xhttp.extra._showMaxHeader" v-model="rf.streamSettings.xhttp.extra.serverMaxHeaderBytes" :min="0" style="margin-top:4px" @change="emit" />
               </el-form-item>
               <el-form-item label="Headers">
@@ -1029,7 +1029,7 @@
               </el-form-item>
               <el-form-item label="x Padding Bytes">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xPaddingBytes" placeholder="100-1000" style="width:200px" @change="emit" />
-                <div class="hint">范围字符串或整数，随机化 HTTP 头长度</div>
+                <div class="hint">{{ t('protoCenter.transport.xhttpPaddingHint') }}</div>
               </el-form-item>
             </el-form>
             <template v-if="!rf.streamSettings.xhttp.mode || rf.streamSettings.xhttp.mode === 'packet-up'">
@@ -1058,11 +1058,11 @@
             <el-form label-width="180px" label-position="left">
               <el-form-item label="Max Concurrency">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConcurrency" placeholder="16-32" style="width:200px" @change="onXmuxConcurrency" />
-                <div class="hint">与 Max Connections 互斥</div>
+                <div class="hint">{{ t('protoCenter.transport.xmuxConcurrencyHint') }}</div>
               </el-form-item>
               <el-form-item label="Max Connections">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConnections" placeholder="0" style="width:200px" @change="onXmuxConnections" />
-                <div class="hint">与 Max Concurrency 互斥</div>
+                <div class="hint">{{ t('protoCenter.transport.xmuxConnectionsHint') }}</div>
               </el-form-item>
               <el-form-item label="C Max Reuse Times">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.cMaxReuseTimes" placeholder="0" style="width:200px" @change="emit" />
@@ -1075,7 +1075,7 @@
               </el-form-item>
               <el-form-item label="H Keep Alive Period">
                 <el-input-number v-model="rf.streamSettings.xhttp.extra.xmux.hKeepAlivePeriod" :min="-1" @change="emit" />
-                <div class="hint">0 使用默认值，-1 禁用</div>
+                <div class="hint">{{ t('protoCenter.transport.xmuxKeepAliveHint') }}</div>
               </el-form-item>
             </el-form>
           </template>
@@ -1087,23 +1087,23 @@
               <el-form-item label="Service Name">
                 <div style="display:flex;gap:8px">
                   <el-input v-model="rf.streamSettings.grpc.serviceName" style="flex:1" />
-                  <el-button size="small" @click="rf.streamSettings.grpc.serviceName = genId(12)">更换</el-button>
+                  <el-button size="small" @click="rf.streamSettings.grpc.serviceName = genId(12)">{{ t('protoCenter.transport.grpcChange') }}</el-button>
                 </div>
               </el-form-item>
               <el-form-item label="Authority">
                 <el-input v-model="rf.streamSettings.grpc.authority" placeholder="grpc.example.com" />
-                <div class="hint">可当 Host 使用，留空不配置</div>
+                <div class="hint">{{ t('protoCenter.transport.grpcAuthority') }}</div>
               </el-form-item>
             </el-form>
             <el-divider content-position="left">Client Settings</el-divider>
             <el-form label-width="140px" label-position="left">
               <el-form-item label="Multi Mode">
                 <el-switch v-model="rf.streamSettings.grpc.settings.multiMode" />
-                <div class="hint">实验性，约 20% 性能提升</div>
+                <div class="hint">{{ t('protoCenter.transport.grpcMultiMode') }}</div>
               </el-form-item>
               <el-form-item label="User Agent">
                 <el-select v-model="rf.streamSettings.grpc.settings.user_agent" filterable allow-create style="width:100%" @change="emit">
-                  <el-option label="默认 (Go)" value="" />
+                  <el-option label="Default (Go)" value="" />
                   <el-option label="Chrome Windows" value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" />
                   <el-option label="Chrome macOS" value="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" />
                   <el-option label="Chrome Linux" value="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" />
@@ -1116,18 +1116,18 @@
               </el-form-item>
               <el-form-item label="Idle Timeout (s)">
                 <el-input-number v-model="rf.streamSettings.grpc.settings.idle_timeout" :min="0" />
-                <div class="hint">空闲健康检查，最小 10s，0=禁用</div>
+                <div class="hint">{{ t('protoCenter.transport.grpcHealthCheck') }}</div>
               </el-form-item>
               <el-form-item label="Health Check Timeout">
                 <el-input-number v-model="rf.streamSettings.grpc.settings.health_check_timeout" :min="0" />
-                <div class="hint">健康检查超时，默认 20s</div>
+                <div class="hint">{{ t('protoCenter.transport.grpcHealthTimeout') }}</div>
               </el-form-item>
               <el-form-item label="Permit Without Stream">
                 <el-switch v-model="rf.streamSettings.grpc.settings.permit_without_stream" />
               </el-form-item>
               <el-form-item label="Initial Window Size">
                 <el-input-number v-model="rf.streamSettings.grpc.settings.initial_windows_size" :min="0" />
-                <div class="hint">0=不生效，>65535 禁用动态窗口</div>
+                <div class="hint">{{ t('protoCenter.transport.grpcInitialWindows') }}</div>
               </el-form-item>
             </el-form>
           </template>
@@ -1148,19 +1148,19 @@
               </el-form-item>
               <el-form-item label="Metadata Only">
                 <el-switch v-model="rf.sniffing.metadataOnly" />
-                <div class="hint">仅使用元数据嗅探，不深度检测</div>
+                <div class="hint">{{ t('protoCenter.transport.sniffingMetadata') }}</div>
               </el-form-item>
               <el-form-item label="Route Only">
                 <el-switch v-model="rf.sniffing.routeOnly" />
-                <div class="hint">仅用于路由，不替换目标地址</div>
+                <div class="hint">{{ t('protoCenter.transport.sniffingRouteOnly') }}</div>
               </el-form-item>
               <el-form-item label="Domains Excluded">
                 <el-input v-model="rf.sniffing._domainsExcludedStr" type="textarea" :rows="2" placeholder="courier.push.apple.com&#10;domain:example.com" @change="emit" />
-                <div class="hint">每行一个，嗅探结果匹配时不重置目标</div>
+                <div class="hint">{{ t('protoCenter.transport.sniffingDomainsExcluded') }}</div>
               </el-form-item>
               <el-form-item label="IPs Excluded">
                 <el-input v-model="rf.sniffing._ipsExcludedStr" type="textarea" :rows="2" placeholder="10.0.0.0/8" @change="emit" />
-                <div class="hint">每行一个，目标 IP 匹配时不重置</div>
+                <div class="hint">{{ t('protoCenter.transport.sniffingIpsExcluded') }}</div>
               </el-form-item>
             </template>
           </el-form>
@@ -1197,7 +1197,7 @@
                 <el-select v-model="rf.sockopt.interface" style="flex:1" filterable allow-create clearable @change="emit" :placeholder="t('protoCenter.sockopt.interfaceHint')">
                   <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
                 </el-select>
-                <el-button size="small" @click="loadInterfaces">刷新</el-button>
+                <el-button size="small" @click="loadInterfaces">{{ t('protoCenter.transport.refresh') }}</el-button>
               </div>
             </el-form-item>
             <el-form-item label="V6 Only">
@@ -1214,7 +1214,7 @@
             </el-form-item>
             <el-form-item label="TCP Congestion">
               <el-select v-model="rf.sockopt.tcpcongestion" style="width:100%" clearable @change="emit">
-                <el-option label="(默认)" value="" /><el-option label="bbr" value="bbr" /><el-option label="cubic" value="cubic" /><el-option label="reno" value="reno" />
+                <el-option label="(default)" value="" /><el-option label="bbr" value="bbr" /><el-option label="cubic" value="cubic" /><el-option label="reno" value="reno" />
               </el-select>
             </el-form-item>
             <el-form-item label="TCP Max Seg">
@@ -1230,18 +1230,18 @@
               <el-switch v-model="rf.sockopt.acceptProxyProtocol" @change="emit" />
             </el-form-item>
             <el-form-item label="Dialer Proxy">
-              <el-input v-model="rf.sockopt.dialerProxy" placeholder="出站标签" @change="emit" />
+              <el-input v-model="rf.sockopt.dialerProxy" @change="emit" />
             </el-form-item>
             <el-form-item label="Address Port Strategy">
               <el-select v-model="rf.sockopt.addressPortStrategy" style="width:100%" clearable @change="emit">
-                <el-option label="(无)" value="" /><el-option label="SrvPortOnly" value="SrvPortOnly" />
+                <el-option label="(none)" value="" /><el-option label="SrvPortOnly" value="SrvPortOnly" />
                 <el-option label="SrvAddressOnly" value="SrvAddressOnly" /><el-option label="SrvPortAndAddress" value="SrvPortAndAddress" />
                 <el-option label="TxtPortOnly" value="TxtPortOnly" /><el-option label="TxtAddressOnly" value="TxtAddressOnly" />
                 <el-option label="TxtPortAndAddress" value="TxtPortAndAddress" />
               </el-select>
             </el-form-item>
             <el-form-item label="Trusted X-Forwarded-For">
-              <el-input v-model="rf.sockopt._trustedXffStr" type="textarea" :rows="2" placeholder="一行一个 IP/CIDR" @change="emit" />
+              <el-input v-model="rf.sockopt._trustedXffStr" type="textarea" :rows="2" placeholder="IP/CIDR" @change="emit" />
             </el-form-item>
           </el-form>
 
@@ -1322,7 +1322,7 @@
             <div v-for="(entry, i) in rf.finalmask.tcp" :key="'tcp-'+i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:12px">
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
                 <el-select v-model="entry.type" style="flex:1" @change="onMaskTypeChange(entry, 'tcp')">
-                  <el-option label="(无)" value="" />
+                  <el-option label="(none)" value="" />
                   <el-option label="fragment" value="fragment" />
                   <el-option label="sudoku" value="sudoku" />
                   <el-option label="header-custom" value="header-custom" />
@@ -1333,7 +1333,7 @@
               <template v-if="entry.type === 'fragment'">
                 <el-form label-width="140px" label-position="left" size="small">
                   <el-form-item :label="t('protoCenter.finalmask.packets')">
-                    <el-input v-model="entry.settings.packets" placeholder="tlshello 或 1-3" @change="emit" />
+                    <el-input v-model="entry.settings.packets" placeholder="tlshello or 1-3" @change="emit" />
                     <div class="hint">{{ t('protoCenter.finalmask.packetsHint') }}</div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.length')">
@@ -1411,15 +1411,15 @@
             <div v-for="(entry, i) in rf.finalmask.udp" :key="'udp-'+i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:12px">
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
                 <el-select v-model="entry.type" style="flex:1" @change="onMaskTypeChange(entry, 'udp')">
-                  <el-option label="(无)" value="" />
-                  <el-option label="header-custom (自定义头)" value="header-custom" />
-                  <el-option label="mkcp-legacy (旧 mKCP 伪装)" value="mkcp-legacy" />
-                  <el-option label="noise (噪声)" value="noise" />
-                  <el-option label="salamander (Hysteria2 混淆)" value="salamander" />
-                  <el-option label="sudoku (加密混淆)" value="sudoku" />
-                  <el-option label="xdns (DNS 隧道)" value="xdns" />
-                  <el-option label="xicmp (ICMP 隧道)" value="xicmp" />
-                  <el-option label="realm (Realm 代理)" value="realm" />
+                  <el-option label="(none)" value="" />
+                  <el-option label="header-custom" value="header-custom" />
+                  <el-option label="mkcp-legacy" value="mkcp-legacy" />
+                  <el-option label="noise" value="noise" />
+                  <el-option label="salamander" value="salamander" />
+                  <el-option label="sudoku" value="sudoku" />
+                  <el-option label="xdns" value="xdns" />
+                  <el-option label="xicmp" value="xicmp" />
+                  <el-option label="realm" value="realm" />
                 </el-select>
                 <el-button size="small" type="danger" text @click="rf.finalmask.udp.splice(i,1)">X</el-button>
               </div>
@@ -1682,7 +1682,7 @@
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.fallback.alpn')">
                   <el-select v-model="fb._alpn" style="width:100%" clearable @change="emit">
-                    <el-option label="(任意)" value="" />
+                    <el-option label="(any)" value="" />
                     <el-option label="h2" value="h2" /><el-option label="http/1.1" value="http/1.1" /><el-option label="h3" value="h3" />
                   </el-select>
                   <div class="hint">{{ t('protoCenter.fallback.alpnDesc') }}</div>
@@ -1692,12 +1692,12 @@
                   <div class="hint">{{ t('protoCenter.fallback.pathDesc') }}</div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.fallback.dest')">
-                  <el-input v-model="fb.dest" placeholder="80 或 addr:port 或 ＠vless-grpc" @change="emit" />
+                  <el-input v-model="fb.dest" placeholder="80 / addr:port / ＠vless-grpc" @change="emit" />
                   <div class="hint">{{ t('protoCenter.fallback.destDesc') }}</div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.fallback.xver')">
                   <el-select v-model="fb.xver" style="width:100%" @change="emit">
-                    <el-option label="0 (不发送)" :value="0" />
+                    <el-option label="0 (disabled)" :value="0" />
                     <el-option label="1" :value="1" />
                     <el-option label="2" :value="2" />
                   </el-select>
@@ -1717,28 +1717,28 @@
     </el-dialog>
 
     <!-- Target Management Dialog -->
-    <el-dialog v-model="showTargetMgr" title="管理 Target 预设" width="600px" top="10vh">
+    <el-dialog v-model="showTargetMgr" :title="t('protoCenter.reality.manageTitle')" width="600px" top="10vh">
       <div style="margin-bottom:8px;font-size:12px;color:#909399">
-        点击 ☆ 设为默认（★），新建入站时固定使用该预设。再次点击 ★ 取消默认（恢复随机选择）。
+        {{ t('protoCenter.reality.manageDesc') }}
       </div>
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <el-input v-model="newTarget.target" placeholder="host:port 或 socket 路径" style="flex:2" />
-        <el-input v-model="newTarget.sni" placeholder="SNI (域名)" style="flex:1" />
+        <el-input v-model="newTarget.target" placeholder="host:port" style="flex:2" />
+        <el-input v-model="newTarget.sni" placeholder="SNI" style="flex:1" />
         <el-select v-model="newTarget.type" style="width:90px">
           <el-option label="TCP" value="tcp" /><el-option label="Sock" value="sock" />
         </el-select>
-        <el-button size="small" type="primary" @click="addTarget">添加</el-button>
-        <el-button size="small" @click="resetTargets">重置</el-button>
+        <el-button size="small" type="primary" @click="addTarget">{{ t('protoCenter.reality.addTarget') }}</el-button>
+        <el-button size="small" @click="resetTargets">{{ t('protoCenter.reality.resetTargets') }}</el-button>
       </div>
       <div style="max-height:400px;overflow-y:auto">
         <div v-for="(t, i) in realityTargets" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;padding:4px 0" :style="t.default ? 'background:#ecf5ff;border-radius:4px;padding:4px 8px' : ''">
-          <el-button size="small" :type="t.default ? 'primary' : 'info'" text @click="setDefaultTarget(i)" :title="'设为默认'">
+          <el-button size="small" :type="t.default ? 'primary' : 'info'" text @click="setDefaultTarget(i)" :title="t('protoCenter.reality.setDefault')">
             {{ t.default ? '★' : '☆' }}
           </el-button>
           <span style="flex:1;font-size:13px">{{ t.target }}</span>
           <span style="flex:1;font-size:13px;color:#909399">{{ t.sni }}</span>
           <el-tag size="small" :type="t.type === 'sock' ? 'warning' : ''">{{ t.type || 'tcp' }}</el-tag>
-          <el-button size="small" type="danger" text @click="removeTarget(i)">删除</el-button>
+          <el-button size="small" type="danger" text @click="removeTarget(i)">{{ t('common.delete') }}</el-button>
         </div>
       </div>
     </el-dialog>
@@ -1804,7 +1804,7 @@ async function genWgKeyPair() {
     rf.settings.secretKey = data.privateKey || ''
     rf._wgPublicKey = data.publicKey || ''
   } catch {
-    ElMessage.error('生成密钥失败')
+    ElMessage.error(t('protoCenter.reality.generateFailed'))
   }
 }
 function genUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8); return v.toString(16) }) }
@@ -2992,12 +2992,12 @@ async function saveInbound() {
     } else {
       await client.post('/inbound-configs', payload)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('common.success'))
     dlg.value = false
     await loadInbounds()
   } catch (e) {
     console.error('Save inbound failed:', e)
-    ElMessage.error(e?.response?.data?.message || '保存失败')
+    ElMessage.error(e?.response?.data?.message || t('common.failed'))
   }
 }
 
@@ -3019,10 +3019,10 @@ async function toggleEnabled(i) {
       enabled: ib._enabled,
       config_json: configJson,
     })
-    ElMessage.success(ib._enabled ? '已启用' : '已禁用')
+    ElMessage.success(ib._enabled ? t('common.enabled') : t('common.disabled'))
   } catch (e) {
     ib._enabled = !ib._enabled
-    ElMessage.error('操作失败')
+    ElMessage.error(t('common.failed'))
   }
 }
 
@@ -3032,7 +3032,7 @@ async function rmInbound(i) {
     try { await client.delete(`/inbound-configs/${ib._id}`) } catch {}
   }
   form.value.splice(i, 1)
-  ElMessage.success('删除成功')
+  ElMessage.success(t('common.success'))
 }
 
 async function loadInbounds() {

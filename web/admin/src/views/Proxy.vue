@@ -33,8 +33,8 @@ const { t } = useI18n()
 const activeProxy = ref(localStorage.getItem('active_proxy') || '')
 
 const proxyOptions = [
-  { type: 'nginx', name: 'Nginx', icon: '🌐', desc: '高性能 HTTP 和反向代理服务器' },
-  { type: 'caddy', name: 'Caddy', icon: '🔒', desc: '自动 HTTPS 的现代 Web 服务器' }
+  { type: 'nginx', name: 'Nginx', icon: '🌐', desc: t('proxy.nginxDesc') },
+  { type: 'caddy', name: 'Caddy', icon: '🔒', desc: t('proxy.caddyDesc') }
 ]
 
 function selectProxy(type) {

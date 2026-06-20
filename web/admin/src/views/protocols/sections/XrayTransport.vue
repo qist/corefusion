@@ -109,7 +109,7 @@
       <el-form label-width="160px" label-position="left">
         <el-form-item label="Server Name">
           <el-input v-model="form.reality.serverName" @change="emit" />
-          <div class="hint">必须匹配服务端 serverNames 之一</div>
+          <div class="hint">{{ t('protoCenter.reality.serverNamesPlaceholder') }}</div>
         </el-form-item>
         <el-form-item label="Fingerprint">
           <el-select v-model="form.reality.fingerprint" style="width:100%" @change="emit">
@@ -121,13 +121,13 @@
         </el-form-item>
         <el-form-item label="Password (Public Key)">
           <el-input v-model="form.reality.password" @change="emit" />
-          <div class="hint">服务端 privateKey 对应的公钥</div>
+          <div class="hint">{{ t('protoCenter.reality.passwordHint') }}</div>
         </el-form-item>
         <el-form-item label="Short ID">
-          <el-input v-model="form.reality.shortId" placeholder="hex, 偶数长度" @change="emit" />
+          <el-input v-model="form.reality.shortId" placeholder="hex, even length" @change="emit" />
         </el-form-item>
         <el-form-item label="SpiderX">
-          <el-input v-model="form.reality.spiderX" placeholder="爬虫初始路径" @change="emit" />
+          <el-input v-model="form.reality.spiderX" placeholder="crawler initial path" @change="emit" />
         </el-form-item>
       </el-form>
       <!-- Client params in settings -->
@@ -168,7 +168,7 @@
       <el-divider content-position="left">XHTTP Settings</el-divider>
       <el-form label-width="160px" label-position="left">
         <el-form-item label="Path"><el-input v-model="form.xhttp.path" placeholder="/" @change="emit" /></el-form-item>
-        <el-form-item label="Host"><el-input v-model="form.xhttp.host" placeholder="留空不配置" @change="emit" /></el-form-item>
+        <el-form-item label="Host"><el-input v-model="form.xhttp.host" @change="emit" /></el-form-item>
         <el-form-item label="Mode">
           <el-select v-model="form.xhttp.mode" style="width:100%" clearable @change="emit">
             <el-option label="auto" value="" />
@@ -184,24 +184,24 @@
       <el-form label-width="180px" label-position="left">
         <el-form-item label="x Padding Bytes">
           <el-input v-model="form.xhttp.extra.xPaddingBytes" placeholder="100-1000" style="width:200px" @change="emit" />
-          <div class="hint">范围字符串或整数，随机化 HTTP 头长度</div>
+          <div class="hint">{{ t('protoCenter.transport.xhttpPaddingHint') }}</div>
         </el-form-item>
         <el-form-item label="Uplink HTTP Method">
-          <el-checkbox v-model="form.xhttp.extra._showMethod" @change="emit">启用</el-checkbox>
+          <el-checkbox v-model="form.xhttp.extra._showMethod" @change="emit">{{ t('protoCenter.transport.xhttpEnable') }}</el-checkbox>
           <el-select v-if="form.xhttp.extra._showMethod" v-model="form.xhttp.extra.uplinkHTTPMethod" style="width:100%;margin-top:4px" @change="emit">
             <el-option label="POST" value="POST" /><el-option label="GET" value="GET" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="['stream-up','stream-one'].includes(form.xhttp.mode)" label="No GRPC Header">
           <el-switch v-model="form.xhttp.extra.noGRPCHeader" @change="emit" />
-          <div class="hint">禁用上游默认 application/grpc 头</div>
+          <div class="hint">{{ t('protoCenter.transport.xhttpGrpcHint') }}</div>
         </el-form-item>
         <el-form-item label="No SSE Header">
           <el-switch v-model="form.xhttp.extra.noSSEHeader" @change="emit" />
           <div class="hint">Server only</div>
         </el-form-item>
         <el-form-item label="Server Max Header Bytes">
-          <el-checkbox v-model="form.xhttp.extra._showMaxHeader" @change="emit">启用</el-checkbox>
+          <el-checkbox v-model="form.xhttp.extra._showMaxHeader" @change="emit">{{ t('protoCenter.transport.xhttpEnable') }}</el-checkbox>
           <el-input-number v-if="form.xhttp.extra._showMaxHeader" v-model="form.xhttp.extra.serverMaxHeaderBytes" :min="0" style="margin-top:4px" @change="emit" />
         </el-form-item>
         <el-form-item label="Headers">
@@ -220,15 +220,15 @@
         <el-form label-width="180px" label-position="left">
           <el-form-item label="Max Each Post Bytes">
             <el-input-number v-model="form.xhttp.extra.scMaxEachPostBytes" :min="0" @change="emit" />
-            <div class="hint">每个 POST 请求最大数据量，默认 1000000</div>
+            <div class="hint">{{ t('protoCenter.transport.xhttpMaxPost') }}</div>
           </el-form-item>
           <el-form-item label="Min Posts Interval (ms)">
             <el-input-number v-model="form.xhttp.extra.scMinPostsIntervalMs" :min="0" @change="emit" />
-            <div class="hint">POST 请求最小间隔，默认 30ms</div>
+            <div class="hint">{{ t('protoCenter.transport.xhttpMinInterval') }}</div>
           </el-form-item>
           <el-form-item label="Max Buffered Posts">
             <el-input v-model="form.xhttp.extra.scMaxBufferedPosts" placeholder="30" style="width:200px" @change="emit" />
-            <div class="hint">服务端缓存的最大 POST 数，默认 30</div>
+            <div class="hint">{{ t('protoCenter.transport.xhttpMaxBuffered') }}</div>
           </el-form-item>
         </el-form>
       </template>
@@ -239,7 +239,7 @@
         <el-form label-width="180px" label-position="left">
           <el-form-item label="Stream Up Server Secs">
             <el-input v-model="form.xhttp.extra.scStreamUpServerSecs" placeholder="20-80" style="width:200px" @change="emit" />
-            <div class="hint">服务端保活间隔，-1 禁用，默认 20-80</div>
+            <div class="hint">{{ t('protoCenter.transport.xhttpStreamUpSecs') }}</div>
           </el-form-item>
         </el-form>
       </template>
@@ -249,11 +249,11 @@
       <el-form label-width="180px" label-position="left">
         <el-form-item label="Max Concurrency">
           <el-input v-model="form.xhttp.extra.xmux.maxConcurrency" placeholder="16-32" style="width:200px" @change="onXmuxConcurrency" />
-          <div class="hint">与 Max Connections 互斥</div>
+          <div class="hint">{{ t('protoCenter.transport.xmuxConcurrencyHint') }}</div>
         </el-form-item>
         <el-form-item label="Max Connections">
           <el-input v-model="form.xhttp.extra.xmux.maxConnections" placeholder="0" style="width:200px" @change="onXmuxConnections" />
-          <div class="hint">与 Max Concurrency 互斥</div>
+          <div class="hint">{{ t('protoCenter.transport.xmuxConnectionsHint') }}</div>
         </el-form-item>
         <el-form-item label="C Max Reuse Times">
           <el-input v-model="form.xhttp.extra.xmux.cMaxReuseTimes" placeholder="0" style="width:200px" @change="emit" />
@@ -266,21 +266,21 @@
         </el-form-item>
         <el-form-item label="H Keep Alive Period">
           <el-input-number v-model="form.xhttp.extra.xmux.hKeepAlivePeriod" :min="-1" @change="emit" />
-          <div class="hint">0 使用默认值，-1 禁用</div>
+          <div class="hint">{{ t('protoCenter.transport.xmuxKeepAliveHint') }}</div>
         </el-form-item>
       </el-form>
 
       <!-- Download Settings (Upstream/Downstream Separation) -->
-      <el-divider content-position="left">Download Settings (上下行分离)</el-divider>
+      <el-divider content-position="left">{{ t('protoCenter.transport.downloadSettings') }}</el-divider>
       <el-form label-width="180px" label-position="left">
-        <el-form-item label="启用上下行分离">
+        <el-form-item :label="t('protoCenter.transport.enableDownload')">
           <el-switch v-model="form.xhttp.extra._showDownload" @change="emit" />
         </el-form-item>
       </el-form>
       <template v-if="form.xhttp.extra._showDownload">
         <el-form label-width="180px" label-position="left">
           <el-form-item label="Download Address">
-            <el-input v-model="form.xhttp.extra.downloadSettings.address" placeholder="下行地址" @change="emit" />
+            <el-input v-model="form.xhttp.extra.downloadSettings.address" @change="emit" />
           </el-form-item>
           <el-form-item label="Download Port">
             <el-input-number v-model="form.xhttp.extra.downloadSettings.port" :min="1" :max="65535" @change="emit" />
@@ -312,7 +312,7 @@
             <el-input v-model="form.xhttp.extra.downloadSettings.realityShortIdsStr" placeholder="hex IDs, comma-sep" @change="emit" />
           </el-form-item>
           <el-form-item label="Download Path">
-            <el-input v-model="form.xhttp.extra.downloadSettings.xhttpPath" placeholder="必须与上传 path 相同" @change="emit" />
+            <el-input v-model="form.xhttp.extra.downloadSettings.xhttpPath" @change="emit" />
           </el-form-item>
           <el-form-item label="Download Mode">
             <el-select v-model="form.xhttp.extra.downloadSettings.xhttpMode" style="width:100%" clearable @change="emit">

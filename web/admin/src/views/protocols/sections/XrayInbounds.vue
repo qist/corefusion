@@ -2713,7 +2713,7 @@ function buildInbound(ib) {
       const xhSettings = {}
       if (xh.path && xh.path !== '/') xhSettings.path = xh.path
       if (xh.host && xh.host.trim()) xhSettings.host = xh.host.trim()
-      if (xh.mode && xh.mode !== 'auto') xhSettings.mode = xh.mode
+      xhSettings.mode = xh.mode || 'auto'
       // Extra settings
       const s = xh.extra || {}
       const extra = {}

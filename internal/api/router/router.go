@@ -30,6 +30,7 @@ import (
 	warpHandler "corefusion/internal/api/handlers/warp"
 	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
+	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/app/embed"
@@ -47,6 +48,7 @@ import (
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
+	outboundconfigSvc "corefusion/internal/service/outboundconfig"
 	warpSvc "corefusion/internal/service/warp"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/repository"
@@ -155,6 +157,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Inbound config service (separate table for inbound configurations)
 	inboundConfigRepo := repository.NewInboundConfigRepository(database)
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo)
+	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
+	outboundConfigSvc := outboundconfigSvc.NewService(outboundConfigRepo)
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -330,6 +334,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				}
 			}
 			fullConfig["inbounds"] = existingInbounds
+		}
+
+		// Replace outbounds with database outbounds (database = source of truth)
+		enabledOutbounds, err := outboundConfigSvc.GetEnabledOutbounds(ctx, coreType)
+		if err != nil {
+			log.Printf("WARNING: failed to load outbounds: %v", err)
+		} else if len(enabledOutbounds) > 0 {
+			fullConfig["outbounds"] = enabledOutbounds
 		}
 
 		data, _ := json.MarshalIndent(fullConfig, "", "  ")
@@ -529,6 +541,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				inboundCfgGroup.GET("/:id", inboundCfgH.Get)
 				inboundCfgGroup.PUT("/:id", inboundCfgH.Update)
 				inboundCfgGroup.DELETE("/:id", inboundCfgH.Delete)
+			}
+
+			// Outbound Configs (separate table)
+			outboundCfgH := outboundconfigHandler.NewHandler(outboundConfigSvc)
+			outboundCfgGroup := protected.Group("/outbound-configs")
+			{
+				outboundCfgGroup.GET("", outboundCfgH.List)
+				outboundCfgGroup.POST("", outboundCfgH.Create)
+				outboundCfgGroup.GET("/:id", outboundCfgH.Get)
+				outboundCfgGroup.PUT("/:id", outboundCfgH.Update)
+				outboundCfgGroup.DELETE("/:id", outboundCfgH.Delete)
 			}
 
 			// Services

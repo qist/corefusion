@@ -454,8 +454,15 @@ function saveBalancer() {
 function rmBalancer(i) { form.balancers.splice(i, 1); emit() }
 
 async function loadTags() {
-  try { const obs = await client.get(`/protocols/${props.coreType}/section/outbounds`); if (Array.isArray(obs)) outboundTags.value = [...new Set(['direct', 'blocked', ...obs.map(o => o.tag).filter(Boolean)])] } catch {}
-  try { const ibs = await client.get(`/protocols/${props.coreType}/section/inbounds`); if (Array.isArray(ibs)) inboundTags.value = ibs.map(i => i.tag).filter(Boolean) } catch {}
+  try {
+    const res = await client.get('/outbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    const obs = res || []
+    outboundTags.value = [...new Set(obs.map(o => o.tag).filter(Boolean))]
+  } catch {}
+  try {
+    const ibs = await client.get('/inbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    inboundTags.value = (ibs || []).map(i => i.tag).filter(Boolean)
+  } catch {}
 }
 async function loadGeoStatus() { try { const d = await client.get('/geo-rules/status'); if (d) geoStatus.value = d } catch {} }
 

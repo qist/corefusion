@@ -20,6 +20,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// Core Configs
 		&entity.CoreConfig{},
 		&entity.InboundConfig{},
+		&entity.OutboundConfig{},
 
 		// Services
 		&entity.InboundService{},
@@ -114,5 +115,28 @@ func AutoMigrate(db *gorm.DB) error {
 	}
 
 	log.Println("all migrations completed")
+
+	// Seed default outbounds if none exist
+	seedDefaultOutbounds(db)
+
 	return nil
+}
+
+func seedDefaultOutbounds(db *gorm.DB) {
+	var count int64
+	db.Model(&entity.OutboundConfig{}).Count(&count)
+	if count > 0 {
+		return
+	}
+	defaults := []entity.OutboundConfig{
+		{CoreType: "xray", Protocol: "freedom", Tag: "direct", ConfigJSON: `{"protocol":"freedom","tag":"direct"}`, Enabled: true, IsDefault: true},
+		{CoreType: "xray", Protocol: "blackhole", Tag: "blocked", ConfigJSON: `{"protocol":"blackhole","tag":"blocked"}`, Enabled: true, IsDefault: true},
+	}
+	for _, ob := range defaults {
+		if err := db.Create(&ob).Error; err != nil {
+			log.Printf("WARNING: seed outbound %s failed: %v", ob.Tag, err)
+		} else {
+			log.Printf("seeded default outbound: %s", ob.Tag)
+		}
+	}
 }

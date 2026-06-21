@@ -1752,7 +1752,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String })
-const emitFn = defineEmits(['update'])
+defineEmits(['update'])
 
 const form = ref([])
 const dlg = ref(false)

@@ -753,7 +753,7 @@ export default {
       ips: 'IPs',
       // realm
       realmUrl: 'URL',
-      realmUrlHint: 'realm://public@xxx/your-realm-name',
+      realmUrlHint: 'realm://public＠xxx/your-realm-name',
       stunServers: 'STUN Servers',
       realmTls: 'Realm TLS (可选)',
       serverName: 'Server Name',

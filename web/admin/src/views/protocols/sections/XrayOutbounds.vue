@@ -1003,6 +1003,18 @@
                   <el-form-item :label="t('protoCenter.finalmask.password')">
                     <el-input v-model="entry.settings.password" style="width:100%" @change="emit" />
                   </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.geckoMode')">
+                    <el-switch v-model="entry.settings._gecko" @change="onGeckoToggle(entry)" />
+                    <div class="hint">{{ t('protoCenter.finalmask.geckoModeHint') }}</div>
+                  </el-form-item>
+                  <el-form-item v-if="entry.settings._gecko" :label="t('protoCenter.finalmask.packetSize')">
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <el-input-number v-model="entry.settings._geckoMin" :min="1" :max="2048" size="small" style="width:100px" @change="onGeckoSizeChange(entry)" />
+                      <span>-</span>
+                      <el-input-number v-model="entry.settings._geckoMax" :min="1" :max="2048" size="small" style="width:100px" @change="onGeckoSizeChange(entry)" />
+                    </div>
+                    <div class="hint">{{ t('protoCenter.finalmask.packetSizeHint') }}</div>
+                  </el-form-item>
                 </el-form>
               </template>
               <!-- mkcp-legacy -->
@@ -1033,6 +1045,85 @@
               <!-- header-custom (UDP) -->
               <template v-if="entry.type === 'header-custom'">
                 <el-input v-model="entry._json" type="textarea" :rows="3" placeholder='{"client":[],"server":[]}' @change="emit" />
+              </template>
+              <!-- xdns -->
+              <template v-if="entry.type === 'xdns'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.domains')">
+                    <el-input v-model="entry.settings._domainsStr" type="textarea" :rows="2" placeholder="t.example.com&#10;domain:method (txt/a/aaaa)" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.domainsHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.resolvers')">
+                    <el-input v-model="entry.settings._resolversStr" type="textarea" :rows="2" placeholder="t.example.com+udp://8.8.8.8:53" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.resolversHint') }}</div>
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- xicmp -->
+              <template v-if="entry.type === 'xicmp'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.dgram')">
+                    <el-switch v-model="entry.settings.dgram" @change="emit" />
+                    <div class="hint">{{ t('protoCenter.finalmask.dgramHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.ips')">
+                    <el-input v-model="entry.settings._ipsStr" type="textarea" :rows="2" placeholder="IP/CIDR" @change="emit" />
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- realm -->
+              <template v-if="entry.type === 'realm'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.realmUrl')">
+                    <el-input v-model="entry.settings.url" :placeholder="t('protoCenter.finalmask.realmUrlHint')" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.stunServers')">
+                    <el-input v-model="entry.settings._stunServersStr" type="textarea" :rows="2" placeholder="stun.nextcloud.com:3478" @change="emit" />
+                  </el-form-item>
+                </el-form>
+                <el-divider content-position="left" style="margin:8px 0">{{ t('protoCenter.finalmask.realmTls') }}</el-divider>
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.serverName')">
+                    <el-input v-model="entry.settings._tlsServerName" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.alpn')">
+                    <el-select v-model="entry.settings._tlsAlpn" style="width:100%" multiple clearable @change="emit">
+                      <el-option label="h3" value="h3" /><el-option label="h2" value="h2" /><el-option label="http/1.1" value="http/1.1" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.fingerprint')">
+                    <el-select v-model="entry.settings._tlsFingerprint" style="width:100%" clearable @change="emit">
+                      <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
+                      <el-option label="safari" value="safari" /><el-option label="random" value="random" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.allowInsecure')">
+                    <el-switch v-model="entry.settings._tlsAllowInsecure" @change="emit" />
+                  </el-form-item>
+                </el-form>
+              </template>
+              <!-- sudoku (UDP) -->
+              <template v-if="entry.type === 'sudoku'">
+                <el-form label-width="140px" label-position="left" size="small">
+                  <el-form-item :label="t('protoCenter.finalmask.password')">
+                    <el-input v-model="entry.settings.password" style="width:100%" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.ascii')">
+                    <el-input v-model="entry.settings.ascii" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.customTable')">
+                    <el-input v-model="entry.settings.customTable" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.customTables')">
+                    <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
+                    <el-input-number v-model="entry.settings.paddingMin" :min="0" @change="emit" />
+                  </el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
+                    <el-input-number v-model="entry.settings.paddingMax" :min="0" @change="emit" />
+                  </el-form-item>
+                </el-form>
               </template>
             </div>
             <el-button size="small" @click="rf._finalmaskUdp.push({type:'',settings:{},_json:''})">{{ t('protoCenter.finalmask.addUdpMask') }}</el-button>
@@ -1282,7 +1373,8 @@ function parseOutbound(ob) {
       const s = e.settings || {}
       if (e.type === 'header-custom') {
         const fixGroup = g => (g || []).map(items => (items || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') })))
-        return { type: 'header-custom', settings: { clients: fixGroup(s.clients), servers: fixGroup(s.servers), errors: fixGroup(s.errors) }, _json: '' }
+        const clients = fixGroup(s.clients), servers = fixGroup(s.servers), errors = fixGroup(s.errors)
+        return { type: 'header-custom', settings: { clients, servers, errors }, _json: JSON.stringify({ clients: s.clients || [[]], servers: s.servers || [[]], errors: s.errors || [[]] }, null, 2) }
       }
       return { type: e.type || '', settings: s, _json: '' }
     }) : [],
@@ -1290,13 +1382,13 @@ function parseOutbound(ob) {
       const s = e.settings || {}
       if (e.type === 'header-custom') {
         const fixArr = arr => (arr || []).map(i => ({ rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))
-        return { type: 'header-custom', settings: { client: fixArr(s.client), server: fixArr(s.server) }, _json: '' }
+        return { type: 'header-custom', settings: { client: fixArr(s.client), server: fixArr(s.server) }, _json: JSON.stringify({ client: s.client || [], server: s.server || [] }, null, 2) }
       }
       const base = { type: e.type || '', settings: { ...s }, _json: '' }
       if (e.type === 'noise') base.settings._noise = (s.noise || []).map(n => ({ type: n.type || 'array', rand: n.rand || '', randRange: n.randRange || '0-255', delay: n.delay || '', _packetStr: Array.isArray(n.packet) ? n.packet.join(',') : (n.packet || '') }))
       if (e.type === 'xdns') { base.settings._domainsStr = (s.domains || []).join('\n'); base.settings._resolversStr = (s.resolvers || []).join('\n') }
       if (e.type === 'xicmp') base.settings._ipsStr = (s.ips || []).join('\n')
-      if (e.type === 'realm') { base.settings._stunServersStr = (s.stunServers || []).join('\n'); const tls = s.tlsConfig || {}; base.settings._tlsServerName = tls.serverName || ''; base.settings._tlsAlpn = tls.alpn || []; base.settings._tlsFingerprint = tls.fingerprint || ''; base.settings._tlsAllowInsecure = tls.allowInsecure || false }
+      if (e.type === 'realm') { base.settings.url = s.url || ''; base.settings._stunServersStr = (s.stunServers || []).join('\n'); const tls = s.tlsConfig || {}; base.settings._tlsServerName = tls.serverName || ''; base.settings._tlsAlpn = tls.alpn || []; base.settings._tlsFingerprint = tls.fingerprint || ''; base.settings._tlsAllowInsecure = tls.allowInsecure || false }
       if (e.type === 'sudoku') base.settings._customTablesStr = (s.customTables || []).join('\n')
       if (e.type === 'salamander') { const ps = s.packetSize || ''; const match = /^(\d+)-(\d+)$/.exec(ps); base.settings._gecko = !!match; base.settings._geckoMin = match ? Number(match[1]) : 512; base.settings._geckoMax = match ? Number(match[2]) : 1200 }
       return base

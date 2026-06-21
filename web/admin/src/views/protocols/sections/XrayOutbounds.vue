@@ -12,7 +12,7 @@
           <el-switch v-if="!ob._isDefault" v-model="ob._enabled" @change="toggleEnabled(i)" />
           <span style="font-weight:600">{{ ob.tag || 'outbound-' + (i+1) }}</span>
           <el-tag size="small">{{ ob.protocol }}</el-tag>
-          <el-tag v-if="ob._isDefault" size="small" type="warning">默认</el-tag>
+          <el-tag v-if="ob._isDefault" size="small" type="warning">{{ t('protoCenter.outbounds.default') }}</el-tag>
           <el-tag v-if="ob._server" size="small" type="info">{{ ob._server }}:{{ ob._port }}</el-tag>
         </div>
         <div>
@@ -56,7 +56,7 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.outbounds.redirect')">
-                  <el-input v-model="rf._freedomRedirect" placeholder="127.0.0.1:80 或 :443" @change="emit" />
+                  <el-input v-model="rf._freedomRedirect" :placeholder="t('protoCenter.outbounds.freedomRedirectHint')" @change="emit" />
                   <div class="hint">{{ t('protoCenter.outbounds.redirectHint') }}</div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.outbounds.userLevel')">
@@ -64,7 +64,7 @@
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.outbounds.proxyProtocol')">
                   <el-select v-model="rf._freedomProxyProtocol" style="width:100%">
-                    <el-option label="关闭 (0)" :value="0" /><el-option label="v1 (1)" :value="1" /><el-option label="v2 (2)" :value="2" />
+                    <el-option :label="t('protoCenter.outbounds.proxyProtocolOff')" :value="0" /><el-option label="v1 (1)" :value="1" /><el-option label="v2 (2)" :value="2" />
                   </el-select>
                 </el-form-item>
 
@@ -75,7 +75,7 @@
                 </el-form-item>
                 <template v-if="rf._freedomFragmentEnabled">
                   <el-form-item label="Packets">
-                    <el-input v-model="rf._freedomFragmentPackets" placeholder="tlshello 或 1-3" />
+                    <el-input v-model="rf._freedomFragmentPackets" :placeholder="t('protoCenter.outbounds.fragmentPacketsHint')" />
                   </el-form-item>
                   <el-form-item label="Length">
                     <el-input v-model="rf._freedomFragmentLength" placeholder="100-200" />
@@ -96,8 +96,8 @@
                       <el-select v-model="n.type" style="width:100px" @change="genNoisePacket(n)">
                         <el-option label="rand" value="rand" /><el-option label="str" value="str" /><el-option label="base64" value="base64" />
                       </el-select>
-                      <el-input v-model="n.packet" :placeholder="n.type === 'rand' ? '长度或范围 (50-150)' : n.type === 'base64' ? 'Base64 数据' : '字符串内容'" style="flex:1" />
-                      <el-button size="small" @click="genNoisePacket(n)">生成</el-button>
+                      <el-input v-model="n.packet" :placeholder="n.type === 'rand' ? t('protoCenter.outbounds.noiseRandHint') : n.type === 'base64' ? t('protoCenter.outbounds.noiseBase64Hint') : t('protoCenter.outbounds.noiseStrHint')" style="flex:1" />
+                      <el-button size="small" @click="genNoisePacket(n)">{{ t('protoCenter.outbounds.generate') }}</el-button>
                       <el-input v-model="n.delay" placeholder="10-20" style="width:100px" />
                       <el-button size="small" type="danger" text @click="rf._freedomNoises.splice(ni,1)">X</el-button>
                     </div>
@@ -117,17 +117,17 @@
                         <el-option label="allow" value="allow" /><el-option label="block" value="block" />
                       </el-select>
                       <el-select v-model="rule.network" style="width:120px" clearable>
-                        <el-option label="(全部)" value="" />
+                        <el-option :label="t('protoCenter.outbounds.allNetworks')" value="" />
                         <el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" />
                       </el-select>
                       <el-input v-model="rule.port" placeholder="22,25,465,587" style="flex:1" />
                       <el-button size="small" type="danger" text @click="rf._freedomFinalRules.splice(ri,1)">X</el-button>
                     </div>
-                    <el-input v-model="rule._ipStr" type="textarea" :rows="1" placeholder="IP/CIDR/geoip:cn，逗号分隔" style="margin-bottom:6px" />
+                    <el-input v-model="rule._ipStr" type="textarea" :rows="1" :placeholder="t('protoCenter.outbounds.finalRuleIpHint')" style="margin-bottom:6px" />
                     <div style="display:flex;gap:8px;align-items:center">
                       <span style="font-size:12px;color:#909399;width:80px">blockDelay:</span>
                       <el-input v-model="rule.blockDelay" placeholder="30-90" style="width:120px" />
-                      <span style="font-size:12px;color:#909399">秒，省略默认 30-90</span>
+                      <span style="font-size:12px;color:#909399">{{ t('protoCenter.outbounds.finalRuleBlockDelay') }}</span>
                     </div>
                   </div>
                   <el-button size="small" @click="addFinalRule()">{{ t('protoCenter.outbounds.addRule') }}</el-button>
@@ -135,7 +135,7 @@
               </template>
             </template>
             <template v-if="rf.protocol === 'blackhole'">
-              <el-form-item label="高级设置">
+              <el-form-item :label="t('protoCenter.outbounds.advancedSettings')">
                 <el-switch v-model="rf._blackholeAdvanced" />
               </el-form-item>
               <template v-if="rf._blackholeAdvanced">
@@ -151,15 +151,15 @@
             <template v-if="rf.protocol === 'dns'">
               <el-form-item label="Rewrite Network">
                 <el-select v-model="rf._dnsRewriteNetwork" style="width:100%" clearable>
-                  <el-option label="(保持原样)" value="" /><el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" />
+                  <el-option :label="t('protoCenter.outbounds.default')" value="" /><el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" />
                 </el-select>
               </el-form-item>
               <el-form-item label="Rewrite Address">
-                <el-input v-model="rf._dnsRewriteAddress" placeholder="如 8.8.8.8" />
+                <el-input v-model="rf._dnsRewriteAddress" :placeholder="t('protoCenter.outbounds.dnsRewriteHint')" />
               </el-form-item>
               <el-form-item label="Rewrite Port">
                 <el-input-number v-model="rf._dnsRewritePort" :min="0" :max="65535" />
-                <div class="hint">0 = 保持原端口</div>
+                <div class="hint">{{ t('protoCenter.outbounds.dnsPortHint') }}</div>
               </el-form-item>
               <el-form-item label="User Level">
                 <el-input-number v-model="rf._dnsUserLevel" :min="0" />
@@ -172,7 +172,7 @@
                     <el-option label="direct" value="direct" /><el-option label="hijack" value="hijack" />
                     <el-option label="drop" value="drop" /><el-option label="return" value="return" />
                   </el-select>
-                  <el-input v-model="rule.qType" placeholder="qType (如 1, 28, 65)" style="width:150px" />
+                  <el-input v-model="rule.qType" :placeholder="t('protoCenter.outbounds.dnsQtypeHint')" style="width:150px" />
                   <el-input v-if="rule.action === 'return'" v-model="rule.rCode" placeholder="rCode (0-65535)" style="width:130px" />
                   <el-button size="small" type="danger" text @click="rf._dnsRules.splice(ri,1)">X</el-button>
                 </div>
@@ -187,7 +187,7 @@
                 <el-select v-model="rf._loopbackInboundTag" style="width:100%" filterable allow-create clearable>
                   <el-option v-for="t in inboundTags" :key="t" :label="t" :value="t" />
                 </el-select>
-                <div class="hint">用于重新进入路由时的入站标识</div>
+                <div class="hint">{{ t('protoCenter.outbounds.reverseTagHint') }}</div>
               </el-form-item>
             </template>
           </el-form>
@@ -288,10 +288,10 @@
             <template v-if="rf.protocol === 'hysteria'">
               <el-form-item label="Version">
                 <el-input-number v-model="rf._hysteriaVersion" :min="2" :max="2" />
-                <div class="hint">必须为 2</div>
+                <div class="hint">{{ t('protoCenter.outbounds.hysteriaVersionHint') }}</div>
               </el-form-item>
               <el-form-item label="Auth">
-                <el-input v-model="rf._hysteriaAuth" placeholder="Hysteria 密码" />
+                <el-input v-model="rf._hysteriaAuth" :placeholder="t('protoCenter.outbounds.hysteriaAuthHint')" />
               </el-form-item>
             </template>
             <template v-if="rf.protocol === 'socks' || rf.protocol === 'http'">
@@ -328,12 +328,12 @@
             <el-form-item label="Secret Key">
               <div style="display:flex;gap:8px;width:100%">
                 <el-input v-model="rf._wgSecretKey" style="flex:1" show-password />
-                <el-button size="small" @click="genWgKey">生成</el-button>
+                <el-button size="small" @click="genWgKey">{{ t('protoCenter.outbounds.generate') }}</el-button>
               </div>
             </el-form-item>
             <el-form-item v-if="rf._wgPublicKey" label="Public Key">
               <el-input :model-value="rf._wgPublicKey" readonly />
-              <div class="hint">配置服务端时需要此公钥</div>
+              <div class="hint">{{ t('protoCenter.outbounds.wgPublicKeyHint') }}</div>
             </el-form-item>
             <el-form-item label="Address (IPv4)">
               <el-input v-model="rf._wgAddressIPv4" placeholder="172.16.0.2/32" @change="emit" />
@@ -355,13 +355,13 @@
             </el-form-item>
             <el-form-item label="Domain Strategy">
               <el-select v-model="rf._wgDomainStrategy" style="width:100%" clearable>
-                <el-option label="ForceIP (默认)" value="ForceIP" />
+                <el-option :label="t('protoCenter.outbounds.wgDomainStrategyDefault')" value="ForceIP" />
                 <el-option label="ForceIPv4" value="ForceIPv4" />
                 <el-option label="ForceIPv6" value="ForceIPv6" />
                 <el-option label="ForceIPv4v6" value="ForceIPv4v6" />
                 <el-option label="ForceIPv6v4" value="ForceIPv6v4" />
               </el-select>
-              <div class="hint">域名解析策略，控制 WireGuard 目标地址解析</div>
+              <div class="hint">{{ t('protoCenter.outbounds.wgDomainStrategyHint') }}</div>
             </el-form-item>
           </el-form>
           <el-divider content-position="left">Peers</el-divider>
@@ -412,8 +412,8 @@
                 <el-input v-model="rf._sni" placeholder="example.com" />
               </el-form-item>
               <el-form-item label="Verify Peer Cert">
-                <el-input v-model="rf._tlsVerifyPeerCertByName" placeholder="留空使用 Server Name" />
-                <div class="hint">覆盖证书验证用的 SNI</div>
+                <el-input v-model="rf._tlsVerifyPeerCertByName" placeholder="{{ t('protoCenter.outbounds.tlsVerifyHint') }}" />
+                <div class="hint">{{ t('protoCenter.outbounds.tlsVerifyDesc') }}</div>
               </el-form-item>
               <el-form-item label="ALPN">
                 <el-select v-model="rf._alpn" style="width:100%" multiple clearable>
@@ -434,10 +434,10 @@
                 <el-switch v-model="rf._tlsDisableSystemRoot" />
               </el-form-item>
               <el-form-item label="ECH Config List">
-                <el-input v-model="rf._tlsEchConfigList" placeholder="Base64 或 DNS 地址" />
+                <el-input v-model="rf._tlsEchConfigList" :placeholder="t('protoCenter.outbounds.tlsEchHint')" />
               </el-form-item>
               <el-form-item label="Master Key Log">
-                <el-input v-model="rf._tlsMasterKeyLog" placeholder="Wireshark 日志路径" />
+                <el-input v-model="rf._tlsMasterKeyLog" :placeholder="t('protoCenter.outbounds.tlsMasterKeyHint')" />
               </el-form-item>
             </template>
 
@@ -452,7 +452,7 @@
                 <el-input v-model="rf._realityPublicKey" />
               </el-form-item>
               <el-form-item label="Short ID">
-                <el-input v-model="rf._realityShortId" placeholder="hex, 偶数长度" />
+                <el-input v-model="rf._realityShortId" :placeholder="t('protoCenter.outbounds.realityShortIdHint')" />
               </el-form-item>
               <el-form-item label="Fingerprint">
                 <el-select v-model="rf._realityFingerprint" style="width:100%">
@@ -465,7 +465,7 @@
                 <el-input v-model="rf._realitySpiderX" placeholder="crawler initial path" />
               </el-form-item>
               <el-form-item label="mldsa65Verify">
-                <el-input v-model="rf._realityMldsa65Verify" type="textarea" :rows="2" placeholder="后量子签名公钥" />
+                <el-input v-model="rf._realityMldsa65Verify" type="textarea" :rows="2" :placeholder="t('protoCenter.outbounds.realityMldsa65Hint')" />
                 <div class="hint">{{ t('protoCenter.outbounds.realityMldsa65Hint') }}</div>
               </el-form-item>
             </template>
@@ -719,7 +719,7 @@
                 </el-form-item>
                 <el-form-item label="H Keep Alive Period">
                   <el-input-number v-model="rf._xhttpXmuxHKeepAlivePeriod" :min="-1" @change="emit" />
-                  <div class="hint">0 = 默认, -1 = 禁用</div>
+                  <div class="hint">{{ t('protoCenter.outbounds.xmuxKeepAliveHint') }}</div>
                 </el-form-item>
               </el-form>
 
@@ -777,7 +777,7 @@
                     </el-form-item>
                   </template>
                   <el-form-item label="Path">
-                    <el-input v-model="rf._xhttpDownloadPath" placeholder="必须与上传 path 相同" @change="emit" />
+                    <el-input v-model="rf._xhttpDownloadPath" :placeholder="t('protoCenter.outbounds.downloadPathHint')" @change="emit" />
                   </el-form-item>
                 </el-form>
                 <!-- Download Xmux -->
@@ -811,7 +811,7 @@
               <el-form label-width="160px" label-position="left">
                 <el-form-item label="Version">
                   <el-input-number v-model="rf._hysteriaVersion" :min="2" :max="2" />
-                  <div class="hint">必须为 2</div>
+                  <div class="hint">{{ t('protoCenter.outbounds.hysteriaVersionHint') }}</div>
                 </el-form-item>
                 <el-form-item label="Auth">
                   <el-input v-model="rf._hysteriaAuth" :placeholder="t('protoCenter.outbounds.hysteriaAuthHint')" />
@@ -957,8 +957,8 @@
               </div>
               <template v-if="entry.type === 'fragment'">
                 <el-form label-width="140px" label-position="left" size="small">
-                  <el-form-item label="Packets"><el-input v-model="entry.settings.packets" placeholder="tlshello 或 1-3" @change="emit" /></el-form-item>
-                  <el-form-item label="Length"><el-input v-model="entry.settings.length" placeholder="100-200" @change="emit" /></el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.packets')"><el-input v-model="entry.settings.packets" placeholder="tlshello or 1-3" @change="emit" /></el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.length')"><el-input v-model="entry.settings.length" placeholder="100-200" @change="emit" /></el-form-item>
                   <el-form-item label="Delay"><el-input v-model="entry.settings.delay" placeholder="10-20" @change="emit" /></el-form-item>
                   <el-form-item label="Max Split"><el-input v-model="entry.settings.maxSplit" placeholder="3-6" @change="emit" /></el-form-item>
                 </el-form>

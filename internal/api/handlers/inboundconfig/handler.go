@@ -111,3 +111,95 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }
+
+// PauseUser handles POST /api/v1/inbound-configs/:id/users/:email/pause.
+// Sets _paused=true on the user in config JSON.
+func (h *Handler) PauseUser(c *gin.Context) {
+	h.setUserPaused(c, true)
+}
+
+// ResumeUser handles POST /api/v1/inbound-configs/:id/users/:email/resume.
+// Sets _paused=false on the user in config JSON.
+func (h *Handler) ResumeUser(c *gin.Context) {
+	h.setUserPaused(c, false)
+}
+
+func (h *Handler) setUserPaused(c *gin.Context, paused bool) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	email := c.Param("email")
+	if email == "" {
+		response.BadRequest(c, "INVALID_PARAMS", "email is required")
+		return
+	}
+
+	cfg, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", err.Error())
+		return
+	}
+
+	// Parse config JSON
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
+		response.InternalError(c, "PARSE_FAILED", err.Error())
+		return
+	}
+
+	// Find user in settings.users or settings.clients
+	settings, ok := config["settings"].(map[string]interface{})
+	if !ok {
+		response.BadRequest(c, "INVALID_CONFIG", "no settings found")
+		return
+	}
+
+	found := false
+	for _, key := range []string{"users", "clients"} {
+		users, ok := settings[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, u := range users {
+			user, ok := u.(map[string]interface{})
+			if !ok {
+				continue
+			}
+		 userEmail, _ := user["email"].(string)
+			if userEmail == email {
+				user["_paused"] = paused
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	if !found {
+		response.NotFound(c, "USER_NOT_FOUND", "user not found in config")
+		return
+	}
+
+	// Save updated config
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		response.InternalError(c, "MARSHAL_FAILED", err.Error())
+		return
+	}
+
+	_, err = h.svc.Update(c.Request.Context(), id, cfg.Remark, cfg.Protocol, cfg.Tag, cfg.Listen, cfg.Port, string(configJSON), cfg.Enabled)
+	if err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+
+	if paused {
+		response.OK(c, gin.H{"message": "user paused", "email": email})
+	} else {
+		response.OK(c, gin.H{"message": "user resumed", "email": email})
+	}
+}

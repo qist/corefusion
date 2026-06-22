@@ -594,6 +594,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				inboundCfgGroup.GET("/:id", inboundCfgH.Get)
 				inboundCfgGroup.PUT("/:id", inboundCfgH.Update)
 				inboundCfgGroup.DELETE("/:id", inboundCfgH.Delete)
+				inboundCfgGroup.POST("/:id/users/:email/pause", inboundCfgH.PauseUser)
+				inboundCfgGroup.POST("/:id/users/:email/resume", inboundCfgH.ResumeUser)
 			}
 
 			// Outbound Configs (separate table)

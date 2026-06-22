@@ -290,6 +290,7 @@ export default {
       addUser: 'Add User',
       manageUsers: 'Manage Users',
       pause: 'Pause',
+      resume: 'Resume',
       removeFromXray: 'Remove from Xray',
       // Details & Share
       view: 'View',

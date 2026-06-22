@@ -291,6 +291,7 @@ export default {
       addUser: '添加用户',
       manageUsers: '管理用户',
       pause: '暂停',
+      resume: '恢复',
       removeFromXray: '从 Xray 移除',
       // Details & Share
       view: '查看',

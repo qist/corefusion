@@ -236,14 +236,19 @@
       <div v-if="manageUsersList.length">
         <div v-for="(u, ui) in manageUsersList" :key="ui" style="display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee">
           <div>
-            <div style="font-weight:500">{{ u.email || u.id }}</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-weight:500">{{ u.email || u.id }}</span>
+              <el-tag v-if="u._paused" size="small" type="warning">Paused</el-tag>
+              <el-tag v-else size="small" type="success">Active</el-tag>
+            </div>
             <div style="font-size:12px;color:#909399">
               <span v-if="u.id">UUID: {{ u.id.substring(0, 8) }}...</span>
               <span v-if="u.flow"> | Flow: {{ u.flow }}</span>
             </div>
           </div>
           <div style="display:flex;gap:8px">
-            <el-button size="small" type="danger" @click="pauseUser(u)">{{ t('protoCenter.inbounds.pause') }}</el-button>
+            <el-button v-if="u._paused" size="small" type="success" @click="resumeUser(u)">{{ t('protoCenter.inbounds.resume') }}</el-button>
+            <el-button v-else size="small" type="warning" @click="pauseUser(u)">{{ t('protoCenter.inbounds.pause') }}</el-button>
             <el-button size="small" type="danger" plain @click="removeUserFromXray(u)">{{ t('protoCenter.inbounds.removeFromXray') }}</el-button>
           </div>
         </div>
@@ -2449,12 +2454,43 @@ function showManageUsers(ib) {
 }
 
 async function pauseUser(user) {
-  // Pause = remove from xray runtime but keep in DB
+  // Find inbound ID from manageUsersTag
+  const inbound = form.value.find(ib => ib.tag === manageUsersTag.value)
+  if (!inbound || !inbound._id) {
+    ElMessage.error('Inbound not found')
+    return
+  }
   try {
+    // Pause = update DB + remove from xray runtime
+    await client.post(`/inbound-configs/${inbound._id}/users/${user.email}/pause`)
     await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
-    ElMessage.success(`User ${user.email} paused (removed from xray)`)
+    user._paused = true
+    ElMessage.success(`User ${user.email} paused`)
   } catch (e) {
     ElMessage.error('Failed to pause user: ' + (e.message || e))
+  }
+}
+
+async function resumeUser(user) {
+  // Find inbound ID from manageUsersTag
+  const inbound = form.value.find(ib => ib.tag === manageUsersTag.value)
+  if (!inbound || !inbound._id) {
+    ElMessage.error('Inbound not found')
+    return
+  }
+  try {
+    // Resume = update DB + add back to xray runtime
+    await client.post(`/inbound-configs/${inbound._id}/users/${user.email}/resume`)
+    await client.post(`/xray/control/inbound/${manageUsersTag.value}/user`, {
+      email: user.email,
+      id: user.id,
+      flow: user.flow || '',
+      password: user.password || ''
+    })
+    user._paused = false
+    ElMessage.success(`User ${user.email} resumed`)
+  } catch (e) {
+    ElMessage.error('Failed to resume user: ' + (e.message || e))
   }
 }
 

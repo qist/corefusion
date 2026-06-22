@@ -55,6 +55,7 @@ import (
 	warpSvc "corefusion/internal/service/warp"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	configsyncSvc "corefusion/internal/service/configsync"
+	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	"corefusion/internal/store/repository"
 )
 
@@ -183,6 +184,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	binaryResolver := binariesSvc.NewResolver(dataDir)
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
 	geoRuleSvcInst := geoRuleSvc.NewService(ruleSourceRepo, geoRuleRepo, dataDir, systemSettingSvc)
+
+	// Traffic sync service (periodically syncs traffic stats to DB)
+	trafficSyncSvc := trafficsyncSvc.NewService(systemSettingSvc, inboundConfigSvc, 30*time.Second)
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
 	warpSvcInst := warpSvc.NewService(warpRepo, dataDir)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
@@ -1007,6 +1011,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Start config sync service (periodically syncs DB configs to disk)
 	configSyncSvc.Start()
+
+	// Start traffic sync service (periodically syncs traffic stats to DB)
+	trafficSyncSvc.Start()
 
 	return r
 }

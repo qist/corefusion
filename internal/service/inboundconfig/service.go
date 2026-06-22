@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -73,6 +74,72 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 // Delete deletes an inbound config.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.repo.Delete(ctx, id)
+}
+
+// UpdateTraffic updates traffic stats for a user by email.
+func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, upDelta int64, downDelta int64) error {
+	// Find all inbound configs
+	configs, err := s.repo.List(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	for _, cfg := range configs {
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
+			continue
+		}
+
+		// Check if this inbound has the user
+		settings, ok := inbound["settings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		updated := false
+		for _, key := range []string{"users", "clients", "accounts"} {
+			items, ok := settings[key].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, item := range items {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				// Match by email or user field
+				itemEmail, _ := m["email"].(string)
+				if itemEmail == "" {
+					itemEmail, _ = m["user"].(string)
+				}
+				if itemEmail == email {
+					// Update traffic
+					up, _ := m["_usedUp"].(float64)
+					down, _ := m["_usedDown"].(float64)
+					m["_usedUp"] = int64(up) + upDelta
+					m["_usedDown"] = int64(down) + downDelta
+					updated = true
+				}
+			}
+		}
+
+		if updated {
+			data, err := json.Marshal(inbound)
+			if err != nil {
+				log.Printf("trafficsync: marshal failed for %s: %v", cfg.Tag, err)
+				continue
+			}
+			cfg.ConfigJSON = string(data)
+			cfg.UpdatedAt = time.Now()
+			log.Printf("trafficsync: saving config %s (id=%d)", cfg.Tag, cfg.ID)
+			if err := s.repo.Update(ctx, &cfg); err != nil {
+				log.Printf("trafficsync: failed to update config %s: %v", cfg.Tag, err)
+			} else {
+				log.Printf("trafficsync: saved config %s successfully", cfg.Tag)
+			}
+		}
+	}
+	return nil
 }
 
 // GetEnabledInbounds returns all enabled inbound configs as parsed JSON.

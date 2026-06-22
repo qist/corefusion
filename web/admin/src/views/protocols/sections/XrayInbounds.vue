@@ -10,20 +10,20 @@
     <!-- Stats Summary -->
     <div style="display:flex;gap:24px;margin-bottom:16px;padding:12px 16px;background:var(--el-fill-color-light);border-radius:8px;font-size:13px">
       <div>
-        <span style="color:#909399">Total Upload/Download: </span>
+        <span style="color:#909399">{{ t('protoCenter.inbounds.totalUploadDownload') }}: </span>
         <span style="font-weight:500">↑ {{ formatTraffic(totalUpload) }} / ↓ {{ formatTraffic(totalDownload) }}</span>
       </div>
       <div>
-        <span style="color:#909399">Total Usage: </span>
+        <span style="color:#909399">{{ t('protoCenter.inbounds.totalUsage') }}: </span>
         <span style="font-weight:500">{{ formatTraffic(totalUpload + totalDownload) }}</span>
       </div>
       <div>
-        <span style="color:#909399">Inbounds: </span>
+        <span style="color:#909399">{{ t('protoCenter.inbounds.inboundCount') }}: </span>
         <span style="font-weight:500">{{ form.length }}</span>
       </div>
-      <el-button size="small" type="warning" @click="resetAllTraffic">Reset All Traffic</el-button>
-      <el-button size="small" @click="fetchXrayStats" :loading="statsLoading">
-        <el-icon><Refresh /></el-icon> Refresh
+      <el-button size="small" type="warning" @click="resetAllTraffic">{{ t('protoCenter.inbounds.resetAllTraffic') }}</el-button>
+      <el-button size="small" @click="loadInbounds" :loading="statsLoading">
+        <el-icon><Refresh /></el-icon> {{ t('common.refresh') }}
       </el-button>
     </div>
 
@@ -54,12 +54,12 @@
           <span style="font-weight:500">{{ row.port }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="Traffic" width="140" align="center">
+      <el-table-column :label="t('protoCenter.inbounds.traffic')" width="140" align="center">
         <template #default="{row}">
           <span style="font-size:12px">↑ {{ formatTraffic(getTotalTraffic(row, 'up')) }} ↓ {{ formatTraffic(getTotalTraffic(row, 'down')) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="Details" min-width="150">
+      <el-table-column :label="t('protoCenter.inbounds.details')" min-width="150">
         <template #default="{row}">
           <div style="font-size:12px;line-height:1.4">
             <div v-if="row.settings?.users?.length">
@@ -78,7 +78,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="Transport" width="160" align="center">
+      <el-table-column :label="t('protoCenter.inbounds.transport')" width="160" align="center">
         <template #default="{row}">
           <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
             <el-tag size="small" type="info">{{ row.streamSettings?.network || 'raw' }}</el-tag>
@@ -86,7 +86,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="Expiry" width="100" align="center">
+      <el-table-column :label="t('protoCenter.inbounds.expiry')" width="100" align="center">
         <template #default="{row}">
           <span style="font-size:12px" :style="isExpired(row) ? 'color:#f56c6c' : ''">{{ getFirstUserExpiry(row) }}</span>
         </template>
@@ -125,7 +125,7 @@
     </el-table>
 
     <!-- QR Code Dialog -->
-    <el-dialog v-model="qrDlg" title="QR Code" width="400" top="10vh">
+    <el-dialog v-model="qrDlg" :title="t('protoCenter.inbounds.qrCode')" width="400" top="10vh">
       <div v-if="qrUsers.length > 1" style="margin-bottom:16px">
         <el-select v-model="qrSelectedUser" style="width:100%" @change="onQrUserChange">
           <el-option v-for="u in qrUsers" :key="u.email || u.id" :label="u.email || u.id" :value="u.email || u.id" />
@@ -136,14 +136,14 @@
           <img :src="qrCodeUrl" style="max-width:250px" />
         </div>
         <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
-        <el-button size="small" style="margin-top:8px" @click="copyQrLink">Copy Link</el-button>
+        <el-button size="small" style="margin-top:8px" @click="copyQrLink">{{ t('protoCenter.inbounds.copyLink') }}</el-button>
       </div>
     </el-dialog>
 
     <!-- Reset Traffic Dialog -->
-    <el-dialog v-model="resetDlg" title="Reset Traffic" width="400">
+    <el-dialog v-model="resetDlg" :title="t('protoCenter.inbounds.resetTraffic')" width="400">
       <div v-if="resetUsers.length">
-        <p style="margin-bottom:12px">Select user to reset traffic:</p>
+        <p style="margin-bottom:12px">{{ t('protoCenter.inbounds.selectUserToReset') }}:</p>
         <el-radio-group v-model="resetSelectedUser" style="display:flex;flex-direction:column;gap:8px">
           <el-radio v-for="u in resetUsers" :key="u.email" :value="u.email" style="margin:0">
             <span>{{ u.email || u.id }}</span>
@@ -158,7 +158,7 @@
     </el-dialog>
 
     <!-- Add User Dialog -->
-    <el-dialog v-model="addUserDlg" title="Add User" width="500">
+    <el-dialog v-model="addUserDlg" :title="t('protoCenter.inbounds.addUser')" width="500">
       <el-form label-width="100px" label-position="left">
         <el-form-item label="Email">
           <el-input v-model="newUser.email" placeholder="user@example.com" />
@@ -189,7 +189,7 @@
     </el-dialog>
 
     <!-- Manage Users Dialog -->
-    <el-dialog v-model="manageUsersDlg" title="Manage Users" width="600">
+    <el-dialog v-model="manageUsersDlg" :title="t('protoCenter.inbounds.manageUsers')" width="600">
       <div v-if="manageUsersList.length">
         <div v-for="(u, ui) in manageUsersList" :key="ui" style="display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee">
           <div>
@@ -200,8 +200,8 @@
             </div>
           </div>
           <div style="display:flex;gap:8px">
-            <el-button size="small" type="danger" @click="pauseUser(u)">Pause</el-button>
-            <el-button size="small" type="danger" plain @click="removeUserFromXray(u)">Remove from Xray</el-button>
+            <el-button size="small" type="danger" @click="pauseUser(u)">{{ t('protoCenter.inbounds.pause') }}</el-button>
+            <el-button size="small" type="danger" plain @click="removeUserFromXray(u)">{{ t('protoCenter.inbounds.removeFromXray') }}</el-button>
           </div>
         </div>
       </div>
@@ -2045,12 +2045,22 @@ const manageUsersTag = ref('')
 const xrayStats = ref({ users: [], inbounds: [] })
 const statsLoading = ref(false)
 
-// Computed stats
+// Computed stats (from database only, exclude API tag)
 const totalUpload = computed(() => {
-  return (xrayStats.value.inbounds || []).reduce((sum, ib) => sum + (ib.uplink || 0), 0)
+  let total = 0
+  for (const ib of form.value) {
+    if (ib.tag === 'api') continue
+    total += getTotalTraffic(ib, 'up')
+  }
+  return total
 })
 const totalDownload = computed(() => {
-  return (xrayStats.value.inbounds || []).reduce((sum, ib) => sum + (ib.downlink || 0), 0)
+  let total = 0
+  for (const ib of form.value) {
+    if (ib.tag === 'api') continue
+    total += getTotalTraffic(ib, 'down')
+  }
+  return total
 })
 
 function getProtocolTagType(protocol) {
@@ -2088,24 +2098,9 @@ async function resetAllTraffic() {
   } catch {}
 }
 
-function getInboundTraffic(ib, direction) {
-  // Get traffic from xray stats API by tag
-  const tag = ib.tag
-  if (!tag) return 0
-
-  const inbound = xrayStats.value.inbounds?.find(i => i.tag === tag)
-  if (!inbound) return 0
-
-  return direction === 'up' ? (inbound.uplink || 0) : (inbound.downlink || 0)
-}
-
 function getTotalTraffic(ib, direction) {
-  // First try to get from xray stats API
-  const apiTraffic = getInboundTraffic(ib, direction)
-  if (apiTraffic > 0) return apiTraffic
-
-  // Fallback to local data
-  const users = ib.settings?.users || ib.settings?.clients || []
+  // Only use database traffic (synced periodically from xray)
+  const users = ib.settings?.users || ib.settings?.clients || ib.settings?.accounts || []
   return users.reduce((sum, u) => sum + (direction === 'up' ? (u._usedUp || 0) : (u._usedDown || 0)), 0)
 }
 

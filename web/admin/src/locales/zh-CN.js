@@ -277,6 +277,56 @@ export default {
       port: '端口',
       socketPath: 'Socket 路径',
       socketPerm: '权限',
+      // 表格列
+      traffic: '流量',
+      details: '详细信息',
+      transport: '传输配置',
+      expiry: '到期时间',
+      // 统计
+      totalUploadDownload: '总上传/下载',
+      totalUsage: '总用量',
+      inboundCount: '入站数量',
+      resetAllTraffic: '重置所有流量',
+      // 用户管理
+      addUser: '添加用户',
+      manageUsers: '管理用户',
+      pause: '暂停',
+      removeFromXray: '从 Xray 移除',
+      // QR Code
+      qrCode: '二维码',
+      copyLink: '复制链接',
+      // 流量重置
+      resetTraffic: '重置流量',
+      selectUserToReset: '选择要重置流量的用户',
+      // 到期时间
+      unlimited: '无限期',
+      expired: '已过期',
+      // 端口跳跃
+      portHopping: '端口跳跃',
+      portHoppingHint: '防火墙规则将在保存时自动应用',
+      targetPort: '目标端口',
+      rangeMode: '范围模式',
+      preset: '预设',
+      manual: '手动',
+      portRange: '端口范围',
+      interface: '网卡',
+      allInterfaces: '所有网卡',
+      // 加密
+      encryption: '加密',
+      encryptionKey: '加密密钥',
+      decryptionKey: '解密密钥',
+      vlessEncryptionHint: 'VLESS 级加密 (vlessenc / ML-KEM)',
+      clientKeyHint: '客户端加密密钥（自动生成）',
+      serverKeyHint: '服务端解密密钥（自动生成）',
+      selectTypeFirst: '请先选择加密类型',
+      // 证书
+      certSource: '证书来源',
+      certSourceFile: '文件路径',
+      certSourceContent: '证书内容',
+      certificateFile: '证书文件',
+      keyFile: '密钥文件',
+      certificate: '证书',
+      key: '密钥',
     },
     outbounds: {
       title: '出站列表',

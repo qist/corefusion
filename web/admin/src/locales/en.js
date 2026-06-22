@@ -276,6 +276,56 @@ export default {
       port: 'Port',
       socketPath: 'Socket Path',
       socketPerm: 'Permission',
+      // Table columns
+      traffic: 'Traffic',
+      details: 'Details',
+      transport: 'Transport',
+      expiry: 'Expiry',
+      // Stats
+      totalUploadDownload: 'Total Upload/Download',
+      totalUsage: 'Total Usage',
+      inboundCount: 'Inbounds',
+      resetAllTraffic: 'Reset All Traffic',
+      // User management
+      addUser: 'Add User',
+      manageUsers: 'Manage Users',
+      pause: 'Pause',
+      removeFromXray: 'Remove from Xray',
+      // QR Code
+      qrCode: 'QR Code',
+      copyLink: 'Copy Link',
+      // Traffic reset
+      resetTraffic: 'Reset Traffic',
+      selectUserToReset: 'Select user to reset traffic',
+      // Expiry
+      unlimited: 'Unlimited',
+      expired: 'Expired',
+      // Port hopping
+      portHopping: 'Port Hopping',
+      portHoppingHint: 'Firewall rules will be applied automatically on save',
+      targetPort: 'Target Port',
+      rangeMode: 'Range Mode',
+      preset: 'Preset',
+      manual: 'Manual',
+      portRange: 'Port Range',
+      interface: 'Interface',
+      allInterfaces: 'All Interfaces',
+      // Encryption
+      encryption: 'Encryption',
+      encryptionKey: 'Encryption Key',
+      decryptionKey: 'Decryption Key',
+      vlessEncryptionHint: 'VLESS-level encryption (vlessenc / ML-KEM)',
+      clientKeyHint: 'Client-side encryption key (auto-generated)',
+      serverKeyHint: 'Server-side decryption key (auto-generated)',
+      selectTypeFirst: 'Please select encryption type first',
+      // Certificate
+      certSource: 'Certificate Source',
+      certSourceFile: 'File Path',
+      certSourceContent: 'Certificate Content',
+      certificateFile: 'Certificate File',
+      keyFile: 'Key File',
+      certificate: 'Certificate',
+      key: 'Key',
     },
     outbounds: {
       title: 'Outbound List',

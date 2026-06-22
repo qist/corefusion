@@ -292,9 +292,13 @@ export default {
       manageUsers: '管理用户',
       pause: '暂停',
       removeFromXray: '从 Xray 移除',
-      // QR Code
-      qrCode: '二维码',
+      // Details & Share
+      view: '查看',
+      users: '用户列表',
+      rawConfig: '原始配置',
+      shareLink: '分享链接',
       copyLink: '复制链接',
+      qrCode: '二维码',
       // 流量重置
       resetTraffic: '重置流量',
       selectUserToReset: '选择要重置流量的用户',

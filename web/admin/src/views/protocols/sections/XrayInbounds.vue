@@ -29,90 +29,31 @@
 
     <!-- Table List -->
     <el-table :data="form" stripe style="width:100%" size="small">
-      <el-table-column :label="t('common.enabled')" width="70" align="center">
+      <el-table-column label="ID" width="50" align="right">
         <template #default="{row, $index}">
-          <el-switch v-model="row._enabled" size="small" @change="toggleEnabled($index)" />
+          <span style="font-size:11px;opacity:0.6">{{ row._id || ($index + 1) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="ID" width="60" align="center">
-        <template #default="{row, $index}">
-          <span style="font-size:12px;color:#909399">{{ row._id || ($index + 1) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.remark')" min-width="120">
-        <template #default="{row}">
-          <span>{{ row._remark || '-' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.protocol')" width="90" align="center">
-        <template #default="{row}">
-          <el-tag size="small" :type="getProtocolTagType(row.protocol)">{{ row.protocol.toUpperCase() }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.port')" width="80" align="center">
-        <template #default="{row}">
-          <span style="font-weight:500">{{ row.port }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.traffic')" width="140" align="center">
-        <template #default="{row}">
-          <span style="font-size:12px">↑ {{ formatTraffic(getTotalTraffic(row, 'up')) }} ↓ {{ formatTraffic(getTotalTraffic(row, 'down')) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.details')" min-width="150">
-        <template #default="{row}">
-          <div style="font-size:12px;line-height:1.4">
-            <div v-if="row.settings?.users?.length">
-              <span v-for="(u, ui) in row.settings.users.slice(0, 2)" :key="ui">
-                {{ u.email || u.id?.substring(0, 8) }}{{ ui < Math.min(row.settings.users.length, 2) - 1 ? ', ' : '' }}
-              </span>
-              <span v-if="row.settings.users.length > 2" style="color:#909399"> +{{ row.settings.users.length - 2 }}</span>
-            </div>
-            <div v-else-if="row.settings?.clients?.length">
-              <span v-for="(c, ci) in row.settings.clients.slice(0, 2)" :key="ci">
-                {{ c.email || 'client-' + (ci + 1) }}{{ ci < Math.min(row.settings.clients.length, 2) - 1 ? ', ' : '' }}
-              </span>
-              <span v-if="row.settings.clients.length > 2" style="color:#909399"> +{{ row.settings.clients.length - 2 }}</span>
-            </div>
-            <span v-else style="color:#909399">-</span>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.transport')" width="160" align="center">
-        <template #default="{row}">
-          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
-            <el-tag size="small" type="info">{{ row.streamSettings?.network || 'raw' }}</el-tag>
-            <el-tag v-if="row.streamSettings?.security && row.streamSettings.security !== 'none'" size="small" :type="row.streamSettings.security === 'reality' ? 'danger' : 'warning'">{{ row.streamSettings.security }}</el-tag>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('protoCenter.inbounds.expiry')" width="100" align="center">
-        <template #default="{row}">
-          <span style="font-size:12px" :style="isExpired(row) ? 'color:#f56c6c' : ''">{{ getFirstUserExpiry(row) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('common.actions')" width="70" align="center" fixed="right">
+      <el-table-column :label="t('common.actions')" width="70" align="center">
         <template #default="{row, $index}">
           <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row, $index)">
-            <el-button size="small" type="primary" text>
-              <el-icon><More /></el-icon>
-            </el-button>
+            <el-icon style="font-size:18px;cursor:pointer"><MoreFilled /></el-icon>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="edit">
                   <el-icon><Edit /></el-icon> {{ t('common.edit') }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="hasUsers(row)" command="qrcode" divided>
-                  <el-icon><View /></el-icon> QR Code
+                  <el-icon><View /></el-icon> {{ t('protoCenter.inbounds.qrCode') }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="hasUsers(row)" command="reset-traffic">
-                  <el-icon><RefreshRight /></el-icon> Reset Traffic
+                  <el-icon><RefreshRight /></el-icon> {{ t('protoCenter.inbounds.resetTraffic') }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="hasUsers(row)" command="add-user" divided>
-                  <el-icon><Plus /></el-icon> Add User
+                  <el-icon><Plus /></el-icon> {{ t('protoCenter.inbounds.addUser') }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="hasUsers(row)" command="manage-users">
-                  <el-icon><User /></el-icon> Manage Users
+                  <el-icon><User /></el-icon> {{ t('protoCenter.inbounds.manageUsers') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="delete" divided>
                   <span style="color:#f56c6c"><el-icon><Delete /></el-icon> {{ t('common.delete') }}</span>
@@ -122,7 +63,109 @@
           </el-dropdown>
         </template>
       </el-table-column>
+      <el-table-column :label="t('common.enabled')" width="60" align="center">
+        <template #default="{row, $index}">
+          <el-switch v-model="row._enabled" size="small" @change="toggleEnabled($index)" />
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.remark')" min-width="120" show-overflow-tooltip>
+        <template #default="{row}">
+          <span>{{ row._remark || '-' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.port')" width="70" align="center">
+        <template #default="{row}">
+          <span style="font-weight:500">{{ row.port }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.protocol')" min-width="180" align="left">
+        <template #default="{row}">
+          <div style="display:inline-flex;flex-wrap:wrap;gap:4px">
+            <el-tag size="small" color="purple" style="color:#fff">{{ row.protocol.toUpperCase() }}</el-tag>
+            <el-tag size="small" color="success">{{ row.streamSettings?.network || 'raw' }}</el-tag>
+            <el-tag v-if="row.streamSettings?.security === 'tls'" size="small" color="primary">TLS</el-tag>
+            <el-tag v-if="row.streamSettings?.security === 'reality'" size="small" color="primary">Reality</el-tag>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.users')" width="120" align="left">
+        <template #default="{row}">
+          <div style="display:flex;gap:6px;align-items:center">
+            <el-tag size="small" style="margin:0">
+              <el-icon><User /></el-icon> {{ getUserCount(row) }}
+            </el-tag>
+            <el-tag v-if="getActiveUserCount(row) > 0" size="small" color="success" style="margin:0">{{ getActiveUserCount(row) }}</el-tag>
+            <el-tag v-if="getExpiredUserCount(row) > 0" size="small" color="danger" style="margin:0">{{ getExpiredUserCount(row) }}</el-tag>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.traffic')" width="120" align="center">
+        <template #default="{row}">
+          <el-popover trigger="hover" width="180">
+            <template #reference>
+              <el-tag :color="getTrafficColor(row)" style="cursor:pointer;min-width:80px">
+                {{ formatTraffic(getTotalTraffic(row, 'up') + getTotalTraffic(row, 'down')) }}
+              </el-tag>
+            </template>
+            <div style="font-size:12px">
+              <div>↑ {{ formatTraffic(getTotalTraffic(row, 'up')) }}</div>
+              <div>↓ {{ formatTraffic(getTotalTraffic(row, 'down')) }}</div>
+            </div>
+          </el-popover>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.expiry')" width="80" align="center">
+        <template #default="{row}">
+          <el-tag :color="getExpiryColor(row)" size="small" style="min-width:50px">
+            {{ getExpiryDisplay(row) }}
+          </el-tag>
+        </template>
+      </el-table-column>
     </el-table>
+
+    <!-- Details Dialog -->
+    <el-dialog v-model="detailsDlg" :title="t('protoCenter.inbounds.details')" width="700" top="5vh">
+      <div v-if="detailsInbound">
+        <!-- Config Info -->
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item :label="t('protoCenter.inbounds.tag')">{{ detailsInbound.tag }}</el-descriptions-item>
+          <el-descriptions-item :label="t('protoCenter.inbounds.protocol')">{{ detailsInbound.protocol?.toUpperCase() }}</el-descriptions-item>
+          <el-descriptions-item :label="t('protoCenter.inbounds.port')">{{ detailsInbound.port }}</el-descriptions-item>
+          <el-descriptions-item :label="t('protoCenter.inbounds.transport')">{{ detailsInbound.streamSettings?.network || 'raw' }} {{ detailsInbound.streamSettings?.security !== 'none' ? detailsInbound.streamSettings?.security : '' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('protoCenter.inbounds.remark')">{{ detailsInbound._remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('common.status')">
+            <el-tag :type="detailsInbound._enabled ? 'success' : 'danger'" size="small">{{ detailsInbound._enabled ? t('common.enabled') : t('common.disabled') }}</el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <!-- Users -->
+        <div v-if="getUsers(detailsInbound).length" style="margin-top:16px">
+          <h4 style="margin-bottom:12px">{{ t('protoCenter.inbounds.users') }}</h4>
+          <div v-for="(u, ui) in getUsers(detailsInbound)" :key="ui" style="border:1px solid #eee;border-radius:6px;padding:12px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div>
+                <span style="font-weight:500">{{ u.email || u.user || u.id?.substring(0, 8) || 'User ' + (ui + 1) }}</span>
+                <el-tag v-if="u.flow" size="small" style="margin-left:8px">{{ u.flow }}</el-tag>
+              </div>
+              <el-button size="small" type="primary" @click="copyShareLink(detailsInbound, u)">
+                {{ t('protoCenter.inbounds.copyLink') }}
+              </el-button>
+            </div>
+            <div style="font-size:12px;color:#909399">
+              <span v-if="u.id">UUID: {{ u.id }}</span>
+              <span v-if="u._usedUp || u._usedDown" style="margin-left:12px">↑ {{ formatTraffic(u._usedUp || 0) }} ↓ {{ formatTraffic(u._usedDown || 0) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raw Config -->
+        <el-collapse style="margin-top:16px">
+          <el-collapse-item :title="t('protoCenter.inbounds.rawConfig')">
+            <pre style="font-size:12px;max-height:300px;overflow:auto;background:#f5f5f5;padding:12px;border-radius:4px">{{ formatJson(detailsInbound) }}</pre>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+    </el-dialog>
 
     <!-- QR Code Dialog -->
     <el-dialog v-model="qrDlg" :title="t('protoCenter.inbounds.qrCode')" width="400" top="10vh">
@@ -2000,7 +2043,7 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { More, Edit, View, RefreshRight, Delete, Refresh, Plus, User } from '@element-plus/icons-vue'
+import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User, ArrowDown } from '@element-plus/icons-vue'
 import client from '../../../api/client'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String })
@@ -2016,6 +2059,10 @@ const defaultTarget = computed(() => realityTargets.value.find(t => t.default))
 const showTargetMgr = ref(false)
 const newTarget = ref({ target: '', sni: '', type: 'tcp', default: false })
 const vlessEncAuths = ref([])
+// Details dialog
+const detailsDlg = ref(false)
+const detailsInbound = ref(null)
+
 const qrDlg = ref(false)
 const qrLink = ref('')
 const qrCodeUrl = ref('')
@@ -2123,6 +2170,62 @@ function isExpired(ib) {
   return !isNaN(date.getTime()) && date < new Date()
 }
 
+function getUserCount(ib) {
+  return (ib.settings?.users || ib.settings?.clients || []).length
+}
+
+function getActiveUserCount(ib) {
+  const users = ib.settings?.users || ib.settings?.clients || []
+  return users.filter(u => {
+    if (!u._expiry) return true
+    return new Date(u._expiry) > new Date()
+  }).length
+}
+
+function getExpiredUserCount(ib) {
+  const users = ib.settings?.users || ib.settings?.clients || []
+  return users.filter(u => {
+    if (!u._expiry) return false
+    return new Date(u._expiry) <= new Date()
+  }).length
+}
+
+function getTrafficColor(ib) {
+  const total = getTotalTraffic(ib, 'up') + getTotalTraffic(ib, 'down')
+  if (total === 0) return 'info'
+  if (total > 1073741824) return 'warning' // > 1GB
+  return 'success'
+}
+
+function getExpiryColor(ib) {
+  const users = ib.settings?.users || ib.settings?.clients || []
+  if (!users.length) return 'purple'
+  const expiry = users[0]._expiry
+  if (!expiry) return 'purple'
+  const date = new Date(expiry)
+  if (isNaN(date.getTime())) return 'purple'
+  if (date < new Date()) return 'danger'
+  const daysLeft = (date - new Date()) / (1000 * 60 * 60 * 24)
+  if (daysLeft < 7) return 'warning'
+  return 'success'
+}
+
+function getExpiryDisplay(ib) {
+  const users = ib.settings?.users || ib.settings?.clients || []
+  if (!users.length) return '∞'
+  const expiry = users[0]._expiry
+  if (!expiry) return '∞'
+  const date = new Date(expiry)
+  if (isNaN(date.getTime())) return expiry
+  const now = new Date()
+  if (date < now) return 'Expired'
+  const diff = date - now
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  if (days > 365) return Math.floor(days / 365) + 'y'
+  if (days > 30) return Math.floor(days / 30) + 'mo'
+  return days + 'd'
+}
+
 function hasUsers(ib) {
   return (ib.settings?.users?.length > 0) || (ib.settings?.clients?.length > 0)
 }
@@ -2145,6 +2248,40 @@ function handleAction(cmd, row, index) {
   } else if (cmd === 'delete') {
     rmInbound(index)
   }
+}
+
+// ==================== Details Dialog ====================
+function showDetails(ib) {
+  detailsInbound.value = ib
+  detailsDlg.value = true
+}
+
+function formatJson(obj) {
+  try {
+    const clean = { ...obj }
+    // Remove internal fields
+    delete clean._id
+    delete clean._enabled
+    delete clean._listenType
+    delete clean._socketPath
+    delete clean._socketPerm
+    delete clean._encryptionType
+    delete clean._portHopEnabled
+    delete clean._portHopMode
+    delete clean._portHopRange
+    delete clean._portHopStart
+    delete clean._portHopEnd
+    delete clean._portHopInterface
+    return JSON.stringify(clean, null, 2)
+  } catch {
+    return '{}'
+  }
+}
+
+function copyShareLink(ib, user) {
+  const link = generateShareLink(ib, user)
+  navigator.clipboard.writeText(link)
+  ElMessage.success('Link copied!')
 }
 
 function showQrCode(ib) {

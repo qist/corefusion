@@ -291,9 +291,13 @@ export default {
       manageUsers: 'Manage Users',
       pause: 'Pause',
       removeFromXray: 'Remove from Xray',
-      // QR Code
-      qrCode: 'QR Code',
+      // Details & Share
+      view: 'View',
+      users: 'Users',
+      rawConfig: 'Raw Config',
+      shareLink: 'Share Link',
       copyLink: 'Copy Link',
+      qrCode: 'QR Code',
       // Traffic reset
       resetTraffic: 'Reset Traffic',
       selectUserToReset: 'Select user to reset traffic',

@@ -82,6 +82,8 @@ type InboundSettings struct {
 	Auth       string         `json:"auth,omitempty"`
 	Password   string         `json:"password,omitempty"`
 	Email      string         `json:"email,omitempty"`
+	Encryption string         `json:"encryption,omitempty"` // VLESS encryption (e.g. "mlkem768x25519plus.native.0rtt.<key>")
+	Decryption string         `json:"decryption,omitempty"` // VLESS decryption (server-side)
 }
 
 type ClientConfig struct {
@@ -176,11 +178,13 @@ type VnextServer struct {
 }
 
 type UserConfig struct {
-	ID       string `json:"id"`
-	AlterID  int    `json:"alterId,omitempty"`
-	Email    string `json:"email,omitempty"`
-	Security string `json:"security,omitempty"`
-	Password string `json:"password,omitempty"`
+	ID         string `json:"id"`
+	AlterID    int    `json:"alterId,omitempty"`
+	Email      string `json:"email,omitempty"`
+	Security   string `json:"security,omitempty"`
+	Password   string `json:"password,omitempty"`
+	Encryption string `json:"encryption,omitempty"` // VLESS encryption
+	Flow       string `json:"flow,omitempty"`       // XTLS Vision flow
 }
 
 type ServerConfig struct {
@@ -276,6 +280,13 @@ func (g *Generator) GenerateServiceConfig(spec common.ServiceConfigSpec) ([]byte
 			})
 		}
 		settings.Clients = clients
+		// Add VLESS encryption if configured
+		if enc, ok := spec.Extra["vless_encryption"].(string); ok && enc != "" {
+			settings.Encryption = enc
+		}
+		if dec, ok := spec.Extra["vless_decryption"].(string); ok && dec != "" {
+			settings.Decryption = dec
+		}
 	case domain.ProtocolVMess:
 		var clients []ClientConfig
 		for _, u := range spec.Users {
@@ -305,6 +316,10 @@ func (g *Generator) GenerateServiceConfig(spec common.ServiceConfigSpec) ([]byte
 			Access:   "/dev/null",
 			Error:    "/dev/stderr",
 			LogLevel: "warning",
+		},
+		API: &APIConfig{
+			Tag:      "api",
+			Services: []string{"HandlerService", "StatsService", "RoutingService"},
 		},
 		Inbounds: []InboundConfig{inbound},
 		Outbounds: []OutboundConfig{
@@ -463,4 +478,33 @@ func (g *Generator) ValidateConfig(content []byte) error {
 	}
 
 	return nil
+}
+
+// VlessEncryptionEnabled reports whether a VLESS inbound has VLESS-level
+// encryption (vlessenc / ML-KEM) configured. When enabled these fields hold a
+// generated dotted string (e.g. "mlkem768x25519plus.native.0rtt.<key>"); "none"
+// or empty means off.
+func VlessEncryptionEnabled(encryption, decryption string) bool {
+	return vlessEncValueSet(encryption) || vlessEncValueSet(decryption)
+}
+
+// vlessEncValueSet reports whether a VLESS encryption/decryption field holds a
+// real (generated) value rather than the "none"/empty sentinel.
+func vlessEncValueSet(v string) bool {
+	return v != "" && v != "none"
+}
+
+// VlessFlowAllowed reports whether a client's XTLS Vision flow belongs in
+// generated links/configs. Vision runs on TCP with tls/reality (classic), and
+// on XHTTP whenever VLESS encryption (vlessenc / ML-KEM) is enabled — there
+// the post-quantum, VLESS-level encryption stands in for the transport TLS
+// that Vision relies on.
+func VlessFlowAllowed(network, security, encryption, decryption string) bool {
+	switch network {
+	case "tcp":
+		return security == "tls" || security == "reality"
+	case "xhttp":
+		return VlessEncryptionEnabled(encryption, decryption)
+	}
+	return false
 }

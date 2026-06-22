@@ -1986,6 +1986,18 @@ async function saveOutbound() {
     } else {
       await client.post('/outbound-configs', payload)
     }
+
+    // Apply to running xray via gRPC
+    try {
+      // Remove existing outbound first if editing
+      if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
+        await client.delete(`/xray/control/outbound/${outbound.tag}`).catch(() => {})
+      }
+      await client.post('/xray/control/outbound', { outbound })
+    } catch (xrayErr) {
+      console.warn('Failed to apply outbound to xray:', xrayErr)
+    }
+
     ElMessage.success(t('common.success'))
     dlg.value = false
     loadOutbounds()
@@ -1996,6 +2008,10 @@ async function removeOutbound(i) {
   const ob = form.value[i]
   if (ob._id) {
     try { await client.delete(`/outbound-configs/${ob._id}`) } catch {}
+  }
+  // Remove from xray runtime
+  if (ob.tag) {
+    try { await client.delete(`/xray/control/outbound/${ob.tag}`) } catch {}
   }
   form.value.splice(i, 1)
   loadOutbounds()

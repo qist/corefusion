@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -31,6 +32,8 @@ import (
 	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
+	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
+	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/app/embed"
@@ -51,6 +54,7 @@ import (
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
 	warpSvc "corefusion/internal/service/warp"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	configsyncSvc "corefusion/internal/service/configsync"
 	"corefusion/internal/store/repository"
 )
 
@@ -159,6 +163,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
 	outboundConfigSvc := outboundconfigSvc.NewService(outboundConfigRepo)
+
+	// Config sync service (periodically syncs DB configs to disk)
+	configSyncSvc := configsyncSvc.NewService(coreConfigSvc, inboundConfigSvc, outboundConfigSvc, dataDir, 5*time.Minute)
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -279,45 +286,87 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 		}
 
+		// Remove outbounds from core_configs (migrated to outbound_configs table)
+		delete(fullConfig, "outbounds")
+
 		// Ensure stats is present (empty object enables stats engine)
 		if _, exists := fullConfig["stats"]; !exists {
 			fullConfig["stats"] = map[string]interface{}{}
 		}
 
-		// Handle API config: if listen is empty, add inbound + routing
+		// Handle API config
+		// - If api.listen is set: use it directly, no auto-add inbound/routing
+		// - If api.listen is empty: auto-add inbound (dokodemo-door) + routing rule
 		if apiRaw, ok := fullConfig["api"]; ok {
 			if apiMap, ok := apiRaw.(map[string]interface{}); ok {
+				// Only keep necessary services
+				apiMap["services"] = []string{"HandlerService", "LoggerService", "StatsService", "RoutingService"}
+
 				listen, _ := apiMap["listen"].(string)
 				tag, _ := apiMap["tag"].(string)
 				if tag == "" {
 					tag = "api"
 				}
-				if listen == "" {
-					// Add API inbound
-					apiInbound := map[string]interface{}{
-						"listen": "127.0.0.1",
-						"port":   62789,
-						"protocol": "dokodemo-door",
-						"settings": map[string]interface{}{"address": "127.0.0.1"},
-						"tag":    tag,
-					}
-					inbounds, _ := fullConfig["inbounds"].([]interface{})
-					fullConfig["inbounds"] = append(inbounds, apiInbound)
 
-					// Add routing rule for API
-					apiRule := map[string]interface{}{
-						"type":        "field",
-						"inboundTag":  []string{tag},
-						"outboundTag": tag,
+				if listen == "" {
+					// listen is empty: auto-add inbound + routing
+					// Remove listen field (let xray use default)
+					delete(apiMap, "listen")
+
+					// Check if API inbound already exists
+					inbounds, _ := fullConfig["inbounds"].([]interface{})
+					hasAPIInbound := false
+					for _, ib := range inbounds {
+						if ibMap, ok := ib.(map[string]interface{}); ok {
+							if ibMap["tag"] == tag {
+								hasAPIInbound = true
+								break
+							}
+						}
 					}
+
+					// Add API inbound (dokodemo-door) if not exists
+					if !hasAPIInbound {
+						apiInbound := map[string]interface{}{
+							"tag":      tag,
+							"listen":   "127.0.0.1",
+							"port":     10085,
+							"protocol": "dokodemo-door",
+							"settings": map[string]interface{}{"address": "127.0.0.1"},
+						}
+						fullConfig["inbounds"] = append(inbounds, apiInbound)
+					}
+
+					// Add routing rule for API if not exists
 					routing, _ := fullConfig["routing"].(map[string]interface{})
 					if routing == nil {
 						routing = map[string]interface{}{"domainStrategy": "IPIfNonMatch"}
 					}
 					rules, _ := routing["rules"].([]interface{})
-					routing["rules"] = append([]interface{}{apiRule}, rules...)
-					fullConfig["routing"] = routing
+					hasAPIRule := false
+					for _, r := range rules {
+						if rm, ok := r.(map[string]interface{}); ok {
+							if tags, ok := rm["inboundTag"].([]interface{}); ok {
+								for _, t := range tags {
+									if t == tag {
+										hasAPIRule = true
+										break
+									}
+								}
+							}
+						}
+					}
+					if !hasAPIRule {
+						apiRule := map[string]interface{}{
+							"type":        "field",
+							"inboundTag":  []string{tag},
+							"outboundTag": tag,
+						}
+						routing["rules"] = append([]interface{}{apiRule}, rules...)
+						fullConfig["routing"] = routing
+					}
 				}
+				// else: listen is set, use it directly (no auto-add)
 			}
 		}
 
@@ -647,7 +696,59 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				binariesGroup.POST("/ech-generate", binariesH.GenerateEchKeys)
 				binariesGroup.POST("/x25519-key", binariesH.GenerateX25519Key)
 				binariesGroup.POST("/mldsa65-key", binariesH.GenerateMldsa65Key)
+				binariesGroup.POST("/vlessenc", binariesH.GenerateVlessEnc)
 				binariesGroup.GET("/interfaces", binariesH.ListInterfaces)
+			}
+
+			// Xray Stats
+			xrayStatsH := xrayStatsHandler.NewHandler(systemSettingSvc)
+			xrayStatsH.SetCoreConfigService(coreConfigSvc)
+			xrayStatsGroup := protected.Group("/xray/stats")
+			{
+				xrayStatsGroup.GET("", xrayStatsH.GetStats)
+				xrayStatsGroup.GET("/users", xrayStatsH.GetUserStats)
+				xrayStatsGroup.POST("/reset/:email", xrayStatsH.ResetUserStats)
+			}
+
+			// Xray Control (dynamic inbound/outbound/routing)
+			xrayControlH := xrayControlHandler.NewHandler(systemSettingSvc)
+			xrayControlH.SetCoreConfigService(coreConfigSvc)
+			xrayControlGroup := protected.Group("/xray/control")
+			{
+				// Inbound management
+				xrayControlGroup.POST("/inbound", xrayControlH.AddInbound)
+				xrayControlGroup.DELETE("/inbound/:tag", xrayControlH.RemoveInbound)
+
+				// Outbound management
+				xrayControlGroup.POST("/outbound", xrayControlH.AddOutbound)
+				xrayControlGroup.DELETE("/outbound/:tag", xrayControlH.RemoveOutbound)
+
+				// User management (add/remove user from running inbound)
+				xrayControlGroup.POST("/inbound/:tag/user", xrayControlH.AddUser)
+				xrayControlGroup.DELETE("/inbound/:tag/user/:email", xrayControlH.RemoveUser)
+
+				// Firewall rules for port hopping
+				xrayControlGroup.POST("/firewall/apply", xrayControlH.ApplyFirewallRules)
+				xrayControlGroup.POST("/firewall/remove", xrayControlH.RemoveFirewallRules)
+
+				// Routing management
+				xrayControlGroup.POST("/routing", xrayControlH.ApplyRouting)
+				xrayControlGroup.POST("/routing/rule", xrayControlH.AddRoutingRule)
+				xrayControlGroup.DELETE("/routing/rule/:tag", xrayControlH.RemoveRoutingRule)
+				xrayControlGroup.GET("/routing/rules", xrayControlH.ListRoutingRules)
+
+				// Balancer management
+				xrayControlGroup.GET("/balancer/:tag", xrayControlH.GetBalancerInfo)
+				xrayControlGroup.POST("/balancer/:tag", xrayControlH.SetBalancerTarget)
+
+				// Config sync (trigger manual sync to disk)
+				xrayControlGroup.POST("/sync", func(c *gin.Context) {
+					if err := configSyncSvc.SyncNow(c.Request.Context()); err != nil {
+						c.JSON(500, gin.H{"error": err.Error()})
+						return
+					}
+					c.JSON(200, gin.H{"message": "config synced successfully", "last_sync": configSyncSvc.LastSync()})
+				})
 			}
 
 			// Geo Rules
@@ -903,6 +1004,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		logManageSvc.StartAutoWriters()
 	}()
 	logManageSvc.Start()
+
+	// Start config sync service (periodically syncs DB configs to disk)
+	configSyncSvc.Start()
 
 	return r
 }

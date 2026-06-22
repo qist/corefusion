@@ -307,6 +307,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String })
@@ -479,8 +480,28 @@ function build() {
     balancers: form.balancers.filter(b => b.enabled !== false && b.tag).map(b => { const bal = { tag: b.tag, selector: b.selectorArr || [], strategy: { type: b.strategyType } }; if (b.fallbackTag) bal.fallbackTag = b.fallbackTag; if (b.settings) bal.strategy.settings = b.settings; return bal }),
   }
 }
-function emit() { emitFn('update', build()) }
+async function emit() {
+  const data = build()
+  emitFn('update', data)
+  // Save to database and apply to xray runtime
+  await saveAndApply(data)
+}
 function rmRule(i) { form.rules.splice(i, 1); emit() }
+
+async function saveAndApply(routing) {
+  try {
+    // Save to database
+    await client.put(`/protocols/${props.coreType || 'xray'}/section/routing`, routing)
+  } catch (e) {
+    console.warn('Failed to save routing to database:', e)
+  }
+  try {
+    // Apply to xray runtime
+    await client.post('/xray/control/routing', { routing })
+  } catch (e) {
+    console.warn('Failed to apply routing to xray:', e)
+  }
+}
 
 onMounted(function() { sync(); loadTags(); loadGeoStatus() })
 </script>

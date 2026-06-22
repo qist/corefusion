@@ -250,12 +250,24 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	relBinPath, _ := filepath.Rel(m.dataDir, binaryPath)
 	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
 
+	// Ensure geo files are accessible from current working directory
+	// This is needed because xray gRPC API uses the caller's working directory
+	rulesDir := filepath.Join(m.dataDir, "rules")
+	if _, err := os.Stat(rulesDir); err == nil {
+		symlinkGeoFiles(rulesDir)
+	}
+
 	cmd := exec.CommandContext(context.Background(), relBinPath, "-c", relConfigPath)
 	cmd.Dir = m.dataDir
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	// Set resource path for geoip/geosite files
-	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Join(m.dataDir, "rules"))
+	// Priority: 1. Environment variable, 2. Default (dataDir/rules)
+	xrayAssetPath := os.Getenv("XRAY_LOCATION_ASSET")
+	if xrayAssetPath == "" {
+		xrayAssetPath = rulesDir
+	}
+	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+xrayAssetPath)
 	setProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
@@ -716,4 +728,26 @@ func (m *Manager) ListGuardians(ctx context.Context) ([]entity.ProcessGuardian, 
 // ResolveBinary resolves the binary path and version for a core type.
 func (m *Manager) ResolveBinary(coreType string) (binaryPath, version string, err error) {
 	return m.resolver.Resolve(coreType)
+}
+
+// symlinkGeoFiles creates symlinks for geoip/geosite files in the current
+// working directory so that xray gRPC API can find them when parsing configs.
+func symlinkGeoFiles(rulesDir string) {
+	geoFiles := []string{"geoip.dat", "geosite.dat", "geoip.metadb", "country.mmdb", "GeoLite2-ASN.mmdb"}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	for _, name := range geoFiles {
+		src := filepath.Join(rulesDir, name)
+		dst := filepath.Join(cwd, name)
+		// Skip if source doesn't exist or destination already exists
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if _, err := os.Lstat(dst); err == nil {
+			continue // already exists
+		}
+		os.Symlink(src, dst)
+	}
 }

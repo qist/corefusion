@@ -2,25 +2,213 @@
   <div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <span style="font-size:15px;font-weight:600">{{ t('protoCenter.inbounds.title') }}</span>
-      <el-button size="small" type="primary" @click="showAdd">{{ t('protoCenter.inbounds.add') }}</el-button>
-    </div>
-
-    <!-- List -->
-    <div v-for="(ib, i) in form" :key="i" class="inbound-item">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div style="display:flex;align-items:center;gap:12px">
-          <el-switch v-model="ib._enabled" @change="toggleEnabled(i)" />
-          <el-tag size="small">{{ ib.protocol }}</el-tag>
-          <span style="font-size:13px">{{ ib.listen || '0.0.0.0' }}:{{ ib.port }}</span>
-          <el-tag v-if="ib._remark" size="small">{{ ib._remark }}</el-tag>
-          <el-tag v-if="ib.tag" size="small" type="info">{{ ib.tag }}</el-tag>
-        </div>
-        <div>
-          <el-button size="small" @click="showEdit(i)">{{ t('common.edit') }}</el-button>
-          <el-button size="small" type="danger" text @click="rmInbound(i)">X</el-button>
-        </div>
+      <div style="display:flex;gap:8px">
+        <el-button size="small" type="primary" @click="showAdd">{{ t('protoCenter.inbounds.add') }}</el-button>
       </div>
     </div>
+
+    <!-- Stats Summary -->
+    <div style="display:flex;gap:24px;margin-bottom:16px;padding:12px 16px;background:var(--el-fill-color-light);border-radius:8px;font-size:13px">
+      <div>
+        <span style="color:#909399">Total Upload/Download: </span>
+        <span style="font-weight:500">↑ {{ formatTraffic(totalUpload) }} / ↓ {{ formatTraffic(totalDownload) }}</span>
+      </div>
+      <div>
+        <span style="color:#909399">Total Usage: </span>
+        <span style="font-weight:500">{{ formatTraffic(totalUpload + totalDownload) }}</span>
+      </div>
+      <div>
+        <span style="color:#909399">Inbounds: </span>
+        <span style="font-weight:500">{{ form.length }}</span>
+      </div>
+      <el-button size="small" type="warning" @click="resetAllTraffic">Reset All Traffic</el-button>
+      <el-button size="small" @click="fetchXrayStats" :loading="statsLoading">
+        <el-icon><Refresh /></el-icon> Refresh
+      </el-button>
+    </div>
+
+    <!-- Table List -->
+    <el-table :data="form" stripe style="width:100%" size="small">
+      <el-table-column :label="t('common.enabled')" width="70" align="center">
+        <template #default="{row, $index}">
+          <el-switch v-model="row._enabled" size="small" @change="toggleEnabled($index)" />
+        </template>
+      </el-table-column>
+      <el-table-column label="ID" width="60" align="center">
+        <template #default="{row, $index}">
+          <span style="font-size:12px;color:#909399">{{ row._id || ($index + 1) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.remark')" min-width="120">
+        <template #default="{row}">
+          <span>{{ row._remark || '-' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.protocol')" width="90" align="center">
+        <template #default="{row}">
+          <el-tag size="small" :type="getProtocolTagType(row.protocol)">{{ row.protocol.toUpperCase() }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('protoCenter.inbounds.port')" width="80" align="center">
+        <template #default="{row}">
+          <span style="font-weight:500">{{ row.port }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="Traffic" width="140" align="center">
+        <template #default="{row}">
+          <span style="font-size:12px">↑ {{ formatTraffic(getTotalTraffic(row, 'up')) }} ↓ {{ formatTraffic(getTotalTraffic(row, 'down')) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="Details" min-width="150">
+        <template #default="{row}">
+          <div style="font-size:12px;line-height:1.4">
+            <div v-if="row.settings?.users?.length">
+              <span v-for="(u, ui) in row.settings.users.slice(0, 2)" :key="ui">
+                {{ u.email || u.id?.substring(0, 8) }}{{ ui < Math.min(row.settings.users.length, 2) - 1 ? ', ' : '' }}
+              </span>
+              <span v-if="row.settings.users.length > 2" style="color:#909399"> +{{ row.settings.users.length - 2 }}</span>
+            </div>
+            <div v-else-if="row.settings?.clients?.length">
+              <span v-for="(c, ci) in row.settings.clients.slice(0, 2)" :key="ci">
+                {{ c.email || 'client-' + (ci + 1) }}{{ ci < Math.min(row.settings.clients.length, 2) - 1 ? ', ' : '' }}
+              </span>
+              <span v-if="row.settings.clients.length > 2" style="color:#909399"> +{{ row.settings.clients.length - 2 }}</span>
+            </div>
+            <span v-else style="color:#909399">-</span>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="Transport" width="160" align="center">
+        <template #default="{row}">
+          <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+            <el-tag size="small" type="info">{{ row.streamSettings?.network || 'raw' }}</el-tag>
+            <el-tag v-if="row.streamSettings?.security && row.streamSettings.security !== 'none'" size="small" :type="row.streamSettings.security === 'reality' ? 'danger' : 'warning'">{{ row.streamSettings.security }}</el-tag>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="Expiry" width="100" align="center">
+        <template #default="{row}">
+          <span style="font-size:12px" :style="isExpired(row) ? 'color:#f56c6c' : ''">{{ getFirstUserExpiry(row) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('common.actions')" width="70" align="center" fixed="right">
+        <template #default="{row, $index}">
+          <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row, $index)">
+            <el-button size="small" type="primary" text>
+              <el-icon><More /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="edit">
+                  <el-icon><Edit /></el-icon> {{ t('common.edit') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="hasUsers(row)" command="qrcode" divided>
+                  <el-icon><View /></el-icon> QR Code
+                </el-dropdown-item>
+                <el-dropdown-item v-if="hasUsers(row)" command="reset-traffic">
+                  <el-icon><RefreshRight /></el-icon> Reset Traffic
+                </el-dropdown-item>
+                <el-dropdown-item v-if="hasUsers(row)" command="add-user" divided>
+                  <el-icon><Plus /></el-icon> Add User
+                </el-dropdown-item>
+                <el-dropdown-item v-if="hasUsers(row)" command="manage-users">
+                  <el-icon><User /></el-icon> Manage Users
+                </el-dropdown-item>
+                <el-dropdown-item command="delete" divided>
+                  <span style="color:#f56c6c"><el-icon><Delete /></el-icon> {{ t('common.delete') }}</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- QR Code Dialog -->
+    <el-dialog v-model="qrDlg" title="QR Code" width="400" top="10vh">
+      <div v-if="qrUsers.length > 1" style="margin-bottom:16px">
+        <el-select v-model="qrSelectedUser" style="width:100%" @change="onQrUserChange">
+          <el-option v-for="u in qrUsers" :key="u.email || u.id" :label="u.email || u.id" :value="u.email || u.id" />
+        </el-select>
+      </div>
+      <div style="text-align:center;padding:20px">
+        <div v-if="qrCodeUrl" style="margin-bottom:16px">
+          <img :src="qrCodeUrl" style="max-width:250px" />
+        </div>
+        <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
+        <el-button size="small" style="margin-top:8px" @click="copyQrLink">Copy Link</el-button>
+      </div>
+    </el-dialog>
+
+    <!-- Reset Traffic Dialog -->
+    <el-dialog v-model="resetDlg" title="Reset Traffic" width="400">
+      <div v-if="resetUsers.length">
+        <p style="margin-bottom:12px">Select user to reset traffic:</p>
+        <el-radio-group v-model="resetSelectedUser" style="display:flex;flex-direction:column;gap:8px">
+          <el-radio v-for="u in resetUsers" :key="u.email" :value="u.email" style="margin:0">
+            <span>{{ u.email || u.id }}</span>
+            <span style="color:#909399;font-size:12px;margin-left:8px">↑ {{ formatTraffic(u._usedUp || 0) }} ↓ {{ formatTraffic(u._usedDown || 0) }}</span>
+          </el-radio>
+        </el-radio-group>
+      </div>
+      <template #footer>
+        <el-button @click="resetDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmResetTraffic">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Add User Dialog -->
+    <el-dialog v-model="addUserDlg" title="Add User" width="500">
+      <el-form label-width="100px" label-position="left">
+        <el-form-item label="Email">
+          <el-input v-model="newUser.email" placeholder="user@example.com" />
+        </el-form-item>
+        <el-form-item v-if="addUserProtocol === 'vless'" label="UUID">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="newUser.id" style="flex:1" />
+            <el-button size="small" @click="newUser.id = genUUID()">Generate</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="addUserProtocol === 'vless'" label="Flow">
+          <el-select v-model="newUser.flow" style="width:100%" clearable>
+            <el-option label="none" value="" />
+            <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="['trojan','shadowsocks'].includes(addUserProtocol)" label="Password">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="newUser.password" style="flex:1" />
+            <el-button size="small" @click="newUser.password = genPassword()">Generate</el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addUserDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmAddUser">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Manage Users Dialog -->
+    <el-dialog v-model="manageUsersDlg" title="Manage Users" width="600">
+      <div v-if="manageUsersList.length">
+        <div v-for="(u, ui) in manageUsersList" :key="ui" style="display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee">
+          <div>
+            <div style="font-weight:500">{{ u.email || u.id }}</div>
+            <div style="font-size:12px;color:#909399">
+              <span v-if="u.id">UUID: {{ u.id.substring(0, 8) }}...</span>
+              <span v-if="u.flow"> | Flow: {{ u.flow }}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <el-button size="small" type="danger" @click="pauseUser(u)">Pause</el-button>
+            <el-button size="small" type="danger" plain @click="removeUserFromXray(u)">Remove from Xray</el-button>
+          </div>
+        </div>
+      </div>
+      <div v-else style="text-align:center;color:#909399;padding:20px">
+        No users found
+      </div>
+    </el-dialog>
 
     <!-- Dialog -->
     <el-dialog v-model="dlg" :title="editIdx >= 0 ? t('protoCenter.inbounds.edit') : t('protoCenter.inbounds.add')" width="750" :close-on-click-modal="false" top="5vh">
@@ -75,8 +263,24 @@
           <!-- VLESS -->
           <template v-if="rf.protocol === 'vless'">
             <el-form label-width="120px" label-position="left">
-              <el-form-item label="Decryption">
-                <el-input v-model="rf.settings.decryption" placeholder="none" />
+              <el-form-item label="Encryption">
+                <div style="display:flex;gap:8px;width:100%">
+                  <el-select v-model="rf.settings._encryptionType" style="flex:1" clearable @change="onVlessEncryptionTypeChange">
+                    <el-option label="None" value="" />
+                    <el-option label="X25519 (Classic)" value="x25519" />
+                    <el-option label="ML-KEM-768 (Post-Quantum)" value="mlkem768" />
+                  </el-select>
+                  <el-button size="small" @click="generateVlessEnc" :disabled="!rf.settings._encryptionType">{{ t('protoCenter.tls.generate') }}</el-button>
+                </div>
+                <div class="hint">VLESS-level encryption (vlessenc). Select type first, then generate keys.</div>
+              </el-form-item>
+              <el-form-item label="Encryption Key">
+                <el-input v-model="rf.settings.encryption" placeholder="none" readonly />
+                <div class="hint">Client-side encryption key (auto-generated)</div>
+              </el-form-item>
+              <el-form-item label="Decryption Key">
+                <el-input v-model="rf.settings.decryption" placeholder="none" readonly />
+                <div class="hint">Server-side decryption key (auto-generated)</div>
               </el-form-item>
               <el-divider content-position="left">
                 Users
@@ -513,20 +717,22 @@
         <el-tab-pane v-if="!['http','socks','tunnel','dokodemo-door','wireguard','tun'].includes(rf.protocol)" :label="t('protoCenter.inbounds.stream')" name="stream">
           <el-form label-width="120px" label-position="left">
             <el-form-item label="Network">
-              <el-select v-model="rf.streamSettings.network" style="width:100%" @change="onNetworkChange">
+              <el-select v-model="rf.streamSettings.network" style="width:100%" :disabled="rf.protocol === 'hysteria'" @change="onNetworkChange">
                 <el-option label="raw" value="raw" /><el-option label="ws" value="ws" />
                 <el-option label="mKCP" value="mkcp" /><el-option label="grpc" value="grpc" />
-                <el-option label="httpupgrade" value="httpupgrade" /><el-option label="xhttp" value="xhttp" />
-                <el-option label="Hysteria" value="hysteria" />
+                <el-option label="httpupgrade" value="httpupgrade" />
+                <el-option v-if="rf.protocol === 'vless'" label="xhttp" value="xhttp" />
+                <el-option v-if="rf.protocol === 'hysteria'" label="Hysteria" value="hysteria" />
               </el-select>
             </el-form-item>
             <el-form-item label="Security">
               <el-select v-model="rf.streamSettings.security" style="width:100%" @change="onSecurityChange">
-                <el-option label="none" value="none" />
+                <el-option v-if="rf.protocol !== 'hysteria'" label="none" value="none" />
                 <el-option label="tls" value="tls" />
-                <el-option v-if="['raw','xhttp','grpc'].includes(rf.streamSettings.network)" label="reality" value="reality" />
+                <el-option v-if="['vless','trojan'].includes(rf.protocol) && ['raw','xhttp','grpc'].includes(rf.streamSettings.network)" label="reality" value="reality" />
               </el-select>
               <div v-if="rf.streamSettings.security === 'reality'" class="hint">{{ t('protoCenter.transport.realityOnly') }}</div>
+              <div v-if="rf.protocol === 'hysteria'" class="hint">Hysteria requires TLS</div>
             </el-form-item>
             <template v-if="rf.streamSettings.security === 'tls'">
               <el-form-item :label="t('protoCenter.tls.serverName')"><el-input v-model="rf.streamSettings.tls.serverName" @change="emit" /></el-form-item>
@@ -979,6 +1185,51 @@
                 </el-form-item>
               </template>
             </el-form>
+
+            <!-- Port Hopping -->
+            <el-divider content-position="left">Port Hopping</el-divider>
+            <el-form label-width="140px" label-position="left">
+              <el-form-item label="Enable">
+                <el-switch v-model="rf._portHopEnabled" @change="onPortHopChange" />
+              </el-form-item>
+              <template v-if="rf._portHopEnabled">
+                <el-form-item label="Target Port">
+                  <el-input-number v-model="rf.port" :min="1" :max="65535" disabled />
+                  <div class="hint">Current hysteria server port</div>
+                </el-form-item>
+                <el-form-item label="Range Mode">
+                  <el-select v-model="rf._portHopMode" style="width:100%" @change="onPortHopModeChange">
+                    <el-option label="Preset" value="preset" />
+                    <el-option label="Manual" value="manual" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
+                  <el-select v-model="rf._portHopRange" style="width:100%" @change="onPortHopRangeChange">
+                    <el-option label="10000-20000" value="10000-20000" />
+                    <el-option label="20000-50000" value="20000-50000" />
+                    <el-option label="30000-60000" value="30000-60000" />
+                    <el-option label="40000-50000" value="40000-50000" />
+                    <el-option label="40000-65000" value="40000-65000" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item v-if="rf._portHopMode === 'manual'" label="Port Range">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <el-input-number v-model="rf._portHopStart" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
+                    <span>-</span>
+                    <el-input-number v-model="rf._portHopEnd" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
+                  </div>
+                </el-form-item>
+                <el-form-item label="Interface">
+                  <div style="display:flex;gap:8px;width:100%">
+                    <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create placeholder="All interfaces">
+                      <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
+                    </el-select>
+                    <el-button size="small" @click="loadInterfaces">Refresh</el-button>
+                  </div>
+                  <div class="hint">Leave empty for all interfaces. Firewall rules will be applied automatically on save.</div>
+                </el-form-item>
+              </template>
+            </el-form>
           </template>
 
           <!-- XHTTP Settings -->
@@ -1133,8 +1384,8 @@
           </template>
         </el-tab-pane>
 
-        <!-- Sniffing Tab -->
-        <el-tab-pane :label="t('protoCenter.inbounds.sniffing')" name="sniffing">
+        <!-- Sniffing Tab (not for TUN) -->
+        <el-tab-pane v-if="!['tun'].includes(rf.protocol)" :label="t('protoCenter.inbounds.sniffing')" name="sniffing">
           <el-form label-width="140px" label-position="left">
             <el-form-item label="Enabled">
               <el-switch v-model="rf.sniffing.enabled" />
@@ -1166,8 +1417,8 @@
           </el-form>
         </el-tab-pane>
 
-        <!-- Sockopt Tab -->
-        <el-tab-pane :label="t('protoCenter.sockopt.title')" name="sockopt">
+        <!-- Sockopt Tab (not for http, socks, tun) -->
+        <el-tab-pane v-if="!['http','socks','tun'].includes(rf.protocol)" :label="t('protoCenter.sockopt.title')" name="sockopt">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.sockopt.enable') }}</span>
             <el-switch v-model="rf.sockopt._enabled" />
@@ -1307,8 +1558,8 @@
           </template>
         </el-tab-pane>
 
-        <!-- FinalMask Tab -->
-        <el-tab-pane :label="t('protoCenter.finalmask.title')" name="finalmask">
+        <!-- FinalMask Tab (not for http, socks, tun, tunnel, dokodemo-door) -->
+        <el-tab-pane v-if="!['http','socks','tun','tunnel','dokodemo-door'].includes(rf.protocol)" :label="t('protoCenter.finalmask.title')" name="finalmask">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.finalmask.enable') }}</span>
             <el-switch v-model="rf.finalmask._enabled" />
@@ -1661,8 +1912,8 @@
           </template>
         </el-tab-pane>
 
-        <!-- Fallback Tab -->
-        <el-tab-pane :label="t('protoCenter.fallback.title')" name="fallback">
+        <!-- Fallback Tab (only for vless, trojan) -->
+        <el-tab-pane v-if="['vless','trojan'].includes(rf.protocol)" :label="t('protoCenter.fallback.title')" name="fallback">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.fallback.enable') }}</span>
             <el-switch v-model="rf._fallbackEnabled" />
@@ -1748,7 +1999,8 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { More, Edit, View, RefreshRight, Delete, Refresh, Plus, User } from '@element-plus/icons-vue'
 import client from '../../../api/client'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String })
@@ -1763,6 +2015,326 @@ const realityTargets = ref([])
 const defaultTarget = computed(() => realityTargets.value.find(t => t.default))
 const showTargetMgr = ref(false)
 const newTarget = ref({ target: '', sni: '', type: 'tcp', default: false })
+const vlessEncAuths = ref([])
+const qrDlg = ref(false)
+const qrLink = ref('')
+const qrCodeUrl = ref('')
+const qrUsers = ref([])
+const qrSelectedUser = ref('')
+const qrCurrentIb = ref(null)
+const resetDlg = ref(false)
+const resetUsers = ref([])
+const resetSelectedUser = ref('')
+const currentResetIndex = ref(-1)
+
+// Add User dialog
+const addUserDlg = ref(false)
+const addUserTag = ref('')
+const addUserProtocol = ref('')
+const newUser = reactive({
+  email: '',
+  id: '',
+  password: '',
+  flow: ''
+})
+
+// Manage Users dialog
+const manageUsersDlg = ref(false)
+const manageUsersList = ref([])
+const manageUsersTag = ref('')
+const xrayStats = ref({ users: [], inbounds: [] })
+const statsLoading = ref(false)
+
+// Computed stats
+const totalUpload = computed(() => {
+  return (xrayStats.value.inbounds || []).reduce((sum, ib) => sum + (ib.uplink || 0), 0)
+})
+const totalDownload = computed(() => {
+  return (xrayStats.value.inbounds || []).reduce((sum, ib) => sum + (ib.downlink || 0), 0)
+})
+
+function getProtocolTagType(protocol) {
+  const types = { vless: '', vmess: 'success', trojan: 'warning', shadowsocks: 'info', socks: 'danger', http: 'danger', wireguard: 'success', hysteria: 'warning' }
+  return types[protocol] || ''
+}
+
+async function fetchXrayStats() {
+  try {
+    statsLoading.value = true
+    const data = await client.get('/xray/stats')
+    if (data) {
+      xrayStats.value = data
+    }
+  } catch (e) {
+    console.error('Failed to fetch xray stats:', e)
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+async function resetAllTraffic() {
+  try {
+    await ElMessageBox.confirm('Are you sure you want to reset all traffic stats?', 'Confirm', { type: 'warning' })
+    // Reset all user stats
+    const users = xrayStats.value.users || []
+    for (const u of users) {
+      try {
+        await client.post(`/xray/stats/reset/${u.email}`)
+      } catch {}
+    }
+    // Refresh stats
+    await fetchXrayStats()
+    ElMessage.success('All traffic stats reset')
+  } catch {}
+}
+
+function getInboundTraffic(ib, direction) {
+  // Get traffic from xray stats API by tag
+  const tag = ib.tag
+  if (!tag) return 0
+
+  const inbound = xrayStats.value.inbounds?.find(i => i.tag === tag)
+  if (!inbound) return 0
+
+  return direction === 'up' ? (inbound.uplink || 0) : (inbound.downlink || 0)
+}
+
+function getTotalTraffic(ib, direction) {
+  // First try to get from xray stats API
+  const apiTraffic = getInboundTraffic(ib, direction)
+  if (apiTraffic > 0) return apiTraffic
+
+  // Fallback to local data
+  const users = ib.settings?.users || ib.settings?.clients || []
+  return users.reduce((sum, u) => sum + (direction === 'up' ? (u._usedUp || 0) : (u._usedDown || 0)), 0)
+}
+
+function getFirstUserExpiry(ib) {
+  const users = ib.settings?.users || ib.settings?.clients || []
+  if (!users.length) return '-'
+  const expiry = users[0]._expiry
+  if (!expiry) return '无限期'
+  const date = new Date(expiry)
+  if (isNaN(date.getTime())) return expiry
+  return date.toLocaleDateString()
+}
+
+function isExpired(ib) {
+  const users = ib.settings?.users || ib.settings?.clients || []
+  if (!users.length) return false
+  const expiry = users[0]._expiry
+  if (!expiry) return false
+  const date = new Date(expiry)
+  return !isNaN(date.getTime()) && date < new Date()
+}
+
+function hasUsers(ib) {
+  return (ib.settings?.users?.length > 0) || (ib.settings?.clients?.length > 0)
+}
+
+function getUsers(ib) {
+  return ib.settings?.users || ib.settings?.clients || []
+}
+
+function handleAction(cmd, row, index) {
+  if (cmd === 'edit') {
+    showEdit(index)
+  } else if (cmd === 'qrcode') {
+    showQrCode(row)
+  } else if (cmd === 'reset-traffic') {
+    showResetTraffic(row, index)
+  } else if (cmd === 'add-user') {
+    showAddUser(row)
+  } else if (cmd === 'manage-users') {
+    showManageUsers(row)
+  } else if (cmd === 'delete') {
+    rmInbound(index)
+  }
+}
+
+function showQrCode(ib) {
+  qrCurrentIb.value = ib
+  qrUsers.value = getUsers(ib)
+  if (qrUsers.value.length === 0) return
+  qrSelectedUser.value = qrUsers.value[0].email || qrUsers.value[0].id
+  updateQrCode()
+  qrDlg.value = true
+}
+
+function onQrUserChange() {
+  updateQrCode()
+}
+
+function updateQrCode() {
+  const ib = qrCurrentIb.value
+  if (!ib) return
+  const user = qrUsers.value.find(u => (u.email || u.id) === qrSelectedUser.value)
+  if (!user) return
+  qrLink.value = generateShareLink(ib, user)
+  qrCodeUrl.value = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(qrLink.value)
+}
+
+function generateShareLink(ib, user) {
+  const protocol = ib.protocol || 'vless'
+  const host = ib.listen || window.location.hostname
+  const port = ib.port || 443
+  const uuid = user.id || user.password || user.auth || ''
+  const flow = user.flow ? '&flow=' + user.flow : ''
+  const encryption = user.encryption && user.encryption !== 'none' ? '&encryption=' + user.encryption : ''
+  const transport = ib.streamSettings?.network || 'tcp'
+  const security = ib.streamSettings?.security || 'none'
+  const sni = ib.streamSettings?.tls?.serverName || ''
+  const remark = ib._remark || ib.tag || protocol + '-' + port
+
+  let link = `${protocol}://${uuid}@${host}:${port}?type=${transport}${flow}${encryption}`
+
+  if (security === 'tls') {
+    link += '&security=tls&sni=' + sni
+  } else if (security === 'reality') {
+    const realitySettings = ib.streamSettings?.reality || {}
+    link += '&security=reality&sni=' + (sni || realitySettings.serverNamesStr?.split(',')[0] || '') + '&fp=' + (realitySettings._fingerprint || 'chrome') + '&pbk=' + (realitySettings._password || '')
+  }
+
+  link += '#' + encodeURIComponent(remark)
+  return link
+}
+
+function copyQrLink() {
+  navigator.clipboard.writeText(qrLink.value)
+  ElMessage.success('Copied!')
+}
+
+function showResetTraffic(ib, index) {
+  resetUsers.value = getUsers(ib).map(u => ({ ...u }))
+  resetSelectedUser.value = resetUsers.value[0]?.email || resetUsers.value[0]?.id || ''
+  currentResetIndex.value = index
+  resetDlg.value = true
+}
+
+async function confirmResetTraffic() {
+  if (currentResetIndex.value < 0) return
+  const ib = form.value[currentResetIndex.value]
+  const users = ib.settings?.users || ib.settings?.clients || []
+  const user = users.find(u => (u.email || u.id) === resetSelectedUser.value)
+  if (user) {
+    user._usedUp = 0
+    user._usedDown = 0
+    // Save to API
+    try {
+      const configJson = buildInbound(ib)
+      delete configJson._remark
+      delete configJson._enabled
+      delete configJson._id
+      await client.put(`/inbound-configs/${ib._id}`, {
+        core_type: props.coreType || 'xray',
+        remark: ib._remark || '',
+        protocol: ib.protocol,
+        tag: ib.tag,
+        listen: ib.listen || '0.0.0.0',
+        port: ib.port || 0,
+        enabled: ib._enabled,
+        config_json: configJson,
+      })
+      ElMessage.success('Traffic reset successfully')
+    } catch (e) {
+      ElMessage.error('Failed to reset traffic')
+    }
+  }
+  resetDlg.value = false
+}
+
+// ==================== User Management ====================
+
+function showAddUser(ib) {
+  addUserTag.value = ib.tag
+  addUserProtocol.value = ib.protocol
+  newUser.email = genEmail()
+  newUser.id = genUUID()
+  newUser.password = genPassword()
+  newUser.flow = ''
+  addUserDlg.value = true
+}
+
+async function confirmAddUser() {
+  if (!newUser.email) {
+    ElMessage.error('Email is required')
+    return
+  }
+
+  try {
+    // Add user to xray runtime via gRPC
+    await client.post(`/xray/control/inbound/${addUserTag.value}/user`, {
+      email: newUser.email,
+      id: newUser.id || undefined,
+      password: newUser.password || undefined,
+      flow: newUser.flow || undefined
+    })
+
+    // Also add to DB config
+    const ib = form.value.find(i => i.tag === addUserTag.value)
+    if (ib) {
+      const users = ib.settings?.users || ib.settings?.clients || []
+      users.push({
+        email: newUser.email,
+        id: newUser.id,
+        password: newUser.password,
+        flow: newUser.flow,
+        level: 0,
+        _quota: 'unlimited',
+        _expiry: null,
+        _usedUp: 0,
+        _usedDown: 0
+      })
+
+      // Save to DB
+      const configJson = buildInbound(ib)
+      delete configJson._remark
+      delete configJson._enabled
+      delete configJson._id
+      await client.put(`/inbound-configs/${ib._id}`, {
+        core_type: props.coreType || 'xray',
+        remark: ib._remark || '',
+        protocol: ib.protocol,
+        tag: ib.tag,
+        listen: ib.listen || '0.0.0.0',
+        port: ib.port || 0,
+        enabled: ib._enabled,
+        config_json: configJson,
+      })
+    }
+
+    ElMessage.success('User added successfully')
+    addUserDlg.value = false
+  } catch (e) {
+    ElMessage.error('Failed to add user: ' + (e.message || e))
+  }
+}
+
+function showManageUsers(ib) {
+  manageUsersTag.value = ib.tag
+  manageUsersList.value = ib.settings?.users || ib.settings?.clients || []
+  manageUsersDlg.value = true
+}
+
+async function pauseUser(user) {
+  // Pause = remove from xray runtime but keep in DB
+  try {
+    await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
+    ElMessage.success(`User ${user.email} paused (removed from xray)`)
+  } catch (e) {
+    ElMessage.error('Failed to pause user: ' + (e.message || e))
+  }
+}
+
+async function removeUserFromXray(user) {
+  try {
+    await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
+    ElMessage.success(`User ${user.email} removed from xray`)
+  } catch (e) {
+    ElMessage.error('Failed to remove user: ' + (e.message || e))
+  }
+}
+
 async function loadTargets() {
   try {
     const data = await client.get('/system/reality-targets')
@@ -1828,8 +2400,8 @@ function getDefaultInbound() {
     _remark: genRemark(), tag: 'inbound-vless-' + port, protocol: 'vless',
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
-    settings: { users: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'none', tls: { serverName: '', _alpn: [], minVersion: '', maxVersion: '', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: '', _certMode: 'content', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: 'POST', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, auth: genBase64Password(), udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    settings: { users: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
+    streamSettings: { network: 'raw', security: 'none', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: 'POST', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, auth: genBase64Password(), udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
@@ -1844,14 +2416,35 @@ function onProtocolChange() {
   rf.port = port
   rf.tag = 'inbound-' + p + '-' + port
   rf._socketPath = '/dev/shm/' + p + '.sock'
-  if (p === 'vless') rf.settings = { users: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], decryption: 'none' }
+  if (p === 'vless') rf.settings = { users: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' }
   else if (p === 'vmess') rf.settings = { users: [{ id: genUUID(), email: genEmail(), alterId: 0, security: 'auto', level: 0, _quota: 'unlimited', _expiry: null }] }
   else if (p === 'trojan') rf.settings = { users: [{ password: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null }] }
   else if (p === 'shadowsocks') rf.settings = { method: 'aes-256-gcm', password: genBase64Password(), network: 'tcp', clients: [{ password: genBase64Password(), email: genEmail(), _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 }] }
   else if (p === 'socks') rf.settings = { auth: 'noauth', accounts: [], udp: false }
   else if (p === 'http') rf.settings = { accounts: [], allowTransparent: false }
   else if (p === 'wireguard') { rf.settings = { secretKey: '', peers: [{ publicKey: '', _allowedIPsStr: '0.0.0.0/0, ::/0', keepAlive: 0, comment: '' }], address: [], mtu: 1420, noKernelTun: true, workers: 0, domainStrategy: '' }; rf._wgAddressesStr = ''; rf._wgPublicKey = '' }
-  else if (p === 'hysteria') rf.settings = { version: 2, users: [{ auth: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null }] }
+  else if (p === 'hysteria') {
+    rf.settings = { version: 2, users: [{ auth: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null }] }
+    rf.streamSettings.network = 'hysteria'
+    rf.streamSettings.security = 'tls'
+    rf.streamSettings.tls._alpn = ['h3']
+    // FinalMask defaults for Hysteria
+    rf.finalmask._enabled = true
+    rf.finalmask.quicParams.congestion = 'bbr'
+    rf.finalmask.quicParams.bbrProfile = 'conservative'
+    // UDP Mask salamander
+    rf.finalmask.udp.push({
+      type: 'salamander',
+      settings: { password: genPassword(), _gecko: false, _geckoMin: 1, _geckoMax: 2048 }
+    })
+    // Port hopping defaults
+    rf._portHopEnabled = false
+    rf._portHopMode = 'preset'
+    rf._portHopRange = '20000-50000'
+    rf._portHopStart = 20000
+    rf._portHopEnd = 50000
+    rf._portHopInterface = ''
+  }
   else if (p === 'tun') { rf.settings = { name: 'xray0', mtu: 1500, gateway: [], dns: [], userLevel: 0, autoSystemRoutingTable: [], autoOutboundsInterface: '' }; rf._tunGatewayStr = ''; rf._tunDnsStr = ''; rf._tunAutoRoutingStr = '' }
   else if (p === 'tunnel' || p === 'dokodemo-door') { rf.settings = { allowedNetwork: 'tcp', rewriteAddress: '', rewritePort: 0, followRedirect: false, userLevel: 0, portMap: {} }; rf._portMap = []; rf.listen = '127.0.0.1'; rf.port = genPort() }
   else rf.settings = {}
@@ -1878,7 +2471,100 @@ function onNetworkChange() {
   emit()
 }
 
+// ==================== Port Hopping ====================
+const presetPortRanges = ['10000-20000', '20000-50000', '30000-60000', '40000-50000', '40000-65000']
+
+function onPortHopChange(enabled) {
+  if (enabled) {
+    rf._portHopMode = 'preset'
+    rf._portHopRange = '20000-50000'
+    rf._portHopStart = 20000
+    rf._portHopEnd = 50000
+    rf._portHopInterface = ''
+    // Enable FinalMask UDP Hop
+    updateUdpHopFromPortHop()
+  } else {
+    // Disable FinalMask UDP Hop
+    rf.finalmask.quicParams._showUdpHop = false
+    rf.finalmask.quicParams.udpHop = { ports: '', interval: '5-10' }
+  }
+  emit()
+}
+
+function onPortHopModeChange(mode) {
+  if (mode === 'preset') {
+    rf._portHopRange = '20000-50000'
+    rf._portHopStart = 20000
+    rf._portHopEnd = 50000
+  } else {
+    rf._portHopStart = 20000
+    rf._portHopEnd = 50000
+  }
+  updateUdpHopFromPortHop()
+  emit()
+}
+
+function onPortHopRangeChange(range) {
+  const [start, end] = range.split('-').map(Number)
+  rf._portHopStart = start
+  rf._portHopEnd = end
+  updateUdpHopFromPortHop()
+  emit()
+}
+
+function onPortHopManualChange() {
+  if (rf._portHopStart && rf._portHopEnd) {
+    rf._portHopRange = `${rf._portHopStart}-${rf._portHopEnd}`
+    updateUdpHopFromPortHop()
+  }
+  emit()
+}
+
+function updateUdpHopFromPortHop() {
+  const portRange = rf._portHopMode === 'preset' ? rf._portHopRange : `${rf._portHopStart}-${rf._portHopEnd}`
+  rf.finalmask._enabled = true
+  rf.finalmask.quicParams._showUdpHop = true
+  rf.finalmask.quicParams.udpHop = {
+    ports: portRange,
+    interval: '5-10'
+  }
+}
+
 function onSecurityChange() {
+  emit()
+}
+
+async function generateVlessEnc() {
+  const encType = rf.settings._encryptionType
+  if (!encType) {
+    ElMessage.warning('Please select encryption type first')
+    return
+  }
+
+  try {
+    const data = await client.post('/binaries/vlessenc')
+    if (data && data.auths && data.auths.length > 0) {
+      vlessEncAuths.value = data.auths
+      // Find matching auth by type
+      const auth = data.auths.find(a => a.id === encType)
+      if (auth) {
+        rf.settings.encryption = auth.encryption || ''
+        rf.settings.decryption = auth.decryption || ''
+        emit()
+        ElMessage.success(t('protoCenter.tls.generateSuccess'))
+      } else {
+        ElMessage.error('No matching encryption type found')
+      }
+    }
+  } catch (e) {
+    ElMessage.error(t('protoCenter.reality.generateFailed'))
+  }
+}
+
+function onVlessEncryptionTypeChange(val) {
+  // Clear keys when type changes
+  rf.settings.encryption = 'none'
+  rf.settings.decryption = 'none'
   emit()
 }
 
@@ -1935,11 +2621,18 @@ function onTargetChange() {
 }
 
 const ifaceList = ref([])
+const dataDir = ref('/opt/corefusion/data') // default fallback
 async function loadInterfaces() {
   try {
     const data = await client.get('/binaries/interfaces')
     if (Array.isArray(data)) ifaceList.value = data
   } catch { ifaceList.value = ['eth0', 'wg0', 'lo'] }
+}
+async function loadDataDir() {
+  try {
+    const data = await client.get('/system/panel-config')
+    if (data && data.data_dir) dataDir.value = data.data_dir
+  } catch {}
 }
 
 function onHappyEyeballsToggle(val) {
@@ -2400,6 +3093,19 @@ function parseSettings(ib) {
       }
     })
   }
+  // Detect VLESS encryption type from stored encryption value
+  if (ib.protocol === 'vless') {
+    const enc = settings.encryption || ''
+    if (enc.includes('mlkem768')) {
+      settings._encryptionType = 'mlkem768'
+    } else if (enc.includes('x25519') && enc !== 'none') {
+      settings._encryptionType = 'x25519'
+    } else {
+      settings._encryptionType = ''
+    }
+    if (!settings.encryption) settings.encryption = 'none'
+    if (!settings.decryption) settings.decryption = 'none'
+  }
   return settings
 }
 
@@ -2447,14 +3153,23 @@ function parseInbound(ib) {
     _tunGatewayStr: (ib.settings?.gateway || []).join(', '),
     _tunDnsStr: (ib.settings?.dns || []).join(', '),
     _tunAutoRoutingStr: (ib.settings?.autoSystemRoutingTable || []).join(', '),
+    _portHopEnabled: ib._portHopEnabled || false,
+    _portHopMode: ib._portHopMode || 'preset',
+    _portHopRange: ib._portHopRange || '20000-50000',
+    _portHopStart: ib._portHopStart || 20000,
+    _portHopEnd: ib._portHopEnd || 50000,
+    _portHopInterface: ib._portHopInterface || '',
   }
 }
 
-function buildInbound(ib) {
+function buildInbound(ib, isApiCall = false) {
+  const settings = JSON.parse(JSON.stringify(ib.settings))
+  // Remove frontend-only internal fields from settings
+  delete settings._encryptionType
   const result = {
     _remark: ib._remark || undefined,
     tag: ib.tag || undefined, protocol: ib.protocol,
-    settings: JSON.parse(JSON.stringify(ib.settings)),
+    settings: settings,
     sniffing: {
       enabled: ib.sniffing.enabled || false,
       destOverride: ib.sniffing.destOverride || ['http', 'tls', 'quic'],
@@ -2624,9 +3339,28 @@ function buildInbound(ib) {
         certObj.ocspStapling = tls._ocspStapling || 3600
         if (tls._oneTimeLoading) certObj.oneTimeLoading = true
         if (tls._certMode === 'file') {
-          const prefix = '../../../'
-          if (tls._certificateFile) certObj.certificateFile = tls._certificateFile.startsWith('/') ? tls._certificateFile : prefix + tls._certificateFile.replace(/^(\.\.\/)+/, '')
-          if (tls._keyFile) certObj.keyFile = tls._keyFile.startsWith('/') ? tls._keyFile : prefix + tls._keyFile.replace(/^(\.\.\/)+/, '')
+          // For API calls, use absolute paths; for config file, use ../../../ prefix
+          if (isApiCall) {
+            // Absolute path for API calls
+            if (tls._certificateFile) {
+              const certPath = tls._certificateFile.replace(/^(\.\.\/)+/, '').replace(/^\//, '')
+              certObj.certificateFile = dataDir.value + '/' + certPath
+            }
+            if (tls._keyFile) {
+              const keyPath = tls._keyFile.replace(/^(\.\.\/)+/, '').replace(/^\//, '')
+              certObj.keyFile = dataDir.value + '/' + keyPath
+            }
+          } else {
+            // Relative path for config file (../../../ prefix)
+            if (tls._certificateFile) {
+              const certPath = tls._certificateFile.replace(/^(\.\.\/)+/, '').replace(/^\//, '')
+              certObj.certificateFile = '../../../' + certPath
+            }
+            if (tls._keyFile) {
+              const keyPath = tls._keyFile.replace(/^(\.\.\/)+/, '').replace(/^\//, '')
+              certObj.keyFile = '../../../' + keyPath
+            }
+          }
         } else {
           if (tls._certificateContent) certObj.certificate = tls._certificateContent.split('\n').filter(Boolean)
           if (tls._keyContent) certObj.key = tls._keyContent.split('\n').filter(Boolean)
@@ -2965,7 +3699,11 @@ function showEdit(i) {
 }
 
 async function saveInbound() {
-  const ib = buildInbound(rf)
+  // Build config for database (with relative paths)
+  const ib = buildInbound(rf, false)
+  // Build config for API call (with absolute paths)
+  const apiConfig = buildInbound(rf, true)
+
   // Store the full inbound object as config_json
   const configJson = { ...ib }
   delete configJson._remark
@@ -2992,6 +3730,54 @@ async function saveInbound() {
     } else {
       await client.post('/inbound-configs', payload)
     }
+
+    // Apply to running xray via gRPC (no restart) - use absolute paths
+    try {
+      const apiJson = { ...apiConfig }
+      delete apiJson._remark
+      delete apiJson._enabled
+      delete apiJson._id
+      // Only remove existing inbound when editing (not creating new)
+      if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
+        try {
+          await client.delete(`/xray/control/inbound/${apiJson.tag}`)
+        } catch {}
+      }
+      // Add new inbound
+      await client.post('/xray/control/inbound', { inbound: apiJson })
+    } catch (xrayErr) {
+      console.warn('Failed to apply to xray runtime:', xrayErr)
+      // Don't fail the whole operation if xray apply fails
+    }
+
+    // Auto-manage firewall rules for port hopping
+    if (rf.protocol === 'hysteria') {
+      const portRange = rf._portHopMode === 'preset' ? rf._portHopRange : `${rf._portHopStart}-${rf._portHopEnd}`
+      if (rf._portHopEnabled && portRange) {
+        // Apply firewall rules
+        try {
+          await client.post('/xray/control/firewall/apply', {
+            port_range: portRange,
+            target_port: rf.port,
+            interface: rf._portHopInterface || ''
+          })
+        } catch (fwErr) {
+          console.warn('Failed to apply firewall rules:', fwErr)
+        }
+      } else {
+        // Remove firewall rules when port hopping is disabled
+        try {
+          await client.post('/xray/control/firewall/remove', {
+            port_range: portRange || '20000-50000',
+            target_port: rf.port,
+            interface: ''
+          })
+        } catch (fwErr) {
+          console.warn('Failed to remove firewall rules:', fwErr)
+        }
+      }
+    }
+
     ElMessage.success(t('common.success'))
     dlg.value = false
     await loadInbounds()
@@ -3031,6 +3817,10 @@ async function rmInbound(i) {
   if (ib._id) {
     try { await client.delete(`/inbound-configs/${ib._id}`) } catch {}
   }
+  // Also remove from xray runtime
+  if (ib.tag) {
+    try { await client.delete(`/xray/control/inbound/${ib.tag}`) } catch {}
+  }
   form.value.splice(i, 1)
   ElMessage.success(t('common.success'))
 }
@@ -3047,7 +3837,7 @@ async function loadInbounds() {
 
 function emit() { /* no longer needed, saves directly to API */ }
 
-onMounted(() => { loadInbounds(); loadCertList(); loadTargets(); loadInterfaces() })
+onMounted(() => { loadInbounds(); loadCertList(); loadTargets(); loadInterfaces(); fetchXrayStats(); loadDataDir() })
 </script>
 
 <style scoped>

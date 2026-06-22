@@ -18,9 +18,7 @@
         <el-checkbox value="HandlerService" label="HandlerService" />
         <el-checkbox value="LoggerService" label="LoggerService" />
         <el-checkbox value="StatsService" label="StatsService" />
-        <el-checkbox value="ObservatoryService" label="ObservatoryService" />
         <el-checkbox value="RoutingService" label="RoutingService" />
-        <el-checkbox value="BalancerService" label="BalancerService" />
       </el-checkbox-group>
       <div class="hint">{{ t('protoCenter.api.servicesHint') }}</div>
     </el-form-item>
@@ -32,12 +30,12 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const props = defineProps({ data: Object })
 const emitFn = defineEmits(['update'])
-const form = reactive({ tag: 'api', listen: '', services: ['HandlerService', 'LoggerService', 'StatsService'] })
+const form = reactive({ tag: 'api', listen: '', services: ['HandlerService', 'LoggerService', 'StatsService', 'RoutingService'] })
 function sync() {
   if (!props.data) return
   form.tag = props.data.tag || 'api'
   form.listen = props.data.listen || ''
-  form.services = props.data.services || ['HandlerService', 'LoggerService', 'StatsService']
+  form.services = props.data.services || ['HandlerService', 'LoggerService', 'StatsService', 'RoutingService']
 }
 function emit() {
   const out = { tag: form.tag, services: form.services }

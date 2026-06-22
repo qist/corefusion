@@ -62,7 +62,7 @@
         <div v-if="activeSection">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <span style="font-size:15px;font-weight:600">{{ getLabel(activeSection) }}</span>
-            <div v-if="activeSection !== '_preview'">
+            <div v-if="activeSection !== '_preview' && activeSection !== 'inbounds' && activeSection !== 'outbounds' && activeSection !== 'routing'">
               <el-button size="small" @click="resetSection">{{ t('common.reset') }}</el-button>
               <el-button size="small" type="primary" :loading="saving" @click="saveSection">{{ t('common.save') }}</el-button>
             </div>

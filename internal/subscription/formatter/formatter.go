@@ -20,16 +20,18 @@ const (
 
 // Node represents a proxy node for formatting.
 type Node struct {
-	Name      string `json:"name"`
-	Protocol  string `json:"protocol"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Transport string `json:"transport"`
-	TLS       bool   `json:"tls"`
+	Name       string `json:"name"`
+	Protocol   string `json:"protocol"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Transport  string `json:"transport"`
+	TLS        bool   `json:"tls"`
 	ServerName string `json:"server_name,omitempty"`
-	UUID      string `json:"uuid,omitempty"`
-	Password  string `json:"password,omitempty"`
-	AlterID   int    `json:"alter_id,omitempty"`
+	UUID       string `json:"uuid,omitempty"`
+	Password   string `json:"password,omitempty"`
+	AlterID    int    `json:"alter_id,omitempty"`
+	Encryption string `json:"encryption,omitempty"` // VLESS encryption (e.g. "mlkem768x25519plus.native.0rtt.<key>")
+	Flow       string `json:"flow,omitempty"`       // XTLS Vision flow
 }
 
 // Formatter formats subscription content.
@@ -81,6 +83,16 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["password"] = node.Password
 		}
 
+		// Add flow for VLESS with XTLS Vision
+		if node.Protocol == "vless" && node.Flow != "" {
+			ob["flow"] = node.Flow
+		}
+
+		// Add VLESS encryption if configured
+		if node.Protocol == "vless" && node.Encryption != "" && node.Encryption != "none" {
+			ob["packet_encoding"] = "xudp" // sing-box uses packet_encoding for VLESS encryption
+		}
+
 		if node.TLS {
 			ob["tls"] = map[string]interface{}{
 				"enabled":     true,
@@ -128,13 +140,22 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		settings := map[string]interface{}{}
 		switch node.Protocol {
 		case "vless", "vmess":
+			user := map[string]interface{}{
+				"id": node.UUID,
+			}
+			// Add flow for VLESS with XTLS Vision
+			if node.Protocol == "vless" && node.Flow != "" {
+				user["flow"] = node.Flow
+			}
 			settings["vnext"] = []map[string]interface{}{{
 				"address": node.Host,
 				"port":    node.Port,
-				"users": []map[string]interface{}{{
-					"id": node.UUID,
-				}},
+				"users":   []map[string]interface{}{user},
 			}}
+			// Add VLESS encryption if configured
+			if node.Protocol == "vless" && node.Encryption != "" && node.Encryption != "none" {
+				settings["encryption"] = node.Encryption
+			}
 		case "trojan":
 			settings["servers"] = []map[string]interface{}{{
 				"address":  node.Host,
@@ -189,6 +210,14 @@ func (f *MihomoFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 		if node.Password != "" {
 			yaml += fmt.Sprintf("    password: %s\n", node.Password)
+		}
+		// Add flow for VLESS with XTLS Vision
+		if node.Protocol == "vless" && node.Flow != "" {
+			yaml += fmt.Sprintf("    flow: %s\n", node.Flow)
+		}
+		// Add VLESS encryption if configured
+		if node.Protocol == "vless" && node.Encryption != "" && node.Encryption != "none" {
+			yaml += fmt.Sprintf("    encryption: %s\n", node.Encryption)
 		}
 		if node.TLS {
 			yaml += "    tls: true\n"
@@ -246,6 +275,14 @@ func formatURI(node Node) string {
 			if node.ServerName != "" {
 				params = append(params, "sni="+node.ServerName)
 			}
+		}
+		// Add VLESS encryption if configured
+		if node.Encryption != "" && node.Encryption != "none" {
+			params = append(params, "encryption="+node.Encryption)
+		}
+		// Add XTLS Vision flow if configured
+		if node.Flow != "" {
+			params = append(params, "flow="+node.Flow)
 		}
 		if len(params) > 0 {
 			uri += "?" + strings.Join(params, "&")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,8 +18,12 @@ import (
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/infra/conf"
+	hyAccount "github.com/xtls/xray-core/proxy/hysteria/account"
+	"github.com/xtls/xray-core/proxy/shadowsocks"
+	ss2022 "github.com/xtls/xray-core/proxy/shadowsocks_2022"
 	"github.com/xtls/xray-core/proxy/trojan"
 	"github.com/xtls/xray-core/proxy/vless"
+	"github.com/xtls/xray-core/proxy/vmess"
 
 	"corefusion/internal/api/response"
 )
@@ -267,6 +272,7 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 // ==================== User Management ====================
 
 // AddUser handles POST /api/v1/xray/control/inbound/:tag/user.
+// Supported protocols: VLESS, VMess, Trojan, Shadowsocks
 func (h *Handler) AddUser(c *gin.Context) {
 	tag := c.Param("tag")
 	if tag == "" {
@@ -279,6 +285,7 @@ func (h *Handler) AddUser(c *gin.Context) {
 		ID       string `json:"id"`
 		Password string `json:"password"`
 		Flow     string `json:"flow"`
+		Method   string `json:"method"` // Shadowsocks cipher method
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_PARAMS", err.Error())
@@ -297,17 +304,60 @@ func (h *Handler) AddUser(c *gin.Context) {
 
 	client := proxymanCommand.NewHandlerServiceClient(conn)
 
-	// Build account based on available fields
+	// Build account based on protocol (detected from tag)
 	var account *serial.TypedMessage
-	if req.ID != "" {
+	tagLower := strings.ToLower(tag)
+
+	if strings.Contains(tagLower, "vless") {
 		// VLESS account
 		vlessAccount := &vless.Account{
 			Id:   req.ID,
 			Flow: req.Flow,
 		}
 		account = serial.ToTypedMessage(vlessAccount)
+	} else if strings.Contains(tagLower, "vmess") {
+		// VMess account
+		vmessAccount := &vmess.Account{
+			Id: req.ID,
+		}
+		account = serial.ToTypedMessage(vmessAccount)
+	} else if strings.Contains(tagLower, "hysteria") {
+		// Hysteria account - uses auth field
+		hysteriaAccount := &hyAccount.Account{
+			Auth: req.Password, // Frontend sends auth as password
+		}
+		account = serial.ToTypedMessage(hysteriaAccount)
+	} else if strings.Contains(tagLower, "shadowsocks") || strings.Contains(tagLower, "ss-") {
+		// Shadowsocks account
+		if strings.HasPrefix(req.Method, "2022-blake3") {
+			// 2022-blake3 methods use shadowsocks_2022.Account with Key
+			ss2022Account := &ss2022.Account{
+				Key: req.Password,
+			}
+			account = serial.ToTypedMessage(ss2022Account)
+		} else {
+			// Legacy methods use shadowsocks.Account with Password and CipherType
+			cipherType := shadowsocks.CipherType_AES_256_GCM
+			if req.Method != "" {
+				switch req.Method {
+				case "aes-128-gcm":
+					cipherType = shadowsocks.CipherType_AES_128_GCM
+				case "chacha20-poly1305":
+					cipherType = shadowsocks.CipherType_CHACHA20_POLY1305
+				case "xchacha20-ietf-poly1305":
+					cipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
+				case "none":
+					cipherType = shadowsocks.CipherType_NONE
+				}
+			}
+			ssAccount := &shadowsocks.Account{
+				Password:   req.Password,
+				CipherType: cipherType,
+			}
+			account = serial.ToTypedMessage(ssAccount)
+		}
 	} else if req.Password != "" {
-		// Trojan account
+		// Trojan account (default for password-based)
 		trojanAccount := &trojan.Account{
 			Password: req.Password,
 		}

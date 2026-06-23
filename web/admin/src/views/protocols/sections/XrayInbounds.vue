@@ -43,16 +43,16 @@
                 <el-dropdown-item command="edit">
                   <el-icon><Edit /></el-icon> {{ t('common.edit') }}
                 </el-dropdown-item>
-                <el-dropdown-item v-if="hasUsers(row)" command="qrcode" divided>
+                <el-dropdown-item v-if="hasShareableUsers(row)" command="qrcode" divided>
                   <el-icon><View /></el-icon> {{ t('protoCenter.inbounds.qrCode') }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="hasUsers(row)" command="reset-traffic">
                   <el-icon><RefreshRight /></el-icon> {{ t('protoCenter.inbounds.resetTraffic') }}
                 </el-dropdown-item>
-                <el-dropdown-item v-if="hasUsers(row)" command="add-user" divided>
+                <el-dropdown-item v-if="canAddUsers(row)" command="add-user" divided>
                   <el-icon><Plus /></el-icon> {{ t('protoCenter.inbounds.addUser') }}
                 </el-dropdown-item>
-                <el-dropdown-item v-if="hasUsers(row)" command="manage-users">
+                <el-dropdown-item v-if="hasUserList(row)" command="manage-users">
                   <el-icon><User /></el-icon> {{ t('protoCenter.inbounds.manageUsers') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="delete" divided>
@@ -206,7 +206,7 @@
         <el-form-item label="Email">
           <el-input v-model="newUser.email" placeholder="user@example.com" />
         </el-form-item>
-        <el-form-item v-if="addUserProtocol === 'vless'" label="UUID">
+        <el-form-item v-if="['vless','vmess'].includes(addUserProtocol)" label="UUID">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="newUser.id" style="flex:1" />
             <el-button size="small" @click="newUser.id = genUUID()">Generate</el-button>
@@ -218,10 +218,16 @@
             <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="['trojan','shadowsocks'].includes(addUserProtocol)" label="Password">
+        <el-form-item v-if="['trojan','hysteria'].includes(addUserProtocol)" label="Password">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="newUser.password" style="flex:1" />
-            <el-button size="small" @click="newUser.password = genPassword()">Generate</el-button>
+            <el-button size="small" @click="newUser.password = genBase64Password()">Generate</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="addUserProtocol === 'shadowsocks' && isSSMultiUser(addUserSSMethod)" label="Password">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="newUser.password" style="flex:1" />
+            <el-button size="small" @click="newUser.password = genSSPassword(addUserSSMethod)">Generate</el-button>
           </div>
         </el-form-item>
       </el-form>
@@ -542,34 +548,42 @@
           <template v-if="rf.protocol === 'shadowsocks'">
             <el-form label-width="120px" label-position="left">
               <el-form-item label="Method">
-                <el-select v-model="rf.settings.method" style="width:100%">
-                  <el-option label="aes-256-gcm" value="aes-256-gcm" />
-                  <el-option label="aes-128-gcm" value="aes-128-gcm" />
-                  <el-option label="chacha20-poly1305" value="chacha20-poly1305" />
-                  <el-option label="2022-blake3-aes-128-gcm" value="2022-blake3-aes-128-gcm" />
+                <el-select v-model="rf.settings.method" style="width:100%" @change="onSSMethodChange">
                   <el-option label="2022-blake3-aes-256-gcm" value="2022-blake3-aes-256-gcm" />
+                  <el-option label="2022-blake3-aes-128-gcm" value="2022-blake3-aes-128-gcm" />
+                  <el-option label="2022-blake3-chacha20-poly1305" value="2022-blake3-chacha20-poly1305" />
+                  <el-option label="aes-256-gcm" value="aes-256-gcm" />
+                  <el-option label="chacha20-poly1305" value="chacha20-poly1305" />
+                  <el-option label="chacha20-ietf-poly1305" value="chacha20-ietf-poly1305" />
+                  <el-option label="xchacha20-ietf-poly1305" value="xchacha20-ietf-poly1305" />
                 </el-select>
               </el-form-item>
               <el-form-item label="Password">
                 <div style="display:flex;gap:8px">
                   <el-input v-model="rf.settings.password" style="flex:1" />
-                  <el-button size="small" @click="rf.settings.password = genBase64Password()">Generate</el-button>
+                  <el-button size="small" @click="rf.settings.password = genSSPassword(rf.settings.method)">Generate</el-button>
                 </div>
+                <div class="hint">{{ isSS2022(rf.settings.method) ? 'Base64 encoded key (auto-generated)' : 'Plain text password' }}</div>
               </el-form-item>
               <el-form-item label="Network">
                 <el-select v-model="rf.settings.network" style="width:100%">
+                  <el-option label="tcp,udp" value="tcp,udp" />
                   <el-option label="tcp" value="tcp" />
                   <el-option label="udp" value="udp" />
-                  <el-option label="tcp,udp" value="tcp,udp" />
                 </el-select>
+              </el-form-item>
+              <el-form-item label="ivCheck">
+                <el-switch v-model="rf.settings.ivCheck" />
+                <div class="hint">Enable IV check for legacy methods</div>
               </el-form-item>
             </el-form>
 
-            <!-- Multi-user clients (for 2022-blake3 methods) -->
-            <el-divider content-position="left">
-              Clients
-              <el-button size="small" type="primary" @click="addUser('shadowsocks')" style="margin-left:12px">+ Add Client</el-button>
-            </el-divider>
+            <!-- Multi-user clients (only for 2022-blake3-aes-*-gcm methods) -->
+            <template v-if="isSSMultiUser(rf.settings.method)">
+              <el-divider content-position="left">
+                Clients
+                <el-button size="small" type="primary" @click="addUser('shadowsocks')" style="margin-left:12px">+ Add Client</el-button>
+              </el-divider>
             <div v-for="(c, ci) in rf.settings.clients" :key="ci" class="user-item">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <span style="font-weight:600">Client #{{ ci + 1 }}</span>
@@ -600,6 +614,7 @@
                 </el-form-item>
               </el-form>
             </div>
+            </template>
           </template>
 
           <!-- SOCKS -->
@@ -1084,6 +1099,51 @@
             </template>
           </el-form>
 
+          <!-- Port Hopping -->
+          <el-divider content-position="left">Port Hopping</el-divider>
+          <el-form label-width="140px" label-position="left">
+            <el-form-item label="Enable">
+              <el-switch v-model="rf._portHopEnabled" @change="onPortHopChange" />
+            </el-form-item>
+            <template v-if="rf._portHopEnabled">
+              <el-form-item label="Target Port">
+                <el-input-number v-model="rf.port" :min="1" :max="65535" disabled />
+                <div class="hint">Current server port</div>
+              </el-form-item>
+              <el-form-item label="Range Mode">
+                <el-select v-model="rf._portHopMode" style="width:100%" @change="onPortHopModeChange">
+                  <el-option label="Preset" value="preset" />
+                  <el-option label="Manual" value="manual" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
+                <el-select v-model="rf._portHopRange" style="width:100%" @change="onPortHopRangeChange">
+                  <el-option label="10000-20000" value="10000-20000" />
+                  <el-option label="20000-50000" value="20000-50000" />
+                  <el-option label="30000-60000" value="30000-60000" />
+                  <el-option label="40000-50000" value="40000-50000" />
+                  <el-option label="40000-65000" value="40000-65000" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="rf._portHopMode === 'manual'" label="Port Range">
+                <div style="display:flex;gap:8px;align-items:center">
+                  <el-input-number v-model="rf._portHopStart" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
+                  <span>-</span>
+                  <el-input-number v-model="rf._portHopEnd" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
+                </div>
+              </el-form-item>
+              <el-form-item label="Interface">
+                <div style="display:flex;gap:8px;width:100%">
+                  <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create placeholder="All interfaces">
+                    <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
+                  </el-select>
+                  <el-button size="small" @click="loadInterfaces">Refresh</el-button>
+                </div>
+                <div class="hint">Leave empty for all interfaces. Firewall rules will be applied automatically on save.</div>
+              </el-form-item>
+            </template>
+          </el-form>
+
           <!-- RAW Settings -->
           <template v-if="rf.streamSettings.network === 'raw'">
             <el-divider content-position="left">RAW Settings</el-divider>
@@ -1288,51 +1348,6 @@
                     <el-button size="small" type="danger" text @click="rf.streamSettings.hysteria.masquerade._headers.splice(i,1)">X</el-button>
                   </div>
                   <el-button size="small" @click="rf.streamSettings.hysteria.masquerade._headers.push({key:'',value:''})">+ Add Header</el-button>
-                </el-form-item>
-              </template>
-            </el-form>
-
-            <!-- Port Hopping -->
-            <el-divider content-position="left">Port Hopping</el-divider>
-            <el-form label-width="140px" label-position="left">
-              <el-form-item label="Enable">
-                <el-switch v-model="rf._portHopEnabled" @change="onPortHopChange" />
-              </el-form-item>
-              <template v-if="rf._portHopEnabled">
-                <el-form-item label="Target Port">
-                  <el-input-number v-model="rf.port" :min="1" :max="65535" disabled />
-                  <div class="hint">Current hysteria server port</div>
-                </el-form-item>
-                <el-form-item label="Range Mode">
-                  <el-select v-model="rf._portHopMode" style="width:100%" @change="onPortHopModeChange">
-                    <el-option label="Preset" value="preset" />
-                    <el-option label="Manual" value="manual" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
-                  <el-select v-model="rf._portHopRange" style="width:100%" @change="onPortHopRangeChange">
-                    <el-option label="10000-20000" value="10000-20000" />
-                    <el-option label="20000-50000" value="20000-50000" />
-                    <el-option label="30000-60000" value="30000-60000" />
-                    <el-option label="40000-50000" value="40000-50000" />
-                    <el-option label="40000-65000" value="40000-65000" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item v-if="rf._portHopMode === 'manual'" label="Port Range">
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <el-input-number v-model="rf._portHopStart" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
-                    <span>-</span>
-                    <el-input-number v-model="rf._portHopEnd" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
-                  </div>
-                </el-form-item>
-                <el-form-item label="Interface">
-                  <div style="display:flex;gap:8px;width:100%">
-                    <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create placeholder="All interfaces">
-                      <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
-                    </el-select>
-                    <el-button size="small" @click="loadInterfaces">Refresh</el-button>
-                  </div>
-                  <div class="hint">Leave empty for all interfaces. Firewall rules will be applied automatically on save.</div>
                 </el-form-item>
               </template>
             </el-form>
@@ -2141,6 +2156,7 @@ const currentResetIndex = ref(-1)
 const addUserDlg = ref(false)
 const addUserTag = ref('')
 const addUserProtocol = ref('')
+const addUserSSMethod = ref('')
 const newUser = reactive({
   email: '',
   id: '',
@@ -2317,11 +2333,40 @@ function getExpiryDisplay(ib) {
 }
 
 function hasUsers(ib) {
+  if (ib.settings?.users?.length > 0) return true
+  if (ib.settings?.clients?.length > 0) return true
+  // Shadowsocks single-user methods have password in settings
+  if (ib.protocol === 'shadowsocks' && ib.settings?.password) return true
+  return false
+}
+
+// Can share (has at least one user with credentials)
+function hasShareableUsers(ib) {
+  return hasUsers(ib)
+}
+
+// Can add users (protocols that support gRPC add user)
+// Supported: VLESS, VMess, Trojan, Shadowsocks (multi-user only), Hysteria
+function canAddUsers(ib) {
+  if (['vless', 'vmess', 'trojan', 'hysteria'].includes(ib.protocol)) return true
+  // Shadowsocks: only multi-user methods (2022-blake3-aes-*) support adding users
+  if (ib.protocol === 'shadowsocks' && isSSMultiUser(ib.settings?.method)) return true
+  return false
+}
+
+// Has user list (clients/users array with items)
+function hasUserList(ib) {
   return (ib.settings?.users?.length > 0) || (ib.settings?.clients?.length > 0)
 }
 
 function getUsers(ib) {
-  return ib.settings?.clients || ib.settings?.users || []
+  if (ib.settings?.clients?.length > 0) return ib.settings.clients
+  if (ib.settings?.users?.length > 0) return ib.settings.users
+  // Shadowsocks single-user: create virtual user from settings
+  if (ib.protocol === 'shadowsocks' && ib.settings?.password) {
+    return [{ email: 'default', password: ib.settings.password }]
+  }
+  return []
 }
 
 function handleAction(cmd, row, index) {
@@ -2618,7 +2663,7 @@ function generateVmessLink(ib, user, host, port, remark) {
       obj.host = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value || ''
       obj.path = tcp.request?._pathsStr || '/'
     }
-  } else if (network === 'kcp') {
+  } else if (network === 'kcp' || network === 'mkcp') {
     const kcp = ib.streamSettings?.kcp || {}
     obj.mtu = kcp.mtu || 1350
     obj.tti = kcp.tti || 50
@@ -2693,7 +2738,7 @@ function generateVlessLink(ib, user, host, port, remark) {
       const hostHeader = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value
       if (hostHeader) params.set('host', hostHeader)
     }
-  } else if (network === 'kcp') {
+  } else if (network === 'kcp' || network === 'mkcp') {
     const kcp = ib.streamSettings?.kcp || {}
     params.set('mtu', String(kcp.mtu || 1350))
     params.set('tti', String(kcp.tti || 50))
@@ -2810,7 +2855,7 @@ function generateTrojanLink(ib, user, host, port, remark) {
       const hostHeader = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value
       if (hostHeader) params.set('host', hostHeader)
     }
-  } else if (network === 'kcp') {
+  } else if (network === 'kcp' || network === 'mkcp') {
     const kcp = ib.streamSettings?.kcp || {}
     params.set('mtu', String(kcp.mtu || 1350))
     params.set('tti', String(kcp.tti || 50))
@@ -2852,6 +2897,22 @@ function generateTrojanLink(ib, user, host, port, remark) {
     if (tls.serverName) params.set('sni', tls.serverName)
     if (tls.echConfigList) params.set('ech', tls.echConfigList)
     if (tls._verifyPeerCertByName) params.set('vcn', tls._verifyPeerCertByName)
+  } else if (security === 'reality') {
+    params.set('security', 'reality')
+    const reality = ib.streamSettings?.reality || {}
+    if (reality._password) params.set('pbk', reality._password)
+    if (reality._fingerprint) params.set('fp', reality._fingerprint)
+    // Random sni from serverNames
+    const sniList = (reality.serverNamesStr || '').split(',').map(s => s.trim()).filter(Boolean)
+    const sni = sniList.length > 0 ? getRandomItem(sniList) : ''
+    if (sni) params.set('sni', sni)
+    // Random sid from shortIds
+    if (reality.shortIdsStr) {
+      const sidList = reality.shortIdsStr.split('\n').map(s => s.trim()).filter(Boolean)
+      const sid = sidList.length > 0 ? getRandomItem(sidList) : ''
+      if (sid) params.set('sid', sid)
+    }
+    if (reality._mldsa65Verify) params.set('pqv', reality._mldsa65Verify)
   } else {
     params.set('security', 'none')
   }
@@ -2871,9 +2932,14 @@ function generateTrojanLink(ib, user, host, port, remark) {
 
 function generateShadowsocksLink(ib, user, host, port, remark) {
   const method = ib.settings?.method || 'aes-256-gcm'
-  const password = user.password || ib.settings?.password || ''
   const network = ib.streamSettings?.network || 'raw'
   const security = ib.streamSettings?.security || 'none'
+
+  // Get password based on method type
+  // For multi-user (2022-blake3-aes-*-gcm): use user.password
+  // For single-user: use settings.password
+  const isMultiUser = method === '2022-blake3-aes-256-gcm' || method === '2022-blake3-aes-128-gcm'
+  const password = isMultiUser ? (user.password || '') : (ib.settings?.password || '')
 
   const params = new URLSearchParams()
   params.set('type', network)
@@ -2887,10 +2953,13 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
       const hostHeader = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value
       if (hostHeader) params.set('host', hostHeader)
     }
+  } else if (network === 'kcp' || network === 'mkcp') {
+    const kcp = ib.streamSettings?.kcp || {}
+    params.set('mtu', String(kcp.mtu || 1350))
+    params.set('tti', String(kcp.tti || 50))
   } else if (network === 'ws') {
     const ws = ib.streamSettings?.ws || {}
     params.set('path', ws.path || '/')
-    // Host: use ws.host or first Host header
     let wsHost = ws.host || ''
     if (!wsHost && ws.settings?._headers?.length) {
       const hostHeader = ws.settings._headers.find(h => h.key?.toLowerCase() === 'host')
@@ -2902,6 +2971,18 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
     params.set('serviceName', grpc.serviceName || '')
     if (grpc.authority) params.set('authority', grpc.authority)
     if (grpc.settings?.multiMode) params.set('mode', 'multi')
+  } else if (network === 'httpupgrade') {
+    const hu = ib.streamSettings?.httpupgrade || {}
+    params.set('path', hu.path || '/')
+    if (hu.host) params.set('host', hu.host)
+  } else if (network === 'xhttp') {
+    const xhttp = ib.streamSettings?.xhttp || {}
+    params.set('path', xhttp.path || '/')
+    if (xhttp.host) params.set('host', xhttp.host)
+    params.set('mode', xhttp.mode || 'auto')
+    if (xhttp.extra?.xPaddingBytes) params.set('x_padding_bytes', xhttp.extra.xPaddingBytes)
+    const extra = buildXhttpExtra(xhttp)
+    if (extra) params.set('extra', JSON.stringify(extra))
   }
 
   // Security params
@@ -2925,7 +3006,9 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
   const isSS2022 = method.startsWith('2022')
   if (isSS2022) {
     // SIP022: method:password (not base64)
-    const userinfo = [method, password].map(encodeURIComponent).join(':')
+    const passwords = [ib.settings?.password]
+    if (isMultiUser && password) passwords.push(password)
+    const userinfo = [method, ...passwords].map(encodeURIComponent).join(':')
     let link = `ss://${userinfo}@${formatUrlHost(host)}:${port}`
     const query = params.toString()
     if (query) link += `?${query}`
@@ -2988,7 +3071,8 @@ function generateHysteriaLink(ib, user, host, port, remark) {
     }
   }
 
-  const url = new URL(`${scheme}://${auth}@${formatUrlHost(host)}:${port}`)
+  const encodedAuth = encodeURIComponent(auth)
+  const url = new URL(`${scheme}://${encodedAuth}@${formatUrlHost(host)}:${port}`)
   for (const [key, value] of params) url.searchParams.set(key, value)
   url.hash = encodeURIComponent(remark)
   return url.toString()
@@ -3047,9 +3131,17 @@ async function confirmResetTraffic() {
 function showAddUser(ib) {
   addUserTag.value = ib.tag
   addUserProtocol.value = ib.protocol
+  addUserSSMethod.value = ib.settings?.method || ''
   newUser.email = genEmail()
   newUser.id = genUUID()
-  newUser.password = genPassword()
+  // Generate password based on protocol
+  if (ib.protocol === 'trojan' || ib.protocol === 'hysteria') {
+    newUser.password = genBase64Password()
+  } else if (ib.protocol === 'shadowsocks') {
+    newUser.password = genSSPassword(ib.settings?.method || 'aes-256-gcm')
+  } else {
+    newUser.password = genPassword()
+  }
   newUser.flow = ''
   newUserTestseed.value = [900, 500, 900, 256]
   addUserDlg.value = true
@@ -3063,28 +3155,55 @@ async function confirmAddUser() {
 
   try {
     // Add user to xray runtime via gRPC
-    await client.post(`/xray/control/inbound/${addUserTag.value}/user`, {
-      email: newUser.email,
-      id: newUser.id || undefined,
-      password: newUser.password || undefined,
-      flow: newUser.flow || undefined
-    })
+    const apiPayload = {
+      email: newUser.email
+    }
+    // Build payload based on protocol
+    if (addUserProtocol.value === 'vless') {
+      apiPayload.id = newUser.id
+      if (newUser.flow) apiPayload.flow = newUser.flow
+    } else if (addUserProtocol.value === 'vmess') {
+      apiPayload.id = newUser.id
+    } else if (addUserProtocol.value === 'trojan') {
+      apiPayload.password = newUser.password
+    } else if (addUserProtocol.value === 'shadowsocks') {
+      apiPayload.password = newUser.password
+      // Send current method from inbound config
+      const ib = form.value.find(i => i.tag === addUserTag.value)
+      if (ib?.settings?.method) {
+        apiPayload.method = ib.settings.method
+      }
+    }
+    await client.post(`/xray/control/inbound/${addUserTag.value}/user`, apiPayload)
 
     // Also add to DB config
     const ib = form.value.find(i => i.tag === addUserTag.value)
     if (ib) {
       const users = ib.settings?.clients || ib.settings?.users || []
-      users.push({
+      const userEntry = {
         email: newUser.email,
-        id: newUser.id,
-        password: newUser.password,
-        flow: newUser.flow,
         level: 0,
         _quota: 'unlimited',
         _expiry: null,
         _usedUp: 0,
         _usedDown: 0
-      })
+      }
+      // Add protocol-specific fields
+      if (addUserProtocol.value === 'vless') {
+        userEntry.id = newUser.id
+        userEntry.flow = newUser.flow || ''
+      } else if (addUserProtocol.value === 'vmess') {
+        userEntry.id = newUser.id
+        userEntry.alterId = 0
+        userEntry.security = 'auto'
+      } else if (addUserProtocol.value === 'trojan') {
+        userEntry.password = newUser.password
+      } else if (addUserProtocol.value === 'shadowsocks') {
+        userEntry.password = newUser.password
+      } else if (addUserProtocol.value === 'hysteria') {
+        userEntry.auth = newUser.password
+      }
+      users.push(userEntry)
       // Add testseed at settings level for VLESS with flow
       if (addUserProtocol.value === 'vless' && newUser.flow) {
         ib.settings.testseed = [...newUserTestseed.value]
@@ -3163,8 +3282,36 @@ async function resumeUser(user) {
 
 async function removeUserFromXray(user) {
   try {
+    // Remove from xray runtime
     await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
-    ElMessage.success(`User ${user.email} removed from xray`)
+
+    // Remove from DB config
+    const ib = form.value.find(i => i.tag === manageUsersTag.value)
+    if (ib) {
+      const users = ib.settings?.clients || ib.settings?.users || []
+      const idx = users.findIndex(u => u.email === user.email)
+      if (idx >= 0) {
+        users.splice(idx, 1)
+        // Save to DB
+        const configJson = buildInbound(ib)
+        delete configJson._remark
+        delete configJson._enabled
+        delete configJson._id
+        await client.put(`/inbound-configs/${ib._id}`, {
+          core_type: 'xray',
+          remark: ib._remark || '',
+          protocol: ib.protocol,
+          tag: ib.tag,
+          listen: ib.listen || '0.0.0.0',
+          port: ib.port || 0,
+          enabled: ib._enabled,
+          config_json: configJson,
+        })
+      }
+    }
+    // Update manageUsersList
+    manageUsersList.value = manageUsersList.value.filter(u => u.email !== user.email)
+    ElMessage.success(`User ${user.email} removed`)
   } catch (e) {
     ElMessage.error('Failed to remove user: ' + (e.message || e))
   }
@@ -3246,6 +3393,37 @@ async function genWgKeyPair() {
 function genUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8); return v.toString(16) }) }
 function genPassword() { const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < 12; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
 function genBase64Password() { const bytes = new Uint8Array(32); crypto.getRandomValues(bytes); return btoa(String.fromCharCode(...bytes)) }
+function isSS2022(method) { return method && method.startsWith('2022') }
+function isSSMultiUser(method) {
+  // Only 2022-blake3-aes-*-gcm support multi-user
+  return method === '2022-blake3-aes-256-gcm' || method === '2022-blake3-aes-128-gcm'
+}
+function genSSPassword(method) {
+  if (isSS2022(method)) {
+    // 2022-blake3 methods use base64 encoded key
+    const length = method === '2022-blake3-aes-128-gcm' ? 16 : 32
+    const bytes = new Uint8Array(length)
+    crypto.getRandomValues(bytes)
+    return btoa(String.fromCharCode(...bytes))
+  }
+  // Legacy methods use plain text password
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let r = ''
+  for (let i = 0; i < 16; i++) r += chars.charAt(Math.floor(Math.random() * chars.length))
+  return r
+}
+function onSSMethodChange(method) {
+  rf.settings.password = genSSPassword(method)
+  if (isSSMultiUser(method)) {
+    // Switching to multi-user: add a client if empty
+    if (!rf.settings.clients || rf.settings.clients.length === 0) {
+      rf.settings.clients = [{ password: genBase64Password(), email: genEmail(), _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 }]
+    }
+  } else {
+    // Switching to single-user: clear clients
+    rf.settings.clients = []
+  }
+}
 function genEmail() { return Math.random().toString(36).substring(2, 8) + '@xray.com' }
 function formatTraffic(bytes) { if (!bytes) return '0 B'; const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0, b = bytes; while (b >= 1024 && i < u.length - 1) { b /= 1024; i++ } return b.toFixed(1) + ' ' + u[i] }
 function resetTraffic(u) { u._usedUp = 0; u._usedDown = 0 }
@@ -3296,10 +3474,29 @@ function onProtocolChange() {
   rf.port = port
   rf.tag = 'inbound-' + p + '-' + port
   rf._socketPath = '/dev/shm/' + p + '.sock'
+  // Reset transport when switching from hysteria
+  if (p !== 'hysteria' && rf.streamSettings.network === 'hysteria') {
+    rf.streamSettings.network = 'raw'
+  }
+  // Reset security to none when switching protocols (except hysteria which needs tls)
+  if (p === 'hysteria') {
+    rf.streamSettings.security = 'tls'
+  } else if (p === 'vless' || p === 'trojan') {
+    // Keep current security for vless/trojan
+  } else {
+    rf.streamSettings.security = 'none'
+  }
+  // Reset FinalMask when switching from hysteria
+  if (p !== 'hysteria' && rf.finalmask._enabled) {
+    rf.finalmask._enabled = false
+    rf.finalmask.tcp = []
+    rf.finalmask.udp = []
+    rf.finalmask.quicParams = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
+  }
   if (p === 'vless') rf.settings = { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' }
   else if (p === 'vmess') rf.settings = { clients: [{ id: genUUID(), email: genEmail(), alterId: 0, security: 'auto', level: 0, _quota: 'unlimited', _expiry: null }] }
   else if (p === 'trojan') rf.settings = { clients: [{ password: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null }] }
-  else if (p === 'shadowsocks') rf.settings = { method: 'aes-256-gcm', password: genBase64Password(), network: 'tcp', clients: [{ password: genBase64Password(), email: genEmail(), _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 }] }
+  else if (p === 'shadowsocks') rf.settings = { method: 'aes-256-gcm', password: genSSPassword('aes-256-gcm'), network: 'tcp', clients: [{ password: genBase64Password(), email: genEmail(), _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 }] }
   else if (p === 'socks') rf.settings = { auth: 'noauth', accounts: [], udp: false }
   else if (p === 'http') rf.settings = { accounts: [], allowTransparent: false }
   else if (p === 'wireguard') { rf.settings = { secretKey: '', peers: [{ publicKey: '', _allowedIPsStr: '0.0.0.0/0, ::/0', keepAlive: 0, comment: '' }], address: [], mtu: 1420, noKernelTun: true, workers: 0, domainStrategy: '' }; rf._wgAddressesStr = ''; rf._wgPublicKey = '' }
@@ -3441,10 +3638,15 @@ async function generateVlessEnc() {
   }
 }
 
-function onVlessEncryptionTypeChange(val) {
-  // Clear keys when type changes
-  rf.settings.encryption = 'none'
-  rf.settings.decryption = 'none'
+async function onVlessEncryptionTypeChange(val) {
+  if (val) {
+    // Auto-generate keys when type is selected
+    await generateVlessEnc()
+  } else {
+    // Clear keys when type is cleared
+    rf.settings.encryption = 'none'
+    rf.settings.decryption = 'none'
+  }
   emit()
 }
 
@@ -4065,6 +4267,10 @@ function buildInbound(ib, isApiCall = false) {
   const settings = JSON.parse(JSON.stringify(ib.settings))
   // Remove frontend-only internal fields from settings
   delete settings._encryptionType
+  // For Shadowsocks single-user methods, remove clients
+  if (ib.protocol === 'shadowsocks' && !isSSMultiUser(settings.method)) {
+    delete settings.clients
+  }
   const result = {
     _remark: ib._remark || undefined,
     tag: ib.tag || undefined, protocol: ib.protocol,

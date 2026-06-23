@@ -84,6 +84,8 @@ type InboundSettings struct {
 	Email      string         `json:"email,omitempty"`
 	Encryption string         `json:"encryption,omitempty"` // VLESS encryption (e.g. "mlkem768x25519plus.native.0rtt.<key>")
 	Decryption string         `json:"decryption,omitempty"` // VLESS decryption (server-side)
+	Method     string         `json:"method,omitempty"`     // Shadowsocks method
+	Network    string         `json:"network,omitempty"`    // Shadowsocks network (tcp, udp, tcp,udp)
 }
 
 type ClientConfig struct {
@@ -306,6 +308,34 @@ func (g *Generator) GenerateServiceConfig(spec common.ServiceConfigSpec) ([]byte
 			})
 		}
 		settings.Clients = clients
+	case domain.ProtocolShadowsocks:
+		// Shadowsocks uses method + password for single-user,
+		// or method + clients for multi-user (2022-blake3-aes-*-gcm)
+		method := ""
+		if m, ok := spec.Extra["ss_method"].(string); ok {
+			method = m
+			settings.Method = m
+		}
+		if password, ok := spec.Extra["ss_password"].(string); ok {
+			settings.Password = password
+		}
+		if network, ok := spec.Extra["ss_network"].(string); ok {
+			settings.Network = network
+		}
+		// Only build clients for 2022-blake3-aes-*-gcm methods (multi-user)
+		isMultiUser := method == "2022-blake3-aes-256-gcm" || method == "2022-blake3-aes-128-gcm"
+		if isMultiUser {
+			var ssClients []ClientConfig
+			for _, u := range spec.Users {
+				ssClients = append(ssClients, ClientConfig{
+					Password: u.Password,
+					Email:    u.Email,
+				})
+			}
+			if len(ssClients) > 0 {
+				settings.Clients = ssClients
+			}
+		}
 	}
 
 	inbound.Settings = settings

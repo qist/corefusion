@@ -178,6 +178,8 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, coreType string) ([]js
 		delete(inbound, "_socketPath")
 		delete(inbound, "_socketPerm")
 		delete(inbound, "_wgPublicKey")
+		delete(inbound, "_accessDomain")
+		delete(inbound, "_portHop")
 		// Clean nested _ fields from users/clients/accounts at top level and inside settings
 		containers := []map[string]interface{}{inbound}
 		if settings, ok := inbound["settings"].(map[string]interface{}); ok {

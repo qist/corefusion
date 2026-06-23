@@ -105,6 +105,13 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.BackupRecord{},
 		&entity.BackupSchedule{},
 		&entity.BackupStorage{},
+
+		// Share Domain Configs
+		&entity.ShareDomainConfig{},
+
+		// CF IP Sources & Entries
+		&entity.CFIPSource{},
+		&entity.CFIPEntry{},
 	}
 
 	for _, model := range models {
@@ -118,6 +125,9 @@ func AutoMigrate(db *gorm.DB) error {
 
 	// Seed default outbounds if none exist
 	seedDefaultOutbounds(db)
+
+	// Seed default share domain configs if none exist
+	seedDefaultShareDomains(db)
 
 	return nil
 }
@@ -137,6 +147,60 @@ func seedDefaultOutbounds(db *gorm.DB) {
 			log.Printf("WARNING: seed outbound %s failed: %v", ob.Tag, err)
 		} else {
 			log.Printf("seeded default outbound: %s", ob.Tag)
+		}
+	}
+}
+
+func seedDefaultShareDomains(db *gorm.DB) {
+	var count int64
+	db.Model(&entity.ShareDomainConfig{}).Count(&count)
+	log.Printf("share domain configs count: %d", count)
+	if count > 0 {
+		return
+	}
+
+	// CF HTTP ports: 80, 8080, 8880, 2052, 2082, 2086, 2095
+	// CF HTTPS ports: 443, 2053, 2083, 2087, 2096, 8443
+	cfHttpPorts := "[80,8080,8880,2052,2082,2086,2095]"
+	cfHttpsPorts := "[443,2053,2083,2087,2096,8443]"
+
+	defaults := []entity.ShareDomainConfig{
+		// CF Priority Domains
+		{Type: "cf_domain", Value: "mfa.gov.ua", Port: 443, Ports: cfHttpPorts, Enabled: true, SortOrder: 1},
+		{Type: "cf_domain", Value: "www.shopify.com", Port: 443, Ports: cfHttpPorts, Enabled: true, SortOrder: 2},
+		{Type: "cf_domain", Value: "www.visa.cn", Port: 443, Ports: cfHttpPorts, Enabled: true, SortOrder: 3},
+		{Type: "cf_domain", Value: "time.is", Port: 443, Ports: cfHttpPorts, Enabled: true, SortOrder: 4},
+		{Type: "cf_domain", Value: "icook.hk", Port: 443, Ports: cfHttpPorts, Enabled: true, SortOrder: 5},
+		{Type: "cf_domain", Value: "icook.tw", Port: 443, Ports: cfHttpPorts, Enabled: true, SortOrder: 6},
+
+		// CF Priority IPs (domain form)
+		{Type: "cf_ip", Value: "cloudflare.182682.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 1},
+		{Type: "cf_ip", Value: "tencentapp.cn", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 2},
+		{Type: "cf_ip", Value: "cf.877774.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 3},
+		{Type: "cf_ip", Value: "cfip.xxxxxxxx.tk", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 4},
+		{Type: "cf_ip", Value: "bestcf.030101.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 5},
+		{Type: "cf_ip", Value: "777.ai7777777.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 6},
+		{Type: "cf_ip", Value: "cdn.2020111.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 7},
+		{Type: "cf_ip", Value: "cfip.cfcdn.vip", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 8},
+		{Type: "cf_ip", Value: "cf.0sm.com", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 9},
+		{Type: "cf_ip", Value: "cfip.1323123.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 10},
+		{Type: "cf_ip", Value: "cloudflare-ip.mofashi.ltd", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 11},
+		{Type: "cf_ip", Value: "cf.877771.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 12},
+		{Type: "cf_ip", Value: "cf.900501.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 13},
+		{Type: "cf_ip", Value: "cdns.doon.eu.org", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 14},
+		{Type: "cf_ip", Value: "fn.130519.xyz", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 15},
+		{Type: "cf_ip", Value: "nrt.xxxxxxxx.nyc.mn", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 16},
+		{Type: "cf_ip", Value: "nrtcfdns.zone.id", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 17},
+		{Type: "cf_ip", Value: "saas.sin.fan", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 18},
+		{Type: "cf_ip", Value: "xn--b6gac.eu.org", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 19},
+		{Type: "cf_ip", Value: "freeyx.cloudflare88.eu.org", Port: 443, Ports: cfHttpsPorts, Enabled: true, SortOrder: 20},
+	}
+
+	for _, d := range defaults {
+		if err := db.Create(&d).Error; err != nil {
+			log.Printf("WARNING: seed share domain %s failed: %v", d.Value, err)
+		} else {
+			log.Printf("seeded share domain: %s [%s]", d.Value, d.Type)
 		}
 	}
 }

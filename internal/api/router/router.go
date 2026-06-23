@@ -32,6 +32,8 @@ import (
 	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
+	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
+	cfipHandler "corefusion/internal/api/handlers/cfip"
 	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
 	proxySvc "corefusion/internal/service/proxy"
@@ -54,6 +56,8 @@ import (
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
 	warpSvc "corefusion/internal/service/warp"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
+	cfipSvc "corefusion/internal/service/cfip"
 	configsyncSvc "corefusion/internal/service/configsync"
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	"corefusion/internal/store/repository"
@@ -607,6 +611,40 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				outboundCfgGroup.GET("/:id", outboundCfgH.Get)
 				outboundCfgGroup.PUT("/:id", outboundCfgH.Update)
 				outboundCfgGroup.DELETE("/:id", outboundCfgH.Delete)
+			}
+
+			// Share Domain Configs
+			shareDomainRepo := repository.NewShareDomainConfigRepository(database)
+			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo)
+			shareDomainH := sharedomainconfigHandler.NewHandler(shareDomainSvc)
+			shareDomainGroup := protected.Group("/share-domains")
+			{
+				shareDomainGroup.GET("", shareDomainH.List)
+				shareDomainGroup.POST("", shareDomainH.Create)
+				shareDomainGroup.PUT("/:id", shareDomainH.Update)
+				shareDomainGroup.DELETE("/:id", shareDomainH.Delete)
+				shareDomainGroup.DELETE("/all", shareDomainH.ClearAll)
+				shareDomainGroup.POST("/seed", shareDomainH.SeedDefaults)
+			}
+
+			// CF IP Sources & Entries
+			cfipSourceRepo := repository.NewCFIPSourceRepository(database)
+			cfipEntryRepo := repository.NewCFIPEntryRepository(database)
+			cfipSvcInst := cfipSvc.NewService(cfipSourceRepo, cfipEntryRepo)
+			cfipH := cfipHandler.NewHandler(cfipSvcInst)
+			cfipGroup := protected.Group("/cfip")
+			{
+				cfipGroup.GET("/sources", cfipH.ListSources)
+				cfipGroup.POST("/sources", cfipH.CreateSource)
+				cfipGroup.PUT("/sources/:id", cfipH.UpdateSource)
+				cfipGroup.DELETE("/sources/:id", cfipH.DeleteSource)
+				cfipGroup.POST("/sources/:id/fetch", cfipH.FetchSource)
+				cfipGroup.POST("/fetch-all", cfipH.FetchAll)
+				cfipGroup.GET("/entries", cfipH.ListEntries)
+				cfipGroup.POST("/entries", cfipH.AddEntry)
+				cfipGroup.DELETE("/entries/:id", cfipH.DeleteEntry)
+				cfipGroup.DELETE("/entries", cfipH.ClearEntries)
+				cfipGroup.POST("/seed", cfipH.SeedDefaults)
 			}
 
 			// Services

@@ -194,9 +194,9 @@
         </el-tab-pane>
 
         <!-- Protocol Tab -->
-        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','socks','http'].includes(rf.protocol)" :label="t('protoCenter.outbounds.protocolSettings')" name="protocol">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','socks','http','hysteria'].includes(rf.protocol)" :label="t('protoCenter.outbounds.protocolSettings')" name="protocol">
           <el-form label-width="120px" label-position="left">
-            <template v-if="['vmess','vless','trojan','shadowsocks'].includes(rf.protocol)">
+            <template v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)">
               <el-form-item :label="t('protoCenter.outbounds.server')">
                 <el-input v-model="rf._server" placeholder="example.com" />
               </el-form-item>
@@ -287,11 +287,8 @@
             </template>
             <template v-if="rf.protocol === 'hysteria'">
               <el-form-item label="Version">
-                <el-input-number v-model="rf._hysteriaVersion" :min="2" :max="2" />
+                <el-input-number v-model="rf._hysteriaVersion" :min="2" :max="2" disabled />
                 <div class="hint">{{ t('protoCenter.outbounds.hysteriaVersionHint') }}</div>
-              </el-form-item>
-              <el-form-item label="Auth">
-                <el-input v-model="rf._hysteriaAuth" :placeholder="t('protoCenter.outbounds.hysteriaAuthHint')" />
               </el-form-item>
             </template>
             <template v-if="rf.protocol === 'socks' || rf.protocol === 'http'">
@@ -387,22 +384,26 @@
         </el-tab-pane>
 
         <!-- Stream Settings Tab -->
-        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','socks','http','hysteria'].includes(rf.protocol)" :label="t('protoCenter.outbounds.stream')" name="stream">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)" :label="t('protoCenter.outbounds.stream')" name="stream">
           <el-form label-width="140px" label-position="left">
             <el-form-item :label="t('protoCenter.outbounds.network')">
-              <el-select v-model="rf._network" style="width:100%" clearable>
+              <el-select v-model="rf._network" style="width:100%" :disabled="rf.protocol === 'hysteria'" clearable>
                 <el-option label="Raw (TCP)" value="raw" />
                 <el-option label="mKCP" value="kcp" />
                 <el-option label="WebSocket" value="ws" />
                 <el-option label="gRPC" value="grpc" />
-                <el-option label="HTTPUpgrade" value="httpupgrade" /><el-option label="XHTTP" value="xhttp" />
-                <el-option label="Hysteria" value="hysteria" />
+                <el-option label="HTTPUpgrade" value="httpupgrade" />
+                <el-option v-if="rf.protocol === 'vless'" label="XHTTP" value="xhttp" />
+                <el-option v-if="rf.protocol === 'hysteria'" label="Hysteria" value="hysteria" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('protoCenter.outbounds.securityMode')">
               <el-select v-model="rf._securityMode" style="width:100%">
-                <el-option label="None" value="none" /><el-option label="TLS" value="tls" /><el-option label="Reality" value="reality" />
+                <el-option v-if="rf.protocol !== 'hysteria'" label="None" value="none" />
+                <el-option label="TLS" value="tls" />
+                <el-option v-if="['vless','trojan'].includes(rf.protocol)" label="Reality" value="reality" />
               </el-select>
+              <div v-if="rf.protocol === 'hysteria'" class="hint">Hysteria requires TLS</div>
             </el-form-item>
 
             <!-- TLS Settings -->
@@ -822,7 +823,7 @@
         </el-tab-pane>
 
         <!-- Sockopt Tab -->
-        <el-tab-pane :label="t('protoCenter.sockopt.title')" name="sockopt">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)" :label="t('protoCenter.sockopt.title')" name="sockopt">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.sockopt.enable') }}</span>
             <el-switch v-model="rf._sockoptEnabled" />
@@ -936,7 +937,7 @@
         </el-tab-pane>
 
         <!-- FinalMask Tab -->
-        <el-tab-pane :label="t('protoCenter.finalmask.title')" name="finalmask">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)" :label="t('protoCenter.finalmask.title')" name="finalmask">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.finalmask.enable') }}</span>
             <el-switch v-model="rf._finalmaskEnabled" />
@@ -2039,6 +2040,11 @@ function onProtocolChange() {
   if (rf.protocol === 'freedom') rf._domainStrategy = 'AsIs'
   if (rf.protocol === 'wireguard') {
     rf._wgPeers = []
+  }
+  // Hysteria: bind network to hysteria, security to tls
+  if (rf.protocol === 'hysteria') {
+    rf._network = 'hysteria'
+    rf._securityMode = 'tls'
   }
 }
 

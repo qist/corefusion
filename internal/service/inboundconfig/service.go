@@ -180,7 +180,7 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, coreType string) ([]js
 		delete(inbound, "_wgPublicKey")
 		delete(inbound, "_accessDomain")
 		delete(inbound, "_portHop")
-		// Clean nested _ fields from users/clients/accounts at top level and inside settings
+		// Clean nested _ fields from users/clients/accounts and filter paused users
 		containers := []map[string]interface{}{inbound}
 		if settings, ok := inbound["settings"].(map[string]interface{}); ok {
 			containers = append(containers, settings)
@@ -188,14 +188,22 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, coreType string) ([]js
 		for _, c := range containers {
 			for _, key := range []string{"users", "clients", "accounts"} {
 				if items, ok := c[key].([]interface{}); ok {
+					var filtered []interface{}
 					for _, item := range items {
 						if m, ok := item.(map[string]interface{}); ok {
+							// Skip paused users
+							if paused, _ := m["_paused"].(bool); paused {
+								continue
+							}
 							delete(m, "_quota")
 							delete(m, "_expiry")
 							delete(m, "_usedUp")
 							delete(m, "_usedDown")
+							delete(m, "_paused")
+							filtered = append(filtered, m)
 						}
 					}
+					c[key] = filtered
 				}
 			}
 		}

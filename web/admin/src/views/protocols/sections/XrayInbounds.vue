@@ -2449,7 +2449,8 @@ function copyShareLink(ib, user) {
 
 function showQrCode(ib) {
   qrCurrentIb.value = ib
-  qrUsers.value = getUsers(ib)
+  // Filter out paused users
+  qrUsers.value = getUsers(ib).filter(u => !u._paused)
   if (qrUsers.value.length === 0) return
   qrSelectedUser.value = qrUsers.value[0].email || qrUsers.value[0].id
   updateQrCode()
@@ -3247,9 +3248,15 @@ async function pauseUser(user) {
     return
   }
   try {
-    // Pause = update DB + remove from xray runtime
+    // Step 1: Remove from xray runtime first
+    try {
+      await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${encodeURIComponent(user.email)}`)
+    } catch (xrayErr) {
+      console.warn('Failed to remove from xray runtime:', xrayErr)
+      // Continue even if xray removal fails (user might not be in xray)
+    }
+    // Step 2: Update DB to mark as paused
     await client.post(`/inbound-configs/${inbound._id}/users/${user.email}/pause`)
-    await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
     user._paused = true
     ElMessage.success(`User ${user.email} paused`)
   } catch (e) {
@@ -3265,14 +3272,24 @@ async function resumeUser(user) {
     return
   }
   try {
-    // Resume = update DB + add back to xray runtime
+    // Step 1: Update DB to mark as active
     await client.post(`/inbound-configs/${inbound._id}/users/${user.email}/resume`)
-    await client.post(`/xray/control/inbound/${manageUsersTag.value}/user`, {
-      email: user.email,
-      id: user.id,
-      flow: user.flow || '',
-      password: user.password || ''
-    })
+    // Step 2: Add back to xray runtime
+    const apiPayload = { email: user.email }
+    if (inbound.protocol === 'vless') {
+      apiPayload.id = user.id
+      if (user.flow) apiPayload.flow = user.flow
+    } else if (inbound.protocol === 'vmess') {
+      apiPayload.id = user.id
+    } else if (inbound.protocol === 'trojan') {
+      apiPayload.password = user.password
+    } else if (inbound.protocol === 'shadowsocks') {
+      apiPayload.password = user.password
+      apiPayload.method = inbound.settings?.method || ''
+    } else if (inbound.protocol === 'hysteria') {
+      apiPayload.password = user.auth || user.password
+    }
+    await client.post(`/xray/control/inbound/${manageUsersTag.value}/user`, apiPayload)
     user._paused = false
     ElMessage.success(`User ${user.email} resumed`)
   } catch (e) {
@@ -4270,6 +4287,13 @@ function buildInbound(ib, isApiCall = false) {
   // For Shadowsocks single-user methods, remove clients
   if (ib.protocol === 'shadowsocks' && !isSSMultiUser(settings.method)) {
     delete settings.clients
+  }
+  // Filter out paused users from xray config (keep in DB config)
+  if (isApiCall && settings.clients) {
+    settings.clients = settings.clients.filter(u => !u._paused)
+  }
+  if (isApiCall && settings.users) {
+    settings.users = settings.users.filter(u => !u._paused)
   }
   const result = {
     _remark: ib._remark || undefined,

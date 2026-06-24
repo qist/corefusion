@@ -112,6 +112,13 @@ func AutoMigrate(db *gorm.DB) error {
 		// CF IP Sources & Entries
 		&entity.CFIPSource{},
 		&entity.CFIPEntry{},
+
+		// Subscription Formats & Rules
+		&entity.SubscriptionFormat{},
+		&entity.SubscriptionRule{},
+
+		// Subscription Endpoints
+		&entity.SubscriptionEndpoint{},
 	}
 
 	for _, model := range models {

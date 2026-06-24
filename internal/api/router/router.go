@@ -26,6 +26,8 @@ import (
 	securityHandler "corefusion/internal/api/handlers/security"
 	servicesHandler "corefusion/internal/api/handlers/services"
 	subsHandler "corefusion/internal/api/handlers/subscriptions"
+	subfmtHandler "corefusion/internal/api/handlers/subformat"
+	subendHandler "corefusion/internal/api/handlers/subendpoint"
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
@@ -49,6 +51,8 @@ import (
 	nodeService "corefusion/internal/service/node"
 	svcService "corefusion/internal/service/service"
 	subService "corefusion/internal/service/subscription"
+	subfmtSvc "corefusion/internal/service/subformat"
+	subendSvc "corefusion/internal/service/subendpoint"
 	systemSvc "corefusion/internal/service/system"
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
@@ -156,6 +160,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	systemSettingRepo := repository.NewSystemSettingRepository(database)
 	notifTmplRepo := repository.NewNotificationTemplateRepository(database)
 	backupRepo := repository.NewBackupRepository(database)
+	subfmtRepo := repository.NewSubscriptionFormatRepository(database)
+	subfmtRuleRepo := repository.NewSubscriptionRuleRepository(database)
+	subendRepo := repository.NewSubscriptionEndpointRepository(database)
+	shareDomainRepo := repository.NewShareDomainConfigRepository(database)
 
 	coreConfigRepo := repository.NewCoreConfigRepository(database)
 	coreConfigSvc := coreconfigSvc.NewService(coreConfigRepo)
@@ -229,6 +237,22 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Seed default geo rules
 	geoRuleSvcInst.SeedDefaults(nil)
 
+	// Subscription format service
+	subfmtSvcInst := subfmtSvc.NewService(subfmtRepo, subfmtRuleRepo)
+	subfmtSvcInst.SeedDefaults(context.Background())
+
+	// Subscription endpoint service
+	subendSvcInst := subendSvc.NewService(subendRepo, caddySiteRepo, nginxSiteRepo, func(ctx context.Context, proxyType string) bool {
+		info := proxyMgr.DetectProxy(proxySvc.ProxyType(proxyType))
+		return info.Status == "running"
+	}, "8080", func(proxyType string) {
+		if proxyType == "nginx" {
+			proxyMgr.ReloadProxy(context.Background(), proxySvc.ProxyNginx)
+		} else {
+			proxyMgr.ReloadProxy(context.Background(), proxySvc.ProxyCaddy)
+		}
+	})
+
 	// Start rule sync scheduler
 	geoRuleScheduler.Start()
 
@@ -239,6 +263,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	coreConfigH := coreconfigHandler.NewHandler(coreConfigSvc)
 	svcH := servicesHandler.NewHandler(svcSvc)
 	subH := subsHandler.NewHandler(subSvc)
+	subfmtH := subfmtHandler.NewHandler(subfmtSvcInst)
+	subendH := subendHandler.NewHandler(subendSvcInst)
+	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, accessLogRepo)
 	certH := certsHandler.NewHandler(certSvc)
 	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 	coreConfigH.SetProcessManager(processMgr)
@@ -614,7 +642,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			// Share Domain Configs
-			shareDomainRepo := repository.NewShareDomainConfigRepository(database)
 			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo)
 			shareDomainH := sharedomainconfigHandler.NewHandler(shareDomainSvc)
 			shareDomainGroup := protected.Group("/share-domains")
@@ -689,6 +716,31 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subsGroup.POST("/:id/reset-usage", subH.ResetUsage)
 				subsGroup.GET("/:id/access-logs", subH.ListAccessLogs)
 				subsGroup.GET("/:id/rotations", subH.ListRotations)
+			}
+
+			// Subscription Formats
+			subfmtGroup := protected.Group("/subscription-formats")
+			{
+				subfmtGroup.GET("", subfmtH.List)
+				subfmtGroup.POST("", subfmtH.Create)
+				subfmtGroup.GET("/:id", subfmtH.GetByID)
+				subfmtGroup.PUT("/:id", subfmtH.Update)
+				subfmtGroup.DELETE("/:id", subfmtH.Delete)
+				subfmtGroup.GET("/:id/rules", subfmtH.ListRules)
+				subfmtGroup.POST("/:id/rules", subfmtH.CreateRule)
+				subfmtGroup.PUT("/:id/rules/:rid", subfmtH.UpdateRule)
+				subfmtGroup.DELETE("/:id/rules/:rid", subfmtH.DeleteRule)
+				subfmtGroup.POST("/:id/rules/sort", subfmtH.SortRules)
+			}
+
+			// Subscription Endpoints
+			subendGroup := protected.Group("/subscription-endpoints")
+			{
+				subendGroup.GET("", subendH.List)
+				subendGroup.POST("", subendH.Create)
+				subendGroup.GET("/:id", subendH.GetByID)
+				subendGroup.PUT("/:id", subendH.Update)
+				subendGroup.DELETE("/:id", subendH.Delete)
 			}
 
 			// Certificates
@@ -1022,7 +1074,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 
 	// Public subscription endpoint
-	r.GET("/sub/:token", placeholder("get subscription"))
+	r.GET("/sub/:token", publicSubH.ServeSubscription)
 
 	// Seed default cores and reconcile processes on startup
 	processMgr.SeedCores(nil)

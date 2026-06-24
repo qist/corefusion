@@ -24,6 +24,8 @@ type PublicHandler struct {
 	inboundRepo     *repository.InboundConfigRepository
 	shareDomainRepo *repository.ShareDomainConfigRepository
 	cfIPEntryRepo   *repository.CFIPEntryRepository
+	clientRepo      *repository.ClientRepository
+	planNodeRepo    *repository.PlanNodeRepository
 	accessLog       *repository.AccessLogRepository
 }
 
@@ -33,6 +35,8 @@ func NewPublicHandler(
 	inboundRepo *repository.InboundConfigRepository,
 	shareDomainRepo *repository.ShareDomainConfigRepository,
 	cfIPEntryRepo *repository.CFIPEntryRepository,
+	clientRepo *repository.ClientRepository,
+	planNodeRepo *repository.PlanNodeRepository,
 	accessLog *repository.AccessLogRepository,
 ) *PublicHandler {
 	return &PublicHandler{
@@ -40,6 +44,8 @@ func NewPublicHandler(
 		inboundRepo:     inboundRepo,
 		shareDomainRepo: shareDomainRepo,
 		cfIPEntryRepo:   cfIPEntryRepo,
+		clientRepo:      clientRepo,
+		planNodeRepo:    planNodeRepo,
 		accessLog:       accessLog,
 	}
 }
@@ -79,13 +85,54 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"code": "SUBSCRIPTION_NOT_FOUND", "message": "subscription not found"})
 		return
 	}
+
+	// Detect client language from Accept-Language header
+	lang := detectLanguage(c.GetHeader("Accept-Language"))
+
+	// Check client status first (client may be suspended while subscription is still active)
+	if sub.ClientID > 0 && h.clientRepo != nil {
+		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
+			switch cl.Status {
+			case "suspended":
+				c.Header("Content-Type", "text/plain; charset=utf-8")
+				c.String(http.StatusForbidden, t(lang, "suspended"))
+				return
+			case "expired":
+				c.Header("Content-Type", "text/plain; charset=utf-8")
+				c.String(http.StatusForbidden, t(lang, "expired"))
+				return
+			}
+		}
+	}
+
 	if sub.Status != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"code": "SUBSCRIPTION_INACTIVE", "message": "subscription is " + sub.Status})
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.String(http.StatusForbidden, t(lang, "inactive"))
 		return
 	}
 
 	shareDomains := h.loadShareDomains(ctx)
-	links := h.collectShareLinks(ctx, shareDomains)
+
+	// Get allowed inbound IDs from client's plan and client email
+	var allowedInboundIDs map[int64]bool
+	var clientEmail string
+	if sub.ClientID > 0 && h.clientRepo != nil {
+		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
+			clientEmail = cl.Email
+			if cl.PlanID > 0 && h.planNodeRepo != nil {
+				if nodes, err := h.planNodeRepo.ListByPlanID(ctx, cl.PlanID); err == nil {
+					allowedInboundIDs = make(map[int64]bool)
+					for _, n := range nodes {
+						if n.Enabled {
+							allowedInboundIDs[n.InboundConfigID] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
 
 	// Format output
 	formatStr := sub.Format
@@ -104,17 +151,17 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		data = []byte(strings.Join(links, "\n"))
 	case formatter.FormatMihomoYAML:
 		f := formatter.GetFormatter(formatter.FormatMihomoYAML)
-		nodes := h.collectFormatterNodes(ctx, shareDomains)
+		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	case formatter.FormatSingBoxJSON:
 		f := formatter.GetFormatter(formatter.FormatSingBoxJSON)
-		nodes := h.collectFormatterNodes(ctx, shareDomains)
+		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	case formatter.FormatXrayJSON:
 		f := formatter.GetFormatter(formatter.FormatXrayJSON)
-		nodes := h.collectFormatterNodes(ctx, shareDomains)
+		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	default:
@@ -145,7 +192,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 }
 
 // collectShareLinks generates share link URIs using the sharelink package.
-func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []shareDomainEntry) []string {
+func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []shareDomainEntry, allowedInboundIDs map[int64]bool, clientEmail string) []string {
 	var links []string
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
@@ -155,6 +202,10 @@ func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []sh
 		}
 		for _, cfg := range configs {
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
+				continue
+			}
+			// Filter by plan nodes if client has a plan
+			if allowedInboundIDs != nil && !allowedInboundIDs[cfg.ID] {
 				continue
 			}
 			var config map[string]interface{}
@@ -169,12 +220,24 @@ func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []sh
 
 			host, port := resolveHostPort(config, cfg.Listen, cfg.Port, shareDomains)
 
+			// Find the specific client's credentials for this subscription
+			settings := getMap(config, "settings")
+			if clientEmail != "" {
+				if userClient := findClientByEmail(settings, clientEmail, cfg.Tag); userClient != nil {
+					// Create a settings map with only this client
+					settings = map[string]interface{}{
+						"clients":    []interface{}{userClient},
+						"encryption": getString(settings, "encryption", "none"),
+					}
+				}
+			}
+
 			node := sharelink.Node{
 				Tag:            cfg.Tag,
 				Protocol:       cfg.Protocol,
 				Host:           host,
 				Port:           port,
-				Settings:       getMap(config, "settings"),
+				Settings:       settings,
 				StreamSettings: getMap(config, "streamSettings"),
 				FinalMask:      getFinalMask(config),
 			}
@@ -189,7 +252,7 @@ func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []sh
 }
 
 // collectFormatterNodes collects nodes for the formatter (used by singbox/xray/mihomo formats).
-func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains []shareDomainEntry) []formatter.Node {
+func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains []shareDomainEntry, allowedInboundIDs map[int64]bool, clientEmail string) []formatter.Node {
 	var nodes []formatter.Node
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
@@ -199,6 +262,10 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 		}
 		for _, cfg := range configs {
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
+				continue
+			}
+			// Filter by plan nodes if client has a plan
+			if allowedInboundIDs != nil && !allowedInboundIDs[cfg.ID] {
 				continue
 			}
 			var config map[string]interface{}
@@ -211,14 +278,38 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			}
 
 			host, port := resolveHostPort(config, cfg.Listen, cfg.Port, shareDomains)
-			clients := getSettingsClients(config)
+			settings := getMap(config, "settings")
 			var uuid, password, flow, method string
-			if len(clients) > 0 {
-				c := clients[0]
-				uuid, _ = c["id"].(string)
-				password, _ = c["password"].(string)
-				flow, _ = c["flow"].(string)
-				method, _ = c["method"].(string)
+
+			// Find the specific client's credentials for this subscription
+			if clientEmail != "" {
+				if userClient := findClientByEmail(settings, clientEmail, cfg.Tag); userClient != nil {
+					uuid, _ = userClient["id"].(string)
+					password, _ = userClient["password"].(string)
+					flow, _ = userClient["flow"].(string)
+					method, _ = userClient["method"].(string)
+					// Hysteria uses "auth" field instead of "password"
+					if cfg.Protocol == "hysteria" {
+						if auth, ok := userClient["auth"].(string); ok && auth != "" {
+							password = auth
+						}
+					}
+				}
+			} else {
+				// Fallback to first client if no email specified
+				clients := getSettingsClients(config)
+				if len(clients) > 0 {
+					c := clients[0]
+					uuid, _ = c["id"].(string)
+					password, _ = c["password"].(string)
+					flow, _ = c["flow"].(string)
+					method, _ = c["method"].(string)
+					if cfg.Protocol == "hysteria" {
+						if auth, ok := c["auth"].(string); ok && auth != "" {
+							password = auth
+						}
+					}
+				}
 			}
 
 			ss := getMap(config, "streamSettings")
@@ -414,6 +505,42 @@ func getString(m map[string]interface{}, key, def string) string {
 	return v
 }
 
+// findClientByEmail finds a specific client entry in the inbound config by matching the email pattern.
+// The email pattern is: {client_email}_{tag_prefix}
+func findClientByEmail(settings map[string]interface{}, clientEmail, tag string) map[string]interface{} {
+	if settings == nil {
+		return nil
+	}
+	// Generate the expected inbound email (same logic as service/client/inbound_manager.go)
+	inboundEmail := generateInboundEmail(clientEmail, tag)
+
+	for _, key := range []string{"clients", "users"} {
+		arr, ok := settings[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, u := range arr {
+			user, ok := u.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if user["email"] == inboundEmail {
+				return user
+			}
+		}
+	}
+	return nil
+}
+
+// generateInboundEmail creates a unique email per inbound (mirrors service/client/inbound_manager.go).
+func generateInboundEmail(baseEmail, tag string) string {
+	parts := strings.Split(tag, "-")
+	if len(parts) >= 3 {
+		return fmt.Sprintf("%s_%s%s", baseEmail, parts[1], parts[len(parts)-1])
+	}
+	return fmt.Sprintf("%s_%s", baseEmail, tag)
+}
+
 func getSettingsClients(config map[string]interface{}) []map[string]interface{} {
 	settings := getMap(config, "settings")
 	if settings == nil {
@@ -492,4 +619,64 @@ func formatSubscriptionInfo(sub *entity.Subscription) string {
 		expires = sub.ExpiresAt.Unix()
 	}
 	return fmt.Sprintf("upload=%d; download=0; total=%d; expires=%d", upload, total, expires)
+}
+
+// --- i18n ---
+
+var messages = map[string]map[string]string{
+	"zh": {
+		"suspended": "订阅已暂停 - 流量已用完，请联系客服续费",
+		"expired":   "订阅已到期 - 请续费后使用",
+		"inactive":  "订阅未激活",
+	},
+	"en": {
+		"suspended": "Subscription suspended - Traffic exhausted, please contact support",
+		"expired":   "Subscription expired - Please renew",
+		"inactive":  "Subscription inactive",
+	},
+	"ja": {
+		"suspended": "サブスペンション停止 - トラフィック使い切り、サポートにお問い合わせください",
+		"expired":   "サブスペンション期限切れ - 更新してください",
+		"inactive":  "サブスペンション未アクティブ",
+	},
+	"ko": {
+		"suspended": "구독 일시 중지 - 트래픽 소진, 고객센터에 문의하세요",
+		"expired":   "구독 만료 - 갱신해 주세요",
+		"inactive":  "구독 비활성",
+	},
+	"ru": {
+		"suspended": "Подписка приостановлена - Трафик исчерпан, обратитесь в поддержку",
+		"expired":   "Подписка истекла - Продлите подписку",
+		"inactive":  "Подписка не активна",
+	},
+}
+
+// detectLanguage detects language from Accept-Language header.
+func detectLanguage(acceptLang string) string {
+	if acceptLang == "" {
+		return "en"
+	}
+	// Check for zh, ja, ko, ru prefix
+	for _, lang := range []string{"zh", "ja", "ko", "ru"} {
+		if len(acceptLang) >= 2 && acceptLang[:2] == lang {
+			return lang
+		}
+	}
+	return "en"
+}
+
+// t returns translated message for the given language and key.
+func t(lang, key string) string {
+	if msgs, ok := messages[lang]; ok {
+		if msg, ok := msgs[key]; ok {
+			return msg
+		}
+	}
+	// Fallback to English
+	if msgs, ok := messages["en"]; ok {
+		if msg, ok := msgs[key]; ok {
+			return msg
+		}
+	}
+	return key
 }

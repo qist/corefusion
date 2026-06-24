@@ -76,6 +76,7 @@ const menuItems = [
   { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link' },
   { path: '/subscription-formats', title: 'menu.subscriptionFormats', icon: 'Document' },
   { path: '/subscription-endpoints', title: 'menu.subscriptionEndpoints', icon: 'Link' },
+  { path: '/clients', title: 'menu.clients', icon: 'User' },
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
   { path: '/users', title: 'menu.users', icon: 'User' },
   { path: '/proxy', title: 'menu.proxy', icon: 'Monitor' },

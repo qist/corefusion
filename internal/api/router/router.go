@@ -28,6 +28,7 @@ import (
 	subsHandler "corefusion/internal/api/handlers/subscriptions"
 	subfmtHandler "corefusion/internal/api/handlers/subformat"
 	subendHandler "corefusion/internal/api/handlers/subendpoint"
+	clientHandler "corefusion/internal/api/handlers/client"
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
@@ -53,6 +54,7 @@ import (
 	subService "corefusion/internal/service/subscription"
 	subfmtSvc "corefusion/internal/service/subformat"
 	subendSvc "corefusion/internal/service/subendpoint"
+	clientSvc "corefusion/internal/service/client"
 	systemSvc "corefusion/internal/service/system"
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
@@ -164,6 +166,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subfmtRuleRepo := repository.NewSubscriptionRuleRepository(database)
 	subendRepo := repository.NewSubscriptionEndpointRepository(database)
 	shareDomainRepo := repository.NewShareDomainConfigRepository(database)
+	planRepo := repository.NewPlanRepository(database)
+	planNodeRepo := repository.NewPlanNodeRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	coreConfigRepo := repository.NewCoreConfigRepository(database)
 	coreConfigSvc := coreconfigSvc.NewService(coreConfigRepo)
@@ -253,6 +258,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 	})
 
+	// Client service
+	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, "8080", jwtSecret)
+	clientSvcInst := clientSvc.NewService(clientRepo, planRepo, planNodeRepo, subRepo, inboundConfigRepo, inboundMgr)
+
 	// Start rule sync scheduler
 	geoRuleScheduler.Start()
 
@@ -266,7 +275,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subfmtH := subfmtHandler.NewHandler(subfmtSvcInst)
 	subendH := subendHandler.NewHandler(subendSvcInst)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, accessLogRepo)
+	clientH := clientHandler.NewHandler(clientSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
 	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 	coreConfigH.SetProcessManager(processMgr)
@@ -741,6 +751,31 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subendGroup.GET("/:id", subendH.GetByID)
 				subendGroup.PUT("/:id", subendH.Update)
 				subendGroup.DELETE("/:id", subendH.Delete)
+			}
+
+			// Plans
+			plansGroup := protected.Group("/plans")
+			{
+				plansGroup.GET("", clientH.ListPlans)
+				plansGroup.POST("", clientH.CreatePlan)
+				plansGroup.GET("/:id", clientH.GetPlan)
+				plansGroup.PUT("/:id", clientH.UpdatePlan)
+				plansGroup.DELETE("/:id", clientH.DeletePlan)
+				plansGroup.POST("/:id/nodes", clientH.AddPlanNode)
+				plansGroup.DELETE("/:id/nodes/:nid", clientH.DeletePlanNode)
+			}
+
+			// Clients
+			clientsGroup := protected.Group("/clients")
+			{
+				clientsGroup.GET("", clientH.ListClients)
+				clientsGroup.POST("", clientH.CreateClient)
+				clientsGroup.GET("/:id", clientH.GetClient)
+				clientsGroup.PUT("/:id", clientH.UpdateClient)
+				clientsGroup.DELETE("/:id", clientH.DeleteClient)
+				clientsGroup.POST("/:id/suspend", clientH.SuspendClient)
+				clientsGroup.POST("/:id/restore", clientH.RestoreClient)
+				clientsGroup.POST("/:id/reset-usage", clientH.ResetUsage)
 			}
 
 			// Certificates
@@ -1253,6 +1288,9 @@ func isSPARoute(path string) bool {
 		"/protocols",
 		"/services",
 		"/subscriptions",
+		"/subscription-formats",
+		"/subscription-endpoints",
+		"/clients",
 		"/certificates",
 		"/users",
 		"/proxy",

@@ -119,6 +119,11 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Subscription Endpoints
 		&entity.SubscriptionEndpoint{},
+
+		// Plans & Clients
+		&entity.Plan{},
+		&entity.PlanNode{},
+		&entity.Client{},
 	}
 
 	for _, model := range models {

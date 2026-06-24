@@ -37,6 +37,7 @@ const routes = [
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('../views/Subscriptions.vue'), meta: { title: '订阅管理', icon: 'Link' } },
       { path: 'subscription-formats', name: 'SubscriptionFormats', component: () => import('../views/SubscriptionFormats.vue'), meta: { title: 'subfmt.title', icon: 'Document' } },
       { path: 'subscription-endpoints', name: 'SubscriptionEndpoints', component: () => import('../views/SubscriptionEndpoints.vue'), meta: { title: 'subend.title', icon: 'Link' } },
+      { path: 'clients', name: 'Clients', component: () => import('../views/Clients.vue'), meta: { title: 'client.title', icon: 'User' } },
       { path: 'certificates', name: 'Certificates', component: () => import('../views/Certificates.vue'), meta: { title: '证书管理', icon: 'Lock' } },
       { path: 'users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', icon: 'User' } },
       { path: 'proxy', name: 'Proxy', component: () => import('../views/Proxy.vue'), meta: { title: '代理管理', icon: 'Monitor' } },

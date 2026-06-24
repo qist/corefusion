@@ -1099,7 +1099,8 @@
             </template>
           </el-form>
 
-          <!-- Port Hopping -->
+          <!-- Port Hopping (Hysteria only) -->
+          <template v-if="rf.protocol === 'hysteria'">
           <el-divider content-position="left">Port Hopping</el-divider>
           <el-form label-width="140px" label-position="left">
             <el-form-item label="Enable">
@@ -1143,6 +1144,7 @@
               </el-form-item>
             </template>
           </el-form>
+          </template>
 
           <!-- RAW Settings -->
           <template v-if="rf.streamSettings.network === 'raw'">
@@ -1817,14 +1819,27 @@
               <template v-if="entry.type === 'mkcp-legacy'">
                 <el-form label-width="140px" label-position="left" size="small">
                   <el-form-item :label="t('protoCenter.finalmask.header')">
-                    <el-select v-model="entry.settings.header" style="width:100%" clearable @change="emit">
-                      <el-option :label="t('protoCenter.finalmask.headerDefault')" value="" /><el-option label="dns" value="dns" /><el-option label="dtls" value="dtls" />
-                      <el-option label="srtp" value="srtp" /><el-option label="utp" value="utp" />
-                      <el-option label="wechat" value="wechat" /><el-option label="wireguard" value="wireguard" />
+                    <el-select v-model="entry.settings.header" style="width:100%" clearable @change="onMkcpHeaderChange(entry)">
+                      <el-option :label="t('protoCenter.finalmask.headerDefault')" value="" />
+                      <el-option label="dns" value="dns" />
+                      <el-option label="dtls" value="dtls" />
+                      <el-option label="srtp" value="srtp" />
+                      <el-option label="utp" value="utp" />
+                      <el-option label="wechat" value="wechat" />
+                      <el-option label="wireguard" value="wireguard" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item :label="t('protoCenter.finalmask.value')">
-                    <el-input v-model="entry.settings.value" @change="emit" />
+                  <!-- AES-128-GCM: show key input with generate button -->
+                  <el-form-item v-if="!entry.settings.header" :label="t('protoCenter.finalmask.value')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings.value" placeholder="AES-128-GCM key (empty = xor)" @change="emit" />
+                      <el-button size="small" @click="entry.settings.value = genAES128Key(); emit()">Generate</el-button>
+                    </div>
+                    <div class="hint">AES-128-GCM key, empty = default xor obfuscation</div>
+                  </el-form-item>
+                  <!-- dns: show domain input -->
+                  <el-form-item v-if="entry.settings.header === 'dns'" :label="t('protoCenter.finalmask.value')">
+                    <el-input v-model="entry.settings.value" placeholder="www.baidu.com" @change="emit" />
                     <div class="hint">{{ t('protoCenter.finalmask.valueHint') }}</div>
                   </el-form-item>
                 </el-form>
@@ -2600,6 +2615,10 @@ function serializeFinalMask(finalmask) {
       Object.keys(settings).forEach(k => {
         if (k.startsWith('_')) delete settings[k]
       })
+      // Ensure mkcp-legacy always has header field
+      if (e.type === 'mkcp-legacy' && !('header' in settings)) {
+        settings.header = ''
+      }
       return { type: e.type, settings }
     })
     if (udp.length) data.udp = udp
@@ -2646,7 +2665,7 @@ function generateVmessLink(ib, user, host, port, remark) {
     id: user.id || '',
     aid: user.alterId || 0,
     scy: user.security || 'auto',
-    net: network,
+    net: network === 'mkcp' ? 'kcp' : network,
     type: 'none',
     host: '',
     path: '',
@@ -2668,6 +2687,19 @@ function generateVmessLink(ib, user, host, port, remark) {
     const kcp = ib.streamSettings?.kcp || {}
     obj.mtu = kcp.mtu || 1350
     obj.tti = kcp.tti || 50
+    // Read from FinalMask mkcp-legacy if enabled
+    const finalmask = ib.finalmask || {}
+    if (finalmask._enabled && finalmask.udp?.length) {
+      const mkcpLegacy = finalmask.udp.find(m => m.type === 'mkcp-legacy')
+      if (mkcpLegacy?.settings) {
+        if (mkcpLegacy.settings.header) {
+          obj.headerType = mkcpLegacy.settings.header
+        }
+        if (mkcpLegacy.settings.value) {
+          obj.seed = mkcpLegacy.settings.value
+        }
+      }
+    }
   } else if (network === 'ws') {
     const ws = ib.streamSettings?.ws || {}
     obj.path = ws.path || '/'
@@ -2707,6 +2739,7 @@ function generateVmessLink(ib, user, host, port, remark) {
     obj.fp = tls.fingerprint || ''
     if (tls.echConfigList) obj.ech = tls.echConfigList
     if (tls._verifyPeerCertByName) obj.vcn = tls._verifyPeerCertByName
+    if (tls._pinnedPeerCertSha256) obj.pcs = tls._pinnedPeerCertSha256
   }
 
   // FinalMask
@@ -2727,7 +2760,7 @@ function generateVlessLink(ib, user, host, port, remark) {
   const security = ib.streamSettings?.security || 'none'
 
   const params = new URLSearchParams()
-  params.set('type', network)
+  params.set('type', network === 'mkcp' ? 'kcp' : network)
   params.set('encryption', encryption)
 
   // Network-specific params
@@ -2743,6 +2776,15 @@ function generateVlessLink(ib, user, host, port, remark) {
     const kcp = ib.streamSettings?.kcp || {}
     params.set('mtu', String(kcp.mtu || 1350))
     params.set('tti', String(kcp.tti || 50))
+    // Read from FinalMask mkcp-legacy if enabled
+    const fm = ib.finalmask || {}
+    if (fm._enabled && fm.udp?.length) {
+      const mkcpLegacy = fm.udp.find(m => m.type === 'mkcp-legacy')
+      if (mkcpLegacy?.settings) {
+        if (mkcpLegacy.settings.header) params.set('headerType', mkcpLegacy.settings.header)
+        if (mkcpLegacy.settings.value) params.set('seed', mkcpLegacy.settings.value)
+      }
+    }
   } else if (network === 'ws') {
     const ws = ib.streamSettings?.ws || {}
     params.set('path', ws.path || '/')
@@ -2782,6 +2824,7 @@ function generateVlessLink(ib, user, host, port, remark) {
     if (tls.serverName) params.set('sni', tls.serverName)
     if (tls.echConfigList) params.set('ech', tls.echConfigList)
     if (tls._verifyPeerCertByName) params.set('vcn', tls._verifyPeerCertByName)
+    if (tls._pinnedPeerCertSha256) params.set('pcs', tls._pinnedPeerCertSha256)
   } else if (security === 'reality') {
     params.set('security', 'reality')
     const reality = ib.streamSettings?.reality || {}
@@ -2798,6 +2841,7 @@ function generateVlessLink(ib, user, host, port, remark) {
       if (sid) params.set('sid', sid)
     }
     if (reality._mldsa65Verify) params.set('pqv', reality._mldsa65Verify)
+    if (reality.spiderX) params.set('spx', reality.spiderX)
   } else {
     params.set('security', 'none')
   }
@@ -2845,7 +2889,7 @@ function generateTrojanLink(ib, user, host, port, remark) {
   const security = ib.streamSettings?.security || 'tls'
 
   const params = new URLSearchParams()
-  params.set('type', network)
+  params.set('type', network === 'mkcp' ? 'kcp' : network)
 
   // Network-specific params
   if (network === 'tcp' || network === 'raw') {
@@ -2860,6 +2904,15 @@ function generateTrojanLink(ib, user, host, port, remark) {
     const kcp = ib.streamSettings?.kcp || {}
     params.set('mtu', String(kcp.mtu || 1350))
     params.set('tti', String(kcp.tti || 50))
+    // Read from FinalMask mkcp-legacy if enabled
+    const fm = ib.finalmask || {}
+    if (fm._enabled && fm.udp?.length) {
+      const mkcpLegacy = fm.udp.find(m => m.type === 'mkcp-legacy')
+      if (mkcpLegacy?.settings) {
+        if (mkcpLegacy.settings.header) params.set('headerType', mkcpLegacy.settings.header)
+        if (mkcpLegacy.settings.value) params.set('seed', mkcpLegacy.settings.value)
+      }
+    }
   } else if (network === 'ws') {
     const ws = ib.streamSettings?.ws || {}
     params.set('path', ws.path || '/')
@@ -2898,6 +2951,7 @@ function generateTrojanLink(ib, user, host, port, remark) {
     if (tls.serverName) params.set('sni', tls.serverName)
     if (tls.echConfigList) params.set('ech', tls.echConfigList)
     if (tls._verifyPeerCertByName) params.set('vcn', tls._verifyPeerCertByName)
+    if (tls._pinnedPeerCertSha256) params.set('pcs', tls._pinnedPeerCertSha256)
   } else if (security === 'reality') {
     params.set('security', 'reality')
     const reality = ib.streamSettings?.reality || {}
@@ -2914,6 +2968,7 @@ function generateTrojanLink(ib, user, host, port, remark) {
       if (sid) params.set('sid', sid)
     }
     if (reality._mldsa65Verify) params.set('pqv', reality._mldsa65Verify)
+    if (reality.spiderX) params.set('spx', reality.spiderX)
   } else {
     params.set('security', 'none')
   }
@@ -2943,7 +2998,7 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
   const password = isMultiUser ? (user.password || '') : (ib.settings?.password || '')
 
   const params = new URLSearchParams()
-  params.set('type', network)
+  params.set('type', network === 'mkcp' ? 'kcp' : network)
 
   // Network-specific params
   if (network === 'tcp' || network === 'raw') {
@@ -2958,6 +3013,15 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
     const kcp = ib.streamSettings?.kcp || {}
     params.set('mtu', String(kcp.mtu || 1350))
     params.set('tti', String(kcp.tti || 50))
+    // Read from FinalMask mkcp-legacy if enabled
+    const fm = ib.finalmask || {}
+    if (fm._enabled && fm.udp?.length) {
+      const mkcpLegacy = fm.udp.find(m => m.type === 'mkcp-legacy')
+      if (mkcpLegacy?.settings) {
+        if (mkcpLegacy.settings.header) params.set('headerType', mkcpLegacy.settings.header)
+        if (mkcpLegacy.settings.value) params.set('seed', mkcpLegacy.settings.value)
+      }
+    }
   } else if (network === 'ws') {
     const ws = ib.streamSettings?.ws || {}
     params.set('path', ws.path || '/')
@@ -3410,6 +3474,7 @@ async function genWgKeyPair() {
 function genUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8); return v.toString(16) }) }
 function genPassword() { const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < 12; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
 function genBase64Password() { const bytes = new Uint8Array(32); crypto.getRandomValues(bytes); return btoa(String.fromCharCode(...bytes)) }
+function genAES128Key() { const bytes = new Uint8Array(16); crypto.getRandomValues(bytes); return btoa(String.fromCharCode(...bytes)) }
 function isSS2022(method) { return method && method.startsWith('2022') }
 function isSSMultiUser(method) {
   // Only 2022-blake3-aes-*-gcm support multi-user
@@ -3966,11 +4031,25 @@ function onMaskTypeChange(entry, protocol) {
   if (entry.type === 'fragment') entry.settings = { packets: 'tlshello', length: '100-200', delay: '', maxSplit: '' }
   if (entry.type === 'sudoku') entry.settings = { password: genPassword(), ascii: '', customTable: '', _customTablesStr: '', paddingMin: 0, paddingMax: 0 }
   if (entry.type === 'salamander') entry.settings = { password: genPassword(), _gecko: false, _geckoMin: 512, _geckoMax: 1200 }
-  if (entry.type === 'mkcp-legacy') entry.settings = { header: '', value: '' }
+  if (entry.type === 'mkcp-legacy') entry.settings = { header: '', value: genAES128Key() }
   if (entry.type === 'noise') entry.settings = { reset: 0, _noise: [newNoiseItem()] }
   if (entry.type === 'xdns') entry.settings = { _domainsStr: '', _resolversStr: '' }
   if (entry.type === 'xicmp') entry.settings = { dgram: false, _ipsStr: '' }
   if (entry.type === 'realm') entry.settings = { url: '', _stunServersStr: '', _tlsServerName: '', _tlsAlpn: [], _tlsFingerprint: '', _tlsAllowInsecure: false }
+}
+
+function onMkcpHeaderChange(entry) {
+  // Clear value when header changes
+  if (entry.settings.header === 'dns') {
+    entry.settings.value = 'www.baidu.com'
+  } else if (!entry.settings.header) {
+    // Default (AES-128-GCM): generate new key
+    entry.settings.value = genAES128Key()
+  } else {
+    // dtls, srtp, utp, wechat, wireguard: clear value
+    entry.settings.value = ''
+  }
+  emit()
 }
 
 function onQuicUdpHopToggle(val) {
@@ -4425,6 +4504,12 @@ function buildInbound(ib, isApiCall = false) {
           delete s._stunServersStr; delete s._tlsServerName; delete s._tlsAlpn; delete s._tlsFingerprint; delete s._tlsAllowInsecure
         }
         if (e.type === 'sudoku' && s._customTablesStr) { s.customTables = s._customTablesStr.split('\n').map(d => d.trim()).filter(Boolean); delete s._customTablesStr }
+        // mkcp-legacy: preserve header field even when empty
+        if (e.type === 'mkcp-legacy') {
+          const header = s.header || ''
+          const value = s.value || ''
+          return { type: 'mkcp-legacy', settings: { header, value } }
+        }
         return { type: e.type, settings: cleanInternal(s) }
       })
     }

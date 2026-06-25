@@ -235,8 +235,12 @@ func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []sh
 				}
 			}
 
+			nodeName := cfg.Remark
+			if nodeName == "" {
+				nodeName = cfg.Tag
+			}
 			node := sharelink.Node{
-				Tag:            cfg.Tag,
+				Tag:            nodeName,
 				Protocol:       cfg.Protocol,
 				Host:           host,
 				Port:           port,
@@ -316,8 +320,12 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			}
 
 			ss := getMap(config, "streamSettings")
+			nodeName := cfg.Remark
+			if nodeName == "" {
+				nodeName = cfg.Tag
+			}
 			node := formatter.Node{
-				Name:       cfg.Tag,
+				Name:       nodeName,
 				Protocol:   cfg.Protocol,
 				Host:       host,
 				Port:       port,

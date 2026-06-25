@@ -4886,6 +4886,14 @@ function showAdd() {
   rf.sniffing = d.sniffing
   rf.sockopt = JSON.parse(JSON.stringify(d.sockopt))
   rf.finalmask = JSON.parse(JSON.stringify(d.finalmask))
+  rf._accessDomainEnabled = d._accessDomainEnabled || false
+  rf._accessDomainType = d._accessDomainType || 'direct'
+  rf._directDomain = d._directDomain || ''
+  rf._directPortMode = d._directPortMode || 'config'
+  rf._cfDomain = d._cfDomain || ''
+  rf._cfIP = d._cfIP || ''
+  rf._customDomain = d._customDomain || ''
+  rf._accessCustomPort = d._accessCustomPort || 443
   rf._fallbackEnabled = d._fallbackEnabled || false
   rf.fallbacks = JSON.parse(JSON.stringify(d.fallbacks || []))
   rf._wgAddressesStr = d._wgAddressesStr
@@ -5093,7 +5101,12 @@ async function loadInbounds() {
     const data = await client.get('/inbound-configs', { params: { core_type: props.coreType || 'xray' } })
     form.value = (data || []).map(item => {
       const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
-      return { ...parseInbound(cfg), _id: item.id, _enabled: item.enabled }
+      const parsed = parseInbound(cfg)
+      // Use remark from API response (stored separately in DB)
+      if (item.remark) {
+        parsed._remark = item.remark
+      }
+      return { ...parsed, _id: item.id, _enabled: item.enabled }
     })
   } catch { form.value = [] }
 }

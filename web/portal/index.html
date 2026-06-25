@@ -99,24 +99,39 @@
         </div>
       </div>
 
-      <!-- Subscription (only show when active and has token) -->
-      <div class="card" v-if="client.status === 'active' && client.sub_token">
+      <!-- Subscription -->
+      <div class="card" v-if="client.sub_token">
         <div class="card-title">订阅信息</div>
-        <div class="info-row">
-          <span class="info-label">订阅链接</span>
+
+        <!-- Revoked status -->
+        <div v-if="client.sub_status === 'revoked'" style="text-align:center;padding:16px 0">
+          <p style="color:#f56c6c;margin-bottom:8px">订阅已吊销</p>
+          <p style="color:#909399;font-size:12px">请联系管理员重新分配</p>
         </div>
-        <div class="sub-link">
-          {{ subUrl }}
-          <div style="float:right;display:flex;gap:4px">
-            <el-button size="small" text @click="copyText(subUrl)">复制</el-button>
-            <el-button size="small" text @click="showQr = !showQr">{{ showQr ? '隐藏' : '二维码' }}</el-button>
+
+        <!-- Active subscription -->
+        <template v-else>
+          <div class="info-row">
+            <span class="info-label">订阅链接</span>
           </div>
-        </div>
-        <div v-if="showQr && qrCodeUrl" style="text-align:center;margin:16px 0">
-          <img :src="qrCodeUrl" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
-          <div style="font-size:12px;color:#909399;margin-top:8px">扫码导入订阅</div>
-        </div>
+          <div class="sub-link">
+            {{ subUrl }}
+            <div style="float:right;display:flex;gap:4px">
+              <el-button size="small" text @click="copyText(subUrl)">复制</el-button>
+              <el-button size="small" text @click="showQr = !showQr">{{ showQr ? '隐藏' : '二维码' }}</el-button>
+            </div>
+          </div>
+          <div v-if="showQr && qrCodeUrl" style="text-align:center;margin:16px 0">
+            <img :src="qrCodeUrl" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
+            <div style="font-size:12px;color:#909399;margin-top:8px">扫码导入订阅</div>
+          </div>
+        </template>
+
         <div class="info-row" style="margin-top: 12px">
+          <span class="info-label">订阅状态</span>
+          <span class="info-value" :style="{color: client.sub_status === 'active' ? '#67c23a' : '#f56c6c'}">{{ subStatusText }}</span>
+        </div>
+        <div class="info-row">
           <span class="info-label">最后使用</span>
           <span class="info-value">{{ client.last_node_usage_at ? formatDate(client.last_node_usage_at) : '未使用' }}</span>
         </div>
@@ -155,7 +170,7 @@
       <!-- Actions -->
       <div class="card">
         <div class="card-title">操作</div>
-        <el-button v-if="client.status === 'active' && client.sub_token" type="warning" size="small" @click="rotateToken" :loading="rotating">轮换订阅 Token</el-button>
+        <el-button v-if="client.status === 'active' && client.sub_token && client.sub_status === 'active'" type="warning" size="small" @click="rotateToken" :loading="rotating">轮换订阅 Token</el-button>
         <el-button size="small" @click="showPasswordDialog = true">修改密码</el-button>
         <el-button type="danger" size="small" @click="handleLogout">退出登录</el-button>
       </div>
@@ -320,6 +335,7 @@
         const usagePercent = computed(() => client.value.quota_bytes > 0 ? Math.min(100, Math.round(client.value.used_bytes / client.value.quota_bytes * 100)) : 0)
         const usageColor = computed(() => usagePercent.value > 80 ? '#f56c6c' : '#409eff')
         const statusText = computed(() => ({ active: '正常', suspended: '已暂停', expired: '已过期' }[client.value.status] || client.value.status))
+        const subStatusText = computed(() => ({ active: '正常', revoked: '已吊销', expired: '已过期', suspended: '已暂停' }[client.value.sub_status] || client.value.sub_status || '-'))
         const endpoints = ref([])
         const showQr = ref(false)
         const registrationEnabled = ref(false)
@@ -364,7 +380,7 @@
 
         onMounted(() => { fetchRegistrationSetting(); if (token.value) { fetchMe(); fetchEndpoints() } })
 
-        return { token, authTab, loading, rotating, showPasswordDialog, showQr, registrationEnabled, loginForm, registerForm, pwdForm, settings, client, endpoints, handleLogin, handleRegister, rotateToken, saveSettings, changePassword, handleLogout, copyText, formatBytes, formatDate, usagePercent, usageColor, statusText, subUrl, qrCodeUrl }
+        return { token, authTab, loading, rotating, showPasswordDialog, showQr, registrationEnabled, loginForm, registerForm, pwdForm, settings, client, endpoints, handleLogin, handleRegister, rotateToken, saveSettings, changePassword, handleLogout, copyText, formatBytes, formatDate, usagePercent, usageColor, statusText, subStatusText, subUrl, qrCodeUrl }
       }
     })
 

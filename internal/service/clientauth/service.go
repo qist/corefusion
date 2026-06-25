@@ -63,20 +63,21 @@ type TokenResponse struct {
 
 // ClientInfo is the public client info.
 type ClientInfo struct {
-	ID           int64      `json:"id"`
-	Email        string     `json:"email"`
-	PlanID       int64      `json:"plan_id"`
-	PlanName     string     `json:"plan_name"`
-	Status       string     `json:"status"`
-	QuotaBytes   int64      `json:"quota_bytes"`
-	UsedBytes    int64      `json:"used_bytes"`
-	ExpiresAt    *time.Time `json:"expires_at"`
-	IPWhitelist  string     `json:"ip_whitelist"`
-	DeviceLimit  int        `json:"device_limit"`
-	SubToken     string     `json:"sub_token"`
-	SubUpdatedAt *time.Time `json:"sub_updated_at"`
+	ID              int64      `json:"id"`
+	Email           string     `json:"email"`
+	PlanID          int64      `json:"plan_id"`
+	PlanName        string     `json:"plan_name"`
+	Status          string     `json:"status"`
+	QuotaBytes      int64      `json:"quota_bytes"`
+	UsedBytes       int64      `json:"used_bytes"`
+	ExpiresAt       *time.Time `json:"expires_at"`
+	IPWhitelist     string     `json:"ip_whitelist"`
+	DeviceLimit     int        `json:"device_limit"`
+	SubToken        string     `json:"sub_token"`
+	SubStatus       string     `json:"sub_status"`
+	SubUpdatedAt    *time.Time `json:"sub_updated_at"`
 	LastNodeUsageAt *time.Time `json:"last_node_usage_at"`
-	CreatedAt    time.Time  `json:"created_at"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // Register creates a new client account.
@@ -154,10 +155,11 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 		}
 	}
 
-	// Get subscription token
+	// Get subscription token and status
 	if client.SubscriptionID != nil {
 		if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
 			info.SubToken = sub.Token
+			info.SubStatus = sub.Status
 		}
 	}
 

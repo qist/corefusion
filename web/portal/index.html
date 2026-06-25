@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>订阅管理</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; min-height: 100vh; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .card-title { font-size: 14px; color: #909399; margin-bottom: 12px; }
+    .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #606266; font-size: 14px; }
+    .info-value { color: #303133; font-size: 14px; font-weight: 500; }
+    .status-active { color: #67c23a; }
+    .status-suspended { color: #f56c6c; }
+    .header { text-align: center; padding: 30px 0; }
+    .header h1 { font-size: 24px; color: #303133; margin-bottom: 8px; }
+    .header p { color: #909399; font-size: 14px; }
+    .btn-block { width: 100%; }
+    .sub-link { word-break: break-all; font-family: monospace; font-size: 12px; background: #f5f7fa; padding: 10px; border-radius: 6px; margin-top: 8px; }
+    .progress-info { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #909399; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Login/Register -->
+    <div v-if="!token" class="container" style="padding-top: 60px;">
+      <div class="header">
+        <h1>📡 订阅管理</h1>
+        <p>{{ registrationEnabled ? '登录或注册以管理您的订阅' : '登录以管理您的订阅' }}</p>
+      </div>
+      <div class="card">
+        <el-tabs v-model="authTab">
+          <el-tab-pane label="登录" name="login">
+            <el-form :model="loginForm" style="margin-top: 16px">
+              <el-form-item>
+                <el-input v-model="loginForm.email" placeholder="邮箱" prefix-icon="Message" />
+              </el-form-item>
+              <el-form-item>
+                <el-input v-model="loginForm.password" type="password" placeholder="密码" prefix-icon="Lock" show-password />
+              </el-form-item>
+              <el-button type="primary" class="btn-block" :loading="loading" @click="handleLogin">登录</el-button>
+            </el-form>
+          </el-tab-pane>
+          <el-tab-pane v-if="registrationEnabled" label="注册" name="register">
+            <el-form :model="registerForm" style="margin-top: 16px">
+              <el-form-item>
+                <el-input v-model="registerForm.email" placeholder="邮箱" prefix-icon="Message" />
+              </el-form-item>
+              <el-form-item>
+                <el-input v-model="registerForm.password" type="password" placeholder="密码（至少6位）" prefix-icon="Lock" show-password />
+              </el-form-item>
+              <el-button type="primary" class="btn-block" :loading="loading" @click="handleRegister">注册</el-button>
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div v-else class="container">
+      <div class="header">
+        <h1>📡 订阅管理</h1>
+        <p>{{ client.email }}</p>
+      </div>
+
+      <!-- Account Info -->
+      <div class="card">
+        <div class="card-title">账户信息</div>
+        <div class="info-row">
+          <span class="info-label">邮箱</span>
+          <span class="info-value">{{ client.email }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">套餐</span>
+          <span class="info-value">{{ client.plan_name || '未购买' }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">状态</span>
+          <span class="info-value" :class="'status-' + client.status">{{ statusText }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">到期时间</span>
+          <span class="info-value">{{ client.expires_at ? formatDate(client.expires_at) : '无限制' }}</span>
+        </div>
+      </div>
+
+      <!-- Traffic -->
+      <div class="card">
+        <div class="card-title">流量使用</div>
+        <el-progress :percentage="usagePercent" :color="usageColor" :stroke-width="20" />
+        <div class="progress-info">
+          <span>已用: {{ formatBytes(client.used_bytes) }}</span>
+          <span>总量: {{ formatBytes(client.quota_bytes) }}</span>
+        </div>
+      </div>
+
+      <!-- Subscription (only show when active and has token) -->
+      <div class="card" v-if="client.status === 'active' && client.sub_token">
+        <div class="card-title">订阅信息</div>
+        <div class="info-row">
+          <span class="info-label">订阅链接</span>
+        </div>
+        <div class="sub-link">
+          {{ subUrl }}
+          <div style="float:right;display:flex;gap:4px">
+            <el-button size="small" text @click="copyText(subUrl)">复制</el-button>
+            <el-button size="small" text @click="showQr = !showQr">{{ showQr ? '隐藏' : '二维码' }}</el-button>
+          </div>
+        </div>
+        <div v-if="showQr && qrCodeUrl" style="text-align:center;margin:16px 0">
+          <img :src="qrCodeUrl" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
+          <div style="font-size:12px;color:#909399;margin-top:8px">扫码导入订阅</div>
+        </div>
+        <div class="info-row" style="margin-top: 12px">
+          <span class="info-label">最后使用</span>
+          <span class="info-value">{{ client.last_node_usage_at ? formatDate(client.last_node_usage_at) : '未使用' }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">订阅更新</span>
+          <span class="info-value">{{ client.sub_updated_at ? formatDate(client.sub_updated_at) : '未更新' }}</span>
+        </div>
+      </div>
+
+      <!-- No subscription message -->
+      <div class="card" v-else-if="client.status === 'active' && !client.sub_token">
+        <div class="card-title">订阅信息</div>
+        <p style="color:#909399;text-align:center;padding:20px 0">暂无订阅，请联系管理员分配套餐</p>
+      </div>
+
+      <!-- Suspended message -->
+      <div class="card" v-else-if="client.status === 'suspended'">
+        <div class="card-title">订阅信息</div>
+        <p style="color:#f56c6c;text-align:center;padding:20px 0">账户已暂停，请续费后恢复使用</p>
+      </div>
+
+      <!-- Settings -->
+      <div class="card">
+        <div class="card-title">安全设置</div>
+        <el-form label-position="top" size="small">
+          <el-form-item label="IP 白名单（逗号分隔，留空不限制）">
+            <el-input v-model="settings.ip_whitelist" placeholder="例: 192.168.1.0/24,10.0.0.1" />
+          </el-form-item>
+          <el-form-item label="设备限制（0=不限制）">
+            <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
+          </el-form-item>
+          <el-button type="primary" size="small" @click="saveSettings">保存设置</el-button>
+        </el-form>
+      </div>
+
+      <!-- Actions -->
+      <div class="card">
+        <div class="card-title">操作</div>
+        <el-button v-if="client.status === 'active' && client.sub_token" type="warning" size="small" @click="rotateToken" :loading="rotating">轮换订阅 Token</el-button>
+        <el-button size="small" @click="showPasswordDialog = true">修改密码</el-button>
+        <el-button type="danger" size="small" @click="handleLogout">退出登录</el-button>
+      </div>
+    </div>
+
+    <!-- Password Dialog -->
+    <el-dialog v-model="showPasswordDialog" title="修改密码" width="400">
+      <el-form :model="pwdForm" label-width="80px">
+        <el-form-item label="旧密码"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
+        <el-form-item label="新密码"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
+        <el-form-item label="确认密码"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showPasswordDialog = false">取消</el-button>
+        <el-button type="primary" @click="changePassword">确定</el-button>
+      </template>
+    </el-dialog>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js"></script>
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue
+    const { ElMessage } = ElementPlus
+
+    const app = createApp({
+      setup() {
+        const token = ref(localStorage.getItem('client_token') || '')
+        const authTab = ref('login')
+        const loading = ref(false)
+        const rotating = ref(false)
+        const showPasswordDialog = ref(false)
+
+        const loginForm = ref({ email: '', password: '' })
+        const registerForm = ref({ email: '', password: '' })
+        const pwdForm = ref({ old_password: '', new_password: '', confirm_password: '' })
+        const settings = ref({ ip_whitelist: '', device_limit: 0 })
+        const client = ref({})
+
+        const api = async (method, path, body) => {
+          const headers = { 'Content-Type': 'application/json' }
+          if (token.value) headers['Authorization'] = 'Bearer ' + token.value
+          const res = await fetch('/api/v1/client-auth' + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.message || 'Error')
+          return data.data || data
+        }
+
+        const handleLogin = async () => {
+          loading.value = true
+          try {
+            const res = await api('POST', '/login', loginForm.value)
+            token.value = res.access_token
+            localStorage.setItem('client_token', token.value)
+            client.value = res.client || {}
+            settings.value.ip_whitelist = client.value.ip_whitelist || ''
+            settings.value.device_limit = client.value.device_limit || 0
+            ElMessage.success('登录成功')
+          } catch (e) { ElMessage.error(e.message) } finally { loading.value = false }
+        }
+
+        const handleRegister = async () => {
+          loading.value = true
+          try {
+            const res = await api('POST', '/register', registerForm.value)
+            token.value = res.access_token
+            localStorage.setItem('client_token', token.value)
+            client.value = res.client || {}
+            ElMessage.success('注册成功')
+          } catch (e) { ElMessage.error(e.message) } finally { loading.value = false }
+        }
+
+        const fetchMe = async () => {
+          try {
+            const res = await api('GET', '/me')
+            client.value = res
+            settings.value.ip_whitelist = res.ip_whitelist || ''
+            settings.value.device_limit = res.device_limit || 0
+          } catch (e) {
+            if (e.message.includes('invalid') || e.message.includes('expired')) {
+              token.value = ''
+              localStorage.removeItem('client_token')
+            }
+          }
+        }
+
+        const rotateToken = async () => {
+          rotating.value = true
+          try {
+            const res = await api('POST', '/rotate-token')
+            client.value.sub_token = res.token
+            ElMessage.success('Token 已轮换')
+          } catch (e) { ElMessage.error(e.message) } finally { rotating.value = false }
+        }
+
+        const saveSettings = async () => {
+          try {
+            await api('PUT', '/settings', settings.value)
+            ElMessage.success('设置已保存')
+          } catch (e) { ElMessage.error(e.message) }
+        }
+
+        const changePassword = async () => {
+          if (!pwdForm.value.old_password || !pwdForm.value.new_password) {
+            ElMessage.error('请填写完整')
+            return
+          }
+          if (pwdForm.value.new_password.length < 6) {
+            ElMessage.error('新密码至少6位')
+            return
+          }
+          if (pwdForm.value.new_password !== pwdForm.value.confirm_password) {
+            ElMessage.error('两次输入的密码不一致')
+            return
+          }
+          try {
+            await api('POST', '/change-password', { old_password: pwdForm.value.old_password, new_password: pwdForm.value.new_password })
+            ElMessage.success('密码已修改')
+            showPasswordDialog.value = false
+            pwdForm.value = { old_password: '', new_password: '', confirm_password: '' }
+          } catch (e) { ElMessage.error(e.message) }
+        }
+
+        const handleLogout = () => {
+          token.value = ''
+          localStorage.removeItem('client_token')
+          client.value = {}
+        }
+
+        const copyText = (text) => {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制')).catch(() => fallbackCopy(text))
+          } else {
+            fallbackCopy(text)
+          }
+        }
+
+        const fallbackCopy = (text) => {
+          const ta = document.createElement('textarea')
+          ta.value = text
+          ta.style.position = 'fixed'
+          ta.style.left = '-9999px'
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+          ElMessage.success('已复制')
+        }
+
+        const formatBytes = (b) => {
+          if (!b || b <= 0) return '0 B'
+          if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB'
+          if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB'
+          return (b / 1024).toFixed(0) + ' KB'
+        }
+
+        const formatDate = (d) => {
+          if (!d) return '-'
+          return new Date(d).toLocaleString('zh-CN')
+        }
+
+        const usagePercent = computed(() => client.value.quota_bytes > 0 ? Math.min(100, Math.round(client.value.used_bytes / client.value.quota_bytes * 100)) : 0)
+        const usageColor = computed(() => usagePercent.value > 80 ? '#f56c6c' : '#409eff')
+        const statusText = computed(() => ({ active: '正常', suspended: '已暂停', expired: '已过期' }[client.value.status] || client.value.status))
+        const endpoints = ref([])
+        const showQr = ref(false)
+        const registrationEnabled = ref(false)
+
+        const fetchEndpoints = async () => {
+          try {
+            const res = await fetch('/api/v1/public/subscription-endpoints')
+            if (res.ok) {
+              const data = await res.json()
+              endpoints.value = Array.isArray(data.data) ? data.data : []
+            }
+          } catch {}
+        }
+
+        const fetchRegistrationSetting = async () => {
+          try {
+            const res = await fetch('/api/v1/public/settings')
+            if (res.ok) {
+              const data = await res.json()
+              registrationEnabled.value = data.data?.registration_enabled === true
+            }
+          } catch {}
+        }
+
+        const subUrl = computed(() => {
+          if (!client.value.sub_token) return ''
+          const token = client.value.sub_token
+          const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
+          if (ep && ep.domain) {
+            const host = ep.domain
+            const path = ep.path || '/'
+            const basePath = path.endsWith('/') ? path : path + '/'
+            return 'https://' + host + basePath + token
+          }
+          return window.location.origin + '/sub/' + token
+        })
+
+        const qrCodeUrl = computed(() => {
+          if (!subUrl.value) return ''
+          return 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(subUrl.value)
+        })
+
+        onMounted(() => { fetchRegistrationSetting(); if (token.value) { fetchMe(); fetchEndpoints() } })
+
+        return { token, authTab, loading, rotating, showPasswordDialog, showQr, registrationEnabled, loginForm, registerForm, pwdForm, settings, client, endpoints, handleLogin, handleRegister, rotateToken, saveSettings, changePassword, handleLogout, copyText, formatBytes, formatDate, usagePercent, usageColor, statusText, subUrl, qrCodeUrl }
+      }
+    })
+
+    app.use(ElementPlus)
+    app.mount('#app')
+  </script>
+</body>
+</html>

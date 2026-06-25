@@ -29,6 +29,7 @@ import (
 	subfmtHandler "corefusion/internal/api/handlers/subformat"
 	subendHandler "corefusion/internal/api/handlers/subendpoint"
 	clientHandler "corefusion/internal/api/handlers/client"
+	clientauthHandler "corefusion/internal/api/handlers/clientauth"
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
@@ -41,6 +42,7 @@ import (
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/api/middleware"
+	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/process"
@@ -55,6 +57,7 @@ import (
 	subfmtSvc "corefusion/internal/service/subformat"
 	subendSvc "corefusion/internal/service/subendpoint"
 	clientSvc "corefusion/internal/service/client"
+	clientauthSvc "corefusion/internal/service/clientauth"
 	systemSvc "corefusion/internal/service/system"
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
@@ -268,6 +271,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
 	clientSvcInst := clientSvc.NewService(clientRepo, planRepo, planNodeRepo, subRepo, inboundConfigRepo, inboundMgr)
 
+	// Client auth service
+	clientauthSvcInst := clientauthSvc.NewService(clientRepo, planRepo, subRepo, systemSettingSvc, jwtSecret)
+
 	// Start rule sync scheduler
 	geoRuleScheduler.Start()
 
@@ -283,6 +289,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
+	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
 	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 	coreConfigH.SetProcessManager(processMgr)
@@ -1117,6 +1124,45 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Public subscription endpoint
 	r.GET("/sub/:token", publicSubH.ServeSubscription)
 
+	// Portal page
+	r.GET("/portal", func(c *gin.Context) {
+		data, err := embed.AdminFSBytes().ReadFile("dist/portal/index.html")
+		if err != nil {
+			c.Status(404)
+			return
+		}
+		c.Data(200, "text/html; charset=utf-8", data)
+	})
+
+	// Client auth (public)
+	clientAuthGroup := r.Group("/api/v1/client-auth")
+	{
+		clientAuthGroup.POST("/register", clientauthH.Register)
+		clientAuthGroup.POST("/login", clientauthH.Login)
+		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
+	}
+
+	// Public subscription endpoints (for portal)
+	r.GET("/api/v1/public/subscription-endpoints", subendH.List)
+
+	// Public settings (for portal)
+	r.GET("/api/v1/public/settings", func(c *gin.Context) {
+		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
+		response.OK(c, gin.H{
+			"registration_enabled": registrationEnabled == "true",
+		})
+	})
+
+	// Client auth (protected)
+	clientAuthProtected := r.Group("/api/v1/client-auth")
+	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
+	{
+		clientAuthProtected.GET("/me", clientauthH.GetMe)
+		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
+		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
+		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
+	}
+
 	// Seed default cores and reconcile processes on startup
 	processMgr.SeedCores(nil)
 	go processMgr.Reconcile(nil)
@@ -1302,6 +1348,7 @@ func isSPARoute(path string) bool {
 		"/proxy",
 		"/log-manage",
 		"/settings",
+		"/portal",
 	}
 
 	for _, route := range knownRoutes {

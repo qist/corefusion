@@ -184,6 +184,7 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 	}
 	var input struct {
 		Password   *string `json:"password"`
+		PlanID     *int64  `json:"plan_id"`
 		QuotaBytes *int64  `json:"quota_bytes"`
 		ExpiresAt  *string `json:"expires_at"`
 		Remark     *string `json:"remark"`

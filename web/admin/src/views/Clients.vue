@@ -73,11 +73,12 @@
           <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}"><el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag></template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="280">
+          <el-table-column :label="t('common.actions')" width="340">
             <template #default="{row}">
               <el-button v-if="row.status==='active'" size="small" type="warning" @click="suspendClient(row)">{{ t('client.suspend') }}</el-button>
               <el-button v-if="row.status==='suspended'" size="small" type="success" @click="restoreClient(row)">{{ t('client.restore') }}</el-button>
               <el-button size="small" @click="resetUsage(row)">{{ t('client.resetUsage') }}</el-button>
+              <el-button size="small" @click="showResetPwd(row)">{{ t('client.resetPwd') }}</el-button>
               <el-button size="small" @click="showEditClient(row)">{{ t('common.edit') }}</el-button>
               <el-button size="small" type="danger" @click="deleteClient(row)">{{ t('common.delete') }}</el-button>
             </template>
@@ -139,6 +140,22 @@
         <el-button type="primary" @click="saveClient">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Reset Password Dialog -->
+    <el-dialog v-model="resetPwdDialog" :title="t('client.resetPwd')" width="400">
+      <el-form :model="resetPwdForm" label-width="80px">
+        <el-form-item :label="t('client.email')">
+          <el-input :model-value="resetPwdForm.email" disabled />
+        </el-form-item>
+        <el-form-item :label="t('client.newPwd')">
+          <el-input v-model="resetPwdForm.password" type="password" show-password placeholder="请输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="resetPwdDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="resetPwd">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -176,6 +193,10 @@ const editingClient = ref(null)
 const clientForm = ref({ email: '', plan_id: null, quota_gb: 0, expires_at: '', remark: '' })
 const filterPlan = ref(null)
 
+// Reset Password
+const resetPwdDialog = ref(false)
+const resetPwdForm = ref({ id: 0, email: '', password: '' })
+
 // Get subscription token for a client
 const getClientToken = (row) => {
   if (!row.subscription_id) return ''
@@ -185,18 +206,24 @@ const getClientToken = (row) => {
 const subUrl = (row) => {
   const token = getClientToken(row)
   if (!token) return ''
-  const ep = endpoints.value[0]
-  const host = ep ? ep.domain : window.location.hostname
-  const path = ep ? (ep.path || '/') : '/'
-  // Check if subscription port is configured
+  const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
+
+  if (ep && ep.domain) {
+    // 有端点域名：用端点的路径 + token
+    const host = ep.domain
+    const path = ep.path || '/'
+    const basePath = path.endsWith('/') ? path : path + '/'
+    return 'https://' + host + basePath + token
+  }
+
+  // 无端点域名：用服务器地址
+  const host = window.location.hostname
   const subPort = panelSettings.value.subscription_port
-  if (subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port) {
-    // Dedicated port: domain:port/Token
+  const isDedicatedPort = subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port
+  if (isDedicatedPort) {
     return 'https://' + host + ':' + subPort + '/' + token
   }
-  // Shared port: domain/sub/Token
-  const basePath = path.endsWith('/') ? path : path + '/'
-  return 'https://' + host + basePath + 'sub/' + token
+  return 'https://' + host + '/sub/' + token
 }
 async function copyToken(row) {
   const token = getClientToken(row)
@@ -265,7 +292,7 @@ async function saveClient() {
   try {
     const payload = { ...clientForm.value, quota_bytes: Math.round((clientForm.value.quota_gb || 0) * 1073741824) }
     delete payload.quota_gb
-    if (editingClient.value) { await client.put(`/clients/${editingClient.value.id}`, { quota_bytes: payload.quota_bytes, expires_at: payload.expires_at, remark: payload.remark }) } else { await client.post('/clients', payload) }
+    if (editingClient.value) { await client.put(`/clients/${editingClient.value.id}`, { plan_id: payload.plan_id, quota_bytes: payload.quota_bytes, expires_at: payload.expires_at, remark: payload.remark }) } else { await client.post('/clients', payload) }
     ElMessage.success(t('common.success')); clientDialog.value = false; fetchClients()
   } catch {}
 }
@@ -273,6 +300,16 @@ async function deleteClient(row) { await ElMessageBox.confirm(t('client.deleteCl
 async function suspendClient(row) { await client.post(`/clients/${row.id}/suspend`); ElMessage.success(t('common.success')); fetchClients() }
 async function restoreClient(row) { await client.post(`/clients/${row.id}/restore`); ElMessage.success(t('common.success')); fetchClients() }
 async function resetUsage(row) { await client.post(`/clients/${row.id}/reset-usage`); ElMessage.success(t('common.success')); fetchClients() }
+
+function showResetPwd(row) { resetPwdForm.value = { id: row.id, email: row.email, password: '' }; resetPwdDialog.value = true }
+async function resetPwd() {
+  if (!resetPwdForm.value.password || resetPwdForm.value.password.length < 6) { ElMessage.error(t('client.pwdMinLen')); return }
+  try {
+    await client.put(`/clients/${resetPwdForm.value.id}`, { password: resetPwdForm.value.password })
+    ElMessage.success(t('client.pwdResetSuccess'))
+    resetPwdDialog.value = false
+  } catch {}
+}
 
 onMounted(() => { fetchPlans(); fetchClients(); fetchInbounds(); fetchPanelSettings() })
 

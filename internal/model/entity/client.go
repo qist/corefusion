@@ -30,19 +30,23 @@ func (PlanNode) TableName() string { return "plan_nodes" }
 
 // Client represents a subscription client/user.
 type Client struct {
-	ID             int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Email          string     `gorm:"size:255;uniqueIndex;not null" json:"email"`
-	Password       string     `gorm:"size:255" json:"password"`
-	PlanID         int64      `gorm:"index" json:"plan_id"`
-	SubscriptionID *int64     `gorm:"index" json:"subscription_id"`
-	Status         string     `gorm:"size:32;not null;default:active" json:"status"`
-	QuotaBytes     int64      `gorm:"not null;default:0" json:"quota_bytes"`
-	UsedBytes      int64      `gorm:"not null;default:0" json:"used_bytes"`
-	ExpiresAt      *time.Time `json:"expires_at"`
-	SuspendedAt    *time.Time `json:"suspended_at"`
-	Remark         string     `gorm:"size:255" json:"remark"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID               int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Email            string     `gorm:"size:255;uniqueIndex;not null" json:"email"`
+	Password         string     `gorm:"size:255" json:"password"`
+	PlanID           int64      `gorm:"index" json:"plan_id"`
+	SubscriptionID   *int64     `gorm:"index" json:"subscription_id"`
+	Status           string     `gorm:"size:32;not null;default:active" json:"status"`
+	QuotaBytes       int64      `gorm:"not null;default:0" json:"quota_bytes"`
+	UsedBytes        int64      `gorm:"not null;default:0" json:"used_bytes"`
+	ExpiresAt        *time.Time `json:"expires_at"`
+	SuspendedAt      *time.Time `json:"suspended_at"`
+	IPWhitelist      string     `gorm:"size:1000" json:"ip_whitelist"`
+	DeviceLimit      int        `gorm:"not null;default:0" json:"device_limit"`
+	LastNodeUsageAt  *time.Time `json:"last_node_usage_at"`
+	SubUpdatedAt     *time.Time `json:"sub_updated_at"`
+	Remark           string     `gorm:"size:255" json:"remark"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 func (Client) TableName() string { return "clients" }

@@ -9,16 +9,22 @@
       <el-table :data="endpoints" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="domain" :label="t('subend.domain')" width="220" />
-        <el-table-column prop="path" :label="t('subend.path')" width="120">
+        <el-table-column prop="path" :label="t('subend.path')" width="150">
           <template #default="{row}">{{ row.path || '/' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('subend.subscribeUrl')" min-width="280">
+          <template #default="{row}">
+            <el-text type="info" size="small" style="font-family:monospace">
+              https://{{ row.domain }}{{ row.path || '/' }}/{token}
+            </el-text>
+          </template>
         </el-table-column>
         <el-table-column prop="description" :label="t('subend.description')" show-overflow-tooltip />
         <el-table-column :label="t('common.status')" width="80">
           <template #default="{row}"><el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?t('common.enabled'):t('common.disabled') }}</el-tag></template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="220">
+        <el-table-column :label="t('common.actions')" width="160">
           <template #default="{row}">
-            <el-button size="small" type="success" @click="showQrCode(row)">{{ t('subend.qrcode') }}</el-button>
             <el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
           </template>
@@ -48,59 +54,23 @@
         <el-button type="primary" :loading="saving" @click="handleSave">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
-
-    <!-- QR Code Dialog -->
-    <el-dialog v-model="qrDialogVisible" :title="t('subend.qrcode')" width="400">
-      <div style="text-align:center">
-        <el-form-item :label="t('subend.selectSub')" label-position="top">
-          <el-select v-model="selectedSubToken" style="width:100%" @change="updateQrCode">
-            <el-option v-for="sub in subscriptions" :key="sub.token" :label="(sub.client_id ? 'Client #'+sub.client_id : 'Sub') + ' (' + sub.format + ')' + ' - ' + sub.token.substring(0,12)+'...'" :value="sub.token" />
-          </el-select>
-        </el-form-item>
-        <div v-if="qrCodeUrl" style="margin:16px 0">
-          <img :src="qrCodeUrl" style="max-width:250px;border:1px solid #eee;border-radius:8px" />
-        </div>
-        <el-input v-model="fullSubUrl" type="textarea" :rows="2" readonly style="margin-top:8px">
-          <template #append>
-            <el-button @click="copyUrl">{{ t('common.copy') }}</el-button>
-          </template>
-        </el-input>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
 
 const { t } = useI18n()
 const endpoints = ref([])
-const subscriptions = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
 const saving = ref(false)
 
 const form = ref({ domain: '', path: '/', description: '', enabled: true })
-
-// QR Code state
-const qrDialogVisible = ref(false)
-const selectedSubToken = ref('')
-const currentEndpoint = ref(null)
-
-const fullSubUrl = computed(() => {
-  if (!currentEndpoint.value || !selectedSubToken.value) return ''
-  const ep = currentEndpoint.value
-  return 'https://' + ep.domain + (ep.path || '/') + '/' + selectedSubToken.value
-})
-
-const qrCodeUrl = computed(() => {
-  if (!fullSubUrl.value) return ''
-  return 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(fullSubUrl.value)
-})
 
 async function fetchData() {
   loading.value = true
@@ -110,13 +80,6 @@ async function fetchData() {
   } finally {
     loading.value = false
   }
-}
-
-async function fetchSubscriptions() {
-  try {
-    const r = await client.get('/subscriptions', { params: { limit: 100 } })
-    subscriptions.value = r.items || []
-  } catch { subscriptions.value = [] }
 }
 
 function showCreate() {
@@ -129,28 +92,6 @@ function showEdit(row) {
   editing.value = row
   form.value = { domain: row.domain, path: row.path || '/', description: row.description || '', enabled: row.enabled }
   dialogVisible.value = true
-}
-
-async function showQrCode(row) {
-  currentEndpoint.value = row
-  if (subscriptions.value.length === 0) {
-    await fetchSubscriptions()
-  }
-  if (subscriptions.value.length > 0 && !selectedSubToken.value) {
-    selectedSubToken.value = subscriptions.value[0].token
-  }
-  qrDialogVisible.value = true
-}
-
-function updateQrCode() {
-  // QR code URL updates automatically via computed
-}
-
-function copyUrl() {
-  if (fullSubUrl.value) {
-    navigator.clipboard.writeText(fullSubUrl.value)
-    ElMessage.success(t('common.copied'))
-  }
 }
 
 async function handleSave() {
@@ -180,5 +121,5 @@ async function handleDelete(row) {
   fetchData()
 }
 
-onMounted(() => { fetchData(); fetchSubscriptions() })
+onMounted(fetchData)
 </script>

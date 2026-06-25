@@ -134,8 +134,11 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
 
-	// Format output
-	formatStr := sub.Format
+	// Format output - query param ?format= overrides subscription default
+	formatStr := c.Query("format")
+	if formatStr == "" {
+		formatStr = sub.Format
+	}
 	if formatStr == "" {
 		formatStr = "base64_uri"
 	}

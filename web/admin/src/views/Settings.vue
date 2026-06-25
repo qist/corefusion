@@ -34,6 +34,10 @@
               <el-input-number v-model="subPort" :min="0" :max="65535" />
               <div class="hint">{{ t('settings.panel.subPortHint') }}</div>
             </el-form-item>
+            <el-form-item :label="t('settings.panel.registrationEnabled')">
+              <el-switch v-model="panelForm.registration_enabled" />
+              <div class="hint">{{ t('settings.panel.registrationHint') }}</div>
+            </el-form-item>
             <el-divider />
             <el-form-item :label="t('settings.panel.tlsEnabled')">
               <el-switch v-model="panelForm.tls_enabled" />
@@ -477,7 +481,7 @@ const { t } = useI18n()
 const activeTab = ref('panel')
 
 // Panel config
-const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data' })
+const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', registration_enabled: false, tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data' })
 const panelPort = computed({ get: () => parseInt(panelForm.value.listen_port) || 8080, set: (v) => { panelForm.value.listen_port = String(v) } })
 const subPort = computed({ get: () => parseInt(panelForm.value.subscription_port) || 0, set: (v) => { panelForm.value.subscription_port = String(v) } })
 const panelSaving = ref(false)

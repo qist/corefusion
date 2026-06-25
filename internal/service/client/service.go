@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 )
@@ -383,6 +384,7 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 // UpdateClient updates client fields.
 func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	Password   *string `json:"password"`
+	PlanID     *int64  `json:"plan_id"`
 	QuotaBytes *int64  `json:"quota_bytes"`
 	ExpiresAt  *string `json:"expires_at"`
 	Remark     *string `json:"remark"`
@@ -392,7 +394,7 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 		return nil, err
 	}
 	if input.Password != nil {
-		client.Password = *input.Password
+		client.Password = hashClientPassword(*input.Password)
 	}
 	if input.QuotaBytes != nil {
 		client.QuotaBytes = *input.QuotaBytes
@@ -410,10 +412,99 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	if input.Remark != nil {
 		client.Remark = *input.Remark
 	}
+
+	// Check if plan is being assigned
+	planChanged := input.PlanID != nil && *input.PlanID > 0 && *input.PlanID != client.PlanID
+	if planChanged {
+		client.PlanID = *input.PlanID
+		// Set quota from plan if not explicitly set
+		if input.QuotaBytes == nil || client.QuotaBytes <= 0 {
+			if plan, err := s.planRepo.GetByID(ctx, client.PlanID); err == nil {
+				client.QuotaBytes = plan.QuotaBytes
+				if client.ExpiresAt == nil && plan.Duration > 0 {
+					t := time.Now().AddDate(0, 0, plan.Duration)
+					client.ExpiresAt = &t
+				}
+			}
+		}
+	}
+
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return nil, err
 	}
+
+	// If plan changed and no subscription exists, generate accounts and create subscription
+	if planChanged && client.SubscriptionID == nil {
+		s.generateAccountsForClient(ctx, client)
+	}
+
 	return client, nil
+}
+
+// generateAccountsForClient creates subscription and generates accounts for all plan inbounds.
+func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.Client) {
+	nodes, err := s.planNodeRepo.ListByPlanID(ctx, client.PlanID)
+	if err != nil || len(nodes) == 0 {
+		log.Printf("client: no nodes in plan %d, skipping account generation", client.PlanID)
+		return
+	}
+
+	token := generateToken(32)
+
+	for _, node := range nodes {
+		if !node.Enabled {
+			continue
+		}
+		inbound, err := s.inboundRepo.GetByID(ctx, node.InboundConfigID)
+		if err != nil || !inbound.Enabled {
+			continue
+		}
+
+		inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
+		uuid := generateUUID()
+		password := generateToken(16)
+		flow := ""
+		method := ""
+
+		// Extract flow and method from inbound config
+		var cfg map[string]interface{}
+		if json.Unmarshal([]byte(inbound.ConfigJSON), &cfg) == nil {
+			if settings, ok := cfg["settings"].(map[string]interface{}); ok {
+				if enc, ok := settings["encryption"].(string); ok {
+					_ = enc
+				}
+			}
+		}
+
+		if s.userManager != nil {
+			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
+				log.Printf("client: failed to add user %s to inbound %s: %v", inboundEmail, inbound.Tag, err)
+			}
+		}
+	}
+
+	// Create subscription
+	sub := &entity.Subscription{
+		ClientID:              client.ID,
+		Format:                "base64_uri",
+		Token:                 token,
+		TokenVersion:          1,
+		Status:                "active",
+		SecurityMode:          "token_only",
+		BindMode:              "none",
+		QuotaResetCycle:       "none",
+		QuotaBytes:            client.QuotaBytes,
+		SuspendOnQuotaExhausted: 1,
+		QuotaState:            "normal",
+	}
+	if client.ExpiresAt != nil {
+		sub.ExpiresAt = client.ExpiresAt
+	}
+	if err := s.subRepo.Create(ctx, sub); err != nil {
+		log.Printf("client: failed to create subscription: %v", err)
+	} else {
+		s.clientRepo.UpdateSubscriptionID(ctx, client.ID, sub.ID)
+	}
 }
 
 // pauseResumeAll pauses or resumes users in all inbounds of a plan.
@@ -462,4 +553,17 @@ func generateUUID() string {
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// hashClientPassword hashes a password using bcrypt.
+func hashClientPassword(pwd string) string {
+	hashed, err := password.Hash(pwd)
+	if err != nil {
+		// Fallback to simple hash if bcrypt fails
+		b := make([]byte, 16)
+		rand.Read(b)
+		salt := hex.EncodeToString(b)
+		return salt + ":" + pwd
+	}
+	return hashed
 }

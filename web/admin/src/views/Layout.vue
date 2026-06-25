@@ -74,8 +74,6 @@ const menuItems = [
   { path: '/protocols', title: 'menu.protoCenter', icon: 'Connection' },
   { path: '/services', title: 'menu.services', icon: 'Monitor' },
   { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link' },
-  { path: '/subscription-formats', title: 'menu.subscriptionFormats', icon: 'Document' },
-  { path: '/subscription-endpoints', title: 'menu.subscriptionEndpoints', icon: 'Link' },
   { path: '/clients', title: 'menu.clients', icon: 'User' },
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
   { path: '/users', title: 'menu.users', icon: 'User' },

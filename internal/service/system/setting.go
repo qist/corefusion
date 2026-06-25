@@ -28,17 +28,18 @@ func NewSettingService(repo *repository.SystemSettingRepository, tmplRepo *repos
 
 // PanelConfig contains all panel configuration fields.
 type PanelConfig struct {
-	ListenAddr  string `json:"listen_addr"`
-	ListenPort  string `json:"listen_port"`
-	TLSEnabled  bool   `json:"tls_enabled"`
-	TLSCertID   int64  `json:"tls_cert_id"`
-	TLSCertPath string `json:"tls_cert_path"`
-	TLSKeyPath  string `json:"tls_key_path"`
-	MTLSEnabled bool   `json:"mtls_enabled"`
-	MTLSCAPath  string `json:"mtls_ca_path"`
-	WebPath     string `json:"web_path"`
-	Timezone    string `json:"timezone"`
-	DataDir     string `json:"data_dir"`
+	ListenAddr       string `json:"listen_addr"`
+	ListenPort       string `json:"listen_port"`
+	SubscriptionPort string `json:"subscription_port"`
+	TLSEnabled       bool   `json:"tls_enabled"`
+	TLSCertID        int64  `json:"tls_cert_id"`
+	TLSCertPath      string `json:"tls_cert_path"`
+	TLSKeyPath       string `json:"tls_key_path"`
+	MTLSEnabled      bool   `json:"mtls_enabled"`
+	MTLSCAPath       string `json:"mtls_ca_path"`
+	WebPath          string `json:"web_path"`
+	Timezone         string `json:"timezone"`
+	DataDir          string `json:"data_dir"`
 }
 
 // GitHubDomain represents a single GitHub acceleration domain.
@@ -84,12 +85,13 @@ type NotificationConfig struct {
 // DefaultPanelConfig returns default panel configuration.
 func DefaultPanelConfig() *PanelConfig {
 	return &PanelConfig{
-		ListenAddr: "0.0.0.0",
-		ListenPort: "8080",
-		TLSEnabled: false,
-		WebPath:    "/",
-		Timezone:   "Asia/Shanghai",
-		DataDir:    "data",
+		ListenAddr:       "0.0.0.0",
+		ListenPort:       "8080",
+		SubscriptionPort: "0",
+		TLSEnabled:       false,
+		WebPath:          "/",
+		Timezone:         "Asia/Shanghai",
+		DataDir:          "data",
 	}
 }
 
@@ -103,6 +105,7 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	config := DefaultPanelConfig()
 	setIfExist(settings, "panel.listen_addr", &config.ListenAddr)
 	setIfExist(settings, "panel.listen_port", &config.ListenPort)
+	setIfExist(settings, "panel.subscription_port", &config.SubscriptionPort)
 	if v, ok := settings["panel.tls_enabled"]; ok {
 		config.TLSEnabled = v == "true"
 	}
@@ -127,9 +130,10 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 // UpdatePanelConfig saves panel configuration to database.
 func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelConfig) error {
 	settings := map[string]string{
-		"panel.listen_addr":   config.ListenAddr,
-		"panel.listen_port":   config.ListenPort,
-		"panel.tls_enabled":   fmt.Sprintf("%v", config.TLSEnabled),
+		"panel.listen_addr":       config.ListenAddr,
+		"panel.listen_port":       config.ListenPort,
+		"panel.subscription_port": config.SubscriptionPort,
+		"panel.tls_enabled":       fmt.Sprintf("%v", config.TLSEnabled),
 		"panel.tls_cert_id":   strconv.FormatInt(config.TLSCertID, 10),
 		"panel.tls_cert_path": config.TLSCertPath,
 		"panel.tls_key_path":  config.TLSKeyPath,

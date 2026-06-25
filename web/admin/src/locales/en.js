@@ -1211,6 +1211,8 @@ export default {
       uploadCA: 'Upload CA',
       webPath: 'URL Root Path',
       timezone: 'Timezone',
+      subPort: 'Subscription Port',
+      subPortHint: 'Dedicated port: domain:port/Token direct access; Leave empty or 0: share main port, path is /sub/Token',
     },
     notification: {
       title: 'Notification Settings',

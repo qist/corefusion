@@ -1212,6 +1212,8 @@ export default {
       uploadCA: '上传 CA',
       webPath: 'URL 根路径',
       timezone: '时区',
+      subPort: '订阅端口',
+      subPortHint: '独立端口：域名:端口/Token 直接访问；留空或0：共用主端口，路径为 /sub/Token',
     },
     notification: {
       title: '通知设置',

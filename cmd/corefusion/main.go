@@ -179,10 +179,7 @@ func runServer(args []string) {
 		log.Printf("initial admin: %v", err)
 	}
 
-	// Phase 5: Create router
-	r := router.NewWithFullConfig(db.DB, jwtSecret, settings["web_path"], dataDir, Version)
-
-	// Phase 6: Build listen address
+	// Phase 5: Build listen address
 	listenAddr := ":8080"
 	if addr := settings["listen_addr"]; addr != "" {
 		listenAddr = addr + ":"
@@ -195,6 +192,17 @@ func runServer(args []string) {
 	if envPort := os.Getenv("PORT"); envPort != "" {
 		listenAddr = ":" + envPort
 	}
+
+	// Extract port for internal API calls
+	apiPort := "8080"
+	if idx := strings.LastIndex(listenAddr, ":"); idx >= 0 {
+		if p := listenAddr[idx+1:]; p != "" {
+			apiPort = p
+		}
+	}
+
+	// Phase 6: Create router
+	r := router.NewWithFullConfig(db.DB, jwtSecret, settings["web_path"], dataDir, Version, apiPort)
 
 	// Phase 7: TLS configuration
 	tlsEnabled := settings["tls_enabled"] == "true"
@@ -217,6 +225,26 @@ func runServer(args []string) {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// Start subscription server on dedicated port if configured
+	subPort := settings["subscription_port"]
+	var subSrv *http.Server
+	if subPort != "" && subPort != "0" && subPort != apiPort {
+		subEngine := router.NewSubscriptionEngine(db.DB)
+		subSrv = &http.Server{
+			Addr:         ":" + subPort,
+			Handler:      subEngine,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  120 * time.Second,
+		}
+		go func() {
+			log.Printf("Subscription server starting on :%s", subPort)
+			if err := subSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("subscription server error: %v", err)
+			}
+		}()
+	}
+
 	// Handle graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -227,6 +255,9 @@ func runServer(args []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)
+		if subSrv != nil {
+			subSrv.Shutdown(ctx)
+		}
 	}()
 
 	if tlsEnabled {
@@ -284,7 +315,7 @@ func initDataDir(dataDir string) {
 // readSettings reads all panel settings from database.
 func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 	keys := []string{
-		"panel.listen_addr", "panel.listen_port",
+		"panel.listen_addr", "panel.listen_port", "panel.subscription_port",
 		"panel.tls_enabled", "panel.tls_cert_path", "panel.tls_key_path",
 		"panel.mtls_enabled", "panel.mtls_ca_path",
 		"panel.web_path", "panel.timezone", "panel.data_dir",

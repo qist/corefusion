@@ -150,6 +150,7 @@ import client from '../api/client'
 
 const { t } = useI18n()
 const activeTab = ref('plans')
+const panelSettings = ref({ listen_port: '8080', subscription_port: '0' })
 
 // Plans
 const plans = ref([])
@@ -185,9 +186,15 @@ const subUrl = (row) => {
   const token = getClientToken(row)
   if (!token) return ''
   const ep = endpoints.value[0]
-  const host = ep ? ep.domain : window.location.host
+  const host = ep ? ep.domain : window.location.hostname
   const path = ep ? (ep.path || '/') : '/'
-  // 确保路径以 / 结尾，然后加上 sub/token
+  // Check if subscription port is configured
+  const subPort = panelSettings.value.subscription_port
+  if (subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port) {
+    // Dedicated port: domain:port/Token
+    return 'https://' + host + ':' + subPort + '/' + token
+  }
+  // Shared port: domain/sub/Token
   const basePath = path.endsWith('/') ? path : path + '/'
   return 'https://' + host + basePath + 'sub/' + token
 }
@@ -267,6 +274,13 @@ async function suspendClient(row) { await client.post(`/clients/${row.id}/suspen
 async function restoreClient(row) { await client.post(`/clients/${row.id}/restore`); ElMessage.success(t('common.success')); fetchClients() }
 async function resetUsage(row) { await client.post(`/clients/${row.id}/reset-usage`); ElMessage.success(t('common.success')); fetchClients() }
 
-onMounted(() => { fetchPlans(); fetchClients(); fetchInbounds() })
+onMounted(() => { fetchPlans(); fetchClients(); fetchInbounds(); fetchPanelSettings() })
+
+async function fetchPanelSettings() {
+  try {
+    const d = await client.get('/system/panel-config')
+    if (d) panelSettings.value = { ...panelSettings.value, ...d }
+  } catch {}
+}
 </script>
 <style scoped>.hint { font-size:12px; color:#909399; margin-top:4px }</style>

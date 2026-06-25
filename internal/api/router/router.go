@@ -131,7 +131,7 @@ func Shutdown() {
 }
 
 // NewWithFullConfig creates a new Gin engine with full config including data directory and version.
-func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, dataDir string, version string) *gin.Engine {
+func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, dataDir string, version string, listenPort ...string) *gin.Engine {
 	r := gin.New()
 
 	// Global middleware
@@ -141,6 +141,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	if dataDir == "" {
 		dataDir = "data"
+	}
+
+	// Determine listen port for internal API calls
+	apiPort := "8080"
+	if len(listenPort) > 0 && listenPort[0] != "" {
+		apiPort = listenPort[0]
 	}
 
 	// Initialize repositories
@@ -259,7 +265,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	// Client service
-	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, "8080", jwtSecret)
+	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
 	clientSvcInst := clientSvc.NewService(clientRepo, planRepo, planNodeRepo, subRepo, inboundConfigRepo, inboundMgr)
 
 	// Start rule sync scheduler
@@ -1305,4 +1311,26 @@ func isSPARoute(path string) bool {
 	}
 
 	return false
+}
+
+// NewSubscriptionEngine creates a separate Gin engine for subscription-only serving on a dedicated port.
+// This allows subscription access via domain:port/Token without the /sub prefix.
+func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	subRepo := repository.NewSubscriptionRepository(database)
+	inboundRepo := repository.NewInboundConfigRepository(database)
+	shareDomainRepo := repository.NewShareDomainConfigRepository(database)
+	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
+	clientRepo := repository.NewClientRepository(database)
+	planNodeRepo := repository.NewPlanNodeRepository(database)
+	accessLogRepo := repository.NewAccessLogRepository(database)
+
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, accessLogRepo)
+
+	// Subscription at root path - no /sub prefix needed
+	r.GET("/:token", publicSubH.ServeSubscription)
+
+	return r
 }

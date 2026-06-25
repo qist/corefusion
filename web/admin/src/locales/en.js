@@ -1658,6 +1658,8 @@ export default {
     newPwd: 'New Password',
     pwdMinLen: 'Password must be at least 6 characters',
     pwdResetSuccess: 'Password reset successfully',
+    viewDetail: 'Detail',
+    subDetail: 'Subscription Detail',
     token: 'Token',
     subscribeUrl: 'Subscribe URL',
     filterPlan: 'Filter by Plan',

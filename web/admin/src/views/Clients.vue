@@ -47,15 +47,9 @@
           <el-table-column :label="t('client.plan')" width="100">
             <template #default="{row}">{{ planName(row.plan_id) }}</template>
           </el-table-column>
-          <el-table-column :label="t('client.token')" width="200">
+          <el-table-column :label="t('client.subscribeUrl')" width="80">
             <template #default="{row}">
-              <el-text v-if="getClientToken(row)" type="info" size="small" style="font-family:monospace;cursor:pointer" @click="copyToken(row)">{{ getClientToken(row).substring(0,16) }}...</el-text>
-              <span v-else>-</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('client.subscribeUrl')" min-width="250">
-            <template #default="{row}">
-              <el-text v-if="getClientToken(row)" type="primary" size="small" style="font-family:monospace;cursor:pointer" @click="copySubUrl(row)">{{ subUrl(row) }}</el-text>
+              <el-button v-if="getClientToken(row)" size="small" type="primary" @click="showSubDetail(row)">{{ t('client.viewDetail') }}</el-button>
               <span v-else>-</span>
             </template>
           </el-table-column>
@@ -73,7 +67,7 @@
           <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}"><el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag></template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="340">
+          <el-table-column :label="t('common.actions')" width="400">
             <template #default="{row}">
               <el-button v-if="row.status==='active'" size="small" type="warning" @click="suspendClient(row)">{{ t('client.suspend') }}</el-button>
               <el-button v-if="row.status==='suspended'" size="small" type="success" @click="restoreClient(row)">{{ t('client.restore') }}</el-button>
@@ -156,6 +150,22 @@
         <el-button type="primary" @click="resetPwd">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Subscription Detail Dialog -->
+    <el-dialog v-model="subDetailDialog" :title="t('client.subDetail')" width="420">
+      <div style="text-align:center">
+        <div style="margin-bottom:12px;font-weight:500">{{ subDetailEmail }}</div>
+        <div class="sub-link" style="word-break:break-all;font-family:monospace;font-size:12px;background:#f5f7fa;padding:10px;border-radius:6px;text-align:left">
+          {{ subDetailUrl }}
+          <el-button size="small" text @click="copyText(subDetailUrl)" style="float:right">复制</el-button>
+        </div>
+        <div v-if="subDetailQr" style="margin:16px 0">
+          <img :src="subDetailQr" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
+          <div style="font-size:12px;color:#909399;margin-top:8px">扫码导入订阅</div>
+        </div>
+        <el-button v-else size="small" @click="subDetailQr = genQr(subDetailUrl)" style="margin-top:8px">显示二维码</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -196,6 +206,12 @@ const filterPlan = ref(null)
 // Reset Password
 const resetPwdDialog = ref(false)
 const resetPwdForm = ref({ id: 0, email: '', password: '' })
+
+// Subscription Detail
+const subDetailDialog = ref(false)
+const subDetailEmail = ref('')
+const subDetailUrl = ref('')
+const subDetailQr = ref('')
 
 // Get subscription token for a client
 const getClientToken = (row) => {
@@ -309,6 +325,33 @@ async function resetPwd() {
     ElMessage.success(t('client.pwdResetSuccess'))
     resetPwdDialog.value = false
   } catch {}
+}
+
+function showSubDetail(row) {
+  subDetailEmail.value = row.email
+  subDetailUrl.value = subUrl(row)
+  subDetailQr.value = ''
+  subDetailDialog.value = true
+}
+
+function genQr(url) {
+  return 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url)
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => ElMessage.success(t('common.copied')))
+  } else {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    ElMessage.success(t('common.copied'))
+  }
 }
 
 onMounted(() => { fetchPlans(); fetchClients(); fetchInbounds(); fetchPanelSettings() })

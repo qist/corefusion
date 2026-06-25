@@ -1665,6 +1665,8 @@ export default {
     newPwd: '新密码',
     pwdMinLen: '密码至少6位',
     pwdResetSuccess: '密码重置成功',
+    viewDetail: '详情',
+    subDetail: '订阅详情',
     token: 'Token',
     subscribeUrl: '订阅地址',
     filterPlan: '按套餐筛选',

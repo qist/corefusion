@@ -124,6 +124,21 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.Plan{},
 		&entity.PlanNode{},
 		&entity.Client{},
+
+		// Mihomo Config
+		&entity.MihomoConfig{},
+		&entity.MihomoGeneral{},
+		&entity.MihomoDNS{},
+		&entity.MihomoHost{},
+		&entity.MihomoTunnel{},
+		&entity.MihomoSniffer{},
+		&entity.MihomoExternalController{},
+		&entity.MihomoTLS{},
+		&entity.MihomoTun{},
+		&entity.MihomoProxyGroup{},
+		&entity.MihomoRuleProvider{},
+		&entity.MihomoRule{},
+		&entity.MihomoSpecialOutbound{},
 	}
 
 	for _, model := range models {

@@ -42,29 +42,41 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*entity.SubscriptionFo
 
 // CreateInput is the input for creating a subscription format.
 type CreateInput struct {
-	Name        string `json:"name" binding:"required"`
-	ClientType  string `json:"client_type" binding:"required"`
-	Format      string `json:"format" binding:"required"`
-	ContentType string `json:"content_type"`
-	Extension   string `json:"extension"`
-	Description string `json:"description"`
-	IsDefault   bool   `json:"is_default"`
-	Enabled     *bool  `json:"enabled"`
-	SortOrder   int    `json:"sort_order"`
+	Name               string `json:"name" binding:"required"`
+	ClientType         string `json:"client_type" binding:"required"`
+	Format             string `json:"format" binding:"required"`
+	ContentType        string `json:"content_type"`
+	Extension          string `json:"extension"`
+	Description        string `json:"description"`
+	IsDefault          bool   `json:"is_default"`
+	Enabled            *bool  `json:"enabled"`
+	SortOrder          int    `json:"sort_order"`
+	ListenersJSON      string `json:"listeners_json"`
+	ProxyGroupsJSON    string `json:"proxy_groups_json"`
+	RuleProvidersJSON  string `json:"rule_providers_json"`
+	ProxyProvidersJSON string `json:"proxy_providers_json"`
+	DNSJSON            string `json:"dns_json"`
+	GeneralJSON        string `json:"general_json"`
 }
 
 // Create creates a new subscription format.
 func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.SubscriptionFormat, error) {
 	format := &entity.SubscriptionFormat{
-		Name:        input.Name,
-		ClientType:  input.ClientType,
-		Format:      input.Format,
-		ContentType: input.ContentType,
-		Extension:   input.Extension,
-		Description: input.Description,
-		IsDefault:   input.IsDefault,
-		Enabled:     true,
-		SortOrder:   input.SortOrder,
+		Name:               input.Name,
+		ClientType:         input.ClientType,
+		Format:             input.Format,
+		ContentType:        input.ContentType,
+		Extension:          input.Extension,
+		Description:        input.Description,
+		IsDefault:          input.IsDefault,
+		Enabled:            true,
+		SortOrder:          input.SortOrder,
+		ListenersJSON:      input.ListenersJSON,
+		ProxyGroupsJSON:    input.ProxyGroupsJSON,
+		RuleProvidersJSON:  input.RuleProvidersJSON,
+		ProxyProvidersJSON: input.ProxyProvidersJSON,
+		DNSJSON:            input.DNSJSON,
+		GeneralJSON:        input.GeneralJSON,
 	}
 	if input.Enabled != nil {
 		format.Enabled = *input.Enabled
@@ -77,15 +89,21 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.Subscr
 
 // UpdateInput is the input for updating a subscription format.
 type UpdateInput struct {
-	Name        *string `json:"name"`
-	ClientType  *string `json:"client_type"`
-	Format      *string `json:"format"`
-	ContentType *string `json:"content_type"`
-	Extension   *string `json:"extension"`
-	Description *string `json:"description"`
-	IsDefault   *bool   `json:"is_default"`
-	Enabled     *bool   `json:"enabled"`
-	SortOrder   *int    `json:"sort_order"`
+	Name               *string `json:"name"`
+	ClientType         *string `json:"client_type"`
+	Format             *string `json:"format"`
+	ContentType        *string `json:"content_type"`
+	Extension          *string `json:"extension"`
+	Description        *string `json:"description"`
+	IsDefault          *bool   `json:"is_default"`
+	Enabled            *bool   `json:"enabled"`
+	SortOrder          *int    `json:"sort_order"`
+	ListenersJSON      *string `json:"listeners_json"`
+	ProxyGroupsJSON    *string `json:"proxy_groups_json"`
+	RuleProvidersJSON  *string `json:"rule_providers_json"`
+	ProxyProvidersJSON *string `json:"proxy_providers_json"`
+	DNSJSON            *string `json:"dns_json"`
+	GeneralJSON        *string `json:"general_json"`
 }
 
 // Update updates a subscription format.
@@ -121,6 +139,24 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 	if input.SortOrder != nil {
 		format.SortOrder = *input.SortOrder
 	}
+	if input.ListenersJSON != nil {
+		format.ListenersJSON = *input.ListenersJSON
+	}
+	if input.ProxyGroupsJSON != nil {
+		format.ProxyGroupsJSON = *input.ProxyGroupsJSON
+	}
+	if input.RuleProvidersJSON != nil {
+		format.RuleProvidersJSON = *input.RuleProvidersJSON
+	}
+	if input.ProxyProvidersJSON != nil {
+		format.ProxyProvidersJSON = *input.ProxyProvidersJSON
+	}
+	if input.DNSJSON != nil {
+		format.DNSJSON = *input.DNSJSON
+	}
+	if input.GeneralJSON != nil {
+		format.GeneralJSON = *input.GeneralJSON
+	}
 	if err := s.formatRepo.Update(ctx, format); err != nil {
 		return nil, err
 	}
@@ -141,22 +177,26 @@ func (s *Service) ListRules(ctx context.Context, formatID int64) ([]entity.Subsc
 
 // CreateRuleInput is the input for creating a rule.
 type CreateRuleInput struct {
-	RuleType    string `json:"rule_type" binding:"required"`
-	MatchValue  string `json:"match_value" binding:"required"`
-	OutboundTag string `json:"outbound_tag" binding:"required"`
-	Priority    int    `json:"priority"`
-	Enabled     *bool  `json:"enabled"`
+	RuleType     string `json:"rule_type" binding:"required"`
+	MatchValue   string `json:"match_value"`
+	OutboundTag  string `json:"outbound_tag" binding:"required"`
+	RuleProvider string `json:"rule_provider"`
+	RuleAction   string `json:"rule_action"`
+	Priority     int    `json:"priority"`
+	Enabled      *bool  `json:"enabled"`
 }
 
 // CreateRule creates a new rule for a format.
 func (s *Service) CreateRule(ctx context.Context, formatID int64, input CreateRuleInput) (*entity.SubscriptionRule, error) {
 	rule := &entity.SubscriptionRule{
-		FormatID:    formatID,
-		RuleType:    input.RuleType,
-		MatchValue:  input.MatchValue,
-		OutboundTag: input.OutboundTag,
-		Priority:    input.Priority,
-		Enabled:     true,
+		FormatID:     formatID,
+		RuleType:     input.RuleType,
+		MatchValue:   input.MatchValue,
+		OutboundTag:  input.OutboundTag,
+		RuleProvider: input.RuleProvider,
+		RuleAction:   input.RuleAction,
+		Priority:     input.Priority,
+		Enabled:      true,
 	}
 	if input.Enabled != nil {
 		rule.Enabled = *input.Enabled
@@ -169,11 +209,13 @@ func (s *Service) CreateRule(ctx context.Context, formatID int64, input CreateRu
 
 // UpdateRuleInput is the input for updating a rule.
 type UpdateRuleInput struct {
-	RuleType    *string `json:"rule_type"`
-	MatchValue  *string `json:"match_value"`
-	OutboundTag *string `json:"outbound_tag"`
-	Priority    *int    `json:"priority"`
-	Enabled     *bool   `json:"enabled"`
+	RuleType     *string `json:"rule_type"`
+	MatchValue   *string `json:"match_value"`
+	OutboundTag  *string `json:"outbound_tag"`
+	RuleProvider *string `json:"rule_provider"`
+	RuleAction   *string `json:"rule_action"`
+	Priority     *int    `json:"priority"`
+	Enabled      *bool   `json:"enabled"`
 }
 
 // UpdateRule updates a rule.
@@ -190,6 +232,12 @@ func (s *Service) UpdateRule(ctx context.Context, ruleID int64, input UpdateRule
 	}
 	if input.OutboundTag != nil {
 		rule.OutboundTag = *input.OutboundTag
+	}
+	if input.RuleProvider != nil {
+		rule.RuleProvider = *input.RuleProvider
+	}
+	if input.RuleAction != nil {
+		rule.RuleAction = *input.RuleAction
 	}
 	if input.Priority != nil {
 		rule.Priority = *input.Priority

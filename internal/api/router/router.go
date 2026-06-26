@@ -30,6 +30,7 @@ import (
 	subendHandler "corefusion/internal/api/handlers/subendpoint"
 	clientHandler "corefusion/internal/api/handlers/client"
 	clientauthHandler "corefusion/internal/api/handlers/clientauth"
+	mihomoHandler "corefusion/internal/api/handlers/mihomo"
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
@@ -58,6 +59,7 @@ import (
 	subendSvc "corefusion/internal/service/subendpoint"
 	clientSvc "corefusion/internal/service/client"
 	clientauthSvc "corefusion/internal/service/clientauth"
+	mihomoSvc "corefusion/internal/service/mihomo"
 	systemSvc "corefusion/internal/service/system"
 	userService "corefusion/internal/service/user"
 	backupService "corefusion/internal/service/backup"
@@ -271,6 +273,26 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
 	clientSvcInst := clientSvc.NewService(clientRepo, planRepo, planNodeRepo, subRepo, inboundConfigRepo, inboundMgr)
 
+	// Mihomo service
+	mihomoConfigRepo := repository.NewMihomoConfigRepository(database)
+	mihomoGeneralRepo := repository.NewMihomoGeneralRepository(database)
+	mihomoDNSRepo := repository.NewMihomoDNSRepository(database)
+	mihomoHostRepo := repository.NewMihomoHostRepository(database)
+	mihomoTunnelRepo := repository.NewMihomoTunnelRepository(database)
+	mihomoSnifferRepo := repository.NewMihomoSnifferRepository(database)
+	mihomoExtCtrlRepo := repository.NewMihomoExternalControllerRepository(database)
+	mihomoTLSRepo := repository.NewMihomoTLSRepository(database)
+	mihomoTunRepo := repository.NewMihomoTunRepository(database)
+	mihomoProxyGroupRepo := repository.NewMihomoProxyGroupRepository(database)
+	mihomoRuleProviderRepo := repository.NewMihomoRuleProviderRepository(database)
+	mihomoRuleRepo := repository.NewMihomoRuleRepository(database)
+	mihomoOutboundRepo := repository.NewMihomoSpecialOutboundRepository(database)
+	mihomoSvcInst := mihomoSvc.NewService(
+		mihomoConfigRepo, mihomoGeneralRepo, mihomoDNSRepo, mihomoHostRepo,
+		mihomoTunnelRepo, mihomoSnifferRepo, mihomoExtCtrlRepo, mihomoTLSRepo,
+		mihomoTunRepo, mihomoProxyGroupRepo, mihomoRuleProviderRepo, mihomoRuleRepo, mihomoOutboundRepo,
+	)
+
 	// Client auth service
 	clientauthSvcInst := clientauthSvc.NewService(clientRepo, planRepo, subRepo, systemSettingSvc, jwtSecret)
 
@@ -290,6 +312,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
+	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
 	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 	coreConfigH.SetProcessManager(processMgr)
@@ -789,6 +812,26 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				clientsGroup.POST("/:id/suspend", clientH.SuspendClient)
 				clientsGroup.POST("/:id/restore", clientH.RestoreClient)
 				clientsGroup.POST("/:id/reset-usage", clientH.ResetUsage)
+			}
+
+			// Mihomo Config
+			mihomoGroup := protected.Group("/mihomo")
+			{
+				mihomoGroup.GET("/configs", mihomoH.List)
+				mihomoGroup.POST("/configs", mihomoH.Create)
+				mihomoGroup.GET("/configs/:id", mihomoH.GetByID)
+				mihomoGroup.PUT("/configs/:id", mihomoH.Update)
+				mihomoGroup.DELETE("/configs/:id", mihomoH.Delete)
+				mihomoGroup.GET("/configs/:id/proxy-groups", mihomoH.ListProxyGroups)
+				mihomoGroup.POST("/configs/:id/proxy-groups", mihomoH.CreateProxyGroup)
+				mihomoGroup.DELETE("/proxy-groups/:id", mihomoH.DeleteProxyGroup)
+				mihomoGroup.GET("/configs/:id/rules", mihomoH.ListRules)
+				mihomoGroup.POST("/configs/:id/rules", mihomoH.CreateRule)
+				mihomoGroup.DELETE("/rules/:id", mihomoH.DeleteRule)
+				mihomoGroup.GET("/configs/:id/rule-providers", mihomoH.ListRuleProviders)
+				mihomoGroup.POST("/configs/:id/rule-providers", mihomoH.CreateRuleProvider)
+				mihomoGroup.DELETE("/rule-providers/:id", mihomoH.DeleteRuleProvider)
+				mihomoGroup.GET("/configs/:id/yaml", mihomoH.GenerateYAML)
 			}
 
 			// Certificates

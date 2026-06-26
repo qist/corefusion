@@ -6,6 +6,7 @@ import "time"
 type Subscription struct {
 	ID int64 `json:"id" gorm:"primaryKey;autoIncrement"`
 	ClientID int64 `json:"client_id" gorm:"index;not null"`
+	MihomoConfigID *int64 `json:"mihomo_config_id" gorm:"index"` // Associated mihomo config
 	Format string `json:"format" gorm:"size:32;not null"`
 	Token string `json:"token" gorm:"size:128;uniqueIndex;not null"`
 	TokenVersion int `json:"token_version" gorm:"not null;default:1"`

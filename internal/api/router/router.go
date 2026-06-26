@@ -309,7 +309,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subfmtH := subfmtHandler.NewHandler(subfmtSvcInst)
 	subendH := subendHandler.NewHandler(subendSvcInst)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, mihomoConfigRepo, mihomoRuleRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
@@ -1416,8 +1416,10 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	clientRepo := repository.NewClientRepository(database)
 	planNodeRepo := repository.NewPlanNodeRepository(database)
 	accessLogRepo := repository.NewAccessLogRepository(database)
+	mihomoConfigRepo2 := repository.NewMihomoConfigRepository(database)
+	mihomoRuleRepo2 := repository.NewMihomoRuleRepository(database)
 
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, mihomoConfigRepo2, mihomoRuleRepo2, accessLogRepo)
 
 	// Subscription at root path - no /sub prefix needed
 	r.GET("/:token", publicSubH.ServeSubscription)

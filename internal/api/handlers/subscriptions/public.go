@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,8 @@ type PublicHandler struct {
 	cfIPEntryRepo   *repository.CFIPEntryRepository
 	clientRepo      *repository.ClientRepository
 	planNodeRepo    *repository.PlanNodeRepository
+	mihomoRepo      *repository.MihomoConfigRepository
+	mihomoRuleRepo  *repository.MihomoRuleRepository
 	accessLog       *repository.AccessLogRepository
 }
 
@@ -37,6 +40,8 @@ func NewPublicHandler(
 	cfIPEntryRepo *repository.CFIPEntryRepository,
 	clientRepo *repository.ClientRepository,
 	planNodeRepo *repository.PlanNodeRepository,
+	mihomoRepo *repository.MihomoConfigRepository,
+	mihomoRuleRepo *repository.MihomoRuleRepository,
 	accessLog *repository.AccessLogRepository,
 ) *PublicHandler {
 	return &PublicHandler{
@@ -46,6 +51,8 @@ func NewPublicHandler(
 		cfIPEntryRepo:   cfIPEntryRepo,
 		clientRepo:      clientRepo,
 		planNodeRepo:    planNodeRepo,
+		mihomoRepo:      mihomoRepo,
+		mihomoRuleRepo:  mihomoRuleRepo,
 		accessLog:       accessLog,
 	}
 }
@@ -146,6 +153,29 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	var data []byte
 	contentType := "text/plain"
 
+	// Determine mihomo config: ?config= param > subscription linked config
+	var mihomoConfig *entity.MihomoConfig
+	var mihomoRules []entity.MihomoRule
+
+	configName := c.Query("config")
+	if configName != "" && h.mihomoRepo != nil {
+		// Find config by name
+		configs, _ := h.mihomoRepo.List(ctx)
+		for _, cfg := range configs {
+			if cfg.Name == configName && cfg.Enabled {
+				mihomoConfig = &cfg
+				break
+			}
+		}
+	} else if sub.MihomoConfigID != nil && h.mihomoRepo != nil {
+		// Use subscription's linked config
+		mihomoConfig, _ = h.mihomoRepo.GetByID(ctx, *sub.MihomoConfigID)
+	}
+
+	if mihomoConfig != nil && h.mihomoRuleRepo != nil {
+		mihomoRules, _ = h.mihomoRuleRepo.ListByConfigID(ctx, mihomoConfig.ID)
+	}
+
 	switch formatter.Format(formatStr) {
 	case formatter.FormatBase64Aggregate:
 		joined := strings.Join(links, "\n")
@@ -153,10 +183,15 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	case formatter.FormatRawURI:
 		data = []byte(strings.Join(links, "\n"))
 	case formatter.FormatMihomoYAML:
-		f := formatter.GetFormatter(formatter.FormatMihomoYAML)
-		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
-		data, _ = f.Format(nodes)
-		contentType = f.ContentType()
+		if mihomoConfig != nil {
+			// Use full mihomo config with rules, DNS, proxy-groups, etc.
+			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, links)
+		} else {
+			f := formatter.GetFormatter(formatter.FormatMihomoYAML)
+			nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
+			data, _ = f.Format(nodes)
+		}
+		contentType = "text/yaml"
 	case formatter.FormatSingBoxJSON:
 		f := formatter.GetFormatter(formatter.FormatSingBoxJSON)
 		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
@@ -343,6 +378,130 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 	return nodes
 }
 
+// generateMihomoYAML generates a complete mihomo YAML config with proxies and rules.
+func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, links []string) []byte {
+	var yaml strings.Builder
+
+	// Parse config_json
+	var cfg map[string]interface{}
+	json.Unmarshal([]byte(config.ConfigJSON), &cfg)
+
+	// Output all top-level fields except proxies and rules (those are injected)
+	skipKeys := map[string]bool{"proxies": true, "rules": true}
+
+	for _, key := range getSortedKeys(cfg) {
+		if skipKeys[key] {
+			continue
+		}
+		value := cfg[key]
+		writeYAMLField(&yaml, key, value, 0)
+	}
+
+	// Inject proxies from links
+	yaml.WriteString("\nproxies:\n")
+	for _, link := range links {
+		yaml.WriteString("  - " + link + "\n")
+	}
+
+	// Inject rules from database
+	if len(rules) > 0 {
+		yaml.WriteString("\nrules:\n")
+		for _, rule := range rules {
+			if rule.Enabled {
+				yaml.WriteString("  - " + rule.RuleString + "\n")
+			}
+		}
+	}
+
+	return []byte(yaml.String())
+}
+
+// getSortedKeys returns sorted keys from a map for consistent output.
+func getSortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Simple sort
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i] > keys[j] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
+}
+
+// writeYAMLField writes a single YAML field.
+func writeYAMLField(yaml *strings.Builder, key string, value interface{}, indent int) {
+	prefix := strings.Repeat("  ", indent)
+
+	switch v := value.(type) {
+	case map[string]interface{}:
+		yaml.WriteString(prefix + key + ":\n")
+		for _, k := range getSortedKeys(v) {
+			writeYAMLField(yaml, k, v[k], indent+1)
+		}
+	case []interface{}:
+		yaml.WriteString(prefix + key + ":\n")
+		for _, item := range v {
+			switch i := item.(type) {
+			case map[string]interface{}:
+				yaml.WriteString(prefix + "  -\n")
+				for _, k := range getSortedKeys(i) {
+					writeYAMLField(yaml, k, i[k], indent+2)
+				}
+			default:
+				yaml.WriteString(prefix + "  - " + formatYAMLValue(i) + "\n")
+			}
+		}
+	case string:
+		if v != "" {
+			yaml.WriteString(prefix + key + ": " + formatYAMLString(v) + "\n")
+		}
+	case bool:
+		yaml.WriteString(prefix + key + ": " + fmt.Sprintf("%v", v) + "\n")
+	case float64:
+		yaml.WriteString(prefix + key + ": " + fmt.Sprintf("%v", v) + "\n")
+	case int:
+		yaml.WriteString(prefix + key + ": " + fmt.Sprintf("%d", v) + "\n")
+	case nil:
+		// Skip nil values
+	}
+}
+
+func formatYAMLValue(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return formatYAMLString(val)
+	case bool:
+		return fmt.Sprintf("%v", val)
+	case float64:
+		return fmt.Sprintf("%v", val)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+func formatYAMLString(s string) string {
+	// Characters that need quoting in YAML
+	if s == "" {
+		return "\"\""
+	}
+	if s == "true" || s == "false" || s == "null" || s == "~" {
+		return "\"" + s + "\""
+	}
+	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") {
+		return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
+	}
+	// Check if it looks like a number or boolean
+	if _, err := strconv.ParseFloat(s, 64); err == nil {
+		return "\"" + s + "\""
+	}
+	return s
+}
+
 // --- helpers ---
 
 func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry {
@@ -514,6 +673,55 @@ func getString(m map[string]interface{}, key, def string) string {
 		return def
 	}
 	return v
+}
+
+func getInt(m map[string]interface{}, key string, def int) int {
+	if m == nil {
+		return def
+	}
+	switch v := m[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return def
+}
+
+func getBool(m map[string]interface{}, key string) bool {
+	if m == nil {
+		return false
+	}
+	v, _ := m[key].(bool)
+	return v
+}
+
+func getBoolDef(m map[string]interface{}, key string, def bool) bool {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key].(bool)
+	if !ok {
+		return def
+	}
+	return v
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	if m == nil {
+		return nil
+	}
+	v, ok := m[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	var result []string
+	for _, item := range v {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // findClientByEmail finds a specific client entry in the inbound config by matching the email pattern.

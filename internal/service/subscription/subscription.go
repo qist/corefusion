@@ -96,6 +96,7 @@ type UpdateSubscriptionInput struct {
 	MaxActiveDays   *int       `json:"max_active_days"`
 	ExpiresAt       *time.Time `json:"expires_at"`
 	Status          *string    `json:"status"`
+	MihomoConfigID  *int64     `json:"mihomo_config_id"`
 }
 
 // Update updates a subscription.
@@ -125,6 +126,9 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateSubscription
 	}
 	if input.Status != nil {
 		sub.Status = *input.Status
+	}
+	if input.MihomoConfigID != nil {
+		sub.MihomoConfigID = input.MihomoConfigID
 	}
 
 	if err := s.repo.Update(ctx, sub); err != nil {

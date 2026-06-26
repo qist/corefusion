@@ -991,7 +991,19 @@ async function saveFormat() {
       'fake-ip-filter': dnsConfig.value._fakeIPFilterEnabled ? (dnsConfig.value._fakeIPFilterStr || '').split('\n').map(s => s.trim()).filter(Boolean) : [],
       'nameserver-policy': Object.keys(nsPolicy).length > 0 ? nsPolicy : undefined
     },
-    'proxy-groups': proxyGroups.value.map(g => ({ name: g.name, type: g.type, proxies: (g._proxiesStr || '').split('\n').map(s => s.trim()).filter(Boolean) })),
+    'proxy-groups': proxyGroups.value.map(g => {
+      const group = { name: g.name, type: g.type, proxies: (g._proxiesStr || '').split('\n').map(s => s.trim()).filter(Boolean) }
+      if (g._hasExternalNodes) group._hasExternalNodes = true
+      if (g.url) group.url = g.url
+      if (g.interval) group.interval = g.interval
+      if (g.lazy) group.lazy = true
+      if (g.timeout) group.timeout = g.timeout
+      if (g['max-failed-times']) group['max-failed-times'] = g['max-failed-times']
+      if (g['empty-fallback']) group['empty-fallback'] = g['empty-fallback']
+      if (g.filter) group.filter = g.filter
+      if (g['exclude-filter']) group['exclude-filter'] = g['exclude-filter']
+      return group
+    }),
     'rule-providers': ruleProviders.value,
     'rules': formatRules.value.map(r => buildRuleString(r)),
     'hosts': hosts.value.reduce((acc, h) => { if (h.domain) acc[h.domain] = h.ip; return acc }, {}),

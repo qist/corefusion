@@ -139,8 +139,6 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		}
 	}
 
-	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
-
 	// Format output - query param ?format= overrides subscription default
 	formatStr := c.Query("format")
 	if formatStr == "" {
@@ -149,6 +147,9 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	if formatStr == "" {
 		formatStr = "base64_uri"
 	}
+
+	nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
+	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
 
 	var data []byte
 	contentType := "text/plain"
@@ -159,7 +160,6 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	configName := c.Query("config")
 	if configName != "" && h.mihomoRepo != nil {
-		// Find config by name
 		configs, _ := h.mihomoRepo.List(ctx)
 		for _, cfg := range configs {
 			if cfg.Name == configName && cfg.Enabled {
@@ -168,7 +168,6 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			}
 		}
 	} else if sub.MihomoConfigID != nil && h.mihomoRepo != nil {
-		// Use subscription's linked config
 		mihomoConfig, _ = h.mihomoRepo.GetByID(ctx, *sub.MihomoConfigID)
 	}
 
@@ -184,22 +183,18 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		data = []byte(strings.Join(links, "\n"))
 	case formatter.FormatMihomoYAML:
 		if mihomoConfig != nil {
-			// Use full mihomo config with rules, DNS, proxy-groups, etc.
-			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, links)
+			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, nodes)
 		} else {
 			f := formatter.GetFormatter(formatter.FormatMihomoYAML)
-			nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
 			data, _ = f.Format(nodes)
 		}
 		contentType = "text/yaml"
 	case formatter.FormatSingBoxJSON:
 		f := formatter.GetFormatter(formatter.FormatSingBoxJSON)
-		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	case formatter.FormatXrayJSON:
 		f := formatter.GetFormatter(formatter.FormatXrayJSON)
-		nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	default:
@@ -379,12 +374,18 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 }
 
 // generateMihomoYAML generates a complete mihomo YAML config with proxies and rules.
-func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, links []string) []byte {
+func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, nodes []formatter.Node) []byte {
 	var yaml strings.Builder
 
 	// Parse config_json
 	var cfg map[string]interface{}
 	json.Unmarshal([]byte(config.ConfigJSON), &cfg)
+
+	// Build node names list for proxy groups injection
+	nodeNames := make([]string, len(nodes))
+	for i, n := range nodes {
+		nodeNames[i] = n.Name
+	}
 
 	// Output all top-level fields except proxies and rules (those are injected)
 	skipKeys := map[string]bool{"proxies": true, "rules": true}
@@ -394,13 +395,35 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 			continue
 		}
 		value := cfg[key]
+		// For proxy-groups, inject node names into groups that have _hasExternalNodes
+		if key == "proxy-groups" {
+			writeProxyGroups(&yaml, value, nodeNames)
+			continue
+		}
+		// For DNS, clean up corrupted nameserver-policy
+		if key == "dns" {
+			value = cleanDNSConfig(value)
+		}
 		writeYAMLField(&yaml, key, value, 0)
 	}
 
-	// Inject proxies from links
+	// Inject proxies from nodes (mihomo object format)
 	yaml.WriteString("\nproxies:\n")
-	for _, link := range links {
-		yaml.WriteString("  - " + link + "\n")
+	for _, node := range nodes {
+		p := mihomoProxyData{
+			Name:       node.Name,
+			Protocol:   node.Protocol,
+			Host:       node.Host,
+			Port:       node.Port,
+			UUID:       node.UUID,
+			Password:   node.Password,
+			Flow:       node.Flow,
+			Encryption: node.Encryption,
+			Transport:  node.Transport,
+			TLS:        node.TLS,
+			ServerName: node.ServerName,
+		}
+		writeMihomoProxy(&yaml, p)
 	}
 
 	// Inject rules from database
@@ -414,6 +437,174 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 	}
 
 	return []byte(yaml.String())
+}
+
+// writeProxyGroups writes proxy-groups with node injection for groups that have _hasExternalNodes.
+func writeProxyGroups(yaml *strings.Builder, value interface{}, nodeNames []string) {
+	groups, ok := value.([]interface{})
+	if !ok || len(groups) == 0 {
+		return
+	}
+	yaml.WriteString("proxy-groups:\n")
+	for _, g := range groups {
+		group, ok := g.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		yaml.WriteString("  - name: " + formatYAMLString(getString(group, "name", "")) + "\n")
+		yaml.WriteString("    type: " + getString(group, "type", "select") + "\n")
+
+		// Build proxies list: existing proxies + node names (if _hasExternalNodes)
+		proxies := getStringSlice(group, "proxies")
+		hasExternal, _ := group["_hasExternalNodes"].(bool)
+		if hasExternal && len(nodeNames) > 0 {
+			proxies = append(proxies, nodeNames...)
+		}
+
+		if len(proxies) > 0 {
+			yaml.WriteString("    proxies:\n")
+			for _, p := range proxies {
+				yaml.WriteString("      - " + formatYAMLString(p) + "\n")
+			}
+		}
+
+		// Optional fields
+		if url := getString(group, "url", ""); url != "" {
+			yaml.WriteString("    url: " + formatYAMLString(url) + "\n")
+		}
+		if interval := getInt(group, "interval", 0); interval > 0 {
+			yaml.WriteString(fmt.Sprintf("    interval: %d\n", interval))
+		}
+		if lazy, ok := group["lazy"].(bool); ok && lazy {
+			yaml.WriteString("    lazy: true\n")
+		}
+		if timeout := getInt(group, "timeout", 0); timeout > 0 {
+			yaml.WriteString(fmt.Sprintf("    timeout: %d\n", timeout))
+		}
+		if maxFailed := getInt(group, "max-failed-times", 0); maxFailed > 0 {
+			yaml.WriteString(fmt.Sprintf("    max-failed-times: %d\n", maxFailed))
+		}
+		if filter := getString(group, "filter", ""); filter != "" {
+			yaml.WriteString("    filter: " + formatYAMLString(filter) + "\n")
+		}
+		if excludeFilter := getString(group, "exclude-filter", ""); excludeFilter != "" {
+			yaml.WriteString("    exclude-filter: " + formatYAMLString(excludeFilter) + "\n")
+		}
+	}
+}
+
+// mihomoProxyData holds all data needed for a mihomo proxy entry.
+type mihomoProxyData struct {
+	Name       string
+	Protocol   string
+	Host       string
+	Port       int
+	UUID       string
+	Password   string
+	Flow       string
+	Encryption string
+	Transport  string
+	TLS        bool
+	ServerName string
+	ALPN       []string
+	Fingerprint string
+	AllowInsecure bool
+	// Transport-specific
+	WSPath    string
+	WSHost    string
+	GRPCServiceName string
+	GRPCAuthority   string
+	HTTPUpgradePath string
+	HTTPUpgradeHost string
+	XHTTPMode       string
+	XHTTPHost       string
+	XHTTPPath       string
+}
+
+// writeMihomoProxy writes a single proxy in mihomo YAML object format.
+func writeMihomoProxy(yaml *strings.Builder, p mihomoProxyData) {
+	yaml.WriteString("  - name: " + formatYAMLString(p.Name) + "\n")
+	yaml.WriteString("    type: " + p.Protocol + "\n")
+	yaml.WriteString("    server: " + p.Host + "\n")
+	yaml.WriteString(fmt.Sprintf("    port: %d\n", p.Port))
+
+	if p.UUID != "" {
+		yaml.WriteString("    uuid: " + p.UUID + "\n")
+	}
+	if p.Password != "" {
+		yaml.WriteString("    password: " + formatYAMLString(p.Password) + "\n")
+	}
+	if p.Protocol == "vless" && p.Flow != "" {
+		yaml.WriteString("    flow: " + p.Flow + "\n")
+	}
+	if p.Encryption != "" && p.Encryption != "none" {
+		yaml.WriteString("    encryption: " + p.Encryption + "\n")
+	}
+	if p.TLS {
+		yaml.WriteString("    tls: true\n")
+		if p.ServerName != "" {
+			yaml.WriteString("    servername: " + p.ServerName + "\n")
+		}
+		if len(p.ALPN) > 0 {
+			yaml.WriteString("    alpn:\n")
+			for _, a := range p.ALPN {
+				yaml.WriteString("      - " + a + "\n")
+			}
+		}
+		if p.Fingerprint != "" {
+			yaml.WriteString("    client-fingerprint: " + p.Fingerprint + "\n")
+		}
+		if p.AllowInsecure {
+			yaml.WriteString("    skip-cert-verify: true\n")
+		}
+	}
+	if p.Transport != "" && p.Transport != "raw" && p.Transport != "tcp" {
+		yaml.WriteString("    network: " + p.Transport + "\n")
+		switch p.Transport {
+		case "ws":
+			if p.WSPath != "" || p.WSHost != "" {
+				yaml.WriteString("    ws-opts:\n")
+				if p.WSPath != "" {
+					yaml.WriteString("      path: " + formatYAMLString(p.WSPath) + "\n")
+				}
+				if p.WSHost != "" {
+					yaml.WriteString("      headers:\n")
+					yaml.WriteString("        Host: " + p.WSHost + "\n")
+				}
+			}
+		case "grpc":
+			if p.GRPCServiceName != "" || p.GRPCAuthority != "" {
+				yaml.WriteString("    grpc-opts:\n")
+				if p.GRPCServiceName != "" {
+					yaml.WriteString("      grpc-service-name: " + formatYAMLString(p.GRPCServiceName) + "\n")
+				}
+				if p.GRPCAuthority != "" {
+					yaml.WriteString("      grpc-authority: " + p.GRPCAuthority + "\n")
+				}
+			}
+		case "httpupgrade":
+			if p.HTTPUpgradePath != "" || p.HTTPUpgradeHost != "" {
+				yaml.WriteString("    httpupgrade-opts:\n")
+				if p.HTTPUpgradePath != "" {
+					yaml.WriteString("      path: " + formatYAMLString(p.HTTPUpgradePath) + "\n")
+				}
+				if p.HTTPUpgradeHost != "" {
+					yaml.WriteString("      host: " + p.HTTPUpgradeHost + "\n")
+				}
+			}
+		case "xhttp":
+			yaml.WriteString("    xhttp-opts:\n")
+			if p.XHTTPMode != "" {
+				yaml.WriteString("      mode: " + p.XHTTPMode + "\n")
+			}
+			if p.XHTTPPath != "" {
+				yaml.WriteString("      path: " + formatYAMLString(p.XHTTPPath) + "\n")
+			}
+			if p.XHTTPHost != "" {
+				yaml.WriteString("      host: " + p.XHTTPHost + "\n")
+			}
+		}
+	}
 }
 
 // getSortedKeys returns sorted keys from a map for consistent output.
@@ -485,21 +676,62 @@ func formatYAMLValue(v interface{}) string {
 }
 
 func formatYAMLString(s string) string {
-	// Characters that need quoting in YAML
 	if s == "" {
 		return "\"\""
 	}
 	if s == "true" || s == "false" || s == "null" || s == "~" {
 		return "\"" + s + "\""
 	}
-	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") {
-		return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
+	// Always quote if contains special YAML characters
+	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`,?") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") || strings.HasPrefix(s, "-") {
+		escaped := strings.ReplaceAll(s, "\\", "\\\\")
+		escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+		return "\"" + escaped + "\""
 	}
-	// Check if it looks like a number or boolean
 	if _, err := strconv.ParseFloat(s, 64); err == nil {
 		return "\"" + s + "\""
 	}
 	return s
+}
+
+// cleanDNSConfig removes corrupted nameserver-policy from DNS config
+// and converts list-form nameserver-policy (imported from YAML) into a proper mapping.
+func cleanDNSConfig(dns interface{}) interface{} {
+	d, ok := dns.(map[string]interface{})
+	if !ok {
+		return dns
+	}
+	// Handle nameserver-policy stored as a list of single-key maps (YAML import issue).
+	// mihomo requires nameserver-policy to be a mapping, not a sequence.
+	if nspList, ok := d["nameserver-policy"].([]interface{}); ok {
+		merged := make(map[string]interface{})
+		for _, item := range nspList {
+			if m, ok := item.(map[string]interface{}); ok {
+				for k, v := range m {
+					if strings.Contains(k, "\"") || strings.Contains(k, "\n") {
+						continue
+					}
+					merged[k] = v
+				}
+			}
+		}
+		if len(merged) > 0 {
+			d["nameserver-policy"] = merged
+		} else {
+			delete(d, "nameserver-policy")
+		}
+	} else if nsp, ok := d["nameserver-policy"].(map[string]interface{}); ok {
+		// Clean corrupted keys in an existing mapping
+		cleaned := make(map[string]interface{})
+		for k, v := range nsp {
+			if strings.Contains(k, "\"") || strings.Contains(k, "\n") {
+				continue
+			}
+			cleaned[k] = v
+		}
+		d["nameserver-policy"] = cleaned
+	}
+	return d
 }
 
 // --- helpers ---

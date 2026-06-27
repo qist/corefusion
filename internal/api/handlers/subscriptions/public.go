@@ -648,16 +648,26 @@ func getSortedKeys(m map[string]interface{}) []string {
 
 // writeYAMLField writes a single YAML field.
 func writeYAMLField(yaml *strings.Builder, key string, value interface{}, indent int) {
+	// Skip empty keys
+	if key == "" {
+		return
+	}
 	prefix := strings.Repeat("  ", indent)
 	quotedKey := formatYAMLString(key)
 
 	switch v := value.(type) {
 	case map[string]interface{}:
+		if len(v) == 0 {
+			return
+		}
 		yaml.WriteString(prefix + quotedKey + ":\n")
 		for _, k := range getSortedKeys(v) {
 			writeYAMLField(yaml, k, v[k], indent+1)
 		}
 	case []interface{}:
+		if len(v) == 0 {
+			return
+		}
 		yaml.WriteString(prefix + quotedKey + ":\n")
 		for _, item := range v {
 			switch i := item.(type) {

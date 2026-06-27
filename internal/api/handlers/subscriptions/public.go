@@ -1129,9 +1129,14 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 	copyKeys := []string{
 		"alterId", "cipher", "alpn", "fingerprint", "client-fingerprint",
 		"skip-cert-verify", "tfo", "mptcp", "routing-mark", "udp", "xudp",
-		"reality-opts", "ech-opts",
+		"reality-opts", "ech-opts", "support-x25519mlkem768",
 		"ws-opts", "ws-headers", "grpc-opts", "xhttp-opts", "h2-opts", "http-opts",
-		"obfs", "obfs-password", "up", "down", "ports",
+		"obfs", "obfs-password", "up", "down", "ports", "hop-interval",
+		"bbr-profile", "max-idle-timeout", "keep-alive-period",
+		"disable-path-mtu-discovery", "max-incoming-streams",
+		"initial-stream-receive-window", "max-stream-receive-window",
+		"initial-connection-receive-window", "max-connection-receive-window",
+		"realm-opts",
 		"packet-addr", "packet-encoding",
 		"plugin", "plugin-opts", "udp-over-tcp", "udp-over-tcp-version",
 	}
@@ -1212,7 +1217,7 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 				extra["alpn"] = alpn
 			}
 			if fp, ok := tls["fingerprint"].(string); ok && fp != "" {
-				extra["fingerprint"] = fp
+				extra["client-fingerprint"] = fp
 			}
 			extra["skip-cert-verify"] = getBool(tls, "allowInsecure")
 		}
@@ -1230,7 +1235,7 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 				extra["reality-opts"] = ro
 			}
 			if fp, ok := reality["fingerprint"].(string); ok && fp != "" {
-				extra["fingerprint"] = fp
+				extra["client-fingerprint"] = fp
 			}
 		}
 	}

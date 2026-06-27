@@ -92,7 +92,19 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			if auth := urlHysteria2.User.String(); auth != "" {
 				hysteria2["password"] = auth
 			}
-			hysteria2["fingerprint"] = query.Get("pinSHA256")
+			// TLS (hysteria2 always uses TLS)
+			security := strings.ToLower(query.Get("security"))
+			if security == "tls" || security == "" {
+				hysteria2["tls"] = true
+			}
+			// client-fingerprint (browser fingerprint)
+			if fp := query.Get("fp"); fp != "" {
+				hysteria2["client-fingerprint"] = fp
+			}
+			// fingerprint (TLS certificate pinning)
+			if pin := query.Get("pinSHA256"); pin != "" {
+				hysteria2["fingerprint"] = pin
+			}
 			hysteria2["down"] = query.Get("down")
 			hysteria2["up"] = query.Get("up")
 
@@ -292,6 +304,23 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			}
 			if alpn := query.Get("alpn"); alpn != "" {
 				trojan["alpn"] = strings.Split(alpn, ",")
+			}
+			// TLS / Reality
+			security := strings.ToLower(query.Get("security"))
+			if strings.HasSuffix(security, "tls") || security == "reality" {
+				trojan["tls"] = true
+			}
+			if security == "reality" {
+				if pbk := query.Get("pbk"); pbk != "" {
+					ro := map[string]any{
+						"public-key": pbk,
+						"short-id":   query.Get("sid"),
+					}
+					if pqv := query.Get("pqv"); pqv != "" {
+						ro["support-x25519mlkem768"] = true
+					}
+					trojan["reality-opts"] = ro
+				}
 			}
 			network := strings.ToLower(query.Get("type"))
 			if network != "" {
@@ -613,10 +642,15 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		proxy["servername"] = sni
 	}
 	if realityPublicKey := query.Get("pbk"); realityPublicKey != "" {
-		proxy["reality-opts"] = map[string]any{
+		ro := map[string]any{
 			"public-key": realityPublicKey,
 			"short-id":   query.Get("sid"),
 		}
+		// pqv (post-quantum verification) → support-x25519mlkem768 inside reality-opts
+		if pqv := query.Get("pqv"); pqv != "" {
+			ro["support-x25519mlkem768"] = true
+		}
+		proxy["reality-opts"] = ro
 	}
 
 	switch query.Get("packetEncoding") {

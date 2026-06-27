@@ -1087,10 +1087,21 @@ func parseLinksToNodes(links []string) []formatter.Node {
 }
 
 // mihomoProxyMapToNode converts a mihomo proxy map to formatter.Node.
+// Returns nil for unsupported transports (kcp, mkcp, quic, etc.).
 func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 	name, _ := p["name"].(string)
 	proto, _ := p["type"].(string)
 	server, _ := p["server"].(string)
+
+	// Filter unsupported transports for mihomo
+	transport := "tcp"
+	if v, ok := p["network"].(string); ok && v != "" {
+		transport = v
+	}
+	unsupportedTransports := map[string]bool{"kcp": true, "mkcp": true, "quic": true}
+	if unsupportedTransports[transport] {
+		return nil
+	}
 	port := 0
 	if v, ok := p["port"].(string); ok {
 		fmt.Sscanf(v, "%d", &port)
@@ -1111,10 +1122,6 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 		sni = v
 	} else if v, ok := p["sni"].(string); ok && v != "" {
 		sni = v
-	}
-	transport := "tcp"
-	if v, ok := p["network"].(string); ok && v != "" {
-		transport = v
 	}
 
 	// Build Extra from all mihomo proxy fields

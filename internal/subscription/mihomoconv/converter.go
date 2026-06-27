@@ -95,6 +95,145 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			hysteria2["fingerprint"] = query.Get("pinSHA256")
 			hysteria2["down"] = query.Get("down")
 			hysteria2["up"] = query.Get("up")
+
+			// Parse fm param for quicParams
+			if fmStr := query.Get("fm"); fmStr != "" {
+				var fm map[string]any
+				if err := json.Unmarshal([]byte(fmStr), &fm); err == nil {
+					// Obfs from udp (salamander / gecko)
+					if udp, ok := fm["udp"].([]any); ok {
+						for _, item := range udp {
+							if m, ok := item.(map[string]any); ok {
+								obfsType, _ := m["type"].(string)
+								s, _ := m["settings"].(map[string]any)
+								if s == nil {
+									continue
+								}
+								switch obfsType {
+								case "salamander":
+									if hysteria2["obfs"] == nil || hysteria2["obfs"] == "" {
+										if pwd, ok := s["password"].(string); ok && pwd != "" {
+											hysteria2["obfs"] = "salamander"
+											hysteria2["obfs-password"] = pwd
+										}
+									}
+								case "gecko":
+									if hysteria2["obfs"] == nil || hysteria2["obfs"] == "" {
+										hysteria2["obfs"] = "gecko"
+										if pwd, ok := s["password"].(string); ok && pwd != "" {
+											hysteria2["obfs-password"] = pwd
+										}
+										if ps, ok := s["packetSize"].(string); ok && ps != "" {
+											parts := strings.SplitN(ps, "-", 2)
+											if len(parts) == 2 {
+												if min, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil && min > 0 {
+													hysteria2["obfs-min-packet-size"] = min
+												}
+												if max, err := strconv.Atoi(strings.TrimSpace(parts[1])); err == nil && max > 0 {
+													hysteria2["obfs-max-packet-size"] = max
+												}
+											}
+										}
+									}
+								case "realm":
+									realmOpts := map[string]any{"enable": true}
+									if url, ok := s["url"].(string); ok && url != "" {
+										realmOpts["server-url"] = url
+									}
+									if token, ok := s["token"].(string); ok && token != "" {
+										realmOpts["token"] = token
+									}
+									if realmID, ok := s["realm-id"].(string); ok && realmID != "" {
+										realmOpts["realm-id"] = realmID
+									}
+									if stunServers, ok := s["stunServers"].([]any); ok && len(stunServers) > 0 {
+										var servers []string
+										for _, ss := range stunServers {
+											if s, ok := ss.(string); ok {
+												servers = append(servers, s)
+											}
+										}
+										if len(servers) > 0 {
+											realmOpts["stun-servers"] = servers
+										}
+									}
+									if len(realmOpts) > 1 { // more than just "enable"
+										hysteria2["realm-opts"] = realmOpts
+									}
+								}
+							}
+						}
+					}
+					// quicParams
+					if qp, ok := fm["quicParams"].(map[string]any); ok {
+						// ports and hop-interval from udpHop
+						if hop, ok := qp["udpHop"].(map[string]any); ok {
+							if ports, ok := hop["ports"].(string); ok && ports != "" {
+								hysteria2["ports"] = ports
+							}
+							if interval, ok := hop["interval"].(string); ok && interval != "" {
+								hysteria2["hop-interval"] = interval
+							}
+						}
+						// bbr-profile
+						if bp, ok := qp["bbrProfile"].(string); ok && bp != "" && bp != "standard" {
+							hysteria2["bbr-profile"] = bp
+						}
+						// up/down from brutalUp/brutalDown (only for brutal/force-brutal congestion)
+						congestion, _ := qp["congestion"].(string)
+						if congestion == "brutal" || congestion == "force-brutal" {
+							if up, ok := qp["brutalUp"].(string); ok && up != "" {
+								hysteria2["up"] = up
+							}
+							if down, ok := qp["brutalDown"]; ok {
+								switch v := down.(type) {
+								case string:
+									if v != "" {
+										hysteria2["down"] = v
+									}
+								case float64:
+									if v > 0 {
+										hysteria2["down"] = fmt.Sprintf("%v Mbps", v)
+									}
+								}
+							}
+						}
+						// QUIC window settings
+						if v, ok := qp["initStreamReceiveWindow"].(float64); ok && v > 0 {
+							hysteria2["initial-stream-receive-window"] = int(v)
+						}
+						if v, ok := qp["maxStreamReceiveWindow"].(float64); ok && v > 0 {
+							hysteria2["max-stream-receive-window"] = int(v)
+						}
+						if v, ok := qp["initConnectionReceiveWindow"].(float64); ok && v > 0 {
+							hysteria2["initial-connection-receive-window"] = int(v)
+						}
+						if v, ok := qp["maxConnectionReceiveWindow"].(float64); ok && v > 0 {
+							hysteria2["max-connection-receive-window"] = int(v)
+						}
+						if v, ok := qp["maxIdleTimeout"].(float64); ok && v > 0 {
+							hysteria2["max-idle-timeout"] = int(v)
+						}
+						if v, ok := qp["keepAlivePeriod"].(float64); ok && v > 0 {
+							hysteria2["keep-alive-period"] = int(v)
+						}
+						if v, ok := qp["disablePathMTUDiscovery"].(bool); ok && v {
+							hysteria2["disable-path-mtu-discovery"] = true
+						}
+						if v, ok := qp["maxIncomingStreams"].(float64); ok && v > 0 {
+							hysteria2["max-incoming-streams"] = int(v)
+						}
+					}
+				}
+			}
+
+			// mport param (alternative to fm)
+			if mport := query.Get("mport"); mport != "" {
+				if _, exists := hysteria2["ports"]; !exists {
+					hysteria2["ports"] = mport
+				}
+			}
+
 			proxies = append(proxies, hysteria2)
 
 		case "tuic":
@@ -571,10 +710,113 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		if mode := query.Get("mode"); mode != "" {
 			xhttpOpts["mode"] = mode
 		}
-		proxy["xhttp-opts"] = xhttpOpts
+		// Parse extra JSON for xhttp advanced options
+		if extraStr := query.Get("extra"); extraStr != "" {
+			var extraMap map[string]any
+			if err := json.Unmarshal([]byte(extraStr), &extraMap); err == nil {
+				parseXHTTPExtra(extraMap, xhttpOpts)
+			}
+		}
+		if len(xhttpOpts) > 0 {
+			proxy["xhttp-opts"] = xhttpOpts
+		}
 	}
 
 	return nil
+}
+
+// parseXHTTPExtra maps xray-core extra JSON fields to mihomo xhttp-opts fields.
+func parseXHTTPExtra(extra map[string]any, opts map[string]any) {
+	// xmux → reuse-settings
+	xmuxToReuse := func(xmux map[string]any) map[string]any {
+		reuse := make(map[string]any)
+		setStr := func(src, dst string) {
+			if v, ok := xmux[src]; ok {
+				switch val := v.(type) {
+				case string:
+					if val != "" {
+						reuse[dst] = val
+					}
+				case float64:
+					reuse[dst] = strconv.FormatInt(int64(val), 10)
+				}
+			}
+		}
+		setStr("maxConnections", "max-connections")
+		setStr("maxConcurrency", "max-concurrency")
+		setStr("cMaxReuseTimes", "c-max-reuse-times")
+		setStr("hMaxRequestTimes", "h-max-request-times")
+		setStr("hMaxReusableSecs", "h-max-reusable-secs")
+		if v, ok := xmux["hKeepAlivePeriod"].(float64); ok {
+			reuse["h-keep-alive-period"] = int(v)
+		}
+		return reuse
+	}
+
+	setStr := func(src, dst string) {
+		if v, ok := extra[src]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				opts[dst] = s
+			}
+		}
+	}
+	setBool := func(src, dst string) {
+		if v, ok := extra[src]; ok {
+			if b, ok := v.(bool); ok && b {
+				opts[dst] = true
+			}
+		}
+	}
+	setInt := func(src, dst string) {
+		if v, ok := extra[src]; ok {
+			switch val := v.(type) {
+			case float64:
+				if val > 0 {
+					opts[dst] = int(val)
+				}
+			case int:
+				if val > 0 {
+					opts[dst] = val
+				}
+			}
+		}
+	}
+
+	setStr("xPaddingBytes", "x-padding-bytes")
+	setBool("noGRPCHeader", "no-grpc-header")
+	setBool("xPaddingObfsMode", "x-padding-obfs-mode")
+	setStr("xPaddingKey", "x-padding-key")
+	setStr("xPaddingHeader", "x-padding-header")
+	setStr("xPaddingPlacement", "x-padding-placement")
+	setStr("xPaddingMethod", "x-padding-method")
+	setStr("uplinkHttpMethod", "uplink-http-method")
+
+	// session placement/key
+	if v, ok := extra["sessionIDPlacement"].(string); ok && v != "" {
+		opts["session-placement"] = v
+	} else if v, ok := extra["sessionPlacement"].(string); ok && v != "" {
+		opts["session-placement"] = v
+	}
+	if v, ok := extra["sessionIDKey"].(string); ok && v != "" {
+		opts["session-key"] = v
+	} else if v, ok := extra["sessionKey"].(string); ok && v != "" {
+		opts["session-key"] = v
+	}
+
+	setStr("seqPlacement", "seq-placement")
+	setStr("seqKey", "seq-key")
+	setStr("uplinkDataPlacement", "uplink-data-placement")
+	setStr("uplinkDataKey", "uplink-data-key")
+	setInt("uplinkChunkSize", "uplink-chunk-size")
+	setInt("scMaxEachPostBytes", "sc-max-each-post-bytes")
+	setInt("scMinPostsIntervalMs", "sc-min-posts-interval-ms")
+
+	// xmux → reuse-settings
+	if xmuxAny, ok := extra["xmux"].(map[string]any); ok && len(xmuxAny) > 0 {
+		if reuse := xmuxToReuse(xmuxAny); len(reuse) > 0 {
+			opts["reuse-settings"] = reuse
+		}
+	}
 }
 
 func uniqueName(names map[string]int, name string) string {

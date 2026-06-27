@@ -1431,11 +1431,11 @@
             <el-divider content-position="left">Xmux (Multiplexing)</el-divider>
             <el-form label-width="180px" label-position="left">
               <el-form-item label="Max Concurrency">
-                <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConcurrency" placeholder="16-32" style="width:200px" @change="onXmuxConcurrency" />
+                <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConcurrency" placeholder="16-32" style="width:200px" :disabled="xmuxConnActive" @change="onXmuxConcurrency" />
                 <div class="hint">{{ t('protoCenter.transport.xmuxConcurrencyHint') }}</div>
               </el-form-item>
               <el-form-item label="Max Connections">
-                <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConnections" placeholder="0" style="width:200px" @change="onXmuxConnections" />
+                <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConnections" placeholder="0" style="width:200px" :disabled="xmuxConcurrencyActive" @change="onXmuxConnections" />
                 <div class="hint">{{ t('protoCenter.transport.xmuxConnectionsHint') }}</div>
               </el-form-item>
               <el-form-item label="C Max Reuse Times">
@@ -2865,11 +2865,19 @@ function buildXhttpExtra(xhttp) {
   const extra = {}
   if (xhttp.mode) extra.mode = xhttp.mode
   if (xhttp.xPaddingBytes) extra.xPaddingBytes = xhttp.xPaddingBytes
-  if (xhttp.extra?.uplinkHTTPMethod) extra.uplinkHTTPMethod = xhttp.extra.uplinkHTTPMethod
-  if (xhttp.extra?.noGRPCHeader) extra.noGRPCHeader = xhttp.extra.noGRPCHeader
-  if (xhttp.extra?.scMaxEachPostBytes) extra.scMaxEachPostBytes = xhttp.extra.scMaxEachPostBytes
-  if (xhttp.extra?.scMinPostsIntervalMs) extra.scMinPostsIntervalMs = xhttp.extra.scMinPostsIntervalMs
-  if (xhttp.extra?.scMaxBufferedPosts) extra.scMaxBufferedPosts = xhttp.extra.scMaxBufferedPosts
+  // xPaddingObfsMode sub-fields only when obfs is enabled
+  if (xhttp.extra?.xPaddingObfsMode) {
+    extra.xPaddingObfsMode = true
+    for (const k of ['xPaddingKey', 'xPaddingHeader', 'xPaddingPlacement', 'xPaddingMethod']) {
+      if (xhttp.extra[k]) extra[k] = xhttp.extra[k]
+    }
+  }
+  // String fields - filter out xray core defaults to avoid DPI fingerprint
+  const coreDefaults = { scMaxEachPostBytes: '1000000', scMinPostsIntervalMs: '30', uplinkHTTPMethod: '' }
+  for (const k of ['uplinkHTTPMethod', 'sessionIDPlacement', 'sessionIDKey', 'seqPlacement', 'seqKey', 'uplinkDataPlacement', 'uplinkDataKey', 'scMaxEachPostBytes', 'scMinPostsIntervalMs']) {
+    const v = xhttp.extra?.[k]
+    if (typeof v === 'string' && v.length > 0 && v !== coreDefaults[k]) extra[k] = v
+  }
   // Headers
   if (xhttp.extra?._headers?.length) {
     const headers = {}
@@ -3534,7 +3542,7 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: 'POST', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
@@ -3736,16 +3744,26 @@ function onSocksAuthChange(val) {
   }
 }
 
+function xmuxFieldActive(val) {
+  if (val === null || val === undefined) return false
+  const s = String(val).trim()
+  return s !== '' && s !== '0'
+}
+const xmuxConcurrencyActive = computed(() => xmuxFieldActive(rf.streamSettings?.xhttp?.extra?.xmux?.maxConcurrency))
+const xmuxConnActive = computed(() => xmuxFieldActive(rf.streamSettings?.xhttp?.extra?.xmux?.maxConnections))
+
 function onXmuxConcurrency() {
-  if (rf.streamSettings.xhttp.extra.xmux.maxConcurrency > 0) {
-    rf.streamSettings.xhttp.extra.xmux.maxConnections = 0
+  const v = rf.streamSettings.xhttp.extra.xmux.maxConcurrency
+  if (xmuxFieldActive(v)) {
+    rf.streamSettings.xhttp.extra.xmux.maxConnections = ''
   }
   emit()
 }
 
 function onXmuxConnections() {
-  if (rf.streamSettings.xhttp.extra.xmux.maxConnections > 0) {
-    rf.streamSettings.xhttp.extra.xmux.maxConcurrency = 0
+  const v = rf.streamSettings.xhttp.extra.xmux.maxConnections
+  if (xmuxFieldActive(v)) {
+    rf.streamSettings.xhttp.extra.xmux.maxConcurrency = ''
   }
   emit()
 }
@@ -4126,7 +4144,7 @@ function parseXhttpSettings(xh) {
     extra: {
       // Client settings
       _showMethod: !!extra.uplinkHTTPMethod,
-      uplinkHTTPMethod: extra.uplinkHTTPMethod || 'POST',
+      uplinkHTTPMethod: extra.uplinkHTTPMethod || '',
       noGRPCHeader: extra.noGRPCHeader || false,
       noSSEHeader: extra.noSSEHeader || false,
       _showMaxHeader: !!extra.serverMaxHeaderBytes,

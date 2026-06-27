@@ -574,6 +574,11 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 		if xpb := getString(xhttp, "xPaddingBytes", ""); xpb != "" {
 			params.Set("x_padding_bytes", xpb)
 		}
+		// Serialize xhttp extra fields
+		extra := buildXhttpExtra(xhttp)
+		if extra != "" {
+			params.Set("extra", extra)
+		}
 	}
 }
 
@@ -620,6 +625,14 @@ func setSecurityParams(params url.Values, ss map[string]interface{}, security st
 		if spx, ok := reality["spiderX"].(string); ok && spx != "" {
 			params.Set("spx", spx)
 		}
+		// pqv (post-quantum verification) from settings[0].mldsa65Verify
+		if settings, ok := reality["settings"].([]interface{}); ok && len(settings) > 0 {
+			if s, ok := settings[0].(map[string]interface{}); ok {
+				if pqv, ok := s["mldsa65Verify"].(string); ok && pqv != "" {
+					params.Set("pqv", pqv)
+				}
+			}
+		}
 	default:
 		params.Set("security", "none")
 	}
@@ -631,6 +644,74 @@ func setFinalMaskParams(params url.Values, fm map[string]interface{}) {
 	if fmData != "" {
 		params.Set("fm", fmData)
 	}
+}
+
+// buildXhttpExtra serializes xhttp extra fields to JSON string.
+func buildXhttpExtra(xhttp map[string]interface{}) string {
+	if xhttp == nil {
+		return ""
+	}
+	// Merge xhttp.extra sub-object into the main xhttp map for unified access
+	xhttpExtra := getMap(xhttp, "extra")
+	merged := xhttp
+	if xhttpExtra != nil {
+		merged = make(map[string]interface{})
+		for k, v := range xhttp {
+			merged[k] = v
+		}
+		for k, v := range xhttpExtra {
+			if _, exists := merged[k]; !exists {
+				merged[k] = v
+			}
+		}
+	}
+	extra := make(map[string]interface{})
+	// Direct extra fields on xhttp object (merged with xhttp.extra)
+	setStr := func(src, dst string) {
+		if v, ok := merged[src].(string); ok && v != "" {
+			extra[dst] = v
+		}
+	}
+	setBool := func(src, dst string) {
+		if v, ok := merged[src].(bool); ok && v {
+			extra[dst] = true
+		}
+	}
+	setInt := func(src, dst string) {
+		if v, ok := merged[src].(float64); ok && v > 0 {
+			extra[dst] = int(v)
+		}
+	}
+	setStr("noGRPCHeader", "noGRPCHeader")
+	setStr("xPaddingBytes", "xPaddingBytes")
+	setBool("xPaddingObfsMode", "xPaddingObfsMode")
+	setStr("xPaddingKey", "xPaddingKey")
+	setStr("xPaddingHeader", "xPaddingHeader")
+	setStr("xPaddingPlacement", "xPaddingPlacement")
+	setStr("xPaddingMethod", "xPaddingMethod")
+	setStr("uplinkHttpMethod", "uplinkHTTPMethod")
+	setStr("sessionIDPlacement", "sessionIDPlacement")
+	setStr("sessionPlacement", "sessionPlacement")
+	setStr("sessionIDKey", "sessionIDKey")
+	setStr("sessionKey", "sessionKey")
+	setStr("seqPlacement", "seqPlacement")
+	setStr("seqKey", "seqKey")
+	setStr("uplinkDataPlacement", "uplinkDataPlacement")
+	setStr("uplinkDataKey", "uplinkDataKey")
+	setInt("uplinkChunkSize", "uplinkChunkSize")
+	setInt("scMaxEachPostBytes", "scMaxEachPostBytes")
+	setInt("scMinPostsIntervalMs", "scMinPostsIntervalMs")
+	setInt("scMaxBufferedPosts", "scMaxBufferedPosts")
+	setStr("scStreamUpServerSecs", "scStreamUpServerSecs")
+	// xmux
+	if xmux := getMap(merged, "xmux"); xmux != nil && len(xmux) > 0 {
+		extra["xmux"] = xmux
+	}
+	if len(extra) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(extra)
+	return string(b)
 }
 
 // serializeFinalMask converts finalmask config to JSON string (mirrors frontend serializeFinalMask).

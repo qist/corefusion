@@ -97,13 +97,18 @@ func (h *Handler) AddPlanNode(c *gin.Context) {
 		return
 	}
 	var req struct {
-		InboundConfigID int64 `json:"inbound_config_id" binding:"required"`
+		InboundConfigID int64 `json:"inbound_config_id"`
+		ExternalNodeID  int64 `json:"external_node_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	node, err := h.svc.AddPlanNode(c.Request.Context(), planID, req.InboundConfigID)
+	if req.InboundConfigID == 0 && req.ExternalNodeID == 0 {
+		response.BadRequest(c, "INVALID_REQUEST", "inbound_config_id or external_node_id required")
+		return
+	}
+	node, err := h.svc.AddPlanNode(c.Request.Context(), planID, req.InboundConfigID, req.ExternalNodeID)
 	if err != nil {
 		response.InternalError(c, "ADD_NODE_FAILED", err.Error())
 		return

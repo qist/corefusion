@@ -17,13 +17,14 @@ type Plan struct {
 
 func (Plan) TableName() string { return "plans" }
 
-// PlanNode maps a plan to inbound configs (nodes).
+// PlanNode maps a plan to inbound configs or external nodes.
 type PlanNode struct {
-	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	PlanID          int64     `gorm:"uniqueIndex:idx_plan_inbound;not null" json:"plan_id"`
-	InboundConfigID int64     `gorm:"uniqueIndex:idx_plan_inbound;not null" json:"inbound_config_id"`
-	Enabled         bool      `gorm:"default:true" json:"enabled"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID               int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	PlanID           int64     `gorm:"not null" json:"plan_id"`
+	InboundConfigID  int64     `gorm:"default:0" json:"inbound_config_id"`
+	ExternalNodeID   int64     `gorm:"default:0" json:"external_node_id"`
+	Enabled          bool      `gorm:"default:true" json:"enabled"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 func (PlanNode) TableName() string { return "plan_nodes" }

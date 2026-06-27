@@ -1896,6 +1896,18 @@ export default {
     deletePlanConfirm: 'Delete this plan? Associated node mappings will also be removed.',
     deleteClientConfirm: 'Delete client "{email}"? User will be removed from all inbounds.',
   },
+  externalNodes: {
+    title: 'External Nodes',
+    import: 'Import Nodes',
+    name: 'Source Name',
+    sourceType: 'Import Type',
+    sourceData: 'Content',
+    sourceUrl: 'Subscription URL',
+    mihomoConfig: 'Config',
+    nodeCount: 'Nodes',
+    importSuccess: 'Import successful, {count} nodes',
+    importError: 'Import failed',
+  },
   error: {
     networkError: 'Network error',
     unauthorized: 'Unauthorized, please login again',

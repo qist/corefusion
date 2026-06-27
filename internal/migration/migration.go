@@ -139,6 +139,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.MihomoRuleProvider{},
 		&entity.MihomoRule{},
 		&entity.MihomoSpecialOutbound{},
+
+		// External Nodes
+		&entity.ExternalNodeSource{},
+		&entity.ExternalNode{},
 	}
 
 	for _, model := range models {

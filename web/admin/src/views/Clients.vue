@@ -98,17 +98,30 @@
 
     <!-- Plan Nodes Dialog -->
     <el-dialog v-model="nodesDialog" :title="currentPlan?.name + ' - ' + t('client.nodes')" width="600">
-      <div style="margin-bottom:12px">
-        <el-select v-model="newNodeId" size="small" filterable :placeholder="t('client.selectInbound')" style="width:300px">
-          <el-option v-for="ib in inbounds" :key="ib.id" :label="ib.tag + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
+      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <el-select v-model="newNodeId" size="small" filterable :placeholder="t('client.selectInbound')" style="width:250px">
+          <el-option v-for="ib in inbounds" :key="ib.id" :label="(ib.remark || ib.tag) + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
         </el-select>
-        <el-button size="small" type="primary" style="margin-left:8px" @click="addPlanNode">{{ t('client.addNode') }}</el-button>
+        <el-button size="small" type="primary" @click="addPlanNode">{{ t('client.addNode') }}</el-button>
+        <el-select v-model="newExtNodeId" size="small" filterable placeholder="外部节点" style="width:250px">
+          <el-option v-for="en in extNodes" :key="en.id" :label="en.name + ' (' + en.host + ':' + en.port + ')'" :value="en.id" />
+        </el-select>
+        <el-button size="small" type="success" @click="addExtNodeToPlan">添加外部节点</el-button>
       </div>
       <el-table :data="planNodes" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column prop="inbound_config_id" :label="t('client.inboundId')" width="80" />
-        <el-table-column :label="t('client.inboundTag')">
-          <template #default="{row}">{{ inboundTag(row.inbound_config_id) }}</template>
+        <el-table-column label="节点名称">
+          <template #default="{row}">
+            <template v-if="row.inbound_config_id">{{ inboundName(row.inbound_config_id) }}</template>
+            <template v-else-if="row.external_node_id">{{ extNodeName(row.external_node_id) }}</template>
+            <template v-else>-</template>
+          </template>
+        </el-table-column>
+        <el-table-column label="类型" width="80">
+          <template #default="{row}">
+            <el-tag v-if="row.inbound_config_id" size="small">入站</el-tag>
+            <el-tag v-else-if="row.external_node_id" size="small" type="success">外部</el-tag>
+          </template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="80">
           <template #default="{row}"><el-button size="small" type="danger" @click="deletePlanNode(row)">{{ t('common.delete') }}</el-button></template>
@@ -192,6 +205,8 @@ const currentPlan = ref(null)
 const planNodes = ref([])
 const inbounds = ref([])
 const newNodeId = ref(null)
+const extNodes = ref([])
+const newExtNodeId = ref(null)
 
 // Clients
 const clients = ref([])
@@ -262,6 +277,8 @@ const usagePercent = (row) => row.quota_bytes > 0 ? Math.min(100, Math.round(row
 const usageColor = (row) => usagePercent(row) > 80 ? '#f56c6c' : '#409eff'
 const statusType = (s) => ({ active: 'success', suspended: 'danger', expired: 'warning' }[s] || 'info')
 const inboundTag = (id) => inbounds.value.find(ib => ib.id === id)?.tag || '#' + id
+const inboundName = (id) => { const ib = inbounds.value.find(ib => ib.id === id); return ib ? (ib.remark || ib.tag) : '#' + id }
+const extNodeName = (id) => { const n = extNodes.value.find(n => n.id === id); return n ? n.name : '#' + id }
 
 // Fetch
 async function fetchPlans() { loading.value = true; try { plans.value = (await client.get('/plans')) || [] } catch {} finally { loading.value = false } }
@@ -299,6 +316,16 @@ async function deletePlan(row) { await ElMessageBox.confirm(t('client.deletePlan
 // Plan Nodes
 async function showPlanNodes(row) { currentPlan.value = row; nodesDialog.value = true; try { const r = await client.get(`/plans/${row.id}`); planNodes.value = r.nodes || [] } catch { planNodes.value = [] } }
 async function addPlanNode() { if (!newNodeId.value) return; await client.post(`/plans/${currentPlan.value.id}/nodes`, { inbound_config_id: newNodeId.value }); ElMessage.success(t('common.success')); newNodeId.value = null; showPlanNodes(currentPlan.value) }
+async function fetchExtNodes() { try { extNodes.value = (await client.get('/external-nodes')) || [] } catch {} }
+async function addExtNodeToPlan() {
+  if (!newExtNodeId.value) return
+  const node = extNodes.value.find(n => n.id === newExtNodeId.value)
+  if (!node) return
+  await client.post(`/plans/${currentPlan.value.id}/nodes`, { external_node_id: newExtNodeId.value })
+  ElMessage.success(`已添加: ${node.name}`)
+  newExtNodeId.value = null
+  showPlanNodes(currentPlan.value)
+}
 async function deletePlanNode(row) { await client.delete(`/plans/${currentPlan.value.id}/nodes/${row.id}`); ElMessage.success(t('common.success')); showPlanNodes(currentPlan.value) }
 
 // Client CRUD
@@ -354,7 +381,7 @@ function copyText(text) {
   }
 }
 
-onMounted(() => { fetchPlans(); fetchClients(); fetchInbounds(); fetchPanelSettings() })
+onMounted(() => { fetchPlans(); fetchClients(); fetchInbounds(); fetchPanelSettings(); fetchExtNodes() })
 
 async function fetchPanelSettings() {
   try {

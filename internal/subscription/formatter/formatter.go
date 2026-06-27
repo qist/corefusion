@@ -613,10 +613,41 @@ func formatURI(node Node) string {
 			"id":   node.UUID,
 			"aid":  node.AlterID,
 			"net":  node.Transport,
-			"tls":  "tls",
+			"type": "none",
+			"host": "",
+			"path": "/",
+			"tls":  "",
+			"sni":  "",
+			"alpn": "",
+			"fp":   "",
 		}
-		if !node.TLS {
-			config["tls"] = ""
+		if node.TLS {
+			config["tls"] = "tls"
+		}
+		if node.ServerName != "" {
+			config["sni"] = node.ServerName
+		}
+		if scy, ok := node.Extra["cipher"].(string); ok && scy != "" {
+			config["scy"] = scy
+		}
+		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
+			config["fp"] = fp
+		}
+		// Transport sub-options from Extra
+		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
+			if path, ok := wsOpts["path"].(string); ok && path != "" {
+				config["path"] = path
+			}
+			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
+				if host, ok := headers["Host"].(string); ok {
+					config["host"] = host
+				}
+			}
+		}
+		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
+			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
+				config["path"] = sn
+			}
 		}
 		data, _ := json.Marshal(config)
 		return "vmess://" + base64.StdEncoding.EncodeToString(data)
@@ -625,21 +656,66 @@ func formatURI(node Node) string {
 		uri := fmt.Sprintf("vless://%s@%s:%d", node.UUID, node.Host, node.Port)
 		params := []string{}
 		if node.Transport != "" && node.Transport != "tcp" {
-			params = append(params, "type="+string(node.Transport))
+			params = append(params, "type="+node.Transport)
 		}
-		if node.TLS {
-			params = append(params, "security=tls")
-			if node.ServerName != "" {
-				params = append(params, "sni="+node.ServerName)
-			}
-		}
-		// Add VLESS encryption if configured
 		if node.Encryption != "" && node.Encryption != "none" {
 			params = append(params, "encryption="+node.Encryption)
 		}
-		// Add XTLS Vision flow if configured
 		if node.Flow != "" {
 			params = append(params, "flow="+node.Flow)
+		}
+		// TLS / Reality
+		if ro, ok := node.Extra["reality-opts"].(map[string]interface{}); ok {
+			params = append(params, "security=reality")
+			if pk, ok := ro["public-key"].(string); ok && pk != "" {
+				params = append(params, "pbk="+pk)
+			}
+			if sid, ok := ro["short-id"].(string); ok && sid != "" {
+				params = append(params, "sid="+sid)
+			}
+		} else if node.TLS {
+			params = append(params, "security=tls")
+		} else {
+			params = append(params, "security=none")
+		}
+		if node.ServerName != "" {
+			params = append(params, "sni="+node.ServerName)
+		}
+		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
+			params = append(params, "fp="+fp)
+		}
+		if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
+			params = append(params, "alpn="+strings.Join(alpn, ","))
+		}
+		// Transport sub-options
+		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
+			if path, ok := wsOpts["path"].(string); ok && path != "" {
+				params = append(params, "path="+path)
+			}
+			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
+				if host, ok := headers["Host"].(string); ok && host != "" {
+					params = append(params, "host="+host)
+				}
+			}
+			if ed, ok := wsOpts["max-early-data"].(int); ok && ed > 0 {
+				params = append(params, "ed="+strconv.Itoa(ed))
+			}
+		}
+		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
+			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
+				params = append(params, "serviceName="+sn)
+			}
+		}
+		if xhttpOpts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
+			if path, ok := xhttpOpts["path"].(string); ok && path != "" {
+				params = append(params, "path="+path)
+			}
+			if host, ok := xhttpOpts["host"].(string); ok && host != "" {
+				params = append(params, "host="+host)
+			}
+			if mode, ok := xhttpOpts["mode"].(string); ok && mode != "" {
+				params = append(params, "mode="+mode)
+			}
 		}
 		if len(params) > 0 {
 			uri += "?" + strings.Join(params, "&")
@@ -648,12 +724,52 @@ func formatURI(node Node) string {
 		return uri
 
 	case "trojan":
-		uri := fmt.Sprintf("trojan://%s@%s:%d", node.Password, node.Host, node.Port)
-		if node.TLS {
-			uri += "?security=tls"
-			if node.ServerName != "" {
-				uri += "&sni=" + node.ServerName
+		uri := fmt.Sprintf("trojan://%s@%s:%d", url.QueryEscape(node.Password), node.Host, node.Port)
+		params := []string{}
+		if node.Transport != "" && node.Transport != "tcp" {
+			params = append(params, "type="+node.Transport)
+		}
+		// TLS / Reality
+		if ro, ok := node.Extra["reality-opts"].(map[string]interface{}); ok {
+			params = append(params, "security=reality")
+			if pk, ok := ro["public-key"].(string); ok && pk != "" {
+				params = append(params, "pbk="+pk)
 			}
+			if sid, ok := ro["short-id"].(string); ok && sid != "" {
+				params = append(params, "sid="+sid)
+			}
+		} else if node.TLS {
+			params = append(params, "security=tls")
+		} else {
+			params = append(params, "security=none")
+		}
+		if node.ServerName != "" {
+			params = append(params, "sni="+node.ServerName)
+		}
+		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
+			params = append(params, "fp="+fp)
+		}
+		if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
+			params = append(params, "alpn="+strings.Join(alpn, ","))
+		}
+		// Transport sub-options
+		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
+			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
+				params = append(params, "serviceName="+sn)
+			}
+		}
+		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
+			if path, ok := wsOpts["path"].(string); ok && path != "" {
+				params = append(params, "path="+path)
+			}
+			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
+				if host, ok := headers["Host"].(string); ok && host != "" {
+					params = append(params, "host="+host)
+				}
+			}
+		}
+		if len(params) > 0 {
+			uri += "?" + strings.Join(params, "&")
 		}
 		uri += "#" + node.Name
 		return uri

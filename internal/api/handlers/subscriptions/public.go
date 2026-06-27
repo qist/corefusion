@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,7 @@ type PublicHandler struct {
 	cfIPEntryRepo   *repository.CFIPEntryRepository
 	clientRepo      *repository.ClientRepository
 	planNodeRepo    *repository.PlanNodeRepository
+	extNodeRepo     *repository.ExternalNodeRepository
 	mihomoRepo      *repository.MihomoConfigRepository
 	mihomoRuleRepo  *repository.MihomoRuleRepository
 	accessLog       *repository.AccessLogRepository
@@ -41,6 +43,7 @@ func NewPublicHandler(
 	cfIPEntryRepo *repository.CFIPEntryRepository,
 	clientRepo *repository.ClientRepository,
 	planNodeRepo *repository.PlanNodeRepository,
+	extNodeRepo *repository.ExternalNodeRepository,
 	mihomoRepo *repository.MihomoConfigRepository,
 	mihomoRuleRepo *repository.MihomoRuleRepository,
 	accessLog *repository.AccessLogRepository,
@@ -52,6 +55,7 @@ func NewPublicHandler(
 		cfIPEntryRepo:   cfIPEntryRepo,
 		clientRepo:      clientRepo,
 		planNodeRepo:    planNodeRepo,
+		extNodeRepo:     extNodeRepo,
 		mihomoRepo:      mihomoRepo,
 		mihomoRuleRepo:  mihomoRuleRepo,
 		accessLog:       accessLog,
@@ -123,16 +127,23 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	// Get allowed inbound IDs from client's plan and client email
 	var allowedInboundIDs map[int64]bool
+	var allowedExternalNodeIDs map[int64]bool
 	var clientEmail string
 	if sub.ClientID > 0 && h.clientRepo != nil {
 		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
 			clientEmail = cl.Email
 			if cl.PlanID > 0 && h.planNodeRepo != nil {
-				if nodes, err := h.planNodeRepo.ListByPlanID(ctx, cl.PlanID); err == nil {
+				if planNodes, err := h.planNodeRepo.ListByPlanID(ctx, cl.PlanID); err == nil {
 					allowedInboundIDs = make(map[int64]bool)
-					for _, n := range nodes {
+					allowedExternalNodeIDs = make(map[int64]bool)
+					for _, n := range planNodes {
 						if n.Enabled {
-							allowedInboundIDs[n.InboundConfigID] = true
+							if n.InboundConfigID > 0 {
+								allowedInboundIDs[n.InboundConfigID] = true
+							}
+							if n.ExternalNodeID > 0 {
+								allowedExternalNodeIDs[n.ExternalNodeID] = true
+							}
 						}
 					}
 				}
@@ -153,6 +164,12 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
 	// Parse URIs into Nodes for format conversion
 	nodes := parseLinksToNodes(links)
+	// Append external nodes from plan
+	if len(allowedExternalNodeIDs) > 0 && h.extNodeRepo != nil {
+		extNodes, extLinks := h.collectExternalNodesAndLinks(ctx, allowedExternalNodeIDs)
+		nodes = append(nodes, extNodes...)
+		links = append(links, extLinks...)
+	}
 
 	var data []byte
 	contentType := "text/plain"
@@ -289,6 +306,43 @@ func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []sh
 		}
 	}
 	return links
+}
+
+// collectExternalNodesAndLinks returns formatter.Nodes and share URIs from external nodes.
+func (h *PublicHandler) collectExternalNodesAndLinks(ctx context.Context, allowedIDs map[int64]bool) ([]formatter.Node, []string) {
+	var nodes []formatter.Node
+	var links []string
+	all, err := h.extNodeRepo.ListAll(ctx)
+	if err != nil {
+		return nodes, links
+	}
+	for _, n := range all {
+		if !n.Enabled || !allowedIDs[n.ID] {
+			continue
+		}
+		var pm map[string]interface{}
+		if json.Unmarshal([]byte(n.ProxyJSON), &pm) != nil {
+			continue
+		}
+		// Use mihomo proxy map directly for Node (all fields preserved)
+		node := mihomoProxyMapToNode(pm)
+		if node != nil {
+			if n.Name != "" {
+				node.Name = n.Name
+			}
+			nodes = append(nodes, *node)
+		}
+		// Generate complete URI from mihomo proxy map
+		uri := formatter.MihomoToURI(pm)
+		if uri != "" {
+			// Replace fragment with external node name
+			if idx := strings.LastIndex(uri, "#"); idx >= 0 {
+				uri = uri[:idx+1] + url.PathEscape(n.Name)
+			}
+			links = append(links, uri)
+		}
+	}
+	return nodes, links
 }
 
 // collectFormatterNodes collects nodes for the formatter (used by singbox/xray/mihomo formats).

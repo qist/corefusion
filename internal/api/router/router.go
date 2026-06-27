@@ -34,6 +34,7 @@ import (
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
+	extNodeHandler "corefusion/internal/api/handlers"
 	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
@@ -309,7 +310,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subfmtH := subfmtHandler.NewHandler(subfmtSvcInst)
 	subendH := subendHandler.NewHandler(subendSvcInst)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, mihomoConfigRepo, mihomoRuleRepo, accessLogRepo)
+	extSrcRepo := repository.NewExternalNodeSourceRepository(database)
+	extNodeRepo := repository.NewExternalNodeRepository(database)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
@@ -833,6 +836,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				mihomoGroup.DELETE("/rule-providers/:id", mihomoH.DeleteRuleProvider)
 				mihomoGroup.GET("/configs/:id/yaml", mihomoH.GenerateYAML)
 			}
+
+			// External Nodes
+			extNodeH := extNodeHandler.NewExternalNodeHandler(extSrcRepo, extNodeRepo)
+			extNodeH.RegisterRoutes(protected)
 
 			// Certificates
 			certsGroup := protected.Group("/certificates")
@@ -1418,8 +1425,9 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	accessLogRepo := repository.NewAccessLogRepository(database)
 	mihomoConfigRepo2 := repository.NewMihomoConfigRepository(database)
 	mihomoRuleRepo2 := repository.NewMihomoRuleRepository(database)
+	extNodeRepo2 := repository.NewExternalNodeRepository(database)
 
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, mihomoConfigRepo2, mihomoRuleRepo2, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, accessLogRepo)
 
 	// Subscription at root path - no /sub prefix needed
 	r.GET("/:token", publicSubH.ServeSubscription)

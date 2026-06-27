@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -109,7 +110,24 @@ func generateVmessLink(n Node) string {
 		}
 	case "ws":
 		ws := getMap(ss, "ws")
-		obj["path"] = getString(ws, "path", "/")
+		path := getString(ws, "path", "/")
+		// Parse early data from path (?ed=2560)
+		if idx := strings.Index(path, "?ed="); idx >= 0 {
+			edStr := path[idx+4:]
+			// Remove any trailing params
+			if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
+				edStr = edStr[:ampIdx]
+			}
+			if ed, err := strconv.Atoi(edStr); err == nil && ed > 0 {
+				obj["max-early-data"] = ed
+				obj["early-data-header-name"] = "Sec-WebSocket-Protocol"
+				path = path[:idx]
+			}
+		}
+		if path == "" {
+			path = "/"
+		}
+		obj["path"] = path
 		obj["host"] = getWSHost(ws)
 	case "grpc":
 		grpc := getMap(ss, "grpc")

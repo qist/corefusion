@@ -90,6 +90,11 @@
           </el-table>
         </el-card>
       </el-tab-pane>
+
+      <!-- External Nodes -->
+      <el-tab-pane :label="t('externalNodes.title')" name="externalNodes">
+        <ExternalNodes ref="extNodesRef" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Format Dialog -->
@@ -238,6 +243,7 @@ import { useI18n } from 'vue-i18n'
 import { load as yamlLoad } from 'js-yaml'
 import client from '../api/client'
 import MihomoConfig from './protocols/sections/MihomoConfig.vue'
+import ExternalNodes from './ExternalNodes.vue'
 
 const { t } = useI18n()
 const activeTab = ref('subscriptions')
@@ -278,6 +284,7 @@ const proxyGroups = ref([])
 const ruleProviders = ref({})
 const proxyProviders = ref({})
 const dnsConfig = ref({ enable: true, _nameserverStr: '8.8.8.8\n1.1.1.1', _fallbackStr: '' })
+const extNodesRef = ref(null)
 const generalConfig = ref({
   mixed_port: 10801, port: 0, socks_port: 0, redir_port: 0, tproxy_port: 0,
   allow_lan: true, bind_address: '*',

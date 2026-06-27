@@ -142,10 +142,11 @@ func (s *Service) DeletePlan(ctx context.Context, id int64) error {
 	return s.planRepo.Delete(ctx, id)
 }
 
-func (s *Service) AddPlanNode(ctx context.Context, planID, inboundConfigID int64) (*entity.PlanNode, error) {
+func (s *Service) AddPlanNode(ctx context.Context, planID, inboundConfigID, externalNodeID int64) (*entity.PlanNode, error) {
 	node := &entity.PlanNode{
 		PlanID:          planID,
 		InboundConfigID: inboundConfigID,
+		ExternalNodeID:  externalNodeID,
 		Enabled:         true,
 	}
 	if err := s.planNodeRepo.Create(ctx, node); err != nil {

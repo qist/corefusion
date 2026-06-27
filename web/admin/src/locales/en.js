@@ -1694,6 +1694,8 @@ export default {
     dnsFallbackIPCIDR: 'IP CIDR',
     dnsFallbackDomain: 'Domain',
     dnsNameserverPolicy: 'Nameserver Policy',
+    dnsNameserverPolicyPlaceholder: '+.google.com=8.8.8.8, 8.8.4.4\ngeosite:cn,private=114.114.114.114, 223.5.5.5\nrule-set:direct=tcp://198.51.100.53:5353, 198.51.100.53:5353',
+    dnsNameserverPolicyHint: 'One rule per line, format: domain-rules=dns1, dns2. Use "=" as delimiter (avoid conflict with geosite:、tcp:// etc). # and // for comments.',
     general: 'General',
     ports: 'Port Settings',
     mixedPort: 'Mixed Port',

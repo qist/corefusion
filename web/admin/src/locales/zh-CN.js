@@ -1701,6 +1701,8 @@ export default {
     dnsFallbackIPCIDR: 'IP CIDR',
     dnsFallbackDomain: '域名',
     dnsNameserverPolicy: 'DNS 策略',
+    dnsNameserverPolicyPlaceholder: '+.google.com=8.8.8.8, 8.8.4.4\ngeosite:cn,private=114.114.114.114, 223.5.5.5\nrule-set:direct=tcp://198.51.100.53:5353, 198.51.100.53:5353',
+    dnsNameserverPolicyHint: '每行一条规则，格式：域名规则=dns1, dns2。用 = 分隔（避免与 geosite:、tcp:// 等冲突）。# 和 // 开头为注释。',
     general: '通用',
     ports: '端口设置',
     mixedPort: '混合端口',

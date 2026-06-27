@@ -485,10 +485,11 @@
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.dnsNameserverPolicy') }}</el-divider>
           <el-form-item :label="t('subfmt.dnsNameserverPolicy')">
-            <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:flex;gap:8px;align-items:flex-start;width:100%">
               <el-switch v-model="dns._nsPolicyEnabled" @change="emitDns" />
-              <el-input v-model="dns._nsPolicyStr" type="textarea" :rows="3" placeholder="geosite:cn,private: https://doh.pub/dns-query&#10;geosite:category-ads-all: rcode://success" :disabled="!dns._nsPolicyEnabled" style="flex:1" @change="emitDns" />
+              <el-input v-model="dns._nsPolicyStr" type="textarea" :rows="7" :placeholder="t('subfmt.dnsNameserverPolicyPlaceholder')" :disabled="!dns._nsPolicyEnabled" style="flex:1;min-width:450px" @change="onNsPolicyChange" />
             </div>
+            <div class="hint">{{ t('subfmt.dnsNameserverPolicyHint') }}</div>
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -760,6 +761,29 @@ function emitProxyGroups() { emit('update:proxyGroups', [...props.proxyGroups]) 
 function emitRuleProviders() { emit('update:ruleProviders', { ...props.ruleProviders }) }
 function emitProxyProviders() { emit('update:proxyProviders', { ...props.proxyProviders }) }
 function emitDns() { emit('update:dns', { ...props.dns }) }
+
+function onNsPolicyChange() {
+  // Convert "key=val1, val2" lines to nameserver-policy JSON
+  // Use "=" as delimiter because ":" appears in geosite:cn, rule-set:xxx, tcp://, https://
+  const policy = {}
+  const dns = props.dns
+  if (dns._nsPolicyStr) {
+    dns._nsPolicyStr.split('\n').forEach(line => {
+      line = line.trim()
+      if (!line || line.startsWith('#') || line.startsWith('//')) return
+      const idx = line.indexOf('=')
+      if (idx > 0) {
+        const key = line.substring(0, idx).trim()
+        const val = line.substring(idx + 1).trim()
+        if (key && val) {
+          policy[key] = val.split(',').map(s => s.trim()).filter(Boolean)
+        }
+      }
+    })
+  }
+  dns._nsPolicyJSON = JSON.stringify(policy, null, 2)
+  emitDns()
+}
 
 function addProxyProvider() {
   if (!newPPName.value) return

@@ -340,7 +340,7 @@ function showCreateFormat() {
   proxyGroups.value = [{ name: 'PROXY', type: 'select', proxies: [], _proxiesStr: 'DIRECT', _showAdvanced: false, hidden: false, lazy: true, url: 'https://www.gstatic.com/generate_204', interval: 300, timeout: 5000, 'max-failed-times': 5, 'empty-fallback': '' }]
   ruleProviders.value = {}
   proxyProviders.value = {}
-  dnsConfig.value = { enable: true, _listen: '0.0.0.0:53', _enhancedMode: 'redir-host', _cacheAlgorithm: 'arc', _preferH3: false, _ipv6: true, _useHosts: true, _respectRules: false, _defaultNameserverStr: '114.114.114.114\n8.8.8.8', _nameserverStr: 'https://doh.pub/dns-query\nhttps://dns.alidns.com/dns-query', _fallbackEnabled: false, _fallbackStr: '', _proxyServerNSEnabled: false, _proxyServerNSStr: '', _directNSEnabled: false, _directNSStr: '', _fakeIPRange: '198.18.0.1/16', _fakeIPFilterMode: 'blacklist', _fakeIPFilterEnabled: true, _fakeIPFilterStr: '*.lan', _fallbackGeoIP: true, _fallbackGeoCode: 'CN', _fallbackIPCIDREnabled: false, _fallbackIPCIDRStr: '', _fallbackDomainEnabled: false, _fallbackDomainStr: '', _nsPolicyEnabled: false, _nsPolicyStr: '' }
+  dnsConfig.value = { enable: true, _listen: '0.0.0.0:53', _enhancedMode: 'redir-host', _cacheAlgorithm: 'arc', _preferH3: false, _ipv6: true, _useHosts: true, _respectRules: false, _defaultNameserverStr: '114.114.114.114\n8.8.8.8', _nameserverStr: 'https://doh.pub/dns-query\nhttps://dns.alidns.com/dns-query', _fallbackEnabled: false, _fallbackStr: '', _proxyServerNSEnabled: false, _proxyServerNSStr: '', _directNSEnabled: false, _directNSStr: '', _fakeIPRange: '198.18.0.1/16', _fakeIPFilterMode: 'blacklist', _fakeIPFilterEnabled: true, _fakeIPFilterStr: '*.lan', _fallbackGeoIP: true, _fallbackGeoCode: 'CN', _fallbackIPCIDREnabled: false, _fallbackIPCIDRStr: '', _fallbackDomainEnabled: false, _fallbackDomainStr: '', _nsPolicyEnabled: false, _nsPolicyJSON: '{}', _nsPolicyStr: '' }
   generalConfig.value = { mixed_port: 10801, _mixedPortEnabled: true, port: 0, _portEnabled: false, socks_port: 0, _socksPortEnabled: false, redir_port: 0, _redirPortEnabled: false, tproxy_port: 0, _tproxyPortEnabled: false, allow_lan: true, bind_address: '*', _authEnabled: false, _authStr: '', _skipAuthEnabled: false, _skipAuthStr: '127.0.0.1/8\n::1/128', _lanAllowedEnabled: false, _lanAllowedStr: '0.0.0.0/0\n::/0', _lanDisallowedEnabled: false, _lanDisallowedStr: '', find_process_mode: 'strict', mode: 'rule', log_level: 'info', ipv6: true, _storeSelected: false, _storeFakeIP: true, _geoAutoUpdate: false, _geoUpdateInterval: 24, _geoIPEnabled: false, _geoIPUrl: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat', _geositeEnabled: false, _geositeUrl: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat', _mmdbEnabled: false, _mmdbUrl: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb', _extControllerEnabled: true, _extController: '0.0.0.0:9093', _extControllerTLS: '', _extControllerTLSEnabled: false, _extSecretEnabled: false, _extSecret: '', _extUIEnabled: false, _extUIName: 'metacubexd', _extUIUrl: '', _tlsEnabled: false, _tlsCert: '', _tlsKey: '', _interfaceEnabled: false, _interfaceName: '', _routingMarkEnabled: false, _routingMark: 0, _tcpConcurrent: true, _keepAliveEnabled: false, _keepAliveIdle: 15, _quicDisableGso: false, _quicDisableEcn: false, _dialerIP4PConvert: false, _tunEnabled: false, _tunStack: 'system', _tunDnsHijack: '0.0.0.0:53', _tunAutoRoute: true, _tunAutoRedirect: false, _tunMTUEnabled: false, _tunMTU: 9000, _tunStrictRoute: false, _tunDisableICMP: false, _tunDevice: '', _tunAutoDetect: true, _tunEndpointNAT: false, _tunGSO: false, _tunGSOMaxSize: 65536, _tunIPv6Enabled: false, _tunIPv6Addr: '', _tunUDPTimeoutEnabled: false, _tunUDPTimeout: 300, _tunRouteAddrV4Enabled: false, _tunRouteAddrV4: '0.0.0.0/1\n128.0.0.0/1', _tunRouteAddrV6Enabled: false, _tunRouteAddrV6: '::/1\n8000::/1', _tunRouteExcludeV4Enabled: false, _tunRouteExcludeV4: '192.168.0.0/16', _tunRouteExcludeV6Enabled: false, _tunRouteExcludeV6: 'fc00::/7', _tunRouteAddrSetEnabled: false, _tunRouteAddrSet: '', _tunRouteExcludeSetEnabled: false, _tunRouteExcludeSet: '', _tunIncludeIfEnabled: false, _tunIncludeIf: '', _tunExcludeIfEnabled: false, _tunExcludeIf: '', _tunIncludeUIDEnabled: false, _tunIncludeUID: '', _tunExcludeUIDEnabled: false, _tunExcludeUID: '', _tunIncludeUIDRangeEnabled: false, _tunIncludeUIDRange: '', _tunExcludeUIDRangeEnabled: false, _tunExcludeUIDRange: '', _tunIncludeMACEnabled: false, _tunIncludeMAC: '', _tunExcludeMACEnabled: false, _tunExcludeMAC: '', _tunIncludeAndroidUserEnabled: false, _tunIncludeAndroidUser: '', _tunIncludePkgEnabled: false, _tunIncludePkg: '', _tunExcludePkgEnabled: false, _tunExcludePkg: '', _snifferEnabled: false, _snifferForceDNS: false, _snifferParsePureIP: false, _snifferOverrideDest: false, _snifferHTTP: true, _snifferHTTPPorts: '80, 8080-8880', _snifferHTTPOverride: false, _snifferTLS: true, _snifferTLSPorts: '443, 8443', _snifferQUIC: true, _snifferQUICPorts: '443, 8443', _snifferForceDomainEnabled: false, _snifferForceDomain: '', _snifferSkipDomainEnabled: false, _snifferSkipDomain: '', _snifferSkipSrcEnabled: false, _snifferSkipSrcAddr: '', _snifferSkipDstEnabled: false, _snifferSkipDstAddr: '', _dnsOutEnabled: true, _rematchOutEnabled: false, _rematchTarget: '', _directOutEnabled: false, _directInterface: '', _directRoutingMark: 0 }
   fmtTab.value = 'basic'
   fmtDialog.value = true
@@ -527,7 +527,8 @@ async function handleImportYAML() {
       _fallbackDomainEnabled: !!(dns['fallback-filter'] && (dns['fallback-filter'].domain || []).length > 0),
       _fallbackDomainStr: (dns['fallback-filter'] && dns['fallback-filter'].domain || []).join('\n'),
       _nsPolicyEnabled: Object.keys(dns['nameserver-policy'] || {}).length > 0,
-      _nsPolicyStr: Object.entries(dns['nameserver-policy'] || {}).map(([k,v]) => k + ': ' + (Array.isArray(v) ? v.join(', ') : v)).join('\n'),
+      _nsPolicyJSON: JSON.stringify(dns['nameserver-policy'] || {}, null, 2),
+      _nsPolicyStr: Object.entries(dns['nameserver-policy'] || {}).map(([k, v]) => k + '=' + (Array.isArray(v) ? v.join(', ') : String(v))).join('\n'),
     })
 
     // External controller (top-level field)
@@ -787,9 +788,10 @@ function showEditFormat(row) {
       _fallbackDomainEnabled: !!(dns['fallback-filter'] && (dns['fallback-filter'].domain || []).length > 0),
       _fallbackDomainStr: (dns['fallback-filter'] && dns['fallback-filter'].domain || []).join('\n'),
       _nsPolicyEnabled: Object.keys(dns['nameserver-policy'] || {}).length > 0,
-      _nsPolicyStr: Object.entries(dns['nameserver-policy'] || {}).map(([k,v]) => k + ': ' + (Array.isArray(v) ? v.join(', ') : v)).join('\n')
+      _nsPolicyJSON: JSON.stringify(dns['nameserver-policy'] || {}, null, 2),
+      _nsPolicyStr: Object.entries(dns['nameserver-policy'] || {}).map(([k, v]) => k + '=' + (Array.isArray(v) ? v.join(', ') : String(v))).join('\n'),
     }
-  } catch { dnsConfig.value = { enable: true, _listen: '0.0.0.0:53', _enhancedMode: 'redir-host', _cacheAlgorithm: 'arc', _preferH3: false, _ipv6: true, _useHosts: true, _respectRules: false, _defaultNameserverStr: '114.114.114.114\n8.8.8.8', _nameserverStr: 'https://doh.pub/dns-query\nhttps://dns.alidns.com/dns-query', _fallbackEnabled: false, _fallbackStr: '', _proxyServerNSEnabled: false, _proxyServerNSStr: '', _directNSEnabled: false, _directNSStr: '', _fakeIPRange: '198.18.0.1/16', _fakeIPFilterMode: 'blacklist', _fakeIPFilterEnabled: true, _fakeIPFilterStr: '*.lan', _fallbackGeoIP: true, _fallbackGeoCode: 'CN', _fallbackIPCIDREnabled: false, _fallbackIPCIDRStr: '', _fallbackDomainEnabled: false, _fallbackDomainStr: '', _nsPolicyEnabled: false, _nsPolicyStr: '' } }
+  } catch { dnsConfig.value = { enable: true, _listen: '0.0.0.0:53', _enhancedMode: 'redir-host', _cacheAlgorithm: 'arc', _preferH3: false, _ipv6: true, _useHosts: true, _respectRules: false, _defaultNameserverStr: '114.114.114.114\n8.8.8.8', _nameserverStr: 'https://doh.pub/dns-query\nhttps://dns.alidns.com/dns-query', _fallbackEnabled: false, _fallbackStr: '', _proxyServerNSEnabled: false, _proxyServerNSStr: '', _directNSEnabled: false, _directNSStr: '', _fakeIPRange: '198.18.0.1/16', _fakeIPFilterMode: 'blacklist', _fakeIPFilterEnabled: true, _fakeIPFilterStr: '*.lan', _fallbackGeoIP: true, _fallbackGeoCode: 'CN', _fallbackIPCIDREnabled: false, _fallbackIPCIDRStr: '', _fallbackDomainEnabled: false, _fallbackDomainStr: '', _nsPolicyEnabled: false, _nsPolicyJSON: '{}', _nsPolicyStr: '' } }
 
   // Parse general settings (top-level fields in mihomo config)
   try {
@@ -934,17 +936,10 @@ function showEditFormat(row) {
 }
 
 async function saveFormat() {
-  // Build nsPolicy
-  const nsPolicy = {}
-  if (dnsConfig.value._nsPolicyEnabled && dnsConfig.value._nsPolicyStr) {
-    dnsConfig.value._nsPolicyStr.split('\n').forEach(line => {
-      const idx = line.indexOf(':')
-      if (idx > 0) {
-        const key = line.substring(0, idx).trim()
-        const val = line.substring(idx + 1).trim()
-        nsPolicy[key] = val.includes(',') ? val.split(',').map(s => s.trim()) : val
-      }
-    })
+  // Build nsPolicy from JSON
+  let nsPolicy = {}
+  if (dnsConfig.value._nsPolicyEnabled && dnsConfig.value._nsPolicyJSON) {
+    try { nsPolicy = JSON.parse(dnsConfig.value._nsPolicyJSON) } catch { nsPolicy = {} }
   }
 
   const configJSON = {

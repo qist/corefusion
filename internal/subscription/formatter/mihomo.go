@@ -48,39 +48,85 @@ func FormatMihomo(nodes []Node, config *MihomoConfig) ([]byte, error) {
 	}
 	yaml.WriteString("\n")
 
-	// DNS section
+	// DNS section - only if enabled
 	if config != nil && config.DNS != nil {
-		yaml.WriteString("dns:\n")
-		if enable, ok := config.DNS["enable"].(bool); ok {
-			yaml.WriteString(fmt.Sprintf("  enable: %v\n", enable))
-		}
-		if nameserver, ok := config.DNS["nameserver"].([]interface{}); ok && len(nameserver) > 0 {
-			yaml.WriteString("  nameserver:\n")
-			for _, ns := range nameserver {
-				yaml.WriteString(fmt.Sprintf("    - %v\n", ns))
+		if enable, ok := config.DNS["enable"].(bool); ok && enable {
+			yaml.WriteString("dns:\n")
+			yaml.WriteString("  enable: true\n")
+
+			// enhanced-mode
+			if mode, ok := config.DNS["enhanced-mode"].(string); ok && mode != "" {
+				yaml.WriteString(fmt.Sprintf("  enhanced-mode: %s\n", mode))
+			} else {
+				yaml.WriteString("  enhanced-mode: fake-ip\n")
 			}
-		}
-		if fallback, ok := config.DNS["fallback"].([]interface{}); ok && len(fallback) > 0 {
-			yaml.WriteString("  fallback:\n")
-			for _, fb := range fallback {
-				yaml.WriteString(fmt.Sprintf("    - %v\n", fb))
+
+			// fake-ip-range
+			if ipRange, ok := config.DNS["fake-ip-range"].(string); ok && ipRange != "" {
+				yaml.WriteString(fmt.Sprintf("  fake-ip-range: %s\n", ipRange))
+			} else {
+				yaml.WriteString("  fake-ip-range: 198.18.0.1/16\n")
 			}
+
+			// fake-ip-filter
+			if filter, ok := config.DNS["fake-ip-filter"].([]interface{}); ok && len(filter) > 0 {
+				yaml.WriteString("  fake-ip-filter:\n")
+				for _, f := range filter {
+					yaml.WriteString(fmt.Sprintf("    - \"%v\"\n", f))
+				}
+			}
+
+			// nameserver
+			if nameserver, ok := config.DNS["nameserver"].([]interface{}); ok && len(nameserver) > 0 {
+				yaml.WriteString("  nameserver:\n")
+				for _, ns := range nameserver {
+					yaml.WriteString(fmt.Sprintf("    - %v\n", ns))
+				}
+			}
+
+			// fallback
+			if fallback, ok := config.DNS["fallback"].([]interface{}); ok && len(fallback) > 0 {
+				yaml.WriteString("  fallback:\n")
+				for _, fb := range fallback {
+					yaml.WriteString(fmt.Sprintf("    - %v\n", fb))
+				}
+			}
+
+			// nameserver-policy
+			if nsPolicy, ok := config.DNS["nameserver-policy"].(map[string]interface{}); ok && len(nsPolicy) > 0 {
+				yaml.WriteString("  nameserver-policy:\n")
+				for key, val := range nsPolicy {
+					yaml.WriteString(fmt.Sprintf("    \"%s\":\n", key))
+					if servers, ok := val.([]interface{}); ok {
+						for _, s := range servers {
+							yaml.WriteString(fmt.Sprintf("      - %v\n", s))
+						}
+					}
+				}
+			}
+
+			yaml.WriteString("\n")
 		}
-		yaml.WriteString("\n")
 	}
 
-	// Listeners section (default not enabled)
+	// Listeners section - only if enabled
 	if config != nil && len(config.Listeners) > 0 {
-		yaml.WriteString("listeners:\n")
+		enabledListeners := []map[string]interface{}{}
 		for _, listener := range config.Listeners {
-			yaml.WriteString("  - name: " + getString(listener, "name", "mixed") + "\n")
-			yaml.WriteString("    type: " + getString(listener, "type", "mixed") + "\n")
-			yaml.WriteString(fmt.Sprintf("    port: %d\n", getInt(listener, "port", 7890)))
-			if enabled, ok := listener["enabled"].(bool); ok {
-				yaml.WriteString(fmt.Sprintf("    enabled: %v\n", enabled))
+			if enabled, ok := listener["enabled"].(bool); ok && enabled {
+				enabledListeners = append(enabledListeners, listener)
 			}
 		}
-		yaml.WriteString("\n")
+		if len(enabledListeners) > 0 {
+			yaml.WriteString("listeners:\n")
+			for _, listener := range enabledListeners {
+				yaml.WriteString("  - name: " + getString(listener, "name", "mixed") + "\n")
+				yaml.WriteString("    type: " + getString(listener, "type", "mixed") + "\n")
+				yaml.WriteString(fmt.Sprintf("    port: %d\n", getInt(listener, "port", 7890)))
+				yaml.WriteString("    enabled: true\n")
+			}
+			yaml.WriteString("\n")
+		}
 	}
 
 	// Proxy groups

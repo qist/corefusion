@@ -395,6 +395,10 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 			continue
 		}
 		value := cfg[key]
+		// Skip empty or disabled fields
+		if isEmptyOrDisabled(key, value) {
+			continue
+		}
 		// For proxy-groups, inject node names into groups that have _hasExternalNodes
 		if key == "proxy-groups" {
 			writeProxyGroups(&yaml, value, nodeNames)
@@ -607,6 +611,24 @@ func writeMihomoProxy(yaml *strings.Builder, p mihomoProxyData) {
 	}
 }
 
+// isEmptyOrDisabled checks if a config field should be skipped in output.
+// Only skips truly empty values, NOT false/0 which are valid config choices.
+func isEmptyOrDisabled(key string, value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	switch v := value.(type) {
+	case string:
+		return v == ""
+	case []interface{}:
+		return len(v) == 0
+	case map[string]interface{}:
+		return len(v) == 0
+	}
+	// bool, int, float64 are always valid (false/0 are explicit choices)
+	return false
+}
+
 // getSortedKeys returns sorted keys from a map for consistent output.
 func getSortedKeys(m map[string]interface{}) []string {
 	keys := make([]string, 0, len(m))
@@ -627,15 +649,16 @@ func getSortedKeys(m map[string]interface{}) []string {
 // writeYAMLField writes a single YAML field.
 func writeYAMLField(yaml *strings.Builder, key string, value interface{}, indent int) {
 	prefix := strings.Repeat("  ", indent)
+	quotedKey := formatYAMLString(key)
 
 	switch v := value.(type) {
 	case map[string]interface{}:
-		yaml.WriteString(prefix + key + ":\n")
+		yaml.WriteString(prefix + quotedKey + ":\n")
 		for _, k := range getSortedKeys(v) {
 			writeYAMLField(yaml, k, v[k], indent+1)
 		}
 	case []interface{}:
-		yaml.WriteString(prefix + key + ":\n")
+		yaml.WriteString(prefix + quotedKey + ":\n")
 		for _, item := range v {
 			switch i := item.(type) {
 			case map[string]interface{}:
@@ -644,19 +667,24 @@ func writeYAMLField(yaml *strings.Builder, key string, value interface{}, indent
 					writeYAMLField(yaml, k, i[k], indent+2)
 				}
 			default:
-				yaml.WriteString(prefix + "  - " + formatYAMLValue(i) + "\n")
+				// Always quote string values in arrays for safety
+				if s, ok := i.(string); ok {
+					yaml.WriteString(prefix + "  - " + formatYAMLValueQuoted(s) + "\n")
+				} else {
+					yaml.WriteString(prefix + "  - " + formatYAMLValue(i) + "\n")
+				}
 			}
 		}
 	case string:
 		if v != "" {
-			yaml.WriteString(prefix + key + ": " + formatYAMLString(v) + "\n")
+			yaml.WriteString(prefix + quotedKey + ": " + formatYAMLString(v) + "\n")
 		}
 	case bool:
-		yaml.WriteString(prefix + key + ": " + fmt.Sprintf("%v", v) + "\n")
+		yaml.WriteString(prefix + quotedKey + ": " + fmt.Sprintf("%v", v) + "\n")
 	case float64:
-		yaml.WriteString(prefix + key + ": " + fmt.Sprintf("%v", v) + "\n")
+		yaml.WriteString(prefix + quotedKey + ": " + fmt.Sprintf("%v", v) + "\n")
 	case int:
-		yaml.WriteString(prefix + key + ": " + fmt.Sprintf("%d", v) + "\n")
+		yaml.WriteString(prefix + quotedKey + ": " + fmt.Sprintf("%d", v) + "\n")
 	case nil:
 		// Skip nil values
 	}
@@ -682,8 +710,8 @@ func formatYAMLString(s string) string {
 	if s == "true" || s == "false" || s == "null" || s == "~" {
 		return "\"" + s + "\""
 	}
-	// Always quote if contains special YAML characters
-	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`,?") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") || strings.HasPrefix(s, "-") {
+	// Quote if contains special YAML characters or could be ambiguous
+	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`,?+\\") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") || strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "@") {
 		escaped := strings.ReplaceAll(s, "\\", "\\\\")
 		escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
 		return "\"" + escaped + "\""
@@ -694,12 +722,27 @@ func formatYAMLString(s string) string {
 	return s
 }
 
+// formatYAMLValueQuoted always wraps string in double quotes
+func formatYAMLValueQuoted(s string) string {
+	escaped := strings.ReplaceAll(s, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	return "\"" + escaped + "\""
+}
+
 // cleanDNSConfig removes corrupted nameserver-policy from DNS config
 // and converts list-form nameserver-policy (imported from YAML) into a proper mapping.
 func cleanDNSConfig(dns interface{}) interface{} {
 	d, ok := dns.(map[string]interface{})
 	if !ok {
 		return dns
+	}
+	// Ensure all fake-ip-filter entries are quoted strings
+	if filter, ok := d["fake-ip-filter"].([]interface{}); ok {
+		quoted := make([]interface{}, len(filter))
+		for i, f := range filter {
+			quoted[i] = fmt.Sprintf("%v", f)
+		}
+		d["fake-ip-filter"] = quoted
 	}
 	// Handle nameserver-policy stored as a list of single-key maps (YAML import issue).
 	// mihomo requires nameserver-policy to be a mapping, not a sequence.
@@ -708,7 +751,7 @@ func cleanDNSConfig(dns interface{}) interface{} {
 		for _, item := range nspList {
 			if m, ok := item.(map[string]interface{}); ok {
 				for k, v := range m {
-					if strings.Contains(k, "\"") || strings.Contains(k, "\n") {
+					if strings.Contains(k, "\n") {
 						continue
 					}
 					merged[k] = v
@@ -721,10 +764,10 @@ func cleanDNSConfig(dns interface{}) interface{} {
 			delete(d, "nameserver-policy")
 		}
 	} else if nsp, ok := d["nameserver-policy"].(map[string]interface{}); ok {
-		// Clean corrupted keys in an existing mapping
+		// Keep all keys as-is, only remove truly corrupted ones
 		cleaned := make(map[string]interface{})
 		for k, v := range nsp {
-			if strings.Contains(k, "\"") || strings.Contains(k, "\n") {
+			if strings.Contains(k, "\n") {
 				continue
 			}
 			cleaned[k] = v

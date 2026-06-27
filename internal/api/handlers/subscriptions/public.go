@@ -16,6 +16,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
+	"corefusion/internal/subscription/mihomoconv"
 	"corefusion/internal/subscription/sharelink"
 )
 
@@ -148,8 +149,10 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		formatStr = "base64_uri"
 	}
 
-	nodes := h.collectFormatterNodes(ctx, shareDomains, allowedInboundIDs, clientEmail)
+	// Single source of truth: collectShareLinks generates complete URIs
 	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
+	// Parse URIs into Nodes for format conversion
+	nodes := parseLinksToNodes(links)
 
 	var data []byte
 	contentType := "text/plain"
@@ -354,18 +357,33 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			if nodeName == "" {
 				nodeName = cfg.Tag
 			}
+			protocol := cfg.Protocol
+			if protocol == "hysteria" {
+				protocol = "hysteria2"
+			}
+			extra := buildExtra(config, ss, cfg.Protocol)
+			transport := getString(ss, "network", "raw")
+			// Filter unsupported transports for mihomo
+			supportedTransports := map[string]bool{"tcp": true, "raw": true, "ws": true, "grpc": true, "xhttp": true, "h2": true, "http": true, "httpupgrade": true}
+			if !supportedTransports[transport] {
+				transport = "tcp"
+			}
+			if transport == "raw" {
+				transport = "tcp"
+			}
 			node := formatter.Node{
 				Name:       nodeName,
-				Protocol:   cfg.Protocol,
+				Protocol:   protocol,
 				Host:       host,
 				Port:       port,
-				Transport:  getString(ss, "network", "raw"),
+				Transport:  transport,
 				TLS:        getString(ss, "security", "none") != "none",
 				ServerName: getTLSServerName(ss),
 				UUID:       uuid,
 				Password:   password,
 				Flow:       flow,
 				Encryption: method,
+				Extra:      extra,
 			}
 			nodes = append(nodes, node)
 		}
@@ -411,23 +429,10 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 		writeYAMLField(&yaml, key, value, 0)
 	}
 
-	// Inject proxies from nodes (mihomo object format)
+	// Inject proxies from nodes using mihomo converter
 	yaml.WriteString("\nproxies:\n")
 	for _, node := range nodes {
-		p := mihomoProxyData{
-			Name:       node.Name,
-			Protocol:   node.Protocol,
-			Host:       node.Host,
-			Port:       node.Port,
-			UUID:       node.UUID,
-			Password:   node.Password,
-			Flow:       node.Flow,
-			Encryption: node.Encryption,
-			Transport:  node.Transport,
-			TLS:        node.TLS,
-			ServerName: node.ServerName,
-		}
-		writeMihomoProxy(&yaml, p)
+		yaml.WriteString(formatter.NodeToMihomoProxy(node))
 	}
 
 	// Inject rules from database
@@ -1063,6 +1068,91 @@ func getSettingsClients(config map[string]interface{}) []map[string]interface{} 
 	return result
 }
 
+// parseLinksToNodes parses complete share URIs into formatter Nodes.
+func parseLinksToNodes(links []string) []formatter.Node {
+	var nodes []formatter.Node
+	// Use mihomo's converter to parse URIs into proxy maps
+	buf := []byte(strings.Join(links, "\n"))
+	proxyMaps, err := mihomoconv.ConvertsV2Ray(buf)
+	if err != nil || len(proxyMaps) == 0 {
+		return nodes
+	}
+	for _, pm := range proxyMaps {
+		node := mihomoProxyMapToNode(pm)
+		if node != nil {
+			nodes = append(nodes, *node)
+		}
+	}
+	return nodes
+}
+
+// mihomoProxyMapToNode converts a mihomo proxy map to formatter.Node.
+func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
+	name, _ := p["name"].(string)
+	proto, _ := p["type"].(string)
+	server, _ := p["server"].(string)
+	port := 0
+	if v, ok := p["port"].(string); ok {
+		fmt.Sscanf(v, "%d", &port)
+	} else if v, ok := p["port"].(float64); ok {
+		port = int(v)
+	}
+	uuid, _ := p["uuid"].(string)
+	password, _ := p["password"].(string)
+	flow, _ := p["flow"].(string)
+	encryption, _ := p["encryption"].(string)
+
+	tls := false
+	if v, ok := p["tls"].(bool); ok {
+		tls = v
+	}
+	sni := ""
+	if v, ok := p["servername"].(string); ok && v != "" {
+		sni = v
+	} else if v, ok := p["sni"].(string); ok && v != "" {
+		sni = v
+	}
+	transport := "tcp"
+	if v, ok := p["network"].(string); ok && v != "" {
+		transport = v
+	}
+
+	// Build Extra from all mihomo proxy fields
+	extra := make(map[string]interface{})
+	copyKeys := []string{
+		"alterId", "cipher", "alpn", "fingerprint", "client-fingerprint",
+		"skip-cert-verify", "tfo", "mptcp", "routing-mark", "udp", "xudp",
+		"reality-opts", "ech-opts",
+		"ws-opts", "ws-headers", "grpc-opts", "xhttp-opts", "h2-opts", "http-opts",
+		"obfs", "obfs-password", "up", "down", "ports",
+		"packet-addr", "packet-encoding",
+		"plugin", "plugin-opts", "udp-over-tcp", "udp-over-tcp-version",
+	}
+	for _, k := range copyKeys {
+		if v, ok := p[k]; ok {
+			extra[k] = v
+		}
+	}
+	if len(extra) == 0 {
+		extra = nil
+	}
+
+	return &formatter.Node{
+		Name:       name,
+		Protocol:   proto,
+		Host:       server,
+		Port:       port,
+		Transport:  transport,
+		TLS:        tls,
+		ServerName: sni,
+		UUID:       uuid,
+		Password:   password,
+		Flow:       flow,
+		Encryption: encryption,
+		Extra:      extra,
+	}
+}
+
 func getTLSServerName(ss map[string]interface{}) string {
 	if ss == nil {
 		return ""
@@ -1082,6 +1172,243 @@ func getTLSServerName(ss map[string]interface{}) string {
 		}
 	}
 	return ""
+}
+
+// buildExtra extracts all mihomo-relevant fields from xray config into Extra map.
+// Only non-empty values are stored. Keys use mihomo YAML field names.
+func buildExtra(config, ss map[string]interface{}, protocol string) map[string]interface{} {
+	extra := make(map[string]interface{})
+
+	// AlterID (vmess)
+	if settings := getMap(config, "settings"); settings != nil {
+		for _, key := range []string{"clients", "users"} {
+			if arr, ok := settings[key].([]interface{}); ok && len(arr) > 0 {
+				if c, ok := arr[0].(map[string]interface{}); ok {
+					if aid, ok := c["alterId"].(float64); ok && aid > 0 {
+						extra["alterId"] = int(aid)
+					}
+					// VMess cipher
+					if cipher, ok := c["security"].(string); ok && cipher != "" {
+						extra["cipher"] = cipher
+					}
+				}
+			}
+		}
+	}
+
+	// TLS settings
+	security := getString(ss, "security", "none")
+	if security == "tls" {
+		tls := getMap(ss, "tlsSettings")
+		if tls != nil {
+			if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
+				extra["alpn"] = alpn
+			}
+			if fp, ok := tls["fingerprint"].(string); ok && fp != "" {
+				extra["fingerprint"] = fp
+			}
+			extra["skip-cert-verify"] = getBool(tls, "allowInsecure")
+		}
+	} else if security == "reality" {
+		reality := getMap(ss, "realitySettings")
+		if reality != nil {
+			ro := make(map[string]interface{})
+			if pk, ok := reality["publicKey"].(string); ok && pk != "" {
+				ro["public-key"] = pk
+			}
+			if sid, ok := reality["shortId"].(string); ok && sid != "" {
+				ro["short-id"] = sid
+			}
+			if len(ro) > 0 {
+				extra["reality-opts"] = ro
+			}
+			if fp, ok := reality["fingerprint"].(string); ok && fp != "" {
+				extra["fingerprint"] = fp
+			}
+		}
+	}
+
+	// Transport sub-options (only mihomo-supported transports)
+	network := getString(ss, "network", "raw")
+	supportedTransports := map[string]bool{"tcp": true, "raw": true, "ws": true, "grpc": true, "xhttp": true, "h2": true, "http": true, "httpupgrade": true}
+	if !supportedTransports[network] {
+		// Unsupported transport (kcp, mkcp, quic, etc.) - skip transport sub-options
+		network = ""
+	}
+	// TCP with HTTP header disguise → treat as http transport for mihomo
+	if network == "tcp" || network == "raw" {
+		tcpSettings := getMap(ss, "tcpSettings")
+		if tcpSettings != nil {
+			if headerType, ok := tcpSettings["header"].(map[string]interface{}); ok {
+				if ht, ok := headerType["type"].(string); ok && ht == "http" {
+					network = "http"
+					// Extract HTTP disguise settings into http-opts
+					opts := make(map[string]interface{})
+					if request, ok := headerType["request"].(map[string]interface{}); ok {
+						if path, ok := request["path"].(string); ok && path != "" {
+							opts["path"] = []string{path}
+						} else if paths, ok := request["path"].([]interface{}); ok && len(paths) > 0 {
+							var p []string
+							for _, v := range paths {
+								if s, ok := v.(string); ok {
+									p = append(p, s)
+								}
+							}
+							if len(p) > 0 {
+								opts["path"] = p
+							}
+						}
+						if headers, ok := request["headers"].(map[string]interface{}); ok {
+							h := make(map[string]interface{})
+							for k, v := range headers {
+								if s, ok := v.(string); ok && s != "" {
+									h[k] = []string{s}
+								} else if arr, ok := v.([]interface{}); ok {
+									var ss []string
+									for _, item := range arr {
+										if s, ok := item.(string); ok {
+											ss = append(ss, s)
+										}
+									}
+									if len(ss) > 0 {
+										h[k] = ss
+									}
+								}
+							}
+							if len(h) > 0 {
+								opts["headers"] = h
+							}
+						}
+					}
+					if len(opts) > 0 {
+						extra["http-opts"] = opts
+					}
+				}
+			}
+		}
+		network = "tcp"
+	}
+	switch network {
+	case "ws":
+		ws := getMap(ss, "wsSettings")
+		if ws != nil {
+			opts := make(map[string]interface{})
+			if path, ok := ws["path"].(string); ok && path != "" {
+				opts["path"] = path
+			}
+			if headers := getMap(ws, "headers"); headers != nil {
+				opts["headers"] = headers
+			}
+			if ed, ok := ws["maxEarlyData"].(float64); ok && ed > 0 {
+				opts["max-early-data"] = int(ed)
+			}
+			if edhp, ok := ws["earlyDataHeaderName"].(string); ok && edhp != "" {
+				opts["early-data-header-name"] = edhp
+			}
+			if len(opts) > 0 {
+				extra["ws-opts"] = opts
+			}
+		}
+		// VLESS ws-headers (top-level in streamSettings)
+		if wsHeaders := getMap(ss, "wsHeaders"); wsHeaders != nil {
+			extra["ws-headers"] = wsHeaders
+		}
+	case "grpc":
+		grpc := getMap(ss, "grpcSettings")
+		if grpc != nil {
+			opts := make(map[string]interface{})
+			if sn, ok := grpc["serviceName"].(string); ok && sn != "" {
+				opts["grpc-service-name"] = sn
+			}
+			if mm, ok := grpc["multiMode"].(bool); ok && mm {
+				// grpc-mode not supported by mihomo
+			}
+			if len(opts) > 0 {
+				extra["grpc-opts"] = opts
+			}
+		}
+	case "xhttp":
+		xhttp := getMap(ss, "xhttpSettings")
+		if xhttp != nil {
+			opts := make(map[string]interface{})
+			if mode, ok := xhttp["mode"].(string); ok && mode != "" {
+				opts["mode"] = mode
+			}
+			if path, ok := xhttp["path"].(string); ok && path != "" {
+				opts["path"] = path
+			}
+			if host, ok := xhttp["host"].(string); ok && host != "" {
+				opts["host"] = host
+			}
+			if headers := getMap(xhttp, "headers"); headers != nil {
+				opts["headers"] = headers
+			}
+			if len(opts) > 0 {
+				extra["xhttp-opts"] = opts
+			}
+		}
+	case "httpupgrade":
+		hu := getMap(ss, "httpupgradeSettings")
+		if hu != nil {
+			opts := make(map[string]interface{})
+			if path, ok := hu["path"].(string); ok && path != "" {
+				opts["path"] = path
+			}
+			if host, ok := hu["host"].(string); ok && host != "" {
+				opts["host"] = host
+			}
+			if len(opts) > 0 {
+				extra["httpupgrade-opts"] = opts
+			}
+		}
+	case "h2", "http":
+		h2 := getMap(ss, "h2Settings")
+		if h2 == nil {
+			h2 = getMap(ss, "httpSettings")
+		}
+		if h2 != nil {
+			opts := make(map[string]interface{})
+			if path, ok := h2["path"].(string); ok && path != "" {
+				opts["path"] = path
+			}
+			if host, ok := h2["host"].([]interface{}); ok && len(host) > 0 {
+				var hosts []string
+				for _, h := range host {
+					if s, ok := h.(string); ok {
+						hosts = append(hosts, s)
+					}
+				}
+				if len(hosts) > 0 {
+					opts["host"] = hosts
+				}
+			}
+			if len(opts) > 0 {
+				if network == "h2" {
+					extra["h2-opts"] = opts
+				} else {
+					extra["http-opts"] = opts
+				}
+			}
+		}
+	}
+
+	// Sockopt
+	if sockopt := getMap(ss, "sockopt"); sockopt != nil {
+		if tfo, ok := sockopt["tcpFastOpen"].(bool); ok && tfo {
+			extra["tfo"] = true
+		}
+		if mark, ok := sockopt["mark"].(float64); ok && mark > 0 {
+			extra["routing-mark"] = int(mark)
+		}
+	}
+
+	// UDP (always true for subscription nodes)
+	extra["udp"] = true
+
+	if len(extra) == 0 {
+		return nil
+	}
+	return extra
 }
 
 func getFinalMask(config map[string]interface{}) map[string]interface{} {

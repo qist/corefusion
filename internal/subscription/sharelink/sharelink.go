@@ -59,7 +59,7 @@ func generateVlessLink(n Node) string {
 	setFinalMaskParams(params, n.FinalMask)
 
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s",
-		uuid, formatHost(n.Host), n.Port, params.Encode(), url.PathEscape(n.Tag))
+		uuid, formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- VMess ---
@@ -168,7 +168,7 @@ func generateTrojanLink(n Node) string {
 	}
 
 	return fmt.Sprintf("trojan://%s@%s:%d?%s#%s",
-		url.QueryEscape(password), formatHost(n.Host), n.Port, params.Encode(), url.PathEscape(n.Tag))
+		url.QueryEscape(password), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- Hysteria ---
@@ -236,7 +236,7 @@ func generateHysteriaLink(n Node) string {
 	}
 
 	return fmt.Sprintf("hysteria2://%s@%s:%d?%s#%s",
-		url.QueryEscape(auth), formatHost(n.Host), n.Port, params.Encode(), url.PathEscape(n.Tag))
+		url.QueryEscape(auth), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- Shadowsocks ---
@@ -262,6 +262,17 @@ func mkcpToKcp(network string) string {
 		return "kcp"
 	}
 	return network
+}
+
+// encodeParams encodes URL params with %20 for spaces instead of +.
+func encodeParams(params url.Values) string {
+	s := params.Encode()
+	return strings.ReplaceAll(s, "+", "%20")
+}
+
+// encodeValue encodes a single value with %20 for spaces instead of +.
+func encodeValue(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
 func formatHost(host string) string {
@@ -372,18 +383,37 @@ func getHeaderHost(tcp map[string]interface{}) string {
 	if tcp == nil {
 		return ""
 	}
+	// Try tcp.request (frontend format) first
 	req, ok := tcp["request"].(map[string]interface{})
 	if !ok {
+		// xray config: tcp.header.request
+		if header := getMap(tcp, "header"); header != nil {
+			req, _ = header["request"].(map[string]interface{})
+		}
+	}
+	if req == nil {
 		return ""
 	}
-	headers, ok := req["headers"].([]interface{})
-	if !ok {
-		return ""
+	// xray config format: {"Host": ["www.baidu.com"]}
+	if headers, ok := req["headers"].(map[string]interface{}); ok {
+		if hostArr, ok := headers["Host"].([]interface{}); ok && len(hostArr) > 0 {
+			if h, ok := hostArr[0].(string); ok {
+				return h
+			}
+		}
+		if hostArr, ok := headers["host"].([]interface{}); ok && len(hostArr) > 0 {
+			if h, ok := hostArr[0].(string); ok {
+				return h
+			}
+		}
 	}
-	for _, h := range headers {
-		if m, ok := h.(map[string]interface{}); ok {
-			if strings.EqualFold(getString(m, "key", ""), "host") {
-				return getString(m, "value", "")
+	// Frontend format: [{"key":"Host","value":"www.baidu.com"}]
+	if headers, ok := req["headers"].([]interface{}); ok {
+		for _, h := range headers {
+			if m, ok := h.(map[string]interface{}); ok {
+				if strings.EqualFold(getString(m, "key", ""), "host") {
+					return getString(m, "value", "")
+				}
 			}
 		}
 	}
@@ -394,8 +424,15 @@ func getTCPPath(tcp map[string]interface{}) string {
 	if tcp == nil {
 		return "/"
 	}
+	// Try tcp.request (frontend format) first
 	req, ok := tcp["request"].(map[string]interface{})
 	if !ok {
+		// xray config: tcp.header.request
+		if header := getMap(tcp, "header"); header != nil {
+			req, _ = header["request"].(map[string]interface{})
+		}
+	}
+	if req == nil {
 		return "/"
 	}
 	if p, ok := req["_pathsStr"].(string); ok && p != "" {
@@ -416,7 +453,15 @@ func getWSHost(ws map[string]interface{}) string {
 	if h, ok := ws["host"].(string); ok && h != "" {
 		return h
 	}
-	// Check headers for Host
+	// xray config format: ws.headers.Host
+	if headers, ok := ws["headers"].(map[string]interface{}); ok {
+		if hostArr, ok := headers["Host"].([]interface{}); ok && len(hostArr) > 0 {
+			if h, ok := hostArr[0].(string); ok {
+				return h
+			}
+		}
+	}
+	// Frontend format: ws.settings._headers
 	if s, ok := ws["settings"].(map[string]interface{}); ok {
 		if headers, ok := s["_headers"].([]interface{}); ok {
 			for _, h := range headers {
@@ -462,8 +507,19 @@ func getMkcpLegacyHeader(fm map[string]interface{}) (header, seed string) {
 func setNetworkParams(params url.Values, ss map[string]interface{}, network string) {
 	switch network {
 	case "tcp", "raw":
-		tcp := getMap(ss, "raw")
-		if getString(tcp, "headerType", "") == "http" {
+		// Try rawSettings first (xray config format), then raw (frontend format)
+		tcp := getMap(ss, "rawSettings")
+		if tcp == nil {
+			tcp = getMap(ss, "raw")
+		}
+		// xray config: rawSettings.header.type = "http"
+		headerType := getString(tcp, "headerType", "")
+		if headerType == "" {
+			if header := getMap(tcp, "header"); header != nil {
+				headerType = getString(header, "type", "")
+			}
+		}
+		if headerType == "http" {
 			params.Set("headerType", "http")
 			params.Set("path", getTCPPath(tcp))
 			if h := getHeaderHost(tcp); h != "" {
@@ -482,11 +538,17 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 			params.Set("seed", seed)
 		}
 	case "ws":
-		ws := getMap(ss, "ws")
+		ws := getMap(ss, "wsSettings")
+		if ws == nil {
+			ws = getMap(ss, "ws")
+		}
 		params.Set("path", getString(ws, "path", "/"))
 		params.Set("host", getWSHost(ws))
 	case "grpc":
-		grpc := getMap(ss, "grpc")
+		grpc := getMap(ss, "grpcSettings")
+		if grpc == nil {
+			grpc = getMap(ss, "grpc")
+		}
 		params.Set("serviceName", getString(grpc, "serviceName", ""))
 		if auth := getString(grpc, "authority", ""); auth != "" {
 			params.Set("authority", auth)
@@ -495,11 +557,17 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 			params.Set("mode", "multi")
 		}
 	case "httpupgrade":
-		hu := getMap(ss, "httpupgrade")
+		hu := getMap(ss, "httpupgradeSettings")
+		if hu == nil {
+			hu = getMap(ss, "httpupgrade")
+		}
 		params.Set("path", getString(hu, "path", "/"))
 		params.Set("host", getString(hu, "host", ""))
 	case "xhttp":
-		xhttp := getMap(ss, "xhttp")
+		xhttp := getMap(ss, "xhttpSettings")
+		if xhttp == nil {
+			xhttp = getMap(ss, "xhttp")
+		}
 		params.Set("path", getString(xhttp, "path", "/"))
 		params.Set("host", getString(xhttp, "host", ""))
 		params.Set("mode", getString(xhttp, "mode", "auto"))
@@ -527,8 +595,10 @@ func setSecurityParams(params url.Values, ss map[string]interface{}, security st
 	case "reality":
 		params.Set("security", "reality")
 		reality := getMap(ss, "realitySettings")
-		// pbk from settings[0].password
-		if settings, ok := reality["settings"].([]interface{}); ok && len(settings) > 0 {
+		// pbk from settings[0].password or _password
+		if pwd, ok := reality["_password"].(string); ok && pwd != "" {
+			params.Set("pbk", pwd)
+		} else if settings, ok := reality["settings"].([]interface{}); ok && len(settings) > 0 {
 			if s, ok := settings[0].(map[string]interface{}); ok {
 				if pwd, ok := s["password"].(string); ok && pwd != "" {
 					params.Set("pbk", pwd)

@@ -149,7 +149,11 @@ func FormatMihomo(nodes []Node, config *MihomoConfig) ([]byte, error) {
 	yaml.WriteString("proxies:\n")
 	for _, node := range nodes {
 		yaml.WriteString("  - name: " + node.Name + "\n")
-		yaml.WriteString("    type: " + node.Protocol + "\n")
+		proto := node.Protocol
+		if proto == "hysteria" {
+			proto = "hysteria2"
+		}
+		yaml.WriteString("    type: " + proto + "\n")
 		yaml.WriteString("    server: " + node.Host + "\n")
 		yaml.WriteString(fmt.Sprintf("    port: %d\n", node.Port))
 		if node.UUID != "" {
@@ -161,18 +165,24 @@ func FormatMihomo(nodes []Node, config *MihomoConfig) ([]byte, error) {
 		if node.Protocol == "vless" && node.Flow != "" {
 			yaml.WriteString("    flow: " + node.Flow + "\n")
 		}
-		if node.Protocol == "vless" && node.Encryption != "" && node.Encryption != "none" {
+		if node.Encryption != "" && node.Encryption != "none" {
 			yaml.WriteString("    encryption: " + node.Encryption + "\n")
 		}
 		if node.TLS {
 			yaml.WriteString("    tls: true\n")
 			if node.ServerName != "" {
-				yaml.WriteString("    servername: " + node.ServerName + "\n")
+				if node.Protocol == "trojan" || node.Protocol == "hysteria2" || node.Protocol == "tuic" {
+					yaml.WriteString("    sni: " + node.ServerName + "\n")
+				} else {
+					yaml.WriteString("    servername: " + node.ServerName + "\n")
+				}
 			}
 		}
-		if node.Transport != "" && node.Transport != "raw" && node.Transport != "tcp" {
+		if node.Transport != "" && node.Transport != "raw" && node.Transport != "tcp" && node.Transport != "kcp" && node.Transport != "mkcp" && node.Transport != "quic" {
 			yaml.WriteString("    network: " + node.Transport + "\n")
 		}
+		// Render all Extra fields
+		yaml.WriteString(renderExtra(node.Extra, 4))
 	}
 	yaml.WriteString("\n")
 

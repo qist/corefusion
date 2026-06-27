@@ -1996,14 +1996,12 @@
               <el-form-item :label="t('protoCenter.finalmask.debug')">
                 <el-switch v-model="rf.finalmask.quicParams.debug" @change="emit" />
               </el-form-item>
-              <template v-if="rf.finalmask.quicParams.congestion === 'brutal' || rf.finalmask.quicParams.congestion === 'force-brutal'">
-                <el-form-item :label="t('protoCenter.finalmask.brutalUp')">
-                  <el-input v-model="rf.finalmask.quicParams.brutalUp" placeholder="60 mbps" @change="emit" />
-                </el-form-item>
-                <el-form-item :label="t('protoCenter.finalmask.brutalDown')">
-                  <el-input v-model="rf.finalmask.quicParams.brutalDown" placeholder="100 mbps" @change="emit" />
-                </el-form-item>
-              </template>
+              <el-form-item :label="t('protoCenter.finalmask.brutalUp')">
+                <el-input v-model="rf.finalmask.quicParams.brutalUp" placeholder="200 mbps" @change="emit" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.finalmask.brutalDown')">
+                <el-input v-model="rf.finalmask.quicParams.brutalDown" placeholder="200 mbps" @change="emit" />
+              </el-form-item>
               <!-- UDP Hop -->
               <el-form-item :label="t('protoCenter.finalmask.udpHop')">
                 <el-switch v-model="rf.finalmask.quicParams._showUdpHop" @change="onQuicUdpHopToggle" />
@@ -2859,7 +2857,7 @@ function generateVlessLink(ib, user, host, port, remark) {
   const url = new URL(`vless://${uuid}@${formatUrlHost(host)}:${port}`)
   for (const [key, value] of params) url.searchParams.set(key, value)
   url.hash = encodeURIComponent(remark)
-  return url.toString()
+  return url.toString().replaceAll('+', '%20')
 }
 
 function buildXhttpExtra(xhttp) {
@@ -2983,7 +2981,7 @@ function generateTrojanLink(ib, user, host, port, remark) {
   const url = new URL(`trojan://${encodeURIComponent(password)}@${formatUrlHost(host)}:${port}`)
   for (const [key, value] of params) url.searchParams.set(key, value)
   url.hash = encodeURIComponent(remark)
-  return url.toString()
+  return url.toString().replaceAll('+', '%20')
 }
 
 function generateShadowsocksLink(ib, user, host, port, remark) {
@@ -3140,7 +3138,7 @@ function generateHysteriaLink(ib, user, host, port, remark) {
   const url = new URL(`${scheme}://${encodedAuth}@${formatUrlHost(host)}:${port}`)
   for (const [key, value] of params) url.searchParams.set(key, value)
   url.hash = encodeURIComponent(remark)
-  return url.toString()
+  return url.toString().replaceAll('+', '%20')
 }
 
 function formatUrlHost(address) {
@@ -3540,7 +3538,7 @@ function getDefaultInbound() {
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
-    finalmask: { _enabled: false, tcp: [], udp: [], quicParams: { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 } },
+    finalmask: { _enabled: false, tcp: [], udp: [], quicParams: { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '200 mbps', brutalDown: '200 mbps', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 } },
     _wgAddressesStr: '', _tunGatewayStr: '', _tunDnsStr: '', _tunAutoRoutingStr: '',
     // Access Domain
     _accessDomainEnabled: false, _accessDomainType: 'direct',
@@ -3573,7 +3571,7 @@ function onProtocolChange() {
     rf.finalmask._enabled = false
     rf.finalmask.tcp = []
     rf.finalmask.udp = []
-    rf.finalmask.quicParams = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
+    rf.finalmask.quicParams = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '200 mbps', brutalDown: '200 mbps', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
   }
   if (p === 'vless') rf.settings = { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' }
   else if (p === 'vmess') rf.settings = { clients: [{ id: genUUID(), email: genEmail(), alterId: 0, security: 'auto', level: 0, _quota: 'unlimited', _expiry: null }] }
@@ -3951,7 +3949,7 @@ function parseRealitySettings(reality) {
 }
 
 function parseFinalmask(fm) {
-  const defQuic = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
+  const defQuic = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '200 mbps', brutalDown: '200 mbps', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
   if (!fm || Object.keys(fm).length === 0) return { _enabled: false, tcp: [], udp: [], quicParams: defQuic }
   const qp = fm.quicParams || {}
   // Parse TCP entry
@@ -4003,7 +4001,7 @@ function parseFinalmask(fm) {
     udp: (fm.udp || []).map(parseUdpEntry),
     quicParams: {
       congestion: qp.congestion || '', bbrProfile: qp.bbrProfile || 'standard', debug: qp.debug || false,
-      brutalUp: qp.brutalUp || '', brutalDown: qp.brutalDown || '',
+      brutalUp: qp.brutalUp || '200 mbps', brutalDown: qp.brutalDown || '200 mbps',
       _showUdpHop: !!qp.udpHop,
       udpHop: qp.udpHop || { ports: '20000-50000', interval: '5-10' },
       maxIdleTimeout: qp.maxIdleTimeout || 30, keepAlivePeriod: qp.keepAlivePeriod || 10,
@@ -4520,8 +4518,8 @@ function buildInbound(ib, isApiCall = false) {
     if (qp.congestion) quicObj.congestion = qp.congestion
     if (qp.bbrProfile) quicObj.bbrProfile = qp.bbrProfile
     if (qp.debug) quicObj.debug = true
-    if (qp.brutalUp !== undefined && qp.brutalUp !== '') quicObj.brutalUp = qp.brutalUp
-    if (qp.brutalDown !== undefined && qp.brutalDown !== '') quicObj.brutalDown = qp.brutalDown || 0
+    quicObj.brutalUp = qp.brutalUp || '200 mbps'
+    quicObj.brutalDown = qp.brutalDown || '200 mbps'
     if (qp._showUdpHop && qp.udpHop) quicObj.udpHop = qp.udpHop
     quicObj.maxIdleTimeout = qp.maxIdleTimeout || 30
     quicObj.keepAlivePeriod = qp.keepAlivePeriod || 10
@@ -4928,7 +4926,7 @@ function showEdit(i) {
   rf.streamSettings = JSON.parse(JSON.stringify(ib.streamSettings || {}))
   rf.sniffing = JSON.parse(JSON.stringify(ib.sniffing || { enabled: false, destOverride: ['http', 'tls'], routeOnly: false }))
   rf.sockopt = JSON.parse(JSON.stringify(ib.sockopt || { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 250, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] }))
-  rf.finalmask = JSON.parse(JSON.stringify(ib.finalmask || { _enabled: false, tcp: [], udp: [], quicParams: { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 } }))
+  rf.finalmask = JSON.parse(JSON.stringify(ib.finalmask || { _enabled: false, tcp: [], udp: [], quicParams: { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '200 mbps', brutalDown: '200 mbps', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 } }))
   rf._fallbackEnabled = ib._fallbackEnabled || false
   rf.fallbacks = JSON.parse(JSON.stringify(ib.fallbacks || []))
   rf._wgAddressesStr = ib._wgAddressesStr || ''

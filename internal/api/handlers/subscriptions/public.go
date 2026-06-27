@@ -195,13 +195,26 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		mihomoRules, _ = h.mihomoRuleRepo.ListByConfigID(ctx, mihomoConfig.ID)
 	}
 
+	// Build subscription info header (for browser display)
+	infoHeader := buildSubscriptionInfoHeader(sub, lang)
+	// Build info node for clash/mihomo (shows as a REJECT node in proxy list)
+	infoNode := buildInfoNode(sub, lang)
+
 	switch formatter.Format(formatStr) {
 	case formatter.FormatBase64Aggregate:
 		joined := strings.Join(links, "\n")
 		data = []byte(base64.StdEncoding.EncodeToString([]byte(joined)))
 	case formatter.FormatRawURI:
-		data = []byte(strings.Join(links, "\n"))
+		if infoHeader != "" {
+			data = []byte(infoHeader + "\n" + strings.Join(links, "\n"))
+		} else {
+			data = []byte(strings.Join(links, "\n"))
+		}
 	case formatter.FormatMihomoYAML:
+		// Prepend info node to show usage in proxy list
+		if infoNode != nil {
+			nodes = append([]formatter.Node{*infoNode}, nodes...)
+		}
 		if mihomoConfig != nil {
 			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, nodes)
 		} else {
@@ -1505,6 +1518,51 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 	}
 	if err := h.accessLog.Create(context.Background(), logEntry); err != nil {
 		log.Printf("sub: failed to record access: %v", err)
+	}
+}
+
+// buildSubscriptionInfoHeader builds a human-readable subscription info block.
+func buildSubscriptionInfoHeader(sub *entity.Subscription, lang string) string {
+	usedGB := float64(sub.UsedBytesCache) / 1073741824
+	totalGB := float64(sub.QuotaBytes) / 1073741824
+	var expiresStr string
+	if sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
+		expiresStr = sub.ExpiresAt.Format("2006-01-02")
+	}
+	var lines []string
+	if lang == "zh" {
+		lines = append(lines, "# 📊 流量: "+fmt.Sprintf("%.2f GB / %.2f GB", usedGB, totalGB))
+		if expiresStr != "" {
+			lines = append(lines, "# 📅 到期: "+expiresStr)
+		}
+	} else {
+		lines = append(lines, "# 📊 Traffic: "+fmt.Sprintf("%.2f GB / %.2f GB", usedGB, totalGB))
+		if expiresStr != "" {
+			lines = append(lines, "# 📅 Expires: "+expiresStr)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// buildInfoNode creates a REJECT node with usage info as name (shows in clash proxy list).
+// Format: ↑:1.21GB,↓:17.64GB,TOT:512GB,EXPIRES:2026-09-02
+func buildInfoNode(sub *entity.Subscription, lang string) *formatter.Node {
+	usedGB := float64(sub.UsedBytesCache) / 1073741824
+	totalGB := float64(sub.QuotaBytes) / 1073741824
+	var expiresStr string
+	if sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
+		expiresStr = sub.ExpiresAt.Format("2006-01-02")
+	}
+	remainGB := totalGB - usedGB
+	if remainGB < 0 {
+		remainGB = 0
+	}
+	name := fmt.Sprintf("↑:%.2fGB,↓:0.00GB,TOT:%.0fGB,EXPIRES:%s,REMAIN:%.0fGB", usedGB, totalGB, expiresStr, remainGB)
+	return &formatter.Node{
+		Name:     name,
+		Protocol: "reject",
+		Host:     "127.0.0.1",
+		Port:     0,
 	}
 }
 

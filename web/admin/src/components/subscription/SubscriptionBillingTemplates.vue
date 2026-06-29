@@ -121,6 +121,7 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import i18n from '../../locales'
 import client from '../../api/client'
 
 const emit = defineEmits(['saved'])
@@ -131,7 +132,7 @@ const activeScope = ref('default')
 const loading = ref(false)
 const savingDefault = ref(false)
 const savingPlan = ref(false)
-const varsCollapsed = ref(false)
+const varsCollapsed = ref(true)
 const plans = ref([])
 const selectedPlanId = ref(null)
 const nodeOptionsLoading = ref(false)
@@ -162,7 +163,47 @@ const planForm = ref({
 
 const variableDescriptions = computed(() => {
   const vars = defaultTemplates.value.variables || []
-  const descMap = t('subscription.billingTemplateVarMap')
+  const isZh = String(i18n.global.locale.value).startsWith('zh')
+  const descMap = isZh ? {
+    remaining_human: '剩余用量（人类可读，如 7.00 GB）',
+    remaining_bytes: '剩余用量（字节）',
+    remaining_gb: '剩余用量（GB 数值）',
+    used_human: '已用流量（人类可读）',
+    used_bytes: '已用流量（字节）',
+    used_gb: '已用流量（GB 数值）',
+    quota_human: '总配额（人类可读）',
+    quota_bytes: '总配额（字节）',
+    quota_gb: '总配额（GB 数值）',
+    reset_human: '重置倒计时（人类可读，如 15 Days）',
+    reset_days: '距下次重置天数',
+    reset_at: '下次重置时间（ISO 格式）',
+    reset_date: '下次重置日期（2006-01-02）',
+    expires_human: '到期时间（人类可读）',
+    expires_at: '到期时间（ISO 格式）',
+    expires_date: '到期日期（2006-01-02）',
+    expires_unix: '到期时间（Unix 时间戳）',
+    quota_state: '配额状态（normal/near_limit/over_limit 等）',
+  } : {
+    remaining_human: 'Remaining usage (human readable, e.g. 7.00 GB)',
+    remaining_bytes: 'Remaining usage (bytes)',
+    remaining_gb: 'Remaining usage (GB value)',
+    used_human: 'Used traffic (human readable)',
+    used_bytes: 'Used traffic (bytes)',
+    used_gb: 'Used traffic (GB value)',
+    quota_human: 'Total quota (human readable)',
+    quota_bytes: 'Total quota (bytes)',
+    quota_gb: 'Total quota (GB value)',
+    reset_human: 'Reset countdown (human readable, e.g. 15 Days)',
+    reset_days: 'Days until next reset',
+    reset_at: 'Next reset time (ISO format)',
+    reset_date: 'Next reset date (2006-01-02)',
+    expires_human: 'Expiration time (human readable)',
+    expires_at: 'Expiration time (ISO format)',
+    expires_date: 'Expiration date (2006-01-02)',
+    expires_unix: 'Expiration time (Unix timestamp)',
+    quota_state: 'Quota state (normal/near_limit/over_limit etc.)',
+  }
+  
   return vars.map(v => {
     const key = v.replace(/[{}]/g, '')
     return {

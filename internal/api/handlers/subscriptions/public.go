@@ -90,16 +90,21 @@ type shareDomainEntry struct {
 }
 
 type renderedSubscriptionNode struct {
-	PlanNodeID int64
-	Link       string
-	Node       *formatter.Node
-	ProxyMap   map[string]interface{}
+	PlanNodeID      int64
+	InboundConfigID int64
+	ExternalNodeID  int64
+	Link            string
+	Node            *formatter.Node
+	ProxyMap        map[string]interface{}
 }
 
 type billingTemplateConfig struct {
-	RemainingTemplate string
-	ResetTemplate     string
-	ExpiryTemplate    string
+	UsedTemplate           string
+	RemainingTemplate      string
+	ResetTemplate          string
+	ExpiryTemplate         string
+	BillingInboundConfigIDs []int64
+	BillingExternalNodeIDs  []int64
 }
 
 // ServeSubscription handles GET /sub/:token.
@@ -176,11 +181,11 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		formatStr = "base64_uri"
 	}
 
-	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, planNodes, clientEmail)
+	billingTemplates := h.loadBillingTemplateConfig(ctx, plan, lang)
+	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, planNodes, clientEmail, billingTemplates)
 	links := renderedNodeLinks(renderedNodes)
 	nodes := renderedFormatterNodes(renderedNodes)
-	billingTemplates := h.loadBillingTemplateConfig(ctx, plan, lang)
-	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes)
+	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes, lang)
 	billingLinks := renderedNodeLinks(billingNodes)
 	billingFormatterNodes := renderedFormatterNodes(billingNodes)
 
@@ -209,7 +214,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	}
 
 	// Build subscription info header (for browser display)
-	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates)
+	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates, lang)
 
 	switch formatter.Format(formatStr) {
 	case formatter.FormatBase64Aggregate:
@@ -358,7 +363,7 @@ func renderedFormatterNodes(items []renderedSubscriptionNode) []formatter.Node {
 	return nodes
 }
 
-func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, planNodes []entity.PlanNode, clientEmail string) []renderedSubscriptionNode {
+func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, planNodes []entity.PlanNode, clientEmail string, templates billingTemplateConfig) []renderedSubscriptionNode {
 	var items []renderedSubscriptionNode
 
 	inboundPlanNodeIDs := make(map[int64][]int64)
@@ -374,6 +379,17 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		}
 	}
 
+	// Build a set of billing-selected inbound config IDs and external node IDs.
+	// These nodes should be rendered even if they're not in the plan.
+	billingInboundSet := make(map[int64]bool)
+	for _, id := range templates.BillingInboundConfigIDs {
+		billingInboundSet[id] = true
+	}
+	billingExternalSet := make(map[int64]bool)
+	for _, id := range templates.BillingExternalNodeIDs {
+		billingExternalSet[id] = true
+	}
+
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
 		configs, err := h.inboundRepo.List(ctx, coreType)
 		if err != nil {
@@ -384,7 +400,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				continue
 			}
 			planNodeIDs := inboundPlanNodeIDs[cfg.ID]
-			if len(planNodes) > 0 && len(planNodeIDs) == 0 {
+			isBillingSelected := billingInboundSet[cfg.ID]
+			if len(planNodes) > 0 && len(planNodeIDs) == 0 && !isBillingSelected {
 				continue
 			}
 			if len(planNodeIDs) == 0 {
@@ -485,8 +502,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			}
 			for _, planNodeID := range planNodeIDs {
 				item := renderedSubscriptionNode{
-					PlanNodeID: planNodeID,
-					Link:       link,
+					PlanNodeID:      planNodeID,
+					InboundConfigID: cfg.ID,
+					Link:            link,
 				}
 				nodeCopy := *node
 				item.Node = &nodeCopy
@@ -510,7 +528,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			continue
 		}
 		planNodeIDs := externalPlanNodeIDs[extNode.ID]
-		if len(planNodes) > 0 && len(planNodeIDs) == 0 {
+		isBillingSelected := billingExternalSet[extNode.ID]
+		if len(planNodes) > 0 && len(planNodeIDs) == 0 && !isBillingSelected {
 			continue
 		}
 		if len(planNodeIDs) == 0 {
@@ -531,8 +550,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		}
 		for _, planNodeID := range planNodeIDs {
 			item := renderedSubscriptionNode{
-				PlanNodeID: planNodeID,
-				Link:       link,
+				PlanNodeID:     planNodeID,
+				ExternalNodeID: extNode.ID,
+				Link:           link,
 			}
 			if node != nil {
 				nodeCopy := *node
@@ -552,35 +572,69 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 	return items
 }
 
-func buildBillingInfoEntries(sub *entity.Subscription, templates billingTemplateConfig, items []renderedSubscriptionNode) []renderedSubscriptionNode {
-	if len(sub.BillingNodeIDs) == 0 {
+func buildBillingInfoEntries(sub *entity.Subscription, templates billingTemplateConfig, items []renderedSubscriptionNode, lang string) []renderedSubscriptionNode {
+	if len(templates.BillingInboundConfigIDs) == 0 && len(templates.BillingExternalNodeIDs) == 0 {
 		return nil
 	}
-	labels := buildBillingInfoLabels(sub, templates)
+	labels := buildBillingInfoLabels(sub, templates, lang)
 	if len(labels) == 0 {
 		return nil
 	}
-	sources := make(map[int64]renderedSubscriptionNode)
+	// Build source maps keyed by inbound_config_id and external_node_id.
+	inboundSources := make(map[int64]renderedSubscriptionNode)
+	externalSources := make(map[int64]renderedSubscriptionNode)
 	for _, item := range items {
-		if item.PlanNodeID <= 0 {
-			continue
-		}
 		if item.Link == "" && item.Node == nil {
 			continue
 		}
-		if _, exists := sources[item.PlanNodeID]; !exists {
-			sources[item.PlanNodeID] = item
+		if item.InboundConfigID > 0 {
+			if _, exists := inboundSources[item.InboundConfigID]; !exists {
+				inboundSources[item.InboundConfigID] = item
+			}
 		}
+		if item.ExternalNodeID > 0 {
+			if _, exists := externalSources[item.ExternalNodeID]; !exists {
+				externalSources[item.ExternalNodeID] = item
+			}
+		}
+	}
+
+	// Build a flat list of source IDs by interleaving inbound and external IDs.
+	var sourceIDs []int64
+	var sourceIsInbound []bool
+	maxLen := len(templates.BillingInboundConfigIDs)
+	if len(templates.BillingExternalNodeIDs) > maxLen {
+		maxLen = len(templates.BillingExternalNodeIDs)
+	}
+	for i := 0; i < maxLen; i++ {
+		if i < len(templates.BillingInboundConfigIDs) {
+			sourceIDs = append(sourceIDs, templates.BillingInboundConfigIDs[i])
+			sourceIsInbound = append(sourceIsInbound, true)
+		}
+		if i < len(templates.BillingExternalNodeIDs) {
+			sourceIDs = append(sourceIDs, templates.BillingExternalNodeIDs[i])
+			sourceIsInbound = append(sourceIsInbound, false)
+		}
+	}
+	if len(sourceIDs) == 0 {
+		return nil
 	}
 
 	result := make([]renderedSubscriptionNode, 0, len(labels))
 	for idx, label := range labels {
-		sourceID := sub.BillingNodeIDs[idx%len(sub.BillingNodeIDs)]
-		source, ok := sources[sourceID]
+		sourceID := sourceIDs[idx%len(sourceIDs)]
+		isInbound := sourceIsInbound[idx%len(sourceIDs)]
+		var source renderedSubscriptionNode
+		var ok bool
+		if isInbound {
+			source, ok = inboundSources[sourceID]
+		} else {
+			source, ok = externalSources[sourceID]
+		}
 		if !ok {
 			continue
 		}
-		cloned := renderedSubscriptionNode{PlanNodeID: sourceID}
+		cloned := renderedSubscriptionNode{}
 		if source.Link != "" {
 			cloned.Link = renameShareLink(source.Link, label)
 		}
@@ -1976,30 +2030,31 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 }
 
 // buildSubscriptionInfoHeader builds a human-readable subscription info block.
-func buildSubscriptionInfoHeader(sub *entity.Subscription, templates billingTemplateConfig) string {
-	if len(sub.BillingNodeIDs) == 0 {
+func buildSubscriptionInfoHeader(sub *entity.Subscription, templates billingTemplateConfig, lang string) string {
+	if len(templates.BillingInboundConfigIDs) == 0 && len(templates.BillingExternalNodeIDs) == 0 {
 		return ""
 	}
 	var lines []string
-	for _, label := range buildBillingInfoLabels(sub, templates) {
+	for _, label := range buildBillingInfoLabels(sub, templates, lang) {
 		lines = append(lines, "# "+label)
 	}
 	return strings.Join(lines, "\n")
 }
 
-func buildBillingInfoLabels(sub *entity.Subscription, templates billingTemplateConfig) []string {
+func buildBillingInfoLabels(sub *entity.Subscription, templates billingTemplateConfig, lang string) []string {
 	return []string{
-		renderBillingTemplate(templates.RemainingTemplate, sub),
-		renderBillingTemplate(templates.ResetTemplate, sub),
-		renderBillingTemplate(templates.ExpiryTemplate, sub),
+		renderBillingTemplate(templates.UsedTemplate, sub, lang),
+		renderBillingTemplate(templates.RemainingTemplate, sub, lang),
+		renderBillingTemplate(templates.ResetTemplate, sub, lang),
+		renderBillingTemplate(templates.ExpiryTemplate, sub, lang),
 	}
 }
 
-func renderBillingTemplate(template string, sub *entity.Subscription) string {
+func renderBillingTemplate(template string, sub *entity.Subscription, lang string) string {
 	if template == "" {
 		return ""
 	}
-	variables := buildBillingTemplateVariables(sub)
+	variables := buildBillingTemplateVariables(sub, lang)
 	replacements := make([]string, 0, len(variables)*2)
 	for _, key := range billingTemplateVariables {
 		replacements = append(replacements, "{"+key+"}", variables[key])
@@ -2029,32 +2084,50 @@ var billingTemplateVariables = []string{
 	"quota_state",
 }
 
-func buildBillingTemplateVariables(sub *entity.Subscription) map[string]string {
+func buildBillingTemplateVariables(sub *entity.Subscription, lang string) map[string]string {
 	remain := sub.QuotaBytes - sub.UsedBytesCache
 	if remain < 0 {
 		remain = 0
 	}
-	resetHuman := "No Reset"
+	noResetStr := "No Reset"
+	todayStr := "Today"
+	daysFmt := "%d Days"
+	unlimitedStr := "Unlimited"
+	if lang == "zh" {
+		noResetStr = "不重置"
+		todayStr = "今天"
+		daysFmt = "%d天"
+		unlimitedStr = "无限"
+	}
+	// Determine the effective reset time: use NextResetAt if set, otherwise
+	// fall back to ExpiresAt — when the subscription expires and renews,
+	// the quota is reset at that point.
+	effectiveResetAt := sub.NextResetAt
+	if (effectiveResetAt == nil || effectiveResetAt.IsZero()) && sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
+		effectiveResetAt = sub.ExpiresAt
+	}
+
+	resetHuman := noResetStr
 	resetDays := "0"
 	resetAt := ""
 	resetDate := ""
-	if sub.NextResetAt != nil && !sub.NextResetAt.IsZero() {
-		resetAt = sub.NextResetAt.Format(time.RFC3339)
-		resetDate = sub.NextResetAt.Format("2006-01-02")
-		remaining := time.Until(*sub.NextResetAt)
+	if effectiveResetAt != nil && !effectiveResetAt.IsZero() {
+		resetAt = effectiveResetAt.Format(time.RFC3339)
+		resetDate = effectiveResetAt.Format("2006-01-02")
+		remaining := time.Until(*effectiveResetAt)
 		if remaining <= 0 {
-			resetHuman = "Today"
+			resetHuman = todayStr
 		} else {
 			days := int((remaining + 24*time.Hour - 1) / (24 * time.Hour))
 			if days < 1 {
 				days = 1
 			}
 			resetDays = strconv.Itoa(days)
-			resetHuman = fmt.Sprintf("%d Days", days)
+			resetHuman = fmt.Sprintf(daysFmt, days)
 		}
 	}
 
-	expiresHuman := "Unlimited"
+	expiresHuman := unlimitedStr
 	expiresAt := ""
 	expiresDate := ""
 	expiresUnix := "0"
@@ -2065,8 +2138,8 @@ func buildBillingTemplateVariables(sub *entity.Subscription) map[string]string {
 		expiresHuman = expiresDate
 	}
 
-	remainingHuman := "Unlimited"
-	quotaHuman := "Unlimited"
+	remainingHuman := unlimitedStr
+	quotaHuman := unlimitedStr
 	if sub.QuotaBytes > 0 {
 		remainingHuman = humanizeBytesGB(remain)
 		quotaHuman = humanizeBytesGB(sub.QuotaBytes)
@@ -2097,12 +2170,14 @@ func buildBillingTemplateVariables(sub *entity.Subscription) map[string]string {
 func defaultBillingTemplateConfig(lang string) billingTemplateConfig {
 	if lang == "zh" {
 		return billingTemplateConfig{
+			UsedTemplate:      "已用流量：{used_human}",
 			RemainingTemplate: "剩余用量：{remaining_human}",
 			ResetTemplate:     "距离下次重置剩余：{reset_human}",
 			ExpiryTemplate:    "套餐到期时间：{expires_human}",
 		}
 	}
 	return billingTemplateConfig{
+		UsedTemplate:      "Used: {used_human}",
 		RemainingTemplate: "Remaining: {remaining_human}",
 		ResetTemplate:     "Reset In: {reset_human}",
 		ExpiryTemplate:    "Expires: {expires_human}",
@@ -2114,6 +2189,9 @@ func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, plan *ent
 	if h.systemSettingRepo != nil {
 		settings, err := h.systemSettingRepo.GetByPrefix(ctx, "subscription.billing_template.")
 		if err == nil {
+			if v := strings.TrimSpace(settings["subscription.billing_template.default_used"]); v != "" {
+				config.UsedTemplate = v
+			}
 			if v := strings.TrimSpace(settings["subscription.billing_template.default_remaining"]); v != "" {
 				config.RemainingTemplate = v
 			}
@@ -2126,6 +2204,9 @@ func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, plan *ent
 		}
 	}
 	if plan != nil {
+		if v := strings.TrimSpace(plan.BillingUsedTemplate); v != "" {
+			config.UsedTemplate = v
+		}
 		if v := strings.TrimSpace(plan.BillingRemainingTemplate); v != "" {
 			config.RemainingTemplate = v
 		}
@@ -2135,6 +2216,8 @@ func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, plan *ent
 		if v := strings.TrimSpace(plan.BillingExpiryTemplate); v != "" {
 			config.ExpiryTemplate = v
 		}
+		config.BillingInboundConfigIDs = plan.BillingInboundConfigIDs
+		config.BillingExternalNodeIDs = plan.BillingExternalNodeIDs
 	}
 	return config
 }
@@ -2166,13 +2249,14 @@ func buildInfoNode(sub *entity.Subscription, lang string) *formatter.Node {
 }
 
 func formatSubscriptionInfo(sub *entity.Subscription) string {
-	upload := sub.UsedBytesCache
+	upload := sub.UploadBytesCache
+	download := sub.DownloadBytesCache
 	total := sub.QuotaBytes
 	expires := int64(0)
 	if sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
 		expires = sub.ExpiresAt.Unix()
 	}
-	return fmt.Sprintf("upload=%d; download=0; total=%d; expires=%d", upload, total, expires)
+	return fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", upload, download, total, expires)
 }
 
 // --- i18n ---

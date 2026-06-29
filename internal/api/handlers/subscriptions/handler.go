@@ -56,6 +56,8 @@ func (h *Handler) List(c *gin.Context) {
 			"security_mode":   s.SecurityMode,
 			"quota_bytes":     s.QuotaBytes,
 			"used_bytes_cache": s.UsedBytesCache,
+			"upload_bytes_cache": s.UploadBytesCache,
+			"download_bytes_cache": s.DownloadBytesCache,
 			"quota_state":     s.QuotaState,
 			"billing_node_ids": s.BillingNodeIDs,
 			"access_count":    s.AccessCount,
@@ -260,6 +262,8 @@ func (h *Handler) ResetUsage(c *gin.Context) {
 	response.OK(c, gin.H{
 		"id":              sub.ID,
 		"used_bytes_cache": sub.UsedBytesCache,
+		"upload_bytes_cache": sub.UploadBytesCache,
+		"download_bytes_cache": sub.DownloadBytesCache,
 		"quota_state":     sub.QuotaState,
 		"last_reset_at":   sub.LastResetAt,
 	})

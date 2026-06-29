@@ -191,7 +191,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Inbound config service (separate table for inbound configurations)
 	inboundConfigRepo := repository.NewInboundConfigRepository(database)
-	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo)
+	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
 	outboundConfigSvc := outboundconfigSvc.NewService(outboundConfigRepo)
 

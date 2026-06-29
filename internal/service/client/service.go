@@ -71,15 +71,18 @@ func (s *Service) GetPlan(ctx context.Context, id int64) (*entity.Plan, []entity
 }
 
 type CreatePlanInput struct {
-	Name                     string `json:"name" binding:"required"`
-	Description              string `json:"description"`
-	QuotaBytes               int64  `json:"quota_bytes"`
-	Duration                 int    `json:"duration"`
-	Enabled                  *bool  `json:"enabled"`
-	SortOrder                int    `json:"sort_order"`
-	BillingRemainingTemplate string `json:"billing_remaining_template"`
-	BillingResetTemplate     string `json:"billing_reset_template"`
-	BillingExpiryTemplate    string `json:"billing_expiry_template"`
+	Name                     string   `json:"name" binding:"required"`
+	Description              string   `json:"description"`
+	QuotaBytes               int64    `json:"quota_bytes"`
+	Duration                 int      `json:"duration"`
+	Enabled                  *bool    `json:"enabled"`
+	SortOrder                int      `json:"sort_order"`
+	BillingUsedTemplate      string   `json:"billing_used_template"`
+	BillingRemainingTemplate string   `json:"billing_remaining_template"`
+	BillingResetTemplate     string   `json:"billing_reset_template"`
+	BillingExpiryTemplate    string   `json:"billing_expiry_template"`
+	BillingInboundConfigIDs  []int64  `json:"billing_inbound_config_ids"`
+	BillingExternalNodeIDs   []int64  `json:"billing_external_node_ids"`
 }
 
 func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (*entity.Plan, error) {
@@ -90,9 +93,12 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (*entit
 		Duration:                 input.Duration,
 		Enabled:                  true,
 		SortOrder:                input.SortOrder,
+		BillingUsedTemplate:      input.BillingUsedTemplate,
 		BillingRemainingTemplate: input.BillingRemainingTemplate,
 		BillingResetTemplate:     input.BillingResetTemplate,
 		BillingExpiryTemplate:    input.BillingExpiryTemplate,
+		BillingInboundConfigIDs:  entity.Int64List(input.BillingInboundConfigIDs),
+		BillingExternalNodeIDs:   entity.Int64List(input.BillingExternalNodeIDs),
 	}
 	if input.Enabled != nil {
 		plan.Enabled = *input.Enabled
@@ -107,15 +113,18 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (*entit
 }
 
 type UpdatePlanInput struct {
-	Name                     *string `json:"name"`
-	Description              *string `json:"description"`
-	QuotaBytes               *int64  `json:"quota_bytes"`
-	Duration                 *int    `json:"duration"`
-	Enabled                  *bool   `json:"enabled"`
-	SortOrder                *int    `json:"sort_order"`
-	BillingRemainingTemplate *string `json:"billing_remaining_template"`
-	BillingResetTemplate     *string `json:"billing_reset_template"`
-	BillingExpiryTemplate    *string `json:"billing_expiry_template"`
+	Name                     *string  `json:"name"`
+	Description              *string  `json:"description"`
+	QuotaBytes               *int64   `json:"quota_bytes"`
+	Duration                 *int     `json:"duration"`
+	Enabled                  *bool    `json:"enabled"`
+	SortOrder                *int     `json:"sort_order"`
+	BillingUsedTemplate      *string  `json:"billing_used_template"`
+	BillingRemainingTemplate *string  `json:"billing_remaining_template"`
+	BillingResetTemplate     *string  `json:"billing_reset_template"`
+	BillingExpiryTemplate    *string  `json:"billing_expiry_template"`
+	BillingInboundConfigIDs  *[]int64 `json:"billing_inbound_config_ids"`
+	BillingExternalNodeIDs   *[]int64 `json:"billing_external_node_ids"`
 }
 
 func (s *Service) UpdatePlan(ctx context.Context, id int64, input UpdatePlanInput) (*entity.Plan, error) {
@@ -141,6 +150,9 @@ func (s *Service) UpdatePlan(ctx context.Context, id int64, input UpdatePlanInpu
 	if input.SortOrder != nil {
 		plan.SortOrder = *input.SortOrder
 	}
+	if input.BillingUsedTemplate != nil {
+		plan.BillingUsedTemplate = *input.BillingUsedTemplate
+	}
 	if input.BillingRemainingTemplate != nil {
 		plan.BillingRemainingTemplate = *input.BillingRemainingTemplate
 	}
@@ -149,6 +161,12 @@ func (s *Service) UpdatePlan(ctx context.Context, id int64, input UpdatePlanInpu
 	}
 	if input.BillingExpiryTemplate != nil {
 		plan.BillingExpiryTemplate = *input.BillingExpiryTemplate
+	}
+	if input.BillingInboundConfigIDs != nil {
+		plan.BillingInboundConfigIDs = entity.Int64List(*input.BillingInboundConfigIDs)
+	}
+	if input.BillingExternalNodeIDs != nil {
+		plan.BillingExternalNodeIDs = entity.Int64List(*input.BillingExternalNodeIDs)
 	}
 	if err := s.planRepo.Update(ctx, plan); err != nil {
 		return nil, err

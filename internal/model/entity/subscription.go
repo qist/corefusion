@@ -20,6 +20,8 @@ type Subscription struct {
 	ExpiresAt               *time.Time `json:"expires_at"`
 	QuotaBytes int64 `json:"quota_bytes" gorm:"not null;default:0"`
 	UsedBytesCache int64 `json:"used_bytes_cache" gorm:"not null;default:0"`
+	UploadBytesCache int64 `json:"upload_bytes_cache" gorm:"not null;default:0"`
+	DownloadBytesCache int64 `json:"download_bytes_cache" gorm:"not null;default:0"`
 	QuotaResetCycle string `json:"quota_reset_cycle" gorm:"size:32;not null;default:none"`
 	QuotaResetDay           *int
 	LastResetAt             *time.Time `json:"last_reset_at"`

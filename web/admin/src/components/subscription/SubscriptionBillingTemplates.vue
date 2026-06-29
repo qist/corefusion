@@ -1,21 +1,42 @@
 <template>
   <div v-loading="loading">
+    <!-- Variables Section (Top) -->
+    <el-card style="margin-bottom: 16px">
+      <template #header>
+        <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer" @click="varsCollapsed = !varsCollapsed">
+          <span>{{ t('subscription.billingTemplateVariables') }}</span>
+          <el-icon style="font-size: 14px; color: #909399">
+            <ArrowDown v-if="varsCollapsed" />
+            <ArrowUp v-else />
+          </el-icon>
+        </div>
+      </template>
+      <el-table v-show="!varsCollapsed" :data="variableDescriptions" size="small" stripe>
+        <el-table-column prop="var" label="Variable" width="200">
+          <template #default="{ row }">
+            <code style="font-size: 12px; background: #f5f7fa; padding: 2px 6px; border-radius: 3px">{{ row.var }}</code>
+          </template>
+        </el-table-column>
+        <el-table-column prop="desc" :label="t('subscription.billingTemplateVarDesc')" />
+      </el-table>
+    </el-card>
+
     <el-tabs v-model="activeScope">
+      <!-- Default Templates -->
       <el-tab-pane :label="t('subscription.billingTemplateDefault')" name="default">
         <el-card>
-          <el-form :model="defaultForm" label-width="120px">
+          <el-form :model="defaultForm" label-width="140px">
+            <el-form-item :label="t('subscription.billingUsedTemplate')">
+              <el-input v-model="defaultForm.billing_used_template" :placeholder="defaultTemplates.default_used_template" />
+            </el-form-item>
             <el-form-item :label="t('subscription.billingRemainingTemplate')">
-              <el-input v-model="defaultForm.billing_remaining_template" type="textarea" :rows="2" :placeholder="defaultTemplates.default_remaining_template" />
-              <div class="hint">{{ t('subscription.billingTemplateDefaultHint') }}</div>
+              <el-input v-model="defaultForm.billing_remaining_template" :placeholder="defaultTemplates.default_remaining_template" />
             </el-form-item>
             <el-form-item :label="t('subscription.billingResetTemplate')">
-              <el-input v-model="defaultForm.billing_reset_template" type="textarea" :rows="2" :placeholder="defaultTemplates.default_reset_template" />
+              <el-input v-model="defaultForm.billing_reset_template" :placeholder="defaultTemplates.default_reset_template" />
             </el-form-item>
             <el-form-item :label="t('subscription.billingExpiryTemplate')">
-              <el-input v-model="defaultForm.billing_expiry_template" type="textarea" :rows="2" :placeholder="defaultTemplates.default_expiry_template" />
-            </el-form-item>
-            <el-form-item :label="t('subscription.billingTemplateVariables')">
-              <div class="hint">{{ variablesText }}</div>
+              <el-input v-model="defaultForm.billing_expiry_template" :placeholder="defaultTemplates.default_expiry_template" />
             </el-form-item>
           </el-form>
           <div class="actions">
@@ -23,13 +44,15 @@
           </div>
         </el-card>
       </el-tab-pane>
+
+      <!-- Plan Override -->
       <el-tab-pane :label="t('subscription.billingTemplatePlan')" name="plan">
         <div class="plan-layout">
           <el-card class="plan-list-card">
             <template #header>
               <div class="plan-list-header">
                 <span>{{ t('subscription.billingTemplatePlanList') }}</span>
-                <el-select v-model="selectedPlanId" filterable style="width:180px" :placeholder="t('subscription.billingTemplatePlanPlaceholder')" @change="selectPlanById">
+                <el-select v-model="selectedPlanId" filterable style="width: 180px" :placeholder="t('subscription.billingTemplatePlanPlaceholder')" @change="selectPlanById">
                   <el-option v-for="plan in plans" :key="plan.id" :label="plan.name" :value="plan.id" />
                 </el-select>
               </div>
@@ -55,25 +78,37 @@
               </div>
             </template>
             <el-empty v-if="!currentPlan" :description="t('subscription.billingTemplateNoPlanSelected')" />
-            <el-form v-else :model="planForm" label-width="120px">
-              <el-form-item :label="t('subscription.billingRemainingTemplate')">
-                <el-input v-model="planForm.billing_remaining_template" type="textarea" :rows="2" :placeholder="defaultTemplates.default_remaining_template" />
-                <div class="hint">{{ t('subscription.billingTemplateFallbackHint') }}</div>
-              </el-form-item>
-              <el-form-item :label="t('subscription.billingResetTemplate')">
-                <el-input v-model="planForm.billing_reset_template" type="textarea" :rows="2" :placeholder="defaultTemplates.default_reset_template" />
-              </el-form-item>
-              <el-form-item :label="t('subscription.billingExpiryTemplate')">
-                <el-input v-model="planForm.billing_expiry_template" type="textarea" :rows="2" :placeholder="defaultTemplates.default_expiry_template" />
-              </el-form-item>
-              <el-form-item :label="t('subscription.billingTemplateVariables')">
-                <div class="hint">{{ variablesText }}</div>
-              </el-form-item>
-            </el-form>
-            <div v-if="currentPlan" class="actions">
-              <el-button @click="resetPlanForm">{{ t('subscription.billingTemplateUseDefault') }}</el-button>
-              <el-button type="primary" :loading="savingPlan" @click="savePlan">{{ t('common.save') }}</el-button>
-            </div>
+            <template v-else>
+              <el-form :model="planForm" label-width="140px">
+                <el-form-item :label="t('subscription.billingUsedTemplate')">
+                  <el-input v-model="planForm.billing_used_template" :placeholder="defaultTemplates.default_used_template" />
+                </el-form-item>
+                <el-form-item :label="t('subscription.billingRemainingTemplate')">
+                  <el-input v-model="planForm.billing_remaining_template" :placeholder="defaultTemplates.default_remaining_template" />
+                </el-form-item>
+                <el-form-item :label="t('subscription.billingResetTemplate')">
+                  <el-input v-model="planForm.billing_reset_template" :placeholder="defaultTemplates.default_reset_template" />
+                </el-form-item>
+                <el-form-item :label="t('subscription.billingExpiryTemplate')">
+                  <el-input v-model="planForm.billing_expiry_template" :placeholder="defaultTemplates.default_expiry_template" />
+                </el-form-item>
+                <el-form-item :label="t('subscription.billingInboundNodes')">
+                  <el-select v-model="planForm.billing_inbound_config_ids" multiple clearable filterable style="width: 100%" :placeholder="t('subscription.billingNodesPlaceholder')" :loading="nodeOptionsLoading">
+                    <el-option v-for="opt in inboundOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item :label="t('subscription.billingExternalNodes')">
+                  <el-select v-model="planForm.billing_external_node_ids" multiple clearable filterable style="width: 100%" :placeholder="t('subscription.billingNodesPlaceholder')" :loading="nodeOptionsLoading">
+                    <el-option v-for="opt in externalOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  </el-select>
+                  <div class="hint">{{ t('subscription.billingNodesHint') }}</div>
+                </el-form-item>
+              </el-form>
+              <div class="actions">
+                <el-button @click="resetPlanForm">{{ t('subscription.billingTemplateUseDefault') }}</el-button>
+                <el-button type="primary" :loading="savingPlan" @click="savePlan">{{ t('common.save') }}</el-button>
+              </div>
+            </template>
           </el-card>
         </div>
       </el-tab-pane>
@@ -84,6 +119,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 
@@ -95,26 +131,65 @@ const activeScope = ref('default')
 const loading = ref(false)
 const savingDefault = ref(false)
 const savingPlan = ref(false)
+const varsCollapsed = ref(false)
 const plans = ref([])
 const selectedPlanId = ref(null)
+const nodeOptionsLoading = ref(false)
+const inboundConfigs = ref([])
+const externalNodes = ref([])
+
 const defaultTemplates = ref({
+  default_used_template: '',
   default_remaining_template: '',
   default_reset_template: '',
   default_expiry_template: '',
   variables: []
 })
 const defaultForm = ref({
+  billing_used_template: '',
   billing_remaining_template: '',
   billing_reset_template: '',
   billing_expiry_template: ''
 })
 const planForm = ref({
+  billing_used_template: '',
   billing_remaining_template: '',
   billing_reset_template: '',
-  billing_expiry_template: ''
+  billing_expiry_template: '',
+  billing_inbound_config_ids: [],
+  billing_external_node_ids: []
 })
 
-const variablesText = computed(() => (defaultTemplates.value.variables || []).join(', '))
+const variableDescriptions = computed(() => {
+  const vars = defaultTemplates.value.variables || []
+  const descMap = t('subscription.billingTemplateVarMap')
+  return vars.map(v => {
+    const key = v.replace(/[{}]/g, '')
+    return {
+      var: v,
+      desc: descMap[key] || v
+    }
+  })
+})
+
+const inboundOptions = computed(() => {
+  return inboundConfigs.value
+    .filter(c => c.enabled !== false)
+    .map(c => ({
+      value: c.id,
+      label: `${c.remark || c.tag} (${c.protocol}:${c.port})`
+    }))
+})
+
+const externalOptions = computed(() => {
+  return externalNodes.value
+    .filter(n => n.enabled !== false)
+    .map(n => ({
+      value: n.id,
+      label: `${n.name} (${n.host}:${n.port})`
+    }))
+})
+
 const currentPlan = computed(() => plans.value.find(plan => plan.id === selectedPlanId.value) || null)
 
 function currentLang() {
@@ -123,6 +198,7 @@ function currentLang() {
 
 function applyDefaultForm() {
   defaultForm.value = {
+    billing_used_template: defaultTemplates.value.default_used_template || '',
     billing_remaining_template: defaultTemplates.value.default_remaining_template || '',
     billing_reset_template: defaultTemplates.value.default_reset_template || '',
     billing_expiry_template: defaultTemplates.value.default_expiry_template || ''
@@ -131,18 +207,24 @@ function applyDefaultForm() {
 
 function planHasCustomTemplate(plan) {
   return !!(
+    plan?.billing_used_template?.trim() ||
     plan?.billing_remaining_template?.trim() ||
     plan?.billing_reset_template?.trim() ||
-    plan?.billing_expiry_template?.trim()
+    plan?.billing_expiry_template?.trim() ||
+    (plan?.billing_inbound_config_ids && plan.billing_inbound_config_ids.length > 0) ||
+    (plan?.billing_external_node_ids && plan.billing_external_node_ids.length > 0)
   )
 }
 
 function selectPlanById(planId) {
   const plan = plans.value.find(item => item.id === planId) || null
   planForm.value = {
+    billing_used_template: plan?.billing_used_template || '',
     billing_remaining_template: plan?.billing_remaining_template || '',
     billing_reset_template: plan?.billing_reset_template || '',
-    billing_expiry_template: plan?.billing_expiry_template || ''
+    billing_expiry_template: plan?.billing_expiry_template || '',
+    billing_inbound_config_ids: Array.isArray(plan?.billing_inbound_config_ids) ? [...plan.billing_inbound_config_ids] : [],
+    billing_external_node_ids: Array.isArray(plan?.billing_external_node_ids) ? [...plan.billing_external_node_ids] : []
   }
 }
 
@@ -154,9 +236,29 @@ function handlePlanRowChange(plan) {
 
 function resetPlanForm() {
   planForm.value = {
+    billing_used_template: '',
     billing_remaining_template: '',
     billing_reset_template: '',
-    billing_expiry_template: ''
+    billing_expiry_template: '',
+    billing_inbound_config_ids: [],
+    billing_external_node_ids: []
+  }
+}
+
+async function loadNodeOptions() {
+  if (inboundConfigs.value.length && externalNodes.value.length) return
+  nodeOptionsLoading.value = true
+  try {
+    const [inboundRes, extRes] = await Promise.all([
+      inboundConfigs.value.length ? Promise.resolve(inboundConfigs.value) : client.get('/inbound-configs').catch(() => []),
+      externalNodes.value.length ? Promise.resolve(externalNodes.value) : client.get('/external-nodes').catch(() => [])
+    ])
+    const inbounds = Array.isArray(inboundRes) ? inboundRes : (inboundRes?.data || [])
+    inboundConfigs.value = inbounds
+    const exts = Array.isArray(extRes) ? extRes : []
+    externalNodes.value = exts
+  } finally {
+    nodeOptionsLoading.value = false
   }
 }
 
@@ -168,6 +270,7 @@ async function loadData() {
       client.get('/plans')
     ])
     defaultTemplates.value = {
+      default_used_template: templateRes?.default_used_template || '',
       default_remaining_template: templateRes?.default_remaining_template || '',
       default_reset_template: templateRes?.default_reset_template || '',
       default_expiry_template: templateRes?.default_expiry_template || '',
@@ -179,6 +282,7 @@ async function loadData() {
       selectedPlanId.value = plans.value[0].id
     }
     selectPlanById(selectedPlanId.value)
+    await loadNodeOptions()
   } finally {
     loading.value = false
   }
@@ -188,12 +292,14 @@ async function saveDefault() {
   savingDefault.value = true
   try {
     await client.put('/system/subscription-billing-templates', {
+      default_used_template: defaultForm.value.billing_used_template,
       default_remaining_template: defaultForm.value.billing_remaining_template,
       default_reset_template: defaultForm.value.billing_reset_template,
       default_expiry_template: defaultForm.value.billing_expiry_template
     })
     defaultTemplates.value = {
       ...defaultTemplates.value,
+      default_used_template: defaultForm.value.billing_used_template,
       default_remaining_template: defaultForm.value.billing_remaining_template,
       default_reset_template: defaultForm.value.billing_reset_template,
       default_expiry_template: defaultForm.value.billing_expiry_template

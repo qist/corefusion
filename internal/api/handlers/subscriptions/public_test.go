@@ -16,60 +16,56 @@ func TestBuildBillingInfoEntriesRequiresExplicitSelection(t *testing.T) {
 	templates := defaultBillingTemplateConfig("zh")
 	items := []renderedSubscriptionNode{
 		{
-			PlanNodeID: 1,
-			Link:       "vless://uuid@example.com:443#node-a",
-			Node:       &formatter.Node{Name: "node-a", Protocol: "vless"},
+			InboundConfigID: 1,
+			Link:            "vless://uuid@example.com:443#node-a",
+			Node:            &formatter.Node{Name: "node-a", Protocol: "vless"},
 		},
 	}
 
-	got := buildBillingInfoEntries(sub, templates, items)
+	got := buildBillingInfoEntries(sub, templates, items, "zh")
 	if len(got) != 0 {
 		t.Fatalf("expected no billing entries without explicit selection, got %d", len(got))
 	}
 
-	if header := buildSubscriptionInfoHeader(sub, templates); header != "" {
+	if header := buildSubscriptionInfoHeader(sub, templates, "zh"); header != "" {
 		t.Fatalf("expected empty info header without explicit selection, got %q", header)
 	}
 }
 
 func TestBuildBillingInfoEntriesUsesExplicitNodeOrder(t *testing.T) {
 	sub := &entity.Subscription{
-		BillingNodeIDs: entity.Int64List{22, 11},
 		QuotaBytes:     20 * 1024 * 1024 * 1024,
 		UsedBytesCache: 4 * 1024 * 1024 * 1024,
 	}
 	items := []renderedSubscriptionNode{
 		{
-			PlanNodeID: 11,
-			Link:       "vless://uuid-a@example.com:443#node-a",
-			Node:       &formatter.Node{Name: "node-a", Protocol: "vless"},
+			InboundConfigID: 11,
+			Link:            "vless://uuid-a@example.com:443#node-a",
+			Node:            &formatter.Node{Name: "node-a", Protocol: "vless"},
 		},
 		{
-			PlanNodeID: 22,
-			Link:       "vless://uuid-b@example.com:443#node-b",
-			Node:       &formatter.Node{Name: "node-b", Protocol: "vless"},
+			InboundConfigID: 22,
+			Link:            "vless://uuid-b@example.com:443#node-b",
+			Node:            &formatter.Node{Name: "node-b", Protocol: "vless"},
 		},
 	}
 
 	templates := defaultBillingTemplateConfig("en")
-	got := buildBillingInfoEntries(sub, templates, items)
-	labels := buildBillingInfoLabels(sub, templates)
+	templates.BillingInboundConfigIDs = []int64{22, 11}
+	got := buildBillingInfoEntries(sub, templates, items, "en")
+	labels := buildBillingInfoLabels(sub, templates, "en")
 	if len(got) != len(labels) {
 		t.Fatalf("expected %d billing entries, got %d", len(labels), len(got))
 	}
 
-	wantPlanNodeIDs := []int64{22, 11, 22}
-	for i, wantID := range wantPlanNodeIDs {
-		if got[i].PlanNodeID != wantID {
-			t.Fatalf("entry %d should use plan node %d, got %d", i, wantID, got[i].PlanNodeID)
-		}
-		if got[i].Node == nil {
+	for i, wantNode := range got {
+		if wantNode.Node == nil {
 			t.Fatalf("entry %d should include formatter node", i)
 		}
-		if got[i].Node.Name != labels[i] {
-			t.Fatalf("entry %d should be renamed to %q, got %q", i, labels[i], got[i].Node.Name)
+		if wantNode.Node.Name != labels[i] {
+			t.Fatalf("entry %d should be renamed to %q, got %q", i, labels[i], wantNode.Node.Name)
 		}
-		if got[i].Link == "" {
+		if wantNode.Link == "" {
 			t.Fatalf("entry %d should keep a share link clone", i)
 		}
 	}
@@ -81,7 +77,7 @@ func TestRenderBillingTemplateSupportsCustomVariables(t *testing.T) {
 		UsedBytesCache: 3 * 1024 * 1024 * 1024,
 		QuotaState:     "normal",
 	}
-	got := renderBillingTemplate("Traffic {remaining_human} / {quota_gb} / {quota_state}", sub)
+	got := renderBillingTemplate("Traffic {remaining_human} / {quota_gb} / {quota_state}", sub, "en")
 	if !strings.Contains(got, "Traffic 7.00 GB / 10.00 / normal") {
 		t.Fatalf("unexpected rendered template %q", got)
 	}

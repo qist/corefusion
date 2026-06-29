@@ -125,11 +125,15 @@ func (a *Aggregator) flush(events []metric.TrafficDeltaEvent) {
 				})
 		}
 
-		// 3. Update subscription used_bytes_cache
+		// 3. Update subscription used_bytes_cache + upload/download caches
 		for subID, delta := range subDeltas {
 			tx.Model(&entity.Subscription{}).
 				Where("id = ?", subID).
-				Update("used_bytes_cache", gorm.Expr("used_bytes_cache + ?", delta.Total))
+				Updates(map[string]interface{}{
+					"used_bytes_cache":     gorm.Expr("used_bytes_cache + ?", delta.Total),
+					"upload_bytes_cache":   gorm.Expr("upload_bytes_cache + ?", delta.Uplink),
+					"download_bytes_cache": gorm.Expr("download_bytes_cache + ?", delta.Downlink),
+				})
 		}
 
 		return nil

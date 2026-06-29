@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -123,40 +124,70 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
+	// Set Subscription-Userinfo header immediately so it's available
+	// even on error responses (suspended/expired/inactive).
+	// This is critical for compatibility with subscription tools
+	// (Clash, V2RayN, Shadowrocket, Surge, Quantumult X, etc.)
+	// that display traffic info regardless of subscription status.
+	c.Header("Subscription-Userinfo", formatSubscriptionInfo(sub))
+	c.Header("Profile-Update-Interval", "6")
+
+	// Build Profile-Title and Profile-Web-Page-Url headers.
+	// These are supported by Clash Verge Rev, V2RayN, and other modern
+	// subscription tools to display a custom profile name and link.
+	profileTitle := "CoreFusion"
+	scheme := "http"
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	// Profile-Web-Page-Url: use system setting if configured,
+	// otherwise auto-detect from request host (strip port).
+	if h.systemSettingRepo != nil {
+		if portalURL, err := h.systemSettingRepo.GetByKey(ctx, "panel.profile_web_page_url"); err == nil && portalURL != "" {
+			c.Header("Profile-Web-Page-Url", portalURL)
+		}
+	}
+	if c.GetHeader("Profile-Web-Page-Url") == "" {
+		portalHost := c.GetHeader("X-Forwarded-Host")
+		if portalHost == "" {
+			portalHost = c.Request.Host
+		}
+		if portalHost != "" {
+			if host, _, err := net.SplitHostPort(portalHost); err == nil {
+				portalHost = host
+			}
+			c.Header("Profile-Web-Page-Url", fmt.Sprintf("%s://%s/portal", scheme, portalHost))
+		}
+	}
+
 	// Detect client language from Accept-Language header
 	lang := detectLanguage(c.GetHeader("Accept-Language"))
 
-	// Check client status first (client may be suspended while subscription is still active)
+	// Load client info once (used for status check, profile title, and plan nodes)
+	var clientEmail string
+	var plan *entity.Plan
+	var planNodes []entity.PlanNode
 	if sub.ClientID > 0 && h.clientRepo != nil {
 		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
+			clientEmail = cl.Email
+			if clientEmail != "" {
+				profileTitle = clientEmail
+			}
+
+			// Check client status first (client may be suspended while subscription is still active)
 			switch cl.Status {
 			case "suspended":
+				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
 				c.String(http.StatusForbidden, t(lang, "suspended"))
 				return
 			case "expired":
+				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
 				c.String(http.StatusForbidden, t(lang, "expired"))
 				return
 			}
-		}
-	}
 
-	if sub.Status != "active" {
-		c.Header("Content-Type", "text/plain; charset=utf-8")
-		c.String(http.StatusForbidden, t(lang, "inactive"))
-		return
-	}
-
-	shareDomains := h.loadShareDomains(ctx)
-
-	// Load plan nodes for this client subscription.
-	var planNodes []entity.PlanNode
-	var clientEmail string
-	var plan *entity.Plan
-	if sub.ClientID > 0 && h.clientRepo != nil {
-		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
-			clientEmail = cl.Email
 			if cl.PlanID > 0 && h.planRepo != nil {
 				plan, _ = h.planRepo.GetByID(ctx, cl.PlanID)
 			}
@@ -171,6 +202,16 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			}
 		}
 	}
+
+	c.Header("Profile-Title", profileTitle)
+
+	if sub.Status != "active" {
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.String(http.StatusForbidden, t(lang, "inactive"))
+		return
+	}
+
+	shareDomains := h.loadShareDomains(ctx)
 
 	// Format output - query param ?format= overrides subscription default
 	formatStr := c.Query("format")
@@ -216,17 +257,29 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	// Build subscription info header (for browser display)
 	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates, lang)
 
+	// Build the Subscription-Userinfo body comment line.
+	// This is prepended to raw_uri and base64_uri responses so that tools
+	// which only parse the response body (not HTTP headers) can still
+	// display traffic usage info.
+	userinfoLine := "Subscription-Userinfo: " + formatSubscriptionInfo(sub)
+
 	switch formatter.Format(formatStr) {
 	case formatter.FormatBase64Aggregate:
 		joined := strings.Join(append(billingLinks, links...), "\n")
-		data = []byte(base64.StdEncoding.EncodeToString([]byte(joined)))
+		// Prepend Subscription-Userinfo as plain-text line before base64 content.
+		// Pattern: "Subscription-Userinfo: ...\n\n<base64>"
+		// Supported by v2rayN and tools following the V2board convention.
+		data = []byte(userinfoLine + "\n\n" + base64.StdEncoding.EncodeToString([]byte(joined)))
 	case formatter.FormatRawURI:
 		allLinks := append(billingLinks, links...)
+		var headerLines []string
+		// Add Subscription-Userinfo as body comment for tools that only read from body
+		headerLines = append(headerLines, "# "+userinfoLine)
 		if infoHeader != "" {
-			data = []byte(infoHeader + "\n" + strings.Join(allLinks, "\n"))
-		} else {
-			data = []byte(strings.Join(allLinks, "\n"))
+			headerLines = append(headerLines, infoHeader)
 		}
+		headerStr := strings.Join(headerLines, "\n") + "\n"
+		data = []byte(headerStr + strings.Join(allLinks, "\n"))
 	case formatter.FormatMihomoYAML:
 		allItems := append(billingNodes, renderedNodes...)
 		proxyMaps := buildRenderedMihomoProxyMaps(allItems)
@@ -249,7 +302,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		contentType = f.ContentType()
 	default:
 		joined := strings.Join(append(billingLinks, links...), "\n")
-		data = []byte(base64.StdEncoding.EncodeToString([]byte(joined)))
+		data = []byte(userinfoLine + "\n\n" + base64.StdEncoding.EncodeToString([]byte(joined)))
 	}
 
 	// Record access
@@ -269,8 +322,6 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	c.Header("Content-Type", contentType+"; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=\"subscription.txt\"")
-	c.Header("Profile-Update-Interval", "6")
-	c.Header("Subscription-Userinfo", formatSubscriptionInfo(sub))
 	c.Data(http.StatusOK, contentType+"; charset=utf-8", data)
 }
 

@@ -41,6 +41,7 @@ type PanelConfig struct {
 	WebPath             string `json:"web_path"`
 	Timezone            string `json:"timezone"`
 	DataDir             string `json:"data_dir"`
+	ProfileWebPageUrl   string `json:"profile_web_page_url"`
 }
 
 // GitHubDomain represents a single GitHub acceleration domain.
@@ -170,6 +171,7 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	setIfExist(settings, "panel.web_path", &config.WebPath)
 	setIfExist(settings, "panel.timezone", &config.Timezone)
 	setIfExist(settings, "panel.data_dir", &config.DataDir)
+	setIfExist(settings, "panel.profile_web_page_url", &config.ProfileWebPageUrl)
 
 	return config, nil
 }
@@ -190,6 +192,7 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.web_path":             config.WebPath,
 		"panel.timezone":             config.Timezone,
 		"panel.data_dir":             config.DataDir,
+		"panel.profile_web_page_url":  config.ProfileWebPageUrl,
 	}
 
 	// Read old data_dir BEFORE updating database

@@ -67,7 +67,7 @@ func GetFormatter(format Format) Formatter {
 // SingBoxFormatter formats nodes as sing-box JSON.
 type SingBoxFormatter struct{}
 
-func (f *SingBoxFormatter) ContentType() string  { return "application/json" }
+func (f *SingBoxFormatter) ContentType() string   { return "application/json" }
 func (f *SingBoxFormatter) FileExtension() string { return "json" }
 
 func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
@@ -75,9 +75,9 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 
 	for _, node := range nodes {
 		ob := map[string]interface{}{
-			"type":    node.Protocol,
-			"tag":     node.Name,
-			"server":  node.Host,
+			"type":        node.Protocol,
+			"tag":         node.Name,
+			"server":      node.Host,
 			"server_port": node.Port,
 		}
 
@@ -130,15 +130,19 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 // XrayFormatter formats nodes as Xray JSON.
 type XrayFormatter struct{}
 
-func (f *XrayFormatter) ContentType() string  { return "application/json" }
+func (f *XrayFormatter) ContentType() string   { return "application/json" }
 func (f *XrayFormatter) FileExtension() string { return "json" }
 
 func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 	outbounds := make([]map[string]interface{}, 0, len(nodes)+2)
 
 	for _, node := range nodes {
+		protocol := node.Protocol
+		if protocol == "hysteria2" {
+			protocol = "hysteria"
+		}
 		ob := map[string]interface{}{
-			"protocol": node.Protocol,
+			"protocol": protocol,
 			"tag":      node.Name,
 		}
 
@@ -167,6 +171,10 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 				"port":     node.Port,
 				"password": node.Password,
 			}}
+		case "hysteria2":
+			settings["version"] = 2
+			settings["address"] = node.Host
+			settings["port"] = node.Port
 		}
 		ob["settings"] = settings
 
@@ -174,7 +182,9 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			"network":  "tcp",
 			"security": "none",
 		}
-		if node.Transport != "" {
+		if node.Protocol == "hysteria2" {
+			streamSettings["network"] = "hysteria"
+		} else if node.Transport != "" {
 			streamSettings["network"] = node.Transport
 		}
 		if node.TLS {
@@ -246,6 +256,20 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			}
 			streamSettings["xhttpSettings"] = xhttpSettings
 		}
+		if kcpOpts, ok := node.Extra["kcp-settings"].(map[string]interface{}); ok {
+			kcpSettings := map[string]interface{}{}
+			for _, key := range []string{"mtu", "tti", "uplinkCapacity", "downlinkCapacity", "congestion", "readBufferSize", "writeBufferSize", "seed"} {
+				if value, exists := kcpOpts[key]; exists {
+					kcpSettings[key] = value
+				}
+			}
+			if headerType, ok := kcpOpts["headerType"].(string); ok && headerType != "" {
+				kcpSettings["header"] = map[string]interface{}{"type": headerType}
+			}
+			if len(kcpSettings) > 0 {
+				streamSettings["kcpSettings"] = kcpSettings
+			}
+		}
 		if h2Opts, ok := node.Extra["h2-opts"].(map[string]interface{}); ok {
 			h2Settings := map[string]interface{}{}
 			if path, ok := h2Opts["path"].(string); ok {
@@ -278,6 +302,34 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		if tfo, ok := node.Extra["tfo"].(bool); ok && tfo {
 			streamSettings["sockopt"] = map[string]interface{}{"tcpFastOpen": true}
 		}
+		if finalmask, ok := node.Extra["finalmask"].(map[string]interface{}); ok && len(finalmask) > 0 {
+			streamSettings["finalmask"] = finalmask
+		}
+		if node.Protocol == "hysteria2" {
+			hysteriaSettings := map[string]interface{}{"version": 2}
+			if node.Password != "" {
+				hysteriaSettings["auth"] = node.Password
+			}
+			if obfs, ok := node.Extra["obfs"].(string); ok && obfs != "" {
+				hysteriaSettings["obfs"] = obfs
+			}
+			if obfsPassword, ok := node.Extra["obfs-password"].(string); ok && obfsPassword != "" {
+				hysteriaSettings["obfsPassword"] = obfsPassword
+			}
+			if up, ok := node.Extra["up"].(string); ok && up != "" {
+				hysteriaSettings["up"] = up
+			}
+			if down, ok := node.Extra["down"].(string); ok && down != "" {
+				hysteriaSettings["down"] = down
+			}
+			if ports, ok := node.Extra["ports"].(string); ok && ports != "" {
+				hysteriaSettings["hopPorts"] = ports
+			}
+			if hopInterval, ok := node.Extra["hop-interval"].(string); ok && hopInterval != "" {
+				hysteriaSettings["hopInterval"] = hopInterval
+			}
+			streamSettings["hysteriaSettings"] = hysteriaSettings
+		}
 		ob["streamSettings"] = streamSettings
 
 		outbounds = append(outbounds, ob)
@@ -295,7 +347,7 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 // MihomoFormatter formats nodes as Mihomo YAML.
 type MihomoFormatter struct{}
 
-func (f *MihomoFormatter) ContentType() string  { return "text/yaml" }
+func (f *MihomoFormatter) ContentType() string   { return "text/yaml" }
 func (f *MihomoFormatter) FileExtension() string { return "yaml" }
 
 func (f *MihomoFormatter) Format(nodes []Node) ([]byte, error) {
@@ -332,8 +384,14 @@ func (f *MihomoFormatter) Format(nodes []Node) ([]byte, error) {
 				}
 			}
 		}
-		if node.Transport != "" && node.Transport != "raw" && node.Transport != "tcp" && node.Transport != "kcp" && node.Transport != "mkcp" && node.Transport != "quic" {
-			yaml += fmt.Sprintf("    network: %s\n", node.Transport)
+		transport := node.Transport
+		if (transport == "tcp" || transport == "raw" || transport == "") && node.Extra != nil {
+			if _, ok := node.Extra["http-opts"]; ok {
+				transport = "http"
+			}
+		}
+		if transport != "" && transport != "raw" && transport != "tcp" && transport != "kcp" && transport != "mkcp" && transport != "quic" {
+			yaml += fmt.Sprintf("    network: %s\n", transport)
 		}
 		// Render all Extra fields
 		yaml += renderExtra(node.Extra, 4)
@@ -447,7 +505,7 @@ func renderMap(m map[string]interface{}, indent int) string {
 // RawURIFormatter formats nodes as raw URI list.
 type RawURIFormatter struct{}
 
-func (f *RawURIFormatter) ContentType() string  { return "text/plain" }
+func (f *RawURIFormatter) ContentType() string   { return "text/plain" }
 func (f *RawURIFormatter) FileExtension() string { return "txt" }
 
 func (f *RawURIFormatter) Format(nodes []Node) ([]byte, error) {
@@ -964,6 +1022,9 @@ func parseVlessURI(body, name string) *Node {
 	if insecure := params["allowInsecure"]; insecure == "1" || insecure == "true" {
 		extra["skip-cert-verify"] = true
 	}
+	if finalMask := parseFinalMaskParam(params); len(finalMask) > 0 {
+		extra["finalmask"] = finalMask
+	}
 
 	// Transport sub-options
 	switch transport {
@@ -1021,6 +1082,27 @@ func parseVlessURI(body, name string) *Node {
 		}
 		if len(xhttpOpts) > 0 {
 			extra["xhttp-opts"] = xhttpOpts
+		}
+	case "kcp":
+		kcpOpts := make(map[string]interface{})
+		if headerType := params["headerType"]; headerType != "" {
+			kcpOpts["headerType"] = headerType
+		}
+		if seed := params["seed"]; seed != "" {
+			kcpOpts["seed"] = seed
+		}
+		if mtu := params["mtu"]; mtu != "" {
+			if v, err := strconv.Atoi(mtu); err == nil {
+				kcpOpts["mtu"] = v
+			}
+		}
+		if tti := params["tti"]; tti != "" {
+			if v, err := strconv.Atoi(tti); err == nil {
+				kcpOpts["tti"] = v
+			}
+		}
+		if len(kcpOpts) > 0 {
+			extra["kcp-settings"] = kcpOpts
 		}
 	case "h2":
 		h2Opts := make(map[string]interface{})
@@ -1147,6 +1229,9 @@ func parseHysteria2URI(body, name string) *Node {
 		return nil
 	}
 	password := body[:atIdx]
+	if decodedPassword, err := url.QueryUnescape(password); err == nil {
+		password = decodedPassword
+	}
 	hostPort := body[atIdx+1:]
 	host, portStr, _ := netSplitHostPort(hostPort)
 	port := 0
@@ -1174,11 +1259,47 @@ func parseHysteria2URI(body, name string) *Node {
 	if up := params["up"]; up != "" {
 		extra["up"] = up
 	}
+	if upMbps := params["upmbps"]; upMbps != "" {
+		extra["up"] = upMbps
+	}
 	if down := params["down"]; down != "" {
 		extra["down"] = down
 	}
+	if downMbps := params["downmbps"]; downMbps != "" {
+		extra["down"] = downMbps
+	}
 	if ports := params["ports"]; ports != "" {
 		extra["ports"] = ports
+	}
+	if mport := params["mport"]; mport != "" {
+		extra["ports"] = mport
+	}
+	if finalMask := parseFinalMaskParam(params); len(finalMask) > 0 {
+		extra["finalmask"] = finalMask
+		if qp, ok := finalMask["quicParams"].(map[string]interface{}); ok {
+			if hop, ok := qp["udpHop"].(map[string]interface{}); ok {
+				if ports, ok := hop["ports"].(string); ok && ports != "" {
+					extra["ports"] = ports
+				}
+				if interval, ok := hop["interval"].(string); ok && interval != "" {
+					extra["hop-interval"] = interval
+				}
+			}
+		}
+		if udp, ok := finalMask["udp"].([]interface{}); ok {
+			for _, item := range udp {
+				entry, ok := item.(map[string]interface{})
+				if !ok || entry["type"] != "salamander" {
+					continue
+				}
+				extra["obfs"] = "salamander"
+				if settings, ok := entry["settings"].(map[string]interface{}); ok {
+					if pwd, ok := settings["password"].(string); ok && pwd != "" {
+						extra["obfs-password"] = pwd
+					}
+				}
+			}
+		}
 	}
 	extra["udp"] = true
 
@@ -1208,6 +1329,18 @@ func parseQueryParams(query string) map[string]string {
 	return params
 }
 
+func parseFinalMaskParam(params map[string]string) map[string]interface{} {
+	fm := params["fm"]
+	if fm == "" {
+		return nil
+	}
+	var finalMask map[string]interface{}
+	if err := json.Unmarshal([]byte(fm), &finalMask); err != nil || len(finalMask) == 0 {
+		return nil
+	}
+	return finalMask
+}
+
 // netSplitHostPort splits host:port, handling IPv6 brackets.
 func netSplitHostPort(hostPort string) (string, string, error) {
 	if strings.HasPrefix(hostPort, "[") {
@@ -1234,7 +1367,7 @@ func netSplitHostPort(hostPort string) (string, string, error) {
 // Base64AggregateFormatter formats nodes as base64-encoded aggregate.
 type Base64AggregateFormatter struct{}
 
-func (f *Base64AggregateFormatter) ContentType() string  { return "text/plain" }
+func (f *Base64AggregateFormatter) ContentType() string   { return "text/plain" }
 func (f *Base64AggregateFormatter) FileExtension() string { return "txt" }
 
 func (f *Base64AggregateFormatter) Format(nodes []Node) ([]byte, error) {

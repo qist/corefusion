@@ -57,6 +57,7 @@ func (h *Handler) List(c *gin.Context) {
 			"quota_bytes":     s.QuotaBytes,
 			"used_bytes_cache": s.UsedBytesCache,
 			"quota_state":     s.QuotaState,
+			"billing_node_ids": s.BillingNodeIDs,
 			"access_count":    s.AccessCount,
 			"last_access_at":  s.LastAccessAt,
 			"expires_at":      s.ExpiresAt,
@@ -90,6 +91,7 @@ func (h *Handler) Create(c *gin.Context) {
 		"status":       sub.Status,
 		"security_mode": sub.SecurityMode,
 		"quota_bytes":  sub.QuotaBytes,
+		"billing_node_ids": sub.BillingNodeIDs,
 		"expires_at":   sub.ExpiresAt,
 		"created_at":   sub.CreatedAt,
 	})

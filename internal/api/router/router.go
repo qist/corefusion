@@ -15,63 +15,63 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	extNodeHandler "corefusion/internal/api/handlers"
 	authHandler "corefusion/internal/api/handlers/auth"
 	backupsHandler "corefusion/internal/api/handlers/backups"
 	binariesHandler "corefusion/internal/api/handlers/binaries"
 	certsHandler "corefusion/internal/api/handlers/certificates"
-	geoRuleHandler "corefusion/internal/api/handlers/georule"
-	logManageHandler "corefusion/internal/api/handlers/logmanage"
-	metricsHandler "corefusion/internal/api/handlers/metrics"
-	nodesHandler "corefusion/internal/api/handlers/nodes"
-	securityHandler "corefusion/internal/api/handlers/security"
-	servicesHandler "corefusion/internal/api/handlers/services"
-	subsHandler "corefusion/internal/api/handlers/subscriptions"
-	subfmtHandler "corefusion/internal/api/handlers/subformat"
-	subendHandler "corefusion/internal/api/handlers/subendpoint"
+	cfipHandler "corefusion/internal/api/handlers/cfip"
 	clientHandler "corefusion/internal/api/handlers/client"
 	clientauthHandler "corefusion/internal/api/handlers/clientauth"
+	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
+	geoRuleHandler "corefusion/internal/api/handlers/georule"
+	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
+	logManageHandler "corefusion/internal/api/handlers/logmanage"
+	metricsHandler "corefusion/internal/api/handlers/metrics"
 	mihomoHandler "corefusion/internal/api/handlers/mihomo"
+	nodesHandler "corefusion/internal/api/handlers/nodes"
+	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
+	securityHandler "corefusion/internal/api/handlers/security"
+	servicesHandler "corefusion/internal/api/handlers/services"
+	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
+	subendHandler "corefusion/internal/api/handlers/subendpoint"
+	subfmtHandler "corefusion/internal/api/handlers/subformat"
+	subsHandler "corefusion/internal/api/handlers/subscriptions"
 	systemHandler "corefusion/internal/api/handlers/system"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
-	extNodeHandler "corefusion/internal/api/handlers"
-	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
-	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
-	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
-	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
-	cfipHandler "corefusion/internal/api/handlers/cfip"
-	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
-	proxySvc "corefusion/internal/service/proxy"
+	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
+	backupService "corefusion/internal/service/backup"
 	binariesSvc "corefusion/internal/service/binaries"
 	certService "corefusion/internal/service/certificate"
-	geoRuleSvc "corefusion/internal/service/georule"
-	logManageSvc "corefusion/internal/service/logmanage"
-	nodeService "corefusion/internal/service/node"
-	svcService "corefusion/internal/service/service"
-	subService "corefusion/internal/service/subscription"
-	subfmtSvc "corefusion/internal/service/subformat"
-	subendSvc "corefusion/internal/service/subendpoint"
+	cfipSvc "corefusion/internal/service/cfip"
 	clientSvc "corefusion/internal/service/client"
 	clientauthSvc "corefusion/internal/service/clientauth"
-	mihomoSvc "corefusion/internal/service/mihomo"
-	systemSvc "corefusion/internal/service/system"
-	userService "corefusion/internal/service/user"
-	backupService "corefusion/internal/service/backup"
-	inboundconfigSvc "corefusion/internal/service/inboundconfig"
-	outboundconfigSvc "corefusion/internal/service/outboundconfig"
-	warpSvc "corefusion/internal/service/warp"
-	coreconfigSvc "corefusion/internal/service/coreconfig"
-	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
-	cfipSvc "corefusion/internal/service/cfip"
 	configsyncSvc "corefusion/internal/service/configsync"
+	coreconfigSvc "corefusion/internal/service/coreconfig"
+	geoRuleSvc "corefusion/internal/service/georule"
+	inboundconfigSvc "corefusion/internal/service/inboundconfig"
+	logManageSvc "corefusion/internal/service/logmanage"
+	mihomoSvc "corefusion/internal/service/mihomo"
+	nodeService "corefusion/internal/service/node"
+	outboundconfigSvc "corefusion/internal/service/outboundconfig"
+	proxySvc "corefusion/internal/service/proxy"
+	svcService "corefusion/internal/service/service"
+	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
+	subendSvc "corefusion/internal/service/subendpoint"
+	subfmtSvc "corefusion/internal/service/subformat"
+	subService "corefusion/internal/service/subscription"
+	systemSvc "corefusion/internal/service/system"
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
+	userService "corefusion/internal/service/user"
+	warpSvc "corefusion/internal/service/warp"
 	"corefusion/internal/store/repository"
 )
 
@@ -118,6 +118,7 @@ func cleanEmpty(m map[string]interface{}) {
 
 // processMgr is the global process manager for graceful shutdown.
 var processMgr *process.Manager
+
 // proxyMgr is the global proxy manager for graceful shutdown.
 var proxyMgr *proxySvc.Manager
 
@@ -202,7 +203,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	userSvc := userService.NewService(userRepo)
 	nodeSvc := nodeService.NewService(nodeRepo)
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
-	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo)
+	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planNodeRepo)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
 	// Initialize HTTP-01 challenge provider for ACME certificate issuance
 	// This integrates with the Gin router to serve challenges at /.well-known/acme-challenge/
@@ -312,7 +313,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	extSrcRepo := repository.NewExternalNodeSourceRepository(database)
 	extNodeRepo := repository.NewExternalNodeRepository(database)
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planRepo, planNodeRepo, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
@@ -330,9 +331,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 			cleanEmpty(fullConfig)
 			for k, v := range fullConfig {
-				if v == nil { delete(fullConfig, k); continue }
+				if v == nil {
+					delete(fullConfig, k)
+					continue
+				}
 				if m, ok := v.(map[string]interface{}); ok {
-					if d, e := m["_disabled"]; e && d == true { delete(fullConfig, k) }
+					if d, e := m["_disabled"]; e && d == true {
+						delete(fullConfig, k)
+					}
 				}
 			}
 			data, _ := json.MarshalIndent(fullConfig, "", "  ")
@@ -365,9 +371,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 		// Remove disabled sections
 		for k, v := range fullConfig {
-			if v == nil { delete(fullConfig, k); continue }
+			if v == nil {
+				delete(fullConfig, k)
+				continue
+			}
 			if m, ok := v.(map[string]interface{}); ok {
-				if d, e := m["_disabled"]; e && d == true { delete(fullConfig, k) }
+				if d, e := m["_disabled"]; e && d == true {
+					delete(fullConfig, k)
+				}
 			}
 		}
 
@@ -1061,6 +1072,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.POST("/upload-mtls-ca", systemH.UploadMTLSCA)
 				systemGroup.GET("/github-config", systemH.GetGitHubConfig)
 				systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
+				systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
+				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
 				systemGroup.PUT("/notification-templates/:id", systemH.UpdateTemplate)
@@ -1421,13 +1434,15 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	shareDomainRepo := repository.NewShareDomainConfigRepository(database)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	clientRepo := repository.NewClientRepository(database)
+	planRepo := repository.NewPlanRepository(database)
 	planNodeRepo := repository.NewPlanNodeRepository(database)
 	accessLogRepo := repository.NewAccessLogRepository(database)
 	mihomoConfigRepo2 := repository.NewMihomoConfigRepository(database)
 	mihomoRuleRepo2 := repository.NewMihomoRuleRepository(database)
 	extNodeRepo2 := repository.NewExternalNodeRepository(database)
+	systemSettingRepo := repository.NewSystemSettingRepository(database)
 
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planNodeRepo, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planRepo, planNodeRepo, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
 
 	// Subscription at root path - no /sub prefix needed
 	r.GET("/:token", publicSubH.ServeSubscription)

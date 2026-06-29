@@ -70,6 +70,7 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	compatMode := proxySandboxCompatMode(m.dataDir)
 
 	// Read SNI settings for proxy_protocol rules
 	sniSettings, _ := m.GetSNISettings(ctx)
@@ -85,6 +86,7 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 			if port == "" {
 				port = "443"
 			}
+			port = caddyCompatPort(port, true, compatMode)
 			sniByPort[port] = append(sniByPort[port], site)
 		} else if site.Template == "l4" {
 			l4Sites = append(l4Sites, site)
@@ -120,6 +122,10 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	// Global options
 	sb.WriteString("{\n")
 	sb.WriteString("\tauto_https off\n")
+	if compatMode {
+		sb.WriteString("\thttp_port 29088\n")
+		sb.WriteString("\thttps_port 29443\n")
+	}
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -191,7 +197,11 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	sb.WriteString("}\n\n")
 
 	if len(httpSites) == 0 && !hasL4 {
-		sb.WriteString(":80 {\n")
+		addr := ":80"
+		if compatMode {
+			addr = ":29088"
+		}
+		sb.WriteString(addr + " {\n")
 		sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 		sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 		sb.WriteString("\thandle @acme {\n")
@@ -209,8 +219,9 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	}
 
 	for domain, siteList := range domainSites {
+		siteAddr := caddyCompatAddress(domain, compatMode)
 		sb.WriteString(fmt.Sprintf("# %s\n", domain))
-		sb.WriteString(fmt.Sprintf("%s {\n", domain))
+		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
 
 		for _, site := range siteList {
 			if site.CertPath != "" && site.KeyPath != "" {
@@ -350,6 +361,7 @@ func (m *CaddyManager) generateL4Block(site *entity.CaddySite) string {
 	if port == "" {
 		port = "443"
 	}
+	port = caddyCompatPort(port, true, proxySandboxCompatMode(m.dataDir))
 	upstream := site.Upstream
 	if upstream == "" {
 		upstream = "127.0.0.1:8080"
@@ -467,9 +479,9 @@ func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, port string, enable
 // GetSNISettings reads SNI settings from database.
 func (m *CaddyManager) GetSNISettings(ctx context.Context) (*SNISettings, error) {
 	settings := &SNISettings{
-		Enabled:    false,
-		ListenPort: "443",
-		LocalPort:  "8443",
+		Enabled:            false,
+		ListenPort:         "443",
+		LocalPort:          "8443",
 		ProxyProtocolRules: []string{"127.0.0.0/8", "::1/128"},
 	}
 	if m.settingStore == nil {

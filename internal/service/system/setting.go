@@ -83,6 +83,13 @@ type NotificationConfig struct {
 	SMTPTLS          bool   `json:"smtp_tls"`
 }
 
+type SubscriptionBillingTemplateConfig struct {
+	DefaultRemainingTemplate string   `json:"default_remaining_template"`
+	DefaultResetTemplate     string   `json:"default_reset_template"`
+	DefaultExpiryTemplate    string   `json:"default_expiry_template"`
+	Variables                []string `json:"variables,omitempty"`
+}
+
 // DefaultPanelConfig returns default panel configuration.
 func DefaultPanelConfig() *PanelConfig {
 	return &PanelConfig{
@@ -94,6 +101,40 @@ func DefaultPanelConfig() *PanelConfig {
 		Timezone:         "Asia/Shanghai",
 		DataDir:          "data",
 	}
+}
+
+func DefaultSubscriptionBillingTemplateConfig(lang string) *SubscriptionBillingTemplateConfig {
+	config := &SubscriptionBillingTemplateConfig{
+		DefaultRemainingTemplate: "Remaining: {remaining_human}",
+		DefaultResetTemplate:     "Reset In: {reset_human}",
+		DefaultExpiryTemplate:    "Expires: {expires_human}",
+		Variables: []string{
+			"{remaining_human}",
+			"{remaining_bytes}",
+			"{remaining_gb}",
+			"{used_human}",
+			"{used_bytes}",
+			"{used_gb}",
+			"{quota_human}",
+			"{quota_bytes}",
+			"{quota_gb}",
+			"{reset_human}",
+			"{reset_days}",
+			"{reset_at}",
+			"{reset_date}",
+			"{expires_human}",
+			"{expires_at}",
+			"{expires_date}",
+			"{expires_unix}",
+			"{quota_state}",
+		},
+	}
+	if lang == "zh" {
+		config.DefaultRemainingTemplate = "剩余用量：{remaining_human}"
+		config.DefaultResetTemplate = "距离下次重置剩余：{reset_human}"
+		config.DefaultExpiryTemplate = "套餐到期时间：{expires_human}"
+	}
+	return config
 }
 
 // GetPanelConfig retrieves panel configuration from database.
@@ -139,14 +180,14 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.subscription_port":    config.SubscriptionPort,
 		"panel.registration_enabled": fmt.Sprintf("%v", config.RegistrationEnabled),
 		"panel.tls_enabled":          fmt.Sprintf("%v", config.TLSEnabled),
-		"panel.tls_cert_id":   strconv.FormatInt(config.TLSCertID, 10),
-		"panel.tls_cert_path": config.TLSCertPath,
-		"panel.tls_key_path":  config.TLSKeyPath,
-		"panel.mtls_enabled":  fmt.Sprintf("%v", config.MTLSEnabled),
-		"panel.mtls_ca_path":  config.MTLSCAPath,
-		"panel.web_path":      config.WebPath,
-		"panel.timezone":      config.Timezone,
-		"panel.data_dir":      config.DataDir,
+		"panel.tls_cert_id":          strconv.FormatInt(config.TLSCertID, 10),
+		"panel.tls_cert_path":        config.TLSCertPath,
+		"panel.tls_key_path":         config.TLSKeyPath,
+		"panel.mtls_enabled":         fmt.Sprintf("%v", config.MTLSEnabled),
+		"panel.mtls_ca_path":         config.MTLSCAPath,
+		"panel.web_path":             config.WebPath,
+		"panel.timezone":             config.Timezone,
+		"panel.data_dir":             config.DataDir,
 	}
 
 	// Read old data_dir BEFORE updating database
@@ -273,16 +314,16 @@ func (s *SettingService) GetNotificationConfig(ctx context.Context) (*Notificati
 // UpdateNotificationConfig saves notification configuration to database.
 func (s *SettingService) UpdateNotificationConfig(ctx context.Context, config *NotificationConfig) error {
 	settings := map[string]string{
-		"notify.telegram_enabled":  fmt.Sprintf("%v", config.TelegramEnabled),
+		"notify.telegram_enabled":   fmt.Sprintf("%v", config.TelegramEnabled),
 		"notify.telegram_bot_token": config.TelegramBotToken,
-		"notify.telegram_chat_id":  config.TelegramChatID,
-		"notify.smtp_enabled":      fmt.Sprintf("%v", config.SMTPEnabled),
-		"notify.smtp_host":         config.SMTPHost,
-		"notify.smtp_port":         config.SMTPPort,
-		"notify.smtp_user":         config.SMTPUser,
-		"notify.smtp_pass":         config.SMTPPass,
-		"notify.smtp_from":         config.SMTPFrom,
-		"notify.smtp_tls":          fmt.Sprintf("%v", config.SMTPTLS),
+		"notify.telegram_chat_id":   config.TelegramChatID,
+		"notify.smtp_enabled":       fmt.Sprintf("%v", config.SMTPEnabled),
+		"notify.smtp_host":          config.SMTPHost,
+		"notify.smtp_port":          config.SMTPPort,
+		"notify.smtp_user":          config.SMTPUser,
+		"notify.smtp_pass":          config.SMTPPass,
+		"notify.smtp_from":          config.SMTPFrom,
+		"notify.smtp_tls":           fmt.Sprintf("%v", config.SMTPTLS),
 	}
 
 	for key, value := range settings {
@@ -314,6 +355,32 @@ func (s *SettingService) UpdateGitHubConfig(ctx context.Context, config *GitHubC
 		return fmt.Errorf("marshal github config: %w", err)
 	}
 	return s.repo.Set(ctx, "github.acceleration", string(data))
+}
+
+func (s *SettingService) GetSubscriptionBillingTemplateConfig(ctx context.Context, lang string) (*SubscriptionBillingTemplateConfig, error) {
+	config := DefaultSubscriptionBillingTemplateConfig(lang)
+	settings, err := s.repo.GetByPrefix(ctx, "subscription.billing_template.")
+	if err != nil {
+		return nil, err
+	}
+	setIfExist(settings, "subscription.billing_template.default_remaining", &config.DefaultRemainingTemplate)
+	setIfExist(settings, "subscription.billing_template.default_reset", &config.DefaultResetTemplate)
+	setIfExist(settings, "subscription.billing_template.default_expiry", &config.DefaultExpiryTemplate)
+	return config, nil
+}
+
+func (s *SettingService) UpdateSubscriptionBillingTemplateConfig(ctx context.Context, config *SubscriptionBillingTemplateConfig) error {
+	settings := map[string]string{
+		"subscription.billing_template.default_remaining": config.DefaultRemainingTemplate,
+		"subscription.billing_template.default_reset":     config.DefaultResetTemplate,
+		"subscription.billing_template.default_expiry":    config.DefaultExpiryTemplate,
+	}
+	for key, value := range settings {
+		if err := s.repo.Set(ctx, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetActiveGitHubDomain returns the first enabled acceleration domain URL, or empty string.

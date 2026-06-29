@@ -25,12 +25,12 @@ type InboundUserManager interface {
 
 // Service handles client business logic.
 type Service struct {
-	clientRepo    *repository.ClientRepository
-	planRepo      *repository.PlanRepository
-	planNodeRepo  *repository.PlanNodeRepository
-	subRepo       *repository.SubscriptionRepository
-	inboundRepo   *repository.InboundConfigRepository
-	userManager   InboundUserManager
+	clientRepo   *repository.ClientRepository
+	planRepo     *repository.PlanRepository
+	planNodeRepo *repository.PlanNodeRepository
+	subRepo      *repository.SubscriptionRepository
+	inboundRepo  *repository.InboundConfigRepository
+	userManager  InboundUserManager
 }
 
 // NewService creates a new client service.
@@ -71,22 +71,28 @@ func (s *Service) GetPlan(ctx context.Context, id int64) (*entity.Plan, []entity
 }
 
 type CreatePlanInput struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
-	QuotaBytes  int64  `json:"quota_bytes"`
-	Duration    int    `json:"duration"`
-	Enabled     *bool  `json:"enabled"`
-	SortOrder   int    `json:"sort_order"`
+	Name                     string `json:"name" binding:"required"`
+	Description              string `json:"description"`
+	QuotaBytes               int64  `json:"quota_bytes"`
+	Duration                 int    `json:"duration"`
+	Enabled                  *bool  `json:"enabled"`
+	SortOrder                int    `json:"sort_order"`
+	BillingRemainingTemplate string `json:"billing_remaining_template"`
+	BillingResetTemplate     string `json:"billing_reset_template"`
+	BillingExpiryTemplate    string `json:"billing_expiry_template"`
 }
 
 func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (*entity.Plan, error) {
 	plan := &entity.Plan{
-		Name:        input.Name,
-		Description: input.Description,
-		QuotaBytes:  input.QuotaBytes,
-		Duration:    input.Duration,
-		Enabled:     true,
-		SortOrder:   input.SortOrder,
+		Name:                     input.Name,
+		Description:              input.Description,
+		QuotaBytes:               input.QuotaBytes,
+		Duration:                 input.Duration,
+		Enabled:                  true,
+		SortOrder:                input.SortOrder,
+		BillingRemainingTemplate: input.BillingRemainingTemplate,
+		BillingResetTemplate:     input.BillingResetTemplate,
+		BillingExpiryTemplate:    input.BillingExpiryTemplate,
 	}
 	if input.Enabled != nil {
 		plan.Enabled = *input.Enabled
@@ -101,12 +107,15 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (*entit
 }
 
 type UpdatePlanInput struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	QuotaBytes  *int64  `json:"quota_bytes"`
-	Duration    *int    `json:"duration"`
-	Enabled     *bool   `json:"enabled"`
-	SortOrder   *int    `json:"sort_order"`
+	Name                     *string `json:"name"`
+	Description              *string `json:"description"`
+	QuotaBytes               *int64  `json:"quota_bytes"`
+	Duration                 *int    `json:"duration"`
+	Enabled                  *bool   `json:"enabled"`
+	SortOrder                *int    `json:"sort_order"`
+	BillingRemainingTemplate *string `json:"billing_remaining_template"`
+	BillingResetTemplate     *string `json:"billing_reset_template"`
+	BillingExpiryTemplate    *string `json:"billing_expiry_template"`
 }
 
 func (s *Service) UpdatePlan(ctx context.Context, id int64, input UpdatePlanInput) (*entity.Plan, error) {
@@ -131,6 +140,15 @@ func (s *Service) UpdatePlan(ctx context.Context, id int64, input UpdatePlanInpu
 	}
 	if input.SortOrder != nil {
 		plan.SortOrder = *input.SortOrder
+	}
+	if input.BillingRemainingTemplate != nil {
+		plan.BillingRemainingTemplate = *input.BillingRemainingTemplate
+	}
+	if input.BillingResetTemplate != nil {
+		plan.BillingResetTemplate = *input.BillingResetTemplate
+	}
+	if input.BillingExpiryTemplate != nil {
+		plan.BillingExpiryTemplate = *input.BillingExpiryTemplate
 	}
 	if err := s.planRepo.Update(ctx, plan); err != nil {
 		return nil, err
@@ -273,17 +291,17 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 
 	// Create subscription
 	sub := &entity.Subscription{
-		ClientID:       client.ID,
-		Format:         "base64_uri",
-		Token:          token,
-		TokenVersion:   1,
-		Status:         "active",
-		SecurityMode:   "token_only",
-		BindMode:       "none",
-		QuotaResetCycle: "none",
-		QuotaBytes:     quota,
+		ClientID:                client.ID,
+		Format:                  "base64_uri",
+		Token:                   token,
+		TokenVersion:            1,
+		Status:                  "active",
+		SecurityMode:            "token_only",
+		BindMode:                "none",
+		QuotaResetCycle:         "none",
+		QuotaBytes:              quota,
 		SuspendOnQuotaExhausted: 1,
-		QuotaState:     "normal",
+		QuotaState:              "normal",
 	}
 	if expiresAt != nil {
 		sub.ExpiresAt = expiresAt
@@ -486,17 +504,17 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 
 	// Create subscription
 	sub := &entity.Subscription{
-		ClientID:              client.ID,
-		Format:                "base64_uri",
-		Token:                 token,
-		TokenVersion:          1,
-		Status:                "active",
-		SecurityMode:          "token_only",
-		BindMode:              "none",
-		QuotaResetCycle:       "none",
-		QuotaBytes:            client.QuotaBytes,
+		ClientID:                client.ID,
+		Format:                  "base64_uri",
+		Token:                   token,
+		TokenVersion:            1,
+		Status:                  "active",
+		SecurityMode:            "token_only",
+		BindMode:                "none",
+		QuotaResetCycle:         "none",
+		QuotaBytes:              client.QuotaBytes,
 		SuspendOnQuotaExhausted: 1,
-		QuotaState:            "normal",
+		QuotaState:              "normal",
 	}
 	if client.ExpiresAt != nil {
 		sub.ExpiresAt = client.ExpiresAt

@@ -3,6 +3,8 @@ package outboundconfig
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"os"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -86,12 +88,40 @@ func (s *Service) GetEnabledOutbounds(ctx context.Context, coreType string) ([]m
 		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &ob); err != nil {
 			continue
 		}
+		normalizeRestrictedOutbound(cfg.Protocol, cfg.Tag, ob)
 		// Set tag from DB
 		ob["tag"] = cfg.Tag
 		ob["protocol"] = cfg.Protocol
 		outbounds = append(outbounds, ob)
 	}
 	return outbounds, nil
+}
+
+func normalizeRestrictedOutbound(protocol, tag string, ob map[string]interface{}) {
+	if protocol != "wireguard" || rpFilterWritable() {
+		return
+	}
+
+	settings, _ := ob["settings"].(map[string]interface{})
+	if settings == nil {
+		settings = make(map[string]interface{})
+		ob["settings"] = settings
+	}
+	if current, ok := settings["noKernelTun"].(bool); ok && current {
+		return
+	}
+
+	settings["noKernelTun"] = true
+	log.Printf("outboundconfig: forced noKernelTun=true for wireguard outbound %q because rp_filter is not writable in current environment", tag)
+}
+
+func rpFilterWritable() bool {
+	f, err := os.OpenFile("/proc/sys/net/ipv4/conf/all/rp_filter", os.O_WRONLY, 0)
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
 }
 
 // GetDefaultOutbounds returns default outbound configs.

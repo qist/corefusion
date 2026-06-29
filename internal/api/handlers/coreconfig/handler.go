@@ -14,6 +14,7 @@ import (
 // ProcessManager provides process restart capabilities.
 type ProcessManager interface {
 	Restart(ctx context.Context, serviceID int64, coreType string) error
+	IsRunning(serviceID int64) bool
 }
 
 // Handler handles core config HTTP requests.
@@ -134,9 +135,11 @@ func (h *Handler) SaveSection(c *gin.Context) {
 		return
 	}
 
-	// Auto-restart service if running
+	// Xray routing/inbounds/outbounds are applied separately via runtime APIs.
+	// Skipping restart here avoids forcing a stopped xray process to restart
+	// when the UI only intends to save config changes to the database.
 	serviceID := h.getServiceID(coreType)
-	if h.processMgr != nil && serviceID > 0 {
+	if h.processMgr != nil && serviceID > 0 && shouldAutoRestartSection(coreType, section) && h.processMgr.IsRunning(serviceID) {
 		h.processMgr.Restart(c.Request.Context(), serviceID, coreType)
 	}
 
@@ -147,6 +150,16 @@ func (h *Handler) SaveSection(c *gin.Context) {
 func (h *Handler) getServiceID(coreType string) int64 {
 	ids := map[string]int64{"xray": 1, "singbox": 2, "hysteria2": 3, "tuic": 4}
 	return ids[coreType]
+}
+
+func shouldAutoRestartSection(coreType, section string) bool {
+	if coreType == "xray" {
+		switch section {
+		case "routing", "inbounds", "outbounds":
+			return false
+		}
+	}
+	return true
 }
 
 // Validate handles POST /api/v1/protocols/:coreType/validate.

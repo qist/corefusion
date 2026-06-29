@@ -5,15 +5,18 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -150,6 +153,101 @@ func lookupNginxUser() (int, int, error) {
 	fmt.Sscanf(u.Uid, "%d", &uid)
 	fmt.Sscanf(u.Gid, "%d", &gid)
 	return uid, gid, nil
+}
+
+func nginxOwnershipRestricted(path string) bool {
+	if os.Geteuid() != 0 {
+		return false
+	}
+	nginxUID, nginxGID, err := lookupNginxUser()
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	if err := os.Chown(path, nginxUID, nginxGID); err != nil {
+		return isIgnorableChownError(err)
+	}
+	_ = os.Chown(path, int(stat.Uid), int(stat.Gid))
+	return false
+}
+
+func isIgnorableChownError(err error) bool {
+	return errors.Is(err, syscall.EPERM) ||
+		errors.Is(err, syscall.EINVAL) ||
+		errors.Is(err, syscall.EROFS) ||
+		errors.Is(err, syscall.ENOTSUP) ||
+		errors.Is(err, syscall.ENOSYS)
+}
+
+func privilegedPortsRestricted() bool {
+	ln, err := net.Listen("tcp", "127.0.0.1:81")
+	if err == nil {
+		_ = ln.Close()
+		return false
+	}
+	return errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
+}
+
+func proxySandboxCompatMode(dataDir string) bool {
+	return nginxOwnershipRestricted(filepath.Join(dataDir, "temp")) || privilegedPortsRestricted()
+}
+
+func compatPort(port string, tls bool, compatMode bool) string {
+	if !compatMode {
+		return port
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p >= 1024 {
+		return port
+	}
+	if tls {
+		if p == 443 {
+			return "8443"
+		}
+	} else if p == 80 {
+		return "8088"
+	}
+	return strconv.Itoa(10000 + p)
+}
+
+func caddyCompatPort(port string, tls bool, compatMode bool) string {
+	if !compatMode {
+		return port
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p >= 1024 {
+		return port
+	}
+	if tls {
+		if p == 443 {
+			return "29443"
+		}
+	} else if p == 80 {
+		return "29088"
+	}
+	return strconv.Itoa(30000 + p)
+}
+
+func caddyCompatAddress(addr string, compatMode bool) string {
+	if !compatMode || addr == "" {
+		return addr
+	}
+	if strings.HasPrefix(addr, ":") {
+		port := strings.TrimPrefix(addr, ":")
+		return ":" + caddyCompatPort(port, port == "443", true)
+	}
+	host, port, ok := strings.Cut(addr, ":")
+	if !ok || strings.Contains(host, ":") {
+		return addr
+	}
+	return host + ":" + caddyCompatPort(port, port == "443", true)
 }
 
 // NewManager creates a new proxy manager.
@@ -318,6 +416,7 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	compatMode := proxySandboxCompatMode(m.dataDir)
 
 	var sb strings.Builder
 	var httpSites []entity.ProxySite
@@ -331,6 +430,7 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 			if port == "" {
 				port = "443"
 			}
+			port = caddyCompatPort(port, true, compatMode)
 			sniByPort[port] = append(sniByPort[port], site)
 		} else if site.Template == "l4" {
 			l4Sites = append(l4Sites, site)
@@ -366,6 +466,10 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 	// Global options block (includes layer4 if needed)
 	sb.WriteString("{\n")
 	sb.WriteString("\tauto_https off\n")
+	if compatMode {
+		sb.WriteString("\thttp_port 29088\n")
+		sb.WriteString("\thttps_port 29443\n")
+	}
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -483,7 +587,11 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 	sb.WriteString("}\n\n")
 
 	if len(httpSites) == 0 && !hasL4 {
-		sb.WriteString(":80 {\n\trespond \"CoreFusion\" 200\n}\n")
+		addr := ":80"
+		if compatMode {
+			addr = ":29088"
+		}
+		sb.WriteString(addr + " {\n\trespond \"CoreFusion\" 200\n}\n")
 		return sb.String(), nil
 	}
 
@@ -494,8 +602,9 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 	}
 
 	for domain, siteList := range domainSites {
+		siteAddr := caddyCompatAddress(domain, compatMode)
 		sb.WriteString(fmt.Sprintf("# %s\n", domain))
-		sb.WriteString(fmt.Sprintf("%s {\n", domain))
+		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
 
 		// TLS from first site that has it
 		for _, site := range siteList {
@@ -599,6 +708,7 @@ func (m *Manager) generateL4Block(site *entity.ProxySite) string {
 	if port == "" {
 		port = "443"
 	}
+	port = caddyCompatPort(port, true, proxySandboxCompatMode(m.dataDir))
 	upstream := site.Upstream
 	if upstream == "" {
 		upstream = "127.0.0.1:8080"
@@ -764,15 +874,22 @@ func (m *Manager) ensureNginxDependencies() error {
 			return fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
+	compatMode := nginxOwnershipRestricted(filepath.Join(m.dataDir, "temp"))
 	// Set temp directory ownership to nginx user
-	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
-		tempDir := filepath.Join(m.dataDir, "temp")
-		filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
-			if err == nil {
-				os.Chown(path, nginxUID, nginxGID)
-			}
-			return nil
-		})
+	if !compatMode {
+		if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+			tempDir := filepath.Join(m.dataDir, "temp")
+			filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
+				if err == nil {
+					if chownErr := os.Chown(path, nginxUID, nginxGID); chownErr != nil && !isIgnorableChownError(chownErr) {
+						log.Printf("proxy nginx: failed to chown %s to %d:%d: %v", path, nginxUID, nginxGID, chownErr)
+					}
+				}
+				return nil
+			})
+		}
+	} else {
+		log.Printf("proxy nginx: temp directory ownership changes are not supported in current environment, using current-user compatibility mode")
 	}
 
 	// Ensure mime.types exists in proxy config directory (same as nginx.conf)
@@ -824,8 +941,10 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 
 	// Ensure nginx dependencies before starting
 	if proxyType == ProxyNginx {
-		if err := checkNginxUser(); err != nil {
-			return err
+		if !nginxOwnershipRestricted(filepath.Join(m.dataDir, "temp")) {
+			if err := checkNginxUser(); err != nil {
+				return err
+			}
 		}
 		if err := m.ensureNginxDependencies(); err != nil {
 			return fmt.Errorf("nginx dependencies: %w", err)
@@ -888,8 +1007,12 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	if m.settingStore != nil {
 		if v, err := m.settingStore.GetByKey(context.Background(), "proxy.log_output_config"); err == nil && v != "" {
 			var cfg struct {
-				Nginx struct{ Mode string `json:"mode"` } `json:"nginx"`
-				Caddy struct{ Mode string `json:"mode"` } `json:"caddy"`
+				Nginx struct {
+					Mode string `json:"mode"`
+				} `json:"nginx"`
+				Caddy struct {
+					Mode string `json:"mode"`
+				} `json:"caddy"`
 			}
 			if json.Unmarshal([]byte(v), &cfg) == nil {
 				switch proxyType {
@@ -1504,9 +1627,9 @@ func run(ctx context.Context, name string, args ...string) error {
 
 // SNISettings contains SNI routing configuration.
 type SNISettings struct {
-	Enabled       bool     `json:"enabled"`
-	ListenPort    string   `json:"listen_port"`
-	LocalPort     string   `json:"local_port"`
+	Enabled            bool     `json:"enabled"`
+	ListenPort         string   `json:"listen_port"`
+	LocalPort          string   `json:"local_port"`
 	ProxyProtocolRules []string `json:"proxy_protocol_rules"`
 }
 

@@ -12,7 +12,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jlaffaye/ftp v0.2.1
-	github.com/xtls/xray-core v1.260327.1-0.20260623114817-ac04c445bd09
+	github.com/xtls/xray-core v1.260327.1-0.20260627131803-45cf2898ab12
 	golang.org/x/crypto v0.53.0
 	google.golang.org/grpc v1.81.1
 	gopkg.in/yaml.v3 v3.0.1

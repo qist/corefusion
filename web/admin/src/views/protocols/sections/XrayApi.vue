@@ -1,7 +1,7 @@
 <template>
   <el-form label-width="140px" label-position="left">
     <el-form-item :label="t('protoCenter.api.tag')">
-      <el-input v-model="form.tag" placeholder="api" @change="emit" />
+      <el-input v-model="form.tag" :placeholder="t('protoCenter.api.tagPlaceholder')" @change="emit" />
       <div class="hint">{{ t('protoCenter.api.tagHint') }}</div>
     </el-form-item>
     <el-form-item :label="t('protoCenter.api.listen')">
@@ -15,10 +15,10 @@
     </el-form-item>
     <el-form-item :label="t('protoCenter.api.services')">
       <el-checkbox-group v-model="form.services" @change="emit">
-        <el-checkbox value="HandlerService" label="HandlerService" />
-        <el-checkbox value="LoggerService" label="LoggerService" />
-        <el-checkbox value="StatsService" label="StatsService" />
-        <el-checkbox value="RoutingService" label="RoutingService" />
+        <el-checkbox value="HandlerService" :label="t('protoCenter.api.handlerService')" />
+        <el-checkbox value="LoggerService" :label="t('protoCenter.api.loggerService')" />
+        <el-checkbox value="StatsService" :label="t('protoCenter.api.statsService')" />
+        <el-checkbox value="RoutingService" :label="t('protoCenter.api.routingService')" />
       </el-checkbox-group>
       <div class="hint">{{ t('protoCenter.api.servicesHint') }}</div>
     </el-form-item>

@@ -82,13 +82,13 @@
       </el-card>
 
       <!-- Version Dialog -->
-      <el-dialog v-model="verVisible" title="选择版本" width="600" :close-on-click-modal="!downloading">
+      <el-dialog v-model="verVisible" :title="t('protoCenter.version.dialogTitle')" width="600" :close-on-click-modal="!downloading">
         <div v-if="downloading" style="text-align:center;padding:40px 20px">
           <el-icon class="is-loading" :size="32" color="#409eff"><Loading /></el-icon>
           <div style="margin-top:16px;font-size:14px;color:#606266">{{ downloadProgress }}</div>
         </div>
         <div v-else v-loading="verLoading" style="min-height:80px">
-          <div v-if="!releases.length && !verLoading" style="text-align:center;color:#999;padding:16px">暂无版本</div>
+          <div v-if="!releases.length && !verLoading" style="text-align:center;color:#999;padding:16px">{{ t('protoCenter.version.noVersions') }}</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <div v-for="r in releases" :key="r.version" class="ver-card" @click="doDownload(r)">
               <div style="font-size:11px;margin-bottom:2px" :style="{color:r.prerelease?'#67c23a':'#409eff'}">{{ r.prerelease?'Pre':'Rel' }}</div>
@@ -101,7 +101,7 @@
 
     <!-- Core Selection -->
     <div v-else>
-      <h2 style="margin-bottom:20px">协议中心</h2>
+      <h2 style="margin-bottom:20px">{{ t('protoCenter.title') }}</h2>
       <div style="display:flex;gap:24px;justify-content:center;margin-top:60px;flex-wrap:wrap">
         <div v-for="c in cores" :key="c.type" class="core-card" @click="selectCore(c.type)">
           <div style="text-align:center;padding:20px 40px">
@@ -246,7 +246,7 @@ function onUpdate(d){
   secJson.value=d===null?'null (disabled)':JSON.stringify(d,null,2)
 }
 function onJsonChange(v){try{secData.value=JSON.parse(v)}catch{}}
-function resetSection(){switchSection(activeSection.value);ElMessage.success('已重置')}
+function resetSection(){switchSection(activeSection.value);ElMessage.success(t('common.reset'))}
 
 async function saveSection(){
   if(activeSection.value==='_preview')return
@@ -262,11 +262,11 @@ async function saveSection(){
     // Auto-restart if service is running
     if(svc.state==='running' && svc.service_id){
       try{await client.post(`/services/${svc.service_id}/restart`)}catch{}
-      ElMessage.success('保存成功，服务已重启')
+      ElMessage.success(t('protoCenter.messages.savedAndRestarted'))
     } else {
-      ElMessage.success('保存成功')
+      ElMessage.success(t('protoCenter.messages.saved'))
     }
-  }catch{ElMessage.error('保存失败')}finally{saving.value=false}
+  }catch{ElMessage.error(t('protoCenter.messages.saveFailed'))}finally{saving.value=false}
 }
 
 async function loadConfig(ct){try{fullConfig.value=await client.get(`/protocols/${ct}`)||{}}catch{fullConfig.value={}}}
@@ -280,19 +280,19 @@ async function fetchStatus(){
   }catch{}
 }
 
-async function doStart(){if(!svc.service_id)return;acting.value=true;try{await client.post(`/services/${svc.service_id}/start`);ElMessage.success('已启动');fetchStatus()}catch{ElMessage.error('启动失败')}finally{acting.value=false}}
-async function doStop(){if(!svc.service_id)return;await ElMessageBox.confirm('确定停止？','确认');acting.value=true;try{await client.post(`/services/${svc.service_id}/stop`);ElMessage.success('已停止');fetchStatus()}catch{ElMessage.error('停止失败')}finally{acting.value=false}}
-async function doRestart(){if(!svc.service_id)return;acting.value=true;try{await client.post(`/services/${svc.service_id}/restart`);ElMessage.success('已重启');fetchStatus()}catch{ElMessage.error('重启失败')}finally{acting.value=false}}
+async function doStart(){if(!svc.service_id)return;acting.value=true;try{await client.post(`/services/${svc.service_id}/start`);ElMessage.success(t('protoCenter.messages.started'));fetchStatus()}catch{ElMessage.error(t('protoCenter.messages.startFailed'))}finally{acting.value=false}}
+async function doStop(){if(!svc.service_id)return;await ElMessageBox.confirm(t('protoCenter.messages.stopConfirm'),t('common.confirm'));acting.value=true;try{await client.post(`/services/${svc.service_id}/stop`);ElMessage.success(t('protoCenter.messages.stopped'));fetchStatus()}catch{ElMessage.error(t('protoCenter.messages.stopFailed'))}finally{acting.value=false}}
+async function doRestart(){if(!svc.service_id)return;acting.value=true;try{await client.post(`/services/${svc.service_id}/restart`);ElMessage.success(t('protoCenter.messages.restarted'));fetchStatus()}catch{ElMessage.error(t('protoCenter.messages.restartFailed'))}finally{acting.value=false}}
 
 async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get('/binaries/releases',{params:{core_type:selectedCore.value,limit:20,offset:0}});releases.value=(d.items||[]).map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
 function isOdd(v){const p=(v||'').replace(/^v/,'').split('.');const n=parseInt(p[p.length-1]);return!isNaN(n)&&n%2!==0}
 async function doDownload(r){
-  await ElMessageBox.confirm(`下载 ${r.version}？`,'确认')
+  await ElMessageBox.confirm(t('protoCenter.version.downloadConfirm', { version: r.version }),t('common.confirm'))
   downloading.value=true
-  downloadProgress.value='正在下载 '+r.version+'...'
+  downloadProgress.value=t('protoCenter.version.downloading', { version: r.version })
   try{
     await client.post('/binaries/download',{core_type:selectedCore.value,version:r.version})
-    downloadProgress.value='下载完成，正在启动服务...'
+    downloadProgress.value=t('protoCenter.version.downloadedStarting')
     // Start service
     try{await client.post(`/services/${svc.service_id}/start`)}catch{}
     // Check immediately
@@ -301,7 +301,7 @@ async function doDownload(r){
       const data=await client.get('/services/process-status')
       const s=(data||[]).find(x=>x.core_type===selectedCore.value)
       if(s&&s.state==='running'){
-        ElMessage.success('更新完成')
+        ElMessage.success(t('protoCenter.version.updateDone'))
         verVisible.value=false
         fetchStatus()
         return
@@ -314,17 +314,17 @@ async function doDownload(r){
         const data=await client.get('/services/process-status')
         const s=(data||[]).find(x=>x.core_type===selectedCore.value)
         if(s&&s.state==='running'){
-          ElMessage.success('更新完成')
+          ElMessage.success(t('protoCenter.version.updateDone'))
           verVisible.value=false
           fetchStatus()
           return
         }
       }catch{}
     }
-    ElMessage.success('下载完成')
+    ElMessage.success(t('protoCenter.version.downloadDone'))
     verVisible.value=false
     fetchStatus()
-  }catch{ElMessage.error('下载失败')}finally{downloading.value=false}
+  }catch{ElMessage.error(t('protoCenter.version.downloadFailed'))}finally{downloading.value=false}
 }
 
 onMounted(()=>{const s=localStorage.getItem('active_core');if(s&&cores.some(c=>c.type===s))selectCore(s);timer=setInterval(fetchStatus,10000)})

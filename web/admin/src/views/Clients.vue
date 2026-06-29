@@ -174,9 +174,12 @@
         </div>
         <div v-if="subDetailQr" style="margin:16px 0">
           <img :src="subDetailQr" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
-          <div style="font-size:12px;color:#909399;margin-top:8px">扫码导入订阅</div>
+          <div style="font-size:12px;color:#909399;margin-top:8px">{{ t('client.scanToImport') }}</div>
         </div>
-        <el-button v-else size="small" @click="subDetailQr = genQr(subDetailUrl)" style="margin-top:8px">显示二维码</el-button>
+        <div v-else-if="subDetailQrLoading" style="margin:16px 0;height:220px;display:flex;align-items:center;justify-content:center;color:#909399">
+          {{ t('client.qrGenerating') }}
+        </div>
+        <el-button v-else size="small" :loading="subDetailQrLoading" @click="generateSubDetailQr" style="margin-top:8px">{{ t('client.showQrCode') }}</el-button>
       </div>
     </el-dialog>
   </div>
@@ -186,6 +189,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { generateQrDataUrl, isQrDataTooLargeError } from '../utils/qrcode'
 import client from '../api/client'
 
 const { t } = useI18n()
@@ -227,6 +231,7 @@ const subDetailDialog = ref(false)
 const subDetailEmail = ref('')
 const subDetailUrl = ref('')
 const subDetailQr = ref('')
+const subDetailQrLoading = ref(false)
 
 // Get subscription token for a client
 const getClientToken = (row) => {
@@ -301,8 +306,22 @@ async function fetchClients() {
 async function fetchInbounds() { try { const r = await client.get('/inbound-configs'); inbounds.value = Array.isArray(r) ? r : r.data || [] } catch {} }
 
 // Plan CRUD
-function showCreatePlan() { editingPlan.value = null; planForm.value = { name: '', description: '', quota_gb: 0, duration: 30, enabled: true }; planDialog.value = true }
-function showEditPlan(row) { editingPlan.value = row; planForm.value = { name: row.name, description: row.description, quota_gb: row.quota_bytes / 1073741824, duration: row.duration, enabled: row.enabled }; planDialog.value = true }
+function showCreatePlan() {
+  editingPlan.value = null
+  planForm.value = { name: '', description: '', quota_gb: 0, duration: 30, enabled: true }
+  planDialog.value = true
+}
+function showEditPlan(row) {
+  editingPlan.value = row
+  planForm.value = {
+    name: row.name,
+    description: row.description,
+    quota_gb: row.quota_bytes / 1073741824,
+    duration: row.duration,
+    enabled: row.enabled
+  }
+  planDialog.value = true
+}
 async function savePlan() {
   try {
     const payload = { ...planForm.value, quota_bytes: Math.round((planForm.value.quota_gb || 0) * 1073741824) }
@@ -358,11 +377,23 @@ function showSubDetail(row) {
   subDetailEmail.value = row.email
   subDetailUrl.value = subUrl(row)
   subDetailQr.value = ''
+  subDetailQrLoading.value = false
   subDetailDialog.value = true
+  void generateSubDetailQr()
 }
 
-function genQr(url) {
-  return 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url)
+async function generateSubDetailQr() {
+  if (!subDetailUrl.value) return
+  subDetailQrLoading.value = true
+  subDetailQr.value = ''
+  try {
+    subDetailQr.value = await generateQrDataUrl(subDetailUrl.value, { width: 200 })
+  } catch (error) {
+    const message = isQrDataTooLargeError(error) ? t('client.qrDataTooLarge') : t('client.qrGenerateFailed')
+    ElMessage.error(message)
+  } finally {
+    subDetailQrLoading.value = false
+  }
 }
 
 function copyText(text) {

@@ -97,6 +97,14 @@
           <span>已用: {{ formatBytes(client.used_bytes) }}</span>
           <span>总量: {{ formatBytes(client.quota_bytes) }}</span>
         </div>
+        <div class="info-row" style="margin-top:8px">
+          <span class="info-label">↑ 上传</span>
+          <span class="info-value" style="color:#409eff">{{ formatBytes(client.upload_bytes) }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">↓ 下载</span>
+          <span class="info-value" style="color:#67c23a">{{ formatBytes(client.download_bytes) }}</span>
+        </div>
       </div>
 
       <!-- Subscription -->
@@ -118,7 +126,7 @@
             {{ subUrl }}
             <div style="float:right;display:flex;gap:4px">
               <el-button size="small" text @click="copyText(subUrl)">复制</el-button>
-              <el-button size="small" text @click="showQr = !showQr">{{ showQr ? '隐藏' : '二维码' }}</el-button>
+              <el-button size="small" text @click="toggleQr">{{ showQr ? '隐藏' : '二维码' }}</el-button>
             </div>
           </div>
           <div v-if="showQr && qrCodeUrl" style="text-align:center;margin:16px 0">
@@ -192,6 +200,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js"></script>
+  <script src="/portal/qrcode.min.js"></script>
   <script>
     const { createApp, ref, computed, onMounted } = Vue
     const { ElMessage } = ElementPlus
@@ -373,14 +382,28 @@
           return window.location.origin + '/sub/' + token
         })
 
-        const qrCodeUrl = computed(() => {
-          if (!subUrl.value) return ''
-          return 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(subUrl.value)
-        })
+        const qrCodeUrl = ref('')
+        const generateQr = async () => {
+          if (!subUrl.value) { qrCodeUrl.value = ''; return }
+          try {
+            var canvas = document.createElement('canvas')
+            new QRious({ element: canvas, value: subUrl.value, size: 200, background: '#ffffff', foreground: '#000000', level: 'L' })
+            qrCodeUrl.value = canvas.toDataURL('image/png')
+          } catch(e) {
+            console.error('QR generation failed:', e)
+            qrCodeUrl.value = ''
+          }
+        }
+        const toggleQr = async () => {
+          showQr.value = !showQr.value
+          if (showQr.value && !qrCodeUrl.value) {
+            await generateQr()
+          }
+        }
 
         onMounted(() => { fetchRegistrationSetting(); if (token.value) { fetchMe(); fetchEndpoints() } })
 
-        return { token, authTab, loading, rotating, showPasswordDialog, showQr, registrationEnabled, loginForm, registerForm, pwdForm, settings, client, endpoints, handleLogin, handleRegister, rotateToken, saveSettings, changePassword, handleLogout, copyText, formatBytes, formatDate, usagePercent, usageColor, statusText, subStatusText, subUrl, qrCodeUrl }
+        return { token, authTab, loading, rotating, showPasswordDialog, showQr, registrationEnabled, loginForm, registerForm, pwdForm, settings, client, endpoints, handleLogin, handleRegister, rotateToken, saveSettings, changePassword, handleLogout, copyText, formatBytes, formatDate, usagePercent, usageColor, statusText, subStatusText, subUrl, qrCodeUrl, toggleQr }
       }
     })
 

@@ -1212,6 +1212,7 @@ import { ref, reactive, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
+import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String })
 
@@ -1990,13 +1991,20 @@ async function saveOutbound() {
 
     // Apply to running xray via gRPC
     try {
+      if (!(await ensureXrayRunning(client, t('protoCenter.outbounds.savedToDb')))) {
+        ElMessage.success(t('common.success'))
+        dlg.value = false
+        loadOutbounds()
+        return
+      }
       // Remove existing outbound first if editing
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
-        await client.delete(`/xray/control/outbound/${outbound.tag}`).catch(() => {})
+        await client.delete(`/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true }).catch(() => {})
       }
-      await client.post('/xray/control/outbound', { outbound })
+      await client.post('/xray/control/outbound', { outbound }, { suppressErrorMessage: true })
     } catch (xrayErr) {
       console.warn('Failed to apply outbound to xray:', xrayErr)
+      notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'))
     }
 
     ElMessage.success(t('common.success'))
@@ -2012,7 +2020,13 @@ async function removeOutbound(i) {
   }
   // Remove from xray runtime
   if (ob.tag) {
-    try { await client.delete(`/xray/control/outbound/${ob.tag}`) } catch {}
+    try {
+      if (await ensureXrayRunning(client, t('protoCenter.outbounds.deletedFromDb'))) {
+        await client.delete(`/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true })
+      }
+    } catch (e) {
+      notifyXrayRuntimeApplyFailure(e, t('protoCenter.outbounds.deletedFromDb'))
+    }
   }
   form.value.splice(i, 1)
   loadOutbounds()

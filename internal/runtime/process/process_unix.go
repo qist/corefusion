@@ -38,7 +38,11 @@ func isProcessAlive(pid int) bool {
 	// Check if process is zombie
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
 	if err != nil {
-		return false
+		// In restricted environments with PID namespaces, kill(pid, 0) may resolve
+		// the namespace PID while /proc only exposes host PIDs. If the signal probe
+		// already succeeded, treat the process as alive when /proc status is
+		// unavailable instead of incorrectly marking it crashed.
+		return true
 	}
 	return !strings.Contains(string(data), "State:\tZ")
 }

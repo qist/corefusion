@@ -20,15 +20,15 @@ import (
 
 // Manager manages core process lifecycle with persistence and daemon support.
 type Manager struct {
-	processes  map[int64]*managedProcess
-	guardians  map[int64]*healthcheck.Guardian
-	mu         sync.RWMutex
-	dataDir    string
-	svcRepo    *repository.ServiceRepository
-	guardRepo  *repository.ProcessGuardianRepository
-	crashRepo  *repository.CrashLogRepository
-	resolver   BinaryResolver
-	configGen  ConfigGenerator
+	processes map[int64]*managedProcess
+	guardians map[int64]*healthcheck.Guardian
+	mu        sync.RWMutex
+	dataDir   string
+	svcRepo   *repository.ServiceRepository
+	guardRepo *repository.ProcessGuardianRepository
+	crashRepo *repository.CrashLogRepository
+	resolver  BinaryResolver
+	configGen ConfigGenerator
 }
 
 // ConfigGenerator generates a config file for a core type before starting.
@@ -52,10 +52,17 @@ type managedProcess struct {
 	ConfigPath string
 	LogPath    string
 	cmd        *exec.Cmd
+	exitDone   chan struct{}
 	pid        int
 	state      string
 	startedAt  time.Time
 	lastError  error
+}
+
+type processStateChange struct {
+	serviceID int64
+	state     string
+	pid       int
 }
 
 // ProcessInfo contains public information about a managed process.
@@ -176,7 +183,6 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	log.Printf("reconcile: done, %d processes managed", len(m.processes))
 }
 
-
 // reattach reattaches to an already-running process.
 func (m *Manager) reattach(g entity.ProcessGuardian) {
 	svc, err := m.svcRepo.GetByID(nil, g.ServiceID)
@@ -215,6 +221,10 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		}
 		delete(m.processes, serviceID)
 	}
+	if g, ok := m.guardians[serviceID]; ok {
+		g.Stop()
+		delete(m.guardians, serviceID)
+	}
 
 	// Resolve binary
 	binaryPath, _, err := m.resolver.Resolve(coreType)
@@ -250,8 +260,9 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	relBinPath, _ := filepath.Rel(m.dataDir, binaryPath)
 	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
 
-	// Ensure geo files are accessible from current working directory
-	// This is needed because xray gRPC API uses the caller's working directory
+	// Ensure geo files are accessible from the panel's lookup paths.
+	// Xray config parsing during control API calls may resolve geodata relative
+	// to the panel executable directory rather than the xray subprocess dir.
 	rulesDir := filepath.Join(m.dataDir, "rules")
 	if _, err := os.Stat(rulesDir); err == nil {
 		symlinkGeoFiles(rulesDir)
@@ -275,9 +286,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		return fmt.Errorf("start process: %w", err)
 	}
 
-	// Reap zombie when process exits
-	go cmd.Wait()
-
 	p := &managedProcess{
 		ServiceID:  serviceID,
 		CoreType:   coreType,
@@ -285,11 +293,17 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		ConfigPath: configPath,
 		LogPath:    logPath,
 		cmd:        cmd,
+		exitDone:   make(chan struct{}),
 		pid:        cmd.Process.Pid,
 		state:      "running",
 		startedAt:  time.Now(),
 	}
 	m.processes[serviceID] = p
+
+	go func() {
+		_ = cmd.Wait()
+		close(p.exitDone)
+	}()
 
 	// Persist to database
 	m.persistState(serviceID, "running", cmd.Process.Pid, false)
@@ -306,15 +320,13 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 // createGuardian creates a health check guardian for a service.
 func (m *Manager) createGuardian(serviceID int64, coreType string) *healthcheck.Guardian {
 	cfg := healthcheck.DefaultConfig(coreType, serviceID)
-	return healthcheck.New(cfg,
+	var guardian *healthcheck.Guardian
+	guardian = healthcheck.New(cfg,
 		func() bool {
-			m.mu.RLock()
-			p, ok := m.processes[serviceID]
-			m.mu.RUnlock()
-			if !ok || p.cmd == nil || p.cmd.Process == nil {
+			if guardian == nil {
 				return false
 			}
-			return isProcessAlive(p.pid)
+			return isProcessAlive(guardian.PID())
 		},
 		func(ctx context.Context) error {
 			// Reap zombie before restart
@@ -322,6 +334,7 @@ func (m *Manager) createGuardian(serviceID int64, coreType string) *healthcheck.
 			return m.Start(ctx, serviceID, coreType)
 		},
 	)
+	return guardian
 }
 
 // Stop stops a core process.
@@ -350,26 +363,45 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 		killProcess(p.pid)
 	}
 
-	// Wait for graceful shutdown and reap zombie
-	done := make(chan error, 1)
-	go func() {
-		if p.cmd != nil {
-			done <- p.cmd.Wait()
-		} else {
-			done <- nil
+	waitForExit := func(timeout time.Duration) bool {
+		if p.exitDone == nil {
+			deadline := time.Now().Add(timeout)
+			for isProcessAlive(p.pid) && time.Now().Before(deadline) {
+				time.Sleep(100 * time.Millisecond)
+			}
+			return !isProcessAlive(p.pid)
 		}
-	}()
 
-	select {
-	case <-ctx.Done():
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		if ctx == nil {
+			select {
+			case <-p.exitDone:
+				return true
+			case <-timer.C:
+				return false
+			}
+		}
+		select {
+		case <-p.exitDone:
+			return true
+		case <-timer.C:
+			return false
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	exited := waitForExit(10 * time.Second)
+	if !exited {
 		forceKillProcess(p.pid)
-	case <-time.After(10 * time.Second):
-		forceKillProcess(p.pid)
-	case <-done:
+		exited = waitForExit(3 * time.Second)
 	}
 
 	m.mu.Lock()
 	p.state = "stopped"
+	p.pid = 0
+	p.lastError = nil
 	m.mu.Unlock()
 
 	// Mark manually stopped
@@ -410,21 +442,46 @@ func (m *Manager) Restart(ctx context.Context, serviceID int64, coreType string)
 
 // GetStatus returns the status of a core process.
 func (m *Manager) GetStatus(serviceID int64) (string, int, time.Time, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	p, ok := m.processes[serviceID]
+	m.mu.Lock()
+	p, ok, changed := m.refreshProcessStateLocked(serviceID)
+	var state string
+	var pid int
+	var startedAt time.Time
+	var lastErr error
+	if ok {
+		state = p.state
+		pid = p.pid
+		startedAt = p.startedAt
+		lastErr = p.lastError
+	}
+	m.mu.Unlock()
+	if changed {
+		m.persistState(serviceID, state, pid, false)
+	}
 	if !ok {
 		return "stopped", 0, time.Time{}, nil
 	}
-	return p.state, p.pid, p.startedAt, p.lastError
+	return state, pid, startedAt, lastErr
 }
 
 // IsRunning checks if a core process is running.
 func (m *Manager) IsRunning(serviceID int64) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	p, ok := m.processes[serviceID]
-	return ok && p.state == "running"
+	m.mu.Lock()
+	p, ok, changed := m.refreshProcessStateLocked(serviceID)
+	running := ok && p.state == "running"
+	pid := 0
+	if ok {
+		pid = p.pid
+	}
+	m.mu.Unlock()
+	if changed {
+		status := "stopped"
+		if ok {
+			status = p.state
+		}
+		m.persistState(serviceID, status, pid, false)
+	}
+	return running
 }
 
 func (m *Manager) isRunning(serviceID int64) bool {
@@ -434,11 +491,20 @@ func (m *Manager) isRunning(serviceID int64) bool {
 
 // ListAll returns the status of all managed processes.
 func (m *Manager) ListAll() []ProcessInfo {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
 
 	result := make([]ProcessInfo, 0, len(m.processes))
+	var changes []processStateChange
 	for _, p := range m.processes {
+		if p.state == "running" || p.state == "stopping" {
+			if _, _, changed := m.refreshProcessStateLocked(p.ServiceID); changed {
+				changes = append(changes, processStateChange{
+					serviceID: p.ServiceID,
+					state:     p.state,
+					pid:       p.pid,
+				})
+			}
+		}
 		info := ProcessInfo{
 			ServiceID: p.ServiceID,
 			CoreType:  p.CoreType,
@@ -461,18 +527,39 @@ func (m *Manager) ListAll() []ProcessInfo {
 		}
 		result = append(result, info)
 	}
+	m.mu.Unlock()
+	for _, change := range changes {
+		m.persistState(change.serviceID, change.state, change.pid, false)
+	}
 	return result
 }
 
 // GetUptime returns the uptime of a running process in seconds.
 func (m *Manager) GetUptime(serviceID int64) int64 {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	p, ok := m.processes[serviceID]
+	m.mu.Lock()
+	p, ok, changed := m.refreshProcessStateLocked(serviceID)
+	var uptime int64
+	var state string
+	var pid int
 	if !ok || p.state != "running" {
+		if ok {
+			state = p.state
+			pid = p.pid
+		}
+		m.mu.Unlock()
+		if changed {
+			m.persistState(serviceID, state, pid, false)
+		}
 		return 0
 	}
-	return int64(time.Since(p.startedAt).Seconds())
+	uptime = int64(time.Since(p.startedAt).Seconds())
+	state = p.state
+	pid = p.pid
+	m.mu.Unlock()
+	if changed {
+		m.persistState(serviceID, state, pid, false)
+	}
+	return uptime
 }
 
 // StopAll gracefully stops all running processes (called on CoreFusion shutdown).
@@ -520,6 +607,8 @@ func (m *Manager) monitor(p *managedProcess, g entity.ProcessGuardian) {
 
 	if p.state == "stopping" {
 		p.state = "stopped"
+		p.pid = 0
+		p.lastError = nil
 		return
 	}
 
@@ -617,11 +706,11 @@ func (m *Manager) persistState(serviceID int64, status string, pid int, manually
 	if err != nil {
 		// Create guardian record
 		g = &entity.ProcessGuardian{
-			ServiceID:       serviceID,
-			AutoStart:       false,
-			AutoRestart:     false,
-			MaxRestartCount: 5,
-			RestartWindowSec: 600,
+			ServiceID:          serviceID,
+			AutoStart:          false,
+			AutoRestart:        false,
+			MaxRestartCount:    5,
+			RestartWindowSec:   600,
 			StableThresholdSec: 300,
 		}
 		m.guardRepo.Create(nil, g)
@@ -640,6 +729,30 @@ func (m *Manager) persistState(serviceID int64, status string, pid int, manually
 		svc.ProcessStatus = status
 		m.svcRepo.Update(nil, svc)
 	}
+}
+
+func (m *Manager) refreshProcessStateLocked(serviceID int64) (*managedProcess, bool, bool) {
+	p, ok := m.processes[serviceID]
+	if !ok {
+		return nil, false, false
+	}
+
+	if p.state == "running" && !isProcessAlive(p.pid) {
+		p.state = "crashed"
+		p.pid = 0
+		if p.lastError == nil {
+			p.lastError = fmt.Errorf("process exited")
+		}
+		return p, true, true
+	}
+
+	if p.state == "stopping" && !isProcessAlive(p.pid) {
+		p.state = "stopped"
+		p.pid = 0
+		return p, true, true
+	}
+
+	return p, true, false
 }
 
 // getProcessStats reads CPU and memory from /proc/<pid>/stat (Linux only).
@@ -730,24 +843,69 @@ func (m *Manager) ResolveBinary(coreType string) (binaryPath, version string, er
 	return m.resolver.Resolve(coreType)
 }
 
-// symlinkGeoFiles creates symlinks for geoip/geosite files in the current
-// working directory so that xray gRPC API can find them when parsing configs.
+// symlinkGeoFiles creates symlinks for geoip/geosite files in the panel's
+// lookup directories so xray config parsing can resolve geodata consistently.
 func symlinkGeoFiles(rulesDir string) {
 	geoFiles := []string{"geoip.dat", "geosite.dat", "geoip.metadb", "country.mmdb", "GeoLite2-ASN.mmdb"}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return
-	}
+	targetDirs := geoLookupDirs()
 	for _, name := range geoFiles {
 		src := filepath.Join(rulesDir, name)
-		dst := filepath.Join(cwd, name)
-		// Skip if source doesn't exist or destination already exists
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if _, err := os.Lstat(dst); err == nil {
-			continue // already exists
+		for _, dir := range targetDirs {
+			dst := filepath.Join(dir, name)
+			if info, err := os.Lstat(dst); err == nil {
+				if info.Mode()&os.ModeSymlink == 0 {
+					log.Printf("symlinkGeoFiles: skip existing non-symlink %s", dst)
+					continue
+				}
+				linkTarget, err := os.Readlink(dst)
+				if err == nil {
+					resolvedTarget := linkTarget
+					if !filepath.IsAbs(resolvedTarget) {
+						resolvedTarget = filepath.Join(dir, resolvedTarget)
+					}
+					if filepath.Clean(resolvedTarget) == filepath.Clean(src) {
+						continue
+					}
+				}
+				if err := os.Remove(dst); err != nil {
+					log.Printf("symlinkGeoFiles: remove stale symlink %s failed: %v", dst, err)
+					continue
+				}
+			} else if !os.IsNotExist(err) {
+				log.Printf("symlinkGeoFiles: stat %s failed: %v", dst, err)
+				continue
+			}
+			if err := os.Symlink(src, dst); err != nil {
+				log.Printf("symlinkGeoFiles: create %s -> %s failed: %v", dst, src, err)
+			}
 		}
-		os.Symlink(src, dst)
 	}
+}
+
+func geoLookupDirs() []string {
+	dirs := make([]string, 0, 2)
+	if exePath, err := os.Executable(); err == nil {
+		dirs = append(dirs, filepath.Dir(exePath))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		dirs = append(dirs, cwd)
+	}
+
+	seen := make(map[string]struct{}, len(dirs))
+	result := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		cleanDir := filepath.Clean(dir)
+		if _, ok := seen[cleanDir]; ok {
+			continue
+		}
+		seen[cleanDir] = struct{}{}
+		result = append(result, cleanDir)
+	}
+	return result
 }

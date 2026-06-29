@@ -36,13 +36,13 @@
           <el-tag v-if="r.ruleTag" size="small">{{ r.ruleTag }}</el-tag>
           <el-tag v-if="r.outboundTag" size="small" :type="r.outboundTag==='blocked'?'danger':r.outboundTag==='direct'?'success':'info'">{{ r.outboundTag }}</el-tag>
           <el-tag v-if="r.balancerTag" size="small" type="warning">{{ r.balancerTag }}</el-tag>
-          <span v-if="r.domain && r.domain.length" style="font-size:12px;color:#909399">domain:{{ r.domain.length }}</span>
-          <span v-if="r.ip && r.ip.length" style="font-size:12px;color:#909399">ip:{{ r.ip.length }}</span>
+          <span v-if="r.domain && r.domain.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.domainCount', { count: r.domain.length }) }}</span>
+          <span v-if="r.ip && r.ip.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.ipCount', { count: r.ip.length }) }}</span>
           <span v-if="r.protocol && r.protocol.length" style="font-size:12px;color:#909399">{{ r.protocol.join(',') }}</span>
-          <span v-if="r.port" style="font-size:12px;color:#909399">port:{{ r.port }}</span>
+          <span v-if="r.port" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.portValue', { value: r.port }) }}</span>
           <span v-if="r.network" style="font-size:12px;color:#909399">{{ r.network }}</span>
-          <span v-if="r.inboundTag && r.inboundTag.length" style="font-size:12px;color:#909399">in:{{ r.inboundTag.join(',') }}</span>
-          <span v-if="r.webhook" style="font-size:12px;color:#909399">webhook</span>
+          <span v-if="r.inboundTag && r.inboundTag.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: r.inboundTag.join(',') }) }}</span>
+          <span v-if="r.webhook" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.webhook') }}</span>
         </div>
         <div>
           <el-button size="small" @click="editRule(i)">{{ t('common.edit') }}</el-button>
@@ -63,7 +63,7 @@
           <el-tag size="small">{{ b.tag }}</el-tag>
           <el-tag size="small" type="info">{{ b.strategyType }}</el-tag>
           <span v-if="b.selectorArr && b.selectorArr.length" style="font-size:12px;color:#909399">selector: {{ b.selectorArr.join(', ') }}</span>
-          <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">fallback: {{ b.fallbackTag }}</span>
+          <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.fallbackShort', { value: b.fallbackTag }) }}</span>
         </div>
         <div>
           <el-button size="small" @click="editBalancer(i)">{{ t('common.edit') }}</el-button>
@@ -176,7 +176,7 @@
         <template v-if="rf._type === 'inboundTag'">
           <el-form-item :label="t('protoCenter.routing.inboundTag')">
             <el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option v-for="t in inboundTags" :key="t" :label="t" :value="t" />
+              <el-option v-for="t in activeInboundTags" :key="t" :label="t" :value="t" />
             </el-select>
           </el-form-item>
         </template>
@@ -207,7 +207,7 @@
               <el-input v-model="a.value" placeholder="GET" style="width:40%" />
               <el-button size="small" type="danger" text @click="rf._attrs.splice(i,1)">X</el-button>
             </div>
-            <el-button size="small" @click="rf._attrs.push({key:'',value:''})">+ Add</el-button>
+            <el-button size="small" @click="rf._attrs.push({key:'',value:''})">{{ t('protoCenter.routing.addItem') }}</el-button>
           </el-form-item>
         </template>
 
@@ -218,15 +218,15 @@
 
         <!-- Webhook -->
         <template v-if="rf._type === 'webhook'">
-          <el-form-item label="URL"><el-input v-model="rf._webhookUrl" placeholder="https://api.example.com/alert" /></el-form-item>
-          <el-form-item label="Deduplication (s)"><el-input-number v-model="rf._webhookDedup" :min="0" /></el-form-item>
-          <el-form-item label="Headers">
+          <el-form-item :label="t('protoCenter.routing.webhookUrl')"><el-input v-model="rf._webhookUrl" :placeholder="t('protoCenter.routing.webhookUrlPlaceholder')" /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.webhookDedup')"><el-input-number v-model="rf._webhookDedup" :min="0" /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
             <div v-for="(h, i) in rf._webhookHeaders" :key="i" style="display:flex;gap:8px;margin-bottom:6px">
-              <el-input v-model="h.key" placeholder="Header name" style="width:40%" />
-              <el-input v-model="h.value" placeholder="Header value" style="width:40%" />
+              <el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:40%" />
+              <el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:40%" />
               <el-button size="small" type="danger" text @click="rf._webhookHeaders.splice(i,1)">X</el-button>
             </div>
-            <el-button size="small" @click="rf._webhookHeaders.push({key:'',value:''})">+ Add</el-button>
+            <el-button size="small" @click="rf._webhookHeaders.push({key:'',value:''})">{{ t('protoCenter.routing.addItem') }}</el-button>
           </el-form-item>
         </template>
 
@@ -235,14 +235,14 @@
         <el-form-item :label="t('protoCenter.routing.outbound')">
           <el-select v-model="rf.outboundTag" style="width:100%" clearable>
             <el-option label="" value="" />
-            <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in activeOutboundTags" :key="t" :label="t" :value="t" />
           </el-select>
-          <div class="hint">Optional when using Balancer</div>
+          <div class="hint">{{ t('protoCenter.routing.outboundOptionalHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.routing.balancer')">
           <el-select v-model="rf.balancerTag" style="width:100%" clearable>
-            <el-option label="None" value="" />
-            <el-option v-for="b in form.balancers" :key="b.tag" :label="b.tag" :value="b.tag" />
+            <el-option :label="t('protoCenter.routing.none')" value="" />
+            <el-option v-for="b in activeBalancers" :key="b.tag" :label="b.tag" :value="b.tag" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -255,17 +255,17 @@
     <!-- Balancer Dialog -->
     <el-dialog v-model="balDlg" :title="balIdx >= 0 ? t('protoCenter.routing.editBalancer') : t('protoCenter.routing.addBalancer')" width="500">
       <el-form label-width="120px" label-position="left">
-        <el-form-item label="Tag"><el-input v-model="bf.tag" placeholder="balancer-tag" /></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.tagLabel')"><el-input v-model="bf.tag" :placeholder="t('protoCenter.routing.balancerTagPlaceholder')" /></el-form-item>
         <el-form-item :label="t('protoCenter.routing.selector')">
-          <el-select v-model="bf.selectorArr" multiple filterable allow-create default-first-option placeholder="Outbound tag prefixes" style="width:100%">
-            <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
+          <el-select v-model="bf.selectorArr" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectorPlaceholder')" style="width:100%">
+            <el-option v-for="t in activeOutboundTags" :key="t" :label="t" :value="t" />
           </el-select>
           <div class="hint">{{ t('protoCenter.routing.selectorHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.routing.fallbackTag')">
           <el-select v-model="bf.fallbackTag" style="width:100%" clearable>
-            <el-option label="None" value="" />
-            <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
+            <el-option :label="t('protoCenter.routing.none')" value="" />
+            <el-option v-for="t in activeOutboundTags" :key="t" :label="t" :value="t" />
           </el-select>
           <div class="hint">{{ t('protoCenter.routing.fallbackTagHint') }}</div>
         </el-form-item>
@@ -305,10 +305,11 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
+import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String })
 const emitFn = defineEmits(['update'])
@@ -318,6 +319,10 @@ const outboundTags = ref(['direct', 'blocked'])
 const inboundTags = ref([])
 const userTags = ref([])
 const geoStatus = ref({ 'geoip.dat': false, 'geosite.dat': false })
+const builtinOutboundTags = ['direct', 'blocked']
+const activeOutboundTags = computed(() => [...new Set(outboundTags.value.filter(Boolean))])
+const activeInboundTags = computed(() => [...new Set(inboundTags.value.filter(Boolean))])
+const activeBalancers = computed(() => form.balancers.filter(b => b.enabled !== false && b.tag))
 
 const dlg = ref(false)
 const editIdx = ref(-1)
@@ -443,6 +448,10 @@ function editBalancer(i) {
   balDlg.value = true
 }
 function saveBalancer() {
+  if (!bf.selectorArr.length) {
+    ElMessage.error(t('protoCenter.routing.balancerSelectorRequired'))
+    return
+  }
   const bal = { tag: bf.tag, selectorArr: [...bf.selectorArr], fallbackTag: bf.fallbackTag, strategyType: bf.strategyType, settings: null }
   if (bf.strategyType === 'leastLoad') {
     const s = {}; if (bf._expected) s.expected = bf._expected; if (bf._maxRTT) s.maxRTT = bf._maxRTT
@@ -457,12 +466,12 @@ function rmBalancer(i) { form.balancers.splice(i, 1); emit() }
 async function loadTags() {
   try {
     const res = await client.get('/outbound-configs', { params: { core_type: props.coreType || 'xray' } })
-    const obs = res || []
-    outboundTags.value = [...new Set(obs.map(o => o.tag).filter(Boolean))]
+    const obs = (res || []).filter(o => o?.enabled !== false)
+    outboundTags.value = [...new Set([...builtinOutboundTags, ...obs.map(o => o.tag).filter(Boolean)])]
   } catch {}
   try {
     const ibs = await client.get('/inbound-configs', { params: { core_type: props.coreType || 'xray' } })
-    inboundTags.value = (ibs || []).map(i => i.tag).filter(Boolean)
+    inboundTags.value = (ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean)
   } catch {}
 }
 async function loadGeoStatus() { try { const d = await client.get('/geo-rules/status'); if (d) geoStatus.value = d } catch {} }
@@ -480,6 +489,11 @@ function build() {
     balancers: form.balancers.filter(b => b.enabled !== false && b.tag).map(b => { const bal = { tag: b.tag, selector: b.selectorArr || [], strategy: { type: b.strategyType } }; if (b.fallbackTag) bal.fallbackTag = b.fallbackTag; if (b.settings) bal.strategy.settings = b.settings; return bal }),
   }
 }
+
+function getInvalidBalancer(routing) {
+  return (routing?.balancers || []).find(b => !Array.isArray(b.selector) || b.selector.length === 0)
+}
+
 async function emit() {
   const data = build()
   emitFn('update', data)
@@ -489,18 +503,31 @@ async function emit() {
 function rmRule(i) { form.rules.splice(i, 1); emit() }
 
 async function saveAndApply(routing) {
+  const invalidBalancer = getInvalidBalancer(routing)
+  if (invalidBalancer) {
+    ElMessage.error(t('protoCenter.routing.balancerSelectorInvalid', { tag: invalidBalancer.tag || t('protoCenter.routing.unnamed') }))
+    return
+  }
   try {
     // Save to database
     await client.put(`/protocols/${props.coreType || 'xray'}/section/routing`, routing)
   } catch (e) {
     console.warn('Failed to save routing to database:', e)
+    return
   }
   try {
+    if (!(await ensureXrayRunning(client, t('protoCenter.routing.savedToDb')))) {
+      ElMessage.success(t('common.success'))
+      return
+    }
     // Apply to xray runtime
-    await client.post('/xray/control/routing', { routing })
+    await client.post('/xray/control/routing', { routing }, { suppressErrorMessage: true })
   } catch (e) {
     console.warn('Failed to apply routing to xray:', e)
+    notifyXrayRuntimeApplyFailure(e, t('protoCenter.routing.savedToDb'))
+    return
   }
+  ElMessage.success(t('common.success'))
 }
 
 onMounted(function() { sync(); loadTags(); loadGeoStatus() })

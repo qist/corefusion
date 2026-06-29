@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,10 +22,10 @@ type SettingStore interface {
 
 // UserTraffic represents traffic stats for a user.
 type UserTraffic struct {
-	Email      string `json:"email"`
-	Uplink     int64  `json:"uplink"`
-	Downlink   int64  `json:"downlink"`
-	Total      int64  `json:"total"`
+	Email    string `json:"email"`
+	Uplink   int64  `json:"uplink"`
+	Downlink int64  `json:"downlink"`
+	Total    int64  `json:"total"`
 }
 
 // InboundTraffic represents traffic stats for an inbound.
@@ -52,8 +51,6 @@ type CoreConfigService interface {
 type Handler struct {
 	settingSvc    SettingStore
 	coreConfigSvc CoreConfigService
-	conn          *grpc.ClientConn
-	connMu        sync.Mutex
 }
 
 // NewHandler creates a new xray stats handler.
@@ -61,30 +58,12 @@ func NewHandler(settingSvc SettingStore) *Handler {
 	return &Handler{settingSvc: settingSvc}
 }
 
-// Close closes the gRPC connection.
-func (h *Handler) Close() {
-	h.connMu.Lock()
-	defer h.connMu.Unlock()
-	if h.conn != nil {
-		h.conn.Close()
-		h.conn = nil
-	}
-}
+// Close is kept for API compatibility.
+func (h *Handler) Close() {}
 
-// connect returns a shared gRPC connection, creating one if needed.
+// connect creates a fresh gRPC connection for each request.
+// This avoids stale transports after xray restarts or reloads.
 func (h *Handler) connect(ctx context.Context) (*grpc.ClientConn, error) {
-	h.connMu.Lock()
-	defer h.connMu.Unlock()
-
-	if h.conn != nil && h.conn.GetState().String() != "SHUTDOWN" {
-		return h.conn, nil
-	}
-
-	if h.conn != nil {
-		h.conn.Close()
-		h.conn = nil
-	}
-
 	addr := h.getStatsAddr(ctx)
 	conn, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -93,7 +72,6 @@ func (h *Handler) connect(ctx context.Context) (*grpc.ClientConn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to xray: %w", err)
 	}
-	h.conn = conn
 	return conn, nil
 }
 
@@ -181,11 +159,12 @@ func (h *Handler) ResetUserStats(c *gin.Context) {
 
 // queryStats queries xray stats via gRPC.
 func (h *Handler) queryStats(ctx context.Context) (*StatsResponse, error) {
-	// Get shared connection
+	// Open a fresh connection for this request.
 	conn, err := h.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
 
 	// Create stats service client
 	client := statsService.NewStatsServiceClient(conn)
@@ -266,11 +245,12 @@ func (h *Handler) queryStats(ctx context.Context) (*StatsResponse, error) {
 
 // resetUserStats resets user stats.
 func (h *Handler) resetUserStats(ctx context.Context, email string) error {
-	// Get shared connection
+	// Open a fresh connection for this request.
 	conn, err := h.connect(ctx)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
 	// Create stats service client
 	client := statsService.NewStatsServiceClient(conn)

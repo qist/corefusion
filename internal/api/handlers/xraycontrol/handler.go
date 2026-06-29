@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,8 +41,6 @@ type CoreConfigService interface {
 type Handler struct {
 	settingSvc    SettingStore
 	coreConfigSvc CoreConfigService
-	conn          *grpc.ClientConn
-	connMu        sync.Mutex
 }
 
 // NewHandler creates a new xray control handler.
@@ -56,14 +53,33 @@ func (h *Handler) SetCoreConfigService(svc CoreConfigService) {
 	h.coreConfigSvc = svc
 }
 
-// Close closes the gRPC connection.
-func (h *Handler) Close() {
-	h.connMu.Lock()
-	defer h.connMu.Unlock()
-	if h.conn != nil {
-		h.conn.Close()
-		h.conn = nil
+// Close is kept for API compatibility.
+func (h *Handler) Close() {}
+
+func ensureImplicitAPIRoutingRule(routerConf *conf.RouterConfig) {
+	if routerConf == nil {
+		return
 	}
+	for _, rawRule := range routerConf.RuleList {
+		var rule struct {
+			InboundTag  []string `json:"inboundTag"`
+			OutboundTag string   `json:"outboundTag"`
+		}
+		if err := json.Unmarshal(rawRule, &rule); err != nil {
+			continue
+		}
+		if rule.OutboundTag != "api" {
+			continue
+		}
+		for _, inboundTag := range rule.InboundTag {
+			if inboundTag == "api" {
+				return
+			}
+		}
+	}
+
+	apiRule := json.RawMessage(`{"type":"field","inboundTag":["api"],"outboundTag":"api"}`)
+	routerConf.RuleList = append([]json.RawMessage{apiRule}, routerConf.RuleList...)
 }
 
 // getStatsAddr returns the xray stats API address.
@@ -95,22 +111,10 @@ func (h *Handler) getStatsAddr(ctx context.Context) string {
 	return "127.0.0.1:10085"
 }
 
-// connect returns a shared gRPC connection to xray, creating one if needed.
+// connect creates a fresh gRPC connection to xray.
+// Xray may restart independently from the panel process, so reusing a cached
+// connection can leave control APIs talking to a stale transport.
 func (h *Handler) connect(ctx context.Context) (*grpc.ClientConn, error) {
-	h.connMu.Lock()
-	defer h.connMu.Unlock()
-
-	// Return existing connection if still alive
-	if h.conn != nil && h.conn.GetState().String() != "SHUTDOWN" {
-		return h.conn, nil
-	}
-
-	// Close old connection if exists
-	if h.conn != nil {
-		h.conn.Close()
-		h.conn = nil
-	}
-
 	addr := h.getStatsAddr(ctx)
 	conn, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -119,7 +123,6 @@ func (h *Handler) connect(ctx context.Context) (*grpc.ClientConn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to xray: %w", err)
 	}
-	h.conn = conn
 	return conn, nil
 }
 
@@ -143,7 +146,7 @@ func (h *Handler) AddInbound(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := proxymanCommand.NewHandlerServiceClient(conn)
 
@@ -184,7 +187,7 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := proxymanCommand.NewHandlerServiceClient(conn)
 
@@ -300,7 +303,7 @@ func (h *Handler) AddUser(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := proxymanCommand.NewHandlerServiceClient(conn)
 
@@ -398,7 +401,7 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := proxymanCommand.NewHandlerServiceClient(conn)
 
@@ -434,7 +437,7 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := routerCommand.NewRoutingServiceClient(conn)
 
@@ -444,6 +447,7 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 		response.BadRequest(c, "INVALID_CONFIG", "failed to parse routing config: "+err.Error())
 		return
 	}
+	ensureImplicitAPIRoutingRule(routerConf)
 
 	config, err := routerConf.Build()
 	if err != nil {
@@ -483,7 +487,7 @@ func (h *Handler) AddRoutingRule(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := routerCommand.NewRoutingServiceClient(conn)
 
@@ -525,7 +529,7 @@ func (h *Handler) RemoveRoutingRule(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := routerCommand.NewRoutingServiceClient(conn)
 
@@ -548,7 +552,7 @@ func (h *Handler) ListRoutingRules(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := routerCommand.NewRoutingServiceClient(conn)
 
@@ -587,7 +591,7 @@ func (h *Handler) GetBalancerInfo(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := routerCommand.NewRoutingServiceClient(conn)
 
@@ -634,7 +638,7 @@ func (h *Handler) SetBalancerTarget(c *gin.Context) {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
-	// Connection is reused, don't close
+	defer conn.Close()
 
 	client := routerCommand.NewRoutingServiceClient(conn)
 

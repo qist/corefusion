@@ -178,6 +178,9 @@
         <div v-if="qrCodeUrl" style="margin-bottom:16px">
           <img :src="qrCodeUrl" style="max-width:250px" />
         </div>
+        <div v-else-if="qrGenerating" style="margin-bottom:16px;height:250px;display:flex;align-items:center;justify-content:center;color:#909399">
+          {{ t('protoCenter.inbounds.qrGenerating') }}
+        </div>
         <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
         <el-button size="small" style="margin-top:8px" @click="copyQrLink">{{ t('protoCenter.inbounds.copyLink') }}</el-button>
       </div>
@@ -2136,6 +2139,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User, ArrowDown } from '@element-plus/icons-vue'
 import client from '../../../api/client'
+import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
+import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String })
 defineEmits(['update'])
@@ -2160,6 +2165,8 @@ const qrCodeUrl = ref('')
 const qrUsers = ref([])
 const qrSelectedUser = ref('')
 const qrCurrentIb = ref(null)
+const qrGenerating = ref(false)
+let qrGenerationToken = 0
 const resetDlg = ref(false)
 const resetUsers = ref([])
 const resetSelectedUser = ref('')
@@ -2274,7 +2281,7 @@ function getFirstUserExpiry(ib) {
   const users = ib.settings?.clients || ib.settings?.users || []
   if (!users.length) return '-'
   const expiry = users[0]._expiry
-  if (!expiry) return '无限期'
+  if (!expiry) return t('common.unlimited')
   const date = new Date(expiry)
   if (isNaN(date.getTime())) return expiry
   return date.toLocaleDateString()
@@ -2466,21 +2473,36 @@ function showQrCode(ib) {
   qrUsers.value = getUsers(ib).filter(u => !u._paused)
   if (qrUsers.value.length === 0) return
   qrSelectedUser.value = qrUsers.value[0].email || qrUsers.value[0].id
-  updateQrCode()
+  void updateQrCode()
   qrDlg.value = true
 }
 
 function onQrUserChange() {
-  updateQrCode()
+  void updateQrCode()
 }
 
-function updateQrCode() {
+async function updateQrCode() {
   const ib = qrCurrentIb.value
   if (!ib) return
   const user = qrUsers.value.find(u => (u.email || u.id) === qrSelectedUser.value)
   if (!user) return
   qrLink.value = generateShareLink(ib, user)
-  qrCodeUrl.value = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(qrLink.value)
+  qrCodeUrl.value = ''
+  const token = ++qrGenerationToken
+  qrGenerating.value = true
+  try {
+    const dataUrl = await generateQrDataUrl(qrLink.value, { width: 250 })
+    if (token !== qrGenerationToken) return
+    qrCodeUrl.value = dataUrl
+  } catch (error) {
+    if (token !== qrGenerationToken) return
+    const message = isQrDataTooLargeError(error) ? t('protoCenter.inbounds.qrDataTooLarge') : t('protoCenter.inbounds.qrGenerateFailed')
+    ElMessage.error(message)
+  } finally {
+    if (token === qrGenerationToken) {
+      qrGenerating.value = false
+    }
+  }
 }
 
 function getRandomItem(arr) {
@@ -5007,6 +5029,12 @@ async function saveInbound() {
 
     // Apply to running xray via gRPC (no restart) - use absolute paths
     try {
+      if (!(await ensureXrayRunning(client, t('protoCenter.inbounds.savedToDb')))) {
+        ElMessage.success(t('common.success'))
+        dlg.value = false
+        loadInbounds()
+        return
+      }
       const apiJson = { ...apiConfig }
       delete apiJson._remark
       delete apiJson._enabled
@@ -5018,14 +5046,15 @@ async function saveInbound() {
       // Only remove existing inbound when editing (not creating new)
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
         try {
-          await client.delete(`/xray/control/inbound/${apiJson.tag}`)
+          await client.delete(`/xray/control/inbound/${apiJson.tag}`, { suppressErrorMessage: true })
         } catch {}
       }
       // Add new inbound
-      await client.post('/xray/control/inbound', { inbound: apiJson })
+      await client.post('/xray/control/inbound', { inbound: apiJson }, { suppressErrorMessage: true })
     } catch (xrayErr) {
       console.warn('Failed to apply to xray runtime:', xrayErr)
       // Don't fail the whole operation if xray apply fails
+      notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.inbounds.savedToDb'))
     }
 
     // Auto-manage firewall rules for port hopping (only when state changes)
@@ -5106,7 +5135,13 @@ async function rmInbound(i) {
   }
   // Also remove from xray runtime
   if (ib.tag) {
-    try { await client.delete(`/xray/control/inbound/${ib.tag}`) } catch {}
+    try {
+      if (await ensureXrayRunning(client, t('protoCenter.inbounds.deletedFromDb'))) {
+        await client.delete(`/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
+      }
+    } catch (e) {
+      notifyXrayRuntimeApplyFailure(e, t('protoCenter.inbounds.deletedFromDb'))
+    }
   }
   form.value.splice(i, 1)
   ElMessage.success(t('common.success'))

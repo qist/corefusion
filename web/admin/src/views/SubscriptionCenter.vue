@@ -14,8 +14,9 @@
             <el-table-column :label="t('common.status')" width="80"><template #default="{row}"><el-tag :type="{active:'success',revoked:'danger',expired:'warning'}[row.status]" size="small">{{ row.status }}</el-tag></template></el-table-column>
             <el-table-column :label="t('subscription.quotaState')" width="100"><template #default="{row}"><el-tag :type="quotaType(row.quota_state)" size="small">{{ row.quota_state }}</el-tag></template></el-table-column>
             <el-table-column :label="`${t('subscription.usedBytes')}/${t('subscription.quotaBytes')}`" width="140"><template #default="{row}">{{ fmtBytes(row.used_bytes_cache) }} / {{ row.quota_bytes ? fmtBytes(row.quota_bytes) : t('common.unlimited') }}</template></el-table-column>
-            <el-table-column :label="t('common.actions')" width="240">
+            <el-table-column :label="t('common.actions')" width="320">
               <template #default="{row}">
+                <el-button size="small" @click="showEditSubscription(row)">{{ t('subscription.editBillingNodes') }}</el-button>
                 <el-button size="small" @click="handleRotate(row)" :disabled="row.status==='revoked'">{{ t('subscription.rotate') }}</el-button>
                 <el-button size="small" type="danger" @click="handleRevoke(row)" :disabled="row.status==='revoked'">{{ t('subscription.revoke') }}</el-button>
                 <el-button v-if="row.status==='revoked'" size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
@@ -89,6 +90,11 @@
             </el-table-column>
           </el-table>
         </el-card>
+      </el-tab-pane>
+
+      <!-- Billing Templates -->
+      <el-tab-pane :label="t('subscription.billingTemplates')" name="billingTemplates">
+        <SubscriptionBillingTemplates />
       </el-tab-pane>
 
       <!-- External Nodes -->
@@ -233,6 +239,22 @@
       </el-form>
       <template #footer><el-button @click="epDialog=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="saveEndpoint">{{ t('common.save') }}</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="subEditDialog" :title="t('subscription.editBillingNodes')" width="560">
+      <el-form v-loading="subEditLoading" :model="subEditForm" label-width="120px">
+        <el-form-item :label="t('subscription.billingNodes')">
+          <el-select v-model="subEditForm.billing_node_ids" multiple clearable filterable style="width:100%" :placeholder="t('subscription.billingNodesPlaceholder')">
+            <el-option v-for="opt in billingNodeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('subscription.billingNodesHint') }}</div>
+        </el-form-item>
+      </el-form>
+      <el-empty v-if="!subEditLoading && !billingNodeOptions.length" :description="t('subscription.noBillingNodeOptions')" />
+      <template #footer>
+        <el-button @click="subEditDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="subEditLoading" @click="saveSubscriptionBillingNodes">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -244,6 +266,7 @@ import { load as yamlLoad } from 'js-yaml'
 import client from '../api/client'
 import MihomoConfig from './protocols/sections/MihomoConfig.vue'
 import ExternalNodes from './ExternalNodes.vue'
+import SubscriptionBillingTemplates from '../components/subscription/SubscriptionBillingTemplates.vue'
 
 const { t } = useI18n()
 const activeTab = ref('subscriptions')
@@ -254,6 +277,11 @@ const clientsList = ref([])
 const subLoading = ref(false)
 const subTotal = ref(0)
 const subPage = ref(1)
+const subEditDialog = ref(false)
+const subEditLoading = ref(false)
+const editingSubscription = ref(null)
+const subEditForm = ref({ billing_node_ids: [] })
+const billingNodeOptions = ref([])
 
 // Formats
 const formats = ref([])
@@ -316,6 +344,11 @@ const epForm = ref({ domain: '', path: '/', description: '', enabled: true })
 const quotaType = (s) => ({ normal: 'success', near_limit: 'warning', over_limit_soft: 'danger', over_limit_hard: 'danger', suspended: 'danger', expired_days: 'warning' }[s] || 'info')
 function fmtBytes(b) { if (!b) return '0 B'; const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; while (b >= 1024 && i < u.length - 1) { b /= 1024; i++ } return b.toFixed(1) + ' ' + u[i] }
 const clientEmail = (id) => clientsList.value.find(c => c.id === id)?.email || `#${id}`
+const clientPlanId = (clientId) => clientsList.value.find(c => c.id === clientId)?.plan_id || 0
+function normalizeBillingNodeIds(ids, options = billingNodeOptions.value) {
+  const allowed = new Set((options || []).map(opt => opt.value))
+  return [...new Set((Array.isArray(ids) ? ids : []).filter(id => allowed.has(id)))]
+}
 
 // Fetch
 async function fetchSubscriptions() {
@@ -334,6 +367,62 @@ async function fetchFormats() { fmtLoading.value = true; try { formats.value = (
 async function fetchEndpoints() { epLoading.value = true; try { endpoints.value = (await client.get('/subscription-endpoints')) || [] } catch {} finally { epLoading.value = false } }
 
 // Subscription actions
+async function showEditSubscription(row) {
+  editingSubscription.value = row
+  subEditForm.value = { billing_node_ids: [] }
+  billingNodeOptions.value = []
+  subEditDialog.value = true
+  subEditLoading.value = true
+  try {
+    const [subDetail, planRes, inboundRes, externalRes] = await Promise.all([
+      client.get(`/subscriptions/${row.id}`),
+      clientPlanId(row.client_id) ? client.get(`/plans/${clientPlanId(row.client_id)}`) : Promise.resolve({ nodes: [] }),
+      client.get('/inbound-configs').catch(() => []),
+      client.get('/external-nodes').catch(() => [])
+    ])
+    const inbounds = Array.isArray(inboundRes) ? inboundRes : (inboundRes?.data || [])
+    const externalNodes = Array.isArray(externalRes) ? externalRes : []
+    const options = (planRes?.nodes || [])
+      .filter(n => n.enabled !== false)
+      .map((n) => {
+        if (n.inbound_config_id) {
+          const inbound = inbounds.find(ib => ib.id === n.inbound_config_id)
+          const name = inbound ? `${inbound.remark || inbound.tag} (${inbound.protocol}:${inbound.port})` : `#${n.inbound_config_id}`
+          return { value: n.id, label: `${t('subscription.inboundNodePrefix')}: ${name}` }
+        }
+        if (n.external_node_id) {
+          const external = externalNodes.find(en => en.id === n.external_node_id)
+          const name = external ? `${external.name} (${external.host}:${external.port})` : `#${n.external_node_id}`
+          return { value: n.id, label: `${t('subscription.externalNodePrefix')}: ${name}` }
+        }
+        return { value: n.id, label: `#${n.id}` }
+      })
+    billingNodeOptions.value = options
+    subEditForm.value = {
+      billing_node_ids: normalizeBillingNodeIds(subDetail?.billing_node_ids, options)
+    }
+  } finally {
+    subEditLoading.value = false
+  }
+}
+
+async function saveSubscriptionBillingNodes() {
+  if (!editingSubscription.value) return
+  subEditLoading.value = true
+  try {
+    const billingNodeIds = normalizeBillingNodeIds(subEditForm.value.billing_node_ids)
+    subEditForm.value.billing_node_ids = billingNodeIds
+    await client.put(`/subscriptions/${editingSubscription.value.id}`, {
+      billing_node_ids: billingNodeIds
+    })
+    ElMessage.success(t('common.success'))
+    subEditDialog.value = false
+    fetchSubscriptions()
+  } finally {
+    subEditLoading.value = false
+  }
+}
+
 async function handleRotate(row) { await ElMessageBox.confirm(t('subscription.rotateConfirm'), t('common.confirm')); const r = await client.post(`/subscriptions/${row.id}/rotate`, { reason: 'manual' }); ElMessage.success(`${t('subscription.newToken')}: ${r.token}`); fetchSubscriptions() }
 async function handleRevoke(row) { await ElMessageBox.confirm(t('subscription.revokeConfirm'), t('common.confirm')); await client.post(`/subscriptions/${row.id}/revoke`); ElMessage.success(t('common.success')); fetchSubscriptions() }
 async function handleDelete(row) { await ElMessageBox.confirm(t('subscription.deleteConfirm'), t('common.confirm')); await client.delete(`/subscriptions/${row.id}`); ElMessage.success(t('common.success')); fetchSubscriptions() }

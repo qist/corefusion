@@ -13,31 +13,50 @@ import (
 
 // Service handles subscription business logic.
 type Service struct {
-	repo      *repository.SubscriptionRepository
-	accessLog *repository.AccessLogRepository
-	rotation  *repository.RotationRepository
+	repo         *repository.SubscriptionRepository
+	accessLog    *repository.AccessLogRepository
+	rotation     *repository.RotationRepository
+	clientRepo   *repository.ClientRepository
+	planNodeRepo *repository.PlanNodeRepository
 }
 
 // NewService creates a new subscription service.
-func NewService(repo *repository.SubscriptionRepository, accessLog *repository.AccessLogRepository, rotation *repository.RotationRepository) *Service {
-	return &Service{repo: repo, accessLog: accessLog, rotation: rotation}
+func NewService(
+	repo *repository.SubscriptionRepository,
+	accessLog *repository.AccessLogRepository,
+	rotation *repository.RotationRepository,
+	clientRepo *repository.ClientRepository,
+	planNodeRepo *repository.PlanNodeRepository,
+) *Service {
+	return &Service{
+		repo:         repo,
+		accessLog:    accessLog,
+		rotation:     rotation,
+		clientRepo:   clientRepo,
+		planNodeRepo: planNodeRepo,
+	}
 }
 
 // CreateSubscriptionInput is the input for creating a subscription.
 type CreateSubscriptionInput struct {
-	ClientID        int64   `json:"client_id" binding:"required"`
-	Format          string  `json:"format" binding:"required"`
-	SecurityMode    string  `json:"security_mode"`
-	BindMode        string  `json:"bind_mode"`
-	QuotaBytes      int64   `json:"quota_bytes"`
-	QuotaResetCycle string  `json:"quota_reset_cycle"`
-	MaxActiveDays   *int    `json:"max_active_days"`
+	ClientID        int64      `json:"client_id" binding:"required"`
+	Format          string     `json:"format" binding:"required"`
+	SecurityMode    string     `json:"security_mode"`
+	BindMode        string     `json:"bind_mode"`
+	QuotaBytes      int64      `json:"quota_bytes"`
+	QuotaResetCycle string     `json:"quota_reset_cycle"`
+	BillingNodeIDs  []int64    `json:"billing_node_ids"`
+	MaxActiveDays   *int       `json:"max_active_days"`
 	ExpiresAt       *time.Time `json:"expires_at"`
 }
 
 // Create creates a new subscription with a random token.
 func (s *Service) Create(ctx context.Context, input CreateSubscriptionInput) (*entity.Subscription, error) {
 	token, err := generateToken(32)
+	if err != nil {
+		return nil, err
+	}
+	billingNodeIDs, err := s.normalizeBillingNodeIDs(ctx, input.ClientID, input.BillingNodeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -56,18 +75,19 @@ func (s *Service) Create(ctx context.Context, input CreateSubscriptionInput) (*e
 	}
 
 	sub := &entity.Subscription{
-		ClientID:         input.ClientID,
-		Format:           input.Format,
-		Token:            token,
-		TokenVersion:     1,
-		Status:           "active",
-		SecurityMode:     securityMode,
-		BindMode:         bindMode,
-		QuotaBytes:       input.QuotaBytes,
-		QuotaResetCycle:  quotaResetCycle,
-		MaxActiveDays:    input.MaxActiveDays,
-		ExpiresAt:        input.ExpiresAt,
-		QuotaState:       "normal",
+		ClientID:        input.ClientID,
+		Format:          input.Format,
+		Token:           token,
+		TokenVersion:    1,
+		Status:          "active",
+		SecurityMode:    securityMode,
+		BindMode:        bindMode,
+		QuotaBytes:      input.QuotaBytes,
+		QuotaResetCycle: quotaResetCycle,
+		BillingNodeIDs:  billingNodeIDs,
+		MaxActiveDays:   input.MaxActiveDays,
+		ExpiresAt:       input.ExpiresAt,
+		QuotaState:      "normal",
 	}
 
 	if err := s.repo.Create(ctx, sub); err != nil {
@@ -93,6 +113,7 @@ type UpdateSubscriptionInput struct {
 	BindMode        *string    `json:"bind_mode"`
 	QuotaBytes      *int64     `json:"quota_bytes"`
 	QuotaResetCycle *string    `json:"quota_reset_cycle"`
+	BillingNodeIDs  *[]int64   `json:"billing_node_ids"`
 	MaxActiveDays   *int       `json:"max_active_days"`
 	ExpiresAt       *time.Time `json:"expires_at"`
 	Status          *string    `json:"status"`
@@ -117,6 +138,13 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateSubscription
 	}
 	if input.QuotaResetCycle != nil {
 		sub.QuotaResetCycle = *input.QuotaResetCycle
+	}
+	if input.BillingNodeIDs != nil {
+		billingNodeIDs, err := s.normalizeBillingNodeIDs(ctx, sub.ClientID, *input.BillingNodeIDs)
+		if err != nil {
+			return nil, err
+		}
+		sub.BillingNodeIDs = billingNodeIDs
 	}
 	if input.MaxActiveDays != nil {
 		sub.MaxActiveDays = input.MaxActiveDays
@@ -296,4 +324,67 @@ func generateToken(byteLen int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func (s *Service) normalizeBillingNodeIDs(ctx context.Context, clientID int64, requested []int64) (entity.Int64List, error) {
+	deduped := uniquePositiveInt64s(requested)
+	if len(deduped) == 0 {
+		return entity.Int64List{}, nil
+	}
+	if clientID <= 0 || s.clientRepo == nil || s.planNodeRepo == nil {
+		return entity.Int64List(deduped), nil
+	}
+
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if client.PlanID <= 0 {
+		return entity.Int64List{}, nil
+	}
+
+	planNodes, err := s.planNodeRepo.ListByPlanID(ctx, client.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	return filterAllowedBillingNodeIDs(deduped, planNodes), nil
+}
+
+func uniquePositiveInt64s(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	result := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
+func filterAllowedBillingNodeIDs(requested []int64, planNodes []entity.PlanNode) entity.Int64List {
+	if len(requested) == 0 || len(planNodes) == 0 {
+		return entity.Int64List{}
+	}
+	allowed := make(map[int64]struct{}, len(planNodes))
+	for _, node := range planNodes {
+		if node.Enabled && node.ID > 0 {
+			allowed[node.ID] = struct{}{}
+		}
+	}
+
+	filtered := make([]int64, 0, len(requested))
+	for _, id := range requested {
+		if _, ok := allowed[id]; ok {
+			filtered = append(filtered, id)
+		}
+	}
+	return entity.Int64List(filtered)
 }

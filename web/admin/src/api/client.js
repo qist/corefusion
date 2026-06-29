@@ -36,22 +36,23 @@ client.interceptors.response.use(
   (response) => response.data?.data ?? response.data,
   (error) => {
     const t = i18n.global.t
+    const suppressErrorMessage = error.config?.suppressErrorMessage === true
     if (error.response) {
       const { status, data } = error.response
       if (status === 401) {
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         window.location.href = basePath + '/login'
-      } else if (status === 403) {
+      } else if (!suppressErrorMessage && status === 403) {
         ElMessage.error(t('error.forbidden'))
-      } else if (status === 404) {
+      } else if (!suppressErrorMessage && status === 404) {
         ElMessage.error(t('error.notFound'))
-      } else if (status >= 500) {
+      } else if (!suppressErrorMessage && status >= 500) {
         ElMessage.error(data?.message || t('error.serverError'))
-      } else {
+      } else if (!suppressErrorMessage) {
         ElMessage.error(data?.message || t('error.unknownError'))
       }
-    } else {
+    } else if (!suppressErrorMessage) {
       ElMessage.error(t('error.networkError'))
     }
     return Promise.reject(error)

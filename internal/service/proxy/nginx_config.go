@@ -36,6 +36,7 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0755)
 	os.MkdirAll(filepath.Join(m.dataDir, "runtime"), 0755)
 	os.MkdirAll(filepath.Join(m.dataDir, "temp"), 0755)
+	compatMode := proxySandboxCompatMode(m.dataDir)
 
 	// Main block
 	sb.WriteString(fmt.Sprintf("worker_processes  %s;\n", s.WorkerProcesses))
@@ -47,7 +48,9 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	} else {
 		sb.WriteString("daemon off;\n")
 	}
-	if s.MasterProcess {
+	if compatMode {
+		sb.WriteString("master_process off;\n")
+	} else if s.MasterProcess {
 		sb.WriteString("master_process on;\n")
 	} else {
 		sb.WriteString("master_process off;\n")
@@ -388,6 +391,7 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 				listenPort = "80"
 			}
 		}
+		listenPort = compatPort(listenPort, hasTLS, compatMode)
 
 		// TLS options from site
 		enableHttp2 := true

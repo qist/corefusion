@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,16 +24,18 @@ import (
 
 // PublicHandler handles public subscription requests.
 type PublicHandler struct {
-	subRepo         *repository.SubscriptionRepository
-	inboundRepo     *repository.InboundConfigRepository
-	shareDomainRepo *repository.ShareDomainConfigRepository
-	cfIPEntryRepo   *repository.CFIPEntryRepository
-	clientRepo      *repository.ClientRepository
-	planNodeRepo    *repository.PlanNodeRepository
-	extNodeRepo     *repository.ExternalNodeRepository
-	mihomoRepo      *repository.MihomoConfigRepository
-	mihomoRuleRepo  *repository.MihomoRuleRepository
-	accessLog       *repository.AccessLogRepository
+	subRepo           *repository.SubscriptionRepository
+	inboundRepo       *repository.InboundConfigRepository
+	shareDomainRepo   *repository.ShareDomainConfigRepository
+	cfIPEntryRepo     *repository.CFIPEntryRepository
+	clientRepo        *repository.ClientRepository
+	planRepo          *repository.PlanRepository
+	planNodeRepo      *repository.PlanNodeRepository
+	extNodeRepo       *repository.ExternalNodeRepository
+	mihomoRepo        *repository.MihomoConfigRepository
+	mihomoRuleRepo    *repository.MihomoRuleRepository
+	systemSettingRepo *repository.SystemSettingRepository
+	accessLog         *repository.AccessLogRepository
 }
 
 // NewPublicHandler creates a new public subscription handler.
@@ -42,23 +45,27 @@ func NewPublicHandler(
 	shareDomainRepo *repository.ShareDomainConfigRepository,
 	cfIPEntryRepo *repository.CFIPEntryRepository,
 	clientRepo *repository.ClientRepository,
+	planRepo *repository.PlanRepository,
 	planNodeRepo *repository.PlanNodeRepository,
 	extNodeRepo *repository.ExternalNodeRepository,
 	mihomoRepo *repository.MihomoConfigRepository,
 	mihomoRuleRepo *repository.MihomoRuleRepository,
+	systemSettingRepo *repository.SystemSettingRepository,
 	accessLog *repository.AccessLogRepository,
 ) *PublicHandler {
 	return &PublicHandler{
-		subRepo:         subRepo,
-		inboundRepo:     inboundRepo,
-		shareDomainRepo: shareDomainRepo,
-		cfIPEntryRepo:   cfIPEntryRepo,
-		clientRepo:      clientRepo,
-		planNodeRepo:    planNodeRepo,
-		extNodeRepo:     extNodeRepo,
-		mihomoRepo:      mihomoRepo,
-		mihomoRuleRepo:  mihomoRuleRepo,
-		accessLog:       accessLog,
+		subRepo:           subRepo,
+		inboundRepo:       inboundRepo,
+		shareDomainRepo:   shareDomainRepo,
+		cfIPEntryRepo:     cfIPEntryRepo,
+		clientRepo:        clientRepo,
+		planRepo:          planRepo,
+		planNodeRepo:      planNodeRepo,
+		extNodeRepo:       extNodeRepo,
+		mihomoRepo:        mihomoRepo,
+		mihomoRuleRepo:    mihomoRuleRepo,
+		systemSettingRepo: systemSettingRepo,
+		accessLog:         accessLog,
 	}
 }
 
@@ -80,6 +87,19 @@ type shareDomainEntry struct {
 	Host  string
 	Port  int
 	Ports []int
+}
+
+type renderedSubscriptionNode struct {
+	PlanNodeID int64
+	Link       string
+	Node       *formatter.Node
+	ProxyMap   map[string]interface{}
+}
+
+type billingTemplateConfig struct {
+	RemainingTemplate string
+	ResetTemplate     string
+	ExpiryTemplate    string
 }
 
 // ServeSubscription handles GET /sub/:token.
@@ -125,25 +145,21 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	shareDomains := h.loadShareDomains(ctx)
 
-	// Get allowed inbound IDs from client's plan and client email
-	var allowedInboundIDs map[int64]bool
-	var allowedExternalNodeIDs map[int64]bool
+	// Load plan nodes for this client subscription.
+	var planNodes []entity.PlanNode
 	var clientEmail string
+	var plan *entity.Plan
 	if sub.ClientID > 0 && h.clientRepo != nil {
 		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
 			clientEmail = cl.Email
+			if cl.PlanID > 0 && h.planRepo != nil {
+				plan, _ = h.planRepo.GetByID(ctx, cl.PlanID)
+			}
 			if cl.PlanID > 0 && h.planNodeRepo != nil {
-				if planNodes, err := h.planNodeRepo.ListByPlanID(ctx, cl.PlanID); err == nil {
-					allowedInboundIDs = make(map[int64]bool)
-					allowedExternalNodeIDs = make(map[int64]bool)
-					for _, n := range planNodes {
+				if rawPlanNodes, err := h.planNodeRepo.ListByPlanID(ctx, cl.PlanID); err == nil {
+					for _, n := range rawPlanNodes {
 						if n.Enabled {
-							if n.InboundConfigID > 0 {
-								allowedInboundIDs[n.InboundConfigID] = true
-							}
-							if n.ExternalNodeID > 0 {
-								allowedExternalNodeIDs[n.ExternalNodeID] = true
-							}
+							planNodes = append(planNodes, n)
 						}
 					}
 				}
@@ -160,16 +176,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		formatStr = "base64_uri"
 	}
 
-	// Single source of truth: collectShareLinks generates complete URIs
-	links := h.collectShareLinks(ctx, shareDomains, allowedInboundIDs, clientEmail)
-	// Parse URIs into Nodes for format conversion
-	nodes := parseLinksToNodes(links)
-	// Append external nodes from plan
-	if len(allowedExternalNodeIDs) > 0 && h.extNodeRepo != nil {
-		extNodes, extLinks := h.collectExternalNodesAndLinks(ctx, allowedExternalNodeIDs)
-		nodes = append(nodes, extNodes...)
-		links = append(links, extLinks...)
-	}
+	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, planNodes, clientEmail)
+	links := renderedNodeLinks(renderedNodes)
+	nodes := renderedFormatterNodes(renderedNodes)
+	billingTemplates := h.loadBillingTemplateConfig(ctx, plan, lang)
+	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes)
+	billingLinks := renderedNodeLinks(billingNodes)
+	billingFormatterNodes := renderedFormatterNodes(billingNodes)
 
 	var data []byte
 	contentType := "text/plain"
@@ -196,42 +209,41 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	}
 
 	// Build subscription info header (for browser display)
-	infoHeader := buildSubscriptionInfoHeader(sub, lang)
-	// Build info node for clash/mihomo (shows as a REJECT node in proxy list)
-	infoNode := buildInfoNode(sub, lang)
+	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates)
 
 	switch formatter.Format(formatStr) {
 	case formatter.FormatBase64Aggregate:
-		joined := strings.Join(links, "\n")
+		joined := strings.Join(append(billingLinks, links...), "\n")
 		data = []byte(base64.StdEncoding.EncodeToString([]byte(joined)))
 	case formatter.FormatRawURI:
+		allLinks := append(billingLinks, links...)
 		if infoHeader != "" {
-			data = []byte(infoHeader + "\n" + strings.Join(links, "\n"))
+			data = []byte(infoHeader + "\n" + strings.Join(allLinks, "\n"))
 		} else {
-			data = []byte(strings.Join(links, "\n"))
+			data = []byte(strings.Join(allLinks, "\n"))
 		}
 	case formatter.FormatMihomoYAML:
-		// Prepend info node to show usage in proxy list
-		if infoNode != nil {
-			nodes = append([]formatter.Node{*infoNode}, nodes...)
-		}
+		allItems := append(billingNodes, renderedNodes...)
+		proxyMaps := buildRenderedMihomoProxyMaps(allItems)
 		if mihomoConfig != nil {
-			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, nodes)
+			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, proxyMaps)
 		} else {
-			f := formatter.GetFormatter(formatter.FormatMihomoYAML)
-			data, _ = f.Format(nodes)
+			data = generatePlainMihomoYAML(proxyMaps)
 		}
 		contentType = "text/yaml"
 	case formatter.FormatSingBoxJSON:
+		nodes = append(billingFormatterNodes, nodes...)
 		f := formatter.GetFormatter(formatter.FormatSingBoxJSON)
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	case formatter.FormatXrayJSON:
+		allLinks := append(billingLinks, links...)
+		xrayNodes := parseSubscriptionLinksToFormatterNodes(allLinks)
 		f := formatter.GetFormatter(formatter.FormatXrayJSON)
-		data, _ = f.Format(nodes)
+		data, _ = f.Format(xrayNodes)
 		contentType = f.ContentType()
 	default:
-		joined := strings.Join(links, "\n")
+		joined := strings.Join(append(billingLinks, links...), "\n")
 		data = []byte(base64.StdEncoding.EncodeToString([]byte(joined)))
 	}
 
@@ -258,7 +270,12 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 }
 
 // collectShareLinks generates share link URIs using the sharelink package.
-func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []shareDomainEntry, allowedInboundIDs map[int64]bool, clientEmail string) []string {
+func (h *PublicHandler) collectShareLinks(
+	ctx context.Context,
+	shareDomains []shareDomainEntry,
+	allowedInboundIDs map[int64]bool,
+	clientEmail string,
+) []string {
 	var links []string
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
@@ -319,6 +336,315 @@ func (h *PublicHandler) collectShareLinks(ctx context.Context, shareDomains []sh
 		}
 	}
 	return links
+}
+
+func renderedNodeLinks(items []renderedSubscriptionNode) []string {
+	links := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Link != "" {
+			links = append(links, item.Link)
+		}
+	}
+	return links
+}
+
+func renderedFormatterNodes(items []renderedSubscriptionNode) []formatter.Node {
+	nodes := make([]formatter.Node, 0, len(items))
+	for _, item := range items {
+		if item.Node != nil {
+			nodes = append(nodes, *item.Node)
+		}
+	}
+	return nodes
+}
+
+func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, planNodes []entity.PlanNode, clientEmail string) []renderedSubscriptionNode {
+	var items []renderedSubscriptionNode
+
+	inboundPlanNodeIDs := make(map[int64][]int64)
+	externalPlanNodeIDs := make(map[int64][]int64)
+	if len(planNodes) > 0 {
+		for _, planNode := range planNodes {
+			if planNode.InboundConfigID > 0 {
+				inboundPlanNodeIDs[planNode.InboundConfigID] = append(inboundPlanNodeIDs[planNode.InboundConfigID], planNode.ID)
+			}
+			if planNode.ExternalNodeID > 0 {
+				externalPlanNodeIDs[planNode.ExternalNodeID] = append(externalPlanNodeIDs[planNode.ExternalNodeID], planNode.ID)
+			}
+		}
+	}
+
+	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+		configs, err := h.inboundRepo.List(ctx, coreType)
+		if err != nil {
+			continue
+		}
+		for _, cfg := range configs {
+			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
+				continue
+			}
+			planNodeIDs := inboundPlanNodeIDs[cfg.ID]
+			if len(planNodes) > 0 && len(planNodeIDs) == 0 {
+				continue
+			}
+			if len(planNodeIDs) == 0 {
+				planNodeIDs = []int64{0}
+			}
+
+			var config map[string]interface{}
+			if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
+				continue
+			}
+			ad, ok := config["_accessDomain"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			enabled, _ := ad["enabled"].(bool)
+			if !enabled {
+				continue
+			}
+
+			host, port := resolveHostPort(config, cfg.Listen, cfg.Port, shareDomains)
+			settings := getMap(config, "settings")
+
+			linkSettings := settings
+			var uuid, password, flow, method string
+			if clientEmail != "" {
+				if userClient := findClientByEmail(settings, clientEmail, cfg.Tag); userClient != nil {
+					linkSettings = map[string]interface{}{
+						"clients":    []interface{}{userClient},
+						"encryption": getString(settings, "encryption", "none"),
+					}
+					uuid, _ = userClient["id"].(string)
+					password, _ = userClient["password"].(string)
+					flow, _ = userClient["flow"].(string)
+					method, _ = userClient["method"].(string)
+					if cfg.Protocol == "hysteria" {
+						if auth, ok := userClient["auth"].(string); ok && auth != "" {
+							password = auth
+						}
+					}
+				}
+			} else {
+				clients := getSettingsClients(config)
+				if len(clients) > 0 {
+					c := clients[0]
+					uuid, _ = c["id"].(string)
+					password, _ = c["password"].(string)
+					flow, _ = c["flow"].(string)
+					method, _ = c["method"].(string)
+					if cfg.Protocol == "hysteria" {
+						if auth, ok := c["auth"].(string); ok && auth != "" {
+							password = auth
+						}
+					}
+				}
+			}
+
+			nodeName := cfg.Remark
+			if nodeName == "" {
+				nodeName = cfg.Tag
+			}
+			shareNode := sharelink.Node{
+				Tag:            nodeName,
+				Protocol:       cfg.Protocol,
+				Host:           host,
+				Port:           port,
+				Settings:       linkSettings,
+				StreamSettings: getMap(config, "streamSettings"),
+				FinalMask:      getFinalMask(config),
+			}
+			link := sharelink.Generate(shareNode)
+
+			ss := getMap(config, "streamSettings")
+			protocol := cfg.Protocol
+			if protocol == "hysteria" {
+				protocol = "hysteria2"
+			}
+			transport := getString(ss, "network", "raw")
+			supportedTransports := map[string]bool{"tcp": true, "raw": true, "ws": true, "grpc": true, "xhttp": true, "h2": true, "http": true, "httpupgrade": true}
+			if !supportedTransports[transport] {
+				transport = "tcp"
+			}
+			if transport == "raw" {
+				transport = "tcp"
+			}
+			node := &formatter.Node{
+				Name:       nodeName,
+				Protocol:   protocol,
+				Host:       host,
+				Port:       port,
+				Transport:  transport,
+				TLS:        getString(ss, "security", "none") != "none",
+				ServerName: getTLSServerName(ss),
+				UUID:       uuid,
+				Password:   password,
+				Flow:       flow,
+				Encryption: method,
+				Extra:      buildExtra(config, ss, cfg.Protocol),
+			}
+			for _, planNodeID := range planNodeIDs {
+				item := renderedSubscriptionNode{
+					PlanNodeID: planNodeID,
+					Link:       link,
+				}
+				nodeCopy := *node
+				item.Node = &nodeCopy
+				if item.Link == "" && item.Node == nil {
+					continue
+				}
+				items = append(items, item)
+			}
+		}
+	}
+
+	if h.extNodeRepo == nil {
+		return items
+	}
+	allExternalNodes, err := h.extNodeRepo.ListAll(ctx)
+	if err != nil {
+		return items
+	}
+	for _, extNode := range allExternalNodes {
+		if !extNode.Enabled {
+			continue
+		}
+		planNodeIDs := externalPlanNodeIDs[extNode.ID]
+		if len(planNodes) > 0 && len(planNodeIDs) == 0 {
+			continue
+		}
+		if len(planNodeIDs) == 0 {
+			planNodeIDs = []int64{0}
+		}
+
+		var pm map[string]interface{}
+		if json.Unmarshal([]byte(extNode.ProxyJSON), &pm) != nil {
+			continue
+		}
+		node := mihomoProxyMapToNode(pm)
+		if node != nil && extNode.Name != "" {
+			node.Name = extNode.Name
+		}
+		link := formatter.MihomoToURI(pm)
+		if link != "" {
+			link = renameShareLink(link, extNode.Name)
+		}
+		for _, planNodeID := range planNodeIDs {
+			item := renderedSubscriptionNode{
+				PlanNodeID: planNodeID,
+				Link:       link,
+			}
+			if node != nil {
+				nodeCopy := *node
+				item.Node = &nodeCopy
+			}
+			item.ProxyMap = cloneProxyMap(pm)
+			if item.ProxyMap != nil && extNode.Name != "" {
+				item.ProxyMap["name"] = extNode.Name
+			}
+			if item.Link == "" && item.Node == nil {
+				continue
+			}
+			items = append(items, item)
+		}
+	}
+
+	return items
+}
+
+func buildBillingInfoEntries(sub *entity.Subscription, templates billingTemplateConfig, items []renderedSubscriptionNode) []renderedSubscriptionNode {
+	if len(sub.BillingNodeIDs) == 0 {
+		return nil
+	}
+	labels := buildBillingInfoLabels(sub, templates)
+	if len(labels) == 0 {
+		return nil
+	}
+	sources := make(map[int64]renderedSubscriptionNode)
+	for _, item := range items {
+		if item.PlanNodeID <= 0 {
+			continue
+		}
+		if item.Link == "" && item.Node == nil {
+			continue
+		}
+		if _, exists := sources[item.PlanNodeID]; !exists {
+			sources[item.PlanNodeID] = item
+		}
+	}
+
+	result := make([]renderedSubscriptionNode, 0, len(labels))
+	for idx, label := range labels {
+		sourceID := sub.BillingNodeIDs[idx%len(sub.BillingNodeIDs)]
+		source, ok := sources[sourceID]
+		if !ok {
+			continue
+		}
+		cloned := renderedSubscriptionNode{PlanNodeID: sourceID}
+		if source.Link != "" {
+			cloned.Link = renameShareLink(source.Link, label)
+		}
+		if source.Node != nil {
+			nodeCopy := *source.Node
+			nodeCopy.Name = label
+			cloned.Node = &nodeCopy
+		} else if cloned.Link != "" {
+			cloned.Node = formatter.ParseURIToNode(cloned.Link)
+		}
+		if source.ProxyMap != nil {
+			cloned.ProxyMap = cloneProxyMap(source.ProxyMap)
+			if cloned.ProxyMap != nil {
+				cloned.ProxyMap["name"] = label
+			}
+		}
+		if cloned.Link == "" && cloned.Node == nil {
+			continue
+		}
+		result = append(result, cloned)
+	}
+	return result
+}
+
+func renameShareLink(link, newName string) string {
+	if link == "" || newName == "" {
+		return link
+	}
+	if strings.HasPrefix(link, "vmess://") {
+		payload := strings.TrimPrefix(link, "vmess://")
+		raw, err := decodeVmessPayload(payload)
+		if err == nil {
+			var obj map[string]interface{}
+			if json.Unmarshal(raw, &obj) == nil {
+				obj["ps"] = newName
+				if data, err := json.Marshal(obj); err == nil {
+					return "vmess://" + base64.StdEncoding.EncodeToString(data)
+				}
+			}
+		}
+		return link
+	}
+	if idx := strings.LastIndex(link, "#"); idx >= 0 {
+		return link[:idx+1] + url.PathEscape(newName)
+	}
+	return link + "#" + url.PathEscape(newName)
+}
+
+func decodeVmessPayload(payload string) ([]byte, error) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, encoding := range encodings {
+		raw, err := encoding.DecodeString(payload)
+		if err == nil {
+			return raw, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 // collectExternalNodesAndLinks returns formatter.Nodes and share URIs from external nodes.
@@ -459,7 +785,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 }
 
 // generateMihomoYAML generates a complete mihomo YAML config with proxies and rules.
-func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, nodes []formatter.Node) []byte {
+func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, proxyMaps []map[string]interface{}) []byte {
 	var yaml strings.Builder
 
 	// Parse config_json
@@ -467,10 +793,7 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 	json.Unmarshal([]byte(config.ConfigJSON), &cfg)
 
 	// Build node names list for proxy groups injection
-	nodeNames := make([]string, len(nodes))
-	for i, n := range nodes {
-		nodeNames[i] = n.Name
-	}
+	nodeNames := getMihomoProxyNames(proxyMaps)
 
 	// Output all top-level fields except proxies and rules (those are injected)
 	skipKeys := map[string]bool{"proxies": true, "rules": true}
@@ -496,11 +819,7 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 		writeYAMLField(&yaml, key, value, 0)
 	}
 
-	// Inject proxies from nodes using mihomo converter
-	yaml.WriteString("\nproxies:\n")
-	for _, node := range nodes {
-		yaml.WriteString(formatter.NodeToMihomoProxy(node))
-	}
+	yaml.WriteString(buildMihomoProxiesYAML(proxyMaps))
 
 	// Inject rules from database
 	if len(rules) > 0 {
@@ -513,6 +832,30 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 	}
 
 	return []byte(yaml.String())
+}
+
+func generatePlainMihomoYAML(proxyMaps []map[string]interface{}) []byte {
+	return []byte(buildMihomoProxiesYAML(proxyMaps))
+}
+
+func buildMihomoProxiesYAML(proxyMaps []map[string]interface{}) string {
+	var yaml strings.Builder
+	yaml.WriteString("proxies:\n")
+	for _, proxyMap := range proxyMaps {
+		writeMihomoProxyMap(&yaml, proxyMap)
+	}
+	return yaml.String()
+}
+
+func getMihomoProxyNames(proxyMaps []map[string]interface{}) []string {
+	names := make([]string, 0, len(proxyMaps))
+	for _, proxyMap := range proxyMaps {
+		name, _ := proxyMap["name"].(string)
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // writeProxyGroups writes proxy-groups with node injection for groups that have _hasExternalNodes.
@@ -569,118 +912,48 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, nodeNames []stri
 	}
 }
 
-// mihomoProxyData holds all data needed for a mihomo proxy entry.
-type mihomoProxyData struct {
-	Name       string
-	Protocol   string
-	Host       string
-	Port       int
-	UUID       string
-	Password   string
-	Flow       string
-	Encryption string
-	Transport  string
-	TLS        bool
-	ServerName string
-	ALPN       []string
-	Fingerprint string
-	AllowInsecure bool
-	// Transport-specific
-	WSPath    string
-	WSHost    string
-	GRPCServiceName string
-	GRPCAuthority   string
-	HTTPUpgradePath string
-	HTTPUpgradeHost string
-	XHTTPMode       string
-	XHTTPHost       string
-	XHTTPPath       string
+func writeMihomoProxyMap(yaml *strings.Builder, proxy map[string]interface{}) {
+	if len(proxy) == 0 {
+		return
+	}
+	keys := getOrderedMihomoProxyKeys(proxy)
+	if len(keys) == 0 {
+		return
+	}
+	firstKey := keys[0]
+	if value, ok := proxy[firstKey].(string); ok && value != "" {
+		yaml.WriteString("  - " + formatYAMLString(firstKey) + ": " + formatYAMLString(value) + "\n")
+	} else {
+		yaml.WriteString("  -\n")
+		writeYAMLField(yaml, firstKey, proxy[firstKey], 2)
+	}
+	for _, key := range keys[1:] {
+		writeYAMLField(yaml, key, proxy[key], 2)
+	}
 }
 
-// writeMihomoProxy writes a single proxy in mihomo YAML object format.
-func writeMihomoProxy(yaml *strings.Builder, p mihomoProxyData) {
-	yaml.WriteString("  - name: " + formatYAMLString(p.Name) + "\n")
-	yaml.WriteString("    type: " + p.Protocol + "\n")
-	yaml.WriteString("    server: " + p.Host + "\n")
-	yaml.WriteString(fmt.Sprintf("    port: %d\n", p.Port))
-
-	if p.UUID != "" {
-		yaml.WriteString("    uuid: " + p.UUID + "\n")
+func getOrderedMihomoProxyKeys(proxy map[string]interface{}) []string {
+	preferred := []string{
+		"name", "type", "server", "port", "uuid", "password", "cipher", "flow", "tls",
+		"servername", "sni", "udp", "network", "alterId", "encryption", "plugin",
+		"plugin-opts", "ws-opts", "grpc-opts", "http-opts", "h2-opts", "httpupgrade-opts",
+		"xhttp-opts", "reality-opts", "ech-opts", "skip-cert-verify", "client-fingerprint",
+		"fingerprint", "alpn",
 	}
-	if p.Password != "" {
-		yaml.WriteString("    password: " + formatYAMLString(p.Password) + "\n")
-	}
-	if p.Protocol == "vless" && p.Flow != "" {
-		yaml.WriteString("    flow: " + p.Flow + "\n")
-	}
-	if p.Encryption != "" && p.Encryption != "none" {
-		yaml.WriteString("    encryption: " + p.Encryption + "\n")
-	}
-	if p.TLS {
-		yaml.WriteString("    tls: true\n")
-		if p.ServerName != "" {
-			yaml.WriteString("    servername: " + p.ServerName + "\n")
-		}
-		if len(p.ALPN) > 0 {
-			yaml.WriteString("    alpn:\n")
-			for _, a := range p.ALPN {
-				yaml.WriteString("      - " + a + "\n")
-			}
-		}
-		if p.Fingerprint != "" {
-			yaml.WriteString("    client-fingerprint: " + p.Fingerprint + "\n")
-		}
-		if p.AllowInsecure {
-			yaml.WriteString("    skip-cert-verify: true\n")
+	seen := make(map[string]bool, len(proxy))
+	keys := make([]string, 0, len(proxy))
+	for _, key := range preferred {
+		if _, ok := proxy[key]; ok {
+			keys = append(keys, key)
+			seen[key] = true
 		}
 	}
-	if p.Transport != "" && p.Transport != "raw" && p.Transport != "tcp" {
-		yaml.WriteString("    network: " + p.Transport + "\n")
-		switch p.Transport {
-		case "ws":
-			if p.WSPath != "" || p.WSHost != "" {
-				yaml.WriteString("    ws-opts:\n")
-				if p.WSPath != "" {
-					yaml.WriteString("      path: " + formatYAMLString(p.WSPath) + "\n")
-				}
-				if p.WSHost != "" {
-					yaml.WriteString("      headers:\n")
-					yaml.WriteString("        Host: " + p.WSHost + "\n")
-				}
-			}
-		case "grpc":
-			if p.GRPCServiceName != "" || p.GRPCAuthority != "" {
-				yaml.WriteString("    grpc-opts:\n")
-				if p.GRPCServiceName != "" {
-					yaml.WriteString("      grpc-service-name: " + formatYAMLString(p.GRPCServiceName) + "\n")
-				}
-				if p.GRPCAuthority != "" {
-					yaml.WriteString("      grpc-authority: " + p.GRPCAuthority + "\n")
-				}
-			}
-		case "httpupgrade":
-			if p.HTTPUpgradePath != "" || p.HTTPUpgradeHost != "" {
-				yaml.WriteString("    httpupgrade-opts:\n")
-				if p.HTTPUpgradePath != "" {
-					yaml.WriteString("      path: " + formatYAMLString(p.HTTPUpgradePath) + "\n")
-				}
-				if p.HTTPUpgradeHost != "" {
-					yaml.WriteString("      host: " + p.HTTPUpgradeHost + "\n")
-				}
-			}
-		case "xhttp":
-			yaml.WriteString("    xhttp-opts:\n")
-			if p.XHTTPMode != "" {
-				yaml.WriteString("      mode: " + p.XHTTPMode + "\n")
-			}
-			if p.XHTTPPath != "" {
-				yaml.WriteString("      path: " + formatYAMLString(p.XHTTPPath) + "\n")
-			}
-			if p.XHTTPHost != "" {
-				yaml.WriteString("      host: " + p.XHTTPHost + "\n")
-			}
+	for _, key := range getSortedKeys(proxy) {
+		if !seen[key] {
+			keys = append(keys, key)
 		}
 	}
+	return keys
 }
 
 // isEmptyOrDisabled checks if a config field should be skipped in output.
@@ -736,6 +1009,30 @@ func writeYAMLField(yaml *strings.Builder, key string, value interface{}, indent
 		for _, k := range getSortedKeys(v) {
 			writeYAMLField(yaml, k, v[k], indent+1)
 		}
+	case map[string]string:
+		if len(v) == 0 {
+			return
+		}
+		yaml.WriteString(prefix + quotedKey + ":\n")
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		for _, k := range keys {
+			writeYAMLField(yaml, k, v[k], indent+1)
+		}
+	case map[string][]string:
+		if len(v) == 0 {
+			return
+		}
+		yaml.WriteString(prefix + quotedKey + ":\n")
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		for _, k := range keys {
+			writeYAMLField(yaml, k, v[k], indent+1)
+		}
 	case []interface{}:
 		if len(v) == 0 {
 			return
@@ -756,6 +1053,14 @@ func writeYAMLField(yaml *strings.Builder, key string, value interface{}, indent
 					yaml.WriteString(prefix + "  - " + formatYAMLValue(i) + "\n")
 				}
 			}
+		}
+	case []string:
+		if len(v) == 0 {
+			return
+		}
+		yaml.WriteString(prefix + quotedKey + ":\n")
+		for _, item := range v {
+			yaml.WriteString(prefix + "  - " + formatYAMLValueQuoted(item) + "\n")
 		}
 	case string:
 		if v != "" {
@@ -1135,22 +1440,155 @@ func getSettingsClients(config map[string]interface{}) []map[string]interface{} 
 	return result
 }
 
-// parseLinksToNodes parses complete share URIs into formatter Nodes.
-func parseLinksToNodes(links []string) []formatter.Node {
-	var nodes []formatter.Node
-	// Use mihomo's converter to parse URIs into proxy maps
-	buf := []byte(strings.Join(links, "\n"))
-	proxyMaps, err := mihomoconv.ConvertsV2Ray(buf)
-	if err != nil || len(proxyMaps) == 0 {
-		return nodes
+func convertLinksToMihomoProxyMaps(links []string) []map[string]interface{} {
+	if len(links) == 0 {
+		return nil
 	}
-	for _, pm := range proxyMaps {
-		node := mihomoProxyMapToNode(pm)
-		if node != nil {
-			nodes = append(nodes, *node)
+	proxyMaps, err := mihomoconv.ConvertsV2Ray([]byte(strings.Join(links, "\n")))
+	if err != nil || len(proxyMaps) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(proxyMaps))
+	for idx, pm := range proxyMaps {
+		if len(pm) == 0 {
+			continue
+		}
+		if idx < len(links) {
+			normalizeSubscriptionMihomoProxyMap(links[idx], pm)
+		}
+		result = append(result, pm)
+	}
+	return result
+}
+
+func buildRenderedMihomoProxyMaps(items []renderedSubscriptionNode) []map[string]interface{} {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		switch {
+		case item.ProxyMap != nil:
+			pm := cloneProxyMap(item.ProxyMap)
+			if len(pm) == 0 {
+				continue
+			}
+			normalizeSubscriptionMihomoProxyMap(item.Link, pm)
+			result = append(result, pm)
+		case item.Link != "":
+			converted := convertLinksToMihomoProxyMaps([]string{item.Link})
+			if len(converted) == 0 {
+				continue
+			}
+			result = append(result, converted[0])
 		}
 	}
+	return result
+}
+
+func parseSubscriptionLinksToFormatterNodes(links []string) []formatter.Node {
+	if len(links) == 0 {
+		return nil
+	}
+	nodes := make([]formatter.Node, 0, len(links))
+	for _, link := range links {
+		node := formatter.ParseURIToNode(link)
+		if node == nil {
+			continue
+		}
+		nodes = append(nodes, *node)
+	}
 	return nodes
+}
+
+func normalizeSubscriptionMihomoProxyMap(link string, proxy map[string]interface{}) {
+	if len(proxy) == 0 {
+		return
+	}
+	trimEmptyALPN(proxy)
+
+	proxyType, _ := proxy["type"].(string)
+	switch proxyType {
+	case "vmess":
+		normalizeVMessSubscriptionProxyMap(link, proxy)
+	}
+}
+
+func cloneProxyMap(src map[string]interface{}) map[string]interface{} {
+	if len(src) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil
+	}
+	var dst map[string]interface{}
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		return nil
+	}
+	return dst
+}
+
+func normalizeVMessSubscriptionProxyMap(link string, proxy map[string]interface{}) {
+	// Mihomo's converter adds xudp for vmess, but this field is not part of the
+	// original Clash-style proxy object we want to preserve for subscription output.
+	delete(proxy, "xudp")
+
+	if !strings.HasPrefix(link, "vmess://") {
+		return
+	}
+	payload := strings.TrimPrefix(link, "vmess://")
+	raw, err := decodeVmessPayload(payload)
+	if err != nil {
+		return
+	}
+
+	var values map[string]interface{}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return
+	}
+
+	network, _ := values["net"].(string)
+	network = strings.ToLower(network)
+	if network != "ws" && network != "httpupgrade" {
+		return
+	}
+
+	path, _ := values["path"].(string)
+	if path == "" {
+		return
+	}
+
+	wsOpts, _ := proxy["ws-opts"].(map[string]interface{})
+	if wsOpts == nil {
+		wsOpts = make(map[string]interface{})
+		proxy["ws-opts"] = wsOpts
+	}
+	wsOpts["path"] = path
+}
+
+func trimEmptyALPN(proxy map[string]interface{}) {
+	alpn, ok := proxy["alpn"]
+	if !ok {
+		return
+	}
+
+	switch values := alpn.(type) {
+	case []string:
+		for _, value := range values {
+			if strings.TrimSpace(value) != "" {
+				return
+			}
+		}
+		delete(proxy, "alpn")
+	case []interface{}:
+		for _, value := range values {
+			if s, ok := value.(string); !ok || strings.TrimSpace(s) != "" {
+				return
+			}
+		}
+		delete(proxy, "alpn")
+	}
 }
 
 // mihomoProxyMapToNode converts a mihomo proxy map to formatter.Node.
@@ -1316,53 +1754,14 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 	}
 	// TCP with HTTP header disguise → treat as http transport for mihomo
 	if network == "tcp" || network == "raw" {
-		tcpSettings := getMap(ss, "tcpSettings")
-		if tcpSettings != nil {
-			if headerType, ok := tcpSettings["header"].(map[string]interface{}); ok {
-				if ht, ok := headerType["type"].(string); ok && ht == "http" {
-					network = "http"
-					// Extract HTTP disguise settings into http-opts
-					opts := make(map[string]interface{})
-					if request, ok := headerType["request"].(map[string]interface{}); ok {
-						if path, ok := request["path"].(string); ok && path != "" {
-							opts["path"] = []string{path}
-						} else if paths, ok := request["path"].([]interface{}); ok && len(paths) > 0 {
-							var p []string
-							for _, v := range paths {
-								if s, ok := v.(string); ok {
-									p = append(p, s)
-								}
-							}
-							if len(p) > 0 {
-								opts["path"] = p
-							}
-						}
-						if headers, ok := request["headers"].(map[string]interface{}); ok {
-							h := make(map[string]interface{})
-							for k, v := range headers {
-								if s, ok := v.(string); ok && s != "" {
-									h[k] = []string{s}
-								} else if arr, ok := v.([]interface{}); ok {
-									var ss []string
-									for _, item := range arr {
-										if s, ok := item.(string); ok {
-											ss = append(ss, s)
-										}
-									}
-									if len(ss) > 0 {
-										h[k] = ss
-									}
-								}
-							}
-							if len(h) > 0 {
-								opts["headers"] = h
-							}
-						}
-					}
-					if len(opts) > 0 {
-						extra["http-opts"] = opts
-					}
-				}
+		rawSettings := getMap(ss, "rawSettings")
+		if rawSettings == nil {
+			rawSettings = getMap(ss, "tcpSettings")
+		}
+		if header := getMap(rawSettings, "header"); header != nil && getString(header, "type", "") == "http" {
+			network = "http"
+			if opts := extractHTTPDisguiseOpts(header); len(opts) > 0 {
+				extra["http-opts"] = opts
 			}
 		}
 		network = "tcp"
@@ -1490,6 +1889,61 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 	return extra
 }
 
+func extractHTTPDisguiseOpts(header map[string]interface{}) map[string]interface{} {
+	request := getMap(header, "request")
+	if request == nil {
+		return nil
+	}
+
+	opts := make(map[string]interface{})
+	if paths := normalizeStringList(request["path"]); len(paths) > 0 {
+		opts["path"] = paths
+	}
+	if headers := getMap(request, "headers"); headers != nil {
+		normalizedHeaders := make(map[string]interface{})
+		for key, value := range headers {
+			if items := normalizeStringList(value); len(items) > 0 {
+				normalizedHeaders[key] = items
+			}
+		}
+		if len(normalizedHeaders) > 0 {
+			opts["headers"] = normalizedHeaders
+		}
+	}
+	if len(opts) == 0 {
+		return nil
+	}
+	return opts
+}
+
+func normalizeStringList(value interface{}) []string {
+	switch v := value.(type) {
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []string{v}
+	case []string:
+		items := make([]string, 0, len(v))
+		for _, item := range v {
+			if item != "" {
+				items = append(items, item)
+			}
+		}
+		return items
+	case []interface{}:
+		items := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				items = append(items, s)
+			}
+		}
+		return items
+	default:
+		return nil
+	}
+}
+
 func getFinalMask(config map[string]interface{}) map[string]interface{} {
 	// Try top-level finalmask
 	if fm := getMap(config, "finalmask"); fm != nil {
@@ -1522,26 +1976,171 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 }
 
 // buildSubscriptionInfoHeader builds a human-readable subscription info block.
-func buildSubscriptionInfoHeader(sub *entity.Subscription, lang string) string {
-	usedGB := float64(sub.UsedBytesCache) / 1073741824
-	totalGB := float64(sub.QuotaBytes) / 1073741824
-	var expiresStr string
-	if sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
-		expiresStr = sub.ExpiresAt.Format("2006-01-02")
+func buildSubscriptionInfoHeader(sub *entity.Subscription, templates billingTemplateConfig) string {
+	if len(sub.BillingNodeIDs) == 0 {
+		return ""
 	}
 	var lines []string
-	if lang == "zh" {
-		lines = append(lines, "# 📊 流量: "+fmt.Sprintf("%.2f GB / %.2f GB", usedGB, totalGB))
-		if expiresStr != "" {
-			lines = append(lines, "# 📅 到期: "+expiresStr)
-		}
-	} else {
-		lines = append(lines, "# 📊 Traffic: "+fmt.Sprintf("%.2f GB / %.2f GB", usedGB, totalGB))
-		if expiresStr != "" {
-			lines = append(lines, "# 📅 Expires: "+expiresStr)
-		}
+	for _, label := range buildBillingInfoLabels(sub, templates) {
+		lines = append(lines, "# "+label)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func buildBillingInfoLabels(sub *entity.Subscription, templates billingTemplateConfig) []string {
+	return []string{
+		renderBillingTemplate(templates.RemainingTemplate, sub),
+		renderBillingTemplate(templates.ResetTemplate, sub),
+		renderBillingTemplate(templates.ExpiryTemplate, sub),
+	}
+}
+
+func renderBillingTemplate(template string, sub *entity.Subscription) string {
+	if template == "" {
+		return ""
+	}
+	variables := buildBillingTemplateVariables(sub)
+	replacements := make([]string, 0, len(variables)*2)
+	for _, key := range billingTemplateVariables {
+		replacements = append(replacements, "{"+key+"}", variables[key])
+	}
+	replacer := strings.NewReplacer(replacements...)
+	return replacer.Replace(template)
+}
+
+var billingTemplateVariables = []string{
+	"remaining_human",
+	"remaining_bytes",
+	"remaining_gb",
+	"used_human",
+	"used_bytes",
+	"used_gb",
+	"quota_human",
+	"quota_bytes",
+	"quota_gb",
+	"reset_human",
+	"reset_days",
+	"reset_at",
+	"reset_date",
+	"expires_human",
+	"expires_at",
+	"expires_date",
+	"expires_unix",
+	"quota_state",
+}
+
+func buildBillingTemplateVariables(sub *entity.Subscription) map[string]string {
+	remain := sub.QuotaBytes - sub.UsedBytesCache
+	if remain < 0 {
+		remain = 0
+	}
+	resetHuman := "No Reset"
+	resetDays := "0"
+	resetAt := ""
+	resetDate := ""
+	if sub.NextResetAt != nil && !sub.NextResetAt.IsZero() {
+		resetAt = sub.NextResetAt.Format(time.RFC3339)
+		resetDate = sub.NextResetAt.Format("2006-01-02")
+		remaining := time.Until(*sub.NextResetAt)
+		if remaining <= 0 {
+			resetHuman = "Today"
+		} else {
+			days := int((remaining + 24*time.Hour - 1) / (24 * time.Hour))
+			if days < 1 {
+				days = 1
+			}
+			resetDays = strconv.Itoa(days)
+			resetHuman = fmt.Sprintf("%d Days", days)
+		}
+	}
+
+	expiresHuman := "Unlimited"
+	expiresAt := ""
+	expiresDate := ""
+	expiresUnix := "0"
+	if sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
+		expiresAt = sub.ExpiresAt.Format(time.RFC3339)
+		expiresDate = sub.ExpiresAt.Format("2006-01-02")
+		expiresUnix = strconv.FormatInt(sub.ExpiresAt.Unix(), 10)
+		expiresHuman = expiresDate
+	}
+
+	remainingHuman := "Unlimited"
+	quotaHuman := "Unlimited"
+	if sub.QuotaBytes > 0 {
+		remainingHuman = humanizeBytesGB(remain)
+		quotaHuman = humanizeBytesGB(sub.QuotaBytes)
+	}
+
+	return map[string]string{
+		"remaining_human": remainingHuman,
+		"remaining_bytes": strconv.FormatInt(remain, 10),
+		"remaining_gb":    fmt.Sprintf("%.2f", float64(remain)/1073741824),
+		"used_human":      humanizeBytesGB(sub.UsedBytesCache),
+		"used_bytes":      strconv.FormatInt(sub.UsedBytesCache, 10),
+		"used_gb":         fmt.Sprintf("%.2f", float64(sub.UsedBytesCache)/1073741824),
+		"quota_human":     quotaHuman,
+		"quota_bytes":     strconv.FormatInt(sub.QuotaBytes, 10),
+		"quota_gb":        fmt.Sprintf("%.2f", float64(sub.QuotaBytes)/1073741824),
+		"reset_human":     resetHuman,
+		"reset_days":      resetDays,
+		"reset_at":        resetAt,
+		"reset_date":      resetDate,
+		"expires_human":   expiresHuman,
+		"expires_at":      expiresAt,
+		"expires_date":    expiresDate,
+		"expires_unix":    expiresUnix,
+		"quota_state":     sub.QuotaState,
+	}
+}
+
+func defaultBillingTemplateConfig(lang string) billingTemplateConfig {
+	if lang == "zh" {
+		return billingTemplateConfig{
+			RemainingTemplate: "剩余用量：{remaining_human}",
+			ResetTemplate:     "距离下次重置剩余：{reset_human}",
+			ExpiryTemplate:    "套餐到期时间：{expires_human}",
+		}
+	}
+	return billingTemplateConfig{
+		RemainingTemplate: "Remaining: {remaining_human}",
+		ResetTemplate:     "Reset In: {reset_human}",
+		ExpiryTemplate:    "Expires: {expires_human}",
+	}
+}
+
+func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, plan *entity.Plan, lang string) billingTemplateConfig {
+	config := defaultBillingTemplateConfig(lang)
+	if h.systemSettingRepo != nil {
+		settings, err := h.systemSettingRepo.GetByPrefix(ctx, "subscription.billing_template.")
+		if err == nil {
+			if v := strings.TrimSpace(settings["subscription.billing_template.default_remaining"]); v != "" {
+				config.RemainingTemplate = v
+			}
+			if v := strings.TrimSpace(settings["subscription.billing_template.default_reset"]); v != "" {
+				config.ResetTemplate = v
+			}
+			if v := strings.TrimSpace(settings["subscription.billing_template.default_expiry"]); v != "" {
+				config.ExpiryTemplate = v
+			}
+		}
+	}
+	if plan != nil {
+		if v := strings.TrimSpace(plan.BillingRemainingTemplate); v != "" {
+			config.RemainingTemplate = v
+		}
+		if v := strings.TrimSpace(plan.BillingResetTemplate); v != "" {
+			config.ResetTemplate = v
+		}
+		if v := strings.TrimSpace(plan.BillingExpiryTemplate); v != "" {
+			config.ExpiryTemplate = v
+		}
+	}
+	return config
+}
+
+func humanizeBytesGB(v int64) string {
+	return fmt.Sprintf("%.2f GB", float64(v)/1073741824)
 }
 
 // buildInfoNode creates a REJECT node with usage info as name (shows in clash proxy list).

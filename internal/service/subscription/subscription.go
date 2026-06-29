@@ -270,6 +270,8 @@ func (s *Service) ResetUsage(ctx context.Context, id int64) (*entity.Subscriptio
 	}
 
 	sub.UsedBytesCache = 0
+	sub.UploadBytesCache = 0
+	sub.DownloadBytesCache = 0
 	sub.QuotaState = "normal"
 	now := time.Now()
 	sub.LastResetAt = &now

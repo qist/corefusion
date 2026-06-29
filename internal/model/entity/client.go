@@ -11,9 +11,12 @@ type Plan struct {
 	Duration                 int       `gorm:"not null;default:30" json:"duration"`
 	Enabled                  bool      `gorm:"default:true" json:"enabled"`
 	SortOrder                int       `gorm:"default:0" json:"sort_order"`
+	BillingUsedTemplate      string    `gorm:"type:text" json:"billing_used_template"`
 	BillingRemainingTemplate string    `gorm:"type:text" json:"billing_remaining_template"`
 	BillingResetTemplate     string    `gorm:"type:text" json:"billing_reset_template"`
 	BillingExpiryTemplate    string    `gorm:"type:text" json:"billing_expiry_template"`
+	BillingInboundConfigIDs  Int64List `gorm:"type:text" json:"billing_inbound_config_ids"`
+	BillingExternalNodeIDs   Int64List `gorm:"type:text" json:"billing_external_node_ids"`
 	CreatedAt                time.Time `json:"created_at"`
 	UpdatedAt                time.Time `json:"updated_at"`
 }

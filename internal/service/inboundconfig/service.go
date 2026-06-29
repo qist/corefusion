@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
@@ -14,11 +17,12 @@ import (
 // Service handles inbound config business logic.
 type Service struct {
 	repo *repository.InboundConfigRepository
+	db   *gorm.DB
 }
 
 // NewService creates a new inbound config service.
-func NewService(repo *repository.InboundConfigRepository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *repository.InboundConfigRepository, db *gorm.DB) *Service {
+	return &Service{repo: repo, db: db}
 }
 
 // List returns all inbound configs for a core type.
@@ -137,9 +141,53 @@ func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, u
 			} else {
 				log.Printf("trafficsync: saved config %s successfully", cfg.Tag)
 			}
+			// Also update subscription traffic caches
+			s.updateSubscriptionTraffic(ctx, email, upDelta, downDelta)
 		}
 	}
 	return nil
+}
+
+// updateSubscriptionTraffic finds the subscription associated with the given
+// user email and increments its traffic cache columns.
+// The email from xray stats is in the format "user@email.com_inboundTag",
+// so we extract the real email by finding the last "_" and taking everything before it
+// (only if the part after "_" looks like a tag, i.e. the email contains "@").
+func (s *Service) updateSubscriptionTraffic(ctx context.Context, statsEmail string, upDelta, downDelta int64) {
+	if s.db == nil || (upDelta == 0 && downDelta == 0) {
+		return
+	}
+
+	// Extract real email from "user@email.com_tag" format
+	realEmail := statsEmail
+	if idx := strings.LastIndex(statsEmail, "_"); idx > 0 {
+		candidate := statsEmail[:idx]
+		if strings.Contains(candidate, "@") {
+			realEmail = candidate
+		}
+	}
+
+	total := upDelta + downDelta
+
+	// Find client by email, then use their subscription_id
+	var client entity.Client
+	if err := s.db.WithContext(ctx).Where("email = ?", realEmail).First(&client).Error; err != nil {
+		return
+	}
+	if client.SubscriptionID == nil || *client.SubscriptionID == 0 {
+		return
+	}
+
+	err := s.db.WithContext(ctx).Model(&entity.Subscription{}).
+		Where("id = ?", *client.SubscriptionID).
+		Updates(map[string]interface{}{
+			"used_bytes_cache":     gorm.Expr("used_bytes_cache + ?", total),
+			"upload_bytes_cache":   gorm.Expr("upload_bytes_cache + ?", upDelta),
+			"download_bytes_cache": gorm.Expr("download_bytes_cache + ?", downDelta),
+		}).Error
+	if err != nil {
+		log.Printf("trafficsync: failed to update subscription %d traffic: %v", *client.SubscriptionID, err)
+	}
 }
 
 // GetEnabledInbounds returns all enabled inbound configs as parsed JSON.

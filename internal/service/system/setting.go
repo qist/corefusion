@@ -84,6 +84,7 @@ type NotificationConfig struct {
 }
 
 type SubscriptionBillingTemplateConfig struct {
+	DefaultUsedTemplate      string   `json:"default_used_template"`
 	DefaultRemainingTemplate string   `json:"default_remaining_template"`
 	DefaultResetTemplate     string   `json:"default_reset_template"`
 	DefaultExpiryTemplate    string   `json:"default_expiry_template"`
@@ -105,6 +106,7 @@ func DefaultPanelConfig() *PanelConfig {
 
 func DefaultSubscriptionBillingTemplateConfig(lang string) *SubscriptionBillingTemplateConfig {
 	config := &SubscriptionBillingTemplateConfig{
+		DefaultUsedTemplate:      "Used: {used_human}",
 		DefaultRemainingTemplate: "Remaining: {remaining_human}",
 		DefaultResetTemplate:     "Reset In: {reset_human}",
 		DefaultExpiryTemplate:    "Expires: {expires_human}",
@@ -363,6 +365,7 @@ func (s *SettingService) GetSubscriptionBillingTemplateConfig(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
+	setIfExist(settings, "subscription.billing_template.default_used", &config.DefaultUsedTemplate)
 	setIfExist(settings, "subscription.billing_template.default_remaining", &config.DefaultRemainingTemplate)
 	setIfExist(settings, "subscription.billing_template.default_reset", &config.DefaultResetTemplate)
 	setIfExist(settings, "subscription.billing_template.default_expiry", &config.DefaultExpiryTemplate)
@@ -371,7 +374,8 @@ func (s *SettingService) GetSubscriptionBillingTemplateConfig(ctx context.Contex
 
 func (s *SettingService) UpdateSubscriptionBillingTemplateConfig(ctx context.Context, config *SubscriptionBillingTemplateConfig) error {
 	settings := map[string]string{
-		"subscription.billing_template.default_remaining": config.DefaultRemainingTemplate,
+		"subscription.billing_template.default_used":      config.DefaultUsedTemplate,
+	"subscription.billing_template.default_remaining": config.DefaultRemainingTemplate,
 		"subscription.billing_template.default_reset":     config.DefaultResetTemplate,
 		"subscription.billing_template.default_expiry":    config.DefaultExpiryTemplate,
 	}

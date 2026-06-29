@@ -188,6 +188,14 @@ func (s *Service) updateSubscriptionTraffic(ctx context.Context, statsEmail stri
 	if err != nil {
 		log.Printf("trafficsync: failed to update subscription %d traffic: %v", *client.SubscriptionID, err)
 	}
+
+	// Update client's last_node_usage_at to reflect real-time activity
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&entity.Client{}).
+		Where("id = ?", client.ID).
+		Update("last_node_usage_at", now).Error; err != nil {
+		log.Printf("trafficsync: failed to update client %d last_node_usage_at: %v", client.ID, err)
+	}
 }
 
 // GetEnabledInbounds returns all enabled inbound configs as parsed JSON.

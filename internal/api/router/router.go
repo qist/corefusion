@@ -546,6 +546,24 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			assetPath = path
 		} else if webPath != "" && strings.HasPrefix(path, webPath+"/assets/") {
 			assetPath = strings.TrimPrefix(path, webPath)
+		} else if strings.HasPrefix(path, "/portal/") && !strings.HasSuffix(path, "/portal/") {
+			// Serve portal static files (e.g. qrcode.min.js) from embed
+			filePath := "dist/portal" + strings.TrimPrefix(path, "/portal")
+			data, err := adminFSBytes.ReadFile(filePath)
+			if err != nil {
+				c.Status(404)
+				return
+			}
+			ext := strings.ToLower(filepath.Ext(filePath))
+			ct := "application/octet-stream"
+			switch ext {
+			case ".js":
+				ct = "application/javascript; charset=utf-8"
+			case ".css":
+				ct = "text/css; charset=utf-8"
+			}
+			c.Data(200, ct, data)
+			return
 		}
 
 		if assetPath != "" {

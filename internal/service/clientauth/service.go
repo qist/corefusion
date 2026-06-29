@@ -70,6 +70,8 @@ type ClientInfo struct {
 	Status          string     `json:"status"`
 	QuotaBytes      int64      `json:"quota_bytes"`
 	UsedBytes       int64      `json:"used_bytes"`
+	UploadBytes     int64      `json:"upload_bytes"`
+	DownloadBytes   int64      `json:"download_bytes"`
 	ExpiresAt       *time.Time `json:"expires_at"`
 	IPWhitelist     string     `json:"ip_whitelist"`
 	DeviceLimit     int        `json:"device_limit"`
@@ -148,6 +150,10 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 		CreatedAt:       client.CreatedAt,
 	}
 
+	// Override with real-time subscription data if available.
+	// The subscriptions table is kept up-to-date by the traffic sync service,
+	// while the clients.used_bytes field may be stale.
+
 	// Get plan name
 	if client.PlanID > 0 {
 		if plan, err := s.planRepo.GetByID(ctx, client.PlanID); err == nil {
@@ -160,6 +166,24 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 		if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
 			info.SubToken = sub.Token
 			info.SubStatus = sub.Status
+			// Use real-time traffic data from subscription record
+			info.UsedBytes = sub.UsedBytesCache
+			info.UploadBytes = sub.UploadBytesCache
+			info.DownloadBytes = sub.DownloadBytesCache
+			if sub.QuotaBytes > 0 {
+				info.QuotaBytes = sub.QuotaBytes
+			}
+			if sub.ExpiresAt != nil {
+				info.ExpiresAt = sub.ExpiresAt
+			}
+			// Use subscription's last access time if client's last_node_usage_at is empty
+			if info.LastNodeUsageAt == nil && sub.LastAccessAt != nil {
+				info.LastNodeUsageAt = sub.LastAccessAt
+			}
+			// Final fallback: use subscription's updated_at (updated by traffic sync)
+			if info.LastNodeUsageAt == nil && !sub.UpdatedAt.IsZero() && sub.UsedBytesCache > 0 {
+				info.LastNodeUsageAt = &sub.UpdatedAt
+			}
 		}
 	}
 

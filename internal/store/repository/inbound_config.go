@@ -82,3 +82,26 @@ func (r *InboundConfigRepository) Delete(ctx context.Context, id int64) error {
 func (r *InboundConfigRepository) DeleteByTag(ctx context.Context, tag string) error {
 	return r.db.WithContext(ctx).Where("tag = ?", tag).Delete(&entity.InboundConfig{}).Error
 }
+
+// ListByServerID retrieves all inbound configs for a specific server.
+func (r *InboundConfigRepository) ListByServerID(ctx context.Context, serverID int64) ([]entity.InboundConfig, error) {
+	var configs []entity.InboundConfig
+	err := r.db.WithContext(ctx).
+		Where("server_id = ?", serverID).
+		Order("id").
+		Find(&configs).Error
+	return configs, err
+}
+
+// ListByServerIDs retrieves all inbound configs for the given server IDs.
+func (r *InboundConfigRepository) ListByServerIDs(ctx context.Context, serverIDs []int64) ([]entity.InboundConfig, error) {
+	if len(serverIDs) == 0 {
+		return nil, nil
+	}
+	var configs []entity.InboundConfig
+	err := r.db.WithContext(ctx).
+		Where("server_id IN ?", serverIDs).
+		Order("server_id, id").
+		Find(&configs).Error
+	return configs, err
+}

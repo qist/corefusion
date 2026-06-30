@@ -30,7 +30,9 @@ import (
 	metricsHandler "corefusion/internal/api/handlers/metrics"
 	mihomoHandler "corefusion/internal/api/handlers/mihomo"
 	nodesHandler "corefusion/internal/api/handlers/nodes"
+	nodeServerHandler "corefusion/internal/api/handlers/nodeserver"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
+	planHandler "corefusion/internal/api/handlers/plan"
 	securityHandler "corefusion/internal/api/handlers/security"
 	servicesHandler "corefusion/internal/api/handlers/services"
 	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
@@ -45,7 +47,9 @@ import (
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
+	"corefusion/internal/runtime/agent"
 	"corefusion/internal/runtime/cert"
+	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	backupService "corefusion/internal/service/backup"
@@ -61,13 +65,16 @@ import (
 	logManageSvc "corefusion/internal/service/logmanage"
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
+	nodeServerSvc "corefusion/internal/service/nodeserver"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
+	planSvc "corefusion/internal/service/plan"
 	proxySvc "corefusion/internal/service/proxy"
 	svcService "corefusion/internal/service/service"
 	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
 	subendSvc "corefusion/internal/service/subendpoint"
 	subfmtSvc "corefusion/internal/service/subformat"
 	subService "corefusion/internal/service/subscription"
+	subRegion "corefusion/internal/service/subscription"
 	systemSvc "corefusion/internal/service/system"
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	userService "corefusion/internal/service/user"
@@ -121,6 +128,21 @@ var processMgr *process.Manager
 
 // proxyMgr is the global proxy manager for graceful shutdown.
 var proxyMgr *proxySvc.Manager
+
+// caService is the global CA service for Agent mTLS certificate management.
+var caService *agent.CertificateAuthority
+
+// SetCAService sets the CA service for the router (called from main.go before NewWithFullConfig).
+func SetCAService(ca *agent.CertificateAuthority) {
+	caService = ca
+}
+
+// SetProcessManager sets the process manager (called from main.go before NewWithFullConfig).
+// If set, the router will reuse this instance instead of creating a new one.
+// This ensures that LocalAgent and HTTP API handlers share the same process.Manager.
+func SetProcessManager(pm *process.Manager) {
+	processMgr = pm
+}
 
 // Shutdown stops all managed processes. Call this when the panel exits.
 func Shutdown() {
@@ -313,12 +335,27 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	extSrcRepo := repository.NewExternalNodeSourceRepository(database)
 	extNodeRepo := repository.NewExternalNodeRepository(database)
+
+	// Plan v2: templates, variants, node groups, promotions, orders
+	planTmplRepo := repository.NewPlanTemplateRepository(database)
+	planVariantRepo := repository.NewPlanVariantRepository(database)
+	nodeGroupRepo := repository.NewNodeGroupRepository(database)
+	nodeGroupMemberRepo := repository.NewNodeGroupMemberRepository(database)
+	promoRepo := repository.NewPromotionRepository(database)
+	planOrderRepo := repository.NewPlanOrderRepository(database)
+	planSvcInst := planSvc.NewService(database, planTmplRepo, planVariantRepo, nodeGroupRepo, nodeGroupMemberRepo, promoRepo, planOrderRepo, clientRepo, inboundConfigRepo, extNodeRepo)
+	planH := planHandler.NewHandler(planSvcInst)
+
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planRepo, planNodeRepo, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
-	processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
+	// Reuse processMgr if injected from main.go (shared with LocalAgent),
+	// otherwise create a new one.
+	if processMgr == nil {
+		processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
+	}
 	coreConfigH.SetProcessManager(processMgr)
 
 	// Set config generator: reads from core_configs and writes merged config file
@@ -844,6 +881,53 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				clientsGroup.POST("/:id/suspend", clientH.SuspendClient)
 				clientsGroup.POST("/:id/restore", clientH.RestoreClient)
 				clientsGroup.POST("/:id/reset-usage", clientH.ResetUsage)
+				clientsGroup.GET("/:id/orders", planH.ListClientOrders)
+				clientsGroup.POST("/:id/renew", planH.Renew)
+				clientsGroup.POST("/:id/upgrade", planH.Upgrade)
+				clientsGroup.POST("/:id/downgrade", planH.Downgrade)
+			}
+
+			// Plan Templates (套餐模板)
+			planTmplGroup := protected.Group("/plan-templates")
+			{
+				planTmplGroup.GET("", planH.ListTemplates)
+				planTmplGroup.POST("", planH.CreateTemplate)
+				planTmplGroup.GET("/:id", planH.GetTemplate)
+				planTmplGroup.PUT("/:id", planH.UpdateTemplate)
+				planTmplGroup.DELETE("/:id", planH.DeleteTemplate)
+				planTmplGroup.PUT("/:id/node-groups", planH.SetTemplateNodeGroups)
+				planTmplGroup.GET("/:id/accessible-nodes", planH.GetAccessibleNodes)
+				planTmplGroup.GET("/:id/variants", planH.ListVariants)
+				planTmplGroup.POST("/:id/variants", planH.CreateVariant)
+			}
+
+			// Plan Variants (套餐规格)
+			planVariantGroup := protected.Group("/plan-variants")
+			{
+				planVariantGroup.PUT("/:id", planH.UpdateVariant)
+				planVariantGroup.DELETE("/:id", planH.DeleteVariant)
+			}
+
+			// Node Groups (节点分组)
+			nodeGroupRoute := protected.Group("/node-groups")
+			{
+				nodeGroupRoute.GET("", planH.ListNodeGroups)
+				nodeGroupRoute.POST("", planH.CreateNodeGroup)
+				nodeGroupRoute.PUT("/:id", planH.UpdateNodeGroup)
+				nodeGroupRoute.DELETE("/:id", planH.DeleteNodeGroup)
+				nodeGroupRoute.GET("/:id/members", planH.ListGroupMembers)
+				nodeGroupRoute.POST("/:id/members", planH.AddGroupMember)
+				nodeGroupRoute.DELETE("/:id/members/:mid", planH.RemoveGroupMember)
+			}
+
+			// Promotions (促销优惠)
+			promoGroup := protected.Group("/promotions")
+			{
+				promoGroup.GET("", planH.ListPromotions)
+				promoGroup.POST("", planH.CreatePromotion)
+				promoGroup.PUT("/:id", planH.UpdatePromotion)
+				promoGroup.DELETE("/:id", planH.DeletePromotion)
+				promoGroup.POST("/validate", planH.ValidatePromotion)
 			}
 
 			// Mihomo Config
@@ -869,6 +953,179 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// External Nodes
 			extNodeH := extNodeHandler.NewExternalNodeHandler(extSrcRepo, extNodeRepo)
 			extNodeH.RegisterRoutes(protected)
+
+			// Node Servers (multi-region architecture)
+			nodeServerRepo := repository.NewNodeServerRepository(database)
+			revocationRepo := repository.NewCertRevocationRepository(database)
+			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
+			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService)
+
+			// Wire up CRL and CertDistributor if CA is available
+			if caService != nil {
+				certRepoForNodeServer := repository.NewCertificateRepository(database)
+				nodeMgrForCRL := agent.NewNodeServerManager(nodeServerRepo, caService)
+				crlInst := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgrForCRL, caService)
+				certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
+				nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
+
+				// Inject LocalAgent — wraps the existing process.Manager and proxy.Manager
+				// for local node operations. Local server (is_local=1) operations go through
+				// process.Manager (cores) and proxy.Manager (Caddy/Nginx) directly,
+				// not through gRPC. Remote servers use gRPC as before.
+				localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+				localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+				nodeMgrForCRL.SetLocalAgent(localAgent)
+
+				// Phase 3: Node Types & Chain Proxy wiring
+				inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
+				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
+
+				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
+				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3)
+				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
+				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
+				billingFilter := agent.NewBillingFilter(nodeServerRepo)
+
+				nodeServerSvcInst.
+					WithInboundRepo(inboundRepoForNodeServer).
+					WithNodeManager(nodeMgrForPhase3).
+					WithFailoverManager(failoverMgr).
+					WithMirrorSync(mirrorSyncMgr).
+					WithChainGenerator(chainGen).
+					WithChainHealthRegistry(chainHealthRegistry).
+					WithBillingFilter(billingFilter)
+
+				// Phase 5: Dashboard & Enhancements wiring
+				multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
+				geoIPResolver := subRegion.NewSimpleGeoIPResolver()
+				regionSelector := subRegion.NewRegionSelector(geoIPResolver, nodeServerRepo)
+
+			nodeServerSvcInst.
+				WithHealthChecker(multiHealthChecker).
+				WithRegionSelector(regionSelector)
+
+			// Phase 6: Advanced Features wiring
+			metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
+			speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
+			loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
+			agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3)
+
+			nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
+
+			nodeServerSvcInst.
+				WithMetricsCollector(metricsCollector).
+				WithSpeedTestManager(speedTestMgr).
+				WithLoadBalancer(loadBalancer).
+				WithAgentUpdater(agentUpdater)
+
+			// Supplementary repos wiring
+			auditLogRepo := repository.NewNodeAuditLogRepository(database)
+			tagRepo := repository.NewServerTagRepository(database)
+			distQueueRepo := repository.NewCertDistributionQueueRepository(database)
+			crlRepoForSvc := revocationRepo // reuse the already-created revocation repo
+			certRepoForSvc := certRepoForNodeServer // reuse the already-created cert repo
+
+			nodeServerSvcInst.
+				WithAuditLogRepo(auditLogRepo).
+				WithTagRepo(tagRepo).
+				WithDistQueueRepo(distQueueRepo).
+				WithCertRepo(certRepoForSvc).
+				WithCRLRepo(crlRepoForSvc).
+				WithDB(database)
+			}
+
+			nodeServerH := nodeServerHandler.NewHandler(nodeServerSvcInst)
+			nodeServersGroup := protected.Group("/node-servers")
+			{
+				nodeServersGroup.GET("", nodeServerH.List)
+				nodeServersGroup.POST("", nodeServerH.Create)
+				nodeServersGroup.GET("/ca-cert", nodeServerH.GetCACert)
+				nodeServersGroup.POST("/distribute-cert", nodeServerH.DistributeCertificateToAll)
+				nodeServersGroup.GET("/:id", nodeServerH.GetByID)
+				nodeServersGroup.PUT("/:id", nodeServerH.Update)
+				nodeServersGroup.DELETE("/:id", nodeServerH.Delete)
+				nodeServersGroup.POST("/:id/bootstrap-token", nodeServerH.GenerateBootstrapToken)
+				nodeServersGroup.POST("/:id/revoke-cert", nodeServerH.RevokeAgentCertificate)
+				nodeServersGroup.POST("/:id/distribute-cert", nodeServerH.DistributeCertificate)
+				// Phase 3: Node Types & Chain Proxy
+				nodeServersGroup.GET("/:id/failover-status", nodeServerH.GetFailoverStatus)
+				nodeServersGroup.POST("/failover-check", nodeServerH.TriggerFailoverCheck)
+				nodeServersGroup.POST("/:id/sync-mirror", nodeServerH.SyncMirror)
+				nodeServersGroup.GET("/:id/mirror-status", nodeServerH.GetMirrorStatus)
+				nodeServersGroup.GET("/:id/chain-config", nodeServerH.GenerateChainConfig)
+				nodeServersGroup.GET("/:id/chain-exit-config", nodeServerH.GenerateChainExitConfig)
+				nodeServersGroup.GET("/:id/chain-health", nodeServerH.GetChainHealthStatus)
+				nodeServersGroup.GET("/billable", nodeServerH.ListBillableServers)
+				nodeServersGroup.POST("/validate-chain-config", nodeServerH.ValidateChainConfig)
+				// Phase 4: User Sync & Traffic Aggregation
+				nodeServersGroup.POST("/users/sync", nodeServerH.SyncUser)
+				nodeServersGroup.DELETE("/users/:client_id", nodeServerH.SyncUserRemoval)
+				nodeServersGroup.GET("/users/retry-queue", nodeServerH.GetRetryQueueStatus)
+				nodeServersGroup.POST("/users/retry-queue/process", nodeServerH.ProcessRetryQueue)
+				nodeServersGroup.GET("/traffic/stats", nodeServerH.GetTrafficStats)
+				// Phase 5: Dashboard & Enhancements
+				nodeServersGroup.GET("/dashboard", nodeServerH.GetDashboardStatus)
+				nodeServersGroup.POST("/recommend-region", nodeServerH.RecommendRegion)
+				nodeServersGroup.GET("/:id/install-script", nodeServerH.GetAgentInstallScript)
+
+				// Phase 6: Advanced Features
+				nodeServersGroup.GET("/:id/metrics-history", nodeServerH.GetMetricsHistory)
+				nodeServersGroup.GET("/metrics/aggregated", nodeServerH.GetAggregatedMetrics)
+				nodeServersGroup.POST("/:id/speed-test", nodeServerH.TestServerSpeed)
+				nodeServersGroup.POST("/speed-test-all", nodeServerH.TestAllServersSpeed)
+				nodeServersGroup.GET("/speed-test-results", nodeServerH.GetSpeedTestResults)
+				nodeServersGroup.POST("/select-nodes", nodeServerH.SelectNodesForSubscription)
+				nodeServersGroup.POST("/:id/update-agent", nodeServerH.UpdateAgent)
+				nodeServersGroup.POST("/update-all-agents", nodeServerH.UpdateAllAgents)
+				nodeServersGroup.GET("/pending-agent-updates", nodeServerH.GetPendingAgentUpdates)
+
+				// Supplementary: Server Management
+				nodeServersGroup.GET("/:id/status", nodeServerH.GetServerStatus)
+				nodeServersGroup.POST("/:id/control", nodeServerH.ControlCore)
+				nodeServersGroup.POST("/:id/sync", nodeServerH.SyncServerConfig)
+				nodeServersGroup.GET("/:id/bootstrap-cmd", nodeServerH.GetBootstrapCommand)
+				nodeServersGroup.PUT("/:id/node-type", nodeServerH.UpdateNodeType)
+				nodeServersGroup.POST("/:id/failover", nodeServerH.TriggerServerFailover)
+				nodeServersGroup.GET("/:id/certificates", nodeServerH.ListServerCertificates)
+				nodeServersGroup.POST("/:id/certificates/:cid", nodeServerH.AssociateCertificate)
+				nodeServersGroup.DELETE("/:id/certificates/:cid", nodeServerH.DissociateCertificate)
+
+				// Supplementary: Agent Degradation & Reconnect
+				nodeServersGroup.GET("/:id/degradation-status", nodeServerH.GetDegradationStatus)
+				nodeServersGroup.POST("/:id/force-reconnect", nodeServerH.ForceReconnect)
+
+				// Supplementary: Node Tags
+				nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
+				nodeServersGroup.POST("/:id/tags", nodeServerH.AddServerTag)
+				nodeServersGroup.DELETE("/:id/tags/:tagKey", nodeServerH.RemoveServerTag)
+			}
+
+			// CA Center (separate group, reuses nodeServerH)
+			caCenterGroup := protected.Group("/ca")
+			{
+				caCenterGroup.GET("/status", nodeServerH.GetCAStatus)
+				caCenterGroup.GET("/agent-certs", nodeServerH.ListAgentCerts)
+				caCenterGroup.POST("/agent-certs/:server_id/renew", nodeServerH.RenewAgentCertificate)
+				caCenterGroup.GET("/revocations", nodeServerH.ListRevocations)
+				caCenterGroup.GET("/revocations/export", nodeServerH.ExportCRL)
+				caCenterGroup.GET("/distribution-queue", nodeServerH.GetDistributionQueue)
+				caCenterGroup.POST("/distribution-queue/:id/retry", nodeServerH.RetryDistribution)
+				caCenterGroup.DELETE("/distribution-queue/:id", nodeServerH.DeleteDistributionQueueItem)
+			}
+
+			// Region Overview (separate group, reuses nodeServerH)
+			regionsOverviewGroup := protected.Group("/regions")
+			{
+				regionsOverviewGroup.GET("/overview", nodeServerH.GetRegionsOverview)
+				regionsOverviewGroup.GET("/:region/servers", nodeServerH.ListServersByRegion)
+			}
+
+			// Node Audit Logs (separate group, reuses nodeServerH)
+			nodeAuditGroup := protected.Group("/node-audit-logs")
+			{
+				nodeAuditGroup.GET("", nodeServerH.ListNodeAuditLogs)
+				nodeAuditGroup.GET("/export", nodeServerH.ExportNodeAuditLogs)
+			}
 
 			// Certificates
 			certsGroup := protected.Group("/certificates")
@@ -1430,6 +1687,8 @@ func isSPARoute(path string) bool {
 		"/log-manage",
 		"/settings",
 		"/portal",
+		"/node-servers",
+		"/plans",
 	}
 
 	for _, route := range knownRoutes {

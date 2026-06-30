@@ -125,6 +125,14 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.PlanNode{},
 		&entity.Client{},
 
+		// Plan v2: Templates, Variants, Node Groups, Promotions, Orders
+		&entity.PlanTemplate{},
+		&entity.PlanVariant{},
+		&entity.NodeGroup{},
+		&entity.NodeGroupMember{},
+		&entity.Promotion{},
+		&entity.PlanOrder{},
+
 		// Mihomo Config
 		&entity.MihomoConfig{},
 		&entity.MihomoGeneral{},
@@ -143,6 +151,21 @@ func AutoMigrate(db *gorm.DB) error {
 		// External Nodes
 		&entity.ExternalNodeSource{},
 		&entity.ExternalNode{},
+
+		// Node Servers (multi-region architecture)
+		&entity.NodeServer{},
+
+		// Agent Certificate Revocations (CRL)
+		&entity.AgentCertRevocation{},
+
+		// Phase 6: Server Metrics & Speed Test Records
+		&entity.ServerMetric{},
+		&entity.SpeedTestRecord{},
+
+		// Supplementary: Node Audit Logs, Server Tags, Cert Distribution Queue
+		&entity.NodeAuditLog{},
+		&entity.ServerTag{},
+		&entity.CertDistributionQueueItem{},
 	}
 
 	for _, model := range models {

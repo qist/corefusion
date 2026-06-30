@@ -40,7 +40,8 @@ type Client struct {
 	ID              int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Email           string     `gorm:"size:255;uniqueIndex;not null" json:"email"`
 	Password        string     `gorm:"size:255" json:"password"`
-	PlanID          int64      `gorm:"index" json:"plan_id"`
+	PlanID          int64      `gorm:"index" json:"plan_id"`                // legacy, maps to PlanTemplate
+	PlanVariantID   int64      `gorm:"not null;default:0;index" json:"plan_variant_id"` // new: links to PlanVariant
 	SubscriptionID  *int64     `gorm:"index" json:"subscription_id"`
 	Status          string     `gorm:"size:32;not null;default:active" json:"status"`
 	QuotaBytes      int64      `gorm:"not null;default:0" json:"quota_bytes"`
@@ -49,6 +50,8 @@ type Client struct {
 	SuspendedAt     *time.Time `json:"suspended_at"`
 	IPWhitelist     string     `gorm:"size:1000" json:"ip_whitelist"`
 	DeviceLimit     int        `gorm:"not null;default:0" json:"device_limit"`
+	SpeedLimitMbps  int        `gorm:"not null;default:0" json:"speed_limit_mbps"`     // inherited from template, can override
+	ConcurrentLimit int        `gorm:"not null;default:0" json:"concurrent_limit"`     // inherited from template, can override
 	LastNodeUsageAt *time.Time `json:"last_node_usage_at"`
 	SubUpdatedAt    *time.Time `json:"sub_updated_at"`
 	Remark          string     `gorm:"size:255" json:"remark"`

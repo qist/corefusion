@@ -66,3 +66,43 @@ func (r *ShareDomainConfigRepository) Count(ctx context.Context) (int64, error) 
 	err := r.db.WithContext(ctx).Model(&entity.ShareDomainConfig{}).Count(&count).Error
 	return count, err
 }
+
+// ListByServerID returns share domain configs for a specific server.
+// server_id = 0 returns global configs only.
+func (r *ShareDomainConfigRepository) ListByServerID(ctx context.Context, serverID int64) ([]entity.ShareDomainConfig, error) {
+	var configs []entity.ShareDomainConfig
+	err := r.db.WithContext(ctx).
+		Where("server_id = ?", serverID).
+		Order("sort_order ASC, id ASC").
+		Find(&configs).Error
+	return configs, err
+}
+
+// ListEffectiveForServer returns share domain configs effective for a server.
+// This includes both server-specific configs (server_id = serverID) and
+// global configs (server_id = 0), filtered by region if specified.
+func (r *ShareDomainConfigRepository) ListEffectiveForServer(ctx context.Context, serverID int64, region string) ([]entity.ShareDomainConfig, error) {
+	var configs []entity.ShareDomainConfig
+	query := r.db.WithContext(ctx).
+		Where("server_id IN ? AND enabled = ?", []int64{0, serverID}, true).
+		Order("server_id DESC, sort_order ASC, id ASC") // server-specific first
+
+	if region != "" {
+		// Include configs with matching region or empty region (all regions)
+		query = query.Where("region = ? OR region = ?", region, "")
+	}
+
+	err := query.Find(&configs).Error
+	return configs, err
+}
+
+// ListByRegion returns share domain configs for a specific region.
+// Includes both region-specific and all-region (empty region) configs.
+func (r *ShareDomainConfigRepository) ListByRegion(ctx context.Context, region string) ([]entity.ShareDomainConfig, error) {
+	var configs []entity.ShareDomainConfig
+	err := r.db.WithContext(ctx).
+		Where("enabled = ? AND (region = ? OR region = ?)", true, region, "").
+		Order("sort_order ASC, id ASC").
+		Find(&configs).Error
+	return configs, err
+}

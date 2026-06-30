@@ -92,7 +92,7 @@ func (a *Aggregator) flush(events []metric.TrafficDeltaEvent) {
 				UplinkBytes:    e.UplinkBytes,
 				DownlinkBytes:  e.DownlinkBytes,
 				BilledBytes:    e.UplinkBytes + e.DownlinkBytes,
-				OccurredAt:     e.OccurredAt,
+				OccurredAt:     e.CollectedAt,
 			}
 			// Use FirstOrCreate for idempotency
 			tx.Where("session_id = ? AND seq = ?", e.SessionID, e.Sequence).

@@ -19,7 +19,14 @@ import (
 	"corefusion/internal/api/router"
 	"corefusion/internal/auth/jwt"
 	"corefusion/internal/migration"
+	"corefusion/internal/runtime/agent"
+	"corefusion/internal/runtime/healthcheck"
+	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
+	binariesSvc "corefusion/internal/service/binaries"
+	"corefusion/internal/service/subscription"
+	"corefusion/internal/service/traffic"
+	usersync "corefusion/internal/service/usersync"
 	sysService "corefusion/internal/service/system"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
@@ -152,6 +159,110 @@ func runServer(args []string) {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
+	// Phase 2.5: Initialize internal CA (for Agent mTLS)
+	caService, err := agent.InitCA(dataDir)
+	if err != nil {
+		log.Fatalf("failed to initialize CA: %v", err)
+	}
+
+	// Initialize NodeServer repository
+	nodeServerRepo := repository.NewNodeServerRepository(db.DB)
+
+	// Ensure local server record exists
+	if err := nodeServerRepo.EnsureLocalServer(context.Background(), "local-panel"); err != nil {
+		log.Printf("WARNING: ensure local server: %v", err)
+	}
+
+	// Create process.Manager — shared between main.go (LocalAgent) and router (HTTP API).
+	// This is the single source of truth for core process lifecycle management.
+	// The healthcheck.Guardian inside process.Manager provides auto-restart on crash.
+	svcRepo := repository.NewServiceRepository(db.DB)
+	guardianRepo := repository.NewProcessGuardianRepository(db.DB)
+	crashLogRepo := repository.NewCrashLogRepository(db.DB)
+	binaryResolver := binariesSvc.NewResolver(dataDir)
+	processMgr := process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
+
+	// Initialize NodeServerManager (gRPC server for Agent connections)
+	nodeMgr := agent.NewNodeServerManager(nodeServerRepo, caService)
+
+	// Inject LocalAgent — wraps the existing process.Manager for local node operations.
+	// Local server (is_local=1) operations go through process.Manager directly,
+	// not through gRPC. The Agent's role is to GUARD (守护) core processes,
+	// and process.Manager + Guardian already implements this completely.
+	localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+	nodeMgr.SetLocalAgent(localAgent)
+
+	// Initialize Cert Revocation List (CRL)
+	revocationRepo := repository.NewCertRevocationRepository(db.DB)
+	crl := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgr, caService)
+	nodeMgr.WithCRL(crl)
+
+	// Start gRPC server for Agents (mTLS on port 18443)
+	agentGRPCAddr := ":18443"
+	if err := nodeMgr.StartGRPCServer(context.Background(), agentGRPCAddr); err != nil {
+		log.Printf("WARNING: failed to start Agent gRPC server: %v", err)
+	} else {
+		defer nodeMgr.StopGRPCServer()
+	}
+
+	// Start CRL refresh loop (background)
+	go crl.RunRefreshLoop(context.Background())
+
+	// Initialize CertDistributor (external TLS cert distribution to Agents)
+	certRepo := repository.NewCertificateRepository(db.DB)
+	_ = agent.NewCertDistributor(certRepo, nodeServerRepo, nodeMgr) // wired in router.go per-request
+
+	// Start Agent certificate auto-renewer (background goroutine)
+	certRenewer := agent.NewCertRenewer(caService, nodeServerRepo).WithPusher(nodeMgr)
+	go certRenewer.RunLoop(context.Background())
+	log.Println("Agent certificate auto-renewer started")
+
+	// Phase 3: Start FailoverManager, MirrorSync, and ChainHealth monitors
+	inboundRepoForPhase3 := repository.NewInboundConfigRepository(db.DB)
+	failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgr)
+	go failoverMgr.RunLoop(context.Background())
+	log.Println("Failover manager started (primary_backup auto-switch)")
+
+	mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForPhase3, nodeMgr)
+	go mirrorSyncMgr.RunLoop(context.Background())
+	log.Println("Mirror sync manager started (config replication)")
+
+	chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgr, nodeServerRepo)
+	go func() {
+		if err := chainHealthRegistry.StartAll(context.Background()); err != nil {
+			log.Printf("chain health registry: %v", err)
+		}
+	}()
+	log.Println("Chain health monitor registry started (multi-exit failover)")
+
+	// Phase 4: Start UserSyncService and MultiServerTrafficCollector
+	billingFilter := agent.NewBillingFilter(nodeServerRepo)
+	clientRepo := repository.NewClientRepository(db.DB)
+	planRepo := repository.NewPlanRepository(db.DB)
+	planNodeRepo := repository.NewPlanNodeRepository(db.DB)
+
+	userSyncSvc := usersync.NewUserSyncService(
+		clientRepo, planRepo, planNodeRepo, inboundRepoForPhase3,
+		nodeServerRepo, nodeMgr, billingFilter,
+	)
+	go userSyncSvc.RunRetryLoop(context.Background())
+	log.Println("User sync service started (multi-server fan-out + offline retry)")
+
+	trafficAggregator := traffic.NewAggregator(db.DB)
+	trafficAggregator.Start(context.Background())
+	multiCollector := traffic.NewMultiServerTrafficCollector(nodeMgr, nodeServerRepo, trafficAggregator)
+	multiCollector.Start(context.Background())
+	log.Println("Multi-server traffic collector started (remote + mirror merge)")
+
+	// Phase 5: Start MultiServerHealthChecker and RegionSelector
+	multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgr, nodeServerRepo)
+	go multiHealthChecker.RunLoop(context.Background())
+	log.Println("Multi-server health checker started (30s interval + alerts)")
+
+	geoIPResolver := subscription.NewSimpleGeoIPResolver()
+	_ = subscription.NewRegionSelector(geoIPResolver, nodeServerRepo)
+	log.Println("GeoIP region selector initialized")
+
 	// Phase 3: Read panel settings from database
 	settingRepo := repository.NewSystemSettingRepository(db.DB)
 	settings := readSettings(settingRepo)
@@ -202,6 +313,8 @@ func runServer(args []string) {
 	}
 
 	// Phase 6: Create router
+	router.SetCAService(caService)
+	router.SetProcessManager(processMgr) // share processMgr with router (HTTP API handlers)
 	r := router.NewWithFullConfig(db.DB, jwtSecret, settings["web_path"], dataDir, Version, apiPort)
 
 	// Phase 7: TLS configuration

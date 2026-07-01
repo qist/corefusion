@@ -294,6 +294,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyMgr := proxySvc.NewCaddyManager(dataDir, caddySiteRepo, systemSettingRepo)
 	nginxMgr := proxySvc.NewNginxManager(dataDir, nginxSiteRepo, systemSettingRepo)
 
+	// Set server_id = 1 (local node) for per-node site filtering.
+	// All proxy/caddy/nginx site queries filter by server_id to ensure
+	// data isolation between node servers.
+	proxyMgr.SetServerID(1)
+	caddyMgr.SetServerID(1)
+	nginxMgr.SetServerID(1)
+
 	// Log management
 	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
 	logJobRepo := repository.NewLogRotationJobRepository(database)
@@ -990,6 +997,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
 		localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
 		binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
+		binaryInstaller.SetProcessController(processMgr) // Enable stop/start during binary updates
 		localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
 		nodeMgrForCRL.SetLocalAgent(localAgent)
 
@@ -1058,6 +1066,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerH := nodeServerHandler.NewHandler(nodeServerSvcInst)
 			nodeServerH.SetCoreConfigService(coreConfigSvc)
 			nodeServerH.SetProxyHandler(proxyH)
+
+			// Wire up NodeOperator so proxy/caddy/nginx handlers can route
+			// operations (start/stop/restart/reload, config sync, status)
+			// to remote nodes via gRPC.
+			proxyH.SetNodeOperator(nodeServerSvcInst)
+			caddyH.SetNodeOperator(nodeServerSvcInst)
+			nginxH.SetNodeOperator(nodeServerSvcInst)
 			nodeServersGroup := protected.Group("/node-servers")
 			{
 				nodeServersGroup.GET("", nodeServerH.List)
@@ -1122,6 +1137,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.GET("/:id/binaries", nodeServerH.ListBinaries)
 			nodeServersGroup.GET("/:id/binaries/releases", nodeServerH.ListReleases)
 			nodeServersGroup.GET("/:id/proxy-status", nodeServerH.GetRemoteProxyStatus)
+
+		// Binary Commands (key generation, interface listing)
+			nodeServersGroup.POST("/:id/binaries/x25519-key", nodeServerH.GenerateX25519Key)
+			nodeServersGroup.POST("/:id/binaries/mldsa65-key", nodeServerH.GenerateMldsa65Key)
+			nodeServersGroup.POST("/:id/binaries/wg-key", nodeServerH.GenerateWgKey)
+			nodeServersGroup.POST("/:id/binaries/ech-generate", nodeServerH.GenerateEchKeys)
+			nodeServersGroup.POST("/:id/binaries/vlessenc", nodeServerH.GenerateVlessEnc)
+			nodeServersGroup.GET("/:id/binaries/interfaces", nodeServerH.ListInterfaces)
 
 		// Supplementary: Node Tags
 			nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
@@ -1280,75 +1303,40 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				acmeAccountsGroup.GET("/default", certEmailH.GetDefault)
 				acmeAccountsGroup.PUT("/:id", certEmailH.Update)
 				acmeAccountsGroup.DELETE("/:id", certEmailH.Delete)
-			}
+		}
 
-			// Binaries
-			binariesGroup := protected.Group("/binaries")
-			{
-				binariesGroup.GET("", binariesH.List)
-				binariesGroup.GET("/releases", binariesH.ListReleases)
-				binariesGroup.POST("/download", binariesH.Download)
-				binariesGroup.POST("/install", binariesH.Install)
-				binariesGroup.POST("/update", binariesH.Update)
-				binariesGroup.POST("/rollback", binariesH.Rollback)
-				binariesGroup.POST("/wg-key", binariesH.GenerateWgKey)
-				binariesGroup.POST("/ech-generate", binariesH.GenerateEchKeys)
-				binariesGroup.POST("/x25519-key", binariesH.GenerateX25519Key)
-				binariesGroup.POST("/mldsa65-key", binariesH.GenerateMldsa65Key)
-				binariesGroup.POST("/vlessenc", binariesH.GenerateVlessEnc)
-				binariesGroup.GET("/interfaces", binariesH.ListInterfaces)
-			}
-
-			// Xray Stats
+		// Xray Stats & Control — moved under /node-servers/:id/
 			xrayStatsH := xrayStatsHandler.NewHandler(systemSettingSvc)
 			xrayStatsH.SetCoreConfigService(coreConfigSvc)
-			xrayStatsGroup := protected.Group("/xray/stats")
-			{
-				xrayStatsGroup.GET("", xrayStatsH.GetStats)
-				xrayStatsGroup.GET("/users", xrayStatsH.GetUserStats)
-				xrayStatsGroup.POST("/reset/:email", xrayStatsH.ResetUserStats)
-			}
-
-			// Xray Control (dynamic inbound/outbound/routing)
 			xrayControlH := xrayControlHandler.NewHandler(systemSettingSvc)
 			xrayControlH.SetCoreConfigService(coreConfigSvc)
-			xrayControlGroup := protected.Group("/xray/control")
-			{
-				// Inbound management
-				xrayControlGroup.POST("/inbound", xrayControlH.AddInbound)
-				xrayControlGroup.DELETE("/inbound/:tag", xrayControlH.RemoveInbound)
 
-				// Outbound management
-				xrayControlGroup.POST("/outbound", xrayControlH.AddOutbound)
-				xrayControlGroup.DELETE("/outbound/:tag", xrayControlH.RemoveOutbound)
+			nodeServersGroup.GET("/:id/xray/stats", xrayStatsH.GetStats)
+			nodeServersGroup.GET("/:id/xray/stats/users", xrayStatsH.GetUserStats)
+			nodeServersGroup.POST("/:id/xray/stats/reset/:email", xrayStatsH.ResetUserStats)
 
-				// User management (add/remove user from running inbound)
-				xrayControlGroup.POST("/inbound/:tag/user", xrayControlH.AddUser)
-				xrayControlGroup.DELETE("/inbound/:tag/user/:email", xrayControlH.RemoveUser)
-
-				// Firewall rules for port hopping
-				xrayControlGroup.POST("/firewall/apply", xrayControlH.ApplyFirewallRules)
-				xrayControlGroup.POST("/firewall/remove", xrayControlH.RemoveFirewallRules)
-
-				// Routing management
-				xrayControlGroup.POST("/routing", xrayControlH.ApplyRouting)
-				xrayControlGroup.POST("/routing/rule", xrayControlH.AddRoutingRule)
-				xrayControlGroup.DELETE("/routing/rule/:tag", xrayControlH.RemoveRoutingRule)
-				xrayControlGroup.GET("/routing/rules", xrayControlH.ListRoutingRules)
-
-				// Balancer management
-				xrayControlGroup.GET("/balancer/:tag", xrayControlH.GetBalancerInfo)
-				xrayControlGroup.POST("/balancer/:tag", xrayControlH.SetBalancerTarget)
-
-				// Config sync (trigger manual sync to disk)
-				xrayControlGroup.POST("/sync", func(c *gin.Context) {
-					if err := configSyncSvc.SyncNow(c.Request.Context()); err != nil {
-						c.JSON(500, gin.H{"error": err.Error()})
-						return
-					}
-					c.JSON(200, gin.H{"message": "config synced successfully", "last_sync": configSyncSvc.LastSync()})
-				})
-			}
+			// Xray Control (dynamic inbound/outbound/routing)
+			nodeServersGroup.POST("/:id/xray/control/inbound", xrayControlH.AddInbound)
+			nodeServersGroup.DELETE("/:id/xray/control/inbound/:tag", xrayControlH.RemoveInbound)
+			nodeServersGroup.POST("/:id/xray/control/outbound", xrayControlH.AddOutbound)
+			nodeServersGroup.DELETE("/:id/xray/control/outbound/:tag", xrayControlH.RemoveOutbound)
+			nodeServersGroup.POST("/:id/xray/control/inbound/:tag/user", xrayControlH.AddUser)
+			nodeServersGroup.DELETE("/:id/xray/control/inbound/:tag/user/:email", xrayControlH.RemoveUser)
+			nodeServersGroup.POST("/:id/xray/control/firewall/apply", xrayControlH.ApplyFirewallRules)
+			nodeServersGroup.POST("/:id/xray/control/firewall/remove", xrayControlH.RemoveFirewallRules)
+			nodeServersGroup.POST("/:id/xray/control/routing", xrayControlH.ApplyRouting)
+			nodeServersGroup.POST("/:id/xray/control/routing/rule", xrayControlH.AddRoutingRule)
+			nodeServersGroup.DELETE("/:id/xray/control/routing/rule/:tag", xrayControlH.RemoveRoutingRule)
+			nodeServersGroup.GET("/:id/xray/control/routing/rules", xrayControlH.ListRoutingRules)
+			nodeServersGroup.GET("/:id/xray/control/balancer/:tag", xrayControlH.GetBalancerInfo)
+			nodeServersGroup.POST("/:id/xray/control/balancer/:tag", xrayControlH.SetBalancerTarget)
+			nodeServersGroup.POST("/:id/xray/control/sync", func(c *gin.Context) {
+				if err := configSyncSvc.SyncNow(c.Request.Context()); err != nil {
+					c.JSON(500, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(200, gin.H{"message": "config synced successfully", "last_sync": configSyncSvc.LastSync()})
+			})
 
 			// Geo Rules
 			geoRulesGroup := protected.Group("/geo-rules")

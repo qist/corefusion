@@ -873,6 +873,24 @@ func (s *Service) ListReleases(ctx context.Context, coreType string) (interface{
 	return s.binaryLister.ListReleases(ctx, coreType)
 }
 
+// ExecuteBinaryCommand executes a binary command on a specific server.
+// For local servers, executes directly. For remote servers, sends via gRPC to Agent.
+func (s *Service) ExecuteBinaryCommand(ctx context.Context, serverID int64, coreType string, args ...string) (map[string]string, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.ExecuteBinaryCommand(ctx, serverID, coreType, args...)
+}
+
+// ListInterfaces lists network interfaces on a specific server.
+// For local servers, queries directly. For remote servers, sends via gRPC to Agent.
+func (s *Service) ListInterfaces(ctx context.Context, serverID int64) ([]string, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.ListInterfaces(ctx, serverID)
+}
+
 // GetBootstrapCommand generates the bootstrap installation command for a server.
 func (s *Service) GetBootstrapCommand(ctx context.Context, serverID int64, panelHost string, panelPort int) (string, error) {
 	required, err := s.tokenMgr.IsBootstrapRequired(ctx, serverID)

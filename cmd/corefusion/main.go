@@ -331,11 +331,15 @@ func runServer(args []string) {
 	}
 
 	// Phase 8: Start server with graceful shutdown
+	// WriteTimeout is set to 5 minutes to accommodate long-running operations
+	// such as binary downloads (~20s), process stop/start, and certificate
+	// generation. ReadTimeout stays at 30s since clients should send requests
+	// quickly. IdleTimeout is 120s for keep-alive connections.
 	srv := &http.Server{
 		Addr:         listenAddr,
 		Handler:      r,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -348,7 +352,7 @@ func runServer(args []string) {
 			Addr:         ":" + subPort,
 			Handler:      subEngine,
 			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
+			WriteTimeout: 5 * time.Minute,
 			IdleTimeout:  120 * time.Second,
 		}
 		go func() {

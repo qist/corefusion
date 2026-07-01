@@ -50,6 +50,9 @@ func (m *NginxManager) ListEnabledSites(ctx context.Context) ([]entity.NginxSite
 }
 
 func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) error {
+	if site.ServerID == 0 {
+		site.ServerID = m.serverID
+	}
 	return m.siteRepo.Create(ctx, site)
 }
 

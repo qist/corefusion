@@ -1208,13 +1208,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String, serverId: Number })
+
+// Helper to build node-server-scoped API paths
+const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+const apiBase = computed(() => `${nodeBase.value}/binaries`)
 
 const form = ref([])
 const dlg = ref(false)
@@ -1999,9 +2003,9 @@ async function saveOutbound() {
       }
       // Remove existing outbound first if editing
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
-        await client.delete(`/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true }).catch(() => {})
+        await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true }).catch(() => {})
       }
-      await client.post('/xray/control/outbound', { outbound }, { suppressErrorMessage: true })
+      await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true })
     } catch (xrayErr) {
       console.warn('Failed to apply outbound to xray:', xrayErr)
       notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'))
@@ -2022,7 +2026,7 @@ async function removeOutbound(i) {
   if (ob.tag) {
     try {
       if (await ensureXrayRunning(client, t('protoCenter.outbounds.deletedFromDb'))) {
-        await client.delete(`/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true })
+        await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true })
       }
     } catch (e) {
       notifyXrayRuntimeApplyFailure(e, t('protoCenter.outbounds.deletedFromDb'))
@@ -2098,7 +2102,7 @@ function onRuleActionChange(rule) {
 
 async function genWgKey() {
   try {
-    const data = await client.post('/binaries/wg-key?core_type=' + (props.coreType || 'xray'))
+    const data = await client.post(`${apiBase.value}/wg-key?core_type=` + (props.coreType || 'xray'))
     if (data && data.privateKey) {
       rf._wgSecretKey = data.privateKey
       rf._wgPublicKey = data.publicKey || ''

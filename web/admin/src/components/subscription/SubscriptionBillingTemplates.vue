@@ -291,7 +291,7 @@ async function loadNodeOptions() {
   nodeOptionsLoading.value = true
   try {
     const [inboundRes, extRes] = await Promise.all([
-      inboundConfigs.value.length ? Promise.resolve(inboundConfigs.value) : client.get('/inbound-configs').catch(() => []),
+      inboundConfigs.value.length ? Promise.resolve(inboundConfigs.value) : client.get('/node-servers/1/inbound-configs').catch(() => []),
       externalNodes.value.length ? Promise.resolve(externalNodes.value) : client.get('/external-nodes').catch(() => [])
     ])
     const inbounds = Array.isArray(inboundRes) ? inboundRes : (inboundRes?.data || [])

@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -476,4 +479,60 @@ func buildXrayAccount(tag string, user *agentpb.UserOp) *serial.TypedMessage {
 		return serial.ToTypedMessage(&trojan.Account{Password: user.Password})
 	}
 	return nil
+}
+
+// ExecuteBinaryCommand executes a binary command and returns the parsed result.
+func (a *LocalAgent) ExecuteBinaryCommand(ctx context.Context, coreType string, args ...string) (map[string]string, error) {
+	// Resolve binary path
+	binaryPath, err := a.resolveBinaryPath(coreType)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("command failed: %w", err)
+	}
+
+	// Parse output as key:value pairs
+	result := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			result[key] = val
+		}
+	}
+	return result, nil
+}
+
+// ListInterfaces returns a list of network interface names.
+func (a *LocalAgent) ListInterfaces() ([]string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		names = append(names, iface.Name)
+	}
+	return names, nil
+}
+
+// resolveBinaryPath resolves the binary path for a core type.
+func (a *LocalAgent) resolveBinaryPath(coreType string) (string, error) {
+	binaryName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	binaryPath := filepath.Join(a.dataDir, "binaries", "active", coreType, binaryName)
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("binary not installed for core type %s", coreType)
+	}
+	return binaryPath, nil
 }

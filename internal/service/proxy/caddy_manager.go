@@ -51,6 +51,9 @@ func (m *CaddyManager) ListEnabledSites(ctx context.Context) ([]entity.CaddySite
 }
 
 func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) error {
+	if site.ServerID == 0 {
+		site.ServerID = m.serverID
+	}
 	return m.siteRepo.Create(ctx, site)
 }
 

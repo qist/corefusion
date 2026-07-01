@@ -175,8 +175,9 @@ async function showVersions(row) {
   versionVisible.value = true
   releasesLoading.value = true
   try {
-    const data = await client.get('/binaries/releases', { params: { core_type: row.core_type, limit: 20, offset: 0 } })
-    releases.value = (data.items || []).map(r => ({
+    const data = await client.get('/node-servers/1/binaries/releases', { params: { core_type: row.core_type } })
+    const items = Array.isArray(data) ? data : (data.items || [])
+    releases.value = items.map(r => ({
       ...r,
       prerelease: r.prerelease !== undefined ? r.prerelease : isOddVersion(r.version)
     }))
@@ -197,7 +198,7 @@ async function handleDownloadVersion(release) {
   await ElMessageBox.confirm(t('service.process.downloadConfirm', { version: release.version }), t('common.confirm'))
   versionVisible.value = false
   try {
-    await client.post('/binaries/download', { core_type: selectedService.value.core_type, version: release.version })
+    await client.post('/node-servers/1/binaries/install', { core_type: selectedService.value.core_type, version: release.version })
     ElMessage.success(t('common.success'))
     fetchData()
   } catch (e) {}

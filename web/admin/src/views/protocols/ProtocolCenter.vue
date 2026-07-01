@@ -83,18 +83,18 @@
       </el-card>
 
       <!-- Version Dialog -->
-      <el-dialog v-model="verVisible" :title="t('protoCenter.version.dialogTitle')" width="600" :close-on-click-modal="!downloading">
+      <el-dialog v-model="verVisible" :title="t('protoCenter.switchVersion.dialogTitle')" width="600" :close-on-click-modal="!downloading">
         <div v-if="downloading" style="text-align:center;padding:40px 20px">
           <el-icon class="is-loading" :size="32" color="#409eff"><Loading /></el-icon>
           <div style="margin-top:16px;font-size:14px;color:#606266">{{ downloadProgress }}</div>
         </div>
         <div v-else v-loading="verLoading" style="min-height:80px">
-          <div v-if="!releases.length && !verLoading" style="text-align:center;color:#999;padding:16px">{{ t('protoCenter.version.noVersions') }}</div>
+          <div v-if="!releases.length && !verLoading" style="text-align:center;color:#999;padding:16px">{{ t('protoCenter.switchVersion.noVersions') }}</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <div v-for="r in releases" :key="r.version" class="ver-card" :class="{ 'ver-card-current': r.version === svc.version }" @click="doDownload(r)">
               <div style="display:flex;justify-content:space-between;width:100%">
                 <span style="font-size:11px" :style="{color:r.prerelease?'#67c23a':'#409eff'}">{{ r.prerelease?'Pre-Release':'Stable' }}</span>
-                <el-tag v-if="r.version === svc.version && svc.binary_installed" size="small" type="success">{{ t('protoCenter.version.current') }}</el-tag>
+                <el-tag v-if="r.version === svc.version && svc.binary_installed" size="small" type="success">{{ t('protoCenter.switchVersion.current') }}</el-tag>
               </div>
               <div style="font-size:13px;font-weight:600;margin-top:2px">{{ r.version }}</div>
             </div>
@@ -291,7 +291,15 @@ async function fetchStatus(){
     const data=await client.get(`/node-servers/${props.serverId}/status`)
     const cores=data?.cores||[]
     const s=cores.find(x=>x.core_type===selectedCore.value)
-    if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:s.state==='running',version:s.version||'',pid:s.pid||0,cpu:s.cpu||0,mem:s.mem||0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
+    // Also fetch installed binaries to get version info even when not running
+    let binaryInstalled=false,version=''
+    try{
+      const binData=await client.get(`/node-servers/${props.serverId}/binaries`)
+      const bins=binData?.binaries||[]
+      const bin=bins.find(b=>b.core_type===selectedCore.value)
+      if(bin){binaryInstalled=true;version=bin.version||''}
+    }catch{}
+    if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:binaryInstalled,version:version||s.version||'',pid:s.pid||0,cpu:s.cpu||0,mem:s.mem||0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:binaryInstalled,version:version})
   }catch{}
 }
 
@@ -318,21 +326,23 @@ async function doRestart(){
   }catch{ElMessage.error(t('protoCenter.messages.restartFailed'))}finally{acting.value=false}
 }
 
-async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get(`/node-servers/${props.serverId}/binaries/releases`,{params:{core_type:selectedCore.value,limit:20,offset:0}});releases.value=(d.items||[]).map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
+async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get(`/node-servers/${props.serverId}/binaries/releases`,{params:{core_type:selectedCore.value,limit:20,offset:0}});const items=Array.isArray(d)?d:(d.items||[]);releases.value=items.map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
 
 // Check if a version is already installed on this server
 async function checkInstalledVersion(version){try{const data=await client.get(`/node-servers/${props.serverId}/binaries`);const bins=data?.binaries||[];return!!bins.find(b=>b.core_type===selectedCore.value&&b.version===version)}catch{return false}}
 function isOdd(v){const p=(v||'').replace(/^v/,'').split('.');const n=parseInt(p[p.length-1]);return!isNaN(n)&&n%2!==0}
 async function doDownload(r){
-  await ElMessageBox.confirm(t('protoCenter.version.downloadConfirm', { version: r.version }),t('common.confirm'))
+  await ElMessageBox.confirm(t('protoCenter.switchVersion.downloadConfirm', { version: r.version }),t('common.confirm'))
   downloading.value=true
-  downloadProgress.value=t('protoCenter.version.downloading', { version: r.version })
+  downloadProgress.value=t('protoCenter.switchVersion.downloading', { version: r.version })
   try{
     // Use node-server-scoped install API to download & install binary to the target server
     await client.post(`/node-servers/${props.serverId}/binaries/install`,{core_type:selectedCore.value,version:r.version})
-    downloadProgress.value=t('protoCenter.version.downloadedStarting')
+    downloadProgress.value=t('protoCenter.switchVersion.downloadedStarting')
     // For local server, try to start the core; for remote, the Agent handles it
-    try{await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})}catch(e){/* remote server or already running */}
+    let startError=null
+    try{await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})}catch(e){startError=e}
+    if(startError)console.warn('Start core warning:',startError)
     // Poll for status update
     await new Promise(resolve=>setTimeout(resolve,1000))
     for(let i=0;i<10;i++){
@@ -340,18 +350,24 @@ async function doDownload(r){
         const data=await client.get(`/node-servers/${props.serverId}/status`)
         const s=(data?.cores||[]).find(x=>x.core_type===selectedCore.value)
         if(s&&s.state==='running'){
-          ElMessage.success(t('protoCenter.version.updateDone'))
+          ElMessage.success(t('protoCenter.switchVersion.updateDone'))
           verVisible.value=false
           fetchStatus()
           return
         }
-      }catch{}
+      }catch(e){console.warn('Poll status warning:',e)}
       await new Promise(resolve=>setTimeout(resolve,1000))
     }
-    ElMessage.success(t('protoCenter.version.downloadDone'))
+    ElMessage.warning(t('protoCenter.switchVersion.downloadDoneButNotRunning'))
     verVisible.value=false
     fetchStatus()
-  }catch{ElMessage.error(t('protoCenter.version.downloadFailed'))}finally{downloading.value=false}
+  }catch(e){
+    console.error('Download failed:',e)
+    ElMessage.error(t('protoCenter.switchVersion.downloadFailed'))
+    verVisible.value=false
+  }finally{
+    downloading.value=false
+  }
 }
 
 onMounted(()=>{const s=localStorage.getItem('active_core');if(s&&cores.some(c=>c.type===s))selectCore(s);timer=setInterval(fetchStatus,10000)})

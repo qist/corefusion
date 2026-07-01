@@ -704,7 +704,7 @@ async function fetchOrders() {
 // ──────── Shared data ────────
 async function fetchInbounds() {
   try {
-    const r = await client.get('/inbound-configs')
+    const r = await client.get('/node-servers/1/inbound-configs')
     inbounds.value = Array.isArray(r) ? r : (r.data || [])
   } catch {}
 }

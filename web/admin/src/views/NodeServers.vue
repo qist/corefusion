@@ -56,9 +56,9 @@
               <span v-else style="color:#c0c4cc;font-size:12px">-</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="280" fixed="right">
+          <el-table-column :label="t('common.actions')" width="320" fixed="right">
             <template #default="{row}">
-              <el-button size="small" @click="showDetailDialog(row)">{{ t('nodeServer.detail') }}</el-button>
+              <el-button size="small" type="primary" @click="goToDetail(row)">{{ t('nodeServer.detail') }}</el-button>
               <el-dropdown trigger="click" @command="(cmd) => handleServerAction(cmd, row)" size="small">
                 <el-button size="small">{{ t('nodeServer.actions') }} <el-icon><ArrowDown /></el-icon></el-button>
                 <template #dropdown>
@@ -498,6 +498,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
@@ -515,6 +516,7 @@ import {
 } from '../api/nodeServer'
 
 const { t } = useI18n()
+const router = useRouter()
 
 // ─── Active Tab ───
 const activeTab = ref('servers')
@@ -837,6 +839,10 @@ async function saveForm() {
 }
 
 // ════════════ Detail ════════════
+
+function goToDetail(row) {
+  router.push(`/node-servers/${row.id}/detail`)
+}
 
 async function showDetailDialog(row) {
   detailData.value = row

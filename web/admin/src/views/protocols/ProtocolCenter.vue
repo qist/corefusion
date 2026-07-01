@@ -116,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
@@ -156,6 +156,14 @@ import TuicAdvanced from './sections/TuicAdvanced.vue'
 import JsonPreview from './sections/JsonPreview.vue'
 
 const { t } = useI18n()
+
+const props = defineProps({
+  serverId: { type: Number, default: 0 }
+})
+
+// API base path: use node-server-scoped routes when serverId is provided
+const apiBase = computed(() => props.serverId > 0 ? `/node-servers/${props.serverId}/protocols` : '/protocols')
+const isNodeMode = computed(() => props.serverId > 0)
 
 const cores = [
   { type:'xray', label:'Xray', icon:'⚡', desc:t('protoCenter.cores.xrayDesc') },
@@ -254,14 +262,20 @@ async function saveSection(){
   try{
     if(secData.value===null){
       delete fullConfig.value[activeSection.value]
-      await client.put(`/protocols/${selectedCore.value}`,fullConfig.value)
+      await client.put(`${apiBase.value}/${selectedCore.value}`,fullConfig.value)
     } else {
-      await client.put(`/protocols/${selectedCore.value}/section/${activeSection.value}`,secData.value)
+      await client.put(`${apiBase.value}/${selectedCore.value}/section/${activeSection.value}`,secData.value)
       fullConfig.value[activeSection.value]=secData.value
     }
     // Auto-restart if service is running
-    if(svc.state==='running' && svc.service_id){
-      try{await client.post(`/services/${svc.service_id}/restart`)}catch{}
+    if(svc.state==='running' && (svc.service_id || isNodeMode.value)){
+      try{
+        if(isNodeMode.value){
+          await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
+        } else {
+          await client.post(`/services/${svc.service_id}/restart`)
+        }
+      }catch{}
       ElMessage.success(t('protoCenter.messages.savedAndRestarted'))
     } else {
       ElMessage.success(t('protoCenter.messages.saved'))
@@ -269,20 +283,59 @@ async function saveSection(){
   }catch{ElMessage.error(t('protoCenter.messages.saveFailed'))}finally{saving.value=false}
 }
 
-async function loadConfig(ct){try{fullConfig.value=await client.get(`/protocols/${ct}`)||{}}catch{fullConfig.value={}}}
+async function loadConfig(ct){try{fullConfig.value=await client.get(`${apiBase.value}/${ct}`)||{}}catch{fullConfig.value={}}}
 
 async function fetchStatus(){
   if(!selectedCore.value)return
   try{
-    const data=await client.get('/services/process-status')
-    const s=(data||[]).find(x=>x.core_type===selectedCore.value)
-    if(s)Object.assign(svc,s);else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
+    if(isNodeMode.value){
+      // Use node-server-scoped status API
+      const data=await client.get(`/node-servers/${props.serverId}/status`)
+      const cores=data?.cores||[]
+      const s=cores.find(x=>x.core_type===selectedCore.value)
+      if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:s.state==='running',version:s.version||'',pid:s.pid||0,cpu:s.cpu||0,mem:s.mem||0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
+    } else {
+      const data=await client.get('/services/process-status')
+      const s=(data||[]).find(x=>x.core_type===selectedCore.value)
+      if(s)Object.assign(svc,s);else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
+    }
   }catch{}
 }
 
-async function doStart(){if(!svc.service_id)return;acting.value=true;try{await client.post(`/services/${svc.service_id}/start`);ElMessage.success(t('protoCenter.messages.started'));fetchStatus()}catch{ElMessage.error(t('protoCenter.messages.startFailed'))}finally{acting.value=false}}
-async function doStop(){if(!svc.service_id)return;await ElMessageBox.confirm(t('protoCenter.messages.stopConfirm'),t('common.confirm'));acting.value=true;try{await client.post(`/services/${svc.service_id}/stop`);ElMessage.success(t('protoCenter.messages.stopped'));fetchStatus()}catch{ElMessage.error(t('protoCenter.messages.stopFailed'))}finally{acting.value=false}}
-async function doRestart(){if(!svc.service_id)return;acting.value=true;try{await client.post(`/services/${svc.service_id}/restart`);ElMessage.success(t('protoCenter.messages.restarted'));fetchStatus()}catch{ElMessage.error(t('protoCenter.messages.restartFailed'))}finally{acting.value=false}}
+async function doStart(){
+  acting.value=true
+  try{
+    if(isNodeMode.value){
+      await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})
+    } else if(svc.service_id){
+      await client.post(`/services/${svc.service_id}/start`)
+    }
+    ElMessage.success(t('protoCenter.messages.started'));fetchStatus()
+  }catch{ElMessage.error(t('protoCenter.messages.startFailed'))}finally{acting.value=false}
+}
+async function doStop(){
+  await ElMessageBox.confirm(t('protoCenter.messages.stopConfirm'),t('common.confirm'))
+  acting.value=true
+  try{
+    if(isNodeMode.value){
+      await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'stop'})
+    } else if(svc.service_id){
+      await client.post(`/services/${svc.service_id}/stop`)
+    }
+    ElMessage.success(t('protoCenter.messages.stopped'));fetchStatus()
+  }catch{ElMessage.error(t('protoCenter.messages.stopFailed'))}finally{acting.value=false}
+}
+async function doRestart(){
+  acting.value=true
+  try{
+    if(isNodeMode.value){
+      await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
+    } else if(svc.service_id){
+      await client.post(`/services/${svc.service_id}/restart`)
+    }
+    ElMessage.success(t('protoCenter.messages.restarted'));fetchStatus()
+  }catch{ElMessage.error(t('protoCenter.messages.restartFailed'))}finally{acting.value=false}
+}
 
 async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get('/binaries/releases',{params:{core_type:selectedCore.value,limit:20,offset:0}});releases.value=(d.items||[]).map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
 function isOdd(v){const p=(v||'').replace(/^v/,'').split('.');const n=parseInt(p[p.length-1]);return!isNaN(n)&&n%2!==0}

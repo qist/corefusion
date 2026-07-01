@@ -71,15 +71,13 @@ const currentLocaleName = computed(() => {
 
 const menuItems = [
   { path: '/dashboard', title: 'menu.dashboard', icon: 'Odometer' },
-  { path: '/protocols', title: 'menu.protoCenter', icon: 'Connection' },
+  { path: '/node-servers', title: 'menu.nodeServers', icon: 'Cpu' },
   { path: '/services', title: 'menu.services', icon: 'Monitor' },
   { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link' },
   { path: '/plans', title: 'menu.planManagement', icon: 'Tickets' },
-  { path: '/node-servers', title: 'menu.nodeServers', icon: 'Cpu' },
   { path: '/clients', title: 'menu.clients', icon: 'User' },
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
   { path: '/users', title: 'menu.users', icon: 'User' },
-  { path: '/proxy', title: 'menu.proxy', icon: 'Monitor' },
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting' },
 ]

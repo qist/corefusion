@@ -793,6 +793,30 @@ func (s *Service) SyncServerConfig(ctx context.Context, serverID int64, coreType
 	return s.nodeMgr.SyncConfig(ctx, serverID, coreType, config, version)
 }
 
+// IsLocalServer checks if a server is the local panel server.
+func (s *Service) IsLocalServer(ctx context.Context, serverID int64) bool {
+	if s.nodeMgr == nil {
+		return false
+	}
+	return s.nodeMgr.IsLocalServer(serverID)
+}
+
+// ControlProxy controls a proxy process (caddy/nginx) on a specific server.
+func (s *Service) ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error {
+	if s.nodeMgr == nil {
+		return fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.ControlProxy(ctx, serverID, proxyType, action)
+}
+
+// SyncProxyConfig syncs proxy configuration to a specific server.
+func (s *Service) SyncProxyConfig(ctx context.Context, serverID int64, proxyType string, config []byte) error {
+	if s.nodeMgr == nil {
+		return fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.SyncProxyConfig(ctx, serverID, proxyType, config)
+}
+
 // GetBootstrapCommand generates the bootstrap installation command for a server.
 func (s *Service) GetBootstrapCommand(ctx context.Context, serverID int64, panelHost string, panelPort int) (string, error) {
 	required, err := s.tokenMgr.IsBootstrapRequired(ctx, serverID)

@@ -69,6 +69,11 @@ func (m *NodeServerManager) isLocalServer(serverID int64) bool {
 	return server.IsLocal
 }
 
+// IsLocalServer is the exported version of isLocalServer.
+func (m *NodeServerManager) IsLocalServer(serverID int64) bool {
+	return m.isLocalServer(serverID)
+}
+
 // AgentConnection represents an active connection to a remote Agent.
 type AgentConnection struct {
 	mu          sync.Mutex
@@ -309,6 +314,9 @@ func (m *NodeServerManager) AlterUsersOnServer(ctx context.Context, serverID int
 	if ac == nil {
 		return fmt.Errorf("server %d not connected", serverID)
 	}
+	if ac.agentClient == nil {
+		return fmt.Errorf("server %d agent client not available", serverID)
+	}
 	resp, err := ac.agentClient.AlterUsers(ctx, req)
 	if err != nil {
 		return err
@@ -324,6 +332,9 @@ func (m *NodeServerManager) ApplyLimitsOnServer(ctx context.Context, serverID in
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return fmt.Errorf("server %d agent client not available", serverID)
 	}
 	resp, err := ac.agentClient.ApplyLimits(ctx, req)
 	if err != nil {
@@ -361,6 +372,9 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 	if ac == nil {
 		return fmt.Errorf("server %d not connected", serverID)
 	}
+	if ac.agentClient == nil {
+		return fmt.Errorf("server %d agent client not available", serverID)
+	}
 	resp, err := ac.agentClient.SyncProxyConfig(ctx, &agentpb.SyncProxyConfigRequest{
 		ProxyType:     proxyType,
 		ConfigContent: config,
@@ -396,6 +410,9 @@ func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, pr
 	if ac == nil {
 		return fmt.Errorf("server %d not connected", serverID)
 	}
+	if ac.agentClient == nil {
+		return fmt.Errorf("server %d agent client not available", serverID)
+	}
 	resp, err := ac.agentClient.ControlProxy(ctx, &agentpb.ControlProxyRequest{
 		ProxyType: proxyType,
 		Action:    action,
@@ -420,6 +437,9 @@ func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID in
 	if ac == nil {
 		return nil, fmt.Errorf("server %d not connected", serverID)
 	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
 	return ac.agentClient.UpdateAgent(ctx, &agentpb.UpdateAgentRequest{
 		TargetVersion: version,
 		DownloadUrl:   downloadURL,
@@ -432,6 +452,9 @@ func (m *NodeServerManager) SpeedTestOnServer(ctx context.Context, serverID int6
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
 	}
 	return ac.agentClient.SpeedTest(ctx, &agentpb.SpeedTestRequest{
 		TargetHost: targetHost,
@@ -446,6 +469,9 @@ func (m *NodeServerManager) GetMetricsFromServer(ctx context.Context, serverID i
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
 	}
 	return ac.agentClient.GetMetrics(ctx, &agentpb.GetMetricsRequest{
 		LastNPoints: lastNPoints,
@@ -568,6 +594,9 @@ func (m *NodeServerManager) SyncConfigToServer(ctx context.Context, serverID int
 	if ac == nil {
 		return fmt.Errorf("server %d not connected", serverID)
 	}
+	if ac.agentClient == nil {
+		return fmt.Errorf("server %d agent client not available (commands sent via heartbeat stream)", serverID)
+	}
 	_, err := ac.agentClient.SyncConfig(ctx, &agentpb.SyncConfigRequest{
 		CoreType:      coreType,
 		ConfigContent: config,
@@ -581,6 +610,9 @@ func (m *NodeServerManager) ControlCoreOnServer(ctx context.Context, serverID in
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return fmt.Errorf("server %d agent client not available (commands sent via heartbeat stream)", serverID)
 	}
 	resp, err := ac.agentClient.ControlCore(ctx, &agentpb.ControlCoreRequest{
 		CoreType: coreType,

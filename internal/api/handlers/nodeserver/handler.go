@@ -1199,5 +1199,113 @@ func (h *Handler) ListReleases(c *gin.Context) {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return
 	}
+	// Ensure we return an empty array instead of null
+	if result == nil {
+		result = []interface{}{}
+	}
+	response.OK(c, result)
+}
+
+// GenerateX25519Key handles POST /api/v1/node-servers/:id/binaries/x25519-key.
+// Generates an X25519 key pair using the xray binary on the target node.
+func (h *Handler) GenerateX25519Key(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "x25519")
+	if err != nil {
+		response.InternalError(c, "EXEC_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// GenerateMldsa65Key handles POST /api/v1/node-servers/:id/binaries/mldsa65-key.
+// Generates an ML-DSA-65 key pair using the xray binary on the target node.
+func (h *Handler) GenerateMldsa65Key(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "mldsa65")
+	if err != nil {
+		response.InternalError(c, "EXEC_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// GenerateWgKey handles POST /api/v1/node-servers/:id/binaries/wg-key.
+// Generates a WireGuard key pair using the xray binary on the target node.
+func (h *Handler) GenerateWgKey(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	coreType := c.DefaultQuery("core_type", "xray")
+	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, coreType, "wg")
+	if err != nil {
+		response.InternalError(c, "EXEC_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// GenerateEchKeys handles POST /api/v1/node-servers/:id/binaries/ech-generate.
+// Generates ECH server keys using the xray binary on the target node.
+func (h *Handler) GenerateEchKeys(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	var req struct {
+		ServerName string `json:"server_name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_BODY", "server_name is required")
+		return
+	}
+	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "tls", "ech", "--serverName", req.ServerName)
+	if err != nil {
+		response.InternalError(c, "EXEC_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// GenerateVlessEnc handles POST /api/v1/node-servers/:id/binaries/vlessenc.
+// Generates VLESS encryption keys using the xray binary on the target node.
+func (h *Handler) GenerateVlessEnc(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "vlessenc")
+	if err != nil {
+		response.InternalError(c, "EXEC_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// ListInterfaces handles GET /api/v1/node-servers/:id/binaries/interfaces.
+// Returns a list of network interface names on the target node.
+func (h *Handler) ListInterfaces(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.svc.ListInterfaces(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
 	response.OK(c, result)
 }

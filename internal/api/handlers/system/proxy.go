@@ -16,12 +16,52 @@ type ProxyHandler struct {
 	proxyMgr *proxy.Manager
 	caddyMgr *proxy.CaddyManager
 	nginxMgr *proxy.NginxManager
+	nodeOp   NodeOperator
 }
 
 // NewProxyHandler creates a new proxy handler.
 func NewProxyHandler(proxyMgr *proxy.Manager, caddyMgr *proxy.CaddyManager, nginxMgr *proxy.NginxManager) *ProxyHandler {
 	return &ProxyHandler{proxyMgr: proxyMgr, caddyMgr: caddyMgr, nginxMgr: nginxMgr}
 }
+
+// SetNodeOperator sets the node operator for remote proxy operations.
+func (h *ProxyHandler) SetNodeOperator(op NodeOperator) {
+	h.nodeOp = op
+}
+
+// applyServerID extracts the server ID from the URL and sets it on all managers
+// so that site queries filter by the correct node. Returns the server ID and
+// whether it is the local node.
+func (h *ProxyHandler) applyServerID(c *gin.Context) (int64, bool) {
+	serverID := parseServerID(c)
+	isLocal := serverID == localServerID || serverID == 0
+	if !isLocal && h.nodeOp != nil {
+		isLocal = h.nodeOp.IsLocalServer(c.Request.Context(), serverID)
+	}
+	// Set serverID on all managers for per-node site filtering.
+	// For local nodes this is always 1; for remote nodes it's the remote server's ID.
+	sid := serverID
+	if sid == 0 {
+		sid = localServerID
+	}
+	h.proxyMgr.SetServerID(sid)
+	h.caddyMgr.SetServerID(sid)
+	h.nginxMgr.SetServerID(sid)
+	return sid, isLocal
+}
+
+// parseServerID extracts the :id parameter from the URL and returns it.
+// Returns 0 if the parameter is missing or invalid.
+func parseServerID(c *gin.Context) int64 {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// localServerID is the server ID of the local node.
+const localServerID = int64(1)
 
 // GetStatus handles GET /api/v1/proxy/status.
 func (h *ProxyHandler) GetStatus(c *gin.Context) {
@@ -123,9 +163,18 @@ func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 	response.OK(c, gin.H{"path": path, "version": req.TagName, "type": req.Type})
 }
 
-// Start handles POST /api/v1/proxy/start.
+// Start handles POST /api/v1/node-servers/:id/proxy/start.
 func (h *ProxyHandler) Start(c *gin.Context) {
 	proxyType := proxy.ProxyType(c.Query("type"))
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		if err := h.nodeOp.ControlProxy(c.Request.Context(), serverID, string(proxyType), "start"); err != nil {
+			response.InternalError(c, "START_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"message": "started"})
+		return
+	}
 	if err := h.proxyMgr.StartProxy(c.Request.Context(), proxyType); err != nil {
 		response.InternalError(c, "START_FAILED", err.Error())
 		return
@@ -133,9 +182,18 @@ func (h *ProxyHandler) Start(c *gin.Context) {
 	response.OK(c, gin.H{"message": "started"})
 }
 
-// Stop handles POST /api/v1/proxy/stop.
+// Stop handles POST /api/v1/node-servers/:id/proxy/stop.
 func (h *ProxyHandler) Stop(c *gin.Context) {
 	proxyType := proxy.ProxyType(c.Query("type"))
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		if err := h.nodeOp.ControlProxy(c.Request.Context(), serverID, string(proxyType), "stop"); err != nil {
+			response.InternalError(c, "STOP_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"message": "stopped"})
+		return
+	}
 	if err := h.proxyMgr.StopProxy(c.Request.Context(), proxyType); err != nil {
 		response.InternalError(c, "STOP_FAILED", err.Error())
 		return
@@ -143,9 +201,18 @@ func (h *ProxyHandler) Stop(c *gin.Context) {
 	response.OK(c, gin.H{"message": "stopped"})
 }
 
-// Restart handles POST /api/v1/proxy/restart.
+// Restart handles POST /api/v1/node-servers/:id/proxy/restart.
 func (h *ProxyHandler) Restart(c *gin.Context) {
 	proxyType := proxy.ProxyType(c.Query("type"))
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		if err := h.nodeOp.ControlProxy(c.Request.Context(), serverID, string(proxyType), "restart"); err != nil {
+			response.InternalError(c, "RESTART_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"message": "restarted"})
+		return
+	}
 	if err := h.proxyMgr.RestartProxy(c.Request.Context(), proxyType); err != nil {
 		response.InternalError(c, "RESTART_FAILED", err.Error())
 		return
@@ -153,9 +220,18 @@ func (h *ProxyHandler) Restart(c *gin.Context) {
 	response.OK(c, gin.H{"message": "restarted"})
 }
 
-// Reload handles POST /api/v1/proxy/reload.
+// Reload handles POST /api/v1/node-servers/:id/proxy/reload.
 func (h *ProxyHandler) Reload(c *gin.Context) {
 	proxyType := proxy.ProxyType(c.Query("type"))
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		if err := h.nodeOp.ControlProxy(c.Request.Context(), serverID, string(proxyType), "reload"); err != nil {
+			response.InternalError(c, "RELOAD_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"message": "reloaded"})
+		return
+	}
 	if err := h.proxyMgr.ReloadProxy(c.Request.Context(), proxyType); err != nil {
 		response.InternalError(c, "RELOAD_FAILED", err.Error())
 		return
@@ -165,8 +241,9 @@ func (h *ProxyHandler) Reload(c *gin.Context) {
 
 // --- Site Management ---
 
-// ListSites handles GET /api/v1/proxy/sites.
+// ListSites handles GET /api/v1/node-servers/:id/proxy/sites.
 func (h *ProxyHandler) ListSites(c *gin.Context) {
+	h.applyServerID(c)
 	proxyType := c.Query("type")
 	var sites []entity.ProxySite
 	var err error
@@ -185,8 +262,9 @@ func (h *ProxyHandler) ListSites(c *gin.Context) {
 	response.OK(c, sites)
 }
 
-// CreateSite handles POST /api/v1/proxy/sites.
+// CreateSite handles POST /api/v1/node-servers/:id/proxy/sites.
 func (h *ProxyHandler) CreateSite(c *gin.Context) {
+	h.applyServerID(c)
 	var req struct {
 		ProxyType     string `json:"proxy_type"`
 		Domain        string `json:"domain" binding:"required"`
@@ -262,6 +340,7 @@ func (h *ProxyHandler) CreateSite(c *gin.Context) {
 
 // UpdateSite handles PUT /api/v1/node-servers/:id/proxy/sites/:siteId.
 func (h *ProxyHandler) UpdateSite(c *gin.Context) {
+	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -398,6 +477,7 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 
 // DeleteSite handles DELETE /api/v1/node-servers/:id/proxy/sites/:siteId.
 func (h *ProxyHandler) DeleteSite(c *gin.Context) {
+	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -410,8 +490,11 @@ func (h *ProxyHandler) DeleteSite(c *gin.Context) {
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
-// GenerateConfig handles POST /api/v1/proxy/generate-config.
+// GenerateConfig handles POST /api/v1/node-servers/:id/proxy/generate-config.
+// For local nodes, generates config and writes to local disk.
+// For remote nodes, generates config and syncs to the remote Agent via gRPC.
 func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
+	serverID, isLocal := h.applyServerID(c)
 	var req struct {
 		Type string `json:"type" binding:"required"`
 	}
@@ -421,26 +504,31 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 	}
 
 	proxyType := proxy.ProxyType(req.Type)
+	var config string
+	var genErr error
 	switch proxyType {
 	case proxy.ProxyCaddy:
-		config, err := h.caddyMgr.GenerateConfig(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "GENERATE_FAILED", err.Error())
-			return
-		}
-		h.proxyMgr.WriteConfigFile(proxy.ProxyCaddy, config)
-		response.OK(c, gin.H{"config": config})
+		config, genErr = h.caddyMgr.GenerateConfig(c.Request.Context())
 	case proxy.ProxyNginx:
-		config, err := h.nginxMgr.GenerateConfig(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "GENERATE_FAILED", err.Error())
-			return
-		}
-		h.proxyMgr.WriteConfigFile(proxy.ProxyNginx, config)
-		response.OK(c, gin.H{"config": config})
+		config, genErr = h.nginxMgr.GenerateConfig(c.Request.Context())
 	default:
 		response.BadRequest(c, "UNSUPPORTED", "unsupported proxy type")
+		return
 	}
+	if genErr != nil {
+		response.InternalError(c, "GENERATE_FAILED", genErr.Error())
+		return
+	}
+
+	if isLocal {
+		h.proxyMgr.WriteConfigFile(proxyType, config)
+	} else if h.nodeOp != nil {
+		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(config)); err != nil {
+			response.InternalError(c, "SYNC_FAILED", err.Error())
+			return
+		}
+	}
+	response.OK(c, gin.H{"config": config})
 }
 
 // GetConfig handles GET /api/v1/proxy/config.
@@ -450,8 +538,9 @@ func (h *ProxyHandler) GetConfig(c *gin.Context) {
 	response.OK(c, gin.H{"config": config, "path": h.proxyMgr.GetConfigPath(proxyType)})
 }
 
-// UpdateConfig handles PUT /api/v1/proxy/config.
+// UpdateConfig handles PUT /api/v1/node-servers/:id/proxy/config.
 func (h *ProxyHandler) UpdateConfig(c *gin.Context) {
+	serverID, isLocal := h.applyServerID(c)
 	var req struct {
 		Type   string `json:"type" binding:"required"`
 		Config string `json:"config" binding:"required"`
@@ -469,20 +558,33 @@ func (h *ProxyHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	// Save config
-	if err := h.proxyMgr.WriteConfigFile(proxyType, req.Config); err != nil {
-		response.InternalError(c, "WRITE_FAILED", err.Error())
-		return
-	}
-
-	// Auto-reload if proxy is running
-	proxyInfo := h.proxyMgr.DetectProxy(proxyType)
-	if proxyInfo.Status == "running" {
-		if err := h.proxyMgr.ReloadProxy(c.Request.Context(), proxyType); err != nil {
-			response.OK(c, gin.H{"message": "config saved", "reload_error": err.Error()})
+	// Save / sync config
+	if isLocal {
+		if err := h.proxyMgr.WriteConfigFile(proxyType, req.Config); err != nil {
+			response.InternalError(c, "WRITE_FAILED", err.Error())
 			return
 		}
-		response.OK(c, gin.H{"message": "config saved and reloaded"})
+		// Auto-reload if proxy is running
+		proxyInfo := h.proxyMgr.DetectProxy(proxyType)
+		if proxyInfo.Status == "running" {
+			if err := h.proxyMgr.ReloadProxy(c.Request.Context(), proxyType); err != nil {
+				response.OK(c, gin.H{"message": "config saved", "reload_error": err.Error()})
+				return
+			}
+			response.OK(c, gin.H{"message": "config saved and reloaded"})
+			return
+		}
+	} else if h.nodeOp != nil {
+		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(req.Config)); err != nil {
+			response.InternalError(c, "SYNC_FAILED", err.Error())
+			return
+		}
+		// Reload remote proxy
+		if err := h.nodeOp.ControlProxy(c.Request.Context(), serverID, string(proxyType), "reload"); err != nil {
+			response.OK(c, gin.H{"message": "config synced", "reload_error": err.Error()})
+			return
+		}
+		response.OK(c, gin.H{"message": "config synced and reloaded"})
 		return
 	}
 
@@ -574,8 +676,9 @@ func (h *ProxyHandler) SaveLogSettings(c *gin.Context) {
 	response.OK(c, gin.H{"output": req.Output, "path": req.Path})
 }
 
-// BatchUpdatePorts handles POST /api/v1/proxy/batch-update-ports.
+// BatchUpdatePorts handles POST /api/v1/node-servers/:id/proxy/batch-update-ports.
 func (h *ProxyHandler) BatchUpdatePorts(c *gin.Context) {
+	h.applyServerID(c)
 	var req struct {
 		Port   string `json:"port" binding:"required"`
 		Enable bool   `json:"enable"`
@@ -592,8 +695,9 @@ func (h *ProxyHandler) BatchUpdatePorts(c *gin.Context) {
 	response.OK(c, gin.H{"updated": count})
 }
 
-// DeleteAllSNI handles DELETE /api/v1/proxy/sni-rules.
+// DeleteAllSNI handles DELETE /api/v1/node-servers/:id/proxy/sni-rules.
 func (h *ProxyHandler) DeleteAllSNI(c *gin.Context) {
+	h.applyServerID(c)
 	count, err := h.proxyMgr.DeleteAllSNI(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
@@ -602,8 +706,9 @@ func (h *ProxyHandler) DeleteAllSNI(c *gin.Context) {
 	response.OK(c, gin.H{"deleted": count})
 }
 
-// ToggleSNI handles POST /api/v1/proxy/sni-rules/toggle.
+// ToggleSNI handles POST /api/v1/node-servers/:id/proxy/sni-rules/toggle.
 func (h *ProxyHandler) ToggleSNI(c *gin.Context) {
+	h.applyServerID(c)
 	var req struct {
 		Enabled   bool   `json:"enabled"`
 		ProxyType string `json:"proxy_type"`
@@ -642,8 +747,9 @@ func (h *ProxyHandler) SaveL4Settings(c *gin.Context) {
 	response.OK(c, gin.H{"enabled": req.Enabled})
 }
 
-// DeleteAllL4 handles DELETE /api/v1/proxy/l4-rules.
+// DeleteAllL4 handles DELETE /api/v1/node-servers/:id/proxy/l4-rules.
 func (h *ProxyHandler) DeleteAllL4(c *gin.Context) {
+	h.applyServerID(c)
 	count, err := h.proxyMgr.DeleteAllL4(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())

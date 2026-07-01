@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 )
 
@@ -209,8 +210,9 @@ func (h *Handler) ValidateProtocol(c *gin.Context) {
 // ──────────────────── Proxy Management ────────────────────
 
 // GetProxyStatus handles GET /api/v1/node-servers/:id/proxy/status
-// For local nodes, returns detailed proxy status. For remote nodes, returns
-// a simplified status from the Agent's last heartbeat.
+// For local nodes, returns detailed proxy status (via proxyH.GetStatus).
+// For remote nodes, queries the Agent via gRPC and transforms the response
+// into the same { caddy, nginx, active_proxy } format the frontend expects.
 func (h *Handler) GetProxyStatus(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -218,22 +220,24 @@ func (h *Handler) GetProxyStatus(c *gin.Context) {
 		return
 	}
 
-	// For local nodes or when proxyH is available, delegate to it
-	if h.proxyH != nil {
-		// Check if this is the local node
-		if h.svc.IsLocalServer(c.Request.Context(), serverID) {
-			h.proxyH.GetStatus(c)
-			return
-		}
+	// For local nodes, delegate to the proxy handler
+	if h.proxyH != nil && h.svc.IsLocalServer(c.Request.Context(), serverID) {
+		h.proxyH.GetStatus(c)
+		return
 	}
 
-	// For remote nodes, return cached status from the service
-	status, err := h.svc.GetServerStatus(c.Request.Context(), serverID)
+	// For remote nodes, query proxy status via gRPC
+	result, err := h.svc.GetProxyStatusRemote(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "PROXY_STATUS_FAILED", err.Error())
 		return
 	}
-	response.OK(c, status)
+
+	// Transform the gRPC response into the format expected by the frontend.
+	// The gRPC GetProxyStatusResponse has a `proxies` array; we need to
+	// convert it to { caddy: {...}, nginx: {...}, active_proxy: "..." }.
+	resp := transformProxyStatus(result)
+	response.OK(c, resp)
 }
 
 // ControlProxy handles POST /api/v1/node-servers/:id/proxy/control
@@ -346,4 +350,48 @@ func isValidCoreType(ct string) bool {
 		}
 	}
 	return false
+}
+
+// transformProxyStatus converts a gRPC GetProxyStatusResponse (which has a
+// `proxies` array) into the { caddy, nginx, active_proxy } map format that
+// the frontend (CaddyProxy.vue / NginxProxy.vue) expects.
+func transformProxyStatus(raw interface{}) gin.H {
+	resp := gin.H{
+		"active_proxy":    "",
+		"caddy":           gin.H{"type": "caddy", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
+		"nginx":           gin.H{"type": "nginx", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
+		"panel_port":      "8080",
+		"caddy_guardian":  nil,
+		"nginx_guardian":  nil,
+	}
+
+	if pb, ok := raw.(*agentpb.GetProxyStatusResponse); ok && pb != nil {
+		active := ""
+		for _, p := range pb.Proxies {
+			entry := gin.H{
+				"type":      p.Type,
+				"name":      p.Name,
+				"installed": p.Installed,
+				"status":    p.Status,
+				"version":   p.Version,
+				"path":      p.Path,
+				"managed":   p.Managed,
+			}
+			switch p.Type {
+			case "caddy":
+				resp["caddy"] = entry
+				if p.Status == "running" {
+					active = "caddy"
+				}
+			case "nginx":
+				resp["nginx"] = entry
+				if p.Status == "running" && active == "" {
+					active = "nginx"
+				}
+			}
+		}
+		resp["active_proxy"] = active
+	}
+
+	return resp
 }

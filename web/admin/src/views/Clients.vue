@@ -509,7 +509,7 @@ async function fetchClients() {
     subscriptions.value = subs.filter(Boolean)
   } catch {} finally { clientLoading.value = false }
 }
-async function fetchInbounds() { try { const r = await client.get('/inbound-configs'); inbounds.value = Array.isArray(r) ? r : r.data || [] } catch {} }
+async function fetchInbounds() { try { const r = await client.get('/node-servers/1/inbound-configs'); inbounds.value = Array.isArray(r) ? r : r.data || [] } catch {} }
 
 // Plan CRUD
 function showCreatePlan() {

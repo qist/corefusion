@@ -14,6 +14,7 @@ import (
 type CaddyHandler struct {
 	caddyMgr *proxy.CaddyManager
 	proxyMgr *proxy.Manager
+	nodeOp   NodeOperator
 }
 
 // NewCaddyHandler creates a new Caddy handler.
@@ -21,9 +22,32 @@ func NewCaddyHandler(caddyMgr *proxy.CaddyManager, proxyMgr *proxy.Manager) *Cad
 	return &CaddyHandler{caddyMgr: caddyMgr, proxyMgr: proxyMgr}
 }
 
+// SetNodeOperator sets the node operator for remote proxy operations.
+func (h *CaddyHandler) SetNodeOperator(op NodeOperator) {
+	h.nodeOp = op
+}
+
+// applyServerID extracts the server ID from the URL and sets it on the managers
+// so that site queries filter by the correct node.
+func (h *CaddyHandler) applyServerID(c *gin.Context) (int64, bool) {
+	serverID := parseServerID(c)
+	isLocal := serverID == localServerID || serverID == 0
+	if !isLocal && h.nodeOp != nil {
+		isLocal = h.nodeOp.IsLocalServer(c.Request.Context(), serverID)
+	}
+	sid := serverID
+	if sid == 0 {
+		sid = localServerID
+	}
+	h.caddyMgr.SetServerID(sid)
+	h.proxyMgr.SetServerID(sid)
+	return sid, isLocal
+}
+
 // --- Site Management ---
 
 func (h *CaddyHandler) ListSites(c *gin.Context) {
+	h.applyServerID(c)
 	sites, err := h.caddyMgr.ListSites(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
@@ -36,6 +60,7 @@ func (h *CaddyHandler) ListSites(c *gin.Context) {
 }
 
 func (h *CaddyHandler) CreateSite(c *gin.Context) {
+	h.applyServerID(c)
 	var req struct {
 		Domain        string `json:"domain" binding:"required"`
 		Upstream      string `json:"upstream"`
@@ -89,6 +114,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 }
 
 func (h *CaddyHandler) UpdateSite(c *gin.Context) {
+	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -151,6 +177,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 }
 
 func (h *CaddyHandler) DeleteSite(c *gin.Context) {
+	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -166,20 +193,35 @@ func (h *CaddyHandler) DeleteSite(c *gin.Context) {
 // --- Config ---
 
 func (h *CaddyHandler) GenerateConfig(c *gin.Context) {
+	serverID, isLocal := h.applyServerID(c)
 	config, err := h.caddyMgr.GenerateConfig(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "GENERATE_FAILED", err.Error())
 		return
 	}
-	h.proxyMgr.WriteConfigFile(proxy.ProxyCaddy, config)
+	if isLocal {
+		h.proxyMgr.WriteConfigFile(proxy.ProxyCaddy, config)
+	} else if h.nodeOp != nil {
+		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config)); err != nil {
+			response.InternalError(c, "SYNC_FAILED", err.Error())
+			return
+		}
+	}
 	response.OK(c, gin.H{"config": config})
 }
 
 func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
+	serverID, isLocal := h.applyServerID(c)
 	config, err := h.caddyMgr.SaveAndApply(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
+	}
+	if !isLocal && h.nodeOp != nil {
+		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config)); err != nil {
+			response.InternalError(c, "SYNC_FAILED", err.Error())
+			return
+		}
 	}
 	response.OK(c, gin.H{"config": config})
 }
@@ -209,6 +251,7 @@ func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
 }
 
 func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
+	h.applyServerID(c)
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -225,6 +268,7 @@ func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
 }
 
 func (h *CaddyHandler) DeleteAllSNI(c *gin.Context) {
+	h.applyServerID(c)
 	count, err := h.caddyMgr.DeleteAllSNI(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
@@ -234,6 +278,7 @@ func (h *CaddyHandler) DeleteAllSNI(c *gin.Context) {
 }
 
 func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
+	h.applyServerID(c)
 	var req struct {
 		Port   string `json:"port" binding:"required"`
 		Enable bool   `json:"enable"`
@@ -253,6 +298,7 @@ func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
 // --- L4 ---
 
 func (h *CaddyHandler) DeleteAllL4(c *gin.Context) {
+	h.applyServerID(c)
 	count, err := h.caddyMgr.DeleteAllL4(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())

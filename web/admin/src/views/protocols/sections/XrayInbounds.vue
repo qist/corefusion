@@ -2142,8 +2142,12 @@ import client from '../../../api/client'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
 const { t } = useI18n()
-const props = defineProps({ data: Array, coreType: String })
+const props = defineProps({ data: Array, coreType: String, serverId: Number })
 defineEmits(['update'])
+
+// Helper to build node-server-scoped API paths
+const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+const apiBase = computed(() => `${nodeBase.value}/binaries`)
 
 const form = ref([])
 const dlg = ref(false)
@@ -2244,7 +2248,7 @@ function getProtocolTagType(protocol) {
 async function fetchXrayStats() {
   try {
     statsLoading.value = true
-    const data = await client.get('/xray/stats')
+    const data = await client.get(`${nodeBase.value}/xray/stats`)
     if (data) {
       xrayStats.value = data
     }
@@ -2262,7 +2266,7 @@ async function resetAllTraffic() {
     const users = xrayStats.value.users || []
     for (const u of users) {
       try {
-        await client.post(`/xray/stats/reset/${u.email}`)
+        await client.post(`${nodeBase.value}/xray/stats/reset/${u.email}`)
       } catch {}
     }
     // Refresh stats
@@ -3201,7 +3205,7 @@ async function confirmResetTraffic() {
       delete configJson._remark
       delete configJson._enabled
       delete configJson._id
-      await client.put(`/inbound-configs/${ib._id}`, {
+      await client.put(`${nodeBase.value}/inbound-configs/${ib._id}`, {
         core_type: props.coreType || 'xray',
         remark: ib._remark || '',
         protocol: ib.protocol,
@@ -3267,7 +3271,7 @@ async function confirmAddUser() {
         apiPayload.method = ib.settings.method
       }
     }
-    await client.post(`/xray/control/inbound/${addUserTag.value}/user`, apiPayload)
+    await client.post(`${nodeBase.value}/xray/control/inbound/${addUserTag.value}/user`, apiPayload)
 
     // Also add to DB config
     const ib = form.value.find(i => i.tag === addUserTag.value)
@@ -3307,7 +3311,7 @@ async function confirmAddUser() {
       delete configJson._remark
       delete configJson._enabled
       delete configJson._id
-      await client.put(`/inbound-configs/${ib._id}`, {
+      await client.put(`${nodeBase.value}/inbound-configs/${ib._id}`, {
         core_type: props.coreType || 'xray',
         remark: ib._remark || '',
         protocol: ib.protocol,
@@ -3342,13 +3346,13 @@ async function pauseUser(user) {
   try {
     // Step 1: Remove from xray runtime first
     try {
-      await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${encodeURIComponent(user.email)}`)
+      await client.delete(`${nodeBase.value}/xray/control/inbound/${manageUsersTag.value}/user/${encodeURIComponent(user.email)}`)
     } catch (xrayErr) {
       console.warn('Failed to remove from xray runtime:', xrayErr)
       // Continue even if xray removal fails (user might not be in xray)
     }
     // Step 2: Update DB to mark as paused
-    await client.post(`/inbound-configs/${inbound._id}/users/${user.email}/pause`)
+    await client.post(`${nodeBase.value}/inbound-configs/${inbound._id}/users/${user.email}/pause`)
     user._paused = true
     ElMessage.success(`User ${user.email} paused`)
   } catch (e) {
@@ -3365,7 +3369,7 @@ async function resumeUser(user) {
   }
   try {
     // Step 1: Update DB to mark as active
-    await client.post(`/inbound-configs/${inbound._id}/users/${user.email}/resume`)
+    await client.post(`${nodeBase.value}/inbound-configs/${inbound._id}/users/${user.email}/resume`)
     // Step 2: Add back to xray runtime
     const apiPayload = { email: user.email }
     if (inbound.protocol === 'vless') {
@@ -3381,7 +3385,7 @@ async function resumeUser(user) {
     } else if (inbound.protocol === 'hysteria') {
       apiPayload.password = user.auth || user.password
     }
-    await client.post(`/xray/control/inbound/${manageUsersTag.value}/user`, apiPayload)
+    await client.post(`${nodeBase.value}/xray/control/inbound/${manageUsersTag.value}/user`, apiPayload)
     user._paused = false
     ElMessage.success(`User ${user.email} resumed`)
   } catch (e) {
@@ -3392,7 +3396,7 @@ async function resumeUser(user) {
 async function removeUserFromXray(user) {
   try {
     // Remove from xray runtime
-    await client.delete(`/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
+    await client.delete(`${nodeBase.value}/xray/control/inbound/${manageUsersTag.value}/user/${user.email}`)
 
     // Remove from DB config
     const ib = form.value.find(i => i.tag === manageUsersTag.value)
@@ -3406,7 +3410,7 @@ async function removeUserFromXray(user) {
         delete configJson._remark
         delete configJson._enabled
         delete configJson._id
-        await client.put(`/inbound-configs/${ib._id}`, {
+        await client.put(`${nodeBase.value}/inbound-configs/${ib._id}`, {
           core_type: 'xray',
           remark: ib._remark || '',
           protocol: ib.protocol,
@@ -3492,7 +3496,7 @@ function genPort() { return Math.floor(Math.random() * 50000 + 10000) }
 function genId(len) { const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < len; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
 async function genWgKeyPair() {
   try {
-    const data = await client.post('/binaries/wg-key?core_type=' + (props.coreType || 'xray'))
+    const data = await client.post(`${apiBase.value}/wg-key?core_type=` + (props.coreType || 'xray'))
     rf.settings.secretKey = data.privateKey || ''
     rf._wgPublicKey = data.publicKey || ''
   } catch {
@@ -3729,7 +3733,7 @@ async function generateVlessEnc() {
   }
 
   try {
-    const data = await client.post('/binaries/vlessenc')
+    const data = await client.post(`${apiBase.value}/vlessenc`)
     if (data && data.auths && data.auths.length > 0) {
       vlessEncAuths.value = data.auths
       // Find matching auth by type
@@ -3794,7 +3798,7 @@ function onCurvesChange() { emit() }
 
 async function genRealityKey(rf) {
   try {
-    const data = await client.post('/binaries/x25519-key')
+    const data = await client.post(`${apiBase.value}/x25519-key`)
     if (data && data.privateKey) {
       rf.streamSettings.reality.privateKey = data.privateKey
       rf.streamSettings.reality._password = data.password || ''
@@ -3826,7 +3830,7 @@ const ifaceList = ref([])
 const dataDir = ref('/opt/corefusion/data') // default fallback
 async function loadInterfaces() {
   try {
-    const data = await client.get('/binaries/interfaces')
+    const data = await client.get(`${apiBase.value}/interfaces`)
     if (Array.isArray(data)) ifaceList.value = data
   } catch { ifaceList.value = ['eth0', 'wg0', 'lo'] }
 }
@@ -3851,7 +3855,7 @@ function onCustomSockoptToggle(val) {
 
 async function genMldsa65(rf) {
   try {
-    const data = await client.post('/binaries/mldsa65-key')
+    const data = await client.post(`${apiBase.value}/mldsa65-key`)
     if (data && data.seed) {
       rf.streamSettings.reality.mldsa65Seed = data.seed
       rf.streamSettings.reality._mldsa65Verify = data.verify || ''
@@ -3894,7 +3898,7 @@ function onCertSelect(rf) {
 async function generateEchKeys(rf) {
   try {
     const sni = rf.streamSettings.tls.serverName || 'example.com'
-    const data = await client.post('/binaries/ech-generate', { server_name: sni })
+    const data = await client.post(`${apiBase.value}/ech-generate`, { server_name: sni })
     if (data) {
       if (data.echServerKeys) rf.streamSettings.tls.echServerKeys = data.echServerKeys
       if (data.echConfigList) rf.streamSettings.tls.echConfigList = data.echConfigList
@@ -5022,9 +5026,9 @@ async function saveInbound() {
   }
   try {
     if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
-      await client.put(`/inbound-configs/${form.value[editIdx.value]._id}`, payload)
+      await client.put(`${nodeBase.value}/inbound-configs/${form.value[editIdx.value]._id}`, payload)
     } else {
-      await client.post('/inbound-configs', payload)
+      await client.post(`${nodeBase.value}/inbound-configs`, payload)
     }
 
     // Apply to running xray via gRPC (no restart) - use absolute paths
@@ -5046,11 +5050,11 @@ async function saveInbound() {
       // Only remove existing inbound when editing (not creating new)
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
         try {
-          await client.delete(`/xray/control/inbound/${apiJson.tag}`, { suppressErrorMessage: true })
+          await client.delete(`${nodeBase.value}/xray/control/inbound/${apiJson.tag}`, { suppressErrorMessage: true })
         } catch {}
       }
       // Add new inbound
-      await client.post('/xray/control/inbound', { inbound: apiJson }, { suppressErrorMessage: true })
+      await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiJson }, { suppressErrorMessage: true })
     } catch (xrayErr) {
       console.warn('Failed to apply to xray runtime:', xrayErr)
       // Don't fail the whole operation if xray apply fails
@@ -5071,7 +5075,7 @@ async function saveInbound() {
         if (isEnabled) {
           // Apply firewall rules when enabling
           try {
-            await client.post('/xray/control/firewall/apply', {
+            await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
               port_range: defaultPortRange,
               target_port: rf.port,
               interface: rf._portHopInterface || ''
@@ -5082,7 +5086,7 @@ async function saveInbound() {
         } else {
           // Remove firewall rules when disabling
           try {
-            await client.post('/xray/control/firewall/remove', {
+            await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
               port_range: defaultPortRange,
               target_port: rf.port,
               interface: ''
@@ -5111,7 +5115,7 @@ async function toggleEnabled(i) {
   delete configJson._enabled
   delete configJson._id
   try {
-    await client.put(`/inbound-configs/${ib._id}`, {
+    await client.put(`${nodeBase.value}/inbound-configs/${ib._id}`, {
       core_type: props.coreType || 'xray',
       remark: ib._remark || '',
       protocol: ib.protocol,
@@ -5131,13 +5135,13 @@ async function toggleEnabled(i) {
 async function rmInbound(i) {
   const ib = form.value[i]
   if (ib._id) {
-    try { await client.delete(`/inbound-configs/${ib._id}`) } catch {}
+    try { await client.delete(`${nodeBase.value}/inbound-configs/${ib._id}`) } catch {}
   }
   // Also remove from xray runtime
   if (ib.tag) {
     try {
       if (await ensureXrayRunning(client, t('protoCenter.inbounds.deletedFromDb'))) {
-        await client.delete(`/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
+        await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
       }
     } catch (e) {
       notifyXrayRuntimeApplyFailure(e, t('protoCenter.inbounds.deletedFromDb'))
@@ -5149,7 +5153,7 @@ async function rmInbound(i) {
 
 async function loadInbounds() {
   try {
-    const data = await client.get('/inbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    const data = await client.get(`${nodeBase.value}/inbound-configs`, { params: { core_type: props.coreType || 'xray' } })
     form.value = (data || []).map(item => {
       const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
       const parsed = parseInbound(cfg)

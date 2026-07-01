@@ -930,3 +930,30 @@ func (r *registrationServiceImpl) Register(ctx context.Context, req *agentpb.Reg
 		Error:   "registration not yet wired up — use REST API bootstrap-token endpoint",
 	}, nil
 }
+
+// ExecuteBinaryCommand executes a binary command on a server.
+// For local servers, executes directly via LocalAgent.
+// For remote servers, returns error (not yet implemented via gRPC).
+func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID int64, coreType string, args ...string) (map[string]string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ExecuteBinaryCommand(ctx, coreType, args...)
+	}
+	// Remote: not yet implemented
+	return nil, fmt.Errorf("remote binary command execution not yet implemented")
+}
+
+// ListInterfaces lists network interfaces on a server.
+// For local servers, queries directly. For remote servers, returns error (not yet implemented via gRPC).
+func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) ([]string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ListInterfaces()
+	}
+	// Remote: not yet implemented
+	return nil, fmt.Errorf("remote interface listing not yet implemented")
+}

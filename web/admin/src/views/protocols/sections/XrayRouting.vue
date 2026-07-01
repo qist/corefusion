@@ -314,6 +314,8 @@ const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
 
+const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+
 const form = reactive({ domainStrategy: 'IPIfNonMatch', rules: [], balancers: [] })
 const outboundTags = ref(['direct', 'blocked'])
 const inboundTags = ref([])
@@ -521,7 +523,7 @@ async function saveAndApply(routing) {
       return
     }
     // Apply to xray runtime
-    await client.post('/xray/control/routing', { routing }, { suppressErrorMessage: true })
+    await client.post(`${nodeBase.value}/xray/control/routing`, { routing }, { suppressErrorMessage: true })
   } catch (e) {
     console.warn('Failed to apply routing to xray:', e)
     notifyXrayRuntimeApplyFailure(e, t('protoCenter.routing.savedToDb'))

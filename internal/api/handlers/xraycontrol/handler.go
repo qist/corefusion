@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,9 +83,26 @@ func ensureImplicitAPIRoutingRule(routerConf *conf.RouterConfig) {
 	routerConf.RuleList = append([]json.RawMessage{apiRule}, routerConf.RuleList...)
 }
 
-// getStatsAddr returns the xray stats API address.
-// Priority: 1. DB setting, 2. Config file api.listen, 3. Default 127.0.0.1:10085
-func (h *Handler) getStatsAddr(ctx context.Context) string {
+// localServerID is the server ID of the local node.
+const localServerID = int64(1)
+
+// parseServerID extracts the :id parameter from the URL.
+// Returns localServerID (1) if the parameter is missing or invalid.
+func parseServerID(c *gin.Context) int64 {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		return localServerID
+	}
+	return id
+}
+
+// getStatsAddr returns the xray stats API address for a given server.
+// For local nodes: Priority 1. DB setting, 2. Config file api.listen, 3. Default 127.0.0.1:10085
+// For remote nodes: not supported (returns empty string; caller should error).
+func (h *Handler) getStatsAddr(ctx context.Context, serverID int64) string {
+	if serverID != localServerID {
+		return "" // Remote nodes: xray API not directly accessible from panel
+	}
 	// 1. Check DB setting
 	if h.settingSvc != nil {
 		val, err := h.settingSvc.GetByKey(ctx, "xray.stats_addr")
@@ -95,7 +113,7 @@ func (h *Handler) getStatsAddr(ctx context.Context) string {
 
 	// 2. Check config file api.listen
 	if h.coreConfigSvc != nil {
-		fullConfig, err := h.coreConfigSvc.GetFull(ctx, 1, "xray")
+		fullConfig, err := h.coreConfigSvc.GetFull(ctx, serverID, "xray")
 		if err == nil {
 			if apiRaw, ok := fullConfig["api"]; ok {
 				if apiMap, ok := apiRaw.(map[string]interface{}); ok {
@@ -111,11 +129,14 @@ func (h *Handler) getStatsAddr(ctx context.Context) string {
 	return "127.0.0.1:10085"
 }
 
-// connect creates a fresh gRPC connection to xray.
+// connect creates a fresh gRPC connection to xray for a given server.
 // Xray may restart independently from the panel process, so reusing a cached
 // connection can leave control APIs talking to a stale transport.
-func (h *Handler) connect(ctx context.Context) (*grpc.ClientConn, error) {
-	addr := h.getStatsAddr(ctx)
+func (h *Handler) connect(ctx context.Context, serverID int64) (*grpc.ClientConn, error) {
+	addr := h.getStatsAddr(ctx, serverID)
+	if addr == "" {
+		return nil, fmt.Errorf("xray API not available for remote server %d", serverID)
+	}
 	conn, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -141,7 +162,7 @@ func (h *Handler) AddInbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -182,7 +203,7 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -215,7 +236,7 @@ func (h *Handler) AddOutbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -255,7 +276,7 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -298,7 +319,7 @@ func (h *Handler) AddUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -396,7 +417,7 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -432,7 +453,7 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -482,7 +503,7 @@ func (h *Handler) AddRoutingRule(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -524,7 +545,7 @@ func (h *Handler) RemoveRoutingRule(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -547,7 +568,7 @@ func (h *Handler) ListRoutingRules(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -586,7 +607,7 @@ func (h *Handler) GetBalancerInfo(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -633,7 +654,7 @@ func (h *Handler) SetBalancerTarget(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx)
+	conn, err := h.connect(ctx, parseServerID(c))
 	if err != nil {
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
@@ -661,7 +682,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	statsAddr := h.getStatsAddr(ctx)
+	statsAddr := h.getStatsAddr(ctx, parseServerID(c))
 
 	conn, err := grpc.DialContext(ctx, statsAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -769,7 +790,7 @@ func (h *Handler) ResetUserStats(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	statsAddr := h.getStatsAddr(ctx)
+	statsAddr := h.getStatsAddr(ctx, parseServerID(c))
 
 	conn, err := grpc.DialContext(ctx, statsAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),

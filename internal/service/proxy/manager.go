@@ -752,6 +752,9 @@ func (m *Manager) ListSitesByType(ctx context.Context, proxyType string) ([]enti
 
 // CreateSite creates a new proxy site in the database.
 func (m *Manager) CreateSite(ctx context.Context, site *entity.ProxySite) error {
+	if site.ServerID == 0 {
+		site.ServerID = m.serverID
+	}
 	return m.siteRepo.Create(ctx, site)
 }
 

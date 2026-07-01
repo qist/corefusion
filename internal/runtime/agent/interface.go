@@ -65,6 +65,25 @@ type ProxyManager interface {
 	WriteConfigFile(proxyType string, config string) error
 	// DetectProxy 检测代理安装状态和运行状态
 	DetectProxy(proxyType string) ProxyInfo
+	// InstallProxy 下载并安装代理二进制（Caddy/Nginx）
+	InstallProxy(ctx context.Context, proxyType string) error
+}
+
+// BinaryInstaller 处理核心二进制的下载和安装。
+// 由 binaries.Installer 实现，LocalAgent 通过此接口委托。
+type BinaryInstaller interface {
+	// Install 下载并安装核心二进制
+	Install(ctx context.Context, coreType, version, downloadURL, assetName string) (*BinaryInstallResult, error)
+	// ListInstalled 列出已安装的核心二进制
+	ListInstalled() []BinaryInstallResult
+}
+
+// BinaryInstallResult 包含核心二进制安装结果信息。
+type BinaryInstallResult struct {
+	CoreType   string `json:"core_type"`
+	Version    string `json:"version"`
+	BinaryPath string `json:"binary_path"`
+	Installed  bool   `json:"installed"`
 }
 
 // ProxyInfo 包含代理进程的安装和运行状态信息。

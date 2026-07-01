@@ -1,10 +1,10 @@
 <template>
   <div>
     <!-- Caddy Management -->
-    <CaddyProxy v-if="activeProxy==='caddy'" @back="switchProxy" />
+    <CaddyProxy v-if="activeProxy==='caddy'" :server-id="serverId" @back="switchProxy" />
 
     <!-- Nginx Management -->
-    <NginxProxy v-else-if="activeProxy==='nginx'" @back="switchProxy" />
+    <NginxProxy v-else-if="activeProxy==='nginx'" :server-id="serverId" @back="switchProxy" />
 
     <!-- Selection Mode -->
     <div v-else>
@@ -29,6 +29,10 @@ import CaddyProxy from './CaddyProxy.vue'
 import NginxProxy from './NginxProxy.vue'
 
 const { t } = useI18n()
+
+const props = defineProps({
+  serverId: { type: Number, required: true }
+})
 
 const activeProxy = ref(localStorage.getItem('active_proxy') || '')
 

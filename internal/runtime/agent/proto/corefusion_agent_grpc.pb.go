@@ -29,6 +29,10 @@ const (
 	AgentService_UpdateAgent_FullMethodName     = "/corefusion.agent.v1.AgentService/UpdateAgent"
 	AgentService_SpeedTest_FullMethodName       = "/corefusion.agent.v1.AgentService/SpeedTest"
 	AgentService_GetMetrics_FullMethodName      = "/corefusion.agent.v1.AgentService/GetMetrics"
+	AgentService_InstallBinary_FullMethodName   = "/corefusion.agent.v1.AgentService/InstallBinary"
+	AgentService_InstallProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/InstallProxy"
+	AgentService_GetProxyStatus_FullMethodName  = "/corefusion.agent.v1.AgentService/GetProxyStatus"
+	AgentService_ListBinaries_FullMethodName    = "/corefusion.agent.v1.AgentService/ListBinaries"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -59,6 +63,14 @@ type AgentServiceClient interface {
 	SpeedTest(ctx context.Context, in *SpeedTestRequest, opts ...grpc.CallOption) (*SpeedTestResponse, error)
 	// 获取详细资源指标（用于监控图表）
 	GetMetrics(ctx context.Context, in *GetMetricsRequest, opts ...grpc.CallOption) (*GetMetricsResponse, error)
+	// 安装核心二进制（xray/singbox/hysteria2/tuic）
+	InstallBinary(ctx context.Context, in *InstallBinaryRequest, opts ...grpc.CallOption) (*InstallBinaryResponse, error)
+	// 安装代理二进制（caddy/nginx）
+	InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*InstallProxyResponse, error)
+	// 查询代理安装状态
+	GetProxyStatus(ctx context.Context, in *GetProxyStatusRequest, opts ...grpc.CallOption) (*GetProxyStatusResponse, error)
+	// 列出已安装的核心二进制
+	ListBinaries(ctx context.Context, in *ListBinariesRequest, opts ...grpc.CallOption) (*ListBinariesResponse, error)
 }
 
 type agentServiceClient struct {
@@ -169,6 +181,46 @@ func (c *agentServiceClient) GetMetrics(ctx context.Context, in *GetMetricsReque
 	return out, nil
 }
 
+func (c *agentServiceClient) InstallBinary(ctx context.Context, in *InstallBinaryRequest, opts ...grpc.CallOption) (*InstallBinaryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallBinaryResponse)
+	err := c.cc.Invoke(ctx, AgentService_InstallBinary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*InstallProxyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallProxyResponse)
+	err := c.cc.Invoke(ctx, AgentService_InstallProxy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) GetProxyStatus(ctx context.Context, in *GetProxyStatusRequest, opts ...grpc.CallOption) (*GetProxyStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetProxyStatusResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetProxyStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ListBinaries(ctx context.Context, in *ListBinariesRequest, opts ...grpc.CallOption) (*ListBinariesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBinariesResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListBinaries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -197,6 +249,14 @@ type AgentServiceServer interface {
 	SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error)
 	// 获取详细资源指标（用于监控图表）
 	GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error)
+	// 安装核心二进制（xray/singbox/hysteria2/tuic）
+	InstallBinary(context.Context, *InstallBinaryRequest) (*InstallBinaryResponse, error)
+	// 安装代理二进制（caddy/nginx）
+	InstallProxy(context.Context, *InstallProxyRequest) (*InstallProxyResponse, error)
+	// 查询代理安装状态
+	GetProxyStatus(context.Context, *GetProxyStatusRequest) (*GetProxyStatusResponse, error)
+	// 列出已安装的核心二进制
+	ListBinaries(context.Context, *ListBinariesRequest) (*ListBinariesResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -236,6 +296,18 @@ func (UnimplementedAgentServiceServer) SpeedTest(context.Context, *SpeedTestRequ
 }
 func (UnimplementedAgentServiceServer) GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMetrics not implemented")
+}
+func (UnimplementedAgentServiceServer) InstallBinary(context.Context, *InstallBinaryRequest) (*InstallBinaryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallBinary not implemented")
+}
+func (UnimplementedAgentServiceServer) InstallProxy(context.Context, *InstallProxyRequest) (*InstallProxyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallProxy not implemented")
+}
+func (UnimplementedAgentServiceServer) GetProxyStatus(context.Context, *GetProxyStatusRequest) (*GetProxyStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProxyStatus not implemented")
+}
+func (UnimplementedAgentServiceServer) ListBinaries(context.Context, *ListBinariesRequest) (*ListBinariesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBinaries not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -438,6 +510,78 @@ func _AgentService_GetMetrics_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_InstallBinary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallBinaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).InstallBinary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_InstallBinary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).InstallBinary(ctx, req.(*InstallBinaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_InstallProxy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallProxyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).InstallProxy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_InstallProxy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).InstallProxy(ctx, req.(*InstallProxyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_GetProxyStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProxyStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetProxyStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetProxyStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetProxyStatus(ctx, req.(*GetProxyStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ListBinaries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBinariesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListBinaries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListBinaries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListBinaries(ctx, req.(*ListBinariesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -484,6 +628,22 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMetrics",
 			Handler:    _AgentService_GetMetrics_Handler,
+		},
+		{
+			MethodName: "InstallBinary",
+			Handler:    _AgentService_InstallBinary_Handler,
+		},
+		{
+			MethodName: "InstallProxy",
+			Handler:    _AgentService_InstallProxy_Handler,
+		},
+		{
+			MethodName: "GetProxyStatus",
+			Handler:    _AgentService_GetProxyStatus_Handler,
+		},
+		{
+			MethodName: "ListBinaries",
+			Handler:    _AgentService_ListBinaries_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

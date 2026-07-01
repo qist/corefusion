@@ -260,9 +260,9 @@ func (h *ProxyHandler) CreateSite(c *gin.Context) {
 	response.Created(c, site)
 }
 
-// UpdateSite handles PUT /api/v1/proxy/sites/:id.
+// UpdateSite handles PUT /api/v1/node-servers/:id/proxy/sites/:siteId.
 func (h *ProxyHandler) UpdateSite(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
@@ -396,9 +396,9 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 	response.OK(c, existing)
 }
 
-// DeleteSite handles DELETE /api/v1/proxy/sites/:id.
+// DeleteSite handles DELETE /api/v1/node-servers/:id/proxy/sites/:siteId.
 func (h *ProxyHandler) DeleteSite(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return

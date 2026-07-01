@@ -1,7 +1,7 @@
 <template>
   <div style="padding:20px">
     <!-- For local nodes, embed the full Proxy.vue (Caddy/Nginx management) -->
-    <Proxy v-if="isLocal" />
+    <Proxy v-if="isLocal" :server-id="serverId" />
 
     <!-- For remote nodes, show proxy status and control -->
     <div v-else>

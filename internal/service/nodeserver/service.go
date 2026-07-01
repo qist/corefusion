@@ -15,6 +15,14 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// BinaryLister lists available binary releases from GitHub.
+type BinaryLister interface {
+	ListReleases(ctx context.Context, coreType string) ([]struct {
+		Version    string `json:"version"`
+		Prerelease bool   `json:"prerelease"`
+	}, error)
+}
+
 // Service provides business logic for managing node servers.
 type Service struct {
 	repo          *repository.NodeServerRepository
@@ -51,6 +59,9 @@ type Service struct {
 	certRepo      *repository.CertificateRepository
 	crlRepo       *repository.CertRevocationRepository
 	db            *gorm.DB
+
+	// Binary management
+	binaryLister BinaryLister
 }
 
 // NewService creates a new node server service.
@@ -815,6 +826,51 @@ func (s *Service) SyncProxyConfig(ctx context.Context, serverID int64, proxyType
 		return fmt.Errorf("node manager not initialized")
 	}
 	return s.nodeMgr.SyncProxyConfig(ctx, serverID, proxyType, config)
+}
+
+// InstallBinary installs a core binary on a specific server (local or remote via Agent).
+func (s *Service) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (interface{}, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.InstallBinary(ctx, serverID, coreType, version, downloadURL, assetName)
+}
+
+// InstallProxy installs a proxy binary (caddy/nginx) on a specific server (local or remote via Agent).
+func (s *Service) InstallProxy(ctx context.Context, serverID int64, proxyType string) (interface{}, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.InstallProxy(ctx, serverID, proxyType)
+}
+
+// GetProxyStatusRemote queries proxy installation status on a specific server.
+func (s *Service) GetProxyStatusRemote(ctx context.Context, serverID int64) (interface{}, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.GetProxyStatus(ctx, serverID)
+}
+
+// ListBinaries lists installed core binaries on a specific server.
+func (s *Service) ListBinaries(ctx context.Context, serverID int64) (interface{}, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.ListBinaries(ctx, serverID)
+}
+
+// SetBinaryLister sets the binary lister for fetching releases from GitHub.
+func (s *Service) SetBinaryLister(lister BinaryLister) {
+	s.binaryLister = lister
+}
+
+// ListReleases lists available binary releases from GitHub for a core type.
+func (s *Service) ListReleases(ctx context.Context, coreType string) (interface{}, error) {
+	if s.binaryLister == nil {
+		return nil, fmt.Errorf("binary lister not initialized")
+	}
+	return s.binaryLister.ListReleases(ctx, coreType)
 }
 
 // GetBootstrapCommand generates the bootstrap installation command for a server.

@@ -265,3 +265,21 @@ export function listNodeAuditLogs(params = {}) {
 export function exportNodeAuditLogs(params = {}) {
   return client.get('/node-audit-logs/export', { params, responseType: 'text', suppressErrorMessage: true })
 }
+
+// ──────────── Binary & Proxy Installation ────────────
+
+export function installBinary(serverId, data) {
+  return client.post(`/node-servers/${serverId}/binaries/install`, data)
+}
+
+export function listBinaries(serverId) {
+  return client.get(`/node-servers/${serverId}/binaries`)
+}
+
+export function installProxy(serverId, type) {
+  return client.post(`/node-servers/${serverId}/proxy/install`, { type })
+}
+
+export function getRemoteProxyStatus(serverId) {
+  return client.get(`/node-servers/${serverId}/proxy-status`)
+}

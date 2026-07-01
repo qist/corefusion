@@ -5,6 +5,7 @@ import "time"
 // ProxySite is the GORM model for the proxy_sites table.
 type ProxySite struct {
 	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID       int64     `json:"server_id" gorm:"not null;default:1;index"`
 	ProxyType      string    `json:"proxy_type" gorm:"size:16;not null;default:'caddy'"`
 	Domain         string    `json:"domain" gorm:"size:255;not null"`
 	Upstream       string    `json:"upstream" gorm:"size:255;not null"`

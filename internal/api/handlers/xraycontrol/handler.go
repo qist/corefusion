@@ -34,7 +34,7 @@ type SettingStore interface {
 
 // CoreConfigService provides access to core configuration.
 type CoreConfigService interface {
-	GetFull(ctx context.Context, coreType string) (map[string]interface{}, error)
+	GetFull(ctx context.Context, serverID int64, coreType string) (map[string]interface{}, error)
 }
 
 // Handler handles xray control HTTP requests.
@@ -95,7 +95,7 @@ func (h *Handler) getStatsAddr(ctx context.Context) string {
 
 	// 2. Check config file api.listen
 	if h.coreConfigSvc != nil {
-		fullConfig, err := h.coreConfigSvc.GetFull(ctx, "xray")
+		fullConfig, err := h.coreConfigSvc.GetFull(ctx, 1, "xray")
 		if err == nil {
 			if apiRaw, ok := fullConfig["api"]; ok {
 				if apiMap, ok := apiRaw.(map[string]interface{}); ok {

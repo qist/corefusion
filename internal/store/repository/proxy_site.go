@@ -31,27 +31,27 @@ func (r *ProxySiteRepository) GetByID(ctx context.Context, id int64) (*entity.Pr
 	return &site, nil
 }
 
-func (r *ProxySiteRepository) List(ctx context.Context) ([]entity.ProxySite, error) {
+func (r *ProxySiteRepository) List(ctx context.Context, serverID int64) ([]entity.ProxySite, error) {
 	var sites []entity.ProxySite
-	err := r.db.WithContext(ctx).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 
-func (r *ProxySiteRepository) ListByType(ctx context.Context, proxyType string) ([]entity.ProxySite, error) {
+func (r *ProxySiteRepository) ListByType(ctx context.Context, serverID int64, proxyType string) ([]entity.ProxySite, error) {
 	var sites []entity.ProxySite
-	err := r.db.WithContext(ctx).Where("proxy_type = ?", proxyType).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND proxy_type = ?", serverID, proxyType).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 
-func (r *ProxySiteRepository) ListEnabled(ctx context.Context) ([]entity.ProxySite, error) {
+func (r *ProxySiteRepository) ListEnabled(ctx context.Context, serverID int64) ([]entity.ProxySite, error) {
 	var sites []entity.ProxySite
-	err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND enabled = ?", serverID, true).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 
-func (r *ProxySiteRepository) ListEnabledByType(ctx context.Context, proxyType string) ([]entity.ProxySite, error) {
+func (r *ProxySiteRepository) ListEnabledByType(ctx context.Context, serverID int64, proxyType string) ([]entity.ProxySite, error) {
 	var sites []entity.ProxySite
-	err := r.db.WithContext(ctx).Where("enabled = ? AND proxy_type = ?", true, proxyType).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND enabled = ? AND proxy_type = ?", serverID, true, proxyType).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 

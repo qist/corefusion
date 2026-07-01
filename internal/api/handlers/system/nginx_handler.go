@@ -101,7 +101,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 }
 
 func (h *NginxHandler) UpdateSite(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
@@ -175,7 +175,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 }
 
 func (h *NginxHandler) DeleteSite(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return

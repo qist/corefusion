@@ -61,6 +61,56 @@
         <ProxyManagement :server-id="serverId" :is-local="server?.is_local || false" />
       </el-tab-pane>
 
+      <!-- Binary Management Tab -->
+      <el-tab-pane :label="t('nodeServer.binaryManagement')" name="binaries">
+        <div style="padding:20px">
+          <!-- Core Binaries -->
+          <h3 style="margin-bottom:16px">{{ t('nodeServer.coreBinaries') }}</h3>
+          <el-table :data="binaries" v-loading="binariesLoading" stripe size="small" style="margin-bottom:24px">
+            <el-table-column prop="core_type" :label="t('nodeServer.coreType')" width="120" />
+            <el-table-column :label="t('nodeServer.installed')" width="100">
+              <template #default="{row}">
+                <el-tag size="small" :type="row.installed ? 'success' : 'info'">{{ row.installed ? t('common.yes') : t('common.no') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="version" :label="t('nodeServer.agentVersion')" width="150" />
+            <el-table-column prop="binary_path" :label="t('nodeServer.binaryPath')" />
+            <el-table-column :label="t('common.actions')" width="160">
+              <template #default="{row}">
+                <el-button type="primary" size="small" :loading="installLoading === row.core_type" @click="doInstallBinary(row.core_type)">
+                  {{ row.installed ? t('common.update') : t('common.install') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- Proxy Binaries -->
+          <h3 style="margin-bottom:16px">{{ t('nodeServer.proxyBinaries') }}</h3>
+          <el-table :data="proxyStatuses" v-loading="proxyStatusLoading" stripe size="small">
+            <el-table-column prop="name" :label="t('nodeServer.proxyType')" width="120" />
+            <el-table-column :label="t('nodeServer.installed')" width="100">
+              <template #default="{row}">
+                <el-tag size="small" :type="row.installed ? 'success' : 'info'">{{ row.installed ? t('common.yes') : t('common.no') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="version" :label="t('nodeServer.agentVersion')" width="150" />
+            <el-table-column prop="status" :label="t('nodeServer.status')" width="100">
+              <template #default="{row}">
+                <el-tag size="small" :type="row.status==='running'?'success':'info'">{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="path" :label="t('nodeServer.binaryPath')" />
+            <el-table-column :label="t('common.actions')" width="160">
+              <template #default="{row}">
+                <el-button type="primary" size="small" :loading="proxyInstallLoading === row.type" @click="doInstallProxy(row.type)">
+                  {{ row.installed ? t('common.update') : t('common.install') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-tab-pane>
+
       <!-- Core Control Tab -->
       <el-tab-pane :label="t('nodeServer.controlCore')" name="control">
         <div style="padding:20px">
@@ -111,6 +161,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
 import client from '../api/client'
+import { listBinaries, installBinary, installProxy, getRemoteProxyStatus } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
 
@@ -126,6 +177,14 @@ const certificates = ref([])
 const statusLoading = ref(false)
 const certLoading = ref(false)
 const controlLoading = ref(false)
+
+// Binary management
+const binaries = ref([])
+const binariesLoading = ref(false)
+const installLoading = ref('')
+const proxyStatuses = ref([])
+const proxyStatusLoading = ref(false)
+const proxyInstallLoading = ref('')
 
 const nodeTypeOptions = {
   standalone: t('nodeServer.nodeTypeStandalone'),
@@ -202,10 +261,63 @@ async function doControl(coreType, action) {
   }
 }
 
+// Binary management
+async function loadBinaries() {
+  binariesLoading.value = true
+  try {
+    const data = await listBinaries(serverId)
+    binaries.value = data?.binaries || []
+  } catch {
+    binaries.value = []
+  } finally {
+    binariesLoading.value = false
+  }
+}
+
+async function loadProxyStatuses() {
+  proxyStatusLoading.value = true
+  try {
+    const data = await getRemoteProxyStatus(serverId)
+    proxyStatuses.value = data?.proxies || []
+  } catch {
+    proxyStatuses.value = []
+  } finally {
+    proxyStatusLoading.value = false
+  }
+}
+
+async function doInstallBinary(coreType) {
+  installLoading.value = coreType
+  try {
+    await installBinary(serverId, { core_type: coreType })
+    ElMessage.success(t('common.success'))
+    loadBinaries()
+  } catch (e) {
+    ElMessage.error(e?.message || t('common.failed'))
+  } finally {
+    installLoading.value = ''
+  }
+}
+
+async function doInstallProxy(proxyType) {
+  proxyInstallLoading.value = proxyType
+  try {
+    await installProxy(serverId, proxyType)
+    ElMessage.success(t('common.success'))
+    loadProxyStatuses()
+  } catch (e) {
+    ElMessage.error(e?.message || t('common.failed'))
+  } finally {
+    proxyInstallLoading.value = ''
+  }
+}
+
 onMounted(() => {
   loadServer()
   loadStatus()
   loadCerts()
+  loadBinaries()
+  loadProxyStatuses()
 })
 </script>
 

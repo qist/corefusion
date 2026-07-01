@@ -20,10 +20,14 @@ func NewHandler(svc *inboundconfig.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// List handles GET /api/v1/inbound-configs.
+// List handles GET /api/v1/node-servers/:id/inbound-configs.
 func (h *Handler) List(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1 // fallback for legacy callers
+	}
 	coreType := c.Query("core_type")
-	configs, err := h.svc.List(c.Request.Context(), coreType)
+	configs, err := h.svc.List(c.Request.Context(), serverID, coreType)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -31,9 +35,9 @@ func (h *Handler) List(c *gin.Context) {
 	response.OK(c, configs)
 }
 
-// Get handles GET /api/v1/inbound-configs/:id.
+// Get handles GET /api/v1/node-servers/:id/inbound-configs/:cfgId.
 func (h *Handler) Get(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
@@ -46,8 +50,12 @@ func (h *Handler) Get(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// Create handles POST /api/v1/inbound-configs.
+// Create handles POST /api/v1/node-servers/:id/inbound-configs.
 func (h *Handler) Create(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
 	var req struct {
 		CoreType   string          `json:"core_type"`
 		Remark     string          `json:"remark"`
@@ -62,7 +70,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	cfg, err := h.svc.Create(c.Request.Context(), req.CoreType, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
+	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
 	if err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
@@ -70,9 +78,9 @@ func (h *Handler) Create(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// Update handles PUT /api/v1/inbound-configs/:id.
+// Update handles PUT /api/v1/node-servers/:id/inbound-configs/:cfgId.
 func (h *Handler) Update(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
@@ -98,9 +106,9 @@ func (h *Handler) Update(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// Delete handles DELETE /api/v1/inbound-configs/:id.
+// Delete handles DELETE /api/v1/node-servers/:id/inbound-configs/:cfgId.
 func (h *Handler) Delete(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
@@ -125,7 +133,7 @@ func (h *Handler) ResumeUser(c *gin.Context) {
 }
 
 func (h *Handler) setUserPaused(c *gin.Context, paused bool) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return

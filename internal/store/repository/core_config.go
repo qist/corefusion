@@ -20,11 +20,11 @@ func NewCoreConfigRepository(db *gorm.DB) *CoreConfigRepository {
 	return &CoreConfigRepository{db: db}
 }
 
-// GetSection retrieves one section config for a core type.
-func (r *CoreConfigRepository) GetSection(ctx context.Context, coreType, section string) (*entity.CoreConfig, error) {
+// GetSection retrieves one section config for a core type on a specific server.
+func (r *CoreConfigRepository) GetSection(ctx context.Context, serverID int64, coreType, section string) (*entity.CoreConfig, error) {
 	var cfg entity.CoreConfig
 	err := r.db.WithContext(ctx).
-		Where("core_type = ? AND section = ?", coreType, section).
+		Where("server_id = ? AND core_type = ? AND section = ?", serverID, coreType, section).
 		First(&cfg).Error
 	if err != nil {
 		return nil, err
@@ -32,20 +32,21 @@ func (r *CoreConfigRepository) GetSection(ctx context.Context, coreType, section
 	return &cfg, nil
 }
 
-// GetAllSections retrieves all section configs for a core type.
-func (r *CoreConfigRepository) GetAllSections(ctx context.Context, coreType string) ([]entity.CoreConfig, error) {
+// GetAllSections retrieves all section configs for a core type on a specific server.
+func (r *CoreConfigRepository) GetAllSections(ctx context.Context, serverID int64, coreType string) ([]entity.CoreConfig, error) {
 	var configs []entity.CoreConfig
 	err := r.db.WithContext(ctx).
-		Where("core_type = ?", coreType).
+		Where("server_id = ? AND core_type = ?", serverID, coreType).
 		Order("section").
 		Find(&configs).Error
 	return configs, err
 }
 
-// List retrieves summary (core_type + section + updated_at) for all cores.
-func (r *CoreConfigRepository) List(ctx context.Context) ([]entity.CoreConfig, error) {
+// List retrieves summary (core_type + section + updated_at) for all cores on a specific server.
+func (r *CoreConfigRepository) List(ctx context.Context, serverID int64) ([]entity.CoreConfig, error) {
 	var configs []entity.CoreConfig
 	err := r.db.WithContext(ctx).
+		Where("server_id = ?", serverID).
 		Order("core_type, section").
 		Find(&configs).Error
 	return configs, err
@@ -55,14 +56,14 @@ func (r *CoreConfigRepository) List(ctx context.Context) ([]entity.CoreConfig, e
 func (r *CoreConfigRepository) UpsertSection(ctx context.Context, cfg *entity.CoreConfig) error {
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "core_type"}, {Name: "section"}},
+		Columns:   []clause.Column{{Name: "server_id"}, {Name: "core_type"}, {Name: "section"}},
 		DoUpdates: clause.AssignmentColumns([]string{"config_json", "updated_at"}),
 	}).Create(cfg).Error
 }
 
 // DeleteSection removes a single section.
-func (r *CoreConfigRepository) DeleteSection(ctx context.Context, coreType, section string) error {
+func (r *CoreConfigRepository) DeleteSection(ctx context.Context, serverID int64, coreType, section string) error {
 	return r.db.WithContext(ctx).
-		Where("core_type = ? AND section = ?", coreType, section).
+		Where("server_id = ? AND core_type = ? AND section = ?", serverID, coreType, section).
 		Delete(&entity.CoreConfig{}).Error
 }

@@ -25,9 +25,16 @@ func NewService(repo *repository.InboundConfigRepository, db *gorm.DB) *Service 
 	return &Service{repo: repo, db: db}
 }
 
-// List returns all inbound configs for a core type.
-func (s *Service) List(ctx context.Context, coreType string) ([]entity.InboundConfig, error) {
-	return s.repo.List(ctx, coreType)
+// List returns all inbound configs for a core type on a specific server.
+func (s *Service) List(ctx context.Context, serverID int64, coreType string) ([]entity.InboundConfig, error) {
+	return s.repo.List(ctx, serverID, coreType)
+}
+
+// ListAll returns all inbound configs across all servers (for traffic sync).
+func (s *Service) ListAll(ctx context.Context) ([]entity.InboundConfig, error) {
+	var configs []entity.InboundConfig
+	err := s.db.WithContext(ctx).Order("id").Find(&configs).Error
+	return configs, err
 }
 
 // GetByID returns an inbound config by ID.
@@ -36,8 +43,12 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*entity.InboundConfig,
 }
 
 // Create creates a new inbound config.
-func (s *Service) Create(ctx context.Context, coreType, remark, protocol, tag, listen string, port int, configJSON string, enabled bool) (*entity.InboundConfig, error) {
+func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, protocol, tag, listen string, port int, configJSON string, enabled bool) (*entity.InboundConfig, error) {
+	if serverID == 0 {
+		serverID = 1 // default to local node
+	}
 	cfg := &entity.InboundConfig{
+		ServerID:   serverID,
 		CoreType:   coreType,
 		Remark:     remark,
 		Protocol:   protocol,
@@ -82,8 +93,8 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 
 // UpdateTraffic updates traffic stats for a user by email.
 func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, upDelta int64, downDelta int64) error {
-	// Find all inbound configs
-	configs, err := s.repo.List(ctx, "")
+	// Find all inbound configs across all servers
+	configs, err := s.ListAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -198,9 +209,9 @@ func (s *Service) updateSubscriptionTraffic(ctx context.Context, statsEmail stri
 	}
 }
 
-// GetEnabledInbounds returns all enabled inbound configs as parsed JSON.
-func (s *Service) GetEnabledInbounds(ctx context.Context, coreType string) ([]json.RawMessage, error) {
-	configs, err := s.repo.List(ctx, coreType)
+// GetEnabledInbounds returns all enabled inbound configs as parsed JSON for a specific server.
+func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
+	configs, err := s.repo.List(ctx, serverID, coreType)
 	if err != nil {
 		return nil, err
 	}

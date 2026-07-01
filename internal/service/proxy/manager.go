@@ -56,19 +56,23 @@ type SettingStore interface {
 
 // Manager handles proxy program management.
 type Manager struct {
-	dataDir      string
-	binDir       string
-	configDir    string
-	siteRepo     *repository.ProxySiteRepository
-	settingStore SettingStore
-	// Config generators (set by router to use new separated managers)
-	caddyConfigGen func(ctx context.Context) (string, error)
-	nginxConfigGen func(ctx context.Context) (string, error)
-	// Stdout log broker for real-time log viewing
-	logBrokers map[ProxyType]*LogBroker
-	// Process guardian for auto-restart on crash (shared healthcheck)
-	guardians map[ProxyType]*healthcheck.Guardian
+dataDir      string
+binDir       string
+configDir    string
+siteRepo     *repository.ProxySiteRepository
+settingStore SettingStore
+serverID     int64
+// Config generators (set by router to use new separated managers)
+caddyConfigGen func(ctx context.Context) (string, error)
+nginxConfigGen func(ctx context.Context) (string, error)
+// Stdout log broker for real-time log viewing
+logBrokers map[ProxyType]*LogBroker
+// Process guardian for auto-restart on crash (shared healthcheck)
+guardians map[ProxyType]*healthcheck.Guardian
 }
+
+// SetServerID sets the server ID for per-node site filtering.
+func (m *Manager) SetServerID(id int64) { m.serverID = id }
 
 // SetCaddyConfigGen sets the Caddy config generator function.
 func (m *Manager) SetCaddyConfigGen(fn func(ctx context.Context) (string, error)) {
@@ -412,7 +416,7 @@ func (m *Manager) getProcessStatus(name string) string {
 
 // GenerateConfig assembles the full Caddyfile from all enabled caddy sites.
 func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
-	sites, err := m.siteRepo.ListEnabledByType(ctx, "caddy")
+	sites, err := m.siteRepo.ListEnabledByType(ctx, m.serverID, "caddy")
 	if err != nil {
 		return "", err
 	}
@@ -738,12 +742,12 @@ func pathToMatcher(path string) string {
 
 // ListSites returns all proxy sites from the database.
 func (m *Manager) ListSites(ctx context.Context) ([]entity.ProxySite, error) {
-	return m.siteRepo.List(ctx)
+	return m.siteRepo.List(ctx, m.serverID)
 }
 
 // ListSitesByType returns proxy sites filtered by proxy type.
 func (m *Manager) ListSitesByType(ctx context.Context, proxyType string) ([]entity.ProxySite, error) {
-	return m.siteRepo.ListByType(ctx, proxyType)
+	return m.siteRepo.ListByType(ctx, m.serverID, proxyType)
 }
 
 // CreateSite creates a new proxy site in the database.
@@ -1684,7 +1688,7 @@ func (m *Manager) SaveSNISettings(ctx context.Context, settings *SNISettings) er
 // Nginx: only changes listen_port, domain stays unchanged.
 // Only affects sites with TLS (cert_path set) — port 80 HTTP sites are untouched.
 func (m *Manager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -1752,7 +1756,7 @@ func (m *Manager) DeleteAllSNI(ctx context.Context) (int, error) {
 // ToggleSNIEnabled enables or disables all SNI template sites without deleting them.
 // When disabled, rules stay in DB but won't be used in config generation.
 func (m *Manager) ToggleSNIEnabled(ctx context.Context, proxyType string, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -1776,7 +1780,7 @@ func (m *Manager) DeleteAllL4(ctx context.Context) (int, error) {
 
 // DeleteByTemplate deletes all sites with the given template.
 func (m *Manager) DeleteByTemplate(ctx context.Context, template string) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}

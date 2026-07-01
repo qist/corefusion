@@ -31,15 +31,15 @@ func (r *NginxSiteRepository) GetByID(ctx context.Context, id int64) (*entity.Ng
 	return &site, nil
 }
 
-func (r *NginxSiteRepository) List(ctx context.Context) ([]entity.NginxSite, error) {
+func (r *NginxSiteRepository) List(ctx context.Context, serverID int64) ([]entity.NginxSite, error) {
 	var sites []entity.NginxSite
-	err := r.db.WithContext(ctx).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 
-func (r *NginxSiteRepository) ListEnabled(ctx context.Context) ([]entity.NginxSite, error) {
+func (r *NginxSiteRepository) ListEnabled(ctx context.Context, serverID int64) ([]entity.NginxSite, error) {
 	var sites []entity.NginxSite
-	err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND enabled = ?", serverID, true).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 

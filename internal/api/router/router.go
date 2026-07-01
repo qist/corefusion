@@ -48,12 +48,13 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
 	"corefusion/internal/runtime/agent"
+	binariesSvc "corefusion/internal/service/binaries"
+	nodeServerSvc "corefusion/internal/service/nodeserver"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	backupService "corefusion/internal/service/backup"
-	binariesSvc "corefusion/internal/service/binaries"
 	certService "corefusion/internal/service/certificate"
 	cfipSvc "corefusion/internal/service/cfip"
 	clientSvc "corefusion/internal/service/client"
@@ -65,7 +66,6 @@ import (
 	logManageSvc "corefusion/internal/service/logmanage"
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
-	nodeServerSvc "corefusion/internal/service/nodeserver"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
 	planSvc "corefusion/internal/service/plan"
 	proxySvc "corefusion/internal/service/proxy"
@@ -81,6 +81,35 @@ import (
 	warpSvc "corefusion/internal/service/warp"
 	"corefusion/internal/store/repository"
 )
+
+// binaryListerAdapter adapts binaries.Installer to nodeserver.BinaryLister interface.
+type binaryListerAdapter struct {
+	installer *binariesSvc.Installer
+}
+
+func (a *binaryListerAdapter) ListReleases(ctx context.Context, coreType string) ([]struct {
+	Version    string `json:"version"`
+	Prerelease bool   `json:"prerelease"`
+}, error) {
+	releases, err := a.installer.ListReleases(ctx, coreType)
+	if err != nil {
+		return nil, err
+	}
+	var result []struct {
+		Version    string `json:"version"`
+		Prerelease bool   `json:"prerelease"`
+	}
+	for _, r := range releases {
+		result = append(result, struct {
+			Version    string `json:"version"`
+			Prerelease bool   `json:"prerelease"`
+		}{
+			Version:    r.Version,
+			Prerelease: r.Prerelease,
+		})
+	}
+	return result, nil
+}
 
 // New creates a new Gin engine with all routes registered.
 func New(database *gorm.DB) *gin.Engine {
@@ -219,7 +248,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	coreConfigRepo := repository.NewCoreConfigRepository(database)
 	coreConfigSvc := coreconfigSvc.NewService(coreConfigRepo)
-	if err := coreConfigSvc.SeedDefaults(context.Background()); err != nil {
+	if err := coreConfigSvc.SeedDefaults(context.Background(), 1); err != nil {
 		log.Printf("WARNING: seed core configs failed: %v", err)
 	}
 
@@ -374,7 +403,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	processMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
 		if coreType != "xray" {
 			// Non-xray cores: simple merge
-			fullConfig, err := coreConfigSvc.GetFull(ctx, coreType)
+			fullConfig, err := coreConfigSvc.GetFull(ctx, 1, coreType)
 			if err != nil {
 				return err
 			}
@@ -395,14 +424,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 
 		// Xray: full config generation with API inbound/routing support
-		fullConfig, err := coreConfigSvc.GetFull(ctx, coreType)
-		if err != nil {
-			return err
-		}
-		cleanEmpty(fullConfig)
+			fullConfig, err := coreConfigSvc.GetFull(ctx, 1, coreType)
+			if err != nil {
+				return err
+			}
+			cleanEmpty(fullConfig)
 
-		// Strip _disabled and enabled fields from rules
-		if routing, ok := fullConfig["routing"].(map[string]interface{}); ok {
+			// Strip _disabled and enabled fields from rules
+			if routing, ok := fullConfig["routing"].(map[string]interface{}); ok {
 			if rules, ok := routing["rules"].([]interface{}); ok {
 				var filtered []interface{}
 				for _, r := range rules {
@@ -516,7 +545,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 
 		// Add enabled inbounds from inbound_configs table
-		enabledInbounds, err := inboundConfigSvc.GetEnabledInbounds(ctx, coreType)
+			enabledInbounds, err := inboundConfigSvc.GetEnabledInbounds(ctx, 1, coreType)
 		if err != nil {
 			log.Printf("WARNING: failed to load inbounds: %v", err)
 		} else if len(enabledInbounds) > 0 {
@@ -531,7 +560,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 
 		// Replace outbounds with database outbounds (database = source of truth)
-		enabledOutbounds, err := outboundConfigSvc.GetEnabledOutbounds(ctx, coreType)
+			enabledOutbounds, err := outboundConfigSvc.GetEnabledOutbounds(ctx, 1, coreType)
 		if err != nil {
 			log.Printf("WARNING: failed to load outbounds: %v", err)
 		} else if len(enabledOutbounds) > 0 {
@@ -733,40 +762,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodesGroup.DELETE("/:id", nodeH.Delete)
 			}
 
-			// Protocols (Core Config)
-			protocolsGroup := protected.Group("/protocols")
-			{
-				protocolsGroup.GET("", coreConfigH.List)
-				protocolsGroup.GET("/:coreType", coreConfigH.Get)
-				protocolsGroup.PUT("/:coreType", coreConfigH.Save)
-				protocolsGroup.GET("/:coreType/section/:section", coreConfigH.GetSection)
-				protocolsGroup.PUT("/:coreType/section/:section", coreConfigH.SaveSection)
-				protocolsGroup.POST("/:coreType/validate", coreConfigH.Validate)
-			}
-
-			// Inbound Configs (separate table)
+			// Inbound Configs (moved under /node-servers/:id/)
 			inboundCfgH := inboundconfigHandler.NewHandler(inboundConfigSvc)
-			inboundCfgGroup := protected.Group("/inbound-configs")
-			{
-				inboundCfgGroup.GET("", inboundCfgH.List)
-				inboundCfgGroup.POST("", inboundCfgH.Create)
-				inboundCfgGroup.GET("/:id", inboundCfgH.Get)
-				inboundCfgGroup.PUT("/:id", inboundCfgH.Update)
-				inboundCfgGroup.DELETE("/:id", inboundCfgH.Delete)
-				inboundCfgGroup.POST("/:id/users/:email/pause", inboundCfgH.PauseUser)
-				inboundCfgGroup.POST("/:id/users/:email/resume", inboundCfgH.ResumeUser)
-			}
 
-			// Outbound Configs (separate table)
+			// Outbound Configs (moved under /node-servers/:id/)
 			outboundCfgH := outboundconfigHandler.NewHandler(outboundConfigSvc)
-			outboundCfgGroup := protected.Group("/outbound-configs")
-			{
-				outboundCfgGroup.GET("", outboundCfgH.List)
-				outboundCfgGroup.POST("", outboundCfgH.Create)
-				outboundCfgGroup.GET("/:id", outboundCfgH.Get)
-				outboundCfgGroup.PUT("/:id", outboundCfgH.Update)
-				outboundCfgGroup.DELETE("/:id", outboundCfgH.Delete)
-			}
 
 			// Share Domain Configs
 			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo)
@@ -987,9 +987,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// for local node operations. Local server (is_local=1) operations go through
 			// process.Manager (cores) and proxy.Manager (Caddy/Nginx) directly,
 			// not through gRPC. Remote servers use gRPC as before.
-			localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
-			localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
-			nodeMgrForCRL.SetLocalAgent(localAgent)
+		localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+		localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+		binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
+		localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
+		nodeMgrForCRL.SetLocalAgent(localAgent)
+
+		// Set binary lister for node server service (used for ListReleases API)
+		// Wrap binaries.Installer to match nodeserver.BinaryLister interface
+		nodeServerSvcInst.SetBinaryLister(&binaryListerAdapter{installer: binaryInstaller})
 
 				// Phase 3: Node Types & Chain Proxy wiring
 			inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
@@ -1109,9 +1115,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				// Supplementary: Agent Degradation & Reconnect
 				nodeServersGroup.GET("/:id/degradation-status", nodeServerH.GetDegradationStatus)
-				nodeServersGroup.POST("/:id/force-reconnect", nodeServerH.ForceReconnect)
+			nodeServersGroup.POST("/:id/force-reconnect", nodeServerH.ForceReconnect)
 
-			// Supplementary: Node Tags
+			// Binary & Proxy Installation (local + remote via Agent)
+			nodeServersGroup.POST("/:id/binaries/install", nodeServerH.InstallBinary)
+			nodeServersGroup.GET("/:id/binaries", nodeServerH.ListBinaries)
+			nodeServersGroup.GET("/:id/binaries/releases", nodeServerH.ListReleases)
+			nodeServersGroup.GET("/:id/proxy-status", nodeServerH.GetRemoteProxyStatus)
+
+		// Supplementary: Node Tags
 			nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
 			nodeServersGroup.POST("/:id/tags", nodeServerH.AddServerTag)
 			nodeServersGroup.DELETE("/:id/tags/:tagKey", nodeServerH.RemoveServerTag)
@@ -1131,6 +1143,80 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.GET("/:id/proxy/status", nodeServerH.GetProxyStatus)
 			nodeServersGroup.POST("/:id/proxy/control", nodeServerH.ControlProxy)
 			nodeServersGroup.POST("/:id/proxy/sync", nodeServerH.SyncProxyConfig)
+
+			// Node-server-scoped Proxy Site Management (Caddy/Nginx)
+			// Proxy sites, SNI, L4, log settings are all per-node now.
+			nodeServersGroup.GET("/:id/proxy/sites", proxyH.ListSites)
+			nodeServersGroup.POST("/:id/proxy/sites", proxyH.CreateSite)
+			nodeServersGroup.PUT("/:id/proxy/sites/:siteId", proxyH.UpdateSite)
+			nodeServersGroup.DELETE("/:id/proxy/sites/:siteId", proxyH.DeleteSite)
+			nodeServersGroup.POST("/:id/proxy/generate-config", proxyH.GenerateConfig)
+			nodeServersGroup.GET("/:id/proxy/config", proxyH.GetConfig)
+			nodeServersGroup.PUT("/:id/proxy/config", proxyH.UpdateConfig)
+			nodeServersGroup.GET("/:id/proxy/sni-settings", proxyH.GetSNISettings)
+			nodeServersGroup.POST("/:id/proxy/sni-settings", proxyH.SaveSNISettings)
+			nodeServersGroup.POST("/:id/proxy/batch-update-ports", proxyH.BatchUpdatePorts)
+			nodeServersGroup.DELETE("/:id/proxy/sni-rules", proxyH.DeleteAllSNI)
+			nodeServersGroup.POST("/:id/proxy/sni-rules/toggle", proxyH.ToggleSNI)
+			nodeServersGroup.GET("/:id/proxy/l4-settings", proxyH.GetL4Settings)
+			nodeServersGroup.POST("/:id/proxy/l4-settings", proxyH.SaveL4Settings)
+			nodeServersGroup.DELETE("/:id/proxy/l4-rules", proxyH.DeleteAllL4)
+			nodeServersGroup.POST("/:id/proxy/guardian", proxyH.UpdateGuardian)
+			nodeServersGroup.GET("/:id/proxy/log-settings", proxyH.GetLogSettings)
+			nodeServersGroup.POST("/:id/proxy/log-settings", proxyH.SaveLogSettings)
+			nodeServersGroup.GET("/:id/proxy/nginx-settings", proxyH.GetNginxSettings)
+			nodeServersGroup.POST("/:id/proxy/nginx-settings", proxyH.SaveNginxSettings)
+			nodeServersGroup.POST("/:id/proxy/install", nodeServerH.InstallProxy)
+			nodeServersGroup.GET("/:id/proxy/releases", proxyH.ListReleases)
+			nodeServersGroup.POST("/:id/proxy/download", proxyH.DownloadVersion)
+			nodeServersGroup.POST("/:id/proxy/start", proxyH.Start)
+			nodeServersGroup.POST("/:id/proxy/stop", proxyH.Stop)
+			nodeServersGroup.POST("/:id/proxy/restart", proxyH.Restart)
+			nodeServersGroup.POST("/:id/proxy/reload", proxyH.Reload)
+
+			// Caddy site management (per node)
+			nodeServersGroup.GET("/:id/caddy/sites", caddyH.ListSites)
+			nodeServersGroup.POST("/:id/caddy/sites", caddyH.CreateSite)
+			nodeServersGroup.PUT("/:id/caddy/sites/:siteId", caddyH.UpdateSite)
+			nodeServersGroup.DELETE("/:id/caddy/sites/:siteId", caddyH.DeleteSite)
+			nodeServersGroup.POST("/:id/caddy/generate-config", caddyH.GenerateConfig)
+			nodeServersGroup.POST("/:id/caddy/save-and-apply", caddyH.SaveAndApply)
+			nodeServersGroup.GET("/:id/caddy/sni-settings", caddyH.GetSNISettings)
+			nodeServersGroup.POST("/:id/caddy/sni-settings", caddyH.SaveSNISettings)
+			nodeServersGroup.POST("/:id/caddy/sni-rules/toggle", caddyH.ToggleSNI)
+			nodeServersGroup.DELETE("/:id/caddy/sni-rules", caddyH.DeleteAllSNI)
+			nodeServersGroup.POST("/:id/caddy/batch-update-ports", caddyH.BatchUpdatePorts)
+			nodeServersGroup.DELETE("/:id/caddy/l4-rules", caddyH.DeleteAllL4)
+
+			// Nginx site management (per node)
+			nodeServersGroup.GET("/:id/nginx/sites", nginxH.ListSites)
+			nodeServersGroup.POST("/:id/nginx/sites", nginxH.CreateSite)
+			nodeServersGroup.PUT("/:id/nginx/sites/:siteId", nginxH.UpdateSite)
+			nodeServersGroup.DELETE("/:id/nginx/sites/:siteId", nginxH.DeleteSite)
+			nodeServersGroup.POST("/:id/nginx/generate-config", nginxH.GenerateConfig)
+			nodeServersGroup.POST("/:id/nginx/save-and-apply", nginxH.SaveAndApply)
+			nodeServersGroup.GET("/:id/nginx/settings", nginxH.GetSettings)
+			nodeServersGroup.POST("/:id/nginx/settings", nginxH.SaveSettings)
+			nodeServersGroup.POST("/:id/nginx/sni-rules/toggle", nginxH.ToggleSNI)
+			nodeServersGroup.DELETE("/:id/nginx/sni-rules", nginxH.DeleteAllSNI)
+			nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)
+			nodeServersGroup.DELETE("/:id/nginx/l4-rules", nginxH.DeleteAllL4)
+
+			// Inbound Configs (per node)
+			nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
+			nodeServersGroup.POST("/:id/inbound-configs", inboundCfgH.Create)
+			nodeServersGroup.GET("/:id/inbound-configs/:cfgId", inboundCfgH.Get)
+			nodeServersGroup.PUT("/:id/inbound-configs/:cfgId", inboundCfgH.Update)
+			nodeServersGroup.DELETE("/:id/inbound-configs/:cfgId", inboundCfgH.Delete)
+			nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/pause", inboundCfgH.PauseUser)
+			nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/resume", inboundCfgH.ResumeUser)
+
+			// Outbound Configs (per node)
+			nodeServersGroup.GET("/:id/outbound-configs", outboundCfgH.List)
+			nodeServersGroup.POST("/:id/outbound-configs", outboundCfgH.Create)
+			nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
+			nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
+			nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
 		}
 
 			// CA Center (separate group, reuses nodeServerH)
@@ -1392,72 +1478,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
 			}
 
-			// Proxy management
-			proxyGroup := protected.Group("/proxy")
-			{
-				proxyGroup.GET("/status", proxyH.GetStatus)
-				proxyGroup.POST("/install", proxyH.Install)
-				proxyGroup.GET("/releases", proxyH.ListReleases)
-				proxyGroup.POST("/download", proxyH.DownloadVersion)
-				proxyGroup.POST("/start", proxyH.Start)
-				proxyGroup.POST("/stop", proxyH.Stop)
-				proxyGroup.POST("/restart", proxyH.Restart)
-				proxyGroup.POST("/reload", proxyH.Reload)
-				proxyGroup.GET("/sites", proxyH.ListSites)
-				proxyGroup.POST("/sites", proxyH.CreateSite)
-				proxyGroup.PUT("/sites/:id", proxyH.UpdateSite)
-				proxyGroup.DELETE("/sites/:id", proxyH.DeleteSite)
-				proxyGroup.POST("/generate-config", proxyH.GenerateConfig)
-				proxyGroup.GET("/config", proxyH.GetConfig)
-				proxyGroup.PUT("/config", proxyH.UpdateConfig)
-				proxyGroup.GET("/sni-settings", proxyH.GetSNISettings)
-				proxyGroup.POST("/sni-settings", proxyH.SaveSNISettings)
-				proxyGroup.POST("/batch-update-ports", proxyH.BatchUpdatePorts)
-				proxyGroup.DELETE("/sni-rules", proxyH.DeleteAllSNI)
-				proxyGroup.POST("/sni-rules/toggle", proxyH.ToggleSNI)
-				proxyGroup.GET("/l4-settings", proxyH.GetL4Settings)
-				proxyGroup.POST("/l4-settings", proxyH.SaveL4Settings)
-				proxyGroup.DELETE("/l4-rules", proxyH.DeleteAllL4)
-				proxyGroup.POST("/guardian", proxyH.UpdateGuardian)
-				proxyGroup.GET("/log-settings", proxyH.GetLogSettings)
-				proxyGroup.POST("/log-settings", proxyH.SaveLogSettings)
-				proxyGroup.GET("/nginx-settings", proxyH.GetNginxSettings)
-				proxyGroup.POST("/nginx-settings", proxyH.SaveNginxSettings)
-			}
-
-			// Caddy management (separated)
-			caddyGroup := protected.Group("/caddy")
-			{
-				caddyGroup.GET("/sites", caddyH.ListSites)
-				caddyGroup.POST("/sites", caddyH.CreateSite)
-				caddyGroup.PUT("/sites/:id", caddyH.UpdateSite)
-				caddyGroup.DELETE("/sites/:id", caddyH.DeleteSite)
-				caddyGroup.POST("/generate-config", caddyH.GenerateConfig)
-				caddyGroup.POST("/save-and-apply", caddyH.SaveAndApply)
-				caddyGroup.GET("/sni-settings", caddyH.GetSNISettings)
-				caddyGroup.POST("/sni-settings", caddyH.SaveSNISettings)
-				caddyGroup.POST("/sni-rules/toggle", caddyH.ToggleSNI)
-				caddyGroup.DELETE("/sni-rules", caddyH.DeleteAllSNI)
-				caddyGroup.POST("/batch-update-ports", caddyH.BatchUpdatePorts)
-				caddyGroup.DELETE("/l4-rules", caddyH.DeleteAllL4)
-			}
-
-			// Nginx management (separated)
-			nginxGroup := protected.Group("/nginx")
-			{
-				nginxGroup.GET("/sites", nginxH.ListSites)
-				nginxGroup.POST("/sites", nginxH.CreateSite)
-				nginxGroup.PUT("/sites/:id", nginxH.UpdateSite)
-				nginxGroup.DELETE("/sites/:id", nginxH.DeleteSite)
-				nginxGroup.POST("/generate-config", nginxH.GenerateConfig)
-				nginxGroup.POST("/save-and-apply", nginxH.SaveAndApply)
-				nginxGroup.GET("/settings", nginxH.GetSettings)
-				nginxGroup.POST("/settings", nginxH.SaveSettings)
-				nginxGroup.POST("/sni-rules/toggle", nginxH.ToggleSNI)
-				nginxGroup.DELETE("/sni-rules", nginxH.DeleteAllSNI)
-				nginxGroup.POST("/batch-update-ports", nginxH.BatchUpdatePorts)
-				nginxGroup.DELETE("/l4-rules", nginxH.DeleteAllL4)
-			}
+			// Proxy/Caddy/Nginx management routes moved under /node-servers/:id/
 
 			// Log management
 			logManageGroup := protected.Group("/log-manage")
@@ -1737,14 +1758,26 @@ func placeholder(name string) gin.HandlerFunc {
 }
 
 // isSPARoute checks if a path matches a known SPA route.
+// Supports both exact matches and dynamic sub-routes (e.g. /node-servers/1/detail).
 func isSPARoute(path string) bool {
-	// Known SPA routes
+	// Known SPA route prefixes that may have dynamic sub-routes
+	// e.g. /node-servers/1/detail, /node-servers/1
+	spaPrefixes := []string{
+		"/node-servers",
+	}
+
+	for _, prefix := range spaPrefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+
+	// Known SPA routes (exact match only)
 	knownRoutes := []string{
 		"/",
 		"/login",
 		"/dashboard",
 		"/nodes",
-		"/protocols",
 		"/services",
 		"/subscriptions",
 		"/subscription-formats",
@@ -1752,11 +1785,9 @@ func isSPARoute(path string) bool {
 		"/clients",
 		"/certificates",
 		"/users",
-		"/proxy",
 		"/log-manage",
 		"/settings",
 		"/portal",
-		"/node-servers",
 		"/plans",
 	}
 

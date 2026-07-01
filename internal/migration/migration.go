@@ -177,6 +177,9 @@ func AutoMigrate(db *gorm.DB) error {
 
 	log.Println("all migrations completed")
 
+	// Migrate existing data to server_id=1 (local node)
+	migrateServerID(db)
+
 	// Seed default outbounds if none exist
 	seedDefaultOutbounds(db)
 
@@ -186,6 +189,28 @@ func AutoMigrate(db *gorm.DB) error {
 	return nil
 }
 
+// migrateServerID sets server_id=1 for all existing rows in tables that
+// newly gained the server_id column. This ensures existing data is
+// associated with the local node after the schema migration.
+func migrateServerID(db *gorm.DB) {
+	tables := []string{
+		"core_configs",
+		"outbound_configs",
+		"inbound_configs",
+		"proxy_sites",
+		"caddy_sites",
+		"nginx_sites",
+	}
+	for _, table := range tables {
+		result := db.Table(table).Where("server_id = 0 OR server_id IS NULL").Update("server_id", 1)
+		if result.Error != nil {
+			log.Printf("WARNING: migrate server_id for %s: %v", table, result.Error)
+		} else if result.RowsAffected > 0 {
+			log.Printf("migrated %d rows in %s to server_id=1", result.RowsAffected, table)
+		}
+	}
+}
+
 func seedDefaultOutbounds(db *gorm.DB) {
 	var count int64
 	db.Model(&entity.OutboundConfig{}).Count(&count)
@@ -193,8 +218,8 @@ func seedDefaultOutbounds(db *gorm.DB) {
 		return
 	}
 	defaults := []entity.OutboundConfig{
-		{CoreType: "xray", Protocol: "freedom", Tag: "direct", ConfigJSON: `{"protocol":"freedom","tag":"direct"}`, Enabled: true, IsDefault: true},
-		{CoreType: "xray", Protocol: "blackhole", Tag: "blocked", ConfigJSON: `{"protocol":"blackhole","tag":"blocked"}`, Enabled: true, IsDefault: true},
+		{ServerID: 1, CoreType: "xray", Protocol: "freedom", Tag: "direct", ConfigJSON: `{"protocol":"freedom","tag":"direct"}`, Enabled: true, IsDefault: true},
+		{ServerID: 1, CoreType: "xray", Protocol: "blackhole", Tag: "blocked", ConfigJSON: `{"protocol":"blackhole","tag":"blocked"}`, Enabled: true, IsDefault: true},
 	}
 	for _, ob := range defaults {
 		if err := db.Create(&ob).Error; err != nil {

@@ -430,6 +430,97 @@ func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, pr
 // Phase 6: 新增 RPC 方法（Agent 自动更新、测速、指标查询）
 // ============================================================
 
+// InstallBinary installs a core binary on a server.
+// For local servers, delegates to LocalAgent → binaries.Installer.
+// For remote servers, sends InstallBinary via gRPC to the Agent.
+func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (*agentpb.InstallBinaryResponse, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.InstallBinary(ctx, coreType, version, downloadURL, assetName)
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	return ac.agentClient.InstallBinary(ctx, &agentpb.InstallBinaryRequest{
+		CoreType:    coreType,
+		Version:     version,
+		DownloadUrl: downloadURL,
+		AssetName:   assetName,
+	})
+}
+
+// InstallProxy installs a proxy binary (caddy/nginx) on a server.
+// For local servers, delegates to LocalAgent → proxy.Manager.InstallProxy.
+// For remote servers, sends InstallProxy via gRPC to the Agent.
+func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, proxyType string) (*agentpb.InstallProxyResponse, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.InstallProxy(ctx, proxyType)
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	return ac.agentClient.InstallProxy(ctx, &agentpb.InstallProxyRequest{
+		ProxyType: proxyType,
+	})
+}
+
+// GetProxyStatus queries proxy installation status on a server.
+// For local servers, delegates to LocalAgent.
+// For remote servers, queries via gRPC to the Agent.
+func (m *NodeServerManager) GetProxyStatus(ctx context.Context, serverID int64) (*agentpb.GetProxyStatusResponse, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.GetProxyStatuses(), nil
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	return ac.agentClient.GetProxyStatus(ctx, &agentpb.GetProxyStatusRequest{})
+}
+
+// ListBinaries lists installed core binaries on a server.
+// For local servers, delegates to LocalAgent.
+// For remote servers, queries via gRPC to the Agent.
+func (m *NodeServerManager) ListBinaries(ctx context.Context, serverID int64) (*agentpb.ListBinariesResponse, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ListBinaries(), nil
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	return ac.agentClient.ListBinaries(ctx, &agentpb.ListBinariesRequest{})
+}
+
 // UpdateAgentOnServer sends an update command to a remote Agent.
 // The Agent downloads the new binary, verifies checksum, replaces, and restarts.
 func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID int64, version, downloadURL, checksum string) (*agentpb.UpdateAgentResponse, error) {

@@ -1214,7 +1214,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
-const props = defineProps({ data: Array, coreType: String })
+const props = defineProps({ data: Array, coreType: String, serverId: Number })
 
 const form = ref([])
 const dlg = ref(false)
@@ -1927,14 +1927,14 @@ function buildStreamSettings(ob) {
 
 async function loadInboundTags() {
   try {
-    const data = await client.get('/inbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    const data = await client.get(`/node-servers/${props.serverId}/inbound-configs`, { params: { core_type: props.coreType || 'xray' } })
     inboundTags.value = (data || []).map(i => i.tag).filter(Boolean)
   } catch {}
 }
 
 async function loadOutbounds() {
   try {
-    const data = await client.get('/outbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    const data = await client.get(`/node-servers/${props.serverId}/outbound-configs`, { params: { core_type: props.coreType || 'xray' } })
     form.value = (data || []).map(item => {
       try {
         const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
@@ -1984,9 +1984,9 @@ async function saveOutbound() {
   }
   try {
     if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
-      await client.put(`/outbound-configs/${form.value[editIdx.value]._id}`, payload)
+      await client.put(`/node-servers/${props.serverId}/outbound-configs/${form.value[editIdx.value]._id}`, payload)
     } else {
-      await client.post('/outbound-configs', payload)
+      await client.post(`/node-servers/${props.serverId}/outbound-configs`, payload)
     }
 
     // Apply to running xray via gRPC
@@ -2016,7 +2016,7 @@ async function saveOutbound() {
 async function removeOutbound(i) {
   const ob = form.value[i]
   if (ob._id) {
-    try { await client.delete(`/outbound-configs/${ob._id}`) } catch {}
+    try { await client.delete(`/node-servers/${props.serverId}/outbound-configs/${ob._id}`) } catch {}
   }
   // Remove from xray runtime
   if (ob.tag) {
@@ -2037,7 +2037,7 @@ async function toggleEnabled(i) {
   if (!ob._id) return
   try {
     const outbound = buildOutbound(ob)
-    await client.put(`/outbound-configs/${ob._id}`, {
+    await client.put(`/node-servers/${props.serverId}/outbound-configs/${ob._id}`, {
       remark: ob.tag || outbound.tag || '',
       protocol: outbound.protocol,
       tag: outbound.tag || ob.tag,

@@ -28,6 +28,16 @@ service AgentService {
   rpc SpeedTest(SpeedTestRequest) returns (SpeedTestResponse);
   // 获取详细资源指标（用于监控图表）
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+  // 安装核心二进制（xray/singbox/hysteria2/tuic）
+  rpc InstallBinary(InstallBinaryRequest) returns (InstallBinaryResponse);
+  // 安装代理二进制（caddy/nginx）
+  rpc InstallProxy(InstallProxyRequest) returns (InstallProxyResponse);
+  // 查询代理安装状态
+  rpc GetProxyStatus(GetProxyStatusRequest) returns (GetProxyStatusResponse);
+  // 列出已安装的核心二进制
+  rpc ListBinaries(ListBinariesRequest) returns (ListBinariesResponse);
+  // 获取 GitHub 上的可用版本列表
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
 }
 
 // ============================================================
@@ -207,6 +217,81 @@ message MetricPoint {
   int32  tcp_connections = 8;      // TCP 连接数
   int64  traffic_uplink = 9;       // 用户上行流量（字节/秒）
   int64  traffic_downlink = 10;    // 用户下行流量（字节/秒）
+}
+
+// ============================================================
+// 二进制安装（核心 + 代理）
+// ============================================================
+
+message InstallBinaryRequest {
+  string core_type = 1;            // xray/singbox/hysteria2/tuic
+  string version = 2;              // 目标版本号（如 v1.8.6）
+  string download_url = 3;         // 下载 URL（空则自动构建）
+  string asset_name = 4;           // 指定 asset 名称（可选）
+}
+
+message InstallBinaryResponse {
+  bool   success = 1;
+  string error = 2;
+  string core_type = 3;
+  string version = 4;
+  string binary_path = 5;
+}
+
+message InstallProxyRequest {
+  string proxy_type = 1;           // caddy/nginx
+}
+
+message InstallProxyResponse {
+  bool   success = 1;
+  string error = 2;
+  string proxy_type = 3;
+  string version = 4;
+  string binary_path = 5;
+  bool   installed = 6;
+}
+
+message GetProxyStatusRequest {}
+
+message GetProxyStatusResponse {
+  repeated ProxyInfo proxies = 1;
+}
+
+message ProxyInfo {
+  string type = 1;
+  string name = 2;
+  bool   installed = 3;
+  string version = 4;
+  string path = 5;
+  string status = 6;               // running/stopped
+  bool   managed = 7;
+}
+
+message ListBinariesRequest {}
+
+message ListBinariesResponse {
+  repeated BinaryInfo binaries = 1;
+}
+
+message BinaryInfo {
+  string core_type = 1;
+  string version = 2;
+  string binary_path = 3;
+  bool   installed = 4;
+}
+
+// ListReleases 获取 GitHub 上的可用版本列表
+message ListReleasesRequest {
+  string core_type = 1;
+}
+
+message ListReleasesResponse {
+  repeated ReleaseInfo releases = 1;
+}
+
+message ReleaseInfo {
+  string version = 1;
+  bool   prerelease = 2;
 }
 
 // ============================================================

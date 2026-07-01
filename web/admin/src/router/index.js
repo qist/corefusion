@@ -10,7 +10,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'protocols', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'proxy', 'log-manage', 'detail']
+    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'detail']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -32,7 +32,6 @@ const routes = [
     redirect: '/dashboard',
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '仪表盘', icon: 'Odometer' } },
-      { path: 'protocols', name: 'Protocols', component: () => import('../views/protocols/ProtocolCenter.vue'), meta: { title: 'menu.protoCenter', icon: 'Connection' } },
       { path: 'services', name: 'Services', component: () => import('../views/Services.vue'), meta: { title: '服务管理', icon: 'Monitor' } },
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('../views/SubscriptionCenter.vue'), meta: { title: 'menu.subscriptions', icon: 'Link' } },
       { path: 'plans', name: 'PlanManagement', component: () => import('../views/PlanManagement.vue'), meta: { title: 'menu.planManagement', icon: 'Tickets' } },
@@ -42,7 +41,6 @@ const routes = [
       { path: 'certificates', name: 'Certificates', component: () => import('../views/Certificates.vue'), meta: { title: '证书管理', icon: 'Lock' } },
       { path: 'users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', icon: 'User' } },
       { path: 'log-manage', name: 'LogManage', component: () => import('../views/LogManage.vue'), meta: { title: '日志管理', icon: 'Document' } },
-      { path: 'proxy', name: 'Proxy', component: () => import('../views/Proxy.vue'), meta: { title: '代理管理', icon: 'Monitor' } }, // kept for backward compat, hidden from menu
       { path: 'settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: '系统设置', icon: 'Setting' } },
     ],
   },

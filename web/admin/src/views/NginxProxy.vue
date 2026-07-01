@@ -635,6 +635,15 @@ import client from '../api/client'
 const { t } = useI18n()
 const emit = defineEmits(['back'])
 
+const props = defineProps({
+  serverId: { type: Number, required: true }
+})
+
+// API base paths (node-server-scoped)
+const apiBase = computed(() => `/node-servers/${props.serverId}`)
+const nginxApi = computed(() => `${apiBase.value}/nginx`)
+const proxyApi = computed(() => `${apiBase.value}/proxy`)
+
 const proxyInfo = ref({})
 const guardian = ref({})
 const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
@@ -702,7 +711,7 @@ function formatSize(bytes) {
 
 async function fetchProxyInfo() {
   try {
-    const status = await client.get('/proxy/status')
+    const status = await client.get(`${proxyApi.value}/status`)
     proxyInfo.value = status.nginx || {}
     guardian.value = status.nginx_guardian || {}
     guardianConfig.value.autoRestart = guardian.value.auto_restart !== false
@@ -713,7 +722,7 @@ async function fetchProxyInfo() {
 
 async function saveGuardianConfig() {
   try {
-    await client.post('/proxy/guardian?type=nginx', {
+    await client.post(`${proxyApi.value}/guardian?type=nginx`, {
       auto_restart: guardianConfig.value.autoRestart,
       max_restarts: guardianConfig.value.maxRestarts
     })
@@ -728,7 +737,7 @@ function formatTime(ts) {
 
 async function fetchSites() {
   try {
-    allSites.value = await client.get('/nginx/sites') || []
+    allSites.value = await client.get(`${nginxApi.value}/sites`) || []
   } catch (e) { allSites.value = [] }
 }
 
@@ -738,7 +747,7 @@ async function fetchCertificates() {
 
 async function fetchSettings() {
   try {
-    const data = await client.get('/nginx/settings')
+    const data = await client.get(`${nginxApi.value}/settings`)
     if (data) settings.value = data
   } catch (e) {}
   // Load log output mode
@@ -750,7 +759,7 @@ async function fetchSettings() {
 
 async function saveSettings() {
   try {
-    await client.post('/nginx/settings', settings.value)
+    await client.post(`${nginxApi.value}/settings`, settings.value)
     // Save log output mode (preserve caddy mode)
     const current = await client.get('/log-manage/log-output')
     await client.put('/log-manage/log-output', {
@@ -771,27 +780,27 @@ async function onSNIToggle(enabled) {
     settings.value.stream_sni_enabled = enabled
     await saveSettings()
     if (enabled) {
-      await client.post('/nginx/sni-rules/toggle', { enabled: true })
+      await client.post(`${nginxApi.value}/sni-rules/toggle`, { enabled: true })
       const localPort = sniLocalPort.value || '8443'
       settings.value.default_https_port = localPort
       await saveSettings()
-      const existing = await client.get('/nginx/sites')
+      const existing = await client.get(`${nginxApi.value}/sites`)
       const hasFallback = (existing || []).some(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
       if (!hasFallback) {
-        await client.post('/nginx/sites', {
+        await client.post(`${nginxApi.value}/sites`, {
           domain: 'fallback', upstream: '', template: 'sni',
           sni_target: `127.0.0.1:${localPort}`, local_port: localPort,
           proxy_protocol: true, is_panel: false, priority: 999,
           listen_port: sniListenPort.value || '443'
         })
       }
-      const res = await client.post('/nginx/batch-update-ports', { port: localPort, enable: true })
+      const res = await client.post(`${nginxApi.value}/batch-update-ports`, { port: localPort, enable: true })
       ElMessage.success(`SNI 已开启，迁移 ${res.updated || 0} 个站点`)
     } else {
       settings.value.default_https_port = '443'
       await saveSettings()
-      await client.post('/nginx/sni-rules/toggle', { enabled: false })
-      await client.post('/nginx/batch-update-ports', { port: '443', enable: false })
+      await client.post(`${nginxApi.value}/sni-rules/toggle`, { enabled: false })
+      await client.post(`${nginxApi.value}/batch-update-ports`, { port: '443', enable: false })
       ElMessage.success('SNI 已关闭，规则已保留（禁用）')
     }
     await applyConfig()
@@ -804,17 +813,17 @@ async function batchMigrate() {
   try {
     settings.value.default_https_port = port
     await saveSettings()
-    const existing = await client.get('/nginx/sites')
+    const existing = await client.get(`${nginxApi.value}/sites`)
     const hasFallback = (existing || []).some(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
     if (!hasFallback) {
-      await client.post('/nginx/sites', {
+      await client.post(`${nginxApi.value}/sites`, {
         domain: 'fallback', upstream: '', template: 'sni',
         sni_target: `127.0.0.1:${port}`, local_port: port,
         proxy_protocol: true, is_panel: false, priority: 999,
         listen_port: sniListenPort.value || '443'
       })
     }
-    const res = await client.post('/nginx/batch-update-ports', { port, enable: true })
+    const res = await client.post(`${nginxApi.value}/batch-update-ports`, { port, enable: true })
     await applyConfig()
     ElMessage.success(`迁移完成，更新 ${res.updated || 0} 个站点`)
     fetchSites()
@@ -825,7 +834,7 @@ async function showReleases() {
   releasesVisible.value = true
   releasesLoading.value = true
   try {
-    releases.value = await client.get('/proxy/releases', { params: { type: 'nginx' } }) || []
+    releases.value = await client.get(`${proxyApi.value}/releases`, { params: { type: 'nginx' } }) || []
   } catch (e) { releases.value = [] } finally { releasesLoading.value = false }
 }
 
@@ -833,8 +842,8 @@ async function downloadVersion(url, tagName) {
   downloading.value = true
   downloadProgress.value = '正在下载 ' + tagName + '...'
   try {
-    await client.post('/proxy/download', { type: 'nginx', download_url: url, tag_name: tagName })
-    try { await client.post('/proxy/start?type=nginx') } catch {}
+    await client.post(`${proxyApi.value}/download`, { type: 'nginx', download_url: url, tag_name: tagName })
+    try { await client.post(`${proxyApi.value}/start?type=nginx`) } catch {}
     ElMessage.success(t('proxy.downloadSuccess'))
     releasesVisible.value = false
     fetchProxyInfo()
@@ -848,7 +857,7 @@ async function downloadVersion(url, tagName) {
 
 async function proxyAction(action) {
   try {
-    await client.post(`/proxy/${action}?type=nginx`)
+    await client.post(`${proxyApi.value}/${action}?type=nginx`)
     ElMessage.success(t('common.success'))
     fetchProxyInfo()
   } catch (e) {}
@@ -1027,9 +1036,9 @@ function generatePreview(site) {
 
 async function applyConfig() {
   try {
-    await client.post('/nginx/generate-config')
+    await client.post(`${nginxApi.value}/generate-config`)
     if (proxyInfo.value.status === 'running') {
-      await client.post('/proxy/reload?type=nginx')
+      await client.post(`${proxyApi.value}/reload?type=nginx`)
     }
     fetchProxyInfo()
   } catch (e) {}
@@ -1067,9 +1076,9 @@ async function saveSite() {
       ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve || ''
     }
     if (siteForm.value.id) {
-      await client.put(`/nginx/sites/${siteForm.value.id}`, payload)
+      await client.put(`${nginxApi.value}/sites/${siteForm.value.id}`, payload)
     } else {
-      await client.post('/nginx/sites', payload)
+      await client.post(`${nginxApi.value}/sites`, payload)
     }
     await applyConfig()
     ElMessage.success(t('proxy.siteSaved'))
@@ -1080,7 +1089,7 @@ async function saveSite() {
 
 async function toggleSite(row) {
   try {
-    await client.put(`/nginx/sites/${row.id}`, { enabled: row.enabled })
+    await client.put(`${nginxApi.value}/sites/${row.id}`, { enabled: row.enabled })
     await applyConfig()
     fetchSites()
   } catch (e) { row.enabled = !row.enabled }
@@ -1089,7 +1098,7 @@ async function toggleSite(row) {
 async function deleteSite(row) {
   await ElMessageBox.confirm(t('common.confirm'))
   try {
-    await client.delete(`/nginx/sites/${row.id}`)
+    await client.delete(`${nginxApi.value}/sites/${row.id}`)
     await applyConfig()
     ElMessage.success(t('common.success'))
     fetchSites()
@@ -1098,7 +1107,7 @@ async function deleteSite(row) {
 
 async function viewConfig() {
   try {
-    const data = await client.get('/proxy/config?type=nginx')
+    const data = await client.get(`${proxyApi.value}/config?type=nginx`)
     configViewContent.value = data.config || ''
     configViewVisible.value = true
   } catch (e) {}
@@ -1116,7 +1125,7 @@ function showAddSNI() {
 
 async function saveSNIRule() {
   try {
-    await client.post('/nginx/sites', {
+    await client.post(`${nginxApi.value}/sites`, {
       domain: sniForm.value.domain,
       upstream: '',
       template: 'sni',

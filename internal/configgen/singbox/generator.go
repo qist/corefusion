@@ -44,8 +44,8 @@ type DNSConfig struct {
 }
 
 type DNSServer struct {
-	Tag:     string `json:"tag"`
-	Address  string `json:"address"`
+	Tag     string `json:"tag"`
+	Address string `json:"address"`
 	Detour   string `json:"detour,omitempty"`
 }
 

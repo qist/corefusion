@@ -104,13 +104,13 @@ func NewService(repo *repository.CoreConfigRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// SeedDefaults creates default config sections for all supported core types.
-func (s *Service) SeedDefaults(ctx context.Context) error {
+// SeedDefaults creates default config sections for all supported core types on a specific server.
+func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 	for _, coreType := range SupportedCoreTypes {
 		sections := CoreSections[coreType]
 		defaults := DefaultSectionJSON[coreType]
 		for _, section := range sections {
-			_, err := s.repo.GetSection(ctx, coreType, section)
+			_, err := s.repo.GetSection(ctx, serverID, coreType, section)
 			if err == nil {
 				continue // already exists
 			}
@@ -121,6 +121,7 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 				}
 			}
 			cfg := &entity.CoreConfig{
+				ServerID:   serverID,
 				CoreType:   coreType,
 				Section:    section,
 				ConfigJSON: defaultJSON,
@@ -134,9 +135,9 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 	return nil
 }
 
-// GetFull returns all sections merged into a single JSON object.
-func (s *Service) GetFull(ctx context.Context, coreType string) (map[string]interface{}, error) {
-	configs, err := s.repo.GetAllSections(ctx, coreType)
+// GetFull returns all sections merged into a single JSON object for a specific server.
+func (s *Service) GetFull(ctx context.Context, serverID int64, coreType string) (map[string]interface{}, error) {
+	configs, err := s.repo.GetAllSections(ctx, serverID, coreType)
 	if err != nil {
 		return nil, err
 	}
@@ -151,9 +152,9 @@ func (s *Service) GetFull(ctx context.Context, coreType string) (map[string]inte
 	return result, nil
 }
 
-// GetSection returns a single section's parsed data.
-func (s *Service) GetSection(ctx context.Context, coreType, section string) (interface{}, error) {
-	cfg, err := s.repo.GetSection(ctx, coreType, section)
+// GetSection returns a single section's parsed data for a specific server.
+func (s *Service) GetSection(ctx context.Context, serverID int64, coreType, section string) (interface{}, error) {
+	cfg, err := s.repo.GetSection(ctx, serverID, coreType, section)
 	if err != nil {
 		return nil, fmt.Errorf("section %q not found: %w", section, err)
 	}
@@ -164,12 +165,13 @@ func (s *Service) GetSection(ctx context.Context, coreType, section string) (int
 	return val, nil
 }
 
-// SaveSection updates a single section.
-func (s *Service) SaveSection(ctx context.Context, coreType, section string, data json.RawMessage) error {
+// SaveSection updates a single section for a specific server.
+func (s *Service) SaveSection(ctx context.Context, serverID int64, coreType, section string, data json.RawMessage) error {
 	if !ValidJSONC(data) {
 		return fmt.Errorf("invalid JSON")
 	}
 	cfg := &entity.CoreConfig{
+		ServerID:   serverID,
 		CoreType:   coreType,
 		Section:    section,
 		ConfigJSON: string(data),
@@ -177,10 +179,10 @@ func (s *Service) SaveSection(ctx context.Context, coreType, section string, dat
 	return s.repo.UpsertSection(ctx, cfg)
 }
 
-// SaveFull replaces all sections for a core type from a merged JSON object.
-func (s *Service) SaveFull(ctx context.Context, coreType string, fullJSON map[string]interface{}) error {
+// SaveFull replaces all sections for a core type from a merged JSON object on a specific server.
+func (s *Service) SaveFull(ctx context.Context, serverID int64, coreType string, fullJSON map[string]interface{}) error {
 	// Get existing sections
-	existing, err := s.repo.GetAllSections(ctx, coreType)
+	existing, err := s.repo.GetAllSections(ctx, serverID, coreType)
 	if err != nil {
 		return err
 	}
@@ -191,7 +193,7 @@ func (s *Service) SaveFull(ctx context.Context, coreType string, fullJSON map[st
 		if err != nil {
 			return fmt.Errorf("marshal %s/%s: %w", coreType, section, err)
 		}
-		if err := s.SaveSection(ctx, coreType, section, json.RawMessage(data)); err != nil {
+		if err := s.SaveSection(ctx, serverID, coreType, section, json.RawMessage(data)); err != nil {
 			return err
 		}
 	}
@@ -199,16 +201,16 @@ func (s *Service) SaveFull(ctx context.Context, coreType string, fullJSON map[st
 	// Delete sections that are no longer in the config
 	for _, cfg := range existing {
 		if _, ok := fullJSON[cfg.Section]; !ok {
-			s.repo.DeleteSection(ctx, coreType, cfg.Section)
+			s.repo.DeleteSection(ctx, serverID, coreType, cfg.Section)
 		}
 	}
 
 	return nil
 }
 
-// List returns all core configs grouped by core type.
-func (s *Service) List(ctx context.Context) (map[string][]entity.CoreConfig, error) {
-	configs, err := s.repo.List(ctx)
+// List returns all core configs grouped by core type for a specific server.
+func (s *Service) List(ctx context.Context, serverID int64) (map[string][]entity.CoreConfig, error) {
+	configs, err := s.repo.List(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}

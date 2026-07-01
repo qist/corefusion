@@ -20,10 +20,14 @@ func NewHandler(svc *outboundconfig.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// List handles GET /api/v1/outbound-configs.
+// List handles GET /api/v1/node-servers/:id/outbound-configs.
 func (h *Handler) List(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
 	coreType := c.Query("core_type")
-	configs, err := h.svc.List(c.Request.Context(), coreType)
+	configs, err := h.svc.List(c.Request.Context(), serverID, coreType)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -31,14 +35,17 @@ func (h *Handler) List(c *gin.Context) {
 	response.OK(c, configs)
 }
 
-// Get handles GET /api/v1/outbound-configs/:id.
+// Get handles GET /api/v1/node-servers/:id/outbound-configs/:cfgId.
 func (h *Handler) Get(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid id")
-		return
+		serverID = 1
 	}
-	cfg, err := h.svc.GetByID(c.Request.Context(), id)
+	cfgID, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
+	if err != nil {
+		cfgID, _ = strconv.ParseInt(c.Param("id"), 10, 64) // fallback
+	}
+	cfg, err := h.svc.GetByID(c.Request.Context(), serverID, cfgID)
 	if err != nil {
 		response.NotFound(c, "NOT_FOUND", err.Error())
 		return
@@ -46,8 +53,12 @@ func (h *Handler) Get(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// Create handles POST /api/v1/outbound-configs.
+// Create handles POST /api/v1/node-servers/:id/outbound-configs.
 func (h *Handler) Create(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
 	var req struct {
 		CoreType   string          `json:"core_type"`
 		Remark     string          `json:"remark"`
@@ -61,7 +72,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	cfg, err := h.svc.Create(c.Request.Context(), req.CoreType, req.Remark, req.Protocol, req.Tag, string(req.ConfigJSON), req.Enabled, req.IsDefault)
+	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, string(req.ConfigJSON), req.Enabled, req.IsDefault)
 	if err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
@@ -69,12 +80,15 @@ func (h *Handler) Create(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// Update handles PUT /api/v1/outbound-configs/:id.
+// Update handles PUT /api/v1/node-servers/:id/outbound-configs/:cfgId.
 func (h *Handler) Update(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid id")
-		return
+		serverID = 1
+	}
+	cfgID, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
+	if err != nil {
+		cfgID, _ = strconv.ParseInt(c.Param("id"), 10, 64) // fallback
 	}
 	var req struct {
 		Remark     string          `json:"remark"`
@@ -88,7 +102,7 @@ func (h *Handler) Update(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	cfg, err := h.svc.Update(c.Request.Context(), id, req.Remark, req.Protocol, req.Tag, string(req.ConfigJSON), req.Enabled, req.IsDefault)
+	cfg, err := h.svc.Update(c.Request.Context(), serverID, cfgID, req.Remark, req.Protocol, req.Tag, string(req.ConfigJSON), req.Enabled, req.IsDefault)
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -96,14 +110,17 @@ func (h *Handler) Update(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// Delete handles DELETE /api/v1/outbound-configs/:id.
+// Delete handles DELETE /api/v1/node-servers/:id/outbound-configs/:cfgId.
 func (h *Handler) Delete(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid id")
-		return
+		serverID = 1
 	}
-	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
+	cfgID, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
+	if err != nil {
+		cfgID, _ = strconv.ParseInt(c.Param("id"), 10, 64) // fallback
+	}
+	if err := h.svc.Delete(c.Request.Context(), serverID, cfgID); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
 	}

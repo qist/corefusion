@@ -7,19 +7,33 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"corefusion/internal/api/handlers/system"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
+	coreconfigSvc "corefusion/internal/service/coreconfig"
 	nodeserverSvc "corefusion/internal/service/nodeserver"
 )
 
 // Handler handles node server HTTP requests.
 type Handler struct {
-	svc *nodeserverSvc.Service
+	svc          *nodeserverSvc.Service
+	coreConfigSvc *coreconfigSvc.Service
+	proxyH       *system.ProxyHandler
 }
 
 // NewHandler creates a new node server handler.
 func NewHandler(svc *nodeserverSvc.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetCoreConfigService sets the core config service for protocol management.
+func (h *Handler) SetCoreConfigService(svc *coreconfigSvc.Service) {
+	h.coreConfigSvc = svc
+}
+
+// SetProxyHandler sets the proxy handler for local proxy management delegation.
+func (h *Handler) SetProxyHandler(ph *system.ProxyHandler) {
+	h.proxyH = ph
 }
 
 // List returns all node servers with optional filtering.

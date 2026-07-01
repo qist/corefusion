@@ -1050,6 +1050,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			nodeServerH := nodeServerHandler.NewHandler(nodeServerSvcInst)
+			nodeServerH.SetCoreConfigService(coreConfigSvc)
+			nodeServerH.SetProxyHandler(proxyH)
 			nodeServersGroup := protected.Group("/node-servers")
 			{
 				nodeServersGroup.GET("", nodeServerH.List)
@@ -1109,11 +1111,27 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/degradation-status", nodeServerH.GetDegradationStatus)
 				nodeServersGroup.POST("/:id/force-reconnect", nodeServerH.ForceReconnect)
 
-				// Supplementary: Node Tags
-				nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
-				nodeServersGroup.POST("/:id/tags", nodeServerH.AddServerTag)
-				nodeServersGroup.DELETE("/:id/tags/:tagKey", nodeServerH.RemoveServerTag)
-			}
+			// Supplementary: Node Tags
+			nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
+			nodeServersGroup.POST("/:id/tags", nodeServerH.AddServerTag)
+			nodeServersGroup.DELETE("/:id/tags/:tagKey", nodeServerH.RemoveServerTag)
+
+			// Node-server-scoped Protocol Config Management
+			// These routes allow managing protocol config per node server.
+			// GET operations read from panel DB; Save operations sync to target node.
+			nodeServersGroup.GET("/:id/protocols", nodeServerH.ListProtocols)
+			nodeServersGroup.GET("/:id/protocols/:coreType", nodeServerH.GetProtocol)
+			nodeServersGroup.PUT("/:id/protocols/:coreType", nodeServerH.SaveProtocol)
+			nodeServersGroup.GET("/:id/protocols/:coreType/section/:section", nodeServerH.GetProtocolSection)
+			nodeServersGroup.PUT("/:id/protocols/:coreType/section/:section", nodeServerH.SaveProtocolSection)
+			nodeServersGroup.POST("/:id/protocols/:coreType/validate", nodeServerH.ValidateProtocol)
+
+			// Node-server-scoped Proxy Management
+			// These routes allow managing proxy (Caddy/Nginx) per node server.
+			nodeServersGroup.GET("/:id/proxy/status", nodeServerH.GetProxyStatus)
+			nodeServersGroup.POST("/:id/proxy/control", nodeServerH.ControlProxy)
+			nodeServersGroup.POST("/:id/proxy/sync", nodeServerH.SyncProxyConfig)
+		}
 
 			// CA Center (separate group, reuses nodeServerH)
 			caCenterGroup := protected.Group("/ca")
@@ -1546,9 +1564,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
 	}
 
-	// Seed default cores and reconcile processes on startup
-	processMgr.SeedCores(nil)
-	go processMgr.Reconcile(nil)
+	// Check panel mode — if management_only, skip local core process startup
+	panelMode, _ := systemSettingSvc.GetByKey(context.Background(), "panel.mode")
+	if panelMode == "management_only" {
+		log.Println("[Panel] Running in MANAGEMENT_ONLY mode — local core processes disabled")
+	} else {
+		// Seed default cores and reconcile processes on startup
+		processMgr.SeedCores(nil)
+		go processMgr.Reconcile(nil)
+	}
 
 	// Set callback to reload proxy config when log output mode is switched
 	logManageSvc.SetOnModeSwitch(func(proxyType string) {

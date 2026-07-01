@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -208,6 +209,56 @@ func (ca *CertificateAuthority) IssueAgentCertificate(ctx context.Context, serve
 		CACertPEM: ca.caCertPEM,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// IssueServerCertificate signs a TLS server certificate for the Panel's gRPC server.
+// This certificate is presented to Agents during the mTLS handshake.
+func (ca *CertificateAuthority) IssueServerCertificate() (tls.Certificate, error) {
+	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("generate server key: %w", err)
+	}
+
+	serialNumber, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("generate serial number: %w", err)
+	}
+
+	expiresAt := time.Now().Add(CAValidity / 2) // 5 years
+
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"CoreFusion"},
+			CommonName:   "corefusion-panel",
+		},
+		NotBefore:   time.Now().Add(-5 * time.Minute),
+		NotAfter:    expiresAt,
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:    []string{"corefusion-panel", "localhost"},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, ca.caCert, &serverKey.PublicKey, ca.caKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("create server cert: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(serverKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("marshal server key: %w", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	serverCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("load server key pair: %w", err)
+	}
+
+	log.Printf("[CA] panel gRPC server certificate issued (serial=%s, expires=%v)", serialNumber.String(), expiresAt)
+	return serverCert, nil
 }
 
 // GetCACertPEM returns the CA root certificate PEM (Agents need this to verify the panel).

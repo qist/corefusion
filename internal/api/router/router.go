@@ -132,9 +132,21 @@ var proxyMgr *proxySvc.Manager
 // caService is the global CA service for Agent mTLS certificate management.
 var caService *agent.CertificateAuthority
 
+// sharedNodeMgr is the global NodeServerManager shared between main.go and router.
+// This is set from main.go to ensure the gRPC server (Agent connections) and
+// the HTTP API (status queries, commands) use the same instance.
+var sharedNodeMgr *agent.NodeServerManager
+
 // SetCAService sets the CA service for the router (called from main.go before NewWithFullConfig).
 func SetCAService(ca *agent.CertificateAuthority) {
 	caService = ca
+}
+
+// SetNodeServerManager sets the shared NodeServerManager (called from main.go before NewWithFullConfig).
+// This ensures that the gRPC server (which receives Agent connections) and the HTTP API
+// (which queries Agent status) share the same instance and connection map.
+func SetNodeServerManager(mgr *agent.NodeServerManager) {
+	sharedNodeMgr = mgr
 }
 
 // SetProcessManager sets the process manager (called from main.go before NewWithFullConfig).
@@ -960,45 +972,48 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService)
 
-			// Wire up CRL and CertDistributor if CA is available
-			if caService != nil {
-				certRepoForNodeServer := repository.NewCertificateRepository(database)
-				nodeMgrForCRL := agent.NewNodeServerManager(nodeServerRepo, caService)
-				crlInst := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgrForCRL, caService)
-				certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
-				nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
+		// Wire up CRL and CertDistributor if CA is available
+		if caService != nil {
+			certRepoForNodeServer := repository.NewCertificateRepository(database)
+			// Use the shared NodeServerManager from main.go (same instance that runs
+			// the gRPC server and receives Agent connections). This ensures that
+			// HTTP API status queries and commands use the same connection map.
+			nodeMgrForCRL := sharedNodeMgr
+			crlInst := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgrForCRL, caService)
+			certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
+			nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
 
-				// Inject LocalAgent — wraps the existing process.Manager and proxy.Manager
-				// for local node operations. Local server (is_local=1) operations go through
-				// process.Manager (cores) and proxy.Manager (Caddy/Nginx) directly,
-				// not through gRPC. Remote servers use gRPC as before.
-				localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
-				localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
-				nodeMgrForCRL.SetLocalAgent(localAgent)
+			// Inject LocalAgent — wraps the existing process.Manager and proxy.Manager
+			// for local node operations. Local server (is_local=1) operations go through
+			// process.Manager (cores) and proxy.Manager (Caddy/Nginx) directly,
+			// not through gRPC. Remote servers use gRPC as before.
+			localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+			localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+			nodeMgrForCRL.SetLocalAgent(localAgent)
 
 				// Phase 3: Node Types & Chain Proxy wiring
-				inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
-				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
+			inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
+			nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
 
-				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
-				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3)
-				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
-				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
-				billingFilter := agent.NewBillingFilter(nodeServerRepo)
+			failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
+			mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3)
+			chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
+			chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
+			billingFilter := agent.NewBillingFilter(nodeServerRepo)
 
-				nodeServerSvcInst.
-					WithInboundRepo(inboundRepoForNodeServer).
-					WithNodeManager(nodeMgrForPhase3).
-					WithFailoverManager(failoverMgr).
-					WithMirrorSync(mirrorSyncMgr).
-					WithChainGenerator(chainGen).
-					WithChainHealthRegistry(chainHealthRegistry).
-					WithBillingFilter(billingFilter)
+			nodeServerSvcInst.
+				WithInboundRepo(inboundRepoForNodeServer).
+				WithNodeManager(nodeMgrForPhase3).
+				WithFailoverManager(failoverMgr).
+				WithMirrorSync(mirrorSyncMgr).
+				WithChainGenerator(chainGen).
+				WithChainHealthRegistry(chainHealthRegistry).
+				WithBillingFilter(billingFilter)
 
-				// Phase 5: Dashboard & Enhancements wiring
-				multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
-				geoIPResolver := subRegion.NewSimpleGeoIPResolver()
-				regionSelector := subRegion.NewRegionSelector(geoIPResolver, nodeServerRepo)
+			// Phase 5: Dashboard & Enhancements wiring
+			multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
+			geoIPResolver := subRegion.NewSimpleGeoIPResolver()
+			regionSelector := subRegion.NewRegionSelector(geoIPResolver, nodeServerRepo)
 
 			nodeServerSvcInst.
 				WithHealthChecker(multiHealthChecker).
@@ -1453,6 +1468,36 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
 				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
 			}
+
+		// Agent bootstrap (public — no auth, uses bootstrap token, registered on v1 not protected)
+		v1.POST("/agent/bootstrap", func(c *gin.Context) {
+			var req struct {
+				ServerID       int64  `json:"server_id" binding:"required"`
+				BootstrapToken string `json:"bootstrap_token" binding:"required"`
+				Hostname       string `json:"hostname"`
+				AgentVersion   string `json:"agent_version"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, "INVALID_BODY", err.Error())
+				return
+			}
+			if bootstrapTokenMgr == nil || caService == nil {
+				response.InternalError(c, "NOT_INITIALIZED", "CA or bootstrap manager not initialized")
+				return
+			}
+			certResult, err := bootstrapTokenMgr.ValidateBootstrapToken(c.Request.Context(), req.ServerID, req.BootstrapToken)
+			if err != nil {
+				response.BadRequest(c, "BOOTSTRAP_FAILED", err.Error())
+				return
+			}
+			response.OK(c, gin.H{
+				"server_id":       req.ServerID,
+				"cert_pem":        string(certResult.CertPEM),
+				"key_pem":         string(certResult.KeyPEM),
+				"ca_cert_pem":     string(certResult.CACertPEM),
+				"cert_expires_at": certResult.ExpiresAt.Unix(),
+			})
+		})
 
 			// Placeholder routes for remaining modules
 			registerPlaceholderRoutes(protected)

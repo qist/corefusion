@@ -314,7 +314,8 @@ func runServer(args []string) {
 
 	// Phase 6: Create router
 	router.SetCAService(caService)
-	router.SetProcessManager(processMgr) // share processMgr with router (HTTP API handlers)
+	router.SetProcessManager(processMgr)              // share processMgr with router (HTTP API handlers)
+	router.SetNodeServerManager(nodeMgr)              // share nodeMgr with router (same gRPC server instance)
 	r := router.NewWithFullConfig(db.DB, jwtSecret, settings["web_path"], dataDir, Version, apiPort)
 
 	// Phase 7: TLS configuration

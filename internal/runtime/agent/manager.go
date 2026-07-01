@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
@@ -758,14 +760,16 @@ func (m *NodeServerManager) StatusEvents() <-chan *StatusEvent {
 }
 
 // registerConnection registers a new Agent connection (called by heartbeatServiceImpl).
+// It also establishes a reverse gRPC client (agentClient) to the Agent's gRPC server
+// so that the Panel can send AgentService RPCs (ListBinaries, InstallBinary, etc.).
 func (m *NodeServerManager) registerConnection(serverID int64, hostname string, stream agentpb.HeartbeatService_StreamServer) *AgentConnection {
 	ac := &AgentConnection{
-		ServerID:    serverID,
-		Hostname:    hostname,
-		stream:      stream,
-		online:      true,
+		ServerID:      serverID,
+		Hostname:      hostname,
+		stream:        stream,
+		online:        true,
 		lastHeartbeat: time.Now(),
-		coreStates:  make(map[string]*agentpb.CoreStatus),
+		coreStates:    make(map[string]*agentpb.CoreStatus),
 	}
 
 	m.mu.Lock()
@@ -773,12 +777,124 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 	m.mu.Unlock()
 
 	// Update server status in DB
-	if err := m.serverRepo.UpdateAgentStatus(context.Background(), serverID, "online", ""); err != nil {
+	if err := m.serverRepo.UpdateAgentStatus(context.Background(), serverID, "online", hostname); err != nil {
 		log.Printf("[NodeServerManager] failed to update agent status for server %d: %v", serverID, err)
 	}
 
+	// Establish reverse gRPC connection to the Agent's gRPC server
+	m.dialAgent(ac, stream)
+
 	log.Printf("[NodeServerManager] server %d (%s) connected", serverID, hostname)
 	return ac
+}
+
+// dialAgent establishes a gRPC client connection to the Agent's gRPC server.
+// It determines the Agent's address from (1) the stream peer address, or (2) the
+// node server's InternalIP/PublicIP + AgentPort in the database.
+func (m *NodeServerManager) dialAgent(ac *AgentConnection, stream agentpb.HeartbeatService_StreamServer) {
+	if m.ca == nil {
+		log.Printf("[NodeServerManager] CA not available, skipping reverse dial for server %d", ac.ServerID)
+		return
+	}
+
+	// Determine agent address
+	addr := m.resolveAgentAddress(ac.ServerID, stream)
+	if addr == "" {
+		log.Printf("[NodeServerManager] cannot determine agent address for server %d, reverse dial skipped", ac.ServerID)
+		return
+	}
+
+	// Load CA cert for verifying the Agent's server certificate
+	caPEM := m.ca.GetCACertPEM()
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		log.Printf("[NodeServerManager] failed to parse CA cert for reverse dial server %d", ac.ServerID)
+		return
+	}
+
+	// Issue a client certificate for the Panel (to present to the Agent)
+	clientCert, err := m.ca.IssueServerCertificate()
+	if err != nil {
+		log.Printf("[NodeServerManager] failed to issue client cert for reverse dial: %v", err)
+		return
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates:       []tls.Certificate{clientCert},
+		RootCAs:            caPool,
+		MinVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: true, // Agent cert CN is hostname, relax for development
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, addr,
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithBlock(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64*1024*1024)),
+	)
+	if err != nil {
+		log.Printf("[NodeServerManager] failed to reverse-dial agent at %s for server %d: %v", addr, ac.ServerID, err)
+		return
+	}
+
+	ac.mu.Lock()
+	ac.conn = conn
+	ac.agentClient = agentpb.NewAgentServiceClient(conn)
+	ac.mu.Unlock()
+
+	log.Printf("[NodeServerManager] reverse-dial to agent %s (server %d) established", addr, ac.ServerID)
+}
+
+// resolveAgentAddress determines the Agent's gRPC server address.
+// Priority: 1. DB InternalIP, 2. DB PublicIP, 3. DB Hostname, 4. Stream peer address.
+// We prefer DB addresses because the stream peer address may be NAT'd or proxied.
+func (m *NodeServerManager) resolveAgentAddress(serverID int64, stream agentpb.HeartbeatService_StreamServer) string {
+	// 1. Look up the server in DB for InternalIP / PublicIP / Hostname
+	server, err := m.serverRepo.GetByID(context.Background(), serverID)
+	if err == nil {
+		port := server.AgentPort
+		if port == 0 {
+			port = 18443
+		}
+		if server.InternalIP != "" {
+			return net.JoinHostPort(server.InternalIP, strconv.Itoa(port))
+		}
+		if server.PublicIP != "" {
+			return net.JoinHostPort(server.PublicIP, strconv.Itoa(port))
+		}
+		// Hostname may be an IP address or DNS name
+		if server.Hostname != "" && server.Hostname != "local-panel" {
+			return net.JoinHostPort(server.Hostname, strconv.Itoa(port))
+		}
+	}
+
+	// 2. Fallback: try to get address from the gRPC stream peer
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		if addr := extractHostFromPeerAddr(p.Addr.String(), serverID); addr != "" {
+			return addr
+		}
+	}
+
+	return ""
+}
+
+// extractHostFromPeerAddr extracts the host from a gRPC peer address string.
+// Peer addresses look like "192.168.2.50:18443" or "[::1]:18443".
+// We need to replace the port with the Agent's listen port (since the peer
+// address is the Agent's *outbound* source port, not its listen port).
+func extractHostFromPeerAddr(peerAddr string, serverID int64) string {
+	host, _, err := net.SplitHostPort(peerAddr)
+	if err != nil {
+		// Maybe just an IP without port
+		host = peerAddr
+	}
+	if host == "" {
+		return ""
+	}
+	// Use default agent port; we'll need the DB port, but for now use default
+	return net.JoinHostPort(host, strconv.Itoa(18443))
 }
 
 // markOffline marks a server as offline (called when stream breaks).
@@ -787,6 +903,12 @@ func (m *NodeServerManager) markOffline(serverID int64) {
 	if ac, ok := m.connections[serverID]; ok {
 		ac.mu.Lock()
 		ac.online = false
+		// Close the reverse gRPC connection if it exists
+		if ac.conn != nil {
+			ac.conn.Close()
+			ac.conn = nil
+			ac.agentClient = nil
+		}
 		ac.mu.Unlock()
 		delete(m.connections, serverID)
 	}

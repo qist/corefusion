@@ -20,10 +20,10 @@ func NewOutboundConfigRepository(db *gorm.DB) *OutboundConfigRepository {
 	return &OutboundConfigRepository{db: db}
 }
 
-// List retrieves all outbound configs for a core type.
-func (r *OutboundConfigRepository) List(ctx context.Context, coreType string) ([]entity.OutboundConfig, error) {
+// List retrieves all outbound configs for a core type on a specific server.
+func (r *OutboundConfigRepository) List(ctx context.Context, serverID int64, coreType string) ([]entity.OutboundConfig, error) {
 	var configs []entity.OutboundConfig
-	query := r.db.WithContext(ctx)
+	query := r.db.WithContext(ctx).Where("server_id = ?", serverID)
 	if coreType != "" {
 		query = query.Where("core_type = ?", coreType)
 	}
@@ -32,19 +32,19 @@ func (r *OutboundConfigRepository) List(ctx context.Context, coreType string) ([
 }
 
 // GetByID retrieves an outbound config by ID.
-func (r *OutboundConfigRepository) GetByID(ctx context.Context, id int64) (*entity.OutboundConfig, error) {
+func (r *OutboundConfigRepository) GetByID(ctx context.Context, serverID int64, id int64) (*entity.OutboundConfig, error) {
 	var cfg entity.OutboundConfig
-	err := r.db.WithContext(ctx).Where("id = ?", id).First(&cfg).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND id = ?", serverID, id).First(&cfg).Error
 	if err != nil {
 		return nil, err
 	}
 	return &cfg, nil
 }
 
-// GetByTag retrieves an outbound config by tag.
-func (r *OutboundConfigRepository) GetByTag(ctx context.Context, tag string) (*entity.OutboundConfig, error) {
+// GetByTag retrieves an outbound config by tag on a specific server.
+func (r *OutboundConfigRepository) GetByTag(ctx context.Context, serverID int64, tag string) (*entity.OutboundConfig, error) {
 	var cfg entity.OutboundConfig
-	err := r.db.WithContext(ctx).Where("tag = ?", tag).First(&cfg).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND tag = ?", serverID, tag).First(&cfg).Error
 	if err != nil {
 		return nil, err
 	}
@@ -69,23 +69,23 @@ func (r *OutboundConfigRepository) Upsert(ctx context.Context, cfg *entity.Outbo
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "tag"}},
-		DoUpdates: clause.AssignmentColumns([]string{"remark", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"server_id", "remark", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
 	}).Create(cfg).Error
 }
 
 // Delete deletes an outbound config by ID.
-func (r *OutboundConfigRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&entity.OutboundConfig{}).Error
+func (r *OutboundConfigRepository) Delete(ctx context.Context, serverID int64, id int64) error {
+	return r.db.WithContext(ctx).Where("server_id = ? AND id = ?", serverID, id).Delete(&entity.OutboundConfig{}).Error
 }
 
-// DeleteByTag deletes an outbound config by tag.
-func (r *OutboundConfigRepository) DeleteByTag(ctx context.Context, tag string) error {
-	return r.db.WithContext(ctx).Where("tag = ?", tag).Delete(&entity.OutboundConfig{}).Error
+// DeleteByTag deletes an outbound config by tag on a specific server.
+func (r *OutboundConfigRepository) DeleteByTag(ctx context.Context, serverID int64, tag string) error {
+	return r.db.WithContext(ctx).Where("server_id = ? AND tag = ?", serverID, tag).Delete(&entity.OutboundConfig{}).Error
 }
 
-// GetDefault retrieves default outbound configs for a core type.
-func (r *OutboundConfigRepository) GetDefault(ctx context.Context, coreType string) ([]entity.OutboundConfig, error) {
+// GetDefault retrieves default outbound configs for a core type on a specific server.
+func (r *OutboundConfigRepository) GetDefault(ctx context.Context, serverID int64, coreType string) ([]entity.OutboundConfig, error) {
 	var configs []entity.OutboundConfig
-	err := r.db.WithContext(ctx).Where("core_type = ? AND is_default = ?", coreType, true).Order("id").Find(&configs).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND core_type = ? AND is_default = ?", serverID, coreType, true).Order("id").Find(&configs).Error
 	return configs, err
 }

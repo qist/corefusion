@@ -311,7 +311,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
-const props = defineProps({ data: Object, coreType: String })
+const props = defineProps({ data: Object, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
 
 const form = reactive({ domainStrategy: 'IPIfNonMatch', rules: [], balancers: [] })
@@ -465,12 +465,12 @@ function rmBalancer(i) { form.balancers.splice(i, 1); emit() }
 
 async function loadTags() {
   try {
-    const res = await client.get('/outbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    const res = await client.get(`/node-servers/${props.serverId}/outbound-configs`, { params: { core_type: props.coreType || 'xray' } })
     const obs = (res || []).filter(o => o?.enabled !== false)
     outboundTags.value = [...new Set([...builtinOutboundTags, ...obs.map(o => o.tag).filter(Boolean)])]
   } catch {}
   try {
-    const ibs = await client.get('/inbound-configs', { params: { core_type: props.coreType || 'xray' } })
+    const ibs = await client.get(`/node-servers/${props.serverId}/inbound-configs`, { params: { core_type: props.coreType || 'xray' } })
     inboundTags.value = (ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean)
   } catch {}
 }
@@ -510,7 +510,7 @@ async function saveAndApply(routing) {
   }
   try {
     // Save to database
-    await client.put(`/protocols/${props.coreType || 'xray'}/section/routing`, routing)
+    await client.put(`/node-servers/${props.serverId}/protocols/${props.coreType || 'xray'}/section/routing`, routing)
   } catch (e) {
     console.warn('Failed to save routing to database:', e)
     return

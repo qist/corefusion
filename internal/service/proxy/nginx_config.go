@@ -20,7 +20,7 @@ func ensureSymlink(path, target string) {
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
 // GenerateConfig assembles an nginx.conf from settings and sites.
 func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
-	sites, err := m.siteRepo.ListEnabled(ctx)
+	sites, err := m.siteRepo.ListEnabled(ctx, m.serverID)
 	if err != nil {
 		return "", err
 	}

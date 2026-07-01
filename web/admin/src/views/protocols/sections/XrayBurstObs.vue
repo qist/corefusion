@@ -47,7 +47,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import client from '../../../api/client'
 const { t } = useI18n()
-const props = defineProps({ data: Object, coreType: String })
+const props = defineProps({ data: Object, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
 const enabled = ref(false)
 const form = reactive({
@@ -58,7 +58,7 @@ const outboundTags = ref([])
 
 async function loadOutbounds() {
   try {
-    const data = await client.get(`/protocols/${props.coreType}/section/outbounds`)
+    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType}/section/outbounds`)
     if (Array.isArray(data)) outboundTags.value = data.map(o => o.tag).filter(Boolean)
   } catch {}
 }

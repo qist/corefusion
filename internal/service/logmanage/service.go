@@ -519,7 +519,7 @@ func (s *Service) discoverCaddyLogs(ctx context.Context) ([]DiscoveredLog, error
 	if s.caddySiteRepo == nil {
 		return nil, nil
 	}
-	sites, err := s.caddySiteRepo.List(ctx)
+	sites, err := s.caddySiteRepo.List(ctx, 1)
 	if err != nil {
 		return nil, err
 	}

@@ -12,17 +12,17 @@ import (
 
 // CoreConfigService provides access to core configuration.
 type CoreConfigService interface {
-	GetFull(ctx context.Context, coreType string) (map[string]interface{}, error)
+	GetFull(ctx context.Context, serverID int64, coreType string) (map[string]interface{}, error)
 }
 
 // InboundConfigService provides access to inbound configurations.
 type InboundConfigService interface {
-	GetEnabledInbounds(ctx context.Context, coreType string) ([]json.RawMessage, error)
+	GetEnabledInbounds(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error)
 }
 
 // OutboundConfigService provides access to outbound configurations.
 type OutboundConfigService interface {
-	GetEnabledOutbounds(ctx context.Context, coreType string) ([]map[string]interface{}, error)
+	GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error)
 }
 
 // Service handles periodic config synchronization to disk.
@@ -137,8 +137,11 @@ func (s *Service) sync(ctx context.Context) error {
 }
 
 func (s *Service) syncCore(ctx context.Context, coreType string) error {
+	// Config sync operates on the local node (server_id=1)
+	const localServerID = 1
+
 	// Get full config from core_configs table
-	fullConfig, err := s.coreSvc.GetFull(ctx, coreType)
+	fullConfig, err := s.coreSvc.GetFull(ctx, localServerID, coreType)
 	if err != nil {
 		return err
 	}
@@ -231,7 +234,7 @@ func (s *Service) syncCore(ctx context.Context, coreType string) error {
 
 	// Merge enabled inbounds from inbound_configs table
 	if s.inboundSvc != nil {
-		enabledInbounds, err := s.inboundSvc.GetEnabledInbounds(ctx, coreType)
+		enabledInbounds, err := s.inboundSvc.GetEnabledInbounds(ctx, localServerID, coreType)
 		if err != nil {
 			log.Printf("configsync: failed to load inbounds: %v", err)
 		} else if len(enabledInbounds) > 0 {
@@ -248,7 +251,7 @@ func (s *Service) syncCore(ctx context.Context, coreType string) error {
 
 	// Merge enabled outbounds from outbound_configs table
 	if s.outboundSvc != nil {
-		enabledOutbounds, err := s.outboundSvc.GetEnabledOutbounds(ctx, coreType)
+		enabledOutbounds, err := s.outboundSvc.GetEnabledOutbounds(ctx, localServerID, coreType)
 		if err != nil {
 			log.Printf("configsync: failed to load outbounds: %v", err)
 		} else if len(enabledOutbounds) > 0 {

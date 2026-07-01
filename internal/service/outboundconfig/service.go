@@ -21,19 +21,20 @@ func NewService(repo *repository.OutboundConfigRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// List returns all outbound configs for a core type.
-func (s *Service) List(ctx context.Context, coreType string) ([]entity.OutboundConfig, error) {
-	return s.repo.List(ctx, coreType)
+// List returns all outbound configs for a core type on a specific server.
+func (s *Service) List(ctx context.Context, serverID int64, coreType string) ([]entity.OutboundConfig, error) {
+	return s.repo.List(ctx, serverID, coreType)
 }
 
 // GetByID returns an outbound config by ID.
-func (s *Service) GetByID(ctx context.Context, id int64) (*entity.OutboundConfig, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *Service) GetByID(ctx context.Context, serverID int64, id int64) (*entity.OutboundConfig, error) {
+	return s.repo.GetByID(ctx, serverID, id)
 }
 
 // Create creates a new outbound config.
-func (s *Service) Create(ctx context.Context, coreType, remark, protocol, tag string, configJSON string, enabled bool, isDefault bool) (*entity.OutboundConfig, error) {
+func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, protocol, tag string, configJSON string, enabled bool, isDefault bool) (*entity.OutboundConfig, error) {
 	cfg := &entity.OutboundConfig{
+		ServerID:   serverID,
 		CoreType:   coreType,
 		Remark:     remark,
 		Protocol:   protocol,
@@ -51,8 +52,8 @@ func (s *Service) Create(ctx context.Context, coreType, remark, protocol, tag st
 }
 
 // Update updates an outbound config.
-func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag string, configJSON string, enabled bool, isDefault bool) (*entity.OutboundConfig, error) {
-	cfg, err := s.repo.GetByID(ctx, id)
+func (s *Service) Update(ctx context.Context, serverID int64, id int64, remark, protocol, tag string, configJSON string, enabled bool, isDefault bool) (*entity.OutboundConfig, error) {
+	cfg, err := s.repo.GetByID(ctx, serverID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -69,13 +70,13 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag st
 }
 
 // Delete deletes an outbound config.
-func (s *Service) Delete(ctx context.Context, id int64) error {
-	return s.repo.Delete(ctx, id)
+func (s *Service) Delete(ctx context.Context, serverID int64, id int64) error {
+	return s.repo.Delete(ctx, serverID, id)
 }
 
 // GetEnabledOutbounds returns enabled outbound configs as JSON objects for config generation.
-func (s *Service) GetEnabledOutbounds(ctx context.Context, coreType string) ([]map[string]interface{}, error) {
-	configs, err := s.repo.List(ctx, coreType)
+func (s *Service) GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error) {
+	configs, err := s.repo.List(ctx, serverID, coreType)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +126,6 @@ func rpFilterWritable() bool {
 }
 
 // GetDefaultOutbounds returns default outbound configs.
-func (s *Service) GetDefaultOutbounds(ctx context.Context, coreType string) ([]entity.OutboundConfig, error) {
-	return s.repo.GetDefault(ctx, coreType)
+func (s *Service) GetDefaultOutbounds(ctx context.Context, serverID int64, coreType string) ([]entity.OutboundConfig, error) {
+	return s.repo.GetDefault(ctx, serverID, coreType)
 }

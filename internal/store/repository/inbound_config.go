@@ -20,10 +20,10 @@ func NewInboundConfigRepository(db *gorm.DB) *InboundConfigRepository {
 	return &InboundConfigRepository{db: db}
 }
 
-// List retrieves all inbound configs for a core type.
-func (r *InboundConfigRepository) List(ctx context.Context, coreType string) ([]entity.InboundConfig, error) {
+// List retrieves all inbound configs for a core type on a specific server.
+func (r *InboundConfigRepository) List(ctx context.Context, serverID int64, coreType string) ([]entity.InboundConfig, error) {
 	var configs []entity.InboundConfig
-	query := r.db.WithContext(ctx)
+	query := r.db.WithContext(ctx).Where("server_id = ?", serverID)
 	if coreType != "" {
 		query = query.Where("core_type = ?", coreType)
 	}
@@ -41,10 +41,10 @@ func (r *InboundConfigRepository) GetByID(ctx context.Context, id int64) (*entit
 	return &cfg, nil
 }
 
-// GetByTag retrieves an inbound config by tag.
-func (r *InboundConfigRepository) GetByTag(ctx context.Context, tag string) (*entity.InboundConfig, error) {
+// GetByTag retrieves an inbound config by tag on a specific server.
+func (r *InboundConfigRepository) GetByTag(ctx context.Context, serverID int64, tag string) (*entity.InboundConfig, error) {
 	var cfg entity.InboundConfig
-	err := r.db.WithContext(ctx).Where("tag = ?", tag).First(&cfg).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND tag = ?", serverID, tag).First(&cfg).Error
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (r *InboundConfigRepository) Upsert(ctx context.Context, cfg *entity.Inboun
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "tag"}},
-		DoUpdates: clause.AssignmentColumns([]string{"remark", "protocol", "listen", "port", "config_json", "enabled", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"remark", "protocol", "listen", "port", "config_json", "enabled", "server_id", "region", "updated_at"}),
 	}).Create(cfg).Error
 }
 
@@ -78,9 +78,20 @@ func (r *InboundConfigRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&entity.InboundConfig{}).Error
 }
 
-// DeleteByTag deletes an inbound config by tag.
-func (r *InboundConfigRepository) DeleteByTag(ctx context.Context, tag string) error {
-	return r.db.WithContext(ctx).Where("tag = ?", tag).Delete(&entity.InboundConfig{}).Error
+// DeleteByTag deletes an inbound config by tag on a specific server.
+func (r *InboundConfigRepository) DeleteByTag(ctx context.Context, serverID int64, tag string) error {
+	return r.db.WithContext(ctx).Where("server_id = ? AND tag = ?", serverID, tag).Delete(&entity.InboundConfig{}).Error
+}
+
+// ListAll retrieves all inbound configs across all servers (for subscription generation).
+func (r *InboundConfigRepository) ListAll(ctx context.Context, coreType string) ([]entity.InboundConfig, error) {
+	var configs []entity.InboundConfig
+	query := r.db.WithContext(ctx)
+	if coreType != "" {
+		query = query.Where("core_type = ?", coreType)
+	}
+	err := query.Order("id").Find(&configs).Error
+	return configs, err
 }
 
 // ListByServerID retrieves all inbound configs for a specific server.

@@ -17,7 +17,11 @@ type NginxManager struct {
 	configDir    string
 	siteRepo     *repository.NginxSiteRepository
 	settingStore SettingStore
+	serverID     int64
 }
+
+// SetServerID sets the server ID for per-node site filtering.
+func (m *NginxManager) SetServerID(id int64) { m.serverID = id }
 
 // NewNginxManager creates a new NginxManager.
 func NewNginxManager(dataDir string, siteRepo *repository.NginxSiteRepository, settingStore SettingStore) *NginxManager {
@@ -38,11 +42,11 @@ func NewNginxManager(dataDir string, siteRepo *repository.NginxSiteRepository, s
 // --- Site CRUD ---
 
 func (m *NginxManager) ListSites(ctx context.Context) ([]entity.NginxSite, error) {
-	return m.siteRepo.List(ctx)
+	return m.siteRepo.List(ctx, m.serverID)
 }
 
 func (m *NginxManager) ListEnabledSites(ctx context.Context) ([]entity.NginxSite, error) {
-	return m.siteRepo.ListEnabled(ctx)
+	return m.siteRepo.ListEnabled(ctx, m.serverID)
 }
 
 func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) error {
@@ -64,7 +68,7 @@ func (m *NginxManager) DeleteSite(ctx context.Context, id int64) error {
 // --- SNI Management ---
 
 func (m *NginxManager) ToggleSNIEnabled(ctx context.Context, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +94,7 @@ func (m *NginxManager) DeleteAllL4(ctx context.Context) (int, error) {
 }
 
 func (m *NginxManager) deleteByTemplate(ctx context.Context, template string) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -108,7 +112,7 @@ func (m *NginxManager) deleteByTemplate(ctx context.Context, template string) (i
 
 // BatchUpdatePorts updates HTTPS site listen ports and proxy_protocol.
 func (m *NginxManager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}

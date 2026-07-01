@@ -50,3 +50,7 @@ func (a *ProxyManagerAdapter) DetectProxy(proxyType string) ProxyInfo {
 		Managed:   info.Managed,
 	}
 }
+
+func (a *ProxyManagerAdapter) InstallProxy(ctx context.Context, proxyType string) error {
+	return a.mgr.InstallProxy(ctx, proxySvc.ProxyType(proxyType))
+}

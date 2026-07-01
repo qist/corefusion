@@ -5,6 +5,7 @@ import "time"
 // NginxSite is the GORM model for the nginx_sites table.
 type NginxSite struct {
 	ID              int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID        int64     `json:"server_id" gorm:"not null;default:1;index"`
 	Domain          string    `json:"domain" gorm:"size:255;not null"`
 	Upstream        string    `json:"upstream" gorm:"size:255;not null"`
 	Template        string    `json:"template" gorm:"size:32"`

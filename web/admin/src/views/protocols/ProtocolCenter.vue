@@ -74,6 +74,7 @@
             :key="selectedCore + '/' + activeSection"
             :data="secData"
             :core-type="selectedCore"
+            :server-id="serverId"
             @update="onUpdate"
           />
           <!-- Fallback JSON -->
@@ -90,9 +91,12 @@
         <div v-else v-loading="verLoading" style="min-height:80px">
           <div v-if="!releases.length && !verLoading" style="text-align:center;color:#999;padding:16px">{{ t('protoCenter.version.noVersions') }}</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <div v-for="r in releases" :key="r.version" class="ver-card" @click="doDownload(r)">
-              <div style="font-size:11px;margin-bottom:2px" :style="{color:r.prerelease?'#67c23a':'#409eff'}">{{ r.prerelease?'Pre':'Rel' }}</div>
-              <div style="font-size:12px;font-weight:500">{{ r.version }}</div>
+            <div v-for="r in releases" :key="r.version" class="ver-card" :class="{ 'ver-card-current': r.version === svc.version }" @click="doDownload(r)">
+              <div style="display:flex;justify-content:space-between;width:100%">
+                <span style="font-size:11px" :style="{color:r.prerelease?'#67c23a':'#409eff'}">{{ r.prerelease?'Pre-Release':'Stable' }}</span>
+                <el-tag v-if="r.version === svc.version && svc.binary_installed" size="small" type="success">{{ t('protoCenter.version.current') }}</el-tag>
+              </div>
+              <div style="font-size:13px;font-weight:600;margin-top:2px">{{ r.version }}</div>
             </div>
           </div>
         </div>
@@ -158,12 +162,11 @@ import JsonPreview from './sections/JsonPreview.vue'
 const { t } = useI18n()
 
 const props = defineProps({
-  serverId: { type: Number, default: 0 }
+  serverId: { type: Number, required: true }
 })
 
-// API base path: use node-server-scoped routes when serverId is provided
-const apiBase = computed(() => props.serverId > 0 ? `/node-servers/${props.serverId}/protocols` : '/protocols')
-const isNodeMode = computed(() => props.serverId > 0)
+// API base path: always node-server-scoped
+const apiBase = computed(() => `/node-servers/${props.serverId}/protocols`)
 
 const cores = [
   { type:'xray', label:'Xray', icon:'⚡', desc:t('protoCenter.cores.xrayDesc') },
@@ -268,13 +271,9 @@ async function saveSection(){
       fullConfig.value[activeSection.value]=secData.value
     }
     // Auto-restart if service is running
-    if(svc.state==='running' && (svc.service_id || isNodeMode.value)){
+    if(svc.state==='running'){
       try{
-        if(isNodeMode.value){
-          await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
-        } else {
-          await client.post(`/services/${svc.service_id}/restart`)
-        }
+        await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
       }catch{}
       ElMessage.success(t('protoCenter.messages.savedAndRestarted'))
     } else {
@@ -288,28 +287,18 @@ async function loadConfig(ct){try{fullConfig.value=await client.get(`${apiBase.v
 async function fetchStatus(){
   if(!selectedCore.value)return
   try{
-    if(isNodeMode.value){
-      // Use node-server-scoped status API
-      const data=await client.get(`/node-servers/${props.serverId}/status`)
-      const cores=data?.cores||[]
-      const s=cores.find(x=>x.core_type===selectedCore.value)
-      if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:s.state==='running',version:s.version||'',pid:s.pid||0,cpu:s.cpu||0,mem:s.mem||0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
-    } else {
-      const data=await client.get('/services/process-status')
-      const s=(data||[]).find(x=>x.core_type===selectedCore.value)
-      if(s)Object.assign(svc,s);else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
-    }
+    // Use node-server-scoped status API
+    const data=await client.get(`/node-servers/${props.serverId}/status`)
+    const cores=data?.cores||[]
+    const s=cores.find(x=>x.core_type===selectedCore.value)
+    if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:s.state==='running',version:s.version||'',pid:s.pid||0,cpu:s.cpu||0,mem:s.mem||0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:false})
   }catch{}
 }
 
 async function doStart(){
   acting.value=true
   try{
-    if(isNodeMode.value){
-      await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})
-    } else if(svc.service_id){
-      await client.post(`/services/${svc.service_id}/start`)
-    }
+    await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})
     ElMessage.success(t('protoCenter.messages.started'));fetchStatus()
   }catch{ElMessage.error(t('protoCenter.messages.startFailed'))}finally{acting.value=false}
 }
@@ -317,55 +306,39 @@ async function doStop(){
   await ElMessageBox.confirm(t('protoCenter.messages.stopConfirm'),t('common.confirm'))
   acting.value=true
   try{
-    if(isNodeMode.value){
-      await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'stop'})
-    } else if(svc.service_id){
-      await client.post(`/services/${svc.service_id}/stop`)
-    }
+    await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'stop'})
     ElMessage.success(t('protoCenter.messages.stopped'));fetchStatus()
   }catch{ElMessage.error(t('protoCenter.messages.stopFailed'))}finally{acting.value=false}
 }
 async function doRestart(){
   acting.value=true
   try{
-    if(isNodeMode.value){
-      await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
-    } else if(svc.service_id){
-      await client.post(`/services/${svc.service_id}/restart`)
-    }
+    await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
     ElMessage.success(t('protoCenter.messages.restarted'));fetchStatus()
   }catch{ElMessage.error(t('protoCenter.messages.restartFailed'))}finally{acting.value=false}
 }
 
-async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get('/binaries/releases',{params:{core_type:selectedCore.value,limit:20,offset:0}});releases.value=(d.items||[]).map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
+async function showVersions(){verVisible.value=true;verLoading.value=true;try{const d=await client.get(`/node-servers/${props.serverId}/binaries/releases`,{params:{core_type:selectedCore.value,limit:20,offset:0}});releases.value=(d.items||[]).map(r=>({...r,prerelease:r.prerelease??isOdd(r.version)}))}catch{releases.value=[]}finally{verLoading.value=false}}
+
+// Check if a version is already installed on this server
+async function checkInstalledVersion(version){try{const data=await client.get(`/node-servers/${props.serverId}/binaries`);const bins=data?.binaries||[];return!!bins.find(b=>b.core_type===selectedCore.value&&b.version===version)}catch{return false}}
 function isOdd(v){const p=(v||'').replace(/^v/,'').split('.');const n=parseInt(p[p.length-1]);return!isNaN(n)&&n%2!==0}
 async function doDownload(r){
   await ElMessageBox.confirm(t('protoCenter.version.downloadConfirm', { version: r.version }),t('common.confirm'))
   downloading.value=true
   downloadProgress.value=t('protoCenter.version.downloading', { version: r.version })
   try{
-    await client.post('/binaries/download',{core_type:selectedCore.value,version:r.version})
+    // Use node-server-scoped install API to download & install binary to the target server
+    await client.post(`/node-servers/${props.serverId}/binaries/install`,{core_type:selectedCore.value,version:r.version})
     downloadProgress.value=t('protoCenter.version.downloadedStarting')
-    // Start service
-    try{await client.post(`/services/${svc.service_id}/start`)}catch{}
-    // Check immediately
-    await new Promise(resolve=>setTimeout(resolve,500))
-    try{
-      const data=await client.get('/services/process-status')
-      const s=(data||[]).find(x=>x.core_type===selectedCore.value)
-      if(s&&s.state==='running'){
-        ElMessage.success(t('protoCenter.version.updateDone'))
-        verVisible.value=false
-        fetchStatus()
-        return
-      }
-    }catch{}
-    // Wait a bit more if not running yet
-    for(let i=0;i<5;i++){
-      await new Promise(resolve=>setTimeout(resolve,1000))
+    // For local server, try to start the core; for remote, the Agent handles it
+    try{await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})}catch(e){/* remote server or already running */}
+    // Poll for status update
+    await new Promise(resolve=>setTimeout(resolve,1000))
+    for(let i=0;i<10;i++){
       try{
-        const data=await client.get('/services/process-status')
-        const s=(data||[]).find(x=>x.core_type===selectedCore.value)
+        const data=await client.get(`/node-servers/${props.serverId}/status`)
+        const s=(data?.cores||[]).find(x=>x.core_type===selectedCore.value)
         if(s&&s.state==='running'){
           ElMessage.success(t('protoCenter.version.updateDone'))
           verVisible.value=false
@@ -373,6 +346,7 @@ async function doDownload(r){
           return
         }
       }catch{}
+      await new Promise(resolve=>setTimeout(resolve,1000))
     }
     ElMessage.success(t('protoCenter.version.downloadDone'))
     verVisible.value=false
@@ -390,6 +364,7 @@ onUnmounted(()=>{if(timer)clearInterval(timer)})
 .sec-tab{padding:8px 14px;cursor:pointer;border-radius:4px;font-size:13px;color:var(--el-text-color-regular);transition:all .15s}
 .sec-tab:hover{background:var(--el-fill-color-light);color:var(--el-color-primary)}
 .sec-tab.active{background:var(--el-color-primary-light-9);color:var(--el-color-primary);font-weight:600}
-.ver-card{width:calc(16.66%-8px);min-width:88px;padding:8px;border:1px solid #dcdfe6;border-radius:6px;cursor:pointer;text-align:center;transition:all .2s}
+.ver-card{width:calc(16.66%-8px);min-width:100px;padding:10px;border:1px solid #dcdfe6;border-radius:6px;cursor:pointer;text-align:center;transition:all .2s}
 .ver-card:hover{border-color:#409eff;background:#ecf5ff}
+.ver-card-current{border-color:#67c23a;background:#f0f9eb}
 </style>

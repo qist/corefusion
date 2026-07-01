@@ -1094,3 +1094,110 @@ func (h *Handler) ForceReconnect(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"disconnected": true, "server_id": id})
 }
+
+// ──────────────────── Binary & Proxy Installation ────────────────────
+
+// InstallBinary installs a core binary (xray/singbox/hysteria2/tuic) on a server.
+// For local servers, delegates to binaries.Installer directly.
+// For remote servers, sends install command via gRPC to the Agent.
+func (h *Handler) InstallBinary(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	var req struct {
+		CoreType    string `json:"core_type" binding:"required"`
+		Version     string `json:"version"`
+		DownloadURL string `json:"download_url"`
+		AssetName   string `json:"asset_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_BODY", err.Error())
+		return
+	}
+	result, err := h.svc.InstallBinary(c.Request.Context(), id, req.CoreType, req.Version, req.DownloadURL, req.AssetName)
+	if err != nil {
+		response.InternalError(c, "INSTALL_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// InstallProxy installs a proxy binary (caddy/nginx) on a server.
+// For local servers, delegates to proxy.Manager.InstallProxy.
+// For remote servers, sends install command via gRPC to the Agent.
+func (h *Handler) InstallProxy(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	var req struct {
+		Type string `json:"type" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_BODY", err.Error())
+		return
+	}
+	result, err := h.svc.InstallProxy(c.Request.Context(), id, req.Type)
+	if err != nil {
+		response.InternalError(c, "INSTALL_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// ListBinaries lists installed core binaries on a server.
+func (h *Handler) ListBinaries(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.svc.ListBinaries(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// GetRemoteProxyStatus queries proxy installation and running status on a server.
+func (h *Handler) GetRemoteProxyStatus(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.svc.GetProxyStatusRemote(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "PROXY_STATUS_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
+// ListReleases handles GET /api/v1/node-servers/:id/binaries/releases.
+// Lists available binary releases from GitHub for a core type.
+func (h *Handler) ListReleases(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	_ = id // Server ID is validated but not used for GitHub API calls
+
+	coreType := c.Query("core_type")
+	if coreType == "" {
+		response.BadRequest(c, "INVALID_REQUEST", "core_type is required")
+		return
+	}
+
+	result, err := h.svc.ListReleases(c.Request.Context(), coreType)
+	if err != nil {
+		response.InternalError(c, "FETCH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}

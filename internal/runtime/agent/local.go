@@ -37,13 +37,14 @@ import (
 // 这不是一个独立的进程管理系统——它是 process.Manager 和 proxy.Manager 的薄包装层，
 // 将 NodeOperator 接口适配到已有的本地管理基础设施上。
 type LocalAgent struct {
-	dataDir   string
-	procMgr   *process.Manager
-	proxyMgr  ProxyManager      // 代理进程管理器（Caddy/Nginx）
-	svcRepo   *repository.ServiceRepository
-	userOp    CoreUserOperator  // 可选：用户热更新操作器
-	limitOp   LimitApplier      // 可选：限速操作器
-	statsAddr string             // xray gRPC API 地址
+	dataDir       string
+	procMgr       *process.Manager
+	proxyMgr      ProxyManager      // 代理进程管理器（Caddy/Nginx）
+	svcRepo       *repository.ServiceRepository
+	userOp        CoreUserOperator  // 可选：用户热更新操作器
+	limitOp       LimitApplier      // 可选：限速操作器
+	binaryInst    BinaryInstaller   // 可选：核心二进制安装器
+	statsAddr     string             // xray gRPC API 地址
 }
 
 // NewLocalAgent 创建本地节点适配器，直接复用现有的 process.Manager。
@@ -83,6 +84,13 @@ func (a *LocalAgent) WithStatsAddr(addr string) *LocalAgent {
 	if addr != "" {
 		a.statsAddr = addr
 	}
+	return a
+}
+
+// WithBinaryInstaller 注入核心二进制安装器。
+// 注入后，LocalAgent 的 InstallBinary 和 ListBinaries 方法将委托给安装器。
+func (a *LocalAgent) WithBinaryInstaller(bi BinaryInstaller) *LocalAgent {
+	a.binaryInst = bi
 	return a
 }
 
@@ -261,6 +269,87 @@ func (a *LocalAgent) GetProxyStatus(proxyType string) *ProxyInfo {
 		Status:    info.Status,
 		Managed:   info.Managed,
 	}
+}
+
+// ============================================================
+// 二进制安装（核心 + 代理）— 委托给 BinaryInstaller / ProxyManager
+// ============================================================
+
+// InstallBinary 安装核心二进制（xray/singbox/hysteria2/tuic）。
+func (a *LocalAgent) InstallBinary(ctx context.Context, coreType, version, downloadURL, assetName string) (*agentpb.InstallBinaryResponse, error) {
+	if a.binaryInst == nil {
+		return &agentpb.InstallBinaryResponse{Success: false, Error: "binary installer not configured"}, nil
+	}
+	result, err := a.binaryInst.Install(ctx, coreType, version, downloadURL, assetName)
+	if err != nil {
+		return &agentpb.InstallBinaryResponse{Success: false, Error: err.Error()}, nil
+	}
+	log.Printf("[LocalAgent] binary installed: %s (version=%s, path=%s)", coreType, result.Version, result.BinaryPath)
+	return &agentpb.InstallBinaryResponse{
+		Success:    true,
+		CoreType:   result.CoreType,
+		Version:    result.Version,
+		BinaryPath: result.BinaryPath,
+	}, nil
+}
+
+// InstallProxy 安装代理二进制（caddy/nginx）。
+func (a *LocalAgent) InstallProxy(ctx context.Context, proxyType string) (*agentpb.InstallProxyResponse, error) {
+	if a.proxyMgr == nil {
+		return &agentpb.InstallProxyResponse{Success: false, Error: "proxy manager not configured"}, nil
+	}
+	if err := a.proxyMgr.InstallProxy(ctx, proxyType); err != nil {
+		return &agentpb.InstallProxyResponse{Success: false, Error: err.Error()}, nil
+	}
+	// Get updated status
+	info := a.proxyMgr.DetectProxy(proxyType)
+	log.Printf("[LocalAgent] proxy installed: %s (version=%s)", proxyType, info.Version)
+	return &agentpb.InstallProxyResponse{
+		Success:    true,
+		ProxyType:  proxyType,
+		Version:    info.Version,
+		BinaryPath: info.Path,
+		Installed:  info.Installed,
+	}, nil
+}
+
+// ListBinaries 列出已安装的核心二进制。
+func (a *LocalAgent) ListBinaries() *agentpb.ListBinariesResponse {
+	if a.binaryInst == nil {
+		return &agentpb.ListBinariesResponse{}
+	}
+	items := a.binaryInst.ListInstalled()
+	binaries := make([]*agentpb.BinaryInfo, 0, len(items))
+	for _, item := range items {
+		binaries = append(binaries, &agentpb.BinaryInfo{
+			CoreType:   item.CoreType,
+			Version:    item.Version,
+			BinaryPath: item.BinaryPath,
+			Installed:  item.Installed,
+		})
+	}
+	return &agentpb.ListBinariesResponse{Binaries: binaries}
+}
+
+// GetProxyStatuses 获取所有代理的安装和运行状态。
+func (a *LocalAgent) GetProxyStatuses() *agentpb.GetProxyStatusResponse {
+	resp := &agentpb.GetProxyStatusResponse{}
+	if a.proxyMgr == nil {
+		return resp
+	}
+	for _, pt := range []string{"caddy", "nginx"} {
+		info := a.proxyMgr.DetectProxy(pt)
+		resp.Proxies = append(resp.Proxies, &agentpb.ProxyInfo{
+			Type:      info.Type,
+			Name:      info.Name,
+			Installed: info.Installed,
+			Version:   info.Version,
+			Path:      info.Path,
+			Status:    info.Status,
+			Managed:   info.Managed,
+		})
+	}
+	return resp
 }
 
 // resolveServiceID 根据 coreType 查找对应的 service ID。

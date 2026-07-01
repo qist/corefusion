@@ -33,7 +33,7 @@ func NewInboundManager(inboundRepo *repository.InboundConfigRepository, apiPort,
 // AddUserToInbound adds a user entry to the inbound config JSON and calls xray API.
 func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email, uuid, password, flow, method string) error {
 	// Find inbound by tag
-	inbound, err := m.inboundRepo.GetByTag(ctx, inboundTag)
+	inbound, err := m.inboundRepo.GetByTag(ctx, 1, inboundTag)
 	if err != nil {
 		return fmt.Errorf("inbound not found: %s", inboundTag)
 	}
@@ -103,7 +103,7 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 
 // RemoveUserFromInbound removes a user entry from the inbound config JSON and calls xray API.
 func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error {
-	inbound, err := m.inboundRepo.GetByTag(ctx, inboundTag)
+	inbound, err := m.inboundRepo.GetByTag(ctx, 1, inboundTag)
 	if err != nil {
 		return nil
 	}

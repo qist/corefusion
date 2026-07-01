@@ -31,15 +31,15 @@ func (r *CaddySiteRepository) GetByID(ctx context.Context, id int64) (*entity.Ca
 	return &site, nil
 }
 
-func (r *CaddySiteRepository) List(ctx context.Context) ([]entity.CaddySite, error) {
+func (r *CaddySiteRepository) List(ctx context.Context, serverID int64) ([]entity.CaddySite, error) {
 	var sites []entity.CaddySite
-	err := r.db.WithContext(ctx).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 
-func (r *CaddySiteRepository) ListEnabled(ctx context.Context) ([]entity.CaddySite, error) {
+func (r *CaddySiteRepository) ListEnabled(ctx context.Context, serverID int64) ([]entity.CaddySite, error) {
 	var sites []entity.CaddySite
-	err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("priority ASC, id ASC").Find(&sites).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND enabled = ?", serverID, true).Order("priority ASC, id ASC").Find(&sites).Error
 	return sites, err
 }
 

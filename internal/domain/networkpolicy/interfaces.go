@@ -2,8 +2,15 @@ package networkpolicy
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrAccessDeniedByPolicy is returned when access is denied by a policy rule.
+var ErrAccessDeniedByPolicy = errors.New("access denied by policy")
+
+// ErrAccessDeniedByBan is returned when access is denied due to an active ban.
+var ErrAccessDeniedByBan = errors.New("access denied by ban")
 
 // AccessGate checks if a connection should be allowed based on access policies.
 type AccessGate interface {

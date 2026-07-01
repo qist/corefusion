@@ -16,14 +16,18 @@ import (
 // ──────────────────── Protocol Config Management ────────────────────
 
 // ListProtocols handles GET /api/v1/node-servers/:id/protocols
-// Returns all core types with their section list.
-// The config data lives in the panel DB regardless of which node.
+// Returns all core types with their section list for a specific server.
 func (h *Handler) ListProtocols(c *gin.Context) {
 	if h.coreConfigSvc == nil {
 		response.InternalError(c, "NOT_CONFIGURED", "core config service not configured")
 		return
 	}
-	result, err := h.coreConfigSvc.List(c.Request.Context())
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	result, err := h.coreConfigSvc.List(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "LIST_PROTOCOLS_FAILED", err.Error())
 		return
@@ -32,10 +36,15 @@ func (h *Handler) ListProtocols(c *gin.Context) {
 }
 
 // GetProtocol handles GET /api/v1/node-servers/:id/protocols/:coreType
-// Returns all sections merged into one JSON object.
+// Returns all sections merged into one JSON object for a specific server.
 func (h *Handler) GetProtocol(c *gin.Context) {
 	if h.coreConfigSvc == nil {
 		response.InternalError(c, "NOT_CONFIGURED", "core config service not configured")
+		return
+	}
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
 	coreType := c.Param("coreType")
@@ -44,7 +53,7 @@ func (h *Handler) GetProtocol(c *gin.Context) {
 		return
 	}
 
-	full, err := h.coreConfigSvc.GetFull(c.Request.Context(), coreType)
+	full, err := h.coreConfigSvc.GetFull(c.Request.Context(), serverID, coreType)
 	if err != nil {
 		response.NotFound(c, "PROTOCOL_NOT_FOUND", err.Error())
 		return
@@ -83,7 +92,7 @@ func (h *Handler) SaveProtocol(c *gin.Context) {
 		return
 	}
 
-	if err := h.coreConfigSvc.SaveFull(c.Request.Context(), coreType, body); err != nil {
+	if err := h.coreConfigSvc.SaveFull(c.Request.Context(), serverID, coreType, body); err != nil {
 		response.InternalError(c, "SAVE_PROTOCOL_FAILED", err.Error())
 		return
 	}
@@ -100,6 +109,11 @@ func (h *Handler) GetProtocolSection(c *gin.Context) {
 		response.InternalError(c, "NOT_CONFIGURED", "core config service not configured")
 		return
 	}
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
 	coreType := c.Param("coreType")
 	section := c.Param("section")
 	if !isValidCoreType(coreType) {
@@ -107,7 +121,7 @@ func (h *Handler) GetProtocolSection(c *gin.Context) {
 		return
 	}
 
-	val, err := h.coreConfigSvc.GetSection(c.Request.Context(), coreType, section)
+	val, err := h.coreConfigSvc.GetSection(c.Request.Context(), serverID, coreType, section)
 	if err != nil {
 		response.NotFound(c, "SECTION_NOT_FOUND", err.Error())
 		return
@@ -147,7 +161,7 @@ func (h *Handler) SaveProtocolSection(c *gin.Context) {
 		return
 	}
 
-	if err := h.coreConfigSvc.SaveSection(c.Request.Context(), coreType, section, body); err != nil {
+	if err := h.coreConfigSvc.SaveSection(c.Request.Context(), serverID, coreType, section, body); err != nil {
 		response.InternalError(c, "SAVE_SECTION_FAILED", err.Error())
 		return
 	}
@@ -281,7 +295,7 @@ func (h *Handler) syncConfigToServer(serverID int64, coreType string) {
 	ctx := context.Background()
 
 	// Generate full config (same logic as configsync)
-	fullConfig, err := h.coreConfigSvc.GetFull(ctx, coreType)
+	fullConfig, err := h.coreConfigSvc.GetFull(ctx, serverID, coreType)
 	if err != nil {
 		return
 	}

@@ -335,7 +335,7 @@ func (h *PublicHandler) collectShareLinks(
 	var links []string
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
-		configs, err := h.inboundRepo.List(ctx, coreType)
+		configs, err := h.inboundRepo.ListAll(ctx, coreType)
 		if err != nil {
 			continue
 		}
@@ -442,7 +442,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 	}
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
-		configs, err := h.inboundRepo.List(ctx, coreType)
+		configs, err := h.inboundRepo.ListAll(ctx, coreType)
 		if err != nil {
 			continue
 		}
@@ -794,7 +794,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 	var nodes []formatter.Node
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
-		configs, err := h.inboundRepo.List(ctx, coreType)
+		configs, err := h.inboundRepo.ListAll(ctx, coreType)
 		if err != nil {
 			continue
 		}

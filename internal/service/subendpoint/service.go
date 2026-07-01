@@ -198,7 +198,7 @@ func (s *Service) syncProxySite(ctx context.Context, oldDomain, oldPath, newDoma
 	proxyType := s.getActiveProxy(ctx)
 
 	if proxyType == "nginx" && s.nginxRepo != nil {
-		sites, err := s.nginxRepo.List(ctx)
+		sites, err := s.nginxRepo.List(ctx, 1)
 		if err == nil {
 			for _, site := range sites {
 				if site.Domain == oldDomain && normalizePath(site.Path) == oldPath {
@@ -219,7 +219,7 @@ func (s *Service) syncProxySite(ctx context.Context, oldDomain, oldPath, newDoma
 		// Not found, create new
 		s.createProxySite(ctx, newDomain, newPath, enabled)
 	} else if s.caddyRepo != nil {
-		sites, err := s.caddyRepo.List(ctx)
+		sites, err := s.caddyRepo.List(ctx, 1)
 		if err == nil {
 			for _, site := range sites {
 				if site.Domain == oldDomain && normalizePath(site.Path) == oldPath {
@@ -247,7 +247,7 @@ func (s *Service) removeProxySite(ctx context.Context, domain, path string) {
 	proxyType := s.getActiveProxy(ctx)
 
 	if proxyType == "nginx" && s.nginxRepo != nil {
-		sites, err := s.nginxRepo.List(ctx)
+		sites, err := s.nginxRepo.List(ctx, 1)
 		if err == nil {
 			for _, site := range sites {
 				if site.Domain == domain && normalizePath(site.Path) == normalizePath(path) {
@@ -262,7 +262,7 @@ func (s *Service) removeProxySite(ctx context.Context, domain, path string) {
 			}
 		}
 	} else if s.caddyRepo != nil {
-		sites, err := s.caddyRepo.List(ctx)
+		sites, err := s.caddyRepo.List(ctx, 1)
 		if err == nil {
 			for _, site := range sites {
 				if site.Domain == domain && normalizePath(site.Path) == normalizePath(path) {

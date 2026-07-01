@@ -14,11 +14,15 @@ import (
 
 // CaddyManager handles Caddy-specific site management and config generation.
 type CaddyManager struct {
-	dataDir      string
-	configDir    string
-	siteRepo     *repository.CaddySiteRepository
-	settingStore SettingStore
+dataDir      string
+configDir    string
+siteRepo     *repository.CaddySiteRepository
+settingStore SettingStore
+serverID     int64
 }
+
+// SetServerID sets the server ID for per-node site filtering.
+func (m *CaddyManager) SetServerID(id int64) { m.serverID = id }
 
 // NewCaddyManager creates a new CaddyManager.
 func NewCaddyManager(dataDir string, siteRepo *repository.CaddySiteRepository, settingStore SettingStore) *CaddyManager {
@@ -39,11 +43,11 @@ func NewCaddyManager(dataDir string, siteRepo *repository.CaddySiteRepository, s
 // --- Site CRUD ---
 
 func (m *CaddyManager) ListSites(ctx context.Context) ([]entity.CaddySite, error) {
-	return m.siteRepo.List(ctx)
+	return m.siteRepo.List(ctx, m.serverID)
 }
 
 func (m *CaddyManager) ListEnabledSites(ctx context.Context) ([]entity.CaddySite, error) {
-	return m.siteRepo.ListEnabled(ctx)
+	return m.siteRepo.ListEnabled(ctx, m.serverID)
 }
 
 func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) error {
@@ -66,7 +70,7 @@ func (m *CaddyManager) DeleteSite(ctx context.Context, id int64) error {
 
 // GenerateConfig assembles the full Caddyfile from all enabled sites.
 func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
-	sites, err := m.siteRepo.ListEnabled(ctx)
+	sites, err := m.siteRepo.ListEnabled(ctx, m.serverID)
 	if err != nil {
 		return "", err
 	}
@@ -399,7 +403,7 @@ func (m *CaddyManager) SaveAndApply(ctx context.Context) (string, error) {
 // --- SNI Management ---
 
 func (m *CaddyManager) ToggleSNIEnabled(ctx context.Context, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -425,7 +429,7 @@ func (m *CaddyManager) DeleteAllL4(ctx context.Context) (int, error) {
 }
 
 func (m *CaddyManager) deleteByTemplate(ctx context.Context, template string) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -443,7 +447,7 @@ func (m *CaddyManager) deleteByTemplate(ctx context.Context, template string) (i
 
 // BatchUpdatePorts updates HTTPS site domains to add/remove port suffix.
 func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx)
+	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}

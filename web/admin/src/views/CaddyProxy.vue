@@ -397,6 +397,15 @@ import client from '../api/client'
 const { t } = useI18n()
 const emit = defineEmits(['back'])
 
+const props = defineProps({
+  serverId: { type: Number, required: true }
+})
+
+// API base paths (node-server-scoped)
+const apiBase = computed(() => `/node-servers/${props.serverId}`)
+const caddyApi = computed(() => `${apiBase.value}/caddy`)
+const proxyApi = computed(() => `${apiBase.value}/proxy`)
+
 const proxyInfo = ref({})
 const guardian = ref({})
 const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
@@ -450,7 +459,7 @@ function formatSize(bytes) {
 
 async function fetchProxyInfo() {
   try {
-    const status = await client.get('/proxy/status')
+    const status = await client.get(`${proxyApi.value}/status`)
     proxyInfo.value = status.caddy || {}
     guardian.value = status.caddy_guardian || {}
     guardianConfig.value.autoRestart = guardian.value.auto_restart !== false
@@ -461,7 +470,7 @@ async function fetchProxyInfo() {
 
 async function saveGuardianConfig() {
   try {
-    await client.post('/proxy/guardian?type=caddy', {
+    await client.post(`${proxyApi.value}/guardian?type=caddy`, {
       auto_restart: guardianConfig.value.autoRestart,
       max_restarts: guardianConfig.value.maxRestarts
     })
@@ -476,7 +485,7 @@ function formatTime(ts) {
 
 async function fetchSites() {
   try {
-    allSites.value = await client.get('/caddy/sites') || []
+    allSites.value = await client.get(`${caddyApi.value}/sites`) || []
   } catch (e) { allSites.value = [] }
   // Load log output mode
   try {
@@ -510,14 +519,14 @@ async function fetchCertificates() {
 
 async function fetchSNISettings() {
   try {
-    const data = await client.get('/caddy/sni-settings')
+    const data = await client.get(`${caddyApi.value}/sni-settings`)
     if (data) sniSettings.value = data
   } catch (e) {}
 }
 
 async function saveSNISettings() {
   try {
-    await client.post('/caddy/sni-settings', sniSettings.value)
+    await client.post(`${caddyApi.value}/sni-settings`, sniSettings.value)
     ElMessage.success(t('common.success'))
   } catch (e) {}
 }
@@ -525,15 +534,15 @@ async function saveSNISettings() {
 async function onSNIToggle(enabled) {
   try {
     sniSettings.value.enabled = enabled
-    await client.post('/caddy/sni-settings', sniSettings.value)
+    await client.post(`${caddyApi.value}/sni-settings`, sniSettings.value)
     if (enabled) {
       // Re-enable preserved SNI rules
-      await client.post('/caddy/sni-rules/toggle', { enabled: true })
+      await client.post(`${caddyApi.value}/sni-rules/toggle`, { enabled: true })
       // Create fallback rule if none exist
       const hasFallback = sniRules.value.some(s => s.domain === 'fallback' || s.domain === '')
       if (!hasFallback) {
         const localPort = sniSettings.value.local_port || '8443'
-        await client.post('/caddy/sites', {
+        await client.post(`${caddyApi.value}/sites`, {
           domain: 'fallback', upstream: '', template: 'sni',
           sni_target: `127.0.0.1:${localPort}`, local_port: localPort,
           proxy_protocol: true, is_panel: false, priority: 999,
@@ -542,13 +551,13 @@ async function onSNIToggle(enabled) {
       }
       // Batch migrate HTTPS sites
       const port = sniSettings.value.local_port || '8443'
-      const res = await client.post('/caddy/batch-update-ports', { port, enable: true })
+      const res = await client.post(`${caddyApi.value}/batch-update-ports`, { port, enable: true })
       ElMessage.success(t('proxy.sniEnabled', { count: res.updated || 0 }))
     } else {
       // Disable SNI rules (keep in DB)
-      await client.post('/caddy/sni-rules/toggle', { enabled: false })
+      await client.post(`${caddyApi.value}/sni-rules/toggle`, { enabled: false })
       // Restore sites to port 443
-      await client.post('/caddy/batch-update-ports', { port: '443', enable: false })
+      await client.post(`${caddyApi.value}/batch-update-ports`, { port: '443', enable: false })
       ElMessage.success(t('proxy.sniDisabled'))
     }
     await applyConfig()
@@ -559,16 +568,16 @@ async function onSNIToggle(enabled) {
 async function batchMigrate() {
   const port = sniSettings.value.local_port || '8443'
   try {
-    await client.post('/caddy/sni-settings', sniSettings.value)
+    await client.post(`${caddyApi.value}/sni-settings`, sniSettings.value)
     if (sniRules.value.length === 0) {
-      await client.post('/caddy/sites', {
+      await client.post(`${caddyApi.value}/sites`, {
         domain: 'fallback', upstream: '', template: 'sni',
         sni_target: `127.0.0.1:${port}`, local_port: port,
         proxy_protocol: true, is_panel: false, priority: 999,
         path: sniSettings.value.listen_port || '443'
       })
     }
-    const res = await client.post('/caddy/batch-update-ports', { port, enable: true })
+    const res = await client.post(`${caddyApi.value}/batch-update-ports`, { port, enable: true })
     await applyConfig()
     ElMessage.success(t('proxy.migrateDone', { count: res.updated || 0 }))
     fetchSites()
@@ -579,7 +588,7 @@ async function showReleases() {
   releasesVisible.value = true
   releasesLoading.value = true
   try {
-    releases.value = await client.get('/proxy/releases', { params: { type: 'caddy' } }) || []
+    releases.value = await client.get(`${proxyApi.value}/releases`, { params: { type: 'caddy' } }) || []
   } catch (e) { releases.value = [] } finally { releasesLoading.value = false }
 }
 
@@ -587,8 +596,8 @@ async function downloadVersion(url, tagName) {
   downloading.value = true
   downloadProgress.value = t('proxy.downloading', { name: tagName })
   try {
-    await client.post('/proxy/download', { type: 'caddy', download_url: url, tag_name: tagName })
-    try { await client.post('/proxy/start?type=caddy') } catch {}
+    await client.post(`${proxyApi.value}/download`, { type: 'caddy', download_url: url, tag_name: tagName })
+    try { await client.post(`${proxyApi.value}/start?type=caddy`) } catch {}
     ElMessage.success(t('proxy.downloadSuccess'))
     releasesVisible.value = false
     fetchProxyInfo()
@@ -602,7 +611,7 @@ async function downloadVersion(url, tagName) {
 
 async function proxyAction(action) {
   try {
-    await client.post(`/proxy/${action}?type=caddy`)
+    await client.post(`${proxyApi.value}/${action}?type=caddy`)
     ElMessage.success(t('common.success'))
     fetchProxyInfo()
   } catch (e) {}
@@ -743,9 +752,9 @@ function generatePreview(site) {
 
 async function applyConfig() {
   try {
-    await client.post('/caddy/generate-config')
+    await client.post(`${caddyApi.value}/generate-config`)
     if (proxyInfo.value.status === 'running') {
-      await client.post('/proxy/reload?type=caddy')
+      await client.post(`${proxyApi.value}/reload?type=caddy`)
     }
     fetchProxyInfo()
   } catch (e) {}
@@ -784,9 +793,9 @@ async function saveSite() {
       priority: siteForm.value.is_panel ? 0 : 100
     }
     if (siteForm.value.id) {
-      await client.put(`/caddy/sites/${siteForm.value.id}`, payload)
+      await client.put(`${caddyApi.value}/sites/${siteForm.value.id}`, payload)
     } else {
-      await client.post('/caddy/sites', payload)
+      await client.post(`${caddyApi.value}/sites`, payload)
     }
     await applyConfig()
     ElMessage.success(t('proxy.siteSaved'))
@@ -797,7 +806,7 @@ async function saveSite() {
 
 async function toggleSite(row) {
   try {
-    await client.put(`/caddy/sites/${row.id}`, { enabled: row.enabled })
+    await client.put(`${caddyApi.value}/sites/${row.id}`, { enabled: row.enabled })
     await applyConfig()
     fetchSites()
   } catch (e) { row.enabled = !row.enabled }
@@ -806,7 +815,7 @@ async function toggleSite(row) {
 async function deleteSite(row) {
   await ElMessageBox.confirm(t('common.confirm'))
   try {
-    await client.delete(`/caddy/sites/${row.id}`)
+    await client.delete(`${caddyApi.value}/sites/${row.id}`)
     await applyConfig()
     ElMessage.success(t('common.success'))
     fetchSites()
@@ -815,7 +824,7 @@ async function deleteSite(row) {
 
 async function viewConfig() {
   try {
-    const data = await client.get('/proxy/config?type=caddy')
+    const data = await client.get(`${proxyApi.value}/config?type=caddy`)
     configViewContent.value = data.config || ''
     configViewVisible.value = true
   } catch (e) {}
@@ -833,7 +842,7 @@ function showAddSNI() {
 
 async function saveSNIRule() {
   try {
-    await client.post('/caddy/sites', {
+    await client.post(`${caddyApi.value}/sites`, {
       domain: sniForm.value.domain,
       upstream: '',
       template: 'sni',

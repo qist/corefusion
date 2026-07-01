@@ -204,6 +204,9 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	binaryResolver := binariesSvc.NewResolver(dataDir)
 	procMgr := process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 
+	// Phase 3b: Create binary installer (for remote core binary installation)
+	binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, &agentSettingStore{repo: settingRepo})
+
 	// Phase 4: Create proxy.Manager (same as Panel)
 	proxyMgr := proxySvc.NewManager(dataDir, proxySiteRepo, &agentSettingStore{repo: settingRepo})
 
@@ -212,6 +215,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// It implements NodeOperator by delegating to process.Manager / proxy.Manager.
 	localAgent := agent.NewLocalAgent(dataDir, procMgr, svcRepo)
 	localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+	localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
 
 	app := &AgentApp{
 		cfg:        cfg,
@@ -647,6 +651,22 @@ func (s *agentServiceServer) GetMetrics(ctx context.Context, req *agentpb.GetMet
 			},
 		},
 	}, nil
+}
+
+func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.InstallBinaryResponse, error) {
+	return s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName)
+}
+
+func (s *agentServiceServer) InstallProxy(ctx context.Context, req *agentpb.InstallProxyRequest) (*agentpb.InstallProxyResponse, error) {
+	return s.localAgent.InstallProxy(ctx, req.ProxyType)
+}
+
+func (s *agentServiceServer) GetProxyStatus(ctx context.Context, req *agentpb.GetProxyStatusRequest) (*agentpb.GetProxyStatusResponse, error) {
+	return s.localAgent.GetProxyStatuses(), nil
+}
+
+func (s *agentServiceServer) ListBinaries(ctx context.Context, req *agentpb.ListBinariesRequest) (*agentpb.ListBinariesResponse, error) {
+	return s.localAgent.ListBinaries(), nil
 }
 
 func (a *AgentApp) StartGRPCServer(ctx context.Context) {

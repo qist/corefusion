@@ -235,7 +235,7 @@ func (ca *CertificateAuthority) IssueServerCertificate() (tls.Certificate, error
 		NotBefore:   time.Now().Add(-5 * time.Minute),
 		NotAfter:    expiresAt,
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		DNSNames:    []string{"corefusion-panel", "localhost"},
 		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
 	}

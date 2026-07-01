@@ -85,7 +85,8 @@ type AgentConnection struct {
 	online        bool
 
 	// Cached core states from last status report
-	coreStates map[string]*agentpb.CoreStatus
+	coreStates     map[string]*agentpb.CoreStatus
+	statusReported bool // true after first STATUS report received
 }
 
 // LastHeartbeatTime returns the last heartbeat timestamp.
@@ -154,10 +155,17 @@ func (m *NodeServerManager) StartGRPCServer(ctx context.Context, addr string) er
 		return fmt.Errorf("CA not initialized")
 	}
 
+	// Issue a server certificate for the Panel's gRPC server (presented to Agents during TLS handshake)
+	serverCert, err := m.ca.IssueServerCertificate()
+	if err != nil {
+		return fmt.Errorf("issue server certificate: %w", err)
+	}
+
 	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS13,
-		ClientAuth: tls.RequireAndVerifyClientCert,
-		ClientCAs:  x509.NewCertPool(),
+		Certificates: []tls.Certificate{serverCert},
+		MinVersion:   tls.VersionTLS13,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    x509.NewCertPool(),
 	}
 	tlsConfig.ClientCAs.AddCert(m.ca.GetCACert())
 
@@ -588,12 +596,32 @@ func (m *NodeServerManager) ControlCoreOnServer(ctx context.Context, serverID in
 }
 
 // GetServerStatus queries the status of a server's cores.
+// If a direct gRPC connection to the Agent is available, it uses that.
+// Otherwise, it returns cached core states from the last heartbeat status report.
 func (m *NodeServerManager) GetServerStatus(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, error) {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return nil, fmt.Errorf("server %d not connected", serverID)
 	}
-	return ac.agentClient.GetStatus(ctx, &agentpb.GetStatusRequest{})
+
+	// If we have a direct gRPC client to the Agent, use it
+	if ac.agentClient != nil {
+		return ac.agentClient.GetStatus(ctx, &agentpb.GetStatusRequest{})
+	}
+
+	// Fallback: return cached core states from last heartbeat status report
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+
+	if !ac.statusReported {
+		return nil, fmt.Errorf("server %d status not yet reported", serverID)
+	}
+
+	cores := make([]*agentpb.CoreStatus, 0, len(ac.coreStates))
+	for _, cs := range ac.coreStates {
+		cores = append(cores, cs)
+	}
+	return &agentpb.GetStatusResponse{Cores: cores}, nil
 }
 
 // TrafficEvents returns the channel for consuming traffic events.
@@ -720,9 +748,11 @@ func (h *heartbeatServiceImpl) handleHeartbeat(ac *AgentConnection, report *agen
 
 func (h *heartbeatServiceImpl) handleStatusReport(ac *AgentConnection, report *agentpb.AgentReport) {
 	ac.mu.Lock()
+	ac.coreStates = make(map[string]*agentpb.CoreStatus, len(report.Cores))
 	for _, cs := range report.Cores {
 		ac.coreStates[cs.CoreType] = cs
 	}
+	ac.statusReported = true
 	ac.mu.Unlock()
 
 	// Emit event

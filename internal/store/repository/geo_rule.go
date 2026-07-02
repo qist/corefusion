@@ -37,6 +37,13 @@ func (r *RuleSourceRepository) List(ctx context.Context) ([]entity.RuleSource, e
 	return sources, err
 }
 
+// ListByServer lists rule sources for a specific node server.
+func (r *RuleSourceRepository) ListByServer(ctx context.Context, serverID int64) ([]entity.RuleSource, error) {
+	var sources []entity.RuleSource
+	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("id ASC").Find(&sources).Error
+	return sources, err
+}
+
 func (r *RuleSourceRepository) Update(ctx context.Context, src *entity.RuleSource) error {
 	return r.db.WithContext(ctx).Save(src).Error
 }
@@ -80,6 +87,13 @@ func (r *GeoRuleRepository) GetBySourceAndName(ctx context.Context, sourceID int
 func (r *GeoRuleRepository) List(ctx context.Context) ([]entity.GeoRuleFile, error) {
 	var rules []entity.GeoRuleFile
 	err := r.db.WithContext(ctx).Order("source_id ASC, id ASC").Find(&rules).Error
+	return rules, err
+}
+
+// ListByServer lists geo rule files for a specific node server.
+func (r *GeoRuleRepository) ListByServer(ctx context.Context, serverID int64) ([]entity.GeoRuleFile, error) {
+	var rules []entity.GeoRuleFile
+	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("source_id ASC, id ASC").Find(&rules).Error
 	return rules, err
 }
 

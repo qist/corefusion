@@ -20,8 +20,12 @@ func NewHandler(svcSvc *svcService.Service) *Handler {
 	return &Handler{svcSvc: svcSvc}
 }
 
-// List handles GET /api/v1/services.
+// List handles GET /api/v1/node-servers/:id/services.
 func (h *Handler) List(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1 // fallback
+	}
 	var q struct {
 		dto.ListQuery
 		CoreType string `form:"core_type"`
@@ -34,7 +38,7 @@ func (h *Handler) List(c *gin.Context) {
 		q.Limit = 20
 	}
 
-	services, total, err := h.svcSvc.List(c.Request.Context(), q.CoreType, q.Limit, q.Offset)
+	services, total, err := h.svcSvc.List(c.Request.Context(), serverID, q.CoreType, q.Limit, q.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_SERVICES_FAILED", err.Error())
 		return
@@ -48,13 +52,18 @@ func (h *Handler) List(c *gin.Context) {
 	response.Paginated(c, items, total, q.Limit, q.Offset)
 }
 
-// Create handles POST /api/v1/services.
+// Create handles POST /api/v1/node-servers/:id/services.
 func (h *Handler) Create(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
 	var input svcService.CreateServiceInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	input.ServerID = serverID
 
 	svc, err := h.svcSvc.Create(c.Request.Context(), input)
 	if err != nil {
@@ -65,9 +74,9 @@ func (h *Handler) Create(c *gin.Context) {
 	response.Created(c, svcService.ServiceToJSON(svc))
 }
 
-// GetByID handles GET /api/v1/services/:id.
+// GetByID handles GET /api/v1/node-servers/:id/services/:serviceId.
 func (h *Handler) GetByID(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -85,9 +94,9 @@ func (h *Handler) GetByID(c *gin.Context) {
 	response.OK(c, result)
 }
 
-// Update handles PUT /api/v1/services/:id.
+// Update handles PUT /api/v1/node-servers/:id/services/:serviceId.
 func (h *Handler) Update(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -108,9 +117,9 @@ func (h *Handler) Update(c *gin.Context) {
 	response.OK(c, svcService.ServiceToJSON(svc))
 }
 
-// Delete handles DELETE /api/v1/services/:id.
+// Delete handles DELETE /api/v1/node-servers/:id/services/:serviceId.
 func (h *Handler) Delete(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -124,9 +133,9 @@ func (h *Handler) Delete(c *gin.Context) {
 	response.OK(c, gin.H{"message": "service deleted"})
 }
 
-// ListEndpoints handles GET /api/v1/services/:id/endpoints.
+// ListEndpoints handles GET /api/v1/node-servers/:id/services/:serviceId/endpoints.
 func (h *Handler) ListEndpoints(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -141,9 +150,9 @@ func (h *Handler) ListEndpoints(c *gin.Context) {
 	response.OK(c, endpoints)
 }
 
-// CreateEndpoint handles POST /api/v1/services/:id/endpoints.
+// CreateEndpoint handles POST /api/v1/node-servers/:id/services/:serviceId/endpoints.
 func (h *Handler) CreateEndpoint(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return

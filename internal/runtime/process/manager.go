@@ -115,7 +115,7 @@ func (m *Manager) SeedCores(ctx context.Context) {
 
 	for _, c := range cores {
 		// Check if service already exists for this core type
-		services, _, err := m.svcRepo.List(ctx, c.CoreType, 1, 0)
+		services, _, err := m.svcRepo.List(ctx, 1, c.CoreType, 1, 0) // server_id=1 (local)
 		if err != nil {
 			log.Printf("seed: failed to check %s: %v", c.CoreType, err)
 			continue
@@ -125,6 +125,7 @@ func (m *Manager) SeedCores(ctx context.Context) {
 		}
 
 		svc := &entity.InboundService{
+			ServerID:   1, // local node
 			Name:       c.Name,
 			CoreType:   c.CoreType,
 			Protocol:   "-",

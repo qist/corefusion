@@ -21,6 +21,7 @@ func NewService(repo *repository.ServiceRepository, endpointRepo *repository.End
 
 // CreateServiceInput is the input for creating an inbound service.
 type CreateServiceInput struct {
+	ServerID   int64  `json:"server_id"`
 	Name       string `json:"name" binding:"required"`
 	CoreType   string `json:"core_type" binding:"required"`
 	Protocol   string `json:"protocol" binding:"required"`
@@ -55,7 +56,13 @@ func (s *Service) Create(ctx context.Context, input CreateServiceInput) (*entity
 		configJSON = "{}"
 	}
 
+	serverID := input.ServerID
+	if serverID == 0 {
+		serverID = 1 // default to local node
+	}
+
 	svc := &entity.InboundService{
+		ServerID:   serverID,
 		Name:       input.Name,
 		CoreType:   input.CoreType,
 		Protocol:   input.Protocol,
@@ -88,9 +95,9 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*entity.InboundService
 	return svc, endpoints, nil
 }
 
-// List retrieves all inbound services with pagination.
-func (s *Service) List(ctx context.Context, coreType string, limit, offset int) ([]entity.InboundService, int64, error) {
-	return s.repo.List(ctx, coreType, limit, offset)
+// List retrieves inbound services for a specific node server with pagination.
+func (s *Service) List(ctx context.Context, serverID int64, coreType string, limit, offset int) ([]entity.InboundService, int64, error) {
+	return s.repo.List(ctx, serverID, coreType, limit, offset)
 }
 
 // Update updates an inbound service.
@@ -277,6 +284,7 @@ func (s *Service) DeleteEndpoint(ctx context.Context, endpointID int64) error {
 func ServiceToJSON(svc *entity.InboundService) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":             svc.ID,
+		"server_id":      svc.ServerID,
 		"name":           svc.Name,
 		"core_type":      svc.CoreType,
 		"protocol":       svc.Protocol,

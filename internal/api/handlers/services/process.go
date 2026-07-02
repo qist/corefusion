@@ -1,23 +1,30 @@
 package services
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-
 	"corefusion/internal/api/response"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/store/repository"
 )
 
+// NodeOperator defines the interface for controlling cores on remote nodes.
+type NodeOperator interface {
+	IsLocalServer(ctx context.Context, serverID int64) bool
+	ControlCore(ctx context.Context, serverID int64, coreType, action string) error
+}
+
 // ProcessHandler handles service process management requests.
 type ProcessHandler struct {
-	processMgr *process.Manager
-	svcRepo    *repository.ServiceRepository
-	crashRepo  *repository.CrashLogRepository
-	dataDir    string
+	processMgr   *process.Manager
+	svcRepo      *repository.ServiceRepository
+	crashRepo    *repository.CrashLogRepository
+	dataDir      string
+	nodeOperator NodeOperator
 }
 
 // NewProcessHandler creates a new process handler.
@@ -30,9 +37,14 @@ func NewProcessHandler(processMgr *process.Manager, svcRepo *repository.ServiceR
 	}
 }
 
-// Start handles POST /api/v1/services/:id/start.
+// SetNodeOperator sets the node operator for remote core control.
+func (h *ProcessHandler) SetNodeOperator(op NodeOperator) {
+	h.nodeOperator = op
+}
+
+// Start handles POST /api/v1/node-servers/:id/services/:serviceId/start.
 func (h *ProcessHandler) Start(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -41,6 +53,16 @@ func (h *ProcessHandler) Start(c *gin.Context) {
 	svc, err := h.svcRepo.GetByID(c.Request.Context(), serviceID)
 	if err != nil {
 		response.NotFound(c, "NOT_FOUND", "service not found")
+		return
+	}
+
+	// Route to remote node via NodeOperator if not local
+	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), svc.ServerID) {
+		if err := h.nodeOperator.ControlCore(c.Request.Context(), svc.ServerID, svc.CoreType, "start"); err != nil {
+			response.InternalError(c, "START_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"service_id": serviceID, "status": "running"})
 		return
 	}
 
@@ -52,25 +74,9 @@ func (h *ProcessHandler) Start(c *gin.Context) {
 	response.OK(c, gin.H{"service_id": serviceID, "status": "running"})
 }
 
-// Stop handles POST /api/v1/services/:id/stop.
+// Stop handles POST /api/v1/node-servers/:id/services/:serviceId/stop.
 func (h *ProcessHandler) Stop(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid service id")
-		return
-	}
-
-	if err := h.processMgr.Stop(c.Request.Context(), serviceID); err != nil {
-		response.InternalError(c, "STOP_FAILED", err.Error())
-		return
-	}
-
-	response.OK(c, gin.H{"service_id": serviceID, "status": "stopped"})
-}
-
-// Restart handles POST /api/v1/services/:id/restart.
-func (h *ProcessHandler) Restart(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -82,6 +88,48 @@ func (h *ProcessHandler) Restart(c *gin.Context) {
 		return
 	}
 
+	// Route to remote node via NodeOperator if not local
+	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), svc.ServerID) {
+		if err := h.nodeOperator.ControlCore(c.Request.Context(), svc.ServerID, svc.CoreType, "stop"); err != nil {
+			response.InternalError(c, "STOP_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"service_id": serviceID, "status": "stopped"})
+		return
+	}
+
+	if err := h.processMgr.Stop(c.Request.Context(), serviceID); err != nil {
+		response.InternalError(c, "STOP_FAILED", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"service_id": serviceID, "status": "stopped"})
+}
+
+// Restart handles POST /api/v1/node-servers/:id/services/:serviceId/restart.
+func (h *ProcessHandler) Restart(c *gin.Context) {
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid service id")
+		return
+	}
+
+	svc, err := h.svcRepo.GetByID(c.Request.Context(), serviceID)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "service not found")
+		return
+	}
+
+	// Route to remote node via NodeOperator if not local
+	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), svc.ServerID) {
+		if err := h.nodeOperator.ControlCore(c.Request.Context(), svc.ServerID, svc.CoreType, "restart"); err != nil {
+			response.InternalError(c, "RESTART_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"service_id": serviceID, "status": "running"})
+		return
+	}
+
 	if err := h.processMgr.Restart(c.Request.Context(), serviceID, svc.CoreType); err != nil {
 		response.InternalError(c, "RESTART_FAILED", err.Error())
 		return
@@ -90,9 +138,9 @@ func (h *ProcessHandler) Restart(c *gin.Context) {
 	response.OK(c, gin.H{"service_id": serviceID, "status": "running"})
 }
 
-// GetProcessStatus handles GET /api/v1/services/:id/process-status.
+// GetProcessStatus handles GET /api/v1/node-servers/:id/services/:serviceId/process-status.
 func (h *ProcessHandler) GetProcessStatus(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -114,8 +162,13 @@ func (h *ProcessHandler) GetProcessStatus(c *gin.Context) {
 	response.OK(c, result)
 }
 
-// ListAllProcessStatuses handles GET /api/v1/services/process-status.
+// ListAllProcessStatuses handles GET /api/v1/node-servers/:id/services/process-status.
 func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
+
 	processes := h.processMgr.ListAll()
 
 	// Build a map for quick lookup
@@ -124,8 +177,8 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 		statusMap[p.ServiceID] = p
 	}
 
-	// Get all services
-	services, _, err := h.svcRepo.List(c.Request.Context(), "", 1000, 0)
+	// Get services for this node server
+	services, _, err := h.svcRepo.List(c.Request.Context(), serverID, "", 1000, 0)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -192,9 +245,9 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 	response.OK(c, result)
 }
 
-// UpdateGuardian handles PUT /api/v1/services/:id/guardian.
+// UpdateGuardian handles PUT /api/v1/node-servers/:id/services/:serviceId/guardian.
 func (h *ProcessHandler) UpdateGuardian(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -248,9 +301,9 @@ func (h *ProcessHandler) UpdateGuardian(c *gin.Context) {
 	})
 }
 
-// GetCrashLogs handles GET /api/v1/services/:id/crash-logs.
+// GetCrashLogs handles GET /api/v1/node-servers/:id/services/:serviceId/crash-logs.
 func (h *ProcessHandler) GetCrashLogs(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -265,9 +318,9 @@ func (h *ProcessHandler) GetCrashLogs(c *gin.Context) {
 	response.OK(c, logs)
 }
 
-// ClearCrashLogs handles DELETE /api/v1/services/:id/crash-logs.
+// ClearCrashLogs handles DELETE /api/v1/node-servers/:id/services/:serviceId/crash-logs.
 func (h *ProcessHandler) ClearCrashLogs(c *gin.Context) {
-	serviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
 		return
@@ -281,7 +334,7 @@ func (h *ProcessHandler) ClearCrashLogs(c *gin.Context) {
 	response.OK(c, gin.H{"message": "crash logs cleared"})
 }
 
-// GetCrashLog handles GET /api/v1/services/:id/crash-logs/:logId.
+// GetCrashLog handles GET /api/v1/node-servers/:id/services/:serviceId/crash-logs/:logId.
 func (h *ProcessHandler) GetCrashLog(c *gin.Context) {
 	response.NotFound(c, "NOT_FOUND", "crash log not found")
 }

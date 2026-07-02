@@ -361,7 +361,7 @@ func (a *LocalAgent) resolveServiceID(coreType string) (int64, error) {
 	if a.svcRepo == nil {
 		return 0, fmt.Errorf("service repository not configured")
 	}
-	services, _, err := a.svcRepo.List(context.Background(), coreType, 1, 0)
+	services, _, err := a.svcRepo.List(context.Background(), 1, coreType, 1, 0) // server_id=1 (local)
 	if err != nil {
 		return 0, fmt.Errorf("query service for %s: %w", coreType, err)
 	}

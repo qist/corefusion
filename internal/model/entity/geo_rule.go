@@ -5,6 +5,7 @@ import "time"
 // RuleSource is the GORM model for the rule_sources table.
 type RuleSource struct {
 	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID     int64     `json:"server_id" gorm:"not null;default:1;index"` // per-node scoping
 	Name         string    `json:"name" gorm:"size:128;not null"`
 	RepoURL      string    `json:"repo_url" gorm:"size:512;not null"` // e.g. "Loyalsoldier/v2ray-rules-dat"
 	Enabled      bool      `json:"enabled" gorm:"not null;default:false"`
@@ -21,6 +22,7 @@ func (RuleSource) TableName() string { return "rule_sources" }
 // GeoRuleFile is the GORM model for the geo_rule_files table.
 type GeoRuleFile struct {
 	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID    int64     `json:"server_id" gorm:"not null;default:1;index"` // per-node scoping
 	SourceID    int64     `json:"source_id" gorm:"index;not null;default:0"`
 	Name        string    `json:"name" gorm:"size:255;not null"`
 	FileName    string    `json:"file_name" gorm:"size:255;not null"`

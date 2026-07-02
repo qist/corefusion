@@ -5,6 +5,7 @@ import "time"
 // InboundService is the GORM model for the inbound_services table.
 type InboundService struct {
 	ID int64 `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID int64 `json:"server_id" gorm:"not null;default:1;index"` // per-node scoping
 	Name string `json:"name" gorm:"size:128;not null"`
 	CoreType string `json:"core_type" gorm:"size:32;not null"`
 	Protocol string `json:"protocol" gorm:"size:32;not null"`

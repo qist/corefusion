@@ -476,7 +476,7 @@ async function loadTags() {
     inboundTags.value = (ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean)
   } catch {}
 }
-async function loadGeoStatus() { try { const d = await client.get('/geo-rules/status'); if (d) geoStatus.value = d } catch {} }
+async function loadGeoStatus() { try { const d = await client.get(`${nodeBase.value}/geo-rules/status`); if (d) geoStatus.value = d } catch {} }
 
 function sync() {
   if (!props.data) return
@@ -518,7 +518,7 @@ async function saveAndApply(routing) {
     return
   }
   try {
-    if (!(await ensureXrayRunning(client, t('protoCenter.routing.savedToDb')))) {
+    if (!(await ensureXrayRunning(client, props.serverId, t('protoCenter.routing.savedToDb')))) {
       ElMessage.success(t('common.success'))
       return
     }

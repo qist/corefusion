@@ -179,7 +179,7 @@ function formatSize(bytes) {
 async function fetchSources() {
   sourcesLoading.value = true
   try {
-    const data = await client.get('/geo-rules/sources')
+    const data = await client.get('/node-servers/1/geo-rules/sources')
     sources.value = (data || []).map(s => ({ ...s, _syncing: false }))
   } finally { sourcesLoading.value = false }
 }
@@ -211,7 +211,7 @@ async function fetchAssetsForSource() {
   sourceSelectedFiles.value = []
   try {
     // Fetch releases via backend API (with GitHub acceleration)
-    const data = await client.get('/geo-rules/github-assets', { params: { repo } })
+    const data = await client.get('/node-servers/1/geo-rules/github-assets', { params: { repo } })
     sourceAssets.value = (data.assets || []).map(a => ({ name: a.name, size: a.size, download_url: a.download_url }))
     sourceSelectedFiles.value = []
   } catch (e) {} finally { sourceAssetsLoading.value = false }
@@ -221,12 +221,12 @@ async function handleSaveSource() {
   sourceSaving.value = true
   try {
     if (editingSource.value) {
-      await client.put(`/geo-rules/sources/${editingSource.value.id}`, sourceForm.value)
+      await client.put(`/node-servers/1/geo-rules/sources/${editingSource.value.id}`, sourceForm.value)
     } else {
-      const src = await client.post('/geo-rules/sources', sourceForm.value)
+      const src = await client.post('/node-servers/1/geo-rules/sources', sourceForm.value)
       // If files were selected, save them
       if (sourceSelectedFiles.value.length > 0 && src && src.id) {
-        await client.post(`/geo-rules/sources/${src.id}/select`, {
+        await client.post(`/node-servers/1/geo-rules/sources/${src.id}/select`, {
           files: sourceSelectedFiles.value
         })
       }
@@ -240,7 +240,7 @@ async function handleSaveSource() {
 
 async function handleDeleteSource(row) {
   await ElMessageBox.confirm(t('service.rules.deleteSourceConfirm', { name: row.name }), t('common.confirm'))
-  await client.delete(`/geo-rules/sources/${row.id}`)
+  await client.delete(`/node-servers/1/geo-rules/sources/${row.id}`)
   ElMessage.success(t('common.success'))
   fetchSources()
   fetchFiles()
@@ -249,7 +249,7 @@ async function handleDeleteSource(row) {
 async function pollSyncStatus(jobKey, callback) {
   const poll = async () => {
     try {
-      const job = await client.get(`/geo-rules/sync-status/${jobKey}`)
+      const job = await client.get(`/node-servers/1/geo-rules/sync-status/${jobKey}`)
       if (job.status === 'running') {
         setTimeout(poll, 1500)
       } else {
@@ -265,7 +265,7 @@ async function pollSyncStatus(jobKey, callback) {
 async function handleSyncSource(row) {
   row._syncing = true
   try {
-    const { job_key } = await client.post(`/geo-rules/sources/${row.id}/sync`)
+    const { job_key } = await client.post(`/node-servers/1/geo-rules/sources/${row.id}/sync`)
     pollSyncStatus(job_key, (job) => {
       row._syncing = false
       if (job.status === 'done' && job.results && job.results.length > 0) {
@@ -282,7 +282,7 @@ async function handleSyncSource(row) {
 
 async function handleToggleSchedule(row) {
   try {
-    await client.put(`/geo-rules/sources/${row.id}/schedule`, {
+    await client.put(`/node-servers/1/geo-rules/sources/${row.id}/schedule`, {
       enabled: row.enabled,
       sync_cron: row.sync_cron || ''
     })
@@ -295,7 +295,7 @@ async function handleToggleSchedule(row) {
 async function handleSyncAll() {
   syncAllLoading.value = true
   try {
-    const { job_key } = await client.post('/geo-rules/sync-all')
+    const { job_key } = await client.post('/node-servers/1/geo-rules/sync-all')
     pollSyncStatus(job_key, (job) => {
       syncAllLoading.value = false
       if (job.status === 'done' && job.results) {
@@ -317,7 +317,7 @@ async function showFetchAssets(row) {
   assetsLoading.value = true
   selectedAssets.value = []
   try {
-    const data = await client.get(`/geo-rules/sources/${row.id}/assets`)
+    const data = await client.get(`/node-servers/1/geo-rules/sources/${row.id}/assets`)
     assets.value = data.assets || []
     assetsTag.value = data.tag || ''
     // Pre-select files already added
@@ -347,7 +347,7 @@ async function handleConfirmSelect() {
   const fileNames = selectedAssets.value
   selectSaving.value = true
   try {
-    await client.post(`/geo-rules/sources/${selectedSourceId.value}/select`, {
+    await client.post(`/node-servers/1/geo-rules/sources/${selectedSourceId.value}/select`, {
       files: fileNames
     })
     ElMessage.success(t('common.success'))
@@ -360,7 +360,7 @@ async function handleConfirmSelect() {
 async function fetchFiles() {
   filesLoading.value = true
   try {
-    const data = await client.get('/geo-rules/files')
+    const data = await client.get('/node-servers/1/geo-rules/files')
     files.value = (data || []).map(f => ({ ...f, _loading: false }))
   } finally { filesLoading.value = false }
 }
@@ -368,7 +368,7 @@ async function fetchFiles() {
 async function handleDownload(row) {
   row._loading = true
   try {
-    await client.post(`/geo-rules/files/${row.id}/download`)
+    await client.post(`/node-servers/1/geo-rules/files/${row.id}/download`)
     ElMessage.success(t('common.success'))
     fetchFiles()
   } catch (e) {} finally { row._loading = false }
@@ -376,7 +376,7 @@ async function handleDownload(row) {
 
 async function handleDeleteFile(row) {
   await ElMessageBox.confirm(t('service.rules.deleteConfirm', { name: row.name }), t('common.confirm'))
-  await client.delete(`/geo-rules/files/${row.id}`)
+  await client.delete(`/node-servers/1/geo-rules/files/${row.id}`)
   ElMessage.success(t('common.success'))
   fetchFiles()
 }

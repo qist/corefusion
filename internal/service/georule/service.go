@@ -91,8 +91,11 @@ func (s *Service) httpClientWithAccel(ctx context.Context) *http.Client {
 }
 
 // SeedDefaults creates the default Loyalsoldier source if not exists.
-func (s *Service) SeedDefaults(ctx context.Context) error {
-	sources, err := s.sourceRepo.List(ctx)
+func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
+	if serverID == 0 {
+		serverID = 1
+	}
+	sources, err := s.sourceRepo.ListByServer(ctx, serverID)
 	if err != nil {
 		return err
 	}
@@ -103,6 +106,7 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 	os.MkdirAll(filepath.Join(s.dataDir, "rules"), 0750)
 
 	src := &entity.RuleSource{
+		ServerID: serverID,
 		Name:    "Loyalsoldier v2ray-rules-dat",
 		RepoURL: "Loyalsoldier/v2ray-rules-dat",
 		Enabled: false,
@@ -130,6 +134,7 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 		for _, name := range defaultFiles {
 			if asset, ok := assetMap[name]; ok {
 				rule := &entity.GeoRuleFile{
+					ServerID:    serverID,
 					SourceID:    src.ID,
 					Name:        name,
 					FileName:    name,
@@ -159,8 +164,17 @@ func (s *Service) ListSources(ctx context.Context) ([]entity.RuleSource, error) 
 	return s.sourceRepo.List(ctx)
 }
 
-func (s *Service) CreateSource(ctx context.Context, name, repoURL, syncCron string) (*entity.RuleSource, error) {
+// ListSourcesByServer lists rule sources for a specific node server.
+func (s *Service) ListSourcesByServer(ctx context.Context, serverID int64) ([]entity.RuleSource, error) {
+	return s.sourceRepo.ListByServer(ctx, serverID)
+}
+
+func (s *Service) CreateSource(ctx context.Context, serverID int64, name, repoURL, syncCron string) (*entity.RuleSource, error) {
+	if serverID == 0 {
+		serverID = 1
+	}
 	src := &entity.RuleSource{
+		ServerID: serverID,
 		Name:    name,
 		RepoURL: repoURL,
 		Enabled: false,
@@ -178,6 +192,7 @@ func (s *Service) CreateSource(ctx context.Context, name, repoURL, syncCron stri
 			fileName = name
 		}
 		rule := &entity.GeoRuleFile{
+			ServerID:    serverID,
 			SourceID:    src.ID,
 			Name:        fileName,
 			FileName:    fileName,
@@ -344,6 +359,7 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 		}
 
 		rule := &entity.GeoRuleFile{
+			ServerID:    src.ServerID,
 			SourceID:    sourceID,
 			Name:        name,
 			FileName:    name,
@@ -367,6 +383,11 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 
 func (s *Service) ListFiles(ctx context.Context) ([]entity.GeoRuleFile, error) {
 	return s.fileRepo.List(ctx)
+}
+
+// ListFilesByServer lists geo rule files for a specific node server.
+func (s *Service) ListFilesByServer(ctx context.Context, serverID int64) ([]entity.GeoRuleFile, error) {
+	return s.fileRepo.ListByServer(ctx, serverID)
 }
 
 func (s *Service) ListFilesBySource(ctx context.Context, sourceID int64) ([]entity.GeoRuleFile, error) {
@@ -577,6 +598,29 @@ func (s *Service) SyncAll(ctx context.Context) ([]SyncResult, error) {
 	return results, nil
 }
 
+// SyncAllByServer syncs all sources for a specific node server.
+func (s *Service) SyncAllByServer(ctx context.Context, serverID int64) ([]SyncResult, error) {
+	sources, err := s.sourceRepo.ListByServer(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []SyncResult
+	for _, src := range sources {
+		result, err := s.SyncSource(ctx, src.ID)
+		if err != nil {
+			results = append(results, SyncResult{
+				SourceID: src.ID,
+				Status:   "error",
+				Error:    err.Error(),
+			})
+			continue
+		}
+		results = append(results, *result)
+	}
+	return results, nil
+}
+
 // SyncJobStatus tracks an async sync job.
 type SyncJobStatus struct {
 	Status     string       `json:"status"` // running, done, error
@@ -625,6 +669,31 @@ func (s *Service) StartSyncAll() string {
 
 	go func() {
 		results, err := s.SyncAll(context.Background())
+		syncMu.Lock()
+		defer syncMu.Unlock()
+		job := syncJobs[key]
+		if err != nil {
+			job.Status = "error"
+			job.Error = err.Error()
+		} else {
+			job.Status = "done"
+			job.Results = results
+		}
+		job.FinishedAt = time.Now()
+	}()
+
+	return key
+}
+
+// StartSyncAllByServer starts an async sync for all sources of a specific node server.
+func (s *Service) StartSyncAllByServer(serverID int64) string {
+	key := fmt.Sprintf("sync-all-%d", serverID)
+	syncMu.Lock()
+	syncJobs[key] = &SyncJobStatus{Status: "running", StartedAt: time.Now()}
+	syncMu.Unlock()
+
+	go func() {
+		results, err := s.SyncAllByServer(context.Background(), serverID)
 		syncMu.Lock()
 		defer syncMu.Unlock()
 		job := syncJobs[key]

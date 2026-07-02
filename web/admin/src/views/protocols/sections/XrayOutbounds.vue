@@ -1995,7 +1995,7 @@ async function saveOutbound() {
 
     // Apply to running xray via gRPC
     try {
-      if (!(await ensureXrayRunning(client, t('protoCenter.outbounds.savedToDb')))) {
+      if (!(await ensureXrayRunning(client, props.serverId, t('protoCenter.outbounds.savedToDb')))) {
         ElMessage.success(t('common.success'))
         dlg.value = false
         loadOutbounds()
@@ -2025,7 +2025,7 @@ async function removeOutbound(i) {
   // Remove from xray runtime
   if (ob.tag) {
     try {
-      if (await ensureXrayRunning(client, t('protoCenter.outbounds.deletedFromDb'))) {
+      if (await ensureXrayRunning(client, props.serverId, t('protoCenter.outbounds.deletedFromDb'))) {
         await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true })
       }
     } catch (e) {

@@ -1536,6 +1536,8 @@ type InstallBinaryRequest struct {
 	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`                            // 目标版本号（如 v1.8.6）
 	DownloadUrl   string                 `protobuf:"bytes,3,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"` // 下载 URL（空则自动构建）
 	AssetName     string                 `protobuf:"bytes,4,opt,name=asset_name,json=assetName,proto3" json:"asset_name,omitempty"`       // 指定 asset 名称（可选）
+	AccelDomain   string                 `protobuf:"bytes,5,opt,name=accel_domain,json=accelDomain,proto3" json:"accel_domain,omitempty"` // GitHub 加速域名（可选）
+	ProxyUrl      string                 `protobuf:"bytes,6,opt,name=proxy_url,json=proxyUrl,proto3" json:"proxy_url,omitempty"`          // HTTP 代理 URL（可选）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1594,6 +1596,20 @@ func (x *InstallBinaryRequest) GetDownloadUrl() string {
 func (x *InstallBinaryRequest) GetAssetName() string {
 	if x != nil {
 		return x.AssetName
+	}
+	return ""
+}
+
+func (x *InstallBinaryRequest) GetAccelDomain() string {
+	if x != nil {
+		return x.AccelDomain
+	}
+	return ""
+}
+
+func (x *InstallBinaryRequest) GetProxyUrl() string {
+	if x != nil {
+		return x.ProxyUrl
 	}
 	return ""
 }
@@ -1676,7 +1692,9 @@ func (x *InstallBinaryResponse) GetBinaryPath() string {
 
 type InstallProxyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProxyType     string                 `protobuf:"bytes,1,opt,name=proxy_type,json=proxyType,proto3" json:"proxy_type,omitempty"` // caddy/nginx
+	ProxyType     string                 `protobuf:"bytes,1,opt,name=proxy_type,json=proxyType,proto3" json:"proxy_type,omitempty"`       // caddy/nginx
+	AccelDomain   string                 `protobuf:"bytes,2,opt,name=accel_domain,json=accelDomain,proto3" json:"accel_domain,omitempty"` // GitHub 加速域名（可选）
+	ProxyUrl      string                 `protobuf:"bytes,3,opt,name=proxy_url,json=proxyUrl,proto3" json:"proxy_url,omitempty"`          // HTTP 代理 URL（可选）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1714,6 +1732,20 @@ func (*InstallProxyRequest) Descriptor() ([]byte, []int) {
 func (x *InstallProxyRequest) GetProxyType() string {
 	if x != nil {
 		return x.ProxyType
+	}
+	return ""
+}
+
+func (x *InstallProxyRequest) GetAccelDomain() string {
+	if x != nil {
+		return x.AccelDomain
+	}
+	return ""
+}
+
+func (x *InstallProxyRequest) GetProxyUrl() string {
+	if x != nil {
+		return x.ProxyUrl
 	}
 	return ""
 }
@@ -3431,23 +3463,27 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x0ftcp_connections\x18\b \x01(\x05R\x0etcpConnections\x12%\n" +
 	"\x0etraffic_uplink\x18\t \x01(\x03R\rtrafficUplink\x12)\n" +
 	"\x10traffic_downlink\x18\n" +
-	" \x01(\x03R\x0ftrafficDownlink\"\x8f\x01\n" +
+	" \x01(\x03R\x0ftrafficDownlink\"\xcf\x01\n" +
 	"\x14InstallBinaryRequest\x12\x1b\n" +
 	"\tcore_type\x18\x01 \x01(\tR\bcoreType\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12!\n" +
 	"\fdownload_url\x18\x03 \x01(\tR\vdownloadUrl\x12\x1d\n" +
 	"\n" +
-	"asset_name\x18\x04 \x01(\tR\tassetName\"\x9f\x01\n" +
+	"asset_name\x18\x04 \x01(\tR\tassetName\x12!\n" +
+	"\faccel_domain\x18\x05 \x01(\tR\vaccelDomain\x12\x1b\n" +
+	"\tproxy_url\x18\x06 \x01(\tR\bproxyUrl\"\x9f\x01\n" +
 	"\x15InstallBinaryResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1b\n" +
 	"\tcore_type\x18\x03 \x01(\tR\bcoreType\x12\x18\n" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x1f\n" +
 	"\vbinary_path\x18\x05 \x01(\tR\n" +
-	"binaryPath\"4\n" +
+	"binaryPath\"t\n" +
 	"\x13InstallProxyRequest\x12\x1d\n" +
 	"\n" +
-	"proxy_type\x18\x01 \x01(\tR\tproxyType\"\xbe\x01\n" +
+	"proxy_type\x18\x01 \x01(\tR\tproxyType\x12!\n" +
+	"\faccel_domain\x18\x02 \x01(\tR\vaccelDomain\x12\x1b\n" +
+	"\tproxy_url\x18\x03 \x01(\tR\bproxyUrl\"\xbe\x01\n" +
 	"\x14InstallProxyResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1d\n" +

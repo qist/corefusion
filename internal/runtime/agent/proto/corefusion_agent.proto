@@ -230,6 +230,8 @@ message InstallBinaryRequest {
   string version = 2;              // 目标版本号（如 v1.8.6）
   string download_url = 3;         // 下载 URL（空则自动构建）
   string asset_name = 4;           // 指定 asset 名称（可选）
+  string accel_domain = 5;         // GitHub 加速域名（可选）
+  string proxy_url = 6;            // HTTP 代理 URL（可选）
 }
 
 message InstallBinaryResponse {
@@ -242,6 +244,8 @@ message InstallBinaryResponse {
 
 message InstallProxyRequest {
   string proxy_type = 1;           // caddy/nginx
+  string accel_domain = 2;         // GitHub 加速域名（可选）
+  string proxy_url = 3;            // HTTP 代理 URL（可选）
 }
 
 message InstallProxyResponse {

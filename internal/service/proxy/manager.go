@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -69,6 +70,9 @@ nginxConfigGen func(ctx context.Context) (string, error)
 logBrokers map[ProxyType]*LogBroker
 // Process guardian for auto-restart on crash (shared healthcheck)
 guardians map[ProxyType]*healthcheck.Guardian
+// mu protects logBrokers and guardians from concurrent access
+// (StartProxy can be called from Guardian's crash-recovery goroutine)
+mu sync.Mutex
 }
 
 // SetServerID sets the server ID for per-node site filtering.
@@ -108,10 +112,12 @@ func (m *Manager) getNginxAccessLogPath() string {
 
 // GetLogBroker returns the log broker for a proxy type, or nil if not running.
 func (m *Manager) GetLogBroker(proxyType ProxyType) *LogBroker {
-	if m.logBrokers == nil {
-		return nil
-	}
-	return m.logBrokers[proxyType]
+m.mu.Lock()
+defer m.mu.Unlock()
+if m.logBrokers == nil {
+return nil
+}
+return m.logBrokers[proxyType]
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -1024,9 +1030,11 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = m.dataDir
 
-	// Create log broker for real-time viewing
-	broker := NewLogBroker()
-	m.logBrokers[proxyType] = broker
+// Create log broker for real-time viewing
+broker := NewLogBroker()
+m.mu.Lock()
+m.logBrokers[proxyType] = broker
+m.mu.Unlock()
 
 	// Check log output mode
 	logMode := "file"
@@ -1088,9 +1096,11 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 		func(ctx context.Context) error {
 			return m.StartProxy(ctx, proxyType)
 		},
-	)
-	m.guardians[proxyType] = guardian
-	guardian.Start(cmd.Process.Pid)
+)
+m.mu.Lock()
+m.guardians[proxyType] = guardian
+m.mu.Unlock()
+guardian.Start(cmd.Process.Pid)
 	log.Printf("proxy %s: guardian started (pid %d)", proxyType, cmd.Process.Pid)
 
 	return nil
@@ -1114,11 +1124,13 @@ func (m *Manager) stopExisting(proxyType ProxyType) {
 
 // StopProxy stops a proxy service and marks it as manually stopped.
 func (m *Manager) StopProxy(ctx context.Context, proxyType ProxyType) error {
-	// Stop guardian to prevent auto-restart
-	if g, ok := m.guardians[proxyType]; ok {
-		g.Stop()
-		delete(m.guardians, proxyType)
-	}
+// Stop guardian to prevent auto-restart
+m.mu.Lock()
+if g, ok := m.guardians[proxyType]; ok {
+g.Stop()
+delete(m.guardians, proxyType)
+}
+m.mu.Unlock()
 
 	if m.settingStore != nil {
 		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "true")
@@ -1129,12 +1141,14 @@ func (m *Manager) StopProxy(ctx context.Context, proxyType ProxyType) error {
 // StopProxyForShutdown stops a proxy without marking as manually stopped.
 // Used when the panel exits so proxy can auto-start on next panel start.
 func (m *Manager) StopProxyForShutdown(ctx context.Context, proxyType ProxyType) error {
-	// Stop guardian
-	if g, ok := m.guardians[proxyType]; ok {
-		g.Stop()
-		delete(m.guardians, proxyType)
-	}
-	return m.killProxyProcess(proxyType)
+// Stop guardian
+m.mu.Lock()
+if g, ok := m.guardians[proxyType]; ok {
+g.Stop()
+delete(m.guardians, proxyType)
+}
+m.mu.Unlock()
+return m.killProxyProcess(proxyType)
 }
 
 func (m *Manager) killProxyProcess(proxyType ProxyType) error {
@@ -1156,9 +1170,11 @@ func (m *Manager) ClearManuallyStopped(ctx context.Context, proxyType ProxyType)
 
 // GetGuardianStatus returns the guardian status for a proxy type.
 func (m *Manager) GetGuardianStatus(proxyType ProxyType) map[string]interface{} {
-	if g, ok := m.guardians[proxyType]; ok {
-		return g.Status()
-	}
+m.mu.Lock()
+defer m.mu.Unlock()
+if g, ok := m.guardians[proxyType]; ok {
+return g.Status()
+}
 	return map[string]interface{}{
 		"proxy_type":       string(proxyType),
 		"state":            "no_guardian",
@@ -1169,8 +1185,10 @@ func (m *Manager) GetGuardianStatus(proxyType ProxyType) map[string]interface{} 
 
 // GetGuardian returns the guardian for a proxy type.
 func (m *Manager) GetGuardian(proxyType ProxyType) (*healthcheck.Guardian, bool) {
-	g, ok := m.guardians[proxyType]
-	return g, ok
+m.mu.Lock()
+defer m.mu.Unlock()
+g, ok := m.guardians[proxyType]
+return g, ok
 }
 
 // GetSetting reads a setting value from the store.

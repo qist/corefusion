@@ -61,6 +61,11 @@
         <ProxyManagement :server-id="serverId" :is-local="server?.is_local || false" />
       </el-tab-pane>
 
+      <!-- Geo Rules Tab -->
+      <el-tab-pane :label="t('service.tabs.rules')" name="rules">
+        <RuleTab :server-id="serverId" />
+      </el-tab-pane>
+
       <!-- Binary Management Tab -->
       <el-tab-pane :label="t('nodeServer.binaryManagement')" name="binaries">
         <div style="padding:20px">
@@ -164,6 +169,7 @@ import client from '../api/client'
 import { listBinaries, installBinary, installProxy, getRemoteProxyStatus } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
+import RuleTab from './services/RuleTab.vue'
 
 const { t } = useI18n()
 const route = useRoute()

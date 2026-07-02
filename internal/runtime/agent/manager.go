@@ -572,6 +572,34 @@ func (m *NodeServerManager) GetMetricsFromServer(ctx context.Context, serverID i
 	})
 }
 
+// DownloadGeoRule downloads a geo rule file on a server.
+// For local servers, the caller (georule service) handles the download directly.
+// For remote servers, sends DownloadGeoRule via gRPC to the Agent.
+func (m *NodeServerManager) DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, accelDomain, proxyURL string) (bool, int64, string, error) {
+	if m.isLocalServer(serverID) {
+		// Local: signal that it should be handled by the caller
+		return false, 0, "LOCAL", nil
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return false, 0, "", fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return false, 0, "", fmt.Errorf("server %d agent client not available", serverID)
+	}
+	resp, err := ac.agentClient.DownloadGeoRule(ctx, &agentpb.DownloadGeoRuleRequest{
+		FileName:    fileName,
+		DownloadUrl: downloadURL,
+		AccelDomain: accelDomain,
+		ProxyUrl:    proxyURL,
+	})
+	if err != nil {
+		return false, 0, "", err
+	}
+	return resp.Success, resp.FileSize, resp.Error, nil
+}
+
 // StopGRPCServer gracefully stops the gRPC server.
 func (m *NodeServerManager) StopGRPCServer() {
 	if m.grpcServer != nil {

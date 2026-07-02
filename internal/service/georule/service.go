@@ -18,6 +18,13 @@ import (
 	"corefusion/pkg/netutil"
 )
 
+// NodeOperator handles remote node operations for geo rule downloads.
+// This is implemented by agent.NodeServerManager.
+type NodeOperator interface {
+	DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, accelDomain, proxyURL string) (success bool, fileSize int64, errMsg string, err error)
+	IsLocalServer(serverID int64) bool
+}
+
 // SettingStore provides access to system settings.
 type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
@@ -46,6 +53,7 @@ type Service struct {
 	fileRepo   *repository.GeoRuleRepository
 	dataDir    string
 	settingSvc SettingStore
+	nodeOp     NodeOperator
 }
 
 // NewService creates a new geo rule service.
@@ -56,6 +64,11 @@ func NewService(sourceRepo *repository.RuleSourceRepository, fileRepo *repositor
 		dataDir:    dataDir,
 		settingSvc: settingSvc,
 	}
+}
+
+// SetNodeOperator sets the node operator for remote node downloads.
+func (s *Service) SetNodeOperator(op NodeOperator) {
+	s.nodeOp = op
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -83,6 +96,24 @@ func (s *Service) githubAccelDomain(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+// githubProxyURL reads the HTTP proxy URL from GitHub acceleration settings.
+func (s *Service) githubProxyURL(ctx context.Context) string {
+	if s.settingSvc == nil {
+		return ""
+	}
+	val, err := s.settingSvc.GetByKey(ctx, "github.acceleration")
+	if err != nil || val == "" {
+		return ""
+	}
+	var cfg struct {
+		ProxyURL string `json:"proxy_url"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil {
+		return ""
+	}
+	return cfg.ProxyURL
 }
 
 // httpClientWithAccel returns an HTTP client with GitHub acceleration applied.
@@ -400,6 +431,15 @@ func (s *Service) Download(ctx context.Context, fileID int64) (*entity.GeoRuleFi
 		return nil, err
 	}
 
+	// Check if this file belongs to a remote node
+	if s.nodeOp != nil && !s.nodeOp.IsLocalServer(rule.ServerID) {
+		return s.downloadRemote(ctx, rule)
+	}
+	return s.downloadLocal(ctx, rule)
+}
+
+// downloadLocal downloads the file to the panel's local data/rules/ directory.
+func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (*entity.GeoRuleFile, error) {
 	rulesDir := filepath.Join(s.dataDir, "rules")
 	tmpDir := filepath.Join(s.dataDir, "rules_tmp")
 	os.MkdirAll(rulesDir, 0750)
@@ -463,6 +503,35 @@ func (s *Service) Download(ctx context.Context, fileID int64) (*entity.GeoRuleFi
 	rule.Status = "available"
 	s.fileRepo.Update(ctx, rule)
 
+	return rule, nil
+}
+
+// downloadRemote sends a gRPC command to the Agent to download the file on the remote node.
+func (s *Service) downloadRemote(ctx context.Context, rule *entity.GeoRuleFile) (*entity.GeoRuleFile, error) {
+	rule.Status = "downloading"
+	s.fileRepo.Update(ctx, rule)
+
+	accelDomain := s.githubAccelDomain(ctx)
+	proxyURL := s.githubProxyURL(ctx)
+
+	success, size, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, rule.ServerID, rule.FileName, rule.DownloadURL, accelDomain, proxyURL)
+	if err != nil {
+		rule.Status = "error"
+		s.fileRepo.Update(ctx, rule)
+		return nil, fmt.Errorf("remote download: %w", err)
+	}
+	if !success {
+		rule.Status = "error"
+		s.fileRepo.Update(ctx, rule)
+		return nil, fmt.Errorf("remote download failed: %s", errMsg)
+	}
+
+	rule.FileSize = size
+	rule.LastUpdated = time.Now()
+	rule.Status = "available"
+	s.fileRepo.Update(ctx, rule)
+
+	log.Printf("[georule] remote download OK: server=%d, file=%s, size=%d", rule.ServerID, rule.FileName, size)
 	return rule, nil
 }
 

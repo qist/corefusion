@@ -119,7 +119,7 @@ func (x AgentReport_ReportType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AgentReport_ReportType.Descriptor instead.
 func (AgentReport_ReportType) EnumDescriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{32, 0}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{37, 0}
 }
 
 type SyncConfigRequest struct {
@@ -2122,6 +2122,283 @@ func (x *BinaryInfo) GetInstalled() bool {
 	return false
 }
 
+// ListReleases 获取 GitHub 上的可用版本列表
+type ListReleasesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReleasesRequest) Reset() {
+	*x = ListReleasesRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReleasesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReleasesRequest) ProtoMessage() {}
+
+func (x *ListReleasesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReleasesRequest.ProtoReflect.Descriptor instead.
+func (*ListReleasesRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListReleasesRequest) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+type ListReleasesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Releases      []*ReleaseInfo         `protobuf:"bytes,1,rep,name=releases,proto3" json:"releases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReleasesResponse) Reset() {
+	*x = ListReleasesResponse{}
+	mi := &file_corefusion_agent_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReleasesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReleasesResponse) ProtoMessage() {}
+
+func (x *ListReleasesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReleasesResponse.ProtoReflect.Descriptor instead.
+func (*ListReleasesResponse) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ListReleasesResponse) GetReleases() []*ReleaseInfo {
+	if x != nil {
+		return x.Releases
+	}
+	return nil
+}
+
+type ReleaseInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Prerelease    bool                   `protobuf:"varint,2,opt,name=prerelease,proto3" json:"prerelease,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseInfo) Reset() {
+	*x = ReleaseInfo{}
+	mi := &file_corefusion_agent_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseInfo) ProtoMessage() {}
+
+func (x *ReleaseInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseInfo.ProtoReflect.Descriptor instead.
+func (*ReleaseInfo) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ReleaseInfo) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ReleaseInfo) GetPrerelease() bool {
+	if x != nil {
+		return x.Prerelease
+	}
+	return false
+}
+
+type DownloadGeoRuleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FileName      string                 `protobuf:"bytes,1,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`          // 文件名（如 geoip.dat）
+	DownloadUrl   string                 `protobuf:"bytes,2,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"` // 下载 URL
+	AccelDomain   string                 `protobuf:"bytes,3,opt,name=accel_domain,json=accelDomain,proto3" json:"accel_domain,omitempty"` // GitHub 加速域名（可选）
+	ProxyUrl      string                 `protobuf:"bytes,4,opt,name=proxy_url,json=proxyUrl,proto3" json:"proxy_url,omitempty"`          // HTTP 代理 URL（可选）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DownloadGeoRuleRequest) Reset() {
+	*x = DownloadGeoRuleRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DownloadGeoRuleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadGeoRuleRequest) ProtoMessage() {}
+
+func (x *DownloadGeoRuleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadGeoRuleRequest.ProtoReflect.Descriptor instead.
+func (*DownloadGeoRuleRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *DownloadGeoRuleRequest) GetFileName() string {
+	if x != nil {
+		return x.FileName
+	}
+	return ""
+}
+
+func (x *DownloadGeoRuleRequest) GetDownloadUrl() string {
+	if x != nil {
+		return x.DownloadUrl
+	}
+	return ""
+}
+
+func (x *DownloadGeoRuleRequest) GetAccelDomain() string {
+	if x != nil {
+		return x.AccelDomain
+	}
+	return ""
+}
+
+func (x *DownloadGeoRuleRequest) GetProxyUrl() string {
+	if x != nil {
+		return x.ProxyUrl
+	}
+	return ""
+}
+
+type DownloadGeoRuleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	FileSize      int64                  `protobuf:"varint,3,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"` // 下载的文件大小
+	FilePath      string                 `protobuf:"bytes,4,opt,name=file_path,json=filePath,proto3" json:"file_path,omitempty"`  // 保存路径
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DownloadGeoRuleResponse) Reset() {
+	*x = DownloadGeoRuleResponse{}
+	mi := &file_corefusion_agent_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DownloadGeoRuleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadGeoRuleResponse) ProtoMessage() {}
+
+func (x *DownloadGeoRuleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadGeoRuleResponse.ProtoReflect.Descriptor instead.
+func (*DownloadGeoRuleResponse) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *DownloadGeoRuleResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DownloadGeoRuleResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *DownloadGeoRuleResponse) GetFileSize() int64 {
+	if x != nil {
+		return x.FileSize
+	}
+	return 0
+}
+
+func (x *DownloadGeoRuleResponse) GetFilePath() string {
+	if x != nil {
+		return x.FilePath
+	}
+	return ""
+}
+
 type AgentReport struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Type      AgentReport_ReportType `protobuf:"varint,1,opt,name=type,proto3,enum=corefusion.agent.v1.AgentReport_ReportType" json:"type,omitempty"`
@@ -2147,7 +2424,7 @@ type AgentReport struct {
 
 func (x *AgentReport) Reset() {
 	*x = AgentReport{}
-	mi := &file_corefusion_agent_proto_msgTypes[32]
+	mi := &file_corefusion_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2159,7 +2436,7 @@ func (x *AgentReport) String() string {
 func (*AgentReport) ProtoMessage() {}
 
 func (x *AgentReport) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[32]
+	mi := &file_corefusion_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2172,7 +2449,7 @@ func (x *AgentReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentReport.ProtoReflect.Descriptor instead.
 func (*AgentReport) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{32}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *AgentReport) GetType() AgentReport_ReportType {
@@ -2281,7 +2558,7 @@ type CoreStatus struct {
 
 func (x *CoreStatus) Reset() {
 	*x = CoreStatus{}
-	mi := &file_corefusion_agent_proto_msgTypes[33]
+	mi := &file_corefusion_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2293,7 +2570,7 @@ func (x *CoreStatus) String() string {
 func (*CoreStatus) ProtoMessage() {}
 
 func (x *CoreStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[33]
+	mi := &file_corefusion_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2306,7 +2583,7 @@ func (x *CoreStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoreStatus.ProtoReflect.Descriptor instead.
 func (*CoreStatus) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{33}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CoreStatus) GetCoreType() string {
@@ -2371,7 +2648,7 @@ type TrafficStat struct {
 
 func (x *TrafficStat) Reset() {
 	*x = TrafficStat{}
-	mi := &file_corefusion_agent_proto_msgTypes[34]
+	mi := &file_corefusion_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2383,7 +2660,7 @@ func (x *TrafficStat) String() string {
 func (*TrafficStat) ProtoMessage() {}
 
 func (x *TrafficStat) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[34]
+	mi := &file_corefusion_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2396,7 +2673,7 @@ func (x *TrafficStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrafficStat.ProtoReflect.Descriptor instead.
 func (*TrafficStat) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{34}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *TrafficStat) GetUserEmail() string {
@@ -2455,7 +2732,7 @@ type PanelCommand struct {
 
 func (x *PanelCommand) Reset() {
 	*x = PanelCommand{}
-	mi := &file_corefusion_agent_proto_msgTypes[35]
+	mi := &file_corefusion_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2467,7 +2744,7 @@ func (x *PanelCommand) String() string {
 func (*PanelCommand) ProtoMessage() {}
 
 func (x *PanelCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[35]
+	mi := &file_corefusion_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2480,7 +2757,7 @@ func (x *PanelCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PanelCommand.ProtoReflect.Descriptor instead.
 func (*PanelCommand) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{35}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PanelCommand) GetCommand() isPanelCommand_Command {
@@ -2656,7 +2933,7 @@ type UpdateAgentCommand struct {
 
 func (x *UpdateAgentCommand) Reset() {
 	*x = UpdateAgentCommand{}
-	mi := &file_corefusion_agent_proto_msgTypes[36]
+	mi := &file_corefusion_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2668,7 +2945,7 @@ func (x *UpdateAgentCommand) String() string {
 func (*UpdateAgentCommand) ProtoMessage() {}
 
 func (x *UpdateAgentCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[36]
+	mi := &file_corefusion_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2681,7 +2958,7 @@ func (x *UpdateAgentCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAgentCommand.ProtoReflect.Descriptor instead.
 func (*UpdateAgentCommand) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{36}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *UpdateAgentCommand) GetVersion() string {
@@ -2717,7 +2994,7 @@ type RenewCertCommand struct {
 
 func (x *RenewCertCommand) Reset() {
 	*x = RenewCertCommand{}
-	mi := &file_corefusion_agent_proto_msgTypes[37]
+	mi := &file_corefusion_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2729,7 +3006,7 @@ func (x *RenewCertCommand) String() string {
 func (*RenewCertCommand) ProtoMessage() {}
 
 func (x *RenewCertCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[37]
+	mi := &file_corefusion_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2742,7 +3019,7 @@ func (x *RenewCertCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewCertCommand.ProtoReflect.Descriptor instead.
 func (*RenewCertCommand) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{37}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RenewCertCommand) GetNewCertPem() []byte {
@@ -2782,7 +3059,7 @@ type DistributeCertCommand struct {
 
 func (x *DistributeCertCommand) Reset() {
 	*x = DistributeCertCommand{}
-	mi := &file_corefusion_agent_proto_msgTypes[38]
+	mi := &file_corefusion_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2794,7 +3071,7 @@ func (x *DistributeCertCommand) String() string {
 func (*DistributeCertCommand) ProtoMessage() {}
 
 func (x *DistributeCertCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[38]
+	mi := &file_corefusion_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2807,7 +3084,7 @@ func (x *DistributeCertCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DistributeCertCommand.ProtoReflect.Descriptor instead.
 func (*DistributeCertCommand) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{38}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *DistributeCertCommand) GetCertName() string {
@@ -2872,7 +3149,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_corefusion_agent_proto_msgTypes[39]
+	mi := &file_corefusion_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2884,7 +3161,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[39]
+	mi := &file_corefusion_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2897,7 +3174,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{39}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *RegisterRequest) GetBootstrapToken() string {
@@ -2950,7 +3227,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_corefusion_agent_proto_msgTypes[40]
+	mi := &file_corefusion_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2962,7 +3239,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_corefusion_agent_proto_msgTypes[40]
+	mi := &file_corefusion_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2975,7 +3252,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_corefusion_agent_proto_rawDescGZIP(), []int{40}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RegisterResponse) GetSuccess() bool {
@@ -3200,7 +3477,26 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1f\n" +
 	"\vbinary_path\x18\x03 \x01(\tR\n" +
 	"binaryPath\x12\x1c\n" +
-	"\tinstalled\x18\x04 \x01(\bR\tinstalled\"\xe0\x04\n" +
+	"\tinstalled\x18\x04 \x01(\bR\tinstalled\"2\n" +
+	"\x13ListReleasesRequest\x12\x1b\n" +
+	"\tcore_type\x18\x01 \x01(\tR\bcoreType\"T\n" +
+	"\x14ListReleasesResponse\x12<\n" +
+	"\breleases\x18\x01 \x03(\v2 .corefusion.agent.v1.ReleaseInfoR\breleases\"G\n" +
+	"\vReleaseInfo\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1e\n" +
+	"\n" +
+	"prerelease\x18\x02 \x01(\bR\n" +
+	"prerelease\"\x98\x01\n" +
+	"\x16DownloadGeoRuleRequest\x12\x1b\n" +
+	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12!\n" +
+	"\fdownload_url\x18\x02 \x01(\tR\vdownloadUrl\x12!\n" +
+	"\faccel_domain\x18\x03 \x01(\tR\vaccelDomain\x12\x1b\n" +
+	"\tproxy_url\x18\x04 \x01(\tR\bproxyUrl\"\x83\x01\n" +
+	"\x17DownloadGeoRuleResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1b\n" +
+	"\tfile_size\x18\x03 \x01(\x03R\bfileSize\x12\x1b\n" +
+	"\tfile_path\x18\x04 \x01(\tR\bfilePath\"\xe0\x04\n" +
 	"\vAgentReport\x12?\n" +
 	"\x04type\x18\x01 \x01(\x0e2+.corefusion.agent.v1.AgentReport.ReportTypeR\x04type\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\x03R\bserverId\x12\x1c\n" +
@@ -3294,8 +3590,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x0eagent_cert_pem\x18\x04 \x01(\fR\fagentCertPem\x12\"\n" +
 	"\ragent_key_pem\x18\x05 \x01(\fR\vagentKeyPem\x12\x1e\n" +
 	"\vca_cert_pem\x18\x06 \x01(\fR\tcaCertPem\x12&\n" +
-	"\x0fcert_expires_at\x18\a \x01(\x03R\rcertExpiresAt2\xf9\n" +
-	"\n" +
+	"\x0fcert_expires_at\x18\a \x01(\x03R\rcertExpiresAt2\xcc\f\n" +
 	"\fAgentService\x12]\n" +
 	"\n" +
 	"SyncConfig\x12&.corefusion.agent.v1.SyncConfigRequest\x1a'.corefusion.agent.v1.SyncConfigResponse\x12`\n" +
@@ -3313,7 +3608,9 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\rInstallBinary\x12).corefusion.agent.v1.InstallBinaryRequest\x1a*.corefusion.agent.v1.InstallBinaryResponse\x12c\n" +
 	"\fInstallProxy\x12(.corefusion.agent.v1.InstallProxyRequest\x1a).corefusion.agent.v1.InstallProxyResponse\x12i\n" +
 	"\x0eGetProxyStatus\x12*.corefusion.agent.v1.GetProxyStatusRequest\x1a+.corefusion.agent.v1.GetProxyStatusResponse\x12c\n" +
-	"\fListBinaries\x12(.corefusion.agent.v1.ListBinariesRequest\x1a).corefusion.agent.v1.ListBinariesResponse2e\n" +
+	"\fListBinaries\x12(.corefusion.agent.v1.ListBinariesRequest\x1a).corefusion.agent.v1.ListBinariesResponse\x12c\n" +
+	"\fListReleases\x12(.corefusion.agent.v1.ListReleasesRequest\x1a).corefusion.agent.v1.ListReleasesResponse\x12l\n" +
+	"\x0fDownloadGeoRule\x12+.corefusion.agent.v1.DownloadGeoRuleRequest\x1a,.corefusion.agent.v1.DownloadGeoRuleResponse2e\n" +
 	"\x10HeartbeatService\x12Q\n" +
 	"\x06Stream\x12 .corefusion.agent.v1.AgentReport\x1a!.corefusion.agent.v1.PanelCommand(\x010\x012n\n" +
 	"\x13RegistrationService\x12W\n" +
@@ -3332,7 +3629,7 @@ func file_corefusion_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_corefusion_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_corefusion_agent_proto_goTypes = []any{
 	(ApplyLimitsRequest_LimitType)(0), // 0: corefusion.agent.v1.ApplyLimitsRequest.LimitType
 	(AgentReport_ReportType)(0),       // 1: corefusion.agent.v1.AgentReport.ReportType
@@ -3368,75 +3665,85 @@ var file_corefusion_agent_proto_goTypes = []any{
 	(*ListBinariesRequest)(nil),       // 31: corefusion.agent.v1.ListBinariesRequest
 	(*ListBinariesResponse)(nil),      // 32: corefusion.agent.v1.ListBinariesResponse
 	(*BinaryInfo)(nil),                // 33: corefusion.agent.v1.BinaryInfo
-	(*AgentReport)(nil),               // 34: corefusion.agent.v1.AgentReport
-	(*CoreStatus)(nil),                // 35: corefusion.agent.v1.CoreStatus
-	(*TrafficStat)(nil),               // 36: corefusion.agent.v1.TrafficStat
-	(*PanelCommand)(nil),              // 37: corefusion.agent.v1.PanelCommand
-	(*UpdateAgentCommand)(nil),        // 38: corefusion.agent.v1.UpdateAgentCommand
-	(*RenewCertCommand)(nil),          // 39: corefusion.agent.v1.RenewCertCommand
-	(*DistributeCertCommand)(nil),     // 40: corefusion.agent.v1.DistributeCertCommand
-	(*RegisterRequest)(nil),           // 41: corefusion.agent.v1.RegisterRequest
-	(*RegisterResponse)(nil),          // 42: corefusion.agent.v1.RegisterResponse
-	nil,                               // 43: corefusion.agent.v1.UserOp.ExtraEntry
+	(*ListReleasesRequest)(nil),       // 34: corefusion.agent.v1.ListReleasesRequest
+	(*ListReleasesResponse)(nil),      // 35: corefusion.agent.v1.ListReleasesResponse
+	(*ReleaseInfo)(nil),               // 36: corefusion.agent.v1.ReleaseInfo
+	(*DownloadGeoRuleRequest)(nil),    // 37: corefusion.agent.v1.DownloadGeoRuleRequest
+	(*DownloadGeoRuleResponse)(nil),   // 38: corefusion.agent.v1.DownloadGeoRuleResponse
+	(*AgentReport)(nil),               // 39: corefusion.agent.v1.AgentReport
+	(*CoreStatus)(nil),                // 40: corefusion.agent.v1.CoreStatus
+	(*TrafficStat)(nil),               // 41: corefusion.agent.v1.TrafficStat
+	(*PanelCommand)(nil),              // 42: corefusion.agent.v1.PanelCommand
+	(*UpdateAgentCommand)(nil),        // 43: corefusion.agent.v1.UpdateAgentCommand
+	(*RenewCertCommand)(nil),          // 44: corefusion.agent.v1.RenewCertCommand
+	(*DistributeCertCommand)(nil),     // 45: corefusion.agent.v1.DistributeCertCommand
+	(*RegisterRequest)(nil),           // 46: corefusion.agent.v1.RegisterRequest
+	(*RegisterResponse)(nil),          // 47: corefusion.agent.v1.RegisterResponse
+	nil,                               // 48: corefusion.agent.v1.UserOp.ExtraEntry
 }
 var file_corefusion_agent_proto_depIdxs = []int32{
 	11, // 0: corefusion.agent.v1.AlterUsersRequest.users:type_name -> corefusion.agent.v1.UserOp
-	43, // 1: corefusion.agent.v1.UserOp.extra:type_name -> corefusion.agent.v1.UserOp.ExtraEntry
+	48, // 1: corefusion.agent.v1.UserOp.extra:type_name -> corefusion.agent.v1.UserOp.ExtraEntry
 	0,  // 2: corefusion.agent.v1.ApplyLimitsRequest.type:type_name -> corefusion.agent.v1.ApplyLimitsRequest.LimitType
-	35, // 3: corefusion.agent.v1.GetStatusResponse.cores:type_name -> corefusion.agent.v1.CoreStatus
+	40, // 3: corefusion.agent.v1.GetStatusResponse.cores:type_name -> corefusion.agent.v1.CoreStatus
 	23, // 4: corefusion.agent.v1.GetMetricsResponse.points:type_name -> corefusion.agent.v1.MetricPoint
 	30, // 5: corefusion.agent.v1.GetProxyStatusResponse.proxies:type_name -> corefusion.agent.v1.ProxyInfo
 	33, // 6: corefusion.agent.v1.ListBinariesResponse.binaries:type_name -> corefusion.agent.v1.BinaryInfo
-	1,  // 7: corefusion.agent.v1.AgentReport.type:type_name -> corefusion.agent.v1.AgentReport.ReportType
-	35, // 8: corefusion.agent.v1.AgentReport.cores:type_name -> corefusion.agent.v1.CoreStatus
-	36, // 9: corefusion.agent.v1.AgentReport.traffic_stats:type_name -> corefusion.agent.v1.TrafficStat
-	2,  // 10: corefusion.agent.v1.PanelCommand.sync_config:type_name -> corefusion.agent.v1.SyncConfigRequest
-	4,  // 11: corefusion.agent.v1.PanelCommand.control_core:type_name -> corefusion.agent.v1.ControlCoreRequest
-	10, // 12: corefusion.agent.v1.PanelCommand.alter_users:type_name -> corefusion.agent.v1.AlterUsersRequest
-	13, // 13: corefusion.agent.v1.PanelCommand.apply_limits:type_name -> corefusion.agent.v1.ApplyLimitsRequest
-	15, // 14: corefusion.agent.v1.PanelCommand.get_status:type_name -> corefusion.agent.v1.GetStatusRequest
-	39, // 15: corefusion.agent.v1.PanelCommand.renew_cert:type_name -> corefusion.agent.v1.RenewCertCommand
-	40, // 16: corefusion.agent.v1.PanelCommand.distribute_cert:type_name -> corefusion.agent.v1.DistributeCertCommand
-	6,  // 17: corefusion.agent.v1.PanelCommand.sync_proxy_config:type_name -> corefusion.agent.v1.SyncProxyConfigRequest
-	8,  // 18: corefusion.agent.v1.PanelCommand.control_proxy:type_name -> corefusion.agent.v1.ControlProxyRequest
-	38, // 19: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
-	2,  // 20: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
-	4,  // 21: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
-	6,  // 22: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
-	8,  // 23: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
-	10, // 24: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
-	15, // 25: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
-	13, // 26: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
-	17, // 27: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
-	19, // 28: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
-	21, // 29: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
-	24, // 30: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
-	26, // 31: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
-	28, // 32: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
-	31, // 33: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
-	34, // 34: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
-	41, // 35: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
-	3,  // 36: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.SyncConfigResponse
-	5,  // 37: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.ControlCoreResponse
-	7,  // 38: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.SyncProxyConfigResponse
-	9,  // 39: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.ControlProxyResponse
-	12, // 40: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.AlterUsersResponse
-	16, // 41: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
-	14, // 42: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.ApplyLimitsResponse
-	18, // 43: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.UpdateAgentResponse
-	20, // 44: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
-	22, // 45: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
-	25, // 46: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.InstallBinaryResponse
-	27, // 47: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.InstallProxyResponse
-	29, // 48: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
-	32, // 49: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
-	37, // 50: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
-	42, // 51: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
-	36, // [36:52] is the sub-list for method output_type
-	20, // [20:36] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	36, // 7: corefusion.agent.v1.ListReleasesResponse.releases:type_name -> corefusion.agent.v1.ReleaseInfo
+	1,  // 8: corefusion.agent.v1.AgentReport.type:type_name -> corefusion.agent.v1.AgentReport.ReportType
+	40, // 9: corefusion.agent.v1.AgentReport.cores:type_name -> corefusion.agent.v1.CoreStatus
+	41, // 10: corefusion.agent.v1.AgentReport.traffic_stats:type_name -> corefusion.agent.v1.TrafficStat
+	2,  // 11: corefusion.agent.v1.PanelCommand.sync_config:type_name -> corefusion.agent.v1.SyncConfigRequest
+	4,  // 12: corefusion.agent.v1.PanelCommand.control_core:type_name -> corefusion.agent.v1.ControlCoreRequest
+	10, // 13: corefusion.agent.v1.PanelCommand.alter_users:type_name -> corefusion.agent.v1.AlterUsersRequest
+	13, // 14: corefusion.agent.v1.PanelCommand.apply_limits:type_name -> corefusion.agent.v1.ApplyLimitsRequest
+	15, // 15: corefusion.agent.v1.PanelCommand.get_status:type_name -> corefusion.agent.v1.GetStatusRequest
+	44, // 16: corefusion.agent.v1.PanelCommand.renew_cert:type_name -> corefusion.agent.v1.RenewCertCommand
+	45, // 17: corefusion.agent.v1.PanelCommand.distribute_cert:type_name -> corefusion.agent.v1.DistributeCertCommand
+	6,  // 18: corefusion.agent.v1.PanelCommand.sync_proxy_config:type_name -> corefusion.agent.v1.SyncProxyConfigRequest
+	8,  // 19: corefusion.agent.v1.PanelCommand.control_proxy:type_name -> corefusion.agent.v1.ControlProxyRequest
+	43, // 20: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
+	2,  // 21: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
+	4,  // 22: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
+	6,  // 23: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
+	8,  // 24: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
+	10, // 25: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
+	15, // 26: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
+	13, // 27: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
+	17, // 28: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
+	19, // 29: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
+	21, // 30: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
+	24, // 31: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
+	26, // 32: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
+	28, // 33: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
+	31, // 34: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
+	34, // 35: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
+	37, // 36: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
+	39, // 37: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
+	46, // 38: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
+	3,  // 39: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.SyncConfigResponse
+	5,  // 40: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.ControlCoreResponse
+	7,  // 41: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.SyncProxyConfigResponse
+	9,  // 42: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.ControlProxyResponse
+	12, // 43: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.AlterUsersResponse
+	16, // 44: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
+	14, // 45: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.ApplyLimitsResponse
+	18, // 46: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.UpdateAgentResponse
+	20, // 47: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
+	22, // 48: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
+	25, // 49: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.InstallBinaryResponse
+	27, // 50: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.InstallProxyResponse
+	29, // 51: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
+	32, // 52: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
+	35, // 53: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListReleasesResponse
+	38, // 54: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
+	42, // 55: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
+	47, // 56: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
+	39, // [39:57] is the sub-list for method output_type
+	21, // [21:39] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_corefusion_agent_proto_init() }
@@ -3444,7 +3751,7 @@ func file_corefusion_agent_proto_init() {
 	if File_corefusion_agent_proto != nil {
 		return
 	}
-	file_corefusion_agent_proto_msgTypes[35].OneofWrappers = []any{
+	file_corefusion_agent_proto_msgTypes[40].OneofWrappers = []any{
 		(*PanelCommand_SyncConfig)(nil),
 		(*PanelCommand_ControlCore)(nil),
 		(*PanelCommand_AlterUsers)(nil),
@@ -3462,7 +3769,7 @@ func file_corefusion_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_corefusion_agent_proto_rawDesc), len(file_corefusion_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   42,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

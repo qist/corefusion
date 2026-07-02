@@ -38,6 +38,8 @@ service AgentService {
   rpc ListBinaries(ListBinariesRequest) returns (ListBinariesResponse);
   // 获取 GitHub 上的可用版本列表
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+  // 下载 Geo 规则文件到 Agent 本地
+  rpc DownloadGeoRule(DownloadGeoRuleRequest) returns (DownloadGeoRuleResponse);
 }
 
 // ============================================================
@@ -292,6 +294,24 @@ message ListReleasesResponse {
 message ReleaseInfo {
   string version = 1;
   bool   prerelease = 2;
+}
+
+// ============================================================
+// Geo 规则文件下载（面板→Agent）
+// ============================================================
+
+message DownloadGeoRuleRequest {
+  string file_name = 1;            // 文件名（如 geoip.dat）
+  string download_url = 2;         // 下载 URL
+  string accel_domain = 3;         // GitHub 加速域名（可选）
+  string proxy_url = 4;            // HTTP 代理 URL（可选）
+}
+
+message DownloadGeoRuleResponse {
+  bool   success = 1;
+  string error = 2;
+  int64  file_size = 3;            // 下载的文件大小
+  string file_path = 4;            // 保存路径
 }
 
 // ============================================================

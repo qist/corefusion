@@ -204,6 +204,19 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	binaryResolver := binariesSvc.NewResolver(dataDir)
 	procMgr := process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 
+	// Set config generator: generates minimal default configs for each core type.
+	// The Agent does NOT have access to the panel's core_configs DB table,
+	// so it generates minimal valid configs locally. When the panel syncs a
+	// full config via SyncConfig, it overwrites these defaults.
+	procMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
+		config := generateDefaultConfig(coreType, dataDir)
+		if config == nil {
+			return fmt.Errorf("no default config for core type: %s", coreType)
+		}
+		data, _ := json.MarshalIndent(config, "", "  ")
+		return os.WriteFile(configPath, data, 0640)
+	})
+
 	// Phase 3b: Create binary installer (for remote core binary installation)
 	binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, &agentSettingStore{repo: settingRepo})
 
@@ -795,6 +808,86 @@ func initDataDir(dataDir string) {
 	for _, d := range dirs {
 		os.MkdirAll(d, 0750)
 	}
+}
+
+// generateDefaultConfig generates a minimal valid config for a core type.
+// The Agent uses this when no config has been synced from the panel yet.
+// Once the panel syncs a full config via SyncConfig, it overwrites these defaults.
+func generateDefaultConfig(coreType string, dataDir string) map[string]interface{} {
+	rulesDir := filepath.Join(dataDir, "rules")
+	switch coreType {
+	case "xray":
+		return map[string]interface{}{
+			"log": map[string]interface{}{
+				"loglevel": "warning",
+			},
+			"api": map[string]interface{}{
+				"tag":      "api",
+				"services": []string{"HandlerService", "LoggerService", "StatsService", "RoutingService"},
+			},
+			"stats": map[string]interface{}{},
+			"inbounds": []interface{}{
+				map[string]interface{}{
+					"tag":      "api",
+					"listen":   "127.0.0.1",
+					"port":     10085,
+					"protocol": "dokodemo-door",
+					"settings": map[string]interface{}{"address": "127.0.0.1"},
+				},
+			},
+			"outbounds": []interface{}{
+				map[string]interface{}{"protocol": "freedom", "tag": "direct"},
+				map[string]interface{}{"protocol": "blackhole", "tag": "blocked"},
+			},
+			"routing": map[string]interface{}{
+				"domainStrategy": "IPIfNonMatch",
+				"rules": []interface{}{
+					map[string]interface{}{
+						"type":        "field",
+						"inboundTag":  []string{"api"},
+						"outboundTag": "api",
+					},
+				},
+			},
+			"policy": map[string]interface{}{
+				"levels": map[string]interface{}{
+					"0": map[string]interface{}{
+						"statsUserUplink":   true,
+						"statsUserDownlink": true,
+					},
+				},
+				"system": map[string]interface{}{
+					"statsInboundUplink":   true,
+					"statsInboundDownlink": true,
+				},
+			},
+		}
+	case "singbox":
+		return map[string]interface{}{
+			"log": map[string]interface{}{
+				"level": "info",
+			},
+			"inbounds":  []interface{}{},
+			"outbounds": []interface{}{},
+		}
+	case "hysteria2":
+		return map[string]interface{}{
+			"log": map[string]interface{}{
+				"level": "info",
+			},
+			"listen":  ":0",
+			"masquerade": map[string]interface{}{
+				"type": "404",
+			},
+		}
+	case "tuic":
+		return map[string]interface{}{
+			"server":   "0.0.0.0:0",
+			"users":    []interface{}{},
+		}
+	}
+	_ = rulesDir // rulesDir used for future geo file path injection
+	return nil
 }
 
 // migrateAgentTables runs migrations for the tables that process.Manager

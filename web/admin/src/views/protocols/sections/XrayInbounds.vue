@@ -5033,7 +5033,7 @@ async function saveInbound() {
 
     // Apply to running xray via gRPC (no restart) - use absolute paths
     try {
-      if (!(await ensureXrayRunning(client, t('protoCenter.inbounds.savedToDb')))) {
+      if (!(await ensureXrayRunning(client, props.serverId, t('protoCenter.inbounds.savedToDb')))) {
         ElMessage.success(t('common.success'))
         dlg.value = false
         loadInbounds()
@@ -5140,7 +5140,7 @@ async function rmInbound(i) {
   // Also remove from xray runtime
   if (ib.tag) {
     try {
-      if (await ensureXrayRunning(client, t('protoCenter.inbounds.deletedFromDb'))) {
+      if (await ensureXrayRunning(client, props.serverId, t('protoCenter.inbounds.deletedFromDb'))) {
         await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
       }
     } catch (e) {

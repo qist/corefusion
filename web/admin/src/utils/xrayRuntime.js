@@ -34,11 +34,12 @@ export function notifyXrayRuntimeApplyFailure(error, persistedMessage) {
   warnWithCooldown(t('xrayRuntime.persistedButApplyFailed', { persistedMessage, message }))
 }
 
-export async function ensureXrayRunning(client, persistedMessage) {
+export async function ensureXrayRunning(client, serverId, persistedMessage) {
   const t = i18n.global.t
   try {
-    const status = await client.get('/services/1/process-status', { suppressErrorMessage: true })
-    if (status?.state === 'running') {
+    const services = await client.get(`/node-servers/${serverId}/services/process-status`, { suppressErrorMessage: true })
+    const xray = (services || []).find(s => s.core_type === 'xray')
+    if (xray?.state === 'running') {
       return true
     }
   } catch {}

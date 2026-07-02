@@ -122,7 +122,7 @@ function formatSize(bytes) {
 async function fetchData() {
   loading.value = true
   try {
-    const data = await client.get('/services/process-status')
+    const data = await client.get('/node-servers/1/services/process-status')
     services.value = (data || []).map(s => ({ ...s, _loading: false }))
   } catch (e) {} finally {
     loading.value = false
@@ -132,7 +132,7 @@ async function fetchData() {
 async function handleStart(row) {
   row._loading = true
   try {
-    await client.post(`/services/${row.service_id}/start`)
+    await client.post(`/node-servers/1/services/${row.service_id}/start`)
     ElMessage.success(t('common.success'))
     fetchData()
   } catch (e) {} finally { row._loading = false }
@@ -142,7 +142,7 @@ async function handleStop(row) {
   await ElMessageBox.confirm(t('service.process.stopConfirm', { name: row.name }), t('common.confirm'))
   row._loading = true
   try {
-    await client.post(`/services/${row.service_id}/stop`)
+    await client.post(`/node-servers/1/services/${row.service_id}/stop`)
     ElMessage.success(t('common.success'))
     fetchData()
   } catch (e) {} finally { row._loading = false }
@@ -151,7 +151,7 @@ async function handleStop(row) {
 async function handleRestart(row) {
   row._loading = true
   try {
-    await client.post(`/services/${row.service_id}/restart`)
+    await client.post(`/node-servers/1/services/${row.service_id}/restart`)
     ElMessage.success(t('common.success'))
     fetchData()
   } catch (e) {} finally { row._loading = false }
@@ -159,7 +159,7 @@ async function handleRestart(row) {
 
 async function updateGuardian(row) {
   try {
-    await client.put(`/services/${row.service_id}/guardian`, {
+    await client.put(`/node-servers/1/services/${row.service_id}/guardian`, {
       auto_start: row.auto_start,
       auto_restart: row.auto_restart
     })

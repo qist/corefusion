@@ -33,12 +33,12 @@ func (r *ServiceRepository) GetByID(ctx context.Context, id int64) (*entity.Inbo
 	return &svc, nil
 }
 
-// List retrieves all inbound services with pagination and optional core_type filter.
-func (r *ServiceRepository) List(ctx context.Context, coreType string, limit, offset int) ([]entity.InboundService, int64, error) {
+// List retrieves inbound services for a specific node server with pagination and optional core_type filter.
+func (r *ServiceRepository) List(ctx context.Context, serverID int64, coreType string, limit, offset int) ([]entity.InboundService, int64, error) {
 	var services []entity.InboundService
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&entity.InboundService{})
+	query := r.db.WithContext(ctx).Model(&entity.InboundService{}).Where("server_id = ?", serverID)
 	if coreType != "" {
 		query = query.Where("core_type = ?", coreType)
 	}

@@ -278,7 +278,7 @@ async function fetchCards() {
 
 async function fetchCoreTraffic() {
   try {
-    const data = await client.get('/services/process-status')
+    const data = await client.get('/node-servers/1/services/process-status')
     coreTraffic.value = (data || []).map(s => ({ ...s, upload: 0, download: 0, live_upload: 0, live_download: 0 }))
   } catch (e) {}
 }

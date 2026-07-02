@@ -588,6 +588,73 @@ nohup /tmp/corefusion server > /tmp/corefusion.log 2>&1 &
 | 日志/DNS/策略等 | 配置文件写入 + 核心重启 | 是（若核心运行中） |
 | 配置文件持久化 | configsync 定时器（5 分钟）同步到文件 | 否 |
 
+### 8.4 基于节点的数据隔离 (Per-Node Scoping)
+
+服务管理 (Services) 和规则管理 (Geo Rules) 已从全局模式迁移为基于节点的架构。
+所有数据和 API 路由均按 `server_id` 隔离，确保每个节点的配置互不影响。
+
+#### 数据模型
+
+以下实体新增 `server_id` 字段（`int64`，默认值 `1` = 本地节点）：
+
+| 实体 | 表名 | 说明 |
+|------|------|------|
+| `InboundService` | `inbound_services` | 入站服务（核心进程管理） |
+| `RuleSource` | `rule_sources` | Geo 规则来源（GitHub repo / 直接 URL） |
+| `GeoRuleFile` | `geo_rule_files` | Geo 规则文件（geoip.dat / geosite.dat 等） |
+
+#### API 路由
+
+所有服务管理和规则管理 API 已迁移至 `/node-servers/:id/` 下：
+
+```
+# 服务管理（按节点）
+GET    /api/v1/node-servers/:id/services                    # 列出节点的服务
+POST   /api/v1/node-servers/:id/services                    # 创建服务
+GET    /api/v1/node-servers/:id/services/:serviceId         # 获取服务详情
+PUT    /api/v1/node-servers/:id/services/:serviceId         # 更新服务
+DELETE /api/v1/node-servers/:id/services/:serviceId         # 删除服务
+
+# 进程管理（按节点）
+POST   /api/v1/node-servers/:id/services/:serviceId/start   # 启动核心
+POST   /api/v1/node-servers/:id/services/:serviceId/stop    # 停止核心
+POST   /api/v1/node-servers/:id/services/:serviceId/restart # 重启核心
+GET    /api/v1/node-servers/:id/services/process-status      # 所有核心状态
+PUT    /api/v1/node-servers/:id/services/:serviceId/guardian # 守护配置
+
+# 规则管理（按节点）
+GET    /api/v1/node-servers/:id/geo-rules/sources            # 列出规则来源
+POST   /api/v1/node-servers/:id/geo-rules/sources            # 创建规则来源
+PUT    /api/v1/node-servers/:id/geo-rules/sources/:sourceId  # 更新规则来源
+DELETE /api/v1/node-servers/:id/geo-rules/sources/:sourceId  # 删除规则来源
+GET    /api/v1/node-servers/:id/geo-rules/files              # 列出规则文件
+GET    /api/v1/node-servers/:id/geo-rules/status             # 规则文件状态
+POST   /api/v1/node-servers/:id/geo-rules/sync-all           # 同步所有来源
+```
+
+#### 远程节点操作
+
+`ProcessHandler` 通过 `NodeOperator` 接口支持远程节点操作：
+- **本地节点** (`is_local=1`)：直接调用 `process.Manager` 管理进程
+- **远程节点**：通过 gRPC 向 Agent 发送 `ControlCore` 指令
+
+```go
+// ProcessHandler 中的远程节点路由逻辑
+if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(ctx, svc.ServerID) {
+    // 远程节点：通过 gRPC 控制 Agent
+    h.nodeOperator.ControlCore(ctx, svc.ServerID, svc.CoreType, "start")
+} else {
+    // 本地节点：直接调用 process.Manager
+    h.processMgr.Start(ctx, serviceID, svc.CoreType)
+}
+```
+
+#### Agent 默认配置生成
+
+Agent 首次启动时，如果面板尚未同步配置，`process.Manager` 会调用 `SetConfigGenerator`
+生成最小可用配置。每种核心类型 (`xray`, `singbox`, `hysteria2`, `tuic`) 都有对应的默认配置。
+面板通过 `SyncConfig` 下发完整配置后会覆盖这些默认值。
+
 ---
 
 ## 9. 常见问题

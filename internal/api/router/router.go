@@ -322,8 +322,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	proxyMgr.SetCaddyConfigGen(caddyMgr.GenerateConfig)
 	proxyMgr.SetNginxConfigGen(nginxMgr.GenerateConfig)
 
-	// Seed default geo rules
-	geoRuleSvcInst.SeedDefaults(nil)
+	// Seed default geo rules for local node (server_id=1)
+	geoRuleSvcInst.SeedDefaults(nil, 1)
 
 	// Subscription format service
 	subfmtSvcInst := subfmtSvc.NewService(subfmtRepo, subfmtRuleRepo)
@@ -808,32 +808,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				cfipGroup.POST("/seed", cfipH.SeedDefaults)
 			}
 
-			// Services
-			servicesGroup := protected.Group("/services")
-			{
-				servicesGroup.GET("", svcH.List)
-				servicesGroup.POST("", svcH.Create)
-				servicesGroup.GET("/:id", svcH.GetByID)
-				servicesGroup.PUT("/:id", svcH.Update)
-				servicesGroup.DELETE("/:id", svcH.Delete)
-				servicesGroup.GET("/:id/endpoints", svcH.ListEndpoints)
-				servicesGroup.POST("/:id/endpoints", svcH.CreateEndpoint)
-				servicesGroup.PUT("/:id/endpoints/:endpointId", svcH.UpdateEndpoint)
-				servicesGroup.DELETE("/:id/endpoints/:endpointId", svcH.DeleteEndpoint)
-
-				// Process management
-				servicesGroup.POST("/:id/start", processH.Start)
-				servicesGroup.POST("/:id/stop", processH.Stop)
-				servicesGroup.POST("/:id/restart", processH.Restart)
-				servicesGroup.GET("/:id/process-status", processH.GetProcessStatus)
-				servicesGroup.PUT("/:id/guardian", processH.UpdateGuardian)
-				servicesGroup.GET("/:id/crash-logs", processH.GetCrashLogs)
-				servicesGroup.GET("/:id/crash-logs/:logId", processH.GetCrashLog)
-				servicesGroup.DELETE("/:id/crash-logs", processH.ClearCrashLogs)
-
-				// Process status for all services
-				servicesGroup.GET("/process-status", processH.ListAllProcessStatuses)
-			}
+		// Services (moved under /node-servers/:id/services)
+		// Geo Rules (moved under /node-servers/:id/geo-rules)
 
 			// Subscriptions
 			subsGroup := protected.Group("/subscriptions")
@@ -1069,12 +1045,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerH.SetOutboundConfigService(outboundConfigSvc)
 			nodeServerH.SetProxyHandler(proxyH)
 
-			// Wire up NodeOperator so proxy/caddy/nginx handlers can route
-			// operations (start/stop/restart/reload, config sync, status)
-			// to remote nodes via gRPC.
-			proxyH.SetNodeOperator(nodeServerSvcInst)
-			caddyH.SetNodeOperator(nodeServerSvcInst)
-			nginxH.SetNodeOperator(nodeServerSvcInst)
+		// Wire up NodeOperator so proxy/caddy/nginx handlers can route
+		// operations (start/stop/restart/reload, config sync, status)
+		// to remote nodes via gRPC.
+		proxyH.SetNodeOperator(nodeServerSvcInst)
+		caddyH.SetNodeOperator(nodeServerSvcInst)
+		nginxH.SetNodeOperator(nodeServerSvcInst)
+		processH.SetNodeOperator(nodeServerSvcInst)
 			nodeServersGroup := protected.Group("/node-servers")
 			{
 				nodeServersGroup.GET("", nodeServerH.List)
@@ -1242,6 +1219,46 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
 			nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
 			nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
+
+			// Services (per node) — service management with process control
+			nodeServersGroup.GET("/:id/services", svcH.List)
+			nodeServersGroup.POST("/:id/services", svcH.Create)
+			nodeServersGroup.GET("/:id/services/:serviceId", svcH.GetByID)
+			nodeServersGroup.PUT("/:id/services/:serviceId", svcH.Update)
+			nodeServersGroup.DELETE("/:id/services/:serviceId", svcH.Delete)
+			nodeServersGroup.GET("/:id/services/:serviceId/endpoints", svcH.ListEndpoints)
+			nodeServersGroup.POST("/:id/services/:serviceId/endpoints", svcH.CreateEndpoint)
+			nodeServersGroup.PUT("/:id/services/:serviceId/endpoints/:endpointId", svcH.UpdateEndpoint)
+			nodeServersGroup.DELETE("/:id/services/:serviceId/endpoints/:endpointId", svcH.DeleteEndpoint)
+
+			// Process management (per node service)
+			nodeServersGroup.POST("/:id/services/:serviceId/start", processH.Start)
+			nodeServersGroup.POST("/:id/services/:serviceId/stop", processH.Stop)
+			nodeServersGroup.POST("/:id/services/:serviceId/restart", processH.Restart)
+			nodeServersGroup.GET("/:id/services/:serviceId/process-status", processH.GetProcessStatus)
+			nodeServersGroup.PUT("/:id/services/:serviceId/guardian", processH.UpdateGuardian)
+			nodeServersGroup.GET("/:id/services/:serviceId/crash-logs", processH.GetCrashLogs)
+			nodeServersGroup.GET("/:id/services/:serviceId/crash-logs/:logId", processH.GetCrashLog)
+			nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
+			nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
+
+			// Geo Rules (per node) — rule source and file management
+			nodeServersGroup.GET("/:id/geo-rules/github-assets", geoRuleH.FetchGitHubAssets)
+			nodeServersGroup.GET("/:id/geo-rules/sources", geoRuleH.ListSources)
+			nodeServersGroup.POST("/:id/geo-rules/sources", geoRuleH.CreateSource)
+			nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId", geoRuleH.UpdateSource)
+			nodeServersGroup.DELETE("/:id/geo-rules/sources/:sourceId", geoRuleH.DeleteSource)
+			nodeServersGroup.GET("/:id/geo-rules/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
+			nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/select", geoRuleH.SelectFiles)
+			nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/sync", geoRuleH.SyncSource)
+			nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
+			nodeServersGroup.POST("/:id/geo-rules/sync-all", geoRuleH.SyncAll)
+			nodeServersGroup.GET("/:id/geo-rules/sync-status/:key", geoRuleH.SyncStatus)
+			nodeServersGroup.GET("/:id/geo-rules/files", geoRuleH.ListFiles)
+			nodeServersGroup.POST("/:id/geo-rules/files/:fileId/download", geoRuleH.Download)
+			nodeServersGroup.DELETE("/:id/geo-rules/files/:fileId", geoRuleH.DeleteFile)
+			nodeServersGroup.PUT("/:id/geo-rules/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
+			nodeServersGroup.GET("/:id/geo-rules/status", geoRuleH.Status)
 		}
 
 			// CA Center (separate group, reuses nodeServerH)
@@ -1340,26 +1357,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				c.JSON(200, gin.H{"message": "config synced successfully", "last_sync": configSyncSvc.LastSync()})
 			})
 
-			// Geo Rules
-			geoRulesGroup := protected.Group("/geo-rules")
-			{
-				geoRulesGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
-				geoRulesGroup.GET("/sources", geoRuleH.ListSources)
-				geoRulesGroup.POST("/sources", geoRuleH.CreateSource)
-				geoRulesGroup.PUT("/sources/:id", geoRuleH.UpdateSource)
-				geoRulesGroup.DELETE("/sources/:id", geoRuleH.DeleteSource)
-				geoRulesGroup.GET("/sources/:id/assets", geoRuleH.FetchReleaseAssets)
-				geoRulesGroup.POST("/sources/:id/select", geoRuleH.SelectFiles)
-				geoRulesGroup.POST("/sources/:id/sync", geoRuleH.SyncSource)
-				geoRulesGroup.PUT("/sources/:id/schedule", geoRuleH.ToggleSchedule)
-				geoRulesGroup.POST("/sync-all", geoRuleH.SyncAll)
-				geoRulesGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
-				geoRulesGroup.GET("/files", geoRuleH.ListFiles)
-				geoRulesGroup.POST("/files/:id/download", geoRuleH.Download)
-				geoRulesGroup.DELETE("/files/:id", geoRuleH.DeleteFile)
-				geoRulesGroup.PUT("/files/:id/auto-sync", geoRuleH.SetAutoSync)
-				geoRulesGroup.GET("/status", geoRuleH.Status)
-			}
+		// Geo Rules (moved under /node-servers/:id/geo-rules)
 
 			// WARP
 			warpGroup := protected.Group("/warp")

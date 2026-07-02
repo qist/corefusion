@@ -882,6 +882,15 @@ func (s *Service) ExecuteBinaryCommand(ctx context.Context, serverID int64, core
 	return s.nodeMgr.ExecuteBinaryCommand(ctx, serverID, coreType, args...)
 }
 
+// ExecuteBinaryRawOutput executes a binary command and returns the raw stdout string.
+// For local servers, executes directly. For remote servers, sends via gRPC to Agent.
+func (s *Service) ExecuteBinaryRawOutput(ctx context.Context, serverID int64, coreType string, args ...string) (string, error) {
+	if s.nodeMgr == nil {
+		return "", fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.ExecuteBinaryRawOutput(ctx, serverID, coreType, args...)
+}
+
 // ListInterfaces lists network interfaces on a specific server.
 // For local servers, queries directly. For remote servers, sends via gRPC to Agent.
 func (s *Service) ListInterfaces(ctx context.Context, serverID int64) ([]string, error) {

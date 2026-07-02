@@ -508,6 +508,20 @@ func (a *LocalAgent) ExecuteBinaryCommand(ctx context.Context, coreType string, 
 	return result, nil
 }
 
+// ExecuteBinaryRawOutput executes a binary command and returns raw stdout.
+func (a *LocalAgent) ExecuteBinaryRawOutput(ctx context.Context, coreType string, args ...string) (string, error) {
+	binaryPath, err := a.resolveBinaryPath(coreType)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("command failed: %w", err)
+	}
+	return string(out), nil
+}
+
 // ListInterfaces returns a list of network interface names.
 func (a *LocalAgent) ListInterfaces() ([]string, error) {
 	ifaces, err := net.Interfaces()

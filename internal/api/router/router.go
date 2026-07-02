@@ -18,7 +18,7 @@ import (
 	extNodeHandler "corefusion/internal/api/handlers"
 	authHandler "corefusion/internal/api/handlers/auth"
 	backupsHandler "corefusion/internal/api/handlers/backups"
-	binariesHandler "corefusion/internal/api/handlers/binaries"
+
 	certsHandler "corefusion/internal/api/handlers/certificates"
 	cfipHandler "corefusion/internal/api/handlers/cfip"
 	clientHandler "corefusion/internal/api/handlers/client"
@@ -585,8 +585,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	proxyH := systemHandler.NewProxyHandler(proxyMgr, caddyMgr, nginxMgr)
 	caddyH := systemHandler.NewCaddyHandler(caddyMgr, proxyMgr)
 	nginxH := systemHandler.NewNginxHandler(nginxMgr, proxyMgr)
-	binariesH := binariesHandler.NewHandler(binaryResolver, dataDir, systemSettingSvc)
-	binariesH.SetProcessManager(processMgr)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
@@ -979,6 +977,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		binaryInstaller.SetProcessController(processMgr) // Enable stop/start during binary updates
 		localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
 		nodeMgrForCRL.SetLocalAgent(localAgent)
+		nodeMgrForCRL.SetSettingStore(systemSettingSvc)
 
 		// Set binary lister for node server service (used for ListReleases API)
 		// Wrap binaries.Installer to match nodeserver.BinaryLister interface

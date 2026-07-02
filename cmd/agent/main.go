@@ -173,6 +173,7 @@ type AgentApp struct {
 	localAgent *agent.LocalAgent
 	svcRepo   *repository.ServiceRepository
 	database  *gorm.DB
+	settingRepo *repository.SystemSettingRepository
 
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
@@ -242,6 +243,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		localAgent: localAgent,
 		svcRepo:    svcRepo,
 		database:   db.DB,
+		settingRepo: settingRepo,
 	}
 
 	return app, nil
@@ -258,6 +260,31 @@ func (s *agentSettingStore) GetByKey(ctx context.Context, key string) (string, e
 
 func (s *agentSettingStore) Set(ctx context.Context, key, value string) error {
 	return s.repo.Set(ctx, key, value)
+}
+
+// syncGithubAccelSettings writes GitHub acceleration config to the Agent's local
+// settings DB so that installer and proxyMgr can use it for downloads.
+func (s *agentServiceServer) syncGithubAccelSettings(ctx context.Context, accelDomain, proxyURL string) {
+	if s.settingRepo == nil {
+		return
+	}
+	if accelDomain == "" && proxyURL == "" {
+		return
+	}
+	// Build config JSON matching the panel's github.acceleration setting format
+	cfg := map[string]interface{}{
+		"enabled":   true,
+		"proxy_url": proxyURL,
+		"domains":   []interface{}{},
+	}
+	if accelDomain != "" {
+		cfg["domains"] = []map[string]interface{}{
+			{"name": "panel-synced", "url": accelDomain, "enabled": true},
+		}
+	}
+	data, _ := json.Marshal(cfg)
+	s.settingRepo.Set(ctx, "github.acceleration", string(data))
+	log.Printf("[Agent] synced github.acceleration settings (accel=%s, proxy=%s)", accelDomain, proxyURL)
 }
 
 // StartLocalDaemons starts process.Manager's seed + reconcile, which provides
@@ -614,6 +641,7 @@ type agentServiceServer struct {
 	agentpb.UnimplementedAgentServiceServer
 	localAgent *agent.LocalAgent
 	dataDir    string
+	settingRepo *repository.SystemSettingRepository
 }
 
 func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.SyncConfigResponse, error) {
@@ -669,10 +697,14 @@ func (s *agentServiceServer) GetMetrics(ctx context.Context, req *agentpb.GetMet
 }
 
 func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.InstallBinaryResponse, error) {
+	// Sync GitHub acceleration settings to local DB before install
+	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
 	return s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName)
 }
 
 func (s *agentServiceServer) InstallProxy(ctx context.Context, req *agentpb.InstallProxyRequest) (*agentpb.InstallProxyResponse, error) {
+	// Sync GitHub acceleration settings to local DB before install
+	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
 	return s.localAgent.InstallProxy(ctx, req.ProxyType)
 }
 
@@ -783,7 +815,7 @@ func (a *AgentApp) StartGRPCServer(ctx context.Context) {
 	}
 
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
-	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent, dataDir: a.dataDir})
+	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent, dataDir: a.dataDir, settingRepo: a.settingRepo})
 
 	log.Printf("[Agent] gRPC server listening on :%d (mTLS)", a.cfg.Agent.ListenPort)
 	go func() {

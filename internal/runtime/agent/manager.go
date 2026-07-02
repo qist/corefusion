@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -34,6 +35,7 @@ type NodeServerManager struct {
 	ca          *CertificateAuthority
 	crl         *CertRevocationList // optional CRL for cert revocation checks
 	localAgent  *LocalAgent          // local node adapter (wraps process.Manager)
+	settingStore NodeSettingStore    // optional, for GitHub accel/proxy settings
 
 	// gRPC server (listens for Agent connections)
 	grpcServer *grpc.Server
@@ -45,6 +47,49 @@ type NodeServerManager struct {
 
 	// Phase 6: Metrics collector (optional, injected by router)
 	metricsCollector *MetricsCollector
+}
+
+// NodeSettingStore provides access to system settings for GitHub acceleration.
+// Implemented by systemSettingService.
+type NodeSettingStore interface {
+	GetByKey(ctx context.Context, key string) (string, error)
+}
+
+// SetSettingStore sets the setting store for GitHub acceleration config.
+func (m *NodeServerManager) SetSettingStore(s NodeSettingStore) {
+	m.settingStore = s
+}
+
+// githubAccelConfig reads the GitHub acceleration domain and proxy URL from settings.
+func (m *NodeServerManager) githubAccelConfig() (accelDomain, proxyURL string) {
+	if m.settingStore == nil {
+		return "", ""
+	}
+	val, err := m.settingStore.GetByKey(context.Background(), "github.acceleration")
+	if err != nil || val == "" {
+		return "", ""
+	}
+	var cfg struct {
+		Enabled bool   `json:"enabled"`
+		ProxyURL string `json:"proxy_url"`
+		Domains []struct {
+			URL     string `json:"url"`
+			Enabled bool   `json:"enabled"`
+		} `json:"domains"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil {
+		return "", ""
+	}
+	if cfg.Enabled {
+		for _, d := range cfg.Domains {
+			if d.Enabled && d.URL != "" {
+				accelDomain = d.URL
+				break
+			}
+		}
+	}
+	proxyURL = cfg.ProxyURL
+	return
 }
 
 // SetLocalAgent sets the local agent adapter.
@@ -450,11 +495,14 @@ func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, c
 	if ac.agentClient == nil {
 		return nil, fmt.Errorf("server %d agent client not available", serverID)
 	}
+	accelDomain, proxyURL := m.githubAccelConfig()
 	return ac.agentClient.InstallBinary(ctx, &agentpb.InstallBinaryRequest{
 		CoreType:    coreType,
 		Version:     version,
 		DownloadUrl: downloadURL,
 		AssetName:   assetName,
+		AccelDomain: accelDomain,
+		ProxyUrl:    proxyURL,
 	})
 }
 
@@ -476,8 +524,11 @@ func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, pr
 	if ac.agentClient == nil {
 		return nil, fmt.Errorf("server %d agent client not available", serverID)
 	}
+	accelDomain, proxyURL := m.githubAccelConfig()
 	return ac.agentClient.InstallProxy(ctx, &agentpb.InstallProxyRequest{
-		ProxyType: proxyType,
+		ProxyType:   proxyType,
+		AccelDomain: accelDomain,
+		ProxyUrl:    proxyURL,
 	})
 }
 

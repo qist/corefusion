@@ -297,7 +297,7 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 		}
 
 		name := header.Name
-		if strings.Contains(name, coreType) && !strings.HasSuffix(name, "/") {
+		if matchCoreBinary(name, coreType) && !strings.HasSuffix(name, "/") {
 			binaryName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
 			if runtime.GOOS == "windows" {
 				binaryName += ".exe"
@@ -336,8 +336,7 @@ func extractZip(data []byte, destDir, coreType string) error {
 			continue
 		}
 		name := filepath.Base(f.Name)
-		lowerName := strings.ToLower(name)
-		if lowerName == coreType || lowerName == coreType+".exe" || name == "xray" || name == "xray.exe" {
+		if matchCoreBinary(name, coreType) {
 			rc, err := f.Open()
 			if err != nil {
 				return err
@@ -407,6 +406,19 @@ func buildDownloadURL(coreType, repoURL, version string) string {
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 	}
 	return ""
+}
+
+// matchCoreBinary checks if an archive entry name corresponds to the
+// given core type. Handles naming variations like "sing-box" vs "singbox".
+func matchCoreBinary(name, coreType string) bool {
+	switch coreType {
+	case "singbox":
+		return strings.Contains(name, "sing-box") || strings.Contains(name, "singbox")
+	case "hysteria2":
+		return strings.Contains(name, "hysteria")
+	default:
+		return strings.Contains(name, coreType)
+	}
 }
 
 // filterAsset returns true if the asset name is relevant for the core type.

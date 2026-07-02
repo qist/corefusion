@@ -33,6 +33,8 @@ const (
 	AgentService_InstallProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/InstallProxy"
 	AgentService_GetProxyStatus_FullMethodName  = "/corefusion.agent.v1.AgentService/GetProxyStatus"
 	AgentService_ListBinaries_FullMethodName    = "/corefusion.agent.v1.AgentService/ListBinaries"
+	AgentService_ListReleases_FullMethodName    = "/corefusion.agent.v1.AgentService/ListReleases"
+	AgentService_DownloadGeoRule_FullMethodName = "/corefusion.agent.v1.AgentService/DownloadGeoRule"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -71,6 +73,10 @@ type AgentServiceClient interface {
 	GetProxyStatus(ctx context.Context, in *GetProxyStatusRequest, opts ...grpc.CallOption) (*GetProxyStatusResponse, error)
 	// 列出已安装的核心二进制
 	ListBinaries(ctx context.Context, in *ListBinariesRequest, opts ...grpc.CallOption) (*ListBinariesResponse, error)
+	// 获取 GitHub 上的可用版本列表
+	ListReleases(ctx context.Context, in *ListReleasesRequest, opts ...grpc.CallOption) (*ListReleasesResponse, error)
+	// 下载 Geo 规则文件到 Agent 本地
+	DownloadGeoRule(ctx context.Context, in *DownloadGeoRuleRequest, opts ...grpc.CallOption) (*DownloadGeoRuleResponse, error)
 }
 
 type agentServiceClient struct {
@@ -221,6 +227,26 @@ func (c *agentServiceClient) ListBinaries(ctx context.Context, in *ListBinariesR
 	return out, nil
 }
 
+func (c *agentServiceClient) ListReleases(ctx context.Context, in *ListReleasesRequest, opts ...grpc.CallOption) (*ListReleasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReleasesResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListReleases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) DownloadGeoRule(ctx context.Context, in *DownloadGeoRuleRequest, opts ...grpc.CallOption) (*DownloadGeoRuleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadGeoRuleResponse)
+	err := c.cc.Invoke(ctx, AgentService_DownloadGeoRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -257,6 +283,10 @@ type AgentServiceServer interface {
 	GetProxyStatus(context.Context, *GetProxyStatusRequest) (*GetProxyStatusResponse, error)
 	// 列出已安装的核心二进制
 	ListBinaries(context.Context, *ListBinariesRequest) (*ListBinariesResponse, error)
+	// 获取 GitHub 上的可用版本列表
+	ListReleases(context.Context, *ListReleasesRequest) (*ListReleasesResponse, error)
+	// 下载 Geo 规则文件到 Agent 本地
+	DownloadGeoRule(context.Context, *DownloadGeoRuleRequest) (*DownloadGeoRuleResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -308,6 +338,12 @@ func (UnimplementedAgentServiceServer) GetProxyStatus(context.Context, *GetProxy
 }
 func (UnimplementedAgentServiceServer) ListBinaries(context.Context, *ListBinariesRequest) (*ListBinariesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBinaries not implemented")
+}
+func (UnimplementedAgentServiceServer) ListReleases(context.Context, *ListReleasesRequest) (*ListReleasesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListReleases not implemented")
+}
+func (UnimplementedAgentServiceServer) DownloadGeoRule(context.Context, *DownloadGeoRuleRequest) (*DownloadGeoRuleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DownloadGeoRule not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -582,6 +618,42 @@ func _AgentService_ListBinaries_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_ListReleases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReleasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListReleases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListReleases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListReleases(ctx, req.(*ListReleasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_DownloadGeoRule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadGeoRuleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).DownloadGeoRule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_DownloadGeoRule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).DownloadGeoRule(ctx, req.(*DownloadGeoRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -644,6 +716,14 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListBinaries",
 			Handler:    _AgentService_ListBinaries_Handler,
+		},
+		{
+			MethodName: "ListReleases",
+			Handler:    _AgentService_ListReleases_Handler,
+		},
+		{
+			MethodName: "DownloadGeoRule",
+			Handler:    _AgentService_DownloadGeoRule_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

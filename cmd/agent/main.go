@@ -47,6 +47,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 const agentVersion = "1.0.0-dev"
@@ -612,6 +613,7 @@ func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 type agentServiceServer struct {
 	agentpb.UnimplementedAgentServiceServer
 	localAgent *agent.LocalAgent
+	dataDir    string
 }
 
 func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.SyncConfigResponse, error) {
@@ -682,6 +684,76 @@ func (s *agentServiceServer) ListBinaries(ctx context.Context, req *agentpb.List
 	return s.localAgent.ListBinaries(), nil
 }
 
+func (s *agentServiceServer) ListReleases(ctx context.Context, req *agentpb.ListReleasesRequest) (*agentpb.ListReleasesResponse, error) {
+	return &agentpb.ListReleasesResponse{}, nil
+}
+
+// DownloadGeoRule downloads a geo rule file to the Agent's local data/rules/ directory.
+func (s *agentServiceServer) DownloadGeoRule(ctx context.Context, req *agentpb.DownloadGeoRuleRequest) (*agentpb.DownloadGeoRuleResponse, error) {
+	if req.FileName == "" || req.DownloadUrl == "" {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: "file_name and download_url are required"}, nil
+	}
+
+	rulesDir := filepath.Join(s.dataDir, "rules")
+	tmpDir := filepath.Join(s.dataDir, "rules_tmp")
+	if err := os.MkdirAll(rulesDir, 0750); err != nil {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create rules dir: %v", err)}, nil
+	}
+	if err := os.MkdirAll(tmpDir, 0750); err != nil {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create tmp dir: %v", err)}, nil
+	}
+
+	filePath := filepath.Join(rulesDir, req.FileName)
+	tmpPath := filepath.Join(tmpDir, req.FileName)
+
+	// Apply GitHub acceleration domain if provided
+	downloadURL := req.DownloadUrl
+	if req.AccelDomain != "" {
+		downloadURL = netutil.AccelerateGitHubURL(downloadURL, req.AccelDomain)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
+	if err != nil {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	// Use HTTP client with GitHub acceleration and/or proxy support
+	client := netutil.GitHubHTTPClientWithProxy(120*time.Second, req.AccelDomain, req.ProxyUrl)
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("download failed: HTTP %d", resp.StatusCode)}, nil
+	}
+
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	size, err := io.Copy(f, resp.Body)
+	f.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	log.Printf("[Agent] geo rule downloaded: %s (%d bytes) → %s", req.FileName, size, filePath)
+	return &agentpb.DownloadGeoRuleResponse{
+		Success:  true,
+		FileSize: size,
+		FilePath: filePath,
+	}, nil
+}
+
 func (a *AgentApp) StartGRPCServer(ctx context.Context) {
 	cert, err := tls.LoadX509KeyPair(a.certPath, a.keyPath)
 	if err != nil {
@@ -711,7 +783,7 @@ func (a *AgentApp) StartGRPCServer(ctx context.Context) {
 	}
 
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
-	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent})
+	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent, dataDir: a.dataDir})
 
 	log.Printf("[Agent] gRPC server listening on :%d (mTLS)", a.cfg.Agent.ListenPort)
 	go func() {

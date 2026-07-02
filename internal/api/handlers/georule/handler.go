@@ -258,6 +258,20 @@ func parseIntParam(c *gin.Context, name string) int64 {
 	return id
 }
 
+// SeedDefaults handles POST /api/v1/node-servers/:id/geo-rules/seed.
+// Creates default rule sources and files for the node if none exist.
+func (h *Handler) SeedDefaults(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
+	if err := h.svc.SeedDefaults(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SEED_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "seeded"})
+}
+
 // Status handles GET /api/v1/node-servers/:id/geo-rules/status.
 // Returns which geo files exist and are usable.
 func (h *Handler) Status(c *gin.Context) {

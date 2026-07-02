@@ -588,6 +588,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	binariesH := binariesHandler.NewHandler(binaryResolver, dataDir, systemSettingSvc)
 	binariesH.SetProcessManager(processMgr)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
+	if sharedNodeMgr != nil {
+		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
+	}
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
@@ -1258,6 +1261,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.POST("/:id/geo-rules/files/:fileId/download", geoRuleH.Download)
 			nodeServersGroup.DELETE("/:id/geo-rules/files/:fileId", geoRuleH.DeleteFile)
 			nodeServersGroup.PUT("/:id/geo-rules/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
+			nodeServersGroup.POST("/:id/geo-rules/seed", geoRuleH.SeedDefaults)
 			nodeServersGroup.GET("/:id/geo-rules/status", geoRuleH.Status)
 		}
 

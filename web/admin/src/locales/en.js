@@ -1379,6 +1379,9 @@ export default {
       domainName: 'Name',
       domainUrl: 'Acceleration URL',
       domainEnabled: 'Enabled',
+      proxyUrl: 'HTTP/SOCKS Proxy',
+      proxyUrlHint: 'Route all GitHub requests through this proxy (e.g. http://127.0.0.1:7890, socks5://127.0.0.1:1080)',
+      proxyUrlPlaceholder: 'http://127.0.0.1:7890',
     },
     proxy: {
       title: 'Proxy Management',

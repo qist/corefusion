@@ -180,6 +180,9 @@ func AutoMigrate(db *gorm.DB) error {
 	// Migrate existing data to server_id=1 (local node)
 	migrateServerID(db)
 
+	// Fix unique indexes to be per-server (GORM AutoMigrate cannot alter existing indexes)
+	migrateUniqueIndexes(db)
+
 	// Seed default outbounds if none exist
 	seedDefaultOutbounds(db)
 
@@ -187,6 +190,45 @@ func AutoMigrate(db *gorm.DB) error {
 	seedDefaultShareDomains(db)
 
 	return nil
+}
+
+// migrateUniqueIndexes drops legacy single-column unique indexes and
+// recreates them as composite (server_id, ...) indexes so that different
+// node servers can use the same tag / (core_type, section) without conflict.
+// GORM AutoMigrate cannot drop/recreate existing indexes, so we do it manually.
+func migrateUniqueIndexes(db *gorm.DB) {
+	// core_configs: idx_core_section was (core_type, section), needs (server_id, core_type, section)
+	recreateIndex(db, "core_configs", "idx_core_section",
+		"CREATE UNIQUE INDEX idx_core_section ON core_configs(server_id, core_type, section)")
+
+	// inbound_configs: idx_inbound_configs_tag was (tag), needs (server_id, tag) as idx_inbound_tag_server
+	dropIndex(db, "inbound_configs", "idx_inbound_configs_tag")
+	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_tag_server ON inbound_configs(server_id, tag)")
+
+	// outbound_configs: idx_outbound_configs_tag and idx_outbound_tag were (tag), needs (server_id, tag)
+	dropIndex(db, "outbound_configs", "idx_outbound_configs_tag")
+	dropIndex(db, "outbound_configs", "idx_outbound_tag")
+	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_tag_server ON outbound_configs(server_id, tag)")
+}
+
+// dropIndex drops an index if it exists, logging the result.
+func dropIndex(db *gorm.DB, table, indexName string) {
+	if err := db.Exec("DROP INDEX IF EXISTS " + indexName).Error; err != nil {
+		log.Printf("WARNING: drop index %s on %s: %v", indexName, table, err)
+	}
+}
+
+// createIndex creates a new index, logging the result.
+func createIndex(db *gorm.DB, sql string) {
+	if err := db.Exec(sql).Error; err != nil {
+		log.Printf("WARNING: create index: %s: %v", sql, err)
+	}
+}
+
+// recreateIndex drops the old index and creates a new one with the given SQL.
+func recreateIndex(db *gorm.DB, table, indexName, createSQL string) {
+	dropIndex(db, table, indexName)
+	createIndex(db, createSQL)
 }
 
 // migrateServerID sets server_id=1 for all existing rows in tables that

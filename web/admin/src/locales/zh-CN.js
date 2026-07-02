@@ -1380,6 +1380,9 @@ export default {
       domainName: '名称',
       domainUrl: '加速地址',
       domainEnabled: '启用',
+      proxyUrl: 'HTTP/SOCKS 代理',
+      proxyUrlHint: '所有 GitHub 请求将通过此代理转发（如 http://127.0.0.1:7890、socks5://127.0.0.1:1080）',
+      proxyUrlPlaceholder: 'http://127.0.0.1:7890',
     },
     proxy: {
       title: '代理管理',

@@ -280,6 +280,10 @@
               <el-switch v-model="githubForm.enabled" />
               <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.github.enabledHint') }}</div>
             </el-form-item>
+            <el-form-item :label="t('settings.github.proxyUrl')">
+              <el-input v-model="githubForm.proxy_url" :placeholder="t('settings.github.proxyUrlPlaceholder')" clearable />
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.github.proxyUrlHint') }}</div>
+            </el-form-item>
           </el-form>
 
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -529,7 +533,7 @@ const tmplForm = ref({ name: '', type: 'telegram', recipients: '', subject: '', 
 const tmplRecipients = ref([])
 
 // GitHub acceleration
-const githubForm = ref({ enabled: false, domains: [] })
+const githubForm = ref({ enabled: false, domains: [], proxy_url: '' })
 const githubSaving = ref(false)
 const domainDialogVisible = ref(false)
 const editingDomainIndex = ref(null)

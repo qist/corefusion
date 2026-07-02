@@ -32,16 +32,29 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 // unaffected. Pass accelDomain="" to disable acceleration while still
 // benefiting from the DNS fix.
 func GitHubHTTPClient(timeout time.Duration, accelDomain string) *http.Client {
+	return GitHubHTTPClientWithProxy(timeout, accelDomain, "")
+}
+
+// GitHubHTTPClientWithProxy is like GitHubHTTPClient but additionally routes
+// all requests through the given proxy URL (http://, https://, socks5://).
+// An empty proxyURL disables proxying.
+func GitHubHTTPClientWithProxy(timeout time.Duration, accelDomain, proxyURL string) *http.Client {
+	transport := &http.Transport{
+		DialContext:       newDialContext(15 * time.Second),
+		DisableKeepAlives: false,
+		MaxIdleConns:      10,
+		IdleConnTimeout:   90 * time.Second,
+	}
+	if proxyURL != "" {
+		if u, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(u)
+		}
+	}
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &githubTransport{
-			inner: &http.Transport{
-				DialContext:       newDialContext(15 * time.Second),
-				DisableKeepAlives: false,
-				MaxIdleConns:      10,
-				IdleConnTimeout:   90 * time.Second,
-			},
-			accelDomain: accelDomain,
+			inner:        transport,
+			accelDomain:  accelDomain,
 		},
 	}
 }

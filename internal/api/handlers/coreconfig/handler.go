@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -33,10 +34,21 @@ func (h *Handler) SetProcessManager(pm ProcessManager) {
 	h.processMgr = pm
 }
 
-// List handles GET /api/v1/node-servers/:id/protocols (legacy handler, now unused).
-// Returns all core types with their section list for the local node.
+// parseServerID extracts the server ID from the URL path parameter.
+// Falls back to 1 (local node) for legacy callers that don't include :id.
+func parseServerID(c *gin.Context) int64 {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		return 1
+	}
+	return id
+}
+
+// List handles GET /api/v1/node-servers/:id/protocols.
+// Returns all core types with their section list for the specified server.
 func (h *Handler) List(c *gin.Context) {
-	result, err := h.svc.List(c.Request.Context(), 1)
+	serverID := parseServerID(c)
+	result, err := h.svc.List(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "LIST_PROTOCOLS_FAILED", err.Error())
 		return
@@ -47,13 +59,14 @@ func (h *Handler) List(c *gin.Context) {
 // Get handles GET /api/v1/protocols/:coreType.
 // Returns all sections merged into one JSON object.
 func (h *Handler) Get(c *gin.Context) {
+	serverID := parseServerID(c)
 	coreType := c.Param("coreType")
 	if !isValidCoreType(coreType) {
 		response.BadRequest(c, "INVALID_CORE_TYPE", "unsupported core type: "+coreType)
 		return
 	}
 
-	full, err := h.svc.GetFull(c.Request.Context(), 1, coreType)
+	full, err := h.svc.GetFull(c.Request.Context(), serverID, coreType)
 	if err != nil {
 		response.NotFound(c, "PROTOCOL_NOT_FOUND", err.Error())
 		return
@@ -64,6 +77,7 @@ func (h *Handler) Get(c *gin.Context) {
 // Save handles PUT /api/v1/protocols/:coreType.
 // Replaces all sections from a merged JSON object.
 func (h *Handler) Save(c *gin.Context) {
+	serverID := parseServerID(c)
 	coreType := c.Param("coreType")
 	if !isValidCoreType(coreType) {
 		response.BadRequest(c, "INVALID_CORE_TYPE", "unsupported core type: "+coreType)
@@ -83,7 +97,7 @@ func (h *Handler) Save(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.SaveFull(c.Request.Context(), 1, coreType, body); err != nil {
+	if err := h.svc.SaveFull(c.Request.Context(), serverID, coreType, body); err != nil {
 		response.InternalError(c, "SAVE_PROTOCOL_FAILED", err.Error())
 		return
 	}
@@ -92,6 +106,7 @@ func (h *Handler) Save(c *gin.Context) {
 
 // GetSection handles GET /api/v1/protocols/:coreType/section/:section.
 func (h *Handler) GetSection(c *gin.Context) {
+	serverID := parseServerID(c)
 	coreType := c.Param("coreType")
 	section := c.Param("section")
 	if !isValidCoreType(coreType) {
@@ -99,7 +114,7 @@ func (h *Handler) GetSection(c *gin.Context) {
 		return
 	}
 
-	val, err := h.svc.GetSection(c.Request.Context(), 1, coreType, section)
+	val, err := h.svc.GetSection(c.Request.Context(), serverID, coreType, section)
 	if err != nil {
 		response.NotFound(c, "SECTION_NOT_FOUND", err.Error())
 		return
@@ -109,6 +124,7 @@ func (h *Handler) GetSection(c *gin.Context) {
 
 // SaveSection handles PUT /api/v1/protocols/:coreType/section/:section.
 func (h *Handler) SaveSection(c *gin.Context) {
+	serverID := parseServerID(c)
 	coreType := c.Param("coreType")
 	section := c.Param("section")
 	if !isValidCoreType(coreType) {
@@ -130,7 +146,7 @@ func (h *Handler) SaveSection(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.SaveSection(c.Request.Context(), 1, coreType, section, body); err != nil {
+	if err := h.svc.SaveSection(c.Request.Context(), serverID, coreType, section, body); err != nil {
 		response.InternalError(c, "SAVE_SECTION_FAILED", err.Error())
 		return
 	}

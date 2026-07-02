@@ -270,8 +270,12 @@ async function saveSection(){
       await client.put(`${apiBase.value}/${selectedCore.value}/section/${activeSection.value}`,secData.value)
       fullConfig.value[activeSection.value]=secData.value
     }
-    // Auto-restart if service is running
-    if(svc.state==='running'){
+    // inbounds/outbounds/routing are hot-updated via Xray gRPC API by their
+    // own component logic — do NOT restart the core for these sections.
+    const hotSections = ['routing','inbounds','outbounds']
+    if(hotSections.includes(activeSection.value)){
+      ElMessage.success(t('protoCenter.messages.saved'))
+    } else if(svc.state==='running'){
       try{
         await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'restart'})
       }catch{}

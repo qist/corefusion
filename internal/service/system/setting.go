@@ -54,14 +54,16 @@ type GitHubDomain struct {
 
 // GitHubConfig contains GitHub acceleration configuration.
 type GitHubConfig struct {
-	Enabled bool           `json:"enabled"`
-	Domains []GitHubDomain `json:"domains"`
+	Enabled  bool           `json:"enabled"`
+	Domains  []GitHubDomain `json:"domains"`
+	ProxyURL string         `json:"proxy_url"` // optional HTTP/SOCKS proxy URL (e.g. http://127.0.0.1:7890)
 }
 
 // DefaultGitHubConfig returns default GitHub acceleration configuration.
 func DefaultGitHubConfig() *GitHubConfig {
 	return &GitHubConfig{
-		Enabled: false,
+		Enabled:  false,
+		ProxyURL: "",
 		Domains: []GitHubDomain{
 			{Name: "gh-proxy.com", URL: "https://gh-proxy.com", Enabled: true},
 			{Name: "geekertao", URL: "https://ghfile.geekertao.top", Enabled: false},
@@ -405,6 +407,16 @@ func (s *SettingService) GetActiveGitHubDomain(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+// GetGitHubProxyURL returns the configured HTTP/SOCKS proxy URL for GitHub
+// requests, or empty string if none is set.
+func (s *SettingService) GetGitHubProxyURL(ctx context.Context) string {
+	config, err := s.GetGitHubConfig(ctx)
+	if err != nil {
+		return ""
+	}
+	return config.ProxyURL
 }
 
 // SaveMTLSCAFile saves an uploaded CA certificate file.

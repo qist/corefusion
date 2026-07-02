@@ -141,9 +141,28 @@ func (m *Manager) githubAccelDomain() string {
 	return ""
 }
 
-// githubHTTPClient creates an HTTP client with GitHub acceleration.
+// githubProxyURL reads the optional HTTP/SOCKS proxy URL from the GitHub
+// acceleration settings. Returns "" when unset.
+func (m *Manager) githubProxyURL() string {
+	if m.settingStore == nil {
+		return ""
+	}
+	val, err := m.settingStore.GetByKey(context.Background(), "github.acceleration")
+	if err != nil || val == "" {
+		return ""
+	}
+	var cfg struct {
+		ProxyURL string `json:"proxy_url"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil {
+		return ""
+	}
+	return cfg.ProxyURL
+}
+
+// githubHTTPClient creates an HTTP client with GitHub acceleration and proxy.
 func (m *Manager) githubHTTPClient(timeout time.Duration) *http.Client {
-	return netutil.GitHubHTTPClient(timeout, m.githubAccelDomain())
+	return netutil.GitHubHTTPClientWithProxy(timeout, m.githubAccelDomain(), m.githubProxyURL())
 }
 
 // lookupNginxUser returns the UID and GID of the nginx user.

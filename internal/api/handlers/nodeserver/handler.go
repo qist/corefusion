@@ -11,14 +11,18 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	nodeserverSvc "corefusion/internal/service/nodeserver"
+	outboundconfigSvc "corefusion/internal/service/outboundconfig"
 )
 
 // Handler handles node server HTTP requests.
 type Handler struct {
-	svc          *nodeserverSvc.Service
-	coreConfigSvc *coreconfigSvc.Service
-	proxyH       *system.ProxyHandler
+	svc             *nodeserverSvc.Service
+	coreConfigSvc   *coreconfigSvc.Service
+	inboundConfigSvc *inboundconfigSvc.Service
+	outboundConfigSvc *outboundconfigSvc.Service
+	proxyH          *system.ProxyHandler
 }
 
 // NewHandler creates a new node server handler.
@@ -29,6 +33,16 @@ func NewHandler(svc *nodeserverSvc.Service) *Handler {
 // SetCoreConfigService sets the core config service for protocol management.
 func (h *Handler) SetCoreConfigService(svc *coreconfigSvc.Service) {
 	h.coreConfigSvc = svc
+}
+
+// SetInboundConfigService sets the inbound config service.
+func (h *Handler) SetInboundConfigService(svc *inboundconfigSvc.Service) {
+	h.inboundConfigSvc = svc
+}
+
+// SetOutboundConfigService sets the outbound config service.
+func (h *Handler) SetOutboundConfigService(svc *outboundconfigSvc.Service) {
+	h.outboundConfigSvc = svc
 }
 
 // SetProxyHandler sets the proxy handler for local proxy management delegation.

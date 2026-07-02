@@ -160,11 +160,12 @@ func (i *Installer) ListReleasesGitHub(ctx context.Context, coreType string) ([]
 	}
 
 	accelDomain := i.githubAccelDomain(ctx)
+	proxyURL := i.githubProxyURL(ctx)
 	apiURL := netutil.AccelerateGitHubURL(
 		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repoURL),
 		accelDomain,
 	)
-	client := netutil.GitHubHTTPClient(30*time.Second, accelDomain)
+	client := netutil.GitHubHTTPClientWithProxy(30*time.Second, accelDomain, proxyURL)
 	req, _ := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -228,9 +229,30 @@ func (i *Installer) githubAccelDomain(ctx context.Context) string {
 	return ""
 }
 
+// githubProxyURL reads the optional HTTP/SOCKS proxy URL from the GitHub
+// acceleration settings. Returns "" when unset.
+func (i *Installer) githubProxyURL(ctx context.Context) string {
+	if i.settingSvc == nil {
+		return ""
+	}
+	val, err := i.settingSvc.GetByKey(ctx, "github.acceleration")
+	if err != nil || val == "" {
+		return ""
+	}
+	var cfg struct {
+		ProxyURL string `json:"proxy_url"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil {
+		return ""
+	}
+	return cfg.ProxyURL
+}
+
 func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, coreType string) error {
-	accelURL := netutil.AccelerateGitHubURL(rawURL, i.githubAccelDomain(ctx))
-	client := netutil.GitHubHTTPClient(300*time.Second, i.githubAccelDomain(ctx))
+	accelDomain := i.githubAccelDomain(ctx)
+	proxyURL := i.githubProxyURL(ctx)
+	accelURL := netutil.AccelerateGitHubURL(rawURL, accelDomain)
+	client := netutil.GitHubHTTPClientWithProxy(300*time.Second, accelDomain, proxyURL)
 	req, _ := http.NewRequestWithContext(ctx, "GET", accelURL, nil)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -420,11 +442,12 @@ func (i *Installer) ListReleases(ctx context.Context, coreType string) ([]Releas
 	}
 
 	accelDomain := i.githubAccelDomain(ctx)
+	proxyURL := i.githubProxyURL(ctx)
 	apiURL := netutil.AccelerateGitHubURL(
 		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repoURL),
 		accelDomain,
 	)
-	client := netutil.GitHubHTTPClient(30*time.Second, accelDomain)
+	client := netutil.GitHubHTTPClientWithProxy(30*time.Second, accelDomain, proxyURL)
 	req, _ := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 

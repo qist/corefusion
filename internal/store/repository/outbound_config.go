@@ -64,12 +64,12 @@ func (r *OutboundConfigRepository) Update(ctx context.Context, cfg *entity.Outbo
 	return r.db.WithContext(ctx).Save(cfg).Error
 }
 
-// Upsert creates or updates an outbound config by tag.
+// Upsert creates or updates an outbound config by (server_id, tag).
 func (r *OutboundConfigRepository) Upsert(ctx context.Context, cfg *entity.OutboundConfig) error {
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "tag"}},
-		DoUpdates: clause.AssignmentColumns([]string{"server_id", "remark", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
+		Columns:   []clause.Column{{Name: "server_id"}, {Name: "tag"}},
+		DoUpdates: clause.AssignmentColumns([]string{"remark", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
 	}).Create(cfg).Error
 }
 

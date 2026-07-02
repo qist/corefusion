@@ -3,6 +3,7 @@ package nodeserver
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -1228,10 +1229,15 @@ func (h *Handler) GenerateX25519Key(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
-	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "x25519")
+	raw, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "x25519")
 	if err != nil {
 		response.InternalError(c, "EXEC_FAILED", err.Error())
 		return
+	}
+	// Map xray x25519 output fields to frontend-expected names
+	result := map[string]string{
+		"privateKey": raw["PrivateKey"],
+		"password":   raw["Password (PublicKey)"],
 	}
 	response.OK(c, result)
 }
@@ -1244,10 +1250,15 @@ func (h *Handler) GenerateMldsa65Key(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
-	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "mldsa65")
+	raw, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "mldsa65")
 	if err != nil {
 		response.InternalError(c, "EXEC_FAILED", err.Error())
 		return
+	}
+	// Map xray mldsa65 output fields to frontend-expected names
+	result := map[string]string{
+		"seed":   raw["Seed"],
+		"verify": raw["Verify"],
 	}
 	response.OK(c, result)
 }
@@ -1261,10 +1272,18 @@ func (h *Handler) GenerateWgKey(c *gin.Context) {
 		return
 	}
 	coreType := c.DefaultQuery("core_type", "xray")
-	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, coreType, "wg")
+	raw, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, coreType, "wg")
 	if err != nil {
 		response.InternalError(c, "EXEC_FAILED", err.Error())
 		return
+	}
+	// Map xray wg output fields to frontend-expected names
+	result := map[string]string{
+		"privateKey": raw["PrivateKey"],
+		"publicKey":  raw["Password (PublicKey)"],
+	}
+	if v, ok := raw["Hash32"]; ok {
+		result["hash32"] = v
 	}
 	response.OK(c, result)
 }
@@ -1284,10 +1303,22 @@ func (h *Handler) GenerateEchKeys(c *gin.Context) {
 		response.BadRequest(c, "INVALID_BODY", "server_name is required")
 		return
 	}
-	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "tls", "ech", "--serverName", req.ServerName)
+	// ECH output has multi-line base64 that ExecuteBinaryCommand can't parse,
+	// so we use a raw output method instead.
+	output, err := h.svc.ExecuteBinaryRawOutput(c.Request.Context(), id, "xray", "tls", "ech", "--serverName", req.ServerName)
 	if err != nil {
 		response.InternalError(c, "EXEC_FAILED", err.Error())
 		return
+	}
+	// Parse ECH output: lines[1]=echConfigList, lines[3]=echServerKeys
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) < 4 {
+		response.InternalError(c, "ECH_GENERATE_FAILED", "invalid ech output")
+		return
+	}
+	result := map[string]string{
+		"echConfigList": strings.TrimSpace(lines[1]),
+		"echServerKeys": strings.TrimSpace(lines[3]),
 	}
 	response.OK(c, result)
 }
@@ -1300,12 +1331,15 @@ func (h *Handler) GenerateVlessEnc(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
-	result, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "vlessenc")
+	// VlessEnc output has structured blocks that ExecuteBinaryCommand can't parse,
+	// so we use a raw output method instead.
+	output, err := h.svc.ExecuteBinaryRawOutput(c.Request.Context(), id, "xray", "vlessenc")
 	if err != nil {
 		response.InternalError(c, "EXEC_FAILED", err.Error())
 		return
 	}
-	response.OK(c, result)
+	auths := parseVlessEncAuths(output)
+	response.OK(c, gin.H{"auths": auths})
 }
 
 // ListInterfaces handles GET /api/v1/node-servers/:id/binaries/interfaces.
@@ -1322,4 +1356,53 @@ func (h *Handler) ListInterfaces(c *gin.Context) {
 		return
 	}
 	response.OK(c, result)
+}
+
+// parseVlessEncAuths parses the output of `xray vlessenc` command.
+func parseVlessEncAuths(output string) []map[string]string {
+	lines := strings.Split(output, "\n")
+	var auths []map[string]string
+	var current map[string]string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Authentication:") {
+			if current != nil {
+				auths = append(auths, current)
+			}
+			label := strings.TrimSpace(strings.TrimPrefix(line, "Authentication:"))
+			current = map[string]string{
+				"id":    vlessEncAuthID(label),
+				"label": label,
+			}
+		} else if strings.HasPrefix(line, `"decryption"`) || strings.HasPrefix(line, `"encryption"`) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 && current != nil {
+				key := strings.Trim(parts[0], `" `)
+				val := strings.TrimSpace(parts[1])
+				val = strings.TrimSuffix(val, ",")
+				val = strings.Trim(val, `" `)
+				current[key] = val
+			}
+		}
+	}
+
+	if current != nil {
+		auths = append(auths, current)
+	}
+
+	return auths
+}
+
+// vlessEncAuthID extracts a short ID from the auth label.
+func vlessEncAuthID(label string) string {
+	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(label))
+	switch {
+	case strings.Contains(normalized, "mlkem768"):
+		return "mlkem768"
+	case strings.Contains(normalized, "x25519"):
+		return "x25519"
+	default:
+		return normalized
+	}
 }

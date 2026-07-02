@@ -1146,6 +1146,18 @@ func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID i
 	return nil, fmt.Errorf("remote binary command execution not yet implemented")
 }
 
+// ExecuteBinaryRawOutput executes a binary command and returns raw stdout.
+func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID int64, coreType string, args ...string) (string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return "", fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ExecuteBinaryRawOutput(ctx, coreType, args...)
+	}
+	// Remote: not yet implemented
+	return "", fmt.Errorf("remote binary command execution not yet implemented")
+}
+
 // ListInterfaces lists network interfaces on a server.
 // For local servers, queries directly. For remote servers, returns error (not yet implemented via gRPC).
 func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) ([]string, error) {

@@ -546,13 +546,14 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	switch c := cmd.Command.(type) {
 	case *agentpb.PanelCommand_SyncConfig:
 		req := c.SyncConfig
-		submitTask("sync_config", func(ctx context.Context) (interface{}, error) {
-			if err := a.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
-				return nil, err
-			}
+		// Delegate to LocalAgent.SyncConfig which handles task submission
+		// with content-based idempotency key and file writing.
+		// We don't double-submit to the task queue.
+		if err := a.localAgent.SyncConfig(context.Background(), req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
+			log.Printf("[Agent] config sync failed: %s: %v", req.CoreType, err)
+		} else {
 			log.Printf("[Agent] config synced: %s (version=%d)", req.CoreType, req.ConfigVersion)
-			return map[string]interface{}{"core_type": req.CoreType, "version": req.ConfigVersion}, nil
-		})
+		}
 
 	case *agentpb.PanelCommand_ControlCore:
 		req := c.ControlCore
@@ -676,18 +677,12 @@ type agentServiceServer struct {
 }
 
 func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.TaskAccept, error) {
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("sync-config-%s-v%d", req.CoreType, req.ConfigVersion)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "sync_config", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
-				return nil, err
-			}
-			log.Printf("[Agent] config synced: %s (version=%d)", req.CoreType, req.ConfigVersion)
-			return map[string]interface{}{"core_type": req.CoreType, "version": req.ConfigVersion}, nil
-		},
-		nil, // no stream callback for direct RPC
-	), nil
+	// Delegate directly to LocalAgent.SyncConfig which handles task submission
+	// with content-based idempotency key.
+	if err := s.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) ControlCore(ctx context.Context, req *agentpb.ControlCoreRequest) (*agentpb.TaskAccept, error) {

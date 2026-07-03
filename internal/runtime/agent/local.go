@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -114,7 +116,10 @@ func (a *LocalAgent) GetTaskQueue() *TaskQueue {
 // 提交到 TaskQueue 执行，通过 TaskResult 回传结果。
 func (a *LocalAgent) SyncConfig(ctx context.Context, coreType string, config []byte, version int64) error {
 	taskID := GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("sync-config-%s-v%d", coreType, version)
+	// Use content hash for idempotency key so that config changes always get applied.
+	// Using version alone (e.g. sync-config-xray-v0) causes idempotent hits when
+	// the same version number is reused, preventing new configs from being written.
+	idempotencyKey := fmt.Sprintf("sync-config-%s-v%d-%s", coreType, version, hashConfig(config))
 
 	a.taskQueue.Submit(taskID, "sync_config", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
@@ -127,6 +132,16 @@ func (a *LocalAgent) SyncConfig(ctx context.Context, coreType string, config []b
 		nil, // callback set by caller if needed
 	)
 	return nil
+}
+
+// hashConfig returns a short hash of the config content for idempotency.
+func hashConfig(data []byte) string {
+	if len(data) == 0 {
+		return "empty"
+	}
+	// Use first 8 chars of SHA256 as a short content hash
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])[:8]
 }
 
 // ControlCore 控制本地核心进程（异步）。

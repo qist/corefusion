@@ -3,6 +3,7 @@ package configsync
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,6 +28,19 @@ type OutboundConfigService interface {
 	GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error)
 }
 
+// ServerLister lists all registered server IDs.
+// Implemented by repository.NodeServerRepository.
+type ServerLister interface {
+	ListAllServerIDs(ctx context.Context) ([]int64, error)
+}
+
+// RemoteConfigSyncer syncs config data to remote nodes.
+// Implemented by agent.NodeServerManager.
+type RemoteConfigSyncer interface {
+	SyncConfig(ctx context.Context, serverID int64, coreType string, config []byte, version int64) error
+	IsOnline(serverID int64) bool
+}
+
 // Service handles periodic config synchronization to disk.
 type Service struct {
 	coreSvc     CoreConfigService
@@ -44,6 +58,12 @@ type Service struct {
 	// This allows process.Manager.WriteRuntimeConfig (which has a mutex)
 	// to protect against concurrent writes from LocalAgent.SyncConfig.
 	configWriter ConfigWriter
+
+	// serverLister lists all registered server IDs for multi-node sync.
+	serverLister ServerLister
+
+	// remoteSyncer syncs config to remote nodes via Agent.
+	remoteSyncer RemoteConfigSyncer
 }
 
 // ConfigWriter writes runtime config files. Implemented by process.Manager.
@@ -54,6 +74,16 @@ type ConfigWriter interface {
 // SetConfigWriter sets the config writer delegate for thread-safe config writes.
 func (s *Service) SetConfigWriter(w ConfigWriter) {
 	s.configWriter = w
+}
+
+// SetServerLister sets the server lister for multi-node sync.
+func (s *Service) SetServerLister(l ServerLister) {
+	s.serverLister = l
+}
+
+// SetRemoteSyncer sets the remote config syncer for pushing configs to Agents.
+func (s *Service) SetRemoteSyncer(r RemoteConfigSyncer) {
+	s.remoteSyncer = r
 }
 
 // NewService creates a new config sync service.
@@ -155,11 +185,39 @@ func (s *Service) sync(ctx context.Context) error {
 }
 
 func (s *Service) syncCore(ctx context.Context, coreType string) error {
-	// Config sync operates on the local node (server_id=1)
-	const localServerID = 1
+	// Determine which servers to sync.
+	// Always sync local node (server_id=1) to disk.
+	// For remote nodes, generate config from panel DB and push via Agent.
+	serverIDs := []int64{1} // local node always synced
 
-	// Get full config from core_configs table
-	fullConfig, err := s.coreSvc.GetFull(ctx, localServerID, coreType)
+	if s.serverLister != nil {
+		if allIDs, err := s.serverLister.ListAllServerIDs(ctx); err == nil {
+			for _, id := range allIDs {
+				if id != 1 { // skip local, already added
+					serverIDs = append(serverIDs, id)
+				}
+			}
+		}
+	}
+
+	var firstErr error
+	for _, serverID := range serverIDs {
+		if err := s.syncCoreForServer(ctx, coreType, serverID); err != nil {
+			log.Printf("configsync: %s sync failed for server %d: %v", coreType, serverID, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// syncCoreForServer generates the full config for a specific server and syncs it.
+// For server_id=1 (local), writes to disk via configWriter.
+// For remote servers, pushes config via Agent gRPC.
+func (s *Service) syncCoreForServer(ctx context.Context, coreType string, serverID int64) error {
+	// Get full config from core_configs table for this server
+	fullConfig, err := s.coreSvc.GetFull(ctx, serverID, coreType)
 	if err != nil {
 		return err
 	}
@@ -167,7 +225,7 @@ func (s *Service) syncCore(ctx context.Context, coreType string) error {
 	// Use the shared PrepareFullConfig to apply all standard steps
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
 		Ctx:              ctx,
-		ServerID:         localServerID,
+		ServerID:         serverID,
 		CoreType:         coreType,
 		FullConfig:       fullConfig,
 		InboundProvider:  s.inboundSvc,
@@ -177,23 +235,35 @@ func (s *Service) syncCore(ctx context.Context, coreType string) error {
 		return err
 	}
 
-	// Write to runtime directory
-	if s.configWriter != nil {
-		// Use the shared config writer (process.Manager.WriteRuntimeConfig)
-		// for thread-safe writes that avoid conflicts with LocalAgent.SyncConfig.
-		if err := s.configWriter.WriteRuntimeConfig(coreType, data); err != nil {
-			return err
+	if serverID == 1 {
+		// Local node: write to runtime directory
+		if s.configWriter != nil {
+			// Use the shared config writer (process.Manager.WriteRuntimeConfig)
+			// for thread-safe writes that avoid conflicts with LocalAgent.SyncConfig.
+			if err := s.configWriter.WriteRuntimeConfig(coreType, data); err != nil {
+				return err
+			}
+		} else {
+			// Fallback: direct file write (not thread-safe)
+			runtimeDir := filepath.Join(s.dataDir, "runtime")
+			if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+				return err
+			}
+			configPath := filepath.Join(runtimeDir, coreType+".jsonc")
+			if err := os.WriteFile(configPath, data, 0640); err != nil {
+				return err
+			}
 		}
 	} else {
-		// Fallback: direct file write (not thread-safe)
-		runtimeDir := filepath.Join(s.dataDir, "runtime")
-		if err := os.MkdirAll(runtimeDir, 0755); err != nil {
-			return err
+		// Remote node: push config via Agent if online
+		if s.remoteSyncer == nil || !s.remoteSyncer.IsOnline(serverID) {
+			log.Printf("configsync: server %d offline or remoteSyncer not set, skipping", serverID)
+			return nil
 		}
-		configPath := filepath.Join(runtimeDir, coreType+".jsonc")
-		if err := os.WriteFile(configPath, data, 0640); err != nil {
-			return err
+		if err := s.remoteSyncer.SyncConfig(ctx, serverID, coreType, data, 0); err != nil {
+			return fmt.Errorf("sync to remote server %d: %w", serverID, err)
 		}
+		log.Printf("configsync: %s config synced to remote server %d (%d bytes)", coreType, serverID, len(data))
 	}
 	return nil
 }

@@ -662,10 +662,17 @@ func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 		log.Printf("[Agent] DistributeCert: no target_path for %s", cmd.CertName)
 		return
 	}
-	dir := filepath.Dir(cmd.TargetPath)
+	// Resolve relative paths against the Agent's dataDir so that xray config
+	// references (relative to data/runtime/) resolve to dataDir/certs/...
+	targetPath := cmd.TargetPath
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(a.dataDir, targetPath)
+	}
+	dir := filepath.Dir(targetPath)
 	os.MkdirAll(dir, 0750)
 
-	if err := os.WriteFile(cmd.TargetPath, cmd.CertPem, 0640); err != nil {
+	// Write cert.pem
+	if err := os.WriteFile(targetPath, cmd.CertPem, 0640); err != nil {
 		log.Printf("[Agent] distribute cert write error: %v", err)
 		return
 	}
@@ -926,8 +933,8 @@ func (s *agentServiceServer) DownloadGeoRule(ctx context.Context, req *agentpb.D
 // It receives database table data from the panel, writes it to the local
 // SQLite database, and optionally generates the runtime config and starts the core.
 func (s *agentServiceServer) SyncData(ctx context.Context, req *agentpb.SyncDataRequest) (*agentpb.SyncDataResponse, error) {
-	log.Printf("[Agent] SyncData RPC: server_id=%d, %d core_configs, %d inbound_configs, %d outbound_configs, %d warp_configs, %d share_domain_configs",
-		req.ServerId, len(req.CoreConfigs), len(req.InboundConfigs), len(req.OutboundConfigs), len(req.WarpConfigs), len(req.ShareDomainConfigs))
+	log.Printf("[Agent] SyncData RPC: server_id=%d, %d core_configs, %d inbound_configs, %d outbound_configs, %d warp_configs, %d share_domain_configs, %d certificates",
+		req.ServerId, len(req.CoreConfigs), len(req.InboundConfigs), len(req.OutboundConfigs), len(req.WarpConfigs), len(req.ShareDomainConfigs), len(req.Certificates))
 
 	// Delegate to AgentApp's handleSyncData method
 	return s.app.handleSyncData(ctx, req)
@@ -1314,6 +1321,46 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		} else {
 			log.Printf("[Agent] upsert share_domain_config id=%d: %v", entry.Id, result.Error)
 		}
+	}
+
+	// 5.5 Land TLS certificates to local disk
+	// Certificates are sent as PEM content in req.Certificates.
+	// We write them to dataDir + relativePath so that xray's certificateFile
+	// references (relative to data/runtime/) resolve correctly.
+	for _, certEntry := range req.Certificates {
+		if certEntry.CertContent == "" || certEntry.KeyContent == "" {
+			continue
+		}
+		// Write certificate file
+		certPath := certEntry.CertPath
+		if !filepath.IsAbs(certPath) {
+			certPath = filepath.Join(a.dataDir, certPath)
+		}
+		os.MkdirAll(filepath.Dir(certPath), 0750)
+		if err := os.WriteFile(certPath, []byte(certEntry.CertContent), 0640); err != nil {
+			log.Printf("[Agent] SyncData: write cert %s: %v", certEntry.Domain, err)
+			continue
+		}
+		// Write key file
+		keyPath := certEntry.KeyPath
+		if !filepath.IsAbs(keyPath) {
+			keyPath = filepath.Join(a.dataDir, keyPath)
+		}
+		os.MkdirAll(filepath.Dir(keyPath), 0750)
+		if err := os.WriteFile(keyPath, []byte(certEntry.KeyContent), 0600); err != nil {
+			log.Printf("[Agent] SyncData: write key %s: %v", certEntry.Domain, err)
+			continue
+		}
+		// Write fullchain if provided
+		if certEntry.FullchainContent != "" && certEntry.FullchainPath != "" {
+			fullchainPath := certEntry.FullchainPath
+			if !filepath.IsAbs(fullchainPath) {
+				fullchainPath = filepath.Join(a.dataDir, fullchainPath)
+			}
+			os.MkdirAll(filepath.Dir(fullchainPath), 0750)
+			os.WriteFile(fullchainPath, []byte(certEntry.FullchainContent), 0640)
+		}
+		log.Printf("[Agent] SyncData: certificate landed: %s → %s", certEntry.Domain, certPath)
 	}
 
 	resp.Success = true

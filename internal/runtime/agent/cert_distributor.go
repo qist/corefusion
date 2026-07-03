@@ -56,22 +56,26 @@ func (d *CertDistributor) DistributeToServer(ctx context.Context, serverID int64
 		return fmt.Errorf("certificate not found: %w", err)
 	}
 
-	// Determine save path on Agent side
-	certDir := fmt.Sprintf("/opt/corefusion-agent/certs/%s", cert.Domain)
+	// Determine save path on Agent side — use the same relative path structure
+	// as the certificates table so xray config references resolve correctly.
+	// The Agent's dataDir is /opt/corefusion-agent/data, and xray configs use
+	// relative paths like "../../../certs/gg/cert.pem" (relative to data/runtime/).
+	// So we write to dataDir/certs/<domain>/cert.pem etc.
+	certDir := fmt.Sprintf("certs/%s", cert.Domain)
+
+	// Fullchain content: use cert content as fallback (fullchain is usually
+	// the same as cert for most setups; if separate fullchain content exists
+	// in DB, it would be stored in a fullchain_content field).
+	fullchainContent := cert.CertContent
 
 	cmd := &agentpb.DistributeCertCommand{
 		CertName:     cert.Domain,
 		CertPem:      []byte(cert.CertContent),
 		KeyPem:       []byte(cert.KeyContent),
-		FullchainPem: []byte(cert.FullchainPath), // Fullchain content if available, else reuse cert content
+		FullchainPem: []byte(fullchainContent),
 		TargetPath:   certDir,
 		ExpiresAt:    cert.ExpiresAt.Unix(),
 		ReloadCore:   true, // Notify core to reload after cert replacement
-	}
-
-	// If fullchain content is not separately stored, use cert content
-	if len(cmd.FullchainPem) == 0 {
-		cmd.FullchainPem = []byte(cert.CertContent)
 	}
 
 	if err := d.nodeMgr.DistributeCertificate(ctx, serverID, cmd); err != nil {

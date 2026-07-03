@@ -537,6 +537,23 @@ message SyncDataRequest {
 
   // config_content 对应的核心类型（xray/singbox/...）
   string config_core_type = 10;
+
+  // 该节点使用的所有 TLS 证书（PEM 内容），Agent 落地到本地磁盘
+  repeated CertificateEntry certificates = 11;
+}
+
+// CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。
+// Agent 收到后将内容写入 dataDir + cert_path / key_path 对应的文件。
+message CertificateEntry {
+  int64  id = 1;              // 证书 ID
+  string domain = 2;          // 主域名
+  string cert_path = 3;       // 证书文件相对路径（与 xray config 中引用的一致）
+  string key_path = 4;        // 私钥文件相对路径
+  string fullchain_path = 5;  // fullchain 相对路径
+  string cert_content = 6;    // 证书 PEM 内容
+  string key_content = 7;     // 私钥 PEM 内容
+  string fullchain_content = 8; // fullchain PEM 内容（为空时用 cert_content）
+  int64  expires_at = 9;      // 过期时间戳
 }
 
 message CoreConfigEntry {

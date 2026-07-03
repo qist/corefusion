@@ -539,13 +539,18 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		}
 
 	case *agentpb.PanelCommand_ControlCore:
-		// LocalAgent.ControlCore → process.Manager.Start/Stop/Restart
-		resp, err := a.localAgent.ControlCore(ctx, c.ControlCore.CoreType, c.ControlCore.Action)
-		if err != nil {
-			log.Printf("[Agent] ControlCore %s %s error: %v", c.ControlCore.CoreType, c.ControlCore.Action, err)
-		} else {
-			log.Printf("[Agent] ControlCore %s %s → state=%s", c.ControlCore.CoreType, c.ControlCore.Action, resp.State)
-		}
+		// Run asynchronously to avoid blocking the stream receive loop.
+		// Start/Stop/Restart may involve database queries and process management
+		// that can take several seconds. Blocking here would prevent the agent
+		// from processing subsequent commands from the panel.
+		go func(coreType, action string) {
+			resp, err := a.localAgent.ControlCore(ctx, coreType, action)
+			if err != nil {
+				log.Printf("[Agent] ControlCore %s %s error: %v", coreType, action, err)
+			} else {
+				log.Printf("[Agent] ControlCore %s %s → state=%s", coreType, action, resp.State)
+			}
+		}(c.ControlCore.CoreType, c.ControlCore.Action)
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
 		// LocalAgent.SyncProxyConfig → proxy.Manager.WriteConfigFile
@@ -557,13 +562,15 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		}
 
 	case *agentpb.PanelCommand_ControlProxy:
-		// LocalAgent.ControlProxy → proxy.Manager.StartProxy/StopProxy/...
-		resp, err := a.localAgent.ControlProxy(ctx, c.ControlProxy.ProxyType, c.ControlProxy.Action)
-		if err != nil {
-			log.Printf("[Agent] ControlProxy error: %v", err)
-		} else {
-			log.Printf("[Agent] ControlProxy %s %s → state=%s", c.ControlProxy.ProxyType, c.ControlProxy.Action, resp.State)
-		}
+		// Run asynchronously to avoid blocking the stream receive loop
+		go func(proxyType, action string) {
+			resp, err := a.localAgent.ControlProxy(ctx, proxyType, action)
+			if err != nil {
+				log.Printf("[Agent] ControlProxy error: %v", err)
+			} else {
+				log.Printf("[Agent] ControlProxy %s %s → state=%s", proxyType, action, resp.State)
+			}
+		}(c.ControlProxy.ProxyType, c.ControlProxy.Action)
 
 	case *agentpb.PanelCommand_AlterUsers:
 		// LocalAgent.AlterUsers → xray gRPC AlterInbound (hot reload, no restart)

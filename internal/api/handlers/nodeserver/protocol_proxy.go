@@ -309,155 +309,25 @@ func (h *Handler) syncConfigToServer(serverID int64, coreType string) {
 		return
 	}
 
-	// 2. Clean empty fields
-	cleanEmptyMap(fullConfig)
-
-	// 3. Remove outbounds from core_configs (migrated to outbound_configs table)
-	delete(fullConfig, "outbounds")
-
-	// 4. Ensure stats is present
-	if _, exists := fullConfig["stats"]; !exists {
-		fullConfig["stats"] = map[string]interface{}{}
-	}
-
-	// 5. Handle API inbound/routing (same logic as configsync)
-	if coreType == "xray" {
-		applyAPIInboundRouting(fullConfig)
-	}
-
-	// 6. Merge enabled inbounds from inbound_configs table
-	if h.inboundConfigSvc != nil {
-		enabledInbounds, err := h.inboundConfigSvc.GetEnabledInbounds(ctx, serverID, coreType)
-		if err != nil {
-			log.Printf("[nodeserver] syncConfigToServer: failed to load inbounds for server %d: %v", serverID, err)
-		} else if len(enabledInbounds) > 0 {
-			existingInbounds, _ := fullConfig["inbounds"].([]interface{})
-			for _, ib := range enabledInbounds {
-				var inbound map[string]interface{}
-				if json.Unmarshal(ib, &inbound) == nil {
-					existingInbounds = append(existingInbounds, inbound)
-				}
-			}
-			fullConfig["inbounds"] = existingInbounds
-		}
-	}
-
-	// 7. Merge enabled outbounds from outbound_configs table
-	if h.outboundConfigSvc != nil {
-		enabledOutbounds, err := h.outboundConfigSvc.GetEnabledOutbounds(ctx, serverID, coreType)
-		if err != nil {
-			log.Printf("[nodeserver] syncConfigToServer: failed to load outbounds for server %d: %v", serverID, err)
-		} else if len(enabledOutbounds) > 0 {
-			fullConfig["outbounds"] = enabledOutbounds
-		}
-	}
-
-	// 8. Marshal to JSON
-	data, err := json.MarshalIndent(fullConfig, "", "  ")
+	// 2. Use the shared PrepareFullConfig to apply all standard steps
+	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+		Ctx:              ctx,
+		ServerID:         serverID,
+		CoreType:         coreType,
+		FullConfig:       fullConfig,
+		InboundProvider:  h.inboundConfigSvc,
+		OutboundProvider: h.outboundConfigSvc,
+	})
 	if err != nil {
-		log.Printf("[nodeserver] syncConfigToServer: marshal failed for server %d: %v", serverID, err)
+		log.Printf("[nodeserver] syncConfigToServer: PrepareFullConfig failed for server %d: %v", serverID, err)
 		return
 	}
 
-	// 9. Sync config file to target node (for persistence, no restart)
+	// 3. Sync config file to target node (for persistence, no restart)
 	if err := h.svc.SyncServerConfig(ctx, serverID, coreType, data, 0); err != nil {
 		log.Printf("[nodeserver] sync config to server %d failed: %v", serverID, err)
 	} else {
 		log.Printf("[nodeserver] config file synced to server %d (%s)", serverID, coreType)
-	}
-}
-
-// applyAPIInboundRouting adds API inbound (dokodemo-door) and routing rule
-// if api.listen is not set. Mirrors the logic in configsync.syncCore.
-func applyAPIInboundRouting(fullConfig map[string]interface{}) {
-	apiRaw, ok := fullConfig["api"]
-	if !ok {
-		return
-	}
-	apiMap, ok := apiRaw.(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	apiMap["services"] = []string{"HandlerService", "LoggerService", "StatsService", "RoutingService"}
-
-	listen, _ := apiMap["listen"].(string)
-	tag, _ := apiMap["tag"].(string)
-	if tag == "" {
-		tag = "api"
-	}
-
-	if listen != "" {
-		return // listen is set, use it directly
-	}
-
-	delete(apiMap, "listen")
-
-	// Add API inbound (dokodemo-door) if not exists
-	inbounds, _ := fullConfig["inbounds"].([]interface{})
-	hasAPIInbound := false
-	for _, ib := range inbounds {
-		if ibMap, ok := ib.(map[string]interface{}); ok {
-			if ibMap["tag"] == tag {
-				hasAPIInbound = true
-				break
-			}
-		}
-	}
-	if !hasAPIInbound {
-		apiInbound := map[string]interface{}{
-			"tag":      tag,
-			"listen":   "127.0.0.1",
-			"port":     10085,
-			"protocol": "dokodemo-door",
-			"settings": map[string]interface{}{"address": "127.0.0.1"},
-		}
-		fullConfig["inbounds"] = append(inbounds, apiInbound)
-	}
-
-	// Add routing rule for API if not exists
-	routing, _ := fullConfig["routing"].(map[string]interface{})
-	if routing == nil {
-		routing = map[string]interface{}{"domainStrategy": "IPIfNonMatch"}
-	}
-	rules, _ := routing["rules"].([]interface{})
-	hasAPIRule := false
-	for _, r := range rules {
-		if rm, ok := r.(map[string]interface{}); ok {
-			if tags, ok := rm["inboundTag"].([]interface{}); ok {
-				for _, t := range tags {
-					if t == tag {
-						hasAPIRule = true
-						break
-					}
-				}
-			}
-		}
-	}
-	if !hasAPIRule {
-		apiRule := map[string]interface{}{
-			"type":        "field",
-			"inboundTag":  []string{tag},
-			"outboundTag": tag,
-		}
-		routing["rules"] = append([]interface{}{apiRule}, rules...)
-		fullConfig["routing"] = routing
-	}
-}
-
-// cleanEmptyMap removes nil values and empty maps recursively.
-func cleanEmptyMap(m map[string]interface{}) {
-	for k, v := range m {
-		if v == nil {
-			delete(m, k)
-			continue
-		}
-		if sub, ok := v.(map[string]interface{}); ok {
-			cleanEmptyMap(sub)
-			if len(sub) == 0 {
-				delete(m, k)
-			}
-		}
 	}
 }
 

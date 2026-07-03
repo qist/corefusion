@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"mime"
@@ -125,31 +124,6 @@ func NewWithSecret(database *gorm.DB, jwtSecret string) *gin.Engine {
 // NewWithConfig creates a new Gin engine with config.
 func NewWithConfig(database *gorm.DB, jwtSecret string, webPath string) *gin.Engine {
 	return NewWithFullConfig(database, jwtSecret, webPath, "data", "unknown")
-}
-
-// cleanEmpty removes empty strings, empty arrays, and empty objects recursively from a map.
-func cleanEmpty(m map[string]interface{}) {
-	for k, v := range m {
-		if v == nil {
-			delete(m, k)
-			continue
-		}
-		switch val := v.(type) {
-		case string:
-			if val == "" {
-				delete(m, k)
-			}
-		case []interface{}:
-			if len(val) == 0 {
-				delete(m, k)
-			}
-		case map[string]interface{}:
-			cleanEmpty(val)
-			if len(val) == 0 {
-				delete(m, k)
-			}
-		}
-	}
 }
 
 // processMgr is the global process manager for graceful shutdown.
@@ -407,174 +381,27 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	coreConfigH.SetProcessManager(processMgr)
 
 	// Set config generator: reads from core_configs and writes merged config file
+	// Uses the shared PrepareFullConfig function to ensure all nodes (local + remote)
+	// get identical config generation logic: cleanEmpty, strip _disabled, filter
+	// disabled routing rules, API inbound/routing, inbounds/outbounds merge.
 	processMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
-		if coreType != "xray" {
-			// Non-xray cores: simple merge
-			fullConfig, err := coreConfigSvc.GetFull(ctx, 1, coreType)
-			if err != nil {
-				return err
-			}
-			cleanEmpty(fullConfig)
-			for k, v := range fullConfig {
-				if v == nil {
-					delete(fullConfig, k)
-					continue
-				}
-				if m, ok := v.(map[string]interface{}); ok {
-					if d, e := m["_disabled"]; e && d == true {
-						delete(fullConfig, k)
-					}
-				}
-			}
-			data, _ := json.MarshalIndent(fullConfig, "", "  ")
-			return os.WriteFile(configPath, data, 0640)
-		}
-
-		// Xray: full config generation with API inbound/routing support
-			fullConfig, err := coreConfigSvc.GetFull(ctx, 1, coreType)
-			if err != nil {
-				return err
-			}
-			cleanEmpty(fullConfig)
-
-			// Strip _disabled and enabled fields from rules
-			if routing, ok := fullConfig["routing"].(map[string]interface{}); ok {
-			if rules, ok := routing["rules"].([]interface{}); ok {
-				var filtered []interface{}
-				for _, r := range rules {
-					if rm, ok := r.(map[string]interface{}); ok {
-						if en, exists := rm["enabled"]; exists && en == false {
-							continue // skip disabled rules
-						}
-						delete(rm, "enabled")
-						filtered = append(filtered, rm)
-					}
-				}
-				routing["rules"] = filtered
-			}
-		}
-
-		// Remove disabled sections
-		for k, v := range fullConfig {
-			if v == nil {
-				delete(fullConfig, k)
-				continue
-			}
-			if m, ok := v.(map[string]interface{}); ok {
-				if d, e := m["_disabled"]; e && d == true {
-					delete(fullConfig, k)
-				}
-			}
-		}
-
-		// Remove outbounds from core_configs (migrated to outbound_configs table)
-		delete(fullConfig, "outbounds")
-
-		// Ensure stats is present (empty object enables stats engine)
-		if _, exists := fullConfig["stats"]; !exists {
-			fullConfig["stats"] = map[string]interface{}{}
-		}
-
-		// Handle API config
-		// - If api.listen is set: use it directly, no auto-add inbound/routing
-		// - If api.listen is empty: auto-add inbound (dokodemo-door) + routing rule
-		if apiRaw, ok := fullConfig["api"]; ok {
-			if apiMap, ok := apiRaw.(map[string]interface{}); ok {
-				// Only keep necessary services
-				apiMap["services"] = []string{"HandlerService", "LoggerService", "StatsService", "RoutingService"}
-
-				listen, _ := apiMap["listen"].(string)
-				tag, _ := apiMap["tag"].(string)
-				if tag == "" {
-					tag = "api"
-				}
-
-				if listen == "" {
-					// listen is empty: auto-add inbound + routing
-					// Remove listen field (let xray use default)
-					delete(apiMap, "listen")
-
-					// Check if API inbound already exists
-					inbounds, _ := fullConfig["inbounds"].([]interface{})
-					hasAPIInbound := false
-					for _, ib := range inbounds {
-						if ibMap, ok := ib.(map[string]interface{}); ok {
-							if ibMap["tag"] == tag {
-								hasAPIInbound = true
-								break
-							}
-						}
-					}
-
-					// Add API inbound (dokodemo-door) if not exists
-					if !hasAPIInbound {
-						apiInbound := map[string]interface{}{
-							"tag":      tag,
-							"listen":   "127.0.0.1",
-							"port":     10085,
-							"protocol": "dokodemo-door",
-							"settings": map[string]interface{}{"address": "127.0.0.1"},
-						}
-						fullConfig["inbounds"] = append(inbounds, apiInbound)
-					}
-
-					// Add routing rule for API if not exists
-					routing, _ := fullConfig["routing"].(map[string]interface{})
-					if routing == nil {
-						routing = map[string]interface{}{"domainStrategy": "IPIfNonMatch"}
-					}
-					rules, _ := routing["rules"].([]interface{})
-					hasAPIRule := false
-					for _, r := range rules {
-						if rm, ok := r.(map[string]interface{}); ok {
-							if tags, ok := rm["inboundTag"].([]interface{}); ok {
-								for _, t := range tags {
-									if t == tag {
-										hasAPIRule = true
-										break
-									}
-								}
-							}
-						}
-					}
-					if !hasAPIRule {
-						apiRule := map[string]interface{}{
-							"type":        "field",
-							"inboundTag":  []string{tag},
-							"outboundTag": tag,
-						}
-						routing["rules"] = append([]interface{}{apiRule}, rules...)
-						fullConfig["routing"] = routing
-					}
-				}
-				// else: listen is set, use it directly (no auto-add)
-			}
-		}
-
-		// Add enabled inbounds from inbound_configs table
-			enabledInbounds, err := inboundConfigSvc.GetEnabledInbounds(ctx, 1, coreType)
+		fullConfig, err := coreConfigSvc.GetFull(ctx, 1, coreType)
 		if err != nil {
-			log.Printf("WARNING: failed to load inbounds: %v", err)
-		} else if len(enabledInbounds) > 0 {
-			existingInbounds, _ := fullConfig["inbounds"].([]interface{})
-			for _, ib := range enabledInbounds {
-				var inbound map[string]interface{}
-				if json.Unmarshal(ib, &inbound) == nil {
-					existingInbounds = append(existingInbounds, inbound)
-				}
-			}
-			fullConfig["inbounds"] = existingInbounds
+			return err
 		}
 
-		// Replace outbounds with database outbounds (database = source of truth)
-			enabledOutbounds, err := outboundConfigSvc.GetEnabledOutbounds(ctx, 1, coreType)
+		data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+			Ctx:              ctx,
+			ServerID:         1,
+			CoreType:         coreType,
+			FullConfig:       fullConfig,
+			InboundProvider:  inboundConfigSvc,
+			OutboundProvider: outboundConfigSvc,
+		})
 		if err != nil {
-			log.Printf("WARNING: failed to load outbounds: %v", err)
-		} else if len(enabledOutbounds) > 0 {
-			fullConfig["outbounds"] = enabledOutbounds
+			return err
 		}
 
-		data, _ := json.MarshalIndent(fullConfig, "", "  ")
 		return os.WriteFile(configPath, data, 0640)
 	})
 	processH := servicesHandler.NewProcessHandler(processMgr, svcRepo, crashLogRepo, dataDir)

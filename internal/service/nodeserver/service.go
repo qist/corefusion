@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"corefusion/internal/api/handlers/services"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/model/vo"
@@ -810,6 +811,42 @@ func (s *Service) IsLocalServer(ctx context.Context, serverID int64) bool {
 		return false
 	}
 	return s.nodeMgr.IsLocalServer(serverID)
+}
+
+// GetRemoteState returns cached state from a remote Agent (core states + binaries).
+func (s *Service) GetRemoteState(ctx context.Context, serverID int64) (coreStates map[string]*services.CoreStateInfo, binaries []*services.BinaryInfoItem, err error) {
+	if s.nodeMgr == nil {
+		return nil, nil, fmt.Errorf("node manager not initialized")
+	}
+	statusResp, binResp, err := s.nodeMgr.GetRemoteState(ctx, serverID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Convert proto core states
+	coreStates = make(map[string]*services.CoreStateInfo)
+	if statusResp != nil {
+		for _, cs := range statusResp.Cores {
+			coreStates[cs.CoreType] = &services.CoreStateInfo{
+				State: cs.State,
+				PID:   cs.Pid,
+			}
+		}
+	}
+
+	// Convert proto binaries
+	if binResp != nil {
+		for _, b := range binResp {
+			binaries = append(binaries, &services.BinaryInfoItem{
+				CoreType:   b.CoreType,
+				Version:    b.Version,
+				BinaryPath: b.BinaryPath,
+				Installed:  b.Installed,
+			})
+		}
+	}
+
+	return coreStates, binaries, nil
 }
 
 // ControlProxy controls a proxy process (caddy/nginx) on a specific server.

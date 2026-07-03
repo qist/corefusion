@@ -55,6 +55,9 @@ type NodeServerManager struct {
 	// Pending task results — taskID → result channel
 	pendingTasks   map[string]chan *agentpb.TaskResult
 	pendingTasksMu sync.RWMutex
+
+	// Data sync provider: reads panel DB tables to build SyncDataRequest
+	dataSyncProvider DataSyncProvider
 }
 
 // NodeSettingStore provides access to system settings for GitHub acceleration.
@@ -118,6 +121,17 @@ func (m *NodeServerManager) InitLocalServerID(ctx context.Context) {
 		m.localServerID = servers[0].ID
 		log.Printf("[NodeServerManager] cached local server ID: %d", m.localServerID)
 	}
+}
+
+// DataSyncProvider reads panel database tables and builds SyncDataRequest
+// for pushing configuration data to remote Agents.
+type DataSyncProvider interface {
+	BuildSyncDataRequest(ctx context.Context, serverID int64) (*agentpb.SyncDataRequest, error)
+}
+
+// SetDataSyncProvider sets the data sync provider for SyncData operations.
+func (m *NodeServerManager) SetDataSyncProvider(p DataSyncProvider) {
+	m.dataSyncProvider = p
 }
 
 // SetMetricsCollector sets the metrics collector for heartbeat-based metric collection.
@@ -1312,6 +1326,55 @@ func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID
 		return "", fmt.Errorf("%s", resp.Error)
 	}
 	return resp.Stdout, nil
+}
+
+// SyncDataToServer syncs all configuration data from the panel database
+// to a remote Agent. The Agent writes the data to its local SQLite database,
+// generates runtime config files from the local data, and starts the core process.
+//
+// This is the primary mechanism for Agent startup: the Agent connects to the panel,
+// requests SyncData, and receives all the configuration it needs to operate
+// independently. If the panel is unreachable, the Agent uses its local database
+// (populated from a previous successful sync) to generate configs and start.
+func (m *NodeServerManager) SyncDataToServer(ctx context.Context, serverID int64, applyAndStart bool) (*agentpb.SyncDataResponse, error) {
+	if m.isLocalServer(serverID) {
+		return nil, fmt.Errorf("SyncData is for remote servers only (server %d is local)", serverID)
+	}
+
+	// Build the SyncDataRequest from panel database
+	if m.dataSyncProvider == nil {
+		return nil, fmt.Errorf("data sync provider not configured")
+	}
+
+	req, err := m.dataSyncProvider.BuildSyncDataRequest(ctx, serverID)
+	if err != nil {
+		return nil, fmt.Errorf("build sync data: %w", err)
+	}
+	req.ApplyAndStart = applyAndStart
+
+	// Try direct gRPC first (more reliable for large payloads)
+	ac := m.GetConnection(serverID)
+	if ac != nil && ac.agentClient != nil {
+		resp, err := ac.agentClient.SyncData(ctx, req)
+		if err == nil {
+			log.Printf("[NodeServerManager] SyncData to server %d via direct gRPC: success=%v", serverID, resp.Success)
+			return resp, nil
+		}
+		log.Printf("[NodeServerManager] SyncData direct gRPC failed for server %d: %v, trying stream", serverID, err)
+	}
+
+	// Fallback: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_SyncData{
+			SyncData: req,
+		},
+	}
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return nil, fmt.Errorf("send SyncData command to server %d: %w", serverID, err)
+	}
+
+	log.Printf("[NodeServerManager] SyncData sent to server %d via stream (async)", serverID)
+	return &agentpb.SyncDataResponse{Success: true}, nil
 }
 
 // XrayAPIOnServer proxies an xray API call to a remote server's Agent.

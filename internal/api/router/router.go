@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -905,6 +906,20 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 
+			// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
+			// Also generates final runtime config via PrepareFullConfig so Agent
+			// doesn't need to re-implement the config preparation pipeline.
+			dataSyncProvider := configsyncSvc.NewDataSyncBuilder(
+				configsyncSvc.NewRepositoryDataProvider(
+					coreConfigRepo,
+					inboundConfigRepo,
+					outboundConfigRepo,
+					warpRepo,
+					shareDomainRepo,
+				),
+			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc)
+			nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
+
 			nodeServerSvcInst.
 				WithMetricsCollector(metricsCollector).
 				WithSpeedTestManager(speedTestMgr).
@@ -1246,6 +1261,29 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					return
 				}
 				c.JSON(200, gin.H{"message": "config synced successfully", "last_sync": configSyncSvc.LastSync()})
+			})
+
+			// Data sync: push full DB tables to remote Agent (for Agent startup / manual refresh)
+			nodeServersGroup.POST("/:id/sync-data", func(c *gin.Context) {
+				serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+				if err != nil {
+					c.JSON(400, gin.H{"error": "invalid server id"})
+					return
+				}
+				var req struct {
+					ApplyAndStart bool `json:"apply_and_start"`
+				}
+				c.ShouldBindJSON(&req)
+				// Default: apply_and_start=true
+				if !req.ApplyAndStart {
+					req.ApplyAndStart = true
+				}
+				resp, err := nodeServerSvcInst.SyncServerData(c.Request.Context(), serverID, req.ApplyAndStart)
+				if err != nil {
+					c.JSON(500, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(200, resp)
 			})
 
 		// Geo Rules (moved under /node-servers/:id/geo-rules)

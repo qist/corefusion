@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -28,7 +29,8 @@ type Manager struct {
 	guardRepo *repository.ProcessGuardianRepository
 	crashRepo *repository.CrashLogRepository
 	resolver  BinaryResolver
-	configGen ConfigGenerator
+	configGen       ConfigGenerator
+	skipConfigGen   atomic.Bool // set by WriteRuntimeConfig to skip configGen in next Start()
 	// configMu protects concurrent writes to runtime config files.
 	// Both configsync.Service and LocalAgent.SyncConfig may write to the same
 	// runtime/<coreType>.jsonc file; this mutex ensures atomic writes.
@@ -121,6 +123,8 @@ func (m *Manager) WriteRuntimeConfig(coreType string, data []byte) error {
 	if err := os.WriteFile(configPath, data, 0640); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
+	// Signal to Start() that config is already written — skip configGen
+	m.skipConfigGen.Store(true)
 	return nil
 }
 
@@ -240,7 +244,14 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	configDir := filepath.Join(m.dataDir, "runtime")
 	os.MkdirAll(configDir, 0750)
 	configPath := filepath.Join(configDir, coreType+".jsonc")
-	if m.configGen != nil {
+	// If WriteRuntimeConfig was just called (e.g. by SyncData), the config
+	// file is already up-to-date — skip configGen to avoid overwriting.
+	if m.skipConfigGen.CompareAndSwap(true, false) {
+		// Config was already written by WriteRuntimeConfig, skip generation.
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			return fmt.Errorf("config not found: %s", configPath)
+		}
+	} else if m.configGen != nil {
 		if err := m.configGen(ctx, coreType, configPath); err != nil {
 			return fmt.Errorf("generate config: %w", err)
 		}

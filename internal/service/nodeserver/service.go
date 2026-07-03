@@ -806,6 +806,16 @@ func (s *Service) SyncServerConfig(ctx context.Context, serverID int64, coreType
 	return s.nodeMgr.SyncConfig(ctx, serverID, coreType, config, version)
 }
 
+// SyncServerData triggers a full database-level data sync from the panel to a
+// specific remote Agent. The Agent writes the data to its local SQLite database,
+// generates the runtime config from the local data, and starts the core process.
+func (s *Service) SyncServerData(ctx context.Context, serverID int64, applyAndStart bool) (*agentpb.SyncDataResponse, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.SyncDataToServer(ctx, serverID, applyAndStart)
+}
+
 // IsLocalServer checks if a server is the local panel server.
 func (s *Service) IsLocalServer(ctx context.Context, serverID int64) bool {
 	if s.nodeMgr == nil {

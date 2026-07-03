@@ -96,8 +96,12 @@ func (a *LocalAgent) proxyProxyman(ctx context.Context, conn *grpc.ClientConn, r
 		if err := json.Unmarshal(req.Payload, &payload); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse payload: %v", err)}, nil
 		}
+		// Rewrite certificate paths: the panel sends absolute paths like
+		// /opt/corefusion/data/certs/gg/cert.pem which don't exist on the
+		// Agent's filesystem. We rewrite them to the Agent's local dataDir.
+		rewrittenConfig := rewriteCertPaths(payload.Config, a.dataDir)
 		inboundConf := new(conf.InboundDetourConfig)
-		if err := json.Unmarshal(payload.Config, inboundConf); err != nil {
+		if err := json.Unmarshal(rewrittenConfig, inboundConf); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse inbound config: %v", err)}, nil
 		}
 		config, err := inboundConf.Build()
@@ -732,4 +736,80 @@ func contains(s, substr string) bool {
 
 func splitN(s, sep string) []string {
 	return strings.Split(s, sep)
+}
+
+// rewriteCertPaths rewrites certificate/key file paths in an inbound config JSON.
+// The panel sends absolute paths like /opt/corefusion/data/certs/gg/cert.pem,
+// which don't exist on the Agent's filesystem. This function rewrites them
+// to use the Agent's local dataDir.
+//
+// It handles paths in:
+//   - streamSettings.tlsSettings.certificates[].certificateFile
+//   - streamSettings.tlsSettings.certificates[].keyFile
+//   - streamSettings.tlsSettings.certificates[].certificate (content, not path — skipped)
+//
+// Rewriting rules:
+//   - Absolute path containing "certs/" → extract from "certs/" onward, prepend dataDir
+//   - Relative path with ../../../ prefix → strip prefix, prepend dataDir
+//   - Relative path without prefix → prepend dataDir
+//   - Empty or content-based → leave as-is
+func rewriteCertPaths(configJSON json.RawMessage, dataDir string) json.RawMessage {
+	if len(configJSON) == 0 || dataDir == "" {
+		return configJSON
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(configJSON, &cfg); err != nil {
+		return configJSON // can't parse, return as-is
+	}
+
+	ss, ok := cfg["streamSettings"].(map[string]interface{})
+	if !ok {
+		return configJSON
+	}
+	tls, ok := ss["tlsSettings"].(map[string]interface{})
+	if !ok {
+		return configJSON
+	}
+	certs, ok := tls["certificates"].([]interface{})
+	if !ok {
+		return configJSON
+	}
+
+	for _, c := range certs {
+		cm, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
+			cm["certificateFile"] = rewritePathToLocal(certFile, dataDir)
+		}
+		if keyFile, ok := cm["keyFile"].(string); ok && keyFile != "" {
+			cm["keyFile"] = rewritePathToLocal(keyFile, dataDir)
+		}
+	}
+
+	result, err := json.Marshal(cfg)
+	if err != nil {
+		return configJSON
+	}
+	return result
+}
+
+// rewritePathToLocal converts a certificate path from the panel's filesystem
+// to the Agent's local filesystem.
+//
+// Examples:
+//   /opt/corefusion/data/certs/gg/cert.pem → /opt/corefusion-agent/data/certs/gg/cert.pem
+//   ../../../certs/gg/cert.pem             → /opt/corefusion-agent/data/certs/gg/cert.pem
+//   certs/gg/cert.pem                      → /opt/corefusion-agent/data/certs/gg/cert.pem
+func rewritePathToLocal(path, dataDir string) string {
+	// Find "certs/" in the path — everything from there is the relative part
+	idx := strings.Index(path, "certs/")
+	if idx >= 0 {
+		relPath := path[idx:]
+		return dataDir + "/" + relPath
+	}
+	// If no "certs/" found, return as-is (might be a non-cert path)
+	return path
 }

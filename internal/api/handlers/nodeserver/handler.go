@@ -875,6 +875,19 @@ func (h *Handler) AssociateCertificate(c *gin.Context) {
 		response.InternalError(c, "ASSOCIATE_FAILED", err.Error())
 		return
 	}
+
+	// Trigger SyncData to push the certificate to the remote node asynchronously.
+	// This ensures the certificate PEM content lands on the Agent's disk.
+	go func(serverID int64) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := h.svc.SyncServerData(ctx, serverID, true); err != nil {
+			log.Printf("[nodeserver] async SyncData after cert association for server %d: %v", serverID, err)
+		} else {
+			log.Printf("[nodeserver] async SyncData after cert association for server %d: success", serverID)
+		}
+	}(id)
+
 	response.OK(c, gin.H{"associated": true, "server_id": id, "certificate_id": cid})
 }
 

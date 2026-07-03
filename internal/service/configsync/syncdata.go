@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	coreconfigSvc "corefusion/internal/service/coreconfig"
@@ -51,6 +52,8 @@ type RepositoryDataProvider struct {
 	outboundConfigRepo *repository.OutboundConfigRepository
 	warpRepo           *repository.WarpRepository
 	shareDomainRepo    *repository.ShareDomainConfigRepository
+	certRepo           *repository.CertificateRepository
+	serverRepo         *repository.NodeServerRepository
 }
 
 // NewRepositoryDataProvider creates a new RawDataProvider backed by repositories.
@@ -68,6 +71,14 @@ func NewRepositoryDataProvider(
 		warpRepo:           warpRepo,
 		shareDomainRepo:    shareDomainRepo,
 	}
+}
+
+// WithCertificateProvider injects certificate and server repositories for
+// collecting TLS certificates during SyncData.
+func (p *RepositoryDataProvider) WithCertificateProvider(certRepo *repository.CertificateRepository, serverRepo *repository.NodeServerRepository) *RepositoryDataProvider {
+	p.certRepo = certRepo
+	p.serverRepo = serverRepo
+	return p
 }
 
 func (p *RepositoryDataProvider) ListCoreConfigs(ctx context.Context, serverID int64) ([]CoreConfigRow, error) {
@@ -296,12 +307,137 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		log.Printf("[DataSyncBuilder] config providers not set, skipping PrepareFullConfig")
 	}
 
+	// === Part 3: Collect TLS certificates used by this server ===
+	// Scan inbound configs for certificateFile references and match against
+	// the certificates table. Also include node_servers.certificate_id if set.
+	// All matching certificates are sent as PEM content so the Agent can land
+	// them on local disk at the correct paths.
+	req.Certificates = b.collectCertificates(ctx, serverID, inboundConfigs)
+	if len(req.Certificates) > 0 {
+		log.Printf("[DataSyncBuilder] server %d: %d certificate entries", serverID, len(req.Certificates))
+	}
+
 	// Log summary
-	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs)
+	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs) + len(req.Certificates)
 	hasConfig := len(req.ConfigContent) > 0
-	log.Printf("[DataSyncBuilder] built SyncDataRequest for server %d: %d total entries, config_content=%v", serverID, total, hasConfig)
+	log.Printf("[DataSyncBuilder] built SyncDataRequest for server %d: %d total entries, config_content=%v, certs=%d", serverID, total, hasConfig, len(req.Certificates))
 
 	return req, nil
+}
+
+// collectCertificates scans inbound configs for TLS certificate file references,
+// matches them against the certificates table, and returns CertificateEntry
+// list with PEM content for the Agent to land on disk.
+//
+// It also includes the node-level certificate (node_servers.certificate_id)
+// if one is associated.
+func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int64, inboundConfigs []InboundConfigRow) []*agentpb.CertificateEntry {
+	rdp, ok := b.rawProvider.(*RepositoryDataProvider)
+	if !ok || rdp.certRepo == nil {
+		return nil
+	}
+
+	// Collect certificate paths referenced in inbound configJSON
+	certPathSet := make(map[string]bool) // key = cert path (normalized)
+
+	for _, ic := range inboundConfigs {
+		if !ic.Enabled {
+			continue
+		}
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(ic.ConfigJSON), &inbound); err != nil {
+			continue
+		}
+		// Navigate: streamSettings.tlsSettings.certificates[].certificateFile
+		ss, ok := inbound["streamSettings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tls, ok := ss["tlsSettings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		certs, ok := tls["certificates"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, c := range certs {
+			cm, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
+				// Normalize path: strip leading "../../../" or "./" prefixes
+				normalized := normalizeCertPath(certFile)
+				certPathSet[normalized] = true
+			}
+		}
+	}
+
+	// Also check hysteria2/tuic core configs for cert/key path references
+	// (these use a flat tls section with cert/key fields)
+	if rdp.serverRepo != nil {
+		if server, err := rdp.serverRepo.GetByID(ctx, serverID); err == nil {
+			if server.CertificateID > 0 {
+				// Node-level certificate: fetch and add its paths
+				if cert, err := rdp.certRepo.GetByID(ctx, server.CertificateID); err == nil {
+					certPathSet[normalizeCertPath(cert.CertPath)] = true
+				}
+			}
+		}
+	}
+
+	if len(certPathSet) == 0 {
+		return nil
+	}
+
+	// Load all certificates from DB and match by path
+	allCerts, _, err := rdp.certRepo.List(ctx, 1000, 0)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] failed to list certificates: %v", err)
+		return nil
+	}
+
+	var entries []*agentpb.CertificateEntry
+	for _, cert := range allCerts {
+		if cert.CertContent == "" || cert.KeyContent == "" {
+			continue
+		}
+		normalizedCertPath := normalizeCertPath(cert.CertPath)
+		if !certPathSet[normalizedCertPath] {
+			continue
+		}
+		fullchainContent := ""
+		if cert.FullchainPath != "" {
+			// Try to read fullchain from disk if not in DB
+			fullchainContent = cert.CertContent // fallback: use cert content as fullchain
+		}
+		entries = append(entries, &agentpb.CertificateEntry{
+			Id:               cert.ID,
+			Domain:           cert.Domain,
+			CertPath:         cert.CertPath,
+			KeyPath:          cert.KeyPath,
+			FullchainPath:    cert.FullchainPath,
+			CertContent:      cert.CertContent,
+			KeyContent:       cert.KeyContent,
+			FullchainContent: fullchainContent,
+			ExpiresAt:        cert.ExpiresAt.Unix(),
+		})
+	}
+
+	return entries
+}
+
+// normalizeCertPath strips common relative path prefixes so that paths
+// like "../../../certs/gg/cert.pem" and "certs/gg/cert.pem" match.
+func normalizeCertPath(path string) string {
+	for strings.HasPrefix(path, "../") {
+		path = strings.TrimPrefix(path, "../")
+	}
+	for strings.HasPrefix(path, "./") {
+		path = strings.TrimPrefix(path, "./")
+	}
+	return path
 }
 
 // MarshalSyncDataRequest serializes a SyncDataRequest to JSON for debugging.

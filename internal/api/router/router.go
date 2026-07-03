@@ -916,7 +916,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					outboundConfigRepo,
 					warpRepo,
 					shareDomainRepo,
-				),
+				).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo),
 			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc)
 			nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 

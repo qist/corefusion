@@ -5,41 +5,64 @@ package corefusion.agent.v1;
 option go_package = "corefusion/internal/runtime/agent/proto;agentpb";
 
 // ============================================================
+// 核心设计原则
+// ============================================================
+// 所有"系统控制操作"（start/stop/restart/reload/sync config）
+// 本质上是异步任务，不能设计为同步 RPC 等待执行完成。
+//
+// 模型：
+//   Panel → Agent: 下发命令（立刻返回 accepted + task_id）
+//   Agent 内部:   TaskQueue → Worker Pool → 执行
+//   Agent → Panel: 通过 stream 回传 TaskResult
+//   Panel 查询:    GetTask(task_id) 获取最新状态
+//
+// 幂等控制：
+//   每个 PanelCommand 携带 idempotency_key
+//   Agent 对同一 key 的重复命令自动去重（返回已有 task_id）
+
+// ============================================================
 // AgentService — Agent 侧提供的 gRPC 服务（面板→Agent 指令）
 // ============================================================
 service AgentService {
-  // 同步完整核心配置
-  rpc SyncConfig(SyncConfigRequest) returns (SyncConfigResponse);
-  // 启动/停止/重启核心进程
-  rpc ControlCore(ControlCoreRequest) returns (ControlCoreResponse);
-  // 同步代理配置（Caddy/Nginx）
-  rpc SyncProxyConfig(SyncProxyConfigRequest) returns (SyncProxyConfigResponse);
-  // 启动/停止/重启/重载代理进程（Caddy/Nginx）
-  rpc ControlProxy(ControlProxyRequest) returns (ControlProxyResponse);
-  // 增删改用户（热生效，不重启核心）
-  rpc AlterUsers(AlterUsersRequest) returns (AlterUsersResponse);
+  // --- 同步查询类 RPC（纯读，不涉及长操作） ---
   // 获取当前状态快照
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
-  // 应用限速规则（nftables/tc）
-  rpc ApplyLimits(ApplyLimitsRequest) returns (ApplyLimitsResponse);
-  // Agent 自动更新（下载新版本、校验、替换、重启）
-  rpc UpdateAgent(UpdateAgentRequest) returns (UpdateAgentResponse);
-  // 节点测速（TCP 连接延迟探测）
-  rpc SpeedTest(SpeedTestRequest) returns (SpeedTestResponse);
   // 获取详细资源指标（用于监控图表）
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
-  // 安装核心二进制（xray/singbox/hysteria2/tuic）
-  rpc InstallBinary(InstallBinaryRequest) returns (InstallBinaryResponse);
-  // 安装代理二进制（caddy/nginx）
-  rpc InstallProxy(InstallProxyRequest) returns (InstallProxyResponse);
   // 查询代理安装状态
   rpc GetProxyStatus(GetProxyStatusRequest) returns (GetProxyStatusResponse);
   // 列出已安装的核心二进制
   rpc ListBinaries(ListBinariesRequest) returns (ListBinariesResponse);
   // 获取 GitHub 上的可用版本列表
-  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+  rpc ListReleases(ListReleasesRequest) returns (ListBinariesResponse);
   // 下载 Geo 规则文件到 Agent 本地
   rpc DownloadGeoRule(DownloadGeoRuleRequest) returns (DownloadGeoRuleResponse);
+  // 节点测速（TCP 连接延迟探测）
+  rpc SpeedTest(SpeedTestRequest) returns (SpeedTestResponse);
+
+  // --- 异步任务类 RPC（立刻返回 accepted + task_id） ---
+  // 启动/停止/重启核心进程 → 返回 TaskAccept
+  rpc ControlCore(ControlCoreRequest) returns (TaskAccept);
+  // 启动/停止/重启/重载代理进程 → 返回 TaskAccept
+  rpc ControlProxy(ControlProxyRequest) returns (TaskAccept);
+  // 同步完整核心配置 → 返回 TaskAccept
+  rpc SyncConfig(SyncConfigRequest) returns (TaskAccept);
+  // 同步代理配置 → 返回 TaskAccept
+  rpc SyncProxyConfig(SyncProxyConfigRequest) returns (TaskAccept);
+  // 增删改用户（热生效） → 返回 TaskAccept
+  rpc AlterUsers(AlterUsersRequest) returns (TaskAccept);
+  // 应用限速规则 → 返回 TaskAccept
+  rpc ApplyLimits(ApplyLimitsRequest) returns (TaskAccept);
+  // 安装核心二进制 → 返回 TaskAccept
+  rpc InstallBinary(InstallBinaryRequest) returns (TaskAccept);
+  // 安装代理二进制 → 返回 TaskAccept
+  rpc InstallProxy(InstallProxyRequest) returns (TaskAccept);
+  // Agent 自动更新 → 返回 TaskAccept
+  rpc UpdateAgent(UpdateAgentRequest) returns (TaskAccept);
+
+  // --- 任务查询 ---
+  // 查询异步任务执行状态
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
 }
 
 // ============================================================
@@ -59,6 +82,45 @@ service RegistrationService {
 }
 
 // ============================================================
+// 任务模型 — 所有异步操作的统一返回
+// ============================================================
+
+// TaskAccept — 异步任务接受确认，立刻返回。
+// 面板收到后不再等待执行完成，而是通过 GetTask 或 stream 回传的
+// TaskResult 来获知最终结果。
+message TaskAccept {
+  bool   accepted = 1;              // 命令是否被接受
+  string task_id = 2;               // 任务 ID（UUID），后续查询用
+  string idempotency_key = 3;       // 回传幂等 key（去重用）
+  string reject_reason = 4;         // 拒绝原因（accepted=false 时）
+}
+
+// TaskStatus — 任务状态枚举
+enum TaskStatus {
+  TASK_UNKNOWN = 0;
+  TASK_QUEUED = 1;                   // 已入队，等待 Worker 执行
+  TASK_RUNNING = 2;                 // 正在执行中
+  TASK_SUCCESS = 3;                 // 执行成功
+  TASK_FAILED = 4;                  // 执行失败
+}
+
+// GetTaskRequest — 查询任务状态
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+// GetTaskResponse — 任务状态响应
+message GetTaskResponse {
+  string task_id = 1;
+  TaskStatus status = 2;
+  string error = 3;                 // 失败原因
+  int64  created_at = 4;           // 任务创建时间
+  int64  finished_at = 5;          // 任务完成时间（0=未完成）
+  string task_type = 6;            // 任务类型（control_core/control_proxy/sync_config 等）
+  string detail_json = 7;          // 任务详细结果（JSON，类型相关）
+}
+
+// ============================================================
 // 面板 → Agent 指令消息
 // ============================================================
 
@@ -68,22 +130,9 @@ message SyncConfigRequest {
   int64  config_version = 3;      // 配置版本号（用于增量判断）
 }
 
-message SyncConfigResponse {
-  bool   success = 1;
-  string error = 2;
-  string applied_version = 3;
-}
-
 message ControlCoreRequest {
   string core_type = 1;
   string action = 2;              // start/stop/restart
-}
-
-message ControlCoreResponse {
-  bool   success = 1;
-  string error = 2;
-  int32  pid = 3;
-  string state = 4;               // running/stopped/crashed
 }
 
 // ============================================================
@@ -95,20 +144,9 @@ message SyncProxyConfigRequest {
   bytes  config_content = 2;      // 完整配置文件内容（Caddyfile / nginx.conf）
 }
 
-message SyncProxyConfigResponse {
-  bool   success = 1;
-  string error = 2;
-}
-
 message ControlProxyRequest {
   string proxy_type = 1;          // caddy/nginx
   string action = 2;              // start/stop/restart/reload
-}
-
-message ControlProxyResponse {
-  bool   success = 1;
-  string error = 2;
-  string state = 3;               // running/stopped
 }
 
 message AlterUsersRequest {
@@ -128,12 +166,6 @@ message UserOp {
   map<string, string> extra = 7;  // 协议特定字段
 }
 
-message AlterUsersResponse {
-  bool   success = 1;
-  string error = 2;
-  int32  affected_count = 3;
-}
-
 message ApplyLimitsRequest {
   enum LimitType { SPEED = 0; CONN = 1; DEVICE = 2; }
   LimitType type = 1;
@@ -141,11 +173,6 @@ message ApplyLimitsRequest {
   string ip = 3;
   int32  value = 4;               // speed: Mbps, conn: count, device: count
   int64  subscription_id = 5;
-}
-
-message ApplyLimitsResponse {
-  bool   success = 1;
-  string error = 2;
 }
 
 message GetStatusRequest {}
@@ -165,13 +192,6 @@ message UpdateAgentRequest {
   string download_url = 2;         // 新版本下载 URL
   string checksum = 3;             // SHA-256 校验和
   bool   force = 4;                // 强制更新（即使版本相同）
-}
-
-message UpdateAgentResponse {
-  bool   success = 1;
-  string error = 2;
-  string current_version = 3;      // 更新后的版本号
-  bool   restart_required = 4;     // 是否需要重启
 }
 
 // ============================================================
@@ -234,27 +254,10 @@ message InstallBinaryRequest {
   string proxy_url = 6;            // HTTP 代理 URL（可选）
 }
 
-message InstallBinaryResponse {
-  bool   success = 1;
-  string error = 2;
-  string core_type = 3;
-  string version = 4;
-  string binary_path = 5;
-}
-
 message InstallProxyRequest {
   string proxy_type = 1;           // caddy/nginx
   string accel_domain = 2;         // GitHub 加速域名（可选）
   string proxy_url = 3;            // HTTP 代理 URL（可选）
-}
-
-message InstallProxyResponse {
-  bool   success = 1;
-  string error = 2;
-  string proxy_type = 3;
-  string version = 4;
-  string binary_path = 5;
-  bool   installed = 6;
 }
 
 message GetProxyStatusRequest {}
@@ -277,6 +280,7 @@ message ListBinariesRequest {}
 
 message ListBinariesResponse {
   repeated BinaryInfo binaries = 1;
+  repeated ReleaseInfo releases = 2;  // 也承载 ListReleases 结果
 }
 
 message BinaryInfo {
@@ -289,10 +293,6 @@ message BinaryInfo {
 // ListReleases 获取 GitHub 上的可用版本列表
 message ListReleasesRequest {
   string core_type = 1;
-}
-
-message ListReleasesResponse {
-  repeated ReleaseInfo releases = 1;
 }
 
 message ReleaseInfo {
@@ -323,7 +323,7 @@ message DownloadGeoRuleResponse {
 // ============================================================
 
 message AgentReport {
-  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; }
+  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; }
   ReportType type = 1;
   int64  server_id = 2;
   int64  timestamp = 3;
@@ -345,11 +345,14 @@ message AgentReport {
   // CRASH
   string crashed_core = 40;
   string crash_log = 41;
+
+  // TASK_RESULT — 异步任务执行结果
+  TaskResult task_result = 50;
 }
 
 message CoreStatus {
   string core_type = 1;
-  string state = 2;               // running/stopped/crashed
+  string state = 2;               // running/stopped/crashed/starting/stopping/restarting
   int32  pid = 3;
   int64  started_at = 4;
   int64  uptime_seconds = 5;
@@ -370,6 +373,8 @@ message TrafficStat {
 // ============================================================
 
 message PanelCommand {
+  string command_id = 20;            // 命令追踪 ID（UUID）
+  string idempotency_key = 21;       // 幂等 key — 防止重复执行同一操作
   oneof command {
     SyncConfigRequest sync_config = 1;
     ControlCoreRequest control_core = 2;
@@ -382,6 +387,21 @@ message PanelCommand {
     ControlProxyRequest control_proxy = 9;          // 控制代理进程
     UpdateAgentCommand update_agent = 10;           // Agent 自动更新
   }
+}
+
+// ============================================================
+// 任务执行结果回传（Agent→面板，通过 stream）
+// ============================================================
+
+message TaskResult {
+  string task_id = 1;                // 对应 PanelCommand.command_id
+  string idempotency_key = 2;        // 回传幂等 key
+  TaskStatus status = 3;             // 任务最终状态
+  string error = 4;                  // 失败原因
+  int64  created_at = 5;            // 任务创建时间
+  int64  finished_at = 6;           // 任务完成时间
+  string task_type = 7;              // control_core / control_proxy / sync_config 等
+  string detail_json = 8;            // 类型相关的详细结果（JSON）
 }
 
 // Agent 自动更新指令（通过流推送，Agent 自行下载更新）

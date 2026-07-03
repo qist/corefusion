@@ -29,6 +29,10 @@ type Manager struct {
 	crashRepo *repository.CrashLogRepository
 	resolver  BinaryResolver
 	configGen ConfigGenerator
+	// configMu protects concurrent writes to runtime config files.
+	// Both configsync.Service and LocalAgent.SyncConfig may write to the same
+	// runtime/<coreType>.jsonc file; this mutex ensures atomic writes.
+	configMu sync.Mutex
 }
 
 // ConfigGenerator generates a config file for a core type before starting.
@@ -99,6 +103,25 @@ func NewManager(dataDir string, svcRepo *repository.ServiceRepository, guardRepo
 		crashRepo: crashRepo,
 		resolver:  resolver,
 	}
+}
+
+// WriteRuntimeConfig writes a core configuration file to the runtime directory
+// under data/runtime/<coreType>.jsonc. It uses a mutex to prevent concurrent
+// writes from configsync.Service and LocalAgent.SyncConfig, which both write
+// to the same path.
+func (m *Manager) WriteRuntimeConfig(coreType string, data []byte) error {
+	m.configMu.Lock()
+	defer m.configMu.Unlock()
+
+	runtimeDir := filepath.Join(m.dataDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0750); err != nil {
+		return fmt.Errorf("create runtime dir: %w", err)
+	}
+	configPath := filepath.Join(runtimeDir, coreType+".jsonc")
+	if err := os.WriteFile(configPath, data, 0640); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }
 
 // SeedCores creates default service entries for all supported core types if they don't exist.
@@ -235,7 +258,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 
 	// Now acquire lock for the fast in-memory operations
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	// Kill existing process if any
 	if p, ok := m.processes[serviceID]; ok {
@@ -244,10 +266,24 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		}
 		delete(m.processes, serviceID)
 	}
+
+	// Collect guardian to stop after releasing mu (avoid AB-BA deadlock:
+	// g.Stop() acquires Guardian.mu; if a Guardian restartFn holds Guardian.mu
+	// and waits for mu, calling g.Stop() under mu creates AB-BA deadlock).
+	// We stop the old guardian AFTER the lock is released.
+	var guardianToStop *healthcheck.Guardian
 	if g, ok := m.guardians[serviceID]; ok {
-		g.Stop()
+		guardianToStop = g
 		delete(m.guardians, serviceID)
 	}
+
+	// Release mu first, then stop the old guardian.
+	defer func() {
+		m.mu.Unlock()
+		if guardianToStop != nil {
+			guardianToStop.Stop()
+		}
+	}()
 
 	// Log file
 	logDir := filepath.Join(m.dataDir, "logs")
@@ -318,22 +354,59 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 }
 
 // createGuardian creates a health check guardian for a service.
+// It reads auto_restart/auto_start from the DB so the Guardian respects
+// the persisted configuration rather than the package default (false).
 func (m *Manager) createGuardian(serviceID int64, coreType string) *healthcheck.Guardian {
 	cfg := healthcheck.DefaultConfig(coreType, serviceID)
+
+	// Load guardian config from DB
+	var autoRestart bool
+	var maxRestarts int
+	if g, err := m.guardRepo.GetByServiceID(nil, serviceID); err == nil {
+		autoRestart = g.AutoRestart
+		maxRestarts = g.MaxRestartCount
+		if maxRestarts > 0 {
+			cfg.MaxRestarts = maxRestarts
+		}
+	}
+
 	var guardian *healthcheck.Guardian
 	guardian = healthcheck.New(cfg,
 		func() bool {
-			if guardian == nil {
+			// Read PID from process.Manager (no lock needed — pid is atomically
+			// updated). Avoid calling guardian.PID() which acquires Guardian.mu,
+			// because check() also acquires Guardian.mu, creating a re-entrant
+			// lock attempt if the scheduler preempts between Unlock and the
+			// isRunning callback.
+			m.mu.RLock()
+			p, ok := m.processes[serviceID]
+			pid := 0
+			if ok {
+				pid = p.pid
+			}
+			m.mu.RUnlock()
+			if pid <= 0 {
 				return false
 			}
-			return isProcessAlive(guardian.PID())
+			return isProcessAlive(pid)
 		},
 		func(ctx context.Context) error {
+			// m.Start will:
+			//   1. Kill the old process
+			//   2. Stop the old Guardian (this guardian's monitorLoop)
+			//   3. Create a new Guardian with its own monitorLoop
+			//   4. Start the new process
+			// After m.Start returns, this Guardian is no longer in m.guardians
+			// and its monitorLoop has been stopped via g.Stop().
 			// Reap zombie before restart
 			m.reapZombies(serviceID)
 			return m.Start(ctx, serviceID, coreType)
 		},
 	)
+
+	// Apply DB-backed settings
+	guardian.SetAutoRestart(autoRestart)
+
 	return guardian
 }
 
@@ -350,9 +423,12 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 		return fmt.Errorf("service %d is not running (state=%s)", serviceID, p.state)
 	}
 
-	// Stop guardian immediately to prevent auto-restart interference
+	// Collect guardian reference before releasing mu to avoid AB-BA deadlock:
+	// we must NOT call g.Stop() while holding mu, because g.Stop() acquires
+	// Guardian.mu, and Guardian's restartFn may acquire Guardian.mu then mu.
+	var guardianToStop *healthcheck.Guardian
 	if g, gok := m.guardians[serviceID]; gok {
-		g.Stop()
+		guardianToStop = g
 		delete(m.guardians, serviceID)
 	}
 
@@ -360,6 +436,11 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 	p.state = "stopping"
 	oldPID := p.pid
 	m.mu.Unlock()
+
+	// Now safely stop the guardian outside of mu
+	if guardianToStop != nil {
+		guardianToStop.Stop()
+	}
 
 	log.Printf("stop service %d (pid=%d): initiating async stop", serviceID, oldPID)
 
@@ -437,9 +518,11 @@ func (m *Manager) Restart(ctx context.Context, serviceID int64, coreType string)
 		return m.Start(ctx, serviceID, coreType)
 	}
 
-	// Stop guardian immediately to prevent auto-restart interference
+	// Collect guardian reference before releasing mu to avoid AB-BA deadlock
+	// (same pattern as Stop — see comment there).
+	var guardianToStop *healthcheck.Guardian
 	if g, gok := m.guardians[serviceID]; gok {
-		g.Stop()
+		guardianToStop = g
 		delete(m.guardians, serviceID)
 	}
 
@@ -447,6 +530,11 @@ func (m *Manager) Restart(ctx context.Context, serviceID int64, coreType string)
 	p.state = "restarting"
 	oldPID := p.pid
 	m.mu.Unlock()
+
+	// Now safely stop the guardian outside of mu
+	if guardianToStop != nil {
+		guardianToStop.Stop()
+	}
 
 	log.Printf("restart service %d (pid=%d, core=%s): initiating async restart", serviceID, oldPID, coreType)
 
@@ -609,11 +697,11 @@ func (m *Manager) GetUptime(serviceID int64) int64 {
 // StopAll gracefully stops all running processes (called on CoreFusion shutdown).
 func (m *Manager) StopAll(ctx context.Context) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
-	// Stop all health check guardians
+	// Collect guardians to stop after releasing mu (avoid AB-BA deadlock)
+	var guardiansToStop []*healthcheck.Guardian
 	for id, g := range m.guardians {
-		g.Stop()
+		guardiansToStop = append(guardiansToStop, g)
 		delete(m.guardians, id)
 	}
 
@@ -636,6 +724,13 @@ func (m *Manager) StopAll(ctx context.Context) {
 	}
 
 	m.processes = make(map[int64]*managedProcess)
+	m.mu.Unlock()
+
+	// Stop guardians outside of mu
+	for _, g := range guardiansToStop {
+		g.Stop()
+	}
+
 	log.Printf("stopall: all processes stopped")
 }
 

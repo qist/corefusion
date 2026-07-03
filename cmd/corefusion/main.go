@@ -185,6 +185,9 @@ func runServer(args []string) {
 	// Initialize NodeServerManager (gRPC server for Agent connections)
 	nodeMgr := agent.NewNodeServerManager(nodeServerRepo, caService)
 
+	// Cache the local server ID to avoid DB queries on every NodeOperator method call.
+	nodeMgr.InitLocalServerID(context.Background())
+
 	// Inject LocalAgent — wraps the existing process.Manager for local node operations.
 	// Local server (is_local=1) operations go through process.Manager directly,
 	// not through gRPC. The Agent's role is to GUARD (守护) core processes,

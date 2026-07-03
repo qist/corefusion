@@ -37,6 +37,10 @@ type NodeServerManager struct {
 	localAgent  *LocalAgent          // local node adapter (wraps process.Manager)
 	settingStore NodeSettingStore    // optional, for GitHub accel/proxy settings
 
+	// Cached local server ID — loaded once at startup to avoid DB queries
+	// on every NodeOperator method call. 0 means not yet initialized.
+	localServerID int64
+
 	// gRPC server (listens for Agent connections)
 	grpcServer *grpc.Server
 	grpcAddr   string
@@ -47,6 +51,10 @@ type NodeServerManager struct {
 
 	// Phase 6: Metrics collector (optional, injected by router)
 	metricsCollector *MetricsCollector
+
+	// Pending task results — taskID → result channel
+	pendingTasks   map[string]chan *agentpb.TaskResult
+	pendingTasksMu sync.RWMutex
 }
 
 // NodeSettingStore provides access to system settings for GitHub acceleration.
@@ -99,16 +107,35 @@ func (m *NodeServerManager) SetLocalAgent(la *LocalAgent) {
 	m.localAgent = la
 }
 
+// InitLocalServerID loads the local server ID from DB and caches it.
+// Call this once at startup to avoid repeated DB queries in isLocalServer().
+func (m *NodeServerManager) InitLocalServerID(ctx context.Context) {
+	if m.serverRepo == nil {
+		return
+	}
+	servers, err := m.serverRepo.ListLocal(ctx)
+	if err == nil && len(servers) > 0 {
+		m.localServerID = servers[0].ID
+		log.Printf("[NodeServerManager] cached local server ID: %d", m.localServerID)
+	}
+}
+
 // SetMetricsCollector sets the metrics collector for heartbeat-based metric collection.
 func (m *NodeServerManager) SetMetricsCollector(mc *MetricsCollector) {
 	m.metricsCollector = mc
 }
 
 // isLocalServer checks if a server is the local panel server.
+// Uses the cached localServerID when available (set by InitLocalServerID),
+// avoiding a DB query on every NodeOperator method call.
 func (m *NodeServerManager) isLocalServer(serverID int64) bool {
 	if serverID == 0 {
 		return true
 	}
+	if m.localServerID > 0 {
+		return serverID == m.localServerID
+	}
+	// Fallback: query DB once (shouldn't happen after InitLocalServerID is called)
 	server, err := m.serverRepo.GetByID(context.Background(), serverID)
 	if err != nil {
 		return false
@@ -193,8 +220,9 @@ func NewNodeServerManager(serverRepo *repository.NodeServerRepository, ca *Certi
 		connections: make(map[int64]*AgentConnection),
 		serverRepo:  serverRepo,
 		ca:          ca,
-		onTraffic:   make(chan *TrafficEvent, 1024),
-		onStatusChg: make(chan *StatusEvent, 256),
+		onTraffic:    make(chan *TrafficEvent, 1024),
+		onStatusChg:  make(chan *StatusEvent, 256),
+		pendingTasks: make(map[string]chan *agentpb.TaskResult),
 	}
 }
 
@@ -285,14 +313,7 @@ func (m *NodeServerManager) ControlCore(ctx context.Context, serverID int64, cor
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-		resp, err := m.localAgent.ControlCore(ctx, coreType, action)
-		if err != nil {
-			return err
-		}
-		if !resp.Success {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return nil
+		return m.localAgent.ControlCore(ctx, coreType, action)
 	}
 	return m.ControlCoreOnServer(ctx, serverID, coreType, action)
 }
@@ -305,14 +326,7 @@ func (m *NodeServerManager) AlterUsers(ctx context.Context, serverID int64, req 
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-		resp, err := m.localAgent.AlterUsers(ctx, req)
-		if err != nil {
-			return err
-		}
-		if !resp.Success {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return nil
+	return m.localAgent.AlterUsers(ctx, req)
 	}
 	return m.AlterUsersOnServer(ctx, serverID, req)
 }
@@ -325,14 +339,7 @@ func (m *NodeServerManager) ApplyLimits(ctx context.Context, serverID int64, req
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-		resp, err := m.localAgent.ApplyLimits(ctx, req)
-		if err != nil {
-			return err
-		}
-		if !resp.Success {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return nil
+	return m.localAgent.ApplyLimits(ctx, req)
 	}
 	return m.ApplyLimitsOnServer(ctx, serverID, req)
 }
@@ -368,12 +375,12 @@ func (m *NodeServerManager) AlterUsersOnServer(ctx context.Context, serverID int
 	if ac.agentClient == nil {
 		return fmt.Errorf("server %d agent client not available", serverID)
 	}
-	resp, err := ac.agentClient.AlterUsers(ctx, req)
+	accept, err := ac.agentClient.AlterUsers(ctx, req)
 	if err != nil {
 		return err
 	}
-	if !resp.Success {
-		return fmt.Errorf("%s", resp.Error)
+	if !accept.Accepted {
+		return fmt.Errorf("task rejected: %s", accept.RejectReason)
 	}
 	return nil
 }
@@ -387,12 +394,12 @@ func (m *NodeServerManager) ApplyLimitsOnServer(ctx context.Context, serverID in
 	if ac.agentClient == nil {
 		return fmt.Errorf("server %d agent client not available", serverID)
 	}
-	resp, err := ac.agentClient.ApplyLimits(ctx, req)
+	accept, err := ac.agentClient.ApplyLimits(ctx, req)
 	if err != nil {
 		return err
 	}
-	if !resp.Success {
-		return fmt.Errorf("%s", resp.Error)
+	if !accept.Accepted {
+		return fmt.Errorf("task rejected: %s", accept.RejectReason)
 	}
 	return nil
 }
@@ -409,14 +416,7 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-		resp, err := m.localAgent.SyncProxyConfig(ctx, proxyType, config)
-		if err != nil {
-			return err
-		}
-		if !resp.Success {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return nil
+	return m.localAgent.SyncProxyConfig(ctx, proxyType, config)
 	}
 	// Remote: send via heartbeat stream
 	cmd := &agentpb.PanelCommand{
@@ -441,14 +441,7 @@ func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, pr
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-		resp, err := m.localAgent.ControlProxy(ctx, proxyType, action)
-		if err != nil {
-			return err
-		}
-		if !resp.Success {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return nil
+	return m.localAgent.ControlProxy(ctx, proxyType, action)
 	}
 	// Remote: send via heartbeat stream
 	cmd := &agentpb.PanelCommand{
@@ -472,12 +465,17 @@ func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, pr
 // InstallBinary installs a core binary on a server.
 // For local servers, delegates to LocalAgent → binaries.Installer.
 // For remote servers, sends InstallBinary via gRPC to the Agent.
-func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (*agentpb.InstallBinaryResponse, error) {
+func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (*agentpb.TaskAccept, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return nil, fmt.Errorf("local agent not configured")
 		}
-		return m.localAgent.InstallBinary(ctx, coreType, version, downloadURL, assetName)
+		err := m.localAgent.InstallBinary(ctx, coreType, version, downloadURL, assetName)
+		if err != nil {
+			return nil, err
+		}
+		// Return a synthetic TaskAccept for local operations
+		return &agentpb.TaskAccept{Accepted: true, TaskId: "local"}, nil
 	}
 	// Remote: send via gRPC
 	ac := m.GetConnection(serverID)
@@ -501,12 +499,16 @@ func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, c
 // InstallProxy installs a proxy binary (caddy/nginx) on a server.
 // For local servers, delegates to LocalAgent → proxy.Manager.InstallProxy.
 // For remote servers, sends InstallProxy via gRPC to the Agent.
-func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, proxyType string) (*agentpb.InstallProxyResponse, error) {
+func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, proxyType string) (*agentpb.TaskAccept, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return nil, fmt.Errorf("local agent not configured")
 		}
-		return m.localAgent.InstallProxy(ctx, proxyType)
+		err := m.localAgent.InstallProxy(ctx, proxyType)
+		if err != nil {
+			return nil, err
+		}
+		return &agentpb.TaskAccept{Accepted: true, TaskId: "local"}, nil
 	}
 	// Remote: send via gRPC
 	ac := m.GetConnection(serverID)
@@ -568,7 +570,7 @@ func (m *NodeServerManager) ListBinaries(ctx context.Context, serverID int64) (*
 
 // UpdateAgentOnServer sends an update command to a remote Agent.
 // The Agent downloads the new binary, verifies checksum, replaces, and restarts.
-func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID int64, version, downloadURL, checksum string) (*agentpb.UpdateAgentResponse, error) {
+func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID int64, version, downloadURL, checksum string) (*agentpb.TaskAccept, error) {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return nil, fmt.Errorf("server %d not connected", serverID)
@@ -701,6 +703,73 @@ func (m *NodeServerManager) SendCommand(ctx context.Context, serverID int64, cmd
 		return fmt.Errorf("send command to server %d: %w", serverID, err)
 	}
 	return nil
+}
+
+// SendCommandAndWait sends a PanelCommand to a server and waits for the Agent
+// to report back a CommandResult. This enables synchronous command execution
+// with a timeout, so callers can know whether the command succeeded or failed.
+//
+// If the command has no command_id, one is generated automatically.
+// The timeout controls how long to wait for the result before returning an error.
+func (m *NodeServerManager) SendCommandAndWait(ctx context.Context, serverID int64, cmd *agentpb.PanelCommand, timeout time.Duration) (*agentpb.TaskResult, error) {
+	// Generate command_id if not set
+	if cmd.CommandId == "" {
+		cmd.CommandId = generateCommandID()
+	}
+	cmdID := cmd.CommandId
+
+	// Register pending result channel
+	resultCh := make(chan *agentpb.TaskResult, 1)
+	m.pendingTasksMu.Lock()
+	m.pendingTasks[cmdID] = resultCh
+	m.pendingTasksMu.Unlock()
+	defer func() {
+		m.pendingTasksMu.Lock()
+		delete(m.pendingTasks, cmdID)
+		m.pendingTasksMu.Unlock()
+	}()
+
+	// Send the command
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return nil, fmt.Errorf("send command: %w", err)
+	}
+
+	// Wait for result with timeout
+	select {
+	case result := <-resultCh:
+		return result, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("command %s timed out after %v", cmdID, timeout)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("command %s cancelled: %w", cmdID, ctx.Err())
+	}
+}
+
+// handleTaskResult processes a TaskResult report from an Agent,
+// routing it to the waiting goroutine via the pendingTasks map.
+func (h *heartbeatServiceImpl) handleTaskResult(ac *AgentConnection, report *agentpb.AgentReport) {
+	if report.TaskResult == nil {
+		return
+	}
+	taskID := report.TaskResult.TaskId
+	if taskID == "" {
+		return
+	}
+	h.mgr.pendingTasksMu.RLock()
+	ch, ok := h.mgr.pendingTasks[taskID]
+	h.mgr.pendingTasksMu.RUnlock()
+	if ok {
+		select {
+		case ch <- report.TaskResult:
+		default: // channel full, shouldn't happen with buffer size 1
+		}
+	}
+}
+
+// generateCommandID generates a unique command ID for tracking.
+// Uses a simple timestamp + random suffix approach.
+func generateCommandID() string {
+	return fmt.Sprintf("cmd-%d-%04d", time.Now().UnixNano(), time.Now().Nanosecond()%10000)
 }
 
 // PushAgentCertificate pushes a renewed Agent certificate via the stream.
@@ -1078,6 +1147,8 @@ func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServ
 			h.handleTrafficReport(ac, report)
 		case agentpb.AgentReport_CRASH:
 			h.handleCrashReport(ac, report)
+		case agentpb.AgentReport_TASK_RESULT:
+			h.handleTaskResult(ac, report)
 		}
 	}
 }

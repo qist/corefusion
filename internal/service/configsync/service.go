@@ -38,6 +38,22 @@ type Service struct {
 	running     bool
 	stopCh      chan struct{}
 	lastSync    time.Time
+
+	// configWriter is an optional delegate for writing runtime config files.
+	// When set, configsync uses this instead of direct os.WriteFile.
+	// This allows process.Manager.WriteRuntimeConfig (which has a mutex)
+	// to protect against concurrent writes from LocalAgent.SyncConfig.
+	configWriter ConfigWriter
+}
+
+// ConfigWriter writes runtime config files. Implemented by process.Manager.
+type ConfigWriter interface {
+	WriteRuntimeConfig(coreType string, data []byte) error
+}
+
+// SetConfigWriter sets the config writer delegate for thread-safe config writes.
+func (s *Service) SetConfigWriter(w ConfigWriter) {
+	s.configWriter = w
 }
 
 // NewService creates a new config sync service.
@@ -162,11 +178,22 @@ func (s *Service) syncCore(ctx context.Context, coreType string) error {
 	}
 
 	// Write to runtime directory
-	runtimeDir := filepath.Join(s.dataDir, "runtime")
-	if err := os.MkdirAll(runtimeDir, 0755); err != nil {
-		return err
+	if s.configWriter != nil {
+		// Use the shared config writer (process.Manager.WriteRuntimeConfig)
+		// for thread-safe writes that avoid conflicts with LocalAgent.SyncConfig.
+		if err := s.configWriter.WriteRuntimeConfig(coreType, data); err != nil {
+			return err
+		}
+	} else {
+		// Fallback: direct file write (not thread-safe)
+		runtimeDir := filepath.Join(s.dataDir, "runtime")
+		if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+			return err
+		}
+		configPath := filepath.Join(runtimeDir, coreType+".jsonc")
+		if err := os.WriteFile(configPath, data, 0640); err != nil {
+			return err
+		}
 	}
-
-	configPath := filepath.Join(runtimeDir, coreType+".jsonc")
-	return os.WriteFile(configPath, data, 0640)
+	return nil
 }

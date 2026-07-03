@@ -13,6 +13,10 @@ type RestartFunc func(ctx context.Context) error
 // IsRunningFunc is called to check if a process is running.
 type IsRunningFunc func() bool
 
+// OnCrashFunc is called when a crash is detected, before the restart attempt.
+// This allows callers to record crash logs, update metrics, etc.
+type OnCrashFunc func(name string, attempt int, maxRestarts int)
+
 // Guardian monitors a process and handles auto-restart with backoff.
 type Guardian struct {
 	mu                 sync.Mutex
@@ -36,6 +40,7 @@ type Guardian struct {
 	stopCh             chan struct{}
 	isRunning          IsRunningFunc
 	restartFn          RestartFunc
+	onCrashFn          OnCrashFunc
 }
 
 // Config holds guardian configuration.
@@ -73,11 +78,20 @@ func New(cfg Config, isRunning IsRunningFunc, restartFn RestartFunc) *Guardian {
 		stableThresholdSec: cfg.StableThresholdSec,
 		checkInterval:      cfg.CheckInterval,
 		failThreshold:      cfg.FailThreshold,
-		autoRestart:        true,
+		autoRestart:        false, // Default off — callers must explicitly enable via SetAutoRestart
 		stopCh:             make(chan struct{}, 1),
 		isRunning:          isRunning,
 		restartFn:          restartFn,
 	}
+}
+
+// OnCrash sets a callback that is invoked when a crash is detected,
+// before the restart attempt. This allows callers to record crash logs,
+// update metrics, or send alerts.
+func (g *Guardian) OnCrash(fn OnCrashFunc) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.onCrashFn = fn
 }
 
 // Start begins monitoring a running process.
@@ -264,6 +278,13 @@ func (g *Guardian) handleCrash() {
 	g.failCount = 0
 
 	log.Printf("healthcheck %s: crashed (restarts: %d/%d)", g.name, g.currentRestarts, g.maxRestarts)
+
+	// Invoke crash callback if set (for logging, metrics, alerts)
+	if g.onCrashFn != nil {
+		g.mu.Unlock()
+		g.onCrashFn(g.name, g.currentRestarts, g.maxRestarts)
+		g.mu.Lock()
+	}
 
 	// Check if auto-restart is disabled
 	if !g.autoRestart {

@@ -528,61 +528,73 @@ func (a *AgentApp) sendStatusReport(stream agentpb.HeartbeatService_StreamClient
 // ============================================================
 
 func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.HeartbeatService_StreamClient) {
-	ctx := context.Background()
+	cmdID := cmd.CommandId
+	idempotencyKey := cmd.IdempotencyKey
+
+	// Helper: submit a task to the LocalAgent's TaskQueue with a callback
+	// that sends the TaskResult back to the panel via the heartbeat stream.
+	submitTask := func(taskType string, fn agent.TaskFunc) {
+		taskID := cmdID
+		if taskID == "" {
+			taskID = agent.GenerateTaskID()
+		}
+		a.localAgent.GetTaskQueue().Submit(taskID, taskType, idempotencyKey, fn, func(result *agentpb.TaskResult) {
+			a.sendTaskResult(stream, result)
+		})
+	}
+
 	switch c := cmd.Command.(type) {
 	case *agentpb.PanelCommand_SyncConfig:
-		// LocalAgent.SyncConfig → os.WriteFile (data/runtime/<coreType>.jsonc)
-		if err := a.localAgent.SyncConfig(ctx, c.SyncConfig.CoreType, c.SyncConfig.ConfigContent, c.SyncConfig.ConfigVersion); err != nil {
-			log.Printf("[Agent] SyncConfig error: %v", err)
-		} else {
-			log.Printf("[Agent] config synced: %s (version=%d)", c.SyncConfig.CoreType, c.SyncConfig.ConfigVersion)
-		}
+		req := c.SyncConfig
+		submitTask("sync_config", func(ctx context.Context) (interface{}, error) {
+			if err := a.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
+				return nil, err
+			}
+			log.Printf("[Agent] config synced: %s (version=%d)", req.CoreType, req.ConfigVersion)
+			return map[string]interface{}{"core_type": req.CoreType, "version": req.ConfigVersion}, nil
+		})
 
 	case *agentpb.PanelCommand_ControlCore:
-		// Run asynchronously to avoid blocking the stream receive loop.
-		// Start/Stop/Restart may involve database queries and process management
-		// that can take several seconds. Blocking here would prevent the agent
-		// from processing subsequent commands from the panel.
-		go func(coreType, action string) {
-			resp, err := a.localAgent.ControlCore(ctx, coreType, action)
-			if err != nil {
-				log.Printf("[Agent] ControlCore %s %s error: %v", coreType, action, err)
-			} else {
-				log.Printf("[Agent] ControlCore %s %s → state=%s", coreType, action, resp.State)
+		req := c.ControlCore
+		submitTask("control_core", func(ctx context.Context) (interface{}, error) {
+			if err := a.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
+				return nil, err
 			}
-		}(c.ControlCore.CoreType, c.ControlCore.Action)
+			log.Printf("[Agent] ControlCore %s %s accepted", req.CoreType, req.Action)
+			return map[string]interface{}{"core_type": req.CoreType, "action": req.Action}, nil
+		})
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
-		// LocalAgent.SyncProxyConfig → proxy.Manager.WriteConfigFile
-		resp, err := a.localAgent.SyncProxyConfig(ctx, c.SyncProxyConfig.ProxyType, c.SyncProxyConfig.ConfigContent)
-		if err != nil {
-			log.Printf("[Agent] SyncProxyConfig error: %v", err)
-		} else if resp.Success {
-			log.Printf("[Agent] proxy config synced: %s", c.SyncProxyConfig.ProxyType)
-		}
+		req := c.SyncProxyConfig
+		submitTask("sync_proxy_config", func(ctx context.Context) (interface{}, error) {
+			if err := a.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
+				return nil, err
+			}
+			log.Printf("[Agent] proxy config synced: %s", req.ProxyType)
+			return map[string]interface{}{"proxy_type": req.ProxyType}, nil
+		})
 
 	case *agentpb.PanelCommand_ControlProxy:
-		// Run asynchronously to avoid blocking the stream receive loop
-		go func(proxyType, action string) {
-			resp, err := a.localAgent.ControlProxy(ctx, proxyType, action)
-			if err != nil {
-				log.Printf("[Agent] ControlProxy error: %v", err)
-			} else {
-				log.Printf("[Agent] ControlProxy %s %s → state=%s", proxyType, action, resp.State)
+		req := c.ControlProxy
+		submitTask("control_proxy", func(ctx context.Context) (interface{}, error) {
+			if err := a.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
+				return nil, err
 			}
-		}(c.ControlProxy.ProxyType, c.ControlProxy.Action)
+			log.Printf("[Agent] ControlProxy %s %s accepted", req.ProxyType, req.Action)
+			return map[string]interface{}{"proxy_type": req.ProxyType, "action": req.Action}, nil
+		})
 
 	case *agentpb.PanelCommand_AlterUsers:
-		// LocalAgent.AlterUsers → xray gRPC AlterInbound (hot reload, no restart)
-		resp, err := a.localAgent.AlterUsers(ctx, c.AlterUsers)
-		if err != nil {
-			log.Printf("[Agent] AlterUsers error: %v", err)
-		} else {
-			log.Printf("[Agent] AlterUsers %s: affected=%d", c.AlterUsers.Action, resp.AffectedCount)
-		}
+		req := c.AlterUsers
+		submitTask("alter_users", func(ctx context.Context) (interface{}, error) {
+			if err := a.localAgent.AlterUsers(ctx, req); err != nil {
+				return nil, err
+			}
+			log.Printf("[Agent] AlterUsers %s accepted", req.Action)
+			return map[string]interface{}{"action": req.Action}, nil
+		})
 
 	case *agentpb.PanelCommand_RenewCert:
-		// Panel pushes renewed mTLS cert — save to disk (hot swap)
 		log.Printf("[Agent] renewing mTLS certificate (expires %v)", time.Unix(c.RenewCert.ExpiresAt, 0))
 		if err := os.WriteFile(a.certPath, c.RenewCert.NewCertPem, 0640); err != nil {
 			log.Printf("[Agent] write renewed cert: %v", err)
@@ -593,11 +605,9 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		}
 
 	case *agentpb.PanelCommand_DistributeCert:
-		// Panel distributes external service TLS cert (e.g. Let's Encrypt)
 		a.handleDistributeCert(c.DistributeCert)
 
 	case *agentpb.PanelCommand_GetStatus:
-		// Panel requests immediate status — send via stream
 		a.sendStatusReport(stream)
 
 	case *agentpb.PanelCommand_UpdateAgent:
@@ -607,6 +617,20 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		log.Printf("[Agent] unknown command: %T", cmd.Command)
 	}
 }
+
+// sendTaskResult sends a TaskResult back to the panel via the heartbeat stream.
+func (a *AgentApp) sendTaskResult(stream agentpb.HeartbeatService_StreamClient, result *agentpb.TaskResult) {
+	report := &agentpb.AgentReport{
+		Type:       agentpb.AgentReport_TASK_RESULT,
+		ServerId:   a.cfg.Panel.ServerID,
+		Timestamp:  time.Now().Unix(),
+		TaskResult: result,
+	}
+	if err := stream.Send(report); err != nil {
+		log.Printf("[Agent] failed to send task result (id=%s): %v", result.TaskId, err)
+	}
+}
+
 
 func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 	if cmd.TargetPath == "" {
@@ -651,39 +675,97 @@ type agentServiceServer struct {
 	settingRepo *repository.SystemSettingRepository
 }
 
-func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.SyncConfigResponse, error) {
-	if err := s.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
-		return &agentpb.SyncConfigResponse{Success: false, Error: err.Error()}, nil
-	}
-	return &agentpb.SyncConfigResponse{Success: true, AppliedVersion: fmt.Sprintf("%d", req.ConfigVersion)}, nil
+func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.TaskAccept, error) {
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("sync-config-%s-v%d", req.CoreType, req.ConfigVersion)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "sync_config", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
+				return nil, err
+			}
+			log.Printf("[Agent] config synced: %s (version=%d)", req.CoreType, req.ConfigVersion)
+			return map[string]interface{}{"core_type": req.CoreType, "version": req.ConfigVersion}, nil
+		},
+		nil, // no stream callback for direct RPC
+	), nil
 }
 
-func (s *agentServiceServer) ControlCore(ctx context.Context, req *agentpb.ControlCoreRequest) (*agentpb.ControlCoreResponse, error) {
-	return s.localAgent.ControlCore(ctx, req.CoreType, req.Action)
+func (s *agentServiceServer) ControlCore(ctx context.Context, req *agentpb.ControlCoreRequest) (*agentpb.TaskAccept, error) {
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("control-core-%s-%s", req.CoreType, req.Action)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "control_core", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"core_type": req.CoreType, "action": req.Action}, nil
+		},
+		nil,
+	), nil
 }
 
 func (s *agentServiceServer) GetStatus(ctx context.Context, req *agentpb.GetStatusRequest) (*agentpb.GetStatusResponse, error) {
 	return s.localAgent.GetStatus(ctx)
 }
 
-func (s *agentServiceServer) SyncProxyConfig(ctx context.Context, req *agentpb.SyncProxyConfigRequest) (*agentpb.SyncProxyConfigResponse, error) {
-	return s.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent)
+func (s *agentServiceServer) SyncProxyConfig(ctx context.Context, req *agentpb.SyncProxyConfigRequest) (*agentpb.TaskAccept, error) {
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("sync-proxy-config-%s", req.ProxyType)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "sync_proxy_config", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"proxy_type": req.ProxyType}, nil
+		},
+		nil,
+	), nil
 }
 
-func (s *agentServiceServer) ControlProxy(ctx context.Context, req *agentpb.ControlProxyRequest) (*agentpb.ControlProxyResponse, error) {
-	return s.localAgent.ControlProxy(ctx, req.ProxyType, req.Action)
+func (s *agentServiceServer) ControlProxy(ctx context.Context, req *agentpb.ControlProxyRequest) (*agentpb.TaskAccept, error) {
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("control-proxy-%s-%s", req.ProxyType, req.Action)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "control_proxy", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"proxy_type": req.ProxyType, "action": req.Action}, nil
+		},
+		nil,
+	), nil
 }
 
-func (s *agentServiceServer) AlterUsers(ctx context.Context, req *agentpb.AlterUsersRequest) (*agentpb.AlterUsersResponse, error) {
-	return s.localAgent.AlterUsers(ctx, req)
+func (s *agentServiceServer) AlterUsers(ctx context.Context, req *agentpb.AlterUsersRequest) (*agentpb.TaskAccept, error) {
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("alter-users-%s-%s", req.InboundTag, req.Action)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "alter_users", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.AlterUsers(ctx, req); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"action": req.Action}, nil
+		},
+		nil,
+	), nil
 }
 
-func (s *agentServiceServer) ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRequest) (*agentpb.ApplyLimitsResponse, error) {
-	return s.localAgent.ApplyLimits(ctx, req)
+func (s *agentServiceServer) ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRequest) (*agentpb.TaskAccept, error) {
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("apply-limits-%s-%s", req.Action, req.Ip)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "apply_limits", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.ApplyLimits(ctx, req); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		},
+		nil,
+	), nil
 }
 
-func (s *agentServiceServer) UpdateAgent(ctx context.Context, req *agentpb.UpdateAgentRequest) (*agentpb.UpdateAgentResponse, error) {
-	return &agentpb.UpdateAgentResponse{Success: false, Error: "not implemented"}, nil
+func (s *agentServiceServer) UpdateAgent(ctx context.Context, req *agentpb.UpdateAgentRequest) (*agentpb.TaskAccept, error) {
+	return &agentpb.TaskAccept{Accepted: false, RejectReason: "not implemented"}, nil
 }
 
 func (s *agentServiceServer) SpeedTest(ctx context.Context, req *agentpb.SpeedTestRequest) (*agentpb.SpeedTestResponse, error) {
@@ -703,16 +785,41 @@ func (s *agentServiceServer) GetMetrics(ctx context.Context, req *agentpb.GetMet
 	}, nil
 }
 
-func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.InstallBinaryResponse, error) {
-	// Sync GitHub acceleration settings to local DB before install
-	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
-	return s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName)
+// GetTask queries the status of an async task.
+func (s *agentServiceServer) GetTask(ctx context.Context, req *agentpb.GetTaskRequest) (*agentpb.GetTaskResponse, error) {
+	return s.localAgent.GetTaskQueue().GetTask(req.TaskId), nil
 }
 
-func (s *agentServiceServer) InstallProxy(ctx context.Context, req *agentpb.InstallProxyRequest) (*agentpb.InstallProxyResponse, error) {
+func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.TaskAccept, error) {
 	// Sync GitHub acceleration settings to local DB before install
 	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
-	return s.localAgent.InstallProxy(ctx, req.ProxyType)
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("install-binary-%s-%s", req.CoreType, req.Version)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "install_binary", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"core_type": req.CoreType, "version": req.Version}, nil
+		},
+		nil,
+	), nil
+}
+
+func (s *agentServiceServer) InstallProxy(ctx context.Context, req *agentpb.InstallProxyRequest) (*agentpb.TaskAccept, error) {
+	// Sync GitHub acceleration settings to local DB before install
+	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
+	taskID := agent.GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("install-proxy-%s", req.ProxyType)
+	return s.localAgent.GetTaskQueue().Submit(taskID, "install_proxy", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if err := s.localAgent.InstallProxy(ctx, req.ProxyType); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"proxy_type": req.ProxyType}, nil
+		},
+		nil,
+	), nil
 }
 
 func (s *agentServiceServer) GetProxyStatus(ctx context.Context, req *agentpb.GetProxyStatusRequest) (*agentpb.GetProxyStatusResponse, error) {
@@ -723,8 +830,8 @@ func (s *agentServiceServer) ListBinaries(ctx context.Context, req *agentpb.List
 	return s.localAgent.ListBinaries(), nil
 }
 
-func (s *agentServiceServer) ListReleases(ctx context.Context, req *agentpb.ListReleasesRequest) (*agentpb.ListReleasesResponse, error) {
-	return &agentpb.ListReleasesResponse{}, nil
+func (s *agentServiceServer) ListReleases(ctx context.Context, req *agentpb.ListReleasesRequest) (*agentpb.ListBinariesResponse, error) {
+	return &agentpb.ListBinariesResponse{}, nil
 }
 
 // DownloadGeoRule downloads a geo rule file to the Agent's local data/rules/ directory.

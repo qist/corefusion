@@ -1227,34 +1227,8 @@ func (r *registrationServiceImpl) Register(ctx context.Context, req *agentpb.Reg
 	}, nil
 }
 
-// ExecuteBinaryCommand executes a binary command on a server.
-// For local servers, executes directly via LocalAgent.
-// For remote servers, returns error (not yet implemented via gRPC).
-func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID int64, coreType string, args ...string) (map[string]string, error) {
-	if m.isLocalServer(serverID) {
-		if m.localAgent == nil {
-			return nil, fmt.Errorf("local agent not configured")
-		}
-		return m.localAgent.ExecuteBinaryCommand(ctx, coreType, args...)
-	}
-	// Remote: not yet implemented
-	return nil, fmt.Errorf("remote binary command execution not yet implemented")
-}
-
-// ExecuteBinaryRawOutput executes a binary command and returns raw stdout.
-func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID int64, coreType string, args ...string) (string, error) {
-	if m.isLocalServer(serverID) {
-		if m.localAgent == nil {
-			return "", fmt.Errorf("local agent not configured")
-		}
-		return m.localAgent.ExecuteBinaryRawOutput(ctx, coreType, args...)
-	}
-	// Remote: not yet implemented
-	return "", fmt.Errorf("remote binary command execution not yet implemented")
-}
-
 // ListInterfaces lists network interfaces on a server.
-// For local servers, queries directly. For remote servers, returns error (not yet implemented via gRPC).
+// For local servers, queries directly. For remote servers, queries via gRPC to the Agent.
 func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) ([]string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -1262,6 +1236,93 @@ func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) 
 		}
 		return m.localAgent.ListInterfaces()
 	}
-	// Remote: not yet implemented
-	return nil, fmt.Errorf("remote interface listing not yet implemented")
+	// Remote: query via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	resp, err := ac.agentClient.ListInterfaces(ctx, &agentpb.ListInterfacesRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetInterfaces(), nil
+}
+
+// ExecuteBinaryCommand executes a binary command on a server.
+// For local servers, executes directly via LocalAgent.
+// For remote servers, sends via gRPC to the Agent.
+func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID int64, coreType string, args ...string) (map[string]string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ExecuteBinaryCommand(ctx, coreType, args...)
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	resp, err := ac.agentClient.ExecuteBinary(ctx, &agentpb.ExecuteBinaryRequest{
+		CoreType:  coreType,
+		Args:      args,
+		RawOutput: false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Parsed, nil
+}
+
+// ExecuteBinaryRawOutput executes a binary command and returns raw stdout.
+// For local servers, executes directly. For remote servers, sends via gRPC to the Agent.
+func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID int64, coreType string, args ...string) (string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return "", fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ExecuteBinaryRawOutput(ctx, coreType, args...)
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return "", fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return "", fmt.Errorf("server %d agent client not available", serverID)
+	}
+	resp, err := ac.agentClient.ExecuteBinary(ctx, &agentpb.ExecuteBinaryRequest{
+		CoreType:  coreType,
+		Args:      args,
+		RawOutput: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Stdout, nil
+}
+
+// XrayAPIOnServer proxies an xray API call to a remote server's Agent.
+// For local servers, returns an error (caller should use direct connection).
+func (m *NodeServerManager) XrayAPIOnServer(ctx context.Context, serverID int64, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	}
+	return ac.agentClient.XrayAPI(ctx, req)
 }

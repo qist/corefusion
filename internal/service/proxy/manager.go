@@ -55,6 +55,16 @@ type SettingStore interface {
 	Set(ctx context.Context, key, value string) error
 }
 
+// CrashLogInserter inserts crash log records. Implemented by repository.CrashLogRepository.
+type CrashLogInserter interface {
+	InsertCrashLog(ctx context.Context, proxyType string, attempt, maxRestarts int)
+}
+
+// SetCrashLogRepo sets the crash log repository for recording proxy crash events.
+func (m *Manager) SetCrashLogRepo(repo CrashLogInserter) {
+	m.crashLogRepo = repo
+}
+
 // Manager handles proxy program management.
 type Manager struct {
 dataDir      string
@@ -62,6 +72,7 @@ binDir       string
 configDir    string
 siteRepo     *repository.ProxySiteRepository
 settingStore SettingStore
+crashLogRepo CrashLogInserter
 serverID     int64
 // Config generators (set by router to use new separated managers)
 caddyConfigGen func(ctx context.Context) (string, error)
@@ -70,6 +81,8 @@ nginxConfigGen func(ctx context.Context) (string, error)
 logBrokers map[ProxyType]*LogBroker
 // Process guardian for auto-restart on crash (shared healthcheck)
 guardians map[ProxyType]*healthcheck.Guardian
+// Tracked PIDs for precise process killing (avoids pkill -f killing wrong processes)
+processPIDs map[ProxyType]int
 // mu protects logBrokers and guardians from concurrent access
 // (StartProxy can be called from Guardian's crash-recovery goroutine)
 mu sync.Mutex
@@ -295,6 +308,7 @@ func NewManager(dataDir string, siteRepo *repository.ProxySiteRepository, settin
 		settingStore: settingStore,
 		logBrokers:   make(map[ProxyType]*LogBroker),
 		guardians:    make(map[ProxyType]*healthcheck.Guardian),
+		processPIDs:  make(map[ProxyType]int),
 	}
 }
 
@@ -1096,9 +1110,17 @@ m.mu.Unlock()
 		func(ctx context.Context) error {
 			return m.StartProxy(ctx, proxyType)
 		},
-)
+	)
+	// Register crash callback for logging
+	guardian.OnCrash(func(name string, attempt, maxRestarts int) {
+		log.Printf("proxy %s: crash detected (attempt %d/%d)", name, attempt, maxRestarts)
+		if m.crashLogRepo != nil {
+			m.crashLogRepo.InsertCrashLog(context.Background(), name, attempt, maxRestarts)
+		}
+	})
 m.mu.Lock()
 m.guardians[proxyType] = guardian
+m.processPIDs[proxyType] = cmd.Process.Pid
 m.mu.Unlock()
 guardian.Start(cmd.Process.Pid)
 	log.Printf("proxy %s: guardian started (pid %d)", proxyType, cmd.Process.Pid)
@@ -1151,13 +1173,58 @@ m.mu.Unlock()
 return m.killProxyProcess(proxyType)
 }
 
+// killProxyProcess stops the proxy process. If a tracked PID is available
+// (from StartProxy), it uses a precise PID-based kill to avoid accidentally
+// killing other processes whose command line contains the proxy type name.
+// Falls back to pkill -f if no PID is tracked.
 func (m *Manager) killProxyProcess(proxyType ProxyType) error {
+	// Try precise PID kill first
+	m.mu.Lock()
+	pid, hasPID := m.processPIDs[proxyType]
+	if hasPID {
+		delete(m.processPIDs, proxyType)
+	}
+	m.mu.Unlock()
+
+	if hasPID && pid > 0 {
+		if isProcessAlive(pid) {
+			log.Printf("proxy %s: killing process by PID %d", proxyType, pid)
+			syscall.Kill(pid, syscall.SIGTERM)
+			// Wait for graceful exit (up to 5 seconds)
+			deadline := time.Now().Add(5 * time.Second)
+			for isProcessAlive(pid) && time.Now().Before(deadline) {
+				time.Sleep(100 * time.Millisecond)
+			}
+			if isProcessAlive(pid) {
+				log.Printf("proxy %s: force killing PID %d", proxyType, pid)
+				syscall.Kill(pid, syscall.SIGKILL)
+			}
+			return nil
+		}
+		log.Printf("proxy %s: tracked PID %d is no longer alive, falling back to pkill", proxyType, pid)
+	}
+
+	// Fallback: pkill
 	switch runtime.GOOS {
 	case "windows":
 		return exec.Command("taskkill", "/IM", string(proxyType)+".exe", "/F").Run()
 	default:
 		return exec.Command("pkill", "-f", string(proxyType)).Run()
 	}
+}
+
+// isProcessAlive checks if a process with the given PID is still running.
+func isProcessAlive(pid int) bool {
+	if runtime.GOOS == "windows" {
+		return true // simplified: always fallback on Windows
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// Signal 0 doesn't kill the process, just checks if it exists
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
 }
 
 // ClearManuallyStopped clears the manually stopped flag.
@@ -1216,10 +1283,37 @@ func (m *Manager) IsManuallyStopped(ctx context.Context, proxyType ProxyType) bo
 	return err == nil && v == "true"
 }
 
+// RestartProxy restarts the proxy process asynchronously.
+// It stops the Guardian first (to prevent interference), then runs stop + start
+// in a goroutine. This avoids blocking the caller for 3+ seconds and aligns
+// with process.Manager.Restart() which is also async.
 func (m *Manager) RestartProxy(ctx context.Context, proxyType ProxyType) error {
-	m.StopProxy(ctx, proxyType)
-	time.Sleep(time.Second)
-	return m.StartProxy(ctx, proxyType)
+	// Stop guardian to prevent auto-restart during restart sequence
+	m.mu.Lock()
+	if g, ok := m.guardians[proxyType]; ok {
+		g.Stop()
+		delete(m.guardians, proxyType)
+	}
+	m.mu.Unlock()
+
+	// Clear manually_stopped flag so the new process can be guarded
+	if m.settingStore != nil {
+		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "false")
+	}
+
+	// Run stop + start asynchronously
+	go func() {
+		log.Printf("proxy %s: async restart begin", proxyType)
+		m.killProxyProcess(proxyType)
+		time.Sleep(time.Second)
+		if err := m.StartProxy(context.Background(), proxyType); err != nil {
+			log.Printf("proxy %s: async restart failed: %v", proxyType, err)
+		} else {
+			log.Printf("proxy %s: async restart completed", proxyType)
+		}
+	}()
+
+	return nil
 }
 
 func (m *Manager) GetConfigPath(proxyType ProxyType) string {

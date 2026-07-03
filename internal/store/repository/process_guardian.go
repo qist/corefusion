@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"log"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -63,6 +65,22 @@ func NewCrashLogRepository(db *gorm.DB) *CrashLogRepository {
 
 func (r *CrashLogRepository) Create(ctx context.Context, log *entity.CoreCrashLog) error {
 	return r.db.WithContext(ctx).Create(log).Error
+}
+
+// InsertCrashLog records a proxy crash event. Uses service_id=0 for proxy processes
+// since they don't have a service ID in the services table.
+func (r *CrashLogRepository) InsertCrashLog(ctx context.Context, proxyType string, attempt, maxRestarts int) {
+	crashLog := &entity.CoreCrashLog{
+		ServiceID:      0, // proxy processes have no service ID
+		CoreType:       proxyType,
+		RestartAttempt: attempt,
+		AutoRestarted:  attempt < maxRestarts,
+		RuntimeSeconds: 0, // unknown for proxy processes
+		CrashAt:        time.Now(),
+	}
+	if err := r.Create(ctx, crashLog); err != nil {
+		log.Printf("failed to insert proxy crash log for %s: %v", proxyType, err)
+	}
 }
 
 func (r *CrashLogRepository) ListByServiceID(ctx context.Context, serviceID int64, limit int) ([]entity.CoreCrashLog, error) {

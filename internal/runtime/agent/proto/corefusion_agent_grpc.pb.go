@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v3.21.12
-// source: corefusion_agent.proto
+// source: internal/runtime/agent/proto/corefusion_agent.proto
 
 package agentpb
 
@@ -19,22 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_SyncConfig_FullMethodName      = "/corefusion.agent.v1.AgentService/SyncConfig"
-	AgentService_ControlCore_FullMethodName     = "/corefusion.agent.v1.AgentService/ControlCore"
-	AgentService_SyncProxyConfig_FullMethodName = "/corefusion.agent.v1.AgentService/SyncProxyConfig"
-	AgentService_ControlProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/ControlProxy"
-	AgentService_AlterUsers_FullMethodName      = "/corefusion.agent.v1.AgentService/AlterUsers"
 	AgentService_GetStatus_FullMethodName       = "/corefusion.agent.v1.AgentService/GetStatus"
-	AgentService_ApplyLimits_FullMethodName     = "/corefusion.agent.v1.AgentService/ApplyLimits"
-	AgentService_UpdateAgent_FullMethodName     = "/corefusion.agent.v1.AgentService/UpdateAgent"
-	AgentService_SpeedTest_FullMethodName       = "/corefusion.agent.v1.AgentService/SpeedTest"
 	AgentService_GetMetrics_FullMethodName      = "/corefusion.agent.v1.AgentService/GetMetrics"
-	AgentService_InstallBinary_FullMethodName   = "/corefusion.agent.v1.AgentService/InstallBinary"
-	AgentService_InstallProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/InstallProxy"
 	AgentService_GetProxyStatus_FullMethodName  = "/corefusion.agent.v1.AgentService/GetProxyStatus"
 	AgentService_ListBinaries_FullMethodName    = "/corefusion.agent.v1.AgentService/ListBinaries"
 	AgentService_ListReleases_FullMethodName    = "/corefusion.agent.v1.AgentService/ListReleases"
 	AgentService_DownloadGeoRule_FullMethodName = "/corefusion.agent.v1.AgentService/DownloadGeoRule"
+	AgentService_SpeedTest_FullMethodName       = "/corefusion.agent.v1.AgentService/SpeedTest"
+	AgentService_ControlCore_FullMethodName     = "/corefusion.agent.v1.AgentService/ControlCore"
+	AgentService_ControlProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/ControlProxy"
+	AgentService_SyncConfig_FullMethodName      = "/corefusion.agent.v1.AgentService/SyncConfig"
+	AgentService_SyncProxyConfig_FullMethodName = "/corefusion.agent.v1.AgentService/SyncProxyConfig"
+	AgentService_AlterUsers_FullMethodName      = "/corefusion.agent.v1.AgentService/AlterUsers"
+	AgentService_ApplyLimits_FullMethodName     = "/corefusion.agent.v1.AgentService/ApplyLimits"
+	AgentService_InstallBinary_FullMethodName   = "/corefusion.agent.v1.AgentService/InstallBinary"
+	AgentService_InstallProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/InstallProxy"
+	AgentService_UpdateAgent_FullMethodName     = "/corefusion.agent.v1.AgentService/UpdateAgent"
+	AgentService_GetTask_FullMethodName         = "/corefusion.agent.v1.AgentService/GetTask"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -45,38 +46,43 @@ const (
 // AgentService — Agent 侧提供的 gRPC 服务（面板→Agent 指令）
 // ============================================================
 type AgentServiceClient interface {
-	// 同步完整核心配置
-	SyncConfig(ctx context.Context, in *SyncConfigRequest, opts ...grpc.CallOption) (*SyncConfigResponse, error)
-	// 启动/停止/重启核心进程
-	ControlCore(ctx context.Context, in *ControlCoreRequest, opts ...grpc.CallOption) (*ControlCoreResponse, error)
-	// 同步代理配置（Caddy/Nginx）
-	SyncProxyConfig(ctx context.Context, in *SyncProxyConfigRequest, opts ...grpc.CallOption) (*SyncProxyConfigResponse, error)
-	// 启动/停止/重启/重载代理进程（Caddy/Nginx）
-	ControlProxy(ctx context.Context, in *ControlProxyRequest, opts ...grpc.CallOption) (*ControlProxyResponse, error)
-	// 增删改用户（热生效，不重启核心）
-	AlterUsers(ctx context.Context, in *AlterUsersRequest, opts ...grpc.CallOption) (*AlterUsersResponse, error)
+	// --- 同步查询类 RPC（纯读，不涉及长操作） ---
 	// 获取当前状态快照
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
-	// 应用限速规则（nftables/tc）
-	ApplyLimits(ctx context.Context, in *ApplyLimitsRequest, opts ...grpc.CallOption) (*ApplyLimitsResponse, error)
-	// Agent 自动更新（下载新版本、校验、替换、重启）
-	UpdateAgent(ctx context.Context, in *UpdateAgentRequest, opts ...grpc.CallOption) (*UpdateAgentResponse, error)
-	// 节点测速（TCP 连接延迟探测）
-	SpeedTest(ctx context.Context, in *SpeedTestRequest, opts ...grpc.CallOption) (*SpeedTestResponse, error)
 	// 获取详细资源指标（用于监控图表）
 	GetMetrics(ctx context.Context, in *GetMetricsRequest, opts ...grpc.CallOption) (*GetMetricsResponse, error)
-	// 安装核心二进制（xray/singbox/hysteria2/tuic）
-	InstallBinary(ctx context.Context, in *InstallBinaryRequest, opts ...grpc.CallOption) (*InstallBinaryResponse, error)
-	// 安装代理二进制（caddy/nginx）
-	InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*InstallProxyResponse, error)
 	// 查询代理安装状态
 	GetProxyStatus(ctx context.Context, in *GetProxyStatusRequest, opts ...grpc.CallOption) (*GetProxyStatusResponse, error)
 	// 列出已安装的核心二进制
 	ListBinaries(ctx context.Context, in *ListBinariesRequest, opts ...grpc.CallOption) (*ListBinariesResponse, error)
 	// 获取 GitHub 上的可用版本列表
-	ListReleases(ctx context.Context, in *ListReleasesRequest, opts ...grpc.CallOption) (*ListReleasesResponse, error)
+	ListReleases(ctx context.Context, in *ListReleasesRequest, opts ...grpc.CallOption) (*ListBinariesResponse, error)
 	// 下载 Geo 规则文件到 Agent 本地
 	DownloadGeoRule(ctx context.Context, in *DownloadGeoRuleRequest, opts ...grpc.CallOption) (*DownloadGeoRuleResponse, error)
+	// 节点测速（TCP 连接延迟探测）
+	SpeedTest(ctx context.Context, in *SpeedTestRequest, opts ...grpc.CallOption) (*SpeedTestResponse, error)
+	// --- 异步任务类 RPC（立刻返回 accepted + task_id） ---
+	// 启动/停止/重启核心进程 → 返回 TaskAccept
+	ControlCore(ctx context.Context, in *ControlCoreRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 启动/停止/重启/重载代理进程 → 返回 TaskAccept
+	ControlProxy(ctx context.Context, in *ControlProxyRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 同步完整核心配置 → 返回 TaskAccept
+	SyncConfig(ctx context.Context, in *SyncConfigRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 同步代理配置 → 返回 TaskAccept
+	SyncProxyConfig(ctx context.Context, in *SyncProxyConfigRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 增删改用户（热生效） → 返回 TaskAccept
+	AlterUsers(ctx context.Context, in *AlterUsersRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 应用限速规则 → 返回 TaskAccept
+	ApplyLimits(ctx context.Context, in *ApplyLimitsRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 安装核心二进制 → 返回 TaskAccept
+	InstallBinary(ctx context.Context, in *InstallBinaryRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// 安装代理二进制 → 返回 TaskAccept
+	InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// Agent 自动更新 → 返回 TaskAccept
+	UpdateAgent(ctx context.Context, in *UpdateAgentRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// --- 任务查询 ---
+	// 查询异步任务执行状态
+	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
 }
 
 type agentServiceClient struct {
@@ -85,56 +91,6 @@ type agentServiceClient struct {
 
 func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
 	return &agentServiceClient{cc}
-}
-
-func (c *agentServiceClient) SyncConfig(ctx context.Context, in *SyncConfigRequest, opts ...grpc.CallOption) (*SyncConfigResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SyncConfigResponse)
-	err := c.cc.Invoke(ctx, AgentService_SyncConfig_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) ControlCore(ctx context.Context, in *ControlCoreRequest, opts ...grpc.CallOption) (*ControlCoreResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ControlCoreResponse)
-	err := c.cc.Invoke(ctx, AgentService_ControlCore_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) SyncProxyConfig(ctx context.Context, in *SyncProxyConfigRequest, opts ...grpc.CallOption) (*SyncProxyConfigResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SyncProxyConfigResponse)
-	err := c.cc.Invoke(ctx, AgentService_SyncProxyConfig_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) ControlProxy(ctx context.Context, in *ControlProxyRequest, opts ...grpc.CallOption) (*ControlProxyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ControlProxyResponse)
-	err := c.cc.Invoke(ctx, AgentService_ControlProxy_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) AlterUsers(ctx context.Context, in *AlterUsersRequest, opts ...grpc.CallOption) (*AlterUsersResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AlterUsersResponse)
-	err := c.cc.Invoke(ctx, AgentService_AlterUsers_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *agentServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error) {
@@ -147,60 +103,10 @@ func (c *agentServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest
 	return out, nil
 }
 
-func (c *agentServiceClient) ApplyLimits(ctx context.Context, in *ApplyLimitsRequest, opts ...grpc.CallOption) (*ApplyLimitsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ApplyLimitsResponse)
-	err := c.cc.Invoke(ctx, AgentService_ApplyLimits_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) UpdateAgent(ctx context.Context, in *UpdateAgentRequest, opts ...grpc.CallOption) (*UpdateAgentResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateAgentResponse)
-	err := c.cc.Invoke(ctx, AgentService_UpdateAgent_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) SpeedTest(ctx context.Context, in *SpeedTestRequest, opts ...grpc.CallOption) (*SpeedTestResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SpeedTestResponse)
-	err := c.cc.Invoke(ctx, AgentService_SpeedTest_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *agentServiceClient) GetMetrics(ctx context.Context, in *GetMetricsRequest, opts ...grpc.CallOption) (*GetMetricsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMetricsResponse)
 	err := c.cc.Invoke(ctx, AgentService_GetMetrics_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) InstallBinary(ctx context.Context, in *InstallBinaryRequest, opts ...grpc.CallOption) (*InstallBinaryResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InstallBinaryResponse)
-	err := c.cc.Invoke(ctx, AgentService_InstallBinary_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*InstallProxyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InstallProxyResponse)
-	err := c.cc.Invoke(ctx, AgentService_InstallProxy_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -227,9 +133,9 @@ func (c *agentServiceClient) ListBinaries(ctx context.Context, in *ListBinariesR
 	return out, nil
 }
 
-func (c *agentServiceClient) ListReleases(ctx context.Context, in *ListReleasesRequest, opts ...grpc.CallOption) (*ListReleasesResponse, error) {
+func (c *agentServiceClient) ListReleases(ctx context.Context, in *ListReleasesRequest, opts ...grpc.CallOption) (*ListBinariesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListReleasesResponse)
+	out := new(ListBinariesResponse)
 	err := c.cc.Invoke(ctx, AgentService_ListReleases_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -247,6 +153,116 @@ func (c *agentServiceClient) DownloadGeoRule(ctx context.Context, in *DownloadGe
 	return out, nil
 }
 
+func (c *agentServiceClient) SpeedTest(ctx context.Context, in *SpeedTestRequest, opts ...grpc.CallOption) (*SpeedTestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SpeedTestResponse)
+	err := c.cc.Invoke(ctx, AgentService_SpeedTest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ControlCore(ctx context.Context, in *ControlCoreRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_ControlCore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ControlProxy(ctx context.Context, in *ControlProxyRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_ControlProxy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) SyncConfig(ctx context.Context, in *SyncConfigRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_SyncConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) SyncProxyConfig(ctx context.Context, in *SyncProxyConfigRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_SyncProxyConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) AlterUsers(ctx context.Context, in *AlterUsersRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_AlterUsers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ApplyLimits(ctx context.Context, in *ApplyLimitsRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_ApplyLimits_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) InstallBinary(ctx context.Context, in *InstallBinaryRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_InstallBinary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_InstallProxy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) UpdateAgent(ctx context.Context, in *UpdateAgentRequest, opts ...grpc.CallOption) (*TaskAccept, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskAccept)
+	err := c.cc.Invoke(ctx, AgentService_UpdateAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTaskResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -255,38 +271,43 @@ func (c *agentServiceClient) DownloadGeoRule(ctx context.Context, in *DownloadGe
 // AgentService — Agent 侧提供的 gRPC 服务（面板→Agent 指令）
 // ============================================================
 type AgentServiceServer interface {
-	// 同步完整核心配置
-	SyncConfig(context.Context, *SyncConfigRequest) (*SyncConfigResponse, error)
-	// 启动/停止/重启核心进程
-	ControlCore(context.Context, *ControlCoreRequest) (*ControlCoreResponse, error)
-	// 同步代理配置（Caddy/Nginx）
-	SyncProxyConfig(context.Context, *SyncProxyConfigRequest) (*SyncProxyConfigResponse, error)
-	// 启动/停止/重启/重载代理进程（Caddy/Nginx）
-	ControlProxy(context.Context, *ControlProxyRequest) (*ControlProxyResponse, error)
-	// 增删改用户（热生效，不重启核心）
-	AlterUsers(context.Context, *AlterUsersRequest) (*AlterUsersResponse, error)
+	// --- 同步查询类 RPC（纯读，不涉及长操作） ---
 	// 获取当前状态快照
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
-	// 应用限速规则（nftables/tc）
-	ApplyLimits(context.Context, *ApplyLimitsRequest) (*ApplyLimitsResponse, error)
-	// Agent 自动更新（下载新版本、校验、替换、重启）
-	UpdateAgent(context.Context, *UpdateAgentRequest) (*UpdateAgentResponse, error)
-	// 节点测速（TCP 连接延迟探测）
-	SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error)
 	// 获取详细资源指标（用于监控图表）
 	GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error)
-	// 安装核心二进制（xray/singbox/hysteria2/tuic）
-	InstallBinary(context.Context, *InstallBinaryRequest) (*InstallBinaryResponse, error)
-	// 安装代理二进制（caddy/nginx）
-	InstallProxy(context.Context, *InstallProxyRequest) (*InstallProxyResponse, error)
 	// 查询代理安装状态
 	GetProxyStatus(context.Context, *GetProxyStatusRequest) (*GetProxyStatusResponse, error)
 	// 列出已安装的核心二进制
 	ListBinaries(context.Context, *ListBinariesRequest) (*ListBinariesResponse, error)
 	// 获取 GitHub 上的可用版本列表
-	ListReleases(context.Context, *ListReleasesRequest) (*ListReleasesResponse, error)
+	ListReleases(context.Context, *ListReleasesRequest) (*ListBinariesResponse, error)
 	// 下载 Geo 规则文件到 Agent 本地
 	DownloadGeoRule(context.Context, *DownloadGeoRuleRequest) (*DownloadGeoRuleResponse, error)
+	// 节点测速（TCP 连接延迟探测）
+	SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error)
+	// --- 异步任务类 RPC（立刻返回 accepted + task_id） ---
+	// 启动/停止/重启核心进程 → 返回 TaskAccept
+	ControlCore(context.Context, *ControlCoreRequest) (*TaskAccept, error)
+	// 启动/停止/重启/重载代理进程 → 返回 TaskAccept
+	ControlProxy(context.Context, *ControlProxyRequest) (*TaskAccept, error)
+	// 同步完整核心配置 → 返回 TaskAccept
+	SyncConfig(context.Context, *SyncConfigRequest) (*TaskAccept, error)
+	// 同步代理配置 → 返回 TaskAccept
+	SyncProxyConfig(context.Context, *SyncProxyConfigRequest) (*TaskAccept, error)
+	// 增删改用户（热生效） → 返回 TaskAccept
+	AlterUsers(context.Context, *AlterUsersRequest) (*TaskAccept, error)
+	// 应用限速规则 → 返回 TaskAccept
+	ApplyLimits(context.Context, *ApplyLimitsRequest) (*TaskAccept, error)
+	// 安装核心二进制 → 返回 TaskAccept
+	InstallBinary(context.Context, *InstallBinaryRequest) (*TaskAccept, error)
+	// 安装代理二进制 → 返回 TaskAccept
+	InstallProxy(context.Context, *InstallProxyRequest) (*TaskAccept, error)
+	// Agent 自动更新 → 返回 TaskAccept
+	UpdateAgent(context.Context, *UpdateAgentRequest) (*TaskAccept, error)
+	// --- 任务查询 ---
+	// 查询异步任务执行状态
+	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -297,41 +318,11 @@ type AgentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentServiceServer struct{}
 
-func (UnimplementedAgentServiceServer) SyncConfig(context.Context, *SyncConfigRequest) (*SyncConfigResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SyncConfig not implemented")
-}
-func (UnimplementedAgentServiceServer) ControlCore(context.Context, *ControlCoreRequest) (*ControlCoreResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ControlCore not implemented")
-}
-func (UnimplementedAgentServiceServer) SyncProxyConfig(context.Context, *SyncProxyConfigRequest) (*SyncProxyConfigResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SyncProxyConfig not implemented")
-}
-func (UnimplementedAgentServiceServer) ControlProxy(context.Context, *ControlProxyRequest) (*ControlProxyResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ControlProxy not implemented")
-}
-func (UnimplementedAgentServiceServer) AlterUsers(context.Context, *AlterUsersRequest) (*AlterUsersResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method AlterUsers not implemented")
-}
 func (UnimplementedAgentServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
 }
-func (UnimplementedAgentServiceServer) ApplyLimits(context.Context, *ApplyLimitsRequest) (*ApplyLimitsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ApplyLimits not implemented")
-}
-func (UnimplementedAgentServiceServer) UpdateAgent(context.Context, *UpdateAgentRequest) (*UpdateAgentResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateAgent not implemented")
-}
-func (UnimplementedAgentServiceServer) SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SpeedTest not implemented")
-}
 func (UnimplementedAgentServiceServer) GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMetrics not implemented")
-}
-func (UnimplementedAgentServiceServer) InstallBinary(context.Context, *InstallBinaryRequest) (*InstallBinaryResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method InstallBinary not implemented")
-}
-func (UnimplementedAgentServiceServer) InstallProxy(context.Context, *InstallProxyRequest) (*InstallProxyResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method InstallProxy not implemented")
 }
 func (UnimplementedAgentServiceServer) GetProxyStatus(context.Context, *GetProxyStatusRequest) (*GetProxyStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetProxyStatus not implemented")
@@ -339,11 +330,44 @@ func (UnimplementedAgentServiceServer) GetProxyStatus(context.Context, *GetProxy
 func (UnimplementedAgentServiceServer) ListBinaries(context.Context, *ListBinariesRequest) (*ListBinariesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBinaries not implemented")
 }
-func (UnimplementedAgentServiceServer) ListReleases(context.Context, *ListReleasesRequest) (*ListReleasesResponse, error) {
+func (UnimplementedAgentServiceServer) ListReleases(context.Context, *ListReleasesRequest) (*ListBinariesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListReleases not implemented")
 }
 func (UnimplementedAgentServiceServer) DownloadGeoRule(context.Context, *DownloadGeoRuleRequest) (*DownloadGeoRuleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DownloadGeoRule not implemented")
+}
+func (UnimplementedAgentServiceServer) SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SpeedTest not implemented")
+}
+func (UnimplementedAgentServiceServer) ControlCore(context.Context, *ControlCoreRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method ControlCore not implemented")
+}
+func (UnimplementedAgentServiceServer) ControlProxy(context.Context, *ControlProxyRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method ControlProxy not implemented")
+}
+func (UnimplementedAgentServiceServer) SyncConfig(context.Context, *SyncConfigRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncConfig not implemented")
+}
+func (UnimplementedAgentServiceServer) SyncProxyConfig(context.Context, *SyncProxyConfigRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncProxyConfig not implemented")
+}
+func (UnimplementedAgentServiceServer) AlterUsers(context.Context, *AlterUsersRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method AlterUsers not implemented")
+}
+func (UnimplementedAgentServiceServer) ApplyLimits(context.Context, *ApplyLimitsRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplyLimits not implemented")
+}
+func (UnimplementedAgentServiceServer) InstallBinary(context.Context, *InstallBinaryRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallBinary not implemented")
+}
+func (UnimplementedAgentServiceServer) InstallProxy(context.Context, *InstallProxyRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallProxy not implemented")
+}
+func (UnimplementedAgentServiceServer) UpdateAgent(context.Context, *UpdateAgentRequest) (*TaskAccept, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateAgent not implemented")
+}
+func (UnimplementedAgentServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -366,96 +390,6 @@ func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer)
 	s.RegisterService(&AgentService_ServiceDesc, srv)
 }
 
-func _AgentService_SyncConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SyncConfigRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).SyncConfig(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_SyncConfig_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).SyncConfig(ctx, req.(*SyncConfigRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_ControlCore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ControlCoreRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).ControlCore(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_ControlCore_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).ControlCore(ctx, req.(*ControlCoreRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_SyncProxyConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SyncProxyConfigRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).SyncProxyConfig(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_SyncProxyConfig_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).SyncProxyConfig(ctx, req.(*SyncProxyConfigRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_ControlProxy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ControlProxyRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).ControlProxy(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_ControlProxy_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).ControlProxy(ctx, req.(*ControlProxyRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_AlterUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AlterUsersRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).AlterUsers(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_AlterUsers_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).AlterUsers(ctx, req.(*AlterUsersRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _AgentService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetStatusRequest)
 	if err := dec(in); err != nil {
@@ -474,60 +408,6 @@ func _AgentService_GetStatus_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AgentService_ApplyLimits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ApplyLimitsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).ApplyLimits(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_ApplyLimits_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).ApplyLimits(ctx, req.(*ApplyLimitsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_UpdateAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateAgentRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).UpdateAgent(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_UpdateAgent_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).UpdateAgent(ctx, req.(*UpdateAgentRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_SpeedTest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SpeedTestRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).SpeedTest(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_SpeedTest_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).SpeedTest(ctx, req.(*SpeedTestRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _AgentService_GetMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMetricsRequest)
 	if err := dec(in); err != nil {
@@ -542,42 +422,6 @@ func _AgentService_GetMetrics_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AgentServiceServer).GetMetrics(ctx, req.(*GetMetricsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_InstallBinary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InstallBinaryRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).InstallBinary(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_InstallBinary_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).InstallBinary(ctx, req.(*InstallBinaryRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_InstallProxy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InstallProxyRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).InstallProxy(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_InstallProxy_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).InstallProxy(ctx, req.(*InstallProxyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -654,6 +498,204 @@ func _AgentService_DownloadGeoRule_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_SpeedTest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SpeedTestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).SpeedTest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_SpeedTest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).SpeedTest(ctx, req.(*SpeedTestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ControlCore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ControlCoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ControlCore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ControlCore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ControlCore(ctx, req.(*ControlCoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ControlProxy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ControlProxyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ControlProxy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ControlProxy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ControlProxy(ctx, req.(*ControlProxyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_SyncConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).SyncConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_SyncConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).SyncConfig(ctx, req.(*SyncConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_SyncProxyConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncProxyConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).SyncProxyConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_SyncProxyConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).SyncProxyConfig(ctx, req.(*SyncProxyConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_AlterUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AlterUsersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).AlterUsers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_AlterUsers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).AlterUsers(ctx, req.(*AlterUsersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ApplyLimits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyLimitsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ApplyLimits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ApplyLimits_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ApplyLimits(ctx, req.(*ApplyLimitsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_InstallBinary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallBinaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).InstallBinary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_InstallBinary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).InstallBinary(ctx, req.(*InstallBinaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_InstallProxy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallProxyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).InstallProxy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_InstallProxy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).InstallProxy(ctx, req.(*InstallProxyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_UpdateAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateAgentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).UpdateAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_UpdateAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).UpdateAgent(ctx, req.(*UpdateAgentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -662,52 +704,12 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AgentServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SyncConfig",
-			Handler:    _AgentService_SyncConfig_Handler,
-		},
-		{
-			MethodName: "ControlCore",
-			Handler:    _AgentService_ControlCore_Handler,
-		},
-		{
-			MethodName: "SyncProxyConfig",
-			Handler:    _AgentService_SyncProxyConfig_Handler,
-		},
-		{
-			MethodName: "ControlProxy",
-			Handler:    _AgentService_ControlProxy_Handler,
-		},
-		{
-			MethodName: "AlterUsers",
-			Handler:    _AgentService_AlterUsers_Handler,
-		},
-		{
 			MethodName: "GetStatus",
 			Handler:    _AgentService_GetStatus_Handler,
 		},
 		{
-			MethodName: "ApplyLimits",
-			Handler:    _AgentService_ApplyLimits_Handler,
-		},
-		{
-			MethodName: "UpdateAgent",
-			Handler:    _AgentService_UpdateAgent_Handler,
-		},
-		{
-			MethodName: "SpeedTest",
-			Handler:    _AgentService_SpeedTest_Handler,
-		},
-		{
 			MethodName: "GetMetrics",
 			Handler:    _AgentService_GetMetrics_Handler,
-		},
-		{
-			MethodName: "InstallBinary",
-			Handler:    _AgentService_InstallBinary_Handler,
-		},
-		{
-			MethodName: "InstallProxy",
-			Handler:    _AgentService_InstallProxy_Handler,
 		},
 		{
 			MethodName: "GetProxyStatus",
@@ -725,9 +727,53 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DownloadGeoRule",
 			Handler:    _AgentService_DownloadGeoRule_Handler,
 		},
+		{
+			MethodName: "SpeedTest",
+			Handler:    _AgentService_SpeedTest_Handler,
+		},
+		{
+			MethodName: "ControlCore",
+			Handler:    _AgentService_ControlCore_Handler,
+		},
+		{
+			MethodName: "ControlProxy",
+			Handler:    _AgentService_ControlProxy_Handler,
+		},
+		{
+			MethodName: "SyncConfig",
+			Handler:    _AgentService_SyncConfig_Handler,
+		},
+		{
+			MethodName: "SyncProxyConfig",
+			Handler:    _AgentService_SyncProxyConfig_Handler,
+		},
+		{
+			MethodName: "AlterUsers",
+			Handler:    _AgentService_AlterUsers_Handler,
+		},
+		{
+			MethodName: "ApplyLimits",
+			Handler:    _AgentService_ApplyLimits_Handler,
+		},
+		{
+			MethodName: "InstallBinary",
+			Handler:    _AgentService_InstallBinary_Handler,
+		},
+		{
+			MethodName: "InstallProxy",
+			Handler:    _AgentService_InstallProxy_Handler,
+		},
+		{
+			MethodName: "UpdateAgent",
+			Handler:    _AgentService_UpdateAgent_Handler,
+		},
+		{
+			MethodName: "GetTask",
+			Handler:    _AgentService_GetTask_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }
 
 const (
@@ -833,7 +879,7 @@ var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }
 
 const (
@@ -945,5 +991,5 @@ var RegistrationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }

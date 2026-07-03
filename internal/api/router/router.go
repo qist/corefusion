@@ -159,6 +159,19 @@ func SetProcessManager(pm *process.Manager) {
 	processMgr = pm
 }
 
+// sharedLocalAgent is the global LocalAgent shared between main.go and router.
+// Set from main.go to ensure there is only one LocalAgent instance with all
+// dependencies (ProxyManager, BinaryInstaller) properly injected.
+var sharedLocalAgent *agent.LocalAgent
+
+// SetLocalAgent sets the shared LocalAgent (called from main.go before NewWithFullConfig).
+// This ensures that both the gRPC server and HTTP API use the same LocalAgent
+// with all dependencies (ProxyManager, BinaryInstaller) properly injected,
+// instead of creating a second incomplete instance.
+func SetLocalAgent(la *agent.LocalAgent) {
+	sharedLocalAgent = la
+}
+
 // Shutdown stops all managed processes. Call this when the panel exits.
 func Shutdown() {
 	ctx := context.Background()
@@ -235,6 +248,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Config sync service (periodically syncs DB configs to disk)
 	configSyncSvc := configsyncSvc.NewService(coreConfigSvc, inboundConfigSvc, outboundConfigSvc, dataDir, 5*time.Minute)
 
+	// Inject process.Manager as the config writer so configsync uses the same
+	// mutex-protected write path as LocalAgent.SyncConfig, avoiding race conditions.
+	if processMgr != nil {
+		configSyncSvc.SetConfigWriter(processMgr)
+	}
+
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
 	userSvc := userService.NewService(userRepo)
@@ -265,6 +284,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddySiteRepo := repository.NewCaddySiteRepository(database)
 	nginxSiteRepo := repository.NewNginxSiteRepository(database)
 	proxyMgr = proxySvc.NewManager(dataDir, proxySiteRepo, systemSettingRepo)
+	proxyMgr.SetCrashLogRepo(repository.NewCrashLogRepository(database))
 	caddyMgr := proxySvc.NewCaddyManager(dataDir, caddySiteRepo, systemSettingRepo)
 	nginxMgr := proxySvc.NewNginxManager(dataDir, nginxSiteRepo, systemSettingRepo)
 
@@ -794,16 +814,28 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
 			nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
 
-			// Inject LocalAgent — wraps the existing process.Manager and proxy.Manager
-			// for local node operations. Local server (is_local=1) operations go through
-			// process.Manager (cores) and proxy.Manager (Caddy/Nginx) directly,
-			// not through gRPC. Remote servers use gRPC as before.
-		localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
-		localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
-		binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
-		binaryInstaller.SetProcessController(processMgr) // Enable stop/start during binary updates
-		localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
-		nodeMgrForCRL.SetLocalAgent(localAgent)
+			// Inject LocalAgent — use the shared instance from main.go if available.
+			// This ensures both the gRPC server and HTTP API use the same LocalAgent
+			// with all dependencies (ProxyManager, BinaryInstaller) properly injected,
+			// instead of creating a second incomplete instance.
+			binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
+			binaryInstaller.SetProcessController(processMgr) // Enable stop/start during binary updates
+			var localAgent *agent.LocalAgent
+			if sharedLocalAgent != nil {
+				localAgent = sharedLocalAgent
+			} else {
+				// Fallback: create a new LocalAgent (backward compatible)
+				localAgent = agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+				localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+				localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
+			}
+			nodeMgrForCRL.SetLocalAgent(localAgent)
+			// Also update the shared NodeServerManager's LocalAgent so the gRPC
+			// heartbeat handler (used by remote Agents) has the complete instance
+			// with ProxyManager and BinaryInstaller, not the partial one from main.go.
+			if sharedNodeMgr != nil {
+				sharedNodeMgr.SetLocalAgent(localAgent)
+			}
 		nodeMgrForCRL.SetSettingStore(systemSettingSvc)
 
 		// Set binary lister for node server service (used for ListReleases API)

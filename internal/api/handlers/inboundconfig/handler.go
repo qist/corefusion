@@ -1,6 +1,7 @@
 package inboundconfig
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 
@@ -10,14 +11,26 @@ import (
 	"corefusion/internal/service/inboundconfig"
 )
 
+// ConfigSyncHook triggers config sync to a specific server after data changes.
+// Implemented by a closure that calls configsync.Service or nodeserver.Service.
+type ConfigSyncHook interface {
+	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
+}
+
 // Handler handles inbound config HTTP requests.
 type Handler struct {
-	svc *inboundconfig.Service
+	svc        *inboundconfig.Service
+	syncHook   ConfigSyncHook
 }
 
 // NewHandler creates a new inbound config handler.
 func NewHandler(svc *inboundconfig.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetSyncHook sets the config sync hook for triggering remote sync after changes.
+func (h *Handler) SetSyncHook(hook ConfigSyncHook) {
+	h.syncHook = hook
 }
 
 // List handles GET /api/v1/node-servers/:id/inbound-configs.
@@ -75,6 +88,12 @@ func (h *Handler) Create(c *gin.Context) {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
+
+	// Trigger config sync to the target server asynchronously
+	if h.syncHook != nil && serverID > 1 {
+		go h.syncHook.SyncServerConfig(context.Background(), serverID, req.CoreType)
+	}
+
 	response.OK(c, cfg)
 }
 
@@ -103,6 +122,12 @@ func (h *Handler) Update(c *gin.Context) {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
+
+	// Trigger config sync to the target server asynchronously
+	if h.syncHook != nil && cfg.ServerID > 1 {
+		go h.syncHook.SyncServerConfig(context.Background(), cfg.ServerID, cfg.CoreType)
+	}
+
 	response.OK(c, cfg)
 }
 
@@ -113,10 +138,24 @@ func (h *Handler) Delete(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
 	}
+	// Get server_id before deletion for sync trigger
+	serverID := int64(1)
+	coreType := "xray"
+	if existing, err := h.svc.GetByID(c.Request.Context(), id); err == nil {
+		serverID = existing.ServerID
+		coreType = existing.CoreType
+	}
+
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
 	}
+
+	// Trigger config sync to the target server asynchronously
+	if h.syncHook != nil && serverID > 1 {
+		go h.syncHook.SyncServerConfig(context.Background(), serverID, coreType)
+	}
+
 	response.OK(c, gin.H{"message": "deleted"})
 }
 

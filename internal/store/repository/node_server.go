@@ -184,6 +184,14 @@ func (r *NodeServerRepository) Count(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+// ListAllServerIDs returns all server IDs.
+func (r *NodeServerRepository) ListAllServerIDs(ctx context.Context) ([]int64, error) {
+	var ids []int64
+	err := r.db.WithContext(ctx).Model(&entity.NodeServer{}).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
 // EnsureLocalServer ensures a local node server record exists.
 // Called during panel bootstrap to represent the panel's own machine.
 func (r *NodeServerRepository) EnsureLocalServer(ctx context.Context, hostname string) error {

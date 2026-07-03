@@ -172,6 +172,20 @@ func SetLocalAgent(la *agent.LocalAgent) {
 	sharedLocalAgent = la
 }
 
+// configSyncHookAdapter adapts configsync.Service to the ConfigSyncHook interface
+// used by inboundconfig and outboundconfig handlers.
+type configSyncHookAdapter struct {
+	syncSvc *configsyncSvc.Service
+}
+
+func (a *configSyncHookAdapter) SyncServerConfig(_ context.Context, serverID int64, coreType string) {
+	if a.syncSvc != nil {
+		if err := a.syncSvc.SyncNow(context.Background()); err != nil {
+			log.Printf("[router] configSyncHook: SyncNow failed for server %d: %v", serverID, err)
+		}
+	}
+}
+
 // Shutdown stops all managed processes. Call this when the panel exits.
 func Shutdown() {
 	ctx := context.Background()
@@ -253,6 +267,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if processMgr != nil {
 		configSyncSvc.SetConfigWriter(processMgr)
 	}
+
+	// Inject NodeServerRepository as the server lister so configsync can
+	// discover all registered servers (local + remote) for multi-node sync.
+	nodeServerRepoForSync := repository.NewNodeServerRepository(database)
+	configSyncSvc.SetServerLister(nodeServerRepoForSync)
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -435,6 +454,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
+		// Inject RemoteSyncer so configsync can push configs to remote Agents.
+		configSyncSvc.SetRemoteSyncer(sharedNodeMgr)
 	}
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
@@ -622,6 +643,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			// Outbound Configs (moved under /node-servers/:id/)
 			outboundCfgH := outboundconfigHandler.NewHandler(outboundConfigSvc)
+
+			// Inject config sync hook so inbound/outbound changes trigger
+			// full config sync to remote nodes.
+			syncHook := &configSyncHookAdapter{syncSvc: configSyncSvc}
+			inboundCfgH.SetSyncHook(syncHook)
+			outboundCfgH.SetSyncHook(syncHook)
 
 			// Share Domain Configs
 			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo)

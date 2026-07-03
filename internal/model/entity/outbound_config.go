@@ -11,8 +11,8 @@ type OutboundConfig struct {
 	Protocol   string    `json:"protocol" gorm:"size:32;not null"`
 	Tag        string    `json:"tag" gorm:"size:128;uniqueIndex:idx_outbound_tag_server"`
 	ConfigJSON string    `json:"config_json" gorm:"type:text;not null"`
-	Enabled    bool      `json:"enabled" gorm:"not null;default:true"`
-	IsDefault  bool      `json:"is_default" gorm:"not null;default:false"`
+	Enabled    bool      `json:"enabled" gorm:"not null"`
+	IsDefault  bool      `json:"is_default" gorm:"not null"`
 	CreatedAt  time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt  time.Time `json:"updated_at" gorm:"not null"`
 }

@@ -68,6 +68,11 @@ service AgentService {
   // 在 Agent 节点上执行核心二进制命令（如 x25519、wg-key 等）
   rpc ExecuteBinary(ExecuteBinaryRequest) returns (ExecuteBinaryResponse);
 
+  // --- 数据同步（面板→Agent 数据库级别同步） ---
+  // 同步面板数据库中与该节点相关的配置数据到 Agent 本地数据库
+  // Agent 收到后写入本地 SQLite，然后从本地数据库生成配置文件并启动核心
+  rpc SyncData(SyncDataRequest) returns (SyncDataResponse);
+
   // --- 任务查询 ---
   // 查询异步任务执行状态
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -394,6 +399,7 @@ message PanelCommand {
     SyncProxyConfigRequest sync_proxy_config = 8;   // 同步代理配置
     ControlProxyRequest control_proxy = 9;          // 控制代理进程
     UpdateAgentCommand update_agent = 10;           // Agent 自动更新
+    SyncDataRequest sync_data = 11;                    // 数据库级别数据同步
   }
 }
 
@@ -490,6 +496,133 @@ message ListInterfacesRequest {}
 
 message ListInterfacesResponse {
   repeated string interfaces = 1;
+}
+
+// ============================================================
+// 数据同步（面板→Agent 数据库级别同步）
+// ============================================================
+
+// SyncDataRequest — 面板将指定 server_id 的所有相关配置表数据发送给 Agent。
+// Agent 收到后写入本地 SQLite 数据库，然后从本地数据生成配置文件并启动核心。
+// 这确保了 Agent 可以独立于面板运行——即使面板不可达，Agent 也能从
+// 本地数据库生成正确的配置并启动核心。
+message SyncDataRequest {
+  int64 server_id = 1;             // 目标服务器 ID
+
+  // core_configs 表数据（按 section 存储，每个 section 一条）
+  repeated CoreConfigEntry core_configs = 2;
+
+  // inbound_configs 表数据
+  repeated InboundConfigEntry inbound_configs = 3;
+
+  // outbound_configs 表数据
+  repeated OutboundConfigEntry outbound_configs = 4;
+
+  // warp_configs 表数据
+  repeated WarpConfigEntry warp_configs = 5;
+
+  // share_domain_configs 表数据
+  repeated ShareDomainConfigEntry share_domain_configs = 6;
+
+  // 同步完成后是否自动生成配置并启动核心
+  bool apply_and_start = 7;
+
+  // 配置版本号（用于幂等判断）
+  int64 config_version = 8;
+
+  // 面板侧已经 PrepareFullConfig 生成好的最终运行时配置（JSON bytes）
+  // Agent 收到后直接写入 runtime 目录即可，无需自己从 DB 行重新组装
+  // 这避免了 Agent 侧需要重新实现 PrepareFullConfig 的全部逻辑
+  bytes  config_content = 9;
+
+  // config_content 对应的核心类型（xray/singbox/...）
+  string config_core_type = 10;
+}
+
+message CoreConfigEntry {
+  int64  id = 1;
+  int64  server_id = 2;
+  string core_type = 3;
+  string section = 4;
+  string config_json = 5;
+  int64  updated_at = 6;
+}
+
+message InboundConfigEntry {
+  int64  id = 1;
+  string remark = 2;
+  string core_type = 3;
+  string protocol = 4;
+  string tag = 5;
+  string listen = 6;
+  int32  port = 7;
+  string config_json = 8;
+  bool   enabled = 9;
+  int64  server_id = 10;
+  string region = 11;
+  int64  created_at = 12;
+  int64  updated_at = 13;
+}
+
+message OutboundConfigEntry {
+  int64  id = 1;
+  int64  server_id = 2;
+  string remark = 3;
+  string core_type = 4;
+  string protocol = 5;
+  string tag = 6;
+  string config_json = 7;
+  bool   enabled = 8;
+  bool   is_default = 9;
+  int64  created_at = 10;
+  int64  updated_at = 11;
+}
+
+message WarpConfigEntry {
+  int64  id = 1;
+  string device_id = 2;
+  string token = 3;
+  string private_key = 4;
+  string public_key = 5;
+  string reserved = 6;
+  string address_ipv4 = 7;
+  string address_ipv6 = 8;
+  string endpoint = 9;
+  string client_id = 10;
+  string account_id = 11;
+  string account_type = 12;
+  string license_key = 13;
+  int64  registration_at = 14;
+  string status = 15;
+  string config_json = 16;
+  int64  created_at = 17;
+  int64  updated_at = 18;
+}
+
+message ShareDomainConfigEntry {
+  int64  id = 1;
+  string type = 2;
+  string value = 3;
+  int32  port = 4;
+  string ports = 5;
+  bool   enabled = 6;
+  int32  sort_order = 7;
+  int64  server_id = 8;
+  string region = 9;
+  int64  created_at = 10;
+  int64  updated_at = 11;
+}
+
+message SyncDataResponse {
+  bool   success = 1;
+  string error = 2;
+  int32  core_configs_applied = 3;
+  int32  inbound_configs_applied = 4;
+  int32  outbound_configs_applied = 5;
+  int32  warp_configs_applied = 6;
+  int32  share_domain_configs_applied = 7;
+  bool   config_generated = 8;
+  bool   core_started = 9;
 }
 
 // ============================================================

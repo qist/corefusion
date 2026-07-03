@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v3.21.12
-// source: corefusion_agent.proto
+// source: internal/runtime/agent/proto/corefusion_agent.proto
 
 package agentpb
 
@@ -38,6 +38,7 @@ const (
 	AgentService_XrayAPI_FullMethodName         = "/corefusion.agent.v1.AgentService/XrayAPI"
 	AgentService_ListInterfaces_FullMethodName  = "/corefusion.agent.v1.AgentService/ListInterfaces"
 	AgentService_ExecuteBinary_FullMethodName   = "/corefusion.agent.v1.AgentService/ExecuteBinary"
+	AgentService_SyncData_FullMethodName        = "/corefusion.agent.v1.AgentService/SyncData"
 	AgentService_GetTask_FullMethodName         = "/corefusion.agent.v1.AgentService/GetTask"
 )
 
@@ -90,6 +91,10 @@ type AgentServiceClient interface {
 	ListInterfaces(ctx context.Context, in *ListInterfacesRequest, opts ...grpc.CallOption) (*ListInterfacesResponse, error)
 	// 在 Agent 节点上执行核心二进制命令（如 x25519、wg-key 等）
 	ExecuteBinary(ctx context.Context, in *ExecuteBinaryRequest, opts ...grpc.CallOption) (*ExecuteBinaryResponse, error)
+	// --- 数据同步（面板→Agent 数据库级别同步） ---
+	// 同步面板数据库中与该节点相关的配置数据到 Agent 本地数据库
+	// Agent 收到后写入本地 SQLite，然后从本地数据库生成配置文件并启动核心
+	SyncData(ctx context.Context, in *SyncDataRequest, opts ...grpc.CallOption) (*SyncDataResponse, error)
 	// --- 任务查询 ---
 	// 查询异步任务执行状态
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
@@ -293,6 +298,16 @@ func (c *agentServiceClient) ExecuteBinary(ctx context.Context, in *ExecuteBinar
 	return out, nil
 }
 
+func (c *agentServiceClient) SyncData(ctx context.Context, in *SyncDataRequest, opts ...grpc.CallOption) (*SyncDataResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SyncDataResponse)
+	err := c.cc.Invoke(ctx, AgentService_SyncData_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTaskResponse)
@@ -352,6 +367,10 @@ type AgentServiceServer interface {
 	ListInterfaces(context.Context, *ListInterfacesRequest) (*ListInterfacesResponse, error)
 	// 在 Agent 节点上执行核心二进制命令（如 x25519、wg-key 等）
 	ExecuteBinary(context.Context, *ExecuteBinaryRequest) (*ExecuteBinaryResponse, error)
+	// --- 数据同步（面板→Agent 数据库级别同步） ---
+	// 同步面板数据库中与该节点相关的配置数据到 Agent 本地数据库
+	// Agent 收到后写入本地 SQLite，然后从本地数据库生成配置文件并启动核心
+	SyncData(context.Context, *SyncDataRequest) (*SyncDataResponse, error)
 	// --- 任务查询 ---
 	// 查询异步任务执行状态
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
@@ -421,6 +440,9 @@ func (UnimplementedAgentServiceServer) ListInterfaces(context.Context, *ListInte
 }
 func (UnimplementedAgentServiceServer) ExecuteBinary(context.Context, *ExecuteBinaryRequest) (*ExecuteBinaryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExecuteBinary not implemented")
+}
+func (UnimplementedAgentServiceServer) SyncData(context.Context, *SyncDataRequest) (*SyncDataResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncData not implemented")
 }
 func (UnimplementedAgentServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
@@ -788,6 +810,24 @@ func _AgentService_ExecuteBinary_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_SyncData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncDataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).SyncData(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_SyncData_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).SyncData(ctx, req.(*SyncDataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AgentService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTaskRequest)
 	if err := dec(in); err != nil {
@@ -890,12 +930,16 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentService_ExecuteBinary_Handler,
 		},
 		{
+			MethodName: "SyncData",
+			Handler:    _AgentService_SyncData_Handler,
+		},
+		{
 			MethodName: "GetTask",
 			Handler:    _AgentService_GetTask_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }
 
 const (
@@ -1001,7 +1045,7 @@ var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }
 
 const (
@@ -1113,5 +1157,5 @@ var RegistrationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }

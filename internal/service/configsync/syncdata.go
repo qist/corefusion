@@ -1,0 +1,333 @@
+package configsync
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"time"
+
+	coreconfigSvc "corefusion/internal/service/coreconfig"
+
+	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/store/repository"
+)
+
+// RawDataProvider provides direct database access for building SyncDataRequest.
+// This is needed because SyncData transfers raw table rows (not processed configs),
+// so the Agent can store them locally for offline startup.
+type RawDataProvider interface {
+	// ListCoreConfigs returns all core_config rows for a server
+	ListCoreConfigs(ctx context.Context, serverID int64) ([]CoreConfigRow, error)
+	// ListInboundConfigs returns all inbound_config rows for a server
+	ListInboundConfigs(ctx context.Context, serverID int64) ([]InboundConfigRow, error)
+	// ListOutboundConfigs returns all outbound_config rows for a server
+	ListOutboundConfigs(ctx context.Context, serverID int64) ([]OutboundConfigRow, error)
+	// ListWarpConfigs returns active warp config rows
+	ListWarpConfigs(ctx context.Context) ([]WarpConfigRow, error)
+	// ListShareDomainConfigs returns effective share domain configs for a server
+	ListShareDomainConfigs(ctx context.Context, serverID int64) ([]ShareDomainConfigRow, error)
+}
+
+// CoreConfigRow represents a row from core_configs table.
+type CoreConfigRow = repository.CoreConfigRow
+
+// InboundConfigRow represents a row from inbound_configs table.
+type InboundConfigRow = repository.InboundConfigRow
+
+// OutboundConfigRow represents a row from outbound_configs table.
+type OutboundConfigRow = repository.OutboundConfigRow
+
+// WarpConfigRow represents a row from warp_configs table.
+type WarpConfigRow = repository.WarpConfigRow
+
+// ShareDomainConfigRow represents a row from share_domain_configs table.
+type ShareDomainConfigRow = repository.ShareDomainConfigRow
+
+// RepositoryDataProvider implements RawDataProvider using panel repositories.
+type RepositoryDataProvider struct {
+	coreConfigRepo     *repository.CoreConfigRepository
+	inboundConfigRepo  *repository.InboundConfigRepository
+	outboundConfigRepo *repository.OutboundConfigRepository
+	warpRepo           *repository.WarpRepository
+	shareDomainRepo    *repository.ShareDomainConfigRepository
+}
+
+// NewRepositoryDataProvider creates a new RawDataProvider backed by repositories.
+func NewRepositoryDataProvider(
+	coreConfigRepo *repository.CoreConfigRepository,
+	inboundConfigRepo *repository.InboundConfigRepository,
+	outboundConfigRepo *repository.OutboundConfigRepository,
+	warpRepo *repository.WarpRepository,
+	shareDomainRepo *repository.ShareDomainConfigRepository,
+) *RepositoryDataProvider {
+	return &RepositoryDataProvider{
+		coreConfigRepo:     coreConfigRepo,
+		inboundConfigRepo:  inboundConfigRepo,
+		outboundConfigRepo: outboundConfigRepo,
+		warpRepo:           warpRepo,
+		shareDomainRepo:    shareDomainRepo,
+	}
+}
+
+func (p *RepositoryDataProvider) ListCoreConfigs(ctx context.Context, serverID int64) ([]CoreConfigRow, error) {
+	return p.coreConfigRepo.ListRows(ctx, serverID)
+}
+
+func (p *RepositoryDataProvider) ListInboundConfigs(ctx context.Context, serverID int64) ([]InboundConfigRow, error) {
+	return p.inboundConfigRepo.ListRows(ctx, serverID)
+}
+
+func (p *RepositoryDataProvider) ListOutboundConfigs(ctx context.Context, serverID int64) ([]OutboundConfigRow, error) {
+	return p.outboundConfigRepo.ListRows(ctx, serverID)
+}
+
+func (p *RepositoryDataProvider) ListWarpConfigs(ctx context.Context) ([]WarpConfigRow, error) {
+	return p.warpRepo.ListRows(ctx)
+}
+
+func (p *RepositoryDataProvider) ListShareDomainConfigs(ctx context.Context, serverID int64) ([]ShareDomainConfigRow, error) {
+	return p.shareDomainRepo.ListRows(ctx, serverID)
+}
+
+// DataSyncBuilder implements agent.DataSyncProvider using configsync.Service.
+// It builds SyncDataRequest messages from the panel database for a specific server.
+//
+// Important: it generates the final runtime config using PrepareFullConfig on the
+// panel side and sends it as config_content. The Agent can use this directly
+// without needing to re-implement the full config preparation pipeline.
+// The raw DB rows are also included so the Agent can persist them locally
+// for offline startup scenarios.
+type DataSyncBuilder struct {
+	rawProvider     RawDataProvider
+	coreSvc         CoreConfigService
+	inboundSvc      InboundConfigService
+	outboundSvc     OutboundConfigService
+}
+
+// NewDataSyncBuilder creates a new DataSyncBuilder.
+func NewDataSyncBuilder(rawProvider RawDataProvider) *DataSyncBuilder {
+	return &DataSyncBuilder{rawProvider: rawProvider}
+}
+
+// WithConfigProviders sets the config service providers for generating
+// the final runtime config via PrepareFullConfig.
+func (b *DataSyncBuilder) WithConfigProviders(coreSvc CoreConfigService, inboundSvc InboundConfigService, outboundSvc OutboundConfigService) *DataSyncBuilder {
+	b.coreSvc = coreSvc
+	b.inboundSvc = inboundSvc
+	b.outboundSvc = outboundSvc
+	return b
+}
+
+// BuildSyncDataRequest builds a SyncDataRequest from the panel database
+// for the given server ID.
+//
+// It does two things:
+//  1. Collects raw DB table rows (core_configs, inbound_configs, etc.)
+//     so the Agent can persist them to its local SQLite for offline use.
+//  2. Generates the final runtime config using PrepareFullConfig (same logic
+//     as configsync.Service.syncCoreForServer) and puts it in config_content.
+//     The Agent writes this directly to its runtime directory — no need
+//     to re-implement the full preparation pipeline on the Agent side.
+func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int64) (*agentpb.SyncDataRequest, error) {
+	req := &agentpb.SyncDataRequest{
+		ServerId:      serverID,
+		ConfigVersion: time.Now().Unix(),
+		ApplyAndStart: true,
+	}
+
+	// === Part 1: Raw DB rows for Agent local persistence ===
+
+	// 1. Core configs (all sections for all core types)
+	coreConfigs, err := b.rawProvider.ListCoreConfigs(ctx, serverID)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] failed to list core configs for server %d: %v", serverID, err)
+	} else {
+		req.CoreConfigs = make([]*agentpb.CoreConfigEntry, len(coreConfigs))
+		for i, c := range coreConfigs {
+			req.CoreConfigs[i] = &agentpb.CoreConfigEntry{
+				Id:         c.ID,
+				ServerId:   c.ServerID,
+				CoreType:   c.CoreType,
+				Section:    c.Section,
+				ConfigJson: c.ConfigJSON,
+				UpdatedAt:  c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d core config entries", serverID, len(coreConfigs))
+	}
+
+	// 2. Inbound configs
+	inboundConfigs, err := b.rawProvider.ListInboundConfigs(ctx, serverID)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] failed to list inbound configs for server %d: %v", serverID, err)
+	} else {
+		req.InboundConfigs = make([]*agentpb.InboundConfigEntry, len(inboundConfigs))
+		for i, c := range inboundConfigs {
+			req.InboundConfigs[i] = &agentpb.InboundConfigEntry{
+				Id:         c.ID,
+				Remark:     c.Remark,
+				CoreType:   c.CoreType,
+				Protocol:   c.Protocol,
+				Tag:        c.Tag,
+				Listen:     c.Listen,
+				Port:       int32(c.Port),
+				ConfigJson: c.ConfigJSON,
+				Enabled:    c.Enabled,
+				ServerId:   c.ServerID,
+				Region:     c.Region,
+				CreatedAt:  c.CreatedAt.Unix(),
+				UpdatedAt:  c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d inbound config entries", serverID, len(inboundConfigs))
+	}
+
+	// 3. Outbound configs
+	outboundConfigs, err := b.rawProvider.ListOutboundConfigs(ctx, serverID)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] failed to list outbound configs for server %d: %v", serverID, err)
+	} else {
+		req.OutboundConfigs = make([]*agentpb.OutboundConfigEntry, len(outboundConfigs))
+		for i, c := range outboundConfigs {
+			req.OutboundConfigs[i] = &agentpb.OutboundConfigEntry{
+				Id:         c.ID,
+				ServerId:   c.ServerID,
+				Remark:     c.Remark,
+				CoreType:   c.CoreType,
+				Protocol:   c.Protocol,
+				Tag:        c.Tag,
+				ConfigJson: c.ConfigJSON,
+				Enabled:    c.Enabled,
+				IsDefault:  c.IsDefault,
+				CreatedAt:  c.CreatedAt.Unix(),
+				UpdatedAt:  c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d outbound config entries", serverID, len(outboundConfigs))
+	}
+
+	// 4. WARP configs (global, not per-server)
+	warpConfigs, err := b.rawProvider.ListWarpConfigs(ctx)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] failed to list warp configs: %v", err)
+	} else {
+		req.WarpConfigs = make([]*agentpb.WarpConfigEntry, len(warpConfigs))
+		for i, c := range warpConfigs {
+			var regAt int64
+			if !c.RegistrationAt.IsZero() {
+				regAt = c.RegistrationAt.Unix()
+			}
+			req.WarpConfigs[i] = &agentpb.WarpConfigEntry{
+				Id:             c.ID,
+				DeviceId:       c.DeviceID,
+				Token:          c.Token,
+				PrivateKey:     c.PrivateKey,
+				PublicKey:      c.PublicKey,
+				Reserved:       c.Reserved,
+				AddressIpv4:    c.AddressIPv4,
+				AddressIpv6:    c.AddressIPv6,
+				Endpoint:       c.Endpoint,
+				ClientId:       c.ClientID,
+				AccountId:      c.AccountID,
+				AccountType:    c.AccountType,
+				LicenseKey:     c.LicenseKey,
+				RegistrationAt: regAt,
+				Status:         c.Status,
+				ConfigJson:     c.ConfigJSON,
+				CreatedAt:      c.CreatedAt.Unix(),
+				UpdatedAt:      c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] %d warp config entries", len(warpConfigs))
+	}
+
+	// 5. Share domain configs (effective for this server)
+	shareDomainConfigs, err := b.rawProvider.ListShareDomainConfigs(ctx, serverID)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] failed to list share domain configs for server %d: %v", serverID, err)
+	} else {
+		req.ShareDomainConfigs = make([]*agentpb.ShareDomainConfigEntry, len(shareDomainConfigs))
+		for i, c := range shareDomainConfigs {
+			req.ShareDomainConfigs[i] = &agentpb.ShareDomainConfigEntry{
+				Id:        c.ID,
+				Type:      c.Type,
+				Value:     c.Value,
+				Port:      int32(c.Port),
+				Ports:     c.Ports,
+				Enabled:   c.Enabled,
+				SortOrder: int32(c.SortOrder),
+				ServerId:  c.ServerID,
+				Region:    c.Region,
+				CreatedAt: c.CreatedAt.Unix(),
+				UpdatedAt: c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d share domain config entries", serverID, len(shareDomainConfigs))
+	}
+
+	// === Part 2: Generate final runtime config via PrepareFullConfig ===
+	// This is the same logic as configsync.Service.syncCoreForServer().
+	// The Agent can use this config directly — no need to re-assemble from DB rows.
+
+	if b.coreSvc != nil && b.inboundSvc != nil && b.outboundSvc != nil {
+		coreType := "xray"
+		fullConfig, err := b.coreSvc.GetFull(ctx, serverID, coreType)
+		if err != nil {
+			log.Printf("[DataSyncBuilder] failed to get full config for server %d: %v", serverID, err)
+		} else {
+			configData, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+				Ctx:              ctx,
+				ServerID:         serverID,
+				CoreType:         coreType,
+				FullConfig:       fullConfig,
+				InboundProvider:  b.inboundSvc,
+				OutboundProvider: b.outboundSvc,
+			})
+			if err != nil {
+				log.Printf("[DataSyncBuilder] PrepareFullConfig failed for server %d: %v", serverID, err)
+			} else {
+				req.ConfigContent = configData
+				req.ConfigCoreType = coreType
+				log.Printf("[DataSyncBuilder] server %d: generated final config via PrepareFullConfig (%d bytes)", serverID, len(configData))
+			}
+		}
+	} else {
+		log.Printf("[DataSyncBuilder] config providers not set, skipping PrepareFullConfig")
+	}
+
+	// Log summary
+	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs)
+	hasConfig := len(req.ConfigContent) > 0
+	log.Printf("[DataSyncBuilder] built SyncDataRequest for server %d: %d total entries, config_content=%v", serverID, total, hasConfig)
+
+	return req, nil
+}
+
+// MarshalSyncDataRequest serializes a SyncDataRequest to JSON for debugging.
+func MarshalSyncDataRequest(req *agentpb.SyncDataRequest) ([]byte, error) {
+	summary := map[string]interface{}{
+		"server_id":            req.ServerId,
+		"config_version":       req.ConfigVersion,
+		"apply_and_start":     req.ApplyAndStart,
+		"core_configs":         len(req.CoreConfigs),
+		"inbound_configs":      len(req.InboundConfigs),
+		"outbound_configs":    len(req.OutboundConfigs),
+		"warp_configs":         len(req.WarpConfigs),
+		"share_domain_configs": len(req.ShareDomainConfigs),
+		"has_config_content":  len(req.ConfigContent) > 0,
+		"config_core_type":    req.ConfigCoreType,
+	}
+	return json.MarshalIndent(summary, "", "  ")
+}
+
+// ValidateSyncDataRequest validates that a SyncDataRequest has the minimum required data.
+func ValidateSyncDataRequest(req *agentpb.SyncDataRequest) error {
+	if req.ServerId <= 0 {
+		return fmt.Errorf("invalid server_id: %d", req.ServerId)
+	}
+	if len(req.CoreConfigs) == 0 && len(req.ConfigContent) == 0 {
+		return fmt.Errorf("no core_configs or config_content provided for server %d", req.ServerId)
+	}
+	return nil
+}

@@ -38,13 +38,15 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/runtime/process"
+	"corefusion/internal/model/entity"
+	coreconfigSvc "corefusion/internal/service/coreconfig"
 	binariesSvc "corefusion/internal/service/binaries"
 	proxySvc "corefusion/internal/service/proxy"
-	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
@@ -139,12 +141,17 @@ func main() {
 	}
 
 	// Phase 2: Start process.Manager + Guardian (local daemon, independent of panel connection)
+	// This starts the Guardian which will auto-restart crashed cores.
+	// At this point, if the Agent has local DB data from a previous SyncData,
+	// the config generator will use it to generate the runtime config.
 	app.StartLocalDaemons(ctx)
 
 	// Phase 3: Start AgentService gRPC server (Panel→Agent direct RPC, mTLS)
 	go app.StartGRPCServer(ctx)
 
 	// Phase 4: Connect to Panel and run heartbeat loop (auto-reconnect)
+	// On first successful connection, the Agent will request SyncData from the panel
+	// to ensure its local database is up-to-date.
 	go app.RunHeartbeatLoop(ctx)
 
 	// Wait for shutdown
@@ -175,6 +182,11 @@ type AgentApp struct {
 	database  *gorm.DB
 	settingRepo *repository.SystemSettingRepository
 
+	// Config repos for SyncData (local config generation from synced data)
+	coreConfigRepo    *repository.CoreConfigRepository
+	inboundConfigRepo *repository.InboundConfigRepository
+	outboundConfigRepo *repository.OutboundConfigRepository
+
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
 }
@@ -202,20 +214,35 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	settingRepo := repository.NewSystemSettingRepository(db.DB)
 	proxySiteRepo := repository.NewProxySiteRepository(db.DB)
 
+	// Create xray kernel config repositories for local config generation
+	coreConfigRepo := repository.NewCoreConfigRepository(db.DB)
+	inboundConfigRepo := repository.NewInboundConfigRepository(db.DB)
+	outboundConfigRepo := repository.NewOutboundConfigRepository(db.DB)
+
 	// Phase 3: Create binary resolver + process.Manager (same as Panel)
 	binaryResolver := binariesSvc.NewResolver(dataDir)
 	procMgr := process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 
-	// Set config generator: generates minimal default configs for each core type.
-	// The Agent does NOT have access to the panel's core_configs DB table,
-	// so it generates minimal valid configs locally. When the panel syncs a
-	// full config via SyncConfig, it overwrites these defaults.
+	// Set config generator: generates config from local database (populated by SyncData).
+	// If the local database has no data (e.g., first boot before panel sync),
+	// falls back to generating a minimal default config.
+	// After a successful SyncData, the local database contains the full config
+	// from the panel, and this generator produces the complete runtime config.
+	agentServerID := cfg.Panel.ServerID // Agent's own server ID in the panel
 	procMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
+		// Try to generate config from local database first
+		data, err := generateConfigFromLocalDB(ctx, agentServerID, coreType)
+		if err == nil && len(data) > 0 {
+			log.Printf("[Agent] generated %s config from local database (%d bytes)", coreType, len(data))
+			return os.WriteFile(configPath, data, 0640)
+		}
+		// Fallback: generate minimal default config
+		log.Printf("[Agent] no local DB data for %s, using default config: %v", coreType, err)
 		config := generateDefaultConfig(coreType, dataDir)
 		if config == nil {
 			return fmt.Errorf("no default config for core type: %s", coreType)
 		}
-		data, _ := json.MarshalIndent(config, "", "  ")
+		data, _ = json.MarshalIndent(config, "", "  ")
 		return os.WriteFile(configPath, data, 0640)
 	})
 
@@ -244,6 +271,9 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		svcRepo:    svcRepo,
 		database:   db.DB,
 		settingRepo: settingRepo,
+		coreConfigRepo:    coreConfigRepo,
+		inboundConfigRepo: inboundConfigRepo,
+		outboundConfigRepo: outboundConfigRepo,
 	}
 
 	return app, nil
@@ -614,6 +644,18 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	case *agentpb.PanelCommand_UpdateAgent:
 		log.Printf("[Agent] UpdateAgent command received: version=%s (not implemented)", c.UpdateAgent.Version)
 
+	case *agentpb.PanelCommand_SyncData:
+		req := c.SyncData
+		log.Printf("[Agent] received SyncData: server_id=%d, %d core_configs, %d inbound_configs, %d outbound_configs, %d warp_configs, %d share_domain_configs",
+			req.ServerId, len(req.CoreConfigs), len(req.InboundConfigs), len(req.OutboundConfigs), len(req.WarpConfigs), len(req.ShareDomainConfigs))
+		resp, err := a.handleSyncData(context.Background(), req)
+		if err != nil {
+			log.Printf("[Agent] SyncData failed: %v", err)
+		} else {
+			log.Printf("[Agent] SyncData completed: success=%v, core_configs=%d, inbound=%d, outbound=%d, config_generated=%v, core_started=%v",
+				resp.Success, resp.CoreConfigsApplied, resp.InboundConfigsApplied, resp.OutboundConfigsApplied, resp.ConfigGenerated, resp.CoreStarted)
+		}
+
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)
 	}
@@ -671,9 +713,10 @@ func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 // delegates to LocalAgent for is_local=1 servers.
 type agentServiceServer struct {
 	agentpb.UnimplementedAgentServiceServer
-	localAgent *agent.LocalAgent
-	dataDir    string
+	localAgent  *agent.LocalAgent
+	dataDir     string
 	settingRepo *repository.SystemSettingRepository
+	app         *AgentApp
 }
 
 func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.TaskAccept, error) {
@@ -926,6 +969,17 @@ func (s *agentServiceServer) DownloadGeoRule(ctx context.Context, req *agentpb.D
 	}, nil
 }
 
+// SyncData handles the SyncData RPC call on the Agent.
+// It receives database table data from the panel, writes it to the local
+// SQLite database, and optionally generates the runtime config and starts the core.
+func (s *agentServiceServer) SyncData(ctx context.Context, req *agentpb.SyncDataRequest) (*agentpb.SyncDataResponse, error) {
+	log.Printf("[Agent] SyncData RPC: server_id=%d, %d core_configs, %d inbound_configs, %d outbound_configs, %d warp_configs, %d share_domain_configs",
+		req.ServerId, len(req.CoreConfigs), len(req.InboundConfigs), len(req.OutboundConfigs), len(req.WarpConfigs), len(req.ShareDomainConfigs))
+
+	// Delegate to AgentApp's handleSyncData method
+	return s.app.handleSyncData(ctx, req)
+}
+
 func (a *AgentApp) StartGRPCServer(ctx context.Context) {
 	cert, err := tls.LoadX509KeyPair(a.certPath, a.keyPath)
 	if err != nil {
@@ -955,7 +1009,7 @@ func (a *AgentApp) StartGRPCServer(ctx context.Context) {
 	}
 
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
-	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent, dataDir: a.dataDir, settingRepo: a.settingRepo})
+	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent, dataDir: a.dataDir, settingRepo: a.settingRepo, app: a})
 
 	log.Printf("[Agent] gRPC server listening on :%d (mTLS)", a.cfg.Agent.ListenPort)
 	go func() {
@@ -1134,17 +1188,359 @@ func generateDefaultConfig(coreType string, dataDir string) map[string]interface
 	return nil
 }
 
-// migrateAgentTables runs migrations for the tables that process.Manager
-// and proxy.Manager need (inbound_services, process_guardians, core_crash_logs,
-// proxy_sites, system_settings).
+// handleSyncData processes a SyncDataRequest from the panel.
+// It writes the received data to the local SQLite database, then optionally
+// generates the runtime config and starts the core process.
+//
+// The flow is:
+//  1. Write core_configs, inbound_configs, outbound_configs, warp_configs,
+//     share_domain_configs to local DB (upsert by ID)
+//  2. If apply_and_start is true, generate runtime config from local DB
+//  3. If apply_and_start is true, start the core process
+func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequest) (*agentpb.SyncDataResponse, error) {
+	resp := &agentpb.SyncDataResponse{}
+
+	// Use standard DB (no debug logging)
+	database := db.DB
+
+	// 1. Upsert core_configs
+	for _, entry := range req.CoreConfigs {
+		record := entity.CoreConfig{
+			ServerID:   entry.ServerId,
+			CoreType:   entry.CoreType,
+			Section:    entry.Section,
+			ConfigJSON: entry.ConfigJson,
+		}
+		// Do NOT set record.ID — let ON CONFLICT(server_id, core_type, section) handle the upsert.
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "server_id"}, {Name: "core_type"}, {Name: "section"}},
+			DoUpdates: clause.AssignmentColumns([]string{"config_json", "updated_at"}),
+		}).Select("server_id", "core_type", "section", "config_json", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.CoreConfigsApplied++
+		} else {
+			log.Printf("[Agent] upsert core_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 2. Upsert inbound_configs
+	for _, entry := range req.InboundConfigs {
+		record := entity.InboundConfig{
+			Remark:     entry.Remark,
+			CoreType:   entry.CoreType,
+			Protocol:   entry.Protocol,
+			Tag:        entry.Tag,
+			Listen:     entry.Listen,
+			Port:       int(entry.Port),
+			ConfigJSON: entry.ConfigJson,
+			Enabled:    entry.Enabled,
+			ServerID:   entry.ServerId,
+			Region:     entry.Region,
+		}
+		// Do NOT set record.ID — let ON CONFLICT(tag, server_id) handle the upsert.
+		// Setting record.ID causes GORM to take a different code path that may
+		// skip zero-value fields like Enabled=false during UPDATE.
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		// Use Select to ensure zero-value fields (like Enabled=false) are included
+		// in the INSERT statement, so ON CONFLICT DO UPDATE SET can update them correctly.
+		// ON CONFLICT uses (tag, server_id) which matches the unique index,
+		// not (id) which may not match when the record was synced from another DB.
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tag"}, {Name: "server_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"remark", "core_type", "protocol", "listen", "port", "config_json", "enabled", "region", "updated_at"}),
+		}).Select("remark", "core_type", "protocol", "tag", "listen", "port", "config_json", "enabled", "server_id", "region", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.InboundConfigsApplied++
+		} else {
+			log.Printf("[Agent] upsert inbound_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 3. Upsert outbound_configs
+	for _, entry := range req.OutboundConfigs {
+		record := entity.OutboundConfig{
+			ServerID:   entry.ServerId,
+			Remark:     entry.Remark,
+			CoreType:   entry.CoreType,
+			Protocol:   entry.Protocol,
+			Tag:        entry.Tag,
+			ConfigJSON: entry.ConfigJson,
+			Enabled:    entry.Enabled,
+			IsDefault:  entry.IsDefault,
+		}
+		// Do NOT set record.ID — let ON CONFLICT(server_id, tag) handle the upsert.
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "server_id"}, {Name: "tag"}},
+			DoUpdates: clause.AssignmentColumns([]string{"remark", "core_type", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
+		}).Select("server_id", "remark", "core_type", "protocol", "tag", "config_json", "enabled", "is_default", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.OutboundConfigsApplied++
+		} else {
+			log.Printf("[Agent] upsert outbound_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 4. Upsert warp_configs
+	for _, entry := range req.WarpConfigs {
+		record := entity.WarpConfig{
+			DeviceID:    entry.DeviceId,
+			Token:       entry.Token,
+			PrivateKey:  entry.PrivateKey,
+			PublicKey:   entry.PublicKey,
+			Reserved:    entry.Reserved,
+			AddressIPv4: entry.AddressIpv4,
+			AddressIPv6: entry.AddressIpv6,
+			Endpoint:    entry.Endpoint,
+			ClientID:    entry.ClientId,
+			AccountID:   entry.AccountId,
+			AccountType: entry.AccountType,
+			LicenseKey:  entry.LicenseKey,
+			Status:      entry.Status,
+			ConfigJSON:  entry.ConfigJson,
+		}
+		// Do NOT set record.ID — use ON CONFLICT for upsert
+		if entry.RegistrationAt > 0 {
+			record.RegistrationAt = time.Unix(entry.RegistrationAt, 0)
+		}
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"device_id", "token", "private_key", "public_key", "reserved", "address_ipv4", "address_ipv6", "endpoint", "client_id", "account_id", "account_type", "license_key", "registration_at", "status", "config_json", "updated_at"}),
+		}).Select("device_id", "token", "private_key", "public_key", "reserved", "address_ipv4", "address_ipv6", "endpoint", "client_id", "account_id", "account_type", "license_key", "registration_at", "status", "config_json", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.WarpConfigsApplied++
+		} else {
+			log.Printf("[Agent] upsert warp_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 5. Upsert share_domain_configs
+	for _, entry := range req.ShareDomainConfigs {
+		record := entity.ShareDomainConfig{
+			Type:      entry.Type,
+			Value:     entry.Value,
+			Port:      int(entry.Port),
+			Ports:     entry.Ports,
+			Enabled:   entry.Enabled,
+			SortOrder: int(entry.SortOrder),
+			ServerID:  entry.ServerId,
+			Region:    entry.Region,
+		}
+		// Do NOT set record.ID — use ON CONFLICT for upsert
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"type", "value", "port", "ports", "enabled", "sort_order", "server_id", "region", "updated_at"}),
+		}).Select("type", "value", "port", "ports", "enabled", "sort_order", "server_id", "region", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.ShareDomainConfigsApplied++
+		} else {
+			log.Printf("[Agent] upsert share_domain_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	resp.Success = true
+
+	// 6. If apply_and_start, generate config from local DB and start core
+	// After upserting all rows above, the local DB is the single source of truth.
+	// generateConfigFromLocalDB uses PrepareFullConfig (same as panel) to produce
+	// the final clean config — disabled inbounds/outbounds are filtered out,
+	// internal fields are stripped, etc.
+	if req.ApplyAndStart {
+		coreType := "xray"
+		if req.ConfigCoreType != "" {
+			coreType = req.ConfigCoreType
+		}
+
+		configData, err := generateConfigFromLocalDB(ctx, req.ServerId, coreType)
+		if err != nil {
+			resp.Error = fmt.Sprintf("generate config: %v", err)
+			log.Printf("[Agent] SyncData: config generation failed: %v", err)
+			return resp, nil
+		}
+		if len(configData) > 0 {
+			if err := a.procMgr.WriteRuntimeConfig(coreType, configData); err != nil {
+				resp.Error = fmt.Sprintf("write config: %v", err)
+				log.Printf("[Agent] SyncData: write config failed: %v", err)
+				return resp, nil
+			}
+			resp.ConfigGenerated = true
+			log.Printf("[Agent] SyncData: generated config from local DB (%d bytes)", len(configData))
+		}
+
+		// Start the core process (configGenerator will also call generateConfigFromLocalDB,
+		// which produces the same result — no conflict)
+		if err := a.procMgr.Start(ctx, 0, coreType); err != nil {
+			resp.Error = fmt.Sprintf("start core: %v", err)
+			log.Printf("[Agent] SyncData: core start failed: %v", err)
+			return resp, nil
+		}
+		resp.CoreStarted = true
+		log.Printf("[Agent] SyncData: core started successfully")
+	}
+
+	return resp, nil
+}
+
+// generateConfigFromLocalDB generates a complete runtime config from the local
+// SQLite database, using the same PrepareFullConfig logic as the panel.
+// This is the fallback path when the panel is unreachable (config_content is empty).
+func generateConfigFromLocalDB(ctx context.Context, serverID int64, coreType string) ([]byte, error) {
+	// Read all core config sections and reconstruct full config (same as coreconfig.Service.GetFull)
+	var coreConfigs []entity.CoreConfig
+	if err := db.DB.WithContext(ctx).Where("server_id = ? AND core_type = ?", serverID, coreType).Find(&coreConfigs).Error; err != nil {
+		return nil, fmt.Errorf("read core_configs: %w", err)
+	}
+	if len(coreConfigs) == 0 {
+		return nil, nil // no data yet
+	}
+
+	fullConfig := make(map[string]interface{})
+	for _, cc := range coreConfigs {
+		var val interface{}
+		if err := json.Unmarshal([]byte(cc.ConfigJSON), &val); err != nil {
+			log.Printf("[Agent] skip core_config section %s: %v", cc.Section, err)
+			continue
+		}
+		fullConfig[cc.Section] = val
+	}
+
+	// Use PrepareFullConfig — same pipeline the panel uses.
+	// This handles: cleaning empty fields, stripping _disabled sections,
+	// filtering disabled routing rules, removing outbounds from core_configs,
+	// ensuring stats section, applying API inbound/routing, merging enabled
+	// inbounds/outbounds from inbound_configs/outbound_configs tables.
+	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+		Ctx:              ctx,
+		ServerID:         serverID,
+		CoreType:         coreType,
+		FullConfig:       fullConfig,
+		InboundProvider:  &localInboundProvider{},
+		OutboundProvider: &localOutboundProvider{},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("PrepareFullConfig: %w", err)
+	}
+	return data, nil
+}
+
+// localInboundProvider implements InboundConfigProvider using the Agent's local DB.
+// It only returns enabled inbounds — matching the panel's behavior.
+type localInboundProvider struct{}
+
+func (p *localInboundProvider) GetEnabledInbounds(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
+	var configs []entity.InboundConfig
+	if err := db.DB.WithContext(ctx).Where("server_id = ? AND core_type = ? AND enabled = ?", serverID, coreType, true).Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	result := make([]json.RawMessage, 0, len(configs))
+	for _, c := range configs {
+		result = append(result, json.RawMessage(c.ConfigJSON))
+	}
+	return result, nil
+}
+
+// localOutboundProvider implements OutboundConfigProvider using the Agent's local DB.
+// It only returns enabled outbounds — matching the panel's behavior.
+type localOutboundProvider struct{}
+
+func (p *localOutboundProvider) GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error) {
+	var configs []entity.OutboundConfig
+	if err := db.DB.WithContext(ctx).Where("server_id = ? AND core_type = ? AND enabled = ?", serverID, coreType, true).Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	result := make([]map[string]interface{}, 0, len(configs))
+	for _, c := range configs {
+		m, err := parseOutboundConfigJSON(c.ConfigJSON, c.Tag, c.Protocol)
+		if err != nil {
+			log.Printf("[Agent] skip outbound_config tag=%s: %v", c.Tag, err)
+			continue
+		}
+		result = append(result, m)
+	}
+	return result, nil
+}
+
+// parseOutboundConfigJSON parses config_json into an outbound map.
+// Handles: normal JSON objects, double-escaped JSON strings, and simple
+// protocol names like "direct"/"blackhole".
+func parseOutboundConfigJSON(configJSON, dbTag, dbProtocol string) (map[string]interface{}, error) {
+	raw := strings.TrimSpace(configJSON)
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("empty config_json")
+	}
+
+	// Try 1: Direct parse as JSON object
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err == nil {
+		// Ensure tag and protocol from DB are authoritative
+		m["tag"] = dbTag
+		m["protocol"] = dbProtocol
+		return m, nil
+	}
+
+	// Try 2: Double-escaped JSON string — unwrap one layer and re-parse
+	// e.g. "\"{\\\"protocol\\\":\\\"freedom\\\",\\\"tag\\\":\\\"direct\\\"}\""
+	// → unquote → {"protocol":"freedom","tag":"direct"}
+	var inner string
+	if err := json.Unmarshal([]byte(raw), &inner); err == nil {
+		var m2 map[string]interface{}
+		if err := json.Unmarshal([]byte(inner), &m2); err == nil {
+			m2["tag"] = dbTag
+			m2["protocol"] = dbProtocol
+			return m2, nil
+		}
+		// inner is a plain string like "direct" — construct from DB fields
+		return map[string]interface{}{"tag": dbTag, "protocol": dbProtocol}, nil
+	}
+
+	// Try 3: Simple string like "direct" — construct from DB fields
+	return map[string]interface{}{"tag": dbTag, "protocol": dbProtocol}, nil
+}
+
+// migrateAgentTables runs migrations for the tables that process.Manager,
+// proxy.Manager, and SyncData need (inbound_services, process_guardians,
+// core_crash_logs, proxy_sites, system_settings, plus xray kernel tables
+// for local config generation from synced data).
 func migrateAgentTables(database *gorm.DB) error {
 	// Only migrate the tables needed by the Agent, not the full Panel schema.
 	// We use AutoMigrate with a subset of entities.
 	return database.AutoMigrate(
+		// Process management tables
 		&entity.InboundService{},
 		&entity.ProcessGuardian{},
 		&entity.CoreCrashLog{},
 		&entity.ProxySite{},
 		&entity.SystemSetting{},
+		// Xray kernel config tables (populated by SyncData, used for local config generation)
+		&entity.CoreConfig{},
+		&entity.InboundConfig{},
+		&entity.OutboundConfig{},
+		&entity.WarpConfig{},
+		&entity.ShareDomainConfig{},
 	)
 }

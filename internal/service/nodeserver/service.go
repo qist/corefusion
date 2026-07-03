@@ -306,6 +306,24 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*entit
 		return nil, fmt.Errorf("create node server: %w", err)
 	}
 
+	// Seed default outbounds (direct + blocked) for the new server.
+	// This ensures every node starts with the essential freedom/blackhole outbounds,
+	// matching the local node's defaults. If they already exist (e.g. from a
+	// previous creation attempt), the ON CONFLICT clause skips them.
+	if s.db != nil && !server.IsLocal {
+		defaults := []entity.OutboundConfig{
+			{ServerID: server.ID, CoreType: "xray", Protocol: "freedom", Tag: "direct", ConfigJSON: `{"protocol":"freedom","tag":"direct"}`, Enabled: true, IsDefault: true},
+			{ServerID: server.ID, CoreType: "xray", Protocol: "blackhole", Tag: "blocked", ConfigJSON: `{"protocol":"blackhole","tag":"blocked"}`, Enabled: true, IsDefault: true},
+		}
+		for _, ob := range defaults {
+			if err := s.db.WithContext(ctx).Create(&ob).Error; err != nil {
+				// Non-fatal: PrepareFullConfig has a safety net that adds these
+				// if missing. Log and continue.
+				fmt.Printf("[nodeserver] seed default outbound %s for server %d: %v\n", ob.Tag, server.ID, err)
+			}
+		}
+	}
+
 	return server, nil
 }
 

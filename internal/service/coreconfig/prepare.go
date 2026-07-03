@@ -100,7 +100,8 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		enabledOutbounds, err := opts.OutboundProvider.GetEnabledOutbounds(opts.Ctx, opts.ServerID, opts.CoreType)
 		if err != nil {
 			log.Printf("[PrepareFullConfig] failed to load outbounds for server %d: %v", opts.ServerID, err)
-		} else if len(enabledOutbounds) > 0 {
+		}
+		if len(enabledOutbounds) > 0 {
 			if opts.CoreType == "xray" {
 				// For xray: replace outbounds entirely (database is source of truth)
 				fullConfig["outbounds"] = enabledOutbounds
@@ -115,12 +116,69 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		}
 	}
 
-	// 9. Marshal to JSON
+	// 9. Ensure default outbounds (direct, blocked) exist — safety net so every
+	// node always has freedom+blackhole even if missing from DB.
+	EnsureDefaultOutbounds(fullConfig, opts.CoreType)
+
+	// 10. Marshal to JSON
 	data, err := json.MarshalIndent(fullConfig, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	return data, nil
+}
+
+// EnsureDefaultOutbounds checks that the standard default outbounds exist in
+// the final config. For xray, these are "direct" (freedom) and "blocked"
+// (blackhole). If they are missing, they are appended. This guarantees that
+// every node — local or remote — always has these two essential outbounds,
+// even if the outbound_configs table doesn't have them for that server.
+func EnsureDefaultOutbounds(fullConfig map[string]interface{}, coreType string) {
+	if coreType != "xray" {
+		return
+	}
+	// Normalize outbounds to []interface{} regardless of underlying type.
+	// GetEnabledOutbounds returns []map[string]interface{}, which does NOT
+	// match []interface{} type assertion — so we must convert explicitly.
+	var outbounds []interface{}
+	switch raw := fullConfig["outbounds"].(type) {
+	case []interface{}:
+		outbounds = raw
+	case []map[string]interface{}:
+		for _, m := range raw {
+			outbounds = append(outbounds, m)
+		}
+	default:
+		outbounds = []interface{}{}
+	}
+	hasDirect := false
+	hasBlocked := false
+	for _, ob := range outbounds {
+		if m, ok := ob.(map[string]interface{}); ok {
+			tag, _ := m["tag"].(string)
+			if tag == "direct" {
+				hasDirect = true
+			}
+			if tag == "blocked" {
+				hasBlocked = true
+			}
+		}
+	}
+	if !hasDirect {
+		outbounds = append(outbounds, map[string]interface{}{
+			"protocol": "freedom",
+			"tag":     "direct",
+		})
+		log.Printf("[PrepareFullConfig] added missing 'direct' (freedom) outbound")
+	}
+	if !hasBlocked {
+		outbounds = append(outbounds, map[string]interface{}{
+			"protocol": "blackhole",
+			"tag":     "blocked",
+		})
+		log.Printf("[PrepareFullConfig] added missing 'blocked' (blackhole) outbound")
+	}
+	fullConfig["outbounds"] = outbounds
 }
 
 // CleanEmpty removes nil values, empty strings, empty arrays, and empty maps
@@ -144,6 +202,64 @@ func CleanEmpty(m map[string]interface{}) {
 			CleanEmpty(val)
 			if len(val) == 0 {
 				delete(m, k)
+			}
+		}
+	}
+}
+
+// CleanInboundFields removes all internal (underscore-prefixed) fields from an
+// inbound config map, ensures required fields are set from the DB record, and
+// filters paused users from settings. This is the shared cleaning logic used by
+// both the Panel's inboundconfig.Service and the Agent's localInboundProvider
+// to ensure consistent, clean output — no _accessDomain, _portHop, etc. in the
+// final runtime config.
+func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol string, port int) {
+	// Ensure required fields are set from the record
+	if tag != "" {
+		inbound["tag"] = tag
+	}
+	if listen != "" {
+		inbound["listen"] = listen
+	}
+	if port > 0 {
+		inbound["port"] = port
+	}
+	if protocol != "" {
+		inbound["protocol"] = protocol
+	}
+	// Remove internal fields
+	delete(inbound, "_remark")
+	delete(inbound, "_enabled")
+	delete(inbound, "_listenType")
+	delete(inbound, "_socketPath")
+	delete(inbound, "_socketPerm")
+	delete(inbound, "_wgPublicKey")
+	delete(inbound, "_accessDomain")
+	delete(inbound, "_portHop")
+	// Clean nested _ fields from users/clients/accounts and filter paused users
+	containers := []map[string]interface{}{inbound}
+	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+		containers = append(containers, settings)
+	}
+	for _, c := range containers {
+		for _, key := range []string{"users", "clients", "accounts"} {
+			if items, ok := c[key].([]interface{}); ok {
+				var filtered []interface{}
+				for _, item := range items {
+					if m, ok := item.(map[string]interface{}); ok {
+						// Skip paused users
+						if paused, _ := m["_paused"].(bool); paused {
+							continue
+						}
+						delete(m, "_quota")
+						delete(m, "_expiry")
+						delete(m, "_usedUp")
+						delete(m, "_usedDown")
+						delete(m, "_paused")
+						filtered = append(filtered, m)
+					}
+				}
+				c[key] = filtered
 			}
 		}
 	}

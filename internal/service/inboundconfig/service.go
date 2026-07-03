@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/repository"
 )
 
@@ -225,55 +226,8 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreTy
 		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
 			return nil, fmt.Errorf("parse inbound %s: %w", cfg.Tag, err)
 		}
-		// Ensure required fields are set from the record
-		if cfg.Tag != "" {
-			inbound["tag"] = cfg.Tag
-		}
-		if cfg.Listen != "" {
-			inbound["listen"] = cfg.Listen
-		}
-		if cfg.Port > 0 {
-			inbound["port"] = cfg.Port
-		}
-		if cfg.Protocol != "" {
-			inbound["protocol"] = cfg.Protocol
-		}
-		// Remove internal fields
-		delete(inbound, "_remark")
-		delete(inbound, "_enabled")
-		delete(inbound, "_listenType")
-		delete(inbound, "_socketPath")
-		delete(inbound, "_socketPerm")
-		delete(inbound, "_wgPublicKey")
-		delete(inbound, "_accessDomain")
-		delete(inbound, "_portHop")
-		// Clean nested _ fields from users/clients/accounts and filter paused users
-		containers := []map[string]interface{}{inbound}
-		if settings, ok := inbound["settings"].(map[string]interface{}); ok {
-			containers = append(containers, settings)
-		}
-		for _, c := range containers {
-			for _, key := range []string{"users", "clients", "accounts"} {
-				if items, ok := c[key].([]interface{}); ok {
-					var filtered []interface{}
-					for _, item := range items {
-						if m, ok := item.(map[string]interface{}); ok {
-							// Skip paused users
-							if paused, _ := m["_paused"].(bool); paused {
-								continue
-							}
-							delete(m, "_quota")
-							delete(m, "_expiry")
-							delete(m, "_usedUp")
-							delete(m, "_usedDown")
-							delete(m, "_paused")
-							filtered = append(filtered, m)
-						}
-					}
-					c[key] = filtered
-				}
-			}
-		}
+		// Clean internal fields and filter paused users (shared logic)
+		coreconfigSvc.CleanInboundFields(inbound, cfg.Tag, cfg.Listen, cfg.Protocol, cfg.Port)
 		data, err := json.Marshal(inbound)
 		if err != nil {
 			return nil, fmt.Errorf("marshal inbound %s: %w", cfg.Tag, err)

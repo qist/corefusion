@@ -1459,7 +1459,19 @@ func (p *localInboundProvider) GetEnabledInbounds(ctx context.Context, serverID 
 	}
 	result := make([]json.RawMessage, 0, len(configs))
 	for _, c := range configs {
-		result = append(result, json.RawMessage(c.ConfigJSON))
+		// Parse, clean internal fields, and re-marshal — same as panel's inboundconfig.Service
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(c.ConfigJSON), &inbound); err != nil {
+			log.Printf("[Agent] skip inbound_config tag=%s: %v", c.Tag, err)
+			continue
+		}
+		coreconfigSvc.CleanInboundFields(inbound, c.Tag, c.Listen, c.Protocol, c.Port)
+		data, err := json.Marshal(inbound)
+		if err != nil {
+			log.Printf("[Agent] marshal inbound_config tag=%s: %v", c.Tag, err)
+			continue
+		}
+		result = append(result, data)
 	}
 	return result, nil
 }

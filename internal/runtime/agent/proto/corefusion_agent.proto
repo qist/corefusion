@@ -60,6 +60,14 @@ service AgentService {
   // Agent 自动更新 → 返回 TaskAccept
   rpc UpdateAgent(UpdateAgentRequest) returns (TaskAccept);
 
+  // --- xray API 代理（面板→Agent→本地 xray gRPC） ---
+  // 通用 xray API 调用代理，支持 inbound/outbound/user/routing/balancer/stats
+  rpc XrayAPI(XrayAPIRequest) returns (XrayAPIResponse);
+  // 列出网络接口（用于端口跳跃等场景）
+  rpc ListInterfaces(ListInterfacesRequest) returns (ListInterfacesResponse);
+  // 在 Agent 节点上执行核心二进制命令（如 x25519、wg-key 等）
+  rpc ExecuteBinary(ExecuteBinaryRequest) returns (ExecuteBinaryResponse);
+
   // --- 任务查询 ---
   // 查询异步任务执行状态
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -449,4 +457,54 @@ message RegisterResponse {
   bytes  agent_key_pem = 5;     // Agent 私钥
   bytes  ca_cert_pem = 6;       // CA 根证书（用于验证面板）
   int64  cert_expires_at = 7;   // 证书过期时间戳
+}
+
+// ============================================================
+// xray API 代理（面板→Agent→本地 xray gRPC）
+// ============================================================
+
+// XrayAPIRequest — 通用 xray API 调用请求。
+// 面板将操作类型和 JSON payload 发给 Agent，Agent 转换为
+// xray gRPC 调用并返回结果。
+message XrayAPIRequest {
+  string service = 1;    // "proxyman" | "router" | "stats"
+  string method = 2;     // "addInbound" | "removeInbound" | "addOutbound" | "removeOutbound"
+                         // | "addUser" | "removeUser" | "applyRouting" | "addRoutingRule"
+                         // | "removeRoutingRule" | "listRoutingRules" | "getBalancerInfo"
+                         // | "setBalancerTarget" | "getStats" | "resetStats"
+  bytes  payload = 3;    // JSON-encoded 请求参数（方法相关）
+}
+
+// XrayAPIResponse — xray API 调用响应。
+message XrayAPIResponse {
+  bool   success = 1;
+  string error = 2;
+  bytes  response = 3;   // JSON-encoded 响应数据（方法相关）
+}
+
+// ============================================================
+// 网络接口查询
+// ============================================================
+
+message ListInterfacesRequest {}
+
+message ListInterfacesResponse {
+  repeated string interfaces = 1;
+}
+
+// ============================================================
+// 核心二进制命令执行（Agent 节点本地执行）
+// ============================================================
+
+message ExecuteBinaryRequest {
+  string core_type = 1;          // xray/singbox/hysteria2/tuic
+  repeated string args = 2;      // 命令行参数
+  bool   raw_output = 3;         // true: 返回原始 stdout; false: 解析为 key:value
+}
+
+message ExecuteBinaryResponse {
+  bool   success = 1;
+  string error = 2;
+  string stdout = 3;             // 原始 stdout（raw_output=true 时使用）
+  map<string, string> parsed = 4; // 解析后的 key:value（raw_output=false 时使用）
 }

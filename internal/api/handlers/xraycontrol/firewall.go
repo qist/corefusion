@@ -1,6 +1,7 @@
 package xraycontrol
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -30,27 +31,35 @@ func (h *Handler) ApplyFirewallRules(c *gin.Context) {
 		return
 	}
 
-	// Check if nftables is available
-	useNft := isNftablesAvailable()
+	// Remote: proxy via Agent
+	if resp, _, handled := h.remoteXrayAPI(c, "firewall", "apply", req); handled {
+		if resp != nil {
+			var result interface{}
+			json.Unmarshal(resp, &result)
+			response.OK(c, result)
+		}
+		return
+	}
 
-	// Check if rule already exists
-	exists, err := checkFirewallRuleExists(useNft, req.PortRange, req.TargetPort, req.Interface)
+	// Local: execute directly
+	useNft := isNftablesAvailableLocal()
+
+	exists, err := checkFirewallRuleExistsLocal(useNft, req.PortRange, req.TargetPort, req.Interface)
 	if err != nil {
 		response.InternalError(c, "CHECK_FAILED", err.Error())
 		return
 	}
 	if exists {
-		response.OK(c, gin.H{"message": "rule already exists", "type": getFirewallType(useNft)})
+		response.OK(c, gin.H{"message": "rule already exists", "type": getFirewallTypeLocal(useNft)})
 		return
 	}
 
-	// Apply firewall rule
-	if err := applyFirewallRule(useNft, req.PortRange, req.TargetPort, req.Interface); err != nil {
+	if err := applyFirewallRuleLocal(useNft, req.PortRange, req.TargetPort, req.Interface); err != nil {
 		response.InternalError(c, "APPLY_FAILED", err.Error())
 		return
 	}
 
-	response.OK(c, gin.H{"message": "firewall rule applied", "type": getFirewallType(useNft)})
+	response.OK(c, gin.H{"message": "firewall rule applied", "type": getFirewallTypeLocal(useNft)})
 }
 
 // RemoveFirewallRules handles POST /api/v1/xray/control/firewall/remove.
@@ -66,48 +75,55 @@ func (h *Handler) RemoveFirewallRules(c *gin.Context) {
 		return
 	}
 
-	// Check if nftables is available
-	useNft := isNftablesAvailable()
+	// Remote: proxy via Agent
+	if resp, _, handled := h.remoteXrayAPI(c, "firewall", "remove", req); handled {
+		if resp != nil {
+			var result interface{}
+			json.Unmarshal(resp, &result)
+			response.OK(c, result)
+		}
+		return
+	}
 
-	// Remove firewall rule
-	if err := removeFirewallRule(useNft, req.PortRange, req.TargetPort, req.Interface); err != nil {
+	// Local: execute directly
+	useNft := isNftablesAvailableLocal()
+
+	if err := removeFirewallRuleLocal(useNft, req.PortRange, req.TargetPort, req.Interface); err != nil {
 		response.InternalError(c, "REMOVE_FAILED", err.Error())
 		return
 	}
 
-	response.OK(c, gin.H{"message": "firewall rule removed", "type": getFirewallType(useNft)})
+	response.OK(c, gin.H{"message": "firewall rule removed", "type": getFirewallTypeLocal(useNft)})
 }
 
-// isNftablesAvailable checks if nftables is available on the system.
-func isNftablesAvailable() bool {
+// Local firewall helper functions (suffixed with "Local" to avoid conflicts
+// with the Agent-side implementations in xrayapi.go)
+
+func isNftablesAvailableLocal() bool {
 	_, err := exec.LookPath("nft")
 	return err == nil
 }
 
-func getFirewallType(useNft bool) string {
+func getFirewallTypeLocal(useNft bool) string {
 	if useNft {
 		return "nftables"
 	}
 	return "iptables"
 }
 
-// checkFirewallRuleExists checks if a firewall rule already exists.
-func checkFirewallRuleExists(useNft bool, portRange string, targetPort int, iface string) (bool, error) {
+func checkFirewallRuleExistsLocal(useNft bool, portRange string, targetPort int, iface string) (bool, error) {
 	if useNft {
-		return checkNftRuleExists(portRange, targetPort, iface)
+		return checkNftRuleExistsLocal(portRange, targetPort, iface)
 	}
-	return checkIptablesRuleExists(portRange, targetPort, iface)
+	return checkIptablesRuleExistsLocal(portRange, targetPort, iface)
 }
 
-// checkNftRuleExists checks if an nftables rule exists.
-func checkNftRuleExists(portRange string, targetPort int, iface string) (bool, error) {
-	// Check if the table exists
+func checkNftRuleExistsLocal(portRange string, targetPort int, iface string) (bool, error) {
 	cmd := exec.Command("nft", "list", "table", "inet", "hysteria_porthopping")
 	if err := cmd.Run(); err != nil {
-		return false, nil // Table doesn't exist
+		return false, nil
 	}
 
-	// List rules in the chain
 	cmd = exec.Command("nft", "list", "chain", "inet", "hysteria_porthopping", "prerouting")
 	out, err := cmd.Output()
 	if err != nil {
@@ -115,7 +131,6 @@ func checkNftRuleExists(portRange string, targetPort int, iface string) (bool, e
 	}
 
 	rules := string(out)
-	// Check if rule with same port range and target port exists
 	if strings.Contains(rules, portRange) && strings.Contains(rules, fmt.Sprintf(":%d", targetPort)) {
 		return true, nil
 	}
@@ -123,8 +138,7 @@ func checkNftRuleExists(portRange string, targetPort int, iface string) (bool, e
 	return false, nil
 }
 
-// checkIptablesRuleExists checks if an iptables rule exists.
-func checkIptablesRuleExists(portRange string, targetPort int, iface string) (bool, error) {
+func checkIptablesRuleExistsLocal(portRange string, targetPort int, iface string) (bool, error) {
 	cmd := exec.Command("iptables", "-t", "nat", "-L", "PREROUTING", "-n")
 	out, err := cmd.Output()
 	if err != nil {
@@ -132,7 +146,6 @@ func checkIptablesRuleExists(portRange string, targetPort int, iface string) (bo
 	}
 
 	rules := string(out)
-	// Check if rule with same port range and target port exists
 	if strings.Contains(rules, portRange) && strings.Contains(rules, fmt.Sprintf("to:%d", targetPort)) {
 		return true, nil
 	}
@@ -140,37 +153,29 @@ func checkIptablesRuleExists(portRange string, targetPort int, iface string) (bo
 	return false, nil
 }
 
-// applyFirewallRule applies a firewall rule.
-func applyFirewallRule(useNft bool, portRange string, targetPort int, iface string) error {
+func applyFirewallRuleLocal(useNft bool, portRange string, targetPort int, iface string) error {
 	if useNft {
-		return applyNftRule(portRange, targetPort, iface)
+		return applyNftRuleLocal(portRange, targetPort, iface)
 	}
-	return applyIptablesRule(portRange, targetPort, iface)
+	return applyIptablesRuleLocal(portRange, targetPort, iface)
 }
 
-// applyNftRule applies an nftables rule.
-func applyNftRule(portRange string, targetPort int, iface string) error {
-	// Create table if not exists
-	cmd := exec.Command("nft", "add", "table", "inet", "hysteria_porthopping")
-	cmd.Run()
+func applyNftRuleLocal(portRange string, targetPort int, iface string) error {
+	exec.Command("nft", "add", "table", "inet", "hysteria_porthopping").Run()
 
-	// Create chain if not exists
-	cmd = exec.Command("nft", "add", "chain", "inet", "hysteria_porthopping", "prerouting",
-		"{ type nat hook prerouting priority dstnat; policy accept; }")
-	cmd.Run()
+	exec.Command("nft", "add", "chain", "inet", "hysteria_porthopping", "prerouting",
+		"{ type nat hook prerouting priority dstnat; policy accept; }").Run()
 
-	// Build rule
 	rule := fmt.Sprintf("udp dport %s counter redirect to :%d", portRange, targetPort)
 	if iface != "" {
 		rule = fmt.Sprintf("iifname %s %s", iface, rule)
 	}
 
-	cmd = exec.Command("nft", "add", "rule", "inet", "hysteria_porthopping", "prerouting", rule)
+	cmd := exec.Command("nft", "add", "rule", "inet", "hysteria_porthopping", "prerouting", rule)
 	return cmd.Run()
 }
 
-// applyIptablesRule applies an iptables rule.
-func applyIptablesRule(portRange string, targetPort int, iface string) error {
+func applyIptablesRuleLocal(portRange string, targetPort int, iface string) error {
 	args := []string{"-t", "nat", "-A", "PREROUTING"}
 	if iface != "" {
 		args = append(args, "-i", iface)
@@ -181,23 +186,19 @@ func applyIptablesRule(portRange string, targetPort int, iface string) error {
 	return cmd.Run()
 }
 
-// removeFirewallRule removes a firewall rule.
-func removeFirewallRule(useNft bool, portRange string, targetPort int, iface string) error {
+func removeFirewallRuleLocal(useNft bool, portRange string, targetPort int, iface string) error {
 	if useNft {
-		return removeNftRule(portRange, targetPort, iface)
+		return removeNftRuleLocal(portRange, targetPort, iface)
 	}
-	return removeIptablesRule(portRange, targetPort, iface)
+	return removeIptablesRuleLocal(portRange, targetPort, iface)
 }
 
-// removeNftRule removes an nftables rule.
-func removeNftRule(portRange string, targetPort int, iface string) error {
-	// Delete the entire table (simplest approach)
+func removeNftRuleLocal(portRange string, targetPort int, iface string) error {
 	cmd := exec.Command("nft", "delete", "table", "inet", "hysteria_porthopping")
 	return cmd.Run()
 }
 
-// removeIptablesRule removes an iptables rule.
-func removeIptablesRule(portRange string, targetPort int, iface string) error {
+func removeIptablesRuleLocal(portRange string, targetPort int, iface string) error {
 	args := []string{"-t", "nat", "-D", "PREROUTING"}
 	if iface != "" {
 		args = append(args, "-i", iface)

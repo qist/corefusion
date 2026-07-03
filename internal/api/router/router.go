@@ -1189,8 +1189,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// Xray Stats & Control — moved under /node-servers/:id/
 			xrayStatsH := xrayStatsHandler.NewHandler(systemSettingSvc)
 			xrayStatsH.SetCoreConfigService(coreConfigSvc)
+			xrayStatsH.SetNodeOperator(nodeServerSvcInst)
 			xrayControlH := xrayControlHandler.NewHandler(systemSettingSvc)
 			xrayControlH.SetCoreConfigService(coreConfigSvc)
+			xrayControlH.SetNodeOperator(nodeServerSvcInst)
 
 			nodeServersGroup.GET("/:id/xray/stats", xrayStatsH.GetStats)
 			nodeServersGroup.GET("/:id/xray/stats/users", xrayStatsH.GetUserStats)

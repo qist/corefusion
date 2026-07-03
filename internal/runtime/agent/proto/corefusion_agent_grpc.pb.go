@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v3.21.12
-// source: internal/runtime/agent/proto/corefusion_agent.proto
+// source: corefusion_agent.proto
 
 package agentpb
 
@@ -35,6 +35,9 @@ const (
 	AgentService_InstallBinary_FullMethodName   = "/corefusion.agent.v1.AgentService/InstallBinary"
 	AgentService_InstallProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/InstallProxy"
 	AgentService_UpdateAgent_FullMethodName     = "/corefusion.agent.v1.AgentService/UpdateAgent"
+	AgentService_XrayAPI_FullMethodName         = "/corefusion.agent.v1.AgentService/XrayAPI"
+	AgentService_ListInterfaces_FullMethodName  = "/corefusion.agent.v1.AgentService/ListInterfaces"
+	AgentService_ExecuteBinary_FullMethodName   = "/corefusion.agent.v1.AgentService/ExecuteBinary"
 	AgentService_GetTask_FullMethodName         = "/corefusion.agent.v1.AgentService/GetTask"
 )
 
@@ -80,6 +83,13 @@ type AgentServiceClient interface {
 	InstallProxy(ctx context.Context, in *InstallProxyRequest, opts ...grpc.CallOption) (*TaskAccept, error)
 	// Agent 自动更新 → 返回 TaskAccept
 	UpdateAgent(ctx context.Context, in *UpdateAgentRequest, opts ...grpc.CallOption) (*TaskAccept, error)
+	// --- xray API 代理（面板→Agent→本地 xray gRPC） ---
+	// 通用 xray API 调用代理，支持 inbound/outbound/user/routing/balancer/stats
+	XrayAPI(ctx context.Context, in *XrayAPIRequest, opts ...grpc.CallOption) (*XrayAPIResponse, error)
+	// 列出网络接口（用于端口跳跃等场景）
+	ListInterfaces(ctx context.Context, in *ListInterfacesRequest, opts ...grpc.CallOption) (*ListInterfacesResponse, error)
+	// 在 Agent 节点上执行核心二进制命令（如 x25519、wg-key 等）
+	ExecuteBinary(ctx context.Context, in *ExecuteBinaryRequest, opts ...grpc.CallOption) (*ExecuteBinaryResponse, error)
 	// --- 任务查询 ---
 	// 查询异步任务执行状态
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
@@ -253,6 +263,36 @@ func (c *agentServiceClient) UpdateAgent(ctx context.Context, in *UpdateAgentReq
 	return out, nil
 }
 
+func (c *agentServiceClient) XrayAPI(ctx context.Context, in *XrayAPIRequest, opts ...grpc.CallOption) (*XrayAPIResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XrayAPIResponse)
+	err := c.cc.Invoke(ctx, AgentService_XrayAPI_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ListInterfaces(ctx context.Context, in *ListInterfacesRequest, opts ...grpc.CallOption) (*ListInterfacesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInterfacesResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListInterfaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ExecuteBinary(ctx context.Context, in *ExecuteBinaryRequest, opts ...grpc.CallOption) (*ExecuteBinaryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecuteBinaryResponse)
+	err := c.cc.Invoke(ctx, AgentService_ExecuteBinary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTaskResponse)
@@ -305,6 +345,13 @@ type AgentServiceServer interface {
 	InstallProxy(context.Context, *InstallProxyRequest) (*TaskAccept, error)
 	// Agent 自动更新 → 返回 TaskAccept
 	UpdateAgent(context.Context, *UpdateAgentRequest) (*TaskAccept, error)
+	// --- xray API 代理（面板→Agent→本地 xray gRPC） ---
+	// 通用 xray API 调用代理，支持 inbound/outbound/user/routing/balancer/stats
+	XrayAPI(context.Context, *XrayAPIRequest) (*XrayAPIResponse, error)
+	// 列出网络接口（用于端口跳跃等场景）
+	ListInterfaces(context.Context, *ListInterfacesRequest) (*ListInterfacesResponse, error)
+	// 在 Agent 节点上执行核心二进制命令（如 x25519、wg-key 等）
+	ExecuteBinary(context.Context, *ExecuteBinaryRequest) (*ExecuteBinaryResponse, error)
 	// --- 任务查询 ---
 	// 查询异步任务执行状态
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
@@ -365,6 +412,15 @@ func (UnimplementedAgentServiceServer) InstallProxy(context.Context, *InstallPro
 }
 func (UnimplementedAgentServiceServer) UpdateAgent(context.Context, *UpdateAgentRequest) (*TaskAccept, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateAgent not implemented")
+}
+func (UnimplementedAgentServiceServer) XrayAPI(context.Context, *XrayAPIRequest) (*XrayAPIResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method XrayAPI not implemented")
+}
+func (UnimplementedAgentServiceServer) ListInterfaces(context.Context, *ListInterfacesRequest) (*ListInterfacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListInterfaces not implemented")
+}
+func (UnimplementedAgentServiceServer) ExecuteBinary(context.Context, *ExecuteBinaryRequest) (*ExecuteBinaryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExecuteBinary not implemented")
 }
 func (UnimplementedAgentServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
@@ -678,6 +734,60 @@ func _AgentService_UpdateAgent_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_XrayAPI_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(XrayAPIRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).XrayAPI(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_XrayAPI_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).XrayAPI(ctx, req.(*XrayAPIRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ListInterfaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInterfacesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListInterfaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListInterfaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListInterfaces(ctx, req.(*ListInterfacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ExecuteBinary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecuteBinaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ExecuteBinary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ExecuteBinary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ExecuteBinary(ctx, req.(*ExecuteBinaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AgentService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTaskRequest)
 	if err := dec(in); err != nil {
@@ -768,12 +878,24 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentService_UpdateAgent_Handler,
 		},
 		{
+			MethodName: "XrayAPI",
+			Handler:    _AgentService_XrayAPI_Handler,
+		},
+		{
+			MethodName: "ListInterfaces",
+			Handler:    _AgentService_ListInterfaces_Handler,
+		},
+		{
+			MethodName: "ExecuteBinary",
+			Handler:    _AgentService_ExecuteBinary_Handler,
+		},
+		{
 			MethodName: "GetTask",
 			Handler:    _AgentService_GetTask_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
+	Metadata: "corefusion_agent.proto",
 }
 
 const (
@@ -879,7 +1001,7 @@ var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
+	Metadata: "corefusion_agent.proto",
 }
 
 const (
@@ -991,5 +1113,5 @@ var RegistrationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
+	Metadata: "corefusion_agent.proto",
 }

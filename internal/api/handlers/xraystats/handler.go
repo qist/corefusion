@@ -2,6 +2,7 @@ package xraystats
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	statsService "github.com/xtls/xray-core/app/stats/command"
 
 	"corefusion/internal/api/response"
+	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
 // SettingStore provides access to system settings.
@@ -48,10 +50,16 @@ type CoreConfigService interface {
 	GetFull(ctx context.Context, serverID int64, coreType string) (map[string]interface{}, error)
 }
 
+// RemoteXrayAPI provides xray API proxying to remote Agent nodes.
+type RemoteXrayAPI interface {
+	XrayAPIOnServer(ctx context.Context, serverID int64, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error)
+}
+
 // Handler handles xray stats HTTP requests.
 type Handler struct {
 	settingSvc    SettingStore
 	coreConfigSvc CoreConfigService
+	nodeOperator  RemoteXrayAPI
 }
 
 // NewHandler creates a new xray stats handler.
@@ -61,6 +69,16 @@ func NewHandler(settingSvc SettingStore) *Handler {
 
 // Close is kept for API compatibility.
 func (h *Handler) Close() {}
+
+// SetCoreConfigService sets the core config service.
+func (h *Handler) SetCoreConfigService(svc CoreConfigService) {
+	h.coreConfigSvc = svc
+}
+
+// SetNodeOperator sets the node operator for remote xray API proxying.
+func (h *Handler) SetNodeOperator(op RemoteXrayAPI) {
+	h.nodeOperator = op
+}
 
 // localServerID is the server ID of the local node.
 const localServerID = int64(1)
@@ -72,6 +90,11 @@ func parseServerID(c *gin.Context) int64 {
 		return localServerID
 	}
 	return id
+}
+
+// isRemote returns true if the server ID refers to a remote node.
+func isRemote(serverID int64) bool {
+	return serverID != localServerID
 }
 
 // connect creates a fresh gRPC connection for each request.
@@ -89,11 +112,6 @@ func (h *Handler) connect(ctx context.Context, serverID int64) (*grpc.ClientConn
 		return nil, fmt.Errorf("failed to connect to xray: %w", err)
 	}
 	return conn, nil
-}
-
-// SetCoreConfigService sets the core config service.
-func (h *Handler) SetCoreConfigService(svc CoreConfigService) {
-	h.coreConfigSvc = svc
 }
 
 // getStatsAddr returns the xray stats API address for a given server.
@@ -129,8 +147,60 @@ func (h *Handler) getStatsAddr(ctx context.Context, serverID int64) string {
 	return "127.0.0.1:10085"
 }
 
+// remoteXrayAPI calls the remote Agent's XrayAPI RPC.
+// Returns (responseJSON, handled, errorOccurred).
+//   - (resp, true, false):  remote call succeeded, resp contains JSON
+//   - (nil, true, true):    remote call failed, error already written to response
+//   - (nil, false, false):  server is local, caller should use direct connection
+func (h *Handler) remoteXrayAPI(c *gin.Context, method string, payload interface{}) (json.RawMessage, bool, bool) {
+	serverID := parseServerID(c)
+	if !isRemote(serverID) {
+		return nil, false, false // local — caller continues with direct gRPC
+	}
+	if h.nodeOperator == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "node operator not configured for remote servers")
+		return nil, true, true
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	resp, err := h.nodeOperator.XrayAPIOnServer(ctx, serverID, &agentpb.XrayAPIRequest{
+		Service: "stats",
+		Method:  method,
+		Payload: payloadBytes,
+	})
+	if err != nil {
+		response.InternalError(c, "REMOTE_API_FAILED", err.Error())
+		return nil, true, true
+	}
+	if !resp.Success {
+		response.InternalError(c, "REMOTE_API_ERROR", resp.Error)
+		return nil, true, true
+	}
+	return json.RawMessage(resp.Response), true, false
+}
+
 // GetStats handles GET /api/v1/xray/stats.
 func (h *Handler) GetStats(c *gin.Context) {
+	// Remote: proxy via Agent
+	resp, handled, _ := h.remoteXrayAPI(c, "getStats", map[string]interface{}{})
+	if handled {
+		if resp != nil {
+			var result StatsResponse
+			if err := json.Unmarshal(resp, &result); err == nil {
+				response.OK(c, &result)
+			} else {
+				var raw interface{}
+				json.Unmarshal(resp, &raw)
+				response.OK(c, raw)
+			}
+		}
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
@@ -145,6 +215,21 @@ func (h *Handler) GetStats(c *gin.Context) {
 
 // GetUserStats handles GET /api/v1/xray/stats/users.
 func (h *Handler) GetUserStats(c *gin.Context) {
+	// Remote: proxy via Agent
+	if resp, handled, _ := h.remoteXrayAPI(c, "getStats", map[string]interface{}{}); handled {
+		if resp != nil {
+			var result StatsResponse
+			if err := json.Unmarshal(resp, &result); err == nil {
+				response.OK(c, result.Users)
+			} else {
+				var raw interface{}
+				json.Unmarshal(resp, &raw)
+				response.OK(c, raw)
+			}
+		}
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
@@ -162,6 +247,16 @@ func (h *Handler) ResetUserStats(c *gin.Context) {
 	email := c.Param("email")
 	if email == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "email is required")
+		return
+	}
+
+	// Remote: proxy via Agent
+	if resp, handled, _ := h.remoteXrayAPI(c, "resetUserStats", map[string]interface{}{"email": email}); handled {
+		if resp != nil {
+			var result interface{}
+			json.Unmarshal(resp, &result)
+			response.OK(c, result)
+		}
 		return
 	}
 

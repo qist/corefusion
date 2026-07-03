@@ -13,6 +13,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/model/vo"
 	"corefusion/internal/runtime/agent"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
 
@@ -935,6 +936,14 @@ func (s *Service) ListInterfaces(ctx context.Context, serverID int64) ([]string,
 		return nil, fmt.Errorf("node manager not initialized")
 	}
 	return s.nodeMgr.ListInterfaces(ctx, serverID)
+}
+
+// XrayAPIOnServer proxies an xray API call to a remote server's Agent.
+func (s *Service) XrayAPIOnServer(ctx context.Context, serverID int64, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.XrayAPIOnServer(ctx, serverID, req)
 }
 
 // GetBootstrapCommand generates the bootstrap installation command for a server.

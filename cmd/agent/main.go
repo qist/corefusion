@@ -790,6 +790,37 @@ func (s *agentServiceServer) GetTask(ctx context.Context, req *agentpb.GetTaskRe
 	return s.localAgent.GetTaskQueue().GetTask(req.TaskId), nil
 }
 
+// XrayAPI proxies xray gRPC API calls to the local xray process.
+// This allows the panel to control xray on remote nodes via the Agent.
+func (s *agentServiceServer) XrayAPI(ctx context.Context, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
+	return s.localAgent.XrayAPIProxy(ctx, req)
+}
+
+// ListInterfaces returns the network interface names on the Agent's host.
+func (s *agentServiceServer) ListInterfaces(ctx context.Context, req *agentpb.ListInterfacesRequest) (*agentpb.ListInterfacesResponse, error) {
+	names, err := s.localAgent.ListInterfaces()
+	if err != nil {
+		return nil, err
+	}
+	return &agentpb.ListInterfacesResponse{Interfaces: names}, nil
+}
+
+// ExecuteBinary executes a core binary command on the Agent's host.
+func (s *agentServiceServer) ExecuteBinary(ctx context.Context, req *agentpb.ExecuteBinaryRequest) (*agentpb.ExecuteBinaryResponse, error) {
+	if req.RawOutput {
+		out, err := s.localAgent.ExecuteBinaryRawOutput(ctx, req.CoreType, req.Args...)
+		if err != nil {
+			return &agentpb.ExecuteBinaryResponse{Success: false, Error: err.Error()}, nil
+		}
+		return &agentpb.ExecuteBinaryResponse{Success: true, Stdout: out}, nil
+	}
+	parsed, err := s.localAgent.ExecuteBinaryCommand(ctx, req.CoreType, req.Args...)
+	if err != nil {
+		return &agentpb.ExecuteBinaryResponse{Success: false, Error: err.Error()}, nil
+	}
+	return &agentpb.ExecuteBinaryResponse{Success: true, Parsed: parsed}, nil
+}
+
 func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.TaskAccept, error) {
 	// Sync GitHub acceleration settings to local DB before install
 	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)

@@ -1394,7 +1394,16 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 
 		// Start the core process (configGenerator will also call generateConfigFromLocalDB,
 		// which produces the same result — no conflict)
-		if err := a.procMgr.Start(ctx, 0, coreType); err != nil {
+		// Resolve the correct serviceID from DB — must match what ControlCore uses,
+		// otherwise the healthcheck will monitor a different serviceID and report "crashed".
+		serviceID := int64(0)
+		if a.svcRepo != nil {
+			services, _, err := a.svcRepo.List(ctx, 1, coreType, 1, 0)
+			if err == nil && len(services) > 0 {
+				serviceID = services[0].ID
+			}
+		}
+		if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
 			resp.Error = fmt.Sprintf("start core: %v", err)
 			log.Printf("[Agent] SyncData: core start failed: %v", err)
 			return resp, nil

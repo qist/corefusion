@@ -77,6 +77,7 @@ func NewTaskQueue(workers int) *TaskQueue {
 		stopCh:  make(chan struct{}),
 	}
 	tq.startWorkers()
+	tq.startCleanupLoop()
 	return tq
 }
 
@@ -101,23 +102,32 @@ func (tq *TaskQueue) startWorkers() {
 }
 
 // Submit 提交一个异步任务。
-// 如果 idempotencyKey 与已有任务重复，返回已有任务的 TaskAccept（不重复执行）。
-// 否则创建新任务并入队，立刻返回 TaskAccept。
+// 如果 idempotencyKey 与仍在运行（QUEUED/RUNNING）的任务重复，返回已有任务的 TaskAccept（不重复执行）。
+// 如果已有任务已完成（SUCCESS/FAILED），则移除旧记录并允许新任务提交。
+// 这确保了 start→stop→start 这样的操作序列不会被幂等机制错误阻断。
 func (tq *TaskQueue) Submit(taskID, taskType, idempotencyKey string, fn TaskFunc, callback TaskResultCallback) *agentpb.TaskAccept {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	// 幂等检查：同一 key 的任务如果仍在运行或已完成，直接返回
+	// 幂等检查：同一 key 的任务如果仍在运行（QUEUED/RUNNING），直接返回不重复执行。
+	// 如果已有任务已完成（SUCCESS/FAILED），移除旧记录，允许新任务提交。
 	if idempotencyKey != "" {
 		if existing, ok := tq.byKey[idempotencyKey]; ok {
-			log.Printf("[TaskQueue] idempotent hit: key=%s → task_id=%s status=%s",
-				idempotencyKey, existing.ID, existing.Status)
-			return &agentpb.TaskAccept{
-				Accepted:       true,
-				TaskId:         existing.ID,
-				IdempotencyKey: idempotencyKey,
-				RejectReason:   "duplicate: task already exists",
+			if existing.Status == agentpb.TaskStatus_TASK_QUEUED || existing.Status == agentpb.TaskStatus_TASK_RUNNING {
+				log.Printf("[TaskQueue] idempotent hit (active): key=%s → task_id=%s status=%s",
+					idempotencyKey, existing.ID, existing.Status)
+				return &agentpb.TaskAccept{
+					Accepted:       true,
+					TaskId:         existing.ID,
+					IdempotencyKey: idempotencyKey,
+					RejectReason:   "duplicate: task already in progress",
+				}
 			}
+			// 任务已完成，移除旧记录以允许重新提交
+			log.Printf("[TaskQueue] idempotent key recycled: key=%s old_task=%s old_status=%s",
+				idempotencyKey, existing.ID, existing.Status)
+			delete(tq.tasks, existing.ID)
+			delete(tq.byKey, idempotencyKey)
 		}
 	}
 
@@ -237,6 +247,24 @@ func (tq *TaskQueue) GetTask(taskID string) *agentpb.GetTaskResponse {
 		TaskType:   entry.Type,
 		DetailJson: entry.DetailJSON,
 	}
+}
+
+// startCleanupLoop 启动定期清理 goroutine，防止已完成的任务记录无限增长。
+func (tq *TaskQueue) startCleanupLoop() {
+	tq.wg.Add(1)
+	go func() {
+		defer tq.wg.Done()
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-tq.stopCh:
+				return
+			case <-ticker.C:
+				tq.Cleanup(10 * time.Minute)
+			}
+		}
+	}()
 }
 
 // Stop 优雅停止 TaskQueue，等待所有 Worker 退出。

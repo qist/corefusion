@@ -558,21 +558,6 @@ func (a *AgentApp) sendStatusReport(stream agentpb.HeartbeatService_StreamClient
 // ============================================================
 
 func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.HeartbeatService_StreamClient) {
-	cmdID := cmd.CommandId
-	idempotencyKey := cmd.IdempotencyKey
-
-	// Helper: submit a task to the LocalAgent's TaskQueue with a callback
-	// that sends the TaskResult back to the panel via the heartbeat stream.
-	submitTask := func(taskType string, fn agent.TaskFunc) {
-		taskID := cmdID
-		if taskID == "" {
-			taskID = agent.GenerateTaskID()
-		}
-		a.localAgent.GetTaskQueue().Submit(taskID, taskType, idempotencyKey, fn, func(result *agentpb.TaskResult) {
-			a.sendTaskResult(stream, result)
-		})
-	}
-
 	switch c := cmd.Command.(type) {
 	case *agentpb.PanelCommand_SyncConfig:
 		req := c.SyncConfig
@@ -587,43 +572,40 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_ControlCore:
 		req := c.ControlCore
-		submitTask("control_core", func(ctx context.Context) (interface{}, error) {
-			if err := a.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
-				return nil, err
-			}
+		// Delegate to LocalAgent.ControlCore which handles task submission
+		// with its own idempotency key. Don't double-submit to the task queue.
+		if err := a.localAgent.ControlCore(context.Background(), req.CoreType, req.Action); err != nil {
+			log.Printf("[Agent] ControlCore %s %s failed: %v", req.CoreType, req.Action, err)
+		} else {
 			log.Printf("[Agent] ControlCore %s %s accepted", req.CoreType, req.Action)
-			return map[string]interface{}{"core_type": req.CoreType, "action": req.Action}, nil
-		})
+		}
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
 		req := c.SyncProxyConfig
-		submitTask("sync_proxy_config", func(ctx context.Context) (interface{}, error) {
-			if err := a.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
-				return nil, err
-			}
+		// Delegate to LocalAgent.SyncProxyConfig which handles task submission.
+		if err := a.localAgent.SyncProxyConfig(context.Background(), req.ProxyType, req.ConfigContent); err != nil {
+			log.Printf("[Agent] proxy config sync failed: %s: %v", req.ProxyType, err)
+		} else {
 			log.Printf("[Agent] proxy config synced: %s", req.ProxyType)
-			return map[string]interface{}{"proxy_type": req.ProxyType}, nil
-		})
+		}
 
 	case *agentpb.PanelCommand_ControlProxy:
 		req := c.ControlProxy
-		submitTask("control_proxy", func(ctx context.Context) (interface{}, error) {
-			if err := a.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
-				return nil, err
-			}
+		// Delegate to LocalAgent.ControlProxy which handles task submission.
+		if err := a.localAgent.ControlProxy(context.Background(), req.ProxyType, req.Action); err != nil {
+			log.Printf("[Agent] ControlProxy %s %s failed: %v", req.ProxyType, req.Action, err)
+		} else {
 			log.Printf("[Agent] ControlProxy %s %s accepted", req.ProxyType, req.Action)
-			return map[string]interface{}{"proxy_type": req.ProxyType, "action": req.Action}, nil
-		})
+		}
 
 	case *agentpb.PanelCommand_AlterUsers:
 		req := c.AlterUsers
-		submitTask("alter_users", func(ctx context.Context) (interface{}, error) {
-			if err := a.localAgent.AlterUsers(ctx, req); err != nil {
-				return nil, err
-			}
+		// Delegate to LocalAgent.AlterUsers which handles task submission.
+		if err := a.localAgent.AlterUsers(context.Background(), req); err != nil {
+			log.Printf("[Agent] AlterUsers %s failed: %v", req.Action, err)
+		} else {
 			log.Printf("[Agent] AlterUsers %s accepted", req.Action)
-			return map[string]interface{}{"action": req.Action}, nil
-		})
+		}
 
 	case *agentpb.PanelCommand_RenewCert:
 		log.Printf("[Agent] renewing mTLS certificate (expires %v)", time.Unix(c.RenewCert.ExpiresAt, 0))
@@ -729,17 +711,12 @@ func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncCo
 }
 
 func (s *agentServiceServer) ControlCore(ctx context.Context, req *agentpb.ControlCoreRequest) (*agentpb.TaskAccept, error) {
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("control-core-%s-%s", req.CoreType, req.Action)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "control_core", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"core_type": req.CoreType, "action": req.Action}, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent.ControlCore which handles task submission internally.
+	// Don't double-submit to the task queue.
+	if err := s.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) GetStatus(ctx context.Context, req *agentpb.GetStatusRequest) (*agentpb.GetStatusResponse, error) {
@@ -747,59 +724,35 @@ func (s *agentServiceServer) GetStatus(ctx context.Context, req *agentpb.GetStat
 }
 
 func (s *agentServiceServer) SyncProxyConfig(ctx context.Context, req *agentpb.SyncProxyConfigRequest) (*agentpb.TaskAccept, error) {
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("sync-proxy-config-%s", req.ProxyType)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "sync_proxy_config", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"proxy_type": req.ProxyType}, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent.SyncProxyConfig which handles task submission internally.
+	if err := s.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) ControlProxy(ctx context.Context, req *agentpb.ControlProxyRequest) (*agentpb.TaskAccept, error) {
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("control-proxy-%s-%s", req.ProxyType, req.Action)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "control_proxy", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"proxy_type": req.ProxyType, "action": req.Action}, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent.ControlProxy which handles task submission internally.
+	if err := s.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) AlterUsers(ctx context.Context, req *agentpb.AlterUsersRequest) (*agentpb.TaskAccept, error) {
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("alter-users-%s-%s", req.InboundTag, req.Action)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "alter_users", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.AlterUsers(ctx, req); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"action": req.Action}, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent.AlterUsers which handles task submission internally.
+	if err := s.localAgent.AlterUsers(ctx, req); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRequest) (*agentpb.TaskAccept, error) {
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("apply-limits-%s-%s", req.Action, req.Ip)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "apply_limits", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.ApplyLimits(ctx, req); err != nil {
-				return nil, err
-			}
-			return nil, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent.ApplyLimits which handles task submission internally.
+	if err := s.localAgent.ApplyLimits(ctx, req); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) UpdateAgent(ctx context.Context, req *agentpb.UpdateAgentRequest) (*agentpb.TaskAccept, error) {

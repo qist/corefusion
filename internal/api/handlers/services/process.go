@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"corefusion/internal/api/response"
@@ -16,6 +18,21 @@ import (
 type NodeOperator interface {
 	IsLocalServer(ctx context.Context, serverID int64) bool
 	ControlCore(ctx context.Context, serverID int64, coreType, action string) error
+	GetRemoteState(ctx context.Context, serverID int64) (coreStates map[string]*CoreStateInfo, binaries []*BinaryInfoItem, err error)
+}
+
+// CoreStateInfo represents a core's state on a remote node.
+type CoreStateInfo struct {
+	State string
+	PID   int32
+}
+
+// BinaryInfoItem represents an installed binary on a remote node.
+type BinaryInfoItem struct {
+	CoreType   string
+	Version    string
+	BinaryPath string
+	Installed  bool
 }
 
 // ProcessHandler handles service process management requests.
@@ -58,7 +75,10 @@ func (h *ProcessHandler) Start(c *gin.Context) {
 
 	// Route to remote node via NodeOperator if not local
 	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), svc.ServerID) {
-		if err := h.nodeOperator.ControlCore(c.Request.Context(), svc.ServerID, svc.CoreType, "start"); err != nil {
+		// Remote start: synchronous with timeout (should be fast)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.nodeOperator.ControlCore(ctx, svc.ServerID, svc.CoreType, "start"); err != nil {
 			response.InternalError(c, "START_FAILED", err.Error())
 			return
 		}
@@ -90,11 +110,19 @@ func (h *ProcessHandler) Stop(c *gin.Context) {
 
 	// Route to remote node via NodeOperator if not local
 	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), svc.ServerID) {
-		if err := h.nodeOperator.ControlCore(c.Request.Context(), svc.ServerID, svc.CoreType, "stop"); err != nil {
-			response.InternalError(c, "STOP_FAILED", err.Error())
-			return
-		}
-		response.OK(c, gin.H{"service_id": serviceID, "status": "stopped"})
+		// Remote stop: async — process shutdown can take 10+ seconds
+		// The Agent's process.Manager.Stop is non-blocking, but the gRPC
+		// round-trip still waits for the RPC completion. Fire and forget.
+		go func(serverID int64, coreType string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if err := h.nodeOperator.ControlCore(ctx, serverID, coreType, "stop"); err != nil {
+				log.Printf("[process] async stop %s on server %d failed: %v", coreType, serverID, err)
+			} else {
+				log.Printf("[process] async stop %s on server %d completed", coreType, serverID)
+			}
+		}(svc.ServerID, svc.CoreType)
+		response.OK(c, gin.H{"service_id": serviceID, "status": "stopping", "async": true})
 		return
 	}
 
@@ -122,11 +150,17 @@ func (h *ProcessHandler) Restart(c *gin.Context) {
 
 	// Route to remote node via NodeOperator if not local
 	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), svc.ServerID) {
-		if err := h.nodeOperator.ControlCore(c.Request.Context(), svc.ServerID, svc.CoreType, "restart"); err != nil {
-			response.InternalError(c, "RESTART_FAILED", err.Error())
-			return
-		}
-		response.OK(c, gin.H{"service_id": serviceID, "status": "running"})
+		// Remote restart: async — stop+sleep+start can take 10+ seconds
+		go func(serverID int64, coreType string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if err := h.nodeOperator.ControlCore(ctx, serverID, coreType, "restart"); err != nil {
+				log.Printf("[process] async restart %s on server %d failed: %v", coreType, serverID, err)
+			} else {
+				log.Printf("[process] async restart %s on server %d completed", coreType, serverID)
+			}
+		}(svc.ServerID, svc.CoreType)
+		response.OK(c, gin.H{"service_id": serviceID, "status": "restarting", "async": true})
 		return
 	}
 
@@ -169,6 +203,15 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 		serverID = 1
 	}
 
+	isRemote := h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(c.Request.Context(), serverID)
+
+	// For remote nodes, use cached state from Agent instead of local processMgr
+	var remoteCoreStates map[string]*CoreStateInfo
+	var remoteBinaries []*BinaryInfoItem
+	if isRemote {
+		remoteCoreStates, remoteBinaries, _ = h.nodeOperator.GetRemoteState(c.Request.Context(), serverID)
+	}
+
 	processes := h.processMgr.ListAll()
 
 	// Build a map for quick lookup
@@ -184,58 +227,106 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 		return
 	}
 
-	// Load all guardians
+	// Load all guardians (local only)
 	guardians, _ := h.processMgr.ListGuardians(c.Request.Context())
-	guardianMap := make(map[int64]bool)
 	guardianAutoStart := make(map[int64]bool)
 	guardianAutoRestart := make(map[int64]bool)
 	guardianMaxRestarts := make(map[int64]int)
 	for _, g := range guardians {
-		guardianMap[g.ServiceID] = true
 		guardianAutoStart[g.ServiceID] = g.AutoStart
 		guardianAutoRestart[g.ServiceID] = g.AutoRestart
 		guardianMaxRestarts[g.ServiceID] = g.MaxRestartCount
 	}
 
+	// Build binary lookup map from remote state or local resolver
+	type binaryInfo struct {
+		installed bool
+		version   string
+	}
+	binaryMap := make(map[string]*binaryInfo)
+	if isRemote && remoteBinaries != nil {
+		for _, b := range remoteBinaries {
+			binaryMap[b.CoreType] = &binaryInfo{installed: b.Installed, version: b.Version}
+		}
+	} else {
+		// Local: resolve from processMgr
+		for _, svc := range services {
+			if _, ok := binaryMap[svc.CoreType]; !ok {
+				if _, ver, err := h.processMgr.ResolveBinary(svc.CoreType); err == nil {
+					binaryMap[svc.CoreType] = &binaryInfo{installed: true, version: ver}
+				}
+			}
+		}
+	}
+
+	// Build core state lookup from remote state or local processMgr
+	type coreStateInfo struct {
+		state string
+		pid   int
+		uptime int64
+		cpu   float64
+		mem   int64
+	}
+	coreStateMap := make(map[string]*coreStateInfo)
+	if isRemote && remoteCoreStates != nil {
+		for coreType, cs := range remoteCoreStates {
+			coreStateMap[coreType] = &coreStateInfo{
+				state: cs.State,
+				pid:   int(cs.PID),
+			}
+		}
+	}
+
 	// Merge service info with process status
 	var result []gin.H
 	for _, svc := range services {
-		// Check binary installation
-		binaryInstalled := false
+		bi := binaryMap[svc.CoreType]
+		binaryInstalled := bi != nil && bi.installed
 		binaryVersion := ""
-		if _, ver, err := h.processMgr.ResolveBinary(svc.CoreType); err == nil {
-			binaryInstalled = true
-			binaryVersion = ver
+		if bi != nil {
+			binaryVersion = bi.version
 		}
 
 		item := gin.H{
-			"service_id":         svc.ID,
-			"name":               svc.Name,
-			"core_type":          svc.CoreType,
-			"protocol":           svc.Protocol,
-			"listen_host":        svc.ListenHost,
-			"listen_port":        svc.ListenPort,
-			"state":              "stopped",
-			"pid":                0,
-			"uptime":             0,
-			"cpu":                0.0,
-			"mem":                0,
-			"binary_installed":   binaryInstalled,
-			"version":            binaryVersion,
-			"auto_start":         guardianAutoStart[svc.ID],
-			"auto_restart":       guardianAutoRestart[svc.ID],
-			"max_restart_count":  guardianMaxRestarts[svc.ID],
+			"service_id":        svc.ID,
+			"name":              svc.Name,
+			"core_type":         svc.CoreType,
+			"protocol":          svc.Protocol,
+			"listen_host":       svc.ListenHost,
+			"listen_port":      svc.ListenPort,
+			"state":             "stopped",
+			"pid":               0,
+			"uptime":            0,
+			"cpu":               0.0,
+			"mem":               int64(0),
+			"binary_installed":  binaryInstalled,
+			"version":           binaryVersion,
+			"auto_start":        guardianAutoStart[svc.ID],
+			"auto_restart":      guardianAutoRestart[svc.ID],
+			"max_restart_count": guardianMaxRestarts[svc.ID],
 		}
 
-		if p, ok := statusMap[svc.ID]; ok {
-			item["state"] = p.State
-			item["pid"] = p.PID
-			item["uptime"] = p.Uptime
-			item["cpu"] = p.CPU
-			item["mem"] = p.Mem
-			item["started_at"] = p.StartedAt
-			if p.LastError != "" {
-				item["last_error"] = p.LastError
+		if isRemote {
+			// Use remote cached state
+			if cs, ok := coreStateMap[svc.CoreType]; ok {
+				item["state"] = cs.state
+				item["pid"] = cs.pid
+				item["uptime"] = cs.uptime
+				item["cpu"] = cs.cpu
+				item["mem"] = cs.mem
+			}
+		} else {
+			// Use local process manager state
+			if p, ok := statusMap[svc.ID]; ok {
+				item["state"] = p.State
+				item["pid"] = p.PID
+				item["uptime"] = p.Uptime
+				item["cpu"] = p.CPU
+				item["mem"] = p.Mem
+				item["started_at"] = p.StartedAt
+				if p.LastError != "" {
+					item["last_error"] = p.LastError
+				}
 			}
 		}
 

@@ -139,6 +139,10 @@ type AgentConnection struct {
 	// Cached core states from last status report
 	coreStates     map[string]*agentpb.CoreStatus
 	statusReported bool // true after first STATUS report received
+
+	// Cached binary info from last ListBinaries query
+	cachedBinaries     []*agentpb.BinaryInfo
+	cachedBinariesAt   time.Time
 }
 
 // LastHeartbeatTime returns the last heartbeat timestamp.
@@ -399,7 +403,7 @@ func (m *NodeServerManager) ApplyLimitsOnServer(ctx context.Context, serverID in
 
 // SyncProxyConfig syncs proxy configuration (Caddy/Nginx) to a server.
 // For local servers, delegates to LocalAgent → proxy.Manager.WriteConfigFile.
-// For remote servers, sends config via gRPC to the Agent.
+// For remote servers, sends config via the heartbeat stream.
 func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64, proxyType string, config []byte) error {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -414,30 +418,24 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 		}
 		return nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_SyncProxyConfig{
+			SyncProxyConfig: &agentpb.SyncProxyConfigRequest{
+				ProxyType:     proxyType,
+				ConfigContent: config,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.SyncProxyConfig(ctx, &agentpb.SyncProxyConfigRequest{
-		ProxyType:     proxyType,
-		ConfigContent: config,
-	})
-	if err != nil {
-		return err
-	}
-	if !resp.Success {
-		return fmt.Errorf("%s", resp.Error)
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return fmt.Errorf("send SyncProxyConfig command to server %d: %w", serverID, err)
 	}
 	return nil
 }
 
 // ControlProxy controls a proxy process (Caddy/Nginx) on a server.
 // For local servers, delegates to LocalAgent → proxy.Manager.StartProxy/StopProxy/etc.
-// For remote servers, sends control command via gRPC to the Agent.
+// For remote servers, sends control command via the heartbeat stream.
 func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -452,23 +450,17 @@ func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, pr
 		}
 		return nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_ControlProxy{
+			ControlProxy: &agentpb.ControlProxyRequest{
+				ProxyType: proxyType,
+				Action:    action,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.ControlProxy(ctx, &agentpb.ControlProxyRequest{
-		ProxyType: proxyType,
-		Action:    action,
-	})
-	if err != nil {
-		return err
-	}
-	if !resp.Success {
-		return fmt.Errorf("%s", resp.Error)
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return fmt.Errorf("send ControlProxy command to server %d: %w", serverID, err)
 	}
 	return nil
 }
@@ -761,40 +753,40 @@ func (m *NodeServerManager) DisconnectServer(ctx context.Context, serverID int64
 }
 
 // SyncConfigToServer syncs core configuration to a specific server.
+// It sends the config via the heartbeat stream (PanelCommand_SyncConfig),
+// which is more reliable than the reverse gRPC connection.
 func (m *NodeServerManager) SyncConfigToServer(ctx context.Context, serverID int64, coreType string, config []byte, version int64) error {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_SyncConfig{
+			SyncConfig: &agentpb.SyncConfigRequest{
+				CoreType:      coreType,
+				ConfigContent: config,
+				ConfigVersion: version,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return fmt.Errorf("server %d agent client not available (commands sent via heartbeat stream)", serverID)
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return fmt.Errorf("send SyncConfig command to server %d: %w", serverID, err)
 	}
-	_, err := ac.agentClient.SyncConfig(ctx, &agentpb.SyncConfigRequest{
-		CoreType:      coreType,
-		ConfigContent: config,
-		ConfigVersion: version,
-	})
-	return err
+	return nil
 }
 
 // ControlCoreOnServer sends a control command to a server's core process.
+// It sends the command via the heartbeat stream (PanelCommand_ControlCore),
+// which is more reliable than the reverse gRPC connection because the stream
+// is always active and verified working (unlike the reverse-dial gRPC client
+// which can become stale if the Agent restarts).
 func (m *NodeServerManager) ControlCoreOnServer(ctx context.Context, serverID int64, coreType, action string) error {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_ControlCore{
+			ControlCore: &agentpb.ControlCoreRequest{
+				CoreType: coreType,
+				Action:   action,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return fmt.Errorf("server %d agent client not available (commands sent via heartbeat stream)", serverID)
-	}
-	resp, err := ac.agentClient.ControlCore(ctx, &agentpb.ControlCoreRequest{
-		CoreType: coreType,
-		Action:   action,
-	})
-	if err != nil {
-		return err
-	}
-	if !resp.Success {
-		return fmt.Errorf("control failed: %s", resp.Error)
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return fmt.Errorf("send ControlCore command to server %d: %w", serverID, err)
 	}
 	return nil
 }
@@ -806,11 +798,6 @@ func (m *NodeServerManager) GetServerStatus(ctx context.Context, serverID int64)
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return nil, fmt.Errorf("server %d not connected", serverID)
-	}
-
-	// If we have a direct gRPC client to the Agent, use it
-	if ac.agentClient != nil {
-		return ac.agentClient.GetStatus(ctx, &agentpb.GetStatusRequest{})
 	}
 
 	// Fallback: return cached core states from last heartbeat status report
@@ -826,6 +813,43 @@ func (m *NodeServerManager) GetServerStatus(ctx context.Context, serverID int64)
 		cores = append(cores, cs)
 	}
 	return &agentpb.GetStatusResponse{Cores: cores}, nil
+}
+
+// GetRemoteState returns cached state from a remote Agent (core states + binaries).
+// This does NOT make a gRPC call — it uses data cached from heartbeat status reports
+// and the last successful ListBinaries query. This prevents API blocking on stale
+// gRPC connections.
+func (m *NodeServerManager) GetRemoteState(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, []*agentpb.BinaryInfo, error) {
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, nil, fmt.Errorf("server %d not connected", serverID)
+	}
+
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+
+	// Core states from heartbeat
+	var cores []*agentpb.CoreStatus
+	if ac.statusReported {
+		for _, cs := range ac.coreStates {
+			cores = append(cores, cs)
+		}
+	}
+
+	// Binaries from cache (refresh if older than 5 minutes)
+	binaries := ac.cachedBinaries
+	if binaries == nil && ac.agentClient != nil {
+		// Try to fetch with short timeout (won't block long)
+		fetchCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if resp, err := ac.agentClient.ListBinaries(fetchCtx, &agentpb.ListBinariesRequest{}); err == nil {
+			binaries = resp.Binaries
+			ac.cachedBinaries = binaries
+			ac.cachedBinariesAt = time.Now()
+		}
+	}
+
+	return &agentpb.GetStatusResponse{Cores: cores}, binaries, nil
 }
 
 // TrafficEvents returns the channel for consuming traffic events.

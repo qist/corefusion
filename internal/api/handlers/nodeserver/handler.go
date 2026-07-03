@@ -1,6 +1,8 @@
 package nodeserver
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -687,7 +689,35 @@ func (h *Handler) ControlCore(c *gin.Context) {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
 		return
 	}
-	if err := h.svc.ControlCore(c.Request.Context(), id, req.CoreType, req.Action); err != nil {
+
+	isRemote := h.svc != nil && !h.svc.IsLocalServer(c.Request.Context(), id)
+
+	// For stop/restart on remote nodes: run async and return immediately.
+	// Both stop and restart involve process shutdown which can take 10+ seconds.
+	// The Agent's process.Manager.Stop/Restart are now non-blocking (return immediately),
+	// but the gRPC round-trip still waits for the RPC to complete. By running
+	// the gRPC call in a goroutine, the HTTP handler returns instantly.
+	if isRemote && (req.Action == "stop" || req.Action == "restart") {
+		go func(serverID int64, coreType, action string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if err := h.svc.ControlCore(ctx, serverID, coreType, action); err != nil {
+				log.Printf("[nodeserver] async %s %s on server %d failed: %v", action, coreType, serverID, err)
+			} else {
+				log.Printf("[nodeserver] async %s %s on server %d completed", action, coreType, serverID)
+			}
+		}(id, req.CoreType, req.Action)
+		response.OK(c, gin.H{"controlled": true, "server_id": id, "action": req.Action, "async": true})
+		return
+	}
+
+	// For local operations and remote start: synchronous with timeout.
+	// Local process.Manager.Stop/Restart are non-blocking (return in ms).
+	// Remote start should be fast (< 5s).
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	if err := h.svc.ControlCore(ctx, id, req.CoreType, req.Action); err != nil {
 		response.InternalError(c, "CONTROL_FAILED", err.Error())
 		return
 	}
@@ -695,6 +725,9 @@ func (h *Handler) ControlCore(c *gin.Context) {
 }
 
 // SyncServerConfig triggers a manual config sync to a server.
+// If config is not provided in the request body, it auto-generates the full config
+// from core_configs + inbound_configs + outbound_configs tables using PrepareFullConfig,
+// then syncs the generated config to the target node.
 func (h *Handler) SyncServerConfig(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -710,7 +743,33 @@ func (h *Handler) SyncServerConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
 		return
 	}
-	if err := h.svc.SyncServerConfig(c.Request.Context(), id, req.CoreType, []byte(req.Config), req.Version); err != nil {
+
+	configData := []byte(req.Config)
+
+	// If no config provided, auto-generate from DB tables (same as syncConfigToServer)
+	if len(configData) == 0 && h.coreConfigSvc != nil {
+		ctx := c.Request.Context()
+		fullConfig, err := h.coreConfigSvc.GetFull(ctx, id, req.CoreType)
+		if err != nil {
+			response.InternalError(c, "SYNC_FAILED", "failed to generate config: "+err.Error())
+			return
+		}
+		data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+			Ctx:              ctx,
+			ServerID:         id,
+			CoreType:         req.CoreType,
+			FullConfig:       fullConfig,
+			InboundProvider:  h.inboundConfigSvc,
+			OutboundProvider: h.outboundConfigSvc,
+		})
+		if err != nil {
+			response.InternalError(c, "SYNC_FAILED", "failed to prepare config: "+err.Error())
+			return
+		}
+		configData = data
+	}
+
+	if err := h.svc.SyncServerConfig(c.Request.Context(), id, req.CoreType, configData, req.Version); err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}

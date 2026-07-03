@@ -1610,24 +1610,27 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 		reloadCmd.Dir = m.dataDir
 		return reloadCmd.Run()
 	case ProxyCaddy:
-		// Caddy doesn't have a simple reload signal, need to restart
+		// Caddy supports in-process hot config reload via "caddy reload" command.
+		// This atomically replaces the running configuration without restarting
+		// the process — existing connections are preserved.
+		// See: https://caddyserver.com/docs/command-line#caddy-reload
 		info := m.DetectProxy(proxyType)
 		if !info.Installed {
 			return fmt.Errorf("caddy not installed")
 		}
-		configPath := m.GetConfigPath(proxyType)
-		m.stopExisting(proxyType)
-		time.Sleep(500 * time.Millisecond)
+		if info.Status != "running" {
+			return fmt.Errorf("caddy is not running (state=%s), use start instead", info.Status)
+		}
 		binPath := info.Path
 		if strings.HasPrefix(binPath, m.dataDir) {
 			binPath, _ = filepath.Rel(m.dataDir, binPath)
 		}
-		cmd := exec.Command(binPath, "run", "--config", configPath, "--adapter", "caddyfile")
-		cmd.Dir = m.dataDir
-		if err := cmd.Start(); err != nil {
-			return err
+		configPath := m.GetConfigPath(proxyType)
+		reloadCmd := exec.Command(binPath, "reload", "--config", configPath, "--adapter", "caddyfile")
+		reloadCmd.Dir = m.dataDir
+		if out, err := reloadCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("caddy reload failed: %s", strings.TrimSpace(string(out)))
 		}
-		go func() { cmd.Wait() }()
 		return nil
 	}
 	return fmt.Errorf("unsupported proxy type")

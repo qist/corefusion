@@ -212,6 +212,28 @@ func (m *Manager) reattach(g entity.ProcessGuardian) {
 
 // Start starts a core process.
 func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) error {
+	// Generate config OUTSIDE the lock — configGen may query the database
+	// which can be slow and would block all other mu.Lock() callers.
+	configDir := filepath.Join(m.dataDir, "runtime")
+	os.MkdirAll(configDir, 0750)
+	configPath := filepath.Join(configDir, coreType+".jsonc")
+	if m.configGen != nil {
+		if err := m.configGen(ctx, coreType, configPath); err != nil {
+			return fmt.Errorf("generate config: %w", err)
+		}
+	} else {
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			return fmt.Errorf("config not found: %s", configPath)
+		}
+	}
+
+	// Resolve binary OUTSIDE the lock (filesystem access)
+	binaryPath, _, err := m.resolver.Resolve(coreType)
+	if err != nil {
+		return fmt.Errorf("binary not found for %s: %w", coreType, err)
+	}
+
+	// Now acquire lock for the fast in-memory operations
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -225,26 +247,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	if g, ok := m.guardians[serviceID]; ok {
 		g.Stop()
 		delete(m.guardians, serviceID)
-	}
-
-	// Resolve binary
-	binaryPath, _, err := m.resolver.Resolve(coreType)
-	if err != nil {
-		return fmt.Errorf("binary not found for %s: %w", coreType, err)
-	}
-
-	// Config path - always regenerate from core_configs on start
-	configDir := filepath.Join(m.dataDir, "runtime")
-	os.MkdirAll(configDir, 0750)
-	configPath := filepath.Join(configDir, coreType+".jsonc")
-	if m.configGen != nil {
-		if err := m.configGen(ctx, coreType, configPath); err != nil {
-			return fmt.Errorf("generate config: %w", err)
-		}
-	} else {
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return fmt.Errorf("config not found: %s", configPath)
-		}
 	}
 
 	// Log file
@@ -262,8 +264,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
 
 	// Ensure geo files are accessible from the panel's lookup paths.
-	// Xray config parsing during control API calls may resolve geodata relative
-	// to the panel executable directory rather than the xray subprocess dir.
 	rulesDir := filepath.Join(m.dataDir, "rules")
 	if _, err := os.Stat(rulesDir); err == nil {
 		symlinkGeoFiles(rulesDir)
@@ -274,7 +274,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	// Set resource path for geoip/geosite files
-	// Priority: 1. Environment variable, 2. Default (dataDir/rules)
 	xrayAssetPath := os.Getenv("XRAY_LOCATION_ASSET")
 	if xrayAssetPath == "" {
 		xrayAssetPath = rulesDir
@@ -346,68 +345,59 @@ func (m *Manager) Stop(ctx context.Context, serviceID int64) error {
 		m.mu.Unlock()
 		return fmt.Errorf("service %d not found", serviceID)
 	}
-	if p.state != "running" {
+	if p.state != "running" && p.state != "restarting" {
 		m.mu.Unlock()
-		return fmt.Errorf("service %d is not running", serviceID)
+		return fmt.Errorf("service %d is not running (state=%s)", serviceID, p.state)
 	}
-	p.state = "stopping"
 
-	// Stop guardian to prevent auto-restart
-	if g, ok := m.guardians[serviceID]; ok {
+	// Stop guardian immediately to prevent auto-restart interference
+	if g, gok := m.guardians[serviceID]; gok {
 		g.Stop()
 		delete(m.guardians, serviceID)
 	}
+
+	// Mark as stopping so status queries return correct state
+	p.state = "stopping"
+	oldPID := p.pid
 	m.mu.Unlock()
 
-	// Send SIGTERM to process group
-	if p.cmd != nil && p.cmd.Process != nil {
-		killProcess(p.pid)
-	}
+	log.Printf("stop service %d (pid=%d): initiating async stop", serviceID, oldPID)
 
-	waitForExit := func(timeout time.Duration) bool {
-		if p.exitDone == nil {
+	// Non-blocking: send kill signal and spawn goroutine to wait + cleanup.
+	// The caller (HTTP handler or gRPC) returns immediately.
+	go func() {
+		// Send SIGTERM to process group
+		if oldPID > 0 {
+			killProcess(oldPID)
+		}
+
+		// Wait for exit (up to 10s graceful, then force kill)
+		waitForExit := func(timeout time.Duration) bool {
 			deadline := time.Now().Add(timeout)
-			for isProcessAlive(p.pid) && time.Now().Before(deadline) {
+			for isProcessAlive(oldPID) && time.Now().Before(deadline) {
 				time.Sleep(100 * time.Millisecond)
 			}
-			return !isProcessAlive(p.pid)
+			return !isProcessAlive(oldPID)
 		}
 
-		timer := time.NewTimer(timeout)
-		defer timer.Stop()
-		if ctx == nil {
-			select {
-			case <-p.exitDone:
-				return true
-			case <-timer.C:
-				return false
-			}
+		exited := waitForExit(10 * time.Second)
+		if !exited {
+			log.Printf("stop service %d: process %d did not exit gracefully, force killing", serviceID, oldPID)
+			forceKillProcess(oldPID)
+			waitForExit(3 * time.Second)
 		}
-		select {
-		case <-p.exitDone:
-			return true
-		case <-timer.C:
-			return false
-		case <-ctx.Done():
-			return false
-		}
-	}
 
-	exited := waitForExit(10 * time.Second)
-	if !exited {
-		forceKillProcess(p.pid)
-		exited = waitForExit(3 * time.Second)
-	}
+		m.mu.Lock()
+		p.state = "stopped"
+		p.pid = 0
+		p.lastError = nil
+		m.mu.Unlock()
 
-	m.mu.Lock()
-	p.state = "stopped"
-	p.pid = 0
-	p.lastError = nil
-	m.mu.Unlock()
+		// Mark manually stopped
+		m.persistState(serviceID, "stopped", 0, true)
+		log.Printf("stopped service %d (pid=%d)", serviceID, oldPID)
+	}()
 
-	// Mark manually stopped
-	m.persistState(serviceID, "stopped", 0, true)
-	log.Printf("stopped service %d", serviceID)
 	return nil
 }
 
@@ -433,12 +423,65 @@ func (m *Manager) reapZombies(serviceID int64) {
 }
 
 // Restart restarts a core process.
+// This method is non-blocking: it immediately stops the Guardian (to prevent
+// auto-restart interference), marks the process as "restarting", then spawns
+// a goroutine to perform the actual stop → sleep → start sequence.
+// This prevents the HTTP handler from being blocked for 10+ seconds while
+// waiting for the process to exit and the new one to start.
 func (m *Manager) Restart(ctx context.Context, serviceID int64, coreType string) error {
-	if err := m.Stop(ctx, serviceID); err != nil {
-		log.Printf("stop before restart: %v", err)
+	m.mu.Lock()
+	p, ok := m.processes[serviceID]
+	if !ok {
+		// Process not tracked — just start it
+		m.mu.Unlock()
+		return m.Start(ctx, serviceID, coreType)
 	}
-	time.Sleep(1 * time.Second)
-	return m.Start(ctx, serviceID, coreType)
+
+	// Stop guardian immediately to prevent auto-restart interference
+	if g, gok := m.guardians[serviceID]; gok {
+		g.Stop()
+		delete(m.guardians, serviceID)
+	}
+
+	// Mark as restarting so status queries return correct state
+	p.state = "restarting"
+	oldPID := p.pid
+	m.mu.Unlock()
+
+	log.Printf("restart service %d (pid=%d, core=%s): initiating async restart", serviceID, oldPID, coreType)
+
+	// Perform the actual restart in a goroutine
+	go func() {
+		// Stop the old process (may take up to 13s with graceful shutdown)
+		if oldPID > 0 {
+			killProcess(oldPID)
+			// Wait for process to exit (max 10s graceful + 3s forced)
+			deadline := time.Now().Add(13 * time.Second)
+			for isProcessAlive(oldPID) && time.Now().Before(deadline) {
+				time.Sleep(100 * time.Millisecond)
+			}
+			if isProcessAlive(oldPID) {
+				forceKillProcess(oldPID)
+			}
+		}
+
+		// Brief pause before starting new process
+		time.Sleep(1 * time.Second)
+
+		// Clean up old process entry and start new one
+		m.mu.Lock()
+		delete(m.processes, serviceID)
+		m.mu.Unlock()
+
+		if err := m.Start(context.Background(), serviceID, coreType); err != nil {
+			log.Printf("restart service %d: start failed: %v", serviceID, err)
+			m.persistState(serviceID, "stopped", 0, false)
+		} else {
+			log.Printf("restart service %d: completed successfully", serviceID)
+		}
+	}()
+
+	return nil
 }
 
 // GetStatus returns the status of a core process.

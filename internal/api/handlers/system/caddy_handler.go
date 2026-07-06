@@ -41,6 +41,8 @@ func (h *CaddyHandler) applyServerID(c *gin.Context) (int64, bool) {
 	}
 	h.caddyMgr.SetServerID(sid)
 	h.proxyMgr.SetServerID(sid)
+	h.caddyMgr.SetIsLocal(isLocal)
+	h.proxyMgr.SetIsLocal(isLocal)
 	return sid, isLocal
 }
 

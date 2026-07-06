@@ -19,10 +19,14 @@ configDir    string
 siteRepo     *repository.CaddySiteRepository
 settingStore SettingStore
 serverID     int64
+isLocal      bool
 }
 
 // SetServerID sets the server ID for per-node site filtering.
 func (m *CaddyManager) SetServerID(id int64) { m.serverID = id }
+
+// SetIsLocal sets whether this manager is operating on the local node.
+func (m *CaddyManager) SetIsLocal(v bool) { m.isLocal = v }
 
 // NewCaddyManager creates a new CaddyManager.
 func NewCaddyManager(dataDir string, siteRepo *repository.CaddySiteRepository, settingStore SettingStore) *CaddyManager {
@@ -77,8 +81,6 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	compatMode := proxySandboxCompatMode(m.dataDir)
-
 	// Read SNI settings for proxy_protocol rules
 	sniSettings, _ := m.GetSNISettings(ctx)
 
@@ -93,7 +95,6 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 			if port == "" {
 				port = "443"
 			}
-			port = caddyCompatPort(port, true, compatMode)
 			sniByPort[port] = append(sniByPort[port], site)
 		} else if site.Template == "l4" {
 			l4Sites = append(l4Sites, site)
@@ -129,10 +130,6 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	// Global options
 	sb.WriteString("{\n")
 	sb.WriteString("\tauto_https off\n")
-	if compatMode {
-		sb.WriteString("\thttp_port 29088\n")
-		sb.WriteString("\thttps_port 29443\n")
-	}
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -204,16 +201,14 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	sb.WriteString("}\n\n")
 
 	if len(httpSites) == 0 && !hasL4 {
-		addr := ":80"
-		if compatMode {
-			addr = ":29088"
-		}
-		sb.WriteString(addr + " {\n")
-		sb.WriteString("\t# ACME HTTP-01 challenge support\n")
-		sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-		sb.WriteString("\thandle @acme {\n")
-		sb.WriteString("\t\treverse_proxy 127.0.0.1:8080\n")
+		sb.WriteString(":80 {\n")
+		if m.isLocal {
+			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
+			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+			sb.WriteString("\thandle @acme {\n")
+sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 		sb.WriteString("\t}\n")
+		}
 		sb.WriteString("\trespond \"CoreFusion\" 200\n")
 		sb.WriteString("}\n")
 		return sb.String(), nil
@@ -226,9 +221,8 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	}
 
 	for domain, siteList := range domainSites {
-		siteAddr := caddyCompatAddress(domain, compatMode)
 		sb.WriteString(fmt.Sprintf("# %s\n", domain))
-		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
+		sb.WriteString(fmt.Sprintf("%s {\n", domain))
 
 		for _, site := range siteList {
 			if site.CertPath != "" && site.KeyPath != "" {
@@ -237,14 +231,16 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 			}
 		}
 
-		// ACME HTTP-01 challenge support
-		sb.WriteString("\t# ACME HTTP-01 challenge support\n")
-		sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-		sb.WriteString("\thandle @acme {\n")
-		sb.WriteString("\t\treverse_proxy 127.0.0.1:8080\n")
+		// ACME HTTP-01 challenge support (local node only)
+		if m.isLocal {
+			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
+			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+			sb.WriteString("\thandle @acme {\n")
+sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 		sb.WriteString("\t}\n")
+		}
 
-		// Per-site log block (from first site that has it)
+		// Per-site log block
 		// Check global log output mode
 		caddyLogMode := "file"
 		if m.settingStore != nil {
@@ -340,18 +336,35 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	return sb.String(), nil
 }
 
+// panelAddr returns the panel address (host:port) for reverse_proxy directives.
+// It reads panel.listen_port from settings, defaulting to 8080.
+func (m *CaddyManager) panelAddr(ctx context.Context) string {
+	port := "8080"
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "panel.listen_port"); err == nil && v != "" {
+			port = v
+		}
+	}
+	return "127.0.0.1:" + port
+}
+
 func (m *CaddyManager) resolvePath(path string) string {
 	if path == "" {
 		return path
 	}
+	// Return relative path so config is portable across local and remote nodes.
+	// Caddy runs with cmd.Dir = dataDir, so relative paths resolve correctly.
 	if filepath.IsAbs(path) {
+		if rel, err := filepath.Rel(m.dataDir, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
 		return path
 	}
 	base := filepath.Base(m.dataDir)
 	if strings.HasPrefix(path, base+"/") {
-		path = strings.TrimPrefix(path, base+"/")
+		return strings.TrimPrefix(path, base+"/")
 	}
-	return filepath.Join(m.dataDir, path)
+	return path
 }
 
 func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
@@ -386,10 +399,13 @@ func (m *CaddyManager) generateL4Block(site *entity.CaddySite) string {
 	if port == "" {
 		port = "443"
 	}
-	port = caddyCompatPort(port, true, proxySandboxCompatMode(m.dataDir))
+	port = site.Path
+	if port == "" {
+		port = "443"
+	}
 	upstream := site.Upstream
 	if upstream == "" {
-		upstream = "127.0.0.1:8080"
+		upstream = m.panelAddr(context.Background())
 	}
 	proto := site.L4Protocol
 	if proto == "" {

@@ -39,9 +39,11 @@ func (h *NginxHandler) applyServerID(c *gin.Context) (int64, bool) {
 	if sid == 0 {
 		sid = localServerID
 	}
-	h.nginxMgr.SetServerID(sid)
-	h.proxyMgr.SetServerID(sid)
-	return sid, isLocal
+h.nginxMgr.SetServerID(sid)
+h.proxyMgr.SetServerID(sid)
+h.nginxMgr.SetIsLocal(isLocal)
+h.proxyMgr.SetIsLocal(isLocal)
+return sid, isLocal
 }
 
 // --- Site Management ---

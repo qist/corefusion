@@ -194,7 +194,7 @@
             <el-button size="small" @click="showAddSite('http')">+ HTTP</el-button>
             <el-button size="small" @click="showAddSite('websocket')">+ WS</el-button>
             <el-button size="small" @click="showAddSite('grpc')">+ gRPC</el-button>
-            <el-button size="small" type="primary" @click="showPanelProxy">{{ t('proxy.proxyPanel') }}</el-button>
+            <el-button v-if="isLocal" size="small" type="primary" @click="showPanelProxy">{{ t('proxy.proxyPanel') }}</el-button>
           </div>
         </div>
       </template>
@@ -398,7 +398,8 @@ const { t } = useI18n()
 const emit = defineEmits(['back'])
 
 const props = defineProps({
-  serverId: { type: Number, required: true }
+  serverId: { type: Number, required: true },
+  isLocal: { type: Boolean, default: false }
 })
 
 // API base paths (node-server-scoped)

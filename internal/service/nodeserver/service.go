@@ -921,6 +921,35 @@ func (s *Service) GetProxyStatusRemote(ctx context.Context, serverID int64) (int
 	return s.nodeMgr.GetProxyStatus(ctx, serverID)
 }
 
+// UpdateProxyGuardian updates proxy guardian settings for a specific server.
+// For local nodes, the caller (ProxyHandler) handles the update directly.
+// For remote nodes, this stores the settings in the panel DB for display.
+func (s *Service) UpdateProxyGuardian(ctx context.Context, serverID int64, proxyType string, autoStart, autoRestart *bool, maxRestarts *int) error {
+	if s.nodeMgr == nil {
+		return fmt.Errorf("node manager not initialized")
+	}
+	// Read current values
+	curAutoStart, curAutoRestart, curMaxRestarts := s.nodeMgr.GetProxyGuardianSettingsForServer(ctx, serverID, proxyType)
+	if autoStart != nil {
+		curAutoStart = *autoStart
+	}
+	if autoRestart != nil {
+		curAutoRestart = *autoRestart
+	}
+	if maxRestarts != nil && *maxRestarts > 0 {
+		curMaxRestarts = *maxRestarts
+	}
+	return s.nodeMgr.UpdateProxyGuardianForServer(ctx, serverID, proxyType, curAutoStart, curAutoRestart, curMaxRestarts)
+}
+
+// GetProxyGuardianSettingsForServer reads proxy guardian settings from the panel DB.
+func (s *Service) GetProxyGuardianSettingsForServer(ctx context.Context, serverID int64, proxyType string) (autoStart, autoRestart bool, maxRestarts int) {
+	if s.nodeMgr == nil {
+		return true, false, 5
+	}
+	return s.nodeMgr.GetProxyGuardianSettingsForServer(ctx, serverID, proxyType)
+}
+
 // ListBinaries lists installed core binaries on a specific server.
 func (s *Service) ListBinaries(ctx context.Context, serverID int64) (interface{}, error) {
 	if s.nodeMgr == nil {

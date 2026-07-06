@@ -60,10 +60,12 @@ type NodeServerManager struct {
 	dataSyncProvider DataSyncProvider
 }
 
-// NodeSettingStore provides access to system settings for GitHub acceleration.
+// NodeSettingStore provides access to system settings for GitHub acceleration
+// and proxy guardian settings.
 // Implemented by systemSettingService.
 type NodeSettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key, value string) error
 }
 
 // SetSettingStore sets the setting store for GitHub acceleration config.
@@ -451,25 +453,69 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 // For local servers, delegates to LocalAgent → proxy.Manager.StartProxy/StopProxy/etc.
 // For remote servers, sends control command via the heartbeat stream.
 func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error {
-	if m.isLocalServer(serverID) {
-		if m.localAgent == nil {
-			return fmt.Errorf("local agent not configured")
+if m.isLocalServer(serverID) {
+if m.localAgent == nil {
+return fmt.Errorf("local agent not configured")
+}
+return m.localAgent.ControlProxy(ctx, proxyType, action)
+}
+// Remote: send via heartbeat stream
+cmd := &agentpb.PanelCommand{
+Command: &agentpb.PanelCommand_ControlProxy{
+ControlProxy: &agentpb.ControlProxyRequest{
+ProxyType: proxyType,
+Action:    action,
+},
+},
+}
+if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+return fmt.Errorf("send ControlProxy command to server %d: %w", serverID, err)
+}
+return nil
+}
+
+// GetProxyGuardianSettingsForServer reads persisted proxy guardian settings from
+// the panel's system_settings DB for a specific server. Used for remote nodes
+// where the settings are stored in the panel DB (not on the agent).
+// Settings keys: proxy.server_{serverID}.{type}.auto_start etc.
+func (m *NodeServerManager) GetProxyGuardianSettingsForServer(ctx context.Context, serverID int64, proxyType string) (autoStart, autoRestart bool, maxRestarts int) {
+	autoStart = true
+	autoRestart = false
+	maxRestarts = 5
+	if m.settingStore == nil {
+		return
+	}
+	prefix := fmt.Sprintf("proxy.server_%d.%s.", serverID, proxyType)
+	if v, err := m.settingStore.GetByKey(ctx, prefix+"auto_start"); err == nil {
+		autoStart = v != "false"
+	}
+	if v, err := m.settingStore.GetByKey(ctx, prefix+"auto_restart"); err == nil {
+		autoRestart = v == "true"
+	}
+	if v, err := m.settingStore.GetByKey(ctx, prefix+"max_restarts"); err == nil {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxRestarts = n
 		}
-	return m.localAgent.ControlProxy(ctx, proxyType, action)
 	}
-	// Remote: send via heartbeat stream
-	cmd := &agentpb.PanelCommand{
-		Command: &agentpb.PanelCommand_ControlProxy{
-			ControlProxy: &agentpb.ControlProxyRequest{
-				ProxyType: proxyType,
-				Action:    action,
-			},
-		},
+	return
+}
+
+// UpdateProxyGuardianForServer persists proxy guardian settings to the panel's
+// system_settings DB for a specific server. For remote nodes, this is display-only
+// (the agent has its own settings). For local nodes, the caller should also update
+// the in-memory proxy.Manager.
+func (m *NodeServerManager) UpdateProxyGuardianForServer(ctx context.Context, serverID int64, proxyType string, autoStart, autoRestart bool, maxRestarts int) error {
+	if m.settingStore == nil {
+		return nil
 	}
-	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
-		return fmt.Errorf("send ControlProxy command to server %d: %w", serverID, err)
+	prefix := fmt.Sprintf("proxy.server_%d.%s.", serverID, proxyType)
+	if err := m.settingStore.Set(ctx, prefix+"auto_start", fmt.Sprintf("%v", autoStart)); err != nil {
+		return err
 	}
-	return nil
+	if err := m.settingStore.Set(ctx, prefix+"auto_restart", fmt.Sprintf("%v", autoRestart)); err != nil {
+		return err
+	}
+	return m.settingStore.Set(ctx, prefix+"max_restarts", strconv.Itoa(maxRestarts))
 }
 
 // ============================================================

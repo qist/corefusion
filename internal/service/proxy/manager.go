@@ -23,11 +23,19 @@ import (
 	"time"
 
 	"corefusion/internal/runtime/healthcheck"
+	"corefusion/internal/runtime/process"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
+
+// ProxyGuardianConfig holds persisted guardian settings for a proxy.
+type ProxyGuardianConfig struct {
+	AutoStart   bool
+	AutoRestart bool
+	MaxRestarts int
+}
 
 // ProxyType represents the type of reverse proxy.
 type ProxyType string
@@ -981,6 +989,22 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 
 	// Check if already running
 	if info.Status == "running" {
+		// If guardian already exists, just skip
+		m.mu.Lock()
+		_, hasGuardian := m.guardians[proxyType]
+		m.mu.Unlock()
+		if hasGuardian {
+			log.Printf("proxy %s: already running with guardian, skipping start", proxyType)
+			return nil
+		}
+		// Process is running but no guardian (e.g. panel restarted while proxy kept running).
+		// Find its PID and create a guardian to monitor it.
+		pid := m.findProxyPID(string(proxyType))
+		if pid > 0 {
+			log.Printf("proxy %s: already running (pid %d), attaching guardian", proxyType, pid)
+			m.attachGuardian(proxyType, pid)
+			return nil
+		}
 		log.Printf("proxy %s: already running, skipping start", proxyType)
 		return nil
 	}
@@ -1111,6 +1135,10 @@ m.mu.Unlock()
 			return m.StartProxy(ctx, proxyType)
 		},
 	)
+	// Apply persisted guardian settings from DB
+	_, autoRestart, maxRestarts := m.GetProxyGuardianSettings(context.Background(), proxyType)
+	guardian.SetMaxRestarts(maxRestarts)
+	guardian.SetAutoRestart(autoRestart)
 	// Register crash callback for logging
 	guardian.OnCrash(func(name string, attempt, maxRestarts int) {
 		log.Printf("proxy %s: crash detected (attempt %d/%d)", name, attempt, maxRestarts)
@@ -1237,16 +1265,33 @@ func (m *Manager) ClearManuallyStopped(ctx context.Context, proxyType ProxyType)
 
 // GetGuardianStatus returns the guardian status for a proxy type.
 func (m *Manager) GetGuardianStatus(proxyType ProxyType) map[string]interface{} {
-m.mu.Lock()
-defer m.mu.Unlock()
-if g, ok := m.guardians[proxyType]; ok {
-return g.Status()
-}
+	// Read persisted settings so they are available even when guardian is not running
+	autoStart, autoRestart, maxRestarts := m.GetProxyGuardianSettings(context.Background(), proxyType)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if g, ok := m.guardians[proxyType]; ok {
+		status := g.Status()
+		status["auto_start"] = autoStart
+		status["auto_restart"] = autoRestart
+		status["max_restarts"] = maxRestarts
+		// Add CPU and memory stats if process is running
+		if pid, ok := status["pid"]; ok {
+			if pidInt, ok := pid.(int); ok && pidInt > 0 {
+				cpu, mem := process.GetProcessStats(pidInt)
+				status["cpu"] = cpu
+				status["mem"] = mem
+			}
+		}
+		return status
+	}
 	return map[string]interface{}{
 		"proxy_type":       string(proxyType),
 		"state":            "no_guardian",
 		"current_restarts": 0,
-		"max_restarts":     5,
+		"max_restarts":     maxRestarts,
+		"auto_start":       autoStart,
+		"auto_restart":     autoRestart,
 	}
 }
 
@@ -1256,6 +1301,57 @@ m.mu.Lock()
 defer m.mu.Unlock()
 g, ok := m.guardians[proxyType]
 return g, ok
+}
+
+// GetProxyGuardianSettings reads guardian settings (auto_start, auto_restart,
+// max_restarts) from the settings DB. Returns defaults if not set.
+func (m *Manager) GetProxyGuardianSettings(ctx context.Context, proxyType ProxyType) (autoStart, autoRestart bool, maxRestarts int) {
+	autoStart = true // default: auto-start enabled
+	autoRestart = false
+	maxRestarts = 5
+
+	if m.settingStore == nil {
+		return
+	}
+	// auto_start: default true unless explicitly set to "false"
+	if v, err := m.settingStore.GetByKey(ctx, "proxy."+string(proxyType)+".auto_start"); err == nil {
+		autoStart = v != "false"
+	} else {
+		// Fall back to manually_stopped (inverse) for backward compat
+		autoStart = !m.IsManuallyStopped(ctx, proxyType)
+	}
+	if v, err := m.settingStore.GetByKey(ctx, "proxy."+string(proxyType)+".auto_restart"); err == nil {
+		autoRestart = v == "true"
+	}
+	if v, err := m.settingStore.GetByKey(ctx, "proxy."+string(proxyType)+".max_restarts"); err == nil {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxRestarts = n
+		}
+	}
+	return
+}
+
+// SetProxyGuardianSettings persists guardian settings to the settings DB.
+func (m *Manager) SetProxyGuardianSettings(ctx context.Context, proxyType ProxyType, autoStart, autoRestart bool, maxRestarts int) error {
+	if m.settingStore == nil {
+		return nil
+	}
+	if err := m.settingStore.Set(ctx, "proxy."+string(proxyType)+".auto_start", fmt.Sprintf("%v", autoStart)); err != nil {
+		return err
+	}
+	if err := m.settingStore.Set(ctx, "proxy."+string(proxyType)+".auto_restart", fmt.Sprintf("%v", autoRestart)); err != nil {
+		return err
+	}
+	if err := m.settingStore.Set(ctx, "proxy."+string(proxyType)+".max_restarts", strconv.Itoa(maxRestarts)); err != nil {
+		return err
+	}
+	// Also update manually_stopped for backward compat with AutoStartManaged
+	if !autoStart {
+		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "true")
+	} else {
+		m.settingStore.Set(ctx, "proxy."+string(proxyType)+".manually_stopped", "false")
+	}
+	return nil
 }
 
 // GetSetting reads a setting value from the store.
@@ -1327,15 +1423,80 @@ func (m *Manager) GetConfigPath(proxyType ProxyType) string {
 	return ""
 }
 
+// findProxyPID finds the PID of a running proxy process by name.
+func (m *Manager) findProxyPID(name string) int {
+	cmd := exec.Command("pgrep", "-f", name)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	for _, pidStr := range strings.Fields(strings.TrimSpace(string(out))) {
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid <= 0 {
+			continue
+		}
+		// Skip zombie processes
+		statPath := fmt.Sprintf("/proc/%d/stat", pid)
+		data, err := os.ReadFile(statPath)
+		if err != nil {
+			continue
+		}
+		str := string(data)
+		if idx := strings.LastIndex(str, ")"); idx >= 0 && idx+2 < len(str) {
+			state := str[idx+2 : idx+3]
+			if state != "Z" {
+				return pid
+			}
+		}
+	}
+	return 0
+}
+
+// attachGuardian creates a guardian for an already-running proxy process.
+func (m *Manager) attachGuardian(proxyType ProxyType, pid int) {
+	proxyTypeStr := string(proxyType)
+	guardian := healthcheck.New(
+		healthcheck.DefaultConfig(proxyTypeStr, 0),
+		func() bool {
+			info := m.DetectProxy(proxyType)
+			return info.Status == "running"
+		},
+		func(ctx context.Context) error {
+			return m.StartProxy(ctx, proxyType)
+		},
+	)
+	_, autoRestart, maxRestarts := m.GetProxyGuardianSettings(context.Background(), proxyType)
+	guardian.SetMaxRestarts(maxRestarts)
+	guardian.SetAutoRestart(autoRestart)
+	guardian.OnCrash(func(name string, attempt, maxRestarts int) {
+		log.Printf("proxy %s: crash detected (attempt %d/%d)", name, attempt, maxRestarts)
+		if m.crashLogRepo != nil {
+			m.crashLogRepo.InsertCrashLog(context.Background(), name, attempt, maxRestarts)
+		}
+	})
+	m.mu.Lock()
+	m.guardians[proxyType] = guardian
+	m.processPIDs[proxyType] = pid
+	m.mu.Unlock()
+	guardian.Start(pid)
+	// Override startedAt with the real process start time from /proc/<pid>/stat
+	// so that uptime is accurate even when the panel restarts while proxy keeps running.
+	if startTime := process.GetProcessStartTime(pid); !startTime.IsZero() {
+		guardian.SetStartedAt(startTime)
+	}
+	log.Printf("proxy %s: guardian attached to existing process (pid %d)", proxyType, pid)
+}
+
 // AutoStartManaged syncs config from DB and starts managed proxies.
-// Skips proxies that were manually stopped by the user.
+// Skips proxies that have auto_start disabled.
 func (m *Manager) AutoStartManaged() {
 	time.Sleep(2 * time.Second)
 	for _, proxyType := range []ProxyType{ProxyCaddy, ProxyNginx} {
 		info := m.DetectProxy(proxyType)
 		if info.Installed && info.Managed {
-			if m.IsManuallyStopped(context.Background(), proxyType) {
-				log.Printf("proxy %s: manually stopped, skipping auto-start", proxyType)
+			autoStart, _, _ := m.GetProxyGuardianSettings(context.Background(), proxyType)
+			if !autoStart {
+				log.Printf("proxy %s: auto_start disabled, skipping", proxyType)
 				continue
 			}
 			log.Printf("proxy %s: managed, syncing config and starting", proxyType)

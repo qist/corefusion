@@ -758,7 +758,10 @@ func (h *ProxyHandler) DeleteAllL4(c *gin.Context) {
 	response.OK(c, gin.H{"deleted": count})
 }
 
-// UpdateGuardian handles POST /api/v1/proxy/guardian.
+// UpdateGuardian handles POST /api/v1/node-servers/:id/proxy/guardian.
+// Persists guardian settings (auto_start, auto_restart, max_restarts) to DB
+// so they survive process restarts. Also updates the in-memory guardian if
+// the proxy is currently running. Works for both local and remote nodes.
 func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 	proxyType := proxy.ProxyType(c.Query("type"))
 	if proxyType == "" {
@@ -766,6 +769,7 @@ func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 		return
 	}
 	var req struct {
+		AutoStart   *bool `json:"auto_start"`
 		AutoRestart *bool `json:"auto_restart"`
 		MaxRestarts *int  `json:"max_restarts"`
 	}
@@ -773,17 +777,47 @@ func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if g, ok := h.proxyMgr.GetGuardian(proxyType); ok {
-		maxRestarts := 5
-		if req.MaxRestarts != nil {
-			maxRestarts = *req.MaxRestarts
+
+	serverID, isLocal := h.applyServerID(c)
+
+	// For remote nodes, delegate via NodeOperator
+	if !isLocal && h.nodeOp != nil {
+		if err := h.nodeOp.UpdateProxyGuardian(c.Request.Context(), serverID, string(proxyType), req.AutoStart, req.AutoRestart, req.MaxRestarts); err != nil {
+			response.InternalError(c, "UPDATE_FAILED", err.Error())
+			return
 		}
-		g.SetMaxRestarts(maxRestarts)
-		if req.AutoRestart != nil {
-			g.SetAutoRestart(*req.AutoRestart)
-		}
-		response.OK(c, g.Status())
-	} else {
-		response.NotFound(c, "NOT_FOUND", "guardian not found")
+		response.OK(c, gin.H{"controlled": true})
+		return
 	}
+
+	// Local: read current persisted settings
+	ctx := c.Request.Context()
+	autoStart, autoRestart, maxRestarts := h.proxyMgr.GetProxyGuardianSettings(ctx, proxyType)
+	if req.AutoStart != nil {
+		autoStart = *req.AutoStart
+	}
+	if req.AutoRestart != nil {
+		autoRestart = *req.AutoRestart
+	}
+	if req.MaxRestarts != nil && *req.MaxRestarts > 0 {
+		maxRestarts = *req.MaxRestarts
+	}
+
+	// Persist to DB (works even when proxy is stopped)
+	if err := h.proxyMgr.SetProxyGuardianSettings(ctx, proxyType, autoStart, autoRestart, maxRestarts); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+
+	// Also update in-memory guardian if running
+	if g, ok := h.proxyMgr.GetGuardian(proxyType); ok {
+		g.SetMaxRestarts(maxRestarts)
+		g.SetAutoRestart(autoRestart)
+	}
+
+	response.OK(c, gin.H{
+		"auto_start":   autoStart,
+		"auto_restart": autoRestart,
+		"max_restarts": maxRestarts,
+	})
 }

@@ -107,6 +107,17 @@ func (g *Guardian) Start(pid int) {
 	go g.monitorLoop()
 }
 
+// SetStartedAt overrides the startedAt timestamp. This is used when attaching
+// to an already-running process: the real start time is read from /proc/<pid>/stat
+// and set here so that uptime calculations are accurate.
+func (g *Guardian) SetStartedAt(t time.Time) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !t.IsZero() {
+		g.startedAt = t
+	}
+}
+
 // Stop stops the guardian and marks as manually stopped.
 func (g *Guardian) Stop() {
 	g.mu.Lock()

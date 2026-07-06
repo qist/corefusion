@@ -234,9 +234,8 @@ func (h *Handler) GetProxyStatus(c *gin.Context) {
 	}
 
 	// Transform the gRPC response into the format expected by the frontend.
-	// The gRPC GetProxyStatusResponse has a `proxies` array; we need to
-	// convert it to { caddy: {...}, nginx: {...}, active_proxy: "..." }.
-	resp := transformProxyStatus(result)
+	// Include guardian settings from the panel DB for remote nodes.
+	resp := transformProxyStatus(result, h.svc, serverID)
 	response.OK(c, resp)
 }
 
@@ -342,15 +341,35 @@ func isValidCoreType(ct string) bool {
 
 // transformProxyStatus converts a gRPC GetProxyStatusResponse (which has a
 // `proxies` array) into the { caddy, nginx, active_proxy } map format that
-// the frontend (CaddyProxy.vue / NginxProxy.vue) expects.
-func transformProxyStatus(raw interface{}) gin.H {
+// the frontend expects. It also includes guardian settings from the panel DB.
+func transformProxyStatus(raw interface{}, svc proxyGuardianReader, serverID int64) gin.H {
 	resp := gin.H{
-		"active_proxy":    "",
-		"caddy":           gin.H{"type": "caddy", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
-		"nginx":           gin.H{"type": "nginx", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
-		"panel_port":      "8080",
-		"caddy_guardian":  nil,
-		"nginx_guardian":  nil,
+		"active_proxy":   "",
+		"caddy":          gin.H{"type": "caddy", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
+		"nginx":          gin.H{"type": "nginx", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
+		"panel_port":     "8080",
+		"caddy_guardian": nil,
+		"nginx_guardian": nil,
+	}
+
+	// Read guardian settings from panel DB for remote display
+	if svc != nil {
+		for _, pt := range []string{"caddy", "nginx"} {
+			autoStart, autoRestart, maxRestarts := svc.GetProxyGuardianSettingsForServer(context.Background(), serverID, pt)
+			guardian := gin.H{
+				"proxy_type":       pt,
+				"state":            "no_guardian",
+				"auto_start":       autoStart,
+				"auto_restart":     autoRestart,
+				"max_restarts":     maxRestarts,
+				"current_restarts": 0,
+			}
+			if pt == "caddy" {
+				resp["caddy_guardian"] = guardian
+			} else {
+				resp["nginx_guardian"] = guardian
+			}
+		}
 	}
 
 	if pb, ok := raw.(*agentpb.GetProxyStatusResponse); ok && pb != nil {
@@ -382,4 +401,10 @@ func transformProxyStatus(raw interface{}) gin.H {
 	}
 
 	return resp
+}
+
+// proxyGuardianReader is implemented by nodeserver.Service to read proxy
+// guardian settings from the panel DB.
+type proxyGuardianReader interface {
+	GetProxyGuardianSettingsForServer(ctx context.Context, serverID int64, proxyType string) (autoStart, autoRestart bool, maxRestarts int)
 }

@@ -3,7 +3,7 @@
     <!-- Full proxy management (Caddy/Nginx) for all nodes — local and remote.
          The backend handlers detect the server_id from the URL and route
          operations to the local manager or remote Agent via gRPC. -->
-    <Proxy :server-id="serverId" />
+    <Proxy :server-id="serverId" :is-local="isLocal" />
   </div>
 </template>
 

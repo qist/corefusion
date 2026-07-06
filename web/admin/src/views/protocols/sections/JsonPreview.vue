@@ -15,7 +15,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 const { t } = useI18n()
-const props = defineProps({ data: Object, coreType: String })
+const props = defineProps({ data: Object, coreType: String, serverId: Number })
 const fileContent = ref('')
 const fileSource = ref(false)
 const loading = ref(false)
@@ -29,7 +29,7 @@ const displayJson = computed(() => {
 async function loadFromFile() {
   loading.value = true
   try {
-    const data = await client.get(`/system/config-file/${props.coreType || 'xray'}`)
+    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType || 'xray'}/config-file`)
     if (typeof data === 'string') {
       fileContent.value = data
     } else {

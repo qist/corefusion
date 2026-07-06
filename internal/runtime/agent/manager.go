@@ -1577,3 +1577,33 @@ func (m *NodeServerManager) XrayAPIOnServer(ctx context.Context, serverID int64,
 	}
 	return ac.agentClient.XrayAPI(ctx, req)
 }
+
+// ReadConfigFileOnServer reads the runtime config file from a node (local or remote).
+// For local nodes, it reads directly from disk via the LocalAgent.
+// For remote nodes, it calls the ReadConfigFile gRPC RPC on the Agent.
+func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID int64, coreType string) ([]byte, string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, "", fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ReadConfigFile(coreType)
+	}
+	// Remote: send via gRPC
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return nil, "", fmt.Errorf("server %d not connected", serverID)
+	}
+	if ac.agentClient == nil {
+		return nil, "", fmt.Errorf("server %d agent client not available", serverID)
+	}
+	resp, err := ac.agentClient.ReadConfigFile(ctx, &agentpb.ReadConfigFileRequest{
+		CoreType: coreType,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if !resp.Success {
+		return nil, "", fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Content, resp.FilePath, nil
+}

@@ -1066,6 +1066,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.GET("/:id/protocols/:coreType/section/:section", nodeServerH.GetProtocolSection)
 			nodeServersGroup.PUT("/:id/protocols/:coreType/section/:section", nodeServerH.SaveProtocolSection)
 			nodeServersGroup.POST("/:id/protocols/:coreType/validate", nodeServerH.ValidateProtocol)
+			nodeServersGroup.GET("/:id/protocols/:coreType/config-file", nodeServerH.GetConfigFile)
 
 			// Node-server-scoped Proxy Management
 			// These routes allow managing proxy (Caddy/Nginx) per node server.

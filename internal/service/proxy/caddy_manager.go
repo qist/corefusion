@@ -385,6 +385,13 @@ func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+	case "xhttp", "httpupgrade":
+		sb.WriteString("\t\theader_up Upgrade {>Upgrade}\n")
+		sb.WriteString("\t\theader_up Connection {>Connection}\n")
+		sb.WriteString("\t\theader_up Host {hostport}\n")
+		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	default:
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")

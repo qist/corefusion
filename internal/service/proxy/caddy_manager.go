@@ -283,6 +283,22 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 		}
 
 		for _, site := range siteList {
+			// Static file server: root + file_server instead of reverse_proxy
+			if site.Template == "static" {
+				rootDir := strings.TrimSpace(site.Upstream)
+				if rootDir == "" {
+					rootDir = "/var/www"
+				}
+				sb.WriteString(fmt.Sprintf("\troot * %s\n", rootDir))
+				sb.WriteString("\tfile_server\n")
+				// Site-level custom config
+				if site.CustomConfig != "" {
+					for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {
+						sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
+					}
+				}
+				continue
+			}
 			// Build reverse_proxy block
 			if site.Path == "" || site.Path == "/" {
 				sb.WriteString("\treverse_proxy {\n")
@@ -341,6 +357,8 @@ func (m *CaddyManager) resolvePath(path string) string {
 func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 	var sb strings.Builder
 	switch site.Template {
+	case "static":
+		// no proxy headers for static file server
 	case "websocket":
 		sb.WriteString("\t\theader_up Upgrade {>Upgrade}\n")
 		sb.WriteString("\t\theader_up Connection {>Connection}\n")

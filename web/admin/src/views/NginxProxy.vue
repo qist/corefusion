@@ -410,6 +410,7 @@
             <el-button size="small" @click="showAddSite('http')">+ HTTP</el-button>
             <el-button size="small" @click="showAddSite('websocket')">+ WS</el-button>
             <el-button size="small" @click="showAddSite('grpc')">+ gRPC</el-button>
+            <el-button size="small" @click="showAddSite('static')">+ Static</el-button>
             <el-button v-if="isLocal" size="small" type="primary" @click="showPanelProxy">{{ t('proxy.proxyPanel') }}</el-button>
           </div>
         </div>
@@ -489,9 +490,16 @@
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" placeholder="example.com" />
         </el-form-item>
-        <el-form-item label="Upstream">
+        <el-form-item label="Upstream" v-if="siteForm.template!=='static'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
+            <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
+          </div>
+          <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') || '添加' }}</el-button>
+        </el-form-item>
+        <el-form-item label="Root Directory" v-if="siteForm.template==='static'">
+          <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+            <el-input v-model="siteForm.upstreams[idx]" placeholder="/var/www/mysite" style="flex:1" />
             <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
           </div>
           <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') || '添加' }}</el-button>
@@ -517,12 +525,21 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template!=='sni'" :label="t('proxy.template')">
+        <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static'" :label="t('proxy.template')">
           <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="siteForm.template==='static'" :label="t('proxy.template')">
+          <el-select v-model="siteForm.template" style="width:100%">
+            <el-option label="HTTP" value="http" />
+            <el-option label="WebSocket" value="websocket" />
+            <el-option label="gRPC" value="grpc" />
+            <el-option :label="t('proxy.templateL4')" value="l4" />
+            <el-option label="Static" value="static" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('proxy.proxyProtocol')">
@@ -1002,6 +1019,15 @@ function generatePreview(site) {
     lines.push(`    ssl_protocols TLSv1.2 TLSv1.3;`)
   }
   lines.push(``)
+  if (site.template === 'static') {
+    const rootDir = upstreams[0] || '/var/www'
+    lines.push(`    location ${path} {`)
+    lines.push(`        root ${rootDir};`)
+    lines.push(`        index index.html index.htm;`)
+    lines.push(`        try_files $uri $uri/ =404;`)
+    lines.push(`    }`, `}`)
+    return lines.join('\n')
+  }
   if (upstreams.length > 1) {
     lines.push(`    upstream backend {`)
     for (const up of upstreams) { lines.push(`        server ${up};`) }

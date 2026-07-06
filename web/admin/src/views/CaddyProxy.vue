@@ -194,6 +194,7 @@
             <el-button size="small" @click="showAddSite('http')">+ HTTP</el-button>
             <el-button size="small" @click="showAddSite('websocket')">+ WS</el-button>
             <el-button size="small" @click="showAddSite('grpc')">+ gRPC</el-button>
+            <el-button size="small" @click="showAddSite('static')">+ Static</el-button>
             <el-button v-if="isLocal" size="small" type="primary" @click="showPanelProxy">{{ t('proxy.proxyPanel') }}</el-button>
           </div>
         </div>
@@ -271,9 +272,16 @@
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" placeholder="example.com" />
         </el-form-item>
-        <el-form-item label="Upstream">
+        <el-form-item label="Upstream" v-if="siteForm.template!=='static'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
+            <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
+          </div>
+          <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') || '添加' }}</el-button>
+        </el-form-item>
+        <el-form-item label="Root Directory" v-if="siteForm.template==='static'">
+          <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+            <el-input v-model="siteForm.upstreams[idx]" placeholder="/var/www/mysite" style="flex:1" />
             <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
           </div>
           <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') || '添加' }}</el-button>
@@ -293,14 +301,22 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4'" :label="t('proxy.template')">
+        <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static'" :label="t('proxy.template')">
           <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4'" label="lb_policy">
+        <el-form-item v-if="siteForm.template==='static'" :label="t('proxy.template')">
+          <el-select v-model="siteForm.template" style="width:100%">
+            <el-option label="HTTP" value="http" />
+            <el-option label="WebSocket" value="websocket" />
+            <el-option label="gRPC" value="grpc" />
+            <el-option label="Static" value="static" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static'" label="lb_policy">
           <el-select v-model="siteForm.lb_policy" style="width:100%" clearable :placeholder="t('proxy.lbPolicyHint')">
             <el-option :label="t('proxy.lbRoundRobin')" value="round_robin" />
             <el-option :label="t('proxy.lbLeastConn')" value="least_conn" />
@@ -721,25 +737,31 @@ function generatePreview(site) {
   }
   lines.push(`${domain} {`)
   if (site.cert_path && site.key_path) lines.push(`\ttls ${site.cert_path} ${site.key_path}`)
-  const upstreams = (site.upstreams || []).filter(u => u.trim())
-  if (upstreams.length > 0) {
-    lines.push(`\treverse_proxy {`)
-    for (const up of upstreams) { lines.push(`\t\tto ${up}`) }
-    if (site.lb_policy) lines.push(`\t\tlb_policy ${site.lb_policy}`)
-    if (site.template === 'websocket') {
-      lines.push(`\t\theader_up Upgrade {>Upgrade}`, `\t\theader_up Connection {>Connection}`)
-      lines.push(`\t\theader_up Host {hostport}`)
-    }
-    lines.push(`\t\theader_up X-Real-IP {remote_host}`, `\t\theader_up X-Forwarded-For {remote_host}`)
-    lines.push(`\t\theader_up X-Forwarded-Proto {scheme}`)
-    if (pp) lines.push(`\t\t${pp}`)
-    if (site.proxy_config) {
-      for (const line of site.proxy_config.split('\n')) {
-        const trimmed = line.trim()
-        if (trimmed) lines.push(`\t\t${trimmed}`)
+  if (site.template === 'static') {
+    const rootDir = (site.upstreams || []).filter(u => u.trim())[0] || '/var/www'
+    lines.push(`\troot * ${rootDir}`)
+    lines.push(`\tfile_server`)
+  } else {
+    const upstreams = (site.upstreams || []).filter(u => u.trim())
+    if (upstreams.length > 0) {
+      lines.push(`\treverse_proxy {`)
+      for (const up of upstreams) { lines.push(`\t\tto ${up}`) }
+      if (site.lb_policy) lines.push(`\t\tlb_policy ${site.lb_policy}`)
+      if (site.template === 'websocket') {
+        lines.push(`\t\theader_up Upgrade {>Upgrade}`, `\t\theader_up Connection {>Connection}`)
+        lines.push(`\t\theader_up Host {hostport}`)
       }
+      lines.push(`\t\theader_up X-Real-IP {remote_host}`, `\t\theader_up X-Forwarded-For {remote_host}`)
+      lines.push(`\t\theader_up X-Forwarded-Proto {scheme}`)
+      if (pp) lines.push(`\t\t${pp}`)
+      if (site.proxy_config) {
+        for (const line of site.proxy_config.split('\n')) {
+          const trimmed = line.trim()
+          if (trimmed) lines.push(`\t\t${trimmed}`)
+        }
+      }
+      lines.push(`\t}`)
     }
-    lines.push(`\t}`)
   }
   if (site.custom_config) {
     for (const line of site.custom_config.split('\n')) {

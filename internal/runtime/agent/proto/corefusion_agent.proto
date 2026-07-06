@@ -271,6 +271,8 @@ message InstallProxyRequest {
   string proxy_type = 1;           // caddy/nginx
   string accel_domain = 2;         // GitHub 加速域名（可选）
   string proxy_url = 3;            // HTTP 代理 URL（可选）
+  string download_url = 4;         // 指定下载 URL（可选，空则自动获取最新版本）
+  string tag_name = 5;             // 目标版本号（可选）
 }
 
 message GetProxyStatusRequest {}
@@ -348,6 +350,9 @@ message AgentReport {
   int64  disk_usage_bytes = 13;
   int64  net_rx_bytes = 14;
   int64  net_tx_bytes = 15;
+  string os = 16;                 // Agent's GOOS (linux, darwin, windows)
+  string arch = 17;               // Agent's GOARCH (amd64, arm64, etc.)
+  string distro = 18;             // Agent's Linux distro (debian, ubuntu, redhat, alpine, etc.)
 
   // STATUS
   repeated CoreStatus cores = 20;

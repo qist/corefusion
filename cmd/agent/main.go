@@ -246,8 +246,9 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		return os.WriteFile(configPath, data, 0640)
 	})
 
-	// Phase 3b: Create binary installer (for remote core binary installation)
-	binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, &agentSettingStore{repo: settingRepo})
+// Phase 3b: Create binary installer (for remote core binary installation)
+binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, &agentSettingStore{repo: settingRepo})
+binaryInstaller.SetProcessController(procMgr) // Enable stop/start during binary updates
 
 	// Phase 4: Create proxy.Manager (same as Panel)
 	proxyMgr := proxySvc.NewManager(dataDir, proxySiteRepo, &agentSettingStore{repo: settingRepo})
@@ -535,7 +536,42 @@ func (a *AgentApp) sendHeartbeat(stream agentpb.HeartbeatService_StreamClient) e
 		AgentVersion:  agentVersion,
 		CpuUsage:      cpu,
 		MemUsageBytes: mem,
+		Os:            runtime.GOOS,
+		Arch:          runtime.GOARCH,
+		Distro:        detectDistro(),
 	})
+}
+
+// detectDistro reads /etc/os-release to determine the Linux distribution.
+// Returns a normalized lower-case distro identifier (e.g. "ubuntu", "debian",
+// "redhat", "alpine"). On non-Linux systems or when detection fails, returns "".
+func detectDistro() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ID=") {
+			id := strings.Trim(strings.TrimPrefix(line, "ID="), `"'`)
+			id = strings.ToLower(strings.TrimSpace(id))
+			// Normalize common variants
+			switch id {
+			case "rhel", "centos", "rocky", "rockylinux", "almalinux", "fedora":
+				return "redhat"
+			case "ubuntu", "debian", "alpine", "opensuse", "opensuse-leap", "sles", "arch":
+				return id
+			default:
+				if id != "" {
+					return id
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func (a *AgentApp) sendStatusReport(stream agentpb.HeartbeatService_StreamClient) error {
@@ -822,33 +858,27 @@ func (s *agentServiceServer) ExecuteBinary(ctx context.Context, req *agentpb.Exe
 func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.TaskAccept, error) {
 	// Sync GitHub acceleration settings to local DB before install
 	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("install-binary-%s-%s", req.CoreType, req.Version)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "install_binary", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"core_type": req.CoreType, "version": req.Version}, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent which handles task submission internally.
+	if err := s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName); err != nil {
+		return nil, err
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) InstallProxy(ctx context.Context, req *agentpb.InstallProxyRequest) (*agentpb.TaskAccept, error) {
 	// Sync GitHub acceleration settings to local DB before install
 	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
-	taskID := agent.GenerateTaskID()
-	idempotencyKey := fmt.Sprintf("install-proxy-%s", req.ProxyType)
-	return s.localAgent.GetTaskQueue().Submit(taskID, "install_proxy", idempotencyKey,
-		func(ctx context.Context) (interface{}, error) {
-			if err := s.localAgent.InstallProxy(ctx, req.ProxyType); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"proxy_type": req.ProxyType}, nil
-		},
-		nil,
-	), nil
+	// Delegate to LocalAgent which handles task submission internally.
+	if req.DownloadUrl != "" {
+		if err := s.localAgent.InstallProxyVersion(ctx, req.ProxyType, req.DownloadUrl, req.TagName); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.localAgent.InstallProxy(ctx, req.ProxyType); err != nil {
+			return nil, err
+		}
+	}
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
 func (s *agentServiceServer) GetProxyStatus(ctx context.Context, req *agentpb.GetProxyStatusRequest) (*agentpb.GetProxyStatusResponse, error) {

@@ -37,10 +37,10 @@ type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
 }
 
-// ProcessController provides process stop/start during binary updates.
+// ProcessController provides process restart during binary updates.
 type ProcessController interface {
-	Stop(ctx context.Context, serviceID int64) error
-	Start(ctx context.Context, serviceID int64, coreType string) error
+	IsRunning(serviceID int64) bool
+	Restart(ctx context.Context, serviceID int64, coreType string) error
 }
 
 // Installer handles downloading and installing core binaries (xray/singbox/hysteria2/tuic).
@@ -69,10 +69,16 @@ func (i *Installer) SetProcessController(pc ProcessController) {
 	i.procCtl = pc
 }
 
-// Install downloads and installs a core binary.
+// Install downloads and installs a core binary on the local machine.
+// It uses runtime.GOOS/runtime.GOARCH for the local platform.
+func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL, assetName string) (*BinaryInfo, error) {
+	return i.InstallForPlatform(ctx, coreType, version, downloadURL, assetName, runtime.GOOS, runtime.GOARCH)
+}
+
+// InstallForPlatform downloads and installs a core binary for the specified OS/arch.
 // If downloadURL is empty, it constructs the URL from the core type and version.
 // If version is empty, it fetches the latest release.
-func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL, assetName string) (*BinaryInfo, error) {
+func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, downloadURL, assetName, osName, archName string) (*BinaryInfo, error) {
 	repoURL := githubRepo(coreType)
 	if repoURL == "" {
 		return nil, fmt.Errorf("unsupported core type: %s", coreType)
@@ -80,7 +86,7 @@ func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL,
 
 	// If version is empty, fetch latest
 	if version == "" {
-		releases, err := i.ListReleasesGitHub(ctx, coreType)
+		releases, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
 		if err != nil {
 			return nil, fmt.Errorf("list releases: %w", err)
 		}
@@ -92,7 +98,7 @@ func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL,
 
 	// Build download URL if not provided
 	if downloadURL == "" {
-		downloadURL = buildDownloadURL(coreType, repoURL, version)
+		downloadURL = buildDownloadURL(coreType, repoURL, version, osName, archName)
 		if downloadURL == "" && assetName != "" {
 			downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, assetName)
 		}
@@ -108,24 +114,23 @@ func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL,
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
 
-	// Find the downloaded binary in temp
-	srcName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
-	if runtime.GOOS == "windows" {
-		srcName += ".exe"
-	}
+	// Find the downloaded binary in temp.
+	// The binary name inside the archive uses the actual platform naming.
+	srcName := binaryNameInArchive(coreType, osName, archName)
 	srcPath := filepath.Join(tmpDir, srcName)
 	if _, err := os.Stat(srcPath); err != nil {
 		return nil, fmt.Errorf("downloaded binary not found: %w", err)
 	}
 
-	// Stop process before replacing
+	// Check if process is running before replacing
 	serviceID := getServiceID(coreType)
+	wasRunning := false
 	if i.procCtl != nil && serviceID > 0 {
-		i.procCtl.Stop(ctx, serviceID)
-		time.Sleep(500 * time.Millisecond)
+		wasRunning = i.procCtl.IsRunning(serviceID)
 	}
 
-	// Move from temp to final location
+	// Move from temp to final location (on Linux, replacing a running binary
+	// is safe — the running process keeps using the old inode via open fd)
 	destDir := filepath.Join(i.dataDir, "binaries", "active", coreType)
 	os.MkdirAll(destDir, 0750)
 	destPath := filepath.Join(destDir, srcName)
@@ -138,9 +143,9 @@ func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL,
 	}
 	os.Chmod(destPath, 0755)
 
-	// Start process with new binary
-	if i.procCtl != nil && serviceID > 0 {
-		i.procCtl.Start(ctx, serviceID, coreType)
+	// Restart the process to pick up the new binary (only if it was running)
+	if wasRunning && i.procCtl != nil && serviceID > 0 {
+		i.procCtl.Restart(ctx, serviceID, coreType)
 	}
 
 	return &BinaryInfo{
@@ -151,9 +156,14 @@ func (i *Installer) Install(ctx context.Context, coreType, version, downloadURL,
 	}, nil
 }
 
-// ListReleasesGitHub fetches available releases from GitHub for a core type (returns full GitHubRelease).
-// Used by HTTP handler.
+// ListReleasesGitHub fetches available releases from GitHub for the local platform.
 func (i *Installer) ListReleasesGitHub(ctx context.Context, coreType string) ([]GitHubRelease, error) {
+	return i.ListReleasesGitHubForPlatform(ctx, coreType, runtime.GOOS, runtime.GOARCH)
+}
+
+// ListReleasesGitHubForPlatform fetches available releases from GitHub for a core type,
+// filtering assets by the specified OS/arch.
+func (i *Installer) ListReleasesGitHubForPlatform(ctx context.Context, coreType, osName, archName string) ([]GitHubRelease, error) {
 	repoURL := githubRepo(coreType)
 	if repoURL == "" {
 		return nil, fmt.Errorf("unsupported core type: %s", coreType)
@@ -184,11 +194,11 @@ func (i *Installer) ListReleasesGitHub(ctx context.Context, coreType string) ([]
 		return nil, err
 	}
 
-	// Filter assets
+	// Filter assets by core type and target platform
 	for i := range releases {
 		var filtered []GitHubAsset
 		for _, a := range releases[i].Assets {
-			if filterAsset(coreType, a.Name) {
+			if filterAsset(coreType, a.Name, osName, archName) {
 				filtered = append(filtered, a)
 			}
 		}
@@ -373,36 +383,44 @@ func githubRepo(coreType string) string {
 }
 
 // buildDownloadURL constructs the correct download URL for each core type.
-func buildDownloadURL(coreType, repoURL, version string) string {
-	osName := runtime.GOOS
-	arch := runtime.GOARCH
-
+func buildDownloadURL(coreType, repoURL, version, osName, archName string) string {
 	switch coreType {
 	case "xray":
-		archName := "64"
-		if arch == "arm64" {
-			archName = "arm64-v8a"
+		archPart := "64"
+		switch archName {
+		case "arm64":
+			archPart = "arm64-v8a"
+		case "arm":
+			archPart = "arm32-v7a"
+		case "386":
+			archPart = "32"
 		}
-		asset := fmt.Sprintf("Xray-%s-%s.zip", osName, archName)
+		asset := fmt.Sprintf("Xray-%s-%s.zip", osName, archPart)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 
 	case "singbox":
-		if arch == "amd64" {
-			arch = "amd64"
+		arch := archName
+		if arch == "arm" {
+			arch = "armv7"
 		}
 		asset := fmt.Sprintf("sing-box-%s-%s-%s.tar.gz", strings.TrimPrefix(version, "v"), osName, arch)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 
 	case "hysteria2":
-		asset := fmt.Sprintf("hysteria-%s-%s", osName, arch)
+		asset := fmt.Sprintf("hysteria-%s-%s", osName, archName)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 
 	case "tuic":
-		archName := "x86_64"
-		if arch == "arm64" {
-			archName = "aarch64"
+		archPart := "x86_64"
+		switch archName {
+		case "arm64":
+			archPart = "aarch64"
+		case "arm":
+			archPart = "armv7"
+		case "386":
+			archPart = "i686"
 		}
-		asset := fmt.Sprintf("tuic-server-%s-%s", osName, archName)
+		asset := fmt.Sprintf("tuic-server-%s-%s", archPart, osName)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 	}
 	return ""
@@ -421,17 +439,109 @@ func matchCoreBinary(name, coreType string) bool {
 	}
 }
 
-// filterAsset returns true if the asset name is relevant for the core type.
-func filterAsset(coreType, name string) bool {
-	if strings.HasSuffix(name, ".txt") || strings.HasSuffix(name, ".md") ||
-		strings.HasSuffix(name, ".sha256") || strings.HasSuffix(name, ".sig") ||
-		name == "LICENSE" || name == "README.md" {
+// filterAsset returns true if the asset name is relevant for the core type
+// and matches the target OS/arch.
+func filterAsset(coreType, name, osName, archName string) bool {
+	lower := strings.ToLower(name)
+	// Exclude non-binary files
+	if strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".md") ||
+		strings.HasSuffix(lower, ".sha256") || strings.HasSuffix(lower, ".sig") ||
+		strings.HasSuffix(lower, ".dgst") || strings.HasSuffix(lower, ".sbom") ||
+		strings.HasSuffix(lower, ".pem") || strings.HasSuffix(lower, ".apk") ||
+		strings.HasSuffix(lower, ".deb") || strings.HasSuffix(lower, ".rpm") ||
+		strings.HasSuffix(lower, ".pkg.tar.zst") ||
+		lower == "license" || lower == "readme.md" {
 		return false
 	}
-	if coreType == "tuic" && !strings.Contains(name, "tuic-server") {
+	if coreType == "tuic" && !strings.Contains(lower, "tuic-server") {
+		return false
+	}
+	// Check OS match
+	if !assetMatchesOS(lower, osName) {
+		return false
+	}
+	// Check arch match
+	if !assetMatchesArch(lower, archName) {
 		return false
 	}
 	return true
+}
+
+// assetMatchesOS checks if the asset name contains the target OS.
+func assetMatchesOS(lowerName, osName string) bool {
+	osAliases := map[string][]string{
+		"linux":   {"linux"},
+		"darwin":  {"darwin", "macos", "mac"},
+		"windows": {"windows", "win"},
+		"freebsd": {"freebsd"},
+	}
+	aliases, ok := osAliases[osName]
+	if !ok {
+		aliases = []string{osName}
+	}
+	for _, a := range aliases {
+		if strings.Contains(lowerName, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// assetMatchesArch checks if the asset name contains the target architecture.
+// Different projects use different naming conventions for the same arch.
+func assetMatchesArch(lowerName, archName string) bool {
+	// Try exact arch name as a segment (delimited by _ or - or .)
+	if strings.Contains(lowerName, "_"+archName) ||
+		strings.Contains(lowerName, "-"+archName) ||
+		strings.Contains(lowerName, "."+archName) ||
+		strings.HasSuffix(lowerName, archName) {
+		return true
+	}
+	archAliases := map[string][]string{
+		"amd64": {"x86_64", "x86-64"},
+		"arm64": {"aarch64", "arm64-v8a", "armv8"},
+		"arm":   {"armv7", "arm32-v7a", "armhf", "armv7hl"},
+		"386":   {"i386", "i686", "x86"},
+		"mips":  {"mips32"},
+		"mipsle": {"mips32le", "mipsle"},
+		"mips64":   {"mips64"},
+		"mips64le": {"mips64le"},
+	}
+	aliases, ok := archAliases[archName]
+	if !ok {
+		return false
+	}
+	for _, a := range aliases {
+		if strings.Contains(lowerName, a) {
+			return true
+		}
+	}
+	// Special case: amd64 can match "64" but NOT "arm64"
+	if archName == "amd64" {
+		if strings.Contains(lowerName, "_64") || strings.Contains(lowerName, "-64") {
+			if !strings.Contains(lowerName, "arm64") {
+				return true
+			}
+		}
+	}
+	// Special case: 386 can match "32" but NOT "arm32"
+	if archName == "386" {
+		if strings.Contains(lowerName, "_32") || strings.Contains(lowerName, "-32") || strings.Contains(lowerName, "32.") || strings.HasSuffix(lowerName, "32") {
+			if !strings.Contains(lowerName, "arm32") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// binaryNameInArchive returns the expected binary name inside a downloaded archive.
+func binaryNameInArchive(coreType, osName, archName string) string {
+	name := coreType + "-" + osName + "-" + archName
+	if osName == "windows" {
+		name += ".exe"
+	}
+	return name
 }
 
 // getServiceID returns the service ID for a core type.
@@ -446,8 +556,14 @@ type ReleaseInfo struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
-// ListReleases fetches available releases from GitHub for a core type.
+// ListReleases fetches available releases from GitHub for the local platform.
 func (i *Installer) ListReleases(ctx context.Context, coreType string) ([]ReleaseInfo, error) {
+	return i.ListReleasesForPlatform(ctx, coreType, runtime.GOOS, runtime.GOARCH)
+}
+
+// ListReleasesForPlatform fetches available releases from GitHub,
+// filtering assets by the specified OS/arch.
+func (i *Installer) ListReleasesForPlatform(ctx context.Context, coreType, osName, archName string) ([]ReleaseInfo, error) {
 	repoURL := githubRepo(coreType)
 	if repoURL == "" {
 		return nil, fmt.Errorf("unsupported core type: %s", coreType)
@@ -480,10 +596,20 @@ func (i *Installer) ListReleases(ctx context.Context, coreType string) ([]Releas
 
 	var result []ReleaseInfo
 	for _, r := range ghReleases {
-		result = append(result, ReleaseInfo{
-			Version:    r.TagName,
-			Prerelease: r.Prerelease,
-		})
+		// Only include releases that have at least one matching asset
+		hasMatch := false
+		for _, a := range r.Assets {
+			if filterAsset(coreType, a.Name, osName, archName) {
+				hasMatch = true
+				break
+			}
+		}
+		if hasMatch {
+			result = append(result, ReleaseInfo{
+				Version:    r.TagName,
+				Prerelease: r.Prerelease,
+			})
+		}
 	}
 	return result, nil
 }

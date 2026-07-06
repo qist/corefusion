@@ -1236,7 +1236,7 @@ func (h *Handler) InstallProxy(c *gin.Context) {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
 		return
 	}
-	result, err := h.svc.InstallProxy(c.Request.Context(), id, req.Type)
+	result, err := h.svc.InstallProxy(c.Request.Context(), id, req.Type, "", "")
 	if err != nil {
 		response.InternalError(c, "INSTALL_FAILED", err.Error())
 		return
@@ -1282,7 +1282,6 @@ func (h *Handler) ListReleases(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
-	_ = id // Server ID is validated but not used for GitHub API calls
 
 	coreType := c.Query("core_type")
 	if coreType == "" {
@@ -1290,7 +1289,7 @@ func (h *Handler) ListReleases(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.ListReleases(c.Request.Context(), coreType)
+	result, err := h.svc.ListReleasesForServer(c.Request.Context(), id, coreType)
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return

@@ -341,16 +341,13 @@ async function doDownload(r){
   downloading.value=true
   downloadProgress.value=t('protoCenter.switchVersion.downloading', { version: r.version })
   try{
-    // Use node-server-scoped install API to download & install binary to the target server
+    // Install binary — the backend (Installer.Install) automatically stops & restarts
+    // the core process after replacing the binary, so no manual start needed here.
     await client.post(`/node-servers/${props.serverId}/binaries/install`,{core_type:selectedCore.value,version:r.version})
     downloadProgress.value=t('protoCenter.switchVersion.downloadedStarting')
-    // For local server, try to start the core; for remote, the Agent handles it
-    let startError=null
-    try{await client.post(`/node-servers/${props.serverId}/control`,{core_type:selectedCore.value,action:'start'})}catch(e){startError=e}
-    if(startError)console.warn('Start core warning:',startError)
-    // Poll for status update
-    await new Promise(resolve=>setTimeout(resolve,1000))
-    for(let i=0;i<10;i++){
+    // Poll for status update — wait for the async install to complete and restart the core
+    await new Promise(resolve=>setTimeout(resolve,2000))
+    for(let i=0;i<15;i++){
       try{
         const data=await client.get(`/node-servers/${props.serverId}/status`)
         const s=(data?.cores||[]).find(x=>x.core_type===selectedCore.value)

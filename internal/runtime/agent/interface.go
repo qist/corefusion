@@ -71,6 +71,8 @@ type ProxyManager interface {
 	DetectProxy(proxyType string) ProxyInfo
 	// InstallProxy 下载并安装代理二进制（Caddy/Nginx）
 	InstallProxy(ctx context.Context, proxyType string) error
+	// DownloadAndInstallProxy 下载指定版本的代理二进制并安装，如果代理正在运行则重启
+	DownloadAndInstallProxy(ctx context.Context, proxyType, downloadURL string) error
 }
 
 // BinaryInstaller 处理核心二进制的下载和安装。

@@ -111,6 +111,30 @@ func (a *binaryListerAdapter) ListReleases(ctx context.Context, coreType string)
 	return result, nil
 }
 
+func (a *binaryListerAdapter) ListReleasesForPlatform(ctx context.Context, coreType, osName, archName string) ([]struct {
+	Version    string `json:"version"`
+	Prerelease bool   `json:"prerelease"`
+}, error) {
+	releases, err := a.installer.ListReleasesForPlatform(ctx, coreType, osName, archName)
+	if err != nil {
+		return nil, err
+	}
+	var result []struct {
+		Version    string `json:"version"`
+		Prerelease bool   `json:"prerelease"`
+	}
+	for _, r := range releases {
+		result = append(result, struct {
+			Version    string `json:"version"`
+			Prerelease bool   `json:"prerelease"`
+		}{
+			Version:    r.Version,
+			Prerelease: r.Prerelease,
+		})
+	}
+	return result, nil
+}
+
 // New creates a new Gin engine with all routes registered.
 func New(database *gorm.DB) *gin.Engine {
 	return NewWithSecret(database, "corefusion-dev-secret")

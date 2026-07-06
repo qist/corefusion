@@ -970,6 +970,42 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 	// Establish reverse gRPC connection to the Agent's gRPC server
 	m.dialAgent(ac, stream)
 
+	// On Agent reconnect: request immediate status + push SyncData to ensure
+	// the Agent's local DB is up-to-date and the core is started.
+	//
+	// This solves two problems:
+	// 1. Status cache is empty after panel restart → UI shows "unknown" state.
+	//    GetStatus command populates the cache immediately.
+	// 2. Agent's local DB may have stale guardian settings (auto_start=0).
+	//    SyncData with ApplyAndStart=true writes fresh DB data and starts the
+	//    core if it's not running. If the core is already running, Start is a
+	//    no-op (returns nil without killing the process).
+	go func() {
+		time.Sleep(2 * time.Second) // give the agent a moment to fully initialize
+
+		// 1. Request immediate status report
+		cmd := &agentpb.PanelCommand{
+			Command: &agentpb.PanelCommand_GetStatus{},
+		}
+		if err := m.SendCommand(context.Background(), serverID, cmd); err != nil {
+			log.Printf("[NodeServerManager] failed to request status from server %d on connect: %v", serverID, err)
+		}
+
+		// 2. Push SyncData (DB tables + config + start core)
+		//    Skip for local server (server_id=1) — it manages its own DB.
+		if serverID != m.localServerID && m.dataSyncProvider != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			resp, err := m.SyncDataToServer(ctx, serverID, true)
+			if err != nil {
+				log.Printf("[NodeServerManager] auto-SyncData to server %d on connect failed: %v", serverID, err)
+			} else {
+				log.Printf("[NodeServerManager] auto-SyncData to server %d on connect: success=%v core_started=%v",
+					serverID, resp.Success, resp.CoreStarted)
+			}
+		}
+	}()
+
 	log.Printf("[NodeServerManager] server %d (%s) connected", serverID, hostname)
 	return ac
 }

@@ -270,7 +270,17 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	// Now acquire lock for the fast in-memory operations
 	m.mu.Lock()
 
-	// Kill existing process if any
+	// If the process is already running, return immediately — don't kill it.
+	// Calling Start on an already-running core should be a no-op, not a restart.
+	// This prevents accidental core restarts when the panel's status cache is
+	// stale (e.g. after panel restart) and the UI sends a spurious "start" command.
+	if p, ok := m.processes[serviceID]; ok && p.state == "running" {
+		m.mu.Unlock()
+		log.Printf("service %d already running (pid=%d), start skipped", serviceID, p.pid)
+		return nil
+	}
+
+	// Kill existing process if any (e.g. crashed but not yet cleaned up)
 	if p, ok := m.processes[serviceID]; ok {
 		if p.cmd != nil && p.cmd.Process != nil {
 			killProcess(p.cmd.Process.Pid)

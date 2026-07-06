@@ -320,7 +320,7 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	// Collect upstreams (HTTP sites only)
 	upstreamSeen := make(map[string]bool)
 	for _, site := range httpSites {
-		if site.Upstream == "" {
+		if site.Upstream == "" || site.Template == "static" {
 			continue
 		}
 		upstreams := strings.Split(site.Upstream, ",")
@@ -556,8 +556,16 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 
 			sb.WriteString(fmt.Sprintf("        location %s {\n", path))
 
-			switch site.Template {
-			case "websocket":
+		switch site.Template {
+		case "static":
+			rootDir := strings.TrimSpace(site.Upstream)
+			if rootDir == "" {
+				rootDir = "/var/www"
+			}
+			sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
+			sb.WriteString("            index index.html index.htm;\n")
+			sb.WriteString("            try_files $uri $uri/ =404;\n")
+		case "websocket":
 				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s/;\n", upstreamKey))
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")

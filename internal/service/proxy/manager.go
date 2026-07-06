@@ -667,6 +667,21 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 
 		// Path-based routing
 		for _, site := range siteList {
+			// Static file server: root + file_server instead of reverse_proxy
+			if site.Template == "static" {
+				rootDir := strings.TrimSpace(site.Upstream)
+				if rootDir == "" {
+					rootDir = "/var/www"
+				}
+				sb.WriteString(fmt.Sprintf("\troot * %s\n", rootDir))
+				sb.WriteString("\tfile_server\n")
+				if site.CustomConfig != "" {
+					for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {
+						sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
+					}
+				}
+				continue
+			}
 			if site.Path == "" || site.Path == "/" {
 				sb.WriteString(fmt.Sprintf("\treverse_proxy %s {\n", site.Upstream))
 				sb.WriteString(m.proxyHeaders(&site))
@@ -729,6 +744,8 @@ func (m *Manager) resolvePath(path string) string {
 func (m *Manager) proxyHeaders(site *entity.ProxySite) string {
 	var sb strings.Builder
 	switch site.Template {
+	case "static":
+		// no proxy headers for static file server
 	case "websocket":
 		sb.WriteString("\t\theader_up Upgrade {>Upgrade}\n")
 		sb.WriteString("\t\theader_up Connection {>Connection}\n")

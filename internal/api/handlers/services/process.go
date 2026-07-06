@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"corefusion/internal/api/response"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/store/repository"
 )
@@ -23,8 +24,11 @@ type NodeOperator interface {
 
 // CoreStateInfo represents a core's state on a remote node.
 type CoreStateInfo struct {
-	State string
-	PID   int32
+	State          string
+	PID            int32
+	UptimeSeconds  int64
+	CpuUsage       float64
+	MemUsageBytes  int64
 }
 
 // BinaryInfoItem represents an installed binary on a remote node.
@@ -227,6 +231,42 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 		return
 	}
 
+	// Ensure all supported core types have a service record.
+	// Local node gets this via process.Manager.SeedCores at startup,
+	// but remote nodes never get seeded. We auto-create missing records
+	// here so both local and remote show all core types consistently.
+	supportedCores := []struct {
+		Name     string
+		CoreType string
+	}{
+		{"Xray", "xray"},
+		{"sing-box", "singbox"},
+		{"Hysteria 2", "hysteria2"},
+		{"TUIC", "tuic"},
+	}
+	existingCoreTypes := make(map[string]bool)
+	for _, svc := range services {
+		existingCoreTypes[svc.CoreType] = true
+	}
+	for _, sc := range supportedCores {
+		if !existingCoreTypes[sc.CoreType] {
+			newSvc := &entity.InboundService{
+				ServerID:   serverID,
+				Name:       sc.Name,
+				CoreType:   sc.CoreType,
+				Protocol:   "-",
+				ListenHost: "0.0.0.0",
+				ListenPort: 0,
+			}
+			if err := h.svcRepo.Create(c.Request.Context(), newSvc); err != nil {
+				log.Printf("[process] failed to seed service %s for server %d: %v", sc.CoreType, serverID, err)
+			} else {
+				log.Printf("[process] seeded service %s for server %d (id=%d)", sc.CoreType, serverID, newSvc.ID)
+				services = append(services, *newSvc)
+			}
+		}
+	}
+
 	// Load all guardians (local only)
 	guardians, _ := h.processMgr.ListGuardians(c.Request.Context())
 	guardianAutoStart := make(map[int64]bool)
@@ -271,8 +311,11 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 	if isRemote && remoteCoreStates != nil {
 		for coreType, cs := range remoteCoreStates {
 			coreStateMap[coreType] = &coreStateInfo{
-				state: cs.State,
-				pid:   int(cs.PID),
+				state:  cs.State,
+				pid:    int(cs.PID),
+				uptime: cs.UptimeSeconds,
+				cpu:    cs.CpuUsage,
+				mem:    cs.MemUsageBytes,
 			}
 		}
 	}

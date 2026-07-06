@@ -36,9 +36,10 @@
               <el-button type="primary" size="small" :loading="acting" @click="showVersions">{{ t('protoCenter.status.install') }}</el-button>
             </template>
             <template v-else>
-              <el-button v-if="svc.state!=='running'" type="success" size="small" :loading="acting" @click="doStart">{{ t('protoCenter.status.start') }}</el-button>
-              <el-button v-else type="danger" size="small" :loading="acting" @click="doStop">{{ t('protoCenter.status.stop') }}</el-button>
-              <el-button size="small" :loading="acting" @click="doRestart">{{ t('protoCenter.status.restart') }}</el-button>
+              <el-button v-if="svc.state==='stopped' || svc.state==='crashed'" type="success" size="small" :loading="acting" @click="doStart">{{ t('protoCenter.status.start') }}</el-button>
+              <el-button v-else-if="svc.state==='running'" type="danger" size="small" :loading="acting" @click="doStop">{{ t('protoCenter.status.stop') }}</el-button>
+              <el-button v-else type="info" size="small" disabled>{{ t('common.loading') }}</el-button>
+              <el-button size="small" :loading="acting" @click="doRestart" :disabled="svc.state==='unknown'">{{ t('protoCenter.status.restart') }}</el-button>
               <el-button type="warning" size="small" plain @click="showVersions">{{ t('protoCenter.status.switchVersion') }}</el-button>
             </template>
           </div>

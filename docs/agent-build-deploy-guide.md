@@ -150,11 +150,11 @@ go build -o data/binaries/active/corefusion-agent/corefusion-agent ./cmd/agent/
 
 ```bash
 # 目标 Linux ARM64
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
   go build -o corefusion-agent-linux-arm64 ./cmd/agent/
 
 # 目标 Linux AMD64
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
   go build -o corefusion-agent-linux-amd64 ./cmd/agent/
 ```
 

@@ -857,8 +857,11 @@ func (s *Service) GetRemoteState(ctx context.Context, serverID int64) (coreState
 	if statusResp != nil {
 		for _, cs := range statusResp.Cores {
 			coreStates[cs.CoreType] = &services.CoreStateInfo{
-				State: cs.State,
-				PID:   cs.Pid,
+				State:         cs.State,
+				PID:           cs.Pid,
+				UptimeSeconds: cs.UptimeSeconds,
+				CpuUsage:      cs.CpuUsage,
+				MemUsageBytes: cs.MemUsageBytes,
 			}
 		}
 	}

@@ -56,10 +56,12 @@ const form = reactive({
 })
 const outboundTags = ref([])
 
+const builtinOutboundTags = ['direct', 'blocked']
 async function loadOutbounds() {
   try {
-    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType}/section/outbounds`)
-    if (Array.isArray(data)) outboundTags.value = data.map(o => o.tag).filter(Boolean)
+    const data = await client.get(`/node-servers/${props.serverId}/outbound-configs`, { params: { core_type: props.coreType || 'xray' } })
+    const tags = (data || []).filter(o => o?.enabled !== false).map(o => o.tag).filter(Boolean)
+    outboundTags.value = [...new Set([...builtinOutboundTags, ...tags])]
   } catch {}
 }
 

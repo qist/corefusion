@@ -109,6 +109,15 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	// Seed default core_config sections (log, dns, routing, outbounds, etc.)
+	// for all supported core types on the new server. This ensures the UI
+	// can immediately load protocol sections without "SECTION_NOT_FOUND" errors.
+	if h.coreConfigSvc != nil {
+		if err := h.coreConfigSvc.SeedDefaults(c.Request.Context(), server.ID); err != nil {
+			log.Printf("[nodeserver] SeedDefaults for server %d failed: %v", server.ID, err)
+		}
+	}
+
 	response.Created(c, h.svc.ToResponse(server))
 }
 

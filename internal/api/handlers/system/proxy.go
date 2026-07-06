@@ -10,6 +10,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/proxy"
+	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
 // ProxyHandler handles proxy management HTTP requests.
@@ -213,6 +214,23 @@ func (h *ProxyHandler) Start(c *gin.Context) {
 	proxyType := proxy.ProxyType(c.Query("type"))
 	serverID, isLocal := h.applyServerID(c)
 	if !isLocal && h.nodeOp != nil {
+		// Check port conflict: prevent starting one proxy while the other is running.
+		if status, err := h.nodeOp.GetProxyStatusRemote(c.Request.Context(), serverID); err == nil {
+			if resp, ok := status.(*agentpb.GetProxyStatusResponse); ok {
+				var otherType string
+				if proxyType == proxy.ProxyNginx {
+					otherType = "caddy"
+				} else {
+					otherType = "nginx"
+				}
+				for _, p := range resp.Proxies {
+					if p.Type == otherType && p.Status == "running" {
+						response.BadRequest(c, "PORT_CONFLICT", otherType+" is running, please stop it first (ports 80/443 conflict)")
+						return
+					}
+				}
+			}
+		}
 		if err := h.nodeOp.ControlProxy(c.Request.Context(), serverID, string(proxyType), "start"); err != nil {
 			response.InternalError(c, "START_FAILED", err.Error())
 			return

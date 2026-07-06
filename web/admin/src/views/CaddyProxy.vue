@@ -2,6 +2,11 @@
   <div>
     <h2 style="margin-bottom:20px">Caddy {{ t('proxy.management') || '管理' }}</h2>
 
+    <!-- Port conflict warning -->
+    <el-alert v-if="nginxRunning" type="warning" :closable="false" show-icon style="margin-bottom:16px">
+      Nginx {{ t('proxy.isRunning') || '正在运行中' }}，{{ t('proxy.portConflictHint') || '80/443 端口冲突，请先停止 Nginx 再启动 Caddy' }}
+    </el-alert>
+
     <!-- Status Card -->
     <el-card shadow="hover" style="margin-bottom:20px">
       <template #header>
@@ -62,8 +67,8 @@
               <el-button type="primary" :loading="releasesLoading" @click="showReleases">{{ t('proxy.download') }}</el-button>
             </template>
             <template v-else>
-              <el-button v-if="proxyInfo.status!=='running'" type="success" @click="proxyAction('start')">{{ t('proxy.start') }}</el-button>
-              <el-button v-else type="danger" @click="proxyAction('stop')">{{ t('proxy.stop') }}</el-button>
+<el-button v-if="proxyInfo.status!=='running'" type="success" :disabled="nginxRunning" @click="proxyAction('start')">{{ t('proxy.start') }}</el-button>
+<el-button v-else type="danger" @click="proxyAction('stop')">{{ t('proxy.stop') }}</el-button>
               <el-button @click="proxyAction('restart')">{{ t('proxy.restart') }}</el-button>
               <el-button type="warning" plain @click="showReleases">{{ t('proxy.switchVersion') || '更新' }}</el-button>
               <el-button plain @click="viewConfig">{{ t('proxy.viewConfig') }}</el-button>
@@ -425,6 +430,7 @@ const proxyApi = computed(() => `${apiBase.value}/proxy`)
 
 const proxyInfo = ref({})
 const guardian = ref({})
+const nginxRunning = ref(false)
 const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
 const allSites = ref([])
 const certificates = ref([])
@@ -482,6 +488,7 @@ async function fetchProxyInfo() {
     guardianConfig.value.autoRestart = guardian.value.auto_restart !== false
     guardianConfig.value.maxRestarts = guardian.value.max_restarts || 5
     if (status.panel_port) panelPort.value = status.panel_port
+    nginxRunning.value = (status.nginx && status.nginx.status === 'running')
   } catch (e) {}
 }
 

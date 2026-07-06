@@ -48,6 +48,9 @@ func (h *ProxyHandler) applyServerID(c *gin.Context) (int64, bool) {
 	h.proxyMgr.SetServerID(sid)
 	h.caddyMgr.SetServerID(sid)
 	h.nginxMgr.SetServerID(sid)
+	h.proxyMgr.SetIsLocal(isLocal)
+	h.caddyMgr.SetIsLocal(isLocal)
+	h.nginxMgr.SetIsLocal(isLocal)
 	return sid, isLocal
 }
 
@@ -573,10 +576,34 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 	response.OK(c, gin.H{"config": config})
 }
 
-// GetConfig handles GET /api/v1/proxy/config.
+// GetConfig handles GET /api/v1/node-servers/:id/proxy/config.
 func (h *ProxyHandler) GetConfig(c *gin.Context) {
+	_, isLocal := h.applyServerID(c)
 	proxyType := proxy.ProxyType(c.Query("type"))
-	config, _ := h.proxyMgr.ReadConfigFile(proxyType)
+
+	if isLocal {
+		// For local nodes, read the actual config file on disk.
+		config, _ := h.proxyMgr.ReadConfigFile(proxyType)
+		response.OK(c, gin.H{"config": config, "path": h.proxyMgr.GetConfigPath(proxyType)})
+		return
+	}
+
+	// For remote nodes, generate config from the database (filtered by server_id).
+	var config string
+	var genErr error
+	switch proxyType {
+	case proxy.ProxyCaddy:
+		config, genErr = h.caddyMgr.GenerateConfig(c.Request.Context())
+	case proxy.ProxyNginx:
+		config, genErr = h.nginxMgr.GenerateConfig(c.Request.Context())
+	default:
+		response.BadRequest(c, "UNSUPPORTED", "unsupported proxy type")
+		return
+	}
+	if genErr != nil {
+		response.InternalError(c, "GENERATE_FAILED", genErr.Error())
+		return
+	}
 	response.OK(c, gin.H{"config": config, "path": h.proxyMgr.GetConfigPath(proxyType)})
 }
 

@@ -728,7 +728,7 @@ function generatePreview(site) {
   if (site.template === 'l4') {
     const port = site.path || '443'
     const proto = site.l4_protocol || 'tcp'
-    const upstream = site.upstream || '127.0.0.1:8080'
+    const upstream = site.upstream || `127.0.0.1:${panelPort.value}`
     lines.push(`# L4 ${proto.toUpperCase()} forward on :${port}`)
     lines.push(`{`, `\tlayer4 {`, `\t\t:${port} {`, `\t\t\troute {`, `\t\t\t\tproxy ${upstream}`)
     if (pp) lines.push(`\t\t\t\t${pp}`)

@@ -18,10 +18,14 @@ type NginxManager struct {
 	siteRepo     *repository.NginxSiteRepository
 	settingStore SettingStore
 	serverID     int64
+	isLocal      bool
 }
 
 // SetServerID sets the server ID for per-node site filtering.
 func (m *NginxManager) SetServerID(id int64) { m.serverID = id }
+
+// SetIsLocal sets whether this manager is operating on the local node.
+func (m *NginxManager) SetIsLocal(v bool) { m.isLocal = v }
 
 // NewNginxManager creates a new NginxManager.
 func NewNginxManager(dataDir string, siteRepo *repository.NginxSiteRepository, settingStore SettingStore) *NginxManager {
@@ -221,6 +225,18 @@ func (m *NginxManager) SaveNginxSettings(ctx context.Context, settings *NginxSet
 		return err
 	}
 	return m.settingStore.Set(ctx, "proxy.nginx_settings", string(data))
+}
+
+// panelAddr returns the panel address (host:port) for reverse_proxy directives.
+// It reads panel.listen_port from settings, defaulting to 8080.
+func (m *NginxManager) panelAddr(ctx context.Context) string {
+	port := "8080"
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "panel.listen_port"); err == nil && v != "" {
+			port = v
+		}
+	}
+	return "127.0.0.1:" + port
 }
 
 // resolvePath resolves a relative cert path against dataDir.

@@ -981,7 +981,7 @@ function generatePreview(site) {
     const port = site.listen_port || '443'
     const proto = site.l4_protocol || 'tcp'
     const upstreams = (site.upstreams || []).filter(u => u.trim())
-    if (upstreams.length === 0) upstreams.push('127.0.0.1:8080')
+    if (upstreams.length === 0) upstreams.push(`127.0.0.1:${panelPort.value}`)
     const upstreamName = 'l4_' + (site.domain || 'default').replace(/[^a-zA-Z0-9_]/g, '_')
     lines.push(`upstream ${upstreamName} {`)
     for (const up of upstreams) { lines.push(`    server ${up};`) }

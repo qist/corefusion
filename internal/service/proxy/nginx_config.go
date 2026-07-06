@@ -36,7 +36,6 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0755)
 	os.MkdirAll(filepath.Join(m.dataDir, "runtime"), 0755)
 	os.MkdirAll(filepath.Join(m.dataDir, "temp"), 0755)
-	compatMode := proxySandboxCompatMode(m.dataDir)
 
 	// Main block
 	sb.WriteString(fmt.Sprintf("worker_processes  %s;\n", s.WorkerProcesses))
@@ -48,9 +47,7 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	} else {
 		sb.WriteString("daemon off;\n")
 	}
-	if compatMode {
-		sb.WriteString("master_process off;\n")
-	} else if s.MasterProcess {
+	if s.MasterProcess {
 		sb.WriteString("master_process on;\n")
 	} else {
 		sb.WriteString("master_process off;\n")
@@ -388,10 +385,9 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 			if hasTLS {
 				listenPort = "443"
 			} else {
-				listenPort = "80"
+			listenPort = "80"
 			}
 		}
-		listenPort = compatPort(listenPort, hasTLS, compatMode)
 
 		// TLS options from site
 		enableHttp2 := true
@@ -506,15 +502,18 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 			}
 		}
 
-		// ACME HTTP-01 challenge support
-		sb.WriteString("        # ACME HTTP-01 challenge support\n")
-		sb.WriteString("        location /.well-known/acme-challenge/ {\n")
-		sb.WriteString("            proxy_pass http://127.0.0.1:8080;\n")
-		sb.WriteString("            proxy_set_header Host $host;\n")
-		sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-		sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-		sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
-		sb.WriteString("        }\n")
+		// ACME HTTP-01 challenge support (local node only)
+		if m.isLocal {
+			panelAddr := m.panelAddr(ctx)
+			sb.WriteString("        # ACME HTTP-01 challenge support\n")
+			sb.WriteString("        location /.well-known/acme-challenge/ {\n")
+			sb.WriteString(fmt.Sprintf("            proxy_pass http://%s;\n", panelAddr))
+			sb.WriteString("            proxy_set_header Host $host;\n")
+			sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
+			sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+			sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+			sb.WriteString("        }\n")
+		}
 
 		// Locations
 		for _, site := range siteList {

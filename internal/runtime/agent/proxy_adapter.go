@@ -54,3 +54,7 @@ func (a *ProxyManagerAdapter) DetectProxy(proxyType string) ProxyInfo {
 func (a *ProxyManagerAdapter) InstallProxy(ctx context.Context, proxyType string) error {
 	return a.mgr.InstallProxy(ctx, proxySvc.ProxyType(proxyType))
 }
+
+func (a *ProxyManagerAdapter) DownloadAndInstallProxy(ctx context.Context, proxyType, downloadURL string) error {
+	return a.mgr.DownloadAndInstallProxy(ctx, proxySvc.ProxyType(proxyType), downloadURL)
+}

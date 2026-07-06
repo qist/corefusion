@@ -296,8 +296,12 @@ async function handleDownloadVersion(release) {
   await ElMessageBox.confirm(t('service.process.downloadConfirm', { version: release.version }), t('common.confirm'))
   versionVisible.value = false
   try {
+    // Install binary — the backend (Installer.Install) automatically stops & restarts
+    // the core process after replacing the binary, so no manual restart needed here.
     await client.post(`/node-servers/${props.serverId}/binaries/install`, { core_type: selectedService.value.core_type, version: release.version })
     ElMessage.success(t('common.success'))
+    // Wait a moment for the async install task to complete and restart the core
+    await new Promise(resolve => setTimeout(resolve, 3000))
     fetchData()
   } catch (e) {}
 }

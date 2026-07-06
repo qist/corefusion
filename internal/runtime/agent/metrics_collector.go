@@ -92,8 +92,8 @@ func (mc *MetricsCollector) CollectFromHeartbeat(serverID int64, report *agentpb
 		elapsed := now.Sub(last.timestamp).Seconds()
 		if elapsed > 0 {
 			// Store rate (bytes/sec) instead of cumulative
-			metric.NetRxBytes = (report.NetRxBytes - last.rxBytes) / int64(elapsed)
-			metric.NetTxBytes = (report.NetTxBytes - last.txBytes) / int64(elapsed)
+			metric.NetRxBytes = int64(float64(report.NetRxBytes-last.rxBytes) / elapsed)
+			metric.NetTxBytes = int64(float64(report.NetTxBytes-last.txBytes) / elapsed)
 		}
 	}
 

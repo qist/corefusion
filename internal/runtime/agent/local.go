@@ -356,6 +356,32 @@ func (a *LocalAgent) InstallProxy(ctx context.Context, proxyType string) error {
 	return nil
 }
 
+// InstallProxyVersion 安装指定版本的代理二进制（caddy/nginx）（异步）。
+// downloadURL 为空时回退到自动获取最新版本。
+func (a *LocalAgent) InstallProxyVersion(ctx context.Context, proxyType, downloadURL, tagName string) error {
+	if a.proxyMgr == nil {
+		return fmt.Errorf("proxy manager not configured")
+	}
+	taskID := GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("install-proxy-%s-%s", proxyType, tagName)
+	a.taskQueue.Submit(taskID, "install_proxy", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			if downloadURL != "" {
+				if err := a.proxyMgr.DownloadAndInstallProxy(ctx, proxyType, downloadURL); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := a.proxyMgr.InstallProxy(ctx, proxyType); err != nil {
+					return nil, err
+				}
+			}
+			return map[string]interface{}{"proxy_type": proxyType, "version": tagName}, nil
+		},
+		nil,
+	)
+	return nil
+}
+
 // InstallBinary 安装核心二进制（xray/singbox/hysteria2/tuic）（异步）。
 func (a *LocalAgent) InstallBinary(ctx context.Context, coreType, version, downloadURL, assetName string) error {
 	if a.binaryInst == nil {

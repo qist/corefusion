@@ -3,6 +3,7 @@ package nodeserver
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,10 @@ import (
 // BinaryLister lists available binary releases from GitHub.
 type BinaryLister interface {
 	ListReleases(ctx context.Context, coreType string) ([]struct {
+		Version    string `json:"version"`
+		Prerelease bool   `json:"prerelease"`
+	}, error)
+	ListReleasesForPlatform(ctx context.Context, coreType, osName, archName string) ([]struct {
 		Version    string `json:"version"`
 		Prerelease bool   `json:"prerelease"`
 	}, error)
@@ -842,6 +847,22 @@ func (s *Service) IsLocalServer(ctx context.Context, serverID int64) bool {
 	return s.nodeMgr.IsLocalServer(serverID)
 }
 
+// GetServerPlatform returns the OS and architecture of a server's Agent.
+func (s *Service) GetServerPlatform(ctx context.Context, serverID int64) (string, string) {
+	if s.nodeMgr == nil {
+		return runtime.GOOS, runtime.GOARCH
+	}
+	return s.nodeMgr.GetServerPlatform(serverID)
+}
+
+// GetServerDistro returns the Linux distribution of a server's Agent.
+func (s *Service) GetServerDistro(ctx context.Context, serverID int64) string {
+	if s.nodeMgr == nil {
+		return ""
+	}
+	return s.nodeMgr.GetServerDistro(serverID)
+}
+
 // GetRemoteState returns cached state from a remote Agent (core states + binaries).
 func (s *Service) GetRemoteState(ctx context.Context, serverID int64) (coreStates map[string]*services.CoreStateInfo, binaries []*services.BinaryInfoItem, err error) {
 	if s.nodeMgr == nil {
@@ -899,18 +920,28 @@ func (s *Service) SyncProxyConfig(ctx context.Context, serverID int64, proxyType
 
 // InstallBinary installs a core binary on a specific server (local or remote via Agent).
 func (s *Service) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (interface{}, error) {
-	if s.nodeMgr == nil {
-		return nil, fmt.Errorf("node manager not initialized")
-	}
-	return s.nodeMgr.InstallBinary(ctx, serverID, coreType, version, downloadURL, assetName)
+if s.nodeMgr == nil {
+return nil, fmt.Errorf("node manager not initialized")
+}
+result, err := s.nodeMgr.InstallBinary(ctx, serverID, coreType, version, downloadURL, assetName)
+if err == nil {
+// Invalidate cached binary info so next query fetches fresh data
+s.nodeMgr.InvalidateBinaryCache(serverID)
+}
+return result, err
 }
 
 // InstallProxy installs a proxy binary (caddy/nginx) on a specific server (local or remote via Agent).
-func (s *Service) InstallProxy(ctx context.Context, serverID int64, proxyType string) (interface{}, error) {
-	if s.nodeMgr == nil {
-		return nil, fmt.Errorf("node manager not initialized")
-	}
-	return s.nodeMgr.InstallProxy(ctx, serverID, proxyType)
+func (s *Service) InstallProxy(ctx context.Context, serverID int64, proxyType, downloadURL, tagName string) (interface{}, error) {
+if s.nodeMgr == nil {
+return nil, fmt.Errorf("node manager not initialized")
+}
+result, err := s.nodeMgr.InstallProxy(ctx, serverID, proxyType, downloadURL, tagName)
+if err == nil {
+// Invalidate cached binary info so next query fetches fresh data
+s.nodeMgr.InvalidateBinaryCache(serverID)
+}
+return result, err
 }
 
 // GetProxyStatusRemote queries proxy installation status on a specific server.
@@ -969,6 +1000,15 @@ func (s *Service) ListReleases(ctx context.Context, coreType string) (interface{
 		return nil, fmt.Errorf("binary lister not initialized")
 	}
 	return s.binaryLister.ListReleases(ctx, coreType)
+}
+
+// ListReleasesForServer lists available binary releases filtered by the target server's platform.
+func (s *Service) ListReleasesForServer(ctx context.Context, serverID int64, coreType string) (interface{}, error) {
+	if s.binaryLister == nil {
+		return nil, fmt.Errorf("binary lister not initialized")
+	}
+	osName, archName := s.GetServerPlatform(ctx, serverID)
+	return s.binaryLister.ListReleasesForPlatform(ctx, coreType, osName, archName)
 }
 
 // ExecuteBinaryCommand executes a binary command on a specific server.

@@ -854,6 +854,28 @@ func (m *Manager) InstallProxy(ctx context.Context, proxyType ProxyType) error {
 	return fmt.Errorf("unsupported proxy type: %s", proxyType)
 }
 
+// DownloadAndInstallProxy downloads a specific proxy binary version via the given URL,
+// installs it, and restarts the proxy if it was running.
+func (m *Manager) DownloadAndInstallProxy(ctx context.Context, proxyType ProxyType, downloadURL string) error {
+	// Check if proxy is currently running
+	wasRunning := m.DetectProxy(proxyType).Status == "running"
+
+	// Download the specific version
+	if _, err := m.DownloadAsset(ctx, downloadURL, string(proxyType)); err != nil {
+		return fmt.Errorf("download %s: %w", proxyType, err)
+	}
+
+	// If proxy was running, restart it to pick up the new binary
+	if wasRunning {
+		log.Printf("proxy %s: was running, restarting after version update", proxyType)
+		if err := m.RestartProxy(ctx, proxyType); err != nil {
+			return fmt.Errorf("restart %s after update: %w", proxyType, err)
+		}
+	}
+
+	return nil
+}
+
 func (m *Manager) installNginx(ctx context.Context) error {
 	releases, err := m.ListNginxReleases("qist/nginx-binaries")
 	if err != nil {
@@ -1523,7 +1545,14 @@ type GitHubAsset struct {
 	Size               int64  `json:"size"`
 }
 
+// ListReleases fetches caddy releases from GitHub, filtering by the local platform.
 func (m *Manager) ListReleases(repo string) ([]GitHubRelease, error) {
+	return m.ListReleasesForPlatform(repo, runtime.GOOS, runtime.GOARCH)
+}
+
+// ListReleasesForPlatform fetches caddy releases from GitHub,
+// filtering assets by the specified OS/arch.
+func (m *Manager) ListReleasesForPlatform(repo, osName, archName string) ([]GitHubRelease, error) {
 	apiURL := netutil.AccelerateGitHubURL(
 		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repo),
 		m.githubAccelDomain(),
@@ -1550,8 +1579,6 @@ func (m *Manager) ListReleases(repo string) ([]GitHubRelease, error) {
 		return nil, err
 	}
 
-	osName := runtime.GOOS
-	archName := runtime.GOARCH
 	for i := range releases {
 		var filtered []GitHubAsset
 		for _, a := range releases[i].Assets {
@@ -1569,14 +1596,86 @@ func (m *Manager) isMatchingBinary(name, osName, archName string) bool {
 	lower := strings.ToLower(name)
 	if strings.HasSuffix(lower, ".sig") || strings.HasSuffix(lower, ".pem") ||
 		strings.HasSuffix(lower, ".sbom") || strings.HasSuffix(lower, ".txt") ||
-		strings.HasSuffix(lower, ".md") {
+		strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".dgst") {
 		return false
 	}
-	if !strings.Contains(lower, osName) || !strings.Contains(lower, archName) {
+	// Check OS
+	if !proxyAssetMatchesOS(lower, osName) {
+		return false
+	}
+	// Check arch
+	if !proxyAssetMatchesArch(lower, archName) {
 		return false
 	}
 	ext := filepath.Ext(lower)
 	return ext == "" || ext == ".exe" || strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".zip")
+}
+
+// proxyAssetMatchesOS checks if the asset name contains the target OS.
+func proxyAssetMatchesOS(lowerName, osName string) bool {
+	osAliases := map[string][]string{
+		"linux":   {"linux"},
+		"darwin":  {"darwin", "macos", "mac"},
+		"windows": {"windows", "win"},
+		"freebsd": {"freebsd"},
+	}
+	aliases, ok := osAliases[osName]
+	if !ok {
+		aliases = []string{osName}
+	}
+	for _, a := range aliases {
+		if strings.Contains(lowerName, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// proxyAssetMatchesArch checks if the asset name contains the target architecture.
+// Handles naming variants: amd64/x86_64/64, arm64/aarch64, arm/armv7/armhf, etc.
+func proxyAssetMatchesArch(lowerName, archName string) bool {
+	// Try exact arch name first
+	if strings.Contains(lowerName, "_"+archName) ||
+		strings.Contains(lowerName, "-"+archName) ||
+		strings.Contains(lowerName, "."+archName) ||
+		strings.HasSuffix(lowerName, archName) {
+		return true
+	}
+	archAliases := map[string][]string{
+		"amd64": {"x86_64", "x86-64"},
+		"arm64": {"aarch64", "arm64-v8a", "armv8"},
+		"arm":   {"armv7", "armhf", "armv7hl"},
+		"386":   {"i386", "i686", "x86"},
+	}
+	aliases, ok := archAliases[archName]
+	if !ok {
+		return false
+	}
+	for _, a := range aliases {
+		if strings.Contains(lowerName, a) {
+			return true
+		}
+	}
+	// Special case: amd64 can match "64" but NOT "arm64" or "386"
+	// Check that "64" appears as a distinct segment (not part of arm64/386)
+	if archName == "amd64" {
+		// Look for patterns like _64, -64, or .64
+		if strings.Contains(lowerName, "_64") || strings.Contains(lowerName, "-64") {
+			// Make sure it's not arm64 or arm32-v7a etc
+			if !strings.Contains(lowerName, "arm64") {
+				return true
+			}
+		}
+	}
+	// Special case: 386 can match "32"
+	if archName == "386" {
+		if strings.Contains(lowerName, "_32") || strings.Contains(lowerName, "-32") || strings.Contains(lowerName, "32.") || strings.HasSuffix(lowerName, "32") {
+			if !strings.Contains(lowerName, "arm32") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // parseOSReleaseID extracts the ID value from /etc/os-release content.
@@ -1622,25 +1721,80 @@ func detectNginxDistro() string {
 	return "debian"
 }
 
-// isMatchingNginxBinary checks if an asset name matches the current platform for nginx binaries.
+// isMatchingNginxBinary checks if an asset name matches the target platform for nginx binaries.
 // nginx binary naming: nginx_{version}_{distro}_{arch}.tar.gz
-func (m *Manager) isMatchingNginxBinary(name string) bool {
+// If distroHint is non-empty, it is used directly (from Agent heartbeat). Otherwise, the local /etc/os-release is read as fallback.
+func (m *Manager) isMatchingNginxBinary(name, osName, archName, distroHint string) bool {
 	lower := strings.ToLower(name)
 	if strings.HasSuffix(lower, ".sig") || strings.HasSuffix(lower, ".pem") ||
 		strings.HasSuffix(lower, ".sbom") || strings.HasSuffix(lower, ".txt") ||
-		strings.HasSuffix(lower, ".md") {
+		strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".dgst") {
 		return false
 	}
-	distro := detectNginxDistro()
-	arch := runtime.GOARCH
-	if !strings.Contains(lower, distro) || !strings.Contains(lower, arch) {
+	distro := detectNginxDistroForOS(osName, distroHint)
+	if !strings.Contains(lower, distro) {
+		return false
+	}
+	// Check arch with aliases
+	if !proxyAssetMatchesArch(lower, archName) {
 		return false
 	}
 	return strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".zip")
 }
 
-// ListNginxReleases fetches nginx releases from qist/nginx-binaries with platform filtering.
+// detectNginxDistroForOS returns the distro name for nginx binary naming.
+// For non-linux OS, returns the OS name directly (macos, windows).
+// For linux, if distroHint is non-empty (from Agent heartbeat), uses it directly.
+// Otherwise, reads local /etc/os-release as fallback.
+func detectNginxDistroForOS(osName, distroHint string) string {
+	switch osName {
+	case "darwin":
+		return "macos"
+	case "windows":
+		return "windows"
+	case "linux":
+		// If Agent reported a distro, normalize and use it
+		if distroHint != "" {
+			switch distroHint {
+			case "alpine", "openwrt":
+				return "alpine"
+			case "ubuntu":
+				return "ubuntu"
+			case "redhat":
+				return "redhat"
+			case "debian":
+				return "debian"
+			default:
+				// Unknown distro from Agent — fall through to local detection
+			}
+		}
+		// Fallback: read local /etc/os-release
+		data, err := os.ReadFile("/etc/os-release")
+		if err != nil {
+			return "debian" // fallback to most common
+		}
+		id := parseOSReleaseID(string(data))
+		switch id {
+		case "alpine", "openwrt":
+			return "alpine"
+		case "ubuntu":
+			return "ubuntu"
+		case "centos", "rhel", "rocky", "almalinux", "ol", "fedora":
+			return "redhat"
+		default:
+			return "debian"
+		}
+	}
+	return "debian"
+}
+
+// ListNginxReleases fetches nginx releases from qist/nginx-binaries with local platform filtering.
 func (m *Manager) ListNginxReleases(repo string) ([]GitHubRelease, error) {
+	return m.ListNginxReleasesForPlatform(repo, runtime.GOOS, runtime.GOARCH, "")
+}
+
+// ListNginxReleasesForPlatform fetches nginx releases, filtering by the specified OS/arch/distro.
+func (m *Manager) ListNginxReleasesForPlatform(repo, osName, archName, distro string) ([]GitHubRelease, error) {
 	apiURL := netutil.AccelerateGitHubURL(
 		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repo),
 		m.githubAccelDomain(),
@@ -1670,7 +1824,7 @@ func (m *Manager) ListNginxReleases(repo string) ([]GitHubRelease, error) {
 	for i := range releases {
 		var filtered []GitHubAsset
 		for _, a := range releases[i].Assets {
-			if m.isMatchingNginxBinary(a.Name) {
+			if m.isMatchingNginxBinary(a.Name, osName, archName, distro) {
 				filtered = append(filtered, a)
 			}
 		}

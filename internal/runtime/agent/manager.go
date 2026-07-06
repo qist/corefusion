@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,6 +189,11 @@ type AgentConnection struct {
 	// Cached binary info from last ListBinaries query
 	cachedBinaries     []*agentpb.BinaryInfo
 	cachedBinariesAt   time.Time
+
+	// Cached OS/arch/distro from heartbeat (for asset filtering)
+	cachedOS     string
+	cachedArch   string
+	cachedDistro string
 }
 
 // LastHeartbeatTime returns the last heartbeat timestamp.
@@ -557,14 +565,19 @@ func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, c
 }
 
 // InstallProxy installs a proxy binary (caddy/nginx) on a server.
-// For local servers, delegates to LocalAgent → proxy.Manager.InstallProxy.
+// For local servers, delegates to LocalAgent → proxy.Manager.
 // For remote servers, sends InstallProxy via gRPC to the Agent.
-func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, proxyType string) (*agentpb.TaskAccept, error) {
+func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, proxyType, downloadURL, tagName string) (*agentpb.TaskAccept, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return nil, fmt.Errorf("local agent not configured")
 		}
-		err := m.localAgent.InstallProxy(ctx, proxyType)
+		var err error
+		if downloadURL != "" {
+			err = m.localAgent.InstallProxyVersion(ctx, proxyType, downloadURL, tagName)
+		} else {
+			err = m.localAgent.InstallProxy(ctx, proxyType)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -583,6 +596,8 @@ func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, pr
 		ProxyType:   proxyType,
 		AccelDomain: accelDomain,
 		ProxyUrl:    proxyURL,
+		DownloadUrl: downloadURL,
+		TagName:     tagName,
 	})
 }
 
@@ -626,6 +641,87 @@ func (m *NodeServerManager) ListBinaries(ctx context.Context, serverID int64) (*
 		return nil, fmt.Errorf("server %d agent client not available", serverID)
 	}
 	return ac.agentClient.ListBinaries(ctx, &agentpb.ListBinariesRequest{})
+}
+
+// InvalidateBinaryCache clears the cached binary info for a server so the next
+// GetRemoteState call will re-fetch fresh data from the Agent.
+func (m *NodeServerManager) InvalidateBinaryCache(serverID int64) {
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return
+	}
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	ac.cachedBinaries = nil
+	ac.cachedBinariesAt = time.Time{}
+}
+
+// GetServerPlatform returns the OS and architecture of a remote Agent from cached heartbeat data.
+// Returns the panel's own OS/arch as fallback for local servers.
+func (m *NodeServerManager) GetServerPlatform(serverID int64) (osName, arch string) {
+	if m.isLocalServer(serverID) {
+		return runtime.GOOS, runtime.GOARCH
+	}
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return runtime.GOOS, runtime.GOARCH
+	}
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	if ac.cachedOS != "" && ac.cachedArch != "" {
+		return ac.cachedOS, ac.cachedArch
+	}
+	// Fallback to panel's platform if not yet reported
+	return runtime.GOOS, runtime.GOARCH
+}
+
+// GetServerDistro returns the Linux distribution of a remote Agent from cached heartbeat data.
+// Returns the panel's own distro as fallback for local servers.
+func (m *NodeServerManager) GetServerDistro(serverID int64) string {
+	if m.isLocalServer(serverID) {
+		return detectLocalDistro()
+	}
+	ac := m.GetConnection(serverID)
+	if ac == nil {
+		return detectLocalDistro()
+	}
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	if ac.cachedDistro != "" {
+		return ac.cachedDistro
+	}
+	// Fallback to panel's own distro if not yet reported
+	return detectLocalDistro()
+}
+
+// detectLocalDistro reads /etc/os-release on the panel machine to determine its Linux distribution.
+// Returns a normalized lower-case distro identifier or "" if not Linux / not detectable.
+func detectLocalDistro() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ID=") {
+			id := strings.Trim(strings.TrimPrefix(line, "ID="), `"'`)
+			id = strings.ToLower(strings.TrimSpace(id))
+			switch id {
+			case "rhel", "centos", "rocky", "rockylinux", "almalinux", "fedora":
+				return "redhat"
+			case "ubuntu", "debian", "alpine", "opensuse", "opensuse-leap", "sles", "arch":
+				return id
+			default:
+				if id != "" {
+					return id
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // UpdateAgentOnServer sends an update command to a remote Agent.
@@ -965,17 +1061,18 @@ func (m *NodeServerManager) GetRemoteState(ctx context.Context, serverID int64) 
 		}
 	}
 
-	// Binaries from cache (refresh if older than 5 minutes)
+	// Binaries from cache (refresh if nil or older than 30 seconds)
 	binaries := ac.cachedBinaries
-	if binaries == nil && ac.agentClient != nil {
+	cacheExpired := time.Since(ac.cachedBinariesAt) > 30*time.Second
+	if (binaries == nil || cacheExpired) && ac.agentClient != nil {
 		// Try to fetch with short timeout (won't block long)
 		fetchCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
 		if resp, err := ac.agentClient.ListBinaries(fetchCtx, &agentpb.ListBinariesRequest{}); err == nil {
 			binaries = resp.Binaries
 			ac.cachedBinaries = binaries
 			ac.cachedBinariesAt = time.Now()
 		}
+		cancel()
 	}
 
 	return &agentpb.GetStatusResponse{Cores: cores}, binaries, nil
@@ -1250,6 +1347,15 @@ func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServ
 }
 
 func (h *heartbeatServiceImpl) handleHeartbeat(ac *AgentConnection, report *agentpb.AgentReport) {
+	// Cache OS/arch/distro from heartbeat for asset filtering
+	if report.Os != "" || report.Arch != "" || report.Distro != "" {
+		ac.mu.Lock()
+		ac.cachedOS = report.Os
+		ac.cachedArch = report.Arch
+		ac.cachedDistro = report.Distro
+		ac.mu.Unlock()
+	}
+
 	// Update heartbeat in DB (throttled — every 30s, not every heartbeat)
 	if err := h.mgr.serverRepo.UpdateHeartbeat(context.Background(), ac.ServerID); err != nil {
 		log.Printf("[NodeServerManager] failed to update heartbeat for server %d: %v", ac.ServerID, err)

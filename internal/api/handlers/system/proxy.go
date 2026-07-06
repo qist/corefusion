@@ -1,6 +1,7 @@
 package system
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -125,12 +126,24 @@ func (h *ProxyHandler) ListReleases(c *gin.Context) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported proxy type")
 		return
 	}
+
+	// Determine target server platform for asset filtering
+	serverID, isLocal := h.applyServerID(c)
+	var osName, archName string
+	var distro string
+	if isLocal || h.nodeOp == nil {
+		osName, archName = runtime.GOOS, runtime.GOARCH
+	} else {
+		osName, archName = h.nodeOp.GetServerPlatform(c.Request.Context(), serverID)
+		distro = h.nodeOp.GetServerDistro(c.Request.Context(), serverID)
+	}
+
 	var releases interface{}
 	var err error
 	if proxyType == "nginx" {
-		releases, err = h.proxyMgr.ListNginxReleases(repo)
+		releases, err = h.proxyMgr.ListNginxReleasesForPlatform(repo, osName, archName, distro)
 	} else {
-		releases, err = h.proxyMgr.ListReleases(repo)
+		releases, err = h.proxyMgr.ListReleasesForPlatform(repo, osName, archName)
 	}
 	if err != nil {
 		errMsg := err.Error()
@@ -144,7 +157,9 @@ func (h *ProxyHandler) ListReleases(c *gin.Context) {
 	response.OK(c, releases)
 }
 
-// DownloadVersion handles POST /api/v1/proxy/download.
+// DownloadVersion handles POST /api/v1/node-servers/:id/proxy/download.
+// For remote nodes, delegates to NodeOperator.InstallProxy via gRPC.
+// For local nodes, downloads the asset and restarts the proxy if it was running.
 func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 	var req struct {
 		Type        string `json:"type" binding:"required"`
@@ -155,12 +170,39 @@ func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+
+	serverID, isLocal := h.applyServerID(c)
+
+	// Remote node: delegate via gRPC to the Agent
+	if !isLocal && h.nodeOp != nil {
+		result, err := h.nodeOp.InstallProxy(c.Request.Context(), serverID, req.Type, req.DownloadURL, req.TagName)
+		if err != nil {
+			response.InternalError(c, "INSTALL_FAILED", err.Error())
+			return
+		}
+		response.OK(c, result)
+		return
+	}
+
+	// Local node: download the asset
+	proxyType := proxy.ProxyType(req.Type)
+	wasRunning := h.proxyMgr.DetectProxy(proxyType).Status == "running"
+
 	path, err := h.proxyMgr.DownloadAsset(c.Request.Context(), req.DownloadURL, req.Type)
 	if err != nil {
 		response.InternalError(c, "DOWNLOAD_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"path": path, "version": req.TagName, "type": req.Type})
+
+	// If proxy was running, restart it to pick up the new binary
+	if wasRunning {
+		if err := h.proxyMgr.RestartProxy(c.Request.Context(), proxyType); err != nil {
+			response.InternalError(c, "RESTART_FAILED", err.Error())
+			return
+		}
+	}
+
+	response.OK(c, gin.H{"path": path, "version": req.TagName, "type": req.Type, "restarted": wasRunning})
 }
 
 // Start handles POST /api/v1/node-servers/:id/proxy/start.

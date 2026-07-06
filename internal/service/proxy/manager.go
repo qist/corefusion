@@ -946,6 +946,19 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 		return fmt.Errorf("%s is not installed", proxyType)
 	}
 
+	// Prevent nginx and caddy from running simultaneously — they share ports 80/443.
+	var otherType ProxyType
+	switch proxyType {
+	case ProxyNginx:
+		otherType = ProxyCaddy
+	case ProxyCaddy:
+		otherType = ProxyNginx
+	}
+	otherInfo := m.DetectProxy(otherType)
+	if otherInfo.Status == "running" {
+		return fmt.Errorf("%s is running, please stop it first (ports 80/443 conflict)", otherType)
+	}
+
 	// Check if already running
 	if info.Status == "running" {
 		// If guardian already exists, just skip
@@ -982,7 +995,11 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	m.ClearManuallyStopped(ctx, proxyType)
 	m.stopExisting(proxyType)
 
-	// Generate config from database and write to file (database = source of truth)
+	// Generate config from database and write to file (database = source of truth).
+	// On the Panel (local node), config generators are wired and generate from DB.
+	// On the Agent (remote node), config generators are NOT set — the config file
+	// was already synced by the panel via SyncProxyConfig RPC. In that case, only
+	// write a default config if no config file exists yet (first run).
 	bgCtx := context.Background()
 	switch proxyType {
 	case ProxyNginx:
@@ -992,8 +1009,14 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 				return fmt.Errorf("generate nginx config: %w", err)
 			}
 			m.WriteConfigFile(ProxyNginx, config)
-		} else if err := m.SaveAndApplyNginxDefault(bgCtx); err != nil {
-			return fmt.Errorf("generate nginx config: %w", err)
+		} else {
+			// Agent mode: use existing config file if it exists (synced by panel)
+			configPath := filepath.Join(m.dataDir, m.GetConfigPath(ProxyNginx))
+			if _, err := os.Stat(configPath); os.IsNotExist(err) {
+				if err := m.SaveAndApplyNginxDefault(bgCtx); err != nil {
+					return fmt.Errorf("generate nginx config: %w", err)
+				}
+			}
 		}
 	default:
 		if m.caddyConfigGen != nil {
@@ -1002,8 +1025,14 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 				return fmt.Errorf("generate caddy config: %w", err)
 			}
 			m.WriteConfigFile(ProxyCaddy, config)
-		} else if _, err := m.SaveAndApply(bgCtx); err != nil {
-			return fmt.Errorf("generate config: %w", err)
+		} else {
+			// Agent mode: use existing config file if it exists (synced by panel)
+			configPath := filepath.Join(m.dataDir, m.GetConfigPath(ProxyCaddy))
+			if _, err := os.Stat(configPath); os.IsNotExist(err) {
+				if _, err := m.SaveAndApply(bgCtx); err != nil {
+					return fmt.Errorf("generate config: %w", err)
+				}
+			}
 		}
 	}
 

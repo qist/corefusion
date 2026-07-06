@@ -9,11 +9,20 @@
     <!-- Selection Mode -->
     <div v-else>
       <h2 style="margin-bottom:20px">{{ t('proxy.title') }}</h2>
+
+      <!-- Show which proxy is currently running -->
+      <el-alert v-if="runningProxy" type="success" :closable="false" show-icon style="margin-bottom:20px;max-width:600px;margin-left:auto;margin-right:auto">
+        {{ runningProxyName }} {{ t('proxy.isRunning') || '正在运行中' }}
+      </el-alert>
+
       <div style="display:flex;gap:24px;justify-content:center;margin-top:60px">
         <el-card v-for="p in proxyOptions" :key="p.type" shadow="hover" class="proxy-select-card" @click="selectProxy(p.type)">
           <div style="text-align:center;padding:20px 40px">
             <div style="font-size:32px;margin-bottom:12px">{{ p.icon }}</div>
-            <div style="font-size:18px;font-weight:600;margin-bottom:8px">{{ p.name }}</div>
+            <div style="font-size:18px;font-weight:600;margin-bottom:8px">
+              {{ p.name }}
+              <el-tag v-if="runningProxy === p.type" type="success" size="small" style="margin-left:4px">running</el-tag>
+            </div>
             <div style="font-size:13px;color:#909399">{{ p.desc }}</div>
           </div>
         </el-card>
@@ -23,10 +32,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CaddyProxy from './CaddyProxy.vue'
 import NginxProxy from './NginxProxy.vue'
+import client from '../api/client'
 
 const { t } = useI18n()
 
@@ -36,11 +46,17 @@ const props = defineProps({
 })
 
 const activeProxy = ref(localStorage.getItem('active_proxy') || '')
+const runningProxy = ref('')
 
 const proxyOptions = [
   { type: 'nginx', name: 'Nginx', icon: '🌐', desc: t('proxy.nginxDesc') },
   { type: 'caddy', name: 'Caddy', icon: '🔒', desc: t('proxy.caddyDesc') }
 ]
+
+const runningProxyName = computed(() => {
+  const p = proxyOptions.find(o => o.type === runningProxy.value)
+  return p ? p.name : ''
+})
 
 function selectProxy(type) {
   activeProxy.value = type
@@ -50,12 +66,27 @@ function selectProxy(type) {
 function switchProxy() {
   activeProxy.value = ''
   localStorage.removeItem('active_proxy')
+  fetchStatus()
+}
+
+async function fetchStatus() {
+  try {
+    const status = await client.get(`/node-servers/${props.serverId}/proxy/status`)
+    if (status.nginx && status.nginx.status === 'running') {
+      runningProxy.value = 'nginx'
+    } else if (status.caddy && status.caddy.status === 'running') {
+      runningProxy.value = 'caddy'
+    } else {
+      runningProxy.value = ''
+    }
+  } catch (e) {}
 }
 
 onMounted(() => {
   // Restore last selection
   const saved = localStorage.getItem('active_proxy')
   if (saved) activeProxy.value = saved
+  fetchStatus()
 })
 </script>
 

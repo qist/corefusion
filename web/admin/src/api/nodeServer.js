@@ -283,3 +283,35 @@ export function installProxy(serverId, type) {
 export function getRemoteProxyStatus(serverId) {
   return client.get(`/node-servers/${serverId}/proxy-status`)
 }
+
+export function getProxyStatus(serverId) {
+  return client.get(`/node-servers/${serverId}/proxy/status`)
+}
+
+export function controlProxy(serverId, proxyType, action) {
+  return client.post(`/node-servers/${serverId}/proxy/control`, { proxy_type: proxyType, action })
+}
+
+export function startProxy(serverId, proxyType) {
+  return client.post(`/node-servers/${serverId}/proxy/start`, null, { params: { type: proxyType } })
+}
+
+export function stopProxy(serverId, proxyType) {
+  return client.post(`/node-servers/${serverId}/proxy/stop`, null, { params: { type: proxyType } })
+}
+
+export function restartProxy(serverId, proxyType) {
+  return client.post(`/node-servers/${serverId}/proxy/restart`, null, { params: { type: proxyType } })
+}
+
+export function updateProxyGuardian(serverId, proxyType, data) {
+  return client.post(`/node-servers/${serverId}/proxy/guardian`, data, { params: { type: proxyType } })
+}
+
+export function getProxyReleases(serverId, type) {
+  return client.get(`/node-servers/${serverId}/proxy/releases`, { params: { type } })
+}
+
+export function downloadProxyVersion(serverId, data) {
+  return client.post(`/node-servers/${serverId}/proxy/download`, data)
+}

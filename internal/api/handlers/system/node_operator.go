@@ -10,4 +10,5 @@ type NodeOperator interface {
 	ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error
 	SyncProxyConfig(ctx context.Context, serverID int64, proxyType string, config []byte) error
 	GetProxyStatusRemote(ctx context.Context, serverID int64) (interface{}, error)
+	UpdateProxyGuardian(ctx context.Context, serverID int64, proxyType string, autoStart, autoRestart *bool, maxRestarts *int) error
 }

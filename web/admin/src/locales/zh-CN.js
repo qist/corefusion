@@ -1064,6 +1064,7 @@ export default {
       stopped: '已停止',
       crashed: '已崩溃',
       starting: '启动中',
+      unknown: '加载中',
     },
     rules: {
       title: '规则文件管理',

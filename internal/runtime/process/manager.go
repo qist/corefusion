@@ -178,6 +178,12 @@ func (m *Manager) Reconcile(ctx context.Context) {
 
 	// Kill all old processes and reset status
 	for _, g := range guardians {
+		// Only manage local node (server_id=1) processes.
+		// Remote nodes' processes are managed by their own Agents.
+		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
+		if err != nil || svc.ServerID != 1 {
+			continue
+		}
 		if g.PID > 0 && isProcessAlive(g.PID) {
 			killProcess(g.PID)
 			// Wait a bit for process to exit and reap zombie
@@ -199,6 +205,11 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	for _, g := range autoStartList {
 		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
 		if err != nil {
+			continue
+		}
+		// Only start services for the local node (server_id=1).
+		// Remote nodes' processes are managed by their own Agents.
+		if svc.ServerID != 1 {
 			continue
 		}
 		if err := m.Start(ctx, g.ServiceID, svc.CoreType); err != nil {
@@ -913,6 +924,56 @@ func (m *Manager) refreshProcessStateLocked(serviceID int64) (*managedProcess, b
 	}
 
 	return p, true, false
+}
+
+// GetProcessStats reads CPU and memory from /proc/<pid>/stat (Linux only).
+// Exported so that the proxy manager can reuse it for proxy processes.
+func GetProcessStats(pid int) (cpu float64, mem int64) {
+	return getProcessStats(pid)
+}
+
+// GetProcessStartTime returns the wall-clock start time of a process by reading
+// /proc/<pid>/stat (field 22 = starttime in clock ticks since boot) and
+// /proc/stat (btime = boot time in seconds since epoch).
+// On non-Linux or error, returns the zero time.
+func GetProcessStartTime(pid int) time.Time {
+	if runtime.GOOS != "linux" {
+		return time.Time{}
+	}
+
+	// Read process stat to get starttime (field 22, 0-indexed = fields[21])
+	statData, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return time.Time{}
+	}
+	fields := strings.Fields(string(statData))
+	if len(fields) < 22 {
+		return time.Time{}
+	}
+	starttimeTicks, err := strconv.ParseInt(fields[21], 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+
+	// Read boot time from /proc/stat (btime line)
+	procStat, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return time.Time{}
+	}
+	var bootSec int64
+	for _, line := range strings.Split(string(procStat), "\n") {
+		if strings.HasPrefix(line, "btime ") {
+			bootSec, _ = strconv.ParseInt(strings.TrimPrefix(line, "btime "), 10, 64)
+			break
+		}
+	}
+	if bootSec == 0 {
+		return time.Time{}
+	}
+
+	clkTck := int64(100) // standard CLK_TCK on Linux
+	startSec := bootSec + starttimeTicks/clkTck
+	return time.Unix(startSec, 0)
 }
 
 // getProcessStats reads CPU and memory from /proc/<pid>/stat (Linux only).

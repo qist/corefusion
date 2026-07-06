@@ -1063,6 +1063,7 @@ export default {
       stopped: 'Stopped',
       crashed: 'Crashed',
       starting: 'Starting',
+      unknown: 'Loading',
     },
     rules: {
       title: 'Rule Files',

@@ -464,19 +464,25 @@
       </template>
     </el-dialog>
 
-    <!-- SNI Dialog -->
-    <el-dialog v-model="sniDialogVisible" :title="t('proxy.addSNIRule')" width="500">
-      <el-form :model="sniForm" label-width="120px">
-        <el-form-item label="Domain">
-          <el-input v-model="sniForm.domain" placeholder="www.example.com" />
-        </el-form-item>
-        <el-form-item :label="t('proxy.sniTarget')">
-          <el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443" />
-        </el-form-item>
-        <el-form-item :label="t('proxy.proxyProtocol')">
-          <el-switch v-model="sniForm.proxy_protocol" />
-        </el-form-item>
-      </el-form>
+<!-- SNI Dialog -->
+<el-dialog v-model="sniDialogVisible" :title="t('proxy.addSNIRule')" width="560">
+<el-form :model="sniForm" label-width="120px">
+<el-form-item :label="t('proxy.associateInbound') || '关联入站'">
+<el-select v-model="sniForm.inbound_id" filterable clearable :placeholder="t('proxy.selectInbound') || '选择 TLS/Reality 入站自动填充'" style="width:100%" @change="onSNIInboundSelect">
+<el-option v-for="ib in sniInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" />
+</el-select>
+</el-form-item>
+<el-form-item label="Domain">
+<el-input v-model="sniForm.domain" type="textarea" :rows="2" placeholder="www.example.com, api.example.com" />
+<div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniDomainHint') || '多个域名用逗号分隔，将自动为每个域名创建 SNI 规则' }}</div>
+</el-form-item>
+<el-form-item :label="t('proxy.sniTarget')">
+<el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443" />
+</el-form-item>
+<el-form-item :label="t('proxy.proxyProtocol')">
+<el-switch v-model="sniForm.proxy_protocol" />
+</el-form-item>
+</el-form>
       <template #footer>
         <el-button @click="sniDialogVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveSNIRule">{{ t('common.save') }}</el-button>
@@ -509,6 +515,11 @@
           </div>
           <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') || '添加' }}</el-button>
         </el-form-item>
+        <el-form-item v-if="showInboundSelect" :label="t('proxy.associateInbound') || '关联入站'">
+          <el-select v-model="siteForm.inbound_id" filterable clearable :placeholder="t('proxy.selectInbound') || '选择核心入站自动填充'" style="width:100%" @change="onInboundSelect">
+            <el-option v-for="ib in filteredInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item v-if="siteForm.template==='l4'" :label="t('proxy.listenPort') || 'Listen Port'">
           <el-input v-model="siteForm.listen_port" placeholder="443" style="width:120px" />
         </el-form-item>
@@ -530,11 +541,13 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static'" :label="t('proxy.template')">
-          <el-select v-model="siteForm.template" style="width:100%">
+<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static'" :label="t('proxy.template')">
+            <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
+            <el-option label="XHTTP" value="xhttp" />
+            <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
           </el-select>
         </el-form-item>
@@ -543,6 +556,8 @@
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
+            <el-option label="XHTTP" value="xhttp" />
+            <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
             <el-option label="Static" value="static" />
           </el-select>
@@ -670,6 +685,7 @@ const proxyApi = computed(() => `${apiBase.value}/proxy`)
 const proxyInfo = ref({})
 const guardian = ref({})
 const caddyRunning = ref(false)
+const inbounds = ref([])
 const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
 const allSites = ref([])
 const certificates = ref([])
@@ -686,6 +702,100 @@ const nginxLogModeHint = computed(() => {
 const httpSites = computed(() => allSites.value.filter(s => s.template !== 'sni' && s.template !== 'l4'))
 const l4Sites = computed(() => allSites.value.filter(s => s.template === 'l4'))
 const sniRules = computed(() => allSites.value.filter(s => s.template === 'sni'))
+
+// Inbound association: filter by template type
+const showInboundSelect = computed(() => {
+  const tpl = siteForm.value.template
+  return ['websocket', 'grpc', 'xhttp', 'httpupgrade', 'sni', 'http'].includes(tpl)
+})
+const filteredInbounds = computed(() => {
+  const tpl = siteForm.value.template
+  return inbounds.value.filter(ib => {
+    const network = ib._network || ''
+    const security = ib._security || ''
+    if (tpl === 'websocket') return network === 'ws'
+    if (tpl === 'grpc') return network === 'grpc'
+    if (tpl === 'xhttp') return network === 'xhttp'
+    if (tpl === 'httpupgrade') return network === 'httpupgrade'
+    if (tpl === 'sni') return security === 'tls' || security === 'reality'
+    if (tpl === 'http') return true // any TCP inbound
+    return false
+  })
+})
+function inboundLabel(ib) {
+  const parts = [ib._remark || ib.tag || ib.protocol]
+  if (ib._isSocket) parts.push(`socket:${ib._socketPath}`)
+  else parts.push(`${ib.listen || '0.0.0.0'}:${ib.port}`)
+  if (ib._network && ib._network !== 'raw' && ib._network !== 'tcp') parts.push(ib._network)
+  if (ib._security && ib._security !== 'none') parts.push(ib._security)
+  return parts.join(' | ')
+}
+function parseInboundConfig(item) {
+  let cfg = {}
+  try { cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {}) } catch {}
+  const ss = cfg.streamSettings || {}
+  const listen = cfg.listen || item.listen || '0.0.0.0'
+  const isSocket = listen.startsWith('/')
+  const socketPath = isSocket ? listen.split(',')[0] : ''
+  let wsPath = '', grpcService = '', xhttpPath = '', httpupgradePath = ''
+  if (ss.wsSettings) wsPath = ss.wsSettings.path || '/'
+  if (ss.grpcSettings) grpcService = ss.grpcSettings.serviceName || ''
+  if (ss.xhttpSettings || ss.splithttpSettings) xhttpPath = (ss.xhttpSettings || ss.splithttpSettings).path || '/'
+  if (ss.httpupgradeSettings) httpupgradePath = ss.httpupgradeSettings.path || '/'
+  // Extract server names from TLS / Reality settings
+  let serverNames = []
+  if (ss.security === 'tls' && ss.tlsSettings) {
+    const sn = ss.tlsSettings.serverName
+    if (sn) serverNames.push(sn)
+  }
+  if (ss.security === 'reality' && ss.realitySettings) {
+    const names = ss.realitySettings.serverNames || []
+    serverNames = serverNames.concat(names)
+  }
+  return {
+    id: item.id,
+    tag: item.tag,
+    protocol: item.protocol,
+    remark: item.remark,
+    listen: listen,
+    port: cfg.port || item.port || 0,
+    _network: ss.network || 'raw',
+    _security: ss.security || 'none',
+    _isSocket: isSocket,
+    _socketPath: socketPath,
+    _wsPath: wsPath,
+    _grpcService: grpcService,
+    _xhttpPath: xhttpPath,
+    _httpupgradePath: httpupgradePath,
+    _serverNames: serverNames,
+    _remark: item.remark || item.tag || '',
+  }
+}
+async function fetchInbounds() {
+  try {
+    const data = await client.get(`${apiBase.value}/inbound-configs`, { params: { core_type: 'xray' } })
+    inbounds.value = (data || []).map(parseInboundConfig)
+  } catch { inbounds.value = [] }
+}
+function onInboundSelect(id) {
+  if (!id) return
+  const ib = inbounds.value.find(i => i.id === id)
+  if (!ib) return
+  // Auto-fill upstream
+  const upstream = ib._isSocket ? `unix:${ib._socketPath}` : `127.0.0.1:${ib.port}`
+  siteForm.value.upstreams = [upstream]
+  // Auto-fill path based on template
+  const tpl = siteForm.value.template
+  if (tpl === 'websocket' && ib._wsPath) siteForm.value.path = ib._wsPath
+  else if (tpl === 'grpc' && ib._grpcService) siteForm.value.path = ib._grpcService
+  else if (tpl === 'xhttp' && ib._xhttpPath) siteForm.value.path = ib._xhttpPath
+  else if (tpl === 'httpupgrade' && ib._httpupgradePath) siteForm.value.path = ib._httpupgradePath
+  else siteForm.value.path = siteForm.value.path || '/'
+  // For SNI: fill sni_target
+  if (tpl === 'sni') {
+    siteForm.value.sni_target = upstream
+  }
+}
 
 const sniListenPort = ref('443')
 const sniLocalPort = ref('8443')
@@ -724,7 +834,28 @@ const configViewContent = ref('')
 
 // SNI
 const sniDialogVisible = ref(false)
-const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false })
+const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null })
+
+// SNI inbounds: only TLS and Reality
+const sniInbounds = computed(() => {
+  return inbounds.value.filter(ib => {
+    const sec = ib._security || ''
+    return sec === 'tls' || sec === 'reality'
+  })
+})
+
+function onSNIInboundSelect(id) {
+if (!id) return
+const ib = inbounds.value.find(i => i.id === id)
+if (!ib) return
+// Auto-fill sni_target from inbound listen:port or socket
+const upstream = ib._isSocket ? `unix:${ib._socketPath}` : `127.0.0.1:${ib.port}`
+sniForm.value.sni_target = upstream
+// Auto-fill domain from server names (TLS serverName / Reality serverNames)
+if (ib._serverNames && ib._serverNames.length > 0) {
+sniForm.value.domain = ib._serverNames.join(', ')
+}
+}
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -901,7 +1032,8 @@ function showAddSite(template) {
     enable_http2: true, enable_ipv6: false, enable_quic: false,
     enable_early_data: false, enable_stapling: false,
     ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-    editMode: 'form'
+    editMode: 'form',
+    inbound_id: null
   }
   siteDialogVisible.value = true
 }
@@ -919,7 +1051,8 @@ function showPanelProxy() {
     enable_http2: true, enable_ipv6: false, enable_quic: false,
     enable_early_data: false, enable_stapling: false,
     ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-    editMode: 'form'
+    editMode: 'form',
+    inbound_id: null
   }
   siteDialogVisible.value = true
 }
@@ -975,7 +1108,8 @@ function editSite(row) {
     ssl_protocols: row.ssl_protocols || '',
     ssl_ciphers: row.ssl_ciphers || '',
     ssl_ecdh_curve: row.ssl_ecdh_curve || '',
-    editMode: 'form'
+    editMode: 'form',
+    inbound_id: null
   }
   siteDialogVisible.value = true
 }
@@ -1153,23 +1287,30 @@ function copyConfig() {
 }
 
 function showAddSNI() {
-  sniForm.value = { domain: '', sni_target: '', proxy_protocol: false }
-  sniDialogVisible.value = true
+sniForm.value = { domain: '', sni_target: '', proxy_protocol: false, inbound_id: null }
+sniDialogVisible.value = true
 }
 
 async function saveSNIRule() {
   try {
-    await client.post(`${nginxApi.value}/sites`, {
-      domain: sniForm.value.domain,
-      upstream: '',
-      template: 'sni',
-      sni_target: sniForm.value.sni_target,
-      local_port: sniLocalPort.value || '8443',
-      proxy_protocol: sniForm.value.proxy_protocol,
-      is_panel: false,
-      priority: 50,
-      listen_port: sniListenPort.value || '443'
-    })
+    const domains = (sniForm.value.domain || '').split(',').map(d => d.trim()).filter(Boolean)
+    if (domains.length === 0) {
+      ElMessage.warning(t('proxy.sniDomainRequired') || '请输入至少一个域名')
+      return
+    }
+    for (const domain of domains) {
+      await client.post(`${nginxApi.value}/sites`, {
+        domain: domain,
+        upstream: '',
+        template: 'sni',
+        sni_target: sniForm.value.sni_target,
+        local_port: sniLocalPort.value || '8443',
+        proxy_protocol: sniForm.value.proxy_protocol,
+        is_panel: false,
+        priority: 50,
+        listen_port: sniListenPort.value || '443'
+      })
+    }
     await applyConfig()
     ElMessage.success(t('common.success'))
     sniDialogVisible.value = false
@@ -1182,6 +1323,7 @@ onMounted(() => {
   fetchSites()
   fetchCertificates()
   fetchSettings()
+  fetchInbounds()
 })
 </script>
 <style scoped>

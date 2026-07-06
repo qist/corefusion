@@ -614,3 +614,14 @@ func (a *LocalAgent) resolveBinaryPath(coreType string) (string, error) {
 	}
 	return binaryPath, nil
 }
+
+// ReadConfigFile reads the runtime config file for the given core type
+// from the agent's data directory (runtime/{coreType}.jsonc).
+func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
+	configPath := filepath.Join(a.dataDir, "runtime", coreType+".jsonc")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, configPath, err
+	}
+	return data, configPath, nil
+}

@@ -1046,6 +1046,16 @@ func (s *Service) XrayAPIOnServer(ctx context.Context, serverID int64, req *agen
 	return s.nodeMgr.XrayAPIOnServer(ctx, serverID, req)
 }
 
+// ReadConfigFile reads the runtime config file from a server (local or remote).
+// For local nodes, reads directly from disk. For remote nodes, calls the
+// ReadConfigFile gRPC RPC on the Agent.
+func (s *Service) ReadConfigFile(ctx context.Context, serverID int64, coreType string) ([]byte, string, error) {
+	if s.nodeMgr == nil {
+		return nil, "", fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.ReadConfigFileOnServer(ctx, serverID, coreType)
+}
+
 // GetBootstrapCommand generates the bootstrap installation command for a server.
 func (s *Service) GetBootstrapCommand(ctx context.Context, serverID int64, panelHost string, panelPort int) (string, error) {
 	required, err := s.tokenMgr.IsBootstrapRequired(ctx, serverID)

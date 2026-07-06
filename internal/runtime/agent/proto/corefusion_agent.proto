@@ -39,6 +39,8 @@ service AgentService {
   rpc DownloadGeoRule(DownloadGeoRuleRequest) returns (DownloadGeoRuleResponse);
   // 节点测速（TCP 连接延迟探测）
   rpc SpeedTest(SpeedTestRequest) returns (SpeedTestResponse);
+  // 读取节点上的配置文件（如 runtime/xray.jsonc）
+  rpc ReadConfigFile(ReadConfigFileRequest) returns (ReadConfigFileResponse);
 
   // --- 异步任务类 RPC（立刻返回 accepted + task_id） ---
   // 启动/停止/重启核心进程 → 返回 TaskAccept
@@ -205,6 +207,21 @@ message UpdateAgentRequest {
   string download_url = 2;         // 新版本下载 URL
   string checksum = 3;             // SHA-256 校验和
   bool   force = 4;                // 强制更新（即使版本相同）
+}
+
+// ============================================================
+// 配置文件读取（面板→Agent 读取节点本地配置文件）
+// ============================================================
+
+message ReadConfigFileRequest {
+  string core_type = 1;            // xray/singbox/hysteria2/tuic
+}
+
+message ReadConfigFileResponse {
+  bool   success = 1;
+  string error = 2;
+  bytes  content = 3;               // 文件内容
+  string file_path = 4;            // 文件路径
 }
 
 // ============================================================

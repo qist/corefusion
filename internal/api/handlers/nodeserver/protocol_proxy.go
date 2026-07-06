@@ -207,6 +207,58 @@ func (h *Handler) ValidateProtocol(c *gin.Context) {
 	response.OK(c, gin.H{"valid": true})
 }
 
+// GetConfigFile handles GET /api/v1/node-servers/:id/protocols/:coreType/config-file
+// Reads the actual config file from the target node (local or remote).
+// For local nodes, reads from disk via the LocalAgent.
+// For remote nodes, calls the ReadConfigFile gRPC RPC on the Agent.
+// If reading from the node fails (e.g. file not found, agent not connected),
+// falls back to generating config from the database.
+func (h *Handler) GetConfigFile(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	coreType := c.Param("coreType")
+	if coreType == "" {
+		coreType = "xray"
+	}
+	if !isValidCoreType(coreType) {
+		response.BadRequest(c, "INVALID_CORE_TYPE", "unsupported core type: "+coreType)
+		return
+	}
+
+	// Try to read the actual config file from the node (local or remote via gRPC)
+	data, _, err := h.svc.ReadConfigFile(c.Request.Context(), serverID, coreType)
+	if err != nil {
+		// If reading from node fails, fall back to generating config from database
+		log.Printf("[nodeserver] GetConfigFile: ReadConfigFile failed for server %d (%s): %v, falling back to DB generation", serverID, coreType, err)
+
+		if h.coreConfigSvc == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "core config service not configured")
+			return
+		}
+		fullConfig, genErr := h.coreConfigSvc.GetFull(c.Request.Context(), serverID, coreType)
+		if genErr != nil {
+			response.NotFound(c, "PROTOCOL_NOT_FOUND", genErr.Error())
+			return
+		}
+		data, err = coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+			Ctx:              c.Request.Context(),
+			ServerID:         serverID,
+			CoreType:         coreType,
+			FullConfig:       fullConfig,
+			InboundProvider:  h.inboundConfigSvc,
+			OutboundProvider: h.outboundConfigSvc,
+		})
+		if err != nil {
+			response.InternalError(c, "GENERATE_FAILED", err.Error())
+			return
+		}
+	}
+	c.Data(200, "application/json", data)
+}
+
 // ──────────────────── Proxy Management ────────────────────
 
 // GetProxyStatus handles GET /api/v1/node-servers/:id/proxy/status

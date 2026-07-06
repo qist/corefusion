@@ -26,6 +26,7 @@ const (
 	AgentService_ListReleases_FullMethodName    = "/corefusion.agent.v1.AgentService/ListReleases"
 	AgentService_DownloadGeoRule_FullMethodName = "/corefusion.agent.v1.AgentService/DownloadGeoRule"
 	AgentService_SpeedTest_FullMethodName       = "/corefusion.agent.v1.AgentService/SpeedTest"
+	AgentService_ReadConfigFile_FullMethodName  = "/corefusion.agent.v1.AgentService/ReadConfigFile"
 	AgentService_ControlCore_FullMethodName     = "/corefusion.agent.v1.AgentService/ControlCore"
 	AgentService_ControlProxy_FullMethodName    = "/corefusion.agent.v1.AgentService/ControlProxy"
 	AgentService_SyncConfig_FullMethodName      = "/corefusion.agent.v1.AgentService/SyncConfig"
@@ -65,6 +66,8 @@ type AgentServiceClient interface {
 	DownloadGeoRule(ctx context.Context, in *DownloadGeoRuleRequest, opts ...grpc.CallOption) (*DownloadGeoRuleResponse, error)
 	// 节点测速（TCP 连接延迟探测）
 	SpeedTest(ctx context.Context, in *SpeedTestRequest, opts ...grpc.CallOption) (*SpeedTestResponse, error)
+	// 读取节点上的配置文件（如 runtime/xray.jsonc）
+	ReadConfigFile(ctx context.Context, in *ReadConfigFileRequest, opts ...grpc.CallOption) (*ReadConfigFileResponse, error)
 	// --- 异步任务类 RPC（立刻返回 accepted + task_id） ---
 	// 启动/停止/重启核心进程 → 返回 TaskAccept
 	ControlCore(ctx context.Context, in *ControlCoreRequest, opts ...grpc.CallOption) (*TaskAccept, error)
@@ -172,6 +175,16 @@ func (c *agentServiceClient) SpeedTest(ctx context.Context, in *SpeedTestRequest
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SpeedTestResponse)
 	err := c.cc.Invoke(ctx, AgentService_SpeedTest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReadConfigFile(ctx context.Context, in *ReadConfigFileRequest, opts ...grpc.CallOption) (*ReadConfigFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadConfigFileResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReadConfigFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -341,6 +354,8 @@ type AgentServiceServer interface {
 	DownloadGeoRule(context.Context, *DownloadGeoRuleRequest) (*DownloadGeoRuleResponse, error)
 	// 节点测速（TCP 连接延迟探测）
 	SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error)
+	// 读取节点上的配置文件（如 runtime/xray.jsonc）
+	ReadConfigFile(context.Context, *ReadConfigFileRequest) (*ReadConfigFileResponse, error)
 	// --- 异步任务类 RPC（立刻返回 accepted + task_id） ---
 	// 启动/停止/重启核心进程 → 返回 TaskAccept
 	ControlCore(context.Context, *ControlCoreRequest) (*TaskAccept, error)
@@ -404,6 +419,9 @@ func (UnimplementedAgentServiceServer) DownloadGeoRule(context.Context, *Downloa
 }
 func (UnimplementedAgentServiceServer) SpeedTest(context.Context, *SpeedTestRequest) (*SpeedTestResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SpeedTest not implemented")
+}
+func (UnimplementedAgentServiceServer) ReadConfigFile(context.Context, *ReadConfigFileRequest) (*ReadConfigFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadConfigFile not implemented")
 }
 func (UnimplementedAgentServiceServer) ControlCore(context.Context, *ControlCoreRequest) (*TaskAccept, error) {
 	return nil, status.Error(codes.Unimplemented, "method ControlCore not implemented")
@@ -590,6 +608,24 @@ func _AgentService_SpeedTest_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AgentServiceServer).SpeedTest(ctx, req.(*SpeedTestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReadConfigFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadConfigFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReadConfigFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReadConfigFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReadConfigFile(ctx, req.(*ReadConfigFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -880,6 +916,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SpeedTest",
 			Handler:    _AgentService_SpeedTest_Handler,
+		},
+		{
+			MethodName: "ReadConfigFile",
+			Handler:    _AgentService_ReadConfigFile_Handler,
 		},
 		{
 			MethodName: "ControlCore",

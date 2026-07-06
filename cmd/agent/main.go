@@ -806,6 +806,22 @@ func (s *agentServiceServer) SpeedTest(ctx context.Context, req *agentpb.SpeedTe
 	return &agentpb.SpeedTestResponse{Success: false, Error: "not implemented"}, nil
 }
 
+// ReadConfigFile reads the runtime config file from the agent's local data directory.
+func (s *agentServiceServer) ReadConfigFile(ctx context.Context, req *agentpb.ReadConfigFileRequest) (*agentpb.ReadConfigFileResponse, error) {
+	if req.CoreType == "" {
+		return &agentpb.ReadConfigFileResponse{Success: false, Error: "core_type is required"}, nil
+	}
+	data, filePath, err := s.localAgent.ReadConfigFile(req.CoreType)
+	if err != nil {
+		return &agentpb.ReadConfigFileResponse{Success: false, Error: err.Error()}, nil
+	}
+	return &agentpb.ReadConfigFileResponse{
+		Success:  true,
+		Content:  data,
+		FilePath: filePath,
+	}, nil
+}
+
 func (s *agentServiceServer) GetMetrics(ctx context.Context, req *agentpb.GetMetricsRequest) (*agentpb.GetMetricsResponse, error) {
 	cpu, mem := getSystemMetrics()
 	return &agentpb.GetMetricsResponse{

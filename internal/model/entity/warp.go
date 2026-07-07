@@ -3,8 +3,14 @@ package entity
 import "time"
 
 // WarpConfig is the GORM model for the warp_configs table.
+// Each WARP config is scoped to a specific node server and optionally
+// to a specific core type (e.g. "xray", "singbox"), so that different
+// cores on the same node can use independent WARP exits.
 type WarpConfig struct {
 	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID       int64     `json:"server_id" gorm:"not null;default:1;index:idx_warp_server_core"`
+	CoreType       string    `json:"core_type" gorm:"size:32;not null;default:'';index:idx_warp_server_core"`
+	Remark         string    `json:"remark" gorm:"size:128"`
 	DeviceID       string    `json:"device_id" gorm:"size:255"`
 	Token          string    `json:"token" gorm:"size:512"`
 	PrivateKey     string    `json:"private_key" gorm:"size:255"`

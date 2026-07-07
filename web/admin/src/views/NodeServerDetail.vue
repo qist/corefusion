@@ -71,6 +71,11 @@
         <CoreProcessTab :server-id="serverId" />
       </el-tab-pane>
 
+      <!-- WARP Tab (per node) -->
+      <el-tab-pane :label="t('service.tabs.warp')" name="warp">
+        <WarpTab :server-id="serverId" />
+      </el-tab-pane>
+
       <!-- Certificates Tab -->
       <el-tab-pane :label="t('menu.certificates')" name="certs">
         <div style="padding:20px">
@@ -101,6 +106,7 @@ import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
 import RuleTab from './services/RuleTab.vue'
 import CoreProcessTab from './node-server/CoreProcessTab.vue'
+import WarpTab from './services/WarpTab.vue'
 
 const { t } = useI18n()
 const route = useRoute()

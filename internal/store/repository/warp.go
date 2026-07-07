@@ -33,14 +33,30 @@ func (r *WarpRepository) GetByID(ctx context.Context, id int64) (*entity.WarpCon
 	return &cfg, nil
 }
 
-// GetActive retrieves the latest active WARP config.
-func (r *WarpRepository) GetActive(ctx context.Context) (*entity.WarpConfig, error) {
+// GetActiveByServer retrieves the latest active WARP config for a specific server.
+// If coreType is non-empty, it filters by core_type as well; otherwise it returns
+// the latest active config for the server regardless of core type.
+func (r *WarpRepository) GetActiveByServer(ctx context.Context, serverID int64, coreType string) (*entity.WarpConfig, error) {
 	var cfg entity.WarpConfig
-	err := r.db.WithContext(ctx).Where("status != ?", "not_registered").Order("id DESC").First(&cfg).Error
+	q := r.db.WithContext(ctx).Where("server_id = ? AND status != ?", serverID, "not_registered")
+	if coreType != "" {
+		q = q.Where("core_type = ?", coreType)
+	}
+	err := q.Order("id DESC").First(&cfg).Error
 	if err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// ListByServer lists all WARP configs for a specific server.
+func (r *WarpRepository) ListByServer(ctx context.Context, serverID int64) ([]*entity.WarpConfig, error) {
+	var cfgs []*entity.WarpConfig
+	err := r.db.WithContext(ctx).
+		Where("server_id = ? AND status != ?", serverID, "not_registered").
+		Order("id DESC").
+		Find(&cfgs).Error
+	return cfgs, err
 }
 
 // Update updates a WARP config.
@@ -51,4 +67,11 @@ func (r *WarpRepository) Update(ctx context.Context, cfg *entity.WarpConfig) err
 // Delete deletes a WARP config by ID.
 func (r *WarpRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.WarpConfig{}, id).Error
+}
+
+// DeleteByServer deletes all WARP configs for a specific server.
+func (r *WarpRepository) DeleteByServer(ctx context.Context, serverID int64) error {
+	return r.db.WithContext(ctx).
+		Where("server_id = ?", serverID).
+		Delete(&entity.WarpConfig{}).Error
 }

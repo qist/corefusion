@@ -24,8 +24,8 @@ type RawDataProvider interface {
 	ListInboundConfigs(ctx context.Context, serverID int64) ([]InboundConfigRow, error)
 	// ListOutboundConfigs returns all outbound_config rows for a server
 	ListOutboundConfigs(ctx context.Context, serverID int64) ([]OutboundConfigRow, error)
-	// ListWarpConfigs returns active warp config rows
-	ListWarpConfigs(ctx context.Context) ([]WarpConfigRow, error)
+	// ListWarpConfigs returns active warp config rows for a specific server
+	ListWarpConfigs(ctx context.Context, serverID int64) ([]WarpConfigRow, error)
 	// ListShareDomainConfigs returns effective share domain configs for a server
 	ListShareDomainConfigs(ctx context.Context, serverID int64) ([]ShareDomainConfigRow, error)
 }
@@ -93,8 +93,8 @@ func (p *RepositoryDataProvider) ListOutboundConfigs(ctx context.Context, server
 	return p.outboundConfigRepo.ListRows(ctx, serverID)
 }
 
-func (p *RepositoryDataProvider) ListWarpConfigs(ctx context.Context) ([]WarpConfigRow, error) {
-	return p.warpRepo.ListRows(ctx)
+func (p *RepositoryDataProvider) ListWarpConfigs(ctx context.Context, serverID int64) ([]WarpConfigRow, error) {
+	return p.warpRepo.ListRows(ctx, serverID)
 }
 
 func (p *RepositoryDataProvider) ListShareDomainConfigs(ctx context.Context, serverID int64) ([]ShareDomainConfigRow, error) {
@@ -218,8 +218,8 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		log.Printf("[DataSyncBuilder] server %d: %d outbound config entries", serverID, len(outboundConfigs))
 	}
 
-	// 4. WARP configs (global, not per-server)
-	warpConfigs, err := b.rawProvider.ListWarpConfigs(ctx)
+	// 4. WARP configs (per-server, not global)
+	warpConfigs, err := b.rawProvider.ListWarpConfigs(ctx, serverID)
 	if err != nil {
 		log.Printf("[DataSyncBuilder] failed to list warp configs: %v", err)
 	} else {
@@ -248,6 +248,9 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				ConfigJson:     c.ConfigJSON,
 				CreatedAt:      c.CreatedAt.Unix(),
 				UpdatedAt:      c.UpdatedAt.Unix(),
+				ServerId:       c.ServerID,
+				CoreType:       c.CoreType,
+				Remark:         c.Remark,
 			}
 		}
 		log.Printf("[DataSyncBuilder] %d warp config entries", len(warpConfigs))

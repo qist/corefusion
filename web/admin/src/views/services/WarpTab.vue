@@ -1,122 +1,158 @@
 <template>
-  <div>
-    <el-card v-loading="loading">
+  <el-card v-loading="loading">
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>{{ t('service.warp.title') }}</span>
-          <div>
-            <el-button v-if="!status.registered" type="primary" @click="handleRegister" :loading="registerLoading">{{ t('service.warp.register') }}</el-button>
-            <el-button v-if="status.registered" type="success" @click="handleGenerateConfig" :loading="generateLoading">{{ t('service.warp.generateConfig') }}</el-button>
-            <el-button v-if="status.registered" type="danger" @click="handleReset">{{ t('service.warp.reset') }}</el-button>
-          </div>
+          <el-button type="primary" @click="showRegisterDialog = true" :loading="registerLoading">
+            {{ t('service.warp.register') }}
+          </el-button>
         </div>
       </template>
 
-      <el-descriptions :column="2" border>
-        <el-descriptions-item :label="t('service.warp.status')" :span="2">
-          <el-tag :type="status.registered ? 'success' : 'info'">
-            {{ status.registered ? t('service.warp.registered') : t('service.warp.notRegistered') }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="Private Key">
-          <code v-if="status.private_key">{{ status.private_key }}</code>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="Public Key (Peer)">
-          <code v-if="status.public_key">{{ status.public_key }}</code>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="Reserved">
-          <code v-if="status.reserved">{{ status.reserved }}</code>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="Endpoint">
-          <code v-if="status.endpoint">{{ status.endpoint }}</code>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item :label="t('service.warp.addressIPv4')">{{ status.address_ipv4 || '-' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('service.warp.addressIPv6')">{{ status.address_ipv6 || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="Account ID">{{ status.account_id || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="Account Type">{{ status.account_type || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="License Key" :span="2">
-          <code v-if="status.license_key">{{ status.license_key }}</code>
-          <span v-else>-</span>
-        </el-descriptions-item>
-      </el-descriptions>
+      <!-- WARP config list -->
+      <el-table v-if="warpConfigs.length > 0" :data="warpConfigs" border style="width: 100%">
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="core_type" :label="t('service.warp.coreType')" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.core_type" size="small">{{ row.core_type }}</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="remark" :label="t('service.warp.remark')" width="120" />
+        <el-table-column prop="status" :label="t('service.warp.status')" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
+              {{ row.status === 'active' ? t('service.warp.active') : t('service.warp.registered') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="address_ipv4" :label="t('service.warp.addressIPv4')" width="140" />
+        <el-table-column prop="address_ipv6" :label="t('service.warp.addressIPv6')" width="180" />
+        <el-table-column prop="endpoint" :label="t('service.warp.endpoint')" width="200" />
+        <el-table-column prop="registration_at" :label="t('service.warp.registrationAt')" width="180" />
+        <el-table-column :label="t('common.actions')" width="200" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" @click="handleGenerateConfig(row)">
+              {{ t('service.warp.generateConfig') }}
+            </el-button>
+            <el-button size="small" type="danger" @click="handleDelete(row)">
+              {{ t('common.delete') }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-      <div v-if="config" style="margin-top:20px">
+      <el-empty v-else :description="t('service.warp.notRegistered')" />
+
+      <!-- Config preview -->
+      <div v-if="currentConfig" style="margin-top:20px">
         <h4>{{ t('service.warp.config') }}</h4>
-        <el-input type="textarea" :model-value="config" :rows="10" readonly />
+        <el-input type="textarea" :model-value="currentConfig" :rows="10" readonly />
       </div>
-    </el-card>
-  </div>
+
+    <!-- Register dialog -->
+    <el-dialog v-model="showRegisterDialog" :title="t('service.warp.register')" width="420px">
+      <el-form label-width="100px">
+        <el-form-item :label="t('service.warp.coreType')">
+          <el-select v-model="registerForm.core_type" style="width:100%" clearable>
+            <el-option label="xray" value="xray" />
+            <el-option label="singbox" value="singbox" />
+            <el-option :label="t('service.warp.allCores')" value="" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('service.warp.remark')">
+          <el-input v-model="registerForm.remark" :placeholder="t('service.warp.remarkPlaceholder')" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRegisterDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleRegister" :loading="registerLoading">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
+  </el-card>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 
+const props = defineProps({
+  serverId: { type: Number, required: true }
+})
+
 const { t } = useI18n()
 const loading = ref(false)
 const registerLoading = ref(false)
-const generateLoading = ref(false)
-const status = ref({ status: 'not_registered', registered: false })
-const config = ref('')
+const warpConfigs = ref([])
+const currentConfig = ref('')
+const showRegisterDialog = ref(false)
+const registerForm = ref({ core_type: '', remark: '' })
 
-async function fetchStatus() {
+const warpBase = computed(() => `/node-servers/${props.serverId}/warp`)
+
+async function fetchWarpConfigs() {
+  if (!props.serverId) return
   loading.value = true
   try {
-    const data = await client.get('/warp/status')
-    status.value = data
+    const data = await client.get(warpBase.value)
+    warpConfigs.value = data?.items || []
   } catch (e) {
-    status.value = { status: 'not_registered', registered: false }
+    warpConfigs.value = []
   } finally {
     loading.value = false
   }
 }
 
-async function fetchConfig() {
+async function handleRegister() {
+  registerLoading.value = true
   try {
-    const data = await client.get('/warp/config')
-    config.value = data.config || ''
+    await client.post(`${warpBase.value}/register`, {
+      core_type: registerForm.value.core_type || '',
+      remark: registerForm.value.remark || '',
+    })
+    ElMessage.success(t('common.success'))
+    showRegisterDialog.value = false
+    registerForm.value = { core_type: '', remark: '' }
+    await fetchWarpConfigs()
   } catch (e) {
-    config.value = ''
+    ElMessage.error(e.message || t('service.warp.registerFailed'))
+  } finally {
+    registerLoading.value = false
   }
 }
 
-async function handleRegister() {
-  await ElMessageBox.confirm(t('service.warp.registerConfirm'), t('common.confirm'))
-  registerLoading.value = true
+async function handleGenerateConfig(row) {
   try {
-    const data = await client.post('/warp/register')
-    status.value = data
+    const data = await client.post(`${warpBase.value}/generate-config`, {
+      core_type: row.core_type || '',
+    })
+    currentConfig.value = data?.config || ''
     ElMessage.success(t('common.success'))
-  } catch (e) {} finally { registerLoading.value = false }
+    await fetchWarpConfigs()
+  } catch (e) {
+    ElMessage.error(e.message || 'Failed')
+  }
 }
 
-async function handleGenerateConfig() {
-  generateLoading.value = true
-  try {
-    const data = await client.post('/warp/generate-config')
-    config.value = data.config || ''
-    ElMessage.success(t('common.success'))
-  } catch (e) {} finally { generateLoading.value = false }
-}
-
-async function handleReset() {
+async function handleDelete(row) {
   await ElMessageBox.confirm(t('service.warp.resetConfirm'), t('common.confirm'))
   try {
-    await client.delete('/warp')
+    await client.delete(`${warpBase.value}/${row.id}`)
     ElMessage.success(t('common.success'))
-    status.value = { status: 'not_registered', registered: false }
-    config.value = ''
-  } catch (e) {}
+    await fetchWarpConfigs()
+  } catch (e) {
+    ElMessage.error(e.message || 'Failed')
+  }
 }
 
+watch(() => props.serverId, () => {
+  currentConfig.value = ''
+  fetchWarpConfigs()
+})
+
 onMounted(() => {
-  fetchStatus()
-  fetchConfig()
+  fetchWarpConfigs()
 })
 </script>

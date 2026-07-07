@@ -242,6 +242,7 @@ func migrateServerID(db *gorm.DB) {
 		"proxy_sites",
 		"caddy_sites",
 		"nginx_sites",
+		"warp_configs",
 	}
 	for _, table := range tables {
 		result := db.Table(table).Where("server_id = 0 OR server_id IS NULL").Update("server_id", 1)

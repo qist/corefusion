@@ -60,6 +60,15 @@ func (r *ShareDomainConfigRepository) ClearAll(ctx context.Context, configType s
 	return query.Delete(&entity.ShareDomainConfig{}).Error
 }
 
+// ClearByServer deletes share domain configs for a specific server, optionally filtered by type.
+func (r *ShareDomainConfigRepository) ClearByServer(ctx context.Context, serverID int64, configType string) error {
+	query := r.db.WithContext(ctx).Where("server_id = ?", serverID)
+	if configType != "" {
+		query = query.Where("type = ?", configType)
+	}
+	return query.Delete(&entity.ShareDomainConfig{}).Error
+}
+
 // Count returns the total number of share domain configs.
 func (r *ShareDomainConfigRepository) Count(ctx context.Context) (int64, error) {
 	var count int64

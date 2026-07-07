@@ -1039,6 +1039,8 @@ export default {
       clearAll: '清空',
       clearAllConfirm: '确定清空所有数据吗？',
       seed: '加载默认',
+      bindNode: '绑定节点',
+      allNodes: '全局(所有节点)',
     },
     process: {
       state: '进程状态',
@@ -2162,6 +2164,7 @@ export default {
     remoteNode: '远程节点',
     agentPort: 'Agent 端口',
     isLocal: '本地节点',
+    directDomains: '直连域名',
     statusOnline: '在线',
     statusOffline: '离线',
     statusDegraded: '降级',

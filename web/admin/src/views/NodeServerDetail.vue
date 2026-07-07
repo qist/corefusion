@@ -76,6 +76,11 @@
         <WarpTab :server-id="serverId" />
       </el-tab-pane>
 
+      <!-- Direct Domains Tab (per node) -->
+      <el-tab-pane :label="t('nodeServer.directDomains')" name="shareDomain">
+        <ShareDomainTab :server-id="serverId" />
+      </el-tab-pane>
+
       <!-- Certificates Tab -->
       <el-tab-pane :label="t('menu.certificates')" name="certs">
         <div style="padding:20px">
@@ -107,6 +112,7 @@ import ProxyManagement from './ProxyManagement.vue'
 import RuleTab from './services/RuleTab.vue'
 import CoreProcessTab from './node-server/CoreProcessTab.vue'
 import WarpTab from './services/WarpTab.vue'
+import ShareDomainTab from './services/ShareDomainTab.vue'
 
 const { t } = useI18n()
 const route = useRoute()

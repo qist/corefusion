@@ -158,7 +158,7 @@ CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
   go build -o corefusion-agent-linux-amd64 ./cmd/agent/
 ```
 
-> 注意：Agent 使用 SQLite (CGO)，交叉编译时需设置 `CGO_ENABLED=0` 使用 pure Go 驱动。
+> 注意：Agent 使用 SQLite (CGO)，交叉编译时需设置 `CGO_ENABLED=1` 使用 pure Go 驱动。
 > 如果目标架构与编译机相同，直接 `go build` 即可（保留 CGO）。
 
 ### 4.3 Agent 配置文件

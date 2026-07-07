@@ -340,6 +340,7 @@ export default {
       customDomainPlaceholder: 'example.com 或 1.2.3.4',
       customPort: '端口',
       customPortHint: '默认 443',
+      customPortCustom: '自定义端口',
       // 表格列
       traffic: '流量',
       details: '详细信息',

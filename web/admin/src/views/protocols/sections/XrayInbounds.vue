@@ -362,9 +362,14 @@
                 <el-form-item :label="t('protoCenter.inbounds.customDomain')">
                   <el-input v-model="rf._customDomain" :placeholder="t('protoCenter.inbounds.customDomainPlaceholder')" />
                 </el-form-item>
-                <el-form-item :label="t('protoCenter.inbounds.customPort')">
+                <el-form-item :label="t('protoCenter.inbounds.directPortMode')">
+                  <el-radio-group v-model="rf._customPortMode">
+                    <el-radio value="custom">{{ t('protoCenter.inbounds.customPortCustom') }}</el-radio>
+                    <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item v-if="rf._customPortMode === 'custom'" :label="t('protoCenter.inbounds.customPort')">
                   <el-input-number v-model="rf._accessCustomPort" :min="1" :max="65535" />
-                  <div class="hint">{{ t('protoCenter.inbounds.customPortHint') }}</div>
                 </el-form-item>
               </template>
             </template>
@@ -2593,9 +2598,10 @@ function getAccessHostPort(ib) {
         }
         break
       case 'custom':
-        // Custom: use custom domain and port
+        // Custom: use custom domain, port depends on mode
         if (ib._customDomain) {
-          result = { host: ib._customDomain, port: ib._accessCustomPort || 443 }
+          const port = ib._customPortMode === 'inbound' ? ib.port : (ib._accessCustomPort || 443)
+          result = { host: ib._customDomain, port }
         }
         break
     }
@@ -3438,11 +3444,14 @@ async function loadTargets() {
 }
 async function loadCFDomains() {
   try {
-    const data = await client.get('/share-domains')
-    if (Array.isArray(data)) {
-      cfDomains.value = data.filter(d => d.type === 'cf_domain')
-      directDomains.value = data.filter(d => d.type === 'direct')
+    // CF domains are global
+    const globalData = await client.get('/share-domains')
+    if (Array.isArray(globalData)) {
+      cfDomains.value = globalData.filter(d => d.type === 'cf_domain')
     }
+    // Direct domains are per-node — only show domains bound to this server
+    const nodeData = await client.get(`${nodeBase.value}/share-domains`)
+    directDomains.value = Array.isArray(nodeData) ? nodeData.filter(d => d.type === 'direct') : []
   } catch {}
 }
 async function loadCFIPEntries() {
@@ -3578,7 +3587,11 @@ function getDefaultInbound() {
     _accessDomainEnabled: false, _accessDomainType: 'direct',
     _directDomain: '', _directPortMode: 'config',
     _cfDomain: '', _cfIP: '', _customDomain: '',
+    _customPortMode: 'custom',
     _accessCustomPort: 443,
+    // Port Hop
+    _portHopEnabled: false, _portHopMode: 'preset', _portHopRange: '20000-50000',
+    _portHopStart: 20000, _portHopEnd: 50000, _portHopInterface: '',
   }
 }
 
@@ -4397,6 +4410,7 @@ function parseInbound(ib) {
     _cfDomain: ib._accessDomain?.cfDomain || '',
     _cfIP: ib._accessDomain?.cfIP || '',
     _customDomain: ib._accessDomain?.customDomain || '',
+    _customPortMode: ib._accessDomain?.customPortMode || 'custom',
     _accessCustomPort: ib._accessDomain?.customPort || 443,
   }
 }
@@ -4437,6 +4451,7 @@ function buildInbound(ib, isApiCall = false) {
       cfDomain: ib._cfDomain || '',
       cfIP: ib._cfIP || '',
       customDomain: ib._customDomain || '',
+      customPortMode: ib._customPortMode || 'custom',
       customPort: ib._accessCustomPort || 443,
     },
     // Port Hop config
@@ -4913,6 +4928,7 @@ function buildInbound(ib, isApiCall = false) {
 
 function showAdd() {
   editIdx.value = -1
+  rf._id = null
   const d = getDefaultInbound()
   rf._remark = d._remark
   rf.tag = d.tag
@@ -4935,13 +4951,22 @@ function showAdd() {
   rf._cfDomain = d._cfDomain || ''
   rf._cfIP = d._cfIP || ''
   rf._customDomain = d._customDomain || ''
+  rf._customPortMode = d._customPortMode || 'custom'
   rf._accessCustomPort = d._accessCustomPort || 443
   rf._fallbackEnabled = d._fallbackEnabled || false
   rf.fallbacks = JSON.parse(JSON.stringify(d.fallbacks || []))
   rf._wgAddressesStr = d._wgAddressesStr
+  rf._wgPublicKey = ''
   rf._tunGatewayStr = d._tunGatewayStr
   rf._tunDnsStr = d._tunDnsStr
   rf._tunAutoRoutingStr = d._tunAutoRoutingStr
+  // Port Hop
+  rf._portHopEnabled = d._portHopEnabled
+  rf._portHopMode = d._portHopMode
+  rf._portHopRange = d._portHopRange
+  rf._portHopStart = d._portHopStart
+  rf._portHopEnd = d._portHopEnd
+  rf._portHopInterface = d._portHopInterface
   activeTab.value = 'basic'
   dlg.value = true
   // Auto-select default target or random
@@ -4986,6 +5011,7 @@ function showEdit(i) {
   rf._cfDomain = ib._cfDomain || ''
   rf._cfIP = ib._cfIP || ''
   rf._customDomain = ib._customDomain || ''
+  rf._customPortMode = ib._customPortMode || 'custom'
   rf._accessCustomPort = ib._accessCustomPort || 443
   // Port Hop config
   rf._portHopEnabled = ib._portHopEnabled || false

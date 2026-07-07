@@ -23,13 +23,33 @@ func (s *Service) List(ctx context.Context, configType string) ([]entity.ShareDo
 	return s.repo.List(ctx, configType)
 }
 
+// ListByServer returns direct share domain configs for a specific server.
+// CF domains are global (server_id=0) and not included here.
+// ListByServer returns direct share domain configs effective for a specific server.
+// This includes both global (server_id=0) and server-specific (server_id=serverID) direct domains.
+// CF domains are global and not included here.
+func (s *Service) ListByServer(ctx context.Context, serverID int64) ([]entity.ShareDomainConfig, error) {
+	// Get effective configs: global + server-specific
+	all, err := s.repo.ListEffectiveForServer(ctx, serverID, "")
+	if err != nil {
+		return nil, err
+	}
+	var result []entity.ShareDomainConfig
+	for _, d := range all {
+		if d.Type == "direct" {
+			result = append(result, d)
+		}
+	}
+	return result, nil
+}
+
 // GetByID returns a share domain config by ID.
 func (s *Service) GetByID(ctx context.Context, id int64) (*entity.ShareDomainConfig, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-// Create creates a new share domain config.
-func (s *Service) Create(ctx context.Context, configType, value string, port int, ports string) (*entity.ShareDomainConfig, error) {
+// Create creates a new share domain config for a specific server.
+func (s *Service) Create(ctx context.Context, serverID int64, configType, value string, port int, ports string) (*entity.ShareDomainConfig, error) {
 	if port <= 0 {
 		port = 443
 	}
@@ -37,11 +57,12 @@ func (s *Service) Create(ctx context.Context, configType, value string, port int
 		ports = "[443]"
 	}
 	config := &entity.ShareDomainConfig{
-		Type:    configType,
-		Value:   value,
-		Port:    port,
-		Ports:   ports,
-		Enabled: true,
+		ServerID: serverID,
+		Type:     configType,
+		Value:    value,
+		Port:     port,
+		Ports:    ports,
+		Enabled:  true,
 	}
 	config.CreatedAt = time.Now()
 	config.UpdatedAt = time.Now()
@@ -77,6 +98,11 @@ func (s *Service) Update(ctx context.Context, id int64, configType, value string
 	return config, nil
 }
 
+// Save saves a share domain config directly (used for server_id binding updates).
+func (s *Service) Save(ctx context.Context, config *entity.ShareDomainConfig) error {
+	return s.repo.Update(ctx, config)
+}
+
 // Delete deletes a share domain config by ID.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.repo.Delete(ctx, id)
@@ -87,17 +113,20 @@ func (s *Service) ClearAll(ctx context.Context, configType string) error {
 	return s.repo.ClearAll(ctx, configType)
 }
 
-// SeedDefaults seeds default share domain configs.
+// ClearByServer deletes direct share domain configs for a specific server.
+func (s *Service) ClearByServer(ctx context.Context, serverID int64, configType string) error {
+	return s.repo.ClearByServer(ctx, serverID, configType)
+}
+
+// SeedDefaults seeds default CF domain configs globally (server_id=0).
 func (s *Service) SeedDefaults(ctx context.Context) error {
-	// Clear existing data first
+	// Clear existing cf_domain globally first
 	if err := s.repo.ClearAll(ctx, "cf_domain"); err != nil {
 		return err
 	}
 
-	// Default only select 443
 	defaultPorts := "[443]"
 	defaults := []entity.ShareDomainConfig{
-		// CF 优选域名
 		{Type: "cf_domain", Value: "mfa.gov.ua", Port: 443, Ports: defaultPorts, Enabled: true, SortOrder: 1},
 		{Type: "cf_domain", Value: "www.shopify.com", Port: 443, Ports: defaultPorts, Enabled: true, SortOrder: 2},
 		{Type: "cf_domain", Value: "www.visa.cn", Port: 443, Ports: defaultPorts, Enabled: true, SortOrder: 3},
@@ -126,6 +155,8 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 		{Type: "cf_domain", Value: "freeyx.cloudflare88.eu.org", Port: 443, Ports: defaultPorts, Enabled: true, SortOrder: 26},
 	}
 	for _, d := range defaults {
+		d.CreatedAt = time.Now()
+		d.UpdatedAt = time.Now()
 		if err := s.repo.Create(ctx, &d); err != nil {
 			return err
 		}

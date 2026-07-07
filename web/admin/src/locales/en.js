@@ -1038,6 +1038,8 @@ export default {
       clearAll: 'Clear All',
       clearAllConfirm: 'Are you sure to clear all items?',
       seed: 'Load Defaults',
+      bindNode: 'Bind Node',
+      allNodes: 'All Nodes (Global)',
     },
     process: {
       state: 'State',
@@ -2149,6 +2151,7 @@ export default {
     localNode: 'Local Node',
     remoteNode: 'Remote Node',
     isLocal: 'Local Node',
+    directDomains: 'Direct Domains',
     statusOnline: 'Online',
     statusOffline: 'Offline',
     statusDegraded: 'Degraded',

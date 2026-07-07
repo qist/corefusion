@@ -1196,6 +1196,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
 			nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
 			nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)
+
+			// Share Domain Configs (per node — direct domains only)
+			nodeServersGroup.GET("/:id/share-domains", shareDomainH.ListByServer)
+			nodeServersGroup.POST("/:id/share-domains", shareDomainH.Create)
+			nodeServersGroup.PUT("/:id/share-domains/:domainId", shareDomainH.Update)
+			nodeServersGroup.DELETE("/:id/share-domains/:domainId", shareDomainH.Delete)
+			nodeServersGroup.DELETE("/:id/share-domains/all", shareDomainH.ClearAll)
 		}
 
 			// CA Center (separate group, reuses nodeServerH)

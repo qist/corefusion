@@ -5087,39 +5087,80 @@ async function saveInbound() {
       notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.inbounds.savedToDb'))
     }
 
-    // Auto-manage firewall rules for port hopping (only when state changes)
-    if (rf.protocol === 'hysteria' && editIdx.value >= 0) {
-      const oldIb = form.value[editIdx.value]
-      const wasEnabled = oldIb?._portHopEnabled || false
+    // Auto-manage firewall rules for port hopping
+    if (rf.protocol === 'hysteria') {
       const isEnabled = rf._portHopEnabled || false
+      const newPortRange = rf._portHopMode === 'preset' ? rf._portHopRange : `${rf._portHopStart}-${rf._portHopEnd}`
+      const newIface = rf._portHopInterface || ''
 
-      // Only call API when state changes
-      if (wasEnabled !== isEnabled) {
-        const portRange = rf._portHopMode === 'preset' ? rf._portHopRange : `${rf._portHopStart}-${rf._portHopEnd}`
-        const defaultPortRange = portRange || '20000-50000'
+      if (editIdx.value >= 0) {
+        // Editing existing inbound
+        const oldIb = form.value[editIdx.value]
+        const wasEnabled = oldIb?._portHopEnabled || false
+        const oldPortRange = oldIb?._portHopMode === 'preset'
+          ? (oldIb?._portHopRange || '20000-50000')
+          : `${oldIb?._portHopStart || 20000}-${oldIb?._portHopEnd || 50000}`
+        const oldIface = oldIb?._portHopInterface || ''
+        const oldPort = oldIb?.port || 0
 
-        if (isEnabled) {
-          // Apply firewall rules when enabling
-          try {
-            await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
-              port_range: defaultPortRange,
-              target_port: rf.port,
-              interface: rf._portHopInterface || ''
-            })
-          } catch (fwErr) {
-            console.warn('Failed to apply firewall rules:', fwErr)
-          }
-        } else {
-          // Remove firewall rules when disabling
+        if (wasEnabled && !isEnabled) {
+          // Port hop disabled: remove old firewall rule
           try {
             await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
-              port_range: defaultPortRange,
-              target_port: rf.port,
-              interface: ''
+              port_range: oldPortRange,
+              target_port: oldPort,
+              interface: oldIface
             })
           } catch (fwErr) {
             console.warn('Failed to remove firewall rules:', fwErr)
           }
+        } else if (isEnabled && !wasEnabled) {
+          // Port hop enabled: apply new firewall rule
+          try {
+            await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
+              port_range: newPortRange || '20000-50000',
+              target_port: rf.port,
+              interface: newIface
+            })
+          } catch (fwErr) {
+            console.warn('Failed to apply firewall rules:', fwErr)
+          }
+        } else if (isEnabled && wasEnabled) {
+          // Port hop stayed enabled: check if port range, target port, or interface changed
+          const configChanged = oldPortRange !== (newPortRange || '20000-50000') ||
+            oldPort !== rf.port || oldIface !== newIface
+          if (configChanged) {
+            // Remove old rule then apply new rule
+            try {
+              await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
+                port_range: oldPortRange,
+                target_port: oldPort,
+                interface: oldIface
+              })
+            } catch (fwErr) {
+              console.warn('Failed to remove old firewall rules:', fwErr)
+            }
+            try {
+              await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
+                port_range: newPortRange || '20000-50000',
+                target_port: rf.port,
+                interface: newIface
+              })
+            } catch (fwErr) {
+              console.warn('Failed to apply new firewall rules:', fwErr)
+            }
+          }
+        }
+      } else if (isEnabled) {
+        // New inbound with port hopping enabled: apply firewall rule
+        try {
+          await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
+            port_range: newPortRange || '20000-50000',
+            target_port: rf.port,
+            interface: newIface
+          })
+        } catch (fwErr) {
+          console.warn('Failed to apply firewall rules:', fwErr)
         }
       }
     }
@@ -5171,6 +5212,21 @@ async function rmInbound(i) {
       }
     } catch (e) {
       notifyXrayRuntimeApplyFailure(e, t('protoCenter.inbounds.deletedFromDb'))
+    }
+  }
+  // Remove firewall rules if port hopping was enabled
+  if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
+    const portRange = ib._portHopMode === 'preset'
+      ? (ib._portHopRange || '20000-50000')
+      : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+    try {
+      await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
+        port_range: portRange,
+        target_port: ib.port || 0,
+        interface: ib._portHopInterface || ''
+      })
+    } catch (fwErr) {
+      console.warn('Failed to remove firewall rules on delete:', fwErr)
     }
   }
   form.value.splice(i, 1)

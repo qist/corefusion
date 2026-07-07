@@ -42,6 +42,7 @@ import (
 
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/model/entity"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
@@ -320,10 +321,49 @@ func (s *agentServiceServer) syncGithubAccelSettings(ctx context.Context, accelD
 
 // StartLocalDaemons starts process.Manager's seed + reconcile, which provides
 // independent local crash-recovery (Guardian) even if the panel is unreachable.
+// After reconcile, it also restores firewall rules for hysteria port hopping.
 func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 	a.procMgr.SeedCores(ctx)
-	go a.procMgr.Reconcile(ctx)
+	go func() {
+		a.procMgr.Reconcile(ctx)
+		// Restore firewall rules for hysteria port hopping after process reconcile.
+		// Rules are lost on machine reboot and need to be re-created from local DB config.
+		time.Sleep(2 * time.Second) // wait for cores to start
+		a.restoreFirewallRules(ctx)
+	}()
 	log.Println("[Agent] process.Manager started (Guardian auto-restart active)")
+}
+
+// restoreFirewallRules scans local inbound configs and re-creates firewall rules
+// for hysteria port hopping. Called on Agent startup after process reconcile.
+func (a *AgentApp) restoreFirewallRules(ctx context.Context) {
+	if a.inboundConfigRepo == nil {
+		return
+	}
+	// Read all enabled hysteria inbounds for this server from local DB
+	configs, err := a.inboundConfigRepo.List(ctx, a.cfg.Panel.ServerID, "xray")
+	if err != nil {
+		log.Printf("[Agent] firewall restore: failed to list inbound configs: %v", err)
+		return
+	}
+
+	var infos []firewall.InboundConfigInfo
+	for _, c := range configs {
+		if !c.Enabled || c.Protocol != "hysteria" {
+			continue
+		}
+		infos = append(infos, firewall.InboundConfigInfo{
+			Tag:        c.Tag,
+			Protocol:   c.Protocol,
+			Port:       c.Port,
+			ConfigJSON: c.ConfigJSON,
+			Enabled:    c.Enabled,
+		})
+	}
+
+	firewall.RestoreRules(ctx, firewall.LocalApplier{}, func() ([]firewall.InboundConfigInfo, error) {
+		return infos, nil
+	})
 }
 
 // ============================================================

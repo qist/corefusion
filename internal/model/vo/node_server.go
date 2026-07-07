@@ -53,3 +53,13 @@ type BootstrapTokenResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 	Instruction string   `json:"instruction"`
 }
+
+// CreateServerResponse is returned when creating a node server.
+// It includes the server data plus a one-time bootstrap token.
+// The frontend builds the curl | bash command from window.location
+// (scheme/host/port) since the backend can't reliably detect TLS
+// behind a reverse proxy (Caddy/Nginx).
+type CreateServerResponse struct {
+	*NodeServerResponse
+	BootstrapToken string `json:"bootstrap_token,omitempty"` // Only returned on creation
+}

@@ -63,8 +63,7 @@
                 <el-button size="small">{{ t('nodeServer.actions') }} <el-icon><ArrowDown /></el-icon></el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="bootstrap" v-if="row.bootstrap_required">{{ t('nodeServer.bootstrapCmd') }}</el-dropdown-item>
-                    <el-dropdown-item command="install">{{ t('nodeServer.installScript') }}</el-dropdown-item>
+                    <el-dropdown-item command="deploy" v-if="row.bootstrap_required">部署命令</el-dropdown-item>
                     <el-dropdown-item command="status" divided>{{ t('nodeServer.realtimeStatus') }}</el-dropdown-item>
                     <el-dropdown-item command="control">{{ t('nodeServer.controlCore') }}</el-dropdown-item>
                     <el-dropdown-item command="sync">{{ t('nodeServer.syncConfig') }}</el-dropdown-item>
@@ -296,7 +295,25 @@
 
     </el-tabs>
 
-    <!-- ════════════ Create/Edit Dialog ════════════ -->
+    <!-- ════════════ Quick Add Node Dialog (kubeadm join style) ════════════ -->
+    <el-dialog v-model="quickAddVisible" title="添加节点" width="480px">
+      <el-alert type="info" :closable="false" style="margin-bottom:16px"
+                title="只需填写名称和 IP，保存后获取一键部署命令" />
+      <el-form :model="quickForm" label-width="80px" size="default">
+        <el-form-item label="名称" required>
+          <el-input v-model="quickForm.name" placeholder="例如：tokyo-01" @keyup.enter="quickAddSave" />
+        </el-form-item>
+        <el-form-item label="IP 地址" required>
+          <el-input v-model="quickForm.hostname" placeholder="例如：192.168.2.180" @keyup.enter="quickAddSave" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="quickAddVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="quickAddSaving" @click="quickAddSave">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ════════════ Create/Edit Dialog (full form, edit only) ════════════ -->
     <el-dialog v-model="formVisible" :title="formMode === 'create' ? t('nodeServer.addServer') : t('nodeServer.editServer')" width="680px" @close="onFormClose">
       <el-form :model="form" label-width="140px" size="small">
         <el-divider content-position="left">{{ t('nodeServer.basicInfo') }}</el-divider>
@@ -450,6 +467,20 @@
       </div>
     </el-dialog>
 
+    <!-- ════════════ One-Line Install Command Dialog ════════════ -->
+    <el-dialog v-model="installCmdVisible" title="节点部署命令" width="720px" :close-on-click-modal="false">
+      <el-alert type="success" :closable="false" style="margin-bottom:16px"
+                title="在远程节点上以 root 执行以下命令，Agent 将自动下载、注册并启动" />
+      <el-input v-model="installCommand" type="textarea" :rows="5" readonly style="font-family:monospace;font-size:13px" />
+      <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+        <span style="color:#909399;font-size:12px">命令包含一次性 Bootstrap Token，请勿重复使用</span>
+        <div>
+          <el-button size="small" @click="copyToClipboard(installCommand)">{{ t('nodeServer.copyCmd') }}</el-button>
+          <el-button size="small" type="primary" @click="installCmdVisible = false">{{ t('common.close') }}</el-button>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- ════════════ Core Control Dialog ════════════ -->
     <el-dialog v-model="controlVisible" :title="t('nodeServer.controlCore')" width="420px">
       <el-form label-width="100px" size="small">
@@ -566,7 +597,7 @@ const auditFilter = reactive({ server_id: '', action: '', limit: 50, offset: 0 }
 
 // ─── Create/Edit Form ───
 const formVisible = ref(false)
-const formMode = ref('create')
+const formMode = ref('edit')
 const formSaving = ref(false)
 const editingId = ref(null)
 const form = reactive({
@@ -578,6 +609,11 @@ const form = reactive({
   billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
 })
 
+// ─── Quick Add (kubeadm join style) ───
+const quickAddVisible = ref(false)
+const quickAddSaving = ref(false)
+const quickForm = reactive({ name: '', hostname: '' })
+
 // ─── Detail Dialog ───
 const detailVisible = ref(false)
 const detailData = ref(null)
@@ -588,6 +624,8 @@ const bootstrapVisible = ref(false)
 const bootstrapCmd = ref('')
 const installVisible = ref(false)
 const installScript = ref('')
+const installCmdVisible = ref(false)
+const installCommand = ref('')
 
 // ─── Core Control ───
 const controlVisible = ref(false)
@@ -761,17 +799,54 @@ function onTabChange(tab) {
 // ════════════ Create/Edit ════════════
 
 function showCreateDialog() {
-  formMode.value = 'create'
-  editingId.value = null
-  Object.assign(form, {
-    name: '', hostname: '', region: '', region_label: '',
-    node_type: 'standalone', partner_server_id: 0, failover_role: '', failover_priority: 0,
-    chain_config: '', agent_port: 18443,
-    supported_cores_arr: ['xray', 'singbox', 'hysteria2', 'tuic'],
-    max_inbounds: 0, public_ip: '', internal_ip: '', bandwidth_mbps: 0,
-    billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
-  })
-  formVisible.value = true
+  // kubeadm join style: just name + IP, then immediately get deploy command
+  quickForm.name = ''
+  quickForm.hostname = ''
+  quickAddVisible.value = true
+}
+
+async function quickAddSave() {
+  if (!quickForm.name || !quickForm.hostname) {
+    ElMessage.error('请填写名称和 IP 地址')
+    return
+  }
+  quickAddSaving.value = true
+  try {
+    const payload = {
+      name: quickForm.name,
+      hostname: quickForm.hostname,
+      node_type: 'standalone',
+      agent_port: 18443,
+      supported_cores: JSON.stringify(['xray', 'singbox', 'hysteria2', 'tuic']),
+      max_inbounds: 0,
+      public_ip: quickForm.hostname,
+      internal_ip: quickForm.hostname,
+      bandwidth_mbps: 0,
+      billing_enabled: true,
+      enabled: true,
+      sort_order: 0,
+      metadata: '',
+    }
+    const res = await createNodeServer(payload)
+    quickAddVisible.value = false
+    ElMessage.success(t('common.success'))
+    // Immediately show the one-line install command
+    // Note: axios interceptor already unwrapped response.data.data,
+    // so res IS the server object directly.
+    if (res?.bootstrap_token) {
+      const proto = window.location.protocol.replace(':', '')
+      const host = window.location.hostname
+      const port = window.location.port || (proto === 'https' ? '443' : '80')
+      const tlsParam = proto === 'https' ? '&tls=true' : ''
+      const agentPort = res.agent_port || 18443
+      installCommand.value =
+        `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}&token=${res.bootstrap_token}&agent_port=${agentPort}${tlsParam}")`
+      installCmdVisible.value = true
+    }
+    loadServers()
+  } finally {
+    quickAddSaving.value = false
+  }
 }
 
 function showEditDialog(row) {
@@ -825,8 +900,20 @@ async function saveForm() {
       metadata: form.metadata,
     }
     if (formMode.value === 'create') {
-      await createNodeServer(payload)
+      // This path is no longer used — quickAddSave handles creation.
+      // Kept for safety in case formVisible is opened in 'create' mode.
+      const res = await createNodeServer(payload)
       ElMessage.success(t('common.success'))
+      if (res?.bootstrap_token) {
+        const proto = window.location.protocol.replace(':', '')
+        const host = window.location.hostname
+        const port = window.location.port || (proto === 'https' ? '443' : '80')
+        const tlsParam = proto === 'https' ? '&tls=true' : ''
+        const agentPort = res.agent_port || 18443
+        installCommand.value =
+          `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}&token=${res.bootstrap_token}&agent_port=${agentPort}${tlsParam}")`
+        installCmdVisible.value = true
+      }
     } else {
       await updateNodeServer(editingId.value, payload)
       ElMessage.success(t('common.success'))
@@ -857,11 +944,10 @@ async function showDetailDialog(row) {
 
 async function handleServerAction(cmd, row) {
   switch (cmd) {
-    case 'edit': showEditDialog(row); break
-    case 'delete': handleDelete(row); break
-    case 'bootstrap': showBootstrapCmd(row); break
-    case 'install': showInstallScript(row); break
-    case 'status': showDetailDialog(row); break
+case 'edit': showEditDialog(row); break
+case 'delete': handleDelete(row); break
+case 'deploy': showDeployCmd(row); break
+case 'status': showDetailDialog(row); break
     case 'control': showControlDialog(row); break
     case 'sync': handleSyncConfig(row); break
     case 'tags': showTagsDialog(row); break
@@ -879,23 +965,26 @@ async function handleDelete(row) {
   } catch (e) { /* cancelled */ }
 }
 
-async function showBootstrapCmd(row) {
+async function showDeployCmd(row) {
   try {
-    // Generate token first
-    await generateBootstrapToken(row.id)
-    // Then get the command
-    const cmd = await getBootstrapCommand(row.id)
-    bootstrapCmd.value = cmd
-    bootstrapVisible.value = true
-  } catch (e) { /* noop */ }
-}
-
-async function showInstallScript(row) {
-  try {
-    const script = await getAgentInstallScript(row.id)
-    installScript.value = script
-    installVisible.value = true
-  } catch (e) { /* noop */ }
+    const proto = window.location.protocol.replace(':', '')
+    const host = window.location.hostname
+    const port = window.location.port || (proto === 'https' ? '443' : '80')
+    const tlsParam = proto === 'https' ? '&tls=true' : ''
+    const agentPort = row.agent_port || 18443
+    // Generate a fresh bootstrap token (interceptor already unwrapped, res = {server_id, token, expires_at, ...})
+    const res = await generateBootstrapToken(row.id)
+    const token = res?.token || ''
+    if (!token) {
+      ElMessage.error('无法生成部署令牌')
+      return
+    }
+    installCommand.value =
+      `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${row.id}&token=${token}&agent_port=${agentPort}${tlsParam}")`
+    installCmdVisible.value = true
+  } catch (e) {
+    ElMessage.error('生成部署命令失败')
+  }
 }
 
 function showControlDialog(row) {
@@ -1067,11 +1156,31 @@ function formatUptime(seconds) {
 }
 
 function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(() => {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success(t('nodeServer.copied'))
+    }).catch(() => {
+      fallbackCopy(text)
+    })
+  } else {
+    fallbackCopy(text)
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    document.execCommand('copy')
     ElMessage.success(t('nodeServer.copied'))
-  }).catch(() => {
+  } catch (e) {
     ElMessage.error(t('nodeServer.copyFailed'))
-  })
+  }
+  document.body.removeChild(ta)
 }
 
 // ════════════ Lifecycle ════════════

@@ -10,6 +10,7 @@ type NginxSite struct {
 	Upstream        string    `json:"upstream" gorm:"size:255;not null"`
 	Template        string    `json:"template" gorm:"size:32"`
 	Path            string    `json:"path" gorm:"size:255"`
+	BackendPath     string    `json:"backend_path" gorm:"size:255"`
 	ListenPort      string    `json:"listen_port" gorm:"size:16"`
 	ListenSocket    string    `json:"listen_socket" gorm:"size:255"`
 	CertPath        string    `json:"cert_path" gorm:"size:512"`

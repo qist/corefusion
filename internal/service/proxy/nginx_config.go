@@ -521,6 +521,10 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 			if path == "" {
 				path = "/"
 			}
+			backendPath := site.BackendPath
+			if backendPath == "" {
+				backendPath = "/"
+			}
 			upstreamKey := strings.ReplaceAll(site.Upstream, ".", "_")
 			upstreamKey = strings.ReplaceAll(upstreamKey, ":", "_")
 			upstreamKey = strings.ReplaceAll(upstreamKey, ",", "_")
@@ -565,7 +569,13 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 			sb.WriteString("            index index.html index.htm;\n")
 			sb.WriteString("            try_files $uri $uri/ =404;\n")
 		case "websocket", "xhttp", "httpupgrade":
-			sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s/;\n", upstreamKey))
+			// If backend_path is root ("/"), add trailing slash to strip the location prefix
+			// If backend_path has a specific path, no trailing slash to preserve the full URI
+			if backendPath == "/" {
+				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s/;\n", upstreamKey))
+			} else {
+				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s;\n", upstreamKey))
+			}
 			sb.WriteString("            proxy_http_version 1.1;\n")
 			sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
 			sb.WriteString("            proxy_set_header Connection $connection_upgrade;\n")

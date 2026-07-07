@@ -473,12 +473,21 @@ const filteredInbounds = computed(() => {
   return inbounds.value.filter(ib => {
     const network = ib._network || ''
     const security = ib._security || ''
+    // Exclude UDP-based protocols for all templates
+    if (network === 'hysteria' || network === 'mkcp' || network === 'kcp') return false
+    // SNI: only TLS and Reality (TCP-based TLS routing)
+    if (tpl === 'sni') return security === 'tls' || security === 'reality'
+    // All HTTP-type templates: exclude Reality (does its own TLS, not HTTP-forwardable)
+    if (security === 'reality') return false
     if (tpl === 'websocket') return network === 'ws'
     if (tpl === 'grpc') return network === 'grpc'
     if (tpl === 'xhttp') return network === 'xhttp'
     if (tpl === 'httpupgrade') return network === 'httpupgrade'
-    if (tpl === 'sni') return security === 'tls' || security === 'reality'
-    if (tpl === 'http') return true // any TCP inbound
+    if (tpl === 'http') {
+      // Exclude raw (no HTTP path to proxy)
+      if (network === 'raw') return false
+      return true
+    }
     return false
   })
 })
@@ -544,13 +553,26 @@ function onInboundSelect(id) {
   // Auto-fill upstream
   const upstream = ib._isSocket ? `unix/${ib._socketPath}` : `127.0.0.1:${ib.port}`
   siteForm.value.upstreams = [upstream]
-  // Auto-fill path based on template
+  // Auto-fill path (location) and backend_path (what the backend expects)
   const tpl = siteForm.value.template
-  if (tpl === 'websocket' && ib._wsPath) siteForm.value.path = ib._wsPath
-  else if (tpl === 'grpc' && ib._grpcService) siteForm.value.path = ib._grpcService
-  else if (tpl === 'xhttp' && ib._xhttpPath) siteForm.value.path = ib._xhttpPath
-  else if (tpl === 'httpupgrade' && ib._httpupgradePath) siteForm.value.path = ib._httpupgradePath
-  else siteForm.value.path = siteForm.value.path || '/'
+  const stripQuery = (p) => (p || '/').split('?')[0] || '/'
+  let backendPath = '/'
+  if (tpl === 'websocket' && ib._wsPath) {
+    backendPath = stripQuery(ib._wsPath)
+    siteForm.value.path = backendPath
+  } else if (tpl === 'grpc' && ib._grpcService) {
+    backendPath = ib._grpcService
+    siteForm.value.path = backendPath
+  } else if (tpl === 'xhttp' && ib._xhttpPath) {
+    backendPath = stripQuery(ib._xhttpPath)
+    siteForm.value.path = backendPath
+  } else if (tpl === 'httpupgrade' && ib._httpupgradePath) {
+    backendPath = stripQuery(ib._httpupgradePath)
+    siteForm.value.path = backendPath
+  } else {
+    siteForm.value.path = siteForm.value.path || '/'
+  }
+  siteForm.value.backend_path = backendPath
   // For SNI: fill sni_target
   if (tpl === 'sni') {
     siteForm.value.sni_target = upstream
@@ -569,7 +591,7 @@ const downloadProgress = ref('')
 const siteDialogVisible = ref(false)
 const siteDialogTitle = ref('')
 const siteSaving = ref(false)
-const siteForm = ref({ domain: '', upstream: '', path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form' })
+const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form' })
 
 // Panel port
 const panelPort = ref('8080')
@@ -583,10 +605,12 @@ const sniSettings = ref({ enabled: false, listen_port: '443', local_port: '8443'
 const sniDialogVisible = ref(false)
 const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null })
 
-// SNI inbounds: only TLS and Reality
+// SNI inbounds: only TLS and Reality, exclude UDP-based protocols (hysteria, mkcp)
 const sniInbounds = computed(() => {
   return inbounds.value.filter(ib => {
     const sec = ib._security || ''
+    const net = ib._network || ''
+    if (net === 'hysteria' || net === 'mkcp' || net === 'kcp') return false
     return sec === 'tls' || sec === 'reality'
   })
 })
@@ -774,8 +798,8 @@ async function proxyAction(action) {
 
 function showAddSite(template) {
   siteDialogTitle.value = t('proxy.addSite')
-  siteForm.value = {
-    domain: '', upstreams: [''], path: '', template,
+siteForm.value = {
+domain: '', upstreams: [''], path: '', backend_path: '', template,
     use_cert: false, cert_id: null, cert_path: '', key_path: '',
     proxy_config: '', custom_config: '', lb_policy: '',
     log_enabled: false, log_path: '', log_format: 'json',
@@ -842,9 +866,10 @@ function editSite(row) {
     upstreams = row.upstream.split(/[,\n]/).map(s => s.trim()).filter(s => s)
     if (upstreams.length === 0) upstreams = ['']
   }
-  siteForm.value = {
-    id: row.id, domain: row.domain, upstreams: upstreams,
-    path: row.path || '', template: row.template || 'http',
+siteForm.value = {
+id: row.id, domain: row.domain, upstreams: upstreams,
+path: row.path || '', backend_path: row.backend_path || '',
+template: row.template || 'http',
     use_cert: !!row.cert_path, cert_id: certId,
     cert_path: row.cert_path || '', key_path: row.key_path || '',
     proxy_config: row.proxy_config || '',
@@ -936,11 +961,12 @@ async function saveSite() {
       }
     }
     const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
-    const payload = {
-      domain: domain,
-      upstream: upstream,
-      path: siteForm.value.path || '',
-      template: siteForm.value.template,
+const payload = {
+domain: domain,
+upstream: upstream,
+path: siteForm.value.path || '',
+backend_path: siteForm.value.backend_path || '',
+template: siteForm.value.template,
       cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
       key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
       proxy_config: siteForm.value.proxy_config || '',

@@ -296,8 +296,15 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 				continue
 			}
 			// Build reverse_proxy block
+			backendPath := site.BackendPath
+			if backendPath == "" {
+				backendPath = "/"
+			}
 			if site.Path == "" || site.Path == "/" {
 				sb.WriteString("\treverse_proxy {\n")
+			} else if backendPath == "/" {
+				// Backend expects root path: use handle_path to strip the location prefix
+				sb.WriteString(fmt.Sprintf("\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
 			} else {
 				sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
 				sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))

@@ -10,6 +10,7 @@ type CaddySite struct {
 	Upstream      string    `json:"upstream" gorm:"size:255;not null"`
 	Template      string    `json:"template" gorm:"size:32"`
 	Path          string    `json:"path" gorm:"size:255"`
+	BackendPath   string    `json:"backend_path" gorm:"size:255"`
 	CertPath      string    `json:"cert_path" gorm:"size:512"`
 	KeyPath       string    `json:"key_path" gorm:"size:512"`
 	ProxyConfig   string    `json:"proxy_config" gorm:"type:text"`   // inside reverse_proxy { }

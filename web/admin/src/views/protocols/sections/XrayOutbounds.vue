@@ -1200,8 +1200,15 @@
       </el-tabs>
 
       <template #footer>
-        <el-button @click="dlg=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="saveOutbound">{{ t('common.save') }}</el-button>
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
+          <el-form-item :label="t('common.enabled')" label-width="auto" style="margin-bottom:0">
+            <el-switch v-model="rf._enabled" />
+          </el-form-item>
+          <div>
+            <el-button @click="dlg=false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" @click="saveOutbound">{{ t('common.save') }}</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -1275,6 +1282,7 @@ function getDefaultOutbound() {
     _finalmaskInitStreamWindow: 8388608, _finalmaskMaxStreamWindow: 8388608, _finalmaskInitConnWindow: 20971520, _finalmaskMaxConnWindow: 20971520,
     _wgSecretKey: '', _wgPublicKey: '', _wgAddressIPv4: '', _wgAddressIPv6: '', _wgMtu: 1280, _wgWorkers: 2, _wgReservedStr: '', _wgNoKernelTun: false, _wgDomainStrategy: 'ForceIP',
     _wgPeers: [],
+    _enabled: true,
   }
 }
 
@@ -1983,7 +1991,7 @@ async function saveOutbound() {
     protocol: outbound.protocol,
     tag: outbound.tag || 'outbound-' + Date.now(),
     config_json: outbound,
-    enabled: true,
+    enabled: rf._enabled !== false,
     is_default: false,
   }
   try {
@@ -2005,7 +2013,10 @@ async function saveOutbound() {
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
         await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true }).catch(() => {})
       }
-      await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true })
+      // Add new outbound only if enabled
+      if (rf._enabled !== false) {
+        await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true })
+      }
     } catch (xrayErr) {
       console.warn('Failed to apply outbound to xray:', xrayErr)
       notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'))
@@ -2049,8 +2060,31 @@ async function toggleEnabled(i) {
       enabled: ob._enabled,
       is_default: ob._isDefault || false,
     })
+
+    // Apply to running xray via gRPC
+    try {
+      if (await ensureXrayRunning(client, props.serverId, '')) {
+        if (ob._enabled) {
+          // Enable: add outbound to xray runtime
+          // Remove existing first to avoid duplicate
+          try {
+            await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true })
+          } catch {}
+          await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true })
+        } else {
+          // Disable: remove outbound from xray runtime
+          await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true })
+        }
+      }
+    } catch (xrayErr) {
+      console.warn('Failed to apply toggle to xray runtime:', xrayErr)
+    }
+
     ElMessage.success(ob._enabled ? t('common.enabled') : t('common.disabled'))
-  } catch (e) { ElMessage.error(t('common.failed')) }
+  } catch (e) { 
+    ob._enabled = !ob._enabled
+    ElMessage.error(t('common.failed')) 
+  }
 }
 
 function onProtocolChange() {

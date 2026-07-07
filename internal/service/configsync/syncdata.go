@@ -54,6 +54,9 @@ type RepositoryDataProvider struct {
 	shareDomainRepo    *repository.ShareDomainConfigRepository
 	certRepo           *repository.CertificateRepository
 	serverRepo         *repository.NodeServerRepository
+	proxySiteRepo      *repository.ProxySiteRepository
+	caddySiteRepo      *repository.CaddySiteRepository
+	nginxSiteRepo      *repository.NginxSiteRepository
 }
 
 // NewRepositoryDataProvider creates a new RawDataProvider backed by repositories.
@@ -78,6 +81,16 @@ func NewRepositoryDataProvider(
 func (p *RepositoryDataProvider) WithCertificateProvider(certRepo *repository.CertificateRepository, serverRepo *repository.NodeServerRepository) *RepositoryDataProvider {
 	p.certRepo = certRepo
 	p.serverRepo = serverRepo
+	return p
+}
+
+// WithProxySiteProvider injects proxy/caddy/nginx site repositories for
+// collecting TLS certificates referenced by reverse proxy sites (Caddy/Nginx).
+// This ensures that certificates used by proxy sites are also synced to remote agents.
+func (p *RepositoryDataProvider) WithProxySiteProvider(proxySiteRepo *repository.ProxySiteRepository, caddySiteRepo *repository.CaddySiteRepository, nginxSiteRepo *repository.NginxSiteRepository) *RepositoryDataProvider {
+	p.proxySiteRepo = proxySiteRepo
+	p.caddySiteRepo = caddySiteRepo
+	p.nginxSiteRepo = nginxSiteRepo
 	return p
 }
 
@@ -390,6 +403,11 @@ func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int6
 		}
 	}
 
+	// Also scan proxy/caddy/nginx site tables for TLS certificate references.
+	// Caddy/Nginx configs reference cert/key paths via site.CertPath/site.KeyPath,
+	// and those cert files must be landed on the remote agent alongside xray certs.
+	b.collectProxySiteCertificates(ctx, serverID, certPathSet)
+
 	if len(certPathSet) == 0 {
 		return nil
 	}
@@ -429,6 +447,59 @@ func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int6
 	}
 
 	return entries
+}
+
+// collectProxySiteCertificates scans proxy_sites, caddy_sites, and nginx_sites
+// tables for TLS certificate path references (CertPath/KeyPath fields) and adds
+// them to the certPathSet. This ensures certificates used by Caddy/Nginx reverse
+// proxy sites are also synced to remote agents.
+func (b *DataSyncBuilder) collectProxySiteCertificates(ctx context.Context, serverID int64, certPathSet map[string]bool) {
+	rdp, ok := b.rawProvider.(*RepositoryDataProvider)
+	if !ok {
+		return
+	}
+
+	// Scan legacy proxy_sites table (generic Manager)
+	if rdp.proxySiteRepo != nil {
+		if sites, err := rdp.proxySiteRepo.List(ctx, serverID); err == nil {
+			for _, site := range sites {
+				if !site.Enabled {
+					continue
+				}
+				if site.CertPath != "" {
+					certPathSet[normalizeCertPath(site.CertPath)] = true
+				}
+			}
+		}
+	}
+
+	// Scan caddy_sites table (CaddyManager)
+	if rdp.caddySiteRepo != nil {
+		if sites, err := rdp.caddySiteRepo.List(ctx, serverID); err == nil {
+			for _, site := range sites {
+				if !site.Enabled {
+					continue
+				}
+				if site.CertPath != "" {
+					certPathSet[normalizeCertPath(site.CertPath)] = true
+				}
+			}
+		}
+	}
+
+	// Scan nginx_sites table (NginxManager)
+	if rdp.nginxSiteRepo != nil {
+		if sites, err := rdp.nginxSiteRepo.List(ctx, serverID); err == nil {
+			for _, site := range sites {
+				if !site.Enabled {
+					continue
+				}
+				if site.CertPath != "" {
+					certPathSet[normalizeCertPath(site.CertPath)] = true
+				}
+			}
+		}
+	}
 }
 
 // normalizeCertPath strips common relative path prefixes so that paths

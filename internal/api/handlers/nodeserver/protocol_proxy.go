@@ -317,6 +317,8 @@ func (h *Handler) ControlProxy(c *gin.Context) {
 
 // SyncProxyConfig handles POST /api/v1/node-servers/:id/proxy/sync
 // Generates and syncs proxy config to a specific server.
+// For remote servers, also triggers SyncData to land TLS certificates
+// referenced by proxy sites (Caddy/Nginx tls directives) on the agent.
 func (h *Handler) SyncProxyConfig(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -336,6 +338,22 @@ func (h *Handler) SyncProxyConfig(c *gin.Context) {
 		response.InternalError(c, "PROXY_SYNC_FAILED", err.Error())
 		return
 	}
+
+	// For remote servers, also trigger SyncData to land TLS certificates
+	// that are referenced by the proxy config (Caddy/Nginx tls directives).
+	// SyncData now includes certificates from proxy_sites/caddy_sites/nginx_sites
+	// tables, ensuring cert files exist on the agent before the proxy starts.
+	if !h.svc.IsLocalServer(c.Request.Context(), serverID) {
+		go func() {
+			ctx := context.Background()
+			if _, err := h.svc.SyncServerData(ctx, serverID, false); err != nil {
+				log.Printf("[nodeserver] SyncData for proxy certs on server %d: %v", serverID, err)
+			} else {
+				log.Printf("[nodeserver] SyncData for proxy certs on server %d: success", serverID)
+			}
+		}()
+	}
+
 	response.OK(c, gin.H{"synced": true, "server_id": serverID, "proxy_type": req.ProxyType})
 }
 

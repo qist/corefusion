@@ -104,6 +104,22 @@ func (m *BootstrapTokenManager) ValidateBootstrapToken(ctx context.Context, serv
 	return certResult, nil
 }
 
+// VerifyToken checks if a bootstrap token is valid without consuming it.
+// Used by the install script endpoint to verify the request is legitimate.
+func (m *BootstrapTokenManager) VerifyToken(ctx context.Context, serverID int64, token string) bool {
+	server, err := m.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		return false
+	}
+	if server.BootstrapUsedAt != nil {
+		return false
+	}
+	if server.BootstrapTokenExpiresAt == nil || time.Now().After(*server.BootstrapTokenExpiresAt) {
+		return false
+	}
+	return server.BootstrapToken != "" && verifyToken(token, server.BootstrapToken)
+}
+
 // IsBootstrapRequired checks if a server needs bootstrap (no cert or token not yet used).
 func (m *BootstrapTokenManager) IsBootstrapRequired(ctx context.Context, serverID int64) (bool, error) {
 	server, err := m.serverRepo.GetByID(ctx, serverID)

@@ -65,6 +65,7 @@ type AgentConfig struct {
 		Port     int    `yaml:"port"`      // Panel HTTP port (for bootstrap REST API)
 		GRPCPort int    `yaml:"grpc_port"` // Panel gRPC port (for mTLS heartbeat)
 		ServerID int64  `yaml:"server_id"`
+		TLS      bool   `yaml:"tls"`       // Use HTTPS for bootstrap API (production behind Caddy/Nginx)
 	} `yaml:"panel"`
 	Bootstrap struct {
 		Token string `yaml:"token"`
@@ -387,7 +388,11 @@ func (a *AgentApp) EnsureCert() error {
 		hostname = "agent-" + strconv.FormatInt(a.cfg.Panel.ServerID, 10)
 	}
 
-	bootstrapURL := fmt.Sprintf("http://%s:%d/api/v1/agent/bootstrap", a.cfg.Panel.Host, a.cfg.Panel.Port)
+	scheme := "http"
+	if a.cfg.Panel.TLS {
+		scheme = "https"
+	}
+	bootstrapURL := fmt.Sprintf("%s://%s:%d/api/v1/agent/bootstrap", scheme, a.cfg.Panel.Host, a.cfg.Panel.Port)
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"server_id":       a.cfg.Panel.ServerID,
 		"bootstrap_token": a.cfg.Bootstrap.Token,
@@ -395,7 +400,12 @@ func (a *AgentApp) EnsureCert() error {
 		"agent_version":   agentVersion,
 	})
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // Bootstrap phase: no CA cert yet
+		},
+	}
 	resp, err := client.Post(bootstrapURL, "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("bootstrap request: %w", err)

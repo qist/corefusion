@@ -3,6 +3,7 @@ package nodeserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"runtime"
 	"time"
 
@@ -248,7 +249,7 @@ func (s *Service) WithDB(db *gorm.DB) *Service {
 }
 
 // Create creates a new node server.
-func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*entity.NodeServer, error) {
+func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*vo.CreateServerResponse, error) {
 	now := time.Now()
 
 	// Set defaults based on node type
@@ -311,6 +312,10 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*entit
 		return nil, fmt.Errorf("create node server: %w", err)
 	}
 
+	resp := &vo.CreateServerResponse{
+		NodeServerResponse: s.ToResponse(server),
+	}
+
 	// Seed default outbounds (direct + blocked) for the new server.
 	// This ensures every node starts with the essential freedom/blackhole outbounds,
 	// matching the local node's defaults. If they already exist (e.g. from a
@@ -329,7 +334,24 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*entit
 		}
 	}
 
-	return server, nil
+	// Auto-generate Bootstrap Token so the frontend can display the
+	// curl install command immediately (Jenkins-style one-liner).
+	if !server.IsLocal && s.tokenMgr != nil {
+		token, err := s.tokenMgr.GenerateBootstrapToken(ctx, server.ID)
+		if err != nil {
+			log.Printf("[nodeserver] auto-generate bootstrap token for server %d failed: %v", server.ID, err)
+			// Non-fatal: user can generate token manually later
+		} else {
+			resp.BootstrapToken = token
+			// Re-fetch the server so BootstrapTokenExpiresAt is populated,
+			// making bootstrap_required = true in the response.
+			if refreshed, err := s.repo.GetByID(ctx, server.ID); err == nil {
+				resp.NodeServerResponse = s.ToResponse(refreshed)
+			}
+		}
+	}
+
+	return resp, nil
 }
 
 // GetByID retrieves a node server by ID.

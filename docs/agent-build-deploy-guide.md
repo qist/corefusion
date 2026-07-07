@@ -76,10 +76,10 @@ cp -r web/admin/dist/* internal/app/embed/dist/
 cp -r web/portal internal/app/embed/dist/
 
 # 3. 编译面板后端（前端已嵌入二进制）
-go build -o /tmp/corefusion ./cmd/corefusion/
+go build -o corefusion ./cmd/corefusion/
 ```
 
-编译产物：`/tmp/corefusion`（包含前端 + 后端的单体二进制）
+编译产物：`corefusion`（包含前端 + 后端的单体二进制）
 
 ### 3.2 配置文件 (.env)
 
@@ -98,10 +98,10 @@ SAFE_PATHS=/opt/corefusion/data
 cd /opt/corefusion
 
 # 前台启动（开发调试）
-/tmp/corefusion server
+./corefusion server
 
 # 后台启动（生产环境）
-nohup /tmp/corefusion server > /tmp/corefusion.log 2>&1 &
+nohup ./corefusion server > /tmp/corefusion.log 2>&1 &
 ```
 
 ### 3.4 默认监听端口
@@ -201,11 +201,56 @@ agent:
 3. 进入 **节点服务器** 页面
 4. 点击 **添加服务器**
 5. 填写服务器名称、IP 地址（远程节点内网 IP）
-6. 点击 **生成 Bootstrap Token** — 复制 Token 填入 Agent 配置文件
+6. 点击 **保存** — 系统自动生成 Bootstrap Token，并弹出 **一键安装命令**
+7. 复制弹窗中的 `curl | bash` 命令
+
+> **一键安装命令** 由前端通过 `window.location` 自动拼接：
+> - 开发环境（HTTP）：`curl -fsSL "http://127.0.0.1:8080/api/v1/agent/install?id=3&token=xxx" | bash`
+> - 生产环境（HTTPS）：`curl -fsSL "https://panel.example.com:443/api/v1/agent/install?id=3&token=xxx&tls=true" | bash`
+>
+> 前端知道当前访问的协议、域名和端口（浏览器 `window.location`），
+> 后端不需要判断 TLS——在 Caddy/Nginx 反向代理后面 `c.Request.TLS` 永远是 `nil`。
 
 ### 4.5 部署 Agent 到远程节点
 
-#### 方式一：手动部署（推荐开发调试）
+#### 方式一：一键部署（推荐）
+
+在远程节点上直接执行面板生成的一键安装命令：
+
+```bash
+# 在远程节点 192.168.2.50 上执行（从面板弹窗复制）
+curl -fsSL "http://127.0.0.1:8080/api/v1/agent/install?id=3&token=<BOOTSTRAP_TOKEN>" | bash
+```
+
+安装脚本会自动完成以下操作：
+1. 创建 `/opt/corefusion-agent/` 目录
+2. 下载 Agent 二进制（优先从面板下载，失败则回退到 GitHub Releases）
+3. 生成 `config.yaml`（包含面板地址、gRPC 端口、TLS 设置、Bootstrap Token）
+4. 创建并启动 systemd 服务
+5. Agent 自动 Bootstrap 注册并连接面板
+
+**安装脚本内部逻辑：**
+
+| 步骤 | 说明 |
+|------|------|
+| 下载二进制 | `curl` 面板 `/api/v1/agent/download?os=linux&arch=amd64` → 失败回退 GitHub Releases |
+| 生成配置 | 根据面板的 scheme/host/port/grpc_port/tls 自动生成 `config.yaml` |
+| systemd 服务 | 自动创建 `/etc/systemd/system/corefusion-agent.service` 并启动 |
+| Bootstrap | Agent 启动后用 Token 向面板换取 mTLS 证书 |
+
+**面板端 API 端点：**
+
+| 端点 | 方法 | 认证 | 说明 |
+|------|------|------|------|
+| `/api/v1/agent/install?id=N&token=XXX` | GET | Bootstrap Token | 返回安装脚本（bash） |
+| `/api/v1/agent/download?os=linux&arch=amd64` | GET | 无 | 下载 Agent 二进制 |
+
+> **TLS 检测策略**（install handler）：
+> 1. `X-Forwarded-Proto: https` 头（Caddy/Nginx 设置）
+> 2. URL 参数 `tls=true`（前端 HTTPS 时自动附加）
+> 3. `c.Request.TLS != nil`（直连 TLS，开发环境基本不会触发）
+
+#### 方式二：手动部署（开发调试用）
 
 ```bash
 # 1. 在面板机上编译 Agent
@@ -243,7 +288,7 @@ ssh root@192.168.2.50 "cd /opt/corefusion-agent && \
 ssh root@192.168.2.50 "tail -20 /tmp/agent.log"
 ```
 
-#### 方式二：systemd 服务（推荐生产环境）
+#### 方式三：systemd 服务（手动创建，一键部署已自动处理）
 
 在远程节点创建 `/etc/systemd/system/corefusion-agent.service`：
 
@@ -357,7 +402,7 @@ npm run dev
 /api → http://localhost:8080
 ```
 
-> 开发模式下前端独立运行，面板后端只需单独启动（`/tmp/corefusion server`）。
+> 开发模式下前端独立运行，面板后端只需单独启动（`./corefusion server`）。
 
 ### 5.2 生产构建（嵌入到 Go 二进制）
 
@@ -374,7 +419,7 @@ cp -r web/admin/dist/* internal/app/embed/dist/
 cp -r web/portal internal/app/embed/dist/
 
 # 3. 编译 Go 二进制（前端已嵌入）
-go build -o /tmp/corefusion ./cmd/corefusion/
+go build -o corefusion ./cmd/corefusion/
 ```
 
 > 前端代码修改后，必须重新执行以上三步才能生效。
@@ -396,10 +441,10 @@ cp -r web/admin/dist/* internal/app/embed/dist/
 cp -r web/portal internal/app/embed/dist/
 
 # 3. 编译面板后端（前端已嵌入）
-go build -o /tmp/corefusion ./cmd/corefusion/
+go build -o corefusion ./cmd/corefusion/
 
 # 4. 启动面板
-cd /opt/corefusion && /tmp/corefusion server
+cd /opt/corefusion && ./corefusion server
 
 # 5. 验证
 curl -s http://127.0.0.1:8080/api/v1/auth/login \
@@ -482,13 +527,13 @@ cp -r web/admin/dist/* internal/app/embed/dist/
 cp -r web/portal internal/app/embed/dist/
 
 # 3. 编译面板后端
-go build -o /tmp/corefusion ./cmd/corefusion/
+go build -o corefusion ./cmd/corefusion/
 
 # 4. 停止旧进程
 kill -9 $(lsof -t -i :8080) 2>/dev/null; sleep 2
 
 # 5. 启动新进程
-nohup /tmp/corefusion server > /tmp/corefusion.log 2>&1 &
+nohup ./corefusion server > /tmp/corefusion.log 2>&1 &
 ```
 
 > 仅修改后端 Go 代码时，跳过步骤 1-2，直接执行 3-5。
@@ -534,11 +579,11 @@ cp -r web/admin/dist/* internal/app/embed/dist/
 cp -r web/portal internal/app/embed/dist/
 
 # 3. 重新编译后端（前端会嵌入）
-go build -o /tmp/corefusion ./cmd/corefusion/
+go build -o corefusion ./cmd/corefusion/
 
 # 4. 重启面板
 kill -9 $(lsof -t -i :8080) 2>/dev/null; sleep 2
-nohup /tmp/corefusion server > /tmp/corefusion.log 2>&1 &
+nohup ./corefusion server > /tmp/corefusion.log 2>&1 &
 ```
 
 > 前端修改无法热生效——必须重新编译整个 Go 二进制并重启面板。
@@ -754,20 +799,34 @@ cd /opt/corefusion/web/admin && npm run build 2>&1 | tail -2 && \
 cd /opt/corefusion && rm -rf internal/app/embed/dist/* && \
 cp -r web/admin/dist/* internal/app/embed/dist/ && \
 cp -r web/portal internal/app/embed/dist/ && \
-go build -o /tmp/corefusion ./cmd/corefusion 2>&1 && \
+go build -o corefusion ./cmd/corefusion 2>&1 && \
 kill -9 $(lsof -t -i :8080) 2>/dev/null; sleep 2; \
-/tmp/corefusion server > /tmp/corefusion.log 2>&1 & sleep 5; echo "done"
+./corefusion server > /tmp/corefusion.log 2>&1 & sleep 5; echo "done"
 ```
 
 ### 仅编译后端（前端无改动）
 
 ```bash
-cd /opt/corefusion && go build -o /tmp/corefusion ./cmd/corefusion/ && \
+cd /opt/corefusion && go build -o corefusion ./cmd/corefusion/ && \
 kill -9 $(lsof -t -i :8080) 2>/dev/null; sleep 2; \
-/tmp/corefusion server > /tmp/corefusion.log 2>&1 & sleep 3; echo "done"
+./corefusion server > /tmp/corefusion.log 2>&1 & sleep 3; echo "done"
 ```
 
-### 编译并部署 Agent 到远程节点
+### 编译 Agent 二进制（供面板下载）
+
+```bash
+cd /opt/corefusion && \
+go build -o data/binaries/active/corefusion-agent/corefusion-agent ./cmd/agent/ && echo "agent build done"
+```
+
+### 在远程节点一键部署 Agent
+
+```bash
+# 在远程节点上执行（从面板 Web UI 「添加服务器」弹窗复制）
+curl -fsSL "http://127.0.0.1:8080/api/v1/agent/install?id=3&token=<BOOTSTRAP_TOKEN>" | bash
+```
+
+### 手动编译并部署 Agent 到远程节点（旧方式）
 
 ```bash
 cd /opt/corefusion && \

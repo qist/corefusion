@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	extNodeHandler "corefusion/internal/api/handlers"
+	agentHandler "corefusion/internal/api/handlers/agent"
 	authHandler "corefusion/internal/api/handlers/auth"
 	backupsHandler "corefusion/internal/api/handlers/backups"
 
@@ -1485,10 +1486,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				"ca_cert_pem":     string(certResult.CACertPEM),
 				"cert_expires_at": certResult.ExpiresAt.Unix(),
 			})
-		})
+	})
 
-			// Placeholder routes for remaining modules
-			registerPlaceholderRoutes(protected)
+		// Agent download + install script (public — no auth, bootstrap token verifies identity)
+		agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr)
+		v1.GET("/agent/download", agentH.DownloadAgent)
+		v1.GET("/agent/install", agentH.GetInstallScript)
+
+		// Placeholder routes for remaining modules
+		registerPlaceholderRoutes(protected)
 		}
 	}
 

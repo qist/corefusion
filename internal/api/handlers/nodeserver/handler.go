@@ -103,7 +103,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	server, err := h.svc.Create(c.Request.Context(), &req)
+	result, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
@@ -113,12 +113,16 @@ func (h *Handler) Create(c *gin.Context) {
 	// for all supported core types on the new server. This ensures the UI
 	// can immediately load protocol sections without "SECTION_NOT_FOUND" errors.
 	if h.coreConfigSvc != nil {
-		if err := h.coreConfigSvc.SeedDefaults(c.Request.Context(), server.ID); err != nil {
-			log.Printf("[nodeserver] SeedDefaults for server %d failed: %v", server.ID, err)
+		if err := h.coreConfigSvc.SeedDefaults(c.Request.Context(), result.ID); err != nil {
+			log.Printf("[nodeserver] SeedDefaults for server %d failed: %v", result.ID, err)
 		}
 	}
 
-	response.Created(c, h.svc.ToResponse(server))
+	// bootstrap_token is returned so the frontend can build the curl command.
+	// The frontend knows the real scheme/host/port from window.location —
+	// the backend can't reliably detect TLS behind a reverse proxy (Caddy/Nginx).
+
+	response.Created(c, result)
 }
 
 // Update updates a node server.

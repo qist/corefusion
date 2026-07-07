@@ -5032,6 +5032,22 @@ function showEdit(i) {
 }
 
 async function saveInbound() {
+  // Preserve _paused flags from existing form data when editing
+  // This ensures paused users stay paused even if the edit dialog lost the flag
+  if (editIdx.value >= 0 && form.value[editIdx.value]) {
+    const oldIb = form.value[editIdx.value]
+    const oldClients = oldIb.settings?.clients || oldIb.settings?.users || []
+    const newClients = rf.settings?.clients || rf.settings?.users || []
+    for (const oldUser of oldClients) {
+      if (oldUser._paused) {
+        const newUser = newClients.find(u => u.email === oldUser.email)
+        if (newUser) {
+          newUser._paused = true
+        }
+      }
+    }
+  }
+
   // Build config for database (with relative paths)
   const ib = buildInbound(rf, false)
   // Build config for API call (with absolute paths)
@@ -5089,6 +5105,15 @@ async function saveInbound() {
       // Add new inbound only if enabled
       if (rf._enabled !== false) {
         await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiJson }, { suppressErrorMessage: true })
+        // Safety net: remove any paused users from xray runtime that might have slipped through
+        const allClients = rf.settings?.clients || rf.settings?.users || []
+        for (const u of allClients) {
+          if (u._paused && u.email) {
+            try {
+              await client.delete(`${nodeBase.value}/xray/control/inbound/${apiJson.tag}/user/${encodeURIComponent(u.email)}`, { suppressErrorMessage: true })
+            } catch {}
+          }
+        }
       }
     } catch (xrayErr) {
       console.warn('Failed to apply to xray runtime:', xrayErr)
@@ -5219,9 +5244,48 @@ async function toggleEnabled(i) {
             await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
           } catch {}
           await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiConfig }, { suppressErrorMessage: true })
+          // Safety net: remove any paused users from xray runtime
+          const allClients = ib.settings?.clients || ib.settings?.users || []
+          for (const u of allClients) {
+            if (u._paused && u.email) {
+              try {
+                await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}/user/${encodeURIComponent(u.email)}`, { suppressErrorMessage: true })
+              } catch {}
+            }
+          }
+          // Apply firewall rules if port hopping is enabled
+          if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
+            const portRange = ib._portHopMode === 'preset'
+              ? (ib._portHopRange || '20000-50000')
+              : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+            try {
+              await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
+                port_range: portRange,
+                target_port: ib.port || 0,
+                interface: ib._portHopInterface || ''
+              })
+            } catch (fwErr) {
+              console.warn('Failed to apply firewall rules on enable:', fwErr)
+            }
+          }
         } else {
           // Disable: remove inbound from xray runtime
           await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
+          // Remove firewall rules if port hopping was enabled
+          if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
+            const portRange = ib._portHopMode === 'preset'
+              ? (ib._portHopRange || '20000-50000')
+              : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+            try {
+              await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
+                port_range: portRange,
+                target_port: ib.port || 0,
+                interface: ib._portHopInterface || ''
+              })
+            } catch (fwErr) {
+              console.warn('Failed to remove firewall rules on disable:', fwErr)
+            }
+          }
         }
       }
     } catch (xrayErr) {

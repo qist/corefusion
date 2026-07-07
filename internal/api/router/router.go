@@ -693,6 +693,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			cfipSourceRepo := repository.NewCFIPSourceRepository(database)
 			cfipEntryRepo := repository.NewCFIPEntryRepository(database)
 			cfipSvcInst := cfipSvc.NewService(cfipSourceRepo, cfipEntryRepo)
+			cfipSvcInst.StartScheduler(context.Background())
 			cfipH := cfipHandler.NewHandler(cfipSvcInst)
 			cfipGroup := protected.Group("/cfip")
 			{

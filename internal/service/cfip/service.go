@@ -266,6 +266,9 @@ func (s *Service) SeedDefaultSources(ctx context.Context) error {
 // StartScheduler starts the background scheduler.
 func (s *Service) StartScheduler(ctx context.Context) {
 	go func() {
+		// Run an initial check immediately on startup
+		s.checkAndFetch(ctx)
+
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 
@@ -283,6 +286,7 @@ func (s *Service) StartScheduler(ctx context.Context) {
 func (s *Service) checkAndFetch(ctx context.Context) {
 	sources, err := s.sourceRepo.GetEnabled(ctx)
 	if err != nil {
+		log.Printf("cfip: failed to get enabled sources: %v", err)
 		return
 	}
 

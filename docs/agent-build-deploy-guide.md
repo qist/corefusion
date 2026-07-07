@@ -10,6 +10,16 @@
 | SQLite | >= 3.35 (支持 ON CONFLICT) |
 | OS | Linux (amd64 / arm64) |
 
+> **当前环境（调试用）**
+>
+> | 角色 | IP | 说明 |
+> |------|-----|------|
+> | 面板 (Panel) | `127.0.0.1` | 主控面板，运行 corefusion 二进制 |
+> | 远程节点 (Agent) | `192.168.2.50` | 远程节点，运行 corefusion-agent |
+> | SSH 用户 | `root` | 两台机器均使用 root 登录 |
+>
+> 以下命令中的 `127.0.0.1` 为面板 IP，`192.168.2.50` 为远程节点 IP。
+
 ---
 
 ## 2. 项目结构
@@ -158,8 +168,9 @@ CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
   go build -o corefusion-agent-linux-amd64 ./cmd/agent/
 ```
 
-> 注意：Agent 使用 SQLite (CGO)，交叉编译时需设置 `CGO_ENABLED=1` 使用 pure Go 驱动。
-> 如果目标架构与编译机相同，直接 `go build` 即可（保留 CGO）。
+> 注意：Agent 使用 SQLite，依赖 `mattn/go-sqlite3`（CGO 驱动）。
+> 交叉编译时必须设置 `CGO_ENABLED=1` 并配置对应架构的 C 编译器（如 `aarch64-linux-gnu-gcc`）。
+> 如果目标架构与编译机相同，直接 `go build` 即可（默认启用 CGO）。
 
 ### 4.3 Agent 配置文件
 
@@ -185,7 +196,7 @@ agent:
 
 ### 4.4 在面板上添加远程节点
 
-1. 登录面板 `http://<面板IP>:8080`
+1. 登录面板 `http://127.0.0.1:8080`
 2. 用户名 `admin`，密码 `admin123`
 3. 进入 **节点服务器** 页面
 4. 点击 **添加服务器**
@@ -202,17 +213,17 @@ cd /opt/corefusion
 go build -o data/binaries/active/corefusion-agent/corefusion-agent ./cmd/agent/
 
 # 2. 创建远程节点目录
-ssh root@<REMOTE_IP> "mkdir -p /opt/corefusion-agent/data"
+ssh root@192.168.2.50 "mkdir -p /opt/corefusion-agent/data"
 
 # 3. 上传 Agent 二进制
 scp data/binaries/active/corefusion-agent/corefusion-agent \
-  root@<REMOTE_IP>:/opt/corefusion-agent/corefusion-agent
+  root@192.168.2.50:/opt/corefusion-agent/corefusion-agent
 
 # 4. 上传配置文件（先在远程节点创建 config.yaml，内容见 4.3）
 #    或者直接用 SSH 写入
-ssh root@<REMOTE_IP> "cat > /opt/corefusion-agent/config.yaml << 'EOF'
+ssh root@192.168.2.50 "cat > /opt/corefusion-agent/config.yaml << 'EOF'
 panel:
-  host: \"<PANEL_IP>\"
+  host: \"127.0.0.1\"
   port: 8080
   grpc_port: 18443
   server_id: 2
@@ -225,11 +236,11 @@ agent:
 EOF"
 
 # 5. 启动 Agent
-ssh root@<REMOTE_IP> "cd /opt/corefusion-agent && \
+ssh root@192.168.2.50 "cd /opt/corefusion-agent && \
   nohup ./corefusion-agent -config config.yaml > /tmp/agent.log 2>&1 &"
 
 # 6. 检查日志
-ssh root@<REMOTE_IP> "tail -20 /tmp/agent.log"
+ssh root@192.168.2.50 "tail -20 /tmp/agent.log"
 ```
 
 #### 方式二：systemd 服务（推荐生产环境）
@@ -406,14 +417,14 @@ cd /opt/corefusion
 go build -o data/binaries/active/corefusion-agent/corefusion-agent ./cmd/agent/
 
 # 3. 部署到远程节点
-ssh root@<REMOTE_IP> "mkdir -p /opt/corefusion-agent/data"
+ssh root@192.168.2.50 "mkdir -p /opt/corefusion-agent/data"
 scp data/binaries/active/corefusion-agent/corefusion-agent \
-  root@<REMOTE_IP>:/opt/corefusion-agent/corefusion-agent
+  root@192.168.2.50:/opt/corefusion-agent/corefusion-agent
 
-# 4. 创建配置文件（替换 <PANEL_IP> 和 <TOKEN>）
-ssh root@<REMOTE_IP> "cat > /opt/corefusion-agent/config.yaml << 'EOF'
+# 4. 创建配置文件（替换 <TOKEN> 为实际 Bootstrap Token）
+ssh root@192.168.2.50 "cat > /opt/corefusion-agent/config.yaml << 'EOF'
 panel:
-  host: \"<PANEL_IP>\"
+  host: \"127.0.0.1\"
   port: 8080
   grpc_port: 18443
   server_id: 2
@@ -426,11 +437,11 @@ agent:
 EOF"
 
 # 5. 启动 Agent
-ssh root@<REMOTE_IP> "cd /opt/corefusion-agent && chmod +x corefusion-agent && \
+ssh root@192.168.2.50 "cd /opt/corefusion-agent && chmod +x corefusion-agent && \
   nohup ./corefusion-agent -config config.yaml > /tmp/agent.log 2>&1 &"
 
 # 6. 验证连接
-ssh root@<REMOTE_IP> "tail -10 /tmp/agent.log"
+ssh root@192.168.2.50 "tail -10 /tmp/agent.log"
 # 应看到 "connected to panel, heartbeat stream active"
 ```
 
@@ -491,18 +502,18 @@ cd /opt/corefusion
 go build -o data/binaries/active/corefusion-agent/corefusion-agent ./cmd/agent/
 
 # 2. 停止远程节点上的旧 Agent
-ssh root@<REMOTE_IP> "pkill -f corefusion-agent"
+ssh root@192.168.2.50 "pkill -f corefusion-agent"
 
 # 3. 上传新二进制
 scp data/binaries/active/corefusion-agent/corefusion-agent \
-  root@<REMOTE_IP>:/opt/corefusion-agent/corefusion-agent
+  root@192.168.2.50:/opt/corefusion-agent/corefusion-agent
 
 # 4. 启动新 Agent
-ssh root@<REMOTE_IP> "cd /opt/corefusion-agent && \
+ssh root@192.168.2.50 "cd /opt/corefusion-agent && \
   nohup ./corefusion-agent -config config.yaml > /tmp/agent.log 2>&1 &"
 
 # 5. 验证
-ssh root@<REMOTE_IP> "tail -10 /tmp/agent.log"
+ssh root@192.168.2.50 "tail -10 /tmp/agent.log"
 ```
 
 > 如果使用 systemd 管理，将步骤 2/4 替换为 `systemctl stop corefusion-agent` / `systemctl start corefusion-agent`。
@@ -665,27 +676,27 @@ Agent 首次启动时，如果面板尚未同步配置，`process.Manager` 会�
 
 1. 确认 Agent 进程在运行：
    ```bash
-   ssh root@<REMOTE_IP> "ps aux | grep corefusion-agent | grep -v grep"
+   ssh root@192.168.2.50 "ps aux | grep corefusion-agent | grep -v grep"
    ```
 
 2. 检查 Agent 日志：
    ```bash
-   ssh root@<REMOTE_IP> "tail -30 /tmp/agent.log"
+   ssh root@192.168.2.50 "tail -30 /tmp/agent.log"
    ```
 
 3. 确认面板 gRPC 端口 (18443) 可达：
    ```bash
-   ssh root@<REMOTE_IP> "nc -zv <PANEL_IP> 18443"
+   ssh root@192.168.2.50 "nc -zv 127.0.0.1 18443"
    ```
 
 4. 确认 mTLS 证书未过期（有效期 10 天，面板自动续签）：
    ```bash
-   ssh root@<REMOTE_IP> "openssl x509 -in /opt/corefusion-agent/data/certs/agent-cert.pem -noout -dates"
+   ssh root@192.168.2.50 "openssl x509 -in /opt/corefusion-agent/data/certs/agent-cert.pem -noout -dates"
    ```
 
 5. 如果证书过期或损坏，删除证书重新 Bootstrap：
    ```bash
-   ssh root@<REMOTE_IP> "rm /opt/corefusion-agent/data/certs/*.pem"
+   ssh root@192.168.2.50 "rm /opt/corefusion-agent/data/certs/*.pem"
    # 在面板上重新生成 Bootstrap Token，更新 config.yaml，重启 Agent
    ```
 
@@ -700,7 +711,7 @@ gRPC TCP 连接断开检测有延迟（默认依赖 TCP keepalive）。**临时�
 1. 远程节点 `agent.listen_port` (默认 18443) 是否被防火墙拦截
 2. 面板能否访问远程节点的 18443 端口：
    ```bash
-   nc -zv <REMOTE_IP> 18443
+   nc -zv 192.168.2.50 18443
    ```
 3. 远程节点的 `internal_ip` 或 `public_ip` 在面板数据库中是否正确：
    ```bash
@@ -761,8 +772,8 @@ kill -9 $(lsof -t -i :8080) 2>/dev/null; sleep 2; \
 ```bash
 cd /opt/corefusion && \
 go build -o data/binaries/active/corefusion-agent/corefusion-agent ./cmd/agent/ && \
-ssh root@<REMOTE_IP> "pkill -f corefusion-agent" 2>/dev/null; sleep 2; \
-scp data/binaries/active/corefusion-agent/corefusion-agent root@<REMOTE_IP>:/opt/corefusion-agent/corefusion-agent && \
-ssh root@<REMOTE_IP> "cd /opt/corefusion-agent && nohup ./corefusion-agent -config config.yaml > /tmp/agent.log 2>&1 &" && \
-sleep 3 && ssh root@<REMOTE_IP> "tail -10 /tmp/agent.log"
+ssh root@192.168.2.50 "pkill -f corefusion-agent" 2>/dev/null; sleep 2; \
+scp data/binaries/active/corefusion-agent/corefusion-agent root@192.168.2.50:/opt/corefusion-agent/corefusion-agent && \
+ssh root@192.168.2.50 "cd /opt/corefusion-agent && nohup ./corefusion-agent -config config.yaml > /tmp/agent.log 2>&1 &" && \
+sleep 3 && ssh root@192.168.2.50 "tail -10 /tmp/agent.log"
 ```

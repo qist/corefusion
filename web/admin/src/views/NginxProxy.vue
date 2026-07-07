@@ -1241,7 +1241,21 @@ async function saveSite() {
   siteSaving.value = true
   try {
     const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
-    const pathValue = siteForm.value.template === 'l4' ? (siteForm.value.listen_port || '') : (siteForm.value.path || '')
+    const pathValue = siteForm.value.template === 'l4' ? (siteForm.value.listen_port || '') : (siteForm.value.path || '/')
+    // Check for duplicate path on the same domain (skip SNI and L4 templates)
+    if (siteForm.value.template !== 'sni' && siteForm.value.template !== 'l4') {
+      const domain = siteForm.value.domain || ''
+      const dup = allSites.value.find(s =>
+        s.id !== siteForm.value.id &&
+        (s.domain || '') === domain &&
+        (s.path || '/') === (pathValue || '/')
+      )
+      if (dup) {
+        ElMessage.error(t('proxy.duplicatePath') || '该域名下已存在相同路径的站点')
+        siteSaving.value = false
+        return
+      }
+    }
     const payload = {
 domain: siteForm.value.domain,
 upstream: upstream,

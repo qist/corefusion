@@ -960,6 +960,21 @@ async function saveSite() {
         domain = domain + ':' + localPort
       }
     }
+    // Check for duplicate path on the same domain (skip SNI and L4 templates)
+    if (siteForm.value.template !== 'sni' && siteForm.value.template !== 'l4') {
+      const checkDomain = siteForm.value.domain || ''
+      const checkPath = siteForm.value.path || '/'
+      const dup = allSites.value.find(s =>
+        s.id !== siteForm.value.id &&
+        (s.domain || '') === checkDomain &&
+        (s.path || '/') === checkPath
+      )
+      if (dup) {
+        ElMessage.error(t('proxy.duplicatePath') || '该域名下已存在相同路径的站点')
+        siteSaving.value = false
+        return
+      }
+    }
     const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
 const payload = {
 domain: domain,

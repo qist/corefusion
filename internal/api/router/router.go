@@ -48,6 +48,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
 	"corefusion/internal/runtime/agent"
+	"corefusion/internal/runtime/firewall"
 	binariesSvc "corefusion/internal/service/binaries"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
 	"corefusion/internal/runtime/cert"
@@ -1539,7 +1540,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	} else {
 		// Seed default cores and reconcile processes on startup
 		processMgr.SeedCores(nil)
-		go processMgr.Reconcile(nil)
+		go func() {
+			processMgr.Reconcile(nil)
+			// Restore firewall rules for hysteria port hopping after process reconcile.
+			// Rules are lost on machine reboot and need to be re-created from DB config.
+			time.Sleep(2 * time.Second) // wait for cores to start
+			restoreFirewallRules(context.Background(), inboundConfigRepo)
+		}()
 	}
 
 	// Set callback to reload proxy config when log output mode is switched
@@ -1745,6 +1752,36 @@ func isSPARoute(path string) bool {
 	}
 
 	return false
+}
+
+// restoreFirewallRules scans all enabled hysteria inbound configs for the local server
+// and re-creates nftables/iptables rules for port hopping. Called on panel startup
+// after process reconcile to restore rules lost on machine reboot.
+func restoreFirewallRules(ctx context.Context, repo *repository.InboundConfigRepository) {
+	// Local server ID is 1
+	configs, err := repo.List(ctx, 1, "xray")
+	if err != nil {
+		log.Printf("[Firewall] failed to list inbound configs for rule restore: %v", err)
+		return
+	}
+
+	var infos []firewall.InboundConfigInfo
+	for _, c := range configs {
+		if !c.Enabled || c.Protocol != "hysteria" {
+			continue
+		}
+		infos = append(infos, firewall.InboundConfigInfo{
+			Tag:        c.Tag,
+			Protocol:   c.Protocol,
+			Port:       c.Port,
+			ConfigJSON: c.ConfigJSON,
+			Enabled:    c.Enabled,
+		})
+	}
+
+	firewall.RestoreRules(ctx, firewall.LocalApplier{}, func() ([]firewall.InboundConfigInfo, error) {
+		return infos, nil
+	})
 }
 
 // NewSubscriptionEngine creates a separate Gin engine for subscription-only serving on a dedicated port.

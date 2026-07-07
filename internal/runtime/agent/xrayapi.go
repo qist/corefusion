@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -657,16 +658,61 @@ func checkNftRuleExists(portRange string, targetPort int, iface string) (bool, e
 	if err := cmd.Run(); err != nil {
 		return false, nil
 	}
-	cmd = exec.Command("nft", "list", "chain", "inet", "hysteria_porthopping", "prerouting")
+	handle, err := findNftRuleHandle(portRange, targetPort, iface)
+	if err != nil {
+		return false, err
+	}
+	return handle > 0, nil
+}
+
+// nftRuleMatches checks if a rule line from `nft -a list chain` output matches
+// the given port range, target port, and interface.
+func nftRuleMatches(line, portRange string, targetPort int, iface string) bool {
+	if !strings.Contains(line, "redirect to") {
+		return false
+	}
+	if !strings.Contains(line, fmt.Sprintf("dport %s ", portRange)) {
+		return false
+	}
+	if !strings.Contains(line, fmt.Sprintf("redirect to :%d", targetPort)) {
+		return false
+	}
+	if iface != "" {
+		if !strings.Contains(line, fmt.Sprintf(`iifname "%s"`, iface)) {
+			return false
+		}
+	} else {
+		if strings.Contains(line, "iifname ") {
+			return false
+		}
+	}
+	return true
+}
+
+// findNftRuleHandle lists the chain with handles and finds the handle of the
+// rule matching the given spec. Returns 0 if not found.
+func findNftRuleHandle(portRange string, targetPort int, iface string) (uint64, error) {
+	cmd := exec.Command("nft", "-a", "list", "chain", "inet", "hysteria_porthopping", "prerouting")
 	out, err := cmd.Output()
 	if err != nil {
-		return false, nil
+		return 0, nil
 	}
-	rules := string(out)
-	if strings.Contains(rules, portRange) && strings.Contains(rules, fmt.Sprintf(":%d", targetPort)) {
-		return true, nil
+	for _, line := range strings.Split(string(out), "\n") {
+		if !nftRuleMatches(line, portRange, targetPort, iface) {
+			continue
+		}
+		handleIdx := strings.LastIndex(line, "handle ")
+		if handleIdx < 0 {
+			continue
+		}
+		handleStr := strings.TrimSpace(line[handleIdx+7:])
+		handle, err := strconv.ParseUint(handleStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		return handle, nil
 	}
-	return false, nil
+	return 0, nil
 }
 
 func checkIptablesRuleExists(portRange string, targetPort int, iface string) (bool, error) {
@@ -717,7 +763,14 @@ func removeFirewallRule(useNft bool, portRange string, targetPort int, iface str
 }
 
 func removeNftRule(portRange string, targetPort int, iface string) error {
-	return exec.Command("nft", "delete", "table", "inet", "hysteria_porthopping").Run()
+	handle, err := findNftRuleHandle(portRange, targetPort, iface)
+	if err != nil {
+		return fmt.Errorf("find rule handle: %w", err)
+	}
+	if handle == 0 {
+		return nil // rule doesn't exist, nothing to remove
+	}
+	return exec.Command("nft", "delete", "rule", "inet", "hysteria_porthopping", "prerouting", "handle", strconv.FormatUint(handle, 10)).Run()
 }
 
 func removeIptablesRule(portRange string, targetPort int, iface string) error {

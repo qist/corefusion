@@ -2104,8 +2104,15 @@
       </el-tabs>
 
       <template #footer>
-        <el-button @click="dlg=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="saveInbound">{{ t('common.save') }}</el-button>
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
+          <el-form-item :label="t('common.enabled')" label-width="auto" style="margin-bottom:0">
+            <el-switch v-model="rf._enabled" />
+          </el-form-item>
+          <div>
+            <el-button @click="dlg=false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" @click="saveInbound">{{ t('common.save') }}</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -5079,8 +5086,10 @@ async function saveInbound() {
           await client.delete(`${nodeBase.value}/xray/control/inbound/${apiJson.tag}`, { suppressErrorMessage: true })
         } catch {}
       }
-      // Add new inbound
-      await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiJson }, { suppressErrorMessage: true })
+      // Add new inbound only if enabled
+      if (rf._enabled !== false) {
+        await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiJson }, { suppressErrorMessage: true })
+      }
     } catch (xrayErr) {
       console.warn('Failed to apply to xray runtime:', xrayErr)
       // Don't fail the whole operation if xray apply fails
@@ -5192,6 +5201,33 @@ async function toggleEnabled(i) {
       enabled: ib._enabled,
       config_json: configJson,
     })
+
+    // Apply to running xray via gRPC
+    try {
+      if (await ensureXrayRunning(client, props.serverId, '')) {
+        if (ib._enabled) {
+          // Enable: add inbound to xray runtime
+          const apiConfig = buildInbound(ib, true)
+          delete apiConfig._remark
+          delete apiConfig._enabled
+          delete apiConfig._id
+          delete apiConfig._accessDomain
+          delete apiConfig._portHop
+          delete apiConfig._wgPublicKey
+          // Remove existing first to avoid duplicate
+          try {
+            await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
+          } catch {}
+          await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiConfig }, { suppressErrorMessage: true })
+        } else {
+          // Disable: remove inbound from xray runtime
+          await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
+        }
+      }
+    } catch (xrayErr) {
+      console.warn('Failed to apply toggle to xray runtime:', xrayErr)
+    }
+
     ElMessage.success(ib._enabled ? t('common.enabled') : t('common.disabled'))
   } catch (e) {
     ib._enabled = !ib._enabled

@@ -300,11 +300,14 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			if backendPath == "" {
 				backendPath = "/"
 			}
+			useHandlePath := false
 			if site.Path == "" || site.Path == "/" {
 				sb.WriteString("\treverse_proxy {\n")
 			} else if backendPath == "/" {
 				// Backend expects root path: use handle_path to strip the location prefix
 				sb.WriteString(fmt.Sprintf("\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
+				sb.WriteString("\t\treverse_proxy {\n")
+				useHandlePath = true
 			} else {
 				sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
 				sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
@@ -329,7 +332,12 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 					sb.WriteString("\t\t" + strings.TrimSpace(line) + "\n")
 				}
 			}
-			sb.WriteString("\t}\n")
+			if useHandlePath {
+				sb.WriteString("\t\t}\n") // close reverse_proxy
+				sb.WriteString("\t}\n")   // close handle_path
+			} else {
+				sb.WriteString("\t}\n") // close reverse_proxy
+			}
 			// Site-level custom config (outside reverse_proxy)
 			if site.CustomConfig != "" {
 				for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {

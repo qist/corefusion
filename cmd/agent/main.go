@@ -1303,6 +1303,9 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 	// 4. Upsert warp_configs
 	for _, entry := range req.WarpConfigs {
 		record := entity.WarpConfig{
+			ServerID:    entry.ServerId,
+			CoreType:    entry.CoreType,
+			Remark:      entry.Remark,
 			DeviceID:    entry.DeviceId,
 			Token:       entry.Token,
 			PrivateKey:  entry.PrivateKey,
@@ -1330,8 +1333,8 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		}
 		result := database.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"device_id", "token", "private_key", "public_key", "reserved", "address_ipv4", "address_ipv6", "endpoint", "client_id", "account_id", "account_type", "license_key", "registration_at", "status", "config_json", "updated_at"}),
-		}).Select("device_id", "token", "private_key", "public_key", "reserved", "address_ipv4", "address_ipv6", "endpoint", "client_id", "account_id", "account_type", "license_key", "registration_at", "status", "config_json", "created_at", "updated_at").Create(&record)
+			DoUpdates: clause.AssignmentColumns([]string{"server_id", "core_type", "remark", "device_id", "token", "private_key", "public_key", "reserved", "address_ipv4", "address_ipv6", "endpoint", "client_id", "account_id", "account_type", "license_key", "registration_at", "status", "config_json", "updated_at"}),
+		}).Select("server_id", "core_type", "remark", "device_id", "token", "private_key", "public_key", "reserved", "address_ipv4", "address_ipv6", "endpoint", "client_id", "account_id", "account_type", "license_key", "registration_at", "status", "config_json", "created_at", "updated_at").Create(&record)
 		if result.Error == nil {
 			resp.WarpConfigsApplied++
 		} else {

@@ -11,8 +11,6 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -51,8 +49,11 @@ type warpAPIResponse struct {
 
 // WarpStatus contains WARP registration status info.
 type WarpStatus struct {
+	ID          int64  `json:"id,omitempty"`
 	Status      string `json:"status"`
 	Registered  bool   `json:"registered"`
+	CoreType    string `json:"core_type,omitempty"`
+	Remark      string `json:"remark,omitempty"`
 	DeviceID    string `json:"device_id,omitempty"`
 	AccountID   string `json:"account_id,omitempty"`
 	AccountType string `json:"account_type,omitempty"`
@@ -65,41 +66,65 @@ type WarpStatus struct {
 	LicenseKey  string `json:"license_key,omitempty"`
 }
 
+// WarpConfigItem is a list item for WARP configs.
+type WarpConfigItem struct {
+	ID            int64  `json:"id"`
+	CoreType      string `json:"core_type"`
+	Remark        string `json:"remark"`
+	Status        string `json:"status"`
+	DeviceID      string `json:"device_id"`
+	AddressIPv4   string `json:"address_ipv4"`
+	AddressIPv6   string `json:"address_ipv6"`
+	Endpoint      string `json:"endpoint"`
+	RegistrationAt string `json:"registration_at"`
+}
+
 // Service handles WARP business logic.
 type Service struct {
-	repo    *repository.WarpRepository
-	dataDir string
+	repo *repository.WarpRepository
 }
 
 // NewService creates a new WARP service.
-func NewService(repo *repository.WarpRepository, dataDir string) *Service {
-	return &Service{repo: repo, dataDir: dataDir}
+func NewService(repo *repository.WarpRepository) *Service {
+	return &Service{repo: repo}
 }
 
-// GetStatus returns the current WARP registration status.
-func (s *Service) GetStatus() (*WarpStatus, error) {
-	cfg, err := s.repo.GetActive(nil)
+// GetStatus returns the WARP registration status for a specific server and core type.
+// If coreType is empty, it returns the latest active config for the server.
+func (s *Service) GetStatus(serverID int64, coreType string) (*WarpStatus, error) {
+	cfg, err := s.repo.GetActiveByServer(nil, serverID, coreType)
 	if err != nil {
 		return &WarpStatus{Status: "not_registered", Registered: false}, nil
 	}
-	return &WarpStatus{
-		Status:      cfg.Status,
-		Registered:  cfg.Status != "not_registered",
-		DeviceID:    cfg.DeviceID,
-		AccountID:   cfg.AccountID,
-		AccountType: cfg.AccountType,
-		PrivateKey:  cfg.PrivateKey,
-		PublicKey:   cfg.PublicKey,
-		Reserved:    cfg.Reserved,
-		AddressIPv4: cfg.AddressIPv4,
-		AddressIPv6: cfg.AddressIPv6,
-		Endpoint:    cfg.Endpoint,
-		LicenseKey:  cfg.LicenseKey,
-	}, nil
+	return s.configToStatus(cfg), nil
+}
+
+// ListByServer returns all WARP configs for a specific server.
+func (s *Service) ListByServer(serverID int64) ([]*WarpConfigItem, error) {
+	cfgs, err := s.repo.ListByServer(nil, serverID)
+	if err != nil {
+		return []*WarpConfigItem{}, nil
+	}
+	items := make([]*WarpConfigItem, len(cfgs))
+	for i, cfg := range cfgs {
+		items[i] = &WarpConfigItem{
+			ID:             cfg.ID,
+			CoreType:       cfg.CoreType,
+			Remark:         cfg.Remark,
+			Status:         cfg.Status,
+			DeviceID:       cfg.DeviceID,
+			AddressIPv4:    cfg.AddressIPv4,
+			AddressIPv6:    cfg.AddressIPv6,
+			Endpoint:       cfg.Endpoint,
+			RegistrationAt: cfg.RegistrationAt.Format(time.RFC3339),
+		}
+	}
+	return items, nil
 }
 
 // Register registers with Cloudflare WARP API (pure Go, no external binary).
-func (s *Service) Register() (*WarpStatus, error) {
+// The registration is scoped to the given serverID and coreType.
+func (s *Service) Register(serverID int64, coreType string) (*WarpStatus, error) {
 	// Generate Curve25519 key pair
 	privateKey, publicKey, err := generateKeyPair()
 	if err != nil {
@@ -176,6 +201,8 @@ func (s *Service) Register() (*WarpStatus, error) {
 	addressV6 = apiResp.Config.Interface.Addresses.V6
 
 	cfg := &entity.WarpConfig{
+		ServerID:       serverID,
+		CoreType:       coreType,
 		DeviceID:       apiResp.ID,
 		Token:          apiResp.Token,
 		PrivateKey:     privateKey,
@@ -196,25 +223,15 @@ func (s *Service) Register() (*WarpStatus, error) {
 		return nil, fmt.Errorf("save config: %w", err)
 	}
 
-	return &WarpStatus{
-		Status:      cfg.Status,
-		Registered:  true,
-		DeviceID:    cfg.DeviceID,
-		AccountID:   cfg.AccountID,
-		AccountType: cfg.AccountType,
-		PrivateKey:  cfg.PrivateKey,
-		PublicKey:   cfg.PublicKey,
-		Reserved:    cfg.Reserved,
-		AddressIPv4: cfg.AddressIPv4,
-		AddressIPv6: cfg.AddressIPv6,
-		Endpoint:    cfg.Endpoint,
-		LicenseKey:  cfg.LicenseKey,
-	}, nil
+	return s.configToStatus(cfg), nil
 }
 
-// GenerateConfig generates a WireGuard config from the stored credentials.
-func (s *Service) GenerateConfig() (string, error) {
-	cfg, err := s.repo.GetActive(nil)
+// GenerateConfig generates a WireGuard config string from the stored credentials.
+// The config is stored in the database (ConfigJSON field) and synced to remote
+// Agents via SyncData. No local file is written — the actual WARP credentials
+// are used by xray/singbox WireGuard outbounds directly from the DB.
+func (s *Service) GenerateConfig(serverID int64, coreType string) (string, error) {
+	cfg, err := s.repo.GetActiveByServer(nil, serverID, coreType)
 	if err != nil {
 		return "", fmt.Errorf("no WARP registration found")
 	}
@@ -230,13 +247,6 @@ AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = %s
 `, cfg.PrivateKey, cfg.AddressIPv4, cfg.AddressIPv6, cfg.PublicKey, cfg.Endpoint)
 
-	runtimeDir := filepath.Join(s.dataDir, "runtime")
-	os.MkdirAll(runtimeDir, 0750)
-	configPath := filepath.Join(runtimeDir, "warp.conf")
-	if err := os.WriteFile(configPath, []byte(wgConfig), 0600); err != nil {
-		return "", fmt.Errorf("write config file: %w", err)
-	}
-
 	cfg.ConfigJSON = wgConfig
 	cfg.Status = "active"
 	if err := s.repo.Update(nil, cfg); err != nil {
@@ -246,24 +256,41 @@ Endpoint = %s
 	return wgConfig, nil
 }
 
-// GetConfig returns the current WARP WireGuard config.
-func (s *Service) GetConfig() (string, error) {
-	cfg, err := s.repo.GetActive(nil)
+// GetConfig returns the WARP WireGuard config for a specific server and core type.
+func (s *Service) GetConfig(serverID int64, coreType string) (string, error) {
+	cfg, err := s.repo.GetActiveByServer(nil, serverID, coreType)
 	if err != nil {
 		return "", nil
 	}
 	return cfg.ConfigJSON, nil
 }
 
-// Reset clears the WARP configuration.
-func (s *Service) Reset() error {
-	cfg, err := s.repo.GetActive(nil)
-	if err != nil {
-		return nil
+// Reset deletes a specific WARP config by ID.
+func (s *Service) Reset(warpID int64) error {
+	if err := s.repo.Delete(nil, warpID); err != nil {
+		return fmt.Errorf("delete warp config: %w", err)
 	}
-	configPath := filepath.Join(s.dataDir, "runtime", "warp.conf")
-	os.Remove(configPath)
-	return s.repo.Delete(nil, cfg.ID)
+	return nil
+}
+
+// configToStatus converts a WarpConfig entity to a WarpStatus response.
+func (s *Service) configToStatus(cfg *entity.WarpConfig) *WarpStatus {
+	return &WarpStatus{
+		ID:          cfg.ID,
+		Status:      cfg.Status,
+		Registered:  cfg.Status != "not_registered",
+		CoreType:    cfg.CoreType,
+		DeviceID:    cfg.DeviceID,
+		AccountID:   cfg.AccountID,
+		AccountType: cfg.AccountType,
+		PrivateKey:  cfg.PrivateKey,
+		PublicKey:   cfg.PublicKey,
+		Reserved:    cfg.Reserved,
+		AddressIPv4: cfg.AddressIPv4,
+		AddressIPv6: cfg.AddressIPv6,
+		Endpoint:    cfg.Endpoint,
+		LicenseKey:  cfg.LicenseKey,
+	}
 }
 
 // generateKeyPair generates a Curve25519 key pair for WireGuard.

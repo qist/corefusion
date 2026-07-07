@@ -318,7 +318,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Traffic sync service (periodically syncs traffic stats to DB)
 	trafficSyncSvc := trafficsyncSvc.NewService(systemSettingSvc, inboundConfigSvc, 30*time.Second)
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
-	warpSvcInst := warpSvc.NewService(warpRepo, dataDir)
+	warpSvcInst := warpSvc.NewService(warpRepo)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)
 	notifier := systemSvc.NewNotifier(systemSettingSvc)
@@ -1188,6 +1188,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.PUT("/:id/geo-rules/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
 			nodeServersGroup.POST("/:id/geo-rules/seed", geoRuleH.SeedDefaults)
 			nodeServersGroup.GET("/:id/geo-rules/status", geoRuleH.Status)
+
+			// WARP (per node) — each node has its own independent WARP configs
+			nodeServersGroup.GET("/:id/warp", warpH.List)
+			nodeServersGroup.GET("/:id/warp/status", warpH.Status)
+			nodeServersGroup.POST("/:id/warp/register", warpH.Register)
+			nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
+			nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
+			nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)
 		}
 
 			// CA Center (separate group, reuses nodeServerH)
@@ -1312,16 +1320,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			})
 
 		// Geo Rules (moved under /node-servers/:id/geo-rules)
-
-			// WARP
-			warpGroup := protected.Group("/warp")
-			{
-				warpGroup.POST("/register", warpH.Register)
-				warpGroup.GET("/status", warpH.Status)
-				warpGroup.POST("/generate-config", warpH.GenerateConfig)
-				warpGroup.GET("/config", warpH.GetConfig)
-				warpGroup.DELETE("", warpH.Reset)
-			}
 
 			// Metrics
 			metricsGroup := protected.Group("/metrics")

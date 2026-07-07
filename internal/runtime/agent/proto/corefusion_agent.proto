@@ -618,24 +618,27 @@ message OutboundConfigEntry {
 }
 
 message WarpConfigEntry {
-  int64  id = 1;
-  string device_id = 2;
-  string token = 3;
-  string private_key = 4;
-  string public_key = 5;
-  string reserved = 6;
-  string address_ipv4 = 7;
-  string address_ipv6 = 8;
-  string endpoint = 9;
-  string client_id = 10;
-  string account_id = 11;
-  string account_type = 12;
-  string license_key = 13;
-  int64  registration_at = 14;
-  string status = 15;
-  string config_json = 16;
-  int64  created_at = 17;
-  int64  updated_at = 18;
+int64  id = 1;
+string device_id = 2;
+string token = 3;
+string private_key = 4;
+string public_key = 5;
+string reserved = 6;
+string address_ipv4 = 7;
+string address_ipv6 = 8;
+string endpoint = 9;
+string client_id = 10;
+string account_id = 11;
+string account_type = 12;
+string license_key = 13;
+int64  registration_at = 14;
+string status = 15;
+string config_json = 16;
+int64  created_at = 17;
+int64  updated_at = 18;
+int64  server_id = 19;
+string core_type = 20;
+string remark = 21;
 }
 
 message ShareDomainConfigEntry {

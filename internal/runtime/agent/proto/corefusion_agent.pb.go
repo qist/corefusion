@@ -4106,6 +4106,9 @@ type WarpConfigEntry struct {
 	ConfigJson     string                 `protobuf:"bytes,16,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
 	CreatedAt      int64                  `protobuf:"varint,17,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      int64                  `protobuf:"varint,18,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ServerId       int64                  `protobuf:"varint,19,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	CoreType       string                 `protobuf:"bytes,20,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
+	Remark         string                 `protobuf:"bytes,21,opt,name=remark,proto3" json:"remark,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -4264,6 +4267,27 @@ func (x *WarpConfigEntry) GetUpdatedAt() int64 {
 		return x.UpdatedAt
 	}
 	return 0
+}
+
+func (x *WarpConfigEntry) GetServerId() int64 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
+}
+
+func (x *WarpConfigEntry) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *WarpConfigEntry) GetRemark() string {
+	if x != nil {
+		return x.Remark
+	}
+	return ""
 }
 
 type ShareDomainConfigEntry struct {
@@ -5004,7 +5028,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"created_at\x18\n" +
 	" \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\x03R\tupdatedAt\"\xb2\x04\n" +
+	"updated_at\x18\v \x01(\x03R\tupdatedAt\"\x84\x05\n" +
 	"\x0fWarpConfigEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x14\n" +
@@ -5031,7 +5055,10 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x11 \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x12 \x01(\x03R\tupdatedAt\"\xa8\x02\n" +
+	"updated_at\x18\x12 \x01(\x03R\tupdatedAt\x12\x1b\n" +
+	"\tserver_id\x18\x13 \x01(\x03R\bserverId\x12\x1b\n" +
+	"\tcore_type\x18\x14 \x01(\tR\bcoreType\x12\x16\n" +
+	"\x06remark\x18\x15 \x01(\tR\x06remark\"\xa8\x02\n" +
 	"\x16ShareDomainConfigEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +

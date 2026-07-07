@@ -2213,13 +2213,15 @@ function onOutboundMaskTypeChange(entry, protocol) {
 
 async function importWarp() {
   try {
-    // Check WARP status
+    const coreType = props.coreType || 'xray'
+    const warpBase = `/node-servers/${props.serverId}/warp`
+    // Check WARP status for this node + core type
     let status
-    try { status = await client.get('/warp/status') } catch { status = null }
+    try { status = await client.get(`${warpBase}/status`, { params: { core_type: coreType } }) } catch { status = null }
     // Register if not registered
     if (!status || !status.registered) {
       ElMessage.info(t('protoCenter.outbounds.warpRegistering'))
-      status = await client.post('/warp/register')
+      status = await client.post(`${warpBase}/register`, { core_type: coreType })
       if (!status || !status.registered) {
         ElMessage.error(t('protoCenter.outbounds.warpRegisterFailed'))
         return

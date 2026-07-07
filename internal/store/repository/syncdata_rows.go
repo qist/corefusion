@@ -90,11 +90,11 @@ func (r *OutboundConfigRepository) ListRows(ctx context.Context, serverID int64)
 	return rows, err
 }
 
-// ListRows returns all warp config rows.
-func (r *WarpRepository) ListRows(ctx context.Context) ([]WarpConfigRow, error) {
+// ListRows returns all warp config rows for a specific server.
+func (r *WarpRepository) ListRows(ctx context.Context, serverID int64) ([]WarpConfigRow, error) {
 	var rows []WarpConfigRow
 	err := r.db.WithContext(ctx).
-		Where("status != ?", "not_registered").
+		Where("server_id = ? AND status != ?", serverID, "not_registered").
 		Order("id DESC").
 		Find(&rows).Error
 	return rows, err

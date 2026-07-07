@@ -339,6 +339,7 @@ export default {
       customDomainPlaceholder: 'example.com or 1.2.3.4',
       customPort: 'Port',
       customPortHint: 'Default 443',
+      customPortCustom: 'Custom Port',
       // Table columns
       traffic: 'Traffic',
       details: 'Details',

@@ -10,7 +10,7 @@
 //   1. Bootstrap：用 Bootstrap Token 向面板换取 mTLS 证书
 //   2. 反向连接面板 gRPC Server，建立 HeartbeatService 双向 stream
 //   3. 定时上报：进程状态、健康指标
-//   4. 启动 AgentService gRPC Server，接收面板指令（委托给 LocalAgent → process.Manager / proxy.Manager）
+//   4. 通过 stream 接收面板指令（委托给 LocalAgent → process.Manager / proxy.Manager）
 //   5. 本地守护：核心/代理崩溃自动重启（Guardian，独立于面板连接）
 package main
 
@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +30,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -71,7 +71,7 @@ type AgentConfig struct {
 		Token string `yaml:"token"`
 	} `yaml:"bootstrap"`
 	Agent struct {
-		ListenPort int    `yaml:"listen_port"` // Agent gRPC server port (for Panel→Agent direct RPC)
+		ListenPort int    `yaml:"listen_port"` // Deprecated: no longer used. All communication via heartbeat stream.
 		LogLevel   string `yaml:"log_level"`
 		DataDir    string `yaml:"data_dir"`
 	} `yaml:"agent"`
@@ -148,10 +148,9 @@ func main() {
 	// the config generator will use it to generate the runtime config.
 	app.StartLocalDaemons(ctx)
 
-	// Phase 3: Start AgentService gRPC server (Panel→Agent direct RPC, mTLS)
-	go app.StartGRPCServer(ctx)
-
-	// Phase 4: Connect to Panel and run heartbeat loop (auto-reconnect)
+	// Phase 3: Connect to Panel and run heartbeat loop (auto-reconnect)
+	// All Panel→Agent communication goes through the heartbeat stream.
+	// No reverse-dial gRPC server is needed — this simplifies container/NAT deployment.
 	// On first successful connection, the Agent will request SyncData from the panel
 	// to ensure its local database is up-to-date.
 	go app.RunHeartbeatLoop(ctx)
@@ -191,6 +190,10 @@ type AgentApp struct {
 
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
+
+	// streamSendMu protects stream.Send calls from concurrent goroutines
+	// (heartbeat ticker, status ticker, recv loop, TaskQueue workers)
+	streamSendMu sync.Mutex
 }
 
 func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
@@ -297,8 +300,8 @@ func (s *agentSettingStore) Set(ctx context.Context, key, value string) error {
 
 // syncGithubAccelSettings writes GitHub acceleration config to the Agent's local
 // settings DB so that installer and proxyMgr can use it for downloads.
-func (s *agentServiceServer) syncGithubAccelSettings(ctx context.Context, accelDomain, proxyURL string) {
-	if s.settingRepo == nil {
+func (a *AgentApp) syncGithubAccelSettings(ctx context.Context, accelDomain, proxyURL string) {
+	if a.settingRepo == nil {
 		return
 	}
 	if accelDomain == "" && proxyURL == "" {
@@ -316,7 +319,7 @@ func (s *agentServiceServer) syncGithubAccelSettings(ctx context.Context, accelD
 		}
 	}
 	data, _ := json.Marshal(cfg)
-	s.settingRepo.Set(ctx, "github.acceleration", string(data))
+	a.settingRepo.Set(ctx, "github.acceleration", string(data))
 	log.Printf("[Agent] synced github.acceleration settings (accel=%s, proxy=%s)", accelDomain, proxyURL)
 }
 
@@ -579,6 +582,8 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 
 func (a *AgentApp) sendHeartbeat(stream agentpb.HeartbeatService_StreamClient) error {
 	cpu, mem := getSystemMetrics()
+	a.streamSendMu.Lock()
+	defer a.streamSendMu.Unlock()
 	return stream.Send(&agentpb.AgentReport{
 		Type:          agentpb.AgentReport_HEARTBEAT,
 		ServerId:      a.cfg.Panel.ServerID,
@@ -630,6 +635,8 @@ func (a *AgentApp) sendStatusReport(stream agentpb.HeartbeatService_StreamClient
 	if err != nil {
 		return err
 	}
+	a.streamSendMu.Lock()
+	defer a.streamSendMu.Unlock()
 	return stream.Send(&agentpb.AgentReport{
 		Type:      agentpb.AgentReport_STATUS,
 		ServerId:  a.cfg.Panel.ServerID,
@@ -644,13 +651,55 @@ func (a *AgentApp) sendStatusReport(stream agentpb.HeartbeatService_StreamClient
 // ============================================================
 
 func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.HeartbeatService_StreamClient) {
+	ctx := context.Background()
+	cmdID := cmd.CommandId
+
+	// sendSyncResult is a helper for synchronous read operations.
+	// It executes the function, marshals the result to detail_json, and sends a TaskResult.
+	sendSyncResult := func(taskType string, resp interface{}, execErr error) {
+		if execErr != nil {
+			a.sendTaskResult(stream, &agentpb.TaskResult{
+				TaskId:   cmdID,
+				Status:   agentpb.TaskStatus_TASK_FAILED,
+				Error:    execErr.Error(),
+				TaskType: taskType,
+				FinishedAt: time.Now().Unix(),
+			})
+			return
+		}
+		jsonBytes, _ := json.Marshal(resp)
+		a.sendTaskResult(stream, &agentpb.TaskResult{
+			TaskId:     cmdID,
+			Status:     agentpb.TaskStatus_TASK_SUCCESS,
+			TaskType:   taskType,
+			DetailJson: string(jsonBytes),
+			FinishedAt: time.Now().Unix(),
+		})
+	}
+
+	// submitAsyncTask is a helper for asynchronous operations.
+	// It submits to the TaskQueue with a callback that sends TaskResult via stream.
+	submitAsyncTask := func(taskType, idempotencyKey string, fn func(ctx context.Context) (interface{}, error)) {
+		a.localAgent.GetTaskQueue().Submit(cmdID, taskType, idempotencyKey, fn, func(result *agentpb.TaskResult) {
+			if result.TaskId == "" {
+				result.TaskId = cmdID
+			}
+			a.sendTaskResult(stream, result)
+		})
+		// Immediately send TASK_QUEUED confirmation so the Panel knows the command was accepted
+		a.sendTaskResult(stream, &agentpb.TaskResult{
+			TaskId:   cmdID,
+			Status:   agentpb.TaskStatus_TASK_QUEUED,
+			TaskType: taskType,
+		})
+	}
+
 	switch c := cmd.Command.(type) {
+
+	// ========== Fire-and-forget commands (existing, unchanged) ==========
 	case *agentpb.PanelCommand_SyncConfig:
 		req := c.SyncConfig
-		// Delegate to LocalAgent.SyncConfig which handles task submission
-		// with content-based idempotency key and file writing.
-		// We don't double-submit to the task queue.
-		if err := a.localAgent.SyncConfig(context.Background(), req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
+		if err := a.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
 			log.Printf("[Agent] config sync failed: %s: %v", req.CoreType, err)
 		} else {
 			log.Printf("[Agent] config synced: %s (version=%d)", req.CoreType, req.ConfigVersion)
@@ -658,9 +707,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_ControlCore:
 		req := c.ControlCore
-		// Delegate to LocalAgent.ControlCore which handles task submission
-		// with its own idempotency key. Don't double-submit to the task queue.
-		if err := a.localAgent.ControlCore(context.Background(), req.CoreType, req.Action); err != nil {
+		if err := a.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
 			log.Printf("[Agent] ControlCore %s %s failed: %v", req.CoreType, req.Action, err)
 		} else {
 			log.Printf("[Agent] ControlCore %s %s accepted", req.CoreType, req.Action)
@@ -668,8 +715,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
 		req := c.SyncProxyConfig
-		// Delegate to LocalAgent.SyncProxyConfig which handles task submission.
-		if err := a.localAgent.SyncProxyConfig(context.Background(), req.ProxyType, req.ConfigContent); err != nil {
+		if err := a.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
 			log.Printf("[Agent] proxy config sync failed: %s: %v", req.ProxyType, err)
 		} else {
 			log.Printf("[Agent] proxy config synced: %s", req.ProxyType)
@@ -677,8 +723,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_ControlProxy:
 		req := c.ControlProxy
-		// Delegate to LocalAgent.ControlProxy which handles task submission.
-		if err := a.localAgent.ControlProxy(context.Background(), req.ProxyType, req.Action); err != nil {
+		if err := a.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
 			log.Printf("[Agent] ControlProxy %s %s failed: %v", req.ProxyType, req.Action, err)
 		} else {
 			log.Printf("[Agent] ControlProxy %s %s accepted", req.ProxyType, req.Action)
@@ -686,8 +731,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_AlterUsers:
 		req := c.AlterUsers
-		// Delegate to LocalAgent.AlterUsers which handles task submission.
-		if err := a.localAgent.AlterUsers(context.Background(), req); err != nil {
+		if err := a.localAgent.AlterUsers(ctx, req); err != nil {
 			log.Printf("[Agent] AlterUsers %s failed: %v", req.Action, err)
 		} else {
 			log.Printf("[Agent] AlterUsers %s accepted", req.Action)
@@ -712,17 +756,119 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	case *agentpb.PanelCommand_UpdateAgent:
 		log.Printf("[Agent] UpdateAgent command received: version=%s (not implemented)", c.UpdateAgent.Version)
 
+	// ========== SyncData — send TaskResult with response ==========
 	case *agentpb.PanelCommand_SyncData:
 		req := c.SyncData
 		log.Printf("[Agent] received SyncData: server_id=%d, %d core_configs, %d inbound_configs, %d outbound_configs, %d warp_configs, %d share_domain_configs",
 			req.ServerId, len(req.CoreConfigs), len(req.InboundConfigs), len(req.OutboundConfigs), len(req.WarpConfigs), len(req.ShareDomainConfigs))
-		resp, err := a.handleSyncData(context.Background(), req)
+		resp, err := a.handleSyncData(ctx, req)
 		if err != nil {
 			log.Printf("[Agent] SyncData failed: %v", err)
+			a.sendTaskResult(stream, &agentpb.TaskResult{
+				TaskId:   cmdID,
+				Status:   agentpb.TaskStatus_TASK_FAILED,
+				Error:    err.Error(),
+				TaskType: "sync_data",
+				FinishedAt: time.Now().Unix(),
+			})
 		} else {
 			log.Printf("[Agent] SyncData completed: success=%v, core_configs=%d, inbound=%d, outbound=%d, config_generated=%v, core_started=%v",
 				resp.Success, resp.CoreConfigsApplied, resp.InboundConfigsApplied, resp.OutboundConfigsApplied, resp.ConfigGenerated, resp.CoreStarted)
+			jsonBytes, _ := json.Marshal(resp)
+			a.sendTaskResult(stream, &agentpb.TaskResult{
+				TaskId:     cmdID,
+				Status:     agentpb.TaskStatus_TASK_SUCCESS,
+				TaskType:   "sync_data",
+				DetailJson: string(jsonBytes),
+				FinishedAt: time.Now().Unix(),
+			})
 		}
+
+	// ========== Async tasks: submit to TaskQueue, callback sends TaskResult ==========
+	case *agentpb.PanelCommand_InstallBinary:
+		req := c.InstallBinary
+		a.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
+		submitAsyncTask("install_binary",
+			fmt.Sprintf("install_binary:%s:%s", req.CoreType, req.Version),
+			func(ctx context.Context) (interface{}, error) {
+				err := a.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]interface{}{"core_type": req.CoreType, "version": req.Version}, nil
+			})
+
+	case *agentpb.PanelCommand_InstallProxy:
+		req := c.InstallProxy
+		a.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
+		submitAsyncTask("install_proxy",
+			fmt.Sprintf("install_proxy:%s:%s", req.ProxyType, req.TagName),
+			func(ctx context.Context) (interface{}, error) {
+				if req.DownloadUrl != "" {
+					return nil, a.localAgent.InstallProxyVersion(ctx, req.ProxyType, req.DownloadUrl, req.TagName)
+				}
+				return nil, a.localAgent.InstallProxy(ctx, req.ProxyType)
+			})
+
+	// ========== Synchronous read operations: execute and send TaskResult ==========
+	case *agentpb.PanelCommand_GetMetrics:
+		cpu, mem := getSystemMetrics()
+		resp := &agentpb.GetMetricsResponse{
+			Points: []*agentpb.MetricPoint{{
+				Timestamp:     time.Now().Unix(),
+				CpuUsage:      cpu,
+				MemUsageBytes: mem,
+			}},
+		}
+		sendSyncResult("get_metrics", resp, nil)
+
+	case *agentpb.PanelCommand_ListBinaries:
+		resp := a.localAgent.ListBinaries()
+		sendSyncResult("list_binaries", resp, nil)
+
+	case *agentpb.PanelCommand_GetProxyStatus:
+		resp := a.localAgent.GetProxyStatuses()
+		sendSyncResult("get_proxy_status", resp, nil)
+
+	case *agentpb.PanelCommand_SpeedTest:
+		// TODO: implement SpeedTest logic
+		sendSyncResult("speed_test", &agentpb.SpeedTestResponse{
+			Success: false, Error: "not implemented",
+		}, nil)
+
+	case *agentpb.PanelCommand_DownloadGeoRule:
+		req := c.DownloadGeoRule
+		resp := a.handleDownloadGeoRule(ctx, req)
+		sendSyncResult("download_geo_rule", resp, nil)
+
+	case *agentpb.PanelCommand_ListInterfaces:
+		names, err := a.localAgent.ListInterfaces()
+		sendSyncResult("list_interfaces", &agentpb.ListInterfacesResponse{Interfaces: names}, err)
+
+	case *agentpb.PanelCommand_ExecuteBinary:
+		req := c.ExecuteBinary
+		if req.RawOutput {
+			out, err := a.localAgent.ExecuteBinaryRawOutput(ctx, req.CoreType, req.Args...)
+			sendSyncResult("execute_binary", &agentpb.ExecuteBinaryResponse{
+				Success: true, Stdout: out,
+			}, err)
+		} else {
+			parsed, err := a.localAgent.ExecuteBinaryCommand(ctx, req.CoreType, req.Args...)
+			sendSyncResult("execute_binary", &agentpb.ExecuteBinaryResponse{
+				Success: true, Parsed: parsed,
+			}, err)
+		}
+
+	case *agentpb.PanelCommand_XrayApi:
+		resp, err := a.localAgent.XrayAPIProxy(ctx, c.XrayApi)
+		sendSyncResult("xray_api", resp, err)
+
+	case *agentpb.PanelCommand_ReadConfigFile:
+		req := c.ReadConfigFile
+		data, filePath, err := a.localAgent.ReadConfigFile(req.CoreType)
+		sendSyncResult("read_config_file", &agentpb.ReadConfigFileResponse{
+			Success: true, Content: data, FilePath: filePath,
+		}, err)
 
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)
@@ -730,6 +876,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 }
 
 // sendTaskResult sends a TaskResult back to the panel via the heartbeat stream.
+// Thread-safe: uses streamSendMu to protect concurrent stream.Send calls.
 func (a *AgentApp) sendTaskResult(stream agentpb.HeartbeatService_StreamClient, result *agentpb.TaskResult) {
 	report := &agentpb.AgentReport{
 		Type:       agentpb.AgentReport_TASK_RESULT,
@@ -737,8 +884,10 @@ func (a *AgentApp) sendTaskResult(stream agentpb.HeartbeatService_StreamClient, 
 		Timestamp:  time.Now().Unix(),
 		TaskResult: result,
 	}
+	a.streamSendMu.Lock()
+	defer a.streamSendMu.Unlock()
 	if err := stream.Send(report); err != nil {
-		log.Printf("[Agent] failed to send task result (id=%s): %v", result.TaskId, err)
+		log.Printf("[Agent] failed to send task result (id=%s type=%s): %v", result.TaskId, result.TaskType, err)
 	}
 }
 
@@ -778,200 +927,20 @@ func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 	}
 }
 
-// ============================================================
-// AgentService gRPC Server (Panel→Agent direct RPC)
-// Delegates to LocalAgent — same as how Panel handles is_local servers
-// ============================================================
-
-// agentServiceServer implements AgentService by delegating to LocalAgent.
-// This is the remote equivalent of how the Panel's NodeServerManager
-// delegates to LocalAgent for is_local=1 servers.
-type agentServiceServer struct {
-	agentpb.UnimplementedAgentServiceServer
-	localAgent  *agent.LocalAgent
-	dataDir     string
-	settingRepo *repository.SystemSettingRepository
-	app         *AgentApp
-}
-
-func (s *agentServiceServer) SyncConfig(ctx context.Context, req *agentpb.SyncConfigRequest) (*agentpb.TaskAccept, error) {
-	// Delegate directly to LocalAgent.SyncConfig which handles task submission
-	// with content-based idempotency key.
-	if err := s.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) ControlCore(ctx context.Context, req *agentpb.ControlCoreRequest) (*agentpb.TaskAccept, error) {
-	// Delegate to LocalAgent.ControlCore which handles task submission internally.
-	// Don't double-submit to the task queue.
-	if err := s.localAgent.ControlCore(ctx, req.CoreType, req.Action); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) GetStatus(ctx context.Context, req *agentpb.GetStatusRequest) (*agentpb.GetStatusResponse, error) {
-	return s.localAgent.GetStatus(ctx)
-}
-
-func (s *agentServiceServer) SyncProxyConfig(ctx context.Context, req *agentpb.SyncProxyConfigRequest) (*agentpb.TaskAccept, error) {
-	// Delegate to LocalAgent.SyncProxyConfig which handles task submission internally.
-	if err := s.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) ControlProxy(ctx context.Context, req *agentpb.ControlProxyRequest) (*agentpb.TaskAccept, error) {
-	// Delegate to LocalAgent.ControlProxy which handles task submission internally.
-	if err := s.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) AlterUsers(ctx context.Context, req *agentpb.AlterUsersRequest) (*agentpb.TaskAccept, error) {
-	// Delegate to LocalAgent.AlterUsers which handles task submission internally.
-	if err := s.localAgent.AlterUsers(ctx, req); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRequest) (*agentpb.TaskAccept, error) {
-	// Delegate to LocalAgent.ApplyLimits which handles task submission internally.
-	if err := s.localAgent.ApplyLimits(ctx, req); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) UpdateAgent(ctx context.Context, req *agentpb.UpdateAgentRequest) (*agentpb.TaskAccept, error) {
-	return &agentpb.TaskAccept{Accepted: false, RejectReason: "not implemented"}, nil
-}
-
-func (s *agentServiceServer) SpeedTest(ctx context.Context, req *agentpb.SpeedTestRequest) (*agentpb.SpeedTestResponse, error) {
-	return &agentpb.SpeedTestResponse{Success: false, Error: "not implemented"}, nil
-}
-
-// ReadConfigFile reads the runtime config file from the agent's local data directory.
-func (s *agentServiceServer) ReadConfigFile(ctx context.Context, req *agentpb.ReadConfigFileRequest) (*agentpb.ReadConfigFileResponse, error) {
-	if req.CoreType == "" {
-		return &agentpb.ReadConfigFileResponse{Success: false, Error: "core_type is required"}, nil
-	}
-	data, filePath, err := s.localAgent.ReadConfigFile(req.CoreType)
-	if err != nil {
-		return &agentpb.ReadConfigFileResponse{Success: false, Error: err.Error()}, nil
-	}
-	return &agentpb.ReadConfigFileResponse{
-		Success:  true,
-		Content:  data,
-		FilePath: filePath,
-	}, nil
-}
-
-func (s *agentServiceServer) GetMetrics(ctx context.Context, req *agentpb.GetMetricsRequest) (*agentpb.GetMetricsResponse, error) {
-	cpu, mem := getSystemMetrics()
-	return &agentpb.GetMetricsResponse{
-		Points: []*agentpb.MetricPoint{
-			{
-				Timestamp:     time.Now().Unix(),
-				CpuUsage:      cpu,
-				MemUsageBytes: mem,
-			},
-		},
-	}, nil
-}
-
-// GetTask queries the status of an async task.
-func (s *agentServiceServer) GetTask(ctx context.Context, req *agentpb.GetTaskRequest) (*agentpb.GetTaskResponse, error) {
-	return s.localAgent.GetTaskQueue().GetTask(req.TaskId), nil
-}
-
-// XrayAPI proxies xray gRPC API calls to the local xray process.
-// This allows the panel to control xray on remote nodes via the Agent.
-func (s *agentServiceServer) XrayAPI(ctx context.Context, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
-	return s.localAgent.XrayAPIProxy(ctx, req)
-}
-
-// ListInterfaces returns the network interface names on the Agent's host.
-func (s *agentServiceServer) ListInterfaces(ctx context.Context, req *agentpb.ListInterfacesRequest) (*agentpb.ListInterfacesResponse, error) {
-	names, err := s.localAgent.ListInterfaces()
-	if err != nil {
-		return nil, err
-	}
-	return &agentpb.ListInterfacesResponse{Interfaces: names}, nil
-}
-
-// ExecuteBinary executes a core binary command on the Agent's host.
-func (s *agentServiceServer) ExecuteBinary(ctx context.Context, req *agentpb.ExecuteBinaryRequest) (*agentpb.ExecuteBinaryResponse, error) {
-	if req.RawOutput {
-		out, err := s.localAgent.ExecuteBinaryRawOutput(ctx, req.CoreType, req.Args...)
-		if err != nil {
-			return &agentpb.ExecuteBinaryResponse{Success: false, Error: err.Error()}, nil
-		}
-		return &agentpb.ExecuteBinaryResponse{Success: true, Stdout: out}, nil
-	}
-	parsed, err := s.localAgent.ExecuteBinaryCommand(ctx, req.CoreType, req.Args...)
-	if err != nil {
-		return &agentpb.ExecuteBinaryResponse{Success: false, Error: err.Error()}, nil
-	}
-	return &agentpb.ExecuteBinaryResponse{Success: true, Parsed: parsed}, nil
-}
-
-func (s *agentServiceServer) InstallBinary(ctx context.Context, req *agentpb.InstallBinaryRequest) (*agentpb.TaskAccept, error) {
-	// Sync GitHub acceleration settings to local DB before install
-	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
-	// Delegate to LocalAgent which handles task submission internally.
-	if err := s.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName); err != nil {
-		return nil, err
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) InstallProxy(ctx context.Context, req *agentpb.InstallProxyRequest) (*agentpb.TaskAccept, error) {
-	// Sync GitHub acceleration settings to local DB before install
-	s.syncGithubAccelSettings(ctx, req.AccelDomain, req.ProxyUrl)
-	// Delegate to LocalAgent which handles task submission internally.
-	if req.DownloadUrl != "" {
-		if err := s.localAgent.InstallProxyVersion(ctx, req.ProxyType, req.DownloadUrl, req.TagName); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.localAgent.InstallProxy(ctx, req.ProxyType); err != nil {
-			return nil, err
-		}
-	}
-	return &agentpb.TaskAccept{Accepted: true}, nil
-}
-
-func (s *agentServiceServer) GetProxyStatus(ctx context.Context, req *agentpb.GetProxyStatusRequest) (*agentpb.GetProxyStatusResponse, error) {
-	return s.localAgent.GetProxyStatuses(), nil
-}
-
-func (s *agentServiceServer) ListBinaries(ctx context.Context, req *agentpb.ListBinariesRequest) (*agentpb.ListBinariesResponse, error) {
-	return s.localAgent.ListBinaries(), nil
-}
-
-func (s *agentServiceServer) ListReleases(ctx context.Context, req *agentpb.ListReleasesRequest) (*agentpb.ListBinariesResponse, error) {
-	return &agentpb.ListBinariesResponse{}, nil
-}
-
-// DownloadGeoRule downloads a geo rule file to the Agent's local data/rules/ directory.
-func (s *agentServiceServer) DownloadGeoRule(ctx context.Context, req *agentpb.DownloadGeoRuleRequest) (*agentpb.DownloadGeoRuleResponse, error) {
+// handleDownloadGeoRule downloads a geo rule file to the Agent's local data/rules/ directory.
+// Moved from the deleted agentServiceServer — now used via stream PanelCommand.
+func (a *AgentApp) handleDownloadGeoRule(ctx context.Context, req *agentpb.DownloadGeoRuleRequest) *agentpb.DownloadGeoRuleResponse {
 	if req.FileName == "" || req.DownloadUrl == "" {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: "file_name and download_url are required"}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: "file_name and download_url are required"}
 	}
 
-	rulesDir := filepath.Join(s.dataDir, "rules")
-	tmpDir := filepath.Join(s.dataDir, "rules_tmp")
+	rulesDir := filepath.Join(a.dataDir, "rules")
+	tmpDir := filepath.Join(a.dataDir, "rules_tmp")
 	if err := os.MkdirAll(rulesDir, 0750); err != nil {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create rules dir: %v", err)}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create rules dir: %v", err)}
 	}
 	if err := os.MkdirAll(tmpDir, 0750); err != nil {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create tmp dir: %v", err)}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create tmp dir: %v", err)}
 	}
 
 	filePath := filepath.Join(rulesDir, req.FileName)
@@ -985,36 +954,36 @@ func (s *agentServiceServer) DownloadGeoRule(ctx context.Context, req *agentpb.D
 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}
 	}
 
 	// Use HTTP client with GitHub acceleration and/or proxy support
 	client := netutil.GitHubHTTPClientWithProxy(120*time.Second, req.AccelDomain, req.ProxyUrl)
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("download failed: HTTP %d", resp.StatusCode)}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("download failed: HTTP %d", resp.StatusCode)}
 	}
 
 	f, err := os.Create(tmpPath)
 	if err != nil {
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}
 	}
 
 	size, err := io.Copy(f, resp.Body)
 	f.Close()
 	if err != nil {
 		os.Remove(tmpPath)
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}
 	}
 
 	if err := os.Rename(tmpPath, filePath); err != nil {
 		os.Remove(tmpPath)
-		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}, nil
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}
 	}
 
 	log.Printf("[Agent] geo rule downloaded: %s (%d bytes) → %s", req.FileName, size, filePath)
@@ -1022,59 +991,6 @@ func (s *agentServiceServer) DownloadGeoRule(ctx context.Context, req *agentpb.D
 		Success:  true,
 		FileSize: size,
 		FilePath: filePath,
-	}, nil
-}
-
-// SyncData handles the SyncData RPC call on the Agent.
-// It receives database table data from the panel, writes it to the local
-// SQLite database, and optionally generates the runtime config and starts the core.
-func (s *agentServiceServer) SyncData(ctx context.Context, req *agentpb.SyncDataRequest) (*agentpb.SyncDataResponse, error) {
-	log.Printf("[Agent] SyncData RPC: server_id=%d, %d core_configs, %d inbound_configs, %d outbound_configs, %d warp_configs, %d share_domain_configs, %d certificates",
-		req.ServerId, len(req.CoreConfigs), len(req.InboundConfigs), len(req.OutboundConfigs), len(req.WarpConfigs), len(req.ShareDomainConfigs), len(req.Certificates))
-
-	// Delegate to AgentApp's handleSyncData method
-	return s.app.handleSyncData(ctx, req)
-}
-
-func (a *AgentApp) StartGRPCServer(ctx context.Context) {
-	cert, err := tls.LoadX509KeyPair(a.certPath, a.keyPath)
-	if err != nil {
-		log.Printf("[Agent] failed to load cert for gRPC server: %v", err)
-		return
-	}
-
-	caPEM, err := os.ReadFile(a.caPath)
-	if err != nil {
-		log.Printf("[Agent] failed to read CA for gRPC server: %v", err)
-		return
-	}
-	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caPEM)
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    caPool,
-		MinVersion:   tls.VersionTLS13,
-	}
-
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", a.cfg.Agent.ListenPort))
-	if err != nil {
-		log.Printf("[Agent] failed to listen on :%d: %v", a.cfg.Agent.ListenPort, err)
-		return
-	}
-
-	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
-	agentpb.RegisterAgentServiceServer(server, &agentServiceServer{localAgent: a.localAgent, dataDir: a.dataDir, settingRepo: a.settingRepo, app: a})
-
-	log.Printf("[Agent] gRPC server listening on :%d (mTLS)", a.cfg.Agent.ListenPort)
-	go func() {
-		<-ctx.Done()
-		server.GracefulStop()
-	}()
-
-	if err := server.Serve(lis); err != nil {
-		log.Printf("[Agent] gRPC server error: %v", err)
 	}
 }
 

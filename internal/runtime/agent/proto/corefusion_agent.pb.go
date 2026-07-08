@@ -2573,6 +2573,17 @@ type PanelCommand struct {
 	//	*PanelCommand_ControlProxy
 	//	*PanelCommand_UpdateAgent
 	//	*PanelCommand_SyncData
+	//	*PanelCommand_InstallBinary
+	//	*PanelCommand_InstallProxy
+	//	*PanelCommand_GetMetrics
+	//	*PanelCommand_ListBinaries
+	//	*PanelCommand_GetProxyStatus
+	//	*PanelCommand_SpeedTest
+	//	*PanelCommand_DownloadGeoRule
+	//	*PanelCommand_ListInterfaces
+	//	*PanelCommand_ExecuteBinary
+	//	*PanelCommand_XrayApi
+	//	*PanelCommand_ReadConfigFile
 	Command       isPanelCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2728,6 +2739,105 @@ func (x *PanelCommand) GetSyncData() *SyncDataRequest {
 	return nil
 }
 
+func (x *PanelCommand) GetInstallBinary() *InstallBinaryRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_InstallBinary); ok {
+			return x.InstallBinary
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetInstallProxy() *InstallProxyRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_InstallProxy); ok {
+			return x.InstallProxy
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetGetMetrics() *GetMetricsRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_GetMetrics); ok {
+			return x.GetMetrics
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetListBinaries() *ListBinariesRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_ListBinaries); ok {
+			return x.ListBinaries
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetGetProxyStatus() *GetProxyStatusRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_GetProxyStatus); ok {
+			return x.GetProxyStatus
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetSpeedTest() *SpeedTestRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_SpeedTest); ok {
+			return x.SpeedTest
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetDownloadGeoRule() *DownloadGeoRuleRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_DownloadGeoRule); ok {
+			return x.DownloadGeoRule
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetListInterfaces() *ListInterfacesRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_ListInterfaces); ok {
+			return x.ListInterfaces
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetExecuteBinary() *ExecuteBinaryRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_ExecuteBinary); ok {
+			return x.ExecuteBinary
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetXrayApi() *XrayAPIRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_XrayApi); ok {
+			return x.XrayApi
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetReadConfigFile() *ReadConfigFileRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_ReadConfigFile); ok {
+			return x.ReadConfigFile
+		}
+	}
+	return nil
+}
+
 type isPanelCommand_Command interface {
 	isPanelCommand_Command()
 }
@@ -2776,6 +2886,51 @@ type PanelCommand_SyncData struct {
 	SyncData *SyncDataRequest `protobuf:"bytes,11,opt,name=sync_data,json=syncData,proto3,oneof"` // 数据库级别数据同步
 }
 
+type PanelCommand_InstallBinary struct {
+	// --- 新增：通过 Stream 下发的原 AgentService RPC ---
+	InstallBinary *InstallBinaryRequest `protobuf:"bytes,12,opt,name=install_binary,json=installBinary,proto3,oneof"` // 安装核心二进制
+}
+
+type PanelCommand_InstallProxy struct {
+	InstallProxy *InstallProxyRequest `protobuf:"bytes,13,opt,name=install_proxy,json=installProxy,proto3,oneof"` // 安装代理二进制
+}
+
+type PanelCommand_GetMetrics struct {
+	GetMetrics *GetMetricsRequest `protobuf:"bytes,14,opt,name=get_metrics,json=getMetrics,proto3,oneof"` // 获取资源指标
+}
+
+type PanelCommand_ListBinaries struct {
+	ListBinaries *ListBinariesRequest `protobuf:"bytes,15,opt,name=list_binaries,json=listBinaries,proto3,oneof"` // 列出已安装二进制
+}
+
+type PanelCommand_GetProxyStatus struct {
+	GetProxyStatus *GetProxyStatusRequest `protobuf:"bytes,16,opt,name=get_proxy_status,json=getProxyStatus,proto3,oneof"` // 查询代理状态
+}
+
+type PanelCommand_SpeedTest struct {
+	SpeedTest *SpeedTestRequest `protobuf:"bytes,17,opt,name=speed_test,json=speedTest,proto3,oneof"` // 节点测速
+}
+
+type PanelCommand_DownloadGeoRule struct {
+	DownloadGeoRule *DownloadGeoRuleRequest `protobuf:"bytes,18,opt,name=download_geo_rule,json=downloadGeoRule,proto3,oneof"` // 下载 Geo 规则
+}
+
+type PanelCommand_ListInterfaces struct {
+	ListInterfaces *ListInterfacesRequest `protobuf:"bytes,19,opt,name=list_interfaces,json=listInterfaces,proto3,oneof"` // 列出网络接口
+}
+
+type PanelCommand_ExecuteBinary struct {
+	ExecuteBinary *ExecuteBinaryRequest `protobuf:"bytes,22,opt,name=execute_binary,json=executeBinary,proto3,oneof"` // 执行二进制命令
+}
+
+type PanelCommand_XrayApi struct {
+	XrayApi *XrayAPIRequest `protobuf:"bytes,23,opt,name=xray_api,json=xrayApi,proto3,oneof"` // Xray API 代理
+}
+
+type PanelCommand_ReadConfigFile struct {
+	ReadConfigFile *ReadConfigFileRequest `protobuf:"bytes,24,opt,name=read_config_file,json=readConfigFile,proto3,oneof"` // 读取配置文件
+}
+
 func (*PanelCommand_SyncConfig) isPanelCommand_Command() {}
 
 func (*PanelCommand_ControlCore) isPanelCommand_Command() {}
@@ -2797,6 +2952,28 @@ func (*PanelCommand_ControlProxy) isPanelCommand_Command() {}
 func (*PanelCommand_UpdateAgent) isPanelCommand_Command() {}
 
 func (*PanelCommand_SyncData) isPanelCommand_Command() {}
+
+func (*PanelCommand_InstallBinary) isPanelCommand_Command() {}
+
+func (*PanelCommand_InstallProxy) isPanelCommand_Command() {}
+
+func (*PanelCommand_GetMetrics) isPanelCommand_Command() {}
+
+func (*PanelCommand_ListBinaries) isPanelCommand_Command() {}
+
+func (*PanelCommand_GetProxyStatus) isPanelCommand_Command() {}
+
+func (*PanelCommand_SpeedTest) isPanelCommand_Command() {}
+
+func (*PanelCommand_DownloadGeoRule) isPanelCommand_Command() {}
+
+func (*PanelCommand_ListInterfaces) isPanelCommand_Command() {}
+
+func (*PanelCommand_ExecuteBinary) isPanelCommand_Command() {}
+
+func (*PanelCommand_XrayApi) isPanelCommand_Command() {}
+
+func (*PanelCommand_ReadConfigFile) isPanelCommand_Command() {}
 
 type TaskResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -4876,7 +5053,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\fuplink_bytes\x18\x02 \x01(\x03R\vuplinkBytes\x12%\n" +
 	"\x0edownlink_bytes\x18\x03 \x01(\x03R\rdownlinkBytes\x12#\n" +
 	"\rsession_start\x18\x04 \x01(\x03R\fsessionStart\x12\x1b\n" +
-	"\tcore_type\x18\x05 \x01(\tR\bcoreType\"\xb9\a\n" +
+	"\tcore_type\x18\x05 \x01(\tR\bcoreType\"\xba\x0e\n" +
 	"\fPanelCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x14 \x01(\tR\tcommandId\x12'\n" +
@@ -4896,7 +5073,20 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\rcontrol_proxy\x18\t \x01(\v2(.corefusion.agent.v1.ControlProxyRequestH\x00R\fcontrolProxy\x12L\n" +
 	"\fupdate_agent\x18\n" +
 	" \x01(\v2'.corefusion.agent.v1.UpdateAgentCommandH\x00R\vupdateAgent\x12C\n" +
-	"\tsync_data\x18\v \x01(\v2$.corefusion.agent.v1.SyncDataRequestH\x00R\bsyncDataB\t\n" +
+	"\tsync_data\x18\v \x01(\v2$.corefusion.agent.v1.SyncDataRequestH\x00R\bsyncData\x12R\n" +
+	"\x0einstall_binary\x18\f \x01(\v2).corefusion.agent.v1.InstallBinaryRequestH\x00R\rinstallBinary\x12O\n" +
+	"\rinstall_proxy\x18\r \x01(\v2(.corefusion.agent.v1.InstallProxyRequestH\x00R\finstallProxy\x12I\n" +
+	"\vget_metrics\x18\x0e \x01(\v2&.corefusion.agent.v1.GetMetricsRequestH\x00R\n" +
+	"getMetrics\x12O\n" +
+	"\rlist_binaries\x18\x0f \x01(\v2(.corefusion.agent.v1.ListBinariesRequestH\x00R\flistBinaries\x12V\n" +
+	"\x10get_proxy_status\x18\x10 \x01(\v2*.corefusion.agent.v1.GetProxyStatusRequestH\x00R\x0egetProxyStatus\x12F\n" +
+	"\n" +
+	"speed_test\x18\x11 \x01(\v2%.corefusion.agent.v1.SpeedTestRequestH\x00R\tspeedTest\x12Y\n" +
+	"\x11download_geo_rule\x18\x12 \x01(\v2+.corefusion.agent.v1.DownloadGeoRuleRequestH\x00R\x0fdownloadGeoRule\x12U\n" +
+	"\x0flist_interfaces\x18\x13 \x01(\v2*.corefusion.agent.v1.ListInterfacesRequestH\x00R\x0elistInterfaces\x12R\n" +
+	"\x0eexecute_binary\x18\x16 \x01(\v2).corefusion.agent.v1.ExecuteBinaryRequestH\x00R\rexecuteBinary\x12@\n" +
+	"\bxray_api\x18\x17 \x01(\v2#.corefusion.agent.v1.XrayAPIRequestH\x00R\axrayApi\x12V\n" +
+	"\x10read_config_file\x18\x18 \x01(\v2*.corefusion.agent.v1.ReadConfigFileRequestH\x00R\x0ereadConfigFileB\t\n" +
 	"\acommand\"\x9b\x02\n" +
 	"\n" +
 	"TaskResult\x12\x17\n" +
@@ -5238,67 +5428,78 @@ var file_corefusion_agent_proto_depIdxs = []int32{
 	9,  // 21: corefusion.agent.v1.PanelCommand.control_proxy:type_name -> corefusion.agent.v1.ControlProxyRequest
 	40, // 22: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
 	49, // 23: corefusion.agent.v1.PanelCommand.sync_data:type_name -> corefusion.agent.v1.SyncDataRequest
-	0,  // 24: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
-	51, // 25: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
-	52, // 26: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
-	53, // 27: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
-	54, // 28: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
-	55, // 29: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
-	50, // 30: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
-	60, // 31: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
-	13, // 32: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
-	20, // 33: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
-	25, // 34: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
-	28, // 35: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
-	31, // 36: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
-	33, // 37: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
-	18, // 38: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
-	16, // 39: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
-	7,  // 40: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
-	9,  // 41: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
-	6,  // 42: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
-	8,  // 43: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
-	10, // 44: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
-	12, // 45: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
-	23, // 46: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
-	24, // 47: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
-	15, // 48: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
-	45, // 49: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
-	47, // 50: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
-	57, // 51: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
-	49, // 52: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
-	4,  // 53: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
-	35, // 54: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
-	43, // 55: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
-	14, // 56: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
-	21, // 57: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
-	26, // 58: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
-	29, // 59: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
-	29, // 60: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
-	34, // 61: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
-	19, // 62: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
-	17, // 63: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
-	3,  // 64: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 65: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 66: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 67: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 68: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 69: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 70: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 71: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 72: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
-	46, // 73: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
-	48, // 74: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
-	58, // 75: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
-	56, // 76: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
-	5,  // 77: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
-	38, // 78: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
-	44, // 79: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
-	56, // [56:80] is the sub-list for method output_type
-	32, // [32:56] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	23, // 24: corefusion.agent.v1.PanelCommand.install_binary:type_name -> corefusion.agent.v1.InstallBinaryRequest
+	24, // 25: corefusion.agent.v1.PanelCommand.install_proxy:type_name -> corefusion.agent.v1.InstallProxyRequest
+	20, // 26: corefusion.agent.v1.PanelCommand.get_metrics:type_name -> corefusion.agent.v1.GetMetricsRequest
+	28, // 27: corefusion.agent.v1.PanelCommand.list_binaries:type_name -> corefusion.agent.v1.ListBinariesRequest
+	25, // 28: corefusion.agent.v1.PanelCommand.get_proxy_status:type_name -> corefusion.agent.v1.GetProxyStatusRequest
+	18, // 29: corefusion.agent.v1.PanelCommand.speed_test:type_name -> corefusion.agent.v1.SpeedTestRequest
+	33, // 30: corefusion.agent.v1.PanelCommand.download_geo_rule:type_name -> corefusion.agent.v1.DownloadGeoRuleRequest
+	47, // 31: corefusion.agent.v1.PanelCommand.list_interfaces:type_name -> corefusion.agent.v1.ListInterfacesRequest
+	57, // 32: corefusion.agent.v1.PanelCommand.execute_binary:type_name -> corefusion.agent.v1.ExecuteBinaryRequest
+	45, // 33: corefusion.agent.v1.PanelCommand.xray_api:type_name -> corefusion.agent.v1.XrayAPIRequest
+	16, // 34: corefusion.agent.v1.PanelCommand.read_config_file:type_name -> corefusion.agent.v1.ReadConfigFileRequest
+	0,  // 35: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
+	51, // 36: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
+	52, // 37: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
+	53, // 38: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
+	54, // 39: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
+	55, // 40: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
+	50, // 41: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
+	60, // 42: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	13, // 43: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
+	20, // 44: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
+	25, // 45: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
+	28, // 46: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
+	31, // 47: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
+	33, // 48: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
+	18, // 49: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
+	16, // 50: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
+	7,  // 51: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
+	9,  // 52: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
+	6,  // 53: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
+	8,  // 54: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
+	10, // 55: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
+	12, // 56: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
+	23, // 57: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
+	24, // 58: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
+	15, // 59: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
+	45, // 60: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
+	47, // 61: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
+	57, // 62: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
+	49, // 63: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
+	4,  // 64: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
+	35, // 65: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
+	43, // 66: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
+	14, // 67: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
+	21, // 68: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
+	26, // 69: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
+	29, // 70: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
+	29, // 71: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
+	34, // 72: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
+	19, // 73: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
+	17, // 74: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
+	3,  // 75: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 76: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 77: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 78: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 79: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 80: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 81: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 82: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 83: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
+	46, // 84: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
+	48, // 85: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
+	58, // 86: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
+	56, // 87: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
+	5,  // 88: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
+	38, // 89: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
+	44, // 90: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
+	67, // [67:91] is the sub-list for method output_type
+	43, // [43:67] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_corefusion_agent_proto_init() }
@@ -5318,6 +5519,17 @@ func file_corefusion_agent_proto_init() {
 		(*PanelCommand_ControlProxy)(nil),
 		(*PanelCommand_UpdateAgent)(nil),
 		(*PanelCommand_SyncData)(nil),
+		(*PanelCommand_InstallBinary)(nil),
+		(*PanelCommand_InstallProxy)(nil),
+		(*PanelCommand_GetMetrics)(nil),
+		(*PanelCommand_ListBinaries)(nil),
+		(*PanelCommand_GetProxyStatus)(nil),
+		(*PanelCommand_SpeedTest)(nil),
+		(*PanelCommand_DownloadGeoRule)(nil),
+		(*PanelCommand_ListInterfaces)(nil),
+		(*PanelCommand_ExecuteBinary)(nil),
+		(*PanelCommand_XrayApi)(nil),
+		(*PanelCommand_ReadConfigFile)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

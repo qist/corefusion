@@ -37,6 +37,12 @@ func (r *LogRotationPolicyRepository) List(ctx context.Context) ([]entity.LogRot
 	return policies, err
 }
 
+func (r *LogRotationPolicyRepository) ListByServerID(ctx context.Context, serverID int64) ([]entity.LogRotationPolicy, error) {
+	var policies []entity.LogRotationPolicy
+	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("id ASC").Find(&policies).Error
+	return policies, err
+}
+
 func (r *LogRotationPolicyRepository) ListEnabled(ctx context.Context) ([]entity.LogRotationPolicy, error) {
 	var policies []entity.LogRotationPolicy
 	err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("id ASC").Find(&policies).Error
@@ -52,6 +58,15 @@ func (r *LogRotationPolicyRepository) GetBySourceType(ctx context.Context, sourc
 func (r *LogRotationPolicyRepository) GetByLogPath(ctx context.Context, logPath string) (*entity.LogRotationPolicy, error) {
 	var policy entity.LogRotationPolicy
 	err := r.db.WithContext(ctx).Where("log_path = ?", logPath).First(&policy).Error
+	if err != nil {
+		return nil, err
+	}
+	return &policy, nil
+}
+
+func (r *LogRotationPolicyRepository) GetByLogPathAndServer(ctx context.Context, logPath string, serverID int64) (*entity.LogRotationPolicy, error) {
+	var policy entity.LogRotationPolicy
+	err := r.db.WithContext(ctx).Where("log_path = ? AND server_id = ?", logPath, serverID).First(&policy).Error
 	if err != nil {
 		return nil, err
 	}

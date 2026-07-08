@@ -1,13 +1,17 @@
 package logmanage
 
 import (
+	"context"
+	"encoding/json"
 	"io"
+	"os"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/service/logmanage"
 )
 
@@ -25,6 +29,29 @@ func NewHandler(svc *logmanage.Service) *Handler {
 
 // ListPolicies returns all rotation policies.
 func (h *Handler) ListPolicies(c *gin.Context) {
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+
+	if serverID > 1 {
+		// Remote node: query agent's policies via gRPC
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		policies, err := h.svc.ListPoliciesForServer(c.Request.Context(), serverID)
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		if policies == nil {
+			policies = []entity.LogRotationPolicy{}
+		}
+		response.OK(c, policies)
+		return
+	}
+
 	policies, err := h.svc.ListPolicies(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
@@ -57,6 +84,7 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 		Name       string `json:"name" binding:"required"`
 		SourceType string `json:"source_type" binding:"required"`
 		LogPath    string `json:"log_path" binding:"required"`
+		ServerID   int64  `json:"server_id"`
 		Enabled    *bool  `json:"enabled"`
 		RotateCron string `json:"rotate_cron"`
 		RetainDays int    `json:"retain_days"`
@@ -81,6 +109,7 @@ func (h *Handler) CreatePolicy(c *gin.Context) {
 		Name:       req.Name,
 		SourceType: req.SourceType,
 		LogPath:    req.LogPath,
+		ServerID:   req.ServerID,
 		Enabled:    enabled,
 		RotateCron: req.RotateCron,
 		RetainDays: req.RetainDays,
@@ -212,6 +241,40 @@ func (h *Handler) ListPolicyJobs(c *gin.Context) {
 
 // DiscoverLogs discovers all configured log files.
 func (h *Handler) DiscoverLogs(c *gin.Context) {
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+
+	if serverID > 1 {
+		// Remote node: discover via gRPC
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		logs, err := nodeLogMgr.DiscoverLogsOnServer(c.Request.Context(), serverID)
+		if err != nil {
+			response.InternalError(c, "DISCOVER_FAILED", err.Error())
+			return
+		}
+		// Convert proto logs to DiscoveredLog format
+		var result []logmanage.DiscoveredLog
+		for _, l := range logs {
+			result = append(result, logmanage.DiscoveredLog{
+				SourceType: l.SourceType,
+				Domain:     l.Domain,
+				LogPath:    l.LogPath,
+				LogFormat:  l.LogFormat,
+				HasPolicy:  l.HasPolicy,
+			})
+		}
+		if result == nil {
+			result = []logmanage.DiscoveredLog{}
+		}
+		response.OK(c, result)
+		return
+	}
+
 	logs, err := h.svc.DiscoverLogs(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "DISCOVER_FAILED", err.Error())
@@ -225,7 +288,11 @@ func (h *Handler) DiscoverLogs(c *gin.Context) {
 
 // SyncPolicies creates policies for discovered logs.
 func (h *Handler) SyncPolicies(c *gin.Context) {
-	created, err := h.svc.SyncPolicies(c.Request.Context())
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+	created, err := h.svc.SyncPoliciesForServer(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
@@ -237,7 +304,11 @@ func (h *Handler) SyncPolicies(c *gin.Context) {
 
 // GetStatus returns log management system status.
 func (h *Handler) GetStatus(c *gin.Context) {
-	status, err := h.svc.GetStatus(c.Request.Context())
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+	status, err := h.svc.GetStatusForServer(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "STATUS_FAILED", err.Error())
 		return
@@ -249,7 +320,11 @@ func (h *Handler) GetStatus(c *gin.Context) {
 
 // GetLogOutput returns the log output configuration.
 func (h *Handler) GetLogOutput(c *gin.Context) {
-	cfg, err := h.svc.GetLogOutput(c.Request.Context())
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+	cfg, err := h.svc.GetLogOutputForServer(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return
@@ -259,14 +334,60 @@ func (h *Handler) GetLogOutput(c *gin.Context) {
 
 // SaveLogOutput saves the log output configuration.
 func (h *Handler) SaveLogOutput(c *gin.Context) {
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
 	var cfg logmanage.LogOutputConfig
 	if err := c.ShouldBindJSON(&cfg); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.svc.SaveLogOutput(c.Request.Context(), &cfg); err != nil {
+	if err := h.svc.SaveLogOutputForServer(c.Request.Context(), serverID, &cfg); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
+	}
+	// Sync to remote node if needed
+	if serverID > 1 && nodeLogMgrExt != nil {
+		data, _ := json.Marshal(cfg)
+		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, "", string(data))
+	}
+	response.OK(c, cfg)
+}
+
+// GetCoreLogOutput returns the core log output configuration.
+func (h *Handler) GetCoreLogOutput(c *gin.Context) {
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+	cfg, err := h.svc.GetCoreLogOutputForServer(c.Request.Context(), serverID)
+	if err != nil {
+		response.InternalError(c, "FETCH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, cfg)
+}
+
+// SaveCoreLogOutput saves the core log output configuration.
+func (h *Handler) SaveCoreLogOutput(c *gin.Context) {
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID == 0 {
+		serverID = 1
+	}
+	var cfg logmanage.CoreLogOutputConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.svc.SaveCoreLogOutputForServer(c.Request.Context(), serverID, &cfg); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	// Sync to remote node if needed
+	if serverID > 1 && nodeLogMgrExt != nil {
+		data, _ := json.Marshal(cfg)
+		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, string(data), "")
 	}
 	response.OK(c, cfg)
 }
@@ -455,12 +576,12 @@ func (h *Handler) GetLog(c *gin.Context) {
 		lines = 500
 	}
 
-	logLines, err := h.svc.TailLog(c.Request.Context(), policy.LogPath, lines)
+	logLines, err := h.svc.TailLogWithType(c.Request.Context(), policy.LogPath, policy.SourceType, lines)
 	if err != nil {
 		response.InternalError(c, "READ_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"lines": logLines, "path": policy.LogPath})
+	response.OK(c, gin.H{"lines": logLines, "path": policy.LogPath, "exists": fileExists(policy.LogPath)})
 }
 
 // StreamLog streams new log lines via SSE.
@@ -488,7 +609,7 @@ func (h *Handler) StreamLog(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 
 	ch := make(chan string, 64)
-	go h.svc.TailLogStream(c.Request.Context(), policy.LogPath, lines, ch)
+	go h.svc.TailLogStreamWithType(c.Request.Context(), policy.LogPath, policy.SourceType, lines, ch)
 
 	c.Stream(func(w io.Writer) bool {
 		line, ok := <-ch
@@ -497,5 +618,175 @@ func (h *Handler) StreamLog(c *gin.Context) {
 		}
 		c.SSEvent("log", line)
 		return true
+	})
+}
+
+// --- Node-based Log Management (Centralized) ---
+
+// fileExists checks if a log file exists on the local filesystem.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// NodeLogManager provides log management for remote nodes.
+type NodeLogManager interface {
+	ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error)
+	RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error)
+	DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error)
+	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig string) error
+}
+
+// nodeLogMgr is set by the router to enable remote node log management.
+var nodeLogMgr NodeLogManager
+
+// nodeLogMgrExt is the same as nodeLogMgr but typed for sync config usage.
+// Set alongside nodeLogMgr in SetNodeLogManager.
+var nodeLogMgrExt NodeLogManager
+
+// SetNodeLogManager sets the node log manager for centralized log management.
+func SetNodeLogManager(m NodeLogManager) {
+	nodeLogMgr = m
+	nodeLogMgrExt = m
+}
+
+// ListNodeLogs lists available log types for a node.
+func (h *Handler) ListNodeLogs(c *gin.Context) {
+	types := logmanage.AllLogTypes()
+	response.OK(c, gin.H{"log_types": types})
+}
+
+// GetNodeLog returns the last N lines of a log from a specific node.
+func (h *Handler) GetNodeLog(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("serverId"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_SERVER_ID", "invalid server id")
+		return
+	}
+	logType := c.Param("type")
+	if !isValidLogType(logType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported log type")
+		return
+	}
+	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "500"))
+	if lines <= 0 {
+		lines = 500
+	}
+
+	// Local node (serverId=1): use local logmanage service
+	if serverID == 1 {
+		logLines, err := h.svc.GetProxyStdoutLog(c.Request.Context(), logType, lines)
+		if err != nil {
+			response.InternalError(c, "READ_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"lines": logLines, "type": logType, "server_id": serverID})
+		return
+	}
+
+	// Remote node: use NodeLogManager
+	if nodeLogMgr == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+		return
+	}
+	logLines, logPath, err := nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, lines)
+	if err != nil {
+		response.InternalError(c, "READ_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"lines": logLines, "type": logType, "server_id": serverID, "log_path": logPath})
+}
+
+// StreamNodeLog streams log lines from a specific node via SSE.
+func (h *Handler) StreamNodeLog(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("serverId"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_SERVER_ID", "invalid server id")
+		return
+	}
+	logType := c.Param("type")
+	if !isValidLogType(logType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported log type")
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	c.Writer.WriteString(": connected\n\n")
+	c.Writer.Flush()
+
+	// Local node: use local logmanage service
+	if serverID == 1 {
+		ch := make(chan string, 64)
+		go h.svc.StreamProxyStdout(c.Request.Context(), logType, ch)
+		c.Stream(func(w io.Writer) bool {
+			line, ok := <-ch
+			if !ok {
+				return false
+			}
+			c.SSEvent("log", line)
+			return true
+		})
+		return
+	}
+
+	// Remote node: SSE proxy would require streaming gRPC, which is complex.
+	// For now, return a message indicating streaming is not available for remote nodes.
+	c.SSEvent("log", "[远程节点日志流暂不支持，请使用一次性读取]")
+	c.Writer.Flush()
+}
+
+// RotateNodeLog triggers log rotation on a specific node.
+func (h *Handler) RotateNodeLog(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("serverId"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_SERVER_ID", "invalid server id")
+		return
+	}
+	logType := c.Param("type")
+	if !isValidLogType(logType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported log type")
+		return
+	}
+
+	// Local node: use local logmanage service (find policy by source_type)
+	if serverID == 1 {
+		policies, err := h.svc.ListPolicies(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		for _, p := range policies {
+			if p.SourceType == logType {
+				job, err := h.svc.Rotate(c.Request.Context(), p.ID)
+				if err != nil {
+					response.InternalError(c, "ROTATE_FAILED", err.Error())
+					return
+				}
+				response.OK(c, job)
+				return
+			}
+		}
+		response.NotFound(c, "POLICY_NOT_FOUND", "no rotation policy found for "+logType)
+		return
+	}
+
+	// Remote node
+	if nodeLogMgr == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+		return
+	}
+	rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), serverID, logType)
+	if err != nil {
+		response.InternalError(c, "ROTATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{
+		"rotated_files": rotated,
+		"cleaned_files": cleaned,
+		"freed_bytes":   freed,
 	})
 }

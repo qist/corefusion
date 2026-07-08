@@ -41,6 +41,11 @@ type RemoteConfigSyncer interface {
 	IsOnline(serverID int64) bool
 }
 
+// LogModeProvider provides the log output mode for a core type.
+type LogModeProvider interface {
+	GetLogMode(ctx context.Context, coreType string) string
+}
+
 // Service handles periodic config synchronization to disk.
 type Service struct {
 	coreSvc     CoreConfigService
@@ -64,6 +69,9 @@ type Service struct {
 
 	// remoteSyncer syncs config to remote nodes via Agent.
 	remoteSyncer RemoteConfigSyncer
+
+	// logModeProvider provides the log mode for each core type.
+	logModeProvider LogModeProvider
 }
 
 // ConfigWriter writes runtime config files. Implemented by process.Manager.
@@ -84,6 +92,11 @@ func (s *Service) SetServerLister(l ServerLister) {
 // SetRemoteSyncer sets the remote config syncer for pushing configs to Agents.
 func (s *Service) SetRemoteSyncer(r RemoteConfigSyncer) {
 	s.remoteSyncer = r
+}
+
+// SetLogModeProvider sets the provider for log output mode per core type.
+func (s *Service) SetLogModeProvider(p LogModeProvider) {
+	s.logModeProvider = p
 }
 
 // NewService creates a new config sync service.
@@ -222,6 +235,12 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 		return err
 	}
 
+	// Determine log mode for this core type
+	logMode := ""
+	if s.logModeProvider != nil {
+		logMode = s.logModeProvider.GetLogMode(ctx, coreType)
+	}
+
 	// Use the shared PrepareFullConfig to apply all standard steps
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
 		Ctx:              ctx,
@@ -230,6 +249,7 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 		FullConfig:       fullConfig,
 		InboundProvider:  s.inboundSvc,
 		OutboundProvider: s.outboundSvc,
+		LogMode:          logMode,
 	})
 	if err != nil {
 		return err

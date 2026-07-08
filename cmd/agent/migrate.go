@@ -26,5 +26,8 @@ func migrateAgentTables(database *gorm.DB) error {
 		&entity.OutboundConfig{},
 		&entity.WarpConfig{},
 		&entity.ShareDomainConfig{},
+		// Log management tables (for rotation policies + jobs, same as Panel)
+		&entity.LogRotationPolicy{},
+		&entity.LogRotationJob{},
 	)
 }

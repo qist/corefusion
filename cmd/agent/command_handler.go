@@ -311,6 +311,48 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			Success: true, Content: data, FilePath: filePath,
 		}, err)
 
+	case *agentpb.PanelCommand_ReadLogFile:
+		req := c.ReadLogFile
+		resp := a.handleReadLogFile(req)
+		sendSyncResult("read_log_file", resp, nil)
+
+	case *agentpb.PanelCommand_RotateLog:
+		req := c.RotateLog
+		resp := a.handleRotateLog(req)
+		sendSyncResult("rotate_log", resp, nil)
+
+	case *agentpb.PanelCommand_PackageLogs:
+		req := c.PackageLogs
+		resp := a.handlePackageLogs(req)
+		sendSyncResult("package_logs", resp, nil)
+
+	case *agentpb.PanelCommand_SyncLogConfig:
+		req := c.SyncLogConfig
+		var syncErr error
+		// Write log output configs to local settings
+		if req.CoreLogConfig != "" {
+			if err := a.settingRepo.Set(ctx, "core.log_output_config", req.CoreLogConfig); err != nil {
+				syncErr = fmt.Errorf("write core log config: %w", err)
+			}
+		}
+		if req.ProxyLogConfig != "" {
+			if err := a.settingRepo.Set(ctx, "proxy.log_output_config", req.ProxyLogConfig); err != nil {
+			syncErr = fmt.Errorf("write proxy log config: %w", err)
+			}
+		}
+		// Restart LogWriters to pick up new modes (same as Panel's SaveLogOutput/SaveCoreLogOutput)
+		if a.logMgr != nil && syncErr == nil {
+			a.logMgr.StartAutoWriters()
+			log.Printf("[Agent] log writers refreshed after SyncLogConfig")
+		}
+		sendSyncResult("sync_log_config", map[string]interface{}{
+			"success": syncErr == nil,
+		}, syncErr)
+
+	case *agentpb.PanelCommand_DiscoverLogs:
+		resp := a.handleDiscoverLogs(ctx)
+		sendSyncResult("discover_logs", resp, nil)
+
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)
 	}

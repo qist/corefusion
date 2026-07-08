@@ -946,6 +946,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo),
 			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc)
 			nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
+nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 
 			nodeServerSvcInst.
 				WithMetricsCollector(metricsCollector).

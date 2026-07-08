@@ -715,10 +715,44 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
 		req := c.SyncProxyConfig
+		// Land TLS certificates to disk before writing the proxy config,
+		// so that cert path references in the config are valid immediately.
+		for _, certEntry := range req.Certificates {
+			if certEntry.CertContent == "" || certEntry.KeyContent == "" {
+				continue
+			}
+			certPath := certEntry.CertPath
+			if !filepath.IsAbs(certPath) {
+				certPath = filepath.Join(a.dataDir, certPath)
+			}
+			os.MkdirAll(filepath.Dir(certPath), 0750)
+			if err := os.WriteFile(certPath, []byte(certEntry.CertContent), 0640); err != nil {
+				log.Printf("[Agent] SyncProxyConfig: write cert %s: %v", certEntry.Domain, err)
+				continue
+			}
+			keyPath := certEntry.KeyPath
+			if !filepath.IsAbs(keyPath) {
+				keyPath = filepath.Join(a.dataDir, keyPath)
+			}
+			os.MkdirAll(filepath.Dir(keyPath), 0750)
+			if err := os.WriteFile(keyPath, []byte(certEntry.KeyContent), 0600); err != nil {
+				log.Printf("[Agent] SyncProxyConfig: write key %s: %v", certEntry.Domain, err)
+				continue
+			}
+			if certEntry.FullchainContent != "" && certEntry.FullchainPath != "" {
+				fullchainPath := certEntry.FullchainPath
+				if !filepath.IsAbs(fullchainPath) {
+					fullchainPath = filepath.Join(a.dataDir, fullchainPath)
+				}
+				os.MkdirAll(filepath.Dir(fullchainPath), 0750)
+				os.WriteFile(fullchainPath, []byte(certEntry.FullchainContent), 0640)
+			}
+			log.Printf("[Agent] SyncProxyConfig: certificate landed: %s → %s", certEntry.Domain, certPath)
+		}
 		if err := a.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
 			log.Printf("[Agent] proxy config sync failed: %s: %v", req.ProxyType, err)
 		} else {
-			log.Printf("[Agent] proxy config synced: %s", req.ProxyType)
+			log.Printf("[Agent] proxy config synced: %s (%d certs)", req.ProxyType, len(req.Certificates))
 		}
 
 	case *agentpb.PanelCommand_ControlProxy:

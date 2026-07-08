@@ -157,6 +157,7 @@ message ControlCoreRequest {
 message SyncProxyConfigRequest {
   string proxy_type = 1;          // caddy/nginx
   bytes  config_content = 2;      // 完整配置文件内容（Caddyfile / nginx.conf）
+  repeated CertificateEntry certificates = 3;  // 代理站点引用的 TLS 证书（落地到 Agent 磁盘）
 }
 
 message ControlProxyRequest {

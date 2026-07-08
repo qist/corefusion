@@ -2,6 +2,7 @@ package nodeserver
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	nodeserverSvc "corefusion/internal/service/nodeserver"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
+	"corefusion/pkg/netutil"
 )
 
 // Handler handles node server HTTP requests.
@@ -634,6 +636,9 @@ func (h *Handler) SelectNodesForSubscription(c *gin.Context) {
 }
 
 // UpdateAgent triggers an Agent update on a specific server.
+// If download_url is empty, the panel auto-scans its local Agent binary.
+// If checksum is empty and download_url is a GitHub URL, the checksum is
+// auto-fetched from the GitHub Release's .sha256 file.
 func (h *Handler) UpdateAgent(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -649,6 +654,12 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
 		return
 	}
+
+	// Auto-fetch checksum from GitHub if not provided
+	if req.Checksum == "" && netutil.IsGitHubURL(req.DownloadURL) {
+		req.Checksum = h.fetchAgentChecksum(req.DownloadURL)
+	}
+
 	if err := h.svc.UpdateAgent(c.Request.Context(), id, req.Version, req.DownloadURL, req.Checksum); err != nil {
 		response.InternalError(c, "AGENT_UPDATE_FAILED", err.Error())
 		return
@@ -668,6 +679,27 @@ func (h *Handler) UpdateAllAgents(c *gin.Context) {
 // GetPendingAgentUpdates returns all pending Agent update tasks.
 func (h *Handler) GetPendingAgentUpdates(c *gin.Context) {
 	response.OK(c, h.svc.GetPendingAgentUpdates())
+}
+
+// fetchAgentChecksum attempts to download a .sha256 checksum file for the
+// given GitHub download URL. Returns "" if not available.
+func (h *Handler) fetchAgentChecksum(downloadURL string) string {
+	checksumURL := downloadURL + ".sha256"
+	client := netutil.NewHTTPClient(30 * time.Second)
+	resp, err := client.Get(checksumURL)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	data, _ := io.ReadAll(resp.Body)
+	parts := strings.Fields(string(data))
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
 }
 
 // ──────────────────── Supplementary: Server Management ────────────────────

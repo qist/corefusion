@@ -216,9 +216,12 @@ func runServer(args []string) {
 	_ = agent.NewCertDistributor(certRepo, nodeServerRepo, nodeMgr) // wired in router.go per-request
 
 	// Start Agent certificate auto-renewer (background goroutine)
+	// Checks every 6 hours, renews certs 3 days before expiry.
+	// Also wired into NodeServerManager so certs are renewed on Agent reconnect.
 	certRenewer := agent.NewCertRenewer(caService, nodeServerRepo).WithPusher(nodeMgr)
+	nodeMgr.WithCertRenewer(certRenewer)
 	go certRenewer.RunLoop(context.Background())
-	log.Println("Agent certificate auto-renewer started")
+	log.Println("Agent certificate auto-renewer started (interval=6h, renew-before=3d)")
 
 	// Phase 3: Start FailoverManager, MirrorSync, and ChainHealth monitors
 	inboundRepoForPhase3 := repository.NewInboundConfigRepository(db.DB)

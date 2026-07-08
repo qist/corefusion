@@ -61,6 +61,9 @@ type NodeServerManager struct {
 
 	// Data sync provider: reads panel DB tables to build SyncDataRequest
 	dataSyncProvider DataSyncProvider
+
+	// Cert renewer: checks and renews Agent certs on reconnect
+	certRenewer *CertRenewer
 }
 
 // NodeSettingStore provides access to system settings for GitHub acceleration
@@ -253,6 +256,12 @@ func NewNodeServerManager(serverRepo *repository.NodeServerRepository, ca *Certi
 // WithCRL sets the CRL for certificate revocation checking.
 func (m *NodeServerManager) WithCRL(crl *CertRevocationList) *NodeServerManager {
 	m.crl = crl
+	return m
+}
+
+// WithCertRenewer sets the cert renewer for on-reconnect certificate renewal.
+func (m *NodeServerManager) WithCertRenewer(r *CertRenewer) *NodeServerManager {
+	m.certRenewer = r
 	return m
 }
 
@@ -1146,6 +1155,13 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 				log.Printf("[NodeServerManager] auto-SyncData to server %d on connect: success=%v core_started=%v",
 					serverID, resp.Success, resp.CoreStarted)
 			}
+		}
+
+		// 3. Check and renew Agent cert if it's expiring soon.
+		//    This ensures the Agent always gets a fresh cert on reconnect,
+		//    even if it was offline during the periodic renewal check.
+		if m.certRenewer != nil && serverID != m.localServerID {
+			m.certRenewer.RenewServerCertIfNeeded(context.Background(), serverID)
 		}
 	}()
 

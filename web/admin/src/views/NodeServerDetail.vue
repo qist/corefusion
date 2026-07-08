@@ -55,18 +55,18 @@
           <template #header>
             <div style="display:flex;align-items:center;gap:8px">
               <el-icon><Upload /></el-icon>
-              <span style="font-weight:600">Agent Update</span>
+              <span style="font-weight:600">{{ t('nodeServer.agentUpdate') }}</span>
             </div>
           </template>
 
           <!-- Current vs Panel Version -->
           <div style="display:flex;gap:24px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
             <div>
-              <span style="color:#909399;font-size:13px">Current Agent Version: </span>
+              <span style="color:#909399;font-size:13px">{{ t('nodeServer.currentAgentVersion') }}: </span>
               <el-tag size="small" type="info">{{ server.agent_version || 'unknown' }}</el-tag>
             </div>
             <div v-if="panelAgentVersion">
-              <span style="color:#909399;font-size:13px">Panel Local Version: </span>
+              <span style="color:#909399;font-size:13px">{{ t('nodeServer.panelLocalVersion') }}: </span>
               <el-tag size="small" :type="server.agent_version === panelAgentVersion.version ? 'success' : 'warning'">
                 {{ panelAgentVersion.version }}
               </el-tag>
@@ -76,23 +76,24 @@
                 :loading="updating"
                 @click="pushUpdateFromPanel"
               >
-                Update from Panel
+                {{ t('nodeServer.updateFromPanel') }}
               </el-button>
             </div>
             <div v-else-if="panelVersionLoading">
-              <el-text type="info" size="small">Loading panel version...</el-text>
+              <el-text type="info" size="small">{{ t('nodeServer.loadingPanelVersion') }}</el-text>
             </div>
             <div v-else>
-              <el-text type="info" size="small">No Agent binary on panel</el-text>
+              <el-text type="info" size="small">{{ t('nodeServer.noAgentBinary') }}</el-text>
             </div>
           </div>
 
-          <el-divider content-position="center">Or from GitHub Releases</el-divider>
+          <template v-if="githubReleases.length > 0 || releasesLoading">
+          <el-divider content-position="center">{{ t('nodeServer.orFromGitHub') }}</el-divider>
 
           <!-- GitHub Releases -->
           <div v-loading="releasesLoading">
             <div v-if="githubReleases.length === 0 && !releasesLoading" style="text-align:center;padding:20px;color:#909399">
-              No releases available
+              {{ t('nodeServer.noReleases') }}
             </div>
             <el-radio-group v-model="selectedRelease" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
               <el-radio-button
@@ -105,8 +106,8 @@
             </el-radio-group>
 
             <div v-if="selectedRelease" style="margin-bottom:12px">
-              <div style="font-size:13px;color:#909399;margin-bottom:4px">Available assets:</div>
-              <el-select v-model="selectedAsset" placeholder="Select asset" size="small" style="width:100%">
+              <div style="font-size:13px;color:#909399;margin-bottom:4px">{{ t('nodeServer.availableAssets') }}</div>
+              <el-select v-model="selectedAsset" :placeholder="t('nodeServer.selectAsset')" size="small" style="width:100%">
                 <el-option
                   v-for="asset in selectedReleaseAssets" :key="asset.name"
                   :label="asset.name" :value="asset.download_url"
@@ -120,14 +121,15 @@
               :loading="updating"
               @click="pushUpdateFromGitHub"
             >
-              Update from GitHub
+              {{ t('nodeServer.updateFromGitHub') }}
             </el-button>
           </div>
+          </template>
 
           <!-- Update Status -->
           <div v-if="updateTask" style="margin-top:16px;padding:12px;background:#f5f7fa;border-radius:4px">
             <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:13px;font-weight:600">Update Status:</span>
+              <span style="font-size:13px;font-weight:600">{{ t('nodeServer.updateStatus') }}:</span>
               <el-tag size="small" :type="updateStatusTag(updateTask.status)">{{ updateTask.status }}</el-tag>
               <span style="font-size:13px;color:#909399">{{ updateTask.from_version }} → {{ updateTask.to_version }}</span>
             </div>

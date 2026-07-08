@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	agent "corefusion/internal/runtime/agent"
@@ -159,9 +160,19 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		log.Printf("[Agent] UpdateAgent command received: version=%s", c.UpdateAgent.Version)
 		go func() {
 			updater := agent.NewSelfUpdater(a.dataDir, a.settingRepo)
+			// Resolve relative download URL using the panel address from config
+			downloadURL := c.UpdateAgent.DownloadUrl
+			if strings.HasPrefix(downloadURL, "/") {
+				scheme := "http"
+				if a.cfg.Panel.TLS {
+					scheme = "https"
+				}
+				downloadURL = fmt.Sprintf("%s://%s:%d%s", scheme, a.cfg.Panel.Host, a.cfg.Panel.Port, downloadURL)
+				log.Printf("[Agent] resolved relative download URL to %s", downloadURL)
+			}
 			err := updater.PerformUpdate(
 				c.UpdateAgent.Version,
-				c.UpdateAgent.DownloadUrl,
+				downloadURL,
 				c.UpdateAgent.Checksum,
 			)
 			if err != nil {

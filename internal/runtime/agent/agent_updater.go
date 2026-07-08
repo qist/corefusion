@@ -27,10 +27,11 @@ import (
 //
 // 本地服务器不需要更新 Agent（它就是面板本身）。
 type AgentUpdater struct {
-	mu         sync.RWMutex
-	serverRepo *repository.NodeServerRepository
-	nodeMgr    *NodeServerManager
-	dataDir    string // 面板数据目录，用于扫描本地 Agent 二进制
+	mu           sync.RWMutex
+	serverRepo   *repository.NodeServerRepository
+	nodeMgr      *NodeServerManager
+	dataDir      string // 面板数据目录，用于扫描本地 Agent 二进制
+	panelBaseURL string // 面板基础 URL（如 http://127.0.0.1:8080），用于构建下载链接
 
 	// 当前可用的 Agent 版本
 	currentVersion string
@@ -103,6 +104,13 @@ func (u *AgentUpdater) WithMaxConcurrency(n int) *AgentUpdater {
 // WithDataDir sets the panel data directory for local binary scanning.
 func (u *AgentUpdater) WithDataDir(dir string) *AgentUpdater {
 	u.dataDir = dir
+	return u
+}
+
+// WithPanelBaseURL sets the panel base URL (e.g. http://127.0.0.1:8080)
+// so that scanLocalAgentBinary can return a full download URL for the Agent.
+func (u *AgentUpdater) WithPanelBaseURL(url string) *AgentUpdater {
+	u.panelBaseURL = strings.TrimRight(url, "/")
 	return u
 }
 
@@ -430,8 +438,11 @@ func (u *AgentUpdater) scanLocalAgentBinary() (version, checksum, downloadURL st
 	}
 	checksum = hex.EncodeToString(hasher.Sum(nil))
 
-	// Build download URL (relative path — panel will resolve to full URL)
+	// Build download URL — use full URL if panelBaseURL is set, otherwise relative
 	downloadURL = "/api/v1/agent/download?os=linux&arch=amd64"
+	if u.panelBaseURL != "" {
+		downloadURL = u.panelBaseURL + downloadURL
+	}
 
 	log.Printf("[AgentUpdater] scanned local binary: version=%s, checksum=%s...", version, checksum[:12])
 	return version, checksum, downloadURL, nil

@@ -19,7 +19,6 @@ type AgentInstallScript struct {
 	serverID        int64
 	agentVersion    string
 	githubURL       string // GitHub Releases base URL (fallback)
-	agentListenPort int    // Agent gRPC listen port (must match node_servers.agent_port)
 }
 
 // NewAgentInstallScript creates a new AgentInstallScript generator.
@@ -31,8 +30,7 @@ func NewAgentInstallScript(panelHost string, panelPort int) *AgentInstallScript 
 		panelGRPCPort:   18443,
 		panelTLS:        false,
 		agentVersion:    "latest",
-		githubURL:       "https://github.com/corefusion/agent/releases/download",
-		agentListenPort: 18443,
+		githubURL:       "https://github.com/qist/corefusion/releases/download",
 	}
 }
 
@@ -72,14 +70,6 @@ func (s *AgentInstallScript) WithTLS(tls bool) *AgentInstallScript {
 	return s
 }
 
-// WithAgentListenPort sets the Agent's gRPC listen port.
-// This must match the server's agent_port in the panel database,
-// so the panel's reverse-dial can reach the Agent.
-func (s *AgentInstallScript) WithAgentListenPort(port int) *AgentInstallScript {
-	s.agentListenPort = port
-	return s
-}
-
 // WithGitHubURL sets the GitHub Releases download base URL.
 func (s *AgentInstallScript) WithGitHubURL(url string) *AgentInstallScript {
 	s.githubURL = url
@@ -103,9 +93,8 @@ func (s *AgentInstallScript) Generate() (string, error) {
 	"PanelTLS":        s.panelTLS,
 	"BootstrapToken":  s.bootstrapToken,
 	"ServerID":        s.serverID,
-	"AgentVersion":    s.agentVersion,
-	"GitHubURL":       s.githubURL,
-	"AgentListenPort": s.agentListenPort,
+		"AgentVersion":    s.agentVersion,
+		"GitHubURL":       s.githubURL,
 	})
 	if err != nil {
 		return "", fmt.Errorf("generate install script: %w", err)
@@ -205,7 +194,6 @@ bootstrap:
   token: "$BOOTSTRAP_TOKEN"
 
 agent:
-  listen_port: {{.AgentListenPort}}
   log_level: info
   data_dir: "$INSTALL_DIR/data"
 EOF

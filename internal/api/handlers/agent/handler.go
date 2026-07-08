@@ -159,24 +159,13 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 			grpcPort = v
 		}
 	}
-
-	// Agent listen port must match the server's agent_port in the panel DB.
-	// The frontend passes this from the create-server response.
-	agentListenPort := 18443
-	if ap := c.Query("agent_port"); ap != "" {
-		if v, err := strconv.Atoi(ap); err == nil {
-			agentListenPort = v
-		}
-	}
-
 	script := agent.NewAgentInstallScript(panelHost, panelPort).
 		WithScheme(scheme).
 		WithGRPCPort(grpcPort).
 		WithTLS(panelTLS).
-		WithAgentListenPort(agentListenPort).
 		WithBootstrapToken(token).
 		WithServerID(serverID).
-		WithGitHubURL("https://github.com/corefusion/agent/releases/download")
+		WithGitHubURL("https://github.com/qist/corefusion/releases/download")
 
 	content, err := script.Generate()
 	if err != nil {

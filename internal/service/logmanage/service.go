@@ -19,6 +19,21 @@ type SettingStore interface {
 	Set(ctx context.Context, key, value string) error
 }
 
+// Supported log source types.
+var (
+	// proxyLogTypes are the proxy process types managed by the log center.
+	proxyLogTypes = []string{"nginx", "caddy"}
+	// coreLogTypes are the core process types managed by the log center.
+	coreLogTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
+	// allLogTypes is the combined list for iteration.
+	allLogTypes = append(append([]string{}, proxyLogTypes...), coreLogTypes...)
+)
+
+// AllLogTypes returns all supported log source types (proxy + core).
+func AllLogTypes() []string {
+	return allLogTypes
+}
+
 // LogBrokerReader is the interface for reading from a proxy log broker.
 type LogBrokerReader interface {
 	Snapshot() []string
@@ -92,7 +107,7 @@ func NewService(
 
 // StartAutoWriters starts writers that were previously enabled.
 func (s *Service) StartAutoWriters() {
-	for _, pType := range []string{"nginx", "caddy"} {
+	for _, pType := range allLogTypes {
 		key := settingKeyLogWriters + "." + pType
 		if s.settingStore == nil {
 			continue
@@ -289,7 +304,7 @@ func (s *Service) StopWriter(proxyType string) error {
 // GetWriterStatus returns the status of all log writers.
 func (s *Service) GetWriterStatus() []LogWriterStatus {
 	var statuses []LogWriterStatus
-	for _, pType := range []string{"nginx", "caddy"} {
+	for _, pType := range allLogTypes {
 		cfg := s.loadWriterConfig(pType)
 		mode := cfg.Mode
 		if mode == "" {
@@ -406,9 +421,17 @@ type DiscoveredLog struct {
 	HasPolicy  bool   `json:"has_policy"`
 }
 
-// DiscoverLogs discovers all configured log files from nginx and caddy settings.
+// DiscoverLogs discovers all configured log files from core, nginx and caddy settings.
 func (s *Service) DiscoverLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	var logs []DiscoveredLog
+
+	// Discover core process logs (xray, singbox, hysteria2, tuic)
+	coreLogs, err := s.discoverCoreLogs(ctx)
+	if err != nil {
+		log.Printf("logmanage: failed to discover core logs: %v", err)
+	} else {
+		logs = append(logs, coreLogs...)
+	}
 
 	// Discover nginx logs from settings
 	nginxLogs, err := s.discoverNginxLogs(ctx)
@@ -438,6 +461,55 @@ func (s *Service) DiscoverLogs(ctx context.Context) ([]DiscoveredLog, error) {
 				logs[i].HasPolicy = true
 			}
 		}
+	}
+
+	return logs, nil
+}
+
+// discoverCoreLogs discovers log files for core processes (xray, singbox, hysteria2, tuic).
+// Each core process writes to data/logs/{coreType}.log in file mode,
+// or data/logs/{coreType}-stdout.log in stdout mode.
+func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error) {
+	var logs []DiscoveredLog
+
+	for _, coreType := range coreLogTypes {
+		logMode := "file"
+		// Check if there's a core log output config
+		if s.settingStore != nil {
+			if v, err := s.settingStore.GetByKey(ctx, "core.log_output_config"); err == nil && v != "" {
+				var cfg struct {
+					Entries map[string]struct {
+						Mode string `json:"mode"`
+					} `json:"-"`
+				}
+				// Parse per-core-type mode
+				var raw map[string]map[string]interface{}
+				if json.Unmarshal([]byte(v), &raw) == nil {
+					if entry, ok := raw[coreType]; ok {
+						if m, ok := entry["mode"].(string); ok && m != "" {
+							logMode = m
+						}
+					}
+				}
+				_ = cfg // keep struct for documentation
+			}
+		}
+
+		var logPath string
+		switch logMode {
+		case "stdout":
+			logPath = s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.log", coreType))
+		case "off":
+			continue // no log file for this core
+		default: // "file"
+			logPath = s.resolveLogPath(fmt.Sprintf("logs/%s.log", coreType))
+		}
+
+		logs = append(logs, DiscoveredLog{
+			SourceType: coreType,
+			Domain:     logMode,
+			LogPath:    logPath,
+		})
 	}
 
 	return logs, nil

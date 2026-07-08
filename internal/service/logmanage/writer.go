@@ -188,6 +188,8 @@ func (w *LogWriter) checkLoop() {
 }
 
 // checkAndRotate checks if rotation is needed and performs it.
+// Rotation only happens when the file size reaches maxSizeMB.
+// Expired file cleanup always runs regardless of rotation.
 func (w *LogWriter) checkAndRotate() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -196,7 +198,10 @@ func (w *LogWriter) checkAndRotate() {
 		return
 	}
 
-	// Determine which file to rotate
+	// Always clean expired files
+	w.cleanExpired()
+
+	// Determine which file to check
 	stdoutPath := filepath.Join(w.dataDir, "logs", w.proxyType+"-stdout.log")
 
 	var currentPath string
@@ -211,19 +216,12 @@ func (w *LogWriter) checkAndRotate() {
 		return
 	}
 
-	// Rotate if size exceeded
+	// Only rotate when file size reaches the threshold.
+	// This prevents splitting small log files that haven't grown enough.
 	if w.maxSizeMB > 0 && info.Size() >= int64(w.maxSizeMB)*1024*1024 {
 		w.rotate(currentPath)
 		return
 	}
-
-	// Rotate daily
-	if info.ModTime().Day() != time.Now().Day() {
-		w.rotate(currentPath)
-		return
-	}
-
-	w.cleanExpired()
 }
 
 // rotate performs log rotation.

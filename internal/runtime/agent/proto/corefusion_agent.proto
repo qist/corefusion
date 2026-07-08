@@ -422,6 +422,19 @@ message PanelCommand {
     ControlProxyRequest control_proxy = 9;          // 控制代理进程
     UpdateAgentCommand update_agent = 10;           // Agent 自动更新
     SyncDataRequest sync_data = 11;                    // 数据库级别数据同步
+
+    // --- 新增：通过 Stream 下发的原 AgentService RPC ---
+    InstallBinaryRequest install_binary = 12;         // 安装核心二进制
+    InstallProxyRequest install_proxy = 13;           // 安装代理二进制
+    GetMetricsRequest get_metrics = 14;              // 获取资源指标
+    ListBinariesRequest list_binaries = 15;          // 列出已安装二进制
+    GetProxyStatusRequest get_proxy_status = 16;     // 查询代理状态
+    SpeedTestRequest speed_test = 17;                // 节点测速
+    DownloadGeoRuleRequest download_geo_rule = 18;   // 下载 Geo 规则
+    ListInterfacesRequest list_interfaces = 19;      // 列出网络接口
+    ExecuteBinaryRequest execute_binary = 22;        // 执行二进制命令
+    XrayAPIRequest xray_api = 23;                    // Xray API 代理
+    ReadConfigFileRequest read_config_file = 24;     // 读取配置文件
   }
 }
 

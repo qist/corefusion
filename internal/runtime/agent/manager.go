@@ -17,7 +17,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/peer"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
@@ -175,8 +174,6 @@ type AgentConnection struct {
 	mu          sync.Mutex
 	ServerID    int64
 	Hostname    string
-	agentClient agentpb.AgentServiceClient
-	conn        *grpc.ClientConn
 
 	// Bidirectional stream (Agent→Panel heartbeat)
 	stream agentpb.HeartbeatService_StreamServer
@@ -399,42 +396,24 @@ func (m *NodeServerManager) IsOnlineForServer(serverID int64) bool {
 	return m.IsOnline(serverID)
 }
 
-// AlterUsersOnServer sends an AlterUsers command to a remote server's Agent.
+// AlterUsersOnServer sends an AlterUsers command to a remote server's Agent via stream.
 func (m *NodeServerManager) AlterUsersOnServer(ctx context.Context, serverID int64, req *agentpb.AlterUsersRequest) error {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_AlterUsers{
+			AlterUsers: req,
+		},
 	}
-	if ac.agentClient == nil {
-		return fmt.Errorf("server %d agent client not available", serverID)
-	}
-	accept, err := ac.agentClient.AlterUsers(ctx, req)
-	if err != nil {
-		return err
-	}
-	if !accept.Accepted {
-		return fmt.Errorf("task rejected: %s", accept.RejectReason)
-	}
-	return nil
+	return m.SendCommand(ctx, serverID, cmd)
 }
 
-// ApplyLimitsOnServer sends an ApplyLimits command to a remote server's Agent.
+// ApplyLimitsOnServer sends an ApplyLimits command to a remote server's Agent via stream.
 func (m *NodeServerManager) ApplyLimitsOnServer(ctx context.Context, serverID int64, req *agentpb.ApplyLimitsRequest) error {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_ApplyLimits{
+			ApplyLimits: req,
+		},
 	}
-	if ac.agentClient == nil {
-		return fmt.Errorf("server %d agent client not available", serverID)
-	}
-	accept, err := ac.agentClient.ApplyLimits(ctx, req)
-	if err != nil {
-		return err
-	}
-	if !accept.Accepted {
-		return fmt.Errorf("task rejected: %s", accept.RejectReason)
-	}
-	return nil
+	return m.SendCommand(ctx, serverID, cmd)
 }
 
 // ============================================================
@@ -541,7 +520,7 @@ func (m *NodeServerManager) UpdateProxyGuardianForServer(ctx context.Context, se
 
 // InstallBinary installs a core binary on a server.
 // For local servers, delegates to LocalAgent → binaries.Installer.
-// For remote servers, sends InstallBinary via gRPC to the Agent.
+// For remote servers, sends InstallBinary via heartbeat stream.
 func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (*agentpb.TaskAccept, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -551,31 +530,35 @@ func (m *NodeServerManager) InstallBinary(ctx context.Context, serverID int64, c
 		if err != nil {
 			return nil, err
 		}
-		// Return a synthetic TaskAccept for local operations
 		return &agentpb.TaskAccept{Accepted: true, TaskId: "local"}, nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
-	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
-	}
+	// Remote: send via heartbeat stream
 	accelDomain, proxyURL := m.githubAccelConfig()
-	return ac.agentClient.InstallBinary(ctx, &agentpb.InstallBinaryRequest{
-		CoreType:    coreType,
-		Version:     version,
-		DownloadUrl: downloadURL,
-		AssetName:   assetName,
-		AccelDomain: accelDomain,
-		ProxyUrl:    proxyURL,
-	})
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_InstallBinary{
+			InstallBinary: &agentpb.InstallBinaryRequest{
+				CoreType:    coreType,
+				Version:     version,
+				DownloadUrl: downloadURL,
+				AssetName:   assetName,
+				AccelDomain: accelDomain,
+				ProxyUrl:    proxyURL,
+			},
+		},
+	}
+	// Wait for TASK_QUEUED confirmation
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("send install_binary command: %w", err)
+	}
+	accepted := result.Status == agentpb.TaskStatus_TASK_QUEUED || result.Status == agentpb.TaskStatus_TASK_SUCCESS
+	return &agentpb.TaskAccept{Accepted: accepted, TaskId: result.TaskId}, nil
 }
 
 // InstallProxy installs a proxy binary (caddy/nginx) on a server.
 // For local servers, delegates to LocalAgent → proxy.Manager.
-// For remote servers, sends InstallProxy via gRPC to the Agent.
+// For remote servers, sends InstallProxy via heartbeat stream.
 func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, proxyType, downloadURL, tagName string) (*agentpb.TaskAccept, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -592,27 +575,31 @@ func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, pr
 		}
 		return &agentpb.TaskAccept{Accepted: true, TaskId: "local"}, nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
-	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
-	}
+	// Remote: send via heartbeat stream
 	accelDomain, proxyURL := m.githubAccelConfig()
-	return ac.agentClient.InstallProxy(ctx, &agentpb.InstallProxyRequest{
-		ProxyType:   proxyType,
-		AccelDomain: accelDomain,
-		ProxyUrl:    proxyURL,
-		DownloadUrl: downloadURL,
-		TagName:     tagName,
-	})
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_InstallProxy{
+			InstallProxy: &agentpb.InstallProxyRequest{
+				ProxyType:   proxyType,
+				AccelDomain: accelDomain,
+				ProxyUrl:    proxyURL,
+				DownloadUrl: downloadURL,
+				TagName:     tagName,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("send install_proxy command: %w", err)
+	}
+	accepted := result.Status == agentpb.TaskStatus_TASK_QUEUED || result.Status == agentpb.TaskStatus_TASK_SUCCESS
+	return &agentpb.TaskAccept{Accepted: accepted, TaskId: result.TaskId}, nil
 }
 
 // GetProxyStatus queries proxy installation status on a server.
 // For local servers, delegates to LocalAgent.
-// For remote servers, queries via gRPC to the Agent.
+// For remote servers, queries via heartbeat stream.
 func (m *NodeServerManager) GetProxyStatus(ctx context.Context, serverID int64) (*agentpb.GetProxyStatusResponse, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -620,20 +607,30 @@ func (m *NodeServerManager) GetProxyStatus(ctx context.Context, serverID int64) 
 		}
 		return m.localAgent.GetProxyStatuses(), nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_GetProxyStatus{
+			GetProxyStatus: &agentpb.GetProxyStatusRequest{},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	return ac.agentClient.GetProxyStatus(ctx, &agentpb.GetProxyStatusRequest{})
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.GetProxyStatusResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal get_proxy_status response: %w", err)
+	}
+	return &resp, nil
 }
 
 // ListBinaries lists installed core binaries on a server.
 // For local servers, delegates to LocalAgent.
-// For remote servers, queries via gRPC to the Agent.
+// For remote servers, queries via heartbeat stream.
 func (m *NodeServerManager) ListBinaries(ctx context.Context, serverID int64) (*agentpb.ListBinariesResponse, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -641,15 +638,25 @@ func (m *NodeServerManager) ListBinaries(ctx context.Context, serverID int64) (*
 		}
 		return m.localAgent.ListBinaries(), nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ListBinaries{
+			ListBinaries: &agentpb.ListBinariesRequest{},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	return ac.agentClient.ListBinaries(ctx, &agentpb.ListBinariesRequest{})
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ListBinariesResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal list_binaries response: %w", err)
+	}
+	return &resp, nil
 }
 
 // InvalidateBinaryCache clears the cached binary info for a server so the next
@@ -733,79 +740,106 @@ func detectLocalDistro() string {
 	return ""
 }
 
-// UpdateAgentOnServer sends an update command to a remote Agent.
+// UpdateAgentOnServer sends an update command to a remote Agent via stream.
 // The Agent downloads the new binary, verifies checksum, replaces, and restarts.
 func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID int64, version, downloadURL, checksum string) (*agentpb.TaskAccept, error) {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_UpdateAgent{
+			UpdateAgent: &agentpb.UpdateAgentCommand{
+				Version:     version,
+				DownloadUrl: downloadURL,
+				Checksum:    checksum,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return nil, fmt.Errorf("send update_agent command: %w", err)
 	}
-	return ac.agentClient.UpdateAgent(ctx, &agentpb.UpdateAgentRequest{
-		TargetVersion: version,
-		DownloadUrl:   downloadURL,
-		Checksum:      checksum,
-	})
+	return &agentpb.TaskAccept{Accepted: true}, nil
 }
 
-// SpeedTestOnServer requests a remote Agent to perform a speed test.
+// SpeedTestOnServer requests a remote Agent to perform a speed test via stream.
 func (m *NodeServerManager) SpeedTestOnServer(ctx context.Context, serverID int64, targetHost string, targetPort int32, timeoutMs int32, samples int32) (*agentpb.SpeedTestResponse, error) {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_SpeedTest{
+			SpeedTest: &agentpb.SpeedTestRequest{
+				TargetHost: targetHost,
+				TargetPort: targetPort,
+				TimeoutMs:  timeoutMs,
+				Samples:    samples,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	return ac.agentClient.SpeedTest(ctx, &agentpb.SpeedTestRequest{
-		TargetHost: targetHost,
-		TargetPort: targetPort,
-		TimeoutMs:  timeoutMs,
-		Samples:    samples,
-	})
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.SpeedTestResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal speed_test response: %w", err)
+	}
+	return &resp, nil
 }
 
-// GetMetricsFromServer queries detailed metrics from a remote Agent.
+// GetMetricsFromServer queries detailed metrics from a remote Agent via stream.
 func (m *NodeServerManager) GetMetricsFromServer(ctx context.Context, serverID int64, lastNPoints int32, metricType string) (*agentpb.GetMetricsResponse, error) {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_GetMetrics{
+			GetMetrics: &agentpb.GetMetricsRequest{
+				LastNPoints: lastNPoints,
+				MetricType:  metricType,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	return ac.agentClient.GetMetrics(ctx, &agentpb.GetMetricsRequest{
-		LastNPoints: lastNPoints,
-		MetricType:  metricType,
-	})
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.GetMetricsResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal get_metrics response: %w", err)
+	}
+	return &resp, nil
 }
 
 // DownloadGeoRule downloads a geo rule file on a server.
 // For local servers, the caller (georule service) handles the download directly.
-// For remote servers, sends DownloadGeoRule via gRPC to the Agent.
+// For remote servers, sends DownloadGeoRule via heartbeat stream.
 func (m *NodeServerManager) DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, accelDomain, proxyURL string) (bool, int64, string, error) {
 	if m.isLocalServer(serverID) {
 		// Local: signal that it should be handled by the caller
 		return false, 0, "LOCAL", nil
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return false, 0, "", fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_DownloadGeoRule{
+			DownloadGeoRule: &agentpb.DownloadGeoRuleRequest{
+				FileName:    fileName,
+				DownloadUrl: downloadURL,
+				AccelDomain: accelDomain,
+				ProxyUrl:    proxyURL,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return false, 0, "", fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.DownloadGeoRule(ctx, &agentpb.DownloadGeoRuleRequest{
-		FileName:    fileName,
-		DownloadUrl: downloadURL,
-		AccelDomain: accelDomain,
-		ProxyUrl:    proxyURL,
-	})
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 120*time.Second)
 	if err != nil {
 		return false, 0, "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return false, 0, result.Error, nil
+	}
+	var resp agentpb.DownloadGeoRuleResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return false, 0, "", fmt.Errorf("unmarshal download_geo_rule response: %w", err)
 	}
 	return resp.Success, resp.FileSize, resp.Error, nil
 }
@@ -977,9 +1011,6 @@ func (m *NodeServerManager) DisconnectServer(ctx context.Context, serverID int64
 	if ac, ok := m.connections[serverID]; ok {
 		ac.mu.Lock()
 		ac.online = false
-		if ac.conn != nil {
-			ac.conn.Close()
-		}
 		ac.mu.Unlock()
 		delete(m.connections, serverID)
 		log.Printf("[NodeServerManager] server %d disconnected", serverID)
@@ -1050,36 +1081,39 @@ func (m *NodeServerManager) GetServerStatus(ctx context.Context, serverID int64)
 }
 
 // GetRemoteState returns cached state from a remote Agent (core states + binaries).
-// This does NOT make a gRPC call — it uses data cached from heartbeat status reports
-// and the last successful ListBinaries query. This prevents API blocking on stale
-// gRPC connections.
+// This does NOT make a blocking gRPC call for core states — it uses data cached from
+// heartbeat status reports. Binaries are refreshed via stream if the cache is stale,
+// but the lock is released before the stream call to avoid deadlock (SendCommand also
+// acquires ac.mu).
 func (m *NodeServerManager) GetRemoteState(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, []*agentpb.BinaryInfo, error) {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
 		return nil, nil, fmt.Errorf("server %d not connected", serverID)
 	}
 
+	// Read cached state under lock
 	ac.mu.Lock()
-	defer ac.mu.Unlock()
-
-	// Core states from heartbeat
 	var cores []*agentpb.CoreStatus
 	if ac.statusReported {
 		for _, cs := range ac.coreStates {
 			cores = append(cores, cs)
 		}
 	}
-
-	// Binaries from cache (refresh if nil or older than 30 seconds)
 	binaries := ac.cachedBinaries
 	cacheExpired := time.Since(ac.cachedBinariesAt) > 30*time.Second
-	if (binaries == nil || cacheExpired) && ac.agentClient != nil {
-		// Try to fetch with short timeout (won't block long)
-		fetchCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		if resp, err := ac.agentClient.ListBinaries(fetchCtx, &agentpb.ListBinariesRequest{}); err == nil {
+	needFetch := binaries == nil || cacheExpired
+	ac.mu.Unlock()
+
+	// Fetch binaries via stream WITHOUT holding ac.mu (SendCommand acquires it)
+	if needFetch {
+		fetchCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if resp, err := m.ListBinaries(fetchCtx, serverID); err == nil && resp != nil {
 			binaries = resp.Binaries
+			// Update cache under lock
+			ac.mu.Lock()
 			ac.cachedBinaries = binaries
 			ac.cachedBinariesAt = time.Now()
+			ac.mu.Unlock()
 		}
 		cancel()
 	}
@@ -1098,8 +1132,7 @@ func (m *NodeServerManager) StatusEvents() <-chan *StatusEvent {
 }
 
 // registerConnection registers a new Agent connection (called by heartbeatServiceImpl).
-// It also establishes a reverse gRPC client (agentClient) to the Agent's gRPC server
-// so that the Panel can send AgentService RPCs (ListBinaries, InstallBinary, etc.).
+// All Panel→Agent communication goes through the heartbeat stream — no reverse dial.
 func (m *NodeServerManager) registerConnection(serverID int64, hostname string, stream agentpb.HeartbeatService_StreamServer) *AgentConnection {
 	ac := &AgentConnection{
 		ServerID:      serverID,
@@ -1118,9 +1151,6 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 	if err := m.serverRepo.UpdateAgentStatus(context.Background(), serverID, "online", hostname); err != nil {
 		log.Printf("[NodeServerManager] failed to update agent status for server %d: %v", serverID, err)
 	}
-
-	// Establish reverse gRPC connection to the Agent's gRPC server
-	m.dialAgent(ac, stream)
 
 	// On Agent reconnect: request immediate status + push SyncData to ensure
 	// the Agent's local DB is up-to-date and the core is started.
@@ -1169,127 +1199,12 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 	return ac
 }
 
-// dialAgent establishes a gRPC client connection to the Agent's gRPC server.
-// It determines the Agent's address from (1) the stream peer address, or (2) the
-// node server's InternalIP/PublicIP + AgentPort in the database.
-func (m *NodeServerManager) dialAgent(ac *AgentConnection, stream agentpb.HeartbeatService_StreamServer) {
-	if m.ca == nil {
-		log.Printf("[NodeServerManager] CA not available, skipping reverse dial for server %d", ac.ServerID)
-		return
-	}
-
-	// Determine agent address
-	addr := m.resolveAgentAddress(ac.ServerID, stream)
-	if addr == "" {
-		log.Printf("[NodeServerManager] cannot determine agent address for server %d, reverse dial skipped", ac.ServerID)
-		return
-	}
-
-	// Load CA cert for verifying the Agent's server certificate
-	caPEM := m.ca.GetCACertPEM()
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caPEM) {
-		log.Printf("[NodeServerManager] failed to parse CA cert for reverse dial server %d", ac.ServerID)
-		return
-	}
-
-	// Issue a client certificate for the Panel (to present to the Agent)
-	clientCert, err := m.ca.IssueServerCertificate()
-	if err != nil {
-		log.Printf("[NodeServerManager] failed to issue client cert for reverse dial: %v", err)
-		return
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates:       []tls.Certificate{clientCert},
-		RootCAs:            caPool,
-		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, // Agent cert CN is hostname, relax for development
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, addr,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
-		grpc.WithBlock(),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64*1024*1024)),
-	)
-	if err != nil {
-		log.Printf("[NodeServerManager] failed to reverse-dial agent at %s for server %d: %v", addr, ac.ServerID, err)
-		return
-	}
-
-	ac.mu.Lock()
-	ac.conn = conn
-	ac.agentClient = agentpb.NewAgentServiceClient(conn)
-	ac.mu.Unlock()
-
-	log.Printf("[NodeServerManager] reverse-dial to agent %s (server %d) established", addr, ac.ServerID)
-}
-
-// resolveAgentAddress determines the Agent's gRPC server address.
-// Priority: 1. DB InternalIP, 2. DB PublicIP, 3. DB Hostname, 4. Stream peer address.
-// We prefer DB addresses because the stream peer address may be NAT'd or proxied.
-func (m *NodeServerManager) resolveAgentAddress(serverID int64, stream agentpb.HeartbeatService_StreamServer) string {
-	// 1. Look up the server in DB for InternalIP / PublicIP / Hostname
-	server, err := m.serverRepo.GetByID(context.Background(), serverID)
-	if err == nil {
-		port := server.AgentPort
-		if port == 0 {
-			port = 18443
-		}
-		if server.InternalIP != "" {
-			return net.JoinHostPort(server.InternalIP, strconv.Itoa(port))
-		}
-		if server.PublicIP != "" {
-			return net.JoinHostPort(server.PublicIP, strconv.Itoa(port))
-		}
-		// Hostname may be an IP address or DNS name
-		if server.Hostname != "" && server.Hostname != "local-panel" {
-			return net.JoinHostPort(server.Hostname, strconv.Itoa(port))
-		}
-	}
-
-	// 2. Fallback: try to get address from the gRPC stream peer
-	if p, ok := peer.FromContext(stream.Context()); ok {
-		if addr := extractHostFromPeerAddr(p.Addr.String(), serverID); addr != "" {
-			return addr
-		}
-	}
-
-	return ""
-}
-
-// extractHostFromPeerAddr extracts the host from a gRPC peer address string.
-// Peer addresses look like "192.168.2.50:18443" or "[::1]:18443".
-// We need to replace the port with the Agent's listen port (since the peer
-// address is the Agent's *outbound* source port, not its listen port).
-func extractHostFromPeerAddr(peerAddr string, serverID int64) string {
-	host, _, err := net.SplitHostPort(peerAddr)
-	if err != nil {
-		// Maybe just an IP without port
-		host = peerAddr
-	}
-	if host == "" {
-		return ""
-	}
-	// Use default agent port; we'll need the DB port, but for now use default
-	return net.JoinHostPort(host, strconv.Itoa(18443))
-}
-
 // markOffline marks a server as offline (called when stream breaks).
 func (m *NodeServerManager) markOffline(serverID int64) {
 	m.mu.Lock()
 	if ac, ok := m.connections[serverID]; ok {
 		ac.mu.Lock()
 		ac.online = false
-		// Close the reverse gRPC connection if it exists
-		if ac.conn != nil {
-			ac.conn.Close()
-			ac.conn = nil
-			ac.agentClient = nil
-		}
 		ac.mu.Unlock()
 		delete(m.connections, serverID)
 	}
@@ -1446,7 +1361,7 @@ func (r *registrationServiceImpl) Register(ctx context.Context, req *agentpb.Reg
 }
 
 // ListInterfaces lists network interfaces on a server.
-// For local servers, queries directly. For remote servers, queries via gRPC to the Agent.
+// For local servers, queries directly. For remote servers, queries via heartbeat stream.
 func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) ([]string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -1454,24 +1369,30 @@ func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) 
 		}
 		return m.localAgent.ListInterfaces()
 	}
-	// Remote: query via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ListInterfaces{
+			ListInterfaces: &agentpb.ListInterfacesRequest{},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.ListInterfaces(ctx, &agentpb.ListInterfacesRequest{})
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
 	if err != nil {
 		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ListInterfacesResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal list_interfaces response: %w", err)
 	}
 	return resp.GetInterfaces(), nil
 }
 
 // ExecuteBinaryCommand executes a binary command on a server.
 // For local servers, executes directly via LocalAgent.
-// For remote servers, sends via gRPC to the Agent.
+// For remote servers, sends via heartbeat stream.
 func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID int64, coreType string, args ...string) (map[string]string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -1479,21 +1400,27 @@ func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID i
 		}
 		return m.localAgent.ExecuteBinaryCommand(ctx, coreType, args...)
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ExecuteBinary{
+			ExecuteBinary: &agentpb.ExecuteBinaryRequest{
+				CoreType:  coreType,
+				Args:      args,
+				RawOutput: false,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.ExecuteBinary(ctx, &agentpb.ExecuteBinaryRequest{
-		CoreType:  coreType,
-		Args:      args,
-		RawOutput: false,
-	})
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
 	if err != nil {
 		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ExecuteBinaryResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal execute_binary response: %w", err)
 	}
 	if !resp.Success {
 		return nil, fmt.Errorf("%s", resp.Error)
@@ -1502,7 +1429,7 @@ func (m *NodeServerManager) ExecuteBinaryCommand(ctx context.Context, serverID i
 }
 
 // ExecuteBinaryRawOutput executes a binary command and returns raw stdout.
-// For local servers, executes directly. For remote servers, sends via gRPC to the Agent.
+// For local servers, executes directly. For remote servers, sends via heartbeat stream.
 func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID int64, coreType string, args ...string) (string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -1510,21 +1437,27 @@ func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID
 		}
 		return m.localAgent.ExecuteBinaryRawOutput(ctx, coreType, args...)
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return "", fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ExecuteBinary{
+			ExecuteBinary: &agentpb.ExecuteBinaryRequest{
+				CoreType:  coreType,
+				Args:      args,
+				RawOutput: true,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return "", fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.ExecuteBinary(ctx, &agentpb.ExecuteBinaryRequest{
-		CoreType:  coreType,
-		Args:      args,
-		RawOutput: true,
-	})
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
 	if err != nil {
 		return "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return "", fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ExecuteBinaryResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return "", fmt.Errorf("unmarshal execute_binary response: %w", err)
 	}
 	if !resp.Success {
 		return "", fmt.Errorf("%s", resp.Error)
@@ -1533,19 +1466,14 @@ func (m *NodeServerManager) ExecuteBinaryRawOutput(ctx context.Context, serverID
 }
 
 // SyncDataToServer syncs all configuration data from the panel database
-// to a remote Agent. The Agent writes the data to its local SQLite database,
-// generates runtime config files from the local data, and starts the core process.
-//
-// This is the primary mechanism for Agent startup: the Agent connects to the panel,
-// requests SyncData, and receives all the configuration it needs to operate
-// independently. If the panel is unreachable, the Agent uses its local database
-// (populated from a previous successful sync) to generate configs and start.
+// to a remote Agent via heartbeat stream. The Agent writes the data to its local
+// SQLite database, generates runtime config files from the local data, and starts
+// the core process.
 func (m *NodeServerManager) SyncDataToServer(ctx context.Context, serverID int64, applyAndStart bool) (*agentpb.SyncDataResponse, error) {
 	if m.isLocalServer(serverID) {
 		return nil, fmt.Errorf("SyncData is for remote servers only (server %d is local)", serverID)
 	}
 
-	// Build the SyncDataRequest from panel database
 	if m.dataSyncProvider == nil {
 		return nil, fmt.Errorf("data sync provider not configured")
 	}
@@ -1556,47 +1484,62 @@ func (m *NodeServerManager) SyncDataToServer(ctx context.Context, serverID int64
 	}
 	req.ApplyAndStart = applyAndStart
 
-	// Try direct gRPC first (more reliable for large payloads)
-	ac := m.GetConnection(serverID)
-	if ac != nil && ac.agentClient != nil {
-		resp, err := ac.agentClient.SyncData(ctx, req)
-		if err == nil {
-			log.Printf("[NodeServerManager] SyncData to server %d via direct gRPC: success=%v", serverID, resp.Success)
-			return resp, nil
-		}
-		log.Printf("[NodeServerManager] SyncData direct gRPC failed for server %d: %v, trying stream", serverID, err)
-	}
-
-	// Fallback: send via heartbeat stream
+	// Send via heartbeat stream and wait for result
 	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
 		Command: &agentpb.PanelCommand_SyncData{
 			SyncData: req,
 		},
 	}
-	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
-		return nil, fmt.Errorf("send SyncData command to server %d: %w", serverID, err)
+
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
+	if err != nil {
+		// Timeout doesn't mean failure — SyncData is async
+		log.Printf("[NodeServerManager] SyncData to server %d sent (async, no result yet)", serverID)
+		return &agentpb.SyncDataResponse{Success: true}, nil
 	}
 
-	log.Printf("[NodeServerManager] SyncData sent to server %d via stream (async)", serverID)
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("SyncData failed: %s", result.Error)
+	}
+
+	// Try to deserialize detailed result
+	if result.DetailJson != "" {
+		var resp agentpb.SyncDataResponse
+		if err := json.Unmarshal([]byte(result.DetailJson), &resp); err == nil {
+			return &resp, nil
+		}
+	}
+
 	return &agentpb.SyncDataResponse{Success: true}, nil
 }
 
-// XrayAPIOnServer proxies an xray API call to a remote server's Agent.
+// XrayAPIOnServer proxies an xray API call to a remote server's Agent via stream.
 // For local servers, returns an error (caller should use direct connection).
 func (m *NodeServerManager) XrayAPIOnServer(ctx context.Context, serverID int64, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_XrayApi{
+			XrayApi: req,
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, fmt.Errorf("server %d agent client not available", serverID)
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	return ac.agentClient.XrayAPI(ctx, req)
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.XrayAPIResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal xray_api response: %w", err)
+	}
+	return &resp, nil
 }
 
 // ReadConfigFileOnServer reads the runtime config file from a node (local or remote).
 // For local nodes, it reads directly from disk via the LocalAgent.
-// For remote nodes, it calls the ReadConfigFile gRPC RPC on the Agent.
+// For remote nodes, it sends ReadConfigFile via heartbeat stream.
 func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID int64, coreType string) ([]byte, string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
@@ -1604,19 +1547,25 @@ func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID
 		}
 		return m.localAgent.ReadConfigFile(coreType)
 	}
-	// Remote: send via gRPC
-	ac := m.GetConnection(serverID)
-	if ac == nil {
-		return nil, "", fmt.Errorf("server %d not connected", serverID)
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ReadConfigFile{
+			ReadConfigFile: &agentpb.ReadConfigFileRequest{
+				CoreType: coreType,
+			},
+		},
 	}
-	if ac.agentClient == nil {
-		return nil, "", fmt.Errorf("server %d agent client not available", serverID)
-	}
-	resp, err := ac.agentClient.ReadConfigFile(ctx, &agentpb.ReadConfigFileRequest{
-		CoreType: coreType,
-	})
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
 	if err != nil {
 		return nil, "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, "", fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ReadConfigFileResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, "", fmt.Errorf("unmarshal read_config_file response: %w", err)
 	}
 	if !resp.Success {
 		return nil, "", fmt.Errorf("%s", resp.Error)

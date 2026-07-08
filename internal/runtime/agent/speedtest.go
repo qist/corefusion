@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
 
@@ -264,7 +263,7 @@ func (m *SpeedTestManager) testLocalServer(ctx context.Context, serverID int64, 
 	return result
 }
 
-// testRemoteServer calls Agent.SpeedTest via gRPC.
+// testRemoteServer calls Agent.SpeedTest via stream.
 func (m *SpeedTestManager) testRemoteServer(ctx context.Context, serverID int64, hostname string) *SpeedTestResult {
 	result := &SpeedTestResult{
 		ServerID: serverID,
@@ -280,12 +279,7 @@ func (m *SpeedTestManager) testRemoteServer(ctx context.Context, serverID int64,
 	testCtx, cancel := context.WithTimeout(ctx, m.timeout*time.Duration(m.samples+2))
 	defer cancel()
 
-	resp, err := ac.agentClient.SpeedTest(testCtx, &agentpb.SpeedTestRequest{
-		TargetHost: hostname,
-		TargetPort: int32(m.testPort),
-		TimeoutMs:  int32(m.timeout / time.Millisecond),
-		Samples:    int32(m.samples),
-	})
+	resp, err := m.nodeMgr.SpeedTestOnServer(testCtx, serverID, hostname, int32(m.testPort), int32(m.timeout/time.Millisecond), int32(m.samples))
 	if err != nil {
 		result.Error = fmt.Sprintf("grpc SpeedTest: %v", err)
 		return result

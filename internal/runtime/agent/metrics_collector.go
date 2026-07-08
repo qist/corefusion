@@ -172,9 +172,7 @@ func (mc *MetricsCollector) collectRemoteMetrics(ctx context.Context, serverID i
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	resp, err := ac.agentClient.GetMetrics(ctx, &agentpb.GetMetricsRequest{
-		LastNPoints: 1,
-	})
+	resp, err := mc.nodeMgr.GetMetricsFromServer(ctx, serverID, 1, "")
 	if err != nil {
 		// Fallback to GetStatus
 		statusResp, err2 := mc.nodeMgr.GetServerStatus(ctx, serverID)

@@ -502,6 +502,63 @@ func (b *DataSyncBuilder) collectProxySiteCertificates(ctx context.Context, serv
 	}
 }
 
+// CollectProxyCertificates collects TLS certificates referenced by proxy sites
+// (Caddy/Nginx) for a specific server. This is used by SyncProxyConfig to land
+// certificate files on remote agents alongside the proxy config.
+//
+// It scans proxy_sites, caddy_sites, and nginx_sites for CertPath references,
+// matches them against the certificates table, and returns CertificateEntry
+// list with PEM content.
+func (b *DataSyncBuilder) CollectProxyCertificates(ctx context.Context, serverID int64) []*agentpb.CertificateEntry {
+	rdp, ok := b.rawProvider.(*RepositoryDataProvider)
+	if !ok || rdp.certRepo == nil {
+		return nil
+	}
+
+	certPathSet := make(map[string]bool)
+	b.collectProxySiteCertificates(ctx, serverID, certPathSet)
+
+	if len(certPathSet) == 0 {
+		return nil
+	}
+
+	// Load all certificates from DB and match by path
+	allCerts, _, err := rdp.certRepo.List(ctx, 1000, 0)
+	if err != nil {
+		log.Printf("[DataSyncBuilder] CollectProxyCertificates: failed to list certificates: %v", err)
+		return nil
+	}
+
+	var entries []*agentpb.CertificateEntry
+	for _, cert := range allCerts {
+		if cert.CertContent == "" || cert.KeyContent == "" {
+			continue
+		}
+		normalizedCertPath := normalizeCertPath(cert.CertPath)
+		if !certPathSet[normalizedCertPath] {
+			continue
+		}
+		fullchainContent := ""
+		if cert.FullchainPath != "" {
+			fullchainContent = cert.CertContent
+		}
+		entries = append(entries, &agentpb.CertificateEntry{
+			Id:               cert.ID,
+			Domain:           cert.Domain,
+			CertPath:         cert.CertPath,
+			KeyPath:          cert.KeyPath,
+			FullchainPath:    cert.FullchainPath,
+			CertContent:      cert.CertContent,
+			KeyContent:       cert.KeyContent,
+			FullchainContent: fullchainContent,
+			ExpiresAt:        cert.ExpiresAt.Unix(),
+		})
+	}
+
+	log.Printf("[DataSyncBuilder] server %d: collected %d proxy certificates", serverID, len(entries))
+	return entries
+}
+
 // normalizeCertPath strips common relative path prefixes so that paths
 // like "../../../certs/gg/cert.pem" and "certs/gg/cert.pem" match.
 func normalizeCertPath(path string) string {

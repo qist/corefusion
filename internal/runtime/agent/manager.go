@@ -61,6 +61,9 @@ type NodeServerManager struct {
 	// Data sync provider: reads panel DB tables to build SyncDataRequest
 	dataSyncProvider DataSyncProvider
 
+	// Proxy cert collector: collects TLS certs for proxy sites (Caddy/Nginx)
+	proxyCertCollector ProxyCertCollector
+
 	// Cert renewer: checks and renews Agent certs on reconnect
 	certRenewer *CertRenewer
 }
@@ -136,9 +139,21 @@ type DataSyncProvider interface {
 	BuildSyncDataRequest(ctx context.Context, serverID int64) (*agentpb.SyncDataRequest, error)
 }
 
+// ProxyCertCollector collects TLS certificates used by proxy sites (Caddy/Nginx)
+// for a specific server. This is used when syncing proxy configs to remote agents
+// so that certificate files are landed on the agent's disk alongside the config.
+type ProxyCertCollector interface {
+	CollectProxyCertificates(ctx context.Context, serverID int64) []*agentpb.CertificateEntry
+}
+
 // SetDataSyncProvider sets the data sync provider for SyncData operations.
 func (m *NodeServerManager) SetDataSyncProvider(p DataSyncProvider) {
 	m.dataSyncProvider = p
+}
+
+// SetProxyCertCollector sets the proxy certificate collector for SyncProxyConfig operations.
+func (m *NodeServerManager) SetProxyCertCollector(c ProxyCertCollector) {
+	m.proxyCertCollector = c
 }
 
 // SetMetricsCollector sets the metrics collector for heartbeat-based metric collection.
@@ -428,14 +443,21 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-	return m.localAgent.SyncProxyConfig(ctx, proxyType, config)
+		return m.localAgent.SyncProxyConfig(ctx, proxyType, config)
 	}
 	// Remote: send via heartbeat stream
+	// Collect TLS certificates referenced by proxy sites for this server
+	// so the Agent can land them on disk before writing the config file.
+	var certs []*agentpb.CertificateEntry
+	if m.proxyCertCollector != nil {
+		certs = m.proxyCertCollector.CollectProxyCertificates(ctx, serverID)
+	}
 	cmd := &agentpb.PanelCommand{
 		Command: &agentpb.PanelCommand_SyncProxyConfig{
 			SyncProxyConfig: &agentpb.SyncProxyConfigRequest{
 				ProxyType:     proxyType,
 				ConfigContent: config,
+				Certificates:  certs,
 			},
 		},
 	}

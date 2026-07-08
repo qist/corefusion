@@ -20,9 +20,8 @@ type AgentConfig struct {
 		Token string `yaml:"token"`
 	} `yaml:"bootstrap"`
 	Agent struct {
-		ListenPort int    `yaml:"listen_port"` // Deprecated: no longer used. All communication via heartbeat stream.
-		LogLevel   string `yaml:"log_level"`
-		DataDir    string `yaml:"data_dir"`
+		LogLevel string `yaml:"log_level"`
+		DataDir  string `yaml:"data_dir"`
 	} `yaml:"agent"`
 }
 
@@ -37,9 +36,6 @@ func loadConfig(path string) (*AgentConfig, error) {
 	}
 	if cfg.Agent.DataDir == "" {
 		cfg.Agent.DataDir = "/opt/corefusion-agent/data"
-	}
-	if cfg.Agent.ListenPort == 0 {
-		cfg.Agent.ListenPort = 18444
 	}
 	if cfg.Panel.GRPCPort == 0 {
 		cfg.Panel.GRPCPort = 18443

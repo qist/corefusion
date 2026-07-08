@@ -171,17 +171,77 @@
       <!-- Certificates Tab -->
       <el-tab-pane :label="t('menu.certificates')" name="certs">
         <div style="padding:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <span style="font-size:14px;font-weight:600">{{ t('nodeServer.certList') }}</span>
+            <div style="display:flex;gap:8px">
+              <el-button size="small" @click="showCertBindDialog = true">{{ t('nodeServer.bindCert') }}</el-button>
+              <el-button size="small" type="primary" @click="loadCerts"><el-icon><Refresh /></el-icon> {{ t('common.refresh') }}</el-button>
+            </div>
+          </div>
+          <el-alert type="info" :closable="false" style="margin-bottom:12px;font-size:12px">
+            {{ t('nodeServer.certAutoDetectHint') }}
+          </el-alert>
           <el-table :data="certificates" v-loading="certLoading" stripe size="small">
             <el-table-column prop="id" label="ID" width="60" />
-            <el-table-column prop="domain" :label="t('nodeServer.hostname')" />
-            <el-table-column prop="issuer" label="Issuer" />
-            <el-table-column :label="t('nodeServer.certStatus')" width="180">
+            <el-table-column prop="domain" :label="t('nodeServer.certDomain')" min-width="140" />
+            <el-table-column :label="t('nodeServer.certSource')" min-width="180">
               <template #default="{row}">
-                <span>{{ row.expires_at ? formatTime(row.expires_at) : '-' }}</span>
+                <div style="display:flex;flex-wrap:wrap;gap:2px">
+                  <el-tag v-for="src in (row.sources || [])" :key="src" size="small" :type="sourceTagType(src)">{{ sourceLabel(src) }}</el-tag>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="issuer" label="Issuer" width="140" show-overflow-tooltip />
+            <el-table-column :label="t('nodeServer.certProvider')" width="90">
+              <template #default="{row}">
+                <el-tag size="small" type="info">{{ row.provider_type || '-' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('nodeServer.certAutoRenew')" width="80">
+              <template #default="{row}">
+                <el-tag size="small" :type="row.auto_renew ? 'success' : 'info'">{{ row.auto_renew ? t('common.yes') : t('common.no') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('nodeServer.certExpiry')" width="170">
+              <template #default="{row}">
+                <el-tag v-if="row.expires_at" size="small" :type="certExpiringSoon(row.expires_at) ? 'warning' : 'success'">
+                  {{ formatTime(row.expires_at) }}
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('nodeServer.certPath')" width="200" show-overflow-tooltip>
+              <template #default="{row}">
+                <span style="font-size:12px;color:#909399">{{ row.cert_path || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.actions')" width="120">
+              <template #default="{row}">
+                <el-button size="small" type="primary" plain :loading="syncingCertId === row.id" @click="syncCertToNode(row)">
+                  {{ t('nodeServer.syncCert') }}
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="certificates.length === 0 && !certLoading" style="text-align:center;padding:40px;color:#909399">
+            {{ t('nodeServer.noCerts') }}
+          </div>
         </div>
+
+        <!-- Bind Certificate Dialog -->
+        <el-dialog v-model="showCertBindDialog" :title="t('nodeServer.bindCert')" width="600">
+          <el-form label-width="120px">
+            <el-form-item :label="t('nodeServer.selectCert')">
+              <el-select v-model="certBindId" style="width:100%" :placeholder="t('nodeServer.selectCertPlaceholder')" filterable>
+                <el-option v-for="c in allCerts" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
+              </el-select>
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="showCertBindDialog = false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" :loading="certBinding" @click="handleBindCert">{{ t('common.confirm') }}</el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -194,7 +254,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Refresh, Upload } from '@element-plus/icons-vue'
 import client from '../api/client'
-import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates } from '../api/nodeServer'
+import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates, distributeCertificate, associateCertificate } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
 import RuleTab from './services/RuleTab.vue'
@@ -222,6 +282,15 @@ const selectedAsset = ref('')
 const updating = ref(false)
 const updateTask = ref(null)
 let pollTimer = null
+
+// Cert sync
+const syncingCertId = ref(null)
+
+// Cert bind dialog
+const showCertBindDialog = ref(false)
+const certBindId = ref(null)
+const certBinding = ref(false)
+const allCerts = ref([])
 
 const nodeTypeOptions = {
   standalone: t('nodeServer.nodeTypeStandalone'),
@@ -265,6 +334,24 @@ function formatTime(ts) {
 
 function goBack() { router.push('/node-servers') }
 
+function certExpiringSoon(ts) {
+  if (!ts) return false
+  const days = (new Date(ts).getTime() - Date.now()) / 86400000
+  return days < 30
+}
+
+async function syncCertToNode(cert) {
+  syncingCertId.value = cert.id
+  try {
+    await distributeCertificate(serverId, cert.id)
+    ElMessage.success(t('nodeServer.syncCertSuccess'))
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('nodeServer.syncCertFailed'))
+  } finally {
+    syncingCertId.value = null
+  }
+}
+
 async function loadServer() {
   try {
     server.value = await client.get(`/node-servers/${serverId}`)
@@ -282,6 +369,51 @@ async function loadCerts() {
     certificates.value = []
   } finally {
     certLoading.value = false
+  }
+}
+
+async function loadAllCerts() {
+  try {
+    const data = await client.get('/certificates', { params: { limit: 100, offset: 0 } })
+    allCerts.value = data?.items || []
+  } catch {
+    allCerts.value = []
+  }
+}
+
+function sourceLabel(src) {
+  if (src === 'node-level') return t('nodeServer.certSrcNodeLevel')
+  if (src.startsWith('xray:')) return 'Xray: ' + src.substring(5)
+  if (src.startsWith('caddy:')) return 'Caddy: ' + src.substring(7)
+  if (src.startsWith('nginx:')) return 'Nginx: ' + src.substring(6)
+  if (src.startsWith('proxy:')) return 'Proxy: ' + src.substring(6)
+  return src
+}
+
+function sourceTagType(src) {
+  if (src === 'node-level') return 'primary'
+  if (src.startsWith('xray:')) return 'success'
+  if (src.startsWith('caddy:')) return 'warning'
+  if (src.startsWith('nginx:')) return 'danger'
+  return 'info'
+}
+
+async function handleBindCert() {
+  if (!certBindId.value) {
+    ElMessage.warning(t('nodeServer.selectCertPlaceholder'))
+    return
+  }
+  certBinding.value = true
+  try {
+    await associateCertificate(serverId, certBindId.value)
+    ElMessage.success(t('common.success'))
+    showCertBindDialog.value = false
+    certBindId.value = null
+    loadCerts()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('common.failed'))
+  } finally {
+    certBinding.value = false
   }
 }
 
@@ -380,6 +512,7 @@ function stopPolling() {
 onMounted(() => {
   loadServer()
   loadCerts()
+  loadAllCerts()
   loadPanelAgentVersion()
   loadGithubReleases()
 })

@@ -39,8 +39,9 @@
         <el-table-column :label="t('certificate.expiresAt')" width="180">
           <template #default="{row}">{{ formatDate(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="150">
+        <el-table-column :label="t('common.actions')" width="260">
           <template #default="{row}">
+            <el-button size="small" type="primary" plain :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
             <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
           </template>
@@ -363,7 +364,7 @@ async function fetchCertificates() {
   loading.value = true
   try {
     const data = await client.get('/certificates', { params: { limit: 20, offset: (page.value - 1) * 20 } })
-    certificates.value = (data.items || []).map(c => ({ ...c, _renewing: false }))
+    certificates.value = (data.items || []).map(c => ({ ...c, _renewing: false, _distributing: false }))
     total.value = data.total || 0
   } finally { loading.value = false }
 }
@@ -452,6 +453,18 @@ async function handleRenew(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(t('certificate.deleteConfirm', { domain: row.domain || row.name }), t('common.confirm'))
   await client.delete(`/certificates/${row.id}`); ElMessage.success(t('common.success')); fetchCertificates()
+}
+
+async function handleDistribute(row) {
+  row._distributing = true
+  try {
+    await client.post('/node-servers/distribute-cert', { certificate_id: row.id })
+    ElMessage.success(t('certificate.distributeSuccess'))
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('certificate.distributeFailed'))
+  } finally {
+    row._distributing = false
+  }
 }
 
 // --- DNS Channels ---

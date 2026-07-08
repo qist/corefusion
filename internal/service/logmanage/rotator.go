@@ -16,6 +16,8 @@ import (
 )
 
 // Rotate executes log rotation for a single policy.
+// If MaxSize is configured (> 0) and the file size hasn't reached it,
+// rotation is skipped (returns a success job with RotatedFiles=0).
 func (s *Service) Rotate(ctx context.Context, policyID int64) (*entity.LogRotationJob, error) {
 	policy, err := s.policyRepo.GetByID(ctx, policyID)
 	if err != nil {
@@ -39,7 +41,7 @@ func (s *Service) Rotate(ctx context.Context, policyID int64) (*entity.LogRotati
 		return job, rotateErr
 	}
 
-	// Clean expired log files
+	// Clean expired log files (always runs, even if rotation was skipped)
 	cleaned, freed, cleanErr := s.cleanExpired(policy)
 	job.CleanedFiles = cleaned
 	job.FreedBytes = freed
@@ -52,8 +54,13 @@ func (s *Service) Rotate(ctx context.Context, policyID int64) (*entity.LogRotati
 		log.Printf("logmanage: failed to save job record: %v", err)
 	}
 
-	log.Printf("logmanage: rotated %s - %d files rotated, %d files cleaned, %d bytes freed",
-		policy.LogPath, job.RotatedFiles, job.CleanedFiles, job.FreedBytes)
+	if rotated > 0 {
+		log.Printf("logmanage: rotated %s - %d files rotated, %d files cleaned, %d bytes freed",
+			policy.LogPath, job.RotatedFiles, job.CleanedFiles, job.FreedBytes)
+	} else {
+		log.Printf("logmanage: skipped rotation for %s (file too small or not exists), cleaned %d expired files",
+			policy.LogPath, job.CleanedFiles)
+	}
 	return job, nil
 }
 
@@ -73,6 +80,7 @@ func (s *Service) RotateAll(ctx context.Context) error {
 }
 
 // rotateFile performs the actual log file rotation.
+// Returns (0, nil) without error if rotation is skipped (file too small or not exists).
 func (s *Service) rotateFile(policy *entity.LogRotationPolicy) (int, error) {
 	logPath := policy.LogPath
 
@@ -87,6 +95,14 @@ func (s *Service) rotateFile(policy *entity.LogRotationPolicy) (int, error) {
 
 	// Skip if file is empty
 	if info.Size() == 0 {
+		return 0, nil
+	}
+
+	// If MaxSize is configured, only rotate when file size reaches the threshold.
+	// This prevents splitting small log files that haven't grown enough.
+	if policy.MaxSize > 0 && info.Size() < policy.MaxSize {
+		log.Printf("logmanage: skip rotation for %s (size=%d, threshold=%d)",
+			logPath, info.Size(), policy.MaxSize)
 		return 0, nil
 	}
 

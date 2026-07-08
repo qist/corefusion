@@ -271,11 +271,21 @@ func (h *Handler) SaveLogOutput(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
-// TakeoverStdout enables stdout capture for a proxy.
+// isValidLogType checks if the given type is a supported log source type.
+func isValidLogType(t string) bool {
+	for _, valid := range logmanage.AllLogTypes() {
+		if t == valid {
+			return true
+		}
+	}
+	return false
+}
+
+// TakeoverStdout enables stdout capture for a process (proxy or core).
 func (h *Handler) TakeoverStdout(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	if err := h.svc.TakeoverStdout(c.Request.Context(), proxyType); err != nil {
@@ -285,11 +295,11 @@ func (h *Handler) TakeoverStdout(c *gin.Context) {
 	response.OK(c, gin.H{"message": "stdout capture enabled", "type": proxyType})
 }
 
-// ReleaseStdout disables stdout capture for a proxy.
+// ReleaseStdout disables stdout capture for a process (proxy or core).
 func (h *Handler) ReleaseStdout(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	if err := h.svc.ReleaseStdout(c.Request.Context(), proxyType); err != nil {
@@ -307,11 +317,11 @@ func (h *Handler) GetWriterStatus(c *gin.Context) {
 	response.OK(c, statuses)
 }
 
-// StartWriter starts the log writer for a proxy type.
+// StartWriter starts the log writer for a process type (proxy or core).
 func (h *Handler) StartWriter(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	var req struct {
@@ -332,11 +342,11 @@ func (h *Handler) StartWriter(c *gin.Context) {
 	response.OK(c, gin.H{"message": "writer started", "type": proxyType, "mode": req.Mode})
 }
 
-// StopWriter stops the log writer for a proxy type.
+// StopWriter stops the log writer for a process type (proxy or core).
 func (h *Handler) StopWriter(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	if err := h.svc.StopWriter(proxyType); err != nil {
@@ -349,8 +359,8 @@ func (h *Handler) StopWriter(c *gin.Context) {
 // UpdateWriterConfig updates the writer configuration.
 func (h *Handler) UpdateWriterConfig(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	var cfg logmanage.LogWriterConfig
@@ -368,8 +378,8 @@ func (h *Handler) UpdateWriterConfig(c *gin.Context) {
 // ListWriterFiles returns the rotated files for a writer.
 func (h *Handler) ListWriterFiles(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	files := h.svc.ListWriterFiles(proxyType)
@@ -379,11 +389,11 @@ func (h *Handler) ListWriterFiles(c *gin.Context) {
 	response.OK(c, files)
 }
 
-// ProxyStdoutLog returns the last N lines from a proxy's stdout broker.
+// ProxyStdoutLog returns the last N lines from a process's stdout broker.
 func (h *Handler) ProxyStdoutLog(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "500"))
@@ -395,11 +405,11 @@ func (h *Handler) ProxyStdoutLog(c *gin.Context) {
 	response.OK(c, gin.H{"lines": logLines, "type": proxyType})
 }
 
-// ProxyStdoutStream streams a proxy's stdout via SSE.
+// ProxyStdoutStream streams a process's stdout via SSE.
 func (h *Handler) ProxyStdoutStream(c *gin.Context) {
 	proxyType := c.Param("type")
-	if proxyType != "nginx" && proxyType != "caddy" {
-		response.BadRequest(c, "INVALID_TYPE", "type must be nginx or caddy")
+	if !isValidLogType(proxyType) {
+		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
 

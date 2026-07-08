@@ -193,6 +193,27 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 		ExpiresAt:     expiresAt,
 	}
 
+	// If a certificate with the same domain already exists, update it in place
+	// so that existing config references pick up the new content automatically.
+	if existing, err := s.repo.GetByDomain(ctx, domain); err == nil {
+		existing.Name = name
+		existing.Domains = sans
+		existing.Issuer = issuer
+		existing.ProviderType = "upload"
+		existing.KeyType = keyType
+		existing.KeyBits = keyBits
+		existing.CertPath = certPath
+		existing.KeyPath = keyPath
+		existing.CertContent = input.CertContent
+		existing.KeyContent = input.KeyContent
+		existing.Status = "active"
+		existing.ExpiresAt = expiresAt
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return nil, err
+		}
+		return existing, nil
+	}
+
 	if err := s.repo.Create(ctx, cert); err != nil {
 		return nil, err
 	}
@@ -549,19 +570,42 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	}
 
 	certRecord := &entity.Certificate{
-		Domain:       input.Domains[0],
-		Issuer:       issuerName,
-		ProviderType: "acme",
-		CertPath:     result.CertPath,
-		KeyPath:      result.KeyPath,
+		Domain:        input.Domains[0],
+		Issuer:        issuerName,
+		ProviderType:  "acme",
+		CertPath:      result.CertPath,
+		KeyPath:       result.KeyPath,
 		FullchainPath: result.FullchainPath,
-		CertContent:  result.CertContent,
-		KeyContent:   result.KeyContent,
-		Status:       "active",
-		AutoRenew:    1,
-		ExpiresAt:    result.ExpiresAt,
+		CertContent:   result.CertContent,
+		KeyContent:    result.KeyContent,
+		Status:        "active",
+		AutoRenew:     1,
+		ExpiresAt:     result.ExpiresAt,
 	}
 
+	// If a certificate for the same domain already exists, update it in place
+	// rather than creating a duplicate record. The file paths are the same
+	// (certs/<domain>/cert.pem), so all existing config references remain valid.
+	now := time.Now()
+	if existing, err := s.repo.GetByDomain(ctx, input.Domains[0]); err == nil {
+		existing.Issuer = issuerName
+		existing.ProviderType = "acme"
+		existing.CertPath = result.CertPath
+		existing.KeyPath = result.KeyPath
+		existing.FullchainPath = result.FullchainPath
+		existing.CertContent = result.CertContent
+		existing.KeyContent = result.KeyContent
+		existing.Status = "active"
+		existing.AutoRenew = 1
+		existing.ExpiresAt = result.ExpiresAt
+		existing.LastRenewedAt = &now
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return nil, err
+		}
+		return existing, nil
+	}
+
+	certRecord.LastRenewedAt = &now
 	if err := s.repo.Create(ctx, certRecord); err != nil {
 		return nil, err
 	}

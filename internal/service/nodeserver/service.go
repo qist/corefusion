@@ -1380,6 +1380,190 @@ func (s *Service) DissociateCertificate(ctx context.Context, serverID int64) err
 	return s.repo.UpdateCertificateID(ctx, serverID, 0)
 }
 
+// MigrateCertificate migrates all references from oldCertID to newCertID.
+// It updates:
+//  1. node_servers.certificate_id
+//  2. inbound_configs.config_json (certificateFile/keyFile paths)
+//  3. caddy_sites.cert_path / key_path
+//  4. nginx_sites.cert_path / key_path
+//  5. proxy_sites.cert_path / key_path
+//
+// After migration, it triggers SyncData to all affected nodes.
+func (s *Service) MigrateCertificate(ctx context.Context, oldCertID, newCertID int64) (map[string]interface{}, error) {
+	if s.certRepo == nil {
+		return nil, fmt.Errorf("certificate repository not initialized")
+	}
+	if s.db == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	oldCert, err := s.certRepo.GetByID(ctx, oldCertID)
+	if err != nil {
+		return nil, fmt.Errorf("old certificate not found: %w", err)
+	}
+	newCert, err := s.certRepo.GetByID(ctx, newCertID)
+	if err != nil {
+		return nil, fmt.Errorf("new certificate not found: %w", err)
+	}
+
+	affectedServers := make(map[int64]bool)
+	result := map[string]interface{}{
+		"old_cert": gin.H{"id": oldCert.ID, "domain": oldCert.Domain, "cert_path": oldCert.CertPath},
+		"new_cert": gin.H{"id": newCert.ID, "domain": newCert.Domain, "cert_path": newCert.CertPath},
+	}
+
+	oldCertPathNorm := normalizeCertPathLocal(oldCert.CertPath)
+	oldKeyPathNorm := normalizeCertPathLocal(oldCert.KeyPath)
+
+	// 1. Update node_servers.certificate_id
+	var servers []entity.NodeServer
+	if err := s.db.WithContext(ctx).Where("certificate_id = ?", oldCertID).Find(&servers).Error; err == nil {
+		for _, srv := range servers {
+			s.db.WithContext(ctx).Model(&entity.NodeServer{}).Where("id = ?", srv.ID).Update("certificate_id", newCertID)
+			affectedServers[srv.ID] = true
+		}
+	}
+	result["node_servers_updated"] = len(servers)
+
+	// 2. Update inbound_configs: replace certificateFile/keyFile paths in config_json
+	if s.inboundRepo != nil {
+		var inbounds []entity.InboundConfig
+		s.db.WithContext(ctx).Find(&inbounds)
+		inboundUpdated := 0
+		for _, ic := range inbounds {
+			var cfg map[string]interface{}
+			if err := json.Unmarshal([]byte(ic.ConfigJSON), &cfg); err != nil {
+				continue
+			}
+			ss, ok := cfg["streamSettings"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			tls, ok := ss["tlsSettings"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			certs, ok := tls["certificates"].([]interface{})
+			if !ok {
+				continue
+			}
+			modified := false
+			for _, c := range certs {
+				cm, ok := c.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if cf, ok := cm["certificateFile"].(string); ok {
+					if normalizeCertPathLocal(cf) == oldCertPathNorm {
+						cm["certificateFile"] = strings.ReplaceAll(cf, oldCert.CertPath, newCert.CertPath)
+						modified = true
+					}
+				}
+				if kf, ok := cm["keyFile"].(string); ok {
+					if normalizeCertPathLocal(kf) == oldKeyPathNorm {
+						cm["keyFile"] = strings.ReplaceAll(kf, oldCert.KeyPath, newCert.KeyPath)
+						modified = true
+					}
+				}
+			}
+			if modified {
+				updatedJSON, _ := json.Marshal(cfg)
+				s.db.WithContext(ctx).Model(&entity.InboundConfig{}).Where("id = ?", ic.ID).Update("config_json", string(updatedJSON))
+				affectedServers[ic.ServerID] = true
+				inboundUpdated++
+			}
+		}
+		result["inbound_configs_updated"] = inboundUpdated
+	}
+
+	// 3. Update caddy_sites
+	var caddySites []entity.CaddySite
+	s.db.WithContext(ctx).Where("cert_path LIKE ? OR key_path LIKE ?", "%"+oldCertPathNorm+"%", "%"+oldKeyPathNorm+"%").Find(&caddySites)
+	for _, site := range caddySites {
+		updates := map[string]interface{}{}
+		if normalizeCertPathLocal(site.CertPath) == oldCertPathNorm {
+			updates["cert_path"] = newCert.CertPath
+		}
+		if normalizeCertPathLocal(site.KeyPath) == oldKeyPathNorm {
+			updates["key_path"] = newCert.KeyPath
+		}
+		if len(updates) > 0 {
+			s.db.WithContext(ctx).Model(&entity.CaddySite{}).Where("id = ?", site.ID).Updates(updates)
+			affectedServers[site.ServerID] = true
+		}
+	}
+	result["caddy_sites_updated"] = len(caddySites)
+
+	// 4. Update nginx_sites
+	var nginxSites []entity.NginxSite
+	s.db.WithContext(ctx).Where("cert_path LIKE ? OR key_path LIKE ?", "%"+oldCertPathNorm+"%", "%"+oldKeyPathNorm+"%").Find(&nginxSites)
+	for _, site := range nginxSites {
+		updates := map[string]interface{}{}
+		if normalizeCertPathLocal(site.CertPath) == oldCertPathNorm {
+			updates["cert_path"] = newCert.CertPath
+		}
+		if normalizeCertPathLocal(site.KeyPath) == oldKeyPathNorm {
+			updates["key_path"] = newCert.KeyPath
+		}
+		if len(updates) > 0 {
+			s.db.WithContext(ctx).Model(&entity.NginxSite{}).Where("id = ?", site.ID).Updates(updates)
+			affectedServers[site.ServerID] = true
+		}
+	}
+	result["nginx_sites_updated"] = len(nginxSites)
+
+	// 5. Update proxy_sites
+	var proxySites []entity.ProxySite
+	s.db.WithContext(ctx).Where("cert_path LIKE ? OR key_path LIKE ?", "%"+oldCertPathNorm+"%", "%"+oldKeyPathNorm+"%").Find(&proxySites)
+	for _, site := range proxySites {
+		updates := map[string]interface{}{}
+		if normalizeCertPathLocal(site.CertPath) == oldCertPathNorm {
+			updates["cert_path"] = newCert.CertPath
+		}
+		if normalizeCertPathLocal(site.KeyPath) == oldKeyPathNorm {
+			updates["key_path"] = newCert.KeyPath
+		}
+		if len(updates) > 0 {
+			s.db.WithContext(ctx).Model(&entity.ProxySite{}).Where("id = ?", site.ID).Updates(updates)
+			affectedServers[site.ServerID] = true
+		}
+	}
+	result["proxy_sites_updated"] = len(proxySites)
+
+	// 6. Trigger SyncData to all affected nodes
+	serverIDs := make([]int64, 0, len(affectedServers))
+	for id := range affectedServers {
+		serverIDs = append(serverIDs, id)
+	}
+	result["affected_servers"] = serverIDs
+
+	if s.nodeMgr != nil && len(serverIDs) > 0 {
+		for _, serverID := range serverIDs {
+			if serverID == 1 || s.nodeMgr.IsLocalServer(serverID) {
+				continue // local server uses files directly
+			}
+			if !s.nodeMgr.IsOnlineForServer(serverID) {
+				log.Printf("[nodeserver] server %d offline, will sync on reconnect", serverID)
+				continue
+			}
+			go func(sid int64) {
+				syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if _, err := s.SyncServerData(syncCtx, sid, true); err != nil {
+					log.Printf("[nodeserver] migration SyncData to server %d: %v", sid, err)
+				} else {
+					log.Printf("[nodeserver] migration SyncData to server %d: success", sid)
+				}
+			}(serverID)
+		}
+	}
+
+	log.Printf("[nodeserver] certificate migration: old=%d (%s) → new=%d (%s), affected %d server(s)",
+		oldCertID, oldCert.Domain, newCertID, newCert.Domain, len(serverIDs))
+
+	return result, nil
+}
+
 // ──────────────────── Supplementary: CA Center ────────────────────
 
 // GetCAStatus returns the CA root certificate status.

@@ -319,26 +319,82 @@ func (m *Manager) systemPaths(name string) []string {
 func (m *Manager) getVersion(path string) string {
 	for _, flag := range []string{"version", "-v", "--version"} {
 		cmd := exec.Command(path, flag)
-		// Use separate stdout to avoid JSON log noise from stderr
-		// (e.g. Caddy emits warnings when XDG_CONFIG_HOME/HOME is unset)
+		// Use separate stdout/stderr buffers because nginx writes its version
+		// to stderr (not stdout), while caddy writes to stdout but may emit
+		// JSON-formatted warning logs on stderr when HOME/XDG_CONFIG_HOME are
+		// unset (common in systemd service environments).
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		err := cmd.Run()
-		if err == nil && stdout.Len() > 0 {
-			v := strings.TrimSpace(stdout.String())
-			if idx := strings.Index(v, "\n"); idx > 0 {
-				v = v[:idx]
-			}
-			v = strings.TrimPrefix(v, "nginx/")
-			v = strings.TrimPrefix(v, "caddy ")
-			if len(v) > 40 {
-				v = v[:40]
-			}
+		if err != nil {
+			continue
+		}
+		// Combine stdout and stderr, then let parseProxyVersion find the
+		// version line among any JSON log noise.
+		raw := stdout.String()
+		if strings.TrimSpace(raw) == "" {
+			raw = stderr.String()
+		} else if strings.TrimSpace(stderr.String()) != "" {
+			// Prepend stderr in case stdout only has log output (unlikely
+			// but keeps the search robust).
+			raw = raw + "\n" + stderr.String()
+		}
+		v := parseProxyVersion(raw)
+		if v != "" {
 			return v
 		}
 	}
 	return "unknown"
+}
+
+// parseProxyVersion extracts a clean version string from proxy version output.
+//
+// nginx -v stderr:  "nginx version: nginx/1.24.0"
+// caddy version:    "v2.11.4 h1:XKxkMTgNSizEvKG6QHue6cAsFOteU2qA61w2tKkCWi0="
+//
+// In systemd service environments, caddy may also emit JSON log warnings on
+// stderr (zerolog format), e.g.:
+//   {"level":"warn","ts":...,"msg":"unable to determine directory ..."}
+// These lines must be skipped to find the actual version line.
+func parseProxyVersion(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	// Scan lines, skip JSON log lines and empty lines, find the version line.
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Skip JSON log lines (caddy zerolog output starts with '{')
+		if line[0] == '{' {
+			continue
+		}
+
+		// nginx: "nginx version: nginx/1.24.0" → "1.24.0"
+		if strings.HasPrefix(line, "nginx version:") {
+			rest := strings.TrimSpace(strings.TrimPrefix(line, "nginx version:"))
+			if idx := strings.Index(rest, "/"); idx >= 0 {
+				return rest[idx+1:]
+			}
+			return rest
+		}
+
+		// caddy: "v2.11.4 h1:hash..." → "v2.11.4" (take first token)
+		if idx := strings.Index(line, " "); idx > 0 {
+			return line[:idx]
+		}
+
+		// Single-token line — return as-is with length guard.
+		if len(line) > 40 {
+			line = line[:40]
+		}
+		return line
+	}
+	return ""
 }
 
 func (m *Manager) getProcessStatus(name string) string {

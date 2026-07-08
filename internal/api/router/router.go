@@ -929,7 +929,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
 			speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
 			loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
-			agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3)
+			agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
 
 			nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 
@@ -1490,9 +1490,12 @@ nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 	})
 
 		// Agent download + install script (public — no auth, bootstrap token verifies identity)
-		agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr)
+		agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
 		v1.GET("/agent/download", agentH.DownloadAgent)
 		v1.GET("/agent/install", agentH.GetInstallScript)
+		// Agent version & releases (requires auth — admin only)
+		protected.GET("/agent/version", agentH.GetAgentVersion)
+		protected.GET("/agent/releases", agentH.GetAgentReleases)
 
 		// Placeholder routes for remaining modules
 		registerPlaceholderRoutes(protected)

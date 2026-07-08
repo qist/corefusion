@@ -2,11 +2,11 @@ data
 web/admin/dist
 web/admin/node_modules
 internal/app/embed/dist
-corefusion
+/corefusion
 geosite.dat
 geoip.metadb
 GeoLite2-ASN.mmdb
 country.mmdb
 geoip.dat
-corefusion-agent
-agent
+/corefusion-agent
+/agent

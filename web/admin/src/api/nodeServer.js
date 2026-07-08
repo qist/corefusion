@@ -192,6 +192,14 @@ export function getPendingAgentUpdates() {
   return client.get('/node-servers/pending-agent-updates')
 }
 
+export function getAgentVersion() {
+  return client.get('/agent/version')
+}
+
+export function getAgentReleases(limit = 20) {
+  return client.get(`/agent/releases?limit=${limit}`)
+}
+
 // ──────────── Agent Degradation ────────────
 
 export function getDegradationStatus(id) {

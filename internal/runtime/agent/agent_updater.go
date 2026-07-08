@@ -2,8 +2,14 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +30,7 @@ type AgentUpdater struct {
 	mu         sync.RWMutex
 	serverRepo *repository.NodeServerRepository
 	nodeMgr    *NodeServerManager
+	dataDir    string // 面板数据目录，用于扫描本地 Agent 二进制
 
 	// 当前可用的 Agent 版本
 	currentVersion string
@@ -93,6 +100,12 @@ func (u *AgentUpdater) WithMaxConcurrency(n int) *AgentUpdater {
 	return u
 }
 
+// WithDataDir sets the panel data directory for local binary scanning.
+func (u *AgentUpdater) WithDataDir(dir string) *AgentUpdater {
+	u.dataDir = dir
+	return u
+}
+
 // GetCurrentVersion returns the current target Agent version.
 func (u *AgentUpdater) GetCurrentVersion() string {
 	u.mu.RLock()
@@ -113,13 +126,32 @@ func (u *AgentUpdater) GetPendingUpdates() []UpdateTask {
 
 // UpdateServer triggers an Agent update on a specific server.
 // The update command is sent via the PanelCommand stream.
+// If no target version/URL is set, it auto-scans the panel's local Agent binary.
 func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 	u.mu.Lock()
-	defer u.mu.Unlock()
+
+	// Auto-scan local binary if no version/URL is configured
+	if u.currentVersion == "" || u.downloadURL == "" {
+		if u.dataDir == "" {
+			u.mu.Unlock()
+			return fmt.Errorf("no target version set and no dataDir for auto-scan")
+		}
+		version, checksum, downloadURL, err := u.scanLocalAgentBinary()
+		if err != nil {
+			u.mu.Unlock()
+			return fmt.Errorf("no target version and cannot scan local binary: %w", err)
+		}
+		u.currentVersion = version
+		u.downloadURL = downloadURL
+		u.checksum = checksum
+		log.Printf("[AgentUpdater] auto-scanned local binary: version=%s", version)
+	}
 
 	if u.currentVersion == "" {
+		u.mu.Unlock()
 		return fmt.Errorf("no target version set")
 	}
+	defer u.mu.Unlock()
 
 	// Check if server is local (no update needed)
 	server, err := u.serverRepo.GetByID(ctx, serverID)
@@ -188,7 +220,22 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 
 // UpdateAllServers triggers Agent updates on all eligible remote servers.
 // Updates are sent concurrently up to maxConcurrency.
+// If no target version is set, auto-scans the panel's local Agent binary.
 func (u *AgentUpdater) UpdateAllServers(ctx context.Context) error {
+	// Auto-scan local binary if no version is configured
+	if u.currentVersion == "" && u.dataDir != "" {
+		version, checksum, downloadURL, err := u.scanLocalAgentBinary()
+		if err != nil {
+			return fmt.Errorf("no target version and cannot scan local binary: %w", err)
+		}
+		u.mu.Lock()
+		u.currentVersion = version
+		u.downloadURL = downloadURL
+		u.checksum = checksum
+		u.mu.Unlock()
+		log.Printf("[AgentUpdater] auto-scanned local binary: version=%s", version)
+	}
+
 	if u.currentVersion == "" {
 		return fmt.Errorf("no target version set")
 	}
@@ -336,4 +383,56 @@ func (u *AgentUpdater) CleanupCompleted(maxAge time.Duration) {
 			delete(u.pendingUpdates, id)
 		}
 	}
+}
+
+// scanLocalAgentBinary scans the panel's local Agent binary directory and
+// returns version, checksum, and download URL.
+func (u *AgentUpdater) scanLocalAgentBinary() (version, checksum, downloadURL string, err error) {
+	agentDir := filepath.Join(u.dataDir, "binaries", "active", "corefusion-agent")
+
+	// Read VERSION file
+	versionFile := filepath.Join(agentDir, "VERSION")
+	data, err := os.ReadFile(versionFile)
+	if err != nil {
+		return "", "", "", fmt.Errorf("read VERSION file: %w", err)
+	}
+	version = strings.TrimSpace(string(data))
+	if version == "" {
+		return "", "", "", fmt.Errorf("VERSION file is empty")
+	}
+
+	// Find the binary file
+	candidates := []string{
+		filepath.Join(agentDir, "corefusion-agent-linux-amd64"),
+		filepath.Join(agentDir, "corefusion-agent-linux-arm64"),
+		filepath.Join(agentDir, "corefusion-agent"),
+	}
+	var binaryPath string
+	for _, p := range candidates {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			binaryPath = p
+			break
+		}
+	}
+	if binaryPath == "" {
+		return "", "", "", fmt.Errorf("agent binary not found in %s", agentDir)
+	}
+
+	// Compute SHA-256
+	f, err := os.Open(binaryPath)
+	if err != nil {
+		return "", "", "", fmt.Errorf("open binary: %w", err)
+	}
+	defer f.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", "", "", fmt.Errorf("compute checksum: %w", err)
+	}
+	checksum = hex.EncodeToString(hasher.Sum(nil))
+
+	// Build download URL (relative path — panel will resolve to full URL)
+	downloadURL = "/api/v1/agent/download?os=linux&arch=amd64"
+
+	log.Printf("[AgentUpdater] scanned local binary: version=%s, checksum=%s...", version, checksum[:12])
+	return version, checksum, downloadURL, nil
 }

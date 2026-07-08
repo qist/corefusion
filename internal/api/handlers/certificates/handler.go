@@ -1,6 +1,8 @@
 package certificates
 
 import (
+	"context"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -14,14 +16,36 @@ import (
 	certService "corefusion/internal/service/certificate"
 )
 
+// CertUpdateCallback is called after a certificate is updated or renewed.
+// It allows external code (e.g. router wiring) to trigger distribution to nodes.
+type CertUpdateCallback func(ctx context.Context, certID int64)
+
 // Handler handles certificate HTTP requests.
 type Handler struct {
-	certSvc *certService.Service
+	certSvc       *certService.Service
+	onCertUpdated CertUpdateCallback
 }
 
 // NewHandler creates a new certificate handler.
 func NewHandler(certSvc *certService.Service) *Handler {
 	return &Handler{certSvc: certSvc}
+}
+
+// OnCertUpdated sets the callback invoked after a certificate is updated/renewed.
+func (h *Handler) OnCertUpdated(cb CertUpdateCallback) {
+	h.onCertUpdated = cb
+}
+
+// fireCertUpdated asynchronously calls the update callback if set.
+func (h *Handler) fireCertUpdated(certID int64) {
+	if h.onCertUpdated == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.onCertUpdated(ctx, certID)
+	}()
 }
 
 // stripDataPrefix removes "data/" prefix from paths for relative display.
@@ -108,6 +132,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	h.fireCertUpdated(id)
 	response.OK(c, cert)
 }
 
@@ -207,6 +232,8 @@ func (h *Handler) Renew(c *gin.Context) {
 		return
 	}
 
+	h.fireCertUpdated(id)
+	log.Printf("[certificates] cert %d renewed, triggering distribution to nodes", id)
 	response.OK(c, cert)
 }
 

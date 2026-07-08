@@ -2,9 +2,11 @@ package nodeserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -558,11 +560,54 @@ func (s *Service) DistributeCertificate(ctx context.Context, serverID int64, cer
 }
 
 // DistributeCertificateToAll distributes a TLS certificate to all associated servers.
+// It does two things:
+//  1. Sends the cert PEM directly to nodes with certificate_id set (via CertDistributor).
+//  2. Triggers SyncData to all remote nodes, which automatically collects and syncs
+//     all certificates referenced by inbound configs, caddy/nginx/proxy sites.
+//     This ensures that certs referenced via config paths (not certificate_id) also
+//     get the renewed content.
 func (s *Service) DistributeCertificateToAll(ctx context.Context, certID int64) error {
-	if s.certDistrib == nil {
-		return fmt.Errorf("cert distributor not initialized")
+	var errs []error
+
+	// 1. Direct distribution to nodes with certificate_id set
+	if s.certDistrib != nil {
+		if err := s.certDistrib.DistributeToAllServers(ctx, certID); err != nil {
+			log.Printf("[nodeserver] direct cert distribution for cert %d: %v", certID, err)
+			errs = append(errs, err)
+		}
 	}
-	return s.certDistrib.DistributeToAllServers(ctx, certID)
+
+	// 2. Trigger SyncData to all remote nodes to sync renewed cert content
+	//    SyncData automatically scans all configs and collects matching certs.
+	if s.nodeMgr != nil {
+		servers, err := s.repo.ListAll(ctx)
+		if err == nil {
+			for _, srv := range servers {
+				if srv.IsLocal {
+					continue
+				}
+				if !s.nodeMgr.IsOnlineForServer(srv.ID) {
+					log.Printf("[nodeserver] server %d offline, cert will sync on reconnect", srv.ID)
+					continue
+				}
+				// Async SyncData — don't block the renewal flow
+				go func(serverID int64) {
+					syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					if _, err := s.SyncServerData(syncCtx, serverID, true); err != nil {
+						log.Printf("[nodeserver] auto-SyncData for cert renewal to server %d: %v", serverID, err)
+					} else {
+						log.Printf("[nodeserver] auto-SyncData for cert renewal to server %d: success", serverID)
+					}
+				}(srv.ID)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("certificate distribution completed with %d error(s)", len(errs))
+	}
+	return nil
 }
 
 // ──────────────────── Phase 3: Node Types & Chain Proxy ────────────────────
@@ -1150,20 +1195,179 @@ func (s *Service) TriggerServerFailover(ctx context.Context, serverID int64) err
 	return nil
 }
 
-// ListServerCertificates returns certificates associated with a server.
+// ListServerCertificates returns all certificates in use by a server.
+// It scans inbound configs, caddy_sites, nginx_sites, proxy_sites,
+// and the node-level certificate_id association to find all certificates
+// referenced by the server's configurations.
 func (s *Service) ListServerCertificates(ctx context.Context, serverID int64) (interface{}, error) {
 	server, err := s.repo.GetByID(ctx, serverID)
 	if err != nil {
 		return nil, fmt.Errorf("server not found: %w", err)
 	}
-	if server.CertificateID == 0 || s.certRepo == nil {
+
+	if s.certRepo == nil {
 		return []interface{}{}, nil
 	}
-	cert, err := s.certRepo.GetByID(ctx, server.CertificateID)
+
+	// Load all certificates from DB for path matching
+	allCerts, _, err := s.certRepo.List(ctx, 1000, 0)
 	if err != nil {
 		return []interface{}{}, nil
 	}
-	return []interface{}{cert}, nil
+
+	// certID -> usage sources
+	type certUsage struct {
+		Cert       entity.Certificate `json:"cert"`
+		Sources    []string           `json:"sources"` // e.g. ["xray:inbound_tag", "caddy:domain", "nginx:domain", "node-level"]
+	}
+	usageMap := make(map[int64]*certUsage)
+
+	addSource := func(certID int64, source string) {
+		if u, ok := usageMap[certID]; ok {
+			u.Sources = append(u.Sources, source)
+		} else {
+			usageMap[certID] = &certUsage{Sources: []string{source}}
+		}
+	}
+
+	// 1. Node-level certificate (node_servers.certificate_id)
+	if server.CertificateID > 0 {
+		addSource(server.CertificateID, "node-level")
+	}
+
+	// 2. Scan inbound configs for certificateFile references
+	if s.inboundRepo != nil {
+		inbounds, err := s.inboundRepo.ListRows(ctx, serverID)
+		if err == nil {
+			for _, ic := range inbounds {
+				if !ic.Enabled {
+					continue
+				}
+				var inbound map[string]interface{}
+				if err := json.Unmarshal([]byte(ic.ConfigJSON), &inbound); err != nil {
+					continue
+				}
+				ss, ok := inbound["streamSettings"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				tls, ok := ss["tlsSettings"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				certs, ok := tls["certificates"].([]interface{})
+				if !ok {
+					continue
+				}
+				for _, c := range certs {
+					cm, ok := c.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
+						normalized := normalizeCertPathLocal(certFile)
+						for _, cert := range allCerts {
+							if normalizeCertPathLocal(cert.CertPath) == normalized {
+								addSource(cert.ID, fmt.Sprintf("xray:%s", ic.Tag))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Scan caddy_sites for cert_path references
+	if s.db != nil {
+		var caddySites []entity.CaddySite
+		if err := s.db.WithContext(ctx).Where("server_id = ? AND enabled = ?", serverID, true).Find(&caddySites).Error; err == nil {
+			for _, site := range caddySites {
+				if site.CertPath == "" {
+					continue
+				}
+				normalized := normalizeCertPathLocal(site.CertPath)
+				for _, cert := range allCerts {
+					if normalizeCertPathLocal(cert.CertPath) == normalized {
+						addSource(cert.ID, fmt.Sprintf("caddy:%s", site.Domain))
+					}
+				}
+			}
+		}
+
+		// 4. Scan nginx_sites for cert_path references
+		var nginxSites []entity.NginxSite
+		if err := s.db.WithContext(ctx).Where("server_id = ? AND enabled = ?", serverID, true).Find(&nginxSites).Error; err == nil {
+			for _, site := range nginxSites {
+				if site.CertPath == "" {
+					continue
+				}
+				normalized := normalizeCertPathLocal(site.CertPath)
+				for _, cert := range allCerts {
+					if normalizeCertPathLocal(cert.CertPath) == normalized {
+						addSource(cert.ID, fmt.Sprintf("nginx:%s", site.Domain))
+					}
+				}
+			}
+		}
+
+		// 5. Scan proxy_sites for cert_path references
+		var proxySites []entity.ProxySite
+		if err := s.db.WithContext(ctx).Where("server_id = ? AND enabled = ?", serverID, true).Find(&proxySites).Error; err == nil {
+			for _, site := range proxySites {
+				if site.CertPath == "" {
+					continue
+				}
+				normalized := normalizeCertPathLocal(site.CertPath)
+				for _, cert := range allCerts {
+					if normalizeCertPathLocal(cert.CertPath) == normalized {
+						addSource(cert.ID, fmt.Sprintf("proxy:%s", site.Domain))
+					}
+				}
+			}
+		}
+	}
+
+	// Build result: attach cert info to each usage
+	result := make([]interface{}, 0, len(usageMap))
+	for certID, usage := range usageMap {
+		for _, cert := range allCerts {
+			if cert.ID == certID {
+				// Strip data/ prefix for display
+				cert.CertPath = strings.TrimPrefix(cert.CertPath, "data/")
+				cert.KeyPath = strings.TrimPrefix(cert.KeyPath, "data/")
+				result = append(result, gin.H{
+					"id":           cert.ID,
+					"name":         cert.Name,
+					"domain":       cert.Domain,
+					"domains":      cert.Domains,
+					"issuer":       cert.Issuer,
+					"provider_type": cert.ProviderType,
+					"key_type":     cert.KeyType,
+					"key_bits":     cert.KeyBits,
+					"cert_path":    cert.CertPath,
+					"key_path":     cert.KeyPath,
+					"status":       cert.Status,
+					"auto_renew":   cert.AutoRenew,
+					"expires_at":   cert.ExpiresAt,
+					"sources":      usage.Sources,
+				})
+				break
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// normalizeCertPathLocal strips common relative path prefixes for matching.
+func normalizeCertPathLocal(path string) string {
+	for strings.HasPrefix(path, "../") {
+		path = strings.TrimPrefix(path, "../")
+	}
+	for strings.HasPrefix(path, "./") {
+		path = strings.TrimPrefix(path, "./")
+	}
+	return path
 }
 
 // AssociateCertificate associates a TLS certificate with a server.

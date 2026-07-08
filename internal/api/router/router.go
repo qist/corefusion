@@ -869,6 +869,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
 			nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
 
+			// Wire cert update callback: when a certificate is updated/renewed
+			// in the certificate center, automatically distribute to all nodes.
+			certH.OnCertUpdated(func(ctx context.Context, certID int64) {
+				if err := nodeServerSvcInst.DistributeCertificateToAll(ctx, certID); err != nil {
+					log.Printf("[router] auto-distribute cert %d after update: %v", certID, err)
+				} else {
+					log.Printf("[router] auto-distributed cert %d to all associated nodes", certID)
+				}
+			})
+
 			// Inject LocalAgent — use the shared instance from main.go if available.
 			// This ensures both the gRPC server and HTTP API use the same LocalAgent
 			// with all dependencies (ProxyManager, BinaryInstaller) properly injected,

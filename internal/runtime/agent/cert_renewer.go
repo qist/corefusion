@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 )
 
@@ -32,7 +33,7 @@ func (noopCertPusher) PushAgentCertificate(ctx context.Context, serverID int64, 
 	return nil
 }
 
-// NewCertRenewer creates a new CertRenewer with the default 24h interval.
+// NewCertRenewer creates a new CertRenewer with the default interval.
 func NewCertRenewer(ca *CertificateAuthority, serverRepo *repository.NodeServerRepository) *CertRenewer {
 	return &CertRenewer{
 		ca:         ca,
@@ -59,12 +60,11 @@ func (r *CertRenewer) RunLoop(ctx context.Context) {
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
-	// Run once shortly after startup
-	time.AfterFunc(1*time.Minute, func() {
-		if err := r.checkAndRenew(ctx); err != nil {
-			log.Printf("[CertRenewer] initial check error: %v", err)
-		}
-	})
+	// Run immediately on startup (no delay) so certs that expired while the
+	// panel was down are renewed right away.
+	if err := r.checkAndRenew(ctx); err != nil {
+		log.Printf("[CertRenewer] initial check error: %v", err)
+	}
 
 	for {
 		select {
@@ -95,35 +95,71 @@ func (r *CertRenewer) checkAndRenew(ctx context.Context) error {
 	log.Printf("[CertRenewer] found %d server(s) with certs expiring before %v", len(servers), threshold)
 
 	for _, server := range servers {
-		if server.IsLocal {
-			continue // Local server doesn't need Agent certs
-		}
-
-		log.Printf("[CertRenewer] server %d (%s) cert expiring at %v, renewing...",
-			server.ID, server.Hostname, server.AgentCertExpiresAt)
-
-		// Issue new certificate
-		certResult, err := r.ca.IssueAgentCertificate(ctx, server.ID, server.Hostname)
-		if err != nil {
-			log.Printf("[CertRenewer] failed to renew cert for server %d: %v", server.ID, err)
-			continue
-		}
-
-		// Push new cert to Agent via gRPC stream
-		if err := r.nodeMgr.PushAgentCertificate(ctx, server.ID, certResult); err != nil {
-			log.Printf("[CertRenewer] failed to push new cert to server %d: %v (will retry on reconnect)",
-				server.ID, err)
-			// Non-fatal: Agent will fetch new cert on next reconnect
-		}
-
-		// Update database
-		if err := r.serverRepo.UpdateAgentCert(ctx, server.ID, certResult.Serial, certResult.ExpiresAt); err != nil {
-			log.Printf("[CertRenewer] failed to update cert record for server %d: %v", server.ID, err)
-			continue
-		}
-
-		log.Printf("[CertRenewer] server %d cert renewed, new expiry %v", server.ID, certResult.ExpiresAt)
+		r.renewServerCert(ctx, &server)
 	}
 
 	return nil
+}
+
+// RenewServerCertIfNeeded checks a single server's cert and renews it if it's
+// expiring soon. This is called when an Agent reconnects to ensure it always
+// has a fresh certificate, even if it was offline during the periodic check.
+func (r *CertRenewer) RenewServerCertIfNeeded(ctx context.Context, serverID int64) {
+	server, err := r.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		log.Printf("[CertRenewer] failed to get server %d for on-reconnect renewal: %v", serverID, err)
+		return
+	}
+
+	if server.IsLocal {
+		return // Local server doesn't need Agent certs
+	}
+
+	if server.AgentCertExpiresAt == nil {
+		return // No cert to renew
+	}
+
+	// Check if the cert is within the renewal window
+	threshold := time.Now().Add(AgentCertRenewBefore)
+	if server.AgentCertExpiresAt.After(threshold) {
+		return // Cert is still fresh, no need to renew
+	}
+
+	log.Printf("[CertRenewer] server %d (%s) cert expiring at %v, renewing on reconnect...",
+		server.ID, server.Hostname, server.AgentCertExpiresAt)
+
+	r.renewServerCert(ctx, server)
+}
+
+// renewServerCert issues a new cert for the given server, pushes it to the
+// Agent, and updates the database.
+func (r *CertRenewer) renewServerCert(ctx context.Context, server *entity.NodeServer) {
+	if server.IsLocal {
+		return
+	}
+
+	log.Printf("[CertRenewer] server %d (%s) cert expiring at %v, renewing...",
+		server.ID, server.Hostname, server.AgentCertExpiresAt)
+
+	// Issue new certificate
+	certResult, err := r.ca.IssueAgentCertificate(ctx, server.ID, server.Hostname)
+	if err != nil {
+		log.Printf("[CertRenewer] failed to renew cert for server %d: %v", server.ID, err)
+		return
+	}
+
+	// Push new cert to Agent via gRPC stream
+	if err := r.nodeMgr.PushAgentCertificate(ctx, server.ID, certResult); err != nil {
+		log.Printf("[CertRenewer] failed to push new cert to server %d: %v (will retry on next check)",
+			server.ID, err)
+		// Non-fatal: Agent will get the new cert on next reconnect or periodic check
+	}
+
+	// Update database
+	if err := r.serverRepo.UpdateAgentCert(ctx, server.ID, certResult.Serial, certResult.ExpiresAt); err != nil {
+		log.Printf("[CertRenewer] failed to update cert record for server %d: %v", server.ID, err)
+		return
+	}
+
+	log.Printf("[CertRenewer] server %d cert renewed, new expiry %v", server.ID, certResult.ExpiresAt)
 }

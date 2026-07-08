@@ -198,6 +198,10 @@ func (h *Handler) Issue(c *gin.Context) {
 		return
 	}
 
+	// Trigger distribution to nodes — new cert may be referenced by
+	// configs that were previously using an older cert for the same domain.
+	h.fireCertUpdated(cert.ID)
+	log.Printf("[certificates] cert %d issued for %s, triggering distribution to nodes", cert.ID, cert.Domain)
 	response.Created(c, cert)
 }
 
@@ -296,5 +300,9 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
+	// Trigger distribution — uploaded cert may replace an existing one
+	// referenced by node configs with the same domain.
+	h.fireCertUpdated(cert.ID)
+	log.Printf("[certificates] cert %d uploaded for %s, triggering distribution to nodes", cert.ID, cert.Domain)
 	response.Created(c, cert)
 }

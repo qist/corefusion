@@ -39,9 +39,10 @@
         <el-table-column :label="t('certificate.expiresAt')" width="180">
           <template #default="{row}">{{ formatDate(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="260">
+        <el-table-column :label="t('common.actions')" width="340">
           <template #default="{row}">
             <el-button size="small" type="primary" plain :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
+            <el-button size="small" type="warning" plain @click="showMigrateDialog(row)">{{ t('certificate.migrate') }}</el-button>
             <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
           </template>
@@ -274,6 +275,29 @@
         <el-button type="primary" :loading="uploading" @click="handleUpload">{{ t('certificate.upload') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Migrate Certificate Dialog -->
+    <el-dialog v-model="migrateVisible" :title="t('certificate.migrateTitle')" width="600">
+      <el-alert type="warning" :closable="false" style="margin-bottom:16px">
+        {{ t('certificate.migrateWarning') }}
+      </el-alert>
+      <el-descriptions :column="1" border style="margin-bottom:16px">
+        <el-descriptions-item :label="t('certificate.oldCert')">
+          <span v-if="migrateRow"><el-tag type="warning">{{ migrateRow.domain }}</el-tag> (ID: {{ migrateRow.id }}, {{ migrateRow.issuer }})</span>
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="120px">
+        <el-form-item :label="t('certificate.newCert')">
+          <el-select v-model="migrateTargetId" style="width:100%" :placeholder="t('certificate.selectNewCert')" filterable>
+            <el-option v-for="c in migrateCandidates" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="migrateVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="migrating" @click="handleMigrate">{{ t('certificate.migrate') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -464,6 +488,46 @@ async function handleDistribute(row) {
     ElMessage.error(e?.response?.data?.message || t('certificate.distributeFailed'))
   } finally {
     row._distributing = false
+  }
+}
+
+// --- Migrate Certificate ---
+const migrateVisible = ref(false)
+const migrateRow = ref(null)
+const migrateTargetId = ref(null)
+const migrating = ref(false)
+const migrateCandidates = ref([])
+
+function showMigrateDialog(row) {
+  migrateRow.value = row
+  migrateTargetId.value = null
+  migrateCandidates.value = certificates.value.filter(c => c.id !== row.id)
+  migrateVisible.value = true
+}
+
+async function handleMigrate() {
+  if (!migrateTargetId.value) {
+    ElMessage.warning(t('certificate.selectNewCert'))
+    return
+  }
+  await ElMessageBox.confirm(
+    t('certificate.migrateConfirm', { old: migrateRow.value.domain, new: migrateCandidates.value.find(c => c.id === migrateTargetId.value)?.domain }),
+    t('common.confirm'),
+    { confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel'), type: 'warning' }
+  )
+  migrating.value = true
+  try {
+    const data = await client.post('/node-servers/migrate-cert', {
+      old_cert_id: migrateRow.value.id,
+      new_cert_id: migrateTargetId.value
+    })
+    ElMessage.success(t('certificate.migrateSuccess'))
+    migrateVisible.value = false
+    fetchCertificates()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('certificate.migrateFailed'))
+  } finally {
+    migrating.value = false
   }
 }
 

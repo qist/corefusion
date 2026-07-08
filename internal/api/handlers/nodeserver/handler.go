@@ -956,6 +956,28 @@ func (h *Handler) DissociateCertificate(c *gin.Context) {
 	response.OK(c, gin.H{"dissociated": true, "server_id": id})
 }
 
+// MigrateCertificate migrates all references from an old certificate to a new one.
+func (h *Handler) MigrateCertificate(c *gin.Context) {
+	var req struct {
+		OldCertID int64 `json:"old_cert_id" binding:"required"`
+		NewCertID int64 `json:"new_cert_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if req.OldCertID == req.NewCertID {
+		response.BadRequest(c, "SAME_CERT", "old and new certificate IDs are the same")
+		return
+	}
+	result, err := h.svc.MigrateCertificate(c.Request.Context(), req.OldCertID, req.NewCertID)
+	if err != nil {
+		response.InternalError(c, "MIGRATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
 // ──────────────────── Supplementary: CA Center ────────────────────
 
 // GetCAStatus returns the CA root certificate status.

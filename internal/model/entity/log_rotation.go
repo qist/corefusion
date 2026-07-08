@@ -5,6 +5,7 @@ import "time"
 // LogRotationPolicy defines a log rotation policy for a specific log file.
 type LogRotationPolicy struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID   int64     `json:"server_id" gorm:"not null;default:1;index:idx_log_policy_server"` // 1 = local node
 	Name       string    `json:"name" gorm:"size:128;not null"`
 	SourceType string    `json:"source_type" gorm:"size:16;not null;default:custom"` // nginx, caddy, custom
 	LogPath    string    `json:"log_path" gorm:"size:512;not null"`

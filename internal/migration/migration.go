@@ -166,6 +166,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.NodeAuditLog{},
 		&entity.ServerTag{},
 		&entity.CertDistributionQueueItem{},
+
+		// Client Log Packages (subscription user log access)
+		&entity.ClientLogPackage{},
 	}
 
 	for _, model := range models {

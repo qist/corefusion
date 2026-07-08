@@ -33,6 +33,10 @@ type PrepareFullConfigOptions struct {
 	InboundProvider InboundConfigProvider
 	// OutboundProvider optionally provides enabled outbound configs.
 	OutboundProvider OutboundConfigProvider
+	// LogMode controls the log section in the generated config.
+	// Values: "file" (default), "stdout", "off".
+	// If empty, defaults to "file".
+	LogMode string
 }
 
 // PrepareFullConfig applies all standard config preparation steps to produce
@@ -120,7 +124,10 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	// node always has freedom+blackhole even if missing from DB.
 	EnsureDefaultOutbounds(fullConfig, opts.CoreType)
 
-	// 10. Marshal to JSON
+	// 10. Apply log mode to the config's log section
+	ApplyLogMode(fullConfig, opts.CoreType, opts.LogMode)
+
+	// 11. Marshal to JSON
 	data, err := json.MarshalIndent(fullConfig, "", "  ")
 	if err != nil {
 		return nil, err
@@ -386,5 +393,63 @@ func ApplyAPIInboundRouting(fullConfig map[string]interface{}) {
 		}
 		routing["rules"] = append([]interface{}{apiRule}, rules...)
 		fullConfig["routing"] = routing
+	}
+}
+
+// ApplyLogMode sets the log section in the config based on the specified log mode.
+// mode values: "file" (default), "stdout", "off".
+// For xray: sets access/error/loglevel fields.
+// For singbox: sets level/output fields.
+// For hysteria2/tuic: no config-level log changes (handled by process.Manager).
+func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode string) {
+	if mode == "" {
+		mode = "file"
+	}
+
+	switch coreType {
+	case "xray":
+		switch mode {
+		case "stdout":
+			fullConfig["log"] = map[string]interface{}{
+				"access":   "none",
+				"error":    "/dev/stderr",
+				"loglevel": "warning",
+			}
+		case "off":
+			fullConfig["log"] = map[string]interface{}{
+				"access":   "none",
+				"error":    "none",
+				"loglevel": "none",
+			}
+		default: // "file"
+			fullConfig["log"] = map[string]interface{}{
+				"access":   "logs/xray-access.log",
+				"error":    "logs/xray.log",
+				"loglevel": "warning",
+			}
+		}
+
+	case "singbox":
+		switch mode {
+		case "stdout":
+			fullConfig["log"] = map[string]interface{}{
+				"level":     "info",
+				"output":    "stderr",
+				"timestamp": true,
+			}
+		case "off":
+			fullConfig["log"] = map[string]interface{}{
+				"level": "silent",
+			}
+		default: // "file"
+			fullConfig["log"] = map[string]interface{}{
+				"level":     "info",
+				"output":    "logs/singbox.log",
+				"timestamp": true,
+			}
+		}
+
+	// hysteria2 and tuic don't have config-level log settings.
+	// Their log output is controlled by process.Manager (file/stdout/off).
 	}
 }

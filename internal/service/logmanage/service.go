@@ -70,6 +70,11 @@ type LogBrokerWrapper struct {
 func (w *LogBrokerWrapper) Snapshot() []string        { return w.SnapshotFn() }
 func (w *LogBrokerWrapper) Subscribe() (<-chan string, func()) { return w.SubscribeFn() }
 
+// CoreLogBrokerProvider provides access to core process log brokers.
+type CoreLogBrokerProvider interface {
+	GetCoreLogBroker(coreType string) LogBrokerReader
+}
+
 // Service provides log management operations.
 type Service struct {
 	policyRepo    *repository.LogRotationPolicyRepository
@@ -79,8 +84,10 @@ type Service struct {
 	dataDir       string
 	scheduler     *Scheduler
 	proxyBroker   ProxyLogBroker
+	coreBroker    CoreLogBrokerProvider
 	writers       map[string]*LogWriter
 	onModeSwitch  func(proxyType string) // callback when output mode is switched
+	clientLogDeps *ClientLogDeps          // optional: for client log packaging
 }
 
 // NewService creates a new log management service.
@@ -103,6 +110,11 @@ func NewService(
 	}
 	svc.scheduler = NewScheduler(policyRepo, svc)
 	return svc
+}
+
+// SetCoreLogBrokerProvider sets the provider for core process log brokers.
+func (s *Service) SetCoreLogBrokerProvider(provider CoreLogBrokerProvider) {
+	s.coreBroker = provider
 }
 
 // StartAutoWriters starts writers that were previously enabled.
@@ -132,6 +144,10 @@ func (s *Service) SetOnModeSwitch(fn func(proxyType string)) {
 // Start starts the background scheduler.
 func (s *Service) Start() {
 	s.scheduler.Start()
+	// Start expired client log package cleanup if configured
+	if s.clientLogDeps != nil {
+		go s.clientLogCleanupLoop()
+	}
 }
 
 // Stop stops the background scheduler.
@@ -141,9 +157,14 @@ func (s *Service) Stop() {
 
 // --- Policy CRUD ---
 
-// ListPolicies returns all rotation policies.
+// ListPolicies returns all rotation policies for the local node.
 func (s *Service) ListPolicies(ctx context.Context) ([]entity.LogRotationPolicy, error) {
-	return s.policyRepo.List(ctx)
+	return s.ListPoliciesForServer(ctx, 1)
+}
+
+// ListPoliciesForServer returns rotation policies for a specific server.
+func (s *Service) ListPoliciesForServer(ctx context.Context, serverID int64) ([]entity.LogRotationPolicy, error) {
+	return s.policyRepo.ListByServerID(ctx, serverID)
 }
 
 // GetPolicy returns a policy by ID.
@@ -153,6 +174,9 @@ func (s *Service) GetPolicy(ctx context.Context, id int64) (*entity.LogRotationP
 
 // CreatePolicy creates a new rotation policy.
 func (s *Service) CreatePolicy(ctx context.Context, policy *entity.LogRotationPolicy) error {
+	if policy.ServerID == 0 {
+		policy.ServerID = 1 // default to local node
+	}
 	if policy.RotateCron == "" {
 		policy.RotateCron = "0 0 * * *"
 	}
@@ -423,6 +447,22 @@ type DiscoveredLog struct {
 
 // DiscoverLogs discovers all configured log files from core, nginx and caddy settings.
 func (s *Service) DiscoverLogs(ctx context.Context) ([]DiscoveredLog, error) {
+	return s.DiscoverLogsForServer(ctx, 1)
+}
+
+// DiscoverLogsForServer discovers log files for a specific server.
+// For local node (serverID=1), reads from local settings.
+// For remote nodes, returns an empty list (remote discovery is done via gRPC by the handler).
+func (s *Service) DiscoverLogsForServer(ctx context.Context, serverID int64) ([]DiscoveredLog, error) {
+	if serverID > 1 {
+		// Remote discovery is handled by the handler via gRPC
+		return []DiscoveredLog{}, nil
+	}
+	return s.discoverLocalLogs(ctx)
+}
+
+// discoverLocalLogs discovers all configured log files from core, nginx and caddy settings.
+func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	var logs []DiscoveredLog
 
 	// Discover core process logs (xray, singbox, hysteria2, tuic)
@@ -449,8 +489,8 @@ func (s *Service) DiscoverLogs(ctx context.Context) ([]DiscoveredLog, error) {
 		logs = append(logs, caddyLogs...)
 	}
 
-	// Cross-check with existing policies
-	existingPolicies, err := s.policyRepo.List(ctx)
+	// Cross-check with existing local policies
+	existingPolicies, err := s.policyRepo.ListByServerID(ctx, 1)
 	if err == nil {
 		policyPaths := make(map[string]bool)
 		for _, p := range existingPolicies {
@@ -473,27 +513,7 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 	var logs []DiscoveredLog
 
 	for _, coreType := range coreLogTypes {
-		logMode := "file"
-		// Check if there's a core log output config
-		if s.settingStore != nil {
-			if v, err := s.settingStore.GetByKey(ctx, "core.log_output_config"); err == nil && v != "" {
-				var cfg struct {
-					Entries map[string]struct {
-						Mode string `json:"mode"`
-					} `json:"-"`
-				}
-				// Parse per-core-type mode
-				var raw map[string]map[string]interface{}
-				if json.Unmarshal([]byte(v), &raw) == nil {
-					if entry, ok := raw[coreType]; ok {
-						if m, ok := entry["mode"].(string); ok && m != "" {
-							logMode = m
-						}
-					}
-				}
-				_ = cfg // keep struct for documentation
-			}
-		}
+		logMode := s.GetCoreLogMode(ctx, coreType)
 
 		var logPath string
 		switch logMode {
@@ -630,23 +650,29 @@ func sanitizeDomain(domain string) string {
 	return domain
 }
 
-// SyncPolicies creates rotation policies for discovered logs that don't have one yet.
+// SyncPolicies creates policies for discovered logs on the local node.
 func (s *Service) SyncPolicies(ctx context.Context) (int, error) {
-	discovered, err := s.DiscoverLogs(ctx)
+	return s.SyncPoliciesForServer(ctx, 1)
+}
+
+// SyncPoliciesForServer creates policies for discovered logs on a specific server.
+func (s *Service) SyncPoliciesForServer(ctx context.Context, serverID int64) (int, error) {
+	discovered, err := s.DiscoverLogsForServer(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
 
 	created := 0
 	for _, d := range discovered {
-		// Check if policy already exists for this log path
-		_, err := s.policyRepo.GetByLogPath(ctx, d.LogPath)
+		// Check if policy already exists for this log path on this server
+		_, err := s.policyRepo.GetByLogPathAndServer(ctx, d.LogPath, serverID)
 		if err == nil {
 			continue // already exists
 		}
 
 		// Create new policy with defaults
 		policy := &entity.LogRotationPolicy{
+			ServerID:   serverID,
 			Name:       filepath.Base(d.LogPath),
 			SourceType: d.SourceType,
 			LogPath:    d.LogPath,
@@ -658,7 +684,10 @@ func (s *Service) SyncPolicies(ctx context.Context) (int, error) {
 			log.Printf("logmanage: failed to create policy for %s: %v", d.LogPath, err)
 			continue
 		}
-		s.scheduler.RefreshJob(policy.ID, true, policy.RotateCron)
+		// Only schedule local jobs (remote jobs are handled by the agent)
+		if serverID <= 1 {
+			s.scheduler.RefreshJob(policy.ID, true, policy.RotateCron)
+		}
 		created++
 	}
 	return created, nil
@@ -674,10 +703,14 @@ type Status struct {
 	ScheduledCount int   `json:"scheduled_count"`
 }
 
-// GetStatus returns the log management system status.
+// GetStatus returns the log management system status for the local node.
 func (s *Service) GetStatus(ctx context.Context) (*Status, error) {
+	return s.GetStatusForServer(ctx, 1)
+}
 
-	policies, err := s.policyRepo.List(ctx)
+// GetStatusForServer returns the log management system status for a specific server.
+func (s *Service) GetStatusForServer(ctx context.Context, serverID int64) (*Status, error) {
+	policies, err := s.policyRepo.ListByServerID(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -694,29 +727,46 @@ func (s *Service) GetStatus(ctx context.Context) (*Status, error) {
 	return status, nil
 }
 
-// GetProxyStdoutLog returns the last N lines from a proxy's stdout broker.
-func (s *Service) GetProxyStdoutLog(ctx context.Context, proxyType string, lastLines int) ([]string, error) {
-	if s.proxyBroker == nil {
-		return []string{"[日志代理未配置]"}, nil
+// GetProxyStdoutLog returns the last N lines from a process's stdout broker.
+// Works for both proxy (nginx/caddy) and core (xray/singbox/hysteria2/tuic) processes.
+func (s *Service) GetProxyStdoutLog(ctx context.Context, logType string, lastLines int) ([]string, error) {
+	// Try proxy broker first
+	if s.proxyBroker != nil {
+		broker := s.proxyBroker.GetLogBroker(logType)
+		if broker != nil {
+			lines := broker.Snapshot()
+			if len(lines) > lastLines {
+				lines = lines[len(lines)-lastLines:]
+			}
+			return lines, nil
+		}
 	}
-	broker := s.proxyBroker.GetLogBroker(proxyType)
-	if broker == nil {
-		return []string{fmt.Sprintf("[%s 未运行或未产生标准输出]", proxyType)}, nil
+	// Try core broker
+	if s.coreBroker != nil {
+		broker := s.coreBroker.GetCoreLogBroker(logType)
+		if broker != nil {
+			lines := broker.Snapshot()
+			if len(lines) > lastLines {
+				lines = lines[len(lines)-lastLines:]
+			}
+			return lines, nil
+		}
 	}
-	lines := broker.Snapshot()
-	if len(lines) > lastLines {
-		lines = lines[len(lines)-lastLines:]
-	}
-	return lines, nil
+	return []string{fmt.Sprintf("[%s 未运行或未产生标准输出]", logType)}, nil
 }
 
-// StreamProxyStdout streams a proxy's stdout via the broker's pub/sub.
-func (s *Service) StreamProxyStdout(ctx context.Context, proxyType string, ch chan<- string) {
+// StreamProxyStdout streams a process's stdout via the broker's pub/sub.
+// Works for both proxy and core processes.
+func (s *Service) StreamProxyStdout(ctx context.Context, logType string, ch chan<- string) {
 	defer close(ch)
-	if s.proxyBroker == nil {
-		return
+
+	var broker LogBrokerReader
+	if s.proxyBroker != nil {
+		broker = s.proxyBroker.GetLogBroker(logType)
 	}
-	broker := s.proxyBroker.GetLogBroker(proxyType)
+	if broker == nil && s.coreBroker != nil {
+		broker = s.coreBroker.GetCoreLogBroker(logType)
+	}
 	if broker == nil {
 		return
 	}

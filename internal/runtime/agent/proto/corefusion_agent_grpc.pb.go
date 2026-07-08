@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v3.21.12
-// source: corefusion_agent.proto
+// source: internal/runtime/agent/proto/corefusion_agent.proto
 
 package agentpb
 
@@ -979,7 +979,7 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }
 
 const (
@@ -1085,7 +1085,7 @@ var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }
 
 const (
@@ -1197,5 +1197,5 @@ var RegistrationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "corefusion_agent.proto",
+	Metadata: "internal/runtime/agent/proto/corefusion_agent.proto",
 }

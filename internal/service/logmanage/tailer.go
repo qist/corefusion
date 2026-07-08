@@ -11,8 +11,15 @@ import (
 )
 
 // TailLog reads the last N lines from a log file.
-// If the file doesn't exist, falls back to proxy stdout broker.
+// If the file doesn't exist, falls back to the broker matching sourceType.
 func (s *Service) TailLog(ctx context.Context, logPath string, lastLines int) ([]string, error) {
+	return s.TailLogWithType(ctx, logPath, "", lastLines)
+}
+
+// TailLogWithType reads the last N lines from a log file.
+// If the file doesn't exist and sourceType is provided, falls back to the matching broker only.
+// If sourceType is empty, no broker fallback is attempted.
+func (s *Service) TailLogWithType(ctx context.Context, logPath string, sourceType string, lastLines int) ([]string, error) {
 	if lastLines <= 0 {
 		lastLines = 500
 	}
@@ -29,33 +36,53 @@ func (s *Service) TailLog(ctx context.Context, logPath string, lastLines int) ([
 		return readLastLines(f, lastLines)
 	}
 
-	// File doesn't exist - try proxy stdout broker
-	if s.proxyBroker != nil {
-		for _, pType := range []string{"nginx", "caddy"} {
-			broker := s.proxyBroker.GetLogBroker(pType)
-			if broker != nil {
-				lines := broker.Snapshot()
-				if len(lines) > 0 {
-					if len(lines) > lastLines {
-						lines = lines[len(lines)-lastLines:]
-					}
-					return lines, nil
+	// File doesn't exist - try the matching broker only
+	if sourceType != "" {
+		broker := s.getBroker(sourceType)
+		if broker != nil {
+			lines := broker.Snapshot()
+			if len(lines) > 0 {
+				if len(lines) > lastLines {
+					lines = lines[len(lines)-lastLines:]
 				}
+				return lines, nil
 			}
 		}
 	}
 
 	return []string{
 		fmt.Sprintf("[日志文件不存在] %s", resolved),
-		"[提示] 代理可能正在输出到标准输出(stdout)",
-		"[提示] 请在日志管理中心点击「接管捕获」，或在代理管理页面切换为「输出到文件」",
+		"[提示] 进程可能未运行，或日志输出模式为 stdout 且尚未产生输出",
 	}, nil
+}
+
+// getBroker returns the broker for the given log type (proxy or core).
+func (s *Service) getBroker(logType string) LogBrokerReader {
+	if s.proxyBroker != nil {
+		broker := s.proxyBroker.GetLogBroker(logType)
+		if broker != nil {
+			return broker
+		}
+	}
+	if s.coreBroker != nil {
+		broker := s.coreBroker.GetCoreLogBroker(logType)
+		if broker != nil {
+			return broker
+		}
+	}
+	return nil
 }
 
 // TailLogStream streams new log lines via SSE.
 // For file-based logs: sends initial lines then polls for new content.
 // For stdout logs: subscribes to the broker for real-time streaming.
 func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines int, ch chan<- string) error {
+	return s.TailLogStreamWithType(ctx, logPath, "", lastLines, ch)
+}
+
+// TailLogStreamWithType streams new log lines via SSE.
+// If the file doesn't exist and sourceType is provided, falls back to the matching broker only.
+func (s *Service) TailLogStreamWithType(ctx context.Context, logPath string, sourceType string, lastLines int, ch chan<- string) error {
 	defer close(ch)
 
 	if lastLines <= 0 {
@@ -70,13 +97,11 @@ func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines i
 		return s.streamFromFile(ctx, resolved, lastLines, ch)
 	}
 
-	// File doesn't exist - try broker for real-time streaming
-	if s.proxyBroker != nil {
-		for _, pType := range []string{"nginx", "caddy"} {
-			broker := s.proxyBroker.GetLogBroker(pType)
-			if broker != nil {
-				return s.streamFromBroker(ctx, broker, lastLines, ch)
-			}
+	// File doesn't exist - try the matching broker only
+	if sourceType != "" {
+		broker := s.getBroker(sourceType)
+		if broker != nil {
+			return s.streamFromBroker(ctx, broker, lastLines, ch)
 		}
 	}
 

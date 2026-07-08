@@ -19,6 +19,12 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// LogModeProvider provides the log output mode for a core type.
+// Returns "file", "stdout", or "off".
+type LogModeProvider interface {
+	GetLogMode(ctx context.Context, coreType string) string
+}
+
 // Manager manages core process lifecycle with persistence and daemon support.
 type Manager struct {
 	processes map[int64]*managedProcess
@@ -35,6 +41,14 @@ type Manager struct {
 	// Both configsync.Service and LocalAgent.SyncConfig may write to the same
 	// runtime/<coreType>.jsonc file; this mutex ensures atomic writes.
 	configMu sync.Mutex
+
+	// logModeProvider determines the log output mode (file/stdout/off) for each core.
+	logModeProvider LogModeProvider
+	// logBrokers holds LogBroker instances for core processes.
+	// In file mode: broker tails the log file for real-time viewing.
+	// In stdout mode: broker captures process stdout/stderr via AttachCmd.
+	// In off mode: no broker is created.
+	logBrokers map[string]*LogBroker
 }
 
 // ConfigGenerator generates a config file for a core type before starting.
@@ -44,6 +58,30 @@ type ConfigGenerator func(ctx context.Context, coreType string, configPath strin
 // SetConfigGenerator sets the config generator callback.
 func (m *Manager) SetConfigGenerator(gen ConfigGenerator) {
 	m.configGen = gen
+}
+
+// SetLogModeProvider sets the provider that determines log output mode per core type.
+func (m *Manager) SetLogModeProvider(provider LogModeProvider) {
+	m.logModeProvider = provider
+}
+
+// GetLogBroker returns the LogBroker for a core type, or nil if none exists.
+func (m *Manager) GetLogBroker(coreType string) *LogBroker {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.logBrokers[coreType]
+}
+
+// getLogMode returns the log mode for a core type, defaulting to "file".
+func (m *Manager) getLogMode(coreType string) string {
+	if m.logModeProvider == nil {
+		return "file"
+	}
+	mode := m.logModeProvider.GetLogMode(context.Background(), coreType)
+	if mode == "" {
+		mode = "file"
+	}
+	return mode
 }
 
 // BinaryResolver resolves binary paths for core types.
@@ -97,13 +135,14 @@ func NewManager(dataDir string, svcRepo *repository.ServiceRepository, guardRepo
 		}
 	}
 	return &Manager{
-		processes: make(map[int64]*managedProcess),
-		guardians: make(map[int64]*healthcheck.Guardian),
-		dataDir:   absDir,
-		svcRepo:   svcRepo,
-		guardRepo: guardRepo,
-		crashRepo: crashRepo,
-		resolver:  resolver,
+		processes:  make(map[int64]*managedProcess),
+		guardians:  make(map[int64]*healthcheck.Guardian),
+		logBrokers: make(map[string]*LogBroker),
+		dataDir:    absDir,
+		svcRepo:    svcRepo,
+		guardRepo:  guardRepo,
+		crashRepo:  crashRepo,
+		resolver:   resolver,
 	}
 }
 
@@ -317,14 +356,18 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		}
 	}()
 
-	// Log file
+	// Log directory
 	logDir := filepath.Join(m.dataDir, "logs")
 	os.MkdirAll(logDir, 0750)
 	logPath := filepath.Join(logDir, coreType+".log")
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
-	if err != nil {
-		return fmt.Errorf("open log file: %w", err)
+	// Determine log mode
+	logMode := m.getLogMode(coreType)
+
+	// Stop old LogBroker if any
+	if oldBroker, ok := m.logBrokers[coreType]; ok {
+		oldBroker.Stop()
+		delete(m.logBrokers, coreType)
 	}
 
 	// Use relative paths from dataDir (same as proxy)
@@ -339,8 +382,43 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 
 	cmd := exec.CommandContext(context.Background(), relBinPath, "-c", relConfigPath)
 	cmd.Dir = m.dataDir
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+
+	// Configure process output based on log mode
+	var logFile *os.File
+	switch logMode {
+	case "stdout":
+		// stdout mode: LogBroker captures process output via io.Pipe
+		broker := NewLogBroker()
+		broker.AttachCmd(cmd)
+		m.logBrokers[coreType] = broker
+		log.Printf("process: started %s in stdout mode (LogBroker attached)", coreType)
+
+	case "off":
+		// off mode: discard all output
+		devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0640)
+		if err == nil {
+			cmd.Stdout = devNull
+			cmd.Stderr = devNull
+			// Store to close later (not tracked in managedProcess, will be GC'd)
+		}
+		log.Printf("process: started %s in off mode (output discarded)", coreType)
+
+	default:
+		// file mode (default): write to log file, also tail for real-time viewing
+		var err error
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+
+		// Create LogBroker and tail the log file for real-time viewing
+		broker := NewLogBroker()
+		broker.TailFile(logPath)
+		m.logBrokers[coreType] = broker
+		log.Printf("process: started %s in file mode (log: %s)", coreType, logPath)
+	}
 	// Set resource path for geoip/geosite files
 	xrayAssetPath := os.Getenv("XRAY_LOCATION_ASSET")
 	if xrayAssetPath == "" {
@@ -350,7 +428,9 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	setProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
-		logFile.Close()
+		if logFile != nil {
+			logFile.Close()
+		}
 		return fmt.Errorf("start process: %w", err)
 	}
 
@@ -729,6 +809,12 @@ func (m *Manager) GetUptime(serviceID int64) int64 {
 // StopAll gracefully stops all running processes (called on CoreFusion shutdown).
 func (m *Manager) StopAll(ctx context.Context) {
 	m.mu.Lock()
+
+	// Stop all log brokers
+	for coreType, broker := range m.logBrokers {
+		broker.Stop()
+		delete(m.logBrokers, coreType)
+	}
 
 	// Collect guardians to stop after releasing mu (avoid AB-BA deadlock)
 	var guardiansToStop []*healthcheck.Guardian

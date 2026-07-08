@@ -71,6 +71,11 @@ func NewLocalAgent(dataDir string, procMgr *process.Manager, svcRepo *repository
 	}
 }
 
+// GetDataDir returns the data directory path.
+func (a *LocalAgent) GetDataDir() string {
+	return a.dataDir
+}
+
 // WithProxyManager 注入代理进程管理器（proxy.Manager）。
 func (a *LocalAgent) WithProxyManager(pm ProxyManager) *LocalAgent {
 	a.proxyMgr = pm

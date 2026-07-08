@@ -2592,6 +2592,12 @@ type PanelCommand struct {
 	//	*PanelCommand_ExecuteBinary
 	//	*PanelCommand_XrayApi
 	//	*PanelCommand_ReadConfigFile
+	//	*PanelCommand_ReadLogFile
+	//	*PanelCommand_RotateLog
+	//	*PanelCommand_PackageLogs
+	//	*PanelCommand_StreamLogFile
+	//	*PanelCommand_SyncLogConfig
+	//	*PanelCommand_DiscoverLogs
 	Command       isPanelCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2846,6 +2852,60 @@ func (x *PanelCommand) GetReadConfigFile() *ReadConfigFileRequest {
 	return nil
 }
 
+func (x *PanelCommand) GetReadLogFile() *ReadLogFileRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_ReadLogFile); ok {
+			return x.ReadLogFile
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetRotateLog() *RotateLogRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_RotateLog); ok {
+			return x.RotateLog
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetPackageLogs() *PackageLogsRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_PackageLogs); ok {
+			return x.PackageLogs
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetStreamLogFile() *StreamLogFileRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_StreamLogFile); ok {
+			return x.StreamLogFile
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetSyncLogConfig() *SyncLogConfigRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_SyncLogConfig); ok {
+			return x.SyncLogConfig
+		}
+	}
+	return nil
+}
+
+func (x *PanelCommand) GetDiscoverLogs() *DiscoverLogsRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_DiscoverLogs); ok {
+			return x.DiscoverLogs
+		}
+	}
+	return nil
+}
+
 type isPanelCommand_Command interface {
 	isPanelCommand_Command()
 }
@@ -2939,6 +2999,30 @@ type PanelCommand_ReadConfigFile struct {
 	ReadConfigFile *ReadConfigFileRequest `protobuf:"bytes,24,opt,name=read_config_file,json=readConfigFile,proto3,oneof"` // 读取配置文件
 }
 
+type PanelCommand_ReadLogFile struct {
+	ReadLogFile *ReadLogFileRequest `protobuf:"bytes,25,opt,name=read_log_file,json=readLogFile,proto3,oneof"` // 读取节点日志文件
+}
+
+type PanelCommand_RotateLog struct {
+	RotateLog *RotateLogRequest `protobuf:"bytes,26,opt,name=rotate_log,json=rotateLog,proto3,oneof"` // 远程触发日志轮转
+}
+
+type PanelCommand_PackageLogs struct {
+	PackageLogs *PackageLogsRequest `protobuf:"bytes,27,opt,name=package_logs,json=packageLogs,proto3,oneof"` // 打包日志文件
+}
+
+type PanelCommand_StreamLogFile struct {
+	StreamLogFile *StreamLogFileRequest `protobuf:"bytes,28,opt,name=stream_log_file,json=streamLogFile,proto3,oneof"` // 流式读取日志（用于 SSE 代理）
+}
+
+type PanelCommand_SyncLogConfig struct {
+	SyncLogConfig *SyncLogConfigRequest `protobuf:"bytes,29,opt,name=sync_log_config,json=syncLogConfig,proto3,oneof"` // 同步日志输出模式配置
+}
+
+type PanelCommand_DiscoverLogs struct {
+	DiscoverLogs *DiscoverLogsRequest `protobuf:"bytes,30,opt,name=discover_logs,json=discoverLogs,proto3,oneof"` // 发现节点上的日志文件
+}
+
 func (*PanelCommand_SyncConfig) isPanelCommand_Command() {}
 
 func (*PanelCommand_ControlCore) isPanelCommand_Command() {}
@@ -2982,6 +3066,18 @@ func (*PanelCommand_ExecuteBinary) isPanelCommand_Command() {}
 func (*PanelCommand_XrayApi) isPanelCommand_Command() {}
 
 func (*PanelCommand_ReadConfigFile) isPanelCommand_Command() {}
+
+func (*PanelCommand_ReadLogFile) isPanelCommand_Command() {}
+
+func (*PanelCommand_RotateLog) isPanelCommand_Command() {}
+
+func (*PanelCommand_PackageLogs) isPanelCommand_Command() {}
+
+func (*PanelCommand_StreamLogFile) isPanelCommand_Command() {}
+
+func (*PanelCommand_SyncLogConfig) isPanelCommand_Command() {}
+
+func (*PanelCommand_DiscoverLogs) isPanelCommand_Command() {}
 
 type TaskResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -4835,6 +4931,680 @@ func (x *ExecuteBinaryResponse) GetParsed() map[string]string {
 	return nil
 }
 
+// 读取节点上的日志文件
+type ReadLogFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`        // xray/singbox/hysteria2/tuic/nginx/caddy
+	LastLines     int32                  `protobuf:"varint,2,opt,name=last_lines,json=lastLines,proto3" json:"last_lines,omitempty"` // 读取最后 N 行（默认 500）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadLogFileRequest) Reset() {
+	*x = ReadLogFileRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadLogFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadLogFileRequest) ProtoMessage() {}
+
+func (x *ReadLogFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadLogFileRequest.ProtoReflect.Descriptor instead.
+func (*ReadLogFileRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ReadLogFileRequest) GetLogType() string {
+	if x != nil {
+		return x.LogType
+	}
+	return ""
+}
+
+func (x *ReadLogFileRequest) GetLastLines() int32 {
+	if x != nil {
+		return x.LastLines
+	}
+	return 0
+}
+
+type ReadLogFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Lines         []string               `protobuf:"bytes,3,rep,name=lines,proto3" json:"lines,omitempty"`
+	LogPath       string                 `protobuf:"bytes,4,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"` // 实际读取的文件路径
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadLogFileResponse) Reset() {
+	*x = ReadLogFileResponse{}
+	mi := &file_corefusion_agent_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadLogFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadLogFileResponse) ProtoMessage() {}
+
+func (x *ReadLogFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadLogFileResponse.ProtoReflect.Descriptor instead.
+func (*ReadLogFileResponse) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ReadLogFileResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReadLogFileResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *ReadLogFileResponse) GetLines() []string {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+func (x *ReadLogFileResponse) GetLogPath() string {
+	if x != nil {
+		return x.LogPath
+	}
+	return ""
+}
+
+// 远程触发日志轮转
+type RotateLogRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"` // 要轮转的日志类型
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateLogRequest) Reset() {
+	*x = RotateLogRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateLogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateLogRequest) ProtoMessage() {}
+
+func (x *RotateLogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateLogRequest.ProtoReflect.Descriptor instead.
+func (*RotateLogRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *RotateLogRequest) GetLogType() string {
+	if x != nil {
+		return x.LogType
+	}
+	return ""
+}
+
+type RotateLogResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	RotatedFiles  int32                  `protobuf:"varint,3,opt,name=rotated_files,json=rotatedFiles,proto3" json:"rotated_files,omitempty"`
+	CleanedFiles  int32                  `protobuf:"varint,4,opt,name=cleaned_files,json=cleanedFiles,proto3" json:"cleaned_files,omitempty"`
+	FreedBytes    int64                  `protobuf:"varint,5,opt,name=freed_bytes,json=freedBytes,proto3" json:"freed_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateLogResponse) Reset() {
+	*x = RotateLogResponse{}
+	mi := &file_corefusion_agent_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateLogResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateLogResponse) ProtoMessage() {}
+
+func (x *RotateLogResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateLogResponse.ProtoReflect.Descriptor instead.
+func (*RotateLogResponse) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *RotateLogResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *RotateLogResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *RotateLogResponse) GetRotatedFiles() int32 {
+	if x != nil {
+		return x.RotatedFiles
+	}
+	return 0
+}
+
+func (x *RotateLogResponse) GetCleanedFiles() int32 {
+	if x != nil {
+		return x.CleanedFiles
+	}
+	return 0
+}
+
+func (x *RotateLogResponse) GetFreedBytes() int64 {
+	if x != nil {
+		return x.FreedBytes
+	}
+	return 0
+}
+
+// 打包日志文件（按时间范围）
+type PackageLogsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LogType        string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`                       // 日志类型
+	StartTime      int64                  `protobuf:"varint,2,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`                // 起始时间（Unix 时间戳）
+	EndTime        int64                  `protobuf:"varint,3,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`                      // 结束时间（Unix 时间戳）
+	IncludeRotated bool                   `protobuf:"varint,4,opt,name=include_rotated,json=includeRotated,proto3" json:"include_rotated,omitempty"` // 是否包含已轮转的归档文件
+	Desensitize    bool                   `protobuf:"varint,5,opt,name=desensitize,proto3" json:"desensitize,omitempty"`                             // 是否脱敏（用于订阅用户日志）
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PackageLogsRequest) Reset() {
+	*x = PackageLogsRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PackageLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PackageLogsRequest) ProtoMessage() {}
+
+func (x *PackageLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PackageLogsRequest.ProtoReflect.Descriptor instead.
+func (*PackageLogsRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *PackageLogsRequest) GetLogType() string {
+	if x != nil {
+		return x.LogType
+	}
+	return ""
+}
+
+func (x *PackageLogsRequest) GetStartTime() int64 {
+	if x != nil {
+		return x.StartTime
+	}
+	return 0
+}
+
+func (x *PackageLogsRequest) GetEndTime() int64 {
+	if x != nil {
+		return x.EndTime
+	}
+	return 0
+}
+
+func (x *PackageLogsRequest) GetIncludeRotated() bool {
+	if x != nil {
+		return x.IncludeRotated
+	}
+	return false
+}
+
+func (x *PackageLogsRequest) GetDesensitize() bool {
+	if x != nil {
+		return x.Desensitize
+	}
+	return false
+}
+
+type PackageLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	PackagePath   string                 `protobuf:"bytes,3,opt,name=package_path,json=packagePath,proto3" json:"package_path,omitempty"`       // Agent 本地打包文件路径
+	PackageSize   int64                  `protobuf:"varint,4,opt,name=package_size,json=packageSize,proto3" json:"package_size,omitempty"`      // 打包文件大小
+	DownloadToken string                 `protobuf:"bytes,5,opt,name=download_token,json=downloadToken,proto3" json:"download_token,omitempty"` // 一次性下载令牌
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PackageLogsResponse) Reset() {
+	*x = PackageLogsResponse{}
+	mi := &file_corefusion_agent_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PackageLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PackageLogsResponse) ProtoMessage() {}
+
+func (x *PackageLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PackageLogsResponse.ProtoReflect.Descriptor instead.
+func (*PackageLogsResponse) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *PackageLogsResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *PackageLogsResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *PackageLogsResponse) GetPackagePath() string {
+	if x != nil {
+		return x.PackagePath
+	}
+	return ""
+}
+
+func (x *PackageLogsResponse) GetPackageSize() int64 {
+	if x != nil {
+		return x.PackageSize
+	}
+	return 0
+}
+
+func (x *PackageLogsResponse) GetDownloadToken() string {
+	if x != nil {
+		return x.DownloadToken
+	}
+	return ""
+}
+
+// 流式读取日志文件（用于 SSE 代理）
+type StreamLogFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`
+	LastLines     int32                  `protobuf:"varint,2,opt,name=last_lines,json=lastLines,proto3" json:"last_lines,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamLogFileRequest) Reset() {
+	*x = StreamLogFileRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamLogFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamLogFileRequest) ProtoMessage() {}
+
+func (x *StreamLogFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamLogFileRequest.ProtoReflect.Descriptor instead.
+func (*StreamLogFileRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *StreamLogFileRequest) GetLogType() string {
+	if x != nil {
+		return x.LogType
+	}
+	return ""
+}
+
+func (x *StreamLogFileRequest) GetLastLines() int32 {
+	if x != nil {
+		return x.LastLines
+	}
+	return 0
+}
+
+// 同步日志输出模式配置到 Agent
+type SyncLogConfigRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CoreLogConfig  string                 `protobuf:"bytes,1,opt,name=core_log_config,json=coreLogConfig,proto3" json:"core_log_config,omitempty"`    // core.log_output_config JSON
+	ProxyLogConfig string                 `protobuf:"bytes,2,opt,name=proxy_log_config,json=proxyLogConfig,proto3" json:"proxy_log_config,omitempty"` // proxy.log_output_config JSON
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SyncLogConfigRequest) Reset() {
+	*x = SyncLogConfigRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncLogConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncLogConfigRequest) ProtoMessage() {}
+
+func (x *SyncLogConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncLogConfigRequest.ProtoReflect.Descriptor instead.
+func (*SyncLogConfigRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *SyncLogConfigRequest) GetCoreLogConfig() string {
+	if x != nil {
+		return x.CoreLogConfig
+	}
+	return ""
+}
+
+func (x *SyncLogConfigRequest) GetProxyLogConfig() string {
+	if x != nil {
+		return x.ProxyLogConfig
+	}
+	return ""
+}
+
+// 发现节点上的日志文件
+type DiscoverLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscoverLogsRequest) Reset() {
+	*x = DiscoverLogsRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverLogsRequest) ProtoMessage() {}
+
+func (x *DiscoverLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverLogsRequest.ProtoReflect.Descriptor instead.
+func (*DiscoverLogsRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{64}
+}
+
+type DiscoverLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Logs          []*DiscoveredLogInfo   `protobuf:"bytes,3,rep,name=logs,proto3" json:"logs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscoverLogsResponse) Reset() {
+	*x = DiscoverLogsResponse{}
+	mi := &file_corefusion_agent_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverLogsResponse) ProtoMessage() {}
+
+func (x *DiscoverLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverLogsResponse.ProtoReflect.Descriptor instead.
+func (*DiscoverLogsResponse) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *DiscoverLogsResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DiscoverLogsResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *DiscoverLogsResponse) GetLogs() []*DiscoveredLogInfo {
+	if x != nil {
+		return x.Logs
+	}
+	return nil
+}
+
+type DiscoveredLogInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceType    string                 `protobuf:"bytes,1,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // nginx/caddy/xray/singbox/hysteria2/tuic
+	Domain        string                 `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`                           // 域名或标识
+	LogPath       string                 `protobuf:"bytes,3,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`          // 日志文件路径
+	LogFormat     string                 `protobuf:"bytes,4,opt,name=log_format,json=logFormat,proto3" json:"log_format,omitempty"`    // 日志格式（可选）
+	HasPolicy     bool                   `protobuf:"varint,5,opt,name=has_policy,json=hasPolicy,proto3" json:"has_policy,omitempty"`   // 是否已有轮转策略
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscoveredLogInfo) Reset() {
+	*x = DiscoveredLogInfo{}
+	mi := &file_corefusion_agent_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoveredLogInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoveredLogInfo) ProtoMessage() {}
+
+func (x *DiscoveredLogInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoveredLogInfo.ProtoReflect.Descriptor instead.
+func (*DiscoveredLogInfo) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *DiscoveredLogInfo) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *DiscoveredLogInfo) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *DiscoveredLogInfo) GetLogPath() string {
+	if x != nil {
+		return x.LogPath
+	}
+	return ""
+}
+
+func (x *DiscoveredLogInfo) GetLogFormat() string {
+	if x != nil {
+		return x.LogFormat
+	}
+	return ""
+}
+
+func (x *DiscoveredLogInfo) GetHasPolicy() bool {
+	if x != nil {
+		return x.HasPolicy
+	}
+	return false
+}
+
 var File_corefusion_agent_proto protoreflect.FileDescriptor
 
 const file_corefusion_agent_proto_rawDesc = "" +
@@ -5062,7 +5832,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\fuplink_bytes\x18\x02 \x01(\x03R\vuplinkBytes\x12%\n" +
 	"\x0edownlink_bytes\x18\x03 \x01(\x03R\rdownlinkBytes\x12#\n" +
 	"\rsession_start\x18\x04 \x01(\x03R\fsessionStart\x12\x1b\n" +
-	"\tcore_type\x18\x05 \x01(\tR\bcoreType\"\xba\x0e\n" +
+	"\tcore_type\x18\x05 \x01(\tR\bcoreType\"\x9a\x12\n" +
 	"\fPanelCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x14 \x01(\tR\tcommandId\x12'\n" +
@@ -5095,7 +5865,14 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x0flist_interfaces\x18\x13 \x01(\v2*.corefusion.agent.v1.ListInterfacesRequestH\x00R\x0elistInterfaces\x12R\n" +
 	"\x0eexecute_binary\x18\x16 \x01(\v2).corefusion.agent.v1.ExecuteBinaryRequestH\x00R\rexecuteBinary\x12@\n" +
 	"\bxray_api\x18\x17 \x01(\v2#.corefusion.agent.v1.XrayAPIRequestH\x00R\axrayApi\x12V\n" +
-	"\x10read_config_file\x18\x18 \x01(\v2*.corefusion.agent.v1.ReadConfigFileRequestH\x00R\x0ereadConfigFileB\t\n" +
+	"\x10read_config_file\x18\x18 \x01(\v2*.corefusion.agent.v1.ReadConfigFileRequestH\x00R\x0ereadConfigFile\x12M\n" +
+	"\rread_log_file\x18\x19 \x01(\v2'.corefusion.agent.v1.ReadLogFileRequestH\x00R\vreadLogFile\x12F\n" +
+	"\n" +
+	"rotate_log\x18\x1a \x01(\v2%.corefusion.agent.v1.RotateLogRequestH\x00R\trotateLog\x12L\n" +
+	"\fpackage_logs\x18\x1b \x01(\v2'.corefusion.agent.v1.PackageLogsRequestH\x00R\vpackageLogs\x12S\n" +
+	"\x0fstream_log_file\x18\x1c \x01(\v2).corefusion.agent.v1.StreamLogFileRequestH\x00R\rstreamLogFile\x12S\n" +
+	"\x0fsync_log_config\x18\x1d \x01(\v2).corefusion.agent.v1.SyncLogConfigRequestH\x00R\rsyncLogConfig\x12O\n" +
+	"\rdiscover_logs\x18\x1e \x01(\v2(.corefusion.agent.v1.DiscoverLogsRequestH\x00R\fdiscoverLogsB\t\n" +
 	"\acommand\"\x9b\x02\n" +
 	"\n" +
 	"TaskResult\x12\x17\n" +
@@ -5296,7 +6073,59 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x06parsed\x18\x04 \x03(\v26.corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntryR\x06parsed\x1a9\n" +
 	"\vParsedEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*d\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"N\n" +
+	"\x12ReadLogFileRequest\x12\x19\n" +
+	"\blog_type\x18\x01 \x01(\tR\alogType\x12\x1d\n" +
+	"\n" +
+	"last_lines\x18\x02 \x01(\x05R\tlastLines\"v\n" +
+	"\x13ReadLogFileResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x14\n" +
+	"\x05lines\x18\x03 \x03(\tR\x05lines\x12\x19\n" +
+	"\blog_path\x18\x04 \x01(\tR\alogPath\"-\n" +
+	"\x10RotateLogRequest\x12\x19\n" +
+	"\blog_type\x18\x01 \x01(\tR\alogType\"\xae\x01\n" +
+	"\x11RotateLogResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12#\n" +
+	"\rrotated_files\x18\x03 \x01(\x05R\frotatedFiles\x12#\n" +
+	"\rcleaned_files\x18\x04 \x01(\x05R\fcleanedFiles\x12\x1f\n" +
+	"\vfreed_bytes\x18\x05 \x01(\x03R\n" +
+	"freedBytes\"\xb4\x01\n" +
+	"\x12PackageLogsRequest\x12\x19\n" +
+	"\blog_type\x18\x01 \x01(\tR\alogType\x12\x1d\n" +
+	"\n" +
+	"start_time\x18\x02 \x01(\x03R\tstartTime\x12\x19\n" +
+	"\bend_time\x18\x03 \x01(\x03R\aendTime\x12'\n" +
+	"\x0finclude_rotated\x18\x04 \x01(\bR\x0eincludeRotated\x12 \n" +
+	"\vdesensitize\x18\x05 \x01(\bR\vdesensitize\"\xb2\x01\n" +
+	"\x13PackageLogsResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12!\n" +
+	"\fpackage_path\x18\x03 \x01(\tR\vpackagePath\x12!\n" +
+	"\fpackage_size\x18\x04 \x01(\x03R\vpackageSize\x12%\n" +
+	"\x0edownload_token\x18\x05 \x01(\tR\rdownloadToken\"P\n" +
+	"\x14StreamLogFileRequest\x12\x19\n" +
+	"\blog_type\x18\x01 \x01(\tR\alogType\x12\x1d\n" +
+	"\n" +
+	"last_lines\x18\x02 \x01(\x05R\tlastLines\"h\n" +
+	"\x14SyncLogConfigRequest\x12&\n" +
+	"\x0fcore_log_config\x18\x01 \x01(\tR\rcoreLogConfig\x12(\n" +
+	"\x10proxy_log_config\x18\x02 \x01(\tR\x0eproxyLogConfig\"\x15\n" +
+	"\x13DiscoverLogsRequest\"\x82\x01\n" +
+	"\x14DiscoverLogsResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12:\n" +
+	"\x04logs\x18\x03 \x03(\v2&.corefusion.agent.v1.DiscoveredLogInfoR\x04logs\"\xa5\x01\n" +
+	"\x11DiscoveredLogInfo\x12\x1f\n" +
+	"\vsource_type\x18\x01 \x01(\tR\n" +
+	"sourceType\x12\x16\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x19\n" +
+	"\blog_path\x18\x03 \x01(\tR\alogPath\x12\x1d\n" +
+	"\n" +
+	"log_format\x18\x04 \x01(\tR\tlogFormat\x12\x1d\n" +
+	"\n" +
+	"has_policy\x18\x05 \x01(\bR\thasPolicy*d\n" +
 	"\n" +
 	"TaskStatus\x12\x10\n" +
 	"\fTASK_UNKNOWN\x10\x00\x12\x0f\n" +
@@ -5348,7 +6177,7 @@ func file_corefusion_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_corefusion_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
+var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
 var file_corefusion_agent_proto_goTypes = []any{
 	(TaskStatus)(0),                   // 0: corefusion.agent.v1.TaskStatus
 	(ApplyLimitsRequest_LimitType)(0), // 1: corefusion.agent.v1.ApplyLimitsRequest.LimitType
@@ -5409,14 +6238,25 @@ var file_corefusion_agent_proto_goTypes = []any{
 	(*SyncDataResponse)(nil),          // 56: corefusion.agent.v1.SyncDataResponse
 	(*ExecuteBinaryRequest)(nil),      // 57: corefusion.agent.v1.ExecuteBinaryRequest
 	(*ExecuteBinaryResponse)(nil),     // 58: corefusion.agent.v1.ExecuteBinaryResponse
-	nil,                               // 59: corefusion.agent.v1.UserOp.ExtraEntry
-	nil,                               // 60: corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	(*ReadLogFileRequest)(nil),        // 59: corefusion.agent.v1.ReadLogFileRequest
+	(*ReadLogFileResponse)(nil),       // 60: corefusion.agent.v1.ReadLogFileResponse
+	(*RotateLogRequest)(nil),          // 61: corefusion.agent.v1.RotateLogRequest
+	(*RotateLogResponse)(nil),         // 62: corefusion.agent.v1.RotateLogResponse
+	(*PackageLogsRequest)(nil),        // 63: corefusion.agent.v1.PackageLogsRequest
+	(*PackageLogsResponse)(nil),       // 64: corefusion.agent.v1.PackageLogsResponse
+	(*StreamLogFileRequest)(nil),      // 65: corefusion.agent.v1.StreamLogFileRequest
+	(*SyncLogConfigRequest)(nil),      // 66: corefusion.agent.v1.SyncLogConfigRequest
+	(*DiscoverLogsRequest)(nil),       // 67: corefusion.agent.v1.DiscoverLogsRequest
+	(*DiscoverLogsResponse)(nil),      // 68: corefusion.agent.v1.DiscoverLogsResponse
+	(*DiscoveredLogInfo)(nil),         // 69: corefusion.agent.v1.DiscoveredLogInfo
+	nil,                               // 70: corefusion.agent.v1.UserOp.ExtraEntry
+	nil,                               // 71: corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
 }
 var file_corefusion_agent_proto_depIdxs = []int32{
 	0,  // 0: corefusion.agent.v1.GetTaskResponse.status:type_name -> corefusion.agent.v1.TaskStatus
 	50, // 1: corefusion.agent.v1.SyncProxyConfigRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
 	11, // 2: corefusion.agent.v1.AlterUsersRequest.users:type_name -> corefusion.agent.v1.UserOp
-	59, // 3: corefusion.agent.v1.UserOp.extra:type_name -> corefusion.agent.v1.UserOp.ExtraEntry
+	70, // 3: corefusion.agent.v1.UserOp.extra:type_name -> corefusion.agent.v1.UserOp.ExtraEntry
 	1,  // 4: corefusion.agent.v1.ApplyLimitsRequest.type:type_name -> corefusion.agent.v1.ApplyLimitsRequest.LimitType
 	36, // 5: corefusion.agent.v1.GetStatusResponse.cores:type_name -> corefusion.agent.v1.CoreStatus
 	22, // 6: corefusion.agent.v1.GetMetricsResponse.points:type_name -> corefusion.agent.v1.MetricPoint
@@ -5449,67 +6289,74 @@ var file_corefusion_agent_proto_depIdxs = []int32{
 	57, // 33: corefusion.agent.v1.PanelCommand.execute_binary:type_name -> corefusion.agent.v1.ExecuteBinaryRequest
 	45, // 34: corefusion.agent.v1.PanelCommand.xray_api:type_name -> corefusion.agent.v1.XrayAPIRequest
 	16, // 35: corefusion.agent.v1.PanelCommand.read_config_file:type_name -> corefusion.agent.v1.ReadConfigFileRequest
-	0,  // 36: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
-	51, // 37: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
-	52, // 38: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
-	53, // 39: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
-	54, // 40: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
-	55, // 41: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
-	50, // 42: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
-	60, // 43: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
-	13, // 44: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
-	20, // 45: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
-	25, // 46: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
-	28, // 47: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
-	31, // 48: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
-	33, // 49: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
-	18, // 50: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
-	16, // 51: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
-	7,  // 52: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
-	9,  // 53: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
-	6,  // 54: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
-	8,  // 55: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
-	10, // 56: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
-	12, // 57: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
-	23, // 58: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
-	24, // 59: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
-	15, // 60: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
-	45, // 61: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
-	47, // 62: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
-	57, // 63: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
-	49, // 64: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
-	4,  // 65: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
-	35, // 66: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
-	43, // 67: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
-	14, // 68: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
-	21, // 69: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
-	26, // 70: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
-	29, // 71: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
-	29, // 72: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
-	34, // 73: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
-	19, // 74: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
-	17, // 75: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
-	3,  // 76: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 77: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 78: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 79: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 80: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 81: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 82: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 83: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 84: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
-	46, // 85: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
-	48, // 86: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
-	58, // 87: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
-	56, // 88: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
-	5,  // 89: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
-	38, // 90: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
-	44, // 91: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
-	68, // [68:92] is the sub-list for method output_type
-	44, // [44:68] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	59, // 36: corefusion.agent.v1.PanelCommand.read_log_file:type_name -> corefusion.agent.v1.ReadLogFileRequest
+	61, // 37: corefusion.agent.v1.PanelCommand.rotate_log:type_name -> corefusion.agent.v1.RotateLogRequest
+	63, // 38: corefusion.agent.v1.PanelCommand.package_logs:type_name -> corefusion.agent.v1.PackageLogsRequest
+	65, // 39: corefusion.agent.v1.PanelCommand.stream_log_file:type_name -> corefusion.agent.v1.StreamLogFileRequest
+	66, // 40: corefusion.agent.v1.PanelCommand.sync_log_config:type_name -> corefusion.agent.v1.SyncLogConfigRequest
+	67, // 41: corefusion.agent.v1.PanelCommand.discover_logs:type_name -> corefusion.agent.v1.DiscoverLogsRequest
+	0,  // 42: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
+	51, // 43: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
+	52, // 44: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
+	53, // 45: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
+	54, // 46: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
+	55, // 47: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
+	50, // 48: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
+	71, // 49: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	69, // 50: corefusion.agent.v1.DiscoverLogsResponse.logs:type_name -> corefusion.agent.v1.DiscoveredLogInfo
+	13, // 51: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
+	20, // 52: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
+	25, // 53: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
+	28, // 54: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
+	31, // 55: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
+	33, // 56: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
+	18, // 57: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
+	16, // 58: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
+	7,  // 59: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
+	9,  // 60: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
+	6,  // 61: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
+	8,  // 62: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
+	10, // 63: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
+	12, // 64: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
+	23, // 65: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
+	24, // 66: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
+	15, // 67: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
+	45, // 68: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
+	47, // 69: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
+	57, // 70: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
+	49, // 71: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
+	4,  // 72: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
+	35, // 73: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
+	43, // 74: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
+	14, // 75: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
+	21, // 76: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
+	26, // 77: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
+	29, // 78: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
+	29, // 79: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
+	34, // 80: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
+	19, // 81: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
+	17, // 82: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
+	3,  // 83: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 84: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 85: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 86: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 87: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 88: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 89: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 90: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 91: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
+	46, // 92: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
+	48, // 93: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
+	58, // 94: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
+	56, // 95: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
+	5,  // 96: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
+	38, // 97: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
+	44, // 98: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
+	75, // [75:99] is the sub-list for method output_type
+	51, // [51:75] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_corefusion_agent_proto_init() }
@@ -5540,6 +6387,12 @@ func file_corefusion_agent_proto_init() {
 		(*PanelCommand_ExecuteBinary)(nil),
 		(*PanelCommand_XrayApi)(nil),
 		(*PanelCommand_ReadConfigFile)(nil),
+		(*PanelCommand_ReadLogFile)(nil),
+		(*PanelCommand_RotateLog)(nil),
+		(*PanelCommand_PackageLogs)(nil),
+		(*PanelCommand_StreamLogFile)(nil),
+		(*PanelCommand_SyncLogConfig)(nil),
+		(*PanelCommand_DiscoverLogs)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -5547,7 +6400,7 @@ func file_corefusion_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_corefusion_agent_proto_rawDesc), len(file_corefusion_agent_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   58,
+			NumMessages:   69,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

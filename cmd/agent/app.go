@@ -14,6 +14,7 @@ import (
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/process"
 	binariesSvc "corefusion/internal/service/binaries"
+	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
@@ -44,6 +45,9 @@ type AgentApp struct {
 	coreConfigRepo     *repository.CoreConfigRepository
 	inboundConfigRepo  *repository.InboundConfigRepository
 	outboundConfigRepo *repository.OutboundConfigRepository
+
+	// Log management (same as Panel — provides LogWriter for stdout file persistence)
+	logMgr *logManageSvc.Service
 
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
@@ -129,6 +133,33 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
 	localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
 
+	// Phase 6: Create log management service (same as Panel)
+	// This provides LogWriter which subscribes to proxy/core LogBroker
+	// and persists captured stdout to logs/{type}-stdout.log files.
+	logPolicyRepo := repository.NewLogRotationPolicyRepository(db.DB)
+	logJobRepo := repository.NewLogRotationJobRepository(db.DB)
+	caddySiteRepo := repository.NewCaddySiteRepository(db.DB)
+
+	proxyBrokerAdapter := &logManageSvc.ProxyBrokerAdapter{
+		GetBrokerFn: func(proxyType string) *logManageSvc.LogBrokerWrapper {
+			broker := proxyMgr.GetLogBroker(proxySvc.ProxyType(proxyType))
+			if broker == nil {
+				return nil
+			}
+			return &logManageSvc.LogBrokerWrapper{
+				SnapshotFn:  broker.Snapshot,
+				SubscribeFn: broker.Subscribe,
+			}
+		},
+	}
+	logMgr := logManageSvc.NewService(logPolicyRepo, logJobRepo, &agentSettingStore{repo: settingRepo}, caddySiteRepo, dataDir, proxyBrokerAdapter)
+
+	// Wire log mode provider so process.Manager knows the log output mode for each core
+	procMgr.SetLogModeProvider(logMgr)
+
+	// Wire core log broker provider so logmanage can read core process stdout
+	logMgr.SetCoreLogBrokerProvider(&agentCoreLogBrokerAdapter{processMgr: procMgr})
+
 	app := &AgentApp{
 		cfg:                cfg,
 		dataDir:            dataDir,
@@ -144,6 +175,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		coreConfigRepo:     coreConfigRepo,
 		inboundConfigRepo:  inboundConfigRepo,
 		outboundConfigRepo: outboundConfigRepo,
+		logMgr:             logMgr,
 	}
 
 	return app, nil
@@ -160,6 +192,23 @@ func (s *agentSettingStore) GetByKey(ctx context.Context, key string) (string, e
 
 func (s *agentSettingStore) Set(ctx context.Context, key, value string) error {
 	return s.repo.Set(ctx, key, value)
+}
+
+// agentCoreLogBrokerAdapter adapts process.Manager to logmanage.CoreLogBrokerProvider.
+// Same as the panel's coreLogBrokerAdapter in router.go.
+type agentCoreLogBrokerAdapter struct {
+	processMgr *process.Manager
+}
+
+func (a *agentCoreLogBrokerAdapter) GetCoreLogBroker(coreType string) logManageSvc.LogBrokerReader {
+	if a == nil || a.processMgr == nil {
+		return nil
+	}
+	broker := a.processMgr.GetLogBroker(coreType)
+	if broker == nil {
+		return nil
+	}
+	return broker // *process.LogBroker implements LogBrokerReader (Snapshot + Subscribe)
 }
 
 // syncGithubAccelSettings writes GitHub acceleration config to the Agent's local
@@ -192,6 +241,16 @@ func (a *AgentApp) syncGithubAccelSettings(ctx context.Context, accelDomain, pro
 // After reconcile, it also restores firewall rules for hysteria port hopping.
 func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 	a.procMgr.SeedCores(ctx)
+
+	// Start log management service (same as Panel)
+	// This restores previously enabled LogWriters that subscribe to proxy/core
+	// LogBrokers and persist captured stdout to logs/{type}-stdout.log files.
+	if a.logMgr != nil {
+		a.logMgr.StartAutoWriters()
+		a.logMgr.Start()
+		log.Println("[Agent] log management service started (LogWriter + rotation scheduler)")
+	}
+
 	go func() {
 		a.procMgr.Reconcile(ctx)
 		// Restore firewall rules for hysteria port hopping after process reconcile.

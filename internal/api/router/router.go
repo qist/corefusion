@@ -358,6 +358,23 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 	logManageSvc := logManageSvc.NewService(logPolicyRepo, logJobRepo, systemSettingRepo, caddySiteRepo, dataDir, proxyBrokerAdapter)
 
+	// Wire log mode provider so process.Manager knows the log output mode for each core
+	processMgr.SetLogModeProvider(logManageSvc)
+
+	// Wire core log broker provider so logmanage can read core process stdout
+	logManageSvc.SetCoreLogBrokerProvider(&coreLogBrokerAdapter{processMgr: processMgr})
+
+	// Wire client log packaging dependencies (for subscription user log access)
+	clientLogPkgRepo := repository.NewClientLogPackageRepository(database)
+	if sharedNodeMgr != nil {
+		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planNodeRepo, inboundConfigRepo, sharedNodeMgr)
+	} else {
+		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planNodeRepo, inboundConfigRepo, nil)
+	}
+
+	// Wire log mode provider to configsync so generated configs include correct log section
+	configSyncSvc.SetLogModeProvider(logManageSvc)
+
 	// Wire config generators so auto-start uses the new separated managers
 	proxyMgr.SetCaddyConfigGen(caddyMgr.GenerateConfig)
 	proxyMgr.SetNginxConfigGen(nginxMgr.GenerateConfig)
@@ -488,6 +505,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
 	logManageH := logManageHandler.NewHandler(logManageSvc)
+	// Wire node log manager for centralized remote node log management
+	if sharedNodeMgr != nil {
+		logManageHandler.SetNodeLogManager(sharedNodeMgr)
+	}
+
+	// Client log handler (for subscription user log packaging)
+	clientLogH := clientauthHandler.NewLogHandler(logManageSvc)
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -1459,15 +1483,24 @@ nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 				logManageGroup.GET("/policies/:id/log-stream", logManageH.StreamLog)
 				logManageGroup.GET("/log-output", logManageH.GetLogOutput)
 				logManageGroup.PUT("/log-output", logManageH.SaveLogOutput)
+				logManageGroup.GET("/core-log-output", logManageH.GetCoreLogOutput)
+				logManageGroup.PUT("/core-log-output", logManageH.SaveCoreLogOutput)
 				logManageGroup.POST("/log-output/takeover/:type", logManageH.TakeoverStdout)
 				logManageGroup.POST("/log-output/release/:type", logManageH.ReleaseStdout)
 				logManageGroup.GET("/proxy/:type/stdout-log", logManageH.ProxyStdoutLog)
 				logManageGroup.GET("/proxy/:type/stdout-stream", logManageH.ProxyStdoutStream)
+				logManageGroup.GET("/core/:type/stdout-log", logManageH.ProxyStdoutLog)
+				logManageGroup.GET("/core/:type/stdout-stream", logManageH.ProxyStdoutStream)
 				logManageGroup.GET("/writers", logManageH.GetWriterStatus)
 				logManageGroup.POST("/writers/:type/start", logManageH.StartWriter)
 				logManageGroup.POST("/writers/:type/stop", logManageH.StopWriter)
 				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
 				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
+				// Node-based centralized log management
+				logManageGroup.GET("/nodes/:serverId/logs", logManageH.ListNodeLogs)
+				logManageGroup.GET("/nodes/:serverId/logs/:type", logManageH.GetNodeLog)
+				logManageGroup.GET("/nodes/:serverId/logs/:type/stream", logManageH.StreamNodeLog)
+				logManageGroup.POST("/nodes/:serverId/logs/:type/rotate", logManageH.RotateNodeLog)
 			}
 
 		// Agent bootstrap (public — no auth, uses bootstrap token, registered on v1 not protected)
@@ -1553,6 +1586,12 @@ nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
+		// Client log package endpoints (subscription user log access)
+		clientAuthProtected.GET("/logs/types", clientLogH.LogPackageHealthCheck)
+		clientAuthProtected.POST("/logs/package", clientLogH.CreateLogPackage)
+		clientAuthProtected.GET("/logs/packages", clientLogH.ListLogPackages)
+		clientAuthProtected.GET("/logs/packages/:id", clientLogH.GetLogPackage)
+		clientAuthProtected.GET("/logs/packages/:id/download", clientLogH.DownloadLogPackage)
 	}
 
 	// Check panel mode — if management_only, skip local core process startup
@@ -1774,6 +1813,22 @@ func isSPARoute(path string) bool {
 	}
 
 	return false
+}
+
+// coreLogBrokerAdapter adapts process.Manager to logmanage.CoreLogBrokerProvider interface.
+type coreLogBrokerAdapter struct {
+	processMgr *process.Manager
+}
+
+func (a *coreLogBrokerAdapter) GetCoreLogBroker(coreType string) logManageSvc.LogBrokerReader {
+	if a == nil || a.processMgr == nil {
+		return nil
+	}
+	broker := a.processMgr.GetLogBroker(coreType)
+	if broker == nil {
+		return nil
+	}
+	return broker // *process.LogBroker implements LogBrokerReader (Snapshot + Subscribe)
 }
 
 // restoreFirewallRules scans all enabled hysteria inbound configs for the local server

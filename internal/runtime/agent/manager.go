@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1593,4 +1594,174 @@ func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID
 		return nil, "", fmt.Errorf("%s", resp.Error)
 	}
 	return resp.Content, resp.FilePath, nil
+}
+
+// ReadLogFileOnServer reads the last N lines of a log file from a node (local or remote).
+func (m *NodeServerManager) ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, "", fmt.Errorf("local agent not configured")
+		}
+		// For local: read directly from disk
+		logPath := filepath.Join(m.localAgent.GetDataDir(), "logs", logType+".log")
+		switch logType {
+		case "nginx":
+			logPath = filepath.Join(m.localAgent.GetDataDir(), "logs", "nginx-error.log")
+		case "caddy":
+			logPath = filepath.Join(m.localAgent.GetDataDir(), "logs", "caddy-access.log")
+		}
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			return nil, logPath, err
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) > lastLines {
+			lines = lines[len(lines)-lastLines:]
+		}
+		return lines, logPath, nil
+	}
+
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ReadLogFile{
+			ReadLogFile: &agentpb.ReadLogFileRequest{
+				LogType:   logType,
+				LastLines: int32(lastLines),
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, "", fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ReadLogFileResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, "", fmt.Errorf("unmarshal read_log_file response: %w", err)
+	}
+	if !resp.Success {
+		return nil, "", fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Lines, resp.LogPath, nil
+}
+
+// RotateLogOnServer triggers log rotation on a node (local or remote).
+func (m *NodeServerManager) RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error) {
+	if m.isLocalServer(serverID) {
+		// For local: we don't have direct access to logmanage.Service here
+		// This should be handled by the API handler directly
+		return 0, 0, 0, fmt.Errorf("local rotation should be handled by API handler")
+	}
+
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_RotateLog{
+			RotateLog: &agentpb.RotateLogRequest{
+				LogType: logType,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return 0, 0, 0, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.RotateLogResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return 0, 0, 0, fmt.Errorf("unmarshal rotate_log response: %w", err)
+	}
+	if !resp.Success {
+		return 0, 0, 0, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.RotatedFiles, resp.CleanedFiles, resp.FreedBytes, nil
+}
+
+// PackageLogsOnServer packages logs from a node within a time range.
+func (m *NodeServerManager) PackageLogsOnServer(ctx context.Context, serverID int64, logType string, startTime, endTime int64, includeRotated, desensitize bool) (string, int64, string, error) {
+	if m.isLocalServer(serverID) {
+		return "", 0, "", fmt.Errorf("local packaging should be handled by API handler")
+	}
+
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_PackageLogs{
+			PackageLogs: &agentpb.PackageLogsRequest{
+				LogType:        logType,
+				StartTime:      startTime,
+				EndTime:        endTime,
+				IncludeRotated: includeRotated,
+				Desensitize:    desensitize,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
+	if err != nil {
+		return "", 0, "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return "", 0, "", fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.PackageLogsResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return "", 0, "", fmt.Errorf("unmarshal package_logs response: %w", err)
+	}
+	if !resp.Success {
+		return "", 0, "", fmt.Errorf("%s", resp.Error)
+	}
+	return resp.PackagePath, resp.PackageSize, resp.DownloadToken, nil
+}
+
+// SyncLogConfigToServer syncs log output mode config to a remote node.
+func (m *NodeServerManager) SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig string) error {
+	if m.isLocalServer(serverID) {
+		return nil // local config is already in the DB
+	}
+
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_SyncLogConfig{
+			SyncLogConfig: &agentpb.SyncLogConfigRequest{
+				CoreLogConfig:  coreLogConfig,
+				ProxyLogConfig: proxyLogConfig,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+// DiscoverLogsOnServer discovers log files on a remote node via gRPC.
+func (m *NodeServerManager) DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error) {
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_DiscoverLogs{
+			DiscoverLogs: &agentpb.DiscoverLogsRequest{},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.DiscoverLogsResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal discover_logs response: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Logs, nil
 }

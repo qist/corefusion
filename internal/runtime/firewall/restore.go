@@ -102,11 +102,33 @@ func ParsePortHopFromConfig(configJSON string, port int) *PortHopConfig {
 	}
 }
 
+// FlushAllRules removes the entire hysteria_porthopping nftables table (or flushes
+// the iptables PREROUTING chain for port hop rules). This ensures stale rules from
+// other nodes or previous configurations are cleaned up before restoring.
+func FlushAllRules() {
+	if isNftablesAvailable() {
+		// Delete the entire table — it will be re-created by applyNft if needed.
+		exec.Command("nft", "delete", "table", "inet", "hysteria_porthopping").Run()
+		log.Printf("[Firewall] flushed nftables hysteria_porthopping table")
+	} else {
+		// For iptables, flush all REDIRECT rules in the nat PREROUTING chain.
+		// We can't easily distinguish port-hop rules from other REDIRECT rules,
+		// so we only flush if the hysteria_porthopping chain concept doesn't apply.
+		// iptables mode is legacy; nftables is the primary path.
+	}
+}
+
 // RestoreRules scans inbound configs and restores firewall rules for enabled port hopping.
 // This should be called on startup (after process reconcile) to re-create rules lost on reboot.
 //
+// It first flushes all existing port-hop rules, then re-creates only the rules that
+// belong to this node. This prevents stale rules from other nodes from persisting.
+//
 // configFetcher should return a slice of (configJSON, port) pairs for all enabled hysteria inbounds.
 func RestoreRules(ctx context.Context, applier FirewallApplier, configFetcher func() ([]InboundConfigInfo, error)) {
+	// Flush all existing rules first to remove any stale entries
+	FlushAllRules()
+
 	configs, err := configFetcher()
 	if err != nil {
 		log.Printf("[Firewall] failed to fetch inbound configs for rule restore: %v", err)

@@ -33,7 +33,7 @@ func (h *Handler) ApplyFirewallRules(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, _, handled := h.remoteXrayAPI(c, "firewall", "apply", req); handled {
+	if resp, handled, _ := h.remoteXrayAPI(c, "firewall", "apply", req); handled {
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -77,7 +77,7 @@ func (h *Handler) RemoveFirewallRules(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, _, handled := h.remoteXrayAPI(c, "firewall", "remove", req); handled {
+	if resp, handled, _ := h.remoteXrayAPI(c, "firewall", "remove", req); handled {
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)

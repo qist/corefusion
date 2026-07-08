@@ -13,6 +13,7 @@
               <el-option v-for="opt in nodeTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
             <el-button size="small" @click="loadServers"><el-icon><Refresh /></el-icon> {{ t('common.refresh') }}</el-button>
+            <el-button size="small" type="warning" @click="handleUpdateAllAgents" :loading="updateAllLoading">{{ t('nodeServer.updateAllAgents') }}</el-button>
           </div>
           <el-button type="primary" size="small" @click="showCreateDialog">+ {{ t('nodeServer.addServer') }}</el-button>
         </div>
@@ -70,6 +71,7 @@
                     <el-dropdown-item command="tags" divided>{{ t('nodeServer.tags') }}</el-dropdown-item>
                     <el-dropdown-item command="revoke" v-if="row.agent_cert_expires_at">{{ t('nodeServer.revokeCert') }}</el-dropdown-item>
                     <el-dropdown-item command="reconnect">{{ t('nodeServer.forceReconnect') }}</el-dropdown-item>
+                    <el-dropdown-item command="updateAgent" v-if="!row.is_local" divided>{{ t('nodeServer.updateAgent') }}</el-dropdown-item>
                     <el-dropdown-item command="edit" divided>{{ t('common.edit') }}</el-dropdown-item>
                     <el-dropdown-item command="delete" v-if="!row.is_local">{{ t('common.delete') }}</el-dropdown-item>
                   </el-dropdown-menu>
@@ -544,6 +546,7 @@ import {
   getRetryQueueStatus, processRetryQueue,
   listNodeAuditLogs, exportNodeAuditLogs,
   syncServerConfig,
+  updateAllAgents,
 } from '../api/nodeServer'
 
 const { t } = useI18n()
@@ -551,6 +554,9 @@ const router = useRouter()
 
 // ─── Active Tab ───
 const activeTab = ref('servers')
+
+// ─── Agent Update All ───
+const updateAllLoading = ref(false)
 
 // ─── Server List ───
 const servers = ref([])
@@ -931,6 +937,26 @@ function goToDetail(row) {
   router.push(`/node-servers/${row.id}/detail`)
 }
 
+async function handleUpdateAllAgents() {
+  try {
+    await ElMessageBox.confirm(
+      t('nodeServer.updateAllAgentsConfirm'),
+      t('nodeServer.updateAllAgents'),
+      { type: 'warning' }
+    )
+    updateAllLoading.value = true
+    const res = await updateAllAgents()
+    ElMessage.success(t('nodeServer.updateAllAgentsPushed') + (res?.updated ? ` (${res.updated})` : ''))
+    loadServers()
+  } catch (e) {
+    if (e !== 'cancel' && e?.response?.data?.message) {
+      ElMessage.error(e.response.data.message)
+    }
+  } finally {
+    updateAllLoading.value = false
+  }
+}
+
 async function showDetailDialog(row) {
   detailData.value = row
   realtimeStatus.value = null
@@ -953,6 +979,7 @@ case 'status': showDetailDialog(row); break
     case 'tags': showTagsDialog(row); break
     case 'revoke': handleRevoke(row); break
     case 'reconnect': handleReconnect(row); break
+    case 'updateAgent': goToDetail(row); break
   }
 }
 

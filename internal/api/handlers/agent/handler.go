@@ -260,6 +260,14 @@ func (h *Handler) GetAgentReleases(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		// Repository has no releases yet — return empty list
+		response.OK(c, gin.H{
+			"releases": []interface{}{},
+			"source":   "github",
+		})
+		return
+	}
 	if resp.StatusCode != 200 {
 		response.InternalError(c, "GITHUB_API_ERROR", fmt.Sprintf("GitHub API returned %d", resp.StatusCode))
 		return

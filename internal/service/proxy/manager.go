@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -318,9 +319,14 @@ func (m *Manager) systemPaths(name string) []string {
 func (m *Manager) getVersion(path string) string {
 	for _, flag := range []string{"version", "-v", "--version"} {
 		cmd := exec.Command(path, flag)
-		out, err := cmd.CombinedOutput()
-		if err == nil && len(out) > 0 {
-			v := strings.TrimSpace(string(out))
+		// Use separate stdout to avoid JSON log noise from stderr
+		// (e.g. Caddy emits warnings when XDG_CONFIG_HOME/HOME is unset)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil && stdout.Len() > 0 {
+			v := strings.TrimSpace(stdout.String())
 			if idx := strings.Index(v, "\n"); idx > 0 {
 				v = v[:idx]
 			}

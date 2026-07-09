@@ -984,10 +984,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					outboundConfigRepo,
 					warpRepo,
 					shareDomainRepo,
-				).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo),
+				).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo),
 			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc)
 			nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
-nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
+			nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
+
+			// Set proxy settings provider for per-node nginx/caddy settings sync
+			nodeMgrForPhase3.SetProxySettingsProvider(&proxySettingsProvider{
+				settingStore: systemSettingRepo,
+			})
 
 			nodeServerSvcInst.
 				WithMetricsCollector(metricsCollector).
@@ -1894,4 +1899,67 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	r.GET("/:token", publicSubH.ServeSubscription)
 
 	return r
+}
+
+// proxySettingsProvider implements agent.ProxySettingsProvider interface
+type proxySettingsProvider struct {
+	settingStore *repository.SystemSettingRepository
+}
+
+// GetNginxSettingsForServer returns nginx settings for a specific server as JSON string.
+func (p *proxySettingsProvider) GetNginxSettingsForServer(ctx context.Context, serverID int64) (string, error) {
+	key := fmt.Sprintf("proxy.nginx_settings.%d", serverID)
+	v, err := p.settingStore.GetByKey(ctx, key)
+	if err != nil || v == "" {
+		// Fallback to global settings
+		v, err = p.settingStore.GetByKey(ctx, "proxy.nginx_settings")
+		if err != nil {
+			return "", err
+		}
+	}
+	return v, nil
+}
+
+// GetCaddySNISettingsForServer returns caddy SNI settings for a specific server as JSON string.
+func (p *proxySettingsProvider) GetCaddySNISettingsForServer(ctx context.Context, serverID int64) (string, error) {
+	// Build per-node keys
+	enabledKey := fmt.Sprintf("proxy.sni_enabled.%d", serverID)
+	listenPortKey := fmt.Sprintf("proxy.sni_listen_port.%d", serverID)
+	localPortKey := fmt.Sprintf("proxy.sni_local_port.%d", serverID)
+	rulesKey := fmt.Sprintf("proxy.proxy_protocol_rules.%d", serverID)
+
+	// Try per-node keys first, fallback to global
+	enabled, _ := p.settingStore.GetByKey(ctx, enabledKey)
+	if enabled == "" {
+		enabled, _ = p.settingStore.GetByKey(ctx, "proxy.sni_enabled")
+	}
+
+	listenPort, _ := p.settingStore.GetByKey(ctx, listenPortKey)
+	if listenPort == "" {
+		listenPort, _ = p.settingStore.GetByKey(ctx, "proxy.sni_listen_port")
+	}
+	if listenPort == "" {
+		listenPort = "443"
+	}
+
+	localPort, _ := p.settingStore.GetByKey(ctx, localPortKey)
+	if localPort == "" {
+		localPort, _ = p.settingStore.GetByKey(ctx, "proxy.sni_local_port")
+	}
+	if localPort == "" {
+		localPort = "8443"
+	}
+
+	rules, _ := p.settingStore.GetByKey(ctx, rulesKey)
+	if rules == "" {
+		rules, _ = p.settingStore.GetByKey(ctx, "proxy.proxy_protocol_rules")
+	}
+	if rules == "" {
+		rules = `["127.0.0.0/8", "::1/128"]`
+	}
+
+	// Build JSON response
+	result := fmt.Sprintf(`{"enabled":%s,"listen_port":"%s","local_port":"%s","proxy_protocol_rules":%s}`,
+		enabled, listenPort, localPort, rules)
+	return result, nil
 }

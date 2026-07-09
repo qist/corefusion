@@ -77,12 +77,17 @@ func (m *CaddyManager) DeleteSite(ctx context.Context, id int64) error {
 
 // GenerateConfig assembles the full Caddyfile from all enabled sites.
 func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
-	sites, err := m.siteRepo.ListEnabled(ctx, m.serverID)
+	return m.GenerateConfigForServer(ctx, m.serverID)
+}
+
+// GenerateConfigForServer assembles the full Caddyfile from all enabled sites for a specific server.
+func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int64) (string, error) {
+	sites, err := m.siteRepo.ListEnabled(ctx, serverID)
 	if err != nil {
 		return "", err
 	}
 	// Read SNI settings for proxy_protocol rules
-	sniSettings, _ := m.GetSNISettings(ctx)
+	sniSettings, _ := m.GetSNISettingsForServer(ctx, serverID)
 
 	var sb strings.Builder
 	var httpSites []entity.CaddySite
@@ -539,8 +544,23 @@ func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, port string, enable
 	return count, nil
 }
 
-// GetSNISettings reads SNI settings from database.
+// perNodeSNISettingsKey returns the settings key for a server ID.
+// Local node (serverID=1) uses the legacy global key for backward compatibility.
+// Remote nodes use a per-node key.
+func perNodeSNISettingsKey(baseKey string, serverID int64) string {
+	if serverID <= 1 {
+		return baseKey
+	}
+	return fmt.Sprintf("%s.%d", baseKey, serverID)
+}
+
+// GetSNISettings reads SNI settings from database (uses the manager's serverID).
 func (m *CaddyManager) GetSNISettings(ctx context.Context) (*SNISettings, error) {
+	return m.GetSNISettingsForServer(ctx, m.serverID)
+}
+
+// GetSNISettingsForServer reads SNI settings from database for a specific server.
+func (m *CaddyManager) GetSNISettingsForServer(ctx context.Context, serverID int64) (*SNISettings, error) {
 	settings := &SNISettings{
 		Enabled:            false,
 		ListenPort:         "443",
@@ -550,25 +570,54 @@ func (m *CaddyManager) GetSNISettings(ctx context.Context) (*SNISettings, error)
 	if m.settingStore == nil {
 		return settings, nil
 	}
-	if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_enabled"); err == nil && v == "true" {
+
+	// Try per-node keys first
+	enabledKey := perNodeSNISettingsKey("proxy.sni_enabled", serverID)
+	if v, err := m.settingStore.GetByKey(ctx, enabledKey); err == nil && v == "true" {
 		settings.Enabled = true
+	} else if serverID > 1 {
+		// Fallback to global key for backward compatibility
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_enabled"); err == nil && v == "true" {
+			settings.Enabled = true
+		}
 	}
-	if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_listen_port"); err == nil && v != "" {
+
+	listenPortKey := perNodeSNISettingsKey("proxy.sni_listen_port", serverID)
+	if v, err := m.settingStore.GetByKey(ctx, listenPortKey); err == nil && v != "" {
 		settings.ListenPort = v
+	} else if serverID > 1 {
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_listen_port"); err == nil && v != "" {
+			settings.ListenPort = v
+		}
 	}
-	if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_local_port"); err == nil && v != "" {
+
+	localPortKey := perNodeSNISettingsKey("proxy.sni_local_port", serverID)
+	if v, err := m.settingStore.GetByKey(ctx, localPortKey); err == nil && v != "" {
 		settings.LocalPort = v
+	} else if serverID > 1 {
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_local_port"); err == nil && v != "" {
+			settings.LocalPort = v
+		}
 	}
-	if v, err := m.settingStore.GetByKey(ctx, "proxy.proxy_protocol_rules"); err == nil && v != "" {
+
+	rulesKey := perNodeSNISettingsKey("proxy.proxy_protocol_rules", serverID)
+	if v, err := m.settingStore.GetByKey(ctx, rulesKey); err == nil && v != "" {
 		var rules []string
 		if json.Unmarshal([]byte(v), &rules) == nil && len(rules) > 0 {
 			settings.ProxyProtocolRules = rules
+		}
+	} else if serverID > 1 {
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.proxy_protocol_rules"); err == nil && v != "" {
+			var rules []string
+			if json.Unmarshal([]byte(v), &rules) == nil && len(rules) > 0 {
+				settings.ProxyProtocolRules = rules
+			}
 		}
 	}
 	return settings, nil
 }
 
-// SaveSNISettings saves SNI settings to database.
+// SaveSNISettings saves SNI settings to database (uses the manager's serverID).
 func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISettings) error {
 	if m.settingStore == nil {
 		return nil
@@ -577,7 +626,9 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISetting
 	if settings.Enabled {
 		enabled = "true"
 	}
-	if err := m.settingStore.Set(ctx, "proxy.sni_enabled", enabled); err != nil {
+
+	enabledKey := perNodeSNISettingsKey("proxy.sni_enabled", m.serverID)
+	if err := m.settingStore.Set(ctx, enabledKey, enabled); err != nil {
 		return err
 	}
 	if settings.ListenPort == "" {
@@ -586,16 +637,22 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISetting
 	if settings.LocalPort == "" {
 		settings.LocalPort = "8443"
 	}
-	if err := m.settingStore.Set(ctx, "proxy.sni_listen_port", settings.ListenPort); err != nil {
+
+	listenPortKey := perNodeSNISettingsKey("proxy.sni_listen_port", m.serverID)
+	if err := m.settingStore.Set(ctx, listenPortKey, settings.ListenPort); err != nil {
 		return err
 	}
-	if err := m.settingStore.Set(ctx, "proxy.sni_local_port", settings.LocalPort); err != nil {
+
+	localPortKey := perNodeSNISettingsKey("proxy.sni_local_port", m.serverID)
+	if err := m.settingStore.Set(ctx, localPortKey, settings.LocalPort); err != nil {
 		return err
 	}
+
 	// Save proxy_protocol rules
 	if len(settings.ProxyProtocolRules) > 0 {
 		data, _ := json.Marshal(settings.ProxyProtocolRules)
-		return m.settingStore.Set(ctx, "proxy.proxy_protocol_rules", string(data))
+		rulesKey := perNodeSNISettingsKey("proxy.proxy_protocol_rules", m.serverID)
+		return m.settingStore.Set(ctx, rulesKey, string(data))
 	}
 	return nil
 }

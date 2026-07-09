@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"runtime"
 )
 
@@ -248,16 +249,44 @@ func DefaultNginxSettings() *NginxSettings {
 	}
 }
 
-// GetNginxSettings reads Nginx settings from database.
+// perNodeNginxSettingsKey returns the settings key for a server ID.
+// Local node (serverID=1) uses the legacy global key for backward compatibility.
+// Remote nodes use a per-node key.
+func perNodeNginxSettingsKey(serverID int64) string {
+	if serverID <= 1 {
+		return "proxy.nginx_settings"
+	}
+	return fmt.Sprintf("proxy.nginx_settings.%d", serverID)
+}
+
+// GetNginxSettings reads Nginx settings from database (local node only).
 func (m *Manager) GetNginxSettings(ctx context.Context) (*NginxSettings, error) {
+	return m.GetNginxSettingsForServer(ctx, 1)
+}
+
+// GetNginxSettingsForServer reads Nginx settings for a specific server.
+// It reads the per-node key first, and falls back to the global key for backward compatibility.
+func (m *Manager) GetNginxSettingsForServer(ctx context.Context, serverID int64) (*NginxSettings, error) {
 	settings := DefaultNginxSettings()
 	if m.settingStore == nil {
 		return settings, nil
 	}
-	v, err := m.settingStore.GetByKey(ctx, "proxy.nginx_settings")
+
+	// Try per-node key first
+	key := perNodeNginxSettingsKey(serverID)
+	v, err := m.settingStore.GetByKey(ctx, key)
 	if err != nil || v == "" {
-		return settings, nil
+		// Fallback to global key for backward compatibility
+		if serverID > 1 {
+			v, err = m.settingStore.GetByKey(ctx, "proxy.nginx_settings")
+			if err != nil || v == "" {
+				return settings, nil
+			}
+		} else {
+			return settings, nil
+		}
 	}
+
 	// Unmarshal into a temp struct, then merge non-empty values onto defaults
 	var saved NginxSettings
 	if err := json.Unmarshal([]byte(v), &saved); err != nil {
@@ -375,8 +404,13 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	dst.StreamLog = src.StreamLog
 }
 
-// SaveNginxSettings saves Nginx settings to database.
+// SaveNginxSettings saves Nginx settings to database (local node only).
 func (m *Manager) SaveNginxSettings(ctx context.Context, settings *NginxSettings) error {
+	return m.SaveNginxSettingsForServer(ctx, 1, settings)
+}
+
+// SaveNginxSettingsForServer saves Nginx settings for a specific server.
+func (m *Manager) SaveNginxSettingsForServer(ctx context.Context, serverID int64, settings *NginxSettings) error {
 	if m.settingStore == nil {
 		return nil
 	}
@@ -384,5 +418,6 @@ func (m *Manager) SaveNginxSettings(ctx context.Context, settings *NginxSettings
 	if err != nil {
 		return err
 	}
-	return m.settingStore.Set(ctx, "proxy.nginx_settings", string(data))
+	key := perNodeNginxSettingsKey(serverID)
+	return m.settingStore.Set(ctx, key, string(data))
 }

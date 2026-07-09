@@ -65,6 +65,9 @@ type NodeServerManager struct {
 	// Proxy cert collector: collects TLS certs for proxy sites (Caddy/Nginx)
 	proxyCertCollector ProxyCertCollector
 
+	// Proxy settings provider: fetches per-node nginx/caddy settings
+	proxySettingsProvider ProxySettingsProvider
+
 	// Cert renewer: checks and renews Agent certs on reconnect
 	certRenewer *CertRenewer
 
@@ -151,6 +154,13 @@ type ProxyCertCollector interface {
 	CollectProxyCertificates(ctx context.Context, serverID int64) []*agentpb.CertificateEntry
 }
 
+// ProxySettingsProvider provides nginx/caddy settings for remote nodes.
+// Implemented by handlers to fetch per-node settings from database.
+type ProxySettingsProvider interface {
+	GetNginxSettingsForServer(ctx context.Context, serverID int64) (string, error)
+	GetCaddySNISettingsForServer(ctx context.Context, serverID int64) (string, error)
+}
+
 // SetDataSyncProvider sets the data sync provider for SyncData operations.
 func (m *NodeServerManager) SetDataSyncProvider(p DataSyncProvider) {
 	m.dataSyncProvider = p
@@ -159,6 +169,11 @@ func (m *NodeServerManager) SetDataSyncProvider(p DataSyncProvider) {
 // SetProxyCertCollector sets the proxy certificate collector for SyncProxyConfig operations.
 func (m *NodeServerManager) SetProxyCertCollector(c ProxyCertCollector) {
 	m.proxyCertCollector = c
+}
+
+// SetProxySettingsProvider sets the proxy settings provider for SyncProxyConfig operations.
+func (m *NodeServerManager) SetProxySettingsProvider(p ProxySettingsProvider) {
+	m.proxySettingsProvider = p
 }
 
 // SetMetricsCollector sets the metrics collector for heartbeat-based metric collection.
@@ -468,12 +483,25 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 	if m.proxyCertCollector != nil {
 		certs = m.proxyCertCollector.CollectProxyCertificates(ctx, serverID)
 	}
+
+	// Collect per-node settings for nginx/caddy
+	var nginxSettings, caddySNISettings string
+	if m.proxySettingsProvider != nil {
+		if proxyType == "nginx" {
+			nginxSettings, _ = m.proxySettingsProvider.GetNginxSettingsForServer(ctx, serverID)
+		} else if proxyType == "caddy" {
+			caddySNISettings, _ = m.proxySettingsProvider.GetCaddySNISettingsForServer(ctx, serverID)
+		}
+	}
+
 	cmd := &agentpb.PanelCommand{
 		Command: &agentpb.PanelCommand_SyncProxyConfig{
 			SyncProxyConfig: &agentpb.SyncProxyConfigRequest{
-				ProxyType:     proxyType,
-				ConfigContent: config,
-				Certificates:  certs,
+				ProxyType:        proxyType,
+				ConfigContent:    config,
+				Certificates:     certs,
+				NginxSettings:    nginxSettings,
+				CaddySniSettings: caddySNISettings,
 			},
 		},
 	}

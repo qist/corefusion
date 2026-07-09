@@ -57,6 +57,7 @@ type RepositoryDataProvider struct {
 	proxySiteRepo      *repository.ProxySiteRepository
 	caddySiteRepo      *repository.CaddySiteRepository
 	nginxSiteRepo      *repository.NginxSiteRepository
+	systemSettingRepo  *repository.SystemSettingRepository
 }
 
 // NewRepositoryDataProvider creates a new RawDataProvider backed by repositories.
@@ -91,6 +92,13 @@ func (p *RepositoryDataProvider) WithProxySiteProvider(proxySiteRepo *repository
 	p.proxySiteRepo = proxySiteRepo
 	p.caddySiteRepo = caddySiteRepo
 	p.nginxSiteRepo = nginxSiteRepo
+	return p
+}
+
+// WithSystemSettingProvider injects system setting repository for
+// collecting nginx/caddy settings and log output config during SyncData.
+func (p *RepositoryDataProvider) WithSystemSettingProvider(systemSettingRepo *repository.SystemSettingRepository) *RepositoryDataProvider {
+	p.systemSettingRepo = systemSettingRepo
 	return p
 }
 
@@ -341,6 +349,31 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	req.Certificates = b.collectCertificates(ctx, serverID, inboundConfigs)
 	if len(req.Certificates) > 0 {
 		log.Printf("[DataSyncBuilder] server %d: %d certificate entries", serverID, len(req.Certificates))
+	}
+
+	// === Part 4: Collect Nginx/Caddy settings and log output config ===
+	// These are needed by the Agent to generate correct proxy configs on startup.
+	rdp, ok := b.rawProvider.(*RepositoryDataProvider)
+	if ok && rdp.systemSettingRepo != nil {
+		// Nginx settings
+		nginxKey := perNodeSettingsKey("proxy.nginx_settings", serverID)
+		if v, err := rdp.systemSettingRepo.GetByKey(ctx, nginxKey); err == nil && v != "" {
+			req.NginxSettings = v
+			log.Printf("[DataSyncBuilder] server %d: nginx settings from %s (%d bytes)", serverID, nginxKey, len(v))
+		} else if v, err := rdp.systemSettingRepo.GetByKey(ctx, "proxy.nginx_settings"); err == nil && v != "" {
+			req.NginxSettings = v
+			log.Printf("[DataSyncBuilder] server %d: nginx settings from global (%d bytes)", serverID, len(v))
+		}
+
+		// Log output config
+		logOutputKey := perNodeSettingsKey("proxy.log_output_config", serverID)
+		if v, err := rdp.systemSettingRepo.GetByKey(ctx, logOutputKey); err == nil && v != "" {
+			req.LogOutputConfig = v
+			log.Printf("[DataSyncBuilder] server %d: log output config from %s (%d bytes)", serverID, logOutputKey, len(v))
+		} else if v, err := rdp.systemSettingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+			req.LogOutputConfig = v
+			log.Printf("[DataSyncBuilder] server %d: log output config from global (%d bytes)", serverID, len(v))
+		}
 	}
 
 	// Log summary
@@ -616,4 +649,14 @@ func (b *DataSyncBuilder) resolveLogMode(ctx context.Context, serverID int64, co
 		return b.logModeProvider.GetLogModeForServer(ctx, serverID, coreType)
 	}
 	return ""
+}
+
+// perNodeSettingsKey returns the settings key for a server ID.
+// Local node (serverID=1) uses the legacy global key for backward compatibility.
+// Remote nodes use a per-node key.
+func perNodeSettingsKey(baseKey string, serverID int64) string {
+	if serverID <= 1 {
+		return baseKey
+	}
+	return fmt.Sprintf("%s.%d", baseKey, serverID)
 }

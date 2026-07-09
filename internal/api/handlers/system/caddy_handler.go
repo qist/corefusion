@@ -231,6 +231,7 @@ func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 // --- SNI ---
 
 func (h *CaddyHandler) GetSNISettings(c *gin.Context) {
+	h.applyServerID(c)
 	settings, err := h.caddyMgr.GetSNISettings(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
@@ -240,6 +241,7 @@ func (h *CaddyHandler) GetSNISettings(c *gin.Context) {
 }
 
 func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
+	h.applyServerID(c)
 	var settings proxy.SNISettings
 	if err := c.ShouldBindJSON(&settings); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

@@ -197,15 +197,31 @@ http {
 
 // --- NginxSettings ---
 
-// GetNginxSettings reads Nginx settings from database.
+// GetNginxSettings reads Nginx settings from database (uses the manager's serverID).
 func (m *NginxManager) GetNginxSettings(ctx context.Context) (*NginxSettings, error) {
+	return m.GetNginxSettingsForServer(ctx, m.serverID)
+}
+
+// GetNginxSettingsForServer reads Nginx settings from database for a specific server.
+func (m *NginxManager) GetNginxSettingsForServer(ctx context.Context, serverID int64) (*NginxSettings, error) {
 	settings := DefaultNginxSettings()
 	if m.settingStore == nil {
 		return settings, nil
 	}
-	v, err := m.settingStore.GetByKey(ctx, "proxy.nginx_settings")
+
+	// Try per-node key first
+	key := perNodeNginxSettingsKey(serverID)
+	v, err := m.settingStore.GetByKey(ctx, key)
 	if err != nil || v == "" {
-		return settings, nil
+		// Fallback to global key for backward compatibility
+		if serverID > 1 {
+			v, err = m.settingStore.GetByKey(ctx, "proxy.nginx_settings")
+			if err != nil || v == "" {
+				return settings, nil
+			}
+		} else {
+			return settings, nil
+		}
 	}
 	var saved NginxSettings
 	if err := json.Unmarshal([]byte(v), &saved); err != nil {
@@ -215,7 +231,7 @@ func (m *NginxManager) GetNginxSettings(ctx context.Context) (*NginxSettings, er
 	return settings, nil
 }
 
-// SaveNginxSettings saves Nginx settings to database.
+// SaveNginxSettings saves Nginx settings to database (uses the manager's serverID).
 func (m *NginxManager) SaveNginxSettings(ctx context.Context, settings *NginxSettings) error {
 	if m.settingStore == nil {
 		return nil
@@ -224,7 +240,8 @@ func (m *NginxManager) SaveNginxSettings(ctx context.Context, settings *NginxSet
 	if err != nil {
 		return err
 	}
-	return m.settingStore.Set(ctx, "proxy.nginx_settings", string(data))
+	key := perNodeNginxSettingsKey(m.serverID)
+	return m.settingStore.Set(ctx, key, string(data))
 }
 
 // panelAddr returns the panel address (host:port) for reverse_proxy directives.

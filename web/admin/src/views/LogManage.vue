@@ -766,7 +766,8 @@ const proxyOutputList = ref(makeDefaultProxyOutputList())
 const savingCoreOutput = ref(false)
 const savingProxyOutput = ref(false)
 const fetchingOutput = ref(false)
-let outputFetchToken = 0
+let coreOutputFetchToken = 0
+let proxyOutputFetchToken = 0
 
 // ──────────── Writer ────────────
 const writerStatuses = ref([])
@@ -884,36 +885,36 @@ async function fetchNodeServers() {
 }
 
 async function fetchCoreLogOutput() {
-  const token = ++outputFetchToken
+  const token = ++coreOutputFetchToken
   fetchingOutput.value = true
   try {
     const r = await logApi.getCoreLogOutput(selectedServerId.value)
     // Discard stale response if user has already switched to another node
-    if (token !== outputFetchToken) return
+    if (token !== coreOutputFetchToken) return
     if (r) {
       for (const item of coreOutputList.value) {
         if (r[item.type]) item.cfg = { ...item.cfg, ...r[item.type] }
       }
     }
   } catch { /* noop */ } finally {
-    if (token === outputFetchToken) fetchingOutput.value = false
+    if (token === coreOutputFetchToken) fetchingOutput.value = false
   }
 }
 
 async function fetchProxyLogOutput() {
-  const token = ++outputFetchToken
+  const token = ++proxyOutputFetchToken
   fetchingOutput.value = true
   try {
     const r = await logApi.getProxyLogOutput(selectedServerId.value)
     // Discard stale response if user has already switched to another node
-    if (token !== outputFetchToken) return
+    if (token !== proxyOutputFetchToken) return
     if (r) {
       for (const item of proxyOutputList.value) {
         if (r[item.type]) item.cfg = { ...item.cfg, ...r[item.type] }
       }
     }
   } catch { /* noop */ } finally {
-    if (token === outputFetchToken) fetchingOutput.value = false
+    if (token === proxyOutputFetchToken) fetchingOutput.value = false
   }
 }
 

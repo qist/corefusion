@@ -44,6 +44,9 @@ type RemoteConfigSyncer interface {
 // LogModeProvider provides the log output mode for a core type.
 type LogModeProvider interface {
 	GetLogMode(ctx context.Context, coreType string) string
+	// GetLogModeForServer returns the log mode for a specific server and core type.
+	// If the per-server config is not set, it falls back to the global config.
+	GetLogModeForServer(ctx context.Context, serverID int64, coreType string) string
 }
 
 // Service handles periodic config synchronization to disk.
@@ -238,7 +241,7 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 	// Determine log mode for this core type
 	logMode := ""
 	if s.logModeProvider != nil {
-		logMode = s.logModeProvider.GetLogMode(ctx, coreType)
+		logMode = s.logModeProvider.GetLogModeForServer(ctx, serverID, coreType)
 	}
 
 	// Use the shared PrepareFullConfig to apply all standard steps

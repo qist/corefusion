@@ -194,6 +194,8 @@ func (s *Service) GetCoreLogOutput(ctx context.Context) (*CoreLogOutputConfig, e
 }
 
 // GetCoreLogOutputForServer reads the core log output configuration for a specific server.
+// For xray and singbox, the mode is derived from the actual log section in core_configs
+// to stay in sync with changes made in the protocol center.
 func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64) (*CoreLogOutputConfig, error) {
 	cfg := &CoreLogOutputConfig{
 		Xray:      CoreLogMode{Mode: "file", Managed: false},
@@ -207,10 +209,13 @@ func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64)
 	key := perNodeKey(settingKeyCoreLogOutput, serverID)
 	v, err := s.settingStore.GetByKey(ctx, key)
 	if err != nil || v == "" {
+		// No saved config — still try to derive mode from actual log section
+		s.deriveModesFromConfig(ctx, serverID, cfg)
 		return cfg, nil
 	}
 	var saved CoreLogOutputConfig
 	if err := json.Unmarshal([]byte(v), &saved); err != nil {
+		s.deriveModesFromConfig(ctx, serverID, cfg)
 		return cfg, nil
 	}
 	if saved.Xray.Mode == "" {
@@ -225,7 +230,86 @@ func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64)
 	if saved.Tuic.Mode == "" {
 		saved.Tuic.Mode = "file"
 	}
+
+	// Override modes from actual log section for xray and singbox
+	s.deriveModesFromConfig(ctx, serverID, &saved)
+
 	return &saved, nil
+}
+
+// deriveModesFromConfig reads the actual log section from core_configs and
+// derives the output mode for xray and singbox. This keeps the log management
+// UI in sync with changes made in the protocol center.
+func (s *Service) deriveModesFromConfig(ctx context.Context, serverID int64, cfg *CoreLogOutputConfig) {
+	if s.configGetter == nil {
+		return
+	}
+
+	// Derive xray mode from log section
+	if logSection, err := s.configGetter.GetSection(ctx, serverID, "xray", "log"); err == nil {
+		if m, ok := logSection.(map[string]interface{}); ok {
+			derived := inferXrayLogMode(m)
+			if derived != "" {
+				cfg.Xray.Mode = derived
+			}
+		}
+	}
+
+	// Derive singbox mode from log section
+	if logSection, err := s.configGetter.GetSection(ctx, serverID, "singbox", "log"); err == nil {
+		if m, ok := logSection.(map[string]interface{}); ok {
+			derived := inferSingboxLogMode(m)
+			if derived != "" {
+				cfg.Singbox.Mode = derived
+			}
+		}
+	}
+}
+
+// inferXrayLogMode derives the output mode from the xray log section.
+// Rules:
+//   - loglevel: "none" → off
+//   - access: "none" AND error: "none" → off
+//   - access: "" OR error: "" OR error: "/dev/stderr" → stdout
+//   - Otherwise → file (has file paths)
+func inferXrayLogMode(log map[string]interface{}) string {
+	access, _ := log["access"].(string)
+	errorVal, _ := log["error"].(string)
+	loglevel, _ := log["loglevel"].(string)
+
+	// off mode
+	if loglevel == "none" {
+		return "off"
+	}
+	if access == "none" && errorVal == "none" {
+		return "off"
+	}
+
+	// stdout mode — empty string means stdout in xray, /dev/stderr is LogBroker capture
+	if access == "" || errorVal == "" || errorVal == "/dev/stderr" {
+		return "stdout"
+	}
+
+	// file mode — has actual file paths
+	return "file"
+}
+
+// inferSingboxLogMode derives the output mode from the singbox log section.
+// Rules:
+//   - level: "silent" → off
+//   - output: "stderr" → stdout
+//   - Otherwise → file
+func inferSingboxLogMode(log map[string]interface{}) string {
+	level, _ := log["level"].(string)
+	output, _ := log["output"].(string)
+
+	if level == "silent" {
+		return "off"
+	}
+	if output == "stderr" {
+		return "stdout"
+	}
+	return "file"
 }
 
 // SaveCoreLogOutput saves the core log output configuration to database.
@@ -285,16 +369,32 @@ func (s *Service) GetNginxSettingsRaw(ctx context.Context) string {
 	return v
 }
 
-// GetLogMode returns the log mode for a specific core type.
+// GetLogMode returns the log mode for a specific core type (local node only).
 // This implements the process.LogModeProvider interface.
 func (s *Service) GetLogMode(ctx context.Context, coreType string) string {
+	return s.GetLogModeForServer(ctx, 1, coreType)
+}
+
+// GetLogModeForServer returns the log mode for a specific server and core type.
+// It reads the per-node key (e.g. "core.log_output_config.2") first, and falls
+// back to the global key ("core.log_output_config") for backward compatibility.
+// This implements the configsync.LogModeProvider interface.
+func (s *Service) GetLogModeForServer(ctx context.Context, serverID int64, coreType string) string {
 	if s.settingStore == nil {
 		return "file"
 	}
-	v, err := s.settingStore.GetByKey(ctx, settingKeyCoreLogOutput)
+
+	// Try per-node key first, fall back to global key
+	key := perNodeKey(settingKeyCoreLogOutput, serverID)
+	v, err := s.settingStore.GetByKey(ctx, key)
 	if err != nil || v == "" {
-		return "file"
+		// Fall back to global key (local node config)
+		v, err = s.settingStore.GetByKey(ctx, settingKeyCoreLogOutput)
+		if err != nil || v == "" {
+			return "file"
+		}
 	}
+
 	var cfg CoreLogOutputConfig
 	if json.Unmarshal([]byte(v), &cfg) != nil {
 		return "file"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -75,6 +76,12 @@ type CoreLogBrokerProvider interface {
 	GetCoreLogBroker(coreType string) LogBrokerReader
 }
 
+// CoreConfigSectionGetter provides access to core config sections (e.g. xray log section).
+// Used to derive the log output mode from the actual protocol center config.
+type CoreConfigSectionGetter interface {
+	GetSection(ctx context.Context, serverID int64, coreType, section string) (interface{}, error)
+}
+
 // Service provides log management operations.
 type Service struct {
 	policyRepo    *repository.LogRotationPolicyRepository
@@ -85,6 +92,7 @@ type Service struct {
 	scheduler     *Scheduler
 	proxyBroker   ProxyLogBroker
 	coreBroker    CoreLogBrokerProvider
+	configGetter  CoreConfigSectionGetter
 	writers       map[string]*LogWriter
 	onModeSwitch  func(proxyType string) // callback when output mode is switched
 	clientLogDeps *ClientLogDeps          // optional: for client log packaging
@@ -115,6 +123,12 @@ func NewService(
 // SetCoreLogBrokerProvider sets the provider for core process log brokers.
 func (s *Service) SetCoreLogBrokerProvider(provider CoreLogBrokerProvider) {
 	s.coreBroker = provider
+}
+
+// SetCoreConfigSectionGetter sets the provider for reading core config sections.
+// This enables deriving the log output mode from the actual protocol center config.
+func (s *Service) SetCoreConfigSectionGetter(getter CoreConfigSectionGetter) {
+	s.configGetter = getter
 }
 
 // StartAutoWriters starts writers that were previously enabled.
@@ -509,7 +523,8 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 // discoverCoreLogs discovers log files for core processes (xray, singbox, hysteria2, tuic).
 // Each core process writes to data/logs/{coreType}.log in file mode,
 // or data/logs/{coreType}-stdout.log in stdout mode.
-// Xray has separate access and error logs in file mode.
+// Xray has separate access and error logs in file mode — paths are read from
+// the runtime config file to respect user's protocol center settings.
 func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	var logs []DiscoveredLog
 
@@ -527,17 +542,22 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 			continue // no log file for this core
 		default: // "file"
 			if coreType == "xray" {
-				// xray has separate access and error logs
-				logs = append(logs, DiscoveredLog{
-					SourceType: coreType,
-					Domain:     "error",
-					LogPath:    s.resolveLogPath("logs/xray.log"),
-				})
-				logs = append(logs, DiscoveredLog{
-					SourceType: coreType,
-					Domain:     "access",
-					LogPath:    s.resolveLogPath("logs/xray-access.log"),
-				})
+				// Read actual access/error paths from the runtime config
+				accessPath, errorPath := s.readXrayRuntimeLogPaths()
+				if errorPath != "" {
+					logs = append(logs, DiscoveredLog{
+						SourceType: coreType,
+						Domain:     "error",
+						LogPath:    errorPath,
+					})
+				}
+				if accessPath != "" {
+					logs = append(logs, DiscoveredLog{
+						SourceType: coreType,
+						Domain:     "access",
+						LogPath:    accessPath,
+					})
+				}
 			} else {
 				logs = append(logs, DiscoveredLog{
 					SourceType: coreType,
@@ -549,6 +569,85 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 	}
 
 	return logs, nil
+}
+
+// readXrayRuntimeLogPaths reads the access and error log paths from the local
+// xray runtime config file (dataDir/runtime/xray.jsonc).
+// Returns resolved absolute paths; empty string if the log is disabled ("none").
+func (s *Service) readXrayRuntimeLogPaths() (accessPath, errorPath string) {
+	// Defaults
+	accessPath = s.resolveLogPath("logs/xray-access.log")
+	errorPath = s.resolveLogPath("logs/xray.log")
+
+	configPath := filepath.Join(s.dataDir, "runtime", "xray.jsonc")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+
+	cleaned := stripJSONCCommentsGo(string(data))
+	var cfg struct {
+		Log struct {
+			Access string `json:"access"`
+			Error  string `json:"error"`
+		} `json:"log"`
+	}
+	if json.Unmarshal([]byte(cleaned), &cfg) != nil {
+		return
+	}
+
+	if cfg.Log.Access != "" && cfg.Log.Access != "none" {
+		accessPath = s.resolveLogPath(cfg.Log.Access)
+	} else {
+		accessPath = ""
+	}
+	if cfg.Log.Error != "" && cfg.Log.Error != "none" {
+		errorPath = s.resolveLogPath(cfg.Log.Error)
+	} else {
+		errorPath = ""
+	}
+	return
+}
+
+// stripJSONCCommentsGo removes // line comments and /* block comments */ from
+// JSONC content so it can be parsed as standard JSON.
+func stripJSONCCommentsGo(s string) string {
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+1 < len(s) && s[i] == '/' && s[i+1] == '/' {
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+		} else if i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
+			i += 2
+			for i+1 < len(s) && !(s[i] == '*' && s[i+1] == '/') {
+				i++
+			}
+			i += 2
+		} else if s[i] == '"' {
+			b.WriteByte(s[i])
+			i++
+			for i < len(s) && s[i] != '"' {
+				if s[i] == '\\' && i+1 < len(s) {
+					b.WriteByte(s[i])
+					b.WriteByte(s[i+1])
+					i += 2
+				} else {
+					b.WriteByte(s[i])
+					i++
+				}
+			}
+			if i < len(s) {
+				b.WriteByte(s[i])
+				i++
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
 }
 
 // discoverNginxLogs reads log paths from nginx settings.

@@ -512,17 +512,22 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			continue
 		default: // "file"
 			if coreType == "xray" {
-				// xray has separate access and error logs
-				logs = append(logs, &agentpb.DiscoveredLogInfo{
-					SourceType: coreType,
-					Domain:     "error",
-					LogPath:    filepath.Join(logDir, "xray.log"),
-				})
-				logs = append(logs, &agentpb.DiscoveredLogInfo{
-					SourceType: coreType,
-					Domain:     "access",
-					LogPath:    filepath.Join(logDir, "xray-access.log"),
-				})
+				// Read actual access/error paths from the runtime config file
+				accessPath, errorPath := a.readXrayLogPaths()
+				if errorPath != "" {
+					logs = append(logs, &agentpb.DiscoveredLogInfo{
+						SourceType: coreType,
+						Domain:     "error",
+						LogPath:    errorPath,
+					})
+				}
+				if accessPath != "" {
+					logs = append(logs, &agentpb.DiscoveredLogInfo{
+						SourceType: coreType,
+						Domain:     "access",
+						LogPath:    accessPath,
+					})
+				}
 			} else {
 				logs = append(logs, &agentpb.DiscoveredLogInfo{
 					SourceType: coreType,
@@ -667,6 +672,89 @@ func (a *AgentApp) resolveRelPath(p string) string {
 		return p
 	}
 	return filepath.Join(a.dataDir, p)
+}
+
+// readXrayLogPaths reads the access and error log paths from the xray runtime
+// config file (dataDir/runtime/xray.jsonc). Returns resolved absolute paths.
+// If the config file doesn't exist or has no log section, falls back to defaults.
+func (a *AgentApp) readXrayLogPaths() (accessPath, errorPath string) {
+	// Defaults
+	accessPath = filepath.Join(a.dataDir, "logs", "xray-access.log")
+	errorPath = filepath.Join(a.dataDir, "logs", "xray.log")
+
+	configPath := filepath.Join(a.dataDir, "runtime", "xray.jsonc")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+
+	// xray.jsonc may contain // comments — strip them before parsing.
+	cleaned := stripJSONCComments(string(data))
+	var cfg struct {
+		Log struct {
+			Access string `json:"access"`
+			Error  string `json:"error"`
+		} `json:"log"`
+	}
+	if json.Unmarshal([]byte(cleaned), &cfg) != nil {
+		return
+	}
+
+	if cfg.Log.Access != "" && cfg.Log.Access != "none" {
+		accessPath = a.resolveRelPath(cfg.Log.Access)
+	} else {
+		accessPath = "" // access log disabled
+	}
+	if cfg.Log.Error != "" && cfg.Log.Error != "none" {
+		errorPath = a.resolveRelPath(cfg.Log.Error)
+	} else {
+		errorPath = "" // error log disabled
+	}
+	return
+}
+
+// stripJSONCComments removes // line comments and /* block comments */ from
+// JSONC content so it can be parsed as standard JSON.
+func stripJSONCComments(s string) string {
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+1 < len(s) && s[i] == '/' && s[i+1] == '/' {
+			// Skip to end of line
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+		} else if i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
+			// Skip to */
+			i += 2
+			for i+1 < len(s) && !(s[i] == '*' && s[i+1] == '/') {
+				i++
+			}
+			i += 2
+		} else if s[i] == '"' {
+			// Copy string literal (including escaped quotes)
+			b.WriteByte(s[i])
+			i++
+			for i < len(s) && s[i] != '"' {
+				if s[i] == '\\' && i+1 < len(s) {
+					b.WriteByte(s[i])
+					b.WriteByte(s[i+1])
+					i += 2
+				} else {
+					b.WriteByte(s[i])
+					i++
+				}
+			}
+			if i < len(s) {
+				b.WriteByte(s[i])
+				i++
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
 }
 
 // sanitizeDomainForLog converts a domain to a safe log file name.

@@ -58,3 +58,7 @@ func (a *ProxyManagerAdapter) InstallProxy(ctx context.Context, proxyType string
 func (a *ProxyManagerAdapter) DownloadAndInstallProxy(ctx context.Context, proxyType, downloadURL string) error {
 	return a.mgr.DownloadAndInstallProxy(ctx, proxySvc.ProxyType(proxyType), downloadURL)
 }
+
+func (a *ProxyManagerAdapter) GetGuardianStatus(proxyType string) map[string]interface{} {
+	return a.mgr.GetGuardianStatus(proxySvc.ProxyType(proxyType))
+}

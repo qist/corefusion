@@ -73,6 +73,8 @@ type ProxyManager interface {
 	InstallProxy(ctx context.Context, proxyType string) error
 	// DownloadAndInstallProxy 下载指定版本的代理二进制并安装，如果代理正在运行则重启
 	DownloadAndInstallProxy(ctx context.Context, proxyType, downloadURL string) error
+	// GetGuardianStatus 获取 Guardian 状态（包含 CPU、内存等监控数据）
+	GetGuardianStatus(proxyType string) map[string]interface{}
 }
 
 // BinaryInstaller 处理核心二进制的下载和安装。

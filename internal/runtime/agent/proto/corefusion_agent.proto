@@ -299,6 +299,8 @@ message GetProxyStatusRequest {}
 
 message GetProxyStatusResponse {
   repeated ProxyInfo proxies = 1;
+  // Guardian status for each proxy type (key: proxy type, value: guardian status JSON)
+  map<string, string> guardian_status = 2;
 }
 
 message ProxyInfo {
@@ -597,6 +599,12 @@ message SyncDataRequest {
 
   // 日志输出配置（JSON 格式，包含 nginx/caddy 的 mode 设置）
   string log_output_config = 14;
+
+  // Nginx 是否手动停止
+  bool nginx_manually_stopped = 15;
+
+  // Caddy 是否手动停止
+  bool caddy_manually_stopped = 16;
 }
 
 // CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。

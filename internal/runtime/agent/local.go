@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -308,7 +309,9 @@ func (a *LocalAgent) GetProxyStatus(proxyType string) *ProxyInfo {
 
 // GetProxyStatuses 获取所有代理的安装和运行状态。
 func (a *LocalAgent) GetProxyStatuses() *agentpb.GetProxyStatusResponse {
-	resp := &agentpb.GetProxyStatusResponse{}
+	resp := &agentpb.GetProxyStatusResponse{
+		GuardianStatus: make(map[string]string),
+	}
 	if a.proxyMgr == nil {
 		return resp
 	}
@@ -323,6 +326,11 @@ func (a *LocalAgent) GetProxyStatuses() *agentpb.GetProxyStatusResponse {
 			Status:    info.Status,
 			Managed:   info.Managed,
 		})
+		// Get guardian status and serialize to JSON
+		guardianStatus := a.proxyMgr.GetGuardianStatus(pt)
+		if statusJSON, err := json.Marshal(guardianStatus); err == nil {
+			resp.GuardianStatus[pt] = string(statusJSON)
+		}
 	}
 	return resp
 }

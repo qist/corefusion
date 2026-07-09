@@ -1711,10 +1711,12 @@ func (*GetProxyStatusRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetProxyStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Proxies       []*ProxyInfo           `protobuf:"bytes,1,rep,name=proxies,proto3" json:"proxies,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Proxies []*ProxyInfo           `protobuf:"bytes,1,rep,name=proxies,proto3" json:"proxies,omitempty"`
+	// Guardian status for each proxy type (key: proxy type, value: guardian status JSON)
+	GuardianStatus map[string]string `protobuf:"bytes,2,rep,name=guardian_status,json=guardianStatus,proto3" json:"guardian_status,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetProxyStatusResponse) Reset() {
@@ -1750,6 +1752,13 @@ func (*GetProxyStatusResponse) Descriptor() ([]byte, []int) {
 func (x *GetProxyStatusResponse) GetProxies() []*ProxyInfo {
 	if x != nil {
 		return x.Proxies
+	}
+	return nil
+}
+
+func (x *GetProxyStatusResponse) GetGuardianStatus() map[string]string {
+	if x != nil {
+		return x.GuardianStatus
 	}
 	return nil
 }
@@ -3884,8 +3893,12 @@ type SyncDataRequest struct {
 	CaddySniSettings string `protobuf:"bytes,13,opt,name=caddy_sni_settings,json=caddySniSettings,proto3" json:"caddy_sni_settings,omitempty"`
 	// 日志输出配置（JSON 格式，包含 nginx/caddy 的 mode 设置）
 	LogOutputConfig string `protobuf:"bytes,14,opt,name=log_output_config,json=logOutputConfig,proto3" json:"log_output_config,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Nginx 是否手动停止
+	NginxManuallyStopped bool `protobuf:"varint,15,opt,name=nginx_manually_stopped,json=nginxManuallyStopped,proto3" json:"nginx_manually_stopped,omitempty"`
+	// Caddy 是否手动停止
+	CaddyManuallyStopped bool `protobuf:"varint,16,opt,name=caddy_manually_stopped,json=caddyManuallyStopped,proto3" json:"caddy_manually_stopped,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *SyncDataRequest) Reset() {
@@ -4014,6 +4027,20 @@ func (x *SyncDataRequest) GetLogOutputConfig() string {
 		return x.LogOutputConfig
 	}
 	return ""
+}
+
+func (x *SyncDataRequest) GetNginxManuallyStopped() bool {
+	if x != nil {
+		return x.NginxManuallyStopped
+	}
+	return false
+}
+
+func (x *SyncDataRequest) GetCaddyManuallyStopped() bool {
+	if x != nil {
+		return x.CaddyManuallyStopped
+	}
+	return false
 }
 
 // CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。
@@ -6428,9 +6455,13 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\tproxy_url\x18\x03 \x01(\tR\bproxyUrl\x12!\n" +
 	"\fdownload_url\x18\x04 \x01(\tR\vdownloadUrl\x12\x19\n" +
 	"\btag_name\x18\x05 \x01(\tR\atagName\"\x17\n" +
-	"\x15GetProxyStatusRequest\"R\n" +
+	"\x15GetProxyStatusRequest\"\xff\x01\n" +
 	"\x16GetProxyStatusResponse\x128\n" +
-	"\aproxies\x18\x01 \x03(\v2\x1e.corefusion.agent.v1.ProxyInfoR\aproxies\"\xb1\x01\n" +
+	"\aproxies\x18\x01 \x03(\v2\x1e.corefusion.agent.v1.ProxyInfoR\aproxies\x12h\n" +
+	"\x0fguardian_status\x18\x02 \x03(\v2?.corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntryR\x0eguardianStatus\x1aA\n" +
+	"\x13GuardianStatusEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb1\x01\n" +
 	"\tProxyInfo\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -6621,7 +6652,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x16ListInterfacesResponse\x12\x1e\n" +
 	"\n" +
 	"interfaces\x18\x01 \x03(\tR\n" +
-	"interfaces\"\xb2\x06\n" +
+	"interfaces\"\x9e\a\n" +
 	"\x0fSyncDataRequest\x12\x1b\n" +
 	"\tserver_id\x18\x01 \x01(\x03R\bserverId\x12G\n" +
 	"\fcore_configs\x18\x02 \x03(\v2$.corefusion.agent.v1.CoreConfigEntryR\vcoreConfigs\x12P\n" +
@@ -6637,7 +6668,9 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\fcertificates\x18\v \x03(\v2%.corefusion.agent.v1.CertificateEntryR\fcertificates\x12%\n" +
 	"\x0enginx_settings\x18\f \x01(\tR\rnginxSettings\x12,\n" +
 	"\x12caddy_sni_settings\x18\r \x01(\tR\x10caddySniSettings\x12*\n" +
-	"\x11log_output_config\x18\x0e \x01(\tR\x0flogOutputConfig\"\xa9\x02\n" +
+	"\x11log_output_config\x18\x0e \x01(\tR\x0flogOutputConfig\x124\n" +
+	"\x16nginx_manually_stopped\x18\x0f \x01(\bR\x14nginxManuallyStopped\x124\n" +
+	"\x16caddy_manually_stopped\x18\x10 \x01(\bR\x14caddyManuallyStopped\"\xa9\x02\n" +
 	"\x10CertificateEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1b\n" +
@@ -6912,7 +6945,7 @@ func file_corefusion_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_corefusion_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 78)
+var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 79)
 var file_corefusion_agent_proto_goTypes = []any{
 	(TaskStatus)(0),                    // 0: corefusion.agent.v1.TaskStatus
 	(ApplyLimitsRequest_LimitType)(0),  // 1: corefusion.agent.v1.ApplyLimitsRequest.LimitType
@@ -6994,7 +7027,8 @@ var file_corefusion_agent_proto_goTypes = []any{
 	(*UpdateWriterConfigRequest)(nil),  // 77: corefusion.agent.v1.UpdateWriterConfigRequest
 	(*UpdateWriterConfigResponse)(nil), // 78: corefusion.agent.v1.UpdateWriterConfigResponse
 	nil,                                // 79: corefusion.agent.v1.UserOp.ExtraEntry
-	nil,                                // 80: corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	nil,                                // 80: corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntry
+	nil,                                // 81: corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
 }
 var file_corefusion_agent_proto_depIdxs = []int32{
 	0,  // 0: corefusion.agent.v1.GetTaskResponse.status:type_name -> corefusion.agent.v1.TaskStatus
@@ -7005,107 +7039,108 @@ var file_corefusion_agent_proto_depIdxs = []int32{
 	36, // 5: corefusion.agent.v1.GetStatusResponse.cores:type_name -> corefusion.agent.v1.CoreStatus
 	22, // 6: corefusion.agent.v1.GetMetricsResponse.points:type_name -> corefusion.agent.v1.MetricPoint
 	27, // 7: corefusion.agent.v1.GetProxyStatusResponse.proxies:type_name -> corefusion.agent.v1.ProxyInfo
-	30, // 8: corefusion.agent.v1.ListBinariesResponse.binaries:type_name -> corefusion.agent.v1.BinaryInfo
-	32, // 9: corefusion.agent.v1.ListBinariesResponse.releases:type_name -> corefusion.agent.v1.ReleaseInfo
-	2,  // 10: corefusion.agent.v1.AgentReport.type:type_name -> corefusion.agent.v1.AgentReport.ReportType
-	36, // 11: corefusion.agent.v1.AgentReport.cores:type_name -> corefusion.agent.v1.CoreStatus
-	37, // 12: corefusion.agent.v1.AgentReport.traffic_stats:type_name -> corefusion.agent.v1.TrafficStat
-	39, // 13: corefusion.agent.v1.AgentReport.task_result:type_name -> corefusion.agent.v1.TaskResult
-	6,  // 14: corefusion.agent.v1.PanelCommand.sync_config:type_name -> corefusion.agent.v1.SyncConfigRequest
-	7,  // 15: corefusion.agent.v1.PanelCommand.control_core:type_name -> corefusion.agent.v1.ControlCoreRequest
-	10, // 16: corefusion.agent.v1.PanelCommand.alter_users:type_name -> corefusion.agent.v1.AlterUsersRequest
-	12, // 17: corefusion.agent.v1.PanelCommand.apply_limits:type_name -> corefusion.agent.v1.ApplyLimitsRequest
-	13, // 18: corefusion.agent.v1.PanelCommand.get_status:type_name -> corefusion.agent.v1.GetStatusRequest
-	41, // 19: corefusion.agent.v1.PanelCommand.renew_cert:type_name -> corefusion.agent.v1.RenewCertCommand
-	42, // 20: corefusion.agent.v1.PanelCommand.distribute_cert:type_name -> corefusion.agent.v1.DistributeCertCommand
-	8,  // 21: corefusion.agent.v1.PanelCommand.sync_proxy_config:type_name -> corefusion.agent.v1.SyncProxyConfigRequest
-	9,  // 22: corefusion.agent.v1.PanelCommand.control_proxy:type_name -> corefusion.agent.v1.ControlProxyRequest
-	40, // 23: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
-	49, // 24: corefusion.agent.v1.PanelCommand.sync_data:type_name -> corefusion.agent.v1.SyncDataRequest
-	23, // 25: corefusion.agent.v1.PanelCommand.install_binary:type_name -> corefusion.agent.v1.InstallBinaryRequest
-	24, // 26: corefusion.agent.v1.PanelCommand.install_proxy:type_name -> corefusion.agent.v1.InstallProxyRequest
-	20, // 27: corefusion.agent.v1.PanelCommand.get_metrics:type_name -> corefusion.agent.v1.GetMetricsRequest
-	28, // 28: corefusion.agent.v1.PanelCommand.list_binaries:type_name -> corefusion.agent.v1.ListBinariesRequest
-	25, // 29: corefusion.agent.v1.PanelCommand.get_proxy_status:type_name -> corefusion.agent.v1.GetProxyStatusRequest
-	18, // 30: corefusion.agent.v1.PanelCommand.speed_test:type_name -> corefusion.agent.v1.SpeedTestRequest
-	33, // 31: corefusion.agent.v1.PanelCommand.download_geo_rule:type_name -> corefusion.agent.v1.DownloadGeoRuleRequest
-	47, // 32: corefusion.agent.v1.PanelCommand.list_interfaces:type_name -> corefusion.agent.v1.ListInterfacesRequest
-	57, // 33: corefusion.agent.v1.PanelCommand.execute_binary:type_name -> corefusion.agent.v1.ExecuteBinaryRequest
-	45, // 34: corefusion.agent.v1.PanelCommand.xray_api:type_name -> corefusion.agent.v1.XrayAPIRequest
-	16, // 35: corefusion.agent.v1.PanelCommand.read_config_file:type_name -> corefusion.agent.v1.ReadConfigFileRequest
-	59, // 36: corefusion.agent.v1.PanelCommand.read_log_file:type_name -> corefusion.agent.v1.ReadLogFileRequest
-	61, // 37: corefusion.agent.v1.PanelCommand.rotate_log:type_name -> corefusion.agent.v1.RotateLogRequest
-	63, // 38: corefusion.agent.v1.PanelCommand.package_logs:type_name -> corefusion.agent.v1.PackageLogsRequest
-	65, // 39: corefusion.agent.v1.PanelCommand.stream_log_file:type_name -> corefusion.agent.v1.StreamLogFileRequest
-	66, // 40: corefusion.agent.v1.PanelCommand.sync_log_config:type_name -> corefusion.agent.v1.SyncLogConfigRequest
-	67, // 41: corefusion.agent.v1.PanelCommand.discover_logs:type_name -> corefusion.agent.v1.DiscoverLogsRequest
-	70, // 42: corefusion.agent.v1.PanelCommand.get_writer_status:type_name -> corefusion.agent.v1.GetWriterStatusRequest
-	73, // 43: corefusion.agent.v1.PanelCommand.start_writer:type_name -> corefusion.agent.v1.StartWriterRequest
-	75, // 44: corefusion.agent.v1.PanelCommand.stop_writer:type_name -> corefusion.agent.v1.StopWriterRequest
-	77, // 45: corefusion.agent.v1.PanelCommand.update_writer_config:type_name -> corefusion.agent.v1.UpdateWriterConfigRequest
-	0,  // 46: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
-	51, // 47: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
-	52, // 48: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
-	53, // 49: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
-	54, // 50: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
-	55, // 51: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
-	50, // 52: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
-	80, // 53: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
-	69, // 54: corefusion.agent.v1.DiscoverLogsResponse.logs:type_name -> corefusion.agent.v1.DiscoveredLogInfo
-	72, // 55: corefusion.agent.v1.GetWriterStatusResponse.writers:type_name -> corefusion.agent.v1.WriterStatus
-	13, // 56: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
-	20, // 57: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
-	25, // 58: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
-	28, // 59: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
-	31, // 60: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
-	33, // 61: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
-	18, // 62: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
-	16, // 63: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
-	7,  // 64: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
-	9,  // 65: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
-	6,  // 66: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
-	8,  // 67: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
-	10, // 68: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
-	12, // 69: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
-	23, // 70: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
-	24, // 71: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
-	15, // 72: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
-	45, // 73: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
-	47, // 74: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
-	57, // 75: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
-	49, // 76: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
-	4,  // 77: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
-	35, // 78: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
-	43, // 79: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
-	14, // 80: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
-	21, // 81: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
-	26, // 82: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
-	29, // 83: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
-	29, // 84: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
-	34, // 85: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
-	19, // 86: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
-	17, // 87: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
-	3,  // 88: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 89: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 90: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 91: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 92: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 93: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 94: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 95: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
-	3,  // 96: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
-	46, // 97: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
-	48, // 98: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
-	58, // 99: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
-	56, // 100: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
-	5,  // 101: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
-	38, // 102: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
-	44, // 103: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
-	80, // [80:104] is the sub-list for method output_type
-	56, // [56:80] is the sub-list for method input_type
-	56, // [56:56] is the sub-list for extension type_name
-	56, // [56:56] is the sub-list for extension extendee
-	0,  // [0:56] is the sub-list for field type_name
+	80, // 8: corefusion.agent.v1.GetProxyStatusResponse.guardian_status:type_name -> corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntry
+	30, // 9: corefusion.agent.v1.ListBinariesResponse.binaries:type_name -> corefusion.agent.v1.BinaryInfo
+	32, // 10: corefusion.agent.v1.ListBinariesResponse.releases:type_name -> corefusion.agent.v1.ReleaseInfo
+	2,  // 11: corefusion.agent.v1.AgentReport.type:type_name -> corefusion.agent.v1.AgentReport.ReportType
+	36, // 12: corefusion.agent.v1.AgentReport.cores:type_name -> corefusion.agent.v1.CoreStatus
+	37, // 13: corefusion.agent.v1.AgentReport.traffic_stats:type_name -> corefusion.agent.v1.TrafficStat
+	39, // 14: corefusion.agent.v1.AgentReport.task_result:type_name -> corefusion.agent.v1.TaskResult
+	6,  // 15: corefusion.agent.v1.PanelCommand.sync_config:type_name -> corefusion.agent.v1.SyncConfigRequest
+	7,  // 16: corefusion.agent.v1.PanelCommand.control_core:type_name -> corefusion.agent.v1.ControlCoreRequest
+	10, // 17: corefusion.agent.v1.PanelCommand.alter_users:type_name -> corefusion.agent.v1.AlterUsersRequest
+	12, // 18: corefusion.agent.v1.PanelCommand.apply_limits:type_name -> corefusion.agent.v1.ApplyLimitsRequest
+	13, // 19: corefusion.agent.v1.PanelCommand.get_status:type_name -> corefusion.agent.v1.GetStatusRequest
+	41, // 20: corefusion.agent.v1.PanelCommand.renew_cert:type_name -> corefusion.agent.v1.RenewCertCommand
+	42, // 21: corefusion.agent.v1.PanelCommand.distribute_cert:type_name -> corefusion.agent.v1.DistributeCertCommand
+	8,  // 22: corefusion.agent.v1.PanelCommand.sync_proxy_config:type_name -> corefusion.agent.v1.SyncProxyConfigRequest
+	9,  // 23: corefusion.agent.v1.PanelCommand.control_proxy:type_name -> corefusion.agent.v1.ControlProxyRequest
+	40, // 24: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
+	49, // 25: corefusion.agent.v1.PanelCommand.sync_data:type_name -> corefusion.agent.v1.SyncDataRequest
+	23, // 26: corefusion.agent.v1.PanelCommand.install_binary:type_name -> corefusion.agent.v1.InstallBinaryRequest
+	24, // 27: corefusion.agent.v1.PanelCommand.install_proxy:type_name -> corefusion.agent.v1.InstallProxyRequest
+	20, // 28: corefusion.agent.v1.PanelCommand.get_metrics:type_name -> corefusion.agent.v1.GetMetricsRequest
+	28, // 29: corefusion.agent.v1.PanelCommand.list_binaries:type_name -> corefusion.agent.v1.ListBinariesRequest
+	25, // 30: corefusion.agent.v1.PanelCommand.get_proxy_status:type_name -> corefusion.agent.v1.GetProxyStatusRequest
+	18, // 31: corefusion.agent.v1.PanelCommand.speed_test:type_name -> corefusion.agent.v1.SpeedTestRequest
+	33, // 32: corefusion.agent.v1.PanelCommand.download_geo_rule:type_name -> corefusion.agent.v1.DownloadGeoRuleRequest
+	47, // 33: corefusion.agent.v1.PanelCommand.list_interfaces:type_name -> corefusion.agent.v1.ListInterfacesRequest
+	57, // 34: corefusion.agent.v1.PanelCommand.execute_binary:type_name -> corefusion.agent.v1.ExecuteBinaryRequest
+	45, // 35: corefusion.agent.v1.PanelCommand.xray_api:type_name -> corefusion.agent.v1.XrayAPIRequest
+	16, // 36: corefusion.agent.v1.PanelCommand.read_config_file:type_name -> corefusion.agent.v1.ReadConfigFileRequest
+	59, // 37: corefusion.agent.v1.PanelCommand.read_log_file:type_name -> corefusion.agent.v1.ReadLogFileRequest
+	61, // 38: corefusion.agent.v1.PanelCommand.rotate_log:type_name -> corefusion.agent.v1.RotateLogRequest
+	63, // 39: corefusion.agent.v1.PanelCommand.package_logs:type_name -> corefusion.agent.v1.PackageLogsRequest
+	65, // 40: corefusion.agent.v1.PanelCommand.stream_log_file:type_name -> corefusion.agent.v1.StreamLogFileRequest
+	66, // 41: corefusion.agent.v1.PanelCommand.sync_log_config:type_name -> corefusion.agent.v1.SyncLogConfigRequest
+	67, // 42: corefusion.agent.v1.PanelCommand.discover_logs:type_name -> corefusion.agent.v1.DiscoverLogsRequest
+	70, // 43: corefusion.agent.v1.PanelCommand.get_writer_status:type_name -> corefusion.agent.v1.GetWriterStatusRequest
+	73, // 44: corefusion.agent.v1.PanelCommand.start_writer:type_name -> corefusion.agent.v1.StartWriterRequest
+	75, // 45: corefusion.agent.v1.PanelCommand.stop_writer:type_name -> corefusion.agent.v1.StopWriterRequest
+	77, // 46: corefusion.agent.v1.PanelCommand.update_writer_config:type_name -> corefusion.agent.v1.UpdateWriterConfigRequest
+	0,  // 47: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
+	51, // 48: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
+	52, // 49: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
+	53, // 50: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
+	54, // 51: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
+	55, // 52: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
+	50, // 53: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
+	81, // 54: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	69, // 55: corefusion.agent.v1.DiscoverLogsResponse.logs:type_name -> corefusion.agent.v1.DiscoveredLogInfo
+	72, // 56: corefusion.agent.v1.GetWriterStatusResponse.writers:type_name -> corefusion.agent.v1.WriterStatus
+	13, // 57: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
+	20, // 58: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
+	25, // 59: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
+	28, // 60: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
+	31, // 61: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
+	33, // 62: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
+	18, // 63: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
+	16, // 64: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
+	7,  // 65: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
+	9,  // 66: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
+	6,  // 67: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
+	8,  // 68: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
+	10, // 69: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
+	12, // 70: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
+	23, // 71: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
+	24, // 72: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
+	15, // 73: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
+	45, // 74: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
+	47, // 75: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
+	57, // 76: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
+	49, // 77: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
+	4,  // 78: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
+	35, // 79: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
+	43, // 80: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
+	14, // 81: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
+	21, // 82: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
+	26, // 83: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
+	29, // 84: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
+	29, // 85: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
+	34, // 86: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
+	19, // 87: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
+	17, // 88: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
+	3,  // 89: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 90: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 91: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 92: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 93: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 94: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 95: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 96: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
+	3,  // 97: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
+	46, // 98: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
+	48, // 99: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
+	58, // 100: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
+	56, // 101: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
+	5,  // 102: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
+	38, // 103: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
+	44, // 104: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
+	81, // [81:105] is the sub-list for method output_type
+	57, // [57:81] is the sub-list for method input_type
+	57, // [57:57] is the sub-list for extension type_name
+	57, // [57:57] is the sub-list for extension extendee
+	0,  // [0:57] is the sub-list for field type_name
 }
 
 func init() { file_corefusion_agent_proto_init() }
@@ -7153,7 +7188,7 @@ func file_corefusion_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_corefusion_agent_proto_rawDesc), len(file_corefusion_agent_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   78,
+			NumMessages:   79,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

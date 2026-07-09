@@ -250,13 +250,18 @@
             </el-table-column>
             <el-table-column :label="t('common.status')" width="90">
               <template #default="{row}">
-                <el-tag v-if="row.active && !row.paused" type="success" size="small">{{ t('logManage.writerActive') }}</el-tag>
+                <el-tag v-if="row.mode === 'off'" type="info" size="small">{{ t('logManage.modeOff') }}</el-tag>
+                <el-tag v-else-if="row.active && !row.paused" type="success" size="small">{{ t('logManage.writerActive') }}</el-tag>
                 <el-tag v-else-if="row.paused" type="warning" size="small">{{ t('logManage.writerPaused') }}</el-tag>
                 <el-tag v-else type="info" size="small">{{ t('common.disabled') }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="mode" :label="t('logManage.mode')" width="80" />
-            <el-table-column prop="file_path" :label="t('logManage.filePath')" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="file_path" :label="t('logManage.filePath')" min-width="160" show-overflow-tooltip>
+              <template #default="{row}">
+                {{ row.mode === 'off' ? '-' : row.file_path }}
+              </template>
+            </el-table-column>
             <el-table-column prop="max_size_mb" :label="t('logManage.maxSizeMB')" width="90">
               <template #default="{row}">{{ row.max_size_mb || 100 }} MB</template>
             </el-table-column>
@@ -1357,7 +1362,7 @@ function showWriterConfig(type) {
   writerConfigType.value = type
   writerConfigVisible.value = true
   const s = getWriterStatus(type)
-  writerFormActive.value = s ? !s.paused : false
+  writerFormActive.value = s ? (s.mode === 'stdout' && !s.paused) : false
   writerForm.value = {
     file_path: s?.file_path || `logs/${type}-stdout.log`,
     retain_days: s?.retain_days || 30,
@@ -1497,6 +1502,9 @@ onUnmounted(() => {
 <style scoped>
 .log-manage-page {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .node-selector-bar {
@@ -1507,6 +1515,23 @@ onUnmounted(() => {
   padding: 8px 12px;
   background: #f5f7fa;
   border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.log-tabs {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.log-tabs :deep(.el-tabs__content) {
+  height: calc(100% - 40px);
+  overflow-y: auto;
+}
+
+.log-tabs :deep(.el-tab-pane) {
+  height: auto;
+  min-height: 100%;
 }
 
 .node-selector-label {

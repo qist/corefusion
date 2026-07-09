@@ -292,6 +292,29 @@ func (s *Service) StartWriter(proxyType string, mode string) error {
 	return nil
 }
 
+// syncWriterFilePath updates the writer config's file path from the output config's capture_path.
+// If the writer is already active and the file path changed, it restarts the writer.
+func (s *Service) syncWriterFilePath(proxyType string, capturePath string) {
+	if capturePath == "" {
+		return
+	}
+	cfg := s.loadWriterConfig(proxyType)
+	if cfg.FilePath == capturePath {
+		return // already in sync
+	}
+	cfg.FilePath = capturePath
+	s.saveWriterConfig(proxyType, cfg)
+
+	// If writer is active, restart it to pick up the new file path
+	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
+		w.Stop()
+		delete(s.writers, proxyType)
+		if err := s.StartWriter(proxyType, cfg.Mode); err != nil {
+			log.Printf("logmanage: failed to restart writer for %s after file path change: %v", proxyType, err)
+		}
+	}
+}
+
 // subscribeToBroker subscribes to the proxy's LogBroker and writes lines to the writer.
 // Keeps retrying and re-subscribing as long as the writer exists.
 func (s *Service) subscribeToBroker(proxyType string, writer *LogWriter) {
@@ -355,9 +378,13 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 			paused = w.IsPaused()
 		}
 		logDir := filepath.Join(s.dataDir, "logs")
-		filePath := filepath.Join("logs", pType+"-stdout.log")
+		filePath := cfg.FilePath
+		if filePath == "" {
+			filePath = fmt.Sprintf("logs/%s-stdout.log", pType)
+		}
 		if w, ok := s.writers[pType]; ok {
 			logDir = w.GetLogDir()
+			filePath = w.GetFilePath()
 		}
 		statuses = append(statuses, LogWriterStatus{
 			ProxyType:  pType,
@@ -382,6 +409,11 @@ func (s *Service) UpdateWriterConfig(proxyType string, cfg LogWriterConfig) erro
 	if cfg.Mode == "" {
 		saved := s.loadWriterConfig(proxyType)
 		cfg.Mode = saved.Mode
+	}
+	// If file_path is empty, keep the existing one
+	if cfg.FilePath == "" {
+		saved := s.loadWriterConfig(proxyType)
+		cfg.FilePath = saved.FilePath
 	}
 
 	s.saveWriterConfig(proxyType, cfg)
@@ -408,6 +440,7 @@ func (s *Service) loadWriterConfig(proxyType string) LogWriterConfig {
 	cfg := LogWriterConfig{
 		ProxyType:  proxyType,
 		Mode:       "file",
+		FilePath:   fmt.Sprintf("logs/%s-stdout.log", proxyType),
 		RetainDays: 30,
 		Compress:   false,
 		MaxSizeMB:  100,
@@ -424,6 +457,9 @@ func (s *Service) loadWriterConfig(proxyType string) LogWriterConfig {
 	if json.Unmarshal([]byte(v), &saved) == nil {
 		if saved.Mode != "" {
 			cfg.Mode = saved.Mode
+		}
+		if saved.FilePath != "" {
+			cfg.FilePath = saved.FilePath
 		}
 		if saved.RetainDays > 0 {
 			cfg.RetainDays = saved.RetainDays
@@ -533,11 +569,9 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 
 		switch logMode {
 		case "stdout":
-			logs = append(logs, DiscoveredLog{
-				SourceType: coreType,
-				Domain:     "stdout",
-				LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.log", coreType)),
-			})
+			// stdout mode: LogWriter captures stdout and manages the capture file
+			// (including rotation), so we don't discover it as a separate log.
+			continue
 		case "off":
 			continue // no log file for this core
 		default: // "file"
@@ -669,11 +703,11 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 		}
 	}
 
-	// In stdout mode, all nginx logs go to nginx-stdout.log
+	// In stdout mode, nginx writes to stdout which is captured by LogWriter.
+	// LogWriter manages the stdout capture file and its rotation, so we don't
+	// discover it as a separate log to avoid duplicate rotation.
 	if logMode == "stdout" {
-		return []DiscoveredLog{
-			{SourceType: "nginx", Domain: "stdout", LogPath: s.resolveLogPath("logs/nginx-stdout.log")},
-		}, nil
+		return nil, nil
 	}
 
 	v, err := s.settingStore.GetByKey(ctx, "proxy.nginx_settings")

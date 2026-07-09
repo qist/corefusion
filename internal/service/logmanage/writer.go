@@ -19,6 +19,7 @@ type LogWriter struct {
 	mu         sync.Mutex
 	proxyType  string
 	dataDir    string
+	filePath   string // configurable stdout capture file path (relative to dataDir)
 	retainDays int
 	compress   bool
 	maxSizeMB  int
@@ -33,7 +34,8 @@ type LogWriter struct {
 // LogWriterConfig configures a LogWriter.
 type LogWriterConfig struct {
 	ProxyType  string `json:"proxy_type"`
-	Mode       string `json:"mode"` // "stdout" or "file"
+	Mode       string `json:"mode"`      // "stdout", "file", or "off"
+	FilePath   string `json:"file_path"` // stdout capture file path (relative to dataDir)
 	RetainDays int    `json:"retain_days"`
 	Compress   bool   `json:"compress"`
 	MaxSizeMB  int    `json:"max_size_mb"`
@@ -47,9 +49,14 @@ func NewLogWriter(cfg LogWriterConfig, dataDir string) *LogWriter {
 	if cfg.MaxSizeMB <= 0 {
 		cfg.MaxSizeMB = 100
 	}
+	filePath := cfg.FilePath
+	if filePath == "" {
+		filePath = fmt.Sprintf("logs/%s-stdout.log", cfg.ProxyType)
+	}
 	return &LogWriter{
 		proxyType:  cfg.ProxyType,
 		dataDir:    dataDir,
+		filePath:   filePath,
 		retainDays: cfg.RetainDays,
 		compress:   cfg.Compress,
 		maxSizeMB:  cfg.MaxSizeMB,
@@ -67,8 +74,8 @@ func (w *LogWriter) SetMode(mode string) error {
 
 	switch mode {
 	case "stdout":
-		// stdout mode: open nginx-stdout.log for writing
-		logPath := filepath.Join(logDir, w.proxyType+"-stdout.log")
+		// stdout mode: open the capture file for writing
+		logPath := w.resolveFilePath()
 		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return fmt.Errorf("open %s: %w", logPath, err)
@@ -82,7 +89,7 @@ func (w *LogWriter) SetMode(mode string) error {
 		log.Printf("logwriter %s: mode=stdout, writing to %s", w.proxyType, logPath)
 
 	case "file":
-		// File mode: nginx writes to its configured log paths
+		// File mode: process writes to its configured log paths
 		// We manage rotation of those files
 		if !w.active {
 			w.active = true
@@ -137,8 +144,7 @@ func (w *LogWriter) SetPaused(paused bool) {
 	w.paused = paused
 	if !paused && w.logFile == nil {
 		// Reopen file if needed
-		logDir := filepath.Join(w.dataDir, "logs")
-		logPath := filepath.Join(logDir, w.proxyType+"-stdout.log")
+		logPath := w.resolveFilePath()
 		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err == nil {
 			w.logFile = f
@@ -175,6 +181,19 @@ func (w *LogWriter) GetLogDir() string {
 	return filepath.Join(w.dataDir, "logs")
 }
 
+// GetFilePath returns the configured stdout capture file path (relative to dataDir).
+func (w *LogWriter) GetFilePath() string {
+	return w.filePath
+}
+
+// resolveFilePath returns the absolute path of the stdout capture file.
+func (w *LogWriter) resolveFilePath() string {
+	if filepath.IsAbs(w.filePath) {
+		return w.filePath
+	}
+	return filepath.Join(w.dataDir, w.filePath)
+}
+
 // checkLoop periodically checks for rotation.
 func (w *LogWriter) checkLoop() {
 	for {
@@ -202,7 +221,7 @@ func (w *LogWriter) checkAndRotate() {
 	w.cleanExpired()
 
 	// Determine which file to check
-	stdoutPath := filepath.Join(w.dataDir, "logs", w.proxyType+"-stdout.log")
+	stdoutPath := w.resolveFilePath()
 
 	var currentPath string
 	if _, err := os.Stat(stdoutPath); err == nil {
@@ -288,7 +307,10 @@ func (w *LogWriter) cleanExpired() {
 		return
 	}
 
-	prefix := w.proxyType + "-stdout."
+	// Derive the file base name (without extension) from the configured file path
+	baseName := strings.TrimSuffix(filepath.Base(w.filePath), filepath.Ext(w.filePath))
+	prefix := baseName + "."
+	currentName := filepath.Base(w.filePath)
 	cutoff := time.Now().AddDate(0, 0, -w.retainDays)
 	for _, entry := range entries {
 		name := entry.Name()
@@ -296,7 +318,7 @@ func (w *LogWriter) cleanExpired() {
 			continue
 		}
 		// Skip the current log file
-		if name == w.proxyType+"-stdout.log" {
+		if name == currentName {
 			continue
 		}
 		info, err := entry.Info()
@@ -317,17 +339,19 @@ func (w *LogWriter) ListLogFiles() []LogFileInfo {
 	if err != nil {
 		return nil
 	}
-	prefix := w.proxyType + "-stdout"
+	// Derive the file base name (without extension) from the configured file path
+	baseName := strings.TrimSuffix(filepath.Base(w.filePath), filepath.Ext(w.filePath))
 	var files []LogFileInfo
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), prefix) {
+		name := e.Name()
+		if !strings.HasPrefix(name, baseName) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		files = append(files, LogFileInfo{Name: e.Name(), Size: info.Size(), ModTime: info.ModTime()})
+		files = append(files, LogFileInfo{Name: name, Size: info.Size(), ModTime: info.ModTime()})
 	}
 	return files
 }

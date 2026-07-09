@@ -232,8 +232,8 @@
           </el-table>
         </el-card>
 
-        <!-- Writer Status (local only) -->
-        <el-card shadow="hover" v-if="selectedServerId <= 1">
+        <!-- Writer Status (local + remote) -->
+        <el-card shadow="hover">
           <template #header>
             <div class="card-header-flex">
               <span style="font-weight:600">LogWriter {{ t('common.status') }}</span>
@@ -713,14 +713,9 @@ function onSelectedServerChange() {
   // Re-fetch all data for the selected node
   fetchStatus()
   fetchData()
-  if (selectedServerId.value <= 1) {
-    fetchCoreLogOutput()
-    fetchProxyLogOutput()
-    fetchWriterStatuses()
-  } else {
-    fetchCoreLogOutput()
-    fetchProxyLogOutput()
-  }
+  fetchCoreLogOutput()
+  fetchProxyLogOutput()
+  fetchWriterStatuses()
 }
 
 // ──────────── Status ────────────
@@ -925,7 +920,7 @@ async function fetchProxyLogOutput() {
 
 async function fetchWriterStatuses() {
   try {
-    const r = await logApi.getWriters()
+    const r = await logApi.getWriters(selectedServerId.value)
     writerStatuses.value = Array.isArray(r) ? r : []
   } catch { /* noop */ }
 }
@@ -1320,8 +1315,8 @@ async function loadStdoutLog(type) {
   logAutoScroll.value = true
   try {
     const r = isCoreType(type)
-      ? await logApi.getCoreStdoutLog(type, 500)
-      : await logApi.getProxyStdoutLog(type, 500)
+      ? await logApi.getCoreStdoutLog(type, 500, selectedServerId.value)
+      : await logApi.getProxyStdoutLog(type, 500, selectedServerId.value)
     logLines.value = r?.lines || []
     await nextTick()
     scrollToBottom()
@@ -1335,10 +1330,9 @@ async function loadStdoutLog(type) {
 
 function startStdoutStream(type) {
   closeLogStream()
-  const path = isCoreType(type)
-    ? `/log-manage/core/${type}/stdout-stream`
-    : `/log-manage/proxy/${type}/stdout-stream`
-  const url = logApi.buildSSEUrl(path)
+  const url = isCoreType(type)
+    ? logApi.buildCoreStdoutStreamUrl(type, selectedServerId.value)
+    : logApi.buildProxyStdoutStreamUrl(type, selectedServerId.value)
   eventSource = logApi.createSSE(url)
   eventSource.addEventListener('log', (e) => {
     logLines.value.push(e.data)

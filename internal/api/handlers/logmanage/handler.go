@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -441,8 +442,30 @@ func (h *Handler) ReleaseStdout(c *gin.Context) {
 
 // GetWriterStatus returns the status of all log writers.
 func (h *Handler) GetWriterStatus(c *gin.Context) {
-	statuses := h.svc.GetWriterStatus()
-	response.OK(c, statuses)
+	serverID, _ := strconv.ParseInt(c.Query("server_id"), 10, 64)
+	if serverID <= 0 {
+		serverID = 1
+	}
+
+	// Local node (serverId=1): use local logmanage service
+	if serverID == 1 {
+		statuses := h.svc.GetWriterStatus()
+		response.OK(c, statuses)
+		return
+	}
+
+	// Remote node: use NodeLogManager
+	if nodeLogMgr == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+		return
+	}
+
+	writers, err := nodeLogMgr.GetWriterStatusOnServer(c.Request.Context(), serverID)
+	if err != nil {
+		response.InternalError(c, "FETCH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, writers)
 }
 
 // StartWriter starts the log writer for a process type (proxy or core).
@@ -524,13 +547,35 @@ func (h *Handler) ProxyStdoutLog(c *gin.Context) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID <= 0 {
+		serverID = 1
+	}
 	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "500"))
-	logLines, err := h.svc.GetProxyStdoutLog(c.Request.Context(), proxyType, lines)
+
+	// Local node (serverId=1): use local logmanage service
+	if serverID == 1 {
+		logLines, err := h.svc.GetProxyStdoutLog(c.Request.Context(), proxyType, lines)
+		if err != nil {
+			response.InternalError(c, "READ_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"lines": logLines, "type": proxyType, "server_id": serverID})
+		return
+	}
+
+	// Remote node: use NodeLogManager
+	if nodeLogMgr == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+		return
+	}
+
+	logLines, _, err := nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, proxyType, lines)
 	if err != nil {
 		response.InternalError(c, "READ_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"lines": logLines, "type": proxyType})
+	response.OK(c, gin.H{"lines": logLines, "type": proxyType, "server_id": serverID})
 }
 
 // ProxyStdoutStream streams a process's stdout via SSE.
@@ -539,6 +584,10 @@ func (h *Handler) ProxyStdoutStream(c *gin.Context) {
 	if !isValidLogType(proxyType) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
+	}
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID <= 0 {
+		serverID = 1
 	}
 
 	c.Header("Content-Type", "text/event-stream")
@@ -550,17 +599,66 @@ func (h *Handler) ProxyStdoutStream(c *gin.Context) {
 	c.Writer.WriteString(": connected\n\n")
 	c.Writer.Flush()
 
-	ch := make(chan string, 64)
-	go h.svc.StreamProxyStdout(c.Request.Context(), proxyType, ch)
+	// Local node (serverId=1): use local logmanage service
+	if serverID == 1 {
+		ch := make(chan string, 64)
+		go h.svc.StreamProxyStdout(c.Request.Context(), proxyType, ch)
 
-	c.Stream(func(w io.Writer) bool {
-		line, ok := <-ch
-		if !ok {
-			return false
+		c.Stream(func(w io.Writer) bool {
+			line, ok := <-ch
+			if !ok {
+				return false
+			}
+			c.SSEvent("log", line)
+			return true
+		})
+		return
+	}
+
+	// Remote node: use NodeLogManager to stream logs
+	if nodeLogMgr == nil {
+		c.Writer.WriteString(": error: node log manager not configured\n\n")
+		c.Writer.Flush()
+		return
+	}
+
+	// For remote nodes, we poll ReadLogFileOnServer periodically
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	seen := make(map[string]bool)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			lines, _, err := nodeLogMgr.ReadLogFileOnServer(ctx, serverID, proxyType, 100)
+			if err != nil {
+				c.SSEvent("log", "[Error reading log: "+err.Error()+"]")
+				c.Writer.Flush()
+				continue
+			}
+			// Send new lines
+			for _, line := range lines {
+				if !seen[line] {
+					c.SSEvent("log", line)
+					seen[line] = true
+				}
+			}
+			c.Writer.Flush()
+			// Cleanup old seen entries to prevent memory leak
+			if len(seen) > 10000 {
+				seen = make(map[string]bool)
+				for _, line := range lines {
+					seen[line] = true
+				}
+			}
 		}
-		c.SSEvent("log", line)
-		return true
-	})
+	}
 }
 
 // --- Log Viewer ---
@@ -642,6 +740,7 @@ type NodeLogManager interface {
 	RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error)
 	DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error)
 	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig, nginxSettings string) error
+	GetWriterStatusOnServer(ctx context.Context, serverID int64) ([]map[string]interface{}, error)
 }
 
 // nodeLogMgr is set by the router to enable remote node log management.

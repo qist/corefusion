@@ -1809,3 +1809,42 @@ func (m *NodeServerManager) DiscoverLogsOnServer(ctx context.Context, serverID i
 	}
 	return resp.Logs, nil
 }
+
+// GetWriterStatusOnServer gets LogWriter status from a remote node via gRPC.
+func (m *NodeServerManager) GetWriterStatusOnServer(ctx context.Context, serverID int64) ([]map[string]interface{}, error) {
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_GetWriterStatus{
+			GetWriterStatus: &agentpb.GetWriterStatusRequest{},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal writer_status response: %w", err)
+	}
+	if success, ok := resp["success"].(bool); !ok || !success {
+		errMsg := "unknown error"
+		if e, ok := resp["error"].(string); ok {
+			errMsg = e
+		}
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+	writersRaw, ok := resp["writers"].([]interface{})
+	if !ok {
+		return []map[string]interface{}{}, nil
+	}
+	writers := make([]map[string]interface{}, 0, len(writersRaw))
+	for _, w := range writersRaw {
+		if wm, ok := w.(map[string]interface{}); ok {
+			writers = append(writers, wm)
+		}
+	}
+	return writers, nil
+}

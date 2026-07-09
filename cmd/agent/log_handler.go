@@ -503,11 +503,9 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 		mode := a.getLogMode(coreType)
 		switch mode {
 		case "stdout":
-			logs = append(logs, &agentpb.DiscoveredLogInfo{
-				SourceType: coreType,
-				Domain:     "stdout",
-				LogPath:    filepath.Join(logDir, coreType+"-stdout.log"),
-			})
+			// stdout mode: LogWriter captures stdout and manages the capture file
+			// (including rotation), so we don't discover it as a separate log.
+			continue
 		case "off":
 			continue
 		default: // "file"
@@ -548,12 +546,11 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			nginxMode = cfg.Nginx.Mode
 		}
 	}
+	// In stdout mode, nginx writes to stdout which is captured by LogWriter.
+	// LogWriter manages the stdout capture file and its rotation, so we don't
+	// discover it as a separate log to avoid duplicate rotation.
 	if nginxMode == "stdout" {
-		logs = append(logs, &agentpb.DiscoveredLogInfo{
-			SourceType: "nginx",
-			Domain:     "stdout",
-			LogPath:    filepath.Join(logDir, "nginx-stdout.log"),
-		})
+		// skip
 	} else if nginxMode != "off" {
 		// Read nginx settings to get actual log paths
 		type nginxLogSettings struct {
@@ -611,12 +608,11 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			caddyMode = cfg.Caddy.Mode
 		}
 	}
+	// In stdout mode, caddy writes to stdout which is captured by LogWriter.
+	// LogWriter manages the stdout capture file and its rotation, so we don't
+	// discover it as a separate log to avoid duplicate rotation.
 	if caddyMode == "stdout" {
-		logs = append(logs, &agentpb.DiscoveredLogInfo{
-			SourceType: "caddy",
-			Domain:     "stdout",
-			LogPath:    filepath.Join(logDir, "caddy-stdout.log"),
-		})
+		// skip
 	} else if caddyMode != "off" {
 		// Read caddy site configs from database for actual log paths
 		if a.caddySiteRepo != nil {

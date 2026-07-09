@@ -1617,17 +1617,18 @@ nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 		}()
 	}
 
-	// Set callback to reload proxy config when log output mode is switched
+	// Set callback to restart proxy when log output mode is switched
+	// Restart is needed because stdout mode requires re-attaching the process's stdout to LogBroker
 	logManageSvc.SetOnModeSwitch(func(proxyType string) {
-		log.Printf("router: reloading %s config after log mode switch", proxyType)
+		log.Printf("router: restarting %s after log mode switch", proxyType)
 		bgCtx := context.Background()
 		switch proxyType {
 		case "nginx":
 			nginxMgr.SaveAndApply(bgCtx)
-			proxyMgr.ReloadProxy(bgCtx, proxySvc.ProxyNginx)
+			proxyMgr.RestartProxy(bgCtx, proxySvc.ProxyNginx)
 		case "caddy":
 			caddyMgr.SaveAndApply(bgCtx)
-			proxyMgr.ReloadProxy(bgCtx, proxySvc.ProxyCaddy)
+			proxyMgr.RestartProxy(bgCtx, proxySvc.ProxyCaddy)
 		}
 	})
 

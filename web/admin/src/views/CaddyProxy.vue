@@ -666,9 +666,9 @@ async function fetchSites() {
   try {
     allSites.value = await client.get(`${caddyApi.value}/sites`) || []
   } catch (e) { allSites.value = [] }
-  // Load log output mode
+  // Load log output mode (per-node)
   try {
-    const cfg = await client.get('/log-manage/log-output')
+    const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
     if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
   } catch (e) {}
 }
@@ -676,11 +676,12 @@ async function fetchSites() {
 async function saveCaddyLogMode() {
   logModeSaving.value = true
   try {
-    const current = await client.get('/log-manage/log-output')
+    // Per-node: read and save with server_id
+    const current = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
     await client.put('/log-manage/log-output', {
       nginx: current?.nginx || { mode: 'file' },
       caddy: { mode: caddyLogMode.value },
-    })
+    }, { params: { server_id: props.serverId } })
     await applyConfig()
     ElMessage.success(t('common.success'))
   } finally {

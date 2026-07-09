@@ -263,6 +263,13 @@ func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 		a.restoreFirewallRules(ctx)
 	}()
 	log.Println("[Agent] process.Manager started (Guardian auto-restart active)")
+
+	// Start proxy processes (nginx/caddy) if they were previously running.
+	// This ensures proxy processes survive agent restarts.
+	go func() {
+		time.Sleep(3 * time.Second) // wait for cores to start first
+		a.startProxyProcesses(ctx)
+	}()
 }
 
 // restoreFirewallRules scans local inbound configs and re-creates firewall rules
@@ -295,4 +302,36 @@ func (a *AgentApp) restoreFirewallRules(ctx context.Context) {
 	firewall.RestoreRules(ctx, firewall.LocalApplier{}, func() ([]firewall.InboundConfigInfo, error) {
 		return infos, nil
 	})
+}
+
+// startProxyProcesses starts proxy processes (nginx/caddy) if not manually stopped.
+// This is called on agent startup to ensure proxy processes survive agent restarts.
+func (a *AgentApp) startProxyProcesses(ctx context.Context) {
+	if a.proxyMgr == nil {
+		return
+	}
+
+	for _, proxyType := range []proxySvc.ProxyType{proxySvc.ProxyNginx, proxySvc.ProxyCaddy} {
+		proxyTypeStr := string(proxyType)
+		
+		// Check if manually stopped (the actual control flag)
+		manuallyStopped := a.proxyMgr.IsManuallyStopped(ctx, proxyType)
+		
+		// Also check if the process is already running
+		info := a.proxyMgr.DetectProxy(proxyType)
+		isRunning := info.Status == "running"
+
+		if !manuallyStopped && !isRunning {
+			log.Printf("[Agent] auto-starting %s (manually_stopped=false, current_status=%s)", proxyTypeStr, info.Status)
+			if err := a.proxyMgr.StartProxy(ctx, proxyType); err != nil {
+				log.Printf("[Agent] failed to auto-start %s: %v", proxyTypeStr, err)
+			} else {
+				log.Printf("[Agent] %s auto-started successfully", proxyTypeStr)
+			}
+		} else if isRunning {
+			log.Printf("[Agent] %s is already running, skipping auto-start", proxyTypeStr)
+		} else {
+			log.Printf("[Agent] %s manually stopped, skipping auto-start", proxyTypeStr)
+		}
+	}
 }

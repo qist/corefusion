@@ -422,26 +422,6 @@ func transformProxyStatus(raw interface{}, svc proxyGuardianReader, serverID int
 		"nginx_guardian": nil,
 	}
 
-	// Read guardian settings from panel DB for remote display
-	if svc != nil {
-		for _, pt := range []string{"caddy", "nginx"} {
-			autoStart, autoRestart, maxRestarts := svc.GetProxyGuardianSettingsForServer(context.Background(), serverID, pt)
-			guardian := gin.H{
-				"proxy_type":       pt,
-				"state":            "no_guardian",
-				"auto_start":       autoStart,
-				"auto_restart":     autoRestart,
-				"max_restarts":     maxRestarts,
-				"current_restarts": 0,
-			}
-			if pt == "caddy" {
-				resp["caddy_guardian"] = guardian
-			} else {
-				resp["nginx_guardian"] = guardian
-			}
-		}
-	}
-
 	if pb, ok := raw.(*agentpb.GetProxyStatusResponse); ok && pb != nil {
 		active := ""
 		for _, p := range pb.Proxies {
@@ -468,6 +448,43 @@ func transformProxyStatus(raw interface{}, svc proxyGuardianReader, serverID int
 			}
 		}
 		resp["active_proxy"] = active
+
+		// Use guardian status from agent if available
+		for pt, statusJSON := range pb.GuardianStatus {
+			var guardian map[string]interface{}
+			if err := json.Unmarshal([]byte(statusJSON), &guardian); err == nil {
+				if pt == "caddy" {
+					resp["caddy_guardian"] = guardian
+				} else if pt == "nginx" {
+					resp["nginx_guardian"] = guardian
+				}
+			}
+		}
+	}
+
+	// Fallback: if guardian status not available from agent, read from panel DB
+	if resp["nginx_guardian"] == nil || resp["caddy_guardian"] == nil {
+		if svc != nil {
+			for _, pt := range []string{"caddy", "nginx"} {
+				if (pt == "caddy" && resp["caddy_guardian"] != nil) || (pt == "nginx" && resp["nginx_guardian"] != nil) {
+					continue
+				}
+				autoStart, autoRestart, maxRestarts := svc.GetProxyGuardianSettingsForServer(context.Background(), serverID, pt)
+				guardian := gin.H{
+					"proxy_type":       pt,
+					"state":            "no_guardian",
+					"auto_start":       autoStart,
+					"auto_restart":     autoRestart,
+					"max_restarts":     maxRestarts,
+					"current_restarts": 0,
+				}
+				if pt == "caddy" {
+					resp["caddy_guardian"] = guardian
+				} else {
+					resp["nginx_guardian"] = guardian
+				}
+			}
+		}
 	}
 
 	return resp

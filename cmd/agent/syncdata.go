@@ -255,6 +255,29 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			log.Printf("[Agent] SyncData: saved log output config to %s (%d bytes)", key, len(req.LogOutputConfig))
 		}
 	}
+	// Save manually_stopped config for proxy auto-start
+	if a.settingRepo != nil {
+		key := perNodeSettingsKey("proxy.nginx.manually_stopped", req.ServerId)
+		value := "false"
+		if req.NginxManuallyStopped {
+			value = "true"
+		}
+		if err := a.settingRepo.Set(ctx, key, value); err != nil {
+			log.Printf("[Agent] SyncData: save nginx manually_stopped failed: %v", err)
+		} else {
+			log.Printf("[Agent] SyncData: saved nginx manually_stopped=%s to %s", value, key)
+		}
+		key = perNodeSettingsKey("proxy.caddy.manually_stopped", req.ServerId)
+		value = "false"
+		if req.CaddyManuallyStopped {
+			value = "true"
+		}
+		if err := a.settingRepo.Set(ctx, key, value); err != nil {
+			log.Printf("[Agent] SyncData: save caddy manually_stopped failed: %v", err)
+		} else {
+			log.Printf("[Agent] SyncData: saved caddy manually_stopped=%s to %s", value, key)
+		}
+	}
 
 	resp.Success = true
 

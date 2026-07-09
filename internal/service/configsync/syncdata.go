@@ -374,6 +374,20 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			req.LogOutputConfig = v
 			log.Printf("[DataSyncBuilder] server %d: log output config from global (%d bytes)", serverID, len(v))
 		}
+
+		// Proxy manually_stopped config (for auto-start on agent startup)
+		nginxManuallyStoppedKey := perNodeSettingsKey("proxy.nginx.manually_stopped", serverID)
+		if v, err := rdp.systemSettingRepo.GetByKey(ctx, nginxManuallyStoppedKey); err == nil && v == "true" {
+			req.NginxManuallyStopped = true
+		} else if v, err := rdp.systemSettingRepo.GetByKey(ctx, "proxy.nginx.manually_stopped"); err == nil && v == "true" {
+			req.NginxManuallyStopped = true
+		}
+		caddyManuallyStoppedKey := perNodeSettingsKey("proxy.caddy.manually_stopped", serverID)
+		if v, err := rdp.systemSettingRepo.GetByKey(ctx, caddyManuallyStoppedKey); err == nil && v == "true" {
+			req.CaddyManuallyStopped = true
+		} else if v, err := rdp.systemSettingRepo.GetByKey(ctx, "proxy.caddy.manually_stopped"); err == nil && v == "true" {
+			req.CaddyManuallyStopped = true
+		}
 	}
 
 	// Log summary

@@ -95,6 +95,8 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 
 	// Only start/stop local writers for the local node
 	if serverID <= 1 {
+		s.syncWriterFilePath("nginx", cfg.Nginx.CapturePath)
+		s.syncWriterFilePath("caddy", cfg.Caddy.CapturePath)
 		if err := s.StartWriter("nginx", cfg.Nginx.Mode); err != nil {
 			log.Printf("logmanage: failed to start nginx writer: %v", err)
 		}
@@ -341,6 +343,7 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 			"tuic":      cfg.Tuic,
 		}
 		for coreType, mode := range coreModes {
+			s.syncWriterFilePath(coreType, mode.CapturePath)
 			if err := s.StartWriter(coreType, mode.Mode); err != nil {
 				log.Printf("logmanage: failed to start %s writer: %v", coreType, err)
 			}

@@ -442,6 +442,10 @@ message PanelCommand {
     StreamLogFileRequest stream_log_file = 28;       // 流式读取日志（用于 SSE 代理）
     SyncLogConfigRequest sync_log_config = 29;       // 同步日志输出模式配置
     DiscoverLogsRequest discover_logs = 30;          // 发现节点上的日志文件
+    GetWriterStatusRequest get_writer_status = 31;   // 获取 LogWriter 状态
+    StartWriterRequest start_writer = 32;            // 启动/恢复 LogWriter
+    StopWriterRequest stop_writer = 33;              // 停止 LogWriter
+    UpdateWriterConfigRequest update_writer_config = 34; // 更新 LogWriter 配置
   }
 }
 
@@ -779,4 +783,64 @@ message DiscoveredLogInfo {
   string log_path = 3;       // 日志文件路径
   string log_format = 4;     // 日志格式（可选）
   bool   has_policy = 5;     // 是否已有轮转策略
+}
+
+// ============================================================
+// LogWriter 管理（远程节点）
+// ============================================================
+
+message GetWriterStatusRequest {}
+
+message GetWriterStatusResponse {
+  bool   success = 1;
+  string error = 2;
+  repeated WriterStatus writers = 3;
+}
+
+message WriterStatus {
+  string proxy_type = 1;
+  string mode = 2;
+  bool   active = 3;
+  bool   paused = 4;
+  string file_path = 5;
+  string log_dir = 6;
+  int32  retain_days = 7;
+  bool   compress = 8;
+  int32  max_size_mb = 9;
+}
+
+message StartWriterRequest {
+  string proxy_type = 1;
+  string mode = 2;       // "stdout" or "file"
+}
+
+message StartWriterResponse {
+  bool   success = 1;
+  string error = 2;
+  string message = 3;
+}
+
+message StopWriterRequest {
+  string proxy_type = 1;
+}
+
+message StopWriterResponse {
+  bool   success = 1;
+  string error = 2;
+  string message = 3;
+}
+
+message UpdateWriterConfigRequest {
+  string proxy_type = 1;
+  string mode = 2;
+  string file_path = 3;
+  int32  retain_days = 4;
+  bool   compress = 5;
+  int32  max_size_mb = 6;
+}
+
+message UpdateWriterConfigResponse {
+  bool   success = 1;
+  string error = 2;
+  string message = 3;
 }

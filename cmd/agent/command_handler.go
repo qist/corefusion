@@ -14,6 +14,7 @@ import (
 
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	logManageSvc "corefusion/internal/service/logmanage"
 	"corefusion/pkg/netutil"
 )
 
@@ -84,6 +85,31 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
 		req := c.SyncProxyConfig
+		// For nginx, ensure stdout/stderr symlinks exist so that the config's
+		// access_log/error_log directives referencing logs/stdout_*.log resolve
+		// correctly. The panel creates these locally via ensureSymlink, but
+		// remote agents need to create them on their own filesystem.
+		if req.ProxyType == "nginx" {
+			logsDir := filepath.Join(a.dataDir, "logs")
+			os.MkdirAll(logsDir, 0755)
+			for _, link := range []struct{ name, target string }{
+				{"stdout_error.log", "/dev/stderr"},
+				{"stdout_access.log", "/dev/stdout"},
+				{"stdout_stream.log", "/dev/stdout"},
+			} {
+				linkPath := filepath.Join(logsDir, link.name)
+				if fi, err := os.Lstat(linkPath); err == nil {
+					// Already exists — check if it's the correct symlink
+					if fi.Mode()&os.ModeSymlink != 0 {
+						if existing, err := os.Readlink(linkPath); err == nil && existing == link.target {
+							continue // correct symlink already in place
+						}
+					}
+					os.Remove(linkPath) // remove stale file/symlink
+				}
+				os.Symlink(link.target, linkPath)
+			}
+		}
 		// Land TLS certificates to disk before writing the proxy config,
 		// so that cert path references in the config are valid immediately.
 		for _, certEntry := range req.Certificates {
@@ -358,6 +384,41 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	case *agentpb.PanelCommand_DiscoverLogs:
 		resp := a.handleDiscoverLogs(ctx)
 		sendSyncResult("discover_logs", resp, nil)
+
+	case *agentpb.PanelCommand_GetWriterStatus:
+		resp := a.handleGetWriterStatus(ctx)
+		sendSyncResult("get_writer_status", resp, nil)
+
+	case *agentpb.PanelCommand_StartWriter:
+		req := c.StartWriter
+		err := a.logMgr.StartWriter(req.ProxyType, req.Mode)
+		sendSyncResult("start_writer", map[string]interface{}{
+			"success": err == nil,
+			"message": fmt.Sprintf("writer %s started mode=%s", req.ProxyType, req.Mode),
+		}, err)
+
+	case *agentpb.PanelCommand_StopWriter:
+		req := c.StopWriter
+		err := a.logMgr.StopWriter(req.ProxyType)
+		sendSyncResult("stop_writer", map[string]interface{}{
+			"success": err == nil,
+			"message": fmt.Sprintf("writer %s stopped", req.ProxyType),
+		}, err)
+
+	case *agentpb.PanelCommand_UpdateWriterConfig:
+		req := c.UpdateWriterConfig
+		cfg := logManageSvc.LogWriterConfig{
+			ProxyType:  req.ProxyType,
+			Mode:       req.Mode,
+			RetainDays: int(req.RetainDays),
+			Compress:   req.Compress,
+			MaxSizeMB:  int(req.MaxSizeMb),
+		}
+		err := a.logMgr.UpdateWriterConfig(req.ProxyType, cfg)
+		sendSyncResult("update_writer_config", map[string]interface{}{
+			"success": err == nil,
+			"message": fmt.Sprintf("writer %s config updated", req.ProxyType),
+		}, err)
 
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)

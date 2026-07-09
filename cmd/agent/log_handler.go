@@ -767,3 +767,32 @@ func sanitizeDomainForLog(domain string) string {
 	}
 	return domain
 }
+
+// handleGetWriterStatus returns the status of all LogWriters on this agent node.
+func (a *AgentApp) handleGetWriterStatus(ctx context.Context) map[string]interface{} {
+	if a.logMgr == nil {
+		return map[string]interface{}{
+			"success": false,
+			"error":   "log manager not initialized",
+		}
+	}
+	statuses := a.logMgr.GetWriterStatus()
+	writers := make([]map[string]interface{}, 0, len(statuses))
+	for _, st := range statuses {
+		writers = append(writers, map[string]interface{}{
+			"proxy_type":  st.ProxyType,
+			"mode":        st.Mode,
+			"active":      st.Active,
+			"paused":      st.Paused,
+			"file_path":   st.FilePath,
+			"log_dir":     st.LogDir,
+			"retain_days": st.RetainDays,
+			"compress":    st.Compress,
+			"max_size_mb": st.MaxSizeMB,
+		})
+	}
+	return map[string]interface{}{
+		"success": true,
+		"writers": writers,
+	}
+}

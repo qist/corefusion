@@ -939,6 +939,20 @@ async function handleSaveCoreOutput() {
       data[item.type] = item.cfg
     }
     await logApi.saveCoreLogOutput(data, selectedServerId.value)
+
+    // Handle managed (takeover/release) for local node
+    if (selectedServerId.value <= 1) {
+      for (const item of coreOutputList.value) {
+        try {
+          if (item.cfg.managed && item.cfg.mode === 'stdout') {
+            await logApi.takeoverStdout(item.type)
+          } else {
+            await logApi.releaseStdout(item.type)
+          }
+        } catch { /* noop */ }
+      }
+    }
+
     ElMessage.success(t('logManage.outputConfigSaved'))
   } finally {
     savingCoreOutput.value = false
@@ -957,6 +971,20 @@ async function handleSaveProxyOutput() {
       data[item.type] = item.cfg
     }
     await logApi.saveProxyLogOutput(data, selectedServerId.value)
+
+    // Handle managed (takeover/release) for local node
+    if (selectedServerId.value <= 1) {
+      for (const item of proxyOutputList.value) {
+        try {
+          if (item.cfg.managed && item.cfg.mode === 'stdout') {
+            await logApi.takeoverStdout(item.type)
+          } else {
+            await logApi.releaseStdout(item.type)
+          }
+        } catch { /* noop */ }
+      }
+    }
+
     ElMessage.success(t('logManage.outputConfigSaved'))
   } finally {
     savingProxyOutput.value = false

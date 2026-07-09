@@ -1740,6 +1740,7 @@ export default {
     capturePath: 'Capture Path',
     saveOutputConfig: 'Save Config',
     outputConfigSaved: 'Log output configuration saved',
+    dataLoading: 'Data is still loading, please wait...',
     outputConfigSyncHint: 'Remote node config will auto-sync to Agent',
     // ── Node logs ──
     selectNode: 'Select Node',

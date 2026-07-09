@@ -337,7 +337,13 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		}
 		if req.ProxyLogConfig != "" {
 			if err := a.settingRepo.Set(ctx, "proxy.log_output_config", req.ProxyLogConfig); err != nil {
-			syncErr = fmt.Errorf("write proxy log config: %w", err)
+				syncErr = fmt.Errorf("write proxy log config: %w", err)
+			}
+		}
+		// Write nginx settings to local settings (for log path discovery)
+		if req.NginxSettings != "" {
+			if err := a.settingRepo.Set(ctx, "proxy.nginx_settings", req.NginxSettings); err != nil {
+				syncErr = fmt.Errorf("write nginx settings: %w", err)
 			}
 		}
 		// Restart LogWriters to pick up new modes (same as Panel's SaveLogOutput/SaveCoreLogOutput)

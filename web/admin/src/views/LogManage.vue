@@ -19,10 +19,9 @@
           :key="s.id"
           :value="s.id"
           :label="s.name"
-          :disabled="!s.is_online"
         >
           <span>{{ s.name }}</span>
-          <el-tag v-if="!s.is_online" size="small" type="danger" style="margin-left:8px">{{ t('logManage.nodeOffline') }}</el-tag>
+          <el-tag v-if="s.agent_status !== 'online'" size="small" type="danger" style="margin-left:8px">{{ t('logManage.nodeOffline') }}</el-tag>
         </el-option>
       </el-select>
       <el-tag v-if="selectedServerId > 1" type="warning" size="small" style="margin-left:8px">
@@ -147,7 +146,7 @@
                 <span style="font-weight:600">{{ t('logManage.coreLogOutput') }}</span>
                 <span class="header-hint">{{ t('logManage.coreLogOutputHint') }}</span>
               </div>
-              <el-button type="primary" size="small" :loading="savingCoreOutput" @click="handleSaveCoreOutput">
+              <el-button type="primary" size="small" :loading="savingCoreOutput" :disabled="fetchingOutput" @click="handleSaveCoreOutput">
                 {{ t('logManage.saveOutputConfig') }}
               </el-button>
             </div>
@@ -194,7 +193,7 @@
                 <span style="font-weight:600">{{ t('logManage.proxyLogOutput') }}</span>
                 <span class="header-hint">{{ t('logManage.proxyLogOutputHint') }}</span>
               </div>
-              <el-button type="primary" size="small" :loading="savingProxyOutput" @click="handleSaveProxyOutput">
+              <el-button type="primary" size="small" :loading="savingProxyOutput" :disabled="fetchingOutput" @click="handleSaveProxyOutput">
                 {{ t('logManage.saveOutputConfig') }}
               </el-button>
             </div>
@@ -416,10 +415,10 @@
                   :key="s.id"
                   :value="s.id"
                   :label="s.name"
-                  :disabled="!s.is_online"
+                  :disabled="s.agent_status !== 'online'"
                 >
                   <span>{{ s.name }}</span>
-                  <el-tag v-if="!s.is_online" size="small" type="danger" style="margin-left:8px">{{ t('logManage.nodeOffline') }}</el-tag>
+                  <el-tag v-if="s.agent_status !== 'online'" size="small" type="danger" style="margin-left:8px">{{ t('logManage.nodeOffline') }}</el-tag>
                 </el-option>
               </el-select>
 
@@ -702,6 +701,10 @@ const selectedServerName = computed(() => {
 })
 
 function onSelectedServerChange() {
+  // Reset output lists to defaults immediately to prevent stale data
+  // from the previous node being saved to the new node
+  coreOutputList.value = makeDefaultCoreOutputList()
+  proxyOutputList.value = makeDefaultProxyOutputList()
   // Re-fetch all data for the selected node
   fetchStatus()
   fetchData()
@@ -752,10 +755,18 @@ const PROXY_TYPES = [
   { type: 'nginx', label: 'Nginx' },
   { type: 'caddy', label: 'Caddy' },
 ]
-const coreOutputList = ref(CORE_TYPES.map(c => ({ ...c, cfg: { mode: 'file', managed: false, capture_path: '' } })))
-const proxyOutputList = ref(PROXY_TYPES.map(p => ({ ...p, cfg: { mode: 'file', managed: false, capture_path: '' } })))
+function makeDefaultCoreOutputList() {
+  return CORE_TYPES.map(c => ({ ...c, cfg: { mode: 'file', managed: false, capture_path: '' } }))
+}
+function makeDefaultProxyOutputList() {
+  return PROXY_TYPES.map(p => ({ ...p, cfg: { mode: 'file', managed: false, capture_path: '' } }))
+}
+const coreOutputList = ref(makeDefaultCoreOutputList())
+const proxyOutputList = ref(makeDefaultProxyOutputList())
 const savingCoreOutput = ref(false)
 const savingProxyOutput = ref(false)
+const fetchingOutput = ref(false)
+let outputFetchToken = 0
 
 // ──────────── Writer ────────────
 const writerStatuses = ref([])
@@ -873,25 +884,37 @@ async function fetchNodeServers() {
 }
 
 async function fetchCoreLogOutput() {
+  const token = ++outputFetchToken
+  fetchingOutput.value = true
   try {
     const r = await logApi.getCoreLogOutput(selectedServerId.value)
+    // Discard stale response if user has already switched to another node
+    if (token !== outputFetchToken) return
     if (r) {
       for (const item of coreOutputList.value) {
         if (r[item.type]) item.cfg = { ...item.cfg, ...r[item.type] }
       }
     }
-  } catch { /* noop */ }
+  } catch { /* noop */ } finally {
+    if (token === outputFetchToken) fetchingOutput.value = false
+  }
 }
 
 async function fetchProxyLogOutput() {
+  const token = ++outputFetchToken
+  fetchingOutput.value = true
   try {
     const r = await logApi.getProxyLogOutput(selectedServerId.value)
+    // Discard stale response if user has already switched to another node
+    if (token !== outputFetchToken) return
     if (r) {
       for (const item of proxyOutputList.value) {
         if (r[item.type]) item.cfg = { ...item.cfg, ...r[item.type] }
       }
     }
-  } catch { /* noop */ }
+  } catch { /* noop */ } finally {
+    if (token === outputFetchToken) fetchingOutput.value = false
+  }
 }
 
 async function fetchWriterStatuses() {
@@ -904,6 +927,10 @@ async function fetchWriterStatuses() {
 // ═══════════════ Output Config Save ═══════════════
 
 async function handleSaveCoreOutput() {
+  if (fetchingOutput.value) {
+    ElMessage.warning(t('logManage.dataLoading') || 'Data is still loading, please wait...')
+    return
+  }
   savingCoreOutput.value = true
   try {
     const data = {}
@@ -918,6 +945,10 @@ async function handleSaveCoreOutput() {
 }
 
 async function handleSaveProxyOutput() {
+  if (fetchingOutput.value) {
+    ElMessage.warning(t('logManage.dataLoading') || 'Data is still loading, please wait...')
+    return
+  }
   savingProxyOutput.value = true
   try {
     const data = {}

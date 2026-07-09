@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
@@ -240,8 +241,38 @@ func (a *AgentApp) resolveLogFilePath(logType string) string {
 	case "tuic":
 		return filepath.Join(logDir, "tuic.log")
 	case "nginx":
+		// Read actual error log path from nginx settings
+		ctx := context.Background()
+		if v, err := a.settingRepo.GetByKey(ctx, "proxy.nginx_settings"); err == nil && v != "" {
+			var ns struct {
+				ErrorLogPath string `json:"error_log_path"`
+			}
+			if json.Unmarshal([]byte(v), &ns) == nil && ns.ErrorLogPath != "" {
+				return a.resolveRelPath(ns.ErrorLogPath)
+			}
+		}
 		return filepath.Join(logDir, "nginx-error.log")
 	case "caddy":
+		// Caddy logs are per-domain; return the first enabled site's log path
+		ctx := context.Background()
+		if a.caddySiteRepo != nil {
+			sites, err := a.caddySiteRepo.List(ctx, 1)
+			if err == nil {
+				for _, site := range sites {
+					if site.Template == "l4" || site.Template == "sni" {
+						continue
+					}
+					if !site.LogEnabled {
+						continue
+					}
+					logPath := site.LogPath
+					if logPath == "" {
+						logPath = fmt.Sprintf("logs/%s.log", sanitizeDomainForLog(site.Domain))
+					}
+					return a.resolveRelPath(logPath)
+				}
+			}
+		}
 		return filepath.Join(logDir, "caddy-access.log")
 	default:
 		return ""
@@ -470,23 +501,39 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 	// Discover core process logs
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
 		mode := a.getLogMode(coreType)
-		var logPath string
 		switch mode {
 		case "stdout":
-			logPath = filepath.Join(logDir, coreType+"-stdout.log")
+			logs = append(logs, &agentpb.DiscoveredLogInfo{
+				SourceType: coreType,
+				Domain:     "stdout",
+				LogPath:    filepath.Join(logDir, coreType+"-stdout.log"),
+			})
 		case "off":
 			continue
-		default:
-			logPath = filepath.Join(logDir, coreType+".log")
+		default: // "file"
+			if coreType == "xray" {
+				// xray has separate access and error logs
+				logs = append(logs, &agentpb.DiscoveredLogInfo{
+					SourceType: coreType,
+					Domain:     "error",
+					LogPath:    filepath.Join(logDir, "xray.log"),
+				})
+				logs = append(logs, &agentpb.DiscoveredLogInfo{
+					SourceType: coreType,
+					Domain:     "access",
+					LogPath:    filepath.Join(logDir, "xray-access.log"),
+				})
+			} else {
+				logs = append(logs, &agentpb.DiscoveredLogInfo{
+					SourceType: coreType,
+					Domain:     mode,
+					LogPath:    filepath.Join(logDir, coreType+".log"),
+				})
+			}
 		}
-		logs = append(logs, &agentpb.DiscoveredLogInfo{
-			SourceType: coreType,
-			Domain:     mode,
-			LogPath:    logPath,
-		})
 	}
 
-	// Discover nginx logs
+	// Discover nginx logs — read actual log paths from proxy.nginx_settings
 	nginxMode := "file"
 	if v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
 		var cfg struct {
@@ -503,27 +550,53 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			LogPath:    filepath.Join(logDir, "nginx-stdout.log"),
 		})
 	} else if nginxMode != "off" {
-		// Check for nginx error log
-		errorLogPath := filepath.Join(logDir, "nginx-error.log")
-		if _, err := os.Stat(errorLogPath); err == nil {
+		// Read nginx settings to get actual log paths
+		type nginxLogSettings struct {
+			ErrorLog      bool   `json:"error_log"`
+			ErrorLogPath  string `json:"error_log_path"`
+			AccessLog     bool   `json:"access_log"`
+			AccessLogPath string `json:"access_log_path"`
+			StreamLog     bool   `json:"stream_log"`
+			StreamLogPath string `json:"stream_log_path"`
+		}
+		var ns nginxLogSettings
+		if v, err := a.settingRepo.GetByKey(ctx, "proxy.nginx_settings"); err == nil && v != "" {
+			json.Unmarshal([]byte(v), &ns)
+		}
+		// Use defaults if settings are empty
+		if ns.ErrorLogPath == "" {
+			ns.ErrorLogPath = "logs/error.log"
+			ns.ErrorLog = true
+		}
+		if ns.AccessLogPath == "" {
+			ns.AccessLogPath = "logs/access.log"
+			ns.AccessLog = true
+		}
+
+		if ns.ErrorLog && ns.ErrorLogPath != "" {
 			logs = append(logs, &agentpb.DiscoveredLogInfo{
 				SourceType: "nginx",
 				Domain:     "error",
-				LogPath:    errorLogPath,
+				LogPath:    a.resolveRelPath(ns.ErrorLogPath),
 			})
 		}
-		// Check for nginx access log
-		accessLogPath := filepath.Join(logDir, "nginx-access.log")
-		if _, err := os.Stat(accessLogPath); err == nil {
+		if ns.AccessLog && ns.AccessLogPath != "" {
 			logs = append(logs, &agentpb.DiscoveredLogInfo{
 				SourceType: "nginx",
 				Domain:     "access",
-				LogPath:    accessLogPath,
+				LogPath:    a.resolveRelPath(ns.AccessLogPath),
+			})
+		}
+		if ns.StreamLog && ns.StreamLogPath != "" {
+			logs = append(logs, &agentpb.DiscoveredLogInfo{
+				SourceType: "nginx",
+				Domain:     "stream",
+				LogPath:    a.resolveRelPath(ns.StreamLogPath),
 			})
 		}
 	}
 
-	// Discover caddy logs
+	// Discover caddy logs — read actual log paths from caddy_sites table
 	caddyMode := "file"
 	if v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
 		var cfg struct {
@@ -540,13 +613,30 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			LogPath:    filepath.Join(logDir, "caddy-stdout.log"),
 		})
 	} else if caddyMode != "off" {
-		caddyLogPath := filepath.Join(logDir, "caddy-access.log")
-		if _, err := os.Stat(caddyLogPath); err == nil {
-			logs = append(logs, &agentpb.DiscoveredLogInfo{
-				SourceType: "caddy",
-				Domain:     "access",
-				LogPath:    caddyLogPath,
-			})
+		// Read caddy site configs from database for actual log paths
+		if a.caddySiteRepo != nil {
+			sites, err := a.caddySiteRepo.List(ctx, 1)
+			if err == nil {
+				for _, site := range sites {
+					// Skip L4 and SNI sites — they don't have HTTP-level logs
+					if site.Template == "l4" || site.Template == "sni" {
+						continue
+					}
+					if !site.LogEnabled {
+						continue
+					}
+					logPath := site.LogPath
+					if logPath == "" {
+						logPath = fmt.Sprintf("logs/%s.log", sanitizeDomainForLog(site.Domain))
+					}
+					logs = append(logs, &agentpb.DiscoveredLogInfo{
+						SourceType: "caddy",
+						Domain:     site.Domain,
+						LogPath:    a.resolveRelPath(logPath),
+						LogFormat:  site.LogFormat,
+					})
+				}
+			}
 		}
 	}
 
@@ -568,4 +658,24 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 		Success: true,
 		Logs:    logs,
 	}
+}
+
+// resolveRelPath resolves a relative path (e.g. "logs/error.log") to an absolute
+// path under the agent's data directory. Absolute paths are returned as-is.
+func (a *AgentApp) resolveRelPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(a.dataDir, p)
+}
+
+// sanitizeDomainForLog converts a domain to a safe log file name.
+func sanitizeDomainForLog(domain string) string {
+	if domain == "" || domain == "_" || domain == ":80" || domain == ":443" {
+		return "default"
+	}
+	if strings.HasPrefix(domain, ":") {
+		return "port" + domain[1:]
+	}
+	return domain
 }

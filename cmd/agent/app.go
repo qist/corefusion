@@ -46,6 +46,9 @@ type AgentApp struct {
 	inboundConfigRepo  *repository.InboundConfigRepository
 	outboundConfigRepo *repository.OutboundConfigRepository
 
+	// Caddy site repo for log discovery (shared with logMgr)
+	caddySiteRepo *repository.CaddySiteRepository
+
 	// Log management (same as Panel — provides LogWriter for stdout file persistence)
 	logMgr *logManageSvc.Service
 
@@ -175,6 +178,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		coreConfigRepo:     coreConfigRepo,
 		inboundConfigRepo:  inboundConfigRepo,
 		outboundConfigRepo: outboundConfigRepo,
+		caddySiteRepo:      caddySiteRepo,
 		logMgr:             logMgr,
 	}
 

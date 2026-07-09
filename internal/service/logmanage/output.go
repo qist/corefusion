@@ -272,6 +272,19 @@ func (s *Service) GetCoreLogMode(ctx context.Context, coreType string) string {
 	return s.GetLogMode(ctx, coreType)
 }
 
+// GetNginxSettingsRaw returns the raw JSON of proxy.nginx_settings from the database.
+// Used for syncing nginx settings to remote agents for log path discovery.
+func (s *Service) GetNginxSettingsRaw(ctx context.Context) string {
+	if s.settingStore == nil {
+		return ""
+	}
+	v, err := s.settingStore.GetByKey(ctx, "proxy.nginx_settings")
+	if err != nil {
+		return ""
+	}
+	return v
+}
+
 // GetLogMode returns the log mode for a specific core type.
 // This implements the process.LogModeProvider interface.
 func (s *Service) GetLogMode(ctx context.Context, coreType string) string {

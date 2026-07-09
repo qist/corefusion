@@ -25,6 +25,11 @@ func NewHandler(svc *logmanage.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// getNginxSettingsForSync returns the raw nginx settings JSON for syncing to remote agents.
+func (h *Handler) getNginxSettingsForSync(ctx context.Context) string {
+	return h.svc.GetNginxSettingsRaw(ctx)
+}
+
 // --- Policy CRUD ---
 
 // ListPolicies returns all rotation policies.
@@ -350,7 +355,8 @@ func (h *Handler) SaveLogOutput(c *gin.Context) {
 	// Sync to remote node if needed
 	if serverID > 1 && nodeLogMgrExt != nil {
 		data, _ := json.Marshal(cfg)
-		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, "", string(data))
+		nginxSettings := h.getNginxSettingsForSync(c.Request.Context())
+		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, "", string(data), nginxSettings)
 	}
 	response.OK(c, cfg)
 }
@@ -387,7 +393,8 @@ func (h *Handler) SaveCoreLogOutput(c *gin.Context) {
 	// Sync to remote node if needed
 	if serverID > 1 && nodeLogMgrExt != nil {
 		data, _ := json.Marshal(cfg)
-		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, string(data), "")
+		nginxSettings := h.getNginxSettingsForSync(c.Request.Context())
+		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, string(data), "", nginxSettings)
 	}
 	response.OK(c, cfg)
 }
@@ -634,7 +641,7 @@ type NodeLogManager interface {
 	ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error)
 	RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error)
 	DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error)
-	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig string) error
+	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig, nginxSettings string) error
 }
 
 // nodeLogMgr is set by the router to enable remote node log management.

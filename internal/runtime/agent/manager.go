@@ -67,6 +67,10 @@ type NodeServerManager struct {
 
 	// Cert renewer: checks and renews Agent certs on reconnect
 	certRenewer *CertRenewer
+
+	// Agent updater: tracks pending Agent binary updates and verifies
+	// version on reconnect. Set via SetAgentUpdater.
+	agentUpdater *AgentUpdater
 }
 
 // NodeSettingStore provides access to system settings for GitHub acceleration
@@ -162,6 +166,13 @@ func (m *NodeServerManager) SetMetricsCollector(mc *MetricsCollector) {
 	m.metricsCollector = mc
 }
 
+// SetAgentUpdater sets the Agent updater for tracking pending Agent binary updates.
+// When an Agent reconnects with a new version, the updater verifies and marks the
+// update task as done (or failed on version mismatch).
+func (m *NodeServerManager) SetAgentUpdater(u *AgentUpdater) {
+	m.agentUpdater = u
+}
+
 // isLocalServer checks if a server is the local panel server.
 // Uses the cached localServerID when available (set by InitLocalServerID),
 // avoiding a DB query on every NodeOperator method call.
@@ -190,6 +201,10 @@ type AgentConnection struct {
 	mu          sync.Mutex
 	ServerID    int64
 	Hostname    string
+
+	// agentVersion is the version reported by the Agent in its last heartbeat.
+	// Tracked to detect version changes (e.g. after a self-update).
+	agentVersion string
 
 	// Bidirectional stream (Agent→Panel heartbeat)
 	stream agentpb.HeartbeatService_StreamServer
@@ -1160,6 +1175,7 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 	ac := &AgentConnection{
 		ServerID:      serverID,
 		Hostname:      hostname,
+		agentVersion:  hostname, // hostname param is actually the agent version from firstReport.AgentVersion
 		stream:        stream,
 		online:        true,
 		lastHeartbeat: time.Now(),
@@ -1173,6 +1189,14 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 	// Update server status in DB
 	if err := m.serverRepo.UpdateAgentStatus(context.Background(), serverID, "online", hostname); err != nil {
 		log.Printf("[NodeServerManager] failed to update agent status for server %d: %v", serverID, err)
+	}
+
+	// Notify AgentUpdater about the reconnect so it can verify whether a pending
+	// update task has completed (Agent restarts with new version after self-update).
+	// This must be called even if there's no pending task — OnAgentReconnect is a
+	// no-op when no task exists for this server.
+	if m.agentUpdater != nil {
+		m.agentUpdater.OnAgentReconnect(serverID, hostname)
 	}
 
 	// On Agent reconnect: request immediate status + push SyncData to ensure
@@ -1308,6 +1332,25 @@ func (h *heartbeatServiceImpl) handleHeartbeat(ac *AgentConnection, report *agen
 		ac.cachedArch = report.Arch
 		ac.cachedDistro = report.Distro
 		ac.mu.Unlock()
+	}
+
+	// Detect Agent version change between heartbeats (e.g. after self-update
+	// without a full reconnect). Notify the AgentUpdater so it can verify
+	// and mark any pending update task as done.
+	if report.AgentVersion != "" {
+		ac.mu.Lock()
+		oldVersion := ac.agentVersion
+		versionChanged := oldVersion != "" && oldVersion != report.AgentVersion
+		if versionChanged {
+			ac.agentVersion = report.AgentVersion
+		}
+		ac.mu.Unlock()
+
+		if versionChanged && h.mgr.agentUpdater != nil {
+			log.Printf("[NodeServerManager] agent version changed for server %d: %s → %s",
+				ac.ServerID, oldVersion, report.AgentVersion)
+			h.mgr.agentUpdater.OnAgentReconnect(ac.ServerID, report.AgentVersion)
+		}
 	}
 
 	// Update heartbeat in DB (throttled — every 30s, not every heartbeat)
@@ -1717,7 +1760,7 @@ func (m *NodeServerManager) PackageLogsOnServer(ctx context.Context, serverID in
 }
 
 // SyncLogConfigToServer syncs log output mode config to a remote node.
-func (m *NodeServerManager) SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig string) error {
+func (m *NodeServerManager) SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig, nginxSettings string) error {
 	if m.isLocalServer(serverID) {
 		return nil // local config is already in the DB
 	}
@@ -1728,6 +1771,7 @@ func (m *NodeServerManager) SyncLogConfigToServer(ctx context.Context, serverID 
 			SyncLogConfig: &agentpb.SyncLogConfigRequest{
 				CoreLogConfig:  coreLogConfig,
 				ProxyLogConfig: proxyLogConfig,
+				NginxSettings:  nginxSettings,
 			},
 		},
 	}

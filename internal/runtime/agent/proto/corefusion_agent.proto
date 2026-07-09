@@ -761,6 +761,7 @@ message StreamLogFileRequest {
 message SyncLogConfigRequest {
   string core_log_config = 1;   // core.log_output_config JSON
   string proxy_log_config = 2;  // proxy.log_output_config JSON
+  string nginx_settings = 3;    // proxy.nginx_settings JSON (for log path discovery)
 }
 
 // 发现节点上的日志文件

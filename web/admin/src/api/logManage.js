@@ -50,20 +50,32 @@ export function getPolicyLog(id, lines = 500) {
   return client.get(`/log-manage/policies/${id}/log`, { params: { lines } })
 }
 
-export function getCoreStdoutLog(type, lines = 500) {
+export function getCoreStdoutLog(type, lines = 500, serverId = 1) {
   const token = localStorage.getItem('access_token')
   const base = client.defaults.baseURL || '/api/v1'
-  return fetch(`${base}/log-manage/core/${type}/stdout-log?lines=${lines}&token=${encodeURIComponent(token)}`)
+  return fetch(`${base}/log-manage/core/${type}/stdout-log?lines=${lines}&server_id=${serverId}&token=${encodeURIComponent(token)}`)
     .then(r => r.json())
     .then(d => d?.data || d)
 }
 
-export function getProxyStdoutLog(type, lines = 500) {
+export function getProxyStdoutLog(type, lines = 500, serverId = 1) {
   const token = localStorage.getItem('access_token')
   const base = client.defaults.baseURL || '/api/v1'
-  return fetch(`${base}/log-manage/proxy/${type}/stdout-log?lines=${lines}&token=${encodeURIComponent(token)}`)
+  return fetch(`${base}/log-manage/proxy/${type}/stdout-log?lines=${lines}&server_id=${serverId}&token=${encodeURIComponent(token)}`)
     .then(r => r.json())
     .then(d => d?.data || d)
+}
+
+export function buildCoreStdoutStreamUrl(type, serverId = 1) {
+  const token = localStorage.getItem('access_token')
+  const base = client.defaults.baseURL || '/api/v1'
+  return `${base}/log-manage/core/${type}/stdout-stream?server_id=${serverId}&token=${encodeURIComponent(token)}`
+}
+
+export function buildProxyStdoutStreamUrl(type, serverId = 1) {
+  const token = localStorage.getItem('access_token')
+  const base = client.defaults.baseURL || '/api/v1'
+  return `${base}/log-manage/proxy/${type}/stdout-stream?server_id=${serverId}&token=${encodeURIComponent(token)}`
 }
 
 // ──────────── Log Output Config (per-node) ────────────
@@ -92,10 +104,10 @@ export function releaseStdout(type) {
   return client.post(`/log-manage/log-output/release/${type}`)
 }
 
-// ──────────── Writer Management (local only) ────────────
+// ──────────── Writer Management (local + remote) ────────────
 
-export function getWriters() {
-  return client.get('/log-manage/writers')
+export function getWriters(serverId = 1) {
+  return client.get('/log-manage/writers', { params: { server_id: serverId } })
 }
 
 export function startWriter(type, data) {

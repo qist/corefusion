@@ -295,8 +295,24 @@ func (s *Service) StartWriter(proxyType string, mode string) error {
 // syncWriterFilePath updates the writer config's file path from the output config's capture_path.
 // If the writer is already active and the file path changed, it restarts the writer.
 func (s *Service) syncWriterFilePath(proxyType string, capturePath string) {
+	// Use default capture path if not specified
 	if capturePath == "" {
-		return
+		switch proxyType {
+		case "nginx":
+			capturePath = "logs/nginx-stdout.log"
+		case "caddy":
+			capturePath = "logs/caddy-stdout.log"
+		case "xray":
+			capturePath = "logs/xray-stdout.log"
+		case "singbox":
+			capturePath = "logs/singbox-stdout.log"
+		case "hysteria2":
+			capturePath = "logs/hysteria2-stdout.log"
+		case "tuic":
+			capturePath = "logs/tuic-stdout.log"
+		default:
+			return
+		}
 	}
 	cfg := s.loadWriterConfig(proxyType)
 	if cfg.FilePath == capturePath {
@@ -315,15 +331,37 @@ func (s *Service) syncWriterFilePath(proxyType string, capturePath string) {
 	}
 }
 
-// subscribeToBroker subscribes to the proxy's LogBroker and writes lines to the writer.
+// subscribeToBroker subscribes to the proxy/core LogBroker and writes lines to the writer.
 // Keeps retrying and re-subscribing as long as the writer exists.
 func (s *Service) subscribeToBroker(proxyType string, writer *LogWriter) {
-	for {
-		if s.proxyBroker == nil {
-			time.Sleep(2 * time.Second)
-			continue
+	// Determine if this is a core type or proxy type
+	isCore := false
+	for _, ct := range coreLogTypes {
+		if proxyType == ct {
+			isCore = true
+			break
 		}
-		broker := s.proxyBroker.GetLogBroker(proxyType)
+	}
+
+	for {
+		var broker LogBrokerReader
+
+		if isCore {
+			// Core type: use coreBroker
+			if s.coreBroker == nil {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			broker = s.coreBroker.GetCoreLogBroker(proxyType)
+		} else {
+			// Proxy type: use proxyBroker
+			if s.proxyBroker == nil {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			broker = s.proxyBroker.GetLogBroker(proxyType)
+		}
+
 		if broker == nil {
 			time.Sleep(2 * time.Second)
 			continue

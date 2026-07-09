@@ -35,8 +35,8 @@ func perNodeKey(baseKey string, serverID int64) string {
 
 // DefaultCapturePaths are the default capture file paths.
 const (
-	DefaultNginxCapturePath = "logs/nginx-access.log"
-	DefaultCaddyCapturePath = "logs/caddy-access.log"
+	DefaultNginxCapturePath = "logs/nginx-stdout.log"
+	DefaultCaddyCapturePath = "logs/caddy-stdout.log"
 )
 
 // GetLogOutput reads the log output configuration from database.
@@ -84,6 +84,9 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 		return nil
 	}
 
+	// Get old config to detect mode changes
+	oldCfg, _ := s.GetLogOutputForServer(ctx, serverID)
+
 	key := perNodeKey(settingKeyLogOutput, serverID)
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -102,6 +105,16 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 		}
 		if err := s.StartWriter("caddy", cfg.Caddy.Mode); err != nil {
 			log.Printf("logmanage: failed to start caddy writer: %v", err)
+		}
+
+		// Trigger mode switch callback if mode changed (need to restart proxy for stdout mode)
+		if s.onModeSwitch != nil {
+			if oldCfg == nil || oldCfg.Nginx.Mode != cfg.Nginx.Mode {
+				s.onModeSwitch("nginx")
+			}
+			if oldCfg == nil || oldCfg.Caddy.Mode != cfg.Caddy.Mode {
+				s.onModeSwitch("caddy")
+			}
 		}
 	}
 

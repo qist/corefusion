@@ -127,6 +127,7 @@ type DataSyncBuilder struct {
 	coreSvc         CoreConfigService
 	inboundSvc      InboundConfigService
 	outboundSvc     OutboundConfigService
+	logModeProvider LogModeProvider
 }
 
 // NewDataSyncBuilder creates a new DataSyncBuilder.
@@ -140,6 +141,14 @@ func (b *DataSyncBuilder) WithConfigProviders(coreSvc CoreConfigService, inbound
 	b.coreSvc = coreSvc
 	b.inboundSvc = inboundSvc
 	b.outboundSvc = outboundSvc
+	return b
+}
+
+// WithLogModeProvider sets the log mode provider for per-server log mode lookup.
+// This is used by PrepareFullConfig to generate the correct log section in the
+// runtime config for each remote node.
+func (b *DataSyncBuilder) WithLogModeProvider(p LogModeProvider) *DataSyncBuilder {
+	b.logModeProvider = p
 	return b
 }
 
@@ -310,6 +319,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				FullConfig:       fullConfig,
 				InboundProvider:  b.inboundSvc,
 				OutboundProvider: b.outboundSvc,
+				LogMode:          b.resolveLogMode(ctx, serverID, coreType),
 			})
 			if err != nil {
 				log.Printf("[DataSyncBuilder] PrepareFullConfig failed for server %d: %v", serverID, err)
@@ -597,4 +607,13 @@ func ValidateSyncDataRequest(req *agentpb.SyncDataRequest) error {
 		return fmt.Errorf("no core_configs or config_content provided for server %d", req.ServerId)
 	}
 	return nil
+}
+
+// resolveLogMode returns the log mode for a given server and core type.
+// Uses the per-server config if available, falling back to the global config.
+func (b *DataSyncBuilder) resolveLogMode(ctx context.Context, serverID int64, coreType string) string {
+	if b.logModeProvider != nil {
+		return b.logModeProvider.GetLogModeForServer(ctx, serverID, coreType)
+	}
+	return ""
 }

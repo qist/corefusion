@@ -375,6 +375,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Wire log mode provider to configsync so generated configs include correct log section
 	configSyncSvc.SetLogModeProvider(logManageSvc)
 
+	// Wire core config section getter so logmanage can derive output mode from
+	// the actual xray/singbox log section (syncs with protocol center changes)
+	logManageSvc.SetCoreConfigSectionGetter(coreConfigSvc)
+
 	// Wire config generators so auto-start uses the new separated managers
 	proxyMgr.SetCaddyConfigGen(caddyMgr.GenerateConfig)
 	proxyMgr.SetNginxConfigGen(nginxMgr.GenerateConfig)
@@ -631,6 +635,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					inject := fmt.Sprintf(`<script>window.__CF_BASE_PATH__="%s/";</script>`, webPath)
 					html = strings.Replace(html, "<head>", "<head>"+inject, 1)
 				}
+				c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 				c.Data(200, "text/html; charset=utf-8", []byte(html))
 				return
 			}
@@ -647,6 +652,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				c.Status(500)
 				return
 			}
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 			c.Data(200, "text/html; charset=utf-8", data)
 			return
 		}
@@ -979,7 +985,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					warpRepo,
 					shareDomainRepo,
 				).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo),
-			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc)
+			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc)
 			nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 

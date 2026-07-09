@@ -196,6 +196,12 @@ func CleanEmpty(m map[string]interface{}) {
 			delete(m, k)
 			continue
 		}
+		// Preserve the "log" section as-is — empty string values have
+		// semantic meaning in xray (access/error: "" = stdout,
+		// "none" = disabled). Cleaning them would alter behavior.
+		if k == "log" {
+			continue
+		}
 		switch val := v.(type) {
 		case string:
 			if val == "" {
@@ -398,8 +404,20 @@ func ApplyAPIInboundRouting(fullConfig map[string]interface{}) {
 
 // ApplyLogMode sets the log section in the config based on the specified log mode.
 // mode values: "file" (default), "stdout", "off".
-// For xray: sets access/error/loglevel fields.
-// For singbox: sets level/output fields.
+//
+// For xray:
+//   - file: preserves the user's log config from core_configs as-is (access path,
+//     error path, loglevel, dnsLog, etc. are all kept). This is the default and
+//     means "let the process write to the files specified in the config".
+//   - stdout: overrides access to "none" and error to "/dev/stderr" so the
+//     process outputs to stderr for LogBroker capture. Preserves user's loglevel.
+//   - off: sets everything to "none" to disable logging entirely.
+//
+// For singbox:
+//   - file: preserves the user's log config as-is.
+//   - stdout: overrides output to "stderr". Preserves user's level.
+//   - off: sets level to "silent".
+//
 // For hysteria2/tuic: no config-level log changes (handled by process.Manager).
 func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode string) {
 	if mode == "" {
@@ -410,43 +428,55 @@ func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode strin
 	case "xray":
 		switch mode {
 		case "stdout":
-			fullConfig["log"] = map[string]interface{}{
-				"access":   "none",
-				"error":    "/dev/stderr",
-				"loglevel": "warning",
+			// Route logs through stderr for LogBroker capture, but only override
+			// values that are file paths. If the user already set access/error to
+			// "" (stdout) or "none" (disabled) or "/dev/stderr", preserve their
+			// choice — the mode was derived from their config.
+			log, _ := fullConfig["log"].(map[string]interface{})
+			if log == nil {
+				log = map[string]interface{}{}
 			}
+			access, _ := log["access"].(string)
+			if access != "" && access != "none" && access != "/dev/stderr" {
+				log["access"] = "none"
+			}
+			errorVal, _ := log["error"].(string)
+			if errorVal != "" && errorVal != "none" && errorVal != "/dev/stderr" {
+				log["error"] = "/dev/stderr"
+			}
+			if log["loglevel"] == nil || log["loglevel"] == "" {
+				log["loglevel"] = "warning"
+			}
+			fullConfig["log"] = log
 		case "off":
 			fullConfig["log"] = map[string]interface{}{
 				"access":   "none",
 				"error":    "none",
 				"loglevel": "none",
 			}
-		default: // "file"
-			fullConfig["log"] = map[string]interface{}{
-				"access":   "logs/xray-access.log",
-				"error":    "logs/xray.log",
-				"loglevel": "warning",
-			}
+		default: // "file" — preserve user's log config from core_configs as-is
+			// Do nothing. The log section from core_configs already has the
+			// user's desired access/error/loglevel settings.
 		}
 
 	case "singbox":
 		switch mode {
 		case "stdout":
-			fullConfig["log"] = map[string]interface{}{
-				"level":     "info",
-				"output":    "stderr",
-				"timestamp": true,
+			log, _ := fullConfig["log"].(map[string]interface{})
+			if log == nil {
+				log = map[string]interface{}{}
 			}
+			log["output"] = "stderr"
+			if log["level"] == nil || log["level"] == "" {
+				log["level"] = "info"
+			}
+			fullConfig["log"] = log
 		case "off":
 			fullConfig["log"] = map[string]interface{}{
 				"level": "silent",
 			}
-		default: // "file"
-			fullConfig["log"] = map[string]interface{}{
-				"level":     "info",
-				"output":    "logs/singbox.log",
-				"timestamp": true,
-			}
+		default: // "file" — preserve user's log config from core_configs as-is
+			// Do nothing.
 		}
 
 	// hysteria2 and tuic don't have config-level log settings.

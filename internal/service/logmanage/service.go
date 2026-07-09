@@ -509,27 +509,43 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 // discoverCoreLogs discovers log files for core processes (xray, singbox, hysteria2, tuic).
 // Each core process writes to data/logs/{coreType}.log in file mode,
 // or data/logs/{coreType}-stdout.log in stdout mode.
+// Xray has separate access and error logs in file mode.
 func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	var logs []DiscoveredLog
 
 	for _, coreType := range coreLogTypes {
 		logMode := s.GetCoreLogMode(ctx, coreType)
 
-		var logPath string
 		switch logMode {
 		case "stdout":
-			logPath = s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.log", coreType))
+			logs = append(logs, DiscoveredLog{
+				SourceType: coreType,
+				Domain:     "stdout",
+				LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.log", coreType)),
+			})
 		case "off":
 			continue // no log file for this core
 		default: // "file"
-			logPath = s.resolveLogPath(fmt.Sprintf("logs/%s.log", coreType))
+			if coreType == "xray" {
+				// xray has separate access and error logs
+				logs = append(logs, DiscoveredLog{
+					SourceType: coreType,
+					Domain:     "error",
+					LogPath:    s.resolveLogPath("logs/xray.log"),
+				})
+				logs = append(logs, DiscoveredLog{
+					SourceType: coreType,
+					Domain:     "access",
+					LogPath:    s.resolveLogPath("logs/xray-access.log"),
+				})
+			} else {
+				logs = append(logs, DiscoveredLog{
+					SourceType: coreType,
+					Domain:     logMode,
+					LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s.log", coreType)),
+				})
+			}
 		}
-
-		logs = append(logs, DiscoveredLog{
-			SourceType: coreType,
-			Domain:     logMode,
-			LogPath:    logPath,
-		})
 	}
 
 	return logs, nil

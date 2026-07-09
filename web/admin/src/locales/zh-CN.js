@@ -1747,6 +1747,7 @@ export default {
     capturePath: '捕获路径',
     saveOutputConfig: '保存配置',
     outputConfigSaved: '日志输出配置已保存',
+    dataLoading: '数据加载中，请稍候...',
     outputConfigSyncHint: '远程节点的配置会自动同步到 Agent',
     // ── Node logs ──
     selectNode: '选择节点',

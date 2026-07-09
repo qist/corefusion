@@ -966,6 +966,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
 
 			nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
+			nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
 
 			// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
 			// Also generates final runtime config via PrepareFullConfig so Agent

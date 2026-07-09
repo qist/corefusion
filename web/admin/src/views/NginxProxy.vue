@@ -930,9 +930,9 @@ async function fetchSettings() {
     const data = await client.get(`${nginxApi.value}/settings`)
     if (data) settings.value = data
   } catch (e) {}
-  // Load log output mode
+  // Load log output mode (per-node)
   try {
-    const cfg = await client.get('/log-manage/log-output')
+    const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
     if (cfg?.nginx?.mode) nginxLogMode.value = cfg.nginx.mode
   } catch (e) {}
 }
@@ -940,12 +940,12 @@ async function fetchSettings() {
 async function saveSettings() {
   try {
     await client.post(`${nginxApi.value}/settings`, settings.value)
-    // Save log output mode (preserve caddy mode)
-    const current = await client.get('/log-manage/log-output')
+    // Save log output mode (preserve caddy mode) — per-node
+    const current = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
     await client.put('/log-manage/log-output', {
       nginx: { mode: nginxLogMode.value },
       caddy: current?.caddy || { mode: 'file' },
-    })
+    }, { params: { server_id: props.serverId } })
     await applyConfig()
     ElMessage.success(t('common.success'))
   } catch (e) {}

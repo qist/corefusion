@@ -149,6 +149,33 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		} else {
 			log.Printf("[Agent] proxy config synced: %s (%d certs)", req.ProxyType, len(req.Certificates))
 		}
+		// Save per-node settings for nginx/caddy to local settings store
+		if req.ProxyType == "nginx" && req.NginxSettings != "" {
+			if err := a.settingRepo.Set(ctx, "proxy.nginx_settings", req.NginxSettings); err != nil {
+				log.Printf("[Agent] failed to save nginx settings: %v", err)
+			}
+		}
+		if req.ProxyType == "caddy" && req.CaddySniSettings != "" {
+			// Parse and save caddy SNI settings
+			var sniSettings struct {
+				Enabled            bool     `json:"enabled"`
+				ListenPort         string   `json:"listen_port"`
+				LocalPort          string   `json:"local_port"`
+				ProxyProtocolRules []string `json:"proxy_protocol_rules"`
+			}
+			if err := json.Unmarshal([]byte(req.CaddySniSettings), &sniSettings); err == nil {
+				enabled := "false"
+				if sniSettings.Enabled {
+					enabled = "true"
+				}
+				a.settingRepo.Set(ctx, "proxy.sni_enabled", enabled)
+				a.settingRepo.Set(ctx, "proxy.sni_listen_port", sniSettings.ListenPort)
+				a.settingRepo.Set(ctx, "proxy.sni_local_port", sniSettings.LocalPort)
+				if rules, err := json.Marshal(sniSettings.ProxyProtocolRules); err == nil {
+					a.settingRepo.Set(ctx, "proxy.proxy_protocol_rules", string(rules))
+				}
+			}
+		}
 
 	case *agentpb.PanelCommand_ControlProxy:
 		req := c.ControlProxy

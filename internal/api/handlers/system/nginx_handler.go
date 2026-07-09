@@ -255,6 +255,7 @@ func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 // --- Settings ---
 
 func (h *NginxHandler) GetSettings(c *gin.Context) {
+	h.applyServerID(c)
 	settings, err := h.nginxMgr.GetNginxSettings(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
@@ -264,6 +265,7 @@ func (h *NginxHandler) GetSettings(c *gin.Context) {
 }
 
 func (h *NginxHandler) SaveSettings(c *gin.Context) {
+	h.applyServerID(c)
 	var settings proxy.NginxSettings
 	if err := c.ShouldBindJSON(&settings); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

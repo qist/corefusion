@@ -20,12 +20,17 @@ func ensureSymlink(path, target string) {
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
 // GenerateConfig assembles an nginx.conf from settings and sites.
 func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
-	sites, err := m.siteRepo.ListEnabled(ctx, m.serverID)
+	return m.GenerateConfigForServer(ctx, m.serverID)
+}
+
+// GenerateConfigForServer assembles an nginx.conf from settings and sites for a specific server.
+func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int64) (string, error) {
+	sites, err := m.siteRepo.ListEnabled(ctx, serverID)
 	if err != nil {
 		return "", err
 	}
 
-	s, err := m.GetNginxSettings(ctx)
+	s, err := m.GetNginxSettingsForServer(ctx, serverID)
 	if err != nil {
 		s = DefaultNginxSettings()
 	}
@@ -52,10 +57,18 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	} else {
 		sb.WriteString("master_process off;\n")
 	}
-	// Error log - check log output mode
+	// Error log - check log output mode (per-node first, then global)
 	logOutputMode := "file"
 	if m.settingStore != nil {
-		if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+		// Try per-node key first
+		logOutputKey := perNodeNginxSettingsKey(serverID)
+		logOutputKey = strings.Replace(logOutputKey, "proxy.nginx_settings", "proxy.log_output_config", 1)
+		v, err := m.settingStore.GetByKey(ctx, logOutputKey)
+		if err != nil || v == "" {
+			// Fallback to global key
+			v, err = m.settingStore.GetByKey(ctx, "proxy.log_output_config")
+		}
+		if err == nil && v != "" {
 			var cfg struct {
 				Nginx struct {
 					Mode string `json:"mode"`
@@ -69,7 +82,7 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	switch logOutputMode {
 	case "stdout":
 		ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_error.log"), "/dev/stderr")
-		sb.WriteString("error_log logs/stdout_error.log warn;\n")
+		sb.WriteString(fmt.Sprintf("error_log logs/stdout_error.log %s;\n", s.ErrorLogLevel))
 	case "off":
 		sb.WriteString("error_log /dev/null;\n")
 	default: // "file"
@@ -615,8 +628,8 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 		sb.WriteString("    }\n\n")
 	}
 
-	// Default server if no sites
-	if len(sites) == 0 {
+	// Default server if no HTTP sites (ensures :80 always responds)
+	if len(httpSites) == 0 {
 		sb.WriteString("    server {\n")
 		sb.WriteString("        listen 80;\n")
 		sb.WriteString("        location / {\n")

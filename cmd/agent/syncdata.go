@@ -237,6 +237,25 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		log.Printf("[Agent] SyncData: certificate landed: %s → %s", certEntry.Domain, certPath)
 	}
 
+	// 5.6 Save Nginx settings and log output config to local DB
+	// These are needed by the Agent to generate correct proxy configs on startup.
+	if req.NginxSettings != "" && a.settingRepo != nil {
+		key := perNodeSettingsKey("proxy.nginx_settings", req.ServerId)
+		if err := a.settingRepo.Set(ctx, key, req.NginxSettings); err != nil {
+			log.Printf("[Agent] SyncData: save nginx settings failed: %v", err)
+		} else {
+			log.Printf("[Agent] SyncData: saved nginx settings to %s (%d bytes)", key, len(req.NginxSettings))
+		}
+	}
+	if req.LogOutputConfig != "" && a.settingRepo != nil {
+		key := perNodeSettingsKey("proxy.log_output_config", req.ServerId)
+		if err := a.settingRepo.Set(ctx, key, req.LogOutputConfig); err != nil {
+			log.Printf("[Agent] SyncData: save log output config failed: %v", err)
+		} else {
+			log.Printf("[Agent] SyncData: saved log output config to %s (%d bytes)", key, len(req.LogOutputConfig))
+		}
+	}
+
 	resp.Success = true
 
 	// 6. If apply_and_start, generate config from local DB and start core
@@ -415,4 +434,14 @@ func parseOutboundConfigJSON(configJSON, dbTag, dbProtocol string) (map[string]i
 
 	// Try 3: Simple string like "direct" — construct from DB fields
 	return map[string]interface{}{"tag": dbTag, "protocol": dbProtocol}, nil
+}
+
+// perNodeSettingsKey returns the settings key for a server ID.
+// Local node (serverID=1) uses the legacy global key for backward compatibility.
+// Remote nodes use a per-node key.
+func perNodeSettingsKey(baseKey string, serverID int64) string {
+	if serverID <= 1 {
+		return baseKey
+	}
+	return fmt.Sprintf("%s.%d", baseKey, serverID)
 }

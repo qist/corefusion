@@ -596,7 +596,7 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 
 // GetConfig handles GET /api/v1/node-servers/:id/proxy/config.
 func (h *ProxyHandler) GetConfig(c *gin.Context) {
-	_, isLocal := h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	proxyType := proxy.ProxyType(c.Query("type"))
 
 	if isLocal {
@@ -611,9 +611,9 @@ func (h *ProxyHandler) GetConfig(c *gin.Context) {
 	var genErr error
 	switch proxyType {
 	case proxy.ProxyCaddy:
-		config, genErr = h.caddyMgr.GenerateConfig(c.Request.Context())
+		config, genErr = h.caddyMgr.GenerateConfigForServer(c.Request.Context(), serverID)
 	case proxy.ProxyNginx:
-		config, genErr = h.nginxMgr.GenerateConfig(c.Request.Context())
+		config, genErr = h.nginxMgr.GenerateConfigForServer(c.Request.Context(), serverID)
 	default:
 		response.BadRequest(c, "UNSUPPORTED", "unsupported proxy type")
 		return

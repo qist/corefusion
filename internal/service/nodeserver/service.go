@@ -1634,6 +1634,8 @@ func (s *Service) ListAgentCerts(ctx context.Context) (interface{}, error) {
 }
 
 // RenewAgentCertificate manually renews an Agent's mTLS certificate.
+// The cert is pushed to the Agent before updating the DB to ensure the
+// Agent actually receives the new cert.
 func (s *Service) RenewAgentCertificate(ctx context.Context, serverID int64) error {
 	if s.caService == nil {
 		return fmt.Errorf("CA not initialized")
@@ -1646,12 +1648,16 @@ func (s *Service) RenewAgentCertificate(ctx context.Context, serverID int64) err
 	if err != nil {
 		return fmt.Errorf("issue cert: %w", err)
 	}
+	// Push new cert to Agent FIRST. Only update DB if push succeeds.
+	if s.nodeMgr != nil && s.nodeMgr.IsOnlineForServer(serverID) {
+		if err := s.nodeMgr.PushAgentCertificate(ctx, serverID, result); err != nil {
+			return fmt.Errorf("push cert to agent failed: %w (DB not updated, will retry on next cycle)", err)
+		}
+	} else {
+		return fmt.Errorf("agent offline, cannot push cert (DB not updated, will retry on reconnect)")
+	}
 	if err := s.repo.UpdateAgentCert(ctx, serverID, result.Serial, result.ExpiresAt); err != nil {
 		return fmt.Errorf("update agent cert: %w", err)
-	}
-	// Push new cert to Agent if online
-	if s.nodeMgr != nil && s.nodeMgr.IsOnlineForServer(serverID) {
-		_ = s.nodeMgr.PushAgentCertificate(ctx, serverID, result)
 	}
 	return nil
 }

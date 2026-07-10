@@ -23,12 +23,12 @@ const (
 	AgentCertValidity = 10 * 24 * time.Hour // 10 天有效期
 
 	// AgentCertRenewBefore defines how long before expiry to start renewal.
-	// 3 天前开始续签，确保证书在过期前 2-3 天就完成更新。
+	// 3 天前开始续签，确保证书在过期前有充足时间完成推送。
 	AgentCertRenewBefore = 3 * 24 * time.Hour // 到期前 3 天开始续签
 
 	// AgentCertRenewInterval defines the renewal check frequency.
-	// 每 6 小时检查一次，避免因检查间隔过长导致证书未能及时续签。
-	AgentCertRenewInterval = 6 * time.Hour // 每 6 小时检查一次
+	// 每 1 小时检查一次，确保及时续签并重试推送失败的证书。
+	AgentCertRenewInterval = 1 * time.Hour // 每 1 小时检查一次
 
 	// CAValidity defines the CA root certificate validity period.
 	CAValidity = 10 * 365 * 24 * time.Hour // 10 年

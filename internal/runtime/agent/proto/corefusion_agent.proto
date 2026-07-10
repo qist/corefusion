@@ -605,6 +605,16 @@ message SyncDataRequest {
 
   // Caddy 是否手动停止
   bool caddy_manually_stopped = 16;
+
+  // --- Proxy Guardian 设置（面板→Agent 同步） ---
+  // Nginx guardian 设置
+  bool  nginx_auto_start = 17;
+  bool  nginx_auto_restart = 18;
+  int32 nginx_max_restarts = 19;
+  // Caddy guardian 设置
+  bool  caddy_auto_start = 20;
+  bool  caddy_auto_restart = 21;
+  int32 caddy_max_restarts = 22;
 }
 
 // CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。

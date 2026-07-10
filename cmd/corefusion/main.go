@@ -25,7 +25,6 @@ import (
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
 	"corefusion/internal/service/subscription"
-	"corefusion/internal/service/traffic"
 	usersync "corefusion/internal/service/usersync"
 	sysService "corefusion/internal/service/system"
 	"corefusion/internal/store/db"
@@ -254,11 +253,18 @@ func runServer(args []string) {
 	go userSyncSvc.RunRetryLoop(context.Background())
 	log.Println("User sync service started (multi-server fan-out + offline retry)")
 
-	trafficAggregator := traffic.NewAggregator(db.DB)
-	trafficAggregator.Start(context.Background())
-	multiCollector := traffic.NewMultiServerTrafficCollector(nodeMgr, nodeServerRepo, trafficAggregator)
-	multiCollector.Start(context.Background())
-	log.Println("Multi-server traffic collector started (remote + mirror merge)")
+	// NOTE: MultiServerTrafficCollector was removed because it competed with
+	// TrafficEventConsumer (started in router.go) for the same onTraffic channel.
+	// Having two consumers on the same channel caused every other traffic event
+	// to be consumed by MultiServerTrafficCollector (which submits to Aggregator)
+	// instead of TrafficEventConsumer (which updates inbound_configs._usedUp/_usedDown).
+	// This resulted in ~50% of remote node traffic being lost from the DB.
+	// TrafficEventConsumer in router.go now handles all remote traffic events.
+	// trafficAggregator := traffic.NewAggregator(db.DB)
+	// trafficAggregator.Start(context.Background())
+	// multiCollector := traffic.NewMultiServerTrafficCollector(nodeMgr, nodeServerRepo, trafficAggregator)
+	// multiCollector.Start(context.Background())
+	// log.Println("Multi-server traffic collector started (remote + mirror merge)")
 
 	// Phase 5: Start MultiServerHealthChecker and RegionSelector
 	multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgr, nodeServerRepo)

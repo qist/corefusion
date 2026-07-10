@@ -192,6 +192,8 @@ async function fetchSources() {
         // Re-fetch after seed
         const reData = await client.get(`/node-servers/${props.serverId}/geo-rules/sources`)
         sources.value = (reData || []).map(s => ({ ...s, _syncing: false }))
+        // Re-fetch files since seed creates default file records (geoip.dat, geosite.dat)
+        fetchFiles()
       } catch (e) {
         // seed failed silently, user can add manually
       }
@@ -398,7 +400,6 @@ async function handleDeleteFile(row) {
 
 
 onMounted(() => {
-  fetchSources()
-  fetchFiles()
+  fetchSources().then(() => fetchFiles())
 })
 </script>

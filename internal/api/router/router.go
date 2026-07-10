@@ -1062,6 +1062,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerH.SetInboundConfigService(inboundConfigSvc)
 			nodeServerH.SetOutboundConfigService(outboundConfigSvc)
 			nodeServerH.SetProxyHandler(proxyH)
+			nodeServerH.SetGeoRuleService(geoRuleSvcInst)
 
 		// Wire up NodeOperator so proxy/caddy/nginx handlers can route
 		// operations (start/stop/restart/reload, config sync, status)

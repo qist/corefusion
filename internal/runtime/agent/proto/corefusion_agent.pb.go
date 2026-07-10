@@ -5121,6 +5121,7 @@ type ReadLogFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`        // xray/singbox/hysteria2/tuic/nginx/caddy
 	LastLines     int32                  `protobuf:"varint,2,opt,name=last_lines,json=lastLines,proto3" json:"last_lines,omitempty"` // 读取最后 N 行（默认 500）
+	LogPath       string                 `protobuf:"bytes,3,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`        // 指定日志文件绝对路径（优先于 log_type 自动解析）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5167,6 +5168,13 @@ func (x *ReadLogFileRequest) GetLastLines() int32 {
 		return x.LastLines
 	}
 	return 0
+}
+
+func (x *ReadLogFileRequest) GetLogPath() string {
+	if x != nil {
+		return x.LogPath
+	}
+	return ""
 }
 
 type ReadLogFileResponse struct {
@@ -6852,11 +6860,12 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x06parsed\x18\x04 \x03(\v26.corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntryR\x06parsed\x1a9\n" +
 	"\vParsedEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"N\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"i\n" +
 	"\x12ReadLogFileRequest\x12\x19\n" +
 	"\blog_type\x18\x01 \x01(\tR\alogType\x12\x1d\n" +
 	"\n" +
-	"last_lines\x18\x02 \x01(\x05R\tlastLines\"v\n" +
+	"last_lines\x18\x02 \x01(\x05R\tlastLines\x12\x19\n" +
+	"\blog_path\x18\x03 \x01(\tR\alogPath\"v\n" +
 	"\x13ReadLogFileResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x14\n" +

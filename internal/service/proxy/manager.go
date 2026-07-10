@@ -1054,16 +1054,61 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 			log.Printf("proxy %s: already running with guardian, skipping start", proxyType)
 			return nil
 		}
+
 		// Process is running but no guardian (e.g. panel restarted while proxy kept running).
-		// Find its PID and create a guardian to monitor it.
+		// Determine current log mode to decide how to handle stdout capture.
+		logMode := "file"
+		if m.settingStore != nil {
+			if v, err := m.settingStore.GetByKey(context.Background(), "proxy.log_output_config"); err == nil && v != "" {
+				var cfg struct {
+					Nginx struct {
+						Mode string `json:"mode"`
+					} `json:"nginx"`
+					Caddy struct {
+						Mode string `json:"mode"`
+					} `json:"caddy"`
+				}
+				if json.Unmarshal([]byte(v), &cfg) == nil {
+					switch proxyType {
+					case ProxyNginx:
+						logMode = cfg.Nginx.Mode
+					case ProxyCaddy:
+						logMode = cfg.Caddy.Mode
+					}
+				}
+			}
+		}
+
 		pid := m.findProxyPID(m.proxyProcessName(proxyType))
 		if pid > 0 {
-			log.Printf("proxy %s: already running (pid %d), attaching guardian", proxyType, pid)
-			m.attachGuardian(proxyType, pid)
+			if logMode == "stdout" {
+				// Stdout mode: the old process's stdout pipe is dead (panel restarted).
+				// We must kill and restart the proxy to re-attach the LogBroker pipe.
+				log.Printf("proxy %s: already running (pid %d) in stdout mode, restarting to re-attach stdout pipe", proxyType, pid)
+				m.stopExisting(proxyType)
+				time.Sleep(1 * time.Second)
+				// Fall through to normal startup below
+			} else {
+				// File mode: just attach guardian and create a file-tailing LogBroker.
+				log.Printf("proxy %s: already running (pid %d), attaching guardian", proxyType, pid)
+				m.attachGuardian(proxyType, pid)
+				// Create LogBroker for file mode (tail access log)
+				broker := NewLogBroker()
+				if proxyType == ProxyNginx {
+					logPath := m.getNginxAccessLogPath()
+					if logPath != "" {
+						broker.TailFile(logPath)
+					}
+				}
+				m.mu.Lock()
+				m.logBrokers[proxyType] = broker
+				m.mu.Unlock()
+				return nil
+			}
+		} else {
+			log.Printf("proxy %s: already running, skipping start", proxyType)
 			return nil
 		}
-		log.Printf("proxy %s: already running, skipping start", proxyType)
-		return nil
 	}
 
 	// Ensure nginx dependencies before starting

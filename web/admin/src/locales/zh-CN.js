@@ -1755,6 +1755,7 @@ export default {
     nodeLabel: '节点',
     remoteNode: '远程节点',
     selectLogType: '日志类型',
+selectLogFile: '选择日志文件',
     nodeLogTypes: '可用日志类型',
     noLogTypes: '该节点暂无可用日志',
     viewNodeLog: '查看',

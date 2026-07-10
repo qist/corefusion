@@ -49,6 +49,12 @@ func (r *LogRotationPolicyRepository) ListEnabled(ctx context.Context) ([]entity
 	return policies, err
 }
 
+func (r *LogRotationPolicyRepository) ListEnabledByServerID(ctx context.Context, serverID int64) ([]entity.LogRotationPolicy, error) {
+	var policies []entity.LogRotationPolicy
+	err := r.db.WithContext(ctx).Where("enabled = ? AND server_id = ?", true, serverID).Order("id ASC").Find(&policies).Error
+	return policies, err
+}
+
 func (r *LogRotationPolicyRepository) GetBySourceType(ctx context.Context, sourceType string) ([]entity.LogRotationPolicy, error) {
 	var policies []entity.LogRotationPolicy
 	err := r.db.WithContext(ctx).Where("source_type = ?", sourceType).Order("id ASC").Find(&policies).Error

@@ -36,9 +36,11 @@ func NewScheduler(policyRepo *repository.LogRotationPolicyRepository, svc *Servi
 	}
 }
 
-// Start loads all enabled policies and starts their cron jobs.
+// Start loads all enabled local policies (serverID=1) and starts their cron jobs.
+// Remote node policies are handled by their respective agents and should not be
+// scheduled on the local scheduler.
 func (s *Scheduler) Start() {
-	policies, err := s.policyRepo.ListEnabled(nil)
+	policies, err := s.policyRepo.ListEnabledByServerID(context.Background(), 1)
 	if err != nil {
 		log.Printf("logmanage scheduler: failed to load policies: %v", err)
 		return

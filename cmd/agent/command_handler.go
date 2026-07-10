@@ -15,6 +15,7 @@ import (
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	logManageSvc "corefusion/internal/service/logmanage"
+	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/pkg/netutil"
 )
 
@@ -144,10 +145,14 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			}
 			log.Printf("[Agent] SyncProxyConfig: certificate landed: %s → %s", certEntry.Domain, certPath)
 		}
-		if err := a.localAgent.SyncProxyConfig(ctx, req.ProxyType, req.ConfigContent); err != nil {
-			log.Printf("[Agent] proxy config sync failed: %s: %v", req.ProxyType, err)
-		} else {
-			log.Printf("[Agent] proxy config synced: %s (%d certs)", req.ProxyType, len(req.Certificates))
+		// Write config file synchronously (not via task queue) so that any
+		// subsequent ControlProxy reload command will see the new config.
+		if a.proxyMgr != nil {
+			if err := a.proxyMgr.WriteConfigFile(proxySvc.ProxyType(req.ProxyType), string(req.ConfigContent)); err != nil {
+				log.Printf("[Agent] proxy config sync failed: %s: %v", req.ProxyType, err)
+			} else {
+				log.Printf("[Agent] proxy config synced: %s (%d bytes, %d certs)", req.ProxyType, len(req.ConfigContent), len(req.Certificates))
+			}
 		}
 		// Save per-node settings for nginx/caddy to local settings store
 		if req.ProxyType == "nginx" && req.NginxSettings != "" {

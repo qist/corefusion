@@ -299,6 +299,24 @@ func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
 	response.OK(c, gin.H{"updated": count})
 }
 
+// BatchUpdateLogEnabled updates the log_enabled flag for all HTTP Caddy sites.
+func (h *CaddyHandler) BatchUpdateLogEnabled(c *gin.Context) {
+	h.applyServerID(c)
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	count, err := h.caddyMgr.BatchUpdateLogEnabled(c.Request.Context(), req.Enabled)
+	if err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"updated": count})
+}
+
 // --- L4 ---
 
 func (h *CaddyHandler) DeleteAllL4(c *gin.Context) {

@@ -228,6 +228,20 @@ func NewManager(dataDir string, siteRepo *repository.ProxySiteRepository, settin
 	}
 }
 
+// proxyProcessName returns the binary base name used for precise process
+// detection. For managed binaries this is the platform-specific name (e.g.
+// "caddy-linux-amd64"), which avoids false positives from pgrep -f matching
+// unrelated processes that merely contain "caddy" in their path. For
+// system-installed binaries it returns the short name (e.g. "caddy").
+func (m *Manager) proxyProcessName(proxyType ProxyType) string {
+	name := string(proxyType)
+	path, _, _ := m.detectBinary(name)
+	if path != "" {
+		return filepath.Base(path)
+	}
+	return name
+}
+
 // DetectProxy checks if a proxy is installed and returns its info.
 func (m *Manager) DetectProxy(proxyType ProxyType) *ProxyInfo {
 	info := &ProxyInfo{
@@ -244,7 +258,7 @@ func (m *Manager) DetectProxy(proxyType ProxyType) *ProxyInfo {
 		info.Version = version
 		info.Installed = path != ""
 		info.Managed = managed
-		info.Status = m.getProcessStatus("nginx")
+		info.Status = m.getProcessStatus(m.proxyProcessName(ProxyNginx))
 	case ProxyCaddy:
 		info.Name = "Caddy"
 		info.ConfigPath = m.toRelative(filepath.Join(m.configDir, "Caddyfile"))
@@ -253,7 +267,7 @@ func (m *Manager) DetectProxy(proxyType ProxyType) *ProxyInfo {
 		info.Version = version
 		info.Installed = path != ""
 		info.Managed = managed
-		info.Status = m.getProcessStatus("caddy")
+		info.Status = m.getProcessStatus(m.proxyProcessName(ProxyCaddy))
 	}
 
 	return info
@@ -497,10 +511,19 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t}\n")
 	}
-	// Log configuration - check log output mode
+	// Log configuration - check log output mode (per-node)
 	caddyLogMode := "file"
 	if m.settingStore != nil {
-		if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+		logKey := "proxy.log_output_config"
+		if m.serverID > 1 {
+			logKey = fmt.Sprintf("%s.%d", logKey, m.serverID)
+		}
+		v, err := m.settingStore.GetByKey(ctx, logKey)
+		if err != nil || v == "" {
+			// Fall back to global key
+			v, err = m.settingStore.GetByKey(ctx, "proxy.log_output_config")
+		}
+		if err == nil && v != "" {
 			var cfg struct {
 				Caddy struct {
 					Mode string `json:"mode"`
@@ -1033,7 +1056,7 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 		}
 		// Process is running but no guardian (e.g. panel restarted while proxy kept running).
 		// Find its PID and create a guardian to monitor it.
-		pid := m.findProxyPID(string(proxyType))
+		pid := m.findProxyPID(m.proxyProcessName(proxyType))
 		if pid > 0 {
 			log.Printf("proxy %s: already running (pid %d), attaching guardian", proxyType, pid)
 			m.attachGuardian(proxyType, pid)
@@ -1205,15 +1228,16 @@ guardian.Start(cmd.Process.Pid)
 }
 
 func (m *Manager) stopExisting(proxyType ProxyType) {
+	procName := m.proxyProcessName(proxyType)
 	switch runtime.GOOS {
 	case "windows":
-		exec.Command("taskkill", "/IM", string(proxyType)+".exe", "/F").Run()
+		exec.Command("taskkill", "/IM", procName+".exe", "/F").Run()
 	default:
 		// First try graceful stop via signal
-		exec.Command("pkill", "-f", string(proxyType)).Run()
+		exec.Command("pkill", "-f", procName).Run()
 		time.Sleep(1 * time.Second)
 		// Force kill any remaining processes
-		exec.Command("pkill", "-9", "-f", string(proxyType)).Run()
+		exec.Command("pkill", "-9", "-f", procName).Run()
 		time.Sleep(500 * time.Millisecond)
 	}
 	// Wait for process to fully exit
@@ -1280,12 +1304,13 @@ func (m *Manager) killProxyProcess(proxyType ProxyType) error {
 		log.Printf("proxy %s: tracked PID %d is no longer alive, falling back to pkill", proxyType, pid)
 	}
 
-	// Fallback: pkill
+	// Fallback: pkill using precise binary name
+	procName := m.proxyProcessName(proxyType)
 	switch runtime.GOOS {
 	case "windows":
-		return exec.Command("taskkill", "/IM", string(proxyType)+".exe", "/F").Run()
+		return exec.Command("taskkill", "/IM", procName+".exe", "/F").Run()
 	default:
-		return exec.Command("pkill", "-f", string(proxyType)).Run()
+		return exec.Command("pkill", "-f", procName).Run()
 	}
 }
 
@@ -2066,7 +2091,10 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 			return fmt.Errorf("caddy not installed")
 		}
 		if info.Status != "running" {
-			return fmt.Errorf("caddy is not running (state=%s), use start instead", info.Status)
+			// Caddy is not running — config file is already written to disk,
+			// so it will be picked up on next start. No need to return an error.
+			log.Printf("proxy caddy: not running (state=%s), config saved to disk", info.Status)
+			return nil
 		}
 		binPath := info.Path
 		if strings.HasPrefix(binPath, m.dataDir) {

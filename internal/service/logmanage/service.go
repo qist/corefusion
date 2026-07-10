@@ -135,8 +135,16 @@ func (s *Service) SetCoreConfigSectionGetter(getter CoreConfigSectionGetter) {
 // It reads the real mode and managed flag from the output configs (not the writer internal config)
 // and uses StartWriterManaged to correctly set the paused state.
 func (s *Service) StartAutoWriters() {
+	s.StartAutoWritersForServer(1)
+}
+
+// StartAutoWritersForServer is the same as StartAutoWriters but uses the given serverID
+// for reading configs. This is needed on the Agent where the serverID may differ from 1.
+func (s *Service) StartAutoWritersForServer(serverID int64) {
+	ctx := context.Background()
+
 	// Read proxy output config
-	proxyCfg, _ := s.GetLogOutput(context.Background())
+	proxyCfg, _ := s.GetLogOutputForServer(ctx, serverID)
 	if proxyCfg != nil {
 		s.syncWriterFilePath("nginx", proxyCfg.Nginx.CapturePath)
 		s.syncWriterFilePath("caddy", proxyCfg.Caddy.CapturePath)
@@ -149,7 +157,7 @@ func (s *Service) StartAutoWriters() {
 	}
 
 	// Read core output config
-	coreCfg, _ := s.GetCoreLogOutput(context.Background())
+	coreCfg, _ := s.GetCoreLogOutputForServer(ctx, serverID)
 	if coreCfg != nil {
 		coreModes := map[string]struct {
 			Mode        string

@@ -157,13 +157,10 @@
                 <span style="font-weight:600">{{ row.label }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="t('logManage.mode')" width="280">
+            <el-table-column :label="t('logManage.mode')" width="200">
               <template #default="{row}">
-                <el-radio-group v-model="row.cfg.mode" size="small">
-                  <el-radio-button value="file">{{ t('logManage.modeFile') }}</el-radio-button>
-                  <el-radio-button value="stdout">{{ t('logManage.modeStdout') }}</el-radio-button>
-                  <el-radio-button value="off">{{ t('logManage.modeOff') }}</el-radio-button>
-                </el-radio-group>
+                <el-tag :type="modeTagType(row.cfg.mode)" size="default" effect="dark">{{ modeLabel(row.cfg.mode) }}</el-tag>
+                <span style="margin-left:8px;color:#909399;font-size:12px">{{ t('logManage.modeControlledByProtocol') }}</span>
               </template>
             </el-table-column>
             <el-table-column :label="t('logManage.capturePath')" min-width="200">
@@ -172,14 +169,14 @@
                   v-model="row.cfg.capture_path"
                   size="small"
                   :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}.log`"
-                  :disabled="row.cfg.mode === 'off'"
+                  :disabled="row.cfg.mode !== 'stdout'"
                   style="max-width:300px"
                 />
               </template>
             </el-table-column>
             <el-table-column :label="t('logManage.managed')" width="100">
               <template #default="{row}">
-                <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode === 'off'" />
+                <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
               </template>
             </el-table-column>
           </el-table>
@@ -204,13 +201,10 @@
                 <span style="font-weight:600">{{ row.label }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="t('logManage.mode')" width="280">
+            <el-table-column :label="t('logManage.mode')" width="200">
               <template #default="{row}">
-                <el-radio-group v-model="row.cfg.mode" size="small">
-                  <el-radio-button value="file">{{ t('logManage.modeFile') }}</el-radio-button>
-                  <el-radio-button value="stdout">{{ t('logManage.modeStdout') }}</el-radio-button>
-                  <el-radio-button value="off">{{ t('logManage.modeOff') }}</el-radio-button>
-                </el-radio-group>
+                <el-tag :type="modeTagType(row.cfg.mode)" size="default" effect="dark">{{ modeLabel(row.cfg.mode) }}</el-tag>
+                <span style="margin-left:8px;color:#909399;font-size:12px">{{ t('logManage.modeControlledByProtocol') }}</span>
               </template>
             </el-table-column>
             <el-table-column :label="t('logManage.capturePath')" min-width="200">
@@ -219,14 +213,14 @@
                   v-model="row.cfg.capture_path"
                   size="small"
                   :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}-access.log`"
-                  :disabled="row.cfg.mode === 'off'"
+                  :disabled="row.cfg.mode !== 'stdout'"
                   style="max-width:300px"
                 />
               </template>
             </el-table-column>
             <el-table-column :label="t('logManage.managed')" width="100">
               <template #default="{row}">
-                <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode === 'off'" />
+                <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
               </template>
             </el-table-column>
           </el-table>

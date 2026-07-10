@@ -1730,8 +1730,9 @@ export default {
     // ── Output config ──
     coreLogOutput: 'Core Process Log Output',
     proxyLogOutput: 'Proxy Process Log Output',
-    coreLogOutputHint: 'Configure log output for Xray / sing-box / Hysteria2 / TUIC',
-    proxyLogOutputHint: 'Configure log output for Nginx / Caddy',
+    coreLogOutputHint: 'Log output mode is controlled by the protocol center. Only capture path and managed status can be configured here.',
+modeControlledByProtocol: 'Protocol Center',
+    proxyLogOutputHint: 'Log output mode is controlled by the protocol center. Only capture path and managed status can be configured here.',
     mode: 'Mode',
     modeFile: 'File',
     modeStdout: 'Stdout',

@@ -745,6 +745,7 @@ message ExecuteBinaryResponse {
 message ReadLogFileRequest {
   string log_type = 1;    // xray/singbox/hysteria2/tuic/nginx/caddy
   int32  last_lines = 2;  // 读取最后 N 行（默认 500）
+  string log_path = 3;    // 指定日志文件绝对路径（优先于 log_type 自动解析）
 }
 
 message ReadLogFileResponse {

@@ -1748,6 +1748,7 @@ export default {
     nodeLabel: 'Node',
     remoteNode: 'Remote Node',
     selectLogType: 'Log Type',
+selectLogFile: 'Select Log File',
     nodeLogTypes: 'Available Log Types',
     noLogTypes: 'No logs available for this node',
     viewNodeLog: 'View',

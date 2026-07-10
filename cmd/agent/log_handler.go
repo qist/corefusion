@@ -18,18 +18,100 @@ import (
 )
 
 // handleReadLogFile reads the last N lines from a log file on the agent node.
+// In stdout mode, it first tries to read from the LogBroker's in-memory snapshot
+// (which captures real-time stdout output). If the broker has no data, it falls
+// back to reading the stdout log file (if managed=true and writer is active).
 func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.ReadLogFileResponse {
-	logPath := a.resolveLogFilePath(req.LogType)
-	if logPath == "" {
-		return &agentpb.ReadLogFileResponse{
-			Success: false,
-			Error:   fmt.Sprintf("unknown log type: %s", req.LogType),
-		}
-	}
-
+	logType := req.LogType
 	lastLines := int(req.LastLines)
 	if lastLines <= 0 {
 		lastLines = 500
+	}
+
+	// If a specific log_path is provided, read that file directly (used by
+	// rotation policies that point to a specific file like access.log).
+	// We still check stdout mode via logType for the broker fallback.
+	if req.LogPath != "" {
+		logPath := a.resolveRelPath(req.LogPath)
+
+		// In stdout mode, try LogBroker snapshot first (real-time data)
+		mode := a.getLogMode(logType)
+		if mode == "stdout" && a.logMgr != nil {
+			lines, err := a.logMgr.GetProxyStdoutLog(context.Background(), logType, lastLines)
+			if err == nil && len(lines) > 0 {
+				realLines := []string{}
+				for _, l := range lines {
+					if !strings.Contains(l, "[未运行") && !strings.Contains(l, "未产生标准输出") {
+						realLines = append(realLines, l)
+					}
+				}
+				if len(realLines) > 0 {
+					return &agentpb.ReadLogFileResponse{
+						Success: true,
+						Lines:   realLines,
+						LogPath: fmt.Sprintf("stdout://%s", logType),
+					}
+				}
+			}
+		}
+
+		// Read the specified file directly
+		f, err := os.Open(logPath)
+		if err != nil {
+			return &agentpb.ReadLogFileResponse{
+				Success: false,
+				Error:   fmt.Sprintf("open log file: %v", err),
+				LogPath: logPath,
+			}
+		}
+		defer f.Close()
+
+		lines, err := readLastLinesFromFile(f, lastLines)
+		if err != nil {
+			return &agentpb.ReadLogFileResponse{
+				Success: false,
+				Error:   fmt.Sprintf("read log file: %v", err),
+				LogPath: logPath,
+			}
+		}
+
+		return &agentpb.ReadLogFileResponse{
+			Success: true,
+			Lines:   lines,
+			LogPath: logPath,
+		}
+	}
+
+	// No log_path specified — resolve by log type (original behavior)
+	// In stdout mode, try LogBroker snapshot first (real-time data)
+	mode := a.getLogMode(logType)
+	if mode == "stdout" && a.logMgr != nil {
+		lines, err := a.logMgr.GetProxyStdoutLog(context.Background(), logType, lastLines)
+		if err == nil && len(lines) > 0 {
+			// Filter out placeholder messages
+			realLines := []string{}
+			for _, l := range lines {
+				if !strings.Contains(l, "[未运行") && !strings.Contains(l, "未产生标准输出") {
+					realLines = append(realLines, l)
+				}
+			}
+			if len(realLines) > 0 {
+				return &agentpb.ReadLogFileResponse{
+					Success:  true,
+					Lines:    realLines,
+					LogPath:  fmt.Sprintf("stdout://%s", logType),
+				}
+			}
+		}
+	}
+
+	// Fall back to file reading
+	logPath := a.resolveLogFilePath(logType)
+	if logPath == "" {
+		return &agentpb.ReadLogFileResponse{
+			Success: false,
+			Error:   fmt.Sprintf("unknown log type: %s", logType),
+		}
 	}
 
 	f, err := os.Open(logPath)
@@ -300,7 +382,8 @@ func (a *AgentApp) getLogMode(logType string) string {
 	if isCore {
 		v, err := a.settingRepo.GetByKey(ctx, "core.log_output_config")
 		if err != nil || v == "" {
-			return "file"
+			// No saved config — derive from actual runtime config
+			return a.deriveCoreLogMode(logType)
 		}
 		var cfg struct {
 			Xray      struct{ Mode string `json:"mode"` } `json:"xray"`
@@ -311,10 +394,19 @@ func (a *AgentApp) getLogMode(logType string) string {
 		if json.Unmarshal([]byte(v), &cfg) != nil {
 			return "file"
 		}
+		// For xray and singbox, override with mode derived from actual runtime config
 		switch logType {
 		case "xray":
+			derived := a.deriveCoreLogMode("xray")
+			if derived != "" {
+				return derived
+			}
 			return cfg.Xray.Mode
 		case "singbox":
+			derived := a.deriveCoreLogMode("singbox")
+			if derived != "" {
+				return derived
+			}
 			return cfg.Singbox.Mode
 		case "hysteria2":
 			return cfg.Hysteria2.Mode
@@ -343,6 +435,77 @@ func (a *AgentApp) getLogMode(logType string) string {
 		return cfg.Caddy.Mode
 	}
 	return "file"
+}
+
+// deriveCoreLogMode infers the log output mode for xray/singbox by reading the
+// actual runtime config file. This keeps the Agent's mode in sync with changes
+// made in the protocol center without needing to save the log output config.
+// Returns "" if the mode cannot be determined (caller should fall back to saved config).
+func (a *AgentApp) deriveCoreLogMode(coreType string) string {
+	switch coreType {
+	case "xray":
+		// Read xray.jsonc and infer mode from log section
+		configPath := filepath.Join(a.dataDir, "runtime", "xray.jsonc")
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			return ""
+		}
+		cleaned := stripJSONCComments(string(data))
+		var cfg struct {
+			Log struct {
+				Access   string `json:"access"`
+				Error    string `json:"error"`
+				LogLevel string `json:"loglevel"`
+			} `json:"log"`
+		}
+		if json.Unmarshal([]byte(cleaned), &cfg) != nil {
+			return ""
+		}
+		// off mode
+		if cfg.Log.LogLevel == "none" {
+			return "off"
+		}
+		if cfg.Log.Access == "none" && cfg.Log.Error == "none" {
+			return "off"
+		}
+		// stdout mode — empty string means stdout in xray, /dev/stderr is LogBroker capture
+		if cfg.Log.Access == "" || cfg.Log.Error == "" || cfg.Log.Error == "/dev/stderr" {
+			return "stdout"
+		}
+		// file mode — has actual file paths
+		return "file"
+
+	case "singbox":
+		// Read singbox config and infer mode from log section
+		configPath := filepath.Join(a.dataDir, "runtime", "singbox.json")
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			// Try .jsonc extension
+			configPath = filepath.Join(a.dataDir, "runtime", "singbox.jsonc")
+			data, err = os.ReadFile(configPath)
+			if err != nil {
+				return ""
+			}
+		}
+		cleaned := stripJSONCComments(string(data))
+		var cfg struct {
+			Log struct {
+				Level  string `json:"level"`
+				Output string `json:"output"`
+			} `json:"log"`
+		}
+		if json.Unmarshal([]byte(cleaned), &cfg) != nil {
+			return ""
+		}
+		if cfg.Log.Level == "silent" {
+			return "off"
+		}
+		if cfg.Log.Output == "stderr" || cfg.Log.Output == "" {
+			return "stdout"
+		}
+		return "file"
+	}
+	return ""
 }
 
 // readLastLinesFromFile reads the last N lines from an open file.
@@ -778,6 +941,7 @@ func (a *AgentApp) handleGetWriterStatus(ctx context.Context) map[string]interfa
 		writers = append(writers, map[string]interface{}{
 			"proxy_type":  st.ProxyType,
 			"mode":        st.Mode,
+			"managed":     st.Managed,
 			"active":      st.Active,
 			"paused":      st.Paused,
 			"file_path":   st.FilePath,

@@ -131,21 +131,41 @@ func (s *Service) SetCoreConfigSectionGetter(getter CoreConfigSectionGetter) {
 	s.configGetter = getter
 }
 
-// StartAutoWriters starts writers that were previously enabled.
+// StartAutoWriters starts writers based on the saved LogOutputConfig and CoreLogOutputConfig.
+// It reads the real mode and managed flag from the output configs (not the writer internal config)
+// and uses StartWriterManaged to correctly set the paused state.
 func (s *Service) StartAutoWriters() {
-	for _, pType := range allLogTypes {
-		key := settingKeyLogWriters + "." + pType
-		if s.settingStore == nil {
-			continue
+	// Read proxy output config
+	proxyCfg, _ := s.GetLogOutput(context.Background())
+	if proxyCfg != nil {
+		s.syncWriterFilePath("nginx", proxyCfg.Nginx.CapturePath)
+		s.syncWriterFilePath("caddy", proxyCfg.Caddy.CapturePath)
+		if err := s.StartWriterManaged("nginx", proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed); err != nil {
+			log.Printf("logmanage: auto-start writer for nginx failed: %v", err)
 		}
-		v, err := s.settingStore.GetByKey(context.Background(), key)
-		if err != nil || v == "" {
-			continue
+		if err := s.StartWriterManaged("caddy", proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed); err != nil {
+			log.Printf("logmanage: auto-start writer for caddy failed: %v", err)
 		}
-		// If config exists, the writer was previously enabled
-		cfg := s.loadWriterConfig(pType)
-		if err := s.StartWriter(pType, cfg.Mode); err != nil {
-			log.Printf("logmanage: auto-start writer for %s failed: %v", pType, err)
+	}
+
+	// Read core output config
+	coreCfg, _ := s.GetCoreLogOutput(context.Background())
+	if coreCfg != nil {
+		coreModes := map[string]struct {
+			Mode        string
+			Managed     bool
+			CapturePath string
+		}{
+			"xray":      {coreCfg.Xray.Mode, coreCfg.Xray.Managed, coreCfg.Xray.CapturePath},
+			"singbox":   {coreCfg.Singbox.Mode, coreCfg.Singbox.Managed, coreCfg.Singbox.CapturePath},
+			"hysteria2": {coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed, coreCfg.Hysteria2.CapturePath},
+			"tuic":      {coreCfg.Tuic.Mode, coreCfg.Tuic.Managed, coreCfg.Tuic.CapturePath},
+		}
+		for coreType, m := range coreModes {
+			s.syncWriterFilePath(coreType, m.CapturePath)
+			if err := s.StartWriterManaged(coreType, m.Mode, m.Managed); err != nil {
+				log.Printf("logmanage: auto-start writer for %s failed: %v", coreType, err)
+			}
 		}
 	}
 }
@@ -380,6 +400,12 @@ func (s *Service) subscribeToBroker(proxyType string, writer *LogWriter) {
 		if broker == nil {
 			time.Sleep(2 * time.Second)
 			continue
+		}
+
+		// Write existing snapshot to file first (catches up on lines produced
+		// before the writer subscribed, e.g. process startup output)
+		for _, line := range broker.Snapshot() {
+			writer.WriteLine(line)
 		}
 
 		ch, cancel := broker.Subscribe()
@@ -661,10 +687,8 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 }
 
 // discoverCoreLogs discovers log files for core processes (xray, singbox, hysteria2, tuic).
-// Each core process writes to data/logs/{coreType}.log in file mode,
-// or data/logs/{coreType}-stdout.log in stdout mode.
-// Xray has separate access and error logs in file mode — paths are read from
-// the runtime config file to respect user's protocol center settings.
+// Uses the actual log mode derived from the runtime config (not the stale
+// log_output_config) to decide which logs to discover.
 func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	var logs []DiscoveredLog
 
@@ -673,14 +697,11 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 
 		switch logMode {
 		case "stdout":
-			// stdout mode: LogWriter captures stdout and manages the capture file
-			// (including rotation), so we don't discover it as a separate log.
 			continue
 		case "off":
-			continue // no log file for this core
+			continue
 		default: // "file"
 			if coreType == "xray" {
-				// Read actual access/error paths from the runtime config
 				accessPath, errorPath := s.readXrayRuntimeLogPaths()
 				if errorPath != "" {
 					logs = append(logs, DiscoveredLog{
@@ -699,7 +720,7 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 			} else {
 				logs = append(logs, DiscoveredLog{
 					SourceType: coreType,
-					Domain:     logMode,
+					Domain:     "file",
 					LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s.log", coreType)),
 				})
 			}
@@ -789,6 +810,7 @@ func stripJSONCCommentsGo(s string) string {
 }
 
 // discoverNginxLogs reads log paths from nginx settings.
+// Skips discovery when the proxy log output mode is stdout.
 func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	if s.settingStore == nil {
 		return nil, nil
@@ -806,10 +828,6 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 			logMode = cfg.Nginx.Mode
 		}
 	}
-
-	// In stdout mode, nginx writes to stdout which is captured by LogWriter.
-	// LogWriter manages the stdout capture file and its rotation, so we don't
-	// discover it as a separate log to avoid duplicate rotation.
 	if logMode == "stdout" {
 		return nil, nil
 	}
@@ -858,6 +876,7 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 }
 
 // discoverCaddyLogs reads log paths from caddy site configs.
+// Always discovers file-based log paths regardless of the log_output_config mode.
 // Caddy collects logs per-domain. If LogPath is empty, it defaults to logs/<domain>.log.
 // L4 and SNI sites are excluded as they don't produce HTTP access logs.
 func (s *Service) discoverCaddyLogs(ctx context.Context) ([]DiscoveredLog, error) {

@@ -110,20 +110,20 @@ export function getWriters(serverId = 1) {
   return client.get('/log-manage/writers', { params: { server_id: serverId } })
 }
 
-export function startWriter(type, data) {
-  return client.post(`/log-manage/writers/${type}/start`, data)
+export function startWriter(type, data, serverId = 1) {
+  return client.post(`/log-manage/writers/${type}/start`, data, { params: { server_id: serverId } })
 }
 
-export function stopWriter(type) {
-  return client.post(`/log-manage/writers/${type}/stop`)
+export function stopWriter(type, serverId = 1) {
+  return client.post(`/log-manage/writers/${type}/stop`, null, { params: { server_id: serverId } })
 }
 
-export function updateWriterConfig(type, data) {
-  return client.put(`/log-manage/writers/${type}/config`, data)
+export function updateWriterConfig(type, data, serverId = 1) {
+  return client.put(`/log-manage/writers/${type}/config`, data, { params: { server_id: serverId } })
 }
 
-export function getWriterFiles(type) {
-  return client.get(`/log-manage/writers/${type}/files`)
+export function getWriterFiles(type, serverId = 1) {
+  return client.get(`/log-manage/writers/${type}/files`, { params: { server_id: serverId } })
 }
 
 // ──────────── Node-based Log Management ────────────
@@ -132,12 +132,16 @@ export function listNodeLogs(serverId) {
   return client.get(`/log-manage/nodes/${serverId}/logs`)
 }
 
-export function getNodeLog(serverId, type, lines = 500) {
-  return client.get(`/log-manage/nodes/${serverId}/logs/${type}`, { params: { lines } })
+export function getNodeLog(serverId, type, lines = 500, logPath = '') {
+  const params = { lines }
+  if (logPath) params.log_path = logPath
+  return client.get(`/log-manage/nodes/${serverId}/logs/${type}`, { params })
 }
 
-export function rotateNodeLog(serverId, type) {
-  return client.post(`/log-manage/nodes/${serverId}/logs/${type}/rotate`)
+export function rotateNodeLog(serverId, type, logPath = '') {
+  const params = {}
+  if (logPath) params.log_path = logPath
+  return client.post(`/log-manage/nodes/${serverId}/logs/${type}/rotate`, null, { params })
 }
 
 // ──────────── SSE Stream Helpers ────────────

@@ -403,6 +403,8 @@ func (s *Service) GetLogMode(ctx context.Context, coreType string) string {
 // GetLogModeForServer returns the log mode for a specific server and core type.
 // It reads the per-node key (e.g. "core.log_output_config.2") first, and falls
 // back to the global key ("core.log_output_config") for backward compatibility.
+// For xray and singbox, the mode is overridden from the actual log section in
+// core_configs to stay in sync with changes made in the protocol center.
 // This implements the configsync.LogModeProvider interface.
 func (s *Service) GetLogModeForServer(ctx context.Context, serverID int64, coreType string) string {
 	if s.settingStore == nil {
@@ -424,6 +426,10 @@ func (s *Service) GetLogModeForServer(ctx context.Context, serverID int64, coreT
 	if json.Unmarshal([]byte(v), &cfg) != nil {
 		return "file"
 	}
+
+	// Override modes from actual log section for xray and singbox
+	s.deriveModesFromConfig(ctx, serverID, &cfg)
+
 	switch coreType {
 	case "xray":
 		if cfg.Xray.Mode != "" {

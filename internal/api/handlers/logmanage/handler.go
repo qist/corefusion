@@ -3,6 +3,7 @@ package logmanage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -206,12 +207,39 @@ func (h *Handler) DeletePolicy(c *gin.Context) {
 // --- Manual Rotation ---
 
 // Rotate triggers manual rotation for a specific policy.
+// For remote node policies (ServerID > 1), rotates via gRPC on the agent.
 func (h *Handler) Rotate(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
 	}
+	policy, err := h.svc.GetPolicy(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "policy not found")
+		return
+	}
+
+	// Remote node: rotate via gRPC
+	if policy.ServerID > 1 {
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), policy.ServerID, policy.SourceType)
+		if err != nil {
+			response.InternalError(c, "ROTATE_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{
+			"rotated_files": rotated,
+			"cleaned_files": cleaned,
+			"freed_bytes":   freed,
+		})
+		return
+	}
+
+	// Local node: rotate locally
 	job, err := h.svc.Rotate(c.Request.Context(), id)
 	if err != nil {
 		response.InternalError(c, "ROTATE_FAILED", err.Error())
@@ -496,9 +524,24 @@ func (h *Handler) StartWriter(c *gin.Context) {
 		response.BadRequest(c, "INVALID_MODE", "mode must be stdout or file")
 		return
 	}
-	if err := h.svc.StartWriter(proxyType, req.Mode); err != nil {
-		response.InternalError(c, "START_FAILED", err.Error())
-		return
+ serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID <= 0 {
+		serverID = 1
+	}
+	if serverID == 1 {
+		if err := h.svc.StartWriter(proxyType, req.Mode); err != nil {
+			response.InternalError(c, "START_FAILED", err.Error())
+			return
+		}
+	} else {
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		if err := nodeLogMgr.StartWriterOnServer(c.Request.Context(), serverID, proxyType, req.Mode); err != nil {
+			response.InternalError(c, "START_FAILED", err.Error())
+			return
+		}
 	}
 	response.OK(c, gin.H{"message": "writer started", "type": proxyType, "mode": req.Mode})
 }
@@ -510,9 +553,24 @@ func (h *Handler) StopWriter(c *gin.Context) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
-	if err := h.svc.StopWriter(proxyType); err != nil {
-		response.InternalError(c, "STOP_FAILED", err.Error())
-		return
+ serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID <= 0 {
+		serverID = 1
+	}
+	if serverID == 1 {
+		if err := h.svc.StopWriter(proxyType); err != nil {
+			response.InternalError(c, "STOP_FAILED", err.Error())
+			return
+		}
+	} else {
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		if err := nodeLogMgr.StopWriterOnServer(c.Request.Context(), serverID, proxyType); err != nil {
+			response.InternalError(c, "STOP_FAILED", err.Error())
+			return
+		}
 	}
 	response.OK(c, gin.H{"message": "writer stopped", "type": proxyType})
 }
@@ -529,9 +587,24 @@ func (h *Handler) UpdateWriterConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.svc.UpdateWriterConfig(proxyType, cfg); err != nil {
-		response.InternalError(c, "UPDATE_FAILED", err.Error())
-		return
+ serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	if serverID <= 0 {
+		serverID = 1
+	}
+	if serverID == 1 {
+		if err := h.svc.UpdateWriterConfig(proxyType, cfg); err != nil {
+			response.InternalError(c, "UPDATE_FAILED", err.Error())
+			return
+		}
+	} else {
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		if err := nodeLogMgr.UpdateWriterConfigOnServer(c.Request.Context(), serverID, proxyType, cfg.Mode, int32(cfg.RetainDays), cfg.Compress, int32(cfg.MaxSizeMB)); err != nil {
+			response.InternalError(c, "UPDATE_FAILED", err.Error())
+			return
+		}
 	}
 	response.OK(c, gin.H{"message": "config updated", "type": proxyType})
 }
@@ -674,6 +747,7 @@ func (h *Handler) ProxyStdoutStream(c *gin.Context) {
 // --- Log Viewer ---
 
 // GetLog returns the last N lines of a policy's log file.
+// For remote node policies (ServerID > 1), reads via gRPC from the agent.
 func (h *Handler) GetLog(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -691,6 +765,34 @@ func (h *Handler) GetLog(c *gin.Context) {
 		lines = 500
 	}
 
+	// Remote node: read log via gRPC from the agent
+	if policy.ServerID > 1 {
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		logLines, logPath, err := nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, lines)
+		if err != nil {
+			// Return friendly message instead of 500 error
+			resolvedPath := policy.LogPath
+			if resolvedPath == "" {
+				resolvedPath = policy.SourceType
+			}
+			response.OK(c, gin.H{
+				"lines": []string{
+					fmt.Sprintf("[日志文件不存在] %s", resolvedPath),
+					fmt.Sprintf("[提示] %s", err.Error()),
+				},
+				"path":   resolvedPath,
+				"exists": false,
+			})
+			return
+		}
+		response.OK(c, gin.H{"lines": logLines, "path": logPath, "exists": len(logLines) > 0})
+		return
+	}
+
+	// Local node: read from local file system
 	logLines, err := h.svc.TailLogWithType(c.Request.Context(), policy.LogPath, policy.SourceType, lines)
 	if err != nil {
 		response.InternalError(c, "READ_FAILED", err.Error())
@@ -700,6 +802,7 @@ func (h *Handler) GetLog(c *gin.Context) {
 }
 
 // StreamLog streams new log lines via SSE.
+// For remote node policies (ServerID > 1), polls the agent via gRPC.
 func (h *Handler) StreamLog(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -723,6 +826,61 @@ func (h *Handler) StreamLog(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
+	// Remote node: poll via gRPC
+	if policy.ServerID > 1 {
+		if nodeLogMgr == nil {
+			c.Writer.WriteString("event: log\ndata: [节点日志管理器未配置]\n\n")
+			c.Writer.Flush()
+			return
+		}
+
+		// Send initial snapshot
+		logLines, _, err := nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, lines)
+		if err != nil {
+			// Send friendly error as log content instead of HTTP 500
+			resolvedPath := policy.LogPath
+			if resolvedPath == "" {
+				resolvedPath = policy.SourceType
+			}
+			c.SSEvent("log", fmt.Sprintf("[日志文件不存在] %s", resolvedPath))
+			c.SSEvent("log", fmt.Sprintf("[提示] %s", err.Error()))
+			c.Writer.Flush()
+			return
+		}
+		if len(logLines) > 0 {
+			for _, line := range logLines {
+				c.SSEvent("log", line)
+			}
+			c.Writer.Flush()
+		}
+
+		// Poll for new lines every 2 seconds
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		seen := len(logLines)
+		ctx := c.Request.Context()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				newLines, _, err := nodeLogMgr.ReadLogFileOnServerWithPath(ctx, policy.ServerID, policy.SourceType, policy.LogPath, lines)
+				if err != nil || len(newLines) == 0 {
+					continue
+				}
+				if len(newLines) > seen {
+					for _, line := range newLines[seen:] {
+						c.SSEvent("log", line)
+					}
+					c.Writer.Flush()
+				}
+				seen = len(newLines)
+			}
+		}
+	}
+
+	// Local node: stream from file or broker
 	ch := make(chan string, 64)
 	go h.svc.TailLogStreamWithType(c.Request.Context(), policy.LogPath, policy.SourceType, lines, ch)
 
@@ -747,10 +905,14 @@ func fileExists(path string) bool {
 // NodeLogManager provides log management for remote nodes.
 type NodeLogManager interface {
 	ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error)
+	ReadLogFileOnServerWithPath(ctx context.Context, serverID int64, logType, logPath string, lastLines int) ([]string, string, error)
 	RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error)
 	DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error)
 	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig, nginxSettings string) error
 	GetWriterStatusOnServer(ctx context.Context, serverID int64) ([]map[string]interface{}, error)
+	StartWriterOnServer(ctx context.Context, serverID int64, proxyType, mode string) error
+	StopWriterOnServer(ctx context.Context, serverID int64, proxyType string) error
+	UpdateWriterConfigOnServer(ctx context.Context, serverID int64, proxyType, mode string, retainDays int32, compress bool, maxSizeMB int32) error
 }
 
 // nodeLogMgr is set by the router to enable remote node log management.
@@ -788,6 +950,7 @@ func (h *Handler) ListNodeLogs(c *gin.Context) {
 }
 
 // GetNodeLog returns the last N lines of a log from a specific node.
+// Supports optional log_path query param to read a specific file.
 func (h *Handler) GetNodeLog(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("serverId"), 10, 64)
 	if err != nil {
@@ -803,9 +966,21 @@ func (h *Handler) GetNodeLog(c *gin.Context) {
 	if lines <= 0 {
 		lines = 500
 	}
+	logPath := c.Query("log_path")
 
-	// Local node (serverId=1): use local logmanage service
+	// Local node (serverId=1)
 	if serverID == 1 {
+		// If log_path is specified, read from that file
+		if logPath != "" {
+			logLines, err := h.svc.TailLogWithType(c.Request.Context(), logPath, logType, lines)
+			if err != nil {
+				response.InternalError(c, "READ_FAILED", err.Error())
+				return
+			}
+			response.OK(c, gin.H{"lines": logLines, "type": logType, "server_id": serverID, "log_path": logPath})
+			return
+		}
+		// No log_path: read from stdout broker
 		logLines, err := h.svc.GetProxyStdoutLog(c.Request.Context(), logType, lines)
 		if err != nil {
 			response.InternalError(c, "READ_FAILED", err.Error())
@@ -820,15 +995,32 @@ func (h *Handler) GetNodeLog(c *gin.Context) {
 		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
 		return
 	}
-	logLines, logPath, err := nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, lines)
+	var logLines []string
+	var resolvedPath string
+	if logPath != "" {
+		logLines, resolvedPath, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), serverID, logType, logPath, lines)
+	} else {
+		logLines, resolvedPath, err = nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, lines)
+	}
 	if err != nil {
-		response.InternalError(c, "READ_FAILED", err.Error())
+		resolvedPath := logPath
+		if resolvedPath == "" {
+			resolvedPath = logType
+		}
+		response.OK(c, gin.H{
+			"lines": []string{
+				fmt.Sprintf("[日志文件不存在] %s", resolvedPath),
+				fmt.Sprintf("[提示] %s", err.Error()),
+			},
+			"type": logType, "server_id": serverID, "log_path": resolvedPath, "exists": false,
+		})
 		return
 	}
-	response.OK(c, gin.H{"lines": logLines, "type": logType, "server_id": serverID, "log_path": logPath})
+	response.OK(c, gin.H{"lines": logLines, "type": logType, "server_id": serverID, "log_path": resolvedPath, "exists": len(logLines) > 0})
 }
 
 // StreamNodeLog streams log lines from a specific node via SSE.
+// Supports optional log_path query param to stream a specific file.
 func (h *Handler) StreamNodeLog(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("serverId"), 10, 64)
 	if err != nil {
@@ -840,6 +1032,7 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported log type")
 		return
 	}
+	logPath := c.Query("log_path")
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -851,6 +1044,21 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 
 	// Local node: use local logmanage service
 	if serverID == 1 {
+		// If log_path is specified, stream from file
+		if logPath != "" {
+			ch := make(chan string, 64)
+			go h.svc.TailLogStreamWithType(c.Request.Context(), logPath, logType, 200, ch)
+			c.Stream(func(w io.Writer) bool {
+				line, ok := <-ch
+				if !ok {
+					return false
+				}
+				c.SSEvent("log", line)
+				return true
+			})
+			return
+		}
+		// No log_path: stream from stdout broker
 		ch := make(chan string, 64)
 		go h.svc.StreamProxyStdout(c.Request.Context(), logType, ch)
 		c.Stream(func(w io.Writer) bool {
@@ -864,10 +1072,57 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		return
 	}
 
-	// Remote node: SSE proxy would require streaming gRPC, which is complex.
-	// For now, return a message indicating streaming is not available for remote nodes.
-	c.SSEvent("log", "[远程节点日志流暂不支持，请使用一次性读取]")
-	c.Writer.Flush()
+	// Remote node: poll via gRPC every 2 seconds
+	if nodeLogMgr == nil {
+		c.SSEvent("log", "[节点日志管理器未配置]")
+		c.Writer.Flush()
+		return
+	}
+
+	// First, send existing lines
+	var logLines []string
+	if logPath != "" {
+		logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), serverID, logType, logPath, 500)
+	} else {
+		logLines, _, err = nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, 500)
+	}
+	if err == nil && len(logLines) > 0 {
+		for _, line := range logLines {
+			c.SSEvent("log", line)
+		}
+		c.Writer.Flush()
+	}
+
+	// Then poll for new lines every 2 seconds
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	seen := len(logLines)
+	ctx := c.Request.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			var lines []string
+			if logPath != "" {
+				lines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(ctx, serverID, logType, logPath, 500)
+			} else {
+				lines, _, err = nodeLogMgr.ReadLogFileOnServer(ctx, serverID, logType, 500)
+			}
+			if err != nil || len(lines) == 0 {
+				continue
+			}
+			// Send only new lines
+			if len(lines) > seen {
+				for _, line := range lines[seen:] {
+					c.SSEvent("log", line)
+				}
+				c.Writer.Flush()
+			}
+			seen = len(lines)
+		}
+	}
 }
 
 // RotateNodeLog triggers log rotation on a specific node.

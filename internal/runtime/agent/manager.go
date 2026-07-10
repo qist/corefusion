@@ -1668,28 +1668,51 @@ func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID
 }
 
 // ReadLogFileOnServer reads the last N lines of a log file from a node (local or remote).
+// If logPath is non-empty, it reads that specific file; otherwise it resolves by logType.
 func (m *NodeServerManager) ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error) {
+	return m.ReadLogFileOnServerWithPath(ctx, serverID, logType, "", lastLines)
+}
+
+// ReadLogFileOnServerWithPath reads the last N lines of a specific log file from a node.
+// If logPath is non-empty, the agent reads that file directly instead of resolving by logType.
+func (m *NodeServerManager) ReadLogFileOnServerWithPath(ctx context.Context, serverID int64, logType, logPath string, lastLines int) ([]string, string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return nil, "", fmt.Errorf("local agent not configured")
 		}
-		// For local: read directly from disk
-		logPath := filepath.Join(m.localAgent.GetDataDir(), "logs", logType+".log")
+		// For local: if logPath is specified, read that file directly
+		if logPath != "" {
+			resolved := logPath
+			if !filepath.IsAbs(resolved) {
+				resolved = filepath.Join(m.localAgent.GetDataDir(), resolved)
+			}
+			data, err := os.ReadFile(resolved)
+			if err != nil {
+				return nil, resolved, err
+			}
+			lines := strings.Split(string(data), "\n")
+			if len(lines) > lastLines {
+				lines = lines[len(lines)-lastLines:]
+			}
+			return lines, resolved, nil
+		}
+		// Fall back to logType-based resolution
+		resolved := filepath.Join(m.localAgent.GetDataDir(), "logs", logType+".log")
 		switch logType {
 		case "nginx":
-			logPath = filepath.Join(m.localAgent.GetDataDir(), "logs", "nginx-error.log")
+			resolved = filepath.Join(m.localAgent.GetDataDir(), "logs", "nginx-error.log")
 		case "caddy":
-			logPath = filepath.Join(m.localAgent.GetDataDir(), "logs", "caddy-access.log")
+			resolved = filepath.Join(m.localAgent.GetDataDir(), "logs", "caddy-access.log")
 		}
-		data, err := os.ReadFile(logPath)
+		data, err := os.ReadFile(resolved)
 		if err != nil {
-			return nil, logPath, err
+			return nil, resolved, err
 		}
 		lines := strings.Split(string(data), "\n")
 		if len(lines) > lastLines {
 			lines = lines[len(lines)-lastLines:]
 		}
-		return lines, logPath, nil
+		return lines, resolved, nil
 	}
 
 	// Remote: send via heartbeat stream
@@ -1698,6 +1721,7 @@ func (m *NodeServerManager) ReadLogFileOnServer(ctx context.Context, serverID in
 		Command: &agentpb.PanelCommand_ReadLogFile{
 			ReadLogFile: &agentpb.ReadLogFileRequest{
 				LogType:   logType,
+				LogPath:   logPath,
 				LastLines: int32(lastLines),
 			},
 		},
@@ -1875,4 +1899,69 @@ func (m *NodeServerManager) GetWriterStatusOnServer(ctx context.Context, serverI
 		}
 	}
 	return writers, nil
+}
+
+// StartWriterOnServer starts a log writer on a remote node via gRPC.
+func (m *NodeServerManager) StartWriterOnServer(ctx context.Context, serverID int64, proxyType, mode string) error {
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_StartWriter{
+			StartWriter: &agentpb.StartWriterRequest{
+				ProxyType: proxyType,
+				Mode:      mode,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+// StopWriterOnServer stops a log writer on a remote node via gRPC.
+func (m *NodeServerManager) StopWriterOnServer(ctx context.Context, serverID int64, proxyType string) error {
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_StopWriter{
+			StopWriter: &agentpb.StopWriterRequest{
+				ProxyType: proxyType,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+// UpdateWriterConfigOnServer updates a log writer's config on a remote node via gRPC.
+func (m *NodeServerManager) UpdateWriterConfigOnServer(ctx context.Context, serverID int64, proxyType, mode string, retainDays int32, compress bool, maxSizeMB int32) error {
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_UpdateWriterConfig{
+			UpdateWriterConfig: &agentpb.UpdateWriterConfigRequest{
+				ProxyType:  proxyType,
+				Mode:       mode,
+				RetainDays: retainDays,
+				Compress:   compress,
+				MaxSizeMb:  maxSizeMB,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 10*time.Second)
+	if err != nil {
+		return err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
 }

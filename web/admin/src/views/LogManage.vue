@@ -457,6 +457,22 @@
                 </el-option>
               </el-select>
 
+              <el-select
+                v-if="viewerLogFiles.length > 0"
+                v-model="viewerLogPath"
+                :placeholder="t('logManage.selectLogFile')"
+                style="width:280px;margin-left:12px"
+                clearable
+                @change="loadViewerLog"
+              >
+                <el-option
+                  v-for="f in viewerLogFiles"
+                  :key="f.log_path"
+                  :value="f.log_path"
+                  :label="f.domain ? `${f.domain} (${f.log_path})` : f.log_path"
+                />
+              </el-select>
+
               <el-input-number
                 v-model="viewerLines"
                 :min="50"
@@ -799,6 +815,8 @@ const nodeServers = ref([])
 const viewerNodeId = ref(0)
 const viewerLogType = ref('')
 const viewerLogTypes = ref([])
+const viewerLogPath = ref('')
+const viewerLogFiles = ref([])
 const viewerLines = ref(500)
 const viewerLoading = ref(false)
 const viewerRotating = ref(false)
@@ -1139,6 +1157,8 @@ async function showJobs(row) {
 async function onViewerNodeChange() {
   viewerLogType.value = ''
   viewerLogTypes.value = []
+  viewerLogPath.value = ''
+  viewerLogFiles.value = []
   logLines.value = []
   closeLogStream()
   if (viewerNodeId.value === 0) {
@@ -1151,7 +1171,8 @@ async function onViewerNodeChange() {
     // Remote node: fetch available log types
     try {
       const r = await logApi.listNodeLogs(viewerNodeId.value)
-      viewerLogTypes.value = (r?.types || r || []).map(t => {
+      const types = r?.log_types || r?.types || (Array.isArray(r) ? r : [])
+      viewerLogTypes.value = types.map(t => {
         if (typeof t === 'string') return { type: t, label: t }
         return t
       })
@@ -1163,9 +1184,24 @@ async function onViewerNodeChange() {
 }
 
 function onViewerLogTypeChange() {
+  viewerLogPath.value = ''
+  viewerLogFiles.value = []
   logLines.value = []
   closeLogStream()
+  loadViewerLogFiles()
   loadViewerLog()
+}
+
+async function loadViewerLogFiles() {
+  if (!viewerLogType.value) return
+  viewerLogFiles.value = []
+  try {
+    const r = await logApi.discoverLogs(viewerNodeId.value || 1)
+    const all = Array.isArray(r) ? r : []
+    viewerLogFiles.value = all.filter(d => d.source_type === viewerLogType.value)
+  } catch {
+    viewerLogFiles.value = []
+  }
 }
 
 async function loadViewerLog() {
@@ -1177,50 +1213,62 @@ async function loadViewerLog() {
 
   try {
     if (viewerNodeId.value === 0) {
-      // Local: try file-based (policy) first, then stdout
+      // Local node
       const type = viewerLogType.value
-      const policy = policies.value.find(p => p.source_type === type)
+      const logPath = viewerLogPath.value
       let gotData = false
 
-      // 1. Try policy-based file read first
-      if (policy) {
+      if (logPath) {
+        // Specific file selected: read via node API with log_path
         try {
-          const pr = await logApi.getPolicyLog(policy.id, viewerLines.value)
-          if (pr?.lines && pr.lines.length > 0) {
-            // Check if the lines are actual data (not "[日志文件不存在]" placeholder)
-            const firstLine = pr.lines[0] || ''
-            if (!firstLine.includes('[日志文件不存在]') && !firstLine.includes('[未运行')) {
-              logLines.value = pr.lines
-              gotData = true
-            }
-          }
-        } catch { /* noop */ }
-      }
-
-      // 2. If no file data, try stdout broker
-      if (!gotData) {
-        try {
-          const r = isCoreType(type)
-            ? await logApi.getCoreStdoutLog(type, viewerLines.value)
-            : await logApi.getProxyStdoutLog(type, viewerLines.value)
+          const r = await logApi.getNodeLog(1, type, viewerLines.value, logPath)
           if (r?.lines && r.lines.length > 0) {
-            // Filter out placeholder messages
-            const realLines = r.lines.filter(l => !l.includes('[未运行'))
-            if (realLines.length > 0) {
-              logLines.value = realLines
+            const firstLine = r.lines[0] || ''
+            if (!firstLine.includes('[日志文件不存在]')) {
+              logLines.value = r.lines
               gotData = true
             }
           }
         } catch { /* noop */ }
+      } else {
+        // No specific file: try policy-based file read first, then stdout
+        const policy = policies.value.find(p => p.source_type === type)
+        // 1. Try policy-based file read first
+        if (policy) {
+          try {
+            const pr = await logApi.getPolicyLog(policy.id, viewerLines.value)
+            if (pr?.lines && pr.lines.length > 0) {
+              const firstLine = pr.lines[0] || ''
+              if (!firstLine.includes('[日志文件不存在]') && !firstLine.includes('[未运行')) {
+                logLines.value = pr.lines
+                gotData = true
+              }
+            }
+          } catch { /* noop */ }
+        }
+        // 2. If no file data, try stdout broker
+        if (!gotData) {
+          try {
+            const r = isCoreType(type)
+              ? await logApi.getCoreStdoutLog(type, viewerLines.value)
+              : await logApi.getProxyStdoutLog(type, viewerLines.value)
+            if (r?.lines && r.lines.length > 0) {
+              const realLines = r.lines.filter(l => !l.includes('[未运行'))
+              if (realLines.length > 0) {
+                logLines.value = realLines
+                gotData = true
+              }
+            }
+          } catch { /* noop */ }
+        }
       }
-
       // 3. If still no data, show informative message
       if (!gotData) {
         logLines.value = [t('logManage.noLogContent')]
       }
     } else {
       // Remote node
-      const r = await logApi.getNodeLog(viewerNodeId.value, viewerLogType.value, viewerLines.value)
+      const r = await logApi.getNodeLog(viewerNodeId.value, viewerLogType.value, viewerLines.value, viewerLogPath.value)
       logLines.value = r?.lines || [t('logManage.noLogContent')]
     }
     await nextTick()
@@ -1237,19 +1285,28 @@ async function loadViewerLog() {
 function startViewerStream() {
   closeLogStream()
   const type = viewerLogType.value
+  if (!type) return
+  const logPath = viewerLogPath.value
   let path
   if (viewerNodeId.value === 0) {
-    // Local stream
-    if (isCoreType(type)) {
-      path = `/log-manage/core/${type}/stdout-stream`
+    if (logPath) {
+      // Local: stream from specific file via node API
+      path = `/log-manage/nodes/1/logs/${type}/stream`
     } else {
-      path = `/log-manage/proxy/${type}/stdout-stream`
+      // Local: stream from stdout broker
+      if (isCoreType(type)) {
+        path = `/log-manage/core/${type}/stdout-stream`
+      } else {
+        path = `/log-manage/proxy/${type}/stdout-stream`
+      }
     }
   } else {
     // Remote node stream
     path = `/log-manage/nodes/${viewerNodeId.value}/logs/${type}/stream`
   }
-  const url = logApi.buildSSEUrl(path)
+  const params = {}
+  if (logPath) params.log_path = logPath
+  const url = logApi.buildSSEUrl(path, params)
   eventSource = logApi.createSSE(url)
 
   eventSource.addEventListener('log', (e) => {
@@ -1281,7 +1338,7 @@ async function handleRotateNodeLog() {
       }
     } else {
       // Remote
-      await logApi.rotateNodeLog(viewerNodeId.value, viewerLogType.value)
+      await logApi.rotateNodeLog(viewerNodeId.value, viewerLogType.value, viewerLogPath.value)
       ElMessage.success(t('logManage.nodeLogRotateSuccess'))
     }
     fetchStatus()
@@ -1308,7 +1365,9 @@ async function loadStdoutLog(type) {
     const r = isCoreType(type)
       ? await logApi.getCoreStdoutLog(type, 500, selectedServerId.value)
       : await logApi.getProxyStdoutLog(type, 500, selectedServerId.value)
-    logLines.value = r?.lines || []
+    // Filter out placeholder messages
+    const lines = (r?.lines || []).filter(l => !l.includes('[未运行') && !l.includes('未产生标准输出'))
+    logLines.value = lines.length > 0 ? lines : [t('logManage.noLogContent') || '暂无日志内容']
     await nextTick()
     scrollToBottom()
     startStdoutStream(type)
@@ -1397,7 +1456,7 @@ async function onWriterManagedToggle(type, val) {
 async function handleSaveWriterConfig() {
   writerConfigSaving.value = true
   try {
-    await logApi.updateWriterConfig(writerConfigType.value, writerForm.value)
+    await logApi.updateWriterConfig(writerConfigType.value, writerForm.value, selectedServerId.value)
     ElMessage.success(t('common.success'))
     writerConfigVisible.value = false
     await fetchWriterStatuses()
@@ -1411,7 +1470,7 @@ async function showWriterFiles(type) {
   writerFilesVisible.value = true
   writerFiles.value = []
   try {
-    const r = await logApi.getWriterFiles(type)
+    const r = await logApi.getWriterFiles(type, selectedServerId.value)
     writerFiles.value = Array.isArray(r) ? r : (r?.files || [])
   } catch { /* noop */ }
 }

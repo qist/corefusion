@@ -996,12 +996,15 @@ func (s *Service) GetStatusForServer(ctx context.Context, serverID int64) (*Stat
 	}
 
 	status := &Status{
-		TotalPolicies:  len(policies),
-		ScheduledCount: s.scheduler.ActiveJobs(),
+		TotalPolicies: len(policies),
 	}
 	for _, p := range policies {
 		if p.Enabled {
 			status.EnabledCount++
+			// A policy is "scheduled" if it's enabled and has a rotate cron
+			if p.RotateCron != "" {
+				status.ScheduledCount++
+			}
 		}
 	}
 	return status, nil

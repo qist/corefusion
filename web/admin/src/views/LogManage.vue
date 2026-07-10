@@ -708,7 +708,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
@@ -1544,6 +1544,13 @@ function onLogScroll() {
 }
 
 // ═══════════════ Lifecycle ═══════════════
+
+// Auto-initialize viewer when tab is first opened
+watch(activeTab, (val) => {
+  if (val === 'viewer' && viewerLogTypes.value.length === 0) {
+    onViewerNodeChange()
+  }
+})
 
 onMounted(() => {
   fetchData()

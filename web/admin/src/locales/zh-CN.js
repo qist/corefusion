@@ -1737,8 +1737,9 @@ export default {
     // ── Output config ──
     coreLogOutput: '核心进程日志输出',
     proxyLogOutput: '代理进程日志输出',
-    coreLogOutputHint: '配置 Xray / sing-box / Hysteria2 / TUIC 的日志输出方式',
-    proxyLogOutputHint: '配置 Nginx / Caddy 的日志输出方式',
+    coreLogOutputHint: '日志输出模式由协议中心控制，此处仅可配置采集路径和托管状态',
+modeControlledByProtocol: '协议中心控制',
+    proxyLogOutputHint: '日志输出模式由协议中心控制，此处仅可配置采集路径和托管状态',
     mode: '模式',
     modeFile: '文件',
     modeStdout: '标准输出',

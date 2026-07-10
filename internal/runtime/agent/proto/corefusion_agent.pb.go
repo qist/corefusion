@@ -3893,6 +3893,8 @@ type SyncDataRequest struct {
 	CaddySniSettings string `protobuf:"bytes,13,opt,name=caddy_sni_settings,json=caddySniSettings,proto3" json:"caddy_sni_settings,omitempty"`
 	// 日志输出配置（JSON 格式，包含 nginx/caddy 的 mode 设置）
 	LogOutputConfig string `protobuf:"bytes,14,opt,name=log_output_config,json=logOutputConfig,proto3" json:"log_output_config,omitempty"`
+	// 核心日志输出配置（JSON 格式，包含 xray/singbox/hysteria2/tuic 的 mode 设置）
+	CoreLogOutputConfig string `protobuf:"bytes,23,opt,name=core_log_output_config,json=coreLogOutputConfig,proto3" json:"core_log_output_config,omitempty"`
 	// Nginx 是否手动停止
 	NginxManuallyStopped bool `protobuf:"varint,15,opt,name=nginx_manually_stopped,json=nginxManuallyStopped,proto3" json:"nginx_manually_stopped,omitempty"`
 	// Caddy 是否手动停止
@@ -4034,6 +4036,13 @@ func (x *SyncDataRequest) GetCaddySniSettings() string {
 func (x *SyncDataRequest) GetLogOutputConfig() string {
 	if x != nil {
 		return x.LogOutputConfig
+	}
+	return ""
+}
+
+func (x *SyncDataRequest) GetCoreLogOutputConfig() string {
+	if x != nil {
+		return x.CoreLogOutputConfig
 	}
 	return ""
 }
@@ -6711,7 +6720,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x16ListInterfacesResponse\x12\x1e\n" +
 	"\n" +
 	"interfaces\x18\x01 \x03(\tR\n" +
-	"interfaces\"\xaa\t\n" +
+	"interfaces\"\xdf\t\n" +
 	"\x0fSyncDataRequest\x12\x1b\n" +
 	"\tserver_id\x18\x01 \x01(\x03R\bserverId\x12G\n" +
 	"\fcore_configs\x18\x02 \x03(\v2$.corefusion.agent.v1.CoreConfigEntryR\vcoreConfigs\x12P\n" +
@@ -6727,7 +6736,8 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\fcertificates\x18\v \x03(\v2%.corefusion.agent.v1.CertificateEntryR\fcertificates\x12%\n" +
 	"\x0enginx_settings\x18\f \x01(\tR\rnginxSettings\x12,\n" +
 	"\x12caddy_sni_settings\x18\r \x01(\tR\x10caddySniSettings\x12*\n" +
-	"\x11log_output_config\x18\x0e \x01(\tR\x0flogOutputConfig\x124\n" +
+	"\x11log_output_config\x18\x0e \x01(\tR\x0flogOutputConfig\x123\n" +
+	"\x16core_log_output_config\x18\x17 \x01(\tR\x13coreLogOutputConfig\x124\n" +
 	"\x16nginx_manually_stopped\x18\x0f \x01(\bR\x14nginxManuallyStopped\x124\n" +
 	"\x16caddy_manually_stopped\x18\x10 \x01(\bR\x14caddyManuallyStopped\x12(\n" +
 	"\x10nginx_auto_start\x18\x11 \x01(\bR\x0enginxAutoStart\x12,\n" +

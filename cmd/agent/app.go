@@ -16,6 +16,7 @@ import (
 	binariesSvc "corefusion/internal/service/binaries"
 	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 
@@ -163,6 +164,10 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// Wire core log broker provider so logmanage can read core process stdout
 	logMgr.SetCoreLogBrokerProvider(&agentCoreLogBrokerAdapter{processMgr: procMgr})
 
+	// Wire core config section getter so logmanage can derive output mode from
+	// the actual xray/singbox log section (same as Panel)
+	logMgr.SetCoreConfigSectionGetter(&agentCoreConfigGetter{})
+
 	app := &AgentApp{
 		cfg:                cfg,
 		dataDir:            dataDir,
@@ -215,6 +220,27 @@ func (a *agentCoreLogBrokerAdapter) GetCoreLogBroker(coreType string) logManageS
 	return broker // *process.LogBroker implements LogBrokerReader (Snapshot + Subscribe)
 }
 
+// agentCoreConfigGetter adapts the local DB to logmanage.CoreConfigSectionGetter.
+// It reads core_config sections from the Agent's local SQLite database, allowing
+// the log management service to derive the actual log output mode from the
+// xray/singbox log section (same as the Panel).
+type agentCoreConfigGetter struct{}
+
+func (g *agentCoreConfigGetter) GetSection(ctx context.Context, serverID int64, coreType, section string) (interface{}, error) {
+	var cfg entity.CoreConfig
+	err := db.DB.WithContext(ctx).
+		Where("server_id = ? AND core_type = ? AND section = ?", serverID, coreType, section).
+		First(&cfg).Error
+	if err != nil {
+		return nil, err
+	}
+	var val interface{}
+	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &val); err != nil {
+		return nil, fmt.Errorf("invalid JSON in %s/%s: %w", coreType, section, err)
+	}
+	return val, nil
+}
+
 // syncGithubAccelSettings writes GitHub acceleration config to the Agent's local
 // settings DB so that installer and proxyMgr can use it for downloads.
 func (a *AgentApp) syncGithubAccelSettings(ctx context.Context, accelDomain, proxyURL string) {
@@ -250,7 +276,7 @@ func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 	// This restores previously enabled LogWriters that subscribe to proxy/core
 	// LogBrokers and persist captured stdout to logs/{type}-stdout.log files.
 	if a.logMgr != nil {
-		a.logMgr.StartAutoWriters()
+		a.logMgr.StartAutoWritersForServer(a.cfg.Panel.ServerID)
 		a.logMgr.Start()
 		log.Println("[Agent] log management service started (LogWriter + rotation scheduler)")
 	}

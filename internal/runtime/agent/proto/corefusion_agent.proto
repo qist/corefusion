@@ -600,6 +600,9 @@ message SyncDataRequest {
   // 日志输出配置（JSON 格式，包含 nginx/caddy 的 mode 设置）
   string log_output_config = 14;
 
+  // 核心日志输出配置（JSON 格式，包含 xray/singbox/hysteria2/tuic 的 mode 设置）
+  string core_log_output_config = 23;
+
   // Nginx 是否手动停止
   bool nginx_manually_stopped = 15;
 

@@ -375,6 +375,16 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			log.Printf("[DataSyncBuilder] server %d: log output config from global (%d bytes)", serverID, len(v))
 		}
 
+		// Core log output config
+		coreLogOutputKey := perNodeSettingsKey("core.log_output_config", serverID)
+		if v, err := rdp.systemSettingRepo.GetByKey(ctx, coreLogOutputKey); err == nil && v != "" {
+			req.CoreLogOutputConfig = v
+			log.Printf("[DataSyncBuilder] server %d: core log output config from %s (%d bytes)", serverID, coreLogOutputKey, len(v))
+		} else if v, err := rdp.systemSettingRepo.GetByKey(ctx, "core.log_output_config"); err == nil && v != "" {
+			req.CoreLogOutputConfig = v
+			log.Printf("[DataSyncBuilder] server %d: core log output config from global (%d bytes)", serverID, len(v))
+		}
+
 		// Proxy manually_stopped config (for auto-start on agent startup)
 		nginxManuallyStoppedKey := perNodeSettingsKey("proxy.nginx.manually_stopped", serverID)
 		if v, err := rdp.systemSettingRepo.GetByKey(ctx, nginxManuallyStoppedKey); err == nil && v == "true" {

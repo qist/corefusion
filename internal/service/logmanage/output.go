@@ -96,6 +96,25 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 	// Get old config to detect mode changes
 	oldCfg, _ := s.GetLogOutputForServer(ctx, serverID)
 
+	// If mode changed (e.g. protocol center switched it), reset managed to false.
+	// The user must manually enable managed after a mode change.
+	if oldCfg != nil {
+		if oldCfg.Nginx.Mode != cfg.Nginx.Mode {
+			cfg.Nginx.Managed = false
+		}
+		if oldCfg.Caddy.Mode != cfg.Caddy.Mode {
+			cfg.Caddy.Managed = false
+		}
+	}
+
+	// Auto-fix: managed should only be true when mode is stdout
+	if cfg.Nginx.Mode != "stdout" {
+		cfg.Nginx.Managed = false
+	}
+	if cfg.Caddy.Mode != "stdout" {
+		cfg.Caddy.Managed = false
+	}
+
 	key := perNodeKey(settingKeyLogOutput, serverID)
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -255,8 +274,47 @@ func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64)
 		saved.Tuic.Mode = "file"
 	}
 
+	// Remember the stored modes before deriving from actual config
+	storedXrayMode := saved.Xray.Mode
+	storedSingboxMode := saved.Singbox.Mode
+
 	// Override modes from actual log section for xray and singbox
 	s.deriveModesFromConfig(ctx, serverID, &saved)
+
+	// If mode changed (protocol center switched it), reset managed to false.
+	// The user must manually enable managed after a mode change.
+	modeChanged := false
+	if saved.Xray.Mode != storedXrayMode {
+		saved.Xray.Managed = false
+		modeChanged = true
+	}
+	if saved.Singbox.Mode != storedSingboxMode {
+		saved.Singbox.Managed = false
+		modeChanged = true
+	}
+
+	// Auto-fix: managed should only be true when mode is stdout
+	if saved.Xray.Mode != "stdout" {
+		saved.Xray.Managed = false
+	}
+	if saved.Singbox.Mode != "stdout" {
+		saved.Singbox.Managed = false
+	}
+	if saved.Hysteria2.Mode != "stdout" {
+		saved.Hysteria2.Managed = false
+	}
+	if saved.Tuic.Mode != "stdout" {
+		saved.Tuic.Managed = false
+	}
+
+	// If mode changed, persist the corrected config so that SyncData
+	// sends the right managed values to remote agents.
+	if modeChanged {
+		data, _ := json.Marshal(&saved)
+		if len(data) > 0 {
+			_ = s.settingStore.Set(ctx, key, string(data))
+		}
+	}
 
 	return &saved, nil
 }
@@ -345,6 +403,40 @@ func (s *Service) SaveCoreLogOutput(ctx context.Context, cfg *CoreLogOutputConfi
 func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64, cfg *CoreLogOutputConfig) error {
 	if s.settingStore == nil {
 		return nil
+	}
+
+	// Get old config to detect mode changes
+	oldCfg, _ := s.GetCoreLogOutputForServer(ctx, serverID)
+
+	// If mode changed (e.g. protocol center switched it), reset managed to false.
+	// The user must manually enable managed after a mode change.
+	if oldCfg != nil {
+		if oldCfg.Xray.Mode != cfg.Xray.Mode {
+			cfg.Xray.Managed = false
+		}
+		if oldCfg.Singbox.Mode != cfg.Singbox.Mode {
+			cfg.Singbox.Managed = false
+		}
+		if oldCfg.Hysteria2.Mode != cfg.Hysteria2.Mode {
+			cfg.Hysteria2.Managed = false
+		}
+		if oldCfg.Tuic.Mode != cfg.Tuic.Mode {
+			cfg.Tuic.Managed = false
+		}
+	}
+
+	// Auto-fix: managed should only be true when mode is stdout
+	if cfg.Xray.Mode != "stdout" {
+		cfg.Xray.Managed = false
+	}
+	if cfg.Singbox.Mode != "stdout" {
+		cfg.Singbox.Managed = false
+	}
+	if cfg.Hysteria2.Mode != "stdout" {
+		cfg.Hysteria2.Managed = false
+	}
+	if cfg.Tuic.Mode != "stdout" {
+		cfg.Tuic.Managed = false
 	}
 
 	key := perNodeKey(settingKeyCoreLogOutput, serverID)

@@ -122,6 +122,8 @@ func (s *Service) httpClientWithAccel(ctx context.Context) *http.Client {
 }
 
 // SeedDefaults creates the default Loyalsoldier source if not exists.
+// Default files geoip.dat and geosite.dat are pre-selected with direct download
+// URLs so they are available immediately without depending on the GitHub API.
 func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 	if serverID == 0 {
 		serverID = 1
@@ -138,48 +140,66 @@ func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 
 	src := &entity.RuleSource{
 		ServerID: serverID,
-		Name:    "Loyalsoldier v2ray-rules-dat",
-		RepoURL: "Loyalsoldier/v2ray-rules-dat",
-		Enabled: false,
+		Name:     "Loyalsoldier v2ray-rules-dat",
+		RepoURL:  "Loyalsoldier/v2ray-rules-dat",
+		Enabled:  false,
 		SyncCron: "0 3 * * *",
-		Status:  "idle",
+		Status:   "idle",
 	}
 	if err := s.sourceRepo.Create(ctx, src); err != nil {
 		return err
 	}
 
-	// Fetch release and add default files
+	// Pre-select default files with direct download URLs.
+	// This ensures geoip.dat and geosite.dat are available in the UI and
+	// can be synced immediately without depending on the GitHub API.
+	defaultFiles := []struct {
+		name        string
+		downloadURL string
+	}{
+		{"geoip.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"},
+		{"geosite.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"},
+	}
+	for _, df := range defaultFiles {
+		rule := &entity.GeoRuleFile{
+			ServerID:    serverID,
+			SourceID:    src.ID,
+			Name:        df.name,
+			FileName:    df.name,
+			DownloadURL: df.downloadURL,
+			AutoSync:    true,
+			Status:      "available",
+		}
+		if err := s.fileRepo.Create(ctx, rule); err != nil {
+			log.Printf("seed: failed to create rule %s: %v", df.name, err)
+		} else {
+			log.Printf("seed: added default rule %s", df.name)
+		}
+	}
+
+	// Asynchronously fetch the latest release tag to update version and
+	// precise download URLs from GitHub. This is optional — the direct URLs
+	// above are sufficient for downloading.
 	go func() {
 		time.Sleep(2 * time.Second) // Wait for server to be ready
 		ctx := context.Background()
 		assets, tag, err := s.FetchReleaseAssets(ctx, src.ID)
 		if err != nil {
-			log.Printf("seed: failed to fetch assets: %v", err)
+			log.Printf("seed: failed to fetch assets (using direct URLs as fallback): %v", err)
 			return
 		}
-		defaultFiles := []string{"geoip.dat", "geosite.dat"}
 		assetMap := make(map[string]ReleaseAsset)
 		for _, a := range assets {
 			assetMap[a.Name] = a
 		}
-		for _, name := range defaultFiles {
-			if asset, ok := assetMap[name]; ok {
-				rule := &entity.GeoRuleFile{
-					ServerID:    serverID,
-					SourceID:    src.ID,
-					Name:        name,
-					FileName:    name,
-					DownloadURL: asset.DownloadURL,
-					FileSize:    asset.Size,
-					Version:     tag,
-					AutoSync:    true,
-					Status:      "available",
-				}
-				if err := s.fileRepo.Create(nil, rule); err != nil {
-					log.Printf("seed: failed to create rule %s: %v", name, err)
-				} else {
-					log.Printf("seed: added default rule %s", name)
-				}
+		// Update file records with precise download URLs and version from GitHub
+		files, _ := s.fileRepo.ListBySource(ctx, src.ID)
+		for _, f := range files {
+			if asset, ok := assetMap[f.FileName]; ok {
+				f.DownloadURL = asset.DownloadURL
+				f.FileSize = asset.Size
+				f.Version = tag
+				s.fileRepo.Update(ctx, &f)
 			}
 		}
 		src.LastSyncTag = tag
@@ -187,6 +207,22 @@ func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 	}()
 
 	return nil
+}
+
+// EnsureDefaultsAndSync ensures default geo rule sources and files exist for the
+// given server, then triggers an async sync to download them. This is intended
+// to be called after a core binary is installed so that geoip.dat/geosite.dat
+// are available for the core to use.
+func (s *Service) EnsureDefaultsAndSync(serverID int64) {
+	if serverID == 0 {
+		serverID = 1
+	}
+	// Ensure default source and files exist (idempotent)
+	if err := s.SeedDefaults(context.Background(), serverID); err != nil {
+		log.Printf("EnsureDefaultsAndSync: SeedDefaults failed: %v", err)
+	}
+	// Trigger async sync to download the files
+	s.StartSyncAllByServer(serverID)
 }
 
 // --- Rule Source CRUD ---

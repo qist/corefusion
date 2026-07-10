@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	geoRuleSvc "corefusion/internal/service/georule"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	nodeserverSvc "corefusion/internal/service/nodeserver"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
@@ -23,11 +24,12 @@ import (
 
 // Handler handles node server HTTP requests.
 type Handler struct {
-	svc             *nodeserverSvc.Service
-	coreConfigSvc   *coreconfigSvc.Service
+	svc              *nodeserverSvc.Service
+	coreConfigSvc    *coreconfigSvc.Service
 	inboundConfigSvc *inboundconfigSvc.Service
 	outboundConfigSvc *outboundconfigSvc.Service
-	proxyH          *system.ProxyHandler
+	proxyH           *system.ProxyHandler
+	geoRuleSvc       *geoRuleSvc.Service
 }
 
 // NewHandler creates a new node server handler.
@@ -53,6 +55,11 @@ func (h *Handler) SetOutboundConfigService(svc *outboundconfigSvc.Service) {
 // SetProxyHandler sets the proxy handler for local proxy management delegation.
 func (h *Handler) SetProxyHandler(ph *system.ProxyHandler) {
 	h.proxyH = ph
+}
+
+// SetGeoRuleService sets the geo rule service for triggering rule sync after core install.
+func (h *Handler) SetGeoRuleService(svc *geoRuleSvc.Service) {
+	h.geoRuleSvc = svc
 }
 
 // List returns all node servers with optional filtering.
@@ -1275,6 +1282,15 @@ func (h *Handler) InstallBinary(c *gin.Context) {
 		response.InternalError(c, "INSTALL_FAILED", err.Error())
 		return
 	}
+
+	// After a core binary is installed, ensure default geo rule files
+	// (geoip.dat, geosite.dat) are seeded and trigger an async sync to
+	// download them. Without these files the core will error on startup
+	// when it tries to load geodata for routing.
+	if h.geoRuleSvc != nil {
+		go h.geoRuleSvc.EnsureDefaultsAndSync(id)
+	}
+
 	response.OK(c, result)
 }
 

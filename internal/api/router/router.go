@@ -1232,8 +1232,9 @@ nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateL
 			nodeServersGroup.GET("/:id/inbound-configs/:cfgId", inboundCfgH.Get)
 			nodeServersGroup.PUT("/:id/inbound-configs/:cfgId", inboundCfgH.Update)
 			nodeServersGroup.DELETE("/:id/inbound-configs/:cfgId", inboundCfgH.Delete)
-			nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/pause", inboundCfgH.PauseUser)
-			nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/resume", inboundCfgH.ResumeUser)
+nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/pause", inboundCfgH.PauseUser)
+nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/resume", inboundCfgH.ResumeUser)
+nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.ResetAllTraffic)
 
 			// Outbound Configs (per node)
 			nodeServersGroup.GET("/:id/outbound-configs", outboundCfgH.List)
@@ -1713,8 +1714,18 @@ nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateL
 	// Start config sync service (periodically syncs DB configs to disk)
 	configSyncSvc.Start()
 
-	// Start traffic sync service (periodically syncs traffic stats to DB)
+	// Start traffic sync service (periodically syncs local traffic stats to DB)
 	trafficSyncSvc.Start()
+
+	// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
+	// This consumes TrafficEvent from the NodeServerManager's onTraffic channel
+	// and persists remote node traffic deltas to the database.
+	if sharedNodeMgr != nil {
+		trafficEventConsumer := agent.NewTrafficEventConsumer(
+			sharedNodeMgr, nil, inboundConfigSvc,
+		)
+		go trafficEventConsumer.Start(context.Background())
+	}
 
 	return r
 }

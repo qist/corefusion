@@ -2274,14 +2274,22 @@ async function fetchXrayStats() {
 async function resetAllTraffic() {
   try {
     await ElMessageBox.confirm('Are you sure you want to reset all traffic stats?', 'Confirm', { type: 'warning' })
-    // Reset all user stats
+    // 1. Reset database traffic (_usedUp/_usedDown) for all inbounds on this server
+    try {
+      await client.post(`${nodeBase.value}/inbound-configs/reset-all-traffic`)
+    } catch (e) {
+      console.error('Failed to reset database traffic:', e)
+    }
+    // 2. Reset xray runtime stats counters
     const users = xrayStats.value.users || []
     for (const u of users) {
       try {
         await client.post(`${nodeBase.value}/xray/stats/reset/${u.email}`)
       } catch {}
     }
-    // Refresh stats
+    // 3. Reload inbounds from database to reflect reset
+    await loadInbounds()
+    // 4. Refresh xray live stats
     await fetchXrayStats()
     ElMessage.success('All traffic stats reset')
   } catch {}

@@ -388,6 +388,17 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		} else if v, err := rdp.systemSettingRepo.GetByKey(ctx, "proxy.caddy.manually_stopped"); err == nil && v == "true" {
 			req.CaddyManuallyStopped = true
 		}
+
+		// Proxy guardian settings (auto_start, auto_restart, max_restarts)
+		// These are stored in the Panel DB with per-server keys:
+		//   proxy.server_{id}.{type}.auto_start / .auto_restart / .max_restarts
+		// They need to be synced to the Agent's local DB so that the Agent's
+		// proxy.Manager.GetProxyGuardianSettings() can read them.
+		req.NginxAutoStart, req.NginxAutoRestart, req.NginxMaxRestarts = readProxyGuardianSettings(ctx, rdp.systemSettingRepo, serverID, "nginx")
+		req.CaddyAutoStart, req.CaddyAutoRestart, req.CaddyMaxRestarts = readProxyGuardianSettings(ctx, rdp.systemSettingRepo, serverID, "caddy")
+		log.Printf("[DataSyncBuilder] server %d: guardian settings: nginx(auto_start=%v,auto_restart=%v,max=%d) caddy(auto_start=%v,auto_restart=%v,max=%d)",
+			serverID, req.NginxAutoStart, req.NginxAutoRestart, req.NginxMaxRestarts,
+			req.CaddyAutoStart, req.CaddyAutoRestart, req.CaddyMaxRestarts)
 	}
 
 	// Log summary
@@ -663,6 +674,32 @@ func (b *DataSyncBuilder) resolveLogMode(ctx context.Context, serverID int64, co
 		return b.logModeProvider.GetLogModeForServer(ctx, serverID, coreType)
 	}
 	return ""
+}
+
+// readProxyGuardianSettings reads proxy guardian settings (auto_start, auto_restart,
+// max_restarts) from the Panel's system_settings DB for a specific server and proxy type.
+// It first tries per-server keys (proxy.server_{id}.{type}.xxx), then falls back to
+// global keys (proxy.{type}.xxx) for backward compatibility.
+// Returns defaults if no settings are found: autoStart=true, autoRestart=false, maxRestarts=5.
+func readProxyGuardianSettings(ctx context.Context, repo *repository.SystemSettingRepository, serverID int64, proxyType string) (autoStart, autoRestart bool, maxRestarts int32) {
+	autoStart = true
+	autoRestart = false
+	maxRestarts = 5
+
+	// Try per-server keys first: proxy.server_{id}.{type}.xxx
+	prefix := fmt.Sprintf("proxy.server_%d.%s.", serverID, proxyType)
+	if v, err := repo.GetByKey(ctx, prefix+"auto_start"); err == nil {
+		autoStart = v != "false"
+	}
+	if v, err := repo.GetByKey(ctx, prefix+"auto_restart"); err == nil {
+		autoRestart = v == "true"
+	}
+	if v, err := repo.GetByKey(ctx, prefix+"max_restarts"); err == nil {
+		if n, err := fmt.Sscanf(v, "%d", &maxRestarts); err == nil && n > 0 && maxRestarts > 0 {
+			// ok
+		}
+	}
+	return
 }
 
 // perNodeSettingsKey returns the settings key for a server ID.

@@ -13,6 +13,7 @@ import (
 	"corefusion/internal/model/entity"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/db"
+	"corefusion/internal/store/repository"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 
@@ -277,6 +278,17 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		} else {
 			log.Printf("[Agent] SyncData: saved caddy manually_stopped=%s to %s", value, key)
 		}
+
+		// Save proxy guardian settings (auto_start, auto_restart, max_restarts)
+		// These are stored using the keys that proxy.Manager.GetProxyGuardianSettings()
+		// reads: proxy.{type}.auto_start / .auto_restart / .max_restarts
+		// (without per-node suffix, since the Agent manages only one node)
+		saveProxyGuardianSetting(ctx, a.settingRepo, "nginx", "auto_start", fmt.Sprintf("%v", req.NginxAutoStart))
+		saveProxyGuardianSetting(ctx, a.settingRepo, "nginx", "auto_restart", fmt.Sprintf("%v", req.NginxAutoRestart))
+		saveProxyGuardianSetting(ctx, a.settingRepo, "nginx", "max_restarts", fmt.Sprintf("%d", req.NginxMaxRestarts))
+		saveProxyGuardianSetting(ctx, a.settingRepo, "caddy", "auto_start", fmt.Sprintf("%v", req.CaddyAutoStart))
+		saveProxyGuardianSetting(ctx, a.settingRepo, "caddy", "auto_restart", fmt.Sprintf("%v", req.CaddyAutoRestart))
+		saveProxyGuardianSetting(ctx, a.settingRepo, "caddy", "max_restarts", fmt.Sprintf("%d", req.CaddyMaxRestarts))
 	}
 
 	resp.Success = true
@@ -467,4 +479,16 @@ func perNodeSettingsKey(baseKey string, serverID int64) string {
 		return baseKey
 	}
 	return fmt.Sprintf("%s.%d", baseKey, serverID)
+}
+
+// saveProxyGuardianSetting saves a single proxy guardian setting to the Agent's
+// local DB using the key format that proxy.Manager.GetProxyGuardianSettings() reads.
+// The key is: proxy.{proxyType}.{settingName} (e.g., proxy.nginx.auto_restart).
+func saveProxyGuardianSetting(ctx context.Context, repo *repository.SystemSettingRepository, proxyType, settingName, value string) {
+	key := fmt.Sprintf("proxy.%s.%s", proxyType, settingName)
+	if err := repo.Set(ctx, key, value); err != nil {
+		log.Printf("[Agent] SyncData: save %s failed: %v", key, err)
+	} else {
+		log.Printf("[Agent] SyncData: saved %s=%s", key, value)
+	}
 }

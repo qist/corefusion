@@ -1021,7 +1021,8 @@ func (s *Service) GetProxyStatusRemote(ctx context.Context, serverID int64) (int
 
 // UpdateProxyGuardian updates proxy guardian settings for a specific server.
 // For local nodes, the caller (ProxyHandler) handles the update directly.
-// For remote nodes, this stores the settings in the panel DB for display.
+// For remote nodes, this stores the settings in the panel DB and triggers a
+// SyncData push so the Agent's local DB is updated immediately.
 func (s *Service) UpdateProxyGuardian(ctx context.Context, serverID int64, proxyType string, autoStart, autoRestart *bool, maxRestarts *int) error {
 	if s.nodeMgr == nil {
 		return fmt.Errorf("node manager not initialized")
@@ -1037,7 +1038,24 @@ func (s *Service) UpdateProxyGuardian(ctx context.Context, serverID int64, proxy
 	if maxRestarts != nil && *maxRestarts > 0 {
 		curMaxRestarts = *maxRestarts
 	}
-	return s.nodeMgr.UpdateProxyGuardianForServer(ctx, serverID, proxyType, curAutoStart, curAutoRestart, curMaxRestarts)
+	if err := s.nodeMgr.UpdateProxyGuardianForServer(ctx, serverID, proxyType, curAutoStart, curAutoRestart, curMaxRestarts); err != nil {
+		return err
+	}
+
+	// Trigger async SyncData push so the Agent's local DB is updated immediately
+	// with the new guardian settings. Without this, the Agent would keep using
+	// defaults (auto_restart=false) until the next periodic sync.
+	go func() {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := s.SyncServerData(syncCtx, serverID, false); err != nil {
+			log.Printf("[nodeserver] SyncData after guardian update to server %d: %v", serverID, err)
+		} else {
+			log.Printf("[nodeserver] SyncData after guardian update to server %d: success", serverID)
+		}
+	}()
+
+	return nil
 }
 
 // GetProxyGuardianSettingsForServer reads proxy guardian settings from the panel DB.

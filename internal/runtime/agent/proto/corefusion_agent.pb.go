@@ -3897,8 +3897,17 @@ type SyncDataRequest struct {
 	NginxManuallyStopped bool `protobuf:"varint,15,opt,name=nginx_manually_stopped,json=nginxManuallyStopped,proto3" json:"nginx_manually_stopped,omitempty"`
 	// Caddy 是否手动停止
 	CaddyManuallyStopped bool `protobuf:"varint,16,opt,name=caddy_manually_stopped,json=caddyManuallyStopped,proto3" json:"caddy_manually_stopped,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// --- Proxy Guardian 设置（面板→Agent 同步） ---
+	// Nginx guardian 设置
+	NginxAutoStart   bool  `protobuf:"varint,17,opt,name=nginx_auto_start,json=nginxAutoStart,proto3" json:"nginx_auto_start,omitempty"`
+	NginxAutoRestart bool  `protobuf:"varint,18,opt,name=nginx_auto_restart,json=nginxAutoRestart,proto3" json:"nginx_auto_restart,omitempty"`
+	NginxMaxRestarts int32 `protobuf:"varint,19,opt,name=nginx_max_restarts,json=nginxMaxRestarts,proto3" json:"nginx_max_restarts,omitempty"`
+	// Caddy guardian 设置
+	CaddyAutoStart   bool  `protobuf:"varint,20,opt,name=caddy_auto_start,json=caddyAutoStart,proto3" json:"caddy_auto_start,omitempty"`
+	CaddyAutoRestart bool  `protobuf:"varint,21,opt,name=caddy_auto_restart,json=caddyAutoRestart,proto3" json:"caddy_auto_restart,omitempty"`
+	CaddyMaxRestarts int32 `protobuf:"varint,22,opt,name=caddy_max_restarts,json=caddyMaxRestarts,proto3" json:"caddy_max_restarts,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SyncDataRequest) Reset() {
@@ -4041,6 +4050,48 @@ func (x *SyncDataRequest) GetCaddyManuallyStopped() bool {
 		return x.CaddyManuallyStopped
 	}
 	return false
+}
+
+func (x *SyncDataRequest) GetNginxAutoStart() bool {
+	if x != nil {
+		return x.NginxAutoStart
+	}
+	return false
+}
+
+func (x *SyncDataRequest) GetNginxAutoRestart() bool {
+	if x != nil {
+		return x.NginxAutoRestart
+	}
+	return false
+}
+
+func (x *SyncDataRequest) GetNginxMaxRestarts() int32 {
+	if x != nil {
+		return x.NginxMaxRestarts
+	}
+	return 0
+}
+
+func (x *SyncDataRequest) GetCaddyAutoStart() bool {
+	if x != nil {
+		return x.CaddyAutoStart
+	}
+	return false
+}
+
+func (x *SyncDataRequest) GetCaddyAutoRestart() bool {
+	if x != nil {
+		return x.CaddyAutoRestart
+	}
+	return false
+}
+
+func (x *SyncDataRequest) GetCaddyMaxRestarts() int32 {
+	if x != nil {
+		return x.CaddyMaxRestarts
+	}
+	return 0
 }
 
 // CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。
@@ -6652,7 +6703,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x16ListInterfacesResponse\x12\x1e\n" +
 	"\n" +
 	"interfaces\x18\x01 \x03(\tR\n" +
-	"interfaces\"\x9e\a\n" +
+	"interfaces\"\xaa\t\n" +
 	"\x0fSyncDataRequest\x12\x1b\n" +
 	"\tserver_id\x18\x01 \x01(\x03R\bserverId\x12G\n" +
 	"\fcore_configs\x18\x02 \x03(\v2$.corefusion.agent.v1.CoreConfigEntryR\vcoreConfigs\x12P\n" +
@@ -6670,7 +6721,13 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x12caddy_sni_settings\x18\r \x01(\tR\x10caddySniSettings\x12*\n" +
 	"\x11log_output_config\x18\x0e \x01(\tR\x0flogOutputConfig\x124\n" +
 	"\x16nginx_manually_stopped\x18\x0f \x01(\bR\x14nginxManuallyStopped\x124\n" +
-	"\x16caddy_manually_stopped\x18\x10 \x01(\bR\x14caddyManuallyStopped\"\xa9\x02\n" +
+	"\x16caddy_manually_stopped\x18\x10 \x01(\bR\x14caddyManuallyStopped\x12(\n" +
+	"\x10nginx_auto_start\x18\x11 \x01(\bR\x0enginxAutoStart\x12,\n" +
+	"\x12nginx_auto_restart\x18\x12 \x01(\bR\x10nginxAutoRestart\x12,\n" +
+	"\x12nginx_max_restarts\x18\x13 \x01(\x05R\x10nginxMaxRestarts\x12(\n" +
+	"\x10caddy_auto_start\x18\x14 \x01(\bR\x0ecaddyAutoStart\x12,\n" +
+	"\x12caddy_auto_restart\x18\x15 \x01(\bR\x10caddyAutoRestart\x12,\n" +
+	"\x12caddy_max_restarts\x18\x16 \x01(\x05R\x10caddyMaxRestarts\"\xa9\x02\n" +
 	"\x10CertificateEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1b\n" +

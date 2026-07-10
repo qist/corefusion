@@ -682,7 +682,12 @@ async function saveCaddyLogMode() {
       nginx: current?.nginx || { mode: 'file' },
       caddy: { mode: caddyLogMode.value },
     }, { params: { server_id: props.serverId } })
+
+    // Regenerate config — the config generator respects the log output mode:
+    // "off" → no log blocks regardless of site.log_enabled
+    // "file"/"stdout" → log blocks only for sites with log_enabled=true
     await applyConfig()
+    
     ElMessage.success(t('common.success'))
   } finally {
     logModeSaving.value = false

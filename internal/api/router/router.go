@@ -514,6 +514,47 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		logManageHandler.SetNodeLogManager(sharedNodeMgr)
 	}
 
+	// Wire proxy log mode applier for remote nodes.
+	// When log mode changes on a remote node, the proxy config (Caddyfile/nginx.conf)
+	// must be regenerated with new log directives, synced to the agent, and the
+	// proxy reloaded/restarted accordingly.
+	if sharedNodeMgr != nil {
+		logManageHandler.SetProxyLogModeApplier(func(ctx context.Context, serverID int64, proxyType string, newMode string) {
+		var config string
+		var err error
+		switch proxyType {
+		case "caddy":
+			config, err = caddyMgr.GenerateConfigForServer(ctx, serverID)
+		case "nginx":
+			config, err = nginxMgr.GenerateConfigForServer(ctx, serverID)
+		default:
+			return
+		}
+		if err != nil {
+			log.Printf("router: generate %s config for server %d after log mode switch: %v", proxyType, serverID, err)
+			return
+		}
+
+		// Sync the regenerated config to the remote agent
+		if err := sharedNodeMgr.SyncProxyConfig(ctx, serverID, proxyType, []byte(config)); err != nil {
+			log.Printf("router: sync %s config to server %d after log mode switch: %v", proxyType, serverID, err)
+			return
+		}
+
+		// Reload for file/off mode (config change only), restart for stdout mode
+		// (need to re-attach stdout pipe)
+		action := "reload"
+		if newMode == "stdout" {
+			action = "restart"
+		}
+		if err := sharedNodeMgr.ControlProxy(ctx, serverID, proxyType, action); err != nil {
+			log.Printf("router: %s %s on server %d after log mode switch: %v", action, proxyType, serverID, err)
+		} else {
+			log.Printf("router: %s %s on server %d after log mode switch to %s", action, proxyType, serverID, newMode)
+		}
+	})
+	}
+
 	// Client log handler (for subscription user log packaging)
 	clientLogH := clientauthHandler.NewLogHandler(logManageSvc)
 
@@ -1167,6 +1208,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.POST("/:id/caddy/sni-rules/toggle", caddyH.ToggleSNI)
 			nodeServersGroup.DELETE("/:id/caddy/sni-rules", caddyH.DeleteAllSNI)
 			nodeServersGroup.POST("/:id/caddy/batch-update-ports", caddyH.BatchUpdatePorts)
+nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateLogEnabled)
 			nodeServersGroup.DELETE("/:id/caddy/l4-rules", caddyH.DeleteAllL4)
 
 			// Nginx site management (per node)
@@ -1625,15 +1667,38 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Set callback to restart proxy when log output mode is switched
 	// Restart is needed because stdout mode requires re-attaching the process's stdout to LogBroker
 	logManageSvc.SetOnModeSwitch(func(proxyType string) {
-		log.Printf("router: restarting %s after log mode switch", proxyType)
 		bgCtx := context.Background()
+
+		// Read the new mode to decide action
+		logCfg, _ := logManageSvc.GetLogOutput(bgCtx)
+		newMode := "file"
+		if proxyType == "nginx" && logCfg != nil {
+			newMode = logCfg.Nginx.Mode
+		} else if proxyType == "caddy" && logCfg != nil {
+			newMode = logCfg.Caddy.Mode
+		}
+
+		var pType proxySvc.ProxyType
 		switch proxyType {
 		case "nginx":
+			pType = proxySvc.ProxyNginx
 			nginxMgr.SaveAndApply(bgCtx)
-			proxyMgr.RestartProxy(bgCtx, proxySvc.ProxyNginx)
 		case "caddy":
+			pType = proxySvc.ProxyCaddy
 			caddyMgr.SaveAndApply(bgCtx)
-			proxyMgr.RestartProxy(bgCtx, proxySvc.ProxyCaddy)
+		default:
+			return
+		}
+
+		// Only restart for stdout mode (need to re-attach stdout pipe).
+		// For file/off mode, reload is sufficient — the config file already
+		// reflects the new log directives.
+		if newMode == "stdout" {
+			log.Printf("router: restarting %s after log mode switch to stdout", proxyType)
+			proxyMgr.RestartProxy(bgCtx, pType)
+		} else {
+			log.Printf("router: reloading %s after log mode switch to %s", proxyType, newMode)
+			proxyMgr.ReloadProxy(bgCtx, pType)
 		}
 	})
 

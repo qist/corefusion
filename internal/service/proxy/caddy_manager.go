@@ -246,20 +246,8 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 		}
 
 		// Per-site log block
-		// Check global log output mode
-		caddyLogMode := "file"
-		if m.settingStore != nil {
-			if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
-				var cfg struct {
-					Caddy struct {
-						Mode string `json:"mode"`
-					} `json:"caddy"`
-				}
-				if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
-					caddyLogMode = cfg.Caddy.Mode
-				}
-			}
-		}
+		// Check log output mode (per-node)
+		caddyLogMode := m.getCaddyLogModeForServer(ctx, serverID)
 		if caddyLogMode != "off" {
 			for _, site := range siteList {
 				if site.LogEnabled {
@@ -668,4 +656,56 @@ func sanitizeLogName(domain string) string {
 		return "port" + domain[1:]
 	}
 	return domain
+}
+
+// getCaddyLogModeForServer reads the caddy log output mode for a specific server.
+// Uses per-node key for remote nodes, global key for local node.
+func (m *CaddyManager) getCaddyLogModeForServer(ctx context.Context, serverID int64) string {
+	caddyLogMode := "file"
+	if m.settingStore == nil {
+		return caddyLogMode
+	}
+	key := perNodeSNISettingsKey("proxy.log_output_config", serverID)
+	v, err := m.settingStore.GetByKey(ctx, key)
+	if err != nil || v == "" {
+		// Fall back to global key
+		v, err = m.settingStore.GetByKey(ctx, "proxy.log_output_config")
+		if err != nil || v == "" {
+			return caddyLogMode
+		}
+	}
+	var cfg struct {
+		Caddy struct {
+			Mode string `json:"mode"`
+		} `json:"caddy"`
+	}
+	if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
+		caddyLogMode = cfg.Caddy.Mode
+	}
+	return caddyLogMode
+}
+
+// BatchUpdateLogEnabled updates the log_enabled flag for all HTTP sites of a server.
+// When log output mode is "off", all sites should have log_enabled=false.
+// When log output mode is "file" or "stdout", all sites should have log_enabled=true.
+func (m *CaddyManager) BatchUpdateLogEnabled(ctx context.Context, enabled bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, m.serverID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, site := range sites {
+		if site.Template == "sni" || site.Template == "l4" {
+			continue
+		}
+		if site.LogEnabled == enabled {
+			continue
+		}
+		site.LogEnabled = enabled
+		if err := m.siteRepo.Update(ctx, &site); err != nil {
+			continue
+		}
+		count++
+	}
+	return count, nil
 }

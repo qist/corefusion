@@ -358,6 +358,16 @@ func (h *Handler) SaveLogOutput(c *gin.Context) {
 		data, _ := json.Marshal(cfg)
 		nginxSettings := h.getNginxSettingsForSync(c.Request.Context())
 		_ = nodeLogMgrExt.SyncLogConfigToServer(c.Request.Context(), serverID, "", string(data), nginxSettings)
+
+		// Regenerate and sync proxy config with new log mode, then reload/restart
+		if proxyLogModeApplier != nil {
+			if cfg.Nginx.Mode != "" {
+				proxyLogModeApplier(c.Request.Context(), serverID, "nginx", cfg.Nginx.Mode)
+			}
+			if cfg.Caddy.Mode != "" {
+				proxyLogModeApplier(c.Request.Context(), serverID, "caddy", cfg.Caddy.Mode)
+			}
+		}
 	}
 	response.OK(c, cfg)
 }
@@ -754,6 +764,21 @@ var nodeLogMgrExt NodeLogManager
 func SetNodeLogManager(m NodeLogManager) {
 	nodeLogMgr = m
 	nodeLogMgrExt = m
+}
+
+// ProxyLogModeApplier is called after log mode is changed for a remote node.
+// It should regenerate proxy config with the new log mode, sync it to the
+// remote agent, and reload/restart the proxy accordingly.
+type ProxyLogModeApplier func(ctx context.Context, serverID int64, proxyType string, newMode string)
+
+// proxyLogModeApplier is set by the router to enable proxy config resync
+// after log mode change on remote nodes.
+var proxyLogModeApplier ProxyLogModeApplier
+
+// SetProxyLogModeApplier sets the callback for regenerating and syncing
+// proxy config after a log mode change on remote nodes.
+func SetProxyLogModeApplier(fn ProxyLogModeApplier) {
+	proxyLogModeApplier = fn
 }
 
 // ListNodeLogs lists available log types for a node.

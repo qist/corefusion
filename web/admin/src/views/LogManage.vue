@@ -248,15 +248,27 @@
                 <el-tag size="small" :type="isCoreType(row.proxy_type) ? 'info' : 'success'">{{ row.proxy_type }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="t('common.status')" width="90">
+            <el-table-column :label="t('common.status')" width="100">
               <template #default="{row}">
                 <el-tag v-if="row.mode === 'off'" type="info" size="small">{{ t('logManage.modeOff') }}</el-tag>
+                <el-tag v-else-if="row.mode === 'file'" type="info" size="small">{{ t('logManage.modeFile') }}</el-tag>
                 <el-tag v-else-if="row.active && !row.paused" type="success" size="small">{{ t('logManage.writerActive') }}</el-tag>
                 <el-tag v-else-if="row.paused" type="warning" size="small">{{ t('logManage.writerPaused') }}</el-tag>
                 <el-tag v-else type="info" size="small">{{ t('common.disabled') }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="mode" :label="t('logManage.mode')" width="80" />
+            <el-table-column :label="t('logManage.mode')" width="90">
+              <template #default="{row}">
+                <el-tag :type="modeTagType(row.mode)" size="small">{{ modeLabel(row.mode) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('logManage.managed')" width="100">
+              <template #default="{row}">
+                <el-tag :type="row.managed ? 'success' : 'info'" size="small">
+                  {{ row.managed ? t('common.yes') : t('common.no') }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="file_path" :label="t('logManage.filePath')" min-width="160" show-overflow-tooltip>
               <template #default="{row}">
                 {{ row.mode === 'off' ? '-' : row.file_path }}
@@ -613,8 +625,12 @@
     <!-- Writer Config Dialog -->
     <el-dialog v-model="writerConfigVisible" :title="writerConfigType.toUpperCase() + ' ' + t('logManage.writerConfig')" width="550">
       <el-form label-width="120px" size="small">
-        <el-form-item :label="t('logManage.writerEnabled')">
-          <el-switch v-model="writerFormActive" @change="toggleWriter" />
+        <el-form-item :label="t('logManage.managed')">
+          <el-switch
+            :model-value="getOutputManaged(writerConfigType)"
+            @change="(val) => onWriterManagedToggle(writerConfigType, val)"
+            :disabled="!getOutputManagedEditable(writerConfigType)"
+          />
           <span class="form-hint">{{ t('logManage.writerEnabledHint') }}</span>
         </el-form-item>
         <el-divider content-position="left">{{ t('logManage.fileSettings') }}</el-divider>
@@ -774,7 +790,6 @@ const writerStatuses = ref([])
 const writerConfigVisible = ref(false)
 const writerConfigType = ref('')
 const writerConfigSaving = ref(false)
-const writerFormActive = ref(false)
 const writerForm = ref({ file_path: '', retain_days: 30, compress: false, max_size_mb: 100 })
 const writerFilesVisible = ref(false)
 const writerFiles = ref([])
@@ -940,20 +955,8 @@ async function handleSaveCoreOutput() {
     }
     await logApi.saveCoreLogOutput(data, selectedServerId.value)
 
-    // Handle managed (takeover/release) for local node
-    if (selectedServerId.value <= 1) {
-      for (const item of coreOutputList.value) {
-        try {
-          if (item.cfg.managed && item.cfg.mode === 'stdout') {
-            await logApi.takeoverStdout(item.type)
-          } else {
-            await logApi.releaseStdout(item.type)
-          }
-        } catch { /* noop */ }
-      }
-    }
-
     ElMessage.success(t('logManage.outputConfigSaved'))
+    await fetchWriterStatuses()
   } finally {
     savingCoreOutput.value = false
   }
@@ -972,20 +975,8 @@ async function handleSaveProxyOutput() {
     }
     await logApi.saveProxyLogOutput(data, selectedServerId.value)
 
-    // Handle managed (takeover/release) for local node
-    if (selectedServerId.value <= 1) {
-      for (const item of proxyOutputList.value) {
-        try {
-          if (item.cfg.managed && item.cfg.mode === 'stdout') {
-            await logApi.takeoverStdout(item.type)
-          } else {
-            await logApi.releaseStdout(item.type)
-          }
-        } catch { /* noop */ }
-      }
-    }
-
     ElMessage.success(t('logManage.outputConfigSaved'))
+    await fetchWriterStatuses()
   } finally {
     savingProxyOutput.value = false
   }
@@ -1356,7 +1347,6 @@ function showWriterConfig(type) {
   writerConfigType.value = type
   writerConfigVisible.value = true
   const s = getWriterStatus(type)
-  writerFormActive.value = s ? (s.mode === 'stdout' && !s.paused) : false
   writerForm.value = {
     file_path: s?.file_path || `logs/${type}-stdout.log`,
     retain_days: s?.retain_days || 30,
@@ -1365,19 +1355,42 @@ function showWriterConfig(type) {
   }
 }
 
-async function toggleWriter(active) {
-  const type = writerConfigType.value
-  try {
-    if (active) {
-      await logApi.startWriter(type, { mode: 'stdout' })
-      ElMessage.success(t('logManage.writerStarted', { type }))
-    } else {
-      await logApi.startWriter(type, { mode: 'file' })
-      ElMessage.success(t('logManage.writerStopped', { type }))
-    }
-    await fetchWriterStatuses()
-  } catch {
-    writerFormActive.value = !active
+// ──────────── Managed ↔ Writer linkage ────────────
+
+// Get the managed state from the output config for a given type
+function getOutputManaged(type) {
+  const list = isCoreType(type) ? coreOutputList.value : proxyOutputList.value
+  const item = list.find(i => i.type === type)
+  return item ? item.cfg.managed : false
+}
+
+// Check if the managed switch is editable (only when mode === 'stdout')
+function getOutputManagedEditable(type) {
+  const list = isCoreType(type) ? coreOutputList.value : proxyOutputList.value
+  const item = list.find(i => i.type === type)
+  return item ? item.cfg.mode === 'stdout' : false
+}
+
+// Toggle managed state from the Writer Config dialog
+async function onWriterManagedToggle(type, val) {
+  const list = isCoreType(type) ? coreOutputList.value : proxyOutputList.value
+  const item = list.find(i => i.type === type)
+  if (!item) return
+  item.cfg.managed = val
+  // For local node: save the output config which will start/stop the writer via StartWriterManaged
+  if (selectedServerId.value <= 1) {
+    try {
+      if (isCoreType(type)) {
+        const data = {}
+        for (const it of coreOutputList.value) data[it.type] = it.cfg
+        await logApi.saveCoreLogOutput(data, selectedServerId.value)
+      } else {
+        const data = {}
+        for (const it of proxyOutputList.value) data[it.type] = it.cfg
+        await logApi.saveProxyLogOutput(data, selectedServerId.value)
+      }
+      await fetchWriterStatuses()
+    } catch { /* noop */ }
   }
 }
 

@@ -409,39 +409,57 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			// Parse proxy config and start/stop writers for nginx/caddy
 			if req.ProxyLogConfig != "" {
 				var proxyCfg struct {
-					Nginx struct{ Mode string `json:"mode"` } `json:"nginx"`
-					Caddy struct{ Mode string `json:"mode"` } `json:"caddy"`
+					Nginx struct {
+						Mode    string `json:"mode"`
+						Managed bool   `json:"managed"`
+					} `json:"nginx"`
+					Caddy struct {
+						Mode    string `json:"mode"`
+						Managed bool   `json:"managed"`
+					} `json:"caddy"`
 				}
 				if err := json.Unmarshal([]byte(req.ProxyLogConfig), &proxyCfg); err == nil {
-					if err := a.logMgr.StartWriter("nginx", proxyCfg.Nginx.Mode); err != nil {
-						log.Printf("[Agent] failed to start nginx writer: %v", err)
-					}
-					if err := a.logMgr.StartWriter("caddy", proxyCfg.Caddy.Mode); err != nil {
-						log.Printf("[Agent] failed to start caddy writer: %v", err)
-					}
+				if err := a.logMgr.StartWriterManaged("nginx", proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed); err != nil {
+					log.Printf("[Agent] failed to start nginx writer: %v", err)
+				}
+				if err := a.logMgr.StartWriterManaged("caddy", proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed); err != nil {
+					log.Printf("[Agent] failed to start caddy writer: %v", err)
+				}
 				}
 			}
 			// Parse core config and start/stop writers for xray/singbox/hysteria2/tuic
 			if req.CoreLogConfig != "" {
 				var coreCfg struct {
-					Xray      struct{ Mode string `json:"mode"` } `json:"xray"`
-					Singbox   struct{ Mode string `json:"mode"` } `json:"singbox"`
-					Hysteria2 struct{ Mode string `json:"mode"` } `json:"hysteria2"`
-					Tuic      struct{ Mode string `json:"mode"` } `json:"tuic"`
+					Xray struct {
+						Mode    string `json:"mode"`
+						Managed bool   `json:"managed"`
+					} `json:"xray"`
+					Singbox struct {
+						Mode    string `json:"mode"`
+						Managed bool   `json:"managed"`
+					} `json:"singbox"`
+					Hysteria2 struct {
+						Mode    string `json:"mode"`
+						Managed bool   `json:"managed"`
+					} `json:"hysteria2"`
+					Tuic struct {
+						Mode    string `json:"mode"`
+						Managed bool   `json:"managed"`
+					} `json:"tuic"`
 				}
 				if err := json.Unmarshal([]byte(req.CoreLogConfig), &coreCfg); err == nil {
-					if err := a.logMgr.StartWriter("xray", coreCfg.Xray.Mode); err != nil {
-						log.Printf("[Agent] failed to start xray writer: %v", err)
-					}
-					if err := a.logMgr.StartWriter("singbox", coreCfg.Singbox.Mode); err != nil {
-						log.Printf("[Agent] failed to start singbox writer: %v", err)
-					}
-					if err := a.logMgr.StartWriter("hysteria2", coreCfg.Hysteria2.Mode); err != nil {
-						log.Printf("[Agent] failed to start hysteria2 writer: %v", err)
-					}
-					if err := a.logMgr.StartWriter("tuic", coreCfg.Tuic.Mode); err != nil {
-						log.Printf("[Agent] failed to start tuic writer: %v", err)
-					}
+				if err := a.logMgr.StartWriterManaged("xray", coreCfg.Xray.Mode, coreCfg.Xray.Managed); err != nil {
+					log.Printf("[Agent] failed to start xray writer: %v", err)
+				}
+				if err := a.logMgr.StartWriterManaged("singbox", coreCfg.Singbox.Mode, coreCfg.Singbox.Managed); err != nil {
+					log.Printf("[Agent] failed to start singbox writer: %v", err)
+				}
+				if err := a.logMgr.StartWriterManaged("hysteria2", coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed); err != nil {
+					log.Printf("[Agent] failed to start hysteria2 writer: %v", err)
+				}
+				if err := a.logMgr.StartWriterManaged("tuic", coreCfg.Tuic.Mode, coreCfg.Tuic.Managed); err != nil {
+					log.Printf("[Agent] failed to start tuic writer: %v", err)
+				}
 				}
 			}
 			log.Printf("[Agent] log writers refreshed after SyncLogConfig")

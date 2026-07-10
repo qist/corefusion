@@ -76,6 +76,15 @@ func (s *Service) SaveLogOutput(ctx context.Context, cfg *LogOutputConfig) error
 	return s.SaveLogOutputForServer(ctx, 1, cfg)
 }
 
+// EffectiveWriterMode is kept for backward compatibility but should be avoided.
+// Prefer StartWriterManaged which preserves the real mode in writer config.
+func EffectiveWriterMode(mode string, managed bool) string {
+	if mode == "stdout" && !managed {
+		return "file" // pause writer — stdout but not managed by log center
+	}
+	return mode
+}
+
 // SaveLogOutputForServer saves the log output configuration for a specific server.
 // For local node (serverID=1), it also starts/stops local writers.
 // For remote nodes, the caller is responsible for syncing via gRPC.
@@ -100,10 +109,10 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 	if serverID <= 1 {
 		s.syncWriterFilePath("nginx", cfg.Nginx.CapturePath)
 		s.syncWriterFilePath("caddy", cfg.Caddy.CapturePath)
-		if err := s.StartWriter("nginx", cfg.Nginx.Mode); err != nil {
+		if err := s.StartWriterManaged("nginx", cfg.Nginx.Mode, cfg.Nginx.Managed); err != nil {
 			log.Printf("logmanage: failed to start nginx writer: %v", err)
 		}
-		if err := s.StartWriter("caddy", cfg.Caddy.Mode); err != nil {
+		if err := s.StartWriterManaged("caddy", cfg.Caddy.Mode, cfg.Caddy.Managed); err != nil {
 			log.Printf("logmanage: failed to start caddy writer: %v", err)
 		}
 
@@ -357,7 +366,7 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 		}
 		for coreType, mode := range coreModes {
 			s.syncWriterFilePath(coreType, mode.CapturePath)
-			if err := s.StartWriter(coreType, mode.Mode); err != nil {
+			if err := s.StartWriterManaged(coreType, mode.Mode, mode.Managed); err != nil {
 				log.Printf("logmanage: failed to start %s writer: %v", coreType, err)
 			}
 		}

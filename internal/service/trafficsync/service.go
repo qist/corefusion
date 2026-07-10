@@ -3,6 +3,7 @@ package trafficsync
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,12 @@ type SettingStore interface {
 }
 
 // Service handles periodic traffic synchronization to database.
+//
+// Strategy (reset_=true, no lastValues needed):
+//   - First query: QueryStats(reset_=true) — resets xray counters to 0.
+//     Discard returned values (old accumulated traffic).
+//   - Subsequent queries: QueryStats(reset_=true) — each value IS the delta
+//     since last query. No baseline, no per-user first-sample skip.
 type Service struct {
 	settingSvc  SettingStore
 	inboundSvc  InboundConfigService
@@ -30,7 +37,7 @@ type Service struct {
 	mu          sync.RWMutex
 	running     bool
 	stopCh      chan struct{}
-	lastValues  map[string]int64
+	initialized bool // false until first reset query completes
 	conn        *grpc.ClientConn
 	connMu      sync.Mutex
 }
@@ -45,7 +52,6 @@ func NewService(settingSvc SettingStore, inboundSvc InboundConfigService, interv
 		inboundSvc: inboundSvc,
 		interval:   interval,
 		stopCh:     make(chan struct{}),
-		lastValues: make(map[string]int64),
 	}
 }
 
@@ -146,7 +152,21 @@ func (s *Service) sync() {
 	}
 
 	client := statsService.NewStatsServiceClient(conn)
-	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: false})
+
+	// First call: reset xray counters to 0.
+	// Discard returned values (old accumulated traffic).
+	if !s.initialized {
+		_, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: true})
+		if err != nil {
+			log.Printf("trafficsync: initial reset failed: %v", err)
+			return
+		}
+		s.initialized = true
+		return // counters reset, next call gets real deltas
+	}
+
+	// Subsequent calls: reset_=true so xray returns deltas and resets counters.
+	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: true})
 	if err != nil {
 		log.Printf("trafficsync: query stats failed: %v", err)
 		return
@@ -164,11 +184,11 @@ func (s *Service) sync() {
 		name := stat.GetName()
 		value := stat.GetValue()
 
-		if !contains(name, "user>>>") || !contains(name, ">>>traffic>>>") {
+		if !strings.Contains(name, "user>>>") || !strings.Contains(name, ">>>traffic>>>") {
 			continue
 		}
 
-		parts := splitN(name, ">>>")
+		parts := strings.Split(name, ">>>")
 		if len(parts) != 4 {
 			continue
 		}
@@ -176,16 +196,8 @@ func (s *Service) sync() {
 		email := parts[1]
 		direction := parts[3]
 
-		lastValue, seen := s.lastValues[name]
-		s.lastValues[name] = value
-
-		// Skip first time (like 3x-ui: "skip first time of seen stat")
-		if !seen {
-			continue
-		}
-
-		delta := value - lastValue
-		if delta <= 0 {
+		// With reset_=true, value IS the delta since last query.
+		if value <= 0 {
 			continue
 		}
 
@@ -195,9 +207,9 @@ func (s *Service) sync() {
 
 		switch direction {
 		case "uplink":
-			userDeltas[email].up += delta
+			userDeltas[email].up += value
 		case "downlink":
-			userDeltas[email].down += delta
+			userDeltas[email].down += value
 		}
 	}
 
@@ -213,33 +225,4 @@ func (s *Service) sync() {
 			}
 		}
 	}
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-func splitN(s, sep string) []string {
-	var result []string
-	for {
-		idx := -1
-		for i := 0; i <= len(s)-len(sep); i++ {
-			if s[i:i+len(sep)] == sep {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			result = append(result, s)
-			break
-		}
-		result = append(result, s[:idx])
-		s = s[idx+len(sep):]
-	}
-	return result
 }

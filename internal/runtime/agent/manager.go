@@ -1425,6 +1425,8 @@ func (h *heartbeatServiceImpl) handleTrafficReport(ac *AgentConnection, report *
 		select {
 		case h.mgr.onTraffic <- event:
 		default: // drop if channel full
+			log.Printf("[TrafficReport] DROPPED server=%d email=%s up=%d down=%d (channel full)",
+				ac.ServerID, stat.UserEmail, stat.UplinkBytes, stat.DownlinkBytes)
 		}
 	}
 }

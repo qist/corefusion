@@ -16,18 +16,24 @@ import (
 	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
-// trafficCollector periodically queries the local xray gRPC Stats API,
-// computes traffic deltas, and returns them for upstream reporting.
+// trafficCollector periodically queries the local xray gRPC Stats API
+// and returns traffic deltas for upstream reporting.
 //
-// It mirrors the logic of the Panel-side trafficsync.Service:
-//   - QueryStats(reset_=false) — reads cumulative counters without resetting
-//   - Computes delta = current - lastValue
-//   - Skips first-time entries (establishes baseline)
-//   - Aggregates per-user uplink/downlink into TrafficStat
+// Strategy (reset_=true, no lastValues needed):
+//   - First query: QueryStats(reset_=true) — resets xray counters to 0.
+//     The returned values are OLD accumulated traffic, so we discard them.
+//     This loses at most one polling interval (30s) of traffic, once on startup.
+//   - Subsequent queries: QueryStats(reset_=true) — each value IS the delta
+//     since last query. No baseline needed, no first-sample skip per user.
+//
+// This approach:
+//   - Never double-counts (reset ensures each byte is returned exactly once)
+//   - Never loses traffic after the initial reset (no per-user baseline skip)
+//   - Works correctly across xray restarts (counter starts at 0)
 type trafficCollector struct {
 	statsAddr    string
 	pollInterval time.Duration
-	lastValues   map[string]int64
+	initialized  bool // false until first reset query completes
 
 	conn   *grpc.ClientConn
 	connMu sync.Mutex
@@ -41,7 +47,6 @@ func newTrafficCollector(statsAddr string) *trafficCollector {
 	return &trafficCollector{
 		statsAddr:    statsAddr,
 		pollInterval: 30 * time.Second,
-		lastValues:   make(map[string]int64),
 	}
 }
 
@@ -54,7 +59,21 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 	}
 
 	client := statsService.NewStatsServiceClient(conn)
-	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: false})
+
+	// First call: reset xray counters to 0.
+	// Discard the returned values (they are old accumulated traffic).
+	// This ensures subsequent queries return only new traffic.
+	if !tc.initialized {
+		_, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: true})
+		if err != nil {
+			return nil, fmt.Errorf("initial reset query stats: %w", err)
+		}
+		tc.initialized = true
+		return nil, nil // baseline reset done, next call gets real deltas
+	}
+
+	// Subsequent calls: reset_=true so xray returns deltas and resets counters.
+	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: true})
 	if err != nil {
 		return nil, fmt.Errorf("query stats: %w", err)
 	}
@@ -83,16 +102,8 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 		email := parts[1]
 		direction := parts[3]
 
-		lastValue, seen := tc.lastValues[name]
-		tc.lastValues[name] = value
-
-		// Skip first time — establishes baseline (same as trafficsync.Service)
-		if !seen {
-			continue
-		}
-
-		delta := value - lastValue
-		if delta <= 0 {
+		// With reset_=true, value IS the delta since last query.
+		if value <= 0 {
 			continue
 		}
 
@@ -102,9 +113,9 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 
 		switch direction {
 		case "uplink":
-			deltas[email].up += delta
+			deltas[email].up += value
 		case "downlink":
-			deltas[email].down += delta
+			deltas[email].down += value
 		}
 	}
 

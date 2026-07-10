@@ -245,6 +245,7 @@ const settingKeyLogWriters = "proxy.log_writers"
 type LogWriterStatus struct {
 	ProxyType  string `json:"proxy_type"`
 	Mode       string `json:"mode"`
+	Managed    bool   `json:"managed"`
 	Active     bool   `json:"active"`
 	Paused     bool   `json:"paused"`
 	FilePath   string `json:"file_path"`
@@ -255,21 +256,35 @@ type LogWriterStatus struct {
 }
 
 // StartWriter starts or updates the log writer for a proxy type.
-// If already active, just toggles pause state instead of restarting.
+// The mode is the actual output mode (stdout/file/off) and is saved as-is.
+// The managed parameter controls whether the writer is active (writing to file)
+// or paused. When mode=stdout but managed=false, the writer is created and
+// subscribed to the broker (so stdout is still viewable in real-time), but
+// file writing is paused.
 func (s *Service) StartWriter(proxyType string, mode string) error {
-	// Save config
+	return s.StartWriterManaged(proxyType, mode, true)
+}
+
+// StartWriterManaged is like StartWriter but with an explicit managed flag.
+// When managed=false and mode=stdout, the writer is paused (not writing to file)
+// but still subscribed to the broker for real-time viewing.
+func (s *Service) StartWriterManaged(proxyType string, mode string, managed bool) error {
+	// Save config with the REAL mode (not EffectiveWriterMode)
 	cfg := s.loadWriterConfig(proxyType)
 	cfg.Mode = mode
 	s.saveWriterConfig(proxyType, cfg)
 
-	// If writer already exists, just toggle pause
+	// Determine if the writer should be active
+	shouldPause := mode != "stdout" || !managed
+
+	// If writer already exists, just toggle pause state
 	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
-		if mode == "stdout" {
-			w.SetPaused(false)
-			log.Printf("logmanage: resumed writer for %s", proxyType)
-		} else {
+		if shouldPause {
 			w.SetPaused(true)
-			log.Printf("logmanage: paused writer for %s (mode=%s)", proxyType, mode)
+			log.Printf("logmanage: paused writer for %s (mode=%s, managed=%v)", proxyType, mode, managed)
+		} else {
+			w.SetPaused(false)
+			log.Printf("logmanage: resumed writer for %s (mode=%s, managed=%v)", proxyType, mode, managed)
 		}
 		return nil
 	}
@@ -284,11 +299,11 @@ func (s *Service) StartWriter(proxyType string, mode string) error {
 	// Always subscribe to LogBroker (keeps running even when paused)
 	go s.subscribeToBroker(proxyType, writer)
 
-	if mode != "stdout" {
+	if shouldPause {
 		writer.SetPaused(true)
 	}
 
-	log.Printf("logmanage: started writer for %s mode=%s", proxyType, mode)
+	log.Printf("logmanage: started writer for %s mode=%s managed=%v", proxyType, mode, managed)
 	return nil
 }
 
@@ -401,22 +416,72 @@ func (s *Service) StopWriter(proxyType string) error {
 }
 
 // GetWriterStatus returns the status of all log writers.
+// The mode and managed fields are read from the actual LogOutputConfig / CoreLogOutputConfig
+// (not the writer's internal config) so they always reflect the real process output mode.
 func (s *Service) GetWriterStatus() []LogWriterStatus {
+	// Read real modes from output configs
+	proxyCfg, _ := s.GetLogOutput(context.Background())
+	coreCfg, _ := s.GetCoreLogOutput(context.Background())
+
+	realModes := map[string]struct {
+		Mode    string
+		Managed bool
+	}{}
+	if proxyCfg != nil {
+		realModes["nginx"] = struct {
+			Mode    string
+			Managed bool
+		}{proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed}
+		realModes["caddy"] = struct {
+			Mode    string
+			Managed bool
+		}{proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed}
+	}
+	if coreCfg != nil {
+		realModes["xray"] = struct {
+			Mode    string
+			Managed bool
+		}{coreCfg.Xray.Mode, coreCfg.Xray.Managed}
+		realModes["singbox"] = struct {
+			Mode    string
+			Managed bool
+		}{coreCfg.Singbox.Mode, coreCfg.Singbox.Managed}
+		realModes["hysteria2"] = struct {
+			Mode    string
+			Managed bool
+		}{coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed}
+		realModes["tuic"] = struct {
+			Mode    string
+			Managed bool
+		}{coreCfg.Tuic.Mode, coreCfg.Tuic.Managed}
+	}
+
 	var statuses []LogWriterStatus
 	for _, pType := range allLogTypes {
-		cfg := s.loadWriterConfig(pType)
-		mode := cfg.Mode
+		// Writer-specific config (file rotation settings)
+		wCfg := s.loadWriterConfig(pType)
+
+		// Real mode and managed from output config
+		rm := realModes[pType]
+		mode := rm.Mode
 		if mode == "" {
 			mode = "file"
 		}
+		managed := rm.Managed
+
 		active := false
 		paused := true
 		if w, ok := s.writers[pType]; ok {
 			active = w.IsActive()
 			paused = w.IsPaused()
 		}
+		// If no writer exists, derive paused from mode+managed
+		if _, ok := s.writers[pType]; !ok {
+			paused = mode != "stdout" || !managed
+		}
+
 		logDir := filepath.Join(s.dataDir, "logs")
-		filePath := cfg.FilePath
+		filePath := wCfg.FilePath
 		if filePath == "" {
 			filePath = fmt.Sprintf("logs/%s-stdout.log", pType)
 		}
@@ -427,13 +492,14 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 		statuses = append(statuses, LogWriterStatus{
 			ProxyType:  pType,
 			Mode:       mode,
+			Managed:    managed,
 			Active:     active,
 			Paused:     paused,
 			FilePath:   filePath,
 			LogDir:     logDir,
-			RetainDays: cfg.RetainDays,
-			Compress:   cfg.Compress,
-			MaxSizeMB:  cfg.MaxSizeMB,
+			RetainDays: wCfg.RetainDays,
+			Compress:   wCfg.Compress,
+			MaxSizeMB:  wCfg.MaxSizeMB,
 		})
 	}
 	return statuses

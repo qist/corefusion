@@ -53,11 +53,14 @@ type AgentApp struct {
 	// Log management (same as Panel — provides LogWriter for stdout file persistence)
 	logMgr *logManageSvc.Service
 
+	// Traffic collector for periodic xray Stats API polling
+	trafficCollector *trafficCollector
+
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
 
 	// streamSendMu protects stream.Send calls from concurrent goroutines
-	// (heartbeat ticker, status ticker, recv loop, TaskQueue workers)
+	// (heartbeat ticker, status ticker, traffic ticker, recv loop, TaskQueue workers)
 	streamSendMu sync.Mutex
 }
 
@@ -168,6 +171,9 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// the actual xray/singbox log section (same as Panel)
 	logMgr.SetCoreConfigSectionGetter(&agentCoreConfigGetter{})
 
+	// Resolve xray stats API address from local settings (or default)
+	statsAddr := resolveStatsAddr(context.Background(), &agentSettingStore{repo: settingRepo})
+
 	app := &AgentApp{
 		cfg:                cfg,
 		dataDir:            dataDir,
@@ -185,6 +191,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		outboundConfigRepo: outboundConfigRepo,
 		caddySiteRepo:      caddySiteRepo,
 		logMgr:             logMgr,
+		trafficCollector:   newTrafficCollector(statsAddr),
 	}
 
 	return app, nil

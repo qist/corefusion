@@ -210,6 +210,156 @@ func (s *Service) updateSubscriptionTraffic(ctx context.Context, statsEmail stri
 	}
 }
 
+// ResetAllTraffic resets _usedUp and _usedDown to 0 for all users in all
+// inbound configs on the given server. Also resets subscription traffic
+// cache columns for affected clients.
+func (s *Service) ResetAllTraffic(ctx context.Context, serverID int64) (int, error) {
+	configs, err := s.repo.List(ctx, serverID, "")
+	if err != nil {
+		return 0, err
+	}
+
+	resetCount := 0
+	for _, cfg := range configs {
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
+			continue
+		}
+
+		settings, ok := inbound["settings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		configReset := false
+		for _, key := range []string{"users", "clients", "accounts"} {
+			items, ok := settings[key].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, item := range items {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if _, hasUp := m["_usedUp"]; hasUp {
+					m["_usedUp"] = int64(0)
+					configReset = true
+					resetCount++
+				}
+				if _, hasDown := m["_usedDown"]; hasDown {
+					m["_usedDown"] = int64(0)
+					configReset = true
+				}
+			}
+		}
+
+		if configReset {
+			data, err := json.Marshal(inbound)
+			if err != nil {
+				log.Printf("resetTraffic: marshal failed for %s: %v", cfg.Tag, err)
+				continue
+			}
+			cfg.ConfigJSON = string(data)
+			cfg.UpdatedAt = time.Now()
+			if err := s.repo.Update(ctx, &cfg); err != nil {
+				log.Printf("resetTraffic: failed to update config %s: %v", cfg.Tag, err)
+			}
+		}
+	}
+
+	// Reset subscription traffic caches for all clients on this server
+	s.resetSubscriptionTrafficForServer(ctx, serverID)
+
+	return resetCount, nil
+}
+
+// resetSubscriptionTrafficForServer resets the traffic cache columns
+// (used_bytes_cache, upload_bytes_cache, download_bytes_cache) for all
+// subscriptions that have clients associated with the given server's inbounds.
+func (s *Service) resetSubscriptionTrafficForServer(ctx context.Context, serverID int64) {
+	if s.db == nil {
+		return
+	}
+
+	// Find all client emails from this server's inbound configs
+	configs, err := s.repo.List(ctx, serverID, "")
+	if err != nil {
+		return
+	}
+
+	emailSet := make(map[string]bool)
+	for _, cfg := range configs {
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
+			continue
+		}
+		settings, ok := inbound["settings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"users", "clients", "accounts"} {
+			items, ok := settings[key].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, item := range items {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				email, _ := m["email"].(string)
+				if email == "" {
+					email, _ = m["user"].(string)
+				}
+				if email != "" {
+					// Extract real email from "user@email.com_tag" format
+					realEmail := email
+					if idx := strings.LastIndex(email, "_"); idx > 0 {
+						candidate := email[:idx]
+						if strings.Contains(candidate, "@") {
+							realEmail = candidate
+						}
+					}
+					emailSet[realEmail] = true
+				}
+			}
+		}
+	}
+
+	if len(emailSet) == 0 {
+		return
+	}
+
+	// Collect unique subscription IDs for these clients
+	emails := make([]string, 0, len(emailSet))
+	for email := range emailSet {
+		emails = append(emails, email)
+	}
+
+	var subIDs []int64
+	s.db.WithContext(ctx).Model(&entity.Client{}).
+		Where("email IN ?", emails).
+		Where("subscription_id IS NOT NULL AND subscription_id > 0").
+		Distinct("subscription_id").
+		Pluck("subscription_id", &subIDs)
+
+	if len(subIDs) == 0 {
+		return
+	}
+
+	// Reset traffic cache for these subscriptions
+	s.db.WithContext(ctx).Model(&entity.Subscription{}).
+		Where("id IN ?", subIDs).
+		Updates(map[string]interface{}{
+			"used_bytes_cache":     0,
+			"upload_bytes_cache":   0,
+			"download_bytes_cache": 0,
+		})
+
+	log.Printf("resetTraffic: reset traffic cache for %d subscriptions on server %d", len(subIDs), serverID)
+}
+
 // GetEnabledInbounds returns all enabled inbound configs as parsed JSON for a specific server.
 func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
 	configs, err := s.repo.List(ctx, serverID, coreType)

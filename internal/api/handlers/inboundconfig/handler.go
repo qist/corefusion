@@ -159,6 +159,31 @@ func (h *Handler) Delete(c *gin.Context) {
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
+// ResetAllTraffic handles POST /api/v1/node-servers/:id/inbound-configs/reset-all-traffic.
+// Resets _usedUp and _usedDown to 0 for all users in all inbound configs on the server.
+func (h *Handler) ResetAllTraffic(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
+
+	count, err := h.svc.ResetAllTraffic(c.Request.Context(), serverID)
+	if err != nil {
+		response.InternalError(c, "RESET_FAILED", err.Error())
+		return
+	}
+
+	// Trigger config sync to the target server asynchronously
+	if h.syncHook != nil && serverID > 1 {
+		go h.syncHook.SyncServerConfig(context.Background(), serverID, "xray")
+	}
+
+	response.OK(c, gin.H{
+		"message":     "all traffic stats reset",
+		"users_reset": count,
+	})
+}
+
 // PauseUser handles POST /api/v1/inbound-configs/:id/users/:email/pause.
 // Sets _paused=true on the user in config JSON.
 func (h *Handler) PauseUser(c *gin.Context) {

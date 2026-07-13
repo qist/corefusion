@@ -156,11 +156,7 @@ func (h *Handler) UpdateGitHubConfig(c *gin.Context) {
 }
 
 func (h *Handler) GetSubscriptionBillingTemplates(c *gin.Context) {
-	lang := c.Query("lang")
-	if lang == "" {
-		lang = "zh"
-	}
-	config, err := h.settingSvc.GetSubscriptionBillingTemplateConfig(c.Request.Context(), lang)
+	config, err := h.settingSvc.GetSubscriptionBillingTemplateConfig(c.Request.Context())
 	if err != nil {
 		response.InternalError(c, "GET_FAILED", err.Error())
 		return

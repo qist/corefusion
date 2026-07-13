@@ -4450,6 +4450,7 @@ type OutboundConfigEntry struct {
 	IsDefault     bool                   `protobuf:"varint,9,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
 	CreatedAt     int64                  `protobuf:"varint,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     int64                  `protobuf:"varint,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	SortOrder     int32                  `protobuf:"varint,12,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4557,6 +4558,13 @@ func (x *OutboundConfigEntry) GetCreatedAt() int64 {
 func (x *OutboundConfigEntry) GetUpdatedAt() int64 {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return 0
+}
+
+func (x *OutboundConfigEntry) GetSortOrder() int32 {
+	if x != nil {
+		return x.SortOrder
 	}
 	return 0
 }
@@ -6784,7 +6792,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\f \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\r \x01(\x03R\tupdatedAt\"\xbd\x02\n" +
+	"updated_at\x18\r \x01(\x03R\tupdatedAt\"\xdc\x02\n" +
 	"\x13OutboundConfigEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\x03R\bserverId\x12\x16\n" +
@@ -6801,7 +6809,9 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"created_at\x18\n" +
 	" \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\x03R\tupdatedAt\"\x84\x05\n" +
+	"updated_at\x18\v \x01(\x03R\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"sort_order\x18\f \x01(\x05R\tsortOrder\"\x84\x05\n" +
 	"\x0fWarpConfigEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x14\n" +

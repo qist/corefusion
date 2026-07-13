@@ -16,6 +16,8 @@
           <el-tag v-if="ob._server" size="small" type="info">{{ ob._server }}:{{ ob._port }}</el-tag>
         </div>
         <div>
+          <el-button size="small" text :disabled="i === 0" @click="moveOutbound(i, -1)">↑</el-button>
+          <el-button size="small" text :disabled="i === form.length - 1" @click="moveOutbound(i, 1)">↓</el-button>
           <el-button size="small" text @click="showEdit(i)">{{ t('common.edit') }}</el-button>
           <el-button v-if="!ob._isDefault" size="small" type="danger" text @click="removeOutbound(i)">{{ t('common.delete') }}</el-button>
         </div>
@@ -1950,7 +1952,7 @@ async function loadOutbounds() {
     form.value = (data || []).map(item => {
       try {
         const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
-        return { ...parseOutbound(cfg), _id: item.id, _enabled: item.enabled, _isDefault: item.is_default }
+        return { ...parseOutbound(cfg), _id: item.id, _enabled: item.enabled, _isDefault: item.is_default, _sortOrder: item.sort_order || 0 }
       } catch (e) { console.error('parseOutbound error:', e, item); return null }
     }).filter(Boolean)
   } catch (e) { console.error('loadOutbounds error:', e); form.value = [] }
@@ -2084,6 +2086,46 @@ async function toggleEnabled(i) {
   } catch (e) { 
     ob._enabled = !ob._enabled
     ElMessage.error(t('common.failed')) 
+  }
+}
+
+async function moveOutbound(i, dir) {
+  const j = i + dir
+  if (j < 0 || j >= form.value.length) return
+  // Swap in the local array first for immediate UI feedback
+  const arr = form.value
+  const tmp = arr[i]
+  arr[i] = arr[j]
+  arr[j] = tmp
+  // Build reorder payload from current array order
+  const orders = arr.map((ob, idx) => ({ id: ob._id, sort_order: idx }))
+  try {
+    await client.put(`/node-servers/${props.serverId}/outbound-configs/reorder`, { orders }, { params: { core_type: props.coreType || 'xray' } })
+    // Update local sort orders
+    arr.forEach((ob, idx) => { ob._sortOrder = idx })
+    // Trigger config sync to running xray
+    try {
+      if (await ensureXrayRunning(client, props.serverId, '')) {
+        // Reload outbounds in xray runtime by removing and re-adding all
+        for (const ob of arr) {
+          if (ob.tag && ob._enabled !== false) {
+            try { await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true }) } catch {}
+          }
+        }
+        for (const ob of arr) {
+          if (ob._enabled !== false) {
+            const outbound = buildOutbound(ob)
+            try { await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true }) } catch {}
+          }
+        }
+      }
+    } catch (xrayErr) {
+      console.warn('Failed to apply reorder to xray runtime:', xrayErr)
+    }
+  } catch (e) {
+    ElMessage.error(t('common.failed') + ': ' + (e.message || e))
+    // Revert on failure
+    loadOutbounds()
   }
 }
 

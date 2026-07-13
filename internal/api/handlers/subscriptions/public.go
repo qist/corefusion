@@ -217,7 +217,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		formatStr = "base64_uri"
 	}
 
-	billingTemplates := h.loadBillingTemplateConfig(ctx, tmpl, lang)
+	billingTemplates := h.loadBillingTemplateConfig(ctx, tmpl)
 	billingTemplates.BillingNodeIDs = sub.BillingNodeIDs
 	// Fallback: if subscription doesn't specify billing node IDs,
 	// use the template's billing node IDs.
@@ -227,7 +227,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, members, clientEmail, billingTemplates)
 	links := renderedNodeLinks(renderedNodes)
 	nodes := renderedFormatterNodes(renderedNodes)
-	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes, lang)
+	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes)
 	billingLinks := renderedNodeLinks(billingNodes)
 	billingFormatterNodes := renderedFormatterNodes(billingNodes)
 
@@ -256,7 +256,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	}
 
 	// Build subscription info header (for browser display)
-	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates, lang)
+	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates)
 
 	// Build the Subscription-Userinfo body comment line.
 	// This is prepended to raw_uri and base64_uri responses so that tools
@@ -632,11 +632,11 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 	return items
 }
 
-func buildBillingInfoEntries(sub *entity.Subscription, templates billingTemplateConfig, items []renderedSubscriptionNode, lang string) []renderedSubscriptionNode {
+func buildBillingInfoEntries(sub *entity.Subscription, templates billingTemplateConfig, items []renderedSubscriptionNode) []renderedSubscriptionNode {
 	if len(templates.BillingNodeIDs) == 0 {
 		return nil
 	}
-	labels := buildBillingInfoLabels(sub, templates, lang)
+	labels := buildBillingInfoLabels(sub, templates)
 	if len(labels) == 0 {
 		return nil
 	}
@@ -2059,31 +2059,31 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 }
 
 // buildSubscriptionInfoHeader builds a human-readable subscription info block.
-func buildSubscriptionInfoHeader(sub *entity.Subscription, templates billingTemplateConfig, lang string) string {
+func buildSubscriptionInfoHeader(sub *entity.Subscription, templates billingTemplateConfig) string {
 	if len(templates.BillingNodeIDs) == 0 {
 		return ""
 	}
 	var lines []string
-	for _, label := range buildBillingInfoLabels(sub, templates, lang) {
+	for _, label := range buildBillingInfoLabels(sub, templates) {
 		lines = append(lines, "# "+label)
 	}
 	return strings.Join(lines, "\n")
 }
 
-func buildBillingInfoLabels(sub *entity.Subscription, templates billingTemplateConfig, lang string) []string {
+func buildBillingInfoLabels(sub *entity.Subscription, templates billingTemplateConfig) []string {
 	return []string{
-		renderBillingTemplate(templates.UsedTemplate, sub, lang),
-		renderBillingTemplate(templates.RemainingTemplate, sub, lang),
-		renderBillingTemplate(templates.ResetTemplate, sub, lang),
-		renderBillingTemplate(templates.ExpiryTemplate, sub, lang),
+		renderBillingTemplate(templates.UsedTemplate, sub),
+		renderBillingTemplate(templates.RemainingTemplate, sub),
+		renderBillingTemplate(templates.ResetTemplate, sub),
+		renderBillingTemplate(templates.ExpiryTemplate, sub),
 	}
 }
 
-func renderBillingTemplate(template string, sub *entity.Subscription, lang string) string {
+func renderBillingTemplate(template string, sub *entity.Subscription) string {
 	if template == "" {
 		return ""
 	}
-	variables := buildBillingTemplateVariables(sub, lang)
+	variables := buildBillingTemplateVariables(sub)
 	replacements := make([]string, 0, len(variables)*2)
 	for _, key := range billingTemplateVariables {
 		replacements = append(replacements, "{"+key+"}", variables[key])
@@ -2113,7 +2113,7 @@ var billingTemplateVariables = []string{
 	"quota_state",
 }
 
-func buildBillingTemplateVariables(sub *entity.Subscription, lang string) map[string]string {
+func buildBillingTemplateVariables(sub *entity.Subscription) map[string]string {
 	remain := sub.QuotaBytes - sub.UsedBytesCache
 	if remain < 0 {
 		remain = 0
@@ -2122,12 +2122,6 @@ func buildBillingTemplateVariables(sub *entity.Subscription, lang string) map[st
 	todayStr := "Today"
 	daysFmt := "%d Days"
 	unlimitedStr := "Unlimited"
-	if lang == "zh" {
-		noResetStr = "不重置"
-		todayStr = "今天"
-		daysFmt = "%d天"
-		unlimitedStr = "无限"
-	}
 	// Determine the effective reset time: use NextResetAt if set, otherwise
 	// fall back to ExpiresAt — when the subscription expires and renews,
 	// the quota is reset at that point.
@@ -2196,15 +2190,7 @@ func buildBillingTemplateVariables(sub *entity.Subscription, lang string) map[st
 	}
 }
 
-func defaultBillingTemplateConfig(lang string) billingTemplateConfig {
-	if lang == "zh" {
-		return billingTemplateConfig{
-			UsedTemplate:      "已用流量：{used_human}",
-			RemainingTemplate: "剩余用量：{remaining_human}",
-			ResetTemplate:     "距离下次重置剩余：{reset_human}",
-			ExpiryTemplate:    "套餐到期时间：{expires_human}",
-		}
-	}
+func defaultBillingTemplateConfig() billingTemplateConfig {
 	return billingTemplateConfig{
 		UsedTemplate:      "Used: {used_human}",
 		RemainingTemplate: "Remaining: {remaining_human}",
@@ -2213,8 +2199,8 @@ func defaultBillingTemplateConfig(lang string) billingTemplateConfig {
 	}
 }
 
-func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, tmpl *entity.PlanTemplate, lang string) billingTemplateConfig {
-	config := defaultBillingTemplateConfig(lang)
+func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, tmpl *entity.PlanTemplate) billingTemplateConfig {
+	config := defaultBillingTemplateConfig()
 	if h.systemSettingRepo != nil {
 		settings, err := h.systemSettingRepo.GetByPrefix(ctx, "subscription.billing_template.")
 		if err == nil {

@@ -27,7 +27,7 @@ func (r *OutboundConfigRepository) List(ctx context.Context, serverID int64, cor
 	if coreType != "" {
 		query = query.Where("core_type = ?", coreType)
 	}
-	err := query.Order("id").Find(&configs).Error
+	err := query.Order("sort_order ASC, id ASC").Find(&configs).Error
 	return configs, err
 }
 
@@ -69,7 +69,7 @@ func (r *OutboundConfigRepository) Upsert(ctx context.Context, cfg *entity.Outbo
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "server_id"}, {Name: "tag"}},
-		DoUpdates: clause.AssignmentColumns([]string{"remark", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"remark", "protocol", "config_json", "enabled", "is_default", "sort_order", "updated_at"}),
 	}).Create(cfg).Error
 }
 
@@ -86,6 +86,30 @@ func (r *OutboundConfigRepository) DeleteByTag(ctx context.Context, serverID int
 // GetDefault retrieves default outbound configs for a core type on a specific server.
 func (r *OutboundConfigRepository) GetDefault(ctx context.Context, serverID int64, coreType string) ([]entity.OutboundConfig, error) {
 	var configs []entity.OutboundConfig
-	err := r.db.WithContext(ctx).Where("server_id = ? AND core_type = ? AND is_default = ?", serverID, coreType, true).Order("id").Find(&configs).Error
+	err := r.db.WithContext(ctx).Where("server_id = ? AND core_type = ? AND is_default = ?", serverID, coreType, true).Order("sort_order ASC, id ASC").Find(&configs).Error
 	return configs, err
+}
+
+// GetMaxSortOrder returns the highest sort_order for a given server and core type.
+func (r *OutboundConfigRepository) GetMaxSortOrder(ctx context.Context, serverID int64, coreType string) (int, error) {
+	var maxOrder int
+	err := r.db.WithContext(ctx).Model(&entity.OutboundConfig{}).
+		Where("server_id = ? AND core_type = ?", serverID, coreType).
+		Select("COALESCE(MAX(sort_order), 0)").Scan(&maxOrder).Error
+	return maxOrder, err
+}
+
+// Reorder updates the sort_order of multiple outbound configs in a single transaction.
+// orders is a map of outbound ID → new sort_order value.
+func (r *OutboundConfigRepository) Reorder(ctx context.Context, serverID int64, orders map[int64]int) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for id, order := range orders {
+			if err := tx.Model(&entity.OutboundConfig{}).
+				Where("server_id = ? AND id = ?", serverID, id).
+				Update("sort_order", order).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

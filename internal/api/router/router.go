@@ -1234,6 +1234,7 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 			nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
 			nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
 			nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
+			nodeServersGroup.PUT("/:id/outbound-configs/reorder", outboundCfgH.Reorder)
 
 			// Services (per node) — service management with process control
 			nodeServersGroup.GET("/:id/services", svcH.List)

@@ -162,3 +162,43 @@ func (h *Handler) Delete(c *gin.Context) {
 
 	response.OK(c, nil)
 }
+
+// Reorder handles PUT /api/v1/node-servers/:id/outbound-configs/reorder.
+// Request body: { "orders": [ { "id": 1, "sort_order": 0 }, ... ] }
+func (h *Handler) Reorder(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		serverID = 1
+	}
+	var req struct {
+		Orders []struct {
+			ID        int64 `json:"id"`
+			SortOrder int   `json:"sort_order"`
+		} `json:"orders"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	orders := make(map[int64]int, len(req.Orders))
+	for _, o := range req.Orders {
+		orders[o.ID] = o.SortOrder
+	}
+
+	if err := h.svc.Reorder(c.Request.Context(), serverID, orders); err != nil {
+		response.InternalError(c, "REORDER_FAILED", err.Error())
+		return
+	}
+
+	// Trigger config sync to the target server asynchronously
+	coreType := c.Query("core_type")
+	if coreType == "" {
+		coreType = "xray"
+	}
+	if h.syncHook != nil && serverID > 1 {
+		go h.syncHook.SyncServerConfig(context.Background(), serverID, coreType)
+	}
+
+	response.OK(c, nil)
+}

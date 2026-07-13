@@ -10,123 +10,13 @@ import (
 	"corefusion/internal/service/client"
 )
 
-// Handler handles plan and client HTTP requests.
+// Handler handles client HTTP requests.
 type Handler struct {
 	svc *client.Service
 }
 
 func NewHandler(svc *client.Service) *Handler {
 	return &Handler{svc: svc}
-}
-
-// --- Plan handlers ---
-
-func (h *Handler) ListPlans(c *gin.Context) {
-	plans, err := h.svc.ListPlans(c.Request.Context())
-	if err != nil {
-		response.InternalError(c, "LIST_PLANS_FAILED", err.Error())
-		return
-	}
-	response.OK(c, plans)
-}
-
-func (h *Handler) GetPlan(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid plan id")
-		return
-	}
-	plan, nodes, err := h.svc.GetPlan(c.Request.Context(), id)
-	if err != nil {
-		response.NotFound(c, "PLAN_NOT_FOUND", "plan not found")
-		return
-	}
-	response.OK(c, gin.H{"plan": plan, "nodes": nodes})
-}
-
-func (h *Handler) CreatePlan(c *gin.Context) {
-	var input client.CreatePlanInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-	plan, err := h.svc.CreatePlan(c.Request.Context(), input)
-	if err != nil {
-		response.InternalError(c, "CREATE_PLAN_FAILED", err.Error())
-		return
-	}
-	response.Created(c, plan)
-}
-
-func (h *Handler) UpdatePlan(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid plan id")
-		return
-	}
-	var input client.UpdatePlanInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-	plan, err := h.svc.UpdatePlan(c.Request.Context(), id, input)
-	if err != nil {
-		response.InternalError(c, "UPDATE_PLAN_FAILED", err.Error())
-		return
-	}
-	response.OK(c, plan)
-}
-
-func (h *Handler) DeletePlan(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid plan id")
-		return
-	}
-	if err := h.svc.DeletePlan(c.Request.Context(), id); err != nil {
-		response.InternalError(c, "DELETE_PLAN_FAILED", err.Error())
-		return
-	}
-	response.OK(c, gin.H{"message": "plan deleted"})
-}
-
-func (h *Handler) AddPlanNode(c *gin.Context) {
-	planID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid plan id")
-		return
-	}
-	var req struct {
-		InboundConfigID int64 `json:"inbound_config_id"`
-		ExternalNodeID  int64 `json:"external_node_id"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-	if req.InboundConfigID == 0 && req.ExternalNodeID == 0 {
-		response.BadRequest(c, "INVALID_REQUEST", "inbound_config_id or external_node_id required")
-		return
-	}
-	node, err := h.svc.AddPlanNode(c.Request.Context(), planID, req.InboundConfigID, req.ExternalNodeID)
-	if err != nil {
-		response.InternalError(c, "ADD_NODE_FAILED", err.Error())
-		return
-	}
-	response.Created(c, node)
-}
-
-func (h *Handler) DeletePlanNode(c *gin.Context) {
-	nid, err := strconv.ParseInt(c.Param("nid"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid node id")
-		return
-	}
-	if err := h.svc.DeletePlanNode(c.Request.Context(), nid); err != nil {
-		response.InternalError(c, "DELETE_NODE_FAILED", err.Error())
-		return
-	}
-	response.OK(c, gin.H{"message": "node removed from plan"})
 }
 
 // --- Client handlers ---
@@ -188,11 +78,14 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 		return
 	}
 	var input struct {
-		Password   *string `json:"password"`
-		PlanID     *int64  `json:"plan_id"`
-		QuotaBytes *int64  `json:"quota_bytes"`
-		ExpiresAt  *string `json:"expires_at"`
-		Remark     *string `json:"remark"`
+		Password        *string `json:"password"`
+		PlanID          *int64  `json:"plan_id"`
+		PlanVariantID   *int64  `json:"plan_variant_id"`
+		QuotaBytes      *int64  `json:"quota_bytes"`
+		SpeedLimitMbps  *int    `json:"speed_limit_mbps"`
+		ConcurrentLimit *int    `json:"concurrent_limit"`
+		ExpiresAt       *string `json:"expires_at"`
+		Remark          *string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

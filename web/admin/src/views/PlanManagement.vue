@@ -24,12 +24,22 @@
                 <div v-if="tpl.is_trial" style="color:#e6a23c">
                   <el-tag type="warning" size="small">试用</el-tag> {{ tpl.trial_duration_hours }}小时
                 </div>
-                <div>节点分组: {{ (tpl.node_group_ids||[]).length }} 个</div>
+                <div>节点分组: {{ (tpl.node_group_ids||[]).length }} 个 | 计费节点: {{ (tpl.billing_node_ids||[]).length }} 个</div>
                 <div style="color:#909399;font-size:12px">{{ tpl.description }}</div>
+              </div>
+              <div v-if="templateNodes[tpl.id] && templateNodes[tpl.id].length" style="margin-top:8px;border-top:1px solid #ebeef5;padding-top:8px">
+                <div style="font-size:12px;color:#909399;margin-bottom:4px">关联节点（主机 - 入口/节点名称）</div>
+                <div v-for="node in templateNodes[tpl.id].slice(0,5)" :key="node.member_id" style="font-size:12px;line-height:1.8">
+                  <el-tag :type="node.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ node.type==='inbound'?'入口':'外部' }}</el-tag>
+                  <span style="color:#409eff">{{ node.server_name }}</span> - {{ node.node_name }}
+                  <span style="color:#909399">({{ node.protocol }}:{{ node.port }})</span>
+                </div>
+                <div v-if="templateNodes[tpl.id].length > 5" style="font-size:12px;color:#909399;margin-top:4px">...共 {{ templateNodes[tpl.id].length }} 个节点</div>
               </div>
               <div style="margin-top:12px;display:flex;gap:4px;flex-wrap:wrap">
                 <el-button size="small" @click="showVariantsDialog(tpl)">管理规格</el-button>
                 <el-button size="small" @click="showNodeGroupsDialog(tpl)">管理节点</el-button>
+                <el-button size="small" @click="showBillingNodesDialog(tpl)">计费节点</el-button>
                 <el-button size="small" @click="showEditTemplate(tpl)">编辑</el-button>
                 <el-button size="small" type="danger" @click="deleteTemplate(tpl)">删除</el-button>
               </div>
@@ -297,6 +307,29 @@
       </template>
     </el-dialog>
 
+    <!-- 计费节点选择弹窗 -->
+    <el-dialog v-model="billingNodesDialog" :title="currentTemplate?.name + ' - 计费节点选择'" width="600px">
+      <div v-loading="billingNodesLoading">
+        <div style="margin-bottom:8px;font-size:13px;color:#606266">
+          选择用于渲染计费信息的节点（显示：主机节点 - 入口/节点名称）。不选则不显示计费信息。
+        </div>
+        <el-checkbox-group v-model="selectedBillingNodeIds">
+          <div v-for="opt in billingNodeOptions" :key="opt.member_id" style="margin-bottom:8px">
+            <el-checkbox :value="opt.member_id">
+              <el-tag :type="opt.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ opt.type==='inbound'?'入口':'外部' }}</el-tag>
+              <span style="color:#409eff">{{ opt.server_name }}</span> - {{ opt.node_name }}
+              <span style="color:#909399;font-size:12px">({{ opt.protocol }}:{{ opt.port }})</span>
+            </el-checkbox>
+          </div>
+        </el-checkbox-group>
+        <el-empty v-if="!billingNodesLoading && billingNodeOptions.length === 0" description="暂无关联节点，请先为模板分配节点分组并添加成员" />
+      </div>
+      <template #footer>
+        <el-button @click="billingNodesDialog=false">取消</el-button>
+        <el-button type="primary" @click="saveBillingNodes">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 分组编辑弹窗 -->
     <el-dialog v-model="groupDialog" :title="editingGroup?'编辑分组':'新增分组'" width="450px">
       <el-form :model="groupForm" label-width="80px" size="small">
@@ -331,8 +364,8 @@
     <!-- 分组成员管理弹窗 -->
     <el-dialog v-model="membersDialog" :title="currentGroup?.name + ' - 成员管理'" width="650px">
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <el-select v-model="newMemberInboundId" size="small" filterable placeholder="选择入站配置" style="width:260px">
-          <el-option v-for="ib in inbounds" :key="ib.id" :label="(ib.remark || ib.tag) + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
+        <el-select v-model="newMemberInboundId" size="small" filterable placeholder="选择入站配置" style="width:320px">
+          <el-option v-for="ib in inbounds" :key="ib.id" :label="(ib.server_name || '本地节点') + ' - ' + (ib.remark || ib.tag) + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
         </el-select>
         <el-button size="small" type="primary" @click="addInboundMember">添加入站</el-button>
         <el-select v-model="newMemberExtNodeId" size="small" filterable placeholder="选择外部节点" style="width:260px">
@@ -342,7 +375,14 @@
       </div>
       <el-table :data="groupMembers" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column label="节点名称">
+        <el-table-column label="主机节点" width="120">
+          <template #default="{row}">
+            <template v-if="row.inbound_config_id">{{ inboundServerName(row.inbound_config_id) }}</template>
+            <template v-else-if="row.external_node_id">外部节点</template>
+            <template v-else>—</template>
+          </template>
+        </el-table-column>
+        <el-table-column label="入口/节点名称">
           <template #default="{row}">
             <template v-if="row.inbound_config_id">{{ inboundName(row.inbound_config_id) }}</template>
             <template v-else-if="row.external_node_id">{{ extNodeName(row.external_node_id) }}</template>
@@ -432,6 +472,7 @@ function emptyTemplateForm() {
 }
 async function fetchTemplates() {
   try { templates.value = (await planApi.listPlanTemplates()) || [] } catch {}
+  fetchTemplateNodes()
 }
 function showCreateTemplate() {
   editingTemplate.value = null
@@ -554,6 +595,49 @@ async function saveTemplateNodeGroups() {
     await planApi.setTemplateNodeGroups(currentTemplate.value.id, selectedNodeGroupIds.value)
     ElMessage.success('保存成功')
     templateNodeGroupsDialog.value = false
+    fetchTemplates()
+    fetchTemplateNodes()
+  } catch {}
+}
+
+// ──────── Template Billing Nodes ────────
+const billingNodesDialog = ref(false)
+const billingNodeOptions = ref([])
+const selectedBillingNodeIds = ref([])
+const billingNodesLoading = ref(false)
+const templateNodes = ref({})
+
+async function fetchTemplateNodes() {
+  for (const tpl of templates.value) {
+    try {
+      const res = await planApi.getBillingNodeOptions(tpl.id)
+      templateNodes.value[tpl.id] = Array.isArray(res) ? res : []
+    } catch {
+      templateNodes.value[tpl.id] = []
+    }
+  }
+}
+
+async function showBillingNodesDialog(tpl) {
+  currentTemplate.value = tpl
+  selectedBillingNodeIds.value = [...(tpl.billing_node_ids || [])]
+  billingNodesLoading.value = true
+  billingNodesDialog.value = true
+  try {
+    const res = await planApi.getBillingNodeOptions(tpl.id)
+    billingNodeOptions.value = Array.isArray(res) ? res : []
+  } catch {
+    billingNodeOptions.value = []
+  } finally {
+    billingNodesLoading.value = false
+  }
+}
+
+async function saveBillingNodes() {
+  try {
+    await planApi.updatePlanTemplate(currentTemplate.value.id, { billing_node_ids: selectedBillingNodeIds.value })
+    ElMessage.success('保存成功')
+    billingNodesDialog.value = false
     fetchTemplates()
   } catch {}
 }
@@ -704,8 +788,7 @@ async function fetchOrders() {
 // ──────── Shared data ────────
 async function fetchInbounds() {
   try {
-    const r = await client.get('/node-servers/1/inbound-configs')
-    inbounds.value = Array.isArray(r) ? r : (r.data || [])
+    inbounds.value = (await planApi.listAllInboundsWithServer()) || []
   } catch {}
 }
 async function fetchExtNodes() {
@@ -730,6 +813,7 @@ const orderTypeColor = (t) => ({ new:'success', renew:'', upgrade:'warning', dow
 const orderStatusLabel = (s) => ({ pending:'待支付', paid:'已支付', completed:'已完成', cancelled:'已取消', refunded:'已退款' })[s] || s
 const orderStatusColor = (s) => ({ pending:'warning', paid:'info', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
 const inboundName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.remark || ib.tag) : '#' + id }
+const inboundServerName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.server_name || '本地节点') : '—' }
 const extNodeName = (id) => { const n = extNodes.value.find(n => n.id === id); return n ? n.name : '#' + id }
 
 onMounted(() => {

@@ -10,6 +10,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 )
 
@@ -17,16 +18,15 @@ import (
 // It respects billing_enabled (skipping chain_exit, backup nodes) and
 // queues failed operations for retry when servers come back online.
 type UserSyncService struct {
-	clientRepo   *repository.ClientRepository
-	planRepo     *repository.PlanRepository
-	planNodeRepo *repository.PlanNodeRepository
-	inboundRepo  *repository.InboundConfigRepository
-	serverRepo   *repository.NodeServerRepository
-	nodeMgr      *agent.NodeServerManager
+	clientRepo    *repository.ClientRepository
+	planSvc       *plan.Service
+	inboundRepo   *repository.InboundConfigRepository
+	serverRepo    *repository.NodeServerRepository
+	nodeMgr       *agent.NodeServerManager
 	billingFilter *agent.BillingFilter
 
 	// Offline retry queue
-	retryMu   sync.Mutex
+	retryMu    sync.Mutex
 	retryQueue []retryEntry
 }
 
@@ -42,8 +42,7 @@ type retryEntry struct {
 // NewUserSyncService creates a new UserSyncService.
 func NewUserSyncService(
 	clientRepo *repository.ClientRepository,
-	planRepo *repository.PlanRepository,
-	planNodeRepo *repository.PlanNodeRepository,
+	planSvc *plan.Service,
 	inboundRepo *repository.InboundConfigRepository,
 	serverRepo *repository.NodeServerRepository,
 	nodeMgr *agent.NodeServerManager,
@@ -51,8 +50,7 @@ func NewUserSyncService(
 ) *UserSyncService {
 	return &UserSyncService{
 		clientRepo:    clientRepo,
-		planRepo:      planRepo,
-		planNodeRepo:  planNodeRepo,
+		planSvc:       planSvc,
 		inboundRepo:   inboundRepo,
 		serverRepo:    serverRepo,
 		nodeMgr:       nodeMgr,
@@ -69,22 +67,15 @@ func (s *UserSyncService) SyncUserToServers(ctx context.Context, clientID int64,
 		return fmt.Errorf("get client %d: %w", clientID, err)
 	}
 
-	// Get plan nodes (inbound configs) for this client's plan
-	planNodes, err := s.planNodeRepo.ListByPlanID(ctx, client.PlanID)
+	// Get accessible nodes (inbound configs) for this client's plan template
+	accessResult, err := s.planSvc.GetAccessibleNodes(ctx, client.PlanID)
 	if err != nil {
-		return fmt.Errorf("list plan nodes for plan %d: %w", client.PlanID, err)
+		return fmt.Errorf("get accessible nodes for plan %d: %w", client.PlanID, err)
 	}
 
 	// Group inbound configs by server_id
 	serverInbounds := make(map[int64][]int64) // server_id → []inbound_id
-	for _, pn := range planNodes {
-		if pn.InboundConfigID == 0 || !pn.Enabled {
-			continue
-		}
-		inbound, err := s.inboundRepo.GetByID(ctx, pn.InboundConfigID)
-		if err != nil {
-			continue
-		}
+	for _, inbound := range accessResult.InboundConfigs {
 		// server_id = 0 means local (existing behavior)
 		serverInbounds[inbound.ServerID] = append(serverInbounds[inbound.ServerID], inbound.ID)
 	}

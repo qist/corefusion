@@ -270,8 +270,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subfmtRuleRepo := repository.NewSubscriptionRuleRepository(database)
 	subendRepo := repository.NewSubscriptionEndpointRepository(database)
 	shareDomainRepo := repository.NewShareDomainConfigRepository(database)
-	planRepo := repository.NewPlanRepository(database)
-	planNodeRepo := repository.NewPlanNodeRepository(database)
 	clientRepo := repository.NewClientRepository(database)
 
 	coreConfigRepo := repository.NewCoreConfigRepository(database)
@@ -282,6 +280,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Inbound config service (separate table for inbound configurations)
 	inboundConfigRepo := repository.NewInboundConfigRepository(database)
+
+	// Plan v2: templates, variants, node groups, promotions, orders (created early, many services depend on planSvc)
+	planTmplRepo := repository.NewPlanTemplateRepository(database)
+	planVariantRepo := repository.NewPlanVariantRepository(database)
+	nodeGroupRepo := repository.NewNodeGroupRepository(database)
+	nodeGroupMemberRepo := repository.NewNodeGroupMemberRepository(database)
+	promoRepo := repository.NewPromotionRepository(database)
+	planOrderRepo := repository.NewPlanOrderRepository(database)
+	extNodeRepo := repository.NewExternalNodeRepository(database)
+	planSvcInst := planSvc.NewService(database, planTmplRepo, planVariantRepo, nodeGroupRepo, nodeGroupMemberRepo, promoRepo, planOrderRepo, clientRepo, inboundConfigRepo, extNodeRepo)
+
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
 	outboundConfigSvc := outboundconfigSvc.NewService(outboundConfigRepo)
@@ -305,7 +314,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	userSvc := userService.NewService(userRepo)
 	nodeSvc := nodeService.NewService(nodeRepo)
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
-	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planNodeRepo)
+	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planSvcInst)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
 	// Initialize HTTP-01 challenge provider for ACME certificate issuance
 	// This integrates with the Gin router to serve challenges at /.well-known/acme-challenge/
@@ -367,9 +376,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Wire client log packaging dependencies (for subscription user log access)
 	clientLogPkgRepo := repository.NewClientLogPackageRepository(database)
 	if sharedNodeMgr != nil {
-		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planNodeRepo, inboundConfigRepo, sharedNodeMgr)
+		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planSvcInst, inboundConfigRepo, sharedNodeMgr)
 	} else {
-		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planNodeRepo, inboundConfigRepo, nil)
+		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planSvcInst, inboundConfigRepo, nil)
 	}
 
 	// Wire log mode provider to configsync so generated configs include correct log section
@@ -404,7 +413,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Client service
 	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
-	clientSvcInst := clientSvc.NewService(clientRepo, planRepo, planNodeRepo, subRepo, inboundConfigRepo, inboundMgr)
+	clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
 
 	// Mihomo service
 	mihomoConfigRepo := repository.NewMihomoConfigRepository(database)
@@ -427,7 +436,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 
 	// Client auth service
-	clientauthSvcInst := clientauthSvc.NewService(clientRepo, planRepo, subRepo, systemSettingSvc, jwtSecret)
+	clientauthSvcInst := clientauthSvc.NewService(clientRepo, planTmplRepo, subRepo, systemSettingSvc, jwtSecret)
 
 	// Start rule sync scheduler
 	geoRuleScheduler.Start()
@@ -443,19 +452,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subendH := subendHandler.NewHandler(subendSvcInst)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	extSrcRepo := repository.NewExternalNodeSourceRepository(database)
-	extNodeRepo := repository.NewExternalNodeRepository(database)
 
-	// Plan v2: templates, variants, node groups, promotions, orders
-	planTmplRepo := repository.NewPlanTemplateRepository(database)
-	planVariantRepo := repository.NewPlanVariantRepository(database)
-	nodeGroupRepo := repository.NewNodeGroupRepository(database)
-	nodeGroupMemberRepo := repository.NewNodeGroupMemberRepository(database)
-	promoRepo := repository.NewPromotionRepository(database)
-	planOrderRepo := repository.NewPlanOrderRepository(database)
-	planSvcInst := planSvc.NewService(database, planTmplRepo, planVariantRepo, nodeGroupRepo, nodeGroupMemberRepo, promoRepo, planOrderRepo, clientRepo, inboundConfigRepo, extNodeRepo)
 	planH := planHandler.NewHandler(planSvcInst)
 
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planRepo, planNodeRepo, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
@@ -827,18 +827,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subendGroup.DELETE("/:id", subendH.Delete)
 			}
 
-			// Plans
-			plansGroup := protected.Group("/plans")
-			{
-				plansGroup.GET("", clientH.ListPlans)
-				plansGroup.POST("", clientH.CreatePlan)
-				plansGroup.GET("/:id", clientH.GetPlan)
-				plansGroup.PUT("/:id", clientH.UpdatePlan)
-				plansGroup.DELETE("/:id", clientH.DeletePlan)
-				plansGroup.POST("/:id/nodes", clientH.AddPlanNode)
-				plansGroup.DELETE("/:id/nodes/:nid", clientH.DeletePlanNode)
-			}
-
 			// Clients
 			clientsGroup := protected.Group("/clients")
 			{
@@ -866,6 +854,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				planTmplGroup.DELETE("/:id", planH.DeleteTemplate)
 				planTmplGroup.PUT("/:id/node-groups", planH.SetTemplateNodeGroups)
 				planTmplGroup.GET("/:id/accessible-nodes", planH.GetAccessibleNodes)
+				planTmplGroup.GET("/:id/billing-node-options", planH.GetBillingNodeOptions)
 				planTmplGroup.GET("/:id/variants", planH.ListVariants)
 				planTmplGroup.POST("/:id/variants", planH.CreateVariant)
 			}
@@ -876,6 +865,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				planVariantGroup.PUT("/:id", planH.UpdateVariant)
 				planVariantGroup.DELETE("/:id", planH.DeleteVariant)
 			}
+
+			// Inbounds with server name (for member management UI)
+			protected.GET("/inbounds-with-server", planH.ListAllInboundsWithServer)
 
 			// Node Groups (节点分组)
 			nodeGroupRoute := protected.Group("/node-groups")
@@ -1893,7 +1885,6 @@ func isSPARoute(path string) bool {
 		"/log-manage",
 		"/settings",
 		"/portal",
-		"/plans",
 	}
 
 	for _, route := range knownRoutes {
@@ -1962,15 +1953,22 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	shareDomainRepo := repository.NewShareDomainConfigRepository(database)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	clientRepo := repository.NewClientRepository(database)
-	planRepo := repository.NewPlanRepository(database)
-	planNodeRepo := repository.NewPlanNodeRepository(database)
 	accessLogRepo := repository.NewAccessLogRepository(database)
 	mihomoConfigRepo2 := repository.NewMihomoConfigRepository(database)
 	mihomoRuleRepo2 := repository.NewMihomoRuleRepository(database)
 	extNodeRepo2 := repository.NewExternalNodeRepository(database)
 	systemSettingRepo := repository.NewSystemSettingRepository(database)
 
-	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planRepo, planNodeRepo, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
+	// Plan v2 service for node resolution
+	planTmplRepo2 := repository.NewPlanTemplateRepository(database)
+	planVariantRepo2 := repository.NewPlanVariantRepository(database)
+	nodeGroupRepo2 := repository.NewNodeGroupRepository(database)
+	nodeGroupMemberRepo2 := repository.NewNodeGroupMemberRepository(database)
+	promoRepo2 := repository.NewPromotionRepository(database)
+	planOrderRepo2 := repository.NewPlanOrderRepository(database)
+	planSvcInst2 := planSvc.NewService(database, planTmplRepo2, planVariantRepo2, nodeGroupRepo2, nodeGroupMemberRepo2, promoRepo2, planOrderRepo2, clientRepo, inboundRepo, extNodeRepo2)
+
+	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst2, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
 
 	// Subscription at root path - no /sub prefix needed
 	r.GET("/:token", publicSubH.ServeSubscription)

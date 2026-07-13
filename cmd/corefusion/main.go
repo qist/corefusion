@@ -25,6 +25,7 @@ import (
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
 	"corefusion/internal/service/subscription"
+	planSvc "corefusion/internal/service/plan"
 	usersync "corefusion/internal/service/usersync"
 	sysService "corefusion/internal/service/system"
 	"corefusion/internal/store/db"
@@ -243,11 +244,19 @@ func runServer(args []string) {
 	// Phase 4: Start UserSyncService and MultiServerTrafficCollector
 	billingFilter := agent.NewBillingFilter(nodeServerRepo)
 	clientRepo := repository.NewClientRepository(db.DB)
-	planRepo := repository.NewPlanRepository(db.DB)
-	planNodeRepo := repository.NewPlanNodeRepository(db.DB)
+	extNodeRepoForSync := repository.NewExternalNodeRepository(db.DB)
+
+	// Plan v2 service for node resolution (used by usersync)
+	planTmplRepoForSync := repository.NewPlanTemplateRepository(db.DB)
+	planVariantRepoForSync := repository.NewPlanVariantRepository(db.DB)
+	nodeGroupRepoForSync := repository.NewNodeGroupRepository(db.DB)
+	nodeGroupMemberRepoForSync := repository.NewNodeGroupMemberRepository(db.DB)
+	promoRepoForSync := repository.NewPromotionRepository(db.DB)
+	planOrderRepoForSync := repository.NewPlanOrderRepository(db.DB)
+	planSvcInst := planSvc.NewService(db.DB, planTmplRepoForSync, planVariantRepoForSync, nodeGroupRepoForSync, nodeGroupMemberRepoForSync, promoRepoForSync, planOrderRepoForSync, clientRepo, inboundRepoForPhase3, extNodeRepoForSync)
 
 	userSyncSvc := usersync.NewUserSyncService(
-		clientRepo, planRepo, planNodeRepo, inboundRepoForPhase3,
+		clientRepo, planSvcInst, inboundRepoForPhase3,
 		nodeServerRepo, nodeMgr, billingFilter,
 	)
 	go userSyncSvc.RunRetryLoop(context.Background())

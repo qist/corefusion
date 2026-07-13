@@ -30,6 +30,14 @@ export function getAccessibleNodes(id) {
   return client.get(`/plan-templates/${id}/accessible-nodes`)
 }
 
+export function getBillingNodeOptions(id) {
+  return client.get(`/plan-templates/${id}/billing-node-options`)
+}
+
+export function listAllInboundsWithServer() {
+  return client.get('/inbounds-with-server')
+}
+
 // ──────────── Plan Variants ────────────
 
 export function listPlanVariants(templateId) {

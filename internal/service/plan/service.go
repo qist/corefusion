@@ -92,6 +92,7 @@ type CreateTemplateInput struct {
 	BillingRemainingTemplate  string   `json:"billing_remaining_template"`
 	BillingResetTemplate      string   `json:"billing_reset_template"`
 	BillingExpiryTemplate     string   `json:"billing_expiry_template"`
+	BillingNodeIDs            []int64 `json:"billing_node_ids"`
 	SortOrder                 int      `json:"sort_order"`
 	Enabled                   *bool    `json:"enabled"`
 	Metadata                  string   `json:"metadata"`
@@ -137,6 +138,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		BillingRemainingTemplate:   input.BillingRemainingTemplate,
 		BillingResetTemplate:       input.BillingResetTemplate,
 		BillingExpiryTemplate:      input.BillingExpiryTemplate,
+		BillingNodeIDs:             entity.Int64List(input.BillingNodeIDs),
 		SortOrder:                  input.SortOrder,
 		Enabled:                    enabled,
 		Metadata:                   input.Metadata,
@@ -169,6 +171,7 @@ type UpdateTemplateInput struct {
 	BillingRemainingTemplate  *string  `json:"billing_remaining_template"`
 	BillingResetTemplate      *string  `json:"billing_reset_template"`
 	BillingExpiryTemplate     *string  `json:"billing_expiry_template"`
+	BillingNodeIDs            *[]int64 `json:"billing_node_ids"`
 	SortOrder                 *int     `json:"sort_order"`
 	Enabled                   *bool    `json:"enabled"`
 	Metadata                  *string  `json:"metadata"`
@@ -233,6 +236,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.BillingExpiryTemplate != nil {
 		tmpl.BillingExpiryTemplate = *input.BillingExpiryTemplate
+	}
+	if input.BillingNodeIDs != nil {
+		tmpl.BillingNodeIDs = entity.Int64List(*input.BillingNodeIDs)
 	}
 	if input.SortOrder != nil {
 		tmpl.SortOrder = *input.SortOrder
@@ -1083,6 +1089,60 @@ type AccessibleNodesResult struct {
 	ExternalNodes  []entity.ExternalNode  `json:"external_nodes"`
 }
 
+// GetTemplateByID returns a plan template by ID (without variants).
+// This is a lightweight getter used by other services that only need template info.
+func (s *Service) GetTemplateByID(ctx context.Context, id int64) (*entity.PlanTemplate, error) {
+	return s.tmplRepo.GetByID(ctx, id)
+}
+
+// ResolveClientNodes resolves all nodes accessible by a client via their plan template's node groups.
+func (s *Service) ResolveClientNodes(ctx context.Context, clientID int64) (*AccessibleNodesResult, error) {
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("client not found: %w", err)
+	}
+	if client.PlanID == 0 {
+		return &AccessibleNodesResult{
+			InboundConfigs: []entity.InboundConfig{},
+			ExternalNodes:  []entity.ExternalNode{},
+		}, nil
+	}
+	return s.GetAccessibleNodes(ctx, client.PlanID)
+}
+
+// ResolveClientNodeMembers returns the raw NodeGroupMember list for a client's plan template.
+// Used for billing node ID filtering (replaces planNodeRepo.ListByPlanID).
+func (s *Service) ResolveClientNodeMembers(ctx context.Context, clientID int64) ([]entity.NodeGroupMember, error) {
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("client not found: %w", err)
+	}
+	if client.PlanID == 0 {
+		return nil, nil
+	}
+	tmpl, err := s.tmplRepo.GetByID(ctx, client.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	if len(tmpl.NodeGroupIDs) == 0 {
+		return nil, nil
+	}
+	return s.memberRepo.ListByGroupIDs(ctx, []int64(tmpl.NodeGroupIDs))
+}
+
+// GetTemplateNodeMembers returns the raw NodeGroupMember list for a plan template.
+// This is used by handlers that need member IDs for rendering and billing node selection.
+func (s *Service) GetTemplateNodeMembers(ctx context.Context, templateID int64) ([]entity.NodeGroupMember, error) {
+	tmpl, err := s.tmplRepo.GetByID(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if len(tmpl.NodeGroupIDs) == 0 {
+		return nil, nil
+	}
+	return s.memberRepo.ListByGroupIDs(ctx, []int64(tmpl.NodeGroupIDs))
+}
+
 // GetAccessibleNodes returns all nodes accessible by a plan template via its node groups.
 func (s *Service) GetAccessibleNodes(ctx context.Context, templateID int64) (*AccessibleNodesResult, error) {
 	tmpl, err := s.tmplRepo.GetByID(ctx, templateID)
@@ -1125,4 +1185,134 @@ func (s *Service) GetAccessibleNodes(ctx context.Context, templateID int64) (*Ac
 	}
 
 	return result, nil
+}
+
+// ──────────────────── Billing Node Options ────────────────────
+
+// InboundWithServer is an InboundConfig enriched with its NodeServer name.
+type InboundWithServer struct {
+	entity.InboundConfig
+	ServerName string `json:"server_name" gorm:"column:server_name"`
+}
+
+// ListAllInboundsWithServer returns all inbound configs across all servers,
+// enriched with the associated NodeServer name.
+func (s *Service) ListAllInboundsWithServer(ctx context.Context) ([]InboundWithServer, error) {
+	var results []InboundWithServer
+	err := s.db.WithContext(ctx).
+		Table("inbound_configs AS ic").
+		Select("ic.*, ns.name AS server_name").
+		Joins("LEFT JOIN node_servers AS ns ON ns.id = ic.server_id").
+		Order("ns.sort_order, ns.id, ic.id").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("list inbounds with server: %w", err)
+	}
+	return results, nil
+}
+
+// BillingNodeOption represents a node group member enriched with display info
+// for billing node selection in the UI.
+type BillingNodeOption struct {
+	MemberID     int64  `json:"member_id"`
+	Type         string `json:"type"`          // "inbound" or "external"
+	ServerID     int64  `json:"server_id"`
+	ServerName   string `json:"server_name"`   // host node name
+	NodeName     string `json:"node_name"`     // inbound remark/tag or external node name
+	Protocol     string `json:"protocol"`
+	Port         int    `json:"port"`
+	DisplayLabel string `json:"display_label"` // "主机节点 - 入口/节点名称 (protocol:port)"
+}
+
+// GetBillingNodeOptions returns enriched node group members for a plan template,
+// suitable for billing node selection in the UI. Each option shows the host
+// node name, inbound/node name, and protocol:port.
+func (s *Service) GetBillingNodeOptions(ctx context.Context, templateID int64) ([]BillingNodeOption, error) {
+	members, err := s.GetTemplateNodeMembers(ctx, templateID)
+	if err != nil {
+		return nil, fmt.Errorf("get template node members: %w", err)
+	}
+	if len(members) == 0 {
+		return []BillingNodeOption{}, nil
+	}
+
+	// Collect IDs for batch queries
+	var inboundIDs, extNodeIDs []int64
+	for _, m := range members {
+		if m.InboundConfigID > 0 {
+			inboundIDs = append(inboundIDs, m.InboundConfigID)
+		}
+		if m.ExternalNodeID > 0 {
+			extNodeIDs = append(extNodeIDs, m.ExternalNodeID)
+		}
+	}
+
+	// Batch fetch inbounds with server names
+	inboundMap := make(map[int64]InboundWithServer)
+	if len(inboundIDs) > 0 {
+		var inbounds []InboundWithServer
+		s.db.WithContext(ctx).
+			Table("inbound_configs AS ic").
+			Select("ic.*, ns.name AS server_name").
+			Joins("LEFT JOIN node_servers AS ns ON ns.id = ic.server_id").
+			Where("ic.id IN ?", inboundIDs).
+			Find(&inbounds)
+		for _, ib := range inbounds {
+			inboundMap[ib.ID] = ib
+		}
+	}
+
+	// Batch fetch external nodes
+	extNodeMap := make(map[int64]entity.ExternalNode)
+	if s.extNodeRepo != nil && len(extNodeIDs) > 0 {
+		allExt, _ := s.extNodeRepo.ListAll(ctx)
+		for _, en := range allExt {
+			extNodeMap[en.ID] = en
+		}
+	}
+
+	options := make([]BillingNodeOption, 0, len(members))
+	for _, m := range members {
+		if !m.Enabled {
+			continue
+		}
+		opt := BillingNodeOption{MemberID: m.ID}
+
+		if m.InboundConfigID > 0 {
+			ib, ok := inboundMap[m.InboundConfigID]
+			if !ok || !ib.Enabled {
+				continue
+			}
+			opt.Type = "inbound"
+			opt.ServerID = ib.ServerID
+			opt.ServerName = ib.ServerName
+			if opt.ServerName == "" {
+				opt.ServerName = "本地节点"
+			}
+			opt.NodeName = ib.Remark
+			if opt.NodeName == "" {
+				opt.NodeName = ib.Tag
+			}
+			opt.Protocol = ib.Protocol
+			opt.Port = ib.Port
+			opt.DisplayLabel = fmt.Sprintf("%s - %s (%s:%d)", opt.ServerName, opt.NodeName, opt.Protocol, opt.Port)
+		} else if m.ExternalNodeID > 0 {
+			en, ok := extNodeMap[m.ExternalNodeID]
+			if !ok || !en.Enabled {
+				continue
+			}
+			opt.Type = "external"
+			opt.ServerName = "外部节点"
+			opt.NodeName = en.Name
+			opt.Protocol = en.Protocol
+			opt.Port = en.Port
+			opt.DisplayLabel = fmt.Sprintf("%s - %s (%s:%d)", opt.ServerName, opt.NodeName, opt.Protocol, opt.Port)
+		} else {
+			continue
+		}
+
+		options = append(options, opt)
+	}
+
+	return options, nil
 }

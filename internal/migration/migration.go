@@ -2,6 +2,7 @@ package migration
 
 import (
 	"log"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -192,6 +193,9 @@ func AutoMigrate(db *gorm.DB) error {
 	// Seed default share domain configs if none exist
 	seedDefaultShareDomains(db)
 
+	// Migrate legacy plans to plan_templates (one-time data migration)
+	migratePlansToTemplates(db)
+
 	return nil
 }
 
@@ -327,5 +331,157 @@ func seedDefaultShareDomains(db *gorm.DB) {
 		} else {
 			log.Printf("seeded share domain: %s [%s]", d.Value, d.Type)
 		}
+	}
+}
+
+// migratePlansToTemplates migrates legacy plans table data to plan_templates + node_groups + node_group_members.
+// This is a one-time data migration that runs after schema migration.
+// It is idempotent: if plan_templates already exist, it skips migration.
+func migratePlansToTemplates(db *gorm.DB) {
+	// Check if plans table exists and has data
+	var planCount int64
+	if !db.Migrator().HasTable("plans") {
+		return
+	}
+	db.Table("plans").Count(&planCount)
+	if planCount == 0 {
+		return
+	}
+
+	// Skip if plan_templates already exist (migration already done)
+	var templateCount int64
+	db.Table("plan_templates").Count(&templateCount)
+	if templateCount > 0 {
+		return
+	}
+
+	// Check if plan_nodes table exists
+	hasPlanNodesTable := db.Migrator().HasTable("plan_nodes")
+
+	type legacyPlan struct {
+		ID                       int64              `gorm:"column:id"`
+		Name                     string             `gorm:"column:name"`
+		Description              string             `gorm:"column:description"`
+		QuotaBytes               int64              `gorm:"column:quota_bytes"`
+		Duration                 int                `gorm:"column:duration"`
+		Enabled                  bool               `gorm:"column:enabled"`
+		SortOrder                int                `gorm:"column:sort_order"`
+		BillingUsedTemplate      string             `gorm:"column:billing_used_template"`
+		BillingRemainingTemplate string             `gorm:"column:billing_remaining_template"`
+		BillingResetTemplate     string             `gorm:"column:billing_reset_template"`
+		BillingExpiryTemplate    string             `gorm:"column:billing_expiry_template"`
+		BillingInboundConfigIDs  entity.Int64List   `gorm:"column:billing_inbound_config_ids"`
+		BillingExternalNodeIDs   entity.Int64List   `gorm:"column:billing_external_node_ids"`
+	}
+
+	var plans []legacyPlan
+	if err := db.Table("plans").Find(&plans).Error; err != nil {
+		log.Printf("WARNING: failed to read legacy plans: %v", err)
+		return
+	}
+
+	now := time.Now()
+	migratedCount := 0
+
+	for _, plan := range plans {
+		// Create a node group for this plan
+		nodeGroup := &entity.NodeGroup{
+			Name:        plan.Name,
+			Description: "Migrated from legacy plan",
+			Tier:        entity.NodeTierStandard,
+			Enabled:     true,
+			SortOrder:   plan.SortOrder,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := db.Create(nodeGroup).Error; err != nil {
+			log.Printf("WARNING: create node group for plan %d: %v", plan.ID, err)
+			continue
+		}
+
+		// Migrate plan_nodes → node_group_members
+		memberIDMap := make(map[int64]int64) // plan_node.id → node_group_member.id
+
+		if hasPlanNodesTable {
+			type legacyPlanNode struct {
+				ID              int64 `gorm:"column:id"`
+				PlanID          int64 `gorm:"column:plan_id"`
+				InboundConfigID int64 `gorm:"column:inbound_config_id"`
+				ExternalNodeID  int64 `gorm:"column:external_node_id"`
+				Enabled         bool  `gorm:"column:enabled"`
+			}
+
+			var planNodes []legacyPlanNode
+			db.Table("plan_nodes").Where("plan_id = ?", plan.ID).Find(&planNodes)
+
+			for _, pn := range planNodes {
+				member := &entity.NodeGroupMember{
+					GroupID:         nodeGroup.ID,
+					InboundConfigID: pn.InboundConfigID,
+					ExternalNodeID:  pn.ExternalNodeID,
+					Enabled:         pn.Enabled,
+					CreatedAt:       now,
+				}
+				if err := db.Create(member).Error; err != nil {
+					log.Printf("WARNING: create node group member for plan_node %d: %v", pn.ID, err)
+					continue
+				}
+				memberIDMap[pn.ID] = member.ID
+			}
+		}
+
+		// Create plan template
+		tmpl := &entity.PlanTemplate{
+			Name:                       plan.Name,
+			Description:                plan.Description,
+			Category:                   entity.PlanCategoryStandard,
+			NodeGroupIDs:               entity.Int64List{nodeGroup.ID},
+			DefaultQuotaBytes:          plan.QuotaBytes,
+			DefaultQuotaResetCycle:     "none",
+			SuspendOnQuotaExhausted:    1,
+			BillingUsedTemplate:        plan.BillingUsedTemplate,
+			BillingRemainingTemplate:   plan.BillingRemainingTemplate,
+			BillingResetTemplate:       plan.BillingResetTemplate,
+			BillingExpiryTemplate:      plan.BillingExpiryTemplate,
+			SortOrder:                  plan.SortOrder,
+			Enabled:                    plan.Enabled,
+			CreatedAt:                  now,
+			UpdatedAt:                  now,
+		}
+		if err := db.Create(tmpl).Error; err != nil {
+			log.Printf("WARNING: create plan template for plan %d: %v", plan.ID, err)
+			continue
+		}
+
+		// Update clients.plan_id to point to the new template
+		db.Table("clients").Where("plan_id = ?", plan.ID).Update("plan_id", tmpl.ID)
+
+		// Update subscriptions.billing_node_ids for affected clients
+		if len(memberIDMap) > 0 {
+			var clientIDs []int64
+			db.Table("clients").Where("plan_id = ?", tmpl.ID).Pluck("id", &clientIDs)
+			for _, clientID := range clientIDs {
+				var sub entity.Subscription
+				if err := db.Where("client_id = ?", clientID).First(&sub).Error; err != nil {
+					continue
+				}
+				if len(sub.BillingNodeIDs) > 0 {
+					newIDs := make(entity.Int64List, 0, len(sub.BillingNodeIDs))
+					for _, oldID := range sub.BillingNodeIDs {
+						if newID, ok := memberIDMap[oldID]; ok {
+							newIDs = append(newIDs, newID)
+						}
+					}
+					sub.BillingNodeIDs = newIDs
+					db.Save(&sub)
+				}
+			}
+		}
+
+		migratedCount++
+	}
+
+	if migratedCount > 0 {
+		log.Printf("migrated %d legacy plans to plan_templates with node groups", migratedCount)
 	}
 }

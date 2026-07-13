@@ -131,6 +131,35 @@ func (h *Handler) GetAccessibleNodes(c *gin.Context) {
 	response.OK(c, result)
 }
 
+// GetBillingNodeOptions handles GET /api/v1/plan-templates/:id/billing-node-options.
+// Returns enriched node group members with host server name, inbound/node name,
+// and protocol:port for billing node selection in the UI.
+func (h *Handler) GetBillingNodeOptions(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid template id")
+		return
+	}
+	options, err := h.svc.GetBillingNodeOptions(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "BILLING_NODE_OPTIONS_FAILED", err.Error())
+		return
+	}
+	response.OK(c, options)
+}
+
+// ListAllInboundsWithServer handles GET /api/v1/plan-templates/inbounds-with-server.
+// Returns all inbound configs across all node servers, enriched with the
+// server name for display in the member management UI.
+func (h *Handler) ListAllInboundsWithServer(c *gin.Context) {
+	result, err := h.svc.ListAllInboundsWithServer(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "LIST_INBOUNDS_WITH_SERVER_FAILED", err.Error())
+		return
+	}
+	response.OK(c, result)
+}
+
 // ──────────────────── Plan Variant ────────────────────
 
 // ListVariants handles GET /api/v1/plan-templates/:id/variants.

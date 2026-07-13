@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/mihomoconv"
@@ -30,8 +31,7 @@ type PublicHandler struct {
 	shareDomainRepo   *repository.ShareDomainConfigRepository
 	cfIPEntryRepo     *repository.CFIPEntryRepository
 	clientRepo        *repository.ClientRepository
-	planRepo          *repository.PlanRepository
-	planNodeRepo      *repository.PlanNodeRepository
+	planSvc           *plan.Service
 	extNodeRepo       *repository.ExternalNodeRepository
 	mihomoRepo        *repository.MihomoConfigRepository
 	mihomoRuleRepo    *repository.MihomoRuleRepository
@@ -46,8 +46,7 @@ func NewPublicHandler(
 	shareDomainRepo *repository.ShareDomainConfigRepository,
 	cfIPEntryRepo *repository.CFIPEntryRepository,
 	clientRepo *repository.ClientRepository,
-	planRepo *repository.PlanRepository,
-	planNodeRepo *repository.PlanNodeRepository,
+	planSvc *plan.Service,
 	extNodeRepo *repository.ExternalNodeRepository,
 	mihomoRepo *repository.MihomoConfigRepository,
 	mihomoRuleRepo *repository.MihomoRuleRepository,
@@ -60,8 +59,7 @@ func NewPublicHandler(
 		shareDomainRepo:   shareDomainRepo,
 		cfIPEntryRepo:     cfIPEntryRepo,
 		clientRepo:        clientRepo,
-		planRepo:          planRepo,
-		planNodeRepo:      planNodeRepo,
+		planSvc:           planSvc,
 		extNodeRepo:       extNodeRepo,
 		mihomoRepo:        mihomoRepo,
 		mihomoRuleRepo:    mihomoRuleRepo,
@@ -91,7 +89,7 @@ type shareDomainEntry struct {
 }
 
 type renderedSubscriptionNode struct {
-	PlanNodeID      int64
+	MemberID        int64
 	InboundConfigID int64
 	ExternalNodeID  int64
 	Link            string
@@ -100,12 +98,11 @@ type renderedSubscriptionNode struct {
 }
 
 type billingTemplateConfig struct {
-	UsedTemplate           string
-	RemainingTemplate      string
-	ResetTemplate          string
-	ExpiryTemplate         string
-	BillingInboundConfigIDs []int64
-	BillingExternalNodeIDs  []int64
+	UsedTemplate      string
+	RemainingTemplate string
+	ResetTemplate     string
+	ExpiryTemplate    string
+	BillingNodeIDs    []int64 // NodeGroupMember IDs from subscription
 }
 
 // ServeSubscription handles GET /sub/:token.
@@ -165,8 +162,8 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	// Load client info once (used for status check, profile title, and plan nodes)
 	var clientEmail string
-	var plan *entity.Plan
-	var planNodes []entity.PlanNode
+	var tmpl *entity.PlanTemplate
+	var members []entity.NodeGroupMember
 	if sub.ClientID > 0 && h.clientRepo != nil {
 		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
 			clientEmail = cl.Email
@@ -188,14 +185,12 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 				return
 			}
 
-			if cl.PlanID > 0 && h.planRepo != nil {
-				plan, _ = h.planRepo.GetByID(ctx, cl.PlanID)
-			}
-			if cl.PlanID > 0 && h.planNodeRepo != nil {
-				if rawPlanNodes, err := h.planNodeRepo.ListByPlanID(ctx, cl.PlanID); err == nil {
-					for _, n := range rawPlanNodes {
-						if n.Enabled {
-							planNodes = append(planNodes, n)
+			if cl.PlanID > 0 && h.planSvc != nil {
+				tmpl, _ = h.planSvc.GetTemplateByID(ctx, cl.PlanID)
+				if rawMembers, err := h.planSvc.GetTemplateNodeMembers(ctx, cl.PlanID); err == nil {
+					for _, m := range rawMembers {
+						if m.Enabled {
+							members = append(members, m)
 						}
 					}
 				}
@@ -222,8 +217,14 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		formatStr = "base64_uri"
 	}
 
-	billingTemplates := h.loadBillingTemplateConfig(ctx, plan, lang)
-	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, planNodes, clientEmail, billingTemplates)
+	billingTemplates := h.loadBillingTemplateConfig(ctx, tmpl, lang)
+	billingTemplates.BillingNodeIDs = sub.BillingNodeIDs
+	// Fallback: if subscription doesn't specify billing node IDs,
+	// use the template's billing node IDs.
+	if len(billingTemplates.BillingNodeIDs) == 0 && tmpl != nil {
+		billingTemplates.BillingNodeIDs = []int64(tmpl.BillingNodeIDs)
+	}
+	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, members, clientEmail, billingTemplates)
 	links := renderedNodeLinks(renderedNodes)
 	nodes := renderedFormatterNodes(renderedNodes)
 	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes, lang)
@@ -414,31 +415,39 @@ func renderedFormatterNodes(items []renderedSubscriptionNode) []formatter.Node {
 	return nodes
 }
 
-func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, planNodes []entity.PlanNode, clientEmail string, templates billingTemplateConfig) []renderedSubscriptionNode {
+func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, members []entity.NodeGroupMember, clientEmail string, templates billingTemplateConfig) []renderedSubscriptionNode {
 	var items []renderedSubscriptionNode
 
-	inboundPlanNodeIDs := make(map[int64][]int64)
-	externalPlanNodeIDs := make(map[int64][]int64)
-	if len(planNodes) > 0 {
-		for _, planNode := range planNodes {
-			if planNode.InboundConfigID > 0 {
-				inboundPlanNodeIDs[planNode.InboundConfigID] = append(inboundPlanNodeIDs[planNode.InboundConfigID], planNode.ID)
+	inboundMemberIDs := make(map[int64][]int64)
+	externalMemberIDs := make(map[int64][]int64)
+	if len(members) > 0 {
+		for _, member := range members {
+			if member.InboundConfigID > 0 {
+				inboundMemberIDs[member.InboundConfigID] = append(inboundMemberIDs[member.InboundConfigID], member.ID)
 			}
-			if planNode.ExternalNodeID > 0 {
-				externalPlanNodeIDs[planNode.ExternalNodeID] = append(externalPlanNodeIDs[planNode.ExternalNodeID], planNode.ID)
+			if member.ExternalNodeID > 0 {
+				externalMemberIDs[member.ExternalNodeID] = append(externalMemberIDs[member.ExternalNodeID], member.ID)
 			}
 		}
 	}
 
 	// Build a set of billing-selected inbound config IDs and external node IDs.
 	// These nodes should be rendered even if they're not in the plan.
-	billingInboundSet := make(map[int64]bool)
-	for _, id := range templates.BillingInboundConfigIDs {
-		billingInboundSet[id] = true
+	billingMemberSet := make(map[int64]bool)
+	for _, id := range templates.BillingNodeIDs {
+		billingMemberSet[id] = true
 	}
+	billingInboundSet := make(map[int64]bool)
 	billingExternalSet := make(map[int64]bool)
-	for _, id := range templates.BillingExternalNodeIDs {
-		billingExternalSet[id] = true
+	for _, m := range members {
+		if billingMemberSet[m.ID] {
+			if m.InboundConfigID > 0 {
+				billingInboundSet[m.InboundConfigID] = true
+			}
+			if m.ExternalNodeID > 0 {
+				billingExternalSet[m.ExternalNodeID] = true
+			}
+		}
 	}
 
 	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
@@ -450,13 +459,13 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
 				continue
 			}
-			planNodeIDs := inboundPlanNodeIDs[cfg.ID]
+			memberIDs := inboundMemberIDs[cfg.ID]
 			isBillingSelected := billingInboundSet[cfg.ID]
-			if len(planNodes) > 0 && len(planNodeIDs) == 0 && !isBillingSelected {
+			if len(members) > 0 && len(memberIDs) == 0 && !isBillingSelected {
 				continue
 			}
-			if len(planNodeIDs) == 0 {
-				planNodeIDs = []int64{0}
+			if len(memberIDs) == 0 {
+				memberIDs = []int64{0}
 			}
 
 			var config map[string]interface{}
@@ -551,9 +560,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				Encryption: method,
 				Extra:      buildExtra(config, ss, cfg.Protocol),
 			}
-			for _, planNodeID := range planNodeIDs {
+			for _, memberID := range memberIDs {
 				item := renderedSubscriptionNode{
-					PlanNodeID:      planNodeID,
+					MemberID:        memberID,
 					InboundConfigID: cfg.ID,
 					Link:            link,
 				}
@@ -578,13 +587,13 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		if !extNode.Enabled {
 			continue
 		}
-		planNodeIDs := externalPlanNodeIDs[extNode.ID]
+		memberIDs := externalMemberIDs[extNode.ID]
 		isBillingSelected := billingExternalSet[extNode.ID]
-		if len(planNodes) > 0 && len(planNodeIDs) == 0 && !isBillingSelected {
+		if len(members) > 0 && len(memberIDs) == 0 && !isBillingSelected {
 			continue
 		}
-		if len(planNodeIDs) == 0 {
-			planNodeIDs = []int64{0}
+		if len(memberIDs) == 0 {
+			memberIDs = []int64{0}
 		}
 
 		var pm map[string]interface{}
@@ -599,9 +608,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		if link != "" {
 			link = renameShareLink(link, extNode.Name)
 		}
-		for _, planNodeID := range planNodeIDs {
+		for _, memberID := range memberIDs {
 			item := renderedSubscriptionNode{
-				PlanNodeID:     planNodeID,
+				MemberID:       memberID,
 				ExternalNodeID: extNode.ID,
 				Link:           link,
 			}
@@ -624,64 +633,33 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 }
 
 func buildBillingInfoEntries(sub *entity.Subscription, templates billingTemplateConfig, items []renderedSubscriptionNode, lang string) []renderedSubscriptionNode {
-	if len(templates.BillingInboundConfigIDs) == 0 && len(templates.BillingExternalNodeIDs) == 0 {
+	if len(templates.BillingNodeIDs) == 0 {
 		return nil
 	}
 	labels := buildBillingInfoLabels(sub, templates, lang)
 	if len(labels) == 0 {
 		return nil
 	}
-	// Build source maps keyed by inbound_config_id and external_node_id.
-	inboundSources := make(map[int64]renderedSubscriptionNode)
-	externalSources := make(map[int64]renderedSubscriptionNode)
+	// Build source map keyed by MemberID.
+	sources := make(map[int64]renderedSubscriptionNode)
 	for _, item := range items {
 		if item.Link == "" && item.Node == nil {
 			continue
 		}
-		if item.InboundConfigID > 0 {
-			if _, exists := inboundSources[item.InboundConfigID]; !exists {
-				inboundSources[item.InboundConfigID] = item
-			}
-		}
-		if item.ExternalNodeID > 0 {
-			if _, exists := externalSources[item.ExternalNodeID]; !exists {
-				externalSources[item.ExternalNodeID] = item
+		if item.MemberID > 0 {
+			if _, exists := sources[item.MemberID]; !exists {
+				sources[item.MemberID] = item
 			}
 		}
 	}
-
-	// Build a flat list of source IDs by interleaving inbound and external IDs.
-	var sourceIDs []int64
-	var sourceIsInbound []bool
-	maxLen := len(templates.BillingInboundConfigIDs)
-	if len(templates.BillingExternalNodeIDs) > maxLen {
-		maxLen = len(templates.BillingExternalNodeIDs)
-	}
-	for i := 0; i < maxLen; i++ {
-		if i < len(templates.BillingInboundConfigIDs) {
-			sourceIDs = append(sourceIDs, templates.BillingInboundConfigIDs[i])
-			sourceIsInbound = append(sourceIsInbound, true)
-		}
-		if i < len(templates.BillingExternalNodeIDs) {
-			sourceIDs = append(sourceIDs, templates.BillingExternalNodeIDs[i])
-			sourceIsInbound = append(sourceIsInbound, false)
-		}
-	}
-	if len(sourceIDs) == 0 {
+	if len(sources) == 0 {
 		return nil
 	}
 
 	result := make([]renderedSubscriptionNode, 0, len(labels))
 	for idx, label := range labels {
-		sourceID := sourceIDs[idx%len(sourceIDs)]
-		isInbound := sourceIsInbound[idx%len(sourceIDs)]
-		var source renderedSubscriptionNode
-		var ok bool
-		if isInbound {
-			source, ok = inboundSources[sourceID]
-		} else {
-			source, ok = externalSources[sourceID]
-		}
+		memberID := templates.BillingNodeIDs[idx%len(templates.BillingNodeIDs)]
+		source, ok := sources[memberID]
 		if !ok {
 			continue
 		}
@@ -2082,7 +2060,7 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 
 // buildSubscriptionInfoHeader builds a human-readable subscription info block.
 func buildSubscriptionInfoHeader(sub *entity.Subscription, templates billingTemplateConfig, lang string) string {
-	if len(templates.BillingInboundConfigIDs) == 0 && len(templates.BillingExternalNodeIDs) == 0 {
+	if len(templates.BillingNodeIDs) == 0 {
 		return ""
 	}
 	var lines []string
@@ -2235,7 +2213,7 @@ func defaultBillingTemplateConfig(lang string) billingTemplateConfig {
 	}
 }
 
-func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, plan *entity.Plan, lang string) billingTemplateConfig {
+func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, tmpl *entity.PlanTemplate, lang string) billingTemplateConfig {
 	config := defaultBillingTemplateConfig(lang)
 	if h.systemSettingRepo != nil {
 		settings, err := h.systemSettingRepo.GetByPrefix(ctx, "subscription.billing_template.")
@@ -2254,21 +2232,19 @@ func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, plan *ent
 			}
 		}
 	}
-	if plan != nil {
-		if v := strings.TrimSpace(plan.BillingUsedTemplate); v != "" {
+	if tmpl != nil {
+		if v := strings.TrimSpace(tmpl.BillingUsedTemplate); v != "" {
 			config.UsedTemplate = v
 		}
-		if v := strings.TrimSpace(plan.BillingRemainingTemplate); v != "" {
+		if v := strings.TrimSpace(tmpl.BillingRemainingTemplate); v != "" {
 			config.RemainingTemplate = v
 		}
-		if v := strings.TrimSpace(plan.BillingResetTemplate); v != "" {
+		if v := strings.TrimSpace(tmpl.BillingResetTemplate); v != "" {
 			config.ResetTemplate = v
 		}
-		if v := strings.TrimSpace(plan.BillingExpiryTemplate); v != "" {
-			config.ExpiryTemplate = v
-		}
-		config.BillingInboundConfigIDs = plan.BillingInboundConfigIDs
-		config.BillingExternalNodeIDs = plan.BillingExternalNodeIDs
+		if v := strings.TrimSpace(tmpl.BillingExpiryTemplate); v != "" {
+				config.ExpiryTemplate = v
+			}
 	}
 	return config
 }

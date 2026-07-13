@@ -1887,6 +1887,7 @@ func isSPARoute(path string) bool {
 		"/subscriptions",
 		"/subscription-formats",
 		"/subscription-endpoints",
+		"/plans",
 		"/clients",
 		"/certificates",
 		"/users",

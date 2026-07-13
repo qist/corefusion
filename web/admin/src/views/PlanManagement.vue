@@ -6,7 +6,10 @@
       <el-tab-pane label="套餐模板" name="templates">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
           <h3 style="margin:0">套餐模板</h3>
-          <el-button type="primary" size="small" @click="showCreateTemplate">+ 新增模板</el-button>
+          <div style="display:flex;gap:8px">
+            <el-button type="warning" size="small" :loading="syncAllLoading" @click="handleSyncAll">全量同步账号</el-button>
+            <el-button type="primary" size="small" @click="showCreateTemplate">+ 新增模板</el-button>
+          </div>
         </div>
         <el-row :gutter="16">
           <el-col v-for="tpl in templates" :key="tpl.id" :span="8" style="margin-bottom:16px">
@@ -40,6 +43,7 @@
                 <el-button size="small" @click="showVariantsDialog(tpl)">管理规格</el-button>
                 <el-button size="small" @click="showNodeGroupsDialog(tpl)">管理节点</el-button>
                 <el-button size="small" @click="showBillingNodesDialog(tpl)">计费节点</el-button>
+                <el-button size="small" type="warning" :loading="syncLoading[tpl.id]" @click="handleSyncTemplate(tpl)">同步账号</el-button>
                 <el-button size="small" @click="showEditTemplate(tpl)">编辑</el-button>
                 <el-button size="small" type="danger" @click="deleteTemplate(tpl)">删除</el-button>
               </div>
@@ -512,6 +516,54 @@ async function deleteTemplate(row) {
     ElMessage.success('删除成功')
     fetchTemplates()
   } catch {}
+}
+
+// ──────── Account Sync ────────
+const syncLoading = ref({})
+const syncAllLoading = ref(false)
+
+async function handleSyncTemplate(tpl) {
+  try {
+    await ElMessageBox.confirm(
+      `确定为套餐「${tpl.name}」的所有已绑定客户端在所有节点上同步创建账号？\n\n此操作会检查每个节点上的 inbound config，为缺少账号的客户端自动创建。已存在的账号不会被重复创建。`,
+      '同步账号确认',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  syncLoading.value[tpl.id] = true
+  try {
+    const res = await planApi.syncAccountsForTemplate(tpl.id)
+    ElMessage.success(`同步完成，处理了 ${res.inbounds_processed || 0} 个节点`)
+  } catch {
+    ElMessage.error('同步失败')
+  } finally {
+    syncLoading.value[tpl.id] = false
+  }
+}
+
+async function handleSyncAll() {
+  try {
+    await ElMessageBox.confirm(
+      '确定为所有已启用套餐的所有已绑定客户端在所有节点上同步创建账号？\n\n此操作会检查每个节点上的 inbound config，为缺少账号的客户端自动创建。已存在的账号不会被重复创建。',
+      '全量同步账号确认',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  syncAllLoading.value = true
+  try {
+    const res = await planApi.syncAllAccounts()
+    const templates = res.templates || {}
+    const total = Object.values(templates).reduce((s, v) => s + v, 0)
+    ElMessage.success(`全量同步完成，${Object.keys(templates).length} 个套餐，共处理 ${total} 个节点`)
+  } catch {
+    ElMessage.error('全量同步失败')
+  } finally {
+    syncAllLoading.value = false
+  }
 }
 
 // ──────── Variants ────────

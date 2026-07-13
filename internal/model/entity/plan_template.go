@@ -34,6 +34,7 @@ type PlanTemplate struct {
 	BillingRemainingTemplate  string    `gorm:"type:text" json:"billing_remaining_template"`
 	BillingResetTemplate      string    `gorm:"type:text" json:"billing_reset_template"`
 	BillingExpiryTemplate     string    `gorm:"type:text" json:"billing_expiry_template"`
+	BillingNodeIDs            Int64List `gorm:"type:text" json:"billing_node_ids"` // NodeGroupMember IDs selected for billing info rendering
 	SortOrder                 int       `gorm:"not null;default:0" json:"sort_order"`
 	Enabled                   bool      `gorm:"not null;default:true" json:"enabled"`
 	Metadata                  string    `gorm:"type:text" json:"metadata"`

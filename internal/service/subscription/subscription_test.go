@@ -18,7 +18,7 @@ func TestUniquePositiveInt64sPreservesExplicitOrder(t *testing.T) {
 func TestFilterAllowedBillingNodeIDsKeepsOnlyEnabledPlanNodes(t *testing.T) {
 	got := filterAllowedBillingNodeIDs(
 		[]int64{22, 11, 33, 44},
-		[]entity.PlanNode{
+		[]entity.NodeGroupMember{
 			{ID: 11, Enabled: true},
 			{ID: 22, Enabled: true},
 			{ID: 33, Enabled: false},

@@ -12,6 +12,7 @@ import (
 
 	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 )
 
@@ -25,174 +26,28 @@ type InboundUserManager interface {
 
 // Service handles client business logic.
 type Service struct {
-	clientRepo   *repository.ClientRepository
-	planRepo     *repository.PlanRepository
-	planNodeRepo *repository.PlanNodeRepository
-	subRepo      *repository.SubscriptionRepository
-	inboundRepo  *repository.InboundConfigRepository
-	userManager  InboundUserManager
+	clientRepo  *repository.ClientRepository
+	planSvc     *plan.Service
+	subRepo     *repository.SubscriptionRepository
+	inboundRepo *repository.InboundConfigRepository
+	userManager InboundUserManager
 }
 
 // NewService creates a new client service.
 func NewService(
 	clientRepo *repository.ClientRepository,
-	planRepo *repository.PlanRepository,
-	planNodeRepo *repository.PlanNodeRepository,
+	planSvc *plan.Service,
 	subRepo *repository.SubscriptionRepository,
 	inboundRepo *repository.InboundConfigRepository,
 	userManager InboundUserManager,
 ) *Service {
 	return &Service{
-		clientRepo:   clientRepo,
-		planRepo:     planRepo,
-		planNodeRepo: planNodeRepo,
-		subRepo:      subRepo,
-		inboundRepo:  inboundRepo,
-		userManager:  userManager,
+		clientRepo:  clientRepo,
+		planSvc:     planSvc,
+		subRepo:     subRepo,
+		inboundRepo: inboundRepo,
+		userManager: userManager,
 	}
-}
-
-// --- Plan operations ---
-
-func (s *Service) ListPlans(ctx context.Context) ([]entity.Plan, error) {
-	return s.planRepo.List(ctx)
-}
-
-func (s *Service) GetPlan(ctx context.Context, id int64) (*entity.Plan, []entity.PlanNode, error) {
-	plan, err := s.planRepo.GetByID(ctx, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	nodes, err := s.planNodeRepo.ListByPlanID(ctx, id)
-	if err != nil {
-		return plan, nil, err
-	}
-	return plan, nodes, nil
-}
-
-type CreatePlanInput struct {
-	Name                     string   `json:"name" binding:"required"`
-	Description              string   `json:"description"`
-	QuotaBytes               int64    `json:"quota_bytes"`
-	Duration                 int      `json:"duration"`
-	Enabled                  *bool    `json:"enabled"`
-	SortOrder                int      `json:"sort_order"`
-	BillingUsedTemplate      string   `json:"billing_used_template"`
-	BillingRemainingTemplate string   `json:"billing_remaining_template"`
-	BillingResetTemplate     string   `json:"billing_reset_template"`
-	BillingExpiryTemplate    string   `json:"billing_expiry_template"`
-	BillingInboundConfigIDs  []int64  `json:"billing_inbound_config_ids"`
-	BillingExternalNodeIDs   []int64  `json:"billing_external_node_ids"`
-}
-
-func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (*entity.Plan, error) {
-	plan := &entity.Plan{
-		Name:                     input.Name,
-		Description:              input.Description,
-		QuotaBytes:               input.QuotaBytes,
-		Duration:                 input.Duration,
-		Enabled:                  true,
-		SortOrder:                input.SortOrder,
-		BillingUsedTemplate:      input.BillingUsedTemplate,
-		BillingRemainingTemplate: input.BillingRemainingTemplate,
-		BillingResetTemplate:     input.BillingResetTemplate,
-		BillingExpiryTemplate:    input.BillingExpiryTemplate,
-		BillingInboundConfigIDs:  entity.Int64List(input.BillingInboundConfigIDs),
-		BillingExternalNodeIDs:   entity.Int64List(input.BillingExternalNodeIDs),
-	}
-	if input.Enabled != nil {
-		plan.Enabled = *input.Enabled
-	}
-	if plan.Duration <= 0 {
-		plan.Duration = 30
-	}
-	if err := s.planRepo.Create(ctx, plan); err != nil {
-		return nil, err
-	}
-	return plan, nil
-}
-
-type UpdatePlanInput struct {
-	Name                     *string  `json:"name"`
-	Description              *string  `json:"description"`
-	QuotaBytes               *int64   `json:"quota_bytes"`
-	Duration                 *int     `json:"duration"`
-	Enabled                  *bool    `json:"enabled"`
-	SortOrder                *int     `json:"sort_order"`
-	BillingUsedTemplate      *string  `json:"billing_used_template"`
-	BillingRemainingTemplate *string  `json:"billing_remaining_template"`
-	BillingResetTemplate     *string  `json:"billing_reset_template"`
-	BillingExpiryTemplate    *string  `json:"billing_expiry_template"`
-	BillingInboundConfigIDs  *[]int64 `json:"billing_inbound_config_ids"`
-	BillingExternalNodeIDs   *[]int64 `json:"billing_external_node_ids"`
-}
-
-func (s *Service) UpdatePlan(ctx context.Context, id int64, input UpdatePlanInput) (*entity.Plan, error) {
-	plan, err := s.planRepo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if input.Name != nil {
-		plan.Name = *input.Name
-	}
-	if input.Description != nil {
-		plan.Description = *input.Description
-	}
-	if input.QuotaBytes != nil {
-		plan.QuotaBytes = *input.QuotaBytes
-	}
-	if input.Duration != nil {
-		plan.Duration = *input.Duration
-	}
-	if input.Enabled != nil {
-		plan.Enabled = *input.Enabled
-	}
-	if input.SortOrder != nil {
-		plan.SortOrder = *input.SortOrder
-	}
-	if input.BillingUsedTemplate != nil {
-		plan.BillingUsedTemplate = *input.BillingUsedTemplate
-	}
-	if input.BillingRemainingTemplate != nil {
-		plan.BillingRemainingTemplate = *input.BillingRemainingTemplate
-	}
-	if input.BillingResetTemplate != nil {
-		plan.BillingResetTemplate = *input.BillingResetTemplate
-	}
-	if input.BillingExpiryTemplate != nil {
-		plan.BillingExpiryTemplate = *input.BillingExpiryTemplate
-	}
-	if input.BillingInboundConfigIDs != nil {
-		plan.BillingInboundConfigIDs = entity.Int64List(*input.BillingInboundConfigIDs)
-	}
-	if input.BillingExternalNodeIDs != nil {
-		plan.BillingExternalNodeIDs = entity.Int64List(*input.BillingExternalNodeIDs)
-	}
-	if err := s.planRepo.Update(ctx, plan); err != nil {
-		return nil, err
-	}
-	return plan, nil
-}
-
-func (s *Service) DeletePlan(ctx context.Context, id int64) error {
-	return s.planRepo.Delete(ctx, id)
-}
-
-func (s *Service) AddPlanNode(ctx context.Context, planID, inboundConfigID, externalNodeID int64) (*entity.PlanNode, error) {
-	node := &entity.PlanNode{
-		PlanID:          planID,
-		InboundConfigID: inboundConfigID,
-		ExternalNodeID:  externalNodeID,
-		Enabled:         true,
-	}
-	if err := s.planNodeRepo.Create(ctx, node); err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-func (s *Service) DeletePlanNode(ctx context.Context, id int64) error {
-	return s.planNodeRepo.Delete(ctx, id)
 }
 
 // --- Client operations ---
@@ -206,20 +61,23 @@ func (s *Service) GetClient(ctx context.Context, id int64) (*entity.Client, erro
 }
 
 type CreateClientInput struct {
-	Email      string  `json:"email" binding:"required"`
-	Password   string  `json:"password"`
-	PlanID     int64   `json:"plan_id" binding:"required"`
-	QuotaBytes int64   `json:"quota_bytes"`
-	ExpiresAt  *string `json:"expires_at"`
-	Remark     string  `json:"remark"`
+	Email           string  `json:"email" binding:"required"`
+	Password        string  `json:"password"`
+	PlanID          int64   `json:"plan_id" binding:"required"`
+	PlanVariantID   int64   `json:"plan_variant_id"`
+	QuotaBytes      int64   `json:"quota_bytes"`
+	SpeedLimitMbps  int     `json:"speed_limit_mbps"`
+	ConcurrentLimit int     `json:"concurrent_limit"`
+	ExpiresAt       *string `json:"expires_at"`
+	Remark          string  `json:"remark"`
 }
 
-// CreateClient creates a client, generates accounts for all plan inbounds, and creates a subscription.
+// CreateClient creates a client, generates accounts for all accessible inbounds, and creates a subscription.
 func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*entity.Client, error) {
-	// Get plan
-	plan, err := s.planRepo.GetByID(ctx, input.PlanID)
+	// Get plan template
+	tmpl, err := s.planSvc.GetTemplateByID(ctx, input.PlanID)
 	if err != nil {
-		return nil, fmt.Errorf("plan not found: %w", err)
+		return nil, fmt.Errorf("plan template not found: %w", err)
 	}
 
 	// Check email uniqueness
@@ -230,7 +88,7 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 	// Determine quota
 	quota := input.QuotaBytes
 	if quota <= 0 {
-		quota = plan.QuotaBytes
+		quota = tmpl.DefaultQuotaBytes
 	}
 
 	// Parse expiry
@@ -241,42 +99,41 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 			expiresAt = &t
 		}
 	}
-	if expiresAt == nil && plan.Duration > 0 {
-		t := time.Now().AddDate(0, 0, plan.Duration)
+	if expiresAt == nil && tmpl.DefaultQuotaResetCycle != "" {
+		t := time.Now().AddDate(0, 0, 30)
 		expiresAt = &t
 	}
 
 	// Create client
 	client := &entity.Client{
-		Email:      input.Email,
-		Password:   input.Password,
-		PlanID:     input.PlanID,
-		Status:     "active",
-		QuotaBytes: quota,
-		ExpiresAt:  expiresAt,
-		Remark:     input.Remark,
+		Email:           input.Email,
+		Password:        input.Password,
+		PlanID:          input.PlanID,
+		PlanVariantID:   input.PlanVariantID,
+		Status:          "active",
+		QuotaBytes:      quota,
+		SpeedLimitMbps:  input.SpeedLimitMbps,
+		ConcurrentLimit: input.ConcurrentLimit,
+		ExpiresAt:       expiresAt,
+		Remark:          input.Remark,
 	}
 	if err := s.clientRepo.Create(ctx, client); err != nil {
 		return nil, err
 	}
 
-	// Get plan nodes
-	nodes, err := s.planNodeRepo.ListByPlanID(ctx, input.PlanID)
-	if err != nil || len(nodes) == 0 {
-		log.Printf("client: no nodes in plan %d, skipping account generation", input.PlanID)
+	// Get accessible nodes for the plan template
+	accessResult, err := s.planSvc.GetAccessibleNodes(ctx, input.PlanID)
+	if err != nil || len(accessResult.InboundConfigs) == 0 {
+		log.Printf("client: no accessible nodes for plan %d, skipping account generation", input.PlanID)
 		return client, nil
 	}
 
-	// Generate accounts for each inbound in the plan
+	// Generate accounts for each accessible inbound
 	token := generateToken(32)
 	var subID int64
 
-	for _, node := range nodes {
-		if !node.Enabled {
-			continue
-		}
-		inbound, err := s.inboundRepo.GetByID(ctx, node.InboundConfigID)
-		if err != nil || !inbound.Enabled {
+	for _, inbound := range accessResult.InboundConfigs {
+		if !inbound.Enabled {
 			continue
 		}
 
@@ -352,7 +209,7 @@ func (s *Service) SuspendClient(ctx context.Context, id int64) error {
 		return err
 	}
 
-	// Pause users in all plan inbounds
+	// Pause users in all accessible inbounds
 	s.pauseResumeAll(ctx, client.Email, client.PlanID, true)
 	return nil
 }
@@ -373,7 +230,7 @@ func (s *Service) RestoreClient(ctx context.Context, id int64) error {
 		return err
 	}
 
-	// Resume users in all plan inbounds
+	// Resume users in all accessible inbounds
 	s.pauseResumeAll(ctx, client.Email, client.PlanID, false)
 	return nil
 }
@@ -402,16 +259,14 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 		return err
 	}
 
-	// Remove users from all plan inbounds
-	nodes, _ := s.planNodeRepo.ListByPlanID(ctx, client.PlanID)
-	for _, node := range nodes {
-		inbound, err := s.inboundRepo.GetByID(ctx, node.InboundConfigID)
-		if err != nil {
-			continue
-		}
-		inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
-		if s.userManager != nil {
-			s.userManager.RemoveUserFromInbound(ctx, inbound.Tag, inboundEmail)
+	// Remove users from all accessible inbounds
+	accessResult, err := s.planSvc.GetAccessibleNodes(ctx, client.PlanID)
+	if err == nil {
+		for _, inbound := range accessResult.InboundConfigs {
+			inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
+			if s.userManager != nil {
+				s.userManager.RemoveUserFromInbound(ctx, inbound.Tag, inboundEmail)
+			}
 		}
 	}
 
@@ -420,11 +275,14 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 
 // UpdateClient updates client fields.
 func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
-	Password   *string `json:"password"`
-	PlanID     *int64  `json:"plan_id"`
-	QuotaBytes *int64  `json:"quota_bytes"`
-	ExpiresAt  *string `json:"expires_at"`
-	Remark     *string `json:"remark"`
+	Password        *string `json:"password"`
+	PlanID          *int64  `json:"plan_id"`
+	PlanVariantID   *int64  `json:"plan_variant_id"`
+	QuotaBytes      *int64  `json:"quota_bytes"`
+	SpeedLimitMbps  *int    `json:"speed_limit_mbps"`
+	ConcurrentLimit *int    `json:"concurrent_limit"`
+	ExpiresAt       *string `json:"expires_at"`
+	Remark          *string `json:"remark"`
 }) (*entity.Client, error) {
 	client, err := s.clientRepo.GetByID(ctx, id)
 	if err != nil {
@@ -435,6 +293,12 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	}
 	if input.QuotaBytes != nil {
 		client.QuotaBytes = *input.QuotaBytes
+	}
+	if input.SpeedLimitMbps != nil {
+		client.SpeedLimitMbps = *input.SpeedLimitMbps
+	}
+	if input.ConcurrentLimit != nil {
+		client.ConcurrentLimit = *input.ConcurrentLimit
 	}
 	if input.ExpiresAt != nil {
 		if *input.ExpiresAt == "" {
@@ -454,16 +318,25 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	planChanged := input.PlanID != nil && *input.PlanID > 0 && *input.PlanID != client.PlanID
 	if planChanged {
 		client.PlanID = *input.PlanID
-		// Set quota from plan if not explicitly set
+		// Set quota from template if not explicitly set
 		if input.QuotaBytes == nil || client.QuotaBytes <= 0 {
-			if plan, err := s.planRepo.GetByID(ctx, client.PlanID); err == nil {
-				client.QuotaBytes = plan.QuotaBytes
-				if client.ExpiresAt == nil && plan.Duration > 0 {
-					t := time.Now().AddDate(0, 0, plan.Duration)
+			if tmpl, err := s.planSvc.GetTemplateByID(ctx, client.PlanID); err == nil {
+				client.QuotaBytes = tmpl.DefaultQuotaBytes
+				if client.SpeedLimitMbps == 0 {
+					client.SpeedLimitMbps = tmpl.SpeedLimitMbps
+				}
+				if client.ConcurrentLimit == 0 {
+					client.ConcurrentLimit = tmpl.ConcurrentLimit
+				}
+				if client.ExpiresAt == nil {
+					t := time.Now().AddDate(0, 0, 30)
 					client.ExpiresAt = &t
 				}
 			}
 		}
+	}
+	if input.PlanVariantID != nil {
+		client.PlanVariantID = *input.PlanVariantID
 	}
 
 	if err := s.clientRepo.Update(ctx, client); err != nil {
@@ -478,22 +351,18 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	return client, nil
 }
 
-// generateAccountsForClient creates subscription and generates accounts for all plan inbounds.
+// generateAccountsForClient creates subscription and generates accounts for all accessible inbounds.
 func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.Client) {
-	nodes, err := s.planNodeRepo.ListByPlanID(ctx, client.PlanID)
-	if err != nil || len(nodes) == 0 {
-		log.Printf("client: no nodes in plan %d, skipping account generation", client.PlanID)
+	accessResult, err := s.planSvc.GetAccessibleNodes(ctx, client.PlanID)
+	if err != nil || len(accessResult.InboundConfigs) == 0 {
+		log.Printf("client: no accessible nodes for plan %d, skipping account generation", client.PlanID)
 		return
 	}
 
 	token := generateToken(32)
 
-	for _, node := range nodes {
-		if !node.Enabled {
-			continue
-		}
-		inbound, err := s.inboundRepo.GetByID(ctx, node.InboundConfigID)
-		if err != nil || !inbound.Enabled {
+	for _, inbound := range accessResult.InboundConfigs {
+		if !inbound.Enabled {
 			continue
 		}
 
@@ -544,20 +413,16 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 	}
 }
 
-// pauseResumeAll pauses or resumes users in all inbounds of a plan.
+// pauseResumeAll pauses or resumes users in all accessible inbounds of a plan template.
 func (s *Service) pauseResumeAll(ctx context.Context, email string, planID int64, pause bool) {
 	if s.userManager == nil {
 		return
 	}
-	nodes, err := s.planNodeRepo.ListByPlanID(ctx, planID)
+	accessResult, err := s.planSvc.GetAccessibleNodes(ctx, planID)
 	if err != nil {
 		return
 	}
-	for _, node := range nodes {
-		inbound, err := s.inboundRepo.GetByID(ctx, node.InboundConfigID)
-		if err != nil {
-			continue
-		}
+	for _, inbound := range accessResult.InboundConfigs {
 		inboundEmail := generateInboundEmail(email, inbound.Tag)
 		if pause {
 			s.userManager.PauseUser(ctx, inbound.ID, inboundEmail)

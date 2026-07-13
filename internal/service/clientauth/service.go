@@ -19,7 +19,7 @@ type SettingStore interface {
 // Service handles client authentication and self-service operations.
 type Service struct {
 	clientRepo *repository.ClientRepository
-	planRepo   *repository.PlanRepository
+	tmplRepo   *repository.PlanTemplateRepository
 	subRepo    *repository.SubscriptionRepository
 	settingSvc SettingStore
 	jwt        *jwt.JWT
@@ -28,14 +28,14 @@ type Service struct {
 // NewService creates a new client auth service.
 func NewService(
 	clientRepo *repository.ClientRepository,
-	planRepo *repository.PlanRepository,
+	tmplRepo *repository.PlanTemplateRepository,
 	subRepo *repository.SubscriptionRepository,
 	settingSvc SettingStore,
 	jwtSecret string,
 ) *Service {
 	return &Service{
 		clientRepo: clientRepo,
-		planRepo:   planRepo,
+		tmplRepo:   tmplRepo,
 		subRepo:    subRepo,
 		settingSvc: settingSvc,
 		jwt:        jwt.New(jwtSecret, 24*time.Hour, 7*24*time.Hour),
@@ -154,10 +154,10 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 	// The subscriptions table is kept up-to-date by the traffic sync service,
 	// while the clients.used_bytes field may be stale.
 
-	// Get plan name
+	// Get plan template name
 	if client.PlanID > 0 {
-		if plan, err := s.planRepo.GetByID(ctx, client.PlanID); err == nil {
-			info.PlanName = plan.Name
+		if tmpl, err := s.tmplRepo.GetByID(ctx, client.PlanID); err == nil {
+			info.PlanName = tmpl.Name
 		}
 	}
 

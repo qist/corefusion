@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 )
 
@@ -49,7 +50,7 @@ type NodeLogPackager interface {
 type ClientLogDeps struct {
 	PkgRepo      *repository.ClientLogPackageRepository
 	ClientRepo   *repository.ClientRepository
-	PlanNodeRepo *repository.PlanNodeRepository
+	PlanSvc      *plan.Service
 	InboundRepo  *repository.InboundConfigRepository
 	NodePackager NodeLogPackager
 }
@@ -66,14 +67,14 @@ func (s *Service) SetClientLogDeps(deps *ClientLogDeps) {
 func (s *Service) InitClientLogDeps(
 	pkgRepo *repository.ClientLogPackageRepository,
 	clientRepo *repository.ClientRepository,
-	planNodeRepo *repository.PlanNodeRepository,
+	planSvc *plan.Service,
 	inboundRepo *repository.InboundConfigRepository,
 	nodePackager NodeLogPackager,
 ) {
 	s.clientLogDeps = &ClientLogDeps{
 		PkgRepo:      pkgRepo,
 		ClientRepo:   clientRepo,
-		PlanNodeRepo: planNodeRepo,
+		PlanSvc:      planSvc,
 		InboundRepo:  inboundRepo,
 		NodePackager: nodePackager,
 	}
@@ -382,29 +383,21 @@ func (s *Service) collectLocalNodeLogs(ctx context.Context, logType string, star
 }
 
 // getClientEntryNodes resolves all entry nodes associated with a client.
-// Flow: Client -> Plan -> PlanNodes -> InboundConfigs -> (ServerID, CoreType)
+// Flow: Client -> PlanTemplate -> NodeGroups -> NodeGroupMembers -> InboundConfigs -> (ServerID, CoreType)
 func (s *Service) getClientEntryNodes(ctx context.Context, client *entity.Client) ([]entryNodeInfo, error) {
 	deps := s.clientLogDeps
 
-	// Get plan nodes
-	planNodes, err := deps.PlanNodeRepo.ListByPlanID(ctx, client.PlanID)
+	// Get accessible nodes for the client's plan template
+	accessResult, err := deps.PlanSvc.GetAccessibleNodes(ctx, client.PlanID)
 	if err != nil {
-		return nil, fmt.Errorf("list plan nodes: %w", err)
+		return nil, fmt.Errorf("get accessible nodes: %w", err)
 	}
 
 	// Deduplicate by (ServerID, LogType)
 	seen := make(map[string]bool)
 	var nodes []entryNodeInfo
 
-	for _, pn := range planNodes {
-		if !pn.Enabled || pn.InboundConfigID == 0 {
-			continue
-		}
-		inbound, err := deps.InboundRepo.GetByID(ctx, pn.InboundConfigID)
-		if err != nil || !inbound.Enabled {
-			continue
-		}
-
+	for _, inbound := range accessResult.InboundConfigs {
 		key := fmt.Sprintf("%d:%s", inbound.ServerID, inbound.CoreType)
 		if seen[key] {
 			continue

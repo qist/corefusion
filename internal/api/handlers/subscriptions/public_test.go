@@ -51,7 +51,7 @@ func TestBuildBillingInfoEntriesUsesExplicitNodeOrder(t *testing.T) {
 	}
 
 	templates := defaultBillingTemplateConfig("en")
-	templates.BillingInboundConfigIDs = []int64{22, 11}
+	templates.BillingNodeIDs = []int64{22, 11}
 	got := buildBillingInfoEntries(sub, templates, items, "en")
 	labels := buildBillingInfoLabels(sub, templates, "en")
 	if len(got) != len(labels) {
@@ -85,7 +85,7 @@ func TestRenderBillingTemplateSupportsCustomVariables(t *testing.T) {
 
 func TestLoadBillingTemplateConfigFallsBackToPlanOverride(t *testing.T) {
 	handler := &PublicHandler{}
-	plan := &entity.Plan{
+	plan := &entity.PlanTemplate{
 		BillingRemainingTemplate: "Plan Remaining {remaining_human}",
 		BillingResetTemplate:     "Plan Reset {reset_human}",
 	}

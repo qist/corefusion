@@ -8,16 +8,17 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 )
 
 // Service handles subscription business logic.
 type Service struct {
-	repo         *repository.SubscriptionRepository
-	accessLog    *repository.AccessLogRepository
-	rotation     *repository.RotationRepository
-	clientRepo   *repository.ClientRepository
-	planNodeRepo *repository.PlanNodeRepository
+	repo       *repository.SubscriptionRepository
+	accessLog  *repository.AccessLogRepository
+	rotation   *repository.RotationRepository
+	clientRepo *repository.ClientRepository
+	planSvc    *plan.Service
 }
 
 // NewService creates a new subscription service.
@@ -26,14 +27,14 @@ func NewService(
 	accessLog *repository.AccessLogRepository,
 	rotation *repository.RotationRepository,
 	clientRepo *repository.ClientRepository,
-	planNodeRepo *repository.PlanNodeRepository,
+	planSvc *plan.Service,
 ) *Service {
 	return &Service{
-		repo:         repo,
-		accessLog:    accessLog,
-		rotation:     rotation,
-		clientRepo:   clientRepo,
-		planNodeRepo: planNodeRepo,
+		repo:       repo,
+		accessLog:  accessLog,
+		rotation:   rotation,
+		clientRepo: clientRepo,
+		planSvc:    planSvc,
 	}
 }
 
@@ -333,23 +334,15 @@ func (s *Service) normalizeBillingNodeIDs(ctx context.Context, clientID int64, r
 	if len(deduped) == 0 {
 		return entity.Int64List{}, nil
 	}
-	if clientID <= 0 || s.clientRepo == nil || s.planNodeRepo == nil {
+	if clientID <= 0 || s.clientRepo == nil || s.planSvc == nil {
 		return entity.Int64List(deduped), nil
 	}
 
-	client, err := s.clientRepo.GetByID(ctx, clientID)
+	members, err := s.planSvc.ResolveClientNodeMembers(ctx, clientID)
 	if err != nil {
 		return nil, err
 	}
-	if client.PlanID <= 0 {
-		return entity.Int64List{}, nil
-	}
-
-	planNodes, err := s.planNodeRepo.ListByPlanID(ctx, client.PlanID)
-	if err != nil {
-		return nil, err
-	}
-	return filterAllowedBillingNodeIDs(deduped, planNodes), nil
+	return filterAllowedBillingNodeIDs(deduped, members), nil
 }
 
 func uniquePositiveInt64s(ids []int64) []int64 {
@@ -371,14 +364,14 @@ func uniquePositiveInt64s(ids []int64) []int64 {
 	return result
 }
 
-func filterAllowedBillingNodeIDs(requested []int64, planNodes []entity.PlanNode) entity.Int64List {
-	if len(requested) == 0 || len(planNodes) == 0 {
+func filterAllowedBillingNodeIDs(requested []int64, members []entity.NodeGroupMember) entity.Int64List {
+	if len(requested) == 0 || len(members) == 0 {
 		return entity.Int64List{}
 	}
-	allowed := make(map[int64]struct{}, len(planNodes))
-	for _, node := range planNodes {
-		if node.Enabled && node.ID > 0 {
-			allowed[node.ID] = struct{}{}
+	allowed := make(map[int64]struct{}, len(members))
+	for _, m := range members {
+		if m.Enabled && m.ID > 0 {
+			allowed[m.ID] = struct{}{}
 		}
 	}
 

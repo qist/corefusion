@@ -92,16 +92,16 @@
                 <el-form-item :label="t('subscription.billingExpiryTemplate')">
                   <el-input v-model="planForm.billing_expiry_template" :placeholder="defaultTemplates.default_expiry_template" />
                 </el-form-item>
-                <el-form-item :label="t('subscription.billingInboundNodes')">
-                  <el-select v-model="planForm.billing_inbound_config_ids" multiple clearable filterable style="width: 100%" :placeholder="t('subscription.billingNodesPlaceholder')" :loading="nodeOptionsLoading">
-                    <el-option v-for="opt in inboundOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                <el-divider content-position="left">{{ isZh ? '计费节点选择' : 'Billing Node Selection' }}</el-divider>
+                <el-form-item :label="isZh ? '计费节点' : 'Billing Nodes'">
+                  <el-select v-model="billingNodeIds" multiple filterable collapse-tags collapse-tags-tooltip
+                    :placeholder="isZh ? '选择计费信息关联的节点（显示：主机节点 - 入口/节点名称）' : 'Select nodes for billing info (shows: Host - Inbound/Node Name)'"
+                    style="width: 100%" :loading="billingNodesLoading">
+                    <el-option v-for="opt in billingNodeOptions" :key="opt.member_id" :label="opt.display_label" :value="opt.member_id" />
                   </el-select>
-                </el-form-item>
-                <el-form-item :label="t('subscription.billingExternalNodes')">
-                  <el-select v-model="planForm.billing_external_node_ids" multiple clearable filterable style="width: 100%" :placeholder="t('subscription.billingNodesPlaceholder')" :loading="nodeOptionsLoading">
-                    <el-option v-for="opt in externalOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-                  </el-select>
-                  <div class="hint">{{ t('subscription.billingNodesHint') }}</div>
+                  <div style="font-size: 12px; color: #909399; margin-top: 4px">
+                    {{ isZh ? '选中的节点将用于渲染订阅中的计费信息条目。不选则不显示计费信息。' : 'Selected nodes will be used to render billing info entries in subscriptions. Leave empty to disable billing info.' }}
+                  </div>
                 </el-form-item>
               </el-form>
               <div class="actions">
@@ -123,6 +123,7 @@ import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import i18n from '../../locales'
 import client from '../../api/client'
+import * as planApi from '../../api/plan'
 
 const emit = defineEmits(['saved'])
 
@@ -135,9 +136,6 @@ const savingPlan = ref(false)
 const varsCollapsed = ref(true)
 const plans = ref([])
 const selectedPlanId = ref(null)
-const nodeOptionsLoading = ref(false)
-const inboundConfigs = ref([])
-const externalNodes = ref([])
 
 const defaultTemplates = ref({
   default_used_template: '',
@@ -156,10 +154,13 @@ const planForm = ref({
   billing_used_template: '',
   billing_remaining_template: '',
   billing_reset_template: '',
-  billing_expiry_template: '',
-  billing_inbound_config_ids: [],
-  billing_external_node_ids: []
+  billing_expiry_template: ''
 })
+const billingNodeOptions = ref([])
+const billingNodeIds = ref([])
+const billingNodesLoading = ref(false)
+
+const isZh = computed(() => String(i18n.global.locale.value).startsWith('zh'))
 
 const variableDescriptions = computed(() => {
   const vars = defaultTemplates.value.variables || []
@@ -213,24 +214,6 @@ const variableDescriptions = computed(() => {
   })
 })
 
-const inboundOptions = computed(() => {
-  return inboundConfigs.value
-    .filter(c => c.enabled !== false)
-    .map(c => ({
-      value: c.id,
-      label: `${c.remark || c.tag} (${c.protocol}:${c.port})`
-    }))
-})
-
-const externalOptions = computed(() => {
-  return externalNodes.value
-    .filter(n => n.enabled !== false)
-    .map(n => ({
-      value: n.id,
-      label: `${n.name} (${n.host}:${n.port})`
-    }))
-})
-
 const currentPlan = computed(() => plans.value.find(plan => plan.id === selectedPlanId.value) || null)
 
 function currentLang() {
@@ -251,9 +234,7 @@ function planHasCustomTemplate(plan) {
     plan?.billing_used_template?.trim() ||
     plan?.billing_remaining_template?.trim() ||
     plan?.billing_reset_template?.trim() ||
-    plan?.billing_expiry_template?.trim() ||
-    (plan?.billing_inbound_config_ids && plan.billing_inbound_config_ids.length > 0) ||
-    (plan?.billing_external_node_ids && plan.billing_external_node_ids.length > 0)
+    plan?.billing_expiry_template?.trim()
   )
 }
 
@@ -263,9 +244,25 @@ function selectPlanById(planId) {
     billing_used_template: plan?.billing_used_template || '',
     billing_remaining_template: plan?.billing_remaining_template || '',
     billing_reset_template: plan?.billing_reset_template || '',
-    billing_expiry_template: plan?.billing_expiry_template || '',
-    billing_inbound_config_ids: Array.isArray(plan?.billing_inbound_config_ids) ? [...plan.billing_inbound_config_ids] : [],
-    billing_external_node_ids: Array.isArray(plan?.billing_external_node_ids) ? [...plan.billing_external_node_ids] : []
+    billing_expiry_template: plan?.billing_expiry_template || ''
+  }
+  billingNodeIds.value = [...(plan?.billing_node_ids || [])]
+  fetchBillingNodeOptions(planId)
+}
+
+async function fetchBillingNodeOptions(planId) {
+  if (!planId) {
+    billingNodeOptions.value = []
+    return
+  }
+  billingNodesLoading.value = true
+  try {
+    const res = await planApi.getBillingNodeOptions(planId)
+    billingNodeOptions.value = Array.isArray(res) ? res : []
+  } catch {
+    billingNodeOptions.value = []
+  } finally {
+    billingNodesLoading.value = false
   }
 }
 
@@ -280,27 +277,9 @@ function resetPlanForm() {
     billing_used_template: '',
     billing_remaining_template: '',
     billing_reset_template: '',
-    billing_expiry_template: '',
-    billing_inbound_config_ids: [],
-    billing_external_node_ids: []
+    billing_expiry_template: ''
   }
-}
-
-async function loadNodeOptions() {
-  if (inboundConfigs.value.length && externalNodes.value.length) return
-  nodeOptionsLoading.value = true
-  try {
-    const [inboundRes, extRes] = await Promise.all([
-      inboundConfigs.value.length ? Promise.resolve(inboundConfigs.value) : client.get('/node-servers/1/inbound-configs').catch(() => []),
-      externalNodes.value.length ? Promise.resolve(externalNodes.value) : client.get('/external-nodes').catch(() => [])
-    ])
-    const inbounds = Array.isArray(inboundRes) ? inboundRes : (inboundRes?.data || [])
-    inboundConfigs.value = inbounds
-    const exts = Array.isArray(extRes) ? extRes : []
-    externalNodes.value = exts
-  } finally {
-    nodeOptionsLoading.value = false
-  }
+  billingNodeIds.value = []
 }
 
 async function loadData() {
@@ -308,7 +287,7 @@ async function loadData() {
   try {
     const [templateRes, planRes] = await Promise.all([
       client.get('/system/subscription-billing-templates', { params: { lang: currentLang() } }),
-      client.get('/plans')
+      planApi.listPlanTemplates()
     ])
     defaultTemplates.value = {
       default_used_template: templateRes?.default_used_template || '',
@@ -323,7 +302,6 @@ async function loadData() {
       selectedPlanId.value = plans.value[0].id
     }
     selectPlanById(selectedPlanId.value)
-    await loadNodeOptions()
   } finally {
     loading.value = false
   }
@@ -356,10 +334,10 @@ async function savePlan() {
   if (!selectedPlanId.value) return
   savingPlan.value = true
   try {
-    await client.put(`/plans/${selectedPlanId.value}`, { ...planForm.value })
+    await planApi.updatePlanTemplate(selectedPlanId.value, { ...planForm.value, billing_node_ids: billingNodeIds.value })
     const target = plans.value.find(item => item.id === selectedPlanId.value)
     if (target) {
-      Object.assign(target, planForm.value)
+      Object.assign(target, planForm.value, { billing_node_ids: [...billingNodeIds.value] })
     }
     ElMessage.success(t('common.success'))
     emit('saved')
@@ -395,12 +373,5 @@ loadData()
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.hint {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 4px;
-  word-break: break-word;
 }
 </style>

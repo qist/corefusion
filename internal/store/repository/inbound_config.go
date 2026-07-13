@@ -94,6 +94,15 @@ func (r *InboundConfigRepository) ListAll(ctx context.Context, coreType string) 
 	return configs, err
 }
 
+// ListByTag retrieves all inbound configs with the given tag across ALL servers.
+// This is used for multi-node account synchronization where the same tag
+// may exist on both local (serverID=1) and remote (serverID>1) nodes.
+func (r *InboundConfigRepository) ListByTag(ctx context.Context, tag string) ([]entity.InboundConfig, error) {
+	var configs []entity.InboundConfig
+	err := r.db.WithContext(ctx).Where("tag = ?", tag).Order("server_id").Find(&configs).Error
+	return configs, err
+}
+
 // ListByServerID retrieves all inbound configs for a specific server.
 func (r *InboundConfigRepository) ListByServerID(ctx context.Context, serverID int64) ([]entity.InboundConfig, error) {
 	var configs []entity.InboundConfig

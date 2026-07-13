@@ -148,6 +148,36 @@ func (h *Handler) GetBillingNodeOptions(c *gin.Context) {
 	response.OK(c, options)
 }
 
+// SyncAccountsForTemplate handles POST /api/v1/plan-templates/:id/sync-accounts.
+// Manually triggers account synchronization for all clients bound to the given
+// plan template across all accessible inbound configs. Used to repair existing
+// data where clients are missing accounts on nodes.
+func (h *Handler) SyncAccountsForTemplate(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid template id")
+		return
+	}
+	count, err := h.svc.SyncAccountsForTemplate(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "SYNC_ACCOUNTS_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"synced": true, "inbounds_processed": count})
+}
+
+// SyncAllAccounts handles POST /api/v1/plan-templates/sync-all-accounts.
+// Manually triggers account synchronization for ALL enabled plan templates.
+// Bulk repair operation for existing data.
+func (h *Handler) SyncAllAccounts(c *gin.Context) {
+	results, err := h.svc.SyncAllAccounts(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "SYNC_ALL_ACCOUNTS_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"synced": true, "templates": results})
+}
+
 // ListAllInboundsWithServer handles GET /api/v1/plan-templates/inbounds-with-server.
 // Returns all inbound configs across all node servers, enriched with the
 // server name for display in the member management UI.

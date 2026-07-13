@@ -413,6 +413,65 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 	}
 }
 
+// SyncAccountsForNewInbound creates accounts for all active clients bound to the
+// given plan template on the specified inbound config. This is called when a new
+// node (InboundConfig) is added to a plan's node group, ensuring that existing
+// clients automatically get accounts on the new node.
+func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int64, inboundConfigID int64) error {
+	// Get the inbound config
+	inbound, err := s.inboundRepo.GetByID(ctx, inboundConfigID)
+	if err != nil {
+		return fmt.Errorf("inbound config not found: %w", err)
+	}
+	if !inbound.Enabled {
+		log.Printf("client: inbound config %d is disabled, skipping account sync", inboundConfigID)
+		return nil
+	}
+
+	// Find all active clients bound to this plan template
+	clients, err := s.clientRepo.ListByPlanID(ctx, templateID)
+	if err != nil {
+		return fmt.Errorf("failed to list clients for plan %d: %w", templateID, err)
+	}
+
+	if len(clients) == 0 {
+		log.Printf("client: no active clients for plan %d, skipping account sync", templateID)
+		return nil
+	}
+
+	// For each client, create an account on the new inbound if not already present
+	for _, client := range clients {
+		inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
+
+		// Check if account already exists
+		if userExistsInConfig(inbound.ConfigJSON, inboundEmail) {
+			continue
+		}
+
+		// Generate credentials
+		uuid := generateUUID()
+		password := generateToken(16)
+		flow := ""
+		method := ""
+
+		// Add user to inbound (this updates DB and calls xray API for all nodes)
+		if s.userManager != nil {
+			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
+				log.Printf("client: failed to sync account for %s on inbound %s: %v", inboundEmail, inbound.Tag, err)
+			}
+		}
+
+		// Refresh inbound config_json after adding user
+		updated, err := s.inboundRepo.GetByID(ctx, inboundConfigID)
+		if err == nil {
+			inbound = updated
+		}
+	}
+
+	log.Printf("client: account sync complete for plan %d, inbound %d (%d clients)", templateID, inboundConfigID, len(clients))
+	return nil
+}
+
 // pauseResumeAll pauses or resumes users in all accessible inbounds of a plan template.
 func (s *Service) pauseResumeAll(ctx context.Context, email string, planID int64, pause bool) {
 	if s.userManager == nil {

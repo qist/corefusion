@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"gorm.io/gorm"
@@ -10,6 +11,12 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 )
+
+// AccountSyncer is implemented by client.Service to synchronize accounts
+// when new nodes are added to a plan. This interface avoids circular imports.
+type AccountSyncer interface {
+	SyncAccountsForNewInbound(ctx context.Context, templateID int64, inboundConfigID int64) error
+}
 
 // Service handles plan template, variant, node group, promotion, and order business logic.
 type Service struct {
@@ -23,6 +30,12 @@ type Service struct {
 	clientRepo     *repository.ClientRepository
 	inboundRepo    *repository.InboundConfigRepository
 	extNodeRepo    *repository.ExternalNodeRepository
+	accountSyncer  AccountSyncer
+}
+
+// SetAccountSyncer injects the account syncer (client.Service).
+func (s *Service) SetAccountSyncer(syncer AccountSyncer) {
+	s.accountSyncer = syncer
 }
 
 // NewService creates a new plan service.
@@ -269,14 +282,58 @@ func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
 }
 
 // SetTemplateNodeGroups sets the node group IDs for a template.
+// When new groups are added, it triggers account synchronization for all
+// inbound configs in those groups, ensuring existing clients get accounts
+// on the newly associated nodes.
 func (s *Service) SetTemplateNodeGroups(ctx context.Context, templateID int64, groupIDs []int64) error {
 	tmpl, err := s.tmplRepo.GetByID(ctx, templateID)
 	if err != nil {
 		return fmt.Errorf("template not found: %w", err)
 	}
+
+	// Find newly added group IDs
+	oldGroups := make(map[int64]bool)
+	for _, id := range tmpl.NodeGroupIDs {
+		oldGroups[id] = true
+	}
+	var newGroupIDs []int64
+	for _, id := range groupIDs {
+		if !oldGroups[id] {
+			newGroupIDs = append(newGroupIDs, id)
+		}
+	}
+
 	tmpl.NodeGroupIDs = entity.Int64List(groupIDs)
 	tmpl.UpdatedAt = time.Now()
-	return s.tmplRepo.Update(ctx, tmpl)
+	if err := s.tmplRepo.Update(ctx, tmpl); err != nil {
+		return err
+	}
+
+	// Trigger account sync for newly added groups
+	if len(newGroupIDs) > 0 && s.accountSyncer != nil {
+		go s.syncAccountsForNewGroups(context.Background(), templateID, newGroupIDs)
+	}
+
+	return nil
+}
+
+// syncAccountsForNewGroups finds all inbound configs in the given groups
+// and triggers account synchronization for each.
+func (s *Service) syncAccountsForNewGroups(ctx context.Context, templateID int64, groupIDs []int64) {
+	members, err := s.memberRepo.ListByGroupIDs(ctx, groupIDs)
+	if err != nil {
+		log.Printf("plan: failed to list members for groups %v: %v", groupIDs, err)
+		return
+	}
+
+	for _, member := range members {
+		if !member.Enabled || member.InboundConfigID <= 0 {
+			continue
+		}
+		if err := s.accountSyncer.SyncAccountsForNewInbound(ctx, templateID, member.InboundConfigID); err != nil {
+			log.Printf("plan: account sync failed for template %d, inbound %d: %v", templateID, member.InboundConfigID, err)
+		}
+	}
 }
 
 // ──────────────────── Plan Variant ────────────────────
@@ -537,7 +594,98 @@ func (s *Service) AddGroupMember(ctx context.Context, groupID int64, input AddGr
 	if err := s.memberRepo.Create(ctx, member); err != nil {
 		return nil, fmt.Errorf("add group member: %w", err)
 	}
+
+	// Trigger account sync: find all templates that include this group
+	// and sync accounts for the new inbound config.
+	if member.InboundConfigID > 0 && s.accountSyncer != nil {
+		go s.triggerAccountSyncForGroup(context.Background(), groupID, member.InboundConfigID)
+	}
+
 	return member, nil
+}
+
+// triggerAccountSyncForGroup finds all plan templates that include the given group
+// and triggers account synchronization for the specified inbound config.
+func (s *Service) triggerAccountSyncForGroup(ctx context.Context, groupID int64, inboundConfigID int64) {
+	templates, err := s.tmplRepo.List(ctx)
+	if err != nil {
+		log.Printf("plan: failed to list templates for account sync: %v", err)
+		return
+	}
+
+	for _, tmpl := range templates {
+		if !tmpl.Enabled {
+			continue
+		}
+		// Check if this template's node_group_ids contains groupID
+		for _, gid := range tmpl.NodeGroupIDs {
+			if gid == groupID {
+				if err := s.accountSyncer.SyncAccountsForNewInbound(ctx, tmpl.ID, inboundConfigID); err != nil {
+					log.Printf("plan: account sync failed for template %d, inbound %d: %v", tmpl.ID, inboundConfigID, err)
+				}
+				break
+			}
+		}
+	}
+}
+
+// SyncAccountsForTemplate triggers account synchronization for ALL inbound configs
+// accessible by the given plan template. This is used to retroactively create
+// accounts for existing clients on nodes that were added before the auto-sync
+// feature was implemented.
+func (s *Service) SyncAccountsForTemplate(ctx context.Context, templateID int64) (int, error) {
+	if s.accountSyncer == nil {
+		return 0, fmt.Errorf("account syncer not configured")
+	}
+
+	result, err := s.GetAccessibleNodes(ctx, templateID)
+	if err != nil {
+		return 0, fmt.Errorf("get accessible nodes: %w", err)
+	}
+
+	count := 0
+	for _, inbound := range result.InboundConfigs {
+		if !inbound.Enabled {
+			continue
+		}
+		if err := s.accountSyncer.SyncAccountsForNewInbound(ctx, templateID, inbound.ID); err != nil {
+			log.Printf("plan: sync accounts failed for template %d, inbound %d: %v", templateID, inbound.ID, err)
+		} else {
+			count++
+		}
+	}
+
+	log.Printf("plan: account sync completed for template %d, %d inbounds processed", templateID, count)
+	return count, nil
+}
+
+// SyncAllAccounts triggers account synchronization for ALL enabled plan templates.
+// This is a bulk repair operation for existing data.
+func (s *Service) SyncAllAccounts(ctx context.Context) (map[int64]int, error) {
+	if s.accountSyncer == nil {
+		return nil, fmt.Errorf("account syncer not configured")
+	}
+
+	templates, err := s.tmplRepo.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list templates: %w", err)
+	}
+
+	results := make(map[int64]int)
+	for _, tmpl := range templates {
+		if !tmpl.Enabled {
+			continue
+		}
+		count, err := s.SyncAccountsForTemplate(ctx, tmpl.ID)
+		if err != nil {
+			log.Printf("plan: sync accounts failed for template %d: %v", tmpl.ID, err)
+			continue
+		}
+		results[tmpl.ID] = count
+	}
+
+	log.Printf("plan: bulk account sync completed, %d templates processed", len(results))
+	return results, nil
 }
 
 // RemoveGroupMember removes a member from a node group.

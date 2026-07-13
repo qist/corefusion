@@ -661,6 +661,36 @@ func (h *Handler) ProxyStdoutLog(c *gin.Context) {
 	response.OK(c, gin.H{"lines": logLines, "type": proxyType, "server_id": serverID})
 }
 
+// findNewLines returns lines in current that appeared after the previous batch.
+// It finds the longest suffix of previous that matches a prefix of current,
+// then returns the remaining lines in current. If no overlap is found (file
+// was rotated or too many new lines), returns all current lines.
+func findNewLines(previous, current []string) []string {
+	if len(previous) == 0 {
+		return current
+	}
+	if len(current) == 0 {
+		return nil
+	}
+	maxOverlap := len(previous)
+	if len(current) < maxOverlap {
+		maxOverlap = len(current)
+	}
+	for overlap := maxOverlap; overlap > 0; overlap-- {
+		match := true
+		for i := 0; i < overlap; i++ {
+			if previous[len(previous)-overlap+i] != current[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return current[overlap:]
+		}
+	}
+	return current
+}
+
 // ProxyStdoutStream streams a process's stdout via SSE.
 func (h *Handler) ProxyStdoutStream(c *gin.Context) {
 	proxyType := c.Param("type")
@@ -705,41 +735,41 @@ func (h *Handler) ProxyStdoutStream(c *gin.Context) {
 		return
 	}
 
-	// For remote nodes, we poll ReadLogFileOnServer periodically
-	ticker := time.NewTicker(500 * time.Millisecond)
+	// For remote nodes, poll via gRPC every 2 seconds (same as other handlers)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	seen := make(map[string]bool)
+	// Send initial snapshot first
+	var prevLines []string
+	initLines, _, err := nodeLogMgr.ReadLogFileOnServer(ctx, serverID, proxyType, 200)
+	if err == nil && len(initLines) > 0 {
+		for _, line := range initLines {
+			c.SSEvent("log", line)
+		}
+		c.Writer.Flush()
+		prevLines = initLines
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			lines, _, err := nodeLogMgr.ReadLogFileOnServer(ctx, serverID, proxyType, 100)
+			lines, _, err := nodeLogMgr.ReadLogFileOnServer(ctx, serverID, proxyType, 200)
 			if err != nil {
-				c.SSEvent("log", "[Error reading log: "+err.Error()+"]")
-				c.Writer.Flush()
 				continue
 			}
-			// Send new lines
-			for _, line := range lines {
-				if !seen[line] {
+			newLines := findNewLines(prevLines, lines)
+			if len(newLines) > 0 {
+				for _, line := range newLines {
 					c.SSEvent("log", line)
-					seen[line] = true
 				}
+				c.Writer.Flush()
 			}
-			c.Writer.Flush()
-			// Cleanup old seen entries to prevent memory leak
-			if len(seen) > 10000 {
-				seen = make(map[string]bool)
-				for _, line := range lines {
-					seen[line] = true
-				}
-			}
+			prevLines = lines
 		}
 	}
 }
@@ -858,24 +888,25 @@ func (h *Handler) StreamLog(c *gin.Context) {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 
-		seen := len(logLines)
+		prevLines := logLines
 		ctx := c.Request.Context()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				newLines, _, err := nodeLogMgr.ReadLogFileOnServerWithPath(ctx, policy.ServerID, policy.SourceType, policy.LogPath, lines)
-				if err != nil || len(newLines) == 0 {
+				newRead, _, err := nodeLogMgr.ReadLogFileOnServerWithPath(ctx, policy.ServerID, policy.SourceType, policy.LogPath, lines)
+				if err != nil || len(newRead) == 0 {
 					continue
 				}
-				if len(newLines) > seen {
-					for _, line := range newLines[seen:] {
+				diff := findNewLines(prevLines, newRead)
+				if len(diff) > 0 {
+					for _, line := range diff {
 						c.SSEvent("log", line)
 					}
 					c.Writer.Flush()
 				}
-				seen = len(newLines)
+				prevLines = newRead
 			}
 		}
 	}
@@ -1097,7 +1128,7 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	seen := len(logLines)
+	prevLines := logLines
 	ctx := c.Request.Context()
 	for {
 		select {
@@ -1113,14 +1144,15 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 			if err != nil || len(lines) == 0 {
 				continue
 			}
-			// Send only new lines
-			if len(lines) > seen {
-				for _, line := range lines[seen:] {
+			// Send only new lines using diff comparison
+			diff := findNewLines(prevLines, lines)
+			if len(diff) > 0 {
+				for _, line := range diff {
 					c.SSEvent("log", line)
 				}
 				c.Writer.Flush()
 			}
-			seen = len(lines)
+			prevLines = lines
 		}
 	}
 }

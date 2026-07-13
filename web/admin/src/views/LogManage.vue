@@ -1503,10 +1503,23 @@ async function showLogViewer(row) {
   eventSource.onopen = () => { logStreamConnected.value = true }
   eventSource.onerror = () => {
     logStreamConnected.value = false
-    setTimeout(() => { if (logViewerVisible.value) {
-      const url2 = logApi.buildSSEUrl(`/log-manage/policies/${row.id}/log-stream`, { lines: 0 })
-      eventSource = logApi.createSSE(url2)
-    } }, 3000)
+    setTimeout(() => {
+      if (logViewerVisible.value) {
+        closeLogStream()
+        const url2 = logApi.buildSSEUrl(`/log-manage/policies/${row.id}/log-stream`, { lines: 0 })
+        eventSource = logApi.createSSE(url2)
+        eventSource.addEventListener('log', (e) => {
+          const line = e.data
+          if (line && !line.includes('[无可用日志源]')) {
+            logLines.value.push(line)
+            if (logLines.value.length > 5000) logLines.value = logLines.value.slice(-3000)
+            if (logAutoScroll.value) nextTick(scrollToBottom)
+          }
+        })
+        eventSource.onopen = () => { logStreamConnected.value = true }
+        eventSource.onerror = () => { logStreamConnected.value = false }
+      }
+    }, 3000)
   }
 }
 

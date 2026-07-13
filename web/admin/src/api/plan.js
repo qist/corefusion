@@ -34,6 +34,14 @@ export function getBillingNodeOptions(id) {
   return client.get(`/plan-templates/${id}/billing-node-options`)
 }
 
+export function syncAccountsForTemplate(id) {
+  return client.post(`/plan-templates/${id}/sync-accounts`)
+}
+
+export function syncAllAccounts() {
+  return client.post('/plan-templates/sync-all-accounts')
+}
+
 export function listAllInboundsWithServer() {
   return client.get('/inbounds-with-server')
 }

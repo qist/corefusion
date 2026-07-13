@@ -499,6 +499,13 @@ async function saveTemplate() {
     const payload = { ...templateForm.value }
     payload.default_quota_bytes = Math.round((payload.default_quota_gb || 0) * 1073741824)
     delete payload.default_quota_gb
+    // billing_node_ids and node_group_ids are managed via separate dialogs,
+    // never send them through the template edit form to avoid accidental overrides
+    delete payload.billing_node_ids
+    delete payload.node_group_ids
+    delete payload.id
+    delete payload.created_at
+    delete payload.updated_at
     if (editingTemplate.value) {
       await planApi.updatePlanTemplate(editingTemplate.value.id, payload)
     } else {

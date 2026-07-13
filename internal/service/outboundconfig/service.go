@@ -33,6 +33,7 @@ func (s *Service) GetByID(ctx context.Context, serverID int64, id int64) (*entit
 
 // Create creates a new outbound config.
 func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, protocol, tag string, configJSON string, enabled bool, isDefault bool) (*entity.OutboundConfig, error) {
+	maxOrder, _ := s.repo.GetMaxSortOrder(ctx, serverID, coreType)
 	cfg := &entity.OutboundConfig{
 		ServerID:   serverID,
 		CoreType:   coreType,
@@ -42,6 +43,7 @@ func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, 
 		ConfigJSON: configJSON,
 		Enabled:    enabled,
 		IsDefault:  isDefault,
+		SortOrder:  maxOrder + 1,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
@@ -128,4 +130,10 @@ func rpFilterWritable() bool {
 // GetDefaultOutbounds returns default outbound configs.
 func (s *Service) GetDefaultOutbounds(ctx context.Context, serverID int64, coreType string) ([]entity.OutboundConfig, error) {
 	return s.repo.GetDefault(ctx, serverID, coreType)
+}
+
+// Reorder updates the sort_order of multiple outbound configs.
+// orders is a map of outbound ID → new sort_order value.
+func (s *Service) Reorder(ctx context.Context, serverID int64, orders map[int64]int) error {
+	return s.repo.Reorder(ctx, serverID, orders)
 }

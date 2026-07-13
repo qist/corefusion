@@ -13,6 +13,7 @@ type OutboundConfig struct {
 	ConfigJSON string    `json:"config_json" gorm:"type:text;not null"`
 	Enabled    bool      `json:"enabled" gorm:"not null"`
 	IsDefault  bool      `json:"is_default" gorm:"not null"`
+	SortOrder  int       `json:"sort_order" gorm:"not null;default:0;index:idx_outbound_sort"`
 	CreatedAt  time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt  time.Time `json:"updated_at" gorm:"not null"`
 }

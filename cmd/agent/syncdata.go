@@ -107,6 +107,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			ConfigJSON: entry.ConfigJson,
 			Enabled:    entry.Enabled,
 			IsDefault:  entry.IsDefault,
+			SortOrder:  int(entry.SortOrder),
 		}
 		// Do NOT set record.ID — let ON CONFLICT(server_id, tag) handle the upsert.
 		if entry.CreatedAt > 0 {
@@ -117,8 +118,8 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		}
 		result := database.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "server_id"}, {Name: "tag"}},
-			DoUpdates: clause.AssignmentColumns([]string{"remark", "core_type", "protocol", "config_json", "enabled", "is_default", "updated_at"}),
-		}).Select("server_id", "remark", "core_type", "protocol", "tag", "config_json", "enabled", "is_default", "created_at", "updated_at").Create(&record)
+			DoUpdates: clause.AssignmentColumns([]string{"remark", "core_type", "protocol", "config_json", "enabled", "is_default", "sort_order", "updated_at"}),
+		}).Select("server_id", "remark", "core_type", "protocol", "tag", "config_json", "enabled", "is_default", "sort_order", "created_at", "updated_at").Create(&record)
 		if result.Error == nil {
 			resp.OutboundConfigsApplied++
 		} else {
@@ -437,7 +438,7 @@ type localOutboundProvider struct{}
 
 func (p *localOutboundProvider) GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error) {
 	var configs []entity.OutboundConfig
-	if err := db.DB.WithContext(ctx).Where("server_id = ? AND core_type = ? AND enabled = ?", serverID, coreType, true).Find(&configs).Error; err != nil {
+	if err := db.DB.WithContext(ctx).Where("server_id = ? AND core_type = ? AND enabled = ?", serverID, coreType, true).Order("sort_order ASC, id ASC").Find(&configs).Error; err != nil {
 		return nil, err
 	}
 	result := make([]map[string]interface{}, 0, len(configs))

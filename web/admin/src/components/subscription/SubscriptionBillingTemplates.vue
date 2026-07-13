@@ -216,10 +216,6 @@ const variableDescriptions = computed(() => {
 
 const currentPlan = computed(() => plans.value.find(plan => plan.id === selectedPlanId.value) || null)
 
-function currentLang() {
-  return String(locale.value || '').startsWith('zh') ? 'zh' : 'en'
-}
-
 function applyDefaultForm() {
   defaultForm.value = {
     billing_used_template: defaultTemplates.value.default_used_template || '',
@@ -286,7 +282,7 @@ async function loadData() {
   loading.value = true
   try {
     const [templateRes, planRes] = await Promise.all([
-      client.get('/system/subscription-billing-templates', { params: { lang: currentLang() } }),
+      client.get('/system/subscription-billing-templates'),
       planApi.listPlanTemplates()
     ])
     defaultTemplates.value = {

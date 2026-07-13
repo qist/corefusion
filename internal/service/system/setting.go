@@ -108,7 +108,7 @@ func DefaultPanelConfig() *PanelConfig {
 	}
 }
 
-func DefaultSubscriptionBillingTemplateConfig(lang string) *SubscriptionBillingTemplateConfig {
+func DefaultSubscriptionBillingTemplateConfig() *SubscriptionBillingTemplateConfig {
 	config := &SubscriptionBillingTemplateConfig{
 		DefaultUsedTemplate:      "Used: {used_human}",
 		DefaultRemainingTemplate: "Remaining: {remaining_human}",
@@ -134,11 +134,6 @@ func DefaultSubscriptionBillingTemplateConfig(lang string) *SubscriptionBillingT
 			"{expires_unix}",
 			"{quota_state}",
 		},
-	}
-	if lang == "zh" {
-		config.DefaultRemainingTemplate = "剩余用量：{remaining_human}"
-		config.DefaultResetTemplate = "距离下次重置剩余：{reset_human}"
-		config.DefaultExpiryTemplate = "套餐到期时间：{expires_human}"
 	}
 	return config
 }
@@ -367,8 +362,8 @@ func (s *SettingService) UpdateGitHubConfig(ctx context.Context, config *GitHubC
 	return s.repo.Set(ctx, "github.acceleration", string(data))
 }
 
-func (s *SettingService) GetSubscriptionBillingTemplateConfig(ctx context.Context, lang string) (*SubscriptionBillingTemplateConfig, error) {
-	config := DefaultSubscriptionBillingTemplateConfig(lang)
+func (s *SettingService) GetSubscriptionBillingTemplateConfig(ctx context.Context) (*SubscriptionBillingTemplateConfig, error) {
+	config := DefaultSubscriptionBillingTemplateConfig()
 	settings, err := s.repo.GetByPrefix(ctx, "subscription.billing_template.")
 	if err != nil {
 		return nil, err

@@ -13,7 +13,7 @@ import (
 
 func TestBuildBillingInfoEntriesRequiresExplicitSelection(t *testing.T) {
 	sub := &entity.Subscription{}
-	templates := defaultBillingTemplateConfig("zh")
+	templates := defaultBillingTemplateConfig()
 	items := []renderedSubscriptionNode{
 		{
 			InboundConfigID: 1,
@@ -22,12 +22,12 @@ func TestBuildBillingInfoEntriesRequiresExplicitSelection(t *testing.T) {
 		},
 	}
 
-	got := buildBillingInfoEntries(sub, templates, items, "zh")
+	got := buildBillingInfoEntries(sub, templates, items)
 	if len(got) != 0 {
 		t.Fatalf("expected no billing entries without explicit selection, got %d", len(got))
 	}
 
-	if header := buildSubscriptionInfoHeader(sub, templates, "zh"); header != "" {
+	if header := buildSubscriptionInfoHeader(sub, templates); header != "" {
 		t.Fatalf("expected empty info header without explicit selection, got %q", header)
 	}
 }
@@ -39,21 +39,23 @@ func TestBuildBillingInfoEntriesUsesExplicitNodeOrder(t *testing.T) {
 	}
 	items := []renderedSubscriptionNode{
 		{
+			MemberID:        11,
 			InboundConfigID: 11,
 			Link:            "vless://uuid-a@example.com:443#node-a",
 			Node:            &formatter.Node{Name: "node-a", Protocol: "vless"},
 		},
 		{
+			MemberID:        22,
 			InboundConfigID: 22,
 			Link:            "vless://uuid-b@example.com:443#node-b",
 			Node:            &formatter.Node{Name: "node-b", Protocol: "vless"},
 		},
 	}
 
-	templates := defaultBillingTemplateConfig("en")
+	templates := defaultBillingTemplateConfig()
 	templates.BillingNodeIDs = []int64{22, 11}
-	got := buildBillingInfoEntries(sub, templates, items, "en")
-	labels := buildBillingInfoLabels(sub, templates, "en")
+	got := buildBillingInfoEntries(sub, templates, items)
+	labels := buildBillingInfoLabels(sub, templates)
 	if len(got) != len(labels) {
 		t.Fatalf("expected %d billing entries, got %d", len(labels), len(got))
 	}
@@ -77,7 +79,7 @@ func TestRenderBillingTemplateSupportsCustomVariables(t *testing.T) {
 		UsedBytesCache: 3 * 1024 * 1024 * 1024,
 		QuotaState:     "normal",
 	}
-	got := renderBillingTemplate("Traffic {remaining_human} / {quota_gb} / {quota_state}", sub, "en")
+	got := renderBillingTemplate("Traffic {remaining_human} / {quota_gb} / {quota_state}", sub)
 	if !strings.Contains(got, "Traffic 7.00 GB / 10.00 / normal") {
 		t.Fatalf("unexpected rendered template %q", got)
 	}
@@ -89,7 +91,7 @@ func TestLoadBillingTemplateConfigFallsBackToPlanOverride(t *testing.T) {
 		BillingRemainingTemplate: "Plan Remaining {remaining_human}",
 		BillingResetTemplate:     "Plan Reset {reset_human}",
 	}
-	got := handler.loadBillingTemplateConfig(context.Background(), plan, "en")
+	got := handler.loadBillingTemplateConfig(context.Background(), plan)
 	if got.RemainingTemplate != "Plan Remaining {remaining_human}" {
 		t.Fatalf("expected plan remaining template override, got %q", got.RemainingTemplate)
 	}

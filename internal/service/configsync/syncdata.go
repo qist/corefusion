@@ -241,6 +241,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				ConfigJson: c.ConfigJSON,
 				Enabled:    c.Enabled,
 				IsDefault:  c.IsDefault,
+				SortOrder:  int32(c.SortOrder),
 				CreatedAt:  c.CreatedAt.Unix(),
 				UpdatedAt:  c.UpdatedAt.Unix(),
 			}

@@ -47,6 +47,7 @@ type OutboundConfigRow struct {
 	ConfigJSON string
 	Enabled    bool
 	IsDefault  bool
+	SortOrder  int
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -85,7 +86,7 @@ func (r *OutboundConfigRepository) ListRows(ctx context.Context, serverID int64)
 	err := r.db.WithContext(ctx).
 		Model(&entity.OutboundConfig{}).
 		Where("server_id = ?", serverID).
-		Order("id").
+		Order("sort_order ASC, id ASC").
 		Find(&rows).Error
 	return rows, err
 }

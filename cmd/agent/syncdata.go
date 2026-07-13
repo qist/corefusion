@@ -17,6 +17,7 @@ import (
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -300,9 +301,16 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		saveProxyGuardianSetting(ctx, a.settingRepo, "caddy", "max_restarts", fmt.Sprintf("%d", req.CaddyMaxRestarts))
 	}
 
+	// 6. Prune stale records that no longer exist on the panel.
+	// SyncData uses upsert (ON CONFLICT) which only adds or updates rows —
+	// it never deletes. Without pruning, outbounds/inbounds deleted on the
+	// panel would persist forever in the agent's local DB, causing stale
+	// entries (e.g. old WARP outbounds) to remain active in xray.
+	pruneStaleRecords(database, req)
+
 	resp.Success = true
 
-	// 6. If apply_and_start, generate config from local DB and start core
+	// 7. If apply_and_start, generate config from local DB and start core
 	// After upserting all rows above, the local DB is the single source of truth.
 	// generateConfigFromLocalDB uses PrepareFullConfig (same as panel) to produce
 	// the final clean config — disabled inbounds/outbounds are filtered out,
@@ -349,7 +357,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		log.Printf("[Agent] SyncData: core started successfully")
 	}
 
-	// 7. Refresh LogWriters based on the updated configs.
+	// 8. Refresh LogWriters based on the updated configs.
 	// core_configs may have changed (e.g. protocol center switched log mode),
 	// so we need to re-read the derived mode and update writer state.
 	// This makes LogWriter status reflect changes immediately without requiring
@@ -360,6 +368,118 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 	}
 
 	return resp, nil
+}
+
+// pruneStaleRecords deletes rows from the agent's local DB that no longer
+// exist on the panel. Each table is pruned independently: if the panel sends
+// a non-empty list for a table, any local rows matching the same server_id
+// (and core_type where applicable) but NOT in the panel's list are deleted.
+// If the panel sends an empty list for a table, no pruning is done for that
+// table (to avoid wiping all data on a partial sync).
+func pruneStaleRecords(database *gorm.DB, req *agentpb.SyncDataRequest) {
+	serverID := req.ServerId
+
+	// --- Prune outbound_configs by (server_id, tag) ---
+	if len(req.OutboundConfigs) > 0 {
+		keepTags := make([]string, 0, len(req.OutboundConfigs))
+		for _, e := range req.OutboundConfigs {
+			if e.ServerId == serverID {
+				keepTags = append(keepTags, e.Tag)
+			}
+		}
+		if len(keepTags) > 0 {
+			result := database.Where("server_id = ? AND tag NOT IN ?", serverID, keepTags).
+				Delete(&entity.OutboundConfig{})
+			if result.RowsAffected > 0 {
+				log.Printf("[Agent] SyncData: pruned %d stale outbound_configs for server %d", result.RowsAffected, serverID)
+			}
+		}
+	}
+
+	// --- Prune inbound_configs by (server_id, tag) ---
+	if len(req.InboundConfigs) > 0 {
+		keepTags := make([]string, 0, len(req.InboundConfigs))
+		for _, e := range req.InboundConfigs {
+			if e.ServerId == serverID {
+				keepTags = append(keepTags, e.Tag)
+			}
+		}
+		if len(keepTags) > 0 {
+			result := database.Where("server_id = ? AND tag NOT IN ?", serverID, keepTags).
+				Delete(&entity.InboundConfig{})
+			if result.RowsAffected > 0 {
+				log.Printf("[Agent] SyncData: pruned %d stale inbound_configs for server %d", result.RowsAffected, serverID)
+			}
+		}
+	}
+
+	// --- Prune core_configs by (server_id, core_type, section) ---
+	// Group by core_type to avoid deleting configs for core types not included in this sync.
+	if len(req.CoreConfigs) > 0 {
+		keepSections := make(map[string]map[string]bool)
+		for _, e := range req.CoreConfigs {
+			if e.ServerId != serverID {
+				continue
+			}
+			if keepSections[e.CoreType] == nil {
+				keepSections[e.CoreType] = make(map[string]bool)
+			}
+			keepSections[e.CoreType][e.Section] = true
+		}
+		for coreType, sections := range keepSections {
+			sectionList := make([]string, 0, len(sections))
+			for s := range sections {
+				sectionList = append(sectionList, s)
+			}
+			result := database.Where("server_id = ? AND core_type = ? AND section NOT IN ?", serverID, coreType, sectionList).
+				Delete(&entity.CoreConfig{})
+			if result.RowsAffected > 0 {
+				log.Printf("[Agent] SyncData: pruned %d stale core_configs for server %d, core_type %s", result.RowsAffected, serverID, coreType)
+			}
+		}
+	}
+
+	// --- Prune warp_configs by id ---
+	if len(req.WarpConfigs) > 0 {
+		keepIDs := make([]int64, 0, len(req.WarpConfigs))
+		for _, e := range req.WarpConfigs {
+			keepIDs = append(keepIDs, e.Id)
+		}
+		if len(keepIDs) > 0 {
+			result := database.Where("server_id = ? AND id NOT IN ?", serverID, keepIDs).
+				Delete(&entity.WarpConfig{})
+			if result.RowsAffected > 0 {
+				log.Printf("[Agent] SyncData: pruned %d stale warp_configs for server %d", result.RowsAffected, serverID)
+			}
+		}
+	}
+
+	// --- Prune share_domain_configs by (server_id, type, value) ---
+	// share_domain_configs uses composite uniqueness on (type, value), but we
+	// don't have a stable ID from the panel. Prune by keeping (type, value) pairs.
+	if len(req.ShareDomainConfigs) > 0 {
+		type keepKey struct{ typ, val string }
+		keepSet := make(map[keepKey]bool)
+		for _, e := range req.ShareDomainConfigs {
+			if e.ServerId == serverID {
+				keepSet[keepKey{e.Type, e.Value}] = true
+			}
+		}
+		var locals []entity.ShareDomainConfig
+		database.Where("server_id = ?", serverID).Find(&locals)
+		var staleIDs []int64
+		for _, l := range locals {
+			if !keepSet[keepKey{l.Type, l.Value}] {
+				staleIDs = append(staleIDs, l.ID)
+			}
+		}
+		if len(staleIDs) > 0 {
+			result := database.Where("id IN ?", staleIDs).Delete(&entity.ShareDomainConfig{})
+			if result.RowsAffected > 0 {
+				log.Printf("[Agent] SyncData: pruned %d stale share_domain_configs for server %d", result.RowsAffected, serverID)
+			}
+		}
+	}
 }
 
 // generateConfigFromLocalDB generates a complete runtime config from the local

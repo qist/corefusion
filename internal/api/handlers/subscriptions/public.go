@@ -369,7 +369,13 @@ func (h *PublicHandler) collectShareLinks(
 						"clients":    []interface{}{userClient},
 						"encryption": getString(settings, "encryption", "none"),
 					}
+				} else {
+					// Client has no account on this node → skip
+					continue
 				}
+			} else {
+				// No client email → skip nodes requiring authentication
+				continue
 			}
 
 			nodeName := cfg.Remark
@@ -487,35 +493,27 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			linkSettings := settings
 			var uuid, password, flow, method string
 			if clientEmail != "" {
-				if userClient := findClientByEmail(settings, clientEmail, cfg.Tag); userClient != nil {
-					linkSettings = map[string]interface{}{
-						"clients":    []interface{}{userClient},
-						"encryption": getString(settings, "encryption", "none"),
-					}
-					uuid, _ = userClient["id"].(string)
-					password, _ = userClient["password"].(string)
-					flow, _ = userClient["flow"].(string)
-					method, _ = userClient["method"].(string)
-					if cfg.Protocol == "hysteria" {
-						if auth, ok := userClient["auth"].(string); ok && auth != "" {
-							password = auth
-						}
+				userClient := findClientByEmail(settings, clientEmail, cfg.Tag)
+				if userClient == nil {
+					// Client has no account on this node → skip (security: never use other users' credentials)
+					continue
+				}
+				linkSettings = map[string]interface{}{
+					"clients":    []interface{}{userClient},
+					"encryption": getString(settings, "encryption", "none"),
+				}
+				uuid, _ = userClient["id"].(string)
+				password, _ = userClient["password"].(string)
+				flow, _ = userClient["flow"].(string)
+				method, _ = userClient["method"].(string)
+				if cfg.Protocol == "hysteria" {
+					if auth, ok := userClient["auth"].(string); ok && auth != "" {
+						password = auth
 					}
 				}
 			} else {
-				clients := getSettingsClients(config)
-				if len(clients) > 0 {
-					c := clients[0]
-					uuid, _ = c["id"].(string)
-					password, _ = c["password"].(string)
-					flow, _ = c["flow"].(string)
-					method, _ = c["method"].(string)
-					if cfg.Protocol == "hysteria" {
-						if auth, ok := c["auth"].(string); ok && auth != "" {
-							password = auth
-						}
-					}
-				}
+				// No client email → skip nodes requiring authentication (security)
+				continue
 			}
 
 			nodeName := cfg.Remark
@@ -799,33 +797,24 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 
 			// Find the specific client's credentials for this subscription
 			if clientEmail != "" {
-				if userClient := findClientByEmail(settings, clientEmail, cfg.Tag); userClient != nil {
-					uuid, _ = userClient["id"].(string)
-					password, _ = userClient["password"].(string)
-					flow, _ = userClient["flow"].(string)
-					method, _ = userClient["method"].(string)
-					// Hysteria uses "auth" field instead of "password"
-					if cfg.Protocol == "hysteria" {
-						if auth, ok := userClient["auth"].(string); ok && auth != "" {
-							password = auth
-						}
+				userClient := findClientByEmail(settings, clientEmail, cfg.Tag)
+				if userClient == nil {
+					// Client has no account on this node → skip (security: never use other users' credentials)
+					continue
+				}
+				uuid, _ = userClient["id"].(string)
+				password, _ = userClient["password"].(string)
+				flow, _ = userClient["flow"].(string)
+				method, _ = userClient["method"].(string)
+				// Hysteria uses "auth" field instead of "password"
+				if cfg.Protocol == "hysteria" {
+					if auth, ok := userClient["auth"].(string); ok && auth != "" {
+						password = auth
 					}
 				}
 			} else {
-				// Fallback to first client if no email specified
-				clients := getSettingsClients(config)
-				if len(clients) > 0 {
-					c := clients[0]
-					uuid, _ = c["id"].(string)
-					password, _ = c["password"].(string)
-					flow, _ = c["flow"].(string)
-					method, _ = c["method"].(string)
-					if cfg.Protocol == "hysteria" {
-						if auth, ok := c["auth"].(string); ok && auth != "" {
-							password = auth
-						}
-					}
-				}
+				// No client email → skip nodes requiring authentication (security)
+				continue
 			}
 
 			ss := getMap(config, "streamSettings")

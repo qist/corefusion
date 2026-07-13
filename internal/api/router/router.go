@@ -415,6 +415,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
 	clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
 
+	// Inject client service into plan service for account synchronization
+	// when new nodes are added to a plan's node group.
+	planSvcInst.SetAccountSyncer(clientSvcInst)
+
 	// Mihomo service
 	mihomoConfigRepo := repository.NewMihomoConfigRepository(database)
 	mihomoGeneralRepo := repository.NewMihomoGeneralRepository(database)
@@ -857,6 +861,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				planTmplGroup.GET("/:id/billing-node-options", planH.GetBillingNodeOptions)
 				planTmplGroup.GET("/:id/variants", planH.ListVariants)
 				planTmplGroup.POST("/:id/variants", planH.CreateVariant)
+				// Account synchronization: manually trigger account creation for existing clients
+				planTmplGroup.POST("/sync-all-accounts", planH.SyncAllAccounts)
+				planTmplGroup.POST("/:id/sync-accounts", planH.SyncAccountsForTemplate)
 			}
 
 			// Plan Variants (套餐规格)

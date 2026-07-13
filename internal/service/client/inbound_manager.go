@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"corefusion/internal/auth/jwt"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 )
 
@@ -30,15 +31,135 @@ func NewInboundManager(inboundRepo *repository.InboundConfigRepository, apiPort,
 	}
 }
 
-// AddUserToInbound adds a user entry to the inbound config JSON and calls xray API.
+// AddUserToInbound adds a user entry to ALL inbound configs matching the tag
+// (across local and remote nodes) and calls xray API for real-time user management.
 func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email, uuid, password, flow, method string) error {
-	// Find inbound by tag
-	inbound, err := m.inboundRepo.GetByTag(ctx, 1, inboundTag)
-	if err != nil {
+	// Find ALL inbounds with this tag across all servers (local + remote)
+	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)
+	if err != nil || len(inbounds) == 0 {
 		return fmt.Errorf("inbound not found: %s", inboundTag)
 	}
 
-	// Add to config JSON
+	for i := range inbounds {
+		inbound := &inbounds[i]
+
+		// Check if user already exists in this inbound's config
+		if userExistsInConfig(inbound.ConfigJSON, email) {
+			continue // Skip, don't create duplicate
+		}
+
+		// Add user to config_json
+		if err := m.addUserToInboundConfig(ctx, inbound, email, uuid, password, flow, method); err != nil {
+			log.Printf("inbound_manager: failed to add user %s to inbound %s (serverID=%d): %v", email, inboundTag, inbound.ServerID, err)
+			continue
+		}
+
+		// Call xray API for real-time user addition (both local and remote)
+		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+	}
+	return nil
+}
+
+// RemoveUserFromInbound removes a user entry from ALL inbound configs matching the tag
+// (across local and remote nodes) and calls xray API for real-time user removal.
+func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error {
+	// Find ALL inbounds with this tag across all servers (local + remote)
+	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)
+	if err != nil || len(inbounds) == 0 {
+		return nil
+	}
+
+	for i := range inbounds {
+		inbound := &inbounds[i]
+
+		// Remove user from config_json
+		if err := m.removeUserFromInboundConfig(ctx, inbound, email); err != nil {
+			log.Printf("inbound_manager: failed to remove user %s from inbound %s (serverID=%d): %v", email, inboundTag, inbound.ServerID, err)
+			continue
+		}
+
+		// Call xray API for real-time user removal (both local and remote)
+		go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+	}
+	return nil
+}
+
+// PauseUser sets _paused=true and removes user from xray runtime.
+// Works on both local and remote nodes.
+func (m *InboundManager) PauseUser(ctx context.Context, inboundID int64, email string) error {
+	inbound, err := m.inboundRepo.GetByID(ctx, inboundID)
+	if err != nil {
+		return nil
+	}
+
+	// Update database (_paused flag)
+	if err := m.setUserPaused(ctx, inboundID, email, true); err != nil {
+		return err
+	}
+
+	// Call xray API to remove user from running instance (local + remote)
+	go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+	return nil
+}
+
+// ResumeUser sets _paused=false and adds user back to xray runtime.
+// Works on both local and remote nodes.
+func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email string) error {
+	inbound, err := m.inboundRepo.GetByID(ctx, inboundID)
+	if err != nil {
+		return nil
+	}
+
+	// Find user credentials from config
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
+		return err
+	}
+	settings, _ := config["settings"].(map[string]interface{})
+	var userEntry map[string]interface{}
+	for _, key := range []string{"clients", "users"} {
+		arr, ok := settings[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, u := range arr {
+			user, ok := u.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if user["email"] == email {
+				userEntry = user
+				break
+			}
+		}
+		if userEntry != nil {
+			break
+		}
+	}
+
+	// Update database (_paused flag)
+	if err := m.setUserPaused(ctx, inboundID, email, false); err != nil {
+		return err
+	}
+
+	// Call xray API to add user back (local + remote)
+	if userEntry != nil {
+		protocol := detectProtocol(inbound.Tag)
+		uuid, _ := userEntry["id"].(string)
+		password, _ := userEntry["password"].(string)
+		auth, _ := userEntry["auth"].(string)
+		flow, _ := userEntry["flow"].(string)
+		method, _ := userEntry["method"].(string)
+		if protocol == "hysteria" && auth != "" {
+			password = auth
+		}
+		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+	}
+	return nil
+}
+
+// addUserToInboundConfig adds a user entry to the specified inbound's config_json.
+func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *entity.InboundConfig, email, uuid, password, flow, method string) error {
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
 		return err
@@ -49,7 +170,7 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 		return fmt.Errorf("no settings in config")
 	}
 
-	protocol := detectProtocol(inboundTag)
+	protocol := detectProtocol(inbound.Tag)
 	user := map[string]interface{}{
 		"email":   email,
 		"_paused": false,
@@ -92,22 +213,11 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 		return err
 	}
 	inbound.ConfigJSON = string(data)
-	if err := m.inboundRepo.Update(ctx, inbound); err != nil {
-		return err
-	}
-
-	// Call xray control API to add user to running instance
-	go m.callXrayAddUser(inboundTag, email, uuid, password, flow, method)
-	return nil
+	return m.inboundRepo.Update(ctx, inbound)
 }
 
-// RemoveUserFromInbound removes a user entry from the inbound config JSON and calls xray API.
-func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error {
-	inbound, err := m.inboundRepo.GetByTag(ctx, 1, inboundTag)
-	if err != nil {
-		return nil
-	}
-
+// removeUserFromInboundConfig removes a user entry from the specified inbound's config_json.
+func (m *InboundManager) removeUserFromInboundConfig(ctx context.Context, inbound *entity.InboundConfig, email string) error {
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
 		return err
@@ -141,85 +251,7 @@ func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, 
 		return err
 	}
 	inbound.ConfigJSON = string(data)
-	if err := m.inboundRepo.Update(ctx, inbound); err != nil {
-		return err
-	}
-
-	// Call xray control API to remove user from running instance
-	go m.callXrayRemoveUser(inboundTag, email)
-	return nil
-}
-
-// PauseUser sets _paused=true and removes user from xray.
-func (m *InboundManager) PauseUser(ctx context.Context, inboundID int64, email string) error {
-	inbound, err := m.inboundRepo.GetByID(ctx, inboundID)
-	if err != nil {
-		return nil
-	}
-
-	// Update database
-	if err := m.setUserPaused(ctx, inboundID, email, true); err != nil {
-		return err
-	}
-
-	// Call xray API to remove user from running instance
-	go m.callXrayRemoveUser(inbound.Tag, email)
-	return nil
-}
-
-// ResumeUser sets _paused=false and adds user back to xray.
-func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email string) error {
-	inbound, err := m.inboundRepo.GetByID(ctx, inboundID)
-	if err != nil {
-		return nil
-	}
-
-	// Find user credentials from config
-	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
-		return err
-	}
-	settings, _ := config["settings"].(map[string]interface{})
-	var userEntry map[string]interface{}
-	for _, key := range []string{"clients", "users"} {
-		arr, ok := settings[key].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, u := range arr {
-			user, ok := u.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if user["email"] == email {
-				userEntry = user
-				break
-			}
-		}
-		if userEntry != nil {
-			break
-		}
-	}
-
-	// Update database
-	if err := m.setUserPaused(ctx, inboundID, email, false); err != nil {
-		return err
-	}
-
-	// Call xray API to add user back
-	if userEntry != nil {
-		protocol := detectProtocol(inbound.Tag)
-		uuid, _ := userEntry["id"].(string)
-		password, _ := userEntry["password"].(string)
-		auth, _ := userEntry["auth"].(string)
-		flow, _ := userEntry["flow"].(string)
-		method, _ := userEntry["method"].(string)
-		if protocol == "hysteria" && auth != "" {
-			password = auth
-		}
-		go m.callXrayAddUser(inbound.Tag, email, uuid, password, flow, method)
-	}
-	return nil
+	return m.inboundRepo.Update(ctx, inbound)
 }
 
 func (m *InboundManager) setUserPaused(ctx context.Context, inboundID int64, email string, paused bool) error {
@@ -272,13 +304,16 @@ func (m *InboundManager) setUserPaused(ctx context.Context, inboundID int64, ema
 	return m.inboundRepo.Update(ctx, inbound)
 }
 
-// callXrayAddUser calls xray control API to add a user.
-func (m *InboundManager) callXrayAddUser(tag, email, uuid, password, flow, method string) {
+// callXrayAddUser calls xray control API to add a user on the specified server.
+// For local nodes (serverID=1), it connects to the local xray gRPC.
+// For remote nodes (serverID>1), it proxies through the Agent gRPC channel.
+func (m *InboundManager) callXrayAddUser(serverID int64, tag, email, uuid, password, flow, method string) {
 	protocol := detectProtocol(tag)
 	body := fmt.Sprintf(`{"email":"%s","id":"%s","password":"%s","flow":"%s","method":"%s"}`,
 		email, uuid, password, flow, method)
 
-	url := fmt.Sprintf("%s/api/v1/xray/control/inbound/%s/user", m.apiBaseURL, tag)
+	// URL includes /node-servers/:id/ prefix for server routing
+	url := fmt.Sprintf("%s/api/v1/node-servers/%d/xray/control/inbound/%s/user", m.apiBaseURL, serverID, tag)
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
 		log.Printf("xray add user: request error: %v", err)
@@ -291,21 +326,24 @@ func (m *InboundManager) callXrayAddUser(tag, email, uuid, password, flow, metho
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("xray add user %s to %s (%s): %v", email, tag, protocol, err)
+		log.Printf("xray add user %s to %s (serverID=%d, %s): %v", email, tag, serverID, protocol, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		log.Printf("xray add user %s to %s: status %d", email, tag, resp.StatusCode)
+		log.Printf("xray add user %s to %s (serverID=%d): status %d", email, tag, serverID, resp.StatusCode)
 	} else {
-		log.Printf("xray add user %s to %s (%s): ok", email, tag, protocol)
+		log.Printf("xray add user %s to %s (serverID=%d, %s): ok", email, tag, serverID, protocol)
 	}
 }
 
-// callXrayRemoveUser calls xray control API to remove a user.
-func (m *InboundManager) callXrayRemoveUser(tag, email string) {
-	url := fmt.Sprintf("%s/api/v1/xray/control/inbound/%s/user/%s", m.apiBaseURL, tag, email)
+// callXrayRemoveUser calls xray control API to remove a user from the specified server.
+// For local nodes (serverID=1), it connects to the local xray gRPC.
+// For remote nodes (serverID>1), it proxies through the Agent gRPC channel.
+func (m *InboundManager) callXrayRemoveUser(serverID int64, tag, email string) {
+	// URL includes /node-servers/:id/ prefix for server routing
+	url := fmt.Sprintf("%s/api/v1/node-servers/%d/xray/control/inbound/%s/user/%s", m.apiBaseURL, serverID, tag, email)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		log.Printf("xray remove user: request error: %v", err)
@@ -317,15 +355,15 @@ func (m *InboundManager) callXrayRemoveUser(tag, email string) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("xray remove user %s from %s: %v", email, tag, err)
+		log.Printf("xray remove user %s from %s (serverID=%d): %v", email, tag, serverID, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		log.Printf("xray remove user %s from %s: status %d", email, tag, resp.StatusCode)
+		log.Printf("xray remove user %s from %s (serverID=%d): status %d", email, tag, serverID, resp.StatusCode)
 	} else {
-		log.Printf("xray remove user %s from %s: ok", email, tag)
+		log.Printf("xray remove user %s from %s (serverID=%d): ok", email, tag, serverID)
 	}
 }
 
@@ -341,6 +379,34 @@ func (m *InboundManager) generateInternalToken() string {
 		return ""
 	}
 	return token
+}
+
+// userExistsInConfig checks if a user with the given email already exists in the config_json.
+func userExistsInConfig(configJSON, email string) bool {
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		return false
+	}
+	settings, ok := config["settings"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"clients", "users"} {
+		arr, ok := settings[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, u := range arr {
+			user, ok := u.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if user["email"] == email {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // detectProtocol extracts protocol from inbound tag.

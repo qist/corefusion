@@ -100,6 +100,17 @@ func (r *ClientRepository) List(ctx context.Context, planID int64, status string
 	return clients, total, err
 }
 
+// ListByPlanID returns all active clients bound to the given plan template ID.
+// Used for batch account synchronization when a new node is added to a plan.
+func (r *ClientRepository) ListByPlanID(ctx context.Context, planID int64) ([]entity.Client, error) {
+	var clients []entity.Client
+	err := r.db.WithContext(ctx).
+		Where("plan_id = ? AND status = ?", planID, "active").
+		Order("id ASC").
+		Find(&clients).Error
+	return clients, err
+}
+
 func (r *ClientRepository) GetByID(ctx context.Context, id int64) (*entity.Client, error) {
 	var client entity.Client
 	err := r.db.WithContext(ctx).First(&client, id).Error

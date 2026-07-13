@@ -1856,12 +1856,25 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			opts := make(map[string]interface{})
 			if path, ok := ws["path"].(string); ok && path != "" {
 				opts["path"] = path
+				// Detect early data in path (?ed=2560), set max-early-data to 4096
+				if idx := strings.Index(path, "?ed="); idx >= 0 {
+					edStr := path[idx+4:]
+					if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
+						edStr = edStr[:ampIdx]
+					}
+					if _, err := strconv.Atoi(edStr); err == nil {
+						opts["max-early-data"] = 4096
+						opts["early-data-header-name"] = "Sec-WebSocket-Protocol"
+					}
+				}
 			}
 			if headers := getMap(ws, "headers"); headers != nil {
 				opts["headers"] = headers
 			}
 			if ed, ok := ws["maxEarlyData"].(float64); ok && ed > 0 {
-				opts["max-early-data"] = int(ed)
+				if _, exists := opts["max-early-data"]; !exists {
+					opts["max-early-data"] = int(ed)
+				}
 			}
 			if edhp, ok := ws["earlyDataHeaderName"].(string); ok && edhp != "" {
 				opts["early-data-header-name"] = edhp
@@ -1914,6 +1927,16 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			opts := make(map[string]interface{})
 			if path, ok := hu["path"].(string); ok && path != "" {
 				opts["path"] = path
+				// Detect early data in path (?ed=2560)
+				if idx := strings.Index(path, "?ed="); idx >= 0 {
+					edStr := path[idx+4:]
+					if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
+						edStr = edStr[:ampIdx]
+					}
+					if _, err := strconv.Atoi(edStr); err == nil {
+						opts["v2ray-http-upgrade-fast-open"] = true
+					}
+				}
 			}
 			if host, ok := hu["host"].(string); ok && host != "" {
 				opts["host"] = host

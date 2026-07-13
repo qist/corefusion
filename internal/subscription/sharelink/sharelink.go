@@ -111,17 +111,15 @@ func generateVmessLink(n Node) string {
 	case "ws":
 		ws := getMap(ss, "ws")
 		path := getString(ws, "path", "/")
-		// Parse early data from path (?ed=2560)
+		// Detect early data in path (?ed=2560), keep path as-is
 		if idx := strings.Index(path, "?ed="); idx >= 0 {
 			edStr := path[idx+4:]
-			// Remove any trailing params
 			if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
 				edStr = edStr[:ampIdx]
 			}
-			if ed, err := strconv.Atoi(edStr); err == nil && ed > 0 {
-				obj["max-early-data"] = ed
+			if _, err := strconv.Atoi(edStr); err == nil {
+				obj["max-early-data"] = 4096
 				obj["early-data-header-name"] = "Sec-WebSocket-Protocol"
-				path = path[:idx]
 			}
 		}
 		if path == "" {

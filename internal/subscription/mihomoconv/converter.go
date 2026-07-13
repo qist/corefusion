@@ -331,7 +331,22 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				headers := make(map[string]any)
 				wsOpts := make(map[string]any)
 				headers["User-Agent"] = randUserAgent()
-				wsOpts["path"] = query.Get("path")
+				path := query.Get("path")
+				// Detect early data in path (e.g. /?ed=2560)
+				if idx := strings.Index(path, "?ed="); idx >= 0 {
+					edStr := path[idx+4:]
+					if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
+						edStr = edStr[:ampIdx]
+					}
+					if _, err := strconv.Atoi(edStr); err == nil {
+						wsOpts["max-early-data"] = 4096
+						wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
+					}
+				}
+				if path == "" {
+					path = "/"
+				}
+				wsOpts["path"] = path
 				wsOpts["headers"] = headers
 				trojan["ws-opts"] = wsOpts
 			case "grpc":
@@ -480,18 +495,14 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 					if err == nil {
 						query := pathURL.Query()
 						if earlyData := query.Get("ed"); earlyData != "" {
-							med, err := strconv.Atoi(earlyData)
-							if err == nil {
+							if _, err := strconv.Atoi(earlyData); err == nil {
 								switch network {
 								case "ws":
-									wsOpts["max-early-data"] = med
+									wsOpts["max-early-data"] = 4096
 									wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
 								case "httpupgrade":
 									wsOpts["v2ray-http-upgrade-fast-open"] = true
 								}
-								query.Del("ed")
-								pathURL.RawQuery = query.Encode()
-								path = pathURL.String()
 							}
 						}
 						if earlyDataHeader := query.Get("eh"); earlyDataHeader != "" {
@@ -708,16 +719,15 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		headers["User-Agent"] = randUserAgent()
 		headers["Host"] = query.Get("host")
 		path := query.Get("path")
-		// Extract early data from path (e.g. /?ed=2560)
+		// Detect early data in path (e.g. /?ed=2560) — set max-early-data to 4096, keep path as-is
 		if idx := strings.Index(path, "?ed="); idx >= 0 {
 			edStr := path[idx+4:]
 			if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
 				edStr = edStr[:ampIdx]
 			}
-			if med, err := strconv.Atoi(edStr); err == nil && med > 0 {
-				wsOpts["max-early-data"] = med
+			if _, err := strconv.Atoi(edStr); err == nil {
+				wsOpts["max-early-data"] = 4096
 				wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
-				path = path[:idx]
 			}
 		}
 		if path == "" {
@@ -728,8 +738,8 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		// Also check for ed as separate query param
 		if _, exists := wsOpts["max-early-data"]; !exists {
 			if edStr := query.Get("ed"); edStr != "" {
-				if med, err := strconv.Atoi(edStr); err == nil && med > 0 {
-					wsOpts["max-early-data"] = med
+				if _, err := strconv.Atoi(edStr); err == nil {
+					wsOpts["max-early-data"] = 4096
 					wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
 				}
 			}

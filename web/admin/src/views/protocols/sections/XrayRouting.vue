@@ -78,157 +78,55 @@
         <el-form-item :label="t('protoCenter.routing.ruleName')">
           <el-input v-model="rf.ruleTag" />
         </el-form-item>
-        <el-form-item :label="t('protoCenter.routing.ruleType')">
-          <el-select v-model="rf._type" style="width:100%" @change="onTypeChange">
-            <el-option label="domain" value="domain" />
-            <el-option label="ip" value="ip" />
-            <el-option label="port" value="port" />
-            <el-option label="sourcePort" value="sourcePort" />
-            <el-option label="localPort" value="localPort" />
-            <el-option label="network" value="network" />
-            <el-option label="protocol" value="protocol" />
-            <el-option label="sourceIP" value="sourceIP" />
-            <el-option label="localIP" value="localIP" />
-            <el-option label="inboundTag" value="inboundTag" />
-            <el-option label="process" value="process" />
-            <el-option label="user" value="user" />
-            <el-option label="attrs" value="attrs" />
-            <el-option label="vlessRoute" value="vlessRoute" />
-            <el-option label="webhook" value="webhook" />
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
+          一条 Xray 路由规则可以同时填写多个匹配条件；多个条件必须同时满足才会命中。
+        </el-alert>
+
+        <el-divider content-position="left">匹配条件</el-divider>
+        <el-form-item :label="t('protoCenter.routing.domain')">
+          <el-select v-model="rf._domain" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
+            <el-option-group label="Geosite">
+              <el-option label="geosite:cn" value="geosite:cn" /><el-option label="geosite:geolocation-cn" value="geosite:geolocation-cn" />
+              <el-option label="geosite:google" value="geosite:google" /><el-option label="geosite:github" value="geosite:github" />
+              <el-option label="geosite:telegram" value="geosite:telegram" /><el-option label="geosite:openai" value="geosite:openai" />
+              <el-option label="geosite:netflix" value="geosite:netflix" /><el-option label="geosite:category-ads-all" value="geosite:category-ads-all" />
+            </el-option-group>
           </el-select>
         </el-form-item>
-
-        <!-- Domain -->
-        <template v-if="rf._type === 'domain'">
-          <el-form-item :label="t('protoCenter.routing.domain')">
-            <el-select v-model="rf._domain" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option-group label="Geosite">
-                <el-option label="geosite:cn" value="geosite:cn" /><el-option label="geosite:geolocation-cn" value="geosite:geolocation-cn" />
-                <el-option label="geosite:google" value="geosite:google" /><el-option label="geosite:github" value="geosite:github" />
-                <el-option label="geosite:telegram" value="geosite:telegram" /><el-option label="geosite:openai" value="geosite:openai" />
-                <el-option label="geosite:netflix" value="geosite:netflix" /><el-option label="geosite:category-ads-all" value="geosite:category-ads-all" />
-              </el-option-group>
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- IP -->
-        <template v-if="rf._type === 'ip'">
-          <el-form-item :label="t('protoCenter.routing.ip')">
-            <el-select v-model="rf._ip" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option-group label="GeoIP">
-                <el-option label="geoip:cn" value="geoip:cn" /><el-option label="geoip:us" value="geoip:us" />
-                <el-option label="geoip:telegram" value="geoip:telegram" /><el-option label="geoip:private" value="geoip:private" />
-                <el-option label="geoip:!cn" value="geoip:!cn" />
-              </el-option-group>
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- Port -->
-        <template v-if="rf._type === 'port'">
-          <el-form-item :label="t('protoCenter.routing.port')"><el-input v-model="rf._port" placeholder="53,443,1000-2000" /></el-form-item>
-        </template>
-        <template v-if="rf._type === 'sourcePort'">
-          <el-form-item :label="t('protoCenter.routing.sourcePort')"><el-input v-model="rf._sourcePort" placeholder="53,443,1000-2000" /></el-form-item>
-        </template>
-        <template v-if="rf._type === 'localPort'">
-          <el-form-item :label="t('protoCenter.routing.localPort')"><el-input v-model="rf._localPort" placeholder="53,443,1000-2000" /></el-form-item>
-        </template>
-
-        <!-- Network -->
-        <template v-if="rf._type === 'network'">
-          <el-form-item :label="t('protoCenter.routing.network')">
-            <el-select v-model="rf._network" style="width:100%">
-              <el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- Protocol -->
-        <template v-if="rf._type === 'protocol'">
-          <el-form-item :label="t('protoCenter.routing.protocol')">
-            <el-select v-model="rf._protocol" multiple style="width:100%">
-              <el-option label="http" value="http" /><el-option label="tls" value="tls" />
-              <el-option label="quic" value="quic" /><el-option label="bittorrent" value="bittorrent" />
-              <el-option label="dns" value="dns" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- Source IP / Local IP -->
-        <template v-if="rf._type === 'sourceIP'">
-          <el-form-item :label="t('protoCenter.routing.sourceIP')">
-            <el-select v-model="rf._sourceIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option label="geoip:cn" value="geoip:cn" /><el-option label="geoip:private" value="geoip:private" />
-            </el-select>
-          </el-form-item>
-        </template>
-        <template v-if="rf._type === 'localIP'">
-          <el-form-item :label="t('protoCenter.routing.localIP')">
-            <el-select v-model="rf._localIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option label="192.168.0.0/16" value="192.168.0.0/16" /><el-option label="10.0.0.0/8" value="10.0.0.0/8" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- Inbound Tag -->
-        <template v-if="rf._type === 'inboundTag'">
-          <el-form-item :label="t('protoCenter.routing.inboundTag')">
-            <el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option v-for="t in activeInboundTags" :key="t" :label="t" :value="t" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- Process -->
-        <template v-if="rf._type === 'process'">
-          <el-form-item :label="t('protoCenter.routing.process')">
-            <el-select v-model="rf._process" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option label="curl" value="curl" /><el-option label="wget" value="wget" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- User -->
-        <template v-if="rf._type === 'user'">
-          <el-form-item :label="t('protoCenter.routing.user')">
-            <el-select v-model="rf._user" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
-              <el-option v-for="t in userTags" :key="t" :label="t" :value="t" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- Attrs -->
-        <template v-if="rf._type === 'attrs'">
-          <el-form-item :label="t('protoCenter.routing.attrs')">
-            <div v-for="(a, i) in rf._attrs" :key="i" style="display:flex;gap:8px;margin-bottom:6px">
-              <el-input v-model="a.key" placeholder=":method" style="width:40%" />
-              <el-input v-model="a.value" placeholder="GET" style="width:40%" />
-              <el-button size="small" type="danger" text @click="rf._attrs.splice(i,1)">X</el-button>
-            </div>
-            <el-button size="small" @click="rf._attrs.push({key:'',value:''})">{{ t('protoCenter.routing.addItem') }}</el-button>
-          </el-form-item>
-        </template>
-
-        <!-- VLESS Route -->
-        <template v-if="rf._type === 'vlessRoute'">
-          <el-form-item :label="t('protoCenter.routing.vlessRoute')"><el-input v-model="rf._vlessRoute" placeholder="53,443,1000-2000" /></el-form-item>
-        </template>
-
-        <!-- Webhook -->
-        <template v-if="rf._type === 'webhook'">
-          <el-form-item :label="t('protoCenter.routing.webhookUrl')"><el-input v-model="rf._webhookUrl" :placeholder="t('protoCenter.routing.webhookUrlPlaceholder')" /></el-form-item>
-          <el-form-item :label="t('protoCenter.routing.webhookDedup')"><el-input-number v-model="rf._webhookDedup" :min="0" /></el-form-item>
-          <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
-            <div v-for="(h, i) in rf._webhookHeaders" :key="i" style="display:flex;gap:8px;margin-bottom:6px">
-              <el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:40%" />
-              <el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:40%" />
-              <el-button size="small" type="danger" text @click="rf._webhookHeaders.splice(i,1)">X</el-button>
-            </div>
-            <el-button size="small" @click="rf._webhookHeaders.push({key:'',value:''})">{{ t('protoCenter.routing.addItem') }}</el-button>
-          </el-form-item>
-        </template>
+        <el-form-item :label="t('protoCenter.routing.ip')">
+          <el-select v-model="rf._ip" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
+            <el-option-group label="GeoIP">
+              <el-option label="geoip:cn" value="geoip:cn" /><el-option label="geoip:us" value="geoip:us" />
+              <el-option label="geoip:telegram" value="geoip:telegram" /><el-option label="geoip:private" value="geoip:private" />
+              <el-option label="geoip:!cn" value="geoip:!cn" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="8"><el-form-item :label="t('protoCenter.routing.port')"><el-input v-model="rf._port" placeholder="53,443,1000-2000" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item :label="t('protoCenter.routing.sourcePort')"><el-input v-model="rf._sourcePort" placeholder="53,443" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item :label="t('protoCenter.routing.localPort')"><el-input v-model="rf._localPort" placeholder="443" /></el-form-item></el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="8"><el-form-item :label="t('protoCenter.routing.network')"><el-select v-model="rf._network" clearable style="width:100%"><el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" /></el-select></el-form-item></el-col>
+          <el-col :span="16"><el-form-item :label="t('protoCenter.routing.protocol')"><el-select v-model="rf._protocol" multiple style="width:100%"><el-option label="http" value="http" /><el-option label="tls" value="tls" /><el-option label="quic" value="quic" /><el-option label="bittorrent" value="bittorrent" /></el-select></el-form-item></el-col>
+        </el-row>
+        <el-form-item :label="t('protoCenter.routing.sourceIP')"><el-select v-model="rf._sourceIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="geoip:cn" value="geoip:cn" /><el-option label="geoip:private" value="geoip:private" /></el-select></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.localIP')"><el-select v-model="rf._localIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="192.168.0.0/16" value="192.168.0.0/16" /><el-option label="10.0.0.0/8" value="10.0.0.0/8" /></el-select></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.inboundTag')"><el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option v-for="tag in activeInboundTags" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.process')"><el-select v-model="rf._process" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="curl" value="curl" /><el-option label="wget" value="wget" /><el-option label="self/" value="self/" /><el-option label="xray/" value="xray/" /></el-select></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.user')"><el-select v-model="rf._user" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option v-for="tag in userTags" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.vlessRoute')"><el-input v-model="rf._vlessRoute" placeholder="53,443,1000-2000" /></el-form-item>
+        <el-form-item :label="t('protoCenter.routing.attrs')">
+          <div v-for="(a, i) in rf._attrs" :key="i" style="display:flex;gap:8px;margin-bottom:6px"><el-input v-model="a.key" placeholder=":method" style="width:40%" /><el-input v-model="a.value" placeholder="GET" style="width:40%" /><el-button size="small" type="danger" text @click="rf._attrs.splice(i,1)">X</el-button></div>
+          <el-button size="small" @click="rf._attrs.push({key:'',value:''})">{{ t('protoCenter.routing.addItem') }}</el-button>
+        </el-form-item>
+        <el-form-item :label="t('protoCenter.routing.webhookUrl')"><el-input v-model="rf._webhookUrl" :placeholder="t('protoCenter.routing.webhookUrlPlaceholder')" /></el-form-item>
+        <el-form-item v-if="rf._webhookUrl" :label="t('protoCenter.routing.webhookDedup')"><el-input-number v-model="rf._webhookDedup" :min="0" /></el-form-item>
+        <el-form-item v-if="rf._webhookUrl" :label="t('protoCenter.routing.webhookHeaders')">
+          <div v-for="(h, i) in rf._webhookHeaders" :key="i" style="display:flex;gap:8px;margin-bottom:6px"><el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:40%" /><el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:40%" /><el-button size="small" type="danger" text @click="rf._webhookHeaders.splice(i,1)">X</el-button></div>
+          <el-button size="small" @click="rf._webhookHeaders.push({key:'',value:''})">{{ t('protoCenter.routing.addItem') }}</el-button>
+        </el-form-item>
 
         <el-divider content-position="left">{{ t('protoCenter.routing.action') }}</el-divider>
 
@@ -332,9 +230,10 @@ const balDlg = ref(false)
 const balIdx = ref(-1)
 const bf = reactive({ tag: '', selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '' })
 const rf = reactive({
-  ruleTag: '', _type: 'domain',
+  ruleTag: '',
   _domain: [], _ip: [], _port: '', _sourcePort: '', _localPort: '',
   _network: '', _protocol: [], _sourceIP: [], _localIP: [],
+  _inboundTag: [],
   _process: [], _user: [],
   _attrs: [], _vlessRoute: '',
   _webhookUrl: '', _webhookDedup: 0, _webhookHeaders: [],
@@ -343,21 +242,12 @@ const rf = reactive({
 
 function genTag() { return 'rule-' + Math.random().toString(36).substring(2, 8) }
 
-function onTypeChange() {
-  rf._domain = []; rf._ip = []; rf._port = ''; rf._sourcePort = ''; rf._localPort = ''
-  rf._network = ''; rf._protocol = []; rf._sourceIP = []; rf._localIP = []
-  rf._process = []; rf._user = []
-  rf._attrs = []; rf._vlessRoute = ''
-  rf._webhookUrl = ''; rf._webhookDedup = 0; rf._webhookHeaders = []
-  // Clear outbound when selecting inboundTag (usually used with balancer)
-  if (rf._type === 'inboundTag') rf.outboundTag = ''
-}
-
 function resetForm() {
   Object.assign(rf, {
-    ruleTag: genTag(), _type: 'domain',
+    ruleTag: genTag(),
     _domain: [], _ip: [], _port: '', _sourcePort: '', _localPort: '',
     _network: '', _protocol: [], _sourceIP: [], _localIP: [],
+    _inboundTag: [],
     _process: [], _user: [],
     _attrs: [], _vlessRoute: '',
     _webhookUrl: '', _webhookDedup: 0, _webhookHeaders: [],
@@ -370,31 +260,16 @@ function showAddRule() { editIdx.value = -1; resetForm(); dlg.value = true }
 function editRule(i) {
   editIdx.value = i
   const r = form.rules[i]
-  let tp = 'domain'
-  if (r.ip && r.ip.length) tp = 'ip'
-  else if (r.port) tp = 'port'
-  else if (r.sourcePort) tp = 'sourcePort'
-  else if (r.localPort) tp = 'localPort'
-  else if (r.network) tp = 'network'
-  else if (r.protocol && r.protocol.length) tp = 'protocol'
-  else if (r.source && r.source.length) tp = 'sourceIP'
-  else if (r.localIP && r.localIP.length) tp = 'localIP'
-  else if (r.inboundTag && r.inboundTag.length) tp = 'inboundTag'
-  else if (r.process && r.process.length) tp = 'process'
-  else if (r.user && r.user.length) tp = 'user'
-  else if (r.attrs) tp = 'attrs'
-  else if (r.vlessRoute) tp = 'vlessRoute'
-  else if (r.webhook) tp = 'webhook'
 
   const attrs = r.attrs ? Object.entries(r.attrs).map(([k,v]) => ({key:k,value:v})) : []
   const whHeaders = r.webhook && r.webhook.headers ? Object.entries(r.webhook.headers).map(([k,v]) => ({key:k,value:v})) : []
 
   Object.assign(rf, {
-    ruleTag: r.ruleTag || genTag(), _type: tp,
+    ruleTag: r.ruleTag || genTag(),
     _domain: r.domain || [], _ip: r.ip || [],
     _port: r.port || '', _sourcePort: r.sourcePort || '', _localPort: r.localPort || '',
     _network: r.network || '', _protocol: r.protocol || [],
-    _sourceIP: r.source || [], _localIP: r.localIP || [],
+    _sourceIP: r.sourceIP || r.source || [], _localIP: r.localIP || [],
     _inboundTag: r.inboundTag || [],
     _process: r.process || [], _user: r.user || [],
     _attrs: attrs, _vlessRoute: r.vlessRoute || '',
@@ -411,24 +286,24 @@ function saveRule() {
   const rule = { type: 'field', enabled: true, ruleTag: rf.ruleTag }
   if (rf.outboundTag) rule.outboundTag = rf.outboundTag
   if (rf.balancerTag) rule.balancerTag = rf.balancerTag
-  if (rf._type === 'domain' && rf._domain.length) rule.domain = [...rf._domain]
-  if (rf._type === 'ip' && rf._ip.length) rule.ip = [...rf._ip]
-  if (rf._type === 'port' && rf._port) rule.port = rf._port
-  if (rf._type === 'sourcePort' && rf._sourcePort) rule.sourcePort = rf._sourcePort
-  if (rf._type === 'localPort' && rf._localPort) rule.localPort = rf._localPort
-  if (rf._type === 'network' && rf._network) rule.network = rf._network
-  if (rf._type === 'protocol' && rf._protocol.length) rule.protocol = [...rf._protocol]
-  if (rf._type === 'sourceIP' && rf._sourceIP.length) rule.source = [...rf._sourceIP]
-  if (rf._type === 'localIP' && rf._localIP.length) rule.localIP = [...rf._localIP]
-  if (rf._type === 'inboundTag' && rf._inboundTag.length) rule.inboundTag = [...rf._inboundTag]
-  if (rf._type === 'process' && rf._process.length) rule.process = [...rf._process]
-  if (rf._type === 'user' && rf._user.length) rule.user = [...rf._user]
-  if (rf._type === 'attrs' && rf._attrs.length) {
+  if (rf._domain.length) rule.domain = [...rf._domain]
+  if (rf._ip.length) rule.ip = [...rf._ip]
+  if (rf._port) rule.port = rf._port
+  if (rf._sourcePort) rule.sourcePort = rf._sourcePort
+  if (rf._localPort) rule.localPort = rf._localPort
+  if (rf._network) rule.network = rf._network
+  if (rf._protocol.length) rule.protocol = [...rf._protocol]
+  if (rf._sourceIP.length) rule.sourceIP = [...rf._sourceIP]
+  if (rf._localIP.length) rule.localIP = [...rf._localIP]
+  if (rf._inboundTag.length) rule.inboundTag = [...rf._inboundTag]
+  if (rf._process.length) rule.process = [...rf._process]
+  if (rf._user.length) rule.user = [...rf._user]
+  if (rf._attrs.length) {
     const attrs = {}; rf._attrs.forEach(a => { if (a.key) attrs[a.key] = a.value })
     if (Object.keys(attrs).length) rule.attrs = attrs
   }
-  if (rf._type === 'vlessRoute' && rf._vlessRoute) rule.vlessRoute = rf._vlessRoute
-  if (rf._type === 'webhook' && rf._webhookUrl) {
+  if (rf._vlessRoute) rule.vlessRoute = rf._vlessRoute
+  if (rf._webhookUrl) {
     const wh = { url: rf._webhookUrl }; if (rf._webhookDedup) wh.deduplication = rf._webhookDedup
     if (rf._webhookHeaders.length) { const h = {}; rf._webhookHeaders.forEach(x => { if (x.key) h[x.key] = x.value }); if (Object.keys(h).length) wh.headers = h }
     rule.webhook = wh

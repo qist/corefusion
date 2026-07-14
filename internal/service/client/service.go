@@ -24,13 +24,20 @@ type InboundUserManager interface {
 	ResumeUser(ctx context.Context, inboundID int64, email string) error
 }
 
+// TrafficResetHook resets inbound config traffic and triggers remote sync.
+type TrafficResetHook interface {
+	ResetUserTrafficByEmail(ctx context.Context, email string) ([]int64, error)
+	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
+}
+
 // Service handles client business logic.
 type Service struct {
-	clientRepo  *repository.ClientRepository
-	planSvc     *plan.Service
-	subRepo     *repository.SubscriptionRepository
-	inboundRepo *repository.InboundConfigRepository
-	userManager InboundUserManager
+	clientRepo   *repository.ClientRepository
+	planSvc      *plan.Service
+	subRepo      *repository.SubscriptionRepository
+	inboundRepo  *repository.InboundConfigRepository
+	userManager  InboundUserManager
+	trafficHook  TrafficResetHook
 }
 
 // NewService creates a new client service.
@@ -48,6 +55,11 @@ func NewService(
 		inboundRepo: inboundRepo,
 		userManager: userManager,
 	}
+}
+
+// SetTrafficResetHook sets the hook for resetting inbound traffic and syncing.
+func (s *Service) SetTrafficResetHook(hook TrafficResetHook) {
+	s.trafficHook = hook
 }
 
 // --- Client operations ---
@@ -236,6 +248,7 @@ func (s *Service) RestoreClient(ctx context.Context, id int64) error {
 }
 
 // ResetUsage resets a client's traffic usage.
+// Also resets _usedUp/_usedDown in inbound configs and syncs to remote nodes.
 func (s *Service) ResetUsage(ctx context.Context, id int64) error {
 	client, err := s.clientRepo.GetByID(ctx, id)
 	if err != nil {
@@ -249,7 +262,41 @@ func (s *Service) ResetUsage(ctx context.Context, id int64) error {
 		// Resume users
 		s.pauseResumeAll(ctx, client.Email, client.PlanID, false)
 	}
-	return s.clientRepo.Update(ctx, client)
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		return err
+	}
+
+	// Reset subscription cache columns
+	if client.SubscriptionID != nil && *client.SubscriptionID > 0 {
+		if s.subRepo != nil {
+			sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID)
+			if err == nil && sub != nil {
+				sub.UsedBytesCache = 0
+				sub.UploadBytesCache = 0
+				sub.DownloadBytesCache = 0
+				sub.QuotaState = "normal"
+				now := time.Now()
+				sub.LastResetAt = &now
+				_ = s.subRepo.Update(ctx, sub)
+			}
+		}
+	}
+
+	// Reset _usedUp/_usedDown in inbound configs + sync to remote
+	if s.trafficHook != nil {
+		serverIDs, err := s.trafficHook.ResetUserTrafficByEmail(ctx, client.Email)
+		if err != nil {
+			log.Printf("resetUsage: failed to reset inbound traffic for %s: %v", client.Email, err)
+		} else {
+			for _, sid := range serverIDs {
+				if sid > 1 {
+					s.trafficHook.SyncServerConfig(ctx, sid, "xray")
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // DeleteClient removes a client and all inbound users.

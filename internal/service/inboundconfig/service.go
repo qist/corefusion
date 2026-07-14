@@ -360,6 +360,80 @@ func (s *Service) resetSubscriptionTrafficForServer(ctx context.Context, serverI
 	log.Printf("resetTraffic: reset traffic cache for %d subscriptions on server %d", len(subIDs), serverID)
 }
 
+// ResetUserTrafficByEmail resets _usedUp and _usedDown to 0 for a specific user
+// (matched by email) across ALL inbound configs on ALL servers.
+// Returns the list of server IDs that were affected (for sync triggering).
+func (s *Service) ResetUserTrafficByEmail(ctx context.Context, email string) ([]int64, error) {
+	configs, err := s.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var affectedServers []int64
+	for _, cfg := range configs {
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
+			continue
+		}
+
+		settings, ok := inbound["settings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		configReset := false
+		for _, key := range []string{"users", "clients", "accounts"} {
+			items, ok := settings[key].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, item := range items {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				itemEmail, _ := m["email"].(string)
+				if itemEmail == "" {
+					itemEmail, _ = m["user"].(string)
+				}
+				// Match exact email or "email_tag" format
+				if itemEmail == email || strings.HasPrefix(itemEmail, email+"_") {
+					m["_usedUp"] = int64(0)
+					m["_usedDown"] = int64(0)
+					configReset = true
+				}
+			}
+		}
+
+		if configReset {
+			data, err := json.Marshal(inbound)
+			if err != nil {
+				continue
+			}
+			cfg.ConfigJSON = string(data)
+			cfg.UpdatedAt = time.Now()
+			if err := s.repo.Update(ctx, &cfg); err != nil {
+				log.Printf("resetUserTraffic: failed to update config %s: %v", cfg.Tag, err)
+				continue
+			}
+			log.Printf("resetUserTraffic: reset traffic for %s in config %s (server %d)", email, cfg.Tag, cfg.ServerID)
+			// Track unique server IDs
+			found := false
+			for _, sid := range affectedServers {
+				if sid == cfg.ServerID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				affectedServers = append(affectedServers, cfg.ServerID)
+			}
+		}
+	}
+
+	return affectedServers, nil
+}
+
 // GetEnabledInbounds returns all enabled inbound configs as parsed JSON for a specific server.
 func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
 	configs, err := s.repo.List(ctx, serverID, coreType)

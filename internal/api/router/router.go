@@ -214,6 +214,55 @@ func (a *configSyncHookAdapter) SyncServerConfig(_ context.Context, serverID int
 	}
 }
 
+// trafficResetHookAdapter combines inboundconfig.Service (for resetting user traffic)
+// with configsync.Service (for triggering remote sync) and nodeserver.Service
+// (for SyncData) to implement the TrafficResetHook interface.
+type trafficResetHookAdapter struct {
+	inboundSvc    *inboundconfigSvc.Service
+	syncSvc       *configsyncSvc.Service
+	nodeServerSvc *nodeServerSvc.Service
+}
+
+func (a *trafficResetHookAdapter) ResetUserTrafficByEmail(ctx context.Context, email string) ([]int64, error) {
+	return a.inboundSvc.ResetUserTrafficByEmail(ctx, email)
+}
+
+func (a *trafficResetHookAdapter) SyncServerConfig(_ context.Context, serverID int64, coreType string) {
+	if a.syncSvc != nil {
+		if err := a.syncSvc.SyncNow(context.Background()); err != nil {
+			log.Printf("[router] trafficResetHook: SyncNow failed for server %d: %v", serverID, err)
+		}
+	}
+	// Also trigger SyncData to push the updated inbound_configs (with reset
+	// _usedUp/_usedDown) to the remote Agent's local SQLite DB.
+	if a.nodeServerSvc != nil && serverID > 1 {
+		go func() {
+			if _, err := a.nodeServerSvc.SyncServerData(context.Background(), serverID, true); err != nil {
+				log.Printf("[router] trafficResetHook: SyncData failed for server %d: %v", serverID, err)
+			} else {
+				log.Printf("[router] trafficResetHook: SyncData success for server %d", serverID)
+			}
+		}()
+	}
+}
+
+// syncDataHookAdapter adapts nodeserver.Service to the SyncDataHook interface.
+type syncDataHookAdapter struct {
+	nodeServerSvc *nodeServerSvc.Service
+}
+
+func (a *syncDataHookAdapter) SyncServerData(_ context.Context, serverID int64) {
+	if a.nodeServerSvc != nil && serverID > 1 {
+		go func() {
+			if _, err := a.nodeServerSvc.SyncServerData(context.Background(), serverID, true); err != nil {
+				log.Printf("[router] syncDataHook: SyncData failed for server %d: %v", serverID, err)
+			} else {
+				log.Printf("[router] syncDataHook: SyncData success for server %d", serverID)
+			}
+		}()
+	}
+}
+
 // Shutdown stops all managed processes. Call this when the panel exits.
 func Shutdown() {
 	ctx := context.Background()
@@ -753,6 +802,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			inboundCfgH.SetSyncHook(syncHook)
 			outboundCfgH.SetSyncHook(syncHook)
 
+			// NOTE: SyncData and traffic reset hooks are injected after
+			// nodeServerSvcInst is created (see below).
+
 			// Share Domain Configs
 			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo)
 			shareDomainH := sharedomainconfigHandler.NewHandler(shareDomainSvc)
@@ -1071,6 +1123,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		caddyH.SetNodeOperator(nodeServerSvcInst)
 		nginxH.SetNodeOperator(nodeServerSvcInst)
 		processH.SetNodeOperator(nodeServerSvcInst)
+
+		// Inject SyncData hook so traffic reset also pushes inbound_configs
+		// table to remote Agent's local SQLite DB.
+		syncDataHook := &syncDataHookAdapter{nodeServerSvc: nodeServerSvcInst}
+		inboundCfgH.SetSyncDataHook(syncDataHook)
+
+		// Inject traffic reset hook so subscription/client reset propagates
+		// to inbound configs and remote Agent nodes.
+		trafficHook := &trafficResetHookAdapter{inboundSvc: inboundConfigSvc, syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}
+		subSvc.SetTrafficResetHook(trafficHook)
+		clientSvcInst.SetTrafficResetHook(trafficHook)
 			nodeServersGroup := protected.Group("/node-servers")
 			{
 				nodeServersGroup.GET("", nodeServerH.List)

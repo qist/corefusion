@@ -17,10 +17,17 @@ type ConfigSyncHook interface {
 	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
 }
 
+// SyncDataHook triggers a full SyncData push to a remote Agent.
+// This updates the Agent's local SQLite DB (inbound_configs, etc).
+type SyncDataHook interface {
+	SyncServerData(ctx context.Context, serverID int64)
+}
+
 // Handler handles inbound config HTTP requests.
 type Handler struct {
-	svc        *inboundconfig.Service
-	syncHook   ConfigSyncHook
+	svc          *inboundconfig.Service
+	syncHook     ConfigSyncHook
+	syncDataHook SyncDataHook
 }
 
 // NewHandler creates a new inbound config handler.
@@ -31,6 +38,11 @@ func NewHandler(svc *inboundconfig.Service) *Handler {
 // SetSyncHook sets the config sync hook for triggering remote sync after changes.
 func (h *Handler) SetSyncHook(hook ConfigSyncHook) {
 	h.syncHook = hook
+}
+
+// SetSyncDataHook sets the SyncData hook for triggering full data sync to remote Agents.
+func (h *Handler) SetSyncDataHook(hook SyncDataHook) {
+	h.syncDataHook = hook
 }
 
 // List handles GET /api/v1/node-servers/:id/inbound-configs.
@@ -173,9 +185,12 @@ func (h *Handler) ResetAllTraffic(c *gin.Context) {
 		return
 	}
 
-	// Trigger config sync to the target server asynchronously
+	// Trigger config sync AND SyncData to the target server asynchronously
 	if h.syncHook != nil && serverID > 1 {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, "xray")
+	}
+	if h.syncDataHook != nil && serverID > 1 {
+		go h.syncDataHook.SyncServerData(context.Background(), serverID)
 	}
 
 	response.OK(c, gin.H{

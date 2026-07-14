@@ -79,6 +79,7 @@ import (
 	subRegion "corefusion/internal/service/subscription"
 	systemSvc "corefusion/internal/service/system"
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
+	trafficSvc "corefusion/internal/service/traffic"
 	userService "corefusion/internal/service/user"
 	warpSvc "corefusion/internal/service/warp"
 	"corefusion/internal/store/repository"
@@ -1716,6 +1717,10 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 
 	// Start traffic sync service (periodically syncs local traffic stats to DB)
 	trafficSyncSvc.Start()
+
+	// Start log cleanup service (periodically removes old log/event records)
+	logCleanupSvc := trafficSvc.NewLogCleanupService(database)
+	logCleanupSvc.Start(context.Background())
 
 	// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
 	// This consumes TrafficEvent from the NodeServerManager's onTraffic channel

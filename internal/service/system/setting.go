@@ -31,6 +31,7 @@ type PanelConfig struct {
 	ListenAddr          string `json:"listen_addr"`
 	ListenPort          string `json:"listen_port"`
 	SubscriptionPort    string `json:"subscription_port"`
+	PortalPort          string `json:"portal_port"`
 	RegistrationEnabled bool   `json:"registration_enabled"`
 	TLSEnabled          bool   `json:"tls_enabled"`
 	TLSCertID           int64  `json:"tls_cert_id"`
@@ -101,6 +102,7 @@ func DefaultPanelConfig() *PanelConfig {
 		ListenAddr:       "0.0.0.0",
 		ListenPort:       "8080",
 		SubscriptionPort: "0",
+		PortalPort:       "0",
 		TLSEnabled:       false,
 		WebPath:          "/",
 		Timezone:         "Asia/Shanghai",
@@ -149,6 +151,7 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	setIfExist(settings, "panel.listen_addr", &config.ListenAddr)
 	setIfExist(settings, "panel.listen_port", &config.ListenPort)
 	setIfExist(settings, "panel.subscription_port", &config.SubscriptionPort)
+	setIfExist(settings, "panel.portal_port", &config.PortalPort)
 	if v, ok := settings["panel.registration_enabled"]; ok {
 		config.RegistrationEnabled = v == "true"
 	}
@@ -181,7 +184,7 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.listen_addr":          config.ListenAddr,
 		"panel.listen_port":          config.ListenPort,
 		"panel.subscription_port":    config.SubscriptionPort,
-		"panel.registration_enabled": fmt.Sprintf("%v", config.RegistrationEnabled),
+		"panel.portal_port":          config.PortalPort,
 		"panel.tls_enabled":          fmt.Sprintf("%v", config.TLSEnabled),
 		"panel.tls_cert_id":          strconv.FormatInt(config.TLSCertID, 10),
 		"panel.tls_cert_path":        config.TLSCertPath,
@@ -530,6 +533,11 @@ func (s *SettingService) GetByKey(ctx context.Context, key string) (string, erro
 
 // Set saves a setting value by key (implements proxy.SettingStore).
 func (s *SettingService) Set(ctx context.Context, key, value string) error {
+	return s.repo.Set(ctx, key, value)
+}
+
+// SetByKey saves a setting value by key (implements portal.SettingStore).
+func (s *SettingService) SetByKey(ctx context.Context, key, value string) error {
 	return s.repo.Set(ctx, key, value)
 }
 

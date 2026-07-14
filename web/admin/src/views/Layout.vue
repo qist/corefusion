@@ -79,6 +79,7 @@ const menuItems = [
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
   { path: '/users', title: 'menu.users', icon: 'User' },
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document' },
+  { path: '/portal', title: '门户站点', icon: 'Monitor' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting' },
 ]
 

@@ -10,7 +10,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'detail']
+    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'portal', 'detail']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -41,6 +41,7 @@ const routes = [
       { path: 'certificates', name: 'Certificates', component: () => import('../views/Certificates.vue'), meta: { title: '证书管理', icon: 'Lock' } },
       { path: 'users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', icon: 'User' } },
       { path: 'log-manage', name: 'LogManage', component: () => import('../views/LogManage.vue'), meta: { title: '日志管理', icon: 'Document' } },
+      { path: 'portal', name: 'PortalManagement', component: () => import('../views/PortalManagement.vue'), meta: { title: 'Portal 管理', icon: 'Monitor' } },
       { path: 'settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: '系统设置', icon: 'Setting' } },
     ],
   },

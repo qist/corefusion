@@ -170,6 +170,9 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Client Log Packages (subscription user log access)
 		&entity.ClientLogPackage{},
+
+		// Portal Templates
+		&entity.PortalTemplate{},
 	}
 
 	for _, model := range models {

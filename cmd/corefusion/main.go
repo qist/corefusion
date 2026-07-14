@@ -384,6 +384,26 @@ func runServer(args []string) {
 		}()
 	}
 
+	// Start portal server on dedicated port if configured
+	portalPort := settings["portal_port"]
+	var portalSrv *http.Server
+	if portalPort != "" && portalPort != "0" && portalPort != apiPort {
+		portalEngine := router.NewPortalEngine(db.DB)
+		portalSrv = &http.Server{
+			Addr:         ":" + portalPort,
+			Handler:      portalEngine,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 5 * time.Minute,
+			IdleTimeout:  120 * time.Second,
+		}
+		go func() {
+			log.Printf("Portal server starting on :%s", portalPort)
+			if err := portalSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("portal server error: %v", err)
+			}
+		}()
+	}
+
 	// Handle graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -396,6 +416,9 @@ func runServer(args []string) {
 		srv.Shutdown(ctx)
 		if subSrv != nil {
 			subSrv.Shutdown(ctx)
+		}
+		if portalSrv != nil {
+			portalSrv.Shutdown(ctx)
 		}
 	}()
 
@@ -454,7 +477,7 @@ func initDataDir(dataDir string) {
 // readSettings reads all panel settings from database.
 func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 	keys := []string{
-		"panel.listen_addr", "panel.listen_port", "panel.subscription_port",
+		"panel.listen_addr", "panel.listen_port", "panel.subscription_port", "panel.portal_port",
 		"panel.tls_enabled", "panel.tls_cert_path", "panel.tls_key_path",
 		"panel.mtls_enabled", "panel.mtls_ca_path",
 		"panel.web_path", "panel.timezone", "panel.data_dir",

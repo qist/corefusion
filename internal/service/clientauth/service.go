@@ -2,6 +2,8 @@ package clientauth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -299,9 +301,10 @@ func (s *Service) generateTokens(client *entity.Client) (*TokenResponse, error) 
 
 func generateToken(n int) string {
 	b := make([]byte, n)
-	for i := range b {
-		b[i] = byte(i * 31 % 256) // Simple deterministic for now
+	if _, err := rand.Read(b); err != nil {
+		// Fallback should never happen with crypto/rand
+		panic("failed to generate random token: " + err.Error())
 	}
-	return fmt.Sprintf("%x", b)
+	return hex.EncodeToString(b)
 }
 

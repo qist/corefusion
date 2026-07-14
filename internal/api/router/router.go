@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"mime"
@@ -33,6 +34,7 @@ import (
 	nodesHandler "corefusion/internal/api/handlers/nodes"
 	nodeServerHandler "corefusion/internal/api/handlers/nodeserver"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
+	portalHandler "corefusion/internal/api/handlers/portal"
 	planHandler "corefusion/internal/api/handlers/plan"
 	securityHandler "corefusion/internal/api/handlers/security"
 	servicesHandler "corefusion/internal/api/handlers/services"
@@ -69,6 +71,7 @@ import (
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
+	portalSvc "corefusion/internal/service/portal"
 	planSvc "corefusion/internal/service/plan"
 	proxySvc "corefusion/internal/service/proxy"
 	svcService "corefusion/internal/service/service"
@@ -650,9 +653,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			assetPath = path
 		} else if webPath != "" && strings.HasPrefix(path, webPath+"/assets/") {
 			assetPath = strings.TrimPrefix(path, webPath)
-		} else if strings.HasPrefix(path, "/portal/") && !strings.HasSuffix(path, "/portal/") {
-			// Serve portal static files (e.g. qrcode.min.js) from embed
-			filePath := "dist/portal" + strings.TrimPrefix(path, "/portal")
+	} else if strings.HasPrefix(path, "/p/") && !strings.HasSuffix(path, "/p/") {
+		// Serve portal static files (e.g. qrcode.min.js) from embed
+		filePath := "dist/portal" + strings.TrimPrefix(path, "/p")
 			data, err := adminFSBytes.ReadFile(filePath)
 			if err != nil {
 				c.Status(404)
@@ -1663,20 +1666,43 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 
 		// Placeholder routes for remaining modules
 		registerPlaceholderRoutes(protected)
+
+		// Portal template management (admin only)
+		portalTmplRepo := repository.NewPortalTemplateRepository(database)
+		portalTmplSvc := portalSvc.NewService(portalTmplRepo)
+		portalTmplSvc.WithSettingStore(systemSettingSvc)
+		portalTmplSvc.SeedBuiltInTemplate(context.Background())
+		portalH := portalHandler.NewHandler(portalTmplSvc)
+		portalGroup := protected.Group("/portal/templates")
+		{
+			portalGroup.GET("", portalH.List)
+			portalGroup.POST("", portalH.Create)
+			portalGroup.GET("/:id", portalH.Get)
+			portalGroup.PUT("/:id", portalH.Update)
+			portalGroup.DELETE("/:id", portalH.Delete)
+			portalGroup.POST("/:id/activate", portalH.Activate)
+		}
+
+		// Portal site management (active config — direct edit, no template list needed)
+		portalActiveGroup := protected.Group("/portal")
+		{
+			portalActiveGroup.GET("/active", portalH.GetActive)
+			portalActiveGroup.PUT("/active", portalH.UpdateActive)
+			portalActiveGroup.POST("/reset", portalH.ResetToDefault)
+		}
 		}
 	}
 
 	// Public subscription endpoint
 	r.GET("/sub/:token", publicSubH.ServeSubscription)
 
-	// Portal page
-	r.GET("/portal", func(c *gin.Context) {
-		data, err := embed.AdminFSBytes().ReadFile("dist/portal/index.html")
-		if err != nil {
-			c.Status(404)
-			return
-		}
-		c.Data(200, "text/html; charset=utf-8", data)
+	// Portal page — served from active custom template (fallback to embedded default)
+	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
+	r.GET("/p", func(c *gin.Context) {
+		portalTmplRepo := repository.NewPortalTemplateRepository(database)
+		portalTmplSvc := portalSvc.NewService(portalTmplRepo)
+		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
+		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
 
 	// Client auth (public)
@@ -2114,4 +2140,175 @@ func (p *proxySettingsProvider) GetCaddySNISettingsForServer(ctx context.Context
 	result := fmt.Sprintf(`{"enabled":%s,"listen_port":"%s","local_port":"%s","proxy_protocol_rules":%s}`,
 		enabled, listenPort, localPort, rules)
 	return result, nil
+}
+
+// renderPortalPage renders the portal HTML page from the active template.
+// If no active template exists, it falls back to the embedded default.
+func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sysSvc *systemSvc.SettingService) string {
+	// Get registration enabled setting
+	registrationEnabled := false
+	if sysSvc != nil {
+		if v, err := sysSvc.GetByKey(ctx, "panel.registration_enabled"); err == nil && v == "true" {
+			registrationEnabled = true
+		}
+	}
+
+	tmpl, err := portalTmplSvc.GetActive(ctx)
+	if err != nil || tmpl == nil {
+		// Fallback to embedded default
+		data, embedErr := embed.AdminFSBytes().ReadFile("dist/portal/index.html")
+		if embedErr != nil {
+			return "<html><body><h1>Portal not configured</h1></body></html>"
+		}
+		return string(data)
+	}
+
+	// Build render config from template config + system settings
+	cfg := portalSvc.MergeConfig(tmpl, registrationEnabled)
+
+	// Render HTML with template variables
+	html := tmpl.HTMLContent
+	html = strings.ReplaceAll(html, "{{.SiteName}}", cfg.SiteName)
+	html = strings.ReplaceAll(html, "{{.LogoURL}}", cfg.LogoURL)
+	html = strings.ReplaceAll(html, "{{.RegistrationEnabled}}", fmt.Sprintf("%v", cfg.RegistrationEnabled))
+	html = strings.ReplaceAll(html, "{{registrationEnabledText}}", map[bool]string{true: "登录或注册以", false: "登录以"}[cfg.RegistrationEnabled])
+
+	// Render CSS with template variables
+	css := tmpl.CSSContent
+	css = strings.ReplaceAll(css, "{{.FontFamily}}", cfg.FontFamily)
+	css = strings.ReplaceAll(css, "{{.BackgroundColor}}", cfg.BackgroundColor)
+	css = strings.ReplaceAll(css, "{{.CardBackgroundColor}}", cfg.CardBackgroundColor)
+	css = strings.ReplaceAll(css, "{{.TextColor}}", cfg.TextColor)
+	css = strings.ReplaceAll(css, "{{.PrimaryColor}}", cfg.PrimaryColor)
+	css = strings.ReplaceAll(css, "{{.AccentColor}}", cfg.AccentColor)
+
+	// Inject CSS and JS into HTML
+	if css != "" {
+		html = strings.Replace(html, `<style id="portal-custom-css"></style>`,
+			`<style id="portal-custom-css">`+css+`</style>`, 1)
+	}
+
+	// Inject PORTAL_CONFIG as JSON for client-side JS
+	configJSON, _ := json.Marshal(cfg)
+	html = strings.Replace(html, `<script id="portal-config"></script>`,
+		`<script id="portal-config">window.PORTAL_CONFIG=`+string(configJSON)+`;if(PORTAL_CONFIG.logo_url){document.getElementById('portal-favicon').href=PORTAL_CONFIG.logo_url;}</script>`, 1)
+
+	if tmpl.JSContent != "" {
+		html = strings.Replace(html, `<script id="portal-custom-js"></script>`,
+			`<script id="portal-custom-js">`+tmpl.JSContent+`</script>`, 1)
+	}
+
+	return html
+}
+
+// NewPortalEngine creates a separate Gin engine for portal-only serving on a dedicated port.
+// This allows the portal to be accessed at http://domain:port/ (root path, no /p prefix).
+// On the main panel the portal is served at /p to avoid collision with the admin SPA route /portal.
+func NewPortalEngine(database *gorm.DB) *gin.Engine {
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	// Repositories
+	systemSettingRepo := repository.NewSystemSettingRepository(database)
+	portalTmplRepo := repository.NewPortalTemplateRepository(database)
+	portalTmplSvc := portalSvc.NewService(portalTmplRepo)
+	portalTmplSvc.SeedBuiltInTemplate(context.Background())
+
+	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
+
+	// Client auth handler
+	clientRepo := repository.NewClientRepository(database)
+	planTmplRepo := repository.NewPlanTemplateRepository(database)
+	subRepo := repository.NewSubscriptionRepository(database)
+	clientauthSvcInst := clientauthSvc.NewService(clientRepo, planTmplRepo, subRepo, systemSettingRepo, os.Getenv("JWT_SECRET"))
+	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
+
+	// Root path serves the portal page
+	r.GET("/", func(c *gin.Context) {
+		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
+		c.Data(200, "text/html; charset=utf-8", []byte(html))
+	})
+
+	// Static files (qrcode.min.js etc.)
+	r.GET("/static/:file", func(c *gin.Context) {
+		file := c.Param("file")
+		data, err := embed.AdminFSBytes().ReadFile("dist/portal/" + file)
+		if err != nil {
+			c.Status(404)
+			return
+		}
+		ext := strings.ToLower(filepath.Ext(file))
+		ct := "application/octet-stream"
+		switch ext {
+		case ".js":
+			ct = "application/javascript; charset=utf-8"
+		case ".css":
+			ct = "text/css; charset=utf-8"
+		}
+		c.Data(200, ct, data)
+	})
+
+	// Client auth (public)
+	clientAuthGroup := r.Group("/api/v1/client-auth")
+	{
+		clientAuthGroup.POST("/register", clientauthH.Register)
+		clientAuthGroup.POST("/login", clientauthH.Login)
+		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
+	}
+
+	// Log manage deps (for client log packaging)
+	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
+	logJobRepo := repository.NewLogRotationJobRepository(database)
+	caddySiteRepo := repository.NewCaddySiteRepository(database)
+	logManageSvcInst := logManageSvc.NewService(logPolicyRepo, logJobRepo, systemSettingRepo, caddySiteRepo, "", nil)
+	clientLogPkgRepo := repository.NewClientLogPackageRepository(database)
+	planSvcInst := planSvc.NewService(
+		database, planTmplRepo,
+		repository.NewPlanVariantRepository(database),
+		repository.NewNodeGroupRepository(database),
+		repository.NewNodeGroupMemberRepository(database),
+		repository.NewPromotionRepository(database),
+		repository.NewPlanOrderRepository(database),
+		clientRepo,
+		repository.NewInboundConfigRepository(database),
+		repository.NewExternalNodeRepository(database),
+	)
+	inboundConfigRepo := repository.NewInboundConfigRepository(database)
+	logManageSvcInst.InitClientLogDeps(clientLogPkgRepo, clientRepo, planSvcInst, inboundConfigRepo, nil)
+	clientLogH := clientauthHandler.NewLogHandler(logManageSvcInst)
+
+	// Client auth (protected)
+	clientAuthProtected := r.Group("/api/v1/client-auth")
+	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
+	{
+		clientAuthProtected.GET("/me", clientauthH.GetMe)
+		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
+		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
+		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
+		// Client log package endpoints (subscription user log access)
+		clientAuthProtected.GET("/logs/types", clientLogH.LogPackageHealthCheck)
+		clientAuthProtected.POST("/logs/package", clientLogH.CreateLogPackage)
+		clientAuthProtected.GET("/logs/packages", clientLogH.ListLogPackages)
+		clientAuthProtected.GET("/logs/packages/:id", clientLogH.GetLogPackage)
+		clientAuthProtected.GET("/logs/packages/:id/download", clientLogH.DownloadLogPackage)
+	}
+
+	// Public endpoints (for portal) — direct DB read
+	subendRepo := repository.NewSubscriptionEndpointRepository(database)
+	r.GET("/api/v1/public/subscription-endpoints", func(c *gin.Context) {
+		endpoints, err := subendRepo.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		response.OK(c, endpoints)
+	})
+	r.GET("/api/v1/public/settings", func(c *gin.Context) {
+		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
+		response.OK(c, gin.H{
+			"registration_enabled": registrationEnabled == "true",
+		})
+	})
+
+	return r
 }

@@ -961,8 +961,8 @@
               <template v-if="entry.type === 'fragment'">
                 <el-form label-width="140px" label-position="left" size="small">
                   <el-form-item :label="t('protoCenter.finalmask.packets')"><el-input v-model="entry.settings.packets" placeholder="tlshello or 1-3" @change="emit" /></el-form-item>
-                  <el-form-item :label="t('protoCenter.finalmask.length')"><el-input v-model="entry.settings.length" placeholder="100-200" @change="emit" /></el-form-item>
-                  <el-form-item label="Delay"><el-input v-model="entry.settings.delay" placeholder="10-20" @change="emit" /></el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.length')"><el-input v-model="entry.settings._lengthsStr" type="textarea" :rows="2" placeholder="3-5&#10;6-8&#10;10-20" @change="emit" /></el-form-item>
+                  <el-form-item :label="t('protoCenter.finalmask.delay')"><el-input v-model="entry.settings._delaysStr" type="textarea" :rows="2" placeholder="10-20" @change="emit" /></el-form-item>
                   <el-form-item label="Max Split"><el-input v-model="entry.settings.maxSplit" placeholder="3-6" @change="emit" /></el-form-item>
                 </el-form>
               </template>
@@ -1277,11 +1277,11 @@ function getDefaultOutbound() {
     _sockoptShowHappyEyeballs: false, _sockoptHappyEyeballsTryDelayMs: 250, _sockoptHappyEyeballsPrioritizeIPv6: false, _sockoptHappyEyeballsInterleave: 1, _sockoptHappyEyeballsMaxConcurrentTry: 4,
     _sockoptShowCustomSockopt: false, _sockoptCustomSockopt: [],
     _finalmaskEnabled: false, _finalmaskTcp: [], _finalmaskUdp: [],
-    _finalmaskCongestion: '', _finalmaskBbrProfile: 'standard', _finalmaskDebug: false,
+    _finalmaskCongestion: '', _finalmaskBbrProfile: '', _finalmaskDebug: false,
     _finalmaskBrutalUp: '', _finalmaskBrutalDown: '',
-    _finalmaskShowUdpHop: false, _finalmaskUdpHopPorts: '20000-50000', _finalmaskUdpHopInterval: '5-10',
-    _finalmaskMaxIdleTimeout: 30, _finalmaskKeepAlivePeriod: 10, _finalmaskDisablePathMTUDiscovery: false, _finalmaskMaxIncomingStreams: 1024,
-    _finalmaskInitStreamWindow: 8388608, _finalmaskMaxStreamWindow: 8388608, _finalmaskInitConnWindow: 20971520, _finalmaskMaxConnWindow: 20971520,
+    _finalmaskShowUdpHop: false, _finalmaskUdpHopPorts: '', _finalmaskUdpHopInterval: '',
+    _finalmaskMaxIdleTimeout: '', _finalmaskKeepAlivePeriod: '', _finalmaskDisablePathMTUDiscovery: false, _finalmaskMaxIncomingStreams: '',
+    _finalmaskInitStreamWindow: '', _finalmaskMaxStreamWindow: '', _finalmaskInitConnWindow: '', _finalmaskMaxConnWindow: '',
     _wgSecretKey: '', _wgPublicKey: '', _wgAddressIPv4: '', _wgAddressIPv6: '', _wgMtu: 1280, _wgWorkers: 2, _wgReservedStr: '', _wgNoKernelTun: false, _wgDomainStrategy: 'ForceIP',
     _wgPeers: [],
     _enabled: true,
@@ -1410,21 +1410,21 @@ function parseOutbound(ob) {
       return base
     }) : [],
     _finalmaskCongestion: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.congestion) || '',
-    _finalmaskBbrProfile: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.bbrProfile) || 'standard',
+    _finalmaskBbrProfile: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.bbrProfile) || '',
     _finalmaskDebug: !!(ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.debug),
     _finalmaskBrutalUp: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.brutalUp) || '',
     _finalmaskBrutalDown: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.brutalDown) || '',
     _finalmaskShowUdpHop: !!(ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.udpHop),
-    _finalmaskUdpHopPorts: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.udpHop && ss.finalmask.quicParams.udpHop.ports) || '20000-50000',
-    _finalmaskUdpHopInterval: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.udpHop && ss.finalmask.quicParams.udpHop.interval) || '5-10',
-    _finalmaskMaxIdleTimeout: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.maxIdleTimeout) || 30,
-    _finalmaskKeepAlivePeriod: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.keepAlivePeriod) || 10,
+    _finalmaskUdpHopPorts: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.udpHop && ss.finalmask.quicParams.udpHop.ports) || '',
+    _finalmaskUdpHopInterval: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.udpHop && ss.finalmask.quicParams.udpHop.interval) || '',
+    _finalmaskMaxIdleTimeout: ss.finalmask?.quicParams?.maxIdleTimeout ?? '',
+    _finalmaskKeepAlivePeriod: ss.finalmask?.quicParams?.keepAlivePeriod ?? '',
     _finalmaskDisablePathMTUDiscovery: !!(ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.disablePathMTUDiscovery),
-    _finalmaskMaxIncomingStreams: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.maxIncomingStreams) || 1024,
-    _finalmaskInitStreamWindow: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.initStreamReceiveWindow) || 8388608,
-    _finalmaskMaxStreamWindow: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.maxStreamReceiveWindow) || 8388608,
-    _finalmaskInitConnWindow: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.initConnectionReceiveWindow) || 20971520,
-    _finalmaskMaxConnWindow: (ss.finalmask && ss.finalmask.quicParams && ss.finalmask.quicParams.maxConnectionReceiveWindow) || 20971520,
+    _finalmaskMaxIncomingStreams: ss.finalmask?.quicParams?.maxIncomingStreams ?? '',
+    _finalmaskInitStreamWindow: ss.finalmask?.quicParams?.initStreamReceiveWindow ?? '',
+    _finalmaskMaxStreamWindow: ss.finalmask?.quicParams?.maxStreamReceiveWindow ?? '',
+    _finalmaskInitConnWindow: ss.finalmask?.quicParams?.initConnectionReceiveWindow ?? '',
+    _finalmaskMaxConnWindow: ss.finalmask?.quicParams?.maxConnectionReceiveWindow ?? '',
     _sni: tls.serverName || '',
     _alpn: tls.alpn || [],
     _fingerprint: tls.fingerprint || '',
@@ -1888,6 +1888,10 @@ function buildStreamSettings(ob) {
     if (ob._finalmaskTcp && ob._finalmaskTcp.length) {
       fm.tcp = ob._finalmaskTcp.filter(e => e.type).map(e => {
         const s = { ...e.settings }
+        if (e.type === 'fragment') {
+          if (s._lengthsStr) s.lengths = s._lengthsStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
+          if (s._delaysStr) s.delays = s._delaysStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
+        }
         if (e.type === 'header-custom') {
           const convertGroup = grp => (grp || []).map(items => (items || []).map(i => { const item = cleanInternal(i); if (i._packetStr) item.packet = toPacket(i); return item }))
           return { type: 'header-custom', settings: { clients: convertGroup(s.clients), servers: convertGroup(s.servers), errors: convertGroup(s.errors) } }
@@ -1924,17 +1928,17 @@ function buildStreamSettings(ob) {
     if (ob._finalmaskDebug) quicObj.debug = true
     if (ob._finalmaskBrutalUp) quicObj.brutalUp = ob._finalmaskBrutalUp
     if (ob._finalmaskBrutalDown) quicObj.brutalDown = ob._finalmaskBrutalDown
-    if (ob._finalmaskShowUdpHop) quicObj.udpHop = { ports: ob._finalmaskUdpHopPorts || '20000-50000', interval: ob._finalmaskUdpHopInterval || '5-10' }
-    quicObj.maxIdleTimeout = ob._finalmaskMaxIdleTimeout || 30
-    quicObj.keepAlivePeriod = ob._finalmaskKeepAlivePeriod || 10
+    if (ob._finalmaskShowUdpHop && (ob._finalmaskUdpHopPorts || ob._finalmaskUdpHopInterval)) quicObj.udpHop = { ports: ob._finalmaskUdpHopPorts || '', interval: ob._finalmaskUdpHopInterval || '' }
+    if (ob._finalmaskMaxIdleTimeout !== '' && ob._finalmaskMaxIdleTimeout !== null && ob._finalmaskMaxIdleTimeout !== undefined) quicObj.maxIdleTimeout = ob._finalmaskMaxIdleTimeout
+    if (ob._finalmaskKeepAlivePeriod !== '' && ob._finalmaskKeepAlivePeriod !== null && ob._finalmaskKeepAlivePeriod !== undefined) quicObj.keepAlivePeriod = ob._finalmaskKeepAlivePeriod
     if (ob._finalmaskDisablePathMTUDiscovery) quicObj.disablePathMTUDiscovery = true
-    quicObj.maxIncomingStreams = ob._finalmaskMaxIncomingStreams || 1024
-    quicObj.initStreamReceiveWindow = ob._finalmaskInitStreamWindow || 8388608
-    quicObj.maxStreamReceiveWindow = ob._finalmaskMaxStreamWindow || 8388608
-    quicObj.initConnectionReceiveWindow = ob._finalmaskInitConnWindow || 20971520
-    quicObj.maxConnectionReceiveWindow = ob._finalmaskMaxConnWindow || 20971520
-    fm.quicParams = quicObj
-    ss.finalmask = fm
+    if (ob._finalmaskMaxIncomingStreams !== '' && ob._finalmaskMaxIncomingStreams !== null && ob._finalmaskMaxIncomingStreams !== undefined) quicObj.maxIncomingStreams = ob._finalmaskMaxIncomingStreams
+    if (ob._finalmaskInitStreamWindow !== '' && ob._finalmaskInitStreamWindow !== null && ob._finalmaskInitStreamWindow !== undefined) quicObj.initStreamReceiveWindow = ob._finalmaskInitStreamWindow
+    if (ob._finalmaskMaxStreamWindow !== '' && ob._finalmaskMaxStreamWindow !== null && ob._finalmaskMaxStreamWindow !== undefined) quicObj.maxStreamReceiveWindow = ob._finalmaskMaxStreamWindow
+    if (ob._finalmaskInitConnWindow !== '' && ob._finalmaskInitConnWindow !== null && ob._finalmaskInitConnWindow !== undefined) quicObj.initConnectionReceiveWindow = ob._finalmaskInitConnWindow
+    if (ob._finalmaskMaxConnWindow !== '' && ob._finalmaskMaxConnWindow !== null && ob._finalmaskMaxConnWindow !== undefined) quicObj.maxConnectionReceiveWindow = ob._finalmaskMaxConnWindow
+    if (Object.keys(quicObj).length) fm.quicParams = quicObj
+    if (Object.keys(fm).length) ss.finalmask = fm
   }
   return ss
 }
@@ -2190,29 +2194,30 @@ async function genWgKey() {
 
 
 function onFinalmaskUdpHopToggle(val) {
-  if (val && !rf._finalmaskUdpHopPorts) {
-    rf._finalmaskUdpHopPorts = '20000-50000'
-    rf._finalmaskUdpHopInterval = '5-10'
-  }
+  // Outbound FinalMask intentionally keeps optional fields empty until selected.
 }
 
 function onOutboundCongestionChange(val) {
-  if (val === 'brutal' || val === 'force-brutal') {
-    if (!rf._finalmaskBrutalUp) rf._finalmaskBrutalUp = '60 mbps'
-    if (!rf._finalmaskBrutalDown) rf._finalmaskBrutalDown = '100 mbps'
-  }
   emit()
 }
 
 function parseFinalmask(fm) {
-  const defQuic = { congestion: '', bbrProfile: 'standard', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '20000-50000', interval: '5-10' }, maxIdleTimeout: 30, keepAlivePeriod: 10, disablePathMTUDiscovery: false, maxIncomingStreams: 1024, initStreamReceiveWindow: 8388608, maxStreamReceiveWindow: 8388608, initConnectionReceiveWindow: 20971520, maxConnectionReceiveWindow: 20971520 }
+  const defQuic = { congestion: '', bbrProfile: '', debug: false, brutalUp: '', brutalDown: '', _showUdpHop: false, udpHop: { ports: '', interval: '' }, maxIdleTimeout: '', keepAlivePeriod: '', disablePathMTUDiscovery: false, maxIncomingStreams: '', initStreamReceiveWindow: '', maxStreamReceiveWindow: '', initConnectionReceiveWindow: '', maxConnectionReceiveWindow: '' }
   if (!fm || Object.keys(fm).length === 0) return { _enabled: false, tcp: [], udp: [], quicParams: defQuic }
   const qp = fm.quicParams || {}
   const parseTcpEntry = e => {
-    const s = e.settings || {}
+    const s = { ...(e.settings || {}) }
     if (e.type === 'header-custom') {
       const fixGroup = g => (g || []).map(items => (items || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') })))
       return { type: 'header-custom', settings: { clients: fixGroup(s.clients), servers: fixGroup(s.servers), errors: fixGroup(s.errors) }, _json: '' }
+    }
+    if (e.type === 'fragment') {
+      const lengths = Array.isArray(s.lengths) ? s.lengths : (s.length ? [s.length] : [])
+      const delays = Array.isArray(s.delays) ? s.delays : (s.delay ? [s.delay] : [])
+      s._lengthsStr = lengths.join('\n')
+      s._delaysStr = delays.join('\n')
+      delete s.length
+      delete s.delay
     }
     return { type: e.type || '', settings: s, _json: '' }
   }
@@ -2249,13 +2254,13 @@ function parseFinalmask(fm) {
     tcp: (fm.tcp || []).map(parseTcpEntry),
     udp: (fm.udp || []).map(parseUdpEntry),
     quicParams: {
-      congestion: qp.congestion || '', bbrProfile: qp.bbrProfile || 'standard', debug: qp.debug || false,
+      congestion: qp.congestion || '', bbrProfile: qp.bbrProfile || '', debug: qp.debug || false,
       brutalUp: qp.brutalUp || '', brutalDown: qp.brutalDown || '',
-      _showUdpHop: !!qp.udpHop, udpHop: qp.udpHop || { ports: '20000-50000', interval: '5-10' },
-      maxIdleTimeout: qp.maxIdleTimeout || 30, keepAlivePeriod: qp.keepAlivePeriod || 10,
-      disablePathMTUDiscovery: qp.disablePathMTUDiscovery || false, maxIncomingStreams: qp.maxIncomingStreams || 1024,
-      initStreamReceiveWindow: qp.initStreamReceiveWindow || 8388608, maxStreamReceiveWindow: qp.maxStreamReceiveWindow || 8388608,
-      initConnectionReceiveWindow: qp.initConnectionReceiveWindow || 20971520, maxConnectionReceiveWindow: qp.maxConnectionReceiveWindow || 20971520,
+      _showUdpHop: !!qp.udpHop, udpHop: qp.udpHop || { ports: '', interval: '' },
+      maxIdleTimeout: qp.maxIdleTimeout ?? '', keepAlivePeriod: qp.keepAlivePeriod ?? '',
+      disablePathMTUDiscovery: qp.disablePathMTUDiscovery || false, maxIncomingStreams: qp.maxIncomingStreams ?? '',
+      initStreamReceiveWindow: qp.initStreamReceiveWindow ?? '', maxStreamReceiveWindow: qp.maxStreamReceiveWindow ?? '',
+      initConnectionReceiveWindow: qp.initConnectionReceiveWindow ?? '', maxConnectionReceiveWindow: qp.maxConnectionReceiveWindow ?? '',
     },
   }
 }
@@ -2273,7 +2278,7 @@ function onGeckoSizeChange(entry) { entry.settings.packetSize = (entry.settings.
 function onOutboundMaskTypeChange(entry, protocol) {
   entry.settings = {}
   entry._json = ''
-  if (entry.type === 'fragment') entry.settings = { packets: 'tlshello', length: '100-200', delay: '', maxSplit: '' }
+  if (entry.type === 'fragment') entry.settings = { packets: 'tlshello', _lengthsStr: '', _delaysStr: '', maxSplit: '' }
   if (entry.type === 'sudoku') entry.settings = { password: '', ascii: '', customTable: '', _customTablesStr: '', paddingMin: 0, paddingMax: 0 }
   if (entry.type === 'header-custom') {
     if (protocol === 'tcp') entry.settings = { clients: [[newClientServerItem()]], servers: [[]], errors: [[]] }

@@ -1719,12 +1719,12 @@
                     <div class="hint">{{ t('protoCenter.finalmask.packetsHint') }}</div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.length')">
-                    <el-input v-model="entry.settings.length" placeholder="100-200" @change="emit" />
-                    <div class="hint">{{ t('protoCenter.finalmask.lengthHint') }}</div>
+                    <el-input v-model="entry.settings._lengthsStr" type="textarea" :rows="2" placeholder="3-5&#10;6-8&#10;10-20" @change="emit" />
+                    <div class="hint">按行填写最新版 lengths 数组；每行一个分片长度范围。</div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.delay')">
-                    <el-input v-model="entry.settings.delay" placeholder="10-20" @change="emit" />
-                    <div class="hint">{{ t('protoCenter.finalmask.delayHint') }}</div>
+                    <el-input v-model="entry.settings._delaysStr" type="textarea" :rows="2" placeholder="10-20" @change="emit" />
+                    <div class="hint">按行填写最新版 delays 数组。</div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.maxSplit')">
                     <el-input v-model="entry.settings.maxSplit" placeholder="3-6" @change="emit" />
@@ -1742,19 +1742,40 @@
                     </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.ascii')">
-                    <el-input v-model="entry.settings.ascii" @change="emit" />
+                    <el-select v-model="entry.settings.ascii" style="width:100%" @change="emit">
+                      <el-option label="prefer_ascii（ASCII 优先）" value="prefer_ascii" />
+                      <el-option label="prefer_entropy（熵优先）" value="prefer_entropy" />
+                    </el-select>
                   </el-form-item>
-                  <el-form-item :label="t('protoCenter.finalmask.customTable')">
-                    <el-input v-model="entry.settings.customTable" @change="emit" />
+                  <el-form-item label="自定义表模式">
+                    <el-select v-model="entry.settings._tableMode" style="width:100%" @change="onSudokuTableModeChange(entry)">
+                      <el-option label="单表 customTable" value="single" />
+                      <el-option label="多表 customTables" value="multiple" />
+                    </el-select>
                   </el-form-item>
-                  <el-form-item :label="t('protoCenter.finalmask.customTables')">
-                    <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                  <el-form-item v-if="entry.settings._tableMode !== 'multiple'" :label="t('protoCenter.finalmask.customTable')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings.customTable" @change="emit" />
+                      <el-button size="small" @click="randomSudokuTable(entry)">随机生成</el-button>
+                    </div>
+                  </el-form-item>
+                  <el-form-item v-else :label="t('protoCenter.finalmask.customTables')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                      <el-button size="small" @click="randomSudokuTables(entry)">随机生成</el-button>
+                    </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
-                    <el-input-number v-model="entry.settings.paddingMin" :min="0" @change="emit" />
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <el-input-number v-model="entry.settings.paddingMin" :min="0" :max="entry.settings.paddingMax" @change="emit" />
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'min')">随机生成</el-button>
+                    </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
-                    <el-input-number v-model="entry.settings.paddingMax" :min="0" @change="emit" />
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <el-input-number v-model="entry.settings.paddingMax" :min="entry.settings.paddingMin" :max="100" @change="emit" />
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'max')">随机生成</el-button>
+                    </div>
                   </el-form-item>
                 </el-form>
               </template>
@@ -1771,14 +1792,20 @@
                       <el-button size="small" text type="danger" @click="entry.settings[gKey].splice(gi,1);emit()">X</el-button>
                       <el-button size="small" text @click="grp.push(newClientServerItem());emit()">{{ t('protoCenter.finalmask.addItem') }}</el-button>
                     </div>
-                    <div v-for="(item, ii) in grp" :key="ii" style="display:flex;gap:6px;margin-bottom:4px;align-items:center">
-                      <el-input-number v-model="item.delay" :min="0" size="small" :placeholder="t('protoCenter.finalmask.delay')" style="width:90px" @change="emit" />
-                      <el-input-number v-model="item.rand" :min="0" size="small" :placeholder="t('protoCenter.finalmask.rand')" style="width:90px" @change="onRandChange(item)" />
+                    <div v-for="(item, ii) in grp" :key="ii" style="display:flex;gap:6px;margin-bottom:4px;align-items:center;flex-wrap:wrap">
+                      <span style="font-size:12px">delay</span>
+                      <el-input-number v-model="item.delay" :min="0" size="small" style="width:90px" @change="emit" />
+                      <span style="font-size:12px">rand</span>
+                      <el-input-number v-model="item.rand" :min="0" size="small" style="width:90px" @change="onRandChange(item)" />
+                      <span style="font-size:12px">randRange</span>
                       <el-input v-model="item.randRange" size="small" placeholder="0-255" style="width:80px" @change="emit" />
-                      <el-select v-model="item.type" size="small" style="width:80px" @change="emit">
+                      <span style="font-size:12px">type</span>
+                      <el-select v-model="item.type" size="small" style="width:90px" @change="onPacketTypeChange(item)">
                         <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
                       </el-select>
-                      <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packet')" :disabled="!!item.rand" style="flex:1" @change="onPacketChange(item)" />
+                      <span style="font-size:12px">packet</span>
+                      <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? 'rand 已启用' : '逗号分隔数据'" :disabled="!!item.rand" style="flex:1;min-width:140px" @change="onPacketChange(item)" />
+                      <el-button size="small" :disabled="!!item.rand" @click="generatePacket(item)">随机生成</el-button>
                       <el-button size="small" type="danger" text @click="grp.splice(ii,1);emit()">X</el-button>
                     </div>
                   </div>
@@ -1812,13 +1839,18 @@
                     <span style="font-weight:500;font-size:13px">{{ group }}</span>
                     <el-button size="small" text @click="(entry.settings[gKey] = entry.settings[gKey] || []).push(newUdpClientServerItem());emit()">{{ t('protoCenter.finalmask.addItem') }}</el-button>
                   </div>
-                  <div v-for="(item, ii) in (entry.settings[gKey] || [])" :key="ii" style="display:flex;gap:6px;margin-bottom:4px;margin-left:12px;align-items:center">
-                    <el-input-number v-model="item.rand" :min="0" size="small" :placeholder="t('protoCenter.finalmask.rand')" style="width:90px" @change="onRandChange(item)" />
+                  <div v-for="(item, ii) in (entry.settings[gKey] || [])" :key="ii" style="display:flex;gap:6px;margin-bottom:4px;margin-left:12px;align-items:center;flex-wrap:wrap">
+                    <span style="font-size:12px">rand</span>
+                    <el-input-number v-model="item.rand" :min="0" size="small" style="width:90px" @change="onRandChange(item)" />
+                    <span style="font-size:12px">randRange</span>
                     <el-input v-model="item.randRange" size="small" placeholder="0-255" style="width:80px" @change="emit" />
-                    <el-select v-model="item.type" size="small" style="width:80px" @change="emit">
+                    <span style="font-size:12px">type</span>
+                    <el-select v-model="item.type" size="small" style="width:90px" @change="onPacketTypeChange(item)">
                       <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
                     </el-select>
-                    <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packet')" :disabled="!!item.rand" style="flex:1" @change="onPacketChange(item)" />
+                    <span style="font-size:12px">packet</span>
+                    <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? 'rand 已启用' : '逗号分隔数据'" :disabled="!!item.rand" style="flex:1;min-width:140px" @change="onPacketChange(item)" />
+                    <el-button size="small" :disabled="!!item.rand" @click="generatePacket(item)">随机生成</el-button>
                     <el-button size="small" type="danger" text @click="entry.settings[gKey].splice(ii,1);emit()">X</el-button>
                   </div>
                 </div>
@@ -1866,7 +1898,7 @@
                     <el-button size="small" type="danger" text @click="entry.settings._noise.splice(ni,1);emit()">X</el-button>
                   </div>
                   <div style="display:flex;gap:6px;align-items:center">
-                    <el-select v-model="n.type" size="small" style="width:80px" @change="emit">
+                    <el-select v-model="n.type" size="small" style="width:80px" @change="onPacketTypeChange(n)">
                       <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
                     </el-select>
                     <el-input v-model="n.rand" size="small" placeholder="rand (1-8192)" style="flex:1" @change="onRandChange(n)" />
@@ -1875,6 +1907,7 @@
                   </div>
                   <div style="margin-top:4px">
                     <el-input v-model="n._packetStr" size="small" :placeholder="n.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packetHint')" :disabled="!!n.rand" @change="onPacketChange(n)" />
+                    <el-button size="small" :disabled="!!n.rand" @click="generatePacket(n)">随机生成</el-button>
                   </div>
                 </div>
                 <el-button size="small" style="margin-left:12px" @click="entry.settings._noise.push({type:'array',rand:'1-8192',randRange:'0-255',delay:'10-20',_packetStr:''})">{{ t('protoCenter.finalmask.addNoise') }}</el-button>
@@ -1912,19 +1945,40 @@
                     </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.ascii')">
-                    <el-input v-model="entry.settings.ascii" @change="emit" />
+                    <el-select v-model="entry.settings.ascii" style="width:100%" @change="emit">
+                      <el-option label="prefer_ascii（ASCII 优先）" value="prefer_ascii" />
+                      <el-option label="prefer_entropy（熵优先）" value="prefer_entropy" />
+                    </el-select>
                   </el-form-item>
-                  <el-form-item :label="t('protoCenter.finalmask.customTable')">
-                    <el-input v-model="entry.settings.customTable" @change="emit" />
+                  <el-form-item label="自定义表模式">
+                    <el-select v-model="entry.settings._tableMode" style="width:100%" @change="onSudokuTableModeChange(entry)">
+                      <el-option label="单表 customTable" value="single" />
+                      <el-option label="多表 customTables" value="multiple" />
+                    </el-select>
                   </el-form-item>
-                  <el-form-item :label="t('protoCenter.finalmask.customTables')">
-                    <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                  <el-form-item v-if="entry.settings._tableMode !== 'multiple'" :label="t('protoCenter.finalmask.customTable')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings.customTable" @change="emit" />
+                      <el-button size="small" @click="randomSudokuTable(entry)">随机生成</el-button>
+                    </div>
+                  </el-form-item>
+                  <el-form-item v-else :label="t('protoCenter.finalmask.customTables')">
+                    <div style="display:flex;gap:8px;width:100%">
+                      <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
+                      <el-button size="small" @click="randomSudokuTables(entry)">随机生成</el-button>
+                    </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
-                    <el-input-number v-model="entry.settings.paddingMin" :min="0" @change="emit" />
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <el-input-number v-model="entry.settings.paddingMin" :min="0" :max="entry.settings.paddingMax" @change="emit" />
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'min')">随机生成</el-button>
+                    </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
-                    <el-input-number v-model="entry.settings.paddingMax" :min="0" @change="emit" />
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <el-input-number v-model="entry.settings.paddingMax" :min="entry.settings.paddingMin" :max="100" @change="emit" />
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'max')">随机生成</el-button>
+                    </div>
                   </el-form-item>
                 </el-form>
               </template>
@@ -2641,14 +2695,35 @@ function getAccessHostPort(ib) {
 function serializeFinalMask(finalmask) {
   if (!finalmask || !finalmask._enabled) return ''
   const data = {}
+  const toPacket = s => { const p = s._packetStr; if (!p) return []; return p.split(',').map(v => { const n = Number(v.trim()); return isNaN(n) ? v.trim() : n }) }
+  const serializeHeaderItem = i => {
+    const item = {}
+    Object.keys(i || {}).forEach(k => { if (!k.startsWith('_') && i[k] !== '' && i[k] !== undefined) item[k] = i[k] })
+    if (Number(i.rand) > 0) delete item.packet
+    else if (i._packetStr) item.packet = toPacket(i)
+    else delete item.packet
+    return item
+  }
   // TCP mask
   if (finalmask.tcp && finalmask.tcp.length) {
     const tcp = finalmask.tcp.filter(e => e.type).map(e => {
       const settings = { ...e.settings }
+      if (e.type === 'header-custom') {
+        const convertGroup = grp => (grp || []).map(items => (items || []).map(serializeHeaderItem))
+        return { type: e.type, settings: { clients: convertGroup(settings.clients), servers: convertGroup(settings.servers), errors: convertGroup(settings.errors) } }
+      }
+      if (e.type === 'fragment') {
+        if (settings._lengthsStr) settings.lengths = settings._lengthsStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
+        if (settings._delaysStr) settings.delays = settings._delaysStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
+      }
       // Clean internal fields
       Object.keys(settings).forEach(k => {
         if (k.startsWith('_')) delete settings[k]
       })
+      if (e.type === 'sudoku') {
+        if (e.settings._tableMode === 'multiple') delete settings.customTable
+        else delete settings.customTables
+      }
       return { type: e.type, settings }
     })
     if (tcp.length) data.tcp = tcp
@@ -2657,12 +2732,20 @@ function serializeFinalMask(finalmask) {
   if (finalmask.udp && finalmask.udp.length) {
     const udp = finalmask.udp.filter(e => e.type).map(e => {
       const settings = { ...e.settings }
+      if (e.type === 'header-custom') {
+        const convert = arr => (arr || []).map(serializeHeaderItem)
+        return { type: e.type, settings: { client: convert(settings.client), server: convert(settings.server) } }
+      }
       Object.keys(settings).forEach(k => {
         if (k.startsWith('_')) delete settings[k]
       })
       // Ensure mkcp-legacy always has header field
       if (e.type === 'mkcp-legacy' && !('header' in settings)) {
         settings.header = ''
+      }
+      if (e.type === 'sudoku') {
+        if (e.settings._tableMode === 'multiple') delete settings.customTable
+        else delete settings.customTables
       }
       return { type: e.type, settings }
     })
@@ -3518,6 +3601,7 @@ const rf = reactive(getDefaultInbound())
 function genRemark() { return 'Node-' + Math.random().toString(36).substring(2, 8) }
 function genPort() { return Math.floor(Math.random() * 50000 + 10000) }
 function genId(len) { const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < len; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
+function genPath() { return '/' + genId(10) }
 async function genWgKeyPair() {
   try {
     const data = await client.post(`${apiBase.value}/wg-key?core_type=` + (props.coreType || 'xray'))
@@ -4026,13 +4110,26 @@ function parseFinalmask(fm) {
   const qp = fm.quicParams || {}
   // Parse TCP entry
   const parseTcpEntry = e => {
-    const s = e.settings || {}
+    const s = { ...(e.settings || {}) }
     if (e.type === 'header-custom') {
       return { type: 'header-custom', settings: {
         clients: (s.clients || []).map(g => (g || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))),
         servers: (s.servers || []).map(g => (g || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))),
         errors: (s.errors || []).map(g => (g || []).map(i => ({ delay: i.delay || 0, rand: i.rand || 0, randRange: i.randRange || '0-255', type: i.type || 'array', _packetStr: Array.isArray(i.packet) ? i.packet.join(',') : (i.packet || '') }))),
       }, _json: '' }
+    }
+    if (e.type === 'fragment') {
+      const lengths = Array.isArray(s.lengths) ? s.lengths : (s.length ? [s.length] : [])
+      const delays = Array.isArray(s.delays) ? s.delays : (s.delay ? [s.delay] : [])
+      s._lengthsStr = lengths.join('\n')
+      s._delaysStr = delays.join('\n')
+      delete s.length
+      delete s.delay
+    }
+    if (e.type === 'sudoku') {
+      s.ascii = s.ascii || 'prefer_ascii'
+      s._tableMode = Array.isArray(s.customTables) && s.customTables.length ? 'multiple' : 'single'
+      s._customTablesStr = (s.customTables || []).join('\n')
     }
     return { type: e.type || '', settings: s, _json: '' }
   }
@@ -4057,7 +4154,11 @@ function parseFinalmask(fm) {
       base.settings._tlsFingerprint = tls.fingerprint || ''
       base.settings._tlsAllowInsecure = tls.allowInsecure || false
     }
-    if (e.type === 'sudoku') base.settings._customTablesStr = (s.customTables || []).join('\n')
+    if (e.type === 'sudoku') {
+      base.settings.ascii = base.settings.ascii || 'prefer_ascii'
+      base.settings._tableMode = Array.isArray(s.customTables) && s.customTables.length ? 'multiple' : 'single'
+      base.settings._customTablesStr = (s.customTables || []).join('\n')
+    }
     if (e.type === 'salamander') {
       const ps = s.packetSize || ''
       const match = /^(\d+)-(\d+)$/.exec(ps)
@@ -4084,22 +4185,98 @@ function parseFinalmask(fm) {
   }
 }
 
-function newClientServerItem() { return { delay: 0, rand: 0, randRange: '0-255', type: 'array', _packetStr: '' } }
-function newUdpClientServerItem() { return { rand: 0, randRange: '0-255', type: 'array', _packetStr: '' } }
+function newClientServerItem() { const item = { delay: 0, rand: 0, randRange: '0-255', type: 'array', _packetStr: '' }; generatePacket(item, false); return item }
+function newUdpClientServerItem() { const item = { rand: 0, randRange: '0-255', type: 'array', _packetStr: '' }; generatePacket(item, false); return item }
 function newNoiseItem() { return { type: 'array', rand: '1-8192', randRange: '0-255', delay: '10-20', _packetStr: '' } }
 // rand 与 packet 互斥
 function onRandChange(item) { if (item.rand) item._packetStr = ''; emit() }
 function onPacketChange(item) { if (item._packetStr) item.rand = 0; emit() }
+function onPacketTypeChange(item) { item.rand = 0; generatePacket(item) }
+
+// Generate packet content in the format selected by type. Packet and rand are mutually exclusive.
+function generatePacket(item, notify = true) {
+  const bytes = Array.from({ length: 8 }, () => Math.floor(Math.random() * 256))
+  if (item.type === 'str') {
+    item._packetStr = Array.from({ length: 8 }, () => 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 62)]).join('')
+  } else if (item.type === 'hex') {
+    item._packetStr = bytes.map(b => b.toString(16).padStart(2, '0')).join('')
+  } else if (item.type === 'base64') {
+    item._packetStr = btoa(String.fromCharCode(...bytes))
+  } else {
+    item.type = 'array'
+    item._packetStr = bytes.join(',')
+  }
+  item.rand = 0
+  if (notify) emit()
+}
+
+function onSudokuTableModeChange(entry) {
+  if (entry.settings._tableMode === 'multiple') {
+    entry.settings.customTable = ''
+    if (!entry.settings._customTablesStr) entry.settings._customTablesStr = `${randomSudokuPattern()}\n${randomSudokuPattern()}`
+  } else {
+    entry.settings._customTablesStr = ''
+    if (!entry.settings.customTable) entry.settings.customTable = randomSudokuPattern()
+  }
+  emit()
+}
+
+function randomSudokuAscii(entry) {
+  entry.settings.ascii = Math.random() < 0.5 ? 'prefer_ascii' : 'prefer_entropy'
+  emit()
+}
+
+function randomSudokuPattern() {
+  const chars = ['x', 'x', 'p', 'p', 'v', 'v', 'v', 'v']
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+  return chars.join('')
+}
+
+function randomSudokuTable(entry) {
+  entry.settings._tableMode = 'single'
+  entry.settings._customTablesStr = ''
+  entry.settings.customTable = randomSudokuPattern()
+  emit()
+}
+
+function randomSudokuTables(entry) {
+  entry.settings._tableMode = 'multiple'
+  entry.settings.customTable = ''
+  entry.settings._customTablesStr = `${randomSudokuPattern()}\n${randomSudokuPattern()}`
+  emit()
+}
+
+function newSudokuSettings() {
+  const entry = {
+    password: genPassword(),
+    ascii: Math.random() < 0.5 ? 'prefer_ascii' : 'prefer_entropy',
+    _tableMode: 'single',
+    customTable: randomSudokuPattern(),
+    _customTablesStr: '',
+    paddingMin: 2,
+    paddingMax: 7,
+  }
+  return entry
+}
+
+function randomSudokuPadding(entry, field) {
+  if (field === 'min') entry.settings.paddingMin = Math.floor(Math.random() * (Number(entry.settings.paddingMax || 100) + 1))
+  else entry.settings.paddingMax = Number(entry.settings.paddingMin) + Math.floor(Math.random() * (100 - Number(entry.settings.paddingMin) + 1))
+  emit()
+}
 
 function onMaskTypeChange(entry, protocol) {
   entry.settings = {}
   entry._json = ''
   if (entry.type === 'header-custom') {
-    if (protocol === 'tcp') entry.settings = { clients: [[newClientServerItem()]], servers: [[]], errors: [[]] }
+    if (protocol === 'tcp') entry.settings = { clients: [[newClientServerItem()]], servers: [[newClientServerItem()]], errors: [[newClientServerItem()]] }
     else entry.settings = { client: [newUdpClientServerItem()], server: [newUdpClientServerItem()] }
   }
-  if (entry.type === 'fragment') entry.settings = { packets: 'tlshello', length: '100-200', delay: '', maxSplit: '' }
-  if (entry.type === 'sudoku') entry.settings = { password: genPassword(), ascii: '', customTable: '', _customTablesStr: '', paddingMin: 0, paddingMax: 0 }
+  if (entry.type === 'fragment') entry.settings = { packets: 'tlshello', _lengthsStr: '3-5\n6-8\n10-20', _delaysStr: '10-20', maxSplit: '3-6' }
+  if (entry.type === 'sudoku') entry.settings = newSudokuSettings()
   if (entry.type === 'salamander') entry.settings = { password: genPassword(), _gecko: false, _geckoMin: 512, _geckoMax: 1200 }
   if (entry.type === 'mkcp-legacy') entry.settings = { header: '', value: genAES128Key() }
   if (entry.type === 'noise') entry.settings = { reset: 0, _noise: [newNoiseItem()] }
@@ -4535,15 +4712,31 @@ function buildInbound(ib, isApiCall = false) {
     // Helper: convert _packetStr to packet array
     const toPacket = (s) => { const p = s._packetStr; if (!p) return []; return p.split(',').map(v => { const n = Number(v); return isNaN(n) ? v : n }) }
     const cleanInternal = (s) => { const r = {}; Object.keys(s).forEach(k => { if (!k.startsWith('_') && s[k] !== '' && s[k] !== undefined) r[k] = s[k] }); return r }
+    const serializeHeaderItem = (i) => {
+      const item = cleanInternal(i)
+      if (Number(i.rand) > 0) delete item.packet
+      else if (i._packetStr) item.packet = toPacket(i)
+      else delete item.packet
+      return item
+    }
     // TCP mask
     if (fm.tcp && fm.tcp.length) {
       finalmask.tcp = fm.tcp.filter(e => e.type).map(e => {
         const s = { ...e.settings }
         if (e.type === 'header-custom') {
-          const convertGroup = grp => (grp || []).map(items => (items || []).map(i => { const item = cleanInternal(i); if (i._packetStr) item.packet = toPacket(i); return item }))
+          const convertGroup = grp => (grp || []).map(items => (items || []).map(serializeHeaderItem))
           return { type: 'header-custom', settings: { clients: convertGroup(s.clients), servers: convertGroup(s.servers), errors: convertGroup(s.errors) } }
         }
+        if (e.type === 'fragment') {
+          if (s._lengthsStr) s.lengths = s._lengthsStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
+          if (s._delaysStr) s.delays = s._delaysStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
+        }
+        if (e.type === 'sudoku') {
+          if (s._tableMode === 'multiple') { delete s.customTable; if (s._customTablesStr) s.customTables = s._customTablesStr.split('\n').map(d => d.trim()).filter(Boolean) }
+          else delete s.customTables
+        }
         delete s._customTablesStr
+        delete s._tableMode
         return { type: e.type, settings: s }
       })
     }
@@ -4552,7 +4745,7 @@ function buildInbound(ib, isApiCall = false) {
       finalmask.udp = fm.udp.filter(e => e.type).map(e => {
         const s = { ...e.settings }
         if (e.type === 'header-custom') {
-          const convertArr = arr => (arr || []).map(i => { const item = cleanInternal(i); if (i._packetStr) item.packet = toPacket(i); return item })
+          const convertArr = arr => (arr || []).map(serializeHeaderItem)
           return { type: 'header-custom', settings: { client: convertArr(s.client), server: convertArr(s.server) } }
         }
         if (e.type === 'noise') {
@@ -4575,7 +4768,13 @@ function buildInbound(ib, isApiCall = false) {
           if (Object.keys(tlsCfg).length) s.tlsConfig = tlsCfg
           delete s._stunServersStr; delete s._tlsServerName; delete s._tlsAlpn; delete s._tlsFingerprint; delete s._tlsAllowInsecure
         }
-        if (e.type === 'sudoku' && s._customTablesStr) { s.customTables = s._customTablesStr.split('\n').map(d => d.trim()).filter(Boolean); delete s._customTablesStr }
+        if (e.type === 'sudoku') {
+          if (s._tableMode === 'multiple' && s._customTablesStr) s.customTables = s._customTablesStr.split('\n').map(d => d.trim()).filter(Boolean)
+          if (s._tableMode === 'multiple') delete s.customTable
+          else delete s.customTables
+          delete s._customTablesStr
+          delete s._tableMode
+        }
         // mkcp-legacy: preserve header field even when empty
         if (e.type === 'mkcp-legacy') {
           const header = s.header || ''
@@ -4945,6 +5144,13 @@ function showAdd() {
   editIdx.value = -1
   rf._id = null
   const d = getDefaultInbound()
+  // A new inbound must never inherit reusable paths or identifiers.
+  d.streamSettings.raw.request._pathsStr = genPath()
+  d.streamSettings.ws.path = genPath()
+  d.streamSettings.httpupgrade.path = genPath()
+  d.streamSettings.xhttp.path = genPath()
+  d.streamSettings.http.path = genPath()
+  d.streamSettings.grpc.serviceName = genId(12)
   rf._remark = d._remark
   rf.tag = d.tag
   rf.protocol = d.protocol

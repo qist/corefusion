@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -12,13 +13,21 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// TrafficResetHook resets inbound config traffic and triggers remote sync.
+// Implemented by inboundconfig.Service + sync hook.
+type TrafficResetHook interface {
+	ResetUserTrafficByEmail(ctx context.Context, email string) ([]int64, error)
+	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
+}
+
 // Service handles subscription business logic.
 type Service struct {
-	repo       *repository.SubscriptionRepository
-	accessLog  *repository.AccessLogRepository
-	rotation   *repository.RotationRepository
-	clientRepo *repository.ClientRepository
-	planSvc    *plan.Service
+	repo           *repository.SubscriptionRepository
+	accessLog      *repository.AccessLogRepository
+	rotation       *repository.RotationRepository
+	clientRepo     *repository.ClientRepository
+	planSvc        *plan.Service
+	trafficHook    TrafficResetHook
 }
 
 // NewService creates a new subscription service.
@@ -36,6 +45,11 @@ func NewService(
 		clientRepo: clientRepo,
 		planSvc:    planSvc,
 	}
+}
+
+// SetTrafficResetHook sets the hook for resetting inbound traffic and syncing.
+func (s *Service) SetTrafficResetHook(hook TrafficResetHook) {
+	s.trafficHook = hook
 }
 
 // CreateSubscriptionInput is the input for creating a subscription.
@@ -264,12 +278,15 @@ func (s *Service) Enable(ctx context.Context, id int64) (*entity.Subscription, e
 }
 
 // ResetUsage resets the usage counter for a subscription.
+// This also resets _usedUp/_usedDown in all inbound configs for the
+// associated client's email, and syncs to remote Agent nodes.
 func (s *Service) ResetUsage(ctx context.Context, id int64) (*entity.Subscription, error) {
 	sub, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
+	// 1. Reset subscription cache columns
 	sub.UsedBytesCache = 0
 	sub.UploadBytesCache = 0
 	sub.DownloadBytesCache = 0
@@ -278,6 +295,34 @@ func (s *Service) ResetUsage(ctx context.Context, id int64) (*entity.Subscriptio
 	sub.LastResetAt = &now
 	if err := s.repo.Update(ctx, sub); err != nil {
 		return nil, err
+	}
+
+	// 2. Reset client used_bytes
+	if s.clientRepo != nil {
+		client, err := s.clientRepo.GetByID(ctx, sub.ClientID)
+		if err == nil && client != nil {
+			client.UsedBytes = 0
+			if client.Status == "suspended" {
+				client.Status = "active"
+				client.SuspendedAt = nil
+			}
+			_ = s.clientRepo.Update(ctx, client)
+
+			// 3. Reset _usedUp/_usedDown in inbound configs + sync to remote
+			if s.trafficHook != nil {
+				serverIDs, err := s.trafficHook.ResetUserTrafficByEmail(ctx, client.Email)
+				if err != nil {
+					log.Printf("resetUsage: failed to reset inbound traffic for %s: %v", client.Email, err)
+				} else {
+					// 4. Trigger sync to each affected remote server
+					for _, sid := range serverIDs {
+						if sid > 1 { // skip local server
+							s.trafficHook.SyncServerConfig(ctx, sid, "xray")
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return sub, nil

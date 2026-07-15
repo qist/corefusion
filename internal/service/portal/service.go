@@ -44,23 +44,93 @@ type CreateInput struct {
 }
 
 // UpdateInput is the input for updating a portal template / active site.
+// Supports both the raw config string and structured fields.
+// If structured fields (navigation, modules, theme) are provided, they take
+// precedence over the raw config string.
 type UpdateInput struct {
-	Name                *string `json:"name"`
-	Description         *string `json:"description"`
-	HTMLContent         *string `json:"html_content"`
-	CSSContent          *string `json:"css_content"`
-	JSContent           *string `json:"js_content"`
-	Config              *string `json:"config"`
-	RegistrationEnabled *bool   `json:"registration_enabled"`
-	PortalPort          *string `json:"portal_port"`
+	Name                *string          `json:"name"`
+	Description         *string          `json:"description"`
+	HTMLContent         *string          `json:"html_content"`
+	CSSContent          *string          `json:"css_content"`
+	JSContent           *string          `json:"js_content"`
+	Config              *string          `json:"config"`
+	RegistrationEnabled *bool            `json:"registration_enabled"`
+	PortalPort          *string          `json:"portal_port"`
+
+	// Structured fields — when provided, merged into config JSON
+	Navigation []NavigationItem `json:"navigation"`
+	Modules    []ModuleItem     `json:"modules"`
+	Theme      *PortalThemeConfig `json:"theme"`
 }
 
 // PortalSiteConfig is the response for the active portal site.
-// It wraps the template entity with extra system-level settings.
+// It wraps the template entity with extra system-level settings and
+// structured navigation/modules/theme fields parsed from the config JSON.
 type PortalSiteConfig struct {
 	*entity.PortalTemplate
-	RegistrationEnabled bool   `json:"registration_enabled"`
-	PortalPort          string `json:"portal_port"`
+	RegistrationEnabled bool              `json:"registration_enabled"`
+	PortalPort          string            `json:"portal_port"`
+
+	// Structured fields parsed from the config JSON string.
+	// These are read-only in the response; to update them, use
+	// the navigation/modules/theme fields in UpdateInput.
+	SiteName            string            `json:"site_name"`
+	LogoURL             string            `json:"logo_url"`
+	PrimaryColor        string            `json:"primary_color"`
+	BackgroundColor     string            `json:"background_color"`
+	CardBackgroundColor string            `json:"card_background_color"`
+	TextColor           string            `json:"text_color"`
+	AccentColor         string            `json:"accent_color"`
+	FontFamily          string            `json:"font_family"`
+	PortalEditorVersion int               `json:"portal_editor_version"`
+	Navigation          []NavigationItem  `json:"navigation"`
+	Modules             []ModuleItem       `json:"modules"`
+}
+
+// parseConfigToSiteConfig parses the config JSON string and populates the
+// structured fields on a PortalSiteConfig.
+func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
+	if configStr == "" {
+		return
+	}
+	var stored map[string]json.RawMessage
+	if json.Unmarshal([]byte(configStr), &stored) != nil {
+		return
+	}
+	// Theme fields
+	stringFields := map[string]*string{
+		"site_name":              &cfg.SiteName,
+		"logo_url":              &cfg.LogoURL,
+		"primary_color":         &cfg.PrimaryColor,
+		"background_color":      &cfg.BackgroundColor,
+		"card_background_color": &cfg.CardBackgroundColor,
+		"text_color":             &cfg.TextColor,
+		"accent_color":          &cfg.AccentColor,
+		"font_family":           &cfg.FontFamily,
+	}
+	for key, ptr := range stringFields {
+		if v, ok := stored[key]; ok {
+			var s string
+			if json.Unmarshal(v, &s) == nil {
+				*ptr = s
+			}
+		}
+	}
+	// Version
+	if v, ok := stored["portal_editor_version"]; ok {
+		var n int
+		if json.Unmarshal(v, &n) == nil {
+			cfg.PortalEditorVersion = n
+		}
+	}
+	// Navigation
+	if v, ok := stored["navigation"]; ok {
+		cfg.Navigation = ParseNavigationItems(v)
+	}
+	// Modules
+	if v, ok := stored["modules"]; ok {
+		cfg.Modules = ParseModuleItems(v)
+	}
 }
 
 // List returns all portal templates.
@@ -80,13 +150,21 @@ func (s *Service) GetActive(ctx context.Context) (*entity.PortalTemplate, error)
 
 // Create creates a new portal template.
 func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.PortalTemplate, error) {
+	configStr := input.Config
+	if configStr != "" {
+		cleaned, err := ValidatePortalConfig(configStr)
+		if err != nil {
+			return nil, fmt.Errorf("config validation failed: %w", err)
+		}
+		configStr = cleaned
+	}
 	tmpl := &entity.PortalTemplate{
 		Name:        input.Name,
 		Description: input.Description,
 		HTMLContent: input.HTMLContent,
 		CSSContent:  input.CSSContent,
 		JSContent:   input.JSContent,
-		Config:      input.Config,
+		Config:      configStr,
 		IsActive:    false,
 		IsBuiltIn:   false,
 		CreatedAt:   time.Now(),
@@ -121,7 +199,11 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 		tmpl.JSContent = *input.JSContent
 	}
 	if input.Config != nil {
-		tmpl.Config = *input.Config
+		cleaned, err := ValidatePortalConfig(*input.Config)
+		if err != nil {
+			return nil, fmt.Errorf("config validation failed: %w", err)
+		}
+		tmpl.Config = cleaned
 	}
 	tmpl.UpdatedAt = time.Now()
 
@@ -156,6 +238,7 @@ func (s *Service) Activate(ctx context.Context, id int64) error {
 
 // GetActiveConfig returns the currently active portal site's full configuration.
 // If no active template exists, it seeds the built-in default first.
+// The config JSON string is parsed into structured navigation, modules, and theme fields.
 func (s *Service) GetActiveConfig(ctx context.Context) (*PortalSiteConfig, error) {
 	tmpl, err := s.repo.GetActive(ctx)
 	if err != nil || tmpl == nil {
@@ -181,10 +264,16 @@ func (s *Service) GetActiveConfig(ctx context.Context) (*PortalSiteConfig, error
 		}
 	}
 
+	// Parse the config JSON string into structured fields
+	parseConfigToSiteConfig(tmpl.Config, cfg)
+
 	return cfg, nil
 }
 
 // UpdateActiveConfig updates the currently active portal configuration.
+// It supports both the raw config string and structured fields.
+// If structured fields (navigation, modules, theme) are provided, they are
+// merged into the config JSON, taking precedence over the raw config string.
 func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*PortalSiteConfig, error) {
 	tmpl, err := s.GetActiveConfig(ctx)
 	if err != nil {
@@ -206,8 +295,58 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 	if input.JSContent != nil {
 		tmpl.JSContent = *input.JSContent
 	}
-	if input.Config != nil {
-		tmpl.Config = *input.Config
+
+	// Build the config JSON from the existing config + structured inputs
+	if input.Config != nil || len(input.Navigation) > 0 || len(input.Modules) > 0 || input.Theme != nil {
+		// Start from existing config or fresh map
+		configMap := make(map[string]interface{})
+		if tmpl.Config != "" {
+			_ = json.Unmarshal([]byte(tmpl.Config), &configMap)
+		}
+
+		// If raw config string provided, use it as base
+		if input.Config != nil {
+			configMap = make(map[string]interface{})
+			_ = json.Unmarshal([]byte(*input.Config), &configMap)
+		}
+
+		// Merge theme fields
+		if input.Theme != nil {
+			configMap["site_name"] = input.Theme.SiteName
+			configMap["logo_url"] = input.Theme.LogoURL
+			configMap["primary_color"] = input.Theme.PrimaryColor
+			configMap["background_color"] = input.Theme.BackgroundColor
+			configMap["card_background_color"] = input.Theme.CardBackgroundColor
+			configMap["text_color"] = input.Theme.TextColor
+			configMap["accent_color"] = input.Theme.AccentColor
+			configMap["font_family"] = input.Theme.FontFamily
+		}
+
+		// Merge navigation (if provided, replaces entire array)
+		if len(input.Navigation) > 0 {
+			configMap["navigation"] = input.Navigation
+		}
+
+		// Merge modules (if provided, replaces entire array)
+		if len(input.Modules) > 0 {
+			configMap["modules"] = input.Modules
+		}
+
+		// Ensure editor version is set
+		configMap["portal_editor_version"] = 1
+
+		// Serialize back to JSON string
+		mergedConfig, marshalErr := json.Marshal(configMap)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to serialize merged config: %w", marshalErr)
+		}
+
+		// Validate and sanitize the merged config
+		cleanedConfig, validateErr := ValidatePortalConfig(string(mergedConfig))
+		if validateErr != nil {
+			return nil, fmt.Errorf("config validation failed: %w", validateErr)
+		}
+		tmpl.Config = cleanedConfig
 	}
 	tmpl.UpdatedAt = time.Now()
 
@@ -231,6 +370,9 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 		}
 	}
 
+	// Re-parse structured fields from the updated config
+	parseConfigToSiteConfig(tmpl.Config, tmpl)
+
 	return tmpl, nil
 }
 
@@ -253,20 +395,27 @@ func (s *Service) ResetToDefault(ctx context.Context) (*PortalSiteConfig, error)
 	if err := s.repo.Update(ctx, tmpl.PortalTemplate); err != nil {
 		return nil, err
 	}
+
+	// Re-parse structured fields from the reset config
+	parseConfigToSiteConfig(tmpl.Config, tmpl)
+
 	return tmpl, nil
 }
 
 // RenderConfig represents the configuration variables available in a portal template.
 type RenderConfig struct {
-	SiteName            string `json:"site_name"`
-	LogoURL             string `json:"logo_url"`
-	PrimaryColor        string `json:"primary_color"`
-	BackgroundColor     string `json:"background_color"`
-	CardBackgroundColor string `json:"card_background_color"`
-	TextColor           string `json:"text_color"`
-	AccentColor         string `json:"accent_color"`
-	FontFamily          string `json:"font_family"`
-	RegistrationEnabled bool   `json:"registration_enabled"`
+	SiteName            string          `json:"site_name"`
+	LogoURL             string          `json:"logo_url"`
+	PrimaryColor        string          `json:"primary_color"`
+	BackgroundColor     string          `json:"background_color"`
+	CardBackgroundColor string          `json:"card_background_color"`
+	TextColor           string          `json:"text_color"`
+	AccentColor         string          `json:"accent_color"`
+	FontFamily          string          `json:"font_family"`
+	RegistrationEnabled bool            `json:"registration_enabled"`
+	PortalEditorVersion int             `json:"portal_editor_version,omitempty"`
+	Navigation         json.RawMessage `json:"navigation,omitempty"`
+	Modules             json.RawMessage `json:"modules,omitempty"`
 }
 
 // DefaultRenderConfig returns default render configuration.
@@ -279,40 +428,82 @@ func DefaultRenderConfig() RenderConfig {
 		TextColor:           "#303133",
 		AccentColor:         "#67c23a",
 		FontFamily:          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+		PortalEditorVersion: 1,
+		Navigation:         json.RawMessage(defaultNavigationJSON),
+		Modules:             json.RawMessage(defaultModulesJSON),
 	}
 }
 
 // MergeConfig merges a template's stored config JSON with defaults.
+// It preserves navigation and modules fields for the portal runtime.
 func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderConfig {
 	cfg := DefaultRenderConfig()
 	cfg.RegistrationEnabled = registrationEnabled
 
 	if tmpl != nil && tmpl.Config != "" {
-		var stored map[string]interface{}
+		var stored map[string]json.RawMessage
 		if json.Unmarshal([]byte(tmpl.Config), &stored) == nil {
-			if v, ok := stored["site_name"].(string); ok && v != "" {
-				cfg.SiteName = v
+			if v, ok := stored["site_name"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.SiteName = s
+				}
 			}
-			if v, ok := stored["logo_url"].(string); ok {
-				cfg.LogoURL = v
+			if v, ok := stored["logo_url"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil {
+					cfg.LogoURL = s
+				}
 			}
-			if v, ok := stored["primary_color"].(string); ok && v != "" {
-				cfg.PrimaryColor = v
+			if v, ok := stored["primary_color"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.PrimaryColor = s
+				}
 			}
-			if v, ok := stored["background_color"].(string); ok && v != "" {
-				cfg.BackgroundColor = v
+			if v, ok := stored["background_color"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.BackgroundColor = s
+				}
 			}
-			if v, ok := stored["card_background_color"].(string); ok && v != "" {
-				cfg.CardBackgroundColor = v
+			if v, ok := stored["card_background_color"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.CardBackgroundColor = s
+				}
 			}
-			if v, ok := stored["text_color"].(string); ok && v != "" {
-				cfg.TextColor = v
+			if v, ok := stored["text_color"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.TextColor = s
+				}
 			}
-			if v, ok := stored["accent_color"].(string); ok && v != "" {
-				cfg.AccentColor = v
+			if v, ok := stored["accent_color"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.AccentColor = s
+				}
 			}
-			if v, ok := stored["font_family"].(string); ok && v != "" {
-				cfg.FontFamily = v
+			if v, ok := stored["font_family"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil && s != "" {
+					cfg.FontFamily = s
+				}
+			}
+			// Pass through navigation and modules
+			if v, ok := stored["navigation"]; ok && len(v) > 0 && string(v) != "null" {
+				cfg.Navigation = v
+			}
+			if v, ok := stored["modules"]; ok && len(v) > 0 && string(v) != "null" {
+				cfg.Modules = v
+			}
+			// Pass through portal_editor_version
+			if v, ok := stored["portal_editor_version"]; ok {
+				var n int
+				if json.Unmarshal(v, &n) == nil && n > 0 {
+					cfg.PortalEditorVersion = n
+				}
 			}
 		}
 	}

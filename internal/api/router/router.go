@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"mime"
 	"net/http"
@@ -2142,6 +2143,11 @@ func (p *proxySettingsProvider) GetCaddySNISettingsForServer(ctx context.Context
 	return result, nil
 }
 
+// htmlEscape escapes a string for safe HTML interpolation.
+func htmlEscape(s string) string {
+	return template.HTMLEscapeString(s)
+}
+
 // renderPortalPage renders the portal HTML page from the active template.
 // If no active template exists, it falls back to the embedded default.
 func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sysSvc *systemSvc.SettingService) string {
@@ -2166,10 +2172,10 @@ func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sys
 	// Build render config from template config + system settings
 	cfg := portalSvc.MergeConfig(tmpl, registrationEnabled)
 
-	// Render HTML with template variables
+	// Render HTML with template variables (sanitize to prevent XSS)
 	html := tmpl.HTMLContent
-	html = strings.ReplaceAll(html, "{{.SiteName}}", cfg.SiteName)
-	html = strings.ReplaceAll(html, "{{.LogoURL}}", cfg.LogoURL)
+	html = strings.ReplaceAll(html, "{{.SiteName}}", htmlEscape(cfg.SiteName))
+	html = strings.ReplaceAll(html, "{{.LogoURL}}", htmlEscape(cfg.LogoURL))
 	html = strings.ReplaceAll(html, "{{.RegistrationEnabled}}", fmt.Sprintf("%v", cfg.RegistrationEnabled))
 	html = strings.ReplaceAll(html, "{{registrationEnabledText}}", map[bool]string{true: "登录或注册以", false: "登录以"}[cfg.RegistrationEnabled])
 

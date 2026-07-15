@@ -360,7 +360,17 @@ func (f *MihomoFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 		yaml += fmt.Sprintf("    type: %s\n", proto)
 		yaml += fmt.Sprintf("    server: %s\n", node.Host)
-		yaml += fmt.Sprintf("    port: %d\n", node.Port)
+		// Resolve port: when port=0 (port hopping), extract first port from range
+		port := node.Port
+		if port == 0 {
+			if portsStr, ok := node.Extra["ports"].(string); ok && portsStr != "" {
+				port = extractFirstPort(portsStr)
+			}
+		}
+		if port == 0 {
+			port = 443
+		}
+		yaml += fmt.Sprintf("    port: %d\n", port)
 		if node.UUID != "" {
 			yaml += fmt.Sprintf("    uuid: %s\n", node.UUID)
 		}
@@ -517,6 +527,193 @@ func (f *RawURIFormatter) Format(nodes []Node) ([]byte, error) {
 	return []byte(strings.Join(lines, "\n")), nil
 }
 
+// extractFirstPort extracts the first port number from a port range string.
+// Supports formats: "20000-50000", "20000,30000,40000", "443".
+func extractFirstPort(portsStr string) int {
+	portsStr = strings.TrimSpace(portsStr)
+	if portsStr == "" {
+		return 0
+	}
+	// Try range format "20000-50000"
+	if idx := strings.Index(portsStr, "-"); idx > 0 {
+		first := strings.TrimSpace(portsStr[:idx])
+		if p, err := strconv.Atoi(first); err == nil && p > 0 {
+			return p
+		}
+	}
+	// Try comma-separated "20000,30000"
+	if idx := strings.Index(portsStr, ","); idx > 0 {
+		first := strings.TrimSpace(portsStr[:idx])
+		if p, err := strconv.Atoi(first); err == nil && p > 0 {
+			return p
+		}
+	}
+	// Single port
+	if p, err := strconv.Atoi(portsStr); err == nil && p > 0 {
+		return p
+	}
+	return 0
+}
+
+// serializeFinalMaskJSON converts a finalmask map to compact JSON string.
+func serializeFinalMaskJSON(fm map[string]interface{}) string {
+	if len(fm) == 0 {
+		return ""
+	}
+	data := make(map[string]interface{})
+	// TCP masks
+	if tcp, ok := fm["tcp"]; ok {
+		data["tcp"] = tcp
+	}
+	// UDP masks
+	if udp, ok := fm["udp"]; ok {
+		data["udp"] = udp
+	}
+	// QUIC params
+	if qp, ok := fm["quicParams"]; ok {
+		data["quicParams"] = qp
+	}
+	if len(data) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(data)
+	return string(b)
+}
+
+// buildFinalMaskFromMihomo reconstructs the fm (finalmask) JSON from
+// mihomo-style flat keys stored in Extra.
+// Mapping: mihomo flat key → finalmask JSON path
+//   up                          → quicParams.brutalUp
+//   down                        → quicParams.brutalDown
+//   ports                       → quicParams.udpHop.ports
+//   hop-interval                → quicParams.udpHop.interval
+//   bbr-profile                 → quicParams.bbrProfile
+//   obfs + obfs-password        → udp[0].type + udp[0].settings.password
+//   initial-stream-receive-window    → quicParams.initStreamReceiveWindow
+//   max-stream-receive-window        → quicParams.maxStreamReceiveWindow
+//   initial-connection-receive-window → quicParams.initConnectionReceiveWindow
+//   max-connection-receive-window    → quicParams.maxConnectionReceiveWindow
+//   max-idle-timeout                → quicParams.maxIdleTimeout
+//   keep-alive-period               → quicParams.keepAlivePeriod
+//   disable-path-mtu-discovery      → quicParams.disablePathMTUDiscovery
+//   max-incoming-streams            → quicParams.maxIncomingStreams
+func buildFinalMaskFromMihomo(extra map[string]interface{}) string {
+	if len(extra) == 0 {
+		return ""
+	}
+
+	data := make(map[string]interface{})
+	quicParams := make(map[string]interface{})
+	hasQP := false
+
+	// bbr-profile → quicParams.bbrProfile
+	if v, ok := extra["bbr-profile"].(string); ok && v != "" {
+		quicParams["bbrProfile"] = v
+		hasQP = true
+	}
+
+	// up → quicParams.brutalUp
+	if v, ok := extra["up"].(string); ok && v != "" {
+		quicParams["brutalUp"] = v
+		hasQP = true
+	}
+
+	// down → quicParams.brutalDown
+	if v, ok := extra["down"].(string); ok && v != "" {
+		quicParams["brutalDown"] = v
+		hasQP = true
+	}
+
+	// QUIC window settings
+	if v := extraToInt(extra, "initial-stream-receive-window"); v > 0 {
+		quicParams["initStreamReceiveWindow"] = v
+		hasQP = true
+	}
+	if v := extraToInt(extra, "max-stream-receive-window"); v > 0 {
+		quicParams["maxStreamReceiveWindow"] = v
+		hasQP = true
+	}
+	if v := extraToInt(extra, "initial-connection-receive-window"); v > 0 {
+		quicParams["initConnectionReceiveWindow"] = v
+		hasQP = true
+	}
+	if v := extraToInt(extra, "max-connection-receive-window"); v > 0 {
+		quicParams["maxConnectionReceiveWindow"] = v
+		hasQP = true
+	}
+	if v := extraToInt(extra, "max-idle-timeout"); v > 0 {
+		quicParams["maxIdleTimeout"] = v
+		hasQP = true
+	}
+	if v := extraToInt(extra, "keep-alive-period"); v > 0 {
+		quicParams["keepAlivePeriod"] = v
+		hasQP = true
+	}
+	if v := extraToInt(extra, "max-incoming-streams"); v > 0 {
+		quicParams["maxIncomingStreams"] = v
+		hasQP = true
+	}
+	if v, ok := extra["disable-path-mtu-discovery"].(bool); ok && v {
+		quicParams["disablePathMTUDiscovery"] = true
+		hasQP = true
+	}
+
+	// udpHop: ports + interval
+	udpHop := make(map[string]interface{})
+	hasHop := false
+	if v, ok := extra["ports"].(string); ok && v != "" {
+		udpHop["ports"] = v
+		hasHop = true
+	}
+	if v, ok := extra["hop-interval"].(string); ok && v != "" {
+		udpHop["interval"] = v
+		hasHop = true
+	}
+	if hasHop {
+		quicParams["udpHop"] = udpHop
+		hasQP = true
+	}
+
+	if hasQP {
+		data["quicParams"] = quicParams
+	}
+
+	// udp: obfs + obfs-password → salamander entry
+	if obfs, ok := extra["obfs"].(string); ok && obfs != "" {
+		udpEntry := map[string]interface{}{
+			"type": obfs,
+		}
+		if obfsPwd, ok := extra["obfs-password"].(string); ok && obfsPwd != "" {
+			udpEntry["settings"] = map[string]interface{}{
+				"password": obfsPwd,
+			}
+		}
+		data["udp"] = []interface{}{udpEntry}
+	}
+
+	if len(data) == 0 {
+		return ""
+	}
+
+	b, _ := json.Marshal(data)
+	return string(b)
+}
+
+// extraToInt extracts an int value from Extra, handling int, float64, and string types.
+func extraToInt(extra map[string]interface{}, key string) int {
+	switch v := extra[key].(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	case string:
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 // FormatNodeURI exports the URI formatting for a single node.
 func FormatNodeURI(node Node) string {
 	return formatURI(node)
@@ -550,7 +747,17 @@ func NodeToMihomoProxy(node Node) string {
 	}
 	b.WriteString("    type: " + proto + "\n")
 	b.WriteString("    server: " + node.Host + "\n")
-	b.WriteString(fmt.Sprintf("    port: %d\n", node.Port))
+	// Resolve port: when port=0 (port hopping), extract first port from range
+	port := node.Port
+	if port == 0 {
+		if portsStr, ok := node.Extra["ports"].(string); ok && portsStr != "" {
+			port = extractFirstPort(portsStr)
+		}
+	}
+	if port == 0 {
+		port = 443
+	}
+	b.WriteString(fmt.Sprintf("    port: %d\n", port))
 	if node.UUID != "" {
 		b.WriteString("    uuid: " + node.UUID + "\n")
 	}
@@ -624,11 +831,17 @@ func mihomoProxyToNode(p map[string]interface{}) *Node {
 	// Build Extra from remaining fields
 	extra := make(map[string]interface{})
 	copyKeys := []string{
-		"alterId", "cipher", "alpn", "fingerprint", "skip-cert-verify",
-		"tfo", "mptcp", "routing-mark", "udp",
-		"reality-opts", "ech-opts",
+		"alterId", "cipher", "alpn", "fingerprint", "client-fingerprint",
+		"skip-cert-verify", "tfo", "mptcp", "routing-mark", "udp", "xudp",
+		"reality-opts", "ech-opts", "support-x25519mlkem768",
 		"ws-opts", "ws-headers", "grpc-opts", "xhttp-opts", "h2-opts", "http-opts",
-		"obfs", "obfs-password", "up", "down", "ports",
+		"obfs", "obfs-password", "up", "down", "ports", "hop-interval",
+		"bbr-profile", "max-idle-timeout", "keep-alive-period",
+		"disable-path-mtu-discovery", "max-incoming-streams",
+		"initial-stream-receive-window", "max-stream-receive-window",
+		"initial-connection-receive-window", "max-connection-receive-window",
+		"realm-opts", "packet-addr", "packet-encoding",
+		"plugin", "plugin-opts", "udp-over-tcp", "udp-over-tcp-version",
 	}
 	for _, k := range copyKeys {
 		if v, ok := p[k]; ok {
@@ -833,14 +1046,85 @@ func formatURI(node Node) string {
 		return uri
 
 	case "hysteria2":
-		uri := fmt.Sprintf("hysteria2://%s@%s:%d", node.Password, node.Host, node.Port)
-		if node.TLS {
-			uri += "?security=tls"
-			if node.ServerName != "" {
-				uri += "&sni=" + node.ServerName
+		// Resolve port: when port=0 (port hopping), extract first port from range
+		port := node.Port
+		portsStr := ""
+		if v, ok := node.Extra["ports"].(string); ok && v != "" {
+			portsStr = v
+		}
+		if port == 0 && portsStr != "" {
+			port = extractFirstPort(portsStr)
+		}
+		if port == 0 {
+			port = 443 // fallback
+		}
+
+		params := url.Values{}
+
+		// TLS (hysteria2 always uses TLS)
+		params.Set("security", "tls")
+		if node.ServerName != "" {
+			params.Set("sni", node.ServerName)
+		}
+
+		// Fingerprint
+		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
+			params.Set("fp", fp)
+		} else if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+			params.Set("fp", fp)
+		}
+
+		// ALPN
+		if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
+			params.Set("alpn", strings.Join(alpn, ","))
+		} else if alpn, ok := node.Extra["alpn"].([]interface{}); ok && len(alpn) > 0 {
+			strs := make([]string, 0, len(alpn))
+			for _, a := range alpn {
+				if s, ok := a.(string); ok {
+					strs = append(strs, s)
+				}
+			}
+			if len(strs) > 0 {
+				params.Set("alpn", strings.Join(strs, ","))
+			}
+		} else if alpn, ok := node.Extra["alpn"].(string); ok && alpn != "" {
+			params.Set("alpn", alpn)
+		}
+
+		// Obfs
+		if obfs, ok := node.Extra["obfs"].(string); ok && obfs != "" {
+			params.Set("obfs", obfs)
+		}
+		if obfsPwd, ok := node.Extra["obfs-password"].(string); ok && obfsPwd != "" {
+			params.Set("obfs-password", obfsPwd)
+		}
+
+		// Port hopping range
+		if portsStr != "" {
+			params.Set("mport", portsStr)
+		}
+
+		// Build fm (finalmask) parameter
+		// If finalmask already exists in Extra (from parsed URI), use it directly
+		// Otherwise, reconstruct from mihomo-style flat keys
+		if fm, ok := node.Extra["finalmask"].(map[string]interface{}); ok && len(fm) > 0 {
+			if fmJSON := serializeFinalMaskJSON(fm); fmJSON != "" {
+				params.Set("fm", fmJSON)
+			}
+		} else {
+			if fmJSON := buildFinalMaskFromMihomo(node.Extra); fmJSON != "" {
+				params.Set("fm", fmJSON)
 			}
 		}
-		uri += "#" + node.Name
+
+		// Encode params (sorted alphabetically, %20 for spaces)
+		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
+
+		uri := fmt.Sprintf("hysteria2://%s@%s:%d", url.QueryEscape(node.Password), node.Host, port)
+		if encoded != "" {
+			uri += "?" + encoded
+		}
+		uri += "#" + url.PathEscape(node.Name)
 		return uri
 
 	default:

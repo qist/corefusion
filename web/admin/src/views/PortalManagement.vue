@@ -420,15 +420,36 @@
             </el-form>
           </el-tab-pane>
           <el-tab-pane label="API 参考" name="api">
-            <div style="padding: 20px 0; max-width: 800px">
-              <h4 class="api-section-title">公开接口</h4>
-              <el-table :data="publicApis" border size="small" style="margin-bottom: 24px">
-                <el-table-column prop="method" label="方法" width="80" /><el-table-column prop="path" label="路径" /><el-table-column prop="desc" label="说明" />
-              </el-table>
-              <h4 class="api-section-title">认证接口</h4>
-              <el-table :data="authApis" border size="small">
-                <el-table-column prop="method" label="方法" width="80" /><el-table-column prop="path" label="路径" /><el-table-column prop="desc" label="说明" />
-              </el-table>
+            <div class="api-ref-container">
+              <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+                <span style="font-size: 13px">以下为门户相关的完整 API 接口文档，含请求/响应示例。<code>admin_token</code> 为管理员登录 Token，<code>client_token</code> 为客户端登录 Token。</span>
+              </el-alert>
+              <el-collapse v-model="activeApiNames" class="api-collapse">
+                <el-collapse-item v-for="(group, gi) in apiGroups" :key="gi" :name="gi" :title="group.title">
+                  <div v-for="(api, ai) in group.apis" :key="ai" class="api-item">
+                    <div class="api-item-header">
+                      <span class="api-method" :class="'method-' + api.method.toLowerCase()">{{ api.method }}</span>
+                      <code class="api-path">{{ api.path }}</code>
+                      <span class="api-desc">{{ api.desc }}</span>
+                    </div>
+                    <div v-if="api.auth" class="api-auth">
+                      <span class="api-auth-label">认证：</span>
+                      <span class="api-auth-value">{{ api.auth }}</span>
+                    </div>
+                    <div v-if="api.requestBody" class="api-section-block">
+                      <div class="api-block-label">请求示例</div>
+                      <div class="api-copy-bar">
+                        <el-button text size="small" :icon="CopyDocument" @click="copyText(api.requestBody)">复制</el-button>
+                      </div>
+                      <pre class="api-code-block"><code>{{ api.requestBody }}</code></pre>
+                    </div>
+                    <div v-if="api.response" class="api-section-block">
+                      <div class="api-block-label">响应示例</div>
+                      <pre class="api-code-block"><code>{{ api.response }}</code></pre>
+                    </div>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -525,18 +546,258 @@ const selectedModuleId = ref('')
 
 const newNav = reactive({ label: '', icon: '', target: 'overview', href: '', enabled: true, open_external: false })
 
-const publicApis = [
-  { method: 'GET', path: '/api/v1/public/settings', desc: '获取公开设置' },
-  { method: 'GET', path: '/api/v1/public/subscription-endpoints', desc: '获取订阅端点' },
-  { method: 'POST', path: '/api/v1/client-auth/register', desc: '注册新用户' },
-  { method: 'POST', path: '/api/v1/client-auth/login', desc: '登录' },
+const activeApiNames = ref([0])
+
+const apiGroups = [
+  {
+    title: '门户管理接口（需管理员 Token）',
+    apis: [
+      {
+        method: 'GET',
+        path: '/api/v1/portal/active',
+        desc: '获取当前活跃门户配置（含结构化导航、模块、主题字段）',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": {
+    "id": 1, "name": "Default", "is_active": true,
+    "site_name": "CoreFusion",
+    "logo_url": "",
+    "primary_color": "#409eff",
+    "background_color": "#f5f7fa",
+    "card_background_color": "#ffffff",
+    "text_color": "#303133",
+    "accent_color": "#67c23a",
+    "font_family": "-apple-system, ...",
+    "portal_editor_version": 1,
+    "registration_enabled": true,
+    "navigation": [
+      { "id": "nav-overview", "label": "概览", "icon": "📊", "target": "overview", "href": "", "enabled": true, "open_external": false }
+    ],
+    "modules": [
+      { "id": "mod-hero", "type": "hero", "title": "欢迎", "visible": true,
+        "data": { "eyebrow": "CORE FUSION", "heading": "欢迎回来", "description": "..." },
+        "style": { "variant": "primary", "align": "left" } }
+    ]
+  }
+}`,
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/portal/active',
+        desc: '更新门户配置（支持结构化字段：navigation / modules / theme）',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: `{
+  "name": "MyPortal",
+  "description": "我的订阅站",
+  "navigation": [
+    { "id": "nav-home", "label": "首页", "icon": "🏠", "target": "overview", "href": "", "enabled": true, "open_external": false }
+  ],
+  "modules": [
+    { "id": "mod-hero", "type": "hero", "title": "欢迎", "visible": true,
+      "data": { "eyebrow": "WELCOME", "heading": "欢迎", "description": "...", "button_text": "查看", "button_target": "subscription" },
+      "style": { "variant": "primary", "align": "left" } }
+  ],
+  "theme": {
+    "site_name": "MyPortal",
+    "logo_url": "",
+    "primary_color": "#ff6600",
+    "background_color": "#f5f5f5",
+    "card_background_color": "#ffffff",
+    "text_color": "#333333",
+    "accent_color": "#00cc00",
+    "font_family": "sans-serif"
+  },
+  "registration_enabled": true,
+  "portal_port": ""
+}`,
+        response: `{
+  "code": 0,
+  "data": { "id": 1, "name": "MyPortal", "site_name": "MyPortal", "primary_color": "#ff6600", "navigation": [ ... ], "modules": [ ... ] }
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/portal/reset',
+        desc: '重置门户为内置默认模板',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": { "name": "Default", "site_name": "CoreFusion", "navigation": [ ... ], "modules": [ ... ] }
+}`,
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/portal/templates',
+        desc: '获取所有门户模板列表',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": [
+    { "id": 1, "name": "Default", "is_active": true, "is_built_in": true }
+  ]
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/portal/templates',
+        desc: '创建新门户模板',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: `{
+  "name": "自定义模板",
+  "description": "我的自定义门户",
+  "html_content": "<div>...</div>",
+  "css_content": "body { ... }",
+  "js_content": "console.log('hi')",
+  "config": "{ ... }"
+}`,
+        response: `{
+  "code": 0,
+  "data": { "id": 2, "name": "自定义模板", "is_active": false }
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/portal/templates/:id/activate',
+        desc: '激活指定模板为当前门户',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{ "code": 0, "data": { "message": "activated", "id": 2 } }`,
+      },
+      {
+        method: 'DELETE',
+        path: '/api/v1/portal/templates/:id',
+        desc: '删除指定模板（不能删除内置/活跃模板）',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{ "code": 0, "data": { "message": "deleted" } }`,
+      },
+    ],
+  },
+  {
+    title: '公开接口（无需认证）',
+    apis: [
+      {
+        method: 'GET',
+        path: '/api/v1/public/settings',
+        desc: '获取门户公开设置（是否开放注册等）',
+        auth: '无需认证',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": { "registration_enabled": true }
+}`,
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/public/subscription-endpoints',
+        desc: '获取可用订阅端点列表',
+        auth: '无需认证',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": [
+    { "id": 1, "name": "主站", "host": "example.com", "port": 8081 }
+  ]
+}`,
+      },
+    ],
+  },
+  {
+    title: '客户端接口（公开 + 需客户端 Token）',
+    apis: [
+      {
+        method: 'POST',
+        path: '/api/v1/client-auth/register',
+        desc: '用户注册（需开启开放注册）',
+        auth: '无需认证',
+        requestBody: `{
+  "username": "user1",
+  "password": "MyPass123!",
+  "email": "user@example.com"
+}`,
+        response: `{
+  "code": 0,
+  "data": { "message": "注册成功" }
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/client-auth/login',
+        desc: '用户登录，获取客户端 Token',
+        auth: '无需认证',
+        requestBody: `{
+  "username": "user1",
+  "password": "MyPass123!"
+}`,
+        response: `{
+  "code": 0,
+  "data": {
+    "access_token": "eyJhbGci...",
+    "refresh_token": "eyJhbGci...",
+    "expires_in": 86400
+  }
+}`,
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/client-auth/me',
+        desc: '获取当前登录用户信息',
+        auth: 'Authorization: Bearer <client_token>',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": {
+    "id": 1, "username": "user1",
+    "subscription_url": "https://example.com/sub/abc123",
+    "traffic_used": 1073741824,
+    "traffic_total": 536870912000
+  }
+}`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/client-auth/rotate-token',
+        desc: '轮换订阅 Token（旧 Token 失效）',
+        auth: 'Authorization: Bearer <client_token>',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": { "subscription_url": "https://example.com/sub/xyz789" }
+}`,
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/client-auth/settings',
+        desc: '更新客户端安全设置',
+        auth: 'Authorization: Bearer <client_token>',
+        requestBody: `{
+  "alert_on_traffic_limit": true,
+  "traffic_alert_threshold": 90
+}`,
+        response: `{ "code": 0, "data": { "message": "设置已更新" } }`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/client-auth/change-password',
+        desc: '修改密码',
+        auth: 'Authorization: Bearer <client_token>',
+        requestBody: `{
+  "old_password": "OldPass123!",
+  "new_password": "NewPass456!"
+}`,
+        response: `{ "code": 0, "data": { "message": "密码修改成功" } }`,
+      },
+    ],
+  },
 ]
-const authApis = [
-  { method: 'GET', path: '/api/v1/client-auth/me', desc: '获取用户信息' },
-  { method: 'POST', path: '/api/v1/client-auth/rotate-token', desc: '轮换订阅 Token' },
-  { method: 'PUT', path: '/api/v1/client-auth/settings', desc: '更新安全设置' },
-  { method: 'POST', path: '/api/v1/client-auth/change-password', desc: '修改密码' },
-]
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制到剪贴板')).catch(() => ElMessage.error('复制失败'))
+}
 
 const selectedNav = computed(() => navigation.value.find(n => n.id === selectedNavId.value))
 const selectedModule = computed(() => modules.value.find(m => m.id === selectedModuleId.value))
@@ -1023,6 +1284,36 @@ onMounted(() => { fetchConfig() })
 .settings-mode { padding: 16px; overflow-y: auto; height: 100%; }
 .color-row { display: flex; align-items: center; gap: 8px; }
 .api-section-title { font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 12px; }
+
+/* ===== API Reference ===== */
+.api-ref-container { padding: 16px 0; max-width: 900px; }
+.api-collapse { border: none; }
+.api-collapse :deep(.el-collapse-item__header) { font-size: 14px; font-weight: 600; color: #303133; }
+.api-collapse :deep(.el-collapse-item__content) { padding-bottom: 0; }
+.api-item { border: 1px solid #ebeef5; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; background: #fafbfc; }
+.api-item-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.api-method {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;
+  color: #fff; min-width: 52px; text-align: center;
+}
+.method-get { background: #409eff; }
+.method-post { background: #67c23a; }
+.method-put { background: #e6a23c; }
+.method-delete { background: #f56c6c; }
+.api-path { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 13px; color: #303133; font-weight: 600; }
+.api-desc { font-size: 12px; color: #909399; }
+.api-auth { font-size: 12px; color: #606266; margin-top: 6px; }
+.api-auth-label { font-weight: 600; }
+.api-auth-value { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; color: #409eff; }
+.api-section-block { margin-top: 8px; }
+.api-block-label { font-size: 11px; font-weight: 600; color: #909399; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.api-copy-bar { display: flex; justify-content: flex-end; margin: -4px 0 2px; }
+.api-code-block {
+  background: #1e1e2e; color: #cdd6f4; padding: 12px 16px; border-radius: 6px;
+  overflow-x: auto; font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px; line-height: 1.6; margin: 0;
+}
+.api-code-block code { color: inherit; }
 
 /* ===== Responsive ===== */
 @media (max-width: 1400px) {

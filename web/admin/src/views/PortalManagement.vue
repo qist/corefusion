@@ -25,7 +25,7 @@
         <div class="col-structure">
           <div class="structure-section">
             <div class="section-header">
-              <span class="section-title">导航菜单</span>
+              <span class="section-title">页面导航</span>
               <el-button text size="small" :icon="Plus" @click="openNavDialog()" />
             </div>
             <div class="nav-list">
@@ -33,13 +33,13 @@
                 v-for="(nav, idx) in navigation"
                 :key="nav.id"
                 class="nav-item-row"
-                :class="{ selected: selectedNavId === nav.id, disabled: !nav.enabled }"
+                :class="{ selected: currentPageNavId === nav.id, disabled: !nav.enabled }"
                 @click="selectNav(nav.id)"
               >
                 <div class="nav-item-info">
                   <span class="nav-icon-emoji">{{ nav.icon || '🔗' }}</span>
                   <span class="nav-label-text">{{ nav.label }}</span>
-                  <el-tag v-if="nav.target && !nav.href" size="small" type="info">{{ nav.target }}</el-tag>
+                  <el-tag size="small" type="info" effect="plain">{{ currentPageModuleCount(nav.target) }} 个模块</el-tag>
                 </div>
                 <div class="nav-item-actions" @click.stop>
                   <el-button text size="small" :icon="ArrowUp" @click="moveItem(navigation, idx, -1)" :disabled="idx === 0" />
@@ -54,15 +54,22 @@
             </div>
           </div>
 
-          <div class="structure-section">
+          <div class="structure-section structure-modules">
             <div class="section-header">
-              <span class="section-title">内容模块</span>
-              <el-dropdown @command="addModule" trigger="click">
-                <el-button text size="small" :icon="Plus">添加</el-button>
+              <span class="section-title">
+                {{ currentNav ? currentNav.label + ' 的模块' : '内容模块' }}
+              </span>
+              <el-dropdown @command="addModule" trigger="click" :disabled="!currentNav">
+                <el-button text size="small" :icon="Plus" :disabled="!currentNav">添加模块</el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="hero">Hero 欢迎区</el-dropdown-item>
-                    <el-dropdown-item command="markdown">Markdown 文档</el-dropdown-item>
+                    <el-dropdown-item command="account_info">账户信息</el-dropdown-item>
+                    <el-dropdown-item command="traffic_ring">流量环形图</el-dropdown-item>
+                    <el-dropdown-item command="subscription_detail">订阅详情</el-dropdown-item>
+                    <el-dropdown-item command="security_settings">安全设置</el-dropdown-item>
+                    <el-dropdown-item command="log_packages">日志打包</el-dropdown-item>
+                    <el-dropdown-item command="markdown" divided>Markdown 文档</el-dropdown-item>
                     <el-dropdown-item command="notice">公告提示</el-dropdown-item>
                     <el-dropdown-item command="feature_cards">功能卡片</el-dropdown-item>
                     <el-dropdown-item command="account_stats">账户数据</el-dropdown-item>
@@ -75,7 +82,7 @@
             </div>
             <div class="module-list">
               <div
-                v-for="(mod, idx) in modules"
+                v-for="(mod, idx) in currentPageModules"
                 :key="mod.id"
                 class="module-item-row"
                 :class="{ selected: selectedModuleId === mod.id, disabled: !mod.visible }"
@@ -86,30 +93,140 @@
                   <span class="module-title-text">{{ mod.title || '(无标题)' }}</span>
                 </div>
                 <div class="module-item-actions" @click.stop>
-                  <el-button text size="small" :icon="ArrowUp" @click="moveItem(modules, idx, -1)" :disabled="idx === 0" />
-                  <el-button text size="small" :icon="ArrowDown" @click="moveItem(modules, idx, 1)" :disabled="idx === modules.length - 1" />
+                  <el-button text size="small" :icon="ArrowUp" @click="movePageModule(idx, -1)" :disabled="idx === 0" />
+                  <el-button text size="small" :icon="ArrowDown" @click="movePageModule(idx, 1)" :disabled="idx === currentPageModules.length - 1" />
                   <el-switch v-model="mod.visible" size="small" />
-                  <el-button text size="small" :icon="CopyDocument" @click="duplicateModule(idx)" />
-                  <el-button text size="small" type="danger" :icon="Delete" @click="removeModule(idx)" />
+                  <el-button text size="small" :icon="CopyDocument" @click="duplicateModuleByIdx(idx)" />
+                  <el-button text size="small" type="danger" :icon="Delete" @click="removeModuleByIdx(idx)" />
                 </div>
               </div>
-              <div v-if="modules.length === 0" class="empty-hint" @click="addModule('hero')">
-                + 添加第一个模块
+              <div v-if="!currentNav" class="empty-hint">
+                ← 点击上方导航项选择页面
+              </div>
+              <div v-else-if="currentPageModules.length === 0" class="empty-hint" @click="addModule('hero')">
+                + 为「{{ currentNav.label }}」添加第一个模块
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Center Column: Canvas Preview -->
+        <!-- Center Column: Code Editor or Visual Preview -->
         <div class="col-canvas">
-          <div class="canvas-toolbar">
+          <!-- Toolbar: device buttons only show when code editor is active -->
+          <div v-if="hasCodeEditor" class="canvas-toolbar">
+            <span class="toolbar-editor-label">{{ moduleTypeLabel(selectedModule.type) }} 编辑器</span>
             <el-radio-group v-model="previewDevice" size="small">
-              <el-radio-button label="desktop">桌面</el-radio-button>
-              <el-radio-button label="tablet">平板</el-radio-button>
-              <el-radio-button label="mobile">手机</el-radio-button>
+              <el-radio-button value="desktop">桌面</el-radio-button>
+              <el-radio-button value="tablet">平板</el-radio-button>
+              <el-radio-button value="mobile">手机</el-radio-button>
             </el-radio-group>
           </div>
-          <div class="canvas-scroll" :class="'device-' + previewDevice">
+
+          <!-- Code Editor Mode -->
+          <div v-if="hasCodeEditor" class="canvas-code-editor">
+            <!-- Markdown Editor -->
+            <template v-if="selectedModule.type === 'markdown'">
+              <div class="md-editor-wrap md-editor-full">
+                <div class="md-editor-toolbar">
+                  <button @click="insertMd('heading')" title="标题">H</button>
+                  <button @click="insertMd('bold')" title="粗体"><b>B</b></button>
+                  <button @click="insertMd('italic')" title="斜体"><i>I</i></button>
+                  <button @click="insertMd('strikethrough')" title="删除线"><s>S</s></button>
+                  <span class="md-divider"></span>
+                  <button @click="insertMd('ul')" title="无序列表">•</button>
+                  <button @click="insertMd('ol')" title="有序列表">1.</button>
+                  <button @click="insertMd('checklist')" title="清单">☑</button>
+                  <span class="md-divider"></span>
+                  <button @click="insertMd('link')" title="链接">🔗</button>
+                  <button @click="insertMd('image')" title="图片">🖼</button>
+                  <button @click="insertMd('code')" title="代码">&lt;/&gt;</button>
+                  <button @click="insertMd('codeblock')" title="代码块">{ }</button>
+                  <button @click="insertMd('quote')" title="引用">❝</button>
+                  <button @click="insertMd('table')" title="表格">⊞</button>
+                  <button @click="insertMd('hr')" title="分割线">—</button>
+                </div>
+                <div class="md-split md-split-full">
+                  <textarea
+                    ref="mdEditRef"
+                    v-model="selectedModule.data.markdown"
+                    class="md-textarea"
+                    placeholder="在此编写 Markdown 内容..."
+                    @input="onMdInput"
+                  ></textarea>
+                  <div class="md-preview-pane md-preview-content" :class="'device-' + previewDevice" v-html="renderMd(selectedModule.data.markdown || '')"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Notice Editor -->
+            <template v-else-if="selectedModule.type === 'notice'">
+              <div class="notice-editor-wrap">
+                <el-form-item label="公告标题" style="margin-bottom: 8px"><el-input v-model="selectedModule.data.title" placeholder="公告标题" /></el-form-item>
+                <div class="md-editor-wrap md-editor-full">
+                  <div class="md-editor-toolbar">
+                    <button @click="insertNoticeMd('heading')" title="标题">H</button>
+                    <button @click="insertNoticeMd('bold')" title="粗体"><b>B</b></button>
+                    <button @click="insertNoticeMd('italic')" title="斜体"><i>I</i></button>
+                    <button @click="insertNoticeMd('link')" title="链接">🔗</button>
+                    <button @click="insertNoticeMd('code')" title="代码">&lt;/&gt;</button>
+                  </div>
+                  <div class="md-split md-split-full">
+                    <textarea
+                      ref="noticeMdRef"
+                      v-model="selectedModule.data.markdown"
+                      class="md-textarea"
+                      placeholder="公告正文 (支持 Markdown)..."
+                      @input="onNoticeMdInput"
+                    ></textarea>
+                    <div class="md-preview-pane md-preview-content" :class="'device-' + previewDevice" v-html="renderMd(selectedModule.data.markdown || '')"></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Rich Text Editor -->
+            <template v-else-if="selectedModule.type === 'rich_text'">
+              <div class="rte-editor-wrap">
+                <div class="rte-toolbar">
+                  <button @click="execCmd('formatBlock', '<h2>')" title="标题1">H2</button>
+                  <button @click="execCmd('formatBlock', '<h3>')" title="标题2">H3</button>
+                  <button @click="execCmd('formatBlock', '<p>')" title="正文">P</button>
+                  <span class="rte-divider"></span>
+                  <button @click="execCmd('bold')" title="粗体"><b>B</b></button>
+                  <button @click="execCmd('italic')" title="斜体"><i>I</i></button>
+                  <button @click="execCmd('underline')" title="下划线"><u>U</u></button>
+                  <button @click="execCmd('strikeThrough')" title="删除线"><s>S</s></button>
+                  <span class="rte-divider"></span>
+                  <button @click="execCmd('insertUnorderedList')" title="无序列表">•</button>
+                  <button @click="execCmd('insertOrderedList')" title="有序列表">1.</button>
+                  <button @click="execCmd('formatBlock', '<blockquote>')" title="引用">❝</button>
+                  <span class="rte-divider"></span>
+                  <button @click="insertLink" title="超链接">🔗</button>
+                  <button @click="execCmd('removeFormat')" title="清除格式">✕</button>
+                </div>
+                <div class="rte-split">
+                  <div ref="richTextEditRef" class="rte-content rte-content-full" contenteditable="true" @input="onRichTextInput" v-html="selectedModule.data.html || ''"></div>
+                  <div class="rte-preview md-preview-content" :class="'device-' + previewDevice" v-html="sanitizeHtml(selectedModule.data.html || '')"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Custom HTML Editor -->
+            <template v-else-if="selectedModule.type === 'custom_html'">
+              <div class="html-editor-wrap">
+                <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 8px">
+                  <span style="font-size: 12px">自定义 HTML 会被直接渲染，请确保内容安全</span>
+                </el-alert>
+                <div class="html-split">
+                  <textarea v-model="selectedModule.data.html" class="html-textarea" placeholder="<div>自定义内容</div>"></textarea>
+                  <div class="html-preview md-preview-content" :class="'device-' + previewDevice" v-html="sanitizeHtml(selectedModule.data.html || '')"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Visual Preview Mode (non-code modules or no selection) -->
+          <div v-else class="canvas-scroll">
             <div class="portal-preview" :style="previewStyles">
               <!-- Site Header Preview -->
               <div class="preview-header">
@@ -124,9 +241,15 @@
                 </div>
               </div>
 
+              <!-- Page Title -->
+              <div v-if="currentNav" class="preview-page-title">
+                <span class="page-title-icon">{{ currentNav.icon || '📄' }}</span>
+                <span class="page-title-text">{{ currentNav.label }}</span>
+              </div>
+
               <!-- Module Previews -->
               <div class="preview-modules">
-                <template v-for="mod in modules.filter(m => m.visible)" :key="mod.id">
+                <template v-for="mod in currentPageModules.filter(m => m.visible)" :key="mod.id">
                   <!-- Hero Module Preview -->
                   <div v-if="mod.type === 'hero'" class="preview-module preview-hero" :style="moduleStyle(mod)">
                     <div class="hero-eyebrow">{{ mod.data?.eyebrow || '' }}</div>
@@ -187,11 +310,65 @@
                     <div class="custom-html-badge">HTML</div>
                     <div v-html="sanitizeHtml(mod.data?.html || '')"></div>
                   </div>
+
+                  <!-- Account Info Preview -->
+                  <div v-else-if="mod.type === 'account_info'" class="preview-module preview-account-info">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title }}</h3>
+                    <div class="stats-grid">
+                      <div class="stat-box"><span class="stat-label">邮箱</span><span class="stat-num" style="font-size:13px">user@example.com</span></div>
+                      <div class="stat-box"><span class="stat-label">套餐</span><span class="stat-num" style="font-size:13px">基础版</span></div>
+                      <div class="stat-box"><span class="stat-label">状态</span><span class="stat-num" style="font-size:13px">正常</span></div>
+                      <div class="stat-box"><span class="stat-label">到期</span><span class="stat-num" style="font-size:13px">无限制</span></div>
+                    </div>
+                  </div>
+
+                  <!-- Traffic Ring Preview -->
+                  <div v-else-if="mod.type === 'traffic_ring'" class="preview-module preview-traffic-ring">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title }}</h3>
+                    <div style="display:flex;justify-content:center;margin:12px 0">
+                      <div style="width:100px;height:100px;border-radius:50%;border:10px solid #e8e8ef;border-top-color:#67c23a;display:flex;align-items:center;justify-content:center;transform:rotate(-90deg)">
+                        <span style="transform:rotate(90deg);font-size:20px;font-weight:700">75%</span>
+                      </div>
+                    </div>
+                    <div class="stats-grid">
+                      <div class="stat-box"><span class="stat-num">12.5 GB</span><span class="stat-label">上传</span></div>
+                      <div class="stat-box"><span class="stat-num">45.2 GB</span><span class="stat-label">下载</span></div>
+                      <div class="stat-box"><span class="stat-num">100 GB</span><span class="stat-label">总量</span></div>
+                    </div>
+                  </div>
+
+                  <!-- Subscription Detail Preview -->
+                  <div v-else-if="mod.type === 'subscription_detail'" class="preview-module preview-sub-detail">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '订阅信息' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="background:var(--pv-bg, #f5f7fa);padding:10px;border-radius:8px;font-family:monospace;font-size:12px;word-break:break-all;margin-bottom:8px">https://example.com/sub/abc123...</div>
+                    <div style="display:flex;gap:8px;align-items:center"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.copy_text || '复制' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.qr_text || '二维码' }}</button><span v-if="mod.data?.show_status !== false" style="font-size:11px;color:#909399;margin-left:auto">状态: 正常</span></div>
+                    <div v-if="mod.data?.show_rotate !== false" style="margin-top:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-accent);color:#fff;cursor:pointer;font-size:12px">轮换Token</button></div>
+                  </div>
+
+                  <!-- Security Settings Preview -->
+                  <div v-else-if="mod.type === 'security_settings'" class="preview-module preview-security">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '安全设置' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="font-size:12px;color:#909399">{{ mod.data?.show_ip_whitelist !== false ? 'IP 白名单 · 设备限制' : '' }}{{ mod.data?.show_password !== false ? ' · 修改密码' : '' }}</div>
+                  </div>
+
+                  <!-- Log Packages Preview -->
+                  <div v-else-if="mod.type === 'log_packages'" class="preview-module preview-log-packages">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '日志打包' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.btn_1h || '1小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.btn_6h || '6小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.btn_24h || '24小时' }}</button></div>
+                  </div>
                 </template>
 
-                <div v-if="modules.filter(m => m.visible).length === 0" class="preview-empty">
+                <div v-if="!currentNav" class="preview-empty">
+                  <span style="font-size: 40px">👈</span>
+                  <p>从左侧选择一个页面开始编辑</p>
+                </div>
+                <div v-else-if="currentPageModules.filter(m => m.visible).length === 0" class="preview-empty">
                   <span style="font-size: 40px">📋</span>
-                  <p>从左侧添加内容模块来构建门户页面</p>
+                  <p>「{{ currentNav.label }}」页面还没有内容模块</p>
+                  <el-button type="primary" size="small" :icon="Plus" @click="addModule('hero')" style="margin-top: 8px">添加模块</el-button>
                 </div>
               </div>
 
@@ -214,12 +391,8 @@
             <el-form label-position="top" size="small">
               <el-form-item label="显示名称"><el-input v-model="selectedNav.label" placeholder="如：首页" /></el-form-item>
               <el-form-item label="图标 (emoji 或文字)"><el-input v-model="selectedNav.icon" placeholder="如：📊" /></el-form-item>
-              <el-form-item label="目标页面">
-                <el-select v-model="selectedNav.target" placeholder="选择内置页面" style="width: 100%">
-                  <el-option label="概览" value="overview" /><el-option label="订阅" value="subscription" /><el-option label="安全" value="security" /><el-option label="日志" value="logs" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="外部链接 (可选)"><el-input v-model="selectedNav.href" placeholder="https://example.com" /></el-form-item>
+              <el-form-item label="页面标识"><el-input v-model="selectedNav.target" placeholder="auto" disabled /></el-form-item>
+              <el-form-item label="外部链接 (可选)"><el-input v-model="selectedNav.href" placeholder="https://example.com — 填写后点击导航跳转到此链接" /></el-form-item>
               <el-form-item label="新窗口打开"><el-switch v-model="selectedNav.open_external" /></el-form-item>
               <el-form-item label="显示"><el-switch v-model="selectedNav.enabled" /></el-form-item>
             </el-form>
@@ -245,7 +418,7 @@
                 </el-form-item>
                 <el-form-item label="对齐方式">
                   <el-radio-group v-model="selectedModule.style.align">
-                    <el-radio label="left">左对齐</el-radio><el-radio label="center">居中</el-radio>
+                    <el-radio value="left">左对齐</el-radio><el-radio value="center">居中</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="样式变体">
@@ -255,67 +428,18 @@
                 </el-form-item>
               </template>
 
-              <!-- Markdown Properties -->
+              <!-- Markdown Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'markdown'">
-                <div class="md-editor-wrap">
-                  <div class="md-editor-toolbar">
-                    <button @click="insertMd('heading')" title="标题">H</button>
-                    <button @click="insertMd('bold')" title="粗体"><b>B</b></button>
-                    <button @click="insertMd('italic')" title="斜体"><i>I</i></button>
-                    <button @click="insertMd('strikethrough')" title="删除线"><s>S</s></button>
-                    <span class="md-divider"></span>
-                    <button @click="insertMd('ul')" title="无序列表">•</button>
-                    <button @click="insertMd('ol')" title="有序列表">1.</button>
-                    <button @click="insertMd('checklist')" title="清单">☑</button>
-                    <span class="md-divider"></span>
-                    <button @click="insertMd('link')" title="链接">🔗</button>
-                    <button @click="insertMd('image')" title="图片">🖼</button>
-                    <button @click="insertMd('code')" title="代码">&lt;/&gt;</button>
-                    <button @click="insertMd('codeblock')" title="代码块">{ }</button>
-                    <button @click="insertMd('quote')" title="引用">❝</button>
-                    <button @click="insertMd('table')" title="表格">⊞</button>
-                    <button @click="insertMd('hr')" title="分割线">—</button>
-                  </div>
-                  <div class="md-split">
-                    <textarea
-                      ref="mdEditRef"
-                      v-model="selectedModule.data.markdown"
-                      class="md-textarea"
-                      placeholder="在此编写 Markdown 内容..."
-                      @input="onMdInput"
-                    ></textarea>
-                    <div class="md-preview-pane md-preview-content" v-html="renderMd(selectedModule.data.markdown || '')"></div>
-                  </div>
-                </div>
-                <el-form-item label="对齐方式" style="margin-top: 8px">
+                <el-form-item label="对齐方式">
                   <el-radio-group v-model="selectedModule.style.align">
-                    <el-radio label="left">左</el-radio><el-radio label="center">中</el-radio>
+                    <el-radio value="left">左</el-radio><el-radio value="center">中</el-radio>
                   </el-radio-group>
                 </el-form-item>
               </template>
 
-              <!-- Notice Properties -->
+              <!-- Notice Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'notice'">
-                <el-form-item label="公告标题"><el-input v-model="selectedModule.data.title" placeholder="公告标题" /></el-form-item>
-                <div class="md-editor-wrap md-editor-compact">
-                  <div class="md-editor-toolbar">
-                    <button @click="insertNoticeMd('bold')" title="粗体"><b>B</b></button>
-                    <button @click="insertNoticeMd('italic')" title="斜体"><i>I</i></button>
-                    <button @click="insertNoticeMd('link')" title="链接">🔗</button>
-                    <button @click="insertNoticeMd('code')" title="代码">&lt;/&gt;</button>
-                  </div>
-                  <div class="md-split md-split-compact">
-                    <textarea
-                      ref="noticeMdRef"
-                      v-model="selectedModule.data.markdown"
-                      class="md-textarea"
-                      placeholder="公告正文 (支持 Markdown)..."
-                      @input="onNoticeMdInput"
-                    ></textarea>
-                    <div class="md-preview-pane md-preview-content" v-html="renderMd(selectedModule.data.markdown || '')"></div>
-                  </div>
-                </div>
-                <el-form-item label="状态色" style="margin-top: 8px">
+                <el-form-item label="状态色">
                   <el-select v-model="selectedModule.style.variant" style="width: 100%">
                     <el-option label="信息" value="info" /><el-option label="成功" value="success" /><el-option label="警告" value="warning" /><el-option label="错误" value="error" />
                   </el-select>
@@ -337,7 +461,7 @@
               <template v-if="selectedModule.type === 'account_stats'">
                 <el-form-item label="布局">
                   <el-radio-group v-model="selectedModule.style.layout">
-                    <el-radio label="grid">网格</el-radio><el-radio label="row">横排</el-radio>
+                    <el-radio value="grid">网格</el-radio><el-radio value="row">横排</el-radio>
                   </el-radio-group>
                 </el-form-item>
               </template>
@@ -349,40 +473,44 @@
                 <el-form-item label="按钮文案"><el-input v-model="selectedModule.data.button_text" placeholder="复制订阅链接" /></el-form-item>
               </template>
 
-              <!-- Rich Text Properties -->
+              <!-- Rich Text Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'rich_text'">
-                <el-form-item label="富文本内容">
-                  <div class="rich-text-editor">
-                    <div class="rte-toolbar">
-                      <button @click="execCmd('formatBlock', '<h2>')" title="标题1">H2</button>
-                      <button @click="execCmd('formatBlock', '<h3>')" title="标题2">H3</button>
-                      <button @click="execCmd('formatBlock', '<p>')" title="正文">P</button>
-                      <span class="rte-divider"></span>
-                      <button @click="execCmd('bold')" title="粗体"><b>B</b></button>
-                      <button @click="execCmd('italic')" title="斜体"><i>I</i></button>
-                      <button @click="execCmd('underline')" title="下划线"><u>U</u></button>
-                      <button @click="execCmd('strikeThrough')" title="删除线"><s>S</s></button>
-                      <span class="rte-divider"></span>
-                      <button @click="execCmd('insertUnorderedList')" title="无序列表">•</button>
-                      <button @click="execCmd('insertOrderedList')" title="有序列表">1.</button>
-                      <button @click="execCmd('formatBlock', '<blockquote>')" title="引用">❝</button>
-                      <span class="rte-divider"></span>
-                      <button @click="insertLink" title="超链接">🔗</button>
-                      <button @click="execCmd('removeFormat')" title="清除格式">✕</button>
-                    </div>
-                    <div ref="richTextEditRef" class="rte-content" contenteditable="true" @input="onRichTextInput" v-html="selectedModule.data.html || ''"></div>
-                  </div>
+                <el-form-item label="对齐方式">
+                  <el-radio-group v-model="selectedModule.style.align">
+                    <el-radio value="left">左</el-radio><el-radio value="center">中</el-radio>
+                  </el-radio-group>
                 </el-form-item>
               </template>
 
-              <!-- Custom HTML Properties -->
+              <!-- Custom HTML Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'custom_html'">
-                <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 8px">
-                  <span style="font-size: 12px">自定义 HTML 会被直接渲染，请确保内容安全</span>
+                <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px">
+                  <span style="font-size: 12px">代码编辑框在中间区域，支持桌面/平板/手机预览</span>
                 </el-alert>
-                <el-form-item label="HTML 内容">
-                  <el-input v-model="selectedModule.data.html" type="textarea" :rows="12" placeholder="<div>自定义内容</div>" />
-                </el-form-item>
+              </template>
+
+              <!-- Subscription Detail Properties -->
+              <template v-if="selectedModule.type === 'subscription_detail'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="查看您的订阅链接和状态" /></el-form-item>
+                <el-form-item label="复制按钮文案"><el-input v-model="selectedModule.data.copy_text" placeholder="复制" /></el-form-item>
+                <el-form-item label="二维码按钮文案"><el-input v-model="selectedModule.data.qr_text" placeholder="二维码" /></el-form-item>
+                <el-form-item label="显示订阅状态"><el-switch v-model="selectedModule.data.show_status" /></el-form-item>
+                <el-form-item label="显示轮换Token"><el-switch v-model="selectedModule.data.show_rotate" /></el-form-item>
+              </template>
+
+              <!-- Security Settings Properties -->
+              <template v-if="selectedModule.type === 'security_settings'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="管理您的账户安全设置" /></el-form-item>
+                <el-form-item label="显示IP白名单"><el-switch v-model="selectedModule.data.show_ip_whitelist" /></el-form-item>
+                <el-form-item label="显示修改密码"><el-switch v-model="selectedModule.data.show_password" /></el-form-item>
+              </template>
+
+              <!-- Log Packages Properties -->
+              <template v-if="selectedModule.type === 'log_packages'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="请求打包最近日志，系统将在后台收集并压缩为可下载文件。" /></el-form-item>
+                <el-form-item label="1小时按钮文案"><el-input v-model="selectedModule.data.btn_1h" placeholder="打包最近1小时" /></el-form-item>
+                <el-form-item label="6小时按钮文案"><el-input v-model="selectedModule.data.btn_6h" placeholder="最近6小时" /></el-form-item>
+                <el-form-item label="24小时按钮文案"><el-input v-model="selectedModule.data.btn_24h" placeholder="最近24小时" /></el-form-item>
               </template>
             </el-form>
           </div>
@@ -488,17 +616,13 @@
     </div>
 
     <!-- Navigation Dialog -->
-    <el-dialog v-model="navDialogVisible" title="添加导航项" width="500px">
+    <el-dialog v-model="navDialogVisible" title="添加导航页" width="500px">
       <el-form label-position="top" size="small">
-        <el-form-item label="显示名称"><el-input v-model="newNav.label" placeholder="如：帮助中心" /></el-form-item>
-        <el-form-item label="图标"><el-input v-model="newNav.icon" placeholder="如：📖" /></el-form-item>
-        <el-form-item label="目标页面">
-          <el-select v-model="newNav.target" style="width: 100%">
-            <el-option label="概览" value="overview" /><el-option label="订阅" value="subscription" /><el-option label="安全" value="security" /><el-option label="日志" value="logs" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="外部链接 (可选)"><el-input v-model="newNav.href" placeholder="https://..." /></el-form-item>
+        <el-form-item label="页面名称"><el-input v-model="newNav.label" placeholder="如：帮助中心 / 关于我们 / 使用教程" /></el-form-item>
+        <el-form-item label="图标 (可选)"><el-input v-model="newNav.icon" placeholder="如：📖 / 🎯 / ⚙️" /></el-form-item>
+        <el-form-item label="外部链接 (可选)"><el-input v-model="newNav.href" placeholder="https://example.com — 填写后此导航跳转到外部链接" /></el-form-item>
       </el-form>
+      <div style="font-size: 13px; color: #909399; margin-top: 8px">💡 添加后会自动创建一个页面，你可以在该页面添加内容模块。</div>
       <template #footer>
         <el-button @click="navDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="confirmAddNav">添加</el-button>
@@ -802,6 +926,31 @@ function copyText(text) {
 const selectedNav = computed(() => navigation.value.find(n => n.id === selectedNavId.value))
 const selectedModule = computed(() => modules.value.find(m => m.id === selectedModuleId.value))
 
+// Separate state: which page we're viewing (controls left/center panels)
+// vs what we're editing in the right panel (nav item or module)
+const currentPageNavId = ref('')
+const currentNav = computed(() => navigation.value.find(n => n.id === currentPageNavId.value))
+
+// Current page target (derived from the page we're viewing, NOT the editing selection)
+const currentPageTarget = computed(() => currentNav.value?.target || '')
+
+// Whether the selected module has a code editor (shown in center column)
+const hasCodeEditor = computed(() => {
+  if (!selectedModule.value) return false
+  return ['markdown', 'rich_text', 'custom_html', 'notice'].includes(selectedModule.value.type)
+})
+
+// Modules belonging to the current page
+const currentPageModules = computed(() => {
+  if (!currentPageTarget.value) return []
+  return modules.value.filter(m => (m.page || 'overview') === currentPageTarget.value)
+})
+
+// Count modules for a given page target
+function currentPageModuleCount(target) {
+  return modules.value.filter(m => (m.page || 'overview') === target).length
+}
+
 const previewStyles = computed(() => ({
   '--pv-primary': config.primary_color || '#667eea',
   '--pv-bg': config.background_color || '#f0f2f5',
@@ -820,28 +969,44 @@ const defaultNavigation = [
 
 const defaultModules = [
   {
-    id: 'mod-hero', type: 'hero', title: '欢迎', visible: true,
+    id: 'mod-hero', type: 'hero', title: '欢迎', page: 'overview', visible: true,
     data: { eyebrow: 'CORE FUSION', heading: '欢迎回来', description: '查看您的流量使用和订阅状态', button_text: '查看订阅', button_target: 'subscription' },
     style: { variant: 'primary', align: 'left' },
   },
   {
-    id: 'md-notice', type: 'notice', title: '站点公告', visible: true,
+    id: 'mod-account', type: 'account_info', title: '账户信息', page: 'overview', visible: true,
+    data: {}, style: {},
+  },
+  {
+    id: 'mod-traffic', type: 'traffic_ring', title: '流量使用', page: 'overview', visible: true,
+    data: {}, style: {},
+  },
+  {
+    id: 'md-notice', type: 'notice', title: '站点公告', page: 'overview', visible: true,
     data: { title: '📢 公告', markdown: '欢迎使用 **CoreFusion** 订阅管理平台！\n\n- 支持 VLESS / VMess / Trojan / TUIC 等多种协议\n- 一键复制订阅链接\n- 流量使用实时查看\n' },
     style: { variant: 'info' },
   },
   {
-    id: 'mod-stats', type: 'account_stats', title: '流量使用', visible: true,
-    data: {}, style: { layout: 'grid' },
+    id: 'mod-sub', type: 'subscription_detail', title: '订阅信息', page: 'subscription', visible: true,
+    data: { description: '查看您的订阅链接和状态', copy_text: '复制', qr_text: '二维码', show_status: true, show_rotate: true }, style: {},
   },
   {
-    id: 'mod-sub', type: 'subscription', title: '订阅信息', visible: true,
-    data: { title: '订阅信息', description: '查看您的订阅链接和状态', button_text: '复制订阅链接' },
-    style: {},
+    id: 'mod-sec', type: 'security_settings', title: '安全设置', page: 'security', visible: true,
+    data: { description: '管理您的账户安全设置', show_ip_whitelist: true, show_password: true }, style: {},
+  },
+  {
+    id: 'mod-log', type: 'log_packages', title: '日志打包', page: 'logs', visible: true,
+    data: { description: '请求打包最近日志，系统将在后台收集并压缩为可下载文件。', btn_1h: '打包最近1小时', btn_6h: '最近6小时', btn_24h: '最近24小时' }, style: {},
+  },
+  {
+    id: 'mod-log-info', type: 'markdown', title: '访问日志', page: 'logs', visible: true,
+    data: { markdown: '## 访问日志\n\n在此页面查看您的连接日志和访问记录。\n\n> 日志数据由客户端实时拉取。' },
+    style: { align: 'left' },
   },
 ]
 
 function moduleTypeLabel(type) {
-  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML' }[type] || type
+  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML', account_info: '账户', traffic_ring: '流量环', subscription_detail: '订阅详情', security_settings: '安全', log_packages: '日志' }[type] || type
 }
 
 function moduleStyle(mod) {
@@ -862,22 +1027,40 @@ function sanitizeHtml(html) {
 
 function genId(prefix) { return (prefix || 'id') + '-' + Math.random().toString(36).slice(2, 9) }
 
-function selectNav(id) { selectedNavId.value = id; selectedModuleId.value = '' }
-function selectModule(id) { selectedModuleId.value = id; selectedNavId.value = '' }
+function selectNav(id) {
+  currentPageNavId.value = id  // switch page view
+  selectedNavId.value = id     // show nav properties in right panel
+  selectedModuleId.value = '' // clear module editing
+}
+function selectModule(id) {
+  selectedModuleId.value = id  // show module properties in right panel
+  selectedNavId.value = ''     // clear nav editing, but keep currentPageNavId
+}
 
 function openNavDialog() {
-  Object.assign(newNav, { label: '', icon: '', target: 'overview', href: '', enabled: true, open_external: false })
+  Object.assign(newNav, { label: '', icon: '', target: '', href: '', enabled: true, open_external: false })
   navDialogVisible.value = true
 }
 function confirmAddNav() {
   if (!newNav.label) { ElMessage.error('请输入显示名称'); return }
-  navigation.value.push({ ...newNav, id: genId('nav') })
+  // Auto-generate target from label if not set
+  const target = newNav.target || newNav.label.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '') || 'page-' + Date.now()
+  const navId = genId('nav')
+  navigation.value.push({ ...newNav, id: navId, target })
   navDialogVisible.value = false
+  // Auto-select the new page
+  selectNav(navId)
   hasUnsavedChanges.value = true
 }
 function removeNav(idx) {
   ElMessageBox.confirm('确定删除此导航项？', '确认', { type: 'warning' }).then(() => {
-    if (selectedNavId.value === navigation.value[idx].id) selectedNavId.value = ''
+    const removedId = navigation.value[idx].id
+    if (selectedNavId.value === removedId) selectedNavId.value = ''
+    if (currentPageNavId.value === removedId) {
+      // Switch to next available page
+      const next = navigation.value[idx + 1] || navigation.value[idx - 1]
+      currentPageNavId.value = next ? next.id : ''
+    }
     navigation.value.splice(idx, 1)
     hasUnsavedChanges.value = true
   }).catch(() => {})
@@ -891,31 +1074,59 @@ function addModule(type) {
     notice: { data: { title: '公告', markdown: '公告正文，支持 **Markdown** 格式。' }, style: { variant: 'info' } },
     feature_cards: { data: { cards: [{ icon: '⭐', title: '功能一', description: '功能描述' }] }, style: {} },
     account_stats: { data: {}, style: { layout: 'grid' } },
+    account_info: { data: {}, style: {} },
+    traffic_ring: { data: {}, style: {} },
+    subscription_detail: { data: { description: '', copy_text: '复制', qr_text: '二维码', show_status: true, show_rotate: true }, style: {} },
+    security_settings: { data: { description: '', show_ip_whitelist: true, show_password: true }, style: {} },
+    log_packages: { data: { description: '', btn_1h: '打包最近1小时', btn_6h: '最近6小时', btn_24h: '最近24小时' }, style: {} },
     subscription: { data: { title: '订阅信息', description: '', button_text: '复制订阅链接' }, style: {} },
     custom_html: { data: { html: '<div>自定义内容</div>' }, style: {} },
   }
-  const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), visible: true, data: defaults[type].data, style: defaults[type].style }
+  const page = currentPageTarget.value || 'overview'
+  const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), page, visible: true, data: defaults[type].data, style: defaults[type].style }
   modules.value.push(mod)
   selectedModuleId.value = mod.id
-  selectedNavId.value = ''
   hasUnsavedChanges.value = true
 }
 
-function duplicateModule(idx) {
-  const orig = modules.value[idx]
-  const copy = JSON.parse(JSON.stringify(orig))
+function duplicateModuleByIdx(pageIdx) {
+  const mod = currentPageModules.value[pageIdx]
+  if (!mod) return
+  const realIdx = modules.value.indexOf(mod)
+  const copy = JSON.parse(JSON.stringify(mod))
   copy.id = genId('mod')
-  copy.title = (orig.title || '') + ' (副本)'
-  modules.value.splice(idx + 1, 0, copy)
+  copy.title = (mod.title || '') + ' (副本)'
+  modules.value.splice(realIdx + 1, 0, copy)
   hasUnsavedChanges.value = true
 }
 
-function removeModule(idx) {
+function removeModuleByIdx(pageIdx) {
+  const mod = currentPageModules.value[pageIdx]
+  if (!mod) return
   ElMessageBox.confirm('确定删除此模块？', '确认', { type: 'warning' }).then(() => {
-    if (selectedModuleId.value === modules.value[idx].id) selectedModuleId.value = ''
-    modules.value.splice(idx, 1)
-    hasUnsavedChanges.value = true
+    const realIdx = modules.value.indexOf(mod)
+    if (realIdx >= 0) {
+      if (selectedModuleId.value === mod.id) selectedModuleId.value = ''
+      modules.value.splice(realIdx, 1)
+      hasUnsavedChanges.value = true
+    }
   }).catch(() => {})
+}
+
+function movePageModule(pageIdx, dir) {
+  const mod = currentPageModules.value[pageIdx]
+  if (!mod) return
+  const realIdx = modules.value.indexOf(mod)
+  // Find the next module on the same page
+  const samePageIndices = modules.value.map((m, i) => (m.page || 'overview') === mod.page ? i : -1).filter(i => i >= 0)
+  const posInPage = samePageIndices.indexOf(realIdx)
+  const targetPos = posInPage + dir
+  if (targetPos < 0 || targetPos >= samePageIndices.length) return
+  const targetRealIdx = samePageIndices[targetPos]
+  const tmp = modules.value[realIdx]
+  modules.value[realIdx] = modules.value[targetRealIdx]
+  modules.value[targetRealIdx] = tmp
+  hasUnsavedChanges.value = true
 }
 
 function moveItem(list, idx, dir) {
@@ -985,6 +1196,7 @@ function insertNoticeMd(type) {
   const sel = text.substring(start, end)
   let insert = ''
   switch (type) {
+    case 'heading': insert = `## ${sel || '标题'}`; break
     case 'bold': insert = `**${sel || '粗体'}**`; break
     case 'italic': insert = `*${sel || '斜体'}*`; break
     case 'link': insert = `[${sel || '链接'}](https://...)`; break
@@ -1023,14 +1235,21 @@ const applyData = (d) => {
       const cfg = JSON.parse(d.config)
       Object.assign(config, cfg)
       navigation.value = Array.isArray(cfg.navigation) && cfg.navigation.length > 0 ? cfg.navigation : JSON.parse(JSON.stringify(defaultNavigation))
-      modules.value = Array.isArray(cfg.modules) && cfg.modules.length > 0 ? cfg.modules : JSON.parse(JSON.stringify(defaultModules))
+      const rawMods = Array.isArray(cfg.modules) && cfg.modules.length > 0 ? cfg.modules : JSON.parse(JSON.stringify(defaultModules))
+      modules.value = rawMods.map(m => ({ ...m, page: m.page || 'overview' }))
     } catch {
       navigation.value = JSON.parse(JSON.stringify(defaultNavigation))
       modules.value = JSON.parse(JSON.stringify(defaultModules))
     }
   } else {
     navigation.value = Array.isArray(d.navigation) && d.navigation.length > 0 ? d.navigation : JSON.parse(JSON.stringify(defaultNavigation))
-    modules.value = Array.isArray(d.modules) && d.modules.length > 0 ? d.modules : JSON.parse(JSON.stringify(defaultModules))
+    const rawMods = Array.isArray(d.modules) && d.modules.length > 0 ? d.modules : JSON.parse(JSON.stringify(defaultModules))
+    modules.value = rawMods.map(m => ({ ...m, page: m.page || 'overview' }))
+  }
+  // Auto-select first nav if none selected
+  if (navigation.value.length > 0) {
+    if (!currentPageNavId.value) currentPageNavId.value = navigation.value[0].id
+    if (!selectedNavId.value) selectedNavId.value = navigation.value[0].id
   }
   hasUnsavedChanges.value = false
 }
@@ -1138,6 +1357,45 @@ onMounted(() => { fetchConfig() })
 .badge-account_stats { background: #e0f7fa; color: #00bcd4; }
 .badge-subscription { background: #fce4ec; color: #e91e63; }
 .badge-custom_html { background: #efebe9; color: #795548; }
+.badge-account_info { background: #e8f5e9; color: #4caf50; }
+.badge-traffic_ring { background: #e3f2fd; color: #1976d2; }
+.badge-subscription_detail { background: #fce4ec; color: #e91e63; }
+.badge-security_settings { background: #fff3e0; color: #ff9800; }
+.badge-log_packages { background: #f3e5f5; color: #9c27b0; }
+
+/* ===== Center Code Editor ===== */
+.canvas-code-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
+.toolbar-editor-label { font-size: 13px; font-weight: 600; color: #303133; margin-right: auto; }
+.canvas-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+
+.md-editor-full, .rte-editor-wrap, .html-editor-wrap, .notice-editor-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.md-split-full { flex: 1; min-height: 0; }
+
+.rte-split { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.rte-content-full { flex: 1; overflow-y: auto; }
+.rte-preview { flex: 1; overflow-y: auto; border-left: 1px solid #e4e7ed; background: #fff; }
+
+.html-split { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.html-textarea {
+  flex: 1; border: 1px solid #dcdfe6; border-radius: 6px 0 0 6px; resize: none; padding: 12px;
+  font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 13px; line-height: 1.6;
+  outline: none; color: #303133; background: #fff;
+}
+.html-preview {
+  flex: 1; padding: 12px; border: 1px solid #dcdfe6; border-left: none; border-radius: 0 6px 6px 0;
+  overflow-y: auto; background: #fff;
+}
+
+/* Device width for preview panes in code editor */
+.md-preview-pane.device-desktop { max-width: 100%; }
+.md-preview-pane.device-tablet { max-width: 768px; margin: 0 auto; }
+.md-preview-pane.device-mobile { max-width: 375px; margin: 0 auto; }
+.rte-preview.device-desktop { max-width: 100%; }
+.rte-preview.device-tablet { max-width: 768px; margin: 0 auto; }
+.rte-preview.device-mobile { max-width: 375px; margin: 0 auto; }
+.html-preview.device-desktop { max-width: 100%; }
+.html-preview.device-tablet { max-width: 768px; margin: 0 auto; }
+.html-preview.device-mobile { max-width: 375px; margin: 0 auto; }
 
 .empty-hint { text-align: center; padding: 16px; color: #909399; font-size: 13px; cursor: pointer; border: 1px dashed #dcdfe6; border-radius: 6px; }
 .empty-hint:hover { color: #409eff; border-color: #409eff; }
@@ -1168,6 +1426,19 @@ onMounted(() => { fetchConfig() })
 .preview-nav-item:hover { color: var(--pv-primary); }
 
 .preview-modules { flex: 1; padding: 16px; overflow-y: auto; }
+
+.preview-page-title {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; background: var(--pv-card-bg);
+  border-bottom: 2px solid var(--pv-primary);
+  flex-shrink: 0;
+}
+.page-title-icon { font-size: 20px; }
+.page-title-text { font-size: 18px; font-weight: 700; color: var(--pv-text); }
+
+/* section modules can grow to fill */
+.structure-modules { flex: 1; display: flex; flex-direction: column; }
+.structure-modules .module-list { flex: 1; overflow-y: auto; }
 
 .preview-module { margin-bottom: 16px; padding: 20px; background: var(--pv-card-bg); border-radius: 12px; }
 .preview-hero { background: linear-gradient(135deg, var(--pv-primary), color-mix(in srgb, var(--pv-primary) 70%, #000)); color: #fff; }

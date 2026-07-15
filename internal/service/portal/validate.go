@@ -9,22 +9,19 @@ import (
 
 // Allowed module types — only these can be rendered by the portal template.
 var allowedModuleTypes = map[string]bool{
-	"hero":          true,
-	"markdown":      true,
-	"rich_text":     true,
-	"notice":        true,
-	"feature_cards": true,
-	"account_stats": true,
-	"subscription":  true,
-	"custom_html":   true,
-}
-
-// Allowed navigation targets for internal pages.
-var allowedNavTargets = map[string]bool{
-	"overview":     true,
-	"subscription": true,
-	"security":     true,
-	"logs":         true,
+	"hero":                true,
+	"markdown":            true,
+	"rich_text":           true,
+	"notice":              true,
+	"feature_cards":       true,
+	"account_stats":       true,
+	"subscription":        true,
+	"custom_html":         true,
+	"account_info":        true,
+	"traffic_ring":        true,
+	"subscription_detail": true,
+	"security_settings":  true,
+	"log_packages":        true,
 }
 
 const (
@@ -115,13 +112,11 @@ func validateNavigation(navRaw json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("navigation item %d: label is required", i)
 		}
 
-		// Validate target if present
+		// Validate target — allow any non-empty target (custom pages allowed)
 		if target, ok := item["target"].(string); ok && target != "" {
-			if !allowedNavTargets[target] {
-				// Allow if it has an external href instead
-				if href, _ := item["href"].(string); href == "" {
-					return nil, fmt.Errorf("navigation item %d: invalid target %q", i, target)
-				}
+			// Block javascript: in target too
+			if javascriptURLRe.MatchString(target) {
+				return nil, fmt.Errorf("navigation item %d: invalid target", i)
 			}
 		}
 
@@ -209,10 +204,10 @@ func validateHeroModule(mod map[string]interface{}) error {
 			data[key] = stripHTMLTags(v)
 		}
 	}
-	// Validate button_target
+	// Validate button_target — allow any non-empty target (custom pages allowed)
 	if target, ok := data["button_target"].(string); ok && target != "" {
-		if !allowedNavTargets[target] {
-			data["button_target"] = "subscription" // safe default
+		if javascriptURLRe.MatchString(target) {
+			return fmt.Errorf("invalid button_target")
 		}
 	}
 	return nil

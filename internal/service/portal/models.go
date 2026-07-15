@@ -14,13 +14,15 @@ type NavigationItem struct {
 }
 
 // ModuleItem represents a single content module in the portal.
+// Page links the module to a navigation target (e.g. "overview", "subscription").
 type ModuleItem struct {
-	ID     string                 `json:"id"`
-	Type   string                 `json:"type"`
-	Title  string                 `json:"title"`
-	Visible bool                  `json:"visible"`
-	Data   map[string]interface{} `json:"data"`
-	Style  map[string]interface{} `json:"style"`
+	ID      string                 `json:"id"`
+	Type    string                 `json:"type"`
+	Title   string                 `json:"title"`
+	Page    string                 `json:"page"` // which nav page this module belongs to
+	Visible bool                   `json:"visible"`
+	Data    map[string]interface{} `json:"data"`
+	Style   map[string]interface{} `json:"style"`
 }
 
 // PortalThemeConfig groups the visual/theme fields of the portal.

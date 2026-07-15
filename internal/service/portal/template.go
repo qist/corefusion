@@ -79,9 +79,9 @@ const defaultPortalHTML = `<!DOCTYPE html>
 
       <!-- Content Area -->
       <main class="main-content">
-        <!-- Custom Modules (from portal editor) -->
-        <template v-if="activeTab === 'overview' && portalModules.length > 0">
-          <div v-for="mod in portalModules" :key="mod.id" class="card glass module-wrap">
+        <!-- Dynamic Modules — all content is module-driven, no hardcoded tabs -->
+        <template v-for="mod in currentModules" :key="mod.id">
+          <div class="card glass module-wrap">
             <!-- Hero -->
             <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
               <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
@@ -108,7 +108,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
             </div>
-            <!-- Account Stats -->
+            <!-- Account Stats (simple) -->
             <div v-else-if="mod.type === 'account_stats'">
               <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ mod.title }}</span></div>
               <div class="traffic-stats">
@@ -119,11 +119,133 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
               </div>
             </div>
-            <!-- Subscription -->
+            <!-- Traffic Ring (with SVG ring) -->
+            <div v-else-if="mod.type === 'traffic_ring'">
+              <div class="card-header">
+                <span class="card-icon">📊</span>
+                <span class="card-title">{{ mod.title || '流量使用' }}</span>
+                <span class="card-action" v-if="refreshing">刷新中...</span>
+              </div>
+              <div class="traffic-ring-wrap">
+                <svg class="traffic-ring" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="52" fill="none" class="ring-bg"/>
+                  <circle cx="60" cy="60" r="52" fill="none" class="ring-fill" :stroke-dasharray="ringDash" :style="{stroke: usageColor}"/>
+                </svg>
+                <div class="ring-text">
+                  <span class="ring-percent">{{ usagePercent }}%</span>
+                  <span class="ring-label">已使用</span>
+                </div>
+              </div>
+              <div class="traffic-stats">
+                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">上传</span></div>
+                <div class="stat-divider"></div>
+                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">下载</span></div>
+                <div class="stat-divider"></div>
+                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
+              </div>
+            </div>
+            <!-- Account Info (dynamic) -->
+            <div v-else-if="mod.type === 'account_info'">
+              <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '账户信息' }}</span></div>
+              <div class="info-grid">
+                <div class="info-item"><span class="info-label">邮箱</span><span class="info-value">{{ client.email }}</span></div>
+                <div class="info-item"><span class="info-label">套餐</span><span class="info-value">{{ client.plan_name || '未购买' }}</span></div>
+                <div class="info-item"><span class="info-label">状态</span><span class="info-value"><span :class="'badge badge-' + client.status">{{ statusText }}</span></span></div>
+                <div class="info-item"><span class="info-label">到期时间</span><span class="info-value">{{ client.expires_at ? formatDate(client.expires_at) : '无限制' }}</span></div>
+              </div>
+            </div>
+            <!-- Subscription Detail (dynamic) -->
+            <div v-else-if="mod.type === 'subscription_detail'">
+              <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.title || '订阅信息' }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <div v-if="client.sub_token && client.sub_status !== 'revoked'">
+                <div class="sub-link-box">
+                  <code class="sub-link-text">{{ subUrl }}</code>
+                  <div class="sub-link-actions">
+                    <el-button size="small" type="primary" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || '复制' }}</el-button>
+                    <el-button size="small" text @click="toggleQr">{{ showQr ? '隐藏' : ((mod.data && mod.data.qr_text) || '二维码') }}</el-button>
+                  </div>
+                </div>
+                <div v-if="showQr && qrCodeUrl" class="qr-wrap">
+                  <img :src="qrCodeUrl" class="qr-img" />
+                  <span class="qr-hint">扫码导入订阅</span>
+                </div>
+                <div v-if="mod.data && mod.data.show_status !== false" class="info-grid" style="margin-top: 16px">
+                  <div class="info-item"><span class="info-label">订阅状态</span><span class="info-value"><span :class="'badge badge-' + (client.sub_status || 'none')">{{ subStatusText }}</span></span></div>
+                  <div class="info-item"><span class="info-label">最后使用</span><span class="info-value">{{ client.last_node_usage_at ? formatDate(client.last_node_usage_at) : '未使用' }}</span></div>
+                  <div class="info-item"><span class="info-label">订阅更新</span><span class="info-value">{{ client.sub_updated_at ? formatDate(client.sub_updated_at) : '未更新' }}</span></div>
+                </div>
+                <div v-if="mod.data && mod.data.show_rotate !== false" class="card-actions">
+                  <el-button type="warning" size="small" @click="rotateToken" :loading="rotating" v-if="client.sub_status === 'active'">轮换订阅 Token</el-button>
+                </div>
+              </div>
+              <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
+                <span class="empty-icon">🚫</span><p class="empty-text danger">订阅已吊销</p><p class="empty-hint">请联系管理员重新分配</p>
+              </div>
+              <div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
+                <span class="empty-icon">📭</span><p class="empty-text">暂无订阅</p><p class="empty-hint">请联系管理员分配套餐</p>
+              </div>
+              <div v-else-if="client.status === 'suspended'" class="empty-state">
+                <span class="empty-icon">⏸️</span><p class="empty-text danger">账户已暂停</p><p class="empty-hint">请续费后恢复使用</p>
+              </div>
+            </div>
+            <!-- Subscription (simple button) -->
             <div v-else-if="mod.type === 'subscription'" class="text-center">
               <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = 'subscription'">{{ mod.data.button_text }}</button>
+              <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = mod.data.button_target || 'subscription'">{{ mod.data.button_text }}</button>
+            </div>
+            <!-- Security Settings (dynamic) -->
+            <div v-else-if="mod.type === 'security_settings'">
+              <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ mod.title || '安全设置' }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <el-form v-if="mod.data && mod.data.show_ip_whitelist !== false" label-position="top" size="small">
+                <el-form-item label="IP 白名单（逗号分隔，留空不限制）">
+                  <el-input v-model="settings.ip_whitelist" placeholder="例: 192.168.1.0/24,10.0.0.1" />
+                </el-form-item>
+                <el-form-item label="设备限制（0=不限制）">
+                  <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
+                </el-form-item>
+                <el-button type="primary" size="small" @click="saveSettings">保存设置</el-button>
+              </el-form>
+              <div v-if="mod.data && mod.data.show_password !== false">
+                <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">修改密码</span></div>
+                <el-form label-position="top" size="small">
+                  <el-form-item label="旧密码"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
+                  <el-form-item label="新密码"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
+                  <el-form-item label="确认密码"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
+                  <el-button type="primary" size="small" @click="changePassword">修改密码</el-button>
+                </el-form>
+              </div>
+            </div>
+            <!-- Log Packages (dynamic) -->
+            <div v-else-if="mod.type === 'log_packages'">
+              <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ mod.title || '日志打包' }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <p v-else class="card-desc">请求打包最近日志，系统将在后台收集并压缩为可下载文件。</p>
+              <div class="log-actions">
+                <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ (mod.data && mod.data.btn_1h) || '打包最近1小时' }}</el-button>
+                <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ (mod.data && mod.data.btn_6h) || '最近6小时' }}</el-button>
+                <el-button size="small" @click="createLogPackage(24)">{{ (mod.data && mod.data.btn_24h) || '最近24小时' }}</el-button>
+              </div>
+              <div v-if="logPackages.length > 0" style="margin-top: 16px">
+                <div class="card-header"><span class="card-icon">📁</span><span class="card-title">日志包列表</span><span class="card-action" @click="fetchLogPackages">刷新</span></div>
+                <div class="logpkg-list">
+                  <div class="logpkg-item" v-for="pkg in logPackages" :key="pkg.id">
+                    <div class="logpkg-info">
+                      <span class="logpkg-id">#{{ pkg.id }}</span>
+                      <span :class="'badge badge-' + pkg.status">{{ pkgStatusText(pkg.status) }}</span>
+                      <span class="logpkg-time">{{ formatDate(pkg.created_at) }}</span>
+                    </div>
+                    <div class="logpkg-actions">
+                      <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
+                      <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">下载</el-button>
+                      <span v-if="pkg.status === 'processing'" class="logpkg-hint">处理中...</span>
+                      <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <!-- Markdown -->
             <div v-else-if="mod.type === 'markdown'" class="module-markdown" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
@@ -134,217 +256,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
           </div>
         </template>
-
-        <!-- Overview Tab -->
-        <div v-show="activeTab === 'overview'" class="tab-panel">
-          <!-- Account Card -->
-          <div class="card glass">
-            <div class="card-header">
-              <span class="card-icon">👤</span>
-              <span class="card-title">账户信息</span>
-            </div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">邮箱</span>
-                <span class="info-value">{{ client.email }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">套餐</span>
-                <span class="info-value">{{ client.plan_name || '未购买' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">状态</span>
-                <span class="info-value"><span :class="'badge badge-' + client.status">{{ statusText }}</span></span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">到期时间</span>
-                <span class="info-value">{{ client.expires_at ? formatDate(client.expires_at) : '无限制' }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Traffic Card -->
-          <div class="card glass">
-            <div class="card-header">
-              <span class="card-icon">📊</span>
-              <span class="card-title">流量使用</span>
-              <span class="card-action" v-if="refreshing">刷新中...</span>
-            </div>
-            <div class="traffic-ring-wrap">
-              <svg class="traffic-ring" viewBox="0 0 120 120">
-                <circle cx="60" cy="60" r="52" fill="none" class="ring-bg"/>
-                <circle cx="60" cy="60" r="52" fill="none" class="ring-fill"
-                  :stroke-dasharray="ringDash"
-                  :style="{stroke: usageColor}"
-                />
-              </svg>
-              <div class="ring-text">
-                <span class="ring-percent">{{ usagePercent }}%</span>
-                <span class="ring-label">已使用</span>
-              </div>
-            </div>
-            <div class="traffic-stats">
-              <div class="stat-item">
-                <span class="stat-icon">↑</span>
-                <span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span>
-                <span class="stat-label">上传</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-item">
-                <span class="stat-icon">↓</span>
-                <span class="stat-value">{{ formatBytes(client.download_bytes) }}</span>
-                <span class="stat-label">下载</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-item">
-                <span class="stat-icon">💾</span>
-                <span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span>
-                <span class="stat-label">总量</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Subscription Tab -->
-        <div v-show="activeTab === 'subscription'" class="tab-panel">
-          <div class="card glass" v-if="client.sub_token && client.sub_status !== 'revoked'">
-            <div class="card-header">
-              <span class="card-icon">📋</span>
-              <span class="card-title">订阅信息</span>
-            </div>
-            <div class="sub-link-box">
-              <code class="sub-link-text">{{ subUrl }}</code>
-              <div class="sub-link-actions">
-                <el-button size="small" type="primary" text @click="copyText(subUrl)">复制</el-button>
-                <el-button size="small" text @click="toggleQr">{{ showQr ? '隐藏' : '二维码' }}</el-button>
-              </div>
-            </div>
-            <div v-if="showQr && qrCodeUrl" class="qr-wrap">
-              <img :src="qrCodeUrl" class="qr-img" />
-              <span class="qr-hint">扫码导入订阅</span>
-            </div>
-            <div class="info-grid" style="margin-top: 16px">
-              <div class="info-item">
-                <span class="info-label">订阅状态</span>
-                <span class="info-value"><span :class="'badge badge-' + (client.sub_status || 'none')">{{ subStatusText }}</span></span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">最后使用</span>
-                <span class="info-value">{{ client.last_node_usage_at ? formatDate(client.last_node_usage_at) : '未使用' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">订阅更新</span>
-                <span class="info-value">{{ client.sub_updated_at ? formatDate(client.sub_updated_at) : '未更新' }}</span>
-              </div>
-            </div>
-            <div class="card-actions">
-              <el-button type="warning" size="small" @click="rotateToken" :loading="rotating" v-if="client.sub_status === 'active'">轮换订阅 Token</el-button>
-            </div>
-          </div>
-
-          <div class="card glass" v-else-if="client.sub_status === 'revoked'">
-            <div class="card-header">
-              <span class="card-icon">📋</span>
-              <span class="card-title">订阅信息</span>
-            </div>
-            <div class="empty-state">
-              <span class="empty-icon">🚫</span>
-              <p class="empty-text danger">订阅已吊销</p>
-              <p class="empty-hint">请联系管理员重新分配</p>
-            </div>
-          </div>
-
-          <div class="card glass" v-else-if="client.status === 'active' && !client.sub_token">
-            <div class="card-header">
-              <span class="card-icon">📋</span>
-              <span class="card-title">订阅信息</span>
-            </div>
-            <div class="empty-state">
-              <span class="empty-icon">📭</span>
-              <p class="empty-text">暂无订阅</p>
-              <p class="empty-hint">请联系管理员分配套餐</p>
-            </div>
-          </div>
-
-          <div class="card glass" v-else-if="client.status === 'suspended'">
-            <div class="card-header">
-              <span class="card-icon">📋</span>
-              <span class="card-title">订阅信息</span>
-            </div>
-            <div class="empty-state">
-              <span class="empty-icon">⏸️</span>
-              <p class="empty-text danger">账户已暂停</p>
-              <p class="empty-hint">请续费后恢复使用</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Security Tab -->
-        <div v-show="activeTab === 'security'" class="tab-panel">
-          <div class="card glass">
-            <div class="card-header">
-              <span class="card-icon">🔒</span>
-              <span class="card-title">安全设置</span>
-            </div>
-            <el-form label-position="top" size="small">
-              <el-form-item label="IP 白名单（逗号分隔，留空不限制）">
-                <el-input v-model="settings.ip_whitelist" placeholder="例: 192.168.1.0/24,10.0.0.1" />
-              </el-form-item>
-              <el-form-item label="设备限制（0=不限制）">
-                <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
-              </el-form-item>
-              <el-button type="primary" size="small" @click="saveSettings">保存设置</el-button>
-            </el-form>
-          </div>
-          <div class="card glass">
-            <div class="card-header">
-              <span class="card-icon">🔑</span>
-              <span class="card-title">修改密码</span>
-            </div>
-            <el-form label-position="top" size="small">
-              <el-form-item label="旧密码"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
-              <el-form-item label="新密码"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
-              <el-form-item label="确认密码"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
-              <el-button type="primary" size="small" @click="changePassword">修改密码</el-button>
-            </el-form>
-          </div>
-        </div>
-
-        <!-- Logs Tab -->
-        <div v-show="activeTab === 'logs'" class="tab-panel">
-          <div class="card glass">
-            <div class="card-header">
-              <span class="card-icon">📦</span>
-              <span class="card-title">日志打包</span>
-            </div>
-            <p class="card-desc">请求打包最近日志，系统将在后台收集并压缩为可下载文件。</p>
-            <div class="log-actions">
-              <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">打包最近1小时</el-button>
-              <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">最近6小时</el-button>
-              <el-button size="small" @click="createLogPackage(24)">最近24小时</el-button>
-            </div>
-          </div>
-          <div class="card glass" v-if="logPackages.length > 0">
-            <div class="card-header">
-              <span class="card-icon">📁</span>
-              <span class="card-title">日志包列表</span>
-              <span class="card-action" @click="fetchLogPackages">刷新</span>
-            </div>
-            <div class="logpkg-list">
-              <div class="logpkg-item" v-for="pkg in logPackages" :key="pkg.id">
-                <div class="logpkg-info">
-                  <span class="logpkg-id">#{{ pkg.id }}</span>
-                  <span :class="'badge badge-' + pkg.status">{{ pkgStatusText(pkg.status) }}</span>
-                  <span class="logpkg-time">{{ formatDate(pkg.created_at) }}</span>
-                </div>
-                <div class="logpkg-actions">
-                  <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                  <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">下载</el-button>
-                  <span v-if="pkg.status === 'processing'" class="logpkg-hint">处理中...</span>
-                  <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
-                </div>
-              </div>
-            </div>
+        <!-- Empty state when no modules on current page -->
+        <div v-if="currentModules.length === 0" class="card glass">
+          <div class="empty-state">
+            <span class="empty-icon">📋</span>
+            <p class="empty-text">此页面暂无内容</p>
           </div>
         </div>
       </main>
@@ -784,14 +700,23 @@ var app = createApp({
         { id: 'nav-log', label: '日志', icon: '📦', target: 'logs', enabled: true }
       ]
     }
+    // Modules for the current page (filtered by activeTab)
+    var currentModules = computed(function() {
+      return portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
+    })
+
     var onNavClick = function(nav) {
       if (nav.href) {
         if (nav.open_external) window.open(nav.href, '_blank')
         else window.location.href = nav.href
         return
       }
-      if (nav.target === 'logs') { activeTab.value = 'logs'; fetchLogPackages() }
-      else activeTab.value = nav.target
+      activeTab.value = nav.target
+      // Auto-fetch log packages if the page has log_packages modules
+      var hasLogMods = portalModules.value.some(function(m) {
+        return (m.page || 'overview') === nav.target && m.type === 'log_packages'
+      })
+      if (hasLogMods) fetchLogPackages()
     }
 
     // Apply theme
@@ -1036,7 +961,7 @@ var app = createApp({
       createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages,
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
       switchToLogs: switchToLogs,
-      portalModules: portalModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd
+      portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd
     }
   }
 })

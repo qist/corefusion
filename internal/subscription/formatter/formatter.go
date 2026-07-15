@@ -842,6 +842,14 @@ func mihomoProxyToNode(p map[string]interface{}) *Node {
 		"initial-connection-receive-window", "max-connection-receive-window",
 		"realm-opts", "packet-addr", "packet-encoding",
 		"plugin", "plugin-opts", "udp-over-tcp", "udp-over-tcp-version",
+		// TUIC specific
+		"token", "congestion-controller", "disable-sni", "udp-relay-mode",
+		// Hysteria v1 specific
+		"auth_str", "protocol", "auth-str",
+		// Socks5/HTTP specific
+		"username",
+		// SS specific
+		"obfs-min-packet-size", "obfs-max-packet-size",
 	}
 	for _, k := range copyKeys {
 		if v, ok := p[k]; ok {
@@ -903,6 +911,11 @@ func formatURI(node Node) string {
 		}
 		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
 			config["fp"] = fp
+		} else if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+			config["fp"] = fp
+		}
+		if alpnStr := extraALPN(node.Extra); alpnStr != "" {
+			config["alpn"] = alpnStr
 		}
 		// Transport sub-options from Extra
 		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
@@ -920,129 +933,321 @@ func formatURI(node Node) string {
 				config["path"] = sn
 			}
 		}
+		if h2Opts, ok := node.Extra["h2-opts"].(map[string]interface{}); ok {
+			if path, ok := h2Opts["path"].(string); ok && path != "" {
+				config["path"] = path
+			}
+			if hosts, ok := h2Opts["host"].([]string); ok && len(hosts) > 0 {
+				config["host"] = hosts[0]
+			} else if hosts, ok := h2Opts["host"].([]interface{}); ok && len(hosts) > 0 {
+				if h, ok := hosts[0].(string); ok {
+					config["host"] = h
+				}
+			}
+		}
+		if httpOpts, ok := node.Extra["http-opts"].(map[string]interface{}); ok {
+			if method, ok := httpOpts["method"].(string); ok && method != "" {
+				config["type"] = method
+			}
+			if paths, ok := httpOpts["path"].([]string); ok && len(paths) > 0 {
+				config["path"] = paths[0]
+			} else if paths, ok := httpOpts["path"].([]interface{}); ok && len(paths) > 0 {
+				if p, ok := paths[0].(string); ok {
+					config["path"] = p
+				}
+			} else if path, ok := httpOpts["path"].(string); ok && path != "" {
+				config["path"] = path
+			}
+			if headers, ok := httpOpts["headers"].(map[string]interface{}); ok {
+				if hostVal, ok := headers["Host"]; ok {
+					switch h := hostVal.(type) {
+					case string:
+						if h != "" {
+							config["host"] = h
+						}
+					case []string:
+						if len(h) > 0 {
+							config["host"] = h[0]
+						}
+					case []interface{}:
+						if len(h) > 0 {
+							if s, ok := h[0].(string); ok {
+								config["host"] = s
+							}
+						}
+					}
+				}
+			}
+		}
 		data, _ := json.Marshal(config)
 		return "vmess://" + base64.StdEncoding.EncodeToString(data)
 
 	case "vless":
 		uri := fmt.Sprintf("vless://%s@%s:%d", node.UUID, node.Host, node.Port)
-		params := []string{}
+		params := url.Values{}
 		if node.Transport != "" && node.Transport != "tcp" {
-			params = append(params, "type="+node.Transport)
+			params.Set("type", node.Transport)
 		}
 		if node.Encryption != "" && node.Encryption != "none" {
-			params = append(params, "encryption="+node.Encryption)
+			params.Set("encryption", node.Encryption)
 		}
 		if node.Flow != "" {
-			params = append(params, "flow="+node.Flow)
+			params.Set("flow", node.Flow)
 		}
 		// TLS / Reality
 		if ro, ok := node.Extra["reality-opts"].(map[string]interface{}); ok {
-			params = append(params, "security=reality")
+			params.Set("security", "reality")
 			if pk, ok := ro["public-key"].(string); ok && pk != "" {
-				params = append(params, "pbk="+pk)
+				params.Set("pbk", pk)
 			}
 			if sid, ok := ro["short-id"].(string); ok && sid != "" {
-				params = append(params, "sid="+sid)
+				params.Set("sid", sid)
 			}
 		} else if node.TLS {
-			params = append(params, "security=tls")
+			params.Set("security", "tls")
 		} else {
-			params = append(params, "security=none")
+			params.Set("security", "none")
 		}
 		if node.ServerName != "" {
-			params = append(params, "sni="+node.ServerName)
+			params.Set("sni", node.ServerName)
 		}
 		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
-			params = append(params, "fp="+fp)
+			params.Set("fp", fp)
+		} else if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+			params.Set("fp", fp)
 		}
-		if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
-			params = append(params, "alpn="+strings.Join(alpn, ","))
+		if alpnStr := extraALPN(node.Extra); alpnStr != "" {
+			params.Set("alpn", alpnStr)
+		}
+		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
+			params.Set("allowInsecure", "1")
 		}
 		// Transport sub-options
 		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
 			if path, ok := wsOpts["path"].(string); ok && path != "" {
-				params = append(params, "path="+path)
+				params.Set("path", path)
 			}
 			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
 				if host, ok := headers["Host"].(string); ok && host != "" {
-					params = append(params, "host="+host)
+					params.Set("host", host)
 				}
 			}
 			if ed, ok := wsOpts["max-early-data"].(int); ok && ed > 0 {
-				params = append(params, "ed="+strconv.Itoa(ed))
+				params.Set("ed", strconv.Itoa(ed))
+			} else if ed, ok := wsOpts["max-early-data"].(float64); ok && ed > 0 {
+				params.Set("ed", strconv.Itoa(int(ed)))
 			}
 		}
 		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
 			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
-				params = append(params, "serviceName="+sn)
+				params.Set("serviceName", sn)
 			}
 		}
 		if xhttpOpts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
 			if path, ok := xhttpOpts["path"].(string); ok && path != "" {
-				params = append(params, "path="+path)
+				params.Set("path", path)
 			}
 			if host, ok := xhttpOpts["host"].(string); ok && host != "" {
-				params = append(params, "host="+host)
+				params.Set("host", host)
 			}
 			if mode, ok := xhttpOpts["mode"].(string); ok && mode != "" {
-				params = append(params, "mode="+mode)
+				params.Set("mode", mode)
 			}
 		}
-		if len(params) > 0 {
-			uri += "?" + strings.Join(params, "&")
+		if h2Opts, ok := node.Extra["h2-opts"].(map[string]interface{}); ok {
+			if path, ok := h2Opts["path"].(string); ok && path != "" {
+				params.Set("path", path)
+			}
+			if hosts, ok := h2Opts["host"].([]string); ok && len(hosts) > 0 {
+				params.Set("host", hosts[0])
+			} else if hosts, ok := h2Opts["host"].([]interface{}); ok && len(hosts) > 0 {
+				if h, ok := hosts[0].(string); ok {
+					params.Set("host", h)
+				}
+			}
 		}
-		uri += "#" + node.Name
+		if httpOpts, ok := node.Extra["http-opts"].(map[string]interface{}); ok {
+			if method, ok := httpOpts["method"].(string); ok && method != "" {
+				params.Set("method", method)
+			}
+			if paths, ok := httpOpts["path"].([]string); ok && len(paths) > 0 {
+				params.Set("path", paths[0])
+			} else if paths, ok := httpOpts["path"].([]interface{}); ok && len(paths) > 0 {
+				if p, ok := paths[0].(string); ok {
+					params.Set("path", p)
+				}
+			} else if path, ok := httpOpts["path"].(string); ok && path != "" {
+				params.Set("path", path)
+			}
+			if headers, ok := httpOpts["headers"].(map[string]interface{}); ok {
+				if hostVal, ok := headers["Host"]; ok {
+					switch h := hostVal.(type) {
+					case string:
+						if h != "" {
+							params.Set("host", h)
+						}
+					case []string:
+						if len(h) > 0 {
+							params.Set("host", h[0])
+						}
+					case []interface{}:
+						if len(h) > 0 {
+							if s, ok := h[0].(string); ok {
+								params.Set("host", s)
+							}
+						}
+					}
+				}
+			}
+		}
+		if fm, ok := node.Extra["finalmask"].(map[string]interface{}); ok && len(fm) > 0 {
+			if fmJSON := serializeFinalMaskJSON(fm); fmJSON != "" {
+				params.Set("fm", fmJSON)
+			}
+		}
+		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
+		if encoded != "" {
+			uri += "?" + encoded
+		}
+		uri += "#" + url.PathEscape(node.Name)
 		return uri
 
 	case "trojan":
 		uri := fmt.Sprintf("trojan://%s@%s:%d", url.QueryEscape(node.Password), node.Host, node.Port)
-		params := []string{}
+		params := url.Values{}
 		if node.Transport != "" && node.Transport != "tcp" {
-			params = append(params, "type="+node.Transport)
+			params.Set("type", node.Transport)
 		}
 		// TLS / Reality
 		if ro, ok := node.Extra["reality-opts"].(map[string]interface{}); ok {
-			params = append(params, "security=reality")
+			params.Set("security", "reality")
 			if pk, ok := ro["public-key"].(string); ok && pk != "" {
-				params = append(params, "pbk="+pk)
+				params.Set("pbk", pk)
 			}
 			if sid, ok := ro["short-id"].(string); ok && sid != "" {
-				params = append(params, "sid="+sid)
+				params.Set("sid", sid)
 			}
 		} else if node.TLS {
-			params = append(params, "security=tls")
+			params.Set("security", "tls")
 		} else {
-			params = append(params, "security=none")
+			params.Set("security", "none")
 		}
 		if node.ServerName != "" {
-			params = append(params, "sni="+node.ServerName)
+			params.Set("sni", node.ServerName)
 		}
 		if fp, ok := node.Extra["client-fingerprint"].(string); ok && fp != "" {
-			params = append(params, "fp="+fp)
+			params.Set("fp", fp)
+		} else if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+			params.Set("fp", fp)
 		}
-		if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
-			params = append(params, "alpn="+strings.Join(alpn, ","))
+		if alpnStr := extraALPN(node.Extra); alpnStr != "" {
+			params.Set("alpn", alpnStr)
+		}
+		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
+			params.Set("allowInsecure", "1")
 		}
 		// Transport sub-options
 		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
 			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
-				params = append(params, "serviceName="+sn)
+				params.Set("serviceName", sn)
 			}
 		}
 		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
 			if path, ok := wsOpts["path"].(string); ok && path != "" {
-				params = append(params, "path="+path)
+				params.Set("path", path)
 			}
 			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
 				if host, ok := headers["Host"].(string); ok && host != "" {
-					params = append(params, "host="+host)
+					params.Set("host", host)
 				}
 			}
 		}
-		if len(params) > 0 {
-			uri += "?" + strings.Join(params, "&")
+		if xhttpOpts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
+			if path, ok := xhttpOpts["path"].(string); ok && path != "" {
+				params.Set("path", path)
+			}
+			if host, ok := xhttpOpts["host"].(string); ok && host != "" {
+				params.Set("host", host)
+			}
+			if mode, ok := xhttpOpts["mode"].(string); ok && mode != "" {
+				params.Set("mode", mode)
+			}
 		}
-		uri += "#" + node.Name
+		if h2Opts, ok := node.Extra["h2-opts"].(map[string]interface{}); ok {
+			if path, ok := h2Opts["path"].(string); ok && path != "" {
+				params.Set("path", path)
+			}
+			if hosts, ok := h2Opts["host"].([]string); ok && len(hosts) > 0 {
+				params.Set("host", hosts[0])
+			} else if hosts, ok := h2Opts["host"].([]interface{}); ok && len(hosts) > 0 {
+				if h, ok := hosts[0].(string); ok {
+					params.Set("host", h)
+				}
+			}
+		}
+		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
+		if encoded != "" {
+			uri += "?" + encoded
+		}
+		uri += "#" + url.PathEscape(node.Name)
+		return uri
+
+	case "tuic":
+		// tuic://uuid:password@host:port?params#name (v5) or tuic://token@host:port (legacy)
+		var userInfo string
+		if node.UUID != "" {
+			if node.Password != "" {
+				userInfo = node.UUID + ":" + node.Password
+			} else {
+				userInfo = node.UUID
+			}
+		} else if token, ok := node.Extra["token"].(string); ok && token != "" {
+			userInfo = token
+		}
+		uri := fmt.Sprintf("tuic://%s@%s:%d", url.QueryEscape(userInfo), node.Host, node.Port)
+		params := url.Values{}
+		if node.UUID != "" {
+			params.Set("uuid", node.UUID)
+		}
+		if node.Password != "" {
+			params.Set("password", node.Password)
+		}
+		if cc, ok := node.Extra["congestion-controller"].(string); ok && cc != "" {
+			params.Set("congestion_control", cc)
+		}
+		if alpnStr := extraALPN(node.Extra); alpnStr != "" {
+			params.Set("alpn", alpnStr)
+		}
+		if node.ServerName != "" {
+			params.Set("sni", node.ServerName)
+		}
+		if v, ok := node.Extra["disable-sni"].(bool); ok && v {
+			params.Set("disable_sni", "1")
+		}
+		if v, ok := node.Extra["udp-relay-mode"].(string); ok && v != "" {
+			params.Set("udp_relay_mode", v)
+		}
+		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
+			params.Set("allowInsecure", "1")
+		}
+		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
+		if encoded != "" {
+			uri += "?" + encoded
+		}
+		uri += "#" + url.PathEscape(node.Name)
+		return uri
+
+	case "shadowsocks", "shadowsocks2022", "ss":
+		// ss://base64(method:password)@host:port#name
+		method := node.Encryption
+		if method == "" {
+			if c, ok := node.Extra["cipher"].(string); ok {
+				method = c
+			}
+		}
+		userinfo := method + ":" + node.Password
+		uri := fmt.Sprintf("ss://%s@%s:%d", base64.StdEncoding.EncodeToString([]byte(userinfo)), node.Host, node.Port)
+		uri += "#" + url.PathEscape(node.Name)
 		return uri
 
 	case "hysteria2":
@@ -1164,6 +1369,10 @@ func ParseURIToNode(uri string) *Node {
 		return parseTrojanURI(body, name)
 	case "hysteria2":
 		return parseHysteria2URI(body, name)
+	case "tuic":
+		return parseTuicURI(body, name)
+	case "ss":
+		return parseSSURI(body, name)
 	}
 	return nil
 }
@@ -1596,6 +1805,124 @@ func parseHysteria2URI(body, name string) *Node {
 		ServerName: sni,
 		Password:   password,
 		Extra:      extra,
+	}
+}
+
+// extraALPN extracts ALPN as comma-separated string from Extra, handling []string, []interface{}, and string types.
+func extraALPN(extra map[string]interface{}) string {
+	switch alpn := extra["alpn"].(type) {
+	case []string:
+		if len(alpn) > 0 {
+			return strings.Join(alpn, ",")
+		}
+	case []interface{}:
+		strs := make([]string, 0, len(alpn))
+		for _, a := range alpn {
+			if s, ok := a.(string); ok {
+				strs = append(strs, s)
+			}
+		}
+		if len(strs) > 0 {
+			return strings.Join(strs, ",")
+		}
+	case string:
+		if alpn != "" {
+			return alpn
+		}
+	}
+	return ""
+}
+
+func parseTuicURI(body, name string) *Node {
+	// tuic://uuid:password@host:port?params#name
+	query := ""
+	if idx := strings.Index(body, "?"); idx >= 0 {
+		query = body[idx+1:]
+		body = body[:idx]
+	}
+	atIdx := strings.LastIndex(body, "@")
+	if atIdx < 0 {
+		return nil
+	}
+	userInfo := body[:atIdx]
+	if decoded, err := url.QueryUnescape(userInfo); err == nil {
+		userInfo = decoded
+	}
+	hostPort := body[atIdx+1:]
+	host, portStr, _ := netSplitHostPort(hostPort)
+	port := 0
+	fmt.Sscanf(portStr, "%d", &port)
+
+	params := parseQueryParams(query)
+	uuid := params["uuid"]
+	password := params["password"]
+	if uuid == "" {
+		// Legacy token format
+		uuid = userInfo
+	}
+
+	extra := make(map[string]interface{})
+	if cc := params["congestion_control"]; cc != "" {
+		extra["congestion-controller"] = cc
+	}
+	if alpn := params["alpn"]; alpn != "" {
+		extra["alpn"] = strings.Split(alpn, ",")
+	}
+	if insecure := params["allowInsecure"]; insecure == "1" || insecure == "true" {
+		extra["skip-cert-verify"] = true
+	}
+	if v := params["disable_sni"]; v == "1" || v == "true" {
+		extra["disable-sni"] = true
+	}
+	if v := params["udp_relay_mode"]; v != "" {
+		extra["udp-relay-mode"] = v
+	}
+	extra["udp"] = true
+
+	return &Node{
+		Name:       name,
+		Protocol:   "tuic",
+		Host:       host,
+		Port:       port,
+		TLS:        true,
+		ServerName: params["sni"],
+		UUID:       uuid,
+		Password:   password,
+		Extra:      extra,
+	}
+}
+
+func parseSSURI(body, name string) *Node {
+	// ss://base64(method:password)@host:port#name
+	atIdx := strings.LastIndex(body, "@")
+	if atIdx < 0 {
+		return nil
+	}
+	encoded := body[:atIdx]
+	hostPort := body[atIdx+1:]
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil
+		}
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+	method, password := parts[0], parts[1]
+	host, portStr, _ := netSplitHostPort(hostPort)
+	port := 0
+	fmt.Sscanf(portStr, "%d", &port)
+
+	return &Node{
+		Name:       name,
+		Protocol:   "shadowsocks",
+		Host:       host,
+		Port:       port,
+		Encryption: method,
+		Password:   password,
 	}
 }
 

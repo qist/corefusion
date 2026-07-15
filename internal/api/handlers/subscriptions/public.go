@@ -1716,6 +1716,14 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 		"realm-opts",
 		"packet-addr", "packet-encoding",
 		"plugin", "plugin-opts", "udp-over-tcp", "udp-over-tcp-version",
+		// TUIC specific
+		"token", "congestion-controller", "disable-sni", "udp-relay-mode",
+		// Hysteria v1 specific
+		"auth_str", "protocol", "auth-str",
+		// Socks5/HTTP specific
+		"username",
+		// SS specific
+		"obfs-min-packet-size", "obfs-max-packet-size",
 	}
 	for _, k := range copyKeys {
 		if v, ok := p[k]; ok {

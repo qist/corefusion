@@ -79,6 +79,62 @@ const defaultPortalHTML = `<!DOCTYPE html>
 
       <!-- Content Area -->
       <main class="main-content">
+        <!-- Custom Modules (from portal editor) -->
+        <template v-if="activeTab === 'overview' && portalModules.length > 0">
+          <div v-for="mod in portalModules" :key="mod.id" class="card glass module-wrap">
+            <!-- Hero -->
+            <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
+              <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
+              <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
+              <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
+              <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = mod.data.button_target || 'subscription'">{{ mod.data.button_text }}</button>
+            </div>
+            <!-- Rich Text -->
+            <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
+            <!-- Notice -->
+            <div v-else-if="mod.type === 'notice'" class="module-notice" :class="'notice-' + (mod.style && mod.style.variant || 'info')">
+              <div v-if="mod.data && mod.data.title" class="notice-title">{{ mod.data.title }}</div>
+              <div v-if="mod.data && mod.data.markdown" class="md-render" v-html="renderMd(mod.data.markdown)"></div>
+              <div v-else-if="mod.data && mod.data.html" v-html="mod.data.html"></div>
+            </div>
+            <!-- Feature Cards -->
+            <div v-else-if="mod.type === 'feature_cards'">
+              <div v-if="mod.title" class="card-header"><span class="card-title">{{ mod.title }}</span></div>
+              <div class="feature-cards-grid">
+                <div v-for="(card, ci) in ((mod.data && mod.data.cards) || []).slice(0,6)" :key="ci" class="feature-card">
+                  <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
+                  <h4>{{ card.title }}</h4>
+                  <p>{{ card.description }}</p>
+                </div>
+              </div>
+            </div>
+            <!-- Account Stats -->
+            <div v-else-if="mod.type === 'account_stats'">
+              <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ mod.title }}</span></div>
+              <div class="traffic-stats">
+                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">上传</span></div>
+                <div class="stat-divider"></div>
+                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">下载</span></div>
+                <div class="stat-divider"></div>
+                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
+              </div>
+            </div>
+            <!-- Subscription -->
+            <div v-else-if="mod.type === 'subscription'" class="text-center">
+              <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = 'subscription'">{{ mod.data.button_text }}</button>
+            </div>
+            <!-- Markdown -->
+            <div v-else-if="mod.type === 'markdown'" class="module-markdown" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
+              <div v-if="mod.title" class="card-header"><span class="card-title">{{ mod.title }}</span></div>
+              <div class="md-render" v-html="renderMd(mod.data && mod.data.markdown || '')"></div>
+            </div>
+            <!-- Custom HTML -->
+            <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
+          </div>
+        </template>
+
         <!-- Overview Tab -->
         <div v-show="activeTab === 'overview'" class="tab-panel">
           <!-- Account Card -->
@@ -295,21 +351,9 @@ const defaultPortalHTML = `<!DOCTYPE html>
 
       <!-- Bottom Navigation -->
       <nav class="bottom-nav glass">
-        <div :class="'nav-item' + (activeTab === 'overview' ? ' active' : '')" @click="activeTab = 'overview'">
-          <span class="nav-icon">📊</span>
-          <span class="nav-label">概览</span>
-        </div>
-        <div :class="'nav-item' + (activeTab === 'subscription' ? ' active' : '')" @click="activeTab = 'subscription'">
-          <span class="nav-icon">📋</span>
-          <span class="nav-label">订阅</span>
-        </div>
-        <div :class="'nav-item' + (activeTab === 'security' ? ' active' : '')" @click="activeTab = 'security'">
-          <span class="nav-icon">🔒</span>
-          <span class="nav-label">安全</span>
-        </div>
-        <div :class="'nav-item' + (activeTab === 'logs' ? ' active' : '')" @click="switchToLogs">
-          <span class="nav-icon">📦</span>
-          <span class="nav-label">日志</span>
+        <div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
+          <span class="nav-icon">{{ nav.icon || '🔗' }}</span>
+          <span class="nav-label">{{ nav.label }}</span>
         </div>
       </nav>
     </div>
@@ -318,6 +362,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
   <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrious@4/dist/qrious.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script id="portal-config"></script>
   <script id="portal-custom-js"></script>
 </body>
@@ -628,7 +673,55 @@ body {
 [data-theme="dark"] .el-tabs__item { color: var(--text-secondary); }
 [data-theme="dark"] .el-tabs__item.is-active { color: var(--accent); }
 [data-theme="dark"] .el-form-item__label { color: var(--text-secondary); }
-[data-theme="dark"] .el-dropdown-menu { background: var(--glass-bg); }`
+[data-theme="dark"] .el-dropdown-menu { background: var(--glass-bg); }
+
+/* ---- Module Styles (Portal Editor) ---- */
+.module-wrap { margin-bottom: 16px; }
+.module-hero { padding: 8px 0; }
+.module-hero .hero-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 4px; }
+.module-hero .hero-heading { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 4px 0; }
+.module-hero .hero-desc { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
+.module-hero .hero-btn { padding: 8px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; font-size: 13px; }
+.module-rich-text { font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.module-rich-text h2 { font-size: 18px; margin: 8px 0; }
+.module-rich-text h3 { font-size: 16px; margin: 8px 0; }
+.module-rich-text p { margin: 6px 0; }
+.module-rich-text blockquote { border-left: 3px solid var(--accent); padding-left: 12px; margin: 8px 0; color: var(--text-secondary); }
+.module-rich-text ul, .module-rich-text ol { padding-left: 20px; margin: 6px 0; }
+.module-notice { border-left: 4px solid; padding: 12px; border-radius: 8px; }
+.notice-info { border-color: var(--accent); background: var(--accent-light); }
+.notice-success { border-color: var(--success); background: rgba(103,194,58,0.12); }
+.notice-warning { border-color: var(--warning); background: rgba(230,162,60,0.12); }
+.notice-error { border-color: var(--danger); background: rgba(245,108,108,0.12); }
+.module-notice .notice-title { font-weight: 600; margin-bottom: 4px; }
+.feature-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+.feature-card { padding: 12px; background: var(--accent-light); border-radius: 10px; text-align: center; }
+.feature-card-icon { font-size: 24px; display: block; margin-bottom: 4px; }
+.feature-card h4 { font-size: 13px; margin: 2px 0; color: var(--text-primary); }
+.feature-card p { font-size: 12px; color: var(--text-muted); }
+.text-center { text-align: center; }
+/* ---- Markdown Render Styles ---- */
+.module-markdown { padding: 4px 0; }
+.md-render { font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.md-render h1 { font-size: 22px; font-weight: 700; margin: 16px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.md-render h2 { font-size: 18px; font-weight: 700; margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md-render h3 { font-size: 16px; font-weight: 600; margin: 12px 0 4px; }
+.md-render h4 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
+.md-render p { margin: 6px 0; }
+.md-render a { color: var(--accent); text-decoration: none; }
+.md-render a:hover { text-decoration: underline; }
+.md-render strong { font-weight: 600; }
+.md-render blockquote { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 8px 0; color: var(--text-secondary); background: var(--accent-light); border-radius: 0 6px 6px 0; }
+.md-render code { background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: 'SF Mono','Fira Code',Consolas,monospace; }
+.md-render pre { background: #1e1e2e; color: #cdd6f4; padding: 14px; border-radius: 8px; overflow-x: auto; margin: 10px 0; }
+.md-render pre code { background: none; padding: 0; color: inherit; }
+.md-render ul, .md-render ol { padding-left: 20px; margin: 6px 0; }
+.md-render li { margin: 3px 0; }
+.md-render table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+.md-render th, .md-render td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.md-render th { background: var(--accent-light); font-weight: 600; }
+.md-render hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.md-render img { max-width: 100%; border-radius: 8px; }`
 
 const defaultPortalJS = `var createApp = Vue.createApp
 var ref = Vue.ref
@@ -664,6 +757,41 @@ var app = createApp({
     var registrationEnabled = ref(false)
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.registration_enabled !== undefined) {
       registrationEnabled.value = PORTAL_CONFIG.registration_enabled
+    }
+
+    // Portal editor: modules & navigation from PORTAL_CONFIG
+    var portalModules = ref([])
+    var portalNavItems = ref([])
+    // Markdown renderer (using marked.js loaded from CDN)
+    var renderMd = function(md) {
+      if (!md) return ''
+      try { return marked.parse(md, { breaks: true, gfm: true }) } catch(e) { return md }
+    }
+    if (typeof PORTAL_CONFIG !== 'undefined') {
+      if (Array.isArray(PORTAL_CONFIG.modules)) {
+        portalModules.value = PORTAL_CONFIG.modules.filter(function(m) { return m.visible !== false })
+      }
+      if (Array.isArray(PORTAL_CONFIG.navigation)) {
+        portalNavItems.value = PORTAL_CONFIG.navigation.filter(function(n) { return n.enabled !== false })
+      }
+    }
+    // Fallback to default nav if none configured
+    if (portalNavItems.value.length === 0) {
+      portalNavItems.value = [
+        { id: 'nav-ov', label: '概览', icon: '📊', target: 'overview', enabled: true },
+        { id: 'nav-sub', label: '订阅', icon: '📋', target: 'subscription', enabled: true },
+        { id: 'nav-sec', label: '安全', icon: '🔒', target: 'security', enabled: true },
+        { id: 'nav-log', label: '日志', icon: '📦', target: 'logs', enabled: true }
+      ]
+    }
+    var onNavClick = function(nav) {
+      if (nav.href) {
+        if (nav.open_external) window.open(nav.href, '_blank')
+        else window.location.href = nav.href
+        return
+      }
+      if (nav.target === 'logs') { activeTab.value = 'logs'; fetchLogPackages() }
+      else activeTab.value = nav.target
     }
 
     // Apply theme
@@ -907,7 +1035,8 @@ var app = createApp({
       toggleQr: toggleQr, toggleTheme: toggleTheme,
       createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages,
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
-      switchToLogs: switchToLogs
+      switchToLogs: switchToLogs,
+      portalModules: portalModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd
     }
   }
 })

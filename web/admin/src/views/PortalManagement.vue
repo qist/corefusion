@@ -359,8 +359,14 @@ ctx.moduleTitle           — 当前模块标题</pre>
                       </template>
                       <template v-else-if="selectedModule.type === 'notice'">
                         <div class="preview-module preview-notice" :class="'notice-' + (selectedModule.style?.variant || 'info')">
+                          <div v-if="selectedModule.data?.display_mode === 'popup'" class="preview-popup-badge">🪟 弹窗模式 · {{ selectedModule.data?.popup_trigger === 'on_load' ? '进入页面自动弹出' : '点击卡片弹出' }} · {{ selectedModule.data?.popup_dismiss === 'once' ? '关闭后不再弹出' : '每次访问弹出' }}</div>
                           <div class="notice-title">{{ selectedModule.data?.title || selectedModule.title }}</div>
                           <div v-if="selectedModule.data?.markdown" class="notice-body md-preview-content" v-html="renderMd(selectedModule.data.markdown)"></div>
+                          <div v-if="selectedModule.data?.display_mode === 'popup' && selectedModule.data?.popup_trigger === 'manual'" class="notice-popup-hint-preview">📍 用户点击此卡片查看详情</div>
+                          <div v-if="selectedModule.data?.display_mode === 'popup'" class="preview-popup-actions">
+                            <span v-if="selectedModule.data?.popup_link_url" class="preview-popup-btn-link">🔗 {{ selectedModule.data?.popup_link_text || '查看详情' }}</span>
+                            <span class="preview-popup-btn-dismiss">{{ selectedModule.data?.popup_button_text || '我知道了' }}</span>
+                          </div>
                         </div>
                       </template>
                       <template v-else-if="selectedModule.type === 'custom_html'">
@@ -502,10 +508,12 @@ ctx.moduleTitle           — 当前模块标题</pre>
                   </div>
 
                   <!-- Notice Module Preview -->
-                  <div v-else-if="mod.type === 'notice'" class="preview-module preview-notice" :class="'notice-' + (mod.style?.variant || 'info')">
+                  <div v-else-if="mod.type === 'notice'" class="preview-module preview-notice" :class="'notice-' + (mod.style?.variant || 'info')" :style="{ cursor: mod.data?.display_mode === 'popup' && mod.data?.popup_trigger === 'manual' ? 'pointer' : 'default' }">
+                    <div v-if="mod.data?.display_mode === 'popup'" class="preview-popup-badge">🪟 弹窗模式 · {{ mod.data?.popup_trigger === 'on_load' ? '自动' : '点击' }} · {{ mod.data?.popup_dismiss === 'once' ? '仅一次' : '每次' }}</div>
                     <div class="notice-title">{{ mod.data?.title || mod.title }}</div>
                     <div v-if="mod.data?.markdown" class="notice-body md-preview-content" v-html="renderMd(mod.data.markdown)"></div>
                     <div v-else-if="mod.data?.html" class="notice-body" v-html="sanitizeHtml(mod.data.html)"></div>
+                    <div v-if="mod.data?.display_mode === 'popup' && mod.data?.popup_link_url" class="preview-notice-link">🔗 {{ mod.data?.popup_link_text || '查看详情' }} → {{ mod.data?.popup_link_url }}</div>
                   </div>
 
                   <!-- Feature Cards Module Preview -->
@@ -683,6 +691,54 @@ ctx.moduleTitle           — 当前模块标题</pre>
                     <el-option label="信息" value="info" /><el-option label="成功" value="success" /><el-option label="警告" value="warning" /><el-option label="错误" value="error" />
                   </el-select>
                 </el-form-item>
+                <el-divider content-position="left">弹窗设置</el-divider>
+                <el-form-item label="显示方式">
+                  <el-radio-group v-model="selectedModule.data.display_mode">
+                    <el-radio value="inline">内嵌卡片</el-radio>
+                    <el-radio value="popup">弹窗</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <template v-if="selectedModule.data.display_mode === 'popup'">
+                  <el-form-item label="弹窗触发">
+                    <el-radio-group v-model="selectedModule.data.popup_trigger">
+                      <el-radio value="on_load">进入页面自动弹</el-radio>
+                      <el-radio value="manual">点击卡片弹</el-radio>
+                    </el-radio-group>
+                  </el-form-item>
+                  <el-form-item label="关闭后">
+                    <el-radio-group v-model="selectedModule.data.popup_dismiss">
+                      <el-radio value="once">不再弹出</el-radio>
+                      <el-radio value="always">每次访问弹出</el-radio>
+                    </el-radio-group>
+                  </el-form-item>
+                  <el-form-item label="弹窗宽度">
+                    <el-select v-model="selectedModule.data.popup_width" style="width: 100%">
+                      <el-option label="窄 (360px)" value="360px" />
+                      <el-option label="标准 (480px)" value="480px" />
+                      <el-option label="宽 (640px)" value="640px" />
+                      <el-option label="超宽 (800px)" value="800px" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="关闭按钮文案">
+                    <el-input v-model="selectedModule.data.popup_button_text" placeholder="我知道了" />
+                  </el-form-item>
+                  <el-form-item label="显示关闭叉号">
+                    <el-switch v-model="selectedModule.data.popup_show_close" :active-value="true" :inactive-value="false" />
+                  </el-form-item>
+                  <el-divider content-position="left">外链按钮（可选）</el-divider>
+                  <el-form-item label="按钮文案">
+                    <el-input v-model="selectedModule.data.popup_link_text" placeholder="查看详情" />
+                  </el-form-item>
+                  <el-form-item label="链接地址">
+                    <el-input v-model="selectedModule.data.popup_link_url" placeholder="https://example.com" />
+                  </el-form-item>
+                  <el-form-item v-if="selectedModule.data.popup_link_url" label="新窗口打开">
+                    <el-switch v-model="selectedModule.data.popup_link_external" :active-value="true" :inactive-value="false" />
+                  </el-form-item>
+                </template>
+                <el-alert v-if="selectedModule.data.display_mode === 'popup'" type="info" :closable="false" show-icon style="margin-top: 4px">
+                  <span style="font-size: 12px">Markdown 中的链接会自动渲染为可点击外链。弹窗内容在中间编辑区编写。</span>
+                </el-alert>
               </template>
 
               <!-- Feature Cards Properties -->
@@ -1212,6 +1268,22 @@ function ensureCustomCss(mod) {
   if (typeof mod.style.custom_css !== 'string') mod.style.custom_css = ''
 }
 
+// Ensure notice module has popup-related data fields initialized
+function ensureNoticeData(mod) {
+  if (!mod || mod.type !== 'notice') return
+  if (!mod.data) mod.data = {}
+  const d = mod.data
+  if (typeof d.display_mode !== 'string') d.display_mode = 'inline'
+  if (typeof d.popup_trigger !== 'string') d.popup_trigger = 'on_load'
+  if (typeof d.popup_dismiss !== 'string') d.popup_dismiss = 'once'
+  if (typeof d.popup_width !== 'string') d.popup_width = '480px'
+  if (typeof d.popup_button_text !== 'string') d.popup_button_text = '我知道了'
+  if (typeof d.popup_show_close !== 'boolean') d.popup_show_close = true
+  if (typeof d.popup_link_text !== 'string') d.popup_link_text = ''
+  if (typeof d.popup_link_url !== 'string') d.popup_link_url = ''
+  if (typeof d.popup_link_external !== 'boolean') d.popup_link_external = true
+}
+
 // Default CSS templates for each module type (mirrors portal runtime styles)
 const defaultModuleCssMap = {
   hero: `/* Hero 欢迎区样式 */
@@ -1639,6 +1711,11 @@ function selectNav(id) {
 function selectModule(id) {
   selectedModuleId.value = id  // show module properties in right panel
   selectedNavId.value = ''     // clear nav editing, but keep currentPageNavId
+  const mod = modules.value.find(m => m.id === id)
+  if (mod) {
+    ensureCustomCss(mod)
+    ensureNoticeData(mod)
+  }
   autoCenterViewMode()
 }
 
@@ -1676,7 +1753,7 @@ function addModule(type) {
     hero: { data: { eyebrow: '', heading: '新标题', description: '', button_text: '', button_target: 'subscription' }, style: { variant: 'primary', align: 'left', custom_css: '' } },
     markdown: { data: { markdown: '## 标题\n\n在这里编写 Markdown 内容。\n\n- 支持 **粗体**、*斜体*\n- 支持 [链接](https://example.com)\n- 支持代码块\n\n```js\nconsole.log("hello")\n```\n' }, style: { align: 'left', custom_css: '' } },
     rich_text: { data: { html: '<p>在此编辑富文本内容</p>' }, style: { align: 'left', custom_css: '' } },
-    notice: { data: { title: '公告', markdown: '公告正文，支持 **Markdown** 格式。' }, style: { variant: 'info', custom_css: '' } },
+    notice: { data: { title: '公告', markdown: '公告正文，支持 **Markdown** 格式。\n\n支持 [外链](https://example.com) 和列表。', display_mode: 'inline', popup_trigger: 'on_load', popup_dismiss: 'once', popup_width: '480px', popup_button_text: '我知道了', popup_show_close: true, popup_link_text: '', popup_link_url: '', popup_link_external: true }, style: { variant: 'info', custom_css: '' } },
     feature_cards: { data: { cards: [{ icon: '⭐', title: '功能一', description: '功能描述' }] }, style: { custom_css: '' } },
     account_stats: { data: {}, style: { layout: 'grid', custom_css: '' } },
     account_info: { data: {}, style: { custom_css: '' } },
@@ -1861,7 +1938,12 @@ const applyData = (d) => {
       Object.assign(config, cfg)
       navigation.value = Array.isArray(cfg.navigation) && cfg.navigation.length > 0 ? cfg.navigation : JSON.parse(JSON.stringify(defaultNavigation))
       const rawMods = Array.isArray(cfg.modules) && cfg.modules.length > 0 ? cfg.modules : JSON.parse(JSON.stringify(defaultModules))
-      modules.value = rawMods.map(m => ({ ...m, page: m.page || 'overview' }))
+      modules.value = rawMods.map(m => {
+        const mod = { ...m, page: m.page || 'overview' }
+        ensureCustomCss(mod)
+        ensureNoticeData(mod)
+        return mod
+      })
     } catch {
       navigation.value = JSON.parse(JSON.stringify(defaultNavigation))
       modules.value = JSON.parse(JSON.stringify(defaultModules))
@@ -1869,7 +1951,12 @@ const applyData = (d) => {
   } else {
     navigation.value = Array.isArray(d.navigation) && d.navigation.length > 0 ? d.navigation : JSON.parse(JSON.stringify(defaultNavigation))
     const rawMods = Array.isArray(d.modules) && d.modules.length > 0 ? d.modules : JSON.parse(JSON.stringify(defaultModules))
-    modules.value = rawMods.map(m => ({ ...m, page: m.page || 'overview' }))
+    modules.value = rawMods.map(m => {
+      const mod = { ...m, page: m.page || 'overview' }
+      ensureCustomCss(mod)
+      ensureNoticeData(mod)
+      return mod
+    })
   }
   // Auto-select first nav if none selected
   if (navigation.value.length > 0) {
@@ -2111,6 +2198,12 @@ onMounted(() => { fetchConfig() })
 .notice-error { border-color: #f56c6c; background: #fef0f0; }
 .notice-title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
 .notice-body { font-size: 13px; }
+.preview-popup-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #e8f4fd; color: #409eff; margin-bottom: 8px; font-weight: 600; }
+.preview-notice-link { font-size: 11px; color: #409eff; margin-top: 6px; word-break: break-all; }
+.notice-popup-hint-preview { font-size: 11px; color: #909399; margin-top: 6px; padding: 4px 8px; background: #f5f7fa; border-radius: 4px; }
+.preview-popup-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.06); }
+.preview-popup-btn-link { font-size: 12px; color: #409eff; padding: 4px 12px; border: 1px solid #409eff; border-radius: 4px; }
+.preview-popup-btn-dismiss { font-size: 12px; color: #fff; padding: 4px 12px; background: #409eff; border-radius: 4px; }
 
 .preview-feature-cards .feature-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .feature-card { padding: 12px; background: var(--pv-bg); border-radius: 8px; text-align: center; }

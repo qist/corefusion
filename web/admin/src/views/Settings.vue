@@ -301,6 +301,9 @@
             <el-divider content-position="left">GitHub OAuth</el-divider>
             <el-form-item label="启用 GitHub OAuth">
               <el-switch v-model="oauthForm.github_enabled" />
+              <div v-if="oauthForm.github_enabled && (!oauthForm.github_client_id || !oauthForm.github_client_secret)" style="font-size:11px;color:#e6a23c;margin-top:4px">
+                ⚠️ 已开启但未配置 Client ID / Secret，用户端不会显示 GitHub 登录按钮
+              </div>
             </el-form-item>
             <template v-if="oauthForm.github_enabled">
               <el-form-item label="Client ID">
@@ -309,10 +312,17 @@
               <el-form-item label="Client Secret">
                 <el-input v-model="oauthForm.github_client_secret" type="password" show-password />
               </el-form-item>
+              <el-form-item label="回调地址">
+                <el-input :model-value="githubCallbackURL" readonly />
+                <div style="font-size:11px;color:#999;margin-top:4px">请将此地址填入 GitHub OAuth App 的 Authorization callback URL</div>
+              </el-form-item>
             </template>
             <el-divider content-position="left">Google OAuth</el-divider>
             <el-form-item label="启用 Google OAuth">
               <el-switch v-model="oauthForm.google_enabled" />
+              <div v-if="oauthForm.google_enabled && (!oauthForm.google_client_id || !oauthForm.google_client_secret)" style="font-size:11px;color:#e6a23c;margin-top:4px">
+                ⚠️ 已开启但未配置 Client ID / Secret，用户端不会显示 Google 登录按钮
+              </div>
             </el-form-item>
             <template v-if="oauthForm.google_enabled">
               <el-form-item label="Client ID">
@@ -320,6 +330,10 @@
               </el-form-item>
               <el-form-item label="Client Secret">
                 <el-input v-model="oauthForm.google_client_secret" type="password" show-password />
+              </el-form-item>
+              <el-form-item label="回调地址">
+                <el-input :model-value="googleCallbackURL" readonly />
+                <div style="font-size:11px;color:#999;margin-top:4px">请将此地址填入 Google OAuth 2.0 凭据的已获授权的重定向 URI</div>
               </el-form-item>
             </template>
             <el-form-item>
@@ -603,6 +617,16 @@ const selfUnbanSaving = ref(false)
 // OAuth config
 const oauthForm = ref({ github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
 const oauthSaving = ref(false)
+
+// OAuth callback URLs (computed from current location)
+const githubCallbackURL = computed(() => {
+  const base = window.location.origin
+  return base + '/api/v1/client-auth/oauth/github/callback'
+})
+const googleCallbackURL = computed(() => {
+  const base = window.location.origin
+  return base + '/api/v1/client-auth/oauth/google/callback'
+})
 
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 

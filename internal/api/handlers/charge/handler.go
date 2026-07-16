@@ -146,7 +146,22 @@ func (h *Handler) ListOrders(c *gin.Context) {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.Paginated(c, items, total, limit, offset)
+	// Enrich with client email
+	type orderVO struct {
+		entity.ChargeOrder
+		ClientEmail    string `json:"client_email"`
+		ClientNickname string `json:"client_nickname"`
+	}
+	result := make([]orderVO, 0, len(items))
+	for _, o := range items {
+		vo := orderVO{ChargeOrder: o}
+		if cli, err := h.clientRepo.GetByID(c.Request.Context(), o.ClientID); err == nil {
+			vo.ClientEmail = cli.Email
+			vo.ClientNickname = cli.Nickname
+		}
+		result = append(result, vo)
+	}
+	response.Paginated(c, result, total, limit, offset)
 }
 
 // RefundOrderInput is the input for refunding a charge order.
@@ -387,7 +402,22 @@ func (h *Handler) ListBalances(c *gin.Context) {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.Paginated(c, items, total, limit, offset)
+	// Enrich with client email & nickname
+	type balanceVO struct {
+		entity.ClientBalance
+		ClientEmail    string `json:"client_email"`
+		ClientNickname string `json:"client_nickname"`
+	}
+	result := make([]balanceVO, 0, len(items))
+	for _, b := range items {
+		vo := balanceVO{ClientBalance: b}
+		if cli, err := h.clientRepo.GetByID(c.Request.Context(), b.ClientID); err == nil {
+			vo.ClientEmail = cli.Email
+			vo.ClientNickname = cli.Nickname
+		}
+		result = append(result, vo)
+	}
+	response.Paginated(c, result, total, limit, offset)
 }
 
 // AdjustBalanceInput is the input for adjusting client balance.

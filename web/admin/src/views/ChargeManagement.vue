@@ -61,8 +61,8 @@
               <el-tag :type="row.order_type==='charge'?'':'warning'" size="small">{{ row.order_type==='charge'?'充值':'购套' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="金额" width="100">
-            <template #default="{row}">¥{{ (row.amount/100).toFixed(2) }}</template>
+          <el-table-column :label="t('currency.amount')" width="120">
+            <template #default="{row}">{{ formatAmount(row.amount, row.currency || 'CNY') }}</template>
           </el-table-column>
           <el-table-column label="支付方式" width="90">
             <template #default="{row}">{{ row.method || '—' }}</template>
@@ -120,9 +120,10 @@
               <el-tag :type="row.card_type==='balance'?'':'warning'" size="small">{{ row.card_type==='balance'?'金额':'套餐' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="面值" width="120">
+          <el-table-column label="面值/套餐" width="200" show-overflow-tooltip>
             <template #default="{row}">
-              {{ row.card_type==='balance' ? '¥'+(row.value/100).toFixed(2) : '规格#'+row.value }}
+              <span v-if="row.card_type==='balance'">{{ formatAmount(row.value, row.currency || 'CNY') }}</span>
+              <el-tag v-else type="warning" size="small">{{ findVariantName(row.value) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="使用" width="80">
@@ -156,11 +157,11 @@
         <el-table :data="balances" v-loading="balancesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" label="客户端ID" width="100" />
-          <el-table-column label="余额" width="120">
-            <template #default="{row}">¥{{ (row.balance/100).toFixed(2) }}</template>
+          <el-table-column :label="t('currency.balance')" width="140">
+            <template #default="{row}">{{ formatAmount(row.balance, row.currency || 'CNY') }}</template>
           </el-table-column>
-          <el-table-column label="冻结" width="120">
-            <template #default="{row}">¥{{ (row.frozen/100).toFixed(2) }}</template>
+          <el-table-column :label="t('currency.frozen')" width="140">
+            <template #default="{row}">{{ formatAmount(row.frozen, row.currency || 'CNY') }}</template>
           </el-table-column>
           <el-table-column label="操作" width="200">
             <template #default="{row}">
@@ -211,9 +212,9 @@
         <el-descriptions-item label="客户端ID">{{ currentOrder.client_id }}</el-descriptions-item>
         <el-descriptions-item label="来源">{{ sourceLabel(currentOrder.source) }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ currentOrder.order_type==='charge'?'充值':'购套' }}</el-descriptions-item>
-        <el-descriptions-item label="金额">¥{{ ((currentOrder.amount||0)/100).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('currency.amount')">{{ formatAmount(currentOrder.amount || 0, currentOrder.currency || 'CNY') }}</el-descriptions-item>
         <el-descriptions-item label="支付币种">{{ currentOrder.paid_currency || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="支付金额">{{ currentOrder.paid_amount ? (currentOrder.paid_amount/100).toFixed(2) : '—' }}</el-descriptions-item>
+        <el-descriptions-item label="支付金额">{{ currentOrder.paid_amount ? formatAmount(currentOrder.paid_amount, currentOrder.paid_currency || 'CNY') : '—' }}</el-descriptions-item>
         <el-descriptions-item label="汇率">{{ currentOrder.exchange_rate || '—' }}</el-descriptions-item>
         <el-descriptions-item label="支付方式">{{ currentOrder.method || '—' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
@@ -228,15 +229,38 @@
     </el-dialog>
 
     <!-- 新增充值卡弹窗 -->
-    <el-dialog v-model="cardDialog" title="新增充值卡" width="450px">
-      <el-form :model="cardForm" label-width="80px" size="small">
+    <el-dialog v-model="cardDialog" title="新增充值卡" width="560px">
+      <el-form :model="cardForm" label-width="90px" size="small">
         <el-form-item label="类型">
           <el-select v-model="cardForm.card_type" style="width:100%">
             <el-option label="金额型" value="balance" />
             <el-option label="套餐型" value="plan" />
           </el-select>
         </el-form-item>
-        <el-form-item label="面值(分)"><el-input-number v-model="cardForm.value" :min="1" style="width:100%" /></el-form-item>
+        <el-form-item v-if="cardForm.card_type==='balance'" :label="t('currency.amount')">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="cardForm.currency" style="width:140px" @change="onCardCurrencyChange">
+              <el-option v-for="c in CURRENCIES" :key="c.code" :label="`${c.code} ${c.symbol} (${t(c.nameKey)})`" :value="c.code" />
+            </el-select>
+            <el-input-number v-model="cardForm.value_yuan" :min="0.01" :step="getAmountStep(cardForm.currency)" :precision="getCurrencyDecimals(cardForm.currency)" style="flex:1" :placeholder="getValuePlaceholder(cardForm.currency)" />
+          </div>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('currency.amountHint') }}</div>
+        </el-form-item>
+        <el-form-item v-if="cardForm.card_type==='plan'" label="绑定套餐">
+          <el-select v-model="cardForm.plan_variant_id" placeholder="选择套餐规格" filterable style="width:100%">
+            <el-option v-for="v in planTypeVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
+        </el-form-item>
+        <el-form-item label="卡号前缀">
+          <el-input v-model="cardForm.card_prefix" placeholder="CF" style="width:100%" />
+          <div style="font-size:12px;color:#909399;margin-top:4px">留空则无前缀，如 CF、VIP、GIFT 等</div>
+        </el-form-item>
+        <el-form-item label="卡号格式">
+          <el-select v-model="cardForm.card_code_format" style="width:100%">
+            <el-option v-for="f in cardCodeFormats" :key="f.value" :label="formatPreview(f.value, cardForm.card_prefix)" :value="f.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="可用次数"><el-input-number v-model="cardForm.max_uses" :min="1" style="width:100%" /></el-form-item>
         <el-form-item label="过期时间"><el-date-picker v-model="cardForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="cardForm.remark" /></el-form-item>
@@ -248,17 +272,40 @@
     </el-dialog>
 
     <!-- 批量生成弹窗 -->
-    <el-dialog v-model="batchDialog" title="批量生成充值卡" width="500px">
-      <el-form :model="batchForm" label-width="90px" size="small">
+    <el-dialog v-model="batchDialog" title="批量生成充值卡" width="560px">
+      <el-form :model="batchForm" label-width="100px" size="small">
         <el-form-item label="类型">
           <el-select v-model="batchForm.card_type" style="width:100%">
             <el-option label="金额型" value="balance" />
             <el-option label="套餐型" value="plan" />
           </el-select>
         </el-form-item>
-        <el-form-item label="面值(分)"><el-input-number v-model="batchForm.value" :min="1" style="width:100%" /></el-form-item>
+        <el-form-item v-if="batchForm.card_type==='balance'" :label="t('currency.amount')">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="batchForm.currency" style="width:140px" @change="onBatchCurrencyChange">
+              <el-option v-for="c in CURRENCIES" :key="c.code" :label="`${c.code} ${c.symbol} (${t(c.nameKey)})`" :value="c.code" />
+            </el-select>
+            <el-input-number v-model="batchForm.value_yuan" :min="0.01" :step="getAmountStep(batchForm.currency)" :precision="getCurrencyDecimals(batchForm.currency)" style="flex:1" :placeholder="getValuePlaceholder(batchForm.currency)" />
+          </div>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('currency.amountHint') }}</div>
+        </el-form-item>
+        <el-form-item v-if="batchForm.card_type==='plan'" label="绑定套餐">
+          <el-select v-model="batchForm.plan_variant_id" placeholder="选择套餐规格" filterable style="width:100%">
+            <el-option v-for="v in planTypeVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
+        </el-form-item>
         <el-form-item label="数量"><el-input-number v-model="batchForm.count" :min="1" :max="1000" style="width:100%" /></el-form-item>
         <el-form-item label="每卡次数"><el-input-number v-model="batchForm.max_uses" :min="1" style="width:100%" /></el-form-item>
+        <el-form-item label="卡号前缀">
+          <el-input v-model="batchForm.card_prefix" placeholder="CF" style="width:100%" />
+          <div style="font-size:12px;color:#909399;margin-top:4px">留空则无前缀，如 CF、VIP、GIFT 等</div>
+        </el-form-item>
+        <el-form-item label="卡号格式">
+          <el-select v-model="batchForm.card_code_format" style="width:100%">
+            <el-option v-for="f in cardCodeFormats" :key="f.value" :label="formatPreview(f.value, batchForm.card_prefix)" :value="f.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="过期时间"><el-date-picker v-model="batchForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="batchForm.remark" /></el-form-item>
       </el-form>
@@ -271,12 +318,17 @@
     <!-- 余额调整弹窗 -->
     <el-dialog v-model="adjustDialog" :title="'调整余额 - 客户#'+adjustForm.client_id" width="450px">
       <el-form :model="adjustForm" label-width="80px" size="small">
-        <el-form-item label="当前余额">
-          <span style="font-weight:600;color:#409eff">¥{{ ((adjustForm.current_balance||0)/100).toFixed(2) }}</span>
+        <el-form-item :label="t('currency.balance')">
+          <span style="font-weight:600;color:#409eff">{{ formatAmount(adjustForm.current_balance || 0, adjustForm.currency || 'CNY') }}</span>
         </el-form-item>
-        <el-form-item label="调整金额">
-          <el-input-number v-model="adjustForm.amount" :step="100" style="width:100%" />
-          <div style="font-size:12px;color:#909399;margin-top:4px">正数=充值，负数=扣减（单位：分）</div>
+        <el-form-item :label="t('currency.amount')">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="adjustForm.currency" style="width:140px" disabled>
+              <el-option v-for="c in CURRENCIES" :key="c.code" :label="`${c.code} ${c.symbol}`" :value="c.code" />
+            </el-select>
+            <el-input-number v-model="adjustForm.amount_yuan" :step="getAmountStep(adjustForm.currency)" :precision="getCurrencyDecimals(adjustForm.currency)" style="flex:1" />
+          </div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">正数=充值，负数=扣减</div>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="adjustForm.remark" placeholder="管理员调整" /></el-form-item>
       </el-form>
@@ -298,12 +350,12 @@
         <el-table-column label="金额" width="120">
           <template #default="{row}">
             <span :style="{color: row.amount>0?'#67c23a':'#f56c6c', fontWeight:600}">
-              {{ row.amount>0?'+':'' }}{{ (row.amount/100).toFixed(2) }}
+              {{ row.amount>0?'+':'' }}{{ formatAmount(Math.abs(row.amount), row.currency || 'CNY') }}
             </span>
           </template>
         </el-table-column>
         <el-table-column label="余额" width="100">
-          <template #default="{row}">¥{{ (row.balance_after/100).toFixed(2) }}</template>
+          <template #default="{row}">{{ formatAmount(row.balance_after, row.currency || 'CNY') }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" show-overflow-tooltip />
         <el-table-column label="时间" width="160">
@@ -319,8 +371,8 @@
       </el-alert>
       <el-table :data="batchResult" stripe size="small" max-height="400">
         <el-table-column prop="card_code" label="卡号" width="220" />
-        <el-table-column label="面值" width="120">
-          <template #default="{row}">{{ batchResultType==='balance' ? '¥'+(row.value/100).toFixed(2) : '规格#'+row.value }}</template>
+        <el-table-column :label="t('currency.amount')" width="200" show-overflow-tooltip>
+          <template #default="{row}">{{ batchResultType==='balance' ? formatAmount(row.value, batchResultCurrency) : findVariantName(row.value) }}</template>
         </el-table-column>
         <el-table-column label="次数" width="80">
           <template #default="{row}">{{ row.max_uses }}</template>
@@ -335,9 +387,28 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import * as chargeApi from '../api/charge'
+import * as planApi from '../api/plan'
+import { CURRENCIES, getCurrencyInfo, getCurrencySymbol, getCurrencyDecimals, yuanToMinor, minorToYuan, formatAmount, getAmountStep, getValuePlaceholder } from '../utils/currency'
+
+const { t, locale } = useI18n()
+
+// Default currency - fetched from system settings
+const defaultCurrency = ref('CNY')
+async function fetchDefaultCurrency() {
+  try {
+    const client = (await import('../api/client')).default
+    const d = await client.get('/system/settings', { params: { prefix: 'currency' } })
+    if (d && d.items) {
+      for (const item of d.items) {
+        if (item.key === 'currency.default') defaultCurrency.value = item.value || 'CNY'
+      }
+    }
+  } catch {}
+}
 
 const activeTab = ref('sites')
 
@@ -439,6 +510,7 @@ const batchResultDialog = ref(false)
 const batchResult = ref([])
 const batchResultBatchId = ref('')
 const batchResultType = ref('balance')
+const batchResultCurrency = ref('CNY')
 
 async function fetchCards() {
   cardsLoading.value = true
@@ -452,30 +524,84 @@ async function fetchCards() {
   } catch {} finally { cardsLoading.value = false }
 }
 function showCreateCard() {
-  cardForm.value = { card_type: 'balance', value: 1000, max_uses: 1, expires_at: null, remark: '' }
+  cardForm.value = {
+    card_type: 'balance', value_yuan: 10, currency: defaultCurrency.value, plan_variant_id: null,
+    card_prefix: loadSavedPrefix(), card_code_format: loadSavedFormat(),
+    max_uses: 1, expires_at: null, remark: ''
+  }
   cardDialog.value = true
+}
+function onCardCurrencyChange(code) {
+  // 当货币改变时调整精度
+  const info = getCurrencyInfo(code)
+  cardForm.value.value_yuan = cardForm.value.value_yuan ? parseFloat(cardForm.value.value_yuan.toFixed(info.decimals)) : 0
 }
 async function saveCard() {
   try {
-    await chargeApi.createChargeCard(cardForm.value)
+    const payload = { ...cardForm.value }
+    if (payload.card_type === 'balance') {
+      payload.value = yuanToMinor(payload.value_yuan, payload.currency)
+    }
+    if (payload.card_type === 'plan' && payload.plan_variant_id) {
+      payload.value = payload.plan_variant_id
+    }
+    // 组合前缀+格式
+    payload.card_code_format = buildCardCodeFormat(payload.card_code_format, payload.card_prefix)
+    delete payload.plan_variant_id
+    delete payload.card_prefix
+    delete payload.value_yuan
+    await chargeApi.createChargeCard(payload)
+    // 记住选择
+    saveFormatAndPrefix(cardForm.value.card_code_format, cardForm.value.card_prefix)
     ElMessage.success('创建成功')
     cardDialog.value = false
     fetchCards()
   } catch {}
 }
 function showBatchCreate() {
-  batchForm.value = { card_type: 'balance', value: 1000, count: 10, max_uses: 1, expires_at: null, remark: '' }
+  batchForm.value = {
+    card_type: 'balance', value_yuan: 10, currency: defaultCurrency.value, plan_variant_id: null, count: 10,
+    max_uses: 1, expires_at: null, remark: '',
+    card_prefix: loadSavedPrefix(), card_code_format: loadSavedFormat()
+  }
   batchDialog.value = true
 }
+function onBatchCurrencyChange(code) {
+  const info = getCurrencyInfo(code)
+  batchForm.value.value_yuan = batchForm.value.value_yuan ? parseFloat(batchForm.value.value_yuan.toFixed(info.decimals)) : 0
+}
 async function saveBatch() {
+  // 校验
+  if (batchForm.value.card_type === 'plan' && !batchForm.value.plan_variant_id) {
+    ElMessage.warning('套餐型充值卡必须选择绑定的套餐规格')
+    return
+  }
+  if (batchForm.value.card_type === 'balance' && (!batchForm.value.value_yuan || batchForm.value.value_yuan <= 0)) {
+    ElMessage.warning('金额型充值卡必须填写面值')
+    return
+  }
   batchSaving.value = true
   try {
-    const r = await chargeApi.batchCreateChargeCards(batchForm.value)
+    const payload = { ...batchForm.value }
+    if (payload.card_type === 'balance') {
+      payload.value = yuanToMinor(payload.value_yuan, payload.currency)
+    }
+    if (payload.card_type === 'plan' && payload.plan_variant_id) {
+      payload.plan_variant_id = payload.plan_variant_id
+    }
+    // 组合前缀+格式
+    payload.card_code_format = buildCardCodeFormat(payload.card_code_format, payload.card_prefix)
+    delete payload.card_prefix
+    delete payload.value_yuan
+    const r = await chargeApi.batchCreateChargeCards(payload)
+    // 记住选择
+    saveFormatAndPrefix(batchForm.value.card_code_format, batchForm.value.card_prefix)
     ElMessage.success('批量生成成功')
     batchDialog.value = false
     batchResult.value = r.cards || []
     batchResultBatchId.value = r.batch_id || ''
     batchResultType.value = batchForm.value.card_type
+    batchResultCurrency.value = batchForm.value.currency || defaultCurrency.value
     batchResultDialog.value = true
     fetchCards()
   } catch {} finally { batchSaving.value = false }
@@ -508,14 +634,15 @@ async function fetchBalances() {
   } catch {} finally { balancesLoading.value = false }
 }
 function showAdjustBalance(row) {
-  adjustForm.value = { client_id: row.client_id, amount: 0, remark: '', current_balance: row.balance }
+  adjustForm.value = { client_id: row.client_id, amount_yuan: 0, currency: row.currency || 'CNY', remark: '', current_balance: row.balance }
   adjustDialog.value = true
 }
 async function saveAdjust() {
-  if (adjustForm.value.amount === 0) { ElMessage.warning('调整金额不能为0'); return }
+  if (adjustForm.value.amount_yuan === 0) { ElMessage.warning('调整金额不能为0'); return }
   adjustSaving.value = true
   try {
-    await chargeApi.adjustClientBalance({ client_id: adjustForm.value.client_id, amount: adjustForm.value.amount, remark: adjustForm.value.remark })
+    const amount = yuanToMinor(adjustForm.value.amount_yuan, adjustForm.value.currency)
+    await chargeApi.adjustClientBalance({ client_id: adjustForm.value.client_id, amount, currency: adjustForm.value.currency, remark: adjustForm.value.remark })
     ElMessage.success('调整成功')
     adjustDialog.value = false
     fetchBalances()
@@ -533,7 +660,7 @@ async function showTransactions(row) {
 
 // ──────── Refund ────────
 async function refundOrder(row) {
-  await ElMessageBox.confirm(`确定对订单 #${row.id}（¥${(row.amount/100).toFixed(2)}）执行退款？金额将退回客户余额。`, '退款确认', { type: 'warning' })
+  await ElMessageBox.confirm(`确定对订单 #${row.id}（${formatAmount(row.amount, row.currency || 'CNY')}）执行退款？金额将退回客户余额。`, '退款确认', { type: 'warning' })
   try {
     await chargeApi.refundChargeOrder(row.id, { remark: '管理员退款' })
     ElMessage.success('退款成功')
@@ -550,11 +677,89 @@ const cardStatusLabel = (s) => ({ active:'可用', used:'已用完', expired:'�
 const cardStatusColor = (s) => ({ active:'success', used:'info', expired:'warning', disabled:'danger' })[s] || ''
 const txTypeLabel = (t) => ({ charge:'充值', consume:'消费', refund:'退款', gift:'赠送' })[t] || t
 
-onMounted(() => {
+// ──────── Plan Data (for card variant selection) ────────
+const planTemplates = ref([])
+const planVariants = ref([])       // all variants across all templates, with template info
+const variantsLoading = ref(false)
+
+async function fetchPlanData() {
+  try {
+    planTemplates.value = (await planApi.listPlanTemplates()) || []
+    const allVariants = []
+    for (const tpl of planTemplates.value) {
+      try {
+        const vars = (await planApi.listPlanVariants(tpl.id)) || []
+        for (const v of vars) {
+          allVariants.push({ ...v, template_name: tpl.name, template_id: tpl.id })
+        }
+      } catch {}
+    }
+    planVariants.value = allVariants
+  } catch {}
+}
+
+// computed: only plan-type variants (not traffic_pack)
+const planTypeVariants = computed(() => planVariants.value.filter(v => v.variant_type === 'plan' && v.enabled))
+
+function variantDisplayName(v) {
+  return `${v.template_name} - ${v.name} (${cycleLabel(v.billing_cycle)}, ${formatAmount(v.price, 'CNY')})`
+}
+
+function findVariantName(id) {
+  const v = planVariants.value.find(v => v.id === id)
+  return v ? `${v.template_name} - ${v.name}` : `#${id}`
+}
+
+const cycleLabel = (c) => ({ monthly:'月付', quarterly:'季付', semi_annual:'半年付', annual:'年付', lifetime:'终身', one_time:'一次性' })[c] || c
+
+// ──────── Card Code Format Presets ────────
+const cardCodeFormats = [
+  { label: 'XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX (4段)', value: '{8}-{8}-{8}-{8}' },
+  { label: 'XXXXXXXX-XXXXXXXX (2段)', value: '{8}-{8}' },
+  { label: 'XXXX-XXXX-XXXX-XXXX (4段短)', value: '{4}-{4}-{4}-{4}' },
+  { label: 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (无分隔)', value: '{32}' },
+  { label: 'XXXXXXXXXXXXXXXX (16位无分隔)', value: '{16}' },
+]
+
+// 根据前缀+格式生成预览文本
+function formatPreview(formatVal, prefix) {
+  let preview = formatVal.replace(/\{(\d+)\}/g, (_, n) => 'X'.repeat(parseInt(n)))
+  if (prefix) {
+    preview = prefix + '-' + preview
+  }
+  return preview
+}
+
+// 将前缀和格式组合成后端需要的完整格式字符串
+function buildCardCodeFormat(formatVal, prefix) {
+  if (!prefix && !formatVal) return ''
+  if (!prefix) return formatVal
+  if (!formatVal) return prefix + '-{8}-{8}-{8}-{8}'
+  return prefix + '-' + formatVal
+}
+
+// ──────── Card Code Defaults (localStorage) ────────
+const STORAGE_KEY_FORMAT = 'cf_card_code_format'
+const STORAGE_KEY_PREFIX = 'cf_card_prefix'
+
+function loadSavedFormat() {
+  return localStorage.getItem(STORAGE_KEY_FORMAT) || '{8}-{8}-{8}-{8}'
+}
+function loadSavedPrefix() {
+  return localStorage.getItem(STORAGE_KEY_PREFIX) || 'CF'
+}
+function saveFormatAndPrefix(format, prefix) {
+  localStorage.setItem(STORAGE_KEY_FORMAT, format)
+  localStorage.setItem(STORAGE_KEY_PREFIX, prefix)
+}
+
+onMounted(async () => {
+  await fetchDefaultCurrency()
   fetchSites()
   fetchOrders()
   fetchCards()
   fetchBalances()
+  fetchPlanData()
 })
 </script>
 

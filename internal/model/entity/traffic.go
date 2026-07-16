@@ -74,8 +74,8 @@ type TrafficQuotaResetLog struct {
 	SubjectType string `json:"subject_type" gorm:"size:32;not null"`
 	SubjectID int64 `json:"subject_id" gorm:"not null"`
 	ResetCycle string `json:"reset_cycle" gorm:"size:32;not null"`
-	PeriodStart            time.Time `json:"created_at" gorm:"not null"`
-	PeriodEnd              time.Time `json:"created_at" gorm:"not null"`
+	PeriodStart            time.Time `json:"period_start" gorm:"not null"`
+	PeriodEnd              time.Time `json:"period_end" gorm:"not null"`
 	BilledBytesBeforeReset int64 `json:"billed_bytes_before_reset" gorm:"not null;default:0"`
 	TriggerSource string `json:"trigger_source" gorm:"size:32;not null"`
 	OperatorID             int64

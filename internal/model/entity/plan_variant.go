@@ -12,11 +12,18 @@ const (
 	BillingCycleOneTime    = "one_time"
 )
 
+// Variant type constants.
+const (
+	VariantTypePlan        = "plan"         // 常规套餐（月付/季付/年付）
+	VariantTypeTrafficPack = "traffic_pack" // 流量叠加包（一次性流量，不延长期限）
+)
+
 // PlanVariant is a pricing variant of a PlanTemplate.
 // E.g. a template "Standard" may have monthly, quarterly, and annual variants.
 type PlanVariant struct {
 	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	TemplateID      int64     `gorm:"not null;index" json:"template_id"`
+	VariantType     string    `gorm:"size:32;not null;default:plan" json:"variant_type"` // plan/traffic_pack
 	Name            string    `gorm:"size:100;not null" json:"name"`
 	BillingCycle    string    `gorm:"size:32;not null;default:monthly" json:"billing_cycle"`
 	DurationDays    int       `gorm:"not null;default:30" json:"duration_days"`

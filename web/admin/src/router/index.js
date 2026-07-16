@@ -10,7 +10,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'portal', 'detail']
+    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -37,6 +37,9 @@ const routes = [
       { path: 'plans', name: 'PlanManagement', component: () => import('../views/PlanManagement.vue'), meta: { title: 'menu.planManagement', icon: 'Tickets' } },
       { path: 'node-servers', name: 'NodeServers', component: () => import('../views/NodeServers.vue'), meta: { title: 'menu.nodeServers', icon: 'Cpu' } },
       { path: 'node-servers/:id/detail', name: 'NodeServerDetail', component: () => import('../views/NodeServerDetail.vue'), meta: { title: 'menu.nodeServers', icon: 'Cpu' } },
+      { path: 'charge', name: 'ChargeManagement', component: () => import('../views/ChargeManagement.vue'), meta: { title: '充值管理', icon: 'Wallet' } },
+      { path: 'tickets', name: 'TicketManagement', component: () => import('../views/TicketManagement.vue'), meta: { title: '工单管理', icon: 'ChatDotRound' } },
+      { path: 'client-ext', name: 'ClientExtManagement', component: () => import('../views/ClientExtManagement.vue'), meta: { title: '扩展管理', icon: 'Grid' } },
       { path: 'clients', name: 'Clients', component: () => import('../views/Clients.vue'), meta: { title: 'client.title', icon: 'User' } },
       { path: 'certificates', name: 'Certificates', component: () => import('../views/Certificates.vue'), meta: { title: '证书管理', icon: 'Lock' } },
       { path: 'users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', icon: 'User' } },

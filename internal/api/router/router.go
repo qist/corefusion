@@ -24,8 +24,10 @@ import (
 
 	certsHandler "corefusion/internal/api/handlers/certificates"
 	cfipHandler "corefusion/internal/api/handlers/cfip"
+	chargeHandler "corefusion/internal/api/handlers/charge"
 	clientHandler "corefusion/internal/api/handlers/client"
 	clientauthHandler "corefusion/internal/api/handlers/clientauth"
+	clientextHandler "corefusion/internal/api/handlers/clientext"
 	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	geoRuleHandler "corefusion/internal/api/handlers/georule"
 	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
@@ -516,6 +518,67 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
+	commerceSvcInst := clientauthSvc.NewCommerceService(
+		database, planTmplRepo,
+		repository.NewPlanVariantRepository(database),
+		repository.NewPlanOrderRepository(database),
+		repository.NewPromotionRepository(database),
+		clientRepo, subRepo,
+		repository.NewChargeSiteRepository(database),
+		repository.NewChargeOrderRepository(database),
+		repository.NewChargeCardRepository(database),
+		repository.NewClientBalanceRepository(database),
+		repository.NewBalanceTransactionRepository(database),
+		systemSettingSvc, jwtSecret,
+	)
+	commerceH := clientauthHandler.NewCommerceHandler(commerceSvcInst)
+
+	// P1-P3 extended services
+	referralSvcInst := clientauthSvc.NewReferralService(
+		database, repository.NewReferralCodeRepository(database),
+		repository.NewReferralRecordRepository(database),
+		repository.NewReferralWithdrawalRepository(database),
+		repository.NewClientBalanceRepository(database),
+		repository.NewBalanceTransactionRepository(database),
+		clientRepo, systemSettingSvc,
+	)
+	ticketSvcInst := clientauthSvc.NewTicketService(
+		repository.NewTicketRepository(database),
+		repository.NewTicketMessageRepository(database),
+		clientRepo,
+	)
+	giftSvcInst := clientauthSvc.NewGiftService(
+		repository.NewClientGiftRepository(database),
+		clientRepo, subRepo, database,
+	)
+	articleSvcInst := clientauthSvc.NewArticleService(
+		repository.NewArticleRepository(database),
+	)
+	sharedAcctSvcInst := clientauthSvc.NewSharedAccountService(
+		repository.NewSharedAccountRepository(database),
+		repository.NewSharedAccountRepairLogRepository(database),
+		clientRepo,
+	)
+	ipWhitelistSvcInst := clientauthSvc.NewIPWhitelistService(
+		repository.NewIPWhitelistEntryRepository(database),
+		clientRepo,
+	)
+	selfUnbanSvcInst := clientauthSvc.NewSelfUnbanService(
+		repository.NewClientSelfUnbanLogRepository(database),
+		clientRepo, systemSettingSvc,
+	)
+	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
+	subEndpointRepo := repository.NewSubscriptionEndpointRepository(database)
+	clientExtH := clientextHandler.NewHandler(
+		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
+		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
+		clientRepo, repository.NewClientOAuthBindingRepository(database),
+		subRepo, subEndpointRepo, publicSubH,
+	)
+
+	// Set balance repo on clientauth service for /me extension
+	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))
+
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
 	// Reuse processMgr if injected from main.go (shared with LocalAgent),
@@ -924,11 +987,85 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			// Plan Variants (套餐规格)
-			planVariantGroup := protected.Group("/plan-variants")
-			{
-				planVariantGroup.PUT("/:id", planH.UpdateVariant)
-				planVariantGroup.DELETE("/:id", planH.DeleteVariant)
-			}
+planVariantGroup := protected.Group("/plan-variants")
+{
+planVariantGroup.PUT("/:id", planH.UpdateVariant)
+planVariantGroup.DELETE("/:id", planH.DeleteVariant)
+}
+
+// Charge Sites (充值站点管理)
+chargeAdminH := chargeHandler.NewHandler(
+repository.NewChargeSiteRepository(database),
+repository.NewChargeOrderRepository(database),
+repository.NewChargeCardRepository(database),
+repository.NewClientBalanceRepository(database),
+repository.NewBalanceTransactionRepository(database),
+clientRepo,
+database,
+)
+chargeSiteGroup := protected.Group("/charge-sites")
+{
+chargeSiteGroup.GET("", chargeAdminH.ListSites)
+chargeSiteGroup.GET("/:id", chargeAdminH.GetSite)
+chargeSiteGroup.POST("", chargeAdminH.CreateSite)
+chargeSiteGroup.PUT("/:id", chargeAdminH.UpdateSite)
+chargeSiteGroup.DELETE("/:id", chargeAdminH.DeleteSite)
+}
+chargeOrderGroup := protected.Group("/charge-orders")
+{
+chargeOrderGroup.GET("", chargeAdminH.ListOrders)
+chargeOrderGroup.GET("/:id", chargeAdminH.GetOrder)
+}
+chargeCardGroup := protected.Group("/charge-cards")
+{
+chargeCardGroup.GET("", chargeAdminH.ListCards)
+chargeCardGroup.POST("", chargeAdminH.CreateCard)
+chargeCardGroup.POST("/batch", chargeAdminH.BatchCreateCards)
+chargeCardGroup.DELETE("/:id", chargeAdminH.DeleteCard)
+}
+clientBalanceGroup := protected.Group("/client-balances")
+{
+clientBalanceGroup.GET("", chargeAdminH.ListBalances)
+clientBalanceGroup.POST("/adjust", chargeAdminH.AdjustBalance)
+clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
+}
+
+// P1-P3: Admin routes for extended modules
+referralWithdrawalGroup := protected.Group("/referral-withdrawals")
+{
+referralWithdrawalGroup.GET("", clientExtH.AdminListWithdrawals)
+referralWithdrawalGroup.POST("/:id/approve", clientExtH.AdminApproveWithdrawal)
+referralWithdrawalGroup.POST("/:id/reject", clientExtH.AdminRejectWithdrawal)
+}
+ticketAdminGroup := protected.Group("/tickets")
+{
+ticketAdminGroup.GET("", clientExtH.AdminListTickets)
+ticketAdminGroup.GET("/:id", clientExtH.AdminGetTicket)
+ticketAdminGroup.POST("/:id/reply", clientExtH.AdminReplyTicket)
+ticketAdminGroup.POST("/:id/close", clientExtH.AdminCloseTicket)
+}
+giftAdminGroup := protected.Group("/client-gifts")
+{
+giftAdminGroup.GET("", clientExtH.AdminListGifts)
+giftAdminGroup.POST("", clientExtH.AdminCreateGift)
+giftAdminGroup.POST("/batch", clientExtH.AdminCreateGiftBatch)
+}
+articleAdminGroup := protected.Group("/articles")
+{
+articleAdminGroup.GET("", clientExtH.AdminListArticles)
+articleAdminGroup.GET("/:id", clientExtH.AdminGetArticle)
+articleAdminGroup.POST("", clientExtH.AdminCreateArticle)
+articleAdminGroup.PUT("/:id", clientExtH.AdminUpdateArticle)
+articleAdminGroup.DELETE("/:id", clientExtH.AdminDeleteArticle)
+}
+sharedAccountAdminGroup := protected.Group("/shared-accounts")
+{
+sharedAccountAdminGroup.GET("", clientExtH.AdminListSharedAccounts)
+sharedAccountAdminGroup.POST("", clientExtH.AdminCreateSharedAccount)
+sharedAccountAdminGroup.PUT("/:id", clientExtH.AdminUpdateSharedAccount)
+sharedAccountAdminGroup.DELETE("/:id", clientExtH.AdminDeleteSharedAccount)
+sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
+}
 
 			// Inbounds with server name (for member management UI)
 			protected.GET("/inbounds-with-server", planH.ListAllInboundsWithServer)
@@ -1720,10 +1857,21 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 	// Public settings (for portal)
 	r.GET("/api/v1/public/settings", func(c *gin.Context) {
 		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
+		chatProvider, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.provider")
+		chatSiteID, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.site_id")
 		response.OK(c, gin.H{
 			"registration_enabled": registrationEnabled == "true",
+			"chat_provider":        chatProvider,
+			"chat_site_id":         chatSiteID,
 		})
 	})
+
+	// Public articles (no auth required)
+	r.GET("/api/v1/public/articles", clientExtH.PublicListArticles)
+	r.GET("/api/v1/public/articles/:slug", clientExtH.PublicGetArticle)
+
+	// Charge callback (public, called by charge sites)
+	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
 
 	// Client auth (protected)
 	clientAuthProtected := r.Group("/api/v1/client-auth")
@@ -1739,6 +1887,99 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		clientAuthProtected.GET("/logs/packages", clientLogH.ListLogPackages)
 		clientAuthProtected.GET("/logs/packages/:id", clientLogH.GetLogPackage)
 		clientAuthProtected.GET("/logs/packages/:id/download", clientLogH.DownloadLogPackage)
+
+		// P0-1: Plan display
+		clientAuthProtected.GET("/plans", commerceH.ListPlans)
+		clientAuthProtected.GET("/plans/:id", commerceH.GetPlan)
+
+		// Traffic packs (流量叠加包)
+		clientAuthProtected.GET("/traffic-packs", commerceH.ListTrafficPacks)
+		clientAuthProtected.POST("/traffic-packs/buy", commerceH.BuyTrafficPack)
+
+		// P0-2: Order management
+		clientAuthProtected.POST("/orders", commerceH.CreateOrder)
+		clientAuthProtected.GET("/orders", commerceH.ListOrders)
+		clientAuthProtected.GET("/orders/:id", commerceH.GetOrder)
+
+		// P0-3: Charging system
+		clientAuthProtected.GET("/charge/sites", commerceH.ListChargeSites)
+		clientAuthProtected.POST("/charge/create", commerceH.CreateChargeOrder)
+		clientAuthProtected.GET("/charge/status/:trade_no", commerceH.GetChargeStatus)
+		clientAuthProtected.POST("/charge/redeem-card", commerceH.RedeemCard)
+		clientAuthProtected.GET("/charge/orders", commerceH.ListChargeOrders)
+		clientAuthProtected.GET("/charge/orders/:id", commerceH.GetChargeOrderDetail)
+
+		// P0-4: Balance system
+		clientAuthProtected.GET("/balance", commerceH.GetBalance)
+		clientAuthProtected.GET("/balance/transactions", commerceH.ListBalanceTransactions)
+
+		// P1-1: Node list (client visible)
+		clientAuthProtected.GET("/nodes", clientExtH.ListClientNodes)
+		clientAuthProtected.GET("/nodes/:id/config", clientExtH.GetNodeConfig)
+		clientAuthProtected.GET("/nodes/:id/link", clientExtH.GetNodeLink)
+		clientAuthProtected.GET("/nodes/:id/qrcode", clientExtH.GetNodeQRCode)
+
+		// P1-2: Referral system
+		clientAuthProtected.GET("/referral/code", clientExtH.GetReferralCode)
+		clientAuthProtected.GET("/referral/stats", clientExtH.GetReferralStats)
+		clientAuthProtected.GET("/referral/records", clientExtH.ListReferralRecords)
+		clientAuthProtected.GET("/referral/withdrawals", clientExtH.ListReferralWithdrawals)
+		clientAuthProtected.POST("/referral/withdraw", clientExtH.RequestWithdrawal)
+
+		// P1-3: Ticket system
+		clientAuthProtected.POST("/tickets", clientExtH.CreateTicket)
+		clientAuthProtected.GET("/tickets", clientExtH.ListTickets)
+		clientAuthProtected.GET("/tickets/:id", clientExtH.GetTicket)
+		clientAuthProtected.POST("/tickets/:id/reply", clientExtH.ReplyTicket)
+		clientAuthProtected.POST("/tickets/:id/close", clientExtH.CloseTicket)
+
+		// P1-4: Bills (reuse plan orders)
+		clientAuthProtected.GET("/bills", commerceH.ListOrders)
+
+		// P2-1: Gift system
+		clientAuthProtected.GET("/gifts", clientExtH.ListGifts)
+		clientAuthProtected.POST("/gifts/:id/claim", clientExtH.ClaimGift)
+
+		// P2-2: Articles
+		clientAuthProtected.GET("/articles", clientExtH.ListArticles)
+		clientAuthProtected.GET("/articles/:slug", clientExtH.GetArticle)
+
+		// P2-3: Subscription reset
+		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription)
+
+		// P3-1: Shared accounts
+		clientAuthProtected.GET("/shared-accounts", clientExtH.ListSharedAccounts)
+		clientAuthProtected.GET("/shared-accounts/:id", clientExtH.GetSharedAccount)
+		clientAuthProtected.POST("/shared-accounts/:id/repair", clientExtH.RequestRepair)
+
+		// P3-2: IP whitelist
+		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)
+		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)
+		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist)
+
+		// P3-3: Self-unban
+		clientAuthProtected.POST("/self-unban", clientExtH.SelfUnban)
+
+		// P1-4b: Invoice detail (reuse order query)
+		clientAuthProtected.GET("/invoices/:id", commerceH.GetOrder)
+
+		// P3-17: Time check
+		clientAuthProtected.GET("/checktime", clientExtH.CheckTime)
+
+		// P3-19: Profile management
+		clientAuthProtected.GET("/profile", clientExtH.GetProfile)
+		clientAuthProtected.PUT("/profile", clientExtH.UpdateProfile)
+		clientAuthProtected.GET("/connection-info", clientExtH.GetConnectionInfo)
+		clientAuthProtected.POST("/profile/bind-oauth", clientExtH.BindOAuth)
+		clientAuthProtected.DELETE("/profile/unbind-oauth/:provider", clientExtH.UnbindOAuth)
+
+		// P3-20: Subscription formats
+		clientAuthProtected.GET("/subscription-formats", clientExtH.ListSubscriptionFormats)
+		clientAuthProtected.GET("/subscription-link", clientExtH.GetSubscriptionLink)
+		clientAuthProtected.GET("/subscription-link/backup", clientExtH.GetBackupSubscriptionLink)
+
+		// P3-22: Shared account apply
+		clientAuthProtected.POST("/shared-accounts/:id/apply", clientExtH.ApplySharedAccount)
 	}
 
 	// Check panel mode — if management_only, skip local core process startup
@@ -2229,6 +2470,65 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	clientauthSvcInst := clientauthSvc.NewService(clientRepo, planTmplRepo, subRepo, systemSettingRepo, os.Getenv("JWT_SECRET"))
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 
+	// Commerce service (plans, orders, charging, balance)
+	commerceSvcInst := clientauthSvc.NewCommerceService(
+		database,
+		planTmplRepo,
+		repository.NewPlanVariantRepository(database),
+		repository.NewPlanOrderRepository(database),
+		repository.NewPromotionRepository(database),
+		clientRepo,
+		subRepo,
+		repository.NewChargeSiteRepository(database),
+		repository.NewChargeOrderRepository(database),
+		repository.NewChargeCardRepository(database),
+		repository.NewClientBalanceRepository(database),
+		repository.NewBalanceTransactionRepository(database),
+		systemSettingSvc,
+		os.Getenv("JWT_SECRET"),
+	)
+	commerceH := clientauthHandler.NewCommerceHandler(commerceSvcInst)
+
+	// P1-P3 extended services
+	referralSvcInst := clientauthSvc.NewReferralService(
+		database, repository.NewReferralCodeRepository(database),
+		repository.NewReferralRecordRepository(database),
+		repository.NewReferralWithdrawalRepository(database),
+		repository.NewClientBalanceRepository(database),
+		repository.NewBalanceTransactionRepository(database),
+		clientRepo, systemSettingSvc,
+	)
+	ticketSvcInst := clientauthSvc.NewTicketService(
+		repository.NewTicketRepository(database),
+		repository.NewTicketMessageRepository(database),
+		clientRepo,
+	)
+	giftSvcInst := clientauthSvc.NewGiftService(
+		repository.NewClientGiftRepository(database),
+		clientRepo, subRepo, database,
+	)
+	articleSvcInst := clientauthSvc.NewArticleService(
+		repository.NewArticleRepository(database),
+	)
+	sharedAcctSvcInst := clientauthSvc.NewSharedAccountService(
+		repository.NewSharedAccountRepository(database),
+		repository.NewSharedAccountRepairLogRepository(database),
+		clientRepo,
+	)
+	ipWhitelistSvcInst := clientauthSvc.NewIPWhitelistService(
+		repository.NewIPWhitelistEntryRepository(database),
+		clientRepo,
+	)
+	selfUnbanSvcInst := clientauthSvc.NewSelfUnbanService(
+		repository.NewClientSelfUnbanLogRepository(database),
+		clientRepo, systemSettingSvc,
+	)
+	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
+	subEndpointRepo2 := repository.NewSubscriptionEndpointRepository(database)
+
+	// Set balance repo on clientauth service for /me extension
+	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))
+
 	// Root path serves the portal page
 	r.GET("/", func(c *gin.Context) {
 		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
@@ -2283,6 +2583,20 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	logManageSvcInst.InitClientLogDeps(clientLogPkgRepo, clientRepo, planSvcInst, inboundConfigRepo, nil)
 	clientLogH := clientauthHandler.NewLogHandler(logManageSvcInst)
 
+	portalPublicSubH := subsHandler.NewPublicHandler(
+		subRepo, inboundConfigRepo, repository.NewShareDomainConfigRepository(database),
+		repository.NewCFIPEntryRepository(database), clientRepo, planSvcInst,
+		repository.NewExternalNodeRepository(database),
+		repository.NewMihomoConfigRepository(database), repository.NewMihomoRuleRepository(database),
+		systemSettingRepo, repository.NewAccessLogRepository(database),
+	)
+	clientExtH := clientextHandler.NewHandler(
+		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
+		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
+		clientRepo, repository.NewClientOAuthBindingRepository(database),
+		subRepo, subEndpointRepo2, portalPublicSubH,
+	)
+
 	// Client auth (protected)
 	clientAuthProtected := r.Group("/api/v1/client-auth")
 	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
@@ -2297,6 +2611,99 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		clientAuthProtected.GET("/logs/packages", clientLogH.ListLogPackages)
 		clientAuthProtected.GET("/logs/packages/:id", clientLogH.GetLogPackage)
 		clientAuthProtected.GET("/logs/packages/:id/download", clientLogH.DownloadLogPackage)
+
+		// P0-1: Plan display
+		clientAuthProtected.GET("/plans", commerceH.ListPlans)
+		clientAuthProtected.GET("/plans/:id", commerceH.GetPlan)
+
+		// Traffic packs (流量叠加包)
+		clientAuthProtected.GET("/traffic-packs", commerceH.ListTrafficPacks)
+		clientAuthProtected.POST("/traffic-packs/buy", commerceH.BuyTrafficPack)
+
+		// P0-2: Order management
+		clientAuthProtected.POST("/orders", commerceH.CreateOrder)
+		clientAuthProtected.GET("/orders", commerceH.ListOrders)
+		clientAuthProtected.GET("/orders/:id", commerceH.GetOrder)
+
+		// P0-3: Charging system
+		clientAuthProtected.GET("/charge/sites", commerceH.ListChargeSites)
+		clientAuthProtected.POST("/charge/create", commerceH.CreateChargeOrder)
+		clientAuthProtected.GET("/charge/status/:trade_no", commerceH.GetChargeStatus)
+		clientAuthProtected.POST("/charge/redeem-card", commerceH.RedeemCard)
+		clientAuthProtected.GET("/charge/orders", commerceH.ListChargeOrders)
+		clientAuthProtected.GET("/charge/orders/:id", commerceH.GetChargeOrderDetail)
+
+		// P0-4: Balance system
+		clientAuthProtected.GET("/balance", commerceH.GetBalance)
+		clientAuthProtected.GET("/balance/transactions", commerceH.ListBalanceTransactions)
+
+		// P1-1: Node list (client visible)
+		clientAuthProtected.GET("/nodes", clientExtH.ListClientNodes)
+		clientAuthProtected.GET("/nodes/:id/config", clientExtH.GetNodeConfig)
+		clientAuthProtected.GET("/nodes/:id/link", clientExtH.GetNodeLink)
+		clientAuthProtected.GET("/nodes/:id/qrcode", clientExtH.GetNodeQRCode)
+
+		// P1-2: Referral system
+		clientAuthProtected.GET("/referral/code", clientExtH.GetReferralCode)
+		clientAuthProtected.GET("/referral/stats", clientExtH.GetReferralStats)
+		clientAuthProtected.GET("/referral/records", clientExtH.ListReferralRecords)
+		clientAuthProtected.GET("/referral/withdrawals", clientExtH.ListReferralWithdrawals)
+		clientAuthProtected.POST("/referral/withdraw", clientExtH.RequestWithdrawal)
+
+		// P1-3: Ticket system
+		clientAuthProtected.POST("/tickets", clientExtH.CreateTicket)
+		clientAuthProtected.GET("/tickets", clientExtH.ListTickets)
+		clientAuthProtected.GET("/tickets/:id", clientExtH.GetTicket)
+		clientAuthProtected.POST("/tickets/:id/reply", clientExtH.ReplyTicket)
+		clientAuthProtected.POST("/tickets/:id/close", clientExtH.CloseTicket)
+
+		// P1-4: Bills (reuse plan orders)
+		clientAuthProtected.GET("/bills", commerceH.ListOrders)
+
+		// P2-1: Gift system
+		clientAuthProtected.GET("/gifts", clientExtH.ListGifts)
+		clientAuthProtected.POST("/gifts/:id/claim", clientExtH.ClaimGift)
+
+		// P2-2: Articles
+		clientAuthProtected.GET("/articles", clientExtH.ListArticles)
+		clientAuthProtected.GET("/articles/:slug", clientExtH.GetArticle)
+
+		// P2-3: Subscription reset
+		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription)
+
+		// P3-1: Shared accounts
+		clientAuthProtected.GET("/shared-accounts", clientExtH.ListSharedAccounts)
+		clientAuthProtected.GET("/shared-accounts/:id", clientExtH.GetSharedAccount)
+		clientAuthProtected.POST("/shared-accounts/:id/repair", clientExtH.RequestRepair)
+
+		// P3-2: IP whitelist
+		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)
+		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)
+		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist)
+
+		// P3-3: Self-unban
+		clientAuthProtected.POST("/self-unban", clientExtH.SelfUnban)
+
+		// P1-4b: Invoice detail (reuse order query)
+		clientAuthProtected.GET("/invoices/:id", commerceH.GetOrder)
+
+		// P3-17: Time check
+		clientAuthProtected.GET("/checktime", clientExtH.CheckTime)
+
+		// P3-19: Profile management
+		clientAuthProtected.GET("/profile", clientExtH.GetProfile)
+		clientAuthProtected.PUT("/profile", clientExtH.UpdateProfile)
+		clientAuthProtected.GET("/connection-info", clientExtH.GetConnectionInfo)
+		clientAuthProtected.POST("/profile/bind-oauth", clientExtH.BindOAuth)
+		clientAuthProtected.DELETE("/profile/unbind-oauth/:provider", clientExtH.UnbindOAuth)
+
+		// P3-20: Subscription formats
+		clientAuthProtected.GET("/subscription-formats", clientExtH.ListSubscriptionFormats)
+		clientAuthProtected.GET("/subscription-link", clientExtH.GetSubscriptionLink)
+		clientAuthProtected.GET("/subscription-link/backup", clientExtH.GetBackupSubscriptionLink)
+
+		// P3-22: Shared account apply
+		clientAuthProtected.POST("/shared-accounts/:id/apply", clientExtH.ApplySharedAccount)
 	}
 
 	// Public endpoints (for portal) — direct DB read
@@ -2315,6 +2722,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 			"registration_enabled": registrationEnabled == "true",
 		})
 	})
+
+	// Charge callback (public, called by charge sites)
+	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
 
 	return r
 }

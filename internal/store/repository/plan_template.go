@@ -97,3 +97,23 @@ func (r *PlanVariantRepository) GetDefaultByTemplateID(ctx context.Context, temp
 		First(&item).Error
 	return &item, err
 }
+
+// ListEnabledByVariantType returns all enabled variants of the given type.
+func (r *PlanVariantRepository) ListEnabledByVariantType(ctx context.Context, variantType string) ([]entity.PlanVariant, error) {
+	var items []entity.PlanVariant
+	err := r.db.WithContext(ctx).
+		Where("variant_type = ? AND enabled = ?", variantType, true).
+		Order("sort_order ASC, id ASC").
+		Find(&items).Error
+	return items, err
+}
+
+// ListEnabledByTemplateID returns all enabled variants for a template.
+func (r *PlanVariantRepository) ListEnabledByTemplateID(ctx context.Context, templateID int64) ([]entity.PlanVariant, error) {
+	var items []entity.PlanVariant
+	err := r.db.WithContext(ctx).
+		Where("template_id = ? AND enabled = ?", templateID, true).
+		Order("sort_order ASC, id ASC").
+		Find(&items).Error
+	return items, err
+}

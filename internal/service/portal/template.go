@@ -81,7 +81,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <main class="main-content">
         <!-- Dynamic Modules — all content is module-driven, no hardcoded tabs -->
         <template v-for="mod in currentModules" :key="mod.id">
-          <div class="card glass module-wrap">
+          <div class="card glass module-wrap" :id="'mod-' + mod.id" :class="mod.style && mod.style.custom_class || ''">
             <!-- Hero -->
             <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
               <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
@@ -254,6 +254,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Custom HTML -->
             <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
+            <!-- Freeform (HTML+CSS+JS custom component) -->
+            <div v-else-if="mod.type === 'freeform'" class="module-freeform">
+              <component :is="freeformComponents[mod.id]" v-if="freeformComponents[mod.id]"></component>
+              <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ 模块加载失败</div>
+            </div>
           </div>
         </template>
         <!-- Empty state when no modules on current page -->
@@ -705,6 +710,33 @@ var app = createApp({
       return portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
     })
 
+    // Inject per-module custom CSS into a <style> tag
+    var injectModuleCss = function() {
+      var existing = document.getElementById('portal-module-css')
+      if (existing) existing.remove()
+      var cssParts = []
+      portalModules.value.forEach(function(m) {
+        if (m.style && m.style.custom_css) {
+          var scoped = m.style.custom_css.replace(/([^{}]+)\{/g, function(match, selectors) {
+            var scoped2 = selectors.split(',').map(function(s) {
+              var t = s.trim()
+              if (!t || t.charAt(0) === '@') return t
+              return '#mod-' + m.id + ' ' + t
+            }).join(', ')
+            return scoped2 + ' {'
+          })
+          cssParts.push('/* Module: ' + (m.title || m.id) + ' */\n' + scoped)
+        }
+      })
+      if (cssParts.length > 0) {
+        var style = document.createElement('style')
+        style.id = 'portal-module-css'
+        style.textContent = cssParts.join('\n')
+        document.head.appendChild(style)
+      }
+    }
+    watch(portalModules, injectModuleCss, { immediate: true })
+
     var onNavClick = function(nav) {
       if (nav.href) {
         if (nav.open_external) window.open(nav.href, '_blank')
@@ -944,6 +976,112 @@ var app = createApp({
 
     watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer) } })
 
+    // --- Freeform module runtime ---
+    var freeformComponents = ref({})
+
+    // Generic API call for freeform ctx (supports query params)
+    var apiRaw = function(method, path, body, query) {
+      var url = '/api/v1/client-auth' + path
+      if (query) {
+        var qs = Object.keys(query).map(function(k) { return k + '=' + encodeURIComponent(query[k]) }).join('&')
+        if (qs) url += (url.indexOf('?') >= 0 ? '&' : '?') + qs
+      }
+      var headers = { 'Content-Type': 'application/json' }
+      if (token.value) headers['Authorization'] = 'Bearer ' + token.value
+      return fetch(url, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined })
+        .then(function(res) {
+          if (res.status === 401 && refreshToken.value && !isRefreshing) {
+            isRefreshing = true
+            return fetch('/api/v1/client-auth/refresh', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh_token: refreshToken.value })
+            }).then(function(refRes) {
+              isRefreshing = false
+              if (refRes.ok) return refRes.json().then(function(d) {
+                token.value = d.data.access_token
+                refreshToken.value = d.data.refresh_token
+                localStorage.setItem('client_token', token.value)
+                localStorage.setItem('client_refresh_token', refreshToken.value)
+                headers['Authorization'] = 'Bearer ' + token.value
+                return fetch(url, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined })
+              })
+              doLogout()
+              throw new Error('Session expired')
+            })
+          }
+          return res
+        })
+        .then(function(res) { return res.json().then(function(data) { return { ok: res.ok, status: res.status, data: data } }) })
+        .then(function(result) {
+          if (!result.ok) throw new Error(result.data.message || result.data.error || 'Error')
+          return result.data.data || result.data
+        })
+    }
+
+    var registerFreeformModules = function() {
+      var comps = {}
+      portalModules.value.forEach(function(mod) {
+        if (mod.type !== 'freeform') return
+        var html = (mod.data && mod.data.html) || '<div></div>'
+        var js = (mod.data && mod.data.js) || ''
+        var css = (mod.data && mod.data.css) || ''
+
+        // Build module context
+        var modCtx = {
+          ref: Vue.ref, computed: Vue.computed, watch: Vue.watch,
+          onMounted: Vue.onMounted, onUnmounted: Vue.onUnmounted,
+          data: { client: client, token: token, isDark: isDark },
+          api: {
+            get: function(p, q) { return apiRaw('GET', p, null, q) },
+            post: function(p, b) { return apiRaw('POST', p, b) },
+            put: function(p, b) { return apiRaw('PUT', p, b) },
+            delete: function(p) { return apiRaw('DELETE', p, null) },
+            raw: function(m, p, b) { return apiRaw(m, p, b) }
+          },
+          formatBytes: formatBytes,
+          formatDate: formatDate,
+          copyText: copyText,
+          elMessage: ElMessage,
+          config: (typeof PORTAL_CONFIG !== 'undefined') ? PORTAL_CONFIG : {},
+          moduleId: mod.id,
+          moduleTitle: mod.title || ''
+        }
+
+        // Compile JS via new Function sandbox
+        var setupFn
+        try {
+          var factory = new Function('ctx', js)
+          setupFn = function() {
+            try {
+              var result = factory(modCtx)
+              return result || {}
+            } catch(e) {
+              console.error('[Freeform ' + mod.id + ']', e)
+              return { __error: e.message }
+            }
+          }
+        } catch(e) {
+          setupFn = function() { return { __error: e.message } }
+        }
+
+        // Inject CSS
+        if (css) {
+          var styleId = 'freeform-css-' + mod.id
+          var existing = document.getElementById(styleId)
+          if (existing) existing.remove()
+          var styleEl = document.createElement('style')
+          styleEl.id = styleId
+          styleEl.textContent = css
+          document.head.appendChild(styleEl)
+        }
+
+        comps[mod.id] = { template: html, setup: setupFn }
+      })
+      freeformComponents.value = comps
+    }
+
+    watch(portalModules, registerFreeformModules, { immediate: true })
+
     return {
       token: token, authTab: authTab, loading: loading, rotating: rotating, refreshing: refreshing,
       activeTab: activeTab, showPasswordDialog: showPasswordDialog, showQr: showQr, logoUrl: logoUrl,
@@ -961,7 +1099,8 @@ var app = createApp({
       createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages,
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
       switchToLogs: switchToLogs,
-      portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd
+      portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd,
+      freeformComponents: freeformComponents
     }
   }
 })

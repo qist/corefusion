@@ -14,5 +14,12 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          monaco: ['monaco-editor', '@guolao/vue-monaco-editor'],
+        },
+      },
+    },
   },
 })

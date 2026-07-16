@@ -35,6 +35,8 @@ import (
 	metricsHandler "corefusion/internal/api/handlers/metrics"
 	mihomoHandler "corefusion/internal/api/handlers/mihomo"
 	nodesHandler "corefusion/internal/api/handlers/nodes"
+	oauthHandler "corefusion/internal/api/handlers/oauth"
+	oauthService "corefusion/internal/service/oauth"
 	nodeServerHandler "corefusion/internal/api/handlers/nodeserver"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
 	portalHandler "corefusion/internal/api/handlers/portal"
@@ -1867,6 +1869,13 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		clientAuthGroup.POST("/register", clientauthH.Register)
 		clientAuthGroup.POST("/login", clientauthH.Login)
 		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
+
+		// OAuth2 login routes (public — no auth required)
+		oauthSvcInst := oauthService.NewService(systemSettingSvc, repository.NewClientOAuthBindingRepository(database), clientRepo)
+		oauthH := oauthHandler.NewHandler(oauthSvcInst, jwtSecret)
+		clientAuthGroup.GET("/oauth/providers", oauthH.ProvidersStatus)
+		clientAuthGroup.GET("/oauth/:provider", oauthH.Authorize)
+		clientAuthGroup.GET("/oauth/:provider/callback", oauthH.Callback)
 	}
 
 	// Public subscription endpoints (for portal)

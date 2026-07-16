@@ -76,6 +76,7 @@
                     <el-dropdown-item command="subscription">订阅入口</el-dropdown-item>
                     <el-dropdown-item command="rich_text" divided>富文本 (HTML)</el-dropdown-item>
                     <el-dropdown-item command="custom_html">自定义 HTML</el-dropdown-item>
+                    <el-dropdown-item command="freeform" divided>自由组件 (HTML+CSS+JS)</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -112,18 +113,26 @@
 
         <!-- Center Column: Code Editor or Visual Preview -->
         <div class="col-canvas">
-          <!-- Toolbar: device buttons only show when code editor is active -->
-          <div v-if="hasCodeEditor" class="canvas-toolbar">
-            <span class="toolbar-editor-label">{{ moduleTypeLabel(selectedModule.type) }} 编辑器</span>
-            <el-radio-group v-model="previewDevice" size="small">
-              <el-radio-button value="desktop">桌面</el-radio-button>
-              <el-radio-button value="tablet">平板</el-radio-button>
-              <el-radio-button value="mobile">手机</el-radio-button>
-            </el-radio-group>
+          <!-- Toolbar: view mode toggle + device buttons -->
+          <div v-if="selectedModule" class="canvas-toolbar">
+            <div class="canvas-toolbar-left">
+              <el-radio-group v-model="centerViewMode" size="small">
+                <el-radio-button v-if="hasContentEditor" value="editor">内容编辑</el-radio-button>
+                <el-radio-button value="preview">可视化预览</el-radio-button>
+                <el-radio-button value="css">CSS 样式</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="canvas-toolbar-right">
+              <el-radio-group v-if="centerViewMode !== 'css'" v-model="previewDevice" size="small">
+                <el-radio-button value="desktop">桌面</el-radio-button>
+                <el-radio-button value="tablet">平板</el-radio-button>
+                <el-radio-button value="mobile">手机</el-radio-button>
+              </el-radio-group>
+            </div>
           </div>
 
-          <!-- Code Editor Mode -->
-          <div v-if="hasCodeEditor" class="canvas-code-editor">
+          <!-- Content Editor Mode (markdown, rich_text, notice, custom_html) -->
+          <div v-if="selectedModule && centerViewMode === 'editor' && hasContentEditor" class="canvas-code-editor">
             <!-- Markdown Editor -->
             <template v-if="selectedModule.type === 'markdown'">
               <div class="md-editor-wrap md-editor-full">
@@ -146,13 +155,14 @@
                   <button @click="insertMd('hr')" title="分割线">—</button>
                 </div>
                 <div class="md-split md-split-full">
-                  <textarea
-                    ref="mdEditRef"
-                    v-model="selectedModule.data.markdown"
-                    class="md-textarea"
-                    placeholder="在此编写 Markdown 内容..."
-                    @input="onMdInput"
-                  ></textarea>
+                  <div class="md-editor-pane">
+                    <CodeEditor
+                      v-model="selectedModule.data.markdown"
+                      language="markdown"
+                      @mount="onMdEditorMount"
+                      @change="onCodeChange"
+                    />
+                  </div>
                   <div class="md-preview-pane md-preview-content" :class="'device-' + previewDevice" v-html="renderMd(selectedModule.data.markdown || '')"></div>
                 </div>
               </div>
@@ -171,13 +181,14 @@
                     <button @click="insertNoticeMd('code')" title="代码">&lt;/&gt;</button>
                   </div>
                   <div class="md-split md-split-full">
-                    <textarea
-                      ref="noticeMdRef"
-                      v-model="selectedModule.data.markdown"
-                      class="md-textarea"
-                      placeholder="公告正文 (支持 Markdown)..."
-                      @input="onNoticeMdInput"
-                    ></textarea>
+                    <div class="md-editor-pane">
+                      <CodeEditor
+                        v-model="selectedModule.data.markdown"
+                        language="markdown"
+                        @mount="onNoticeMdEditorMount"
+                        @change="onCodeChange"
+                      />
+                    </div>
                     <div class="md-preview-pane md-preview-content" :class="'device-' + previewDevice" v-html="renderMd(selectedModule.data.markdown || '')"></div>
                   </div>
                 </div>
@@ -218,15 +229,236 @@
                   <span style="font-size: 12px">自定义 HTML 会被直接渲染，请确保内容安全</span>
                 </el-alert>
                 <div class="html-split">
-                  <textarea v-model="selectedModule.data.html" class="html-textarea" placeholder="<div>自定义内容</div>"></textarea>
+                  <div class="html-editor-pane">
+                    <CodeEditor
+                      v-model="selectedModule.data.html"
+                      language="html"
+                      @change="onCodeChange"
+                    />
+                  </div>
                   <div class="html-preview md-preview-content" :class="'device-' + previewDevice" v-html="sanitizeHtml(selectedModule.data.html || '')"></div>
                 </div>
               </div>
             </template>
+
+            <!-- Freeform Editor (HTML + CSS + JS) -->
+            <template v-else-if="selectedModule.type === 'freeform'">
+              <div class="freeform-editor-wrap">
+                <el-tabs v-model="freeformTab" type="border-card" class="freeform-tabs">
+                  <el-tab-pane label="HTML (Vue 模板)" name="html">
+                    <div class="freeform-editor-pane">
+                      <CodeEditor
+                        v-model="selectedModule.data.html"
+                        language="html"
+                        @change="onCodeChange"
+                      />
+                    </div>
+                  </el-tab-pane>
+                  <el-tab-pane label="CSS" name="css">
+                    <div class="freeform-editor-pane">
+                      <CodeEditor
+                        v-model="selectedModule.data.css"
+                        language="css"
+                        @change="onCodeChange"
+                      />
+                    </div>
+                  </el-tab-pane>
+                  <el-tab-pane label="JavaScript" name="js">
+                    <div class="freeform-editor-pane">
+                      <CodeEditor
+                        v-model="selectedModule.data.js"
+                        language="javascript"
+                        @change="onCodeChange"
+                      />
+                    </div>
+                    <div class="freeform-api-ref">
+                      <el-collapse>
+                        <el-collapse-item title="ctx API 参考">
+                          <pre>ctx.ref(val)              — 创建响应式变量
+ctx.computed(fn)          — 创建计算属性
+ctx.watch(src, cb)        — 监听变化
+ctx.onMounted(fn)         — 组件挂载时
+ctx.onUnmounted(fn)       — 组件卸载时
+
+ctx.data.client           — 用户账户信息 (响应式)
+ctx.data.token            — 当前 token (响应式)
+ctx.data.isDark           — 暗色模式 (响应式)
+
+ctx.api.get(path, query)  — GET 请求
+ctx.api.post(path, body)  — POST 请求
+ctx.api.put(path, body)   — PUT 请求
+ctx.api.delete(path)      — DELETE 请求
+
+ctx.formatBytes(bytes)    — 格式化文件大小
+ctx.formatDate(date)      — 格式化日期
+ctx.copyText(text)        — 复制到剪贴板
+ctx.elMessage             — Element Plus 消息提示
+ctx.config                — 门户配置 (PORTAL_CONFIG)
+ctx.moduleId              — 当前模块 ID
+ctx.moduleTitle           — 当前模块标题</pre>
+                        </el-collapse-item>
+                      </el-collapse>
+                    </div>
+                  </el-tab-pane>
+                </el-tabs>
+                <el-alert type="info" :closable="false" show-icon style="margin-top: 8px">
+                  <span style="font-size: 12px">JS 需 <code>return</code> 一个对象作为 Vue 组件 setup 返回值。使用 <code>ctx.api.get('/me')</code> 调用后端接口。保存后访问门户页面查看真实效果。</span>
+                </el-alert>
+              </div>
+            </template>
           </div>
 
-          <!-- Visual Preview Mode (non-code modules or no selection) -->
-          <div v-else class="canvas-scroll">
+          <!-- CSS Editor Mode (available for ALL module types) -->
+          <div v-if="selectedModule && centerViewMode === 'css'" class="canvas-css-editor">
+            <div class="css-editor-info">
+              <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px; border-radius: 6px">
+                <span style="font-size: 12px">
+                  为「<b>{{ selectedModule.title || moduleTypeLabel(selectedModule.type) }}</b>」模块编写自定义 CSS。
+                  使用 <code>.module-wrap</code> 选择器可覆盖默认样式，例如：<code>.module-wrap {{ '{' }} padding: 20px; border-radius: 16px; {{ '}' }}</code>
+                </span>
+              </el-alert>
+            </div>
+            <div class="css-editor-split">
+              <div class="css-editor-pane">
+                <CodeEditor
+                  v-model="selectedModule.style.custom_css"
+                  language="css"
+                  @change="onCodeChange"
+                />
+              </div>
+              <div class="css-preview-pane" :class="'device-' + previewDevice">
+                <div class="portal-preview" :style="previewStyles">
+                  <div class="preview-header">
+                    <div class="preview-header-left">
+                      <span class="preview-site-name">{{ config.site_name || 'CoreFusion' }}</span>
+                    </div>
+                  </div>
+                  <div class="preview-modules">
+                    <component :is="'preview-' + selectedModule.type" :mod="selectedModule" :config="config" v-if="false" />
+                    <!-- Live preview of just this module with custom CSS -->
+                    <div :id="'preview-mod-' + selectedModule.id" class="module-wrap-preview">
+                      <style v-if="selectedModule.style?.custom_css" v-html="scopeCss(selectedModule.style.custom_css, selectedModule.id)"></style>
+                      <template v-if="selectedModule.type === 'hero'">
+                        <div class="preview-module preview-hero" :style="moduleStyle(selectedModule)">
+                          <div class="hero-eyebrow">{{ selectedModule.data?.eyebrow || '' }}</div>
+                          <h2 class="hero-heading">{{ selectedModule.data?.heading || selectedModule.title }}</h2>
+                          <p class="hero-desc">{{ selectedModule.data?.description || '' }}</p>
+                          <button v-if="selectedModule.data?.button_text" class="hero-btn">{{ selectedModule.data.button_text }}</button>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'markdown'">
+                        <div class="preview-module preview-markdown" :style="moduleStyle(selectedModule)">
+                          <div v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</div>
+                          <div class="md-preview-content" v-html="renderMd(selectedModule.data?.markdown || '')"></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'rich_text'">
+                        <div class="preview-module preview-rich-text" :style="moduleStyle(selectedModule)">
+                          <div v-html="sanitizeHtml(selectedModule.data?.html || '')"></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'notice'">
+                        <div class="preview-module preview-notice" :class="'notice-' + (selectedModule.style?.variant || 'info')">
+                          <div class="notice-title">{{ selectedModule.data?.title || selectedModule.title }}</div>
+                          <div v-if="selectedModule.data?.markdown" class="notice-body md-preview-content" v-html="renderMd(selectedModule.data.markdown)"></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'custom_html'">
+                        <div class="preview-module preview-custom-html">
+                          <div v-html="sanitizeHtml(selectedModule.data?.html || '')"></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'feature_cards'">
+                        <div class="preview-module preview-feature-cards">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
+                          <div class="feature-cards-grid">
+                            <div v-for="(card, ci) in (selectedModule.data?.cards || []).slice(0, 6)" :key="ci" class="feature-card">
+                              <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
+                              <h4>{{ card.title }}</h4>
+                              <p>{{ card.description }}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'account_stats'">
+                        <div class="preview-module preview-account-stats">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
+                          <div class="stats-grid">
+                            <div class="stat-box"><span class="stat-num">--</span><span class="stat-label">上传</span></div>
+                            <div class="stat-box"><span class="stat-num">--</span><span class="stat-label">下载</span></div>
+                            <div class="stat-box"><span class="stat-num">--</span><span class="stat-label">总量</span></div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'subscription'">
+                        <div class="preview-module preview-subscription">
+                          <h3 class="module-section-title">{{ selectedModule.data?.title || selectedModule.title || '订阅信息' }}</h3>
+                          <p class="sub-desc">{{ selectedModule.data?.description || '查看您的订阅链接和状态' }}</p>
+                          <button v-if="selectedModule.data?.button_text" class="sub-btn">{{ selectedModule.data.button_text }}</button>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'account_info'">
+                        <div class="preview-module preview-account-info">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
+                          <div class="stats-grid">
+                            <div class="stat-box"><span class="stat-label">邮箱</span><span class="stat-num" style="font-size:13px">user@example.com</span></div>
+                            <div class="stat-box"><span class="stat-label">套餐</span><span class="stat-num" style="font-size:13px">基础版</span></div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'traffic_ring'">
+                        <div class="preview-module preview-traffic-ring">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
+                          <div style="display:flex;justify-content:center;margin:12px 0">
+                            <div style="width:100px;height:100px;border-radius:50%;border:10px solid #e8e8ef;border-top-color:#67c23a;display:flex;align-items:center;justify-content:center">
+                              <span style="font-size:20px;font-weight:700">75%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'subscription_detail'">
+                        <div class="preview-module preview-sub-detail">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '订阅信息' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="background:var(--pv-bg);padding:10px;border-radius:8px;font-family:monospace;font-size:12px;word-break:break-all;margin-bottom:8px">https://example.com/sub/abc123...</div>
+                          <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.copy_text || '复制' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ selectedModule.data?.qr_text || '二维码' }}</button></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'security_settings'">
+                        <div class="preview-module preview-security">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '安全设置' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="font-size:12px;color:#909399">IP 白名单 · 设备限制 · 修改密码</div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'log_packages'">
+                        <div class="preview-module preview-log-packages">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '日志打包' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.btn_1h || '1小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ selectedModule.data?.btn_6h || '6小时' }}</button></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'freeform'">
+                        <div class="preview-module preview-freeform">
+                          <div class="freeform-badge">HTML+CSS+JS</div>
+                          <div v-html="sanitizeHtml(selectedModule.data?.html || '')"></div>
+                          <p style="color:#909399;font-size:11px;text-align:center;margin-top:4px">JS 交互需保存后在门户查看</p>
+                        </div>
+                      </template>
+                      <template v-else>
+                        <div class="preview-module">
+                          <p style="color:#909399;text-align:center;padding:20px">{{ moduleTypeLabel(selectedModule.type) }} 模块预览</p>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Visual Preview Mode -->
+          <div v-if="!selectedModule || (centerViewMode === 'preview')" class="canvas-scroll">
             <div class="portal-preview" :style="previewStyles">
               <!-- Site Header Preview -->
               <div class="preview-header">
@@ -309,6 +541,13 @@
                   <div v-else-if="mod.type === 'custom_html'" class="preview-module preview-custom-html">
                     <div class="custom-html-badge">HTML</div>
                     <div v-html="sanitizeHtml(mod.data?.html || '')"></div>
+                  </div>
+
+                  <!-- Freeform Module Preview -->
+                  <div v-else-if="mod.type === 'freeform'" class="preview-module preview-freeform">
+                    <div class="freeform-badge">HTML+CSS+JS</div>
+                    <div v-html="sanitizeHtml(mod.data?.html || '')"></div>
+                    <p style="color:#909399;font-size:11px;text-align:center;margin-top:4px">JS 交互需保存后在门户查看</p>
                   </div>
 
                   <!-- Account Info Preview -->
@@ -584,8 +823,8 @@
       </div>
 
       <!-- ===== Template Code Mode ===== -->
-      <div v-if="editorMode === 'code'" class="settings-mode">
-        <el-alert type="info" :closable="false" show-icon style="margin-bottom: 12px">
+      <div v-if="editorMode === 'code'" class="code-mode">
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom: 0; border-radius: 0">
           <span style="font-size: 13px">
             <b>模板编辑</b> — 可直接修改门户的 HTML/CSS/JS 模板代码。修改后点击"保存"即生效。
             <br/>HTML 变量：<code v-pre>{{.SiteName}}</code> <code v-pre>{{.LogoURL}}</code> <code v-pre>{{.RegistrationEnabled}}</code>
@@ -593,25 +832,43 @@
             <code v-pre>{{.BackgroundColor}}</code> <code v-pre>{{.FontFamily}}</code> 等
           </span>
         </el-alert>
-        <el-tabs v-model="codeTab" type="border-card">
-          <el-tab-pane label="HTML 模板" name="html">
-            <el-input v-model="form.html_content" type="textarea" :rows="28" style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 12px" />
-          </el-tab-pane>
-          <el-tab-pane label="CSS 样式" name="css">
-            <el-input v-model="form.css_content" type="textarea" :rows="28" style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 12px" />
-          </el-tab-pane>
-          <el-tab-pane label="JavaScript" name="js">
-            <el-input v-model="form.js_content" type="textarea" :rows="28" style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 12px" />
-          </el-tab-pane>
-          <el-tab-pane label="重置与导出" name="advanced">
-            <div style="padding: 20px 0; max-width: 600px">
-              <el-alert type="warning" :closable="false" show-icon title="重置为默认模板" style="margin-bottom: 16px">
-                此操作将覆盖当前所有自定义配置，恢复为系统内置默认模板。此操作不可撤销。
-              </el-alert>
-              <el-button type="danger" @click="handleReset">重置为默认模板</el-button>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
+        <div class="code-tabs-bar">
+          <el-radio-group v-model="codeTab" size="small">
+            <el-radio-button value="html">HTML 模板</el-radio-button>
+            <el-radio-button value="css">CSS 样式</el-radio-button>
+            <el-radio-button value="js">JavaScript</el-radio-button>
+            <el-radio-button value="advanced">重置与导出</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div v-if="codeTab !== 'advanced'" class="code-editor-area">
+          <CodeEditor
+            v-if="codeTab === 'html'"
+            v-model="form.html_content"
+            language="html"
+            :minimap="true"
+            @change="onCodeChange"
+          />
+          <CodeEditor
+            v-if="codeTab === 'css'"
+            v-model="form.css_content"
+            language="css"
+            :minimap="true"
+            @change="onCodeChange"
+          />
+          <CodeEditor
+            v-if="codeTab === 'js'"
+            v-model="form.js_content"
+            language="javascript"
+            :minimap="true"
+            @change="onCodeChange"
+          />
+        </div>
+        <div v-else class="code-advanced-pane">
+          <el-alert type="warning" :closable="false" show-icon title="重置为默认模板" style="margin-bottom: 16px">
+            此操作将覆盖当前所有自定义配置，恢复为系统内置默认模板。此操作不可撤销。
+          </el-alert>
+          <el-button type="danger" @click="handleReset">重置为默认模板</el-button>
+        </div>
       </div>
     </div>
 
@@ -632,12 +889,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, shallowRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
 import { getActivePortal, updateActivePortal, resetPortal } from '../api/portal'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import CodeEditor from '../components/common/CodeEditor.vue'
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true })
@@ -653,8 +911,8 @@ const registrationEnabled = ref(false)
 const portalPort = ref('')
 const navDialogVisible = ref(false)
 const richTextEditRef = ref(null)
-const mdEditRef = ref(null)
-const noticeMdRef = ref(null)
+const mdEditorRef = shallowRef(null)
+const noticeMdEditorRef = shallowRef(null)
 
 const form = reactive({ name: '', description: '', html_content: '', css_content: '', js_content: '' })
 const config = reactive({
@@ -934,10 +1192,339 @@ const currentNav = computed(() => navigation.value.find(n => n.id === currentPag
 // Current page target (derived from the page we're viewing, NOT the editing selection)
 const currentPageTarget = computed(() => currentNav.value?.target || '')
 
-// Whether the selected module has a code editor (shown in center column)
-const hasCodeEditor = computed(() => {
+// Center column view mode: 'preview' | 'editor' | 'css'
+const centerViewMode = ref('preview')
+const freeformTab = ref('html')
+
+// Whether the selected module has a content code editor (markdown, rich_text, etc.)
+const hasContentEditor = computed(() => {
   if (!selectedModule.value) return false
-  return ['markdown', 'rich_text', 'custom_html', 'notice'].includes(selectedModule.value.type)
+  return ['markdown', 'rich_text', 'custom_html', 'notice', 'freeform'].includes(selectedModule.value.type)
+})
+
+// Whether the selected module can have custom CSS
+const hasCustomCss = computed(() => !!selectedModule.value)
+
+// Ensure module.style.custom_css exists
+function ensureCustomCss(mod) {
+  if (!mod) return
+  if (!mod.style) mod.style = {}
+  if (typeof mod.style.custom_css !== 'string') mod.style.custom_css = ''
+}
+
+// Default CSS templates for each module type (mirrors portal runtime styles)
+const defaultModuleCssMap = {
+  hero: `/* Hero 欢迎区样式 */
+.module-wrap {
+  padding: 20px;
+  border-radius: 16px;
+}
+.hero-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.hero-heading {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+.hero-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.hero-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}`,
+  markdown: `/* Markdown 文档样式 */
+.module-wrap {
+  padding: 16px;
+}
+.module-markdown {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.md-render h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.md-render h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 14px 0 6px;
+}
+.md-render p {
+  margin: 6px 0;
+}
+.md-render code {
+  background: rgba(0,0,0,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.md-render pre {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  padding: 14px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.md-render blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+  background: var(--accent-light);
+  border-radius: 0 6px 6px 0;
+}`,
+  rich_text: `/* 富文本样式 */
+.module-wrap {
+  padding: 16px;
+}
+.module-rich-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+.module-rich-text h2 {
+  font-size: 18px;
+  margin: 8px 0;
+}
+.module-rich-text h3 {
+  font-size: 16px;
+  margin: 8px 0;
+}
+.module-rich-text p {
+  margin: 6px 0;
+}
+.module-rich-text blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+}`,
+  notice: `/* 公告提示样式 */
+.module-wrap {
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.module-notice {
+  border-left: 4px solid;
+  padding: 12px;
+  border-radius: 8px;
+}
+.notice-info {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.notice-success {
+  border-color: var(--success);
+  background: rgba(103,194,58,0.12);
+}
+.notice-warning {
+  border-color: var(--warning);
+  background: rgba(230,162,60,0.12);
+}
+.notice-error {
+  border-color: var(--danger);
+  background: rgba(245,108,108,0.12);
+}
+.notice-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}`,
+  feature_cards: `/* 功能卡片样式 */
+.module-wrap {
+  padding: 16px;
+}
+.feature-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+.feature-card {
+  padding: 12px;
+  background: var(--accent-light);
+  border-radius: 10px;
+  text-align: center;
+  transition: transform 0.2s;
+}
+.feature-card:hover {
+  transform: translateY(-2px);
+}
+.feature-card-icon {
+  font-size: 24px;
+  display: block;
+  margin-bottom: 4px;
+}
+.feature-card h4 {
+  font-size: 13px;
+  margin: 2px 0;
+  color: var(--text-primary);
+}
+.feature-card p {
+  font-size: 12px;
+  color: var(--text-muted);
+}`,
+  account_stats: `/* 账户数据样式 */
+.module-wrap {
+  padding: 16px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.stat-box {
+  text-align: center;
+  padding: 12px;
+  background: var(--accent-light);
+  border-radius: 8px;
+}
+.stat-num {
+  font-size: 18px;
+  font-weight: 700;
+  display: block;
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}`,
+  account_info: `/* 账户信息样式 */
+.module-wrap {
+  padding: 16px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.stat-box {
+  text-align: center;
+  padding: 12px;
+  background: var(--accent-light);
+  border-radius: 8px;
+}`,
+  traffic_ring: `/* 流量环形图样式 */
+.module-wrap {
+  padding: 16px;
+  text-align: center;
+}`,
+  subscription_detail: `/* 订阅详情样式 */
+.module-wrap {
+  padding: 16px;
+}
+.sub-link-box {
+  background: var(--accent-light);
+  padding: 10px;
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-all;
+  margin-bottom: 8px;
+}`,
+  security_settings: `/* 安全设置样式 */
+.module-wrap {
+  padding: 16px;
+}`,
+  log_packages: `/* 日志打包样式 */
+.module-wrap {
+  padding: 16px;
+}
+.log-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}`,
+  subscription: `/* 订阅入口样式 */
+.module-wrap {
+  padding: 20px;
+  text-align: center;
+}
+.sub-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 8px 0;
+}
+.sub-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}`,
+  custom_html: `/* 自定义 HTML 样式 */
+.module-wrap {
+  padding: 16px;
+}`,
+  freeform: `/* 自由组件样式 */
+.module-wrap {
+  padding: 0;
+}
+.module-freeform {
+  width: 100%;
+}`,
+}
+
+// When switching to CSS mode, auto-fill default CSS if empty
+function onSwitchToCssMode() {
+  if (!selectedModule.value) return
+  ensureCustomCss(selectedModule.value)
+  if (!selectedModule.value.style.custom_css) {
+    const defaultCss = defaultModuleCssMap[selectedModule.value.type]
+    if (defaultCss) {
+      selectedModule.value.style.custom_css = defaultCss
+      hasUnsavedChanges.value = true
+    }
+  }
+}
+
+// Watch centerViewMode: when switching to 'css', auto-fill default CSS
+watch(centerViewMode, (newVal) => {
+  if (newVal === 'css') onSwitchToCssMode()
+})
+
+// Auto-switch center view mode when selecting a module
+function autoCenterViewMode() {
+  if (hasContentEditor.value) centerViewMode.value = 'editor'
+  else centerViewMode.value = 'preview'
+}
+
+// Computed custom CSS for the currently selected module (for live preview)
+const selectedModuleCustomCss = computed(() => {
+  if (!selectedModule.value) return ''
+  ensureCustomCss(selectedModule.value)
+  return selectedModule.value.style.custom_css || ''
+})
+
+// Collect all custom CSS from all visible modules for the full preview
+const allModuleCustomCss = computed(() => {
+  return modules.value
+    .filter(m => m.visible && m.style?.custom_css)
+    .map(m => {
+      const css = m.style.custom_css
+      // Scope CSS to the module's wrapper: #preview-mod-{id}
+      // Replace bare selectors with scoped ones
+      return `\n/* Module: ${m.title || m.id} */\n${css}`
+    })
+    .join('\n')
 })
 
 // Modules belonging to the current page
@@ -1006,13 +1593,30 @@ const defaultModules = [
 ]
 
 function moduleTypeLabel(type) {
-  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML', account_info: '账户', traffic_ring: '流量环', subscription_detail: '订阅详情', security_settings: '安全', log_packages: '日志' }[type] || type
+  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML', account_info: '账户', traffic_ring: '流量环', subscription_detail: '订阅详情', security_settings: '安全', log_packages: '日志', freeform: '自由' }[type] || type
 }
 
 function moduleStyle(mod) {
   const s = {}
   if (mod.style?.align === 'center') s.textAlign = 'center'
   return s
+}
+
+// Scope CSS to a specific module preview by prefixing selectors with #preview-mod-{id}
+function scopeCss(css, modId) {
+  if (!css) return ''
+  const scope = `#preview-mod-${modId}`
+  // Add scope prefix to each selector in comma-separated selector lists
+  return css.replace(/([^{}]+)\{/g, (match, selectors) => {
+    const scoped = selectors.split(',').map(s => {
+      const trimmed = s.trim()
+      if (!trimmed) return trimmed
+      // Don't scope @media, @keyframes, etc.
+      if (trimmed.startsWith('@')) return trimmed
+      return `${scope} ${trimmed}`
+    }).join(', ')
+    return scoped + ' {'
+  })
 }
 
 function renderMd(md) {
@@ -1035,6 +1639,7 @@ function selectNav(id) {
 function selectModule(id) {
   selectedModuleId.value = id  // show module properties in right panel
   selectedNavId.value = ''     // clear nav editing, but keep currentPageNavId
+  autoCenterViewMode()
 }
 
 function openNavDialog() {
@@ -1068,19 +1673,27 @@ function removeNav(idx) {
 
 function addModule(type) {
   const defaults = {
-    hero: { data: { eyebrow: '', heading: '新标题', description: '', button_text: '', button_target: 'subscription' }, style: { variant: 'primary', align: 'left' } },
-    markdown: { data: { markdown: '## 标题\n\n在这里编写 Markdown 内容。\n\n- 支持 **粗体**、*斜体*\n- 支持 [链接](https://example.com)\n- 支持代码块\n\n```js\nconsole.log("hello")\n```\n' }, style: { align: 'left' } },
-    rich_text: { data: { html: '<p>在此编辑富文本内容</p>' }, style: { align: 'left' } },
-    notice: { data: { title: '公告', markdown: '公告正文，支持 **Markdown** 格式。' }, style: { variant: 'info' } },
-    feature_cards: { data: { cards: [{ icon: '⭐', title: '功能一', description: '功能描述' }] }, style: {} },
-    account_stats: { data: {}, style: { layout: 'grid' } },
-    account_info: { data: {}, style: {} },
-    traffic_ring: { data: {}, style: {} },
-    subscription_detail: { data: { description: '', copy_text: '复制', qr_text: '二维码', show_status: true, show_rotate: true }, style: {} },
-    security_settings: { data: { description: '', show_ip_whitelist: true, show_password: true }, style: {} },
-    log_packages: { data: { description: '', btn_1h: '打包最近1小时', btn_6h: '最近6小时', btn_24h: '最近24小时' }, style: {} },
-    subscription: { data: { title: '订阅信息', description: '', button_text: '复制订阅链接' }, style: {} },
-    custom_html: { data: { html: '<div>自定义内容</div>' }, style: {} },
+    hero: { data: { eyebrow: '', heading: '新标题', description: '', button_text: '', button_target: 'subscription' }, style: { variant: 'primary', align: 'left', custom_css: '' } },
+    markdown: { data: { markdown: '## 标题\n\n在这里编写 Markdown 内容。\n\n- 支持 **粗体**、*斜体*\n- 支持 [链接](https://example.com)\n- 支持代码块\n\n```js\nconsole.log("hello")\n```\n' }, style: { align: 'left', custom_css: '' } },
+    rich_text: { data: { html: '<p>在此编辑富文本内容</p>' }, style: { align: 'left', custom_css: '' } },
+    notice: { data: { title: '公告', markdown: '公告正文，支持 **Markdown** 格式。' }, style: { variant: 'info', custom_css: '' } },
+    feature_cards: { data: { cards: [{ icon: '⭐', title: '功能一', description: '功能描述' }] }, style: { custom_css: '' } },
+    account_stats: { data: {}, style: { layout: 'grid', custom_css: '' } },
+    account_info: { data: {}, style: { custom_css: '' } },
+    traffic_ring: { data: {}, style: { custom_css: '' } },
+    subscription_detail: { data: { description: '', copy_text: '复制', qr_text: '二维码', show_status: true, show_rotate: true }, style: { custom_css: '' } },
+    security_settings: { data: { description: '', show_ip_whitelist: true, show_password: true }, style: { custom_css: '' } },
+    log_packages: { data: { description: '', btn_1h: '打包最近1小时', btn_6h: '最近6小时', btn_24h: '最近24小时' }, style: { custom_css: '' } },
+    subscription: { data: { title: '订阅信息', description: '', button_text: '复制订阅链接' }, style: { custom_css: '' } },
+    custom_html: { data: { html: '<div>自定义内容</div>' }, style: { custom_css: '' } },
+    freeform: {
+      data: {
+        html: '<div class="my-module">\n  <h3>{{ title }}</h3>\n  <p>自定义内容区域</p>\n  <button @click="count++">点击 {{ count }}</button>\n</div>',
+        css: '.my-module {\n  padding: 20px;\n  border-radius: 12px;\n  background: var(--accent-light);\n}\n.my-module h3 {\n  color: var(--accent);\n  margin-bottom: 8px;\n}\n.my-module button {\n  padding: 6px 16px;\n  border: none;\n  border-radius: 6px;\n  background: var(--accent);\n  color: #fff;\n  cursor: pointer;\n}',
+        js: '// ctx 包含：\n// ctx.ref / ctx.computed / ctx.watch  — Vue 响应式 API\n// ctx.data.client / ctx.data.token  — 用户数据\n// ctx.api.get/post/put/delete(path, body)  — API 调用\n// ctx.formatBytes / ctx.copyText / ctx.elMessage  — 工具函数\n\nvar ref = ctx.ref\n\nreturn {\n  title: ref("我的自定义模块"),\n  count: ref(0),\n}'
+      },
+      style: { custom_css: '', custom_class: '' }
+    },
   }
   const page = currentPageTarget.value || 'overview'
   const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), page, visible: true, data: defaults[type].data, style: defaults[type].style }
@@ -1153,14 +1766,25 @@ function syncRichText() {
   }
 }
 
+// Monaco editor mount handlers
+function onMdEditorMount(editor) {
+  mdEditorRef.value = editor
+}
+function onNoticeMdEditorMount(editor) {
+  noticeMdEditorRef.value = editor
+}
+function onCodeChange() {
+  hasUnsavedChanges.value = true
+}
+
 // Markdown editor toolbar
 function insertMd(type) {
-  const el = mdEditRef.value
-  if (!el) return
-  const start = el.selectionStart
-  const end = el.selectionEnd
-  const text = el.value
-  const sel = text.substring(start, end)
+  const editor = mdEditorRef.value
+  if (!editor || !selectedModule.value) return
+  const model = editor.getModel()
+  if (!model) return
+  const selection = editor.getSelection()
+  const sel = model.getValueInRange(selection)
   let insert = ''
   switch (type) {
     case 'heading': insert = `## ${sel || '标题'}`; break
@@ -1178,22 +1802,22 @@ function insertMd(type) {
     case 'table': insert = `| 列1 | 列2 | 列3 |\n|------|------|------|\n| 内容 | 内容 | 内容 |`; break
     case 'hr': insert = `---`; break
   }
-  el.value = text.substring(0, start) + insert + text.substring(end)
-  el.selectionStart = el.selectionEnd = start + insert.length
-  selectedModule.value.data.markdown = el.value
+  editor.executeEdits('toolbar', [{
+    range: selection,
+    text: insert,
+    forceMoveMarkers: true,
+  }])
   hasUnsavedChanges.value = true
 }
 
-function onMdInput() { hasUnsavedChanges.value = true }
-
 // Notice MD helpers
 function insertNoticeMd(type) {
-  const el = noticeMdRef.value
-  if (!el) return
-  const start = el.selectionStart
-  const end = el.selectionEnd
-  const text = el.value
-  const sel = text.substring(start, end)
+  const editor = noticeMdEditorRef.value
+  if (!editor || !selectedModule.value) return
+  const model = editor.getModel()
+  if (!model) return
+  const selection = editor.getSelection()
+  const sel = model.getValueInRange(selection)
   let insert = ''
   switch (type) {
     case 'heading': insert = `## ${sel || '标题'}`; break
@@ -1202,12 +1826,13 @@ function insertNoticeMd(type) {
     case 'link': insert = `[${sel || '链接'}](https://...)`; break
     case 'code': insert = `\`${sel || '代码'}\``; break
   }
-  el.value = text.substring(0, start) + insert + text.substring(end)
-  el.selectionStart = el.selectionEnd = start + insert.length
-  selectedModule.value.data.markdown = el.value
+  editor.executeEdits('toolbar', [{
+    range: selection,
+    text: insert,
+    forceMoveMarkers: true,
+  }])
   hasUnsavedChanges.value = true
 }
-function onNoticeMdInput() { hasUnsavedChanges.value = true }
 
 const applyData = (d) => {
   if (!d) return
@@ -1365,8 +1990,19 @@ onMounted(() => { fetchConfig() })
 
 /* ===== Center Code Editor ===== */
 .canvas-code-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
-.toolbar-editor-label { font-size: 13px; font-weight: 600; color: #303133; margin-right: auto; }
-.canvas-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #e4e7ed; flex-shrink: 0; }
+.canvas-toolbar-left { display: flex; align-items: center; gap: 8px; }
+.canvas-toolbar-right { display: flex; align-items: center; gap: 8px; }
+
+/* ===== CSS Editor Mode ===== */
+.canvas-css-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
+.css-editor-info { flex-shrink: 0; }
+.css-editor-split { flex: 1; display: flex; min-height: 0; gap: 8px; overflow: hidden; }
+.css-editor-pane { flex: 1; min-width: 0; overflow: hidden; }
+.css-preview-pane { flex: 1; overflow-y: auto; background: #f5f7fa; border-radius: 6px; }
+.css-preview-pane.device-tablet .portal-preview { max-width: 768px; margin: 0 auto; }
+.css-preview-pane.device-mobile .portal-preview { max-width: 375px; margin: 0 auto; }
+.module-wrap-preview { padding: 16px; }
 
 .md-editor-full, .rte-editor-wrap, .html-editor-wrap, .notice-editor-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .md-split-full { flex: 1; min-height: 0; }
@@ -1376,10 +2012,8 @@ onMounted(() => { fetchConfig() })
 .rte-preview { flex: 1; overflow-y: auto; border-left: 1px solid #e4e7ed; background: #fff; }
 
 .html-split { flex: 1; display: flex; min-height: 0; overflow: hidden; }
-.html-textarea {
-  flex: 1; border: 1px solid #dcdfe6; border-radius: 6px 0 0 6px; resize: none; padding: 12px;
-  font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 13px; line-height: 1.6;
-  outline: none; color: #303133; background: #fff;
+.html-editor-pane {
+  flex: 1; min-width: 0; border: 1px solid #dcdfe6; border-radius: 6px 0 0 6px; overflow: hidden;
 }
 .html-preview {
   flex: 1; padding: 12px; border: 1px solid #dcdfe6; border-left: none; border-radius: 0 6px 6px 0;
@@ -1496,6 +2130,17 @@ onMounted(() => { fetchConfig() })
 .module-section-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 
 .custom-html-badge { display: inline-block; padding: 1px 8px; border-radius: 4px; background: #efebe9; color: #795548; font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+.freeform-badge { display: inline-block; padding: 1px 8px; border-radius: 4px; background: #e8f5e9; color: #2e7d32; font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+
+.freeform-editor-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.freeform-tabs { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.freeform-tabs :deep(.el-tabs__content) { flex: 1; overflow: hidden; }
+.freeform-tabs :deep(.el-tab-pane) { height: 100%; display: flex; flex-direction: column; }
+.freeform-editor-pane { flex: 1; overflow: hidden; min-height: 300px; }
+.freeform-api-ref { margin-top: 8px; }
+.freeform-api-ref pre { font-size: 12px; line-height: 1.6; color: #606266; white-space: pre-wrap; word-break: break-all; margin: 0; }
+.freeform-api-ref .el-collapse { border: none; }
+.freeform-api-ref .el-collapse-item__header { font-size: 12px; height: 32px; line-height: 32px; }
 
 .preview-empty { text-align: center; padding: 40px; color: #909399; }
 
@@ -1530,13 +2175,9 @@ onMounted(() => { fetchConfig() })
 .md-divider { width: 1px; background: #dcdfe6; margin: 2px 4px; }
 .md-split { display: flex; min-height: 240px; }
 .md-split-compact { min-height: 120px; }
-.md-textarea {
-  width: 50%; border: none; resize: none; padding: 12px;
-  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
-  font-size: 13px; line-height: 1.6; outline: none; color: #303133;
-  background: #fff;
+.md-editor-pane {
+  width: 50%; min-width: 0; overflow: hidden;
 }
-.md-textarea:focus { background: #fafcff; }
 .md-preview-pane {
   width: 50%; padding: 12px; border-left: 1px solid #e4e7ed;
   overflow-y: auto; background: #fff;
@@ -1551,8 +2192,22 @@ onMounted(() => { fetchConfig() })
 .rte-content { padding: 12px; min-height: 120px; font-size: 14px; line-height: 1.6; outline: none; }
 .rte-content:focus { outline: 2px solid #409eff; }
 
-/* ===== Settings/Code Mode ===== */
+/* ===== Settings Mode ===== */
 .settings-mode { padding: 16px; overflow-y: auto; height: 100%; }
+
+/* ===== Template Code Mode (Monaco) ===== */
+.code-mode { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.code-tabs-bar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  background: #fff; border-bottom: 1px solid #e4e7ed; flex-shrink: 0;
+}
+.code-editor-area {
+  flex: 1; min-height: 0; padding: 8px;
+}
+.code-editor-area > * {
+  height: 100%;
+}
+.code-advanced-pane { padding: 20px; overflow-y: auto; }
 .color-row { display: flex; align-items: center; gap: 8px; }
 .api-section-title { font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 12px; }
 

@@ -22,14 +22,16 @@ var allowedModuleTypes = map[string]bool{
 	"subscription_detail": true,
 	"security_settings":  true,
 	"log_packages":        true,
+	"freeform":            true, // 自由模块：HTML+CSS+JS，不清洗
 }
 
 const (
-	maxModules       = 20 // maximum number of modules allowed
-	maxNavigation    = 10 // maximum number of navigation items allowed
-	maxConfigSize    = 200 * 1024 // 200KB max config JSON size
-	maxHTMLContent   = 50000      // max characters for HTML/Markdown content in a single module
-	maxCardsPerModule = 6         // max feature cards per module
+	maxModules        = 20  // maximum number of modules allowed
+	maxNavigation     = 10  // maximum number of navigation items allowed
+	maxConfigSize     = 300 * 1024 // 300KB max config JSON size (increased for freeform)
+	maxHTMLContent    = 50000      // max characters for HTML/Markdown content in a single module
+	maxFreeformContent = 200000    // max characters for freeform html/css/js content per field
+	maxCardsPerModule = 6          // max feature cards per module
 )
 
 // dangerousScriptRe matches script tags and event handler attributes.
@@ -182,6 +184,10 @@ func validateModules(modRaw json.RawMessage) (json.RawMessage, error) {
 			if err := validateMarkdownModule(mod); err != nil {
 				return nil, fmt.Errorf("module %d (%s): %w", i, modType, err)
 			}
+		case "freeform":
+			if err := validateFreeformModule(mod); err != nil {
+				return nil, fmt.Errorf("module %d (freeform): %w", i, err)
+			}
 		}
 	}
 
@@ -273,6 +279,32 @@ func validateMarkdownModule(mod map[string]interface{}) error {
 	return nil
 }
 
+// validateFreeformModule validates a freeform module (HTML+CSS+JS).
+// Unlike other modules, freeform content is NOT sanitized — the admin has full control.
+// Basic safety checks only: size limits and blocking of eval().
+func validateFreeformModule(mod map[string]interface{}) error {
+	data, ok := mod["data"].(map[string]interface{})
+	if !ok {
+		return nil // data is optional
+	}
+
+	// Check size limits for html, css, js fields
+	for _, key := range []string{"html", "css", "js"} {
+		if v, ok := data[key].(string); ok && len(v) > maxFreeformContent {
+			return fmt.Errorf("%s content too large: %d chars (max %d)", key, len(v), maxFreeformContent)
+		}
+	}
+
+	// Basic safety: block eval() in JS
+	if js, ok := data["js"].(string); ok {
+		if strings.Contains(js, "eval(") {
+			return fmt.Errorf("eval() is not allowed in freeform JS")
+		}
+	}
+
+	return nil
+}
+
 // sanitizeModuleHTML removes dangerous HTML from module content.
 // This is a backend-level safety net — the frontend also sanitizes with DOMPurify.
 func sanitizeModuleHTML(modRaw json.RawMessage) (json.RawMessage, error) {
@@ -282,6 +314,11 @@ func sanitizeModuleHTML(modRaw json.RawMessage) (json.RawMessage, error) {
 	}
 
 	for _, mod := range modules {
+		modType, _ := mod["type"].(string)
+		// Skip sanitization for freeform modules — admin has full control
+		if modType == "freeform" {
+			continue
+		}
 		data, ok := mod["data"].(map[string]interface{})
 		if !ok {
 			continue

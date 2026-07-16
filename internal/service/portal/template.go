@@ -92,10 +92,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <!-- Rich Text -->
             <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
             <!-- Notice -->
-            <div v-else-if="mod.type === 'notice'" class="module-notice" :class="'notice-' + (mod.style && mod.style.variant || 'info')">
+            <div v-else-if="mod.type === 'notice'" class="module-notice" :class="'notice-' + (mod.style && mod.style.variant || 'info')" :style="{ cursor: mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual' ? 'pointer' : 'default' }" @click="mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual' && showNoticePopup(mod)">
               <div v-if="mod.data && mod.data.title" class="notice-title">{{ mod.data.title }}</div>
               <div v-if="mod.data && mod.data.markdown" class="md-render" v-html="renderMd(mod.data.markdown)"></div>
               <div v-else-if="mod.data && mod.data.html" v-html="mod.data.html"></div>
+              <div v-if="mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual'" class="notice-popup-hint">📍 点击查看详情</div>
             </div>
             <!-- Feature Cards -->
             <div v-else-if="mod.type === 'feature_cards'">
@@ -278,6 +279,39 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
       </nav>
     </div>
+
+    <!-- Notice Popup Dialog -->
+    <el-dialog
+      v-if="activeNoticePopup"
+      v-model="noticePopupVisible"
+      :title="(activeNoticePopup.data && activeNoticePopup.data.title) || activeNoticePopup.title || '公告'"
+      :width="(activeNoticePopup.data && activeNoticePopup.data.popup_width) || '480px'"
+      :show-close="(activeNoticePopup.data && activeNoticePopup.data.popup_show_close !== false)"
+      :close-on-click-modal="false"
+      class="notice-popup-dialog"
+      align-center
+      append-to-body
+    >
+      <div class="notice-popup-body" :class="'notice-' + ((activeNoticePopup.style && activeNoticePopup.style.variant) || 'info')">
+        <div v-if="activeNoticePopup.data && activeNoticePopup.data.markdown" class="md-render" v-html="renderMd(activeNoticePopup.data.markdown)"></div>
+        <div v-if="activeNoticePopup.data && activeNoticePopup.data.html" v-html="activeNoticePopup.data.html"></div>
+      </div>
+      <template #footer>
+        <div class="notice-popup-footer">
+          <el-button
+            v-if="activeNoticePopup.data && activeNoticePopup.data.popup_link_url"
+            type="primary"
+            plain
+            @click="openNoticeLink(activeNoticePopup.data.popup_link_url, activeNoticePopup.data.popup_link_external !== false)"
+          >
+            {{ (activeNoticePopup.data && activeNoticePopup.data.popup_link_text) || '查看详情' }}
+          </el-button>
+          <el-button type="primary" @click="dismissNoticePopup">
+            {{ (activeNoticePopup.data && activeNoticePopup.data.popup_button_text) || '我知道了' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
@@ -615,6 +649,17 @@ body {
 .notice-warning { border-color: var(--warning); background: rgba(230,162,60,0.12); }
 .notice-error { border-color: var(--danger); background: rgba(245,108,108,0.12); }
 .module-notice .notice-title { font-weight: 600; margin-bottom: 4px; }
+.notice-popup-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.notice-popup-dialog .el-dialog__body { padding: 0; }
+.notice-popup-body { padding: 20px 24px; }
+.notice-popup-body.info { border-top: 3px solid var(--accent); }
+.notice-popup-body.success { border-top: 3px solid var(--success); }
+.notice-popup-body.warning { border-top: 3px solid var(--warning); }
+.notice-popup-body.error { border-top: 3px solid var(--danger); }
+.notice-popup-footer { display: flex; justify-content: flex-end; gap: 12px; }
+.notice-popup-dialog .el-dialog { border-radius: 16px; overflow: hidden; }
+.notice-popup-dialog .el-dialog__header { padding: 16px 24px; border-bottom: 1px solid var(--border); }
+.notice-popup-dialog .el-dialog__title { font-size: 16px; font-weight: 600; }
 .feature-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
 .feature-card { padding: 12px; background: var(--accent-light); border-radius: 10px; text-align: center; }
 .feature-card-icon { font-size: 24px; display: block; margin-bottom: 4px; }
@@ -663,6 +708,8 @@ var app = createApp({
     var activeTab = ref('overview')
     var showPasswordDialog = ref(false)
     var showQr = ref(false)
+    var noticePopupVisible = ref(false)
+    var activeNoticePopup = ref(null)
     var logoUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.logo_url) || '')
     var isDark = ref(localStorage.getItem('portal_theme') === 'dark' || (!localStorage.getItem('portal_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
 
@@ -967,9 +1014,64 @@ var app = createApp({
       }).catch(function() {})
     }
 
+    // --- Notice popup logic ---
+    var showNoticePopup = function(mod) {
+      // Check if dismissed before (for 'once' mode)
+      if (mod.data && mod.data.popup_dismiss === 'once') {
+        var key = 'notice_dismissed_' + mod.id
+        if (localStorage.getItem(key)) return
+      }
+      activeNoticePopup.value = mod
+      noticePopupVisible.value = true
+    }
+
+    var dismissNoticePopup = function() {
+      var mod = activeNoticePopup.value
+      if (mod && mod.data && mod.data.popup_dismiss === 'once') {
+        localStorage.setItem('notice_dismissed_' + mod.id, '1')
+      }
+      noticePopupVisible.value = false
+    }
+
+    var openNoticeLink = function(url, external) {
+      if (external) window.open(url, '_blank')
+      else window.location.href = url
+    }
+
+    var checkAutoNoticePopups = function() {
+      if (!token.value) return // Only show when logged in
+      var pageMods = portalModules.value.filter(function(m) {
+        return (m.page || 'overview') === activeTab.value && m.type === 'notice'
+      })
+      for (var i = 0; i < pageMods.length; i++) {
+        var mod = pageMods[i]
+        if (mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'on_load') {
+          if (mod.data.popup_dismiss === 'once') {
+            var key = 'notice_dismissed_' + mod.id
+            if (localStorage.getItem(key)) continue
+          }
+          showNoticePopup(mod)
+          break // Only show first matching popup
+        }
+      }
+    }
+
     onMounted(function() {
       fetchPublicSettings()
-      if (token.value) { fetchMe(); fetchEndpoints(); startAutoRefresh() }
+      if (token.value) {
+        fetchMe(); fetchEndpoints(); startAutoRefresh()
+        setTimeout(checkAutoNoticePopups, 800)
+      }
+    })
+
+    // Check for popups when switching pages
+    watch(activeTab, function() {
+      if (token.value) setTimeout(checkAutoNoticePopups, 300)
+    })
+
+    // Check for popups after login
+    watch(token, function(v) {
+      if (v) setTimeout(checkAutoNoticePopups, 800)
     })
 
     onUnmounted(function() { if (refreshTimer) clearInterval(refreshTimer) })
@@ -1100,7 +1202,9 @@ var app = createApp({
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
       switchToLogs: switchToLogs,
       portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd,
-      freeformComponents: freeformComponents
+      freeformComponents: freeformComponents,
+      noticePopupVisible: noticePopupVisible, activeNoticePopup: activeNoticePopup,
+      showNoticePopup: showNoticePopup, dismissNoticePopup: dismissNoticePopup, openNoticeLink: openNoticeLink
     }
   }
 })

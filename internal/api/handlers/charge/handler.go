@@ -237,15 +237,48 @@ func (h *Handler) ListCards(c *gin.Context) {
 	response.Paginated(c, cards, total, limit, offset)
 }
 
+// CreateCardInput is the input for creating a single charge card.
+type CreateCardInput struct {
+	CardType       string     `json:"card_type" binding:"required"`
+	Value          int64      `json:"value"`                               // 金额(最小单位)或 plan_variant_id
+	Currency       string     `json:"currency"`                            // 货币类型
+	PlanVariantID  *int64     `json:"plan_variant_id"`                    // 套餐型时绑定的规格ID
+	MaxUses        int        `json:"max_uses"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	BatchID        string     `json:"batch_id"`
+	Remark         string     `json:"remark"`
+	CardCodeFormat string     `json:"card_code_format"`
+}
+
 // CreateCard handles POST /api/v1/charge-cards.
 func (h *Handler) CreateCard(c *gin.Context) {
-	var card entity.ChargeCard
-	if err := c.ShouldBindJSON(&card); err != nil {
+	var input CreateCardInput
+	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if card.CardCode == "" {
-		card.CardCode = GenerateCardCode()
+	// 套餐型必须有有效的 value (plan_variant_id)
+	if input.CardType == entity.ChargeCardTypePlan && input.Value <= 0 {
+		response.BadRequest(c, "INVALID_VALUE", "plan card requires a valid plan_variant_id as value")
+		return
+	}
+	if input.MaxUses == 0 {
+		input.MaxUses = 1
+	}
+	cardValue := input.Value
+	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID != nil {
+		cardValue = *input.PlanVariantID
+	}
+	card := entity.ChargeCard{
+		CardCode: GenerateCardCode(input.CardCodeFormat),
+		CardType: input.CardType,
+		Value:    cardValue,
+		Currency: input.Currency,
+		MaxUses:  input.MaxUses,
+		Status:   entity.ChargeCardStatusActive,
+		BatchID:  input.BatchID,
+		Remark:   input.Remark,
+		ExpiresAt: input.ExpiresAt,
 	}
 	if err := h.chargeCardRepo.Create(c.Request.Context(), &card); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -256,13 +289,16 @@ func (h *Handler) CreateCard(c *gin.Context) {
 
 // BatchCreateCardsInput is the input for batch creating charge cards.
 type BatchCreateCardsInput struct {
-	CardType  string  `json:"card_type" binding:"required"`
-	Value     int64   `json:"value" binding:"required"`
-	MaxUses   int     `json:"max_uses"`
-	Count     int     `json:"count" binding:"required,min=1,max=1000"`
-	ExpiresAt *string `json:"expires_at"`
-	BatchID   string  `json:"batch_id"`
-	Remark    string  `json:"remark"`
+	CardType       string  `json:"card_type" binding:"required"`
+	Value          int64   `json:"value"`                               // 金额(最小单位)或 plan_variant_id
+	Currency       string  `json:"currency"`                            // 货币类型
+	PlanVariantID  *int64  `json:"plan_variant_id"`                    // 套餐型时绑定的规格ID
+	MaxUses        int     `json:"max_uses"`
+	Count          int     `json:"count" binding:"required,min=1,max=1000"`
+	ExpiresAt      *string `json:"expires_at"`
+	BatchID        string  `json:"batch_id"`
+	Remark         string  `json:"remark"`
+	CardCodeFormat string  `json:"card_code_format"`
 }
 
 // BatchCreateCards handles POST /api/v1/charge-cards/batch.
@@ -272,6 +308,16 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// 套餐型必须提供 plan_variant_id
+	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID == nil {
+		response.BadRequest(c, "MISSING_VARIANT", "plan card requires plan_variant_id")
+		return
+	}
+	// 金额型必须提供 value
+	if input.CardType == entity.ChargeCardTypeBalance && input.Value <= 0 {
+		response.BadRequest(c, "INVALID_VALUE", "balance card requires a positive value")
+		return
+	}
 	if input.BatchID == "" {
 		input.BatchID = generateBatchID()
 	}
@@ -279,12 +325,19 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 		input.MaxUses = 1
 	}
 
+	// 确定实际 value：套餐型用 plan_variant_id
+	cardValue := input.Value
+	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID != nil {
+		cardValue = *input.PlanVariantID
+	}
+
 	cards := make([]entity.ChargeCard, input.Count)
 	for i := 0; i < input.Count; i++ {
 		cards[i] = entity.ChargeCard{
-			CardCode: GenerateCardCode(),
+			CardCode: GenerateCardCode(input.CardCodeFormat),
 			CardType: input.CardType,
-			Value:    input.Value,
+			Value:    cardValue,
+			Currency: input.Currency,
 			MaxUses:  input.MaxUses,
 			Status:   entity.ChargeCardStatusActive,
 			BatchID:  input.BatchID,
@@ -427,12 +480,82 @@ func (h *Handler) ListBalanceTransactionsAdmin(c *gin.Context) {
 // Helpers
 // ============================================================
 
-// GenerateCardCode generates a unique card code in format CF-XXXX-XXXX-XXXX.
-func GenerateCardCode() string {
-	b := make([]byte, 6)
+// GenerateCardCode generates a unique card code.
+// If format is empty, uses the default format: CF-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX.
+// Custom format uses {N} placeholders where N is the number of hex chars per segment.
+// Examples: "{8}-{8}-{8}-{8}" -> XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX
+//           "{32}"             -> 32 hex chars without separator
+//           "CF-{8}-{8}"       -> CF-XXXXXXXX-XXXXXXXX
+func GenerateCardCode(format ...string) string {
+	fmtStr := "CF-{8}-{8}-{8}-{8}" // default
+	if len(format) > 0 && format[0] != "" {
+		fmtStr = format[0]
+	}
+
+	// Calculate total hex chars needed
+	totalHex := 0
+	i := 0
+	for i < len(fmtStr) {
+		if fmtStr[i] == '{' {
+			j := i + 1
+			for j < len(fmtStr) && fmtStr[j] != '}' {
+				j++
+			}
+			if j < len(fmtStr) {
+				n, err := strconv.Atoi(fmtStr[i+1 : j])
+				if err == nil && n > 0 {
+					totalHex += n
+				}
+				i = j + 1
+				continue
+			}
+		}
+		i++
+	}
+	if totalHex == 0 {
+		totalHex = 32
+	}
+
+	// Generate random hex
+	byteLen := (totalHex + 1) / 2
+	b := make([]byte, byteLen)
 	rand.Read(b)
 	hexStr := hex.EncodeToString(b)
-	return fmt.Sprintf("CF-%s-%s-%s", hexStr[0:4], hexStr[4:8], hexStr[8:12])
+	if len(hexStr) < totalHex {
+		// unlikely, but pad if needed
+		extra := make([]byte, (totalHex-len(hexStr)+1)/2)
+		rand.Read(extra)
+		hexStr += hex.EncodeToString(extra)
+	}
+
+	// Build result by replacing {N} with hex segments
+	var result []byte
+	hexIdx := 0
+	i = 0
+	for i < len(fmtStr) {
+		if fmtStr[i] == '{' {
+			j := i + 1
+			for j < len(fmtStr) && fmtStr[j] != '}' {
+				j++
+			}
+			if j < len(fmtStr) {
+				n, err := strconv.Atoi(fmtStr[i+1 : j])
+				if err == nil && n > 0 {
+					end := hexIdx + n
+					if end > len(hexStr) {
+						end = len(hexStr)
+					}
+					result = append(result, hexStr[hexIdx:end]...)
+					hexIdx = end
+					i = j + 1
+					continue
+				}
+			}
+		}
+		result = append(result, fmtStr[i])
+		i++
+	}
+	return string(result)
 }
 
 func generateBatchID() string {

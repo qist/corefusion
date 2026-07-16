@@ -294,6 +294,23 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- Currency Config -->
+      <el-tab-pane :label="t('currency.defaultCurrency')" name="currency">
+        <el-card>
+          <el-form :model="currencyForm" label-width="160px" style="max-width:600px">
+            <el-form-item :label="t('currency.defaultCurrency')">
+              <el-select v-model="currencyForm.default_currency" filterable style="width:100%">
+                <el-option v-for="c in currencyList" :key="c.code" :label="`${c.code} ${c.symbol} (${t(c.nameKey)})`" :value="c.code" />
+              </el-select>
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('currency.defaultCurrencyHint') }}</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="currencySaving" @click="saveCurrencyConfig">{{ t('common.save') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-tab-pane>
+
       <!-- OAuth Config -->
       <el-tab-pane label="OAuth 配置" name="oauth">
         <el-card>
@@ -562,9 +579,14 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
+import { CURRENCIES as currencyList } from '../utils/currency'
 
 const { t } = useI18n()
 const activeTab = ref('panel')
+
+// Currency config
+const currencyForm = ref({ default_currency: 'CNY' })
+const currencySaving = ref(false)
 
 // Panel config
 const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', profile_web_page_url: '', mode: 'full' })
@@ -897,6 +919,29 @@ async function saveOAuthConfig() {
     ElMessage.success(t('common.success'))
   } catch (e) {} finally { oauthSaving.value = false }
 }
+
+// Currency config
+async function fetchCurrencyConfig() {
+  try {
+    const d = await client.get('/system/settings', { params: { prefix: 'currency' } })
+    if (d && d.items) {
+      for (const item of d.items) {
+        if (item.key === 'currency.default') currencyForm.value.default_currency = item.value || 'CNY'
+      }
+    }
+  } catch (e) {}
+}
+async function saveCurrencyConfig() {
+  currencySaving.value = true
+  try {
+    await client.put('/system/settings/batch', {
+      items: [
+        { key: 'currency.default', value: currencyForm.value.default_currency },
+      ]
+    })
+    ElMessage.success(t('common.success'))
+  } catch (e) {} finally { currencySaving.value = false }
+}
 function showAddDomain() { editingDomainIndex.value = null; domainForm.value = { name: '', url: '' }; domainDialogVisible.value = true }
 function showEditDomain(row, index) { editingDomainIndex.value = index; domainForm.value = { ...row }; domainDialogVisible.value = true }
 function handleSaveDomain() {
@@ -909,5 +954,5 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchOAuthConfig() })
+onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchOAuthConfig(); fetchCurrencyConfig() })
 </script>

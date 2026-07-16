@@ -2,6 +2,38 @@
   <div>
     <el-tabs v-model="activeTab" type="border-card">
 
+      <!-- ════════════ 流量叠加包 Tab ════════════ -->
+      <el-tab-pane label="流量叠加包" name="traffic_packs">
+        <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0">流量叠加包</h3>
+        </div>
+        <el-table :data="allTrafficPacks" v-loading="trafficPacksLoading" stripe size="small">
+          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="name" label="名称" width="120" />
+          <el-table-column label="所属模板" width="150">
+            <template #default="{row}">{{ templateName(row.template_id) }}</template>
+          </el-table-column>
+          <el-table-column label="价格" width="100">
+            <template #default="{row}">¥{{ (row.price/100).toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column label="流量" width="100">
+            <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '继承模板' }}</template>
+          </el-table-column>
+          <el-table-column prop="duration_days" label="天数" width="80" />
+          <el-table-column label="状态" width="80">
+            <template #default="{row}">
+              <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'启用':'禁用' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120">
+            <template #default="{row}">
+              <el-button size="small" @click="showEditTrafficPackVariant(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="deleteTrafficPackVariant(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
       <!-- ════════════ 套餐模板 Tab ════════════ -->
       <el-tab-pane label="套餐模板" name="templates">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
@@ -463,7 +495,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import * as planApi from '../api/plan'
@@ -865,6 +897,62 @@ async function fetchExtNodes() {
   try { extNodes.value = (await client.get('/external-nodes')) || [] } catch {}
 }
 
+// ──────── Traffic Packs ────────
+const allTrafficPacks = computed(() => {
+  // Collect all traffic_pack variants across all templates
+  const packs = []
+  for (const tpl of templates.value) {
+    // We need to load variants for each template to show traffic packs
+    // Since variants are loaded on-demand, use a separate fetch for traffic packs
+  }
+  return trafficPackVariants.value
+})
+const trafficPacksLoading = ref(false)
+const trafficPackVariants = ref([])
+
+async function fetchTrafficPacks() {
+  trafficPacksLoading.value = true
+  try {
+    const tpls = templates.value
+    const allVariants = []
+    for (const tpl of tpls) {
+      try {
+        const vars = (await planApi.listPlanVariants(tpl.id)) || []
+        for (const v of vars) {
+          if (v.variant_type === 'traffic_pack') {
+            allVariants.push({ ...v, template_id: tpl.id, template_name: tpl.name })
+          }
+        }
+      } catch {}
+    }
+    trafficPackVariants.value = allVariants
+  } finally {
+    trafficPacksLoading.value = false
+  }
+}
+
+function templateName(templateId) {
+  const tpl = templates.value.find(t => t.id === templateId)
+  return tpl ? tpl.name : '#'+templateId
+}
+
+async function showEditTrafficPackVariant(row) {
+  const tpl = templates.value.find(t => t.id === row.template_id)
+  if (tpl) {
+    currentTemplate.value = tpl
+    showEditVariant(row)
+  }
+}
+
+async function deleteTrafficPackVariant(row) {
+  await ElMessageBox.confirm(`确定删除流量包「${row.name}」？`, '确认')
+  try {
+    await planApi.deletePlanVariant(row.id)
+    ElMessage.success('删除成功')
+    fetchTemplates()
+  } catch {}
+}
+
 // ──────── Helpers ────────
 const formatBytes = (b) => {
   if (!b || b <= 0) return '不限'
@@ -892,6 +980,7 @@ onMounted(() => {
   fetchPromotions()
   fetchInbounds()
   fetchExtNodes()
+  fetchTrafficPacks()
 })
 </script>
 

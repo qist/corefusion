@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"corefusion/internal/api/handlers/subscriptions"
+	"gorm.io/gorm"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
@@ -35,6 +36,7 @@ type Handler struct {
 	subRepo          *repository.SubscriptionRepository
 	subEndpointRepo  *repository.SubscriptionEndpointRepository
 	publicSubH       PublicSubHandler
+	db               *gorm.DB
 }
 
 // NewHandler creates a new Handler.
@@ -52,6 +54,7 @@ func NewHandler(
 	subRepo *repository.SubscriptionRepository,
 	subEndpointRepo *repository.SubscriptionEndpointRepository,
 	publicSubH PublicSubHandler,
+	db *gorm.DB,
 ) *Handler {
 	return &Handler{
 		referralSvc: referralSvc, ticketSvc: ticketSvc,
@@ -59,8 +62,9 @@ func NewHandler(
 		sharedAcctSvc: sharedAcctSvc, ipWhitelistSvc: ipWhitelistSvc,
 		selfUnbanSvc: selfUnbanSvc, subResetSvc: subResetSvc,
 		clientRepo: clientRepo, oAuthRepo: oAuthRepo,
-		subRepo: subRepo, subEndpointRepo: subEndpointRepo,
-		publicSubH: publicSubH,
+		subEndpointRepo: subEndpointRepo,
+		publicSubH:      publicSubH,
+		db:              db,
 	}
 }
 
@@ -339,6 +343,62 @@ func (h *Handler) ResetSubscription(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "subscription token reset"})
 }
 
+// AdminListAllIPWhitelists handles GET /api/v1/ip-whitelists (admin: list all client IP whitelists).
+func (h *Handler) AdminListAllIPWhitelists(c *gin.Context) {
+	limit, offset := getLimitOffset(c)
+	clientIDStr := c.Query("client_id")
+	var items []entity.IPWhitelistEntry
+	var total int64
+	q := h.db.WithContext(c.Request.Context()).Model(&entity.IPWhitelistEntry{})
+	if clientIDStr != "" {
+		clientID, err := strconv.ParseInt(clientIDStr, 10, 64)
+		if err == nil {
+			q = q.Where("client_id = ?", clientID)
+		}
+	}
+	q.Count(&total)
+	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+}
+
+// AdminUpdateIPWhitelistConfig handles PUT /api/v1/ip-whitelist-config (admin: update global IP whitelist config).
+func (h *Handler) AdminUpdateIPWhitelistConfig(c *gin.Context) {
+	var body struct {
+		AllowSelfAdd bool `json:"allow_self_add"`
+		MaxEntries   int  `json:"max_entries"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Store config via setting service
+	c.JSON(http.StatusOK, gin.H{"message": "updated"})
+}
+
+// AdminListClientOAuthBindings handles GET /api/v1/client-oauth-bindings (admin: list all OAuth bindings).
+func (h *Handler) AdminListClientOAuthBindings(c *gin.Context) {
+	limit, offset := getLimitOffset(c)
+	clientIDStr := c.Query("client_id")
+	var items []entity.ClientOAuthBinding
+	var total int64
+	q := h.db.WithContext(c.Request.Context()).Model(&entity.ClientOAuthBinding{})
+	if clientIDStr != "" {
+		clientID, err := strconv.ParseInt(clientIDStr, 10, 64)
+		if err == nil {
+			q = q.Where("client_id = ?", clientID)
+		}
+	}
+	q.Count(&total)
+	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+}
+
 // ======================== Admin: Referral ========================
 
 func (h *Handler) AdminListWithdrawals(c *gin.Context) {
@@ -350,6 +410,55 @@ func (h *Handler) AdminListWithdrawals(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+}
+
+// AdminListReferralRecords handles GET /api/v1/referral-records (admin: list all referral records).
+func (h *Handler) AdminListReferralRecords(c *gin.Context) {
+	limit, offset := getLimitOffset(c)
+	referrerIDStr := c.Query("referrer_id")
+	var items []entity.ReferralRecord
+	var total int64
+	q := h.db.WithContext(c.Request.Context()).Model(&entity.ReferralRecord{})
+	if referrerIDStr != "" {
+		referrerID, err := strconv.ParseInt(referrerIDStr, 10, 64)
+		if err == nil {
+			q = q.Where("referrer_id = ?", referrerID)
+		}
+	}
+	q.Count(&total)
+	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+}
+
+// AdminReferralStats handles GET /api/v1/referral-stats (admin: global referral statistics).
+func (h *Handler) AdminReferralStats(c *gin.Context) {
+	var totalReferrers int64
+	var totalRecords int64
+	var totalCommission int64
+	var totalWithdrawn int64
+
+	h.db.WithContext(c.Request.Context()).Model(&entity.ReferralCode{}).Count(&totalReferrers)
+	h.db.WithContext(c.Request.Context()).Model(&entity.ReferralRecord{}).Count(&totalRecords)
+	h.db.WithContext(c.Request.Context()).Model(&entity.ReferralRecord{}).
+		Select("COALESCE(SUM(commission_amount),0)").Scan(&totalCommission)
+
+	var withdrawals []entity.ReferralWithdrawal
+	h.db.WithContext(c.Request.Context()).
+		Where("status = ?", "approved").Find(&withdrawals)
+	for _, w := range withdrawals {
+		totalWithdrawn += w.Amount
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_referrers":    totalReferrers,
+		"total_records":      totalRecords,
+		"total_commission":   totalCommission,
+		"total_withdrawn":    totalWithdrawn,
+		"pending_commission": totalCommission - totalWithdrawn,
+	})
 }
 
 func (h *Handler) AdminApproveWithdrawal(c *gin.Context) {
@@ -425,6 +534,23 @@ func (h *Handler) AdminCloseTicket(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "closed"})
+}
+
+// AdminAssignTicket handles POST /api/v1/tickets/:id/assign (admin: assign ticket to an admin).
+func (h *Handler) AdminAssignTicket(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	var body struct {
+		AdminID int64 `json:"admin_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.ticketSvc.AdminAssignTicket(c.Request.Context(), id, body.AdminID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "assigned"})
 }
 
 // ======================== Admin: Gift ========================

@@ -2,8 +2,44 @@
   <div>
     <el-tabs v-model="activeTab" type="border-card">
 
-      <!-- ════════════ 推广提现 Tab ════════════ -->
-      <el-tab-pane label="推广提现" name="referrals">
+      <!-- ════════════ 邀请推广 Tab ════════════ -->
+      <el-tab-pane label="邀请推广" name="referrals">
+        <!-- 推广统计面板 -->
+        <el-row :gutter="16" style="margin-bottom:16px">
+          <el-col :span="4">
+            <el-card shadow="hover" style="text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#409eff">{{ referralStats.total_referrers || 0 }}</div>
+              <div style="font-size:12px;color:#909399;margin-top:4px">推广人数</div>
+            </el-card>
+          </el-col>
+          <el-col :span="4">
+            <el-card shadow="hover" style="text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#67c23a">{{ referralStats.total_records || 0 }}</div>
+              <div style="font-size:12px;color:#909399;margin-top:4px">邀请记录</div>
+            </el-card>
+          </el-col>
+          <el-col :span="4">
+            <el-card shadow="hover" style="text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#e6a23c">¥{{ ((referralStats.total_commission || 0)/100).toFixed(2) }}</div>
+              <div style="font-size:12px;color:#909399;margin-top:4px">总佣金</div>
+            </el-card>
+          </el-col>
+          <el-col :span="4">
+            <el-card shadow="hover" style="text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#f56c6c">¥{{ ((referralStats.total_withdrawn || 0)/100).toFixed(2) }}</div>
+              <div style="font-size:12px;color:#909399;margin-top:4px">已提现</div>
+            </el-card>
+          </el-col>
+          <el-col :span="4">
+            <el-card shadow="hover" style="text-align:center">
+              <div style="font-size:24px;font-weight:700;color:#909399">¥{{ ((referralStats.pending_commission || 0)/100).toFixed(2) }}</div>
+              <div style="font-size:12px;color:#909399;margin-top:4px">待提现</div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <!-- 推广提现管理 -->
+        <h4 style="margin:0 0 12px">提现审核</h4>
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
           <h3 style="margin:0">推广提现管理</h3>
           <div style="display:flex;gap:8px;align-items:center">
@@ -42,12 +78,55 @@
           </el-table-column>
         </el-table>
         <el-pagination v-if="withdrawalTotal>20" :total="withdrawalTotal" :page-size="20" v-model:current-page="withdrawalPage" layout="prev,pager,next" style="margin-top:12px" @current-change="fetchWithdrawals" />
+
+        <!-- 邀请记录查询 -->
+        <h4 style="margin:16px 0 12px">邀请记录</h4>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+          <el-input v-model="referralRecordReferrerFilter" size="small" placeholder="推广人客户端ID" style="width:180px" clearable />
+          <el-button size="small" @click="fetchReferralRecords">查询</el-button>
+        </div>
+        <el-table :data="referralRecords" v-loading="referralRecordsLoading" stripe size="small">
+          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="referrer_id" label="推广人ID" width="100" />
+          <el-table-column prop="referee_id" label="被邀请人ID" width="100" />
+          <el-table-column label="佣金" width="100">
+            <template #default="{row}">¥{{ ((row.commission_amount||0)/100).toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column label="佣金状态" width="100">
+            <template #default="{row}">
+              <el-tag :type="row.commission_status==='available'?'success':'info'" size="small">{{ {available:'可提现',paid:'已提现',pending:'待确认'}[row.commission_status] || row.commission_status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" width="170" />
+        </el-table>
       </el-tab-pane>
 
       <!-- ════════════ 福利管理 Tab ════════════ -->
       <el-tab-pane label="福利管理" name="gifts">
+        <!-- 福利规则配置 -->
+        <el-card style="margin-bottom:16px">
+          <template #header><span style="font-weight:600">福利规则配置</span></template>
+          <el-form :model="giftRuleForm" label-width="140px" size="small" style="max-width:500px">
+            <el-form-item label="新用户注册奖励天数">
+              <el-input-number v-model="giftRuleForm.signup_bonus_days" :min="0" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">0=无奖励</span>
+            </el-form-item>
+            <el-form-item label="月度自动福利天数">
+              <el-input-number v-model="giftRuleForm.monthly_bonus_days" :min="0" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">0=关闭</span>
+            </el-form-item>
+            <el-form-item label="故障补偿倍率">
+              <el-input-number v-model="giftRuleForm.fault_compensation_rate" :min="0" :max="10" :step="0.1" :precision="1" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">故障时长 × 倍率 = 补偿天数</span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" size="small" @click="saveGiftRuleConfig" :loading="giftRuleSaving">保存规则</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">福利管理</h3>
+          <h3 style="margin:0">福利记录</h3>
           <div style="display:flex;gap:8px">
             <el-button type="primary" size="small" @click="showCreateGift">+ 发放福利</el-button>
             <el-button size="small" @click="showBatchGift">批量发放</el-button>
@@ -267,6 +346,50 @@
         </el-dialog>
       </el-tab-pane>
 
+      <!-- ════════════ IP白名单 Tab ════════════ -->
+      <el-tab-pane label="IP白名单" name="ip_whitelist">
+        <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0">IP白名单管理</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <el-input v-model="ipWhitelistClientFilter" size="small" placeholder="客户端ID筛选" style="width:150px" clearable />
+            <el-button size="small" @click="fetchIPWhitelists">查询</el-button>
+          </div>
+        </div>
+        <el-table :data="ipWhitelistEntries" v-loading="ipWhitelistLoading" stripe size="small">
+          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="client_id" label="客户端ID" width="100" />
+          <el-table-column prop="ip_address" label="IP地址" width="160" />
+          <el-table-column label="来源" width="100">
+            <template #default="{row}">
+              <el-tag :type="row.source==='auto'?'success':'warning'" size="small">{{ row.source==='auto'?'自动添加':'手动添加' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="添加时间" width="170" />
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ════════════ OAuth绑定 Tab ════════════ -->
+      <el-tab-pane label="OAuth绑定" name="oauth_bindings">
+        <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0">OAuth绑定记录</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <el-input v-model="oauthClientFilter" size="small" placeholder="客户端ID筛选" style="width:150px" clearable />
+            <el-button size="small" @click="fetchOAuthBindings">查询</el-button>
+          </div>
+        </div>
+        <el-table :data="oauthBindings" v-loading="oauthBindingsLoading" stripe size="small">
+          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="client_id" label="客户端ID" width="100" />
+          <el-table-column prop="provider" label="平台" width="100">
+            <template #default="{row}">
+              <el-tag size="small">{{ row.provider }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="provider_user_id" label="第三方用户ID" width="200" show-overflow-tooltip />
+          <el-table-column prop="created_at" label="绑定时间" width="170" />
+        </el-table>
+      </el-tab-pane>
+
     </el-tabs>
   </div>
 </template>
@@ -276,12 +399,33 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listReferralWithdrawals, approveReferralWithdrawal, rejectReferralWithdrawal,
+  getReferralStats, listReferralRecords,
   listClientGifts, createClientGift, batchCreateClientGifts,
   listArticles, getArticle, createArticle, updateArticle, deleteArticle as deleteArticleApi,
-  listSharedAccounts, getSharedAccount, createSharedAccount, updateSharedAccount, deleteSharedAccount as deleteSharedAccountApi, listSharedAccountRepairLogs
-} from '@/api/clientext'
+  listSharedAccounts, getSharedAccount, createSharedAccount, updateSharedAccount, deleteSharedAccount as deleteSharedAccountApi, listSharedAccountRepairLogs,
+  listAllIPWhitelists, listOAuthBindings
+} from '../api/clientext'
 
 const activeTab = ref('referrals')
+
+// ════════════ Referral Stats & Records ════════════
+const referralStats = ref({})
+const referralRecords = ref([])
+const referralRecordsLoading = ref(false)
+const referralRecordReferrerFilter = ref('')
+
+async function fetchReferralStats() {
+  try { referralStats.value = (await getReferralStats()) || {} } catch {}
+}
+async function fetchReferralRecords() {
+  referralRecordsLoading.value = true
+  try {
+    const params = { limit: 50 }
+    if (referralRecordReferrerFilter.value) params.referrer_id = referralRecordReferrerFilter.value
+    const result = await listReferralRecords(params)
+    referralRecords.value = result?.items || []
+  } finally { referralRecordsLoading.value = false }
+}
 
 // ════════════ Referral Withdrawals ════════════
 const withdrawals = ref([])
@@ -295,9 +439,9 @@ async function fetchWithdrawals() {
   try {
     const params = { limit: 20, offset: (withdrawalPage.value - 1) * 20 }
     if (withdrawalStatusFilter.value) params.status = withdrawalStatusFilter.value
-    const { data } = await listReferralWithdrawals(params)
-    withdrawals.value = data.items || []
-    withdrawalTotal.value = data.total || 0
+    const result = await listReferralWithdrawals(params)
+    withdrawals.value = result?.items || []
+    withdrawalTotal.value = result?.total || 0
   } finally { withdrawalsLoading.value = false }
 }
 
@@ -329,8 +473,8 @@ const giftSubmitting = ref(false)
 async function fetchGifts() {
   giftsLoading.value = true
   try {
-    const { data } = await listClientGifts({ limit: 50 })
-    gifts.value = data.items || []
+    const result = await listClientGifts({ limit: 50 })
+    gifts.value = result?.items || []
   } finally { giftsLoading.value = false }
 }
 
@@ -356,6 +500,34 @@ function giftStatusLabel(s) { return { available: '可领取', claimed: '已领�
 function giftStatusType(s) { return { available: 'success', claimed: 'info', expired: 'danger' }[s] || '' }
 function formatBytes(b) { if (b === 0) return '0B'; const k = 1024; const s = ['B','KB','MB','GB','TB']; const i = Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+s[i] }
 
+// ════════════ Gift Rule Config ════════════
+const giftRuleForm = ref({ signup_bonus_days: 0, monthly_bonus_days: 0, fault_compensation_rate: 1.0 })
+const giftRuleSaving = ref(false)
+
+async function fetchGiftRuleConfig() {
+  try {
+    await listClientGifts({ limit: 1 })
+    // Read config from system settings
+    // For now use default values; real implementation would call /system/settings
+  } catch {}
+}
+
+async function saveGiftRuleConfig() {
+  giftRuleSaving.value = true
+  try {
+    // Save via system settings API
+    const client = (await import('../api/client')).default
+    await client.put('/system/settings/batch', {
+      items: [
+        { key: 'gift.signup_bonus_days', value: String(giftRuleForm.value.signup_bonus_days) },
+        { key: 'gift.monthly_bonus_days', value: String(giftRuleForm.value.monthly_bonus_days) },
+        { key: 'gift.fault_compensation_rate', value: String(giftRuleForm.value.fault_compensation_rate) },
+      ]
+    })
+    ElMessage.success('福利规则已保存')
+  } catch {} finally { giftRuleSaving.value = false }
+}
+
 // ════════════ Articles ════════════
 const articles = ref([])
 const articlesLoading = ref(false)
@@ -366,16 +538,16 @@ const articleSubmitting = ref(false)
 async function fetchArticles() {
   articlesLoading.value = true
   try {
-    const { data } = await listArticles({ limit: 50 })
-    articles.value = data.items || []
+    const result = await listArticles({ limit: 50 })
+    articles.value = result?.items || []
   } finally { articlesLoading.value = false }
 }
 
 function showCreateArticle() { articleForm.value = { title: '', slug: '', category: 'tutorial', platform: '', sort_order: 0, is_published: false, content: '' }; articleDialogVisible.value = true }
 
 async function showEditArticle(row) {
-  const { data } = await getArticle(row.id)
-  articleForm.value = { ...data }
+  const result = await getArticle(row.id)
+  articleForm.value = { ...result }
   articleDialogVisible.value = true
 }
 
@@ -414,16 +586,16 @@ const repairLogs = ref([])
 async function fetchSharedAccounts() {
   sharedAccountsLoading.value = true
   try {
-    const { data } = await listSharedAccounts({ limit: 50 })
-    sharedAccounts.value = data.items || []
+    const result = await listSharedAccounts({ limit: 50 })
+    sharedAccounts.value = result?.items || []
   } finally { sharedAccountsLoading.value = false }
 }
 
 function showCreateSharedAccount() { sharedAccountForm.value = { name: '', type: 'other', icon_url: '', credentials_enc: '', min_plan_category: '', repair_cooldown: 1440, sort_order: 0, enabled: true }; sharedAccountDialogVisible.value = true }
 
 async function showEditSharedAccount(row) {
-  const { data } = await getSharedAccount(row.id)
-  sharedAccountForm.value = { ...data }
+  const result = await getSharedAccount(row.id)
+  sharedAccountForm.value = { ...result }
   sharedAccountDialogVisible.value = true
 }
 
@@ -449,12 +621,42 @@ async function deleteSharedAccount(row) {
 }
 
 async function viewRepairLogs(row) {
-  const { data } = await listSharedAccountRepairLogs(row.id, { limit: 50 })
-  repairLogs.value = data.items || []
+  const result = await listSharedAccountRepairLogs(row.id, { limit: 50 })
+  repairLogs.value = result?.items || []
   repairLogDialogVisible.value = true
 }
 
 function sharedAccountTypeLabel(t) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: '其他' }[t] || t }
 
-onMounted(() => { fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts() })
+// ════════════ IP Whitelist ════════════
+const ipWhitelistEntries = ref([])
+const ipWhitelistLoading = ref(false)
+const ipWhitelistClientFilter = ref('')
+
+async function fetchIPWhitelists() {
+  ipWhitelistLoading.value = true
+  try {
+    const params = { limit: 50 }
+    if (ipWhitelistClientFilter.value) params.client_id = ipWhitelistClientFilter.value
+    const result = await listAllIPWhitelists(params)
+    ipWhitelistEntries.value = result?.items || []
+  } finally { ipWhitelistLoading.value = false }
+}
+
+// ════════════ OAuth Bindings ════════════
+const oauthBindings = ref([])
+const oauthBindingsLoading = ref(false)
+const oauthClientFilter = ref('')
+
+async function fetchOAuthBindings() {
+  oauthBindingsLoading.value = true
+  try {
+    const params = { limit: 50 }
+    if (oauthClientFilter.value) params.client_id = oauthClientFilter.value
+    const result = await listOAuthBindings(params)
+    oauthBindings.value = result?.items || []
+  } finally { oauthBindingsLoading.value = false }
+}
+
+onMounted(() => { fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings() })
 </script>

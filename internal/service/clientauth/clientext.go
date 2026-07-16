@@ -372,6 +372,16 @@ func (s *TicketService) AdminCloseTicket(ctx context.Context, ticketID int64) er
 	return s.ticketRepo.Update(ctx, ticket)
 }
 
+// AdminAssignTicket assigns a ticket to an admin user.
+func (s *TicketService) AdminAssignTicket(ctx context.Context, ticketID, adminID int64) error {
+	ticket, err := s.ticketRepo.GetByID(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("ticket not found")
+	}
+	ticket.AssignedAdminID = &adminID
+	return s.ticketRepo.Update(ctx, ticket)
+}
+
 // ============================================================
 // P2-1: Gift Service
 // ============================================================

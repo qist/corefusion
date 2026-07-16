@@ -50,6 +50,7 @@
         <el-table :data="orders" v-loading="ordersLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" label="客户端ID" width="90" />
+          <el-table-column prop="client_email" label="邮箱" min-width="180" show-overflow-tooltip />
           <el-table-column prop="trade_no" label="交易号" width="200" show-overflow-tooltip />
           <el-table-column label="来源" width="80">
             <template #default="{row}">
@@ -157,15 +158,16 @@
         <el-table :data="balances" v-loading="balancesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" label="客户端ID" width="100" />
+          <el-table-column prop="client_email" label="邮箱" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="client_nickname" label="昵称" width="120" show-overflow-tooltip />
           <el-table-column :label="t('currency.balance')" width="140">
             <template #default="{row}">{{ formatAmount(row.balance, row.currency || 'CNY') }}</template>
           </el-table-column>
           <el-table-column :label="t('currency.frozen')" width="140">
             <template #default="{row}">{{ formatAmount(row.frozen, row.currency || 'CNY') }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="200">
+          <el-table-column label="操作" width="100">
             <template #default="{row}">
-              <el-button size="small" type="primary" @click="showAdjustBalance(row)">调整</el-button>
               <el-button size="small" @click="showTransactions(row)">流水</el-button>
             </template>
           </el-table-column>

@@ -20,11 +20,12 @@ type SettingStore interface {
 
 // Service handles client authentication and self-service operations.
 type Service struct {
-	clientRepo *repository.ClientRepository
-	tmplRepo   *repository.PlanTemplateRepository
-	subRepo    *repository.SubscriptionRepository
-	settingSvc SettingStore
-	jwt        *jwt.JWT
+	clientRepo  *repository.ClientRepository
+	tmplRepo    *repository.PlanTemplateRepository
+	subRepo     *repository.SubscriptionRepository
+	balanceRepo *repository.ClientBalanceRepository
+	settingSvc  SettingStore
+	jwt         *jwt.JWT
 }
 
 // NewService creates a new client auth service.
@@ -36,12 +37,18 @@ func NewService(
 	jwtSecret string,
 ) *Service {
 	return &Service{
-		clientRepo: clientRepo,
-		tmplRepo:   tmplRepo,
-		subRepo:    subRepo,
-		settingSvc: settingSvc,
-		jwt:        jwt.New(jwtSecret, 24*time.Hour, 7*24*time.Hour),
+		clientRepo:  clientRepo,
+		tmplRepo:    tmplRepo,
+		subRepo:     subRepo,
+		balanceRepo: nil, // will be set via SetBalanceRepo if needed
+		settingSvc:  settingSvc,
+		jwt:         jwt.New(jwtSecret, 24*time.Hour, 7*24*time.Hour),
 	}
+}
+
+// SetBalanceRepo sets the balance repository (called from router initialization).
+func (s *Service) SetBalanceRepo(repo *repository.ClientBalanceRepository) {
+	s.balanceRepo = repo
 }
 
 // RegisterInput is the input for client registration.
@@ -82,6 +89,12 @@ type ClientInfo struct {
 	SubUpdatedAt    *time.Time `json:"sub_updated_at"`
 	LastNodeUsageAt *time.Time `json:"last_node_usage_at"`
 	CreatedAt       time.Time  `json:"created_at"`
+
+	// P0-5: Extended fields
+	Balance         int64      `json:"balance"`            // 余额（分）
+	QuotaResetCycle string     `json:"quota_reset_cycle"`   // 流量重置周期
+	QuotaResetDay   *int       `json:"quota_reset_day"`     // 流量重置日
+	NextResetAt     *time.Time `json:"next_reset_at"`       // 下次重置时间
 }
 
 // Register creates a new client account.
@@ -186,6 +199,18 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 			if info.LastNodeUsageAt == nil && !sub.UpdatedAt.IsZero() && sub.UsedBytesCache > 0 {
 				info.LastNodeUsageAt = &sub.UpdatedAt
 			}
+
+			// P0-5: Extended subscription info
+			info.QuotaResetCycle = sub.QuotaResetCycle
+			info.QuotaResetDay = sub.QuotaResetDay
+			info.NextResetAt = sub.NextResetAt
+		}
+	}
+
+	// P0-5: Get balance
+	if s.balanceRepo != nil {
+		if bal, err := s.balanceRepo.GetByClientID(ctx, clientID); err == nil {
+			info.Balance = bal.Balance
 		}
 	}
 

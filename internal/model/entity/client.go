@@ -40,6 +40,9 @@ type Client struct {
 	ID              int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Email           string     `gorm:"size:255;uniqueIndex;not null" json:"email"`
 	Password        string     `gorm:"size:255" json:"password"`
+	Nickname        string     `gorm:"size:100" json:"nickname"`
+	QQ              string     `gorm:"size:64" json:"qq"`
+	Wechat          string     `gorm:"size:64" json:"wechat"`
 	PlanID          int64      `gorm:"index" json:"plan_id"`                // legacy, maps to PlanTemplate
 	PlanVariantID   int64      `gorm:"not null;default:0;index" json:"plan_variant_id"` // new: links to PlanVariant
 	SubscriptionID  *int64     `gorm:"index" json:"subscription_id"`

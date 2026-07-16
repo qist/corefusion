@@ -32,6 +32,15 @@ func (r *NodeGroupRepository) ListByTier(ctx context.Context, tier string) ([]en
 	return items, err
 }
 
+func (r *NodeGroupRepository) ListEnabled(ctx context.Context) ([]entity.NodeGroup, error) {
+	var items []entity.NodeGroup
+	err := r.db.WithContext(ctx).
+		Where("enabled = ?", true).
+		Order("sort_order ASC, id ASC").
+		Find(&items).Error
+	return items, err
+}
+
 func (r *NodeGroupRepository) GetByID(ctx context.Context, id int64) (*entity.NodeGroup, error) {
 	var item entity.NodeGroup
 	err := r.db.WithContext(ctx).First(&item, id).Error

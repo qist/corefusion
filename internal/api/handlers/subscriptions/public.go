@@ -2351,3 +2351,74 @@ func t(lang, key string) string {
 	}
 	return key
 }
+
+// ClientVisibleNode represents a node visible to a client, with its share link.
+type ClientVisibleNode struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Protocol    string `json:"protocol"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	Transport   string `json:"transport"`
+	TLS         bool   `json:"tls"`
+	Region      string `json:"region,omitempty"`
+	GroupName   string `json:"group_name,omitempty"`
+	Link        string `json:"link,omitempty"`
+	InboundID   int64  `json:"inbound_id,omitempty"`
+	ExternalID  int64  `json:"external_id,omitempty"`
+}
+
+// ListClientVisibleNodes returns all nodes visible to the given client,
+// based on the client's plan template and node group membership.
+// This reuses the same logic as ServeSubscription but returns structured data.
+func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int64) ([]ClientVisibleNode, error) {
+	if h.clientRepo == nil || clientID == 0 {
+		return nil, nil
+	}
+
+	client, err := h.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("client not found: %w", err)
+	}
+	clientEmail := client.Email
+
+	var members []entity.NodeGroupMember
+	if client.PlanID > 0 && h.planSvc != nil {
+		if rawMembers, err := h.planSvc.GetTemplateNodeMembers(ctx, client.PlanID); err == nil {
+			for _, m := range rawMembers {
+				if m.Enabled {
+					members = append(members, m)
+				}
+			}
+		}
+	}
+
+	shareDomains := h.loadShareDomains(ctx)
+	var tmpl *entity.PlanTemplate
+	if client.PlanID > 0 && h.planSvc != nil {
+		tmpl, _ = h.planSvc.GetTemplateByID(ctx, client.PlanID)
+	}
+	billingTemplates := h.loadBillingTemplateConfig(ctx, tmpl)
+
+	rendered := h.collectRenderedNodes(ctx, shareDomains, members, clientEmail, billingTemplates)
+
+	nodes := make([]ClientVisibleNode, 0, len(rendered))
+	for _, r := range rendered {
+		n := ClientVisibleNode{
+			ID:         r.MemberID,
+			InboundID:  r.InboundConfigID,
+			ExternalID: r.ExternalNodeID,
+			Link:       r.Link,
+		}
+		if r.Node != nil {
+			n.Name = r.Node.Name
+			n.Protocol = r.Node.Protocol
+			n.Host = r.Node.Host
+			n.Port = r.Node.Port
+			n.Transport = r.Node.Transport
+			n.TLS = r.Node.TLS
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes, nil
+}

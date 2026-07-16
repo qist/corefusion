@@ -12,15 +12,16 @@ const (
 // NodeGroup is a logical collection of inbound configs and external nodes.
 // Used to control which nodes are accessible by which plan templates.
 type NodeGroup struct {
-	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string    `gorm:"size:100;not null" json:"name"`
-	Description string    `gorm:"size:500" json:"description"`
-	Region      string    `gorm:"size:32" json:"region"`
-	Tier        string    `gorm:"size:32;not null;default:standard" json:"tier"` // standard/premium/exclusive
-	SortOrder   int       `gorm:"not null;default:0" json:"sort_order"`
-	Enabled     bool      `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string    `gorm:"size:100;not null" json:"name"`
+	Description   string    `gorm:"size:500" json:"description"`
+	Region        string    `gorm:"size:32" json:"region"`
+	Tier          string    `gorm:"size:32;not null;default:standard" json:"tier"` // standard/premium/exclusive
+	ClientVisible bool      `gorm:"not null;default:true" json:"client_visible"`    // 是否对客户端可见
+	SortOrder     int       `gorm:"not null;default:0" json:"sort_order"`
+	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func (NodeGroup) TableName() string { return "node_groups" }

@@ -173,6 +173,41 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Portal Templates
 		&entity.PortalTemplate{},
+
+		// Commerce: Charge Sites, Orders, Cards, Balances
+		&entity.ChargeSite{},
+		&entity.ChargeOrder{},
+		&entity.ChargeCard{},
+		&entity.ClientBalance{},
+		&entity.BalanceTransaction{},
+
+		// Referral / 邀请推广
+		&entity.ReferralCode{},
+		&entity.ReferralRecord{},
+		&entity.ReferralWithdrawal{},
+
+		// Ticket / 工单
+		&entity.Ticket{},
+		&entity.TicketMessage{},
+
+		// Gift / 福利
+		&entity.ClientGift{},
+
+		// Article / 教程文章
+		&entity.Article{},
+
+		// Shared Account / 共享账号
+		&entity.SharedAccount{},
+		&entity.SharedAccountRepairLog{},
+
+		// OAuth Binding / 第三方绑定
+		&entity.ClientOAuthBinding{},
+
+		// Self-Unban / 自解封
+		&entity.ClientSelfUnbanLog{},
+
+		// IP Whitelist / IP白名单来源
+		&entity.IPWhitelistEntry{},
 	}
 
 	for _, model := range models {

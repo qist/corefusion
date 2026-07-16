@@ -237,6 +237,11 @@
       </div>
       <el-table :data="variants" stripe size="small">
         <el-table-column prop="name" label="名称" width="80" />
+        <el-table-column label="类型" width="90">
+          <template #default="{row}">
+            <el-tag :type="row.variant_type==='traffic_pack'?'warning':''" size="small">{{ row.variant_type==='traffic_pack'?'流量包':'套餐' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="周期" width="80">
           <template #default="{row}">{{ cycleLabel(row.billing_cycle) }}</template>
         </el-table-column>
@@ -268,6 +273,12 @@
     <!-- 规格编辑弹窗 -->
     <el-dialog v-model="variantDialog" :title="editingVariant?'编辑规格':'添加规格'" width="500px" append-to-body>
       <el-form :model="variantForm" label-width="100px" size="small">
+        <el-form-item label="规格类型">
+          <el-select v-model="variantForm.variant_type" style="width:100%">
+            <el-option label="常规套餐" value="plan" />
+            <el-option label="流量叠加包" value="traffic_pack" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="名称"><el-input v-model="variantForm.name" placeholder="如: 月付" /></el-form-item>
         <el-form-item label="计费周期">
           <el-select v-model="variantForm.billing_cycle" style="width:100%">
@@ -583,7 +594,7 @@ const variantForm = ref({})
 
 function emptyVariantForm() {
   return {
-    name: '', billing_cycle: 'monthly', duration_days: 30,
+    variant_type: 'plan', name: '', billing_cycle: 'monthly', duration_days: 30,
     price_yuan: 0, original_price_yuan: 0, quota_gb: 0,
     is_default: false, is_recommended: false, enabled: true, sort_order: 0,
   }

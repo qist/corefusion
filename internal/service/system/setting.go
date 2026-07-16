@@ -531,6 +531,11 @@ func (s *SettingService) GetByKey(ctx context.Context, key string) (string, erro
 	return s.repo.GetByKey(ctx, key)
 }
 
+// GetByPrefix retrieves all settings with a given key prefix.
+func (s *SettingService) GetByPrefix(ctx context.Context, prefix string) (map[string]string, error) {
+	return s.repo.GetByPrefix(ctx, prefix)
+}
+
 // Set saves a setting value by key (implements proxy.SettingStore).
 func (s *SettingService) Set(ctx context.Context, key, value string) error {
 	return s.repo.Set(ctx, key, value)

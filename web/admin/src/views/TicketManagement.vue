@@ -40,6 +40,7 @@
       <el-table-column label="操作" width="200">
         <template #default="{row}">
           <el-button size="small" @click="viewTicket(row)">查看/回复</el-button>
+          <el-button size="small" type="primary" @click="assignTicketTo(row)" v-if="row.status!=='closed'">分配</el-button>
           <el-button size="small" type="danger" @click="closeTicket(row)" v-if="row.status!=='closed'">关闭</el-button>
         </template>
       </el-table-column>
@@ -77,7 +78,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listTickets, getTicket, replyTicket, closeTicket as closeTicketApi } from '@/api/clientext'
+import { listTickets, getTicket, replyTicket, closeTicket as closeTicketApi, assignTicket } from '../api/clientext'
 
 const tickets = ref([])
 const loading = ref(false)
@@ -97,16 +98,16 @@ async function fetchTickets() {
     const params = { limit: 20, offset: (page.value - 1) * 20 }
     if (statusFilter.value) params.status = statusFilter.value
     if (categoryFilter.value) params.category = categoryFilter.value
-    const { data } = await listTickets(params)
-    tickets.value = data.items || []
-    total.value = data.total || 0
+    const result = await listTickets(params)
+    tickets.value = result?.items || []
+    total.value = result?.total || 0
   } finally { loading.value = false }
 }
 
 async function viewTicket(row) {
-  const { data } = await getTicket(row.id)
-  currentTicket.value = data.ticket
-  messages.value = data.messages || []
+  const result = await getTicket(row.id)
+  currentTicket.value = result?.ticket
+  messages.value = result?.messages || []
   replyContent.value = ''
   dialogVisible.value = true
 }
@@ -118,9 +119,9 @@ async function submitReply() {
     await replyTicket(currentTicket.value.id, { content: replyContent.value })
     ElMessage.success('回复成功')
     replyContent.value = ''
-    const { data } = await getTicket(currentTicket.value.id)
-    currentTicket.value = data.ticket
-    messages.value = data.messages || []
+    const result = await getTicket(currentTicket.value.id)
+    currentTicket.value = result?.ticket
+    messages.value = result?.messages || []
     fetchTickets()
   } finally { replyLoading.value = false }
 }
@@ -129,6 +130,17 @@ async function closeTicket(row) {
   await ElMessageBox.confirm('确定关闭此工单？', '提示')
   await closeTicketApi(row.id)
   ElMessage.success('已关闭')
+  fetchTickets()
+}
+
+async function assignTicketTo(row) {
+  const { value: adminId } = await ElMessageBox.prompt('输入管理员用户ID', '分配工单', { inputPlaceholder: '管理员ID' })
+  if (!adminId || isNaN(parseInt(adminId))) {
+    ElMessage.warning('请输入有效的管理员ID')
+    return
+  }
+  await assignTicket(row.id, { admin_id: parseInt(adminId) })
+  ElMessage.success('已分配')
   fetchTickets()
 }
 

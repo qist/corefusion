@@ -258,6 +258,8 @@ type ClientOAuthBinding struct {
 	ProviderUserID string    `gorm:"size:255;not null" json:"provider_user_id"`
 	ProviderName   string    `gorm:"size:255" json:"provider_name"` // display name from OAuth
 	BoundAt        time.Time `json:"bound_at"`
+	CreatedAt      time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"not null" json:"updated_at"`
 }
 
 func (ClientOAuthBinding) TableName() string { return "client_oauth_bindings" }

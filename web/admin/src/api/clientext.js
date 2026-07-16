@@ -14,6 +14,16 @@ export function rejectReferralWithdrawal(id, data = {}) {
   return client.post(`/referral-withdrawals/${id}/reject`, data)
 }
 
+// ──────────── Referral Admin ────────────
+
+export function getReferralStats() {
+  return client.get('/referral/stats')
+}
+
+export function listReferralRecords(params = {}) {
+  return client.get('/referral/records', { params })
+}
+
 // ──────────── Tickets (工单) ────────────
 
 export function listTickets(params = {}) {
@@ -92,4 +102,22 @@ export function deleteSharedAccount(id) {
 
 export function listSharedAccountRepairLogs(id, params = {}) {
   return client.get(`/shared-accounts/${id}/repair-logs`, { params })
+}
+
+// ──────────── Ticket Admin ────────────
+
+export function assignTicket(id, data) {
+  return client.post(`/tickets/${id}/assign`, data)
+}
+
+// ──────────── IP Whitelist Admin ────────────
+
+export function listAllIPWhitelists(params = {}) {
+  return client.get('/ip-whitelists', { params })
+}
+
+// ──────────── OAuth Bindings Admin ────────────
+
+export function listOAuthBindings(params = {}) {
+  return client.get('/client-oauth-bindings', { params })
 }

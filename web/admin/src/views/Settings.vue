@@ -268,6 +268,67 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- Self-Unban Config -->
+      <el-tab-pane label="自解封配置" name="self-unban">
+        <el-card>
+          <el-form :model="selfUnbanForm" label-width="160px" style="max-width:600px">
+            <el-form-item label="启用自解封">
+              <el-switch v-model="selfUnbanForm.enabled" />
+              <div style="font-size:11px;color:#999;margin-top:4px">允许被暂停的客户端自行解封</div>
+            </el-form-item>
+            <el-form-item label="冷却时间（小时）">
+              <el-input-number v-model="selfUnbanForm.cooldown_hours" :min="1" :max="720" />
+              <div style="font-size:11px;color:#999;margin-top:4px">两次自解封之间的最短间隔</div>
+            </el-form-item>
+            <el-form-item label="适用状态">
+              <el-select v-model="selfUnbanForm.applicable_status" multiple style="width:100%" placeholder="选择可自解封的状态">
+                <el-option label="暂停 (suspended)" value="suspended" />
+                <el-option label="过期 (expired)" value="expired" />
+                <el-option label="流量超限 (overuse)" value="overuse" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="selfUnbanSaving" @click="saveSelfUnbanConfig">保存</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- OAuth Config -->
+      <el-tab-pane label="OAuth 配置" name="oauth">
+        <el-card>
+          <el-form :model="oauthForm" label-width="160px" style="max-width:600px">
+            <el-divider content-position="left">GitHub OAuth</el-divider>
+            <el-form-item label="启用 GitHub OAuth">
+              <el-switch v-model="oauthForm.github_enabled" />
+            </el-form-item>
+            <template v-if="oauthForm.github_enabled">
+              <el-form-item label="Client ID">
+                <el-input v-model="oauthForm.github_client_id" placeholder="GitHub OAuth App Client ID" />
+              </el-form-item>
+              <el-form-item label="Client Secret">
+                <el-input v-model="oauthForm.github_client_secret" type="password" show-password />
+              </el-form-item>
+            </template>
+            <el-divider content-position="left">Google OAuth</el-divider>
+            <el-form-item label="启用 Google OAuth">
+              <el-switch v-model="oauthForm.google_enabled" />
+            </el-form-item>
+            <template v-if="oauthForm.google_enabled">
+              <el-form-item label="Client ID">
+                <el-input v-model="oauthForm.google_client_id" placeholder="Google OAuth Client ID" />
+              </el-form-item>
+              <el-form-item label="Client Secret">
+                <el-input v-model="oauthForm.google_client_secret" type="password" show-password />
+              </el-form-item>
+            </template>
+            <el-form-item>
+              <el-button type="primary" :loading="oauthSaving" @click="saveOAuthConfig">保存</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-tab-pane>
+
       <!-- GitHub Acceleration -->
       <el-tab-pane :label="t('settings.github.title')" name="github">
         <el-card>
@@ -535,6 +596,14 @@ const domainDialogVisible = ref(false)
 const editingDomainIndex = ref(null)
 const domainForm = ref({ name: '', url: '' })
 
+// Self-unban config
+const selfUnbanForm = ref({ enabled: false, cooldown_hours: 24, applicable_status: ['suspended'] })
+const selfUnbanSaving = ref(false)
+
+// OAuth config
+const oauthForm = ref({ github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
+const oauthSaving = ref(false)
+
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 
 async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) panelForm.value = { ...panelForm.value, ...d } } catch (e) {} }
@@ -742,6 +811,68 @@ async function handleUploadWebDAV() {
 // GitHub acceleration
 async function fetchGitHubConfig() { try { const d = await client.get('/system/github-config'); if (d) githubForm.value = { ...githubForm.value, ...d } } catch (e) {} }
 async function saveGitHubConfig() { githubSaving.value = true; try { await client.put('/system/github-config', githubForm.value); ElMessage.success(t('common.success')) } catch (e) {} finally { githubSaving.value = false } }
+
+// Self-unban config
+async function fetchSelfUnbanConfig() {
+  try {
+    const d = await client.get('/system/settings', { params: { prefix: 'self_unban' } })
+    if (d && d.items) {
+      for (const item of d.items) {
+        if (item.key === 'self_unban.enabled') selfUnbanForm.value.enabled = item.value === 'true'
+        if (item.key === 'self_unban.cooldown_hours') selfUnbanForm.value.cooldown_hours = parseInt(item.value) || 24
+        if (item.key === 'self_unban.applicable_status') {
+          try { selfUnbanForm.value.applicable_status = JSON.parse(item.value) } catch { selfUnbanForm.value.applicable_status = ['suspended'] }
+        }
+      }
+    }
+  } catch (e) {}
+}
+async function saveSelfUnbanConfig() {
+  selfUnbanSaving.value = true
+  try {
+    await client.put('/system/settings/batch', {
+      items: [
+        { key: 'self_unban.enabled', value: String(selfUnbanForm.value.enabled) },
+        { key: 'self_unban.cooldown_hours', value: String(selfUnbanForm.value.cooldown_hours) },
+        { key: 'self_unban.applicable_status', value: JSON.stringify(selfUnbanForm.value.applicable_status) },
+      ]
+    })
+    ElMessage.success(t('common.success'))
+  } catch (e) {} finally { selfUnbanSaving.value = false }
+}
+
+// OAuth config
+async function fetchOAuthConfig() {
+  try {
+    const d = await client.get('/system/settings', { params: { prefix: 'oauth' } })
+    if (d && d.items) {
+      for (const item of d.items) {
+        if (item.key === 'oauth.github_enabled') oauthForm.value.github_enabled = item.value === 'true'
+        if (item.key === 'oauth.github_client_id') oauthForm.value.github_client_id = item.value
+        if (item.key === 'oauth.github_client_secret') oauthForm.value.github_client_secret = item.value
+        if (item.key === 'oauth.google_enabled') oauthForm.value.google_enabled = item.value === 'true'
+        if (item.key === 'oauth.google_client_id') oauthForm.value.google_client_id = item.value
+        if (item.key === 'oauth.google_client_secret') oauthForm.value.google_client_secret = item.value
+      }
+    }
+  } catch (e) {}
+}
+async function saveOAuthConfig() {
+  oauthSaving.value = true
+  try {
+    await client.put('/system/settings/batch', {
+      items: [
+        { key: 'oauth.github_enabled', value: String(oauthForm.value.github_enabled) },
+        { key: 'oauth.github_client_id', value: oauthForm.value.github_client_id },
+        { key: 'oauth.github_client_secret', value: oauthForm.value.github_client_secret },
+        { key: 'oauth.google_enabled', value: String(oauthForm.value.google_enabled) },
+        { key: 'oauth.google_client_id', value: oauthForm.value.google_client_id },
+        { key: 'oauth.google_client_secret', value: oauthForm.value.google_client_secret },
+      ]
+    })
+    ElMessage.success(t('common.success'))
+  } catch (e) {} finally { oauthSaving.value = false }
+}
 function showAddDomain() { editingDomainIndex.value = null; domainForm.value = { name: '', url: '' }; domainDialogVisible.value = true }
 function showEditDomain(row, index) { editingDomainIndex.value = index; domainForm.value = { ...row }; domainDialogVisible.value = true }
 function handleSaveDomain() {
@@ -754,5 +885,5 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig() })
+onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchOAuthConfig() })
 </script>

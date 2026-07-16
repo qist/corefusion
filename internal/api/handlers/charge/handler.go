@@ -149,6 +149,62 @@ func (h *Handler) ListOrders(c *gin.Context) {
 	response.Paginated(c, items, total, limit, offset)
 }
 
+// RefundOrderInput is the input for refunding a charge order.
+type RefundOrderInput struct {
+	Remark string `json:"remark"`
+}
+
+// RefundOrder handles POST /api/v1/charge-orders/:id/refund.
+func (h *Handler) RefundOrder(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	order, err := h.chargeOrderRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge order not found")
+		return
+	}
+	if order.Status != entity.ChargeStatusPaid {
+		response.BadRequest(c, "INVALID_STATUS", "only paid orders can be refunded")
+		return
+	}
+
+	var input RefundOrderInput
+	c.ShouldBindJSON(&input)
+
+	// Update order status to refunded
+	order.Status = entity.ChargeStatusRefunded
+	remark := input.Remark
+	if remark == "" {
+		remark = "管理员退款"
+	}
+	order.Remark = remark
+	if err := h.chargeOrderRepo.Update(c.Request.Context(), order); err != nil {
+		response.InternalError(c, "REFUND_FAILED", err.Error())
+		return
+	}
+
+	// Refund to client balance
+	if order.Amount > 0 {
+		bal, err := h.balanceRepo.AddBalance(c.Request.Context(), order.ClientID, order.Amount)
+		if err == nil {
+			txRecord := &entity.BalanceTransaction{
+				ClientID:      order.ClientID,
+				Type:          entity.BalanceTxTypeRefund,
+				Amount:        order.Amount,
+				BalanceAfter:  bal.Balance,
+				RelatedChargeOrderID: &order.ID,
+				Remark:        remark,
+			}
+			h.balanceTxRepo.Create(c.Request.Context(), txRecord)
+		}
+	}
+
+	response.OK(c, order)
+}
+
 // GetOrder handles GET /api/v1/charge-orders/:id.
 func (h *Handler) GetOrder(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

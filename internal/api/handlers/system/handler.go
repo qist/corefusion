@@ -301,6 +301,50 @@ func (h *Handler) Restart(c *gin.Context) {
 	}()
 }
 
+// --- Generic Settings ---
+
+// GetSettings handles GET /api/v1/system/settings?prefix=xxx
+// Returns all system settings matching the given key prefix.
+func (h *Handler) GetSettings(c *gin.Context) {
+	prefix := c.Query("prefix")
+	if prefix == "" {
+		response.BadRequest(c, "MISSING_PREFIX", "prefix query parameter is required")
+		return
+	}
+	settings, err := h.settingSvc.GetByPrefix(c.Request.Context(), prefix)
+	if err != nil {
+		response.InternalError(c, "GET_FAILED", err.Error())
+		return
+	}
+	items := make([]gin.H, 0, len(settings))
+	for k, v := range settings {
+		items = append(items, gin.H{"key": k, "value": v})
+	}
+	response.OK(c, gin.H{"items": items})
+}
+
+// BatchUpdateSettings handles PUT /api/v1/system/settings/batch
+// Upserts multiple system settings at once.
+func (h *Handler) BatchUpdateSettings(c *gin.Context) {
+	var body struct {
+		Items []struct {
+			Key   string `json:"key" binding:"required"`
+			Value string `json:"value"`
+		} `json:"items" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	for _, item := range body.Items {
+		if err := h.settingSvc.SetByKey(c.Request.Context(), item.Key, item.Value); err != nil {
+			response.InternalError(c, "SET_FAILED", err.Error())
+			return
+		}
+	}
+	response.OK(c, gin.H{"message": "settings updated"})
+}
+
 // --- Existing stubs ---
 
 func (h *Handler) GetBootstrapState(c *gin.Context) {

@@ -32,6 +32,10 @@ export function getChargeOrder(id) {
   return client.get(`/charge-orders/${id}`)
 }
 
+export function refundChargeOrder(id, data = {}) {
+  return client.post(`/charge-orders/${id}/refund`, data)
+}
+
 // ──────────── Charge Cards (充值卡) ────────────
 
 export function listChargeCards(params = {}) {

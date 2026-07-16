@@ -569,12 +569,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo := repository.NewSubscriptionEndpointRepository(database)
-	clientExtH := clientextHandler.NewHandler(
-		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
-		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
-		clientRepo, repository.NewClientOAuthBindingRepository(database),
-		subRepo, subEndpointRepo, publicSubH,
-	)
+clientExtH := clientextHandler.NewHandler(
+referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
+sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
+clientRepo, repository.NewClientOAuthBindingRepository(database),
+subRepo, subEndpointRepo, publicSubH, database,
+)
 
 	// Set balance repo on clientauth service for /me extension
 	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))
@@ -1015,6 +1015,7 @@ chargeOrderGroup := protected.Group("/charge-orders")
 {
 chargeOrderGroup.GET("", chargeAdminH.ListOrders)
 chargeOrderGroup.GET("/:id", chargeAdminH.GetOrder)
+chargeOrderGroup.POST("/:id/refund", chargeAdminH.RefundOrder)
 }
 chargeCardGroup := protected.Group("/charge-cards")
 {
@@ -1037,12 +1038,26 @@ referralWithdrawalGroup.GET("", clientExtH.AdminListWithdrawals)
 referralWithdrawalGroup.POST("/:id/approve", clientExtH.AdminApproveWithdrawal)
 referralWithdrawalGroup.POST("/:id/reject", clientExtH.AdminRejectWithdrawal)
 }
+referralAdminGroup := protected.Group("/referral")
+{
+referralAdminGroup.GET("/stats", clientExtH.AdminReferralStats)
+referralAdminGroup.GET("/records", clientExtH.AdminListReferralRecords)
+}
+ipWhitelistAdminGroup := protected.Group("/ip-whitelists")
+{
+ipWhitelistAdminGroup.GET("", clientExtH.AdminListAllIPWhitelists)
+}
+oauthBindingAdminGroup := protected.Group("/client-oauth-bindings")
+{
+oauthBindingAdminGroup.GET("", clientExtH.AdminListClientOAuthBindings)
+}
 ticketAdminGroup := protected.Group("/tickets")
 {
 ticketAdminGroup.GET("", clientExtH.AdminListTickets)
 ticketAdminGroup.GET("/:id", clientExtH.AdminGetTicket)
 ticketAdminGroup.POST("/:id/reply", clientExtH.AdminReplyTicket)
 ticketAdminGroup.POST("/:id/close", clientExtH.AdminCloseTicket)
+ticketAdminGroup.POST("/:id/assign", clientExtH.AdminAssignTicket)
 }
 giftAdminGroup := protected.Group("/client-gifts")
 {
@@ -1722,8 +1737,11 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
 				systemGroup.PUT("/reality-targets", systemH.UpdateRealityTargets)
 				systemGroup.POST("/reality-targets/reset", systemH.ResetRealityTargets)
-				systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
-			}
+			systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
+			// Generic settings API (used by self-unban, OAuth config, etc.)
+			systemGroup.GET("/settings", systemH.GetSettings)
+			systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
+		}
 
 			// Proxy/Caddy/Nginx management routes moved under /node-servers/:id/
 
@@ -2230,6 +2248,9 @@ func isSPARoute(path string) bool {
 		"/log-manage",
 		"/settings",
 		"/portal",
+		"/charge",
+		"/tickets",
+		"/client-ext",
 	}
 
 	for _, route := range knownRoutes {
@@ -2590,12 +2611,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		repository.NewMihomoConfigRepository(database), repository.NewMihomoRuleRepository(database),
 		systemSettingRepo, repository.NewAccessLogRepository(database),
 	)
-	clientExtH := clientextHandler.NewHandler(
-		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
-		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
-		clientRepo, repository.NewClientOAuthBindingRepository(database),
-		subRepo, subEndpointRepo2, portalPublicSubH,
-	)
+clientExtH := clientextHandler.NewHandler(
+referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
+sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
+clientRepo, repository.NewClientOAuthBindingRepository(database),
+subRepo, subEndpointRepo2, portalPublicSubH, database,
+)
 
 	// Client auth (protected)
 	clientAuthProtected := r.Group("/api/v1/client-auth")

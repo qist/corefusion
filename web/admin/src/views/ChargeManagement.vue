@@ -78,9 +78,10 @@
           <el-table-column label="支付时间" width="160">
             <template #default="{row}">{{ row.paid_at?.substring(0,16).replace('T',' ') || '—' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="80">
+          <el-table-column label="操作" width="140">
             <template #default="{row}">
               <el-button size="small" @click="showOrderDetail(row)">详情</el-button>
+              <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">退款</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -528,6 +529,17 @@ async function showTransactions(row) {
     const r = await chargeApi.listBalanceTransactions({ client_id: row.client_id, limit: 100 })
     transactions.value = r.items || []
   } catch { transactions.value = [] } finally { txLoading.value = false }
+}
+
+// ──────── Refund ────────
+async function refundOrder(row) {
+  await ElMessageBox.confirm(`确定对订单 #${row.id}（¥${(row.amount/100).toFixed(2)}）执行退款？金额将退回客户余额。`, '退款确认', { type: 'warning' })
+  try {
+    await chargeApi.refundChargeOrder(row.id, { remark: '管理员退款' })
+    ElMessage.success('退款成功')
+    fetchOrders()
+    fetchBalances()
+  } catch {}
 }
 
 // ──────── Helpers ────────

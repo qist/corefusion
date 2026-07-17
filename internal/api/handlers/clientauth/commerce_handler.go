@@ -1,6 +1,8 @@
 package clientauth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -251,6 +253,13 @@ func (h *CommerceHandler) RedeemCard(c *gin.Context) {
 
 // HandleChargeCallback handles POST /api/v1/charge/callback/:site_id (public endpoint).
 func (h *CommerceHandler) HandleChargeCallback(c *gin.Context) {
+	// ① 生成 request_id（全链路追踪 §4.10）
+	requestID := c.GetHeader("X-Request-ID")
+	if requestID == "" {
+		requestID = generateRequestID()
+	}
+	c.Header("X-Request-ID", requestID)
+
 	siteID, err := strconv.ParseInt(c.Param("site_id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_SITE_ID", "invalid site ID")
@@ -261,11 +270,12 @@ func (h *CommerceHandler) HandleChargeCallback(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.svc.HandleChargeCallback(c.Request.Context(), siteID, input); err != nil {
+	remoteIP := c.ClientIP()
+	if err := h.svc.HandleChargeCallback(c.Request.Context(), siteID, remoteIP, requestID, input); err != nil {
 		response.BadRequest(c, "CALLBACK_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"status": "ok"})
+	response.OK(c, gin.H{"success": true, "message": "ok"})
 }
 
 // ============================================================
@@ -319,4 +329,11 @@ func getPagination(c *gin.Context) (limit, offset int) {
 		offset = o
 	}
 	return
+}
+
+// generateRequestID generates a unique request ID: req_ + 12 hex chars.
+func generateRequestID() string {
+	b := make([]byte, 6)
+	rand.Read(b)
+	return "req_" + hex.EncodeToString(b)
 }

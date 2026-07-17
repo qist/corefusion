@@ -14,7 +14,10 @@
           <el-table-column prop="site_url" label="站点URL" show-overflow-tooltip />
           <el-table-column label="支付方式" width="200">
             <template #default="{row}">
-              <el-tag v-for="m in parseMethods(row.supported_methods)" :key="m" size="small" style="margin:2px">{{ m }}</el-tag>
+              <template v-if="parseMethods(row.supported_methods).length">
+                <el-tag v-for="m in parseMethods(row.supported_methods)" :key="m" size="small" style="margin:2px">{{ m }}</el-tag>
+              </template>
+              <span v-else style="color:#999">—</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="80">
@@ -22,10 +25,18 @@
               <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'启用':'禁用' }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="验证" width="80">
+            <template #default="{row}">
+              <el-tag :type="row.verified?'success':'danger'" size="small">{{ row.verified?'已验证':'未验证' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="currency" label="货币" width="70" />
           <el-table-column prop="sort_order" label="排序" width="60" />
-          <el-table-column label="操作" width="180">
+          <el-table-column label="操作" width="280">
             <template #default="{row}">
               <el-button size="small" @click="showEditSite(row)">编辑</el-button>
+              <el-button size="small" type="primary" @click="showVerifyDialog(row)">验证</el-button>
+              <el-button size="small" type="info" @click="showIntegrationDoc(row)">文档</el-button>
               <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?'禁用':'启用' }}</el-button>
               <el-button size="small" type="danger" @click="deleteSite(row)">删除</el-button>
             </template>
@@ -181,29 +192,148 @@
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 充值站点编辑弹窗 -->
-    <el-dialog v-model="siteDialog" :title="editingSite?'编辑充值站点':'新增充值站点'" width="550px">
+    <el-dialog v-model="siteDialog" :title="editingSite?'编辑充值站点':'新增充值站点'" width="620px">
       <el-form :model="siteForm" label-width="110px" size="small">
         <el-form-item label="名称"><el-input v-model="siteForm.name" /></el-form-item>
         <el-form-item label="站点URL"><el-input v-model="siteForm.site_url" placeholder="https://pay.example.com" /></el-form-item>
         <el-form-item label="API Key"><el-input v-model="siteForm.api_key" type="password" show-password /></el-form-item>
-        <el-form-item label="回调密钥"><el-input v-model="siteForm.callback_secret" type="password" show-password /></el-form-item>
+        <el-form-item label="回调密钥">
+          <el-input v-model="siteForm.callback_secret" type="password" show-password placeholder="HMAC-SHA256 签名密钥" />
+          <div style="font-size:11px;color:#e6a23c;margin-top:4px">⚠ 必须配置，否则回调将被拒绝。用于 HMAC-SHA256 签名验证</div>
+        </el-form-item>
+        <el-form-item label="IP白名单">
+          <el-input v-model="siteForm.callback_whitelist" type="textarea" :rows="2" placeholder='JSON格式，如 ["1.2.3.4","10.0.0.0/24"]' />
+          <div style="font-size:11px;color:#999;margin-top:4px">留空则不校验IP。支持单IP和CIDR网段</div>
+        </el-form-item>
+        <el-form-item label="货币">
+          <el-select v-model="siteForm.currency" style="width:100%">
+            <el-option v-for="c in CURRENCIES" :key="c.code" :label="`${c.code} ${c.symbol} (${t(c.nameKey)})`" :value="c.code" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="支付方式">
-          <el-select v-model="siteForm.supported_methods_arr" multiple style="width:100%" placeholder="选择支持的支付方式">
+          <el-select v-model="siteForm.supported_methods_arr" multiple filterable allow-create default-first-option style="width:100%" placeholder="选择或输入自定义支付方式">
             <el-option label="支付宝" value="alipay" />
             <el-option label="微信支付" value="wechat" />
             <el-option label="USDT" value="usdt" />
             <el-option label="PayPal" value="paypal" />
             <el-option label="信用卡" value="credit_card" />
+            <el-option label="借记卡" value="debit_card" />
+            <el-option label="银行转账" value="bank_transfer" />
+            <el-option label="QIWI" value="qiwi" />
+            <el-option label="ЮMoney" value="yoomoney" />
+            <el-option label="SberPay" value="sberpay" />
+            <el-option label="Tinkoff" value="tinkoff" />
+            <el-option label="Crypto" value="crypto" />
           </el-select>
+          <div style="font-size:11px;color:#999;margin-top:4px">可直接输入自定义支付方式，回车添加</div>
         </el-form-item>
         <el-form-item label="图标URL"><el-input v-model="siteForm.icon_url" /></el-form-item>
         <el-form-item label="排序"><el-input-number v-model="siteForm.sort_order" :min="0" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="siteForm.enabled" /></el-form-item>
+
+        <!-- 回调地址展示 -->
+        <el-divider content-position="left">回调配置</el-divider>
+        <el-form-item v-if="editingSite" label="回调地址">
+          <el-input :model-value="`/api/v1/charge/callback/${editingSite.id}`" readonly>
+            <template #append><el-button @click="copyCallbackUrl(editingSite.id)">复制</el-button></template>
+          </el-input>
+          <div style="font-size:11px;color:#999;margin-top:4px">第三方站点需向此地址发送 POST 回调</div>
+        </el-form-item>
+        <el-form-item v-if="editingSite" label="验证状态">
+          <el-tag :type="editingSite.verified?'success':'danger'" size="small">{{ editingSite.verified?'已验证':'未验证' }}</el-tag>
+          <span style="margin-left:8px;font-size:12px;color:#909399">未验证站点的回调将被拒绝</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="siteDialog=false">取消</el-button>
         <el-button type="primary" @click="saveSite">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 域名验证弹窗 -->
+    <el-dialog v-model="verifyDialog" title="域名验证" width="600px">
+      <div v-if="verifySite">
+        <el-alert :type="verifySite.verified?'success':'warning'" :closable="false" style="margin-bottom:16px">
+          <template #title>
+            {{ verifySite.verified ? '✓ 域名已验证' : '⚠ 域名未验证，回调将被拒绝' }}
+          </template>
+        </el-alert>
+
+        <el-steps :active="verifyStep" align-center style="margin-bottom:20px">
+          <el-step title="生成验证文件" />
+          <el-step title="部署验证" />
+          <el-step title="验证域名" />
+        </el-steps>
+
+        <div v-if="verifyData">
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="验证文件URL">
+              <span style="word-break:break-all;font-family:monospace">{{ verifyData.verify_file_url }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="文件内容">
+              <span style="font-family:monospace">{{ verifyData.verify_content }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="DNS TXT 记录名">_corefusion-verify</el-descriptions-item>
+            <el-descriptions-item label="DNS TXT 记录值">
+              <span style="font-family:monospace">{{ verifyData.verify_content }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <div style="margin-top:16px;text-align:center">
+            <el-button type="primary" :loading="verifyLoading" @click="doVerifyHTTP">验证 HTTP 文件</el-button>
+            <el-button type="success" :loading="verifyLoading" @click="doVerifyDNS">验证 DNS TXT</el-button>
+          </div>
+
+          <div style="margin-top:12px;font-size:12px;color:#909399;text-align:center">
+            方法一：将验证文件放在站点 <code>.well-known/</code> 目录下<br>
+            方法二：添加 DNS TXT 记录 <code>_corefusion-verify.您的域名</code>
+          </div>
+        </div>
+
+        <div v-else style="text-align:center;padding:20px">
+          <el-button type="primary" :loading="verifyLoading" @click="doGenerateVerify">生成验证文件</el-button>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 集成文档弹窗 -->
+    <el-dialog v-model="integrationDocDialog" title="对接文档" width="650px">
+      <div v-if="integrationDoc">
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="站点ID">{{ integrationDoc.site_id }}</el-descriptions-item>
+          <el-descriptions-item label="站点名称">{{ integrationDoc.site_name }}</el-descriptions-item>
+          <el-descriptions-item label="回调地址">
+            <span style="font-family:monospace;color:#409eff">{{ integrationDoc.callback_url }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="签名算法">{{ integrationDoc.signature_algorithm }}</el-descriptions-item>
+          <el-descriptions-item label="签名字段">
+            <el-tag v-for="f in integrationDoc.signature_fields" :key="f" size="small" style="margin:2px">{{ f }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="时间戳容差">{{ integrationDoc.timestamp_tolerance }} 秒</el-descriptions-item>
+          <el-descriptions-item label="Nonce 要求">{{ integrationDoc.nonce_required ? '必须提供' : '可选' }}</el-descriptions-item>
+          <el-descriptions-item label="金额单位">{{ integrationDoc.amount_unit }}</el-descriptions-item>
+          <el-descriptions-item label="IP白名单">{{ integrationDoc.ip_whitelist || '未配置' }}</el-descriptions-item>
+          <el-descriptions-item label="验证状态">
+            <el-tag :type="integrationDoc.verified?'success':'danger'" size="small">{{ integrationDoc.verified?'已验证':'未验证' }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="回调密钥">{{ integrationDoc.callback_secret_set?'已配置':'未配置' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <el-divider content-position="left">回调请求示例 (JSON)</el-divider>
+        <pre style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:12px;overflow-x:auto">{{ JSON.stringify(integrationDoc.example_callback, null, 2) }}</pre>
+
+        <el-divider content-position="left">成功响应</el-divider>
+        <pre style="background:#f0f9eb;padding:12px;border-radius:4px;font-size:12px">{{ integrationDoc.response_format }}</pre>
+
+        <el-divider content-position="left">签名计算方法</el-divider>
+        <div style="font-size:12px;color:#606266;line-height:1.8">
+          <p>1. 将签名字段按 key 字典序排列，组成 JSON 字符串</p>
+          <p>2. 使用 <code>callback_secret</code> 作为密钥，计算 <code>HMAC-SHA256</code></p>
+          <p>3. 将结果转为十六进制字符串，放入 <code>sign</code> 字段</p>
+        </div>
+      </div>
     </el-dialog>
 
     <!-- 充值订单详情弹窗 -->
@@ -422,7 +552,7 @@ const editingSite = ref(null)
 const siteForm = ref({})
 
 function emptySiteForm() {
-  return { name: '', site_url: '', api_key: '', callback_secret: '', supported_methods_arr: [], icon_url: '', sort_order: 0, enabled: true }
+  return { name: '', site_url: '', api_key: '', callback_secret: '', callback_whitelist: '', currency: defaultCurrency.value, supported_methods_arr: [], icon_url: '', sort_order: 0, enabled: true }
 }
 async function fetchSites() {
   sitesLoading.value = true
@@ -439,6 +569,80 @@ function showEditSite(row) {
   try { methods = JSON.parse(row.supported_methods || '[]') } catch {}
   siteForm.value = { ...row, supported_methods_arr: methods, enabled: !!row.enabled }
   siteDialog.value = true
+}
+function copyCallbackUrl(siteId) {
+  const url = window.location.origin + `/api/v1/charge/callback/${siteId}`
+  navigator.clipboard.writeText(url)
+  ElMessage.success('已复制回调地址')
+}
+
+// ──────── Domain Verification ────────
+const verifyDialog = ref(false)
+const verifySite = ref(null)
+const verifyData = ref(null)
+const verifyLoading = ref(false)
+const verifyStep = ref(0)
+
+async function showVerifyDialog(row) {
+  verifySite.value = row
+  verifyData.value = null
+  verifyStep.value = 0
+  verifyDialog.value = true
+  // 如果已有 verify_token，展示已有数据
+  if (row.verify_token) {
+    verifyData.value = {
+      verify_token: row.verify_token,
+      verify_content: row.verify_content,
+      verify_file_url: `${row.site_url.replace(/\/$/, '')}/.well-known/${row.verify_token}.txt`,
+    }
+    verifyStep.value = 1
+  }
+}
+async function doGenerateVerify() {
+  verifyLoading.value = true
+  try {
+    const r = await chargeApi.generateVerifyFile(verifySite.value.id)
+    verifyData.value = r
+    verifyStep.value = 1
+    ElMessage.success('验证文件已生成')
+    fetchSites()
+  } catch {} finally { verifyLoading.value = false }
+}
+async function doVerifyHTTP() {
+  verifyLoading.value = true
+  try {
+    await chargeApi.verifyDomainHTTP(verifySite.value.id)
+    ElMessage.success('HTTP 验证成功！')
+    verifyStep.value = 3
+    verifySite.value.verified = true
+    fetchSites()
+  } catch (e) {
+    if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
+  } finally { verifyLoading.value = false }
+}
+async function doVerifyDNS() {
+  verifyLoading.value = true
+  try {
+    await chargeApi.verifyDomainDNS(verifySite.value.id)
+    ElMessage.success('DNS 验证成功！')
+    verifyStep.value = 3
+    verifySite.value.verified = true
+    fetchSites()
+  } catch (e) {
+    if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
+  } finally { verifyLoading.value = false }
+}
+
+// ──────── Integration Doc ────────
+const integrationDocDialog = ref(false)
+const integrationDoc = ref(null)
+
+async function showIntegrationDoc(row) {
+  integrationDocDialog.value = true
+  integrationDoc.value = null
+  try {
+    integrationDoc.value = await chargeApi.getSiteIntegrationDoc(row.id)
+  } catch {}
 }
 async function saveSite() {
   try {

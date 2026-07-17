@@ -22,6 +22,48 @@ export function deleteChargeSite(id) {
   return client.delete(`/charge-sites/${id}`)
 }
 
+export function generateVerifyFile(id) {
+  return client.post(`/charge-sites/${id}/generate-verify`)
+}
+
+export function verifyDomainHTTP(id) {
+  return client.post(`/charge-sites/${id}/verify-domain`)
+}
+
+export function verifyDomainDNS(id) {
+  return client.post(`/charge-sites/${id}/verify-dns`)
+}
+
+export function getSiteIntegrationDoc(id) {
+  return client.get(`/charge-sites/${id}/integration-doc`)
+}
+
+// ──────────── Secret Rotation (密钥轮换) ────────────
+
+export function rotateSiteSecret(id, newSecret) {
+  return client.post(`/charge-sites/${id}/rotate-secret`, { new_secret: newSecret })
+}
+
+export function clearPrevSiteSecret(id) {
+  return client.post(`/charge-sites/${id}/clear-prev-secret`)
+}
+
+// ──────────── Callback Logs (回调日志) ────────────
+
+export function listCallbackLogs(params = {}) {
+  return client.get('/charge-callback-logs', { params })
+}
+
+// ──────────── Callback Retries (回调重试) ────────────
+
+export function listCallbackRetries(params = {}) {
+  return client.get('/charge-callback-retries', { params })
+}
+
+export function retryCallback(id) {
+  return client.post(`/charge-callback-retries/${id}/retry`)
+}
+
 // ──────────── Charge Orders (充值订单) ────────────
 
 export function listChargeOrders(params = {}) {

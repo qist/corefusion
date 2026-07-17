@@ -34,20 +34,20 @@ var chargeHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // CommerceService handles plan display, ordering, charging, and balance operations.
 type CommerceService struct {
-	db                *gorm.DB
-	tmplRepo          *repository.PlanTemplateRepository
-	variantRepo       *repository.PlanVariantRepository
-	orderRepo         *repository.PlanOrderRepository
-	promotionRepo     *repository.PromotionRepository
-	clientRepo        *repository.ClientRepository
-	subRepo           *repository.SubscriptionRepository
-	chargeSiteRepo    *repository.ChargeSiteRepository
-	chargeOrderRepo   *repository.ChargeOrderRepository
-	chargeCardRepo    *repository.ChargeCardRepository
-	balanceRepo       *repository.ClientBalanceRepository
-	balanceTxRepo     *repository.BalanceTransactionRepository
-	settingSvc        SettingStore
-	jwtSecret         string
+	db              *gorm.DB
+	tmplRepo        *repository.PlanTemplateRepository
+	variantRepo     *repository.PlanVariantRepository
+	orderRepo       *repository.PlanOrderRepository
+	promotionRepo   *repository.PromotionRepository
+	clientRepo      *repository.ClientRepository
+	subRepo         *repository.SubscriptionRepository
+	chargeSiteRepo  *repository.ChargeSiteRepository
+	chargeOrderRepo *repository.ChargeOrderRepository
+	chargeCardRepo  *repository.ChargeCardRepository
+	balanceRepo     *repository.ClientBalanceRepository
+	balanceTxRepo   *repository.BalanceTransactionRepository
+	settingSvc      SettingStore
+	jwtSecret       string
 }
 
 // NewCommerceService creates a new CommerceService.
@@ -103,11 +103,11 @@ type PlanListItem struct {
 type PlanVariantItem struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
-	VariantType   string `json:"variant_type"`    // plan/traffic_pack
+	VariantType   string `json:"variant_type"` // plan/traffic_pack
 	BillingCycle  string `json:"billing_cycle"`
 	DurationDays  int    `json:"duration_days"`
-	Price         int64  `json:"price"`            // 分
-	OriginalPrice int64  `json:"original_price"`   // 分
+	Price         int64  `json:"price"`          // 分
+	OriginalPrice int64  `json:"original_price"` // 分
 	Currency      string `json:"currency"`
 	QuotaBytes    int64  `json:"quota_bytes"`
 	IsRecommended bool   `json:"is_recommended"`
@@ -234,8 +234,8 @@ func (s *CommerceService) ListTrafficPacks(ctx context.Context) ([]PlanVariantIt
 
 // BuyTrafficPackInput is the input for buying a traffic pack.
 type BuyTrafficPackInput struct {
-	VariantID  int64  `json:"variant_id" binding:"required"`
-	PayMethod  string `json:"pay_method"`       // balance/charge_site
+	VariantID    int64  `json:"variant_id" binding:"required"`
+	PayMethod    string `json:"pay_method"` // balance/charge_site
 	ChargeSiteID *int64 `json:"charge_site_id"`
 }
 
@@ -331,11 +331,11 @@ func (s *CommerceService) addTrafficToSubscription(ctx context.Context, client *
 
 // CreateOrderInput is the input for creating a plan order.
 type CreateOrderInput struct {
-	VariantID      int64  `json:"variant_id" binding:"required"`
-	OrderType      string `json:"order_type" binding:"required"` // new/renew/upgrade
-	PromotionCode  string `json:"promotion_code"`
-	PayMethod      string `json:"pay_method"`       // balance/charge_site
-	ChargeSiteID   *int64 `json:"charge_site_id"`
+	VariantID     int64  `json:"variant_id" binding:"required"`
+	OrderType     string `json:"order_type" binding:"required"` // new/renew/upgrade
+	PromotionCode string `json:"promotion_code"`
+	PayMethod     string `json:"pay_method"` // balance/charge_site
+	ChargeSiteID  *int64 `json:"charge_site_id"`
 }
 
 // CreateOrderResult is the result of creating an order.
@@ -562,9 +562,9 @@ func (s *CommerceService) CreateChargeOrder(ctx context.Context, clientID int64,
 type ChargeCallbackInput struct {
 	TradeNo      string          `json:"trade_no"`
 	SiteTradeNo  string          `json:"site_trade_no"`
-	Status       string          `json:"status"`       // 业务状态，不参与签名
+	Status       string          `json:"status"` // 业务状态，不参与签名
 	Amount       int64           `json:"amount"`
-	Currency     string          `json:"currency"`     // 订单货币（参与签名）
+	Currency     string          `json:"currency"` // 订单货币（参与签名）
 	Timestamp    int64           `json:"timestamp"`
 	Nonce        string          `json:"nonce"`
 	PaidCurrency string          `json:"paid_currency"`
@@ -577,23 +577,30 @@ type ChargeCallbackInput struct {
 }
 
 // HandleChargeCallback processes a charge site callback.
-// v3.1 verification chain:
-//  1. request_id  2. site check  3. verified check  4. IP whitelist (+match rule)
-//  5. timestamp check  6. nonce atomic INSERT (replay prevention)
-//  7. HMAC verify (body_hash + secret_version)  8. order lookup  9. order belong
-//  10. status check  11. amount check
-//  12. transaction: processing(+processing_at) → SELECT FOR UPDATE → INSERT ledger → UPDATE balance → paid
+// v3.2 verification chain:
+//  1. request_id  2. site check  3. verified check
+//  4. timestamp + nonce check  5. nonce atomic INSERT (replay prevention, sign_valid=false)
+//  6. HMAC verify (version + body_hash + secret_version) → mark nonce sign_valid
+//  7. order lookup + belong  8. callback_count++ / last_callback_at (异常频率检测)
+//  9. status check (幂等)  10. amount + currency lock check
+//  11. v3.2 Transaction: SELECT order FOR UPDATE → SELECT balance FOR UPDATE → INSERT ledger → UPDATE balance → UPDATE order(paid) → COMMIT
+//  12. Async: callback_event (事务外，不阻塞账务)
+//
+// 安全优先级：HMAC P0 / nonce P0 / 金额+币种 P0 / IP白名单 P2(仅记录不阻断)
 func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64, remoteIP string, requestID string, input ChargeCallbackInput) error {
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
 	rawBody, _ := json.Marshal(input)
 	payloadHash := sha256Hex(rawBody)
-	bodyHash := payloadHash // body_hash = SHA256(rawBody), same as payloadHash
+	bodyHash := payloadHash
 
-	// v3.1: merged event+log into single recordCallbackEvent call
+	// v3.2: event 改为异步写入，不阻塞账务
 	recordEvent := func(result, errorCode, errMsg string, signValid bool, secretVer int, ipMatchRule string) {
-		s.recordCallbackEvent(ctx, siteID, requestID, input.TradeNo, remoteIP, ipMatchRule, payloadHash, input.Amount, result, errorCode, errMsg, signValid, secretVer)
+		go s.recordCallbackEventAsync(siteID, requestID, input.TradeNo, remoteIP, ipMatchRule, payloadHash, input.Amount, result, errorCode, errMsg, signValid, secretVer)
+	}
+	raiseSecEvent := func(eventType, severity, tradeNo, detail string) {
+		go s.recordSecurityEventAsync(siteID, tradeNo, requestID, eventType, severity, remoteIP, detail)
 	}
 
 	// ② site
@@ -616,17 +623,19 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	}
 	log.Printf("[callback] request_id=%s verified=ok", requestID)
 
-	// ④ IP whitelist (+记录匹配规则)
+	// ④ IP whitelist — v3.2: 降级为 P2 辅助，仅记录不阻断
 	ipMatchRule := ""
 	if site.CallbackWhitelist != "" {
 		ipMatchRule = findIPMatchRule(remoteIP, site.CallbackWhitelist)
 		if ipMatchRule == "" {
-			log.Printf("[callback] request_id=%s ip_whitelist=denied ip=%s", requestID, remoteIP)
-			recordEvent("error", "IP_NOT_ALLOWED", fmt.Sprintf("ip not allowed: %s", remoteIP), false, 0, "")
-			return fmt.Errorf("ip not allowed: %s", remoteIP)
+			log.Printf("[callback] request_id=%s ip_whitelist=mismatch ip=%s (P2: logged only)", requestID, remoteIP)
+			raiseSecEvent(entity.ChargeSecEventIPChanged, entity.ChargeSecSeverityMedium, input.TradeNo,
+				fmt.Sprintf("ip not in whitelist: %s", remoteIP))
 		}
+	} else {
+		ipMatchRule = "no_whitelist"
 	}
-	log.Printf("[callback] request_id=%s ip_whitelist=ok matched=%s", requestID, ipMatchRule)
+	log.Printf("[callback] request_id=%s ip_whitelist=P2 matched=%s", requestID, ipMatchRule)
 
 	// ⑤ timestamp
 	now := time.Now().Unix()
@@ -641,45 +650,70 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	}
 	log.Printf("[callback] request_id=%s timestamp=ok", requestID)
 
-	// ⑥ nonce 原子消费
+	// ⑥ nonce 原子消费（v3.2: sign_valid=false，验签后更新）
 	nonceRecord := &entity.CallbackNonce{
 		Nonce:     input.Nonce,
 		SiteID:    siteID,
 		TradeNo:   input.TradeNo,
+		SignValid: false, // 默认未通过，验签成功后更新
 		CreatedAt: time.Now(),
 	}
 	if err := s.db.WithContext(ctx).Create(nonceRecord).Error; err != nil {
 		log.Printf("[callback] request_id=%s nonce_replay nonce=%s", requestID, input.Nonce)
 		recordEvent("replay", "REPLAY_ATTACK", "nonce already used", false, 0, ipMatchRule)
+		raiseSecEvent(entity.ChargeSecEventNonceReplay, entity.ChargeSecSeverityHigh, input.TradeNo,
+			fmt.Sprintf("nonce replay: %s", input.Nonce))
 		return fmt.Errorf("nonce already used (replay attack)")
 	}
 	log.Printf("[callback] request_id=%s nonce=consumed", requestID)
 
-	// ⑦ HMAC verify (body_hash + secret_version)
-	secret := resolveSiteSecret(site)
-	if secret == "" {
+	// ⑦ HMAC verify (v3.2: version + body_hash + secret_version)
+	// v3.2: 从 charge_site_secrets 表加载所有有效密钥（active + legacy），按版本降序尝试
+	secrets, err := s.loadActiveSecrets(ctx, siteID)
+	if err != nil {
+		log.Printf("[callback] request_id=%s secret=load_error: %v", requestID, err)
+	}
+	if len(secrets) == 0 {
+		// 兼容旧逻辑：从 ChargeSite 字段加载
+		secret := resolveSiteSecret(site)
+		if secret != "" {
+			secrets = []chargeSecretEntry{{version: site.SecretVersion, secret: secret}}
+			if prev := resolveSiteSecretPrev(site); prev != "" {
+				secrets = append(secrets, chargeSecretEntry{version: site.SecretVersion - 1, secret: prev})
+			}
+		}
+	}
+	if len(secrets) == 0 {
 		log.Printf("[callback] request_id=%s secret=missing", requestID)
 		recordEvent("signature_failed", "SECRET_REQUIRED", "callback_secret not configured", false, 0, ipMatchRule)
-		s.raiseCallbackAlert(siteID, "SECRET_REQUIRED", "warning", "回调密钥未配置", fmt.Sprintf("site_id=%d", siteID))
+		raiseSecEvent(entity.ChargeSecEventSigFailed, entity.ChargeSecSeverityMedium, input.TradeNo, "secret not configured")
 		return fmt.Errorf("callback_secret not configured")
 	}
-	usedSecretVer := site.SecretVersion
-	signValid := s.verifyChargeCallback(input, bodyHash, secret)
-	if !signValid {
-		prevSecret := resolveSiteSecretPrev(site)
-		if prevSecret != "" && s.verifyChargeCallback(input, bodyHash, prevSecret) {
+
+	usedSecretVer := 0
+	signValid := false
+	for _, entry := range secrets {
+		if s.verifyChargeCallback(input, bodyHash, entry.secret) {
 			signValid = true
-			usedSecretVer = site.SecretVersion - 1 // 旧密钥 = 上一版本
-			log.Printf("[callback] request_id=%s verify_signature=ok_via_prev_secret v=%d", requestID, usedSecretVer)
-		} else {
-			log.Printf("[callback] request_id=%s verify_signature=failed", requestID)
-			recordEvent("signature_failed", "INVALID_SIGNATURE", "invalid signature", false, 0, ipMatchRule)
-			s.raiseCallbackAlert(siteID, "INVALID_SIGNATURE", "critical", "回调签名验证失败", fmt.Sprintf("site_id=%d remote_ip=%s trade_no=%s", siteID, remoteIP, input.TradeNo))
-			return fmt.Errorf("invalid signature")
+			usedSecretVer = entry.version
+			break
 		}
-	} else {
-		log.Printf("[callback] request_id=%s verify_signature=ok v=%d", requestID, usedSecretVer)
 	}
+	if !signValid {
+		log.Printf("[callback] request_id=%s verify_signature=failed", requestID)
+		// 标记 nonce 签名失败
+		s.db.WithContext(ctx).Model(&entity.CallbackNonce{}).
+			Where("id = ?", nonceRecord.ID).Update("sign_valid", false)
+		recordEvent("signature_failed", "INVALID_SIGNATURE", "invalid signature", false, 0, ipMatchRule)
+		raiseSecEvent(entity.ChargeSecEventSigFailed, entity.ChargeSecSeverityCritical, input.TradeNo,
+			fmt.Sprintf("invalid signature, remote_ip=%s", remoteIP))
+		return fmt.Errorf("invalid signature")
+	}
+
+	// 验签成功：标记 nonce sign_valid=true
+	s.db.WithContext(ctx).Model(&entity.CallbackNonce{}).
+		Where("id = ?", nonceRecord.ID).Update("sign_valid", true)
+	log.Printf("[callback] request_id=%s verify_signature=ok v=%d", requestID, usedSecretVer)
 
 	// ⑧ order lookup
 	order, err := s.chargeOrderRepo.GetByTradeNo(ctx, input.TradeNo)
@@ -696,8 +730,39 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		return fmt.Errorf("order does not belong to this site")
 	}
 
-	// ⑩ order status (幂等 + 状态机)
-	if order.Status == entity.ChargeStatusPaid && input.Status == "paid" {
+	// v3.2: 更新 callback_count / last_callback_at（异常频率检测）
+	callbackNow := time.Now()
+	s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
+		Where("id = ?", order.ID).
+		Updates(map[string]interface{}{
+			"callback_count":   gorm.Expr("callback_count + 1"),
+			"last_callback_at": callbackNow,
+		})
+	// 异常频率检测：1分钟内超过10次回调
+	if order.LastCallbackAt != nil && callbackNow.Sub(*order.LastCallbackAt) < time.Minute && order.CallbackCount > 10 {
+		raiseSecEvent(entity.ChargeSecEventCallbackFlood, entity.ChargeSecSeverityHigh, input.TradeNo,
+			fmt.Sprintf("callback flood: %d callbacks in short period", order.CallbackCount))
+	}
+
+	// ⑩ callback status whitelist (v3.2: 显式校验，拒绝未知状态)
+	switch input.Status {
+	case entity.CallbackStatusPaid, entity.CallbackStatusFailed:
+		// valid terminal statuses — proceed to state machine
+	case entity.CallbackStatusPending:
+		// 中间态：支付进行中，仅确认收到回调，不改订单状态
+		log.Printf("[callback] request_id=%s order=%s status=pending acknowledged", requestID, input.TradeNo)
+		recordEvent("success", "", "callback status is pending, order unchanged", signValid, usedSecretVer, ipMatchRule)
+		return nil
+	default:
+		log.Printf("[callback] request_id=%s order=%s unknown_status=%s", requestID, input.TradeNo, input.Status)
+		recordEvent("error", "INVALID_STATUS", fmt.Sprintf("unknown callback status: %s", input.Status), signValid, usedSecretVer, ipMatchRule)
+		raiseSecEvent(entity.ChargeSecEventSigFailed, entity.ChargeSecSeverityMedium, input.TradeNo,
+			fmt.Sprintf("unknown callback status: %s", input.Status))
+		return fmt.Errorf("invalid callback status: %s", input.Status)
+	}
+
+	// ⑩b order status (幂等 + 状态机)
+	if order.Status == entity.ChargeStatusPaid && input.Status == entity.CallbackStatusPaid {
 		log.Printf("[callback] request_id=%s order=%s idempotent=paid", requestID, input.TradeNo)
 		recordEvent("success", "", "idempotent: order already paid", signValid, usedSecretVer, ipMatchRule)
 		return nil
@@ -708,7 +773,7 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		return nil
 	}
 	targetStatus := entity.ChargeStatusPaid
-	if input.Status != "paid" {
+	if input.Status == entity.CallbackStatusFailed {
 		targetStatus = entity.ChargeStatusFailed
 	}
 	if !entity.CanChargeOrderTransition(order.Status, targetStatus) {
@@ -717,93 +782,115 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		return fmt.Errorf("order status is %s, cannot process callback", order.Status)
 	}
 
-	// ⑪ amount check
+	// ⑪ amount + currency lock check (v3.2: 币种锁定)
 	if input.Amount != order.Amount {
 		log.Printf("[callback] request_id=%s amount_mismatch callback=%d order=%d", requestID, input.Amount, order.Amount)
 		recordEvent("amount_error", "AMOUNT_MISMATCH", fmt.Sprintf("callback=%d order=%d", input.Amount, order.Amount), signValid, usedSecretVer, ipMatchRule)
-		s.raiseCallbackAlert(siteID, "AMOUNT_MISMATCH", "critical", "回调金额不一致", fmt.Sprintf("site_id=%d trade_no=%s callback=%d order=%d", siteID, input.TradeNo, input.Amount, order.Amount))
+		raiseSecEvent(entity.ChargeSecEventAmountMismatch, entity.ChargeSecSeverityCritical, input.TradeNo,
+			fmt.Sprintf("amount mismatch: callback=%d order=%d", input.Amount, order.Amount))
 		return fmt.Errorf("amount mismatch: callback=%d order=%d", input.Amount, order.Amount)
 	}
+	// v3.2: 币种锁定 — order 有币种时，callback.currency 必须非空且一致
+	if order.Currency != "" {
+		if input.Currency == "" {
+			log.Printf("[callback] request_id=%s currency_missing order=%s", requestID, order.Currency)
+			recordEvent("amount_error", "CURRENCY_MISSING", fmt.Sprintf("order=%s callback=empty", order.Currency), signValid, usedSecretVer, ipMatchRule)
+			raiseSecEvent(entity.ChargeSecEventCurrencyMismatch, entity.ChargeSecSeverityCritical, input.TradeNo,
+				fmt.Sprintf("currency missing: order=%s callback=empty", order.Currency))
+			return fmt.Errorf("currency missing: order currency is %s but callback has none", order.Currency)
+		}
+		if input.Currency != order.Currency {
+			log.Printf("[callback] request_id=%s currency_mismatch callback=%s order=%s", requestID, input.Currency, order.Currency)
+			recordEvent("amount_error", "CURRENCY_MISMATCH", fmt.Sprintf("callback=%s order=%s", input.Currency, order.Currency), signValid, usedSecretVer, ipMatchRule)
+			raiseSecEvent(entity.ChargeSecEventCurrencyMismatch, entity.ChargeSecSeverityCritical, input.TradeNo,
+				fmt.Sprintf("currency mismatch: callback=%s order=%s", input.Currency, order.Currency))
+			return fmt.Errorf("currency mismatch: callback=%s order=%s", input.Currency, order.Currency)
+		}
+	}
+	// v3.2: 内部余额只认 order.amount，paid_amount/exchange_rate 不参与入账
 
 	// ⑫ process payment result
-	if input.Status == "paid" {
+	if input.Status == entity.CallbackStatusPaid {
 		paidAt := time.Now()
 		if input.PaidAt != "" {
 			if t, err := time.Parse(time.RFC3339, input.PaidAt); err == nil {
 				paidAt = t
 			}
 		}
-		processingAt := time.Now()
 
-		// v3.1 Transaction: pending → processing(+processing_at) → SELECT FOR UPDATE → INSERT ledger → UPDATE balance → paid
+		// v3.2 Transaction: 锁订单 → 锁余额 → 写流水 → 改余额 → 改订单 → COMMIT
+		// 不再先改 processing 再锁，整个流程在一个事务内用 SELECT FOR UPDATE 保证原子性
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Step 1: acquire processing lock (pending → processing, set processing_at)
-			result := tx.Model(&entity.ChargeOrder{}).
-				Where("trade_no = ? AND status = ?", input.TradeNo, entity.ChargeStatusPending).
-				Updates(map[string]interface{}{
-					"status":        entity.ChargeStatusProcessing,
-					"processing_at": processingAt,
-				})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				return nil // already handled by another request
+			// Step 1: SELECT order FOR UPDATE (行锁)
+			var lockedOrder entity.ChargeOrder
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("trade_no = ?", input.TradeNo).First(&lockedOrder).Error; err != nil {
+				return err
 			}
 
-			// Step 2: SELECT balance FOR UPDATE (pessimistic lock)
+			// 幂等检查：如果已经是 paid，直接返回
+			if lockedOrder.Status == entity.ChargeStatusPaid {
+				return nil
+			}
+			// 如果不是 pending/processing，不能继续
+			if lockedOrder.Status != entity.ChargeStatusPending && lockedOrder.Status != entity.ChargeStatusProcessing {
+				return fmt.Errorf("order status is %s, cannot process", lockedOrder.Status)
+			}
+
+			// Step 2: SELECT balance FOR UPDATE (行锁)
 			var bal entity.ClientBalance
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("client_id = ?", order.ClientID).First(&bal).Error; err != nil {
+				Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error; err != nil {
 				return err
 			}
 			balanceBefore := bal.Balance
-			balanceAfter := balanceBefore + order.Amount
+			balanceAfter := balanceBefore + lockedOrder.Amount // v3.2: 只认 order.amount
 
-			// Step 3: INSERT ledger first (describe the change before applying)
+			// Step 3: INSERT ledger (先记流水)
 			txRecord := &entity.BalanceTransaction{
-				ClientID:             order.ClientID,
+				ClientID:             lockedOrder.ClientID,
 				Type:                 entity.BalanceTxTypeCharge,
-				Amount:               order.Amount,
+				Amount:               lockedOrder.Amount,
 				BalanceBefore:        balanceBefore,
 				BalanceAfter:         balanceAfter,
-				Currency:             site.Currency,
-				RelatedChargeOrderID: &order.ID,
-				Remark:               fmt.Sprintf("充值回调 trade_no=%s", input.TradeNo),
+				Currency:             bal.Currency,
+				RelatedChargeOrderID: &lockedOrder.ID,
+				Remark:               fmt.Sprintf("charge:%s", input.TradeNo),
 			}
 			if err := tx.Create(txRecord).Error; err != nil {
 				return err
 			}
 
-			// Step 4: UPDATE balance (apply the change)
+			// Step 4: UPDATE balance
 			if err := tx.Model(&entity.ClientBalance{}).
-				Where("client_id = ?", order.ClientID).
-				UpdateColumn("balance", balanceAfter).Error; err != nil {
+				Where("client_id = ?", lockedOrder.ClientID).
+				Update("balance", balanceAfter).Error; err != nil {
 				return err
 			}
 
-			// Step 5: UPDATE order to paid (processing → paid)
+			// Step 5: UPDATE order → paid (processing_at 清空)
 			if err := tx.Model(&entity.ChargeOrder{}).
-				Where("trade_no = ? AND status = ?", input.TradeNo, entity.ChargeStatusProcessing).
+				Where("id = ?", lockedOrder.ID).
 				Updates(map[string]interface{}{
 					"status":        entity.ChargeStatusPaid,
-					"site_trade_no": input.SiteTradeNo,
+					"paid_at":       paidAt,
 					"paid_currency": input.PaidCurrency,
 					"paid_amount":   input.PaidAmount,
 					"exchange_rate": input.ExchangeRate,
 					"method":        input.Method,
-					"paid_at":       paidAt,
-					"callback_raw":  string(rawBody),
+					"processing_at": nil,
 				}).Error; err != nil {
 				return err
 			}
+
 			return nil
 		})
 		if err != nil {
 			log.Printf("[callback] request_id=%s order=%s transaction_error=%v", requestID, input.TradeNo, err)
 			recordEvent("error", "CALLBACK_FAILED", err.Error(), signValid, usedSecretVer, ipMatchRule)
 			s.enqueueCallbackRetry(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, "CALLBACK_FAILED", err.Error(), true)
-			s.raiseCallbackAlert(siteID, "CALLBACK_FAILED", "high", "回调入账失败", fmt.Sprintf("site_id=%d trade_no=%s error=%v", siteID, input.TradeNo, err))
+			raiseSecEvent(entity.ChargeSecEventSigFailed, entity.ChargeSecSeverityHigh, input.TradeNo,
+				fmt.Sprintf("callback failed: %v", err))
 			return err
 		}
 		log.Printf("[callback] request_id=%s order=%s amount=%d status=paid success", requestID, input.TradeNo, order.Amount)
@@ -820,8 +907,8 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	return nil
 }
 
-// recordCallbackEvent records a unified callback event (v3.1: merged log+event).
-func (s *CommerceService) recordCallbackEvent(ctx context.Context, siteID int64, requestID, tradeNo, remoteIP, ipMatchRule, payloadHash string, amount int64, result, errorCode, errMsg string, signValid bool, secretVer int) {
+// recordCallbackEventAsync records a callback event asynchronously (v3.2: 事务外，不阻塞账务).
+func (s *CommerceService) recordCallbackEventAsync(siteID int64, requestID, tradeNo, remoteIP, ipMatchRule, payloadHash string, amount int64, result, errorCode, errMsg string, signValid bool, secretVer int) {
 	event := &entity.ChargeCallbackEvent{
 		SiteID:       siteID,
 		TradeNo:      tradeNo,
@@ -836,9 +923,50 @@ func (s *CommerceService) recordCallbackEvent(ctx context.Context, siteID int64,
 		ErrorMessage: errMsg,
 		Amount:       amount,
 	}
-	if err := s.db.WithContext(ctx).Create(event).Error; err != nil {
-		log.Printf("[callback] request_id=%s failed to record event: %v", requestID, err)
+	if err := s.db.Create(event).Error; err != nil {
+		log.Printf("[callback] request_id=%s failed to record event async: %v", requestID, err)
 	}
+}
+
+// recordSecurityEventAsync records a charge security event asynchronously (v3.2).
+func (s *CommerceService) recordSecurityEventAsync(siteID int64, tradeNo, requestID, eventType, severity, remoteIP, detail string) {
+	event := &entity.ChargeSecurityEvent{
+		SiteID:    siteID,
+		TradeNo:   tradeNo,
+		RequestID: requestID,
+		EventType: eventType,
+		Severity:  severity,
+		RemoteIP:  remoteIP,
+		Detail:    detail,
+	}
+	if err := s.db.Create(event).Error; err != nil {
+		log.Printf("[callback] request_id=%s failed to record security event: %v", requestID, err)
+	}
+}
+
+// chargeSecretEntry holds a decrypted secret with its version number.
+type chargeSecretEntry struct {
+	version int
+	secret  string
+}
+
+// loadActiveSecrets loads all active and legacy secrets from charge_site_secrets table (v3.2).
+// Returns secrets sorted by version descending (newest first).
+func (s *CommerceService) loadActiveSecrets(ctx context.Context, siteID int64) ([]chargeSecretEntry, error) {
+	var secrets []entity.ChargeSiteSecret
+	if err := s.db.WithContext(ctx).
+		Where("site_id = ? AND status IN ?", siteID, []string{entity.SecretStatusActive, entity.SecretStatusLegacy}).
+		Order("version DESC").
+		Find(&secrets).Error; err != nil {
+		return nil, err
+	}
+	var result []chargeSecretEntry
+	for _, sec := range secrets {
+		if decrypted, err := crypto.DecryptSecret(sec.EncryptedSecret); err == nil {
+			result = append(result, chargeSecretEntry{version: sec.Version, secret: decrypted})
+		}
+	}
+	return result, nil
 }
 
 // sha256Hex returns the hex-encoded SHA-256 hash of data.
@@ -973,7 +1101,9 @@ func (s *CommerceService) processRetries() {
 	}
 }
 
-// RotateSiteSecret rotates the callback secret: current secret becomes prev, new secret becomes current.
+// RotateSiteSecret rotates the callback secret using the v3.2 charge_site_secrets table.
+// v3.2: 当前 active 密钥变为 legacy，新密钥插入为 active。
+// 支持 N 个历史版本，类似 Stripe/PayPal webhook secret rotation。
 func (s *CommerceService) RotateSiteSecret(ctx context.Context, siteID int64, newSecret string) error {
 	site, err := s.chargeSiteRepo.GetByID(ctx, siteID)
 	if err != nil {
@@ -983,29 +1113,56 @@ func (s *CommerceService) RotateSiteSecret(ctx context.Context, siteID int64, ne
 		return fmt.Errorf("new secret cannot be empty")
 	}
 
-	// 当前密钥变为旧密钥
-	site.EncryptedSecretPrev = site.EncryptedSecret
-
 	// 加密新密钥
 	encrypted, err := crypto.EncryptSecret(newSecret)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt new secret: %w", err)
 	}
-	site.EncryptedSecret = encrypted
-	site.CallbackSecret = ""
-	site.SecretVersion++ // v3.1: 每次轮换递增版本号，用于审计追踪
 
-	return s.chargeSiteRepo.Update(ctx, site)
+	newVersion := site.SecretVersion + 1
+
+	// v3.2: 在 charge_site_secrets 表中操作
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 将当前 active 密钥降级为 legacy
+		tx.Model(&entity.ChargeSiteSecret{}).
+			Where("site_id = ? AND status = ?", siteID, entity.SecretStatusActive).
+			Update("status", entity.SecretStatusLegacy)
+
+		// 插入新密钥为 active
+		newSecretRecord := &entity.ChargeSiteSecret{
+			SiteID:          siteID,
+			Version:         newVersion,
+			EncryptedSecret: encrypted,
+			Status:          entity.SecretStatusActive,
+			CreatedAt:       time.Now(),
+		}
+		if err := tx.Create(newSecretRecord).Error; err != nil {
+			return err
+		}
+
+		// 更新 ChargeSite 的 SecretVersion（兼容旧字段）
+		site.SecretVersion = newVersion
+		site.EncryptedSecret = encrypted
+		site.CallbackSecret = ""
+		return tx.Model(&entity.ChargeSite{}).Where("id = ?", siteID).
+			Updates(map[string]interface{}{
+				"secret_version":   newVersion,
+				"encrypted_secret": encrypted,
+				"callback_secret":  "",
+			}).Error
+	})
 }
 
-// ClearPrevSecret removes the previous secret after the transition period is over.
+// ClearPrevSecret expires old legacy secrets after the transition period is over.
+// v3.2: 将 legacy 密钥标记为 expired，不再用于验签。
 func (s *CommerceService) ClearPrevSecret(ctx context.Context, siteID int64) error {
-	site, err := s.chargeSiteRepo.GetByID(ctx, siteID)
-	if err != nil {
-		return fmt.Errorf("charge site not found")
-	}
-	site.EncryptedSecretPrev = ""
-	return s.chargeSiteRepo.Update(ctx, site)
+	now := time.Now()
+	return s.db.WithContext(ctx).Model(&entity.ChargeSiteSecret{}).
+		Where("site_id = ? AND status = ?", siteID, entity.SecretStatusLegacy).
+		Updates(map[string]interface{}{
+			"status":     entity.SecretStatusExpired,
+			"expired_at": now,
+		}).Error
 }
 
 // absInt64 returns the absolute value of n.
@@ -1047,7 +1204,7 @@ func findIPMatchRule(remoteIP string, whitelistJSON string) string {
 }
 
 // StartProcessingRecovery starts a background goroutine that recovers stuck processing orders.
-// Orders stuck in processing for more than 5 minutes are reset to pending.
+// v3.2: Also runs nonce cleanup (24h retention) and expired secret cleanup.
 func (s *CommerceService) StartProcessingRecovery(interval time.Duration) chan struct{} {
 	stopCh := make(chan struct{})
 	go func() {
@@ -1059,26 +1216,90 @@ func (s *CommerceService) StartProcessingRecovery(interval time.Duration) chan s
 				return
 			case <-ticker.C:
 				s.recoverStuckProcessing()
+				s.cleanupNonces()
+				s.cleanupExpiredSecrets()
 			}
 		}
 	}()
 	return stopCh
 }
 
-// recoverStuckProcessing resets orders stuck in processing for more than 5 minutes back to pending.
+// cleanupNonces removes nonce records older than 24 hours (v3.2: 支付争议审计保留24小时).
+func (s *CommerceService) cleanupNonces() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	threshold := time.Now().Add(-24 * time.Hour)
+	result := s.db.WithContext(ctx).Where("created_at < ?", threshold).Delete(&entity.CallbackNonce{})
+	if result.RowsAffected > 0 {
+		log.Printf("[cleanup] deleted %d nonces older than 24h", result.RowsAffected)
+	}
+}
+
+// cleanupExpiredSecrets removes expired secret records older than 7 days (v3.2).
+func (s *CommerceService) cleanupExpiredSecrets() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	threshold := time.Now().Add(-7 * 24 * time.Hour)
+	result := s.db.WithContext(ctx).
+		Where("status = ? AND expired_at < ?", entity.SecretStatusExpired, threshold).
+		Delete(&entity.ChargeSiteSecret{})
+	if result.RowsAffected > 0 {
+		log.Printf("[cleanup] deleted %d expired secrets older than 7d", result.RowsAffected)
+	}
+}
+
+// recoverStuckProcessing recovers orders stuck in processing for more than 5 minutes.
+// v3.2: 检查 balance_transactions，有流水→paid（防重复入账），无流水→pending（可重新处理）
 func (s *CommerceService) recoverStuckProcessing() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	threshold := time.Now().Add(-5 * time.Minute)
-	result := s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
+
+	// 查找超时的 processing 订单
+	var stuckOrders []entity.ChargeOrder
+	if err := s.db.WithContext(ctx).
 		Where("status = ? AND processing_at < ?", entity.ChargeStatusProcessing, threshold).
-		Updates(map[string]interface{}{
-			"status":        entity.ChargeStatusPending,
-			"processing_at": nil,
-		})
-	if result.RowsAffected > 0 {
-		log.Printf("[recovery] reset %d stuck processing orders to pending", result.RowsAffected)
+		Find(&stuckOrders).Error; err != nil {
+		log.Printf("[recovery] failed to query stuck orders: %v", err)
+		return
+	}
+
+	for _, order := range stuckOrders {
+		// 检查是否已有 balance_transactions 记录
+		var txCount int64
+		s.db.WithContext(ctx).Model(&entity.BalanceTransaction{}).
+			Where("related_charge_order_id = ?", order.ID).Count(&txCount)
+
+		if txCount > 0 {
+			// 有流水 → 说明入账已成功，但订单状态未更新为 paid
+			// 直接标记为 paid，防止重复入账
+			now := time.Now()
+			s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
+				Where("id = ? AND status = ?", order.ID, entity.ChargeStatusProcessing).
+				Updates(map[string]interface{}{
+					"status":        entity.ChargeStatusPaid,
+					"paid_at":       now,
+					"processing_at": nil,
+				})
+			log.Printf("[recovery] order %s: has ledger → paid (prevented double charge)", order.TradeNo)
+			// 记录安全事件
+			siteIDForEvent := int64(0)
+			if order.SiteID != nil {
+				siteIDForEvent = *order.SiteID
+			}
+			go s.recordSecurityEventAsync(siteIDForEvent, order.TradeNo, "", entity.ChargeSecEventRecoveryStuck, entity.ChargeSecSeverityHigh, "",
+				fmt.Sprintf("order %s recovered to paid (had ledger, was stuck in processing)", order.TradeNo))
+		} else {
+			// 无流水 → 说明入账未完成，安全回滚到 pending
+			s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
+				Where("id = ? AND status = ?", order.ID, entity.ChargeStatusProcessing).
+				Updates(map[string]interface{}{
+					"status":        entity.ChargeStatusPending,
+					"processing_at": nil,
+				})
+			log.Printf("[recovery] order %s: no ledger → pending (safe to reprocess)", order.TradeNo)
+		}
 	}
 }
 
@@ -1521,17 +1742,18 @@ func (s *CommerceService) calculateDiscount(promo *entity.Promotion, originalAmo
 }
 
 // verifyChargeCallback verifies the HMAC-SHA256 signature of a charge callback.
-// v3.1: status 不参与签名，currency + body_hash 参与。
-// 签名字段（字典序）：amount, body_hash, currency, nonce, site_trade_no, timestamp, trade_no
+// v3.2: 增加 version 字段到签名 payload，支持未来算法升级。
+// 签名字段（字典序）：amount, body_hash, currency, nonce, site_trade_no, timestamp, trade_no, version
 func (s *CommerceService) verifyChargeCallback(input ChargeCallbackInput, bodyHash string, secret string) bool {
 	payload := map[string]interface{}{
-		"amount":         input.Amount,
-		"body_hash":      bodyHash,
-		"currency":       input.Currency,
-		"nonce":          input.Nonce,
-		"site_trade_no":  input.SiteTradeNo,
-		"timestamp":      input.Timestamp,
-		"trade_no":       input.TradeNo,
+		"amount":        input.Amount,
+		"body_hash":     bodyHash,
+		"currency":      input.Currency,
+		"nonce":         input.Nonce,
+		"site_trade_no": input.SiteTradeNo,
+		"timestamp":     input.Timestamp,
+		"trade_no":      input.TradeNo,
+		"version":       "v1", // v3.2: 签名版本号，未来升级为 v2/v3 时不破坏旧接口
 	}
 	payloadBytes, _ := json.Marshal(payload)
 	mac := hmac.New(sha256.New, []byte(secret))

@@ -30,6 +30,7 @@ import (
 	sysService "corefusion/internal/service/system"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 func main() {
@@ -296,6 +297,9 @@ func runServer(args []string) {
 
 	log.Printf("Data directory: %s", dataDir)
 
+	// Initialize trusted proxies for real IP extraction
+	initTrustedProxies(env, settings)
+
 	// Phase 4: Setup JWT
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -474,6 +478,40 @@ func initDataDir(dataDir string) {
 	}
 }
 
+// initTrustedProxies configures the trusted proxy list for netutil.GetRealIP.
+// Priority: CF_TRUSTED_PROXIES env > panel.trusted_proxies DB setting.
+// Format: comma-separated IPs/CIDRs, or "cloudflare" for all Cloudflare ranges.
+// If not set, no headers are trusted (only RemoteAddr is used — safest default).
+func initTrustedProxies(env map[string]string, settings map[string]string) {
+	raw := os.Getenv("CF_TRUSTED_PROXIES")
+	if raw == "" {
+		raw = settings["trusted_proxies"]
+	}
+	if raw == "" {
+		log.Println("[netutil] no trusted proxies configured — only RemoteAddr will be used for IP extraction")
+		return
+	}
+
+	entries := strings.Split(raw, ",")
+	var proxies []string
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if strings.EqualFold(e, "cloudflare") {
+			proxies = append(proxies, netutil.CloudflareProxyRanges()...)
+			continue
+		}
+		proxies = append(proxies, e)
+	}
+	if len(proxies) > 0 {
+		netutil.SetTrustedProxies(proxies)
+	} else {
+		log.Println("[netutil] trusted_proxies set but no valid entries found")
+	}
+}
+
 // readSettings reads all panel settings from database.
 func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 	keys := []string{
@@ -481,6 +519,7 @@ func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 		"panel.tls_enabled", "panel.tls_cert_path", "panel.tls_key_path",
 		"panel.mtls_enabled", "panel.mtls_ca_path",
 		"panel.web_path", "panel.timezone", "panel.data_dir",
+		"panel.trusted_proxies",
 	}
 	settings := make(map[string]string)
 	for _, key := range keys {

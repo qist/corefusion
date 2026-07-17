@@ -77,7 +77,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// Phase 1: Initialize local SQLite database (same as Panel)
 	dbPath := filepath.Join(dataDir, "sqlite", "agent.db")
 	dbCfg := db.DefaultConfig()
-	dbCfg.Path = dbPath
+	dbCfg.DSN = dbPath
 	if err := db.Init(dbCfg); err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}

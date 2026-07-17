@@ -146,14 +146,16 @@ func runServer(args []string) {
 	// Ensure data directory structure
 	initDataDir(dataDir)
 
-	// Phase 2: Initialize database
+	// Phase 2: Initialize database (from .env config, default: SQLite)
 	dbPath := filepath.Join(dataDir, "sqlite", "app.db")
-	dbCfg := db.DefaultConfig()
-	dbCfg.Path = dbPath
+	dbCfg := db.ConfigFromEnv(env, dbPath)
 	if err := db.Init(dbCfg); err != nil {
 		log.Fatalf("failed to init database: %v", err)
 	}
 	defer db.Close()
+
+	// Record startup DB config for change detection (used by /system/db-config API)
+	db.RecordStartup(dbCfg)
 
 	// Run migrations
 	if err := migration.AutoMigrate(db.DB); err != nil {
@@ -546,8 +548,7 @@ func runMigrate(args []string) {
 		}
 	}
 
-	dbCfg := db.DefaultConfig()
-	dbCfg.Path = filepath.Join(dataDir, "sqlite", "app.db")
+	dbCfg := db.ConfigFromEnv(env, filepath.Join(dataDir, "sqlite", "app.db"))
 	if err := db.Init(dbCfg); err != nil {
 		log.Fatalf("failed to init database: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 )
 
@@ -499,6 +500,254 @@ func (s *SettingService) MigrateDataToDir(oldDir, newDir string) error {
 	return migrateDataDir(oldDir, newDir)
 }
 
+// --- Database Config ---
+// All database configuration is stored in the .env file only (like SAFE_PATHS).
+// This avoids the chicken-and-egg problem: you need DB config to connect to DB.
+
+// DBConfig contains database connection configuration.
+// Read from .env file only. Changes take effect on next panel restart.
+type DBConfig struct {
+	Type          string `json:"type"`             // sqlite | mysql | postgres
+	DSN           string `json:"dsn"`              // Connection string (passwords masked on GET)
+	MaxOpenConns  int    `json:"max_open_conns"`   // Pool: max open connections (MySQL/PostgreSQL)
+	MaxIdleConns  int    `json:"max_idle_conns"`   // Pool: max idle connections (MySQL/PostgreSQL)
+	CurrentType   string `json:"current_type"`     // Read-only: type currently in use
+	EffectiveDSN  string `json:"effective_dsn"`    // Read-only: DSN currently in use (masked)
+	RestartNeeded bool   `json:"restart_needed"`   // Read-only: true if config changed since startup
+}
+
+// GetDBConfig reads database configuration from the .env file.
+// DSN passwords are masked for display; the real value is preserved in .env.
+func (s *SettingService) GetDBConfig(ctx context.Context) (*DBConfig, error) {
+	env := loadEnvFile()
+
+	config := &DBConfig{
+		Type:         "sqlite",
+		MaxOpenConns: 100,
+		MaxIdleConns: 10,
+	}
+
+	// Parse CF_DB_DSN
+	dsn := env["CF_DB_DSN"]
+	if dsn != "" {
+		switch {
+		case strings.HasPrefix(dsn, "mysql://"):
+			config.Type = "mysql"
+			config.DSN = maskDSN(dsn)
+		case strings.HasPrefix(dsn, "postgres://"), strings.HasPrefix(dsn, "postgresql://"):
+			config.Type = "postgres"
+			config.DSN = maskDSN(dsn)
+		case strings.HasPrefix(dsn, "sqlite://"):
+			config.Type = "sqlite"
+			config.DSN = strings.TrimPrefix(dsn, "sqlite://")
+		default:
+			config.Type = "sqlite"
+			config.DSN = dsn // bare path
+		}
+	} else {
+		// Default: derive from SAFE_PATHS
+		safePaths := env["SAFE_PATHS"]
+		if safePaths == "" {
+			safePaths = "data"
+		}
+		config.DSN = filepath.Join(safePaths, "sqlite", "app.db")
+	}
+
+	// CF_DB_TYPE override
+	if dbType := env["CF_DB_TYPE"]; dbType != "" {
+		config.Type = dbType
+	}
+
+	// Pool settings
+	if v := env["CF_DB_MAX_OPEN_CONNS"]; v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			config.MaxOpenConns = n
+		}
+	}
+	if v := env["CF_DB_MAX_IDLE_CONNS"]; v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			config.MaxIdleConns = n
+		}
+	}
+
+	// Current running config (set at startup)
+	startType, startDSN := db.StartupConfig()
+	config.CurrentType = startType
+	config.EffectiveDSN = maskDSN(startDSN)
+
+	// Check if restart needed (env changed since startup)
+	// Compare the raw .env DSN with the startup DSN.
+	// Since startDSN may have the scheme prefix stripped by ConfigFromEnv,
+	// we normalize both for comparison.
+	currentEnvDSN := env["CF_DB_DSN"]
+	needsRestart := false
+	if currentEnvDSN != "" && startDSN != "" {
+		// Strip scheme prefix from env DSN for fair comparison
+		envDSNNormalized := strings.TrimPrefix(currentEnvDSN, "mysql://")
+		envDSNNormalized = strings.TrimPrefix(envDSNNormalized, "postgres://")
+		envDSNNormalized = strings.TrimPrefix(envDSNNormalized, "postgresql://")
+		envDSNNormalized = strings.TrimPrefix(envDSNNormalized, "sqlite://")
+		needsRestart = (envDSNNormalized != startDSN)
+	} else if currentEnvDSN != "" && startDSN == "" {
+		// Env has config but startup used default SQLite
+		needsRestart = true
+	}
+	config.RestartNeeded = needsRestart
+
+	return config, nil
+}
+
+// UpdateDBConfig saves database configuration to the .env file.
+// All fields are written to .env — nothing is stored in system_settings.
+// Changes take effect on next panel restart.
+func (s *SettingService) UpdateDBConfig(ctx context.Context, config *DBConfig) error {
+	// Validate type
+	switch config.Type {
+	case "sqlite", "mysql", "postgres":
+		// ok
+	default:
+		return fmt.Errorf("unsupported database type: %s", config.Type)
+	}
+
+	// Resolve DSN: if masked (unchanged by user), keep the existing .env value
+	dsnForEnv := s.resolveDSN(config.DSN)
+	if config.Type == "mysql" && !strings.HasPrefix(dsnForEnv, "mysql://") {
+		dsnForEnv = "mysql://" + dsnForEnv
+	} else if config.Type == "postgres" && !strings.HasPrefix(dsnForEnv, "postgres://") && !strings.HasPrefix(dsnForEnv, "postgresql://") {
+		dsnForEnv = "postgres://" + dsnForEnv
+	}
+
+	// Write CF_DB_DSN to .env
+	if err := saveEnvFile("CF_DB_DSN", dsnForEnv); err != nil {
+		return fmt.Errorf("save .env: %w", err)
+	}
+
+	// Write pool settings to .env
+	if config.MaxOpenConns > 0 {
+		saveEnvFile("CF_DB_MAX_OPEN_CONNS", strconv.Itoa(config.MaxOpenConns))
+	}
+	if config.MaxIdleConns > 0 {
+		saveEnvFile("CF_DB_MAX_IDLE_CONNS", strconv.Itoa(config.MaxIdleConns))
+	}
+
+	return nil
+}
+
+// TestDBConnection tests connectivity to a database using the given config.
+// Does NOT use or modify the running database connection.
+// If the DSN contains masked passwords (********), reads the real DSN from .env.
+func (s *SettingService) TestDBConnection(ctx context.Context, config *DBConfig) error {
+	dsn := s.resolveDSN(config.DSN)
+	dbCfg := db.ParseDSN(dsn)
+	// If type was explicitly set and DSN has no scheme, use the explicit type
+	if config.Type != "" && dbCfg.Type == "sqlite" && config.Type != "sqlite" {
+		dbCfg.Type = config.Type
+	}
+	dbCfg.MaxOpenConns = 1
+	dbCfg.MaxIdleConns = 1
+	return db.TestConnection(dbCfg)
+}
+
+// MigrateDBData copies all data from the current (running) database to the specified target database.
+// The target database is specified by the given config.
+// Before copying data, AutoMigrate is run on the target to create all tables.
+// Warning: this will DELETE all existing data in target tables before inserting source data.
+func (s *SettingService) MigrateDBData(ctx context.Context, dstConfig *DBConfig) (tablesCopied int, rowsCopied int64, err error) {
+	dsn := s.resolveDSN(dstConfig.DSN)
+	dstCfg := db.ParseDSN(dsn)
+	if dstConfig.Type != "" && dstCfg.Type == "sqlite" && dstConfig.Type != "sqlite" {
+		dstCfg.Type = dstConfig.Type
+	}
+	// Apply pool settings for target
+	dstCfg.MaxOpenConns = dstConfig.MaxOpenConns
+	dstCfg.MaxIdleConns = dstConfig.MaxIdleConns
+	return db.MigrateTo(dstCfg)
+}
+
+// resolveDSN returns the real DSN. If the input contains masked passwords (********),
+// it falls back to the actual DSN from .env (meaning the user didn't change the field).
+func (s *SettingService) resolveDSN(dsn string) string {
+	if strings.Contains(dsn, "********") {
+		env := loadEnvFile()
+		if envDSN := env["CF_DB_DSN"]; envDSN != "" {
+			return envDSN
+		}
+	}
+	// If DSN has no scheme prefix but type is mysql/postgres, the env may have the prefix
+	// Try reading from .env to get the full DSN with scheme
+	if !strings.HasPrefix(dsn, "mysql://") && !strings.HasPrefix(dsn, "postgres://") && strings.Contains(dsn, "@tcp(") {
+		env := loadEnvFile()
+		if envDSN := env["CF_DB_DSN"]; envDSN != "" {
+			return envDSN
+		}
+	}
+	return dsn
+}
+
+// maskDSN masks passwords in a DSN string for display.
+func maskDSN(dsn string) string {
+	if dsn == "" {
+		return ""
+	}
+	// Bare path (SQLite) — no masking needed
+	if !strings.Contains(dsn, "://") && !strings.Contains(dsn, "@") {
+		return dsn
+	}
+	// Mask password in postgres://user:password@host/db
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		atIdx := strings.LastIndex(dsn, "@")
+		schemeEnd := strings.Index(dsn, "://") + 3
+		if atIdx > schemeEnd {
+			userPart := dsn[schemeEnd:atIdx]
+			if colonIdx := strings.Index(userPart, ":"); colonIdx >= 0 {
+				return dsn[:schemeEnd+colonIdx+1] + "********" + dsn[atIdx:]
+			}
+		}
+	}
+	// Mask password in mysql://user:password@tcp(host:port)/db
+	// Also handles bare format: user:password@tcp(host:port)/db (without mysql:// prefix)
+	if strings.HasPrefix(dsn, "mysql://") {
+		rest := strings.TrimPrefix(dsn, "mysql://")
+		atIdx := strings.Index(rest, "@")
+		if atIdx >= 0 {
+			userPart := rest[:atIdx]
+			if colonIdx := strings.Index(userPart, ":"); colonIdx >= 0 {
+				return "mysql://" + userPart[:colonIdx+1] + "********" + rest[atIdx:]
+			}
+		}
+	} else if strings.Contains(dsn, "@tcp(") {
+		// Bare MySQL DSN without mysql:// prefix: user:password@tcp(host:port)/db
+		atIdx := strings.Index(dsn, "@tcp(")
+		if atIdx >= 0 {
+			userPart := dsn[:atIdx]
+			if colonIdx := strings.Index(userPart, ":"); colonIdx >= 0 {
+				return userPart[:colonIdx+1] + "********" + dsn[atIdx:]
+			}
+		}
+	}
+	return dsn
+}
+
+// loadEnvFile reads the .env file and returns key-value pairs.
+func loadEnvFile() map[string]string {
+	env := make(map[string]string)
+	data, err := os.ReadFile(".env")
+	if err != nil {
+		return env
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			env[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+	return env
+}
+
 // saveEnvFile updates a key in the .env file.
 func saveEnvFile(key, value string) error {
 	lines := []string{}
@@ -544,6 +793,11 @@ func (s *SettingService) Set(ctx context.Context, key, value string) error {
 // SetByKey saves a setting value by key (implements portal.SettingStore).
 func (s *SettingService) SetByKey(ctx context.Context, key, value string) error {
 	return s.repo.Set(ctx, key, value)
+}
+
+// Delete deletes a setting by key.
+func (s *SettingService) Delete(ctx context.Context, key string) error {
+	return s.repo.Delete(ctx, key)
 }
 
 func setIfExist(m map[string]string, key string, target *string) {

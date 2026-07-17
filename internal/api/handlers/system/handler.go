@@ -392,24 +392,13 @@ var defaultRealityTargets = `[
 
 // GetRealityTargets handles GET /api/v1/system/reality-targets.
 func (h *Handler) GetRealityTargets(c *gin.Context) {
-	val, err := h.db.WithContext(c.Request.Context()).Raw(
-		"SELECT value FROM system_settings WHERE key = ?", realityTargetsKey,
-	).Rows()
-	if err != nil || !val.Next() {
-		if val != nil {
-			val.Close()
-		}
+	var s entity.SystemSetting
+	err := h.db.WithContext(c.Request.Context()).Where("`key` = ?", realityTargetsKey).First(&s).Error
+	if err != nil || s.Value == "" {
 		c.Data(200, "application/json", []byte(defaultRealityTargets))
 		return
 	}
-	var v string
-	val.Scan(&v)
-	val.Close()
-	if v == "" {
-		c.Data(200, "application/json", []byte(defaultRealityTargets))
-		return
-	}
-	c.Data(200, "application/json", []byte(v))
+	c.Data(200, "application/json", []byte(s.Value))
 }
 
 // UpdateRealityTargets handles PUT /api/v1/system/reality-targets.
@@ -425,18 +414,13 @@ func (h *Handler) UpdateRealityTargets(c *gin.Context) {
 		response.BadRequest(c, "INVALID_JSON", "must be a JSON array")
 		return
 	}
-	h.db.WithContext(c.Request.Context()).Exec(
-		"INSERT INTO system_settings (key, value, created_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-		realityTargetsKey, string(body),
-	)
+	h.settingSvc.Set(c.Request.Context(), realityTargetsKey, string(body))
 	response.OK(c, arr)
 }
 
 // ResetRealityTargets handles POST /api/v1/system/reality-targets/reset.
 func (h *Handler) ResetRealityTargets(c *gin.Context) {
-	h.db.WithContext(c.Request.Context()).Exec(
-		"DELETE FROM system_settings WHERE key = ?", realityTargetsKey,
-	)
+	h.settingSvc.Delete(c.Request.Context(), realityTargetsKey)
 	c.Data(200, "application/json", []byte(defaultRealityTargets))
 }
 
@@ -458,4 +442,63 @@ func (h *Handler) GetConfigFile(c *gin.Context) {
 		return
 	}
 	c.Data(200, "application/json", data)
+}
+
+// --- Database Config ---
+
+// GetDBConfig handles GET /api/v1/system/db-config.
+func (h *Handler) GetDBConfig(c *gin.Context) {
+	config, err := h.settingSvc.GetDBConfig(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "GET_FAILED", err.Error())
+		return
+	}
+	response.OK(c, config)
+}
+
+// UpdateDBConfig handles PUT /api/v1/system/db-config.
+func (h *Handler) UpdateDBConfig(c *gin.Context) {
+	var config system.DBConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.settingSvc.UpdateDBConfig(c.Request.Context(), &config); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "database config updated, restart required to apply changes"})
+}
+
+// TestDBConnection handles POST /api/v1/system/db-config/test.
+func (h *Handler) TestDBConnection(c *gin.Context) {
+	var config system.DBConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.settingSvc.TestDBConnection(c.Request.Context(), &config); err != nil {
+		response.InternalError(c, "CONNECTION_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "database connection successful"})
+}
+
+// MigrateDBData handles POST /api/v1/system/db-config/migrate.
+func (h *Handler) MigrateDBData(c *gin.Context) {
+	var config system.DBConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	tables, rows, err := h.settingSvc.MigrateDBData(c.Request.Context(), &config)
+	if err != nil {
+		response.InternalError(c, "MIGRATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{
+		"message":       "data migration completed, restart required to apply changes",
+		"tables_copied": tables,
+		"rows_copied":   rows,
+	})
 }

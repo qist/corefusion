@@ -7,7 +7,7 @@ import "time"
 // their associated entry nodes. The packaged logs are desensitized and
 // expire after 1 hour.
 type ClientLogPackage struct {
-	ID             string    `json:"id" gorm:"primaryKey;type:text"`
+	ID             string    `json:"id" gorm:"primaryKey;size:64"`
 	ClientID       int64     `json:"client_id" gorm:"index"`
 	SubscriptionID int64     `json:"subscription_id" gorm:"index"`
 	ServerID       int64     `json:"server_id" gorm:"index"`

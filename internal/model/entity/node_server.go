@@ -67,7 +67,7 @@ type NodeServer struct {
 	IsLocal bool `json:"is_local" gorm:"not null;default:false"`
 
 	// 服务器能力
-	SupportedCores string `json:"supported_cores" gorm:"type:text;not null;default:'[]'"`
+	SupportedCores string `json:"supported_cores" gorm:"type:varchar(2048);not null;default:'[]'"`
 	MaxInbounds    int    `json:"max_inbounds" gorm:"not null;default:0"`
 
 	// 网络信息

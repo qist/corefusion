@@ -887,20 +887,21 @@ func (h *Handler) maskSiteSecret(site *entity.ChargeSite) {
 // Callback Logs & Retry Management
 // ============================================================
 
-// ListCallbackLogs handles GET /api/v1/charge-callback-logs.
-func (h *Handler) ListCallbackLogs(c *gin.Context) {
+// ListCallbackEvents handles GET /api/v1/charge-callback-events.
+// v3.1: merged callback_logs into callback_events — events ARE logs.
+func (h *Handler) ListCallbackEvents(c *gin.Context) {
 	siteIDStr := c.Query("site_id")
-	status := c.Query("status")
+	result := c.Query("result")
 	limit, offset := getPagination(c)
 
-	var items []entity.ChargeCallbackLog
+	var items []entity.ChargeCallbackEvent
 	var total int64
-	q := h.db.WithContext(c.Request.Context()).Model(&entity.ChargeCallbackLog{})
+	q := h.db.WithContext(c.Request.Context()).Model(&entity.ChargeCallbackEvent{})
 	if siteIDStr != "" {
 		q = q.Where("site_id = ?", siteIDStr)
 	}
-	if status != "" {
-		q = q.Where("status = ?", status)
+	if result != "" {
+		q = q.Where("result = ?", result)
 	}
 	q.Count(&total)
 	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {

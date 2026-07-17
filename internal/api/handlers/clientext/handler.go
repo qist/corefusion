@@ -14,6 +14,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // PublicSubHandler is the interface satisfied by subscriptions.PublicHandler.
@@ -300,11 +301,11 @@ func (h *Handler) AutoAddIP(c *gin.Context) {
 		IP string `json:"ip" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		// fallback to remote IP
-		body.IP = c.ClientIP()
+		// fallback to real IP (CDN-aware)
+		body.IP = netutil.GetRealIP(c.Request)
 	}
 	if body.IP == "" {
-		body.IP = c.ClientIP()
+		body.IP = netutil.GetRealIP(c.Request)
 	}
 	entry, err := h.ipWhitelistSvc.AutoAddIP(c.Request.Context(), getClientID(c), body.IP)
 	if err != nil {
@@ -877,7 +878,7 @@ func (h *Handler) CheckTime(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"server_time": serverTime,
-		"client_ip":   c.ClientIP(),
+		"client_ip":   netutil.GetRealIP(c.Request),
 		"diff_seconds": diff,
 	})
 }

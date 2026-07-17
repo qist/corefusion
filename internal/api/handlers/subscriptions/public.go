@@ -18,6 +18,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
+	"corefusion/pkg/netutil"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/mihomoconv"
@@ -308,14 +309,11 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	// Record access
 	if h.accessLog != nil {
-		ip := c.ClientIP()
+		ip := netutil.GetRealIP(c.Request)
 		ua := c.Request.UserAgent()
 		realIP := c.GetHeader("X-Real-IP")
 		cdnIP := c.GetHeader("CF-Connecting-IP")
-		cdnProvider := ""
-		if cdnIP != "" {
-			cdnProvider = "cloudflare"
-		}
+		cdnProvider := detectCDNProvider(c)
 		go func() {
 			h.recordAccess(sub.ID, ip, ua, realIP, cdnIP, cdnProvider)
 		}()
@@ -2076,6 +2074,20 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 	if err := h.accessLog.Create(context.Background(), logEntry); err != nil {
 		log.Printf("sub: failed to record access: %v", err)
 	}
+}
+
+// detectCDNProvider checks CDN-specific headers to identify the CDN provider.
+func detectCDNProvider(c *gin.Context) string {
+	if c.GetHeader("CF-Connecting-IP") != "" {
+		return "cloudflare"
+	}
+	if c.GetHeader("True-Client-IP") != "" {
+		return "akamai"
+	}
+	if c.GetHeader("X-Real-IP") != "" {
+		return "reverse_proxy"
+	}
+	return ""
 }
 
 // buildSubscriptionInfoHeader builds a human-readable subscription info block.

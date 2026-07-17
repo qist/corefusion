@@ -1045,10 +1045,10 @@ clientBalanceGroup.POST("/adjust", chargeAdminH.AdjustBalance)
 clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
 }
 
-// Callback logs & retry management
-callbackLogGroup := protected.Group("/charge-callback-logs")
+// Callback events (v3.1: merged logs into events) & retry management
+callbackEventGroup := protected.Group("/charge-callback-events")
 {
-callbackLogGroup.GET("", chargeAdminH.ListCallbackLogs)
+callbackEventGroup.GET("", chargeAdminH.ListCallbackEvents)
 }
 callbackRetryGroup := protected.Group("/charge-callback-retries")
 {

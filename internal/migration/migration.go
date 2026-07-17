@@ -183,6 +183,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.CallbackNonce{},
 		&entity.ChargeCallbackRetry{},
 		&entity.ChargeCallbackEvent{},
+		&entity.ChargeSiteSecret{},    // v3.2: 多版本密钥管理
+		&entity.ChargeSecurityEvent{}, // v3.2: 充值风控事件
 
 		// Referral / 邀请推广
 		&entity.ReferralCode{},

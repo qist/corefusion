@@ -1,17 +1,153 @@
 package netutil
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 )
+
+// ============================================================
+// Trusted Proxy Configuration
+// ============================================================
+
+// trustedProxyConfig 是全局可信代理配置，通过 SetTrustedProxies 设置。
+// 只有来自这些 IP/CIDR 的请求才会被解析 CDN/代理头。
+var (
+	trustedProxyMu  sync.RWMutex
+	trustedProxyCfg *TrustedProxyConfig
+)
+
+// TrustedProxyConfig 保存预解析的可信代理 IP/CIDR 列表。
+type TrustedProxyConfig struct {
+	cidrs []*net.IPNet
+	ips   []net.IP
+}
+
+// NewTrustedProxyConfig 解析 IP/CIDR 字符串列表为可信代理配置。
+// 支持 "1.2.3.4"、"10.0.0.0/8"、"::1"、"fd00::/8" 等格式。
+func NewTrustedProxyConfig(proxies []string) *TrustedProxyConfig {
+	cfg := &TrustedProxyConfig{}
+	for _, p := range proxies {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		// 尝试 CIDR
+		if strings.Contains(p, "/") {
+			_, cidr, err := net.ParseCIDR(p)
+			if err != nil {
+				log.Printf("[netutil] invalid trusted proxy CIDR %q: %v", p, err)
+				continue
+			}
+			cfg.cidrs = append(cfg.cidrs, cidr)
+		} else {
+			// 单个 IP
+			ip := net.ParseIP(p)
+			if ip == nil {
+				log.Printf("[netutil] invalid trusted proxy IP %q", p)
+				continue
+			}
+			cfg.ips = append(cfg.ips, ip)
+		}
+	}
+	return cfg
+}
+
+// IsTrusted 检查 IP 是否在可信代理列表中。
+func (c *TrustedProxyConfig) IsTrusted(ipStr string) bool {
+	if c == nil {
+		return false
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, c := range c.cidrs {
+		if c.Contains(ip) {
+			return true
+		}
+	}
+	for _, trustedIP := range c.ips {
+		if trustedIP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetTrustedProxies 设置全局可信代理列表。
+// 应在程序启动时调用（如从配置文件/环境变量读取后）。
+// 设置后，GetRealIP 只有在 RemoteAddr 来自这些 IP 时才解析 CDN 头。
+func SetTrustedProxies(proxies []string) {
+	trustedProxyMu.Lock()
+	defer trustedProxyMu.Unlock()
+	trustedProxyCfg = NewTrustedProxyConfig(proxies)
+	log.Printf("[netutil] trusted proxies configured: %d entries", len(proxies))
+}
+
+// GetTrustedProxyConfig 返回当前全局可信代理配置（只读）。
+func GetTrustedProxyConfig() *TrustedProxyConfig {
+	trustedProxyMu.RLock()
+	defer trustedProxyMu.RUnlock()
+	return trustedProxyCfg
+}
+
+// ============================================================
+// Cloudflare IP Ranges
+// ============================================================
+
+// CloudflareIPv4Ranges 返回 Cloudflare 的 IPv4 段。
+// 来源：https://www.cloudflare.com/ips-v4/
+var cloudflareIPv4Ranges = []string{
+	"173.245.48.0/20",
+	"103.21.244.0/22",
+	"103.22.200.0/22",
+	"103.31.4.0/22",
+	"141.101.64.0/18",
+	"108.162.192.0/18",
+	"190.93.240.0/20",
+	"188.114.96.0/20",
+	"197.234.240.0/22",
+	"198.41.128.0/17",
+	"162.158.0.0/15",
+	"104.16.0.0/13",
+	"104.24.0.0/14",
+	"172.64.0.0/13",
+	"131.0.72.0/22",
+}
+
+// CloudflareIPv6Ranges 返回 Cloudflare 的 IPv6 段。
+// 来源：https://www.cloudflare.com/ips-v6/
+var cloudflareIPv6Ranges = []string{
+	"2400:cb00::/32",
+	"2606:4700::/32",
+	"2803:f800::/32",
+	"2606:4700::/32",
+	"2803:f800::/32",
+	"2a06:98c0::/29",
+	"2c0f:f248::/32",
+}
+
+// CloudflareProxyRanges 返回 Cloudflare 所有 IP 段（IPv4 + IPv6）。
+// 可直接传给 SetTrustedProxies。
+func CloudflareProxyRanges() []string {
+	result := make([]string, 0, len(cloudflareIPv4Ranges)+len(cloudflareIPv6Ranges))
+	result = append(result, cloudflareIPv4Ranges...)
+	result = append(result, cloudflareIPv6Ranges...)
+	return result
+}
+
+// ============================================================
+// Real IP Extraction
+// ============================================================
 
 // CDN header 优先级（从高到低）：
 // 1. CF-Connecting-IP     — Cloudflare 专用，最可信
-// 2. X-Real-IP            — Nginx/Caddy 反代设置
-// 3. X-Forwarded-For      — 标准代理头，取第一个
-// 4. True-Client-IP       — Akamai / Cloudflare Enterprise
-// 5. X-Client-IP          — 部分负载均衡器
+// 2. True-Client-IP       — Akamai / Cloudflare Enterprise
+// 3. X-Real-IP            — Nginx/Caddy 反代设置
+// 4. X-Client-IP          — 部分负载均衡器
 var cdnHeaders = []string{
 	"CF-Connecting-IP",
 	"True-Client-IP",
@@ -19,17 +155,30 @@ var cdnHeaders = []string{
 	"X-Client-IP",
 }
 
-// GetRealIP 从 HTTP 请求中获取客户端真实 IP。
+// GetRealIP 从 HTTP 请求中获取客户端真实 IP（安全版本）。
 //
-// 优先级：
-//  1. CDN 专用头（CF-Connecting-IP, True-Client-IP 等）
-//  2. X-Forwarded-For 第一个非内网 IP
-//  3. http.Request.RemoteAddr（TCP 直连 IP）
+// 安全策略：
+//   - 首先获取 TCP 直连 IP（RemoteAddr）
+//   - 如果配置了全局可信代理（SetTrustedProxies），检查直连 IP 是否可信
+//   - 只有来自可信代理的请求，才解析 CDN/代理头（CF-Connecting-IP 等）
+//   - 如果没有配置可信代理，或直连 IP 不在可信列表中，直接返回 RemoteAddr
 //
-// 如果 CoreFusion 在 CDN/反代后面，c.ClientIP() 返回的是 CDN 节点 IP，
-// 本函数解析 CDN 头获取支付平台的真实出口 IP。
+// 这样可以防止攻击者直连服务器伪造 CF-Connecting-IP 头。
 func GetRealIP(r *http.Request) string {
-	// ① 检查 CDN 专用头（按优先级）
+	// ① 获取 TCP 直连 IP
+	directIP := remoteAddrToIP(r)
+	if directIP == "" {
+		return ""
+	}
+
+	// ② 检查是否来自可信代理
+	cfg := GetTrustedProxyConfig()
+	if cfg == nil || !cfg.IsTrusted(directIP) {
+		// 不可信来源：直接返回 TCP 连接 IP，忽略所有头
+		return directIP
+	}
+
+	// ③ 来自可信代理：解析 CDN 专用头（按优先级）
 	for _, header := range cdnHeaders {
 		ip := strings.TrimSpace(r.Header.Get(header))
 		if ip != "" && isValidPublicIP(ip) {
@@ -37,38 +186,53 @@ func GetRealIP(r *http.Request) string {
 		}
 	}
 
-	// ② 检查 X-Forwarded-For（可能包含多级代理链）
+	// ④ 解析 X-Forwarded-For（可能包含多级代理链）
+	// 从右向左取第一个公网 IP（跳过可信代理自身的 IP）
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {
-		// X-Forwarded-For: client, proxy1, proxy2
 		parts := strings.Split(xff, ",")
 		for i := len(parts) - 1; i >= 0; i-- {
 			ip := strings.TrimSpace(parts[i])
-			if ip != "" && isValidPublicIP(ip) {
+			if ip == "" {
+				continue
+			}
+			// 跳过可信代理自身的 IP
+			if cfg.IsTrusted(ip) {
+				continue
+			}
+			if isValidPublicIP(ip) {
 				return ip
 			}
 		}
-		// 如果全是内网 IP，取第一个（至少有个地址）
-		if len(parts) > 0 {
-			first := strings.TrimSpace(parts[0])
-			if first != "" {
-				return first
+		// 如果全是内网/可信 IP，取第一个（至少有个地址）
+		for i := 0; i < len(parts); i++ {
+			ip := strings.TrimSpace(parts[i])
+			if ip != "" {
+				return ip
 			}
 		}
 	}
 
-	// ③ 回退到 TCP 连接地址
-	if r.RemoteAddr != "" {
-		// RemoteAddr 格式: IP:Port
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err == nil {
-			return host
-		}
-		return r.RemoteAddr
-	}
-
-	return ""
+	// ⑤ 可信代理但头缺失/无效：回退到直连 IP
+	return directIP
 }
+
+// remoteAddrToIP 从 http.Request.RemoteAddr 提取 IP 地址。
+func remoteAddrToIP(r *http.Request) string {
+	if r.RemoteAddr == "" {
+		return ""
+	}
+	// RemoteAddr 格式: IP:Port 或 [IPv6]:Port
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// ============================================================
+// IP Validation (IPv4 + IPv6)
+// ============================================================
 
 // isValidPublicIP 检查 IP 字符串是否为有效的公网 IP（排除内网/保留地址，支持 IPv4 和 IPv6）。
 func isValidPublicIP(ipStr string) bool {

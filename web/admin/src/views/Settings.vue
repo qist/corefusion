@@ -399,6 +399,67 @@
           </div>
         </el-card>
       </el-tab-pane>
+
+      <!-- Database Config -->
+      <el-tab-pane :label="t('settings.db.title')" name="database">
+        <!-- Current Status -->
+        <el-card style="margin-bottom:20px">
+          <template #header><span>{{ t('settings.db.currentStatus') }}</span></template>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item :label="t('settings.db.currentType')">
+              <el-tag :type="dbForm.current_type === 'sqlite' ? 'info' : 'success'">{{ dbForm.current_type || 'sqlite' }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('settings.db.effectiveDSN')">
+              <span style="font-family:monospace;font-size:12px">{{ dbForm.effective_dsn || '-' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('settings.db.restartNeeded')" :span="2">
+              <el-tag v-if="dbForm.restart_needed" type="warning">{{ t('settings.db.restartNeededYes') }}</el-tag>
+              <el-tag v-else type="success">{{ t('settings.db.restartNeededNo') }}</el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <!-- Configuration -->
+        <el-card style="margin-bottom:20px">
+          <template #header><span>{{ t('settings.db.config') }}</span></template>
+          <el-form :model="dbForm" label-width="160px" style="max-width:700px">
+            <el-form-item :label="t('settings.db.type')">
+              <el-select v-model="dbForm.type" style="width:100%">
+                <el-option label="SQLite" value="sqlite" />
+                <el-option label="MySQL" value="mysql" />
+                <el-option label="PostgreSQL" value="postgres" />
+              </el-select>
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.db.typeHint') }}</div>
+            </el-form-item>
+
+            <el-form-item :label="t('settings.db.dsn')">
+              <el-input v-model="dbForm.dsn" :placeholder="dbDsnPlaceholder" type="textarea" :rows="2" />
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.db.dsnHint') }}</div>
+            </el-form-item>
+
+            <template v-if="dbForm.type !== 'sqlite'">
+              <el-form-item :label="t('settings.db.maxOpenConns')">
+                <el-input-number v-model="dbForm.max_open_conns" :min="1" :max="1000" />
+              </el-form-item>
+              <el-form-item :label="t('settings.db.maxIdleConns')">
+                <el-input-number v-model="dbForm.max_idle_conns" :min="1" :max="500" />
+              </el-form-item>
+            </template>
+
+            <el-form-item>
+              <el-button type="primary" :loading="dbSaving" @click="saveDBConfig">{{ t('common.save') }}</el-button>
+              <el-button :loading="dbTesting" @click="testDBConnection">{{ t('settings.db.testConnection') }}</el-button>
+              <el-button type="warning" :loading="dbMigrating" @click="handleMigrateDB">{{ t('settings.db.migrateData') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <!-- Data Migration Help -->
+        <el-card>
+          <template #header><span>{{ t('settings.db.migration') }}</span></template>
+          <el-alert :title="t('settings.db.migrationWarning')" type="info" :closable="false" show-icon />
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Schedule Dialog -->
@@ -575,7 +636,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
@@ -639,6 +700,31 @@ const selfUnbanSaving = ref(false)
 // OAuth config
 const oauthForm = ref({ github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
 const oauthSaving = ref(false)
+
+// Database config
+const dbForm = ref({ type: 'sqlite', dsn: '', max_open_conns: 100, max_idle_conns: 10, current_type: 'sqlite', effective_dsn: '', restart_needed: false })
+const dbSaving = ref(false)
+const dbTesting = ref(false)
+const dbMigrating = ref(false)
+const dbDsnPlaceholder = computed(() => {
+  switch (dbForm.value.type) {
+    case 'mysql': return 'mysql://user:password@tcp(127.0.0.1:3306)/corefusion?charset=utf8mb4&parseTime=True&loc=Local'
+    case 'postgres': return 'postgres://user:password@127.0.0.1:5432/corefusion?sslmode=disable'
+    default: return 'data/sqlite/app.db'
+  }
+})
+
+// When DB type changes, reset DSN and auto-fill SQLite default path
+// Skip during initial load from API
+const dbTypeInitializing = ref(false)
+watch(() => dbForm.value.type, (newType) => {
+  if (dbTypeInitializing.value) return
+  if (newType === 'sqlite') {
+    dbForm.value.dsn = 'data/sqlite/app.db'
+  } else {
+    dbForm.value.dsn = ''
+  }
+})
 
 // OAuth callback URLs (computed from current location)
 const githubCallbackURL = computed(() => {
@@ -942,6 +1028,45 @@ async function saveCurrencyConfig() {
     ElMessage.success(t('common.success'))
   } catch (e) {} finally { currencySaving.value = false }
 }
+
+// Database config
+async function fetchDBConfig() {
+  try {
+    dbTypeInitializing.value = true
+    const d = await client.get('/system/db-config')
+    if (d) dbForm.value = { ...dbForm.value, ...d }
+  } catch (e) {} finally { dbTypeInitializing.value = false }
+}
+async function saveDBConfig() {
+  dbSaving.value = true
+  try {
+    await client.put('/system/db-config', dbForm.value)
+    ElMessage.success(t('settings.db.saveSuccess'))
+    fetchDBConfig() // refresh to show updated restart_needed
+  } catch (e) {} finally { dbSaving.value = false }
+}
+async function testDBConnection() {
+  dbTesting.value = true
+  try {
+    await client.post('/system/db-config/test', dbForm.value)
+    ElMessage.success(t('settings.db.testSuccess'))
+  } catch (e) {} finally { dbTesting.value = false }
+}
+async function handleMigrateDB() {
+  if (!dbForm.value.dsn) {
+    return
+  }
+  if (dbForm.value.dsn.includes('********')) {
+    ElMessage.warning(t('settings.db.migrateHint'))
+    return
+  }
+  await ElMessageBox.confirm(t('settings.db.migrateConfirm'), t('common.confirm'), { type: 'warning' })
+  dbMigrating.value = true
+  try {
+    const d = await client.post('/system/db-config/migrate', { type: dbForm.value.type, dsn: dbForm.value.dsn, max_open_conns: dbForm.value.max_open_conns, max_idle_conns: dbForm.value.max_idle_conns })
+    ElMessage.success(t('settings.db.migrateSuccess') + ' (' + (d.tables_copied || 0) + ' tables, ' + (d.rows_copied || 0) + ' rows)')
+  } catch (e) {} finally { dbMigrating.value = false }
+}
 function showAddDomain() { editingDomainIndex.value = null; domainForm.value = { name: '', url: '' }; domainDialogVisible.value = true }
 function showEditDomain(row, index) { editingDomainIndex.value = index; domainForm.value = { ...row }; domainDialogVisible.value = true }
 function handleSaveDomain() {
@@ -954,5 +1079,5 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchOAuthConfig(); fetchCurrencyConfig() })
+onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig() })
 </script>

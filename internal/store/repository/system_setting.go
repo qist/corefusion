@@ -22,7 +22,7 @@ func NewSystemSettingRepository(db *gorm.DB) *SystemSettingRepository {
 // GetByKey retrieves a setting by key.
 func (r *SystemSettingRepository) GetByKey(ctx context.Context, key string) (string, error) {
 	var s entity.SystemSetting
-	err := r.db.WithContext(ctx).Where("key = ?", key).First(&s).Error
+	err := r.db.WithContext(ctx).Where("`key` = ?", key).First(&s).Error
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +40,7 @@ func (r *SystemSettingRepository) Set(ctx context.Context, key, value string) er
 // GetByPrefix retrieves all settings with a key prefix.
 func (r *SystemSettingRepository) GetByPrefix(ctx context.Context, prefix string) (map[string]string, error) {
 	var settings []entity.SystemSetting
-	err := r.db.WithContext(ctx).Where("key LIKE ?", prefix+"%").Find(&settings).Error
+	err := r.db.WithContext(ctx).Where("`key` LIKE ?", prefix+"%").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -53,5 +53,5 @@ func (r *SystemSettingRepository) GetByPrefix(ctx context.Context, prefix string
 
 // Delete deletes a setting by key.
 func (r *SystemSettingRepository) Delete(ctx context.Context, key string) error {
-	return r.db.WithContext(ctx).Where("key = ?", key).Delete(&entity.SystemSetting{}).Error
+	return r.db.WithContext(ctx).Where("`key` = ?", key).Delete(&entity.SystemSetting{}).Error
 }

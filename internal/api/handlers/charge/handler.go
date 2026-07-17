@@ -4,7 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +16,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 	"corefusion/internal/store/repository"
 )
 
@@ -58,6 +63,9 @@ func (h *Handler) ListSites(c *gin.Context) {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
+	for i := range sites {
+		h.maskSiteSecret(&sites[i])
+	}
 	response.OK(c, sites)
 }
 
@@ -73,6 +81,7 @@ func (h *Handler) GetSite(c *gin.Context) {
 		response.NotFound(c, "NOT_FOUND", "charge site not found")
 		return
 	}
+	h.maskSiteSecret(site)
 	response.OK(c, site)
 }
 
@@ -83,10 +92,23 @@ func (h *Handler) CreateSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Encrypt callback_secret if provided
+	if site.CallbackSecret != "" {
+		encrypted, err := crypto.EncryptSecret(site.CallbackSecret)
+		if err != nil {
+			response.InternalError(c, "ENCRYPT_FAILED", err.Error())
+			return
+		}
+		site.EncryptedSecret = encrypted
+		site.CallbackSecret = "" // 不存明文
+	}
+	// Extract domain from site URL
+	site.Domain = extractDomain(site.SiteURL)
 	if err := h.chargeSiteRepo.Create(c.Request.Context(), &site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
+	h.maskSiteSecret(&site)
 	response.Created(c, site)
 }
 
@@ -102,14 +124,46 @@ func (h *Handler) UpdateSite(c *gin.Context) {
 		response.NotFound(c, "NOT_FOUND", "charge site not found")
 		return
 	}
-	if err := c.ShouldBindJSON(site); err != nil {
+
+	// Read incoming update into a temporary struct to detect secret changes
+	var incoming struct {
+		entity.ChargeSite
+		CallbackSecret string `json:"callback_secret"`
+	}
+	if err := c.ShouldBindJSON(&incoming); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+
+	// Copy fields from incoming to site
+	site.Name = incoming.Name
+	site.SiteURL = incoming.SiteURL
+	site.APIKey = incoming.APIKey
+	site.CallbackWhitelist = incoming.CallbackWhitelist
+	site.SupportedMethods = incoming.SupportedMethods
+	site.Currency = incoming.Currency
+	site.IconURL = incoming.IconURL
+	site.Enabled = incoming.Enabled
+	site.SortOrder = incoming.SortOrder
+	site.ConfigJSON = incoming.ConfigJSON
+	site.Domain = extractDomain(site.SiteURL)
+
+	// Handle callback_secret: only update if a new plaintext value is provided
+	if incoming.CallbackSecret != "" {
+		encrypted, err := crypto.EncryptSecret(incoming.CallbackSecret)
+		if err != nil {
+			response.InternalError(c, "ENCRYPT_FAILED", err.Error())
+			return
+		}
+		site.EncryptedSecret = encrypted
+		site.CallbackSecret = "" // 不存明文
+	}
+
 	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
+	h.maskSiteSecret(site)
 	response.OK(c, site)
 }
 
@@ -125,6 +179,200 @@ func (h *Handler) DeleteSite(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "deleted"})
+}
+
+// ============================================================
+// Domain Verification & Integration Doc
+// ============================================================
+
+// GenerateVerifyFile handles POST /api/v1/charge-sites/:id/generate-verify-file.
+// Generates a verify token and content for domain ownership verification.
+func (h *Handler) GenerateVerifyFile(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+
+	// Generate token: WW_verify_<16 hex chars>
+	tokenBytes := make([]byte, 8)
+	rand.Read(tokenBytes)
+	site.VerifyToken = "WW_verify_" + hex.EncodeToString(tokenBytes)
+
+	// Generate content: 32 random digits
+	contentBytes := make([]byte, 16)
+	rand.Read(contentBytes)
+	site.VerifyContent = hex.EncodeToString(contentBytes)
+
+	site.Verified = false
+	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+
+	// Extract domain for DNS TXT record name
+txtDomain := extractDomain(site.SiteURL)
+
+	response.OK(c, gin.H{
+		"verify_token":         site.VerifyToken,
+		"verify_content":       site.VerifyContent,
+		"verify_file_url":      fmt.Sprintf("%s/%s.txt", strings.TrimRight(site.SiteURL, "/"), site.VerifyToken),
+		"dns_txt_record_name":  "_corefusion_verify." + txtDomain,
+		"dns_txt_record_value": site.VerifyContent,
+		"instructions":         "请将验证文件放置在站点根目录（如 https://pay.example.com/" + site.VerifyToken + ".txt），或添加 DNS TXT 记录后点击验证",
+	})
+}
+
+// VerifyDomainHTTP handles POST /api/v1/charge-sites/:id/verify-domain-http.
+// Checks HTTP accessibility of the verify file.
+func (h *Handler) VerifyDomainHTTP(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+	if site.VerifyToken == "" || site.VerifyContent == "" {
+		response.BadRequest(c, "NOT_GENERATED", "请先生成验证文件")
+		return
+	}
+
+	verifyURL := fmt.Sprintf("%s/%s.txt", strings.TrimRight(site.SiteURL, "/"), site.VerifyToken)
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Get(verifyURL)
+	if err != nil {
+		response.BadRequest(c, "VERIFY_FAILED", fmt.Sprintf("无法访问验证文件: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		response.BadRequest(c, "VERIFY_FAILED", fmt.Sprintf("验证文件返回 HTTP %d", resp.StatusCode))
+		return
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := strings.TrimSpace(string(body))
+	if bodyStr != site.VerifyContent {
+		response.BadRequest(c, "CONTENT_MISMATCH", "验证文件内容不匹配")
+		return
+	}
+
+	now := time.Now()
+	expire := now.AddDate(0, 6, 0) // 180 days
+	site.Verified = true
+	site.VerifiedMethod = "http"
+	site.VerifiedAt = &now
+	site.VerifyExpireAt = &expire
+	site.Domain = extractDomain(site.SiteURL)
+	h.chargeSiteRepo.Update(c.Request.Context(), site)
+	response.OK(c, gin.H{"verified": true, "method": "http", "verified_at": now, "verify_expire_at": expire})
+}
+
+// VerifyDomainDNS handles POST /api/v1/charge-sites/:id/verify-domain-dns.
+// Checks DNS TXT record for domain ownership verification.
+func (h *Handler) VerifyDomainDNS(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+	if site.VerifyToken == "" || site.VerifyContent == "" {
+		response.BadRequest(c, "NOT_GENERATED", "请先生成验证文件")
+		return
+	}
+
+	// Extract domain from site URL
+	domain := extractDomain(site.SiteURL)
+	dnsName := "_corefusion_verify." + domain
+
+	txts, err := net.LookupTXT(dnsName)
+	if err != nil {
+		response.BadRequest(c, "DNS_LOOKUP_FAILED", fmt.Sprintf("DNS TXT 查询失败: %v", err))
+		return
+	}
+	for _, txt := range txts {
+		if strings.TrimSpace(txt) == site.VerifyContent {
+			now := time.Now()
+			expire := now.AddDate(0, 6, 0) // 180 days
+			site.Verified = true
+			site.VerifiedMethod = "dns_txt"
+			site.VerifiedAt = &now
+			site.VerifyExpireAt = &expire
+			site.Domain = domain
+			h.chargeSiteRepo.Update(c.Request.Context(), site)
+			response.OK(c, gin.H{"verified": true, "method": "dns_txt", "verified_at": now, "verify_expire_at": expire})
+			return
+		}
+	}
+	response.BadRequest(c, "CONTENT_MISMATCH", "DNS TXT 记录内容不匹配")
+}
+
+// GetSiteIntegrationDoc handles GET /api/v1/charge-sites/:id/integration-doc.
+// Returns the integration documentation for this specific site.
+func (h *Handler) GetSiteIntegrationDoc(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+
+	callbackURL := fmt.Sprintf("/api/v1/charge/callback/%d", site.ID)
+
+	doc := gin.H{
+		"site_id":               site.ID,
+		"site_name":             site.Name,
+		"site_url":              site.SiteURL,
+		"callback_url":          callbackURL,
+		"callback_secret_set":   site.EncryptedSecret != "",
+		"verified":              site.Verified,
+		"verified_method":       site.VerifiedMethod,
+		"verified_at":           site.VerifiedAt,
+		"verify_expire_at":      site.VerifyExpireAt,
+		"domain":                site.Domain,
+		"verify_token":          site.VerifyToken,
+		"currency":              site.Currency,
+		"supported_methods":     site.SupportedMethods,
+		"signature_algorithm":   "HMAC-SHA256",
+		"signature_fields":      []string{"amount", "currency", "nonce", "site_trade_no", "timestamp", "trade_no"},
+		"timestamp_tolerance":   300,
+		"nonce_required":        true,
+		"amount_unit":           "cents (分)",
+		"ip_whitelist":          site.CallbackWhitelist,
+		"response_format":       `{"success": true, "message": "ok"}`,
+		"example_callback": gin.H{
+			"trade_no":      "CF20250717120000-xxx",
+			"site_trade_no": "SITE_12345",
+			"status":        "paid",
+			"amount":        10000,
+			"currency":      "CNY",
+			"timestamp":     1721210400,
+			"nonce":         "a1b2c3d4e5f6",
+			"paid_currency": "CNY",
+			"paid_amount":   10000,
+			"method":        "alipay",
+			"sign":          "<HMAC-SHA256 hex>",
+		},
+	}
+
+	response.OK(c, doc)
 }
 
 // ============================================================
@@ -594,6 +842,17 @@ func generateBatchID() string {
 	return fmt.Sprintf("B%s%s", time.Now().Format("20060102"), hex.EncodeToString(b))
 }
 
+// extractDomain extracts the hostname from a URL string.
+func extractDomain(rawURL string) string {
+	u := rawURL
+	if strings.HasPrefix(u, "https://") {
+		u = strings.TrimPrefix(u, "https://")
+	} else if strings.HasPrefix(u, "http://") {
+		u = strings.TrimPrefix(u, "http://")
+	}
+	return strings.Split(u, "/")[0]
+}
+
 func getPagination(c *gin.Context) (limit, offset int) {
 	limit = 20
 	offset = 0
@@ -604,4 +863,159 @@ func getPagination(c *gin.Context) (limit, offset int) {
 		offset = o
 	}
 	return
+}
+
+// maskSiteSecret masks the callback_secret for API responses and hides the encrypted_secret.
+func (h *Handler) maskSiteSecret(site *entity.ChargeSite) {
+	// Try to decrypt for masking; if decryption fails, check plaintext fallback
+	plain := ""
+	if site.EncryptedSecret != "" {
+		if decrypted, err := crypto.DecryptSecret(site.EncryptedSecret); err == nil {
+			plain = decrypted
+		}
+	}
+	if plain == "" && site.CallbackSecret != "" {
+		// Backward compat: plaintext stored directly
+		plain = site.CallbackSecret
+	}
+	site.CallbackSecret = crypto.MaskSecret(plain)
+	site.EncryptedSecret = "" // Never expose encrypted_secret to frontend
+	site.EncryptedSecretPrev = "" // Never expose to frontend
+}
+
+// ============================================================
+// Callback Logs & Retry Management
+// ============================================================
+
+// ListCallbackLogs handles GET /api/v1/charge-callback-logs.
+func (h *Handler) ListCallbackLogs(c *gin.Context) {
+	siteIDStr := c.Query("site_id")
+	status := c.Query("status")
+	limit, offset := getPagination(c)
+
+	var items []entity.ChargeCallbackLog
+	var total int64
+	q := h.db.WithContext(c.Request.Context()).Model(&entity.ChargeCallbackLog{})
+	if siteIDStr != "" {
+		q = q.Where("site_id = ?", siteIDStr)
+	}
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	q.Count(&total)
+	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+	response.Paginated(c, items, total, limit, offset)
+}
+
+// ListCallbackRetries handles GET /api/v1/charge-callback-retries.
+func (h *Handler) ListCallbackRetries(c *gin.Context) {
+	status := c.Query("status")
+	limit, offset := getPagination(c)
+
+	var items []entity.ChargeCallbackRetry
+	var total int64
+	q := h.db.WithContext(c.Request.Context()).Model(&entity.ChargeCallbackRetry{})
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	q.Count(&total)
+	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+	response.Paginated(c, items, total, limit, offset)
+}
+
+// RetryCallback handles POST /api/v1/charge-callback-retries/:id/retry.
+// Manually triggers a retry for a specific callback.
+func (h *Handler) RetryCallback(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	var retry entity.ChargeCallbackRetry
+	if err := h.db.WithContext(c.Request.Context()).First(&retry, id).Error; err != nil {
+		response.NotFound(c, "NOT_FOUND", "retry record not found")
+		return
+	}
+	// Mark for immediate retry
+	now := time.Now()
+	h.db.Model(&retry).Updates(map[string]interface{}{
+		"status":        "pending",
+		"next_retry_at": now,
+	})
+	response.OK(c, gin.H{"message": "retry scheduled"})
+}
+
+// ============================================================
+// Secret Rotation — 密钥轮换
+// ============================================================
+
+// RotateSecretInput is the input for rotating the callback secret.
+type RotateSecretInput struct {
+	NewSecret string `json:"new_secret" binding:"required"`
+}
+
+// RotateSecret handles POST /api/v1/charge-sites/:id/rotate-secret.
+// Rotates the callback secret: current secret becomes prev (for transition), new secret becomes current.
+func (h *Handler) RotateSecret(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+	var input RotateSecretInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	// 当前密钥变为旧密钥（用于过渡期双密钥验证）
+	site.EncryptedSecretPrev = site.EncryptedSecret
+	// 加密新密钥
+	encrypted, err := crypto.EncryptSecret(input.NewSecret)
+	if err != nil {
+		response.InternalError(c, "ENCRYPT_FAILED", err.Error())
+		return
+	}
+	site.EncryptedSecret = encrypted
+	site.CallbackSecret = ""
+	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	h.maskSiteSecret(site)
+	response.OK(c, gin.H{
+		"message":           "secret rotated, old secret kept for transition",
+		"has_prev_secret":   site.EncryptedSecretPrev != "",
+	})
+}
+
+// ClearPrevSecret handles POST /api/v1/charge-sites/:id/clear-prev-secret.
+// Removes the previous secret after the transition period is over.
+func (h *Handler) ClearPrevSecret(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+	site.EncryptedSecretPrev = ""
+	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "previous secret cleared"})
 }

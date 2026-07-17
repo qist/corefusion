@@ -180,6 +180,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.ChargeCard{},
 		&entity.ClientBalance{},
 		&entity.BalanceTransaction{},
+		&entity.CallbackNonce{},
+		&entity.ChargeCallbackLog{},
+		&entity.ChargeCallbackRetry{},
+		&entity.ChargeCallbackEvent{},
 
 		// Referral / 邀请推广
 		&entity.ReferralCode{},

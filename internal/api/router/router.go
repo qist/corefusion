@@ -535,6 +535,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	commerceH := clientauthHandler.NewCommerceHandler(commerceSvcInst)
 
+	// Start callback retry scheduler (runs every 1 minute)
+	commerceSvcInst.StartRetryScheduler(1 * time.Minute)
+
 	// P1-P3 extended services
 	referralSvcInst := clientauthSvc.NewReferralService(
 		database, repository.NewReferralCodeRepository(database),
@@ -1012,6 +1015,15 @@ chargeSiteGroup.GET("/:id", chargeAdminH.GetSite)
 chargeSiteGroup.POST("", chargeAdminH.CreateSite)
 chargeSiteGroup.PUT("/:id", chargeAdminH.UpdateSite)
 chargeSiteGroup.DELETE("/:id", chargeAdminH.DeleteSite)
+chargeSiteGroup.POST("/:id/generate-verify-file", chargeAdminH.GenerateVerifyFile)
+chargeSiteGroup.POST("/:id/generate-verify", chargeAdminH.GenerateVerifyFile) // 文档路径别名
+chargeSiteGroup.POST("/:id/verify-domain-http", chargeAdminH.VerifyDomainHTTP)
+chargeSiteGroup.POST("/:id/verify-domain", chargeAdminH.VerifyDomainHTTP) // 文档路径别名
+chargeSiteGroup.POST("/:id/verify-domain-dns", chargeAdminH.VerifyDomainDNS)
+chargeSiteGroup.POST("/:id/verify-dns", chargeAdminH.VerifyDomainDNS) // 文档路径别名
+chargeSiteGroup.GET("/:id/integration-doc", chargeAdminH.GetSiteIntegrationDoc)
+chargeSiteGroup.POST("/:id/rotate-secret", chargeAdminH.RotateSecret)
+chargeSiteGroup.POST("/:id/clear-prev-secret", chargeAdminH.ClearPrevSecret)
 }
 chargeOrderGroup := protected.Group("/charge-orders")
 {
@@ -1031,6 +1043,17 @@ clientBalanceGroup := protected.Group("/client-balances")
 clientBalanceGroup.GET("", chargeAdminH.ListBalances)
 clientBalanceGroup.POST("/adjust", chargeAdminH.AdjustBalance)
 clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
+}
+
+// Callback logs & retry management
+callbackLogGroup := protected.Group("/charge-callback-logs")
+{
+callbackLogGroup.GET("", chargeAdminH.ListCallbackLogs)
+}
+callbackRetryGroup := protected.Group("/charge-callback-retries")
+{
+callbackRetryGroup.GET("", chargeAdminH.ListCallbackRetries)
+callbackRetryGroup.POST("/:id/retry", chargeAdminH.RetryCallback)
 }
 
 // P1-P3: Admin routes for extended modules

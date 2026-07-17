@@ -9,6 +9,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/service/clientauth"
+	"corefusion/pkg/netutil"
 )
 
 // CommerceHandler handles client commerce HTTP requests.
@@ -270,7 +271,7 @@ func (h *CommerceHandler) HandleChargeCallback(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	remoteIP := c.ClientIP()
+	remoteIP := netutil.GetRealIP(c.Request)
 	if err := h.svc.HandleChargeCallback(c.Request.Context(), siteID, remoteIP, requestID, input); err != nil {
 		response.BadRequest(c, "CALLBACK_FAILED", err.Error())
 		return

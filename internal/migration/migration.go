@@ -181,7 +181,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.ClientBalance{},
 		&entity.BalanceTransaction{},
 		&entity.CallbackNonce{},
-		&entity.ChargeCallbackLog{},
 		&entity.ChargeCallbackRetry{},
 		&entity.ChargeCallbackEvent{},
 

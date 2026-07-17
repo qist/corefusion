@@ -16,6 +16,7 @@ type ChargeSite struct {
 	CallbackSecret      string    `gorm:"size:255" json:"callback_secret"`               // 明文（仅内存中使用，写库前加密）
 	EncryptedSecret     string    `gorm:"type:text" json:"encrypted_secret"`             // AES-256-GCM 加密后的当前 callback_secret
 	EncryptedSecretPrev string    `gorm:"type:text" json:"encrypted_secret_prev"`        // AES-256-GCM 加密后的旧 callback_secret（密钥轮换过渡期）
+	SecretVersion       int       `gorm:"not null;default:1" json:"secret_version"`        // 密钥版本号，轮换时递增，用于审计追踪
 	CallbackWhitelist   string    `gorm:"size:1000" json:"callback_whitelist"`           // JSON array of allowed IPs/CIDRs
 	SupportedMethods    string    `gorm:"type:text" json:"supported_methods"`            // JSON array
 	Currency            string    `gorm:"size:16;not null;default:CNY" json:"currency"`  // 站点主货币
@@ -103,6 +104,7 @@ type ChargeOrder struct {
 	Status        string     `gorm:"size:32;not null;default:pending" json:"status"`
 	PaymentURL    string     `gorm:"size:500" json:"payment_url"`
 	PaidAt        *time.Time `json:"paid_at"`
+	ProcessingAt  *time.Time `gorm:"index" json:"processing_at"`                   // 进入 processing 状态的时间，用于超时恢复
 	ExpiresAt     *time.Time `json:"expires_at"`
 	CallbackRaw   string     `gorm:"type:text" json:"callback_raw"`
 	ChargeCardID  *int64     `json:"charge_card_id"`
@@ -210,43 +212,26 @@ func (CallbackNonce) TableName() string { return "callback_nonces" }
 // Charge Callback Events — 回调事件记录（每次回调一条，用于争议排查）
 // ============================================================
 
-// ChargeCallbackEvent records every callback as a structured event for dispute resolution.
+// ChargeCallbackEvent records every callback as a unified event+log for dispute resolution and debugging.
+// v3.1: Merged charge_callback_logs into this table — events ARE logs.
 type ChargeCallbackEvent struct {
-	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	SiteID      int64     `gorm:"not null;index" json:"site_id"`
-	TradeNo     string    `gorm:"size:64;index" json:"trade_no"`
-	RequestID   string    `gorm:"size:64;index" json:"request_id"`
-	RemoteIP    string    `gorm:"size:64" json:"remote_ip"`
-	PayloadHash string    `gorm:"size:64" json:"payload_hash"`     // SHA-256(rawBody), 用于争议比对
-	SignValid   bool      `gorm:"not null;default:false" json:"sign_valid"`
-	Result      string    `gorm:"size:32;not null" json:"result"`  // received / signature_failed / replay / amount_error / success / error
-	ErrorCode   string    `gorm:"size:64" json:"error_code"`
-	Amount      int64     `json:"amount"`                           // 回调金额（用于审计）
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-func (ChargeCallbackEvent) TableName() string { return "charge_callback_events" }
-
-// ============================================================
-// Charge Callback Logs — 回调日志记录
-// ============================================================
-
-// ChargeCallbackLog records callback processing details for debugging.
-// Does NOT store raw payload — use payload_hash for dispute comparison.
-type ChargeCallbackLog struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	SiteID       int64     `gorm:"not null;index" json:"site_id"`
+	TradeNo      string    `gorm:"size:64;index" json:"trade_no"`
 	RequestID    string    `gorm:"size:64;index" json:"request_id"`
-	TradeNo      string    `gorm:"size:64" json:"trade_no"`
 	RemoteIP     string    `gorm:"size:64" json:"remote_ip"`
-	Status       string    `gorm:"size:32" json:"status"`         // success / failed
+	IpMatchRule  string    `gorm:"size:64" json:"ip_match_rule"`      // 匹配的 IP 白名单规则（如 10.0.0.0/8），便于排查
+	PayloadHash  string    `gorm:"size:64" json:"payload_hash"`      // SHA-256(rawBody), 用于争议比对
+	SignValid    bool      `gorm:"not null;default:false" json:"sign_valid"`
+	SecretVer    int       `json:"secret_version"`                   // 验签使用的密钥版本
+	Result       string    `gorm:"size:32;not null" json:"result"`   // received / signature_failed / replay / amount_error / success / error
 	ErrorCode    string    `gorm:"size:64" json:"error_code"`
 	ErrorMessage string    `gorm:"size:500" json:"error_message"`
-	PayloadHash  string    `gorm:"size:64" json:"payload_hash"`   // SHA-256(rawBody)
+	Amount       int64     `json:"amount"`                            // 回调金额（用于审计）
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-func (ChargeCallbackLog) TableName() string { return "charge_callback_logs" }
+func (ChargeCallbackEvent) TableName() string { return "charge_callback_events" }
 
 // ============================================================
 // Charge Callback Retry Queue — 回调重试队列

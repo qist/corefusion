@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
@@ -576,66 +577,71 @@ type ChargeCallbackInput struct {
 }
 
 // HandleChargeCallback processes a charge site callback.
-// v3.0 verification chain (per CHARGE_SITE_INTEGRATION.md §4.2):
-//  1. request_id  2. site check  3. verified check  4. IP whitelist
+// v3.1 verification chain:
+//  1. request_id  2. site check  3. verified check  4. IP whitelist (+match rule)
 //  5. timestamp check  6. nonce atomic INSERT (replay prevention)
-//  7. HMAC verify  8. order lookup  9. order belong  10. status check
-//  11. amount check  12. transaction: processing → balance → paid → event
+//  7. HMAC verify (body_hash + secret_version)  8. order lookup  9. order belong
+//  10. status check  11. amount check
+//  12. transaction: processing(+processing_at) → SELECT FOR UPDATE → INSERT ledger → UPDATE balance → paid
 func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64, remoteIP string, requestID string, input ChargeCallbackInput) error {
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
 	rawBody, _ := json.Marshal(input)
 	payloadHash := sha256Hex(rawBody)
+	bodyHash := payloadHash // body_hash = SHA256(rawBody), same as payloadHash
 
-	recordEvent := func(result, errorCode string, signValid bool) {
-		s.recordCallbackEvent(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, input.Amount, result, errorCode, signValid)
-		s.logCallbackRequest(ctx, siteID, requestID, input.TradeNo, remoteIP, result, errorCode, "", payloadHash)
+	// v3.1: merged event+log into single recordCallbackEvent call
+	recordEvent := func(result, errorCode, errMsg string, signValid bool, secretVer int, ipMatchRule string) {
+		s.recordCallbackEvent(ctx, siteID, requestID, input.TradeNo, remoteIP, ipMatchRule, payloadHash, input.Amount, result, errorCode, errMsg, signValid, secretVer)
 	}
 
 	// ② site
 	site, err := s.chargeSiteRepo.GetByID(ctx, siteID)
 	if err != nil {
 		log.Printf("[callback] request_id=%s site_id=%d error=site_not_found", requestID, siteID)
-		recordEvent("error", "SITE_NOT_FOUND", false)
+		recordEvent("error", "SITE_NOT_FOUND", "charge site not found", false, 0, "")
 		return fmt.Errorf("charge site not found")
 	}
 	log.Printf("[callback] request_id=%s site_id=%d remote_ip=%s", requestID, siteID, remoteIP)
 
 	// ③ verified (含过期检查)
 	if !site.Verified {
-		recordEvent("error", "SITE_NOT_VERIFIED", false)
+		recordEvent("error", "SITE_NOT_VERIFIED", "site not verified", false, 0, "")
 		return fmt.Errorf("site not verified")
 	}
 	if site.VerifyExpireAt != nil && site.VerifyExpireAt.Before(time.Now()) {
-		recordEvent("error", "SITE_NOT_VERIFIED", false)
+		recordEvent("error", "SITE_NOT_VERIFIED", "site verification expired", false, 0, "")
 		return fmt.Errorf("site verification expired")
 	}
 	log.Printf("[callback] request_id=%s verified=ok", requestID)
 
-	// ④ IP whitelist
-	if site.CallbackWhitelist != "" && !isIPAllowed(remoteIP, site.CallbackWhitelist) {
-		log.Printf("[callback] request_id=%s ip_whitelist=denied ip=%s", requestID, remoteIP)
-		recordEvent("error", "IP_NOT_ALLOWED", false)
-		return fmt.Errorf("ip not allowed: %s", remoteIP)
+	// ④ IP whitelist (+记录匹配规则)
+	ipMatchRule := ""
+	if site.CallbackWhitelist != "" {
+		ipMatchRule = findIPMatchRule(remoteIP, site.CallbackWhitelist)
+		if ipMatchRule == "" {
+			log.Printf("[callback] request_id=%s ip_whitelist=denied ip=%s", requestID, remoteIP)
+			recordEvent("error", "IP_NOT_ALLOWED", fmt.Sprintf("ip not allowed: %s", remoteIP), false, 0, "")
+			return fmt.Errorf("ip not allowed: %s", remoteIP)
+		}
 	}
-	log.Printf("[callback] request_id=%s ip_whitelist=ok", requestID)
+	log.Printf("[callback] request_id=%s ip_whitelist=ok matched=%s", requestID, ipMatchRule)
 
 	// ⑤ timestamp
 	now := time.Now().Unix()
 	if input.Timestamp == 0 || absInt64(now-input.Timestamp) > 300 {
 		log.Printf("[callback] request_id=%s timestamp=expired", requestID)
-		recordEvent("replay", "REPLAY_ATTACK", false)
+		recordEvent("replay", "REPLAY_ATTACK", "callback timestamp expired", false, 0, ipMatchRule)
 		return fmt.Errorf("callback timestamp expired (possible replay attack)")
 	}
 	if input.Nonce == "" {
-		recordEvent("replay", "REPLAY_ATTACK", false)
+		recordEvent("replay", "REPLAY_ATTACK", "nonce is required", false, 0, ipMatchRule)
 		return fmt.Errorf("nonce is required")
 	}
 	log.Printf("[callback] request_id=%s timestamp=ok", requestID)
 
-	// ⑥ nonce 原子消费（INSERT, UNIQUE 冲突 = 重放）
-	// 站点+nonce 联合唯一，不同站点可使用相同 nonce
+	// ⑥ nonce 原子消费
 	nonceRecord := &entity.CallbackNonce{
 		Nonce:     input.Nonce,
 		SiteID:    siteID,
@@ -644,59 +650,61 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	}
 	if err := s.db.WithContext(ctx).Create(nonceRecord).Error; err != nil {
 		log.Printf("[callback] request_id=%s nonce_replay nonce=%s", requestID, input.Nonce)
-		recordEvent("replay", "REPLAY_ATTACK", false)
+		recordEvent("replay", "REPLAY_ATTACK", "nonce already used", false, 0, ipMatchRule)
 		return fmt.Errorf("nonce already used (replay attack)")
 	}
 	log.Printf("[callback] request_id=%s nonce=consumed", requestID)
 
-	// ⑦ HMAC verify (含旧密钥轮换)
+	// ⑦ HMAC verify (body_hash + secret_version)
 	secret := resolveSiteSecret(site)
 	if secret == "" {
 		log.Printf("[callback] request_id=%s secret=missing", requestID)
-		recordEvent("signature_failed", "SECRET_REQUIRED", false)
+		recordEvent("signature_failed", "SECRET_REQUIRED", "callback_secret not configured", false, 0, ipMatchRule)
 		s.raiseCallbackAlert(siteID, "SECRET_REQUIRED", "warning", "回调密钥未配置", fmt.Sprintf("site_id=%d", siteID))
 		return fmt.Errorf("callback_secret not configured")
 	}
-	signValid := s.verifyChargeCallback(input, secret)
+	usedSecretVer := site.SecretVersion
+	signValid := s.verifyChargeCallback(input, bodyHash, secret)
 	if !signValid {
 		prevSecret := resolveSiteSecretPrev(site)
-		if prevSecret != "" && s.verifyChargeCallback(input, prevSecret) {
+		if prevSecret != "" && s.verifyChargeCallback(input, bodyHash, prevSecret) {
 			signValid = true
-			log.Printf("[callback] request_id=%s verify_signature=ok_via_prev_secret", requestID)
+			usedSecretVer = site.SecretVersion - 1 // 旧密钥 = 上一版本
+			log.Printf("[callback] request_id=%s verify_signature=ok_via_prev_secret v=%d", requestID, usedSecretVer)
 		} else {
 			log.Printf("[callback] request_id=%s verify_signature=failed", requestID)
-			recordEvent("signature_failed", "INVALID_SIGNATURE", false)
+			recordEvent("signature_failed", "INVALID_SIGNATURE", "invalid signature", false, 0, ipMatchRule)
 			s.raiseCallbackAlert(siteID, "INVALID_SIGNATURE", "critical", "回调签名验证失败", fmt.Sprintf("site_id=%d remote_ip=%s trade_no=%s", siteID, remoteIP, input.TradeNo))
 			return fmt.Errorf("invalid signature")
 		}
 	} else {
-		log.Printf("[callback] request_id=%s verify_signature=ok", requestID)
+		log.Printf("[callback] request_id=%s verify_signature=ok v=%d", requestID, usedSecretVer)
 	}
 
 	// ⑧ order lookup
 	order, err := s.chargeOrderRepo.GetByTradeNo(ctx, input.TradeNo)
 	if err != nil {
 		log.Printf("[callback] request_id=%s order=not_found trade_no=%s", requestID, input.TradeNo)
-		recordEvent("error", "ORDER_NOT_FOUND", signValid)
+		recordEvent("error", "ORDER_NOT_FOUND", fmt.Sprintf("order not found: %s", input.TradeNo), signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order not found: %s", input.TradeNo)
 	}
 
 	// ⑨ order belong
 	if order.SiteID == nil || *order.SiteID != site.ID {
 		log.Printf("[callback] request_id=%s order_not_belong", requestID)
-		recordEvent("error", "ORDER_NOT_BELONG", signValid)
+		recordEvent("error", "ORDER_NOT_BELONG", "order does not belong to this site", signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order does not belong to this site")
 	}
 
 	// ⑩ order status (幂等 + 状态机)
 	if order.Status == entity.ChargeStatusPaid && input.Status == "paid" {
 		log.Printf("[callback] request_id=%s order=%s idempotent=paid", requestID, input.TradeNo)
-		recordEvent("success", "", signValid)
+		recordEvent("success", "", "idempotent: order already paid", signValid, usedSecretVer, ipMatchRule)
 		return nil
 	}
 	if order.Status == entity.ChargeStatusProcessing {
 		log.Printf("[callback] request_id=%s order=%s processing_skip", requestID, input.TradeNo)
-		recordEvent("success", "", signValid)
+		recordEvent("success", "", "order is processing", signValid, usedSecretVer, ipMatchRule)
 		return nil
 	}
 	targetStatus := entity.ChargeStatusPaid
@@ -705,14 +713,14 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	}
 	if !entity.CanChargeOrderTransition(order.Status, targetStatus) {
 		log.Printf("[callback] request_id=%s invalid_transition from=%s to=%s", requestID, order.Status, targetStatus)
-		recordEvent("error", "INVALID_STATUS_TRANSITION", signValid)
+		recordEvent("error", "INVALID_STATUS_TRANSITION", fmt.Sprintf("order status is %s", order.Status), signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order status is %s, cannot process callback", order.Status)
 	}
 
 	// ⑪ amount check
 	if input.Amount != order.Amount {
 		log.Printf("[callback] request_id=%s amount_mismatch callback=%d order=%d", requestID, input.Amount, order.Amount)
-		recordEvent("amount_error", "AMOUNT_MISMATCH", signValid)
+		recordEvent("amount_error", "AMOUNT_MISMATCH", fmt.Sprintf("callback=%d order=%d", input.Amount, order.Amount), signValid, usedSecretVer, ipMatchRule)
 		s.raiseCallbackAlert(siteID, "AMOUNT_MISMATCH", "critical", "回调金额不一致", fmt.Sprintf("site_id=%d trade_no=%s callback=%d order=%d", siteID, input.TradeNo, input.Amount, order.Amount))
 		return fmt.Errorf("amount mismatch: callback=%d order=%d", input.Amount, order.Amount)
 	}
@@ -725,13 +733,17 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 				paidAt = t
 			}
 		}
+		processingAt := time.Now()
 
-		// Transaction: pending → processing → balance → paid
+		// v3.1 Transaction: pending → processing(+processing_at) → SELECT FOR UPDATE → INSERT ledger → UPDATE balance → paid
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Step 1: acquire processing lock (pending → processing)
+			// Step 1: acquire processing lock (pending → processing, set processing_at)
 			result := tx.Model(&entity.ChargeOrder{}).
 				Where("trade_no = ? AND status = ?", input.TradeNo, entity.ChargeStatusPending).
-				Update("status", entity.ChargeStatusProcessing)
+				Updates(map[string]interface{}{
+					"status":        entity.ChargeStatusProcessing,
+					"processing_at": processingAt,
+				})
 			if result.Error != nil {
 				return result.Error
 			}
@@ -739,27 +751,22 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 				return nil // already handled by another request
 			}
 
-			// Step 2: get current balance for balance_before snapshot
+			// Step 2: SELECT balance FOR UPDATE (pessimistic lock)
 			var bal entity.ClientBalance
-			if err := tx.Where("client_id = ?", order.ClientID).First(&bal).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("client_id = ?", order.ClientID).First(&bal).Error; err != nil {
 				return err
 			}
 			balanceBefore := bal.Balance
+			balanceAfter := balanceBefore + order.Amount
 
-			// Step 3: increase balance
-			if err := tx.Model(&entity.ClientBalance{}).
-				Where("client_id = ?", order.ClientID).
-				UpdateColumn("balance", gorm.Expr("balance + ?", order.Amount)).Error; err != nil {
-				return err
-			}
-
-			// Step 4: create balance transaction (UNIQUE + balance_before snapshot)
+			// Step 3: INSERT ledger first (describe the change before applying)
 			txRecord := &entity.BalanceTransaction{
 				ClientID:             order.ClientID,
 				Type:                 entity.BalanceTxTypeCharge,
 				Amount:               order.Amount,
 				BalanceBefore:        balanceBefore,
-				BalanceAfter:         balanceBefore + order.Amount,
+				BalanceAfter:         balanceAfter,
 				Currency:             site.Currency,
 				RelatedChargeOrderID: &order.ID,
 				Remark:               fmt.Sprintf("充值回调 trade_no=%s", input.TradeNo),
@@ -768,7 +775,14 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 				return err
 			}
 
-			// Step 5: update order to paid (processing → paid)
+			// Step 4: UPDATE balance (apply the change)
+			if err := tx.Model(&entity.ClientBalance{}).
+				Where("client_id = ?", order.ClientID).
+				UpdateColumn("balance", balanceAfter).Error; err != nil {
+				return err
+			}
+
+			// Step 5: UPDATE order to paid (processing → paid)
 			if err := tx.Model(&entity.ChargeOrder{}).
 				Where("trade_no = ? AND status = ?", input.TradeNo, entity.ChargeStatusProcessing).
 				Updates(map[string]interface{}{
@@ -787,13 +801,13 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		})
 		if err != nil {
 			log.Printf("[callback] request_id=%s order=%s transaction_error=%v", requestID, input.TradeNo, err)
-			recordEvent("error", "CALLBACK_FAILED", signValid)
+			recordEvent("error", "CALLBACK_FAILED", err.Error(), signValid, usedSecretVer, ipMatchRule)
 			s.enqueueCallbackRetry(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, "CALLBACK_FAILED", err.Error(), true)
 			s.raiseCallbackAlert(siteID, "CALLBACK_FAILED", "high", "回调入账失败", fmt.Sprintf("site_id=%d trade_no=%s error=%v", siteID, input.TradeNo, err))
 			return err
 		}
 		log.Printf("[callback] request_id=%s order=%s amount=%d status=paid success", requestID, input.TradeNo, order.Amount)
-		recordEvent("success", "", signValid)
+		recordEvent("success", "", "", signValid, usedSecretVer, ipMatchRule)
 		return nil
 	}
 
@@ -802,39 +816,25 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		Where("trade_no = ? AND status IN ?", input.TradeNo, []string{entity.ChargeStatusPending, entity.ChargeStatusProcessing}).
 		Update("status", entity.ChargeStatusFailed)
 	log.Printf("[callback] request_id=%s order=%s status=failed", requestID, input.TradeNo)
-	recordEvent("success", "", signValid)
+	recordEvent("success", "", "order marked as failed", signValid, usedSecretVer, ipMatchRule)
 	return nil
 }
 
-// logCallbackRequest records a callback log entry (without raw payload, uses payload_hash).
-func (s *CommerceService) logCallbackRequest(ctx context.Context, siteID int64, requestID, tradeNo, remoteIP, status, errorCode, errMsg, payloadHash string) {
-	logEntry := &entity.ChargeCallbackLog{
+// recordCallbackEvent records a unified callback event (v3.1: merged log+event).
+func (s *CommerceService) recordCallbackEvent(ctx context.Context, siteID int64, requestID, tradeNo, remoteIP, ipMatchRule, payloadHash string, amount int64, result, errorCode, errMsg string, signValid bool, secretVer int) {
+	event := &entity.ChargeCallbackEvent{
 		SiteID:       siteID,
-		RequestID:    requestID,
 		TradeNo:      tradeNo,
+		RequestID:    requestID,
 		RemoteIP:     remoteIP,
-		Status:       status,
+		IpMatchRule:  ipMatchRule,
+		PayloadHash:  payloadHash,
+		SignValid:    signValid,
+		SecretVer:    secretVer,
+		Result:       result,
 		ErrorCode:    errorCode,
 		ErrorMessage: errMsg,
-		PayloadHash:  payloadHash,
-	}
-	if err := s.db.WithContext(ctx).Create(logEntry).Error; err != nil {
-		log.Printf("[callback] request_id=%s failed to log callback: %v", requestID, err)
-	}
-}
-
-// recordCallbackEvent records a structured callback event for dispute resolution.
-func (s *CommerceService) recordCallbackEvent(ctx context.Context, siteID int64, requestID, tradeNo, remoteIP, payloadHash string, amount int64, result, errorCode string, signValid bool) {
-	event := &entity.ChargeCallbackEvent{
-		SiteID:      siteID,
-		TradeNo:     tradeNo,
-		RequestID:   requestID,
-		RemoteIP:    remoteIP,
-		PayloadHash: payloadHash,
-		SignValid:   signValid,
-		Result:      result,
-		ErrorCode:   errorCode,
-		Amount:      amount,
+		Amount:       amount,
 	}
 	if err := s.db.WithContext(ctx).Create(event).Error; err != nil {
 		log.Printf("[callback] request_id=%s failed to record event: %v", requestID, err)
@@ -993,6 +993,7 @@ func (s *CommerceService) RotateSiteSecret(ctx context.Context, siteID int64, ne
 	}
 	site.EncryptedSecret = encrypted
 	site.CallbackSecret = ""
+	site.SecretVersion++ // v3.1: 每次轮换递增版本号，用于审计追踪
 
 	return s.chargeSiteRepo.Update(ctx, site)
 }
@@ -1017,29 +1018,68 @@ func absInt64(n int64) int64 {
 
 // isIPAllowed checks if remoteIP is in the whitelist JSON.
 func isIPAllowed(remoteIP string, whitelistJSON string) bool {
+	return findIPMatchRule(remoteIP, whitelistJSON) != ""
+}
+
+// findIPMatchRule returns the matching whitelist rule (IP or CIDR) for remoteIP, or "" if no match.
+func findIPMatchRule(remoteIP string, whitelistJSON string) string {
 	var whitelist []string
 	if err := json.Unmarshal([]byte(whitelistJSON), &whitelist); err != nil {
-		return false
+		return ""
 	}
 	testIP := net.ParseIP(remoteIP)
 	if testIP == nil {
-		return false
+		return ""
 	}
 	for _, entry := range whitelist {
 		if strings.Contains(entry, "/") {
-			// CIDR
 			_, cidr, err := net.ParseCIDR(entry)
 			if err == nil && cidr.Contains(testIP) {
-				return true
+				return entry
 			}
 		} else {
-			// Single IP
 			if entry == remoteIP {
-				return true
+				return entry
 			}
 		}
 	}
-	return false
+	return ""
+}
+
+// StartProcessingRecovery starts a background goroutine that recovers stuck processing orders.
+// Orders stuck in processing for more than 5 minutes are reset to pending.
+func (s *CommerceService) StartProcessingRecovery(interval time.Duration) chan struct{} {
+	stopCh := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				s.recoverStuckProcessing()
+			}
+		}
+	}()
+	return stopCh
+}
+
+// recoverStuckProcessing resets orders stuck in processing for more than 5 minutes back to pending.
+func (s *CommerceService) recoverStuckProcessing() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	threshold := time.Now().Add(-5 * time.Minute)
+	result := s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
+		Where("status = ? AND processing_at < ?", entity.ChargeStatusProcessing, threshold).
+		Updates(map[string]interface{}{
+			"status":        entity.ChargeStatusPending,
+			"processing_at": nil,
+		})
+	if result.RowsAffected > 0 {
+		log.Printf("[recovery] reset %d stuck processing orders to pending", result.RowsAffected)
+	}
 }
 
 // GetChargeStatus returns the charge order status.
@@ -1481,11 +1521,12 @@ func (s *CommerceService) calculateDiscount(promo *entity.Promotion, originalAmo
 }
 
 // verifyChargeCallback verifies the HMAC-SHA256 signature of a charge callback.
-// v3.0: status 不参与签名（业务状态由 CoreFusion 判断），currency 参与签名。
-// 签名字段（字典序）：amount, currency, nonce, site_trade_no, timestamp, trade_no
-func (s *CommerceService) verifyChargeCallback(input ChargeCallbackInput, secret string) bool {
+// v3.1: status 不参与签名，currency + body_hash 参与。
+// 签名字段（字典序）：amount, body_hash, currency, nonce, site_trade_no, timestamp, trade_no
+func (s *CommerceService) verifyChargeCallback(input ChargeCallbackInput, bodyHash string, secret string) bool {
 	payload := map[string]interface{}{
 		"amount":         input.Amount,
+		"body_hash":      bodyHash,
 		"currency":       input.Currency,
 		"nonce":          input.Nonce,
 		"site_trade_no":  input.SiteTradeNo,

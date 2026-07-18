@@ -20,12 +20,13 @@ type SettingStore interface {
 
 // Service handles client authentication and self-service operations.
 type Service struct {
-	clientRepo  *repository.ClientRepository
-	tmplRepo    *repository.PlanTemplateRepository
-	subRepo     *repository.SubscriptionRepository
-	balanceRepo *repository.ClientBalanceRepository
-	settingSvc  SettingStore
-	jwt         *jwt.JWT
+	clientRepo   *repository.ClientRepository
+	tmplRepo     *repository.PlanTemplateRepository
+	subRepo      *repository.SubscriptionRepository
+	balanceRepo  *repository.ClientBalanceRepository
+	referralSvc  *ReferralService // P1: 邀请码注册绑定
+	settingSvc   SettingStore
+	jwt          *jwt.JWT
 }
 
 // NewService creates a new client auth service.
@@ -51,10 +52,17 @@ func (s *Service) SetBalanceRepo(repo *repository.ClientBalanceRepository) {
 	s.balanceRepo = repo
 }
 
+// SetReferralService sets the referral service (called from router initialization).
+// P1: 邀请码注册绑定 — 注册时自动建立邀请关系
+func (s *Service) SetReferralService(svc *ReferralService) {
+	s.referralSvc = svc
+}
+
 // RegisterInput is the input for client registration.
 type RegisterInput struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Email        string `json:"email" binding:"required,email"`
+	Password     string `json:"password" binding:"required,min=6"`
+	ReferralCode string `json:"referral_code"` // P1: 邀请码（可选）
 }
 
 // LoginInput is the input for client login.
@@ -124,6 +132,14 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*TokenResp
 	}
 	if err := s.clientRepo.Create(ctx, client); err != nil {
 		return nil, err
+	}
+
+	// P1: 邀请码注册绑定 — 自动建立邀请关系
+	if input.ReferralCode != "" && s.referralSvc != nil {
+		if err := s.referralSvc.ProcessReferral(ctx, input.ReferralCode, client.ID); err != nil {
+			// 邀请码错误不影响注册流程，仅记录日志
+			fmt.Printf("[register] failed to process referral code: %v\n", err)
+		}
 	}
 
 	return s.generateTokens(client)

@@ -46,6 +46,7 @@ type CommerceService struct {
 	chargeCardRepo  *repository.ChargeCardRepository
 	balanceRepo     *repository.ClientBalanceRepository
 	balanceTxRepo   *repository.BalanceTransactionRepository
+	referralSvc     *ReferralService // P1: 首次付费返利触发
 	settingSvc      SettingStore
 	jwtSecret       string
 }
@@ -82,6 +83,23 @@ func NewCommerceService(
 		balanceTxRepo:   balanceTxRepo,
 		settingSvc:      settingSvc,
 		jwtSecret:       jwtSecret,
+	}
+}
+
+// SetReferralService sets the referral service (called from router initialization).
+// P1: 首次付费返利触发 — 套餐激活后自动发放返利
+func (s *CommerceService) SetReferralService(svc *ReferralService) {
+	s.referralSvc = svc
+}
+
+// triggerFirstPaid triggers the first-paid referral commission if applicable.
+// P1: 首次付费返利触发 — 非阻塞，失败仅记录日志
+func (s *CommerceService) triggerFirstPaid(ctx context.Context, clientID int64, orderAmount int64) {
+	if s.referralSvc == nil {
+		return
+	}
+	if err := s.referralSvc.ProcessFirstPaid(ctx, clientID, orderAmount); err != nil {
+		fmt.Printf("[commerce] failed to process first paid referral: %v\n", err)
 	}
 }
 
@@ -419,6 +437,8 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
 			return nil, fmt.Errorf("failed to activate plan: %v", err)
 		}
+		// P1: 首次付费返利触发（余额支付）
+		s.triggerFirstPaid(ctx, clientID, paidAmount)
 		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
 
 	} else if input.PayMethod == "charge_site" {
@@ -1404,6 +1424,10 @@ func (s *CommerceService) RedeemCard(ctx context.Context, clientID int64, input 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to redeem card: %v", err)
+	}
+	// P1: 首次付费返利触发（充值卡购买套餐 — 事务外调用，避免嵌套事务问题）
+	if chargeOrder.OrderType == entity.ChargeOrderTypePurchase && chargeOrder.PlanVariantID != nil {
+		s.triggerFirstPaid(ctx, chargeOrder.ClientID, chargeOrder.Amount)
 	}
 	return chargeOrder, nil
 }

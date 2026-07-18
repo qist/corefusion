@@ -114,10 +114,6 @@ export function listClientBalances(params = {}) {
   return client.get('/client-balances', { params })
 }
 
-export function adjustClientBalance(data) {
-  return client.post('/client-balances/adjust', data)
-}
-
 export function listBalanceTransactions(params = {}) {
   return client.get('/client-balances/transactions', { params })
 }

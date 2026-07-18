@@ -1043,6 +1043,8 @@ chargeCardGroup := protected.Group("/charge-cards")
 chargeCardGroup.GET("", chargeAdminH.ListCards)
 chargeCardGroup.POST("", chargeAdminH.CreateCard)
 chargeCardGroup.POST("/batch", chargeAdminH.BatchCreateCards)
+chargeCardGroup.GET("/export-csv", chargeAdminH.ExportCardsCSV) // v3.3: CSV 导出（放在 /:id 之前避免路由冲突）
+chargeCardGroup.GET("/:id/usages", chargeAdminH.GetCardUsages)  // v3.3: 使用记录
 chargeCardGroup.DELETE("/:id", chargeAdminH.DeleteCard)
 }
 clientBalanceGroup := protected.Group("/client-balances")

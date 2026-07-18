@@ -1340,6 +1340,7 @@ type RedeemCardInput struct {
 
 // RedeemCard redeems a charge card for the client.
 func (s *CommerceService) RedeemCard(ctx context.Context, clientID int64, input RedeemCardInput) (*entity.ChargeOrder, error) {
+	// 1. 预检查（无锁，快速失败）
 	card, err := s.chargeCardRepo.GetByCardCode(ctx, input.CardCode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid card code")
@@ -1349,9 +1350,6 @@ func (s *CommerceService) RedeemCard(ctx context.Context, clientID int64, input 
 	}
 	if card.ExpiresAt != nil && card.ExpiresAt.Before(time.Now()) {
 		return nil, fmt.Errorf("card has expired")
-	}
-	if card.MaxUses > 0 && card.UsedCount >= card.MaxUses {
-		return nil, fmt.Errorf("card has been fully used")
 	}
 
 	tradeNo := generateTradeNo()
@@ -1368,18 +1366,44 @@ func (s *CommerceService) RedeemCard(ctx context.Context, clientID int64, input 
 		chargeOrder.PlanVariantID = &card.Value
 		chargeOrder.Amount = 0
 	}
-	if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
-		return nil, fmt.Errorf("failed to create charge order: %v", err)
-	}
-	if err := s.processChargePayment(ctx, chargeOrder); err != nil {
-		return nil, fmt.Errorf("failed to process card: %v", err)
-	}
-	s.chargeCardRepo.IncrementUsedCount(ctx, card.ID)
 
-	updated, _ := s.chargeCardRepo.GetByCardCode(ctx, input.CardCode)
-	if updated != nil && updated.MaxUses > 0 && updated.UsedCount >= updated.MaxUses {
-		updated.Status = entity.ChargeCardStatusUsed
-		s.chargeCardRepo.Update(ctx, updated)
+	// 2. 事务：锁卡 → 标记used → 创建订单 → 处理充值（全在一个事务内）
+	//    任一步骤失败，整个事务回滚，卡恢复 active，防止"卡消耗但充值未完成"
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 行锁卡
+		var lockedCard entity.ChargeCard
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", card.ID).First(&lockedCard).Error; err != nil {
+			return err
+		}
+		if lockedCard.Status != entity.ChargeCardStatusActive {
+			return fmt.Errorf("card has already been used")
+		}
+		// 立即标记为 used（WHERE status=active 防止并发竞争）
+		result := tx.Model(&entity.ChargeCard{}).
+			Where("id = ? AND status = ?", lockedCard.ID, entity.ChargeCardStatusActive).
+			Updates(map[string]interface{}{
+				"status":     entity.ChargeCardStatusUsed,
+				"used_count": 1,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("card has already been used")
+		}
+		// 创建订单（用 tx 保证在事务内）
+		if err := tx.Create(chargeOrder).Error; err != nil {
+			return err
+		}
+		// 处理充值（传入 tx，使用 savepoint 嵌套事务）
+		if err := s.processChargePayment(ctx, tx, chargeOrder); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to redeem card: %v", err)
 	}
 	return chargeOrder, nil
 }
@@ -1472,9 +1496,10 @@ func (s *CommerceService) StartCleanupScheduler(interval time.Duration) chan str
 // ============================================================
 
 // processChargePayment handles the actual payment processing after a charge is confirmed.
-// v3.3: 修复事务原子性 — 所有 DB 操作都使用 tx，不再通过 repo（repo 内部用 s.db，不在事务内）
-func (s *CommerceService) processChargePayment(ctx context.Context, order *entity.ChargeOrder) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// v3.3: 接受 exec 参数 — 传入 s.db 时创建独立事务；传入外层 tx 时使用 savepoint 嵌套事务。
+// 这样 RedeemCard 可以把"锁卡→标记used→创建订单→充值"放在一个事务内，任一步失败全部回滚。
+func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.DB, order *entity.ChargeOrder) error {
+	return exec.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if order.OrderType == entity.ChargeOrderTypeCharge && order.Amount > 0 {
 			// SELECT balance FOR UPDATE（行锁，防并发）
 			var bal entity.ClientBalance

@@ -98,6 +98,16 @@ export function deleteChargeCard(id) {
   return client.delete(`/charge-cards/${id}`)
 }
 
+// v3.3: 充值卡使用记录
+export function getCardUsages(id) {
+  return client.get(`/charge-cards/${id}/usages`)
+}
+
+// v3.3: 导出充值卡 CSV
+export function exportCardsCSV(params = {}) {
+  return client.get('/charge-cards/export-csv', { params, responseType: 'blob' })
+}
+
 // ──────────── Client Balances (客户余额) ────────────
 
 export function listClientBalances(params = {}) {

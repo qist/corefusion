@@ -32,6 +32,12 @@ var allowedModuleTypes = map[string]bool{
 	"ticket_list":       true,
 	"article_list":      true,
 	"shared_accounts":   true,
+	// New modules
+	"client_download":   true,
+	"streaming_status":  true,
+	"order_list":        true,
+	"node_list":         true,
+	"tutorial_cards":    true,
 }
 
 const (

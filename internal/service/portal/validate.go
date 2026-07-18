@@ -23,6 +23,15 @@ var allowedModuleTypes = map[string]bool{
 	"security_settings":  true,
 	"log_packages":        true,
 	"freeform":            true, // 自由模块：HTML+CSS+JS，不清洗
+	// Commercial modules (P0-P2)
+	"plan_list":         true,
+	"order_create":      true,
+	"charge_panel":      true,
+	"balance_display":   true,
+	"referral":          true,
+	"ticket_list":       true,
+	"article_list":      true,
+	"shared_accounts":   true,
 }
 
 const (

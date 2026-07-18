@@ -828,59 +828,6 @@ func (h *Handler) ListBalances(c *gin.Context) {
 	response.Paginated(c, result, total, limit, offset)
 }
 
-// AdjustBalanceInput is the input for adjusting client balance.
-type AdjustBalanceInput struct {
-	ClientID int64  `json:"client_id" binding:"required"`
-	Amount   int64  `json:"amount" binding:"required"` // positive=add, negative=deduct
-	Remark   string `json:"remark"`
-}
-
-// AdjustBalance handles POST /api/v1/client-balances/adjust.
-func (h *Handler) AdjustBalance(c *gin.Context) {
-	var input AdjustBalanceInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-
-	bal, err := h.balanceRepo.GetOrCreate(c.Request.Context(), input.ClientID)
-	if err != nil {
-		response.NotFound(c, "NOT_FOUND", "client not found")
-		return
-	}
-
-	balanceBefore := bal.Balance
-
-	if input.Amount > 0 {
-		bal, err = h.balanceRepo.AddBalance(c.Request.Context(), input.ClientID, input.Amount)
-	} else if input.Amount < 0 {
-		bal, err = h.balanceRepo.DeductBalance(c.Request.Context(), input.ClientID, -input.Amount)
-	}
-	if err != nil {
-		response.BadRequest(c, "ADJUST_FAILED", err.Error())
-		return
-	}
-
-	remark := input.Remark
-	if remark == "" {
-		remark = "管理员调整"
-	}
-	txType := entity.BalanceTxTypeCharge
-	amount := input.Amount
-	if input.Amount < 0 {
-		txType = entity.BalanceTxTypeConsume
-	}
-
-	if input.Amount != 0 {
-		txRecord := &entity.BalanceTransaction{
-			ClientID: input.ClientID, Type: txType, Amount: amount,
-			BalanceBefore: balanceBefore, BalanceAfter: bal.Balance, Remark: remark,
-		}
-		h.balanceTxRepo.Create(c.Request.Context(), txRecord)
-	}
-	response.OK(c, bal)
-}
-
 // ListBalanceTransactionsAdmin handles GET /api/v1/client-balances/transactions.
 func (h *Handler) ListBalanceTransactionsAdmin(c *gin.Context) {
 	clientIDStr := c.Query("client_id")

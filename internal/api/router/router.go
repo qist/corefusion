@@ -1050,7 +1050,6 @@ chargeCardGroup.DELETE("/:id", chargeAdminH.DeleteCard)
 clientBalanceGroup := protected.Group("/client-balances")
 {
 clientBalanceGroup.GET("", chargeAdminH.ListBalances)
-clientBalanceGroup.POST("/adjust", chargeAdminH.AdjustBalance)
 clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
 }
 

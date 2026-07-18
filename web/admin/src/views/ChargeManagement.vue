@@ -466,29 +466,6 @@
       </template>
     </el-dialog>
 
-    <!-- 余额调整弹窗 -->
-    <el-dialog v-model="adjustDialog" :title="'调整余额 - 客户#'+adjustForm.client_id" width="450px">
-      <el-form :model="adjustForm" label-width="80px" size="small">
-        <el-form-item :label="t('currency.balance')">
-          <span style="font-weight:600;color:#409eff">{{ formatAmount(adjustForm.current_balance || 0, adjustForm.currency || 'CNY') }}</span>
-        </el-form-item>
-        <el-form-item :label="t('currency.amount')">
-          <div style="display:flex;gap:8px;width:100%">
-            <el-select v-model="adjustForm.currency" style="width:140px" disabled>
-              <el-option v-for="c in CURRENCIES" :key="c.code" :label="`${c.code} ${c.symbol}`" :value="c.code" />
-            </el-select>
-            <el-input-number v-model="adjustForm.amount_yuan" :step="getAmountStep(adjustForm.currency)" :precision="getCurrencyDecimals(adjustForm.currency)" style="flex:1" />
-          </div>
-          <div style="font-size:12px;color:#909399;margin-top:4px">正数=充值，负数=扣减</div>
-        </el-form-item>
-        <el-form-item label="备注"><el-input v-model="adjustForm.remark" placeholder="管理员调整" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="adjustDialog=false">取消</el-button>
-        <el-button type="primary" :loading="adjustSaving" @click="saveAdjust">确认调整</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 余额流水弹窗 -->
     <el-dialog v-model="txDialog" :title="'余额流水 - 客户#'+txClientId" width="800px">
       <el-table :data="transactions" v-loading="txLoading" stripe size="small">
@@ -1044,9 +1021,6 @@ const balances = ref([])
 const balancesLoading = ref(false)
 const balancePage = ref(1)
 const balanceTotal = ref(0)
-const adjustDialog = ref(false)
-const adjustForm = ref({ client_id: 0, amount: 0, remark: '', current_balance: 0 })
-const adjustSaving = ref(false)
 const txDialog = ref(false)
 const txClientId = ref(0)
 const transactions = ref([])
@@ -1060,21 +1034,6 @@ async function fetchBalances() {
     balances.value = r.items || []
     balanceTotal.value = r.total || 0
   } catch {} finally { balancesLoading.value = false }
-}
-function showAdjustBalance(row) {
-  adjustForm.value = { client_id: row.client_id, amount_yuan: 0, currency: row.currency || 'CNY', remark: '', current_balance: row.balance }
-  adjustDialog.value = true
-}
-async function saveAdjust() {
-  if (adjustForm.value.amount_yuan === 0) { ElMessage.warning('调整金额不能为0'); return }
-  adjustSaving.value = true
-  try {
-    const amount = yuanToMinor(adjustForm.value.amount_yuan, adjustForm.value.currency)
-    await chargeApi.adjustClientBalance({ client_id: adjustForm.value.client_id, amount, currency: adjustForm.value.currency, remark: adjustForm.value.remark })
-    ElMessage.success('调整成功')
-    adjustDialog.value = false
-    fetchBalances()
-  } catch {} finally { adjustSaving.value = false }
 }
 async function showTransactions(row) {
   txClientId.value = row.client_id

@@ -184,6 +184,8 @@ type ChargeCard struct {
 	Remark            string     `gorm:"size:500" json:"remark"`
 	CreatedByAdminID  int64      `gorm:"not null;default:0;index" json:"created_by_admin"`           // 创建者管理员ID（关联 users 表）
 	CreatedByAdminName string    `gorm:"size:64;not null;default:''" json:"created_by_admin_name"`   // 创建者用户名（冗余，便于展示）
+	AgentID           *int64     `gorm:"index" json:"agent_id"`                                      // 代理员/推广员管理员ID（关联 users 表），为空表示官方
+	AgentName         string     `gorm:"size:64" json:"agent_name"`                                  // 代理员用户名（冗余，便于展示）
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }

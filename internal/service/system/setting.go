@@ -2,6 +2,8 @@ package system
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -804,4 +806,32 @@ func setIfExist(m map[string]string, key string, target *string) {
 	if v, ok := m[key]; ok && v != "" {
 		*target = v
 	}
+}
+
+// --- Encryption Key Config ---
+
+// IsEncryptionKeyConfigured checks if CF_SECRET_ENCRYPTION_KEY is set in .env.
+func (s *SettingService) IsEncryptionKeyConfigured() bool {
+	env := loadEnvFile()
+	key := env["CF_SECRET_ENCRYPTION_KEY"]
+	return key != "" && key != "0000000000000000000000000000000000000000000000000000000000000000"
+}
+
+// GenerateAndSaveEncryptionKey generates a random 32-byte key and saves it to .env.
+// Returns the generated key (for preview only) or error.
+// WARNING: Once generated, do not change this key, or all encrypted data (charge cards, charge site secrets, etc.) will be lost!
+func (s *SettingService) GenerateAndSaveEncryptionKey() (string, error) {
+	// Generate random 32 bytes
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	key := hex.EncodeToString(b)
+	
+	// Save to .env file
+	if err := saveEnvFile("CF_SECRET_ENCRYPTION_KEY", key); err != nil {
+		return "", err
+	}
+	
+	return key, nil
 }

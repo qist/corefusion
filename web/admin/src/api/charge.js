@@ -108,6 +108,12 @@ export function exportCardsCSV(params = {}) {
   return client.get('/charge-cards/export-csv', { params, responseType: 'blob' })
 }
 
+// ──────────── Users (管理员用户) ────────────
+
+export function listUsers(params = {}) {
+  return client.get('/users', { params })
+}
+
 // ──────────── Client Balances (客户余额) ────────────
 
 export function listClientBalances(params = {}) {

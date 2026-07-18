@@ -502,3 +502,25 @@ func (h *Handler) MigrateDBData(c *gin.Context) {
 		"rows_copied":   rows,
 	})
 }
+
+// --- Encryption Key Config ---
+
+// GetEncryptionKeyStatus handles GET /api/v1/system/encryption-key-status.
+func (h *Handler) GetEncryptionKeyStatus(c *gin.Context) {
+	configured := h.settingSvc.IsEncryptionKeyConfigured()
+	response.OK(c, gin.H{"configured": configured})
+}
+
+// GenerateEncryptionKey handles POST /api/v1/system/generate-encryption-key.
+func (h *Handler) GenerateEncryptionKey(c *gin.Context) {
+	if h.settingSvc.IsEncryptionKeyConfigured() {
+		response.BadRequest(c, "ALREADY_CONFIGURED", "encryption key is already configured")
+		return
+	}
+	key, err := h.settingSvc.GenerateAndSaveEncryptionKey()
+	if err != nil {
+		response.InternalError(c, "GENERATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"success": true, "message": "encryption key generated and saved to .env", "key_preview": key[:8] + "****"})
+}

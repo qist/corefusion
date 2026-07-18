@@ -420,7 +420,12 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 	now := time.Now()
 
 	if input.PayMethod == "balance" {
+		// v3.3: 先检查余额，不足时返回特殊错误码让前端引导选择其他支付方式
 		if paidAmount > 0 {
+			bal, err := s.balanceRepo.GetByClientID(ctx, clientID)
+			if err != nil || bal.Balance < paidAmount {
+				return nil, fmt.Errorf("INSUFFICIENT_BALANCE: need %d, have %d", paidAmount, bal.Balance)
+			}
 			if err := s.deductBalanceForOrder(ctx, clientID, paidAmount); err != nil {
 				return nil, fmt.Errorf("insufficient balance: %v", err)
 			}

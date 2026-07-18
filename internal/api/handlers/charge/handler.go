@@ -30,6 +30,7 @@ type Handler struct {
 	balanceRepo    *repository.ClientBalanceRepository
 	balanceTxRepo   *repository.BalanceTransactionRepository
 	clientRepo     *repository.ClientRepository
+	userRepo       *repository.UserRepository // v3.3: 用于查询代理员信息
 	db             *gorm.DB
 }
 
@@ -41,6 +42,7 @@ func NewHandler(
 	balanceRepo *repository.ClientBalanceRepository,
 	balanceTxRepo *repository.BalanceTransactionRepository,
 	clientRepo *repository.ClientRepository,
+	userRepo *repository.UserRepository, // v3.3: 用于查询代理员信息
 	db *gorm.DB,
 ) *Handler {
 	return &Handler{
@@ -50,6 +52,7 @@ func NewHandler(
 		balanceRepo:     balanceRepo,
 		balanceTxRepo:   balanceTxRepo,
 		clientRepo:      clientRepo,
+		userRepo:        userRepo,
 		db:              db,
 	}
 }
@@ -536,8 +539,15 @@ func (h *Handler) GetOrder(c *gin.Context) {
 func (h *Handler) ListCards(c *gin.Context) {
 	status := c.Query("status")
 	cardType := c.Query("card_type")
+	// v3.3: 支持按代理员筛选
+	var agentID *int64
+	if agentIDStr := c.Query("agent_id"); agentIDStr != "" {
+		if id, err := strconv.ParseInt(agentIDStr, 10, 64); err == nil {
+			agentID = &id
+		}
+	}
 	limit, offset := getPagination(c)
-	cards, total, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, limit, offset)
+	cards, total, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, agentID, limit, offset)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -556,6 +566,7 @@ type CreateCardInput struct {
 	BatchID        string     `json:"batch_id"`
 	Remark         string     `json:"remark"`
 	CardCodeFormat string     `json:"card_code_format"`
+	AgentID        *int64     `json:"agent_id"`                           // 代理员/推广员管理员ID，为空表示官方
 }
 
 // CreateCard handles POST /api/v1/charge-cards.
@@ -577,6 +588,13 @@ func (h *Handler) CreateCard(c *gin.Context) {
 	// v3.3: 关联创建者管理员
 	adminID := c.GetInt64("user_id")
 	adminName := c.GetString("username")
+	// v3.3: 关联代理员/推广员
+	var agentName string
+	if input.AgentID != nil && *input.AgentID > 0 {
+		if user, err := h.userRepo.GetByID(c.Request.Context(), *input.AgentID); err == nil {
+			agentName = user.Username
+		}
+	}
 	card := entity.ChargeCard{
 		CardCode:           GenerateCardCode(input.CardCodeFormat),
 		CardType:           input.CardType,
@@ -588,6 +606,8 @@ func (h *Handler) CreateCard(c *gin.Context) {
 		ExpiresAt:          input.ExpiresAt,
 		CreatedByAdminID:   adminID,
 		CreatedByAdminName: adminName,
+		AgentID:            input.AgentID,
+		AgentName:          agentName,
 	}
 	if err := h.chargeCardRepo.Create(c.Request.Context(), &card); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -613,6 +633,7 @@ type BatchCreateCardsInput struct {
 	BatchID        string  `json:"batch_id"`
 	Remark         string  `json:"remark"`
 	CardCodeFormat string  `json:"card_code_format"`
+	AgentID        *int64  `json:"agent_id"`                           // 代理员/推广员管理员ID，为空表示官方
 }
 
 // BatchCreateCards handles POST /api/v1/charge-cards/batch.
@@ -644,6 +665,13 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 	// v3.3: 关联创建者管理员
 	adminID := c.GetInt64("user_id")
 	adminName := c.GetString("username")
+	// v3.3: 关联代理员/推广员
+	var agentName string
+	if input.AgentID != nil && *input.AgentID > 0 {
+		if user, err := h.userRepo.GetByID(c.Request.Context(), *input.AgentID); err == nil {
+			agentName = user.Username
+		}
+	}
 
 	cards := make([]entity.ChargeCard, input.Count)
 	for i := 0; i < input.Count; i++ {
@@ -657,6 +685,8 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 			Remark:             input.Remark,
 			CreatedByAdminID:   adminID,
 			CreatedByAdminName: adminName,
+			AgentID:            input.AgentID,
+			AgentName:          agentName,
 		}
 		if input.ExpiresAt != nil {
 			t, err := time.Parse(time.RFC3339, *input.ExpiresAt)
@@ -730,8 +760,15 @@ func (h *Handler) GetCardUsages(c *gin.Context) {
 func (h *Handler) ExportCardsCSV(c *gin.Context) {
 	status := c.Query("status")
 	cardType := c.Query("card_type")
+	// v3.3: 支持按代理员筛选导出
+	var agentID *int64
+	if agentIDStr := c.Query("agent_id"); agentIDStr != "" {
+		if id, err := strconv.ParseInt(agentIDStr, 10, 64); err == nil {
+			agentID = &id
+		}
+	}
 
-	cards, _, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, 100000, 0)
+	cards, _, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, agentID, 100000, 0)
 	if err != nil {
 		response.InternalError(c, "EXPORT_FAILED", err.Error())
 		return

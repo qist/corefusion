@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -105,6 +106,11 @@ func (h *CommerceHandler) CreateOrder(c *gin.Context) {
 	}
 	result, err := h.svc.CreateOrder(c.Request.Context(), clientID, input)
 	if err != nil {
+		// v3.3: 余额不足时返回特殊错误码，前端引导选择其他支付方式
+		if strings.Contains(err.Error(), "INSUFFICIENT_BALANCE:") {
+			response.PaymentRequired(c, "INSUFFICIENT_BALANCE", err.Error())
+			return
+		}
 		response.BadRequest(c, "CREATE_ORDER_FAILED", err.Error())
 		return
 	}

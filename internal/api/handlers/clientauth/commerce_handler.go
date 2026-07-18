@@ -1,8 +1,10 @@
 package clientauth
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -266,13 +268,24 @@ func (h *CommerceHandler) HandleChargeCallback(c *gin.Context) {
 		response.BadRequest(c, "INVALID_SITE_ID", "invalid site ID")
 		return
 	}
+
+	// v3.2: 读取原始请求体，用于 body_hash = SHA256(raw_body) 计算
+	// 必须在 JSON 绑定之前读取，因为 ShouldBindJSON 会消费 Body
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", "failed to read request body")
+		return
+	}
+	// 恢复 Body 供后续 JSON 绑定使用
+	c.Request.Body = io.NopCloser(bytes.NewReader(rawBody))
+
 	var input clientauth.ChargeCallbackInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
 	remoteIP := netutil.GetRealIP(c.Request)
-	if err := h.svc.HandleChargeCallback(c.Request.Context(), siteID, remoteIP, requestID, input); err != nil {
+	if err := h.svc.HandleChargeCallback(c.Request.Context(), siteID, remoteIP, requestID, rawBody, input); err != nil {
 		response.BadRequest(c, "CALLBACK_FAILED", err.Error())
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // Handler handles admin charge management HTTP requests.
@@ -247,6 +249,25 @@ func (h *Handler) VerifyDomainHTTP(c *gin.Context) {
 	}
 
 	verifyURL := fmt.Sprintf("%s/%s.txt", strings.TrimRight(site.SiteURL, "/"), site.VerifyToken)
+
+	// SSRF 防护：解析 URL 域名的 IP 地址，禁止访问内网/保留地址
+	parsedURL, err := url.Parse(verifyURL)
+	if err != nil {
+		response.BadRequest(c, "INVALID_URL", fmt.Sprintf("invalid verify URL: %v", err))
+		return
+	}
+	ips, err := net.LookupIP(parsedURL.Hostname())
+	if err != nil {
+		response.BadRequest(c, "DNS_FAILED", fmt.Sprintf("DNS 解析失败: %v", err))
+		return
+	}
+	for _, ip := range ips {
+		if netutil.IsPrivateIP(ip.String()) || netutil.IsReservedIP(ip.String()) {
+			response.BadRequest(c, "SSRF_BLOCKED", fmt.Sprintf("域名解析到内网/保留地址: %s", ip))
+			return
+		}
+	}
+
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	resp, err := httpClient.Get(verifyURL)
 	if err != nil {
@@ -351,7 +372,10 @@ func (h *Handler) GetSiteIntegrationDoc(c *gin.Context) {
 		"currency":              site.Currency,
 		"supported_methods":     site.SupportedMethods,
 		"signature_algorithm":   "HMAC-SHA256",
-		"signature_fields":      []string{"amount", "currency", "nonce", "site_trade_no", "timestamp", "trade_no"},
+		"signature_fields":      []string{"amount", "body_hash", "currency", "nonce", "site_trade_no", "timestamp", "trade_no", "version"},
+		"signature_version":     "v1",
+		"body_hash_algorithm":   "SHA-256(raw_body) hex-encoded",
+		"body_hash_note":        "body_hash and version are auto-included by CoreFusion server; do not send them in the request body but include them in signature payload",
 		"timestamp_tolerance":   300,
 		"nonce_required":        true,
 		"amount_unit":           "cents (分)",
@@ -457,6 +481,7 @@ func (h *Handler) RefundOrder(c *gin.Context) {
 				ClientID:      order.ClientID,
 				Type:          entity.BalanceTxTypeRefund,
 				Amount:        order.Amount,
+				BalanceBefore: bal.Balance - order.Amount,
 				BalanceAfter:  bal.Balance,
 				RelatedChargeOrderID: &order.ID,
 				Remark:        remark,
@@ -689,6 +714,8 @@ func (h *Handler) AdjustBalance(c *gin.Context) {
 		return
 	}
 
+	balanceBefore := bal.Balance
+
 	if input.Amount > 0 {
 		bal, err = h.balanceRepo.AddBalance(c.Request.Context(), input.ClientID, input.Amount)
 	} else if input.Amount < 0 {
@@ -712,7 +739,7 @@ func (h *Handler) AdjustBalance(c *gin.Context) {
 	if input.Amount != 0 {
 		txRecord := &entity.BalanceTransaction{
 			ClientID: input.ClientID, Type: txType, Amount: amount,
-			BalanceAfter: bal.Balance, Remark: remark,
+			BalanceBefore: balanceBefore, BalanceAfter: bal.Balance, Remark: remark,
 		}
 		h.balanceTxRepo.Create(c.Request.Context(), txRecord)
 	}
@@ -962,7 +989,8 @@ type RotateSecretInput struct {
 }
 
 // RotateSecret handles POST /api/v1/charge-sites/:id/rotate-secret.
-// Rotates the callback secret: current secret becomes prev (for transition), new secret becomes current.
+// v3.2: Uses charge_site_secrets table for multi-version key management.
+// Current active secret becomes legacy, new secret becomes active.
 func (h *Handler) RotateSecret(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -979,29 +1007,57 @@ func (h *Handler) RotateSecret(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	// 当前密钥变为旧密钥（用于过渡期双密钥验证）
-	site.EncryptedSecretPrev = site.EncryptedSecret
 	// 加密新密钥
 	encrypted, err := crypto.EncryptSecret(input.NewSecret)
 	if err != nil {
 		response.InternalError(c, "ENCRYPT_FAILED", err.Error())
 		return
 	}
-	site.EncryptedSecret = encrypted
-	site.CallbackSecret = ""
-	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
-		response.InternalError(c, "UPDATE_FAILED", err.Error())
+
+	newVersion := site.SecretVersion + 1
+
+	// v3.2: 在 charge_site_secrets 表中操作
+	err = h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// 将当前 active 密钥降级为 legacy
+		tx.Model(&entity.ChargeSiteSecret{}).
+			Where("site_id = ? AND status = ?", id, entity.SecretStatusActive).
+			Update("status", entity.SecretStatusLegacy)
+
+		// 插入新密钥为 active
+		newSecretRecord := &entity.ChargeSiteSecret{
+			SiteID:          id,
+			Version:         newVersion,
+			EncryptedSecret: encrypted,
+			Status:          entity.SecretStatusActive,
+			CreatedAt:       time.Now(),
+		}
+		if err := tx.Create(newSecretRecord).Error; err != nil {
+			return err
+		}
+
+		// 更新 ChargeSite 兼容字段（旧逻辑回退用）
+		site.SecretVersion = newVersion
+		site.EncryptedSecret = encrypted
+		site.CallbackSecret = ""
+		return tx.Model(&entity.ChargeSite{}).Where("id = ?", id).
+			Updates(map[string]interface{}{
+				"secret_version":   newVersion,
+				"encrypted_secret": encrypted,
+				"callback_secret":  "",
+			}).Error
+	})
+	if err != nil {
+		response.InternalError(c, "ROTATE_FAILED", err.Error())
 		return
 	}
-	h.maskSiteSecret(site)
 	response.OK(c, gin.H{
-		"message":           "secret rotated, old secret kept for transition",
-		"has_prev_secret":   site.EncryptedSecretPrev != "",
+		"message":     "secret rotated using v3.2 charge_site_secrets table",
+		"new_version": newVersion,
 	})
 }
 
 // ClearPrevSecret handles POST /api/v1/charge-sites/:id/clear-prev-secret.
-// Removes the previous secret after the transition period is over.
+// v3.2: Expires all legacy secrets in charge_site_secrets table.
 func (h *Handler) ClearPrevSecret(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -1013,10 +1069,18 @@ func (h *Handler) ClearPrevSecret(c *gin.Context) {
 		response.NotFound(c, "NOT_FOUND", "charge site not found")
 		return
 	}
-	site.EncryptedSecretPrev = ""
-	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
-		response.InternalError(c, "UPDATE_FAILED", err.Error())
+	now := time.Now()
+	if err := h.db.WithContext(c.Request.Context()).Model(&entity.ChargeSiteSecret{}).
+		Where("site_id = ? AND status = ?", id, entity.SecretStatusLegacy).
+		Updates(map[string]interface{}{
+			"status":     entity.SecretStatusExpired,
+			"expired_at": now,
+		}).Error; err != nil {
+		response.InternalError(c, "CLEAR_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"message": "previous secret cleared"})
+	// 清除兼容字段旧密钥
+	site.EncryptedSecretPrev = ""
+	h.chargeSiteRepo.Update(c.Request.Context(), site)
+	response.OK(c, gin.H{"message": "legacy secrets expired"})
 }

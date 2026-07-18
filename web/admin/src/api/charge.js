@@ -40,8 +40,10 @@ export function getSiteIntegrationDoc(id) {
 
 // ──────────── Secret Rotation (密钥轮换) ────────────
 
+// v3.3: newSecret 为空时后端自动生成
 export function rotateSiteSecret(id, newSecret) {
-  return client.post(`/charge-sites/${id}/rotate-secret`, { new_secret: newSecret })
+  const body = newSecret ? { new_secret: newSecret } : {}
+  return client.post(`/charge-sites/${id}/rotate-secret`, body)
 }
 
 export function clearPrevSiteSecret(id) {

@@ -32,10 +32,11 @@
           </el-table-column>
           <el-table-column prop="currency" label="货币" width="70" />
           <el-table-column prop="sort_order" label="排序" width="60" />
-          <el-table-column label="操作" width="280">
+          <el-table-column label="操作" width="350">
             <template #default="{row}">
               <el-button size="small" @click="showEditSite(row)">编辑</el-button>
               <el-button size="small" type="primary" @click="showVerifyDialog(row)">验证</el-button>
+              <el-button size="small" type="warning" @click="rotateSiteSecret(row)">轮换密钥</el-button>
               <el-button size="small" type="info" @click="showIntegrationDoc(row)">文档</el-button>
               <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?'禁用':'启用' }}</el-button>
               <el-button size="small" type="danger" @click="deleteSite(row)">删除</el-button>
@@ -198,8 +199,14 @@
         <el-form-item label="站点URL"><el-input v-model="siteForm.site_url" placeholder="https://pay.example.com" /></el-form-item>
         <el-form-item label="API Key"><el-input v-model="siteForm.api_key" type="password" show-password /></el-form-item>
         <el-form-item label="回调密钥">
-          <el-input v-model="siteForm.callback_secret" type="password" show-password placeholder="HMAC-SHA256 签名密钥" />
-          <div style="font-size:11px;color:#e6a23c;margin-top:4px">⚠ 必须配置，否则回调将被拒绝。用于 HMAC-SHA256 签名验证</div>
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="siteForm.callback_secret" type="password" show-password placeholder="留空将自动生成" style="flex:1" />
+            <el-button @click="generateSecretField">🎲 自动生成</el-button>
+          </div>
+          <div style="font-size:11px;color:#999;margin-top:4px">
+            <span v-if="editingSite">留空不修改现有密钥。点击「轮换密钥」可生成新密钥</span>
+            <span v-else>留空将自动生成强随机密钥（推荐）</span>
+          </div>
         </el-form-item>
         <el-form-item label="IP白名单">
           <el-input v-model="siteForm.callback_whitelist" type="textarea" :rows="2" placeholder='JSON格式，如 ["1.2.3.4","10.0.0.0/24"]' />
@@ -496,6 +503,38 @@
       </el-table>
     </el-dialog>
 
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 密钥展示弹窗（仅显示一次） -->
+    <el-dialog v-model="secretDialog" title="🔑 回调密钥（仅显示一次）" width="560px" :close-on-click-modal="false">
+      <el-alert type="warning" :closable="false" style="margin-bottom:16px">
+        <template #title>
+          ⚠ 此密钥仅显示一次！请立即复制并配置到支付平台，关闭后无法再次查看。
+        </template>
+      </el-alert>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="站点">{{ secretDialogSite }}</el-descriptions-item>
+        <el-descriptions-item label="密钥版本">v{{ secretDialogVersion }}</el-descriptions-item>
+        <el-descriptions-item label="回调密钥">
+          <div style="display:flex;gap:8px;align-items:center">
+            <code style="font-family:monospace;font-size:13px;word-break:break-all;flex:1;background:#f5f7fa;padding:8px;border-radius:4px">{{ secretDialogValue }}</code>
+            <el-button size="small" type="primary" @click="copySecret(secretDialogValue)">复制</el-button>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="回调地址">
+          <div style="display:flex;gap:8px;align-items:center">
+            <code style="font-family:monospace;font-size:12px;word-break:break-all;flex:1">{{ secretDialogCallbackUrl }}</code>
+            <el-button size="small" @click="copyText(secretDialogCallbackUrl)">复制</el-button>
+          </div>
+        </el-descriptions-item>
+      </el-descriptions>
+      <div style="margin-top:12px;font-size:12px;color:#909399">
+        此密钥用于 HMAC-SHA256 签名验证。支付平台回调请求需使用此密钥计算签名，CoreFusion 服务端会验证签名是否正确。
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="secretDialog=false">我已复制保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量生成结果弹窗 -->
     <el-dialog v-model="batchResultDialog" title="批量生成结果" width="700px">
       <el-alert type="success" :closable="false" style="margin-bottom:12px">
@@ -554,6 +593,7 @@ const siteForm = ref({})
 function emptySiteForm() {
   return { name: '', site_url: '', api_key: '', callback_secret: '', callback_whitelist: '', currency: defaultCurrency.value, supported_methods_arr: [], icon_url: '', sort_order: 0, enabled: true }
 }
+// v3.3: callback_secret 留空，后端自动生成强随机密钥
 async function fetchSites() {
   sitesLoading.value = true
   try { sites.value = (await chargeApi.listChargeSites()) || [] } catch {} finally { sitesLoading.value = false }
@@ -574,6 +614,60 @@ function copyCallbackUrl(siteId) {
   const url = window.location.origin + `/api/v1/charge/callback/${siteId}`
   navigator.clipboard.writeText(url)
   ElMessage.success('已复制回调地址')
+}
+
+// ──────── Secret Rotation & Generation (v3.3) ────────
+const secretDialog = ref(false)
+const secretDialogValue = ref('')
+const secretDialogSite = ref('')
+const secretDialogVersion = ref(1)
+const secretDialogCallbackUrl = ref('')
+
+function showSecretDialog(siteName, siteId, version, plaintextSecret) {
+  secretDialogSite.value = siteName
+  secretDialogVersion.value = version
+  secretDialogValue.value = plaintextSecret
+  secretDialogCallbackUrl.value = window.location.origin + `/api/v1/charge/callback/${siteId}`
+  secretDialog.value = true
+}
+
+function copySecret(val) {
+  navigator.clipboard.writeText(val)
+  ElMessage.success('密钥已复制')
+}
+function copyText(val) {
+  navigator.clipboard.writeText(val)
+  ElMessage.success('已复制')
+}
+
+// 前端生成随机密钥字符串（用于编辑表单预填）
+function generateSecretField() {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  siteForm.value.callback_secret = 'cs_' + hex
+  ElMessage.success('已生成随机密钥')
+}
+
+// 轮换密钥 — 后端自动生成，返回明文（仅此一次）
+async function rotateSiteSecret(row) {
+  await ElMessageBox.confirm(
+    `确定轮换站点「${row.name}」的回调密钥？\n\n轮换后旧密钥将变为过渡态（过渡期内仍可验签），新密钥立即生效。\n请确保已准备好将新密钥配置到支付平台。`,
+    '轮换密钥确认',
+    { type: 'warning', confirmButtonText: '确认轮换', cancelButtonText: '取消' }
+  )
+  try {
+    const r = await chargeApi.rotateSiteSecret(row.id) // 不传 newSecret，后端自动生成
+    if (r && r.plaintext_secret) {
+      showSecretDialog(row.name, row.id, r.new_version, r.plaintext_secret)
+      ElMessage.success('密钥已轮换')
+    } else {
+      ElMessage.success('密钥已轮换')
+    }
+    fetchSites()
+  } catch (e) {
+    if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
+  }
 }
 
 // ──────── Domain Verification ────────
@@ -651,10 +745,17 @@ async function saveSite() {
     delete payload.id; delete payload.created_at; delete payload.updated_at
     if (editingSite.value) {
       await chargeApi.updateChargeSite(editingSite.value.id, payload)
+      ElMessage.success('保存成功')
     } else {
-      await chargeApi.createChargeSite(payload)
+      // v3.3: 创建时后端自动生成密钥，返回明文（仅此一次）
+      const r = await chargeApi.createChargeSite(payload)
+      if (r && r.plaintext_secret) {
+        showSecretDialog(r.site?.name || siteForm.value.name, r.site?.id || 0, 1, r.plaintext_secret)
+        ElMessage.success('创建成功，密钥已生成')
+      } else {
+        ElMessage.success('保存成功')
+      }
     }
-    ElMessage.success('保存成功')
     siteDialog.value = false
     fetchSites()
   } catch {}

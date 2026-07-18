@@ -94,24 +94,44 @@ func (h *Handler) CreateSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	// Encrypt callback_secret if provided
-	if site.CallbackSecret != "" {
-		encrypted, err := crypto.EncryptSecret(site.CallbackSecret)
-		if err != nil {
-			response.InternalError(c, "ENCRYPT_FAILED", err.Error())
-			return
-		}
-		site.EncryptedSecret = encrypted
-		site.CallbackSecret = "" // 不存明文
+	// v3.3: 如果管理员未提供 callback_secret，自动生成强随机密钥
+	plaintextSecret := site.CallbackSecret
+	if plaintextSecret == "" {
+		plaintextSecret = generateCallbackSecret()
 	}
+	encrypted, err := crypto.EncryptSecret(plaintextSecret)
+	if err != nil {
+		response.InternalError(c, "ENCRYPT_FAILED", err.Error())
+		return
+	}
+	site.EncryptedSecret = encrypted
+	site.SecretVersion = 1
+	site.CallbackSecret = "" // 不存明文
 	// Extract domain from site URL
 	site.Domain = extractDomain(site.SiteURL)
 	if err := h.chargeSiteRepo.Create(c.Request.Context(), &site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
+
+	// v3.2: 同步写入 charge_site_secrets 表
+	secretRecord := &entity.ChargeSiteSecret{
+		SiteID:          site.ID,
+		Version:         1,
+		EncryptedSecret: encrypted,
+		Status:          entity.SecretStatusActive,
+		CreatedAt:       time.Now(),
+	}
+	h.db.WithContext(c.Request.Context()).Create(secretRecord)
+
 	h.maskSiteSecret(&site)
-	response.Created(c, site)
+	// v3.3: 创建时返回明文密钥（仅此一次），供管理员复制给支付平台
+	response.Created(c, gin.H{
+		"site":                 site,
+		"plaintext_secret":     plaintextSecret,
+		"secret_shown_once":    true,
+		"secret_message":       "请立即复制此密钥到支付平台配置，此密钥仅显示一次",
+	})
 }
 
 // UpdateSite handles PUT /api/v1/charge-sites/:id.
@@ -892,6 +912,14 @@ func getPagination(c *gin.Context) (limit, offset int) {
 	return
 }
 
+// generateCallbackSecret generates a strong random callback secret (48 chars hex = 192-bit entropy).
+// v3.3: 用于 CreateSite / RotateSecret 自动生成，避免管理员手动设置弱密钥。
+func generateCallbackSecret() string {
+	b := make([]byte, 24) // 24 bytes = 48 hex chars
+	rand.Read(b)
+	return "cs_" + hex.EncodeToString(b) // cs_ 前缀便于识别
+}
+
 // maskSiteSecret masks the callback_secret for API responses and hides the encrypted_secret.
 func (h *Handler) maskSiteSecret(site *entity.ChargeSite) {
 	// Try to decrypt for masking; if decryption fails, check plaintext fallback
@@ -984,13 +1012,14 @@ func (h *Handler) RetryCallback(c *gin.Context) {
 // ============================================================
 
 // RotateSecretInput is the input for rotating the callback secret.
+// v3.3: new_secret 改为可选 — 为空时自动生成强随机密钥，避免人工出错
 type RotateSecretInput struct {
-	NewSecret string `json:"new_secret" binding:"required"`
+	NewSecret string `json:"new_secret"` // 可选，为空则自动生成
 }
 
 // RotateSecret handles POST /api/v1/charge-sites/:id/rotate-secret.
 // v3.2: Uses charge_site_secrets table for multi-version key management.
-// Current active secret becomes legacy, new secret becomes active.
+// v3.3: new_secret 为空时自动生成，返回明文密钥（仅此一次）
 func (h *Handler) RotateSecret(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -1003,12 +1032,16 @@ func (h *Handler) RotateSecret(c *gin.Context) {
 		return
 	}
 	var input RotateSecretInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
+	_ = c.ShouldBindJSON(&input) // v3.3: 不再 required
+
+	// v3.3: 为空时自动生成强随机密钥
+	plaintextSecret := input.NewSecret
+	if plaintextSecret == "" {
+		plaintextSecret = generateCallbackSecret()
 	}
+
 	// 加密新密钥
-	encrypted, err := crypto.EncryptSecret(input.NewSecret)
+	encrypted, err := crypto.EncryptSecret(plaintextSecret)
 	if err != nil {
 		response.InternalError(c, "ENCRYPT_FAILED", err.Error())
 		return
@@ -1051,8 +1084,11 @@ func (h *Handler) RotateSecret(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{
-		"message":     "secret rotated using v3.2 charge_site_secrets table",
-		"new_version": newVersion,
+		"message":           "secret rotated",
+		"new_version":       newVersion,
+		"plaintext_secret":  plaintextSecret,
+		"secret_shown_once": true,
+		"secret_message":    "请立即复制此密钥到支付平台配置，此密钥仅显示一次",
 	})
 }
 

@@ -110,6 +110,7 @@
           <div style="display:flex;gap:8px">
             <el-button type="primary" size="small" @click="showCreateCard">+ 新增卡</el-button>
             <el-button type="success" size="small" @click="showBatchCreate">批量生成</el-button>
+            <el-button type="info" size="small" @click="doExportCSV">📥 导出CSV</el-button>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -127,7 +128,11 @@
         </div>
         <el-table :data="cards" v-loading="cardsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="card_code" label="卡号" width="200" />
+          <el-table-column label="卡号" width="200">
+            <template #default="{row}">
+              <span style="font-family:monospace">{{ row.card_code_masked || row.card_code }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="类型" width="80">
             <template #default="{row}">
               <el-tag :type="row.card_type==='balance'?'':'warning'" size="small">{{ row.card_type==='balance'?'金额':'套餐' }}</el-tag>
@@ -139,10 +144,18 @@
               <el-tag v-else type="warning" size="small">{{ findVariantName(row.value) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="使用" width="80">
-            <template #default="{row}">{{ row.used_count }}/{{ row.max_uses||'∞' }}</template>
+          <el-table-column label="使用" width="70">
+            <template #default="{row}">
+              <el-tag :type="row.status==='active'?'success':'info'" size="small">{{ row.status==='active'?'未用':'已用' }}</el-tag>
+            </template>
           </el-table-column>
           <el-table-column prop="batch_id" label="批次" width="140" show-overflow-tooltip />
+          <el-table-column label="创建者" width="100">
+            <template #default="{row}">
+              <span v-if="row.created_by_admin_name">{{ row.created_by_admin_name }}</span>
+              <span v-else style="color:#999">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="80">
             <template #default="{row}">
               <el-tag :type="cardStatusColor(row.status)" size="small">{{ cardStatusLabel(row.status) }}</el-tag>
@@ -151,8 +164,9 @@
           <el-table-column label="过期时间" width="160">
             <template #default="{row}">{{ row.expires_at?.substring(0,10) || '永不过期' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="80">
+          <el-table-column label="操作" width="150">
             <template #default="{row}">
+              <el-button size="small" @click="showCardUsages(row)">使用记录</el-button>
               <el-button size="small" type="danger" @click="deleteCard(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -400,7 +414,6 @@
             <el-option v-for="f in cardCodeFormats" :key="f.value" :label="formatPreview(f.value, cardForm.card_prefix)" :value="f.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="可用次数"><el-input-number v-model="cardForm.max_uses" :min="1" style="width:100%" /></el-form-item>
         <el-form-item label="过期时间"><el-date-picker v-model="cardForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="cardForm.remark" /></el-form-item>
       </el-form>
@@ -435,7 +448,6 @@
           <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
         </el-form-item>
         <el-form-item label="数量"><el-input-number v-model="batchForm.count" :min="1" :max="1000" style="width:100%" /></el-form-item>
-        <el-form-item label="每卡次数"><el-input-number v-model="batchForm.max_uses" :min="1" style="width:100%" /></el-form-item>
         <el-form-item label="卡号前缀">
           <el-input v-model="batchForm.card_prefix" placeholder="CF" style="width:100%" />
           <div style="font-size:12px;color:#909399;margin-top:4px">留空则无前缀，如 CF、VIP、GIFT 等</div>
@@ -535,6 +547,56 @@
       </template>
     </el-dialog>
 
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 充值卡使用记录弹窗 -->
+    <el-dialog v-model="usageDialog" :title="'使用记录 - 卡#' + usageCardId" width="750px">
+      <el-alert v-if="usageItems.length === 0 && !usageLoading" type="info" :closable="false">
+        <template #title>此卡尚未被使用</template>
+      </el-alert>
+      <el-table :data="usageItems" v-loading="usageLoading" stripe size="small" v-else>
+        <el-table-column prop="id" label="订单ID" width="70" />
+        <el-table-column prop="trade_no" label="交易号" width="200" show-overflow-tooltip />
+        <el-table-column prop="client_email" label="使用者邮箱" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="client_nickname" label="昵称" width="100" show-overflow-tooltip />
+        <el-table-column label="金额" width="100">
+          <template #default="{row}">{{ formatAmount(row.amount, row.currency || 'CNY') }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="80">
+          <template #default="{row}">
+            <el-tag :type="chargeOrderStatusColor(row.status)" size="small">{{ chargeOrderStatusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="使用时间" width="160">
+          <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="usageDialog=false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 卡号展示弹窗（仅显示一次） -->
+    <el-dialog v-model="cardCodeDialog" title="🎫 充值卡号（仅显示一次）" width="500px" :close-on-click-modal="false">
+      <el-alert type="warning" :closable="false" style="margin-bottom:16px">
+        <template #title>
+          ⚠ 此卡号仅显示一次！请立即复制保存，关闭后列表中将显示脱敏卡号。
+        </template>
+      </el-alert>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item v-if="cardCodeDialogBatchId" label="批次号">{{ cardCodeDialogBatchId }}</el-descriptions-item>
+        <el-descriptions-item label="卡号">
+          <div style="display:flex;gap:8px;align-items:center">
+            <code style="font-family:monospace;font-size:14px;word-break:break-all;flex:1;background:#f5f7fa;padding:8px;border-radius:4px">{{ cardCodeDialogValue }}</code>
+            <el-button size="small" type="primary" @click="copyCardCode(cardCodeDialogValue)">复制</el-button>
+          </div>
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button type="primary" @click="cardCodeDialog=false">我已复制保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量生成结果弹窗 -->
     <el-dialog v-model="batchResultDialog" title="批量生成结果" width="700px">
       <el-alert type="success" :closable="false" style="margin-bottom:12px">
@@ -545,8 +607,8 @@
         <el-table-column :label="t('currency.amount')" width="200" show-overflow-tooltip>
           <template #default="{row}">{{ batchResultType==='balance' ? formatAmount(row.value, batchResultCurrency) : findVariantName(row.value) }}</template>
         </el-table-column>
-        <el-table-column label="次数" width="80">
-          <template #default="{row}">{{ row.max_uses }}</template>
+        <el-table-column label="状态" width="70">
+          <template #default><el-tag type="success" size="small">未用</el-tag></template>
         </el-table-column>
       </el-table>
       <template #footer>
@@ -668,6 +730,22 @@ async function rotateSiteSecret(row) {
   } catch (e) {
     if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
   }
+}
+
+// ──────── Card Code Display (v3.3: 仅显示一次) ────────
+const cardCodeDialog = ref(false)
+const cardCodeDialogValue = ref('')
+const cardCodeDialogBatchId = ref('')
+
+function showCardCodeDialog(plaintextCode, batchId) {
+  cardCodeDialogValue.value = plaintextCode
+  cardCodeDialogBatchId.value = batchId
+  cardCodeDialog.value = true
+}
+
+function copyCardCode(val) {
+  navigator.clipboard.writeText(val)
+  ElMessage.success('卡号已复制')
 }
 
 // ──────── Domain Verification ────────
@@ -834,7 +912,7 @@ function showCreateCard() {
   cardForm.value = {
     card_type: 'balance', value_yuan: 10, currency: defaultCurrency.value, plan_variant_id: null,
     card_prefix: loadSavedPrefix(), card_code_format: loadSavedFormat(),
-    max_uses: 1, expires_at: null, remark: ''
+    expires_at: null, remark: ''
   }
   cardDialog.value = true
 }
@@ -857,10 +935,15 @@ async function saveCard() {
     delete payload.plan_variant_id
     delete payload.card_prefix
     delete payload.value_yuan
-    await chargeApi.createChargeCard(payload)
+    const r = await chargeApi.createChargeCard(payload)
     // 记住选择
     saveFormatAndPrefix(cardForm.value.card_code_format, cardForm.value.card_prefix)
-    ElMessage.success('创建成功')
+    // v3.3: 后端返回明文卡号（仅此一次），弹窗展示
+    if (r && r.plaintext_card_code) {
+      showCardCodeDialog(r.plaintext_card_code, r.card?.batch_id || '')
+    } else {
+      ElMessage.success('创建成功')
+    }
     cardDialog.value = false
     fetchCards()
   } catch {}
@@ -868,7 +951,7 @@ async function saveCard() {
 function showBatchCreate() {
   batchForm.value = {
     card_type: 'balance', value_yuan: 10, currency: defaultCurrency.value, plan_variant_id: null, count: 10,
-    max_uses: 1, expires_at: null, remark: '',
+    expires_at: null, remark: '',
     card_prefix: loadSavedPrefix(), card_code_format: loadSavedFormat()
   }
   batchDialog.value = true
@@ -914,8 +997,46 @@ async function saveBatch() {
   } catch {} finally { batchSaving.value = false }
 }
 async function deleteCard(row) {
-  await ElMessageBox.confirm(`确定删除充值卡「${row.card_code}」？`, '确认')
+  await ElMessageBox.confirm(`确定删除充值卡「${row.card_code_masked || row.card_code}」？`, '确认')
   try { await chargeApi.deleteChargeCard(row.id); ElMessage.success('删除成功'); fetchCards() } catch {}
+}
+
+// ──────── Card Usage Records (v3.3) ────────
+const usageDialog = ref(false)
+const usageCardId = ref(0)
+const usageItems = ref([])
+const usageLoading = ref(false)
+
+async function showCardUsages(row) {
+  usageCardId.value = row.id
+  usageDialog.value = true
+  usageLoading.value = true
+  usageItems.value = []
+  try {
+    const r = await chargeApi.getCardUsages(row.id)
+    usageItems.value = r.items || []
+  } catch { usageItems.value = [] } finally { usageLoading.value = false }
+}
+
+// ──────── CSV Export (v3.3) ────────
+async function doExportCSV() {
+  try {
+    const params = {}
+    if (cardStatusFilter.value) params.status = cardStatusFilter.value
+    if (cardTypeFilter.value) params.card_type = cardTypeFilter.value
+    const blob = await chargeApi.exportCardsCSV(params)
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `charge-cards-${new Date().toISOString().substring(0,10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('CSV 导出成功')
+  } catch (e) {
+    if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
+  }
 }
 
 // ──────── Client Balances ────────

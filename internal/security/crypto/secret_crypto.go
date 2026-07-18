@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -127,4 +128,20 @@ func MaskSecret(secret string) string {
 		return "****"
 	}
 	return secret[:4] + "****"
+}
+
+// HashSecret returns the SHA-256 hex hash of a secret.
+// Used for indexed lookup of encrypted secrets (e.g. charge card codes).
+func HashSecret(plaintext string) string {
+	h := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(h[:])
+}
+
+// MaskCardCode masks a card code for display, showing first and last 4 chars.
+// Example: "CF-a1b2c3d4-e5f6g7h8" → "CF-a1****g7h8"
+func MaskCardCode(code string) string {
+	if len(code) <= 8 {
+		return "****"
+	}
+	return code[:4] + "****" + code[len(code)-4:]
 }

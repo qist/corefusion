@@ -546,12 +546,12 @@ func (h *Handler) ListCards(c *gin.Context) {
 }
 
 // CreateCardInput is the input for creating a single charge card.
+// v3.3: 移除 max_uses — 充值卡一次性使用
 type CreateCardInput struct {
 	CardType       string     `json:"card_type" binding:"required"`
 	Value          int64      `json:"value"`                               // 金额(最小单位)或 plan_variant_id
 	Currency       string     `json:"currency"`                            // 货币类型
 	PlanVariantID  *int64     `json:"plan_variant_id"`                    // 套餐型时绑定的规格ID
-	MaxUses        int        `json:"max_uses"`
 	ExpiresAt      *time.Time `json:"expires_at"`
 	BatchID        string     `json:"batch_id"`
 	Remark         string     `json:"remark"`
@@ -570,38 +570,44 @@ func (h *Handler) CreateCard(c *gin.Context) {
 		response.BadRequest(c, "INVALID_VALUE", "plan card requires a valid plan_variant_id as value")
 		return
 	}
-	if input.MaxUses == 0 {
-		input.MaxUses = 1
-	}
 	cardValue := input.Value
 	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID != nil {
 		cardValue = *input.PlanVariantID
 	}
+	// v3.3: 关联创建者管理员
+	adminID := c.GetInt64("user_id")
+	adminName := c.GetString("username")
 	card := entity.ChargeCard{
-		CardCode: GenerateCardCode(input.CardCodeFormat),
-		CardType: input.CardType,
-		Value:    cardValue,
-		Currency: input.Currency,
-		MaxUses:  input.MaxUses,
-		Status:   entity.ChargeCardStatusActive,
-		BatchID:  input.BatchID,
-		Remark:   input.Remark,
-		ExpiresAt: input.ExpiresAt,
+		CardCode:           GenerateCardCode(input.CardCodeFormat),
+		CardType:           input.CardType,
+		Value:              cardValue,
+		Currency:           input.Currency,
+		Status:             entity.ChargeCardStatusActive,
+		BatchID:            input.BatchID,
+		Remark:             input.Remark,
+		ExpiresAt:          input.ExpiresAt,
+		CreatedByAdminID:   adminID,
+		CreatedByAdminName: adminName,
 	}
 	if err := h.chargeCardRepo.Create(c.Request.Context(), &card); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
-	response.Created(c, card)
+	// v3.3: 返回明文卡号（仅此一次），列表中会脱敏
+	response.Created(c, gin.H{
+		"card":               card,
+		"plaintext_card_code": card.CardCode,
+		"secret_shown_once":   true,
+	})
 }
 
 // BatchCreateCardsInput is the input for batch creating charge cards.
+// v3.3: 移除 max_uses — 充值卡一次性使用
 type BatchCreateCardsInput struct {
 	CardType       string  `json:"card_type" binding:"required"`
 	Value          int64   `json:"value"`                               // 金额(最小单位)或 plan_variant_id
 	Currency       string  `json:"currency"`                            // 货币类型
 	PlanVariantID  *int64  `json:"plan_variant_id"`                    // 套餐型时绑定的规格ID
-	MaxUses        int     `json:"max_uses"`
 	Count          int     `json:"count" binding:"required,min=1,max=1000"`
 	ExpiresAt      *string `json:"expires_at"`
 	BatchID        string  `json:"batch_id"`
@@ -629,27 +635,28 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 	if input.BatchID == "" {
 		input.BatchID = generateBatchID()
 	}
-	if input.MaxUses == 0 {
-		input.MaxUses = 1
-	}
-
 	// 确定实际 value：套餐型用 plan_variant_id
 	cardValue := input.Value
 	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID != nil {
 		cardValue = *input.PlanVariantID
 	}
 
+	// v3.3: 关联创建者管理员
+	adminID := c.GetInt64("user_id")
+	adminName := c.GetString("username")
+
 	cards := make([]entity.ChargeCard, input.Count)
 	for i := 0; i < input.Count; i++ {
 		cards[i] = entity.ChargeCard{
-			CardCode: GenerateCardCode(input.CardCodeFormat),
-			CardType: input.CardType,
-			Value:    cardValue,
-			Currency: input.Currency,
-			MaxUses:  input.MaxUses,
-			Status:   entity.ChargeCardStatusActive,
-			BatchID:  input.BatchID,
-			Remark:   input.Remark,
+			CardCode:           GenerateCardCode(input.CardCodeFormat),
+			CardType:           input.CardType,
+			Value:              cardValue,
+			Currency:           input.Currency,
+			Status:             entity.ChargeCardStatusActive,
+			BatchID:            input.BatchID,
+			Remark:             input.Remark,
+			CreatedByAdminID:   adminID,
+			CreatedByAdminName: adminName,
 		}
 		if input.ExpiresAt != nil {
 			t, err := time.Parse(time.RFC3339, *input.ExpiresAt)
@@ -663,6 +670,7 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 		response.InternalError(c, "BATCH_CREATE_FAILED", err.Error())
 		return
 	}
+	// v3.3: 批量生成返回明文卡号（仅此一次），列表中会脱敏
 	response.Created(c, gin.H{"batch_id": input.BatchID, "count": input.Count, "cards": cards})
 }
 
@@ -678,6 +686,113 @@ func (h *Handler) DeleteCard(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "deleted"})
+}
+
+// GetCardUsages handles GET /api/v1/charge-cards/:id/usages.
+// v3.3: 查看充值卡的使用记录（谁用了、何时用、哪个订单）
+func (h *Handler) GetCardUsages(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+
+	type usageVO struct {
+		entity.ChargeOrder
+		ClientEmail    string `json:"client_email"`
+		ClientNickname string `json:"client_nickname"`
+	}
+
+	var orders []entity.ChargeOrder
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("charge_card_id = ?", id).
+		Order("created_at DESC").
+		Find(&orders).Error; err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+
+	result := make([]usageVO, 0, len(orders))
+	for _, o := range orders {
+		vo := usageVO{ChargeOrder: o}
+		if cli, err := h.clientRepo.GetByID(c.Request.Context(), o.ClientID); err == nil {
+			vo.ClientEmail = cli.Email
+			vo.ClientNickname = cli.Nickname
+		}
+		result = append(result, vo)
+	}
+
+	response.OK(c, gin.H{"items": result, "total": len(result)})
+}
+
+// ExportCardsCSV handles GET /api/v1/charge-cards/export-csv.
+// v3.3: 导出充值卡 CSV（含明文卡号，仅管理员可导出）
+func (h *Handler) ExportCardsCSV(c *gin.Context) {
+	status := c.Query("status")
+	cardType := c.Query("card_type")
+
+	cards, _, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, 100000, 0)
+	if err != nil {
+		response.InternalError(c, "EXPORT_FAILED", err.Error())
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=charge-cards.csv")
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+
+	// BOM for Excel UTF-8 compatibility
+	var sb strings.Builder
+	sb.WriteString("\xEF\xBB\xBF")
+	sb.WriteString("ID,卡号,类型,面值/套餐ID,货币,是否已用,状态,批次号,创建者,创建时间,过期时间,备注\n")
+
+	for _, card := range cards {
+		cardCode := card.CardCode // ListAll 已解密填充
+		if cardCode == "" {
+			cardCode = card.CardCodeMasked
+		}
+		typeLabel := "金额"
+		if card.CardType == entity.ChargeCardTypePlan {
+			typeLabel = "套餐"
+		}
+		expiresAt := ""
+		if card.ExpiresAt != nil {
+			expiresAt = card.ExpiresAt.Format("2006-01-02 15:04:05")
+		}
+		// CSV escape: wrap in quotes if contains comma
+		remark := csvEscape(card.Remark)
+		sb.WriteString(fmt.Sprintf("%d,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s\n",
+			card.ID,
+			csvEscape(cardCode),
+			typeLabel,
+			card.Value,
+			card.Currency,
+			boolStr(card.UsedCount > 0),
+			card.Status,
+			csvEscape(card.BatchID),
+			csvEscape(card.CreatedByAdminName),
+			card.CreatedAt.Format("2006-01-02 15:04:05"),
+			expiresAt,
+			remark,
+		))
+	}
+
+	c.String(http.StatusOK, sb.String())
+}
+
+// csvEscape wraps a string in double quotes for CSV safety.
+func csvEscape(s string) string {
+	if strings.ContainsAny(s, ",\"\n\r") {
+		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+	}
+	return s
+}
+
+// boolStr returns "是" or "否" for CSV export.
+func boolStr(b bool) string {
+	if b {
+		return "是"
+	}
+	return "否"
 }
 
 // ============================================================

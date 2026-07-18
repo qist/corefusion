@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 )
 
 // AutoMigrate runs auto-migration for all entity models.
@@ -230,6 +231,9 @@ func AutoMigrate(db *gorm.DB) error {
 	// Fix unique indexes to be per-server (GORM AutoMigrate cannot alter existing indexes)
 	migrateUniqueIndexes(db)
 
+	// v3.3: Migrate charge_cards from plaintext card_code to encrypted storage
+	migrateChargeCardEncryption(db)
+
 	// Seed default outbounds if none exist
 	seedDefaultOutbounds(db)
 
@@ -279,6 +283,47 @@ func createIndex(db *gorm.DB, sql string) {
 func recreateIndex(db *gorm.DB, table, indexName, createSQL string) {
 	dropIndex(db, table, indexName)
 	createIndex(db, createSQL)
+}
+
+// migrateChargeCardEncryption v3.3: 迁移 charge_cards 从明文 card_code 到加密存储。
+// 旧表有 card_code 明文列，新 schema 用 card_code_hash (SHA-256) + card_code_encrypted (AES-256-GCM)。
+// 迁移步骤：
+//   1. AutoMigrate 已添加新列 (card_code_hash, card_code_encrypted, created_by_admin_id, created_by_admin_name)
+//   2. 对已有行：card_code → hash + encrypt，然后删除旧 card_code 列
+func migrateChargeCardEncryption(db *gorm.DB) {
+	// 检查是否有旧的 card_code 明文列
+	var hasOldColumn bool
+	db.Raw("SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = 'charge_cards' AND column_name = 'card_code'").Scan(&hasOldColumn)
+	if !hasOldColumn {
+		return // 已迁移过
+	}
+
+	log.Println("[migration] charge_cards: migrating from plaintext card_code to encrypted storage")
+
+	// 读取所有有明文 card_code 但没有 card_code_hash 的行
+	type oldCard struct {
+		ID       int64  `gorm:"column:id"`
+		CardCode string `gorm:"column:card_code"`
+	}
+	var cards []oldCard
+	db.Table("charge_cards").Where("card_code IS NOT NULL AND card_code != '' AND (card_code_hash IS NULL OR card_code_hash = '')").Find(&cards)
+
+	for _, card := range cards {
+		cardHash := crypto.HashSecret(card.CardCode)
+		encrypted, err := crypto.EncryptSecret(card.CardCode)
+		if err != nil {
+			log.Printf("[migration] WARNING: failed to encrypt card_code for card %d: %v", card.ID, err)
+			continue
+		}
+		db.Exec("UPDATE charge_cards SET card_code_hash = ?, card_code_encrypted = ? WHERE id = ?", cardHash, encrypted, card.ID)
+	}
+
+	// 删除旧的 card_code 明文列
+	db.Exec("ALTER TABLE charge_cards DROP COLUMN card_code")
+	// 删除旧的 card_code 唯一索引（如果还存在）
+	db.Exec("DROP INDEX IF EXISTS idx_charge_cards_card_code")
+
+	log.Printf("[migration] charge_cards: migrated %d cards to encrypted storage", len(cards))
 }
 
 // migrateServerID sets server_id=1 for all existing rows in tables that

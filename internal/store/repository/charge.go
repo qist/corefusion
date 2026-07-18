@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 )
 
 // ============================================================
@@ -117,15 +118,46 @@ func NewChargeCardRepository(db *gorm.DB) *ChargeCardRepository {
 
 func (r *ChargeCardRepository) GetByCardCode(ctx context.Context, cardCode string) (*entity.ChargeCard, error) {
 	var item entity.ChargeCard
-	err := r.db.WithContext(ctx).Where("card_code = ?", cardCode).First(&item).Error
+	// v3.3: 使用 hash 查找，不存储明文 card_code
+	cardHash := crypto.HashSecret(cardCode)
+	err := r.db.WithContext(ctx).Where("card_code_hash = ?", cardHash).First(&item).Error
+	if err != nil {
+		return &item, err
+	}
+	// 解密填充明文
+	if item.CardCodeEncrypted != "" {
+		if plain, err := crypto.DecryptSecret(item.CardCodeEncrypted); err == nil {
+			item.CardCode = plain
+		}
+	}
 	return &item, err
 }
 
 func (r *ChargeCardRepository) Create(ctx context.Context, item *entity.ChargeCard) error {
+	// v3.3: 加密存储卡号
+	if item.CardCode != "" {
+		item.CardCodeHash = crypto.HashSecret(item.CardCode)
+		enc, err := crypto.EncryptSecret(item.CardCode)
+		if err != nil {
+			return err
+		}
+		item.CardCodeEncrypted = enc
+	}
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
 func (r *ChargeCardRepository) CreateBatch(ctx context.Context, items []entity.ChargeCard) error {
+	// v3.3: 加密存储卡号
+	for i := range items {
+		if items[i].CardCode != "" {
+			items[i].CardCodeHash = crypto.HashSecret(items[i].CardCode)
+			enc, err := crypto.EncryptSecret(items[i].CardCode)
+			if err != nil {
+				return err
+			}
+			items[i].CardCodeEncrypted = enc
+		}
+	}
 	return r.db.WithContext(ctx).Create(&items).Error
 }
 
@@ -145,6 +177,18 @@ func (r *ChargeCardRepository) ListAll(ctx context.Context, status, cardType str
 	}
 	q.Count(&total)
 	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error
+	if err != nil {
+		return items, total, err
+	}
+	// v3.3: 解密填充明文 + 脱敏
+	for i := range items {
+		if items[i].CardCodeEncrypted != "" {
+			if plain, err := crypto.DecryptSecret(items[i].CardCodeEncrypted); err == nil {
+				items[i].CardCode = plain
+				items[i].CardCodeMasked = crypto.MaskCardCode(plain)
+			}
+		}
+	}
 	return items, total, err
 }
 

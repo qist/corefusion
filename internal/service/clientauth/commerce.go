@@ -352,8 +352,9 @@ type CreateOrderInput struct {
 	VariantID     int64  `json:"variant_id" binding:"required"`
 	OrderType     string `json:"order_type" binding:"required"` // new/renew/upgrade
 	PromotionCode string `json:"promotion_code"`
-	PayMethod     string `json:"pay_method"` // balance/charge_site
+	PayMethod     string `json:"pay_method"` // balance/charge_site/gift_card
 	ChargeSiteID  *int64 `json:"charge_site_id"`
+	GiftCardCode  string `json:"gift_card_code"` // v3.3: 套餐卡兑换码
 }
 
 // CreateOrderResult is the result of creating an order.
@@ -480,6 +481,78 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		chargeOrder.PaymentURL = paymentURL
 		s.chargeOrderRepo.Update(ctx, chargeOrder)
 		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusPending, PaymentURL: paymentURL, TradeNo: tradeNo}, nil
+
+	} else if input.PayMethod == "gift_card" {
+		// v3.3: 套餐卡支付
+		if input.GiftCardCode == "" {
+			return nil, fmt.Errorf("gift_card_code is required for gift_card payment")
+		}
+		// 查找并验证套餐卡
+		card, err := s.chargeCardRepo.GetByCardCode(ctx, input.GiftCardCode)
+		if err != nil {
+			return nil, fmt.Errorf("invalid gift card code")
+		}
+		// 验证套餐卡状态
+		if card.Status != entity.ChargeCardStatusActive {
+			return nil, fmt.Errorf("gift card is not active")
+		}
+		if card.UsedCount > 0 {
+			return nil, fmt.Errorf("gift card has already been used")
+		}
+		if card.ExpiresAt != nil && card.ExpiresAt.Before(time.Now()) {
+			return nil, fmt.Errorf("gift card has expired")
+		}
+		// 验证套餐卡类型 - 必须是套餐型
+		if card.CardType != entity.ChargeCardTypePlan {
+			return nil, fmt.Errorf("gift card is not a plan card")
+		}
+		// 验证套餐卡价值是否匹配订单
+		if card.Value != input.VariantID {
+			return nil, fmt.Errorf("gift card does not match the selected plan variant")
+		}
+
+		// 创建 ChargeOrder 记录套餐卡使用（用于后台追踪）
+		chargeOrder := &entity.ChargeOrder{
+			ClientID:       clientID,
+			TradeNo:        generateTradeNo(),
+			Source:         entity.ChargeSourceCard,
+			Amount:         0, // 套餐卡支付，金额为0
+			Currency:       "CNY",
+			PlanVariantID:  &input.VariantID,
+			OrderType:      entity.ChargeOrderTypePurchase,
+			Status:         entity.ChargeStatusPaid,
+			ChargeCardID:   &card.ID,
+			PaidAt:         &now,
+		}
+		if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
+			log.Printf("[gift_card] failed to create charge order: %v", err)
+		}
+
+		// 创建已完成订单
+		order := &entity.PlanOrder{
+			ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
+			OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: 0, // 套餐卡支付，实际支付金额为0
+			PromotionID: promotionID, PromotionCode: input.PromotionCode,
+			EffectiveFrom: now, Status: entity.OrderStatusCompleted,
+			Remark: "套餐卡支付: " + card.CardCodeMasked,
+		}
+		if err := s.orderRepo.Create(ctx, order); err != nil {
+			return nil, fmt.Errorf("failed to create order: %v", err)
+		}
+
+		// 标记套餐卡为已使用
+		card.UsedCount = 1
+		card.Status = entity.ChargeCardStatusUsed
+		if err := s.chargeCardRepo.Update(ctx, card); err != nil {
+			log.Printf("[gift_card] failed to update card status: %v", err)
+		}
+
+		// 激活套餐
+		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
+			return nil, fmt.Errorf("failed to activate plan: %v", err)
+		}
+
+		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
 	}
 
 	// No pay_method: pending order

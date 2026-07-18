@@ -294,7 +294,7 @@ func (s *CommerceService) BuyTrafficPack(ctx context.Context, clientID int64, in
 		expiresAt := now.Add(15 * time.Minute)
 		chargeOrder := &entity.ChargeOrder{
 			ClientID: clientID, TradeNo: tradeNo, Source: entity.ChargeSourceSite,
-			SiteID: input.ChargeSiteID, Amount: paidAmount, PlanVariantID: &input.VariantID,
+			SiteID: input.ChargeSiteID, Amount: paidAmount, Currency: site.Currency, PlanVariantID: &input.VariantID,
 			OrderType: entity.ChargeOrderTypePurchase, Status: entity.ChargeStatusPending, ExpiresAt: &expiresAt,
 		}
 		if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
@@ -442,7 +442,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		expiresAt := now.Add(15 * time.Minute)
 		chargeOrder := &entity.ChargeOrder{
 			ClientID: clientID, TradeNo: tradeNo, Source: entity.ChargeSourceSite,
-			SiteID: input.ChargeSiteID, Amount: paidAmount, PlanVariantID: &input.VariantID,
+			SiteID: input.ChargeSiteID, Amount: paidAmount, Currency: site.Currency, PlanVariantID: &input.VariantID,
 			OrderType: entity.ChargeOrderTypePurchase, Status: entity.ChargeStatusPending, ExpiresAt: &expiresAt,
 		}
 		if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
@@ -543,7 +543,7 @@ func (s *CommerceService) CreateChargeOrder(ctx context.Context, clientID int64,
 	}
 	chargeOrder := &entity.ChargeOrder{
 		ClientID: clientID, TradeNo: tradeNo, Source: entity.ChargeSourceSite,
-		SiteID: &input.SiteID, Amount: input.Amount, PlanVariantID: input.PlanVariantID,
+		SiteID: &input.SiteID, Amount: input.Amount, Currency: site.Currency, PlanVariantID: input.PlanVariantID,
 		OrderType: orderType, Status: entity.ChargeStatusPending, ExpiresAt: &expiresAt,
 	}
 	if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
@@ -587,11 +587,13 @@ type ChargeCallbackInput struct {
 //  12. Async: callback_event (事务外，不阻塞账务)
 //
 // 安全优先级：HMAC P0 / nonce P0 / 金额+币种 P0 / IP白名单 P2(仅记录不阻断)
-func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64, remoteIP string, requestID string, input ChargeCallbackInput) error {
+//
+// v3.2: rawBody 是原始 HTTP 请求体字节，用于计算 body_hash = SHA256(raw_body)。
+// 不能用 json.Marshal(input) 重新序列化，因为 key 顺序可能与客户端发送的原始 body 不同。
+func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64, remoteIP string, requestID string, rawBody []byte, input ChargeCallbackInput) error {
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
-	rawBody, _ := json.Marshal(input)
 	payloadHash := sha256Hex(rawBody)
 	bodyHash := payloadHash
 
@@ -623,19 +625,24 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	}
 	log.Printf("[callback] request_id=%s verified=ok", requestID)
 
-	// ④ IP whitelist — v3.2: 降级为 P2 辅助，仅记录不阻断
+	// ④ IP whitelist — v3.3: 配置了白名单就严格阻断
+	// 回调是支付平台服务器间请求（server-to-server），IP 固定可预测。
+	// 管理员配置了白名单说明知道支付平台 IP 范围，此时应严格阻断非白名单 IP。
+	// 未配置白名单时跳过检查（依赖 HMAC 签名保护）。
 	ipMatchRule := ""
 	if site.CallbackWhitelist != "" {
 		ipMatchRule = findIPMatchRule(remoteIP, site.CallbackWhitelist)
 		if ipMatchRule == "" {
-			log.Printf("[callback] request_id=%s ip_whitelist=mismatch ip=%s (P2: logged only)", requestID, remoteIP)
-			raiseSecEvent(entity.ChargeSecEventIPChanged, entity.ChargeSecSeverityMedium, input.TradeNo,
-				fmt.Sprintf("ip not in whitelist: %s", remoteIP))
+			log.Printf("[callback] request_id=%s ip_whitelist=BLOCKED ip=%s", requestID, remoteIP)
+			raiseSecEvent(entity.ChargeSecEventIPChanged, entity.ChargeSecSeverityCritical, input.TradeNo,
+				fmt.Sprintf("ip not in whitelist, blocked: %s", remoteIP))
+			recordEvent("error", "IP_BLOCKED", fmt.Sprintf("ip not in whitelist: %s", remoteIP), false, 0, "")
+			return fmt.Errorf("ip not in whitelist: %s", remoteIP)
 		}
 	} else {
 		ipMatchRule = "no_whitelist"
 	}
-	log.Printf("[callback] request_id=%s ip_whitelist=P2 matched=%s", requestID, ipMatchRule)
+	log.Printf("[callback] request_id=%s ip_whitelist=ok matched=%s", requestID, ipMatchRule)
 
 	// ⑤ timestamp
 	now := time.Now().Unix()
@@ -756,7 +763,7 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	default:
 		log.Printf("[callback] request_id=%s order=%s unknown_status=%s", requestID, input.TradeNo, input.Status)
 		recordEvent("error", "INVALID_STATUS", fmt.Sprintf("unknown callback status: %s", input.Status), signValid, usedSecretVer, ipMatchRule)
-		raiseSecEvent(entity.ChargeSecEventSigFailed, entity.ChargeSecSeverityMedium, input.TradeNo,
+		raiseSecEvent(entity.ChargeSecEventInvalidStatus, entity.ChargeSecSeverityMedium, input.TradeNo,
 			fmt.Sprintf("unknown callback status: %s", input.Status))
 		return fmt.Errorf("invalid callback status: %s", input.Status)
 	}
@@ -887,11 +894,11 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		})
 		if err != nil {
 			log.Printf("[callback] request_id=%s order=%s transaction_error=%v", requestID, input.TradeNo, err)
-			recordEvent("error", "CALLBACK_FAILED", err.Error(), signValid, usedSecretVer, ipMatchRule)
-			s.enqueueCallbackRetry(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, "CALLBACK_FAILED", err.Error(), true)
-			raiseSecEvent(entity.ChargeSecEventSigFailed, entity.ChargeSecSeverityHigh, input.TradeNo,
-				fmt.Sprintf("callback failed: %v", err))
-			return err
+		recordEvent("error", "CALLBACK_FAILED", err.Error(), signValid, usedSecretVer, ipMatchRule)
+		s.enqueueCallbackRetry(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, "CALLBACK_FAILED", err.Error(), true)
+		raiseSecEvent(entity.ChargeSecEventTransactionError, entity.ChargeSecSeverityHigh, input.TradeNo,
+			fmt.Sprintf("callback transaction failed: %v", err))
+		return err
 		}
 		log.Printf("[callback] request_id=%s order=%s amount=%d status=paid success", requestID, input.TradeNo, order.Amount)
 		recordEvent("success", "", "", signValid, usedSecretVer, ipMatchRule)
@@ -1353,7 +1360,7 @@ func (s *CommerceService) RedeemCard(ctx context.Context, clientID int64, input 
 
 	chargeOrder := &entity.ChargeOrder{
 		ClientID: clientID, TradeNo: tradeNo, Source: entity.ChargeSourceCard,
-		Amount: card.Value, ChargeCardID: &cardID,
+		Amount: card.Value, Currency: card.Currency, ChargeCardID: &cardID,
 		OrderType: entity.ChargeOrderTypeCharge, Status: entity.ChargeStatusPaid, PaidAt: &now,
 	}
 	if card.CardType == entity.ChargeCardTypePlan {
@@ -1465,26 +1472,46 @@ func (s *CommerceService) StartCleanupScheduler(interval time.Duration) chan str
 // ============================================================
 
 // processChargePayment handles the actual payment processing after a charge is confirmed.
-// NOTE: We use the db-level repos directly instead of tx-scoped repos because
-// the repository pattern doesn't support injection of *gorm.DB per-call.
-// The outer Transaction() wrapper ensures atomicity at the DB level.
+// v3.3: 修复事务原子性 — 所有 DB 操作都使用 tx，不再通过 repo（repo 内部用 s.db，不在事务内）
 func (s *CommerceService) processChargePayment(ctx context.Context, order *entity.ChargeOrder) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if order.OrderType == entity.ChargeOrderTypeCharge && order.Amount > 0 {
-			newBal, err := s.balanceRepo.AddBalance(ctx, order.ClientID, order.Amount)
-			if err != nil {
+			// SELECT balance FOR UPDATE（行锁，防并发）
+			var bal entity.ClientBalance
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("client_id = ?", order.ClientID).First(&bal).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					// 创建零余额记录
+					bal = entity.ClientBalance{ClientID: order.ClientID, Balance: 0, Currency: order.Currency}
+					if err := tx.Create(&bal).Error; err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			}
+
+			balanceBefore := bal.Balance
+			balanceAfter := balanceBefore + order.Amount
+
+			// UPDATE balance
+			if err := tx.Model(&entity.ClientBalance{}).
+				Where("client_id = ?", order.ClientID).
+				Update("balance", balanceAfter).Error; err != nil {
 				return err
 			}
+
 			remark := "充值到账"
 			if order.Source == entity.ChargeSourceCard {
 				remark = "充值卡兑换到账"
 			}
+			// INSERT ledger（先记账：balance_before + balance_after）
 			txRecord := &entity.BalanceTransaction{
 				ClientID: order.ClientID, Type: entity.BalanceTxTypeCharge,
-				Amount: order.Amount, BalanceAfter: newBal.Balance,
-				RelatedChargeOrderID: &order.ID, Remark: remark,
+				Amount: order.Amount, BalanceBefore: balanceBefore, BalanceAfter: balanceAfter,
+				Currency: bal.Currency, RelatedChargeOrderID: &order.ID, Remark: remark,
 			}
-			return s.balanceTxRepo.Create(ctx, txRecord)
+			return tx.Create(txRecord).Error
 		} else if order.OrderType == entity.ChargeOrderTypePurchase && order.PlanVariantID != nil {
 			variant, err := s.variantRepo.GetByID(ctx, *order.PlanVariantID)
 			if err != nil {
@@ -1527,7 +1554,7 @@ func (s *CommerceService) processChargePayment(ctx context.Context, order *entit
 				planOrder.PaidAmount = 0
 				planOrder.Remark = "充值卡兑换自动开通"
 			}
-			return s.orderRepo.Create(ctx, planOrder)
+			return tx.Create(planOrder).Error
 		}
 		return nil
 	})
@@ -1628,7 +1655,7 @@ func (s *CommerceService) deductBalanceForOrder(ctx context.Context, clientID in
 	}
 	txRecord := &entity.BalanceTransaction{
 		ClientID: clientID, Type: entity.BalanceTxTypeConsume,
-		Amount: -amount, BalanceAfter: newBal.Balance, Remark: "套餐购买扣款",
+		Amount: -amount, BalanceBefore: newBal.Balance + amount, BalanceAfter: newBal.Balance, Remark: "套餐购买扣款",
 	}
 	return s.balanceTxRepo.Create(ctx, txRecord)
 }
@@ -1644,7 +1671,7 @@ func (s *CommerceService) requestChargeSitePayment(ctx context.Context, site *en
 	notifyURL := externalURL + "/api/v1/charge/callback/" + strconv.FormatInt(site.ID, 10)
 
 	payload := map[string]interface{}{
-		"trade_no": order.TradeNo, "amount": order.Amount, "currency": "CNY",
+		"trade_no": order.TradeNo, "amount": order.Amount, "currency": order.Currency,
 		"subject": "CoreFusion 充值", "notify_url": notifyURL,
 		"return_url": returnURL, "client_email": maskEmail(client.Email),
 		"timestamp": time.Now().Unix(),

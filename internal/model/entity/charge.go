@@ -215,12 +215,12 @@ const (
 type BalanceTransaction struct {
 	ID                    int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	ClientID              int64     `gorm:"not null;index" json:"client_id"`
-	Type                  string    `gorm:"size:32;not null" json:"type"`
+	Type                  string    `gorm:"size:32;not null;uniqueIndex:idx_balance_tx_order_type,priority:1" json:"type"`
 	Amount                int64     `gorm:"not null;default:0" json:"amount"`
 	BalanceBefore         int64     `gorm:"not null;default:0" json:"balance_before"`
 	BalanceAfter          int64     `gorm:"not null;default:0" json:"balance_after"`
 	Currency              string    `gorm:"size:16;not null;default:CNY" json:"currency"`
-	RelatedChargeOrderID  *int64    `gorm:"uniqueIndex:idx_balance_tx_order_type,priority:3" json:"related_charge_order_id"`
+	RelatedChargeOrderID  *int64    `gorm:"uniqueIndex:idx_balance_tx_order_type,priority:2" json:"related_charge_order_id"`
 	RelatedPlanOrderID    *int64    `json:"related_plan_order_id"`
 	Remark                string    `gorm:"size:500" json:"remark"`
 	CreatedAt             time.Time `json:"created_at"`
@@ -322,6 +322,8 @@ const (
 	ChargeSecEventIPChanged        = "ip_changed"
 	ChargeSecEventCallbackFlood    = "callback_flood"
 	ChargeSecEventRecoveryStuck    = "recovery_stuck"
+	ChargeSecEventInvalidStatus    = "invalid_status"      // 回调状态值未知
+	ChargeSecEventTransactionError = "transaction_error"   // 事务执行失败
 )
 
 // ChargeSecurityEvent records a security-relevant event in the charge flow.

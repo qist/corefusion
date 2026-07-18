@@ -538,6 +538,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Start callback retry scheduler (runs every 1 minute)
 	commerceSvcInst.StartRetryScheduler(1 * time.Minute)
 
+	// v3.2: Start processing recovery scheduler (runs every 1 minute)
+	// Recovers stuck processing orders, cleans up nonces (24h) and expired secrets (7d)
+	commerceSvcInst.StartProcessingRecovery(1 * time.Minute)
+
+	// Start expired order cleanup scheduler (runs every 5 minutes)
+	commerceSvcInst.StartCleanupScheduler(5 * time.Minute)
+
 	// P1-P3 extended services
 	referralSvcInst := clientauthSvc.NewReferralService(
 		database, repository.NewReferralCodeRepository(database),
@@ -2779,9 +2786,6 @@ subRepo, subEndpointRepo2, portalPublicSubH, database,
 			"registration_enabled": registrationEnabled == "true",
 		})
 	})
-
-	// Charge callback (public, called by charge sites)
-	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
 
 	return r
 }

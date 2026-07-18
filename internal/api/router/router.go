@@ -591,6 +591,10 @@ subRepo, subEndpointRepo, publicSubH, database,
 	// Set balance repo on clientauth service for /me extension
 	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))
 
+	// P1: 注入 ReferralService — 注册时自动绑定邀请关系 + 套餐激活时触发返利
+	clientauthSvcInst.SetReferralService(referralSvcInst)
+	commerceSvcInst.SetReferralService(referralSvcInst)
+
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
 	// Reuse processMgr if injected from main.go (shared with LocalAgent),
@@ -1995,8 +1999,9 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		clientAuthProtected.POST("/tickets/:id/reply", clientExtH.ReplyTicket)
 		clientAuthProtected.POST("/tickets/:id/close", clientExtH.CloseTicket)
 
-		// P1-4: Bills (reuse plan orders)
-		clientAuthProtected.GET("/bills", commerceH.ListOrders)
+		// P1-4: Invoices (reuse plan orders) — 与文档设计统一为 /invoices
+		clientAuthProtected.GET("/invoices", commerceH.ListOrders)
+		clientAuthProtected.GET("/bills", commerceH.ListOrders) // 向后兼容别名
 
 		// P2-1: Gift system
 		clientAuthProtected.GET("/gifts", clientExtH.ListGifts)
@@ -2006,18 +2011,22 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		clientAuthProtected.GET("/articles", clientExtH.ListArticles)
 		clientAuthProtected.GET("/articles/:slug", clientExtH.GetArticle)
 
-		// P2-3: Subscription reset
-		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription)
+		// P2-3: Subscription reset — 与文档设计统一为 /reset-subscription
+		clientAuthProtected.POST("/reset-subscription", clientExtH.ResetSubscription)
+		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription) // 向后兼容别名
 
 		// P3-1: Shared accounts
 		clientAuthProtected.GET("/shared-accounts", clientExtH.ListSharedAccounts)
 		clientAuthProtected.GET("/shared-accounts/:id", clientExtH.GetSharedAccount)
 		clientAuthProtected.POST("/shared-accounts/:id/repair", clientExtH.RequestRepair)
 
-		// P3-2: IP whitelist
-		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)
-		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)
-		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist)
+		// P3-2: IP whitelist — 与文档设计统一为 /settings/whitelist
+		clientAuthProtected.GET("/settings/whitelist", clientExtH.ListIPWhitelist)
+		clientAuthProtected.POST("/settings/auto-add-ip", clientExtH.AutoAddIP)
+		clientAuthProtected.DELETE("/settings/whitelist/:id", clientExtH.RemoveIPWhitelist)
+		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)          // 向后兼容别名
+		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)      // 向后兼容别名
+		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist) // 向后兼容别名
 
 		// P3-3: Self-unban
 		clientAuthProtected.POST("/self-unban", clientExtH.SelfUnban)
@@ -2594,6 +2603,10 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// Set balance repo on clientauth service for /me extension
 	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))
 
+	// P1: 注入 ReferralService — 注册时自动绑定邀请关系 + 套餐激活时触发返利
+	clientauthSvcInst.SetReferralService(referralSvcInst)
+	commerceSvcInst.SetReferralService(referralSvcInst)
+
 	// Root path serves the portal page
 	r.GET("/", func(c *gin.Context) {
 		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
@@ -2722,8 +2735,9 @@ subRepo, subEndpointRepo2, portalPublicSubH, database,
 		clientAuthProtected.POST("/tickets/:id/reply", clientExtH.ReplyTicket)
 		clientAuthProtected.POST("/tickets/:id/close", clientExtH.CloseTicket)
 
-		// P1-4: Bills (reuse plan orders)
-		clientAuthProtected.GET("/bills", commerceH.ListOrders)
+		// P1-4: Invoices (reuse plan orders) — 与文档设计统一为 /invoices
+		clientAuthProtected.GET("/invoices", commerceH.ListOrders)
+		clientAuthProtected.GET("/bills", commerceH.ListOrders) // 向后兼容别名
 
 		// P2-1: Gift system
 		clientAuthProtected.GET("/gifts", clientExtH.ListGifts)
@@ -2733,18 +2747,22 @@ subRepo, subEndpointRepo2, portalPublicSubH, database,
 		clientAuthProtected.GET("/articles", clientExtH.ListArticles)
 		clientAuthProtected.GET("/articles/:slug", clientExtH.GetArticle)
 
-		// P2-3: Subscription reset
-		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription)
+		// P2-3: Subscription reset — 与文档设计统一为 /reset-subscription
+		clientAuthProtected.POST("/reset-subscription", clientExtH.ResetSubscription)
+		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription) // 向后兼容别名
 
 		// P3-1: Shared accounts
 		clientAuthProtected.GET("/shared-accounts", clientExtH.ListSharedAccounts)
 		clientAuthProtected.GET("/shared-accounts/:id", clientExtH.GetSharedAccount)
 		clientAuthProtected.POST("/shared-accounts/:id/repair", clientExtH.RequestRepair)
 
-		// P3-2: IP whitelist
-		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)
-		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)
-		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist)
+		// P3-2: IP whitelist — 与文档设计统一为 /settings/whitelist
+		clientAuthProtected.GET("/settings/whitelist", clientExtH.ListIPWhitelist)
+		clientAuthProtected.POST("/settings/auto-add-ip", clientExtH.AutoAddIP)
+		clientAuthProtected.DELETE("/settings/whitelist/:id", clientExtH.RemoveIPWhitelist)
+		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)          // 向后兼容别名
+		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)      // 向后兼容别名
+		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist) // 向后兼容别名
 
 		// P3-3: Self-unban
 		clientAuthProtected.POST("/self-unban", clientExtH.SelfUnban)

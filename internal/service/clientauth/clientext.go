@@ -723,7 +723,12 @@ func (s *SubscriptionResetService) ResetSubscription(ctx context.Context, client
 	if err != nil {
 		return err
 	}
+	// P2: 重置订阅凭证 — Token + TokenVersion + 安全绑定信息全部重置
 	sub.Token = generateToken(32)
 	sub.TokenVersion++
+	sub.Signature = ""
+	sub.BindMode = "none"
+	sub.BindValue = ""
+	sub.SecurityMode = "token_only"
 	return s.subRepo.Update(ctx, sub)
 }

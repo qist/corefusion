@@ -165,7 +165,7 @@ func (r *ChargeCardRepository) Update(ctx context.Context, item *entity.ChargeCa
 	return r.db.WithContext(ctx).Save(item).Error
 }
 
-func (r *ChargeCardRepository) ListAll(ctx context.Context, status, cardType string, limit, offset int) ([]entity.ChargeCard, int64, error) {
+func (r *ChargeCardRepository) ListAll(ctx context.Context, status, cardType string, agentID *int64, limit, offset int) ([]entity.ChargeCard, int64, error) {
 	var items []entity.ChargeCard
 	var total int64
 	q := r.db.WithContext(ctx).Model(&entity.ChargeCard{})
@@ -174,6 +174,14 @@ func (r *ChargeCardRepository) ListAll(ctx context.Context, status, cardType str
 	}
 	if cardType != "" {
 		q = q.Where("card_type = ?", cardType)
+	}
+	if agentID != nil {
+		if *agentID == 0 {
+			// agent_id=0 表示查询官方（agent_id IS NULL）
+			q = q.Where("agent_id IS NULL")
+		} else {
+			q = q.Where("agent_id = ?", *agentID)
+		}
 	}
 	q.Count(&total)
 	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error

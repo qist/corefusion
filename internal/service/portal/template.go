@@ -1897,6 +1897,78 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
       </template>
     </el-dialog>
+
+    <!-- Payment Method Dialog / 支付方式选择弹窗 (v3.3) -->
+    <el-dialog v-model="showPaymentDialog" title="选择支付方式" width="420px" align-center append-to-body :close-on-click-modal="false">
+      <div class="payment-dialog-content">
+        <el-form label-position="top" size="default">
+          <!-- 订单信息摘要 -->
+          <div class="payment-order-summary" style="background: var(--bg-secondary); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+            <div style="font-size: 13px; color: var(--text-muted);">订单类型</div>
+            <div style="font-size: 15px; font-weight: 500; margin-top: 4px;">
+              {{ orderForm.order_type === 'renew' ? '续费' : orderForm.order_type === 'upgrade' ? '升级' : '新购' }}
+            </div>
+          </div>
+
+          <!-- 支付方式选择 -->
+          <el-form-item label="支付方式">
+            <div class="payment-method-grid">
+              <div 
+                class="payment-method-item"
+                :class="{ active: orderForm.pay_method === 'balance' }"
+                @click="orderForm.pay_method = 'balance'"
+              >
+                <el-icon><Wallet /></el-icon>
+                <div class="payment-method-name">余额支付</div>
+                <div class="payment-method-desc">当前余额: {{ formatMoney(balance.balance) }}</div>
+              </div>
+              <div 
+                class="payment-method-item"
+                :class="{ active: orderForm.pay_method === 'gift_card' }"
+                @click="orderForm.pay_method = 'gift_card'"
+              >
+                <el-icon><Ticket /></el-icon>
+                <div class="payment-method-name">套餐卡</div>
+                <div class="payment-method-desc">使用兑换码支付</div>
+              </div>
+              <div 
+                v-if="chargeSites.length > 0"
+                class="payment-method-item"
+                :class="{ active: orderForm.pay_method === 'charge_site' }"
+                @click="orderForm.pay_method = 'charge_site'"
+              >
+                <el-icon><Money /></el-icon>
+                <div class="payment-method-name">在线支付</div>
+                <div class="payment-method-desc">支付宝/微信等</div>
+              </div>
+            </div>
+          </el-form-item>
+
+          <!-- 套餐卡号输入 -->
+          <el-form-item v-if="orderForm.pay_method === 'gift_card'" label="套餐卡号">
+            <el-input v-model="orderForm.gift_card_code" placeholder="请输入套餐卡兑换码" />
+          </el-form-item>
+
+          <!-- 充值站点选择 -->
+          <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" label="支付渠道">
+            <el-select v-model="orderForm.charge_site_id" placeholder="选择支付渠道" style="width: 100%">
+              <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+          </el-form-item>
+
+          <!-- 优惠码 -->
+          <el-form-item label="优惠码（可选）">
+            <el-input v-model="orderForm.promotion_code" placeholder="输入优惠码享受折扣" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <div class="payment-dialog-footer">
+          <el-button @click="showPaymentDialog = false">取消</el-button>
+          <el-button type="primary" @click="confirmPayment" :loading="orderBusy">确认支付</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
@@ -3412,10 +3484,11 @@ var withdrawRecords = ref([])
     var showNoticePanel = ref(false)
     var sharedAccounts = ref([])
 var showCredentialsDialog = ref(false)
-var sharedAccountCreds = ref(null)
-var showChargeDialog = ref(false)
+    var sharedAccountCreds = ref(null)
+    var showChargeDialog = ref(false)
+    var showPaymentDialog = ref(false) // v3.3: 支付方式选择弹窗
 
-var registrationEnabled = ref(false)
+    var registrationEnabled = ref(false)
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.registration_enabled !== undefined) {
       registrationEnabled.value = PORTAL_CONFIG.registration_enabled
     }
@@ -3778,10 +3851,53 @@ var showStreamingAccount = function(service) {
     }
 
     // --- Purchase a plan variant ---
+    // v3.3: 弹出支付方式选择框，让用户选择余额/套餐卡/第三方支付
     var purchaseVariant = function(variantId, plan, modData) {
       var orderType = (client.value.plan_id > 0 && client.value.plan_id === plan.id) ? 'renew' : 'new'
+      // 设置订单表单默认值
+      orderForm.value = {
+        variant_id: variantId,
+        order_type: orderType,
+        promotion_code: '',
+        pay_method: 'balance', // 默认选中余额支付
+        gift_card_code: '',
+        charge_site_id: null
+      }
+      // 显示支付方式选择弹窗
+      showPaymentDialog.value = true
+    }
+
+    // v3.3: 确认支付 - 根据选择的支付方式提交订单
+    var confirmPayment = function() {
+      if (!orderForm.value.pay_method) {
+        ElMessage.error('请选择支付方式')
+        return
+      }
+      if (orderForm.value.pay_method === 'gift_card' && !orderForm.value.gift_card_code) {
+        ElMessage.error('请输入套餐卡号')
+        return
+      }
+      if (orderForm.value.pay_method === 'charge_site' && !orderForm.value.charge_site_id) {
+        ElMessage.error('请选择支付渠道')
+        return
+      }
+
       orderBusy.value = true
-      api('POST', '/orders', { variant_id: variantId, order_type: orderType, pay_method: 'balance' }).then(function(res) {
+      var payload = {
+        variant_id: orderForm.value.variant_id,
+        order_type: orderForm.value.order_type,
+        promotion_code: orderForm.value.promotion_code,
+        pay_method: orderForm.value.pay_method
+      }
+      if (orderForm.value.pay_method === 'charge_site' && orderForm.value.charge_site_id) {
+        payload.charge_site_id = orderForm.value.charge_site_id
+      }
+      if (orderForm.value.pay_method === 'gift_card' && orderForm.value.gift_card_code) {
+        payload.gift_card_code = orderForm.value.gift_card_code
+      }
+
+      api('POST', '/orders', payload).then(function(res) {
+        showPaymentDialog.value = false
         if (res.status === 'completed') {
           ElMessage.success('购买成功')
           fetchMe()
@@ -3789,9 +3905,17 @@ var showStreamingAccount = function(service) {
           ElMessage.info('正在跳转到支付页面...')
           window.open(res.payment_url, '_blank')
         } else {
-          ElMessage.success('订单已创建，状态: ' + res.status)
+          ElMessage.success('订单已创建')
         }
-      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { orderBusy.value = false })
+      }).catch(function(e) {
+        // v3.3: 余额不足时特殊处理 - 保持弹窗开启，提示用户选择其他支付方式
+        if (e.code === 'INSUFFICIENT_BALANCE' || (e.message && e.message.includes('INSUFFICIENT_BALANCE'))) {
+          ElMessage.warning('余额不足，请选择其他支付方式')
+        } else {
+          ElMessage.error(e.message || '订单创建失败')
+          showPaymentDialog.value = false
+        }
+      }).finally(function() { orderBusy.value = false })
     }
 
     // --- Submit order form ---
@@ -4350,6 +4474,7 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       showArticleDetail: showArticleDetail, articleDetail: articleDetail,
       sharedAccounts: sharedAccounts, showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
       fetchPlans: fetchPlans, purchaseVariant: purchaseVariant, submitOrder: submitOrder,
+      showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, // v3.3: 支付方式选择弹窗
       fetchChargeSites: fetchChargeSites, submitCharge: submitCharge, redeemCard: redeemCard,
       fetchChargeOrders: fetchChargeOrders, chargeStatusText: chargeStatusText,
       fetchMyOrders: fetchMyOrders, orderStatusText: orderStatusText, orderStatusBadge: orderStatusBadge, getOrderServiceName: getOrderServiceName,

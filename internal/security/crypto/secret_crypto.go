@@ -13,13 +13,11 @@ import (
 	"strings"
 )
 
-// ErrKeyNotSet is returned when the encryption key environment variable is not set.
-var ErrKeyNotSet = errors.New("CF_SECRET_ENCRYPTION_KEY not set")
-
-// defaultKey is loaded once from the environment variable.
+// defaultKey is loaded once from the environment variable or auto-generated.
 var defaultKey []byte
 
 // getKey returns the encryption key, loading it from the environment on first use.
+// If not set, generates a default key from hostname (consistent across restarts).
 // The key must be a 32-byte hex string (64 hex chars).
 func getKey() ([]byte, error) {
 	if defaultKey != nil {
@@ -27,7 +25,9 @@ func getKey() ([]byte, error) {
 	}
 	raw := os.Getenv("CF_SECRET_ENCRYPTION_KEY")
 	if raw == "" {
-		return nil, ErrKeyNotSet
+		// Auto-generate default key from hostname + fixed salt
+		defaultKey = generateDefaultKey()
+		return defaultKey, nil
 	}
 	key, err := hex.DecodeString(raw)
 	if err != nil || len(key) != 32 {
@@ -35,6 +35,19 @@ func getKey() ([]byte, error) {
 	}
 	defaultKey = key
 	return key, nil
+}
+
+// generateDefaultKey generates a deterministic 32-byte key from hostname.
+// This ensures the same key is generated across restarts on the same machine.
+func generateDefaultKey() []byte {
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "corefusion-default"
+	}
+	// Use SHA-256 to derive 32 bytes from hostname + salt
+	salt := "cf-secret-salt-v1"
+	h := sha256.Sum256([]byte(hostname + salt))
+	return h[:]
 }
 
 // EncryptSecret encrypts a plaintext secret using AES-256-GCM.

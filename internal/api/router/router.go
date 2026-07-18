@@ -1010,15 +1010,16 @@ planVariantGroup.DELETE("/:id", planH.DeleteVariant)
 }
 
 // Charge Sites (充值站点管理)
-chargeAdminH := chargeHandler.NewHandler(
-repository.NewChargeSiteRepository(database),
-repository.NewChargeOrderRepository(database),
-repository.NewChargeCardRepository(database),
-repository.NewClientBalanceRepository(database),
-repository.NewBalanceTransactionRepository(database),
-clientRepo,
-database,
-)
+	chargeAdminH := chargeHandler.NewHandler(
+		repository.NewChargeSiteRepository(database),
+		repository.NewChargeOrderRepository(database),
+		repository.NewChargeCardRepository(database),
+		repository.NewClientBalanceRepository(database),
+		repository.NewBalanceTransactionRepository(database),
+		clientRepo,
+		userRepo, // v3.3: 用于查询代理员信息
+		database,
+	)
 chargeSiteGroup := protected.Group("/charge-sites")
 {
 chargeSiteGroup.GET("", chargeAdminH.ListSites)
@@ -1780,9 +1781,12 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				systemGroup.POST("/reality-targets/reset", systemH.ResetRealityTargets)
 			systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
 			// Generic settings API (used by self-unban, OAuth config, etc.)
-			systemGroup.GET("/settings", systemH.GetSettings)
-			systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
-		}
+	systemGroup.GET("/settings", systemH.GetSettings)
+		systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
+		// Encryption key config
+		systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
+		systemGroup.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
+	}
 
 			// Proxy/Caddy/Nginx management routes moved under /node-servers/:id/
 

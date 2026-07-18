@@ -234,6 +234,9 @@ func AutoMigrate(db *gorm.DB) error {
 	// v3.3: Migrate charge_cards from plaintext card_code to encrypted storage
 	migrateChargeCardEncryption(db)
 
+	// v3.3: Add agent_id column to charge_cards for agent/sales tracking
+	migrateChargeCardAgentColumn(db)
+
 	// Seed default outbounds if none exist
 	seedDefaultOutbounds(db)
 
@@ -324,6 +327,34 @@ func migrateChargeCardEncryption(db *gorm.DB) {
 	db.Exec("DROP INDEX IF EXISTS idx_charge_cards_card_code")
 
 	log.Printf("[migration] charge_cards: migrated %d cards to encrypted storage", len(cards))
+}
+
+// migrateChargeCardAgentColumn v3.3: 添加 agent_id 和 agent_name 列到 charge_cards 表
+// 用于追踪充值卡的销售代理员/推广员
+func migrateChargeCardAgentColumn(db *gorm.DB) {
+	// 检查是否已有 agent_id 列
+	var hasAgentIDColumn bool
+	db.Raw("SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = 'charge_cards' AND column_name = 'agent_id'").Scan(&hasAgentIDColumn)
+	if hasAgentIDColumn {
+		return // 已存在，无需迁移
+	}
+
+	log.Println("[migration] charge_cards: adding agent_id and agent_name columns")
+
+	// 添加 agent_id 列
+	if err := db.Exec("ALTER TABLE charge_cards ADD COLUMN agent_id INTEGER").Error; err != nil {
+		log.Printf("[migration] WARNING: failed to add agent_id column: %v", err)
+	}
+	// 添加 agent_name 列
+	if err := db.Exec("ALTER TABLE charge_cards ADD COLUMN agent_name VARCHAR(64)").Error; err != nil {
+		log.Printf("[migration] WARNING: failed to add agent_name column: %v", err)
+	}
+	// 创建 agent_id 索引
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_charge_cards_agent_id ON charge_cards(agent_id)").Error; err != nil {
+		log.Printf("[migration] WARNING: failed to create agent_id index: %v", err)
+	}
+
+	log.Println("[migration] charge_cards: agent columns added successfully")
 }
 
 // migrateServerID sets server_id=1 for all existing rows in tables that

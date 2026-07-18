@@ -113,7 +113,7 @@
             <el-button type="info" size="small" @click="doExportCSV">📥 导出CSV</el-button>
           </div>
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <el-select v-model="cardStatusFilter" size="small" placeholder="状态" clearable style="width:100px">
             <el-option label="可用" value="active" />
             <el-option label="已用" value="used" />
@@ -123,6 +123,10 @@
           <el-select v-model="cardTypeFilter" size="small" placeholder="类型" clearable style="width:100px">
             <el-option label="金额型" value="balance" />
             <el-option label="套餐型" value="plan" />
+          </el-select>
+          <el-select v-model="cardAgentFilter" size="small" placeholder="代理员" clearable style="width:140px">
+            <el-option label="官方" :value="0" />
+            <el-option v-for="u in agentUsers" :key="u.id" :label="u.username" :value="u.id" />
           </el-select>
           <el-button size="small" @click="fetchCards">查询</el-button>
         </div>
@@ -154,6 +158,12 @@
             <template #default="{row}">
               <span v-if="row.created_by_admin_name">{{ row.created_by_admin_name }}</span>
               <span v-else style="color:#999">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="代理员" width="100">
+            <template #default="{row}">
+              <span v-if="row.agent_name">{{ row.agent_name }}</span>
+              <span v-else style="color:#999">官方</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="80">
@@ -415,6 +425,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="过期时间"><el-date-picker v-model="cardForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item label="代理员">
+          <el-select v-model="cardForm.agent_id" placeholder="选择代理员（默认官方）" clearable style="width:100%">
+            <el-option label="官方" :value="null" />
+            <el-option v-for="u in agentUsers" :key="u.id" :label="u.username" :value="u.id" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">选择销售代理员，用于追踪业绩（默认官方）</div>
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="cardForm.remark" /></el-form-item>
       </el-form>
       <template #footer>
@@ -458,6 +475,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="过期时间"><el-date-picker v-model="batchForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item label="代理员">
+          <el-select v-model="batchForm.agent_id" placeholder="选择代理员（默认官方）" clearable style="width:100%">
+            <el-option label="官方" :value="null" />
+            <el-option v-for="u in agentUsers" :key="u.id" :label="u.username" :value="u.id" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">选择销售代理员，用于追踪业绩（默认官方）</div>
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="batchForm.remark" /></el-form-item>
       </el-form>
       <template #footer>
@@ -861,8 +885,10 @@ const cards = ref([])
 const cardsLoading = ref(false)
 const cardStatusFilter = ref('')
 const cardTypeFilter = ref('')
+const cardAgentFilter = ref(null)
 const cardPage = ref(1)
 const cardTotal = ref(0)
+const agentUsers = ref([])
 const cardDialog = ref(false)
 const cardForm = ref({})
 const batchDialog = ref(false)
@@ -880,10 +906,21 @@ async function fetchCards() {
     const params = { limit: 20, offset: (cardPage.value - 1) * 20 }
     if (cardStatusFilter.value) params.status = cardStatusFilter.value
     if (cardTypeFilter.value) params.card_type = cardTypeFilter.value
+    if (cardAgentFilter.value !== null && cardAgentFilter.value !== undefined) params.agent_id = cardAgentFilter.value
     const r = await chargeApi.listChargeCards(params)
     cards.value = r.items || []
     cardTotal.value = r.total || 0
   } catch {} finally { cardsLoading.value = false }
+}
+
+// v3.3: 加载代理员列表（管理员用户）
+async function fetchAgentUsers() {
+  try {
+    const r = await chargeApi.listUsers({ limit: 1000 })
+    agentUsers.value = (r.items || []).filter(u => u.status === 1)
+  } catch {
+    agentUsers.value = []
+  }
 }
 function showCreateCard() {
   cardForm.value = {
@@ -1142,6 +1179,7 @@ function saveFormatAndPrefix(format, prefix) {
 
 onMounted(async () => {
   await fetchDefaultCurrency()
+  fetchAgentUsers() // v3.3: 加载代理员列表
   fetchSites()
   fetchOrders()
   fetchCards()

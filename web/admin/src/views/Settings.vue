@@ -294,6 +294,43 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- Security Config -->
+      <el-tab-pane label="安全设置" name="security">
+        <el-card>
+          <el-form label-width="180px" style="max-width:600px">
+            <el-form-item label="加密密钥状态">
+              <div style="display:flex;align-items:center;gap:12px">
+                <el-tag :type="encryptionKeyStatus.type">{{ encryptionKeyStatus.text }}</el-tag>
+                <span v-if="encryptionKeyStatus.configured" style="font-size:12px;color:#666">
+                  已配置（不可修改）
+                </span>
+              </div>
+              <div style="font-size:11px;color:#999;margin-top:4px">
+                用于加密充值卡号等敏感数据，密钥值不会显示
+              </div>
+            </el-form-item>
+            <el-form-item v-if="!encryptionKeyStatus.configured" label="生成加密密钥">
+              <el-button type="primary" :loading="generatingKey" @click="generateEncryptionKey">
+                随机生成并保存
+              </el-button>
+              <div style="font-size:11px;color:#999;margin-top:4px">
+                生成后将自动写入 .env 文件，请妥善保管备份
+              </div>
+            </el-form-item>
+            <el-form-item v-if="encryptionKeyStatus.configured" label="重要警告">
+              <el-alert type="warning" :closable="false" show-icon>
+                <template #title>
+                  密钥已配置！修改密钥会导致已加密的充值卡号等数据无法解密，请谨慎操作
+                </template>
+                <div style="margin-top:8px">
+                  如需修改，请手动编辑 .env 文件中的 CF_SECRET_ENCRYPTION_KEY，重启后生效
+                </div>
+              </el-alert>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-tab-pane>
+
       <!-- Currency Config -->
       <el-tab-pane :label="t('currency.defaultCurrency')" name="currency">
         <el-card>
@@ -697,6 +734,10 @@ const domainForm = ref({ name: '', url: '' })
 const selfUnbanForm = ref({ enabled: false, cooldown_hours: 24, applicable_status: ['suspended'] })
 const selfUnbanSaving = ref(false)
 
+// Security config (encryption key)
+const encryptionKeyStatus = ref({ configured: false, text: '未配置', type: 'danger' })
+const generatingKey = ref(false)
+
 // OAuth config
 const oauthForm = ref({ github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
 const oauthSaving = ref(false)
@@ -973,6 +1014,36 @@ async function saveSelfUnbanConfig() {
   } catch (e) {} finally { selfUnbanSaving.value = false }
 }
 
+// Security config (encryption key)
+async function fetchEncryptionKeyStatus() {
+  try {
+    const d = await client.get('/system/encryption-key-status')
+    if (d) {
+      encryptionKeyStatus.value = {
+        configured: d.configured,
+        text: d.configured ? '已配置' : '未配置',
+        type: d.configured ? 'success' : 'danger'
+      }
+    }
+  } catch (e) {
+    encryptionKeyStatus.value = { configured: false, text: '未知', type: 'warning' }
+  }
+}
+async function generateEncryptionKey() {
+  generatingKey.value = true
+  try {
+    const d = await client.post('/system/generate-encryption-key')
+    if (d && d.success) {
+      ElMessage.success('加密密钥已生成并保存')
+      await fetchEncryptionKeyStatus()
+    } else {
+      ElMessage.error(d.message || '生成失败')
+    }
+  } catch (e) {
+    ElMessage.error('生成加密密钥失败')
+  } finally { generatingKey.value = false }
+}
+
 // OAuth config
 async function fetchOAuthConfig() {
   try {
@@ -1079,5 +1150,5 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig() })
+onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig() })
 </script>

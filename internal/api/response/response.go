@@ -61,6 +61,11 @@ func Unprocessable(c *gin.Context, code, message string) {
 	Error(c, http.StatusUnprocessableEntity, code, message)
 }
 
+// PaymentRequired sends a 402 error response (insufficient balance, need payment).
+func PaymentRequired(c *gin.Context, code, message string) {
+	Error(c, http.StatusPaymentRequired, code, message)
+}
+
 // InternalError sends a 500 error response.
 func InternalError(c *gin.Context, code, message string) {
 	Error(c, http.StatusInternalServerError, code, message)

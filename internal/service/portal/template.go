@@ -1885,7 +1885,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <el-button 
             v-if="chargeForm.method === 'card'" 
             type="primary" 
-            @click="redeemCardCode"
+            @click="redeemCard"
             :loading="redeemBusy"
           >立即充值</el-button>
           <el-button 
@@ -3454,7 +3454,7 @@ var noticePopupVisible = ref(false)
     var orderForm = ref({ variant_id: null, order_type: 'new', promotion_code: '', pay_method: 'balance', charge_site_id: null, gift_card_code: '' })
     var orderBusy = ref(false)
     var chargeSites = ref([])
-    var chargeForm = ref({ site_id: null, amount_yuan: 10 })
+    var chargeForm = ref({ site_id: null, amount_yuan: 10, method: 'online', custom_amount: false })
     var chargeBusy = ref(false)
     var chargeOrders = ref([])
     var cardCode = ref('')

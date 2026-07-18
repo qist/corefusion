@@ -422,12 +422,12 @@ type RenderConfig struct {
 func DefaultRenderConfig() RenderConfig {
 	return RenderConfig{
 		SiteName:            "CoreFusion",
-		PrimaryColor:        "#409eff",
-		BackgroundColor:     "#f5f7fa",
+		PrimaryColor:        "#667eea",
+		BackgroundColor:     "#f0f2f5",
 		CardBackgroundColor: "#ffffff",
 		TextColor:           "#303133",
 		AccentColor:         "#67c23a",
-		FontFamily:          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+		FontFamily:          "system-ui, -apple-system, sans-serif",
 		PortalEditorVersion: 1,
 		Navigation:         json.RawMessage(defaultNavigationJSON),
 		Modules:             json.RawMessage(defaultModulesJSON),

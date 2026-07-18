@@ -77,6 +77,14 @@
                     <el-dropdown-item command="rich_text" divided>富文本 (HTML)</el-dropdown-item>
                     <el-dropdown-item command="custom_html">自定义 HTML</el-dropdown-item>
                     <el-dropdown-item command="freeform" divided>自由组件 (HTML+CSS+JS)</el-dropdown-item>
+                    <el-dropdown-item command="plan_list" divided>套餐列表</el-dropdown-item>
+                    <el-dropdown-item command="order_create">创建订单</el-dropdown-item>
+                    <el-dropdown-item command="charge_panel">在线充值</el-dropdown-item>
+                    <el-dropdown-item command="balance_display">余额显示</el-dropdown-item>
+                    <el-dropdown-item command="referral">邀请返利</el-dropdown-item>
+                    <el-dropdown-item command="ticket_list">工单系统</el-dropdown-item>
+                    <el-dropdown-item command="article_list">教程文章</el-dropdown-item>
+                    <el-dropdown-item command="shared_accounts">共享账号</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -807,6 +815,67 @@ ctx.moduleTitle           — 当前模块标题</pre>
                 <el-form-item label="6小时按钮文案"><el-input v-model="selectedModule.data.btn_6h" placeholder="最近6小时" /></el-form-item>
                 <el-form-item label="24小时按钮文案"><el-input v-model="selectedModule.data.btn_24h" placeholder="最近24小时" /></el-form-item>
               </template>
+
+              <!-- Plan List Properties -->
+              <template v-if="selectedModule.type === 'plan_list'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="（可选）" /></el-form-item>
+                <el-form-item label="显示价格"><el-switch v-model="selectedModule.data.show_price" /></el-form-item>
+                <el-form-item label="显示流量"><el-switch v-model="selectedModule.data.show_quota" /></el-form-item>
+                <el-form-item label="购买按钮文案"><el-input v-model="selectedModule.data.buy_text" placeholder="立即购买" /></el-form-item>
+                <el-form-item label="续费按钮文案"><el-input v-model="selectedModule.data.renew_text" placeholder="续费" /></el-form-item>
+                <el-form-item label="列数"><el-input-number v-model="selectedModule.data.columns" :min="1" :max="4" /></el-form-item>
+              </template>
+
+              <!-- Order Create Properties -->
+              <template v-if="selectedModule.type === 'order_create'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+              </template>
+
+              <!-- Charge Panel Properties -->
+              <template v-if="selectedModule.type === 'charge_panel'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item label="显示充值记录"><el-switch v-model="selectedModule.data.show_orders" /></el-form-item>
+                <el-form-item label="记录显示条数"><el-input-number v-model="selectedModule.data.orders_limit" :min="1" :max="20" /></el-form-item>
+                <el-form-item label="卡号占位符"><el-input v-model="selectedModule.data.card_placeholder" placeholder="输入充值卡号" /></el-form-item>
+                <el-form-item label="兑换按钮文案"><el-input v-model="selectedModule.data.card_btn_text" placeholder="兑换" /></el-form-item>
+              </template>
+
+              <!-- Balance Display Properties -->
+              <template v-if="selectedModule.type === 'balance_display'">
+                <el-form-item label="显示交易记录"><el-switch v-model="selectedModule.data.show_transactions" /></el-form-item>
+                <el-form-item label="交易记录条数"><el-input-number v-model="selectedModule.data.tx_limit" :min="1" :max="50" /></el-form-item>
+                <el-form-item label="充值按钮文案"><el-input v-model="selectedModule.data.charge_btn_text" placeholder="去充值" /></el-form-item>
+              </template>
+
+              <!-- Referral Properties -->
+              <template v-if="selectedModule.type === 'referral'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item label="复制按钮文案"><el-input v-model="selectedModule.data.copy_btn_text" placeholder="复制邀请链接" /></el-form-item>
+                <el-form-item label="显示邀请记录"><el-switch v-model="selectedModule.data.show_records" /></el-form-item>
+                <el-form-item label="记录显示条数"><el-input-number v-model="selectedModule.data.records_limit" :min="1" :max="50" /></el-form-item>
+              </template>
+
+              <!-- Ticket List Properties -->
+              <template v-if="selectedModule.type === 'ticket_list'">
+                <el-form-item label="新建按钮文案"><el-input v-model="selectedModule.data.new_btn_text" placeholder="新建工单" /></el-form-item>
+              </template>
+
+              <!-- Article List Properties -->
+              <template v-if="selectedModule.type === 'article_list'">
+                <el-form-item label="显示分类筛选"><el-switch v-model="selectedModule.data.show_category_filter" /></el-form-item>
+                <el-form-item label="默认分类">
+                  <el-select v-model="selectedModule.data.default_category" style="width: 100%">
+                    <el-option label="全部" value="" /><el-option label="教程" value="tutorial" /><el-option label="FAQ" value="faq" /><el-option label="公告" value="notice" />
+                  </el-select>
+                </el-form-item>
+              </template>
+
+              <!-- Shared Accounts Properties -->
+              <template v-if="selectedModule.type === 'shared_accounts'">
+                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item label="查看凭据按钮"><el-input v-model="selectedModule.data.apply_btn_text" placeholder="查看凭据" /></el-form-item>
+                <el-form-item label="修复按钮文案"><el-input v-model="selectedModule.data.repair_btn_text" placeholder="请求修复" /></el-form-item>
+              </template>
             </el-form>
           </div>
 
@@ -883,7 +952,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
         <el-alert type="info" :closable="false" show-icon style="margin-bottom: 0; border-radius: 0">
           <span style="font-size: 13px">
             <b>模板编辑</b> — 可直接修改门户的 HTML/CSS/JS 模板代码。修改后点击"保存"即生效。
-            <br/>HTML 变量：<code v-pre>{{.SiteName}}</code> <code v-pre>{{.LogoURL}}</code> <code v-pre>{{.RegistrationEnabled}}</code>
+            <br/>HTML 变量：<code v-pre>{{.PortalName}}</code> <code v-pre>{{.LogoURL}}</code> <code v-pre>{{.RegistrationEnabled}}</code>
             <code v-pre>{{registrationEnabledText}}</code> &nbsp;|&nbsp; CSS 变量：<code v-pre>{{.PrimaryColor}}</code>
             <code v-pre>{{.BackgroundColor}}</code> <code v-pre>{{.FontFamily}}</code> 等
           </span>
@@ -974,7 +1043,7 @@ const form = reactive({ name: '', description: '', html_content: '', css_content
 const config = reactive({
   site_name: 'CoreFusion', logo_url: '', primary_color: '#667eea', background_color: '#f0f2f5',
   card_background_color: '#ffffff', text_color: '#303133', accent_color: '#67c23a',
-  font_family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  font_family: "system-ui, -apple-system, sans-serif",
 })
 
 const navigation = ref([])
@@ -1622,14 +1691,16 @@ const previewStyles = computed(() => ({
 const defaultNavigation = [
   { id: 'nav-overview', label: '概览', icon: '📊', target: 'overview', href: '', enabled: true, open_external: false },
   { id: 'nav-subscription', label: '订阅', icon: '📋', target: 'subscription', href: '', enabled: true, open_external: false },
+  { id: 'nav-store', label: '商城', icon: '💎', target: 'store', href: '', enabled: true, open_external: false },
   { id: 'nav-security', label: '安全', icon: '🔒', target: 'security', href: '', enabled: true, open_external: false },
+  { id: 'nav-support', label: '支持', icon: '💬', target: 'support', href: '', enabled: true, open_external: false },
   { id: 'nav-logs', label: '日志', icon: '📦', target: 'logs', href: '', enabled: true, open_external: false },
 ]
 
 const defaultModules = [
   {
     id: 'mod-hero', type: 'hero', title: '欢迎', page: 'overview', visible: true,
-    data: { eyebrow: 'CORE FUSION', heading: '欢迎回来', description: '查看您的流量使用和订阅状态', button_text: '查看订阅', button_target: 'subscription' },
+    data: { eyebrow: 'WELCOME BACK', heading: '欢迎回来', description: '管理您的订阅与服务', button_text: '查看订阅', button_target: 'subscription' },
     style: { variant: 'primary', align: 'left' },
   },
   {
@@ -1662,10 +1733,45 @@ const defaultModules = [
     data: { markdown: '## 访问日志\n\n在此页面查看您的连接日志和访问记录。\n\n> 日志数据由客户端实时拉取。' },
     style: { align: 'left' },
   },
+  {
+    id: 'mod-plan-list', type: 'plan_list', title: '套餐列表', page: 'store', visible: true,
+    data: { show_price: true, show_features: true, show_quota: true, button_text: '购买', buy_text: '立即购买', renew_text: '续费', columns: 2 },
+    style: {},
+  },
+  {
+    id: 'mod-balance', type: 'balance_display', title: '账户余额', page: 'store', visible: true,
+    data: { show_transactions: true, charge_btn_text: '去充值', tx_limit: 10 },
+    style: {},
+  },
+  {
+    id: 'mod-charge', type: 'charge_panel', title: '在线充值', page: 'store', visible: false,
+    data: { description: '选择充值方式，输入金额后跳转到支付页面。', show_orders: true, orders_limit: 5, card_placeholder: '输入充值卡号', card_btn_text: '兑换' },
+    style: {},
+  },
+  {
+    id: 'mod-referral', type: 'referral', title: '邀请返利', page: 'support', visible: true,
+    data: { description: '邀请好友注册并消费，即可获得返利佣金。', copy_btn_text: '复制邀请链接', show_records: true, records_limit: 10 },
+    style: {},
+  },
+  {
+    id: 'mod-tickets', type: 'ticket_list', title: '我的工单', page: 'support', visible: true,
+    data: { new_btn_text: '新建工单', show_categories: true },
+    style: {},
+  },
+  {
+    id: 'mod-articles', type: 'article_list', title: '教程文章', page: 'support', visible: true,
+    data: { show_category_filter: true, default_category: '' },
+    style: {},
+  },
+  {
+    id: 'mod-shared-accts', type: 'shared_accounts', title: '共享账号', page: 'support', visible: true,
+    data: { description: '以下共享账号可供使用，点击查看凭据。', apply_btn_text: '查看凭据', repair_btn_text: '请求修复' },
+    style: {},
+  },
 ]
 
 function moduleTypeLabel(type) {
-  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML', account_info: '账户', traffic_ring: '流量环', subscription_detail: '订阅详情', security_settings: '安全', log_packages: '日志', freeform: '自由' }[type] || type
+  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML', account_info: '账户', traffic_ring: '流量环', subscription_detail: '订阅详情', security_settings: '安全', log_packages: '日志', freeform: '自由', plan_list: '套餐', order_create: '订单', charge_panel: '充值', balance_display: '余额', referral: '返利', ticket_list: '工单', article_list: '文章', shared_accounts: '共享账号' }[type] || type
 }
 
 function moduleStyle(mod) {
@@ -1771,6 +1877,14 @@ function addModule(type) {
       },
       style: { custom_css: '', custom_class: '' }
     },
+    plan_list: { data: { show_price: true, show_features: true, show_quota: true, button_text: '购买', buy_text: '立即购买', renew_text: '续费', columns: 2 }, style: { custom_css: '' } },
+    order_create: { data: { description: '选择套餐和支付方式，创建订单。' }, style: { custom_css: '' } },
+    charge_panel: { data: { description: '选择充值方式，输入金额后跳转到支付页面。', show_orders: true, orders_limit: 5, card_placeholder: '输入充值卡号', card_btn_text: '兑换' }, style: { custom_css: '' } },
+    balance_display: { data: { show_transactions: true, charge_btn_text: '去充值', tx_limit: 10 }, style: { custom_css: '' } },
+    referral: { data: { description: '邀请好友注册并消费，即可获得返利佣金。', copy_btn_text: '复制邀请链接', show_records: true, records_limit: 10 }, style: { custom_css: '' } },
+    ticket_list: { data: { new_btn_text: '新建工单', show_categories: true }, style: { custom_css: '' } },
+    article_list: { data: { show_category_filter: true, default_category: '' }, style: { custom_css: '' } },
+    shared_accounts: { data: { description: '以下共享账号可供使用，点击查看凭据。', apply_btn_text: '查看凭据', repair_btn_text: '请求修复' }, style: { custom_css: '' } },
   }
   const page = currentPageTarget.value || 'overview'
   const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), page, visible: true, data: defaults[type].data, style: defaults[type].style }

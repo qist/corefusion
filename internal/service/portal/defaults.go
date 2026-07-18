@@ -5,7 +5,9 @@ package portal
 const defaultNavigationJSON = `[
   {"id":"nav-overview","label":"概览","icon":"📊","target":"overview","href":"","enabled":true,"open_external":false},
   {"id":"nav-subscription","label":"订阅","icon":"📋","target":"subscription","href":"","enabled":true,"open_external":false},
+  {"id":"nav-store","label":"商城","icon":"💎","target":"store","href":"","enabled":true,"open_external":false},
   {"id":"nav-security","label":"安全","icon":"🔒","target":"security","href":"","enabled":true,"open_external":false},
+  {"id":"nav-support","label":"支持","icon":"💬","target":"support","href":"","enabled":true,"open_external":false},
   {"id":"nav-logs","label":"日志","icon":"📦","target":"logs","href":"","enabled":true,"open_external":false}
 ]`
 
@@ -15,7 +17,7 @@ const defaultNavigationJSON = `[
 const defaultModulesJSON = `[
   {
     "id":"mod-hero","type":"hero","title":"欢迎","page":"overview","visible":true,
-    "data":{"eyebrow":"CORE FUSION","heading":"欢迎回来","description":"查看您的流量使用和订阅状态","button_text":"查看订阅","button_target":"subscription"},
+    "data":{"eyebrow":"WELCOME BACK","heading":"欢迎回来","description":"管理您的订阅与服务","button_text":"查看订阅","button_target":"subscription"},
     "style":{"variant":"primary","align":"left"}
   },
   {
@@ -50,5 +52,40 @@ const defaultModulesJSON = `[
     "id":"mod-log-info","type":"markdown","title":"访问日志","page":"logs","visible":true,
     "data":{"markdown":"## 访问日志\n\n在此页面查看您的连接日志和访问记录。\n\n> 日志数据由客户端实时拉取。"},
     "style":{"align":"left"}
+  },
+  {
+    "id":"mod-plan-list","type":"plan_list","title":"套餐列表","page":"store","visible":true,
+    "data":{"show_price":true,"show_features":true,"show_quota":true,"button_text":"购买","buy_text":"立即购买","renew_text":"续费","columns":2},
+    "style":{}
+  },
+  {
+    "id":"mod-balance","type":"balance_display","title":"账户余额","page":"store","visible":true,
+    "data":{"show_transactions":true,"charge_btn_text":"去充值","tx_limit":10},
+    "style":{}
+  },
+  {
+    "id":"mod-charge","type":"charge_panel","title":"在线充值","page":"store","visible":false,
+    "data":{"description":"选择充值方式，输入金额后跳转到支付页面。","show_orders":true,"orders_limit":5,"card_placeholder":"输入充值卡号","card_btn_text":"兑换"},
+    "style":{}
+  },
+  {
+    "id":"mod-referral","type":"referral","title":"邀请返利","page":"support","visible":true,
+    "data":{"description":"邀请好友注册并消费，即可获得返利佣金。","copy_btn_text":"复制邀请链接","show_records":true,"records_limit":10},
+    "style":{}
+  },
+  {
+    "id":"mod-tickets","type":"ticket_list","title":"我的工单","page":"support","visible":true,
+    "data":{"new_btn_text":"新建工单","show_categories":true},
+    "style":{}
+  },
+  {
+    "id":"mod-articles","type":"article_list","title":"教程文章","page":"support","visible":true,
+    "data":{"show_category_filter":true,"default_category":""},
+    "style":{}
+  },
+  {
+    "id":"mod-shared-accts","type":"shared_accounts","title":"共享账号","page":"support","visible":true,
+    "data":{"description":"以下共享账号可供使用，点击查看凭据。","apply_btn_text":"查看凭据","repair_btn_text":"请求修复"},
+    "style":{}
   }
 ]`

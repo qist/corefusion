@@ -2489,7 +2489,8 @@ func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sys
 
 	// Render HTML with template variables (sanitize to prevent XSS)
 	html := tmpl.HTMLContent
-	html = strings.ReplaceAll(html, "{{.SiteName}}", htmlEscape(cfg.SiteName))
+	html = strings.ReplaceAll(html, "{{.PortalName}}", htmlEscape(cfg.SiteName))
+	html = strings.ReplaceAll(html, "{{.SiteName}}", htmlEscape(cfg.SiteName)) // 向后兼容
 	html = strings.ReplaceAll(html, "{{.LogoURL}}", htmlEscape(cfg.LogoURL))
 	html = strings.ReplaceAll(html, "{{.RegistrationEnabled}}", fmt.Sprintf("%v", cfg.RegistrationEnabled))
 	html = strings.ReplaceAll(html, "{{registrationEnabledText}}", map[bool]string{true: "登录或注册以", false: "登录以"}[cfg.RegistrationEnabled])

@@ -1,6 +1,7 @@
 package charge
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -22,6 +23,12 @@ import (
 	"corefusion/pkg/netutil"
 )
 
+// PlanRefunder handles plan-related refund operations.
+// Implemented by clientauth.CommerceService to avoid circular imports.
+type PlanRefunder interface {
+	RefundChargeOrder(ctx context.Context, chargeOrderID int64, remark string) error
+}
+
 // Handler handles admin charge management HTTP requests.
 type Handler struct {
 	chargeSiteRepo  *repository.ChargeSiteRepository
@@ -31,6 +38,7 @@ type Handler struct {
 	balanceTxRepo   *repository.BalanceTransactionRepository
 	clientRepo     *repository.ClientRepository
 	userRepo       *repository.UserRepository // v3.3: 用于查询代理员信息
+	planRefunder    PlanRefunder               // 退款时回退套餐时间 + 移除节点账号
 	db             *gorm.DB
 }
 
@@ -55,6 +63,12 @@ func NewHandler(
 		userRepo:        userRepo,
 		db:              db,
 	}
+}
+
+// SetPlanRefunder sets the plan refunder (called from router initialization).
+// 退款时自动回退套餐到期时间 + 从节点移除用户凭证
+func (h *Handler) SetPlanRefunder(rf PlanRefunder) {
+	h.planRefunder = rf
 }
 
 // ============================================================
@@ -484,12 +498,26 @@ func (h *Handler) RefundOrder(c *gin.Context) {
 	var input RefundOrderInput
 	c.ShouldBindJSON(&input)
 
-	// Update order status to refunded
-	order.Status = entity.ChargeStatusRefunded
 	remark := input.Remark
 	if remark == "" {
 		remark = "管理员退款"
 	}
+
+	// 如果有 PlanRefunder（CommerceService），使用完整退款逻辑：
+	// 退余额 + 回退套餐到期时间 + 从节点移除用户凭证
+	if h.planRefunder != nil {
+		if err := h.planRefunder.RefundChargeOrder(c.Request.Context(), id, remark); err != nil {
+			response.InternalError(c, "REFUND_FAILED", err.Error())
+			return
+		}
+		// 重新查询更新后的订单返回
+		order, _ = h.chargeOrderRepo.GetByID(c.Request.Context(), id)
+		response.OK(c, order)
+		return
+	}
+
+	// 兼容模式：无 PlanRefunder 时仅退余额（旧逻辑）
+	order.Status = entity.ChargeStatusRefunded
 	order.Remark = remark
 	if err := h.chargeOrderRepo.Update(c.Request.Context(), order); err != nil {
 		response.InternalError(c, "REFUND_FAILED", err.Error())

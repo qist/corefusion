@@ -208,6 +208,18 @@ func SetLocalAgent(la *agent.LocalAgent) {
 	sharedLocalAgent = la
 }
 
+// sharedUserSyncer is the global UserSyncer shared between main.go and router.
+// Set from main.go to ensure that CommerceService can sync user credentials
+// to all nodes (local + remote) when a plan is activated or refunded.
+var sharedUserSyncer clientauthSvc.UserSyncer
+
+// SetUserSyncer sets the shared UserSyncer (called from main.go before NewWithFullConfig).
+// This enables CommerceService to sync user accounts to nodes after plan activation
+// and remove them on refund.
+func SetUserSyncer(syncer clientauthSvc.UserSyncer) {
+	sharedUserSyncer = syncer
+}
+
 // configSyncHookAdapter adapts configsync.Service to the ConfigSyncHook interface
 // used by inboundconfig and outboundconfig handlers.
 type configSyncHookAdapter struct {
@@ -594,6 +606,11 @@ subRepo, subEndpointRepo, publicSubH, database,
 	// P1: 注入 ReferralService — 注册时自动绑定邀请关系 + 套餐激活时触发返利
 	clientauthSvcInst.SetReferralService(referralSvcInst)
 	commerceSvcInst.SetReferralService(referralSvcInst)
+
+	// 注入 UserSyncer — 套餐激活后同步用户到节点 + 退款时移除用户
+	if sharedUserSyncer != nil {
+		commerceSvcInst.SetUserSyncer(sharedUserSyncer)
+	}
 
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
@@ -1020,6 +1037,8 @@ planVariantGroup.DELETE("/:id", planH.DeleteVariant)
 		userRepo, // v3.3: 用于查询代理员信息
 		database,
 	)
+	// 注入 PlanRefunder — 退款时回退套餐时间 + 移除节点账号
+	chargeAdminH.SetPlanRefunder(commerceSvcInst)
 chargeSiteGroup := protected.Group("/charge-sites")
 {
 chargeSiteGroup.GET("", chargeAdminH.ListSites)
@@ -2606,6 +2625,11 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// P1: 注入 ReferralService — 注册时自动绑定邀请关系 + 套餐激活时触发返利
 	clientauthSvcInst.SetReferralService(referralSvcInst)
 	commerceSvcInst.SetReferralService(referralSvcInst)
+
+	// 注入 UserSyncer — Portal 引擎的套餐激活也需同步用户到节点
+	if sharedUserSyncer != nil {
+		commerceSvcInst.SetUserSyncer(sharedUserSyncer)
+	}
 
 	// Root path serves the portal page
 	r.GET("/", func(c *gin.Context) {

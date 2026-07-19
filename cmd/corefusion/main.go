@@ -265,6 +265,10 @@ func runServer(args []string) {
 	go userSyncSvc.RunRetryLoop(context.Background())
 	log.Println("User sync service started (multi-server fan-out + offline retry)")
 
+	// 注入 UserSyncService 到 router（供 CommerceService 使用）
+	// 套餐激活后自动同步用户凭证到所有节点 + 退款时移除用户
+	router.SetUserSyncer(userSyncSvc)
+
 	// NOTE: MultiServerTrafficCollector was removed because it competed with
 	// TrafficEventConsumer (started in router.go) for the same onTraffic channel.
 	// Having two consumers on the same channel caused every other traffic event

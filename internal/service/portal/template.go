@@ -121,7 +121,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
               <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
               <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
+              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
             </div>
             <!-- Rich Text -->
             <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
@@ -336,7 +336,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'subscription'" class="text-center">
               <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
+              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
             </div>
             <!-- Security Settings (dynamic) -->
             <div v-else-if="mod.type === 'security_settings'">
@@ -1003,7 +1003,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
           <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
           <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
-          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
+          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
         </div>
         <!-- Rich Text -->
         <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
@@ -1201,7 +1201,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'subscription'" class="text-center">
           <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
           <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
+          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
         </div>
         <!-- Streaming Status / 流媒体解锁 -->
         <div v-else-if="mod.type === 'streaming_status'">
@@ -3695,6 +3695,7 @@ var onMounted = Vue.onMounted
 var onUnmounted = Vue.onUnmounted
 var watch = Vue.watch
 var ElMessage = ElementPlus.ElMessage
+var ElMessageBox = ElementPlus.ElMessageBox
 
 var app = createApp({
   setup: function() {
@@ -3914,6 +3915,37 @@ var showCredentialsDialog = ref(false)
     var saveActiveTab = function(tab) {
       try { localStorage.setItem('portal_active_tab', tab) } catch(e) {}
     }
+    // Fetch data for a specific page
+    var fetchPageData = function(pageTarget) {
+      // Auto-fetch log packages if the page has log_packages modules
+      var hasLogMods = portalModules.value.some(function(m) {
+        return (m.page || 'overview') === pageTarget && m.type === 'log_packages'
+      })
+      if (hasLogMods) fetchLogPackages()
+      // Auto-fetch commercial module data based on page
+      var pageMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === pageTarget })
+      var hasPlanList = pageMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
+      var hasCharge = pageMods.some(function(m) { return m.type === 'charge_panel' })
+      var hasBalance = pageMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
+      var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })
+      var hasTickets = pageMods.some(function(m) { return m.type === 'ticket_list' })
+      var hasArticles = pageMods.some(function(m) { return m.type === 'article_list' })
+      var hasTutorialCards = pageMods.some(function(m) { return m.type === 'tutorial_cards' })
+      var hasSharedAccts = pageMods.some(function(m) { return m.type === 'shared_accounts' })
+      var hasStreaming = pageMods.some(function(m) { return m.type === 'streaming_status' })
+      var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
+      var hasNodeList = pageMods.some(function(m) { return m.type === 'node_list' })
+      if (hasPlanList || hasNodeList) fetchPlans()
+      if (hasNodeList) fetchNodes()
+      if (hasPlanList || hasCharge) fetchChargeSites()
+      if (hasCharge) fetchChargeOrders()
+      if (hasBalance) { fetchBalance(); fetchBalanceTxns() }
+      if (hasReferral) fetchReferral()
+      if (hasTickets) fetchTickets()
+      if (hasArticles || hasTutorialCards) fetchArticles()
+      if (hasSharedAccts || hasStreaming) fetchSharedAccounts()
+      if (hasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
+    }
     var onNavClick = function(nav) {
       if (nav.href) {
         if (nav.open_external) window.open(nav.href, '_blank')
@@ -3922,34 +3954,7 @@ var showCredentialsDialog = ref(false)
       }
       activeTab.value = nav.target
       saveActiveTab(nav.target)
-      // Auto-fetch log packages if the page has log_packages modules
-      var hasLogMods = portalModules.value.some(function(m) {
-        return (m.page || 'overview') === nav.target && m.type === 'log_packages'
-      })
-      if (hasLogMods) fetchLogPackages()
-      // Auto-fetch commercial module data based on page
-      var pageMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === nav.target })
-      var hasPlanList = pageMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
-      var hasCharge = pageMods.some(function(m) { return m.type === 'charge_panel' })
-      var hasBalance = pageMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
-      var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })
-      var hasTickets = pageMods.some(function(m) { return m.type === 'ticket_list' })
-            var hasArticles = pageMods.some(function(m) { return m.type === 'article_list' })
-            var hasTutorialCards = pageMods.some(function(m) { return m.type === 'tutorial_cards' })
-var hasSharedAccts = pageMods.some(function(m) { return m.type === 'shared_accounts' })
-var hasStreaming = pageMods.some(function(m) { return m.type === 'streaming_status' })
-var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
-            var hasNodeList = pageMods.some(function(m) { return m.type === 'node_list' })
-            if (hasPlanList || hasNodeList) fetchPlans()
-            if (hasNodeList) fetchNodes()
-            if (hasPlanList || hasCharge) fetchChargeSites()
-            if (hasCharge) fetchChargeOrders()
-            if (hasBalance) { fetchBalance(); fetchBalanceTxns() }
-            if (hasReferral) fetchReferral()
-            if (hasTickets) fetchTickets()
-            if (hasArticles || hasTutorialCards) fetchArticles()
-if (hasSharedAccts || hasStreaming) fetchSharedAccounts()
-if (hasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
+      fetchPageData(nav.target)
     }
 
     // Apply theme
@@ -4849,7 +4854,7 @@ return {
       createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages,
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
       switchToLogs: switchToLogs, scrollToModule: scrollToModule,
-      portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd,
+      portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd, fetchPageData: fetchPageData, saveActiveTab: saveActiveTab,
       freeformComponents: freeformComponents,
       showNodeQRDialog: showNodeQRDialog, currentNodeQR: currentNodeQR, nodeQRContainer: nodeQRContainer, showNodeQR: showNodeQR,
       showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail, showNodeDetail: showNodeDetail,

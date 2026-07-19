@@ -19,11 +19,6 @@ const defaultNavigationJSON = `[
 // All content is module-driven — no hardcoded tabs in the template.
 const defaultModulesJSON = `[
   {
-    "id":"mod-notice","type":"notice","title":"站点公告","page":"overview","visible":true,
-    "data":{"title":"📢 公告","markdown":"欢迎使用 **CoreFusion** 订阅管理平台！\n\n- 支持 VLESS / VMess / Trojan / TUIC 等多种协议\n- 一键复制订阅链接\n- 流量使用实时查看\n"},
-    "style":{"variant":"info"}
-  },
-  {
     "id":"mod-hero","type":"hero","title":"欢迎","page":"overview","visible":true,
     "data":{"eyebrow":"WELCOME","heading":"欢迎回来","description":"管理您的订阅与服务","button_text":"查看订阅","button_target":"store"},
     "style":{"variant":"primary","align":"left"}

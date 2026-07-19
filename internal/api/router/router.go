@@ -1954,15 +1954,23 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 	r.GET("/api/v1/public/subscription-endpoints", subendH.List)
 
 	// Public settings (for portal)
+	// v3.4: portalTmplSvc 用于在 public/settings 中返回最新 portal 配置
+	portalTmplSvcPublic := portalSvc.NewService(repository.NewPortalTemplateRepository(database))
+	portalTmplSvcPublic.WithSettingStore(systemSettingSvc)
 	r.GET("/api/v1/public/settings", func(c *gin.Context) {
 		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
 		chatProvider, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.provider")
 		chatSiteID, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.site_id")
-		response.OK(c, gin.H{
+		result := gin.H{
 			"registration_enabled": registrationEnabled == "true",
-			"chat_provider":        chatProvider,
-			"chat_site_id":         chatSiteID,
-		})
+			"chat_provider":       chatProvider,
+			"chat_site_id":        chatSiteID,
+		}
+		// v3.4: 返回最新 portal 配置，前端可用于热更新模块/导航
+		if cfg, err := portalTmplSvcPublic.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
+			result["portal_config"] = cfg
+		}
+		response.OK(c, result)
 	})
 
 	// Public articles (no auth required)
@@ -2840,9 +2848,14 @@ subRepo, subEndpointRepo2, portalPublicSubH, database,
 	})
 	r.GET("/api/v1/public/settings", func(c *gin.Context) {
 		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
-		response.OK(c, gin.H{
+		result := gin.H{
 			"registration_enabled": registrationEnabled == "true",
-		})
+		}
+		// v3.4: 返回最新 portal 配置
+		if cfg, err := portalTmplSvc.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
+			result["portal_config"] = cfg
+		}
+		response.OK(c, result)
 	})
 
 	return r

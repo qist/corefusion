@@ -194,6 +194,7 @@ type Article struct {
 	Content     string     `gorm:"type:longtext;not null" json:"content"` // Markdown
 	SortOrder   int        `gorm:"not null;default:0" json:"sort_order"`
 	IsPublished bool       `gorm:"not null;default:false" json:"is_published"`
+	IsPopup     bool       `gorm:"not null;default:false" json:"is_popup"` // 标记为首页弹窗公告
 	PublishedAt *time.Time `json:"published_at"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`

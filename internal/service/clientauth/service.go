@@ -192,8 +192,8 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 		}
 	}
 
-	// Get subscription token and status
-	if client.SubscriptionID != nil {
+	// Get subscription token and status (only for active clients)
+	if client.SubscriptionID != nil && client.Status == "active" {
 		if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
 			info.SubToken = sub.Token
 			info.SubStatus = sub.Status

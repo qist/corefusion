@@ -111,8 +111,8 @@ func (s *UserSyncService) syncUserToServer(
 	client *entity.Client,
 	action string,
 ) error {
-	// Check if server is online
-	if !s.nodeMgr.IsOnline(serverID) {
+	// Check if server is online (local servers are always online)
+	if !s.nodeMgr.IsOnlineForServer(serverID) {
 		log.Printf("[UserSync] server %d offline, queuing for retry (client %d, action %s)",
 			serverID, client.ID, action)
 		s.enqueueRetry(client.ID, serverID, action)
@@ -120,6 +120,8 @@ func (s *UserSyncService) syncUserToServer(
 	}
 
 	// For each inbound on this server, send AlterUsers command
+	// Use AlterUsers (not SendCommand) so local servers are routed to LocalAgent
+	// → xray gRPC AlterInbound, and remote servers go through the heartbeat stream.
 	for _, inboundID := range inboundIDs {
 		inbound, err := s.inboundRepo.GetByID(ctx, inboundID)
 		if err != nil {
@@ -136,14 +138,7 @@ func (s *UserSyncService) syncUserToServer(
 			}},
 		}
 
-		// Send via gRPC stream command
-		panelCmd := &agentpb.PanelCommand{
-			Command: &agentpb.PanelCommand_AlterUsers{
-				AlterUsers: req,
-			},
-		}
-
-		if err := s.nodeMgr.SendCommand(ctx, serverID, panelCmd); err != nil {
+		if err := s.nodeMgr.AlterUsers(ctx, serverID, req); err != nil {
 			log.Printf("[UserSync] server %d inbound %s: %v", serverID, inbound.Tag, err)
 			// Queue for retry
 			s.enqueueRetry(client.ID, serverID, action)
@@ -172,7 +167,7 @@ func (s *UserSyncService) SyncUserRemoval(ctx context.Context, clientID int64) e
 			continue
 		}
 
-		if !s.nodeMgr.IsOnline(server.ID) {
+		if !s.nodeMgr.IsOnlineForServer(server.ID) {
 			continue
 		}
 
@@ -187,12 +182,7 @@ func (s *UserSyncService) SyncUserRemoval(ctx context.Context, clientID int64) e
 					Action:     "remove",
 					Users:      []*agentpb.UserOp{{Email: client.Email}},
 				}
-				panelCmd := &agentpb.PanelCommand{
-					Command: &agentpb.PanelCommand_AlterUsers{
-						AlterUsers: req,
-					},
-				}
-				s.nodeMgr.SendCommand(ctx, sid, panelCmd)
+				s.nodeMgr.AlterUsers(ctx, sid, req)
 			}
 		}(server.ID)
 	}
@@ -230,8 +220,8 @@ func (s *UserSyncService) ProcessRetryQueue(ctx context.Context) {
 
 	var failed []retryEntry
 	for _, entry := range entries {
-		// Check if server is now online
-		if !s.nodeMgr.IsOnline(entry.ServerID) {
+		// Check if server is now online (local servers are always online)
+		if !s.nodeMgr.IsOnlineForServer(entry.ServerID) {
 			// Still offline — re-queue if not too old
 			if time.Since(entry.QueuedAt) < 24*time.Hour {
 				entry.RetryCount++

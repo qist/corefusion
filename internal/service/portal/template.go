@@ -7,7 +7,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>{{.PortalName}} - 订阅管理</title>
+  <title>{{.PortalName}}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
   <link rel="icon" id="portal-favicon" href="">
   <style id="portal-custom-css"></style>
@@ -23,7 +23,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <div v-else class="logo-icon">⚡</div>
         </div>
         <h1 class="auth-title">{{.PortalName}}</h1>
-        <p class="auth-subtitle">{{registrationEnabledText}}管理您的订阅</p>
+        <p class="auth-subtitle">{{registrationEnabledText}}开始使用</p>
         <el-tabs v-model="authTab" class="auth-tabs">
           <el-tab-pane label="登录" name="login">
             <el-form :model="loginForm" class="auth-form">

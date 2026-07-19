@@ -121,7 +121,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
               <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
               <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = mod.data.button_target || 'subscription'">{{ mod.data.button_text }}</button>
+              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
             </div>
             <!-- Rich Text -->
             <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
@@ -188,7 +188,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <!-- Account Info (yiy.wiki row style with icon+label+value+badge) -->
             <div v-else-if="mod.type === 'account_info'">
               <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '帐号信息' }}</span></div>
-              <div class="acct-info-list">
+              <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
                 <div class="acct-info-row">
                   <span class="acct-info-icon">🛡️</span>
                   <div class="acct-info-body">
@@ -242,21 +242,6 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </div>
                 </div>
               </div>
-              <!-- 交易记录 -->
-              <div v-if="mod.data && mod.data.show_balance !== false && balanceTxns.length > 0" style="margin-top: 12px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">交易记录</span></div>
-                <div class="logpkg-list">
-                  <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, 5)" :key="tx.id">
-                    <div class="logpkg-info">
-                      <span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</span>
-                      <span class="logpkg-time">{{ tx.remark || tx.type }}</span>
-                    </div>
-                    <div class="logpkg-actions">
-                      <span class="logpkg-time">{{ formatDate(tx.created_at) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
               <!-- Traffic mini bar inside account info -->
               <div class="acct-traffic-section">
                 <div class="acct-traffic-label">
@@ -294,11 +279,15 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'subscription_detail'">
               <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || '订阅链接' }}</span></div>
               <div v-if="client.sub_token && client.sub_status !== 'revoked'">
+                <div v-if="client.status === 'suspended'" style="padding: 10px 12px; background: rgba(245,108,108,0.1); border: 1px solid rgba(245,108,108,0.3); border-radius: 8px; margin-bottom: 12px;">
+                  <p style="color: var(--danger); margin: 0; font-size: 13px;">⚠️ 账户已暂停，购买套餐恢复</p>
+                </div>
                 <div class="sub-link-box">
-                  <code class="sub-link-text">{{ subUrl }}</code>
+                  <code class="sub-link-text">{{ showSubUrl && subUrl ? subUrl : '••••••••••••••••••••••••••' }}</code>
                   <div class="sub-link-actions">
-                    <el-button size="small" type="primary" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || '复制' }}</el-button>
-                    <el-button size="small" text @click="toggleQr">{{ showQr ? '隐藏' : ((mod.data && mod.data.qr_text) || '二维码') }}</el-button>
+                    <el-button size="small" text @click="showSubUrl = !showSubUrl">{{ showSubUrl ? '🙈' : '👁️' }}</el-button>
+                    <el-button size="small" text @click="copyText(subUrl)" :disabled="!subUrl">📋</el-button>
+                    <el-button size="small" text @click="toggleQr" :disabled="!subUrl">{{ showQr ? '隐藏' : '二维码' }}</el-button>
                   </div>
                 </div>
                 <div v-if="showQr && qrCodeUrl" class="qr-wrap">
@@ -320,30 +309,26 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
                 <span class="empty-icon">🚫</span><p class="empty-text danger">订阅已吊销</p><p class="empty-hint">请联系管理员重新分配</p>
               </div>
-              <div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
-                <span class="empty-icon">📭</span><p class="empty-text">暂无订阅</p><p class="empty-hint">请联系管理员分配套餐</p>
-              </div>
-              <div v-else-if="client.status === 'suspended'" class="empty-state">
-                <span class="empty-icon">⏸️</span><p class="empty-text danger">账户已暂停</p><p class="empty-hint">请续费后恢复使用</p>
-              </div>
+<div v-else-if="!client.sub_token" class="empty-state">
+<span class="empty-icon">⏸️</span><p class="empty-text danger">已暂停</p><p class="empty-hint">请购买套餐恢复</p>
+</div>
             </div>
             <!-- Streaming Status / 流媒体解锁 -->
             <div v-else-if="mod.type === 'streaming_status'">
               <div class="streaming-grid">
-                <div 
-                  v-for="s in (mod.data && mod.data.services) || []" 
-                  :key="s.name"
-                  class="streaming-card"
-                >
-                  <div class="streaming-name">{{ s.name }}</div>
-                  <div class="streaming-icon" v-if="s.icon">
-                    <img v-if="s.icon === 'apple'" src="/assets/apple-logo.png" alt="Apple" />
-                    <img v-else-if="s.icon === 'netflix'" src="/assets/netflix-logo.png" alt="Netflix" />
-                    <el-icon v-else><VideoPlay /></el-icon>
-                  </div>
-                  <div class="streaming-action" @click="showStreamingAccount(s)">
-                    {{ s.action_text || '点此查看账号' }}
-                  </div>
+                <!-- 苹果共享ID -->
+                <div class="streaming-card">
+                  <div class="streaming-name">苹果共享ID(小火箭)</div>
+                  <div class="streaming-icon"><span style="font-size: 32px;">🍎</span></div>
+                  <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">点此查看账号</div>
+                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
+                </div>
+                <!-- Netflix共享账号 -->
+                <div class="streaming-card">
+                  <div class="streaming-name">Netflix共享账号</div>
+                  <div class="streaming-icon"><span style="font-size: 32px;">🎬</span></div>
+                  <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">点此查看账号</div>
+                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
                 </div>
               </div>
             </div>
@@ -351,7 +336,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'subscription'" class="text-center">
               <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = mod.data.button_target || 'subscription'">{{ mod.data.button_text }}</button>
+              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
             </div>
             <!-- Security Settings (dynamic) -->
             <div v-else-if="mod.type === 'security_settings'">
@@ -1018,7 +1003,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
           <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
           <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
-          <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = mod.data.button_target || 'subscription'">{{ mod.data.button_text }}</button>
+          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
         </div>
         <!-- Rich Text -->
         <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
@@ -1095,7 +1080,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <!-- Account Info (yiy.wiki style with icon+label+value+badge) -->
         <div v-else-if="mod.type === 'account_info'">
           <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '帐号信息' }}</span></div>
-          <div class="acct-info-list">
+          <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
             <div class="acct-info-row">
               <span class="acct-info-icon">🛡️</span>
               <div class="acct-info-body">
@@ -1142,21 +1127,6 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </div>
             </div>
           </div>
-          <!-- 交易记录 -->
-          <div v-if="mod.data && mod.data.show_balance !== false && balanceTxns.length > 0" style="margin-top: 12px">
-            <div class="card-header"><span class="card-icon">📄</span><span class="card-title">交易记录</span></div>
-            <div class="logpkg-list">
-              <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, 5)" :key="tx.id">
-                <div class="logpkg-info">
-                  <span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</span>
-                  <span class="logpkg-time">{{ tx.remark || tx.type }}</span>
-                </div>
-                <div class="logpkg-actions">
-                  <span class="logpkg-time">{{ formatDate(tx.created_at) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
           <!-- Traffic mini bar inside account info -->
           <div class="acct-traffic-section">
             <div class="acct-traffic-label">
@@ -1197,7 +1167,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div class="sub-link-box">
               <code class="sub-link-text">{{ subUrl }}</code>
               <div class="sub-link-actions">
-                <el-button size="small" type="primary" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || '复制' }}</el-button>
+                <el-button size="small" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || '复制' }}</el-button>
                 <el-button size="small" text @click="toggleQr">{{ showQr ? '隐藏' : ((mod.data && mod.data.qr_text) || '二维码') }}</el-button>
               </div>
             </div>
@@ -1220,9 +1190,9 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
             <span class="empty-icon">🚫</span><p class="empty-text danger">订阅已吊销</p><p class="empty-hint">请联系管理员重新分配</p>
           </div>
-          <div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
-            <span class="empty-icon">📭</span><p class="empty-text">暂无订阅</p><p class="empty-hint">请联系管理员分配套餐</p>
-          </div>
+<div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
+<span class="empty-icon">⏸️</span><p class="empty-text danger">已暂停</p><p class="empty-hint">请购买套餐恢复</p>
+</div>
           <div v-else-if="client.status === 'suspended'" class="empty-state">
             <span class="empty-icon">⏸️</span><p class="empty-text danger">账户已暂停</p><p class="empty-hint">请续费后恢复使用</p>
           </div>
@@ -1231,25 +1201,24 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'subscription'" class="text-center">
           <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
           <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-          <button v-if="mod.data && mod.data.button_text" class="hero-btn" @click="activeTab = mod.data.button_target || 'subscription'">{{ mod.data.button_text }}</button>
+          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; try { localStorage.setItem('portal_active_tab', target) } catch(e) {}">{{ mod.data.button_text }}</button>
         </div>
         <!-- Streaming Status / 流媒体解锁 -->
         <div v-else-if="mod.type === 'streaming_status'">
           <div class="streaming-grid">
-            <div 
-              v-for="s in (mod.data && mod.data.services) || []" 
-              :key="s.name"
-              class="streaming-card"
-            >
-              <div class="streaming-name">{{ s.name }}</div>
-              <div class="streaming-icon" v-if="s.icon">
-                <img v-if="s.icon === 'apple'" src="/assets/apple-logo.png" alt="Apple" />
-                <img v-else-if="s.icon === 'netflix'" src="/assets/netflix-logo.png" alt="Netflix" />
-                <el-icon v-else><VideoPlay /></el-icon>
-              </div>
-              <div class="streaming-action" @click="showStreamingAccount(s)">
-                {{ s.action_text || '点此查看账号' }}
-              </div>
+            <!-- 苹果共享ID -->
+            <div class="streaming-card">
+              <div class="streaming-name">苹果共享ID(小火箭)</div>
+              <div class="streaming-icon"><span style="font-size: 32px;">🍎</span></div>
+              <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">点此查看账号</div>
+              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
+            </div>
+            <!-- Netflix共享账号 -->
+            <div class="streaming-card">
+              <div class="streaming-name">Netflix共享账号</div>
+              <div class="streaming-icon"><span style="font-size: 32px;">🎬</span></div>
+              <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">点此查看账号</div>
+              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
             </div>
           </div>
         </div>
@@ -1624,7 +1593,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div class="referral-meta">
               <span class="referral-rate">返利比例: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
               <span class="referral-divider">|</span>
-              <span class="referral-mode">返利模式: {{ (referralStats && referralStats.commission_mode === 'recurring') ? '循环返利' : ((mod.data && mod.data.default_commission_mode === 'recurring') ? '循环返利' : '普通返利') }}</span>
+              <span class="referral-mode">返利模式: {{ (referralStats && referralStats.commission_mode === 'recurring') ? '循环返利' : ((mod.data && mod.data.default_commission_mode === 'recu rring') ? '循环返利' : '普通返利') }}</span>
             </div>
           </div>
           <div class="referral-link-wrap" v-if="referralCode">
@@ -2539,16 +2508,27 @@ body {
 
 /* ---- Account Info (yiy.wiki row style) ---- */
 .acct-info-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+display: flex;
+flex-direction: column;
+gap: 2px;
+}
+.acct-info-list.two-column {
+display: grid;
+grid-template-columns: repeat(2, 1fr);
+gap: 8px;
+}
+.acct-info-list.two-column .acct-info-row {
+border-bottom: none;
+padding: 8px;
+background: var(--glass-bg);
+border-radius: 8px;
 }
 .acct-info-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+display: flex;
+align-items: center;
+gap: 12px;
+padding: 10px 0;
+border-bottom: 1px solid var(--border);
 }
 .acct-info-row:last-child { border-bottom: none; }
 .acct-info-icon {
@@ -3726,9 +3706,10 @@ var app = createApp({
     var refreshing = ref(false)
     var activeTab = ref(localStorage.getItem('portal_active_tab') || 'overview')
     var showPasswordDialog = ref(false)
-var showQr = ref(false)
-var selectedPlatform = ref('')
-var noticePopupVisible = ref(false)
+    var showQr = ref(false)
+    var showSubUrl = ref(false)
+    var selectedPlatform = ref('')
+    var noticePopupVisible = ref(false)
     var activeNoticePopup = ref(null)
     var logoUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.logo_url) || '')
     var isDark = ref(localStorage.getItem('portal_theme') === 'dark' || (!localStorage.getItem('portal_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -3930,6 +3911,9 @@ var showCredentialsDialog = ref(false)
     }
     watch(portalModules, injectModuleCss, { immediate: true })
 
+    var saveActiveTab = function(tab) {
+      try { localStorage.setItem('portal_active_tab', tab) } catch(e) {}
+    }
     var onNavClick = function(nav) {
       if (nav.href) {
         if (nav.open_external) window.open(nav.href, '_blank')
@@ -3937,7 +3921,7 @@ var showCredentialsDialog = ref(false)
         return
       }
       activeTab.value = nav.target
-      localStorage.setItem('portal_active_tab', nav.target)
+      saveActiveTab(nav.target)
       // Auto-fetch log packages if the page has log_packages modules
       var hasLogMods = portalModules.value.some(function(m) {
         return (m.page || 'overview') === nav.target && m.type === 'log_packages'
@@ -3952,8 +3936,9 @@ var showCredentialsDialog = ref(false)
       var hasTickets = pageMods.some(function(m) { return m.type === 'ticket_list' })
             var hasArticles = pageMods.some(function(m) { return m.type === 'article_list' })
             var hasTutorialCards = pageMods.some(function(m) { return m.type === 'tutorial_cards' })
-            var hasSharedAccts = pageMods.some(function(m) { return m.type === 'shared_accounts' })
-            var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
+var hasSharedAccts = pageMods.some(function(m) { return m.type === 'shared_accounts' })
+var hasStreaming = pageMods.some(function(m) { return m.type === 'streaming_status' })
+var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
             var hasNodeList = pageMods.some(function(m) { return m.type === 'node_list' })
             if (hasPlanList || hasNodeList) fetchPlans()
             if (hasNodeList) fetchNodes()
@@ -3963,8 +3948,8 @@ var showCredentialsDialog = ref(false)
             if (hasReferral) fetchReferral()
             if (hasTickets) fetchTickets()
             if (hasArticles || hasTutorialCards) fetchArticles()
-            if (hasSharedAccts) fetchSharedAccounts()
-            if (hasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
+if (hasSharedAccts || hasStreaming) fetchSharedAccounts()
+if (hasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
     }
 
     // Apply theme
@@ -4116,6 +4101,13 @@ var formatDateTime = function(d) { if (!d) return '-'; var date = new Date(d); r
     })
     var statusText = computed(function() { return { active: '正常', suspended: '已暂停', expired: '已过期' }[client.value.status] || client.value.status || '-' })
     var subStatusText = computed(function() { return { active: '正常', revoked: '已吊销', expired: '已过期', suspended: '已暂停' }[client.value.sub_status] || client.value.sub_status || '-' })
+    // Streaming accounts from shared accounts API
+    var appleAccount = computed(function() {
+      return sharedAccounts.value.find(function(sa) { return sa.type === 'apple_id' && sa.enabled !== false })
+    })
+    var netflixAccount = computed(function() {
+      return sharedAccounts.value.find(function(sa) { return sa.type === 'netflix' && sa.enabled !== false })
+    })
 
     var endpoints = ref([])
     var fetchEndpoints = function() {
@@ -4150,20 +4142,28 @@ var toggleQr = function() { showQr.value = !showQr.value; if (showQr.value && !q
 var handleSubAction = function(action) {
   if (action.action === 'navigate') {
     activeTab.value = action.target
+    try { localStorage.setItem('portal_active_tab', action.target) } catch(e) {}
   } else if (action.action === 'dialog') {
     // 处理对话框操作
     if (action.target === 'whitelist') {
-      ElMessage.info('白名单管理功能开发中')
+      // 跳转到个人中心的安全设置
+      activeTab.value = 'profile'
+      try { localStorage.setItem('portal_active_tab', 'profile') } catch(e) {}
+      ElMessage.info('请在安全设置中管理IP白名单')
     } else if (action.target === 'more_subs') {
-      ElMessage.info('更多订阅功能开发中')
+      // 跳转到购买服务
+      activeTab.value = 'store'
+      try { localStorage.setItem('portal_active_tab', 'store') } catch(e) {}
     }
   } else if (action.action === 'confirm') {
     // 处理确认操作
     if (action.target === 'reset_sub') {
-      ElMessageBox.confirm('确定要重置订阅链接吗？重置后旧链接将失效。', '提示', {
-        confirmButtonText: '确定',
+      // 轮换Token（换新的Token）
+      ElMessageBox.confirm('确定要重置订阅链接吗？重置后旧链接将失效，需要重新配置客户端。', '提示', {
+        confirmButtonText: '确定重置',
         cancelButtonText: '取消',
-        type: 'warning'
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger'
       }).then(function() {
         rotateToken()
       }).catch(function() {})
@@ -4827,7 +4827,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
 return {
           token: token, authTab: authTab, loading: loading, rotating: rotating, refreshing: refreshing,
-          activeTab: activeTab, showPasswordDialog: showPasswordDialog, showQr: showQr, selectedPlatform: selectedPlatform, logoUrl: logoUrl,
+          activeTab: activeTab, showPasswordDialog: showPasswordDialog, showQr: showQr, showSubUrl: showSubUrl, selectedPlatform: selectedPlatform, logoUrl: logoUrl,
       isDark: isDark, registrationEnabled: registrationEnabled,
       loginForm: loginForm, registerForm: registerForm, pwdForm: pwdForm,
       settings: settings, client: client, endpoints: endpoints,
@@ -4865,6 +4865,7 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       articles: articles, articleCategory: articleCategory,
       showArticleDetail: showArticleDetail, articleDetail: articleDetail,
       sharedAccounts: sharedAccounts, showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
+      appleAccount: appleAccount, netflixAccount: netflixAccount,
       fetchPlans: fetchPlans, purchaseVariant: purchaseVariant, submitOrder: submitOrder,
       showChargeDialog: showChargeDialog, // 充值弹窗
       showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, // v3.3: 支付方式选择弹窗

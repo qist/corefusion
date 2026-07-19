@@ -1095,6 +1095,12 @@ func (h *Handler) GetSubscriptionLink(c *gin.Context) {
 		return
 	}
 
+	// Check client status - only active clients can get subscription link
+	if client.Status != "active" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "account suspended", "status": client.Status})
+		return
+	}
+
 	if client.SubscriptionID == nil || *client.SubscriptionID == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no active subscription"})
 		return
@@ -1138,6 +1144,12 @@ func (h *Handler) GetBackupSubscriptionLink(c *gin.Context) {
 	client, err := h.clientRepo.GetByID(c.Request.Context(), clientID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
+		return
+	}
+
+	// Check client status - only active clients can get subscription link
+	if client.Status != "active" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "account suspended", "status": client.Status})
 		return
 	}
 

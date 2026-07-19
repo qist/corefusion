@@ -25,12 +25,12 @@ const defaultModulesJSON = `[
   },
   {
     "id":"mod-hero","type":"hero","title":"欢迎","page":"overview","visible":true,
-    "data":{"eyebrow":"WELCOME","heading":"欢迎回来","description":"管理您的订阅与服务","button_text":"查看订阅","button_target":"overview"},
+    "data":{"eyebrow":"WELCOME","heading":"欢迎回来","description":"管理您的订阅与服务","button_text":"查看订阅","button_target":"store"},
     "style":{"variant":"primary","align":"left"}
   },
   {
     "id":"mod-account","type":"account_info","title":"帐号信息","page":"overview","visible":true,
-    "data":{},"style":{}
+    "data":{"columns":2},"style":{}
   },
   {
     "id":"mod-traffic","type":"traffic_ring","title":"流量使用","page":"overview","visible":true,
@@ -72,12 +72,7 @@ const defaultModulesJSON = `[
   },
   {
     "id":"mod-streaming","type":"streaming_status","title":"流媒体解锁","page":"overview","visible":true,
-    "data":{
-      "services":[
-        {"name":"苹果共享ID(小火箭)","icon":"apple","status":"available","action_text":"点此查看账号"},
-        {"name":"Netflix共享账号","icon":"netflix","status":"available","action_text":"点此查看账号"}
-      ]
-    },
+    "data":{},
     "style":{}
   },
   {
@@ -148,15 +143,6 @@ const defaultModulesJSON = `[
   {
     "id":"mod-sec","type":"security_settings","title":"安全设置","page":"profile","visible":true,
     "data":{"description":"管理您的账户安全设置","show_ip_whitelist":true,"show_password":true},
-    "style":{}
-  },
-  {
-    "id":"mod-profile-info","type":"account_info","title":"账户信息","page":"profile","visible":true,
-    "data":{"show_balance":true},"style":{}
-  },
-  {
-    "id":"mod-shared-accts","type":"shared_accounts","title":"共享账号","page":"profile","visible":true,
-    "data":{"description":"以下共享账号可供使用，点击查看凭据。","apply_btn_text":"查看凭据","repair_btn_text":"请求修复"},
     "style":{}
   },
   {

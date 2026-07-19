@@ -32,6 +32,14 @@ import (
 // chargeHTTPClient is a shared HTTP client with timeout for charge site requests.
 var chargeHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
+// UserSyncer defines the interface for syncing user credentials to nodes.
+// Implemented by usersync.UserSyncService. Used to sync user accounts to
+// all nodes when a plan is activated (new purchase, renew, upgrade).
+// This avoids circular dependency between clientauth and usersync packages.
+type UserSyncer interface {
+	SyncUserToServers(ctx context.Context, clientID int64, action string) error
+}
+
 // CommerceService handles plan display, ordering, charging, and balance operations.
 type CommerceService struct {
 	db              *gorm.DB
@@ -47,6 +55,7 @@ type CommerceService struct {
 	balanceRepo     *repository.ClientBalanceRepository
 	balanceTxRepo   *repository.BalanceTransactionRepository
 	referralSvc     *ReferralService // P1: 首次付费返利触发
+	userSyncer      UserSyncer       // 套餐激活后同步用户到节点
 	settingSvc      SettingStore
 	jwtSecret       string
 }
@@ -90,6 +99,12 @@ func NewCommerceService(
 // P1: 首次付费返利触发 — 套餐激活后自动发放返利
 func (s *CommerceService) SetReferralService(svc *ReferralService) {
 	s.referralSvc = svc
+}
+
+// SetUserSyncer sets the user syncer (called from router initialization).
+// 套餐激活后自动将用户凭证同步到所有节点（本地+远程）
+func (s *CommerceService) SetUserSyncer(syncer UserSyncer) {
+	s.userSyncer = syncer
 }
 
 // triggerFirstPaid triggers the first-paid referral commission if applicable.
@@ -1894,6 +1909,121 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		}
 		s.subRepo.Update(ctx, sub)
 	}
+
+	// 套餐激活成功后，将用户凭证同步到所有节点（本地+远程）
+	// action: new → "add"，renew/upgrade → "update"
+	if s.userSyncer != nil {
+		syncAction := "add"
+		if orderType != entity.OrderTypeNew {
+			syncAction = "update"
+		}
+		// 异步同步，不阻塞订单流程（同步失败有 retry 机制兜底）
+		go func(cID int64, act string) {
+			if err := s.userSyncer.SyncUserToServers(context.Background(), cID, act); err != nil {
+				log.Printf("[commerce] failed to sync user %d to servers after plan activation: %v", cID, err)
+			}
+		}(client.ID, syncAction)
+	}
+
+	return nil
+}
+
+// RefundChargeOrder 退款一个已支付的 ChargeOrder。
+// 如果该订单是套餐购买（order_type=purchase），则：
+//  1. 回退客户端到期时间（减去对应 variant 的 duration_days）
+//  2. 如果回退后已过期，标记 client 为 expired
+//  3. 如果是新购退款（client 无其他有效套餐），从所有节点移除用户凭证
+//  4. 退还金额到余额（如果 amount > 0）
+//
+// remark 为退款备注，如为空则使用 "管理员退款"。
+func (s *CommerceService) RefundChargeOrder(ctx context.Context, chargeOrderID int64, remark string) error {
+	order, err := s.chargeOrderRepo.GetByID(ctx, chargeOrderID)
+	if err != nil {
+		return fmt.Errorf("charge order not found: %w", err)
+	}
+	if order.Status != entity.ChargeStatusPaid {
+		return fmt.Errorf("only paid orders can be refunded, current status: %s", order.Status)
+	}
+	if remark == "" {
+		remark = "管理员退款"
+	}
+
+	// 1. 更新订单状态为 refunded
+	order.Status = entity.ChargeStatusRefunded
+	order.Remark = remark
+	if err := s.chargeOrderRepo.Update(ctx, order); err != nil {
+		return fmt.Errorf("failed to update order status: %w", err)
+	}
+
+	// 2. 退还金额到余额
+	if order.Amount > 0 {
+		bal, err := s.balanceRepo.AddBalance(ctx, order.ClientID, order.Amount)
+		if err == nil {
+			txRecord := &entity.BalanceTransaction{
+				ClientID:             order.ClientID,
+				Type:                 entity.BalanceTxTypeRefund,
+				Amount:               order.Amount,
+				BalanceBefore:        bal.Balance - order.Amount,
+				BalanceAfter:         bal.Balance,
+				RelatedChargeOrderID: &order.ID,
+				Remark:               remark,
+			}
+			s.balanceTxRepo.Create(ctx, txRecord)
+		}
+	}
+
+	// 3. 如果是套餐购买订单，回退套餐时间
+	if order.OrderType == entity.ChargeOrderTypePurchase && order.PlanVariantID != nil {
+		client, err := s.clientRepo.GetByID(ctx, order.ClientID)
+		if err != nil {
+			log.Printf("[refund] failed to get client %d: %v", order.ClientID, err)
+			return nil // 退款本身已成功，套餐回退失败仅记录
+		}
+
+		variant, err := s.variantRepo.GetByID(ctx, *order.PlanVariantID)
+		if err != nil {
+			log.Printf("[refund] failed to get variant %d: %v", *order.PlanVariantID, err)
+			return nil
+		}
+
+		// 回退到期时间：减去 variant.DurationDays
+		if client.ExpiresAt != nil && variant.DurationDays > 0 {
+			newExpiresAt := client.ExpiresAt.AddDate(0, 0, -variant.DurationDays)
+			client.ExpiresAt = &newExpiresAt
+
+			// 如果回退后已过期，标记为 expired
+			if newExpiresAt.Before(time.Now()) || newExpiresAt.Equal(time.Now()) {
+				client.Status = "expired"
+				// 从所有节点移除用户凭证
+				if s.userSyncer != nil {
+					go func(cID int64) {
+						if err := s.userSyncer.SyncUserToServers(context.Background(), cID, "remove"); err != nil {
+							log.Printf("[refund] failed to remove user %d from servers: %v", cID, err)
+						}
+					}(client.ID)
+				}
+			}
+
+			if err := s.clientRepo.Update(ctx, client); err != nil {
+				log.Printf("[refund] failed to update client %d expires_at: %v", client.ID, err)
+			} else {
+				log.Printf("[refund] client %d expires_at rolled back by %d days (order %d)",
+					client.ID, variant.DurationDays, chargeOrderID)
+			}
+
+			// 同步更新 subscription
+			if client.SubscriptionID != nil {
+				if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
+					sub.ExpiresAt = client.ExpiresAt
+					if client.Status == "expired" {
+						sub.Status = "expired"
+					}
+					s.subRepo.Update(ctx, sub)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

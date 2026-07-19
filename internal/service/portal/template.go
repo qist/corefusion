@@ -242,6 +242,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </div>
                 </div>
               </div>
+              <!-- 交易记录 -->
+              <div v-if="mod.data && mod.data.show_balance !== false && balanceTxns.length > 0" style="margin-top: 12px">
+                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">交易记录</span></div>
+                <div class="logpkg-list">
+                  <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, 5)" :key="tx.id">
+                    <div class="logpkg-info">
+                      <span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</span>
+                      <span class="logpkg-time">{{ tx.remark || tx.type }}</span>
+                    </div>
+                    <div class="logpkg-actions">
+                      <span class="logpkg-time">{{ formatDate(tx.created_at) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <!-- Traffic mini bar inside account info -->
               <div class="acct-traffic-section">
                 <div class="acct-traffic-label">
@@ -424,7 +439,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                         <td v-if="vIdx === 0" :rowspan="plan.variants.length" class="plan-cell plan-cell-service">
                           <div class="plan-service-name">{{ plan.name }}</div>
                           <div class="plan-service-meta">
-                            <div v-if="v.quota_bytes">内含流量: {{ v.quota_bytes }} GB/每月</div>
+                            <div v-if="v.quota_bytes">内含流量: {{ formatBytes(v.quota_bytes) }}/每月</div>
                             <div v-if="v.speed_limit">最大带宽: {{ v.speed_limit }}M</div>
                             <div v-if="v.duration_days">有效期: {{ v.duration_days }}天</div>
                           </div>
@@ -564,12 +579,12 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <!-- Order List / 我的账单 (订单表格) -->
             <div v-else-if="mod.type === 'order_list'">
               <!-- 顶部提示文字 -->
-              <div v-if="mod.data && mod.data.notice_text" class="billing-notice">
-                <span class="billing-notice-text">{{ mod.data.notice_text }}</span>
+              <div class="billing-notice">
+                <span class="billing-notice-text">{{ (mod.data && mod.data.notice_text) || '我的账单' }}</span>
                 <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ mod.data.notice_highlight }}</span>
               </div>
-              <div v-if="mod.data && mod.data.notice_subtext" class="billing-notice-sub">
-                {{ mod.data.notice_subtext }}
+              <div class="billing-notice-sub">
+                {{ (mod.data && mod.data.notice_subtext) || '仅显示最近30天内的交易记录' }}
               </div>
               <!-- 订单表格 -->
               <div v-if="myOrdersLoading" class="empty-state">
@@ -606,6 +621,62 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </tbody>
                 </table>
               </div>
+              <!-- 充值记录 -->
+              <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
+                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">充值记录</span></div>
+                <div class="billing-table-wrap">
+                  <table class="billing-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>交易号</th>
+                        <th>来源</th>
+                        <th>金额</th>
+                        <th>时间</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(co, idx) in chargeOrders.slice(0, 10)" :key="co.id">
+                        <td class="billing-col-index">{{ idx + 1 }}</td>
+                        <td class="billing-col-id">{{ co.trade_no }}</td>
+                        <td>{{ co.source === 'card' ? '充值卡' : (co.source === 'site' ? '在线支付' : co.source) }}</td>
+                        <td class="billing-col-amount">{{ formatMoney(co.amount) }} {{ co.currency }}</td>
+                        <td class="billing-col-date">{{ formatDate(co.created_at) }}</td>
+                        <td class="billing-col-status"><span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- 交易流水 -->
+              <div v-if="balanceTxns.length > 0" style="margin-top: 20px">
+                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">余额变动记录</span></div>
+                <div class="billing-table-wrap">
+                  <table class="billing-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>类型</th>
+                        <th>金额</th>
+                        <th>变动后余额</th>
+                        <th>说明</th>
+                        <th>时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(tx, idx) in balanceTxns.slice(0, 10)" :key="tx.id">
+                        <td class="billing-col-index">{{ idx + 1 }}</td>
+                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? '充值' : (tx.type === 'consume' ? '消费' : (tx.type === 'refund' ? '退款' : tx.type)) }}</span></td>
+                        <td class="billing-col-amount" :style="{ color: tx.amount >= 0 ? '#67c23a' : '#f56c6c' }">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</td>
+                        <td class="billing-col-amount">{{ formatMoney(tx.balance_after) }}</td>
+                        <td>{{ tx.remark || '-' }}</td>
+                        <td class="billing-col-date">{{ formatDate(tx.created_at) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
             <!-- Node List / 线路列表 -->
             <div v-else-if="mod.type === 'node_list'" class="node-list-module">
@@ -621,15 +692,28 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <span class="empty-icon">📭</span>
                 <p class="empty-text">暂无线路信息</p>
               </div>
-              <div v-else class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 3) + ', 1fr)' }">
-                <div v-for="node in allPlanNodes" :key="node.id" class="node-card" :class="{ disabled: !node.hasAccess }">
-                  <div class="node-name">{{ node.name }}</div>
-                  <div v-if="node.hasAccess" class="node-actions">
-                    <el-button v-if="node.link" size="small" text @click="copyText(node.link)">详情</el-button>
-                    <el-button v-if="node.link" size="small" text @click="showNodeQR(node)">二维码</el-button>
+              <div v-else>
+                <div v-for="planGroup in allPlanNodes" :key="planGroup.plan_id" class="plan-node-group">
+                  <div class="plan-node-header">
+                    <span class="plan-node-name">{{ planGroup.plan_name }}</span>
+                    <span v-if="planGroup.active" class="badge badge-active">当前套餐</span>
+                    <span v-else class="badge badge-none">未购买</span>
                   </div>
-                  <div v-else class="node-locked">
-                    <el-button type="primary" size="small" text @click="activeTab = 'store'">升级套餐解锁</el-button>
+                  <div class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 3) + ', 1fr)' }">
+                    <div v-for="node in planGroup.nodes" :key="node.id" class="node-card" :class="{ disabled: !planGroup.active }">
+                      <div class="node-name">{{ node.name }}</div>
+                      <div class="node-tags">
+                        <span v-if="node.protocol" class="node-tag tag-protocol">{{ node.protocol }}</span>
+                        <span v-if="node.transport" class="node-tag tag-transport">{{ node.transport }}</span>
+                      </div>
+                      <div v-if="planGroup.active && node.link" class="node-actions">
+                        <el-button size="small" text @click="showNodeDetail(node)">详情</el-button>
+                        <el-button size="small" text @click="showNodeQR(node)">二维码</el-button>
+                      </div>
+                      <div v-else class="node-locked">
+                        <span class="lock-hint">🔒 需购买套餐</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1045,6 +1129,32 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : '无限制' }}</span>
               </div>
             </div>
+            <!-- 余额显示 -->
+            <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
+              <span class="acct-info-icon">💰</span>
+              <div class="acct-info-body">
+                <span class="acct-info-label">账户余额</span>
+                <div class="acct-info-value-row">
+                  <span class="acct-info-value">{{ formatMoney(balance.balance) }}</span>
+                  <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">充值</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 交易记录 -->
+          <div v-if="mod.data && mod.data.show_balance !== false && balanceTxns.length > 0" style="margin-top: 12px">
+            <div class="card-header"><span class="card-icon">📄</span><span class="card-title">交易记录</span></div>
+            <div class="logpkg-list">
+              <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, 5)" :key="tx.id">
+                <div class="logpkg-info">
+                  <span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</span>
+                  <span class="logpkg-time">{{ tx.remark || tx.type }}</span>
+                </div>
+                <div class="logpkg-actions">
+                  <span class="logpkg-time">{{ formatDate(tx.created_at) }}</span>
+                </div>
+              </div>
+            </div>
           </div>
           <!-- Traffic mini bar inside account info -->
           <div class="acct-traffic-section">
@@ -1228,7 +1338,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     <td v-if="vIdx === 0" :rowspan="plan.variants.length" class="plan-cell plan-cell-service">
                       <div class="plan-service-name">{{ plan.name }}</div>
                       <div class="plan-service-meta">
-                        <div v-if="v.quota_bytes">内含流量: {{ v.quota_bytes }} GB/每月</div>
+                        <div v-if="v.quota_bytes">内含流量: {{ formatBytes(v.quota_bytes) }}/每月</div>
                         <div v-if="v.speed_limit">最大带宽: {{ v.speed_limit }}M</div>
                         <div v-if="v.duration_days">有效期: {{ v.duration_days }}天</div>
                       </div>
@@ -1367,12 +1477,12 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Order List / 我的账单 (订单表格) -->
         <div v-else-if="mod.type === 'order_list'">
-          <div v-if="mod.data && mod.data.notice_text" class="billing-notice">
-            <span class="billing-notice-text">{{ mod.data.notice_text }}</span>
+          <div class="billing-notice">
+            <span class="billing-notice-text">{{ (mod.data && mod.data.notice_text) || '我的账单' }}</span>
             <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ mod.data.notice_highlight }}</span>
           </div>
-          <div v-if="mod.data && mod.data.notice_subtext" class="billing-notice-sub">
-            {{ mod.data.notice_subtext }}
+          <div class="billing-notice-sub">
+            {{ (mod.data && mod.data.notice_subtext) || '仅显示最近30天内的交易记录' }}
           </div>
           <div v-if="myOrdersLoading" class="empty-state">
             <span class="empty-icon">⏳</span>
@@ -1383,31 +1493,87 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <p class="empty-text">暂无账单记录</p>
           </div>
           <div v-else class="billing-table-wrap">
-            <table class="billing-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>编号</th>
-                  <th>服务</th>
-                  <th>金额</th>
-                  <th>购买日期</th>
-                  <th>到期时间</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(order, idx) in myOrders.slice(0, (mod.data && mod.data.limit) || 20)" :key="order.id">
-                  <td class="billing-col-index">{{ idx + 1 }}</td>
-                  <td class="billing-col-id">#{{ order.id }}</td>
-                  <td class="billing-col-service">{{ getOrderServiceName(order) }}</td>
-                  <td class="billing-col-amount">{{ formatMoney(order.paid_amount || order.original_amount) }}</td>
-                  <td class="billing-col-date">{{ formatDate(order.created_at) }}</td>
-                  <td class="billing-col-expire">{{ order.effective_to ? formatDate(order.effective_to) : '-' }}</td>
-                  <td class="billing-col-status"><span :class="'badge badge-' + orderStatusBadge(order.status)">{{ orderStatusText(order.status) }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                <table class="billing-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>编号</th>
+                      <th>服务</th>
+                      <th>金额</th>
+                      <th>购买日期</th>
+                      <th>到期时间</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(order, idx) in myOrders.slice(0, (mod.data && mod.data.limit) || 20)" :key="order.id">
+                      <td class="billing-col-index">{{ idx + 1 }}</td>
+                      <td class="billing-col-id">#{{ order.id }}</td>
+                      <td class="billing-col-service">{{ getOrderServiceName(order) }}</td>
+                      <td class="billing-col-amount">{{ formatMoney(order.paid_amount || order.original_amount) }}</td>
+                      <td class="billing-col-date">{{ formatDate(order.created_at) }}</td>
+                      <td class="billing-col-expire">{{ order.effective_to ? formatDate(order.effective_to) : '-' }}</td>
+                      <td class="billing-col-status"><span :class="'badge badge-' + orderStatusBadge(order.status)">{{ orderStatusText(order.status) }}</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <!-- 充值记录 -->
+              <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
+                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">充值记录</span></div>
+                <div class="billing-table-wrap">
+                  <table class="billing-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>交易号</th>
+                        <th>来源</th>
+                        <th>金额</th>
+                        <th>时间</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(co, idx) in chargeOrders.slice(0, 10)" :key="co.id">
+                        <td class="billing-col-index">{{ idx + 1 }}</td>
+                        <td class="billing-col-id">{{ co.trade_no }}</td>
+                        <td>{{ co.source === 'card' ? '充值卡' : (co.source === 'site' ? '在线支付' : co.source) }}</td>
+                        <td class="billing-col-amount">{{ formatMoney(co.amount) }} {{ co.currency }}</td>
+                        <td class="billing-col-date">{{ formatDate(co.created_at) }}</td>
+                        <td class="billing-col-status"><span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- 交易流水 -->
+              <div v-if="balanceTxns.length > 0" style="margin-top: 20px">
+                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">余额变动记录</span></div>
+                <div class="billing-table-wrap">
+                  <table class="billing-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>类型</th>
+                        <th>金额</th>
+                        <th>变动后余额</th>
+                        <th>说明</th>
+                        <th>时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(tx, idx) in balanceTxns.slice(0, 10)" :key="tx.id">
+                        <td class="billing-col-index">{{ idx + 1 }}</td>
+                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? '充值' : (tx.type === 'consume' ? '消费' : (tx.type === 'refund' ? '退款' : tx.type)) }}</span></td>
+                        <td class="billing-col-amount" :style="{ color: tx.amount >= 0 ? '#67c23a' : '#f56c6c' }">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</td>
+                        <td class="billing-col-amount">{{ formatMoney(tx.balance_after) }}</td>
+                        <td>{{ tx.remark || '-' }}</td>
+                        <td class="billing-col-date">{{ formatDate(tx.created_at) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
         </div>
         <!-- Node List / 线路列表 (Mobile) -->
         <div v-else-if="mod.type === 'node_list'" class="node-list-module">
@@ -1415,18 +1581,38 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div class="node-info-title">{{ mod.data.info_title || '线路说明' }}</div>
             <div class="node-info-content">{{ mod.data.info_text }}</div>
           </div>
-          <div v-if="client.value && client.value.nodes && client.value.nodes.length > 0" class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 2) + ', 1fr)' }">
-            <div v-for="node in client.value.nodes" :key="node.id" class="node-card">
-              <div class="node-name">{{ node.name }}</div>
-              <div class="node-actions">
-                <el-button size="small" text>详情</el-button>
-                <el-button size="small" text>二维码</el-button>
+          <div v-if="plansLoading" class="empty-state">
+            <span class="empty-icon">⏳</span>
+            <p class="empty-text">加载中...</p>
+          </div>
+          <div v-else-if="allPlanNodes.length === 0" class="empty-state">
+            <span class="empty-icon">📭</span>
+            <p class="empty-text">暂无线路信息</p>
+          </div>
+          <div v-else>
+            <div v-for="planGroup in allPlanNodes" :key="planGroup.plan_id" class="plan-node-group">
+              <div class="plan-node-header">
+                <span class="plan-node-name">{{ planGroup.plan_name }}</span>
+                <span v-if="planGroup.active" class="badge badge-active">当前套餐</span>
+                <span v-else class="badge badge-none">未购买</span>
+              </div>
+              <div class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 2) + ', 1fr)' }">
+                <div v-for="node in planGroup.nodes" :key="node.id" class="node-card" :class="{ disabled: !planGroup.active }">
+                  <div class="node-name">{{ node.name }}</div>
+                  <div class="node-tags">
+                    <span v-if="node.protocol" class="node-tag tag-protocol">{{ node.protocol }}</span>
+                    <span v-if="node.transport" class="node-tag tag-transport">{{ node.transport }}</span>
+                  </div>
+                  <div v-if="planGroup.active && node.link" class="node-actions">
+                    <el-button size="small" text @click="showNodeDetail(node)">详情</el-button>
+                    <el-button size="small" text @click="showNodeQR(node)">二维码</el-button>
+                  </div>
+                  <div v-else class="node-locked">
+                    <span class="lock-hint">🔒 需购买套餐</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div v-else class="empty-state">
-            <span class="empty-icon">📭</span>
-            <p class="empty-text">暂无可用线路</p>
           </div>
         </div>
         <!-- Referral -->
@@ -1735,7 +1921,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <el-dialog v-model="showNodeQRDialog" title="节点二维码" width="300px" align-center>
       <div style="text-align: center; padding: 20px;">
         <div ref="nodeQRContainer" style="width: 200px; height: 200px; margin: 0 auto;"></div>
-        <p style="margin-top: 12px; font-size: 12px; color: var(--text-muted); word-break: break-all;">{{ currentNodeQR }}</p>
+      </div>
+    </el-dialog>
+
+    <!-- Node Detail Dialog -->
+    <el-dialog v-model="showNodeDetailDialog" :title="currentNodeDetail.name || '节点详情'" width="450px" align-center append-to-body>
+      <div v-if="currentNodeDetail.link" class="node-detail-content">
+        <div class="node-detail-tags">
+          <span v-if="currentNodeDetail.protocol" class="node-tag tag-protocol">{{ currentNodeDetail.protocol }}</span>
+          <span v-if="currentNodeDetail.transport" class="node-tag tag-transport">{{ currentNodeDetail.transport }}</span>
+        </div>
+        <div class="node-detail-label">分享链接</div>
+        <div class="node-detail-link-box">
+          <code class="node-detail-link-text">{{ currentNodeDetail.link }}</code>
+          <el-button type="primary" size="small" @click="copyText(currentNodeDetail.link)">复制链接</el-button>
+        </div>
       </div>
     </el-dialog>
 
@@ -1829,6 +2029,16 @@ const defaultPortalHTML = `<!DOCTYPE html>
             class="charge-method-tab"
             :class="{ active: chargeForm.method === 'card' }"
             @click="chargeForm.method = 'card'; chargeForm.site_id = null"
+          >
+            <el-icon><Ticket /></el-icon>
+            <span>充值卡</span>
+          </div>
+        </div>
+        <!-- 只有充值卡时显示简化标题 -->
+        <div v-else class="charge-method-tabs" style="justify-content: center;">
+          <div 
+            class="charge-method-tab active"
+            @click="chargeForm.method = 'card'"
           >
             <el-icon><Ticket /></el-icon>
             <span>充值卡</span>
@@ -2684,6 +2894,81 @@ body {
   justify-content: center;
   padding: 4px 0;
 }
+.plan-node-group {
+  margin-bottom: 20px;
+}
+.plan-node-group:last-child {
+  margin-bottom: 0;
+}
+.plan-node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.plan-node-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.node-region {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.node-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.node-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.tag-protocol {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+.tag-transport {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+.node-detail-content {
+  padding: 10px 0;
+}
+.node-detail-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.node-detail-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.node-detail-link-box {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.node-detail-link-text {
+  flex: 1;
+  font-size: 12px;
+  background: var(--accent-light, #f5f5f5);
+  padding: 8px 12px;
+  border-radius: 8px;
+  word-break: break-all;
+  line-height: 1.6;
+  font-family: monospace;
+}
+.lock-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 
 /* ---- Tutorial Cards / 下载与教程 ---- */
 .tutorial-grid {
@@ -3455,6 +3740,12 @@ var noticePopupVisible = ref(false)
     var orderBusy = ref(false)
     var chargeSites = ref([])
     var chargeForm = ref({ site_id: null, amount_yuan: 10, method: 'online', custom_amount: false })
+    // 如果没有充值站点，默认使用充值卡方式
+    watch(chargeSites, function(sites) {
+      if (!sites || sites.length === 0) {
+        chargeForm.value.method = 'card'
+      }
+    }, { immediate: true })
     var chargeBusy = ref(false)
     var chargeOrders = ref([])
     var cardCode = ref('')
@@ -3528,21 +3819,77 @@ var showCredentialsDialog = ref(false)
       return portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
     })
 
-    // All plan nodes with access control
+    // Client visible nodes (from /nodes API — only for user's current plan, provides links)
+    var clientNodes = ref([])
+    var fetchNodes = function() {
+      api('GET', '/nodes').then(function(res) {
+        clientNodes.value = (res && res.items) ? res.items : (Array.isArray(res) ? res : [])
+      }).catch(function() {})
+    }
+
+    // Build a link lookup from clientNodes: map inbound_id/external_id -> link
+    // /plans returns inbound_config.id and external_node.id as node.id,
+    // while /nodes returns MemberID as id and inbound_config.id as inbound_id.
+    // So we must key by inbound_id and external_id to match.
+    var nodeLinkMap = computed(function() {
+      var map = {}
+      clientNodes.value.forEach(function(n) {
+        if (n.link) {
+          if (n.inbound_id) map['ib_' + n.inbound_id] = n.link
+          if (n.external_id) map['ext_' + n.external_id] = n.link
+          // Also key by name as fallback
+          if (n.name) map['name_' + n.name] = n.link
+        }
+      })
+      return map
+    })
+
+    // Determine if user's subscription is active (not expired/suspended)
+    var userPlanActive = computed(function() {
+      var c = client.value
+      if (!c || !c.plan_id) return false
+      if (c.status === 'suspended' || c.status === 'expired') return false
+      return true
+    })
+
+    // All plan nodes grouped by plan — shows all plans with their nodes,
+    // only the user's active plan shows detail/QR buttons
     var allPlanNodes = computed(function() {
-      var result = []
       var userPlanId = client.value && client.value.plan_id
+      var active = userPlanActive.value
+      var linkMap = nodeLinkMap.value
+      var result = []
       plans.value.forEach(function(plan) {
+        var isUserPlan = (plan.id === userPlanId)
+        var planNodes = []
         if (plan.nodes && Array.isArray(plan.nodes)) {
           plan.nodes.forEach(function(node) {
-            result.push({
-              id: node.id || node.node_id,
-              name: node.name,
-              link: userPlanId === plan.id ? node.link : null,
-              hasAccess: userPlanId === plan.id
+            // Build key matching nodeLinkMap format: ib_<id> or ext_<id>
+            var prefix = node.type === 'external' ? 'ext_' : 'ib_'
+            var nodeKey = prefix + node.id
+            var nameKey = 'name_' + (node.name || '')
+            var link = null
+            if (isUserPlan && active) {
+              link = linkMap[nodeKey] || linkMap[nameKey] || null
+            }
+            planNodes.push({
+              id: node.id,
+              name: node.name || ('节点 #' + (node.id || '?')),
+              protocol: node.protocol || '',
+              transport: node.transport || '',
+              region: node.region || '',
+              link: link,
+              hasAccess: isUserPlan && active
             })
           })
         }
+        result.push({
+          plan_id: plan.id,
+          plan_name: plan.name,
+          isUserPlan: isUserPlan,
+          active: isUserPlan && active,
+          nodes: planNodes
+        })
       })
       return result
     })
@@ -3590,7 +3937,7 @@ var showCredentialsDialog = ref(false)
       var pageMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === nav.target })
       var hasPlanList = pageMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
       var hasCharge = pageMods.some(function(m) { return m.type === 'charge_panel' })
-      var hasBalance = pageMods.some(function(m) { return m.type === 'balance_display' })
+      var hasBalance = pageMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
       var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })
       var hasTickets = pageMods.some(function(m) { return m.type === 'ticket_list' })
             var hasArticles = pageMods.some(function(m) { return m.type === 'article_list' })
@@ -3599,6 +3946,7 @@ var showCredentialsDialog = ref(false)
             var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
             var hasNodeList = pageMods.some(function(m) { return m.type === 'node_list' })
             if (hasPlanList || hasNodeList) fetchPlans()
+            if (hasNodeList) fetchNodes()
             if (hasPlanList || hasCharge) fetchChargeSites()
             if (hasCharge) fetchChargeOrders()
             if (hasBalance) { fetchBalance(); fetchBalanceTxns() }
@@ -3606,7 +3954,7 @@ var showCredentialsDialog = ref(false)
             if (hasTickets) fetchTickets()
             if (hasArticles || hasTutorialCards) fetchArticles()
             if (hasSharedAccts) fetchSharedAccounts()
-            if (hasOrderList) { fetchPlans(); fetchMyOrders() }
+            if (hasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
     }
 
     // Apply theme
@@ -3746,6 +4094,7 @@ var showCredentialsDialog = ref(false)
       return (b / 1024).toFixed(0) + ' KB'
     }
     var formatDate = function(d) { if (!d) return '-'; return new Date(d).toLocaleString('zh-CN') }
+var within30Days = function(d) { if (!d) return false; var t = new Date(d).getTime(); if (isNaN(t)) return false; return t >= Date.now() - 30 * 24 * 60 * 60 * 1000 }
 var formatDateTime = function(d) { if (!d) return '-'; var date = new Date(d); return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0') + ' ' + String(date.getHours()).padStart(2,'0') + ':' + String(date.getMinutes()).padStart(2,'0') + ':' + String(date.getSeconds()).padStart(2,'0') }
 
     var usagePercent = computed(function() { return client.value.quota_bytes > 0 ? Math.min(100, Math.round(client.value.used_bytes / client.value.quota_bytes * 100)) : 0 })
@@ -3900,7 +4249,7 @@ var showStreamingAccount = function(service) {
         showPaymentDialog.value = false
         if (res.status === 'completed') {
           ElMessage.success('购买成功')
-          fetchMe()
+          fetchMe(); fetchBalance(); fetchBalanceTxns()
         } else if (res.payment_url) {
           ElMessage.info('正在跳转到支付页面...')
           window.open(res.payment_url, '_blank')
@@ -3936,7 +4285,7 @@ var showStreamingAccount = function(service) {
       api('POST', '/orders', payload).then(function(res) {
         if (res.status === 'completed') {
           ElMessage.success('订单完成')
-          fetchMe()
+          fetchMe(); fetchBalance(); fetchBalanceTxns()
         } else if (res.payment_url) {
           ElMessage.info('正在跳转到支付页面...')
           window.open(res.payment_url, '_blank')
@@ -3976,16 +4325,16 @@ var showStreamingAccount = function(service) {
       api('POST', '/charge/redeem-card', { card_code: cardCode.value }).then(function(res) {
         ElMessage.success('充值卡兑换成功')
         cardCode.value = ''
-        fetchBalance()
+        fetchBalance(); fetchBalanceTxns()
         fetchChargeOrders()
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { redeemBusy.value = false })
     }
 
     // --- Charge orders history ---
     var fetchChargeOrders = function() {
-      api('GET', '/charge/orders?limit=10').then(function(res) {
-        chargeOrders.value = (res && res.items) ? res.items : []
-      }).catch(function() {})
+api('GET', '/charge/orders?limit=50').then(function(res) {
+chargeOrders.value = ((res && res.items) ? res.items : []).filter(function(co) { return within30Days(co.created_at) })
+}).catch(function() {})
     }
 
     var chargeStatusText = function(s) { return { pending: '待支付', paid: '已支付', processing: '处理中', expired: '已过期', failed: '失败' }[s] || s || '-' }
@@ -3993,9 +4342,9 @@ var showStreamingAccount = function(service) {
     // --- My Orders (我的账单) ---
     var fetchMyOrders = function() {
       myOrdersLoading.value = true
-      api('GET', '/orders?limit=50').then(function(res) {
-        myOrders.value = (res && res.items) ? res.items : (Array.isArray(res) ? res : [])
-      }).catch(function() {}).finally(function() { myOrdersLoading.value = false })
+api('GET', '/orders?limit=50').then(function(res) {
+myOrders.value = ((res && res.items) ? res.items : (Array.isArray(res) ? res : [])).filter(function(o) { return within30Days(o.created_at) })
+}).catch(function() {}).finally(function() { myOrdersLoading.value = false })
     }
     var orderStatusText = function(s) {
       return { pending: '待支付', paid: '已支付', completed: '已完成', cancelled: '已取消', refunded: '已退款' }[s] || s || '-'
@@ -4024,9 +4373,9 @@ var showStreamingAccount = function(service) {
       }).catch(function() {})
     }
     var fetchBalanceTxns = function() {
-      api('GET', '/balance/transactions?limit=20').then(function(res) {
-        balanceTxns.value = (res && res.items) ? res.items : []
-      }).catch(function() {})
+api('GET', '/balance/transactions?limit=50').then(function(res) {
+balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { return within30Days(tx.created_at) })
+}).catch(function() {})
     }
 
     // --- Referral ---
@@ -4212,6 +4561,14 @@ var showStreamingAccount = function(service) {
         generateNodeQR(node.link)
       })
     }
+
+    // Node detail dialog (shows share link + copy)
+    var showNodeDetailDialog = ref(false)
+    var currentNodeDetail = ref({})
+    var showNodeDetail = function(node) {
+      currentNodeDetail.value = node
+      showNodeDetailDialog.value = true
+    }
     var generateNodeQR = function(text) {
       var container = nodeQRContainer.value
       if (!container || typeof QRious === 'undefined') return
@@ -4311,6 +4668,27 @@ var showStreamingAccount = function(service) {
         fetchMe(); fetchEndpoints(); startAutoRefresh()
         fetchAnnouncements()
         setTimeout(checkAutoNoticePopups, 800)
+        // Auto-load commercial module data for the default page
+        var initMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
+        var initHasCharge = initMods.some(function(m) { return m.type === 'charge_panel' })
+        var initHasBalance = initMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
+        var initHasPlanList = initMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
+        var initHasReferral = initMods.some(function(m) { return m.type === 'referral' })
+        var initHasTickets = initMods.some(function(m) { return m.type === 'ticket_list' })
+        var initHasArticles = initMods.some(function(m) { return m.type === 'article_list' || m.type === 'tutorial_cards' })
+        var initHasSharedAccts = initMods.some(function(m) { return m.type === 'shared_accounts' })
+        var initHasOrderList = initMods.some(function(m) { return m.type === 'order_list' })
+        var initHasNodeList = initMods.some(function(m) { return m.type === 'node_list' })
+        if (initHasPlanList || initHasNodeList) fetchPlans()
+        if (initHasNodeList) fetchNodes()
+        if (initHasPlanList || initHasCharge) fetchChargeSites()
+        if (initHasCharge) fetchChargeOrders()
+        if (initHasBalance) { fetchBalance(); fetchBalanceTxns() }
+        if (initHasReferral) fetchReferral()
+        if (initHasTickets) fetchTickets()
+        if (initHasArticles) fetchArticles()
+        if (initHasSharedAccts) fetchSharedAccounts()
+        if (initHasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
       }
     })
 
@@ -4454,6 +4832,7 @@ return {
       portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd,
       freeformComponents: freeformComponents,
       showNodeQRDialog: showNodeQRDialog, currentNodeQR: currentNodeQR, nodeQRContainer: nodeQRContainer, showNodeQR: showNodeQR,
+      showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail, showNodeDetail: showNodeDetail,
       noticePopupVisible: noticePopupVisible, activeNoticePopup: activeNoticePopup,
       showNoticePopup: showNoticePopup, dismissNoticePopup: dismissNoticePopup, openNoticeLink: openNoticeLink,
       handleNoticeClick: handleNoticeClick, getNoticeArticlePreview: getNoticeArticlePreview,
@@ -4474,6 +4853,7 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       showArticleDetail: showArticleDetail, articleDetail: articleDetail,
       sharedAccounts: sharedAccounts, showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
       fetchPlans: fetchPlans, purchaseVariant: purchaseVariant, submitOrder: submitOrder,
+      showChargeDialog: showChargeDialog, // 充值弹窗
       showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, // v3.3: 支付方式选择弹窗
       fetchChargeSites: fetchChargeSites, submitCharge: submitCharge, redeemCard: redeemCard,
       fetchChargeOrders: fetchChargeOrders, chargeStatusText: chargeStatusText,

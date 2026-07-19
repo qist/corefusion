@@ -107,14 +107,25 @@ func (s *CommerceService) triggerFirstPaid(ctx context.Context, clientID int64, 
 // P0-1: Plan Display
 // ============================================================
 
+// PlanNodeInfo is a simplified node info for plan display (no sensitive connection details).
+type PlanNodeInfo struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Protocol  string `json:"protocol"`
+	Transport string `json:"transport"`
+	Region    string `json:"region"`
+	Type      string `json:"type"` // "inbound" or "external"
+}
+
 // PlanListItem is a simplified plan template for client display.
 type PlanListItem struct {
 	ID          int64             `json:"id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Category    string            `json:"category"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Category    string             `json:"category"`
 	SortOrder   int               `json:"sort_order"`
 	Variants    []PlanVariantItem `json:"variants"`
+	Nodes       []PlanNodeInfo    `json:"nodes"`
 }
 
 // PlanVariantItem is a simplified plan variant for client display.
@@ -175,9 +186,101 @@ func (s *CommerceService) ListPlans(ctx context.Context) ([]PlanListItem, error)
 		items = append(items, PlanListItem{
 			ID: tmpl.ID, Name: tmpl.Name, Description: tmpl.Description,
 			Category: tmpl.Category, SortOrder: tmpl.SortOrder, Variants: variantItems,
+			Nodes: s.getPlanNodes(ctx, &tmpl),
 		})
 	}
 	return items, nil
+}
+
+// getPlanNodes returns the list of nodes associated with a plan template (names only, no links).
+func (s *CommerceService) getPlanNodes(ctx context.Context, tmpl *entity.PlanTemplate) []PlanNodeInfo {
+	if len(tmpl.NodeGroupIDs) == 0 {
+		return []PlanNodeInfo{}
+	}
+
+	var members []entity.NodeGroupMember
+	if err := s.db.WithContext(ctx).
+		Where("group_id IN ?", []int64(tmpl.NodeGroupIDs)).
+		Where("enabled = ?", true).
+		Find(&members).Error; err != nil {
+		return []PlanNodeInfo{}
+	}
+
+	var nodes []PlanNodeInfo
+	seenInbound := make(map[int64]bool)
+	seenExt := make(map[int64]bool)
+
+	for _, m := range members {
+		if m.InboundConfigID > 0 && !seenInbound[m.InboundConfigID] {
+			var ib entity.InboundConfig
+			if err := s.db.WithContext(ctx).First(&ib, m.InboundConfigID).Error; err == nil && ib.Enabled {
+				name := ib.Remark
+				if name == "" {
+					name = ib.Protocol + "-" + ib.Region
+				}
+				transport := parseInboundTransport(ib.ConfigJSON)
+				nodes = append(nodes, PlanNodeInfo{
+					ID: ib.ID, Name: name, Protocol: ib.Protocol, Transport: transport, Region: ib.Region, Type: "inbound",
+				})
+				seenInbound[m.InboundConfigID] = true
+			}
+		}
+		if m.ExternalNodeID > 0 && !seenExt[m.ExternalNodeID] {
+			var en entity.ExternalNode
+			if err := s.db.WithContext(ctx).First(&en, m.ExternalNodeID).Error; err == nil && en.Enabled {
+				transport := en.Transport
+				if en.TLS {
+					if transport != "" {
+						transport += "+tls"
+					} else {
+						transport = "tls"
+					}
+				}
+				nodes = append(nodes, PlanNodeInfo{
+					ID: en.ID, Name: en.Name, Protocol: en.Protocol, Transport: transport, Region: "", Type: "external",
+				})
+				seenExt[m.ExternalNodeID] = true
+			}
+		}
+	}
+	return nodes
+}
+
+// parseInboundTransport extracts the transport network type from an inbound config JSON.
+// Returns a human-readable string like "tcp", "ws", "grpc", "tcp+tls", "grpc+reality", etc.
+func parseInboundTransport(configJSON string) string {
+	if configJSON == "" {
+		return ""
+	}
+	var cfg struct {
+		StreamSettings struct {
+			Network  string `json:"network"`
+			Security string `json:"security"`
+		} `json:"streamSettings"`
+	}
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return ""
+	}
+	network := cfg.StreamSettings.Network
+	security := cfg.StreamSettings.Security
+	// Map xray network names to user-friendly labels
+	switch network {
+	case "raw", "tcp":
+		network = "tcp"
+	case "ws":
+		network = "ws"
+	case "grpc":
+		network = "grpc"
+	case "httpupgrade":
+		network = "httpupgrade"
+	case "xhttp":
+		network = "xhttp"
+	}
+	result := network
+	if security != "" && security != "none" {
+		result += "+" + security
+	}
+	return result
 }
 
 // GetPlan returns a single plan template detail with variants.
@@ -278,16 +381,7 @@ func (s *CommerceService) BuyTrafficPack(ctx context.Context, clientID int64, in
 	paidAmount := variant.Price
 
 	if input.PayMethod == "balance" {
-		if paidAmount > 0 {
-			if err := s.deductBalanceForOrder(ctx, clientID, paidAmount); err != nil {
-				return nil, fmt.Errorf("insufficient balance: %v", err)
-			}
-		}
-		// Add traffic to subscription
-		if err := s.addTrafficToSubscription(ctx, client, variant.QuotaBytes); err != nil {
-			return nil, fmt.Errorf("failed to add traffic: %v", err)
-		}
-		// Create completed order
+		// 先创建订单再扣款，这样流水可以关联订单 ID
 		now := time.Now()
 		order := &entity.PlanOrder{
 			ClientID: clientID, OrderType: entity.OrderTypeNew, ToVariantID: input.VariantID,
@@ -296,6 +390,15 @@ func (s *CommerceService) BuyTrafficPack(ctx context.Context, clientID int64, in
 		}
 		if err := s.orderRepo.Create(ctx, order); err != nil {
 			return nil, fmt.Errorf("failed to create order: %v", err)
+		}
+		if paidAmount > 0 {
+			if err := s.deductBalanceForOrder(ctx, clientID, paidAmount, &order.ID); err != nil {
+				return nil, fmt.Errorf("insufficient balance: %v", err)
+			}
+		}
+		// Add traffic to subscription
+		if err := s.addTrafficToSubscription(ctx, client, variant.QuotaBytes); err != nil {
+			return nil, fmt.Errorf("failed to add traffic: %v", err)
 		}
 		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
 
@@ -427,9 +530,6 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			if err != nil || bal.Balance < paidAmount {
 				return nil, fmt.Errorf("INSUFFICIENT_BALANCE: need %d, have %d", paidAmount, bal.Balance)
 			}
-			if err := s.deductBalanceForOrder(ctx, clientID, paidAmount); err != nil {
-				return nil, fmt.Errorf("insufficient balance: %v", err)
-			}
 		}
 		order := &entity.PlanOrder{
 			ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
@@ -439,6 +539,12 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		}
 		if err := s.orderRepo.Create(ctx, order); err != nil {
 			return nil, fmt.Errorf("failed to create order: %v", err)
+		}
+		// 先创建订单再扣款，这样流水可以关联订单 ID
+		if paidAmount > 0 {
+			if err := s.deductBalanceForOrder(ctx, clientID, paidAmount, &order.ID); err != nil {
+				return nil, fmt.Errorf("insufficient balance: %v", err)
+			}
 		}
 		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
 			return nil, fmt.Errorf("failed to activate plan: %v", err)
@@ -1681,7 +1787,24 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 				planOrder.PaidAmount = 0
 				planOrder.Remark = "充值卡兑换自动开通"
 			}
-			return tx.Create(planOrder).Error
+			if err := tx.Create(planOrder).Error; err != nil {
+				return err
+			}
+			// 记录余额消费流水（三方充值/充值卡购买套餐）
+			if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
+				remark := "在线支付购买套餐"
+				if order.Source == entity.ChargeSourceSite {
+					remark = "充值站点支付购买套餐"
+				}
+				txRecord := &entity.BalanceTransaction{
+					ClientID: order.ClientID, Type: entity.BalanceTxTypeConsume,
+					Amount: -order.Amount, BalanceBefore: 0, BalanceAfter: 0,
+					RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &planOrder.ID,
+					Remark: remark,
+				}
+				tx.Create(txRecord)
+			}
+			return nil
 		}
 		return nil
 	})
@@ -1774,15 +1897,16 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 	return nil
 }
 
-// deductBalanceForOrder deducts balance for a plan order.
-func (s *CommerceService) deductBalanceForOrder(ctx context.Context, clientID int64, amount int64) error {
+// deductBalanceForOrder deducts balance for a plan order and records the transaction.
+func (s *CommerceService) deductBalanceForOrder(ctx context.Context, clientID int64, amount int64, planOrderID *int64) error {
 	newBal, err := s.balanceRepo.DeductBalance(ctx, clientID, amount)
 	if err != nil {
 		return fmt.Errorf("insufficient balance")
 	}
 	txRecord := &entity.BalanceTransaction{
 		ClientID: clientID, Type: entity.BalanceTxTypeConsume,
-		Amount: -amount, BalanceBefore: newBal.Balance + amount, BalanceAfter: newBal.Balance, Remark: "套餐购买扣款",
+		Amount: -amount, BalanceBefore: newBal.Balance + amount, BalanceAfter: newBal.Balance,
+		RelatedPlanOrderID: planOrderID, Remark: "余额购买套餐扣款",
 	}
 	return s.balanceTxRepo.Create(ctx, txRecord)
 }

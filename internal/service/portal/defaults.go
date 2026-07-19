@@ -1,7 +1,7 @@
 package portal
 
 // defaultNavigationJSON is the default navigation items for a new portal.
-// Navigation structure follows yiy.wiki's sidebar layout, with logs section retained.
+// Navigation structure follows qist's sidebar layout, with logs section retained.
 const defaultNavigationJSON = `[
   {"id":"nav-home","label":"网站首页","icon":"🏠","target":"overview","href":"","enabled":true,"open_external":false},
   {"id":"nav-services","label":"购买服务","icon":"🛒","target":"store","href":"","enabled":true,"open_external":false},

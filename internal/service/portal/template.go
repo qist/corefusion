@@ -110,7 +110,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
 
       <!-- Content Area -->
       <main class="main-content">
-        <!-- Two-column layout for overview page: left main + right sidebar (yiy.wiki style) -->
+        <!-- Two-column layout for overview page: left main + right sidebar (qist style) -->
         <div v-if="activeTab === 'overview'" class="overview-layout">
           <!-- Left column: main modules (exclude notice type) -->
           <div class="overview-main">
@@ -185,7 +185,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
               </div>
             </div>
-            <!-- Account Info (yiy.wiki row style with icon+label+value+badge) -->
+            <!-- Account Info (qist row style with icon+label+value+badge) -->
             <div v-else-if="mod.type === 'account_info'">
               <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '帐号信息' }}</span></div>
               <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
@@ -397,7 +397,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Custom HTML -->
             <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
-<!-- Plan List (商业模块 P0) - yiy.wiki table style -->
+<!-- Plan List (商业模块 P0) - qist table style -->
             <div v-else-if="mod.type === 'plan_list'">
               <!-- 顶部提示 -->
               <div v-if="mod.data && mod.data.notice_text" class="plan-notice">
@@ -1077,7 +1077,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
           </div>
         </div>
-        <!-- Account Info (yiy.wiki style with icon+label+value+badge) -->
+        <!-- Account Info (qist style with icon+label+value+badge) -->
         <div v-else-if="mod.type === 'account_info'">
           <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '帐号信息' }}</span></div>
           <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
@@ -1281,7 +1281,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Custom HTML -->
         <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
-        <!-- Plan List (yiy.wiki table style) -->
+        <!-- Plan List (qist table style) -->
         <div v-else-if="mod.type === 'plan_list'">
           <!-- 顶部提示 -->
           <div v-if="mod.data && mod.data.notice_text" class="plan-notice">
@@ -2375,7 +2375,7 @@ body {
 .user-badge { cursor: pointer; }
 .user-email { font-size: 13px; color: var(--text-secondary); }
 
-/* ---- Desktop Sidebar (yiy.wiki Metronic style) ---- */
+/* ---- Desktop Sidebar (qist Metronic style) ---- */
 .app-sidebar {
   display: none;
   position: fixed;
@@ -2454,7 +2454,7 @@ body {
   margin: 0 auto;
 }
 
-/* ---- Overview Two-Column Layout (yiy.wiki style) ---- */
+/* ---- Overview Two-Column Layout (qist style) ---- */
 .overview-layout {
   display: flex;
   gap: 20px;
@@ -2506,7 +2506,7 @@ body {
   white-space: nowrap;
 }
 
-/* ---- Account Info (yiy.wiki row style) ---- */
+/* ---- Account Info (qist row style) ---- */
 .acct-info-list {
 display: flex;
 flex-direction: column;
@@ -2595,7 +2595,7 @@ border-bottom: 1px solid var(--border);
 .card-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6; }
 .card-actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* ---- Info Grid (yiy.wiki acct-item style) ---- */
+/* ---- Info Grid (qist acct-item style) ---- */
 .info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2626,7 +2626,7 @@ border-bottom: 1px solid var(--border);
   word-break: break-all;
 }
 
-/* ---- Badge (yiy.wiki style) ---- */
+/* ---- Badge (qist style) ---- */
 .badge {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 2px 9px; border-radius: 20px;
@@ -2641,7 +2641,7 @@ border-bottom: 1px solid var(--border);
 .badge-failed { background: #fee2e2; color: #991b1b; }
 .badge-none { background: #f3f4f6; color: #6b7280; }
 
-/* ---- Traffic Ring + Bar (yiy.wiki style) ---- */
+/* ---- Traffic Ring + Bar (qist style) ---- */
 .traffic-ring-wrap {
   position: relative;
   width: 140px; height: 140px;
@@ -2658,7 +2658,7 @@ border-bottom: 1px solid var(--border);
 .ring-percent { font-size: 28px; font-weight: 700; color: var(--accent); line-height: 1; }
 .ring-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
-/* Horizontal traffic bar (yiy.wiki style) */
+/* Horizontal traffic bar (qist style) */
 .traffic-bar-wrap { padding: 4px 0 8px; }
 .traffic-bar-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -2705,7 +2705,7 @@ border-bottom: 1px solid var(--border);
 .stat-label { font-size: 11px; color: var(--text-muted); }
 .stat-divider { width: 1px; height: 32px; background: var(--border); }
 
-/* ---- Subscription (yiy.wiki sub-card style) ---- */
+/* ---- Subscription (qist sub-card style) ---- */
 .sub-link-box {
   background: var(--accent-light);
   border: 1px solid var(--accent-border);
@@ -2738,7 +2738,7 @@ border-bottom: 1px solid var(--border);
 .empty-text.danger { color: var(--danger); }
 .empty-hint { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
-/* ---- Logs (yiy.wiki style) ---- */
+/* ---- Logs (qist style) ---- */
 .log-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .logpkg-list { display: flex; flex-direction: column; gap: 10px; }
 .logpkg-item {
@@ -3580,7 +3580,7 @@ border-bottom: 1px solid var(--border);
 .md-render img { max-width: 100%; border-radius: 8px; }
 
 /* ---- Commercial Modules ---- */
-/* Plan List (yiy.wiki horizontal row style) */
+/* Plan List (qist horizontal row style) */
 .plan-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .plan-card {
   display: flex;

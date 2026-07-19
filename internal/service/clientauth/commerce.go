@@ -33,11 +33,21 @@ import (
 var chargeHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // UserSyncer defines the interface for syncing user credentials to nodes.
-// Implemented by usersync.UserSyncService. Used to sync user accounts to
-// all nodes when a plan is activated (new purchase, renew, upgrade).
+// Implemented by usersync.UserSyncService. Used to remove user accounts from
+// all nodes when a plan is refunded and expired.
 // This avoids circular dependency between clientauth and usersync packages.
 type UserSyncer interface {
 	SyncUserToServers(ctx context.Context, clientID int64, action string) error
+}
+
+// AccountSyncer triggers account synchronization for a plan template.
+// Implemented by plan.Service. Reuses the existing SyncAccountsForTemplate
+// → SyncAccountsForNewInbound → InboundManager.AddUserToInbound chain:
+// generates UUID/Password, persists to config_json, and hot-adds via xray gRPC
+// for both local and remote nodes.
+// This avoids duplicating account creation logic in commerce.go.
+type AccountSyncer interface {
+	SyncAccountsForTemplate(ctx context.Context, templateID int64) (int, error)
 }
 
 // CommerceService handles plan display, ordering, charging, and balance operations.
@@ -55,7 +65,8 @@ type CommerceService struct {
 	balanceRepo     *repository.ClientBalanceRepository
 	balanceTxRepo   *repository.BalanceTransactionRepository
 	referralSvc     *ReferralService // P1: 首次付费返利触发
-	userSyncer      UserSyncer       // 套餐激活后同步用户到节点
+userSyncer      UserSyncer       // 退款过期后从节点移除用户凭证
+accountSyncer   AccountSyncer    // 套餐激活后同步创建入站用户账号
 	settingSvc      SettingStore
 	jwtSecret       string
 }
@@ -102,9 +113,16 @@ func (s *CommerceService) SetReferralService(svc *ReferralService) {
 }
 
 // SetUserSyncer sets the user syncer (called from router initialization).
-// 套餐激活后自动将用户凭证同步到所有节点（本地+远程）
+// 用于退款过期后从所有节点移除用户凭证（本地+远程）
 func (s *CommerceService) SetUserSyncer(syncer UserSyncer) {
 	s.userSyncer = syncer
+}
+
+// SetAccountSyncer sets the account syncer (called from router initialization).
+// 套餐激活后自动为客户端在所有入站创建账号，复用 plan.Service.SyncAccountsForTemplate
+// 已有链路：生成 UUID/Password → 写 config_json → xray gRPC 热添加（本地+远程）
+func (s *CommerceService) SetAccountSyncer(syncer AccountSyncer) {
+	s.accountSyncer = syncer
 }
 
 // triggerFirstPaid triggers the first-paid referral commission if applicable.
@@ -542,8 +560,12 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		// v3.3: 先检查余额，不足时返回特殊错误码让前端引导选择其他支付方式
 		if paidAmount > 0 {
 			bal, err := s.balanceRepo.GetByClientID(ctx, clientID)
-			if err != nil || bal.Balance < paidAmount {
-				return nil, fmt.Errorf("INSUFFICIENT_BALANCE: need %d, have %d", paidAmount, bal.Balance)
+			haveBalance := int64(0)
+			if err == nil && bal != nil {
+				haveBalance = bal.Balance
+			}
+			if err != nil || haveBalance < paidAmount {
+				return nil, fmt.Errorf("INSUFFICIENT_BALANCE: need %d, have %d", paidAmount, haveBalance)
 			}
 		}
 		order := &entity.PlanOrder{
@@ -672,6 +694,9 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
 			return nil, fmt.Errorf("failed to activate plan: %v", err)
 		}
+
+		// P1: 首次付费返利触发（套餐卡支付 — 按原价计算返利，套餐卡等价于预付原价）
+		s.triggerFirstPaid(ctx, clientID, originalAmount)
 
 		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
 	}
@@ -1121,6 +1146,13 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		}
 		log.Printf("[callback] request_id=%s order=%s amount=%d status=paid success", requestID, input.TradeNo, order.Amount)
 		recordEvent("success", "", "", signValid, usedSecretVer, ipMatchRule)
+
+		// P1: 首次付费返利触发（三方支付购买套餐 — 事务外调用，避免嵌套事务问题）
+		// 仅当是套餐购买订单时触发，纯充值不触发返利
+		if order.OrderType == entity.ChargeOrderTypePurchase && order.PlanVariantID != nil {
+			s.triggerFirstPaid(ctx, order.ClientID, order.Amount)
+		}
+
 		return nil
 	}
 
@@ -1782,7 +1814,7 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 			} else {
 				// Regular plan activation
 				orderType := entity.OrderTypeNew
-				if client.PlanID > 0 {
+				if client.PlanID > 0 && client.Status != "expired" {
 					orderType = entity.OrderTypeRenew
 				}
 				if err := s.activatePlan(ctx, client, tmpl, variant, orderType); err != nil {
@@ -1910,19 +1942,17 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		s.subRepo.Update(ctx, sub)
 	}
 
-	// 套餐激活成功后，将用户凭证同步到所有节点（本地+远程）
-	// action: new → "add"，renew/upgrade → "update"
-	if s.userSyncer != nil {
-		syncAction := "add"
-		if orderType != entity.OrderTypeNew {
-			syncAction = "update"
-		}
-		// 异步同步，不阻塞订单流程（同步失败有 retry 机制兜底）
-		go func(cID int64, act string) {
-			if err := s.userSyncer.SyncUserToServers(context.Background(), cID, act); err != nil {
-				log.Printf("[commerce] failed to sync user %d to servers after plan activation: %v", cID, err)
+	// 套餐激活成功后，为客户端在所有入站创建/确保账号。复用 plan.Service.SyncAccountsForTemplate
+	// 已有链路（SyncAccountsForNewInbound → InboundManager.AddUserToInbound）：
+	// 生成 UUID/Password、写入 config_json 持久化、通过 xray gRPC 热添加到运行中的 xray（本地+远程）。
+	// 新购和续费都触发：SyncAccountsForNewInbound 内部有 userExistsInConfig 幂等检查，已存在的账号会跳过。
+	// 续费时也触发是为了覆盖过期后重新购买的场景（退款可能已从 xray 运行时移除用户）。
+	if (orderType == entity.OrderTypeNew || orderType == entity.OrderTypeRenew) && s.accountSyncer != nil {
+		go func(planID int64) {
+			if _, err := s.accountSyncer.SyncAccountsForTemplate(context.Background(), planID); err != nil {
+				log.Printf("[commerce] failed to sync accounts for plan %d: %v", planID, err)
 			}
-		}(client.ID, syncAction)
+		}(tmpl.ID)
 	}
 
 	return nil

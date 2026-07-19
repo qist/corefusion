@@ -213,6 +213,11 @@ func SetLocalAgent(la *agent.LocalAgent) {
 // to all nodes (local + remote) when a plan is activated or refunded.
 var sharedUserSyncer clientauthSvc.UserSyncer
 
+// sharedAccountSyncer is the global AccountSyncer shared between NewWithFullConfig
+// and NewPortalEngine. Set in NewWithFullConfig after planSvcInst is created,
+// so that the portal engine's CommerceService can also trigger account sync.
+var sharedAccountSyncer clientauthSvc.AccountSyncer
+
 // SetUserSyncer sets the shared UserSyncer (called from main.go before NewWithFullConfig).
 // This enables CommerceService to sync user accounts to nodes after plan activation
 // and remove them on refund.
@@ -607,10 +612,15 @@ subRepo, subEndpointRepo, publicSubH, database,
 	clientauthSvcInst.SetReferralService(referralSvcInst)
 	commerceSvcInst.SetReferralService(referralSvcInst)
 
-	// 注入 UserSyncer — 套餐激活后同步用户到节点 + 退款时移除用户
+	// 注入 UserSyncer — 退款过期后从节点移除用户凭证
 	if sharedUserSyncer != nil {
 		commerceSvcInst.SetUserSyncer(sharedUserSyncer)
 	}
+
+	// 注入 AccountSyncer — 套餐激活后复用 plan.Service.SyncAccountsForTemplate
+	// 为客户端在所有入站创建账号（生成 UUID/Password → 写 config_json → xray gRPC 热添加）
+	commerceSvcInst.SetAccountSyncer(planSvcInst)
+	sharedAccountSyncer = planSvcInst // 供 NewPortalEngine 使用
 
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
@@ -2626,9 +2636,14 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	clientauthSvcInst.SetReferralService(referralSvcInst)
 	commerceSvcInst.SetReferralService(referralSvcInst)
 
-	// 注入 UserSyncer — Portal 引擎的套餐激活也需同步用户到节点
+	// 注入 UserSyncer — Portal 引擎退款过期后也需从节点移除用户
 	if sharedUserSyncer != nil {
 		commerceSvcInst.SetUserSyncer(sharedUserSyncer)
+	}
+
+	// 注入 AccountSyncer — Portal 引擎套餐激活后也需创建入站账号
+	if sharedAccountSyncer != nil {
+		commerceSvcInst.SetAccountSyncer(sharedAccountSyncer)
 	}
 
 	// Root path serves the portal page

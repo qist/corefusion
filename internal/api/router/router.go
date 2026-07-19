@@ -2468,7 +2468,7 @@ func htmlEscape(s string) string {
 }
 
 // renderPortalPage renders the portal HTML page from the active template.
-// If no active template exists, it falls back to the embedded default.
+// Always uses the active template from database.
 func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sysSvc *systemSvc.SettingService) string {
 	// Get registration enabled setting
 	registrationEnabled := false
@@ -2480,12 +2480,7 @@ func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sys
 
 	tmpl, err := portalTmplSvc.GetActive(ctx)
 	if err != nil || tmpl == nil {
-		// Fallback to embedded default
-		data, embedErr := embed.AdminFSBytes().ReadFile("dist/portal/index.html")
-		if embedErr != nil {
-			return "<html><body><h1>Portal not configured</h1></body></html>"
-		}
-		return string(data)
+		return "<html><body><h1>Portal not configured</h1></body></html>"
 	}
 
 	// Build render config from template config + system settings

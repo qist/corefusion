@@ -238,21 +238,61 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'client_download'">
               <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || '客户端下载' }}</span></div>
               <div class="client-platform-tabs">
-                <div 
-                  v-for="p in (mod.data && mod.data.platforms) || []" 
+                <div
+                  v-for="p in (mod.data && mod.data.platforms) || []"
                   :key="p.id"
                   class="platform-tab"
                   :class="{ active: selectedPlatform === p.id }"
-                  @click="selectedPlatform = p.id"
+                  @click="selectPlatform(p.id)"
                 >
                   <el-icon v-if="p.icon"><component :is="p.icon" /></el-icon>
                   <span>{{ p.name }}</span>
                 </div>
               </div>
-              <div class="client-download-hint">
+              <!-- Hint when no platform selected -->
+              <div v-if="!selectedPlatform" class="client-download-hint">
                 <el-icon><ArrowUp /></el-icon>
                 <span>{{ (mod.data && mod.data.hint_text) || '请点击上方标签选择你的操作系统' }}</span>
                 <el-icon><ArrowUp /></el-icon>
+              </div>
+              <!-- Content when platform selected -->
+              <div v-else class="client-download-content">
+                <div class="client-download-platform-header">
+                  <span class="client-download-platform-name">{{ getSelectedPlatformName() }}</span>
+                  <el-button text size="small" @click="navigateTo('tutorial')">查看全部教程 →</el-button>
+                </div>
+                <!-- Download link -->
+                <div v-if="getSelectedPlatformUrl(mod)" class="client-download-link-row">
+                  <a :href="getSelectedPlatformUrl(mod)" target="_blank" rel="noopener" class="client-download-btn">
+                    <el-icon><Download /></el-icon>
+                    <span>下载 {{ getSelectedPlatformName() }} 客户端</span>
+                  </a>
+                </div>
+                <!-- Associated tutorial articles -->
+                <div v-if="getPlatformArticles(selectedPlatform).length > 0" class="client-download-articles">
+                  <div class="client-download-section-title">📖 相关教程</div>
+                  <div class="article-list compact">
+                    <div
+                      class="article-item"
+                      v-for="article in getPlatformArticles(selectedPlatform)"
+                      :key="article.id"
+                      @click="openArticle(article.slug)"
+                    >
+                      <span class="article-cat-badge">{{ articleCatText(article.category) }}</span>
+                      <div class="article-info">
+                        <span class="article-title">{{ article.title }}</span>
+                        <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
+                      </div>
+                      <el-icon class="article-arrow"><ArrowRight /></el-icon>
+                    </div>
+                  </div>
+                </div>
+                <!-- Empty state -->
+                <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
+                  <span class="empty-icon">📦</span>
+                  <p class="empty-text">暂无下载内容</p>
+                  <p class="empty-hint">请稍后再来查看</p>
+                </div>
               </div>
             </div>
             <!-- Subscription Detail (dynamic) -->
@@ -1112,21 +1152,61 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'client_download'">
           <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || '客户端下载' }}</span></div>
           <div class="client-platform-tabs">
-            <div 
-              v-for="p in (mod.data && mod.data.platforms) || []" 
+            <div
+              v-for="p in (mod.data && mod.data.platforms) || []"
               :key="p.id"
               class="platform-tab"
               :class="{ active: selectedPlatform === p.id }"
-              @click="selectedPlatform = p.id"
+              @click="selectPlatform(p.id)"
             >
               <el-icon v-if="p.icon"><component :is="p.icon" /></el-icon>
               <span>{{ p.name }}</span>
             </div>
           </div>
-          <div class="client-download-hint">
+          <!-- Hint when no platform selected -->
+          <div v-if="!selectedPlatform" class="client-download-hint">
             <el-icon><ArrowUp /></el-icon>
             <span>{{ (mod.data && mod.data.hint_text) || '请点击上方标签选择你的操作系统' }}</span>
             <el-icon><ArrowUp /></el-icon>
+          </div>
+          <!-- Content when platform selected -->
+          <div v-else class="client-download-content">
+            <div class="client-download-platform-header">
+              <span class="client-download-platform-name">{{ getSelectedPlatformName() }}</span>
+              <el-button text size="small" @click="navigateTo('tutorial')">查看全部教程 →</el-button>
+            </div>
+            <!-- Download link -->
+            <div v-if="getSelectedPlatformUrl(mod)" class="client-download-link-row">
+              <a :href="getSelectedPlatformUrl(mod)" target="_blank" rel="noopener" class="client-download-btn">
+                <el-icon><Download /></el-icon>
+                <span>下载 {{ getSelectedPlatformName() }} 客户端</span>
+              </a>
+            </div>
+            <!-- Associated tutorial articles -->
+            <div v-if="getPlatformArticles(selectedPlatform).length > 0" class="client-download-articles">
+              <div class="client-download-section-title">📖 相关教程</div>
+              <div class="article-list compact">
+                <div
+                  class="article-item"
+                  v-for="article in getPlatformArticles(selectedPlatform)"
+                  :key="article.id"
+                  @click="openArticle(article.slug)"
+                >
+                  <span class="article-cat-badge">{{ articleCatText(article.category) }}</span>
+                  <div class="article-info">
+                    <span class="article-title">{{ article.title }}</span>
+                    <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
+                  </div>
+                  <el-icon class="article-arrow"><ArrowRight /></el-icon>
+                </div>
+              </div>
+            </div>
+            <!-- Empty state -->
+            <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
+              <span class="empty-icon">📦</span>
+              <p class="empty-text">暂无下载内容</p>
+              <p class="empty-hint">请稍后再来查看</p>
+            </div>
           </div>
         </div>
         <!-- Subscription Detail -->
@@ -3313,6 +3393,59 @@ border-bottom: 1px solid var(--border);
   justify-content: center;
   gap: 8px;
 }
+.client-download-content {
+  padding: 4px 0;
+}
+.client-download-platform-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.client-download-platform-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.client-download-link-row {
+  margin-bottom: 16px;
+}
+.client-download-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark, var(--accent)));
+  color: #fff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.client-download-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.client-download-articles {
+  margin-top: 4px;
+}
+.client-download-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.article-list.compact .article-item {
+  padding: 8px 10px;
+}
+.article-list.compact .article-title {
+  font-size: 13px;
+}
 
 /* ---- Subscription Actions / 订阅操作 ---- */
 .sub-actions-row {
@@ -3839,6 +3972,7 @@ border-bottom: 1px solid var(--border);
 }
 .article-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .article-title { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.article-arrow { color: var(--text-muted); flex-shrink: 0; font-size: 14px; }
 .sa-icon { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; }
 
 /* Ticket Detail */
@@ -4103,6 +4237,7 @@ var showPromoInput = ref(false) // 优惠码输入折叠
       var hasTickets = pageMods.some(function(m) { return m.type === 'ticket_list' })
       var hasArticles = pageMods.some(function(m) { return m.type === 'article_list' })
       var hasTutorialCards = pageMods.some(function(m) { return m.type === 'tutorial_cards' })
+      var hasClientDownload = pageMods.some(function(m) { return m.type === 'client_download' })
       var hasSharedAccts = pageMods.some(function(m) { return m.type === 'shared_accounts' })
       var hasStreaming = pageMods.some(function(m) { return m.type === 'streaming_status' })
       var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
@@ -4114,7 +4249,7 @@ var showPromoInput = ref(false) // 优惠码输入折叠
       if (hasBalance) { fetchBalance(); fetchBalanceTxns() }
       if (hasReferral) fetchReferral()
       if (hasTickets) fetchTickets()
-      if (hasArticles || hasTutorialCards) fetchArticles()
+      if (hasArticles || hasTutorialCards || hasClientDownload) fetchArticles()
       if (hasSharedAccts || hasStreaming) fetchSharedAccounts()
       if (hasOrderList) { fetchPlans(); fetchMyOrders(); fetchChargeOrders(); fetchBalanceTxns() }
     }
@@ -4705,11 +4840,25 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       fetchArticlesByPlatform(platformId)
     }
     var getSelectedPlatformName = function() {
-      // Find the tutorial_cards module from currentModules
+      // Find platform name from tutorial_cards or client_download module
       var tutorialMod = currentModules.value.find(function(m) { return m.type === 'tutorial_cards' })
       var cards = (tutorialMod && tutorialMod.data && tutorialMod.data.cards) || []
       var card = cards.find(function(c) { return c.id === selectedPlatform.value })
-      return card ? card.name : selectedPlatform.value
+      if (card) return card.name
+      // Fallback: search client_download module platforms
+      var dlMod = currentModules.value.find(function(m) { return m.type === 'client_download' })
+      var platforms = (dlMod && dlMod.data && dlMod.data.platforms) || []
+      var p = platforms.find(function(pl) { return pl.id === selectedPlatform.value })
+      return p ? p.name : selectedPlatform.value
+    }
+    var getSelectedPlatformUrl = function(mod) {
+      if (!mod || !mod.data || !mod.data.platforms) return ''
+      var p = mod.data.platforms.find(function(pl) { return pl.id === selectedPlatform.value })
+      return (p && p.url) || ''
+    }
+    var navigateTo = function(target) {
+      var nav = portalNavItems.value.find(function(n) { return n.target === target })
+      if (nav) onNavClick(nav)
     }
     var getPlatformArticles = function(platformId) {
       // Special handling for FAQ card
@@ -4886,7 +5035,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         var initHasPlanList = initMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
         var initHasReferral = initMods.some(function(m) { return m.type === 'referral' })
         var initHasTickets = initMods.some(function(m) { return m.type === 'ticket_list' })
-        var initHasArticles = initMods.some(function(m) { return m.type === 'article_list' || m.type === 'tutorial_cards' })
+        var initHasArticles = initMods.some(function(m) { return m.type === 'article_list' || m.type === 'tutorial_cards' || m.type === 'client_download' })
         var initHasSharedAccts = initMods.some(function(m) { return m.type === 'shared_accounts' })
         var initHasOrderList = initMods.some(function(m) { return m.type === 'order_list' })
         var initHasNodeList = initMods.some(function(m) { return m.type === 'node_list' })
@@ -5077,6 +5226,7 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       getTutorialIcon: getTutorialIcon, openTutorial: openTutorial,
       selectedPlatform: selectedPlatform, selectPlatform: selectPlatform,
       getSelectedPlatformName: getSelectedPlatformName, getPlatformArticles: getPlatformArticles,
+      getSelectedPlatformUrl: getSelectedPlatformUrl, navigateTo: navigateTo,
       announcements: announcements, fetchAnnouncements: fetchAnnouncements,
       showNoticePanel: showNoticePanel,
       fetchSharedAccounts: fetchSharedAccounts, applySharedAccount: applySharedAccount,

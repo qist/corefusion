@@ -208,6 +208,11 @@
               <el-tag :type="row.is_published?'success':'info'" size="small">{{ row.is_published?'已发布':'草稿' }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="弹窗" width="60">
+            <template #default="{row}">
+              <el-tag :type="row.is_popup?'danger':'info'" size="small">{{ row.is_popup?'是':'否' }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="sort_order" label="排序" width="60" />
           <el-table-column label="操作" width="180">
             <template #default="{row}">
@@ -248,6 +253,10 @@
             </el-form-item>
             <el-form-item label="发布">
               <el-switch v-model="articleForm.is_published" />
+            </el-form-item>
+            <el-form-item label="首页弹窗">
+              <el-switch v-model="articleForm.is_popup" />
+              <span style="margin-left:8px;color:#999;font-size:12px">开启后用户打开首页自动弹窗显示</span>
             </el-form-item>
             <el-form-item label="内容">
               <el-input v-model="articleForm.content" type="textarea" :rows="15" placeholder="Markdown 格式" />
@@ -532,7 +541,7 @@ async function saveGiftRuleConfig() {
 const articles = ref([])
 const articlesLoading = ref(false)
 const articleDialogVisible = ref(false)
-const articleForm = ref({ title: '', slug: '', category: 'tutorial', platform: '', sort_order: 0, is_published: false, content: '' })
+const articleForm = ref({ title: '', slug: '', category: 'tutorial', platform: '', sort_order: 0, is_published: false, is_popup: false, content: '' })
 const articleSubmitting = ref(false)
 
 async function fetchArticles() {
@@ -543,7 +552,7 @@ async function fetchArticles() {
   } finally { articlesLoading.value = false }
 }
 
-function showCreateArticle() { articleForm.value = { title: '', slug: '', category: 'tutorial', platform: '', sort_order: 0, is_published: false, content: '' }; articleDialogVisible.value = true }
+function showCreateArticle() { articleForm.value = { title: '', slug: '', category: 'tutorial', platform: '', sort_order: 0, is_published: false, is_popup: false, content: '' }; articleDialogVisible.value = true }
 
 async function showEditArticle(row) {
   const result = await getArticle(row.id)

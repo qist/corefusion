@@ -1034,12 +1034,14 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	}
 
 	// ⑪ amount + currency lock check (v3.2: 币种锁定)
-	if input.Amount != order.Amount {
-		log.Printf("[callback] request_id=%s amount_mismatch callback=%d order=%d", requestID, input.Amount, order.Amount)
-		recordEvent("amount_error", "AMOUNT_MISMATCH", fmt.Sprintf("callback=%d order=%d", input.Amount, order.Amount), signValid, usedSecretVer, ipMatchRule)
+	// 充值站点 amount 单位为元，内部 order.Amount 单位为分，需要统一后比较
+	callbackAmountCents := input.Amount * 100
+	if callbackAmountCents != order.Amount {
+		log.Printf("[callback] request_id=%s amount_mismatch callback=%d(yuan) order=%d(cents)", requestID, input.Amount, order.Amount)
+		recordEvent("amount_error", "AMOUNT_MISMATCH", fmt.Sprintf("callback=%d(yuan) order=%d(cents)", input.Amount, order.Amount), signValid, usedSecretVer, ipMatchRule)
 		raiseSecEvent(entity.ChargeSecEventAmountMismatch, entity.ChargeSecSeverityCritical, input.TradeNo,
-			fmt.Sprintf("amount mismatch: callback=%d order=%d", input.Amount, order.Amount))
-		return fmt.Errorf("amount mismatch: callback=%d order=%d", input.Amount, order.Amount)
+			fmt.Sprintf("amount mismatch: callback=%d(yuan) order=%d(cents)", input.Amount, order.Amount))
+		return fmt.Errorf("amount mismatch: callback=%d(yuan) order=%d(cents)", input.Amount, order.Amount)
 	}
 	// v3.2: 币种锁定 — order 有币种时，callback.currency 必须非空且一致
 	if order.Currency != "" {
@@ -2082,7 +2084,7 @@ func (s *CommerceService) requestChargeSitePayment(ctx context.Context, site *en
 	notifyURL := externalURL + "/api/v1/charge/callback/" + strconv.FormatInt(site.ID, 10)
 
 	payload := map[string]interface{}{
-		"trade_no": order.TradeNo, "amount": order.Amount, "currency": order.Currency,
+		"trade_no": order.TradeNo, "amount": order.Amount / 100.0, "currency": order.Currency,
 		"subject": "CoreFusion 充值", "notify_url": notifyURL,
 		"return_url": returnURL, "client_email": maskEmail(client.Email),
 		"timestamp": time.Now().Unix(),

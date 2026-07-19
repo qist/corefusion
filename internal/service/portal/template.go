@@ -66,26 +66,6 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <button class="theme-toggle" @click="toggleTheme" :title="isDark ? '切换到亮色模式' : '切换到暗色模式'">
             <span v-if="isDark">☀️</span><span v-else>🌙</span>
           </button>
-          <div class="notice-bell-wrap">
-            <button class="notice-bell" @click="showNoticePanel = !showNoticePanel" title="公告栏">
-              <span class="bell-icon">🔔</span>
-              <span v-if="announcements.length > 0" class="bell-badge">{{ announcements.length > 99 ? '99+' : announcements.length }}</span>
-            </button>
-            <div v-if="showNoticePanel" class="notice-panel-dropdown">
-              <div class="notice-panel-header">
-                <span class="notice-panel-title">📢 公告栏</span>
-                <span v-if="announcements.length > 0" class="notice-panel-count">{{ announcements.length }} 条</span>
-              </div>
-              <div v-if="announcements.length === 0" class="notice-panel-empty">暂无公告</div>
-              <div v-else class="notice-panel-list">
-                <div v-for="ann in announcements" :key="ann.id" class="notice-panel-item" @click="openArticle(ann.slug); showNoticePanel = false">
-                  <span class="notice-panel-date">{{ formatDate(ann.published_at || ann.updated_at).slice(5,10) }}</span>
-                  <span class="notice-panel-text">{{ ann.title }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="showNoticePanel" class="notice-backdrop" @click="showNoticePanel = false"></div>
           <el-dropdown trigger="click">
             <span class="user-badge">
               <span class="user-email">{{ client.email }}</span>
@@ -966,27 +946,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Right column: notice sidebar + announcements -->
+      <!-- Right column: announcement list -->
       <aside class="overview-sidebar">
-        <!-- Inline notice modules rendered as sidebar cards -->
-        <template v-for="mod in currentModules.filter(function(m){ return m.type === 'notice' })" :key="mod.id">
-          <div class="card glass notice-sidebar-card" :id="'mod-' + mod.id">
-            <div class="module-notice" :class="'notice-' + (mod.style && mod.style.variant || 'info')" :style="{ cursor: (mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual') || mod.data.article_slug ? 'pointer' : 'default', borderLeft: 'none', padding: 0, borderRadius: '8px' }" @click="handleNoticeClick(mod)">
-              <div v-if="mod.data && mod.data.title" class="notice-title">{{ mod.data.title }}</div>
-              <div v-if="mod.data && mod.data.markdown" class="md-render" v-html="renderMd(mod.data.markdown)"></div>
-              <div v-else-if="mod.data && mod.data.html" v-html="mod.data.html"></div>
-              <div v-else-if="mod.data && mod.data.article_slug" class="notice-article-preview">
-                <p class="notice-article-desc">{{ getNoticeArticlePreview(mod.data.article_slug) }}</p>
-              </div>
-              <div v-if="(mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual') || mod.data.article_slug" class="notice-popup-hint">📍 点击查看详情</div>
-            </div>
-          </div>
-        </template>
-        <!-- Announcement list from API -->
+        <!-- Announcement list from API (统一公告来源) -->
         <div v-if="announcements.length > 0" class="card glass announcement-sidebar-card">
           <div class="card-header"><span class="card-icon">📢</span><span class="card-title">公告栏</span></div>
           <div class="announcement-sidebar-list">
-            <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openArticle(ann.slug)">
+            <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openAnnouncementPopup(ann)">
+              <span v-if="ann.is_popup" class="announcement-popup-badge">📌</span>
               <span class="announcement-sidebar-date">[{{ formatDate(ann.published_at || ann.updated_at).slice(5,10) }}]</span>
               <span class="announcement-sidebar-text">{{ ann.title }}</span>
             </div>
@@ -1007,15 +974,17 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Rich Text -->
         <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
-            <!-- Notice (for non-overview pages) -->
-            <div v-else-if="mod.type === 'notice'" class="module-notice" :class="'notice-' + (mod.style && mod.style.variant || 'info')" :style="{ cursor: (mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual') || mod.data.article_slug ? 'pointer' : 'default' }" @click="handleNoticeClick(mod)">
-              <div v-if="mod.data && mod.data.title" class="notice-title">{{ mod.data.title }}</div>
-              <div v-if="mod.data && mod.data.markdown" class="md-render" v-html="renderMd(mod.data.markdown)"></div>
-              <div v-else-if="mod.data && mod.data.html" v-html="mod.data.html"></div>
-              <div v-else-if="mod.data && mod.data.article_slug" class="notice-article-preview">
-                <p class="notice-article-desc">{{ getNoticeArticlePreview(mod.data.article_slug) }}</p>
+            <!-- Announcement list (for non-overview pages) -->
+            <div v-else-if="mod.type === 'notice'" class="card glass announcement-sidebar-card" style="margin-bottom: 16px;">
+              <div class="card-header"><span class="card-icon">📢</span><span class="card-title">{{ mod.title || '公告栏' }}</span></div>
+              <div class="announcement-sidebar-list">
+                <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openAnnouncementPopup(ann)">
+                  <span v-if="ann.is_popup" class="announcement-popup-badge">📌</span>
+                  <span class="announcement-sidebar-date">[{{ formatDate(ann.published_at || ann.updated_at).slice(5,10) }}]</span>
+                  <span class="announcement-sidebar-text">{{ ann.title }}</span>
+                </div>
+                <div v-if="announcements.length === 0" style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">暂无公告</div>
               </div>
-              <div v-if="(mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual') || mod.data.article_slug" class="notice-popup-hint">📍 点击查看详情</div>
             </div>
         <!-- Feature Cards -->
         <div v-else-if="mod.type === 'feature_cards'">
@@ -1855,35 +1824,23 @@ const defaultPortalHTML = `<!DOCTYPE html>
       </nav>
     </div>
 
-    <!-- Notice Popup Dialog -->
+    <!-- Announcement Popup Dialog -->
     <el-dialog
-      v-if="activeNoticePopup"
-      v-model="noticePopupVisible"
-      :title="(activeNoticePopup.data && activeNoticePopup.data.title) || activeNoticePopup.title || '公告'"
-      :width="(activeNoticePopup.data && activeNoticePopup.data.popup_width) || '480px'"
-      :show-close="(activeNoticePopup.data && activeNoticePopup.data.popup_show_close !== false)"
-      :close-on-click-modal="false"
+      v-if="activeAnnouncement"
+      v-model="announcementPopupVisible"
+      :title="activeAnnouncement.title || '公告'"
+      width="500px"
+      :close-on-click-modal="true"
       class="notice-popup-dialog"
       align-center
       append-to-body
     >
-      <div class="notice-popup-body" :class="'notice-' + ((activeNoticePopup.style && activeNoticePopup.style.variant) || 'info')">
-        <div v-if="activeNoticePopup.data && activeNoticePopup.data.markdown" class="md-render" v-html="renderMd(activeNoticePopup.data.markdown)"></div>
-        <div v-if="activeNoticePopup.data && activeNoticePopup.data.html" v-html="activeNoticePopup.data.html"></div>
+      <div class="notice-popup-body notice-info">
+        <div class="md-render" v-html="renderMd(activeAnnouncement.content || '')"></div>
       </div>
       <template #footer>
         <div class="notice-popup-footer">
-          <el-button
-            v-if="activeNoticePopup.data && activeNoticePopup.data.popup_link_url"
-            type="primary"
-            plain
-            @click="openNoticeLink(activeNoticePopup.data.popup_link_url, activeNoticePopup.data.popup_link_external !== false)"
-          >
-            {{ (activeNoticePopup.data && activeNoticePopup.data.popup_link_text) || '查看详情' }}
-          </el-button>
-          <el-button type="primary" @click="dismissNoticePopup">
-            {{ (activeNoticePopup.data && activeNoticePopup.data.popup_button_text) || '我知道了' }}
-          </el-button>
+          <el-button type="primary" @click="announcementPopupVisible = false">我知道了</el-button>
         </div>
       </template>
     </el-dialog>
@@ -1985,180 +1942,260 @@ const defaultPortalHTML = `<!DOCTYPE html>
     </el-dialog>
 
     <!-- Charge Dialog / 充值弹窗 -->
-    <el-dialog v-model="showChargeDialog" title="余额充值" width="400px" align-center append-to-body>
-      <div class="charge-dialog-content">
+    <el-dialog v-model="showChargeDialog" title="余额充值" width="440px" align-center append-to-body class="payment-dialog">
+      <div class="payment-dialog-content">
         <!-- 充值方式选择 -->
-        <div class="charge-method-tabs" v-if="chargeSites && chargeSites.length > 0">
+        <div class="pay-section-title">选择充值方式</div>
+        <div class="pay-method-list">
           <div 
-            v-for="site in chargeSites" 
-            :key="site.id"
-            class="charge-method-tab"
-            :class="{ active: chargeForm.site_id === site.id }"
+            v-for="site in (chargeSites || [])" 
+            :key="'cs-'+site.id"
+            class="pay-method-card"
+            :class="{ active: chargeForm.method !== 'card' && chargeForm.site_id === site.id }"
             @click="chargeForm.site_id = site.id; chargeForm.method = 'online'"
           >
-            <el-icon><Money /></el-icon>
-            <span>{{ site.name || '在线支付' }}</span>
+            <div class="pay-method-icon pay-method-icon-online">
+              <el-icon><Money /></el-icon>
+            </div>
+            <div class="pay-method-info">
+              <div class="pay-method-name">{{ site.name || '在线支付' }}</div>
+              <div class="pay-method-desc">支付宝 / 微信等</div>
+            </div>
+            <div class="pay-method-check" v-if="chargeForm.method !== 'card' && chargeForm.site_id === site.id">
+              <el-icon><Check /></el-icon>
+            </div>
           </div>
+
           <div 
-            class="charge-method-tab"
+            class="pay-method-card"
             :class="{ active: chargeForm.method === 'card' }"
             @click="chargeForm.method = 'card'; chargeForm.site_id = null"
           >
-            <el-icon><Ticket /></el-icon>
-            <span>充值卡</span>
+            <div class="pay-method-icon pay-method-icon-card">
+              <el-icon><Ticket /></el-icon>
+            </div>
+            <div class="pay-method-info">
+              <div class="pay-method-name">充值卡</div>
+              <div class="pay-method-desc">使用卡密兑换</div>
+            </div>
+            <div class="pay-method-check" v-if="chargeForm.method === 'card'">
+              <el-icon><Check /></el-icon>
+            </div>
           </div>
         </div>
-        <!-- 只有充值卡时显示简化标题 -->
-        <div v-else class="charge-method-tabs" style="justify-content: center;">
-          <div 
-            class="charge-method-tab active"
-            @click="chargeForm.method = 'card'"
-          >
-            <el-icon><Ticket /></el-icon>
-            <span>充值卡</span>
-          </div>
-        </div>
-        
+
         <!-- 在线支付表单 -->
-        <div v-if="chargeForm.method !== 'card' && chargeSites && chargeSites.length > 0" class="charge-form">
-          <el-form label-position="top" size="default">
-            <el-form-item label="充值金额">
-              <div class="charge-amount-grid">
-                <div 
-                  v-for="amt in [1, 2, 5, 10, 20, 50, 100, 300, 500]" 
-                  :key="amt"
-                  class="charge-amount-btn"
-                  :class="{ active: chargeForm.amount_yuan === amt && !chargeForm.custom_amount }"
-                  @click="chargeForm.amount_yuan = amt; chargeForm.custom_amount = false"
-                >
-                  {{ amt }}元
-                </div>
-                <div 
-                  class="charge-amount-btn"
-                  :class="{ active: chargeForm.custom_amount }"
-                  @click="chargeForm.custom_amount = true"
-                >
-                  其他金额
-                </div>
+        <transition name="pay-fade">
+          <div v-if="chargeForm.method !== 'card' && chargeSites && chargeSites.length > 0" class="pay-extra-form">
+            <div class="pay-extra-label">充值金额</div>
+            <div class="charge-amount-grid">
+              <div 
+                v-for="amt in [1, 2, 5, 10, 20, 50, 100, 300, 500]" 
+                :key="amt"
+                class="charge-amount-btn"
+                :class="{ active: chargeForm.amount_yuan === amt && !chargeForm.custom_amount }"
+                @click="chargeForm.amount_yuan = amt; chargeForm.custom_amount = false"
+              >
+                <span class="charge-amount-num">{{ amt }}</span><span class="charge-amount-unit">元</span>
               </div>
-              <el-input-number 
-                v-if="chargeForm.custom_amount" 
-                v-model="chargeForm.amount_yuan" 
-                :min="1" 
-                :step="1" 
-                style="width: 100%; margin-top: 12px;" 
-                placeholder="请输入充值金额"
-              />
-            </el-form-item>
-          </el-form>
-        </div>
-        
+              <div 
+                class="charge-amount-btn charge-amount-custom"
+                :class="{ active: chargeForm.custom_amount }"
+                @click="chargeForm.custom_amount = true"
+              >
+                自定义
+              </div>
+            </div>
+            <el-input-number 
+              v-if="chargeForm.custom_amount" 
+              v-model="chargeForm.amount_yuan" 
+              :min="1" 
+              :step="1" 
+              style="width: 100%; margin-top: 12px;" 
+              placeholder="请输入充值金额"
+            />
+          </div>
+        </transition>
+
         <!-- 充值卡表单 -->
-        <div v-else class="charge-form">
-          <el-form label-position="top" size="default">
-            <el-form-item label="充值卡密码">
-              <el-input v-model="cardCode" placeholder="请输入充值卡密码" />
-            </el-form-item>
-            <div class="charge-card-hint">充值卡面额即充值金额，无需输入金额</div>
-          </el-form>
-        </div>
+        <transition name="pay-fade">
+          <div v-if="chargeForm.method === 'card'" class="pay-extra-form">
+            <div class="pay-extra-label">充值卡密码</div>
+            <el-input v-model="cardCode" placeholder="请输入充值卡密码" prefix-icon="Ticket" clearable />
+            <div class="pay-hint">充值卡面额即充值金额，无需输入金额</div>
+          </div>
+        </transition>
       </div>
       <template #footer>
-        <div class="charge-dialog-footer">
-          <el-button @click="showChargeDialog = false">取消</el-button>
+        <div class="pay-dialog-footer">
+          <el-button @click="showChargeDialog = false" size="large">取消</el-button>
           <el-button 
             v-if="chargeForm.method === 'card'" 
             type="primary" 
             @click="redeemCard"
             :loading="redeemBusy"
-          >立即充值</el-button>
+            size="large"
+            class="pay-confirm-btn"
+          >立即兑换</el-button>
           <el-button 
             v-else 
             type="primary" 
             @click="submitCharge"
             :loading="chargeBusy"
+            size="large"
+            class="pay-confirm-btn"
           >去支付</el-button>
         </div>
       </template>
     </el-dialog>
 
     <!-- Payment Method Dialog / 支付方式选择弹窗 (v3.3) -->
-    <el-dialog v-model="showPaymentDialog" title="选择支付方式" width="420px" align-center append-to-body :close-on-click-modal="false">
+    <el-dialog v-model="showPaymentDialog" title="确认订单" width="440px" align-center append-to-body :close-on-click-modal="false" class="payment-dialog">
       <div class="payment-dialog-content">
-        <el-form label-position="top" size="default">
-          <!-- 订单信息摘要 -->
-          <div class="payment-order-summary" style="background: var(--bg-secondary); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-            <div style="font-size: 13px; color: var(--text-muted);">订单类型</div>
-            <div style="font-size: 15px; font-weight: 500; margin-top: 4px;">
-              {{ orderForm.order_type === 'renew' ? '续费' : orderForm.order_type === 'upgrade' ? '升级' : '新购' }}
+        <!-- 订单摘要 -->
+        <div class="pay-summary">
+          <div class="pay-summary-row">
+            <span class="pay-summary-label">套餐</span>
+            <span class="pay-summary-value">{{ orderForm.plan_name || '未选择' }}</span>
+          </div>
+          <div class="pay-summary-row" v-if="orderForm.variant_name">
+            <span class="pay-summary-label">规格</span>
+            <span class="pay-summary-value">{{ orderForm.variant_name }}</span>
+          </div>
+          <div class="pay-summary-row" v-if="orderForm.duration_days">
+            <span class="pay-summary-label">时长</span>
+            <span class="pay-summary-value">{{ orderForm.duration_days }} 天</span>
+          </div>
+          <div class="pay-summary-row" v-if="orderForm.quota_bytes">
+            <span class="pay-summary-label">流量</span>
+            <span class="pay-summary-value">{{ formatBytes(orderForm.quota_bytes) }}/月</span>
+          </div>
+          <div class="pay-summary-row">
+            <span class="pay-summary-label">类型</span>
+            <span class="pay-summary-value">
+              <span :class="'pay-type-tag pay-type-' + orderForm.order_type">{{ orderForm.order_type === 'renew' ? '续费' : orderForm.order_type === 'upgrade' ? '升级' : '新购' }}</span>
+            </span>
+          </div>
+          <div class="pay-summary-row pay-summary-price">
+            <span class="pay-summary-label">应付金额</span>
+            <span class="pay-summary-value pay-price-num">{{ orderForm.currency === 'USD' ? '$' : '¥' }}{{ formatMoney(orderForm.price) }}</span>
+          </div>
+          <div class="pay-summary-row" v-if="orderForm.pay_method === 'balance'">
+            <span class="pay-summary-label">账户余额</span>
+            <span class="pay-summary-value" :class="{ 'text-danger': balance && balance.balance < orderForm.price }">{{ formatMoney(balance.balance) }}</span>
+          </div>
+        </div>
+
+        <!-- 支付方式 -->
+        <div class="pay-section-title">选择支付方式</div>
+        <div class="pay-method-list">
+          <div 
+            class="pay-method-card"
+            :class="{ active: orderForm.pay_method === 'balance' }"
+            @click="orderForm.pay_method = 'balance'"
+          >
+            <div class="pay-method-icon pay-method-icon-balance">
+              <el-icon><Wallet /></el-icon>
+            </div>
+            <div class="pay-method-info">
+              <div class="pay-method-name">余额支付</div>
+              <div class="pay-method-desc">可用余额 {{ formatMoney(balance.balance) }}</div>
+            </div>
+            <div class="pay-method-check" v-if="orderForm.pay_method === 'balance'">
+              <el-icon><Check /></el-icon>
             </div>
           </div>
 
-          <!-- 支付方式选择 -->
-          <el-form-item label="支付方式">
-            <div class="payment-method-grid">
-              <div 
-                class="payment-method-item"
-                :class="{ active: orderForm.pay_method === 'balance' }"
-                @click="orderForm.pay_method = 'balance'"
-              >
-                <el-icon><Wallet /></el-icon>
-                <div class="payment-method-name">余额支付</div>
-                <div class="payment-method-desc">当前余额: {{ formatMoney(balance.balance) }}</div>
-              </div>
-              <div 
-                class="payment-method-item"
-                :class="{ active: orderForm.pay_method === 'gift_card' }"
-                @click="orderForm.pay_method = 'gift_card'"
-              >
-                <el-icon><Ticket /></el-icon>
-                <div class="payment-method-name">套餐卡</div>
-                <div class="payment-method-desc">使用兑换码支付</div>
-              </div>
-              <div 
-                v-if="chargeSites.length > 0"
-                class="payment-method-item"
-                :class="{ active: orderForm.pay_method === 'charge_site' }"
-                @click="orderForm.pay_method = 'charge_site'"
-              >
-                <el-icon><Money /></el-icon>
-                <div class="payment-method-name">在线支付</div>
-                <div class="payment-method-desc">支付宝/微信等</div>
-              </div>
+          <div 
+            class="pay-method-card"
+            :class="{ active: orderForm.pay_method === 'gift_card' }"
+            @click="orderForm.pay_method = 'gift_card'"
+          >
+            <div class="pay-method-icon pay-method-icon-card">
+              <el-icon><Ticket /></el-icon>
             </div>
-          </el-form-item>
+            <div class="pay-method-info">
+              <div class="pay-method-name">套餐卡</div>
+              <div class="pay-method-desc">使用兑换码支付</div>
+            </div>
+            <div class="pay-method-check" v-if="orderForm.pay_method === 'gift_card'">
+              <el-icon><Check /></el-icon>
+            </div>
+          </div>
 
-          <!-- 套餐卡号输入 -->
-          <el-form-item v-if="orderForm.pay_method === 'gift_card'" label="套餐卡号">
-            <el-input v-model="orderForm.gift_card_code" placeholder="请输入套餐卡兑换码" />
-          </el-form-item>
+          <div 
+            v-if="chargeSites.length > 0"
+            class="pay-method-card"
+            :class="{ active: orderForm.pay_method === 'charge_site' }"
+            @click="orderForm.pay_method = 'charge_site'"
+          >
+            <div class="pay-method-icon pay-method-icon-online">
+              <el-icon><Money /></el-icon>
+            </div>
+            <div class="pay-method-info">
+              <div class="pay-method-name">在线支付</div>
+              <div class="pay-method-desc">支付宝 / 微信等</div>
+            </div>
+            <div class="pay-method-check" v-if="orderForm.pay_method === 'charge_site'">
+              <el-icon><Check /></el-icon>
+            </div>
+          </div>
+        </div>
 
-          <!-- 充值站点选择 -->
-          <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" label="支付渠道">
-            <el-select v-model="orderForm.charge_site_id" placeholder="选择支付渠道" style="width: 100%">
+        <!-- 选中后展开的表单区域 -->
+        <transition name="pay-fade">
+          <div v-if="orderForm.pay_method === 'gift_card'" class="pay-extra-form">
+            <div class="pay-extra-label">套餐卡兑换码</div>
+            <el-input v-model="orderForm.gift_card_code" placeholder="请输入套餐卡兑换码" prefix-icon="Ticket" clearable />
+          </div>
+        </transition>
+
+        <transition name="pay-fade">
+          <div v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" class="pay-extra-form">
+            <div class="pay-extra-label">支付渠道</div>
+            <el-select v-model="orderForm.charge_site_id" placeholder="选择支付渠道" style="width: 100%" size="large">
               <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
             </el-select>
-          </el-form-item>
+          </div>
+        </transition>
 
-          <!-- 优惠码 -->
-          <el-form-item label="优惠码（可选）">
-            <el-input v-model="orderForm.promotion_code" placeholder="输入优惠码享受折扣" />
-          </el-form-item>
-        </el-form>
+        <transition name="pay-fade">
+          <div v-if="orderForm.pay_method === 'balance' && balance && balance.balance < orderForm.price" class="pay-balance-warn">
+            <el-icon><WarningFilled /></el-icon>
+            <span>余额不足，请先充值或选择其他方式</span>
+          </div>
+        </transition>
+
+        <!-- 优惠码（折叠式） -->
+        <div class="pay-promo-toggle" @click="showPromoInput = !showPromoInput">
+          <span>{{ showPromoInput ? '收起优惠码' : (orderForm.promotion_code ? '优惠码: ' + orderForm.promotion_code : '使用优惠码') }}</span>
+          <el-icon class="pay-promo-arrow" :class="{ rotated: showPromoInput }"><ArrowDown /></el-icon>
+        </div>
+        <transition name="pay-fade">
+          <div v-if="showPromoInput" class="pay-extra-form" style="margin-top: 8px;">
+            <el-input v-model="orderForm.promotion_code" placeholder="输入优惠码享受折扣" clearable />
+          </div>
+        </transition>
       </div>
       <template #footer>
-        <div class="payment-dialog-footer">
-          <el-button @click="showPaymentDialog = false">取消</el-button>
-          <el-button type="primary" @click="confirmPayment" :loading="orderBusy">确认支付</el-button>
+        <div class="pay-dialog-footer">
+          <el-button @click="showPaymentDialog = false" size="large">取消</el-button>
+          <el-button type="primary" @click="confirmPayment" :loading="orderBusy" size="large" class="pay-confirm-btn">
+            <span v-if="orderForm.pay_method === 'balance'">确认支付</span>
+            <span v-else-if="orderForm.pay_method === 'gift_card'">卡密支付</span>
+            <span v-else-if="orderForm.pay_method === 'charge_site'">去支付</span>
+            <span v-else>确认支付</span>
+          </el-button>
         </div>
       </template>
     </el-dialog>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrious@4/dist/qrious.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrious@4/dist/qrious.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script id="portal-config"></script>
   <script id="portal-custom-js"></script>
 </body>
@@ -2491,6 +2528,10 @@ body {
 }
 .announcement-sidebar-item:hover {
   background: var(--accent-light);
+}
+.announcement-popup-badge {
+  font-size: 12px;
+  flex-shrink: 0;
 }
 .announcement-sidebar-date {
   font-size: 11px;
@@ -3638,6 +3679,136 @@ border-bottom: 1px solid var(--border);
 .charge-subtitle { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; }
 .charge-card-row { display: flex; gap: 8px; }
 
+/* ===== Payment / Charge Dialog (v3.4 美化) ===== */
+.payment-dialog .el-dialog__header { padding: 20px 24px 12px; margin-right: 0; }
+.payment-dialog .el-dialog__title { font-size: 17px; font-weight: 700; }
+.payment-dialog .el-dialog__body { padding: 8px 24px 16px; }
+.payment-dialog .el-dialog__footer { padding: 12px 24px 20px; }
+.payment-dialog-content { }
+
+/* 订单摘要 */
+.pay-summary {
+  background: var(--bg-secondary, rgba(0,0,0,0.03)); border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pay-summary-row { display: flex; align-items: center; justify-content: space-between; }
+.pay-summary-label { font-size: 13px; color: var(--text-muted, #999); }
+.pay-summary-value { font-size: 14px; font-weight: 600; color: var(--text-primary, #333); }
+.pay-summary-value.text-danger { color: var(--danger, #ef4444); }
+.pay-summary-price { padding-top: 10px; margin-top: 4px; border-top: 1px dashed var(--border, #e5e7eb); }
+.pay-price-num { font-size: 20px; font-weight: 800; color: var(--accent, #2563eb); }
+
+/* 订单类型标签 */
+.pay-type-tag {
+  display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+}
+.pay-type-new { background: rgba(37,99,235,0.12); color: #2563eb; }
+.pay-type-renew { background: rgba(16,185,129,0.12); color: #10b981; }
+.pay-type-upgrade { background: rgba(245,158,11,0.12); color: #f59e0b; }
+
+/* 分区标题 */
+.pay-section-title {
+  font-size: 14px; font-weight: 700; color: var(--text-primary, #333); margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.pay-section-title::before {
+  content: ''; display: inline-block; width: 3px; height: 14px; border-radius: 2px;
+  background: var(--accent, #2563eb);
+}
+
+/* 支付方式列表 */
+.pay-method-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.pay-method-card {
+  display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+  border: 2px solid var(--border, #e5e7eb); border-radius: 12px; cursor: pointer;
+  transition: all 0.2s ease; background: var(--bg-card, transparent); position: relative;
+}
+.pay-method-card:hover { border-color: rgba(37,99,235,0.4); background: rgba(37,99,235,0.04); }
+.pay-method-card.active {
+  border-color: var(--accent, #2563eb); background: rgba(37,99,235,0.06);
+  box-shadow: 0 2px 12px rgba(37,99,235,0.12);
+}
+
+/* 支付方式图标 */
+.pay-method-icon {
+  width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0;
+}
+.pay-method-icon-balance { background: rgba(37,99,235,0.1); color: #2563eb; }
+.pay-method-icon-card { background: rgba(16,185,129,0.1); color: #10b981; }
+.pay-method-icon-online { background: rgba(245,158,11,0.1); color: #f59e0b; }
+
+/* 支付方式信息 */
+.pay-method-info { flex: 1; min-width: 0; }
+.pay-method-name { font-size: 15px; font-weight: 600; color: var(--text-primary, #333); margin-bottom: 2px; }
+.pay-method-desc { font-size: 12px; color: var(--text-muted, #999); }
+
+/* 选中勾选 */
+.pay-method-check {
+  width: 24px; height: 24px; border-radius: 50%; background: var(--accent, #2563eb); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
+  animation: pay-check-pop 0.2s ease;
+}
+@keyframes pay-check-pop { 0% { transform: scale(0); } 80% { transform: scale(1.15); } 100% { transform: scale(1); } }
+
+/* 展开的额外表单 */
+.pay-extra-form { margin-bottom: 16px; }
+.pay-extra-label { font-size: 13px; font-weight: 600; color: var(--text-muted, #666); margin-bottom: 8px; }
+.pay-hint { font-size: 12px; color: var(--text-muted, #999); margin-top: 8px; }
+
+/* 余额不足警告 */
+.pay-balance-warn {
+  display: flex; align-items: center; gap: 6px; padding: 10px 14px; margin-bottom: 16px;
+  background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px;
+  color: var(--danger, #ef4444); font-size: 13px;
+}
+
+/* 优惠码折叠 */
+.pay-promo-toggle {
+  display: flex; align-items: center; justify-content: space-between; padding: 10px 14px;
+  border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--text-muted, #666);
+  background: var(--bg-secondary, rgba(0,0,0,0.03)); transition: background 0.15s;
+}
+.pay-promo-toggle:hover { background: rgba(0,0,0,0.06); }
+.pay-promo-arrow { transition: transform 0.2s; font-size: 12px; }
+.pay-promo-arrow.rotated { transform: rotate(180deg); }
+
+/* 充值金额网格 */
+.charge-amount-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.charge-amount-btn {
+  display: flex; align-items: baseline; justify-content: center; gap: 1px;
+  padding: 12px 8px; border-radius: 10px; border: 2px solid var(--border, #e5e7eb);
+  cursor: pointer; font-size: 14px; transition: all 0.15s; background: var(--bg-card, transparent);
+}
+.charge-amount-btn:hover { border-color: rgba(37,99,235,0.4); }
+.charge-amount-btn.active {
+  border-color: var(--accent, #2563eb); background: rgba(37,99,235,0.08); color: var(--accent, #2563eb);
+  font-weight: 700;
+}
+.charge-amount-num { font-size: 16px; font-weight: 700; }
+.charge-amount-unit { font-size: 12px; opacity: 0.8; }
+.charge-amount-custom { font-size: 13px; color: var(--text-muted, #666); }
+
+/* 底部按钮 */
+.pay-dialog-footer { display: flex; gap: 10px; justify-content: flex-end; }
+.pay-confirm-btn { min-width: 120px; }
+
+/* 过渡动画 */
+.pay-fade-enter-active, .pay-fade-leave-active { transition: all 0.25s ease; }
+.pay-fade-enter-from { opacity: 0; transform: translateY(-8px); }
+.pay-fade-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* Dark mode */
+[data-theme="dark"] .pay-method-card { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .pay-method-card:hover { background: rgba(37,99,235,0.08); }
+[data-theme="dark"] .pay-method-card.active { background: rgba(37,99,235,0.1); }
+[data-theme="dark"] .pay-summary { background: rgba(255,255,255,0.05); }
+[data-theme="dark"] .pay-promo-toggle { background: rgba(255,255,255,0.05); }
+[data-theme="dark"] .pay-promo-toggle:hover { background: rgba(255,255,255,0.08); }
+[data-theme="dark"] .charge-amount-btn { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .charge-amount-btn:hover { border-color: rgba(37,99,235,0.4); }
+[data-theme="dark"] .charge-amount-btn.active { background: rgba(37,99,235,0.12); }
+
 /* Balance Display */
 .balance-hero { text-align: center; padding: 20px 0; }
 .balance-amount { font-size: 36px; font-weight: 700; color: var(--accent); }
@@ -3710,8 +3881,8 @@ var app = createApp({
     var showQr = ref(false)
     var showSubUrl = ref(false)
     var selectedPlatform = ref('')
-    var noticePopupVisible = ref(false)
-    var activeNoticePopup = ref(null)
+var announcementPopupVisible = ref(false)
+var activeAnnouncement = ref(null)
     var logoUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.logo_url) || '')
     var isDark = ref(localStorage.getItem('portal_theme') === 'dark' || (!localStorage.getItem('portal_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
 
@@ -3769,6 +3940,7 @@ var showCredentialsDialog = ref(false)
     var sharedAccountCreds = ref(null)
     var showChargeDialog = ref(false)
     var showPaymentDialog = ref(false) // v3.3: 支付方式选择弹窗
+var showPromoInput = ref(false) // 优惠码输入折叠
 
     var registrationEnabled = ref(false)
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.registration_enabled !== undefined) {
@@ -4218,6 +4390,13 @@ var showStreamingAccount = function(service) {
     // v3.3: 弹出支付方式选择框，让用户选择余额/套餐卡/第三方支付
     var purchaseVariant = function(variantId, plan, modData) {
       var orderType = (client.value.plan_id > 0 && client.value.plan_id === plan.id) ? 'renew' : 'new'
+      // 找到选中的变体，把名称/价格等信息直接存下来，弹窗直接展示
+      var variant = null
+      if (plan && plan.variants) {
+        for (var i = 0; i < plan.variants.length; i++) {
+          if (plan.variants[i].id === variantId) { variant = plan.variants[i]; break }
+        }
+      }
       // 设置订单表单默认值
       orderForm.value = {
         variant_id: variantId,
@@ -4225,10 +4404,42 @@ var showStreamingAccount = function(service) {
         promotion_code: '',
         pay_method: 'balance', // 默认选中余额支付
         gift_card_code: '',
-        charge_site_id: null
+        charge_site_id: null,
+        // 用于弹窗展示的信息（来自实际数据，不反查）
+        plan_name: plan ? plan.name : '',
+        variant_name: variant ? (variant.name || '') : '',
+        price: variant ? variant.price : 0,       // 分
+        currency: variant ? (variant.currency || 'CNY') : 'CNY',
+        duration_days: variant ? (variant.duration_days || 0) : 0,
+        quota_bytes: variant ? (variant.quota_bytes || 0) : 0
       }
+      showPromoInput.value = false
+      // 确保余额和充值站点数据是最新的（不依赖页面模块判断）
+      fetchBalance()
+      if (chargeSites.value.length === 0) fetchChargeSites()
       // 显示支付方式选择弹窗
       showPaymentDialog.value = true
+    }
+
+    // 获取套餐名称
+    var getPlanName = function(planId) {
+      if (!planId) return '未选择'
+      var p = plans.value.find(function(x) { return x.id === planId })
+      return p ? p.name : '套餐 #' + planId
+    }
+    // 获取套餐价格（分转元，取最低变体价格或0）
+    var getPlanPrice = function(planId) {
+      if (!planId) return 0
+      var p = plans.value.find(function(x) { return x.id === planId })
+      if (!p) return 0
+      if (p.variants && p.variants.length > 0) {
+        var minPrice = Infinity
+        p.variants.forEach(function(v) {
+          if (v.price < minPrice) minPrice = v.price
+        })
+        return minPrice === Infinity ? 0 : minPrice / 100
+      }
+      return (p.price || 0) / 100
     }
 
     // v3.3: 确认支付 - 根据选择的支付方式提交订单
@@ -4534,6 +4745,8 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
     var fetchAnnouncements = function() {
       api('GET', '/articles?category=notice').then(function(res) {
         announcements.value = Array.isArray(res) ? res : []
+        // 数据加载完成后检查是否需要自动弹窗
+        checkAutoAnnouncementPopup()
       }).catch(function() {})
     }
 
@@ -4613,71 +4826,44 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
     // Public settings
     var fetchPublicSettings = function() {
       fetch('/api/v1/public/settings').then(function(r) { return r.json() }).then(function(d) {
-        if (d.data && d.data.registration_enabled !== undefined) registrationEnabled.value = d.data.registration_enabled
+        var data = d.data || d
+        if (data && data.registration_enabled !== undefined) registrationEnabled.value = data.registration_enabled
+        // v3.4: 热更新 portal 模块/导航（后台重置模板后前端自动同步）
+        if (data && data.portal_config) {
+          var cfg = data.portal_config
+          if (Array.isArray(cfg.modules)) {
+            portalModules.value = cfg.modules.filter(function(m) { return m.visible !== false })
+          }
+          if (Array.isArray(cfg.navigation)) {
+            portalNavItems.value = cfg.navigation.filter(function(n) { return n.enabled !== false })
+          }
+          // 模块更新后重新加载当前页数据
+          fetchPageData(activeTab.value)
+        }
       }).catch(function() {})
     }
 
-    // --- Notice popup logic ---
-    var showNoticePopup = function(mod) {
-      // Check if dismissed before (for 'once' mode)
-      if (mod.data && mod.data.popup_dismiss === 'once') {
-        var key = 'notice_dismissed_' + mod.id
-        if (localStorage.getItem(key)) return
-      }
-      activeNoticePopup.value = mod
-      noticePopupVisible.value = true
+    // --- Announcement popup logic ---
+    var openAnnouncementPopup = function(ann) {
+      activeAnnouncement.value = ann
+      announcementPopupVisible.value = true
     }
 
-    var dismissNoticePopup = function() {
-      var mod = activeNoticePopup.value
-      if (mod && mod.data && mod.data.popup_dismiss === 'once') {
-        localStorage.setItem('notice_dismissed_' + mod.id, '1')
-      }
-      noticePopupVisible.value = false
-    }
-
-    var openNoticeLink = function(url, external) {
-      if (external) window.open(url, '_blank')
-      else window.location.href = url
-    }
-
-    var checkAutoNoticePopups = function() {
-      if (!token.value) return // Only show when logged in
-      var pageMods = portalModules.value.filter(function(m) {
-        return (m.page || 'overview') === activeTab.value && m.type === 'notice'
-      })
-      for (var i = 0; i < pageMods.length; i++) {
-        var mod = pageMods[i]
-        if (mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'on_load') {
-          if (mod.data.popup_dismiss === 'once') {
-            var key = 'notice_dismissed_' + mod.id
-            if (localStorage.getItem(key)) continue
-          }
-          showNoticePopup(mod)
-          break // Only show first matching popup
+    // 首页加载时自动弹出标记为 is_popup 的公告（每天只弹一次）
+    var checkAutoAnnouncementPopup = function() {
+      if (!token.value || !announcements.value || announcements.value.length === 0) return
+      var today = new Date().toDateString()
+      var popupKey = 'ann_popup_seen_' + today
+      // 今天已经弹过了就不再弹
+      if (localStorage.getItem(popupKey)) return
+      // 找第一个标记为弹窗的公告
+      for (var i = 0; i < announcements.value.length; i++) {
+        if (announcements.value[i].is_popup) {
+          openAnnouncementPopup(announcements.value[i])
+          localStorage.setItem(popupKey, '1')
+          break
         }
       }
-    }
-
-    // --- Notice with article link ---
-    var handleNoticeClick = function(mod) {
-      if (mod.data && mod.data.article_slug) {
-        // Open linked article
-        openArticle(mod.data.article_slug)
-      } else if (mod.data && mod.data.display_mode === 'popup' && mod.data.popup_trigger === 'manual') {
-        showNoticePopup(mod)
-      }
-    }
-    var getNoticeArticlePreview = function(slug) {
-      var article = articles.value.find(function(a) { return a.slug === slug })
-      if (article) {
-        // Return first 50 chars of content or summary
-        var text = article.summary || article.content || ''
-        // Strip markdown
-        text = text.replace(/[#*\[\]()]/g, '').replace(/\n/g, ' ')
-        return text.slice(0, 50) + (text.length > 50 ? '...' : '')
-      }
-      return '点击查看详情'
     }
 
     onMounted(function() {
@@ -4692,7 +4878,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       if (token.value) {
         fetchMe(); fetchEndpoints(); startAutoRefresh()
         fetchAnnouncements()
-        setTimeout(checkAutoNoticePopups, 800)
+        setTimeout(checkAutoAnnouncementPopup, 800)
         // Auto-load commercial module data for the default page
         var initMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
         var initHasCharge = initMods.some(function(m) { return m.type === 'charge_panel' })
@@ -4719,12 +4905,12 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
     // Check for popups when switching pages
     watch(activeTab, function() {
-      if (token.value) setTimeout(checkAutoNoticePopups, 300)
+      if (token.value) setTimeout(checkAutoAnnouncementPopup, 300)
     })
 
     // Check for popups after login
     watch(token, function(v) {
-      if (v) { setTimeout(checkAutoNoticePopups, 800); fetchAnnouncements() }
+      if (v) { setTimeout(checkAutoAnnouncementPopup, 800); fetchAnnouncements() }
     })
 
     onUnmounted(function() { if (refreshTimer) clearInterval(refreshTimer) })
@@ -4858,9 +5044,8 @@ return {
       freeformComponents: freeformComponents,
       showNodeQRDialog: showNodeQRDialog, currentNodeQR: currentNodeQR, nodeQRContainer: nodeQRContainer, showNodeQR: showNodeQR,
       showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail, showNodeDetail: showNodeDetail,
-      noticePopupVisible: noticePopupVisible, activeNoticePopup: activeNoticePopup,
-      showNoticePopup: showNoticePopup, dismissNoticePopup: dismissNoticePopup, openNoticeLink: openNoticeLink,
-      handleNoticeClick: handleNoticeClick, getNoticeArticlePreview: getNoticeArticlePreview,
+      announcementPopupVisible: announcementPopupVisible, activeAnnouncement: activeAnnouncement,
+      openAnnouncementPopup: openAnnouncementPopup,
       // Commercial modules
       plans: plans, plansLoading: plansLoading, orderForm: orderForm, orderBusy: orderBusy,
       chargeSites: chargeSites, chargeForm: chargeForm, chargeBusy: chargeBusy, chargeOrders: chargeOrders,
@@ -4880,7 +5065,7 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       appleAccount: appleAccount, netflixAccount: netflixAccount,
       fetchPlans: fetchPlans, purchaseVariant: purchaseVariant, submitOrder: submitOrder,
       showChargeDialog: showChargeDialog, // 充值弹窗
-      showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, // v3.3: 支付方式选择弹窗
+      showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, showPromoInput: showPromoInput, getPlanName: getPlanName, getPlanPrice: getPlanPrice, // v3.3: 支付方式选择弹窗
       fetchChargeSites: fetchChargeSites, submitCharge: submitCharge, redeemCard: redeemCard,
       fetchChargeOrders: fetchChargeOrders, chargeStatusText: chargeStatusText,
       fetchMyOrders: fetchMyOrders, orderStatusText: orderStatusText, orderStatusBadge: orderStatusBadge, getOrderServiceName: getOrderServiceName,
@@ -4901,4 +5086,10 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
 })
 
 app.use(ElementPlus)
+// 全局注册 Element Plus 图标
+if (typeof ElementPlusIconsVue !== 'undefined') {
+  for (var iconName in ElementPlusIconsVue) {
+    app.component(iconName, ElementPlusIconsVue[iconName])
+  }
+}
 app.mount('#app')`

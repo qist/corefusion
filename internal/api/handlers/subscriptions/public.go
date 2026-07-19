@@ -2392,6 +2392,14 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
+
+	// Security: only return node connection details for clients with an active subscription.
+	// Suspended/expired/no-plan clients get an empty list — they can still see node names
+	// via the /plans API, but not the connection links.
+	if client.Status != "active" || client.PlanID == 0 {
+		return []ClientVisibleNode{}, nil
+	}
+
 	clientEmail := client.Email
 
 	var members []entity.NodeGroupMember

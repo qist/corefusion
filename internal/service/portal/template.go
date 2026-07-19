@@ -4677,6 +4677,13 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
     onMounted(function() {
       fetchPublicSettings()
+      // Check for referral code in URL
+      var urlParams = new URLSearchParams(window.location.search)
+      var refCode = urlParams.get('ref')
+      if (refCode) {
+        registerForm.value.referral_code = refCode
+        authTab.value = 'register'
+      }
       if (token.value) {
         fetchMe(); fetchEndpoints(); startAutoRefresh()
         fetchAnnouncements()

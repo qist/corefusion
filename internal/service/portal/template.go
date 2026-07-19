@@ -841,18 +841,19 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'ticket_list'">
               <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ mod.title || '我的工单' }}</span><span class="card-action" @click="showTicketDialog = true">{{ (mod.data && mod.data.new_btn_text) || '新建工单' }}</span></div>
               <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无工单</p></div>
-              <div v-else class="logpkg-list">
-                <div class="logpkg-item" v-for="t in tickets" :key="t.id" @click="openTicket(t.id)" style="cursor: pointer">
-                  <div class="logpkg-info">
-                    <span class="logpkg-id">#{{ t.id }}</span>
-                    <span class="logpkg-time">{{ t.subject }}</span>
-                    <span :class="'badge badge-' + ticketStatusBadge(t.status)">{{ ticketStatusText(t.status) }}</span>
-                  </div>
-                  <div class="logpkg-actions">
-                    <span class="logpkg-time">{{ formatDate(t.updated_at) }}</span>
-                  </div>
-                </div>
-              </div>
+<div v-else class="logpkg-list">
+<div class="logpkg-item" v-for="t in tickets" :key="t.id" @click="openTicket(t.id)" style="cursor: pointer">
+<div class="logpkg-info">
+<span class="logpkg-id">#{{ t.id }}</span>
+<span class="logpkg-time">{{ t.subject }}</span>
+<span :class="'badge badge-' + ticketStatusBadge(t.status)">{{ ticketStatusText(t.status) }}</span>
+<span v-if="t.status === 'replied'" class="ticket-new-badge">新回复</span>
+</div>
+<div class="logpkg-actions">
+<span class="logpkg-time">{{ formatDate(t.updated_at) }}</span>
+</div>
+</div>
+</div>
             </div>
             <!-- Tutorial Cards / 下载与教程 -->
             <div v-else-if="mod.type === 'tutorial_cards'">
@@ -1633,14 +1634,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </el-button>
           </div>
           
-          <!-- 邀请码信息 -->
-          <div class="referral-code-section" v-if="referralCode">
-            <div class="referral-code-row">
-              <span class="referral-code-label">邀请码</span>
-              <span class="referral-code-value">{{ referralCode }}</span>
-              <el-tag size="small" type="success" effect="dark" class="referral-status">可用</el-tag>
-            </div>
-          </div>
+<!-- 邀请码信息 -->
+<div class="referral-code-section" v-if="referralCode">
+<div class="referral-code-row">
+<span class="referral-code-label">邀请码</span>
+<span class="referral-code-value">{{ referralCode.code }}</span>
+<el-tag size="small" type="success" effect="dark" class="referral-status">可用</el-tag>
+</div>
+</div>
 
           <!-- 邀请记录 -->
           <div class="referral-section" v-if="referralRecords.length > 0">
@@ -1738,18 +1739,19 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'ticket_list'">
           <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ mod.title || '我的工单' }}</span><span class="card-action" @click="showTicketDialog = true">{{ (mod.data && mod.data.new_btn_text) || '新建工单' }}</span></div>
           <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无工单</p></div>
-          <div v-else class="logpkg-list">
-            <div class="logpkg-item" v-for="t in tickets" :key="t.id" @click="openTicket(t.id)" style="cursor: pointer">
-              <div class="logpkg-info">
-                <span class="logpkg-id">#{{ t.id }}</span>
-                <span class="logpkg-time">{{ t.subject }}</span>
-                <span :class="'badge badge-' + ticketStatusBadge(t.status)">{{ ticketStatusText(t.status) }}</span>
-              </div>
-              <div class="logpkg-actions">
-                <span class="logpkg-time">{{ formatDate(t.updated_at) }}</span>
-              </div>
-            </div>
-          </div>
+<div v-else class="logpkg-list">
+<div class="logpkg-item" v-for="t in tickets" :key="t.id" @click="openTicket(t.id)" style="cursor: pointer">
+<div class="logpkg-info">
+<span class="logpkg-id">#{{ t.id }}</span>
+<span class="logpkg-time">{{ t.subject }}</span>
+<span :class="'badge badge-' + ticketStatusBadge(t.status)">{{ ticketStatusText(t.status) }}</span>
+<span v-if="t.status === 'replied'" class="ticket-new-badge">新回复</span>
+</div>
+<div class="logpkg-actions">
+<span class="logpkg-time">{{ formatDate(t.updated_at) }}</span>
+</div>
+</div>
+</div>
         </div>
         <!-- Tutorial Cards / 下载与教程 (Mobile) -->
         <div v-else-if="mod.type === 'tutorial_cards'">
@@ -1940,7 +1942,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
     </el-dialog>
 
     <!-- Ticket Detail Dialog -->
-    <el-dialog v-model="showTicketDetail" title="工单详情" width="500px" align-center append-to-body>
+    <el-dialog v-model="showTicketDetail" title="工单详情" width="500px" align-center append-to-body class="ticket-detail-dialog">
       <div v-if="ticketDetail" class="ticket-detail">
         <div class="ticket-detail-header">
           <span class="logpkg-id">#{{ ticketDetail.ticket.id }}</span>
@@ -1955,12 +1957,15 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <span class="logpkg-time">{{ formatDate(msg.created_at) }}</span>
           </div>
         </div>
-        <div v-if="ticketDetail.ticket.status !== 'closed'" class="ticket-reply">
-          <el-input v-model="ticketReplyContent" type="textarea" :rows="2" placeholder="输入回复内容..." />
-          <div class="card-actions" style="margin-top: 8px">
-            <el-button type="primary" size="small" @click="replyTicket" :loading="ticketBusy">回复</el-button>
-            <el-button size="small" @click="closeTicket" :loading="ticketBusy">关闭工单</el-button>
-          </div>
+        <div v-if="ticketDetail.ticket && ticketDetail.ticket.status !== 'closed'" class="ticket-reply">
+          <el-input v-model="ticketReplyContent" type="textarea" :rows="3" placeholder="输入回复内容..."></el-input>
+        </div>
+        <div v-if="ticketDetail.ticket && ticketDetail.ticket.status !== 'closed'" style="margin-top: 12px; text-align: right;">
+          <el-button size="small" @click="closeTicket" :loading="ticketBusy">关闭工单</el-button>
+          <el-button type="primary" size="small" @click="replyTicket" :loading="ticketBusy">发送回复</el-button>
+        </div>
+        <div v-if="ticketDetail.ticket && ticketDetail.ticket.status === 'closed'" style="margin-top: 12px; text-align: center; color: var(--text-muted);">
+          此工单已关闭
         </div>
       </div>
     </el-dialog>
@@ -3689,12 +3694,16 @@ body {
 .ticket-detail-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ticket-subject { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; }
 .ticket-msgs { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.ticket-msg { padding: 10px 12px; border-radius: 10px; }
-.ticket-msg.msg-client { background: var(--accent-light); border: 1px solid var(--accent-border); }
-.ticket-msg.msg-admin { background: var(--glass-bg); border: 1px solid var(--border); }
+.ticket-msg { padding: 10px 12px; border-radius: 10px; max-width: 80%; }
+.ticket-msg.msg-client { background: var(--accent-light); border: 1px solid var(--accent-border); align-self: flex-end; text-align: right; }
+.ticket-msg.msg-admin { background: var(--glass-bg); border: 1px solid var(--border); align-self: flex-start; text-align: left; }
 .ticket-msg-sender { font-size: 12px; font-weight: 700; color: var(--accent); display: block; margin-bottom: 4px; }
 .ticket-msg-content { font-size: 14px; color: var(--text-primary); line-height: 1.6; }
-.ticket-reply { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.ticket-reply { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; min-height: 100px; }
+.ticket-new-badge { background: #f56c6c; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 8px; }
+.ticket-detail-dialog .el-dialog__body { max-height: 80vh; overflow-y: auto; padding-bottom: 20px; }
+.ticket-detail { display: flex; flex-direction: column; }
+.ticket-msgs { flex: 1; overflow-y: auto; max-height: 400px; }
 
 /* Article Dialog */
 .article-dialog .el-dialog__body { max-height: 60vh; overflow-y: auto; }`
@@ -3715,7 +3724,7 @@ var app = createApp({
     var loading = ref(false)
     var rotating = ref(false)
     var refreshing = ref(false)
-    var activeTab = ref('overview')
+    var activeTab = ref(localStorage.getItem('portal_active_tab') || 'overview')
     var showPasswordDialog = ref(false)
 var showQr = ref(false)
 var selectedPlatform = ref('')
@@ -3928,6 +3937,7 @@ var showCredentialsDialog = ref(false)
         return
       }
       activeTab.value = nav.target
+      localStorage.setItem('portal_active_tab', nav.target)
       // Auto-fetch log packages if the page has log_packages modules
       var hasLogMods = portalModules.value.some(function(m) {
         return (m.page || 'overview') === nav.target && m.type === 'log_packages'
@@ -4422,7 +4432,10 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       api('POST', '/tickets/' + tid + '/reply', { content: ticketReplyContent.value }).then(function() {
         ElMessage.success('回复成功')
         ticketReplyContent.value = ''
-        openTicket(tid)
+        // 动态加载最新消息，不关闭弹窗
+        api('GET', '/tickets/' + tid).then(function(res) {
+          ticketDetail.value = res
+        })
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { ticketBusy.value = false })
     }
     var closeTicket = function() {

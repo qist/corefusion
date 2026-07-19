@@ -61,6 +61,7 @@ type UpdateInput struct {
 	Navigation []NavigationItem `json:"navigation"`
 	Modules    []ModuleItem     `json:"modules"`
 	Theme      *PortalThemeConfig `json:"theme"`
+	Lang       json.RawMessage   `json:"lang"`
 }
 
 // PortalSiteConfig is the response for the active portal site.
@@ -85,6 +86,7 @@ type PortalSiteConfig struct {
 	PortalEditorVersion int               `json:"portal_editor_version"`
 	Navigation          []NavigationItem  `json:"navigation"`
 	Modules             []ModuleItem       `json:"modules"`
+	Lang                json.RawMessage   `json:"lang"`
 }
 
 // parseConfigToSiteConfig parses the config JSON string and populates the
@@ -130,6 +132,12 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 	// Modules
 	if v, ok := stored["modules"]; ok {
 		cfg.Modules = ParseModuleItems(v)
+	}
+	// Lang
+	if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
+		cfg.Lang = v
+	} else {
+		cfg.Lang = json.RawMessage(defaultLangJSON)
 	}
 }
 
@@ -332,6 +340,11 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 			configMap["modules"] = input.Modules
 		}
 
+		// Merge lang (i18n text pack, if provided)
+		if len(input.Lang) > 0 && string(input.Lang) != "null" {
+			configMap["lang"] = json.RawMessage(input.Lang)
+		}
+
 		// Ensure editor version is set
 		configMap["portal_editor_version"] = 1
 
@@ -416,6 +429,7 @@ type RenderConfig struct {
 	PortalEditorVersion int             `json:"portal_editor_version,omitempty"`
 	Navigation         json.RawMessage `json:"navigation,omitempty"`
 	Modules             json.RawMessage `json:"modules,omitempty"`
+	Lang                json.RawMessage `json:"lang,omitempty"`
 }
 
 // DefaultRenderConfig returns default render configuration.
@@ -431,6 +445,7 @@ func DefaultRenderConfig() RenderConfig {
 		PortalEditorVersion: 1,
 		Navigation:         json.RawMessage(defaultNavigationJSON),
 		Modules:             json.RawMessage(defaultModulesJSON),
+		Lang:                json.RawMessage(defaultLangJSON),
 	}
 }
 
@@ -498,14 +513,20 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 			if v, ok := stored["modules"]; ok && len(v) > 0 && string(v) != "null" {
 				cfg.Modules = v
 			}
-			// Pass through portal_editor_version
-			if v, ok := stored["portal_editor_version"]; ok {
-				var n int
-				if json.Unmarshal(v, &n) == nil && n > 0 {
-					cfg.PortalEditorVersion = n
-				}
+		// Pass through portal_editor_version
+		if v, ok := stored["portal_editor_version"]; ok {
+			var n int
+			if json.Unmarshal(v, &n) == nil && n > 0 {
+				cfg.PortalEditorVersion = n
 			}
 		}
+		// Pass through lang (i18n text pack)
+		if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
+			cfg.Lang = v
+		} else {
+			cfg.Lang = json.RawMessage(defaultLangJSON)
+		}
+	}
 	}
 
 	return cfg

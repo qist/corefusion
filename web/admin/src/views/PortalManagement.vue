@@ -10,6 +10,7 @@
       <div class="topbar-right">
         <el-button-group>
           <el-button :type="editorMode === 'builder' ? 'primary' : 'default'" size="small" @click="editorMode = 'builder'">搭建器</el-button>
+          <el-button :type="editorMode === 'lang' ? 'primary' : 'default'" size="small" @click="editorMode = 'lang'">文案</el-button>
           <el-button :type="editorMode === 'settings' ? 'primary' : 'default'" size="small" @click="editorMode = 'settings'">设置</el-button>
           <el-button :type="editorMode === 'code' ? 'primary' : 'default'" size="small" @click="editorMode = 'code'">模板编辑</el-button>
         </el-button-group>
@@ -63,28 +64,31 @@
                 <el-button text size="small" :icon="Plus" :disabled="!currentNav">添加模块</el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="hero">Hero 欢迎区</el-dropdown-item>
-                    <el-dropdown-item command="account_info">账户信息</el-dropdown-item>
-                    <el-dropdown-item command="traffic_ring">流量环形图</el-dropdown-item>
-                    <el-dropdown-item command="subscription_detail">订阅详情</el-dropdown-item>
-                    <el-dropdown-item command="security_settings">安全设置</el-dropdown-item>
-                    <el-dropdown-item command="log_packages">日志打包</el-dropdown-item>
-                    <el-dropdown-item command="markdown" divided>Markdown 文档</el-dropdown-item>
-                    <el-dropdown-item command="notice">公告提示</el-dropdown-item>
-                    <el-dropdown-item command="feature_cards">功能卡片</el-dropdown-item>
-                    <el-dropdown-item command="account_stats">账户数据</el-dropdown-item>
-                    <el-dropdown-item command="subscription">订阅入口</el-dropdown-item>
-                    <el-dropdown-item command="rich_text" divided>富文本 (HTML)</el-dropdown-item>
-                    <el-dropdown-item command="custom_html">自定义 HTML</el-dropdown-item>
-                    <el-dropdown-item command="freeform" divided>自由组件 (HTML+CSS+JS)</el-dropdown-item>
-                    <el-dropdown-item command="plan_list" divided>套餐列表</el-dropdown-item>
-                    <el-dropdown-item command="order_create">创建订单</el-dropdown-item>
-                    <el-dropdown-item command="charge_panel">在线充值</el-dropdown-item>
-                    <el-dropdown-item command="balance_display">余额显示</el-dropdown-item>
-                    <el-dropdown-item command="referral">邀请返利</el-dropdown-item>
-                    <el-dropdown-item command="ticket_list">工单系统</el-dropdown-item>
-                    <el-dropdown-item command="article_list">教程文章</el-dropdown-item>
-                    <el-dropdown-item command="shared_accounts">共享账号</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600">— 内容展示 —</el-dropdown-item>
+                    <el-dropdown-item command="hero">🚀 欢迎横幅</el-dropdown-item>
+                    <el-dropdown-item command="markdown">📝 Markdown 文档</el-dropdown-item>
+                    <el-dropdown-item command="notice">📢 公告提示</el-dropdown-item>
+                    <el-dropdown-item command="freeform">🧩 自定义组件 (HTML+CSS+JS)</el-dropdown-item>
+                    <el-dropdown-item command="tutorial_cards">📚 下载与教程</el-dropdown-item>
+                    <el-dropdown-item command="article_list">📖 教程文章</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— 账户与订阅 —</el-dropdown-item>
+                    <el-dropdown-item command="account_info">👤 账户信息</el-dropdown-item>
+                    <el-dropdown-item command="traffic_ring">📊 流量使用</el-dropdown-item>
+                    <el-dropdown-item command="subscription_detail">🔗 订阅详情</el-dropdown-item>
+                    <el-dropdown-item command="client_download">💻 客户端下载</el-dropdown-item>
+                    <el-dropdown-item command="streaming_status">🎬 流媒体解锁</el-dropdown-item>
+                    <el-dropdown-item command="shared_accounts">🔑 共享账号</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— 商务服务 —</el-dropdown-item>
+                    <el-dropdown-item command="plan_list">📦 套餐列表</el-dropdown-item>
+                    <el-dropdown-item command="charge_panel">💳 在线充值</el-dropdown-item>
+                    <el-dropdown-item command="balance_display">💰 余额显示</el-dropdown-item>
+                    <el-dropdown-item command="order_list">🧾 我的账单</el-dropdown-item>
+                    <el-dropdown-item command="referral">🎁 推广邀请</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— 系统功能 —</el-dropdown-item>
+                    <el-dropdown-item command="node_list">📋 线路列表</el-dropdown-item>
+                    <el-dropdown-item command="ticket_list">🎫 工单系统</el-dropdown-item>
+                    <el-dropdown-item command="security_settings">🔒 安全设置</el-dropdown-item>
+                    <el-dropdown-item command="log_packages">📦 日志打包</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -887,6 +891,49 @@ ctx.moduleTitle           — 当前模块标题</pre>
         </div>
       </div>
 
+      <!-- ===== Lang Editor Mode ===== -->
+      <div v-if="editorMode === 'lang'" class="lang-mode">
+        <div class="lang-toolbar">
+          <el-input v-model="langSearch" placeholder="搜索文案 key 或内容..." :prefix-icon="Search" clearable size="small" style="width: 320px" />
+          <el-button text size="small" :icon="Plus" @click="addLangKey">新增文案</el-button>
+          <el-button text size="small" @click="exportLang">导出 JSON</el-button>
+          <el-upload :show-file-list="false" :before-upload="importLang" accept=".json">
+            <el-button text size="small">导入 JSON</el-button>
+          </el-upload>
+          <span class="lang-count">共 {{ filteredLangEntries.length }} 条文案</span>
+        </div>
+        <div class="lang-table-wrap">
+          <table class="lang-table">
+            <thead>
+              <tr>
+                <th style="width: 30%">Key</th>
+                <th>文案内容</th>
+                <th style="width: 80px">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="entry in filteredLangEntries" :key="entry.key">
+                <td class="lang-key-cell">
+                  <span class="lang-key-prefix" :class="'prefix-' + entry.prefix">{{ entry.prefix }}</span>
+                  <span class="lang-key-name">{{ entry.key }}</span>
+                </td>
+                <td class="lang-value-cell">
+                  <el-input v-model="langData[entry.key]" size="small" :placeholder="entry.key" />
+                </td>
+                <td class="lang-action-cell">
+                  <el-button text size="small" type="danger" :icon="Delete" @click="deleteLangKey(entry.key)" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="filteredLangEntries.length === 0" class="lang-empty">
+            <span style="font-size: 40px">📝</span>
+            <p>暂无文案数据</p>
+            <el-button text size="small" :icon="Plus" @click="addLangKey">新增第一条文案</el-button>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== Settings Mode ===== -->
       <div v-if="editorMode === 'settings'" class="settings-mode">
         <el-tabs v-model="settingsTab" type="border-card">
@@ -1016,7 +1063,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
 <script setup>
 import { ref, reactive, computed, onMounted, shallowRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
+import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument, Search } from '@element-plus/icons-vue'
 import { getActivePortal, updateActivePortal, resetPortal } from '../api/portal'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -1030,6 +1077,7 @@ const saving = ref(false)
 const editorMode = ref('builder')
 const settingsTab = ref('basic')
 const codeTab = ref('html')
+const langSearch = ref('')  // search filter for lang editor
 const previewDevice = ref('desktop')
 const hasUnsavedChanges = ref(false)
 const registrationEnabled = ref(false)
@@ -1040,6 +1088,7 @@ const mdEditorRef = shallowRef(null)
 const noticeMdEditorRef = shallowRef(null)
 
 const form = reactive({ name: '', description: '', html_content: '', css_content: '', js_content: '' })
+const langData = ref({})  // i18n text pack: key -> value
 const config = reactive({
   site_name: 'CoreFusion', logo_url: '', primary_color: '#667eea', background_color: '#f0f2f5',
   card_background_color: '#ffffff', text_color: '#303133', accent_color: '#67c23a',
@@ -1324,7 +1373,7 @@ const freeformTab = ref('html')
 // Whether the selected module has a content code editor (markdown, rich_text, etc.)
 const hasContentEditor = computed(() => {
   if (!selectedModule.value) return false
-  return ['markdown', 'rich_text', 'custom_html', 'notice', 'freeform'].includes(selectedModule.value.type)
+  return ['markdown', 'notice', 'freeform'].includes(selectedModule.value.type)
 })
 
 // Whether the selected module can have custom CSS
@@ -1771,7 +1820,15 @@ const defaultModules = [
 ]
 
 function moduleTypeLabel(type) {
-  return { hero: 'Hero', markdown: 'MD文档', rich_text: '富文本', notice: '公告', feature_cards: '功能卡片', account_stats: '数据', subscription: '订阅', custom_html: 'HTML', account_info: '账户', traffic_ring: '流量环', subscription_detail: '订阅详情', security_settings: '安全', log_packages: '日志', freeform: '自由', plan_list: '套餐', order_create: '订单', charge_panel: '充值', balance_display: '余额', referral: '返利', ticket_list: '工单', article_list: '文章', shared_accounts: '共享账号' }[type] || type
+  return {
+    hero: '欢迎横幅', markdown: 'Markdown', notice: '公告', freeform: '自定义组件',
+    tutorial_cards: '下载与教程', article_list: '教程文章',
+    account_info: '账户信息', traffic_ring: '流量使用', subscription_detail: '订阅详情',
+    client_download: '客户端下载', streaming_status: '流媒体解锁', shared_accounts: '共享账号',
+    plan_list: '套餐列表', charge_panel: '在线充值', balance_display: '余额显示',
+    order_list: '我的账单', referral: '推广邀请',
+    node_list: '线路列表', ticket_list: '工单系统', security_settings: '安全设置', log_packages: '日志打包',
+  }[type] || type
 }
 
 function moduleStyle(mod) {
@@ -2072,6 +2129,18 @@ const applyData = (d) => {
       return mod
     })
   }
+  // Parse lang pack
+  if (d.lang && typeof d.lang === 'object') {
+    langData.value = d.lang
+  } else if (d.config) {
+    try {
+      const cfg = JSON.parse(d.config)
+      if (cfg.lang && typeof cfg.lang === 'object') langData.value = cfg.lang
+      else langData.value = {}
+    } catch { langData.value = {} }
+  } else {
+    langData.value = {}
+  }
   // Auto-select first nav if none selected
   if (navigation.value.length > 0) {
     if (!currentPageNavId.value) currentPageNavId.value = navigation.value[0].id
@@ -2108,6 +2177,7 @@ const handleSave = async () => {
         accent_color: config.accent_color,
         font_family: config.font_family,
       },
+      lang: Object.keys(langData.value).length > 0 ? langData.value : undefined,
       registration_enabled: registrationEnabled.value, portal_port: portalPort.value,
     }
     const res = await updateActivePortal(data)
@@ -2120,6 +2190,80 @@ const handleSave = async () => {
 }
 
 const handlePreview = () => { window.open(window.location.origin + '/p', '_blank') }
+
+// --- Lang editor helpers ---
+const filteredLangEntries = computed(() => {
+  const entries = []
+  const search = langSearch.value.toLowerCase().trim()
+  for (const key of Object.keys(langData.value)) {
+    if (key.startsWith('_')) continue  // skip meta keys
+    const val = String(langData.value[key] || '')
+    const prefix = key.split('.')[0] || 'other'
+    if (!search || key.toLowerCase().includes(search) || val.toLowerCase().includes(search)) {
+      entries.push({ key, val, prefix })
+    }
+  }
+  entries.sort((a, b) => a.key.localeCompare(b.key))
+  return entries
+})
+
+function addLangKey() {
+  ElMessageBox.prompt('请输入文案 Key（如 nav.home 或 common.save）', '新增文案', {
+    confirmButtonText: '添加',
+    cancelButtonText: '取消',
+    inputPattern: /^[a-z_]+\.[a-z_]+$/,
+    inputErrorMessage: 'Key 格式：小写字母+下划线，用点分隔，如 nav.home'
+  }).then(({ value }) => {
+    if (langData.value[value] !== undefined) {
+      ElMessage.warning('该 Key 已存在')
+      return
+    }
+    langData.value[value] = ''
+    langData.value = { ...langData.value }  // trigger reactivity
+    hasUnsavedChanges.value = true
+    ElMessage.success('已添加，请编辑文案内容')
+  }).catch(() => {})
+}
+
+function deleteLangKey(key) {
+  ElMessageBox.confirm(`确定删除文案 "${key}" 吗？`, '确认', { type: 'warning' }).then(() => {
+    delete langData.value[key]
+    langData.value = { ...langData.value }
+    hasUnsavedChanges.value = true
+    ElMessage.success('已删除')
+  }).catch(() => {})
+}
+
+function exportLang() {
+  const json = JSON.stringify(langData.value, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'portal-lang.json'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function importLang(file) {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result)
+      if (typeof data === 'object' && data !== null) {
+        langData.value = { ...langData.value, ...data }
+        hasUnsavedChanges.value = true
+        ElMessage.success('文案导入成功')
+      } else {
+        ElMessage.error('文件格式不正确')
+      }
+    } catch {
+      ElMessage.error('JSON 解析失败')
+    }
+  }
+  reader.readAsText(file)
+  return false  // prevent upload
+}
 
 const handleReset = async () => {
   try {
@@ -2459,4 +2603,62 @@ onMounted(() => { fetchConfig() })
   .col-canvas { flex: 1; min-height: 300px; }
   .md-split { min-height: 180px; }
 }
+
+/* ===== Lang Editor Mode ===== */
+.lang-mode { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.lang-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; background: #fff; border-bottom: 1px solid #e4e7ed;
+}
+.lang-count { margin-left: auto; font-size: 12px; color: #909399; }
+.lang-table-wrap { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
+.lang-table {
+  width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px;
+}
+.lang-table th {
+  text-align: left; padding: 8px 12px; background: #f5f7fa;
+  border-bottom: 2px solid #e4e7ed; font-weight: 600; color: #606266;
+  position: sticky; top: 0; z-index: 1;
+}
+.lang-table td {
+  padding: 6px 12px; border-bottom: 1px solid #ebeef5; vertical-align: middle;
+}
+.lang-key-cell { display: flex; align-items: center; gap: 6px; }
+.lang-key-prefix {
+  font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px;
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.prefix-nav { background: #e6f7ff; color: #1890ff; }
+.prefix-common { background: #f6ffed; color: #52c41a; }
+.prefix-auth { background: #fff7e6; color: #fa8c16; }
+.prefix-account { background: #f9f0ff; color: #722ed1; }
+.prefix-traffic { background: #e6fffb; color: #13c2c2; }
+.prefix-sub { background: #fff0f6; color: #eb2f96; }
+.prefix-plan { background: #fffbe6; color: #faad14; }
+.prefix-balance { background: #f0f5ff; color: #2f54eb; }
+.prefix-order { background: #fff2e8; color: #fa541c; }
+.prefix-node { background: #e8f4f8; color: #1890ff; }
+.prefix-tutorial { background: #f0f9eb; color: #67c23a; }
+.prefix-client { background: #ecf5ff; color: #409eff; }
+.prefix-article { background: #fef0f0; color: #f56c6c; }
+.prefix-announcement { background: #fdf6ec; color: #e6a23c; }
+.prefix-referral { background: #f0f9eb; color: #67c23a; }
+.prefix-ticket { background: #e8f4f8; color: #1890ff; }
+.prefix-security { background: #fef0f0; color: #f56c6c; }
+.prefix-log { background: #f4f4f5; color: #909399; }
+.prefix-charge { background: #fff7e6; color: #fa8c16; }
+.prefix-shared { background: #f9f0ff; color: #722ed1; }
+.prefix-streaming { background: #e6f7ff; color: #1890ff; }
+.prefix-theme { background: #f4f4f5; color: #909399; }
+.prefix-error { background: #fef0f0; color: #f56c6c; }
+.prefix-toast { background: #f0f9eb; color: #67c23a; }
+.prefix-hero { background: #fff0f6; color: #eb2f96; }
+.lang-key-name { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #606266; }
+.lang-value-cell { min-width: 200px; }
+.lang-action-cell { text-align: center; }
+.lang-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 60px 20px; color: #909399;
+}
+.lang-empty p { margin: 8px 0; font-size: 14px; }
 </style>

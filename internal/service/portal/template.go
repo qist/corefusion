@@ -25,29 +25,29 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <h1 class="auth-title">{{.PortalName}}</h1>
         <p class="auth-subtitle">{{registrationEnabledText}}开始使用</p>
         <el-tabs v-model="authTab" class="auth-tabs">
-          <el-tab-pane label="登录" name="login">
+          <el-tab-pane :label="t('auth.login')" name="login">
             <el-form :model="loginForm" class="auth-form">
               <el-form-item>
-                <el-input v-model="loginForm.email" placeholder="邮箱" prefix-icon="Message" size="large" />
+                <el-input v-model="loginForm.email" :placeholder="t('auth.email')" prefix-icon="Message" size="large" />
               </el-form-item>
               <el-form-item>
-                <el-input v-model="loginForm.password" type="password" placeholder="密码" prefix-icon="Lock" show-password size="large" @keyup.enter="handleLogin" />
+                <el-input v-model="loginForm.password" type="password" :placeholder="t('auth.password')" prefix-icon="Lock" show-password size="large" @keyup.enter="handleLogin" />
               </el-form-item>
-              <el-button type="primary" class="btn-block" :loading="loading" @click="handleLogin" size="large">登录</el-button>
+              <el-button type="primary" class="btn-block" :loading="loading" @click="handleLogin" size="large">{{ t('auth.login_btn') }}</el-button>
             </el-form>
           </el-tab-pane>
-          <el-tab-pane v-if="registrationEnabled" label="注册" name="register">
+          <el-tab-pane v-if="registrationEnabled" :label="t('auth.register')" name="register">
             <el-form :model="registerForm" class="auth-form">
               <el-form-item>
-                <el-input v-model="registerForm.email" placeholder="邮箱" prefix-icon="Message" size="large" />
+                <el-input v-model="registerForm.email" :placeholder="t('auth.email')" prefix-icon="Message" size="large" />
               </el-form-item>
               <el-form-item>
-                <el-input v-model="registerForm.password" type="password" placeholder="密码（至少6位）" prefix-icon="Lock" show-password size="large" @keyup.enter="handleRegister" />
+                <el-input v-model="registerForm.password" type="password" :placeholder="t('auth.password')" prefix-icon="Lock" show-password size="large" @keyup.enter="handleRegister" />
               </el-form-item>
               <el-form-item>
-                <el-input v-model="registerForm.referral_code" placeholder="邀请码（可选）" prefix-icon="Promotion" size="large" />
+                <el-input v-model="registerForm.referral_code" :placeholder="t('auth.invite_code')" prefix-icon="Promotion" size="large" />
               </el-form-item>
-              <el-button type="primary" class="btn-block" :loading="loading" @click="handleRegister" size="large">注册</el-button>
+              <el-button type="primary" class="btn-block" :loading="loading" @click="handleRegister" size="large">{{ t('auth.register_btn') }}</el-button>
             </el-form>
           </el-tab-pane>
         </el-tabs>
@@ -63,7 +63,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <span class="top-title">{{.PortalName}}</span>
         </div>
         <div class="top-bar-right">
-          <button class="theme-toggle" @click="toggleTheme" :title="isDark ? '切换到亮色模式' : '切换到暗色模式'">
+          <button class="theme-toggle" @click="toggleTheme" :title="isDark ? t('theme.light') : t('theme.dark')">
             <span v-if="isDark">☀️</span><span v-else>🌙</span>
           </button>
           <el-dropdown trigger="click">
@@ -72,8 +72,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="showPasswordDialog = true">修改密码</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+                <el-dropdown-item @click="showPasswordDialog = true">{{ t('security.password') }}</el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout">{{ t('auth.logout') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -131,7 +131,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'traffic_ring'">
               <div class="card-header">
                 <span class="card-icon">📊</span>
-                <span class="card-title">{{ mod.title || '流量使用' }}</span>
+                <span class="card-title">{{ mod.title || t('traffic.title') }}</span>
                 <span class="card-action" v-if="refreshing">刷新中...</span>
               </div>
               <div class="traffic-ring-wrap">
@@ -167,7 +167,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Account Info (qist row style with icon+label+value+badge) -->
             <div v-else-if="mod.type === 'account_info'">
-              <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '帐号信息' }}</span></div>
+              <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || t('account.title') }}</span></div>
               <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
                 <div class="acct-info-row">
                   <span class="acct-info-icon">🛡️</span>
@@ -236,7 +236,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Client Download / 客户端下载 -->
             <div v-else-if="mod.type === 'client_download'">
-              <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || '客户端下载' }}</span></div>
+              <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || t('client.title') }}</span></div>
               <div class="client-platform-tabs">
                 <div
                   v-for="p in (mod.data && mod.data.platforms) || []"
@@ -297,22 +297,22 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Subscription Detail (dynamic) -->
             <div v-else-if="mod.type === 'subscription_detail'">
-              <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || '订阅链接' }}</span></div>
+              <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || t('sub.title') }}</span></div>
               <div v-if="client.sub_token && client.sub_status !== 'revoked'">
                 <div v-if="client.status === 'suspended'" style="padding: 10px 12px; background: rgba(245,108,108,0.1); border: 1px solid rgba(245,108,108,0.3); border-radius: 8px; margin-bottom: 12px;">
-                  <p style="color: var(--danger); margin: 0; font-size: 13px;">⚠️ 账户已暂停，购买套餐恢复</p>
+                  <p style="color: var(--danger); margin: 0; font-size: 13px;">⚠️ {{ t('account.suspended') }}，{{ t('account.suspended_hint') }}</p>
                 </div>
                 <div class="sub-link-box">
                   <code class="sub-link-text">{{ showSubUrl && subUrl ? subUrl : '••••••••••••••••••••••••••' }}</code>
                   <div class="sub-link-actions">
                     <el-button size="small" text @click="showSubUrl = !showSubUrl">{{ showSubUrl ? '🙈' : '👁️' }}</el-button>
                     <el-button size="small" text @click="copyText(subUrl)" :disabled="!subUrl">📋</el-button>
-                    <el-button size="small" text @click="toggleQr" :disabled="!subUrl">{{ showQr ? '隐藏' : '二维码' }}</el-button>
+                    <el-button size="small" text @click="toggleQr" :disabled="!subUrl">{{ showQr ? t('common.close') : t('sub.qr_code') }}</el-button>
                   </div>
                 </div>
                 <div v-if="showQr && qrCodeUrl" class="qr-wrap">
                   <img :src="qrCodeUrl" class="qr-img" />
-                  <span class="qr-hint">扫码导入订阅</span>
+                  <span class="qr-hint">{{ t('sub.scan_import') }}</span>
                 </div>
                 <div class="sub-actions-row" v-if="mod.data && mod.data.actions">
                   <el-button 
@@ -1052,7 +1052,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'traffic_ring'">
           <div class="card-header">
             <span class="card-icon">📊</span>
-            <span class="card-title">{{ mod.title || '流量使用' }}</span>
+            <span class="card-title">{{ mod.title || t('traffic.title') }}</span>
             <span class="card-action" v-if="refreshing">刷新中...</span>
           </div>
           <div class="traffic-ring-wrap">
@@ -1088,7 +1088,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Account Info (qist style with icon+label+value+badge) -->
         <div v-else-if="mod.type === 'account_info'">
-          <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || '帐号信息' }}</span></div>
+          <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || t('account.title') }}</span></div>
           <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
             <div class="acct-info-row">
               <span class="acct-info-icon">🛡️</span>
@@ -1150,7 +1150,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Client Download / 客户端下载 -->
         <div v-else-if="mod.type === 'client_download'">
-          <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || '客户端下载' }}</span></div>
+          <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || t('client.title') }}</span></div>
           <div class="client-platform-tabs">
             <div
               v-for="p in (mod.data && mod.data.platforms) || []"
@@ -1211,7 +1211,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Subscription Detail -->
         <div v-else-if="mod.type === 'subscription_detail'">
-          <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || '订阅链接' }}</span></div>
+          <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || t('sub.title') }}</span></div>
           <div v-if="client.sub_token && client.sub_status !== 'revoked'">
             <div class="sub-link-box">
               <code class="sub-link-text">{{ subUrl }}</code>
@@ -1222,7 +1222,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <div v-if="showQr && qrCodeUrl" class="qr-wrap">
               <img :src="qrCodeUrl" class="qr-img" />
-              <span class="qr-hint">扫码导入订阅</span>
+              <span class="qr-hint">{{ t('sub.scan_import') }}</span>
             </div>
             <div class="sub-actions-row" v-if="mod.data && mod.data.actions">
               <el-button 
@@ -4097,18 +4097,29 @@ var showPromoInput = ref(false) // 优惠码输入折叠
         portalNavItems.value = PORTAL_CONFIG.navigation.filter(function(n) { return n.enabled !== false })
       }
     }
+    // --- i18n / lang pack ---
+    var langData = {}
+    if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.lang) {
+      langData = PORTAL_CONFIG.lang
+    }
+    var lang = ref(langData)
+    var t = function(key) {
+      var v = lang.value[key]
+      if (v === undefined || v === null || v === '') return key
+      return v
+    }
     // Fallback to default nav if none configured
     if (portalNavItems.value.length === 0) {
       portalNavItems.value = [
-        { id: 'nav-home', label: '网站首页', icon: '🏠', target: 'overview', enabled: true },
-        { id: 'nav-services', label: '购买服务', icon: '🛒', target: 'store', enabled: true },
-        { id: 'nav-billing', label: '我的账单', icon: '💰', target: 'billing', enabled: true },
-        { id: 'nav-nodes', label: '线路列表', icon: '📋', target: 'nodes', enabled: true },
-        { id: 'nav-tutorial', label: '使用教程', icon: '📚', target: 'tutorial', enabled: true },
-        { id: 'nav-tickets', label: '发起工单', icon: '🎫', target: 'support', enabled: true },
-        { id: 'nav-referral', label: '推广邀请', icon: '🎁', target: 'referral', enabled: true },
-        { id: 'nav-profile', label: '个人中心', icon: '👤', target: 'profile', enabled: true },
-        { id: 'nav-logs', label: '日志', icon: '📦', target: 'logs', enabled: true }
+        { id: 'nav-home', label: t('nav.home'), icon: '🏠', target: 'overview', enabled: true },
+        { id: 'nav-services', label: t('nav.store'), icon: '🛒', target: 'store', enabled: true },
+        { id: 'nav-billing', label: t('nav.billing'), icon: '💰', target: 'billing', enabled: true },
+        { id: 'nav-nodes', label: t('nav.nodes'), icon: '📋', target: 'nodes', enabled: true },
+        { id: 'nav-tutorial', label: t('nav.tutorial'), icon: '📚', target: 'tutorial', enabled: true },
+        { id: 'nav-tickets', label: t('nav.support'), icon: '🎫', target: 'support', enabled: true },
+        { id: 'nav-referral', label: t('nav.referral'), icon: '🎁', target: 'referral', enabled: true },
+        { id: 'nav-profile', label: t('nav.profile'), icon: '👤', target: 'profile', enabled: true },
+        { id: 'nav-logs', label: t('nav.logs'), icon: '📦', target: 'logs', enabled: true }
       ]
     }
     // Modules for the current page (filtered by activeTab)
@@ -5230,7 +5241,8 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       announcements: announcements, fetchAnnouncements: fetchAnnouncements,
       showNoticePanel: showNoticePanel,
       fetchSharedAccounts: fetchSharedAccounts, applySharedAccount: applySharedAccount,
-      repairSharedAccount: repairSharedAccount, sharedAcctTypeText: sharedAcctTypeText
+      repairSharedAccount: repairSharedAccount, sharedAcctTypeText: sharedAcctTypeText,
+      lang: lang, t: t
     }
   }
 })

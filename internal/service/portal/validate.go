@@ -94,6 +94,24 @@ func ValidatePortalConfig(configStr string) (string, error) {
 		cfg["modules"] = cleaned
 	}
 
+	// Validate and clean lang (i18n multi-language pack)
+	if langRaw, ok := cfg["lang"]; ok {
+		cleaned, err := validateLang(langRaw)
+		if err != nil {
+			return "", fmt.Errorf("lang validation failed: %w", err)
+		}
+		cfg["lang"] = cleaned
+	}
+
+	// Validate and clean regions (editable system pages like auth/login)
+	if regionsRaw, ok := cfg["regions"]; ok {
+		cleaned, err := validateRegions(regionsRaw)
+		if err != nil {
+			return "", fmt.Errorf("regions validation failed: %w", err)
+		}
+		cfg["regions"] = cleaned
+	}
+
 	// Ensure portal_editor_version is present and valid
 	if v, ok := cfg["portal_editor_version"]; ok {
 		var n int
@@ -389,4 +407,126 @@ func joinAllowedTypes() string {
 		types = append(types, t)
 	}
 	return strings.Join(types, ", ")
+}
+
+// validateRegions validates the regions map (auth, header, sidebar, etc.).
+// Region content is NOT sanitized — the admin has full control.
+// Basic safety checks only: size limits and blocking of eval().
+func validateRegions(regionsRaw json.RawMessage) (json.RawMessage, error) {
+	if len(regionsRaw) == 0 || string(regionsRaw) == "null" {
+		return json.RawMessage(`{}`), nil
+	}
+
+	var regions map[string]json.RawMessage
+	if err := json.Unmarshal(regionsRaw, &regions); err != nil {
+		return nil, fmt.Errorf("invalid regions JSON: %w", err)
+	}
+
+	for name, raw := range regions {
+		var region map[string]interface{}
+		if err := json.Unmarshal(raw, &region); err != nil {
+			return nil, fmt.Errorf("region %q: invalid structure: %w", name, err)
+		}
+
+		// Check size limits for html, css, js fields
+		for _, key := range []string{"html", "css", "js"} {
+			if v, ok := region[key].(string); ok && len(v) > maxFreeformContent {
+				return nil, fmt.Errorf("region %q: %s content too large: %d chars (max %d)", name, key, len(v), maxFreeformContent)
+			}
+		}
+
+		// Basic safety: block eval() in JS
+		if js, ok := region["js"].(string); ok {
+			if strings.Contains(js, "eval(") {
+				return nil, fmt.Errorf("region %q: eval() is not allowed in JS", name)
+			}
+		}
+	}
+
+	return regionsRaw, nil
+}
+
+// validateLang validates the lang (i18n) field.
+// Supports two formats:
+//  1. New multi-language: {"default":"zh-CN","locales":{"zh-CN":{...},"en":{...}}}
+//  2. Legacy flat: {"nav.home":"网站首页", ...}  (treated as a single zh-CN pack)
+//
+// For the new format, it validates:
+//   - "default" key exists and matches one of the locales
+//   - Each locale value is an object with string keys/values
+//   - Size limits are enforced
+const maxLangSize = 200 * 1024 // 200KB max for the entire lang JSON
+
+func validateLang(langRaw json.RawMessage) (json.RawMessage, error) {
+	if len(langRaw) == 0 || string(langRaw) == "null" {
+		return json.RawMessage(defaultMultiLangJSON), nil
+	}
+
+	if len(langRaw) > maxLangSize {
+		return nil, fmt.Errorf("lang pack too large: %d bytes (max %d)", len(langRaw), maxLangSize)
+	}
+
+	// Try to parse as the new multi-language format
+	var multiLang struct {
+		Default  string                          `json:"default"`
+		Locales  map[string]json.RawMessage      `json:"locales"`
+	}
+	if err := json.Unmarshal(langRaw, &multiLang); err == nil && multiLang.Locales != nil {
+		// New multi-language format
+		if multiLang.Default == "" {
+			return nil, fmt.Errorf("lang: \"default\" field is required")
+		}
+		if _, ok := multiLang.Locales[multiLang.Default]; !ok {
+			return nil, fmt.Errorf("lang: default locale %q not found in locales", multiLang.Default)
+		}
+		if len(multiLang.Locales) > 10 {
+			return nil, fmt.Errorf("lang: too many locales: %d (max 10)", len(multiLang.Locales))
+		}
+		// Validate each locale pack
+		for code, raw := range multiLang.Locales {
+			if len(raw) > maxLangSize {
+				return nil, fmt.Errorf("lang: locale %q too large: %d bytes (max %d)", code, len(raw), maxLangSize)
+			}
+			var pack map[string]interface{}
+			if err := json.Unmarshal(raw, &pack); err != nil {
+				return nil, fmt.Errorf("lang: locale %q: invalid JSON: %w", code, err)
+			}
+			// Validate all values are strings (except _meta which can be an object)
+			for key, val := range pack {
+				if key == "_meta" {
+					continue
+				}
+				if _, ok := val.(string); !ok {
+					return nil, fmt.Errorf("lang: locale %q: key %q must be a string value", code, key)
+				}
+			}
+		}
+		return langRaw, nil
+	}
+
+	// Try to parse as legacy flat format
+	var flatPack map[string]interface{}
+	if err := json.Unmarshal(langRaw, &flatPack); err == nil {
+		// Legacy flat format — wrap it into the new structure
+		// Determine language from _meta or default to zh-CN
+		langCode := "zh-CN"
+		if meta, ok := flatPack["_meta"].(map[string]interface{}); ok {
+			if lc, ok := meta["language"].(string); ok && lc != "" {
+				langCode = lc
+			}
+		}
+		wrapped := map[string]interface{}{
+			"default": langCode,
+			"locales": map[string]interface{}{
+				langCode: flatPack,
+			},
+		}
+		result, err := json.Marshal(wrapped)
+		if err != nil {
+			return nil, fmt.Errorf("lang: failed to wrap legacy format: %w", err)
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("lang: invalid format — expected multi-language {default, locales} or flat key-value object")
 }

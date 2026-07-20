@@ -62,6 +62,7 @@ type UpdateInput struct {
 	Modules    []ModuleItem     `json:"modules"`
 	Theme      *PortalThemeConfig `json:"theme"`
 	Lang       json.RawMessage   `json:"lang"`
+	Regions    json.RawMessage   `json:"regions"`
 }
 
 // PortalSiteConfig is the response for the active portal site.
@@ -87,6 +88,7 @@ type PortalSiteConfig struct {
 	Navigation          []NavigationItem  `json:"navigation"`
 	Modules             []ModuleItem       `json:"modules"`
 	Lang                json.RawMessage   `json:"lang"`
+	Regions             json.RawMessage   `json:"regions"`
 }
 
 // parseConfigToSiteConfig parses the config JSON string and populates the
@@ -133,11 +135,17 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 	if v, ok := stored["modules"]; ok {
 		cfg.Modules = ParseModuleItems(v)
 	}
-	// Lang
+	// Lang (multi-language pack)
 	if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
 		cfg.Lang = v
 	} else {
-		cfg.Lang = json.RawMessage(defaultLangJSON)
+		cfg.Lang = json.RawMessage(defaultMultiLangJSON)
+	}
+	// Regions
+	if v, ok := stored["regions"]; ok && len(v) > 0 && string(v) != "null" && string(v) != "{}" {
+		cfg.Regions = v
+	} else {
+		cfg.Regions = json.RawMessage(defaultRegionsJSON)
 	}
 }
 
@@ -305,7 +313,7 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 	}
 
 	// Build the config JSON from the existing config + structured inputs
-	if input.Config != nil || len(input.Navigation) > 0 || len(input.Modules) > 0 || input.Theme != nil {
+	if input.Config != nil || len(input.Navigation) > 0 || len(input.Modules) > 0 || input.Theme != nil || len(input.Regions) > 0 {
 		// Start from existing config or fresh map
 		configMap := make(map[string]interface{})
 		if tmpl.Config != "" {
@@ -343,6 +351,11 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 		// Merge lang (i18n text pack, if provided)
 		if len(input.Lang) > 0 && string(input.Lang) != "null" {
 			configMap["lang"] = json.RawMessage(input.Lang)
+		}
+
+		// Merge regions (editable system pages, if provided)
+		if len(input.Regions) > 0 && string(input.Regions) != "null" && string(input.Regions) != "{}" {
+			configMap["regions"] = json.RawMessage(input.Regions)
 		}
 
 		// Ensure editor version is set
@@ -430,6 +443,7 @@ type RenderConfig struct {
 	Navigation         json.RawMessage `json:"navigation,omitempty"`
 	Modules             json.RawMessage `json:"modules,omitempty"`
 	Lang                json.RawMessage `json:"lang,omitempty"`
+	Regions             json.RawMessage `json:"regions,omitempty"`
 }
 
 // DefaultRenderConfig returns default render configuration.
@@ -445,7 +459,8 @@ func DefaultRenderConfig() RenderConfig {
 		PortalEditorVersion: 1,
 		Navigation:         json.RawMessage(defaultNavigationJSON),
 		Modules:             json.RawMessage(defaultModulesJSON),
-		Lang:                json.RawMessage(defaultLangJSON),
+		Lang:                json.RawMessage(defaultMultiLangJSON),
+		Regions:             json.RawMessage(defaultRegionsJSON),
 	}
 }
 
@@ -520,11 +535,19 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 				cfg.PortalEditorVersion = n
 			}
 		}
-		// Pass through lang (i18n text pack)
+		// Pass through lang (i18n multi-language pack)
 		if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
+			// Check if it's the new multi-language format or old flat format
+			// Both are passed through as-is; the frontend handles both
 			cfg.Lang = v
 		} else {
-			cfg.Lang = json.RawMessage(defaultLangJSON)
+			cfg.Lang = json.RawMessage(defaultMultiLangJSON)
+		}
+		// Pass through regions (editable system pages)
+		if v, ok := stored["regions"]; ok && len(v) > 0 && string(v) != "null" && string(v) != "{}" {
+			cfg.Regions = v
+		} else {
+			cfg.Regions = json.RawMessage(defaultRegionsJSON)
 		}
 	}
 	}

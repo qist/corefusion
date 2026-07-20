@@ -327,6 +327,11 @@ func migrateChargeCardEncryption(db *gorm.DB) {
 	db.Exec("DROP INDEX IF EXISTS idx_charge_cards_card_code")
 
 	log.Printf("[migration] charge_cards: migrated %d cards to encrypted storage", len(cards))
+
+	// Create partial unique index on card_code_hash (exclude empty values to avoid conflicts)
+	// This replaces the GORM-managed uniqueIndex tag which fails when multiple rows have empty hash
+	recreateIndex(db, "charge_cards", "idx_charge_cards_card_code_hash",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_charge_cards_card_code_hash ON charge_cards(card_code_hash) WHERE card_code_hash != ''")
 }
 
 // migrateChargeCardAgentColumn v3.3: 添加 agent_id 和 agent_name 列到 charge_cards 表

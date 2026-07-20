@@ -902,12 +902,30 @@ ctx.moduleTitle           — 当前模块标题</pre>
           </el-upload>
           <span class="lang-count">共 {{ filteredLangEntries.length }} 条文案</span>
         </div>
+        <!-- Locale tabs -->
+        <div class="lang-locales-bar">
+          <div
+            v-for="loc in langAvailableLocales"
+            :key="loc.code"
+            class="lang-locale-tab"
+            :class="{ active: langLocale === loc.code }"
+            @click="switchLangLocale(loc.code)"
+          >
+            <span>{{ loc.flag }} {{ loc.label }}</span>
+            <el-icon v-if="loc.code === langPack.default" class="locale-default-badge" title="默认语言">★</el-icon>
+            <el-icon v-if="loc.code !== langPack.default" class="locale-remove-btn" @click.stop="removeLocale(loc.code)"><Close /></el-icon>
+          </div>
+          <el-button text size="small" :icon="Plus" @click="addLocale">添加语言</el-button>
+          <el-select v-model="langPack.default" size="small" style="width: 160px; margin-left: auto;" placeholder="默认语言">
+            <el-option v-for="loc in langAvailableLocales" :key="loc.code" :label="loc.flag + ' ' + loc.label" :value="loc.code" />
+          </el-select>
+        </div>
         <div class="lang-table-wrap">
           <table class="lang-table">
             <thead>
               <tr>
                 <th style="width: 30%">Key</th>
-                <th>文案内容</th>
+                <th>{{ langAvailableLocales.find(l => l.code === langLocale)?.flag }} {{ langAvailableLocales.find(l => l.code === langLocale)?.label }} 文案内容</th>
                 <th style="width: 80px">操作</th>
               </tr>
             </thead>
@@ -1063,7 +1081,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
 <script setup>
 import { ref, reactive, computed, onMounted, shallowRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument, Search } from '@element-plus/icons-vue'
+import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument, Search, Close } from '@element-plus/icons-vue'
 import { getActivePortal, updateActivePortal, resetPortal } from '../api/portal'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -1088,7 +1106,10 @@ const mdEditorRef = shallowRef(null)
 const noticeMdEditorRef = shallowRef(null)
 
 const form = reactive({ name: '', description: '', html_content: '', css_content: '', js_content: '' })
-const langData = ref({})  // i18n text pack: key -> value
+// Multi-language i18n pack: { default: 'zh-CN', locales: { 'zh-CN': {...}, 'en': {...} } }
+const langPack = ref({ default: 'zh-CN', locales: {} })
+const langLocale = ref('zh-CN')  // currently selected locale in editor
+const langData = ref({})  // current locale's key -> value pairs
 const config = reactive({
   site_name: 'CoreFusion', logo_url: '', primary_color: '#667eea', background_color: '#f0f2f5',
   card_background_color: '#ffffff', text_color: '#303133', accent_color: '#67c23a',
@@ -2129,18 +2150,33 @@ const applyData = (d) => {
       return mod
     })
   }
-  // Parse lang pack
+  // Parse lang pack (multi-language)
   if (d.lang && typeof d.lang === 'object') {
-    langData.value = d.lang
+    if (d.lang.locales && typeof d.lang.locales === 'object') {
+      langPack.value = d.lang
+    } else {
+      // Legacy flat format — wrap it
+      langPack.value = { default: 'zh-CN', locales: { 'zh-CN': d.lang } }
+    }
   } else if (d.config) {
     try {
       const cfg = JSON.parse(d.config)
-      if (cfg.lang && typeof cfg.lang === 'object') langData.value = cfg.lang
-      else langData.value = {}
-    } catch { langData.value = {} }
+      if (cfg.lang) {
+        if (cfg.lang.locales) langPack.value = cfg.lang
+        else langPack.value = { default: 'zh-CN', locales: { 'zh-CN': cfg.lang } }
+      } else {
+        langPack.value = { default: 'zh-CN', locales: {} }
+      }
+    } catch { langPack.value = { default: 'zh-CN', locales: {} } }
   } else {
-    langData.value = {}
+    langPack.value = { default: 'zh-CN', locales: {} }
   }
+  // Set current locale to default
+  langLocale.value = langPack.value.default || 'zh-CN'
+  if (!langPack.value.locales[langLocale.value]) {
+    langPack.value.locales[langLocale.value] = {}
+  }
+  langData.value = langPack.value.locales[langLocale.value]
   // Auto-select first nav if none selected
   if (navigation.value.length > 0) {
     if (!currentPageNavId.value) currentPageNavId.value = navigation.value[0].id
@@ -2177,7 +2213,7 @@ const handleSave = async () => {
         accent_color: config.accent_color,
         font_family: config.font_family,
       },
-      lang: Object.keys(langData.value).length > 0 ? langData.value : undefined,
+      lang: Object.keys(langPack.value.locales).length > 0 ? langPack.value : undefined,
       registration_enabled: registrationEnabled.value, portal_port: portalPort.value,
     }
     const res = await updateActivePortal(data)
@@ -2192,6 +2228,59 @@ const handleSave = async () => {
 const handlePreview = () => { window.open(window.location.origin + '/p', '_blank') }
 
 // --- Lang editor helpers ---
+// Available locales for the editor
+const langAvailableLocales = computed(() => {
+  return Object.keys(langPack.value.locales).map(code => {
+    const meta = langPack.value.locales[code]?._meta || {}
+    return { code, label: meta.label || code, flag: meta.flag || '🌐' }
+  })
+})
+
+function switchLangLocale(code) {
+  // Save current locale data back to pack
+  langPack.value.locales[langLocale.value] = langData.value
+  // Switch to new locale
+  langLocale.value = code
+  if (!langPack.value.locales[code]) langPack.value.locales[code] = {}
+  langData.value = langPack.value.locales[code]
+  hasUnsavedChanges.value = true
+}
+
+function addLocale() {
+  ElMessageBox.prompt('请输入语言代码（如 en, ja, ko, en-US）', '新增语言', {
+    confirmButtonText: '添加',
+    cancelButtonText: '取消',
+    inputPattern: /^[a-z]{2}(-[A-Z]{2})?$/,
+    inputErrorMessage: '语言代码格式：如 en, en-US, ja'
+  }).then(({ value }) => {
+    if (langPack.value.locales[value]) { ElMessage.warning('该语言已存在'); return }
+    // Copy keys from current locale with empty values
+    const newLocale = {}
+    for (const key of Object.keys(langData.value)) {
+      if (key === '_meta') continue
+      newLocale[key] = ''
+    }
+    newLocale._meta = { language: value, label: value, flag: '🌐' }
+    langPack.value.locales[value] = newLocale
+    langPack.value = { ...langPack.value }  // trigger reactivity
+    ElMessage.success('已添加语言：' + value)
+  }).catch(() => {})
+}
+
+function removeLocale(code) {
+  if (code === langPack.value.default) { ElMessage.warning('不能删除默认语言'); return }
+  ElMessageBox.confirm(`确定删除语言 "${code}" 吗？`, '确认', { type: 'warning' }).then(() => {
+    delete langPack.value.locales[code]
+    langPack.value = { ...langPack.value }
+    if (langLocale.value === code) {
+      langLocale.value = langPack.value.default || 'zh-CN'
+      langData.value = langPack.value.locales[langLocale.value] || {}
+    }
+    hasUnsavedChanges.value = true
+    ElMessage.success('已删除')
+  }).catch(() => {})
+}
+
 const filteredLangEntries = computed(() => {
   const entries = []
   const search = langSearch.value.toLowerCase().trim()
@@ -2235,7 +2324,9 @@ function deleteLangKey(key) {
 }
 
 function exportLang() {
-  const json = JSON.stringify(langData.value, null, 2)
+  // Export the full multi-language pack
+  langPack.value.locales[langLocale.value] = langData.value
+  const json = JSON.stringify(langPack.value, null, 2)
   const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -2250,10 +2341,19 @@ function importLang(file) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result)
-      if (typeof data === 'object' && data !== null) {
-        langData.value = { ...langData.value, ...data }
+      if (data && data.locales && typeof data.locales === 'object') {
+        // Multi-language format
+        langPack.value = data
+        langLocale.value = data.default || Object.keys(data.locales)[0] || 'zh-CN'
+        langData.value = langPack.value.locales[langLocale.value] || {}
         hasUnsavedChanges.value = true
-        ElMessage.success('文案导入成功')
+        ElMessage.success('多语言包导入成功')
+      } else if (typeof data === 'object' && data !== null) {
+        // Legacy flat format — merge into current locale
+        langData.value = { ...langData.value, ...data }
+        langPack.value.locales[langLocale.value] = langData.value
+        hasUnsavedChanges.value = true
+        ElMessage.success('文案导入成功（已合并到当前语言）')
       } else {
         ElMessage.error('文件格式不正确')
       }
@@ -2611,6 +2711,24 @@ onMounted(() => { fetchConfig() })
   padding: 8px 16px; background: #fff; border-bottom: 1px solid #e4e7ed;
 }
 .lang-count { margin-left: auto; font-size: 12px; color: #909399; }
+.lang-locales-bar {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 6px 16px; background: #fafbfc; border-bottom: 1px solid #e4e7ed;
+}
+.lang-locale-tab {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: #606266; border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.lang-locale-tab:hover { background: #ecf5ff; color: #409eff; }
+.lang-locale-tab.active {
+  background: #409eff; color: #fff; border-color: #409eff;
+}
+.locale-default-badge { color: #f7ba2a; font-size: 12px; }
+.lang-locale-tab.active .locale-default-badge { color: #ffd700; }
+.locale-remove-btn { color: #c0c4cc; font-size: 12px; margin-left: 2px; }
+.locale-remove-btn:hover { color: #f56c6c; }
 .lang-table-wrap { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
 .lang-table {
   width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px;

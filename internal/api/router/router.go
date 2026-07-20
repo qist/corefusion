@@ -1929,6 +1929,9 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 	// Portal page — served from active custom template (fallback to embedded default)
 	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
 	r.GET("/p", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
 		portalTmplRepo := repository.NewPortalTemplateRepository(database)
 		portalTmplSvc := portalSvc.NewService(portalTmplRepo)
 		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
@@ -2529,7 +2532,7 @@ func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sys
 	html = strings.ReplaceAll(html, "{{.SiteName}}", htmlEscape(cfg.SiteName)) // 向后兼容
 	html = strings.ReplaceAll(html, "{{.LogoURL}}", htmlEscape(cfg.LogoURL))
 	html = strings.ReplaceAll(html, "{{.RegistrationEnabled}}", fmt.Sprintf("%v", cfg.RegistrationEnabled))
-	html = strings.ReplaceAll(html, "{{registrationEnabledText}}", map[bool]string{true: "登录或注册以", false: "登录以"}[cfg.RegistrationEnabled])
+	html = strings.ReplaceAll(html, "{{registrationEnabledText}}", map[bool]string{true: "", false: ""}[cfg.RegistrationEnabled])
 
 	// Render CSS with template variables
 	css := tmpl.CSSContent

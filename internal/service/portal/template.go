@@ -14,43 +14,46 @@ const defaultPortalHTML = `<!DOCTYPE html>
 </head>
 <body>
   <div id="app" v-cloak>
-    <!-- Auth Screen -->
-    <div v-if="!token" class="auth-wrapper">
-      <div class="auth-bg"></div>
-      <div class="auth-card glass">
-        <div class="auth-logo">
-          <img v-if="logoUrl" :src="logoUrl" class="logo-img" />
-          <div v-else class="logo-icon">⚡</div>
+    <!-- Auth Screen (dynamic region or fallback) -->
+    <div v-if="!token">
+      <component :is="authComponent" v-if="authComponent"></component>
+      <div v-else class="auth-wrapper">
+        <div class="auth-bg"></div>
+        <div class="auth-card glass">
+          <div class="auth-logo">
+            <img v-if="logoUrl" :src="logoUrl" class="logo-img" />
+            <div v-else class="logo-icon">⚡</div>
+          </div>
+          <h1 class="auth-title">{{.PortalName}}</h1>
+          <p class="auth-subtitle">{{ registrationEnabled ? t('auth.welcome_login') : t('auth.login_title') }}</p>
+          <el-tabs v-model="authTab" class="auth-tabs">
+            <el-tab-pane :label="t('auth.login')" name="login">
+              <el-form :model="loginForm" class="auth-form">
+                <el-form-item>
+                  <el-input v-model="loginForm.email" :placeholder="t('auth.email')" prefix-icon="Message" size="large" />
+                </el-form-item>
+                <el-form-item>
+                  <el-input v-model="loginForm.password" type="password" :placeholder="t('auth.password')" prefix-icon="Lock" show-password size="large" @keyup.enter="handleLogin" />
+                </el-form-item>
+                <el-button type="primary" class="btn-block" :loading="loading" @click="handleLogin" size="large">{{ t('auth.login_btn') }}</el-button>
+              </el-form>
+            </el-tab-pane>
+            <el-tab-pane v-if="registrationEnabled" :label="t('auth.register')" name="register">
+              <el-form :model="registerForm" class="auth-form">
+                <el-form-item>
+                  <el-input v-model="registerForm.email" :placeholder="t('auth.email')" prefix-icon="Message" size="large" />
+                </el-form-item>
+                <el-form-item>
+                  <el-input v-model="registerForm.password" type="password" :placeholder="t('auth.password')" prefix-icon="Lock" show-password size="large" @keyup.enter="handleRegister" />
+                </el-form-item>
+                <el-form-item>
+                  <el-input v-model="registerForm.referral_code" :placeholder="t('auth.invite_code')" prefix-icon="Promotion" size="large" />
+                </el-form-item>
+                <el-button type="primary" class="btn-block" :loading="loading" @click="handleRegister" size="large">{{ t('auth.register_btn') }}</el-button>
+              </el-form>
+            </el-tab-pane>
+          </el-tabs>
         </div>
-        <h1 class="auth-title">{{.PortalName}}</h1>
-        <p class="auth-subtitle">{{registrationEnabledText}}开始使用</p>
-        <el-tabs v-model="authTab" class="auth-tabs">
-          <el-tab-pane :label="t('auth.login')" name="login">
-            <el-form :model="loginForm" class="auth-form">
-              <el-form-item>
-                <el-input v-model="loginForm.email" :placeholder="t('auth.email')" prefix-icon="Message" size="large" />
-              </el-form-item>
-              <el-form-item>
-                <el-input v-model="loginForm.password" type="password" :placeholder="t('auth.password')" prefix-icon="Lock" show-password size="large" @keyup.enter="handleLogin" />
-              </el-form-item>
-              <el-button type="primary" class="btn-block" :loading="loading" @click="handleLogin" size="large">{{ t('auth.login_btn') }}</el-button>
-            </el-form>
-          </el-tab-pane>
-          <el-tab-pane v-if="registrationEnabled" :label="t('auth.register')" name="register">
-            <el-form :model="registerForm" class="auth-form">
-              <el-form-item>
-                <el-input v-model="registerForm.email" :placeholder="t('auth.email')" prefix-icon="Message" size="large" />
-              </el-form-item>
-              <el-form-item>
-                <el-input v-model="registerForm.password" type="password" :placeholder="t('auth.password')" prefix-icon="Lock" show-password size="large" @keyup.enter="handleRegister" />
-              </el-form-item>
-              <el-form-item>
-                <el-input v-model="registerForm.referral_code" :placeholder="t('auth.invite_code')" prefix-icon="Promotion" size="large" />
-              </el-form-item>
-              <el-button type="primary" class="btn-block" :loading="loading" @click="handleRegister" size="large">{{ t('auth.register_btn') }}</el-button>
-            </el-form>
-          </el-tab-pane>
-        </el-tabs>
       </div>
     </div>
 
@@ -63,6 +66,19 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <span class="top-title">{{.PortalName}}</span>
         </div>
         <div class="top-bar-right">
+          <el-dropdown trigger="click" v-if="availableLocales.length > 1" class="locale-switcher">
+            <button class="theme-toggle" :title="t('common.language')">
+              <span>{{ currentLocaleFlag }}</span>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="loc in availableLocales" :key="loc.code" @click="switchLocale(loc.code)">
+                  <span>{{ loc.flag }} {{ loc.label }}</span>
+                  <el-icon v-if="loc.code === currentLocale" style="margin-left: 4px; color: var(--accent);"><Check /></el-icon>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <button class="theme-toggle" @click="toggleTheme" :title="isDark ? t('theme.light') : t('theme.dark')">
             <span v-if="isDark">☀️</span><span v-else>🌙</span>
           </button>
@@ -84,7 +100,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <aside class="app-sidebar">
         <div v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
           <span class="sidebar-icon">{{ nav.icon || '🔗' }}</span>
-          <span>{{ nav.label }}</span>
+          <span>{{ t(nav.label) }}</span>
         </div>
       </aside>
 
@@ -98,16 +114,16 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <div class="card glass module-wrap" :id="'mod-' + mod.id" :class="mod.style && mod.style.custom_class || ''">
             <!-- Hero -->
             <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-              <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
-              <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
-              <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
+              <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ t(mod.data.eyebrow) }}</div>
+              <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ t(mod.data.heading) }}</h2>
+              <p v-if="mod.data && mod.data.description" class="hero-desc">{{ t(mod.data.description) }}</p>
+              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
             </div>
             <!-- Rich Text -->
             <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
             <!-- Feature Cards -->
             <div v-else-if="mod.type === 'feature_cards'">
-              <div v-if="mod.title" class="card-header"><span class="card-title">{{ mod.title }}</span></div>
+              <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="feature-cards-grid">
                 <div v-for="(card, ci) in ((mod.data && mod.data.cards) || []).slice(0,6)" :key="ci" class="feature-card">
                   <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
@@ -118,21 +134,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Account Stats (simple) -->
             <div v-else-if="mod.type === 'account_stats'">
-              <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ mod.title }}</span></div>
+              <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="traffic-stats">
-                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">上传</span></div>
+                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
                 <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">下载</span></div>
+                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
                 <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
+                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
               </div>
             </div>
             <!-- Traffic Ring (with SVG ring + horizontal bar) -->
             <div v-else-if="mod.type === 'traffic_ring'">
               <div class="card-header">
                 <span class="card-icon">📊</span>
-                <span class="card-title">{{ mod.title || t('traffic.title') }}</span>
-                <span class="card-action" v-if="refreshing">刷新中...</span>
+                <span class="card-title">{{ t(mod.title) }}</span>
+                <span class="card-action" v-if="refreshing">{{ t('common.refreshing') }}</span>
               </div>
               <div class="traffic-ring-wrap">
                 <svg class="traffic-ring" viewBox="0 0 120 120">
@@ -141,83 +157,83 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </svg>
                 <div class="ring-text">
                   <span class="ring-percent">{{ usagePercent }}%</span>
-                  <span class="ring-label">已使用</span>
+                  <span class="ring-label">{{ t('traffic.used') }}</span>
                 </div>
               </div>
               <div class="traffic-bar-wrap">
                 <div class="traffic-bar-header">
-                  <span class="bar-label">📊 流量使用</span>
+                  <span class="bar-label">📊 {{ t('traffic.title') }}</span>
                   <span class="bar-nums">{{ formatBytes(client.used_bytes) }} <span style="color:var(--text-muted);">/</span> {{ formatBytes(client.quota_bytes) }}</span>
                 </div>
                 <div class="traffic-bar">
                   <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
                 </div>
                 <div class="traffic-bar-footer">
-                  <span class="bar-hint">上传 {{ formatBytes(client.upload_bytes) }} · 下载 {{ formatBytes(client.download_bytes) }}</span>
+                  <span class="bar-hint">{{ t('traffic.upload') }} {{ formatBytes(client.upload_bytes) }} · {{ t('traffic.download') }} {{ formatBytes(client.download_bytes) }}</span>
                   <span class="bar-pct">{{ usagePercent }}%</span>
                 </div>
               </div>
               <div class="traffic-stats">
-                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">上传</span></div>
+                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
                 <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">下载</span></div>
+                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
                 <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
+                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
               </div>
             </div>
             <!-- Account Info (qist row style with icon+label+value+badge) -->
             <div v-else-if="mod.type === 'account_info'">
-              <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || t('account.title') }}</span></div>
+              <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
                 <div class="acct-info-row">
                   <span class="acct-info-icon">🛡️</span>
                   <div class="acct-info-body">
-                    <span class="acct-info-label">账户状态</span>
+                    <span class="acct-info-label">{{ t('account.status') }}</span>
                     <div class="acct-info-value-row">
                       <span class="acct-info-value">● {{ statusText }}</span>
-                      <span v-if="client.status === 'active'" class="badge badge-active" style="margin-left:6px">正常</span>
-                      <span v-else-if="client.status === 'suspended'" class="badge badge-suspended" style="margin-left:6px">暂停</span>
-                      <span v-else-if="client.status === 'expired'" class="badge badge-expired" style="margin-left:6px">过期</span>
-                      <span v-else class="badge badge-none" style="margin-left:6px">未知</span>
+                      <span v-if="client.status === 'active'" class="badge badge-active" style="margin-left:6px">{{ t('account.normal') }}</span>
+                      <span v-else-if="client.status === 'suspended'" class="badge badge-suspended" style="margin-left:6px">{{ t('account.suspended') }}</span>
+                      <span v-else-if="client.status === 'expired'" class="badge badge-expired" style="margin-left:6px">{{ t('common.expired') }}</span>
+                      <span v-else class="badge badge-none" style="margin-left:6px">{{ t('common.unknown') }}</span>
                     </div>
                   </div>
                 </div>
                 <div class="acct-info-row">
                   <span class="acct-info-icon">⭐</span>
                   <div class="acct-info-body">
-                    <span class="acct-info-label">当前套餐</span>
-                    <span class="acct-info-value">{{ client.plan_name || 'VIP1 / 入门' }}</span>
+                    <span class="acct-info-label">{{ t('account.plan') }}</span>
+                    <span class="acct-info-value">{{ client.plan_name || t('account.plan_default') }}</span>
                   </div>
                 </div>
                 <div class="acct-info-row">
                   <span class="acct-info-icon">📧</span>
                   <div class="acct-info-body">
-                    <span class="acct-info-label">邮箱</span>
+                    <span class="acct-info-label">{{ t('account.email') }}</span>
                     <span class="acct-info-value">{{ client.email }}</span>
                   </div>
                 </div>
                 <div class="acct-info-row">
                   <span class="acct-info-icon">🕐</span>
                   <div class="acct-info-body">
-                    <span class="acct-info-label">注册时间</span>
+                    <span class="acct-info-label">{{ t('account.register_time') }}</span>
                     <span class="acct-info-value">{{ client.created_at ? formatDate(client.created_at) : '-' }}</span>
                   </div>
                 </div>
                 <div class="acct-info-row">
                   <span class="acct-info-icon">🔄</span>
                   <div class="acct-info-body">
-                    <span class="acct-info-label">到期时间</span>
-                    <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : '无限制' }}</span>
+                    <span class="acct-info-label">{{ t('account.expire') }}</span>
+                    <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : t('common.unlimited') }}</span>
                   </div>
                 </div>
-                <!-- 余额显示 -->
+                <!-- balance display -->
                 <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
                   <span class="acct-info-icon">💰</span>
                   <div class="acct-info-body">
-                    <span class="acct-info-label">账户余额</span>
+                    <span class="acct-info-label">{{ t('balance.available') }}</span>
                     <div class="acct-info-value-row">
                       <span class="acct-info-value">{{ formatMoney(balance.balance) }}</span>
-                      <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">充值</el-button>
+                      <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">{{ t('balance.charge_btn') }}</el-button>
                     </div>
                   </div>
                 </div>
@@ -225,18 +241,18 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <!-- Traffic mini bar inside account info -->
               <div class="acct-traffic-section">
                 <div class="acct-traffic-label">
-                  <span>📊 流量使用</span>
+                  <span>📊 {{ t('traffic.title') }}</span>
                   <span class="acct-traffic-pct">{{ usagePercent }}% / {{ formatBytes(client.quota_bytes) }}</span>
                 </div>
                 <div class="traffic-bar" style="height:8px;border-radius:6px;background:var(--ring-bg);overflow:hidden;margin-top:6px;">
                   <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
                 </div>
-                <div class="acct-traffic-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">剩余 {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} 可用流量</div>
+                <div class="acct-traffic-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">{{ t('traffic.remaining') }} {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} {{ t('traffic.available') }}</div>
               </div>
             </div>
-            <!-- Client Download / 客户端下载 -->
+            <!-- Client Download -->
             <div v-else-if="mod.type === 'client_download'">
-              <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || t('client.title') }}</span></div>
+              <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="client-platform-tabs">
                 <div
                   v-for="p in (mod.data && mod.data.platforms) || []"
@@ -252,25 +268,25 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <!-- Hint when no platform selected -->
               <div v-if="!selectedPlatform" class="client-download-hint">
                 <el-icon><ArrowUp /></el-icon>
-                <span>{{ (mod.data && mod.data.hint_text) || '请点击上方标签选择你的操作系统' }}</span>
+                <span>{{ t((mod.data && mod.data.hint_text) || 'tutorial.select_platform') }}</span>
                 <el-icon><ArrowUp /></el-icon>
               </div>
               <!-- Content when platform selected -->
               <div v-else class="client-download-content">
                 <div class="client-download-platform-header">
                   <span class="client-download-platform-name">{{ getSelectedPlatformName() }}</span>
-                  <el-button text size="small" @click="navigateTo('tutorial')">查看全部教程 →</el-button>
+                  <el-button text size="small" @click="navigateTo('tutorial')">{{ t('tutorial.view_all') }} →</el-button>
                 </div>
                 <!-- Download link -->
                 <div v-if="getSelectedPlatformUrl(mod)" class="client-download-link-row">
                   <a :href="getSelectedPlatformUrl(mod)" target="_blank" rel="noopener" class="client-download-btn">
                     <el-icon><Download /></el-icon>
-                    <span>下载 {{ getSelectedPlatformName() }} 客户端</span>
+                    <span>{{ t('common.download') }} {{ getSelectedPlatformName() }} {{ t('client.title') }}</span>
                   </a>
                 </div>
                 <!-- Associated tutorial articles -->
                 <div v-if="getPlatformArticles(selectedPlatform).length > 0" class="client-download-articles">
-                  <div class="client-download-section-title">📖 相关教程</div>
+                  <div class="client-download-section-title">📖 {{ t('tutorial.related') }}</div>
                   <div class="article-list compact">
                     <div
                       class="article-item"
@@ -290,14 +306,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <!-- Empty state -->
                 <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
                   <span class="empty-icon">📦</span>
-                  <p class="empty-text">暂无下载内容</p>
-                  <p class="empty-hint">请稍后再来查看</p>
+                  <p class="empty-text">{{ t('tutorial.no_content') }}</p>
+                  <p class="empty-hint">{{ t('tutorial.no_content_hint') }}</p>
                 </div>
               </div>
             </div>
             <!-- Subscription Detail (dynamic) -->
             <div v-else-if="mod.type === 'subscription_detail'">
-              <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || t('sub.title') }}</span></div>
+              <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div v-if="client.sub_token && client.sub_status !== 'revoked'">
                 <div v-if="client.status === 'suspended'" style="padding: 10px 12px; background: rgba(245,108,108,0.1); border: 1px solid rgba(245,108,108,0.3); border-radius: 8px; margin-bottom: 12px;">
                   <p style="color: var(--danger); margin: 0; font-size: 13px;">⚠️ {{ t('account.suspended') }}，{{ t('account.suspended_hint') }}</p>
@@ -322,77 +338,77 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     size="small"
                     @click="handleSubAction(action)"
                   >
-                    {{ action.text }}
+                    {{ t(action.text) }}
                   </el-button>
                 </div>
               </div>
               <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
-                <span class="empty-icon">🚫</span><p class="empty-text danger">订阅已吊销</p><p class="empty-hint">请联系管理员重新分配</p>
+                <span class="empty-icon">🚫</span><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
               </div>
 <div v-else-if="!client.sub_token" class="empty-state">
-<span class="empty-icon">⏸️</span><p class="empty-text danger">已暂停</p><p class="empty-hint">请购买套餐恢复</p>
+<span class="empty-icon">⏸️</span><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
 </div>
             </div>
-            <!-- Streaming Status / 流媒体解锁 -->
+            <!-- Streaming Status -->
             <div v-else-if="mod.type === 'streaming_status'">
               <div class="streaming-grid">
-                <!-- 苹果共享ID -->
+                <!-- Apple Shared ID -->
                 <div class="streaming-card">
-                  <div class="streaming-name">苹果共享ID(小火箭)</div>
+                  <div class="streaming-name">{{ t('shared.apple_id') }}</div>
                   <div class="streaming-icon"><span style="font-size: 32px;">🍎</span></div>
-                  <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">点此查看账号</div>
-                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
+                  <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
+                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
                 </div>
-                <!-- Netflix共享账号 -->
+                <!-- Netflix Shared Account -->
                 <div class="streaming-card">
-                  <div class="streaming-name">Netflix共享账号</div>
+                  <div class="streaming-name">{{ t('shared.netflix') }}</div>
                   <div class="streaming-icon"><span style="font-size: 32px;">🎬</span></div>
-                  <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">点此查看账号</div>
-                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
+                  <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
+                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
                 </div>
               </div>
             </div>
             <!-- Subscription (simple button) -->
             <div v-else-if="mod.type === 'subscription'" class="text-center">
               <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
+              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
             </div>
             <!-- Security Settings (dynamic) -->
             <div v-else-if="mod.type === 'security_settings'">
-              <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ mod.title || '安全设置' }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <el-form v-if="mod.data && mod.data.show_ip_whitelist !== false" label-position="top" size="small">
-                <el-form-item label="IP 白名单（逗号分隔，留空不限制）">
-                  <el-input v-model="settings.ip_whitelist" placeholder="例: 192.168.1.0/24,10.0.0.1" />
+                <el-form-item :label="t('security.ip_whitelist_full')">
+                  <el-input v-model="settings.ip_whitelist" :placeholder="t('security.ip_example')" />
                 </el-form-item>
-                <el-form-item label="设备限制（0=不限制）">
+                <el-form-item :label="t('security.device_limit_hint')">
                   <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
                 </el-form-item>
-                <el-button type="primary" size="small" @click="saveSettings">保存设置</el-button>
+                <el-button type="primary" size="small" @click="saveSettings">{{ t('common.save') }}</el-button>
               </el-form>
               <div v-if="mod.data && mod.data.show_password !== false">
-                <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">修改密码</span></div>
+                <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">{{ t('security.password') }}</span></div>
                 <el-form label-position="top" size="small">
-                  <el-form-item label="旧密码"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
-                  <el-form-item label="新密码"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
-                  <el-form-item label="确认密码"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
-                  <el-button type="primary" size="small" @click="changePassword">修改密码</el-button>
+<el-form-item :label="t('security.old_password')"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
+<el-form-item :label="t('security.new_password')"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
+<el-form-item :label="t('security.confirm_password')"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
+                  <el-button type="primary" size="small" @click="changePassword">{{ t('security.password') }}</el-button>
                 </el-form>
               </div>
             </div>
             <!-- Log Packages (dynamic) -->
             <div v-else-if="mod.type === 'log_packages'">
-              <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ mod.title || '日志打包' }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-              <p v-else class="card-desc">请求打包最近日志，系统将在后台收集并压缩为可下载文件。</p>
+              <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
+              <p v-else class="card-desc">{{ t('log.description') }}</p>
               <div class="log-actions">
-                <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ (mod.data && mod.data.btn_1h) || '打包最近1小时' }}</el-button>
-                <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ (mod.data && mod.data.btn_6h) || '最近6小时' }}</el-button>
-                <el-button size="small" @click="createLogPackage(24)">{{ (mod.data && mod.data.btn_24h) || '最近24小时' }}</el-button>
+                <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ t((mod.data && mod.data.btn_1h) || 'log.btn_1h') }}</el-button>
+                <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ t((mod.data && mod.data.btn_6h) || 'log.btn_6h') }}</el-button>
+                <el-button size="small" @click="createLogPackage(24)">{{ t((mod.data && mod.data.btn_24h) || 'log.btn_24h') }}</el-button>
               </div>
               <div v-if="logPackages.length > 0" style="margin-top: 16px">
-                <div class="card-header"><span class="card-icon">📁</span><span class="card-title">日志包列表</span><span class="card-action" @click="fetchLogPackages">刷新</span></div>
+                <div class="card-header"><span class="card-icon">📁</span><span class="card-title">{{ t('log.package_list') }}</span><span class="card-action" @click="fetchLogPackages">{{ t('common.refresh') }}</span></div>
                 <div class="logpkg-list">
                   <div class="logpkg-item" v-for="pkg in logPackages" :key="pkg.id">
                     <div class="logpkg-info">
@@ -402,8 +418,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     </div>
                     <div class="logpkg-actions">
                       <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                      <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">下载</el-button>
-                      <span v-if="pkg.status === 'processing'" class="logpkg-hint">处理中...</span>
+                      <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
+                      <span v-if="pkg.status === 'processing'" class="logpkg-hint">{{ t('common.processing') }}...</span>
                       <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
                     </div>
                   </div>
@@ -412,52 +428,52 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Markdown -->
             <div v-else-if="mod.type === 'markdown'" class="module-markdown" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-              <div v-if="mod.title" class="card-header"><span class="card-title">{{ mod.title }}</span></div>
-              <div class="md-render" v-html="renderMd(mod.data && mod.data.markdown || '')"></div>
+              <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
+              <div class="md-render" v-html="renderMd(t(mod.data && mod.data.markdown || ''))"></div>
             </div>
             <!-- Custom HTML -->
             <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
-<!-- Plan List (商业模块 P0) - qist table style -->
+<!-- Plan List -->
             <div v-else-if="mod.type === 'plan_list'">
-              <!-- 顶部提示 -->
+              <!-- Top Notice -->
               <div v-if="mod.data && mod.data.notice_text" class="plan-notice">
-                <div class="plan-notice-content">{{ mod.data.notice_text }}</div>
-                <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ mod.data.notice_subtext }}</div>
+                <div class="plan-notice-content">{{ t(mod.data.notice_text) }}</div>
+                <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ t(mod.data.notice_subtext) }}</div>
               </div>
               
-              <div v-if="plansLoading" class="empty-state"><span class="empty-icon">⏳</span><p class="empty-text">加载中...</p></div>
-              <div v-else-if="plans.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无可用套餐</p></div>
+              <div v-if="plansLoading" class="empty-state"><span class="empty-icon">⏳</span><p class="empty-text">{{ t('common.loading') }}</p></div>
+              <div v-else-if="plans.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('plan.empty') }}</p></div>
               <div v-else class="plan-table-wrap">
                 <table class="plan-table">
                   <thead>
                     <tr>
-                      <th class="plan-col-service">服务</th>
-                      <th class="plan-col-desc">描述</th>
-                      <th class="plan-col-price">售价</th>
-                      <th class="plan-col-action">操作</th>
+                      <th class="plan-col-service">{{ t('plan.col_service') }}</th>
+                      <th class="plan-col-desc">{{ t('plan.col_desc') }}</th>
+                      <th class="plan-col-price">{{ t('plan.col_price') }}</th>
+                      <th class="plan-col-action">{{ t('common.action') }}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <template v-for="plan in plans" :key="plan.id">
                       <tr v-for="(v, vIdx) in (plan.variants || [])" :key="v.id" class="plan-row" :class="{ 'plan-current': client.plan_id > 0 && client.plan_id === plan.id }">
-                        <!-- 服务列 - 只在第一个 variant 显示 -->
+                        <!-- Service Column -->
                         <td v-if="vIdx === 0" :rowspan="plan.variants.length" class="plan-cell plan-cell-service">
                           <div class="plan-service-name">{{ plan.name }}</div>
                           <div class="plan-service-meta">
-                            <div v-if="v.quota_bytes">内含流量: {{ formatBytes(v.quota_bytes) }}/每月</div>
-                            <div v-if="v.speed_limit">最大带宽: {{ v.speed_limit }}M</div>
-                            <div v-if="v.duration_days">有效期: {{ v.duration_days }}天</div>
+                            <div v-if="v.quota_bytes">{{ t('plan.included_traffic') }}: {{ formatBytes(v.quota_bytes) }}/{{ t('plan.per_month') }}</div>
+                            <div v-if="v.speed_limit">{{ t('plan.max_bandwidth') }}: {{ v.speed_limit }}M</div>
+                            <div v-if="v.duration_days">{{ t('plan.duration') }}: {{ v.duration_days }}{{ t('plan.days_unit') }}</div>
                           </div>
                         </td>
-                        <!-- 描述列 -->
+                        <!-- Description Column -->
                         <td class="plan-cell plan-cell-desc">
-                          <div class="plan-desc-text">{{ plan.description || '线路同上，价格更优惠' }}</div>
+                          <div class="plan-desc-text">{{ plan.description || t('plan.default_desc') }}</div>
                         </td>
-                        <!-- 售价列 -->
+                        <!-- Price Column -->
                         <td class="plan-cell plan-cell-price">
                           <span class="plan-price-amount">{{ (v.currency || 'CNY') === 'CNY' ? '¥' : (v.currency === 'USD' ? '$' : v.currency) }}{{ formatMoney(v.price) }}</span>
                         </td>
-                        <!-- 操作列 -->
+                        <!-- Action Column -->
                         <td class="plan-cell plan-cell-action">
                           <el-button 
                             type="primary" 
@@ -465,10 +481,10 @@ const defaultPortalHTML = `<!DOCTYPE html>
                             @click="purchaseVariant(v.id, plan, mod.data)"
                             :disabled="orderBusy"
                           >
-                            <span v-if="client.plan_id > 0 && client.plan_id === plan.id">{{ (mod.data && mod.data.renew_text) || '购买' }}</span>
-                            <span v-else>{{ (mod.data && mod.data.buy_text) || '购买' }}</span>
+                            <span v-if="client.plan_id > 0 && client.plan_id === plan.id">{{ t((mod.data && mod.data.renew_text) || 'common.buy') }}</span>
+                            <span v-else>{{ t((mod.data && mod.data.buy_text) || 'common.buy') }}</span>
                           </el-button>
-                          <div v-if="client.plan_id > 0 && client.plan_id === plan.id" class="plan-current-badge">当前的套餐</div>
+                          <div v-if="client.plan_id > 0 && client.plan_id === plan.id" class="plan-current-badge">{{ t('plan.current_plan') }}</div>
                         </td>
                       </tr>
                     </template>
@@ -476,71 +492,71 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </table>
               </div>
             </div>
-            <!-- Order Create (商业模块 P0) -->
+            <!-- Order Create -->
             <div v-else-if="mod.type === 'order_create'">
-              <div class="card-header"><span class="card-icon">🛒</span><span class="card-title">{{ mod.title || '创建订单' }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <div class="card-header"><span class="card-icon">🛒</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <el-form label-position="top" size="small">
-                <el-form-item label="套餐">
-                  <el-select v-model="orderForm.variant_id" placeholder="选择套餐" style="width: 100%">
+                <el-form-item :label="t('plan.title')">
+                  <el-select v-model="orderForm.variant_id" :placeholder="t('plan.select_placeholder')" style="width: 100%">
                     <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="订单类型">
+                <el-form-item :label="t('order.type')">
                   <el-radio-group v-model="orderForm.order_type">
-                    <el-radio value="new">新购</el-radio>
-                    <el-radio value="renew">续费</el-radio>
-                    <el-radio value="upgrade">升级</el-radio>
+                    <el-radio value="new">{{ t('order.type_new') }}</el-radio>
+                    <el-radio value="renew">{{ t('common.renew') }}</el-radio>
+                    <el-radio value="upgrade">{{ t('common.upgrade') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="优惠码">
-                  <el-input v-model="orderForm.promotion_code" placeholder="输入优惠码（可选）" />
+                <el-form-item :label="t('plan.promo_code')">
+                  <el-input v-model="orderForm.promotion_code" :placeholder="t('plan.promo_placeholder')" />
                 </el-form-item>
-                <el-form-item label="支付方式">
+                <el-form-item :label="t('plan.select_payment')">
                   <el-radio-group v-model="orderForm.pay_method">
-                    <el-radio value="balance">余额支付</el-radio>
-                    <el-radio value="gift_card">套餐卡支付</el-radio>
-                    <el-radio v-if="chargeSites.length > 0" value="charge_site">在线支付</el-radio>
+                    <el-radio value="balance">{{ t('plan.balance_pay') }}</el-radio>
+                    <el-radio value="gift_card">{{ t('plan.card_pay') }}</el-radio>
+                    <el-radio v-if="chargeSites.length > 0" value="charge_site">{{ t('plan.charge_pay') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item v-if="orderForm.pay_method === 'gift_card'" label="套餐卡号">
-                  <el-input v-model="orderForm.gift_card_code" placeholder="输入套餐卡兑换码" />
+                <el-form-item v-if="orderForm.pay_method === 'gift_card'" :label="t('plan.card_code')">
+                  <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" />
                 </el-form-item>
-                <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" label="充值站点">
-                  <el-select v-model="orderForm.charge_site_id" placeholder="选择支付渠道" style="width: 100%">
+                <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" :label="t('charge.site_label')">
+                  <el-select v-model="orderForm.charge_site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
                     <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
                   </el-select>
                 </el-form-item>
-                <el-button type="primary" size="small" @click="submitOrder" :loading="orderBusy">创建订单</el-button>
+                <el-button type="primary" size="small" @click="submitOrder" :loading="orderBusy">{{ t('order.create') }}</el-button>
               </el-form>
             </div>
-            <!-- Charge Panel (商业模块 P0) -->
+            <!-- Charge Panel -->
             <div v-else-if="mod.type === 'charge_panel'">
-              <div class="card-header"><span class="card-icon">💳</span><span class="card-title">{{ mod.title || '在线充值' }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+              <div class="card-header"><span class="card-icon">💳</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <div class="charge-section">
-                <h4 class="charge-subtitle">在线支付</h4>
+                <h4 class="charge-subtitle">{{ t('plan.charge_pay') }}</h4>
                 <el-form label-position="top" size="small">
-                  <el-form-item label="充值站点">
-                    <el-select v-model="chargeForm.site_id" placeholder="选择支付渠道" style="width: 100%">
+                  <el-form-item :label="t('charge.site_label')">
+                    <el-select v-model="chargeForm.site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
                       <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="金额（元）">
+                  <el-form-item :label="t('charge.amount_yuan')">
                     <el-input-number v-model="chargeForm.amount_yuan" :min="1" :step="10" style="width: 100%" />
                   </el-form-item>
-                  <el-button type="primary" size="small" @click="submitCharge" :loading="chargeBusy">立即充值</el-button>
+                  <el-button type="primary" size="small" @click="submitCharge" :loading="chargeBusy">{{ t('charge.submit_now') }}</el-button>
                 </el-form>
               </div>
               <div class="charge-section">
-                <h4 class="charge-subtitle">充值卡兑换</h4>
+                <h4 class="charge-subtitle">{{ t('charge.card_redeem') }}</h4>
                 <div class="charge-card-row">
-                  <el-input v-model="cardCode" :placeholder="(mod.data && mod.data.card_placeholder) || '输入充值卡号'" size="small" />
-                  <el-button type="success" size="small" @click="redeemCard" :loading="redeemBusy">{{ (mod.data && mod.data.card_btn_text) || '兑换' }}</el-button>
+                  <el-input v-model="cardCode" :placeholder="(mod.data && mod.data.card_placeholder) || t('charge.card_code_placeholder')" size="small" />
+                  <el-button type="success" size="small" @click="redeemCard" :loading="redeemBusy">{{ (mod.data && mod.data.card_btn_text) || t('charge.card_redeem_btn') }}</el-button>
                 </div>
               </div>
               <div v-if="mod.data && mod.data.show_orders !== false && chargeOrders.length > 0" class="charge-section">
-                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">充值记录</span></div>
+                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
                 <div class="logpkg-list">
                   <div class="logpkg-item" v-for="co in chargeOrders.slice(0, (mod.data && mod.data.orders_limit) || 5)" :key="co.id">
                     <div class="logpkg-info">
@@ -550,24 +566,24 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     </div>
                     <div class="logpkg-actions">
                       <span class="logpkg-time">{{ formatDate(co.created_at) }}</span>
-                      <a v-if="co.payment_url && co.status === 'pending'" :href="co.payment_url" target="_blank" class="card-action">去支付</a>
+                      <a v-if="co.payment_url && co.status === 'pending'" :href="co.payment_url" target="_blank" class="card-action">{{ t('charge.go_pay') }}</a>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            <!-- Balance Display (商业模块 P0) -->
+            <!-- Balance Display -->
             <div v-else-if="mod.type === 'balance_display'">
-              <div class="card-header"><span class="card-icon">💰</span><span class="card-title">{{ mod.title || '账户余额' }}</span></div>
+              <div class="card-header"><span class="card-icon">💰</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="balance-hero">
                 <span class="balance-amount">{{ formatMoney(balance.balance) }}</span>
-                <span v-if="balance.frozen > 0" class="balance-frozen">冻结: {{ formatMoney(balance.frozen) }}</span>
+                <span v-if="balance.frozen > 0" class="balance-frozen">{{ t('balance.frozen') }}: {{ formatMoney(balance.frozen) }}</span>
               </div>
               <div class="card-actions">
-                <el-button type="primary" size="small" @click="activeTab = 'store'; scrollToModule('mod-charge')">{{ (mod.data && mod.data.charge_btn_text) || '去充值' }}</el-button>
+                <el-button type="primary" size="small" @click="activeTab = 'store'; scrollToModule('mod-charge')">{{ (mod.data && mod.data.charge_btn_text) || t('balance.charge_btn') }}</el-button>
               </div>
               <div v-if="mod.data && mod.data.show_transactions !== false && balanceTxns.length > 0" style="margin-top: 16px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">交易记录</span></div>
+                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.transactions') }}</span></div>
                 <div class="logpkg-list">
                   <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, (mod.data && mod.data.tx_limit) || 10)" :key="tx.id">
                     <div class="logpkg-info">
@@ -581,36 +597,36 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
             </div>
-            <!-- Order List / 我的账单 (订单表格) -->
+            <!-- Order List -->
             <div v-else-if="mod.type === 'order_list'">
-              <!-- 顶部提示文字 -->
+              <!-- Top Notice -->
               <div class="billing-notice">
-                <span class="billing-notice-text">{{ (mod.data && mod.data.notice_text) || '我的账单' }}</span>
-                <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ mod.data.notice_highlight }}</span>
+                <span class="billing-notice-text">{{ t((mod.data && mod.data.notice_text) || 'order.title') }}</span>
+                <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ t(mod.data.notice_highlight) }}</span>
               </div>
               <div class="billing-notice-sub">
-                {{ (mod.data && mod.data.notice_subtext) || '仅显示最近30天内的交易记录' }}
+                {{ t((mod.data && mod.data.notice_subtext) || 'balance.tx_limit') }}
               </div>
-              <!-- 订单表格 -->
+              <!-- Order Table -->
               <div v-if="myOrdersLoading" class="empty-state">
                 <span class="empty-icon">⏳</span>
-                <p class="empty-text">加载中...</p>
+                <p class="empty-text">{{ t('common.loading') }}</p>
               </div>
               <div v-else-if="myOrders.length === 0" class="empty-state">
                 <span class="empty-icon">📭</span>
-                <p class="empty-text">暂无账单记录</p>
+                <p class="empty-text">{{ t('order.empty') }}</p>
               </div>
               <div v-else class="billing-table-wrap">
                 <table class="billing-table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>编号</th>
-                      <th>服务</th>
-                      <th>金额</th>
-                      <th>购买日期</th>
-                      <th>到期时间</th>
-                      <th>状态</th>
+                      <th>{{ t('order.id') }}</th>
+                      <th>{{ t('plan.col_service') }}</th>
+                      <th>{{ t('common.amount') }}</th>
+                      <th>{{ t('order.date') }}</th>
+                      <th>{{ t('account.expire') }}</th>
+                      <th>{{ t('common.status') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -626,26 +642,26 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </tbody>
                 </table>
               </div>
-              <!-- 充值记录 -->
+              <!-- Charge Records -->
               <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">充值记录</span></div>
+                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
                 <div class="billing-table-wrap">
                   <table class="billing-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>交易号</th>
-                        <th>来源</th>
-                        <th>金额</th>
-                        <th>时间</th>
-                        <th>状态</th>
+                        <th>{{ t('order.trade_no') }}</th>
+                        <th>{{ t('order.source') }}</th>
+                        <th>{{ t('common.amount') }}</th>
+                        <th>{{ t('common.time') }}</th>
+                        <th>{{ t('common.status') }}</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-for="(co, idx) in chargeOrders.slice(0, 10)" :key="co.id">
                         <td class="billing-col-index">{{ idx + 1 }}</td>
                         <td class="billing-col-id">{{ co.trade_no }}</td>
-                        <td>{{ co.source === 'card' ? '充值卡' : (co.source === 'site' ? '在线支付' : co.source) }}</td>
+                        <td>{{ co.source === 'card' ? t('charge.card_title') : (co.source === 'site' ? t('plan.charge_pay') : co.source) }}</td>
                         <td class="billing-col-amount">{{ formatMoney(co.amount) }} {{ co.currency }}</td>
                         <td class="billing-col-date">{{ formatDate(co.created_at) }}</td>
                         <td class="billing-col-status"><span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span></td>
@@ -654,25 +670,25 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </table>
                 </div>
               </div>
-              <!-- 交易流水 -->
+              <!-- Transaction Flow -->
               <div v-if="balanceTxns.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">余额变动记录</span></div>
+                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.balance_change') }}</span></div>
                 <div class="billing-table-wrap">
                   <table class="billing-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>类型</th>
-                        <th>金额</th>
-                        <th>变动后余额</th>
-                        <th>说明</th>
-                        <th>时间</th>
+                        <th>{{ t('common.type') }}</th>
+                        <th>{{ t('common.amount') }}</th>
+                        <th>{{ t('balance.balance_after') }}</th>
+                        <th>{{ t('common.remark') }}</th>
+                        <th>{{ t('common.time') }}</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-for="(tx, idx) in balanceTxns.slice(0, 10)" :key="tx.id">
                         <td class="billing-col-index">{{ idx + 1 }}</td>
-                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? '充值' : (tx.type === 'consume' ? '消费' : (tx.type === 'refund' ? '退款' : tx.type)) }}</span></td>
+                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? t('balance.charge_btn') : (tx.type === 'consume' ? t('balance.type_consume') : (tx.type === 'refund' ? t('order.refund') : tx.type)) }}</span></td>
                         <td class="billing-col-amount" :style="{ color: tx.amount >= 0 ? '#67c23a' : '#f56c6c' }">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</td>
                         <td class="billing-col-amount">{{ formatMoney(tx.balance_after) }}</td>
                         <td>{{ tx.remark || '-' }}</td>
@@ -683,26 +699,26 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
             </div>
-            <!-- Node List / 线路列表 -->
+            <!-- Node List -->
             <div v-else-if="mod.type === 'node_list'" class="node-list-module">
               <div v-if="mod.data && mod.data.info_text" class="node-info-card">
-                <div class="node-info-title">{{ mod.data.info_title || '线路说明' }}</div>
-                <div class="node-info-content">{{ mod.data.info_text }}</div>
+                <div class="node-info-title">{{ t(mod.data.info_title || 'node.info_title') }}</div>
+                <div class="node-info-content">{{ t(mod.data.info_text) }}</div>
               </div>
               <div v-if="plansLoading" class="empty-state">
                 <span class="empty-icon">⏳</span>
-                <p class="empty-text">加载中...</p>
+                <p class="empty-text">{{ t('common.loading') }}</p>
               </div>
               <div v-else-if="allPlanNodes.length === 0" class="empty-state">
                 <span class="empty-icon">📭</span>
-                <p class="empty-text">暂无线路信息</p>
+                <p class="empty-text">{{ t('node.empty') }}</p>
               </div>
               <div v-else>
                 <div v-for="planGroup in allPlanNodes" :key="planGroup.plan_id" class="plan-node-group">
                   <div class="plan-node-header">
                     <span class="plan-node-name">{{ planGroup.plan_name }}</span>
-                    <span v-if="planGroup.active" class="badge badge-active">当前套餐</span>
-                    <span v-else class="badge badge-none">未购买</span>
+                    <span v-if="planGroup.active" class="badge badge-active">{{ t('account.plan') }}</span>
+                    <span v-else class="badge badge-none">{{ t('node.not_purchased') }}</span>
                   </div>
                   <div class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 3) + ', 1fr)' }">
                     <div v-for="node in planGroup.nodes" :key="node.id" class="node-card" :class="{ disabled: !planGroup.active }">
@@ -712,54 +728,54 @@ const defaultPortalHTML = `<!DOCTYPE html>
                         <span v-if="node.transport" class="node-tag tag-transport">{{ node.transport }}</span>
                       </div>
                       <div v-if="planGroup.active && node.link" class="node-actions">
-                        <el-button size="small" text @click="showNodeDetail(node)">详情</el-button>
-                        <el-button size="small" text @click="showNodeQR(node)">二维码</el-button>
+                        <el-button size="small" text @click="showNodeDetail(node)">{{ t('common.view_detail') }}</el-button>
+                        <el-button size="small" text @click="showNodeQR(node)">{{ t('sub.qr_code') }}</el-button>
                       </div>
                       <div v-else class="node-locked">
-                        <span class="lock-hint">🔒 需购买套餐</span>
+                        <span class="lock-hint">🔒 {{ t('node.need_plan') }}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            <!-- Referral (商业模块 P1) -->
+            <!-- Referral -->
             <div v-else-if="mod.type === 'referral'">
-              <!-- 邀请链接 -->
+              <!-- Referral Link -->
               <div class="referral-header">
-                <div class="referral-title">🎁 我的邀请链接</div>
+                <div class="referral-title">🎁 {{ t('referral.my_link') }}</div>
                 <div class="referral-meta">
-                  <span class="referral-rate">返利比例: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
+                  <span class="referral-rate">{{ t('referral.commission_rate') }}: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
                   <span class="referral-divider">|</span>
-                  <span class="referral-mode">返利模式: {{ (referralStats && referralStats.commission_mode === 'recurring') ? '循环返利' : ((mod.data && mod.data.default_commission_mode === 'recurring') ? '循环返利' : '普通返利') }}</span>
+                  <span class="referral-mode">{{ t('referral.commission_mode') }}: {{ (referralStats && referralStats.commission_mode === 'recurring') ? t('referral.mode_recurring') : ((mod.data && mod.data.default_commission_mode === 'recurring') ? t('referral.mode_recurring') : t('referral.mode_normal')) }}</span>
                 </div>
               </div>
               <div class="referral-link-wrap" v-if="referralCode">
                 <div class="referral-link">{{ referralInviteUrl }}</div>
                 <el-button type="primary" size="small" @click="copyText(referralInviteUrl)" class="referral-copy-btn">
-                  <el-icon><DocumentCopy /></el-icon> 复制
+                  <el-icon><DocumentCopy /></el-icon> {{ t('common.copy') }}
                 </el-button>
               </div>
               
-              <!-- 邀请码信息 -->
+              <!-- Invite Code -->
               <div class="referral-code-section" v-if="referralCode">
                 <div class="referral-code-row">
-                  <span class="referral-code-label">邀请码</span>
+                  <span class="referral-code-label">{{ t('referral.invite_code') }}</span>
                   <span class="referral-code-value">{{ referralCode.code }}</span>
-                  <el-tag size="small" type="success" effect="dark" class="referral-status">可用</el-tag>
+                  <el-tag size="small" type="success" effect="dark" class="referral-status">{{ t('referral.code_available') }}</el-tag>
                 </div>
               </div>
 
-              <!-- 邀请记录 -->
+              <!-- Invite Records -->
               <div class="referral-section" v-if="referralRecords.length > 0">
-                <div class="section-title">邀请记录</div>
+                <div class="section-title">{{ t('referral.invite_records') }}</div>
                 <div class="referral-table-wrap">
                   <table class="referral-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>邮箱</th>
-                        <th>注册时间</th>
+                        <th>{{ t('account.email') }}</th>
+                        <th>{{ t('account.register_time') }}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -773,23 +789,23 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
 
-              <!-- 佣金记录 -->
+              <!-- Commission Records -->
               <div class="referral-section">
                 <div class="section-header">
-                  <span class="section-title">佣金记录</span>
-                  <span class="section-subtitle">（默认提现到余额，余额超过100元可通过USDT提现到个人钱包）</span>
-                  <el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">提现</el-button>
+                  <span class="section-title">{{ t('referral.records') }}</span>
+                  <span class="section-subtitle">{{ t('referral.withdraw_hint') }}</span>
+                  <el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">{{ t('referral.withdraw') }}</el-button>
                 </div>
                 <div class="referral-table-wrap">
                   <table class="referral-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>返利时间</th>
-                        <th>消费者</th>
-                        <th>消费金额</th>
-                        <th>返利金额</th>
-                        <th>状态</th>
+                        <th>{{ t('referral.commission_time') }}</th>
+                        <th>{{ t('referral.consumer') }}</th>
+                        <th>{{ t('referral.consume_amount') }}</th>
+                        <th>{{ t('referral.commission_amount') }}</th>
+                        <th>{{ t('common.status') }}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -801,7 +817,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                         <td>¥{{ r.commission }}</td>
                         <td>
                           <el-tag size="small" :type="r.status === 'available' ? 'success' : r.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                            {{ r.status === 'available' ? '可提现' : r.status === 'pending' ? '待结算' : '已提现' }}
+                            {{ r.status === 'available' ? t('referral.status_available') : r.status === 'pending' ? t('referral.status_pending') : t('referral.status_withdrawn') }}
                           </el-tag>
                         </td>
                       </tr>
@@ -809,21 +825,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </table>
                 </div>
                 <div class="referral-summary" v-if="referralStats">
-                  合计返利 {{ formatMoney(referralStats.total_commission) }}（{{ referralStats.total_paid }}次），满15元可以申请提现。
+                  {{ t('referral.total_commission') }} {{ formatMoney(referralStats.total_commission) }}（{{ referralStats.total_paid }}{{ t('referral.times' ) }}），{{ t('referral.withdraw_threshold' ) }}
                 </div>
               </div>
 
-              <!-- 提现记录 -->
+              <!-- Withdrawal Records -->
               <div class="referral-section" v-if="withdrawRecords && withdrawRecords.length > 0">
-                <div class="section-title">提现记录</div>
+                <div class="section-title">{{ t('referral.withdraw_records') }}</div>
                 <div class="referral-table-wrap">
                   <table class="referral-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>提现日期</th>
-                        <th>提现金额</th>
-                        <th>状态</th>
+                        <th>{{ t('referral.withdraw_date') }}</th>
+                        <th>{{ t('referral.withdraw_amount') }}</th>
+                        <th>{{ t('common.status') }}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -833,7 +849,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                         <td>{{ w.amount }}</td>
                         <td>
                           <el-tag size="small" :type="w.status === 'completed' ? 'success' : w.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                            {{ w.status === 'completed' ? '已打款' : w.status === 'pending' ? '处理中' : '已取消' }}
+                            {{ w.status === 'completed' ? t('referral.status_paid') : w.status === 'pending' ? t('common.processing') : t('order.status_cancelled') }}
                           </el-tag>
                         </td>
                       </tr>
@@ -842,28 +858,28 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
             </div>
-            <!-- Ticket List (商业模块 P1) -->
+            <!-- Ticket List -->
             <div v-else-if="mod.type === 'ticket_list'">
-              <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ mod.title || '我的工单' }}</span><span class="card-action" @click="showTicketDialog = true">{{ (mod.data && mod.data.new_btn_text) || '新建工单' }}</span></div>
-              <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无工单</p></div>
+              <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
+              <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('ticket.empty') }}</p></div>
 <div v-else class="logpkg-list">
-<div class="logpkg-item" v-for="t in tickets" :key="t.id" @click="openTicket(t.id)" style="cursor: pointer">
+<div class="logpkg-item" v-for="tk in tickets" :key="tk.id" @click="openTicket(tk.id)" style="cursor: pointer">
 <div class="logpkg-info">
-<span class="logpkg-id">#{{ t.id }}</span>
-<span class="logpkg-time">{{ t.subject }}</span>
-<span :class="'badge badge-' + ticketStatusBadge(t.status)">{{ ticketStatusText(t.status) }}</span>
-<span v-if="t.status === 'replied'" class="ticket-new-badge">新回复</span>
+<span class="logpkg-id">#{{ tk.id }}</span>
+<span class="logpkg-time">{{ tk.subject }}</span>
+<span :class="'badge badge-' + ticketStatusBadge(tk.status)">{{ ticketStatusText(tk.status) }}</span>
+<span v-if="tk.status === 'replied'" class="ticket-new-badge">{{ t('ticket.new_reply') }}</span>
 </div>
 <div class="logpkg-actions">
-<span class="logpkg-time">{{ formatDate(t.updated_at) }}</span>
+<span class="logpkg-time">{{ formatDate(tk.updated_at) }}</span>
 </div>
 </div>
 </div>
             </div>
-            <!-- Tutorial Cards / 下载与教程 -->
+            <!-- Tutorial Cards -->
             <div v-else-if="mod.type === 'tutorial_cards'">
-              <div class="card-header"><span class="card-icon">📥</span><span class="card-title">{{ mod.title || '下载与教程' }}</span></div>
-              <!-- 平台选择标签 -->
+              <div class="card-header"><span class="card-icon">📥</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <!-- Platform Tabs -->
               <div class="tutorial-platform-tabs">
                 <div
                   v-for="card in (mod.data && mod.data.cards) || []"
@@ -875,7 +891,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   {{ card.name }}
                 </div>
               </div>
-              <!-- 平台卡片网格 -->
+              <!-- Platform Grid -->
               <div class="tutorial-grid">
                 <div
                   v-for="card in (mod.data && mod.data.cards) || []"
@@ -887,18 +903,18 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 >
                   <div class="tutorial-card-icon">{{ getTutorialIcon(card.icon) }}</div>
                   <div class="tutorial-card-name">{{ card.name }}</div>
-                  <div class="tutorial-card-desc">{{ card.desc }}</div>
+                  <div class="tutorial-card-desc">{{ t(card.desc) }}</div>
                 </div>
               </div>
-              <!-- 关联的教程文章 -->
+              <!-- Related Articles -->
               <div v-if="selectedPlatform" class="tutorial-articles">
                 <div class="tutorial-articles-header">
                   <span class="tutorial-platform-name">{{ getSelectedPlatformName() }}</span>
-                  <span class="tutorial-articles-count">{{ getPlatformArticles(selectedPlatform).length }} {{ selectedPlatform === 'faq' ? '个问题' : '篇教程' }}</span>
+                  <span class="tutorial-articles-count">{{ getPlatformArticles(selectedPlatform).length }} {{ selectedPlatform === 'faq' ? t('article.faq_count') : t('tutorial.platform_articles') }}</span>
                 </div>
                 <div v-if="getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
                   <span class="empty-icon">📝</span>
-                  <p class="empty-text">{{ selectedPlatform === 'faq' ? '暂无常见问题' : '暂无该平台的教程文章' }}</p>
+                  <p class="empty-text">{{ selectedPlatform === 'faq' ? t('tutorial.no_faq') : t('tutorial.no_articles') }}</p>
                 </div>
                 <div v-else class="article-list tutorial-article-list">
                   <div
@@ -912,27 +928,27 @@ const defaultPortalHTML = `<!DOCTYPE html>
                       <span class="article-title">{{ article.title }}</span>
                       <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
                     </div>
-                    <span class="card-action">阅读</span>
+                    <span class="card-action">{{ t('article.read') }}</span>
                   </div>
                 </div>
               </div>
               <div v-else class="tutorial-select-hint">
                 <span class="empty-icon">👆</span>
-                <p class="empty-text">请点击上方选择你的操作系统</p>
+                <p class="empty-text">{{ t('tutorial.select_platform') }}</p>
               </div>
             </div>
-            <!-- Article List (商业模块 P2) -->
+            <!-- Article List -->
             <div v-else-if="mod.type === 'article_list'">
-              <div class="card-header"><span class="card-icon">📚</span><span class="card-title">{{ mod.title || '教程文章' }}</span></div>
+              <div class="card-header"><span class="card-icon">📚</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div v-if="mod.data && mod.data.show_category_filter" class="article-filter">
                 <el-radio-group v-model="articleCategory" size="small" @change="fetchArticles">
-                  <el-radio-button value="">全部</el-radio-button>
-                  <el-radio-button value="tutorial">教程</el-radio-button>
+                  <el-radio-button value="">{{ t('common.all') }}</el-radio-button>
+                  <el-radio-button value="tutorial">{{ t('article.tutorial') }}</el-radio-button>
                   <el-radio-button value="faq">FAQ</el-radio-button>
-                  <el-radio-button value="notice">公告</el-radio-button>
+                  <el-radio-button value="notice">{{ t('article.notice') }}</el-radio-button>
                 </el-radio-group>
               </div>
-              <div v-if="articles.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无文章</p></div>
+              <div v-if="articles.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('article.empty') }}</p></div>
               <div v-else class="article-list">
                 <div class="article-item" v-for="a in articles" :key="a.id" @click="openArticle(a.slug)">
                   <span class="article-cat-badge">{{ articleCatText(a.category) }}</span>
@@ -940,23 +956,23 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     <span class="article-title">{{ a.title }}</span>
                     <span class="logpkg-time">{{ formatDate(a.published_at || a.updated_at) }}</span>
                   </div>
-                  <span class="card-action">阅读</span>
+                  <span class="card-action">{{ t('article.read') }}</span>
                 </div>
               </div>
             </div>
-            <!-- Shared Accounts (商业模块 P2) -->
+            <!-- Shared Accounts -->
             <div v-else-if="mod.type === 'shared_accounts'">
-              <div class="card-header"><span class="card-icon">🔑</span><span class="card-title">{{ mod.title || '共享账号' }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-              <!-- 无套餐权限提示 -->
+              <div class="card-header"><span class="card-icon">🔑</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
+              <!-- No Plan Access -->
               <div v-if="!client.plan_id" class="empty-state">
                 <span class="empty-icon">🔒</span>
-                <p class="empty-text">订阅套餐后即可使用共享账号</p>
-                <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">去订阅套餐</el-button>
+                <p class="empty-text">{{ t('shared.need_plan') }}</p>
+                <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">{{ t('plan.go_subscribe') }}</el-button>
               </div>
-              <!-- 有权限但无账号 -->
-              <div v-else-if="sharedAccounts.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无可用共享账号</p></div>
-              <!-- 有权限且有账号 -->
+              <!-- Has Plan, No Accounts -->
+              <div v-else-if="sharedAccounts.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('shared.empty') }}</p></div>
+              <!-- Has Plan And Accounts -->
               <div v-else class="article-list">
                 <div class="article-item" v-for="sa in sharedAccounts" :key="sa.id">
                   <img v-if="sa.icon_url" :src="sa.icon_url" class="sa-icon" />
@@ -965,15 +981,15 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     <span class="article-title">{{ sa.name }}</span>
                     <span class="logpkg-time">{{ sharedAcctTypeText(sa.type) }}</span>
                   </div>
-                  <el-button size="small" type="primary" text @click="applySharedAccount(sa.id, mod.data)">{{ (mod.data && mod.data.apply_btn_text) || '查看凭据' }}</el-button>
-                  <el-button size="small" text @click="repairSharedAccount(sa.id, mod.data)">{{ (mod.data && mod.data.repair_btn_text) || '请求修复' }}</el-button>
+                  <el-button size="small" type="primary" text @click="applySharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.apply_btn_text) || 'shared.view_credential') }}</el-button>
+                  <el-button size="small" text @click="repairSharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.repair_btn_text) || 'shared.repair') }}</el-button>
                 </div>
               </div>
             </div>
             <!-- Freeform (HTML+CSS+JS custom component) -->
             <div v-else-if="mod.type === 'freeform'" class="module-freeform">
               <component :is="freeformComponents[mod.id]" v-if="freeformComponents[mod.id]"></component>
-              <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ 模块加载失败</div>
+              <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ {{ t('error.load_failed') }}</div>
             </div>
           </div>
         </template>
@@ -981,16 +997,16 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-if="currentModules.filter(function(m){ return m.type !== 'notice' }).length === 0" class="card glass">
           <div class="empty-state">
             <span class="empty-icon">📋</span>
-            <p class="empty-text">此页面暂无内容</p>
+            <p class="empty-text">{{ t('common.empty') }}</p>
           </div>
         </div>
       </div>
 
       <!-- Right column: announcement list -->
       <aside class="overview-sidebar">
-        <!-- Announcement list from API (统一公告来源) -->
+        <!-- Announcements -->
         <div v-if="announcements.length > 0" class="card glass announcement-sidebar-card">
-          <div class="card-header"><span class="card-icon">📢</span><span class="card-title">公告栏</span></div>
+          <div class="card-header"><span class="card-icon">📢</span><span class="card-title">{{ t('announcement.title') }}</span></div>
           <div class="announcement-sidebar-list">
             <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openAnnouncementPopup(ann)">
               <span v-if="ann.is_popup" class="announcement-popup-badge">📌</span>
@@ -1007,28 +1023,28 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <div class="card glass module-wrap" :id="'mod-' + mod.id" :class="mod.style && mod.style.custom_class || ''">
         <!-- Hero -->
         <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-          <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ mod.data.eyebrow }}</div>
-          <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ mod.data.heading }}</h2>
-          <p v-if="mod.data && mod.data.description" class="hero-desc">{{ mod.data.description }}</p>
-          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
+          <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ t(mod.data.eyebrow) }}</div>
+          <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ t(mod.data.heading) }}</h2>
+          <p v-if="mod.data && mod.data.description" class="hero-desc">{{ t(mod.data.description) }}</p>
+          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
         </div>
         <!-- Rich Text -->
         <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
             <!-- Announcement list (for non-overview pages) -->
             <div v-else-if="mod.type === 'notice'" class="card glass announcement-sidebar-card" style="margin-bottom: 16px;">
-              <div class="card-header"><span class="card-icon">📢</span><span class="card-title">{{ mod.title || '公告栏' }}</span></div>
+              <div class="card-header"><span class="card-icon">📢</span><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="announcement-sidebar-list">
                 <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openAnnouncementPopup(ann)">
                   <span v-if="ann.is_popup" class="announcement-popup-badge">📌</span>
                   <span class="announcement-sidebar-date">[{{ formatDate(ann.published_at || ann.updated_at).slice(5,10) }}]</span>
                   <span class="announcement-sidebar-text">{{ ann.title }}</span>
                 </div>
-                <div v-if="announcements.length === 0" style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">暂无公告</div>
+                <div v-if="announcements.length === 0" style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">{{ t('announcement.empty') }}</div>
               </div>
             </div>
         <!-- Feature Cards -->
         <div v-else-if="mod.type === 'feature_cards'">
-          <div v-if="mod.title" class="card-header"><span class="card-title">{{ mod.title }}</span></div>
+          <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="feature-cards-grid">
             <div v-for="(card, ci) in ((mod.data && mod.data.cards) || []).slice(0,6)" :key="ci" class="feature-card">
               <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
@@ -1039,21 +1055,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Account Stats (simple) -->
         <div v-else-if="mod.type === 'account_stats'">
-          <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ mod.title }}</span></div>
+          <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="traffic-stats">
-            <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">上传</span></div>
+            <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">下载</span></div>
+            <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
+            <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
           </div>
         </div>
         <!-- Traffic Ring -->
         <div v-else-if="mod.type === 'traffic_ring'">
           <div class="card-header">
             <span class="card-icon">📊</span>
-            <span class="card-title">{{ mod.title || t('traffic.title') }}</span>
-            <span class="card-action" v-if="refreshing">刷新中...</span>
+            <span class="card-title">{{ t(mod.title) }}</span>
+            <span class="card-action" v-if="refreshing">{{ t('common.refreshing') }}</span>
           </div>
           <div class="traffic-ring-wrap">
             <svg class="traffic-ring" viewBox="0 0 120 120">
@@ -1062,76 +1078,76 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </svg>
             <div class="ring-text">
               <span class="ring-percent">{{ usagePercent }}%</span>
-              <span class="ring-label">已使用</span>
+              <span class="ring-label">{{ t('traffic.used') }}</span>
             </div>
           </div>
           <div class="traffic-bar-wrap">
             <div class="traffic-bar-header">
-              <span class="bar-label">📊 流量使用</span>
+              <span class="bar-label">📊 {{ t('traffic.title') }}</span>
               <span class="bar-nums">{{ formatBytes(client.used_bytes) }} <span style="color:var(--text-muted);">/</span> {{ formatBytes(client.quota_bytes) }}</span>
             </div>
             <div class="traffic-bar">
               <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
             </div>
             <div class="traffic-bar-footer">
-              <span class="bar-hint">上传 {{ formatBytes(client.upload_bytes) }} · 下载 {{ formatBytes(client.download_bytes) }}</span>
+              <span class="bar-hint">{{ t('traffic.upload') }} {{ formatBytes(client.upload_bytes) }} · {{ t('traffic.download') }} {{ formatBytes(client.download_bytes) }}</span>
               <span class="bar-pct">{{ usagePercent }}%</span>
             </div>
           </div>
           <div class="traffic-stats">
-            <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">上传</span></div>
+            <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">下载</span></div>
+            <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">总量</span></div>
+            <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
           </div>
         </div>
         <!-- Account Info (qist style with icon+label+value+badge) -->
         <div v-else-if="mod.type === 'account_info'">
-          <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ mod.title || t('account.title') }}</span></div>
+          <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
             <div class="acct-info-row">
               <span class="acct-info-icon">🛡️</span>
               <div class="acct-info-body">
-                <span class="acct-info-label">账户状态</span>
+                <span class="acct-info-label">{{ t('account.status') }}</span>
                 <div class="acct-info-value-row">
                   <span class="acct-info-value">● {{ statusText }}</span>
-                  <span v-if="client.status === 'active'" class="badge badge-active" style="margin-left:6px">正常</span>
-                  <span v-else-if="client.status === 'suspended'" class="badge badge-suspended" style="margin-left:6px">暂停</span>
-                  <span v-else-if="client.status === 'expired'" class="badge badge-expired" style="margin-left:6px">过期</span>
-                  <span v-else class="badge badge-none" style="margin-left:6px">未知</span>
+                  <span v-if="client.status === 'active'" class="badge badge-active" style="margin-left:6px">{{ t('account.normal') }}</span>
+                  <span v-else-if="client.status === 'suspended'" class="badge badge-suspended" style="margin-left:6px">{{ t('account.suspended') }}</span>
+                  <span v-else-if="client.status === 'expired'" class="badge badge-expired" style="margin-left:6px">{{ t('common.expired') }}</span>
+                  <span v-else class="badge badge-none" style="margin-left:6px">{{ t('common.unknown') }}</span>
                 </div>
               </div>
             </div>
             <div class="acct-info-row">
               <span class="acct-info-icon">⭐</span>
               <div class="acct-info-body">
-                <span class="acct-info-label">当前套餐</span>
-                <span class="acct-info-value">{{ client.plan_name || 'VIP1 / 入门' }}</span>
+                <span class="acct-info-label">{{ t('account.plan') }}</span>
+                <span class="acct-info-value">{{ client.plan_name || t('account.plan_default') }}</span>
               </div>
             </div>
             <div class="acct-info-row">
               <span class="acct-info-icon">🕐</span>
               <div class="acct-info-body">
-                <span class="acct-info-label">注册时间</span>
+                <span class="acct-info-label">{{ t('account.register_time') }}</span>
                 <span class="acct-info-value">{{ client.created_at ? formatDate(client.created_at) : '-' }}</span>
               </div>
             </div>
             <div class="acct-info-row">
               <span class="acct-info-icon">🔄</span>
               <div class="acct-info-body">
-                <span class="acct-info-label">到期时间</span>
-                <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : '无限制' }}</span>
+                <span class="acct-info-label">{{ t('account.expire') }}</span>
+                <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : t('common.unlimited') }}</span>
               </div>
             </div>
-            <!-- 余额显示 -->
+            <!-- Balance Display -->
             <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
               <span class="acct-info-icon">💰</span>
               <div class="acct-info-body">
-                <span class="acct-info-label">账户余额</span>
+                <span class="acct-info-label">{{ t('balance.available') }}</span>
                 <div class="acct-info-value-row">
                   <span class="acct-info-value">{{ formatMoney(balance.balance) }}</span>
-                  <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">充值</el-button>
+                  <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">{{ t('balance.charge_btn') }}</el-button>
                 </div>
               </div>
             </div>
@@ -1139,18 +1155,18 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <!-- Traffic mini bar inside account info -->
           <div class="acct-traffic-section">
             <div class="acct-traffic-label">
-              <span>📊 流量使用</span>
+              <span>📊 {{ t('traffic.title') }}</span>
               <span class="acct-traffic-pct">{{ usagePercent }}% / {{ formatBytes(client.quota_bytes) }}</span>
             </div>
             <div class="traffic-bar" style="height:8px;border-radius:6px;background:var(--ring-bg);overflow:hidden;margin-top:6px;">
               <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
             </div>
-            <div class="acct-traffic-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">剩余 {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} 可用流量</div>
+            <div class="acct-traffic-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">{{ t('traffic.remaining') }} {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} {{ t('traffic.available') }}</div>
           </div>
         </div>
-        <!-- Client Download / 客户端下载 -->
+        <!-- Client Download -->
         <div v-else-if="mod.type === 'client_download'">
-          <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ mod.title || t('client.title') }}</span></div>
+          <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="client-platform-tabs">
             <div
               v-for="p in (mod.data && mod.data.platforms) || []"
@@ -1166,25 +1182,25 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <!-- Hint when no platform selected -->
           <div v-if="!selectedPlatform" class="client-download-hint">
             <el-icon><ArrowUp /></el-icon>
-            <span>{{ (mod.data && mod.data.hint_text) || '请点击上方标签选择你的操作系统' }}</span>
+            <span>{{ t((mod.data && mod.data.hint_text) || 'tutorial.select_platform') }}</span>
             <el-icon><ArrowUp /></el-icon>
           </div>
           <!-- Content when platform selected -->
           <div v-else class="client-download-content">
             <div class="client-download-platform-header">
               <span class="client-download-platform-name">{{ getSelectedPlatformName() }}</span>
-              <el-button text size="small" @click="navigateTo('tutorial')">查看全部教程 →</el-button>
+              <el-button text size="small" @click="navigateTo('tutorial')">{{ t('tutorial.view_all') }} →</el-button>
             </div>
             <!-- Download link -->
             <div v-if="getSelectedPlatformUrl(mod)" class="client-download-link-row">
               <a :href="getSelectedPlatformUrl(mod)" target="_blank" rel="noopener" class="client-download-btn">
                 <el-icon><Download /></el-icon>
-                <span>下载 {{ getSelectedPlatformName() }} 客户端</span>
+                <span>{{ t('common.download') }} {{ getSelectedPlatformName() }} {{ t('client.title') }}</span>
               </a>
             </div>
             <!-- Associated tutorial articles -->
             <div v-if="getPlatformArticles(selectedPlatform).length > 0" class="client-download-articles">
-              <div class="client-download-section-title">📖 相关教程</div>
+              <div class="client-download-section-title">📖 {{ t('tutorial.related') }}</div>
               <div class="article-list compact">
                 <div
                   class="article-item"
@@ -1204,20 +1220,20 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <!-- Empty state -->
             <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
               <span class="empty-icon">📦</span>
-              <p class="empty-text">暂无下载内容</p>
-              <p class="empty-hint">请稍后再来查看</p>
+              <p class="empty-text">{{ t('tutorial.no_content') }}</p>
+              <p class="empty-hint">{{ t('tutorial.no_content_hint') }}</p>
             </div>
           </div>
         </div>
         <!-- Subscription Detail -->
         <div v-else-if="mod.type === 'subscription_detail'">
-          <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ mod.title || t('sub.title') }}</span></div>
+          <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div v-if="client.sub_token && client.sub_status !== 'revoked'">
             <div class="sub-link-box">
               <code class="sub-link-text">{{ subUrl }}</code>
               <div class="sub-link-actions">
-                <el-button size="small" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || '复制' }}</el-button>
-                <el-button size="small" text @click="toggleQr">{{ showQr ? '隐藏' : ((mod.data && mod.data.qr_text) || '二维码') }}</el-button>
+                <el-button size="small" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || t('common.copy') }}</el-button>
+                <el-button size="small" text @click="toggleQr">{{ showQr ? t('sub.hide') : ((mod.data && mod.data.qr_text) || t('sub.qr_code')) }}</el-button>
               </div>
             </div>
             <div v-if="showQr && qrCodeUrl" class="qr-wrap">
@@ -1237,75 +1253,75 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
           </div>
           <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
-            <span class="empty-icon">🚫</span><p class="empty-text danger">订阅已吊销</p><p class="empty-hint">请联系管理员重新分配</p>
+            <span class="empty-icon">🚫</span><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
           </div>
 <div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
-<span class="empty-icon">⏸️</span><p class="empty-text danger">已暂停</p><p class="empty-hint">请购买套餐恢复</p>
+<span class="empty-icon">⏸️</span><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
 </div>
           <div v-else-if="client.status === 'suspended'" class="empty-state">
-            <span class="empty-icon">⏸️</span><p class="empty-text danger">账户已暂停</p><p class="empty-hint">请续费后恢复使用</p>
+            <span class="empty-icon">⏸️</span><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.renew_hint') }}</p>
           </div>
         </div>
         <!-- Subscription (simple button) -->
         <div v-else-if="mod.type === 'subscription'" class="text-center">
           <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ mod.data.button_text }}</button>
+          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
+          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
         </div>
-        <!-- Streaming Status / 流媒体解锁 -->
+        <!-- Streaming Status -->
         <div v-else-if="mod.type === 'streaming_status'">
           <div class="streaming-grid">
-            <!-- 苹果共享ID -->
+            <!-- Apple Shared ID -->
             <div class="streaming-card">
-              <div class="streaming-name">苹果共享ID(小火箭)</div>
+              <div class="streaming-name">{{ t('shared.apple_id') }}</div>
               <div class="streaming-icon"><span style="font-size: 32px;">🍎</span></div>
-              <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">点此查看账号</div>
-              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
+              <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
+              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
             </div>
-            <!-- Netflix共享账号 -->
+            <!-- Netflix Shared Account -->
             <div class="streaming-card">
-              <div class="streaming-name">Netflix共享账号</div>
+              <div class="streaming-name">{{ t('shared.netflix') }}</div>
               <div class="streaming-icon"><span style="font-size: 32px;">🎬</span></div>
-              <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">点此查看账号</div>
-              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">无</div>
+              <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
+              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
             </div>
           </div>
         </div>
         <!-- Security Settings -->
         <div v-else-if="mod.type === 'security_settings'">
-          <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ mod.title || '安全设置' }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+          <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <el-form v-if="mod.data && mod.data.show_ip_whitelist !== false" label-position="top" size="small">
-            <el-form-item label="IP 白名单（逗号分隔，留空不限制）">
-              <el-input v-model="settings.ip_whitelist" placeholder="例: 192.168.1.0/24,10.0.0.1" />
+            <el-form-item :label="t('security.ip_whitelist_full')">
+              <el-input v-model="settings.ip_whitelist" :placeholder="t('security.ip_example')" />
             </el-form-item>
-            <el-form-item label="设备限制（0=不限制）">
+            <el-form-item :label="t('security.device_limit_hint')">
               <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
             </el-form-item>
-            <el-button type="primary" size="small" @click="saveSettings">保存设置</el-button>
+            <el-button type="primary" size="small" @click="saveSettings">{{ t('common.save') }}</el-button>
           </el-form>
           <div v-if="mod.data && mod.data.show_password !== false">
-            <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">修改密码</span></div>
+            <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">{{ t('security.password') }}</span></div>
             <el-form label-position="top" size="small">
-              <el-form-item label="旧密码"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
-              <el-form-item label="新密码"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
-              <el-form-item label="确认密码"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
-              <el-button type="primary" size="small" @click="changePassword">修改密码</el-button>
+<el-form-item :label="t('security.old_password')"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
+<el-form-item :label="t('security.new_password')"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
+<el-form-item :label="t('security.confirm_password')"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
+              <el-button type="primary" size="small" @click="changePassword">{{ t('security.password') }}</el-button>
             </el-form>
           </div>
         </div>
         <!-- Log Packages -->
         <div v-else-if="mod.type === 'log_packages'">
-          <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ mod.title || '日志打包' }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-          <p v-else class="card-desc">请求打包最近日志，系统将在后台收集并压缩为可下载文件。</p>
+          <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
+          <p v-else class="card-desc">{{ t('log.description') }}</p>
           <div class="log-actions">
-            <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ (mod.data && mod.data.btn_1h) || '打包最近1小时' }}</el-button>
-            <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ (mod.data && mod.data.btn_6h) || '最近6小时' }}</el-button>
-            <el-button size="small" @click="createLogPackage(24)">{{ (mod.data && mod.data.btn_24h) || '最近24小时' }}</el-button>
+            <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ t((mod.data && mod.data.btn_1h) || 'log.btn_1h') }}</el-button>
+            <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ t((mod.data && mod.data.btn_6h) || 'log.btn_6h') }}</el-button>
+            <el-button size="small" @click="createLogPackage(24)">{{ t((mod.data && mod.data.btn_24h) || 'log.btn_24h') }}</el-button>
           </div>
           <div v-if="logPackages.length > 0" style="margin-top: 16px">
-            <div class="card-header"><span class="card-icon">📁</span><span class="card-title">日志包列表</span><span class="card-action" @click="fetchLogPackages">刷新</span></div>
+            <div class="card-header"><span class="card-icon">📁</span><span class="card-title">{{ t('log.package_list') }}</span><span class="card-action" @click="fetchLogPackages">{{ t('common.refresh') }}</span></div>
             <div class="logpkg-list">
               <div class="logpkg-item" v-for="pkg in logPackages" :key="pkg.id">
                 <div class="logpkg-info">
@@ -1315,8 +1331,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
                 <div class="logpkg-actions">
                   <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                  <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">下载</el-button>
-                  <span v-if="pkg.status === 'processing'" class="logpkg-hint">处理中...</span>
+                  <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
+                  <span v-if="pkg.status === 'processing'" class="logpkg-hint">{{ t('common.processing') }}...</span>
                   <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
                 </div>
               </div>
@@ -1325,52 +1341,52 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Markdown -->
         <div v-else-if="mod.type === 'markdown'" class="module-markdown" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-          <div v-if="mod.title" class="card-header"><span class="card-title">{{ mod.title }}</span></div>
-          <div class="md-render" v-html="renderMd(mod.data && mod.data.markdown || '')"></div>
+          <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="md-render" v-html="renderMd(t(mod.data && mod.data.markdown || ''))"></div>
         </div>
         <!-- Custom HTML -->
         <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
         <!-- Plan List (qist table style) -->
         <div v-else-if="mod.type === 'plan_list'">
-          <!-- 顶部提示 -->
+          <!-- Top Notice -->
           <div v-if="mod.data && mod.data.notice_text" class="plan-notice">
-            <div class="plan-notice-content">{{ mod.data.notice_text }}</div>
-            <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ mod.data.notice_subtext }}</div>
+            <div class="plan-notice-content">{{ t(mod.data.notice_text) }}</div>
+            <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ t(mod.data.notice_subtext) }}</div>
           </div>
           
-          <div v-if="plansLoading" class="empty-state"><span class="empty-icon">⏳</span><p class="empty-text">加载中...</p></div>
-          <div v-else-if="plans.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无可用套餐</p></div>
+          <div v-if="plansLoading" class="empty-state"><span class="empty-icon">⏳</span><p class="empty-text">{{ t('common.loading') }}</p></div>
+          <div v-else-if="plans.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('plan.empty') }}</p></div>
           <div v-else class="plan-table-wrap">
             <table class="plan-table">
               <thead>
                 <tr>
-                  <th class="plan-col-service">服务</th>
-                  <th class="plan-col-desc">描述</th>
-                  <th class="plan-col-price">售价</th>
-                  <th class="plan-col-action">操作</th>
+                  <th class="plan-col-service">{{ t('plan.col_service') }}</th>
+                  <th class="plan-col-desc">{{ t('plan.col_desc') }}</th>
+                  <th class="plan-col-price">{{ t('plan.col_price') }}</th>
+                  <th class="plan-col-action">{{ t('common.action') }}</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-for="plan in plans" :key="plan.id">
                   <tr v-for="(v, vIdx) in (plan.variants || [])" :key="v.id" class="plan-row" :class="{ 'plan-current': client.plan_id > 0 && client.plan_id === plan.id }">
-                    <!-- 服务列 - 只在第一个 variant 显示 -->
+                    <!-- Service Column -->
                     <td v-if="vIdx === 0" :rowspan="plan.variants.length" class="plan-cell plan-cell-service">
                       <div class="plan-service-name">{{ plan.name }}</div>
                       <div class="plan-service-meta">
-                        <div v-if="v.quota_bytes">内含流量: {{ formatBytes(v.quota_bytes) }}/每月</div>
-                        <div v-if="v.speed_limit">最大带宽: {{ v.speed_limit }}M</div>
-                        <div v-if="v.duration_days">有效期: {{ v.duration_days }}天</div>
+                        <div v-if="v.quota_bytes">{{ t('plan.included_traffic') }}: {{ formatBytes(v.quota_bytes) }}/{{ t('plan.per_month') }}</div>
+                        <div v-if="v.speed_limit">{{ t('plan.max_bandwidth') }}: {{ v.speed_limit }}M</div>
+                        <div v-if="v.duration_days">{{ t('plan.duration') }}: {{ v.duration_days }}{{ t('plan.days_unit') }}</div>
                       </div>
                     </td>
-                    <!-- 描述列 -->
+                    <!-- Description Column -->
                     <td class="plan-cell plan-cell-desc">
-                      <div class="plan-desc-text">{{ plan.description || '线路同上，价格更优惠' }}</div>
+                      <div class="plan-desc-text">{{ plan.description || t('plan.default_desc') }}</div>
                     </td>
-                    <!-- 售价列 -->
+                    <!-- Price Column -->
                     <td class="plan-cell plan-cell-price">
                       <span class="plan-price-amount">{{ (v.currency || 'CNY') === 'CNY' ? '¥' : (v.currency === 'USD' ? '$' : v.currency) }}{{ formatMoney(v.price) }}</span>
                     </td>
-                    <!-- 操作列 -->
+                    <!-- Action Column -->
                     <td class="plan-cell plan-cell-action">
                       <el-button 
                         type="primary" 
@@ -1378,10 +1394,10 @@ const defaultPortalHTML = `<!DOCTYPE html>
                         @click="purchaseVariant(v.id, plan, mod.data)"
                         :disabled="orderBusy"
                       >
-                        <span v-if="client.plan_id > 0 && client.plan_id === plan.id">{{ (mod.data && mod.data.renew_text) || '购买' }}</span>
-                        <span v-else>{{ (mod.data && mod.data.buy_text) || '购买' }}</span>
+                        <span v-if="client.plan_id > 0 && client.plan_id === plan.id">{{ t((mod.data && mod.data.renew_text) || 'common.buy') }}</span>
+                        <span v-else>{{ t((mod.data && mod.data.buy_text) || 'common.buy') }}</span>
                       </el-button>
-                      <div v-if="client.plan_id > 0 && client.plan_id === plan.id" class="plan-current-badge">当前的套餐</div>
+                      <div v-if="client.plan_id > 0 && client.plan_id === plan.id" class="plan-current-badge">{{ t('plan.current_plan') }}</div>
                     </td>
                   </tr>
                 </template>
@@ -1391,69 +1407,69 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Order Create -->
         <div v-else-if="mod.type === 'order_create'">
-          <div class="card-header"><span class="card-icon">🛒</span><span class="card-title">{{ mod.title || '创建订单' }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+          <div class="card-header"><span class="card-icon">🛒</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <el-form label-position="top" size="small">
-            <el-form-item label="套餐">
-              <el-select v-model="orderForm.variant_id" placeholder="选择套餐" style="width: 100%">
+            <el-form-item :label="t('plan.title')">
+              <el-select v-model="orderForm.variant_id" :placeholder="t('plan.select_placeholder')" style="width: 100%">
                 <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="订单类型">
+            <el-form-item :label="t('order.type')">
               <el-radio-group v-model="orderForm.order_type">
-                <el-radio value="new">新购</el-radio>
-                <el-radio value="renew">续费</el-radio>
-                <el-radio value="upgrade">升级</el-radio>
+                <el-radio value="new">{{ t('order.type_new') }}</el-radio>
+                <el-radio value="renew">{{ t('common.renew') }}</el-radio>
+                <el-radio value="upgrade">{{ t('common.upgrade') }}</el-radio>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="优惠码">
-              <el-input v-model="orderForm.promotion_code" placeholder="输入优惠码（可选）" />
+            <el-form-item :label="t('plan.promo_code')">
+              <el-input v-model="orderForm.promotion_code" :placeholder="t('plan.promo_placeholder')" />
             </el-form-item>
-            <el-form-item label="支付方式">
+            <el-form-item :label="t('plan.select_payment')">
               <el-radio-group v-model="orderForm.pay_method">
-                <el-radio value="balance">余额支付</el-radio>
-                <el-radio value="gift_card">套餐卡支付</el-radio>
-                <el-radio v-if="chargeSites.length > 0" value="charge_site">在线支付</el-radio>
+                <el-radio value="balance">{{ t('plan.balance_pay') }}</el-radio>
+                <el-radio value="gift_card">{{ t('plan.card_pay') }}</el-radio>
+                <el-radio v-if="chargeSites.length > 0" value="charge_site">{{ t('plan.charge_pay') }}</el-radio>
               </el-radio-group>
             </el-form-item>
-            <el-form-item v-if="orderForm.pay_method === 'gift_card'" label="套餐卡号">
-              <el-input v-model="orderForm.gift_card_code" placeholder="输入套餐卡兑换码" />
+            <el-form-item v-if="orderForm.pay_method === 'gift_card'" :label="t('plan.card_code')">
+              <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" />
             </el-form-item>
-            <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" label="充值站点">
-              <el-select v-model="orderForm.charge_site_id" placeholder="选择支付渠道" style="width: 100%">
+            <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" :label="t('charge.site_label')">
+              <el-select v-model="orderForm.charge_site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
                 <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
               </el-select>
             </el-form-item>
-            <el-button type="primary" size="small" @click="submitOrder" :loading="orderBusy">创建订单</el-button>
+            <el-button type="primary" size="small" @click="submitOrder" :loading="orderBusy">{{ t('order.create') }}</el-button>
           </el-form>
         </div>
         <!-- Charge Panel -->
         <div v-else-if="mod.type === 'charge_panel'">
-          <div class="card-header"><span class="card-icon">💳</span><span class="card-title">{{ mod.title || '在线充值' }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
+          <div class="card-header"><span class="card-icon">💳</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <div class="charge-section">
-            <h4 class="charge-subtitle">在线支付</h4>
+            <h4 class="charge-subtitle">{{ t('plan.charge_pay') }}</h4>
             <el-form label-position="top" size="small">
-              <el-form-item label="充值站点">
-                <el-select v-model="chargeForm.site_id" placeholder="选择支付渠道" style="width: 100%">
+              <el-form-item :label="t('charge.site_label')">
+                <el-select v-model="chargeForm.site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
                   <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="金额（元）">
+              <el-form-item :label="t('charge.amount_yuan')">
                 <el-input-number v-model="chargeForm.amount_yuan" :min="1" :step="10" style="width: 100%" />
               </el-form-item>
-              <el-button type="primary" size="small" @click="submitCharge" :loading="chargeBusy">立即充值</el-button>
+              <el-button type="primary" size="small" @click="submitCharge" :loading="chargeBusy">{{ t('charge.submit_now') }}</el-button>
             </el-form>
           </div>
           <div class="charge-section">
-            <h4 class="charge-subtitle">充值卡兑换</h4>
+            <h4 class="charge-subtitle">{{ t('charge.card_redeem') }}</h4>
             <div class="charge-card-row">
-              <el-input v-model="cardCode" :placeholder="(mod.data && mod.data.card_placeholder) || '输入充值卡号'" size="small" />
-              <el-button type="success" size="small" @click="redeemCard" :loading="redeemBusy">{{ (mod.data && mod.data.card_btn_text) || '兑换' }}</el-button>
+              <el-input v-model="cardCode" :placeholder="(mod.data && mod.data.card_placeholder) || t('charge.card_code_placeholder')" size="small" />
+              <el-button type="success" size="small" @click="redeemCard" :loading="redeemBusy">{{ (mod.data && mod.data.card_btn_text) || t('charge.card_redeem_btn') }}</el-button>
             </div>
           </div>
           <div v-if="mod.data && mod.data.show_orders !== false && chargeOrders.length > 0" class="charge-section">
-            <div class="card-header"><span class="card-icon">📋</span><span class="card-title">充值记录</span></div>
+            <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
             <div class="logpkg-list">
               <div class="logpkg-item" v-for="co in chargeOrders.slice(0, (mod.data && mod.data.orders_limit) || 5)" :key="co.id">
                 <div class="logpkg-info">
@@ -1463,7 +1479,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
                 <div class="logpkg-actions">
                   <span class="logpkg-time">{{ formatDate(co.created_at) }}</span>
-                  <a v-if="co.payment_url && co.status === 'pending'" :href="co.payment_url" target="_blank" class="card-action">去支付</a>
+                  <a v-if="co.payment_url && co.status === 'pending'" :href="co.payment_url" target="_blank" class="card-action">{{ t('charge.go_pay') }}</a>
                 </div>
               </div>
             </div>
@@ -1471,16 +1487,16 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Balance Display -->
         <div v-else-if="mod.type === 'balance_display'">
-          <div class="card-header"><span class="card-icon">💰</span><span class="card-title">{{ mod.title || '账户余额' }}</span></div>
+          <div class="card-header"><span class="card-icon">💰</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="balance-hero">
             <span class="balance-amount">{{ formatMoney(balance.balance) }}</span>
-            <span v-if="balance.frozen > 0" class="balance-frozen">冻结: {{ formatMoney(balance.frozen) }}</span>
+            <span v-if="balance.frozen > 0" class="balance-frozen">{{ t('balance.frozen') }}: {{ formatMoney(balance.frozen) }}</span>
           </div>
           <div class="card-actions">
-            <el-button type="primary" size="small" @click="activeTab = 'store'; scrollToModule('mod-charge')">{{ (mod.data && mod.data.charge_btn_text) || '去充值' }}</el-button>
+            <el-button type="primary" size="small" @click="activeTab = 'store'; scrollToModule('mod-charge')">{{ (mod.data && mod.data.charge_btn_text) || t('balance.charge_btn') }}</el-button>
           </div>
           <div v-if="mod.data && mod.data.show_transactions !== false && balanceTxns.length > 0" style="margin-top: 16px">
-            <div class="card-header"><span class="card-icon">📄</span><span class="card-title">交易记录</span></div>
+            <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.transactions') }}</span></div>
             <div class="logpkg-list">
               <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, (mod.data && mod.data.tx_limit) || 10)" :key="tx.id">
                 <div class="logpkg-info">
@@ -1494,34 +1510,34 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
           </div>
         </div>
-        <!-- Order List / 我的账单 (订单表格) -->
+        <!-- Order List -->
         <div v-else-if="mod.type === 'order_list'">
           <div class="billing-notice">
-            <span class="billing-notice-text">{{ (mod.data && mod.data.notice_text) || '我的账单' }}</span>
-            <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ mod.data.notice_highlight }}</span>
+            <span class="billing-notice-text">{{ t((mod.data && mod.data.notice_text) || 'order.title') }}</span>
+            <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ t(mod.data.notice_highlight) }}</span>
           </div>
           <div class="billing-notice-sub">
-            {{ (mod.data && mod.data.notice_subtext) || '仅显示最近30天内的交易记录' }}
+            {{ t((mod.data && mod.data.notice_subtext) || 'balance.tx_limit') }}
           </div>
           <div v-if="myOrdersLoading" class="empty-state">
             <span class="empty-icon">⏳</span>
-            <p class="empty-text">加载中...</p>
+            <p class="empty-text">{{ t('common.loading') }}</p>
           </div>
           <div v-else-if="myOrders.length === 0" class="empty-state">
             <span class="empty-icon">📭</span>
-            <p class="empty-text">暂无账单记录</p>
+            <p class="empty-text">{{ t('order.empty') }}</p>
           </div>
           <div v-else class="billing-table-wrap">
                 <table class="billing-table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>编号</th>
-                      <th>服务</th>
-                      <th>金额</th>
-                      <th>购买日期</th>
-                      <th>到期时间</th>
-                      <th>状态</th>
+                      <th>{{ t('order.id') }}</th>
+                      <th>{{ t('plan.col_service') }}</th>
+                      <th>{{ t('common.amount') }}</th>
+                      <th>{{ t('order.date') }}</th>
+                      <th>{{ t('account.expire') }}</th>
+                      <th>{{ t('common.status') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1537,26 +1553,26 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </tbody>
                 </table>
               </div>
-              <!-- 充值记录 -->
+              <!-- Charge Records -->
               <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">充值记录</span></div>
+                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
                 <div class="billing-table-wrap">
                   <table class="billing-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>交易号</th>
-                        <th>来源</th>
-                        <th>金额</th>
-                        <th>时间</th>
-                        <th>状态</th>
+                        <th>{{ t('order.trade_no') }}</th>
+                        <th>{{ t('order.source') }}</th>
+                        <th>{{ t('common.amount') }}</th>
+                        <th>{{ t('common.time') }}</th>
+                        <th>{{ t('common.status') }}</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-for="(co, idx) in chargeOrders.slice(0, 10)" :key="co.id">
                         <td class="billing-col-index">{{ idx + 1 }}</td>
                         <td class="billing-col-id">{{ co.trade_no }}</td>
-                        <td>{{ co.source === 'card' ? '充值卡' : (co.source === 'site' ? '在线支付' : co.source) }}</td>
+                        <td>{{ co.source === 'card' ? t('charge.card_title') : (co.source === 'site' ? t('plan.charge_pay') : co.source) }}</td>
                         <td class="billing-col-amount">{{ formatMoney(co.amount) }} {{ co.currency }}</td>
                         <td class="billing-col-date">{{ formatDate(co.created_at) }}</td>
                         <td class="billing-col-status"><span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span></td>
@@ -1565,25 +1581,25 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   </table>
                 </div>
               </div>
-              <!-- 交易流水 -->
+              <!-- Transaction Flow -->
               <div v-if="balanceTxns.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">余额变动记录</span></div>
+                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.balance_change') }}</span></div>
                 <div class="billing-table-wrap">
                   <table class="billing-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>类型</th>
-                        <th>金额</th>
-                        <th>变动后余额</th>
-                        <th>说明</th>
-                        <th>时间</th>
+                        <th>{{ t('common.type') }}</th>
+                        <th>{{ t('common.amount') }}</th>
+                        <th>{{ t('balance.balance_after') }}</th>
+                        <th>{{ t('common.remark') }}</th>
+                        <th>{{ t('common.time') }}</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-for="(tx, idx) in balanceTxns.slice(0, 10)" :key="tx.id">
                         <td class="billing-col-index">{{ idx + 1 }}</td>
-                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? '充值' : (tx.type === 'consume' ? '消费' : (tx.type === 'refund' ? '退款' : tx.type)) }}</span></td>
+                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? t('balance.charge_btn') : (tx.type === 'consume' ? t('balance.type_consume') : (tx.type === 'refund' ? t('order.refund') : tx.type)) }}</span></td>
                         <td class="billing-col-amount" :style="{ color: tx.amount >= 0 ? '#67c23a' : '#f56c6c' }">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</td>
                         <td class="billing-col-amount">{{ formatMoney(tx.balance_after) }}</td>
                         <td>{{ tx.remark || '-' }}</td>
@@ -1594,26 +1610,26 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
         </div>
-        <!-- Node List / 线路列表 (Mobile) -->
+        <!-- Node List (Mobile) -->
         <div v-else-if="mod.type === 'node_list'" class="node-list-module">
           <div v-if="mod.data && mod.data.info_text" class="node-info-card">
-            <div class="node-info-title">{{ mod.data.info_title || '线路说明' }}</div>
-            <div class="node-info-content">{{ mod.data.info_text }}</div>
+            <div class="node-info-title">{{ t(mod.data.info_title || 'node.info_title') }}</div>
+            <div class="node-info-content">{{ t(mod.data.info_text) }}</div>
           </div>
           <div v-if="plansLoading" class="empty-state">
             <span class="empty-icon">⏳</span>
-            <p class="empty-text">加载中...</p>
+            <p class="empty-text">{{ t('common.loading') }}</p>
           </div>
           <div v-else-if="allPlanNodes.length === 0" class="empty-state">
             <span class="empty-icon">📭</span>
-            <p class="empty-text">暂无线路信息</p>
+            <p class="empty-text">{{ t('node.empty') }}</p>
           </div>
           <div v-else>
             <div v-for="planGroup in allPlanNodes" :key="planGroup.plan_id" class="plan-node-group">
               <div class="plan-node-header">
                 <span class="plan-node-name">{{ planGroup.plan_name }}</span>
-                <span v-if="planGroup.active" class="badge badge-active">当前套餐</span>
-                <span v-else class="badge badge-none">未购买</span>
+                <span v-if="planGroup.active" class="badge badge-active">{{ t('account.plan') }}</span>
+                <span v-else class="badge badge-none">{{ t('node.not_purchased') }}</span>
               </div>
               <div class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 2) + ', 1fr)' }">
                 <div v-for="node in planGroup.nodes" :key="node.id" class="node-card" :class="{ disabled: !planGroup.active }">
@@ -1623,11 +1639,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     <span v-if="node.transport" class="node-tag tag-transport">{{ node.transport }}</span>
                   </div>
                   <div v-if="planGroup.active && node.link" class="node-actions">
-                    <el-button size="small" text @click="showNodeDetail(node)">详情</el-button>
-                    <el-button size="small" text @click="showNodeQR(node)">二维码</el-button>
+                    <el-button size="small" text @click="showNodeDetail(node)">{{ t('common.view_detail') }}</el-button>
+                    <el-button size="small" text @click="showNodeQR(node)">{{ t('sub.qr_code') }}</el-button>
                   </div>
                   <div v-else class="node-locked">
-                    <span class="lock-hint">🔒 需购买套餐</span>
+                    <span class="lock-hint">🔒 {{ t('node.need_plan') }}</span>
                   </div>
                 </div>
               </div>
@@ -1636,41 +1652,41 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Referral -->
         <div v-else-if="mod.type === 'referral'">
-          <!-- 邀请链接 -->
+          <!-- Referral Link -->
           <div class="referral-header">
-            <div class="referral-title">🎁 我的邀请链接</div>
+            <div class="referral-title">🎁 {{ t('referral.my_link') }}</div>
             <div class="referral-meta">
-              <span class="referral-rate">返利比例: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
+              <span class="referral-rate">{{ t('referral.commission_rate') }}: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
               <span class="referral-divider">|</span>
-              <span class="referral-mode">返利模式: {{ (referralStats && referralStats.commission_mode === 'recurring') ? '循环返利' : ((mod.data && mod.data.default_commission_mode === 'recu rring') ? '循环返利' : '普通返利') }}</span>
+              <span class="referral-mode">{{ t('referral.commission_mode') }}: {{ (referralStats && referralStats.commission_mode === 'recurring') ? t('referral.mode_recurring') : ((mod.data && mod.data.default_commission_mode === 'recu rring') ? t('referral.mode_recurring') : t('referral.mode_normal')) }}</span>
             </div>
           </div>
           <div class="referral-link-wrap" v-if="referralCode">
             <div class="referral-link">{{ referralInviteUrl }}</div>
             <el-button type="primary" size="small" @click="copyText(referralInviteUrl)" class="referral-copy-btn">
-              <el-icon><DocumentCopy /></el-icon> 复制
+              <el-icon><DocumentCopy /></el-icon> {{ t('common.copy') }}
             </el-button>
           </div>
           
-<!-- 邀请码信息 -->
+<!-- Invite Code -->
 <div class="referral-code-section" v-if="referralCode">
 <div class="referral-code-row">
-<span class="referral-code-label">邀请码</span>
+<span class="referral-code-label">{{ t('referral.invite_code') }}</span>
 <span class="referral-code-value">{{ referralCode.code }}</span>
-<el-tag size="small" type="success" effect="dark" class="referral-status">可用</el-tag>
+<el-tag size="small" type="success" effect="dark" class="referral-status">{{ t('referral.code_available') }}</el-tag>
 </div>
 </div>
 
-          <!-- 邀请记录 -->
+          <!-- Invite Records -->
           <div class="referral-section" v-if="referralRecords.length > 0">
-            <div class="section-title">邀请记录</div>
+            <div class="section-title">{{ t('referral.invite_records') }}</div>
             <div class="referral-table-wrap">
               <table class="referral-table">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>邮箱</th>
-                    <th>注册时间</th>
+                    <th>{{ t('account.email') }}</th>
+                    <th>{{ t('account.register_time') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1684,23 +1700,23 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
           </div>
 
-          <!-- 佣金记录 -->
+          <!-- Commission Records -->
           <div class="referral-section">
             <div class="section-header">
-              <span class="section-title">佣金记录</span>
-              <span class="section-subtitle">（默认提现到余额，余额超过100元可通过USDT提现到个人钱包）</span>
-              <el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">提现</el-button>
+              <span class="section-title">{{ t('referral.records') }}</span>
+              <span class="section-subtitle">{{ t('referral.withdraw_hint') }}</span>
+              <el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">{{ t('referral.withdraw') }}</el-button>
             </div>
             <div class="referral-table-wrap">
               <table class="referral-table">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>返利时间</th>
-                    <th>消费者</th>
-                    <th>消费金额</th>
-                    <th>返利金额</th>
-                    <th>状态</th>
+                    <th>{{ t('referral.commission_time') }}</th>
+                    <th>{{ t('referral.consumer') }}</th>
+                    <th>{{ t('referral.consume_amount') }}</th>
+                    <th>{{ t('referral.commission_amount') }}</th>
+                    <th>{{ t('common.status') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1712,7 +1728,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     <td>¥{{ r.commission }}</td>
                     <td>
                       <el-tag size="small" :type="r.status === 'available' ? 'success' : r.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                        {{ r.status === 'available' ? '可提现' : r.status === 'pending' ? '待结算' : '已提现' }}
+                        {{ r.status === 'available' ? t('referral.status_available') : r.status === 'pending' ? t('referral.status_pending') : t('referral.status_withdrawn') }}
                       </el-tag>
                     </td>
                   </tr>
@@ -1720,21 +1736,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </table>
             </div>
             <div class="referral-summary" v-if="referralStats">
-              合计返利 {{ formatMoney(referralStats.total_commission) }}（{{ referralStats.total_paid }}次），满15元可以申请提现。
+              {{ t('referral.total_commission') }} {{ formatMoney(referralStats.total_commission) }}（{{ referralStats.total_paid }}{{ t('referral.times' ) }}），{{ t('referral.withdraw_threshold' ) }}
             </div>
           </div>
 
-          <!-- 提现记录 -->
+          <!-- Withdrawal Records -->
           <div class="referral-section" v-if="withdrawRecords && withdrawRecords.length > 0">
-            <div class="section-title">提现记录</div>
+            <div class="section-title">{{ t('referral.withdraw_records') }}</div>
             <div class="referral-table-wrap">
               <table class="referral-table">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>提现日期</th>
-                    <th>提现金额</th>
-                    <th>状态</th>
+                    <th>{{ t('referral.withdraw_date') }}</th>
+                    <th>{{ t('referral.withdraw_amount') }}</th>
+                    <th>{{ t('common.status') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1744,7 +1760,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     <td>{{ w.amount }}</td>
                     <td>
                       <el-tag size="small" :type="w.status === 'completed' ? 'success' : w.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                        {{ w.status === 'completed' ? '已打款' : w.status === 'pending' ? '处理中' : '已取消' }}
+                        {{ w.status === 'completed' ? t('referral.status_paid') : w.status === 'pending' ? t('common.processing') : t('order.status_cancelled') }}
                       </el-tag>
                     </td>
                   </tr>
@@ -1755,26 +1771,26 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Ticket List -->
         <div v-else-if="mod.type === 'ticket_list'">
-          <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ mod.title || '我的工单' }}</span><span class="card-action" @click="showTicketDialog = true">{{ (mod.data && mod.data.new_btn_text) || '新建工单' }}</span></div>
-          <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无工单</p></div>
+          <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
+          <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('ticket.empty') }}</p></div>
 <div v-else class="logpkg-list">
-<div class="logpkg-item" v-for="t in tickets" :key="t.id" @click="openTicket(t.id)" style="cursor: pointer">
+<div class="logpkg-item" v-for="tk in tickets" :key="tk.id" @click="openTicket(tk.id)" style="cursor: pointer">
 <div class="logpkg-info">
-<span class="logpkg-id">#{{ t.id }}</span>
-<span class="logpkg-time">{{ t.subject }}</span>
-<span :class="'badge badge-' + ticketStatusBadge(t.status)">{{ ticketStatusText(t.status) }}</span>
-<span v-if="t.status === 'replied'" class="ticket-new-badge">新回复</span>
+<span class="logpkg-id">#{{ tk.id }}</span>
+<span class="logpkg-time">{{ tk.subject }}</span>
+<span :class="'badge badge-' + ticketStatusBadge(tk.status)">{{ ticketStatusText(tk.status) }}</span>
+<span v-if="tk.status === 'replied'" class="ticket-new-badge">{{ t('ticket.new_reply') }}</span>
 </div>
 <div class="logpkg-actions">
-<span class="logpkg-time">{{ formatDate(t.updated_at) }}</span>
+<span class="logpkg-time">{{ formatDate(tk.updated_at) }}</span>
 </div>
 </div>
 </div>
         </div>
-        <!-- Tutorial Cards / 下载与教程 (Mobile) -->
+        <!-- Tutorial Cards (Mobile) -->
         <div v-else-if="mod.type === 'tutorial_cards'">
-          <div class="card-header"><span class="card-icon">📥</span><span class="card-title">{{ mod.title || '下载与教程' }}</span></div>
-          <!-- 平台选择标签 -->
+          <div class="card-header"><span class="card-icon">📥</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <!-- Platform Tabs -->
           <div class="tutorial-platform-tabs">
             <div
               v-for="card in (mod.data && mod.data.cards) || []"
@@ -1786,7 +1802,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
               {{ card.name }}
             </div>
           </div>
-          <!-- 平台卡片网格 -->
+          <!-- Platform Grid -->
           <div class="tutorial-grid">
             <div
               v-for="card in (mod.data && mod.data.cards) || []"
@@ -1798,18 +1814,18 @@ const defaultPortalHTML = `<!DOCTYPE html>
             >
               <div class="tutorial-card-icon">{{ getTutorialIcon(card.icon) }}</div>
               <div class="tutorial-card-name">{{ card.name }}</div>
-              <div class="tutorial-card-desc">{{ card.desc }}</div>
+              <div class="tutorial-card-desc">{{ t(card.desc) }}</div>
             </div>
           </div>
-          <!-- 关联的教程文章 -->
+          <!-- Related Articles -->
           <div v-if="selectedPlatform" class="tutorial-articles">
             <div class="tutorial-articles-header">
               <span class="tutorial-platform-name">{{ getSelectedPlatformName() }}</span>
-              <span class="tutorial-articles-count">{{ getPlatformArticles(selectedPlatform).length }} {{ selectedPlatform === 'faq' ? '个问题' : '篇教程' }}</span>
+              <span class="tutorial-articles-count">{{ getPlatformArticles(selectedPlatform).length }} {{ selectedPlatform === 'faq' ? t('article.faq_count') : t('tutorial.platform_articles') }}</span>
             </div>
             <div v-if="getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
               <span class="empty-icon">📝</span>
-              <p class="empty-text">{{ selectedPlatform === 'faq' ? '暂无常见问题' : '暂无该平台的教程文章' }}</p>
+              <p class="empty-text">{{ selectedPlatform === 'faq' ? t('tutorial.no_faq') : t('tutorial.no_articles') }}</p>
             </div>
             <div v-else class="article-list tutorial-article-list">
               <div
@@ -1823,27 +1839,27 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   <span class="article-title">{{ article.title }}</span>
                   <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
                 </div>
-                <span class="card-action">阅读</span>
+                <span class="card-action">{{ t('article.read') }}</span>
               </div>
             </div>
           </div>
           <div v-else class="tutorial-select-hint">
             <span class="empty-icon">👆</span>
-            <p class="empty-text">请点击上方选择你的操作系统</p>
+            <p class="empty-text">{{ t('tutorial.select_platform') }}</p>
           </div>
         </div>
         <!-- Article List -->
         <div v-else-if="mod.type === 'article_list'">
-          <div class="card-header"><span class="card-icon">📚</span><span class="card-title">{{ mod.title || '教程文章' }}</span></div>
+          <div class="card-header"><span class="card-icon">📚</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div v-if="mod.data && mod.data.show_category_filter" class="article-filter">
             <el-radio-group v-model="articleCategory" size="small" @change="fetchArticles">
-              <el-radio-button value="">全部</el-radio-button>
-              <el-radio-button value="tutorial">教程</el-radio-button>
+              <el-radio-button value="">{{ t('common.all') }}</el-radio-button>
+              <el-radio-button value="tutorial">{{ t('article.tutorial') }}</el-radio-button>
               <el-radio-button value="faq">FAQ</el-radio-button>
-              <el-radio-button value="notice">公告</el-radio-button>
+              <el-radio-button value="notice">{{ t('article.notice') }}</el-radio-button>
             </el-radio-group>
           </div>
-          <div v-if="articles.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无文章</p></div>
+          <div v-if="articles.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('article.empty') }}</p></div>
           <div v-else class="article-list">
             <div class="article-item" v-for="a in articles" :key="a.id" @click="openArticle(a.slug)">
               <span class="article-cat-badge">{{ articleCatText(a.category) }}</span>
@@ -1851,23 +1867,23 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <span class="article-title">{{ a.title }}</span>
                 <span class="logpkg-time">{{ formatDate(a.published_at || a.updated_at) }}</span>
               </div>
-              <span class="card-action">阅读</span>
+              <span class="card-action">{{ t('article.read') }}</span>
             </div>
           </div>
         </div>
         <!-- Shared Accounts -->
         <div v-else-if="mod.type === 'shared_accounts'">
-          <div class="card-header"><span class="card-icon">🔑</span><span class="card-title">{{ mod.title || '共享账号' }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ mod.data.description }}</p>
-          <!-- 无套餐权限提示 -->
+          <div class="card-header"><span class="card-icon">🔑</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
+          <!-- No Plan Access -->
           <div v-if="!client.plan_id" class="empty-state">
             <span class="empty-icon">🔒</span>
-            <p class="empty-text">订阅套餐后即可使用共享账号</p>
-            <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">去订阅套餐</el-button>
+            <p class="empty-text">{{ t('shared.need_plan') }}</p>
+            <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">{{ t('plan.go_subscribe') }}</el-button>
           </div>
-          <!-- 有权限但无账号 -->
-          <div v-else-if="sharedAccounts.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">暂无可用共享账号</p></div>
-          <!-- 有权限且有账号 -->
+          <!-- Has Plan, No Accounts -->
+          <div v-else-if="sharedAccounts.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('shared.empty') }}</p></div>
+          <!-- Has Plan And Accounts -->
           <div v-else class="article-list">
             <div class="article-item" v-for="sa in sharedAccounts" :key="sa.id">
               <img v-if="sa.icon_url" :src="sa.icon_url" class="sa-icon" />
@@ -1876,15 +1892,15 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <span class="article-title">{{ sa.name }}</span>
                 <span class="logpkg-time">{{ sharedAcctTypeText(sa.type) }}</span>
               </div>
-              <el-button size="small" type="primary" text @click="applySharedAccount(sa.id, mod.data)">{{ (mod.data && mod.data.apply_btn_text) || '查看凭据' }}</el-button>
-              <el-button size="small" text @click="repairSharedAccount(sa.id, mod.data)">{{ (mod.data && mod.data.repair_btn_text) || '请求修复' }}</el-button>
+              <el-button size="small" type="primary" text @click="applySharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.apply_btn_text) || 'shared.view_credential') }}</el-button>
+              <el-button size="small" text @click="repairSharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.repair_btn_text) || 'shared.repair') }}</el-button>
             </div>
           </div>
         </div>
         <!-- Freeform -->
         <div v-else-if="mod.type === 'freeform'" class="module-freeform">
           <component :is="freeformComponents[mod.id]" v-if="freeformComponents[mod.id]"></component>
-          <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ 模块加载失败</div>
+          <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ {{ t('error.load_failed') }}</div>
         </div>
       </div>
     </template>
@@ -1892,14 +1908,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <div v-if="activeTab !== 'overview' && currentModules.length === 0" class="card glass">
       <div class="empty-state">
         <span class="empty-icon">📋</span>
-        <p class="empty-text">此页面暂无内容</p>
+        <p class="empty-text">{{ t('common.empty') }}</p>
       </div>
     </div>
       </main>
       <nav class="bottom-nav">
         <div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
           <span class="nav-icon">{{ nav.icon || '🔗' }}</span>
-          <span class="nav-label">{{ nav.label }}</span>
+          <span class="nav-label">{{ t(nav.label) }}</span>
         </div>
       </nav>
     </div>
@@ -1908,7 +1924,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <el-dialog
       v-if="activeAnnouncement"
       v-model="announcementPopupVisible"
-      :title="activeAnnouncement.title || '公告'"
+      :title="activeAnnouncement.title || t('announcement.popup_title')"
       width="500px"
       :close-on-click-modal="true"
       class="notice-popup-dialog"
@@ -1920,35 +1936,35 @@ const defaultPortalHTML = `<!DOCTYPE html>
       </div>
       <template #footer>
         <div class="notice-popup-footer">
-          <el-button type="primary" @click="announcementPopupVisible = false">我知道了</el-button>
+          <el-button type="primary" @click="announcementPopupVisible = false">{{ t('announcement.got_it') }}</el-button>
         </div>
       </template>
     </el-dialog>
 
     <!-- Node QR Code Dialog -->
-    <el-dialog v-model="showNodeQRDialog" title="节点二维码" width="300px" align-center>
+    <el-dialog v-model="showNodeQRDialog" :title="t('node.qr_code')" width="300px" align-center>
       <div style="text-align: center; padding: 20px;">
         <div ref="nodeQRContainer" style="width: 200px; height: 200px; margin: 0 auto;"></div>
       </div>
     </el-dialog>
 
     <!-- Node Detail Dialog -->
-    <el-dialog v-model="showNodeDetailDialog" :title="currentNodeDetail.name || '节点详情'" width="450px" align-center append-to-body>
+    <el-dialog v-model="showNodeDetailDialog" :title="currentNodeDetail.name || t('node.detail')" width="450px" align-center append-to-body>
       <div v-if="currentNodeDetail.link" class="node-detail-content">
         <div class="node-detail-tags">
           <span v-if="currentNodeDetail.protocol" class="node-tag tag-protocol">{{ currentNodeDetail.protocol }}</span>
           <span v-if="currentNodeDetail.transport" class="node-tag tag-transport">{{ currentNodeDetail.transport }}</span>
         </div>
-        <div class="node-detail-label">分享链接</div>
+        <div class="node-detail-label">{{ t('node.share_link') }}</div>
         <div class="node-detail-link-box">
           <code class="node-detail-link-text">{{ currentNodeDetail.link }}</code>
-          <el-button type="primary" size="small" @click="copyText(currentNodeDetail.link)">复制链接</el-button>
+          <el-button type="primary" size="small" @click="copyText(currentNodeDetail.link)">{{ t('node.copy_link') }}</el-button>
         </div>
       </div>
     </el-dialog>
 
     <!-- Ticket Detail Dialog -->
-    <el-dialog v-model="showTicketDetail" title="工单详情" width="500px" align-center append-to-body class="ticket-detail-dialog">
+    <el-dialog v-model="showTicketDetail" :title="t('ticket.detail')" width="500px" align-center append-to-body class="ticket-detail-dialog">
       <div v-if="ticketDetail" class="ticket-detail">
         <div class="ticket-detail-header">
           <span class="logpkg-id">#{{ ticketDetail.ticket.id }}</span>
@@ -1958,74 +1974,74 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <h3 class="ticket-subject">{{ ticketDetail.ticket.subject }}</h3>
         <div class="ticket-msgs">
           <div v-for="msg in ticketDetail.messages" :key="msg.id" class="ticket-msg" :class="'msg-' + msg.sender_type">
-            <span class="ticket-msg-sender">{{ msg.sender_type === 'client' ? '我' : '客服' }}</span>
+            <span class="ticket-msg-sender">{{ msg.sender_type === 'client' ? t('ticket.sender_me') : t('ticket.sender_staff') }}</span>
             <div class="ticket-msg-content" v-html="renderMd(msg.content)"></div>
             <span class="logpkg-time">{{ formatDate(msg.created_at) }}</span>
           </div>
         </div>
         <div v-if="ticketDetail.ticket && ticketDetail.ticket.status !== 'closed'" class="ticket-reply">
-          <el-input v-model="ticketReplyContent" type="textarea" :rows="3" placeholder="输入回复内容..."></el-input>
+          <el-input v-model="ticketReplyContent" type="textarea" :rows="3" :placeholder="t('ticket.reply_placeholder')"></el-input>
         </div>
         <div v-if="ticketDetail.ticket && ticketDetail.ticket.status !== 'closed'" style="margin-top: 12px; text-align: right;">
-          <el-button size="small" @click="closeTicket" :loading="ticketBusy">关闭工单</el-button>
-          <el-button type="primary" size="small" @click="replyTicket" :loading="ticketBusy">发送回复</el-button>
+          <el-button size="small" @click="closeTicket" :loading="ticketBusy">{{ t('ticket.close') }}</el-button>
+          <el-button type="primary" size="small" @click="replyTicket" :loading="ticketBusy">{{ t('ticket.send_reply') }}</el-button>
         </div>
         <div v-if="ticketDetail.ticket && ticketDetail.ticket.status === 'closed'" style="margin-top: 12px; text-align: center; color: var(--text-muted);">
-          此工单已关闭
+          {{ t('ticket.closed_notice') }}
         </div>
       </div>
     </el-dialog>
 
 <!-- New Ticket Dialog -->
-<el-dialog v-model="showTicketDialog" title="发起工单" width="500px" align-center append-to-body class="ticket-dialog">
+<el-dialog v-model="showTicketDialog" :title="t('ticket.new')" width="500px" align-center append-to-body class="ticket-dialog">
   <el-form label-position="top" size="default">
-    <el-form-item label="工单类型">
+    <el-form-item :label="t('ticket.category')">
       <el-radio-group v-model="newTicketForm.category" class="ticket-type-group">
-        <el-radio-button value="technical">技术问题</el-radio-button>
-        <el-radio-button value="billing">账单问题</el-radio-button>
-        <el-radio-button value="account">账号问题</el-radio-button>
-        <el-radio-button value="other">其他</el-radio-button>
+        <el-radio-button value="technical">{{ t('ticket.technical') }}</el-radio-button>
+        <el-radio-button value="billing">{{ t('ticket.billing') }}</el-radio-button>
+        <el-radio-button value="account">{{ t('ticket.account') }}</el-radio-button>
+        <el-radio-button value="other">{{ t('common.other') }}</el-radio-button>
       </el-radio-group>
     </el-form-item>
-    <el-form-item label="主题">
-      <el-input v-model="newTicketForm.subject" placeholder="简要描述问题" />
+    <el-form-item :label="t('ticket.subject')">
+      <el-input v-model="newTicketForm.subject" :placeholder="t('ticket.subject_placeholder')" />
     </el-form-item>
-    <el-form-item label="问题描述">
-      <el-input v-model="newTicketForm.content" type="textarea" :rows="5" placeholder="请详细描述您遇到的问题，以便我们更好地帮助您..." />
+    <el-form-item :label="t('ticket.content_label')">
+      <el-input v-model="newTicketForm.content" type="textarea" :rows="5" :placeholder="t('ticket.content_placeholder')" />
     </el-form-item>
     <div class="ticket-submit-wrap">
-      <el-button type="primary" size="large" @click="createTicket" :loading="ticketBusy" class="ticket-submit-btn">提交工单</el-button>
+      <el-button type="primary" size="large" @click="createTicket" :loading="ticketBusy" class="ticket-submit-btn">{{ t('ticket.submit') }}</el-button>
     </div>
   </el-form>
 </el-dialog>
 
     <!-- Article Detail Dialog -->
-    <el-dialog v-model="showArticleDetail" :title="articleDetail ? articleDetail.title : '文章'" width="600px" align-center append-to-body class="article-dialog">
+    <el-dialog v-model="showArticleDetail" :title="articleDetail ? articleDetail.title : t('article.title')" width="600px" align-center append-to-body class="article-dialog">
       <div v-if="articleDetail" class="md-render" v-html="renderMd(articleDetail.content)"></div>
     </el-dialog>
 
     <!-- Shared Account Credentials Dialog -->
-    <el-dialog v-model="showCredentialsDialog" title="账号凭据" width="460px" align-center append-to-body>
+    <el-dialog v-model="showCredentialsDialog" :title="t('shared.credential_title')" width="460px" align-center append-to-body>
       <div v-if="sharedAccountCreds" class="credential-detail">
         <div class="info-grid" style="margin-bottom: 12px">
-          <div class="info-item"><span class="info-label">名称</span><span class="info-value">{{ sharedAccountCreds.name }}</span></div>
-          <div class="info-item"><span class="info-label">类型</span><span class="info-value">{{ sharedAcctTypeText(sharedAccountCreds.type) }}</span></div>
+          <div class="info-item"><span class="info-label">{{ t('common.name') }}</span><span class="info-value">{{ sharedAccountCreds.name }}</span></div>
+          <div class="info-item"><span class="info-label">{{ t('common.type') }}</span><span class="info-value">{{ sharedAcctTypeText(sharedAccountCreds.type) }}</span></div>
         </div>
         <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 12px">
-          <span style="font-size: 12px">凭据信息请妥善保管，不要分享给他人。</span>
+          <span style="font-size: 12px">{{ t('shared.credential_hint') }}</span>
         </el-alert>
         <div class="referral-link-box">
           <code class="sub-link-text" style="white-space: pre-wrap; word-break: break-all">{{ sharedAccountCreds.credentials_enc }}</code>
-          <el-button size="small" type="primary" text @click="copyText(sharedAccountCreds.credentials_enc)">复制</el-button>
+          <el-button size="small" type="primary" text @click="copyText(sharedAccountCreds.credentials_enc)">{{ t('common.copy') }}</el-button>
         </div>
       </div>
     </el-dialog>
 
-    <!-- Charge Dialog / 充值弹窗 -->
-    <el-dialog v-model="showChargeDialog" title="余额充值" width="440px" align-center append-to-body class="payment-dialog">
+    <!-- Charge Dialog -->
+    <el-dialog v-model="showChargeDialog" :title="t('charge.dialog_title')" width="440px" align-center append-to-body class="payment-dialog">
       <div class="payment-dialog-content">
-        <!-- 充值方式选择 -->
-        <div class="pay-section-title">选择充值方式</div>
+        <!-- Charge Method -->
+        <div class="pay-section-title">{{ t('charge.select_method') }}</div>
         <div class="pay-method-list">
           <div 
             v-for="site in (chargeSites || [])" 
@@ -2038,8 +2054,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <el-icon><Money /></el-icon>
             </div>
             <div class="pay-method-info">
-              <div class="pay-method-name">{{ site.name || '在线支付' }}</div>
-              <div class="pay-method-desc">支付宝 / 微信等</div>
+              <div class="pay-method-name">{{ site.name || t('plan.charge_pay') }}</div>
+              <div class="pay-method-desc">{{ t('charge.alipay_wechat') }}</div>
             </div>
             <div class="pay-method-check" v-if="chargeForm.method !== 'card' && chargeForm.site_id === site.id">
               <el-icon><Check /></el-icon>
@@ -2055,8 +2071,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <el-icon><Ticket /></el-icon>
             </div>
             <div class="pay-method-info">
-              <div class="pay-method-name">充值卡</div>
-              <div class="pay-method-desc">使用卡密兑换</div>
+              <div class="pay-method-name">{{ t('charge.card_title') }}</div>
+              <div class="pay-method-desc">{{ t('charge.use_card_redeem') }}</div>
             </div>
             <div class="pay-method-check" v-if="chargeForm.method === 'card'">
               <el-icon><Check /></el-icon>
@@ -2064,10 +2080,10 @@ const defaultPortalHTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- 在线支付表单 -->
+        <!-- Online Payment Form -->
         <transition name="pay-fade">
           <div v-if="chargeForm.method !== 'card' && chargeSites && chargeSites.length > 0" class="pay-extra-form">
-            <div class="pay-extra-label">充值金额</div>
+            <div class="pay-extra-label">{{ t('charge.amount_label') }}</div>
             <div class="charge-amount-grid">
               <div 
                 v-for="amt in [1, 2, 5, 10, 20, 50, 100, 300, 500]" 
@@ -2076,14 +2092,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 :class="{ active: chargeForm.amount_yuan === amt && !chargeForm.custom_amount }"
                 @click="chargeForm.amount_yuan = amt; chargeForm.custom_amount = false"
               >
-                <span class="charge-amount-num">{{ amt }}</span><span class="charge-amount-unit">元</span>
+                <span class="charge-amount-num">{{ amt }}</span><span class="charge-amount-unit">{{ t('charge.yuan') }}</span>
               </div>
               <div 
                 class="charge-amount-btn charge-amount-custom"
                 :class="{ active: chargeForm.custom_amount }"
                 @click="chargeForm.custom_amount = true"
               >
-                自定义
+                {{ t('charge.custom') }}
               </div>
             </div>
             <el-input-number 
@@ -2092,23 +2108,23 @@ const defaultPortalHTML = `<!DOCTYPE html>
               :min="1" 
               :step="1" 
               style="width: 100%; margin-top: 12px;" 
-              placeholder="请输入充值金额"
+              :placeholder="t('charge.amount_placeholder')"
             />
           </div>
         </transition>
 
-        <!-- 充值卡表单 -->
+        <!-- Card Form -->
         <transition name="pay-fade">
           <div v-if="chargeForm.method === 'card'" class="pay-extra-form">
-            <div class="pay-extra-label">充值卡密码</div>
-            <el-input v-model="cardCode" placeholder="请输入充值卡密码" prefix-icon="Ticket" clearable />
-            <div class="pay-hint">充值卡面额即充值金额，无需输入金额</div>
+            <div class="pay-extra-label">{{ t('charge.card_password') }}</div>
+            <el-input v-model="cardCode" :placeholder="t('charge.card_password_placeholder')" prefix-icon="Ticket" clearable />
+            <div class="pay-hint">{{ t('charge.card_hint') }}</div>
           </div>
         </transition>
       </div>
       <template #footer>
         <div class="pay-dialog-footer">
-          <el-button @click="showChargeDialog = false" size="large">取消</el-button>
+          <el-button @click="showChargeDialog = false" size="large">{{ t('common.cancel') }}</el-button>
           <el-button 
             v-if="chargeForm.method === 'card'" 
             type="primary" 
@@ -2116,7 +2132,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             :loading="redeemBusy"
             size="large"
             class="pay-confirm-btn"
-          >立即兑换</el-button>
+          >{{ t('charge.card_redeem_btn') }}</el-button>
           <el-button 
             v-else 
             type="primary" 
@@ -2124,50 +2140,50 @@ const defaultPortalHTML = `<!DOCTYPE html>
             :loading="chargeBusy"
             size="large"
             class="pay-confirm-btn"
-          >去支付</el-button>
+          >{{ t('charge.go_pay') }}</el-button>
         </div>
       </template>
     </el-dialog>
 
-    <!-- Payment Method Dialog / 支付方式选择弹窗 (v3.3) -->
-    <el-dialog v-model="showPaymentDialog" title="确认订单" width="440px" align-center append-to-body :close-on-click-modal="false" class="payment-dialog">
+    <!-- Payment Method Dialog -->
+    <el-dialog v-model="showPaymentDialog" :title="t('order.confirm')" width="440px" align-center append-to-body :close-on-click-modal="false" class="payment-dialog">
       <div class="payment-dialog-content">
-        <!-- 订单摘要 -->
+        <!-- Order Summary -->
         <div class="pay-summary">
           <div class="pay-summary-row">
-            <span class="pay-summary-label">套餐</span>
-            <span class="pay-summary-value">{{ orderForm.plan_name || '未选择' }}</span>
+            <span class="pay-summary-label">{{ t('plan.title') }}</span>
+            <span class="pay-summary-value">{{ orderForm.plan_name || t('plan.not_selected') }}</span>
           </div>
           <div class="pay-summary-row" v-if="orderForm.variant_name">
-            <span class="pay-summary-label">规格</span>
+            <span class="pay-summary-label">{{ t('order.spec') }}</span>
             <span class="pay-summary-value">{{ orderForm.variant_name }}</span>
           </div>
           <div class="pay-summary-row" v-if="orderForm.duration_days">
-            <span class="pay-summary-label">时长</span>
-            <span class="pay-summary-value">{{ orderForm.duration_days }} 天</span>
+            <span class="pay-summary-label">{{ t('order.duration') }}</span>
+            <span class="pay-summary-value">{{ orderForm.duration_days }} {{ t('plan.days_unit') }}</span>
           </div>
           <div class="pay-summary-row" v-if="orderForm.quota_bytes">
-            <span class="pay-summary-label">流量</span>
-            <span class="pay-summary-value">{{ formatBytes(orderForm.quota_bytes) }}/月</span>
+            <span class="pay-summary-label">{{ t('order.traffic') }}</span>
+            <span class="pay-summary-value">{{ formatBytes(orderForm.quota_bytes) }}/{{ t('plan.per_month') }}</span>
           </div>
           <div class="pay-summary-row">
-            <span class="pay-summary-label">类型</span>
+            <span class="pay-summary-label">{{ t('common.type') }}</span>
             <span class="pay-summary-value">
-              <span :class="'pay-type-tag pay-type-' + orderForm.order_type">{{ orderForm.order_type === 'renew' ? '续费' : orderForm.order_type === 'upgrade' ? '升级' : '新购' }}</span>
+              <span :class="'pay-type-tag pay-type-' + orderForm.order_type">{{ orderForm.order_type === 'renew' ? t('common.renew') : orderForm.order_type === 'upgrade' ? t('common.upgrade') : t('order.type_new') }}</span>
             </span>
           </div>
           <div class="pay-summary-row pay-summary-price">
-            <span class="pay-summary-label">应付金额</span>
+            <span class="pay-summary-label">{{ t('order.amount_due') }}</span>
             <span class="pay-summary-value pay-price-num">{{ orderForm.currency === 'USD' ? '$' : '¥' }}{{ formatMoney(orderForm.price) }}</span>
           </div>
           <div class="pay-summary-row" v-if="orderForm.pay_method === 'balance'">
-            <span class="pay-summary-label">账户余额</span>
+            <span class="pay-summary-label">{{ t('balance.available') }}</span>
             <span class="pay-summary-value" :class="{ 'text-danger': balance && balance.balance < orderForm.price }">{{ formatMoney(balance.balance) }}</span>
           </div>
         </div>
 
-        <!-- 支付方式 -->
-        <div class="pay-section-title">选择支付方式</div>
+        <!-- Payment Methods -->
+        <div class="pay-section-title">{{ t('plan.select_payment') }}</div>
         <div class="pay-method-list">
           <div 
             class="pay-method-card"
@@ -2178,8 +2194,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <el-icon><Wallet /></el-icon>
             </div>
             <div class="pay-method-info">
-              <div class="pay-method-name">余额支付</div>
-              <div class="pay-method-desc">可用余额 {{ formatMoney(balance.balance) }}</div>
+              <div class="pay-method-name">{{ t('plan.balance_pay') }}</div>
+              <div class="pay-method-desc">{{ t('balance.available') }} {{ formatMoney(balance.balance) }}</div>
             </div>
             <div class="pay-method-check" v-if="orderForm.pay_method === 'balance'">
               <el-icon><Check /></el-icon>
@@ -2195,8 +2211,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <el-icon><Ticket /></el-icon>
             </div>
             <div class="pay-method-info">
-              <div class="pay-method-name">套餐卡</div>
-              <div class="pay-method-desc">使用兑换码支付</div>
+              <div class="pay-method-name">{{ t('plan.card_pay') }}</div>
+              <div class="pay-method-desc">{{ t('charge.use_card_redeem') }}</div>
             </div>
             <div class="pay-method-check" v-if="orderForm.pay_method === 'gift_card'">
               <el-icon><Check /></el-icon>
@@ -2213,8 +2229,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <el-icon><Money /></el-icon>
             </div>
             <div class="pay-method-info">
-              <div class="pay-method-name">在线支付</div>
-              <div class="pay-method-desc">支付宝 / 微信等</div>
+              <div class="pay-method-name">{{ t('plan.charge_pay') }}</div>
+              <div class="pay-method-desc">{{ t('charge.alipay_wechat') }}</div>
             </div>
             <div class="pay-method-check" v-if="orderForm.pay_method === 'charge_site'">
               <el-icon><Check /></el-icon>
@@ -2222,18 +2238,18 @@ const defaultPortalHTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- 选中后展开的表单区域 -->
+        <!-- Expanded Form Area -->
         <transition name="pay-fade">
           <div v-if="orderForm.pay_method === 'gift_card'" class="pay-extra-form">
-            <div class="pay-extra-label">套餐卡兑换码</div>
-            <el-input v-model="orderForm.gift_card_code" placeholder="请输入套餐卡兑换码" prefix-icon="Ticket" clearable />
+            <div class="pay-extra-label">{{ t('plan.card_code') }}</div>
+            <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" prefix-icon="Ticket" clearable />
           </div>
         </transition>
 
         <transition name="pay-fade">
           <div v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" class="pay-extra-form">
-            <div class="pay-extra-label">支付渠道</div>
-            <el-select v-model="orderForm.charge_site_id" placeholder="选择支付渠道" style="width: 100%" size="large">
+            <div class="pay-extra-label">{{ t('charge.channel') }}</div>
+            <el-select v-model="orderForm.charge_site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%" size="large">
               <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
             </el-select>
           </div>
@@ -2242,29 +2258,29 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <transition name="pay-fade">
           <div v-if="orderForm.pay_method === 'balance' && balance && balance.balance < orderForm.price" class="pay-balance-warn">
             <el-icon><WarningFilled /></el-icon>
-            <span>余额不足，请先充值或选择其他方式</span>
+            <span>{{ t('plan.balance_insufficient') }}</span>
           </div>
         </transition>
 
-        <!-- 优惠码（折叠式） -->
+        <!-- Promo Code (Collapsible) -->
         <div class="pay-promo-toggle" @click="showPromoInput = !showPromoInput">
-          <span>{{ showPromoInput ? '收起优惠码' : (orderForm.promotion_code ? '优惠码: ' + orderForm.promotion_code : '使用优惠码') }}</span>
+          <span>{{ showPromoInput ? t('charge.hide_promo') : (orderForm.promotion_code ? (t('plan.promo_code') + ': ' + orderForm.promotion_code) : t('charge.use_promo')) }}</span>
           <el-icon class="pay-promo-arrow" :class="{ rotated: showPromoInput }"><ArrowDown /></el-icon>
         </div>
         <transition name="pay-fade">
           <div v-if="showPromoInput" class="pay-extra-form" style="margin-top: 8px;">
-            <el-input v-model="orderForm.promotion_code" placeholder="输入优惠码享受折扣" clearable />
+            <el-input v-model="orderForm.promotion_code" placeholder="t('plan.promo_placeholder')" clearable />
           </div>
         </transition>
       </div>
       <template #footer>
         <div class="pay-dialog-footer">
-          <el-button @click="showPaymentDialog = false" size="large">取消</el-button>
+          <el-button @click="showPaymentDialog = false" size="large">{{ t('common.cancel') }}</el-button>
           <el-button type="primary" @click="confirmPayment" :loading="orderBusy" size="large" class="pay-confirm-btn">
-            <span v-if="orderForm.pay_method === 'balance'">确认支付</span>
-            <span v-else-if="orderForm.pay_method === 'gift_card'">卡密支付</span>
-            <span v-else-if="orderForm.pay_method === 'charge_site'">去支付</span>
-            <span v-else>确认支付</span>
+            <span v-if="orderForm.pay_method === 'balance'">{{ t('charge.confirm_pay') }}</span>
+            <span v-else-if="orderForm.pay_method === 'gift_card'">{{ t('charge.card_pay') }}</span>
+            <span v-else-if="orderForm.pay_method === 'charge_site'">{{ t('charge.go_pay') }}</span>
+            <span v-else>{{ t('charge.confirm_pay') }}</span>
           </el-button>
         </div>
       </template>
@@ -2429,6 +2445,9 @@ body {
   transition: background 0.2s;
 }
 .theme-toggle:hover { background: var(--accent-light); }
+.locale-switcher { display: inline-flex; }
+.locale-switcher .theme-toggle { display: inline-flex; align-items: center; justify-content: center; }
+.locale-switcher :deep(.el-dropdown-menu__item) { display: flex; align-items: center; justify-content: space-between; }
 
 /* ---- Notice Bell (top bar) ---- */
 .notice-bell-wrap { position: relative; display: inline-flex; }
@@ -2879,7 +2898,7 @@ border-bottom: 1px solid var(--border);
 .logpkg-hint { font-size: 12px; color: var(--accent); }
 .logpkg-error { font-size: 12px; color: var(--danger); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---- Billing / 我的账单 (订单表格) ---- */
+/* ---- Billing ---- */
 .billing-notice {
   padding: 12px 16px;
   margin-bottom: 8px;
@@ -2947,7 +2966,7 @@ border-bottom: 1px solid var(--border);
 .billing-col-expire { width: 110px; }
 .billing-col-status { width: 80px; text-align: center; }
 
-/* ---- Node List / 线路列表 ---- */
+/* ---- Node List ---- */
 .node-info-card {
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(14, 165, 233, 0.04));
   border: 1px solid rgba(56, 189, 248, 0.15);
@@ -3076,7 +3095,7 @@ border-bottom: 1px solid var(--border);
   color: var(--text-secondary);
 }
 
-/* ---- Tutorial Cards / 下载与教程 ---- */
+/* ---- Tutorial Cards ---- */
 .tutorial-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -3129,7 +3148,7 @@ border-bottom: 1px solid var(--border);
   line-height: 1.5;
 }
 
-/* ---- Tutorial Platform Tabs / 教程平台标签 ---- */
+/* ---- Tutorial Platform Tabs ---- */
 .tutorial-platform-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -3161,7 +3180,7 @@ border-bottom: 1px solid var(--border);
   box-shadow: 0 0 0 3px var(--accent), 0 8px 24px rgba(0,0,0,0.15);
 }
 
-/* ---- Tutorial Articles / 教程文章列表 ---- */
+/* ---- Tutorial Articles ---- */
 .tutorial-articles {
   margin-top: 20px;
   padding-top: 20px;
@@ -3196,7 +3215,7 @@ border-bottom: 1px solid var(--border);
   color: var(--text-secondary);
 }
 
-/* ---- Ticket Dialog / 工单弹窗 ---- */
+/* ---- Ticket Dialog ---- */
 .ticket-dialog .el-dialog__body {
   padding: 20px 24px;
 }
@@ -3225,7 +3244,7 @@ border-bottom: 1px solid var(--border);
   border-radius: 8px;
 }
 
-/* ---- Referral / 推广邀请 ---- */
+/* ---- Referral ---- */
 .referral-header {
   margin-bottom: 16px;
 }
@@ -3356,7 +3375,7 @@ border-bottom: 1px solid var(--border);
   text-align: right;
 }
 
-/* ---- Client Download / 客户端下载 ---- */
+/* ---- Client Download ---- */
 .client-platform-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -3447,7 +3466,7 @@ border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
-/* ---- Subscription Actions / 订阅操作 ---- */
+/* ---- Subscription Actions ---- */
 .sub-actions-row {
   display: flex;
   flex-wrap: wrap;
@@ -3457,7 +3476,7 @@ border-bottom: 1px solid var(--border);
   border-top: 1px solid var(--border);
 }
 
-/* ---- Streaming Status / 流媒体解锁 ---- */
+/* ---- Streaming Status ---- */
 .streaming-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -3504,7 +3523,7 @@ border-bottom: 1px solid var(--border);
   opacity: 0.8;
 }
 
-/* ---- Plan Table / 套餐表格 ---- */
+/* ---- Plan Table ---- */
 .plan-notice {
   background: #fff5f5;
   border: 1px solid #feb2b2;
@@ -3812,14 +3831,14 @@ border-bottom: 1px solid var(--border);
 .charge-subtitle { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; }
 .charge-card-row { display: flex; gap: 8px; }
 
-/* ===== Payment / Charge Dialog (v3.4 美化) ===== */
+/* ===== Payment/Charge Dialog (v3.4) ===== */
 .payment-dialog .el-dialog__header { padding: 20px 24px 12px; margin-right: 0; }
 .payment-dialog .el-dialog__title { font-size: 17px; font-weight: 700; }
 .payment-dialog .el-dialog__body { padding: 8px 24px 16px; }
 .payment-dialog .el-dialog__footer { padding: 12px 24px 20px; }
 .payment-dialog-content { }
 
-/* 订单摘要 */
+/* Order Summary */
 .pay-summary {
   background: var(--bg-secondary, rgba(0,0,0,0.03)); border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;
   display: flex; flex-direction: column; gap: 10px;
@@ -3831,7 +3850,7 @@ border-bottom: 1px solid var(--border);
 .pay-summary-price { padding-top: 10px; margin-top: 4px; border-top: 1px dashed var(--border, #e5e7eb); }
 .pay-price-num { font-size: 20px; font-weight: 800; color: var(--accent, #2563eb); }
 
-/* 订单类型标签 */
+/* Order Type Badge */
 .pay-type-tag {
   display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
 }
@@ -3839,7 +3858,7 @@ border-bottom: 1px solid var(--border);
 .pay-type-renew { background: rgba(16,185,129,0.12); color: #10b981; }
 .pay-type-upgrade { background: rgba(245,158,11,0.12); color: #f59e0b; }
 
-/* 分区标题 */
+/* Section Title */
 .pay-section-title {
   font-size: 14px; font-weight: 700; color: var(--text-primary, #333); margin-bottom: 12px;
   display: flex; align-items: center; gap: 6px;
@@ -3849,7 +3868,7 @@ border-bottom: 1px solid var(--border);
   background: var(--accent, #2563eb);
 }
 
-/* 支付方式列表 */
+/* Payment Method List */
 .pay-method-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
 .pay-method-card {
   display: flex; align-items: center; gap: 12px; padding: 14px 16px;
@@ -3862,7 +3881,7 @@ border-bottom: 1px solid var(--border);
   box-shadow: 0 2px 12px rgba(37,99,235,0.12);
 }
 
-/* 支付方式图标 */
+/* Payment Method Icon */
 .pay-method-icon {
   width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
   font-size: 20px; flex-shrink: 0;
@@ -3871,12 +3890,12 @@ border-bottom: 1px solid var(--border);
 .pay-method-icon-card { background: rgba(16,185,129,0.1); color: #10b981; }
 .pay-method-icon-online { background: rgba(245,158,11,0.1); color: #f59e0b; }
 
-/* 支付方式信息 */
+/* Payment Method Info */
 .pay-method-info { flex: 1; min-width: 0; }
 .pay-method-name { font-size: 15px; font-weight: 600; color: var(--text-primary, #333); margin-bottom: 2px; }
 .pay-method-desc { font-size: 12px; color: var(--text-muted, #999); }
 
-/* 选中勾选 */
+/* Selected Check */
 .pay-method-check {
   width: 24px; height: 24px; border-radius: 50%; background: var(--accent, #2563eb); color: #fff;
   display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
@@ -3884,19 +3903,19 @@ border-bottom: 1px solid var(--border);
 }
 @keyframes pay-check-pop { 0% { transform: scale(0); } 80% { transform: scale(1.15); } 100% { transform: scale(1); } }
 
-/* 展开的额外表单 */
+/* Expanded Form */
 .pay-extra-form { margin-bottom: 16px; }
 .pay-extra-label { font-size: 13px; font-weight: 600; color: var(--text-muted, #666); margin-bottom: 8px; }
 .pay-hint { font-size: 12px; color: var(--text-muted, #999); margin-top: 8px; }
 
-/* 余额不足警告 */
+/* Insufficient Balance Warning */
 .pay-balance-warn {
   display: flex; align-items: center; gap: 6px; padding: 10px 14px; margin-bottom: 16px;
   background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px;
   color: var(--danger, #ef4444); font-size: 13px;
 }
 
-/* 优惠码折叠 */
+/* Promo Code Fold */
 .pay-promo-toggle {
   display: flex; align-items: center; justify-content: space-between; padding: 10px 14px;
   border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--text-muted, #666);
@@ -3906,7 +3925,7 @@ border-bottom: 1px solid var(--border);
 .pay-promo-arrow { transition: transform 0.2s; font-size: 12px; }
 .pay-promo-arrow.rotated { transform: rotate(180deg); }
 
-/* 充值金额网格 */
+/* Charge Amount Grid */
 .charge-amount-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .charge-amount-btn {
   display: flex; align-items: baseline; justify-content: center; gap: 1px;
@@ -3922,11 +3941,11 @@ border-bottom: 1px solid var(--border);
 .charge-amount-unit { font-size: 12px; opacity: 0.8; }
 .charge-amount-custom { font-size: 13px; color: var(--text-muted, #666); }
 
-/* 底部按钮 */
+/* Bottom Button */
 .pay-dialog-footer { display: flex; gap: 10px; justify-content: flex-end; }
 .pay-confirm-btn { min-width: 120px; }
 
-/* 过渡动画 */
+/* Transition Animation */
 .pay-fade-enter-active, .pay-fade-leave-active { transition: all 0.25s ease; }
 .pay-fade-enter-from { opacity: 0; transform: translateY(-8px); }
 .pay-fade-leave-to { opacity: 0; transform: translateY(-4px); }
@@ -4036,7 +4055,7 @@ var activeAnnouncement = ref(null)
     var orderBusy = ref(false)
     var chargeSites = ref([])
     var chargeForm = ref({ site_id: null, amount_yuan: 10, method: 'online', custom_amount: false })
-    // 如果没有充值站点，默认使用充值卡方式
+    // if no charge sites, default to card
     watch(chargeSites, function(sites) {
       if (!sites || sites.length === 0) {
         chargeForm.value.method = 'card'
@@ -4048,7 +4067,7 @@ var activeAnnouncement = ref(null)
     var redeemBusy = ref(false)
 var balance = ref({ balance: 0, frozen: 0 })
 var balanceTxns = ref([])
-// --- Order list (我的账单) ---
+// --- Order list ---
 var myOrders = ref([])
 var myOrdersLoading = ref(false)
 var referralCode = ref(null)
@@ -4073,8 +4092,8 @@ var withdrawRecords = ref([])
 var showCredentialsDialog = ref(false)
     var sharedAccountCreds = ref(null)
     var showChargeDialog = ref(false)
-    var showPaymentDialog = ref(false) // v3.3: 支付方式选择弹窗
-var showPromoInput = ref(false) // 优惠码输入折叠
+    var showPaymentDialog = ref(false) // v3.3: payment method dialog
+var showPromoInput = ref(false) // promo code fold
 
     var registrationEnabled = ref(false)
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.registration_enabled !== undefined) {
@@ -4097,16 +4116,65 @@ var showPromoInput = ref(false) // 优惠码输入折叠
         portalNavItems.value = PORTAL_CONFIG.navigation.filter(function(n) { return n.enabled !== false })
       }
     }
-    // --- i18n / lang pack ---
-    var langData = {}
+    // --- i18n / multi-language pack ---
+    var multiLang = { default: 'zh-CN', locales: {} }
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.lang) {
-      langData = PORTAL_CONFIG.lang
+      var rawLang = PORTAL_CONFIG.lang
+      if (rawLang && rawLang.locales && typeof rawLang.locales === 'object') {
+        multiLang = rawLang
+      } else if (rawLang && typeof rawLang === 'object') {
+        multiLang = { default: 'zh-CN', locales: { 'zh-CN': rawLang } }
+      }
     }
-    var lang = ref(langData)
+    // Detect preferred locale
+    var savedLocale = localStorage.getItem('portal_locale')
+    var browserLang = (navigator.language || navigator.userLanguage || 'zh-CN').toLowerCase()
+    var detectedLocale = savedLocale
+    if (!detectedLocale || !multiLang.locales[detectedLocale]) {
+      if (multiLang.locales[browserLang]) {
+        detectedLocale = browserLang
+      } else {
+        var prefix = browserLang.split('-')[0]
+        var found = false
+        for (var code in multiLang.locales) {
+          if (code.split('-')[0] === prefix) { detectedLocale = code; found = true; break }
+        }
+        if (!found) detectedLocale = multiLang.default || 'zh-CN'
+      }
+    }
+    var currentLocale = ref(detectedLocale)
+    var availableLocales = computed(function() {
+      var list = []
+      for (var code in multiLang.locales) {
+        var meta = (multiLang.locales[code] && multiLang.locales[code]._meta) || {}
+        list.push({ code: code, label: meta.label || code, flag: meta.flag || '🌐' })
+      }
+      return list
+    })
+    var currentLocaleFlag = computed(function() {
+      var loc = multiLang.locales[currentLocale.value]
+      if (loc && loc._meta && loc._meta.flag) return loc._meta.flag
+      return '🌐'
+    })
+    var lang = computed(function() {
+      return multiLang.locales[currentLocale.value] || multiLang.locales[multiLang.default] || {}
+    })
     var t = function(key) {
+      if (!key) return ''
       var v = lang.value[key]
+      if (v === undefined || v === null || v === '') {
+        var defaultPack = multiLang.locales[multiLang.default] || {}
+        v = defaultPack[key]
+      }
       if (v === undefined || v === null || v === '') return key
       return v
+    }
+    var switchLocale = function(code) {
+      if (multiLang.locales[code]) {
+        currentLocale.value = code
+        localStorage.setItem('portal_locale', code)
+        document.documentElement.lang = code
+      }
     }
     // Fallback to default nav if none configured
     if (portalNavItems.value.length === 0) {
@@ -4182,7 +4250,7 @@ var showPromoInput = ref(false) // 优惠码输入折叠
             }
             planNodes.push({
               id: node.id,
-              name: node.name || ('节点 #' + (node.id || '?')),
+              name: node.name || (t('node.hash_prefix') + (node.id || '?')),
               protocol: node.protocol || '',
               transport: node.transport || '',
               region: node.region || '',
@@ -4338,7 +4406,7 @@ var showPromoInput = ref(false) // 优惠码输入折叠
         client.value = res.client || {}
         settings.value.ip_whitelist = client.value.ip_whitelist || ''
         settings.value.device_limit = client.value.device_limit || 0
-        ElMessage.success('登录成功')
+        ElMessage.success(t('auth.login_success'))
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { loading.value = false })
     }
 
@@ -4350,7 +4418,7 @@ var showPromoInput = ref(false) // 优惠码输入折叠
         localStorage.setItem('client_token', token.value)
         localStorage.setItem('client_refresh_token', refreshToken.value)
         client.value = res.client || {}
-        ElMessage.success('注册成功')
+        ElMessage.success(t('auth.register_success'))
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { loading.value = false })
     }
 
@@ -4371,22 +4439,22 @@ var showPromoInput = ref(false) // 优惠码输入折叠
       rotating.value = true
       api('POST', '/rotate-token').then(function(res) {
         client.value.sub_token = res.token
-        ElMessage.success('Token 已轮换')
+        ElMessage.success(t('sub.reset_success'))
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { rotating.value = false })
     }
 
     var saveSettings = function() {
       api('PUT', '/settings', settings.value).then(function() {
-        ElMessage.success('设置已保存')
+        ElMessage.success(t('common.saved'))
       }).catch(function(e) { ElMessage.error(e.message) })
     }
 
     var changePassword = function() {
-      if (!pwdForm.value.old_password || !pwdForm.value.new_password) { ElMessage.error('请填写完整'); return }
-      if (pwdForm.value.new_password.length < 6) { ElMessage.error('新密码至少6位'); return }
-      if (pwdForm.value.new_password !== pwdForm.value.confirm_password) { ElMessage.error('两次输入的密码不一致'); return }
+      if (!pwdForm.value.old_password || !pwdForm.value.new_password) { ElMessage.error(t('common.fill_required')); return }
+      if (pwdForm.value.new_password.length < 6) { ElMessage.error(t('security.password_min_length')); return }
+      if (pwdForm.value.new_password !== pwdForm.value.confirm_password) { ElMessage.error(t('security.password_mismatch')); return }
       api('POST', '/change-password', { old_password: pwdForm.value.old_password, new_password: pwdForm.value.new_password }).then(function() {
-        ElMessage.success('密码已修改')
+        ElMessage.success(t('security.password_changed'))
         pwdForm.value = { old_password: '', new_password: '', confirm_password: '' }
       }).catch(function(e) { ElMessage.error(e.message) })
     }
@@ -4395,14 +4463,14 @@ var showPromoInput = ref(false) // 优惠码输入折叠
 
     var copyText = function(text) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function() { ElMessage.success('已复制') }).catch(function() { fallbackCopy(text) })
+        navigator.clipboard.writeText(text).then(function() { ElMessage.success(t('common.copied')) }).catch(function() { fallbackCopy(text) })
       } else { fallbackCopy(text) }
     }
     var fallbackCopy = function(text) {
       var ta = document.createElement('textarea')
       ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px'
       document.body.appendChild(ta); ta.select(); document.execCommand('copy')
-      document.body.removeChild(ta); ElMessage.success('已复制')
+      document.body.removeChild(ta); ElMessage.success(t('common.copied'))
     }
 
     var formatBytes = function(b) {
@@ -4422,8 +4490,8 @@ var formatDateTime = function(d) { if (!d) return '-'; var date = new Date(d); r
       var fill = circumference * usagePercent.value / 100
       return fill + ' ' + (circumference - fill)
     })
-    var statusText = computed(function() { return { active: '正常', suspended: '已暂停', expired: '已过期' }[client.value.status] || client.value.status || '-' })
-    var subStatusText = computed(function() { return { active: '正常', revoked: '已吊销', expired: '已过期', suspended: '已暂停' }[client.value.sub_status] || client.value.sub_status || '-' })
+var statusText = computed(function() { return { active: t('account.normal'), suspended: t('account.suspended'), expired: t('common.expired') }[client.value.status] || client.value.status || '-' })
+var subStatusText = computed(function() { return { active: t('account.normal'), revoked: t('sub.status_revoked'), expired: t('common.expired'), suspended: t('account.suspended') }[client.value.sub_status] || client.value.sub_status || '-' })
     // Streaming accounts from shared accounts API
     var appleAccount = computed(function() {
       return sharedAccounts.value.find(function(sa) { return sa.type === 'apple_id' && sa.enabled !== false })
@@ -4467,24 +4535,24 @@ var handleSubAction = function(action) {
     activeTab.value = action.target
     try { localStorage.setItem('portal_active_tab', action.target) } catch(e) {}
   } else if (action.action === 'dialog') {
-    // 处理对话框操作
+    // handle dialog actions
     if (action.target === 'whitelist') {
-      // 跳转到个人中心的安全设置
+      // navigate to security settings
       activeTab.value = 'profile'
       try { localStorage.setItem('portal_active_tab', 'profile') } catch(e) {}
-      ElMessage.info('请在安全设置中管理IP白名单')
+      ElMessage.info(t('security.ip_whitelist_manage'))
     } else if (action.target === 'more_subs') {
-      // 跳转到购买服务
+      // navigate to store
       activeTab.value = 'store'
       try { localStorage.setItem('portal_active_tab', 'store') } catch(e) {}
     }
   } else if (action.action === 'confirm') {
-    // 处理确认操作
+    // handle confirm
     if (action.target === 'reset_sub') {
-      // 轮换Token（换新的Token）
-      ElMessageBox.confirm('确定要重置订阅链接吗？重置后旧链接将失效，需要重新配置客户端。', '提示', {
-        confirmButtonText: '确定重置',
-        cancelButtonText: '取消',
+      // rotate token
+      ElMessageBox.confirm(t('sub.reset_confirm'), t('common.confirm'), {
+        confirmButtonText: t('sub.reset_confirm_btn'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
         confirmButtonClass: 'el-button--danger'
       }).then(function() {
@@ -4494,7 +4562,7 @@ var handleSubAction = function(action) {
   }
 }
 var showStreamingAccount = function(service) {
-  ElMessage.info(service.name + ' 账号查看功能开发中')
+  ElMessage.info(service.name + ' ' + t('shared.coming_soon'))
 }
 
 // Log packages
@@ -4507,7 +4575,7 @@ var showStreamingAccount = function(service) {
     var createLogPackage = function(hours) {
       logPacking.value = true
       api('POST', '/logs/package', { hours: hours }).then(function(res) {
-        ElMessage.success('日志打包任务已创建')
+        ElMessage.success(t('log.request_sent'))
         fetchLogPackages()
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { logPacking.value = false })
     }
@@ -4516,7 +4584,7 @@ var showStreamingAccount = function(service) {
       window.open('/api/v1/client-auth/logs/packages/' + id + '/download?token=' + encodeURIComponent(token.value), '_blank')
     }
 
-    var pkgStatusText = function(s) { return { pending: '等待中', processing: '处理中', done: '已完成', failed: '失败' }[s] || s || '-' }
+    var pkgStatusText = function(s) { return { pending: t('common.processing'), processing: t('common.processing'), done: t('order.status_completed'), failed: t('common.failed') }[s] || s || '-' }
 
     // --- formatMoney: converts cents to yuan string ---
     var formatMoney = function(cents) {
@@ -4533,47 +4601,47 @@ var showStreamingAccount = function(service) {
     }
 
     // --- Purchase a plan variant ---
-    // v3.3: 弹出支付方式选择框，让用户选择余额/套餐卡/第三方支付
+    // v3.3: show payment method dialog
     var purchaseVariant = function(variantId, plan, modData) {
       var orderType = (client.value.plan_id > 0 && client.value.plan_id === plan.id) ? 'renew' : 'new'
-      // 找到选中的变体，把名称/价格等信息直接存下来，弹窗直接展示
+      // find selected variant for dialog
       var variant = null
       if (plan && plan.variants) {
         for (var i = 0; i < plan.variants.length; i++) {
           if (plan.variants[i].id === variantId) { variant = plan.variants[i]; break }
         }
       }
-      // 设置订单表单默认值
+      // set order form defaults
       orderForm.value = {
         variant_id: variantId,
         order_type: orderType,
         promotion_code: '',
-        pay_method: 'balance', // 默认选中余额支付
+        pay_method: 'balance', // default: balance payment
         gift_card_code: '',
         charge_site_id: null,
-        // 用于弹窗展示的信息（来自实际数据，不反查）
+        // dialog display info
         plan_name: plan ? plan.name : '',
         variant_name: variant ? (variant.name || '') : '',
-        price: variant ? variant.price : 0,       // 分
+        price: variant ? variant.price : 0,       // cents
         currency: variant ? (variant.currency || 'CNY') : 'CNY',
         duration_days: variant ? (variant.duration_days || 0) : 0,
         quota_bytes: variant ? (variant.quota_bytes || 0) : 0
       }
       showPromoInput.value = false
-      // 确保余额和充值站点数据是最新的（不依赖页面模块判断）
+      // ensure balance and charge sites are fresh
       fetchBalance()
       if (chargeSites.value.length === 0) fetchChargeSites()
-      // 显示支付方式选择弹窗
+      // show payment dialog
       showPaymentDialog.value = true
     }
 
-    // 获取套餐名称
+    // get plan name
     var getPlanName = function(planId) {
-      if (!planId) return '未选择'
+      if (!planId) return t('plan.not_selected')
       var p = plans.value.find(function(x) { return x.id === planId })
-      return p ? p.name : '套餐 #' + planId
+      return p ? p.name : t('plan.hash_prefix') + planId
     }
-    // 获取套餐价格（分转元，取最低变体价格或0）
+    // get plan price
     var getPlanPrice = function(planId) {
       if (!planId) return 0
       var p = plans.value.find(function(x) { return x.id === planId })
@@ -4588,18 +4656,18 @@ var showStreamingAccount = function(service) {
       return (p.price || 0) / 100
     }
 
-    // v3.3: 确认支付 - 根据选择的支付方式提交订单
+    // v3.3: confirm payment
     var confirmPayment = function() {
       if (!orderForm.value.pay_method) {
-        ElMessage.error('请选择支付方式')
+        ElMessage.error(t('plan.select_payment'))
         return
       }
       if (orderForm.value.pay_method === 'gift_card' && !orderForm.value.gift_card_code) {
-        ElMessage.error('请输入套餐卡号')
+        ElMessage.error(t('plan.card_code_placeholder'))
         return
       }
       if (orderForm.value.pay_method === 'charge_site' && !orderForm.value.charge_site_id) {
-        ElMessage.error('请选择支付渠道')
+        ElMessage.error(t('plan.select_channel_placeholder'))
         return
       }
 
@@ -4620,20 +4688,20 @@ var showStreamingAccount = function(service) {
       api('POST', '/orders', payload).then(function(res) {
         showPaymentDialog.value = false
         if (res.status === 'completed') {
-          ElMessage.success('购买成功')
+          ElMessage.success(t('plan.buy_success'))
           fetchMe(); fetchBalance(); fetchBalanceTxns()
         } else if (res.payment_url) {
-          ElMessage.info('正在跳转到支付页面...')
+          ElMessage.info(t('plan.redirecting_payment'))
           window.open(res.payment_url, '_blank')
         } else {
-          ElMessage.success('订单已创建')
+          ElMessage.success(t('plan.order_created'))
         }
       }).catch(function(e) {
-        // v3.3: 余额不足时特殊处理 - 保持弹窗开启，提示用户选择其他支付方式
+        // v3.3: handle insufficient balance
         if (e.code === 'INSUFFICIENT_BALANCE' || (e.message && e.message.includes('INSUFFICIENT_BALANCE'))) {
-          ElMessage.warning('余额不足，请选择其他支付方式')
+          ElMessage.warning(t('plan.balance_insufficient_alt'))
         } else {
-          ElMessage.error(e.message || '订单创建失败')
+          ElMessage.error(e.message || t('plan.order_create_failed'))
           showPaymentDialog.value = false
         }
       }).finally(function() { orderBusy.value = false })
@@ -4641,8 +4709,8 @@ var showStreamingAccount = function(service) {
 
     // --- Submit order form ---
     var submitOrder = function() {
-      if (!orderForm.value.variant_id) { ElMessage.error('请选择套餐'); return }
-      if (orderForm.value.pay_method === 'gift_card' && !orderForm.value.gift_card_code) { ElMessage.error('请输入套餐卡号'); return }
+      if (!orderForm.value.variant_id) { ElMessage.error(t('plan.select_placeholder')); return }
+      if (orderForm.value.pay_method === 'gift_card' && !orderForm.value.gift_card_code) { ElMessage.error(t('plan.card_code_placeholder')); return }
       orderBusy.value = true
       var payload = {
         variant_id: orderForm.value.variant_id, order_type: orderForm.value.order_type,
@@ -4656,13 +4724,13 @@ var showStreamingAccount = function(service) {
       }
       api('POST', '/orders', payload).then(function(res) {
         if (res.status === 'completed') {
-          ElMessage.success('订单完成')
+          ElMessage.success(t('order.completed'))
           fetchMe(); fetchBalance(); fetchBalanceTxns()
         } else if (res.payment_url) {
-          ElMessage.info('正在跳转到支付页面...')
+          ElMessage.info(t('plan.redirecting_payment'))
           window.open(res.payment_url, '_blank')
         } else {
-          ElMessage.success('订单已创建')
+          ElMessage.success(t('plan.order_created'))
         }
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { orderBusy.value = false })
     }
@@ -4676,15 +4744,15 @@ var showStreamingAccount = function(service) {
 
     // --- Submit charge (online payment) ---
     var submitCharge = function() {
-      if (!chargeForm.value.site_id) { ElMessage.error('请选择充值站点'); return }
+      if (!chargeForm.value.site_id) { ElMessage.error(t('charge.select_site')); return }
       chargeBusy.value = true
       var amountCents = Math.round(chargeForm.value.amount_yuan * 100)
       api('POST', '/charge/create', { site_id: chargeForm.value.site_id, amount: amountCents }).then(function(res) {
         if (res.payment_url) {
-          ElMessage.info('正在跳转到支付页面...')
+          ElMessage.info(t('plan.redirecting_payment'))
           window.open(res.payment_url, '_blank')
         } else {
-          ElMessage.success('充值订单已创建')
+          ElMessage.success(t('charge.order_created'))
         }
         fetchChargeOrders()
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { chargeBusy.value = false })
@@ -4692,10 +4760,10 @@ var showStreamingAccount = function(service) {
 
     // --- Redeem charge card ---
     var redeemCard = function() {
-      if (!cardCode.value) { ElMessage.error('请输入卡号'); return }
+      if (!cardCode.value) { ElMessage.error(t('charge.enter_card_code')); return }
       redeemBusy.value = true
       api('POST', '/charge/redeem-card', { card_code: cardCode.value }).then(function(res) {
-        ElMessage.success('充值卡兑换成功')
+        ElMessage.success(t('charge.card_success'))
         cardCode.value = ''
         fetchBalance(); fetchBalanceTxns()
         fetchChargeOrders()
@@ -4709,9 +4777,9 @@ chargeOrders.value = ((res && res.items) ? res.items : []).filter(function(co) {
 }).catch(function() {})
     }
 
-    var chargeStatusText = function(s) { return { pending: '待支付', paid: '已支付', processing: '处理中', expired: '已过期', failed: '失败' }[s] || s || '-' }
+    var chargeStatusText = function(s) { return { pending: t('order.status_pending'), paid: t('order.status_paid'), processing: t('common.processing'), expired: t('common.expired'), failed: t('common.failed') }[s] || s || '-' }
 
-    // --- My Orders (我的账单) ---
+    // --- My Orders ---
     var fetchMyOrders = function() {
       myOrdersLoading.value = true
 api('GET', '/orders?limit=50').then(function(res) {
@@ -4719,14 +4787,14 @@ myOrders.value = ((res && res.items) ? res.items : (Array.isArray(res) ? res : [
 }).catch(function() {}).finally(function() { myOrdersLoading.value = false })
     }
     var orderStatusText = function(s) {
-      return { pending: '待支付', paid: '已支付', completed: '已完成', cancelled: '已取消', refunded: '已退款' }[s] || s || '-'
+      return { pending: t('order.status_pending'), paid: t('order.status_paid'), completed: t('order.status_completed'), cancelled: t('order.status_cancelled'), refunded: t('order.status_refunded') }[s] || s || '-'
     }
     var orderStatusBadge = function(s) {
       return { pending: 'processing', paid: 'active', completed: 'active', cancelled: 'none', refunded: 'expired' }[s] || 'none'
     }
     // Resolve service name from plan cache by to_variant_id -> variant -> plan name
     var getOrderServiceName = function(order) {
-      if (!order.to_variant_id) return { new: '新购', renew: '续费', upgrade: '升级', downgrade: '降级' }[order.order_type] || order.order_type || '-'
+      if (!order.to_variant_id) return { new: t('order.type_new'), renew: t('common.renew'), upgrade: t('common.upgrade'), downgrade: t('order.type_downgrade') }[order.order_type] || order.order_type || '-'
       for (var i = 0; i < plans.value.length; i++) {
         var p = plans.value[i]
         if (p.variants) {
@@ -4735,7 +4803,7 @@ myOrders.value = ((res && res.items) ? res.items : (Array.isArray(res) ? res : [
           }
         }
       }
-      return { new: '新购', renew: '续费', upgrade: '升级', downgrade: '降级' }[order.order_type] || order.order_type || '-'
+      return { new: t('order.type_new'), renew: t('common.renew'), upgrade: t('common.upgrade'), downgrade: t('order.type_downgrade') }[order.order_type] || order.order_type || '-'
     }
 
     // --- Balance ---
@@ -4762,7 +4830,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       if (!referralCode.value || !referralCode.value.code) return ''
       return window.location.origin + '/p?ref=' + referralCode.value.code
     })
-    var referralStatusText = function(s) { return { pending: '待结算', available: '可提现', withdrawn: '已提现' }[s] || s || '-' }
+    var referralStatusText = function(s) { return { pending: t('referral.status_pending'), available: t('referral.status_available'), withdrawn: t('referral.status_withdrawn') }[s] || s || '-' }
 
     // --- Tickets ---
     var fetchTickets = function() {
@@ -4778,23 +4846,23 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { ticketBusy.value = false })
     }
     var createTicket = function() {
-      if (!newTicketForm.value.subject || !newTicketForm.value.content) { ElMessage.error('请填写主题和内容'); return }
+      if (!newTicketForm.value.subject || !newTicketForm.value.content) { ElMessage.error(t('ticket.fill_subject_content')); return }
       ticketBusy.value = true
       api('POST', '/tickets', newTicketForm.value).then(function(res) {
-        ElMessage.success('工单已创建')
+        ElMessage.success(t('ticket.created'))
         showTicketDialog.value = false
         newTicketForm.value = { subject: '', category: 'other', priority: 'normal', content: '' }
         fetchTickets()
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { ticketBusy.value = false })
     }
     var replyTicket = function() {
-      if (!ticketReplyContent.value) { ElMessage.error('请输入回复内容'); return }
+      if (!ticketReplyContent.value) { ElMessage.error(t('ticket.reply_placeholder')); return }
       ticketBusy.value = true
       var tid = ticketDetail.value.ticket.id
       api('POST', '/tickets/' + tid + '/reply', { content: ticketReplyContent.value }).then(function() {
-        ElMessage.success('回复成功')
+        ElMessage.success(t('ticket.reply_success'))
         ticketReplyContent.value = ''
-        // 动态加载最新消息，不关闭弹窗
+        // reload messages, keep dialog open
         api('GET', '/tickets/' + tid).then(function(res) {
           ticketDetail.value = res
         })
@@ -4805,12 +4873,12 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       ticketBusy.value = true
       var tid = ticketDetail.value.ticket.id
       api('POST', '/tickets/' + tid + '/close').then(function() {
-        ElMessage.success('工单已关闭')
+        ElMessage.success(t('ticket.closed'))
         showTicketDetail.value = false
         fetchTickets()
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { ticketBusy.value = false })
     }
-    var ticketStatusText = function(s) { return { open: '待回复', replied: '已回复', closed: '已关闭' }[s] || s || '-' }
+    var ticketStatusText = function(s) { return { open: t('ticket.status_open'), replied: t('ticket.status_replied'), closed: t('ticket.status_closed') }[s] || s || '-' }
     var ticketStatusBadge = function(s) { return { open: 'processing', replied: 'active', closed: 'none' }[s] || 'none' }
 
     // --- Articles ---
@@ -4827,7 +4895,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         showArticleDetail.value = true
       }).catch(function(e) { ElMessage.error(e.message) })
     }
-    var articleCatText = function(c) { return { tutorial: '教程', faq: 'FAQ', notice: '公告', general: '综合' }[c] || c || '-' }
+    var articleCatText = function(c) { return { tutorial: t('article.tutorial'), faq: 'FAQ', notice: t('article.notice'), general: t('article.general') }[c] || c || '-' }
 
     // --- Tutorial cards helpers ---
     var getTutorialIcon = function(icon) {
@@ -4841,7 +4909,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       } else if (card.link) {
         window.open(card.link, '_blank')
       } else {
-        ElMessage.info('教程内容即将上线')
+        ElMessage.info(t('tutorial.coming_soon'))
       }
     }
     // Platform selection for tutorial cards
@@ -4905,7 +4973,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
     var fetchAnnouncements = function() {
       api('GET', '/articles?category=notice').then(function(res) {
         announcements.value = Array.isArray(res) ? res : []
-        // 数据加载完成后检查是否需要自动弹窗
+        // check auto popup after data load
         checkAutoAnnouncementPopup()
       }).catch(function() {})
     }
@@ -4924,10 +4992,10 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
     }
     var repairSharedAccount = function(id, modData) {
       api('POST', '/shared-accounts/' + id + '/repair').then(function(res) {
-        ElMessage.success('修复请求已提交，请稍后查看')
+        ElMessage.success(t('shared.repair_sent'))
       }).catch(function(e) { ElMessage.error(e.message) })
     }
-    var sharedAcctTypeText = function(t) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: '其他' }[t] || t || '-' }
+    var sharedAcctTypeText = function(t) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: t('common.other') }[t] || t || '-' }
 
     // --- Scroll to a module by ID ---
     var scrollToModule = function(modId) {
@@ -4988,7 +5056,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       fetch('/api/v1/public/settings').then(function(r) { return r.json() }).then(function(d) {
         var data = d.data || d
         if (data && data.registration_enabled !== undefined) registrationEnabled.value = data.registration_enabled
-        // v3.4: 热更新 portal 模块/导航（后台重置模板后前端自动同步）
+        // v3.4: hot-reload portal modules/nav
         if (data && data.portal_config) {
           var cfg = data.portal_config
           if (Array.isArray(cfg.modules)) {
@@ -4997,7 +5065,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
           if (Array.isArray(cfg.navigation)) {
             portalNavItems.value = cfg.navigation.filter(function(n) { return n.enabled !== false })
           }
-          // 模块更新后重新加载当前页数据
+          // reload page data after module update
           fetchPageData(activeTab.value)
         }
       }).catch(function() {})
@@ -5009,14 +5077,14 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       announcementPopupVisible.value = true
     }
 
-    // 首页加载时自动弹出标记为 is_popup 的公告（每天只弹一次）
+    // auto-popup announcements (once per day)
     var checkAutoAnnouncementPopup = function() {
       if (!token.value || !announcements.value || announcements.value.length === 0) return
       var today = new Date().toDateString()
       var popupKey = 'ann_popup_seen_' + today
-      // 今天已经弹过了就不再弹
+      // already popped today
       if (localStorage.getItem(popupKey)) return
-      // 找第一个标记为弹窗的公告
+      // find first popup announcement
       for (var i = 0; i < announcements.value.length; i++) {
         if (announcements.value[i].is_popup) {
           openAnnouncementPopup(announcements.value[i])
@@ -5224,8 +5292,8 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       sharedAccounts: sharedAccounts, showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
       appleAccount: appleAccount, netflixAccount: netflixAccount,
       fetchPlans: fetchPlans, purchaseVariant: purchaseVariant, submitOrder: submitOrder,
-      showChargeDialog: showChargeDialog, // 充值弹窗
-      showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, showPromoInput: showPromoInput, getPlanName: getPlanName, getPlanPrice: getPlanPrice, // v3.3: 支付方式选择弹窗
+      showChargeDialog: showChargeDialog, // charge dialog
+      showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, showPromoInput: showPromoInput, getPlanName: getPlanName, getPlanPrice: getPlanPrice, // v3.3: payment method dialog
       fetchChargeSites: fetchChargeSites, submitCharge: submitCharge, redeemCard: redeemCard,
       fetchChargeOrders: fetchChargeOrders, chargeStatusText: chargeStatusText,
       fetchMyOrders: fetchMyOrders, orderStatusText: orderStatusText, orderStatusBadge: orderStatusBadge, getOrderServiceName: getOrderServiceName,
@@ -5242,13 +5310,14 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       showNoticePanel: showNoticePanel,
       fetchSharedAccounts: fetchSharedAccounts, applySharedAccount: applySharedAccount,
       repairSharedAccount: repairSharedAccount, sharedAcctTypeText: sharedAcctTypeText,
-      lang: lang, t: t
+      lang: lang, t: t,
+      currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale
     }
   }
 })
 
 app.use(ElementPlus)
-// 全局注册 Element Plus 图标
+// register Element Plus icons
 if (typeof ElementPlusIconsVue !== 'undefined') {
   for (var iconName in ElementPlusIconsVue) {
     app.component(iconName, ElementPlusIconsVue[iconName])

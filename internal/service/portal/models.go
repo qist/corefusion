@@ -37,6 +37,15 @@ type PortalThemeConfig struct {
 	FontFamily          string `json:"font_family"`
 }
 
+// RegionSource represents an editable portal region (e.g. auth/login page).
+// Each region has HTML (Vue template), CSS, JS (setup function), and Data (configurable properties).
+type RegionSource struct {
+	HTML string                 `json:"html"`
+	CSS  string                 `json:"css"`
+	JS   string                 `json:"js"`
+	Data map[string]interface{} `json:"data"`
+}
+
 // ParseNavigationItems parses a json.RawMessage into NavigationItem slice.
 func ParseNavigationItems(raw json.RawMessage) []NavigationItem {
 	if len(raw) == 0 || string(raw) == "null" || string(raw) == "[]" {
@@ -77,4 +86,16 @@ func ModuleItemsToRaw(items []ModuleItem) json.RawMessage {
 	}
 	data, _ := json.Marshal(items)
 	return data
+}
+
+// ParseRegions parses a json.RawMessage into a map of RegionSource.
+func ParseRegions(raw json.RawMessage) map[string]RegionSource {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return map[string]RegionSource{}
+	}
+	var regions map[string]RegionSource
+	if err := json.Unmarshal(raw, &regions); err != nil {
+		return map[string]RegionSource{}
+	}
+	return regions
 }

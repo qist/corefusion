@@ -1,106 +1,107 @@
 package portal
 
 // defaultNavigationJSON is the default navigation items for a new portal.
-// Navigation structure follows qist's sidebar layout, with logs section retained.
+// Labels use lang keys (e.g. "nav.home") which are resolved by t() at runtime.
+// If a label is not a lang key, t() returns it as-is (backward compatible).
 const defaultNavigationJSON = `[
-  {"id":"nav-home","label":"网站首页","icon":"🏠","target":"overview","href":"","enabled":true,"open_external":false},
-  {"id":"nav-services","label":"购买服务","icon":"🛒","target":"store","href":"","enabled":true,"open_external":false},
-  {"id":"nav-billing","label":"我的账单","icon":"💰","target":"billing","href":"","enabled":true,"open_external":false},
-  {"id":"nav-nodes","label":"线路列表","icon":"📋","target":"nodes","href":"","enabled":true,"open_external":false},
-  {"id":"nav-tutorial","label":"使用教程","icon":"📚","target":"tutorial","href":"","enabled":true,"open_external":false},
-  {"id":"nav-tickets","label":"发起工单","icon":"🎫","target":"support","href":"","enabled":true,"open_external":false},
-  {"id":"nav-referral","label":"推广邀请","icon":"🎁","target":"referral","href":"","enabled":true,"open_external":false},
-  {"id":"nav-profile","label":"个人中心","icon":"👤","target":"profile","href":"","enabled":true,"open_external":false},
-  {"id":"nav-logs","label":"日志","icon":"📦","target":"logs","href":"","enabled":true,"open_external":false}
+  {"id":"nav-home","label":"nav.home","icon":"🏠","target":"overview","href":"","enabled":true,"open_external":false},
+  {"id":"nav-services","label":"nav.store","icon":"🛒","target":"store","href":"","enabled":true,"open_external":false},
+  {"id":"nav-billing","label":"nav.billing","icon":"💰","target":"billing","href":"","enabled":true,"open_external":false},
+  {"id":"nav-nodes","label":"nav.nodes","icon":"📋","target":"nodes","href":"","enabled":true,"open_external":false},
+  {"id":"nav-tutorial","label":"nav.tutorial","icon":"📚","target":"tutorial","href":"","enabled":true,"open_external":false},
+  {"id":"nav-tickets","label":"nav.support","icon":"🎫","target":"support","href":"","enabled":true,"open_external":false},
+  {"id":"nav-referral","label":"nav.referral","icon":"🎁","target":"referral","href":"","enabled":true,"open_external":false},
+  {"id":"nav-profile","label":"nav.profile","icon":"👤","target":"profile","href":"","enabled":true,"open_external":false},
+  {"id":"nav-logs","label":"nav.logs","icon":"📦","target":"logs","href":"","enabled":true,"open_external":false}
 ]`
 
 // defaultModulesJSON is the default module layout for a new portal.
-// Each module has a "page" field linking it to a navigation target.
-// All content is module-driven — no hardcoded tabs in the template.
+// Titles and text fields use lang keys (e.g. "traffic.title") resolved by t() at runtime.
+// Long custom content (notice_text, info_text, markdown) remains as editable content.
 const defaultModulesJSON = `[
   {
-    "id":"mod-hero","type":"hero","title":"欢迎","page":"overview","visible":true,
-    "data":{"eyebrow":"WELCOME","heading":"欢迎回来","description":"管理您的订阅与服务","button_text":"查看订阅","button_target":"store"},
+    "id":"mod-hero","type":"hero","title":"hero.welcome","page":"overview","visible":true,
+    "data":{"eyebrow":"WELCOME","heading":"hero.welcome_back","description":"hero.manage_sub","button_text":"hero.manage_sub","button_target":"store"},
     "style":{"variant":"primary","align":"left"}
   },
   {
-    "id":"mod-account","type":"account_info","title":"帐号信息","page":"overview","visible":true,
+    "id":"mod-account","type":"account_info","title":"account.title","page":"overview","visible":true,
     "data":{"columns":2},"style":{}
   },
   {
-    "id":"mod-traffic","type":"traffic_ring","title":"流量使用","page":"overview","visible":true,
+    "id":"mod-traffic","type":"traffic_ring","title":"traffic.title","page":"overview","visible":true,
     "data":{},"style":{}
   },
   {
-    "id":"mod-client-download","type":"client_download","title":"客户端下载","page":"overview","visible":true,
+    "id":"mod-client-download","type":"client_download","title":"client.title","page":"overview","visible":true,
     "data":{
       "platforms":[
         {"id":"windows","name":"Windows","icon":"windows","url":"/downloads/windows"},
         {"id":"ios","name":"iOS","icon":"apple","url":"/downloads/ios"},
-        {"id":"android","name":"安卓","icon":"android","url":"/downloads/android"},
+        {"id":"android","name":"Android","icon":"android","url":"/downloads/android"},
         {"id":"mac","name":"Mac","icon":"desktop","url":"/downloads/mac"},
         {"id":"linux","name":"Linux","icon":"linux","url":"/downloads/linux"},
-        {"id":"browser","name":"浏览器","icon":"chrome","url":"/downloads/browser"},
-        {"id":"other","name":"其他","icon":"ellipsis","url":"/downloads/other"}
+        {"id":"browser","name":"Browser","icon":"chrome","url":"/downloads/browser"},
+        {"id":"other","name":"Other","icon":"ellipsis","url":"/downloads/other"}
       ],
-      "select_text":"选择平台",
-      "hint_text":"请点击上方标签选择你的操作系统"
+      "select_text":"common.other",
+      "hint_text":"tutorial.select_platform"
     },
     "style":{}
   },
   {
-    "id":"mod-sub","type":"subscription_detail","title":"订阅链接","page":"overview","visible":true,
+    "id":"mod-sub","type":"subscription_detail","title":"sub.title","page":"overview","visible":true,
     "data":{
-      "description":"查看您的订阅链接和状态",
-      "copy_text":"复制",
-      "qr_text":"二维码",
+      "description":"sub.description",
+      "copy_text":"common.copy",
+      "qr_text":"sub.qr_code",
       "show_status":true,
       "show_rotate":true,
       "actions":[
-        {"text":"购买套餐","type":"primary","action":"navigate","target":"store"},
-        {"text":"白名单管理","type":"info","action":"dialog","target":"whitelist"},
-        {"text":"更多订阅","type":"info","action":"dialog","target":"more_subs"},
-        {"text":"重置订阅","type":"danger","action":"confirm","target":"reset_sub"}
+        {"text":"sub.buy_plan","type":"primary","action":"navigate","target":"store"},
+        {"text":"sub.whitelist","type":"info","action":"dialog","target":"whitelist"},
+        {"text":"sub.more_subs","type":"info","action":"dialog","target":"more_subs"},
+        {"text":"sub.reset","type":"danger","action":"confirm","target":"reset_sub"}
       ]
     },
     "style":{}
   },
   {
-    "id":"mod-streaming","type":"streaming_status","title":"流媒体解锁","page":"overview","visible":true,
+    "id":"mod-streaming","type":"streaming_status","title":"streaming.title","page":"overview","visible":true,
     "data":{},
     "style":{}
   },
   {
-    "id":"mod-plan-list","type":"plan_list","title":"套餐列表","page":"store","visible":true,
+    "id":"mod-plan-list","type":"plan_list","title":"plan.title","page":"store","visible":true,
     "data":{
-      "notice_text":"套餐可叠加购买，剩余有效期自动叠加。如需升级请直接购买新套餐，剩余有效期会根据等级差价换算，然后再叠加(新套餐立即生效)。以下套餐只能个人使用，禁止倒卖/组团拼车购买等行为，发现则封号处理（如需多人使用请联系客服定制团队套餐）。",
-      "notice_subtext":"福利：每月赠送10-60G应急流量（结合VIP等级和账户累计续费天数而增加），首页点领福利可获取",
+      "notice_text":"plan.notice_text",
+      "notice_subtext":"plan.notice_subtext",
       "show_price":true,
       "show_features":true,
       "show_quota":true,
-      "button_text":"购买",
-      "buy_text":"购买",
-      "renew_text":"购买",
+      "button_text":"common.buy",
+      "buy_text":"common.buy",
+      "renew_text":"common.buy",
       "columns":2
     },
     "style":{}
   },
   {
-    "id":"mod-orders","type":"order_list","title":"我的账单","page":"billing","visible":true,
+    "id":"mod-orders","type":"order_list","title":"order.title","page":"billing","visible":true,
     "data":{
-      "notice_text":"支付后自动开通，帐号信息在网站首页，新用户请到网站首页查看使用教程。续费用户请在客户端墙上重新订阅即可！",
-      "notice_highlight":"请保护好自己！",
-      "notice_subtext":"付款后5分钟未有显示已发行，直接联系在线客服补单",
-      "columns":["编号","编号","服务","金额","购买日期","到期时间","状态"],
+      "notice_text":"order.notice",
+      "notice_highlight":"order.notice_highlight",
+      "notice_subtext":"order.notice_subtext",
+      "columns":["order.id","order.id","order.service","common.amount","order.date","order.expire","common.status"],
       "limit":20
     },
     "style":{}
   },
   {
-    "id":"mod-nodes-list","type":"node_list","title":"线路列表","page":"nodes","visible":true,
+    "id":"mod-nodes-list","type":"node_list","title":"node.title","page":"nodes","visible":true,
     "data":{
-      "info_title":"线路列表",
-      "info_text":"线路名字说明：\n【主打线路】R系列：主力线路(中转|网速快|推荐)\n【特殊线路】V系列：IEPL专线；S系列：IPLC低延迟游戏级专线\n【特殊线路】D系列：直连线路(R/V/S系列只能从大陆连接，D系列境外可访问)\n【流量倍率】名字末尾带x1.5为1.5倍率，不带x的为默认1倍率，计算方法：账号使用流量 = 实际流量 * 倍率\n【Netflix解锁】全部香港/新加坡/美国线路均可解锁非自制剧\n【OpenAI解锁】美国/香港均可解锁，其中IPLC专线采用独立通道解锁，响应更快。请勿用于批量注册\n【Gemini解锁】美国均可解锁\n【其他AI解锁】美国均可解锁\n【Disney+解锁】港/美基本都可解锁",
+      "info_title":"node.info_title",
+      "info_text":"node.info_text",
       "group_by":"region",
       "show_protocol":true,
       "show_tier":true,
@@ -111,43 +112,67 @@ const defaultModulesJSON = `[
     "style":{}
   },
   {
-    "id":"mod-tutorial-cards","type":"tutorial_cards","title":"下载与教程","page":"tutorial","visible":true,
+    "id":"mod-tutorial-cards","type":"tutorial_cards","title":"tutorial.title","page":"tutorial","visible":true,
     "data":{
       "cards":[
-        {"id":"windows","name":"Windows","icon":"windows","desc":"适用于 Windows 10 及以上版本","color":"#0ea5e9","bg":"linear-gradient(135deg, #0ea5e9, #0284c7)"},
-        {"id":"android","name":"Android","icon":"android","desc":"适用于 Android 5.0 及以上版本，安卓手机和平板设备","color":"#84cc16","bg":"linear-gradient(135deg, #84cc16, #65a30d)"},
-        {"id":"apple","name":"Apple","icon":"apple","desc":"适用于 iOS/iPadOS/","color":"#1f2937","bg":"linear-gradient(135deg, #374151, #1f2937)"},
-        {"id":"mac","name":"Mac","icon":"desktop","desc":"适用于 M 系列芯片及 macOS 12+","color":"#6b7280","bg":"linear-gradient(135deg, #9ca3af, #6b7280)"},
-        {"id":"linux","name":"Linux","icon":"linux","desc":"适用于所有主流 Linux 发行版","color":"#f59e0b","bg":"linear-gradient(135deg, #f59e0b, #d97706)"},
-        {"id":"faq","name":"FAQ","icon":"question","desc":"常见问题与操作指南，助您快速上手","color":"#8b5cf6","bg":"linear-gradient(135deg, #a78bfa, #8b5cf6)"},
-        {"id":"update","name":"更新订阅","icon":"sync","desc":"所有客户端更新订阅方法汇总，一页查清","color":"#10b981","bg":"linear-gradient(135deg, #10b981, #059669)"}
+        {"id":"windows","name":"Windows","icon":"windows","desc":"tutorial.desc_windows","color":"#0ea5e9","bg":"linear-gradient(135deg, #0ea5e9, #0284c7)"},
+        {"id":"android","name":"Android","icon":"android","desc":"tutorial.desc_android","color":"#84cc16","bg":"linear-gradient(135deg, #84cc16, #65a30d)"},
+        {"id":"apple","name":"Apple","icon":"apple","desc":"tutorial.desc_apple","color":"#1f2937","bg":"linear-gradient(135deg, #374151, #1f2937)"},
+        {"id":"mac","name":"Mac","icon":"desktop","desc":"tutorial.desc_mac","color":"#6b7280","bg":"linear-gradient(135deg, #9ca3af, #6b7280)"},
+        {"id":"linux","name":"Linux","icon":"linux","desc":"tutorial.desc_linux","color":"#f59e0b","bg":"linear-gradient(135deg, #f59e0b, #d97706)"},
+        {"id":"faq","name":"FAQ","icon":"question","desc":"tutorial.desc_faq","color":"#8b5cf6","bg":"linear-gradient(135deg, #a78bfa, #8b5cf6)"},
+        {"id":"update","name":"Update","icon":"sync","desc":"tutorial.desc_update","color":"#10b981","bg":"linear-gradient(135deg, #10b981, #059669)"}
       ]
     },
     "style":{}
   },
   {
-    "id":"mod-tickets","type":"ticket_list","title":"我的工单","page":"support","visible":true,
-    "data":{"new_btn_text":"新建工单","show_categories":true},
+    "id":"mod-tickets","type":"ticket_list","title":"ticket.title","page":"support","visible":true,
+    "data":{"new_btn_text":"ticket.new","show_categories":true},
     "style":{}
   },
   {
-    "id":"mod-referral","type":"referral","title":"推广邀请","page":"referral","visible":true,
-    "data":{"description":"邀请好友注册并消费，即可获得返利佣金。","copy_btn_text":"复制邀请链接","show_records":true,"records_limit":10},
+    "id":"mod-referral","type":"referral","title":"referral.title","page":"referral","visible":true,
+    "data":{"description":"referral.description","copy_btn_text":"referral.copy_link","show_records":true,"records_limit":10},
     "style":{}
   },
   {
-    "id":"mod-sec","type":"security_settings","title":"安全设置","page":"profile","visible":true,
-    "data":{"description":"管理您的账户安全设置","show_ip_whitelist":true,"show_password":true},
+    "id":"mod-sec","type":"security_settings","title":"security.title","page":"profile","visible":true,
+    "data":{"description":"security.description","show_ip_whitelist":true,"show_password":true},
     "style":{}
   },
   {
-    "id":"mod-log","type":"log_packages","title":"日志打包","page":"logs","visible":true,
-    "data":{"description":"请求打包最近日志，系统将在后台收集并压缩为可下载文件。","btn_1h":"打包最近1小时","btn_6h":"最近6小时","btn_24h":"最近24小时"},
+    "id":"mod-log","type":"log_packages","title":"log.title","page":"logs","visible":true,
+    "data":{"description":"log.description","btn_1h":"log.btn_1h","btn_6h":"log.btn_6h","btn_24h":"log.btn_24h"},
     "style":{}
   },
   {
-    "id":"mod-log-info","type":"markdown","title":"访问日志","page":"logs","visible":true,
-    "data":{"markdown":"## 访问日志\n\n在此页面查看您的连接日志和访问记录。\n\n> 日志数据由客户端实时拉取。"},
+    "id":"mod-log-info","type":"markdown","title":"log.access_log","page":"logs","visible":true,
+    "data":{"markdown":"log.access_log_md"},
     "style":{"align":"left"}
   }
 ]`
+
+// defaultAuthRegionJSON is the default source code for the auth (login) region.
+// Data fields use lang keys resolved by t() at runtime.
+const defaultAuthRegionJSON = `{
+  "html": "<div class=\"auth-wrapper\">\n  <div class=\"auth-bg\"></div>\n  <div class=\"auth-card glass\">\n    <div class=\"auth-logo\">\n      <img v-if=\"logoUrl\" :src=\"logoUrl\" class=\"logo-img\" />\n      <div v-else class=\"logo-icon\">{{ data.logo_emoji || '\\u26a1' }}</div>\n    </div>\n    <h1 class=\"auth-title\">{{ siteName }}</h1>\n    <p class=\"auth-subtitle\">{{ data.subtitle || '\\u767b\\u5f55\\u6216\\u6ce8\\u518c\\u4ee5\\u5f00\\u59cb\\u4f7f\\u7528' }}</p>\n    <el-tabs v-model=\"authTab\" class=\"auth-tabs\">\n      <el-tab-pane :label=\"data.login_label || '\\u767b\\u5f55'\" name=\"login\">\n        <el-form :model=\"loginForm\" class=\"auth-form\">\n          <el-form-item>\n            <el-input v-model=\"loginForm.email\" :placeholder=\"data.email_placeholder || '\\u90ae\\u7bb1'\" prefix-icon=\"Message\" size=\"large\" />\n          </el-form-item>\n          <el-form-item>\n            <el-input v-model=\"loginForm.password\" type=\"password\" :placeholder=\"data.password_placeholder || '\\u5bc6\\u7801'\" prefix-icon=\"Lock\" show-password size=\"large\" @keyup.enter=\"handleLogin\" />\n          </el-form-item>\n          <el-button type=\"primary\" class=\"btn-block\" :loading=\"loading\" @click=\"handleLogin\" size=\"large\">{{ data.login_btn_text || '\\u767b\\u5f55' }}</el-button>\n        </el-form>\n      </el-tab-pane>\n      <el-tab-pane v-if=\"registrationEnabled\" :label=\"data.register_label || '\\u6ce8\\u518c'\" name=\"register\">\n        <el-form :model=\"registerForm\" class=\"auth-form\">\n          <el-form-item>\n            <el-input v-model=\"registerForm.email\" :placeholder=\"data.email_placeholder || '\\u90ae\\u7bb1'\" prefix-icon=\"Message\" size=\"large\" />\n          </el-form-item>\n          <el-form-item>\n            <el-input v-model=\"registerForm.password\" type=\"password\" :placeholder=\"data.password_placeholder || '\\u5bc6\\u7801'\" prefix-icon=\"Lock\" show-password size=\"large\" @keyup.enter=\"handleRegister\" />\n          </el-form-item>\n          <el-form-item>\n            <el-input v-model=\"registerForm.referral_code\" :placeholder=\"data.invite_placeholder || '\\u9080\\u8bf7\\u7801\\uff08\\u53ef\\u9009\\uff09'\" prefix-icon=\"Promotion\" size=\"large\" />\n          </el-form-item>\n          <el-button type=\"primary\" class=\"btn-block\" :loading=\"loading\" @click=\"handleRegister\" size=\"large\">{{ data.register_btn_text || '\\u6ce8\\u518c' }}</el-button>\n        </el-form>\n      </el-tab-pane>\n    </el-tabs>\n    <p v-if=\"data.footer_text\" class=\"auth-footer\">{{ data.footer_text }}</p>\n  </div>\n</div>",
+  "css": ".auth-wrapper {\n  min-height: 100vh;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  position: relative;\n  padding: 20px;\n}\n.auth-bg {\n  position: fixed; inset: 0;\n  background: var(--bg-gradient);\n  z-index: 0;\n}\n.auth-card {\n  position: relative; z-index: 1;\n  border-radius: 20px;\n  padding: 40px 32px;\n  width: 100%;\n  max-width: 400px;\n  text-align: center;\n}\n.auth-logo { margin-bottom: 8px; }\n.logo-img { width: 64px; height: 64px; border-radius: 16px; }\n.logo-icon { font-size: 48px; line-height: 1; }\n.auth-title {\n  font-size: 24px;\n  font-weight: 700;\n  color: var(--text-primary);\n  margin-bottom: 4px;\n}\n.auth-subtitle {\n  font-size: 14px;\n  color: var(--text-secondary);\n  margin-bottom: 24px;\n}\n.auth-tabs { margin-bottom: 0; }\n.auth-form { margin-top: 16px; }\n.btn-block {\n  width: 100%;\n  background: linear-gradient(135deg, var(--accent), var(--accent-dark)) !important;\n  border: none !important;\n  font-weight: 700 !important;\n  box-shadow: 0 4px 14px rgba(37,99,235,0.25) !important;\n  transition: transform 0.15s, box-shadow 0.15s !important;\n}\n.btn-block:hover {\n  transform: translateY(-2px);\n  box-shadow: 0 6px 20px rgba(37,99,235,0.35) !important;\n}\n.auth-footer {\n  margin-top: 16px;\n  font-size: 12px;\n  color: var(--text-muted);\n}",
+  "js": "return {\n  loginForm: ctx.loginForm,\n  registerForm: ctx.registerForm,\n  authTab: ctx.authTab,\n  loading: ctx.loading,\n  registrationEnabled: ctx.registrationEnabled,\n  logoUrl: ctx.logoUrl,\n  siteName: ctx.siteName,\n  handleLogin: ctx.handleLogin,\n  handleRegister: ctx.handleRegister,\n  data: ctx.data\n}",
+  "data": {
+    "subtitle": "auth.welcome_login",
+    "logo_emoji": "\\u26a1",
+    "login_label": "auth.login",
+    "register_label": "auth.register",
+    "login_btn_text": "auth.login_btn",
+    "register_btn_text": "auth.register_btn",
+    "email_placeholder": "auth.email",
+    "password_placeholder": "auth.password",
+    "invite_placeholder": "auth.invite_code",
+    "footer_text": ""
+  }
+}`
+
+// defaultRegionsJSON wraps all editable regions into a single JSON object.
+// Currently only "auth" (login page) is supported; more regions can be added.
+const defaultRegionsJSON = `{"auth":` + defaultAuthRegionJSON + `}`

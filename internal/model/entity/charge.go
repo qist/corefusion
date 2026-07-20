@@ -170,7 +170,7 @@ const (
 type ChargeCard struct {
 	ID                int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	CardCode          string     `gorm:"-" json:"card_code"`                                          // 明文，仅内存中使用（从 CardCodeEncrypted 解密填充）
-	CardCodeHash      string     `gorm:"size:64;uniqueIndex;not null" json:"-"`                       // SHA-256 hash，用于快速查找（不返回前端）
+	CardCodeHash      string     `gorm:"size:64;index;not null;default:''" json:"-"`                       // SHA-256 hash，用于快速查找（不返回前端）
 	CardCodeEncrypted string     `gorm:"type:text" json:"-"`                                          // AES-256-GCM 加密存储（不返回前端）
 	CardCodeMasked    string     `gorm:"-" json:"card_code_masked"`                                  // 脱敏卡号（列表展示用）
 	CardType          string     `gorm:"size:32;not null" json:"card_type"`

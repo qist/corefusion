@@ -59,7 +59,34 @@ func (r *ClientLogPackageRepository) ListByClientID(ctx context.Context, clientI
 	return pkgs, total, err
 }
 
+// ListActiveByClientID returns non-expired log packages for a specific client.
+func (r *ClientLogPackageRepository) ListActiveByClientID(ctx context.Context, clientID int64, limit, offset int) ([]entity.ClientLogPackage, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var pkgs []entity.ClientLogPackage
+	var total int64
+	q := r.db.WithContext(ctx).Model(&entity.ClientLogPackage{}).
+		Where("client_id = ? AND status != ?", clientID, "expired")
+	q.Count(&total)
+	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&pkgs).Error
+	return pkgs, total, err
+}
+
 // Delete removes a log package record.
 func (r *ClientLogPackageRepository) Delete(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&entity.ClientLogPackage{}).Error
+}
+
+// ListAll returns all log packages ordered by creation time desc (for admin view).
+func (r *ClientLogPackageRepository) ListAll(ctx context.Context, limit, offset int) ([]entity.ClientLogPackage, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var pkgs []entity.ClientLogPackage
+	var total int64
+	q := r.db.WithContext(ctx).Model(&entity.ClientLogPackage{})
+	q.Count(&total)
+	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&pkgs).Error
+	return pkgs, total, err
 }

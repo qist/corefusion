@@ -399,9 +399,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <p v-else class="card-desc">{{ t('log.description') }}</p>
               <div class="log-actions">
-                <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ t((mod.data && mod.data.btn_1h) || 'log.btn_1h') }}</el-button>
-                <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ t((mod.data && mod.data.btn_6h) || 'log.btn_6h') }}</el-button>
-                <el-button size="small" @click="createLogPackage(24)">{{ t((mod.data && mod.data.btn_24h) || 'log.btn_24h') }}</el-button>
+                <el-button type="primary" size="small" @click="confirmCreateLogPackage()" :loading="logPacking" :disabled="!hasEntryNodes">{{ t('log.btn_pack') }}</el-button>
+                <span v-if="!hasEntryNodes" class="logpkg-hint" style="margin-left:8px">{{ t('log.no_nodes') }}</span>
               </div>
               <div v-if="logPackages.length > 0" style="margin-top: 16px">
                 <div class="card-header"><span class="card-icon">📁</span><span class="card-title">{{ t('log.package_list') }}</span><span class="card-action" @click="fetchLogPackages">{{ t('common.refresh') }}</span></div>
@@ -414,9 +413,10 @@ const defaultPortalHTML = `<!DOCTYPE html>
                     </div>
                     <div class="logpkg-actions">
                       <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                      <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
+                      <el-button v-if="pkg.status === 'ready'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
                       <span v-if="pkg.status === 'processing'" class="logpkg-hint">{{ t('common.processing') }}...</span>
                       <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
+                      <el-button v-if="pkg.status === 'ready' || pkg.status === 'failed'" size="small" type="danger" text @click="deleteLogPackage(pkg.id)">{{ t('common.delete') }}</el-button>
                     </div>
                   </div>
                 </div>
@@ -1308,9 +1308,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <p v-else class="card-desc">{{ t('log.description') }}</p>
           <div class="log-actions">
-            <el-button type="primary" size="small" @click="createLogPackage(1)" :loading="logPacking">{{ t((mod.data && mod.data.btn_1h) || 'log.btn_1h') }}</el-button>
-            <el-button size="small" @click="createLogPackage(6)" :loading="logPacking">{{ t((mod.data && mod.data.btn_6h) || 'log.btn_6h') }}</el-button>
-            <el-button size="small" @click="createLogPackage(24)">{{ t((mod.data && mod.data.btn_24h) || 'log.btn_24h') }}</el-button>
+            <el-button type="primary" size="small" @click="confirmCreateLogPackage()" :loading="logPacking" :disabled="!hasEntryNodes">{{ t('log.btn_pack') }}</el-button>
+            <span v-if="!hasEntryNodes" class="logpkg-hint" style="margin-left:8px">{{ t('log.no_nodes') }}</span>
           </div>
           <div v-if="logPackages.length > 0" style="margin-top: 16px">
             <div class="card-header"><span class="card-icon">📁</span><span class="card-title">{{ t('log.package_list') }}</span><span class="card-action" @click="fetchLogPackages">{{ t('common.refresh') }}</span></div>
@@ -1323,9 +1322,10 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
                 <div class="logpkg-actions">
                   <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                  <el-button v-if="pkg.status === 'done'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
+                  <el-button v-if="pkg.status === 'ready'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
                   <span v-if="pkg.status === 'processing'" class="logpkg-hint">{{ t('common.processing') }}...</span>
                   <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
+                  <el-button v-if="pkg.status === 'ready' || pkg.status === 'failed'" size="small" type="danger" text @click="deleteLogPackage(pkg.id)">{{ t('common.delete') }}</el-button>
                 </div>
               </div>
             </div>
@@ -2827,6 +2827,7 @@ border-bottom: 1px solid var(--border);
 .badge-expired { background: #fef3c7; color: #92400e; }
 .badge-revoked { background: #fee2e2; color: #991b1b; }
 .badge-done { background: #d1fae5; color: #065f46; }
+.badge-ready { background: #d1fae5; color: #065f46; }
 .badge-processing { background: #dbeafe; color: #1e40af; }
 .badge-failed { background: #fee2e2; color: #991b1b; }
 .badge-none { background: #f3f4f6; color: #6b7280; }
@@ -4133,6 +4134,7 @@ var activeAnnouncement = ref(null)
 
     var logPackages = ref([])
     var logPacking = ref(false)
+    var hasEntryNodes = ref(true)
 
     // --- Commercial module state ---
     var plans = ref([])
@@ -4392,7 +4394,7 @@ var showPromoInput = ref(false) // promo code fold
       var hasLogMods = portalModules.value.some(function(m) {
         return (m.page || 'overview') === pageTarget && m.type === 'log_packages'
       })
-      if (hasLogMods) fetchLogPackages()
+      if (hasLogMods) { fetchLogPackages(); checkEntryNodes() }
       // Auto-fetch commercial module data based on page
       var pageMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === pageTarget })
       var hasPlanList = pageMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
@@ -4764,6 +4766,36 @@ var showStreamingAccount = function(service) {
       }).catch(function() {})
     }
 
+    var checkEntryNodes = function() {
+      api('GET', '/logs/types').then(function(res) {
+        hasEntryNodes.value = !!res.has_entry_nodes
+      }).catch(function() { hasEntryNodes.value = true })
+    }
+
+    var confirmCreateLogPackage = function() {
+      if (!hasEntryNodes.value) {
+        ElMessage.warning(t('log.no_nodes'))
+        return
+      }
+      var dialogHtml = '<div style="margin-bottom:12px">' + t('log.confirm_desc') + '</div>' +
+        '<div style="display:flex;gap:12px">' +
+          '<label style="cursor:pointer"><input type="radio" name="logPackHours" value="1" checked style="margin-right:4px">1h</label>' +
+          '<label style="cursor:pointer"><input type="radio" name="logPackHours" value="6" style="margin-right:4px">6h</label>' +
+          '<label style="cursor:pointer"><input type="radio" name="logPackHours" value="24" style="margin-right:4px">24h</label>' +
+        '</div>'
+      ElMessageBox.confirm(dialogHtml, t('log.btn_pack'), {
+        dangerouslyUseHTMLString: true,
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel')
+      }).then(function() {
+        var checked = document.querySelector('input[name="logPackHours"]:checked')
+        var hours = checked ? parseInt(checked.value) : 1
+        createLogPackage(hours)
+      }).catch(function() {})
+    }
+
+    var logPackHours = ref(1)
+
     var createLogPackage = function(hours) {
       logPacking.value = true
       api('POST', '/logs/package', { hours: hours }).then(function(res) {
@@ -4776,7 +4808,20 @@ var showStreamingAccount = function(service) {
       window.open('/api/v1/client-auth/logs/packages/' + id + '/download?token=' + encodeURIComponent(token.value), '_blank')
     }
 
-    var pkgStatusText = function(s) { return { pending: t('common.processing'), processing: t('common.processing'), done: t('order.status_completed'), failed: t('common.failed') }[s] || s || '-' }
+    var deleteLogPackage = function(id) {
+      ElMessageBox.confirm(t('log.delete_confirm'), t('common.confirm'), {
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
+        type: 'warning'
+      }).then(function() {
+        api('DELETE', '/logs/packages/' + id).then(function() {
+          ElMessage.success(t('log.deleted'))
+          fetchLogPackages()
+        }).catch(function(e) { ElMessage.error(e.message) })
+      }).catch(function() {})
+    }
+
+    var pkgStatusText = function(s) { return { pending: t('common.processing'), processing: t('common.processing'), ready: t('order.status_completed'), failed: t('common.failed') }[s] || s || '-' }
 
     // --- formatMoney: converts cents to yuan string ---
     var formatMoney = function(cents) {
@@ -5449,7 +5494,7 @@ return {
       isDark: isDark, registrationEnabled: registrationEnabled,
       loginForm: loginForm, registerForm: registerForm, pwdForm: pwdForm,
       settings: settings, client: client, endpoints: endpoints,
-      logPackages: logPackages, logPacking: logPacking,
+      logPackages: logPackages, logPacking: logPacking, hasEntryNodes: hasEntryNodes,
       qrCodeUrl: qrCodeUrl,
       handleLogin: handleLogin, handleRegister: handleRegister, rotateToken: rotateToken,
       saveSettings: saveSettings, changePassword: changePassword, handleLogout: handleLogout,
@@ -5457,7 +5502,7 @@ return {
       usagePercent: usagePercent, usageColor: usageColor, ringDash: ringDash,
       statusText: statusText, subStatusText: subStatusText, subUrl: subUrl,
       toggleQr: toggleQr, showQrDialog: showQrDialog, handleSubAction: handleSubAction, showStreamingAccount: showStreamingAccount, toggleTheme: toggleTheme,
-      createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages,
+      createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages, confirmCreateLogPackage: confirmCreateLogPackage, deleteLogPackage: deleteLogPackage, checkEntryNodes: checkEntryNodes,
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
       switchToLogs: switchToLogs, scrollToModule: scrollToModule,
       portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd, fetchPageData: fetchPageData, saveActiveTab: saveActiveTab,

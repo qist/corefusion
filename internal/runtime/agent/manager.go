@@ -1675,9 +1675,25 @@ func (m *NodeServerManager) ReadLogFileOnServer(ctx context.Context, serverID in
 	return m.ReadLogFileOnServerWithPath(ctx, serverID, logType, "", lastLines)
 }
 
+// ReadLogFileOnServerFiltered reads log lines from a remote node with server-side filtering.
+// filterEmails: when non-empty, the agent only returns lines containing one of these emails.
+// startTime/endTime: Unix timestamps for time-range filtering (0 = no limit).
+// This is used for client log packaging to avoid transferring entire log files.
+func (m *NodeServerManager) ReadLogFileOnServerFiltered(ctx context.Context, serverID int64, logType string, lastLines int, filterEmails []string, startTime, endTime int64) ([]string, string, error) {
+	return m.ReadLogFileOnServerWithPathFiltered(ctx, serverID, logType, "", lastLines, filterEmails, startTime, endTime)
+}
+
 // ReadLogFileOnServerWithPath reads the last N lines of a specific log file from a node.
 // If logPath is non-empty, the agent reads that file directly instead of resolving by logType.
 func (m *NodeServerManager) ReadLogFileOnServerWithPath(ctx context.Context, serverID int64, logType, logPath string, lastLines int) ([]string, string, error) {
+	return m.ReadLogFileOnServerWithPathFiltered(ctx, serverID, logType, logPath, lastLines, nil, 0, 0)
+}
+
+// ReadLogFileOnServerWithPathFiltered reads the last N lines of a specific log file from a node
+// with optional server-side filtering. For remote nodes, filterEmails/startTime/endTime are
+// sent to the agent so it can pre-filter lines before transmission, dramatically reducing
+// network payload for client log packaging.
+func (m *NodeServerManager) ReadLogFileOnServerWithPathFiltered(ctx context.Context, serverID int64, logType, logPath string, lastLines int, filterEmails []string, startTime, endTime int64) ([]string, string, error) {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return nil, "", fmt.Errorf("local agent not configured")
@@ -1722,9 +1738,12 @@ func (m *NodeServerManager) ReadLogFileOnServerWithPath(ctx context.Context, ser
 		CommandId: generateCommandID(),
 		Command: &agentpb.PanelCommand_ReadLogFile{
 			ReadLogFile: &agentpb.ReadLogFileRequest{
-				LogType:   logType,
-				LogPath:   logPath,
-				LastLines: int32(lastLines),
+				LogType:      logType,
+				LogPath:      logPath,
+				LastLines:    int32(lastLines),
+				FilterEmails: filterEmails,
+				StartTime:    startTime,
+				EndTime:      endTime,
 			},
 		},
 	}
@@ -1742,7 +1761,13 @@ func (m *NodeServerManager) ReadLogFileOnServerWithPath(ctx context.Context, ser
 	if !resp.Success {
 		return nil, "", fmt.Errorf("%s", resp.Error)
 	}
-	return resp.Lines, resp.LogPath, nil
+	// Safety: resp.Lines may be nil when the remote node has no data.
+	// Return empty slice instead of nil to avoid nil-pointer issues downstream.
+	lines := resp.Lines
+	if lines == nil {
+		lines = []string{}
+	}
+	return lines, resp.LogPath, nil
 }
 
 // RotateLogOnServer triggers log rotation on a node (local or remote).

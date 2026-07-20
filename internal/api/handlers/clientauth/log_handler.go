@@ -166,8 +166,31 @@ func (h *LogHandler) DownloadLogPackage(c *gin.Context) {
 	c.File(filePath)
 }
 
+// DeleteLogPackage handles DELETE /api/v1/client-auth/logs/packages/:id.
+// Deletes a log package record and its file.
+func (h *LogHandler) DeleteLogPackage(c *gin.Context) {
+	clientID := getClientID(c)
+	if clientID == 0 {
+		response.Unauthorized(c, "UNAUTHORIZED", "client not authenticated")
+		return
+	}
+
+	pkgID := c.Param("id")
+	if pkgID == "" {
+		response.BadRequest(c, "INVALID_ID", "package id required")
+		return
+	}
+
+	if err := h.logSvc.DeletePackage(c.Request.Context(), clientID, pkgID); err != nil {
+		response.BadRequest(c, "DELETE_FAILED", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"deleted": true})
+}
+
 // LogPackageHealthCheck handles GET /api/v1/client-auth/logs/types.
-// Returns available log types and max hours for the client.
+// Returns available log types, max hours, and whether the client has entry nodes.
 func (h *LogHandler) LogPackageHealthCheck(c *gin.Context) {
 	clientID := getClientID(c)
 	if clientID == 0 {
@@ -176,8 +199,9 @@ func (h *LogHandler) LogPackageHealthCheck(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"max_hours":  logmanage.MaxClientLogHours,
-		"log_types":  logmanage.AllLogTypes(),
-		"expiry_min": 60,
+		"max_hours":       logmanage.MaxClientLogHours,
+		"log_types":      logmanage.AllLogTypes(),
+		"expiry_min":     60,
+		"has_entry_nodes": h.logSvc.HasEntryNodes(c.Request.Context(), clientID),
 	})
 }

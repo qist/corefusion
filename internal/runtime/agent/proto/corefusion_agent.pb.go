@@ -5136,9 +5136,12 @@ func (x *ExecuteBinaryResponse) GetParsed() map[string]string {
 // 读取节点上的日志文件
 type ReadLogFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`        // xray/singbox/hysteria2/tuic/nginx/caddy
-	LastLines     int32                  `protobuf:"varint,2,opt,name=last_lines,json=lastLines,proto3" json:"last_lines,omitempty"` // 读取最后 N 行（默认 500）
-	LogPath       string                 `protobuf:"bytes,3,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`        // 指定日志文件绝对路径（优先于 log_type 自动解析）
+	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`                // xray/singbox/hysteria2/tuic/nginx/caddy
+	LastLines     int32                  `protobuf:"varint,2,opt,name=last_lines,json=lastLines,proto3" json:"last_lines,omitempty"`         // 读取最后 N 行（默认 500）
+	LogPath       string                 `protobuf:"bytes,3,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`                // 指定日志文件绝对路径（优先于 log_type 自动解析）
+	FilterEmails  []string               `protobuf:"bytes,4,rep,name=filter_emails,json=filterEmails,proto3" json:"filter_emails,omitempty"` // 仅返回包含这些 email 标识的日志行（用于订阅用户日志打包）
+	StartTime     int64                  `protobuf:"varint,5,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`         // 时间范围起始（Unix 时间戳，0 表示不限制）
+	EndTime       int64                  `protobuf:"varint,6,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`               // 时间范围结束（Unix 时间戳，0 表示不限制）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5192,6 +5195,27 @@ func (x *ReadLogFileRequest) GetLogPath() string {
 		return x.LogPath
 	}
 	return ""
+}
+
+func (x *ReadLogFileRequest) GetFilterEmails() []string {
+	if x != nil {
+		return x.FilterEmails
+	}
+	return nil
+}
+
+func (x *ReadLogFileRequest) GetStartTime() int64 {
+	if x != nil {
+		return x.StartTime
+	}
+	return 0
+}
+
+func (x *ReadLogFileRequest) GetEndTime() int64 {
+	if x != nil {
+		return x.EndTime
+	}
+	return 0
 }
 
 type ReadLogFileResponse struct {
@@ -6880,12 +6904,16 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x06parsed\x18\x04 \x03(\v26.corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntryR\x06parsed\x1a9\n" +
 	"\vParsedEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"i\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc8\x01\n" +
 	"\x12ReadLogFileRequest\x12\x19\n" +
 	"\blog_type\x18\x01 \x01(\tR\alogType\x12\x1d\n" +
 	"\n" +
 	"last_lines\x18\x02 \x01(\x05R\tlastLines\x12\x19\n" +
-	"\blog_path\x18\x03 \x01(\tR\alogPath\"v\n" +
+	"\blog_path\x18\x03 \x01(\tR\alogPath\x12#\n" +
+	"\rfilter_emails\x18\x04 \x03(\tR\ffilterEmails\x12\x1d\n" +
+	"\n" +
+	"start_time\x18\x05 \x01(\x03R\tstartTime\x12\x19\n" +
+	"\bend_time\x18\x06 \x01(\x03R\aendTime\"v\n" +
 	"\x13ReadLogFileResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x14\n" +

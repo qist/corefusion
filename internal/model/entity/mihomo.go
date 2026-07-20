@@ -9,9 +9,11 @@ type MihomoConfig struct {
 	ClientType  string    `gorm:"size:50;default:'clash'" json:"client_type"`  // clash, singbox, v2ray
 	Format      string    `gorm:"size:50;not null;default:'mihomo_yaml'" json:"format"` // mihomo_yaml, singbox_json, xray_json
 	Description string    `gorm:"size:500" json:"description"`
+	Platform    string    `gorm:"size:50;default:''" json:"platform"`   // win, mac, android, ios, universal (empty = universal)
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
 	ConfigJSON  string    `gorm:"type:text" json:"config_json"` // Complete JSON for import/export
+	PlanIDs     Int64List `gorm:"type:text;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

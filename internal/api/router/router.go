@@ -1980,6 +1980,85 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 	r.GET("/api/v1/public/articles", clientExtH.PublicListArticles)
 	r.GET("/api/v1/public/articles/:slug", clientExtH.PublicGetArticle)
 
+	// Public: list enabled client configs (for portal "more subscriptions" dialog)
+	mihomoCfgRepoPublic := repository.NewMihomoConfigRepository(database)
+	subFmtRepoPublic := repository.NewSubscriptionFormatRepository(database)
+	r.GET("/api/v1/public/client-configs", func(c *gin.Context) {
+		planIDStr := c.Query("plan_id")
+		var planID int64
+		if planIDStr != "" {
+			planID, _ = strconv.ParseInt(planIDStr, 10, 64)
+		}
+
+		// 1) Fetch enabled MihomoConfigs, filter by plan_id
+		configs, err := mihomoCfgRepoPublic.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		var cfgItems []gin.H
+		for _, cfg := range configs {
+			if !cfg.Enabled {
+				continue
+			}
+			// Parse plan_ids from JSON string (manual handling for compatibility)
+			var planIDs []int64
+			if cfg.PlanIDs != nil && len(cfg.PlanIDs) > 0 {
+				planIDs = []int64(cfg.PlanIDs)
+			}
+			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
+			if len(planIDs) > 0 && !containsInt64(planIDs, planID) {
+				continue
+			}
+			cfgItems = append(cfgItems, gin.H{
+				"id":          cfg.ID,
+				"name":        cfg.Name,
+				"description": cfg.Description,
+				"format":      cfg.Format,
+				"client_type": cfg.ClientType,
+				"platform":    cfg.Platform,
+				"sort_order":  cfg.SortOrder,
+				"plan_ids":    planIDs,
+				"type":        "config",
+			})
+		}
+
+		// 2) Fetch enabled SubscriptionFormats, filter by plan_id
+		formats, err := subFmtRepoPublic.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		var fmtItems []gin.H
+		for _, fmt := range formats {
+			if !fmt.Enabled {
+				continue
+			}
+			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
+			if len(fmt.PlanIDs) > 0 && !containsInt64(fmt.PlanIDs, planID) {
+				continue
+			}
+			fmtItems = append(fmtItems, gin.H{
+				"id":          fmt.ID,
+				"name":        fmt.Name,
+				"description": fmt.Description,
+				"format":      fmt.Format,
+				"client_type": fmt.ClientType,
+				"platform":    "",
+				"sort_order":  fmt.SortOrder,
+				"plan_ids":    fmt.PlanIDs,
+				"type":        "format",
+			})
+		}
+
+		// Merge and return
+		allItems := append(cfgItems, fmtItems...)
+		if allItems == nil {
+			allItems = []gin.H{}
+		}
+		response.OK(c, allItems)
+	})
+
 	// Charge callback (public, called by charge sites)
 	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
 
@@ -2861,5 +2940,89 @@ subRepo, subEndpointRepo2, portalPublicSubH, database,
 		response.OK(c, result)
 	})
 
+	// Public: list enabled client configs (for portal "more subscriptions" dialog)
+	clientCfgRepo := repository.NewMihomoConfigRepository(database)
+	subFmtRepoAgent := repository.NewSubscriptionFormatRepository(database)
+	r.GET("/api/v1/public/client-configs", func(c *gin.Context) {
+		planIDStr := c.Query("plan_id")
+		var planID int64
+		if planIDStr != "" {
+			planID, _ = strconv.ParseInt(planIDStr, 10, 64)
+		}
+
+		// 1) Fetch enabled MihomoConfigs, filter by plan_id
+		configs, err := clientCfgRepo.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		var cfgItems []gin.H
+		for _, cfg := range configs {
+			if !cfg.Enabled {
+				continue
+			}
+			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
+			if len(cfg.PlanIDs) > 0 && !containsInt64(cfg.PlanIDs, planID) {
+				continue
+			}
+			cfgItems = append(cfgItems, gin.H{
+				"id":          cfg.ID,
+				"name":        cfg.Name,
+				"description": cfg.Description,
+				"format":      cfg.Format,
+				"client_type": cfg.ClientType,
+				"platform":    cfg.Platform,
+				"sort_order":  cfg.SortOrder,
+				"plan_ids":    cfg.PlanIDs,
+				"type":        "config",
+			})
+		}
+
+		// 2) Fetch enabled SubscriptionFormats, filter by plan_id
+		formats, err := subFmtRepoAgent.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		var fmtItems []gin.H
+		for _, fmt := range formats {
+			if !fmt.Enabled {
+				continue
+			}
+			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
+			if len(fmt.PlanIDs) > 0 && !containsInt64(fmt.PlanIDs, planID) {
+				continue
+			}
+			fmtItems = append(fmtItems, gin.H{
+				"id":          fmt.ID,
+				"name":        fmt.Name,
+				"description": fmt.Description,
+				"format":      fmt.Format,
+				"client_type": fmt.ClientType,
+				"platform":    "",
+				"sort_order":  fmt.SortOrder,
+				"plan_ids":    fmt.PlanIDs,
+				"type":        "format",
+			})
+		}
+
+		// Merge and return
+		allItems := append(cfgItems, fmtItems...)
+		if allItems == nil {
+			allItems = []gin.H{}
+		}
+		response.OK(c, allItems)
+	})
+
 	return r
+}
+
+// containsInt64 checks if a slice contains a specific int64 value.
+func containsInt64(slice []int64, val int64) bool {
+	for _, v := range slice {
+		if v == val {
+			return true
+		}
+	}
+	return false
 }

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"gorm.io/gorm"
 
@@ -20,7 +21,18 @@ func NewMihomoConfigRepository(db *gorm.DB) *MihomoConfigRepository {
 func (r *MihomoConfigRepository) List(ctx context.Context) ([]entity.MihomoConfig, error) {
 	var configs []entity.MihomoConfig
 	err := r.db.WithContext(ctx).Order("sort_order ASC, id ASC").Find(&configs).Error
-	return configs, err
+	if err != nil {
+		return nil, err
+	}
+	// Manually load plan_ids for each config (compatibility with MySQL/SQLite)
+	for i := range configs {
+		var planIDsJSON *string
+		r.db.WithContext(ctx).Raw("SELECT plan_ids FROM mihomo_configs WHERE id = ?", configs[i].ID).Scan(&planIDsJSON)
+		if planIDsJSON != nil && *planIDsJSON != "" && *planIDsJSON != "null" {
+			json.Unmarshal([]byte(*planIDsJSON), &configs[i].PlanIDs)
+		}
+	}
+	return configs, nil
 }
 
 func (r *MihomoConfigRepository) GetByID(ctx context.Context, id int64) (*entity.MihomoConfig, error) {

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/service/mihomo"
 )
 
@@ -67,12 +68,14 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	var input struct {
-		Name        *string `json:"name"`
-		ClientType  *string `json:"client_type"`
-		Format      *string `json:"format"`
-		Description *string `json:"description"`
-		Enabled     *bool   `json:"enabled"`
-		ConfigJSON  *string `json:"config_json"`
+		Name        *string           `json:"name"`
+		ClientType  *string           `json:"client_type"`
+		Format      *string           `json:"format"`
+		Description *string           `json:"description"`
+		Platform    *string           `json:"platform"`
+		Enabled     *bool             `json:"enabled"`
+		ConfigJSON  *string           `json:"config_json"`
+		PlanIDs     *entity.Int64List `json:"plan_ids"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -102,6 +105,12 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 	if input.ConfigJSON != nil {
 		config.ConfigJSON = *input.ConfigJSON
+	}
+	if input.Platform != nil {
+		config.Platform = *input.Platform
+	}
+	if input.PlanIDs != nil {
+		config.PlanIDs = *input.PlanIDs
 	}
 
 	if err := h.svc.UpdateConfig(c.Request.Context(), config); err != nil {

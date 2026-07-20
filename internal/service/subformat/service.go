@@ -42,21 +42,22 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*entity.SubscriptionFo
 
 // CreateInput is the input for creating a subscription format.
 type CreateInput struct {
-	Name               string `json:"name" binding:"required"`
-	ClientType         string `json:"client_type" binding:"required"`
-	Format             string `json:"format" binding:"required"`
-	ContentType        string `json:"content_type"`
-	Extension          string `json:"extension"`
-	Description        string `json:"description"`
-	IsDefault          bool   `json:"is_default"`
-	Enabled            *bool  `json:"enabled"`
-	SortOrder          int    `json:"sort_order"`
-	ListenersJSON      string `json:"listeners_json"`
-	ProxyGroupsJSON    string `json:"proxy_groups_json"`
-	RuleProvidersJSON  string `json:"rule_providers_json"`
-	ProxyProvidersJSON string `json:"proxy_providers_json"`
-	DNSJSON            string `json:"dns_json"`
-	GeneralJSON        string `json:"general_json"`
+	Name               string           `json:"name" binding:"required"`
+	ClientType         string           `json:"client_type" binding:"required"`
+	Format             string           `json:"format" binding:"required"`
+	ContentType        string           `json:"content_type"`
+	Extension          string           `json:"extension"`
+	Description        string           `json:"description"`
+	IsDefault          bool             `json:"is_default"`
+	Enabled            *bool            `json:"enabled"`
+	SortOrder          int              `json:"sort_order"`
+	PlanIDs            entity.Int64List `json:"plan_ids"`
+	ListenersJSON      string           `json:"listeners_json"`
+	ProxyGroupsJSON    string           `json:"proxy_groups_json"`
+	RuleProvidersJSON  string           `json:"rule_providers_json"`
+	ProxyProvidersJSON string           `json:"proxy_providers_json"`
+	DNSJSON            string           `json:"dns_json"`
+	GeneralJSON        string           `json:"general_json"`
 }
 
 // Create creates a new subscription format.
@@ -71,6 +72,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.Subscr
 		IsDefault:          input.IsDefault,
 		Enabled:            true,
 		SortOrder:          input.SortOrder,
+		PlanIDs:            input.PlanIDs,
 		ListenersJSON:      input.ListenersJSON,
 		ProxyGroupsJSON:    input.ProxyGroupsJSON,
 		RuleProvidersJSON:  input.RuleProvidersJSON,
@@ -89,21 +91,22 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.Subscr
 
 // UpdateInput is the input for updating a subscription format.
 type UpdateInput struct {
-	Name               *string `json:"name"`
-	ClientType         *string `json:"client_type"`
-	Format             *string `json:"format"`
-	ContentType        *string `json:"content_type"`
-	Extension          *string `json:"extension"`
-	Description        *string `json:"description"`
-	IsDefault          *bool   `json:"is_default"`
-	Enabled            *bool   `json:"enabled"`
-	SortOrder          *int    `json:"sort_order"`
-	ListenersJSON      *string `json:"listeners_json"`
-	ProxyGroupsJSON    *string `json:"proxy_groups_json"`
-	RuleProvidersJSON  *string `json:"rule_providers_json"`
-	ProxyProvidersJSON *string `json:"proxy_providers_json"`
-	DNSJSON            *string `json:"dns_json"`
-	GeneralJSON        *string `json:"general_json"`
+	Name               *string           `json:"name"`
+	ClientType         *string           `json:"client_type"`
+	Format             *string           `json:"format"`
+	ContentType        *string           `json:"content_type"`
+	Extension          *string           `json:"extension"`
+	Description        *string           `json:"description"`
+	IsDefault          *bool             `json:"is_default"`
+	Enabled            *bool             `json:"enabled"`
+	SortOrder          *int              `json:"sort_order"`
+	PlanIDs            *entity.Int64List `json:"plan_ids"`
+	ListenersJSON      *string           `json:"listeners_json"`
+	ProxyGroupsJSON    *string           `json:"proxy_groups_json"`
+	RuleProvidersJSON  *string           `json:"rule_providers_json"`
+	ProxyProvidersJSON *string           `json:"proxy_providers_json"`
+	DNSJSON            *string           `json:"dns_json"`
+	GeneralJSON        *string           `json:"general_json"`
 }
 
 // Update updates a subscription format.
@@ -156,6 +159,9 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 	}
 	if input.GeneralJSON != nil {
 		format.GeneralJSON = *input.GeneralJSON
+	}
+	if input.PlanIDs != nil {
+		format.PlanIDs = *input.PlanIDs
 	}
 	if err := s.formatRepo.Update(ctx, format); err != nil {
 		return nil, err

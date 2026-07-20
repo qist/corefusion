@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"gorm.io/gorm"
 
@@ -22,7 +23,18 @@ func NewSubscriptionFormatRepository(db *gorm.DB) *SubscriptionFormatRepository 
 func (r *SubscriptionFormatRepository) List(ctx context.Context) ([]entity.SubscriptionFormat, error) {
 	var formats []entity.SubscriptionFormat
 	err := r.db.WithContext(ctx).Order("sort_order ASC, id ASC").Find(&formats).Error
-	return formats, err
+	if err != nil {
+		return nil, err
+	}
+	// Manually load plan_ids for each format (compatibility with MySQL/SQLite)
+	for i := range formats {
+		var planIDsJSON string
+		r.db.WithContext(ctx).Raw("SELECT plan_ids FROM subscription_formats WHERE id = ?", formats[i].ID).Scan(&planIDsJSON)
+		if planIDsJSON != "" && planIDsJSON != "null" {
+			json.Unmarshal([]byte(planIDsJSON), &formats[i].PlanIDs)
+		}
+	}
+	return formats, nil
 }
 
 // GetByID returns a subscription format by ID.

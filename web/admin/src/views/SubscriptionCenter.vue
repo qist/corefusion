@@ -55,6 +55,8 @@
               <el-table-column prop="id" label="ID" width="50" />
               <el-table-column prop="name" :label="t('subfmt.name')" width="150" />
               <el-table-column prop="description" :label="t('subfmt.description')" show-overflow-tooltip />
+              <el-table-column :label="t('subfmt.platform')" width="90"><template #default="{row}"><el-tag v-if="row.platform" size="small" type="info">{{ row.platform }}</el-tag><span v-else style="color:#909399">Universal</span></template></el-table-column>
+              <el-table-column :label="t('subfmt.planIds')" width="120"><template #default="{row}"><span v-if="!row.plan_ids || row.plan_ids.length===0" style="color:#909399">All</span><span v-else>{{ row.plan_ids.length }} plans</span></template></el-table-column>
               <el-table-column :label="t('common.status')" width="70"><template #default="{row}"><el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'✓':'✗' }}</el-tag></template></el-table-column>
               <el-table-column :label="t('common.actions')" width="200">
                 <template #default="{row}">
@@ -113,6 +115,22 @@
             <el-form-item :label="t('subfmt.contentType')"><el-input v-model="fmtForm.content_type" placeholder="text/yaml; charset=utf-8" /></el-form-item>
             <el-form-item :label="t('subfmt.extension')"><el-input v-model="fmtForm.extension" placeholder=".yaml" /></el-form-item>
             <el-form-item :label="t('subfmt.description')"><el-input v-model="fmtForm.description" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item :label="t('subfmt.platform')">
+              <el-select v-model="fmtForm.platform" style="width:100%" clearable>
+                <el-option label="Universal" value="" />
+                <el-option label="Windows" value="win" />
+                <el-option label="macOS" value="mac" />
+                <el-option label="Linux" value="linux" />
+                <el-option label="Android" value="android" />
+                <el-option label="iOS" value="ios" />
+                <el-option label="Router" value="router" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('subfmt.planIds')">
+              <el-select v-model="fmtForm.plan_ids" style="width:100%" multiple clearable placeholder="Universal">
+                <el-option v-for="p in allPlans" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item :label="t('common.enabled')"><el-switch v-model="fmtForm.enabled" /></el-form-item>
           </el-form>
         </el-tab-pane>
@@ -282,7 +300,8 @@ function selectFormatType(type) {
 }
 const fmtDialog = ref(false)
 const editingFormat = ref(null)
-const fmtForm = ref({ name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', enabled: true, listeners_json: '', proxy_groups_json: '', rule_providers_json: '', proxy_providers_json: '', dns_json: '', general_json: '' })
+const fmtForm = ref({ name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', platform: '', plan_ids: [], enabled: true, listeners_json: '', proxy_groups_json: '', rule_providers_json: '', proxy_providers_json: '', dns_json: '', general_json: '' })
+const allPlans = ref([])
 const fmtTab = ref('basic')
 const hosts = ref([])
 const tunnels = ref([])
@@ -336,6 +355,8 @@ async function fetchSubscriptions() {
     clientsList.value = clRes.items || []
   } finally { subLoading.value = false }
 }
+async function fetchPlans() { try { allPlans.value = (await client.get('/plan-templates')) || [] } catch { allPlans.value = [] } }
+
 async function fetchFormats() { fmtLoading.value = true; try { formats.value = (await client.get('/mihomo/configs')) || [] } catch {} finally { fmtLoading.value = false } }
 async function fetchEndpoints() { epLoading.value = true; try { endpoints.value = (await client.get('/subscription-endpoints')) || [] } catch {} finally { epLoading.value = false } }
 
@@ -347,7 +368,7 @@ async function handleDelete(row) { await ElMessageBox.confirm(t('subscription.de
 // Format CRUD
 function showCreateFormat() {
   editingFormat.value = null
-  fmtForm.value = { name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', enabled: true, listeners_json: '', proxy_groups_json: '', rule_providers_json: '', proxy_providers_json: '', dns_json: '', general_json: '' }
+  fmtForm.value = { name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', platform: '', plan_ids: [], enabled: true, listeners_json: '', proxy_groups_json: '', rule_providers_json: '', proxy_providers_json: '', dns_json: '', general_json: '' }
   hosts.value = []
   tunnels.value = []
   proxyGroups.value = [{ name: 'PROXY', type: 'select', proxies: [], _proxiesStr: 'DIRECT', _showAdvanced: false, hidden: false, lazy: true, url: 'https://www.gstatic.com/generate_204', interval: 300, timeout: 5000, 'max-failed-times': 5, 'empty-fallback': '' }]
@@ -734,7 +755,7 @@ async function handleImportYAML() {
 
 function showEditFormat(row) {
   editingFormat.value = row
-  fmtForm.value = { name: row.name, client_type: row.client_type || 'clash', format: row.format || 'mihomo_yaml', description: row.description || '', enabled: row.enabled }
+  fmtForm.value = { name: row.name, client_type: row.client_type || 'clash', format: row.format || 'mihomo_yaml', description: row.description || '', platform: row.platform || '', plan_ids: row.plan_ids || [], enabled: row.enabled }
 
   // Parse config_json from mihomo table
   let config = {}
@@ -1093,6 +1114,8 @@ async function saveFormat() {
       client_type: fmtForm.value.client_type || 'clash',
       format: fmtForm.value.format || selectedFormatType.value || 'mihomo_yaml',
       description: fmtForm.value.description,
+      platform: fmtForm.value.platform || '',
+      plan_ids: fmtForm.value.plan_ids || [],
       enabled: fmtForm.value.enabled,
       config_json: JSON.stringify(configJSON)
     }
@@ -1193,5 +1216,5 @@ function showEditEndpoint(row) { editingEndpoint.value = row; epForm.value = { d
 async function saveEndpoint() { if (!epForm.value.domain) { ElMessage.error(t('subend.domainRequired')); return }; try { if (editingEndpoint.value) { await client.put(`/subscription-endpoints/${editingEndpoint.value.id}`, epForm.value) } else { await client.post('/subscription-endpoints', epForm.value) } ElMessage.success(t('common.success')); epDialog.value = false; fetchEndpoints() } catch {} }
 async function deleteEndpoint(row) { await ElMessageBox.confirm(t('subend.deleteConfirm', { domain: row.domain }), t('common.confirm')); await client.delete(`/subscription-endpoints/${row.id}`); ElMessage.success(t('common.success')); fetchEndpoints() }
 
-onMounted(() => { fetchSubscriptions(); fetchFormats(); fetchEndpoints() })
+onMounted(() => { fetchSubscriptions(); fetchFormats(); fetchEndpoints(); fetchPlans() })
 </script>

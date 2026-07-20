@@ -2076,6 +2076,7 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		clientAuthProtected.GET("/logs/packages", clientLogH.ListLogPackages)
 		clientAuthProtected.GET("/logs/packages/:id", clientLogH.GetLogPackage)
 		clientAuthProtected.GET("/logs/packages/:id/download", clientLogH.DownloadLogPackage)
+		clientAuthProtected.DELETE("/logs/packages/:id", clientLogH.DeleteLogPackage)
 
 		// P0-1: Plan display
 		clientAuthProtected.GET("/plans", commerceH.ListPlans)
@@ -2818,6 +2819,7 @@ subRepo, subEndpointRepo2, portalPublicSubH, database,
 		clientAuthProtected.GET("/logs/packages", clientLogH.ListLogPackages)
 		clientAuthProtected.GET("/logs/packages/:id", clientLogH.GetLogPackage)
 		clientAuthProtected.GET("/logs/packages/:id/download", clientLogH.DownloadLogPackage)
+		clientAuthProtected.DELETE("/logs/packages/:id", clientLogH.DeleteLogPackage)
 
 		// P0-1: Plan display
 		clientAuthProtected.GET("/plans", commerceH.ListPlans)

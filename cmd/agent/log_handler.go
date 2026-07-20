@@ -28,6 +28,19 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 		lastLines = 500
 	}
 
+	// Extract client-log-package filter parameters.
+	// When filter_emails is set, only lines containing one of the emails are returned.
+	// When start_time/end_time are set, lines outside the range are excluded.
+	filterEmails := req.GetFilterEmails()
+	hasFilter := len(filterEmails) > 0 || req.StartTime > 0 || req.EndTime > 0
+	var filterStart, filterEnd time.Time
+	if req.StartTime > 0 {
+		filterStart = time.Unix(req.StartTime, 0)
+	}
+	if req.EndTime > 0 {
+		filterEnd = time.Unix(req.EndTime, 0)
+	}
+
 	// If a specific log_path is provided, read that file directly (used by
 	// rotation policies that point to a specific file like access.log).
 	// We still check stdout mode via logType for the broker fallback.
@@ -48,7 +61,7 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 				if len(realLines) > 0 {
 					return &agentpb.ReadLogFileResponse{
 						Success: true,
-						Lines:   realLines,
+						Lines:   agentFilterLines(realLines, filterEmails, filterStart, filterEnd, hasFilter),
 						LogPath: fmt.Sprintf("stdout://%s", logType),
 					}
 				}
@@ -77,7 +90,7 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 
 		return &agentpb.ReadLogFileResponse{
 			Success: true,
-			Lines:   lines,
+			Lines:   agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter),
 			LogPath: logPath,
 		}
 	}
@@ -97,9 +110,9 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 			}
 			if len(realLines) > 0 {
 				return &agentpb.ReadLogFileResponse{
-					Success:  true,
-					Lines:    realLines,
-					LogPath:  fmt.Sprintf("stdout://%s", logType),
+					Success: true,
+					Lines:   agentFilterLines(realLines, filterEmails, filterStart, filterEnd, hasFilter),
+					LogPath: fmt.Sprintf("stdout://%s", logType),
 				}
 			}
 		}
@@ -117,9 +130,9 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 	f, err := os.Open(logPath)
 	if err != nil {
 		return &agentpb.ReadLogFileResponse{
-			Success:  false,
-			Error:    fmt.Sprintf("open log file: %v", err),
-			LogPath:  logPath,
+			Success: false,
+			Error:   fmt.Sprintf("open log file: %v", err),
+			LogPath: logPath,
 		}
 	}
 	defer f.Close()
@@ -127,16 +140,16 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 	lines, err := readLastLinesFromFile(f, lastLines)
 	if err != nil {
 		return &agentpb.ReadLogFileResponse{
-			Success:  false,
-			Error:    fmt.Sprintf("read log file: %v", err),
-			LogPath:  logPath,
+			Success: false,
+			Error:   fmt.Sprintf("read log file: %v", err),
+			LogPath: logPath,
 		}
 	}
 
 	return &agentpb.ReadLogFileResponse{
-		Success:  true,
-		Lines:    lines,
-		LogPath:  logPath,
+		Success: true,
+		Lines:   agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter),
+		LogPath: logPath,
 	}
 }
 
@@ -587,6 +600,52 @@ func isInTimeRange(line string, start, end time.Time) bool {
 	}
 	// If we can't parse the timestamp, include the line (conservative approach)
 	return true
+}
+
+// agentFilterLines filters log lines by email identifiers and/or time range.
+// This is used for client log packaging: the panel sends the user's inbound email
+// identifiers so the agent can pre-filter on the remote node, avoiding the need to
+// transfer the entire log file over the network.
+// If hasFilter is false (no filter_emails, no time range), lines are returned as-is.
+// A nil input returns nil (safe for protobuf nil slices).
+func agentFilterLines(lines []string, filterEmails []string, start, end time.Time, hasFilter bool) []string {
+	if !hasFilter || len(lines) == 0 {
+		return lines
+	}
+
+	// Build email lookup set for fast matching
+	emailSet := make(map[string]bool, len(filterEmails))
+	for _, e := range filterEmails {
+		emailSet[e] = true
+	}
+
+	hasTimeFilter := !start.IsZero() || !end.IsZero()
+	filtered := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		// Filter by email: only keep lines containing at least one of the filter emails
+		if len(emailSet) > 0 {
+			matched := false
+			for email := range emailSet {
+				if strings.Contains(line, email) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+
+		// Filter by time range
+		if hasTimeFilter && !isInTimeRange(line, start, end) {
+			continue
+		}
+
+		filtered = append(filtered, line)
+	}
+
+	return filtered
 }
 
 // ============================================================

@@ -750,6 +750,9 @@ message ReadLogFileRequest {
   string log_type = 1;    // xray/singbox/hysteria2/tuic/nginx/caddy
   int32  last_lines = 2;  // 读取最后 N 行（默认 500）
   string log_path = 3;    // 指定日志文件绝对路径（优先于 log_type 自动解析）
+  repeated string filter_emails = 4;  // 仅返回包含这些 email 标识的日志行（用于订阅用户日志打包）
+  int64  start_time = 5;  // 时间范围起始（Unix 时间戳，0 表示不限制）
+  int64  end_time = 6;    // 时间范围结束（Unix 时间戳，0 表示不限制）
 }
 
 message ReadLogFileResponse {

@@ -52,6 +52,11 @@
         <el-form-item :label="t('subfmt.contentType')"><el-input v-model="form.content_type" placeholder="text/yaml; charset=utf-8" /></el-form-item>
         <el-form-item :label="t('subfmt.extension')"><el-input v-model="form.extension" placeholder=".yaml" /></el-form-item>
         <el-form-item :label="t('subfmt.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('subfmt.planIds')">
+          <el-select v-model="form.plan_ids" style="width:100%" multiple clearable placeholder="Universal">
+            <el-option v-for="p in allPlans" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('subfmt.sortOrder')"><el-input-number v-model="form.sort_order" :min="0" /></el-form-item>
         <el-form-item :label="t('common.enabled')"><el-switch v-model="form.enabled" /></el-form-item>
         <el-form-item :label="t('subfmt.isDefault')"><el-switch v-model="form.is_default" /></el-form-item>
@@ -141,8 +146,9 @@ const saving = ref(false)
 const form = ref({
   name: '', client_type: 'clash', format: 'mihomo_yaml',
   content_type: '', extension: '', description: '',
-  is_default: false, enabled: true, sort_order: 0
+  plan_ids: [], is_default: false, enabled: true, sort_order: 0
 })
+const allPlans = ref([])
 
 // Rules state
 const rulesDialogVisible = ref(false)
@@ -173,13 +179,13 @@ async function fetchData() {
 
 function showCreate() {
   editing.value = null
-  form.value = { name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', is_default: false, enabled: true, sort_order: 0 }
+  form.value = { name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', plan_ids: [], is_default: false, enabled: true, sort_order: 0 }
   dialogVisible.value = true
 }
 
 function showEdit(row) {
   editing.value = row
-  form.value = { name: row.name, client_type: row.client_type, format: row.format, content_type: row.content_type || '', extension: row.extension || '', description: row.description || '', is_default: row.is_default, enabled: row.enabled, sort_order: row.sort_order || 0 }
+  form.value = { name: row.name, client_type: row.client_type, format: row.format, content_type: row.content_type || '', extension: row.extension || '', description: row.description || '', plan_ids: row.plan_ids || [], is_default: row.is_default, enabled: row.enabled, sort_order: row.sort_order || 0 }
   dialogVisible.value = true
 }
 
@@ -255,5 +261,7 @@ async function handleDeleteRule(row) {
   await fetchRules(currentFormat.value.id)
 }
 
-onMounted(fetchData)
+async function fetchPlans() { try { allPlans.value = (await client.get('/plan-templates')) || [] } catch { allPlans.value = [] } }
+
+onMounted(() => { fetchData(); fetchPlans() })
 </script>

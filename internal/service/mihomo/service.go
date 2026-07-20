@@ -147,13 +147,15 @@ func (s *Service) UpdateConfig(ctx context.Context, config *entity.MihomoConfig)
 
 // CreateInput is the input for creating a mihomo config.
 type CreateInput struct {
-	Name        string `json:"name" binding:"required"`
-	ClientType  string `json:"client_type"`
-	Format      string `json:"format"`
-	Description string `json:"description"`
-	Enabled     *bool  `json:"enabled"`
-	SortOrder   int    `json:"sort_order"`
-	ConfigJSON  string `json:"config_json"`
+	Name        string           `json:"name" binding:"required"`
+	ClientType  string           `json:"client_type"`
+	Format      string           `json:"format"`
+	Description string           `json:"description"`
+	Platform    string           `json:"platform"`
+	Enabled     *bool            `json:"enabled"`
+	SortOrder   int              `json:"sort_order"`
+	ConfigJSON  string           `json:"config_json"`
+	PlanIDs     entity.Int64List `json:"plan_ids"`
 }
 
 // Create creates a new mihomo config with default settings.
@@ -171,9 +173,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.Mihomo
 		ClientType:  clientType,
 		Format:      format,
 		Description: input.Description,
+		Platform:    input.Platform,
 		Enabled:     true,
 		SortOrder:   input.SortOrder,
 		ConfigJSON:  input.ConfigJSON,
+		PlanIDs:     input.PlanIDs,
 	}
 	if input.Enabled != nil {
 		config.Enabled = *input.Enabled

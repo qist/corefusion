@@ -14,6 +14,7 @@ type SubscriptionFormat struct {
 	IsDefault   bool      `gorm:"default:false" json:"is_default"`
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
+	PlanIDs     Int64List `gorm:"type:text;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
 	// Mihomo/Clash specific config sections (JSON)
 	ListenersJSON      string `gorm:"type:text" json:"listeners_json"`
 	ProxyGroupsJSON    string `gorm:"type:text" json:"proxy_groups_json"`

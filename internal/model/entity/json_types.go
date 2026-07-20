@@ -21,9 +21,6 @@ func (l Int64List) Value() (driver.Value, error) {
 }
 
 func (l *Int64List) Scan(value interface{}) error {
-	if l == nil {
-		return nil
-	}
 	if value == nil {
 		*l = Int64List{}
 		return nil
@@ -37,13 +34,23 @@ func (l *Int64List) Scan(value interface{}) error {
 	default:
 		return fmt.Errorf("unsupported Int64List scan type %T", value)
 	}
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		*l = Int64List{}
 		return nil
 	}
 	var items []int64
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return err
+		// Try to parse as string representation of array
+		var str string
+		if err2 := json.Unmarshal(raw, &str); err2 == nil {
+			if err3 := json.Unmarshal([]byte(str), &items); err3 != nil {
+				*l = Int64List{}
+				return nil
+			}
+		} else {
+			*l = Int64List{}
+			return nil
+		}
 	}
 	*l = Int64List(items)
 	return nil

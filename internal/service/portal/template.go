@@ -323,12 +323,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   <div class="sub-link-actions">
                     <el-button size="small" text @click="showSubUrl = !showSubUrl">{{ showSubUrl ? '🙈' : '👁️' }}</el-button>
                     <el-button size="small" text @click="copyText(subUrl)" :disabled="!subUrl">📋</el-button>
-                    <el-button size="small" text @click="toggleQr" :disabled="!subUrl">{{ showQr ? t('common.close') : t('sub.qr_code') }}</el-button>
+                    <el-button size="small" text @click="showQrDialog" :disabled="!subUrl">{{ t('sub.qr_code') }}</el-button>
                   </div>
-                </div>
-                <div v-if="showQr && qrCodeUrl" class="qr-wrap">
-                  <img :src="qrCodeUrl" class="qr-img" />
-                  <span class="qr-hint">{{ t('sub.scan_import') }}</span>
                 </div>
                 <div class="sub-actions-row" v-if="mod.data && mod.data.actions">
                   <el-button 
@@ -1229,17 +1225,13 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'subscription_detail'">
           <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ t(mod.title) }}</span></div>
           <div v-if="client.sub_token && client.sub_status !== 'revoked'">
-            <div class="sub-link-box">
-              <code class="sub-link-text">{{ subUrl }}</code>
-              <div class="sub-link-actions">
-                <el-button size="small" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || t('common.copy') }}</el-button>
-                <el-button size="small" text @click="toggleQr">{{ showQr ? t('sub.hide') : ((mod.data && mod.data.qr_text) || t('sub.qr_code')) }}</el-button>
-              </div>
-            </div>
-            <div v-if="showQr && qrCodeUrl" class="qr-wrap">
-              <img :src="qrCodeUrl" class="qr-img" />
-              <span class="qr-hint">{{ t('sub.scan_import') }}</span>
-            </div>
+                <div class="sub-link-box">
+                  <code class="sub-link-text">{{ subUrl }}</code>
+                  <div class="sub-link-actions">
+                    <el-button size="small" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || t('common.copy') }}</el-button>
+                    <el-button size="small" text @click="showQrDialog">{{ (mod.data && mod.data.qr_text) || t('sub.qr_code') }}</el-button>
+                  </div>
+                </div>
             <div class="sub-actions-row" v-if="mod.data && mod.data.actions">
               <el-button 
                 v-for="action in mod.data.actions" 
@@ -1248,7 +1240,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 size="small"
                 @click="handleSubAction(action)"
               >
-                {{ action.text }}
+                {{ t(action.text) }}
               </el-button>
             </div>
           </div>
@@ -1941,12 +1933,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
       </template>
     </el-dialog>
 
-    <!-- Node QR Code Dialog -->
-    <el-dialog v-model="showNodeQRDialog" :title="t('node.qr_code')" width="300px" align-center>
-      <div style="text-align: center; padding: 20px;">
-        <div ref="nodeQRContainer" style="width: 200px; height: 200px; margin: 0 auto;"></div>
-      </div>
-    </el-dialog>
+<!-- Node QR Code Dialog -->
+<el-dialog v-model="showNodeQRDialog" :title="t('node.qr_code')" width="300px" align-center>
+<div style="text-align: center; padding: 20px;">
+<div ref="nodeQRContainer" style="width: 200px; height: 200px; margin: 0 auto;"></div>
+</div>
+</el-dialog>
+
+<!-- Subscription QR Code Dialog -->
+<el-dialog v-model="showSubQrDialog" :title="t('sub.qr_code')" width="300px" align-center>
+<div style="text-align: center; padding: 20px;">
+<img v-if="qrCodeUrl" :src="qrCodeUrl" style="width: 200px; height: 200px; border-radius: 8px;" />
+<span v-else style="color: var(--text-muted)">Loading...</span>
+<div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">{{ t('sub.scan_import') }}</div>
+</div>
+</el-dialog>
 
     <!-- Node Detail Dialog -->
     <el-dialog v-model="showNodeDetailDialog" :title="currentNodeDetail.name || t('node.detail')" width="450px" align-center append-to-body>
@@ -2284,6 +2285,55 @@ const defaultPortalHTML = `<!DOCTYPE html>
           </el-button>
         </div>
       </template>
+    </el-dialog>
+
+    <!-- More Subscriptions Dialog -->
+    <el-dialog v-model="moreSubsVisible" :title="t('sub.more_subs')" width="480px" align-center append-to-body class="more-subs-dialog">
+      <div class="more-subs-list">
+        <div v-if="moreSubFormats.length === 0" class="more-subs-empty">{{ t('common.empty') }}</div>
+        <!-- Format Cards -->
+        <div v-for="item in moreSubFormats" :key="item.key" class="more-subs-card">
+          <div class="more-subs-card-header">
+            <span class="more-subs-card-icon">{{ item.icon }}</span>
+            <span class="more-subs-card-title">{{ item.label }}</span>
+            <span class="more-subs-card-desc">{{ item.desc }}</span>
+          </div>
+          <!-- Config List -->
+          <div class="more-subs-config-list">
+            <!-- Single format without configs -->
+            <div v-if="!item.configs || item.configs.length === 0" class="more-subs-config-row">
+              <span class="more-subs-config-label">{{ t('sub.default_config') }}</span>
+              <div class="more-subs-config-actions">
+                <el-button size="small" type="primary" plain @click="copyText(buildSubLink(item.key, '', ''))" :disabled="!client.sub_token">{{ t('sub.copy_link') }}</el-button>
+                <el-button size="small" @click="showMoreSubQrDialog(item.key, '', '')" :disabled="!client.sub_token">{{ t('sub.qr_code') }}</el-button>
+              </div>
+            </div>
+            <!-- Multiple configs -->
+            <div v-for="cfg in item.configs" :key="cfg.name + '-' + cfg.type" class="more-subs-config-row">
+              <div class="more-subs-config-info">
+                <span class="more-subs-config-name">{{ cfg.name }}</span>
+                <el-tag v-if="cfg.platform" size="small" type="info" effect="plain" class="more-subs-config-tag">{{ cfg.platform }}</el-tag>
+              </div>
+              <div class="more-subs-config-actions">
+                <el-button size="small" type="primary" plain @click="copyText(buildSubLink(item.key, cfg.type === 'config' ? cfg.name : '', cfg.platform || ''))" :disabled="!client.sub_token">{{ t('sub.copy_link') }}</el-button>
+                <el-button size="small" @click="showMoreSubQrDialog(item.key, cfg.type === 'config' ? cfg.name : '', cfg.platform || '')" :disabled="!client.sub_token">{{ t('sub.qr_code') }}</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="moreSubsVisible = false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- More Subscriptions QR Code Dialog -->
+    <el-dialog v-model="moreSubQrDialogVisible" :title="t('sub.qr_code')" width="300px" align-center append-to-body>
+      <div style="text-align: center; padding: 20px;">
+        <img v-if="moreSubQrDialogUrl" :src="moreSubQrDialogUrl" style="width: 200px; height: 200px; border-radius: 8px;" />
+        <span v-else style="color: var(--text-muted)">Loading...</span>
+        <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">{{ t('sub.scan_import') }}</div>
+      </div>
     </el-dialog>
   </div>
 
@@ -3476,6 +3526,41 @@ border-bottom: 1px solid var(--border);
   border-top: 1px solid var(--border);
 }
 
+/* ---- More Subscriptions Dialog ---- */
+.more-subs-list { max-height: 60vh; overflow-y: auto; padding: 8px 0; }
+.more-subs-card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+.more-subs-card:last-child { margin-bottom: 0; }
+.more-subs-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.more-subs-card-icon { font-size: 20px; }
+.more-subs-card-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.more-subs-card-desc { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.more-subs-config-list { display: flex; flex-direction: column; gap: 8px; }
+.more-subs-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.more-subs-config-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.more-subs-config-name { font-size: 14px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more-subs-config-label { font-size: 13px; color: var(--text-secondary); }
+.more-subs-config-tag { font-size: 11px; text-transform: capitalize; }
+.more-subs-config-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.more-subs-qr-section { text-align: center; margin-top: 12px; padding: 16px; background: var(--bg); border-radius: 8px; border: 1px dashed var(--border); }
+.more-subs-qr-img { width: 180px; height: 180px; border-radius: 8px; }
+.more-subs-qr-hint { display: block; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.more-subs-empty { text-align: center; padding: 40px; color: var(--text-muted); }
+.more-subs-dialog .el-dialog__body { padding: 16px 20px; }
+
 /* ---- Streaming Status ---- */
 .streaming-grid {
   display: grid;
@@ -4031,8 +4116,9 @@ var app = createApp({
     var refreshing = ref(false)
     var activeTab = ref(localStorage.getItem('portal_active_tab') || 'overview')
     var showPasswordDialog = ref(false)
-    var showQr = ref(false)
-    var showSubUrl = ref(false)
+var showQr = ref(false)
+var showSubQrDialog = ref(false)
+var showSubUrl = ref(false)
     var selectedPlatform = ref('')
 var announcementPopupVisible = ref(false)
 var activeAnnouncement = ref(null)
@@ -4530,6 +4616,113 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
       } catch(e) { qrCodeUrl.value = '' }
     }
 var toggleQr = function() { showQr.value = !showQr.value; if (showQr.value && !qrCodeUrl.value) generateQr() }
+var showQrDialog = function() { if (!qrCodeUrl.value) generateQr(); showSubQrDialog.value = true }
+
+// --- More Subscriptions Dialog ---
+var moreSubsVisible = ref(false)
+var clientConfigs = ref([])
+var moreSubQrKey = ref('')
+var moreSubQrConfig = ref('')
+var moreSubQrUrl = ref('')
+var moreSubQrDialogVisible = ref(false)
+var moreSubQrDialogUrl = ref('')
+
+var fetchClientConfigs = function() {
+  var pid = client.value && client.value.plan_id ? client.value.plan_id : ''
+  var url = '/api/v1/public/client-configs'
+  if (pid) url += '?plan_id=' + pid
+  fetch(url).then(function(r) { return r.json() }).then(function(d) {
+    clientConfigs.value = Array.isArray(d.data) ? d.data : []
+  }).catch(function() { clientConfigs.value = [] })
+}
+
+var buildSubLink = function(formatKey, configName, platform) {
+  var base = subUrl.value
+  if (!base) return ''
+  var sep = base.indexOf('?') >= 0 ? '&' : '?'
+  var link = base + sep + 'format=' + encodeURIComponent(formatKey)
+  if (configName) link += '&config=' + encodeURIComponent(configName)
+  if (platform) link += '&platform=' + encodeURIComponent(platform)
+  return link
+}
+
+var moreSubFormats = computed(function() {
+  // Separate MihomoConfigs and SubscriptionFormats
+  var mihomoCfgs = {}  // keyed by format
+  var subFmtCfgs = {}  // keyed by format
+  clientConfigs.value.forEach(function(c) {
+    var fmt = c.format || 'mihomo_yaml'
+    var entry = {
+      id: c.id,
+      name: c.name,
+      description: c.description || '',
+      platform: c.platform || '',
+      type: c.type || 'config',
+      client_type: c.client_type || '',
+      sort_order: c.sort_order || 0
+    }
+    if (c.type === 'config') {
+      if (!mihomoCfgs[fmt]) mihomoCfgs[fmt] = []
+      mihomoCfgs[fmt].push(entry)
+    } else {
+      if (!subFmtCfgs[fmt]) subFmtCfgs[fmt] = []
+      subFmtCfgs[fmt].push(entry)
+    }
+  })
+
+  // Build format groups with icons
+  var allFormats = [
+    { key: 'base64_uri', label: 'Base64', desc: t('sub.fmt_base64'), icon: '📋' },
+    { key: 'raw_uri', label: 'Raw URI', desc: t('sub.fmt_raw'), icon: '🔗' },
+    { key: 'mihomo_yaml', label: 'Clash / Mihomo', desc: t('sub.fmt_clash'), icon: '🐱' },
+    { key: 'singbox_json', label: 'Sing-box', desc: t('sub.fmt_singbox'), icon: '📦' },
+    { key: 'xray_json', label: 'Xray', desc: t('sub.fmt_xray'), icon: '🚀' }
+  ]
+  return allFormats.map(function(f) {
+    var item = { key: f.key, label: f.label, desc: f.desc, icon: f.icon, configs: [] }
+    // Priority: MihomoConfig > SubscriptionFormat (deduplicate by name)
+    var configs = mihomoCfgs[f.key] || []
+    var seenNames = {}
+    configs.forEach(function(c) { seenNames[c.name] = true })
+    // Add SubscriptionFormats only if no MihomoConfig with same name exists
+    var subFmts = subFmtCfgs[f.key] || []
+    subFmts.forEach(function(c) {
+      if (!seenNames[c.name]) configs.push(c)
+    })
+    // Sort by sort_order then name
+    if (configs.length > 0) {
+      item.configs = configs.slice().sort(function(a, b) { return a.sort_order - b.sort_order || a.name.localeCompare(b.name) })
+    }
+    return item
+  }).filter(function(f) { return f.configs.length > 0 || ['base64_uri', 'raw_uri'].indexOf(f.key) >= 0 })
+})
+
+var generateMoreSubQr = function(url) {
+  try {
+    var canvas = document.createElement('canvas')
+    new QRious({ element: canvas, value: url, size: 200, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
+    return canvas.toDataURL('image/png')
+  } catch(e) { return '' }
+}
+
+var toggleMoreSubQr = function(formatKey, configName, platform) {
+if (moreSubQrKey.value === formatKey && moreSubQrConfig.value === configName) {
+moreSubQrKey.value = ''
+moreSubQrConfig.value = ''
+moreSubQrUrl.value = ''
+return
+}
+moreSubQrKey.value = formatKey
+moreSubQrConfig.value = configName
+var url = buildSubLink(formatKey, configName, platform)
+moreSubQrUrl.value = url ? generateMoreSubQr(url) : ''
+}
+var showMoreSubQrDialog = function(formatKey, configName, platform) {
+var url = buildSubLink(formatKey, configName, platform)
+moreSubQrDialogUrl.value = url ? generateMoreSubQr(url) : ''
+moreSubQrDialogVisible.value = true
+}
+// --- End More Subscriptions ---
 var handleSubAction = function(action) {
   if (action.action === 'navigate') {
     activeTab.value = action.target
@@ -4542,9 +4735,8 @@ var handleSubAction = function(action) {
       try { localStorage.setItem('portal_active_tab', 'profile') } catch(e) {}
       ElMessage.info(t('security.ip_whitelist_manage'))
     } else if (action.target === 'more_subs') {
-      // navigate to store
-      activeTab.value = 'store'
-      try { localStorage.setItem('portal_active_tab', 'store') } catch(e) {}
+      moreSubsVisible.value = true
+      fetchClientConfigs()
     }
   } else if (action.action === 'confirm') {
     // handle confirm
@@ -5253,7 +5445,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
 return {
           token: token, authTab: authTab, loading: loading, rotating: rotating, refreshing: refreshing,
-          activeTab: activeTab, showPasswordDialog: showPasswordDialog, showQr: showQr, showSubUrl: showSubUrl, selectedPlatform: selectedPlatform, logoUrl: logoUrl,
+          activeTab: activeTab, showPasswordDialog: showPasswordDialog, showQr: showQr, showSubQrDialog: showSubQrDialog, showSubUrl: showSubUrl, selectedPlatform: selectedPlatform, logoUrl: logoUrl,
       isDark: isDark, registrationEnabled: registrationEnabled,
       loginForm: loginForm, registerForm: registerForm, pwdForm: pwdForm,
       settings: settings, client: client, endpoints: endpoints,
@@ -5264,7 +5456,7 @@ return {
       copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatDateTime: formatDateTime, formatMoney: formatMoney,
       usagePercent: usagePercent, usageColor: usageColor, ringDash: ringDash,
       statusText: statusText, subStatusText: subStatusText, subUrl: subUrl,
-      toggleQr: toggleQr, handleSubAction: handleSubAction, showStreamingAccount: showStreamingAccount, toggleTheme: toggleTheme,
+      toggleQr: toggleQr, showQrDialog: showQrDialog, handleSubAction: handleSubAction, showStreamingAccount: showStreamingAccount, toggleTheme: toggleTheme,
       createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages,
       downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
       switchToLogs: switchToLogs, scrollToModule: scrollToModule,
@@ -5311,7 +5503,8 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       fetchSharedAccounts: fetchSharedAccounts, applySharedAccount: applySharedAccount,
       repairSharedAccount: repairSharedAccount, sharedAcctTypeText: sharedAcctTypeText,
       lang: lang, t: t,
-      currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale
+      currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale,
+      moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats, moreSubQrKey: moreSubQrKey, moreSubQrConfig: moreSubQrConfig, moreSubQrUrl: moreSubQrUrl, moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl, buildSubLink: buildSubLink, toggleMoreSubQr: toggleMoreSubQr, showMoreSubQrDialog: showMoreSubQrDialog
     }
   }
 })

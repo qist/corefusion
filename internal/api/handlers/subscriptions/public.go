@@ -235,17 +235,36 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	var data []byte
 	contentType := "text/plain"
 
-	// Determine mihomo config: ?config= param > subscription linked config
+	// Determine mihomo config: ?config= param > ?platform= match > subscription linked config
 	var mihomoConfig *entity.MihomoConfig
 	var mihomoRules []entity.MihomoRule
 
 	configName := c.Query("config")
+	platformName := c.Query("platform")
 	if configName != "" && h.mihomoRepo != nil {
 		configs, _ := h.mihomoRepo.List(ctx)
 		for _, cfg := range configs {
 			if cfg.Name == configName && cfg.Enabled {
 				mihomoConfig = &cfg
 				break
+			}
+		}
+	} else if platformName != "" && h.mihomoRepo != nil {
+		// Try to find a config matching the requested platform
+		configs, _ := h.mihomoRepo.List(ctx)
+		for _, cfg := range configs {
+			if cfg.Enabled && cfg.Platform == platformName && cfg.Format == "mihomo_yaml" {
+				mihomoConfig = &cfg
+				break
+			}
+		}
+		// Fallback: if no exact platform match, try universal (empty platform)
+		if mihomoConfig == nil {
+			for _, cfg := range configs {
+				if cfg.Enabled && cfg.Platform == "" && cfg.Format == "mihomo_yaml" {
+					mihomoConfig = &cfg
+					break
+				}
 			}
 		}
 	} else if sub.MihomoConfigID != nil && h.mihomoRepo != nil {

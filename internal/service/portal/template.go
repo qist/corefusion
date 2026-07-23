@@ -4916,6 +4916,9 @@ var showPromoInput = ref(false) // promo code fold
         logoUrl: logoUrl,
         isDark: isDark,
         
+        // Site info (from PORTAL_CONFIG or fallback)
+        siteName: (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.site_name) || 'CoreFusion',
+        
         // Methods
         handleLogin: handleLogin,
         handleRegister: handleRegister,
@@ -4970,15 +4973,19 @@ var showPromoInput = ref(false) // promo code fold
         document.head.appendChild(styleEl)
       }
       
-      // Create component
+      // Create component - call setupFn to get the setup result
+      var setupResult = setupFn()
       authComponent.value = {
         template: region.html,
-        setup: setupFn
+        setup: function() { return setupResult },
+        // Bind methods from setup result to ensure they're accessible in template
+        methods: {
+          handleLogin: setupResult.handleLogin,
+          handleRegister: setupResult.handleRegister
+        }
       }
     }
     
-    // Compile auth region on init
-    compileAuthRegion()
     // --- i18n / multi-language pack ---
     var multiLang = { default: 'zh-CN', locales: {} }
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.lang) {
@@ -5039,6 +5046,7 @@ var showPromoInput = ref(false) // promo code fold
         document.documentElement.lang = code
       }
     }
+    
     // Fallback to default nav if none configured
     if (portalNavItems.value.length === 0) {
       portalNavItems.value = [
@@ -5284,6 +5292,9 @@ var showPromoInput = ref(false) // promo code fold
         ElMessage.success(t('auth.register_success'))
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { loading.value = false })
     }
+
+    // Compile auth region after handleLogin and handleRegister are defined
+    compileAuthRegion()
 
     var fetchMe = function() {
       refreshing.value = true

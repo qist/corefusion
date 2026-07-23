@@ -22,7 +22,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div class="auth-card glass">
           <div class="auth-logo">
             <img v-if="logoUrl" :src="logoUrl" class="logo-img" />
-            <div v-else class="logo-icon">⚡</div>
+            <div v-else class="logo-icon"><el-icon size="48" color="var(--accent)"><Lightning /></el-icon></div>
           </div>
           <h1 class="auth-title">{{.PortalName}}</h1>
           <p class="auth-subtitle">{{ registrationEnabled ? t('auth.welcome_login') : t('auth.login_title') }}</p>
@@ -80,7 +80,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </template>
           </el-dropdown>
           <button class="theme-toggle" @click="toggleTheme" :title="isDark ? t('theme.light') : t('theme.dark')">
-            <span v-if="isDark">☀️</span><span v-else>🌙</span>
+            <el-icon v-if="isDark" size="20"><Sunny /></el-icon><el-icon v-else size="20"><Moon /></el-icon>
           </button>
           <el-dropdown trigger="click">
             <span class="user-badge">
@@ -99,7 +99,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <!-- Desktop Sidebar -->
       <aside class="app-sidebar">
         <div v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
-          <span class="sidebar-icon">{{ nav.icon || '🔗' }}</span>
+          <svg class="sidebar-icon" viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor"><path :d="iconPaths[nav.icon] || iconPaths['Link']"></path></svg>
           <span>{{ t(nav.label) }}</span>
         </div>
       </aside>
@@ -183,7 +183,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Account Info (qist row style with icon+label+value+badge) -->
             <div v-else-if="mod.type === 'account_info'">
-              <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <div class="card-header"><el-icon class="card-icon" size="20"><User /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
                 <div class="acct-info-row">
                   <span class="acct-info-icon">🛡️</span>
@@ -228,7 +228,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
                 <!-- balance display -->
                 <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
-                  <span class="acct-info-icon">💰</span>
+                  <el-icon class="acct-info-icon" size="16"><Wallet /></el-icon>
                   <div class="acct-info-body">
                     <span class="acct-info-label">{{ t('balance.available') }}</span>
                     <div class="acct-info-value-row">
@@ -305,7 +305,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
                 <!-- Empty state -->
                 <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
-                  <span class="empty-icon">📦</span>
+                  <el-icon class="empty-icon" size="48"><Box /></el-icon>
                   <p class="empty-text">{{ t('tutorial.no_content') }}</p>
                   <p class="empty-hint">{{ t('tutorial.no_content_hint') }}</p>
                 </div>
@@ -321,8 +321,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <div class="sub-link-box">
                   <code class="sub-link-text">{{ showSubUrl && subUrl ? subUrl : '••••••••••••••••••••••••••' }}</code>
                   <div class="sub-link-actions">
-                    <el-button size="small" text @click="showSubUrl = !showSubUrl">{{ showSubUrl ? '🙈' : '👁️' }}</el-button>
-                    <el-button size="small" text @click="copyText(subUrl)" :disabled="!subUrl">📋</el-button>
+                    <el-button size="small" text @click="showSubUrl = !showSubUrl" :icon="showSubUrl ? Hide : View" />
+                    <el-button size="small" text @click="copyText(subUrl)" :disabled="!subUrl" :icon="DocumentCopy" />
                     <el-button size="small" text @click="showQrDialog" :disabled="!subUrl">{{ t('sub.qr_code') }}</el-button>
                   </div>
                 </div>
@@ -339,10 +339,10 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
               <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
-                <span class="empty-icon">🚫</span><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
+                <el-icon class="empty-icon" size="48" color="var(--danger)"><CircleClose /></el-icon><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
               </div>
 <div v-else-if="!client.sub_token" class="empty-state">
-<span class="empty-icon">⏸️</span><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
+<el-icon class="empty-icon" size="48" color="var(--warning)"><Warning /></el-icon><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
 </div>
             </div>
             <!-- Streaming Status -->
@@ -366,7 +366,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Subscription (simple button) -->
             <div v-else-if="mod.type === 'subscription'" class="text-center">
-              <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
+              <div v-if="mod.data && mod.data.title" class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ mod.data.title }}</span></div>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
             </div>
@@ -395,7 +395,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Log Packages (dynamic) -->
             <div v-else-if="mod.type === 'log_packages'">
-              <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <div class="card-header"><el-icon class="card-icon" size="20"><Box /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <p v-else class="card-desc">{{ t('log.description') }}</p>
               <div class="log-actions">
@@ -437,8 +437,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ t(mod.data.notice_subtext) }}</div>
               </div>
               
-              <div v-if="plansLoading" class="empty-state"><span class="empty-icon">⏳</span><p class="empty-text">{{ t('common.loading') }}</p></div>
-              <div v-else-if="plans.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('plan.empty') }}</p></div>
+              <div v-if="plansLoading" class="empty-state"><el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon><p class="empty-text">{{ t('common.loading') }}</p></div>
+              <div v-else-if="plans.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('plan.empty') }}</p></div>
               <div v-else class="plan-table-wrap">
                 <table class="plan-table">
                   <thead>
@@ -490,7 +490,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Order Create -->
             <div v-else-if="mod.type === 'order_create'">
-              <div class="card-header"><span class="card-icon">🛒</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <div class="card-header"><el-icon class="card-icon" size="20"><ShoppingCart /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
               <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
               <el-form label-position="top" size="small">
                 <el-form-item :label="t('plan.title')">
@@ -552,7 +552,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 </div>
               </div>
               <div v-if="mod.data && mod.data.show_orders !== false && chargeOrders.length > 0" class="charge-section">
-                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
+                <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
                 <div class="logpkg-list">
                   <div class="logpkg-item" v-for="co in chargeOrders.slice(0, (mod.data && mod.data.orders_limit) || 5)" :key="co.id">
                     <div class="logpkg-info">
@@ -570,7 +570,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Balance Display -->
             <div v-else-if="mod.type === 'balance_display'">
-              <div class="card-header"><span class="card-icon">💰</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <div class="card-header"><el-icon class="card-icon" size="20"><Money /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
               <div class="balance-hero">
                 <span class="balance-amount">{{ formatMoney(balance.balance) }}</span>
                 <span v-if="balance.frozen > 0" class="balance-frozen">{{ t('balance.frozen') }}: {{ formatMoney(balance.frozen) }}</span>
@@ -605,11 +605,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </div>
               <!-- Order Table -->
               <div v-if="myOrdersLoading" class="empty-state">
-                <span class="empty-icon">⏳</span>
+                <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
                 <p class="empty-text">{{ t('common.loading') }}</p>
               </div>
               <div v-else-if="myOrders.length === 0" class="empty-state">
-                <span class="empty-icon">📭</span>
+                <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
                 <p class="empty-text">{{ t('order.empty') }}</p>
               </div>
               <div v-else class="billing-table-wrap">
@@ -640,7 +640,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </div>
               <!-- Charge Records -->
               <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
+                <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
                 <div class="billing-table-wrap">
                   <table class="billing-table">
                     <thead>
@@ -702,11 +702,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <div class="node-info-content">{{ t(mod.data.info_text) }}</div>
               </div>
               <div v-if="plansLoading" class="empty-state">
-                <span class="empty-icon">⏳</span>
+                <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
                 <p class="empty-text">{{ t('common.loading') }}</p>
               </div>
               <div v-else-if="allPlanNodes.length === 0" class="empty-state">
-                <span class="empty-icon">📭</span>
+                <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
                 <p class="empty-text">{{ t('node.empty') }}</p>
               </div>
               <div v-else>
@@ -739,7 +739,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-else-if="mod.type === 'referral'">
               <!-- Referral Link -->
               <div class="referral-header">
-                <div class="referral-title">🎁 {{ t('referral.my_link') }}</div>
+                <div class="referral-title"><el-icon size="20" style="margin-right: 8px;"><Gift /></el-icon>{{ t('referral.my_link') }}</div>
                 <div class="referral-meta">
                   <span class="referral-rate">{{ t('referral.commission_rate') }}: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
                   <span class="referral-divider">|</span>
@@ -856,8 +856,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Ticket List -->
             <div v-else-if="mod.type === 'ticket_list'">
-              <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
-              <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('ticket.empty') }}</p></div>
+              <div class="card-header"><el-icon class="card-icon" size="20"><Ticket /></el-icon><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
+              <div v-if="tickets.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('ticket.empty') }}</p></div>
 <div v-else class="logpkg-list">
 <div class="logpkg-item" v-for="tk in tickets" :key="tk.id" @click="openTicket(tk.id)" style="cursor: pointer">
 <div class="logpkg-info">
@@ -935,7 +935,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Article List -->
             <div v-else-if="mod.type === 'article_list'">
-              <div class="card-header"><span class="card-icon">📚</span><span class="card-title">{{ t(mod.title) }}</span></div>
+              <div class="card-header"><el-icon class="card-icon" size="20"><Reading /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
               <div v-if="mod.data && mod.data.show_category_filter" class="article-filter">
                 <el-radio-group v-model="articleCategory" size="small" @change="fetchArticles">
                   <el-radio-button value="">{{ t('common.all') }}</el-radio-button>
@@ -944,7 +944,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                   <el-radio-button value="notice">{{ t('article.notice') }}</el-radio-button>
                 </el-radio-group>
               </div>
-              <div v-if="articles.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('article.empty') }}</p></div>
+              <div v-if="articles.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('article.empty') }}</p></div>
               <div v-else class="article-list">
                 <div class="article-item" v-for="a in articles" :key="a.id" @click="openArticle(a.slug)">
                   <span class="article-cat-badge">{{ articleCatText(a.category) }}</span>
@@ -967,7 +967,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
                 <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">{{ t('plan.go_subscribe') }}</el-button>
               </div>
               <!-- Has Plan, No Accounts -->
-              <div v-else-if="sharedAccounts.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('shared.empty') }}</p></div>
+              <div v-else-if="sharedAccounts.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('shared.empty') }}</p></div>
               <!-- Has Plan And Accounts -->
               <div v-else class="article-list">
                 <div class="article-item" v-for="sa in sharedAccounts" :key="sa.id">
@@ -992,7 +992,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <!-- Empty state for overview main column -->
         <div v-if="currentModules.filter(function(m){ return m.type !== 'notice' }).length === 0" class="card glass">
           <div class="empty-state">
-            <span class="empty-icon">📋</span>
+            <el-icon class="empty-icon" size="48"><Document /></el-icon>
             <p class="empty-text">{{ t('common.empty') }}</p>
           </div>
         </div>
@@ -1100,7 +1100,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Account Info (qist style with icon+label+value+badge) -->
         <div v-else-if="mod.type === 'account_info'">
-          <div class="card-header"><span class="card-icon">👤</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="card-header"><el-icon class="card-icon" size="20"><User /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
             <div class="acct-info-row">
               <span class="acct-info-icon">🛡️</span>
@@ -1138,7 +1138,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Balance Display -->
             <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
-              <span class="acct-info-icon">💰</span>
+              <el-icon class="acct-info-icon" size="16"><Wallet /></el-icon>
               <div class="acct-info-body">
                 <span class="acct-info-label">{{ t('balance.available') }}</span>
                 <div class="acct-info-value-row">
@@ -1215,7 +1215,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
             <!-- Empty state -->
             <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
-              <span class="empty-icon">📦</span>
+              <el-icon class="empty-icon" size="48"><Box /></el-icon>
               <p class="empty-text">{{ t('tutorial.no_content') }}</p>
               <p class="empty-hint">{{ t('tutorial.no_content_hint') }}</p>
             </div>
@@ -1245,18 +1245,18 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
           </div>
           <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
-            <span class="empty-icon">🚫</span><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
+            <el-icon class="empty-icon" size="48" color="var(--danger)"><CircleClose /></el-icon><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
           </div>
 <div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
-<span class="empty-icon">⏸️</span><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
+<el-icon class="empty-icon" size="48" color="var(--warning)"><Warning /></el-icon><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
 </div>
           <div v-else-if="client.status === 'suspended'" class="empty-state">
-            <span class="empty-icon">⏸️</span><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.renew_hint') }}</p>
+            <el-icon class="empty-icon" size="48" color="var(--warning)"><Warning /></el-icon><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.renew_hint') }}</p>
           </div>
         </div>
         <!-- Subscription (simple button) -->
         <div v-else-if="mod.type === 'subscription'" class="text-center">
-          <div v-if="mod.data && mod.data.title" class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ mod.data.title }}</span></div>
+          <div v-if="mod.data && mod.data.title" class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ mod.data.title }}</span></div>
           <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
         </div>
@@ -1304,7 +1304,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Log Packages -->
         <div v-else-if="mod.type === 'log_packages'">
-          <div class="card-header"><span class="card-icon">📦</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="card-header"><el-icon class="card-icon" size="20"><Box /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
           <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <p v-else class="card-desc">{{ t('log.description') }}</p>
           <div class="log-actions">
@@ -1346,8 +1346,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ t(mod.data.notice_subtext) }}</div>
           </div>
           
-          <div v-if="plansLoading" class="empty-state"><span class="empty-icon">⏳</span><p class="empty-text">{{ t('common.loading') }}</p></div>
-          <div v-else-if="plans.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('plan.empty') }}</p></div>
+          <div v-if="plansLoading" class="empty-state"><el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon><p class="empty-text">{{ t('common.loading') }}</p></div>
+          <div v-else-if="plans.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('plan.empty') }}</p></div>
           <div v-else class="plan-table-wrap">
             <table class="plan-table">
               <thead>
@@ -1399,7 +1399,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Order Create -->
         <div v-else-if="mod.type === 'order_create'">
-          <div class="card-header"><span class="card-icon">🛒</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="card-header"><el-icon class="card-icon" size="20"><ShoppingCart /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
           <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
           <el-form label-position="top" size="small">
             <el-form-item :label="t('plan.title')">
@@ -1461,7 +1461,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             </div>
           </div>
           <div v-if="mod.data && mod.data.show_orders !== false && chargeOrders.length > 0" class="charge-section">
-            <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
+            <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
             <div class="logpkg-list">
               <div class="logpkg-item" v-for="co in chargeOrders.slice(0, (mod.data && mod.data.orders_limit) || 5)" :key="co.id">
                 <div class="logpkg-info">
@@ -1479,7 +1479,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Balance Display -->
         <div v-else-if="mod.type === 'balance_display'">
-          <div class="card-header"><span class="card-icon">💰</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="card-header"><el-icon class="card-icon" size="20"><Money /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
           <div class="balance-hero">
             <span class="balance-amount">{{ formatMoney(balance.balance) }}</span>
             <span v-if="balance.frozen > 0" class="balance-frozen">{{ t('balance.frozen') }}: {{ formatMoney(balance.frozen) }}</span>
@@ -1512,11 +1512,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
             {{ t((mod.data && mod.data.notice_subtext) || 'balance.tx_limit') }}
           </div>
           <div v-if="myOrdersLoading" class="empty-state">
-            <span class="empty-icon">⏳</span>
+            <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
             <p class="empty-text">{{ t('common.loading') }}</p>
           </div>
           <div v-else-if="myOrders.length === 0" class="empty-state">
-            <span class="empty-icon">📭</span>
+            <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
             <p class="empty-text">{{ t('order.empty') }}</p>
           </div>
           <div v-else class="billing-table-wrap">
@@ -1547,7 +1547,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </div>
               <!-- Charge Records -->
               <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📋</span><span class="card-title">{{ t('charge.records') }}</span></div>
+                <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
                 <div class="billing-table-wrap">
                   <table class="billing-table">
                     <thead>
@@ -1609,11 +1609,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <div class="node-info-content">{{ t(mod.data.info_text) }}</div>
           </div>
           <div v-if="plansLoading" class="empty-state">
-            <span class="empty-icon">⏳</span>
+            <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
             <p class="empty-text">{{ t('common.loading') }}</p>
           </div>
           <div v-else-if="allPlanNodes.length === 0" class="empty-state">
-            <span class="empty-icon">📭</span>
+            <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
             <p class="empty-text">{{ t('node.empty') }}</p>
           </div>
           <div v-else>
@@ -1646,7 +1646,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div v-else-if="mod.type === 'referral'">
           <!-- Referral Link -->
           <div class="referral-header">
-            <div class="referral-title">🎁 {{ t('referral.my_link') }}</div>
+            <div class="referral-title"><el-icon size="20" style="margin-right: 8px;"><Gift /></el-icon>{{ t('referral.my_link') }}</div>
             <div class="referral-meta">
               <span class="referral-rate">{{ t('referral.commission_rate') }}: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
               <span class="referral-divider">|</span>
@@ -1763,8 +1763,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Ticket List -->
         <div v-else-if="mod.type === 'ticket_list'">
-          <div class="card-header"><span class="card-icon">🎫</span><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
-          <div v-if="tickets.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('ticket.empty') }}</p></div>
+          <div class="card-header"><el-icon class="card-icon" size="20"><Ticket /></el-icon><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
+          <div v-if="tickets.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('ticket.empty') }}</p></div>
 <div v-else class="logpkg-list">
 <div class="logpkg-item" v-for="tk in tickets" :key="tk.id" @click="openTicket(tk.id)" style="cursor: pointer">
 <div class="logpkg-info">
@@ -1842,7 +1842,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <!-- Article List -->
         <div v-else-if="mod.type === 'article_list'">
-          <div class="card-header"><span class="card-icon">📚</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="card-header"><el-icon class="card-icon" size="20"><Reading /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
           <div v-if="mod.data && mod.data.show_category_filter" class="article-filter">
             <el-radio-group v-model="articleCategory" size="small" @change="fetchArticles">
               <el-radio-button value="">{{ t('common.all') }}</el-radio-button>
@@ -1851,7 +1851,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
               <el-radio-button value="notice">{{ t('article.notice') }}</el-radio-button>
             </el-radio-group>
           </div>
-          <div v-if="articles.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('article.empty') }}</p></div>
+          <div v-if="articles.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('article.empty') }}</p></div>
           <div v-else class="article-list">
             <div class="article-item" v-for="a in articles" :key="a.id" @click="openArticle(a.slug)">
               <span class="article-cat-badge">{{ articleCatText(a.category) }}</span>
@@ -1874,7 +1874,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">{{ t('plan.go_subscribe') }}</el-button>
           </div>
           <!-- Has Plan, No Accounts -->
-          <div v-else-if="sharedAccounts.length === 0" class="empty-state"><span class="empty-icon">📭</span><p class="empty-text">{{ t('shared.empty') }}</p></div>
+          <div v-else-if="sharedAccounts.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('shared.empty') }}</p></div>
           <!-- Has Plan And Accounts -->
           <div v-else class="article-list">
             <div class="article-item" v-for="sa in sharedAccounts" :key="sa.id">
@@ -1899,14 +1899,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <!-- Empty state for non-overview pages -->
     <div v-if="activeTab !== 'overview' && currentModules.length === 0" class="card glass">
       <div class="empty-state">
-        <span class="empty-icon">📋</span>
+        <el-icon class="empty-icon" size="48"><Document /></el-icon>
         <p class="empty-text">{{ t('common.empty') }}</p>
       </div>
     </div>
       </main>
       <nav class="bottom-nav">
         <div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
-          <span class="nav-icon">{{ nav.icon || '🔗' }}</span>
+          <svg class="nav-icon" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor"><path :d="iconPaths[nav.icon] || iconPaths['Link']"></path></svg>
           <span class="nav-label">{{ t(nav.label) }}</span>
         </div>
       </nav>
@@ -2270,7 +2270,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
         <transition name="pay-fade">
           <div v-if="showPromoInput" class="pay-extra-form" style="margin-top: 8px;">
-            <el-input v-model="orderForm.promotion_code" placeholder="t('plan.promo_placeholder')" clearable />
+            <el-input v-model="orderForm.promotion_code" :placeholder="t('plan.promo_placeholder')" clearable />
           </div>
         </transition>
       </div>
@@ -2554,10 +2554,12 @@ body {
 
 .card-icon { 
   font-size: 1.25rem;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--accent);
+  transition: transform var(--transition-fast), color var(--transition-fast);
+}
+
+.card:hover .card-icon {
+  transform: scale(1.1) rotate(-5deg);
 }
 
 .card-title { 
@@ -2676,12 +2678,13 @@ body {
 }
 
 .logo-icon { 
-  font-size: 56px; 
-  line-height: 1;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: logoPulse 2s ease-in-out infinite;
+}
+
+.logo-icon .el-icon {
   filter: drop-shadow(0 4px 8px rgba(99, 102, 241, 0.3));
 }
 
@@ -2991,8 +2994,19 @@ body {
 .app-sidebar .sidebar-icon {
   font-size: 18px;
   width: 22px;
-  text-align: center;
+  height: 22px;
   flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.app-sidebar .sidebar-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-item:hover .sidebar-icon,
+.sidebar-item.active .sidebar-icon {
+  color: var(--accent);
 }
 .app-sidebar .sidebar-section-label {
   font-size: 11px;
@@ -4107,7 +4121,18 @@ border-bottom: 1px solid var(--border);
 .nav-item.active { background: var(--accent-light); }
 .nav-item.active .nav-icon,
 .nav-item.active .nav-label { color: var(--accent); }
-.nav-icon { font-size: 20px; line-height: 1; }
+.nav-icon { 
+  font-size: 20px; 
+  width: 20px;
+  height: 20px;
+  margin-bottom: 4px;
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+
+.nav-icon svg {
+  width: 20px;
+  height: 20px;
+}
 .nav-label { font-size: 11px; color: var(--text-muted); }
 
 /* ============================================
@@ -4199,15 +4224,28 @@ border-bottom: 1px solid var(--border);
 
 /* ---- Element Plus Overrides ---- */
 .el-button--primary { --el-color-primary: #2563eb; }
-.el-button--primary {
+.el-button--primary:not(.is-plain) {
   background: linear-gradient(135deg, var(--accent), var(--accent-dark)) !important;
   border: none !important;
   font-weight: 600 !important;
   box-shadow: 0 2px 8px rgba(37,99,235,0.18) !important;
+  color: #fff !important;
 }
-.el-button--primary:hover {
+.el-button--primary:not(.is-plain):hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(37,99,235,0.28) !important;
+}
+/* Plain button styles */
+.el-button--primary.is-plain {
+  background: var(--accent-light) !important;
+  border: 1px solid var(--accent-border) !important;
+  color: var(--accent) !important;
+  font-weight: 600 !important;
+}
+.el-button--primary.is-plain:hover {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
 }
 .el-button--success {
   background: linear-gradient(135deg, #059669, #047857) !important;
@@ -4477,6 +4515,189 @@ border-bottom: 1px solid var(--border);
 .pay-fade-enter-from { opacity: 0; transform: translateY(-8px); }
 .pay-fade-leave-to { opacity: 0; transform: translateY(-4px); }
 
+/* ============================================
+   Page & Content Transitions
+   ============================================ */
+
+/* Page switch animation */
+.page-enter-active,
+.page-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+/* Card stagger animation */
+@keyframes cardSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.card {
+  animation: cardSlideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+.card:nth-child(1) { animation-delay: 0ms; }
+.card:nth-child(2) { animation-delay: 50ms; }
+.card:nth-child(3) { animation-delay: 100ms; }
+.card:nth-child(4) { animation-delay: 150ms; }
+.card:nth-child(5) { animation-delay: 200ms; }
+.card:nth-child(6) { animation-delay: 250ms; }
+
+/* Card hover lift effect */
+.card {
+  transition: transform var(--transition-base), 
+              box-shadow var(--transition-base),
+              background var(--transition-base);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--glass-shadow-hover), 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+}
+
+/* Button ripple effect */
+.hero-btn,
+.btn-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-btn::after,
+.btn-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), 
+    rgba(255, 255, 255, 0.3) 0%, 
+    transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.hero-btn:active::after,
+.btn-block:active::after {
+  opacity: 1;
+}
+
+/* Sidebar item animation */
+.sidebar-item {
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.sidebar-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 20px;
+  background: var(--accent-gradient);
+  border-radius: 0 3px 3px 0;
+  transition: transform var(--transition-fast);
+}
+
+.sidebar-item.active::before,
+.sidebar-item:hover::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+.sidebar-item:hover {
+  background: var(--accent-light);
+  padding-left: calc(var(--space-3) + 4px);
+}
+
+/* Bottom nav item animation */
+.nav-item {
+  transition: all var(--transition-fast);
+}
+
+.nav-item:hover {
+  transform: translateY(-2px);
+}
+
+.nav-item.active {
+  transform: translateY(-4px);
+}
+
+.nav-item.active .nav-icon {
+  animation: navIconBounce 0.5s ease;
+}
+
+@keyframes navIconBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Skeleton loading animation */
+@keyframes skeletonShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--glass-bg) 25%,
+    var(--glass-bg-hover) 50%,
+    var(--glass-bg) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: var(--radius-md);
+}
+
+/* Empty state animation */
+.empty-state {
+  animation: emptyStateFadeIn 0.5s ease;
+}
+
+@keyframes emptyStateFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.empty-icon {
+  animation: emptyIconFloat 3s ease-in-out infinite;
+  color: var(--accent);
+}
+
+.empty-icon.is-loading {
+  animation: emptyIconFloat 3s ease-in-out infinite, rotate 1s linear infinite;
+}
+
+@keyframes emptyIconFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Dark mode */
 [data-theme="dark"] .pay-method-card { background: rgba(255,255,255,0.03); }
 [data-theme="dark"] .pay-method-card:hover { background: rgba(37,99,235,0.08); }
@@ -4547,6 +4768,26 @@ var onUnmounted = Vue.onUnmounted
 var watch = Vue.watch
 var ElMessage = ElementPlus.ElMessage
 var ElMessageBox = ElementPlus.ElMessageBox
+
+// Icon SVG paths for Element Plus icons
+var iconPaths = {
+  'HomeFilled': 'M448 96v163.072L224 384V96h224zm128 0v163.072L800 384V96H576zM256 96H96v288l160-96V96zm672 0h-160v192l160 96V96zM448 320v192h128V320H448zM96 448l160-96v288H96V448zm704 0v192h160V352l-160 96zM576 320v192h224V320H576zM256 320v192h128V320H256z',
+  'ShoppingCart': 'M432 928a48 48 0 1 1 0-96 48 48 0 0 1 0 96zm320 0a48 48 0 1 1 0-96 48 48 0 0 1 0 96zM96 128a32 32 0 0 1 32-32h64a32 32 0 0 1 31.232 24.256l21.632 86.528 508.352 101.664a32 32 0 0 1 25.6 29.12l-8 160a32 32 0 0 1-32 32H288a32 32 0 0 1-32-32v-32h448v-64H256l-32-128H128V128z',
+  'Wallet': 'M64 256v448a64 64 0 0 0 64 64h768a64 64 0 0 0 64-64V256a64 64 0 0 0-64-64H128a64 64 0 0 0-64 64zm64 0h768v448H128V256zm512 224a64 64 0 1 1 0-128 64 64 0 0 1 0 128z',
+  'List': 'M128 256h768v64H128v-64zm0 256h768v64H128v-64zm0 256h768v64H128v-64z',
+  'Reading': 'M832 128H192a64 64 0 0 0-64 64v640a64 64 0 0 0 64 64h640a64 64 0 0 0 64-64V192a64 64 0 0 0-64-64zM192 192h640v640H192V192zm128 128h384v64H320v-64zm0 192h384v64H320v-64zm0 192h256v64H320v-64z',
+  'Service': 'M512 128c-212 0-384 172-384 384 0 128 64 240 160 312v168c0 35 29 64 64 64h320c35 0 64-29 64-64v-168c96-72 160-184 160-312 0-212-172-384-384-384zm-96 832v-64h192v64H416zm144-128H416c-106 0-192-86-192-192 0-106 86-192 192-192 106 0 192 86 192 192 0 106-86 192-192 192z',
+  'Gift': 'M320 128a96 96 0 0 1 96 96v64H256v-64a96 96 0 0 1 64-96zm288 0a96 96 0 0 1 96 96v64h-160v-64a96 96 0 0 1 64-96zM128 320h768v128H128V320zm64 192h640v384H192V512z',
+  'User': 'M512 128c-141 0-256 115-256 256 0 89 46 168 115 214-83 35-144 108-160 197H192v64h640v-64h-19c-16-89-77-162-160-197 69-46 115-125 115-214 0-141-115-256-256-256zm0 64c106 0 192 86 192 192s-86 192-192 192-192-86-192-192 86-192 192-192z',
+  'Document': 'M832 128H192c-35 0-64 29-64 64v640c0 35 29 64 64 64h640c35 0 64-29 64-64V192c0-35-29-64-64-64zM192 192h640v640H192V192zm128 128h384v64H320v-64zm0 192h384v64H320v-64zm0 192h256v64H320v-64z',
+  'Link': 'M576 128c-141 0-256 115-256 256h64c0-106 86-192 192-192s192 86 192 192-86 192-192 192h-64v64h64c141 0 256-115 256-256S717 128 576 128zm-320 320c-141 0-256 115-256 256s115 256 256 256 256-115 256-256h-64c0 106-86 192-192 192s-192-86-192-192 86-192 192-192h64v-64h-64zM384 448v64h256v-64H384z'
+}
+
+// Render icon as SVG
+var renderIcon = function(name, size) {
+  var path = iconPaths[name] || iconPaths['Link']
+  return '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\" style=\"width:' + size + 'px;height:' + size + 'px;fill:currentColor\"><path d=\"' + path + '\"></path></svg>'
+}
 
 var app = createApp({
   setup: function() {
@@ -4708,15 +4949,15 @@ var showPromoInput = ref(false) // promo code fold
     // Fallback to default nav if none configured
     if (portalNavItems.value.length === 0) {
       portalNavItems.value = [
-        { id: 'nav-home', label: t('nav.home'), icon: '🏠', target: 'overview', enabled: true },
-        { id: 'nav-services', label: t('nav.store'), icon: '🛒', target: 'store', enabled: true },
-        { id: 'nav-billing', label: t('nav.billing'), icon: '💰', target: 'billing', enabled: true },
-        { id: 'nav-nodes', label: t('nav.nodes'), icon: '📋', target: 'nodes', enabled: true },
-        { id: 'nav-tutorial', label: t('nav.tutorial'), icon: '📚', target: 'tutorial', enabled: true },
-        { id: 'nav-tickets', label: t('nav.support'), icon: '🎫', target: 'support', enabled: true },
-        { id: 'nav-referral', label: t('nav.referral'), icon: '🎁', target: 'referral', enabled: true },
-        { id: 'nav-profile', label: t('nav.profile'), icon: '👤', target: 'profile', enabled: true },
-        { id: 'nav-logs', label: t('nav.logs'), icon: '📦', target: 'logs', enabled: true }
+        { id: 'nav-home', label: t('nav.home'), icon: 'HomeFilled', target: 'overview', enabled: true },
+        { id: 'nav-services', label: t('nav.store'), icon: 'ShoppingCart', target: 'store', enabled: true },
+        { id: 'nav-billing', label: t('nav.billing'), icon: 'Wallet', target: 'billing', enabled: true },
+        { id: 'nav-nodes', label: t('nav.nodes'), icon: 'List', target: 'nodes', enabled: true },
+        { id: 'nav-tutorial', label: t('nav.tutorial'), icon: 'Reading', target: 'tutorial', enabled: true },
+        { id: 'nav-tickets', label: t('nav.support'), icon: 'Service', target: 'support', enabled: true },
+        { id: 'nav-referral', label: t('nav.referral'), icon: 'Gift', target: 'referral', enabled: true },
+        { id: 'nav-profile', label: t('nav.profile'), icon: 'User', target: 'profile', enabled: true },
+        { id: 'nav-logs', label: t('nav.logs'), icon: 'Document', target: 'logs', enabled: false }
       ]
     }
     // Modules for the current page (filtered by activeTab)
@@ -5990,7 +6231,8 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       repairSharedAccount: repairSharedAccount, sharedAcctTypeText: sharedAcctTypeText,
       lang: lang, t: t,
       currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale,
-      moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats, moreSubQrKey: moreSubQrKey, moreSubQrConfig: moreSubQrConfig, moreSubQrUrl: moreSubQrUrl, moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl, buildSubLink: buildSubLink, toggleMoreSubQr: toggleMoreSubQr, showMoreSubQrDialog: showMoreSubQrDialog
+      moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats, moreSubQrKey: moreSubQrKey, moreSubQrConfig: moreSubQrConfig, moreSubQrUrl: moreSubQrUrl, moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl, buildSubLink: buildSubLink, toggleMoreSubQr: toggleMoreSubQr, showMoreSubQrDialog: showMoreSubQrDialog,
+      iconPaths: iconPaths
     }
   }
 })

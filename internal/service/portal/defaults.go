@@ -12,7 +12,7 @@ const defaultNavigationJSON = `[
   {"id":"nav-tickets","label":"nav.support","icon":"🎫","target":"support","href":"","enabled":true,"open_external":false},
   {"id":"nav-referral","label":"nav.referral","icon":"🎁","target":"referral","href":"","enabled":true,"open_external":false},
   {"id":"nav-profile","label":"nav.profile","icon":"👤","target":"profile","href":"","enabled":true,"open_external":false},
-  {"id":"nav-logs","label":"nav.logs","icon":"📦","target":"logs","href":"","enabled":true,"open_external":false}
+  {"id":"nav-logs","label":"nav.logs","icon":"📦","target":"logs","href":"","enabled":false,"open_external":false}
 ]`
 
 // defaultModulesJSON is the default module layout for a new portal.

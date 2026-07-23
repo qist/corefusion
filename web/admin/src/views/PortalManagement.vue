@@ -24,6 +24,23 @@
       <div v-if="editorMode === 'builder'" class="builder-layout">
         <!-- Left Column: Page Structure -->
         <div class="col-structure">
+          <!-- System Pages Section (Regions) -->
+          <div class="structure-section">
+            <div class="section-header">
+              <span class="section-title">系统页面</span>
+            </div>
+            <div class="nav-list">
+              <div class="nav-item-row"
+                   :class="{ selected: selectedRegionType === 'auth' }"
+                   @click="selectRegion('auth')">
+                <div class="nav-item-info">
+                  <span class="nav-icon-emoji">🔐</span>
+                  <span class="nav-label-text">登录页</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="structure-section">
             <div class="section-header">
               <span class="section-title">页面导航</span>
@@ -125,6 +142,39 @@
 
         <!-- Center Column: Code Editor or Visual Preview -->
         <div class="col-canvas">
+          <!-- Region Editor Toolbar (when a region is selected) -->
+          <div v-if="selectedRegion" class="canvas-toolbar">
+            <div class="canvas-toolbar-left">
+              <el-radio-group v-model="regionViewMode" size="small">
+                <el-radio-button value="preview">可视化预览</el-radio-button>
+                <el-radio-button value="html">HTML</el-radio-button>
+                <el-radio-button value="css">CSS</el-radio-button>
+                <el-radio-button value="js">JS</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="canvas-toolbar-right">
+              <el-radio-group v-if="regionViewMode === 'preview'" v-model="previewDevice" size="small">
+                <el-radio-button value="desktop">桌面</el-radio-button>
+                <el-radio-button value="tablet">平板</el-radio-button>
+                <el-radio-button value="mobile">手机</el-radio-button>
+              </el-radio-group>
+            </div>
+          </div>
+
+          <!-- Region Preview Mode (iframe) -->
+          <div v-if="selectedRegion && regionViewMode === 'preview'" class="canvas-scroll">
+            <iframe ref="previewFrame" :src="previewUrl" class="preview-iframe" />
+          </div>
+
+          <!-- Region HTML/CSS/JS Editor -->
+          <div v-if="selectedRegion && regionViewMode !== 'preview'" class="canvas-code-editor">
+            <CodeEditor
+              v-model="selectedRegionSource[regionViewMode]"
+              :language="regionViewMode === 'html' ? 'html' : regionViewMode === 'css' ? 'css' : 'javascript'"
+              @change="onCodeChange"
+            />
+          </div>
+
           <!-- Toolbar: view mode toggle + device buttons -->
           <div v-if="selectedModule" class="canvas-toolbar">
             <div class="canvas-toolbar-left">
@@ -644,8 +694,60 @@ ctx.moduleTitle           — 当前模块标题</pre>
 
         <!-- Right Column: Properties Panel -->
         <div class="col-properties">
+          <!-- Region Properties -->
+          <div v-if="selectedRegion" class="props-panel">
+            <h3 class="props-title">编辑：🔐 登录页</h3>
+            <el-form label-position="top" size="small">
+              <el-divider content-position="left">基本设置</el-divider>
+              <el-form-item label="副标题">
+                <el-input v-model="selectedRegion.data.subtitle" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="Logo 图标 (emoji)">
+                <el-input v-model="selectedRegion.data.logo_emoji" @input="onCodeChange" />
+              </el-form-item>
+
+              <el-divider content-position="left">表单文案</el-divider>
+              <el-form-item label="登录标签">
+                <el-input v-model="selectedRegion.data.login_label" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="注册标签">
+                <el-input v-model="selectedRegion.data.register_label" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="登录按钮">
+                <el-input v-model="selectedRegion.data.login_btn_text" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="注册按钮">
+                <el-input v-model="selectedRegion.data.register_btn_text" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="邮箱占位符">
+                <el-input v-model="selectedRegion.data.email_placeholder" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="密码占位符">
+                <el-input v-model="selectedRegion.data.password_placeholder" @input="onCodeChange" />
+              </el-form-item>
+              <el-form-item label="邀请码占位符">
+                <el-input v-model="selectedRegion.data.invite_placeholder" @input="onCodeChange" />
+              </el-form-item>
+
+              <el-divider content-position="left">底部区域</el-divider>
+              <el-form-item label="底部文案">
+                <el-input v-model="selectedRegion.data.footer_text" @input="onCodeChange" />
+              </el-form-item>
+
+              <el-divider content-position="left">JS 编写规范</el-divider>
+              <el-alert type="info" :closable="false" show-icon>
+                <span style="font-size: 11px">
+                  <b>对象字面量</b>：<code>{ customTitle: '欢迎' }</code><br>
+                  <b>return 语句</b>：<code>return { customTitle: '欢迎' }</code><br>
+                  <b>完整函数体</b>：<code>console.log('init'); return {}</code><br>
+                  <b>可用 ctx</b>：loginForm, registerForm, authTab, loading, handleLogin, handleRegister, t, data, ElMessage
+                </span>
+              </el-alert>
+            </el-form>
+          </div>
+
           <!-- Navigation Properties -->
-          <div v-if="selectedNavId && selectedNav" class="props-panel">
+          <div v-else-if="selectedNavId && selectedNav" class="props-panel">
             <h3 class="props-title">编辑导航项</h3>
             <el-form label-position="top" size="small">
               <el-form-item label="显示名称"><el-input v-model="selectedNav.label" placeholder="如：首页" /></el-form-item>
@@ -1120,6 +1222,12 @@ const navigation = ref([])
 const modules = ref([])
 const selectedNavId = ref('')
 const selectedModuleId = ref('')
+
+// Regions (editable system pages like auth/login)
+const regions = ref({})  // { auth: { html, css, js, data } }
+const selectedRegionType = ref('')  // 'auth' | ''
+const regionViewMode = ref('preview')  // 'preview' | 'html' | 'css' | 'js'
+const previewFrame = ref(null)
 
 const newNav = reactive({ label: '', icon: '', target: 'overview', href: '', enabled: true, open_external: false })
 
@@ -1744,6 +1852,25 @@ const currentPageModules = computed(() => {
   return modules.value.filter(m => (m.page || 'overview') === currentPageTarget.value)
 })
 
+// Region computed properties
+const selectedRegion = computed(() => {
+  if (!selectedRegionType.value) return null
+  return regions.value[selectedRegionType.value] || null
+})
+
+const selectedRegionSource = computed(() => {
+  if (!selectedRegion.value) return { html: '', css: '', js: '' }
+  return {
+    html: selectedRegion.value.html || '',
+    css: selectedRegion.value.css || '',
+    js: selectedRegion.value.js || '',
+  }
+})
+
+const previewUrl = computed(() => {
+  return window.location.origin + '/p?preview=1&screen=auth'
+})
+
 // Count modules for a given page target
 function currentPageModuleCount(target) {
   return modules.value.filter(m => (m.page || 'overview') === target).length
@@ -1891,16 +2018,26 @@ function selectNav(id) {
   currentPageNavId.value = id  // switch page view
   selectedNavId.value = id     // show nav properties in right panel
   selectedModuleId.value = '' // clear module editing
+  selectedRegionType.value = '' // clear region selection
 }
 function selectModule(id) {
   selectedModuleId.value = id  // show module properties in right panel
   selectedNavId.value = ''     // clear nav editing, but keep currentPageNavId
+  selectedRegionType.value = '' // clear region selection
   const mod = modules.value.find(m => m.id === id)
   if (mod) {
     ensureCustomCss(mod)
     ensureNoticeData(mod)
   }
   autoCenterViewMode()
+}
+
+function selectRegion(type) {
+  selectedRegionType.value = type
+  selectedNavId.value = ''
+  selectedModuleId.value = ''
+  currentPageNavId.value = ''
+  regionViewMode.value = 'preview'
 }
 
 function openNavDialog() {
@@ -2177,6 +2314,19 @@ const applyData = (d) => {
     langPack.value.locales[langLocale.value] = {}
   }
   langData.value = langPack.value.locales[langLocale.value]
+
+  // Parse regions (editable system pages)
+  if (d.regions && typeof d.regions === 'object') {
+    regions.value = d.regions
+  } else if (d.config) {
+    try {
+      const cfg = JSON.parse(d.config)
+      regions.value = cfg.regions || {}
+    } catch { regions.value = {} }
+  } else {
+    regions.value = {}
+  }
+
   // Auto-select first nav if none selected
   if (navigation.value.length > 0) {
     if (!currentPageNavId.value) currentPageNavId.value = navigation.value[0].id
@@ -2215,6 +2365,7 @@ const handleSave = async () => {
       },
       lang: Object.keys(langPack.value.locales).length > 0 ? langPack.value : undefined,
       registration_enabled: registrationEnabled.value, portal_port: portalPort.value,
+      regions: Object.keys(regions.value).length > 0 ? regions.value : undefined,
     }
     const res = await updateActivePortal(data)
     // Re-apply data from response to sync structured fields
@@ -2392,15 +2543,18 @@ onMounted(() => { fetchConfig() })
 .editor-body { flex: 1; overflow: hidden; }
 
 /* ===== Builder Layout ===== */
-.builder-layout { display: flex; height: 100%; gap: 1px; background: #e4e7ed; }
+.builder-layout { display: flex; height: 100%; background: #e4e7ed; }
 
-.col-structure { width: 280px; background: #fff; overflow-y: auto; display: flex; flex-direction: column; }
-.col-canvas { flex: 1; background: #f5f7fa; display: flex; flex-direction: column; overflow: hidden; }
-.col-properties { width: 420px; background: #fff; overflow-y: auto; }
+.col-structure { width: 280px; background: #fff; overflow-y: auto; display: flex; flex-direction: column; border-right: 1px solid #e4e7ed; flex-shrink: 0; }
+.col-canvas { flex: 1; background: #f5f7fa; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.col-properties { width: 420px; background: #fff; overflow-y: auto; border-left: 1px solid #e4e7ed; flex-shrink: 0; }
 
 .structure-section { padding: 12px; border-bottom: 1px solid #f0f0f0; }
+.structure-section:last-child { border-bottom: none; flex: 1; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .section-title { font-size: 13px; font-weight: 600; color: #303133; }
+.structure-modules { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.structure-modules .module-list { flex: 1; overflow-y: auto; }
 
 .nav-list, .module-list { display: flex; flex-direction: column; gap: 4px; }
 .nav-item-row, .module-item-row {
@@ -2434,8 +2588,9 @@ onMounted(() => { fetchConfig() })
 .badge-log_packages { background: #f3e5f5; color: #9c27b0; }
 
 /* ===== Center Code Editor ===== */
-.canvas-code-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
+.canvas-code-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; background: #fff; }
 .canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #e4e7ed; flex-shrink: 0; }
+.canvas-scroll { flex: 1; overflow: auto; }
 .canvas-toolbar-left { display: flex; align-items: center; gap: 8px; }
 .canvas-toolbar-right { display: flex; align-items: center; gap: 8px; }
 
@@ -2705,16 +2860,21 @@ onMounted(() => { fetchConfig() })
 }
 
 /* ===== Lang Editor Mode ===== */
-.lang-mode { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.lang-mode { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .lang-toolbar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 16px; background: #fff; border-bottom: 1px solid #e4e7ed;
 }
 .lang-count { margin-left: auto; font-size: 12px; color: #909399; }
 .lang-locales-bar {
-  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
   padding: 6px 16px; background: #fafbfc; border-bottom: 1px solid #e4e7ed;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin;
 }
+.lang-locales-bar::-webkit-scrollbar { height: 6px; }
+.lang-locales-bar::-webkit-scrollbar-thumb { background: #c0c4cc; border-radius: 3px; }
+.lang-locales-bar::-webkit-scrollbar-track { background: transparent; }
 .lang-locale-tab {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 12px; border-radius: 6px; cursor: pointer;
@@ -2729,9 +2889,9 @@ onMounted(() => { fetchConfig() })
 .lang-locale-tab.active .locale-default-badge { color: #ffd700; }
 .locale-remove-btn { color: #c0c4cc; font-size: 12px; margin-left: 2px; }
 .locale-remove-btn:hover { color: #f56c6c; }
-.lang-table-wrap { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
+.lang-table-wrap { flex: 1; overflow: auto; padding: 0 16px 16px; min-height: 0; }
 .lang-table {
-  width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px;
+  width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; table-layout: fixed;
 }
 .lang-table th {
   text-align: left; padding: 8px 12px; background: #f5f7fa;
@@ -2741,11 +2901,12 @@ onMounted(() => { fetchConfig() })
 .lang-table td {
   padding: 6px 12px; border-bottom: 1px solid #ebeef5; vertical-align: middle;
 }
-.lang-key-cell { display: flex; align-items: center; gap: 6px; }
+.lang-key-cell { display: flex; align-items: center; gap: 6px; overflow: hidden; }
 .lang-key-prefix {
   font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px;
   text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
 }
+.lang-key-name { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #606266; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .prefix-nav { background: #e6f7ff; color: #1890ff; }
 .prefix-common { background: #f6ffed; color: #52c41a; }
 .prefix-auth { background: #fff7e6; color: #fa8c16; }
@@ -2779,4 +2940,16 @@ onMounted(() => { fetchConfig() })
   padding: 60px 20px; color: #909399;
 }
 .lang-empty p { margin: 8px 0; font-size: 14px; }
+
+/* ===== Region Editor (iframe preview) ===== */
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #f5f7fa;
+}
+.canvas-scroll:has(.preview-iframe) {
+  display: flex;
+  flex-direction: column;
+}
 </style>

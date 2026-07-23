@@ -4930,11 +4930,27 @@ var showPromoInput = ref(false) // promo code fold
       }
       
       // Compile JS setup function
+      // JS should be an object literal or return statement
+      // Examples: "{ foo: 1 }" or "return { foo: 1 }" or "console.log('init'); return {}"
       var setupFn
       if (region.js) {
         try {
-          var factory = new Function('ctx', region.js)
-          setupFn = function() { return factory(authCtx) || {} }
+          var jsCode = region.js.trim()
+          // Wrap in function if it's an object literal (starts with {)
+          if (jsCode.charAt(0) === '{' && jsCode.charAt(jsCode.length - 1) === '}') {
+            jsCode = 'return ' + jsCode
+          }
+          // Create factory function with ctx in scope
+          var factory = new Function('ctx', jsCode)
+          setupFn = function() { 
+            try {
+              var result = factory(authCtx)
+              return result || {}
+            } catch(e) {
+              console.error('Auth region JS runtime error:', e)
+              return { __error: e.message }
+            }
+          }
         } catch(e) {
           console.error('Auth region JS compile error:', e)
           setupFn = function() { return { __error: e.message } }

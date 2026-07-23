@@ -2540,7 +2540,8 @@ onMounted(() => { fetchConfig() })
 .portal-name { font-size: 16px; font-weight: 600; color: #303133; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
 
-.editor-body { flex: 1; overflow: hidden; }
+.editor-body { flex: 1; overflow: hidden; position: relative; }
+.editor-body > div { height: 100%; }
 
 /* ===== Builder Layout ===== */
 .builder-layout { display: flex; height: 100%; background: #e4e7ed; }
@@ -2860,7 +2861,7 @@ onMounted(() => { fetchConfig() })
 }
 
 /* ===== Lang Editor Mode ===== */
-.lang-mode { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.lang-mode { height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 .lang-toolbar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 16px; background: #fff; border-bottom: 1px solid #e4e7ed;

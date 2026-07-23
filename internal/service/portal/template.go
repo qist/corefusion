@@ -4886,6 +4886,83 @@ var showPromoInput = ref(false) // promo code fold
         portalNavItems.value = PORTAL_CONFIG.navigation.filter(function(n) { return n.enabled !== false })
       }
     }
+
+    // --- Auth Region (editable login page) ---
+    var authComponent = ref(null)
+    
+    // Compile auth region from PORTAL_CONFIG.regions
+    var compileAuthRegion = function() {
+      var region = (PORTAL_CONFIG.regions && PORTAL_CONFIG.regions.auth) || null
+      if (!region || !region.html) {
+        authComponent.value = null
+        return
+      }
+      
+      // Build context for auth region
+      var authCtx = {
+        // Vue APIs
+        ref: Vue.ref,
+        computed: Vue.computed,
+        watch: Vue.watch,
+        onMounted: Vue.onMounted,
+        onUnmounted: Vue.onUnmounted,
+        
+        // Reactive state
+        loginForm: loginForm,
+        registerForm: registerForm,
+        authTab: authTab,
+        loading: loading,
+        registrationEnabled: registrationEnabled,
+        logoUrl: logoUrl,
+        isDark: isDark,
+        
+        // Methods
+        handleLogin: handleLogin,
+        handleRegister: handleRegister,
+        t: t,
+        
+        // Config data
+        data: region.data || {},
+        
+        // Utils
+        ElMessage: ElMessage,
+        ElMessageBox: ElMessageBox
+      }
+      
+      // Compile JS setup function
+      var setupFn
+      if (region.js) {
+        try {
+          var factory = new Function('ctx', region.js)
+          setupFn = function() { return factory(authCtx) || {} }
+        } catch(e) {
+          console.error('Auth region JS compile error:', e)
+          setupFn = function() { return { __error: e.message } }
+        }
+      } else {
+        setupFn = function() { return authCtx }
+      }
+      
+      // Inject CSS
+      if (region.css) {
+        var styleId = 'auth-region-css'
+        var existing = document.getElementById(styleId)
+        if (existing) existing.remove()
+        var styleEl = document.createElement('style')
+        styleEl.id = styleId
+        styleEl.textContent = region.css
+        document.head.appendChild(styleEl)
+      }
+      
+      // Create component
+      authComponent.value = {
+        template: region.html,
+        setup: setupFn
+      }
+    }
+    
+    // Compile auth region on init
+    compileAuthRegion()
     // --- i18n / multi-language pack ---
     var multiLang = { default: 'zh-CN', locales: {} }
     if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.lang) {
@@ -6232,7 +6309,8 @@ referralCode: referralCode, referralStats: referralStats, referralRecords: refer
       lang: lang, t: t,
       currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale,
       moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats, moreSubQrKey: moreSubQrKey, moreSubQrConfig: moreSubQrConfig, moreSubQrUrl: moreSubQrUrl, moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl, buildSubLink: buildSubLink, toggleMoreSubQr: toggleMoreSubQr, showMoreSubQrDialog: showMoreSubQrDialog,
-      iconPaths: iconPaths
+      iconPaths: iconPaths,
+      authComponent: authComponent
     }
   }
 })

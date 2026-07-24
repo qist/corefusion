@@ -399,221 +399,20 @@ ctx.moduleTitle           — 当前模块标题</pre>
                     </div>
                   </div>
                   <div class="preview-modules">
-                    <component :is="'preview-' + selectedModule.type" :mod="selectedModule" :config="config" v-if="false" />
-                    <!-- Live preview of just this module with custom CSS -->
+                    <!-- Module preview using user-edited HTML/CSS/JS from database -->
                     <div :id="'preview-mod-' + selectedModule.id" class="module-wrap-preview">
+                      <!-- User-edited CSS -->
+                      <style v-if="selectedModule.data?.css" v-html="selectedModule.data.css"></style>
                       <style v-if="selectedModule.style?.custom_css" v-html="scopeCss(selectedModule.style.custom_css, selectedModule.id)"></style>
-                      <template v-if="selectedModule.type === 'hero'">
-                        <div class="preview-module preview-hero" :style="moduleStyle(selectedModule)">
-                          <div class="hero-eyebrow">{{ selectedModule.data?.eyebrow || '' }}</div>
-                          <h2 class="hero-heading">{{ selectedModule.data?.heading || selectedModule.title }}</h2>
-                          <p class="hero-desc">{{ selectedModule.data?.description || '' }}</p>
-                          <button v-if="selectedModule.data?.button_text" class="hero-btn">{{ selectedModule.data.button_text }}</button>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'markdown'">
-                        <div class="preview-module preview-markdown" :style="moduleStyle(selectedModule)">
-                          <div v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</div>
-                          <div class="md-preview-content" v-html="renderMd(selectedModule.data?.markdown || '')"></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'rich_text'">
-                        <div class="preview-module preview-rich-text" :style="moduleStyle(selectedModule)">
-                          <div v-html="sanitizeHtml(selectedModule.data?.html || '')"></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'notice'">
-                        <div class="preview-module preview-notice" :class="'notice-' + (selectedModule.style?.variant || 'info')">
-                          <div v-if="selectedModule.data?.display_mode === 'popup'" class="preview-popup-badge">🪟 弹窗模式 · {{ selectedModule.data?.popup_trigger === 'on_load' ? '进入页面自动弹出' : '点击卡片弹出' }} · {{ selectedModule.data?.popup_dismiss === 'once' ? '关闭后不再弹出' : '每次访问弹出' }}</div>
-                          <div class="notice-title">{{ selectedModule.data?.title || selectedModule.title }}</div>
-                          <div v-if="selectedModule.data?.markdown" class="notice-body md-preview-content" v-html="renderMd(selectedModule.data.markdown)"></div>
-                          <div v-if="selectedModule.data?.display_mode === 'popup' && selectedModule.data?.popup_trigger === 'manual'" class="notice-popup-hint-preview">📍 用户点击此卡片查看详情</div>
-                          <div v-if="selectedModule.data?.display_mode === 'popup'" class="preview-popup-actions">
-                            <span v-if="selectedModule.data?.popup_link_url" class="preview-popup-btn-link">🔗 {{ selectedModule.data?.popup_link_text || '查看详情' }}</span>
-                            <span class="preview-popup-btn-dismiss">{{ selectedModule.data?.popup_button_text || '我知道了' }}</span>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'custom_html'">
-                        <div class="preview-module preview-custom-html">
-                          <div v-html="sanitizeHtml(selectedModule.data?.html || '')"></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'feature_cards'">
-                        <div class="preview-module preview-feature-cards">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
-                          <div class="feature-cards-grid">
-                            <div v-for="(card, ci) in (selectedModule.data?.cards || []).slice(0, 6)" :key="ci" class="feature-card">
-                              <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
-                              <h4>{{ card.title }}</h4>
-                              <p>{{ card.description }}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'account_stats'">
-                        <div class="preview-module preview-account-stats">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
-                          <div class="stats-grid">
-                            <div class="stat-box"><span class="stat-num">--</span><span class="stat-label">上传</span></div>
-                            <div class="stat-box"><span class="stat-num">--</span><span class="stat-label">下载</span></div>
-                            <div class="stat-box"><span class="stat-num">--</span><span class="stat-label">总量</span></div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'subscription'">
-                        <div class="preview-module preview-subscription">
-                          <h3 class="module-section-title">{{ selectedModule.data?.title || selectedModule.title || '订阅信息' }}</h3>
-                          <p class="sub-desc">{{ selectedModule.data?.description || '查看您的订阅链接和状态' }}</p>
-                          <button v-if="selectedModule.data?.button_text" class="sub-btn">{{ selectedModule.data.button_text }}</button>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'account_info'">
-                        <div class="preview-module preview-account-info">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
-                          <div class="stats-grid">
-                            <div class="stat-box"><span class="stat-label">邮箱</span><span class="stat-num" style="font-size:13px">user@example.com</span></div>
-                            <div class="stat-box"><span class="stat-label">套餐</span><span class="stat-num" style="font-size:13px">基础版</span></div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'traffic_ring'">
-                        <div class="preview-module preview-traffic-ring">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title }}</h3>
-                          <div style="display:flex;justify-content:center;margin:12px 0">
-                            <div style="width:100px;height:100px;border-radius:50%;border:10px solid #e8e8ef;border-top-color:#67c23a;display:flex;align-items:center;justify-content:center">
-                              <span style="font-size:20px;font-weight:700">75%</span>
-                            </div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'subscription_detail'">
-                        <div class="preview-module preview-sub-detail">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '订阅信息' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="background:var(--pv-bg);padding:10px;border-radius:8px;font-family:monospace;font-size:12px;word-break:break-all;margin-bottom:8px">https://example.com/sub/abc123...</div>
-                          <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.copy_text || '复制' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ selectedModule.data?.qr_text || '二维码' }}</button></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'security_settings'">
-                        <div class="preview-module preview-security">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '安全设置' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="font-size:12px;color:#909399">IP 白名单 · 设备限制 · 修改密码</div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'log_packages'">
-                        <div class="preview-module preview-log-packages">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '日志打包' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.btn_1h || '1小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ selectedModule.data?.btn_6h || '6小时' }}</button></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'plan_list'">
-                        <div class="preview-module preview-plan-list">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '套餐列表' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
-                            <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px"><div style="font-weight:600;font-size:13px">基础版</div><div style="color:var(--pv-primary);font-size:16px;font-weight:700;margin:4px 0">¥9.9/月</div><div style="font-size:11px;color:#909399">100GB 流量</div></div>
-                            <div style="border:1px solid var(--pv-primary);border-radius:8px;padding:10px;background:var(--pv-primary);color:#fff"><div style="font-weight:600;font-size:13px">专业版</div><div style="font-size:16px;font-weight:700;margin:4px 0">¥19.9/月</div><div style="font-size:11px;opacity:0.8">500GB 流量</div></div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'charge_panel'">
-                        <div class="preview-module preview-charge-panel">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '在线充值' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="display:flex;gap:8px;flex-wrap:wrap"><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥50</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥100</button></div>
-                          <div v-if="selectedModule.data?.card_placeholder" style="margin-top:8px;display:flex;gap:4px"><input :placeholder="selectedModule.data?.card_placeholder" style="flex:1;padding:4px 8px;border:1px solid #e4e7ed;border-radius:6px;font-size:12px" disabled /><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.card_btn_text || '兑换' }}</button></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'balance_display'">
-                        <div class="preview-module preview-balance">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '账户余额' }}</h3>
-                          <div style="font-size:24px;font-weight:700;color:var(--pv-primary);margin:8px 0">¥ 0.00</div>
-                          <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.charge_btn_text || '去充值' }}</button>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'order_list'">
-                        <div class="preview-module preview-order-list">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '我的账单' }}</h3>
-                          <div style="font-size:12px;color:#909399;text-align:center;padding:12px">暂无订单记录</div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'referral'">
-                        <div class="preview-module preview-referral">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '推广邀请' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="background:var(--pv-bg,#f5f7fa);padding:8px;border-radius:6px;font-family:monospace;font-size:11px;word-break:break-all;margin-bottom:8px">https://example.com/ref/abc123...</div>
-                          <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.copy_btn_text || '复制邀请链接' }}</button>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'node_list'">
-                        <div class="preview-module preview-node-list">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '线路列表' }}</h3>
-                          <div style="font-size:12px;color:#909399;text-align:center;padding:12px">线路列表将在门户页面中显示</div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'ticket_list'">
-                        <div class="preview-module preview-ticket-list">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '工单系统' }}</h3>
-                          <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.new_btn_text || '新建工单' }}</button></div>
-                          <div style="font-size:12px;color:#909399;text-align:center;padding:8px">暂无工单</div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'article_list'">
-                        <div class="preview-module preview-article-list">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '教程文章' }}</h3>
-                          <div style="font-size:12px;color:#909399;text-align:center;padding:12px">文章列表将在门户页面中显示</div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'tutorial_cards'">
-                        <div class="preview-module preview-tutorial-cards">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '下载与教程' }}</h3>
-                          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-                            <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">💻</div><div style="font-size:11px;margin-top:4px">Windows</div></div>
-                            <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">🍎</div><div style="font-size:11px;margin-top:4px">macOS</div></div>
-                            <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">📱</div><div style="font-size:11px;margin-top:4px">Android</div></div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'client_download'">
-                        <div class="preview-module preview-client-download">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '客户端下载' }}</h3>
-                          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button style="padding:4px 12px;border:1px solid var(--pv-primary);border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">Windows</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">macOS</button></div>
-                          <button style="padding:6px 16px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">下载客户端</button>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'streaming_status'">
-                        <div class="preview-module preview-streaming">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '流媒体解锁' }}</h3>
-                          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">
-                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Netflix</div>
-                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#f56c6c">✗</span> Disney+</div>
-                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> YouTube</div>
-                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Spotify</div>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'shared_accounts'">
-                        <div class="preview-module preview-shared-accounts">
-                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '共享账号' }}</h3>
-                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
-                          <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px">Netflix 共享账号</span><button style="padding:2px 8px;border:none;border-radius:4px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:11px">{{ selectedModule.data?.apply_btn_text || '查看凭据' }}</button></div>
-                        </div>
-                      </template>
-                      <template v-else-if="selectedModule.type === 'freeform'">
-                        <div class="preview-module preview-freeform">
-                          <div class="freeform-badge">HTML+CSS+JS</div>
-                          <div v-html="sanitizeHtml(selectedModule.data?.html || '')"></div>
-                          <p style="color:#909399;font-size:11px;text-align:center;margin-top:4px">JS 交互需保存后在门户查看</p>
-                        </div>
-                      </template>
-                      <template v-else>
-                        <div class="preview-module">
-                          <p style="color:#909399;text-align:center;padding:20px">{{ moduleTypeLabel(selectedModule.type) }} 模块预览</p>
-                        </div>
-                      </template>
+                      
+                      <!-- Dynamic component from user-edited HTML/JS -->
+                      <component :is="dynamicModuleComponent" v-if="dynamicModuleComponent" />
+                      
+                      <!-- Empty state if no code -->
+                      <div v-else class="preview-module" style="text-align:center;padding:40px;color:#909399">
+                        <p>模块暂无自定义代码</p>
+                        <p style="font-size:12px;margin-top:8px">请在 HTML/CSS/JS 编辑器中添加代码</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -697,224 +496,19 @@ ctx.moduleTitle           — 当前模块标题</pre>
                 <span class="page-title-text">{{ currentNav.label }}</span>
               </div>
 
-              <!-- Module Previews -->
+              <!-- Module Previews - Using Dynamic Components from Database -->
               <div class="preview-modules">
                 <template v-for="mod in currentPageModules.filter(m => m.visible)" :key="mod.id">
-                  <!-- Hero Module Preview -->
-                  <div v-if="mod.type === 'hero'" class="preview-module preview-hero" :style="moduleStyle(mod)">
-                    <div class="hero-eyebrow">{{ mod.data?.eyebrow || '' }}</div>
-                    <h2 class="hero-heading">{{ mod.data?.heading || mod.title }}</h2>
-                    <p class="hero-desc">{{ mod.data?.description || '' }}</p>
-                    <button v-if="mod.data?.button_text" class="hero-btn">{{ mod.data.button_text }}</button>
-                  </div>
-
-                  <!-- Markdown Module Preview -->
-                  <div v-else-if="mod.type === 'markdown'" class="preview-module preview-markdown" :style="moduleStyle(mod)">
-                    <div v-if="mod.title" class="module-section-title">{{ mod.title }}</div>
-                    <div class="md-preview-content" v-html="renderMd(mod.data?.markdown || '')"></div>
-                  </div>
-
-                  <!-- Rich Text Module Preview -->
-                  <div v-else-if="mod.type === 'rich_text'" class="preview-module preview-rich-text" :style="moduleStyle(mod)">
-                    <div v-html="sanitizeHtml(mod.data?.html || '')"></div>
-                  </div>
-
-                  <!-- Notice Module Preview -->
-                  <div v-else-if="mod.type === 'notice'" class="preview-module preview-notice" :class="'notice-' + (mod.style?.variant || 'info')" :style="{ cursor: mod.data?.display_mode === 'popup' && mod.data?.popup_trigger === 'manual' ? 'pointer' : 'default' }">
-                    <div v-if="mod.data?.display_mode === 'popup'" class="preview-popup-badge">🪟 弹窗模式 · {{ mod.data?.popup_trigger === 'on_load' ? '自动' : '点击' }} · {{ mod.data?.popup_dismiss === 'once' ? '仅一次' : '每次' }}</div>
-                    <div class="notice-title">{{ mod.data?.title || mod.title }}</div>
-                    <div v-if="mod.data?.markdown" class="notice-body md-preview-content" v-html="renderMd(mod.data.markdown)"></div>
-                    <div v-else-if="mod.data?.html" class="notice-body" v-html="sanitizeHtml(mod.data.html)"></div>
-                    <div v-if="mod.data?.display_mode === 'popup' && mod.data?.popup_link_url" class="preview-notice-link">🔗 {{ mod.data?.popup_link_text || '查看详情' }} → {{ mod.data?.popup_link_url }}</div>
-                  </div>
-
-                  <!-- Feature Cards Module Preview -->
-                  <div v-else-if="mod.type === 'feature_cards'" class="preview-module preview-feature-cards">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title }}</h3>
-                    <div class="feature-cards-grid">
-                      <div v-for="(card, ci) in (mod.data?.cards || []).slice(0, 6)" :key="ci" class="feature-card">
-                        <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
-                        <h4>{{ card.title }}</h4>
-                        <p>{{ card.description }}</p>
-                      </div>
+                  <div class="preview-module" :id="'preview-mod-' + mod.id">
+                    <!-- User-edited CSS -->
+                    <style v-if="mod.data?.css" v-html="mod.data.css"></style>
+                    <!-- Dynamic Component -->
+                    <component :is="getDynamicComponent(mod)" v-if="getDynamicComponent(mod)" />
+                    <!-- Empty State -->
+                    <div v-else style="text-align:center;padding:40px;color:#909399">
+                      <p>{{ mod.title || moduleTypeLabel(mod.type) }}</p>
+                      <p style="font-size:12px;margin-top:8px">暂无自定义代码</p>
                     </div>
-                  </div>
-
-                  <!-- Account Stats Module Preview -->
-                  <div v-else-if="mod.type === 'account_stats'" class="preview-module preview-account-stats">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title }}</h3>
-                    <div class="stats-grid">
-                      <div class="stat-box"><span class="stat-num">{{ '--' }}</span><span class="stat-label">上传</span></div>
-                      <div class="stat-box"><span class="stat-num">{{ '--' }}</span><span class="stat-label">下载</span></div>
-                      <div class="stat-box"><span class="stat-num">{{ '--' }}</span><span class="stat-label">总量</span></div>
-                    </div>
-                  </div>
-
-                  <!-- Subscription Module Preview -->
-                  <div v-else-if="mod.type === 'subscription'" class="preview-module preview-subscription">
-                    <h3 class="module-section-title">{{ mod.data?.title || mod.title || '订阅信息' }}</h3>
-                    <p class="sub-desc">{{ mod.data?.description || '查看您的订阅链接和状态' }}</p>
-                    <button v-if="mod.data?.button_text" class="sub-btn">{{ mod.data.button_text }}</button>
-                  </div>
-
-                  <!-- Custom HTML Module Preview -->
-                  <div v-else-if="mod.type === 'custom_html'" class="preview-module preview-custom-html">
-                    <div class="custom-html-badge">HTML</div>
-                    <div v-html="sanitizeHtml(mod.data?.html || '')"></div>
-                  </div>
-
-                  <!-- Freeform Module Preview -->
-                  <div v-else-if="mod.type === 'freeform'" class="preview-module preview-freeform">
-                    <div class="freeform-badge">HTML+CSS+JS</div>
-                    <div v-html="sanitizeHtml(mod.data?.html || '')"></div>
-                    <p style="color:#909399;font-size:11px;text-align:center;margin-top:4px">JS 交互需保存后在门户查看</p>
-                  </div>
-
-                  <!-- Account Info Preview -->
-                  <div v-else-if="mod.type === 'account_info'" class="preview-module preview-account-info">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title }}</h3>
-                    <div class="stats-grid">
-                      <div class="stat-box"><span class="stat-label">邮箱</span><span class="stat-num" style="font-size:13px">user@example.com</span></div>
-                      <div class="stat-box"><span class="stat-label">套餐</span><span class="stat-num" style="font-size:13px">基础版</span></div>
-                      <div class="stat-box"><span class="stat-label">状态</span><span class="stat-num" style="font-size:13px">正常</span></div>
-                      <div class="stat-box"><span class="stat-label">到期</span><span class="stat-num" style="font-size:13px">无限制</span></div>
-                    </div>
-                  </div>
-
-                  <!-- Traffic Ring Preview -->
-                  <div v-else-if="mod.type === 'traffic_ring'" class="preview-module preview-traffic-ring">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title }}</h3>
-                    <div style="display:flex;justify-content:center;margin:12px 0">
-                      <div style="width:100px;height:100px;border-radius:50%;border:10px solid #e8e8ef;border-top-color:#67c23a;display:flex;align-items:center;justify-content:center;transform:rotate(-90deg)">
-                        <span style="transform:rotate(90deg);font-size:20px;font-weight:700">75%</span>
-                      </div>
-                    </div>
-                    <div class="stats-grid">
-                      <div class="stat-box"><span class="stat-num">12.5 GB</span><span class="stat-label">上传</span></div>
-                      <div class="stat-box"><span class="stat-num">45.2 GB</span><span class="stat-label">下载</span></div>
-                      <div class="stat-box"><span class="stat-num">100 GB</span><span class="stat-label">总量</span></div>
-                    </div>
-                  </div>
-
-                  <!-- Subscription Detail Preview -->
-                  <div v-else-if="mod.type === 'subscription_detail'" class="preview-module preview-sub-detail">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '订阅信息' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="background:var(--pv-bg, #f5f7fa);padding:10px;border-radius:8px;font-family:monospace;font-size:12px;word-break:break-all;margin-bottom:8px">https://example.com/sub/abc123...</div>
-                    <div style="display:flex;gap:8px;align-items:center"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.copy_text || '复制' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.qr_text || '二维码' }}</button><span v-if="mod.data?.show_status !== false" style="font-size:11px;color:#909399;margin-left:auto">状态: 正常</span></div>
-                    <div v-if="mod.data?.show_rotate !== false" style="margin-top:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-accent);color:#fff;cursor:pointer;font-size:12px">轮换Token</button></div>
-                  </div>
-
-                  <!-- Security Settings Preview -->
-                  <div v-else-if="mod.type === 'security_settings'" class="preview-module preview-security">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '安全设置' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="font-size:12px;color:#909399">{{ mod.data?.show_ip_whitelist !== false ? 'IP 白名单 · 设备限制' : '' }}{{ mod.data?.show_password !== false ? ' · 修改密码' : '' }}</div>
-                  </div>
-
-                  <!-- Log Packages Preview -->
-                  <div v-else-if="mod.type === 'log_packages'" class="preview-module preview-log-packages">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '日志打包' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.btn_1h || '1小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.btn_6h || '6小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.btn_24h || '24小时' }}</button></div>
-                  </div>
-
-                  <!-- Plan List Preview -->
-                  <div v-else-if="mod.type === 'plan_list'" class="preview-module preview-plan-list">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '套餐列表' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
-                      <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px"><div style="font-weight:600;font-size:13px">基础版</div><div style="color:var(--pv-primary);font-size:16px;font-weight:700;margin:4px 0">¥9.9/月</div><div style="font-size:11px;color:#909399">100GB 流量</div></div>
-                      <div style="border:1px solid var(--pv-primary);border-radius:8px;padding:10px;background:var(--pv-primary);color:#fff"><div style="font-weight:600;font-size:13px">专业版</div><div style="font-size:16px;font-weight:700;margin:4px 0">¥19.9/月</div><div style="font-size:11px;opacity:0.8">500GB 流量</div></div>
-                    </div>
-                  </div>
-
-                  <!-- Charge Panel Preview -->
-                  <div v-else-if="mod.type === 'charge_panel'" class="preview-module preview-charge-panel">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '在线充值' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap"><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥50</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥100</button></div>
-                    <div v-if="mod.data?.card_placeholder" style="margin-top:8px;display:flex;gap:4px"><input :placeholder="mod.data?.card_placeholder" style="flex:1;padding:4px 8px;border:1px solid #e4e7ed;border-radius:6px;font-size:12px" disabled /><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.card_btn_text || '兑换' }}</button></div>
-                  </div>
-
-                  <!-- Balance Display Preview -->
-                  <div v-else-if="mod.type === 'balance_display'" class="preview-module preview-balance">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '账户余额' }}</h3>
-                    <div style="font-size:24px;font-weight:700;color:var(--pv-primary);margin:8px 0">¥ 0.00</div>
-                    <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.charge_btn_text || '去充值' }}</button>
-                  </div>
-
-                  <!-- Order List Preview -->
-                  <div v-else-if="mod.type === 'order_list'" class="preview-module preview-order-list">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '我的账单' }}</h3>
-                    <div style="font-size:12px;color:#909399;text-align:center;padding:12px">暂无订单记录</div>
-                  </div>
-
-                  <!-- Referral Preview -->
-                  <div v-else-if="mod.type === 'referral'" class="preview-module preview-referral">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '推广邀请' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="background:var(--pv-bg,#f5f7fa);padding:8px;border-radius:6px;font-family:monospace;font-size:11px;word-break:break-all;margin-bottom:8px">https://example.com/ref/abc123...</div>
-                    <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.copy_btn_text || '复制邀请链接' }}</button>
-                  </div>
-
-                  <!-- Node List Preview -->
-                  <div v-else-if="mod.type === 'node_list'" class="preview-module preview-node-list">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '线路列表' }}</h3>
-                    <div style="font-size:12px;color:#909399;text-align:center;padding:12px">线路列表将在门户页面中显示</div>
-                  </div>
-
-                  <!-- Ticket List Preview -->
-                  <div v-else-if="mod.type === 'ticket_list'" class="preview-module preview-ticket-list">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '工单系统' }}</h3>
-                    <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.new_btn_text || '新建工单' }}</button></div>
-                    <div style="font-size:12px;color:#909399;text-align:center;padding:8px">暂无工单</div>
-                  </div>
-
-                  <!-- Article List Preview -->
-                  <div v-else-if="mod.type === 'article_list'" class="preview-module preview-article-list">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '教程文章' }}</h3>
-                    <div style="font-size:12px;color:#909399;text-align:center;padding:12px">文章列表将在门户页面中显示</div>
-                  </div>
-
-                  <!-- Tutorial Cards Preview -->
-                  <div v-else-if="mod.type === 'tutorial_cards'" class="preview-module preview-tutorial-cards">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '下载与教程' }}</h3>
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-                      <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">💻</div><div style="font-size:11px;margin-top:4px">Windows</div></div>
-                      <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">🍎</div><div style="font-size:11px;margin-top:4px">macOS</div></div>
-                      <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">📱</div><div style="font-size:11px;margin-top:4px">Android</div></div>
-                    </div>
-                  </div>
-
-                  <!-- Client Download Preview -->
-                  <div v-else-if="mod.type === 'client_download'" class="preview-module preview-client-download">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '客户端下载' }}</h3>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button style="padding:4px 12px;border:1px solid var(--pv-primary);border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">Windows</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">macOS</button></div>
-                    <button style="padding:6px 16px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">下载客户端</button>
-                  </div>
-
-                  <!-- Streaming Status Preview -->
-                  <div v-else-if="mod.type === 'streaming_status'" class="preview-module preview-streaming">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '流媒体解锁' }}</h3>
-                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">
-                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Netflix</div>
-                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#f56c6c">✗</span> Disney+</div>
-                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> YouTube</div>
-                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Spotify</div>
-                    </div>
-                  </div>
-
-                  <!-- Shared Accounts Preview -->
-                  <div v-else-if="mod.type === 'shared_accounts'" class="preview-module preview-shared-accounts">
-                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '共享账号' }}</h3>
-                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
-                    <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px">Netflix 共享账号</span><button style="padding:2px 8px;border:none;border-radius:4px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:11px">{{ mod.data?.apply_btn_text || '查看凭据' }}</button></div>
-                  </div>
-
-                  <!-- Fallback for any other module type -->
-                  <div v-else class="preview-module">
-                    <p style="color:#909399;text-align:center;padding:20px">{{ moduleTypeLabel(mod.type) }} 模块预览</p>
                   </div>
                 </template>
 
@@ -1429,7 +1023,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, shallowRef, watch } from 'vue'
+import { ref, reactive, computed, onMounted, shallowRef, watch, defineComponent, h, compile } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument, Search, Close } from '@element-plus/icons-vue'
 import { getActivePortal, updateActivePortal, resetPortal } from '../api/portal'
@@ -1779,13 +1373,390 @@ function ensureNoticeData(mod) {
   if (typeof d.popup_link_external !== 'boolean') d.popup_link_external = true
 }
 
+// Default HTML templates for each module type
+const defaultModuleHtmlMap = {
+  hero: `<!-- Hero 欢迎区 -->
+<div class="hero-wrap">
+  <div class="hero-eyebrow">{{ eyebrow }}</div>
+  <h2 class="hero-heading">{{ heading }}</h2>
+  <p class="hero-desc">{{ description }}</p>
+  <button class="hero-btn" @click="onButtonClick">{{ button_text }}</button>
+</div>`,
+  account_info: `<!-- 账户信息 -->
+<div class="account-info-wrap">
+  <div class="info-row">
+    <span class="info-label">账户状态</span>
+    <span class="info-value">{{ client.status }}</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">邮箱</span>
+    <span class="info-value">{{ client.email }}</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">套餐</span>
+    <span class="info-value">{{ client.plan_name }}</span>
+  </div>
+</div>`,
+  traffic_ring: `<!-- 流量使用 -->
+<div class="traffic-wrap">
+  <div class="traffic-ring">
+    <svg viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="52" class="ring-bg"/>
+      <circle cx="60" cy="60" r="52" class="ring-fill" :stroke-dasharray="ringDash"/>
+    </svg>
+    <div class="ring-text">
+      <span class="ring-percent">{{ usagePercent }}%</span>
+      <span class="ring-label">已使用</span>
+    </div>
+  </div>
+  <div class="traffic-bar">
+    <div class="bar-fill" :style="{ width: usagePercent + '%' }"></div>
+  </div>
+  <div class="traffic-stats">
+    <div class="stat">
+      <span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span>
+      <span class="stat-label">上传</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ formatBytes(client.download_bytes) }}</span>
+      <span class="stat-label">下载</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span>
+      <span class="stat-label">总流量</span>
+    </div>
+  </div>
+</div>`,
+  notice: `<!-- 公告提示 -->
+<div class="notice-wrap" :class="'notice-' + variant">
+  <div class="notice-title">{{ title }}</div>
+  <div class="notice-content" v-html="content"></div>
+</div>`,
+  subscription_detail: `<!-- 订阅信息 -->
+<div class="sub-wrap">
+  <div class="sub-link-box">
+    <code class="sub-link">{{ subUrl }}</code>
+    <div class="sub-actions">
+      <button @click="copySub">复制</button>
+      <button @click="showQR">二维码</button>
+    </div>
+  </div>
+  <div class="sub-status" v-if="show_status">
+    状态: <span :class="'status-' + client.sub_status">{{ client.sub_status }}</span>
+  </div>
+</div>`,
+  feature_cards: `<!-- 功能卡片 -->
+<div class="feature-wrap">
+  <div class="feature-grid">
+    <div class="feature-card" v-for="(card, idx) in cards" :key="idx">
+      <span class="card-icon">{{ card.icon }}</span>
+      <h4>{{ card.title }}</h4>
+      <p>{{ card.description }}</p>
+    </div>
+  </div>
+</div>`,
+  custom_html: `<!-- 自定义 HTML -->
+<div class="custom-html-wrap" v-html="html"></div>`,
+  markdown: `<!-- Markdown 文档 -->
+<div class="markdown-wrap">
+  <div class="md-content" v-html="renderedMarkdown"></div>
+</div>`,
+  plan_list: `<!-- 套餐列表 -->
+<div class="plan-list-wrap">
+  <div class="plan-card" v-for="plan in plans" :key="plan.id">
+    <h3 class="plan-name">{{ plan.name }}</h3>
+    <p class="plan-desc">{{ plan.description }}</p>
+    <div class="plan-price">¥{{ plan.price }}</div>
+    <button class="plan-btn" @click="buy(plan)">购买</button>
+  </div>
+</div>`,
+  order_list: `<!-- 订单列表 -->
+<div class="order-list-wrap">
+  <div class="order-item" v-for="order in orders" :key="order.id">
+    <div class="order-info">
+      <span class="order-id">#{{ order.id }}</span>
+      <span class="order-status" :class="'status-' + order.status">{{ order.status }}</span>
+    </div>
+    <div class="order-amount">¥{{ order.amount }}</div>
+  </div>
+</div>`,
+  node_list: `<!-- 节点列表 -->
+<div class="node-list-wrap">
+  <div class="node-group" v-for="group in nodeGroups" :key="group.id">
+    <h4 class="group-name">{{ group.name }}</h4>
+    <div class="node-items">
+      <div class="node-item" v-for="node in group.nodes" :key="node.id">
+        <span class="node-name">{{ node.name }}</span>
+        <span class="node-protocol">{{ node.protocol }}</span>
+      </div>
+    </div>
+  </div>
+</div>`,
+  ticket_list: `<!-- 工单列表 -->
+<div class="ticket-list-wrap">
+  <div class="ticket-item" v-for="ticket in tickets" :key="ticket.id">
+    <div class="ticket-subject">{{ ticket.subject }}</div>
+    <div class="ticket-meta">
+      <span class="ticket-status" :class="'status-' + ticket.status">{{ ticket.status }}</span>
+      <span class="ticket-time">{{ ticket.updated_at }}</span>
+    </div>
+  </div>
+</div>`,
+  article_list: `<!-- 文章列表 -->
+<div class="article-list-wrap">
+  <div class="article-item" v-for="article in articles" :key="article.id" @click="open(article)">
+    <span class="article-category">{{ article.category }}</span>
+    <h4 class="article-title">{{ article.title }}</h4>
+    <span class="article-date">{{ article.published_at }}</span>
+  </div>
+</div>`,
+  referral: `<!-- 推广返利 -->
+<div class="referral-wrap">
+  <div class="ref-link-box">
+    <span class="ref-label">我的邀请链接</span>
+    <code class="ref-link">{{ inviteUrl }}</code>
+    <button @click="copyLink">复制</button>
+  </div>
+  <div class="ref-stats">
+    <div class="stat">
+      <span class="stat-value">{{ referralStats.total_invited }}</span>
+      <span class="stat-label">已邀请</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">¥{{ referralStats.total_commission }}</span>
+      <span class="stat-label">累计佣金</span>
+    </div>
+  </div>
+</div>`,
+  balance_display: `<!-- 余额显示 -->
+<div class="balance-wrap">
+  <div class="balance-amount">
+    <span class="currency">¥</span>
+    <span class="amount">{{ balance.balance }}</span>
+  </div>
+  <div class="balance-actions">
+    <button class="btn-primary" @click="charge">充值</button>
+  </div>
+</div>`,
+  charge_panel: `<!-- 充值面板 -->
+<div class="charge-wrap">
+  <div class="charge-form">
+    <input v-model="chargeAmount" placeholder="充值金额" />
+    <button @click="submitCharge">立即充值</button>
+  </div>
+  <div class="charge-records">
+    <div class="record-item" v-for="record in chargeRecords" :key="record.id">
+      <span>¥{{ record.amount }}</span>
+      <span :class="'status-' + record.status">{{ record.status }}</span>
+    </div>
+  </div>
+</div>`,
+  security_settings: `<!-- 安全设置 -->
+<div class="security-wrap">
+  <div class="setting-section">
+    <h4>修改密码</h4>
+    <input type="password" v-model="pwdForm.old" placeholder="旧密码" />
+    <input type="password" v-model="pwdForm.new" placeholder="新密码" />
+    <button @click="changePwd">修改</button>
+  </div>
+  <div class="setting-section" v-if="show_ip_whitelist">
+    <h4>IP 白名单</h4>
+    <textarea v-model="ipWhitelist" placeholder="每行一个 IP"></textarea>
+  </div>
+</div>`,
+  log_packages: `<!-- 日志打包 -->
+<div class="log-wrap">
+  <div class="log-actions">
+    <button @click="packLog(1)">打包 1 小时</button>
+    <button @click="packLog(6)">打包 6 小时</button>
+    <button @click="packLog(24)">打包 24 小时</button>
+  </div>
+  <div class="log-list">
+    <div class="log-item" v-for="pkg in logPackages" :key="pkg.id">
+      <span>#{{ pkg.id }}</span>
+      <span :class="'status-' + pkg.status">{{ pkg.status }}</span>
+      <button v-if="pkg.status === 'ready'" @click="download(pkg)">下载</button>
+    </div>
+  </div>
+</div>`,
+  streaming_status: `<!-- 流媒体状态 -->
+<div class="streaming-wrap">
+  <div class="service-list">
+    <div class="service-item" v-for="svc in services" :key="svc.id">
+      <span class="svc-icon">{{ svc.icon }}</span>
+      <span class="svc-name">{{ svc.name }}</span>
+      <span class="svc-status" :class="'status-' + svc.status">{{ svc.status_text }}</span>
+    </div>
+  </div>
+</div>`,
+  shared_accounts: `<!-- 共享账号 -->
+<div class="shared-wrap">
+  <div class="account-list">
+    <div class="account-item" v-for="acct in sharedAccounts" :key="acct.id">
+      <span class="acct-type">{{ acct.type }}</span>
+      <span class="acct-name">{{ acct.name }}</span>
+      <button @click="viewAcct(acct)">查看</button>
+    </div>
+  </div>
+</div>`,
+  tutorial_cards: `<!-- 教程卡片 -->
+<div class="tutorial-wrap">
+  <div class="tutorial-grid">
+    <div class="tutorial-card" v-for="tut in tutorials" :key="tut.id" @click="openTut(tut)">
+      <span class="tut-icon">{{ tut.icon }}</span>
+      <h4>{{ tut.name }}</h4>
+      <p>{{ tut.desc }}</p>
+    </div>
+  </div>
+</div>`,
+  client_download: `<!-- 客户端下载 -->
+<div class="client-wrap">
+  <div class="platform-tabs">
+    <button v-for="p in platforms" :key="p.id" :class="{ active: selectedPlatform === p.id }" @click="selectPlatform(p.id)">
+      {{ p.name }}
+    </button>
+  </div>
+  <div class="download-area" v-if="selectedPlatform">
+    <a :href="downloadUrl" class="download-btn" target="_blank">下载客户端</a>
+  </div>
+</div>`,
+  subscription: `<!-- 订阅按钮 -->
+<div class="sub-btn-wrap">
+  <button class="sub-btn" @click="goSubscribe">{{ button_text }}</button>
+</div>`,
+  order_create: `<!-- 创建订单 -->
+<div class="order-create-wrap">
+  <div class="form-group">
+    <label>选择套餐</label>
+    <select v-model="selectedPlan">
+      <option v-for="plan in plans" :key="plan.id" :value="plan.id">{{ plan.name }} - ¥{{ plan.price }}</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>优惠码</label>
+    <input v-model="promoCode" placeholder="选填" />
+  </div>
+  <button class="submit-btn" @click="createOrder">创建订单</button>
+</div>`,
+  freeform: `<!-- 自由组件 -->
+<div class="freeform-wrap">
+  <!-- 在此编写自定义 Vue 模板代码 -->
+  <h2>{{ title }}</h2>
+  <p>{{ description }}</p>
+</div>`
+}
+
+// Default JS templates for each module type
+const defaultModuleJsMap = {
+  hero: `// Hero 模块逻辑
+return {
+  onButtonClick() {
+    // 按钮点击处理
+    console.log('Hero button clicked')
+    // 可以在这里添加跳转逻辑
+    // window.location.href = '/subscription'
+  }
+}`,
+  subscription_detail: `// 订阅信息模块逻辑
+return {
+  subUrl: computed(() => ctx.data.client?.sub_url || ''),
+  
+  copySub() {
+    navigator.clipboard.writeText(this.subUrl)
+    ElMessage.success('订阅链接已复制')
+  },
+  
+  showQR() {
+    // 显示二维码弹窗
+    ctx.emit('show-qr', this.subUrl)
+  }
+}`,
+  traffic_ring: `// 流量使用模块逻辑
+return {
+  usagePercent: computed(() => {
+    const client = ctx.data.client
+    if (!client?.quota_bytes) return 0
+    return Math.round((client.used_bytes / client.quota_bytes) * 100)
+  }),
+  
+  ringDash: computed(() => {
+    const percent = this.usagePercent
+    const circumference = 2 * Math.PI * 52
+    return \`\${circumference * percent / 100} \${circumference}\`
+  }),
+  
+  formatBytes(bytes) {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+}`,
+  plan_list: `// 套餐列表模块逻辑
+return {
+  async buy(plan) {
+    try {
+      // 调用购买 API
+      const res = await fetch('/api/v1/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: plan.id })
+      })
+      const data = await res.json()
+      if (data.code === 0) {
+        ElMessage.success('订单创建成功')
+        // 跳转到支付页面
+        window.location.href = '/payment/' + data.data.id
+      }
+    } catch (err) {
+      ElMessage.error('购买失败: ' + err.message)
+    }
+  }
+}`,
+  referral: `// 推广返利模块逻辑
+return {
+  inviteUrl: computed(() => {
+    const code = ctx.data.client?.referral_code
+    return code ? \`\${window.location.origin}/register?ref=\${code}\` : ''
+  }),
+  
+  copyLink() {
+    navigator.clipboard.writeText(this.inviteUrl)
+    ElMessage.success('邀请链接已复制')
+  }
+}`,
+  freeform: `// 自由组件逻辑
+// 可以在这里编写任意 Vue 组合式 API 代码
+const count = ref(0)
+
+return {
+  count,
+  increment() {
+    count.value++
+  },
+  decrement() {
+    count.value--
+  }
+}`
+}
+
 // Ensure module has html/css/js data fields for code editing
 function ensureModuleCode(mod) {
   if (!mod) return
   if (!mod.data) mod.data = {}
-  if (typeof mod.data.html !== 'string') mod.data.html = ''
-  if (typeof mod.data.css !== 'string') mod.data.css = ''
-  if (typeof mod.data.js !== 'string') mod.data.js = ''
+  const data = mod.data
+  
+  // Initialize html/css/js fields with default templates
+  if (!data.html) {
+    data.html = defaultModuleHtmlMap[mod.type] || ''
+  }
+  if (!data.css) {
+    data.css = defaultModuleCssMap[mod.type] || ''
+  }
+  if (!data.js) {
+    data.js = defaultModuleJsMap[mod.type] || ''
+  }
 }
 
 // Default CSS templates for each module type (mirrors portal runtime styles)
@@ -2128,6 +2099,127 @@ const previewUrl = computed(() => {
   return window.location.origin + '/p?preview=1&screen=auth'
 })
 
+// Dynamic component for rendering user-edited HTML/CSS/JS
+const dynamicModuleComponent = computed(() => {
+  if (!selectedModule.value) return null
+  const mod = selectedModule.value
+  const html = mod.data?.html || ''
+  const css = mod.data?.css || ''
+  const js = mod.data?.js || ''
+  
+  if (!html && !css && !js) return null
+  
+  try {
+    // Create scoped CSS
+    const scopedCss = css ? `
+      <style>
+        #dynamic-mod-${mod.id} {
+          ${css}
+        }
+      </style>
+    ` : ''
+    
+    // Compile HTML template
+    const renderFn = html ? compile(html) : () => h('div', 'No template')
+    
+    // Execute JS to get component logic
+    let componentLogic = {}
+    if (js) {
+      try {
+        // Create a safe context with common Vue APIs
+        const ctx = {
+          ref,
+          reactive,
+          computed,
+          watch,
+          onMounted,
+          // Add module data
+          data: mod.data || {},
+          // Add common helpers
+          ElMessage
+        }
+        // Wrap JS in a function that returns the component logic
+        const fn = new Function('ctx', `
+          with (ctx) {
+            ${js}
+          }
+        `)
+        const result = fn(ctx)
+        if (result && typeof result === 'object') {
+          componentLogic = result
+        }
+      } catch (jsErr) {
+        console.error('JS execution error:', jsErr)
+      }
+    }
+    
+    // Create dynamic component
+    return defineComponent({
+      name: `DynamicModule-${mod.id}`,
+      render: renderFn,
+      setup() {
+        return componentLogic
+      }
+    })
+  } catch (err) {
+    console.error('Dynamic component creation error:', err)
+    return null
+  }
+})
+
+// Function to create dynamic component for any module (used in page preview)
+function getDynamicComponent(mod) {
+  if (!mod) return null
+  const html = mod.data?.html || ''
+  const css = mod.data?.css || ''
+  const js = mod.data?.js || ''
+  
+  if (!html && !css && !js) return null
+  
+  try {
+    // Compile HTML template
+    const renderFn = html ? compile(html) : () => h('div', 'No template')
+    
+    // Execute JS to get component logic
+    let componentLogic = {}
+    if (js) {
+      try {
+        const ctx = {
+          ref,
+          reactive,
+          computed,
+          watch,
+          onMounted,
+          data: mod.data || {},
+          ElMessage
+        }
+        const fn = new Function('ctx', `
+          with (ctx) {
+            ${js}
+          }
+        `)
+        const result = fn(ctx)
+        if (result && typeof result === 'object') {
+          componentLogic = result
+        }
+      } catch (jsErr) {
+        console.error('JS execution error:', jsErr)
+      }
+    }
+    
+    return defineComponent({
+      name: `DynamicModule-${mod.id}`,
+      render: renderFn,
+      setup() {
+        return componentLogic
+      }
+    })
+  } catch (err) {
+    console.error('Dynamic component creation error:', err)
+    return null
+  }
+}
+
 // Iframe-based page preview URL for modules (references actual portal page)
 const modulePreviewUrl = computed(() => {
   return window.location.origin + '/p?preview=1'
@@ -2291,6 +2383,11 @@ function selectModule(id) {
     ensureCustomCss(mod)
     ensureNoticeData(mod)
     ensureModuleCode(mod)
+    // Force reactivity update by creating new object reference
+    const idx = modules.value.findIndex(m => m.id === id)
+    if (idx !== -1) {
+      modules.value[idx] = { ...mod }
+    }
   }
   autoCenterViewMode()
 }
@@ -2549,6 +2646,7 @@ const applyData = (d) => {
       const mod = { ...m, page: m.page || 'overview' }
       ensureCustomCss(mod)
       ensureNoticeData(mod)
+      ensureModuleCode(mod)
       return mod
     })
   }

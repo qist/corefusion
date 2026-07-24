@@ -181,11 +181,14 @@
               <el-radio-group v-model="centerViewMode" size="small">
                 <el-radio-button v-if="hasContentEditor" value="editor">内容编辑</el-radio-button>
                 <el-radio-button value="preview">可视化预览</el-radio-button>
-                <el-radio-button value="css">CSS 样式</el-radio-button>
+                <el-radio-button value="page-preview">页面预览</el-radio-button>
+                <el-radio-button value="html">HTML</el-radio-button>
+                <el-radio-button value="css">CSS</el-radio-button>
+                <el-radio-button value="js">JS</el-radio-button>
               </el-radio-group>
             </div>
             <div class="canvas-toolbar-right">
-              <el-radio-group v-if="centerViewMode !== 'css'" v-model="previewDevice" size="small">
+              <el-radio-group v-if="centerViewMode === 'preview' || centerViewMode === 'editor'" v-model="previewDevice" size="small">
                 <el-radio-button value="desktop">桌面</el-radio-button>
                 <el-radio-button value="tablet">平板</el-radio-button>
                 <el-radio-button value="mobile">手机</el-radio-button>
@@ -506,6 +509,99 @@ ctx.moduleTitle           — 当前模块标题</pre>
                           <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.btn_1h || '1小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ selectedModule.data?.btn_6h || '6小时' }}</button></div>
                         </div>
                       </template>
+                      <template v-else-if="selectedModule.type === 'plan_list'">
+                        <div class="preview-module preview-plan-list">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '套餐列表' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+                            <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px"><div style="font-weight:600;font-size:13px">基础版</div><div style="color:var(--pv-primary);font-size:16px;font-weight:700;margin:4px 0">¥9.9/月</div><div style="font-size:11px;color:#909399">100GB 流量</div></div>
+                            <div style="border:1px solid var(--pv-primary);border-radius:8px;padding:10px;background:var(--pv-primary);color:#fff"><div style="font-weight:600;font-size:13px">专业版</div><div style="font-size:16px;font-weight:700;margin:4px 0">¥19.9/月</div><div style="font-size:11px;opacity:0.8">500GB 流量</div></div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'charge_panel'">
+                        <div class="preview-module preview-charge-panel">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '在线充值' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="display:flex;gap:8px;flex-wrap:wrap"><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥50</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥100</button></div>
+                          <div v-if="selectedModule.data?.card_placeholder" style="margin-top:8px;display:flex;gap:4px"><input :placeholder="selectedModule.data?.card_placeholder" style="flex:1;padding:4px 8px;border:1px solid #e4e7ed;border-radius:6px;font-size:12px" disabled /><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.card_btn_text || '兑换' }}</button></div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'balance_display'">
+                        <div class="preview-module preview-balance">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '账户余额' }}</h3>
+                          <div style="font-size:24px;font-weight:700;color:var(--pv-primary);margin:8px 0">¥ 0.00</div>
+                          <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.charge_btn_text || '去充值' }}</button>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'order_list'">
+                        <div class="preview-module preview-order-list">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '我的账单' }}</h3>
+                          <div style="font-size:12px;color:#909399;text-align:center;padding:12px">暂无订单记录</div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'referral'">
+                        <div class="preview-module preview-referral">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '推广邀请' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="background:var(--pv-bg,#f5f7fa);padding:8px;border-radius:6px;font-family:monospace;font-size:11px;word-break:break-all;margin-bottom:8px">https://example.com/ref/abc123...</div>
+                          <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.copy_btn_text || '复制邀请链接' }}</button>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'node_list'">
+                        <div class="preview-module preview-node-list">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '线路列表' }}</h3>
+                          <div style="font-size:12px;color:#909399;text-align:center;padding:12px">线路列表将在门户页面中显示</div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'ticket_list'">
+                        <div class="preview-module preview-ticket-list">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '工单系统' }}</h3>
+                          <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ selectedModule.data?.new_btn_text || '新建工单' }}</button></div>
+                          <div style="font-size:12px;color:#909399;text-align:center;padding:8px">暂无工单</div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'article_list'">
+                        <div class="preview-module preview-article-list">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '教程文章' }}</h3>
+                          <div style="font-size:12px;color:#909399;text-align:center;padding:12px">文章列表将在门户页面中显示</div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'tutorial_cards'">
+                        <div class="preview-module preview-tutorial-cards">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '下载与教程' }}</h3>
+                          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                            <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">💻</div><div style="font-size:11px;margin-top:4px">Windows</div></div>
+                            <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">🍎</div><div style="font-size:11px;margin-top:4px">macOS</div></div>
+                            <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">📱</div><div style="font-size:11px;margin-top:4px">Android</div></div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'client_download'">
+                        <div class="preview-module preview-client-download">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '客户端下载' }}</h3>
+                          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button style="padding:4px 12px;border:1px solid var(--pv-primary);border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">Windows</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">macOS</button></div>
+                          <button style="padding:6px 16px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">下载客户端</button>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'streaming_status'">
+                        <div class="preview-module preview-streaming">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '流媒体解锁' }}</h3>
+                          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">
+                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Netflix</div>
+                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#f56c6c">✗</span> Disney+</div>
+                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> YouTube</div>
+                            <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Spotify</div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else-if="selectedModule.type === 'shared_accounts'">
+                        <div class="preview-module preview-shared-accounts">
+                          <h3 v-if="selectedModule.title" class="module-section-title">{{ selectedModule.title || '共享账号' }}</h3>
+                          <p v-if="selectedModule.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ selectedModule.data.description }}</p>
+                          <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px">Netflix 共享账号</span><button style="padding:2px 8px;border:none;border-radius:4px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:11px">{{ selectedModule.data?.apply_btn_text || '查看凭据' }}</button></div>
+                        </div>
+                      </template>
                       <template v-else-if="selectedModule.type === 'freeform'">
                         <div class="preview-module preview-freeform">
                           <div class="freeform-badge">HTML+CSS+JS</div>
@@ -522,6 +618,60 @@ ctx.moduleTitle           — 当前模块标题</pre>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Page Preview Mode (iframe — like login module) -->
+          <div v-if="selectedModule && centerViewMode === 'page-preview'" class="canvas-scroll">
+            <iframe :src="modulePreviewUrl" class="preview-iframe" />
+          </div>
+
+          <!-- HTML Editor Mode -->
+          <div v-if="selectedModule && centerViewMode === 'html'" class="canvas-code-editor">
+            <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px">
+              <span style="font-size: 12px">编辑模块的 HTML 模板。对于「自定义组件」类型，HTML 作为 Vue 模板渲染；其他类型保存后在门户页面查看效果。</span>
+            </el-alert>
+            <CodeEditor
+              v-model="selectedModule.data.html"
+              language="html"
+              @change="onCodeChange"
+            />
+          </div>
+
+          <!-- JS Editor Mode -->
+          <div v-if="selectedModule && centerViewMode === 'js'" class="canvas-code-editor">
+            <CodeEditor
+              v-model="selectedModule.data.js"
+              language="javascript"
+              @change="onCodeChange"
+            />
+            <div class="freeform-api-ref" style="padding: 8px 12px">
+              <el-collapse>
+                <el-collapse-item title="ctx API 参考">
+                  <pre>ctx.ref(val)              — 创建响应式变量
+ctx.computed(fn)          — 创建计算属性
+ctx.watch(src, cb)        — 监听变化
+ctx.onMounted(fn)         — 组件挂载时
+ctx.onUnmounted(fn)       — 组件卸载时
+
+ctx.data.client           — 用户账户信息 (响应式)
+ctx.data.token            — 当前 token (响应式)
+ctx.data.isDark           — 暗色模式 (响应式)
+
+ctx.api.get(path, query)  — GET 请求
+ctx.api.post(path, body)  — POST 请求
+ctx.api.put(path, body)   — PUT 请求
+ctx.api.delete(path)      — DELETE 请求
+
+ctx.formatBytes(bytes)    — 格式化文件大小
+ctx.formatDate(date)      — 格式化日期
+ctx.copyText(text)        — 复制到剪贴板
+ctx.elMessage             — Element Plus 消息提示
+ctx.config                — 门户配置 (PORTAL_CONFIG)
+ctx.moduleId              — 当前模块 ID
+ctx.moduleTitle           — 当前模块标题</pre>
+                </el-collapse-item>
+              </el-collapse>
             </div>
           </div>
 
@@ -667,6 +817,104 @@ ctx.moduleTitle           — 当前模块标题</pre>
                     <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '日志打包' }}</h3>
                     <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
                     <div style="display:flex;gap:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.btn_1h || '1小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.btn_6h || '6小时' }}</button><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">{{ mod.data?.btn_24h || '24小时' }}</button></div>
+                  </div>
+
+                  <!-- Plan List Preview -->
+                  <div v-else-if="mod.type === 'plan_list'" class="preview-module preview-plan-list">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '套餐列表' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+                      <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px"><div style="font-weight:600;font-size:13px">基础版</div><div style="color:var(--pv-primary);font-size:16px;font-weight:700;margin:4px 0">¥9.9/月</div><div style="font-size:11px;color:#909399">100GB 流量</div></div>
+                      <div style="border:1px solid var(--pv-primary);border-radius:8px;padding:10px;background:var(--pv-primary);color:#fff"><div style="font-weight:600;font-size:13px">专业版</div><div style="font-size:16px;font-weight:700;margin:4px 0">¥19.9/月</div><div style="font-size:11px;opacity:0.8">500GB 流量</div></div>
+                    </div>
+                  </div>
+
+                  <!-- Charge Panel Preview -->
+                  <div v-else-if="mod.type === 'charge_panel'" class="preview-module preview-charge-panel">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '在线充值' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap"><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥50</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">¥100</button></div>
+                    <div v-if="mod.data?.card_placeholder" style="margin-top:8px;display:flex;gap:4px"><input :placeholder="mod.data?.card_placeholder" style="flex:1;padding:4px 8px;border:1px solid #e4e7ed;border-radius:6px;font-size:12px" disabled /><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.card_btn_text || '兑换' }}</button></div>
+                  </div>
+
+                  <!-- Balance Display Preview -->
+                  <div v-else-if="mod.type === 'balance_display'" class="preview-module preview-balance">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '账户余额' }}</h3>
+                    <div style="font-size:24px;font-weight:700;color:var(--pv-primary);margin:8px 0">¥ 0.00</div>
+                    <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.charge_btn_text || '去充值' }}</button>
+                  </div>
+
+                  <!-- Order List Preview -->
+                  <div v-else-if="mod.type === 'order_list'" class="preview-module preview-order-list">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '我的账单' }}</h3>
+                    <div style="font-size:12px;color:#909399;text-align:center;padding:12px">暂无订单记录</div>
+                  </div>
+
+                  <!-- Referral Preview -->
+                  <div v-else-if="mod.type === 'referral'" class="preview-module preview-referral">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '推广邀请' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="background:var(--pv-bg,#f5f7fa);padding:8px;border-radius:6px;font-family:monospace;font-size:11px;word-break:break-all;margin-bottom:8px">https://example.com/ref/abc123...</div>
+                    <button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.copy_btn_text || '复制邀请链接' }}</button>
+                  </div>
+
+                  <!-- Node List Preview -->
+                  <div v-else-if="mod.type === 'node_list'" class="preview-module preview-node-list">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '线路列表' }}</h3>
+                    <div style="font-size:12px;color:#909399;text-align:center;padding:12px">线路列表将在门户页面中显示</div>
+                  </div>
+
+                  <!-- Ticket List Preview -->
+                  <div v-else-if="mod.type === 'ticket_list'" class="preview-module preview-ticket-list">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '工单系统' }}</h3>
+                    <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button style="padding:4px 12px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">{{ mod.data?.new_btn_text || '新建工单' }}</button></div>
+                    <div style="font-size:12px;color:#909399;text-align:center;padding:8px">暂无工单</div>
+                  </div>
+
+                  <!-- Article List Preview -->
+                  <div v-else-if="mod.type === 'article_list'" class="preview-module preview-article-list">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '教程文章' }}</h3>
+                    <div style="font-size:12px;color:#909399;text-align:center;padding:12px">文章列表将在门户页面中显示</div>
+                  </div>
+
+                  <!-- Tutorial Cards Preview -->
+                  <div v-else-if="mod.type === 'tutorial_cards'" class="preview-module preview-tutorial-cards">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '下载与教程' }}</h3>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                      <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">💻</div><div style="font-size:11px;margin-top:4px">Windows</div></div>
+                      <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">🍎</div><div style="font-size:11px;margin-top:4px">macOS</div></div>
+                      <div style="text-align:center;padding:10px;border:1px solid #e4e7ed;border-radius:8px"><div style="font-size:24px">📱</div><div style="font-size:11px;margin-top:4px">Android</div></div>
+                    </div>
+                  </div>
+
+                  <!-- Client Download Preview -->
+                  <div v-else-if="mod.type === 'client_download'" class="preview-module preview-client-download">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '客户端下载' }}</h3>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button style="padding:4px 12px;border:1px solid var(--pv-primary);border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">Windows</button><button style="padding:4px 12px;border:1px solid #e4e7ed;border-radius:6px;background:var(--pv-card-bg);color:var(--pv-text);cursor:pointer;font-size:12px">macOS</button></div>
+                    <button style="padding:6px 16px;border:none;border-radius:6px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:12px">下载客户端</button>
+                  </div>
+
+                  <!-- Streaming Status Preview -->
+                  <div v-else-if="mod.type === 'streaming_status'" class="preview-module preview-streaming">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '流媒体解锁' }}</h3>
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">
+                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Netflix</div>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#f56c6c">✗</span> Disney+</div>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> YouTube</div>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="color:#67c23a">✓</span> Spotify</div>
+                    </div>
+                  </div>
+
+                  <!-- Shared Accounts Preview -->
+                  <div v-else-if="mod.type === 'shared_accounts'" class="preview-module preview-shared-accounts">
+                    <h3 v-if="mod.title" class="module-section-title">{{ mod.title || '共享账号' }}</h3>
+                    <p v-if="mod.data?.description" style="font-size:13px;color:#909399;margin-bottom:8px">{{ mod.data.description }}</p>
+                    <div style="border:1px solid #e4e7ed;border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px">Netflix 共享账号</span><button style="padding:2px 8px;border:none;border-radius:4px;background:var(--pv-primary);color:#fff;cursor:pointer;font-size:11px">{{ mod.data?.apply_btn_text || '查看凭据' }}</button></div>
+                  </div>
+
+                  <!-- Fallback for any other module type -->
+                  <div v-else class="preview-module">
+                    <p style="color:#909399;text-align:center;padding:20px">{{ moduleTypeLabel(mod.type) }} 模块预览</p>
                   </div>
                 </template>
 
@@ -1495,7 +1743,7 @@ const currentNav = computed(() => navigation.value.find(n => n.id === currentPag
 // Current page target (derived from the page we're viewing, NOT the editing selection)
 const currentPageTarget = computed(() => currentNav.value?.target || '')
 
-// Center column view mode: 'preview' | 'editor' | 'css'
+// Center column view mode: 'preview' | 'editor' | 'css' | 'page-preview' | 'html' | 'js'
 const centerViewMode = ref('preview')
 const freeformTab = ref('html')
 
@@ -1529,6 +1777,15 @@ function ensureNoticeData(mod) {
   if (typeof d.popup_link_text !== 'string') d.popup_link_text = ''
   if (typeof d.popup_link_url !== 'string') d.popup_link_url = ''
   if (typeof d.popup_link_external !== 'boolean') d.popup_link_external = true
+}
+
+// Ensure module has html/css/js data fields for code editing
+function ensureModuleCode(mod) {
+  if (!mod) return
+  if (!mod.data) mod.data = {}
+  if (typeof mod.data.html !== 'string') mod.data.html = ''
+  if (typeof mod.data.css !== 'string') mod.data.css = ''
+  if (typeof mod.data.js !== 'string') mod.data.js = ''
 }
 
 // Default CSS templates for each module type (mirrors portal runtime styles)
@@ -1871,6 +2128,11 @@ const previewUrl = computed(() => {
   return window.location.origin + '/p?preview=1&screen=auth'
 })
 
+// Iframe-based page preview URL for modules (references actual portal page)
+const modulePreviewUrl = computed(() => {
+  return window.location.origin + '/p?preview=1'
+})
+
 // Count modules for a given page target
 function currentPageModuleCount(target) {
   return modules.value.filter(m => (m.page || 'overview') === target).length
@@ -2028,6 +2290,7 @@ function selectModule(id) {
   if (mod) {
     ensureCustomCss(mod)
     ensureNoticeData(mod)
+    ensureModuleCode(mod)
   }
   autoCenterViewMode()
 }
@@ -2103,6 +2366,7 @@ function addModule(type) {
   }
   const page = currentPageTarget.value || 'overview'
   const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), page, visible: true, data: defaults[type].data, style: defaults[type].style }
+  ensureModuleCode(mod)
   modules.value.push(mod)
   selectedModuleId.value = mod.id
   hasUnsavedChanges.value = true
@@ -2271,6 +2535,7 @@ const applyData = (d) => {
         const mod = { ...m, page: m.page || 'overview' }
         ensureCustomCss(mod)
         ensureNoticeData(mod)
+        ensureModuleCode(mod)
         return mod
       })
     } catch {
@@ -2540,23 +2805,24 @@ onMounted(() => { fetchConfig() })
 .portal-name { font-size: 16px; font-weight: 600; color: #303133; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
 
-.editor-body { flex: 1; overflow: hidden; position: relative; }
-.editor-body > div { height: 100%; }
+.editor-body { flex: 1; overflow: hidden; position: relative; min-height: 0; }
+.editor-body > div { height: 100%; min-height: 0; }
 
 /* ===== Builder Layout - Clean Card Style ===== */
-.builder-layout { display: flex; height: 100%; background: #f0f2f5; }
+.builder-layout { display: flex; height: 100%; min-height: 0; background: #f0f2f5; }
 
 /* Left Column - Clean Navigation */
-.col-structure { 
-  width: 240px; 
-  background: #fff; 
-  overflow-y: auto; 
-  display: flex; 
-  flex-direction: column; 
-  border-right: 1px solid #e8e8e8; 
-  flex-shrink: 0;
-  padding: 20px 16px;
-  gap: 20px;
+.col-structure {
+width: 320px;
+background: #fff;
+overflow-y: auto;
+display: flex;
+flex-direction: column;
+border-right: 1px solid #e8e8e8;
+flex-shrink: 0;
+padding: 10px;
+gap: 10px;
+min-height: 0;
 }
 
 .structure-section { background: #fff; }
@@ -2566,21 +2832,22 @@ onMounted(() => { fetchConfig() })
   display: flex; 
   justify-content: space-between; 
   align-items: center; 
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  padding: 0 4px;
 }
-.section-title { font-size: 13px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+.section-title { font-size: 11px; font-weight: 600; color: #909399; text-transform: uppercase; letter-spacing: 0.5px; }
 
 /* Big Card Style Navigation Items */
-.nav-list { display: flex; flex-direction: column; gap: 8px; }
+.nav-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; overflow-x: hidden; }
 .nav-item-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
   cursor: pointer;
   background: #f8f9fa;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   transition: all 0.2s ease;
 }
 .nav-item-row:hover { 
@@ -2595,25 +2862,29 @@ onMounted(() => { fetchConfig() })
 }
 .nav-item-row.disabled { opacity: 0.5; }
 
-.nav-icon-emoji { font-size: 22px; }
+.nav-icon-emoji { font-size: 12px; flex-shrink: 0; }
+.nav-item-info { display: flex; align-items: center; gap: 4px; flex: 1; overflow: hidden; min-width: 0; }
 .nav-label-text { 
-  font-size: 15px; 
-  color: #333; 
+  font-size: 11px; 
+  color: #333;
   font-weight: 500;
-  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
+.nav-item-info .el-tag { flex-shrink: 0; font-size: 10px; padding: 0 4px; }
 
-.nav-item-actions { 
-  display: flex; 
-  align-items: center; 
-  gap: 4px; 
-  opacity: 0;
-  transition: opacity 0.2s;
+.nav-item-actions {
+display: flex;
+align-items: center;
+gap: 2px;
+flex-shrink: 0;
 }
-.nav-item-row:hover .nav-item-actions { opacity: 1; }
+.nav-item-actions .el-button { padding: 4px; }
 
 /* Module List */
-.structure-modules { flex: 1; display: flex; flex-direction: column; overflow: hidden; margin-top: 8px; }
+.structure-modules { flex: 1; display: flex; flex-direction: column; overflow: hidden; margin-top: 8px; min-height: 200px; }
 .module-list { 
   flex: 1; 
   overflow-y: auto; 
@@ -2624,9 +2895,9 @@ onMounted(() => { fetchConfig() })
 .module-item-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
   cursor: pointer;
   background: #fafafa;
   border: 1px solid #f0f0f0;
@@ -2636,40 +2907,41 @@ onMounted(() => { fetchConfig() })
 .module-item-row.selected { background: #e6f7ff; border-color: #1890ff; }
 .module-item-row.disabled { opacity: 0.5; }
 
-.module-item-info { display: flex; align-items: center; gap: 8px; flex: 1; overflow: hidden; }
+.module-item-info { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; min-width: 0; }
 .module-type-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 500;
   flex-shrink: 0;
 }
 .module-title-text { 
-  font-size: 13px; 
+  font-size: 11px; 
   color: #333;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  min-width: 0;
 }
 .module-item-actions { 
   display: flex; 
   align-items: center; 
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.2s;
+  gap: 1px;
+  flex-shrink: 0;
 }
-.module-item-row:hover .module-item-actions { opacity: 1; }
+.module-item-actions .el-button { padding: 4px; }
 
 /* Center Column - Editor with Toolbar */
-.col-canvas { 
-  flex: 1; 
-  background: #f0f2f5; 
-  display: flex; 
-  flex-direction: column; 
-  overflow: hidden; 
+.col-canvas {
+flex: 1;
+background: #f0f2f5;
+display: flex;
+flex-direction: column;
+overflow: hidden;
+min-height: 0;
   min-width: 0;
 }
 
@@ -2704,13 +2976,13 @@ onMounted(() => { fetchConfig() })
 }
 
 /* Right Column - Properties */
-.col-properties { 
-  width: 320px; 
-  background: #fff; 
-  overflow-y: auto; 
-  border-left: 1px solid #e8e8e8; 
-  flex-shrink: 0;
-  padding: 20px;
+.col-properties {
+width: 280px;
+background: #fff;
+overflow-y: auto;
+border-left: 1px solid #e8e8e8;
+flex-shrink: 0;
+padding: 16px;
 }
 
 /* Badge Colors */
@@ -2845,7 +3117,6 @@ onMounted(() => { fetchConfig() })
 .page-title-text { font-size: 18px; font-weight: 700; color: var(--pv-text); }
 
 /* section modules can grow to fill */
-.structure-modules { flex: 1; display: flex; flex-direction: column; }
 .structure-modules .module-list { flex: 1; overflow-y: auto; }
 
 .preview-module { margin-bottom: 16px; padding: 20px; background: var(--pv-card-bg); border-radius: 12px; }
@@ -3023,8 +3294,8 @@ onMounted(() => { fetchConfig() })
 
 /* ===== Responsive ===== */
 @media (max-width: 1400px) {
-  .col-structure { width: 240px; }
-  .col-properties { width: 380px; }
+.col-structure { width: 200px; }
+.col-properties { width: 260px; }
 }
 @media (max-width: 1100px) {
   .builder-layout { flex-direction: column; }

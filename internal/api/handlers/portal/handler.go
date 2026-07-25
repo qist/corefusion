@@ -144,3 +144,46 @@ func (h *Handler) ResetToDefault(c *gin.Context) {
 	}
 	response.OK(c, tmpl)
 }
+
+// CacheStatus handles GET /api/v1/portal/cache.
+// Returns diagnostic information about the render cache.
+func (h *Handler) CacheStatus(c *gin.Context) {
+	stats := h.svc.GetCacheStats()
+	response.OK(c, stats)
+}
+
+// CacheClear handles DELETE /api/v1/portal/cache.
+// Invalidates the render cache, forcing a rebuild on next request.
+func (h *Handler) CacheClear(c *gin.Context) {
+	h.svc.InvalidateCache()
+	response.OK(c, gin.H{"message": "cache cleared"})
+}
+
+// CacheRebuild handles POST /api/v1/portal/cache/rebuild.
+// Forces a cache rebuild by rendering the page once immediately.
+func (h *Handler) CacheRebuild(c *gin.Context) {
+	if err := h.svc.RebuildCache(c.Request.Context()); err != nil {
+		response.InternalError(c, "REBUILD_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "cache rebuilt", "stats": h.svc.GetCacheStats()})
+}
+
+// CacheDevMode handles PUT /api/v1/portal/cache/dev-mode.
+// Toggles dev mode (cache bypass) at runtime.
+// Body: {"dev_mode": true/false}
+func (h *Handler) CacheDevMode(c *gin.Context) {
+	var body struct {
+		DevMode bool `json:"dev_mode"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	h.svc.SetDevMode(body.DevMode)
+	mode := "production"
+	if body.DevMode {
+		mode = "dev"
+	}
+	response.OK(c, gin.H{"message": "dev mode set to " + mode, "dev_mode": body.DevMode})
+}

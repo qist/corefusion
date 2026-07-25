@@ -20,17 +20,92 @@ type SettingStore interface {
 type Service struct {
 	repo       *repository.PortalTemplateRepository
 	settingSvc SettingStore
+	cache      *RenderCache
 }
 
 // NewService creates a new portal template service.
 func NewService(repo *repository.PortalTemplateRepository) *Service {
-	return &Service{repo: repo}
+	return &Service{repo: repo, cache: NewRenderCache()}
 }
 
 // WithSettingStore injects a setting store for managing registration_enabled / portal_port.
 func (s *Service) WithSettingStore(ss SettingStore) *Service {
 	s.settingSvc = ss
 	return s
+}
+
+// RenderPage renders the portal HTML page from the active template with caching.
+// In dev mode (PORTAL_DEV_MODE=true), caching is bypassed and the page is
+// re-rendered from the database on every request.
+// In production mode, the fully rendered HTML is cached and served directly
+// until the template is modified or the cache is manually invalidated.
+func (s *Service) RenderPage(ctx context.Context) string {
+	// Get registration enabled setting
+	registrationEnabled := false
+	if s.settingSvc != nil {
+		if v, err := s.settingSvc.GetByKey(ctx, "panel.registration_enabled"); err == nil && v == "true" {
+			registrationEnabled = true
+		}
+	}
+
+	tmpl, err := s.repo.GetActive(ctx)
+	if err != nil || tmpl == nil {
+		return "<html><body><h1>Portal not configured</h1></body></html>"
+	}
+
+	// Build cache key from all inputs that affect the rendered output
+	input := cacheInput{
+		TemplateID:          tmpl.ID,
+		UpdatedAt:           tmpl.UpdatedAt,
+		RegistrationEnabled: registrationEnabled,
+		HTMLContent:         tmpl.HTMLContent,
+		CSSContent:          tmpl.CSSContent,
+		JSContent:           tmpl.JSContent,
+		Config:              tmpl.Config,
+	}
+	key := input.computeKey()
+
+	// Check cache first
+	if html, ok := s.cache.Get(key); ok {
+		return html
+	}
+
+	// Cache miss — render the page
+	cfg := MergeConfig(tmpl, registrationEnabled)
+	html := renderPortalHTML(tmpl.HTMLContent, tmpl.CSSContent, tmpl.JSContent, tmpl.Config, cfg)
+
+	// Store in cache
+	s.cache.Set(key, html)
+
+	return html
+}
+
+// InvalidateCache clears the render cache, forcing a rebuild on next request.
+func (s *Service) InvalidateCache() {
+	s.cache.Invalidate()
+}
+
+// RebuildCache forces a cache rebuild by rendering the page once and caching it.
+func (s *Service) RebuildCache(ctx context.Context) error {
+	s.cache.Invalidate()
+	// Trigger a render which will populate the cache
+	_ = s.RenderPage(ctx)
+	return nil
+}
+
+// GetCacheStats returns diagnostic information about the render cache.
+func (s *Service) GetCacheStats() CacheStats {
+	return s.cache.Stats()
+}
+
+// SetDevMode enables or disables dev mode (cache bypass) at runtime.
+func (s *Service) SetDevMode(dev bool) {
+	s.cache.SetDevMode(dev)
+}
+
+// IsDevMode returns whether dev mode is currently active.
+func (s *Service) IsDevMode() bool {
+	return s.cache.IsDevMode()
 }
 
 // CreateInput is the input for creating a portal template.
@@ -249,7 +324,11 @@ func (s *Service) Activate(ctx context.Context, id int64) error {
 	if _, err := s.repo.GetByID(ctx, id); err != nil {
 		return err
 	}
-	return s.repo.Activate(ctx, id)
+	if err := s.repo.Activate(ctx, id); err != nil {
+		return err
+	}
+	s.cache.Invalidate()
+	return nil
 }
 
 // GetActiveConfig returns the currently active portal site's full configuration.
@@ -396,6 +475,9 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 		}
 	}
 
+	// Invalidate render cache since the active template changed
+	s.cache.Invalidate()
+
 	// Re-parse structured fields from the updated config
 	parseConfigToSiteConfig(tmpl.Config, tmpl)
 
@@ -421,6 +503,9 @@ func (s *Service) ResetToDefault(ctx context.Context) (*PortalSiteConfig, error)
 	if err := s.repo.Update(ctx, tmpl.PortalTemplate); err != nil {
 		return nil, err
 	}
+
+	// Invalidate render cache since the template was reset
+	s.cache.Invalidate()
 
 	// Re-parse structured fields from the reset config
 	parseConfigToSiteConfig(tmpl.Config, tmpl)
@@ -525,9 +610,9 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 			if v, ok := stored["navigation"]; ok && len(v) > 0 && string(v) != "null" {
 				cfg.Navigation = v
 			}
-			if v, ok := stored["modules"]; ok && len(v) > 0 && string(v) != "null" {
-				cfg.Modules = v
-			}
+		if v, ok := stored["modules"]; ok && len(v) > 0 && string(v) != "null" {
+			cfg.Modules = v
+		}
 		// Pass through portal_editor_version
 		if v, ok := stored["portal_editor_version"]; ok {
 			var n int

@@ -2,9 +2,7 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"html/template"
 	"log"
 	"mime"
 	"net/http"
@@ -864,6 +862,11 @@ subRepo, subEndpointRepo, publicSubH, database,
 		c.Status(404)
 	})
 
+	// Portal template service — shared across protected routes, /p page, and portal engine
+	portalTmplSvc := portalSvc.NewService(repository.NewPortalTemplateRepository(database))
+	portalTmplSvc.WithSettingStore(systemSettingSvc)
+	portalTmplSvc.SeedBuiltInTemplate(context.Background())
+
 	// API v1
 	v1 := r.Group("/api/v1")
 	{
@@ -878,8 +881,8 @@ subRepo, subEndpointRepo, publicSubH, database,
 		}
 
 		// Protected routes
-		protected := v1.Group("")
-		protected.Use(middleware.AuthRequired())
+	protected := v1.Group("")
+	protected.Use(middleware.AuthRequired())
 		{
 			// Users
 			usersGroup := protected.Group("/users")
@@ -1898,11 +1901,7 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		registerPlaceholderRoutes(protected)
 
 		// Portal template management (admin only)
-		portalTmplRepo := repository.NewPortalTemplateRepository(database)
-		portalTmplSvc := portalSvc.NewService(portalTmplRepo)
-		portalTmplSvc.WithSettingStore(systemSettingSvc)
-		portalTmplSvc.SeedBuiltInTemplate(context.Background())
-		portalH := portalHandler.NewHandler(portalTmplSvc)
+	portalH := portalHandler.NewHandler(portalTmplSvc)
 		portalGroup := protected.Group("/portal/templates")
 		{
 			portalGroup.GET("", portalH.List)
@@ -1919,6 +1918,11 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 			portalActiveGroup.GET("/active", portalH.GetActive)
 			portalActiveGroup.PUT("/active", portalH.UpdateActive)
 			portalActiveGroup.POST("/reset", portalH.ResetToDefault)
+			// Render cache management
+			portalActiveGroup.GET("/cache", portalH.CacheStatus)
+			portalActiveGroup.DELETE("/cache", portalH.CacheClear)
+			portalActiveGroup.POST("/cache/rebuild", portalH.CacheRebuild)
+			portalActiveGroup.PUT("/cache/dev-mode", portalH.CacheDevMode)
 		}
 		}
 	}
@@ -1926,15 +1930,13 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 	// Public subscription endpoint
 	r.GET("/sub/:token", publicSubH.ServeSubscription)
 
-	// Portal page — served from active custom template (fallback to embedded default)
+	// Portal page — served from active custom template (cached)
 	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
 	r.GET("/p", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
-		portalTmplRepo := repository.NewPortalTemplateRepository(database)
-		portalTmplSvc := portalSvc.NewService(portalTmplRepo)
-		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
+		html := portalTmplSvc.RenderPage(c.Request.Context())
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
 
@@ -1957,9 +1959,7 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 	r.GET("/api/v1/public/subscription-endpoints", subendH.List)
 
 	// Public settings (for portal)
-	// v3.4: portalTmplSvc 用于在 public/settings 中返回最新 portal 配置
-	portalTmplSvcPublic := portalSvc.NewService(repository.NewPortalTemplateRepository(database))
-	portalTmplSvcPublic.WithSettingStore(systemSettingSvc)
+	// v3.4: portalTmplSvc used in public/settings to return latest portal config
 	r.GET("/api/v1/public/settings", func(c *gin.Context) {
 		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
 		chatProvider, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.provider")
@@ -1970,7 +1970,7 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 			"chat_site_id":        chatSiteID,
 		}
 		// v3.4: 返回最新 portal 配置，前端可用于热更新模块/导航
-		if cfg, err := portalTmplSvcPublic.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
+		if cfg, err := portalTmplSvc.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
 			result["portal_config"] = cfg
 		}
 		response.OK(c, result)
@@ -2582,66 +2582,6 @@ func (p *proxySettingsProvider) GetCaddySNISettingsForServer(ctx context.Context
 	return result, nil
 }
 
-// htmlEscape escapes a string for safe HTML interpolation.
-func htmlEscape(s string) string {
-	return template.HTMLEscapeString(s)
-}
-
-// renderPortalPage renders the portal HTML page from the active template.
-// Always uses the active template from database.
-func renderPortalPage(ctx context.Context, portalTmplSvc *portalSvc.Service, sysSvc *systemSvc.SettingService) string {
-	// Get registration enabled setting
-	registrationEnabled := false
-	if sysSvc != nil {
-		if v, err := sysSvc.GetByKey(ctx, "panel.registration_enabled"); err == nil && v == "true" {
-			registrationEnabled = true
-		}
-	}
-
-	tmpl, err := portalTmplSvc.GetActive(ctx)
-	if err != nil || tmpl == nil {
-		return "<html><body><h1>Portal not configured</h1></body></html>"
-	}
-
-	// Build render config from template config + system settings
-	cfg := portalSvc.MergeConfig(tmpl, registrationEnabled)
-
-	// Render HTML with template variables (sanitize to prevent XSS)
-	html := tmpl.HTMLContent
-	html = strings.ReplaceAll(html, "{{.PortalName}}", htmlEscape(cfg.SiteName))
-	html = strings.ReplaceAll(html, "{{.SiteName}}", htmlEscape(cfg.SiteName)) // 向后兼容
-	html = strings.ReplaceAll(html, "{{.LogoURL}}", htmlEscape(cfg.LogoURL))
-	html = strings.ReplaceAll(html, "{{.RegistrationEnabled}}", fmt.Sprintf("%v", cfg.RegistrationEnabled))
-	html = strings.ReplaceAll(html, "{{registrationEnabledText}}", map[bool]string{true: "", false: ""}[cfg.RegistrationEnabled])
-
-	// Render CSS with template variables
-	css := tmpl.CSSContent
-	css = strings.ReplaceAll(css, "{{.FontFamily}}", cfg.FontFamily)
-	css = strings.ReplaceAll(css, "{{.BackgroundColor}}", cfg.BackgroundColor)
-	css = strings.ReplaceAll(css, "{{.CardBackgroundColor}}", cfg.CardBackgroundColor)
-	css = strings.ReplaceAll(css, "{{.TextColor}}", cfg.TextColor)
-	css = strings.ReplaceAll(css, "{{.PrimaryColor}}", cfg.PrimaryColor)
-	css = strings.ReplaceAll(css, "{{.AccentColor}}", cfg.AccentColor)
-
-	// Inject CSS and JS into HTML
-	if css != "" {
-		html = strings.Replace(html, `<style id="portal-custom-css"></style>`,
-			`<style id="portal-custom-css">`+css+`</style>`, 1)
-	}
-
-	// Inject PORTAL_CONFIG as JSON for client-side JS
-	configJSON, _ := json.Marshal(cfg)
-	html = strings.Replace(html, `<script id="portal-config"></script>`,
-		`<script id="portal-config">window.PORTAL_CONFIG=`+string(configJSON)+`;if(PORTAL_CONFIG.logo_url){document.getElementById('portal-favicon').href=PORTAL_CONFIG.logo_url;}</script>`, 1)
-
-	if tmpl.JSContent != "" {
-		html = strings.Replace(html, `<script id="portal-custom-js"></script>`,
-			`<script id="portal-custom-js">`+tmpl.JSContent+`</script>`, 1)
-	}
-
-	return html
-}
-
 // NewPortalEngine creates a separate Gin engine for portal-only serving on a dedicated port.
 // This allows the portal to be accessed at http://domain:port/ (root path, no /p prefix).
 // On the main panel the portal is served at /p to avoid collision with the admin SPA route /portal.
@@ -2656,6 +2596,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	portalTmplSvc.SeedBuiltInTemplate(context.Background())
 
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
+	portalTmplSvc.WithSettingStore(systemSettingSvc)
 
 	// Client auth handler
 	clientRepo := repository.NewClientRepository(database)
@@ -2737,9 +2678,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		commerceSvcInst.SetAccountSyncer(sharedAccountSyncer)
 	}
 
-	// Root path serves the portal page
+	// Root path serves the portal page (cached)
 	r.GET("/", func(c *gin.Context) {
-		html := renderPortalPage(c.Request.Context(), portalTmplSvc, systemSettingSvc)
+		html := portalTmplSvc.RenderPage(c.Request.Context())
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
 

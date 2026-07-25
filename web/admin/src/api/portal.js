@@ -13,6 +13,23 @@ export function resetPortal() {
   return client.post('/portal/reset')
 }
 
+// Render cache management
+export function getPortalCacheStatus() {
+  return client.get('/portal/cache')
+}
+
+export function clearPortalCache() {
+  return client.delete('/portal/cache')
+}
+
+export function rebuildPortalCache() {
+  return client.post('/portal/cache/rebuild')
+}
+
+export function setPortalDevMode(devMode) {
+  return client.put('/portal/cache/dev-mode', { dev_mode: devMode })
+}
+
 // Legacy template CRUD (kept for compatibility)
 export function listPortalTemplates() {
   return client.get('/portal/templates')

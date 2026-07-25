@@ -112,881 +112,8 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <div class="overview-main">
             <template v-for="mod in currentModules.filter(function(m){ return m.type !== 'notice' })" :key="mod.id">
               <div class="card glass module-wrap" :id="'mod-' + mod.id" :class="mod.style && mod.style.custom_class || ''">
-            <!-- Hero -->
-            <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-              <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ t(mod.data.eyebrow) }}</div>
-              <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ t(mod.data.heading) }}</h2>
-              <p v-if="mod.data && mod.data.description" class="hero-desc">{{ t(mod.data.description) }}</p>
-              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
-            </div>
-            <!-- Rich Text -->
-            <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
-            <!-- Feature Cards -->
-            <div v-else-if="mod.type === 'feature_cards'">
-              <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="feature-cards-grid">
-                <div v-for="(card, ci) in ((mod.data && mod.data.cards) || []).slice(0,6)" :key="ci" class="feature-card">
-                  <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
-                  <h4>{{ card.title }}</h4>
-                  <p>{{ card.description }}</p>
-                </div>
-              </div>
-            </div>
-            <!-- Account Stats (simple) -->
-            <div v-else-if="mod.type === 'account_stats'">
-              <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="traffic-stats">
-                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
-                <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
-                <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
-              </div>
-            </div>
-            <!-- Traffic Ring (with SVG ring + horizontal bar) -->
-            <div v-else-if="mod.type === 'traffic_ring'">
-              <div class="card-header">
-                <span class="card-icon">📊</span>
-                <span class="card-title">{{ t(mod.title) }}</span>
-                <span class="card-action" v-if="refreshing">{{ t('common.refreshing') }}</span>
-              </div>
-              <div class="traffic-ring-wrap">
-                <svg class="traffic-ring" viewBox="0 0 120 120">
-                  <circle cx="60" cy="60" r="52" fill="none" class="ring-bg"/>
-                  <circle cx="60" cy="60" r="52" fill="none" class="ring-fill" :stroke-dasharray="ringDash" :style="{stroke: usageColor}"/>
-                </svg>
-                <div class="ring-text">
-                  <span class="ring-percent">{{ usagePercent }}%</span>
-                  <span class="ring-label">{{ t('traffic.used') }}</span>
-                </div>
-              </div>
-              <div class="traffic-bar-wrap">
-                <div class="traffic-bar-header">
-                  <span class="bar-label">📊 {{ t('traffic.title') }}</span>
-                  <span class="bar-nums">{{ formatBytes(client.used_bytes) }} <span style="color:var(--text-muted);">/</span> {{ formatBytes(client.quota_bytes) }}</span>
-                </div>
-                <div class="traffic-bar">
-                  <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
-                </div>
-                <div class="traffic-bar-footer">
-                  <span class="bar-hint">{{ t('traffic.upload') }} {{ formatBytes(client.upload_bytes) }} · {{ t('traffic.download') }} {{ formatBytes(client.download_bytes) }}</span>
-                  <span class="bar-pct">{{ usagePercent }}%</span>
-                </div>
-              </div>
-              <div class="traffic-stats">
-                <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
-                <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
-                <div class="stat-divider"></div>
-                <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
-              </div>
-            </div>
-            <!-- Account Info (qist row style with icon+label+value+badge) -->
-            <div v-else-if="mod.type === 'account_info'">
-              <div class="card-header"><el-icon class="card-icon" size="20"><User /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
-                <div class="acct-info-row">
-                  <span class="acct-info-icon">🛡️</span>
-                  <div class="acct-info-body">
-                    <span class="acct-info-label">{{ t('account.status') }}</span>
-                    <div class="acct-info-value-row">
-                      <span class="acct-info-value">● {{ statusText }}</span>
-                      <span v-if="client.status === 'active'" class="badge badge-active" style="margin-left:6px">{{ t('account.normal') }}</span>
-                      <span v-else-if="client.status === 'suspended'" class="badge badge-suspended" style="margin-left:6px">{{ t('account.suspended') }}</span>
-                      <span v-else-if="client.status === 'expired'" class="badge badge-expired" style="margin-left:6px">{{ t('common.expired') }}</span>
-                      <span v-else class="badge badge-none" style="margin-left:6px">{{ t('common.unknown') }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="acct-info-row">
-                  <span class="acct-info-icon">⭐</span>
-                  <div class="acct-info-body">
-                    <span class="acct-info-label">{{ t('account.plan') }}</span>
-                    <span class="acct-info-value">{{ client.plan_name || t('account.plan_default') }}</span>
-                  </div>
-                </div>
-                <div class="acct-info-row">
-                  <span class="acct-info-icon">📧</span>
-                  <div class="acct-info-body">
-                    <span class="acct-info-label">{{ t('account.email') }}</span>
-                    <span class="acct-info-value">{{ client.email }}</span>
-                  </div>
-                </div>
-                <div class="acct-info-row">
-                  <span class="acct-info-icon">🕐</span>
-                  <div class="acct-info-body">
-                    <span class="acct-info-label">{{ t('account.register_time') }}</span>
-                    <span class="acct-info-value">{{ client.created_at ? formatDate(client.created_at) : '-' }}</span>
-                  </div>
-                </div>
-                <div class="acct-info-row">
-                  <span class="acct-info-icon">🔄</span>
-                  <div class="acct-info-body">
-                    <span class="acct-info-label">{{ t('account.expire') }}</span>
-                    <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : t('common.unlimited') }}</span>
-                  </div>
-                </div>
-                <!-- balance display -->
-                <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
-                  <el-icon class="acct-info-icon" size="16"><Wallet /></el-icon>
-                  <div class="acct-info-body">
-                    <span class="acct-info-label">{{ t('balance.available') }}</span>
-                    <div class="acct-info-value-row">
-                      <span class="acct-info-value">{{ formatMoney(balance.balance) }}</span>
-                      <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">{{ t('balance.charge_btn') }}</el-button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <!-- Traffic mini bar inside account info -->
-              <div class="acct-traffic-section">
-                <div class="acct-traffic-label">
-                  <span>📊 {{ t('traffic.title') }}</span>
-                  <span class="acct-traffic-pct">{{ usagePercent }}% / {{ formatBytes(client.quota_bytes) }}</span>
-                </div>
-                <div class="traffic-bar" style="height:8px;border-radius:6px;background:var(--ring-bg);overflow:hidden;margin-top:6px;">
-                  <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
-                </div>
-                <div class="acct-traffic-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">{{ t('traffic.remaining') }} {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} {{ t('traffic.available') }}</div>
-              </div>
-            </div>
-            <!-- Client Download -->
-            <div v-else-if="mod.type === 'client_download'">
-              <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="client-platform-tabs">
-                <div
-                  v-for="p in (mod.data && mod.data.platforms) || []"
-                  :key="p.id"
-                  class="platform-tab"
-                  :class="{ active: selectedPlatform === p.id }"
-                  @click="selectPlatform(p.id)"
-                >
-                  <el-icon v-if="p.icon"><component :is="p.icon" /></el-icon>
-                  <span>{{ p.name }}</span>
-                </div>
-              </div>
-              <!-- Hint when no platform selected -->
-              <div v-if="!selectedPlatform" class="client-download-hint">
-                <el-icon><ArrowUp /></el-icon>
-                <span>{{ t((mod.data && mod.data.hint_text) || 'tutorial.select_platform') }}</span>
-                <el-icon><ArrowUp /></el-icon>
-              </div>
-              <!-- Content when platform selected -->
-              <div v-else class="client-download-content">
-                <div class="client-download-platform-header">
-                  <span class="client-download-platform-name">{{ getSelectedPlatformName() }}</span>
-                  <el-button text size="small" @click="navigateTo('tutorial')">{{ t('tutorial.view_all') }} →</el-button>
-                </div>
-                <!-- Download link -->
-                <div v-if="getSelectedPlatformUrl(mod)" class="client-download-link-row">
-                  <a :href="getSelectedPlatformUrl(mod)" target="_blank" rel="noopener" class="client-download-btn">
-                    <el-icon><Download /></el-icon>
-                    <span>{{ t('common.download') }} {{ getSelectedPlatformName() }} {{ t('client.title') }}</span>
-                  </a>
-                </div>
-                <!-- Associated tutorial articles -->
-                <div v-if="getPlatformArticles(selectedPlatform).length > 0" class="client-download-articles">
-                  <div class="client-download-section-title">📖 {{ t('tutorial.related') }}</div>
-                  <div class="article-list compact">
-                    <div
-                      class="article-item"
-                      v-for="article in getPlatformArticles(selectedPlatform)"
-                      :key="article.id"
-                      @click="openArticle(article.slug)"
-                    >
-                      <span class="article-cat-badge">{{ articleCatText(article.category) }}</span>
-                      <div class="article-info">
-                        <span class="article-title">{{ article.title }}</span>
-                        <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
-                      </div>
-                      <el-icon class="article-arrow"><ArrowRight /></el-icon>
-                    </div>
-                  </div>
-                </div>
-                <!-- Empty state -->
-                <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
-                  <el-icon class="empty-icon" size="48"><Box /></el-icon>
-                  <p class="empty-text">{{ t('tutorial.no_content') }}</p>
-                  <p class="empty-hint">{{ t('tutorial.no_content_hint') }}</p>
-                </div>
-              </div>
-            </div>
-            <!-- Subscription Detail (dynamic) -->
-            <div v-else-if="mod.type === 'subscription_detail'">
-              <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div v-if="client.sub_token && client.sub_status !== 'revoked'">
-                <div v-if="client.status === 'suspended'" style="padding: 10px 12px; background: rgba(245,108,108,0.1); border: 1px solid rgba(245,108,108,0.3); border-radius: 8px; margin-bottom: 12px;">
-                  <p style="color: var(--danger); margin: 0; font-size: 13px;">⚠️ {{ t('account.suspended') }}，{{ t('account.suspended_hint') }}</p>
-                </div>
-                <div class="sub-link-box">
-                  <code class="sub-link-text">{{ showSubUrl && subUrl ? subUrl : '••••••••••••••••••••••••••' }}</code>
-                  <div class="sub-link-actions">
-                    <el-button size="small" text @click="showSubUrl = !showSubUrl" :icon="showSubUrl ? Hide : View" />
-                    <el-button size="small" text @click="copyText(subUrl)" :disabled="!subUrl" :icon="DocumentCopy" />
-                    <el-button size="small" text @click="showQrDialog" :disabled="!subUrl">{{ t('sub.qr_code') }}</el-button>
-                  </div>
-                </div>
-                <div class="sub-actions-row" v-if="mod.data && mod.data.actions">
-                  <el-button 
-                    v-for="action in mod.data.actions" 
-                    :key="action.target"
-                    :type="action.type || 'default'"
-                    size="small"
-                    @click="handleSubAction(action)"
-                  >
-                    {{ t(action.text) }}
-                  </el-button>
-                </div>
-              </div>
-              <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
-                <el-icon class="empty-icon" size="48" color="var(--danger)"><CircleClose /></el-icon><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
-              </div>
-<div v-else-if="!client.sub_token" class="empty-state">
-<el-icon class="empty-icon" size="48" color="var(--warning)"><Warning /></el-icon><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
-</div>
-            </div>
-            <!-- Streaming Status -->
-            <div v-else-if="mod.type === 'streaming_status'">
-              <div class="streaming-grid">
-                <!-- Apple Shared ID -->
-                <div class="streaming-card">
-                  <div class="streaming-name">{{ t('shared.apple_id') }}</div>
-                  <div class="streaming-icon"><span style="font-size: 32px;">🍎</span></div>
-                  <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
-                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
-                </div>
-                <!-- Netflix Shared Account -->
-                <div class="streaming-card">
-                  <div class="streaming-name">{{ t('shared.netflix') }}</div>
-                  <div class="streaming-icon"><span style="font-size: 32px;">🎬</span></div>
-                  <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
-                  <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
-                </div>
-              </div>
-            </div>
-            <!-- Subscription (simple button) -->
-            <div v-else-if="mod.type === 'subscription'" class="text-center">
-              <div v-if="mod.data && mod.data.title" class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ mod.data.title }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-              <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
-            </div>
-            <!-- Security Settings (dynamic) -->
-            <div v-else-if="mod.type === 'security_settings'">
-              <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-              <el-form v-if="mod.data && mod.data.show_ip_whitelist !== false" label-position="top" size="small">
-                <el-form-item :label="t('security.ip_whitelist_full')">
-                  <el-input v-model="settings.ip_whitelist" :placeholder="t('security.ip_example')" />
-                </el-form-item>
-                <el-form-item :label="t('security.device_limit_hint')">
-                  <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
-                </el-form-item>
-                <el-button type="primary" size="small" @click="saveSettings">{{ t('common.save') }}</el-button>
-              </el-form>
-              <div v-if="mod.data && mod.data.show_password !== false">
-                <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">{{ t('security.password') }}</span></div>
-                <el-form label-position="top" size="small">
-<el-form-item :label="t('security.old_password')"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
-<el-form-item :label="t('security.new_password')"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
-<el-form-item :label="t('security.confirm_password')"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
-                  <el-button type="primary" size="small" @click="changePassword">{{ t('security.password') }}</el-button>
-                </el-form>
-              </div>
-            </div>
-            <!-- Log Packages (dynamic) -->
-            <div v-else-if="mod.type === 'log_packages'">
-              <div class="card-header"><el-icon class="card-icon" size="20"><Box /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-              <p v-else class="card-desc">{{ t('log.description') }}</p>
-              <div class="log-actions">
-                <el-button type="primary" size="small" @click="confirmCreateLogPackage()" :loading="logPacking" :disabled="!hasEntryNodes">{{ t('log.btn_pack') }}</el-button>
-                <span v-if="!hasEntryNodes" class="logpkg-hint" style="margin-left:8px">{{ t('log.no_nodes') }}</span>
-              </div>
-              <div v-if="logPackages.length > 0" style="margin-top: 16px">
-                <div class="card-header"><span class="card-icon">📁</span><span class="card-title">{{ t('log.package_list') }}</span><span class="card-action" @click="fetchLogPackages">{{ t('common.refresh') }}</span></div>
-                <div class="logpkg-list">
-                  <div class="logpkg-item" v-for="pkg in logPackages" :key="pkg.id">
-                    <div class="logpkg-info">
-                      <span class="logpkg-id">#{{ pkg.id }}</span>
-                      <span :class="'badge badge-' + pkg.status">{{ pkgStatusText(pkg.status) }}</span>
-                      <span class="logpkg-time">{{ formatDate(pkg.created_at) }}</span>
-                    </div>
-                    <div class="logpkg-actions">
-                      <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                      <el-button v-if="pkg.status === 'ready'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
-                      <span v-if="pkg.status === 'processing'" class="logpkg-hint">{{ t('common.processing') }}...</span>
-                      <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
-                      <el-button v-if="pkg.status === 'ready' || pkg.status === 'failed'" size="small" type="danger" text @click="deleteLogPackage(pkg.id)">{{ t('common.delete') }}</el-button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Markdown -->
-            <div v-else-if="mod.type === 'markdown'" class="module-markdown" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-              <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="md-render" v-html="renderMd(t(mod.data && mod.data.markdown || ''))"></div>
-            </div>
-            <!-- Custom HTML -->
-            <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
-<!-- Plan List -->
-            <div v-else-if="mod.type === 'plan_list'">
-              <!-- Top Notice -->
-              <div v-if="mod.data && mod.data.notice_text" class="plan-notice">
-                <div class="plan-notice-content">{{ t(mod.data.notice_text) }}</div>
-                <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ t(mod.data.notice_subtext) }}</div>
-              </div>
-              
-              <div v-if="plansLoading" class="empty-state"><el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon><p class="empty-text">{{ t('common.loading') }}</p></div>
-              <div v-else-if="plans.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('plan.empty') }}</p></div>
-              <div v-else class="plan-table-wrap">
-                <table class="plan-table">
-                  <thead>
-                    <tr>
-                      <th class="plan-col-service">{{ t('plan.col_service') }}</th>
-                      <th class="plan-col-desc">{{ t('plan.col_desc') }}</th>
-                      <th class="plan-col-price">{{ t('plan.col_price') }}</th>
-                      <th class="plan-col-action">{{ t('common.action') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template v-for="plan in plans" :key="plan.id">
-                      <tr v-for="(v, vIdx) in (plan.variants || [])" :key="v.id" class="plan-row" :class="{ 'plan-current': client.plan_id > 0 && client.plan_id === plan.id }">
-                        <!-- Service Column -->
-                        <td v-if="vIdx === 0" :rowspan="plan.variants.length" class="plan-cell plan-cell-service">
-                          <div class="plan-service-name">{{ plan.name }}</div>
-                          <div class="plan-service-meta">
-                            <div v-if="v.quota_bytes">{{ t('plan.included_traffic') }}: {{ formatBytes(v.quota_bytes) }}/{{ t('plan.per_month') }}</div>
-                            <div v-if="v.speed_limit">{{ t('plan.max_bandwidth') }}: {{ v.speed_limit }}M</div>
-                            <div v-if="v.duration_days">{{ t('plan.duration') }}: {{ v.duration_days }}{{ t('plan.days_unit') }}</div>
-                          </div>
-                        </td>
-                        <!-- Description Column -->
-                        <td class="plan-cell plan-cell-desc">
-                          <div class="plan-desc-text">{{ plan.description || t('plan.default_desc') }}</div>
-                        </td>
-                        <!-- Price Column -->
-                        <td class="plan-cell plan-cell-price">
-                          <span class="plan-price-amount">{{ (v.currency || 'CNY') === 'CNY' ? '¥' : (v.currency === 'USD' ? '$' : v.currency) }}{{ formatMoney(v.price) }}</span>
-                        </td>
-                        <!-- Action Column -->
-                        <td class="plan-cell plan-cell-action">
-                          <el-button 
-                            type="primary" 
-                            size="small" 
-                            @click="purchaseVariant(v.id, plan, mod.data)"
-                            :disabled="orderBusy"
-                          >
-                            <span v-if="client.plan_id > 0 && client.plan_id === plan.id">{{ t((mod.data && mod.data.renew_text) || 'common.buy') }}</span>
-                            <span v-else>{{ t((mod.data && mod.data.buy_text) || 'common.buy') }}</span>
-                          </el-button>
-                          <div v-if="client.plan_id > 0 && client.plan_id === plan.id" class="plan-current-badge">{{ t('plan.current_plan') }}</div>
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <!-- Order Create -->
-            <div v-else-if="mod.type === 'order_create'">
-              <div class="card-header"><el-icon class="card-icon" size="20"><ShoppingCart /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-              <el-form label-position="top" size="small">
-                <el-form-item :label="t('plan.title')">
-                  <el-select v-model="orderForm.variant_id" :placeholder="t('plan.select_placeholder')" style="width: 100%">
-                    <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item :label="t('order.type')">
-                  <el-radio-group v-model="orderForm.order_type">
-                    <el-radio value="new">{{ t('order.type_new') }}</el-radio>
-                    <el-radio value="renew">{{ t('common.renew') }}</el-radio>
-                    <el-radio value="upgrade">{{ t('common.upgrade') }}</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-                <el-form-item :label="t('plan.promo_code')">
-                  <el-input v-model="orderForm.promotion_code" :placeholder="t('plan.promo_placeholder')" />
-                </el-form-item>
-                <el-form-item :label="t('plan.select_payment')">
-                  <el-radio-group v-model="orderForm.pay_method">
-                    <el-radio value="balance">{{ t('plan.balance_pay') }}</el-radio>
-                    <el-radio value="gift_card">{{ t('plan.card_pay') }}</el-radio>
-                    <el-radio v-if="chargeSites.length > 0" value="charge_site">{{ t('plan.charge_pay') }}</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-                <el-form-item v-if="orderForm.pay_method === 'gift_card'" :label="t('plan.card_code')">
-                  <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" />
-                </el-form-item>
-                <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" :label="t('charge.site_label')">
-                  <el-select v-model="orderForm.charge_site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
-                    <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
-                  </el-select>
-                </el-form-item>
-                <el-button type="primary" size="small" @click="submitOrder" :loading="orderBusy">{{ t('order.create') }}</el-button>
-              </el-form>
-            </div>
-            <!-- Charge Panel -->
-            <div v-else-if="mod.type === 'charge_panel'">
-              <div class="card-header"><span class="card-icon">💳</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-              <div class="charge-section">
-                <h4 class="charge-subtitle">{{ t('plan.charge_pay') }}</h4>
-                <el-form label-position="top" size="small">
-                  <el-form-item :label="t('charge.site_label')">
-                    <el-select v-model="chargeForm.site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
-                      <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item :label="t('charge.amount_yuan')">
-                    <el-input-number v-model="chargeForm.amount_yuan" :min="1" :step="10" style="width: 100%" />
-                  </el-form-item>
-                  <el-button type="primary" size="small" @click="submitCharge" :loading="chargeBusy">{{ t('charge.submit_now') }}</el-button>
-                </el-form>
-              </div>
-              <div class="charge-section">
-                <h4 class="charge-subtitle">{{ t('charge.card_redeem') }}</h4>
-                <div class="charge-card-row">
-                  <el-input v-model="cardCode" :placeholder="(mod.data && mod.data.card_placeholder) || t('charge.card_code_placeholder')" size="small" />
-                  <el-button type="success" size="small" @click="redeemCard" :loading="redeemBusy">{{ (mod.data && mod.data.card_btn_text) || t('charge.card_redeem_btn') }}</el-button>
-                </div>
-              </div>
-              <div v-if="mod.data && mod.data.show_orders !== false && chargeOrders.length > 0" class="charge-section">
-                <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
-                <div class="logpkg-list">
-                  <div class="logpkg-item" v-for="co in chargeOrders.slice(0, (mod.data && mod.data.orders_limit) || 5)" :key="co.id">
-                    <div class="logpkg-info">
-                      <span class="logpkg-id">{{ co.trade_no }}</span>
-                      <span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span>
-                      <span class="logpkg-time">{{ formatMoney(co.amount) }} {{ co.currency }}</span>
-                    </div>
-                    <div class="logpkg-actions">
-                      <span class="logpkg-time">{{ formatDate(co.created_at) }}</span>
-                      <a v-if="co.payment_url && co.status === 'pending'" :href="co.payment_url" target="_blank" class="card-action">{{ t('charge.go_pay') }}</a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Balance Display -->
-            <div v-else-if="mod.type === 'balance_display'">
-              <div class="card-header"><el-icon class="card-icon" size="20"><Money /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="balance-hero">
-                <span class="balance-amount">{{ formatMoney(balance.balance) }}</span>
-                <span v-if="balance.frozen > 0" class="balance-frozen">{{ t('balance.frozen') }}: {{ formatMoney(balance.frozen) }}</span>
-              </div>
-              <div class="card-actions">
-                <el-button type="primary" size="small" @click="activeTab = 'store'; scrollToModule('mod-charge')">{{ (mod.data && mod.data.charge_btn_text) || t('balance.charge_btn') }}</el-button>
-              </div>
-              <div v-if="mod.data && mod.data.show_transactions !== false && balanceTxns.length > 0" style="margin-top: 16px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.transactions') }}</span></div>
-                <div class="logpkg-list">
-                  <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, (mod.data && mod.data.tx_limit) || 10)" :key="tx.id">
-                    <div class="logpkg-info">
-                      <span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</span>
-                      <span class="logpkg-time">{{ tx.remark || tx.type }}</span>
-                    </div>
-                    <div class="logpkg-actions">
-                      <span class="logpkg-time">{{ formatDate(tx.created_at) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Order List -->
-            <div v-else-if="mod.type === 'order_list'">
-              <!-- Top Notice -->
-              <div class="billing-notice">
-                <span class="billing-notice-text">{{ t((mod.data && mod.data.notice_text) || 'order.title') }}</span>
-                <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ t(mod.data.notice_highlight) }}</span>
-              </div>
-              <div class="billing-notice-sub">
-                {{ t((mod.data && mod.data.notice_subtext) || 'balance.tx_limit') }}
-              </div>
-              <!-- Order Table -->
-              <div v-if="myOrdersLoading" class="empty-state">
-                <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
-                <p class="empty-text">{{ t('common.loading') }}</p>
-              </div>
-              <div v-else-if="myOrders.length === 0" class="empty-state">
-                <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
-                <p class="empty-text">{{ t('order.empty') }}</p>
-              </div>
-              <div v-else class="billing-table-wrap">
-                <table class="billing-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>{{ t('order.id') }}</th>
-                      <th>{{ t('plan.col_service') }}</th>
-                      <th>{{ t('common.amount') }}</th>
-                      <th>{{ t('order.date') }}</th>
-                      <th>{{ t('account.expire') }}</th>
-                      <th>{{ t('common.status') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(order, idx) in myOrders.slice(0, (mod.data && mod.data.limit) || 20)" :key="order.id">
-                      <td class="billing-col-index">{{ idx + 1 }}</td>
-                      <td class="billing-col-id">#{{ order.id }}</td>
-                      <td class="billing-col-service">{{ getOrderServiceName(order) }}</td>
-                      <td class="billing-col-amount">{{ formatMoney(order.paid_amount || order.original_amount) }}</td>
-                      <td class="billing-col-date">{{ formatDate(order.created_at) }}</td>
-                      <td class="billing-col-expire">{{ order.effective_to ? formatDate(order.effective_to) : '-' }}</td>
-                      <td class="billing-col-status"><span :class="'badge badge-' + orderStatusBadge(order.status)">{{ orderStatusText(order.status) }}</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <!-- Charge Records -->
-              <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
-                <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
-                <div class="billing-table-wrap">
-                  <table class="billing-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('order.trade_no') }}</th>
-                        <th>{{ t('order.source') }}</th>
-                        <th>{{ t('common.amount') }}</th>
-                        <th>{{ t('common.time') }}</th>
-                        <th>{{ t('common.status') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(co, idx) in chargeOrders.slice(0, 10)" :key="co.id">
-                        <td class="billing-col-index">{{ idx + 1 }}</td>
-                        <td class="billing-col-id">{{ co.trade_no }}</td>
-                        <td>{{ co.source === 'card' ? t('charge.card_title') : (co.source === 'site' ? t('plan.charge_pay') : co.source) }}</td>
-                        <td class="billing-col-amount">{{ formatMoney(co.amount) }} {{ co.currency }}</td>
-                        <td class="billing-col-date">{{ formatDate(co.created_at) }}</td>
-                        <td class="billing-col-status"><span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <!-- Transaction Flow -->
-              <div v-if="balanceTxns.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.balance_change') }}</span></div>
-                <div class="billing-table-wrap">
-                  <table class="billing-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('common.type') }}</th>
-                        <th>{{ t('common.amount') }}</th>
-                        <th>{{ t('balance.balance_after') }}</th>
-                        <th>{{ t('common.remark') }}</th>
-                        <th>{{ t('common.time') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(tx, idx) in balanceTxns.slice(0, 10)" :key="tx.id">
-                        <td class="billing-col-index">{{ idx + 1 }}</td>
-                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? t('balance.charge_btn') : (tx.type === 'consume' ? t('balance.type_consume') : (tx.type === 'refund' ? t('order.refund') : tx.type)) }}</span></td>
-                        <td class="billing-col-amount" :style="{ color: tx.amount >= 0 ? '#67c23a' : '#f56c6c' }">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</td>
-                        <td class="billing-col-amount">{{ formatMoney(tx.balance_after) }}</td>
-                        <td>{{ tx.remark || '-' }}</td>
-                        <td class="billing-col-date">{{ formatDate(tx.created_at) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <!-- Node List -->
-            <div v-else-if="mod.type === 'node_list'" class="node-list-module">
-              <div v-if="mod.data && mod.data.info_text" class="node-info-card">
-                <div class="node-info-title">{{ t(mod.data.info_title || 'node.info_title') }}</div>
-                <div class="node-info-content">{{ t(mod.data.info_text) }}</div>
-              </div>
-              <div v-if="plansLoading" class="empty-state">
-                <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
-                <p class="empty-text">{{ t('common.loading') }}</p>
-              </div>
-              <div v-else-if="allPlanNodes.length === 0" class="empty-state">
-                <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
-                <p class="empty-text">{{ t('node.empty') }}</p>
-              </div>
-              <div v-else>
-                <div v-for="planGroup in allPlanNodes" :key="planGroup.plan_id" class="plan-node-group">
-                  <div class="plan-node-header">
-                    <span class="plan-node-name">{{ planGroup.plan_name }}</span>
-                    <span v-if="planGroup.active" class="badge badge-active">{{ t('account.plan') }}</span>
-                    <span v-else class="badge badge-none">{{ t('node.not_purchased') }}</span>
-                  </div>
-                  <div class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 3) + ', 1fr)' }">
-                    <div v-for="node in planGroup.nodes" :key="node.id" class="node-card" :class="{ disabled: !planGroup.active }">
-                      <div class="node-name">{{ node.name }}</div>
-                      <div class="node-tags">
-                        <span v-if="node.protocol" class="node-tag tag-protocol">{{ node.protocol }}</span>
-                        <span v-if="node.transport" class="node-tag tag-transport">{{ node.transport }}</span>
-                      </div>
-                      <div v-if="planGroup.active && node.link" class="node-actions">
-                        <el-button size="small" text @click="showNodeDetail(node)">{{ t('common.view_detail') }}</el-button>
-                        <el-button size="small" text @click="showNodeQR(node)">{{ t('sub.qr_code') }}</el-button>
-                      </div>
-                      <div v-else class="node-locked">
-                        <span class="lock-hint">🔒 {{ t('node.need_plan') }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Referral -->
-            <div v-else-if="mod.type === 'referral'">
-              <!-- Referral Link -->
-              <div class="referral-header">
-                <div class="referral-title"><el-icon size="20" style="margin-right: 8px;"><Gift /></el-icon>{{ t('referral.my_link') }}</div>
-                <div class="referral-meta">
-                  <span class="referral-rate">{{ t('referral.commission_rate') }}: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
-                  <span class="referral-divider">|</span>
-                  <span class="referral-mode">{{ t('referral.commission_mode') }}: {{ (referralStats && referralStats.commission_mode === 'recurring') ? t('referral.mode_recurring') : ((mod.data && mod.data.default_commission_mode === 'recurring') ? t('referral.mode_recurring') : t('referral.mode_normal')) }}</span>
-                </div>
-              </div>
-              <div class="referral-link-wrap" v-if="referralCode">
-                <div class="referral-link">{{ referralInviteUrl }}</div>
-                <el-button type="primary" size="small" @click="copyText(referralInviteUrl)" class="referral-copy-btn">
-                  <el-icon><DocumentCopy /></el-icon> {{ t('common.copy') }}
-                </el-button>
-              </div>
-              
-              <!-- Invite Code -->
-              <div class="referral-code-section" v-if="referralCode">
-                <div class="referral-code-row">
-                  <span class="referral-code-label">{{ t('referral.invite_code') }}</span>
-                  <span class="referral-code-value">{{ referralCode.code }}</span>
-                  <el-tag size="small" type="success" effect="dark" class="referral-status">{{ t('referral.code_available') }}</el-tag>
-                </div>
-              </div>
-
-              <!-- Invite Records -->
-              <div class="referral-section" v-if="referralRecords.length > 0">
-                <div class="section-title">{{ t('referral.invite_records') }}</div>
-                <div class="referral-table-wrap">
-                  <table class="referral-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('account.email') }}</th>
-                        <th>{{ t('account.register_time') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(r, idx) in referralRecords.slice(0, (mod.data && mod.data.records_limit) || 10)" :key="r.id">
-                        <td>{{ idx + 1 }}</td>
-                        <td>{{ r.referee_email }}</td>
-                        <td>{{ formatDateTime(r.registered_at) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Commission Records -->
-              <div class="referral-section">
-                <div class="section-header">
-                  <span class="section-title">{{ t('referral.records') }}</span>
-                  <span class="section-subtitle">{{ t('referral.withdraw_hint') }}</span>
-                  <el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">{{ t('referral.withdraw') }}</el-button>
-                </div>
-                <div class="referral-table-wrap">
-                  <table class="referral-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('referral.commission_time') }}</th>
-                        <th>{{ t('referral.consumer') }}</th>
-                        <th>{{ t('referral.consume_amount') }}</th>
-                        <th>{{ t('referral.commission_amount') }}</th>
-                        <th>{{ t('common.status') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(r, idx) in commissionRecords" :key="r.id">
-                        <td>{{ idx + 1 }}</td>
-                        <td>{{ formatDateTime(r.created_at) }}</td>
-                        <td>{{ r.consumer_email }}</td>
-                        <td>¥{{ r.amount }}</td>
-                        <td>¥{{ r.commission }}</td>
-                        <td>
-                          <el-tag size="small" :type="r.status === 'available' ? 'success' : r.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                            {{ r.status === 'available' ? t('referral.status_available') : r.status === 'pending' ? t('referral.status_pending') : t('referral.status_withdrawn') }}
-                          </el-tag>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div class="referral-summary" v-if="referralStats">
-                  {{ t('referral.total_commission') }} {{ formatMoney(referralStats.total_commission) }}（{{ referralStats.total_paid }}{{ t('referral.times' ) }}），{{ t('referral.withdraw_threshold' ) }}
-                </div>
-              </div>
-
-              <!-- Withdrawal Records -->
-              <div class="referral-section" v-if="withdrawRecords && withdrawRecords.length > 0">
-                <div class="section-title">{{ t('referral.withdraw_records') }}</div>
-                <div class="referral-table-wrap">
-                  <table class="referral-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('referral.withdraw_date') }}</th>
-                        <th>{{ t('referral.withdraw_amount') }}</th>
-                        <th>{{ t('common.status') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(w, idx) in withdrawRecords" :key="w.id">
-                        <td>{{ idx + 1 }}</td>
-                        <td>{{ formatDateTime(w.created_at) }}</td>
-                        <td>{{ w.amount }}</td>
-                        <td>
-                          <el-tag size="small" :type="w.status === 'completed' ? 'success' : w.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                            {{ w.status === 'completed' ? t('referral.status_paid') : w.status === 'pending' ? t('common.processing') : t('order.status_cancelled') }}
-                          </el-tag>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <!-- Ticket List -->
-            <div v-else-if="mod.type === 'ticket_list'">
-              <div class="card-header"><el-icon class="card-icon" size="20"><Ticket /></el-icon><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
-              <div v-if="tickets.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('ticket.empty') }}</p></div>
-<div v-else class="logpkg-list">
-<div class="logpkg-item" v-for="tk in tickets" :key="tk.id" @click="openTicket(tk.id)" style="cursor: pointer">
-<div class="logpkg-info">
-<span class="logpkg-id">#{{ tk.id }}</span>
-<span class="logpkg-time">{{ tk.subject }}</span>
-<span :class="'badge badge-' + ticketStatusBadge(tk.status)">{{ ticketStatusText(tk.status) }}</span>
-<span v-if="tk.status === 'replied'" class="ticket-new-badge">{{ t('ticket.new_reply') }}</span>
-</div>
-<div class="logpkg-actions">
-<span class="logpkg-time">{{ formatDate(tk.updated_at) }}</span>
-</div>
-</div>
-</div>
-            </div>
-            <!-- Tutorial Cards -->
-            <div v-else-if="mod.type === 'tutorial_cards'">
-              <div class="card-header"><span class="card-icon">📥</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <!-- Platform Tabs -->
-              <div class="tutorial-platform-tabs">
-                <div
-                  v-for="card in (mod.data && mod.data.cards) || []"
-                  :key="card.id"
-                  class="tutorial-tab"
-                  :class="{ active: selectedPlatform === card.id }"
-                  @click="selectPlatform(card.id)"
-                >
-                  {{ card.name }}
-                </div>
-              </div>
-              <!-- Platform Grid -->
-              <div class="tutorial-grid">
-                <div
-                  v-for="card in (mod.data && mod.data.cards) || []"
-                  :key="card.id"
-                  class="tutorial-card"
-                  :class="{ active: selectedPlatform === card.id }"
-                  :style="{ background: card.bg || card.color }"
-                  @click="selectPlatform(card.id)"
-                >
-                  <div class="tutorial-card-icon">{{ getTutorialIcon(card.icon) }}</div>
-                  <div class="tutorial-card-name">{{ card.name }}</div>
-                  <div class="tutorial-card-desc">{{ t(card.desc) }}</div>
-                </div>
-              </div>
-              <!-- Related Articles -->
-              <div v-if="selectedPlatform" class="tutorial-articles">
-                <div class="tutorial-articles-header">
-                  <span class="tutorial-platform-name">{{ getSelectedPlatformName() }}</span>
-                  <span class="tutorial-articles-count">{{ getPlatformArticles(selectedPlatform).length }} {{ selectedPlatform === 'faq' ? t('article.faq_count') : t('tutorial.platform_articles') }}</span>
-                </div>
-                <div v-if="getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
-                  <span class="empty-icon">📝</span>
-                  <p class="empty-text">{{ selectedPlatform === 'faq' ? t('tutorial.no_faq') : t('tutorial.no_articles') }}</p>
-                </div>
-                <div v-else class="article-list tutorial-article-list">
-                  <div
-                    class="article-item"
-                    v-for="article in getPlatformArticles(selectedPlatform)"
-                    :key="article.id"
-                    @click="openArticle(article.slug)"
-                  >
-                    <span class="article-cat-badge">{{ articleCatText(article.category) }}</span>
-                    <div class="article-info">
-                      <span class="article-title">{{ article.title }}</span>
-                      <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
-                    </div>
-                    <span class="card-action">{{ t('article.read') }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-else class="tutorial-select-hint">
-                <span class="empty-icon">👆</span>
-                <p class="empty-text">{{ t('tutorial.select_platform') }}</p>
-              </div>
-            </div>
-            <!-- Article List -->
-            <div v-else-if="mod.type === 'article_list'">
-              <div class="card-header"><el-icon class="card-icon" size="20"><Reading /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div v-if="mod.data && mod.data.show_category_filter" class="article-filter">
-                <el-radio-group v-model="articleCategory" size="small" @change="fetchArticles">
-                  <el-radio-button value="">{{ t('common.all') }}</el-radio-button>
-                  <el-radio-button value="tutorial">{{ t('article.tutorial') }}</el-radio-button>
-                  <el-radio-button value="faq">FAQ</el-radio-button>
-                  <el-radio-button value="notice">{{ t('article.notice') }}</el-radio-button>
-                </el-radio-group>
-              </div>
-              <div v-if="articles.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('article.empty') }}</p></div>
-              <div v-else class="article-list">
-                <div class="article-item" v-for="a in articles" :key="a.id" @click="openArticle(a.slug)">
-                  <span class="article-cat-badge">{{ articleCatText(a.category) }}</span>
-                  <div class="article-info">
-                    <span class="article-title">{{ a.title }}</span>
-                    <span class="logpkg-time">{{ formatDate(a.published_at || a.updated_at) }}</span>
-                  </div>
-                  <span class="card-action">{{ t('article.read') }}</span>
-                </div>
-              </div>
-            </div>
-            <!-- Shared Accounts -->
-            <div v-else-if="mod.type === 'shared_accounts'">
-              <div class="card-header"><span class="card-icon">🔑</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-              <!-- No Plan Access -->
-              <div v-if="!client.plan_id" class="empty-state">
-                <span class="empty-icon">🔒</span>
-                <p class="empty-text">{{ t('shared.need_plan') }}</p>
-                <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">{{ t('plan.go_subscribe') }}</el-button>
-              </div>
-              <!-- Has Plan, No Accounts -->
-              <div v-else-if="sharedAccounts.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('shared.empty') }}</p></div>
-              <!-- Has Plan And Accounts -->
-              <div v-else class="article-list">
-                <div class="article-item" v-for="sa in sharedAccounts" :key="sa.id">
-                  <img v-if="sa.icon_url" :src="sa.icon_url" class="sa-icon" />
-                  <span v-else class="article-cat-badge">{{ sharedAcctTypeText(sa.type) }}</span>
-                  <div class="article-info">
-                    <span class="article-title">{{ sa.name }}</span>
-                    <span class="logpkg-time">{{ sharedAcctTypeText(sa.type) }}</span>
-                  </div>
-                  <el-button size="small" type="primary" text @click="applySharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.apply_btn_text) || 'shared.view_credential') }}</el-button>
-                  <el-button size="small" text @click="repairSharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.repair_btn_text) || 'shared.repair') }}</el-button>
-                </div>
-              </div>
-            </div>
-            <!-- Freeform (HTML+CSS+JS custom component) -->
-            <div v-else-if="mod.type === 'freeform'" class="module-freeform">
-              <component :is="freeformComponents[mod.id]" v-if="freeformComponents[mod.id]"></component>
-              <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ {{ t('error.load_failed') }}</div>
-            </div>
+            <component :is="moduleComponents[mod.id]" v-if="moduleComponents[mod.id]"></component>
+            <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ {{ t('error.load_failed') }}</div>
           </div>
         </template>
         <!-- Empty state for overview main column -->
@@ -1017,883 +144,21 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <!-- Non-overview pages: single column layout -->
     <template v-if="activeTab !== 'overview'" v-for="mod in currentModules" :key="mod.id">
       <div class="card glass module-wrap" :id="'mod-' + mod.id" :class="mod.style && mod.style.custom_class || ''">
-        <!-- Hero -->
-        <div v-if="mod.type === 'hero'" class="module-hero" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-          <div v-if="mod.data && mod.data.eyebrow" class="hero-eyebrow">{{ t(mod.data.eyebrow) }}</div>
-          <h2 v-if="mod.data && mod.data.heading" class="hero-heading">{{ t(mod.data.heading) }}</h2>
-          <p v-if="mod.data && mod.data.description" class="hero-desc">{{ t(mod.data.description) }}</p>
-          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
-        </div>
-        <!-- Rich Text -->
-        <div v-else-if="mod.type === 'rich_text'" class="module-rich-text" :style="{ textAlign: mod.style && mod.style.align || 'left' }" v-html="mod.data.html"></div>
-            <!-- Announcement list (for non-overview pages) -->
-            <div v-else-if="mod.type === 'notice'" class="card glass announcement-sidebar-card" style="margin-bottom: 16px;">
-              <div class="card-header"><span class="card-icon">📢</span><span class="card-title">{{ t(mod.title) }}</span></div>
-              <div class="announcement-sidebar-list">
-                <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openAnnouncementPopup(ann)">
-                  <span v-if="ann.is_popup" class="announcement-popup-badge">📌</span>
-                  <span class="announcement-sidebar-date">[{{ formatDate(ann.published_at || ann.updated_at).slice(5,10) }}]</span>
-                  <span class="announcement-sidebar-text">{{ ann.title }}</span>
-                </div>
-                <div v-if="announcements.length === 0" style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">{{ t('announcement.empty') }}</div>
-              </div>
+        <!-- Notice modules: special handling for announcements -->
+        <div v-if="mod.type === 'notice'" class="announcement-sidebar-card" style="margin-bottom: 16px;">
+          <div class="card-header"><span class="card-icon">📢</span><span class="card-title">{{ t(mod.title) }}</span></div>
+          <div class="announcement-sidebar-list">
+            <div v-for="ann in announcements.slice(0, 10)" :key="ann.id" class="announcement-sidebar-item" @click="openAnnouncementPopup(ann)">
+              <span v-if="ann.is_popup" class="announcement-popup-badge">📌</span>
+              <span class="announcement-sidebar-date">[{{ formatDate(ann.published_at || ann.updated_at).slice(5,10) }}]</span>
+              <span class="announcement-sidebar-text">{{ ann.title }}</span>
             </div>
-        <!-- Feature Cards -->
-        <div v-else-if="mod.type === 'feature_cards'">
-          <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div class="feature-cards-grid">
-            <div v-for="(card, ci) in ((mod.data && mod.data.cards) || []).slice(0,6)" :key="ci" class="feature-card">
-              <span class="feature-card-icon">{{ card.icon || '⭐' }}</span>
-              <h4>{{ card.title }}</h4>
-              <p>{{ card.description }}</p>
-            </div>
+            <div v-if="announcements.length === 0" style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">{{ t('announcement.empty') }}</div>
           </div>
         </div>
-        <!-- Account Stats (simple) -->
-        <div v-else-if="mod.type === 'account_stats'">
-          <div v-if="mod.title" class="card-header"><span class="card-icon">📊</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div class="traffic-stats">
-            <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
-          </div>
-        </div>
-        <!-- Traffic Ring -->
-        <div v-else-if="mod.type === 'traffic_ring'">
-          <div class="card-header">
-            <span class="card-icon">📊</span>
-            <span class="card-title">{{ t(mod.title) }}</span>
-            <span class="card-action" v-if="refreshing">{{ t('common.refreshing') }}</span>
-          </div>
-          <div class="traffic-ring-wrap">
-            <svg class="traffic-ring" viewBox="0 0 120 120">
-              <circle cx="60" cy="60" r="52" fill="none" class="ring-bg"/>
-              <circle cx="60" cy="60" r="52" fill="none" class="ring-fill" :stroke-dasharray="ringDash" :style="{stroke: usageColor}"/>
-            </svg>
-            <div class="ring-text">
-              <span class="ring-percent">{{ usagePercent }}%</span>
-              <span class="ring-label">{{ t('traffic.used') }}</span>
-            </div>
-          </div>
-          <div class="traffic-bar-wrap">
-            <div class="traffic-bar-header">
-              <span class="bar-label">📊 {{ t('traffic.title') }}</span>
-              <span class="bar-nums">{{ formatBytes(client.used_bytes) }} <span style="color:var(--text-muted);">/</span> {{ formatBytes(client.quota_bytes) }}</span>
-            </div>
-            <div class="traffic-bar">
-              <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
-            </div>
-            <div class="traffic-bar-footer">
-              <span class="bar-hint">{{ t('traffic.upload') }} {{ formatBytes(client.upload_bytes) }} · {{ t('traffic.download') }} {{ formatBytes(client.download_bytes) }}</span>
-              <span class="bar-pct">{{ usagePercent }}%</span>
-            </div>
-          </div>
-          <div class="traffic-stats">
-            <div class="stat-item"><span class="stat-icon">↑</span><span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span><span class="stat-label">{{ t('traffic.upload') }}</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">↓</span><span class="stat-value">{{ formatBytes(client.download_bytes) }}</span><span class="stat-label">{{ t('traffic.download') }}</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-icon">💾</span><span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span><span class="stat-label">{{ t('traffic.total') }}</span></div>
-          </div>
-        </div>
-        <!-- Account Info (qist style with icon+label+value+badge) -->
-        <div v-else-if="mod.type === 'account_info'">
-          <div class="card-header"><el-icon class="card-icon" size="20"><User /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div class="acct-info-list" :class="{ 'two-column': mod.data && mod.data.columns === 2 }">
-            <div class="acct-info-row">
-              <span class="acct-info-icon">🛡️</span>
-              <div class="acct-info-body">
-                <span class="acct-info-label">{{ t('account.status') }}</span>
-                <div class="acct-info-value-row">
-                  <span class="acct-info-value">● {{ statusText }}</span>
-                  <span v-if="client.status === 'active'" class="badge badge-active" style="margin-left:6px">{{ t('account.normal') }}</span>
-                  <span v-else-if="client.status === 'suspended'" class="badge badge-suspended" style="margin-left:6px">{{ t('account.suspended') }}</span>
-                  <span v-else-if="client.status === 'expired'" class="badge badge-expired" style="margin-left:6px">{{ t('common.expired') }}</span>
-                  <span v-else class="badge badge-none" style="margin-left:6px">{{ t('common.unknown') }}</span>
-                </div>
-              </div>
-            </div>
-            <div class="acct-info-row">
-              <span class="acct-info-icon">⭐</span>
-              <div class="acct-info-body">
-                <span class="acct-info-label">{{ t('account.plan') }}</span>
-                <span class="acct-info-value">{{ client.plan_name || t('account.plan_default') }}</span>
-              </div>
-            </div>
-            <div class="acct-info-row">
-              <span class="acct-info-icon">🕐</span>
-              <div class="acct-info-body">
-                <span class="acct-info-label">{{ t('account.register_time') }}</span>
-                <span class="acct-info-value">{{ client.created_at ? formatDate(client.created_at) : '-' }}</span>
-              </div>
-            </div>
-            <div class="acct-info-row">
-              <span class="acct-info-icon">🔄</span>
-              <div class="acct-info-body">
-                <span class="acct-info-label">{{ t('account.expire') }}</span>
-                <span class="acct-info-value">{{ client.expires_at ? formatDate(client.expires_at) : t('common.unlimited') }}</span>
-              </div>
-            </div>
-            <!-- Balance Display -->
-            <div class="acct-info-row" v-if="mod.data && mod.data.show_balance !== false">
-              <el-icon class="acct-info-icon" size="16"><Wallet /></el-icon>
-              <div class="acct-info-body">
-                <span class="acct-info-label">{{ t('balance.available') }}</span>
-                <div class="acct-info-value-row">
-                  <span class="acct-info-value">{{ formatMoney(balance.balance) }}</span>
-                  <el-button type="primary" size="small" @click="showChargeDialog = true" style="margin-left: 8px;">{{ t('balance.charge_btn') }}</el-button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <!-- Traffic mini bar inside account info -->
-          <div class="acct-traffic-section">
-            <div class="acct-traffic-label">
-              <span>📊 {{ t('traffic.title') }}</span>
-              <span class="acct-traffic-pct">{{ usagePercent }}% / {{ formatBytes(client.quota_bytes) }}</span>
-            </div>
-            <div class="traffic-bar" style="height:8px;border-radius:6px;background:var(--ring-bg);overflow:hidden;margin-top:6px;">
-              <div class="traffic-bar-fill" :class="{ warn: usagePercent > 70, danger: usagePercent > 90 }" :style="{ width: usagePercent + '%' }"></div>
-            </div>
-            <div class="acct-traffic-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">{{ t('traffic.remaining') }} {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} {{ t('traffic.available') }}</div>
-          </div>
-        </div>
-        <!-- Client Download -->
-        <div v-else-if="mod.type === 'client_download'">
-          <div class="card-header"><span class="card-icon">💻</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div class="client-platform-tabs">
-            <div
-              v-for="p in (mod.data && mod.data.platforms) || []"
-              :key="p.id"
-              class="platform-tab"
-              :class="{ active: selectedPlatform === p.id }"
-              @click="selectPlatform(p.id)"
-            >
-              <el-icon v-if="p.icon"><component :is="p.icon" /></el-icon>
-              <span>{{ p.name }}</span>
-            </div>
-          </div>
-          <!-- Hint when no platform selected -->
-          <div v-if="!selectedPlatform" class="client-download-hint">
-            <el-icon><ArrowUp /></el-icon>
-            <span>{{ t((mod.data && mod.data.hint_text) || 'tutorial.select_platform') }}</span>
-            <el-icon><ArrowUp /></el-icon>
-          </div>
-          <!-- Content when platform selected -->
-          <div v-else class="client-download-content">
-            <div class="client-download-platform-header">
-              <span class="client-download-platform-name">{{ getSelectedPlatformName() }}</span>
-              <el-button text size="small" @click="navigateTo('tutorial')">{{ t('tutorial.view_all') }} →</el-button>
-            </div>
-            <!-- Download link -->
-            <div v-if="getSelectedPlatformUrl(mod)" class="client-download-link-row">
-              <a :href="getSelectedPlatformUrl(mod)" target="_blank" rel="noopener" class="client-download-btn">
-                <el-icon><Download /></el-icon>
-                <span>{{ t('common.download') }} {{ getSelectedPlatformName() }} {{ t('client.title') }}</span>
-              </a>
-            </div>
-            <!-- Associated tutorial articles -->
-            <div v-if="getPlatformArticles(selectedPlatform).length > 0" class="client-download-articles">
-              <div class="client-download-section-title">📖 {{ t('tutorial.related') }}</div>
-              <div class="article-list compact">
-                <div
-                  class="article-item"
-                  v-for="article in getPlatformArticles(selectedPlatform)"
-                  :key="article.id"
-                  @click="openArticle(article.slug)"
-                >
-                  <span class="article-cat-badge">{{ articleCatText(article.category) }}</span>
-                  <div class="article-info">
-                    <span class="article-title">{{ article.title }}</span>
-                    <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
-                  </div>
-                  <el-icon class="article-arrow"><ArrowRight /></el-icon>
-                </div>
-              </div>
-            </div>
-            <!-- Empty state -->
-            <div v-if="!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
-              <el-icon class="empty-icon" size="48"><Box /></el-icon>
-              <p class="empty-text">{{ t('tutorial.no_content') }}</p>
-              <p class="empty-hint">{{ t('tutorial.no_content_hint') }}</p>
-            </div>
-          </div>
-        </div>
-        <!-- Subscription Detail -->
-        <div v-else-if="mod.type === 'subscription_detail'">
-          <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div v-if="client.sub_token && client.sub_status !== 'revoked'">
-                <div class="sub-link-box">
-                  <code class="sub-link-text">{{ subUrl }}</code>
-                  <div class="sub-link-actions">
-                    <el-button size="small" text @click="copyText(subUrl)">{{ (mod.data && mod.data.copy_text) || t('common.copy') }}</el-button>
-                    <el-button size="small" text @click="showQrDialog">{{ (mod.data && mod.data.qr_text) || t('sub.qr_code') }}</el-button>
-                  </div>
-                </div>
-            <div class="sub-actions-row" v-if="mod.data && mod.data.actions">
-              <el-button 
-                v-for="action in mod.data.actions" 
-                :key="action.target"
-                :type="action.type || 'default'"
-                size="small"
-                @click="handleSubAction(action)"
-              >
-                {{ t(action.text) }}
-              </el-button>
-            </div>
-          </div>
-          <div v-else-if="client.sub_status === 'revoked'" class="empty-state">
-            <el-icon class="empty-icon" size="48" color="var(--danger)"><CircleClose /></el-icon><p class="empty-text danger">{{ t('sub.revoked') }}</p><p class="empty-hint">{{ t('sub.revoked_hint') }}</p>
-          </div>
-<div v-else-if="client.status === 'active' && !client.sub_token" class="empty-state">
-<el-icon class="empty-icon" size="48" color="var(--warning)"><Warning /></el-icon><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.suspended_hint') }}</p>
-</div>
-          <div v-else-if="client.status === 'suspended'" class="empty-state">
-            <el-icon class="empty-icon" size="48" color="var(--warning)"><Warning /></el-icon><p class="empty-text danger">{{ t('account.suspended') }}</p><p class="empty-hint">{{ t('account.renew_hint') }}</p>
-          </div>
-        </div>
-        <!-- Subscription (simple button) -->
-        <div v-else-if="mod.type === 'subscription'" class="text-center">
-          <div v-if="mod.data && mod.data.title" class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ mod.data.title }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-          <button v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'" class="hero-btn" @click="var target = mod.data.button_target || 'store'; activeTab = target; saveActiveTab(target); fetchPageData(target)">{{ t(mod.data.button_text) }}</button>
-        </div>
-        <!-- Streaming Status -->
-        <div v-else-if="mod.type === 'streaming_status'">
-          <div class="streaming-grid">
-            <!-- Apple Shared ID -->
-            <div class="streaming-card">
-              <div class="streaming-name">{{ t('shared.apple_id') }}</div>
-              <div class="streaming-icon"><span style="font-size: 32px;">🍎</span></div>
-              <div class="streaming-action" v-if="appleAccount" @click="applySharedAccount(appleAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
-              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
-            </div>
-            <!-- Netflix Shared Account -->
-            <div class="streaming-card">
-              <div class="streaming-name">{{ t('shared.netflix') }}</div>
-              <div class="streaming-icon"><span style="font-size: 32px;">🎬</span></div>
-              <div class="streaming-action" v-if="netflixAccount" @click="applySharedAccount(netflixAccount.id, mod.data)">{{ t('streaming.view_account') }}</div>
-              <div class="streaming-action" v-else style="color: var(--text-muted); cursor: default;">{{ t('streaming.none') }}</div>
-            </div>
-          </div>
-        </div>
-        <!-- Security Settings -->
-        <div v-else-if="mod.type === 'security_settings'">
-          <div class="card-header"><span class="card-icon">🔒</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-          <el-form v-if="mod.data && mod.data.show_ip_whitelist !== false" label-position="top" size="small">
-            <el-form-item :label="t('security.ip_whitelist_full')">
-              <el-input v-model="settings.ip_whitelist" :placeholder="t('security.ip_example')" />
-            </el-form-item>
-            <el-form-item :label="t('security.device_limit_hint')">
-              <el-input-number v-model="settings.device_limit" :min="0" :max="100" />
-            </el-form-item>
-            <el-button type="primary" size="small" @click="saveSettings">{{ t('common.save') }}</el-button>
-          </el-form>
-          <div v-if="mod.data && mod.data.show_password !== false">
-            <div class="card-header" style="margin-top: 20px"><span class="card-icon">🔑</span><span class="card-title">{{ t('security.password') }}</span></div>
-            <el-form label-position="top" size="small">
-<el-form-item :label="t('security.old_password')"><el-input v-model="pwdForm.old_password" type="password" show-password /></el-form-item>
-<el-form-item :label="t('security.new_password')"><el-input v-model="pwdForm.new_password" type="password" show-password /></el-form-item>
-<el-form-item :label="t('security.confirm_password')"><el-input v-model="pwdForm.confirm_password" type="password" show-password /></el-form-item>
-              <el-button type="primary" size="small" @click="changePassword">{{ t('security.password') }}</el-button>
-            </el-form>
-          </div>
-        </div>
-        <!-- Log Packages -->
-        <div v-else-if="mod.type === 'log_packages'">
-          <div class="card-header"><el-icon class="card-icon" size="20"><Box /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-          <p v-else class="card-desc">{{ t('log.description') }}</p>
-          <div class="log-actions">
-            <el-button type="primary" size="small" @click="confirmCreateLogPackage()" :loading="logPacking" :disabled="!hasEntryNodes">{{ t('log.btn_pack') }}</el-button>
-            <span v-if="!hasEntryNodes" class="logpkg-hint" style="margin-left:8px">{{ t('log.no_nodes') }}</span>
-          </div>
-          <div v-if="logPackages.length > 0" style="margin-top: 16px">
-            <div class="card-header"><span class="card-icon">📁</span><span class="card-title">{{ t('log.package_list') }}</span><span class="card-action" @click="fetchLogPackages">{{ t('common.refresh') }}</span></div>
-            <div class="logpkg-list">
-              <div class="logpkg-item" v-for="pkg in logPackages" :key="pkg.id">
-                <div class="logpkg-info">
-                  <span class="logpkg-id">#{{ pkg.id }}</span>
-                  <span :class="'badge badge-' + pkg.status">{{ pkgStatusText(pkg.status) }}</span>
-                  <span class="logpkg-time">{{ formatDate(pkg.created_at) }}</span>
-                </div>
-                <div class="logpkg-actions">
-                  <span v-if="pkg.file_size" class="logpkg-size">{{ formatBytes(pkg.file_size) }}</span>
-                  <el-button v-if="pkg.status === 'ready'" size="small" type="primary" text @click="downloadLogPackage(pkg.id)">{{ t('common.download') }}</el-button>
-                  <span v-if="pkg.status === 'processing'" class="logpkg-hint">{{ t('common.processing') }}...</span>
-                  <span v-if="pkg.error" class="logpkg-error">{{ pkg.error }}</span>
-                  <el-button v-if="pkg.status === 'ready' || pkg.status === 'failed'" size="small" type="danger" text @click="deleteLogPackage(pkg.id)">{{ t('common.delete') }}</el-button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Markdown -->
-        <div v-else-if="mod.type === 'markdown'" class="module-markdown" :style="{ textAlign: mod.style && mod.style.align || 'left' }">
-          <div v-if="mod.title" class="card-header"><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div class="md-render" v-html="renderMd(t(mod.data && mod.data.markdown || ''))"></div>
-        </div>
-        <!-- Custom HTML -->
-        <div v-else-if="mod.type === 'custom_html'" v-html="(mod.data && mod.data.html) || ''"></div>
-        <!-- Plan List (qist table style) -->
-        <div v-else-if="mod.type === 'plan_list'">
-          <!-- Top Notice -->
-          <div v-if="mod.data && mod.data.notice_text" class="plan-notice">
-            <div class="plan-notice-content">{{ t(mod.data.notice_text) }}</div>
-            <div v-if="mod.data.notice_subtext" class="plan-notice-sub">{{ t(mod.data.notice_subtext) }}</div>
-          </div>
-          
-          <div v-if="plansLoading" class="empty-state"><el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon><p class="empty-text">{{ t('common.loading') }}</p></div>
-          <div v-else-if="plans.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('plan.empty') }}</p></div>
-          <div v-else class="plan-table-wrap">
-            <table class="plan-table">
-              <thead>
-                <tr>
-                  <th class="plan-col-service">{{ t('plan.col_service') }}</th>
-                  <th class="plan-col-desc">{{ t('plan.col_desc') }}</th>
-                  <th class="plan-col-price">{{ t('plan.col_price') }}</th>
-                  <th class="plan-col-action">{{ t('common.action') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template v-for="plan in plans" :key="plan.id">
-                  <tr v-for="(v, vIdx) in (plan.variants || [])" :key="v.id" class="plan-row" :class="{ 'plan-current': client.plan_id > 0 && client.plan_id === plan.id }">
-                    <!-- Service Column -->
-                    <td v-if="vIdx === 0" :rowspan="plan.variants.length" class="plan-cell plan-cell-service">
-                      <div class="plan-service-name">{{ plan.name }}</div>
-                      <div class="plan-service-meta">
-                        <div v-if="v.quota_bytes">{{ t('plan.included_traffic') }}: {{ formatBytes(v.quota_bytes) }}/{{ t('plan.per_month') }}</div>
-                        <div v-if="v.speed_limit">{{ t('plan.max_bandwidth') }}: {{ v.speed_limit }}M</div>
-                        <div v-if="v.duration_days">{{ t('plan.duration') }}: {{ v.duration_days }}{{ t('plan.days_unit') }}</div>
-                      </div>
-                    </td>
-                    <!-- Description Column -->
-                    <td class="plan-cell plan-cell-desc">
-                      <div class="plan-desc-text">{{ plan.description || t('plan.default_desc') }}</div>
-                    </td>
-                    <!-- Price Column -->
-                    <td class="plan-cell plan-cell-price">
-                      <span class="plan-price-amount">{{ (v.currency || 'CNY') === 'CNY' ? '¥' : (v.currency === 'USD' ? '$' : v.currency) }}{{ formatMoney(v.price) }}</span>
-                    </td>
-                    <!-- Action Column -->
-                    <td class="plan-cell plan-cell-action">
-                      <el-button 
-                        type="primary" 
-                        size="small" 
-                        @click="purchaseVariant(v.id, plan, mod.data)"
-                        :disabled="orderBusy"
-                      >
-                        <span v-if="client.plan_id > 0 && client.plan_id === plan.id">{{ t((mod.data && mod.data.renew_text) || 'common.buy') }}</span>
-                        <span v-else>{{ t((mod.data && mod.data.buy_text) || 'common.buy') }}</span>
-                      </el-button>
-                      <div v-if="client.plan_id > 0 && client.plan_id === plan.id" class="plan-current-badge">{{ t('plan.current_plan') }}</div>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <!-- Order Create -->
-        <div v-else-if="mod.type === 'order_create'">
-          <div class="card-header"><el-icon class="card-icon" size="20"><ShoppingCart /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-          <el-form label-position="top" size="small">
-            <el-form-item :label="t('plan.title')">
-              <el-select v-model="orderForm.variant_id" :placeholder="t('plan.select_placeholder')" style="width: 100%">
-                <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('order.type')">
-              <el-radio-group v-model="orderForm.order_type">
-                <el-radio value="new">{{ t('order.type_new') }}</el-radio>
-                <el-radio value="renew">{{ t('common.renew') }}</el-radio>
-                <el-radio value="upgrade">{{ t('common.upgrade') }}</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item :label="t('plan.promo_code')">
-              <el-input v-model="orderForm.promotion_code" :placeholder="t('plan.promo_placeholder')" />
-            </el-form-item>
-            <el-form-item :label="t('plan.select_payment')">
-              <el-radio-group v-model="orderForm.pay_method">
-                <el-radio value="balance">{{ t('plan.balance_pay') }}</el-radio>
-                <el-radio value="gift_card">{{ t('plan.card_pay') }}</el-radio>
-                <el-radio v-if="chargeSites.length > 0" value="charge_site">{{ t('plan.charge_pay') }}</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="orderForm.pay_method === 'gift_card'" :label="t('plan.card_code')">
-              <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" />
-            </el-form-item>
-            <el-form-item v-if="orderForm.pay_method === 'charge_site' && chargeSites.length > 0" :label="t('charge.site_label')">
-              <el-select v-model="orderForm.charge_site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
-                <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
-              </el-select>
-            </el-form-item>
-            <el-button type="primary" size="small" @click="submitOrder" :loading="orderBusy">{{ t('order.create') }}</el-button>
-          </el-form>
-        </div>
-        <!-- Charge Panel -->
-        <div v-else-if="mod.type === 'charge_panel'">
-          <div class="card-header"><span class="card-icon">💳</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-          <div class="charge-section">
-            <h4 class="charge-subtitle">{{ t('plan.charge_pay') }}</h4>
-            <el-form label-position="top" size="small">
-              <el-form-item :label="t('charge.site_label')">
-                <el-select v-model="chargeForm.site_id" :placeholder="t('plan.select_channel_placeholder')" style="width: 100%">
-                  <el-option v-for="s in chargeSites" :key="s.id" :label="s.name" :value="s.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item :label="t('charge.amount_yuan')">
-                <el-input-number v-model="chargeForm.amount_yuan" :min="1" :step="10" style="width: 100%" />
-              </el-form-item>
-              <el-button type="primary" size="small" @click="submitCharge" :loading="chargeBusy">{{ t('charge.submit_now') }}</el-button>
-            </el-form>
-          </div>
-          <div class="charge-section">
-            <h4 class="charge-subtitle">{{ t('charge.card_redeem') }}</h4>
-            <div class="charge-card-row">
-              <el-input v-model="cardCode" :placeholder="(mod.data && mod.data.card_placeholder) || t('charge.card_code_placeholder')" size="small" />
-              <el-button type="success" size="small" @click="redeemCard" :loading="redeemBusy">{{ (mod.data && mod.data.card_btn_text) || t('charge.card_redeem_btn') }}</el-button>
-            </div>
-          </div>
-          <div v-if="mod.data && mod.data.show_orders !== false && chargeOrders.length > 0" class="charge-section">
-            <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
-            <div class="logpkg-list">
-              <div class="logpkg-item" v-for="co in chargeOrders.slice(0, (mod.data && mod.data.orders_limit) || 5)" :key="co.id">
-                <div class="logpkg-info">
-                  <span class="logpkg-id">{{ co.trade_no }}</span>
-                  <span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span>
-                  <span class="logpkg-time">{{ formatMoney(co.amount) }} {{ co.currency }}</span>
-                </div>
-                <div class="logpkg-actions">
-                  <span class="logpkg-time">{{ formatDate(co.created_at) }}</span>
-                  <a v-if="co.payment_url && co.status === 'pending'" :href="co.payment_url" target="_blank" class="card-action">{{ t('charge.go_pay') }}</a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Balance Display -->
-        <div v-else-if="mod.type === 'balance_display'">
-          <div class="card-header"><el-icon class="card-icon" size="20"><Money /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div class="balance-hero">
-            <span class="balance-amount">{{ formatMoney(balance.balance) }}</span>
-            <span v-if="balance.frozen > 0" class="balance-frozen">{{ t('balance.frozen') }}: {{ formatMoney(balance.frozen) }}</span>
-          </div>
-          <div class="card-actions">
-            <el-button type="primary" size="small" @click="activeTab = 'store'; scrollToModule('mod-charge')">{{ (mod.data && mod.data.charge_btn_text) || t('balance.charge_btn') }}</el-button>
-          </div>
-          <div v-if="mod.data && mod.data.show_transactions !== false && balanceTxns.length > 0" style="margin-top: 16px">
-            <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.transactions') }}</span></div>
-            <div class="logpkg-list">
-              <div class="logpkg-item" v-for="tx in balanceTxns.slice(0, (mod.data && mod.data.tx_limit) || 10)" :key="tx.id">
-                <div class="logpkg-info">
-                  <span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</span>
-                  <span class="logpkg-time">{{ tx.remark || tx.type }}</span>
-                </div>
-                <div class="logpkg-actions">
-                  <span class="logpkg-time">{{ formatDate(tx.created_at) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Order List -->
-        <div v-else-if="mod.type === 'order_list'">
-          <div class="billing-notice">
-            <span class="billing-notice-text">{{ t((mod.data && mod.data.notice_text) || 'order.title') }}</span>
-            <span v-if="mod.data.notice_highlight" class="billing-notice-highlight">{{ t(mod.data.notice_highlight) }}</span>
-          </div>
-          <div class="billing-notice-sub">
-            {{ t((mod.data && mod.data.notice_subtext) || 'balance.tx_limit') }}
-          </div>
-          <div v-if="myOrdersLoading" class="empty-state">
-            <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
-            <p class="empty-text">{{ t('common.loading') }}</p>
-          </div>
-          <div v-else-if="myOrders.length === 0" class="empty-state">
-            <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
-            <p class="empty-text">{{ t('order.empty') }}</p>
-          </div>
-          <div v-else class="billing-table-wrap">
-                <table class="billing-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>{{ t('order.id') }}</th>
-                      <th>{{ t('plan.col_service') }}</th>
-                      <th>{{ t('common.amount') }}</th>
-                      <th>{{ t('order.date') }}</th>
-                      <th>{{ t('account.expire') }}</th>
-                      <th>{{ t('common.status') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(order, idx) in myOrders.slice(0, (mod.data && mod.data.limit) || 20)" :key="order.id">
-                      <td class="billing-col-index">{{ idx + 1 }}</td>
-                      <td class="billing-col-id">#{{ order.id }}</td>
-                      <td class="billing-col-service">{{ getOrderServiceName(order) }}</td>
-                      <td class="billing-col-amount">{{ formatMoney(order.paid_amount || order.original_amount) }}</td>
-                      <td class="billing-col-date">{{ formatDate(order.created_at) }}</td>
-                      <td class="billing-col-expire">{{ order.effective_to ? formatDate(order.effective_to) : '-' }}</td>
-                      <td class="billing-col-status"><span :class="'badge badge-' + orderStatusBadge(order.status)">{{ orderStatusText(order.status) }}</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <!-- Charge Records -->
-              <div v-if="chargeOrders.length > 0" style="margin-top: 20px">
-                <div class="card-header"><el-icon class="card-icon" size="20"><Document /></el-icon><span class="card-title">{{ t('charge.records') }}</span></div>
-                <div class="billing-table-wrap">
-                  <table class="billing-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('order.trade_no') }}</th>
-                        <th>{{ t('order.source') }}</th>
-                        <th>{{ t('common.amount') }}</th>
-                        <th>{{ t('common.time') }}</th>
-                        <th>{{ t('common.status') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(co, idx) in chargeOrders.slice(0, 10)" :key="co.id">
-                        <td class="billing-col-index">{{ idx + 1 }}</td>
-                        <td class="billing-col-id">{{ co.trade_no }}</td>
-                        <td>{{ co.source === 'card' ? t('charge.card_title') : (co.source === 'site' ? t('plan.charge_pay') : co.source) }}</td>
-                        <td class="billing-col-amount">{{ formatMoney(co.amount) }} {{ co.currency }}</td>
-                        <td class="billing-col-date">{{ formatDate(co.created_at) }}</td>
-                        <td class="billing-col-status"><span :class="'badge badge-' + co.status">{{ chargeStatusText(co.status) }}</span></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <!-- Transaction Flow -->
-              <div v-if="balanceTxns.length > 0" style="margin-top: 20px">
-                <div class="card-header"><span class="card-icon">📄</span><span class="card-title">{{ t('balance.balance_change') }}</span></div>
-                <div class="billing-table-wrap">
-                  <table class="billing-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{{ t('common.type') }}</th>
-                        <th>{{ t('common.amount') }}</th>
-                        <th>{{ t('balance.balance_after') }}</th>
-                        <th>{{ t('common.remark') }}</th>
-                        <th>{{ t('common.time') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(tx, idx) in balanceTxns.slice(0, 10)" :key="tx.id">
-                        <td class="billing-col-index">{{ idx + 1 }}</td>
-                        <td><span :class="'badge badge-' + (tx.amount >= 0 ? 'active' : 'expired')">{{ tx.type === 'charge' ? t('balance.charge_btn') : (tx.type === 'consume' ? t('balance.type_consume') : (tx.type === 'refund' ? t('order.refund') : tx.type)) }}</span></td>
-                        <td class="billing-col-amount" :style="{ color: tx.amount >= 0 ? '#67c23a' : '#f56c6c' }">{{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}</td>
-                        <td class="billing-col-amount">{{ formatMoney(tx.balance_after) }}</td>
-                        <td>{{ tx.remark || '-' }}</td>
-                        <td class="billing-col-date">{{ formatDate(tx.created_at) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-        </div>
-        <!-- Node List (Mobile) -->
-        <div v-else-if="mod.type === 'node_list'" class="node-list-module">
-          <div v-if="mod.data && mod.data.info_text" class="node-info-card">
-            <div class="node-info-title">{{ t(mod.data.info_title || 'node.info_title') }}</div>
-            <div class="node-info-content">{{ t(mod.data.info_text) }}</div>
-          </div>
-          <div v-if="plansLoading" class="empty-state">
-            <el-icon class="empty-icon" size="48" class="is-loading"><Loading /></el-icon>
-            <p class="empty-text">{{ t('common.loading') }}</p>
-          </div>
-          <div v-else-if="allPlanNodes.length === 0" class="empty-state">
-            <el-icon class="empty-icon" size="48"><Inbox /></el-icon>
-            <p class="empty-text">{{ t('node.empty') }}</p>
-          </div>
-          <div v-else>
-            <div v-for="planGroup in allPlanNodes" :key="planGroup.plan_id" class="plan-node-group">
-              <div class="plan-node-header">
-                <span class="plan-node-name">{{ planGroup.plan_name }}</span>
-                <span v-if="planGroup.active" class="badge badge-active">{{ t('account.plan') }}</span>
-                <span v-else class="badge badge-none">{{ t('node.not_purchased') }}</span>
-              </div>
-              <div class="node-grid" :style="{ gridTemplateColumns: 'repeat(' + ((mod.data && mod.data.columns) || 2) + ', 1fr)' }">
-                <div v-for="node in planGroup.nodes" :key="node.id" class="node-card" :class="{ disabled: !planGroup.active }">
-                  <div class="node-name">{{ node.name }}</div>
-                  <div class="node-tags">
-                    <span v-if="node.protocol" class="node-tag tag-protocol">{{ node.protocol }}</span>
-                    <span v-if="node.transport" class="node-tag tag-transport">{{ node.transport }}</span>
-                  </div>
-                  <div v-if="planGroup.active && node.link" class="node-actions">
-                    <el-button size="small" text @click="showNodeDetail(node)">{{ t('common.view_detail') }}</el-button>
-                    <el-button size="small" text @click="showNodeQR(node)">{{ t('sub.qr_code') }}</el-button>
-                  </div>
-                  <div v-else class="node-locked">
-                    <span class="lock-hint">🔒 {{ t('node.need_plan') }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Referral -->
-        <div v-else-if="mod.type === 'referral'">
-          <!-- Referral Link -->
-          <div class="referral-header">
-            <div class="referral-title"><el-icon size="20" style="margin-right: 8px;"><Gift /></el-icon>{{ t('referral.my_link') }}</div>
-            <div class="referral-meta">
-              <span class="referral-rate">{{ t('referral.commission_rate') }}: {{ (referralStats && referralStats.commission_rate) ? referralStats.commission_rate + '%' : ((mod.data && mod.data.default_commission_rate) || '15') + '%' }}</span>
-              <span class="referral-divider">|</span>
-              <span class="referral-mode">{{ t('referral.commission_mode') }}: {{ (referralStats && referralStats.commission_mode === 'recurring') ? t('referral.mode_recurring') : ((mod.data && mod.data.default_commission_mode === 'recu rring') ? t('referral.mode_recurring') : t('referral.mode_normal')) }}</span>
-            </div>
-          </div>
-          <div class="referral-link-wrap" v-if="referralCode">
-            <div class="referral-link">{{ referralInviteUrl }}</div>
-            <el-button type="primary" size="small" @click="copyText(referralInviteUrl)" class="referral-copy-btn">
-              <el-icon><DocumentCopy /></el-icon> {{ t('common.copy') }}
-            </el-button>
-          </div>
-          
-<!-- Invite Code -->
-<div class="referral-code-section" v-if="referralCode">
-<div class="referral-code-row">
-<span class="referral-code-label">{{ t('referral.invite_code') }}</span>
-<span class="referral-code-value">{{ referralCode.code }}</span>
-<el-tag size="small" type="success" effect="dark" class="referral-status">{{ t('referral.code_available') }}</el-tag>
-</div>
-</div>
-
-          <!-- Invite Records -->
-          <div class="referral-section" v-if="referralRecords.length > 0">
-            <div class="section-title">{{ t('referral.invite_records') }}</div>
-            <div class="referral-table-wrap">
-              <table class="referral-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>{{ t('account.email') }}</th>
-                    <th>{{ t('account.register_time') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(r, idx) in referralRecords.slice(0, (mod.data && mod.data.records_limit) || 10)" :key="r.id">
-                    <td>{{ idx + 1 }}</td>
-                    <td>{{ r.referee_email }}</td>
-                    <td>{{ formatDateTime(r.registered_at) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Commission Records -->
-          <div class="referral-section">
-            <div class="section-header">
-              <span class="section-title">{{ t('referral.records') }}</span>
-              <span class="section-subtitle">{{ t('referral.withdraw_hint') }}</span>
-              <el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">{{ t('referral.withdraw') }}</el-button>
-            </div>
-            <div class="referral-table-wrap">
-              <table class="referral-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>{{ t('referral.commission_time') }}</th>
-                    <th>{{ t('referral.consumer') }}</th>
-                    <th>{{ t('referral.consume_amount') }}</th>
-                    <th>{{ t('referral.commission_amount') }}</th>
-                    <th>{{ t('common.status') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(r, idx) in commissionRecords" :key="r.id">
-                    <td>{{ idx + 1 }}</td>
-                    <td>{{ formatDateTime(r.created_at) }}</td>
-                    <td>{{ r.consumer_email }}</td>
-                    <td>¥{{ r.amount }}</td>
-                    <td>¥{{ r.commission }}</td>
-                    <td>
-                      <el-tag size="small" :type="r.status === 'available' ? 'success' : r.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                        {{ r.status === 'available' ? t('referral.status_available') : r.status === 'pending' ? t('referral.status_pending') : t('referral.status_withdrawn') }}
-                      </el-tag>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="referral-summary" v-if="referralStats">
-              {{ t('referral.total_commission') }} {{ formatMoney(referralStats.total_commission) }}（{{ referralStats.total_paid }}{{ t('referral.times' ) }}），{{ t('referral.withdraw_threshold' ) }}
-            </div>
-          </div>
-
-          <!-- Withdrawal Records -->
-          <div class="referral-section" v-if="withdrawRecords && withdrawRecords.length > 0">
-            <div class="section-title">{{ t('referral.withdraw_records') }}</div>
-            <div class="referral-table-wrap">
-              <table class="referral-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>{{ t('referral.withdraw_date') }}</th>
-                    <th>{{ t('referral.withdraw_amount') }}</th>
-                    <th>{{ t('common.status') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(w, idx) in withdrawRecords" :key="w.id">
-                    <td>{{ idx + 1 }}</td>
-                    <td>{{ formatDateTime(w.created_at) }}</td>
-                    <td>{{ w.amount }}</td>
-                    <td>
-                      <el-tag size="small" :type="w.status === 'completed' ? 'success' : w.status === 'pending' ? 'warning' : 'info'" effect="plain">
-                        {{ w.status === 'completed' ? t('referral.status_paid') : w.status === 'pending' ? t('common.processing') : t('order.status_cancelled') }}
-                      </el-tag>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        <!-- Ticket List -->
-        <div v-else-if="mod.type === 'ticket_list'">
-          <div class="card-header"><el-icon class="card-icon" size="20"><Ticket /></el-icon><span class="card-title">{{ t(mod.title) }}</span><span class="card-action" @click="showTicketDialog = true">{{ t((mod.data && mod.data.new_btn_text) || 'ticket.new') }}</span></div>
-          <div v-if="tickets.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('ticket.empty') }}</p></div>
-<div v-else class="logpkg-list">
-<div class="logpkg-item" v-for="tk in tickets" :key="tk.id" @click="openTicket(tk.id)" style="cursor: pointer">
-<div class="logpkg-info">
-<span class="logpkg-id">#{{ tk.id }}</span>
-<span class="logpkg-time">{{ tk.subject }}</span>
-<span :class="'badge badge-' + ticketStatusBadge(tk.status)">{{ ticketStatusText(tk.status) }}</span>
-<span v-if="tk.status === 'replied'" class="ticket-new-badge">{{ t('ticket.new_reply') }}</span>
-</div>
-<div class="logpkg-actions">
-<span class="logpkg-time">{{ formatDate(tk.updated_at) }}</span>
-</div>
-</div>
-</div>
-        </div>
-        <!-- Tutorial Cards (Mobile) -->
-        <div v-else-if="mod.type === 'tutorial_cards'">
-          <div class="card-header"><span class="card-icon">📥</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <!-- Platform Tabs -->
-          <div class="tutorial-platform-tabs">
-            <div
-              v-for="card in (mod.data && mod.data.cards) || []"
-              :key="card.id"
-              class="tutorial-tab"
-              :class="{ active: selectedPlatform === card.id }"
-              @click="selectPlatform(card.id)"
-            >
-              {{ card.name }}
-            </div>
-          </div>
-          <!-- Platform Grid -->
-          <div class="tutorial-grid">
-            <div
-              v-for="card in (mod.data && mod.data.cards) || []"
-              :key="card.id"
-              class="tutorial-card"
-              :class="{ active: selectedPlatform === card.id }"
-              :style="{ background: card.bg || card.color }"
-              @click="selectPlatform(card.id)"
-            >
-              <div class="tutorial-card-icon">{{ getTutorialIcon(card.icon) }}</div>
-              <div class="tutorial-card-name">{{ card.name }}</div>
-              <div class="tutorial-card-desc">{{ t(card.desc) }}</div>
-            </div>
-          </div>
-          <!-- Related Articles -->
-          <div v-if="selectedPlatform" class="tutorial-articles">
-            <div class="tutorial-articles-header">
-              <span class="tutorial-platform-name">{{ getSelectedPlatformName() }}</span>
-              <span class="tutorial-articles-count">{{ getPlatformArticles(selectedPlatform).length }} {{ selectedPlatform === 'faq' ? t('article.faq_count') : t('tutorial.platform_articles') }}</span>
-            </div>
-            <div v-if="getPlatformArticles(selectedPlatform).length === 0" class="empty-state" style="padding: 24px;">
-              <span class="empty-icon">📝</span>
-              <p class="empty-text">{{ selectedPlatform === 'faq' ? t('tutorial.no_faq') : t('tutorial.no_articles') }}</p>
-            </div>
-            <div v-else class="article-list tutorial-article-list">
-              <div
-                class="article-item"
-                v-for="article in getPlatformArticles(selectedPlatform)"
-                :key="article.id"
-                @click="openArticle(article.slug)"
-              >
-                <span class="article-cat-badge">{{ articleCatText(article.category) }}</span>
-                <div class="article-info">
-                  <span class="article-title">{{ article.title }}</span>
-                  <span class="logpkg-time">{{ formatDate(article.published_at || article.updated_at) }}</span>
-                </div>
-                <span class="card-action">{{ t('article.read') }}</span>
-              </div>
-            </div>
-          </div>
-          <div v-else class="tutorial-select-hint">
-            <span class="empty-icon">👆</span>
-            <p class="empty-text">{{ t('tutorial.select_platform') }}</p>
-          </div>
-        </div>
-        <!-- Article List -->
-        <div v-else-if="mod.type === 'article_list'">
-          <div class="card-header"><el-icon class="card-icon" size="20"><Reading /></el-icon><span class="card-title">{{ t(mod.title) }}</span></div>
-          <div v-if="mod.data && mod.data.show_category_filter" class="article-filter">
-            <el-radio-group v-model="articleCategory" size="small" @change="fetchArticles">
-              <el-radio-button value="">{{ t('common.all') }}</el-radio-button>
-              <el-radio-button value="tutorial">{{ t('article.tutorial') }}</el-radio-button>
-              <el-radio-button value="faq">FAQ</el-radio-button>
-              <el-radio-button value="notice">{{ t('article.notice') }}</el-radio-button>
-            </el-radio-group>
-          </div>
-          <div v-if="articles.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('article.empty') }}</p></div>
-          <div v-else class="article-list">
-            <div class="article-item" v-for="a in articles" :key="a.id" @click="openArticle(a.slug)">
-              <span class="article-cat-badge">{{ articleCatText(a.category) }}</span>
-              <div class="article-info">
-                <span class="article-title">{{ a.title }}</span>
-                <span class="logpkg-time">{{ formatDate(a.published_at || a.updated_at) }}</span>
-              </div>
-              <span class="card-action">{{ t('article.read') }}</span>
-            </div>
-          </div>
-        </div>
-        <!-- Shared Accounts -->
-        <div v-else-if="mod.type === 'shared_accounts'">
-          <div class="card-header"><span class="card-icon">🔑</span><span class="card-title">{{ t(mod.title) }}</span></div>
-          <p v-if="mod.data && mod.data.description" class="card-desc">{{ t(mod.data.description) }}</p>
-          <!-- No Plan Access -->
-          <div v-if="!client.plan_id" class="empty-state">
-            <span class="empty-icon">🔒</span>
-            <p class="empty-text">{{ t('shared.need_plan') }}</p>
-            <el-button type="primary" size="small" @click="activeTab = 'services'" style="margin-top: 12px">{{ t('plan.go_subscribe') }}</el-button>
-          </div>
-          <!-- Has Plan, No Accounts -->
-          <div v-else-if="sharedAccounts.length === 0" class="empty-state"><el-icon class="empty-icon" size="48"><Inbox /></el-icon><p class="empty-text">{{ t('shared.empty') }}</p></div>
-          <!-- Has Plan And Accounts -->
-          <div v-else class="article-list">
-            <div class="article-item" v-for="sa in sharedAccounts" :key="sa.id">
-              <img v-if="sa.icon_url" :src="sa.icon_url" class="sa-icon" />
-              <span v-else class="article-cat-badge">{{ sharedAcctTypeText(sa.type) }}</span>
-              <div class="article-info">
-                <span class="article-title">{{ sa.name }}</span>
-                <span class="logpkg-time">{{ sharedAcctTypeText(sa.type) }}</span>
-              </div>
-              <el-button size="small" type="primary" text @click="applySharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.apply_btn_text) || 'shared.view_credential') }}</el-button>
-              <el-button size="small" text @click="repairSharedAccount(sa.id, mod.data)">{{ t((mod.data && mod.data.repair_btn_text) || 'shared.repair') }}</el-button>
-            </div>
-          </div>
-        </div>
-        <!-- Freeform -->
-        <div v-else-if="mod.type === 'freeform'" class="module-freeform">
-          <component :is="freeformComponents[mod.id]" v-if="freeformComponents[mod.id]"></component>
-          <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ {{ t('error.load_failed') }}</div>
-        </div>
+        <!-- All other modules: dynamic component from database -->
+        <component :is="moduleComponents[mod.id]" v-else-if="moduleComponents[mod.id]"></component>
+        <div v-else style="color:#f56c6c;padding:12px;font-size:13px">⚠️ {{ t('error.load_failed') }}</div>
       </div>
     </template>
     <!-- Empty state for non-overview pages -->
@@ -4783,12 +3048,6 @@ var iconPaths = {
   'Link': 'M576 128c-141 0-256 115-256 256h64c0-106 86-192 192-192s192 86 192 192-86 192-192 192h-64v64h64c141 0 256-115 256-256S717 128 576 128zm-320 320c-141 0-256 115-256 256s115 256 256 256 256-115 256-256h-64c0 106-86 192-192 192s-192-86-192-192 86-192 192-192h64v-64h-64zM384 448v64h256v-64H384z'
 }
 
-// Render icon as SVG
-var renderIcon = function(name, size) {
-  var path = iconPaths[name] || iconPaths['Link']
-  return '<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\" style=\"width:' + size + 'px;height:' + size + 'px;fill:currentColor\"><path d=\"' + path + '\"></path></svg>'
-}
-
 var app = createApp({
   setup: function() {
     var token = ref(localStorage.getItem('client_token') || '')
@@ -6168,10 +4427,13 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
     watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer) } })
 
-    // --- Freeform module runtime ---
-    var freeformComponents = ref({})
+    // --- Module component runtime (all module types) ---
+    var moduleComponents = ref({})
 
-    // Generic API call for freeform ctx (supports query params)
+    // Navigation helper for modules
+    var goToPage = function(target) { activeTab.value = target; saveActiveTab(target); fetchPageData(target) }
+
+    // Generic API call for module ctx (supports query params)
     var apiRaw = function(method, path, body, query) {
       var url = '/api/v1/client-auth' + path
       if (query) {
@@ -6210,19 +4472,43 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         })
     }
 
-    var registerFreeformModules = function() {
+    var registerModuleComponents = function() {
       var comps = {}
       portalModules.value.forEach(function(mod) {
-        if (mod.type !== 'freeform') return
+        // Skip modules without html/js code (notice modules are handled separately in template)
+        if (!mod.data || (!mod.data.html && !mod.data.js)) return
         var html = (mod.data && mod.data.html) || '<div></div>'
         var js = (mod.data && mod.data.js) || ''
         var css = (mod.data && mod.data.css) || ''
 
-        // Build module context
+        // Build module context with i18n, data, and utilities
         var modCtx = {
+          // Vue APIs
           ref: Vue.ref, computed: Vue.computed, watch: Vue.watch,
           onMounted: Vue.onMounted, onUnmounted: Vue.onUnmounted,
-          data: { client: client, token: token, isDark: isDark },
+          // Module data
+          data: mod.data,
+          mod: mod,
+          // Global reactive data
+          client: client, token: token, isDark: isDark,
+          settings: settings, endpoints: endpoints,
+          announcements: announcements,
+          plans: plans, plansLoading: plansLoading,
+          chargeSites: chargeSites, chargeOrders: chargeOrders,
+          balance: balance, balanceTxns: balanceTxns,
+          myOrders: myOrders, myOrdersLoading: myOrdersLoading,
+          allPlanNodes: allPlanNodes,
+          referralCode: referralCode, referralStats: referralStats, referralRecords: referralRecords,
+          tickets: tickets,
+          articles: articles,
+          sharedAccounts: sharedAccounts,
+          logPackages: logPackages,
+          // Computed values
+          usagePercent: usagePercent, usageColor: usageColor, ringDash: ringDash,
+          subUrl: subUrl, subStatusText: subStatusText, statusText: statusText,
+          // i18n
+          t: t, lang: lang, currentLocale: currentLocale, switchLocale: switchLocale,
+          // API
           api: {
             get: function(p, q) { return apiRaw('GET', p, null, q) },
             post: function(p, b) { return apiRaw('POST', p, b) },
@@ -6230,10 +4516,13 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
             delete: function(p) { return apiRaw('DELETE', p, null) },
             raw: function(m, p, b) { return apiRaw(m, p, b) }
           },
-          formatBytes: formatBytes,
-          formatDate: formatDate,
-          copyText: copyText,
-          elMessage: ElMessage,
+          // Utilities
+          formatBytes: formatBytes, formatDate: formatDate, formatDateTime: formatDateTime,
+          formatMoney: formatMoney, copyText: copyText, elMessage: ElMessage, renderMd: renderMd,
+          // Navigation
+          goToPage: goToPage,
+          activeTab: activeTab,
+          // Config
           config: (typeof PORTAL_CONFIG !== 'undefined') ? PORTAL_CONFIG : {},
           moduleId: mod.id,
           moduleTitle: mod.title || ''
@@ -6245,20 +4534,107 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
           var factory = new Function('ctx', js)
           setupFn = function() {
             try {
-              var result = factory(modCtx)
-              return result || {}
+              var result = factory(modCtx) || {}
+              // Auto-merge common bindings so templates can access them
+              if (!result.t) result.t = t
+              if (!result.mod) result.mod = mod
+              if (!result.client) result.client = client
+              if (!result.token) result.token = token
+              if (!result.isDark) result.isDark = isDark
+              if (!result.formatBytes) result.formatBytes = formatBytes
+              if (!result.formatDate) result.formatDate = formatDate
+              if (!result.formatDateTime) result.formatDateTime = formatDateTime
+              if (!result.formatMoney) result.formatMoney = formatMoney
+              if (!result.copyText) result.copyText = copyText
+              if (!result.usagePercent) result.usagePercent = usagePercent
+              if (!result.usageColor) result.usageColor = usageColor
+              if (!result.ringDash) result.ringDash = ringDash
+              if (!result.subUrl) result.subUrl = subUrl
+              if (!result.subStatusText) result.subStatusText = subStatusText
+              if (!result.statusText) result.statusText = statusText
+              if (!result.announcements) result.announcements = announcements
+              if (!result.settings) result.settings = settings
+              if (!result.endpoints) result.endpoints = endpoints
+              if (!result.plans) result.plans = plans
+              if (!result.chargeSites) result.chargeSites = chargeSites
+              if (!result.chargeOrders) result.chargeOrders = chargeOrders
+              if (!result.balance) result.balance = balance
+              if (!result.balanceTxns) result.balanceTxns = balanceTxns
+              if (!result.myOrders) result.myOrders = myOrders
+              if (!result.allPlanNodes) result.allPlanNodes = allPlanNodes
+              if (!result.referralCode) result.referralCode = referralCode
+              if (!result.referralStats) result.referralStats = referralStats
+              if (!result.referralRecords) result.referralRecords = referralRecords
+              if (!result.tickets) result.tickets = tickets
+              if (!result.articles) result.articles = articles
+              if (!result.sharedAccounts) result.sharedAccounts = sharedAccounts
+              if (!result.logPackages) result.logPackages = logPackages
+              if (!result.renderMd) result.renderMd = renderMd
+              if (!result.goToPage) result.goToPage = goToPage
+              if (!result.activeTab) result.activeTab = activeTab
+              if (!result.lang) result.lang = lang
+              // Extended auto-merge: expose all main-app state & functions to module templates
+              var ext = {
+                refreshing: refreshing, rotating: rotating, logoUrl: logoUrl, registrationEnabled: registrationEnabled,
+                selectedPlatform: selectedPlatform, selectPlatform: selectPlatform,
+                getSelectedPlatformName: getSelectedPlatformName, getSelectedPlatformUrl: getSelectedPlatformUrl,
+                getPlatformArticles: getPlatformArticles, getTutorialIcon: getTutorialIcon,
+                showSubUrl: showSubUrl, showQrDialog: showQrDialog, showSubQrDialog: showSubQrDialog,
+                handleSubAction: handleSubAction, rotateToken: rotateToken,
+                showNodeQRDialog: showNodeQRDialog, showNodeQR: showNodeQR,
+                showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail, showNodeDetail: showNodeDetail,
+                showTicketDialog: showTicketDialog, showTicketDetail: showTicketDetail,
+                openTicket: openTicket, newTicketForm: newTicketForm, ticketReplyContent: ticketReplyContent,
+                ticketBusy: ticketBusy, createTicket: createTicket, replyTicket: replyTicket, closeTicket: closeTicket,
+                ticketStatusText: ticketStatusText, ticketStatusBadge: ticketStatusBadge,
+                articleCategory: articleCategory, showArticleDetail: showArticleDetail, articleDetail: articleDetail,
+                fetchArticles: fetchArticles, openArticle: openArticle, articleCatText: articleCatText,
+                plansLoading: plansLoading, myOrdersLoading: myOrdersLoading,
+                purchaseVariant: purchaseVariant, submitOrder: submitOrder,
+                orderForm: orderForm, orderBusy: orderBusy,
+                showChargeDialog: showChargeDialog, submitCharge: submitCharge,
+                chargeForm: chargeForm, chargeBusy: chargeBusy, chargeStatusText: chargeStatusText,
+                cardCode: cardCode, redeemBusy: redeemBusy, redeemCard: redeemCard,
+                showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, showPromoInput: showPromoInput,
+                confirmCreateLogPackage: confirmCreateLogPackage, fetchLogPackages: fetchLogPackages,
+                downloadLogPackage: downloadLogPackage, deleteLogPackage: deleteLogPackage,
+                logPacking: logPacking, hasEntryNodes: hasEntryNodes, pkgStatusText: pkgStatusText,
+                createLogPackage: createLogPackage, checkEntryNodes: checkEntryNodes,
+                pwdForm: pwdForm, changePassword: changePassword, saveSettings: saveSettings,
+                navigateTo: navigateTo, scrollToModule: scrollToModule,
+                referralInviteUrl: referralInviteUrl, referralStatusText: referralStatusText,
+                commissionRecords: commissionRecords, withdrawRecords: withdrawRecords,
+                appleAccount: appleAccount, netflixAccount: netflixAccount,
+                applySharedAccount: applySharedAccount, repairSharedAccount: repairSharedAccount,
+                sharedAcctTypeText: sharedAcctTypeText, sharedAccountCreds: sharedAccountCreds,
+                showCredentialsDialog: showCredentialsDialog,
+                orderStatusText: orderStatusText, orderStatusBadge: orderStatusBadge, getOrderServiceName: getOrderServiceName,
+                openAnnouncementPopup: openAnnouncementPopup, announcementPopupVisible: announcementPopupVisible,
+                activeAnnouncement: activeAnnouncement,
+                toggleTheme: toggleTheme, showStreamingAccount: showStreamingAccount,
+                qrCodeUrl: qrCodeUrl, toggleQr: toggleQr,
+                onNavClick: onNavClick, fetchPageData: fetchPageData, saveActiveTab: saveActiveTab,
+                currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag,
+                switchLocale: switchLocale,
+                moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats,
+                showMoreSubQrDialog: showMoreSubQrDialog, moreSubQrDialogUrl: moreSubQrDialogUrl,
+                moreSubQrDialogVisible: moreSubQrDialogVisible, buildSubLink: buildSubLink,
+                showNoticePanel: showNoticePanel, iconPaths: iconPaths
+              }
+              for (var k in ext) { if (!(k in result)) result[k] = ext[k] }
+              return result
             } catch(e) {
-              console.error('[Freeform ' + mod.id + ']', e)
-              return { __error: e.message }
+              console.error('[Module ' + mod.id + ']', e)
+              return { __error: e.message, t: t, mod: mod }
             }
           }
         } catch(e) {
-          setupFn = function() { return { __error: e.message } }
+          setupFn = function() { return { __error: e.message, t: t, mod: mod } }
         }
 
         // Inject CSS
         if (css) {
-          var styleId = 'freeform-css-' + mod.id
+          var styleId = 'module-css-' + mod.id
           var existing = document.getElementById(styleId)
           if (existing) existing.remove()
           var styleEl = document.createElement('style')
@@ -6269,75 +4645,54 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
         comps[mod.id] = { template: html, setup: setupFn }
       })
-      freeformComponents.value = comps
+      moduleComponents.value = comps
     }
 
-    watch(portalModules, registerFreeformModules, { immediate: true })
+    watch(portalModules, registerModuleComponents, { immediate: true })
 
 return {
-          token: token, authTab: authTab, loading: loading, rotating: rotating, refreshing: refreshing,
-          activeTab: activeTab, showPasswordDialog: showPasswordDialog, showQr: showQr, showSubQrDialog: showSubQrDialog, showSubUrl: showSubUrl, selectedPlatform: selectedPlatform, logoUrl: logoUrl,
+      // Auth & shell
+      token: token, authTab: authTab, loading: loading,
+      activeTab: activeTab, showPasswordDialog: showPasswordDialog,
+      showSubQrDialog: showSubQrDialog, logoUrl: logoUrl,
       isDark: isDark, registrationEnabled: registrationEnabled,
-      loginForm: loginForm, registerForm: registerForm, pwdForm: pwdForm,
-      settings: settings, client: client, endpoints: endpoints,
-      logPackages: logPackages, logPacking: logPacking, hasEntryNodes: hasEntryNodes,
-      qrCodeUrl: qrCodeUrl,
-      handleLogin: handleLogin, handleRegister: handleRegister, rotateToken: rotateToken,
-      saveSettings: saveSettings, changePassword: changePassword, handleLogout: handleLogout,
-      copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatDateTime: formatDateTime, formatMoney: formatMoney,
-      usagePercent: usagePercent, usageColor: usageColor, ringDash: ringDash,
-      statusText: statusText, subStatusText: subStatusText, subUrl: subUrl,
-      toggleQr: toggleQr, showQrDialog: showQrDialog, handleSubAction: handleSubAction, showStreamingAccount: showStreamingAccount, toggleTheme: toggleTheme,
-      createLogPackage: createLogPackage, fetchLogPackages: fetchLogPackages, confirmCreateLogPackage: confirmCreateLogPackage, deleteLogPackage: deleteLogPackage, checkEntryNodes: checkEntryNodes,
-      downloadLogPackage: downloadLogPackage, pkgStatusText: pkgStatusText,
-      switchToLogs: switchToLogs, scrollToModule: scrollToModule,
-      portalModules: portalModules, currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick, renderMd: renderMd, fetchPageData: fetchPageData, saveActiveTab: saveActiveTab,
-      freeformComponents: freeformComponents,
-      showNodeQRDialog: showNodeQRDialog, currentNodeQR: currentNodeQR, nodeQRContainer: nodeQRContainer, showNodeQR: showNodeQR,
-      showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail, showNodeDetail: showNodeDetail,
+      loginForm: loginForm, registerForm: registerForm, client: client,
+      handleLogin: handleLogin, handleRegister: handleRegister, handleLogout: handleLogout,
+      toggleTheme: toggleTheme,
+      // Navigation & modules
+      currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
+      renderMd: renderMd, moduleComponents: moduleComponents,
+      // Shared dialogs
+      showNodeQRDialog: showNodeQRDialog, nodeQRContainer: nodeQRContainer,
+      showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail,
       announcementPopupVisible: announcementPopupVisible, activeAnnouncement: activeAnnouncement,
-      openAnnouncementPopup: openAnnouncementPopup,
-      // Commercial modules
-      plans: plans, plansLoading: plansLoading, orderForm: orderForm, orderBusy: orderBusy,
-      chargeSites: chargeSites, chargeForm: chargeForm, chargeBusy: chargeBusy, chargeOrders: chargeOrders,
-      cardCode: cardCode, redeemBusy: redeemBusy,
-      balance: balance, balanceTxns: balanceTxns,
-      myOrders: myOrders, myOrdersLoading: myOrdersLoading,
-      allPlanNodes: allPlanNodes,
-referralCode: referralCode, referralStats: referralStats, referralRecords: referralRecords,
-              commissionRecords: commissionRecords, withdrawRecords: withdrawRecords,
-              referralInviteUrl: referralInviteUrl, referralStatusText: referralStatusText,
-      tickets: tickets, showTicketDialog: showTicketDialog, showTicketDetail: showTicketDetail,
+      openAnnouncementPopup: openAnnouncementPopup, announcements: announcements,
+      // Payment dialogs
+      orderForm: orderForm, orderBusy: orderBusy,
+      chargeSites: chargeSites, chargeForm: chargeForm, chargeBusy: chargeBusy,
+      cardCode: cardCode, redeemBusy: redeemBusy, balance: balance,
+      showChargeDialog: showChargeDialog, showPaymentDialog: showPaymentDialog,
+      confirmPayment: confirmPayment, showPromoInput: showPromoInput,
+      redeemCard: redeemCard, submitCharge: submitCharge,
+      // Ticket dialogs
+      showTicketDialog: showTicketDialog, showTicketDetail: showTicketDetail,
       ticketDetail: ticketDetail, ticketReplyContent: ticketReplyContent, ticketBusy: ticketBusy,
-      newTicketForm: newTicketForm,
-      articles: articles, articleCategory: articleCategory,
-      showArticleDetail: showArticleDetail, articleDetail: articleDetail,
-      sharedAccounts: sharedAccounts, showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
-      appleAccount: appleAccount, netflixAccount: netflixAccount,
-      fetchPlans: fetchPlans, purchaseVariant: purchaseVariant, submitOrder: submitOrder,
-      showChargeDialog: showChargeDialog, // charge dialog
-      showPaymentDialog: showPaymentDialog, confirmPayment: confirmPayment, showPromoInput: showPromoInput, getPlanName: getPlanName, getPlanPrice: getPlanPrice, // v3.3: payment method dialog
-      fetchChargeSites: fetchChargeSites, submitCharge: submitCharge, redeemCard: redeemCard,
-      fetchChargeOrders: fetchChargeOrders, chargeStatusText: chargeStatusText,
-      fetchMyOrders: fetchMyOrders, orderStatusText: orderStatusText, orderStatusBadge: orderStatusBadge, getOrderServiceName: getOrderServiceName,
-      fetchBalance: fetchBalance, fetchBalanceTxns: fetchBalanceTxns, fetchReferral: fetchReferral,
-      fetchTickets: fetchTickets, openTicket: openTicket, createTicket: createTicket,
-      replyTicket: replyTicket, closeTicket: closeTicket,
+      newTicketForm: newTicketForm, createTicket: createTicket, replyTicket: replyTicket, closeTicket: closeTicket,
       ticketStatusText: ticketStatusText, ticketStatusBadge: ticketStatusBadge,
-      fetchArticles: fetchArticles, openArticle: openArticle, articleCatText: articleCatText,
-      getTutorialIcon: getTutorialIcon, openTutorial: openTutorial,
-      selectedPlatform: selectedPlatform, selectPlatform: selectPlatform,
-      getSelectedPlatformName: getSelectedPlatformName, getPlatformArticles: getPlatformArticles,
-      getSelectedPlatformUrl: getSelectedPlatformUrl, navigateTo: navigateTo,
-      announcements: announcements, fetchAnnouncements: fetchAnnouncements,
-      showNoticePanel: showNoticePanel,
-      fetchSharedAccounts: fetchSharedAccounts, applySharedAccount: applySharedAccount,
-      repairSharedAccount: repairSharedAccount, sharedAcctTypeText: sharedAcctTypeText,
-      lang: lang, t: t,
-      currentLocale: currentLocale, availableLocales: availableLocales, currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale,
-      moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats, moreSubQrKey: moreSubQrKey, moreSubQrConfig: moreSubQrConfig, moreSubQrUrl: moreSubQrUrl, moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl, buildSubLink: buildSubLink, toggleMoreSubQr: toggleMoreSubQr, showMoreSubQrDialog: showMoreSubQrDialog,
-      iconPaths: iconPaths,
-      authComponent: authComponent
+      // Article & shared account dialogs
+      showArticleDetail: showArticleDetail, articleDetail: articleDetail,
+      showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
+      sharedAcctTypeText: sharedAcctTypeText,
+      // i18n
+      t: t, currentLocale: currentLocale, availableLocales: availableLocales,
+      currentLocaleFlag: currentLocaleFlag, switchLocale: switchLocale,
+      // Subscription dialogs
+      qrCodeUrl: qrCodeUrl, moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats,
+      moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl,
+      buildSubLink: buildSubLink, showMoreSubQrDialog: showMoreSubQrDialog,
+      // Utils & icons
+      copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatMoney: formatMoney,
+      iconPaths: iconPaths, authComponent: authComponent
     }
   }
 })

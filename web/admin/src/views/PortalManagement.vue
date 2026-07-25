@@ -16,6 +16,17 @@
         </el-button-group>
         <el-button size="small" :icon="View" @click="handlePreview">预览</el-button>
         <el-button type="primary" size="small" :icon="Check" :loading="saving" @click="handleSave">保存</el-button>
+        <el-dropdown @command="handleCacheCommand" trigger="click">
+          <el-button size="small">缓存<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="status">缓存状态{{ cacheStatus.cached ? '（已缓存）' : '（未缓存）' }}</el-dropdown-item>
+              <el-dropdown-item command="rebuild" divided>重建缓存</el-dropdown-item>
+              <el-dropdown-item command="clear">清理缓存</el-dropdown-item>
+              <el-dropdown-item command="dev" divided>{{ cacheStatus.dev_mode ? '切换到生产模式' : '切换到开发模式' }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
@@ -1026,7 +1037,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
 import { ref, reactive, computed, onMounted, shallowRef, watch, defineComponent, h, compile } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument, Search, Close } from '@element-plus/icons-vue'
-import { getActivePortal, updateActivePortal, resetPortal } from '../api/portal'
+import { getActivePortal, updateActivePortal, resetPortal, getPortalCacheStatus, clearPortalCache, rebuildPortalCache, setPortalDevMode } from '../api/portal'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import CodeEditor from '../components/common/CodeEditor.vue'
@@ -1154,6 +1165,41 @@ const apiGroups = [
   "code": 0,
   "data": { "name": "Default", "site_name": "CoreFusion", "navigation": [ ... ], "modules": [ ... ] }
 }`,
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/portal/cache',
+        desc: '查看渲染缓存状态（命中/未命中次数、开发模式等）',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{
+  "code": 0,
+  "data": { "cached": true, "cache_key": "a1b2c3d4e5f6a7b8", "built_at": "2025-01-01T12:00:00Z", "hit_count": 42, "miss_count": 1, "dev_mode": false }
+}`,
+      },
+      {
+        method: 'DELETE',
+        path: '/api/v1/portal/cache',
+        desc: '清理渲染缓存，下次访问门户时重新编译',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{ "code": 0, "data": { "message": "cache cleared" } }`,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/portal/cache/rebuild',
+        desc: '立即重建渲染缓存（编译一次并缓存结果）',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: null,
+        response: `{ "code": 0, "data": { "message": "cache rebuilt", "stats": { "cached": true, "hit_count": 42, "miss_count": 2, "dev_mode": false } } }`,
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/portal/cache/dev-mode',
+        desc: '切换开发/生产模式（开发模式：每次请求都重新编译；生产模式：启用缓存）',
+        auth: 'Authorization: Bearer <admin_token>',
+        requestBody: `{ "dev_mode": true }`,
+        response: `{ "code": 0, "data": { "message": "dev mode set to dev", "dev_mode": true } }`,
       },
       {
         method: 'GET',
@@ -1373,674 +1419,10 @@ function ensureNoticeData(mod) {
   if (typeof d.popup_link_external !== 'boolean') d.popup_link_external = true
 }
 
-// Default HTML templates for each module type
-const defaultModuleHtmlMap = {
-  hero: `<!-- Hero 欢迎区 -->
-<div class="hero-wrap">
-  <div class="hero-eyebrow">{{ eyebrow }}</div>
-  <h2 class="hero-heading">{{ heading }}</h2>
-  <p class="hero-desc">{{ description }}</p>
-  <button class="hero-btn" @click="onButtonClick">{{ button_text }}</button>
-</div>`,
-  account_info: `<!-- 账户信息 -->
-<div class="account-info-wrap">
-  <div class="info-row">
-    <span class="info-label">账户状态</span>
-    <span class="info-value">{{ client.status }}</span>
-  </div>
-  <div class="info-row">
-    <span class="info-label">邮箱</span>
-    <span class="info-value">{{ client.email }}</span>
-  </div>
-  <div class="info-row">
-    <span class="info-label">套餐</span>
-    <span class="info-value">{{ client.plan_name }}</span>
-  </div>
-</div>`,
-  traffic_ring: `<!-- 流量使用 -->
-<div class="traffic-wrap">
-  <div class="traffic-ring">
-    <svg viewBox="0 0 120 120">
-      <circle cx="60" cy="60" r="52" class="ring-bg"/>
-      <circle cx="60" cy="60" r="52" class="ring-fill" :stroke-dasharray="ringDash"/>
-    </svg>
-    <div class="ring-text">
-      <span class="ring-percent">{{ usagePercent }}%</span>
-      <span class="ring-label">已使用</span>
-    </div>
-  </div>
-  <div class="traffic-bar">
-    <div class="bar-fill" :style="{ width: usagePercent + '%' }"></div>
-  </div>
-  <div class="traffic-stats">
-    <div class="stat">
-      <span class="stat-value">{{ formatBytes(client.upload_bytes) }}</span>
-      <span class="stat-label">上传</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">{{ formatBytes(client.download_bytes) }}</span>
-      <span class="stat-label">下载</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">{{ formatBytes(client.quota_bytes) }}</span>
-      <span class="stat-label">总流量</span>
-    </div>
-  </div>
-</div>`,
-  notice: `<!-- 公告提示 -->
-<div class="notice-wrap" :class="'notice-' + variant">
-  <div class="notice-title">{{ title }}</div>
-  <div class="notice-content" v-html="content"></div>
-</div>`,
-  subscription_detail: `<!-- 订阅信息 -->
-<div class="sub-wrap">
-  <div class="sub-link-box">
-    <code class="sub-link">{{ subUrl }}</code>
-    <div class="sub-actions">
-      <button @click="copySub">复制</button>
-      <button @click="showQR">二维码</button>
-    </div>
-  </div>
-  <div class="sub-status" v-if="show_status">
-    状态: <span :class="'status-' + client.sub_status">{{ client.sub_status }}</span>
-  </div>
-</div>`,
-  feature_cards: `<!-- 功能卡片 -->
-<div class="feature-wrap">
-  <div class="feature-grid">
-    <div class="feature-card" v-for="(card, idx) in cards" :key="idx">
-      <span class="card-icon">{{ card.icon }}</span>
-      <h4>{{ card.title }}</h4>
-      <p>{{ card.description }}</p>
-    </div>
-  </div>
-</div>`,
-  custom_html: `<!-- 自定义 HTML -->
-<div class="custom-html-wrap" v-html="html"></div>`,
-  markdown: `<!-- Markdown 文档 -->
-<div class="markdown-wrap">
-  <div class="md-content" v-html="renderedMarkdown"></div>
-</div>`,
-  plan_list: `<!-- 套餐列表 -->
-<div class="plan-list-wrap">
-  <div class="plan-card" v-for="plan in plans" :key="plan.id">
-    <h3 class="plan-name">{{ plan.name }}</h3>
-    <p class="plan-desc">{{ plan.description }}</p>
-    <div class="plan-price">¥{{ plan.price }}</div>
-    <button class="plan-btn" @click="buy(plan)">购买</button>
-  </div>
-</div>`,
-  order_list: `<!-- 订单列表 -->
-<div class="order-list-wrap">
-  <div class="order-item" v-for="order in orders" :key="order.id">
-    <div class="order-info">
-      <span class="order-id">#{{ order.id }}</span>
-      <span class="order-status" :class="'status-' + order.status">{{ order.status }}</span>
-    </div>
-    <div class="order-amount">¥{{ order.amount }}</div>
-  </div>
-</div>`,
-  node_list: `<!-- 节点列表 -->
-<div class="node-list-wrap">
-  <div class="node-group" v-for="group in nodeGroups" :key="group.id">
-    <h4 class="group-name">{{ group.name }}</h4>
-    <div class="node-items">
-      <div class="node-item" v-for="node in group.nodes" :key="node.id">
-        <span class="node-name">{{ node.name }}</span>
-        <span class="node-protocol">{{ node.protocol }}</span>
-      </div>
-    </div>
-  </div>
-</div>`,
-  ticket_list: `<!-- 工单列表 -->
-<div class="ticket-list-wrap">
-  <div class="ticket-item" v-for="ticket in tickets" :key="ticket.id">
-    <div class="ticket-subject">{{ ticket.subject }}</div>
-    <div class="ticket-meta">
-      <span class="ticket-status" :class="'status-' + ticket.status">{{ ticket.status }}</span>
-      <span class="ticket-time">{{ ticket.updated_at }}</span>
-    </div>
-  </div>
-</div>`,
-  article_list: `<!-- 文章列表 -->
-<div class="article-list-wrap">
-  <div class="article-item" v-for="article in articles" :key="article.id" @click="open(article)">
-    <span class="article-category">{{ article.category }}</span>
-    <h4 class="article-title">{{ article.title }}</h4>
-    <span class="article-date">{{ article.published_at }}</span>
-  </div>
-</div>`,
-  referral: `<!-- 推广返利 -->
-<div class="referral-wrap">
-  <div class="ref-link-box">
-    <span class="ref-label">我的邀请链接</span>
-    <code class="ref-link">{{ inviteUrl }}</code>
-    <button @click="copyLink">复制</button>
-  </div>
-  <div class="ref-stats">
-    <div class="stat">
-      <span class="stat-value">{{ referralStats.total_invited }}</span>
-      <span class="stat-label">已邀请</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">¥{{ referralStats.total_commission }}</span>
-      <span class="stat-label">累计佣金</span>
-    </div>
-  </div>
-</div>`,
-  balance_display: `<!-- 余额显示 -->
-<div class="balance-wrap">
-  <div class="balance-amount">
-    <span class="currency">¥</span>
-    <span class="amount">{{ balance.balance }}</span>
-  </div>
-  <div class="balance-actions">
-    <button class="btn-primary" @click="charge">充值</button>
-  </div>
-</div>`,
-  charge_panel: `<!-- 充值面板 -->
-<div class="charge-wrap">
-  <div class="charge-form">
-    <input v-model="chargeAmount" placeholder="充值金额" />
-    <button @click="submitCharge">立即充值</button>
-  </div>
-  <div class="charge-records">
-    <div class="record-item" v-for="record in chargeRecords" :key="record.id">
-      <span>¥{{ record.amount }}</span>
-      <span :class="'status-' + record.status">{{ record.status }}</span>
-    </div>
-  </div>
-</div>`,
-  security_settings: `<!-- 安全设置 -->
-<div class="security-wrap">
-  <div class="setting-section">
-    <h4>修改密码</h4>
-    <input type="password" v-model="pwdForm.old" placeholder="旧密码" />
-    <input type="password" v-model="pwdForm.new" placeholder="新密码" />
-    <button @click="changePwd">修改</button>
-  </div>
-  <div class="setting-section" v-if="show_ip_whitelist">
-    <h4>IP 白名单</h4>
-    <textarea v-model="ipWhitelist" placeholder="每行一个 IP"></textarea>
-  </div>
-</div>`,
-  log_packages: `<!-- 日志打包 -->
-<div class="log-wrap">
-  <div class="log-actions">
-    <button @click="packLog(1)">打包 1 小时</button>
-    <button @click="packLog(6)">打包 6 小时</button>
-    <button @click="packLog(24)">打包 24 小时</button>
-  </div>
-  <div class="log-list">
-    <div class="log-item" v-for="pkg in logPackages" :key="pkg.id">
-      <span>#{{ pkg.id }}</span>
-      <span :class="'status-' + pkg.status">{{ pkg.status }}</span>
-      <button v-if="pkg.status === 'ready'" @click="download(pkg)">下载</button>
-    </div>
-  </div>
-</div>`,
-  streaming_status: `<!-- 流媒体状态 -->
-<div class="streaming-wrap">
-  <div class="service-list">
-    <div class="service-item" v-for="svc in services" :key="svc.id">
-      <span class="svc-icon">{{ svc.icon }}</span>
-      <span class="svc-name">{{ svc.name }}</span>
-      <span class="svc-status" :class="'status-' + svc.status">{{ svc.status_text }}</span>
-    </div>
-  </div>
-</div>`,
-  shared_accounts: `<!-- 共享账号 -->
-<div class="shared-wrap">
-  <div class="account-list">
-    <div class="account-item" v-for="acct in sharedAccounts" :key="acct.id">
-      <span class="acct-type">{{ acct.type }}</span>
-      <span class="acct-name">{{ acct.name }}</span>
-      <button @click="viewAcct(acct)">查看</button>
-    </div>
-  </div>
-</div>`,
-  tutorial_cards: `<!-- 教程卡片 -->
-<div class="tutorial-wrap">
-  <div class="tutorial-grid">
-    <div class="tutorial-card" v-for="tut in tutorials" :key="tut.id" @click="openTut(tut)">
-      <span class="tut-icon">{{ tut.icon }}</span>
-      <h4>{{ tut.name }}</h4>
-      <p>{{ tut.desc }}</p>
-    </div>
-  </div>
-</div>`,
-  client_download: `<!-- 客户端下载 -->
-<div class="client-wrap">
-  <div class="platform-tabs">
-    <button v-for="p in platforms" :key="p.id" :class="{ active: selectedPlatform === p.id }" @click="selectPlatform(p.id)">
-      {{ p.name }}
-    </button>
-  </div>
-  <div class="download-area" v-if="selectedPlatform">
-    <a :href="downloadUrl" class="download-btn" target="_blank">下载客户端</a>
-  </div>
-</div>`,
-  subscription: `<!-- 订阅按钮 -->
-<div class="sub-btn-wrap">
-  <button class="sub-btn" @click="goSubscribe">{{ button_text }}</button>
-</div>`,
-  order_create: `<!-- 创建订单 -->
-<div class="order-create-wrap">
-  <div class="form-group">
-    <label>选择套餐</label>
-    <select v-model="selectedPlan">
-      <option v-for="plan in plans" :key="plan.id" :value="plan.id">{{ plan.name }} - ¥{{ plan.price }}</option>
-    </select>
-  </div>
-  <div class="form-group">
-    <label>优惠码</label>
-    <input v-model="promoCode" placeholder="选填" />
-  </div>
-  <button class="submit-btn" @click="createOrder">创建订单</button>
-</div>`,
-  freeform: `<!-- 自由组件 -->
-<div class="freeform-wrap">
-  <!-- 在此编写自定义 Vue 模板代码 -->
-  <h2>{{ title }}</h2>
-  <p>{{ description }}</p>
-</div>`
-}
-
-// Default JS templates for each module type
-const defaultModuleJsMap = {
-  hero: `// Hero 模块逻辑
-return {
-  onButtonClick() {
-    // 按钮点击处理
-    console.log('Hero button clicked')
-    // 可以在这里添加跳转逻辑
-    // window.location.href = '/subscription'
-  }
-}`,
-  subscription_detail: `// 订阅信息模块逻辑
-return {
-  subUrl: computed(() => ctx.data.client?.sub_url || ''),
-  
-  copySub() {
-    navigator.clipboard.writeText(this.subUrl)
-    ElMessage.success('订阅链接已复制')
-  },
-  
-  showQR() {
-    // 显示二维码弹窗
-    ctx.emit('show-qr', this.subUrl)
-  }
-}`,
-  traffic_ring: `// 流量使用模块逻辑
-return {
-  usagePercent: computed(() => {
-    const client = ctx.data.client
-    if (!client?.quota_bytes) return 0
-    return Math.round((client.used_bytes / client.quota_bytes) * 100)
-  }),
-  
-  ringDash: computed(() => {
-    const percent = this.usagePercent
-    const circumference = 2 * Math.PI * 52
-    return \`\${circumference * percent / 100} \${circumference}\`
-  }),
-  
-  formatBytes(bytes) {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-}`,
-  plan_list: `// 套餐列表模块逻辑
-return {
-  async buy(plan) {
-    try {
-      // 调用购买 API
-      const res = await fetch('/api/v1/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_id: plan.id })
-      })
-      const data = await res.json()
-      if (data.code === 0) {
-        ElMessage.success('订单创建成功')
-        // 跳转到支付页面
-        window.location.href = '/payment/' + data.data.id
-      }
-    } catch (err) {
-      ElMessage.error('购买失败: ' + err.message)
-    }
-  }
-}`,
-  referral: `// 推广返利模块逻辑
-return {
-  inviteUrl: computed(() => {
-    const code = ctx.data.client?.referral_code
-    return code ? \`\${window.location.origin}/register?ref=\${code}\` : ''
-  }),
-  
-  copyLink() {
-    navigator.clipboard.writeText(this.inviteUrl)
-    ElMessage.success('邀请链接已复制')
-  }
-}`,
-  freeform: `// 自由组件逻辑
-// 可以在这里编写任意 Vue 组合式 API 代码
-const count = ref(0)
-
-return {
-  count,
-  increment() {
-    count.value++
-  },
-  decrement() {
-    count.value--
-  }
-}`
-}
-
-// Ensure module has html/css/js data fields for code editing
-function ensureModuleCode(mod) {
-  if (!mod) return
-  if (!mod.data) mod.data = {}
-  const data = mod.data
-  
-  // Initialize html/css/js fields with default templates
-  if (!data.html) {
-    data.html = defaultModuleHtmlMap[mod.type] || ''
-  }
-  if (!data.css) {
-    data.css = defaultModuleCssMap[mod.type] || ''
-  }
-  if (!data.js) {
-    data.js = defaultModuleJsMap[mod.type] || ''
-  }
-}
-
-// Default CSS templates for each module type (mirrors portal runtime styles)
-const defaultModuleCssMap = {
-  hero: `/* Hero 欢迎区样式 */
-.module-wrap {
-  padding: 20px;
-  border-radius: 16px;
-}
-.hero-eyebrow {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--accent);
-  margin-bottom: 4px;
-}
-.hero-heading {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 4px 0;
-}
-.hero-desc {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
-}
-.hero-btn {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 13px;
-}`,
-  markdown: `/* Markdown 文档样式 */
-.module-wrap {
-  padding: 16px;
-}
-.module-markdown {
-  font-size: 14px;
-  line-height: 1.7;
-}
-.md-render h1 {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 16px 0 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-.md-render h2 {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 14px 0 6px;
-}
-.md-render p {
-  margin: 6px 0;
-}
-.md-render code {
-  background: rgba(0,0,0,0.06);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-.md-render pre {
-  background: #1e1e2e;
-  color: #cdd6f4;
-  padding: 14px;
-  border-radius: 8px;
-  overflow-x: auto;
-}
-.md-render blockquote {
-  border-left: 3px solid var(--accent);
-  padding: 4px 12px;
-  margin: 8px 0;
-  color: var(--text-secondary);
-  background: var(--accent-light);
-  border-radius: 0 6px 6px 0;
-}`,
-  rich_text: `/* 富文本样式 */
-.module-wrap {
-  padding: 16px;
-}
-.module-rich-text {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--text-primary);
-}
-.module-rich-text h2 {
-  font-size: 18px;
-  margin: 8px 0;
-}
-.module-rich-text h3 {
-  font-size: 16px;
-  margin: 8px 0;
-}
-.module-rich-text p {
-  margin: 6px 0;
-}
-.module-rich-text blockquote {
-  border-left: 3px solid var(--accent);
-  padding-left: 12px;
-  margin: 8px 0;
-  color: var(--text-secondary);
-}`,
-  notice: `/* 公告提示样式 */
-.module-wrap {
-  padding: 0;
-  border-radius: 8px;
-  overflow: hidden;
-}
-.module-notice {
-  border-left: 4px solid;
-  padding: 12px;
-  border-radius: 8px;
-}
-.notice-info {
-  border-color: var(--accent);
-  background: var(--accent-light);
-}
-.notice-success {
-  border-color: var(--success);
-  background: rgba(103,194,58,0.12);
-}
-.notice-warning {
-  border-color: var(--warning);
-  background: rgba(230,162,60,0.12);
-}
-.notice-error {
-  border-color: var(--danger);
-  background: rgba(245,108,108,0.12);
-}
-.notice-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}`,
-  feature_cards: `/* 功能卡片样式 */
-.module-wrap {
-  padding: 16px;
-}
-.feature-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 12px;
-}
-.feature-card {
-  padding: 12px;
-  background: var(--accent-light);
-  border-radius: 10px;
-  text-align: center;
-  transition: transform 0.2s;
-}
-.feature-card:hover {
-  transform: translateY(-2px);
-}
-.feature-card-icon {
-  font-size: 24px;
-  display: block;
-  margin-bottom: 4px;
-}
-.feature-card h4 {
-  font-size: 13px;
-  margin: 2px 0;
-  color: var(--text-primary);
-}
-.feature-card p {
-  font-size: 12px;
-  color: var(--text-muted);
-}`,
-  account_stats: `/* 账户数据样式 */
-.module-wrap {
-  padding: 16px;
-}
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-.stat-box {
-  text-align: center;
-  padding: 12px;
-  background: var(--accent-light);
-  border-radius: 8px;
-}
-.stat-num {
-  font-size: 18px;
-  font-weight: 700;
-  display: block;
-}
-.stat-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}`,
-  account_info: `/* 账户信息样式 */
-.module-wrap {
-  padding: 16px;
-}
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-.stat-box {
-  text-align: center;
-  padding: 12px;
-  background: var(--accent-light);
-  border-radius: 8px;
-}`,
-  traffic_ring: `/* 流量环形图样式 */
-.module-wrap {
-  padding: 16px;
-  text-align: center;
-}`,
-  subscription_detail: `/* 订阅详情样式 */
-.module-wrap {
-  padding: 16px;
-}
-.sub-link-box {
-  background: var(--accent-light);
-  padding: 10px;
-  border-radius: 8px;
-  font-family: monospace;
-  font-size: 12px;
-  word-break: break-all;
-  margin-bottom: 8px;
-}`,
-  security_settings: `/* 安全设置样式 */
-.module-wrap {
-  padding: 16px;
-}`,
-  log_packages: `/* 日志打包样式 */
-.module-wrap {
-  padding: 16px;
-}
-.log-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}`,
-  subscription: `/* 订阅入口样式 */
-.module-wrap {
-  padding: 20px;
-  text-align: center;
-}
-.sub-desc {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 8px 0;
-}
-.sub-btn {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-}`,
-  custom_html: `/* 自定义 HTML 样式 */
-.module-wrap {
-  padding: 16px;
-}`,
-  freeform: `/* 自由组件样式 */
-.module-wrap {
-  padding: 0;
-}
-.module-freeform {
-  width: 100%;
-}`,
-}
-
-// When switching to CSS mode, auto-fill default CSS if empty
+// When switching to CSS mode, auto-fill custom_css if empty
 function onSwitchToCssMode() {
   if (!selectedModule.value) return
   ensureCustomCss(selectedModule.value)
-  if (!selectedModule.value.style.custom_css) {
-    const defaultCss = defaultModuleCssMap[selectedModule.value.type]
-    if (defaultCss) {
-      selectedModule.value.style.custom_css = defaultCss
-      hasUnsavedChanges.value = true
-    }
-  }
 }
 
 // Watch centerViewMode: when switching to 'css', auto-fill default CSS
@@ -2382,7 +1764,6 @@ function selectModule(id) {
   if (mod) {
     ensureCustomCss(mod)
     ensureNoticeData(mod)
-    ensureModuleCode(mod)
     // Force reactivity update by creating new object reference
     const idx = modules.value.findIndex(m => m.id === id)
     if (idx !== -1) {
@@ -2463,7 +1844,6 @@ function addModule(type) {
   }
   const page = currentPageTarget.value || 'overview'
   const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), page, visible: true, data: defaults[type].data, style: defaults[type].style }
-  ensureModuleCode(mod)
   modules.value.push(mod)
   selectedModuleId.value = mod.id
   hasUnsavedChanges.value = true
@@ -2632,7 +2012,6 @@ const applyData = (d) => {
         const mod = { ...m, page: m.page || 'overview' }
         ensureCustomCss(mod)
         ensureNoticeData(mod)
-        ensureModuleCode(mod)
         return mod
       })
     } catch {
@@ -2646,7 +2025,6 @@ const applyData = (d) => {
       const mod = { ...m, page: m.page || 'overview' }
       ensureCustomCss(mod)
       ensureNoticeData(mod)
-      ensureModuleCode(mod)
       return mod
     })
   }
@@ -2733,6 +2111,8 @@ const handleSave = async () => {
     const res = await updateActivePortal(data)
     // Re-apply data from response to sync structured fields
     applyData(res)
+    // Rebuild render cache so the portal page reflects changes immediately
+    try { await rebuildPortalCache() } catch { /* cache rebuild is best-effort */ }
     ElMessage.success('门户配置已保存')
     hasUnsavedChanges.value = false
   } catch (e) { ElMessage.error(e.response?.data?.message || '保存失败') }
@@ -2884,11 +2264,54 @@ const handleReset = async () => {
     await ElMessageBox.confirm('此操作将覆盖当前所有自定义配置，恢复为系统内置默认模板。此操作不可撤销！', '确认重置', { type: 'warning' })
     const res = await resetPortal()
     applyData(res)
+    try { await rebuildPortalCache() } catch { /* best-effort */ }
     ElMessage.success('已重置为默认模板')
   } catch (e) { if (e !== 'cancel') ElMessage.error('重置失败') }
 }
 
-onMounted(() => { fetchConfig() })
+// --- Render cache management ---
+const cacheStatus = ref({ cached: false, dev_mode: false, hit_count: 0, miss_count: 0 })
+
+async function fetchCacheStatus() {
+  try {
+    const data = await getPortalCacheStatus()
+    cacheStatus.value = data
+  } catch { /* ignore */ }
+}
+
+async function handleCacheCommand(cmd) {
+  if (cmd === 'status') {
+    await fetchCacheStatus()
+    const s = cacheStatus.value
+    const msg = `缓存状态：${s.cached ? '已缓存' : '未缓存'}\n` +
+      `模式：${s.dev_mode ? '开发模式（不缓存）' : '生产模式（已缓存）'}\n` +
+      `命中次数：${s.hit_count}\n` +
+      `未命中次数：${s.miss_count}` +
+      (s.built_at ? `\n缓存时间：${s.built_at}` : '')
+    ElMessageBox.alert(msg, '缓存状态', { confirmButtonText: '关闭' })
+  } else if (cmd === 'rebuild') {
+    try {
+      await rebuildPortalCache()
+      await fetchCacheStatus()
+      ElMessage.success('缓存已重建')
+    } catch { ElMessage.error('重建缓存失败') }
+  } else if (cmd === 'clear') {
+    try {
+      await clearPortalCache()
+      await fetchCacheStatus()
+      ElMessage.success('缓存已清理')
+    } catch { ElMessage.error('清理缓存失败') }
+  } else if (cmd === 'dev') {
+    const newMode = !cacheStatus.value.dev_mode
+    try {
+      await setPortalDevMode(newMode)
+      await fetchCacheStatus()
+      ElMessage.success(newMode ? '已切换到开发模式（每次请求都重新编译）' : '已切换到生产模式（启用缓存）')
+    } catch { ElMessage.error('切换模式失败') }
+  }
+}
+
+onMounted(() => { fetchConfig(); fetchCacheStatus() })
 </script>
 
 <style scoped>

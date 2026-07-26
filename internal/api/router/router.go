@@ -1134,6 +1134,7 @@ giftAdminGroup := protected.Group("/client-gifts")
 giftAdminGroup.GET("", clientExtH.AdminListGifts)
 giftAdminGroup.POST("", clientExtH.AdminCreateGift)
 giftAdminGroup.POST("/batch", clientExtH.AdminCreateGiftBatch)
+giftAdminGroup.GET("/search-clients", clientExtH.AdminSearchClients)
 }
 articleAdminGroup := protected.Group("/articles")
 {

@@ -56,6 +56,10 @@ export function batchCreateClientGifts(data) {
   return client.post('/client-gifts/batch', data)
 }
 
+export function searchGiftClients(keyword) {
+  return client.get('/client-gifts/search-clients', { params: { keyword } })
+}
+
 // ──────────── Articles (教程文章) ────────────
 
 export function listArticles(params = {}) {

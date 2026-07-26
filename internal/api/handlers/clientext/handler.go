@@ -564,7 +564,22 @@ func (h *Handler) AdminListGifts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+	// Enrich gifts with client email
+	type giftVO struct {
+		entity.ClientGift
+		ClientEmail string `json:"client_email"`
+	}
+	result := make([]giftVO, 0, len(items))
+	for _, g := range items {
+		vo := giftVO{ClientGift: g}
+		if h.clientRepo != nil {
+			if cli, err := h.clientRepo.GetByID(c.Request.Context(), g.ClientID); err == nil {
+				vo.ClientEmail = cli.Email
+			}
+		}
+		result = append(result, vo)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": result, "total": total})
 }
 
 func (h *Handler) AdminCreateGift(c *gin.Context) {
@@ -604,6 +619,27 @@ func (h *Handler) AdminCreateGiftBatch(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "gifts created"})
+}
+
+// AdminSearchClients handles GET /api/v1/client-gifts/search-clients (admin: search clients by email for gift dropdown).
+func (h *Handler) AdminSearchClients(c *gin.Context) {
+	keyword := c.Query("keyword")
+	if keyword == "" {
+		// Return recent 20 clients when no keyword
+		clients, _, err := h.clientRepo.List(c.Request.Context(), 0, "", 20, 0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": clients})
+		return
+	}
+	clients, err := h.clientRepo.SearchByEmail(c.Request.Context(), keyword, 20)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": clients})
 }
 
 // ======================== Admin: Article ========================

@@ -308,6 +308,7 @@
                 <el-option label="Android" value="android" />
                 <el-option label="Mac" value="mac" />
                 <el-option label="Linux" value="linux" />
+                <el-option label="Other" value="other" />
                 <el-option label="游戏" value="game" />
               </el-select>
             </el-form-item>

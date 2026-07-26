@@ -4,6 +4,24 @@
 
       <!-- ════════════ 邀请推广 Tab ════════════ -->
       <el-tab-pane label="邀请推广" name="referrals">
+        <!-- 返利配置 -->
+        <el-card style="margin-bottom:16px">
+          <template #header><span style="font-weight:600">返利配置</span></template>
+          <el-form label-width="140px" size="small" style="max-width:500px">
+            <el-form-item label="返利比例 (%)">
+              <el-input-number v-model="referralConfig.commission_rate" :min="0" :max="100" :step="1" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">被邀请人首次付费金额的百分比，0=关闭返利</span>
+            </el-form-item>
+            <el-form-item label="最低提现金额 (元)">
+              <el-input-number v-model="referralConfig.min_withdraw_yuan" :min="0" :step="1" :precision="2" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">佣金余额达到此金额才能申请提现</span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" size="small" @click="saveReferralConfig" :loading="referralConfigSaving">保存配置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
         <!-- 推广统计面板 -->
         <el-row :gutter="16" style="margin-bottom:16px">
           <el-col :span="4">
@@ -82,13 +100,17 @@
         <!-- 邀请记录查询 -->
         <h4 style="margin:16px 0 12px">邀请记录</h4>
         <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
-          <el-input v-model="referralRecordReferrerFilter" size="small" placeholder="推广人客户端ID" style="width:180px" clearable />
+          <el-input v-model="referralRecordReferrerFilter" size="small" placeholder="推广人ID" style="width:180px" clearable />
           <el-button size="small" @click="fetchReferralRecords">查询</el-button>
         </div>
         <el-table :data="referralRecords" v-loading="referralRecordsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="referrer_id" label="推广人ID" width="100" />
-          <el-table-column prop="referee_id" label="被邀请人ID" width="100" />
+          <el-table-column label="推广人" min-width="160">
+            <template #default="{row}">{{ row.referrer_email || row.referrer_id }}</template>
+          </el-table-column>
+          <el-table-column label="被邀请人" min-width="160">
+            <template #default="{row}">{{ row.referee_email || row.referee_id }}</template>
+          </el-table-column>
           <el-table-column label="佣金" width="100">
             <template #default="{row}">¥{{ ((row.commission_amount||0)/100).toFixed(2) }}</template>
           </el-table-column>
@@ -449,7 +471,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listReferralWithdrawals, approveReferralWithdrawal, rejectReferralWithdrawal,
-  getReferralStats, listReferralRecords,
+  getReferralStats, listReferralRecords, getReferralConfig, setReferralConfig,
   listClientGifts, createClientGift, batchCreateClientGifts, searchGiftClients,
   listArticles, getArticle, createArticle, updateArticle, deleteArticle as deleteArticleApi,
   listSharedAccounts, getSharedAccount, createSharedAccount, updateSharedAccount, deleteSharedAccount as deleteSharedAccountApi, listSharedAccountRepairLogs,
@@ -463,6 +485,26 @@ const referralStats = ref({})
 const referralRecords = ref([])
 const referralRecordsLoading = ref(false)
 const referralRecordReferrerFilter = ref('')
+const referralConfig = ref({ commission_rate: 15, min_withdraw_yuan: 10 })
+const referralConfigSaving = ref(false)
+
+async function fetchReferralConfig() {
+  try {
+    const result = await getReferralConfig()
+    referralConfig.value.commission_rate = parseInt(result?.commission_rate) || 0
+    referralConfig.value.min_withdraw_yuan = (parseInt(result?.min_withdraw_amount) || 0) / 100
+  } catch {}
+}
+async function saveReferralConfig() {
+  referralConfigSaving.value = true
+  try {
+    await setReferralConfig({
+      commission_rate: referralConfig.value.commission_rate,
+      min_withdraw_amount: Math.round(referralConfig.value.min_withdraw_yuan * 100)
+    })
+    ElMessage.success('返利配置已保存')
+  } catch {} finally { referralConfigSaving.value = false }
+}
 
 async function fetchReferralStats() {
   try { referralStats.value = (await getReferralStats()) || {} } catch {}
@@ -758,5 +800,5 @@ async function fetchOAuthBindings() {
   } finally { oauthBindingsLoading.value = false }
 }
 
-onMounted(() => { fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings() })
+onMounted(() => { fetchReferralConfig(); fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings() })
 </script>

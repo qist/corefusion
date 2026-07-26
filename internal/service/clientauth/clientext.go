@@ -59,6 +59,8 @@ type ReferralStats struct {
 	TotalCommission    int64 `json:"total_commission"`
 	AvailableCommission int64 `json:"available_commission"`
 	PendingCommission  int64 `json:"pending_commission"`
+	CommissionRate     int   `json:"commission_rate"`
+	MinWithdrawAmount  int64 `json:"min_withdraw_amount"`
 }
 
 func (s *ReferralService) GetStats(ctx context.Context, clientID int64) (*ReferralStats, error) {
@@ -66,7 +68,7 @@ func (s *ReferralService) GetStats(ctx context.Context, clientID int64) (*Referr
 	if err != nil {
 		return nil, err
 	}
-	stats := &ReferralStats{}
+	stats := &ReferralStats{CommissionRate: s.getCommissionRate(), MinWithdrawAmount: s.getMinWithdrawAmount()}
 	for _, r := range records {
 		stats.TotalInvited++
 		if r.FirstPaidAt != nil {

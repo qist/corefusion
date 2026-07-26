@@ -431,7 +431,26 @@ func (h *Handler) AdminListReferralRecords(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+	// Enrich with referrer/referee emails
+	type recordVO struct {
+		entity.ReferralRecord
+		ReferrerEmail string `json:"referrer_email"`
+		RefereeEmail  string `json:"referee_email"`
+	}
+	result := make([]recordVO, 0, len(items))
+	for _, r := range items {
+		vo := recordVO{ReferralRecord: r}
+		if h.clientRepo != nil {
+			if cli, err := h.clientRepo.GetByID(c.Request.Context(), r.ReferrerID); err == nil {
+				vo.ReferrerEmail = cli.Email
+			}
+			if cli, err := h.clientRepo.GetByID(c.Request.Context(), r.RefereeID); err == nil {
+				vo.RefereeEmail = cli.Email
+			}
+		}
+		result = append(result, vo)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": result, "total": total})
 }
 
 // AdminReferralStats handles GET /api/v1/referral-stats (admin: global referral statistics).
@@ -640,6 +659,64 @@ func (h *Handler) AdminSearchClients(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": clients})
+}
+
+// ======================== Admin: Referral Config ========================
+
+// AdminGetReferralConfig handles GET /api/v1/referral/config (admin: get referral settings).
+func (h *Handler) AdminGetReferralConfig(c *gin.Context) {
+	getSetting := func(key, defaultVal string) string {
+		var s entity.SystemSetting
+		if err := h.db.WithContext(c.Request.Context()).Where("key = ?", key).First(&s).Error; err == nil {
+			return s.Value
+		}
+		return defaultVal
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"commission_rate":     getSetting("referral.commission_rate", "15"),
+		"min_withdraw_amount": getSetting("referral.min_withdraw_amount", "1000"),
+	})
+}
+
+// AdminSetReferralConfig handles PUT /api/v1/referral/config (admin: set referral settings).
+func (h *Handler) AdminSetReferralConfig(c *gin.Context) {
+	var body struct {
+		CommissionRate     *int   `json:"commission_rate"`
+		MinWithdrawAmount  *int64 `json:"min_withdraw_amount"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	setSetting := func(key string, value string) error {
+		return h.db.WithContext(c.Request.Context()).
+			Where("key = ?", key).
+			Assign(entity.SystemSetting{Value: value}).
+			FirstOrCreate(&entity.SystemSetting{Key: key, Value: value}).Error
+	}
+	if body.CommissionRate != nil {
+		rate := *body.CommissionRate
+		if rate < 0 || rate > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "commission_rate must be 0-100"})
+			return
+		}
+		if err := setSetting("referral.commission_rate", fmt.Sprintf("%d", rate)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if body.MinWithdrawAmount != nil {
+		amt := *body.MinWithdrawAmount
+		if amt < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "min_withdraw_amount must be >= 0"})
+			return
+		}
+		if err := setSetting("referral.min_withdraw_amount", fmt.Sprintf("%d", amt)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "referral config updated"})
 }
 
 // ======================== Admin: Article ========================

@@ -24,6 +24,14 @@ export function listReferralRecords(params = {}) {
   return client.get('/referral/records', { params })
 }
 
+export function getReferralConfig() {
+  return client.get('/referral/config')
+}
+
+export function setReferralConfig(data) {
+  return client.put('/referral/config', data)
+}
+
 // ──────────── Tickets (工单) ────────────
 
 export function listTickets(params = {}) {

@@ -527,10 +527,9 @@ func (s *SharedAccountService) ListVisible(ctx context.Context, clientID int64) 
 	if err != nil {
 		return nil, err
 	}
-	clientCat := clientCategoryFromPlanID(client.PlanID)
 	var visible []entity.SharedAccount
 	for _, a := range accounts {
-		if a.MinPlanCategory == "" || isCategorySufficient(clientCat, a.MinPlanCategory) {
+		if a.MinPlanCategory == "" || a.MinPlanCategory == "0" || isPlanSufficient(client.PlanID, a.MinPlanCategory) {
 			visible = append(visible, a)
 		}
 	}
@@ -546,8 +545,7 @@ func (s *SharedAccountService) GetAccount(ctx context.Context, clientID, account
 	if err != nil {
 		return nil, err
 	}
-	clientCat := clientCategoryFromPlanID(client.PlanID)
-	if account.MinPlanCategory != "" && !isCategorySufficient(clientCat, account.MinPlanCategory) {
+	if account.MinPlanCategory != "" && account.MinPlanCategory != "0" && !isPlanSufficient(client.PlanID, account.MinPlanCategory) {
 		return nil, fmt.Errorf("insufficient plan level")
 	}
 	return account, nil
@@ -594,20 +592,19 @@ func (s *SharedAccountService) AdminRepairLogs(ctx context.Context, accountID in
 	return s.repairLogRepo.ListByAccountID(ctx, accountID, limit, offset)
 }
 
-// clientCategoryFromPlanID derives a plan category from the client's plan ID.
-func clientCategoryFromPlanID(planID int64) string {
-	if planID <= 0 {
-		return entity.PlanCategoryBasic
+// isPlanSufficient checks if the client's plan ID meets the minimum requirement.
+// minPlanIDStr is the minimum plan template ID as a string. "" or "0" means no restriction.
+// The comparison is numeric: client plan ID >= required plan template ID.
+func isPlanSufficient(clientPlanID int64, minPlanIDStr string) bool {
+	if minPlanIDStr == "" || minPlanIDStr == "0" {
+		return true
 	}
-	return entity.PlanCategoryStandard
-}
-
-func isCategorySufficient(clientCat, minCat string) bool {
-	order := map[string]int{
-		entity.PlanCategoryBasic: 1, entity.PlanCategoryStandard: 2,
-		entity.PlanCategoryPremium: 3, entity.PlanCategoryTrial: 0, entity.PlanCategoryCustom: 4,
+	var minID int64
+	fmt.Sscanf(minPlanIDStr, "%d", &minID)
+	if minID <= 0 {
+		return true
 	}
-	return order[clientCat] >= order[minCat]
+	return clientPlanID >= minID
 }
 
 // ============================================================

@@ -1149,6 +1149,7 @@ articleAdminGroup.DELETE("/:id", clientExtH.AdminDeleteArticle)
 sharedAccountAdminGroup := protected.Group("/shared-accounts")
 {
 sharedAccountAdminGroup.GET("", clientExtH.AdminListSharedAccounts)
+sharedAccountAdminGroup.GET("/:id", clientExtH.AdminGetSharedAccount)
 sharedAccountAdminGroup.POST("", clientExtH.AdminCreateSharedAccount)
 sharedAccountAdminGroup.PUT("/:id", clientExtH.AdminUpdateSharedAccount)
 sharedAccountAdminGroup.DELETE("/:id", clientExtH.AdminDeleteSharedAccount)

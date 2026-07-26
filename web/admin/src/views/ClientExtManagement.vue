@@ -347,7 +347,9 @@
               <el-tag size="small">{{ sharedAccountTypeLabel(row.type) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="min_plan_category" label="最低套餐" width="100" />
+          <el-table-column label="最低套餐" width="120">
+            <template #default="{row}">{{ planTemplateNameById(row.min_plan_category) }}</template>
+          </el-table-column>
           <el-table-column prop="repair_cooldown" label="报修冷却(分)" width="120" />
           <el-table-column label="状态" width="80">
             <template #default="{row}">
@@ -379,15 +381,15 @@
             <el-form-item label="图标URL">
               <el-input v-model="sharedAccountForm.icon_url" />
             </el-form-item>
-            <el-form-item label="凭据(加密)">
-              <el-input v-model="sharedAccountForm.credentials_enc" type="textarea" :rows="3" />
+            <el-form-item label="共享凭据">
+              <el-input v-model="sharedAccountForm.credentials_enc" type="textarea" :rows="4" placeholder="用户点击查看时显示的内容，如：&#10;账号：xxx@example.com&#10;密码：yyy123" />
+              <span style="font-size:12px;color:#909399;margin-top:4px;display:block">用户在门户点击「查看凭据」时会看到此内容，请填写账号密码等信息</span>
             </el-form-item>
-            <el-form-item label="最低套餐等级">
-              <el-select v-model="sharedAccountForm.min_plan_category" clearable style="width:100%">
-                <el-option label="基础" value="basic" />
-                <el-option label="标准" value="standard" />
-                <el-option label="高级" value="premium" />
+            <el-form-item label="最低套餐要求">
+              <el-select v-model="sharedAccountForm.min_plan_category" clearable placeholder="不限制" style="width:100%">
+                <el-option v-for="p in planTemplateOptions" :key="p.id" :label="p.name" :value="String(p.id)" />
               </el-select>
+              <span style="font-size:12px;color:#909399;margin-top:4px;display:block">选择后，用户需购买该套餐或更高等级才能查看此共享账号</span>
             </el-form-item>
             <el-form-item label="报修冷却(分钟)">
               <el-input-number v-model="sharedAccountForm.repair_cooldown" :min="0" />
@@ -478,6 +480,7 @@ import {
   listSharedAccounts, getSharedAccount, createSharedAccount, updateSharedAccount, deleteSharedAccount as deleteSharedAccountApi, listSharedAccountRepairLogs,
   listAllIPWhitelists, listOAuthBindings
 } from '../api/clientext'
+import { listPlanTemplates } from '../api/plan'
 
 const activeTab = ref('referrals')
 
@@ -725,6 +728,20 @@ const sharedAccountForm = ref({ name: '', type: 'other', icon_url: '', credentia
 const sharedAccountSubmitting = ref(false)
 const repairLogDialogVisible = ref(false)
 const repairLogs = ref([])
+const planTemplateOptions = ref([])
+
+function planTemplateNameById(idStr) {
+  if (!idStr || idStr === '0') return '不限制'
+  const p = planTemplateOptions.value.find(pt => String(pt.id) === String(idStr))
+  return p ? p.name : ('ID: ' + idStr)
+}
+
+async function fetchPlanTemplates() {
+  try {
+    const result = await listPlanTemplates()
+    planTemplateOptions.value = Array.isArray(result) ? result : (result?.items || [])
+  } catch {}
+}
 
 async function fetchSharedAccounts() {
   sharedAccountsLoading.value = true
@@ -801,5 +818,5 @@ async function fetchOAuthBindings() {
   } finally { oauthBindingsLoading.value = false }
 }
 
-onMounted(() => { fetchReferralConfig(); fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings() })
+onMounted(() => { fetchReferralConfig(); fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings(); fetchPlanTemplates() })
 </script>

@@ -462,7 +462,10 @@ func (s *GiftService) AdminCreateGiftBatch(ctx context.Context, clientIDs []int6
 	return s.giftRepo.CreateBatch(ctx, gifts)
 }
 func (s *GiftService) AdminListGifts(ctx context.Context, clientID int64, limit, offset int) ([]entity.ClientGift, int64, error) {
-	return s.giftRepo.ListByClientID(ctx, clientID, limit, offset)
+	if clientID > 0 {
+		return s.giftRepo.ListByClientID(ctx, clientID, limit, offset)
+	}
+	return s.giftRepo.ListAll(ctx, limit, offset)
 }
 
 // ============================================================

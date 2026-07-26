@@ -207,6 +207,16 @@ func (r *ClientGiftRepository) ListByClientID(ctx context.Context, clientID int6
 	return items, total, err
 }
 
+// ListAll returns all gifts with pagination (admin view, no client_id filter).
+func (r *ClientGiftRepository) ListAll(ctx context.Context, limit, offset int) ([]entity.ClientGift, int64, error) {
+	var items []entity.ClientGift
+	var total int64
+	q := r.db.WithContext(ctx).Model(&entity.ClientGift{})
+	q.Count(&total)
+	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error
+	return items, total, err
+}
+
 func (r *ClientGiftRepository) GetByID(ctx context.Context, id int64) (*entity.ClientGift, error) {
 	var item entity.ClientGift
 	err := r.db.WithContext(ctx).First(&item, id).Error

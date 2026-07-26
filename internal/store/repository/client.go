@@ -123,6 +123,20 @@ func (r *ClientRepository) GetByEmail(ctx context.Context, email string) (*entit
 	return &client, err
 }
 
+// SearchByEmail returns clients whose email matches the keyword (LIKE %keyword%).
+func (r *ClientRepository) SearchByEmail(ctx context.Context, keyword string, limit int) ([]entity.Client, error) {
+	var clients []entity.Client
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	err := r.db.WithContext(ctx).
+		Where("email LIKE ?", "%"+keyword+"%").
+		Order("id DESC").
+		Limit(limit).
+		Find(&clients).Error
+	return clients, err
+}
+
 func (r *ClientRepository) Create(ctx context.Context, client *entity.Client) error {
 	return r.db.WithContext(ctx).Create(client).Error
 }

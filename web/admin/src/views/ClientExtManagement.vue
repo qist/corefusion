@@ -134,7 +134,11 @@
         </div>
         <el-table :data="gifts" v-loading="giftsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="client_id" label="客户端ID" width="90" />
+          <el-table-column label="客户端" min-width="180">
+            <template #default="{row}">
+              <span>{{ row.client_email || ('ID: ' + row.client_id) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="类型" width="80">
             <template #default="{row}">
               <el-tag :type="row.type==='days'?'warning':'success'" size="small">{{ row.type==='days'?'天数':'流量' }}</el-tag>
@@ -149,16 +153,52 @@
               <el-tag :type="giftStatusType(row.status)" size="small">{{ giftStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" width="170" />
+          <el-table-column prop="created_at" label="发放时间" width="170" />
+          <el-table-column label="领取时间" width="170">
+            <template #default="{row}">{{ row.claimed_at || '-' }}</template>
+          </el-table-column>
         </el-table>
 
         <el-dialog v-model="giftDialogVisible" :title="giftBatchMode?'批量发放福利':'发放福利'" width="500px">
           <el-form label-width="100px" size="small">
-            <el-form-item label="客户端ID" v-if="!giftBatchMode">
-              <el-input v-model="giftForm.client_id" />
+            <el-form-item label="选择客户" v-if="!giftBatchMode">
+              <el-select
+                v-model="giftForm.client_id"
+                filterable
+                remote
+                reserve-keyword
+                placeholder="输入邮箱搜索选择客户"
+                :remote-method="searchClients"
+                :loading="clientSearchLoading"
+                style="width:100%"
+              >
+                <el-option
+                  v-for="item in clientOptions"
+                  :key="item.id"
+                  :label="item.email"
+                  :value="item.id"
+                />
+              </el-select>
             </el-form-item>
-            <el-form-item label="客户端IDs" v-if="giftBatchMode">
-              <el-input v-model="giftForm.client_ids" type="textarea" :rows="3" placeholder="逗号分隔的客户端ID" />
+            <el-form-item label="选择客户" v-if="giftBatchMode">
+              <el-select
+                v-model="giftForm.client_ids_arr"
+                filterable
+                remote
+                multiple
+                reserve-keyword
+                placeholder="输入邮箱搜索，可多选"
+                :remote-method="searchClients"
+                :loading="clientSearchLoading"
+                style="width:100%"
+              >
+                <el-option
+                  v-for="item in clientOptions"
+                  :key="item.id"
+                  :label="item.email"
+                  :value="item.id"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="类型">
               <el-select v-model="giftForm.type" style="width:100%">
@@ -167,7 +207,8 @@
               </el-select>
             </el-form-item>
             <el-form-item label="数值">
-              <el-input v-model="giftForm.value" :placeholder="giftForm.type==='days'?'天数':'字节数'" />
+              <el-input-number v-model="giftForm.value" :min="0" :precision="giftForm.type==='traffic'?1:0" :step="giftForm.type==='traffic'?0.5:1" style="width:100%" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">{{ giftForm.type==='days'?'天':'GB' }}</span>
             </el-form-item>
             <el-form-item label="来源">
               <el-select v-model="giftForm.source" style="width:100%">
@@ -409,7 +450,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listReferralWithdrawals, approveReferralWithdrawal, rejectReferralWithdrawal,
   getReferralStats, listReferralRecords,
-  listClientGifts, createClientGift, batchCreateClientGifts,
+  listClientGifts, createClientGift, batchCreateClientGifts, searchGiftClients,
   listArticles, getArticle, createArticle, updateArticle, deleteArticle as deleteArticleApi,
   listSharedAccounts, getSharedAccount, createSharedAccount, updateSharedAccount, deleteSharedAccount as deleteSharedAccountApi, listSharedAccountRepairLogs,
   listAllIPWhitelists, listOAuthBindings
@@ -476,8 +517,10 @@ const gifts = ref([])
 const giftsLoading = ref(false)
 const giftDialogVisible = ref(false)
 const giftBatchMode = ref(false)
-const giftForm = ref({ client_id: '', client_ids: '', type: 'days', value: '', source: 'admin' })
+const giftForm = ref({ client_id: '', client_ids_arr: [], type: 'days', value: 0, source: 'admin' })
 const giftSubmitting = ref(false)
+const clientOptions = ref([])
+const clientSearchLoading = ref(false)
 
 async function fetchGifts() {
   giftsLoading.value = true
@@ -487,21 +530,69 @@ async function fetchGifts() {
   } finally { giftsLoading.value = false }
 }
 
-function showCreateGift() { giftBatchMode.value = false; giftForm.value = { client_id: '', client_ids: '', type: 'days', value: '', source: 'admin' }; giftDialogVisible.value = true }
-function showBatchGift() { giftBatchMode.value = true; giftForm.value = { client_id: '', client_ids: '', type: 'days', value: '', source: 'admin' }; giftDialogVisible.value = true }
+let searchTimer = null
+async function searchClients(query) {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    clientSearchLoading.value = true
+    try {
+      const result = await searchGiftClients(query || '')
+      clientOptions.value = result?.items || []
+    } catch {
+      // keep existing options on error
+    } finally {
+      clientSearchLoading.value = false
+    }
+  }, 300)
+}
+
+async function loadClientOptions() {
+  clientSearchLoading.value = true
+  try {
+    const result = await searchGiftClients('')
+    clientOptions.value = result?.items || []
+  } catch {
+    clientOptions.value = []
+  } finally {
+    clientSearchLoading.value = false
+  }
+}
+
+function showCreateGift() { giftBatchMode.value = false; giftForm.value = { client_id: '', client_ids_arr: [], type: 'days', value: 0, source: 'admin' }; loadClientOptions(); giftDialogVisible.value = true }
+function showBatchGift() { giftBatchMode.value = true; giftForm.value = { client_id: '', client_ids_arr: [], type: 'days', value: 0, source: 'admin' }; loadClientOptions(); giftDialogVisible.value = true }
 
 async function submitGift() {
   giftSubmitting.value = true
   try {
+    // 流量类型：GB → 字节；天数类型：直接用整数
+    const rawValue = Number(giftForm.value.value)
+    if (isNaN(rawValue) || rawValue <= 0) {
+      ElMessage.warning('请输入有效的数值')
+      giftSubmitting.value = false
+      return
+    }
+    const finalValue = giftForm.value.type === 'traffic' ? Math.round(rawValue * 1073741824) : Math.round(rawValue)
     if (giftBatchMode.value) {
-      const ids = giftForm.value.client_ids.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
-      await batchCreateClientGifts({ client_ids: ids, type: giftForm.value.type, source: giftForm.value.source, value: parseInt(giftForm.value.value) })
+      const ids = giftForm.value.client_ids_arr
+      if (!ids || ids.length === 0) {
+        ElMessage.warning('请至少选择一个客户')
+        giftSubmitting.value = false
+        return
+      }
+      await batchCreateClientGifts({ client_ids: ids, type: giftForm.value.type, source: giftForm.value.source, value: finalValue })
     } else {
-      await createClientGift({ client_id: parseInt(giftForm.value.client_id), type: giftForm.value.type, value: parseInt(giftForm.value.value), source: giftForm.value.source })
+      if (!giftForm.value.client_id) {
+        ElMessage.warning('请选择客户')
+        giftSubmitting.value = false
+        return
+      }
+      await createClientGift({ client_id: parseInt(giftForm.value.client_id), type: giftForm.value.type, value: finalValue, source: giftForm.value.source })
     }
     ElMessage.success('福利已发放')
     giftDialogVisible.value = false
     fetchGifts()
+  } catch {
+    // error handled by axios interceptor
   } finally { giftSubmitting.value = false }
 }
 

@@ -82,48 +82,48 @@ const defaultModulesJSON = `[
           "id": "windows",
           "name": "Windows",
           "icon": "windows",
-          "url": "/downloads/windows"
+          "url": ""
         },
         {
           "id": "ios",
           "name": "iOS",
           "icon": "apple",
-          "url": "/downloads/ios"
+          "url": ""
         },
         {
           "id": "android",
           "name": "Android",
           "icon": "android",
-          "url": "/downloads/android"
+          "url": ""
         },
         {
           "id": "mac",
           "name": "Mac",
           "icon": "desktop",
-          "url": "/downloads/mac"
+          "url": ""
         },
         {
           "id": "linux",
           "name": "Linux",
           "icon": "linux",
-          "url": "/downloads/linux"
+          "url": ""
         },
         {
           "id": "browser",
           "name": "Browser",
           "icon": "chrome",
-          "url": "/downloads/browser"
+          "url": ""
         },
         {
           "id": "other",
           "name": "Other",
           "icon": "ellipsis",
-          "url": "/downloads/other"
+          "url": ""
         }
       ],
       "select_text": "common.other",
       "hint_text": "tutorial.select_platform",
-      "html": "<div class=\"card-header\"><span class=\"card-icon\">💻</span><span class=\"card-title\">{{ t(mod.title) }}</span></div>\n              <div class=\"client-platform-tabs\">\n                <div\n                  v-for=\"p in (mod.data && mod.data.platforms) || []\"\n                  :key=\"p.id\"\n                  class=\"platform-tab\"\n                  :class=\"{ active: selectedPlatform === p.id }\"\n                  @click=\"selectPlatform(p.id)\"\n                >\n                  <el-icon v-if=\"p.icon\"><component :is=\"p.icon\" /></el-icon>\n                  <span>{{ p.name }}</span>\n                </div>\n              </div>\n              <!-- Hint when no platform selected -->\n              <div v-if=\"!selectedPlatform\" class=\"client-download-hint\">\n                <el-icon><ArrowUp /></el-icon>\n                <span>{{ t((mod.data && mod.data.hint_text) || 'tutorial.select_platform') }}</span>\n                <el-icon><ArrowUp /></el-icon>\n              </div>\n              <!-- Content when platform selected -->\n              <div v-else class=\"client-download-content\">\n                <div class=\"client-download-platform-header\">\n                  <span class=\"client-download-platform-name\">{{ getSelectedPlatformName() }}</span>\n                  <el-button text size=\"small\" @click=\"navigateTo('tutorial')\">{{ t('tutorial.view_all') }} →</el-button>\n                </div>\n                <!-- Download link -->\n                <div v-if=\"getSelectedPlatformUrl(mod)\" class=\"client-download-link-row\">\n                  <a :href=\"getSelectedPlatformUrl(mod)\" target=\"_blank\" rel=\"noopener\" class=\"client-download-btn\">\n                    <el-icon><Download /></el-icon>\n                    <span>{{ t('common.download') }} {{ getSelectedPlatformName() }} {{ t('client.title') }}</span>\n                  </a>\n                </div>\n                <!-- Associated tutorial articles -->\n                <div v-if=\"getPlatformArticles(selectedPlatform).length > 0\" class=\"client-download-articles\">\n                  <div class=\"client-download-section-title\">📖 {{ t('tutorial.related') }}</div>\n                  <div class=\"article-list compact\">\n                    <div\n                      class=\"article-item\"\n                      v-for=\"article in getPlatformArticles(selectedPlatform)\"\n                      :key=\"article.id\"\n                      @click=\"openArticle(article.slug)\"\n                    >\n                      <span class=\"article-cat-badge\">{{ articleCatText(article.category) }}</span>\n                      <div class=\"article-info\">\n                        <span class=\"article-title\">{{ article.title }}</span>\n                        <span class=\"logpkg-time\">{{ formatDate(article.published_at || article.updated_at) }}</span>\n                      </div>\n                      <el-icon class=\"article-arrow\"><ArrowRight /></el-icon>\n                    </div>\n                  </div>\n                </div>\n                <!-- Empty state -->\n                <div v-if=\"!getSelectedPlatformUrl(mod) && getPlatformArticles(selectedPlatform).length === 0\" class=\"empty-state\" style=\"padding: 24px;\">\n                  <el-icon class=\"empty-icon\" size=\"48\"><Box /></el-icon>\n                  <p class=\"empty-text\">{{ t('tutorial.no_content') }}</p>\n                  <p class=\"empty-hint\">{{ t('tutorial.no_content_hint') }}</p>\n                </div>\n              </div>",
+      "html": "<div class=\"card-header\"><span class=\"card-icon\">💻</span><span class=\"card-title\">{{ t(mod.title) }}</span></div>\n              <div class=\"client-platform-tabs\">\n                <div\n                  v-for=\"p in (mod.data && mod.data.platforms) || []\"\n                  :key=\"p.id\"\n                  class=\"platform-tab\"\n                  :class=\"{ active: selectedPlatform === p.id }\"\n                  @click=\"selectPlatform(p.id)\"\n                >\n                  <el-icon v-if=\"p.icon\"><component :is=\"p.icon\" /></el-icon>\n                  <span>{{ p.name }}</span>\n                </div>\n              </div>\n              <!-- Hint when no platform selected -->\n              <div v-if=\"!selectedPlatform\" class=\"client-download-hint\">\n                <el-icon><ArrowUp /></el-icon>\n                <span>{{ t((mod.data && mod.data.hint_text) || 'tutorial.select_platform') }}</span>\n                <el-icon><ArrowUp /></el-icon>\n              </div>\n              <!-- Content when platform selected -->\n              <div v-else class=\"client-download-content\">\n                <div class=\"client-download-platform-header\">\n                  <span class=\"client-download-platform-name\">{{ getSelectedPlatformName() }}</span>\n                  <el-button text size=\"small\" @click=\"navigateTo('tutorial')\">{{ t('tutorial.view_all') }} →</el-button>\n                </div>\n                <!-- Tutorial articles (contains download links) -->\n                <div v-if=\"getPlatformArticles(selectedPlatform).length > 0\" class=\"client-download-articles\">\n                  <div class=\"client-download-section-title\">📖 {{ t('tutorial.related') }}</div>\n                  <div class=\"article-list compact\">\n                    <div\n                      class=\"article-item\"\n                      v-for=\"article in getPlatformArticles(selectedPlatform)\"\n                      :key=\"article.id\"\n                      @click=\"openArticle(article.slug)\"\n                    >\n                      <span class=\"article-cat-badge\">{{ articleCatText(article.category) }}</span>\n                      <div class=\"article-info\">\n                        <span class=\"article-title\">{{ article.title }}</span>\n                        <span class=\"logpkg-time\">{{ formatDate(article.published_at || article.updated_at) }}</span>\n                      </div>\n                      <el-icon class=\"article-arrow\"><ArrowRight /></el-icon>\n                    </div>\n                  </div>\n                </div>\n                <!-- Empty state -->\n                <div v-if=\"getPlatformArticles(selectedPlatform).length === 0\" class=\"empty-state\" style=\"padding: 24px;\">\n                  <el-icon class=\"empty-icon\" size=\"48\"><Box /></el-icon>\n                  <p class=\"empty-text\">{{ t('tutorial.no_content') }}</p>\n                  <p class=\"empty-hint\">{{ t('tutorial.no_content_hint') }}</p>\n                </div>\n              </div>",
       "css": "",
       "js": "return {}"
     },

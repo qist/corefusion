@@ -4320,6 +4320,12 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
           return a.category === 'faq' && a.is_published
         }).sort(function(a, b) { return (a.sort_order || 0) - (b.sort_order || 0) })
       }
+      // Special handling for Update card: show general category articles (cross-platform guides)
+      if (platformId === 'update') {
+        return articles.value.filter(function(a) {
+          return a.category === 'general' && a.is_published
+        }).sort(function(a, b) { return (a.sort_order || 0) - (b.sort_order || 0) })
+      }
       // Map platform id to article platform field
       var platformMap = {
         windows: 'windows',
@@ -4327,6 +4333,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         apple: 'ios',
         mac: 'mac',
         linux: 'linux',
+        browser: 'other',
         game: 'game',
         other: 'other'
       }

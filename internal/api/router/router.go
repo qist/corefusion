@@ -1112,6 +1112,8 @@ referralAdminGroup := protected.Group("/referral")
 {
 referralAdminGroup.GET("/stats", clientExtH.AdminReferralStats)
 referralAdminGroup.GET("/records", clientExtH.AdminListReferralRecords)
+referralAdminGroup.GET("/config", clientExtH.AdminGetReferralConfig)
+referralAdminGroup.PUT("/config", clientExtH.AdminSetReferralConfig)
 }
 ipWhitelistAdminGroup := protected.Group("/ip-whitelists")
 {

@@ -1423,6 +1423,70 @@ border-bottom: 1px solid var(--border);
   color: var(--accent);
 }
 
+/* Gift Section */
+.acct-gift-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.acct-gift-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.acct-gift-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  padding: 1px 8px;
+  border-radius: 20px;
+}
+.acct-gift-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.acct-gift-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+}
+.acct-gift-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.acct-gift-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--glass-bg);
+  padding: 2px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.acct-gift-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.acct-gift-source {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ---- Cards (portlet style) ---- */
 .card {
   border-radius: 12px;
@@ -3103,6 +3167,9 @@ var referralStats = ref(null)
 var referralRecords = ref([])
 var commissionRecords = ref([])
 var withdrawRecords = ref([])
+// --- Gifts ---
+var gifts = ref([])
+var giftClaiming = ref(false)
     var tickets = ref([])
     var showTicketDialog = ref(false)
     var showTicketDetail = ref(false)
@@ -4099,6 +4166,24 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 }).catch(function() {})
     }
 
+    // --- Gifts ---
+    var fetchGifts = function() {
+      api('GET', '/gifts').then(function(res) {
+        gifts.value = Array.isArray(res) ? res : []
+      }).catch(function() {})
+    }
+    var claimGift = function(giftId) {
+      giftClaiming.value = true
+      api('POST', '/gifts/' + giftId + '/claim').then(function(res) {
+        ElMessage.success(t('gift.claim_success'))
+        fetchGifts()
+        // Refresh client data to reflect quota/expiry changes
+        fetchMe()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { giftClaiming.value = false })
+    }
+    var giftTypeText = function(type) { return { days: t('gift.type_days'), traffic: t('gift.type_traffic') }[type] || type }
+    var giftSourceText = function(s) { return { fault_compensation: t('gift.src_fault'), monthly_bonus: t('gift.src_monthly'), promotion: t('gift.src_promo'), admin: t('gift.src_admin') }[s] || s }
+
     // --- Referral ---
     var fetchReferral = function() {
       api('GET', '/referral/code').then(function(res) { referralCode.value = res }).catch(function() {})
@@ -4403,8 +4488,9 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         if (initHasNodeList) fetchNodes()
         if (initHasPlanList || initHasCharge) fetchChargeSites()
         if (initHasCharge) fetchChargeOrders()
-        if (initHasBalance) { fetchBalance(); fetchBalanceTxns() }
-        if (initHasReferral) fetchReferral()
+      if (initHasBalance) { fetchBalance(); fetchBalanceTxns() }
+      if (initHasBalance || initMods.some(function(m) { return m.type === 'account_info' })) fetchGifts()
+      if (initHasReferral) fetchReferral()
         if (initHasTickets) fetchTickets()
         if (initHasArticles) fetchArticles()
         if (initHasSharedAccts) fetchSharedAccounts()
@@ -4502,6 +4588,8 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
           articles: articles,
           sharedAccounts: sharedAccounts,
           logPackages: logPackages,
+          gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
+          giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts,
           // Computed values
           usagePercent: usagePercent, usageColor: usageColor, ringDash: ringDash,
           subUrl: subUrl, subStatusText: subStatusText, statusText: statusText,
@@ -4618,7 +4706,9 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
                 moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats,
                 showMoreSubQrDialog: showMoreSubQrDialog, moreSubQrDialogUrl: moreSubQrDialogUrl,
                 moreSubQrDialogVisible: moreSubQrDialogVisible, buildSubLink: buildSubLink,
-                showNoticePanel: showNoticePanel, iconPaths: iconPaths
+                showNoticePanel: showNoticePanel, iconPaths: iconPaths,
+                gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
+                giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts
               }
               for (var k in ext) { if (!(k in result)) result[k] = ext[k] }
               return result
@@ -4691,7 +4781,10 @@ return {
       buildSubLink: buildSubLink, showMoreSubQrDialog: showMoreSubQrDialog,
       // Utils & icons
       copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatMoney: formatMoney,
-      iconPaths: iconPaths, authComponent: authComponent
+      iconPaths: iconPaths, authComponent: authComponent,
+      // Gifts
+      gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
+      giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts
     }
   }
 })

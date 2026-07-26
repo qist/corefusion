@@ -795,6 +795,16 @@ func (h *Handler) AdminListSharedAccounts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
 }
 
+func (h *Handler) AdminGetSharedAccount(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	acct, err := h.sharedAcctSvc.AdminGetAccount(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+		return
+	}
+	c.JSON(http.StatusOK, acct)
+}
+
 func (h *Handler) AdminCreateSharedAccount(c *gin.Context) {
 	var acct entity.SharedAccount
 	if err := c.ShouldBindJSON(&acct); err != nil {

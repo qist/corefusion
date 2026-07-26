@@ -286,6 +286,19 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <div v-if="articleDetail" class="md-render" v-html="renderMd(articleDetail.content)"></div>
     </el-dialog>
 
+    <!-- Shared Account List Dialog (multiple accounts) -->
+    <el-dialog v-model="showAccountListDialog" :title="accountListTitle" width="460px" align-center append-to-body>
+      <div class="account-pick-list">
+        <div v-for="(acct, idx) in accountListItems" :key="acct.id" class="account-pick-item" @click="pickSharedAccount(acct.id)">
+          <div class="account-pick-info">
+            <span class="account-pick-num">#{{ idx + 1 }}</span>
+            <span class="account-pick-name">{{ acct.name }}</span>
+          </div>
+          <el-icon><ArrowRight /></el-icon>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- Shared Account Credentials Dialog -->
     <el-dialog v-model="showCredentialsDialog" :title="t('shared.credential_title')" width="460px" align-center append-to-body>
       <div v-if="sharedAccountCreds" class="credential-detail">
@@ -2238,6 +2251,43 @@ border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
+/* Account pick list */
+.account-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-pick-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.account-pick-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.account-pick-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.account-pick-num {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 24px;
+}
+.account-pick-name {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
 /* ---- Subscription Actions ---- */
 .sub-actions-row {
   display: flex;
@@ -3186,6 +3236,9 @@ var giftClaiming = ref(false)
     var sharedAccounts = ref([])
 var showCredentialsDialog = ref(false)
     var sharedAccountCreds = ref(null)
+    var showAccountListDialog = ref(false)
+    var accountListItems = ref([])
+    var accountListTitle = ref('')
     var showChargeDialog = ref(false)
     var showPaymentDialog = ref(false) // v3.3: payment method dialog
 var showPromoInput = ref(false) // promo code fold
@@ -3700,11 +3753,17 @@ var formatDateTime = function(d) { if (!d) return '-'; var date = new Date(d); r
 var statusText = computed(function() { return { active: t('account.normal'), suspended: t('account.suspended'), expired: t('common.expired') }[client.value.status] || client.value.status || '-' })
 var subStatusText = computed(function() { return { active: t('account.normal'), revoked: t('sub.status_revoked'), expired: t('common.expired'), suspended: t('account.suspended') }[client.value.sub_status] || client.value.sub_status || '-' })
     // Streaming accounts from shared accounts API
+    var appleAccounts = computed(function() {
+      return sharedAccounts.value.filter(function(sa) { return sa.type === 'apple_id' && sa.enabled !== false })
+    })
+    var netflixAccounts = computed(function() {
+      return sharedAccounts.value.filter(function(sa) { return sa.type === 'netflix' && sa.enabled !== false })
+    })
     var appleAccount = computed(function() {
-      return sharedAccounts.value.find(function(sa) { return sa.type === 'apple_id' && sa.enabled !== false })
+      return appleAccounts.value[0] || null
     })
     var netflixAccount = computed(function() {
-      return sharedAccounts.value.find(function(sa) { return sa.type === 'netflix' && sa.enabled !== false })
+      return netflixAccounts.value[0] || null
     })
 
     var endpoints = ref([])
@@ -4371,12 +4430,30 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         showCredentialsDialog.value = true
       }).catch(function(e) { ElMessage.error(e.message) })
     }
+    // Show list of accounts by type, user picks one to view credentials
+    var showAccountList = function(accounts, title) {
+      if (!accounts || accounts.length === 0) return
+      if (accounts.length === 1) {
+        applySharedAccount(accounts[0].id)
+      } else {
+        accountListItems.value = accounts
+        accountListTitle.value = title
+        showAccountListDialog.value = true
+      }
+    }
+    var pickSharedAccount = function(id) {
+      showAccountListDialog.value = false
+      applySharedAccount(id)
+    }
+    // Click handler for streaming cards: show list or directly view
+    var viewAppleAccounts = function() { showAccountList(appleAccounts.value, t('shared.apple_id')) }
+    var viewNetflixAccounts = function() { showAccountList(netflixAccounts.value, t('shared.netflix')) }
     var repairSharedAccount = function(id, modData) {
       api('POST', '/shared-accounts/' + id + '/repair').then(function(res) {
         ElMessage.success(t('shared.repair_sent'))
       }).catch(function(e) { ElMessage.error(e.message) })
     }
-    var sharedAcctTypeText = function(t) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: t('common.other') }[t] || t || '-' }
+    var sharedAcctTypeText = function(type) { if (type === 'apple_id') return 'Apple ID'; if (type === 'netflix') return 'Netflix'; if (type === 'other') return t('common.other'); return type || '-' }
 
     // --- Scroll to a module by ID ---
     var scrollToModule = function(modId) {
@@ -4489,7 +4566,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         var initHasReferral = initMods.some(function(m) { return m.type === 'referral' })
         var initHasTickets = initMods.some(function(m) { return m.type === 'ticket_list' })
         var initHasArticles = initMods.some(function(m) { return m.type === 'article_list' || m.type === 'tutorial_cards' || m.type === 'client_download' })
-        var initHasSharedAccts = initMods.some(function(m) { return m.type === 'shared_accounts' })
+        var initHasSharedAccts = initMods.some(function(m) { return m.type === 'shared_accounts' || m.type === 'streaming_status' })
         var initHasOrderList = initMods.some(function(m) { return m.type === 'order_list' })
         var initHasNodeList = initMods.some(function(m) { return m.type === 'node_list' })
         if (initHasPlanList || initHasNodeList) fetchPlans()
@@ -4700,7 +4777,11 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
                 referralInviteUrl: referralInviteUrl, referralStatusText: referralStatusText,
                 commissionRecords: commissionRecords, withdrawRecords: withdrawRecords,
                 appleAccount: appleAccount, netflixAccount: netflixAccount,
+                appleAccounts: appleAccounts, netflixAccounts: netflixAccounts,
                 applySharedAccount: applySharedAccount, repairSharedAccount: repairSharedAccount,
+                viewAppleAccounts: viewAppleAccounts, viewNetflixAccounts: viewNetflixAccounts,
+                pickSharedAccount: pickSharedAccount, showAccountListDialog: showAccountListDialog,
+                accountListItems: accountListItems, accountListTitle: accountListTitle,
                 sharedAcctTypeText: sharedAcctTypeText, sharedAccountCreds: sharedAccountCreds,
                 showCredentialsDialog: showCredentialsDialog,
                 orderStatusText: orderStatusText, orderStatusBadge: orderStatusBadge, getOrderServiceName: getOrderServiceName,
@@ -4779,6 +4860,8 @@ return {
       // Article & shared account dialogs
       showArticleDetail: showArticleDetail, articleDetail: articleDetail,
       showCredentialsDialog: showCredentialsDialog, sharedAccountCreds: sharedAccountCreds,
+      showAccountListDialog: showAccountListDialog, accountListItems: accountListItems, accountListTitle: accountListTitle,
+      pickSharedAccount: pickSharedAccount,
       sharedAcctTypeText: sharedAcctTypeText,
       // i18n
       t: t, currentLocale: currentLocale, availableLocales: availableLocales,

@@ -74,6 +74,9 @@ type NodeServerManager struct {
 	// Agent updater: tracks pending Agent binary updates and verifies
 	// version on reconnect. Set via SetAgentUpdater.
 	agentUpdater *AgentUpdater
+
+	// Rate limit syncer: syncs rate limit config to Agent on reconnect
+	rateLimitSyncer RateLimitSyncer
 }
 
 // NodeSettingStore provides access to system settings for GitHub acceleration
@@ -186,6 +189,16 @@ func (m *NodeServerManager) SetMetricsCollector(mc *MetricsCollector) {
 // update task as done (or failed on version mismatch).
 func (m *NodeServerManager) SetAgentUpdater(u *AgentUpdater) {
 	m.agentUpdater = u
+}
+
+// RateLimitSyncer syncs rate limit config to Agent on reconnect.
+type RateLimitSyncer interface {
+	SyncConfigToAgent(ctx context.Context, serverID int64) error
+}
+
+// SetRateLimitSyncer sets the rate limit syncer for pushing rate limit config on Agent reconnect.
+func (m *NodeServerManager) SetRateLimitSyncer(s RateLimitSyncer) {
+	m.rateLimitSyncer = s
 }
 
 // isLocalServer checks if a server is the local panel server.
@@ -457,6 +470,29 @@ func (m *NodeServerManager) ApplyLimitsOnServer(ctx context.Context, serverID in
 	cmd := &agentpb.PanelCommand{
 		Command: &agentpb.PanelCommand_ApplyLimits{
 			ApplyLimits: req,
+		},
+	}
+	return m.SendCommand(ctx, serverID, cmd)
+}
+
+// AssociateIP pushes IP ownership information to a server's Agent.
+// For local servers, delegates to LocalAgent → ratelimit.Manager.
+// For remote servers, sends AssociateIP command via heartbeat stream.
+func (m *NodeServerManager) AssociateIP(ctx context.Context, serverID int64, req *agentpb.AssociateIPRequest) error {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.AssociateIP(ctx, req)
+	}
+	return m.AssociateIPOnServer(ctx, serverID, req)
+}
+
+// AssociateIPOnServer sends an AssociateIP command to a remote server's Agent via stream.
+func (m *NodeServerManager) AssociateIPOnServer(ctx context.Context, serverID int64, req *agentpb.AssociateIPRequest) error {
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_AssociateIp{
+			AssociateIp: req,
 		},
 	}
 	return m.SendCommand(ctx, serverID, cmd)
@@ -1267,6 +1303,12 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 		//    even if it was offline during the periodic renewal check.
 		if m.certRenewer != nil && serverID != m.localServerID {
 			m.certRenewer.RenewServerCertIfNeeded(context.Background(), serverID)
+		}
+
+		// 4. Push rate limit config if rate limiting is enabled for this server.
+		//    On reconnect, the Agent needs to re-initialize its RateLimitManager.
+		if m.rateLimitSyncer != nil && serverID != m.localServerID {
+			m.rateLimitSyncer.SyncConfigToAgent(context.Background(), serverID)
 		}
 	}()
 

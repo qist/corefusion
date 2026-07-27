@@ -14,6 +14,7 @@ import (
 
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	ratelimit "corefusion/internal/runtime/agent/ratelimit"
 	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/pkg/netutil"
@@ -506,6 +507,157 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			"success": err == nil,
 			"message": fmt.Sprintf("writer %s config updated", req.ProxyType),
 		}, err)
+
+	// ========== Rate Limit commands ==========
+	case *agentpb.PanelCommand_AssociateIp:
+		req := c.AssociateIp
+		submitAsyncTask("associate_ip",
+			fmt.Sprintf("associate_ip:%s:%d", req.Ip, req.SubscriptionId),
+			func(ctx context.Context) (interface{}, error) {
+				if err := a.localAgent.AssociateIP(ctx, req); err != nil {
+					return nil, err
+				}
+				return map[string]interface{}{
+					"ip":              req.Ip,
+					"subscription_id": req.SubscriptionId,
+				}, nil
+			})
+
+	case *agentpb.PanelCommand_BatchApplyLimits:
+		req := c.BatchApplyLimits
+		submitAsyncTask("batch_apply_limits",
+			fmt.Sprintf("batch_apply_limits:%d_rules", len(req.Limits)),
+			func(ctx context.Context) (interface{}, error) {
+				mgr := a.localAgent.GetRateLimitManager()
+				if mgr == nil {
+					return nil, fmt.Errorf("rate limit manager not configured")
+				}
+				if req.ResetAll {
+					if err := mgr.FlushAll(ctx); err != nil {
+						log.Printf("[Agent] BatchApplyLimits reset_all failed: %v", err)
+					}
+				}
+				applied := 0
+				for _, limit := range req.Limits {
+					switch limit.Action {
+					case "apply":
+						rate := &ratelimit.RateConfig{
+							MaxDownMbps: limit.MaxDownMbps,
+							MaxUpMbps:   limit.MaxUpMbps,
+						}
+						if err := mgr.AssociateIP(ctx, limit.Ip, limit.SubscriptionId, rate); err != nil {
+							log.Printf("[Agent] BatchApplyLimits apply ip=%s sub=%d failed: %v", limit.Ip, limit.SubscriptionId, err)
+							continue
+						}
+						applied++
+					case "remove":
+						if err := mgr.RemoveIP(ctx, limit.Ip); err != nil {
+							log.Printf("[Agent] BatchApplyLimits remove ip=%s failed: %v", limit.Ip, err)
+						}
+						applied++
+					case "remove_subscription":
+						if err := mgr.RemoveSubscription(ctx, limit.SubscriptionId); err != nil {
+							log.Printf("[Agent] BatchApplyLimits remove_subscription sub=%d failed: %v", limit.SubscriptionId, err)
+						}
+						applied++
+					}
+				}
+				return map[string]interface{}{
+					"applied": applied,
+					"total":   len(req.Limits),
+				}, nil
+			})
+
+	case *agentpb.PanelCommand_GetRateLimitStatus:
+		req := c.GetRateLimitStatus
+		mgr := a.localAgent.GetRateLimitManager()
+		if mgr == nil {
+			sendSyncResult("get_rate_limit_status", map[string]interface{}{
+				"entries":       []interface{}{},
+				"nft_available": false,
+				"tc_available":  false,
+				"ifb_available": false,
+			}, fmt.Errorf("rate limit manager not configured"))
+			break
+		}
+		entries := mgr.GetStatus(req.SubscriptionId)
+		avail := mgr.IsAvailable()
+		type entryJSON struct {
+			SubscriptionID int64  `json:"subscription_id"`
+			IP             string `json:"ip"`
+			Mark           uint32 `json:"mark"`
+			MaxDownMbps    int32  `json:"max_down_mbps"`
+			MaxUpMbps      int32  `json:"max_up_mbps"`
+			DownlinkBytes  int64  `json:"downlink_bytes"`
+			UplinkBytes    int64  `json:"uplink_bytes"`
+			LastSeen       int64  `json:"last_seen"`
+		}
+		jsonEntries := make([]entryJSON, 0, len(entries))
+		for _, e := range entries {
+			jsonEntries = append(jsonEntries, entryJSON{
+				SubscriptionID: e.SubscriptionID,
+				IP:             e.IP,
+				Mark:           e.Mark,
+				MaxDownMbps:    e.MaxDownMbps,
+				MaxUpMbps:      e.MaxUpMbps,
+				DownlinkBytes:  e.DownlinkBytes,
+				UplinkBytes:    e.UplinkBytes,
+				LastSeen:       e.LastSeen,
+			})
+		}
+		sendSyncResult("get_rate_limit_status", map[string]interface{}{
+			"entries":       jsonEntries,
+			"nft_available": avail.NftAvailable,
+			"tc_available":  avail.TcAvailable,
+			"ifb_available": avail.IfbAvailable,
+		}, nil)
+
+	case *agentpb.PanelCommand_ApplyLimits:
+		req := c.ApplyLimits
+		mgr := a.localAgent.GetRateLimitManager()
+		if mgr == nil {
+			// Fallback: old LimitApplier path
+			submitAsyncTask("apply_limits",
+				fmt.Sprintf("apply_limits:%s:%d", req.Action, req.SubscriptionId),
+				func(ctx context.Context) (interface{}, error) {
+					return nil, a.localAgent.ApplyLimits(ctx, req)
+				})
+			break
+		}
+		submitAsyncTask("apply_limits",
+			fmt.Sprintf("apply_limits:%s:%d", req.Action, req.SubscriptionId),
+			func(ctx context.Context) (interface{}, error) {
+				rate := &ratelimit.RateConfig{
+					MaxDownMbps: req.MaxDownMbps,
+					MaxUpMbps:   req.MaxUpMbps,
+				}
+				// If value is set but specific mbps fields are 0, use value as both
+				if req.Value > 0 && rate.MaxDownMbps == 0 && rate.MaxUpMbps == 0 {
+					rate.MaxDownMbps = req.Value
+					rate.MaxUpMbps = req.Value
+				}
+				switch req.Action {
+				case "apply":
+					if err := mgr.AssociateIP(ctx, req.Ip, req.SubscriptionId, rate); err != nil {
+						return nil, err
+					}
+				case "remove":
+					if err := mgr.RemoveIP(ctx, req.Ip); err != nil {
+						return nil, err
+					}
+				case "remove_subscription":
+					if err := mgr.RemoveSubscription(ctx, req.SubscriptionId); err != nil {
+						return nil, err
+					}
+				default:
+					return nil, fmt.Errorf("unknown action: %s", req.Action)
+				}
+				return map[string]interface{}{
+					"action":           req.Action,
+					"ip":               req.Ip,
+					"subscription_id":  req.SubscriptionId,
+				}, nil
+			})
 
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)

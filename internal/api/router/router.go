@@ -50,6 +50,7 @@ import (
 	warpHandler "corefusion/internal/api/handlers/warp"
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
 	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
+	rateLimitHandler "corefusion/internal/api/handlers/ratelimit"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
@@ -88,6 +89,7 @@ import (
 	trafficSvc "corefusion/internal/service/traffic"
 	userService "corefusion/internal/service/user"
 	warpSvc "corefusion/internal/service/warp"
+	rateLimitSvc "corefusion/internal/service/ratelimit"
 	"corefusion/internal/store/repository"
 )
 
@@ -403,6 +405,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	trafficSyncSvc := trafficsyncSvc.NewService(systemSettingSvc, inboundConfigSvc, 30*time.Second)
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
 	warpSvcInst := warpSvc.NewService(warpRepo)
+	rateLimitConfigRepo := repository.NewRateLimitConfigRepository(database)
+	rateLimitSvcInst := rateLimitSvc.NewService(rateLimitConfigRepo)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)
 	notifier := systemSvc.NewNotifier(systemSettingSvc)
@@ -533,8 +537,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	planH := planHandler.NewHandler(planSvcInst)
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
+	publicSubH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync)
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
+	clientauthH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync, clientRepo, planTmplRepo)
 	commerceSvcInst := clientauthSvc.NewCommerceService(
 		database, planTmplRepo,
 		repository.NewPlanVariantRepository(database),
@@ -666,8 +672,11 @@ subRepo, subEndpointRepo, publicSubH, database,
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
 		// Inject RemoteSyncer so configsync can push configs to remote Agents.
 		configSyncSvc.SetRemoteSyncer(sharedNodeMgr)
+		// Wire rate limit service so PushIPAssociation can reach remote Agents.
+		rateLimitSvcInst.SetNodeOperator(sharedNodeMgr)
 	}
 	warpH := warpHandler.NewHandler(warpSvcInst)
+	rateLimitH := rateLimitHandler.NewHandler(rateLimitSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
 	logManageH := logManageHandler.NewHandler(logManageSvc)
@@ -1305,6 +1314,7 @@ sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
 
 			nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 			nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
+	nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
 
 			// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
 			// Also generates final runtime config via PrepareFullConfig so Agent
@@ -1428,6 +1438,11 @@ sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
 				nodeServersGroup.GET("/:id/certificates", nodeServerH.ListServerCertificates)
 				nodeServersGroup.POST("/:id/certificates/:cid", nodeServerH.AssociateCertificate)
 				nodeServersGroup.DELETE("/:id/certificates/:cid", nodeServerH.DissociateCertificate)
+
+			// Rate Limit Config
+			nodeServersGroup.GET("/:id/rate-limit", rateLimitH.GetConfig)
+			nodeServersGroup.PUT("/:id/rate-limit", rateLimitH.UpdateConfig)
+			nodeServersGroup.GET("/:id/rate-limit/status", rateLimitH.GetStatus)
 
 				// Supplementary: Agent Degradation & Reconnect
 				nodeServersGroup.GET("/:id/degradation-status", nodeServerH.GetDegradationStatus)

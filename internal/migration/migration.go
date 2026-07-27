@@ -214,6 +214,9 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// IP Whitelist / IP白名单来源
 		&entity.IPWhitelistEntry{},
+
+		// Rate Limit Config / 限速配置
+		&entity.RateLimitConfig{},
 	}
 
 	for _, model := range models {

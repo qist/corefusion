@@ -16,6 +16,12 @@ type Enforcer struct {
 	coreManagers map[domain.CoreType]CoreUserManager
 	subRepo      *repository.SubscriptionRepository
 	ipTracker    IPTracker
+	rateLimitSvc RateLimitBlocker // optional: removes rate limit rules on quota block
+}
+
+// RateLimitBlocker removes rate limit rules for a subscription on remote Agents.
+type RateLimitBlocker interface {
+	RemoveSubscriptionOnAllNodes(ctx context.Context, subID int64)
 }
 
 // CoreUserManager manages users in a core.
@@ -40,6 +46,11 @@ func NewEnforcer(subRepo *repository.SubscriptionRepository, ipTracker IPTracker
 	}
 }
 
+// SetRateLimitBlocker sets the rate limit blocker for quota block/unblock linkage.
+func (e *Enforcer) SetRateLimitBlocker(svc RateLimitBlocker) {
+	e.rateLimitSvc = svc
+}
+
 // RegisterCoreManager registers a core user manager.
 func (e *Enforcer) RegisterCoreManager(coreType domain.CoreType, manager CoreUserManager) {
 	e.coreManagers[coreType] = manager
@@ -55,11 +66,18 @@ func (e *Enforcer) OnQuotaStateChanged(ctx context.Context, subID int64, oldStat
 		if e.ipTracker != nil {
 			e.ipTracker.BlockSubscription(subID)
 		}
+		// Also remove rate limit rules on remote Agents
+		if e.rateLimitSvc != nil {
+			go e.rateLimitSvc.RemoveSubscriptionOnAllNodes(context.Background(), subID)
+		}
 
 	case domain.QuotaStateOverLimitHard:
 		// Hard reject: block via nftables + flush conntrack
 		if e.ipTracker != nil {
 			e.ipTracker.BlockSubscription(subID)
+		}
+		if e.rateLimitSvc != nil {
+			go e.rateLimitSvc.RemoveSubscriptionOnAllNodes(context.Background(), subID)
 		}
 		e.flushConntrack(subID)
 
@@ -68,12 +86,18 @@ func (e *Enforcer) OnQuotaStateChanged(ctx context.Context, subID int64, oldStat
 		if e.ipTracker != nil {
 			e.ipTracker.BlockSubscription(subID)
 		}
+		if e.rateLimitSvc != nil {
+			go e.rateLimitSvc.RemoveSubscriptionOnAllNodes(context.Background(), subID)
+		}
 		e.flushConntrack(subID)
 
 	case domain.QuotaStateExpiredDays:
 		// Max active days expired: block
 		if e.ipTracker != nil {
 			e.ipTracker.BlockSubscription(subID)
+		}
+		if e.rateLimitSvc != nil {
+			go e.rateLimitSvc.RemoveSubscriptionOnAllNodes(context.Background(), subID)
 		}
 		e.flushConntrack(subID)
 

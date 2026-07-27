@@ -37,6 +37,9 @@ type PrepareFullConfigOptions struct {
 	// Values: "file" (default), "stdout", "off".
 	// If empty, defaults to "file".
 	LogMode string
+	// RateLimitEnabled indicates whether rate limiting is enabled for this node.
+	// When true, EnsureOnlineStatsPolicy will add statsUserOnline to the policy section.
+	RateLimitEnabled bool
 }
 
 // PrepareFullConfig applies all standard config preparation steps to produce
@@ -127,7 +130,12 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	// 10. Apply log mode to the config's log section
 	ApplyLogMode(fullConfig, opts.CoreType, opts.LogMode)
 
-	// 11. Marshal to JSON
+	// 11. Ensure online-stats policy when rate limiting is enabled
+	if opts.RateLimitEnabled {
+		EnsureOnlineStatsPolicy(fullConfig, opts.CoreType)
+	}
+
+	// 12. Marshal to JSON
 	data, err := json.MarshalIndent(fullConfig, "", "  ")
 	if err != nil {
 		return nil, err
@@ -482,4 +490,36 @@ func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode strin
 	// hysteria2 and tuic don't have config-level log settings.
 	// Their log output is controlled by process.Manager (file/stdout/off).
 	}
+}
+
+// EnsureOnlineStatsPolicy adds statsUserOnline to the xray policy section
+// when rate limiting is enabled. This allows the Agent to query per-user
+// online IPs via the xray Stats API, which is needed for the P1 trigger
+// source (online-stats polling).
+//
+// This only affects xray configs. For other core types, it's a no-op.
+// statsUserOnline is a relatively new xray-core feature; if the running
+// core doesn't support it, the Agent will get an Unimplemented error and
+// fall back to P0 (Panel push) as the sole IP source.
+func EnsureOnlineStatsPolicy(fullConfig map[string]interface{}, coreType string) {
+	if coreType != "xray" {
+		return
+	}
+
+	policy, ok := fullConfig["policy"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	levels, ok := policy["levels"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	level0, ok := levels["0"].(map[string]interface{})
+	if !ok {
+		level0 = map[string]interface{}{}
+		levels["0"] = level0
+	}
+	// Only add when rate limiting is enabled; nodes without rate limiting
+	// keep the default (no online tracking) to avoid the extra memory overhead.
+	level0["statsUserOnline"] = true
 }

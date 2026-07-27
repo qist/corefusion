@@ -26,6 +26,9 @@ func migrateAgentTables(database *gorm.DB) error {
 		&entity.OutboundConfig{},
 		&entity.WarpConfig{},
 		&entity.ShareDomainConfig{},
+		// Rate limit config table (populated by SyncData, used for nft+tc rate limiting)
+		&entity.RateLimitConfig{},
+		&entity.RateLimitIPEntry{},
 		// Log management tables (for rotation policies + jobs, same as Panel)
 		&entity.LogRotationPolicy{},
 		&entity.LogRotationJob{},

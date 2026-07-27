@@ -1,23 +1,44 @@
 package clientauth
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/pkg/netutil"
 	"corefusion/internal/service/clientauth"
+	"corefusion/internal/store/repository"
 )
+
+// RateLimitPusher pushes IP association to rate limit agents.
+type RateLimitPusher interface {
+	PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps int32) error
+}
 
 // Handler handles client authentication HTTP requests.
 type Handler struct {
-	svc *clientauth.Service
+	svc              *clientauth.Service
+	rateLimitPusher  RateLimitPusher
+	nodeServerRepo   *repository.NodeServerRepository
+	clientRepo       *repository.ClientRepository
+	planTmplRepo     *repository.PlanTemplateRepository
 }
 
 // NewHandler creates a new client auth handler.
 func NewHandler(svc *clientauth.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetRateLimitPusher injects the rate limit pusher for IP association on login.
+func (h *Handler) SetRateLimitPusher(pusher RateLimitPusher, nodeServerRepo *repository.NodeServerRepository, clientRepo *repository.ClientRepository, planTmplRepo *repository.PlanTemplateRepository) {
+	h.rateLimitPusher = pusher
+	h.nodeServerRepo = nodeServerRepo
+	h.clientRepo = clientRepo
+	h.planTmplRepo = planTmplRepo
 }
 
 // Register handles POST /api/v1/client-auth/register.
@@ -66,6 +87,12 @@ func (h *Handler) Login(c *gin.Context) {
 	// Get client info
 	clientInfo, _ := h.svc.GetMe(c.Request.Context(), result.Client.ID)
 	result.Client = clientInfo
+
+	// Push rate limit IP association on login (P0 trigger source)
+	if h.rateLimitPusher != nil && result.Client.ID > 0 {
+		clientIP := netutil.GetRealIP(c.Request)
+		go h.pushRateLimitOnLogin(clientIP, result.Client.ID)
+	}
 
 	response.OK(c, result)
 }
@@ -184,6 +211,54 @@ func getClientID(c *gin.Context) int64 {
 		}
 	}
 	return 0
+}
+
+// pushRateLimitOnLogin pushes IP association to all nodes when a client logs in.
+func (h *Handler) pushRateLimitOnLogin(clientIP string, clientID int64) {
+	if clientIP == "" || h.clientRepo == nil || h.nodeServerRepo == nil {
+		return
+	}
+	ctx := context.Background()
+
+	cl, err := h.clientRepo.GetByID(ctx, clientID)
+	if err != nil || cl.SubscriptionID == nil || *cl.SubscriptionID == 0 {
+		return
+	}
+	subID := *cl.SubscriptionID
+
+	// Resolve speed limits
+	var maxDownMbps, maxUpMbps int32
+	if cl.SpeedLimitMbps > 0 {
+		maxDownMbps = int32(cl.SpeedLimitMbps)
+	}
+	if cl.SpeedLimitUpMbps > 0 {
+		maxUpMbps = int32(cl.SpeedLimitUpMbps)
+	}
+	if maxDownMbps == 0 || maxUpMbps == 0 {
+		if cl.PlanID > 0 && h.planTmplRepo != nil {
+			if tmpl, err := h.planTmplRepo.GetByID(ctx, cl.PlanID); err == nil {
+				if maxDownMbps == 0 && tmpl.SpeedLimitMbps > 0 {
+					maxDownMbps = int32(tmpl.SpeedLimitMbps)
+				}
+				if maxUpMbps == 0 && tmpl.SpeedLimitUpMbps > 0 {
+					maxUpMbps = int32(tmpl.SpeedLimitUpMbps)
+				}
+			}
+		}
+	}
+
+	servers, err := h.nodeServerRepo.ListEnabled(ctx)
+	if err != nil {
+		return
+	}
+	for _, server := range servers {
+		if server.ID <= 0 {
+			continue
+		}
+		if err := h.rateLimitPusher.PushIPAssociation(ctx, server.ID, clientIP, subID, maxDownMbps, maxUpMbps); err != nil {
+			log.Printf("clientauth: rate limit push failed for server %d: %v", server.ID, err)
+		}
+	}
 }
 
 // ClientAuthMiddleware creates a middleware for client JWT authentication.

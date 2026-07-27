@@ -156,8 +156,9 @@ func (ChargeOrder) TableName() string { return "charge_orders" }
 // ============================================================
 
 const (
-	ChargeCardTypeBalance = "balance"
-	ChargeCardTypePlan    = "plan"
+	ChargeCardTypeBalance     = "balance"
+	ChargeCardTypePlan        = "plan"
+	ChargeCardTypeTrafficPack = "traffic_pack"
 )
 
 const (

@@ -604,13 +604,13 @@ func (h *Handler) CreateCard(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	// 套餐型必须有有效的 value (plan_variant_id)
-	if input.CardType == entity.ChargeCardTypePlan && input.Value <= 0 {
-		response.BadRequest(c, "INVALID_VALUE", "plan card requires a valid plan_variant_id as value")
+	// 套餐型/流量包型必须有有效的 plan_variant_id
+	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID == nil {
+		response.BadRequest(c, "INVALID_VALUE", "plan/traffic_pack card requires a valid plan_variant_id")
 		return
 	}
 	cardValue := input.Value
-	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID != nil {
+	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID != nil {
 		cardValue = *input.PlanVariantID
 	}
 	// v3.3: 关联创建者管理员
@@ -671,9 +671,9 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	// 套餐型必须提供 plan_variant_id
-	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID == nil {
-		response.BadRequest(c, "MISSING_VARIANT", "plan card requires plan_variant_id")
+	// 套餐型/流量包型必须提供 plan_variant_id
+	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID == nil {
+		response.BadRequest(c, "MISSING_VARIANT", "plan/traffic_pack card requires plan_variant_id")
 		return
 	}
 	// 金额型必须提供 value
@@ -684,9 +684,9 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 	if input.BatchID == "" {
 		input.BatchID = generateBatchID()
 	}
-	// 确定实际 value：套餐型用 plan_variant_id
+	// 确定实际 value：套餐型/流量包型用 plan_variant_id
 	cardValue := input.Value
-	if input.CardType == entity.ChargeCardTypePlan && input.PlanVariantID != nil {
+	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID != nil {
 		cardValue = *input.PlanVariantID
 	}
 
@@ -788,6 +788,7 @@ func (h *Handler) GetCardUsages(c *gin.Context) {
 func (h *Handler) ExportCardsCSV(c *gin.Context) {
 	status := c.Query("status")
 	cardType := c.Query("card_type")
+	batchID := c.Query("batch_id")
 	// v3.3: 支持按代理员筛选导出
 	var agentID *int64
 	if agentIDStr := c.Query("agent_id"); agentIDStr != "" {
@@ -800,6 +801,17 @@ func (h *Handler) ExportCardsCSV(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, "EXPORT_FAILED", err.Error())
 		return
+	}
+
+	// 按批次号筛选（如果指定了 batch_id）
+	if batchID != "" {
+		var filtered []entity.ChargeCard
+		for _, card := range cards {
+			if card.BatchID == batchID {
+				filtered = append(filtered, card)
+			}
+		}
+		cards = filtered
 	}
 
 	c.Header("Content-Disposition", "attachment; filename=charge-cards.csv")
@@ -818,6 +830,8 @@ func (h *Handler) ExportCardsCSV(c *gin.Context) {
 		typeLabel := "金额"
 		if card.CardType == entity.ChargeCardTypePlan {
 			typeLabel = "套餐"
+		} else if card.CardType == entity.ChargeCardTypeTrafficPack {
+			typeLabel = "流量包"
 		}
 		expiresAt := ""
 		if card.ExpiresAt != nil {

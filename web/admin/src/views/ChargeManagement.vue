@@ -120,9 +120,10 @@
             <el-option label="已过期" value="expired" />
             <el-option label="已禁用" value="disabled" />
           </el-select>
-          <el-select v-model="cardTypeFilter" size="small" placeholder="类型" clearable style="width:100px">
+          <el-select v-model="cardTypeFilter" size="small" placeholder="类型" clearable style="width:120px">
             <el-option label="金额型" value="balance" />
             <el-option label="套餐型" value="plan" />
+            <el-option label="流量叠加包" value="traffic_pack" />
           </el-select>
           <el-select v-model="cardAgentFilter" size="small" placeholder="代理员" clearable style="width:140px">
             <el-option label="官方" :value="0" />
@@ -137,9 +138,9 @@
               <span style="font-family:monospace">{{ row.card_code_masked || row.card_code }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="80">
+          <el-table-column label="类型" width="100">
             <template #default="{row}">
-              <el-tag :type="row.card_type==='balance'?'':'warning'" size="small">{{ row.card_type==='balance'?'金额':'套餐' }}</el-tag>
+              <el-tag :type="row.card_type==='balance'?'':row.card_type==='plan'?'warning':'success'" size="small">{{ cardTypeLabel(row.card_type) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="面值/套餐" width="200" show-overflow-tooltip>
@@ -398,6 +399,7 @@
           <el-select v-model="cardForm.card_type" style="width:100%">
             <el-option label="金额型" value="balance" />
             <el-option label="套餐型" value="plan" />
+            <el-option label="流量叠加包" value="traffic_pack" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="cardForm.card_type==='balance'" :label="t('currency.amount')">
@@ -414,6 +416,12 @@
             <el-option v-for="v in planTypeVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
           </el-select>
           <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
+        </el-form-item>
+        <el-form-item v-if="cardForm.card_type==='traffic_pack'" label="绑定流量包">
+          <el-select v-model="cardForm.plan_variant_id" placeholder="选择流量叠加包规格" filterable style="width:100%">
+            <el-option v-for="v in trafficPackVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的流量叠加包规格，兑换时自动增加流量</div>
         </el-form-item>
         <el-form-item label="卡号前缀">
           <el-input v-model="cardForm.card_prefix" placeholder="CF" style="width:100%" />
@@ -447,6 +455,7 @@
           <el-select v-model="batchForm.card_type" style="width:100%">
             <el-option label="金额型" value="balance" />
             <el-option label="套餐型" value="plan" />
+            <el-option label="流量叠加包" value="traffic_pack" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="batchForm.card_type==='balance'" :label="t('currency.amount')">
@@ -463,6 +472,12 @@
             <el-option v-for="v in planTypeVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
           </el-select>
           <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
+        </el-form-item>
+        <el-form-item v-if="batchForm.card_type==='traffic_pack'" label="绑定流量包">
+          <el-select v-model="batchForm.plan_variant_id" placeholder="选择流量叠加包规格" filterable style="width:100%">
+            <el-option v-for="v in trafficPackVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的流量叠加包规格，兑换时自动增加流量</div>
         </el-form-item>
         <el-form-item label="数量"><el-input-number v-model="batchForm.count" :min="1" :max="1000" style="width:100%" /></el-form-item>
         <el-form-item label="卡号前缀">
@@ -1038,6 +1053,7 @@ async function doExportCSV() {
     const params = {}
     if (cardStatusFilter.value) params.status = cardStatusFilter.value
     if (cardTypeFilter.value) params.card_type = cardTypeFilter.value
+    if (cardAgentFilter.value !== null && cardAgentFilter.value !== undefined) params.agent_id = cardAgentFilter.value
     const blob = await chargeApi.exportCardsCSV(params)
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1099,6 +1115,7 @@ const chargeOrderStatusLabel = (s) => ({ pending:'待支付', paid:'已支付', 
 const chargeOrderStatusColor = (s) => ({ pending:'warning', paid:'success', failed:'danger', expired:'info', refunded:'danger' })[s] || ''
 const cardStatusLabel = (s) => ({ active:'可用', used:'已用完', expired:'已过期', disabled:'已禁用' })[s] || s
 const cardStatusColor = (s) => ({ active:'success', used:'info', expired:'warning', disabled:'danger' })[s] || ''
+const cardTypeLabel = (t) => ({ balance:'金额', plan:'套餐', traffic_pack:'流量包' })[t] || t
 const txTypeLabel = (t) => ({ charge:'充值', consume:'消费', refund:'退款', gift:'赠送' })[t] || t
 
 // ──────── Plan Data (for card variant selection) ────────
@@ -1110,6 +1127,7 @@ async function fetchPlanData() {
   try {
     planTemplates.value = (await planApi.listPlanTemplates()) || []
     const allVariants = []
+    // 获取模板下的规格（套餐型）
     for (const tpl of planTemplates.value) {
       try {
         const vars = (await planApi.listPlanVariants(tpl.id)) || []
@@ -1118,12 +1136,22 @@ async function fetchPlanData() {
         }
       } catch {}
     }
+    // 获取独立的流量叠加包
+    try {
+      const trafficPacks = (await planApi.listTrafficPacks()) || []
+      for (const v of trafficPacks) {
+        allVariants.push({ ...v, template_name: '流量叠加包', template_id: 0 })
+      }
+    } catch {}
     planVariants.value = allVariants
   } catch {}
 }
 
 // computed: only plan-type variants (not traffic_pack)
 const planTypeVariants = computed(() => planVariants.value.filter(v => v.variant_type === 'plan' && v.enabled))
+
+// computed: only traffic_pack-type variants
+const trafficPackVariants = computed(() => planVariants.value.filter(v => v.variant_type === 'traffic_pack' && v.enabled))
 
 function variantDisplayName(v) {
   return `${v.template_name} - ${v.name} (${cycleLabel(v.billing_cycle)}, ${formatAmount(v.price, 'CNY')})`

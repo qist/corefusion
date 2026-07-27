@@ -3191,9 +3191,11 @@ var activeAnnouncement = ref(null)
     var hasEntryNodes = ref(true)
 
     // --- Commercial module state ---
-    var plans = ref([])
-    var plansLoading = ref(false)
-    var orderForm = ref({ variant_id: null, order_type: 'new', promotion_code: '', pay_method: 'balance', charge_site_id: null, gift_card_code: '' })
+var plans = ref([])
+var plansLoading = ref(false)
+var trafficPacks = ref([])
+var trafficPacksLoading = ref(false)
+var orderForm = ref({ variant_id: null, order_type: 'new', promotion_code: '', pay_method: 'balance', charge_site_id: null, gift_card_code: '' })
     var orderBusy = ref(false)
     var chargeSites = ref([])
     var chargeForm = ref({ site_id: null, amount_yuan: 10, method: 'online', custom_amount: false })
@@ -3559,6 +3561,7 @@ var showPromoInput = ref(false) // promo code fold
       // Auto-fetch commercial module data based on page
       var pageMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === pageTarget })
       var hasPlanList = pageMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
+      var hasTrafficPacks = pageMods.some(function(m) { return m.type === 'traffic_pack_list' })
       var hasCharge = pageMods.some(function(m) { return m.type === 'charge_panel' })
       var hasBalance = pageMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
       var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })
@@ -3571,6 +3574,7 @@ var showPromoInput = ref(false) // promo code fold
       var hasOrderList = pageMods.some(function(m) { return m.type === 'order_list' })
       var hasNodeList = pageMods.some(function(m) { return m.type === 'node_list' })
       if (hasPlanList || hasNodeList) fetchPlans()
+      if (hasTrafficPacks || hasPlanList) fetchTrafficPacks()
       if (hasNodeList) fetchNodes()
       if (hasPlanList || hasCharge) fetchChargeSites()
       if (hasCharge) fetchChargeOrders()
@@ -4015,6 +4019,41 @@ var showStreamingAccount = function(service) {
       }).catch(function() {}).finally(function() { plansLoading.value = false })
     }
 
+    // --- Traffic packs: fetch traffic packs ---
+    var fetchTrafficPacks = function() {
+      trafficPacksLoading.value = true
+      api('GET', '/traffic-packs').then(function(res) {
+        trafficPacks.value = Array.isArray(res) ? res : []
+      }).catch(function() {}).finally(function() { trafficPacksLoading.value = false })
+    }
+
+    // --- Buy a traffic pack (reuses payment dialog) ---
+    var buyTrafficPack = function(pack) {
+      if (client.value.plan_id === 0 || !client.value.plan_id) {
+        ElMessage.warning(t('traffic_pack.need_plan'))
+        return
+      }
+      orderForm.value = {
+        variant_id: pack.id,
+        order_type: 'new',
+        promotion_code: '',
+        pay_method: 'balance',
+        gift_card_code: '',
+        charge_site_id: null,
+        plan_name: pack.name,
+        variant_name: pack.name,
+        price: pack.price,
+        currency: pack.currency || 'CNY',
+        duration_days: pack.duration_days || 0,
+        quota_bytes: pack.quota_bytes || 0,
+        is_traffic_pack: true
+      }
+      showPromoInput.value = false
+      fetchBalance()
+      if (chargeSites.value.length === 0) fetchChargeSites()
+      showPaymentDialog.value = true
+    }
+
     // --- Purchase a plan variant ---
     // v3.3: show payment method dialog
     var purchaseVariant = function(variantId, plan, modData) {
@@ -4087,6 +4126,7 @@ var showStreamingAccount = function(service) {
       }
 
       orderBusy.value = true
+      var isTrafficPack = !!orderForm.value.is_traffic_pack
       var payload = {
         variant_id: orderForm.value.variant_id,
         order_type: orderForm.value.order_type,
@@ -4100,7 +4140,15 @@ var showStreamingAccount = function(service) {
         payload.gift_card_code = orderForm.value.gift_card_code
       }
 
-      api('POST', '/orders', payload).then(function(res) {
+      // Traffic pack uses a dedicated buy endpoint with a simpler payload
+      var apiPath = isTrafficPack ? '/traffic-packs/buy' : '/orders'
+      var apiPayload = isTrafficPack ? {
+        variant_id: orderForm.value.variant_id,
+        pay_method: orderForm.value.pay_method,
+        charge_site_id: orderForm.value.pay_method === 'charge_site' ? orderForm.value.charge_site_id : null
+      } : payload
+
+      api('POST', apiPath, apiPayload).then(function(res) {
         showPaymentDialog.value = false
         if (res.status === 'completed') {
           ElMessage.success(t('plan.buy_success'))
@@ -4562,15 +4610,17 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         var initMods = portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
         var initHasCharge = initMods.some(function(m) { return m.type === 'charge_panel' })
         var initHasBalance = initMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
-        var initHasPlanList = initMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
-        var initHasReferral = initMods.some(function(m) { return m.type === 'referral' })
+var initHasPlanList = initMods.some(function(m) { return m.type === 'plan_list' || m.type === 'order_create' })
+var initHasTrafficPacks = initMods.some(function(m) { return m.type === 'traffic_pack_list' })
+var initHasReferral = initMods.some(function(m) { return m.type === 'referral' })
         var initHasTickets = initMods.some(function(m) { return m.type === 'ticket_list' })
         var initHasArticles = initMods.some(function(m) { return m.type === 'article_list' || m.type === 'tutorial_cards' || m.type === 'client_download' })
         var initHasSharedAccts = initMods.some(function(m) { return m.type === 'shared_accounts' || m.type === 'streaming_status' })
         var initHasOrderList = initMods.some(function(m) { return m.type === 'order_list' })
         var initHasNodeList = initMods.some(function(m) { return m.type === 'node_list' })
-        if (initHasPlanList || initHasNodeList) fetchPlans()
-        if (initHasNodeList) fetchNodes()
+if (initHasPlanList || initHasNodeList) fetchPlans()
+if (initHasTrafficPacks || initHasPlanList) fetchTrafficPacks()
+if (initHasNodeList) fetchNodes()
         if (initHasPlanList || initHasCharge) fetchChargeSites()
         if (initHasCharge) fetchChargeOrders()
       if (initHasBalance) { fetchBalance(); fetchBalanceTxns() }
@@ -4763,6 +4813,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
                 fetchArticles: fetchArticles, openArticle: openArticle, articleCatText: articleCatText,
                 plansLoading: plansLoading, myOrdersLoading: myOrdersLoading,
                 purchaseVariant: purchaseVariant, submitOrder: submitOrder,
+                buyTrafficPack: buyTrafficPack, trafficPacks: trafficPacks, trafficPacksLoading: trafficPacksLoading,
                 orderForm: orderForm, orderBusy: orderBusy,
                 showChargeDialog: showChargeDialog, submitCharge: submitCharge,
                 chargeForm: chargeForm, chargeBusy: chargeBusy, chargeStatusText: chargeStatusText,
@@ -4847,6 +4898,7 @@ return {
       openAnnouncementPopup: openAnnouncementPopup, announcements: announcements,
       // Payment dialogs
       orderForm: orderForm, orderBusy: orderBusy,
+      trafficPacks: trafficPacks, trafficPacksLoading: trafficPacksLoading, buyTrafficPack: buyTrafficPack,
       chargeSites: chargeSites, chargeForm: chargeForm, chargeBusy: chargeBusy,
       cardCode: cardCode, redeemBusy: redeemBusy, balance: balance,
       showChargeDialog: showChargeDialog, showPaymentDialog: showPaymentDialog,

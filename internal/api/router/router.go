@@ -1039,6 +1039,15 @@ planVariantGroup.PUT("/:id", planH.UpdateVariant)
 planVariantGroup.DELETE("/:id", planH.DeleteVariant)
 }
 
+// Traffic Packs (独立流量叠加包，不绑定模板，适用全部套餐)
+trafficPackGroup := protected.Group("/traffic-packs")
+{
+trafficPackGroup.GET("", planH.ListTrafficPacks)
+trafficPackGroup.POST("", planH.CreateTrafficPack)
+trafficPackGroup.PUT("/:id", planH.UpdateTrafficPack)
+trafficPackGroup.DELETE("/:id", planH.DeleteTrafficPack)
+}
+
 // Charge Sites (充值站点管理)
 	chargeAdminH := chargeHandler.NewHandler(
 		repository.NewChargeSiteRepository(database),

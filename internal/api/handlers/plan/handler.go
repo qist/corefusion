@@ -261,6 +261,67 @@ func (h *Handler) DeleteVariant(c *gin.Context) {
 	response.OK(c, gin.H{"deleted": true})
 }
 
+// ──────────────────── Traffic Pack (独立流量叠加包) ────────────────────
+
+// ListTrafficPacks handles GET /api/v1/traffic-packs.
+func (h *Handler) ListTrafficPacks(c *gin.Context) {
+	packs, err := h.svc.ListTrafficPacks(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "LIST_TRAFFIC_PACKS_FAILED", err.Error())
+		return
+	}
+	response.OK(c, packs)
+}
+
+// CreateTrafficPack handles POST /api/v1/traffic-packs.
+func (h *Handler) CreateTrafficPack(c *gin.Context) {
+	var input planSvc.CreateTrafficPackInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	pack, err := h.svc.CreateTrafficPack(c.Request.Context(), input)
+	if err != nil {
+		response.InternalError(c, "CREATE_TRAFFIC_PACK_FAILED", err.Error())
+		return
+	}
+	response.Created(c, pack)
+}
+
+// UpdateTrafficPack handles PUT /api/v1/traffic-packs/:id.
+func (h *Handler) UpdateTrafficPack(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid traffic pack id")
+		return
+	}
+	var input planSvc.UpdateVariantInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	pack, err := h.svc.UpdateTrafficPack(c.Request.Context(), id, input)
+	if err != nil {
+		response.InternalError(c, "UPDATE_TRAFFIC_PACK_FAILED", err.Error())
+		return
+	}
+	response.OK(c, pack)
+}
+
+// DeleteTrafficPack handles DELETE /api/v1/traffic-packs/:id.
+func (h *Handler) DeleteTrafficPack(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid traffic pack id")
+		return
+	}
+	if err := h.svc.DeleteTrafficPack(c.Request.Context(), id); err != nil {
+		response.InternalError(c, "DELETE_TRAFFIC_PACK_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"deleted": true})
+}
+
 // ──────────────────── Node Group ────────────────────
 
 // ListNodeGroups handles GET /api/v1/node-groups.

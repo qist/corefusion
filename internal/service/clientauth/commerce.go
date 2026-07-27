@@ -166,12 +166,14 @@ type PlanVariantItem struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
 	VariantType   string `json:"variant_type"` // plan/traffic_pack
+	Description   string `json:"description"`
 	BillingCycle  string `json:"billing_cycle"`
 	DurationDays  int    `json:"duration_days"`
 	Price         int64  `json:"price"`          // 分
 	OriginalPrice int64  `json:"original_price"` // 分
 	Currency      string `json:"currency"`
 	QuotaBytes    int64  `json:"quota_bytes"`
+	ExpiryMode    string `json:"expiry_mode"` // traffic pack: align_with_plan/extend_plan
 	IsRecommended bool   `json:"is_recommended"`
 	IsDefault     bool   `json:"is_default"`
 }
@@ -377,10 +379,11 @@ func (s *CommerceService) ListTrafficPacks(ctx context.Context) ([]PlanVariantIt
 	var items []PlanVariantItem
 	for _, v := range packs {
 		items = append(items, PlanVariantItem{
-			ID: v.ID, Name: v.Name, VariantType: v.VariantType,
+			ID: v.ID, Name: v.Name, VariantType: v.VariantType, Description: v.Description,
 			BillingCycle: v.BillingCycle, DurationDays: v.DurationDays,
 			Price: v.Price, OriginalPrice: v.OriginalPrice, Currency: v.Currency,
-			QuotaBytes: v.QuotaBytes, IsRecommended: v.IsRecommended, IsDefault: v.IsDefault,
+			QuotaBytes: v.QuotaBytes, ExpiryMode: v.ExpiryMode,
+			IsRecommended: v.IsRecommended, IsDefault: v.IsDefault,
 		})
 	}
 	return items, nil
@@ -429,9 +432,9 @@ func (s *CommerceService) BuyTrafficPack(ctx context.Context, clientID int64, in
 				return nil, fmt.Errorf("insufficient balance: %v", err)
 			}
 		}
-		// Add traffic to subscription
-		if err := s.addTrafficToSubscription(ctx, client, variant.QuotaBytes); err != nil {
-			return nil, fmt.Errorf("failed to add traffic: %v", err)
+		// Apply traffic pack (adds traffic, optionally extends expiry)
+		if err := s.applyTrafficPack(ctx, client, variant); err != nil {
+			return nil, fmt.Errorf("failed to apply traffic pack: %v", err)
 		}
 		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
 
@@ -477,6 +480,47 @@ func (s *CommerceService) addTrafficToSubscription(ctx context.Context, client *
 	}
 	sub.QuotaBytes += quotaBytes
 	return s.subRepo.Update(ctx, sub)
+}
+
+// applyTrafficPack applies a traffic pack to a client's subscription.
+// Depending on the variant's ExpiryMode, it may also extend the plan's expiry date:
+//   - align_with_plan (default): only adds traffic bytes, does not change expiry.
+//   - extend_plan: adds traffic bytes AND extends client/subscription expiry by DurationDays.
+func (s *CommerceService) applyTrafficPack(ctx context.Context, client *entity.Client, variant *entity.PlanVariant) error {
+	// 1. Add traffic bytes
+	if err := s.addTrafficToSubscription(ctx, client, variant.QuotaBytes); err != nil {
+		return err
+	}
+
+	// 2. Extend plan expiry if mode is extend_plan
+	if variant.ExpiryMode == entity.ExpiryModeExtendPlan && variant.DurationDays > 0 {
+		now := time.Now()
+		var newExpiry time.Time
+		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+			newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
+		} else {
+			newExpiry = now.AddDate(0, 0, variant.DurationDays)
+		}
+		client.ExpiresAt = &newExpiry
+		client.UpdatedAt = now
+		if err := s.clientRepo.Update(ctx, client); err != nil {
+			return fmt.Errorf("failed to extend client expiry: %v", err)
+		}
+
+		// Also update subscription expiry
+		if client.SubscriptionID != nil {
+			sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID)
+			if err == nil {
+				sub.ExpiresAt = &newExpiry
+				s.subRepo.Update(ctx, sub)
+			}
+		}
+
+		log.Printf("[commerce] traffic pack %d extended client %d expiry by %d days to %v",
+			variant.ID, client.ID, variant.DurationDays, newExpiry)
+	}
+
+	return nil
 }
 
 // ============================================================
@@ -1808,9 +1852,9 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 				return err
 			}
 
-			// Traffic pack: add traffic without extending expiry
+			// Traffic pack: add traffic (and optionally extend expiry)
 			if variant.VariantType == entity.VariantTypeTrafficPack {
-				if err := s.addTrafficToSubscription(ctx, client, variant.QuotaBytes); err != nil {
+				if err := s.applyTrafficPack(ctx, client, variant); err != nil {
 					return err
 				}
 			} else {

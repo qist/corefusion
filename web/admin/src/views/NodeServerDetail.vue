@@ -169,6 +169,9 @@
       </el-tab-pane>
 
       <!-- Certificates Tab -->
+      <el-tab-pane :label="t('rateLimit.tabLabel')" name="rateLimit">
+        <RateLimitTab :server-id="serverId" />
+      </el-tab-pane>
       <el-tab-pane :label="t('menu.certificates')" name="certs">
         <div style="padding:20px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -261,6 +264,7 @@ import RuleTab from './services/RuleTab.vue'
 import CoreProcessTab from './node-server/CoreProcessTab.vue'
 import WarpTab from './services/WarpTab.vue'
 import ShareDomainTab from './services/ShareDomainTab.vue'
+import RateLimitTab from './services/RateLimitTab.vue'
 
 const { t } = useI18n()
 const route = useRoute()

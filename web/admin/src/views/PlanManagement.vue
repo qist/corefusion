@@ -65,7 +65,7 @@
               <div style="font-size:13px;line-height:2;color:#606266">
                 <div>分类: <el-tag size="small" :type="categoryType(tpl.category)">{{ categoryLabel(tpl.category) }}</el-tag></div>
                 <div>流量: {{ formatBytes(tpl.default_quota_bytes) }} / {{ tpl.default_quota_reset_cycle || '不限' }}</div>
-                <div>设备: {{ tpl.device_limit || '不限' }} 台 | 限速: {{ tpl.speed_limit_mbps || '不限' }} Mbps</div>
+                <div>设备: {{ tpl.device_limit || '不限' }} 台 | 下载: {{ tpl.speed_limit_mbps || '不限' }} Mbps | 上传: {{ tpl.speed_limit_up_mbps || '不限' }} Mbps</div>
                 <div v-if="tpl.is_trial" style="color:#e6a23c">
                   <el-tag type="warning" size="small">试用</el-tag> {{ tpl.trial_duration_hours }}小时
                 </div>
@@ -234,8 +234,11 @@
         <el-form-item label="设备数限制">
           <el-input-number v-model="templateForm.device_limit" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
         </el-form-item>
-        <el-form-item label="限速 (Mbps)">
+        <el-form-item label="下载限速 (Mbps)">
           <el-input-number v-model="templateForm.speed_limit_mbps" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
+        </el-form-item>
+        <el-form-item label="上传限速 (Mbps)">
+          <el-input-number v-model="templateForm.speed_limit_up_mbps" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
         </el-form-item>
         <el-form-item label="并发连接限制">
           <el-input-number v-model="templateForm.concurrent_limit" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
@@ -551,7 +554,7 @@ const templateForm = ref({})
 function emptyTemplateForm() {
   return {
     name: '', description: '', category: 'standard',
-    device_limit: 0, speed_limit_mbps: 0, concurrent_limit: 0,
+    device_limit: 0, speed_limit_mbps: 0, speed_limit_up_mbps: 0, concurrent_limit: 0,
     default_quota_gb: 0, default_quota_reset_cycle: 'none',
     suspend_on_quota_exhausted: 1, is_trial: false, trial_duration_hours: 0,
     sort_order: 0, enabled: true,

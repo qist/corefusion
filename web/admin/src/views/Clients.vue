@@ -21,8 +21,11 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="限速" width="80">
+      <el-table-column label="下载限速" width="80">
         <template #default="{row}">{{ row.speed_limit_mbps ? row.speed_limit_mbps + 'Mbps' : '-' }}</template>
+      </el-table-column>
+      <el-table-column label="上传限速" width="80">
+        <template #default="{row}">{{ row.speed_limit_up_mbps ? row.speed_limit_up_mbps + 'Mbps' : '-' }}</template>
       </el-table-column>
       <el-table-column :label="t('client.subscribeUrl')" width="80">
         <template #default="{row}">
@@ -75,7 +78,8 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('client.quota')"><el-input v-model.number="clientForm.quota_gb" type="number" :min="0" :step="0.1" /><div class="hint">GB (0=用套餐默认)</div></el-form-item>
-        <el-form-item label="限速(Mbps)"><el-input-number v-model="clientForm.speed_limit_mbps" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
+        <el-form-item label="下载限速(Mbps)"><el-input-number v-model="clientForm.speed_limit_mbps" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
+        <el-form-item label="上传限速(Mbps)"><el-input-number v-model="clientForm.speed_limit_up_mbps" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
         <el-form-item label="并发限制"><el-input-number v-model="clientForm.concurrent_limit" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
         <el-form-item :label="t('client.expires')"><el-date-picker v-model="clientForm.expires_at" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
         <el-form-item :label="t('client.remark')"><el-input v-model="clientForm.remark" /></el-form-item>
@@ -247,7 +251,7 @@ const endpoints = ref([])
 const clientLoading = ref(false)
 const clientDialog = ref(false)
 const editingClient = ref(null)
-const clientForm = ref({ email: '', plan_id: null, plan_variant_id: null, quota_gb: 0, speed_limit_mbps: 0, concurrent_limit: 0, expires_at: '', remark: '' })
+const clientForm = ref({ email: '', plan_id: null, plan_variant_id: null, quota_gb: 0, speed_limit_mbps: 0, speed_limit_up_mbps: 0, concurrent_limit: 0, expires_at: '', remark: '' })
 const filterPlan = ref(null)
 
 // Renew / Upgrade / Downgrade
@@ -407,13 +411,13 @@ async function fetchClients() {
 }
 
 // Client CRUD
-function showCreateClient() { editingClient.value = null; clientForm.value = { email: '', plan_id: planTemplates.value[0]?.id || null, plan_variant_id: null, quota_gb: 0, speed_limit_mbps: 0, concurrent_limit: 0, expires_at: '', remark: '' }; clientDialog.value = true }
-function showEditClient(row) { editingClient.value = row; clientForm.value = { email: row.email, plan_id: row.plan_id, plan_variant_id: row.plan_variant_id || null, quota_gb: row.quota_bytes / 1073741824, speed_limit_mbps: row.speed_limit_mbps || 0, concurrent_limit: row.concurrent_limit || 0, expires_at: row.expires_at?.substring(0,10) || '', remark: row.remark || '' }; clientDialog.value = true }
+function showCreateClient() { editingClient.value = null; clientForm.value = { email: '', plan_id: planTemplates.value[0]?.id || null, plan_variant_id: null, quota_gb: 0, speed_limit_mbps: 0, speed_limit_up_mbps: 0, concurrent_limit: 0, expires_at: '', remark: '' }; clientDialog.value = true }
+function showEditClient(row) { editingClient.value = row; clientForm.value = { email: row.email, plan_id: row.plan_id, plan_variant_id: row.plan_variant_id || null, quota_gb: row.quota_bytes / 1073741824, speed_limit_mbps: row.speed_limit_mbps || 0, speed_limit_up_mbps: row.speed_limit_up_mbps || 0, concurrent_limit: row.concurrent_limit || 0, expires_at: row.expires_at?.substring(0,10) || '', remark: row.remark || '' }; clientDialog.value = true }
 async function saveClient() {
   try {
     const payload = { ...clientForm.value, quota_bytes: Math.round((clientForm.value.quota_gb || 0) * 1073741824) }
     delete payload.quota_gb
-    if (editingClient.value) { await client.put(`/clients/${editingClient.value.id}`, { plan_id: payload.plan_id, plan_variant_id: payload.plan_variant_id, quota_bytes: payload.quota_bytes, speed_limit_mbps: payload.speed_limit_mbps, concurrent_limit: payload.concurrent_limit, expires_at: payload.expires_at, remark: payload.remark }) } else { await client.post('/clients', payload) }
+    if (editingClient.value) { await client.put(`/clients/${editingClient.value.id}`, { plan_id: payload.plan_id, plan_variant_id: payload.plan_variant_id, quota_bytes: payload.quota_bytes, speed_limit_mbps: payload.speed_limit_mbps, speed_limit_up_mbps: payload.speed_limit_up_mbps, concurrent_limit: payload.concurrent_limit, expires_at: payload.expires_at, remark: payload.remark }) } else { await client.post('/clients', payload) }
     ElMessage.success(t('common.success')); clientDialog.value = false; fetchClients()
   } catch {}
 }

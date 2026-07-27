@@ -53,8 +53,9 @@ type Client struct {
 	SuspendedAt     *time.Time `json:"suspended_at"`
 	IPWhitelist     string     `gorm:"size:1000" json:"ip_whitelist"`
 	DeviceLimit     int        `gorm:"not null;default:0" json:"device_limit"`
-	SpeedLimitMbps  int        `gorm:"not null;default:0" json:"speed_limit_mbps"`     // inherited from template, can override
-	ConcurrentLimit int        `gorm:"not null;default:0" json:"concurrent_limit"`     // inherited from template, can override
+	SpeedLimitMbps    int        `gorm:"not null;default:0" json:"speed_limit_mbps"`         // 下载限速 Mbps, inherited from template, can override
+	SpeedLimitUpMbps  int        `gorm:"not null;default:0" json:"speed_limit_up_mbps"`      // 上传限速 Mbps, inherited from template, can override
+	ConcurrentLimit   int        `gorm:"not null;default:0" json:"concurrent_limit"`         // inherited from template, can override
 	LastNodeUsageAt *time.Time `json:"last_node_usage_at"`
 	SubUpdatedAt    *time.Time `json:"sub_updated_at"`
 	Remark          string     `gorm:"size:255" json:"remark"`

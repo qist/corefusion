@@ -21,7 +21,8 @@ type PlanTemplate struct {
 	Category                  string    `gorm:"size:32;not null;default:general" json:"category"`
 	NodeGroupIDs              Int64List `gorm:"type:text;not null" json:"node_group_ids"`
 	DeviceLimit               int       `gorm:"not null;default:0" json:"device_limit"`
-	SpeedLimitMbps            int       `gorm:"not null;default:0" json:"speed_limit_mbps"`
+	SpeedLimitMbps            int       `gorm:"not null;default:0" json:"speed_limit_mbps"`         // 下载限速 Mbps（0=不限）
+	SpeedLimitUpMbps          int       `gorm:"not null;default:0" json:"speed_limit_up_mbps"`      // 上传限速 Mbps（0=不限）
 	ConcurrentLimit           int       `gorm:"not null;default:0" json:"concurrent_limit"`
 	DefaultQuotaBytes         int64     `gorm:"not null;default:0" json:"default_quota_bytes"`
 	DefaultQuotaResetCycle    string    `gorm:"size:32;not null;default:none" json:"default_quota_reset_cycle"`

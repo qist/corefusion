@@ -77,9 +77,10 @@ type CreateClientInput struct {
 	Password        string  `json:"password"`
 	PlanID          int64   `json:"plan_id" binding:"required"`
 	PlanVariantID   int64   `json:"plan_variant_id"`
-	QuotaBytes      int64   `json:"quota_bytes"`
-	SpeedLimitMbps  int     `json:"speed_limit_mbps"`
-	ConcurrentLimit int     `json:"concurrent_limit"`
+	QuotaBytes        int64   `json:"quota_bytes"`
+	SpeedLimitMbps    int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps  int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit   int     `json:"concurrent_limit"`
 	ExpiresAt       *string `json:"expires_at"`
 	Remark          string  `json:"remark"`
 }
@@ -123,9 +124,10 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 		PlanID:          input.PlanID,
 		PlanVariantID:   input.PlanVariantID,
 		Status:          "active",
-		QuotaBytes:      quota,
-		SpeedLimitMbps:  input.SpeedLimitMbps,
-		ConcurrentLimit: input.ConcurrentLimit,
+		QuotaBytes:        quota,
+		SpeedLimitMbps:    input.SpeedLimitMbps,
+		SpeedLimitUpMbps: input.SpeedLimitUpMbps,
+		ConcurrentLimit:   input.ConcurrentLimit,
 		ExpiresAt:       expiresAt,
 		Remark:          input.Remark,
 	}
@@ -325,9 +327,10 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	Password        *string `json:"password"`
 	PlanID          *int64  `json:"plan_id"`
 	PlanVariantID   *int64  `json:"plan_variant_id"`
-	QuotaBytes      *int64  `json:"quota_bytes"`
-	SpeedLimitMbps  *int    `json:"speed_limit_mbps"`
-	ConcurrentLimit *int    `json:"concurrent_limit"`
+	QuotaBytes        *int64  `json:"quota_bytes"`
+	SpeedLimitMbps    *int    `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps  *int    `json:"speed_limit_up_mbps"`
+	ConcurrentLimit   *int    `json:"concurrent_limit"`
 	ExpiresAt       *string `json:"expires_at"`
 	Remark          *string `json:"remark"`
 }) (*entity.Client, error) {
@@ -343,6 +346,9 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	}
 	if input.SpeedLimitMbps != nil {
 		client.SpeedLimitMbps = *input.SpeedLimitMbps
+	}
+	if input.SpeedLimitUpMbps != nil {
+		client.SpeedLimitUpMbps = *input.SpeedLimitUpMbps
 	}
 	if input.ConcurrentLimit != nil {
 		client.ConcurrentLimit = *input.ConcurrentLimit
@@ -371,6 +377,9 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 				client.QuotaBytes = tmpl.DefaultQuotaBytes
 				if client.SpeedLimitMbps == 0 {
 					client.SpeedLimitMbps = tmpl.SpeedLimitMbps
+				}
+				if client.SpeedLimitUpMbps == 0 {
+					client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
 				}
 				if client.ConcurrentLimit == 0 {
 					client.ConcurrentLimit = tmpl.ConcurrentLimit

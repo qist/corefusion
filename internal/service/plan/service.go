@@ -93,6 +93,7 @@ type CreateTemplateInput struct {
 	NodeGroupIDs              []int64  `json:"node_group_ids"`
 	DeviceLimit               int      `json:"device_limit"`
 	SpeedLimitMbps            int      `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps          int      `json:"speed_limit_up_mbps"`
 	ConcurrentLimit           int      `json:"concurrent_limit"`
 	DefaultQuotaBytes         int64    `json:"default_quota_bytes"`
 	DefaultQuotaResetCycle    string   `json:"default_quota_reset_cycle"`
@@ -139,6 +140,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		NodeGroupIDs:               entity.Int64List(input.NodeGroupIDs),
 		DeviceLimit:                input.DeviceLimit,
 		SpeedLimitMbps:             input.SpeedLimitMbps,
+		SpeedLimitUpMbps:           input.SpeedLimitUpMbps,
 		ConcurrentLimit:            input.ConcurrentLimit,
 		DefaultQuotaBytes:          input.DefaultQuotaBytes,
 		DefaultQuotaResetCycle:     input.DefaultQuotaResetCycle,
@@ -172,6 +174,7 @@ type UpdateTemplateInput struct {
 	NodeGroupIDs              *[]int64 `json:"node_group_ids"`
 	DeviceLimit               *int     `json:"device_limit"`
 	SpeedLimitMbps            *int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps          *int     `json:"speed_limit_up_mbps"`
 	ConcurrentLimit           *int     `json:"concurrent_limit"`
 	DefaultQuotaBytes         *int64   `json:"default_quota_bytes"`
 	DefaultQuotaResetCycle    *string  `json:"default_quota_reset_cycle"`
@@ -213,6 +216,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.SpeedLimitMbps != nil {
 		tmpl.SpeedLimitMbps = *input.SpeedLimitMbps
+	}
+	if input.SpeedLimitUpMbps != nil {
+		tmpl.SpeedLimitUpMbps = *input.SpeedLimitUpMbps
 	}
 	if input.ConcurrentLimit != nil {
 		tmpl.ConcurrentLimit = *input.ConcurrentLimit
@@ -1244,6 +1250,9 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 	if tmpl != nil {
 		if client.SpeedLimitMbps == 0 {
 			client.SpeedLimitMbps = tmpl.SpeedLimitMbps
+		}
+		if client.SpeedLimitUpMbps == 0 {
+			client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
 		}
 		if client.ConcurrentLimit == 0 {
 			client.ConcurrentLimit = tmpl.ConcurrentLimit

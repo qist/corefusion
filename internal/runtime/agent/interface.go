@@ -34,6 +34,9 @@ type NodeOperator interface {
 	// 限速/并发（异步）
 	ApplyLimits(ctx context.Context, serverID int64, req *agentpb.ApplyLimitsRequest) error
 
+	// IP 归属推送（异步）— Panel 通知 Agent 某个 IP 属于哪个订阅
+	AssociateIP(ctx context.Context, serverID int64, req *agentpb.AssociateIPRequest) error
+
 	// 状态查询（同步，纯读）
 	GetStatus(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, error)
 	IsOnline(serverID int64) bool

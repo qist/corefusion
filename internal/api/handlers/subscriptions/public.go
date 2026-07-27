@@ -25,6 +25,12 @@ import (
 	"corefusion/internal/subscription/sharelink"
 )
 
+// RateLimitPusher pushes IP association to rate limit agents.
+// Implemented by ratelimitsvc.Service.
+type RateLimitPusher interface {
+	PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps int32) error
+}
+
 // PublicHandler handles public subscription requests.
 type PublicHandler struct {
 	subRepo           *repository.SubscriptionRepository
@@ -38,6 +44,8 @@ type PublicHandler struct {
 	mihomoRuleRepo    *repository.MihomoRuleRepository
 	systemSettingRepo *repository.SystemSettingRepository
 	accessLog         *repository.AccessLogRepository
+	rateLimitPusher   RateLimitPusher
+	nodeServerRepo    *repository.NodeServerRepository
 }
 
 // NewPublicHandler creates a new public subscription handler.
@@ -67,6 +75,12 @@ func NewPublicHandler(
 		systemSettingRepo: systemSettingRepo,
 		accessLog:         accessLog,
 	}
+}
+
+// SetRateLimitPusher injects the rate limit pusher for IP association on subscription access.
+func (h *PublicHandler) SetRateLimitPusher(pusher RateLimitPusher, nodeServerRepo *repository.NodeServerRepository) {
+	h.rateLimitPusher = pusher
+	h.nodeServerRepo = nodeServerRepo
 }
 
 // shareableProtocols are protocols that generate share links.
@@ -336,6 +350,15 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		go func() {
 			h.recordAccess(sub.ID, ip, ua, realIP, cdnIP, cdnProvider)
 		}()
+
+		// Push IP association to rate limit agents (P0 trigger source).
+		// When a user accesses their subscription URL, we know their real IP
+		// and which subscription they belong to — push this to every node
+		// that has rate limiting enabled, so the agent can apply nft+tc rules.
+		if h.rateLimitPusher != nil && sub.ClientID > 0 {
+			clientIP := netutil.GetRealIP(c.Request)
+			go h.pushRateLimitAssociation(clientIP, sub, tmpl)
+		}
 	}
 
 	c.Header("Content-Type", contentType+"; charset=utf-8")
@@ -2092,6 +2115,52 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 	}
 	if err := h.accessLog.Create(context.Background(), logEntry); err != nil {
 		log.Printf("sub: failed to record access: %v", err)
+	}
+}
+
+// pushRateLimitAssociation pushes the user's IP to all nodes that have rate limiting enabled.
+// This is the P0 trigger source: when a user accesses their subscription URL,
+// we know their real IP and can associate it with their subscription's speed limit.
+func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Subscription, tmpl *entity.PlanTemplate) {
+	if h.rateLimitPusher == nil || h.nodeServerRepo == nil || clientIP == "" {
+		return
+	}
+
+	ctx := context.Background()
+
+	// Resolve the client's speed limits
+	var maxDownMbps, maxUpMbps int32
+	if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
+		// Client-level override takes priority
+		if cl.SpeedLimitMbps > 0 {
+			maxDownMbps = int32(cl.SpeedLimitMbps)
+		}
+		if cl.SpeedLimitUpMbps > 0 {
+			maxUpMbps = int32(cl.SpeedLimitUpMbps)
+		}
+		// If client has no override, inherit from plan template
+		if maxDownMbps == 0 && tmpl != nil && tmpl.SpeedLimitMbps > 0 {
+			maxDownMbps = int32(tmpl.SpeedLimitMbps)
+		}
+		if maxUpMbps == 0 && tmpl != nil && tmpl.SpeedLimitUpMbps > 0 {
+			maxUpMbps = int32(tmpl.SpeedLimitUpMbps)
+		}
+	}
+
+	// Find all servers and push association to those with rate limiting enabled
+	servers, err := h.nodeServerRepo.ListEnabled(ctx)
+	if err != nil {
+		return
+	}
+	for _, server := range servers {
+		if server.ID <= 0 {
+			continue
+		}
+		// Push to this server — the rateLimitSvc will check if rate limiting
+		// is enabled for this server before actually sending the command
+		if err := h.rateLimitPusher.PushIPAssociation(ctx, server.ID, clientIP, sub.ID, maxDownMbps, maxUpMbps); err != nil {
+			log.Printf("sub: rate limit push failed for server %d: %v", server.ID, err)
+		}
 	}
 }
 

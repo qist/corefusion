@@ -191,6 +191,51 @@ message ApplyLimitsRequest {
   string ip = 3;
   int32  value = 4;               // speed: Mbps, conn: count, device: count
   int64  subscription_id = 5;
+
+  // --- 限速扩展字段 ---
+  int32  max_up_mbps = 6;         // 上传限速 Mbps（0=不限）
+  int32  max_down_mbps = 7;       // 下载限速 Mbps（0=不限）
+  string iface = 8;               // 目标网卡（默认自动检测）
+}
+
+// 批量限速指令（一次下发多个用户的限速规则）
+message BatchApplyLimitsRequest {
+  repeated ApplyLimitsRequest limits = 1;
+  bool   reset_all = 2;           // true: 先清除所有现有规则再应用
+}
+
+// IP 归属推送（Panel→Agent，通知 Agent 某个 IP 属于某个订阅）
+message AssociateIPRequest {
+  string ip = 1;
+  int64  subscription_id = 2;
+  int64  user_id = 3;              // 可选
+  int32  max_down_mbps = 4;       // 下载限速 Mbps（0=不限）
+  int32  max_up_mbps = 5;         // 上传限速 Mbps（0=不限）
+  int64  ttl_seconds = 6;         // 归属有效期（0=永久，直到用户下线）
+  string iface = 7;               // 目标网卡（默认自动检测）
+}
+
+// 限速状态查询
+message GetRateLimitStatusRequest {
+  int64  subscription_id = 1;     // 0=查询所有
+}
+
+message GetRateLimitStatusResponse {
+  repeated RateLimitEntry entries = 1;
+  bool   nft_available = 2;       // Agent 是否支持 nft
+  bool   tc_available = 3;        // Agent 是否支持 tc
+  bool   ifb_available = 4;       // IFB 是否已加载
+}
+
+message RateLimitEntry {
+  int64  subscription_id = 1;
+  string ip = 2;
+  uint32 mark = 3;
+  int32  max_down_mbps = 4;
+  int32  max_up_mbps = 5;
+  int64  downlink_bytes = 6;       // 该用户已用下载字节（nft counter）
+  int64  uplink_bytes = 7;         // 该用户已用上传字节
+  int64  last_seen = 8;           // 最后活跃时间
 }
 
 message GetStatusRequest {}
@@ -360,7 +405,7 @@ message DownloadGeoRuleResponse {
 // ============================================================
 
 message AgentReport {
-  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; }
+  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; RATE_LIMIT_STATUS = 5; }
   ReportType type = 1;
   int64  server_id = 2;
   int64  timestamp = 3;
@@ -388,6 +433,11 @@ message AgentReport {
 
   // TASK_RESULT — 异步任务执行结果
   TaskResult task_result = 50;
+
+  // RATE_LIMIT_STATUS — 限速状态上报
+  repeated RateLimitEntry rate_limit_entries = 60;
+  int64  rate_limit_total_downlink = 61;   // 该节点总下载带宽 bps
+  int64  rate_limit_total_uplink = 62;     // 该节点总上传带宽 bps
 }
 
 message CoreStatus {
@@ -450,6 +500,11 @@ message PanelCommand {
     StartWriterRequest start_writer = 32;            // 启动/恢复 LogWriter
     StopWriterRequest stop_writer = 33;              // 停止 LogWriter
     UpdateWriterConfigRequest update_writer_config = 34; // 更新 LogWriter 配置
+
+    // --- 限速扩展指令 ---
+    AssociateIPRequest associate_ip = 100;                    // IP 归属推送
+    BatchApplyLimitsRequest batch_apply_limits = 101;         // 批量限速
+    GetRateLimitStatusRequest get_rate_limit_status = 102;    // 限速状态查询
   }
 }
 

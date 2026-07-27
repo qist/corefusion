@@ -183,6 +183,7 @@ type PlanDetailItem struct {
 	PlanListItem
 	DeviceLimit     int     `json:"device_limit"`
 	SpeedLimitMbps  int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps int   `json:"speed_limit_up_mbps"`
 	ConcurrentLimit int     `json:"concurrent_limit"`
 	NodeGroupIDs    []int64 `json:"node_group_ids"`
 }
@@ -361,6 +362,7 @@ func (s *CommerceService) GetPlan(ctx context.Context, planID int64) (*PlanDetai
 			Category: tmpl.Category, SortOrder: tmpl.SortOrder, Variants: variantItems,
 		},
 		DeviceLimit: tmpl.DeviceLimit, SpeedLimitMbps: tmpl.SpeedLimitMbps,
+		SpeedLimitUpMbps: tmpl.SpeedLimitUpMbps,
 		ConcurrentLimit: tmpl.ConcurrentLimit, NodeGroupIDs: nodeGroupIDs,
 	}, nil
 }
@@ -1980,6 +1982,9 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 	}
 	if tmpl.SpeedLimitMbps > 0 {
 		client.SpeedLimitMbps = tmpl.SpeedLimitMbps
+	}
+	if tmpl.SpeedLimitUpMbps > 0 {
+		client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
 	}
 	if tmpl.ConcurrentLimit > 0 {
 		client.ConcurrentLimit = tmpl.ConcurrentLimit

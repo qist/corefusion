@@ -31,6 +31,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vmess"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/store/repository"
 )
@@ -55,6 +56,9 @@ type LocalAgent struct {
 	binaryInst    BinaryInstaller   // 可选：核心二进制安装器
 	statsAddr     string             // xray gRPC API 地址
 	taskQueue     *TaskQueue         // 异步任务队列
+
+	// 限速管理器（nft + tc）
+	rateLimitMgr *ratelimit.Manager
 
 	// Persistent xray gRPC connection (lazy-initialized, reused across AlterUsers calls)
 	xrayConn   *grpc.ClientConn
@@ -107,6 +111,17 @@ func (a *LocalAgent) WithStatsAddr(addr string) *LocalAgent {
 func (a *LocalAgent) WithBinaryInstaller(bi BinaryInstaller) *LocalAgent {
 	a.binaryInst = bi
 	return a
+}
+
+// WithRateLimitManager 注入限速管理器。
+func (a *LocalAgent) WithRateLimitManager(mgr *ratelimit.Manager) *LocalAgent {
+	a.rateLimitMgr = mgr
+	return a
+}
+
+// GetRateLimitManager 返回限速管理器。
+func (a *LocalAgent) GetRateLimitManager() *ratelimit.Manager {
+	return a.rateLimitMgr
 }
 
 // GetTaskQueue 返回 TaskQueue 供外部查询任务状态。
@@ -247,14 +262,29 @@ func (a *LocalAgent) AlterUsers(ctx context.Context, req *agentpb.AlterUsersRequ
 }
 
 // ApplyLimits 应用本地限速规则（异步）。
+// 优先使用 ratelimit.Manager（nft + tc 完整限速），
+// 如果未配置则回退到旧版 LimitApplier。
 func (a *LocalAgent) ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRequest) error {
+	taskID := GenerateTaskID()
+
+	// 优先使用新的 ratelimit.Manager
+	if a.rateLimitMgr != nil {
+		idempotencyKey := fmt.Sprintf("apply-limits-%s-%s", req.Action, req.Ip)
+		a.taskQueue.Submit(taskID, "apply_limits", idempotencyKey,
+			func(ctx context.Context) (interface{}, error) {
+				return nil, a.applyLimitsViaManager(ctx, req)
+			},
+			nil,
+		)
+		return nil
+	}
+
+	// 回退到旧版 LimitApplier
 	if a.limitOp == nil {
 		return fmt.Errorf("limit applier not configured")
 	}
 
-	taskID := GenerateTaskID()
 	idempotencyKey := fmt.Sprintf("apply-limits-%s-%s", req.Action, req.Ip)
-
 	a.taskQueue.Submit(taskID, "apply_limits", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
 			return nil, a.limitOp.ApplyLimits(ctx, req)
@@ -262,6 +292,61 @@ func (a *LocalAgent) ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRe
 		nil,
 	)
 	return nil
+}
+
+// AssociateIP 将 IP 关联到订阅并应用限速规则（异步）。
+// 这是 Panel 推送 IP 归属的 Agent 侧入口。
+func (a *LocalAgent) AssociateIP(ctx context.Context, req *agentpb.AssociateIPRequest) error {
+	if a.rateLimitMgr == nil {
+		return fmt.Errorf("rate limit manager not configured")
+	}
+
+	taskID := GenerateTaskID()
+	idempotencyKey := fmt.Sprintf("associate-ip-%s-%d", req.Ip, req.SubscriptionId)
+
+	a.taskQueue.Submit(taskID, "associate_ip", idempotencyKey,
+		func(ctx context.Context) (interface{}, error) {
+			rate := &ratelimit.RateConfig{
+				MaxDownMbps: req.MaxDownMbps,
+				MaxUpMbps:   req.MaxUpMbps,
+			}
+			return nil, a.rateLimitMgr.AssociateIP(ctx, req.Ip, req.SubscriptionId, rate)
+		},
+		nil,
+	)
+	return nil
+}
+
+// applyLimitsViaManager 使用 ratelimit.Manager 执行限速操作。
+func (a *LocalAgent) applyLimitsViaManager(ctx context.Context, req *agentpb.ApplyLimitsRequest) error {
+	if a.rateLimitMgr == nil {
+		return fmt.Errorf("rate limit manager not configured")
+	}
+
+	switch req.Action {
+	case "apply":
+		rate := &ratelimit.RateConfig{
+			MaxDownMbps: req.MaxDownMbps,
+			MaxUpMbps:   req.MaxUpMbps,
+		}
+		return a.rateLimitMgr.AssociateIP(ctx, req.Ip, req.SubscriptionId, rate)
+
+	case "remove":
+		if req.Ip != "" {
+			return a.rateLimitMgr.RemoveIP(ctx, req.Ip)
+		}
+		return a.rateLimitMgr.RemoveSubscription(ctx, req.SubscriptionId)
+
+	case "update":
+		rate := &ratelimit.RateConfig{
+			MaxDownMbps: req.MaxDownMbps,
+			MaxUpMbps:   req.MaxUpMbps,
+		}
+		return a.rateLimitMgr.UpdateRate(ctx, req.SubscriptionId, rate)
+
+	default:
+		return fmt.Errorf("unknown apply-limits action: %s", req.Action)
+	}
 }
 
 // ============================================================

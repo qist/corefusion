@@ -689,15 +689,53 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if card.ExpiresAt != nil && card.ExpiresAt.Before(time.Now()) {
 			return nil, fmt.Errorf("gift card has expired")
 		}
-		// 验证套餐卡类型 - 必须是套餐型
-		if card.CardType != entity.ChargeCardTypePlan {
-			return nil, fmt.Errorf("gift card is not a plan card")
+		// 验证套餐卡类型 - 必须是套餐型或流量叠加包型
+		if card.CardType != entity.ChargeCardTypePlan && card.CardType != entity.ChargeCardTypeTrafficPack {
+			return nil, fmt.Errorf("gift card is not a plan/traffic_pack card")
 		}
 		// 验证套餐卡价值是否匹配订单
 		if card.Value != input.VariantID {
 			return nil, fmt.Errorf("gift card does not match the selected plan variant")
 		}
 
+		// 流量叠加包类型处理
+		if card.CardType == entity.ChargeCardTypeTrafficPack {
+			// 使用流量叠加包
+			if err := s.applyTrafficPack(ctx, client, variant); err != nil {
+				return nil, fmt.Errorf("failed to apply traffic pack: %v", err)
+			}
+
+			// 创建 ChargeOrder 记录流量包卡使用
+			chargeOrder := &entity.ChargeOrder{
+				ClientID:       clientID,
+				TradeNo:        generateTradeNo(),
+				Source:         entity.ChargeSourceCard,
+				Amount:         0,
+				Currency:       "CNY",
+				PlanVariantID:  &input.VariantID,
+				OrderType:      entity.ChargeOrderTypePurchase,
+				Status:         entity.ChargeStatusPaid,
+				ChargeCardID:   &card.ID,
+				PaidAt:         &now,
+			}
+			if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
+				log.Printf("[gift_card] failed to create charge order: %v", err)
+			}
+
+			// 标记流量包卡为已使用
+			card.UsedCount = 1
+			card.Status = entity.ChargeCardStatusUsed
+			if err := s.chargeCardRepo.Update(ctx, card); err != nil {
+				log.Printf("[gift_card] failed to update card status: %v", err)
+			}
+
+			// P1: 首次付费返利触发（流量包卡支付）
+			s.triggerFirstPaid(ctx, clientID, originalAmount)
+
+			return &CreateOrderResult{OrderID: 0, Status: entity.OrderStatusCompleted}, nil
+		}
+
+		// 套餐型处理（原有逻辑）
 		// 创建 ChargeOrder 记录套餐卡使用（用于后台追踪）
 		chargeOrder := &entity.ChargeOrder{
 			ClientID:       clientID,

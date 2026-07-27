@@ -108,6 +108,16 @@ func (r *PlanVariantRepository) ListEnabledByVariantType(ctx context.Context, va
 	return items, err
 }
 
+// ListAllByVariantType returns all variants of the given type (including disabled).
+func (r *PlanVariantRepository) ListAllByVariantType(ctx context.Context, variantType string) ([]entity.PlanVariant, error) {
+	var items []entity.PlanVariant
+	err := r.db.WithContext(ctx).
+		Where("variant_type = ?", variantType).
+		Order("sort_order ASC, id ASC").
+		Find(&items).Error
+	return items, err
+}
+
 // ListEnabledByTemplateID returns all enabled variants for a template.
 func (r *PlanVariantRepository) ListEnabledByTemplateID(ctx context.Context, templateID int64) ([]entity.PlanVariant, error) {
 	var items []entity.PlanVariant

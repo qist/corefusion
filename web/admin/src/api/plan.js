@@ -64,6 +64,24 @@ export function deletePlanVariant(id) {
   return client.delete(`/plan-variants/${id}`)
 }
 
+// ──────────── Traffic Packs (独立流量叠加包) ────────────
+
+export function listTrafficPacks() {
+  return client.get('/traffic-packs')
+}
+
+export function createTrafficPack(data) {
+  return client.post('/traffic-packs', data)
+}
+
+export function updateTrafficPack(id, data) {
+  return client.put(`/traffic-packs/${id}`, data)
+}
+
+export function deleteTrafficPack(id) {
+  return client.delete(`/traffic-packs/${id}`)
+}
+
 // ──────────── Node Groups ────────────
 
 export function listNodeGroups() {

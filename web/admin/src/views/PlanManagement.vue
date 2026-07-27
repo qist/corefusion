@@ -6,20 +6,30 @@
       <el-tab-pane label="流量叠加包" name="traffic_packs">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
           <h3 style="margin:0">流量叠加包</h3>
+          <el-button type="primary" size="small" @click="showCreateTrafficPack">+ 新增叠加包</el-button>
         </div>
-        <el-table :data="allTrafficPacks" v-loading="trafficPacksLoading" stripe size="small">
+        <el-table :data="trafficPackVariants" v-loading="trafficPacksLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="name" label="名称" width="120" />
-          <el-table-column label="所属模板" width="150">
-            <template #default="{row}">{{ templateName(row.template_id) }}</template>
+          <el-table-column prop="name" label="名称" width="150" />
+          <el-table-column label="说明" show-overflow-tooltip>
+            <template #default="{row}">{{ row.description || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="适用范围" width="120">
+            <template #default=""><el-tag size="small" type="success">全部套餐</el-tag></template>
           </el-table-column>
           <el-table-column label="价格" width="100">
             <template #default="{row}">¥{{ (row.price/100).toFixed(2) }}</template>
           </el-table-column>
-          <el-table-column label="流量" width="100">
-            <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '继承模板' }}</template>
+          <el-table-column label="流量" width="120">
+            <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '—' }}</template>
           </el-table-column>
-          <el-table-column prop="duration_days" label="天数" width="80" />
+          <el-table-column label="过期模式" width="160">
+            <template #default="{row}">
+              <el-tag v-if="row.expiry_mode === 'extend_plan'" type="warning" size="small">延长{{ row.duration_days }}天</el-tag>
+              <el-tag v-else size="small">与套餐同期</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="sort_order" label="排序" width="80" />
           <el-table-column label="状态" width="80">
             <template #default="{row}">
               <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'启用':'禁用' }}</el-tag>
@@ -27,8 +37,8 @@
           </el-table-column>
           <el-table-column label="操作" width="120">
             <template #default="{row}">
-              <el-button size="small" @click="showEditTrafficPackVariant(row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="deleteTrafficPackVariant(row)">删除</el-button>
+              <el-button size="small" @click="showEditTrafficPack(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="deleteTrafficPack(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -491,11 +501,41 @@
       </template>
     </el-dialog>
 
+    <!-- 流量叠加包编辑弹窗 -->
+    <el-dialog v-model="trafficPackDialog" :title="editingTrafficPack?'编辑流量叠加包':'新增流量叠加包'" width="520px">
+      <el-form :model="trafficPackForm" label-width="100px" size="small">
+        <el-form-item label="名称"><el-input v-model="trafficPackForm.name" placeholder="如: 10GB流量包" /></el-form-item>
+        <el-form-item label="说明"><el-input v-model="trafficPackForm.description" type="textarea" :rows="2" placeholder="如: 购买后立即增加10GB流量" /></el-form-item>
+        <el-form-item label="价格 (元)"><el-input-number v-model="trafficPackForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
+        <el-form-item label="原价 (元)"><el-input-number v-model="trafficPackForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
+        <el-form-item label="流量 (GB)"><el-input-number v-model="trafficPackForm.quota_gb" :min="0.1" :step="0.1" /></el-form-item>
+        <el-divider content-position="left">过期时间</el-divider>
+        <el-form-item label="过期模式">
+          <el-radio-group v-model="trafficPackForm.expiry_mode">
+            <el-radio value="align_with_plan">与套餐同期过期</el-radio>
+            <el-radio value="extend_plan">延长套餐时间</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="trafficPackForm.expiry_mode === 'extend_plan'" label="延长天数">
+          <el-input-number v-model="trafficPackForm.duration_days" :min="1" :max="365" />
+          <span style="font-size:12px;color:#909399;margin-left:8px">购买后套餐到期时间延长 N 天</span>
+        </el-form-item>
+        <el-divider content-position="left">显示设置</el-divider>
+        <el-form-item label="推荐"><el-switch v-model="trafficPackForm.is_recommended" /></el-form-item>
+        <el-form-item label="启用"><el-switch v-model="trafficPackForm.enabled" /></el-form-item>
+        <el-form-item label="排序"><el-input-number v-model="trafficPackForm.sort_order" :min="0" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="trafficPackDialog=false">取消</el-button>
+        <el-button type="primary" @click="saveTrafficPack">保存</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import * as planApi from '../api/plan'
@@ -897,59 +937,84 @@ async function fetchExtNodes() {
   try { extNodes.value = (await client.get('/external-nodes')) || [] } catch {}
 }
 
-// ──────── Traffic Packs ────────
-const allTrafficPacks = computed(() => {
-  // Collect all traffic_pack variants across all templates
-  const packs = []
-  for (const tpl of templates.value) {
-    // We need to load variants for each template to show traffic packs
-    // Since variants are loaded on-demand, use a separate fetch for traffic packs
-  }
-  return trafficPackVariants.value
-})
+// ──────── Traffic Packs (独立流量叠加包) ────────
 const trafficPacksLoading = ref(false)
 const trafficPackVariants = ref([])
+const trafficPackDialog = ref(false)
+const editingTrafficPack = ref(null)
+const trafficPackForm = ref({})
+
+function emptyTrafficPackForm() {
+  return {
+    name: '', description: '', price_yuan: 0, original_price_yuan: 0, quota_gb: 1,
+    expiry_mode: 'align_with_plan', duration_days: 7,
+    is_recommended: false, enabled: true, sort_order: 0,
+  }
+}
 
 async function fetchTrafficPacks() {
   trafficPacksLoading.value = true
   try {
-    const tpls = templates.value
-    const allVariants = []
-    for (const tpl of tpls) {
-      try {
-        const vars = (await planApi.listPlanVariants(tpl.id)) || []
-        for (const v of vars) {
-          if (v.variant_type === 'traffic_pack') {
-            allVariants.push({ ...v, template_id: tpl.id, template_name: tpl.name })
-          }
-        }
-      } catch {}
-    }
-    trafficPackVariants.value = allVariants
+    trafficPackVariants.value = (await planApi.listTrafficPacks()) || []
+  } catch {
+    trafficPackVariants.value = []
   } finally {
     trafficPacksLoading.value = false
   }
 }
 
-function templateName(templateId) {
-  const tpl = templates.value.find(t => t.id === templateId)
-  return tpl ? tpl.name : '#'+templateId
+function showCreateTrafficPack() {
+  editingTrafficPack.value = null
+  trafficPackForm.value = emptyTrafficPackForm()
+  trafficPackDialog.value = true
 }
 
-async function showEditTrafficPackVariant(row) {
-  const tpl = templates.value.find(t => t.id === row.template_id)
-  if (tpl) {
-    currentTemplate.value = tpl
-    showEditVariant(row)
+function showEditTrafficPack(row) {
+  editingTrafficPack.value = row
+  trafficPackForm.value = {
+    ...row,
+    price_yuan: row.price / 100,
+    original_price_yuan: row.original_price / 100,
+    quota_gb: row.quota_bytes / 1073741824,
+    expiry_mode: row.expiry_mode || 'align_with_plan',
+    duration_days: row.duration_days || 7,
+    is_recommended: !!row.is_recommended,
+    enabled: !!row.enabled,
   }
+  trafficPackDialog.value = true
 }
 
-async function deleteTrafficPackVariant(row) {
-  await ElMessageBox.confirm(`确定删除流量包「${row.name}」？`, '确认')
+async function saveTrafficPack() {
   try {
-    await planApi.deletePlanVariant(row.id)
+    const payload = {
+      name: trafficPackForm.value.name,
+      description: trafficPackForm.value.description,
+      price: Math.round(trafficPackForm.value.price_yuan * 100),
+      original_price: Math.round(trafficPackForm.value.original_price_yuan * 100),
+      quota_bytes: Math.round(trafficPackForm.value.quota_gb * 1073741824),
+      expiry_mode: trafficPackForm.value.expiry_mode,
+      duration_days: trafficPackForm.value.expiry_mode === 'extend_plan' ? trafficPackForm.value.duration_days : 0,
+      is_recommended: trafficPackForm.value.is_recommended,
+      enabled: trafficPackForm.value.enabled,
+      sort_order: trafficPackForm.value.sort_order,
+    }
+    if (editingTrafficPack.value) {
+      await planApi.updateTrafficPack(editingTrafficPack.value.id, payload)
+    } else {
+      await planApi.createTrafficPack(payload)
+    }
+    ElMessage.success('保存成功')
+    trafficPackDialog.value = false
+    fetchTrafficPacks()
+  } catch {}
+}
+
+async function deleteTrafficPack(row) {
+  await ElMessageBox.confirm(`确定删除流量叠加包「${row.name}」？`, '确认')
+  try {
+    await planApi.deleteTrafficPack(row.id)
     ElMessage.success('删除成功')
-    fetchTemplates()
+    fetchTrafficPacks()
   } catch {}
 }
 

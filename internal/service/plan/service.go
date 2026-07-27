@@ -407,6 +407,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 // UpdateVariantInput is the input for updating a plan variant.
 type UpdateVariantInput struct {
 	Name            *string `json:"name"`
+	Description     *string `json:"description"`
 	BillingCycle    *string `json:"billing_cycle"`
 	DurationDays    *int    `json:"duration_days"`
 	Price           *int64  `json:"price"`
@@ -415,6 +416,7 @@ type UpdateVariantInput struct {
 	QuotaBytes      *int64  `json:"quota_bytes"`
 	QuotaResetCycle *string `json:"quota_reset_cycle"`
 	QuotaResetDay   *int    `json:"quota_reset_day"`
+	ExpiryMode      *string `json:"expiry_mode"`
 	IsRecommended   *bool   `json:"is_recommended"`
 	IsDefault       *bool   `json:"is_default"`
 	Enabled         *bool   `json:"enabled"`
@@ -429,6 +431,9 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 	}
 	if input.Name != nil {
 		variant.Name = *input.Name
+	}
+	if input.Description != nil {
+		variant.Description = *input.Description
 	}
 	if input.BillingCycle != nil {
 		variant.BillingCycle = *input.BillingCycle
@@ -454,6 +459,9 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 	if input.QuotaResetDay != nil {
 		variant.QuotaResetDay = input.QuotaResetDay
 	}
+	if input.ExpiryMode != nil {
+		variant.ExpiryMode = *input.ExpiryMode
+	}
 	if input.IsRecommended != nil {
 		variant.IsRecommended = *input.IsRecommended
 	}
@@ -475,6 +483,107 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 
 // DeleteVariant deletes a plan variant.
 func (s *Service) DeleteVariant(ctx context.Context, id int64) error {
+	return s.variantRepo.Delete(ctx, id)
+}
+
+// ──────────────────── Traffic Pack (独立流量叠加包) ────────────────────
+
+// ListTrafficPacks returns all traffic pack variants (including disabled).
+func (s *Service) ListTrafficPacks(ctx context.Context) ([]entity.PlanVariant, error) {
+	return s.variantRepo.ListAllByVariantType(ctx, entity.VariantTypeTrafficPack)
+}
+
+// CreateTrafficPackInput is the input for creating a standalone traffic pack.
+type CreateTrafficPackInput struct {
+	Name            string `json:"name" binding:"required"`
+	Description     string `json:"description"`
+	BillingCycle    string `json:"billing_cycle"`
+	DurationDays    int    `json:"duration_days"`
+	Price           int64  `json:"price"`
+	OriginalPrice   int64  `json:"original_price"`
+	Currency        string `json:"currency"`
+	QuotaBytes      int64  `json:"quota_bytes"`
+	QuotaResetCycle string `json:"quota_reset_cycle"`
+	QuotaResetDay   *int   `json:"quota_reset_day"`
+	ExpiryMode      string `json:"expiry_mode"`
+	IsRecommended   bool   `json:"is_recommended"`
+	IsDefault       bool   `json:"is_default"`
+	Enabled         *bool  `json:"enabled"`
+	SortOrder       int    `json:"sort_order"`
+}
+
+// CreateTrafficPack creates a standalone traffic pack (not bound to any template).
+func (s *Service) CreateTrafficPack(ctx context.Context, input CreateTrafficPackInput) (*entity.PlanVariant, error) {
+	billingCycle := input.BillingCycle
+	if billingCycle == "" {
+		billingCycle = entity.BillingCycleOneTime
+	}
+	duration := input.DurationDays
+	if duration <= 0 {
+		duration = 0 // traffic packs don't extend duration
+	}
+	currency := input.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
+	now := time.Now()
+	expiryMode := input.ExpiryMode
+	if expiryMode == "" {
+		expiryMode = entity.ExpiryModeAlignWithPlan
+	}
+	variant := &entity.PlanVariant{
+		TemplateID:      0, // 0 = not bound to any template, applicable to all plans
+		VariantType:     entity.VariantTypeTrafficPack,
+		Name:            input.Name,
+		Description:     input.Description,
+		BillingCycle:    billingCycle,
+		DurationDays:    duration,
+		Price:           input.Price,
+		OriginalPrice:   input.OriginalPrice,
+		Currency:        currency,
+		QuotaBytes:      input.QuotaBytes,
+		QuotaResetCycle: input.QuotaResetCycle,
+		QuotaResetDay:   input.QuotaResetDay,
+		ExpiryMode:      expiryMode,
+		IsRecommended:   input.IsRecommended,
+		IsDefault:       input.IsDefault,
+		Enabled:         enabled,
+		SortOrder:       input.SortOrder,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := s.variantRepo.Create(ctx, variant); err != nil {
+		return nil, fmt.Errorf("create traffic pack: %w", err)
+	}
+	return variant, nil
+}
+
+// UpdateTrafficPack updates a standalone traffic pack.
+func (s *Service) UpdateTrafficPack(ctx context.Context, id int64, input UpdateVariantInput) (*entity.PlanVariant, error) {
+	variant, err := s.variantRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("traffic pack not found: %w", err)
+	}
+	if variant.VariantType != entity.VariantTypeTrafficPack {
+		return nil, fmt.Errorf("variant is not a traffic pack")
+	}
+	return s.UpdateVariant(ctx, id, input)
+}
+
+// DeleteTrafficPack deletes a standalone traffic pack.
+func (s *Service) DeleteTrafficPack(ctx context.Context, id int64) error {
+	variant, err := s.variantRepo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("traffic pack not found: %w", err)
+	}
+	if variant.VariantType != entity.VariantTypeTrafficPack {
+		return fmt.Errorf("variant is not a traffic pack")
+	}
 	return s.variantRepo.Delete(ctx, id)
 }
 

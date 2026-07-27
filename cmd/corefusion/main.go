@@ -34,16 +34,15 @@ import (
 )
 
 func main() {
+	// 无参数或第一个参数不是已知命令时，默认启动 server
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+		runServer([]string{})
+		return
 	}
 
 	switch os.Args[1] {
 	case "server":
 		runServer(os.Args[2:])
-	case "client":
-		runClient(os.Args[2:])
 	case "migrate":
 		runMigrate(os.Args[2:])
 	case "version":
@@ -51,9 +50,8 @@ func main() {
 	case "help", "--help", "-h":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		printUsage()
-		os.Exit(1)
+		// 未知命令也默认启动 server（保留参数传递）
+		runServer(os.Args[1:])
 	}
 }
 
@@ -61,11 +59,10 @@ func printUsage() {
 	fmt.Print(`CoreFusion - Multi-protocol proxy management panel
 
 Usage:
+  corefusion                    Start the server management panel
   corefusion <command> [options]
 
 Commands:
-  server    Start the server management panel
-  client    Start the client mode
   migrate   Run database migrations
   version   Print version
   help      Show this help

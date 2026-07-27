@@ -209,6 +209,21 @@ const defaultModulesJSON = `[
     "style": {}
   },
   {
+    "id": "mod-traffic-packs",
+    "type": "traffic_pack_list",
+    "title": "traffic_pack.title",
+    "page": "store",
+    "visible": true,
+    "data": {
+      "notice_text": "traffic_pack.notice",
+      "button_text": "common.buy",
+      "html": "<div class=\"card-header\"><span class=\"card-icon\">📦</span><span class=\"card-title\">{{ t(mod.title) }}</span></div>\n              <div v-if=\"mod.data && mod.data.notice_text\" class=\"plan-notice\" style=\"margin-bottom:12px\">\n                <div class=\"plan-notice-content\">{{ t(mod.data.notice_text) }}</div>\n              </div>\n              <div v-if=\"trafficPacksLoading\" class=\"empty-state\"><el-icon class=\"empty-icon\" size=\"48\" class=\"is-loading\"><Loading /></el-icon><p class=\"empty-text\">{{ t('common.loading') }}</p></div>\n              <div v-else-if=\"trafficPacks.length === 0\" class=\"empty-state\"><el-icon class=\"empty-icon\" size=\"48\"><Inbox /></el-icon><p class=\"empty-text\">{{ t('traffic_pack.empty') }}</p></div>\n              <div v-else class=\"plan-table-wrap\">\n                <table class=\"plan-table\">\n                  <thead>\n                    <tr>\n                      <th class=\"plan-col-service\">{{ t('traffic_pack.col_name') }}</th>\n                      <th class=\"plan-col-desc\">{{ t('traffic_pack.col_desc') }}</th>\n                      <th class=\"plan-col-price\">{{ t('plan.col_price') }}</th>\n                      <th class=\"plan-col-action\">{{ t('common.action') }}</th>\n                    </tr>\n                  </thead>\n                  <tbody>\n                    <tr v-for=\"pack in trafficPacks\" :key=\"pack.id\" class=\"plan-row\">\n                      <td class=\"plan-cell plan-cell-service\">\n                        <div class=\"plan-service-name\">{{ pack.name }}</div>\n                        <div class=\"plan-service-meta\">\n                          <div v-if=\"pack.quota_bytes\">{{ t('traffic_pack.traffic_amount') }}: {{ formatBytes(pack.quota_bytes) }}</div>\n                          <div v-if=\"pack.expiry_mode === 'extend_plan' && pack.duration_days\">{{ t('traffic_pack.extend_hint') }}: +{{ pack.duration_days }}{{ t('plan.days_unit') }}</div>\n                          <div v-else>{{ t('traffic_pack.align_hint') }}</div>\n                        </div>\n                      </td>\n                      <td class=\"plan-cell plan-cell-desc\">\n                        <div class=\"plan-desc-text\">{{ pack.description || t('traffic_pack.default_desc') }}</div>\n                      </td>\n                      <td class=\"plan-cell plan-cell-price\">\n                        <span class=\"plan-price-amount\">{{ (pack.currency || 'CNY') === 'CNY' ? '¥' : (pack.currency === 'USD' ? '$' : pack.currency) }}{{ formatMoney(pack.price) }}</span>\n                      </td>\n                      <td class=\"plan-cell plan-cell-action\">\n                        <el-button type=\"primary\" size=\"small\" @click=\"buyTrafficPack(pack)\" :disabled=\"orderBusy || !client.plan_id\">\n                          {{ t((mod.data && mod.data.button_text) || 'common.buy') }}\n                        </el-button>\n                        <div v-if=\"!client.plan_id\" class=\"plan-current-badge\" style=\"color:var(--text-muted)\">{{ t('traffic_pack.need_plan') }}</div>\n                      </td>\n                    </tr>\n                  </tbody>\n                </table>\n              </div>",
+      "css": "",
+      "js": "return {}"
+    },
+    "style": {}
+  },
+  {
     "id": "mod-orders",
     "type": "order_list",
     "title": "order.title",

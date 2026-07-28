@@ -1829,8 +1829,22 @@ type MetricPoint struct {
 	TcpConnections  int32                  `protobuf:"varint,8,opt,name=tcp_connections,json=tcpConnections,proto3" json:"tcp_connections,omitempty"`     // TCP 连接数
 	TrafficUplink   int64                  `protobuf:"varint,9,opt,name=traffic_uplink,json=trafficUplink,proto3" json:"traffic_uplink,omitempty"`        // 用户上行流量（字节/秒）
 	TrafficDownlink int64                  `protobuf:"varint,10,opt,name=traffic_downlink,json=trafficDownlink,proto3" json:"traffic_downlink,omitempty"` // 用户下行流量（字节/秒）
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// --- Extended resource metrics (节点使用率) ---
+	CpuCores          int32   `protobuf:"varint,11,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`                                // 逻辑 CPU 核心数
+	MemTotalBytes     int64   `protobuf:"varint,12,opt,name=mem_total_bytes,json=memTotalBytes,proto3" json:"mem_total_bytes,omitempty"`               // 物理内存总量
+	MemUsage          float64 `protobuf:"fixed64,13,opt,name=mem_usage,json=memUsage,proto3" json:"mem_usage,omitempty"`                               // 内存使用率 0-100
+	SwapTotalBytes    int64   `protobuf:"varint,14,opt,name=swap_total_bytes,json=swapTotalBytes,proto3" json:"swap_total_bytes,omitempty"`            // Swap 总量
+	SwapUsedBytes     int64   `protobuf:"varint,15,opt,name=swap_used_bytes,json=swapUsedBytes,proto3" json:"swap_used_bytes,omitempty"`               // Swap 已用
+	SwapUsage         float64 `protobuf:"fixed64,16,opt,name=swap_usage,json=swapUsage,proto3" json:"swap_usage,omitempty"`                            // Swap 使用率 0-100
+	DiskTotalBytes    int64   `protobuf:"varint,17,opt,name=disk_total_bytes,json=diskTotalBytes,proto3" json:"disk_total_bytes,omitempty"`            // 磁盘总量
+	DiskUsage         float64 `protobuf:"fixed64,18,opt,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`                            // 磁盘使用率 0-100
+	DiskReadBytesSec  int64   `protobuf:"varint,19,opt,name=disk_read_bytes_sec,json=diskReadBytesSec,proto3" json:"disk_read_bytes_sec,omitempty"`    // 磁盘读取速率 bytes/sec
+	DiskWriteBytesSec int64   `protobuf:"varint,20,opt,name=disk_write_bytes_sec,json=diskWriteBytesSec,proto3" json:"disk_write_bytes_sec,omitempty"` // 磁盘写入速率 bytes/sec
+	NetRxBytesSec     int64   `protobuf:"varint,21,opt,name=net_rx_bytes_sec,json=netRxBytesSec,proto3" json:"net_rx_bytes_sec,omitempty"`             // 网络接收速率 bytes/sec
+	NetTxBytesSec     int64   `protobuf:"varint,22,opt,name=net_tx_bytes_sec,json=netTxBytesSec,proto3" json:"net_tx_bytes_sec,omitempty"`             // 网络发送速率 bytes/sec
+	UptimeSeconds     int64   `protobuf:"varint,23,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`                 // 系统运行时间（秒）
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *MetricPoint) Reset() {
@@ -1929,6 +1943,97 @@ func (x *MetricPoint) GetTrafficUplink() int64 {
 func (x *MetricPoint) GetTrafficDownlink() int64 {
 	if x != nil {
 		return x.TrafficDownlink
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetCpuCores() int32 {
+	if x != nil {
+		return x.CpuCores
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetMemTotalBytes() int64 {
+	if x != nil {
+		return x.MemTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetMemUsage() float64 {
+	if x != nil {
+		return x.MemUsage
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetSwapTotalBytes() int64 {
+	if x != nil {
+		return x.SwapTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetSwapUsedBytes() int64 {
+	if x != nil {
+		return x.SwapUsedBytes
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetSwapUsage() float64 {
+	if x != nil {
+		return x.SwapUsage
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetDiskTotalBytes() int64 {
+	if x != nil {
+		return x.DiskTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetDiskUsage() float64 {
+	if x != nil {
+		return x.DiskUsage
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetDiskReadBytesSec() int64 {
+	if x != nil {
+		return x.DiskReadBytesSec
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetDiskWriteBytesSec() int64 {
+	if x != nil {
+		return x.DiskWriteBytesSec
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetNetRxBytesSec() int64 {
+	if x != nil {
+		return x.NetRxBytesSec
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetNetTxBytesSec() int64 {
+	if x != nil {
+		return x.NetTxBytesSec
+	}
+	return 0
+}
+
+func (x *MetricPoint) GetUptimeSeconds() int64 {
+	if x != nil {
+		return x.UptimeSeconds
 	}
 	return 0
 }
@@ -2678,6 +2783,23 @@ type AgentReport struct {
 	Os             string  `protobuf:"bytes,16,opt,name=os,proto3" json:"os,omitempty"`         // Agent's GOOS (linux, darwin, windows)
 	Arch           string  `protobuf:"bytes,17,opt,name=arch,proto3" json:"arch,omitempty"`     // Agent's GOARCH (amd64, arm64, etc.)
 	Distro         string  `protobuf:"bytes,18,opt,name=distro,proto3" json:"distro,omitempty"` // Agent's Linux distro (debian, ubuntu, redhat, alpine, etc.)
+	// HEARTBEAT — Extended resource metrics
+	CpuCores          int32   `protobuf:"varint,70,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`                                // 逻辑 CPU 核心数
+	MemTotalBytes     int64   `protobuf:"varint,71,opt,name=mem_total_bytes,json=memTotalBytes,proto3" json:"mem_total_bytes,omitempty"`               // 物理内存总量
+	MemUsage          float64 `protobuf:"fixed64,72,opt,name=mem_usage,json=memUsage,proto3" json:"mem_usage,omitempty"`                               // 内存使用率 0-100
+	SwapTotalBytes    int64   `protobuf:"varint,73,opt,name=swap_total_bytes,json=swapTotalBytes,proto3" json:"swap_total_bytes,omitempty"`            // Swap 总量
+	SwapUsedBytes     int64   `protobuf:"varint,74,opt,name=swap_used_bytes,json=swapUsedBytes,proto3" json:"swap_used_bytes,omitempty"`               // Swap 已用
+	SwapUsage         float64 `protobuf:"fixed64,75,opt,name=swap_usage,json=swapUsage,proto3" json:"swap_usage,omitempty"`                            // Swap 使用率 0-100
+	DiskTotalBytes    int64   `protobuf:"varint,76,opt,name=disk_total_bytes,json=diskTotalBytes,proto3" json:"disk_total_bytes,omitempty"`            // 磁盘总量
+	DiskUsage         float64 `protobuf:"fixed64,77,opt,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`                            // 磁盘使用率 0-100
+	DiskReadBytesSec  int64   `protobuf:"varint,78,opt,name=disk_read_bytes_sec,json=diskReadBytesSec,proto3" json:"disk_read_bytes_sec,omitempty"`    // 磁盘读取速率 bytes/sec
+	DiskWriteBytesSec int64   `protobuf:"varint,79,opt,name=disk_write_bytes_sec,json=diskWriteBytesSec,proto3" json:"disk_write_bytes_sec,omitempty"` // 磁盘写入速率 bytes/sec
+	NetRxBytesSec     int64   `protobuf:"varint,80,opt,name=net_rx_bytes_sec,json=netRxBytesSec,proto3" json:"net_rx_bytes_sec,omitempty"`             // 网络接收速率 bytes/sec
+	NetTxBytesSec     int64   `protobuf:"varint,81,opt,name=net_tx_bytes_sec,json=netTxBytesSec,proto3" json:"net_tx_bytes_sec,omitempty"`             // 网络发送速率 bytes/sec
+	Hostname          string  `protobuf:"bytes,82,opt,name=hostname,proto3" json:"hostname,omitempty"`                                                 // 系统主机名
+	UptimeSeconds     int64   `protobuf:"varint,83,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`                 // 系统运行时间（秒）
+	Load_1M           float64 `protobuf:"fixed64,84,opt,name=load_1m,json=load1m,proto3" json:"load_1m,omitempty"`                                     // 1 分钟负载
+	TcpConnections    int32   `protobuf:"varint,85,opt,name=tcp_connections,json=tcpConnections,proto3" json:"tcp_connections,omitempty"`              // TCP 连接数
 	// STATUS
 	Cores []*CoreStatus `protobuf:"bytes,20,rep,name=cores,proto3" json:"cores,omitempty"`
 	// TRAFFIC
@@ -2807,6 +2929,118 @@ func (x *AgentReport) GetDistro() string {
 		return x.Distro
 	}
 	return ""
+}
+
+func (x *AgentReport) GetCpuCores() int32 {
+	if x != nil {
+		return x.CpuCores
+	}
+	return 0
+}
+
+func (x *AgentReport) GetMemTotalBytes() int64 {
+	if x != nil {
+		return x.MemTotalBytes
+	}
+	return 0
+}
+
+func (x *AgentReport) GetMemUsage() float64 {
+	if x != nil {
+		return x.MemUsage
+	}
+	return 0
+}
+
+func (x *AgentReport) GetSwapTotalBytes() int64 {
+	if x != nil {
+		return x.SwapTotalBytes
+	}
+	return 0
+}
+
+func (x *AgentReport) GetSwapUsedBytes() int64 {
+	if x != nil {
+		return x.SwapUsedBytes
+	}
+	return 0
+}
+
+func (x *AgentReport) GetSwapUsage() float64 {
+	if x != nil {
+		return x.SwapUsage
+	}
+	return 0
+}
+
+func (x *AgentReport) GetDiskTotalBytes() int64 {
+	if x != nil {
+		return x.DiskTotalBytes
+	}
+	return 0
+}
+
+func (x *AgentReport) GetDiskUsage() float64 {
+	if x != nil {
+		return x.DiskUsage
+	}
+	return 0
+}
+
+func (x *AgentReport) GetDiskReadBytesSec() int64 {
+	if x != nil {
+		return x.DiskReadBytesSec
+	}
+	return 0
+}
+
+func (x *AgentReport) GetDiskWriteBytesSec() int64 {
+	if x != nil {
+		return x.DiskWriteBytesSec
+	}
+	return 0
+}
+
+func (x *AgentReport) GetNetRxBytesSec() int64 {
+	if x != nil {
+		return x.NetRxBytesSec
+	}
+	return 0
+}
+
+func (x *AgentReport) GetNetTxBytesSec() int64 {
+	if x != nil {
+		return x.NetTxBytesSec
+	}
+	return 0
+}
+
+func (x *AgentReport) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *AgentReport) GetUptimeSeconds() int64 {
+	if x != nil {
+		return x.UptimeSeconds
+	}
+	return 0
+}
+
+func (x *AgentReport) GetLoad_1M() float64 {
+	if x != nil {
+		return x.Load_1M
+	}
+	return 0
+}
+
+func (x *AgentReport) GetTcpConnections() int32 {
+	if x != nil {
+		return x.TcpConnections
+	}
+	return 0
 }
 
 func (x *AgentReport) GetCores() []*CoreStatus {
@@ -7056,7 +7290,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\vmetric_type\x18\x02 \x01(\tR\n" +
 	"metricType\"N\n" +
 	"\x12GetMetricsResponse\x128\n" +
-	"\x06points\x18\x01 \x03(\v2 .corefusion.agent.v1.MetricPointR\x06points\"\xf2\x02\n" +
+	"\x06points\x18\x01 \x03(\v2 .corefusion.agent.v1.MetricPointR\x06points\"\xe7\x06\n" +
 	"\vMetricPoint\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x12\x1b\n" +
 	"\tcpu_usage\x18\x02 \x01(\x01R\bcpuUsage\x12&\n" +
@@ -7070,7 +7304,22 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\x0ftcp_connections\x18\b \x01(\x05R\x0etcpConnections\x12%\n" +
 	"\x0etraffic_uplink\x18\t \x01(\x03R\rtrafficUplink\x12)\n" +
 	"\x10traffic_downlink\x18\n" +
-	" \x01(\x03R\x0ftrafficDownlink\"\xcf\x01\n" +
+	" \x01(\x03R\x0ftrafficDownlink\x12\x1b\n" +
+	"\tcpu_cores\x18\v \x01(\x05R\bcpuCores\x12&\n" +
+	"\x0fmem_total_bytes\x18\f \x01(\x03R\rmemTotalBytes\x12\x1b\n" +
+	"\tmem_usage\x18\r \x01(\x01R\bmemUsage\x12(\n" +
+	"\x10swap_total_bytes\x18\x0e \x01(\x03R\x0eswapTotalBytes\x12&\n" +
+	"\x0fswap_used_bytes\x18\x0f \x01(\x03R\rswapUsedBytes\x12\x1d\n" +
+	"\n" +
+	"swap_usage\x18\x10 \x01(\x01R\tswapUsage\x12(\n" +
+	"\x10disk_total_bytes\x18\x11 \x01(\x03R\x0ediskTotalBytes\x12\x1d\n" +
+	"\n" +
+	"disk_usage\x18\x12 \x01(\x01R\tdiskUsage\x12-\n" +
+	"\x13disk_read_bytes_sec\x18\x13 \x01(\x03R\x10diskReadBytesSec\x12/\n" +
+	"\x14disk_write_bytes_sec\x18\x14 \x01(\x03R\x11diskWriteBytesSec\x12'\n" +
+	"\x10net_rx_bytes_sec\x18\x15 \x01(\x03R\rnetRxBytesSec\x12'\n" +
+	"\x10net_tx_bytes_sec\x18\x16 \x01(\x03R\rnetTxBytesSec\x12%\n" +
+	"\x0euptime_seconds\x18\x17 \x01(\x03R\ruptimeSeconds\"\xcf\x01\n" +
 	"\x14InstallBinaryRequest\x12\x1b\n" +
 	"\tcore_type\x18\x01 \x01(\tR\bcoreType\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12!\n" +
@@ -7128,7 +7377,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1b\n" +
 	"\tfile_size\x18\x03 \x01(\x03R\bfileSize\x12\x1b\n" +
-	"\tfile_path\x18\x04 \x01(\tR\bfilePath\"\xcb\a\n" +
+	"\tfile_path\x18\x04 \x01(\tR\bfilePath\"\x9e\f\n" +
 	"\vAgentReport\x12?\n" +
 	"\x04type\x18\x01 \x01(\x0e2+.corefusion.agent.v1.AgentReport.ReportTypeR\x04type\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\x03R\bserverId\x12\x1c\n" +
@@ -7144,7 +7393,25 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"netTxBytes\x12\x0e\n" +
 	"\x02os\x18\x10 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x11 \x01(\tR\x04arch\x12\x16\n" +
-	"\x06distro\x18\x12 \x01(\tR\x06distro\x125\n" +
+	"\x06distro\x18\x12 \x01(\tR\x06distro\x12\x1b\n" +
+	"\tcpu_cores\x18F \x01(\x05R\bcpuCores\x12&\n" +
+	"\x0fmem_total_bytes\x18G \x01(\x03R\rmemTotalBytes\x12\x1b\n" +
+	"\tmem_usage\x18H \x01(\x01R\bmemUsage\x12(\n" +
+	"\x10swap_total_bytes\x18I \x01(\x03R\x0eswapTotalBytes\x12&\n" +
+	"\x0fswap_used_bytes\x18J \x01(\x03R\rswapUsedBytes\x12\x1d\n" +
+	"\n" +
+	"swap_usage\x18K \x01(\x01R\tswapUsage\x12(\n" +
+	"\x10disk_total_bytes\x18L \x01(\x03R\x0ediskTotalBytes\x12\x1d\n" +
+	"\n" +
+	"disk_usage\x18M \x01(\x01R\tdiskUsage\x12-\n" +
+	"\x13disk_read_bytes_sec\x18N \x01(\x03R\x10diskReadBytesSec\x12/\n" +
+	"\x14disk_write_bytes_sec\x18O \x01(\x03R\x11diskWriteBytesSec\x12'\n" +
+	"\x10net_rx_bytes_sec\x18P \x01(\x03R\rnetRxBytesSec\x12'\n" +
+	"\x10net_tx_bytes_sec\x18Q \x01(\x03R\rnetTxBytesSec\x12\x1a\n" +
+	"\bhostname\x18R \x01(\tR\bhostname\x12%\n" +
+	"\x0euptime_seconds\x18S \x01(\x03R\ruptimeSeconds\x12\x17\n" +
+	"\aload_1m\x18T \x01(\x01R\x06load1m\x12'\n" +
+	"\x0ftcp_connections\x18U \x01(\x05R\x0etcpConnections\x125\n" +
 	"\x05cores\x18\x14 \x03(\v2\x1f.corefusion.agent.v1.CoreStatusR\x05cores\x12E\n" +
 	"\rtraffic_stats\x18\x1e \x03(\v2 .corefusion.agent.v1.TrafficStatR\ftrafficStats\x12!\n" +
 	"\fcrashed_core\x18( \x01(\tR\vcrashedCore\x12\x1b\n" +

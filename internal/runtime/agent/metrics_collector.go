@@ -77,27 +77,47 @@ func (mc *MetricsCollector) CollectFromHeartbeat(serverID int64, report *agentpb
 
 	now := time.Now()
 	metric := &entity.ServerMetric{
-		ServerID:        serverID,
-		CPUUsage:        report.CpuUsage,
-		MemUsageBytes:   report.MemUsageBytes,
-		DiskUsageBytes:  report.DiskUsageBytes,
-		NetRxBytes:      report.NetRxBytes,
-		NetTxBytes:      report.NetTxBytes,
-		AgentVersion:    report.AgentVersion,
-		CreatedAt:       now,
+		ServerID:         serverID,
+		CPUUsage:         report.CpuUsage,
+		CPUCores:         int(report.CpuCores),
+		MemUsageBytes:    report.MemUsageBytes,
+		MemTotalBytes:    report.MemTotalBytes,
+		MemUsage:         report.MemUsage,
+		SwapTotalBytes:   report.SwapTotalBytes,
+		SwapUsedBytes:    report.SwapUsedBytes,
+		SwapUsage:        report.SwapUsage,
+		DiskUsageBytes:   report.DiskUsageBytes,
+		DiskTotalBytes:   report.DiskTotalBytes,
+		DiskUsage:        report.DiskUsage,
+		DiskReadBytesSec:  report.DiskReadBytesSec,
+		DiskWriteBytesSec: report.DiskWriteBytesSec,
+		Load1m:           report.Load_1M,
+		TCPConnections:    int(report.TcpConnections),
+		UptimeSeconds:     report.UptimeSeconds,
+		TrafficUplink:    report.RateLimitTotalUplink,
+		TrafficDownlink:  report.RateLimitTotalDownlink,
+		AgentVersion:     report.AgentVersion,
+		Hostname:         report.Hostname,
+		CreatedAt:        now,
 	}
 
-	// Calculate network rate
-	if last, ok := mc.lastNetStats[serverID]; ok {
-		elapsed := now.Sub(last.timestamp).Seconds()
-		if elapsed > 0 {
-			// Store rate (bytes/sec) instead of cumulative
-			metric.NetRxBytes = int64(float64(report.NetRxBytes-last.rxBytes) / elapsed)
-			metric.NetTxBytes = int64(float64(report.NetTxBytes-last.txBytes) / elapsed)
+	// Use Agent-reported network rates if available (field 80/81),
+	// otherwise fall back to delta calculation from cumulative counters.
+	if report.NetRxBytesSec > 0 || report.NetTxBytesSec > 0 {
+		metric.NetRxBytes = report.NetRxBytesSec
+		metric.NetTxBytes = report.NetTxBytesSec
+	} else {
+		// Legacy: calculate rate from cumulative counters
+		if last, ok := mc.lastNetStats[serverID]; ok {
+			elapsed := now.Sub(last.timestamp).Seconds()
+			if elapsed > 0 {
+				metric.NetRxBytes = int64(float64(report.NetRxBytes-last.rxBytes) / elapsed)
+				metric.NetTxBytes = int64(float64(report.NetTxBytes-last.txBytes) / elapsed)
+			}
 		}
 	}
 
-	// Update last counters
+	// Update last counters (for legacy delta calculation fallback)
 	mc.lastNetStats[serverID] = &netCounter{
 		rxBytes:   report.NetRxBytes,
 		txBytes:   report.NetTxBytes,
@@ -190,17 +210,28 @@ func (mc *MetricsCollector) collectRemoteMetrics(ctx context.Context, serverID i
 
 	p := resp.Points[0]
 	metric := &entity.ServerMetric{
-		ServerID:        serverID,
-		CPUUsage:        p.CpuUsage,
-		MemUsageBytes:   p.MemUsageBytes,
-		DiskUsageBytes:  p.DiskUsageBytes,
-		NetRxBytes:      p.NetRxBytes,
-		NetTxBytes:      p.NetTxBytes,
-		Load1m:          p.Load_1M,
-		TCPConnections:  int(p.TcpConnections),
-		TrafficUplink:   p.TrafficUplink,
-		TrafficDownlink: p.TrafficDownlink,
-		CreatedAt:       time.Unix(p.Timestamp, 0),
+		ServerID:          serverID,
+		CPUUsage:          p.CpuUsage,
+		CPUCores:          int(p.CpuCores),
+		MemUsageBytes:     p.MemUsageBytes,
+		MemTotalBytes:     p.MemTotalBytes,
+		MemUsage:          p.MemUsage,
+		SwapTotalBytes:    p.SwapTotalBytes,
+		SwapUsedBytes:     p.SwapUsedBytes,
+		SwapUsage:         p.SwapUsage,
+		DiskUsageBytes:    p.DiskUsageBytes,
+		DiskTotalBytes:    p.DiskTotalBytes,
+		DiskUsage:         p.DiskUsage,
+		DiskReadBytesSec:  p.DiskReadBytesSec,
+		DiskWriteBytesSec: p.DiskWriteBytesSec,
+		NetRxBytes:        p.NetRxBytesSec,
+		NetTxBytes:        p.NetTxBytesSec,
+		Load1m:            p.Load_1M,
+		TCPConnections:    int(p.TcpConnections),
+		UptimeSeconds:     p.UptimeSeconds,
+		TrafficUplink:     p.TrafficUplink,
+		TrafficDownlink:   p.TrafficDownlink,
+		CreatedAt:          time.Unix(p.Timestamp, 0),
 	}
 
 	mc.mu.Lock()
@@ -266,31 +297,40 @@ func (mc *MetricsCollector) GetAggregatedMetrics(ctx context.Context) (map[int64
 		}
 
 		// Calculate averages
-		var cpuSum, memSum float64
-		var netRxSum, netTxSum int64
+		var cpuSum float64
 		latest := metrics[0]
 
 		for _, m := range metrics {
 			cpuSum += m.CPUUsage
-			memSum += float64(m.MemUsageBytes)
-			netRxSum += m.NetRxBytes
-			netTxSum += m.NetTxBytes
 		}
 
 		result[server.ID] = &ServerMetricSummary{
-			ServerID:        server.ID,
-			Name:            server.Name,
-			Region:          server.Region,
-			Online:          mc.nodeMgr.IsOnlineForServer(server.ID),
-			CPUUsage:        cpuSum / float64(len(metrics)),
-			MemUsageBytes:   int64(memSum / float64(len(metrics))),
-			NetRxBytes:      netRxSum / int64(len(metrics)),
-			NetTxBytes:      netTxSum / int64(len(metrics)),
-			TCPConnections:  latest.TCPConnections,
-			Load1m:          latest.Load1m,
-			TrafficUplink:   latest.TrafficUplink,
-			TrafficDownlink: latest.TrafficDownlink,
-			LastUpdated:     latest.CreatedAt,
+			ServerID:         server.ID,
+			Name:             server.Name,
+			Region:           server.Region,
+			Online:           mc.nodeMgr.IsOnlineForServer(server.ID),
+			CPUUsage:         cpuSum / float64(len(metrics)),
+			CPUCores:         latest.CPUCores,
+			MemUsageBytes:    latest.MemUsageBytes,
+			MemTotalBytes:    latest.MemTotalBytes,
+			MemUsage:         latest.MemUsage,
+			SwapTotalBytes:   latest.SwapTotalBytes,
+			SwapUsedBytes:    latest.SwapUsedBytes,
+			SwapUsage:        latest.SwapUsage,
+			DiskUsageBytes:   latest.DiskUsageBytes,
+			DiskTotalBytes:   latest.DiskTotalBytes,
+			DiskUsage:        latest.DiskUsage,
+			DiskReadBytesSec: latest.DiskReadBytesSec,
+			DiskWriteBytesSec: latest.DiskWriteBytesSec,
+			NetRxBytes:       latest.NetRxBytes,
+			NetTxBytes:       latest.NetTxBytes,
+			TCPConnections:   latest.TCPConnections,
+			Load1m:           latest.Load1m,
+			UptimeSeconds:    latest.UptimeSeconds,
+			Hostname:         latest.Hostname,
+			TrafficUplink:    latest.TrafficUplink,
+			TrafficDownlink:  latest.TrafficDownlink,
+			LastUpdated:      latest.CreatedAt,
 		}
 	}
 
@@ -376,35 +416,58 @@ func averageMetrics(metrics []entity.ServerMetric) entity.ServerMetric {
 		return entity.ServerMetric{}
 	}
 
-	var cpuSum, loadSum float64
+	var cpuSum, loadSum, memUsageSum, swapUsageSum, diskUsageSum float64
 	var memSum, diskSum, netRxSum, netTxSum, uplinkSum, downlinkSum int64
+	var memTotalSum, diskTotalSum int64
+	var diskReadSum, diskWriteSum int64
 	var tcpSum int
+	var uptimeSum int64
 
 	for _, m := range metrics {
 		cpuSum += m.CPUUsage
 		memSum += m.MemUsageBytes
+		memTotalSum += m.MemTotalBytes
+		memUsageSum += m.MemUsage
 		diskSum += m.DiskUsageBytes
+		diskTotalSum += m.DiskTotalBytes
+		diskUsageSum += m.DiskUsage
+		diskReadSum += m.DiskReadBytesSec
+		diskWriteSum += m.DiskWriteBytesSec
 		netRxSum += m.NetRxBytes
 		netTxSum += m.NetTxBytes
 		loadSum += m.Load1m
 		tcpSum += m.TCPConnections
 		uplinkSum += m.TrafficUplink
 		downlinkSum += m.TrafficDownlink
+		uptimeSum += m.UptimeSeconds
+		swapUsageSum += m.SwapUsage
 	}
 
 	n := float64(len(metrics))
 	return entity.ServerMetric{
-		ServerID:        metrics[0].ServerID,
-		CPUUsage:        cpuSum / n,
-		MemUsageBytes:   memSum / int64(n),
-		DiskUsageBytes:  diskSum / int64(n),
-		NetRxBytes:      netRxSum / int64(n),
-		NetTxBytes:      netTxSum / int64(n),
-		Load1m:          loadSum / n,
-		TCPConnections:  tcpSum / int(n),
-		TrafficUplink:   uplinkSum / int64(n),
-		TrafficDownlink: downlinkSum / int64(n),
-		CreatedAt:       metrics[len(metrics)-1].CreatedAt,
+		ServerID:          metrics[0].ServerID,
+		CPUUsage:          cpuSum / n,
+		CPUCores:          metrics[0].CPUCores,
+		MemUsageBytes:     memSum / int64(n),
+		MemTotalBytes:     memTotalSum / int64(n),
+		MemUsage:          memUsageSum / n,
+		SwapTotalBytes:    metrics[0].SwapTotalBytes,
+		SwapUsedBytes:     metrics[0].SwapUsedBytes,
+		SwapUsage:         swapUsageSum / n,
+		DiskUsageBytes:    diskSum / int64(n),
+		DiskTotalBytes:    diskTotalSum / int64(n),
+		DiskUsage:         diskUsageSum / n,
+		DiskReadBytesSec:  diskReadSum / int64(n),
+		DiskWriteBytesSec: diskWriteSum / int64(n),
+		NetRxBytes:        netRxSum / int64(n),
+		NetTxBytes:        netTxSum / int64(n),
+		Load1m:            loadSum / n,
+		TCPConnections:    tcpSum / int(n),
+		UptimeSeconds:     uptimeSum / int64(n),
+		TrafficUplink:     uplinkSum / int64(n),
+		TrafficDownlink:   downlinkSum / int64(n),
+		Hostname:          metrics[0].Hostname,
+		CreatedAt:         metrics[len(metrics)-1].CreatedAt,
 	}
 }
 
@@ -414,13 +477,69 @@ type ServerMetricSummary struct {
 	Name            string    `json:"name"`
 	Region          string    `json:"region"`
 	Online          bool      `json:"online"`
+
+	// CPU
 	CPUUsage        float64   `json:"cpu_usage"`
+	CPUCores        int       `json:"cpu_cores"`
+
+	// Memory
 	MemUsageBytes   int64     `json:"mem_usage_bytes"`
+	MemTotalBytes   int64     `json:"mem_total_bytes"`
+	MemUsage        float64   `json:"mem_usage"`
+
+	// Swap
+	SwapTotalBytes  int64     `json:"swap_total_bytes"`
+	SwapUsedBytes   int64     `json:"swap_used_bytes"`
+	SwapUsage       float64   `json:"swap_usage"`
+
+	// Disk
+	DiskUsageBytes  int64     `json:"disk_usage_bytes"`
+	DiskTotalBytes  int64     `json:"disk_total_bytes"`
+	DiskUsage       float64   `json:"disk_usage"`
+
+	// Disk I/O
+	DiskReadBytesSec  int64   `json:"disk_read_bytes_sec"`
+	DiskWriteBytesSec int64   `json:"disk_write_bytes_sec"`
+
+	// Network
 	NetRxBytes      int64     `json:"net_rx_bytes"`
 	NetTxBytes      int64     `json:"net_tx_bytes"`
+
+	// System
 	TCPConnections  int       `json:"tcp_connections"`
 	Load1m          float64   `json:"load_1m"`
+	UptimeSeconds   int64     `json:"uptime_seconds"`
+	Hostname        string    `json:"hostname"`
+
+	// Traffic
 	TrafficUplink   int64     `json:"traffic_uplink"`
 	TrafficDownlink int64     `json:"traffic_downlink"`
 	LastUpdated     time.Time `json:"last_updated"`
+}
+
+// GetLatestMetricsBatch returns the most recent metric for each server.
+// Used for embedding resource usage in node server list responses.
+func (mc *MetricsCollector) GetLatestMetricsBatch(ctx context.Context) (map[int64]*entity.ServerMetric, error) {
+	if mc.db == nil {
+		return nil, nil
+	}
+
+	servers, err := mc.serverRepo.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[int64]*entity.ServerMetric, len(servers))
+	for _, server := range servers {
+		var metric entity.ServerMetric
+		if err := mc.db.Where("server_id = ?", server.ID).
+			Order("created_at DESC").
+			Limit(1).
+			Find(&metric).Error; err != nil || metric.ID == 0 {
+			continue
+		}
+		result[server.ID] = &metric
+	}
+
+	return result, nil
 }

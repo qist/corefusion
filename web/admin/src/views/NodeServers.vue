@@ -74,7 +74,7 @@
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="月流量" width="130">
+          <el-table-column :label="t('nodeServer.monthlyTraffic')" width="130">
             <template #default="{row}">
               <div v-if="row.traffic_quota_bytes > 0" style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
@@ -82,7 +82,7 @@
                 </div>
                 <span style="font-size:10px;color:#606266;min-width:38px;text-align:right">{{ formatBytes(row.traffic_used_bytes) }}/{{ formatBytes(row.traffic_quota_bytes) }}</span>
               </div>
-              <span v-else-if="row.traffic_suspended" style="color:#f56c6c;font-size:11px">⚠ 已暂停</span>
+              <span v-else-if="row.traffic_suspended" style="color:#f56c6c;font-size:11px">⚠ {{ t('nodeServer.trafficSuspended') }}</span>
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
@@ -109,14 +109,14 @@
                 <el-button size="small">{{ t('nodeServer.actions') }} <el-icon><ArrowDown /></el-icon></el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="deploy" v-if="row.bootstrap_required">部署命令</el-dropdown-item>
+                    <el-dropdown-item command="deploy" v-if="row.bootstrap_required">{{ t('nodeServer.deployCommand') }}</el-dropdown-item>
                     <el-dropdown-item command="status" divided>{{ t('nodeServer.realtimeStatus') }}</el-dropdown-item>
                     <el-dropdown-item command="control">{{ t('nodeServer.controlCore') }}</el-dropdown-item>
                     <el-dropdown-item command="sync">{{ t('nodeServer.syncConfig') }}</el-dropdown-item>
                     <el-dropdown-item command="tags" divided>{{ t('nodeServer.tags') }}</el-dropdown-item>
                     <el-dropdown-item command="revoke" v-if="row.agent_cert_expires_at">{{ t('nodeServer.revokeCert') }}</el-dropdown-item>
                     <el-dropdown-item command="reconnect">{{ t('nodeServer.forceReconnect') }}</el-dropdown-item>
-                    <el-dropdown-item command="resumeTraffic" v-if="row.traffic_suspended" divided style="color:#e6a23c">⚠ 恢复流量暂停</el-dropdown-item>
+                    <el-dropdown-item command="resumeTraffic" v-if="row.traffic_suspended" divided style="color:#e6a23c">⚠ {{ t('nodeServer.resumeTraffic') }}</el-dropdown-item>
                     <el-dropdown-item command="updateAgent" v-if="!row.is_local" divided>{{ t('nodeServer.updateAgent') }}</el-dropdown-item>
                     <el-dropdown-item command="edit" divided>{{ t('common.edit') }}</el-dropdown-item>
                     <el-dropdown-item command="delete" v-if="!row.is_local">{{ t('common.delete') }}</el-dropdown-item>
@@ -344,15 +344,15 @@
     </el-tabs>
 
     <!-- ════════════ Quick Add Node Dialog (kubeadm join style) ════════════ -->
-    <el-dialog v-model="quickAddVisible" title="添加节点" width="480px">
+    <el-dialog v-model="quickAddVisible" :title="t('nodeServer.addNode')" width="480px">
       <el-alert type="info" :closable="false" style="margin-bottom:16px"
-                title="只需填写名称和 IP，保存后获取一键部署命令" />
+                :title="t('nodeServer.quickAddHint')" />
       <el-form :model="quickForm" label-width="80px" size="default">
-        <el-form-item label="名称" required>
-          <el-input v-model="quickForm.name" placeholder="例如：tokyo-01" @keyup.enter="quickAddSave" />
+        <el-form-item :label="t('nodeServer.name')" required>
+          <el-input v-model="quickForm.name" :placeholder="t('nodeServer.namePlaceholder')" @keyup.enter="quickAddSave" />
         </el-form-item>
-        <el-form-item label="IP 地址" required>
-          <el-input v-model="quickForm.hostname" placeholder="例如：192.168.2.180" @keyup.enter="quickAddSave" />
+        <el-form-item :label="t('nodeServer.ipAddress')" required>
+          <el-input v-model="quickForm.hostname" :placeholder="t('nodeServer.ipAddressPlaceholder')" @keyup.enter="quickAddSave" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -436,23 +436,23 @@
           <el-switch v-model="form.enabled" />
         </el-form-item>
 
-        <el-divider content-position="left">月度流量配额</el-divider>
-        <el-form-item label="出口网卡">
+        <el-divider content-position="left">{{ t('nodeServer.trafficQuotaSection') }}</el-divider>
+        <el-form-item :label="t('nodeServer.egressInterface')">
           <div style="display:flex;gap:8px;width:100%">
-            <el-select v-model="form.egress_interface" clearable filterable allow-create style="flex:1" placeholder="选择或输入网卡名">
+            <el-select v-model="form.egress_interface" clearable filterable allow-create style="flex:1" :placeholder="t('nodeServer.egressInterfacePlaceholder')">
               <el-option v-for="iface in interfaceOptions" :key="iface" :label="iface" :value="iface" />
             </el-select>
-            <el-button size="small" @click="loadInterfaces" :loading="interfacesLoading" style="flex-shrink:0">刷新</el-button>
+            <el-button size="small" @click="loadInterfaces" :loading="interfacesLoading" style="flex-shrink:0">{{ t('nodeServer.refresh') }}</el-button>
           </div>
-          <div style="color:#909399;font-size:11px;margin-top:4px">监控此网卡的月度总流量，留空则不监控</div>
+          <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.egressInterfaceHint') }}</div>
         </el-form-item>
-        <el-form-item label="月流量配额">
+        <el-form-item :label="t('nodeServer.trafficQuota')">
           <el-input-number v-model="form.traffic_quota_gb" :min="0" :step="500" controls-position="right" style="width:100%" />
-          <div style="color:#909399;font-size:11px;margin-top:4px">单位 GB，0 表示不限</div>
+          <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.trafficQuotaUnit') }}</div>
         </el-form-item>
-        <el-form-item label="每月结算日">
+        <el-form-item :label="t('nodeServer.trafficQuotaResetDay')">
           <el-input-number v-model="form.traffic_quota_reset_day" :min="1" :max="28" controls-position="right" style="width:100%" />
-          <div style="color:#909399;font-size:11px;margin-top:4px">每月此日重置流量计数（1-28）</div>
+          <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.trafficResetDayHint') }}</div>
         </el-form-item>
 
         <el-form-item :label="t('nodeServer.sortOrder')">
@@ -503,12 +503,12 @@
           <el-tag v-else size="small" type="info">{{ t('nodeServer.bootstrapNotGenerated') }}</el-tag>
         </el-descriptions-item>
 
-        <el-descriptions-item label="出口网卡">{{ detailData.egress_interface || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="月流量配额">
+        <el-descriptions-item :label="t('nodeServer.egressInterface')">{{ detailData.egress_interface || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('nodeServer.trafficQuota')">
           <span v-if="detailData.traffic_quota_bytes > 0">{{ formatBytes(detailData.traffic_quota_bytes) }}</span>
-          <span v-else>不限</span>
+          <span v-else>{{ t('nodeServer.trafficUnlimited') }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="本月已用流量">
+        <el-descriptions-item :label="t('nodeServer.monthlyUsedTraffic')">
           <span v-if="detailData.traffic_quota_bytes > 0">
             {{ formatBytes(detailData.traffic_used_bytes) }}
             <el-progress :percentage="Math.min((detailData.traffic_used_bytes / detailData.traffic_quota_bytes) * 100, 100)"
@@ -517,11 +517,11 @@
           </span>
           <span v-else>-</span>
         </el-descriptions-item>
-        <el-descriptions-item label="结算日">{{ detailData.traffic_quota_reset_day || 1 }} 号</el-descriptions-item>
-        <el-descriptions-item label="流量状态">
-          <el-tag v-if="detailData.traffic_suspended" size="small" type="danger">已暂停（超限）</el-tag>
-          <el-tag v-else-if="detailData.traffic_quota_bytes > 0" size="small" type="success">正常</el-tag>
-          <el-tag v-else size="small" type="info">未配置</el-tag>
+        <el-descriptions-item :label="t('nodeServer.billingDay')">{{ detailData.traffic_quota_reset_day || 1 }}{{ t('nodeServer.billingDaySuffix') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('nodeServer.trafficStatus')">
+          <el-tag v-if="detailData.traffic_suspended" size="small" type="danger">{{ t('nodeServer.trafficSuspendedOverQuota') }}</el-tag>
+          <el-tag v-else-if="detailData.traffic_quota_bytes > 0" size="small" type="success">{{ t('nodeServer.trafficNormal') }}</el-tag>
+          <el-tag v-else size="small" type="info">{{ t('nodeServer.notConfigured') }}</el-tag>
         </el-descriptions-item>
       </el-descriptions>
 
@@ -557,12 +557,12 @@
     </el-dialog>
 
     <!-- ════════════ One-Line Install Command Dialog ════════════ -->
-    <el-dialog v-model="installCmdVisible" title="节点部署命令" width="720px" :close-on-click-modal="false">
+    <el-dialog v-model="installCmdVisible" :title="t('nodeServer.nodeDeployCommand')" width="720px" :close-on-click-modal="false">
       <el-alert type="success" :closable="false" style="margin-bottom:16px"
-                title="在远程节点上以 root 执行以下命令，Agent 将自动下载、注册并启动" />
+                :title="t('nodeServer.deployCommandHint')" />
       <el-input v-model="installCommand" type="textarea" :rows="5" readonly style="font-family:monospace;font-size:13px" />
       <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
-        <span style="color:#909399;font-size:12px">命令包含一次性 Bootstrap Token，请勿重复使用</span>
+        <span style="color:#909399;font-size:12px">{{ t('nodeServer.deployCommandTokenHint') }}</span>
         <div>
           <el-button size="small" @click="copyToClipboard(installCommand)">{{ t('nodeServer.copyCmd') }}</el-button>
           <el-button size="small" type="primary" @click="installCmdVisible = false">{{ t('common.close') }}</el-button>
@@ -617,7 +617,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -657,13 +657,13 @@ const filterRegion = ref('')
 const filterNodeType = ref('')
 const regionOptions = ref(['HK', 'JP', 'US', 'SG', 'EU', 'CN'])
 
-const nodeTypeOptions = [
-  { value: 'standalone', label: '独立节点 (standalone)' },
-  { value: 'mirror', label: '镜像节点 (mirror)' },
-  { value: 'primary_backup', label: '主备节点 (primary_backup)' },
-  { value: 'chain_entry', label: '链式入口 (chain_entry)' },
-  { value: 'chain_exit', label: '链式出口 (chain_exit)' },
-]
+const nodeTypeOptions = computed(() => [
+  { value: 'standalone', label: t('nodeServer.standaloneLabel') },
+  { value: 'mirror', label: t('nodeServer.mirrorLabel') },
+  { value: 'primary_backup', label: t('nodeServer.primaryBackupLabel') },
+  { value: 'chain_entry', label: t('nodeServer.chainEntryLabel') },
+  { value: 'chain_exit', label: t('nodeServer.chainExitLabel') },
+])
 
 // ─── Dashboard ───
 const dashboard = ref({})
@@ -911,7 +911,7 @@ function showCreateDialog() {
 
 async function quickAddSave() {
   if (!quickForm.name || !quickForm.hostname) {
-    ElMessage.error('请填写名称和 IP 地址')
+    ElMessage.error(t('nodeServer.nameAndIPRequired'))
     return
   }
   quickAddSaving.value = true
@@ -1094,12 +1094,12 @@ case 'status': showDetailDialog(row); break
 async function handleResumeTraffic(row) {
   try {
     await ElMessageBox.confirm(
-      `确定要恢复节点「${row.name}」的流量暂停状态吗？该节点将重新启动服务。`,
-      '恢复流量暂停',
+      t('nodeServer.resumeTrafficConfirm', { name: row.name }),
+      t('nodeServer.resumeTraffic'),
       { type: 'warning' }
     )
     await resumeTrafficSuspended(row.id)
-    ElMessage.success('节点已恢复')
+    ElMessage.success(t('nodeServer.nodeResumed'))
     loadServers()
   } catch (e) {
     if (e !== 'cancel' && e?.response?.data?.message) {
@@ -1142,14 +1142,14 @@ async function showDeployCmd(row) {
     const res = await generateBootstrapToken(row.id)
     const token = res?.token || ''
     if (!token) {
-      ElMessage.error('无法生成部署令牌')
+      ElMessage.error(t('nodeServer.cannotGenerateDeployToken'))
       return
     }
     installCommand.value =
       `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${row.id}&token=${token}&agent_port=${agentPort}${tlsParam}")`
     installCmdVisible.value = true
   } catch (e) {
-    ElMessage.error('生成部署命令失败')
+    ElMessage.error(t('nodeServer.generateDeployFailed'))
   }
 }
 

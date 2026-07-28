@@ -61,9 +61,9 @@
               <el-input v-model="panelForm.tls_key_path" />
             </el-form-item>
             <el-divider />
-            <el-form-item label="Agent gRPC 端口">
+            <el-form-item :label="t('settings.panel.agentGRPCPort')">
               <el-input-number v-model="agentGRPCPort" :min="1" :max="65535" />
-              <div class="hint">面板与远程 Agent 之间 mTLS 心跳连接的监听端口，默认 18443。修改后需重启面板生效。</div>
+              <div class="hint">{{ t('settings.panel.agentGRPCPortHint') }}</div>
             </el-form-item>
             <el-divider />
             <el-form-item :label="t('settings.panel.mtlsEnabled')">

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"corefusion/internal/constants"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,7 +39,7 @@ func loadConfig(path string) (*AgentConfig, error) {
 		cfg.Agent.DataDir = "/opt/corefusion-agent/data"
 	}
 	if cfg.Panel.GRPCPort == 0 {
-		cfg.Panel.GRPCPort = 18443
+		cfg.Panel.GRPCPort = constants.DefaultAgentGRPCPort
 	}
 	if cfg.Panel.Port == 0 {
 		cfg.Panel.Port = 8080

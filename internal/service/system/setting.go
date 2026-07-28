@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"corefusion/internal/constants"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
@@ -42,6 +43,7 @@ type PanelConfig struct {
 	TLSKeyPath          string `json:"tls_key_path"`
 	MTLSEnabled         bool   `json:"mtls_enabled"`
 	MTLSCAPath          string `json:"mtls_ca_path"`
+	AgentGRPCPort       string `json:"agent_grpc_port"` // Agent gRPC 监听端口 (默认 18443)
 	WebPath             string `json:"web_path"`
 	Timezone            string `json:"timezone"`
 	DataDir             string `json:"data_dir"`
@@ -107,6 +109,7 @@ func DefaultPanelConfig() *PanelConfig {
 		SubscriptionPort: "0",
 		PortalPort:       "0",
 		TLSEnabled:       false,
+		AgentGRPCPort:    strconv.Itoa(constants.DefaultAgentGRPCPort),
 		WebPath:          "/",
 		Timezone:         "Asia/Shanghai",
 		DataDir:          "data",
@@ -172,6 +175,7 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 		config.MTLSEnabled = v == "true"
 	}
 	setIfExist(settings, "panel.mtls_ca_path", &config.MTLSCAPath)
+	setIfExist(settings, "panel.agent_grpc_port", &config.AgentGRPCPort)
 	setIfExist(settings, "panel.web_path", &config.WebPath)
 	setIfExist(settings, "panel.timezone", &config.Timezone)
 	setIfExist(settings, "panel.data_dir", &config.DataDir)
@@ -194,6 +198,7 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.tls_key_path":         config.TLSKeyPath,
 		"panel.mtls_enabled":         fmt.Sprintf("%v", config.MTLSEnabled),
 		"panel.mtls_ca_path":         config.MTLSCAPath,
+		"panel.agent_grpc_port":       config.AgentGRPCPort,
 		"panel.web_path":             config.WebPath,
 		"panel.timezone":             config.Timezone,
 		"panel.data_dir":             config.DataDir,

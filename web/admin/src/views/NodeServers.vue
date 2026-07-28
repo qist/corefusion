@@ -621,6 +621,10 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+
+// Default Agent gRPC port (matches constants.DefaultAgentGRPCPort in Go)
+const DEFAULT_AGENT_GRPC_PORT = 18443
+
 import {
   listNodeServers, createNodeServer, updateNodeServer, deleteNodeServer,
   getServerStatus, controlCore, generateBootstrapToken, getBootstrapCommand,
@@ -697,7 +701,7 @@ const editingId = ref(null)
 const form = reactive({
   name: '', hostname: '', region: '', region_label: '',
   node_type: 'standalone', partner_server_id: 0, failover_role: '', failover_priority: 0,
-  chain_config: '', agent_port: 18443,
+  chain_config: '', agent_port: DEFAULT_AGENT_GRPC_PORT,
   supported_cores_arr: ['xray', 'singbox', 'hysteria2', 'tuic'],
   max_inbounds: 0, public_ip: '', internal_ip: '', bandwidth_mbps: 0,
   billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
@@ -916,7 +920,7 @@ async function quickAddSave() {
       name: quickForm.name,
       hostname: quickForm.hostname,
       node_type: 'standalone',
-      agent_port: 18443,
+      agent_port: DEFAULT_AGENT_GRPC_PORT,
       supported_cores: JSON.stringify(['xray', 'singbox', 'hysteria2', 'tuic']),
       max_inbounds: 0,
       public_ip: quickForm.hostname,
@@ -938,7 +942,7 @@ async function quickAddSave() {
       const host = window.location.hostname
       const port = window.location.port || (proto === 'https' ? '443' : '80')
       const tlsParam = proto === 'https' ? '&tls=true' : ''
-      const agentPort = res.agent_port || 18443
+      const agentPort = res.agent_port || DEFAULT_AGENT_GRPC_PORT
       installCommand.value =
         `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}&token=${res.bootstrap_token}&agent_port=${agentPort}${tlsParam}")`
       installCmdVisible.value = true
@@ -1018,7 +1022,7 @@ async function saveForm() {
         const host = window.location.hostname
         const port = window.location.port || (proto === 'https' ? '443' : '80')
         const tlsParam = proto === 'https' ? '&tls=true' : ''
-        const agentPort = res.agent_port || 18443
+        const agentPort = res.agent_port || DEFAULT_AGENT_GRPC_PORT
         installCommand.value =
           `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}&token=${res.bootstrap_token}&agent_port=${agentPort}${tlsParam}")`
         installCmdVisible.value = true
@@ -1133,7 +1137,7 @@ async function showDeployCmd(row) {
     const host = window.location.hostname
     const port = window.location.port || (proto === 'https' ? '443' : '80')
     const tlsParam = proto === 'https' ? '&tls=true' : ''
-    const agentPort = row.agent_port || 18443
+    const agentPort = row.agent_port || DEFAULT_AGENT_GRPC_PORT
     // Generate a fresh bootstrap token (interceptor already unwrapped, res = {server_id, token, expires_at, ...})
     const res = await generateBootstrapToken(row.id)
     const token = res?.token || ''

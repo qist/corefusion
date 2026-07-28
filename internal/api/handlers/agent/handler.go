@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/constants"
 	"corefusion/internal/runtime/agent"
 	"corefusion/internal/service/binaries"
 	"corefusion/pkg/netutil"
@@ -29,7 +30,7 @@ import (
 type Handler struct {
 	dataDir    string
 	tokenMgr   *agent.BootstrapTokenManager
-	settingSvc binaries.SettingStore // for GitHub acceleration settings
+	settingSvc binaries.SettingStore // for GitHub acceleration and panel settings
 }
 
 // NewHandler creates a new Agent handler.
@@ -153,11 +154,22 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 		panelPort = 443
 	}
 
-	grpcPort := 18443
+	// Determine gRPC port: query param > system setting > default 18443
+	grpcPort := 0
 	if g := c.Query("grpc_port"); g != "" {
 		if v, err := strconv.Atoi(g); err == nil {
 			grpcPort = v
 		}
+	}
+	if grpcPort == 0 && h.settingSvc != nil {
+		if v, err := h.settingSvc.GetByKey(c.Request.Context(), "panel.agent_grpc_port"); err == nil && v != "" {
+			if p, err := strconv.Atoi(v); err == nil && p > 0 {
+				grpcPort = p
+			}
+		}
+	}
+	if grpcPort == 0 {
+		grpcPort = constants.DefaultAgentGRPCPort
 	}
 	script := agent.NewAgentInstallScript(panelHost, panelPort).
 		WithScheme(scheme).

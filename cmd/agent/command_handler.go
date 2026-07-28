@@ -544,6 +544,8 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 						rate := &ratelimit.RateConfig{
 							MaxDownMbps: limit.MaxDownMbps,
 							MaxUpMbps:   limit.MaxUpMbps,
+							ConnLimit:   limit.ConnLimit,
+							DeviceLimit: limit.DeviceLimit,
 						}
 						if err := mgr.AssociateIP(ctx, limit.Ip, limit.SubscriptionId, rate); err != nil {
 							log.Printf("[Agent] BatchApplyLimits apply ip=%s sub=%d failed: %v", limit.Ip, limit.SubscriptionId, err)
@@ -630,6 +632,8 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 				rate := &ratelimit.RateConfig{
 					MaxDownMbps: req.MaxDownMbps,
 					MaxUpMbps:   req.MaxUpMbps,
+					ConnLimit:   req.ConnLimit,
+					DeviceLimit: req.DeviceLimit,
 				}
 				// If value is set but specific mbps fields are 0, use value as both
 				if req.Value > 0 && rate.MaxDownMbps == 0 && rate.MaxUpMbps == 0 {

@@ -181,7 +181,7 @@ func (s *Service) SyncConfigToAgent(ctx context.Context, serverID int64) error {
 
 // PushIPAssociation pushes an IP association to a specific server's Agent.
 // This is called when a user accesses their subscription URL.
-func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps int32) error {
+func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error {
 	if s.nodeOp == nil {
 		return fmt.Errorf("node operator not configured")
 	}
@@ -196,6 +196,8 @@ func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip stri
 		SubscriptionId: subID,
 		MaxDownMbps:    maxDownMbps,
 		MaxUpMbps:      maxUpMbps,
+		ConnLimit:      connLimit,
+		DeviceLimit:    deviceLimit,
 	}
 
 	if err := s.nodeOp.AssociateIP(ctx, serverID, req); err != nil {
@@ -211,7 +213,7 @@ type NodeServerLister interface {
 }
 
 // PushIPAssociationToAll pushes an IP association to all enabled server Agents.
-func (s *Service) PushIPAssociationToAll(ctx context.Context, lister NodeServerLister, ip string, subID int64, maxDownMbps, maxUpMbps int32) {
+func (s *Service) PushIPAssociationToAll(ctx context.Context, lister NodeServerLister, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) {
 	if lister == nil || s.nodeOp == nil {
 		return
 	}
@@ -223,7 +225,7 @@ func (s *Service) PushIPAssociationToAll(ctx context.Context, lister NodeServerL
 		if server.ID <= 0 {
 			continue
 		}
-		if err := s.PushIPAssociation(ctx, server.ID, ip, subID, maxDownMbps, maxUpMbps); err != nil {
+		if err := s.PushIPAssociation(ctx, server.ID, ip, subID, maxDownMbps, maxUpMbps, connLimit, deviceLimit); err != nil {
 			log.Printf("[RateLimitService] push IP association to server %d failed: %v", server.ID, err)
 		}
 	}

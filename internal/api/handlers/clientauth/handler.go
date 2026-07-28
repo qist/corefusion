@@ -16,7 +16,7 @@ import (
 
 // RateLimitPusher pushes IP association to rate limit agents.
 type RateLimitPusher interface {
-	PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps int32) error
+	PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error
 }
 
 // Handler handles client authentication HTTP requests.
@@ -226,15 +226,21 @@ func (h *Handler) pushRateLimitOnLogin(clientIP string, clientID int64) {
 	}
 	subID := *cl.SubscriptionID
 
-	// Resolve speed limits
-	var maxDownMbps, maxUpMbps int32
+	// Resolve limits (speed, concurrent connections, device count)
+	var maxDownMbps, maxUpMbps, connLimit, deviceLimit int32
 	if cl.SpeedLimitMbps > 0 {
 		maxDownMbps = int32(cl.SpeedLimitMbps)
 	}
 	if cl.SpeedLimitUpMbps > 0 {
 		maxUpMbps = int32(cl.SpeedLimitUpMbps)
 	}
-	if maxDownMbps == 0 || maxUpMbps == 0 {
+	if cl.ConcurrentLimit > 0 {
+		connLimit = int32(cl.ConcurrentLimit)
+	}
+	if cl.DeviceLimit > 0 {
+		deviceLimit = int32(cl.DeviceLimit)
+	}
+	if maxDownMbps == 0 || maxUpMbps == 0 || connLimit == 0 || deviceLimit == 0 {
 		if cl.PlanID > 0 && h.planTmplRepo != nil {
 			if tmpl, err := h.planTmplRepo.GetByID(ctx, cl.PlanID); err == nil {
 				if maxDownMbps == 0 && tmpl.SpeedLimitMbps > 0 {
@@ -242,6 +248,12 @@ func (h *Handler) pushRateLimitOnLogin(clientIP string, clientID int64) {
 				}
 				if maxUpMbps == 0 && tmpl.SpeedLimitUpMbps > 0 {
 					maxUpMbps = int32(tmpl.SpeedLimitUpMbps)
+				}
+				if connLimit == 0 && tmpl.ConcurrentLimit > 0 {
+					connLimit = int32(tmpl.ConcurrentLimit)
+				}
+				if deviceLimit == 0 && tmpl.DeviceLimit > 0 {
+					deviceLimit = int32(tmpl.DeviceLimit)
 				}
 			}
 		}
@@ -255,7 +267,7 @@ func (h *Handler) pushRateLimitOnLogin(clientIP string, clientID int64) {
 		if server.ID <= 0 {
 			continue
 		}
-		if err := h.rateLimitPusher.PushIPAssociation(ctx, server.ID, clientIP, subID, maxDownMbps, maxUpMbps); err != nil {
+		if err := h.rateLimitPusher.PushIPAssociation(ctx, server.ID, clientIP, subID, maxDownMbps, maxUpMbps, connLimit, deviceLimit); err != nil {
 			log.Printf("clientauth: rate limit push failed for server %d: %v", server.ID, err)
 		}
 	}

@@ -804,6 +804,8 @@ type ApplyLimitsRequest struct {
 	MaxUpMbps     int32  `protobuf:"varint,6,opt,name=max_up_mbps,json=maxUpMbps,proto3" json:"max_up_mbps,omitempty"`       // 上传限速 Mbps（0=不限）
 	MaxDownMbps   int32  `protobuf:"varint,7,opt,name=max_down_mbps,json=maxDownMbps,proto3" json:"max_down_mbps,omitempty"` // 下载限速 Mbps（0=不限）
 	Iface         string `protobuf:"bytes,8,opt,name=iface,proto3" json:"iface,omitempty"`                                   // 目标网卡（默认自动检测）
+	ConnLimit     int32  `protobuf:"varint,9,opt,name=conn_limit,json=connLimit,proto3" json:"conn_limit,omitempty"`         // 并发连接限制（0=不限）
+	DeviceLimit   int32  `protobuf:"varint,10,opt,name=device_limit,json=deviceLimit,proto3" json:"device_limit,omitempty"`  // 设备数限制（0=不限）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -894,6 +896,20 @@ func (x *ApplyLimitsRequest) GetIface() string {
 	return ""
 }
 
+func (x *ApplyLimitsRequest) GetConnLimit() int32 {
+	if x != nil {
+		return x.ConnLimit
+	}
+	return 0
+}
+
+func (x *ApplyLimitsRequest) GetDeviceLimit() int32 {
+	if x != nil {
+		return x.DeviceLimit
+	}
+	return 0
+}
+
 // 批量限速指令（一次下发多个用户的限速规则）
 type BatchApplyLimitsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -957,6 +973,8 @@ type AssociateIPRequest struct {
 	MaxUpMbps      int32                  `protobuf:"varint,5,opt,name=max_up_mbps,json=maxUpMbps,proto3" json:"max_up_mbps,omitempty"`       // 上传限速 Mbps（0=不限）
 	TtlSeconds     int64                  `protobuf:"varint,6,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`      // 归属有效期（0=永久，直到用户下线）
 	Iface          string                 `protobuf:"bytes,7,opt,name=iface,proto3" json:"iface,omitempty"`                                   // 目标网卡（默认自动检测）
+	ConnLimit      int32                  `protobuf:"varint,8,opt,name=conn_limit,json=connLimit,proto3" json:"conn_limit,omitempty"`         // 并发连接限制（0=不限）
+	DeviceLimit    int32                  `protobuf:"varint,9,opt,name=device_limit,json=deviceLimit,proto3" json:"device_limit,omitempty"`   // 设备数限制（0=不限）
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1038,6 +1056,20 @@ func (x *AssociateIPRequest) GetIface() string {
 		return x.Iface
 	}
 	return ""
+}
+
+func (x *AssociateIPRequest) GetConnLimit() int32 {
+	if x != nil {
+		return x.ConnLimit
+	}
+	return 0
+}
+
+func (x *AssociateIPRequest) GetDeviceLimit() int32 {
+	if x != nil {
+		return x.DeviceLimit
+	}
+	return 0
 }
 
 // 限速状态查询
@@ -6933,7 +6965,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\n" +
 	"ExtraEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xca\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8c\x03\n" +
 	"\x12ApplyLimitsRequest\x12E\n" +
 	"\x04type\x18\x01 \x01(\x0e21.corefusion.agent.v1.ApplyLimitsRequest.LimitTypeR\x04type\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x0e\n" +
@@ -6942,7 +6974,11 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\x0fsubscription_id\x18\x05 \x01(\x03R\x0esubscriptionId\x12\x1e\n" +
 	"\vmax_up_mbps\x18\x06 \x01(\x05R\tmaxUpMbps\x12\"\n" +
 	"\rmax_down_mbps\x18\a \x01(\x05R\vmaxDownMbps\x12\x14\n" +
-	"\x05iface\x18\b \x01(\tR\x05iface\",\n" +
+	"\x05iface\x18\b \x01(\tR\x05iface\x12\x1d\n" +
+	"\n" +
+	"conn_limit\x18\t \x01(\x05R\tconnLimit\x12!\n" +
+	"\fdevice_limit\x18\n" +
+	" \x01(\x05R\vdeviceLimit\",\n" +
 	"\tLimitType\x12\t\n" +
 	"\x05SPEED\x10\x00\x12\b\n" +
 	"\x04CONN\x10\x01\x12\n" +
@@ -6950,7 +6986,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\x06DEVICE\x10\x02\"w\n" +
 	"\x17BatchApplyLimitsRequest\x12?\n" +
 	"\x06limits\x18\x01 \x03(\v2'.corefusion.agent.v1.ApplyLimitsRequestR\x06limits\x12\x1b\n" +
-	"\treset_all\x18\x02 \x01(\bR\bresetAll\"\xe1\x01\n" +
+	"\treset_all\x18\x02 \x01(\bR\bresetAll\"\xa3\x02\n" +
 	"\x12AssociateIPRequest\x12\x0e\n" +
 	"\x02ip\x18\x01 \x01(\tR\x02ip\x12'\n" +
 	"\x0fsubscription_id\x18\x02 \x01(\x03R\x0esubscriptionId\x12\x17\n" +
@@ -6959,7 +6995,10 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\vmax_up_mbps\x18\x05 \x01(\x05R\tmaxUpMbps\x12\x1f\n" +
 	"\vttl_seconds\x18\x06 \x01(\x03R\n" +
 	"ttlSeconds\x12\x14\n" +
-	"\x05iface\x18\a \x01(\tR\x05iface\"D\n" +
+	"\x05iface\x18\a \x01(\tR\x05iface\x12\x1d\n" +
+	"\n" +
+	"conn_limit\x18\b \x01(\x05R\tconnLimit\x12!\n" +
+	"\fdevice_limit\x18\t \x01(\x05R\vdeviceLimit\"D\n" +
 	"\x19GetRateLimitStatusRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\x03R\x0esubscriptionId\"\xc8\x01\n" +
 	"\x1aGetRateLimitStatusResponse\x12=\n" +

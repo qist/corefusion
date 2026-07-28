@@ -35,6 +35,8 @@ type MarkEntry struct {
 type RateConfig struct {
 	MaxDownMbps int32 // 下载限速 Mbps（0=不限）
 	MaxUpMbps   int32 // 上传限速 Mbps（0=不限）
+	ConnLimit   int32 // 并发连接限制（0=不限）
+	DeviceLimit int32 // 设备数限制（0=不限）
 }
 
 // NewMarkRegistry 创建一个新的 MarkRegistry。
@@ -193,6 +195,39 @@ func (r *MarkRegistry) GetSubscriptionIPs(subID int64) []string {
 		}
 	}
 	return ips
+}
+
+// GetSubscriptionIPCount 返回指定订阅的活跃 IP 数量（用于设备数限制检查）。
+func (r *MarkRegistry) GetSubscriptionIPCount(subID int64) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, entry := range r.ipToMark {
+		if entry.SubscriptionID == subID {
+			count++
+		}
+	}
+	return count
+}
+
+// GetConnLimit 获取订阅的并发连接限制。
+func (r *MarkRegistry) GetConnLimit(subID int64) int32 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if rate, ok := r.subToRate[subID]; ok {
+		return rate.ConnLimit
+	}
+	return 0
+}
+
+// GetDeviceLimit 获取订阅的设备数限制。
+func (r *MarkRegistry) GetDeviceLimit(subID int64) int32 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if rate, ok := r.subToRate[subID]; ok {
+		return rate.DeviceLimit
+	}
+	return 0
 }
 
 // CleanupStale 清理超过 ttl 未活跃的条目。

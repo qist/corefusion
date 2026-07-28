@@ -196,6 +196,8 @@ message ApplyLimitsRequest {
   int32  max_up_mbps = 6;         // 上传限速 Mbps（0=不限）
   int32  max_down_mbps = 7;       // 下载限速 Mbps（0=不限）
   string iface = 8;               // 目标网卡（默认自动检测）
+  int32  conn_limit = 9;          // 并发连接限制（0=不限）
+  int32  device_limit = 10;       // 设备数限制（0=不限）
 }
 
 // 批量限速指令（一次下发多个用户的限速规则）
@@ -213,6 +215,8 @@ message AssociateIPRequest {
   int32  max_up_mbps = 5;         // 上传限速 Mbps（0=不限）
   int64  ttl_seconds = 6;         // 归属有效期（0=永久，直到用户下线）
   string iface = 7;               // 目标网卡（默认自动检测）
+  int32  conn_limit = 8;          // 并发连接限制（0=不限）
+  int32  device_limit = 9;        // 设备数限制（0=不限）
 }
 
 // 限速状态查询

@@ -136,21 +136,56 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 	}
 }
 
-// sendHeartbeat sends a periodic heartbeat report with system metrics.
+// sendHeartbeat sends a periodic heartbeat report with comprehensive system metrics.
 func (a *AgentApp) sendHeartbeat(stream agentpb.HeartbeatService_StreamClient) error {
-	cpu, mem := getSystemMetrics()
+	m := getSystemMetrics()
 	a.streamSendMu.Lock()
 	defer a.streamSendMu.Unlock()
 	return stream.Send(&agentpb.AgentReport{
-		Type:          agentpb.AgentReport_HEARTBEAT,
-		ServerId:      a.cfg.Panel.ServerID,
-		Timestamp:     time.Now().Unix(),
-		AgentVersion:  constants.Version,
-		CpuUsage:      cpu,
-		MemUsageBytes: mem,
-		Os:            runtime.GOOS,
-		Arch:          runtime.GOARCH,
-		Distro:        detectDistro(),
+		Type:            agentpb.AgentReport_HEARTBEAT,
+		ServerId:        a.cfg.Panel.ServerID,
+		Timestamp:       time.Now().Unix(),
+		AgentVersion:    constants.Version,
+
+		// CPU
+		CpuUsage:   m.CPUUsage,
+		CpuCores:   int32(m.CPUCores),
+
+		// Memory
+		MemTotalBytes:   m.MemTotalBytes,
+		MemUsageBytes:   m.MemUsedBytes,
+		MemUsage:        m.MemUsage,
+
+		// Swap
+		SwapTotalBytes:  m.SwapTotalBytes,
+		SwapUsedBytes:   m.SwapUsedBytes,
+		SwapUsage:       m.SwapUsage,
+
+		// Disk
+		DiskTotalBytes:  m.DiskTotalBytes,
+		DiskUsageBytes:  m.DiskUsedBytes,
+		DiskUsage:       m.DiskUsage,
+
+		// Disk I/O rate
+		DiskReadBytesSec:  m.DiskReadBytesSec,
+		DiskWriteBytesSec: m.DiskWriteBytesSec,
+
+		// Network counters
+		NetRxBytes:      m.NetRxBytesTotal,
+		NetTxBytes:      m.NetTxBytesTotal,
+
+		// Network rate
+		NetRxBytesSec:   m.NetRxBytesSec,
+		NetTxBytesSec:   m.NetTxBytesSec,
+
+		// System
+		Os:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		Distro:         detectDistro(),
+		Hostname:       m.Hostname,
+		UptimeSeconds:  m.UptimeSeconds,
+		Load_1M:        m.Load1m,
+		TcpConnections: int32(m.TCPConnections),
 	})
 }
 

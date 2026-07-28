@@ -312,12 +312,30 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	// ========== Synchronous read operations: execute and send TaskResult ==========
 	case *agentpb.PanelCommand_GetMetrics:
-		cpu, mem := getSystemMetrics()
+		m := getSystemMetrics()
 		resp := &agentpb.GetMetricsResponse{
 			Points: []*agentpb.MetricPoint{{
-				Timestamp:     time.Now().Unix(),
-				CpuUsage:      cpu,
-				MemUsageBytes: mem,
+				Timestamp:        time.Now().Unix(),
+				CpuUsage:         m.CPUUsage,
+				CpuCores:         int32(m.CPUCores),
+				MemUsageBytes:    m.MemUsedBytes,
+				MemTotalBytes:    m.MemTotalBytes,
+				MemUsage:         m.MemUsage,
+				SwapTotalBytes:   m.SwapTotalBytes,
+				SwapUsedBytes:    m.SwapUsedBytes,
+				SwapUsage:        m.SwapUsage,
+				DiskUsageBytes:   m.DiskUsedBytes,
+				DiskTotalBytes:   m.DiskTotalBytes,
+				DiskUsage:        m.DiskUsage,
+				DiskReadBytesSec:  m.DiskReadBytesSec,
+				DiskWriteBytesSec: m.DiskWriteBytesSec,
+				NetRxBytes:       m.NetRxBytesTotal,
+				NetTxBytes:       m.NetTxBytesTotal,
+				NetRxBytesSec:    m.NetRxBytesSec,
+				NetTxBytesSec:    m.NetTxBytesSec,
+				Load_1M:          m.Load1m,
+				TcpConnections:   int32(m.TCPConnections),
+				UptimeSeconds:    m.UptimeSeconds,
 			}},
 		}
 		sendSyncResult("get_metrics", resp, nil)

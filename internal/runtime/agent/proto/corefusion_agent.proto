@@ -321,6 +321,21 @@ message MetricPoint {
   int32  tcp_connections = 8;      // TCP 连接数
   int64  traffic_uplink = 9;       // 用户上行流量（字节/秒）
   int64  traffic_downlink = 10;    // 用户下行流量（字节/秒）
+
+  // --- Extended resource metrics (节点使用率) ---
+  int32  cpu_cores = 11;           // 逻辑 CPU 核心数
+  int64  mem_total_bytes = 12;     // 物理内存总量
+  double mem_usage = 13;          // 内存使用率 0-100
+  int64  swap_total_bytes = 14;    // Swap 总量
+  int64  swap_used_bytes = 15;     // Swap 已用
+  double swap_usage = 16;         // Swap 使用率 0-100
+  int64  disk_total_bytes = 17;    // 磁盘总量
+  double disk_usage = 18;         // 磁盘使用率 0-100
+  int64  disk_read_bytes_sec = 19;  // 磁盘读取速率 bytes/sec
+  int64  disk_write_bytes_sec = 20; // 磁盘写入速率 bytes/sec
+  int64  net_rx_bytes_sec = 21;    // 网络接收速率 bytes/sec
+  int64  net_tx_bytes_sec = 22;    // 网络发送速率 bytes/sec
+  int64  uptime_seconds = 23;      // 系统运行时间（秒）
 }
 
 // ============================================================
@@ -424,6 +439,24 @@ message AgentReport {
   string os = 16;                 // Agent's GOOS (linux, darwin, windows)
   string arch = 17;               // Agent's GOARCH (amd64, arm64, etc.)
   string distro = 18;             // Agent's Linux distro (debian, ubuntu, redhat, alpine, etc.)
+
+  // HEARTBEAT — Extended resource metrics
+  int32  cpu_cores = 70;           // 逻辑 CPU 核心数
+  int64  mem_total_bytes = 71;     // 物理内存总量
+  double mem_usage = 72;          // 内存使用率 0-100
+  int64  swap_total_bytes = 73;    // Swap 总量
+  int64  swap_used_bytes = 74;     // Swap 已用
+  double swap_usage = 75;         // Swap 使用率 0-100
+  int64  disk_total_bytes = 76;    // 磁盘总量
+  double disk_usage = 77;         // 磁盘使用率 0-100
+  int64  disk_read_bytes_sec = 78;  // 磁盘读取速率 bytes/sec
+  int64  disk_write_bytes_sec = 79; // 磁盘写入速率 bytes/sec
+  int64  net_rx_bytes_sec = 80;    // 网络接收速率 bytes/sec
+  int64  net_tx_bytes_sec = 81;    // 网络发送速率 bytes/sec
+  string hostname = 82;          // 系统主机名
+  int64  uptime_seconds = 83;      // 系统运行时间（秒）
+  double load_1m = 84;            // 1 分钟负载
+  int32  tcp_connections = 85;    // TCP 连接数
 
   // STATUS
   repeated CoreStatus cores = 20;

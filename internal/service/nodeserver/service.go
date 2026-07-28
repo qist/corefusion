@@ -489,12 +489,13 @@ func (s *Service) GenerateBootstrapToken(ctx context.Context, serverID int64) (*
 }
 
 // ToResponse converts an entity to a VO response.
-func (s *Service) ToResponse(server *entity.NodeServer) *vo.NodeServerResponse {
+// Optionally accepts a ResourceUsage to embed in the response.
+func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.ResourceUsage) *vo.NodeServerResponse {
 	bootstrapRequired := server.BootstrapUsedAt == nil &&
 		server.BootstrapTokenExpiresAt != nil &&
 		time.Now().Before(*server.BootstrapTokenExpiresAt)
 
-	return &vo.NodeServerResponse{
+	resp := &vo.NodeServerResponse{
 		ID:                     server.ID,
 		Name:                   server.Name,
 		Hostname:               server.Hostname,
@@ -528,6 +529,94 @@ func (s *Service) ToResponse(server *entity.NodeServer) *vo.NodeServerResponse {
 		CreatedAt:              server.CreatedAt,
 		UpdatedAt:              server.UpdatedAt,
 	}
+
+	if len(resourceUsage) > 0 && resourceUsage[0] != nil {
+		resp.ResourceUsage = resourceUsage[0]
+	}
+
+	return resp
+}
+
+// ListWithResourceUsage returns servers enriched with the latest resource usage data.
+func (s *Service) ListWithResourceUsage(ctx context.Context, q *dto.NodeServerListQuery) ([]vo.NodeServerResponse, int64, error) {
+	servers, total, err := s.List(ctx, q)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Batch fetch latest metrics
+	var usageMap map[int64]*vo.ResourceUsage
+	if s.metricsCollector != nil {
+		metricsMap, err := s.metricsCollector.GetLatestMetricsBatch(ctx)
+		if err == nil && len(metricsMap) > 0 {
+			usageMap = make(map[int64]*vo.ResourceUsage, len(metricsMap))
+			for serverID, m := range metricsMap {
+				usageMap[serverID] = metricToResourceUsage(m)
+			}
+		}
+	}
+
+	items := make([]vo.NodeServerResponse, len(servers))
+	for i, srv := range servers {
+		var usage *vo.ResourceUsage
+		if usageMap != nil {
+			usage = usageMap[srv.ID]
+		}
+		resp := s.ToResponse(&srv, usage)
+		items[i] = *resp
+	}
+
+	return items, total, nil
+}
+
+// metricToResourceUsage converts a ServerMetric entity to a ResourceUsage VO.
+func metricToResourceUsage(m *entity.ServerMetric) *vo.ResourceUsage {
+	if m == nil || m.ID == 0 {
+		return nil
+	}
+	return &vo.ResourceUsage{
+		CPUUsage:          m.CPUUsage,
+		CPUCores:          m.CPUCores,
+		MemUsedBytes:      m.MemUsageBytes,
+		MemTotalBytes:     m.MemTotalBytes,
+		MemUsage:          m.MemUsage,
+		SwapUsedBytes:     m.SwapUsedBytes,
+		SwapTotalBytes:    m.SwapTotalBytes,
+		SwapUsage:         m.SwapUsage,
+		DiskUsedBytes:     m.DiskUsageBytes,
+		DiskTotalBytes:    m.DiskTotalBytes,
+		DiskUsage:         m.DiskUsage,
+		DiskReadBytesSec:  m.DiskReadBytesSec,
+		DiskWriteBytesSec: m.DiskWriteBytesSec,
+		NetRxBytesSec:     m.NetRxBytes,
+		NetTxBytesSec:     m.NetTxBytes,
+		TCPConnections:    m.TCPConnections,
+		Load1m:            m.Load1m,
+		UptimeSeconds:     m.UptimeSeconds,
+		TrafficUplink:     m.TrafficUplink,
+		TrafficDownlink:   m.TrafficDownlink,
+		LastUpdated:       m.CreatedAt,
+	}
+}
+
+// HasMetricsCollector returns true if the metrics collector is available.
+func (s *Service) HasMetricsCollector() bool {
+	return s.metricsCollector != nil
+}
+
+// GetResourceUsage returns the latest resource usage for a single server.
+func (s *Service) GetResourceUsage(ctx context.Context, serverID int64) *vo.ResourceUsage {
+	if s.metricsCollector == nil {
+		return nil
+	}
+	metricsMap, err := s.metricsCollector.GetLatestMetricsBatch(ctx)
+	if err != nil {
+		return nil
+	}
+	if m, ok := metricsMap[serverID]; ok {
+		return metricToResourceUsage(m)
+	}
+	return nil
 }
 
 // EnsureLocalServer ensures a local node server record exists.

@@ -14,6 +14,7 @@ import (
 	"corefusion/internal/api/handlers/system"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
+	"corefusion/internal/model/vo"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	geoRuleSvc "corefusion/internal/service/georule"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
@@ -63,6 +64,7 @@ func (h *Handler) SetGeoRuleService(svc *geoRuleSvc.Service) {
 }
 
 // List returns all node servers with optional filtering.
+// Response includes resource_usage (CPU/Memory/Disk/Network) for each server.
 func (h *Handler) List(c *gin.Context) {
 	var q dto.NodeServerListQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
@@ -70,15 +72,10 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 
-	servers, total, err := h.svc.List(c.Request.Context(), &q)
+	items, total, err := h.svc.ListWithResourceUsage(c.Request.Context(), &q)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
-	}
-
-	items := make([]interface{}, len(servers))
-	for i, s := range servers {
-		items[i] = h.svc.ToResponse(&s)
 	}
 
 	response.OK(c, gin.H{
@@ -101,7 +98,13 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response.OK(c, h.svc.ToResponse(server))
+	// Fetch latest resource usage if metrics collector is available
+	var usage *vo.ResourceUsage
+	if h.svc.HasMetricsCollector() {
+		usage = h.svc.GetResourceUsage(c.Request.Context(), id)
+	}
+
+	response.OK(c, h.svc.ToResponse(server, usage))
 }
 
 // Create creates a new node server.

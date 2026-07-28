@@ -41,6 +41,39 @@
             </template>
           </el-table-column>
           <el-table-column prop="agent_version" :label="t('nodeServer.agentVersion')" width="90" show-overflow-tooltip />
+          <el-table-column label="CPU" width="100">
+            <template #default="{row}">
+              <div v-if="row.resource_usage" style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+                  <div :style="{width: Math.min(row.resource_usage.cpu_usage,100)+'%', background: row.resource_usage.cpu_usage > 80 ? '#f56c6c' : '#409eff', height:'100%', borderRadius:'3px'}" />
+                </div>
+                <span style="font-size:11px;color:#606266;min-width:32px;text-align:right">{{ row.resource_usage.cpu_usage?.toFixed(1) || 0 }}%</span>
+              </div>
+              <span v-else style="color:#c0c4cc;font-size:11px">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('dashboard.memory')" width="100">
+            <template #default="{row}">
+              <div v-if="row.resource_usage" style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+                  <div :style="{width: Math.min(row.resource_usage.mem_usage,100)+'%', background: row.resource_usage.mem_usage > 80 ? '#f56c6c' : '#67c23a', height:'100%', borderRadius:'3px'}" />
+                </div>
+                <span style="font-size:11px;color:#606266;min-width:32px;text-align:right">{{ row.resource_usage.mem_usage?.toFixed(1) || 0 }}%</span>
+              </div>
+              <span v-else style="color:#c0c4cc;font-size:11px">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('dashboard.disk')" width="100">
+            <template #default="{row}">
+              <div v-if="row.resource_usage" style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+                  <div :style="{width: Math.min(row.resource_usage.disk_usage,100)+'%', background: row.resource_usage.disk_usage > 80 ? '#f56c6c' : '#e6a23c', height:'100%', borderRadius:'3px'}" />
+                </div>
+                <span style="font-size:11px;color:#606266;min-width:32px;text-align:right">{{ row.resource_usage.disk_usage?.toFixed(1) || 0 }}%</span>
+              </div>
+              <span v-else style="color:#c0c4cc;font-size:11px">-</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('nodeServer.lastHeartbeat')" width="155">
             <template #default="{row}">
               <span v-if="row.last_heartbeat_at" style="font-size:12px;color:#909399">{{ formatTime(row.last_heartbeat_at) }}</span>

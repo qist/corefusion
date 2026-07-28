@@ -55,6 +55,9 @@ type NodeServerManager struct {
 	// Phase 6: Metrics collector (optional, injected by router)
 	metricsCollector *MetricsCollector
 
+	// Phase 6b: Traffic quota service (optional, injected by router)
+	trafficQuotaSvc TrafficQuotaProcessor
+
 	// Pending task results — taskID → result channel
 	pendingTasks   map[string]chan *agentpb.TaskResult
 	pendingTasksMu sync.RWMutex
@@ -182,6 +185,11 @@ func (m *NodeServerManager) SetProxySettingsProvider(p ProxySettingsProvider) {
 // SetMetricsCollector sets the metrics collector for heartbeat-based metric collection.
 func (m *NodeServerManager) SetMetricsCollector(mc *MetricsCollector) {
 	m.metricsCollector = mc
+}
+
+// SetTrafficQuotaProcessor sets the traffic quota processor for egress interface monitoring.
+func (m *NodeServerManager) SetTrafficQuotaProcessor(p TrafficQuotaProcessor) {
+	m.trafficQuotaSvc = p
 }
 
 // SetAgentUpdater sets the Agent updater for tracking pending Agent binary updates.
@@ -1431,6 +1439,11 @@ func (h *heartbeatServiceImpl) handleHeartbeat(ac *AgentConnection, report *agen
 	// Phase 6: Collect metrics from heartbeat
 	if h.mgr.metricsCollector != nil {
 		h.mgr.metricsCollector.CollectFromHeartbeat(ac.ServerID, report)
+	}
+
+	// Phase 6b: Process egress interface traffic for quota monitoring
+	if h.mgr.trafficQuotaSvc != nil {
+		h.mgr.trafficQuotaSvc.ProcessHeartbeat(ac.ServerID, report)
 	}
 }
 

@@ -44,6 +44,15 @@ type NodeServerResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 
+	// ── 出口网卡流量配额 ──
+	EgressInterface     string     `json:"egress_interface"`
+	TrafficQuotaBytes   int64      `json:"traffic_quota_bytes"`
+	TrafficQuotaResetDay int      `json:"traffic_quota_reset_day"`
+	TrafficSuspended    bool      `json:"traffic_suspended"`
+	TrafficSuspendedAt  *time.Time `json:"traffic_suspended_at,omitempty"`
+	TrafficUsedBytes    int64      `json:"traffic_used_bytes"`
+	TrafficPeriodStart  *time.Time `json:"traffic_period_start,omitempty"`
+
 	// Resource usage — populated from the latest server_metric
 	ResourceUsage *ResourceUsage `json:"resource_usage,omitempty"`
 }
@@ -85,6 +94,12 @@ type ResourceUsage struct {
 	// Traffic
 	TrafficUplink   int64     `json:"traffic_uplink"`
 	TrafficDownlink int64     `json:"traffic_downlink"`
+
+	// Egress interface (出口网卡累计流量)
+	EgressInterface string `json:"egress_interface"`
+	EgressRxBytes   int64  `json:"egress_rx_bytes"`
+	EgressTxBytes   int64  `json:"egress_tx_bytes"`
+
 	LastUpdated     time.Time `json:"last_updated"`
 }
 

@@ -323,3 +323,21 @@ export function getProxyReleases(serverId, type) {
 export function downloadProxyVersion(serverId, data) {
   return client.post(`/node-servers/${serverId}/proxy/download`, data)
 }
+
+// ──────────── Traffic Quota ────────────
+
+export function getTrafficUsage(serverId) {
+  return client.get(`/node-servers/${serverId}/traffic-usage`)
+}
+
+export function getTrafficHistory(serverId, months = 6) {
+  return client.get(`/node-servers/${serverId}/traffic-history`, { params: { months } })
+}
+
+export function resumeTrafficSuspended(serverId) {
+  return client.post(`/node-servers/${serverId}/traffic-resume`)
+}
+
+export function listInterfaces(serverId) {
+  return client.get(`/node-servers/${serverId}/binaries/interfaces`)
+}

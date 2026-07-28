@@ -33,12 +33,12 @@ import (
 	metricsHandler "corefusion/internal/api/handlers/metrics"
 	mihomoHandler "corefusion/internal/api/handlers/mihomo"
 	nodesHandler "corefusion/internal/api/handlers/nodes"
-	oauthHandler "corefusion/internal/api/handlers/oauth"
-	oauthService "corefusion/internal/service/oauth"
 	nodeServerHandler "corefusion/internal/api/handlers/nodeserver"
+	oauthHandler "corefusion/internal/api/handlers/oauth"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
-	portalHandler "corefusion/internal/api/handlers/portal"
 	planHandler "corefusion/internal/api/handlers/plan"
+	portalHandler "corefusion/internal/api/handlers/portal"
+	rateLimitHandler "corefusion/internal/api/handlers/ratelimit"
 	securityHandler "corefusion/internal/api/handlers/security"
 	servicesHandler "corefusion/internal/api/handlers/services"
 	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
@@ -50,19 +50,17 @@ import (
 	warpHandler "corefusion/internal/api/handlers/warp"
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
 	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
-	rateLimitHandler "corefusion/internal/api/handlers/ratelimit"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
 	"corefusion/internal/runtime/agent"
-	"corefusion/internal/runtime/firewall"
-	binariesSvc "corefusion/internal/service/binaries"
-	nodeServerSvc "corefusion/internal/service/nodeserver"
 	"corefusion/internal/runtime/cert"
+	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	backupService "corefusion/internal/service/backup"
+	binariesSvc "corefusion/internal/service/binaries"
 	certService "corefusion/internal/service/certificate"
 	cfipSvc "corefusion/internal/service/cfip"
 	clientSvc "corefusion/internal/service/client"
@@ -74,22 +72,24 @@ import (
 	logManageSvc "corefusion/internal/service/logmanage"
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
+	nodeServerSvc "corefusion/internal/service/nodeserver"
+	oauthService "corefusion/internal/service/oauth"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
-	portalSvc "corefusion/internal/service/portal"
 	planSvc "corefusion/internal/service/plan"
+	portalSvc "corefusion/internal/service/portal"
 	proxySvc "corefusion/internal/service/proxy"
+	rateLimitSvc "corefusion/internal/service/ratelimit"
 	svcService "corefusion/internal/service/service"
 	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
 	subendSvc "corefusion/internal/service/subendpoint"
 	subfmtSvc "corefusion/internal/service/subformat"
-	subService "corefusion/internal/service/subscription"
 	subRegion "corefusion/internal/service/subscription"
+	subService "corefusion/internal/service/subscription"
 	systemSvc "corefusion/internal/service/system"
-	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	trafficSvc "corefusion/internal/service/traffic"
+	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	userService "corefusion/internal/service/user"
 	warpSvc "corefusion/internal/service/warp"
-	rateLimitSvc "corefusion/internal/service/ratelimit"
 	"corefusion/internal/store/repository"
 )
 
@@ -602,12 +602,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo := repository.NewSubscriptionEndpointRepository(database)
-clientExtH := clientextHandler.NewHandler(
-referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
-sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
-clientRepo, repository.NewClientOAuthBindingRepository(database),
-subRepo, subEndpointRepo, publicSubH, database,
-)
+	clientExtH := clientextHandler.NewHandler(
+		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
+		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
+		clientRepo, repository.NewClientOAuthBindingRepository(database),
+		subRepo, subEndpointRepo, publicSubH, database,
+	)
 
 	// Set balance repo on clientauth service for /me extension
 	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))
@@ -691,39 +691,39 @@ subRepo, subEndpointRepo, publicSubH, database,
 	// proxy reloaded/restarted accordingly.
 	if sharedNodeMgr != nil {
 		logManageHandler.SetProxyLogModeApplier(func(ctx context.Context, serverID int64, proxyType string, newMode string) {
-		var config string
-		var err error
-		switch proxyType {
-		case "caddy":
-			config, err = caddyMgr.GenerateConfigForServer(ctx, serverID)
-		case "nginx":
-			config, err = nginxMgr.GenerateConfigForServer(ctx, serverID)
-		default:
-			return
-		}
-		if err != nil {
-			log.Printf("router: generate %s config for server %d after log mode switch: %v", proxyType, serverID, err)
-			return
-		}
+			var config string
+			var err error
+			switch proxyType {
+			case "caddy":
+				config, err = caddyMgr.GenerateConfigForServer(ctx, serverID)
+			case "nginx":
+				config, err = nginxMgr.GenerateConfigForServer(ctx, serverID)
+			default:
+				return
+			}
+			if err != nil {
+				log.Printf("router: generate %s config for server %d after log mode switch: %v", proxyType, serverID, err)
+				return
+			}
 
-		// Sync the regenerated config to the remote agent
-		if err := sharedNodeMgr.SyncProxyConfig(ctx, serverID, proxyType, []byte(config)); err != nil {
-			log.Printf("router: sync %s config to server %d after log mode switch: %v", proxyType, serverID, err)
-			return
-		}
+			// Sync the regenerated config to the remote agent
+			if err := sharedNodeMgr.SyncProxyConfig(ctx, serverID, proxyType, []byte(config)); err != nil {
+				log.Printf("router: sync %s config to server %d after log mode switch: %v", proxyType, serverID, err)
+				return
+			}
 
-		// Reload for file/off mode (config change only), restart for stdout mode
-		// (need to re-attach stdout pipe)
-		action := "reload"
-		if newMode == "stdout" {
-			action = "restart"
-		}
-		if err := sharedNodeMgr.ControlProxy(ctx, serverID, proxyType, action); err != nil {
-			log.Printf("router: %s %s on server %d after log mode switch: %v", action, proxyType, serverID, err)
-		} else {
-			log.Printf("router: %s %s on server %d after log mode switch to %s", action, proxyType, serverID, newMode)
-		}
-	})
+			// Reload for file/off mode (config change only), restart for stdout mode
+			// (need to re-attach stdout pipe)
+			action := "reload"
+			if newMode == "stdout" {
+				action = "restart"
+			}
+			if err := sharedNodeMgr.ControlProxy(ctx, serverID, proxyType, action); err != nil {
+				log.Printf("router: %s %s on server %d after log mode switch: %v", action, proxyType, serverID, err)
+			} else {
+				log.Printf("router: %s %s on server %d after log mode switch to %s", action, proxyType, serverID, newMode)
+			}
+		})
 	}
 
 	// Client log handler (for subscription user log packaging)
@@ -767,9 +767,9 @@ subRepo, subEndpointRepo, publicSubH, database,
 			assetPath = path
 		} else if webPath != "" && strings.HasPrefix(path, webPath+"/assets/") {
 			assetPath = strings.TrimPrefix(path, webPath)
-	} else if strings.HasPrefix(path, "/p/") && !strings.HasSuffix(path, "/p/") {
-		// Serve portal static files (e.g. qrcode.min.js) from embed
-		filePath := "dist/portal" + strings.TrimPrefix(path, "/p")
+		} else if strings.HasPrefix(path, "/p/") && !strings.HasSuffix(path, "/p/") {
+			// Serve portal static files (e.g. qrcode.min.js) from embed
+			filePath := "dist/portal" + strings.TrimPrefix(path, "/p")
 			data, err := adminFSBytes.ReadFile(filePath)
 			if err != nil {
 				c.Status(404)
@@ -890,8 +890,8 @@ subRepo, subEndpointRepo, publicSubH, database,
 		}
 
 		// Protected routes
-	protected := v1.Group("")
-	protected.Use(middleware.AuthRequired())
+		protected := v1.Group("")
+		protected.Use(middleware.AuthRequired())
 		{
 			// Users
 			usersGroup := protected.Group("/users")
@@ -961,8 +961,8 @@ subRepo, subEndpointRepo, publicSubH, database,
 				cfipGroup.POST("/seed", cfipH.SeedDefaults)
 			}
 
-		// Services (moved under /node-servers/:id/services)
-		// Geo Rules (moved under /node-servers/:id/geo-rules)
+			// Services (moved under /node-servers/:id/services)
+			// Geo Rules (moved under /node-servers/:id/geo-rules)
 
 			// Subscriptions
 			subsGroup := protected.Group("/subscriptions")
@@ -1042,137 +1042,137 @@ subRepo, subEndpointRepo, publicSubH, database,
 			}
 
 			// Plan Variants (套餐规格)
-planVariantGroup := protected.Group("/plan-variants")
-{
-planVariantGroup.PUT("/:id", planH.UpdateVariant)
-planVariantGroup.DELETE("/:id", planH.DeleteVariant)
-}
+			planVariantGroup := protected.Group("/plan-variants")
+			{
+				planVariantGroup.PUT("/:id", planH.UpdateVariant)
+				planVariantGroup.DELETE("/:id", planH.DeleteVariant)
+			}
 
-// Traffic Packs (独立流量叠加包，不绑定模板，适用全部套餐)
-trafficPackGroup := protected.Group("/traffic-packs")
-{
-trafficPackGroup.GET("", planH.ListTrafficPacks)
-trafficPackGroup.POST("", planH.CreateTrafficPack)
-trafficPackGroup.PUT("/:id", planH.UpdateTrafficPack)
-trafficPackGroup.DELETE("/:id", planH.DeleteTrafficPack)
-}
+			// Traffic Packs (独立流量叠加包，不绑定模板，适用全部套餐)
+			trafficPackGroup := protected.Group("/traffic-packs")
+			{
+				trafficPackGroup.GET("", planH.ListTrafficPacks)
+				trafficPackGroup.POST("", planH.CreateTrafficPack)
+				trafficPackGroup.PUT("/:id", planH.UpdateTrafficPack)
+				trafficPackGroup.DELETE("/:id", planH.DeleteTrafficPack)
+			}
 
-// Charge Sites (充值站点管理)
-	chargeAdminH := chargeHandler.NewHandler(
-		repository.NewChargeSiteRepository(database),
-		repository.NewChargeOrderRepository(database),
-		repository.NewChargeCardRepository(database),
-		repository.NewClientBalanceRepository(database),
-		repository.NewBalanceTransactionRepository(database),
-		clientRepo,
-		userRepo, // v3.3: 用于查询代理员信息
-		database,
-	)
-	// 注入 PlanRefunder — 退款时回退套餐时间 + 移除节点账号
-	chargeAdminH.SetPlanRefunder(commerceSvcInst)
-chargeSiteGroup := protected.Group("/charge-sites")
-{
-chargeSiteGroup.GET("", chargeAdminH.ListSites)
-chargeSiteGroup.GET("/:id", chargeAdminH.GetSite)
-chargeSiteGroup.POST("", chargeAdminH.CreateSite)
-chargeSiteGroup.PUT("/:id", chargeAdminH.UpdateSite)
-chargeSiteGroup.DELETE("/:id", chargeAdminH.DeleteSite)
-chargeSiteGroup.POST("/:id/generate-verify-file", chargeAdminH.GenerateVerifyFile)
-chargeSiteGroup.POST("/:id/generate-verify", chargeAdminH.GenerateVerifyFile) // 文档路径别名
-chargeSiteGroup.POST("/:id/verify-domain-http", chargeAdminH.VerifyDomainHTTP)
-chargeSiteGroup.POST("/:id/verify-domain", chargeAdminH.VerifyDomainHTTP) // 文档路径别名
-chargeSiteGroup.POST("/:id/verify-domain-dns", chargeAdminH.VerifyDomainDNS)
-chargeSiteGroup.POST("/:id/verify-dns", chargeAdminH.VerifyDomainDNS) // 文档路径别名
-chargeSiteGroup.GET("/:id/integration-doc", chargeAdminH.GetSiteIntegrationDoc)
-chargeSiteGroup.POST("/:id/rotate-secret", chargeAdminH.RotateSecret)
-chargeSiteGroup.POST("/:id/clear-prev-secret", chargeAdminH.ClearPrevSecret)
-}
-chargeOrderGroup := protected.Group("/charge-orders")
-{
-chargeOrderGroup.GET("", chargeAdminH.ListOrders)
-chargeOrderGroup.GET("/:id", chargeAdminH.GetOrder)
-chargeOrderGroup.POST("/:id/refund", chargeAdminH.RefundOrder)
-}
-chargeCardGroup := protected.Group("/charge-cards")
-{
-chargeCardGroup.GET("", chargeAdminH.ListCards)
-chargeCardGroup.POST("", chargeAdminH.CreateCard)
-chargeCardGroup.POST("/batch", chargeAdminH.BatchCreateCards)
-chargeCardGroup.GET("/export-csv", chargeAdminH.ExportCardsCSV) // v3.3: CSV 导出（放在 /:id 之前避免路由冲突）
-chargeCardGroup.GET("/:id/usages", chargeAdminH.GetCardUsages)  // v3.3: 使用记录
-chargeCardGroup.DELETE("/:id", chargeAdminH.DeleteCard)
-}
-clientBalanceGroup := protected.Group("/client-balances")
-{
-clientBalanceGroup.GET("", chargeAdminH.ListBalances)
-clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
-}
+			// Charge Sites (充值站点管理)
+			chargeAdminH := chargeHandler.NewHandler(
+				repository.NewChargeSiteRepository(database),
+				repository.NewChargeOrderRepository(database),
+				repository.NewChargeCardRepository(database),
+				repository.NewClientBalanceRepository(database),
+				repository.NewBalanceTransactionRepository(database),
+				clientRepo,
+				userRepo, // v3.3: 用于查询代理员信息
+				database,
+			)
+			// 注入 PlanRefunder — 退款时回退套餐时间 + 移除节点账号
+			chargeAdminH.SetPlanRefunder(commerceSvcInst)
+			chargeSiteGroup := protected.Group("/charge-sites")
+			{
+				chargeSiteGroup.GET("", chargeAdminH.ListSites)
+				chargeSiteGroup.GET("/:id", chargeAdminH.GetSite)
+				chargeSiteGroup.POST("", chargeAdminH.CreateSite)
+				chargeSiteGroup.PUT("/:id", chargeAdminH.UpdateSite)
+				chargeSiteGroup.DELETE("/:id", chargeAdminH.DeleteSite)
+				chargeSiteGroup.POST("/:id/generate-verify-file", chargeAdminH.GenerateVerifyFile)
+				chargeSiteGroup.POST("/:id/generate-verify", chargeAdminH.GenerateVerifyFile) // 文档路径别名
+				chargeSiteGroup.POST("/:id/verify-domain-http", chargeAdminH.VerifyDomainHTTP)
+				chargeSiteGroup.POST("/:id/verify-domain", chargeAdminH.VerifyDomainHTTP) // 文档路径别名
+				chargeSiteGroup.POST("/:id/verify-domain-dns", chargeAdminH.VerifyDomainDNS)
+				chargeSiteGroup.POST("/:id/verify-dns", chargeAdminH.VerifyDomainDNS) // 文档路径别名
+				chargeSiteGroup.GET("/:id/integration-doc", chargeAdminH.GetSiteIntegrationDoc)
+				chargeSiteGroup.POST("/:id/rotate-secret", chargeAdminH.RotateSecret)
+				chargeSiteGroup.POST("/:id/clear-prev-secret", chargeAdminH.ClearPrevSecret)
+			}
+			chargeOrderGroup := protected.Group("/charge-orders")
+			{
+				chargeOrderGroup.GET("", chargeAdminH.ListOrders)
+				chargeOrderGroup.GET("/:id", chargeAdminH.GetOrder)
+				chargeOrderGroup.POST("/:id/refund", chargeAdminH.RefundOrder)
+			}
+			chargeCardGroup := protected.Group("/charge-cards")
+			{
+				chargeCardGroup.GET("", chargeAdminH.ListCards)
+				chargeCardGroup.POST("", chargeAdminH.CreateCard)
+				chargeCardGroup.POST("/batch", chargeAdminH.BatchCreateCards)
+				chargeCardGroup.GET("/export-csv", chargeAdminH.ExportCardsCSV) // v3.3: CSV 导出（放在 /:id 之前避免路由冲突）
+				chargeCardGroup.GET("/:id/usages", chargeAdminH.GetCardUsages)  // v3.3: 使用记录
+				chargeCardGroup.DELETE("/:id", chargeAdminH.DeleteCard)
+			}
+			clientBalanceGroup := protected.Group("/client-balances")
+			{
+				clientBalanceGroup.GET("", chargeAdminH.ListBalances)
+				clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
+			}
 
-// Callback events (v3.1: merged logs into events) & retry management
-callbackEventGroup := protected.Group("/charge-callback-events")
-{
-callbackEventGroup.GET("", chargeAdminH.ListCallbackEvents)
-}
-callbackRetryGroup := protected.Group("/charge-callback-retries")
-{
-callbackRetryGroup.GET("", chargeAdminH.ListCallbackRetries)
-callbackRetryGroup.POST("/:id/retry", chargeAdminH.RetryCallback)
-}
+			// Callback events (v3.1: merged logs into events) & retry management
+			callbackEventGroup := protected.Group("/charge-callback-events")
+			{
+				callbackEventGroup.GET("", chargeAdminH.ListCallbackEvents)
+			}
+			callbackRetryGroup := protected.Group("/charge-callback-retries")
+			{
+				callbackRetryGroup.GET("", chargeAdminH.ListCallbackRetries)
+				callbackRetryGroup.POST("/:id/retry", chargeAdminH.RetryCallback)
+			}
 
-// P1-P3: Admin routes for extended modules
-referralWithdrawalGroup := protected.Group("/referral-withdrawals")
-{
-referralWithdrawalGroup.GET("", clientExtH.AdminListWithdrawals)
-referralWithdrawalGroup.POST("/:id/approve", clientExtH.AdminApproveWithdrawal)
-referralWithdrawalGroup.POST("/:id/reject", clientExtH.AdminRejectWithdrawal)
-}
-referralAdminGroup := protected.Group("/referral")
-{
-referralAdminGroup.GET("/stats", clientExtH.AdminReferralStats)
-referralAdminGroup.GET("/records", clientExtH.AdminListReferralRecords)
-referralAdminGroup.GET("/config", clientExtH.AdminGetReferralConfig)
-referralAdminGroup.PUT("/config", clientExtH.AdminSetReferralConfig)
-}
-ipWhitelistAdminGroup := protected.Group("/ip-whitelists")
-{
-ipWhitelistAdminGroup.GET("", clientExtH.AdminListAllIPWhitelists)
-}
-oauthBindingAdminGroup := protected.Group("/client-oauth-bindings")
-{
-oauthBindingAdminGroup.GET("", clientExtH.AdminListClientOAuthBindings)
-}
-ticketAdminGroup := protected.Group("/tickets")
-{
-ticketAdminGroup.GET("", clientExtH.AdminListTickets)
-ticketAdminGroup.GET("/:id", clientExtH.AdminGetTicket)
-ticketAdminGroup.POST("/:id/reply", clientExtH.AdminReplyTicket)
-ticketAdminGroup.POST("/:id/close", clientExtH.AdminCloseTicket)
-ticketAdminGroup.POST("/:id/assign", clientExtH.AdminAssignTicket)
-}
-giftAdminGroup := protected.Group("/client-gifts")
-{
-giftAdminGroup.GET("", clientExtH.AdminListGifts)
-giftAdminGroup.POST("", clientExtH.AdminCreateGift)
-giftAdminGroup.POST("/batch", clientExtH.AdminCreateGiftBatch)
-giftAdminGroup.GET("/search-clients", clientExtH.AdminSearchClients)
-}
-articleAdminGroup := protected.Group("/articles")
-{
-articleAdminGroup.GET("", clientExtH.AdminListArticles)
-articleAdminGroup.GET("/:id", clientExtH.AdminGetArticle)
-articleAdminGroup.POST("", clientExtH.AdminCreateArticle)
-articleAdminGroup.PUT("/:id", clientExtH.AdminUpdateArticle)
-articleAdminGroup.DELETE("/:id", clientExtH.AdminDeleteArticle)
-}
-sharedAccountAdminGroup := protected.Group("/shared-accounts")
-{
-sharedAccountAdminGroup.GET("", clientExtH.AdminListSharedAccounts)
-sharedAccountAdminGroup.GET("/:id", clientExtH.AdminGetSharedAccount)
-sharedAccountAdminGroup.POST("", clientExtH.AdminCreateSharedAccount)
-sharedAccountAdminGroup.PUT("/:id", clientExtH.AdminUpdateSharedAccount)
-sharedAccountAdminGroup.DELETE("/:id", clientExtH.AdminDeleteSharedAccount)
-sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
-}
+			// P1-P3: Admin routes for extended modules
+			referralWithdrawalGroup := protected.Group("/referral-withdrawals")
+			{
+				referralWithdrawalGroup.GET("", clientExtH.AdminListWithdrawals)
+				referralWithdrawalGroup.POST("/:id/approve", clientExtH.AdminApproveWithdrawal)
+				referralWithdrawalGroup.POST("/:id/reject", clientExtH.AdminRejectWithdrawal)
+			}
+			referralAdminGroup := protected.Group("/referral")
+			{
+				referralAdminGroup.GET("/stats", clientExtH.AdminReferralStats)
+				referralAdminGroup.GET("/records", clientExtH.AdminListReferralRecords)
+				referralAdminGroup.GET("/config", clientExtH.AdminGetReferralConfig)
+				referralAdminGroup.PUT("/config", clientExtH.AdminSetReferralConfig)
+			}
+			ipWhitelistAdminGroup := protected.Group("/ip-whitelists")
+			{
+				ipWhitelistAdminGroup.GET("", clientExtH.AdminListAllIPWhitelists)
+			}
+			oauthBindingAdminGroup := protected.Group("/client-oauth-bindings")
+			{
+				oauthBindingAdminGroup.GET("", clientExtH.AdminListClientOAuthBindings)
+			}
+			ticketAdminGroup := protected.Group("/tickets")
+			{
+				ticketAdminGroup.GET("", clientExtH.AdminListTickets)
+				ticketAdminGroup.GET("/:id", clientExtH.AdminGetTicket)
+				ticketAdminGroup.POST("/:id/reply", clientExtH.AdminReplyTicket)
+				ticketAdminGroup.POST("/:id/close", clientExtH.AdminCloseTicket)
+				ticketAdminGroup.POST("/:id/assign", clientExtH.AdminAssignTicket)
+			}
+			giftAdminGroup := protected.Group("/client-gifts")
+			{
+				giftAdminGroup.GET("", clientExtH.AdminListGifts)
+				giftAdminGroup.POST("", clientExtH.AdminCreateGift)
+				giftAdminGroup.POST("/batch", clientExtH.AdminCreateGiftBatch)
+				giftAdminGroup.GET("/search-clients", clientExtH.AdminSearchClients)
+			}
+			articleAdminGroup := protected.Group("/articles")
+			{
+				articleAdminGroup.GET("", clientExtH.AdminListArticles)
+				articleAdminGroup.GET("/:id", clientExtH.AdminGetArticle)
+				articleAdminGroup.POST("", clientExtH.AdminCreateArticle)
+				articleAdminGroup.PUT("/:id", clientExtH.AdminUpdateArticle)
+				articleAdminGroup.DELETE("/:id", clientExtH.AdminDeleteArticle)
+			}
+			sharedAccountAdminGroup := protected.Group("/shared-accounts")
+			{
+				sharedAccountAdminGroup.GET("", clientExtH.AdminListSharedAccounts)
+				sharedAccountAdminGroup.GET("/:id", clientExtH.AdminGetSharedAccount)
+				sharedAccountAdminGroup.POST("", clientExtH.AdminCreateSharedAccount)
+				sharedAccountAdminGroup.PUT("/:id", clientExtH.AdminUpdateSharedAccount)
+				sharedAccountAdminGroup.DELETE("/:id", clientExtH.AdminDeleteSharedAccount)
+				sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
+			}
 
 			// Inbounds with server name (for member management UI)
 			protected.GET("/inbounds-with-server", planH.ListAllInboundsWithServer)
@@ -1229,133 +1229,145 @@ sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
 			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService)
 
-		// Wire up CRL and CertDistributor if CA is available
-		if caService != nil {
-			certRepoForNodeServer := repository.NewCertificateRepository(database)
-			// Use the shared NodeServerManager from main.go (same instance that runs
-			// the gRPC server and receives Agent connections). This ensures that
-			// HTTP API status queries and commands use the same connection map.
-			nodeMgrForCRL := sharedNodeMgr
-			crlInst := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgrForCRL, caService)
-			certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
-			nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
+			// Wire up CRL and CertDistributor if CA is available
+			if caService != nil {
+				certRepoForNodeServer := repository.NewCertificateRepository(database)
+				// Use the shared NodeServerManager from main.go (same instance that runs
+				// the gRPC server and receives Agent connections). This ensures that
+				// HTTP API status queries and commands use the same connection map.
+				nodeMgrForCRL := sharedNodeMgr
+				crlInst := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgrForCRL, caService)
+				certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
+				nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
 
-			// Wire cert update callback: when a certificate is updated/renewed
-			// in the certificate center, automatically distribute to all nodes.
-			certH.OnCertUpdated(func(ctx context.Context, certID int64) {
-				if err := nodeServerSvcInst.DistributeCertificateToAll(ctx, certID); err != nil {
-					log.Printf("[router] auto-distribute cert %d after update: %v", certID, err)
+				// Wire cert update callback: when a certificate is updated/renewed
+				// in the certificate center, automatically distribute to all nodes.
+				certH.OnCertUpdated(func(ctx context.Context, certID int64) {
+					if err := nodeServerSvcInst.DistributeCertificateToAll(ctx, certID); err != nil {
+						log.Printf("[router] auto-distribute cert %d after update: %v", certID, err)
+					} else {
+						log.Printf("[router] auto-distributed cert %d to all associated nodes", certID)
+					}
+				})
+
+				// Inject LocalAgent — use the shared instance from main.go if available.
+				// This ensures both the gRPC server and HTTP API use the same LocalAgent
+				// with all dependencies (ProxyManager, BinaryInstaller) properly injected,
+				// instead of creating a second incomplete instance.
+				binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
+				binaryInstaller.SetProcessController(processMgr) // Enable stop/start during binary updates
+				var localAgent *agent.LocalAgent
+				if sharedLocalAgent != nil {
+					localAgent = sharedLocalAgent
 				} else {
-					log.Printf("[router] auto-distributed cert %d to all associated nodes", certID)
+					// Fallback: create a new LocalAgent (backward compatible)
+					localAgent = agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+					localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+					localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
 				}
-			})
+				nodeMgrForCRL.SetLocalAgent(localAgent)
+				// Also update the shared NodeServerManager's LocalAgent so the gRPC
+				// heartbeat handler (used by remote Agents) has the complete instance
+				// with ProxyManager and BinaryInstaller, not the partial one from main.go.
+				if sharedNodeMgr != nil {
+					sharedNodeMgr.SetLocalAgent(localAgent)
+				}
+				nodeMgrForCRL.SetSettingStore(systemSettingSvc)
 
-			// Inject LocalAgent — use the shared instance from main.go if available.
-			// This ensures both the gRPC server and HTTP API use the same LocalAgent
-			// with all dependencies (ProxyManager, BinaryInstaller) properly injected,
-			// instead of creating a second incomplete instance.
-			binaryInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
-			binaryInstaller.SetProcessController(processMgr) // Enable stop/start during binary updates
-			var localAgent *agent.LocalAgent
-			if sharedLocalAgent != nil {
-				localAgent = sharedLocalAgent
-			} else {
-				// Fallback: create a new LocalAgent (backward compatible)
-				localAgent = agent.NewLocalAgent(dataDir, processMgr, svcRepo)
-				localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
-				localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
-			}
-			nodeMgrForCRL.SetLocalAgent(localAgent)
-			// Also update the shared NodeServerManager's LocalAgent so the gRPC
-			// heartbeat handler (used by remote Agents) has the complete instance
-			// with ProxyManager and BinaryInstaller, not the partial one from main.go.
-			if sharedNodeMgr != nil {
-				sharedNodeMgr.SetLocalAgent(localAgent)
-			}
-		nodeMgrForCRL.SetSettingStore(systemSettingSvc)
-
-		// Set binary lister for node server service (used for ListReleases API)
-		// Wrap binaries.Installer to match nodeserver.BinaryLister interface
-		nodeServerSvcInst.SetBinaryLister(&binaryListerAdapter{installer: binaryInstaller})
+				// Set binary lister for node server service (used for ListReleases API)
+				// Wrap binaries.Installer to match nodeserver.BinaryLister interface
+				nodeServerSvcInst.SetBinaryLister(&binaryListerAdapter{installer: binaryInstaller})
 
 				// Phase 3: Node Types & Chain Proxy wiring
-			inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
-			nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
+				inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
+				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
 
-			failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
-			mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3)
-			chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
-			chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
-			billingFilter := agent.NewBillingFilter(nodeServerRepo)
+				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
+				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3)
+				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
+				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
+				billingFilter := agent.NewBillingFilter(nodeServerRepo)
 
-			nodeServerSvcInst.
-				WithInboundRepo(inboundRepoForNodeServer).
-				WithNodeManager(nodeMgrForPhase3).
-				WithFailoverManager(failoverMgr).
-				WithMirrorSync(mirrorSyncMgr).
-				WithChainGenerator(chainGen).
-				WithChainHealthRegistry(chainHealthRegistry).
-				WithBillingFilter(billingFilter)
+				nodeServerSvcInst.
+					WithInboundRepo(inboundRepoForNodeServer).
+					WithNodeManager(nodeMgrForPhase3).
+					WithFailoverManager(failoverMgr).
+					WithMirrorSync(mirrorSyncMgr).
+					WithChainGenerator(chainGen).
+					WithChainHealthRegistry(chainHealthRegistry).
+					WithBillingFilter(billingFilter)
 
-			// Phase 5: Dashboard & Enhancements wiring
-			multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
-			geoIPResolver := subRegion.NewSimpleGeoIPResolver()
-			regionSelector := subRegion.NewRegionSelector(geoIPResolver, nodeServerRepo)
+				// Phase 5: Dashboard & Enhancements wiring
+				multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
+				geoIPResolver := subRegion.NewSimpleGeoIPResolver()
+				regionSelector := subRegion.NewRegionSelector(geoIPResolver, nodeServerRepo)
 
-			nodeServerSvcInst.
-				WithHealthChecker(multiHealthChecker).
-				WithRegionSelector(regionSelector)
+				nodeServerSvcInst.
+					WithHealthChecker(multiHealthChecker).
+					WithRegionSelector(regionSelector)
 
-			// Phase 6: Advanced Features wiring
-			metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
-			speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
-			loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
-			agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
+				// Phase 6: Advanced Features wiring
+				metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
+				speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
+				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
+				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
 
-			nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
-			nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
-	nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
+				nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
+				nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
+				nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
 
-			// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
-			// Also generates final runtime config via PrepareFullConfig so Agent
-			// doesn't need to re-implement the config preparation pipeline.
-			dataSyncProvider := configsyncSvc.NewDataSyncBuilder(
-				configsyncSvc.NewRepositoryDataProvider(
-					coreConfigRepo,
-					inboundConfigRepo,
-					outboundConfigRepo,
-					warpRepo,
-					shareDomainRepo,
-				).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo),
-			).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc)
-			nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
-			nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
+				// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
+				// Also generates final runtime config via PrepareFullConfig so Agent
+				// doesn't need to re-implement the config preparation pipeline.
+				dataSyncProvider := configsyncSvc.NewDataSyncBuilder(
+					configsyncSvc.NewRepositoryDataProvider(
+						coreConfigRepo,
+						inboundConfigRepo,
+						outboundConfigRepo,
+						warpRepo,
+						shareDomainRepo,
+					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo),
+				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc)
+				nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
+				nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 
-			// Set proxy settings provider for per-node nginx/caddy settings sync
-			nodeMgrForPhase3.SetProxySettingsProvider(&proxySettingsProvider{
-				settingStore: systemSettingRepo,
-			})
+				// Set proxy settings provider for per-node nginx/caddy settings sync
+				nodeMgrForPhase3.SetProxySettingsProvider(&proxySettingsProvider{
+					settingStore: systemSettingRepo,
+				})
 
-			nodeServerSvcInst.
-				WithMetricsCollector(metricsCollector).
-				WithSpeedTestManager(speedTestMgr).
-				WithLoadBalancer(loadBalancer).
-				WithAgentUpdater(agentUpdater)
+				nodeServerSvcInst.
+					WithMetricsCollector(metricsCollector).
+					WithSpeedTestManager(speedTestMgr).
+					WithLoadBalancer(loadBalancer).
+					WithAgentUpdater(agentUpdater)
 
-			// Supplementary repos wiring
-			auditLogRepo := repository.NewNodeAuditLogRepository(database)
-			tagRepo := repository.NewServerTagRepository(database)
-			distQueueRepo := repository.NewCertDistributionQueueRepository(database)
-			crlRepoForSvc := revocationRepo // reuse the already-created revocation repo
-			certRepoForSvc := certRepoForNodeServer // reuse the already-created cert repo
+				// Create and wire the traffic quota service for monthly traffic monitoring
+				trafficQuotaSvc := nodeServerSvc.NewNodeTrafficQuotaService(
+					database,
+					nodeServerRepo,
+					nodeMgrForPhase3,
+				)
+				nodeServerSvcInst.WithTrafficQuotaService(trafficQuotaSvc)
+				nodeMgrForPhase3.SetTrafficQuotaProcessor(trafficQuotaSvc)
 
-			nodeServerSvcInst.
-				WithAuditLogRepo(auditLogRepo).
-				WithTagRepo(tagRepo).
-				WithDistQueueRepo(distQueueRepo).
-				WithCertRepo(certRepoForSvc).
-				WithCRLRepo(crlRepoForSvc).
-				WithDB(database)
+				// Start the traffic quota checker in the background
+				go trafficQuotaSvc.Start(context.Background())
+
+				// Supplementary repos wiring
+				auditLogRepo := repository.NewNodeAuditLogRepository(database)
+				tagRepo := repository.NewServerTagRepository(database)
+				distQueueRepo := repository.NewCertDistributionQueueRepository(database)
+				crlRepoForSvc := revocationRepo         // reuse the already-created revocation repo
+				certRepoForSvc := certRepoForNodeServer // reuse the already-created cert repo
+
+				nodeServerSvcInst.
+					WithAuditLogRepo(auditLogRepo).
+					WithTagRepo(tagRepo).
+					WithDistQueueRepo(distQueueRepo).
+					WithCertRepo(certRepoForSvc).
+					WithCRLRepo(crlRepoForSvc).
+					WithDB(database)
 			}
 
 			nodeServerH := nodeServerHandler.NewHandler(nodeServerSvcInst)
@@ -1365,31 +1377,31 @@ sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
 			nodeServerH.SetProxyHandler(proxyH)
 			nodeServerH.SetGeoRuleService(geoRuleSvcInst)
 
-		// Wire up NodeOperator so proxy/caddy/nginx handlers can route
-		// operations (start/stop/restart/reload, config sync, status)
-		// to remote nodes via gRPC.
-		proxyH.SetNodeOperator(nodeServerSvcInst)
-		caddyH.SetNodeOperator(nodeServerSvcInst)
-		nginxH.SetNodeOperator(nodeServerSvcInst)
-		processH.SetNodeOperator(nodeServerSvcInst)
+			// Wire up NodeOperator so proxy/caddy/nginx handlers can route
+			// operations (start/stop/restart/reload, config sync, status)
+			// to remote nodes via gRPC.
+			proxyH.SetNodeOperator(nodeServerSvcInst)
+			caddyH.SetNodeOperator(nodeServerSvcInst)
+			nginxH.SetNodeOperator(nodeServerSvcInst)
+			processH.SetNodeOperator(nodeServerSvcInst)
 
-		// Inject SyncData hook so traffic reset also pushes inbound_configs
-		// table to remote Agent's local SQLite DB.
-		syncDataHook := &syncDataHookAdapter{nodeServerSvc: nodeServerSvcInst}
-		inboundCfgH.SetSyncDataHook(syncDataHook)
+			// Inject SyncData hook so traffic reset also pushes inbound_configs
+			// table to remote Agent's local SQLite DB.
+			syncDataHook := &syncDataHookAdapter{nodeServerSvc: nodeServerSvcInst}
+			inboundCfgH.SetSyncDataHook(syncDataHook)
 
-		// Inject traffic reset hook so subscription/client reset propagates
-		// to inbound configs and remote Agent nodes.
-		trafficHook := &trafficResetHookAdapter{inboundSvc: inboundConfigSvc, syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}
-		subSvc.SetTrafficResetHook(trafficHook)
-		clientSvcInst.SetTrafficResetHook(trafficHook)
+			// Inject traffic reset hook so subscription/client reset propagates
+			// to inbound configs and remote Agent nodes.
+			trafficHook := &trafficResetHookAdapter{inboundSvc: inboundConfigSvc, syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}
+			subSvc.SetTrafficResetHook(trafficHook)
+			clientSvcInst.SetTrafficResetHook(trafficHook)
 			nodeServersGroup := protected.Group("/node-servers")
 			{
 				nodeServersGroup.GET("", nodeServerH.List)
 				nodeServersGroup.POST("", nodeServerH.Create)
 				nodeServersGroup.GET("/ca-cert", nodeServerH.GetCACert)
 				nodeServersGroup.POST("/distribute-cert", nodeServerH.DistributeCertificateToAll)
-			nodeServersGroup.POST("/migrate-cert", nodeServerH.MigrateCertificate)
+				nodeServersGroup.POST("/migrate-cert", nodeServerH.MigrateCertificate)
 				nodeServersGroup.GET("/:id", nodeServerH.GetByID)
 				nodeServersGroup.PUT("/:id", nodeServerH.Update)
 				nodeServersGroup.DELETE("/:id", nodeServerH.Delete)
@@ -1439,184 +1451,189 @@ sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
 				nodeServersGroup.POST("/:id/certificates/:cid", nodeServerH.AssociateCertificate)
 				nodeServersGroup.DELETE("/:id/certificates/:cid", nodeServerH.DissociateCertificate)
 
-			// Rate Limit Config
-			nodeServersGroup.GET("/:id/rate-limit", rateLimitH.GetConfig)
-			nodeServersGroup.PUT("/:id/rate-limit", rateLimitH.UpdateConfig)
-			nodeServersGroup.GET("/:id/rate-limit/status", rateLimitH.GetStatus)
+				// Rate Limit Config
+				nodeServersGroup.GET("/:id/rate-limit", rateLimitH.GetConfig)
+				nodeServersGroup.PUT("/:id/rate-limit", rateLimitH.UpdateConfig)
+				nodeServersGroup.GET("/:id/rate-limit/status", rateLimitH.GetStatus)
 
 				// Supplementary: Agent Degradation & Reconnect
 				nodeServersGroup.GET("/:id/degradation-status", nodeServerH.GetDegradationStatus)
-			nodeServersGroup.POST("/:id/force-reconnect", nodeServerH.ForceReconnect)
+				nodeServersGroup.POST("/:id/force-reconnect", nodeServerH.ForceReconnect)
 
-			// Binary & Proxy Installation (local + remote via Agent)
-			nodeServersGroup.POST("/:id/binaries/install", nodeServerH.InstallBinary)
-			nodeServersGroup.GET("/:id/binaries", nodeServerH.ListBinaries)
-			nodeServersGroup.GET("/:id/binaries/releases", nodeServerH.ListReleases)
-			nodeServersGroup.GET("/:id/proxy-status", nodeServerH.GetRemoteProxyStatus)
+				// Binary & Proxy Installation (local + remote via Agent)
+				nodeServersGroup.POST("/:id/binaries/install", nodeServerH.InstallBinary)
+				nodeServersGroup.GET("/:id/binaries", nodeServerH.ListBinaries)
+				nodeServersGroup.GET("/:id/binaries/releases", nodeServerH.ListReleases)
+				nodeServersGroup.GET("/:id/proxy-status", nodeServerH.GetRemoteProxyStatus)
 
-		// Binary Commands (key generation, interface listing)
-			nodeServersGroup.POST("/:id/binaries/x25519-key", nodeServerH.GenerateX25519Key)
-			nodeServersGroup.POST("/:id/binaries/mldsa65-key", nodeServerH.GenerateMldsa65Key)
-			nodeServersGroup.POST("/:id/binaries/wg-key", nodeServerH.GenerateWgKey)
-			nodeServersGroup.POST("/:id/binaries/ech-generate", nodeServerH.GenerateEchKeys)
-			nodeServersGroup.POST("/:id/binaries/vlessenc", nodeServerH.GenerateVlessEnc)
-			nodeServersGroup.GET("/:id/binaries/interfaces", nodeServerH.ListInterfaces)
+				// Binary Commands (key generation, interface listing)
+				nodeServersGroup.POST("/:id/binaries/x25519-key", nodeServerH.GenerateX25519Key)
+				nodeServersGroup.POST("/:id/binaries/mldsa65-key", nodeServerH.GenerateMldsa65Key)
+				nodeServersGroup.POST("/:id/binaries/wg-key", nodeServerH.GenerateWgKey)
+				nodeServersGroup.POST("/:id/binaries/ech-generate", nodeServerH.GenerateEchKeys)
+				nodeServersGroup.POST("/:id/binaries/vlessenc", nodeServerH.GenerateVlessEnc)
+				nodeServersGroup.GET("/:id/binaries/interfaces", nodeServerH.ListInterfaces)
 
-		// Supplementary: Node Tags
-			nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
-			nodeServersGroup.POST("/:id/tags", nodeServerH.AddServerTag)
-			nodeServersGroup.DELETE("/:id/tags/:tagKey", nodeServerH.RemoveServerTag)
+				// Supplementary: Node Traffic Quota
+				nodeServersGroup.GET("/:id/traffic-usage", nodeServerH.GetTrafficUsage)
+				nodeServersGroup.GET("/:id/traffic-history", nodeServerH.GetTrafficHistory)
+				nodeServersGroup.POST("/:id/traffic-resume", nodeServerH.ResumeTrafficSuspended)
 
-			// Node-server-scoped Protocol Config Management
-			// These routes allow managing protocol config per node server.
-			// GET operations read from panel DB; Save operations sync to target node.
-			nodeServersGroup.GET("/:id/protocols", nodeServerH.ListProtocols)
-			nodeServersGroup.GET("/:id/protocols/:coreType", nodeServerH.GetProtocol)
-			nodeServersGroup.PUT("/:id/protocols/:coreType", nodeServerH.SaveProtocol)
-			nodeServersGroup.GET("/:id/protocols/:coreType/section/:section", nodeServerH.GetProtocolSection)
-			nodeServersGroup.PUT("/:id/protocols/:coreType/section/:section", nodeServerH.SaveProtocolSection)
-			nodeServersGroup.POST("/:id/protocols/:coreType/validate", nodeServerH.ValidateProtocol)
-			nodeServersGroup.GET("/:id/protocols/:coreType/config-file", nodeServerH.GetConfigFile)
+				// Supplementary: Node Tags
+				nodeServersGroup.GET("/:id/tags", nodeServerH.ListServerTags)
+				nodeServersGroup.POST("/:id/tags", nodeServerH.AddServerTag)
+				nodeServersGroup.DELETE("/:id/tags/:tagKey", nodeServerH.RemoveServerTag)
 
-			// Node-server-scoped Proxy Management
-			// These routes allow managing proxy (Caddy/Nginx) per node server.
-			nodeServersGroup.GET("/:id/proxy/status", nodeServerH.GetProxyStatus)
-			nodeServersGroup.POST("/:id/proxy/control", nodeServerH.ControlProxy)
-			nodeServersGroup.POST("/:id/proxy/sync", nodeServerH.SyncProxyConfig)
+				// Node-server-scoped Protocol Config Management
+				// These routes allow managing protocol config per node server.
+				// GET operations read from panel DB; Save operations sync to target node.
+				nodeServersGroup.GET("/:id/protocols", nodeServerH.ListProtocols)
+				nodeServersGroup.GET("/:id/protocols/:coreType", nodeServerH.GetProtocol)
+				nodeServersGroup.PUT("/:id/protocols/:coreType", nodeServerH.SaveProtocol)
+				nodeServersGroup.GET("/:id/protocols/:coreType/section/:section", nodeServerH.GetProtocolSection)
+				nodeServersGroup.PUT("/:id/protocols/:coreType/section/:section", nodeServerH.SaveProtocolSection)
+				nodeServersGroup.POST("/:id/protocols/:coreType/validate", nodeServerH.ValidateProtocol)
+				nodeServersGroup.GET("/:id/protocols/:coreType/config-file", nodeServerH.GetConfigFile)
 
-			// Node-server-scoped Proxy Site Management (Caddy/Nginx)
-			// Proxy sites, SNI, L4, log settings are all per-node now.
-			nodeServersGroup.GET("/:id/proxy/sites", proxyH.ListSites)
-			nodeServersGroup.POST("/:id/proxy/sites", proxyH.CreateSite)
-			nodeServersGroup.PUT("/:id/proxy/sites/:siteId", proxyH.UpdateSite)
-			nodeServersGroup.DELETE("/:id/proxy/sites/:siteId", proxyH.DeleteSite)
-			nodeServersGroup.POST("/:id/proxy/generate-config", proxyH.GenerateConfig)
-			nodeServersGroup.GET("/:id/proxy/config", proxyH.GetConfig)
-			nodeServersGroup.PUT("/:id/proxy/config", proxyH.UpdateConfig)
-			nodeServersGroup.GET("/:id/proxy/sni-settings", proxyH.GetSNISettings)
-			nodeServersGroup.POST("/:id/proxy/sni-settings", proxyH.SaveSNISettings)
-			nodeServersGroup.POST("/:id/proxy/batch-update-ports", proxyH.BatchUpdatePorts)
-			nodeServersGroup.DELETE("/:id/proxy/sni-rules", proxyH.DeleteAllSNI)
-			nodeServersGroup.POST("/:id/proxy/sni-rules/toggle", proxyH.ToggleSNI)
-			nodeServersGroup.GET("/:id/proxy/l4-settings", proxyH.GetL4Settings)
-			nodeServersGroup.POST("/:id/proxy/l4-settings", proxyH.SaveL4Settings)
-			nodeServersGroup.DELETE("/:id/proxy/l4-rules", proxyH.DeleteAllL4)
-			nodeServersGroup.POST("/:id/proxy/guardian", proxyH.UpdateGuardian)
-			nodeServersGroup.GET("/:id/proxy/log-settings", proxyH.GetLogSettings)
-			nodeServersGroup.POST("/:id/proxy/log-settings", proxyH.SaveLogSettings)
-			nodeServersGroup.GET("/:id/proxy/nginx-settings", proxyH.GetNginxSettings)
-			nodeServersGroup.POST("/:id/proxy/nginx-settings", proxyH.SaveNginxSettings)
-			nodeServersGroup.POST("/:id/proxy/install", nodeServerH.InstallProxy)
-			nodeServersGroup.GET("/:id/proxy/releases", proxyH.ListReleases)
-			nodeServersGroup.POST("/:id/proxy/download", proxyH.DownloadVersion)
-			nodeServersGroup.POST("/:id/proxy/start", proxyH.Start)
-			nodeServersGroup.POST("/:id/proxy/stop", proxyH.Stop)
-			nodeServersGroup.POST("/:id/proxy/restart", proxyH.Restart)
-			nodeServersGroup.POST("/:id/proxy/reload", proxyH.Reload)
+				// Node-server-scoped Proxy Management
+				// These routes allow managing proxy (Caddy/Nginx) per node server.
+				nodeServersGroup.GET("/:id/proxy/status", nodeServerH.GetProxyStatus)
+				nodeServersGroup.POST("/:id/proxy/control", nodeServerH.ControlProxy)
+				nodeServersGroup.POST("/:id/proxy/sync", nodeServerH.SyncProxyConfig)
 
-			// Caddy site management (per node)
-			nodeServersGroup.GET("/:id/caddy/sites", caddyH.ListSites)
-			nodeServersGroup.POST("/:id/caddy/sites", caddyH.CreateSite)
-			nodeServersGroup.PUT("/:id/caddy/sites/:siteId", caddyH.UpdateSite)
-			nodeServersGroup.DELETE("/:id/caddy/sites/:siteId", caddyH.DeleteSite)
-			nodeServersGroup.POST("/:id/caddy/generate-config", caddyH.GenerateConfig)
-			nodeServersGroup.POST("/:id/caddy/save-and-apply", caddyH.SaveAndApply)
-			nodeServersGroup.GET("/:id/caddy/sni-settings", caddyH.GetSNISettings)
-			nodeServersGroup.POST("/:id/caddy/sni-settings", caddyH.SaveSNISettings)
-			nodeServersGroup.POST("/:id/caddy/sni-rules/toggle", caddyH.ToggleSNI)
-			nodeServersGroup.DELETE("/:id/caddy/sni-rules", caddyH.DeleteAllSNI)
-			nodeServersGroup.POST("/:id/caddy/batch-update-ports", caddyH.BatchUpdatePorts)
-nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateLogEnabled)
-			nodeServersGroup.DELETE("/:id/caddy/l4-rules", caddyH.DeleteAllL4)
+				// Node-server-scoped Proxy Site Management (Caddy/Nginx)
+				// Proxy sites, SNI, L4, log settings are all per-node now.
+				nodeServersGroup.GET("/:id/proxy/sites", proxyH.ListSites)
+				nodeServersGroup.POST("/:id/proxy/sites", proxyH.CreateSite)
+				nodeServersGroup.PUT("/:id/proxy/sites/:siteId", proxyH.UpdateSite)
+				nodeServersGroup.DELETE("/:id/proxy/sites/:siteId", proxyH.DeleteSite)
+				nodeServersGroup.POST("/:id/proxy/generate-config", proxyH.GenerateConfig)
+				nodeServersGroup.GET("/:id/proxy/config", proxyH.GetConfig)
+				nodeServersGroup.PUT("/:id/proxy/config", proxyH.UpdateConfig)
+				nodeServersGroup.GET("/:id/proxy/sni-settings", proxyH.GetSNISettings)
+				nodeServersGroup.POST("/:id/proxy/sni-settings", proxyH.SaveSNISettings)
+				nodeServersGroup.POST("/:id/proxy/batch-update-ports", proxyH.BatchUpdatePorts)
+				nodeServersGroup.DELETE("/:id/proxy/sni-rules", proxyH.DeleteAllSNI)
+				nodeServersGroup.POST("/:id/proxy/sni-rules/toggle", proxyH.ToggleSNI)
+				nodeServersGroup.GET("/:id/proxy/l4-settings", proxyH.GetL4Settings)
+				nodeServersGroup.POST("/:id/proxy/l4-settings", proxyH.SaveL4Settings)
+				nodeServersGroup.DELETE("/:id/proxy/l4-rules", proxyH.DeleteAllL4)
+				nodeServersGroup.POST("/:id/proxy/guardian", proxyH.UpdateGuardian)
+				nodeServersGroup.GET("/:id/proxy/log-settings", proxyH.GetLogSettings)
+				nodeServersGroup.POST("/:id/proxy/log-settings", proxyH.SaveLogSettings)
+				nodeServersGroup.GET("/:id/proxy/nginx-settings", proxyH.GetNginxSettings)
+				nodeServersGroup.POST("/:id/proxy/nginx-settings", proxyH.SaveNginxSettings)
+				nodeServersGroup.POST("/:id/proxy/install", nodeServerH.InstallProxy)
+				nodeServersGroup.GET("/:id/proxy/releases", proxyH.ListReleases)
+				nodeServersGroup.POST("/:id/proxy/download", proxyH.DownloadVersion)
+				nodeServersGroup.POST("/:id/proxy/start", proxyH.Start)
+				nodeServersGroup.POST("/:id/proxy/stop", proxyH.Stop)
+				nodeServersGroup.POST("/:id/proxy/restart", proxyH.Restart)
+				nodeServersGroup.POST("/:id/proxy/reload", proxyH.Reload)
 
-			// Nginx site management (per node)
-			nodeServersGroup.GET("/:id/nginx/sites", nginxH.ListSites)
-			nodeServersGroup.POST("/:id/nginx/sites", nginxH.CreateSite)
-			nodeServersGroup.PUT("/:id/nginx/sites/:siteId", nginxH.UpdateSite)
-			nodeServersGroup.DELETE("/:id/nginx/sites/:siteId", nginxH.DeleteSite)
-			nodeServersGroup.POST("/:id/nginx/generate-config", nginxH.GenerateConfig)
-			nodeServersGroup.POST("/:id/nginx/save-and-apply", nginxH.SaveAndApply)
-			nodeServersGroup.GET("/:id/nginx/settings", nginxH.GetSettings)
-			nodeServersGroup.POST("/:id/nginx/settings", nginxH.SaveSettings)
-			nodeServersGroup.POST("/:id/nginx/sni-rules/toggle", nginxH.ToggleSNI)
-			nodeServersGroup.DELETE("/:id/nginx/sni-rules", nginxH.DeleteAllSNI)
-			nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)
-			nodeServersGroup.DELETE("/:id/nginx/l4-rules", nginxH.DeleteAllL4)
+				// Caddy site management (per node)
+				nodeServersGroup.GET("/:id/caddy/sites", caddyH.ListSites)
+				nodeServersGroup.POST("/:id/caddy/sites", caddyH.CreateSite)
+				nodeServersGroup.PUT("/:id/caddy/sites/:siteId", caddyH.UpdateSite)
+				nodeServersGroup.DELETE("/:id/caddy/sites/:siteId", caddyH.DeleteSite)
+				nodeServersGroup.POST("/:id/caddy/generate-config", caddyH.GenerateConfig)
+				nodeServersGroup.POST("/:id/caddy/save-and-apply", caddyH.SaveAndApply)
+				nodeServersGroup.GET("/:id/caddy/sni-settings", caddyH.GetSNISettings)
+				nodeServersGroup.POST("/:id/caddy/sni-settings", caddyH.SaveSNISettings)
+				nodeServersGroup.POST("/:id/caddy/sni-rules/toggle", caddyH.ToggleSNI)
+				nodeServersGroup.DELETE("/:id/caddy/sni-rules", caddyH.DeleteAllSNI)
+				nodeServersGroup.POST("/:id/caddy/batch-update-ports", caddyH.BatchUpdatePorts)
+				nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateLogEnabled)
+				nodeServersGroup.DELETE("/:id/caddy/l4-rules", caddyH.DeleteAllL4)
 
-			// Inbound Configs (per node)
-			nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
-			nodeServersGroup.POST("/:id/inbound-configs", inboundCfgH.Create)
-			nodeServersGroup.GET("/:id/inbound-configs/:cfgId", inboundCfgH.Get)
-			nodeServersGroup.PUT("/:id/inbound-configs/:cfgId", inboundCfgH.Update)
-			nodeServersGroup.DELETE("/:id/inbound-configs/:cfgId", inboundCfgH.Delete)
-nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/pause", inboundCfgH.PauseUser)
-nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/resume", inboundCfgH.ResumeUser)
-nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.ResetAllTraffic)
+				// Nginx site management (per node)
+				nodeServersGroup.GET("/:id/nginx/sites", nginxH.ListSites)
+				nodeServersGroup.POST("/:id/nginx/sites", nginxH.CreateSite)
+				nodeServersGroup.PUT("/:id/nginx/sites/:siteId", nginxH.UpdateSite)
+				nodeServersGroup.DELETE("/:id/nginx/sites/:siteId", nginxH.DeleteSite)
+				nodeServersGroup.POST("/:id/nginx/generate-config", nginxH.GenerateConfig)
+				nodeServersGroup.POST("/:id/nginx/save-and-apply", nginxH.SaveAndApply)
+				nodeServersGroup.GET("/:id/nginx/settings", nginxH.GetSettings)
+				nodeServersGroup.POST("/:id/nginx/settings", nginxH.SaveSettings)
+				nodeServersGroup.POST("/:id/nginx/sni-rules/toggle", nginxH.ToggleSNI)
+				nodeServersGroup.DELETE("/:id/nginx/sni-rules", nginxH.DeleteAllSNI)
+				nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)
+				nodeServersGroup.DELETE("/:id/nginx/l4-rules", nginxH.DeleteAllL4)
 
-			// Outbound Configs (per node)
-			nodeServersGroup.GET("/:id/outbound-configs", outboundCfgH.List)
-			nodeServersGroup.POST("/:id/outbound-configs", outboundCfgH.Create)
-			nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
-			nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
-			nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
-			nodeServersGroup.PUT("/:id/outbound-configs/reorder", outboundCfgH.Reorder)
+				// Inbound Configs (per node)
+				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
+				nodeServersGroup.POST("/:id/inbound-configs", inboundCfgH.Create)
+				nodeServersGroup.GET("/:id/inbound-configs/:cfgId", inboundCfgH.Get)
+				nodeServersGroup.PUT("/:id/inbound-configs/:cfgId", inboundCfgH.Update)
+				nodeServersGroup.DELETE("/:id/inbound-configs/:cfgId", inboundCfgH.Delete)
+				nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/pause", inboundCfgH.PauseUser)
+				nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/resume", inboundCfgH.ResumeUser)
+				nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.ResetAllTraffic)
 
-			// Services (per node) — service management with process control
-			nodeServersGroup.GET("/:id/services", svcH.List)
-			nodeServersGroup.POST("/:id/services", svcH.Create)
-			nodeServersGroup.GET("/:id/services/:serviceId", svcH.GetByID)
-			nodeServersGroup.PUT("/:id/services/:serviceId", svcH.Update)
-			nodeServersGroup.DELETE("/:id/services/:serviceId", svcH.Delete)
-			nodeServersGroup.GET("/:id/services/:serviceId/endpoints", svcH.ListEndpoints)
-			nodeServersGroup.POST("/:id/services/:serviceId/endpoints", svcH.CreateEndpoint)
-			nodeServersGroup.PUT("/:id/services/:serviceId/endpoints/:endpointId", svcH.UpdateEndpoint)
-			nodeServersGroup.DELETE("/:id/services/:serviceId/endpoints/:endpointId", svcH.DeleteEndpoint)
+				// Outbound Configs (per node)
+				nodeServersGroup.GET("/:id/outbound-configs", outboundCfgH.List)
+				nodeServersGroup.POST("/:id/outbound-configs", outboundCfgH.Create)
+				nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
+				nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
+				nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
+				nodeServersGroup.PUT("/:id/outbound-configs/reorder", outboundCfgH.Reorder)
 
-			// Process management (per node service)
-			nodeServersGroup.POST("/:id/services/:serviceId/start", processH.Start)
-			nodeServersGroup.POST("/:id/services/:serviceId/stop", processH.Stop)
-			nodeServersGroup.POST("/:id/services/:serviceId/restart", processH.Restart)
-			nodeServersGroup.GET("/:id/services/:serviceId/process-status", processH.GetProcessStatus)
-			nodeServersGroup.PUT("/:id/services/:serviceId/guardian", processH.UpdateGuardian)
-			nodeServersGroup.GET("/:id/services/:serviceId/crash-logs", processH.GetCrashLogs)
-			nodeServersGroup.GET("/:id/services/:serviceId/crash-logs/:logId", processH.GetCrashLog)
-			nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
-			nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
+				// Services (per node) — service management with process control
+				nodeServersGroup.GET("/:id/services", svcH.List)
+				nodeServersGroup.POST("/:id/services", svcH.Create)
+				nodeServersGroup.GET("/:id/services/:serviceId", svcH.GetByID)
+				nodeServersGroup.PUT("/:id/services/:serviceId", svcH.Update)
+				nodeServersGroup.DELETE("/:id/services/:serviceId", svcH.Delete)
+				nodeServersGroup.GET("/:id/services/:serviceId/endpoints", svcH.ListEndpoints)
+				nodeServersGroup.POST("/:id/services/:serviceId/endpoints", svcH.CreateEndpoint)
+				nodeServersGroup.PUT("/:id/services/:serviceId/endpoints/:endpointId", svcH.UpdateEndpoint)
+				nodeServersGroup.DELETE("/:id/services/:serviceId/endpoints/:endpointId", svcH.DeleteEndpoint)
 
-			// Geo Rules (per node) — rule source and file management
-			nodeServersGroup.GET("/:id/geo-rules/github-assets", geoRuleH.FetchGitHubAssets)
-			nodeServersGroup.GET("/:id/geo-rules/sources", geoRuleH.ListSources)
-			nodeServersGroup.POST("/:id/geo-rules/sources", geoRuleH.CreateSource)
-			nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId", geoRuleH.UpdateSource)
-			nodeServersGroup.DELETE("/:id/geo-rules/sources/:sourceId", geoRuleH.DeleteSource)
-			nodeServersGroup.GET("/:id/geo-rules/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
-			nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/select", geoRuleH.SelectFiles)
-			nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/sync", geoRuleH.SyncSource)
-			nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
-			nodeServersGroup.POST("/:id/geo-rules/sync-all", geoRuleH.SyncAll)
-			nodeServersGroup.GET("/:id/geo-rules/sync-status/:key", geoRuleH.SyncStatus)
-			nodeServersGroup.GET("/:id/geo-rules/files", geoRuleH.ListFiles)
-			nodeServersGroup.POST("/:id/geo-rules/files/:fileId/download", geoRuleH.Download)
-			nodeServersGroup.DELETE("/:id/geo-rules/files/:fileId", geoRuleH.DeleteFile)
-			nodeServersGroup.PUT("/:id/geo-rules/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
-			nodeServersGroup.POST("/:id/geo-rules/seed", geoRuleH.SeedDefaults)
-			nodeServersGroup.GET("/:id/geo-rules/status", geoRuleH.Status)
+				// Process management (per node service)
+				nodeServersGroup.POST("/:id/services/:serviceId/start", processH.Start)
+				nodeServersGroup.POST("/:id/services/:serviceId/stop", processH.Stop)
+				nodeServersGroup.POST("/:id/services/:serviceId/restart", processH.Restart)
+				nodeServersGroup.GET("/:id/services/:serviceId/process-status", processH.GetProcessStatus)
+				nodeServersGroup.PUT("/:id/services/:serviceId/guardian", processH.UpdateGuardian)
+				nodeServersGroup.GET("/:id/services/:serviceId/crash-logs", processH.GetCrashLogs)
+				nodeServersGroup.GET("/:id/services/:serviceId/crash-logs/:logId", processH.GetCrashLog)
+				nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
+				nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
 
-			// WARP (per node) — each node has its own independent WARP configs
-			nodeServersGroup.GET("/:id/warp", warpH.List)
-			nodeServersGroup.GET("/:id/warp/status", warpH.Status)
-			nodeServersGroup.POST("/:id/warp/register", warpH.Register)
-			nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
-			nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
-			nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)
+				// Geo Rules (per node) — rule source and file management
+				nodeServersGroup.GET("/:id/geo-rules/github-assets", geoRuleH.FetchGitHubAssets)
+				nodeServersGroup.GET("/:id/geo-rules/sources", geoRuleH.ListSources)
+				nodeServersGroup.POST("/:id/geo-rules/sources", geoRuleH.CreateSource)
+				nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId", geoRuleH.UpdateSource)
+				nodeServersGroup.DELETE("/:id/geo-rules/sources/:sourceId", geoRuleH.DeleteSource)
+				nodeServersGroup.GET("/:id/geo-rules/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
+				nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/select", geoRuleH.SelectFiles)
+				nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/sync", geoRuleH.SyncSource)
+				nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
+				nodeServersGroup.POST("/:id/geo-rules/sync-all", geoRuleH.SyncAll)
+				nodeServersGroup.GET("/:id/geo-rules/sync-status/:key", geoRuleH.SyncStatus)
+				nodeServersGroup.GET("/:id/geo-rules/files", geoRuleH.ListFiles)
+				nodeServersGroup.POST("/:id/geo-rules/files/:fileId/download", geoRuleH.Download)
+				nodeServersGroup.DELETE("/:id/geo-rules/files/:fileId", geoRuleH.DeleteFile)
+				nodeServersGroup.PUT("/:id/geo-rules/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
+				nodeServersGroup.POST("/:id/geo-rules/seed", geoRuleH.SeedDefaults)
+				nodeServersGroup.GET("/:id/geo-rules/status", geoRuleH.Status)
 
-			// Share Domain Configs (per node — direct domains only)
-			nodeServersGroup.GET("/:id/share-domains", shareDomainH.ListByServer)
-			nodeServersGroup.POST("/:id/share-domains", shareDomainH.Create)
-			nodeServersGroup.PUT("/:id/share-domains/:domainId", shareDomainH.Update)
-			nodeServersGroup.DELETE("/:id/share-domains/:domainId", shareDomainH.Delete)
-			nodeServersGroup.DELETE("/:id/share-domains/all", shareDomainH.ClearAll)
-		}
+				// WARP (per node) — each node has its own independent WARP configs
+				nodeServersGroup.GET("/:id/warp", warpH.List)
+				nodeServersGroup.GET("/:id/warp/status", warpH.Status)
+				nodeServersGroup.POST("/:id/warp/register", warpH.Register)
+				nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
+				nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
+				nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)
+
+				// Share Domain Configs (per node — direct domains only)
+				nodeServersGroup.GET("/:id/share-domains", shareDomainH.ListByServer)
+				nodeServersGroup.POST("/:id/share-domains", shareDomainH.Create)
+				nodeServersGroup.PUT("/:id/share-domains/:domainId", shareDomainH.Update)
+				nodeServersGroup.DELETE("/:id/share-domains/:domainId", shareDomainH.Delete)
+				nodeServersGroup.DELETE("/:id/share-domains/all", shareDomainH.ClearAll)
+			}
 
 			// CA Center (separate group, reuses nodeServerH)
 			caCenterGroup := protected.Group("/ca")
@@ -1679,9 +1696,9 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				acmeAccountsGroup.GET("/default", certEmailH.GetDefault)
 				acmeAccountsGroup.PUT("/:id", certEmailH.Update)
 				acmeAccountsGroup.DELETE("/:id", certEmailH.Delete)
-		}
+			}
 
-		// Xray Stats & Control — moved under /node-servers/:id/
+			// Xray Stats & Control — moved under /node-servers/:id/
 			xrayStatsH := xrayStatsHandler.NewHandler(systemSettingSvc)
 			xrayStatsH.SetCoreConfigService(coreConfigSvc)
 			xrayStatsH.SetNodeOperator(nodeServerSvcInst)
@@ -1739,7 +1756,7 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				c.JSON(200, resp)
 			})
 
-		// Geo Rules (moved under /node-servers/:id/geo-rules)
+			// Geo Rules (moved under /node-servers/:id/geo-rules)
 
 			// Metrics
 			metricsGroup := protected.Group("/metrics")
@@ -1824,12 +1841,12 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				systemGroup.POST("/restart", systemH.Restart)
 				systemGroup.POST("/migrate-data", systemH.MigrateData)
 				systemGroup.POST("/upload-mtls-ca", systemH.UploadMTLSCA)
-			systemGroup.GET("/github-config", systemH.GetGitHubConfig)
-			systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
-			systemGroup.GET("/db-config", systemH.GetDBConfig)
-			systemGroup.PUT("/db-config", systemH.UpdateDBConfig)
-			systemGroup.POST("/db-config/test", systemH.TestDBConnection)
-			systemGroup.POST("/db-config/migrate", systemH.MigrateDBData)
+				systemGroup.GET("/github-config", systemH.GetGitHubConfig)
+				systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
+				systemGroup.GET("/db-config", systemH.GetDBConfig)
+				systemGroup.PUT("/db-config", systemH.UpdateDBConfig)
+				systemGroup.POST("/db-config/test", systemH.TestDBConnection)
+				systemGroup.POST("/db-config/migrate", systemH.MigrateDBData)
 				systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
 				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
@@ -1839,14 +1856,14 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
 				systemGroup.PUT("/reality-targets", systemH.UpdateRealityTargets)
 				systemGroup.POST("/reality-targets/reset", systemH.ResetRealityTargets)
-			systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
-			// Generic settings API (used by self-unban, OAuth config, etc.)
-	systemGroup.GET("/settings", systemH.GetSettings)
-		systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
-		// Encryption key config
-		systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
-		systemGroup.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
-	}
+				systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
+				// Generic settings API (used by self-unban, OAuth config, etc.)
+				systemGroup.GET("/settings", systemH.GetSettings)
+				systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
+				// Encryption key config
+				systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
+				systemGroup.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
+			}
 
 			// Proxy/Caddy/Nginx management routes moved under /node-servers/:id/
 
@@ -1887,71 +1904,71 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 				logManageGroup.POST("/nodes/:serverId/logs/:type/rotate", logManageH.RotateNodeLog)
 			}
 
-		// Agent bootstrap (public — no auth, uses bootstrap token, registered on v1 not protected)
-		v1.POST("/agent/bootstrap", func(c *gin.Context) {
-			var req struct {
-				ServerID       int64  `json:"server_id" binding:"required"`
-				BootstrapToken string `json:"bootstrap_token" binding:"required"`
-				Hostname       string `json:"hostname"`
-				AgentVersion   string `json:"agent_version"`
-			}
-			if err := c.ShouldBindJSON(&req); err != nil {
-				response.BadRequest(c, "INVALID_BODY", err.Error())
-				return
-			}
-			if bootstrapTokenMgr == nil || caService == nil {
-				response.InternalError(c, "NOT_INITIALIZED", "CA or bootstrap manager not initialized")
-				return
-			}
-			certResult, err := bootstrapTokenMgr.ValidateBootstrapToken(c.Request.Context(), req.ServerID, req.BootstrapToken)
-			if err != nil {
-				response.BadRequest(c, "BOOTSTRAP_FAILED", err.Error())
-				return
-			}
-			response.OK(c, gin.H{
-				"server_id":       req.ServerID,
-				"cert_pem":        string(certResult.CertPEM),
-				"key_pem":         string(certResult.KeyPEM),
-				"ca_cert_pem":     string(certResult.CACertPEM),
-				"cert_expires_at": certResult.ExpiresAt.Unix(),
+			// Agent bootstrap (public — no auth, uses bootstrap token, registered on v1 not protected)
+			v1.POST("/agent/bootstrap", func(c *gin.Context) {
+				var req struct {
+					ServerID       int64  `json:"server_id" binding:"required"`
+					BootstrapToken string `json:"bootstrap_token" binding:"required"`
+					Hostname       string `json:"hostname"`
+					AgentVersion   string `json:"agent_version"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					response.BadRequest(c, "INVALID_BODY", err.Error())
+					return
+				}
+				if bootstrapTokenMgr == nil || caService == nil {
+					response.InternalError(c, "NOT_INITIALIZED", "CA or bootstrap manager not initialized")
+					return
+				}
+				certResult, err := bootstrapTokenMgr.ValidateBootstrapToken(c.Request.Context(), req.ServerID, req.BootstrapToken)
+				if err != nil {
+					response.BadRequest(c, "BOOTSTRAP_FAILED", err.Error())
+					return
+				}
+				response.OK(c, gin.H{
+					"server_id":       req.ServerID,
+					"cert_pem":        string(certResult.CertPEM),
+					"key_pem":         string(certResult.KeyPEM),
+					"ca_cert_pem":     string(certResult.CACertPEM),
+					"cert_expires_at": certResult.ExpiresAt.Unix(),
+				})
 			})
-	})
 
-		// Agent download + install script (public — no auth, bootstrap token verifies identity)
-		agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
-		v1.GET("/agent/download", agentH.DownloadAgent)
-		v1.GET("/agent/install", agentH.GetInstallScript)
-		// Agent version & releases (requires auth — admin only)
-		protected.GET("/agent/version", agentH.GetAgentVersion)
-		protected.GET("/agent/releases", agentH.GetAgentReleases)
+			// Agent download + install script (public — no auth, bootstrap token verifies identity)
+			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
+			v1.GET("/agent/download", agentH.DownloadAgent)
+			v1.GET("/agent/install", agentH.GetInstallScript)
+			// Agent version & releases (requires auth — admin only)
+			protected.GET("/agent/version", agentH.GetAgentVersion)
+			protected.GET("/agent/releases", agentH.GetAgentReleases)
 
-		// Placeholder routes for remaining modules
-		registerPlaceholderRoutes(protected)
+			// Placeholder routes for remaining modules
+			registerPlaceholderRoutes(protected)
 
-		// Portal template management (admin only)
-	portalH := portalHandler.NewHandler(portalTmplSvc)
-		portalGroup := protected.Group("/portal/templates")
-		{
-			portalGroup.GET("", portalH.List)
-			portalGroup.POST("", portalH.Create)
-			portalGroup.GET("/:id", portalH.Get)
-			portalGroup.PUT("/:id", portalH.Update)
-			portalGroup.DELETE("/:id", portalH.Delete)
-			portalGroup.POST("/:id/activate", portalH.Activate)
-		}
+			// Portal template management (admin only)
+			portalH := portalHandler.NewHandler(portalTmplSvc)
+			portalGroup := protected.Group("/portal/templates")
+			{
+				portalGroup.GET("", portalH.List)
+				portalGroup.POST("", portalH.Create)
+				portalGroup.GET("/:id", portalH.Get)
+				portalGroup.PUT("/:id", portalH.Update)
+				portalGroup.DELETE("/:id", portalH.Delete)
+				portalGroup.POST("/:id/activate", portalH.Activate)
+			}
 
-		// Portal site management (active config — direct edit, no template list needed)
-		portalActiveGroup := protected.Group("/portal")
-		{
-			portalActiveGroup.GET("/active", portalH.GetActive)
-			portalActiveGroup.PUT("/active", portalH.UpdateActive)
-			portalActiveGroup.POST("/reset", portalH.ResetToDefault)
-			// Render cache management
-			portalActiveGroup.GET("/cache", portalH.CacheStatus)
-			portalActiveGroup.DELETE("/cache", portalH.CacheClear)
-			portalActiveGroup.POST("/cache/rebuild", portalH.CacheRebuild)
-			portalActiveGroup.PUT("/cache/dev-mode", portalH.CacheDevMode)
-		}
+			// Portal site management (active config — direct edit, no template list needed)
+			portalActiveGroup := protected.Group("/portal")
+			{
+				portalActiveGroup.GET("/active", portalH.GetActive)
+				portalActiveGroup.PUT("/active", portalH.UpdateActive)
+				portalActiveGroup.POST("/reset", portalH.ResetToDefault)
+				// Render cache management
+				portalActiveGroup.GET("/cache", portalH.CacheStatus)
+				portalActiveGroup.DELETE("/cache", portalH.CacheClear)
+				portalActiveGroup.POST("/cache/rebuild", portalH.CacheRebuild)
+				portalActiveGroup.PUT("/cache/dev-mode", portalH.CacheDevMode)
+			}
 		}
 	}
 
@@ -1994,8 +2011,8 @@ nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.Rese
 		chatSiteID, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.site_id")
 		result := gin.H{
 			"registration_enabled": registrationEnabled == "true",
-			"chat_provider":       chatProvider,
-			"chat_site_id":        chatSiteID,
+			"chat_provider":        chatProvider,
+			"chat_site_id":         chatSiteID,
 		}
 		// v3.4: 返回最新 portal 配置，前端可用于热更新模块/导航
 		if cfg, err := portalTmplSvc.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
@@ -2767,12 +2784,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		repository.NewMihomoConfigRepository(database), repository.NewMihomoRuleRepository(database),
 		systemSettingRepo, repository.NewAccessLogRepository(database),
 	)
-clientExtH := clientextHandler.NewHandler(
-referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
-sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
-clientRepo, repository.NewClientOAuthBindingRepository(database),
-subRepo, subEndpointRepo2, portalPublicSubH, database,
-)
+	clientExtH := clientextHandler.NewHandler(
+		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
+		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
+		clientRepo, repository.NewClientOAuthBindingRepository(database),
+		subRepo, subEndpointRepo2, portalPublicSubH, database,
+	)
 
 	// Client auth (protected)
 	clientAuthProtected := r.Group("/api/v1/client-auth")

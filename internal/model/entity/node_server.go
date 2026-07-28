@@ -84,6 +84,22 @@ type NodeServer struct {
 	Enabled   bool      `json:"enabled" gorm:"not null;default:true"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
+
+	// ── 出口网卡流量配额 ──
+	// 选择出口网卡名称（如 eth0、ens3），用于监控该节点的月度总流量
+	EgressInterface string `json:"egress_interface" gorm:"size:64;not null;default:''"`
+	// 月度流量配额（字节），0=不限
+	TrafficQuotaBytes int64 `json:"traffic_quota_bytes" gorm:"not null;default:0"`
+	// 每月结算日（1-28），默认 1 号重置
+	TrafficQuotaResetDay int `json:"traffic_quota_reset_day" gorm:"not null;default:1"`
+	// 当前是否因流量超限被暂停
+	TrafficSuspended bool `json:"traffic_suspended" gorm:"not null;default:false"`
+	// 流量暂停时间
+	TrafficSuspendedAt *time.Time `json:"traffic_suspended_at"`
+	// 当前周期累计已用流量（缓存字段，由定时任务更新）
+	TrafficUsedBytes int64 `json:"traffic_used_bytes" gorm:"not null;default:0"`
+	// 当前结算周期起始时间
+	TrafficPeriodStart *time.Time `json:"traffic_period_start"`
 }
 
 func (NodeServer) TableName() string { return "node_servers" }
@@ -96,3 +112,13 @@ func (n *NodeServer) IsMirror() bool { return n.NodeType == NodeTypeMirror }
 
 // ShouldBill returns true if this node participates in billing (user creation + traffic stats).
 func (n *NodeServer) ShouldBill() bool { return n.Enabled && n.BillingEnabled && !n.IsChainExit() }
+
+// HasTrafficQuota returns true if this node has a traffic quota configured.
+func (n *NodeServer) HasTrafficQuota() bool {
+	return n.EgressInterface != "" && n.TrafficQuotaBytes > 0
+}
+
+// IsTrafficSuspended returns true if this node is suspended due to traffic quota exceeded.
+func (n *NodeServer) IsTrafficSuspended() bool {
+	return n.TrafficSuspended
+}

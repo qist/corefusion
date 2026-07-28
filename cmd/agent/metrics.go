@@ -43,6 +43,11 @@ type SystemMetrics struct {
 	NetRxBytesTotal int64 // Cumulative received bytes
 	NetTxBytesTotal int64 // Cumulative transmitted bytes
 
+	// Egress interface traffic (出口网卡累计流量，用于月度配额)
+	EgressInterface string // 出口网卡名称
+	EgressRxBytes   int64 // 出口网卡累计接收字节
+	EgressTxBytes   int64 // 出口网卡累计发送字节
+
 	// System
 	Hostname       string  // System hostname
 	KernelVersion  string  // Kernel version string
@@ -53,6 +58,20 @@ type SystemMetrics struct {
 	// Timestamps for rate calculation
 	lastNetStats   *netCounter
 	lastDiskStats  *diskCounter
+}
+
+// egressInterface holds the configured egress interface name for traffic quota monitoring.
+// Set by Panel via SetEgressInterface command.
+var egressInterface string
+
+// SetEgressInterface sets the egress interface name to monitor.
+func SetEgressInterface(iface string) {
+	egressInterface = iface
+}
+
+// GetEgressInterface returns the currently configured egress interface name.
+func GetEgressInterface() string {
+	return egressInterface
 }
 
 type netCounter struct {
@@ -239,10 +258,17 @@ func (m *SystemMetrics) readNetworkCounters() {
 		}
 		parts := strings.Fields(strings.Replace(line, ":", " ", 1))
 		if len(parts) >= 10 {
+			iface := strings.TrimSpace(parts[0])
 			recv, _ := strconv.ParseInt(parts[1], 10, 64)
 			sent, _ := strconv.ParseInt(parts[9], 10, 64)
 			totalRx += recv
 			totalTx += sent
+
+			// If this is the egress interface, record its counters
+			if egressInterface != "" && iface == egressInterface {
+				m.EgressRxBytes = recv
+				m.EgressTxBytes = sent
+			}
 		}
 	}
 
@@ -263,6 +289,9 @@ func (m *SystemMetrics) readNetworkCounters() {
 		txBytes:   totalTx,
 		timestamp: now,
 	}
+
+	// Record egress interface name
+	m.EgressInterface = egressInterface
 }
 
 // ──────────────────────────────────────────────────────

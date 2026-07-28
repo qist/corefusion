@@ -363,6 +363,15 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		names, err := a.localAgent.ListInterfaces()
 		sendSyncResult("list_interfaces", &agentpb.ListInterfacesResponse{Interfaces: names}, err)
 
+	case *agentpb.PanelCommand_SetEgressInterface:
+		req := c.SetEgressInterface
+		SetEgressInterface(req.InterfaceName)
+		log.Printf("[Agent] egress interface set to: %q", req.InterfaceName)
+		sendSyncResult("set_egress_interface", map[string]interface{}{
+			"interface": req.InterfaceName,
+			"success":   true,
+		}, nil)
+
 	case *agentpb.PanelCommand_ExecuteBinary:
 		req := c.ExecuteBinary
 		if req.RawOutput {

@@ -48,6 +48,11 @@ type ServerMetric struct {
 	AgentVersion string `json:"agent_version" gorm:"size:64"`
 	Hostname     string `json:"hostname" gorm:"size:255"`
 
+	// Egress interface traffic (出口网卡累计流量)
+	EgressInterface string `json:"egress_interface" gorm:"size:64;not null;default:''"`
+	EgressRxBytes   int64  `json:"egress_rx_bytes" gorm:"not null;default:0"`
+	EgressTxBytes   int64  `json:"egress_tx_bytes" gorm:"not null;default:0"`
+
 	CreatedAt time.Time `json:"created_at" gorm:"index;not null"`
 }
 

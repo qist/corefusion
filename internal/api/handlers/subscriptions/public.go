@@ -28,7 +28,7 @@ import (
 // RateLimitPusher pushes IP association to rate limit agents.
 // Implemented by ratelimitsvc.Service.
 type RateLimitPusher interface {
-	PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps int32) error
+	PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error
 }
 
 // PublicHandler handles public subscription requests.
@@ -2120,7 +2120,8 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 
 // pushRateLimitAssociation pushes the user's IP to all nodes that have rate limiting enabled.
 // This is the P0 trigger source: when a user accesses their subscription URL,
-// we know their real IP and can associate it with their subscription's speed limit.
+// we know their real IP and can associate it with their subscription's speed limit,
+// concurrent connection limit, and device limit.
 func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Subscription, tmpl *entity.PlanTemplate) {
 	if h.rateLimitPusher == nil || h.nodeServerRepo == nil || clientIP == "" {
 		return
@@ -2128,8 +2129,8 @@ func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Su
 
 	ctx := context.Background()
 
-	// Resolve the client's speed limits
-	var maxDownMbps, maxUpMbps int32
+	// Resolve the client's limits (speed, concurrent connections, device count)
+	var maxDownMbps, maxUpMbps, connLimit, deviceLimit int32
 	if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
 		// Client-level override takes priority
 		if cl.SpeedLimitMbps > 0 {
@@ -2138,12 +2139,24 @@ func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Su
 		if cl.SpeedLimitUpMbps > 0 {
 			maxUpMbps = int32(cl.SpeedLimitUpMbps)
 		}
+		if cl.ConcurrentLimit > 0 {
+			connLimit = int32(cl.ConcurrentLimit)
+		}
+		if cl.DeviceLimit > 0 {
+			deviceLimit = int32(cl.DeviceLimit)
+		}
 		// If client has no override, inherit from plan template
 		if maxDownMbps == 0 && tmpl != nil && tmpl.SpeedLimitMbps > 0 {
 			maxDownMbps = int32(tmpl.SpeedLimitMbps)
 		}
 		if maxUpMbps == 0 && tmpl != nil && tmpl.SpeedLimitUpMbps > 0 {
 			maxUpMbps = int32(tmpl.SpeedLimitUpMbps)
+		}
+		if connLimit == 0 && tmpl != nil && tmpl.ConcurrentLimit > 0 {
+			connLimit = int32(tmpl.ConcurrentLimit)
+		}
+		if deviceLimit == 0 && tmpl != nil && tmpl.DeviceLimit > 0 {
+			deviceLimit = int32(tmpl.DeviceLimit)
 		}
 	}
 
@@ -2158,7 +2171,7 @@ func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Su
 		}
 		// Push to this server — the rateLimitSvc will check if rate limiting
 		// is enabled for this server before actually sending the command
-		if err := h.rateLimitPusher.PushIPAssociation(ctx, server.ID, clientIP, sub.ID, maxDownMbps, maxUpMbps); err != nil {
+		if err := h.rateLimitPusher.PushIPAssociation(ctx, server.ID, clientIP, sub.ID, maxDownMbps, maxUpMbps, connLimit, deviceLimit); err != nil {
 			log.Printf("sub: rate limit push failed for server %d: %v", server.ID, err)
 		}
 	}

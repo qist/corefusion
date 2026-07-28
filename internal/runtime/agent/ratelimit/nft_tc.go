@@ -26,9 +26,11 @@ type NftTcBackend struct {
 }
 
 const (
-	nftTable       = "corefusion_ratelimit"
-	nftChain       = "prerouting"
-	defaultClassID = 9999  // 默认 class（无限速）
+	nftTable        = "corefusion_ratelimit"
+	nftChain        = "prerouting"       // mark 链（priority mangle = -150）
+	nftConnChain    = "connlimit_chain"  // connlimit 链（priority -155，在 mark 链之前）
+	nftBlockChain   = "blocked_chain"    // 设备阻断链（priority -160，在 connlimit 链之前）
+	defaultClassID  = 9999  // 默认 class（无限速）
 	defaultRateMbps = 10000 // 默认速率 10Gbps（实际不限）
 )
 
@@ -102,6 +104,13 @@ func (b *NftTcBackend) ApplyRule(ctx context.Context, ip string, mark uint32, ra
 		return fmt.Errorf("add nft mark rule for %s: %w", ip, err)
 	}
 
+	// 1b. 如果有并发连接限制，添加 connlimit 规则
+	if rate.ConnLimit > 0 {
+		if err := b.addNftConnLimitRule(ip, rate.ConnLimit); err != nil {
+			log.Printf("[NftTcBackend] add connlimit rule for %s: %v", ip, err)
+		}
+	}
+
 	// 2. tc: 添加 egress class (下载限速)
 	if err := b.addTcClass(b.iface, 1, mark, rate.MaxDownMbps); err != nil {
 		return fmt.Errorf("add tc egress class for mark 0x%x: %w", mark, err)
@@ -160,8 +169,10 @@ func (b *NftTcBackend) RemoveRule(ctx context.Context, ip string, mark uint32) e
 		return nil
 	}
 
-	// 1. 删除 nft 规则
+	// 1. 删除 nft 规则（mark + connlimit + block）
 	b.deleteNftMarkRule(ip)
+	b.deleteNftConnLimitRule(ip)
+	b.deleteNftBlockRule(ip)
 
 	// 2. 删除 tc egress class + filter
 	b.deleteTcClass(b.iface, 1, mark)
@@ -204,7 +215,7 @@ func (b *NftTcBackend) FlushAll(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// 删除 nft 表（级联删除所有规则）
+	// 删除 nft 表（级联删除所有链和规则，包括 connlimit_chain 和 blocked_chain）
 	runCmd("nft", "delete", "table", "inet", nftTable)
 
 	// 清除 tc qdisc（会级联删除所有 class 和 filter）
@@ -226,6 +237,74 @@ func (b *NftTcBackend) Close() error {
 	return nil
 }
 
+// ApplyConnLimit 为一个 IP 添加 nftables connlimit 规则（并发连接限制）。
+// connLimit = 0 表示移除限制。
+func (b *NftTcBackend) ApplyConnLimit(ctx context.Context, ip string, mark uint32, connLimit int32) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.initialized {
+		return fmt.Errorf("backend not initialized")
+	}
+
+	// 先删除旧的 connlimit 规则（如果有）
+	b.deleteNftConnLimitRule(ip)
+
+	if connLimit > 0 {
+		if err := b.addNftConnLimitRule(ip, connLimit); err != nil {
+			return fmt.Errorf("add connlimit rule for %s: %w", ip, err)
+		}
+		log.Printf("[NftTcBackend] applied connlimit for ip=%s limit=%d", ip, connLimit)
+	}
+
+	return nil
+}
+
+// RemoveConnLimit 移除一个 IP 的 connlimit 规则。
+func (b *NftTcBackend) RemoveConnLimit(ctx context.Context, ip string, mark uint32) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.initialized {
+		return nil
+	}
+
+	b.deleteNftConnLimitRule(ip)
+	log.Printf("[NftTcBackend] removed connlimit for ip=%s", ip)
+	return nil
+}
+
+// BlockIP 在 nftables blocked 链中添加阻断规则（丢弃该 IP 的所有流量）。
+func (b *NftTcBackend) BlockIP(ctx context.Context, ip string, mark uint32) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.initialized {
+		return fmt.Errorf("backend not initialized")
+	}
+
+	if err := b.addNftBlockRule(ip); err != nil {
+		return fmt.Errorf("add block rule for %s: %w", ip, err)
+	}
+
+	log.Printf("[NftTcBackend] blocked ip=%s (mark=0x%x)", ip, mark)
+	return nil
+}
+
+// UnblockIP 移除对 IP 的阻断。
+func (b *NftTcBackend) UnblockIP(ctx context.Context, ip string, mark uint32) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.initialized {
+		return nil
+	}
+
+	b.deleteNftBlockRule(ip)
+	log.Printf("[NftTcBackend] unblocked ip=%s (mark=0x%x)", ip, mark)
+	return nil
+}
+
 // ============================================================
 // nft 操作
 // ============================================================
@@ -235,11 +314,20 @@ func (b *NftTcBackend) initNftTable() error {
 	if err := runCmd("nft", "add", "table", "inet", nftTable); err != nil {
 		return fmt.Errorf("create nft table: %w", err)
 	}
-	// 创建链：prerouting, hook prerouting, priority mangle (在路由决策前打标记)
-	chainDef := fmt.Sprintf("{ type filter hook prerouting priority mangle ; policy accept ; }")
-	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftChain, chainDef); err != nil {
-		// 链可能已存在，忽略错误
-		log.Printf("[NftTcBackend] nft chain create note: %v (may already exist)", err)
+	// 创建 mark 链：prerouting, hook prerouting, priority mangle (-150)
+	markChainDef := "{ type filter hook prerouting priority mangle ; policy accept ; }"
+	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftChain, markChainDef); err != nil {
+		log.Printf("[NftTcBackend] nft mark chain create note: %v (may already exist)", err)
+	}
+	// 创建 connlimit 链：priority -155（在 mark 链之前执行，drop 的包不会到达 mark 链）
+	connChainDef := "{ type filter hook prerouting priority -155 ; policy accept ; }"
+	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftConnChain, connChainDef); err != nil {
+		log.Printf("[NftTcBackend] nft connlimit chain create note: %v (may already exist)", err)
+	}
+	// 创建 blocked 链：priority -160（在 connlimit 链之前执行，阻断的包直接丢弃）
+	blockChainDef := "{ type filter hook prerouting priority -160 ; policy accept ; }"
+	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftBlockChain, blockChainDef); err != nil {
+		log.Printf("[NftTcBackend] nft blocked chain create note: %v (may already exist)", err)
 	}
 	return nil
 }
@@ -252,10 +340,44 @@ func (b *NftTcBackend) addNftMarkRule(ip string, mark uint32) error {
 }
 
 func (b *NftTcBackend) deleteNftMarkRule(ip string) {
-	// nft 需要先找到 handle 才能删除，这里用 flush + 重建的方式
-	// 更安全的做法：list chain 找 handle 再 delete
-	// 简单实现：先查找包含该 IP 的规则的 handle
-	out, err := exec.Command("nft", "-a", "list", "chain", "inet", nftTable, nftChain).Output()
+	b.deleteNftRuleByIP(nftChain, ip)
+}
+
+// addNftConnLimitRule 在 connlimit 链中添加并发连接限制规则。
+// 使用 nftables connlimit 表达式：当某 IP 的并发连接数超过 connLimit 时，丢弃新连接。
+//
+//	nft add rule inet corefusion_ratelimit connlimit_chain \
+//	    ip saddr <ip> ct state new connlimit count <N> over counter drop
+//
+func (b *NftTcBackend) addNftConnLimitRule(ip string, connLimit int32) error {
+	return runCmd("nft", "add", "rule", "inet", nftTable, nftConnChain,
+		"ip", "saddr", ip,
+		"ct", "state", "new",
+		"connlimit", "count", fmt.Sprintf("%d", connLimit), "over",
+		"counter", "drop")
+}
+
+func (b *NftTcBackend) deleteNftConnLimitRule(ip string) {
+	b.deleteNftRuleByIP(nftConnChain, ip)
+}
+
+// addNftBlockRule 在 blocked 链中添加阻断规则（丢弃该 IP 的所有流量）。
+//
+//	nft add rule inet corefusion_ratelimit blocked_chain \
+//	    ip saddr <ip> counter drop
+//
+func (b *NftTcBackend) addNftBlockRule(ip string) error {
+	return runCmd("nft", "add", "rule", "inet", nftTable, nftBlockChain,
+		"ip", "saddr", ip, "counter", "drop")
+}
+
+func (b *NftTcBackend) deleteNftBlockRule(ip string) {
+	b.deleteNftRuleByIP(nftBlockChain, ip)
+}
+
+// deleteNftRuleByIP 在指定链中查找并删除包含某 IP 的规则（按 handle 删除）。
+func (b *NftTcBackend) deleteNftRuleByIP(chain, ip string) {
+	out, err := exec.Command("nft", "-a", "list", "chain", "inet", nftTable, chain).Output()
 	if err != nil {
 		return
 	}
@@ -268,7 +390,7 @@ func (b *NftTcBackend) deleteNftMarkRule(ip string) {
 			continue
 		}
 		handleStr := strings.TrimSpace(line[handleIdx+7:])
-		runCmd("nft", "delete", "rule", "inet", nftTable, nftChain, "handle", handleStr)
+		runCmd("nft", "delete", "rule", "inet", nftTable, chain, "handle", handleStr)
 		return
 	}
 }

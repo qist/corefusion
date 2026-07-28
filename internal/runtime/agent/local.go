@@ -309,6 +309,8 @@ func (a *LocalAgent) AssociateIP(ctx context.Context, req *agentpb.AssociateIPRe
 			rate := &ratelimit.RateConfig{
 				MaxDownMbps: req.MaxDownMbps,
 				MaxUpMbps:   req.MaxUpMbps,
+				ConnLimit:   req.ConnLimit,
+				DeviceLimit: req.DeviceLimit,
 			}
 			return nil, a.rateLimitMgr.AssociateIP(ctx, req.Ip, req.SubscriptionId, rate)
 		},
@@ -328,6 +330,8 @@ func (a *LocalAgent) applyLimitsViaManager(ctx context.Context, req *agentpb.App
 		rate := &ratelimit.RateConfig{
 			MaxDownMbps: req.MaxDownMbps,
 			MaxUpMbps:   req.MaxUpMbps,
+			ConnLimit:   req.ConnLimit,
+			DeviceLimit: req.DeviceLimit,
 		}
 		return a.rateLimitMgr.AssociateIP(ctx, req.Ip, req.SubscriptionId, rate)
 
@@ -341,6 +345,8 @@ func (a *LocalAgent) applyLimitsViaManager(ctx context.Context, req *agentpb.App
 		rate := &ratelimit.RateConfig{
 			MaxDownMbps: req.MaxDownMbps,
 			MaxUpMbps:   req.MaxUpMbps,
+			ConnLimit:   req.ConnLimit,
+			DeviceLimit: req.DeviceLimit,
 		}
 		return a.rateLimitMgr.UpdateRate(ctx, req.SubscriptionId, rate)
 

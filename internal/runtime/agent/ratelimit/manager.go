@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 )
@@ -87,6 +88,7 @@ func (m *Manager) Init(ctx context.Context) error {
 
 // AssociateIP 将 IP 关联到订阅并应用限速规则。
 // 这是 P0 触发源（Panel 推送）的 Agent 侧入口。
+// 如果订阅配置了 device_limit，会检查是否超限，超限则阻断该 IP。
 func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate *RateConfig) error {
 	if !m.initialized {
 		return fmt.Errorf("rate limit manager not initialized")
@@ -95,13 +97,33 @@ func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate 
 	// 1. 在 MarkRegistry 中记录映射
 	mark := m.registry.AssociateIP(ip, subID, rate)
 
-	// 2. 应用 nft + tc 规则
+	// 2. 设备数限制检查：如果该订阅已有 deviceLimit 个 IP，阻断新 IP
+	if rate != nil && rate.DeviceLimit > 0 {
+		ipCount := m.registry.GetSubscriptionIPCount(subID)
+		if ipCount > int(rate.DeviceLimit) {
+			// 超过设备限制，阻断新 IP
+			if err := m.backend.BlockIP(ctx, ip, mark); err != nil {
+				log.Printf("[RateLimitManager] block excess device ip=%s sub=%d (count=%d, limit=%d): %v",
+					ip, subID, ipCount, rate.DeviceLimit, err)
+			} else {
+				log.Printf("[RateLimitManager] blocked excess device ip=%s sub=%d (count=%d, limit=%d)",
+					ip, subID, ipCount, rate.DeviceLimit)
+			}
+			// 仍然持久化记录，便于后续检查
+			if m.persistFunc != nil {
+				go m.persistFunc(ip, subID, rate.MaxDownMbps, rate.MaxUpMbps)
+			}
+			return nil
+		}
+	}
+
+	// 3. 应用 nft + tc 规则（包括 connlimit）
 	if err := m.backend.ApplyRule(ctx, ip, mark, rate); err != nil {
 		return fmt.Errorf("apply rate limit rule for ip=%s sub=%d mark=0x%x: %w", ip, subID, mark, err)
 	}
 
-	log.Printf("[RateLimitManager] associated ip=%s → sub=%d mark=0x%x rate=↓%dMbps/↑%dMbps",
-		ip, subID, mark, rate.MaxDownMbps, rate.MaxUpMbps)
+	log.Printf("[RateLimitManager] associated ip=%s → sub=%d mark=0x%x rate=↓%dMbps/↑%dMbps conn=%d device=%d",
+		ip, subID, mark, rate.MaxDownMbps, rate.MaxUpMbps, rate.ConnLimit, rate.DeviceLimit)
 
 	// Persist to local DB for restart recovery
 	if m.persistFunc != nil {
@@ -174,8 +196,9 @@ func (m *Manager) RemoveSubscription(ctx context.Context, subID int64) error {
 }
 
 // TouchIP updates the last-seen timestamp for an IP if it's already associated.
-// If the IP is not in the registry, it's a no-op (new IPs need full AssociateIP with rate config).
-// This is used by the online-stats poller to keep active IPs from being cleaned up.
+// If the IP is not in the registry but the subscription has a known rate config,
+// auto-associates the IP with the existing rate config (fixes the gap where
+// OnlineStatsPoller discovers IPs that Panel hasn't pushed yet).
 func (m *Manager) TouchIP(ctx context.Context, ip string, subID int64) error {
 	if !m.initialized {
 		return nil
@@ -183,8 +206,14 @@ func (m *Manager) TouchIP(ctx context.Context, ip string, subID int64) error {
 
 	_, entry := m.registry.LookupByIP(ip)
 	if entry == nil {
-		// IP not in registry — can't apply rate limit without a rate config.
-		// The P0 trigger source (Panel push) should have already associated this IP.
+		// IP not in registry. Check if this subscription has a known rate config
+		// (set by a previous AssociateIP for another IP of the same subscription).
+		rate := m.registry.GetRateConfig(subID)
+		if rate != nil {
+			// Auto-associate with the existing rate config
+			log.Printf("[RateLimitManager] auto-associating ip=%s sub=%d from online stats poller", ip, subID)
+			return m.AssociateIP(ctx, ip, subID, rate)
+		}
 		return nil
 	}
 
@@ -280,6 +309,64 @@ func (m *Manager) GetStatus(subID int64) []RateLimitEntry {
 	return result
 }
 
+// CheckDeviceLimit 检查指定订阅的设备数是否超限，超限则阻断多余的 IP。
+// 已在 registry 中的 IP 按 LastSeen 排序，保留最近活跃的 deviceLimit 个，
+// 其余 IP 被 Block。
+// 该方法由 Manager 的定时清理循环调用，也可由 Panel 主动触发。
+func (m *Manager) CheckDeviceLimit(ctx context.Context, subID int64) error {
+	if !m.initialized {
+		return nil
+	}
+
+	deviceLimit := m.registry.GetDeviceLimit(subID)
+	if deviceLimit <= 0 {
+		return nil // 不限制
+	}
+
+	ips := m.registry.GetSubscriptionIPs(subID)
+	if len(ips) <= int(deviceLimit) {
+		return nil // 未超限
+	}
+
+	// 超过限制：需要阻断多余的 IP
+	// 按 LastSeen 排序，保留最近活跃的 deviceLimit 个
+	type ipEntry struct {
+		ip       string
+		lastSeen time.Time
+		mark     uint32
+	}
+	entries := make([]ipEntry, 0, len(ips))
+	for _, ip := range ips {
+		mark, e := m.registry.LookupByIP(ip)
+		if e != nil {
+			entries = append(entries, ipEntry{ip: ip, lastSeen: e.LastSeen, mark: mark})
+		}
+	}
+
+	// 按 LastSeen 降序排序（最近的在前）
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].lastSeen.After(entries[j].lastSeen)
+	})
+
+	// 阻断超出限制的 IP
+	blocked := 0
+	for i := int(deviceLimit); i < len(entries); i++ {
+		e := entries[i]
+		if err := m.backend.BlockIP(ctx, e.ip, e.mark); err != nil {
+			log.Printf("[RateLimitManager] block excess device ip=%s sub=%d: %v", e.ip, subID, err)
+		} else {
+			blocked++
+		}
+	}
+
+	if blocked > 0 {
+		log.Printf("[RateLimitManager] device limit enforced: sub=%d active=%d limit=%d blocked=%d",
+			subID, len(entries), deviceLimit, blocked)
+	}
+
+	return nil
+}
+
 // StartCleanupLoop 启动后台清理协程。
 // 定期清理超过 TTL 未活跃的 IP 映射和规则。
 func (m *Manager) StartCleanupLoop(interval time.Duration) {
@@ -316,6 +403,8 @@ func (m *Manager) cleanupLoop() {
 func (m *Manager) doCleanup() {
 	removed := m.registry.CleanupStale(m.cleanupTTL)
 	if len(removed) == 0 {
+		// 即使没有清理，也检查设备数限制
+		m.checkAllDeviceLimits()
 		return
 	}
 	ctx := context.Background()
@@ -329,6 +418,27 @@ func (m *Manager) doCleanup() {
 		}
 	}
 	log.Printf("[RateLimitManager] cleanup: removed %d stale entries", len(removed))
+
+	// 清理后检查设备数限制（被封断的 IP 可能已经下线，需要重新评估）
+	m.checkAllDeviceLimits()
+}
+
+// checkAllDeviceLimits 遍历所有限速配置中有 device_limit 的订阅，检查是否超限。
+func (m *Manager) checkAllDeviceLimits() {
+	ctx := context.Background()
+	entries := m.registry.GetAllEntries()
+	checkedSubs := make(map[int64]bool)
+	for _, entry := range entries {
+		if checkedSubs[entry.SubscriptionID] {
+			continue
+		}
+		checkedSubs[entry.SubscriptionID] = true
+		if m.registry.GetDeviceLimit(entry.SubscriptionID) > 0 {
+			if err := m.CheckDeviceLimit(ctx, entry.SubscriptionID); err != nil {
+				log.Printf("[RateLimitManager] device limit check for sub=%d: %v", entry.SubscriptionID, err)
+			}
+		}
+	}
 }
 
 // Close 清理资源。

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+
+	"corefusion/internal/constants"
 )
 
 // AgentInstallScript generates a bash install script for the Agent binary.
@@ -27,7 +29,7 @@ func NewAgentInstallScript(panelHost string, panelPort int) *AgentInstallScript 
 		panelHost:       panelHost,
 		panelPort:       panelPort,
 		panelScheme:     "http",
-		panelGRPCPort:   18443,
+		panelGRPCPort:   constants.DefaultAgentGRPCPort,
 		panelTLS:        false,
 		agentVersion:    "latest",
 		githubURL:       "https://github.com/qist/corefusion/releases/download",

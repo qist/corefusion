@@ -61,6 +61,11 @@
               <el-input v-model="panelForm.tls_key_path" />
             </el-form-item>
             <el-divider />
+            <el-form-item label="Agent gRPC 端口">
+              <el-input-number v-model="agentGRPCPort" :min="1" :max="65535" />
+              <div class="hint">面板与远程 Agent 之间 mTLS 心跳连接的监听端口，默认 18443。修改后需重启面板生效。</div>
+            </el-form-item>
+            <el-divider />
             <el-form-item :label="t('settings.panel.mtlsEnabled')">
               <el-switch v-model="panelForm.mtls_enabled" />
             </el-form-item>
@@ -687,9 +692,10 @@ const currencyForm = ref({ default_currency: 'CNY' })
 const currencySaving = ref(false)
 
 // Panel config
-const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', profile_web_page_url: '', mode: 'full' })
+const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', profile_web_page_url: '', mode: 'full' })
 const panelPort = computed({ get: () => parseInt(panelForm.value.listen_port) || 8080, set: (v) => { panelForm.value.listen_port = String(v) } })
 const subPort = computed({ get: () => parseInt(panelForm.value.subscription_port) || 0, set: (v) => { panelForm.value.subscription_port = String(v) } })
+const agentGRPCPort = computed({ get: () => parseInt(panelForm.value.agent_grpc_port) || 18443, set: (v) => { panelForm.value.agent_grpc_port = String(v) } })
 const panelSaving = ref(false)
 const migrating = ref(false)
 const certificates = ref([])

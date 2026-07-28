@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"corefusion/internal/constants"
 	"corefusion/internal/model/entity"
 )
 
@@ -208,7 +209,7 @@ func (r *NodeServerRepository) EnsureLocalServer(ctx context.Context, hostname s
 		Hostname:      hostname,
 		NodeType:      entity.NodeTypeStandalone,
 		AgentStatus:   entity.AgentStatusOnline,
-		AgentPort:     18443,
+		AgentPort:     constants.DefaultAgentGRPCPort,
 		IsLocal:       true,
 		BillingEnabled: true,
 		SupportedCores: `["xray","singbox","hysteria2","tuic"]`,

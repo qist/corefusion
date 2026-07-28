@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"corefusion/internal/constants"
 	"corefusion/internal/api/handlers/services"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
@@ -287,7 +288,7 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*vo.Cr
 
 	agentPort := req.AgentPort
 	if agentPort == 0 {
-		agentPort = 18443
+		agentPort = constants.DefaultAgentGRPCPort
 	}
 
 	supportedCores := req.SupportedCores

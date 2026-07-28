@@ -45,7 +45,7 @@ type NodeServer struct {
 	ChainConfig string `json:"chain_config" gorm:"type:text"`
 
 	// Agent 连接
-	AgentPort       int        `json:"agent_port" gorm:"not null;default:18443"`
+	AgentPort       int        `json:"agent_port" gorm:"not null;default:18443"` // default see constants.DefaultAgentGRPCPort
 	AgentStatus     string     `json:"agent_status" gorm:"size:32;not null;default:offline;index"`
 	AgentVersion    string     `json:"agent_version" gorm:"size:64"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at"`

@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"corefusion/internal/constants"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/router"
 	"corefusion/internal/auth/jwt"
@@ -200,8 +202,19 @@ func runServer(args []string) {
 	crl := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgr, caService)
 	nodeMgr.WithCRL(crl)
 
-	// Start gRPC server for Agents (mTLS on port 18443)
-	agentGRPCAddr := ":18443"
+	// Start gRPC server for Agents (mTLS)
+	// Default port 18443; can be changed via system settings (panel.agent_grpc_port).
+	// After changing, restart the panel for it to take effect.
+	agentGRPCPort := constants.DefaultAgentGRPCPort
+	// Try read from system_settings (DB already initialized above)
+	grpcSettingRepo := repository.NewSystemSettingRepository(db.DB)
+	if v, err := grpcSettingRepo.GetByKey(context.Background(), "panel.agent_grpc_port"); err == nil && v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			agentGRPCPort = p
+		}
+	}
+	agentGRPCAddr := fmt.Sprintf(":%d", agentGRPCPort)
+	log.Printf("[Panel] Agent gRPC server starting on %s", agentGRPCAddr)
 	if err := nodeMgr.StartGRPCServer(context.Background(), agentGRPCAddr); err != nil {
 		log.Printf("WARNING: failed to start Agent gRPC server: %v", err)
 	} else {

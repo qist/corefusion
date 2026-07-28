@@ -1515,6 +1515,83 @@ func (h *Handler) ListInterfaces(c *gin.Context) {
 	response.OK(c, result)
 }
 
+// ──────────────────── 节点流量配额 API ────────────────────
+
+// GetTrafficUsage handles GET /api/v1/node-servers/:id/traffic-usage.
+// Returns the current billing period's traffic usage for a server.
+func (h *Handler) GetTrafficUsage(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+
+	quotaSvc := h.svc.GetTrafficQuotaService()
+	if quotaSvc == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "traffic quota service not configured")
+		return
+	}
+
+	usage, err := quotaSvc.GetTrafficUsage(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "QUERY_FAILED", err.Error())
+		return
+	}
+	response.OK(c, usage)
+}
+
+// GetTrafficHistory handles GET /api/v1/node-servers/:id/traffic-history.
+// Returns historical traffic usage for a server (last N months).
+func (h *Handler) GetTrafficHistory(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+
+	months := 6
+	if m, err := strconv.Atoi(c.Query("months")); err == nil && m > 0 {
+		months = m
+	}
+
+	quotaSvc := h.svc.GetTrafficQuotaService()
+	if quotaSvc == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "traffic quota service not configured")
+		return
+	}
+
+	history, err := quotaSvc.GetTrafficHistory(c.Request.Context(), id, months)
+	if err != nil {
+		response.InternalError(c, "QUERY_FAILED", err.Error())
+		return
+	}
+	response.OK(c, history)
+}
+
+// ResumeTrafficSuspended handles POST /api/v1/node-servers/:id/traffic-resume.
+// Manually resumes a traffic-suspended server.
+func (h *Handler) ResumeTrafficSuspended(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+
+	quotaSvc := h.svc.GetTrafficQuotaService()
+	if quotaSvc == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "traffic quota service not configured")
+		return
+	}
+
+	if err := quotaSvc.ResumeServer(c.Request.Context(), id); err != nil {
+		response.InternalError(c, "RESUME_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "server resumed successfully"})
+}
+
+// ──────────────────── 节点流量配额 API ────────────────────
+
 // parseVlessEncAuths parses the output of `xray vlessenc` command.
 func parseVlessEncAuths(output string) []map[string]string {
 	lines := strings.Split(output, "\n")

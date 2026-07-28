@@ -56,6 +56,12 @@ type LimitApplier interface {
 	ApplyLimits(ctx context.Context, req *agentpb.ApplyLimitsRequest) error
 }
 
+// TrafficQuotaProcessor processes egress interface traffic data from heartbeats
+// for monthly traffic quota monitoring. Implemented by nodeserver.NodeTrafficQuotaService.
+type TrafficQuotaProcessor interface {
+	ProcessHeartbeat(serverID int64, report *agentpb.AgentReport)
+}
+
 // ProxyManager 接口抽象代理进程管理能力。
 // 由现有的 proxy.Manager 实现，LocalAgent 通过此接口委托，
 // 不重新实现 Caddy/Nginx 的启动、停止、重启、配置生成等逻辑。

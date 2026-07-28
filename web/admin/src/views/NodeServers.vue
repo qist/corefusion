@@ -74,6 +74,18 @@
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
+          <el-table-column label="月流量" width="130">
+            <template #default="{row}">
+              <div v-if="row.traffic_quota_bytes > 0" style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+                  <div :style="{width: Math.min((row.traffic_used_bytes/row.traffic_quota_bytes)*100, 100)+'%', background: row.traffic_suspended ? '#f56c6c' : (row.traffic_used_bytes/row.traffic_quota_bytes > 0.8 ? '#e6a23c' : '#409eff'), height:'100%', borderRadius:'3px'}" />
+                </div>
+                <span style="font-size:10px;color:#606266;min-width:38px;text-align:right">{{ formatBytes(row.traffic_used_bytes) }}/{{ formatBytes(row.traffic_quota_bytes) }}</span>
+              </div>
+              <span v-else-if="row.traffic_suspended" style="color:#f56c6c;font-size:11px">⚠ 已暂停</span>
+              <span v-else style="color:#c0c4cc;font-size:11px">-</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('nodeServer.lastHeartbeat')" width="155">
             <template #default="{row}">
               <span v-if="row.last_heartbeat_at" style="font-size:12px;color:#909399">{{ formatTime(row.last_heartbeat_at) }}</span>
@@ -104,6 +116,7 @@
                     <el-dropdown-item command="tags" divided>{{ t('nodeServer.tags') }}</el-dropdown-item>
                     <el-dropdown-item command="revoke" v-if="row.agent_cert_expires_at">{{ t('nodeServer.revokeCert') }}</el-dropdown-item>
                     <el-dropdown-item command="reconnect">{{ t('nodeServer.forceReconnect') }}</el-dropdown-item>
+                    <el-dropdown-item command="resumeTraffic" v-if="row.traffic_suspended" divided style="color:#e6a23c">⚠ 恢复流量暂停</el-dropdown-item>
                     <el-dropdown-item command="updateAgent" v-if="!row.is_local" divided>{{ t('nodeServer.updateAgent') }}</el-dropdown-item>
                     <el-dropdown-item command="edit" divided>{{ t('common.edit') }}</el-dropdown-item>
                     <el-dropdown-item command="delete" v-if="!row.is_local">{{ t('common.delete') }}</el-dropdown-item>
@@ -386,7 +399,7 @@
           </el-form-item>
         </template>
         <el-form-item :label="t('nodeServer.chainConfig')" v-if="form.node_type === 'chain_entry' || form.node_type === 'chain_exit'">
-          <el-input v-model="form.chain_config" type="textarea" :rows="4" :placeholder='t(&apos;nodeServer.chainConfigPlaceholder&apos;)' />
+          <el-input v-model="form.chain_config" type="textarea" :rows="4" :placeholder="t('nodeServer.chainConfigPlaceholder')" />
         </el-form-item>
 
         <el-divider content-position="left">{{ t('nodeServer.serverInfo') }}</el-divider>
@@ -422,11 +435,31 @@
         <el-form-item :label="t('nodeServer.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
+
+        <el-divider content-position="left">月度流量配额</el-divider>
+        <el-form-item label="出口网卡">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="form.egress_interface" clearable filterable allow-create style="flex:1" placeholder="选择或输入网卡名">
+              <el-option v-for="iface in interfaceOptions" :key="iface" :label="iface" :value="iface" />
+            </el-select>
+            <el-button size="small" @click="loadInterfaces" :loading="interfacesLoading" style="flex-shrink:0">刷新</el-button>
+          </div>
+          <div style="color:#909399;font-size:11px;margin-top:4px">监控此网卡的月度总流量，留空则不监控</div>
+        </el-form-item>
+        <el-form-item label="月流量配额">
+          <el-input-number v-model="form.traffic_quota_gb" :min="0" :step="500" controls-position="right" style="width:100%" />
+          <div style="color:#909399;font-size:11px;margin-top:4px">单位 GB，0 表示不限</div>
+        </el-form-item>
+        <el-form-item label="每月结算日">
+          <el-input-number v-model="form.traffic_quota_reset_day" :min="1" :max="28" controls-position="right" style="width:100%" />
+          <div style="color:#909399;font-size:11px;margin-top:4px">每月此日重置流量计数（1-28）</div>
+        </el-form-item>
+
         <el-form-item :label="t('nodeServer.sortOrder')">
           <el-input-number v-model="form.sort_order" :min="0" controls-position="right" style="width:100%" />
         </el-form-item>
         <el-form-item :label="t('nodeServer.metadata')">
-          <el-input v-model="form.metadata" type="textarea" :rows="2" :placeholder='&apos;{}&apos;' />
+          <el-input v-model="form.metadata" type="textarea" :rows="2" placeholder="{}" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -468,6 +501,27 @@
           <el-tag v-if="detailData.bootstrap_required" size="small" type="warning">{{ t('nodeServer.bootstrapPending') }}</el-tag>
           <el-tag v-else-if="detailData.bootstrap_used_at" size="small" type="success">{{ t('nodeServer.bootstrapDone') }}</el-tag>
           <el-tag v-else size="small" type="info">{{ t('nodeServer.bootstrapNotGenerated') }}</el-tag>
+        </el-descriptions-item>
+
+        <el-descriptions-item label="出口网卡">{{ detailData.egress_interface || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="月流量配额">
+          <span v-if="detailData.traffic_quota_bytes > 0">{{ formatBytes(detailData.traffic_quota_bytes) }}</span>
+          <span v-else>不限</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="本月已用流量">
+          <span v-if="detailData.traffic_quota_bytes > 0">
+            {{ formatBytes(detailData.traffic_used_bytes) }}
+            <el-progress :percentage="Math.min((detailData.traffic_used_bytes / detailData.traffic_quota_bytes) * 100, 100)"
+              :color="detailData.traffic_suspended ? '#f56c6c' : (detailData.traffic_used_bytes / detailData.traffic_quota_bytes > 0.8 ? '#e6a23c' : '#409eff')"
+              :stroke-width="6" :show-text="true" style="width:120px;display:inline-block;vertical-align:middle;margin-left:8px" />
+          </span>
+          <span v-else>-</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="结算日">{{ detailData.traffic_quota_reset_day || 1 }} 号</el-descriptions-item>
+        <el-descriptions-item label="流量状态">
+          <el-tag v-if="detailData.traffic_suspended" size="small" type="danger">已暂停（超限）</el-tag>
+          <el-tag v-else-if="detailData.traffic_quota_bytes > 0" size="small" type="success">正常</el-tag>
+          <el-tag v-else size="small" type="info">未配置</el-tag>
         </el-descriptions-item>
       </el-descriptions>
 
@@ -580,6 +634,7 @@ import {
   listNodeAuditLogs, exportNodeAuditLogs,
   syncServerConfig,
   updateAllAgents,
+  resumeTrafficSuspended, listInterfaces,
 } from '../api/nodeServer'
 
 const { t } = useI18n()
@@ -646,7 +701,13 @@ const form = reactive({
   supported_cores_arr: ['xray', 'singbox', 'hysteria2', 'tuic'],
   max_inbounds: 0, public_ip: '', internal_ip: '', bandwidth_mbps: 0,
   billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
+  // 流量配额
+  egress_interface: '', traffic_quota_gb: 0, traffic_quota_reset_day: 1,
 })
+
+// ─── Interfaces for egress selection ───
+const interfaceOptions = ref([])
+const interfacesLoading = ref(false)
 
 // ─── Quick Add (kubeadm join style) ───
 const quickAddVisible = ref(false)
@@ -902,8 +963,13 @@ function showEditDialog(row) {
     internal_ip: row.internal_ip, bandwidth_mbps: row.bandwidth_mbps,
     billing_enabled: row.billing_enabled, enabled: row.enabled,
     sort_order: row.sort_order, metadata: row.metadata || '',
+    // 流量配额
+    egress_interface: row.egress_interface || '',
+    traffic_quota_gb: row.traffic_quota_bytes ? Math.round(row.traffic_quota_bytes / (1024 * 1024 * 1024)) : 0,
+    traffic_quota_reset_day: row.traffic_quota_reset_day || 1,
   })
   formVisible.value = true
+  loadInterfaces()
 }
 
 function onFormClose() {
@@ -937,6 +1003,10 @@ async function saveForm() {
       enabled: form.enabled,
       sort_order: form.sort_order,
       metadata: form.metadata,
+      // 流量配额
+      egress_interface: form.egress_interface,
+      traffic_quota_bytes: form.traffic_quota_gb * 1024 * 1024 * 1024,
+      traffic_quota_reset_day: form.traffic_quota_reset_day,
     }
     if (formMode.value === 'create') {
       // This path is no longer used — quickAddSave handles creation.
@@ -1012,7 +1082,39 @@ case 'status': showDetailDialog(row); break
     case 'tags': showTagsDialog(row); break
     case 'revoke': handleRevoke(row); break
     case 'reconnect': handleReconnect(row); break
+    case 'resumeTraffic': handleResumeTraffic(row); break
     case 'updateAgent': goToDetail(row); break
+  }
+}
+
+async function handleResumeTraffic(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要恢复节点「${row.name}」的流量暂停状态吗？该节点将重新启动服务。`,
+      '恢复流量暂停',
+      { type: 'warning' }
+    )
+    await resumeTrafficSuspended(row.id)
+    ElMessage.success('节点已恢复')
+    loadServers()
+  } catch (e) {
+    if (e !== 'cancel' && e?.response?.data?.message) {
+      ElMessage.error(e.response.data.message)
+    }
+  }
+}
+
+async function loadInterfaces() {
+  if (!editingId.value) return
+  interfacesLoading.value = true
+  try {
+    const res = await listInterfaces(editingId.value)
+    interfaceOptions.value = res || []
+  } catch (e) {
+    // ignore - might be offline
+    interfaceOptions.value = []
+  } finally {
+    interfacesLoading.value = false
   }
 }
 
@@ -1213,6 +1315,19 @@ function formatUptime(seconds) {
   if (hours > 0) s += hours + 'h '
   s += mins + 'm'
   return s
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let i = 0
+  let val = bytes
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i++
+  }
+  if (i >= 3) return val.toFixed(1) + units[i] // GB, TB 用1位小数
+  return Math.round(val) + units[i] // B, KB, MB 整数
 }
 
 function copyToClipboard(text) {

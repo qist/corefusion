@@ -186,6 +186,11 @@ func (a *AgentApp) sendHeartbeat(stream agentpb.HeartbeatService_StreamClient) e
 		UptimeSeconds:  m.UptimeSeconds,
 		Load_1M:        m.Load1m,
 		TcpConnections: int32(m.TCPConnections),
+
+		// Egress interface traffic (出口网卡累计流量，用于月度配额)
+		EgressInterface: m.EgressInterface,
+		EgressRxBytes:  m.EgressRxBytes,
+		EgressTxBytes:  m.EgressTxBytes,
 	})
 }
 

@@ -57,10 +57,11 @@ type Service struct {
 	regionSelector RegionSelectorInterface
 
 	// Phase 6: Advanced features
-	metricsCollector *agent.MetricsCollector
+	metricsCollector  *agent.MetricsCollector
 	speedTestMgr     *agent.SpeedTestManager
-	loadBalancer     *agent.LoadBalancer
-	agentUpdater     *agent.AgentUpdater
+	loadBalancer      *agent.LoadBalancer
+	agentUpdater      *agent.AgentUpdater
+	trafficQuotaSvc   *NodeTrafficQuotaService
 
 	// Supplementary repos
 	auditLogRepo  *repository.NodeAuditLogRepository
@@ -196,6 +197,17 @@ func (s *Service) WithMetricsCollector(mc *agent.MetricsCollector) *Service {
 	return s
 }
 
+// WithTrafficQuotaService sets the traffic quota service.
+func (s *Service) WithTrafficQuotaService(svc *NodeTrafficQuotaService) *Service {
+	s.trafficQuotaSvc = svc
+	return s
+}
+
+// GetTrafficQuotaService returns the traffic quota service.
+func (s *Service) GetTrafficQuotaService() *NodeTrafficQuotaService {
+	return s.trafficQuotaSvc
+}
+
 // WithSpeedTestManager sets the speed test manager.
 func (s *Service) WithSpeedTestManager(stm *agent.SpeedTestManager) *Service {
 	s.speedTestMgr = stm
@@ -308,6 +320,11 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*vo.Cr
 		Enabled:          enabled,
 		CreatedAt:        now,
 		UpdatedAt:        now,
+
+		// 出口网卡流量配额
+		EgressInterface:      req.EgressInterface,
+		TrafficQuotaBytes:    req.TrafficQuotaBytes,
+		TrafficQuotaResetDay: req.TrafficQuotaResetDay,
 	}
 
 	if err := s.repo.Create(ctx, server); err != nil {
@@ -446,6 +463,18 @@ func (s *Service) Update(ctx context.Context, id int64, req *dto.NodeServerUpdat
 	if req.Enabled != nil {
 		server.Enabled = *req.Enabled
 	}
+
+	// 出口网卡流量配额
+	if req.EgressInterface != nil {
+		server.EgressInterface = *req.EgressInterface
+	}
+	if req.TrafficQuotaBytes != nil {
+		server.TrafficQuotaBytes = *req.TrafficQuotaBytes
+	}
+	if req.TrafficQuotaResetDay != nil {
+		server.TrafficQuotaResetDay = *req.TrafficQuotaResetDay
+	}
+
 	server.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, server); err != nil {
@@ -528,6 +557,15 @@ func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.Res
 		Enabled:                server.Enabled,
 		CreatedAt:              server.CreatedAt,
 		UpdatedAt:              server.UpdatedAt,
+
+		// 出口网卡流量配额
+		EgressInterface:       server.EgressInterface,
+		TrafficQuotaBytes:     server.TrafficQuotaBytes,
+		TrafficQuotaResetDay:  server.TrafficQuotaResetDay,
+		TrafficSuspended:      server.TrafficSuspended,
+		TrafficSuspendedAt:    server.TrafficSuspendedAt,
+		TrafficUsedBytes:      server.TrafficUsedBytes,
+		TrafficPeriodStart:    server.TrafficPeriodStart,
 	}
 
 	if len(resourceUsage) > 0 && resourceUsage[0] != nil {
@@ -595,6 +633,9 @@ func metricToResourceUsage(m *entity.ServerMetric) *vo.ResourceUsage {
 		UptimeSeconds:     m.UptimeSeconds,
 		TrafficUplink:     m.TrafficUplink,
 		TrafficDownlink:   m.TrafficDownlink,
+		EgressInterface:   m.EgressInterface,
+		EgressRxBytes:     m.EgressRxBytes,
+		EgressTxBytes:     m.EgressTxBytes,
 		LastUpdated:       m.CreatedAt,
 	}
 }

@@ -98,6 +98,12 @@ func (mc *MetricsCollector) CollectFromHeartbeat(serverID int64, report *agentpb
 		TrafficDownlink:  report.RateLimitTotalDownlink,
 		AgentVersion:     report.AgentVersion,
 		Hostname:         report.Hostname,
+
+		// Egress interface traffic (出口网卡累计流量)
+		EgressInterface: report.EgressInterface,
+		EgressRxBytes:   report.EgressRxBytes,
+		EgressTxBytes:   report.EgressTxBytes,
+
 		CreatedAt:        now,
 	}
 

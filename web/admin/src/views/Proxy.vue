@@ -12,7 +12,7 @@
 
       <!-- Show which proxy is currently running -->
       <el-alert v-if="runningProxy" type="success" :closable="false" show-icon style="margin-bottom:20px;max-width:600px;margin-left:auto;margin-right:auto">
-        {{ runningProxyName }} {{ t('proxy.isRunning') || '正在运行中' }}
+        {{ runningProxyName }} {{ t('proxy.isRunning') }}
       </el-alert>
 
       <div style="display:flex;gap:24px;justify-content:center;margin-top:60px">

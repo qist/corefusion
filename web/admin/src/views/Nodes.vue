@@ -31,7 +31,7 @@
         <el-form-item :label="t('protoCenter.protocol')"><el-select v-model="form.protocol" style="width:100%"><el-option label="VLESS" value="vless" /><el-option label="VMess" value="vmess" /><el-option label="Trojan" value="trojan" /><el-option label="Hysteria 2" value="hysteria2" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.host')"><el-input v-model="form.host" /></el-form-item>
         <el-form-item :label="t('protoCenter.port')"><el-input-number v-model="form.port" :min="1" :max="65535" /></el-form-item>
-        <el-form-item :label="t('protoCenter.transport')"><el-select v-model="form.transport" style="width:100%" clearable><el-option :label="t('transport.tcp')" value="tcp" /><el-option :label="t('transport.ws')" value="ws" /><el-option :label="t('transport.grpc')" value="grpc" /></el-select></el-form-item>
+        <el-form-item :label="t('protoCenter.transportLabel')"><el-select v-model="form.transport" style="width:100%" clearable><el-option :label="t('transport.tcp')" value="tcp" /><el-option :label="t('transport.ws')" value="ws" /><el-option :label="t('transport.grpc')" value="grpc" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.tlsMode')"><el-select v-model="form.tls_mode" style="width:100%" clearable><el-option label="None" value="none" /><el-option label="TLS" value="tls" /><el-option label="Reality" value="reality" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.region')"><el-input v-model="form.region" /></el-form-item>
       </el-form>

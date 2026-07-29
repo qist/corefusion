@@ -3,54 +3,54 @@
     <el-tabs v-model="activeTab" type="border-card">
 
       <!-- ════════════ 流量叠加包 Tab ════════════ -->
-      <el-tab-pane label="流量叠加包" name="traffic_packs">
+      <el-tab-pane :label="t('plan.trafficPacksTab')" name="traffic_packs">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">流量叠加包</h3>
-          <el-button type="primary" size="small" @click="showCreateTrafficPack">+ 新增叠加包</el-button>
+          <h3 style="margin:0">{{ t('plan.trafficPacksTab') }}</h3>
+          <el-button type="primary" size="small" @click="showCreateTrafficPack">{{ t('plan.createTrafficPack') }}</el-button>
         </div>
         <el-table :data="trafficPackVariants" v-loading="trafficPacksLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="name" label="名称" width="150" />
-          <el-table-column label="说明" show-overflow-tooltip>
+          <el-table-column prop="name" :label="t('common.name')" width="150" />
+          <el-table-column :label="t('plan.trafficPackDesc')" show-overflow-tooltip>
             <template #default="{row}">{{ row.description || '—' }}</template>
           </el-table-column>
-          <el-table-column label="适用范围" width="120">
-            <template #default=""><el-tag size="small" type="success">全部套餐</el-tag></template>
+          <el-table-column :label="t('plan.applicableScope')" width="120">
+            <template #default=""><el-tag size="small" type="success">{{ t('plan.allPlans') }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="价格" width="100">
+          <el-table-column :label="t('plan.price')" width="100">
             <template #default="{row}">¥{{ (row.price/100).toFixed(2) }}</template>
           </el-table-column>
-          <el-table-column label="流量" width="120">
+          <el-table-column :label="t('plan.traffic')" width="120">
             <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '—' }}</template>
           </el-table-column>
-          <el-table-column label="过期模式" width="160">
+          <el-table-column :label="t('plan.expiryMode')" width="160">
             <template #default="{row}">
-              <el-tag v-if="row.expiry_mode === 'extend_plan'" type="warning" size="small">延长{{ row.duration_days }}天</el-tag>
-              <el-tag v-else size="small">与套餐同期</el-tag>
+              <el-tag v-if="row.expiry_mode === 'extend_plan'" type="warning" size="small">{{ t('plan.extendPlan', { days: row.duration_days }) }}</el-tag>
+              <el-tag v-else size="small">{{ t('plan.modeSamePlan') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="sort_order" label="排序" width="80" />
-          <el-table-column label="状态" width="80">
+          <el-table-column prop="sort_order" :label="t('plan.sortOrder')" width="80" />
+          <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}">
-              <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'启用':'禁用' }}</el-tag>
+              <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?t('common.enabled'):t('common.disabled') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120">
+          <el-table-column :label="t('common.actions')" width="120">
             <template #default="{row}">
-              <el-button size="small" @click="showEditTrafficPack(row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="deleteTrafficPack(row)">删除</el-button>
+              <el-button size="small" @click="showEditTrafficPack(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="deleteTrafficPack(row)">{{ t('common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- ════════════ 套餐模板 Tab ════════════ -->
-      <el-tab-pane label="套餐模板" name="templates">
+      <el-tab-pane :label="t('plan.templatesTab')" name="templates">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">套餐模板</h3>
+          <h3 style="margin:0">{{ t('plan.templatesTab') }}</h3>
           <div style="display:flex;gap:8px">
-            <el-button type="warning" size="small" :loading="syncAllLoading" @click="handleSyncAll">全量同步账号</el-button>
-            <el-button type="primary" size="small" @click="showCreateTemplate">+ 新增模板</el-button>
+            <el-button type="warning" size="small" :loading="syncAllLoading" @click="handleSyncAll">{{ t('plan.syncAllAccounts') }}</el-button>
+            <el-button type="primary" size="small" @click="showCreateTemplate">{{ t('plan.createTemplate') }}</el-button>
           </div>
         </div>
         <el-row :gutter="16">
@@ -59,35 +59,35 @@
               <template #header>
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <span style="font-weight:600">{{ tpl.name }}</span>
-                  <el-tag :type="tpl.enabled?'success':'danger'" size="small">{{ tpl.enabled?'启用':'禁用' }}</el-tag>
+                  <el-tag :type="tpl.enabled?'success':'danger'" size="small">{{ tpl.enabled?t('common.enabled'):t('common.disabled') }}</el-tag>
                 </div>
               </template>
               <div style="font-size:13px;line-height:2;color:#606266">
-                <div>分类: <el-tag size="small" :type="categoryType(tpl.category)">{{ categoryLabel(tpl.category) }}</el-tag></div>
-                <div>流量: {{ formatBytes(tpl.default_quota_bytes) }} / {{ tpl.default_quota_reset_cycle || '不限' }}</div>
-                <div>设备: {{ tpl.device_limit || '不限' }} 台 | 下载: {{ tpl.speed_limit_mbps || '不限' }} Mbps | 上传: {{ tpl.speed_limit_up_mbps || '不限' }} Mbps</div>
+                <div>{{ t('plan.category') }}: <el-tag size="small" :type="categoryType(tpl.category)">{{ categoryLabel(tpl.category) }}</el-tag></div>
+                <div>{{ t('plan.traffic') }}: {{ formatBytes(tpl.default_quota_bytes) }} / {{ tpl.default_quota_reset_cycle || t('common.unlimited') }}</div>
+                <div>{{ t('plan.deviceLimit') }}: {{ tpl.device_limit || t('common.unlimited') }} {{ t('plan.unitDevices') }} | {{ t('plan.downloadSpeed') }}: {{ tpl.speed_limit_mbps || t('common.unlimited') }} Mbps | {{ t('plan.uploadSpeed') }}: {{ tpl.speed_limit_up_mbps || t('common.unlimited') }} Mbps</div>
                 <div v-if="tpl.is_trial" style="color:#e6a23c">
-                  <el-tag type="warning" size="small">试用</el-tag> {{ tpl.trial_duration_hours }}小时
+                  <el-tag type="warning" size="small">{{ t('plan.categoryTrial') }}</el-tag> {{ tpl.trial_duration_hours }}{{ t('plan.unitHours') }}
                 </div>
-                <div>节点分组: {{ (tpl.node_group_ids||[]).length }} 个 | 计费节点: {{ (tpl.billing_node_ids||[]).length }} 个</div>
+                <div>{{ t('plan.nodeGroupsTab') }}: {{ (tpl.node_group_ids||[]).length }} {{ t('plan.unitCount') }} | {{ t('plan.billingNodes') }}: {{ (tpl.billing_node_ids||[]).length }} {{ t('plan.unitCount') }}</div>
                 <div style="color:#909399;font-size:12px">{{ tpl.description }}</div>
               </div>
               <div v-if="templateNodes[tpl.id] && templateNodes[tpl.id].length" style="margin-top:8px;border-top:1px solid #ebeef5;padding-top:8px">
-                <div style="font-size:12px;color:#909399;margin-bottom:4px">关联节点（主机 - 入口/节点名称）</div>
+                <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('plan.relatedNodes') }}</div>
                 <div v-for="node in templateNodes[tpl.id].slice(0,5)" :key="node.member_id" style="font-size:12px;line-height:1.8">
-                  <el-tag :type="node.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ node.type==='inbound'?'入口':'外部' }}</el-tag>
+                  <el-tag :type="node.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ node.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
                   <span style="color:#409eff">{{ node.server_name }}</span> - {{ node.node_name }}
                   <span style="color:#909399">({{ node.protocol }}:{{ node.port }})</span>
                 </div>
-                <div v-if="templateNodes[tpl.id].length > 5" style="font-size:12px;color:#909399;margin-top:4px">...共 {{ templateNodes[tpl.id].length }} 个节点</div>
+                <div v-if="templateNodes[tpl.id].length > 5" style="font-size:12px;color:#909399;margin-top:4px">...{{ t('plan.totalCount') }} {{ templateNodes[tpl.id].length }} {{ t('plan.unitNodes') }}</div>
               </div>
               <div style="margin-top:12px;display:flex;gap:4px;flex-wrap:wrap">
-                <el-button size="small" @click="showVariantsDialog(tpl)">管理规格</el-button>
-                <el-button size="small" @click="showNodeGroupsDialog(tpl)">管理节点</el-button>
-                <el-button size="small" @click="showBillingNodesDialog(tpl)">计费节点</el-button>
-                <el-button size="small" type="warning" :loading="syncLoading[tpl.id]" @click="handleSyncTemplate(tpl)">同步账号</el-button>
-                <el-button size="small" @click="showEditTemplate(tpl)">编辑</el-button>
-                <el-button size="small" type="danger" @click="deleteTemplate(tpl)">删除</el-button>
+                <el-button size="small" @click="showVariantsDialog(tpl)">{{ t('plan.manageVariants') }}</el-button>
+                <el-button size="small" @click="showNodeGroupsDialog(tpl)">{{ t('plan.manageNodes') }}</el-button>
+                <el-button size="small" @click="showBillingNodesDialog(tpl)">{{ t('plan.billingNodes') }}</el-button>
+                <el-button size="small" type="warning" :loading="syncLoading[tpl.id]" @click="handleSyncTemplate(tpl)">{{ t('plan.syncAccounts') }}</el-button>
+                <el-button size="small" @click="showEditTemplate(tpl)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteTemplate(tpl)">{{ t('common.delete') }}</el-button>
               </div>
             </el-card>
           </el-col>
@@ -95,99 +95,99 @@
       </el-tab-pane>
 
       <!-- ════════════ 节点分组 Tab ════════════ -->
-      <el-tab-pane label="节点分组" name="node-groups">
+      <el-tab-pane :label="t('plan.nodeGroupsTab')" name="node-groups">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">节点分组</h3>
-          <el-button type="primary" size="small" @click="showCreateGroup">+ 新增分组</el-button>
+          <h3 style="margin:0">{{ t('plan.nodeGroupsTab') }}</h3>
+          <el-button type="primary" size="small" @click="showCreateGroup">{{ t('plan.createGroup') }}</el-button>
         </div>
         <el-table :data="nodeGroups" v-loading="groupLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
-          <el-table-column prop="name" label="名称" width="150" />
-          <el-table-column label="等级" width="100">
+          <el-table-column prop="name" :label="t('common.name')" width="150" />
+          <el-table-column :label="t('plan.category')" width="100">
             <template #default="{row}">
               <el-tag :type="tierType(row.tier)" size="small">{{ tierLabel(row.tier) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="region" label="区域" width="80" />
-          <el-table-column prop="description" label="描述" show-overflow-tooltip />
-          <el-table-column label="状态" width="70">
+          <el-table-column prop="region" :label="t('plan.region')" width="80" />
+          <el-table-column prop="description" :label="t('plan.description')" show-overflow-tooltip />
+          <el-table-column :label="t('common.status')" width="70">
             <template #default="{row}">
               <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'✓':'✗' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200">
+          <el-table-column :label="t('common.actions')" width="200">
             <template #default="{row}">
-              <el-button size="small" @click="showMembersDialog(row)">成员管理</el-button>
-              <el-button size="small" @click="showEditGroup(row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="deleteGroup(row)">删除</el-button>
+              <el-button size="small" @click="showMembersDialog(row)">{{ t('plan.memberManagement') }}</el-button>
+              <el-button size="small" @click="showEditGroup(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="deleteGroup(row)">{{ t('common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- ════════════ 优惠码 Tab ════════════ -->
-      <el-tab-pane label="优惠码" name="promotions">
+      <el-tab-pane :label="t('plan.promotionsTab')" name="promotions">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">促销优惠</h3>
-          <el-button type="primary" size="small" @click="showCreatePromo">+ 新增优惠码</el-button>
+          <h3 style="margin:0">{{ t('plan.promotions') }}</h3>
+          <el-button type="primary" size="small" @click="showCreatePromo">{{ t('plan.createPromotion') }}</el-button>
         </div>
         <el-table :data="promotions" v-loading="promoLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
-          <el-table-column prop="code" label="优惠码" width="150" />
-          <el-table-column prop="name" label="名称" width="150" />
-          <el-table-column label="类型" width="100">
+          <el-table-column prop="code" :label="t('plan.promotionsTab')" width="150" />
+          <el-table-column prop="name" :label="t('common.name')" width="150" />
+          <el-table-column :label="t('common.type')" width="100">
             <template #default="{row}">
               {{ row.discount_type === 'percentage' ? row.discount_value + '%' : '¥' + (row.discount_value/100).toFixed(2) }}
             </template>
           </el-table-column>
-          <el-table-column label="适用范围" width="120">
+          <el-table-column :label="t('plan.applicableScope')" width="120">
             <template #default="{row}">
               <el-tag size="small">{{ scopeLabel(row.applicable_scope) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="使用次数" width="100">
+          <el-table-column :label="t('plan.usageLimit')" width="100">
             <template #default="{row}">{{ row.used_count }}{{ row.max_uses > 0 ? '/' + row.max_uses : '/∞' }}</template>
           </el-table-column>
-          <el-table-column label="有效期" width="200">
+          <el-table-column :label="t('plan.validPeriod')" width="200">
             <template #default="{row}">
               <span style="font-size:12px">
-                {{ row.starts_at?.substring(0,10) || '—' }} ~ {{ row.ends_at?.substring(0,10) || '永久' }}
+                {{ row.starts_at?.substring(0,10) || '—' }} ~ {{ row.ends_at?.substring(0,10) || t('plan.permanent') }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="70">
+          <el-table-column :label="t('common.status')" width="70">
             <template #default="{row}">
               <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'✓':'✗' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120">
+          <el-table-column :label="t('common.actions')" width="120">
             <template #default="{row}">
-              <el-button size="small" @click="showEditPromo(row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="deletePromo(row)">删除</el-button>
+              <el-button size="small" @click="showEditPromo(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="deletePromo(row)">{{ t('common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- ════════════ 订单记录 Tab ════════════ -->
-      <el-tab-pane label="订单记录" name="orders">
+      <el-tab-pane :label="t('plan.ordersTab')" name="orders">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
           <div style="display:flex;gap:8px;align-items:center">
-            <h3 style="margin:0">订单记录</h3>
-            <el-input v-model="orderClientFilter" size="small" placeholder="输入客户端ID" style="width:150px" @keyup.enter="fetchOrders" clearable />
-            <el-button size="small" @click="fetchOrders">查询</el-button>
+            <h3 style="margin:0">{{ t('plan.ordersTab') }}</h3>
+            <el-input v-model="orderClientFilter" size="small" :placeholder="t('plan.clientIdPlaceholder')" style="width:150px" @keyup.enter="fetchOrders" clearable />
+            <el-button size="small" @click="fetchOrders">{{ t('common.search') }}</el-button>
           </div>
         </div>
         <el-table :data="orders" v-loading="orderLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="client_id" label="客户端ID" width="80" />
-          <el-table-column label="类型" width="80">
+          <el-table-column prop="client_id" :label="t('plan.clientId')" width="80" />
+          <el-table-column :label="t('common.type')" width="80">
             <template #default="{row}">
               <el-tag :type="orderTypeColor(row.order_type)" size="small">{{ orderTypeLabel(row.order_type) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="to_variant_id" label="规格ID" width="70" />
-          <el-table-column label="金额" width="180">
+          <el-table-column prop="to_variant_id" :label="t('plan.variantId')" width="70" />
+          <el-table-column :label="t('plan.amount')" width="180">
             <template #default="{row}">
               <span style="font-size:12px">
                 ¥{{ (row.paid_amount/100).toFixed(2) }}
@@ -197,14 +197,14 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="promotion_code" label="优惠码" width="120" />
-          <el-table-column label="生效时间" width="160">
+          <el-table-column prop="promotion_code" :label="t('plan.promotionsTab')" width="120" />
+          <el-table-column :label="t('plan.effectiveTime')" width="160">
             <template #default="{row}">{{ row.effective_from?.substring(0,16).replace('T',' ') }}</template>
           </el-table-column>
-          <el-table-column label="到期时间" width="160">
+          <el-table-column :label="t('plan.expiryTime')" width="160">
             <template #default="{row}">{{ row.effective_to?.substring(0,16).replace('T',' ') || '—' }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}">
               <el-tag :type="orderStatusColor(row.status)" size="small">{{ orderStatusLabel(row.status) }}</el-tag>
             </template>
@@ -216,142 +216,142 @@
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 模板编辑弹窗 -->
-    <el-dialog v-model="templateDialog" :title="editingTemplate?'编辑模板':'新增模板'" width="650px">
+    <el-dialog v-model="templateDialog" :title="editingTemplate ? t('plan.editTemplate') : t('plan.createTemplate')" width="650px">
       <el-form :model="templateForm" label-width="120px" size="small">
-        <el-divider content-position="left">基本信息</el-divider>
-        <el-form-item label="名称"><el-input v-model="templateForm.name" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="templateForm.description" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="分类">
+        <el-divider content-position="left">{{ t('plan.basicInfo') }}</el-divider>
+        <el-form-item :label="t('common.name')"><el-input v-model="templateForm.name" /></el-form-item>
+        <el-form-item :label="t('plan.description')"><el-input v-model="templateForm.description" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('plan.category')">
           <el-select v-model="templateForm.category" style="width:100%">
-            <el-option label="基础版" value="basic" />
-            <el-option label="标准版" value="standard" />
-            <el-option label="高级版" value="premium" />
-            <el-option label="试用版" value="trial" />
-            <el-option label="自定义" value="custom" />
+            <el-option :label="t('plan.categoryBasic')" value="basic" />
+            <el-option :label="t('plan.categoryStandard')" value="standard" />
+            <el-option :label="t('plan.categoryPremium')" value="premium" />
+            <el-option :label="t('plan.categoryTrial')" value="trial" />
+            <el-option :label="t('plan.categoryCustom')" value="custom" />
           </el-select>
         </el-form-item>
-        <el-divider content-position="left">功能特性</el-divider>
-        <el-form-item label="设备数限制">
-          <el-input-number v-model="templateForm.device_limit" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
+        <el-divider content-position="left">{{ t('plan.features') }}</el-divider>
+        <el-form-item :label="t('plan.deviceLimit')">
+          <el-input-number v-model="templateForm.device_limit" :min="0" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
         </el-form-item>
-        <el-form-item label="下载限速 (Mbps)">
-          <el-input-number v-model="templateForm.speed_limit_mbps" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
+        <el-form-item :label="t('plan.downloadSpeedLimit')">
+          <el-input-number v-model="templateForm.speed_limit_mbps" :min="0" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
         </el-form-item>
-        <el-form-item label="上传限速 (Mbps)">
-          <el-input-number v-model="templateForm.speed_limit_up_mbps" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
+        <el-form-item :label="t('plan.uploadSpeedLimit')">
+          <el-input-number v-model="templateForm.speed_limit_up_mbps" :min="0" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
         </el-form-item>
-        <el-form-item label="并发连接限制">
-          <el-input-number v-model="templateForm.concurrent_limit" :min="0" /> <span style="color:#909399;font-size:12px">0=不限</span>
+        <el-form-item :label="t('plan.concurrentLimit')">
+          <el-input-number v-model="templateForm.concurrent_limit" :min="0" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
         </el-form-item>
-        <el-divider content-position="left">配额默认值</el-divider>
-        <el-form-item label="默认流量 (GB)">
-          <el-input-number v-model="templateForm.default_quota_gb" :min="0" :step="0.1" /> <span style="color:#909399;font-size:12px">0=不限</span>
+        <el-divider content-position="left">{{ t('plan.quotaDefaults') }}</el-divider>
+        <el-form-item :label="t('plan.defaultTraffic')">
+          <el-input-number v-model="templateForm.default_quota_gb" :min="0" :step="0.1" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
         </el-form-item>
-        <el-form-item label="配额重置周期">
+        <el-form-item :label="t('plan.quotaResetCycle')">
           <el-select v-model="templateForm.default_quota_reset_cycle" style="width:100%">
-            <el-option label="不重置" value="none" />
-            <el-option label="每月" value="monthly" />
+            <el-option :label="t('plan.noReset')" value="none" />
+            <el-option :label="t('plan.cycleMonthly')" value="monthly" />
           </el-select>
         </el-form-item>
-        <el-form-item label="超量暂停">
+        <el-form-item :label="t('plan.suspendOnExhausted')">
           <el-switch v-model="templateForm.suspend_on_quota_exhausted" :active-value="1" :inactive-value="0" />
         </el-form-item>
-        <el-divider content-position="left">试用配置</el-divider>
-        <el-form-item label="是否试用">
+        <el-divider content-position="left">{{ t('plan.trialConfig') }}</el-divider>
+        <el-form-item :label="t('plan.enableTrial')">
           <el-switch v-model="templateForm.is_trial" />
         </el-form-item>
         <template v-if="templateForm.is_trial">
-          <el-form-item label="试用时长 (小时)">
+          <el-form-item :label="t('plan.trialDuration')">
             <el-input-number v-model="templateForm.trial_duration_hours" :min="1" />
           </el-form-item>
         </template>
-        <el-divider content-position="left">显示设置</el-divider>
-        <el-form-item label="排序"><el-input-number v-model="templateForm.sort_order" :min="0" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="templateForm.enabled" /></el-form-item>
+        <el-divider content-position="left">{{ t('plan.displaySettings') }}</el-divider>
+        <el-form-item :label="t('plan.sortOrder')"><el-input-number v-model="templateForm.sort_order" :min="0" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="templateForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="templateDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveTemplate">保存</el-button>
+        <el-button @click="templateDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveTemplate">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 规格管理弹窗 -->
-    <el-dialog v-model="variantsDialog" :title="currentTemplate?.name + ' - 规格管理'" width="750px">
+    <el-dialog v-model="variantsDialog" :title="currentTemplate?.name + ' - ' + t('plan.manageVariants')" width="750px">
       <div style="margin-bottom:12px;text-align:right">
-        <el-button type="primary" size="small" @click="showCreateVariant">+ 添加规格</el-button>
+        <el-button type="primary" size="small" @click="showCreateVariant">{{ t('plan.addVariant') }}</el-button>
       </div>
       <el-table :data="variants" stripe size="small">
-        <el-table-column prop="name" label="名称" width="80" />
-        <el-table-column label="类型" width="90">
+        <el-table-column prop="name" :label="t('common.name')" width="80" />
+        <el-table-column :label="t('common.type')" width="90">
           <template #default="{row}">
-            <el-tag :type="row.variant_type==='traffic_pack'?'warning':''" size="small">{{ row.variant_type==='traffic_pack'?'流量包':'套餐' }}</el-tag>
+            <el-tag :type="row.variant_type==='traffic_pack'?'warning':''" size="small">{{ row.variant_type==='traffic_pack'?t('plan.trafficPack'):t('plan.planType') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="周期" width="80">
+        <el-table-column :label="t('plan.billingCycle')" width="80">
           <template #default="{row}">{{ cycleLabel(row.billing_cycle) }}</template>
         </el-table-column>
-        <el-table-column label="价格" width="100">
+        <el-table-column :label="t('plan.price')" width="100">
           <template #default="{row}">¥{{ (row.price/100).toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column label="原价" width="100">
+        <el-table-column :label="t('plan.originalPrice')" width="100">
           <template #default="{row}">{{ row.original_price > 0 ? '¥' + (row.original_price/100).toFixed(2) : '—' }}</template>
         </el-table-column>
-        <el-table-column prop="duration_days" label="天数" width="60" />
-        <el-table-column label="配额" width="100">
-          <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '继承模板' }}</template>
+        <el-table-column prop="duration_days" :label="t('plan.durationDays')" width="60" />
+        <el-table-column :label="t('plan.quota')" width="100">
+          <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('plan.modeSamePlan') }}</template>
         </el-table-column>
-        <el-table-column label="标记" width="80">
+        <el-table-column :label="t('plan.tag')" width="80">
           <template #default="{row}">
-            <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
-            <el-tag v-else-if="row.is_recommended" type="warning" size="small">推荐</el-tag>
+            <el-tag v-if="row.is_default" type="success" size="small">{{ t('plan.default') }}</el-tag>
+            <el-tag v-else-if="row.is_recommended" type="warning" size="small">{{ t('plan.recommended') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" @click="showEditVariant(row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="deleteVariant(row)">删除</el-button>
+            <el-button size="small" @click="showEditVariant(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteVariant(row)">{{ t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-dialog>
 
     <!-- 规格编辑弹窗 -->
-    <el-dialog v-model="variantDialog" :title="editingVariant?'编辑规格':'添加规格'" width="500px" append-to-body>
+    <el-dialog v-model="variantDialog" :title="editingVariant ? t('plan.editVariant') : t('plan.addVariant')" width="500px" append-to-body>
       <el-form :model="variantForm" label-width="100px" size="small">
-        <el-form-item label="规格类型">
+        <el-form-item :label="t('plan.variantType')">
           <el-select v-model="variantForm.variant_type" style="width:100%">
-            <el-option label="常规套餐" value="plan" />
-            <el-option label="流量叠加包" value="traffic_pack" />
+            <el-option :label="t('plan.regularPlan')" value="plan" />
+            <el-option :label="t('plan.trafficPacksTab')" value="traffic_pack" />
           </el-select>
         </el-form-item>
-        <el-form-item label="名称"><el-input v-model="variantForm.name" placeholder="如: 月付" /></el-form-item>
-        <el-form-item label="计费周期">
+        <el-form-item :label="t('common.name')"><el-input v-model="variantForm.name" :placeholder="t('plan.variantNamePlaceholder')" /></el-form-item>
+        <el-form-item :label="t('plan.billingCycle')">
           <el-select v-model="variantForm.billing_cycle" style="width:100%">
-            <el-option label="月付" value="monthly" />
-            <el-option label="季付" value="quarterly" />
-            <el-option label="半年付" value="semi_annual" />
-            <el-option label="年付" value="annual" />
-            <el-option label="终身" value="lifetime" />
-            <el-option label="一次性" value="one_time" />
+            <el-option :label="t('plan.cycleMonthly')" value="monthly" />
+            <el-option :label="t('plan.cycleQuarterly')" value="quarterly" />
+            <el-option :label="t('plan.cycleSemiAnnual')" value="semi_annual" />
+            <el-option :label="t('plan.cycleAnnual')" value="annual" />
+            <el-option :label="t('plan.cycleLifetime')" value="lifetime" />
+            <el-option :label="t('plan.cycleOneTime')" value="one_time" />
           </el-select>
         </el-form-item>
-        <el-form-item label="有效天数"><el-input-number v-model="variantForm.duration_days" :min="1" /></el-form-item>
-        <el-form-item label="价格 (元)"><el-input-number v-model="variantForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
-        <el-form-item label="原价 (元)"><el-input-number v-model="variantForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
-        <el-form-item label="流量 (GB)"><el-input-number v-model="variantForm.quota_gb" :min="0" :step="0.1" /> <span style="font-size:12px;color:#909399">0=继承模板</span></el-form-item>
-        <el-form-item label="默认规格"><el-switch v-model="variantForm.is_default" /></el-form-item>
-        <el-form-item label="推荐"><el-switch v-model="variantForm.is_recommended" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="variantForm.enabled" /></el-form-item>
-        <el-form-item label="排序"><el-input-number v-model="variantForm.sort_order" :min="0" /></el-form-item>
+        <el-form-item :label="t('plan.effectiveDays')"><el-input-number v-model="variantForm.duration_days" :min="1" /></el-form-item>
+        <el-form-item :label="t('plan.priceYuan')"><el-input-number v-model="variantForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
+        <el-form-item :label="t('plan.originalPriceYuan')"><el-input-number v-model="variantForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
+        <el-form-item :label="t('plan.trafficGB')"><el-input-number v-model="variantForm.quota_gb" :min="0" :step="0.1" /> <span style="font-size:12px;color:#909399">{{ t('plan.inheritTemplate') }}</span></el-form-item>
+        <el-form-item :label="t('plan.defaultVariant')"><el-switch v-model="variantForm.is_default" /></el-form-item>
+        <el-form-item :label="t('plan.recommended')"><el-switch v-model="variantForm.is_recommended" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="variantForm.enabled" /></el-form-item>
+        <el-form-item :label="t('plan.sortOrder')"><el-input-number v-model="variantForm.sort_order" :min="0" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="variantDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveVariant">保存</el-button>
+        <el-button @click="variantDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveVariant">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 模板节点分组管理弹窗 -->
-    <el-dialog v-model="templateNodeGroupsDialog" :title="currentTemplate?.name + ' - 节点分组'" width="500px">
+    <el-dialog v-model="templateNodeGroupsDialog" :title="currentTemplate?.name + ' - ' + t('plan.nodeGroupsTab')" width="500px">
       <el-checkbox-group v-model="selectedNodeGroupIds">
         <div v-for="g in nodeGroups" :key="g.id" style="margin-bottom:8px">
           <el-checkbox :value="g.id" :disabled="!g.enabled">
@@ -362,175 +362,175 @@
         </div>
       </el-checkbox-group>
       <template #footer>
-        <el-button @click="templateNodeGroupsDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveTemplateNodeGroups">保存</el-button>
+        <el-button @click="templateNodeGroupsDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveTemplateNodeGroups">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 计费节点选择弹窗 -->
-    <el-dialog v-model="billingNodesDialog" :title="currentTemplate?.name + ' - 计费节点选择'" width="600px">
+    <el-dialog v-model="billingNodesDialog" :title="currentTemplate?.name + ' - ' + t('plan.billingNodeSelect')" width="600px">
       <div v-loading="billingNodesLoading">
         <div style="margin-bottom:8px;font-size:13px;color:#606266">
-          选择用于渲染计费信息的节点（显示：主机节点 - 入口/节点名称）。不选则不显示计费信息。
+          {{ t('plan.billingNodeSelectHint') }}
         </div>
         <el-checkbox-group v-model="selectedBillingNodeIds">
           <div v-for="opt in billingNodeOptions" :key="opt.member_id" style="margin-bottom:8px">
             <el-checkbox :value="opt.member_id">
-              <el-tag :type="opt.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ opt.type==='inbound'?'入口':'外部' }}</el-tag>
+              <el-tag :type="opt.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ opt.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
               <span style="color:#409eff">{{ opt.server_name }}</span> - {{ opt.node_name }}
               <span style="color:#909399;font-size:12px">({{ opt.protocol }}:{{ opt.port }})</span>
             </el-checkbox>
           </div>
         </el-checkbox-group>
-        <el-empty v-if="!billingNodesLoading && billingNodeOptions.length === 0" description="暂无关联节点，请先为模板分配节点分组并添加成员" />
+        <el-empty v-if="!billingNodesLoading && billingNodeOptions.length === 0" description="{{ t('plan.noRelatedNodesHint') }}" />
       </div>
       <template #footer>
-        <el-button @click="billingNodesDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveBillingNodes">保存</el-button>
+        <el-button @click="billingNodesDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveBillingNodes">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 分组编辑弹窗 -->
-    <el-dialog v-model="groupDialog" :title="editingGroup?'编辑分组':'新增分组'" width="450px">
+    <el-dialog v-model="groupDialog" :title="editingGroup ? t('plan.editGroup') : t('plan.createGroup')" width="450px">
       <el-form :model="groupForm" label-width="80px" size="small">
-        <el-form-item label="名称"><el-input v-model="groupForm.name" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="groupForm.description" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="区域">
+        <el-form-item :label="t('common.name')"><el-input v-model="groupForm.name" /></el-form-item>
+        <el-form-item :label="t('plan.description')"><el-input v-model="groupForm.description" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('plan.region')">
           <el-select v-model="groupForm.region" style="width:100%" clearable>
-            <el-option label="香港" value="HK" />
-            <el-option label="日本" value="JP" />
-            <el-option label="美国" value="US" />
-            <el-option label="新加坡" value="SG" />
-            <el-option label="欧洲" value="EU" />
-            <el-option label="中国" value="CN" />
+            <el-option :label="t('plan.regionHK')" value="HK" />
+            <el-option :label="t('plan.regionJP')" value="JP" />
+            <el-option :label="t('plan.regionUS')" value="US" />
+            <el-option :label="t('plan.regionSG')" value="SG" />
+            <el-option :label="t('plan.regionEU')" value="EU" />
+            <el-option :label="t('plan.regionCN')" value="CN" />
           </el-select>
         </el-form-item>
-        <el-form-item label="等级">
+        <el-form-item :label="t('plan.category')">
           <el-select v-model="groupForm.tier" style="width:100%">
-            <el-option label="标准节点" value="standard" />
-            <el-option label="高级节点" value="premium" />
-            <el-option label="独享节点" value="exclusive" />
+            <el-option :label="t('plan.tierStandard')" value="standard" />
+            <el-option :label="t('plan.tierPremium')" value="premium" />
+            <el-option :label="t('plan.tierExclusive')" value="exclusive" />
           </el-select>
         </el-form-item>
-        <el-form-item label="排序"><el-input-number v-model="groupForm.sort_order" :min="0" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="groupForm.enabled" /></el-form-item>
+        <el-form-item :label="t('plan.sortOrder')"><el-input-number v-model="groupForm.sort_order" :min="0" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="groupForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="groupDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveGroup">保存</el-button>
+        <el-button @click="groupDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveGroup">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 分组成员管理弹窗 -->
-    <el-dialog v-model="membersDialog" :title="currentGroup?.name + ' - 成员管理'" width="650px">
+    <el-dialog v-model="membersDialog" :title="currentGroup?.name + ' - ' + t('plan.memberManagement')" width="650px">
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <el-select v-model="newMemberInboundId" size="small" filterable placeholder="选择入站配置" style="width:320px">
-          <el-option v-for="ib in inbounds" :key="ib.id" :label="(ib.server_name || '本地节点') + ' - ' + (ib.remark || ib.tag) + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
+        <el-select v-model="newMemberInboundId" size="small" filterable :placeholder="t('plan.selectInbound')" style="width:320px">
+          <el-option v-for="ib in inbounds" :key="ib.id" :label="(ib.server_name || t('plan.localNode')) + ' - ' + (ib.remark || ib.tag) + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
         </el-select>
-        <el-button size="small" type="primary" @click="addInboundMember">添加入站</el-button>
-        <el-select v-model="newMemberExtNodeId" size="small" filterable placeholder="选择外部节点" style="width:260px">
+        <el-button size="small" type="primary" @click="addInboundMember">{{ t('plan.addInbound') }}</el-button>
+        <el-select v-model="newMemberExtNodeId" size="small" filterable :placeholder="t('plan.selectExtNode')" style="width:260px">
           <el-option v-for="en in extNodes" :key="en.id" :label="en.name + ' (' + en.host + ':' + en.port + ')'" :value="en.id" />
         </el-select>
-        <el-button size="small" type="success" @click="addExtNodeMember">添加外部节点</el-button>
+        <el-button size="small" type="success" @click="addExtNodeMember">{{ t('plan.addExtNode') }}</el-button>
       </div>
       <el-table :data="groupMembers" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column label="主机节点" width="120">
+        <el-table-column :label="t('plan.hostNode')" width="120">
           <template #default="{row}">
             <template v-if="row.inbound_config_id">{{ inboundServerName(row.inbound_config_id) }}</template>
-            <template v-else-if="row.external_node_id">外部节点</template>
+            <template v-else-if="row.external_node_id">{{ t('plan.nodeTypeExternal') }}</template>
             <template v-else>—</template>
           </template>
         </el-table-column>
-        <el-table-column label="入口/节点名称">
+        <el-table-column :label="t('plan.inboundNodeName')">
           <template #default="{row}">
             <template v-if="row.inbound_config_id">{{ inboundName(row.inbound_config_id) }}</template>
             <template v-else-if="row.external_node_id">{{ extNodeName(row.external_node_id) }}</template>
             <template v-else>—</template>
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="80">
+        <el-table-column :label="t('common.type')" width="80">
           <template #default="{row}">
-            <el-tag v-if="row.inbound_config_id" size="small">入站</el-tag>
-            <el-tag v-else-if="row.external_node_id" size="small" type="success">外部</el-tag>
+            <el-tag v-if="row.inbound_config_id" size="small">{{ t('plan.nodeTypeInbound') }}</el-tag>
+            <el-tag v-else-if="row.external_node_id" size="small" type="success">{{ t('plan.nodeTypeExternal') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80">
+        <el-table-column :label="t('common.actions')" width="80">
           <template #default="{row}">
-            <el-button size="small" type="danger" @click="removeMember(row)">移除</el-button>
+            <el-button size="small" type="danger" @click="removeMember(row)">{{ t('common.remove') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-dialog>
 
     <!-- 优惠码编辑弹窗 -->
-    <el-dialog v-model="promoDialog" :title="editingPromo?'编辑优惠码':'新增优惠码'" width="550px">
+    <el-dialog v-model="promoDialog" :title="editingPromo ? t('plan.editPromotion') : t('plan.createPromotion')" width="550px">
       <el-form :model="promoForm" label-width="100px" size="small">
-        <el-form-item label="优惠码"><el-input v-model="promoForm.code" :disabled="!!editingPromo" /></el-form-item>
-        <el-form-item label="名称"><el-input v-model="promoForm.name" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="promoForm.description" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="优惠类型">
+        <el-form-item :label="t('plan.promotionsTab')"><el-input v-model="promoForm.code" :disabled="!!editingPromo" /></el-form-item>
+        <el-form-item :label="t('common.name')"><el-input v-model="promoForm.name" /></el-form-item>
+        <el-form-item :label="t('plan.description')"><el-input v-model="promoForm.description" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('plan.promotionType')">
           <el-select v-model="promoForm.discount_type" style="width:100%">
-            <el-option label="百分比折扣" value="percentage" />
-            <el-option label="固定金额减免" value="fixed_amount" />
+            <el-option :label="t('plan.typePercent')" value="percentage" />
+            <el-option :label="t('plan.typeFixed')" value="fixed_amount" />
           </el-select>
         </el-form-item>
-        <el-form-item label="优惠值">
+        <el-form-item :label="t('plan.discountValue')">
           <el-input-number v-model="promoForm.discount_value" :min="0" />
           <span style="font-size:12px;color:#909399;margin-left:8px">
-            {{ promoForm.discount_type === 'percentage' ? '百分比 (1-100)' : '金额（分）' }}
+            {{ promoForm.discount_type === 'percentage' ? t('plan.percentHint') : t('plan.amountCents') }}
           </span>
         </el-form-item>
-        <el-form-item v-if="promoForm.discount_type === 'percentage'" label="最大减免">
+        <el-form-item v-if="promoForm.discount_type === 'percentage'" :label="t('plan.maxDiscount')">
           <el-input-number v-model="promoForm.max_discount_amount" :min="0" />
-          <span style="font-size:12px;color:#909399;margin-left:8px">0=不限（分）</span>
+          <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('plan.zeroUnlimitedCents') }}</span>
         </el-form-item>
-        <el-form-item label="适用范围">
+        <el-form-item :label="t('plan.applicableScope')">
           <el-select v-model="promoForm.applicable_scope" style="width:100%">
-            <el-option label="全部" value="all" />
-            <el-option label="指定模板" value="template" />
-            <el-option label="指定规格" value="specific_variant" />
+            <el-option :label="t('plan.allPlansLabel')" value="all" />
+            <el-option :label="t('plan.specificTemplate')" value="template" />
+            <el-option :label="t('plan.specificVariant')" value="specific_variant" />
           </el-select>
         </el-form-item>
-        <el-form-item label="总使用次数"><el-input-number v-model="promoForm.max_uses" :min="0" /> <span style="font-size:12px;color:#909399">0=不限</span></el-form-item>
-        <el-form-item label="每用户次数"><el-input-number v-model="promoForm.max_uses_per_user" :min="1" /></el-form-item>
-        <el-form-item label="生效时间"><el-date-picker v-model="promoForm.starts_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
-        <el-form-item label="结束时间"><el-date-picker v-model="promoForm.ends_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="promoForm.enabled" /></el-form-item>
+        <el-form-item :label="t('plan.totalUsageLimit')"><el-input-number v-model="promoForm.max_uses" :min="0" /> <span style="font-size:12px;color:#909399">{{ t('plan.zeroUnlimited') }}</span></el-form-item>
+        <el-form-item :label="t('plan.perUserLimit')"><el-input-number v-model="promoForm.max_uses_per_user" :min="1" /></el-form-item>
+        <el-form-item :label="t('plan.effectiveTime')"><el-date-picker v-model="promoForm.starts_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item :label="t('plan.endTime')"><el-date-picker v-model="promoForm.ends_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="promoForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="promoDialog=false">取消</el-button>
-        <el-button type="primary" @click="savePromo">保存</el-button>
+        <el-button @click="promoDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="savePromo">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 流量叠加包编辑弹窗 -->
-    <el-dialog v-model="trafficPackDialog" :title="editingTrafficPack?'编辑流量叠加包':'新增流量叠加包'" width="520px">
+    <el-dialog v-model="trafficPackDialog" :title="editingTrafficPack ? t('plan.editTrafficPack') : t('plan.createTrafficPack')" width="520px">
       <el-form :model="trafficPackForm" label-width="100px" size="small">
-        <el-form-item label="名称"><el-input v-model="trafficPackForm.name" placeholder="如: 10GB流量包" /></el-form-item>
-        <el-form-item label="说明"><el-input v-model="trafficPackForm.description" type="textarea" :rows="2" placeholder="如: 购买后立即增加10GB流量" /></el-form-item>
-        <el-form-item label="价格 (元)"><el-input-number v-model="trafficPackForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
-        <el-form-item label="原价 (元)"><el-input-number v-model="trafficPackForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
-        <el-form-item label="流量 (GB)"><el-input-number v-model="trafficPackForm.quota_gb" :min="0.1" :step="0.1" /></el-form-item>
-        <el-divider content-position="left">过期时间</el-divider>
-        <el-form-item label="过期模式">
+        <el-form-item :label="t('common.name')"><el-input v-model="trafficPackForm.name" :placeholder="t('plan.trafficPackNamePlaceholder')" /></el-form-item>
+        <el-form-item :label="t('plan.trafficPackDesc')"><el-input v-model="trafficPackForm.description" type="textarea" :rows="2" :placeholder="t('plan.trafficPackDescPlaceholder')" /></el-form-item>
+        <el-form-item :label="t('plan.priceYuan')"><el-input-number v-model="trafficPackForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
+        <el-form-item :label="t('plan.originalPriceYuan')"><el-input-number v-model="trafficPackForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
+        <el-form-item :label="t('plan.trafficGB')"><el-input-number v-model="trafficPackForm.quota_gb" :min="0.1" :step="0.1" /></el-form-item>
+        <el-divider content-position="left">{{ t('plan.expiryTime') }}</el-divider>
+        <el-form-item :label="t('plan.expiryMode')">
           <el-radio-group v-model="trafficPackForm.expiry_mode">
-            <el-radio value="align_with_plan">与套餐同期过期</el-radio>
-            <el-radio value="extend_plan">延长套餐时间</el-radio>
+            <el-radio value="align_with_plan">{{ t('plan.modeSamePlan') }}</el-radio>
+            <el-radio value="extend_plan">{{ t('plan.modeExtend') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="trafficPackForm.expiry_mode === 'extend_plan'" label="延长天数">
+        <el-form-item v-if="trafficPackForm.expiry_mode === 'extend_plan'" :label="t('plan.modeExtend')">
           <el-input-number v-model="trafficPackForm.duration_days" :min="1" :max="365" />
-          <span style="font-size:12px;color:#909399;margin-left:8px">购买后套餐到期时间延长 N 天</span>
+          <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('plan.extendPlanHint') }}</span>
         </el-form-item>
-        <el-divider content-position="left">显示设置</el-divider>
-        <el-form-item label="推荐"><el-switch v-model="trafficPackForm.is_recommended" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="trafficPackForm.enabled" /></el-form-item>
-        <el-form-item label="排序"><el-input-number v-model="trafficPackForm.sort_order" :min="0" /></el-form-item>
+        <el-divider content-position="left">{{ t('plan.displaySettings') }}</el-divider>
+        <el-form-item :label="t('plan.recommended')"><el-switch v-model="trafficPackForm.is_recommended" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="trafficPackForm.enabled" /></el-form-item>
+        <el-form-item :label="t('plan.sortOrder')"><el-input-number v-model="trafficPackForm.sort_order" :min="0" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="trafficPackDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveTrafficPack">保存</el-button>
+        <el-button @click="trafficPackDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveTrafficPack">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -539,6 +539,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import * as planApi from '../api/plan'
@@ -597,16 +599,16 @@ async function saveTemplate() {
     } else {
       await planApi.createPlanTemplate(payload)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     templateDialog.value = false
     fetchTemplates()
   } catch {}
 }
 async function deleteTemplate(row) {
-  await ElMessageBox.confirm(`确定删除模板「${row.name}」？`, '确认')
+  await ElMessageBox.confirm(t('plan.deleteTemplateConfirm', { name: row.name }), t('common.confirm'))
   try {
     await planApi.deletePlanTemplate(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('plan.deleteSuccess'))
     fetchTemplates()
   } catch {}
 }
@@ -618,8 +620,8 @@ const syncAllLoading = ref(false)
 async function handleSyncTemplate(tpl) {
   try {
     await ElMessageBox.confirm(
-      `确定为套餐「${tpl.name}」的所有已绑定客户端在所有节点上同步创建账号？\n\n此操作会检查每个节点上的 inbound config，为缺少账号的客户端自动创建。已存在的账号不会被重复创建。`,
-      '同步账号确认',
+      t('plan.syncAccountConfirm', { name: tpl.name }),
+      t('plan.syncAccountConfirmTitle'),
       { type: 'warning' }
     )
   } catch {
@@ -628,9 +630,9 @@ async function handleSyncTemplate(tpl) {
   syncLoading.value[tpl.id] = true
   try {
     const res = await planApi.syncAccountsForTemplate(tpl.id)
-    ElMessage.success(`同步完成，处理了 ${res.inbounds_processed || 0} 个节点`)
+    ElMessage.success(t('plan.syncComplete', { count: res.inbounds_processed || 0 }))
   } catch {
-    ElMessage.error('同步失败')
+    ElMessage.error(t('plan.syncFailed'))
   } finally {
     syncLoading.value[tpl.id] = false
   }
@@ -639,8 +641,8 @@ async function handleSyncTemplate(tpl) {
 async function handleSyncAll() {
   try {
     await ElMessageBox.confirm(
-      '确定为所有已启用套餐的所有已绑定客户端在所有节点上同步创建账号？\n\n此操作会检查每个节点上的 inbound config，为缺少账号的客户端自动创建。已存在的账号不会被重复创建。',
-      '全量同步账号确认',
+      t('plan.syncAllConfirm'),
+      t('plan.syncAllConfirmTitle'),
       { type: 'warning' }
     )
   } catch {
@@ -651,9 +653,9 @@ async function handleSyncAll() {
     const res = await planApi.syncAllAccounts()
     const templates = res.templates || {}
     const total = Object.values(templates).reduce((s, v) => s + v, 0)
-    ElMessage.success(`全量同步完成，${Object.keys(templates).length} 个套餐，共处理 ${total} 个节点`)
+    ElMessage.success(t('plan.syncAllComplete', { planCount: Object.keys(templates).length, nodeCount: total }))
   } catch {
-    ElMessage.error('全量同步失败')
+    ElMessage.error(t('plan.syncAllFailed'))
   } finally {
     syncAllLoading.value = false
   }
@@ -711,16 +713,16 @@ async function saveVariant() {
     } else {
       await planApi.createPlanVariant(currentTemplate.value.id, payload)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     variantDialog.value = false
     showVariantsDialog(currentTemplate.value)
   } catch {}
 }
 async function deleteVariant(row) {
-  await ElMessageBox.confirm(`确定删除规格「${row.name}」？`, '确认')
+  await ElMessageBox.confirm(t('plan.deleteVariantConfirm', { name: row.name }), t('common.confirm'))
   try {
     await planApi.deletePlanVariant(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('plan.deleteSuccess'))
     showVariantsDialog(currentTemplate.value)
   } catch {}
 }
@@ -738,7 +740,7 @@ async function showNodeGroupsDialog(tpl) {
 async function saveTemplateNodeGroups() {
   try {
     await planApi.setTemplateNodeGroups(currentTemplate.value.id, selectedNodeGroupIds.value)
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     templateNodeGroupsDialog.value = false
     fetchTemplates()
     fetchTemplateNodes()
@@ -781,7 +783,7 @@ async function showBillingNodesDialog(tpl) {
 async function saveBillingNodes() {
   try {
     await planApi.updatePlanTemplate(currentTemplate.value.id, { billing_node_ids: selectedBillingNodeIds.value })
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     billingNodesDialog.value = false
     fetchTemplates()
   } catch {}
@@ -822,16 +824,16 @@ async function saveGroup() {
     } else {
       await planApi.createNodeGroup(groupForm.value)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     groupDialog.value = false
     fetchNodeGroups()
   } catch {}
 }
 async function deleteGroup(row) {
-  await ElMessageBox.confirm(`确定删除分组「${row.name}」？`, '确认')
+  await ElMessageBox.confirm(t('plan.deleteGroupConfirm', { name: row.name }), t('common.confirm'))
   try {
     await planApi.deleteNodeGroup(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('plan.deleteSuccess'))
     fetchNodeGroups()
   } catch {}
 }
@@ -844,7 +846,7 @@ async function addInboundMember() {
   if (!newMemberInboundId.value) return
   try {
     await planApi.addGroupMember(currentGroup.value.id, { inbound_config_id: newMemberInboundId.value })
-    ElMessage.success('添加成功')
+    ElMessage.success(t('plan.addSuccess'))
     newMemberInboundId.value = null
     showMembersDialog(currentGroup.value)
   } catch {}
@@ -853,7 +855,7 @@ async function addExtNodeMember() {
   if (!newMemberExtNodeId.value) return
   try {
     await planApi.addGroupMember(currentGroup.value.id, { external_node_id: newMemberExtNodeId.value })
-    ElMessage.success('添加成功')
+    ElMessage.success(t('plan.addSuccess'))
     newMemberExtNodeId.value = null
     showMembersDialog(currentGroup.value)
   } catch {}
@@ -861,7 +863,7 @@ async function addExtNodeMember() {
 async function removeMember(row) {
   try {
     await planApi.removeGroupMember(currentGroup.value.id, row.id)
-    ElMessage.success('移除成功')
+    ElMessage.success(t('common.removeSuccess'))
     showMembersDialog(currentGroup.value)
   } catch {}
 }
@@ -902,16 +904,16 @@ async function savePromo() {
     } else {
       await planApi.createPromotion(promoForm.value)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     promoDialog.value = false
     fetchPromotions()
   } catch {}
 }
 async function deletePromo(row) {
-  await ElMessageBox.confirm(`确定删除优惠码「${row.code}」？`, '确认')
+  await ElMessageBox.confirm(t('plan.deletePromoConfirm', { code: row.code }), t('common.confirm'))
   try {
     await planApi.deletePromotion(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('plan.deleteSuccess'))
     fetchPromotions()
   } catch {}
 }
@@ -1006,40 +1008,40 @@ async function saveTrafficPack() {
     } else {
       await planApi.createTrafficPack(payload)
     }
-    ElMessage.success('保存成功')
+    ElMessage.success(t('plan.saveSuccess'))
     trafficPackDialog.value = false
     fetchTrafficPacks()
   } catch {}
 }
 
 async function deleteTrafficPack(row) {
-  await ElMessageBox.confirm(`确定删除流量叠加包「${row.name}」？`, '确认')
+  await ElMessageBox.confirm(t('plan.deleteTrafficPackConfirm', { name: row.name }), t('common.confirm'))
   try {
     await planApi.deleteTrafficPack(row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('plan.deleteSuccess'))
     fetchTrafficPacks()
   } catch {}
 }
 
 // ──────── Helpers ────────
 const formatBytes = (b) => {
-  if (!b || b <= 0) return '不限'
+  if (!b || b <= 0) return t('common.unlimited')
   if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB'
   if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB'
   return (b / 1024).toFixed(0) + ' KB'
 }
-const categoryLabel = (c) => ({ basic:'基础版', standard:'标准版', premium:'高级版', trial:'试用版', custom:'自定义' })[c] || c
+const categoryLabel = (c) => ({ basic: t('plan.categoryBasic'), standard: t('plan.categoryStandard'), premium: t('plan.categoryPremium'), trial: t('plan.categoryTrial'), custom: t('plan.categoryCustom') })[c] || c
 const categoryType = (c) => ({ basic:'info', standard:'', premium:'warning', trial:'danger', custom:'success' })[c] || ''
-const tierLabel = (t) => ({ standard:'标准', premium:'高级', exclusive:'独享' })[t] || t
+const tierLabel = (tv) => ({ standard: t('plan.tierStandardLabel'), premium: t('plan.tierPremiumLabel'), exclusive: t('plan.tierExclusiveLabel') })[tv] || tv
 const tierType = (t) => ({ standard:'', premium:'warning', exclusive:'danger' })[t] || ''
-const cycleLabel = (c) => ({ monthly:'月付', quarterly:'季付', semi_annual:'半年付', annual:'年付', lifetime:'终身', one_time:'一次性' })[c] || c
-const scopeLabel = (s) => ({ all:'全部', template:'指定模板', specific_variant:'指定规格' })[s] || s
-const orderTypeLabel = (t) => ({ new:'新购', renew:'续费', upgrade:'升级', downgrade:'降级', trial_convert:'试用转正' })[t] || t
+const cycleLabel = (c) => ({ monthly: t('plan.cycleMonthly'), quarterly: t('plan.cycleQuarterly'), semi_annual: t('plan.cycleSemiAnnual'), annual: t('plan.cycleAnnual'), lifetime: t('plan.cycleLifetime'), one_time: t('plan.cycleOneTime') })[c] || c
+const scopeLabel = (s) => ({ all: t('plan.allPlansLabel'), template: t('plan.specificTemplate'), specific_variant: t('plan.specificVariant') })[s] || s
+const orderTypeLabel = (tv) => ({ new: t('plan.orderNew'), renew: t('plan.orderRenew'), upgrade: t('plan.orderUpgrade'), downgrade: t('plan.orderDowngrade'), trial_convert: t('plan.orderTrialConvert') })[tv] || tv
 const orderTypeColor = (t) => ({ new:'success', renew:'', upgrade:'warning', downgrade:'info', trial_convert:'danger' })[t] || ''
-const orderStatusLabel = (s) => ({ pending:'待支付', paid:'已支付', completed:'已完成', cancelled:'已取消', refunded:'已退款' })[s] || s
+const orderStatusLabel = (s) => ({ pending: t('plan.orderPending'), paid: t('plan.orderPaid'), completed: t('plan.orderCompleted'), cancelled: t('plan.orderCancelled'), refunded: t('plan.orderRefunded') })[s] || s
 const orderStatusColor = (s) => ({ pending:'warning', paid:'info', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
 const inboundName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.remark || ib.tag) : '#' + id }
-const inboundServerName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.server_name || '本地节点') : '—' }
+const inboundServerName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.server_name || t('plan.localNode')) : '—' }
 const extNodeName = (id) => { const n = extNodes.value.find(n => n.id === id); return n ? n.name : '#' + id }
 
 onMounted(() => {

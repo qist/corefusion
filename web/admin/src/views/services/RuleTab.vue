@@ -75,7 +75,7 @@
         </el-form-item>
         <el-form-item :label="t('service.rules.syncCron')">
           <el-select v-model="sourceForm.sync_cron" filterable allow-create style="width:100%">
-            <el-option label="关闭" value="" />
+            <el-option :label="t('common.disabled')" value="" />
             <el-option :label="t('service.rules.cronEvery6h')" value="0 */6 * * *" />
             <el-option :label="t('service.rules.cronEvery12h')" value="0 */12 * * *" />
             <el-option :label="t('service.rules.cronDaily3am')" value="0 3 * * *" />

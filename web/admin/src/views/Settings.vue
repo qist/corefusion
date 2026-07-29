@@ -118,7 +118,7 @@
                 <el-select v-model="notifyForm.smtp_port" style="width:100%">
                   <el-option label="465 (SSL/TLS)" value="465" />
                   <el-option label="587 (STARTTLS)" value="587" />
-                  <el-option label="25 (不加密)" value="25" />
+                  <el-option :label="t('settings.smtp.port25')" value="25" />
                 </el-select>
               </el-form-item>
               <el-form-item :label="t('settings.smtp.user')">
@@ -274,61 +274,61 @@
       </el-tab-pane>
 
       <!-- Self-Unban Config -->
-      <el-tab-pane label="自解封配置" name="self-unban">
+      <el-tab-pane :label="t('settings.selfUnban.tabLabel')" name="self-unban">
         <el-card>
           <el-form :model="selfUnbanForm" label-width="160px" style="max-width:600px">
-            <el-form-item label="启用自解封">
+            <el-form-item :label="t('settings.selfUnban.enable')">
               <el-switch v-model="selfUnbanForm.enabled" />
-              <div style="font-size:11px;color:#999;margin-top:4px">允许被暂停的客户端自行解封</div>
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.selfUnban.enableHint') }}</div>
             </el-form-item>
-            <el-form-item label="冷却时间（小时）">
+            <el-form-item :label="t('settings.selfUnban.cooldown')">
               <el-input-number v-model="selfUnbanForm.cooldown_hours" :min="1" :max="720" />
-              <div style="font-size:11px;color:#999;margin-top:4px">两次自解封之间的最短间隔</div>
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.selfUnban.cooldownHint') }}</div>
             </el-form-item>
-            <el-form-item label="适用状态">
-              <el-select v-model="selfUnbanForm.applicable_status" multiple style="width:100%" placeholder="选择可自解封的状态">
-                <el-option label="暂停 (suspended)" value="suspended" />
-                <el-option label="过期 (expired)" value="expired" />
-                <el-option label="流量超限 (overuse)" value="overuse" />
+            <el-form-item :label="t('settings.selfUnban.applicableStatus')">
+              <el-select v-model="selfUnbanForm.applicable_status" multiple style="width:100%" :placeholder="t('settings.selfUnban.selectStatus')">
+                <el-option :label="t('settings.selfUnban.suspended')" value="suspended" />
+                <el-option :label="t('settings.selfUnban.expired')" value="expired" />
+                <el-option :label="t('settings.selfUnban.overuse')" value="overuse" />
               </el-select>
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" :loading="selfUnbanSaving" @click="saveSelfUnbanConfig">保存</el-button>
+              <el-button type="primary" :loading="selfUnbanSaving" @click="saveSelfUnbanConfig">{{ t('common.save') }}</el-button>
             </el-form-item>
           </el-form>
         </el-card>
       </el-tab-pane>
 
       <!-- Security Config -->
-      <el-tab-pane label="安全设置" name="security">
+      <el-tab-pane :label="t('settings.security.tab')" name="security">
         <el-card>
           <el-form label-width="180px" style="max-width:600px">
-            <el-form-item label="加密密钥状态">
+            <el-form-item :label="t('settings.security.keyStatus')">
               <div style="display:flex;align-items:center;gap:12px">
-                <el-tag :type="encryptionKeyStatus.type">{{ encryptionKeyStatus.text }}</el-tag>
+                <el-tag :type="encryptionKeyStatus.type">{{ t(encryptionKeyStatus.text) }}</el-tag>
                 <span v-if="encryptionKeyStatus.configured" style="font-size:12px;color:#666">
-                  已配置（不可修改）
+                  {{ t('settings.security.configuredNoEdit') }}
                 </span>
               </div>
               <div style="font-size:11px;color:#999;margin-top:4px">
-                用于加密充值卡号等敏感数据，密钥值不会显示
+                {{ t('settings.security.keyDesc') }}
               </div>
             </el-form-item>
-            <el-form-item v-if="!encryptionKeyStatus.configured" label="生成加密密钥">
+            <el-form-item v-if="!encryptionKeyStatus.configured" :label="t('settings.security.genKey')">
               <el-button type="primary" :loading="generatingKey" @click="generateEncryptionKey">
-                随机生成并保存
+                {{ t('settings.security.randomGenSave') }}
               </el-button>
               <div style="font-size:11px;color:#999;margin-top:4px">
-                生成后将自动写入 .env 文件，请妥善保管备份
+                {{ t('settings.security.genKeyHint') }}
               </div>
             </el-form-item>
-            <el-form-item v-if="encryptionKeyStatus.configured" label="重要警告">
+            <el-form-item v-if="encryptionKeyStatus.configured" :label="t('settings.security.importantWarning')">
               <el-alert type="warning" :closable="false" show-icon>
                 <template #title>
-                  密钥已配置！修改密钥会导致已加密的充值卡号等数据无法解密，请谨慎操作
+                  {{ t('settings.security.keyConfiguredWarn') }}
                 </template>
                 <div style="margin-top:8px">
-                  如需修改，请手动编辑 .env 文件中的 CF_SECRET_ENCRYPTION_KEY，重启后生效
+                  {{ t('settings.security.keyEditHint') }}
                 </div>
               </el-alert>
             </el-form-item>
@@ -354,14 +354,14 @@
       </el-tab-pane>
 
       <!-- OAuth Config -->
-      <el-tab-pane label="OAuth 配置" name="oauth">
+      <el-tab-pane :label="t('settings.oauth.tab')" name="oauth">
         <el-card>
           <el-form :model="oauthForm" label-width="160px" style="max-width:600px">
             <el-divider content-position="left">GitHub OAuth</el-divider>
-            <el-form-item label="启用 GitHub OAuth">
+            <el-form-item :label="t('settings.oauth.enableGithub')">
               <el-switch v-model="oauthForm.github_enabled" />
               <div v-if="oauthForm.github_enabled && (!oauthForm.github_client_id || !oauthForm.github_client_secret)" style="font-size:11px;color:#e6a23c;margin-top:4px">
-                ⚠️ 已开启但未配置 Client ID / Secret，用户端不会显示 GitHub 登录按钮
+                {{ t('settings.oauth.githubNotConfigured') }}
               </div>
             </el-form-item>
             <template v-if="oauthForm.github_enabled">
@@ -371,16 +371,16 @@
               <el-form-item label="Client Secret">
                 <el-input v-model="oauthForm.github_client_secret" type="password" show-password />
               </el-form-item>
-              <el-form-item label="回调地址">
+              <el-form-item :label="t('settings.oauth.callbackUrl')">
                 <el-input :model-value="githubCallbackURL" readonly />
-                <div style="font-size:11px;color:#999;margin-top:4px">请将此地址填入 GitHub OAuth App 的 Authorization callback URL</div>
+                <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.oauth.githubCallbackHint') }}</div>
               </el-form-item>
             </template>
             <el-divider content-position="left">Google OAuth</el-divider>
-            <el-form-item label="启用 Google OAuth">
+            <el-form-item :label="t('settings.oauth.enableGoogle')">
               <el-switch v-model="oauthForm.google_enabled" />
               <div v-if="oauthForm.google_enabled && (!oauthForm.google_client_id || !oauthForm.google_client_secret)" style="font-size:11px;color:#e6a23c;margin-top:4px">
-                ⚠️ 已开启但未配置 Client ID / Secret，用户端不会显示 Google 登录按钮
+                {{ t('settings.oauth.googleNotConfigured') }}
               </div>
             </el-form-item>
             <template v-if="oauthForm.google_enabled">
@@ -390,13 +390,13 @@
               <el-form-item label="Client Secret">
                 <el-input v-model="oauthForm.google_client_secret" type="password" show-password />
               </el-form-item>
-              <el-form-item label="回调地址">
+              <el-form-item :label="t('settings.oauth.callbackUrl')">
                 <el-input :model-value="googleCallbackURL" readonly />
-                <div style="font-size:11px;color:#999;margin-top:4px">请将此地址填入 Google OAuth 2.0 凭据的已获授权的重定向 URI</div>
+                <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.oauth.googleCallbackHint') }}</div>
               </el-form-item>
             </template>
             <el-form-item>
-              <el-button type="primary" :loading="oauthSaving" @click="saveOAuthConfig">保存</el-button>
+              <el-button type="primary" :loading="oauthSaving" @click="saveOAuthConfig">{{ t('common.save') }}</el-button>
             </el-form-item>
           </el-form>
         </el-card>
@@ -510,10 +510,10 @@
         <el-form-item :label="t('common.name')"><el-input v-model="schedForm.name" /></el-form-item>
         <el-form-item label="Cron">
           <el-select v-model="schedForm.cron" filterable allow-create style="width:100%">
-            <el-option label="每天 3:00" value="0 3 * * *" />
-            <el-option label="每天 0:00" value="0 0 * * *" />
-            <el-option label="每周日 3:00" value="0 3 * * 0" />
-            <el-option label="每 12 小时" value="0 */12 * * *" />
+            <el-option :label="t('settings.cron.daily3')" value="0 3 * * *" />
+            <el-option :label="t('settings.cron.daily0')" value="0 0 * * *" />
+            <el-option :label="t('settings.cron.weeklySun3')" value="0 3 * * 0" />
+            <el-option :label="t('settings.cron.every12h')" value="0 */12 * * *" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('settings.backup.remoteStorage')">
@@ -633,15 +633,15 @@
         </el-form-item>
         <el-form-item v-if="tmplForm.type==='email'" label="Subject"><el-input v-model="tmplForm.subject" /></el-form-item>
         <el-form-item label="Content">
-          <el-input v-model="tmplForm.content" type="textarea" :rows="6" placeholder="支持变量: {date} {time} {service_name} {status}" />
+          <el-input v-model="tmplForm.content" type="textarea" :rows="6" :placeholder="t('settings.supportVars')" />
         </el-form-item>
         <el-form-item label="Cron">
           <el-select v-model="tmplForm.cron" filterable allow-create style="width:100%">
-            <el-option label="手动发送" value="" />
-            <el-option label="每小时" value="0 * * * *" />
-            <el-option label="每天 9:00" value="0 9 * * *" />
-            <el-option label="每天 21:00" value="0 21 * * *" />
-            <el-option label="每周一 9:00" value="0 9 * * 1" />
+            <el-option :label="t('settings.cron.manual')" value="" />
+            <el-option :label="t('settings.cron.hourly')" value="0 * * * *" />
+            <el-option :label="t('settings.cron.daily9')" value="0 9 * * *" />
+            <el-option :label="t('settings.cron.daily21')" value="0 21 * * *" />
+            <el-option :label="t('settings.cron.monday9')" value="0 9 * * 1" />
           </el-select>
         </el-form-item>
         <el-form-item label="Enabled"><el-switch v-model="tmplForm.enabled" /></el-form-item>
@@ -1027,12 +1027,12 @@ async function fetchEncryptionKeyStatus() {
     if (d) {
       encryptionKeyStatus.value = {
         configured: d.configured,
-        text: d.configured ? '已配置' : '未配置',
+        text: d.configured ? 'settings.security.statusConfigured' : 'settings.security.statusNotConfigured',
         type: d.configured ? 'success' : 'danger'
       }
     }
   } catch (e) {
-    encryptionKeyStatus.value = { configured: false, text: '未知', type: 'warning' }
+    encryptionKeyStatus.value = { configured: false, text: 'settings.security.statusUnknown', type: 'warning' }
   }
 }
 async function generateEncryptionKey() {
@@ -1040,13 +1040,13 @@ async function generateEncryptionKey() {
   try {
     const d = await client.post('/system/generate-encryption-key')
     if (d && d.success) {
-      ElMessage.success('加密密钥已生成并保存')
+      ElMessage.success(t('settings.security.genSuccess'))
       await fetchEncryptionKeyStatus()
     } else {
-      ElMessage.error(d.message || '生成失败')
+      ElMessage.error(d.message || t('settings.security.genFailed'))
     }
   } catch (e) {
-    ElMessage.error('生成加密密钥失败')
+    ElMessage.error(t('settings.security.genError'))
   } finally { generatingKey.value = false }
 }
 

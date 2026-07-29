@@ -39,7 +39,7 @@
           <el-input v-model="form.domain" placeholder="sub.example.com" />
         </el-form-item>
         <el-form-item :label="t('subend.path')">
-          <el-input v-model="form.path" placeholder="/ 或 /sub" />
+          <el-input v-model="form.path" :placeholder="t('subend.pathPlaceholder')" />
           <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('subend.pathHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('subend.description')">

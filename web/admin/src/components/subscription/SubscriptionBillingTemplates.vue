@@ -92,15 +92,15 @@
                 <el-form-item :label="t('subscription.billingExpiryTemplate')">
                   <el-input v-model="planForm.billing_expiry_template" :placeholder="defaultTemplates.default_expiry_template" />
                 </el-form-item>
-                <el-divider content-position="left">{{ isZh ? '计费节点选择' : 'Billing Node Selection' }}</el-divider>
-                <el-form-item :label="isZh ? '计费节点' : 'Billing Nodes'">
+                <el-divider content-position="left">{{ t('subscription.billingNodeSelection') }}</el-divider>
+                <el-form-item :label="t('subscription.billingNodes')">
                   <el-select v-model="billingNodeIds" multiple filterable collapse-tags collapse-tags-tooltip
-                    :placeholder="isZh ? '选择计费信息关联的节点（显示：主机节点 - 入口/节点名称）' : 'Select nodes for billing info (shows: Host - Inbound/Node Name)'"
+                    :placeholder="t('subscription.billingNodesPlaceholder')"
                     style="width: 100%" :loading="billingNodesLoading">
                     <el-option v-for="opt in billingNodeOptions" :key="opt.member_id" :label="opt.display_label" :value="opt.member_id" />
                   </el-select>
                   <div style="font-size: 12px; color: #909399; margin-top: 4px">
-                    {{ isZh ? '选中的节点将用于渲染订阅中的计费信息条目。不选则不显示计费信息。' : 'Selected nodes will be used to render billing info entries in subscriptions. Leave empty to disable billing info.' }}
+                    {{ t('subscription.billingNodesHint') }}
                   </div>
                 </el-form-item>
               </el-form>
@@ -164,45 +164,25 @@ const isZh = computed(() => String(i18n.global.locale.value).startsWith('zh'))
 
 const variableDescriptions = computed(() => {
   const vars = defaultTemplates.value.variables || []
-  const isZh = String(i18n.global.locale.value).startsWith('zh')
-  const descMap = isZh ? {
-    remaining_human: '剩余用量（人类可读，如 7.00 GB）',
-    remaining_bytes: '剩余用量（字节）',
-    remaining_gb: '剩余用量（GB 数值）',
-    used_human: '已用流量（人类可读）',
-    used_bytes: '已用流量（字节）',
-    used_gb: '已用流量（GB 数值）',
-    quota_human: '总配额（人类可读）',
-    quota_bytes: '总配额（字节）',
-    quota_gb: '总配额（GB 数值）',
-    reset_human: '重置倒计时（人类可读，如 15 Days）',
-    reset_days: '距下次重置天数',
-    reset_at: '下次重置时间（ISO 格式）',
-    reset_date: '下次重置日期（2006-01-02）',
-    expires_human: '到期时间（人类可读）',
-    expires_at: '到期时间（ISO 格式）',
-    expires_date: '到期日期（2006-01-02）',
-    expires_unix: '到期时间（Unix 时间戳）',
-    quota_state: '配额状态（normal/near_limit/over_limit 等）',
-  } : {
-    remaining_human: 'Remaining usage (human readable, e.g. 7.00 GB)',
-    remaining_bytes: 'Remaining usage (bytes)',
-    remaining_gb: 'Remaining usage (GB value)',
-    used_human: 'Used traffic (human readable)',
-    used_bytes: 'Used traffic (bytes)',
-    used_gb: 'Used traffic (GB value)',
-    quota_human: 'Total quota (human readable)',
-    quota_bytes: 'Total quota (bytes)',
-    quota_gb: 'Total quota (GB value)',
-    reset_human: 'Reset countdown (human readable, e.g. 15 Days)',
-    reset_days: 'Days until next reset',
-    reset_at: 'Next reset time (ISO format)',
-    reset_date: 'Next reset date (2006-01-02)',
-    expires_human: 'Expiration time (human readable)',
-    expires_at: 'Expiration time (ISO format)',
-    expires_date: 'Expiration date (2006-01-02)',
-    expires_unix: 'Expiration time (Unix timestamp)',
-    quota_state: 'Quota state (normal/near_limit/over_limit etc.)',
+  const descMap = {
+    remaining_human: t('subscription.varRemainingHuman'),
+    remaining_bytes: t('subscription.varRemainingBytes'),
+    remaining_gb: t('subscription.varRemainingGb'),
+    used_human: t('subscription.varUsedHuman'),
+    used_bytes: t('subscription.varUsedBytes'),
+    used_gb: t('subscription.varUsedGb'),
+    quota_human: t('subscription.varQuotaHuman'),
+    quota_bytes: t('subscription.varQuotaBytes'),
+    quota_gb: t('subscription.varQuotaGb'),
+    reset_human: t('subscription.varResetHuman'),
+    reset_days: t('subscription.varResetDays'),
+    reset_at: t('subscription.varResetAt'),
+    reset_date: t('subscription.varResetDate'),
+    expires_human: t('subscription.varExpiresHuman'),
+    expires_at: t('subscription.varExpiresAt'),
+    expires_date: t('subscription.varExpiresDate'),
+    expires_unix: t('subscription.varExpiresUnix'),
+    quota_state: t('subscription.varQuotaState'),
   }
   
   return vars.map(v => {

@@ -65,17 +65,17 @@
           </el-form-item>
           <el-form-item :label="t('subfmt.findProcessMode')">
             <el-select v-model="modelValue.find_process_mode" style="width:200px" @change="emit">
-              <el-option label="strict（默认）" value="strict" /><el-option label="always" value="always" /><el-option label="off" value="off" />
+              <el-option :label="t('subfmt.findProcessStrict')" value="strict" /><el-option label="always" value="always" /><el-option label="off" value="off" />
             </el-select>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.profile') }}</el-divider>
           <el-form-item :label="t('subfmt.storeSelected')">
             <el-switch v-model="modelValue._storeSelected" @change="emit" />
-            <div class="hint">持久化 select 选择记录</div>
+            <div class="hint">{{ t('subfmt.storeSelectedHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('subfmt.storeFakeIP')">
             <el-switch v-model="modelValue._storeFakeIP" @change="emit" />
-            <div class="hint">持久化 fake-ip 映射</div>
+            <div class="hint">{{ t('subfmt.storeFakeIPHint') }}</div>
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -85,7 +85,7 @@
         <div class="hint" style="margin-bottom:8px">{{ t('subfmt.hostsHint') }}</div>
         <div v-for="(h, i) in hosts" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
           <el-input v-model="h.domain" size="small" placeholder="example.com" style="width:200px" @change="emitHosts" />
-          <el-input v-model="h.ip" size="small" placeholder="1.1.1.1 或 lan 或别名" style="flex:1" @change="emitHosts" />
+          <el-input v-model="h.ip" size="small" :placeholder="t('mihomo.hostIpPlaceholder')" style="flex:1" @change="emitHosts" />
           <el-button size="small" type="danger" text @click="hosts.splice(i,1);emitHosts()">X</el-button>
         </div>
         <el-button size="small" @click="hosts.push({domain:'',ip:''});emitHosts()">+ {{ t('subfmt.addHost') }}</el-button>
@@ -99,7 +99,7 @@
           </el-form-item>
           <el-form-item :label="t('subfmt.tunDevice')">
             <el-input v-model="modelValue._tunDevice" size="small" placeholder="utun" style="width:200px" :disabled="!modelValue._tunEnabled" @change="emit" />
-            <span style="font-size:12px;color:#909399;margin-left:8px">留空自动分配</span>
+            <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.tunAutoAssign') }}</span>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunStack')">
             <el-select v-model="modelValue._tunStack" style="width:200px" :disabled="!modelValue._tunEnabled" @change="emit">
@@ -133,7 +133,7 @@
           <el-form-item :label="t('subfmt.tunGSO')">
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._tunGSO" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <span style="font-size:12px;color:#909399">仅 Linux</span>
+              <span style="font-size:12px;color:#909399">{{ t('mihomo.linuxOnly') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunGSOMaxSize')" v-if="modelValue._tunGSO">
@@ -149,7 +149,7 @@
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._tunUDPTimeoutEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
               <el-input-number v-model="modelValue._tunUDPTimeout" :min="0" :disabled="!modelValue._tunEnabled || !modelValue._tunUDPTimeoutEnabled" @change="emit" />
-              <span style="font-size:12px;color:#909399">秒</span>
+              <span style="font-size:12px;color:#909399">{{ t('mihomo.seconds') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunDisableICMP')">
@@ -272,7 +272,7 @@
           <el-form-item :label="t('subfmt.dnsOutbound')">
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._dnsOutEnabled" @change="emit" />
-              <span style="font-size:12px;color:#909399">dns-out: 劫持 DNS 请求到内部模块</span>
+              <span style="font-size:12px;color:#909399">{{ t('mihomo.dnsOutHint') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.rematchOutbound')">
@@ -292,17 +292,17 @@
         <el-divider content-position="left">{{ t('subfmt.proxyGroups') }}</el-divider>
         <div v-for="(g, i) in proxyGroups" :key="i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:8px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-            <el-input v-model="g.name" size="small" placeholder="组名" style="width:120px" @change="emitProxyGroups" />
+            <el-input v-model="g.name" size="small" :placeholder="t('mihomo.groupNamePlaceholder')" style="width:120px" @change="emitProxyGroups" />
             <el-select v-model="g.type" size="small" style="width:120px" @change="emitProxyGroups">
               <el-option label="select" value="select" /><el-option label="url-test" value="url-test" /><el-option label="fallback" value="fallback" /><el-option label="load-balance" value="load-balance" /><el-option label="relay" value="relay" />
             </el-select>
             <el-switch v-model="g.hidden" size="small" @change="emitProxyGroups" />
-            <span style="font-size:12px;color:#909399">隐藏</span>
+            <span style="font-size:12px;color:#909399">{{ t('mihomo.hidden') }}</span>
             <el-switch v-model="g._hasExternalNodes" size="small" @change="emitProxyGroups" />
-            <span style="font-size:12px;color:#909399">订阅添加节点</span>
+            <span style="font-size:12px;color:#909399">{{ t('mihomo.subscribeAddNodes') }}</span>
             <el-button size="small" type="danger" text @click="proxyGroups.splice(i,1);emitProxyGroups()">X</el-button>
           </div>
-          <div style="font-size:12px;color:#909399;margin-bottom:4px">代理列表（每行一个，订阅会根据类型自动添加节点）</div>
+          <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('mihomo.proxyListHint') }}</div>
           <el-input v-model="g._proxiesStr" type="textarea" :rows="2" size="small" placeholder="DIRECT&#10;PROXY" @change="emitProxyGroups" />
           <!-- Optional fields toggle -->
           <div style="margin-top:8px">
@@ -318,7 +318,7 @@
               </el-form-item>
               <el-form-item :label="t('subfmt.groupInterval')">
                 <el-input-number v-model="g.interval" :min="0" size="small" @change="emitProxyGroups" />
-                <span style="font-size:12px;color:#909399;margin-left:8px">秒</span>
+                <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.seconds') }}</span>
               </el-form-item>
               <el-form-item :label="t('subfmt.groupLazy')">
                 <el-switch v-model="g.lazy" @change="emitProxyGroups" />
@@ -366,7 +366,7 @@
       <el-tab-pane :label="t('subfmt.ruleProviders')" name="ruleProviders">
         <div v-for="(rp, i) in ruleProvidersList" :key="i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:8px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <el-input v-model="rp.name" size="small" placeholder="规则集名称" style="width:150px" @change="syncRuleProviders" />
+            <el-input v-model="rp.name" size="small" :placeholder="t('mihomo.ruleSetNamePlaceholder')" style="width:150px" @change="syncRuleProviders" />
             <el-select v-model="rp.type" size="small" style="width:100px" @change="syncRuleProviders">
               <el-option label="http" value="http" /><el-option label="file" value="file" /><el-option label="inline" value="inline" />
             </el-select>
@@ -393,7 +393,7 @@
             </el-form-item>
             <el-form-item :label="t('subfmt.rpInterval')">
               <el-input-number v-model="rp.interval" :min="0" size="small" @change="syncRuleProviders" />
-              <span style="font-size:12px;color:#909399;margin-left:8px">秒</span>
+              <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.seconds') }}</span>
             </el-form-item>
           </el-form>
         </div>
@@ -515,7 +515,7 @@
               <el-switch v-model="modelValue._snifferHTTP" :disabled="!modelValue._snifferEnabled" @change="emit" />
               <el-input v-model="modelValue._snifferHTTPPorts" size="small" placeholder="80, 8080-8880" :disabled="!modelValue._snifferEnabled || !modelValue._snifferHTTP" style="width:200px" @change="emit" />
               <el-switch v-model="modelValue._snifferHTTPOverride" :disabled="!modelValue._snifferEnabled || !modelValue._snifferHTTP" @change="emit" />
-              <span style="font-size:12px;color:#909399">覆盖目标</span>
+              <span style="font-size:12px;color:#909399">{{ t('mihomo.overrideTarget') }}</span>
             </div>
           </el-form-item>
           <el-form-item label="TLS">
@@ -564,7 +564,7 @@
           <el-form-item :label="t('subfmt.geoAutoUpdate')"><el-switch v-model="modelValue._geoAutoUpdate" @change="emit" /></el-form-item>
           <el-form-item :label="t('subfmt.geoUpdateInterval')">
             <el-input-number v-model="modelValue._geoUpdateInterval" :min="1" :max="168" :disabled="!modelValue._geoAutoUpdate" @change="emit" />
-            <span style="font-size:12px;color:#909399;margin-left:8px">小时</span>
+            <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.hours') }}</span>
           </el-form-item>
           <el-form-item :label="t('subfmt.geoIPUrl')">
             <div style="display:flex;gap:8px;align-items:center">
@@ -626,11 +626,11 @@
           <el-form-item :label="t('subfmt.tlsCertificate')">
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._tlsEnabled" @change="emit" />
-              <el-input v-model="modelValue._tlsCert" type="textarea" :rows="3" placeholder="PEM 证书或路径" :disabled="!modelValue._tlsEnabled" style="flex:1" @change="emit" />
+              <el-input v-model="modelValue._tlsCert" type="textarea" :rows="3" :placeholder="t('mihomo.tlsCertPlaceholder')" :disabled="!modelValue._tlsEnabled" style="flex:1" @change="emit" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tlsKey')">
-            <el-input v-model="modelValue._tlsKey" type="textarea" :rows="3" placeholder="PEM 私钥或路径" :disabled="!modelValue._tlsEnabled" @change="emit" />
+            <el-input v-model="modelValue._tlsKey" type="textarea" :rows="3" :placeholder="t('mihomo.tlsKeyPlaceholder')" :disabled="!modelValue._tlsEnabled" @change="emit" />
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -672,7 +672,7 @@
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._keepAliveEnabled" @change="emit" />
               <el-input-number v-model="modelValue._keepAliveIdle" :min="0" :disabled="!modelValue._keepAliveEnabled" @change="emit" />
-              <span style="font-size:12px;color:#909399">秒</span>
+              <span style="font-size:12px;color:#909399">{{ t('mihomo.seconds') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.lanControl')">

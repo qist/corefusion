@@ -3,27 +3,27 @@
     <!-- Top Bar -->
     <div class="editor-topbar">
       <div class="topbar-left">
-        <span class="portal-name">{{ form.name || '门户站点' }}</span>
-        <el-tag v-if="hasUnsavedChanges" type="warning" size="small">未保存</el-tag>
-        <el-tag v-else type="success" size="small">已保存</el-tag>
+        <span class="portal-name">{{ form.name || t('portal.defaultName') }}</span>
+        <el-tag v-if="hasUnsavedChanges" type="warning" size="small">{{ t('portal.unsaved') }}</el-tag>
+        <el-tag v-else type="success" size="small">{{ t('portal.saved') }}</el-tag>
       </div>
       <div class="topbar-right">
         <el-button-group>
-          <el-button :type="editorMode === 'builder' ? 'primary' : 'default'" size="small" @click="editorMode = 'builder'">搭建器</el-button>
-          <el-button :type="editorMode === 'lang' ? 'primary' : 'default'" size="small" @click="editorMode = 'lang'">文案</el-button>
-          <el-button :type="editorMode === 'settings' ? 'primary' : 'default'" size="small" @click="editorMode = 'settings'">设置</el-button>
-          <el-button :type="editorMode === 'code' ? 'primary' : 'default'" size="small" @click="editorMode = 'code'">模板编辑</el-button>
+          <el-button :type="editorMode === 'builder' ? 'primary' : 'default'" size="small" @click="editorMode = 'builder'">{{ t('portal.builder') }}</el-button>
+          <el-button :type="editorMode === 'lang' ? 'primary' : 'default'" size="small" @click="editorMode = 'lang'">{{ t('portal.lang') }}</el-button>
+          <el-button :type="editorMode === 'settings' ? 'primary' : 'default'" size="small" @click="editorMode = 'settings'">{{ t('portal.settings') }}</el-button>
+          <el-button :type="editorMode === 'code' ? 'primary' : 'default'" size="small" @click="editorMode = 'code'">{{ t('portal.templateEdit') }}</el-button>
         </el-button-group>
-        <el-button size="small" :icon="View" @click="handlePreview">预览</el-button>
-        <el-button type="primary" size="small" :icon="Check" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button size="small" :icon="View" @click="handlePreview">{{ t('portal.preview') }}</el-button>
+        <el-button type="primary" size="small" :icon="Check" :loading="saving" @click="handleSave">{{ t('common.save') }}</el-button>
         <el-dropdown @command="handleCacheCommand" trigger="click">
-          <el-button size="small">缓存<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <el-button size="small">{{ t('portal.cache') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="status">缓存状态{{ cacheStatus.cached ? '（已缓存）' : '（未缓存）' }}</el-dropdown-item>
-              <el-dropdown-item command="rebuild" divided>重建缓存</el-dropdown-item>
-              <el-dropdown-item command="clear">清理缓存</el-dropdown-item>
-              <el-dropdown-item command="dev" divided>{{ cacheStatus.dev_mode ? '切换到生产模式' : '切换到开发模式' }}</el-dropdown-item>
+              <el-dropdown-item command="status">{{ t('portal.cacheStatus') }}{{ cacheStatus.cached ? t('portal.cached') : t('portal.notCached') }}</el-dropdown-item>
+              <el-dropdown-item command="rebuild" divided>{{ t('portal.rebuildCache') }}</el-dropdown-item>
+              <el-dropdown-item command="clear">{{ t('portal.clearCache') }}</el-dropdown-item>
+              <el-dropdown-item command="dev" divided>{{ cacheStatus.dev_mode ? t('portal.switchToProduction') : t('portal.switchToDev') }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -38,7 +38,7 @@
           <!-- System Pages Section (Regions) -->
           <div class="structure-section">
             <div class="section-header">
-              <span class="section-title">系统页面</span>
+              <span class="section-title">{{ t('portal.systemPages') }}</span>
             </div>
             <div class="nav-list">
               <div class="nav-item-row"
@@ -46,7 +46,7 @@
                    @click="selectRegion('auth')">
                 <div class="nav-item-info">
                   <span class="nav-icon-emoji">🔐</span>
-                  <span class="nav-label-text">登录页</span>
+                  <span class="nav-label-text">{{ t('portal.loginPage') }}</span>
                 </div>
               </div>
             </div>
@@ -54,7 +54,7 @@
 
           <div class="structure-section">
             <div class="section-header">
-              <span class="section-title">页面导航</span>
+              <span class="section-title">{{ t('portal.pageNav') }}</span>
               <el-button text size="small" :icon="Plus" @click="openNavDialog()" />
             </div>
             <div class="nav-list">
@@ -68,7 +68,7 @@
                 <div class="nav-item-info">
                   <span class="nav-icon-emoji">{{ nav.icon || '🔗' }}</span>
                   <span class="nav-label-text">{{ nav.label }}</span>
-                  <el-tag size="small" type="info" effect="plain">{{ currentPageModuleCount(nav.target) }} 个模块</el-tag>
+                  <el-tag size="small" type="info" effect="plain">t('portal.moduleCount', { count: currentPageModuleCount(nav.target) })</el-tag>
                 </div>
                 <div class="nav-item-actions" @click.stop>
                   <el-button text size="small" :icon="ArrowUp" @click="moveItem(navigation, idx, -1)" :disabled="idx === 0" />
@@ -78,7 +78,7 @@
                 </div>
               </div>
               <div v-if="navigation.length === 0" class="empty-hint" @click="openNavDialog()">
-                + 添加导航项
+                t('portal.addNav')
               </div>
             </div>
           </div>
@@ -86,37 +86,37 @@
           <div class="structure-section structure-modules">
             <div class="section-header">
               <span class="section-title">
-                {{ currentNav ? currentNav.label + ' 的模块' : '内容模块' }}
+                currentNav ? t('portal.navModules', { name: currentNav.label }) : t('portal.contentModules')
               </span>
               <el-dropdown @command="addModule" trigger="click" :disabled="!currentNav">
-                <el-button text size="small" :icon="Plus" :disabled="!currentNav">添加模块</el-button>
+                <el-button text size="small" :icon="Plus" :disabled="!currentNav">{{ t('portal.addModule') }}</el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600">— 内容展示 —</el-dropdown-item>
-                    <el-dropdown-item command="hero">🚀 欢迎横幅</el-dropdown-item>
-                    <el-dropdown-item command="markdown">📝 Markdown 文档</el-dropdown-item>
-                    <el-dropdown-item command="notice">📢 公告提示</el-dropdown-item>
-                    <el-dropdown-item command="freeform">🧩 自定义组件 (HTML+CSS+JS)</el-dropdown-item>
-                    <el-dropdown-item command="tutorial_cards">📚 下载与教程</el-dropdown-item>
-                    <el-dropdown-item command="article_list">📖 教程文章</el-dropdown-item>
-                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— 账户与订阅 —</el-dropdown-item>
-                    <el-dropdown-item command="account_info">👤 账户信息</el-dropdown-item>
-                    <el-dropdown-item command="traffic_ring">📊 流量使用</el-dropdown-item>
-                    <el-dropdown-item command="subscription_detail">🔗 订阅详情</el-dropdown-item>
-                    <el-dropdown-item command="client_download">💻 客户端下载</el-dropdown-item>
-                    <el-dropdown-item command="streaming_status">🎬 流媒体解锁</el-dropdown-item>
-                    <el-dropdown-item command="shared_accounts">🔑 共享账号</el-dropdown-item>
-                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— 商务服务 —</el-dropdown-item>
-                    <el-dropdown-item command="plan_list">📦 套餐列表</el-dropdown-item>
-                    <el-dropdown-item command="charge_panel">💳 在线充值</el-dropdown-item>
-                    <el-dropdown-item command="balance_display">💰 余额显示</el-dropdown-item>
-                    <el-dropdown-item command="order_list">🧾 我的账单</el-dropdown-item>
-                    <el-dropdown-item command="referral">🎁 推广邀请</el-dropdown-item>
-                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— 系统功能 —</el-dropdown-item>
-                    <el-dropdown-item command="node_list">📋 线路列表</el-dropdown-item>
-                    <el-dropdown-item command="ticket_list">🎫 工单系统</el-dropdown-item>
-                    <el-dropdown-item command="security_settings">🔒 安全设置</el-dropdown-item>
-                    <el-dropdown-item command="log_packages">📦 日志打包</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600">— {{ t('portal.catContent') }} —</el-dropdown-item>
+                    <el-dropdown-item command="hero">🚀 {{ t('portal.modHero') }}</el-dropdown-item>
+                    <el-dropdown-item command="markdown">📝 {{ t('portal.modMarkdown') }}</el-dropdown-item>
+                    <el-dropdown-item command="notice">📢 {{ t('portal.modNotice') }}</el-dropdown-item>
+                    <el-dropdown-item command="freeform">🧩 {{ t('portal.modFreeform') }}</el-dropdown-item>
+                    <el-dropdown-item command="tutorial_cards">📚 {{ t('portal.modTutorialCards') }}</el-dropdown-item>
+                    <el-dropdown-item command="article_list">📖 {{ t('portal.modArticleList') }}</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— {{ t('portal.catAccount') }} —</el-dropdown-item>
+                    <el-dropdown-item command="account_info">👤 {{ t('portal.modAccountInfo') }}</el-dropdown-item>
+                    <el-dropdown-item command="traffic_ring">📊 {{ t('portal.modTrafficRing') }}</el-dropdown-item>
+                    <el-dropdown-item command="subscription_detail">🔗 {{ t('portal.modSubDetail') }}</el-dropdown-item>
+                    <el-dropdown-item command="client_download">💻 {{ t('portal.modClientDownload') }}</el-dropdown-item>
+                    <el-dropdown-item command="streaming_status">🎬 {{ t('portal.modStreamingStatus') }}</el-dropdown-item>
+                    <el-dropdown-item command="shared_accounts">🔑 {{ t('portal.modSharedAccounts') }}</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— {{ t('portal.catBusiness') }} —</el-dropdown-item>
+                    <el-dropdown-item command="plan_list">📦 {{ t('portal.modPlanList') }}</el-dropdown-item>
+                    <el-dropdown-item command="charge_panel">💳 {{ t('portal.modChargePanel') }}</el-dropdown-item>
+                    <el-dropdown-item command="balance_display">💰 {{ t('portal.modBalanceDisplay') }}</el-dropdown-item>
+                    <el-dropdown-item command="order_list">🧾 {{ t('portal.modOrderList') }}</el-dropdown-item>
+                    <el-dropdown-item command="referral">🎁 {{ t('portal.modReferral') }}</el-dropdown-item>
+                    <el-dropdown-item disabled style="font-size:11px;color:#909399;font-weight:600" divided>— {{ t('portal.catSystem') }} —</el-dropdown-item>
+                    <el-dropdown-item command="node_list">📋 {{ t('portal.modNodeList') }}</el-dropdown-item>
+                    <el-dropdown-item command="ticket_list">🎫 {{ t('portal.modTicketList') }}</el-dropdown-item>
+                    <el-dropdown-item command="security_settings">🔒 {{ t('portal.modSecuritySettings') }}</el-dropdown-item>
+                    <el-dropdown-item command="log_packages">📦 {{ t('portal.modLogPackages') }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -131,7 +131,7 @@
               >
                 <div class="module-item-info">
                   <span class="module-type-badge" :class="'badge-' + mod.type">{{ moduleTypeLabel(mod.type) }}</span>
-                  <span class="module-title-text">{{ mod.title || '(无标题)' }}</span>
+                  <span class="module-title-text">{{ mod.title || t('portal.noTitle') }}</span>
                 </div>
                 <div class="module-item-actions" @click.stop>
                   <el-button text size="small" :icon="ArrowUp" @click="movePageModule(idx, -1)" :disabled="idx === 0" />
@@ -142,10 +142,10 @@
                 </div>
               </div>
               <div v-if="!currentNav" class="empty-hint">
-                ← 点击上方导航项选择页面
+                t('portal.clickNavHint')
               </div>
               <div v-else-if="currentPageModules.length === 0" class="empty-hint" @click="addModule('hero')">
-                + 为「{{ currentNav.label }}」添加第一个模块
+                t('portal.addFirstModule', { name: currentNav.label })
               </div>
             </div>
           </div>
@@ -157,7 +157,7 @@
           <div v-if="selectedRegion" class="canvas-toolbar">
             <div class="canvas-toolbar-left">
               <el-radio-group v-model="regionViewMode" size="small">
-                <el-radio-button value="preview">可视化预览</el-radio-button>
+                <el-radio-button value="preview">{{ t('portal.visualPreview') }}</el-radio-button>
                 <el-radio-button value="html">HTML</el-radio-button>
                 <el-radio-button value="css">CSS</el-radio-button>
                 <el-radio-button value="js">JS</el-radio-button>
@@ -165,9 +165,9 @@
             </div>
             <div class="canvas-toolbar-right">
               <el-radio-group v-if="regionViewMode === 'preview'" v-model="previewDevice" size="small">
-                <el-radio-button value="desktop">桌面</el-radio-button>
-                <el-radio-button value="tablet">平板</el-radio-button>
-                <el-radio-button value="mobile">手机</el-radio-button>
+                <el-radio-button value="desktop">{{ t('portal.deviceDesktop') }}</el-radio-button>
+                <el-radio-button value="tablet">{{ t('portal.deviceTablet') }}</el-radio-button>
+                <el-radio-button value="mobile">{{ t('portal.deviceMobile') }}</el-radio-button>
               </el-radio-group>
             </div>
           </div>
@@ -190,9 +190,9 @@
           <div v-if="selectedModule" class="canvas-toolbar">
             <div class="canvas-toolbar-left">
               <el-radio-group v-model="centerViewMode" size="small">
-                <el-radio-button v-if="hasContentEditor" value="editor">内容编辑</el-radio-button>
-                <el-radio-button value="preview">可视化预览</el-radio-button>
-                <el-radio-button value="page-preview">页面预览</el-radio-button>
+                <el-radio-button v-if="hasContentEditor" value="editor">{{ t('portal.contentEditor') }}</el-radio-button>
+                <el-radio-button value="preview">{{ t('portal.visualPreview') }}</el-radio-button>
+                <el-radio-button value="page-preview">{{ t('portal.pagePreview') }}</el-radio-button>
                 <el-radio-button value="html">HTML</el-radio-button>
                 <el-radio-button value="css">CSS</el-radio-button>
                 <el-radio-button value="js">JS</el-radio-button>
@@ -200,9 +200,9 @@
             </div>
             <div class="canvas-toolbar-right">
               <el-radio-group v-if="centerViewMode === 'preview' || centerViewMode === 'editor'" v-model="previewDevice" size="small">
-                <el-radio-button value="desktop">桌面</el-radio-button>
-                <el-radio-button value="tablet">平板</el-radio-button>
-                <el-radio-button value="mobile">手机</el-radio-button>
+                <el-radio-button value="desktop">{{ t('portal.deviceDesktop') }}</el-radio-button>
+                <el-radio-button value="tablet">{{ t('portal.deviceTablet') }}</el-radio-button>
+                <el-radio-button value="mobile">{{ t('portal.deviceMobile') }}</el-radio-button>
               </el-radio-group>
             </div>
           </div>
@@ -213,22 +213,22 @@
             <template v-if="selectedModule.type === 'markdown'">
               <div class="md-editor-wrap md-editor-full">
                 <div class="md-editor-toolbar">
-                  <button @click="insertMd('heading')" title="标题">H</button>
-                  <button @click="insertMd('bold')" title="粗体"><b>B</b></button>
-                  <button @click="insertMd('italic')" title="斜体"><i>I</i></button>
-                  <button @click="insertMd('strikethrough')" title="删除线"><s>S</s></button>
+                  <button @click="insertMd('heading')" :title="t('portal.mdHeading')">H</button>
+                  <button @click="insertMd('bold')" :title="t('portal.mdBold')"><b>B</b></button>
+                  <button @click="insertMd('italic')" :title="t('portal.mdItalic')"><i>I</i></button>
+                  <button @click="insertMd('strikethrough')" :title="t('portal.mdStrikethrough')"><s>S</s></button>
                   <span class="md-divider"></span>
-                  <button @click="insertMd('ul')" title="无序列表">•</button>
-                  <button @click="insertMd('ol')" title="有序列表">1.</button>
-                  <button @click="insertMd('checklist')" title="清单">☑</button>
+                  <button @click="insertMd('ul')" :title="t('portal.mdUnorderedList')">•</button>
+                  <button @click="insertMd('ol')" :title="t('portal.mdOrderedList')">1.</button>
+                  <button @click="insertMd('checklist')" :title="t('portal.mdChecklist')">☑</button>
                   <span class="md-divider"></span>
-                  <button @click="insertMd('link')" title="链接">🔗</button>
-                  <button @click="insertMd('image')" title="图片">🖼</button>
-                  <button @click="insertMd('code')" title="代码">&lt;/&gt;</button>
-                  <button @click="insertMd('codeblock')" title="代码块">{ }</button>
-                  <button @click="insertMd('quote')" title="引用">❝</button>
-                  <button @click="insertMd('table')" title="表格">⊞</button>
-                  <button @click="insertMd('hr')" title="分割线">—</button>
+                  <button @click="insertMd('link')" :title="t('portal.mdLink')">🔗</button>
+                  <button @click="insertMd('image')" :title="t('portal.mdImage')">🖼</button>
+                  <button @click="insertMd('code')" :title="t('portal.mdCode')">&lt;/&gt;</button>
+                  <button @click="insertMd('codeblock')" :title="t('portal.mdCodeBlock')">{ }</button>
+                  <button @click="insertMd('quote')" :title="t('portal.mdQuote')">❝</button>
+                  <button @click="insertMd('table')" :title="t('portal.mdTable')">⊞</button>
+                  <button @click="insertMd('hr')" :title="t('portal.mdHr')">—</button>
                 </div>
                 <div class="md-split md-split-full">
                   <div class="md-editor-pane">
@@ -247,14 +247,14 @@
             <!-- Notice Editor -->
             <template v-else-if="selectedModule.type === 'notice'">
               <div class="notice-editor-wrap">
-                <el-form-item label="公告标题" style="margin-bottom: 8px"><el-input v-model="selectedModule.data.title" placeholder="公告标题" /></el-form-item>
+                <el-form-item :label="t('portal.noticeTitle')" style="margin-bottom: 8px"><el-input v-model="selectedModule.data.title" :placeholder="t('portal.noticeTitle')" /></el-form-item>
                 <div class="md-editor-wrap md-editor-full">
                   <div class="md-editor-toolbar">
-                    <button @click="insertNoticeMd('heading')" title="标题">H</button>
-                    <button @click="insertNoticeMd('bold')" title="粗体"><b>B</b></button>
-                    <button @click="insertNoticeMd('italic')" title="斜体"><i>I</i></button>
-                    <button @click="insertNoticeMd('link')" title="链接">🔗</button>
-                    <button @click="insertNoticeMd('code')" title="代码">&lt;/&gt;</button>
+                    <button @click="insertNoticeMd('heading')" :title="t('portal.mdHeading')">H</button>
+                    <button @click="insertNoticeMd('bold')" :title="t('portal.mdBold')"><b>B</b></button>
+                    <button @click="insertNoticeMd('italic')" :title="t('portal.mdItalic')"><i>I</i></button>
+                    <button @click="insertNoticeMd('link')" :title="t('portal.mdLink')">🔗</button>
+                    <button @click="insertNoticeMd('code')" :title="t('portal.mdCode')">&lt;/&gt;</button>
                   </div>
                   <div class="md-split md-split-full">
                     <div class="md-editor-pane">
@@ -275,21 +275,21 @@
             <template v-else-if="selectedModule.type === 'rich_text'">
               <div class="rte-editor-wrap">
                 <div class="rte-toolbar">
-                  <button @click="execCmd('formatBlock', '<h2>')" title="标题1">H2</button>
-                  <button @click="execCmd('formatBlock', '<h3>')" title="标题2">H3</button>
-                  <button @click="execCmd('formatBlock', '<p>')" title="正文">P</button>
+                  <button @click="execCmd('formatBlock', '<h2>')" :title="t('portal.rteHeading1')">H2</button>
+                  <button @click="execCmd('formatBlock', '<h3>')" :title="t('portal.rteHeading2')">H3</button>
+                  <button @click="execCmd('formatBlock', '<p>')" :title="t('portal.rteParagraph')">P</button>
                   <span class="rte-divider"></span>
-                  <button @click="execCmd('bold')" title="粗体"><b>B</b></button>
-                  <button @click="execCmd('italic')" title="斜体"><i>I</i></button>
-                  <button @click="execCmd('underline')" title="下划线"><u>U</u></button>
-                  <button @click="execCmd('strikeThrough')" title="删除线"><s>S</s></button>
+                  <button @click="execCmd('bold')" :title="t('portal.mdBold')"><b>B</b></button>
+                  <button @click="execCmd('italic')" :title="t('portal.mdItalic')"><i>I</i></button>
+                  <button @click="execCmd('underline')" :title="t('portal.rteUnderline')"><u>U</u></button>
+                  <button @click="execCmd('strikeThrough')" :title="t('portal.mdStrikethrough')"><s>S</s></button>
                   <span class="rte-divider"></span>
-                  <button @click="execCmd('insertUnorderedList')" title="无序列表">•</button>
-                  <button @click="execCmd('insertOrderedList')" title="有序列表">1.</button>
-                  <button @click="execCmd('formatBlock', '<blockquote>')" title="引用">❝</button>
+                  <button @click="execCmd('insertUnorderedList')" :title="t('portal.mdUnorderedList')">•</button>
+                  <button @click="execCmd('insertOrderedList')" :title="t('portal.mdOrderedList')">1.</button>
+                  <button @click="execCmd('formatBlock', '<blockquote>')" :title="t('portal.mdQuote')">❝</button>
                   <span class="rte-divider"></span>
-                  <button @click="insertLink" title="超链接">🔗</button>
-                  <button @click="execCmd('removeFormat')" title="清除格式">✕</button>
+                  <button @click="insertLink" :title="t('portal.rteHyperlink')">🔗</button>
+                  <button @click="execCmd('removeFormat')" :title="t('portal.rteClearFormat')">✕</button>
                 </div>
                 <div class="rte-split">
                   <div ref="richTextEditRef" class="rte-content rte-content-full" contenteditable="true" @input="onRichTextInput" v-html="selectedModule.data.html || ''"></div>
@@ -302,7 +302,7 @@
             <template v-else-if="selectedModule.type === 'custom_html'">
               <div class="html-editor-wrap">
                 <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 8px">
-                  <span style="font-size: 12px">自定义 HTML 会被直接渲染，请确保内容安全</span>
+                  <span style="font-size: 12px">{{ t('portal.customHtmlWarning') }}</span>
                 </el-alert>
                 <div class="html-split">
                   <div class="html-editor-pane">
@@ -321,7 +321,7 @@
             <template v-else-if="selectedModule.type === 'freeform'">
               <div class="freeform-editor-wrap">
                 <el-tabs v-model="freeformTab" type="border-card" class="freeform-tabs">
-                  <el-tab-pane label="HTML (Vue 模板)" name="html">
+                  <el-tab-pane :label="t('portal.freeformHtmlTab')" name="html">
                     <div class="freeform-editor-pane">
                       <CodeEditor
                         v-model="selectedModule.data.html"
@@ -339,7 +339,7 @@
                       />
                     </div>
                   </el-tab-pane>
-                  <el-tab-pane label="JavaScript" name="js">
+                  <el-tab-pane :label="t('portal.freeformJsTab')" name="js">
                     <div class="freeform-editor-pane">
                       <CodeEditor
                         v-model="selectedModule.data.js"
@@ -349,36 +349,15 @@
                     </div>
                     <div class="freeform-api-ref">
                       <el-collapse>
-                        <el-collapse-item title="ctx API 参考">
-                          <pre>ctx.ref(val)              — 创建响应式变量
-ctx.computed(fn)          — 创建计算属性
-ctx.watch(src, cb)        — 监听变化
-ctx.onMounted(fn)         — 组件挂载时
-ctx.onUnmounted(fn)       — 组件卸载时
-
-ctx.data.client           — 用户账户信息 (响应式)
-ctx.data.token            — 当前 token (响应式)
-ctx.data.isDark           — 暗色模式 (响应式)
-
-ctx.api.get(path, query)  — GET 请求
-ctx.api.post(path, body)  — POST 请求
-ctx.api.put(path, body)   — PUT 请求
-ctx.api.delete(path)      — DELETE 请求
-
-ctx.formatBytes(bytes)    — 格式化文件大小
-ctx.formatDate(date)      — 格式化日期
-ctx.copyText(text)        — 复制到剪贴板
-ctx.elMessage             — Element Plus 消息提示
-ctx.config                — 门户配置 (PORTAL_CONFIG)
-ctx.moduleId              — 当前模块 ID
-ctx.moduleTitle           — 当前模块标题</pre>
+                        <el-collapse-item :title="t('portal.ctxApiRef')">
+                          <pre>{{ t('portal.ctxApiRefBody') }}</pre>
                         </el-collapse-item>
                       </el-collapse>
                     </div>
                   </el-tab-pane>
                 </el-tabs>
                 <el-alert type="info" :closable="false" show-icon style="margin-top: 8px">
-                  <span style="font-size: 12px">JS 需 <code>return</code> 一个对象作为 Vue 组件 setup 返回值。使用 <code>ctx.api.get('/me')</code> 调用后端接口。保存后访问门户页面查看真实效果。</span>
+                  <span style="font-size: 12px">{{ t('portal.jsHint') }}</span>
                 </el-alert>
               </div>
             </template>
@@ -389,8 +368,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
             <div class="css-editor-info">
               <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px; border-radius: 6px">
                 <span style="font-size: 12px">
-                  为「<b>{{ selectedModule.title || moduleTypeLabel(selectedModule.type) }}</b>」模块编写自定义 CSS。
-                  使用 <code>.module-wrap</code> 选择器可覆盖默认样式，例如：<code>.module-wrap {{ '{' }} padding: 20px; border-radius: 16px; {{ '}' }}</code>
+                  {{ t('portal.cssHint1') }}<b>{{ selectedModule.title || moduleTypeLabel(selectedModule.type) }}</b>{{ t('portal.cssHint2') }}
                 </span>
               </el-alert>
             </div>
@@ -421,8 +399,8 @@ ctx.moduleTitle           — 当前模块标题</pre>
                       
                       <!-- Empty state if no code -->
                       <div v-else class="preview-module" style="text-align:center;padding:40px;color:#909399">
-                        <p>模块暂无自定义代码</p>
-                        <p style="font-size:12px;margin-top:8px">请在 HTML/CSS/JS 编辑器中添加代码</p>
+                        <p>{{ t('portal.noCustomCode') }}</p>
+                        <p style="font-size:12px;margin-top:8px">{{ t('portal.addCodeHint') }}</p>
                       </div>
                     </div>
                   </div>
@@ -439,7 +417,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
           <!-- HTML Editor Mode -->
           <div v-if="selectedModule && centerViewMode === 'html'" class="canvas-code-editor">
             <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px">
-              <span style="font-size: 12px">编辑模块的 HTML 模板。对于「自定义组件」类型，HTML 作为 Vue 模板渲染；其他类型保存后在门户页面查看效果。</span>
+              <span style="font-size: 12px">{{ t('portal.htmlEditorHint') }}</span>
             </el-alert>
             <CodeEditor
               v-model="selectedModule.data.html"
@@ -457,29 +435,8 @@ ctx.moduleTitle           — 当前模块标题</pre>
             />
             <div class="freeform-api-ref" style="padding: 8px 12px">
               <el-collapse>
-                <el-collapse-item title="ctx API 参考">
-                  <pre>ctx.ref(val)              — 创建响应式变量
-ctx.computed(fn)          — 创建计算属性
-ctx.watch(src, cb)        — 监听变化
-ctx.onMounted(fn)         — 组件挂载时
-ctx.onUnmounted(fn)       — 组件卸载时
-
-ctx.data.client           — 用户账户信息 (响应式)
-ctx.data.token            — 当前 token (响应式)
-ctx.data.isDark           — 暗色模式 (响应式)
-
-ctx.api.get(path, query)  — GET 请求
-ctx.api.post(path, body)  — POST 请求
-ctx.api.put(path, body)   — PUT 请求
-ctx.api.delete(path)      — DELETE 请求
-
-ctx.formatBytes(bytes)    — 格式化文件大小
-ctx.formatDate(date)      — 格式化日期
-ctx.copyText(text)        — 复制到剪贴板
-ctx.elMessage             — Element Plus 消息提示
-ctx.config                — 门户配置 (PORTAL_CONFIG)
-ctx.moduleId              — 当前模块 ID
-ctx.moduleTitle           — 当前模块标题</pre>
+                <el-collapse-item :title="t('portal.ctxApiRef')">
+                  <pre>{{ t('portal.ctxApiRefBody') }}</pre>
                 </el-collapse-item>
               </el-collapse>
             </div>
@@ -518,19 +475,19 @@ ctx.moduleTitle           — 当前模块标题</pre>
                     <!-- Empty State -->
                     <div v-else style="text-align:center;padding:40px;color:#909399">
                       <p>{{ mod.title || moduleTypeLabel(mod.type) }}</p>
-                      <p style="font-size:12px;margin-top:8px">暂无自定义代码</p>
+                      <p style="font-size:12px;margin-top:8px">{{ t('portal.noCustomCode') }}</p>
                     </div>
                   </div>
                 </template>
 
                 <div v-if="!currentNav" class="preview-empty">
                   <span style="font-size: 40px">👈</span>
-                  <p>从左侧选择一个页面开始编辑</p>
+                  <p>{{ t('portal.selectPageHint') }}</p>
                 </div>
                 <div v-else-if="currentPageModules.filter(m => m.visible).length === 0" class="preview-empty">
                   <span style="font-size: 40px">📋</span>
-                  <p>「{{ currentNav.label }}」页面还没有内容模块</p>
-                  <el-button type="primary" size="small" :icon="Plus" @click="addModule('hero')" style="margin-top: 8px">添加模块</el-button>
+                  <p>{{ t('portal.pageNoModules', { name: currentNav.label }) }}</p>
+                  <el-button type="primary" size="small" :icon="Plus" @click="addModule('hero')" style="margin-top: 8px">{{ t('portal.addModule') }}</el-button>
                 </div>
               </div>
 
@@ -549,51 +506,51 @@ ctx.moduleTitle           — 当前模块标题</pre>
         <div class="col-properties">
           <!-- Region Properties -->
           <div v-if="selectedRegion" class="props-panel">
-            <h3 class="props-title">编辑：🔐 登录页</h3>
+            <h3 class="props-title">{{ t('portal.editLoginPage') }}</h3>
             <el-form label-position="top" size="small">
-              <el-divider content-position="left">基本设置</el-divider>
-              <el-form-item label="副标题">
+              <el-divider content-position="left">{{ t('portal.basicSettings') }}</el-divider>
+              <el-form-item :label="t('portal.subtitle')">
                 <el-input v-model="selectedRegion.data.subtitle" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="Logo 图标 (emoji)">
+              <el-form-item :label="t('portal.logoEmoji')">
                 <el-input v-model="selectedRegion.data.logo_emoji" @input="onCodeChange" />
               </el-form-item>
 
-              <el-divider content-position="left">表单文案</el-divider>
-              <el-form-item label="登录标签">
+              <el-divider content-position="left">{{ t('portal.formText') }}</el-divider>
+              <el-form-item :label="t('portal.loginLabel')">
                 <el-input v-model="selectedRegion.data.login_label" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="注册标签">
+              <el-form-item :label="t('portal.registerLabel')">
                 <el-input v-model="selectedRegion.data.register_label" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="登录按钮">
+              <el-form-item :label="t('portal.loginBtn')">
                 <el-input v-model="selectedRegion.data.login_btn_text" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="注册按钮">
+              <el-form-item :label="t('portal.registerBtn')">
                 <el-input v-model="selectedRegion.data.register_btn_text" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="邮箱占位符">
+              <el-form-item :label="t('portal.emailPlaceholder')">
                 <el-input v-model="selectedRegion.data.email_placeholder" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="密码占位符">
+              <el-form-item :label="t('portal.passwordPlaceholder')">
                 <el-input v-model="selectedRegion.data.password_placeholder" @input="onCodeChange" />
               </el-form-item>
-              <el-form-item label="邀请码占位符">
+              <el-form-item :label="t('portal.invitePlaceholder')">
                 <el-input v-model="selectedRegion.data.invite_placeholder" @input="onCodeChange" />
               </el-form-item>
 
-              <el-divider content-position="left">底部区域</el-divider>
-              <el-form-item label="底部文案">
+              <el-divider content-position="left">{{ t('portal.footerArea') }}</el-divider>
+              <el-form-item :label="t('portal.footerText')">
                 <el-input v-model="selectedRegion.data.footer_text" @input="onCodeChange" />
               </el-form-item>
 
-              <el-divider content-position="left">JS 编写规范</el-divider>
+              <el-divider content-position="left">{{ t('portal.jsCodingSpec') }}</el-divider>
               <el-alert type="info" :closable="false" show-icon>
                 <span style="font-size: 11px">
-                  <b>对象字面量</b>：<code>{ customTitle: '欢迎' }</code><br>
-                  <b>return 语句</b>：<code>return { customTitle: '欢迎' }</code><br>
-                  <b>完整函数体</b>：<code>console.log('init'); return {}</code><br>
-                  <b>可用 ctx</b>：loginForm, registerForm, authTab, loading, handleLogin, handleRegister, t, data, ElMessage
+                  <b>{{ t('portal.jsObjectLiteral') }}</b>：<code>{ customTitle: t('portal.jsExampleCustomTitle') }</code><br>
+                  <b>{{ t('portal.jsReturnStatement') }}</b>：<code>return { customTitle: t('portal.jsExampleCustomTitle') }</code><br>
+                  <b>{{ t('portal.jsFullFunction') }}</b>：<code>console.log('init'); return {}</code><br>
+                  <b>{{ t('portal.jsAvailableCtx') }}</b>：loginForm, registerForm, authTab, loading, handleLogin, handleRegister, t, data, ElMessage
                 </span>
               </el-alert>
             </el-form>
@@ -601,145 +558,145 @@ ctx.moduleTitle           — 当前模块标题</pre>
 
           <!-- Navigation Properties -->
           <div v-else-if="selectedNavId && selectedNav" class="props-panel">
-            <h3 class="props-title">编辑导航项</h3>
+            <h3 class="props-title">{{ t('portal.editNav') }}</h3>
             <el-form label-position="top" size="small">
-              <el-form-item label="显示名称"><el-input v-model="selectedNav.label" placeholder="如：首页" /></el-form-item>
-              <el-form-item label="图标 (emoji 或文字)"><el-input v-model="selectedNav.icon" placeholder="如：📊" /></el-form-item>
-              <el-form-item label="页面标识"><el-input v-model="selectedNav.target" placeholder="auto" disabled /></el-form-item>
-              <el-form-item label="外部链接 (可选)"><el-input v-model="selectedNav.href" placeholder="https://example.com — 填写后点击导航跳转到此链接" /></el-form-item>
-              <el-form-item label="新窗口打开"><el-switch v-model="selectedNav.open_external" /></el-form-item>
-              <el-form-item label="显示"><el-switch v-model="selectedNav.enabled" /></el-form-item>
+              <el-form-item :label="t('portal.displayName')"><el-input v-model="selectedNav.label" :placeholder="t('portal.displayNamePlaceholder')" /></el-form-item>
+              <el-form-item :label="t('portal.navIcon')"><el-input v-model="selectedNav.icon" :placeholder="t('portal.navIconPlaceholder')" /></el-form-item>
+              <el-form-item :label="t('portal.pageTarget')"><el-input v-model="selectedNav.target" placeholder="auto" disabled /></el-form-item>
+              <el-form-item :label="t('portal.externalLink')"><el-input v-model="selectedNav.href" :placeholder="t('portal.externalLinkPlaceholder')" /></el-form-item>
+              <el-form-item :label="t('portal.openInNewWindow')"><el-switch v-model="selectedNav.open_external" /></el-form-item>
+              <el-form-item :label="t('portal.showNav')"><el-switch v-model="selectedNav.enabled" /></el-form-item>
             </el-form>
           </div>
 
           <!-- Module Properties -->
           <div v-else-if="selectedModuleId && selectedModule" class="props-panel">
-            <h3 class="props-title">编辑：{{ moduleTypeLabel(selectedModule.type) }}</h3>
+            <h3 class="props-title">{{ t('portal.editModule', { type: moduleTypeLabel(selectedModule.type) }) }}</h3>
             <el-form label-position="top" size="small">
-              <el-form-item label="模块标题"><el-input v-model="selectedModule.title" placeholder="模块标题" /></el-form-item>
-              <el-form-item label="显示模块"><el-switch v-model="selectedModule.visible" /></el-form-item>
+              <el-form-item :label="t('portal.moduleTitle')"><el-input v-model="selectedModule.title" :placeholder="t('portal.moduleTitle')" /></el-form-item>
+              <el-form-item :label="t('portal.showModule')"><el-switch v-model="selectedModule.visible" /></el-form-item>
 
               <!-- Hero Properties -->
               <template v-if="selectedModule.type === 'hero'">
-                <el-form-item label="眉题"><el-input v-model="selectedModule.data.eyebrow" placeholder="如：CORE FUSION" /></el-form-item>
-                <el-form-item label="标题"><el-input v-model="selectedModule.data.heading" placeholder="如：欢迎回来" /></el-form-item>
-                <el-form-item label="描述"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
-                <el-form-item label="按钮文案"><el-input v-model="selectedModule.data.button_text" placeholder="如：查看订阅" /></el-form-item>
-                <el-form-item label="按钮跳转">
+                <el-form-item :label="t('portal.heroEyebrow')"><el-input v-model="selectedModule.data.eyebrow" :placeholder="t('portal.heroEyebrowPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.heroHeading')"><el-input v-model="selectedModule.data.heading" :placeholder="t('portal.heroHeadingPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.heroDescription')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item :label="t('portal.heroButtonText')"><el-input v-model="selectedModule.data.button_text" :placeholder="t('portal.heroButtonPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.heroButtonTarget')">
                   <el-select v-model="selectedModule.data.button_target" style="width: 100%">
-                    <el-option label="概览" value="overview" /><el-option label="订阅" value="subscription" /><el-option label="安全" value="security" /><el-option label="日志" value="logs" />
+                    <el-option :label="t('portal.targetOverview')" value="overview" /><el-option :label="t('portal.targetSubscription')" value="subscription" /><el-option :label="t('portal.targetSecurity')" value="security" /><el-option :label="t('portal.targetLogs')" value="logs" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="对齐方式">
+                <el-form-item :label="t('portal.alignment')">
                   <el-radio-group v-model="selectedModule.style.align">
-                    <el-radio value="left">左对齐</el-radio><el-radio value="center">居中</el-radio>
+                    <el-radio value="left">{{ t('portal.alignLeft') }}</el-radio><el-radio value="center">{{ t('portal.alignCenter') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="样式变体">
+                <el-form-item :label="t('portal.styleVariant')">
                   <el-select v-model="selectedModule.style.variant" style="width: 100%">
-                    <el-option label="主色" value="primary" /><el-option label="渐变" value="gradient" /><el-option label="简洁" value="minimal" />
+                    <el-option :label="t('portal.variantPrimary')" value="primary" /><el-option :label="t('portal.variantGradient')" value="gradient" /><el-option :label="t('portal.variantMinimal')" value="minimal" />
                   </el-select>
                 </el-form-item>
               </template>
 
               <!-- Markdown Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'markdown'">
-                <el-form-item label="对齐方式">
+                <el-form-item :label="t('portal.alignment')">
                   <el-radio-group v-model="selectedModule.style.align">
-                    <el-radio value="left">左</el-radio><el-radio value="center">中</el-radio>
+                    <el-radio value="left">{{ t('portal.alignLeft') }}</el-radio><el-radio value="center">{{ t('portal.alignCenter') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
               </template>
 
               <!-- Notice Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'notice'">
-                <el-form-item label="状态色">
+                <el-form-item :label="t('portal.statusColor')">
                   <el-select v-model="selectedModule.style.variant" style="width: 100%">
-                    <el-option label="信息" value="info" /><el-option label="成功" value="success" /><el-option label="警告" value="warning" /><el-option label="错误" value="error" />
+                    <el-option :label="t('portal.statusInfo')" value="info" /><el-option :label="t('portal.statusSuccess')" value="success" /><el-option :label="t('portal.statusWarning')" value="warning" /><el-option :label="t('portal.statusError')" value="error" />
                   </el-select>
                 </el-form-item>
-                <el-divider content-position="left">弹窗设置</el-divider>
-                <el-form-item label="显示方式">
+                <el-divider content-position="left">{{ t('portal.popupSettings') }}</el-divider>
+                <el-form-item :label="t('portal.displayMode')">
                   <el-radio-group v-model="selectedModule.data.display_mode">
-                    <el-radio value="inline">内嵌卡片</el-radio>
-                    <el-radio value="popup">弹窗</el-radio>
+                    <el-radio value="inline">{{ t('portal.modeInline') }}</el-radio>
+                    <el-radio value="popup">{{ t('portal.modePopup') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <template v-if="selectedModule.data.display_mode === 'popup'">
-                  <el-form-item label="弹窗触发">
+                  <el-form-item :label="t('portal.popupTrigger')">
                     <el-radio-group v-model="selectedModule.data.popup_trigger">
-                      <el-radio value="on_load">进入页面自动弹</el-radio>
-                      <el-radio value="manual">点击卡片弹</el-radio>
+                      <el-radio value="on_load">{{ t('portal.triggerOnLoad') }}</el-radio>
+                      <el-radio value="manual">{{ t('portal.triggerManual') }}</el-radio>
                     </el-radio-group>
                   </el-form-item>
-                  <el-form-item label="关闭后">
+                  <el-form-item :label="t('portal.popupDismiss')">
                     <el-radio-group v-model="selectedModule.data.popup_dismiss">
-                      <el-radio value="once">不再弹出</el-radio>
-                      <el-radio value="always">每次访问弹出</el-radio>
+                      <el-radio value="once">{{ t('portal.dismissOnce') }}</el-radio>
+                      <el-radio value="always">{{ t('portal.dismissAlways') }}</el-radio>
                     </el-radio-group>
                   </el-form-item>
-                  <el-form-item label="弹窗宽度">
+                  <el-form-item :label="t('portal.popupWidth')">
                     <el-select v-model="selectedModule.data.popup_width" style="width: 100%">
-                      <el-option label="窄 (360px)" value="360px" />
-                      <el-option label="标准 (480px)" value="480px" />
-                      <el-option label="宽 (640px)" value="640px" />
-                      <el-option label="超宽 (800px)" value="800px" />
+                      <el-option :label="t('portal.widthNarrow')" value="360px" />
+                      <el-option :label="t('portal.widthStandard')" value="480px" />
+                      <el-option :label="t('portal.widthWide')" value="640px" />
+                      <el-option :label="t('portal.widthExtraWide')" value="800px" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="关闭按钮文案">
-                    <el-input v-model="selectedModule.data.popup_button_text" placeholder="我知道了" />
+                  <el-form-item :label="t('portal.popupCloseBtn')">
+                    <el-input v-model="selectedModule.data.popup_button_text" :placeholder="t('portal.popupCloseBtnPlaceholder')" />
                   </el-form-item>
-                  <el-form-item label="显示关闭叉号">
+                  <el-form-item :label="t('portal.popupShowClose')">
                     <el-switch v-model="selectedModule.data.popup_show_close" :active-value="true" :inactive-value="false" />
                   </el-form-item>
-                  <el-divider content-position="left">外链按钮（可选）</el-divider>
-                  <el-form-item label="按钮文案">
-                    <el-input v-model="selectedModule.data.popup_link_text" placeholder="查看详情" />
+                  <el-divider content-position="left">{{ t('portal.popupLinkSection') }}</el-divider>
+                  <el-form-item :label="t('portal.heroButtonText')">
+                    <el-input v-model="selectedModule.data.popup_link_text" :placeholder="t('portal.popupLinkTextPlaceholder')" />
                   </el-form-item>
-                  <el-form-item label="链接地址">
+                  <el-form-item :label="t('portal.popupLinkUrl')">
                     <el-input v-model="selectedModule.data.popup_link_url" placeholder="https://example.com" />
                   </el-form-item>
-                  <el-form-item v-if="selectedModule.data.popup_link_url" label="新窗口打开">
+                  <el-form-item v-if="selectedModule.data.popup_link_url" :label="t('portal.openInNewWindow')">
                     <el-switch v-model="selectedModule.data.popup_link_external" :active-value="true" :inactive-value="false" />
                   </el-form-item>
                 </template>
                 <el-alert v-if="selectedModule.data.display_mode === 'popup'" type="info" :closable="false" show-icon style="margin-top: 4px">
-                  <span style="font-size: 12px">Markdown 中的链接会自动渲染为可点击外链。弹窗内容在中间编辑区编写。</span>
+                  <span style="font-size: 12px">{{ t('portal.noticePopupHint') }}</span>
                 </el-alert>
               </template>
 
               <!-- Feature Cards Properties -->
               <template v-if="selectedModule.type === 'feature_cards'">
                 <div v-for="(card, ci) in selectedModule.data.cards" :key="ci" class="card-edit-row">
-                  <el-input v-model="card.icon" placeholder="图标" style="width: 60px" />
-                  <el-input v-model="card.title" placeholder="标题" />
-                  <el-input v-model="card.description" placeholder="描述" />
+                  <el-input v-model="card.icon" :placeholder="t('portal.cardIcon')" style="width: 60px" />
+                  <el-input v-model="card.title" :placeholder="t('portal.cardTitle')" />
+                  <el-input v-model="card.description" :placeholder="t('portal.cardDesc')" />
                   <el-button text type="danger" :icon="Delete" @click="selectedModule.data.cards.splice(ci, 1)" />
                 </div>
-                <el-button text :icon="Plus" @click="selectedModule.data.cards.push({ icon: '⭐', title: '', description: '' })">添加卡片</el-button>
+                <el-button text :icon="Plus" @click="selectedModule.data.cards.push({ icon: '⭐', title: '', description: '' })">{{ t('portal.addCard') }}</el-button>
               </template>
 
               <!-- Account Stats Properties -->
               <template v-if="selectedModule.type === 'account_stats'">
-                <el-form-item label="布局">
+                <el-form-item :label="t('portal.layout')">
                   <el-radio-group v-model="selectedModule.style.layout">
-                    <el-radio value="grid">网格</el-radio><el-radio value="row">横排</el-radio>
+                    <el-radio value="grid">{{ t('portal.layoutGrid') }}</el-radio><el-radio value="row">{{ t('portal.layoutRow') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
               </template>
 
               <!-- Subscription Properties -->
               <template v-if="selectedModule.type === 'subscription'">
-                <el-form-item label="标题"><el-input v-model="selectedModule.data.title" placeholder="订阅信息" /></el-form-item>
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
-                <el-form-item label="按钮文案"><el-input v-model="selectedModule.data.button_text" placeholder="复制订阅链接" /></el-form-item>
+                <el-form-item :label="t('portal.heroHeading')"><el-input v-model="selectedModule.data.title" :placeholder="t('portal.subInfoPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item :label="t('portal.heroButtonText')"><el-input v-model="selectedModule.data.button_text" :placeholder="t('portal.copySubLinkPlaceholder')" /></el-form-item>
               </template>
 
               <!-- Rich Text Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'rich_text'">
-                <el-form-item label="对齐方式">
+                <el-form-item :label="t('portal.alignment')">
                   <el-radio-group v-model="selectedModule.style.align">
-                    <el-radio value="left">左</el-radio><el-radio value="center">中</el-radio>
+                    <el-radio value="left">{{ t('portal.alignLeft') }}</el-radio><el-radio value="center">{{ t('portal.alignCenter') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
               </template>
@@ -747,93 +704,93 @@ ctx.moduleTitle           — 当前模块标题</pre>
               <!-- Custom HTML Properties (editor is in center column) -->
               <template v-if="selectedModule.type === 'custom_html'">
                 <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px">
-                  <span style="font-size: 12px">代码编辑框在中间区域，支持桌面/平板/手机预览</span>
+                  <span style="font-size: 12px">{{ t('portal.codeEditorAreaHint') }}</span>
                 </el-alert>
               </template>
 
               <!-- Subscription Detail Properties -->
               <template v-if="selectedModule.type === 'subscription_detail'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="查看您的订阅链接和状态" /></el-form-item>
-                <el-form-item label="复制按钮文案"><el-input v-model="selectedModule.data.copy_text" placeholder="复制" /></el-form-item>
-                <el-form-item label="二维码按钮文案"><el-input v-model="selectedModule.data.qr_text" placeholder="二维码" /></el-form-item>
-                <el-form-item label="显示订阅状态"><el-switch v-model="selectedModule.data.show_status" /></el-form-item>
-                <el-form-item label="显示轮换Token"><el-switch v-model="selectedModule.data.show_rotate" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" :placeholder="t('portal.subDetailDescPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.copyBtnText')"><el-input v-model="selectedModule.data.copy_text" :placeholder="t('portal.copyPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.qrBtnText')"><el-input v-model="selectedModule.data.qr_text" :placeholder="t('portal.qrPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.showSubStatus')"><el-switch v-model="selectedModule.data.show_status" /></el-form-item>
+                <el-form-item :label="t('portal.showRotateToken')"><el-switch v-model="selectedModule.data.show_rotate" /></el-form-item>
               </template>
 
               <!-- Security Settings Properties -->
               <template v-if="selectedModule.type === 'security_settings'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="管理您的账户安全设置" /></el-form-item>
-                <el-form-item label="显示IP白名单"><el-switch v-model="selectedModule.data.show_ip_whitelist" /></el-form-item>
-                <el-form-item label="显示修改密码"><el-switch v-model="selectedModule.data.show_password" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" :placeholder="t('portal.securityDescPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.showIpWhitelist')"><el-switch v-model="selectedModule.data.show_ip_whitelist" /></el-form-item>
+                <el-form-item :label="t('portal.showChangePassword')"><el-switch v-model="selectedModule.data.show_password" /></el-form-item>
               </template>
 
               <!-- Log Packages Properties -->
               <template v-if="selectedModule.type === 'log_packages'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="请求打包最近日志，系统将在后台收集并压缩为可下载文件。" /></el-form-item>
-                <el-form-item label="1小时按钮文案"><el-input v-model="selectedModule.data.btn_1h" placeholder="打包最近1小时" /></el-form-item>
-                <el-form-item label="6小时按钮文案"><el-input v-model="selectedModule.data.btn_6h" placeholder="最近6小时" /></el-form-item>
-                <el-form-item label="24小时按钮文案"><el-input v-model="selectedModule.data.btn_24h" placeholder="最近24小时" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" :placeholder="t('portal.logPkgDescPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.btn1h')"><el-input v-model="selectedModule.data.btn_1h" :placeholder="t('portal.btn1hPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.btn6h')"><el-input v-model="selectedModule.data.btn_6h" :placeholder="t('portal.btn6hPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.btn24h')"><el-input v-model="selectedModule.data.btn_24h" :placeholder="t('portal.btn24hPlaceholder')" /></el-form-item>
               </template>
 
               <!-- Plan List Properties -->
               <template v-if="selectedModule.type === 'plan_list'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" placeholder="（可选）" /></el-form-item>
-                <el-form-item label="显示价格"><el-switch v-model="selectedModule.data.show_price" /></el-form-item>
-                <el-form-item label="显示流量"><el-switch v-model="selectedModule.data.show_quota" /></el-form-item>
-                <el-form-item label="购买按钮文案"><el-input v-model="selectedModule.data.buy_text" placeholder="立即购买" /></el-form-item>
-                <el-form-item label="续费按钮文案"><el-input v-model="selectedModule.data.renew_text" placeholder="续费" /></el-form-item>
-                <el-form-item label="列数"><el-input-number v-model="selectedModule.data.columns" :min="1" :max="4" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" :placeholder="t('portal.optionalPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.showPrice')"><el-switch v-model="selectedModule.data.show_price" /></el-form-item>
+                <el-form-item :label="t('portal.showQuota')"><el-switch v-model="selectedModule.data.show_quota" /></el-form-item>
+                <el-form-item :label="t('portal.buyBtnText')"><el-input v-model="selectedModule.data.buy_text" :placeholder="t('portal.buyBtnPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.renewBtnText')"><el-input v-model="selectedModule.data.renew_text" :placeholder="t('portal.renewBtnPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.columns')"><el-input-number v-model="selectedModule.data.columns" :min="1" :max="4" /></el-form-item>
               </template>
 
               <!-- Order Create Properties -->
               <template v-if="selectedModule.type === 'order_create'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
               </template>
 
               <!-- Charge Panel Properties -->
               <template v-if="selectedModule.type === 'charge_panel'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
-                <el-form-item label="显示充值记录"><el-switch v-model="selectedModule.data.show_orders" /></el-form-item>
-                <el-form-item label="记录显示条数"><el-input-number v-model="selectedModule.data.orders_limit" :min="1" :max="20" /></el-form-item>
-                <el-form-item label="卡号占位符"><el-input v-model="selectedModule.data.card_placeholder" placeholder="输入充值卡号" /></el-form-item>
-                <el-form-item label="兑换按钮文案"><el-input v-model="selectedModule.data.card_btn_text" placeholder="兑换" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item :label="t('portal.showChargeRecords')"><el-switch v-model="selectedModule.data.show_orders" /></el-form-item>
+                <el-form-item :label="t('portal.recordsLimit')"><el-input-number v-model="selectedModule.data.orders_limit" :min="1" :max="20" /></el-form-item>
+                <el-form-item :label="t('portal.cardPlaceholder')"><el-input v-model="selectedModule.data.card_placeholder" :placeholder="t('portal.cardPlaceholderText')" /></el-form-item>
+                <el-form-item :label="t('portal.redeemBtnText')"><el-input v-model="selectedModule.data.card_btn_text" :placeholder="t('portal.redeemPlaceholder')" /></el-form-item>
               </template>
 
               <!-- Balance Display Properties -->
               <template v-if="selectedModule.type === 'balance_display'">
-                <el-form-item label="显示交易记录"><el-switch v-model="selectedModule.data.show_transactions" /></el-form-item>
-                <el-form-item label="交易记录条数"><el-input-number v-model="selectedModule.data.tx_limit" :min="1" :max="50" /></el-form-item>
-                <el-form-item label="充值按钮文案"><el-input v-model="selectedModule.data.charge_btn_text" placeholder="去充值" /></el-form-item>
+                <el-form-item :label="t('portal.showTransactions')"><el-switch v-model="selectedModule.data.show_transactions" /></el-form-item>
+                <el-form-item :label="t('portal.txLimit')"><el-input-number v-model="selectedModule.data.tx_limit" :min="1" :max="50" /></el-form-item>
+                <el-form-item :label="t('portal.chargeBtnText2')"><el-input v-model="selectedModule.data.charge_btn_text" :placeholder="t('portal.chargeBtnPlaceholder')" /></el-form-item>
               </template>
 
               <!-- Referral Properties -->
               <template v-if="selectedModule.type === 'referral'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
-                <el-form-item label="复制按钮文案"><el-input v-model="selectedModule.data.copy_btn_text" placeholder="复制邀请链接" /></el-form-item>
-                <el-form-item label="显示邀请记录"><el-switch v-model="selectedModule.data.show_records" /></el-form-item>
-                <el-form-item label="记录显示条数"><el-input-number v-model="selectedModule.data.records_limit" :min="1" :max="50" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item :label="t('portal.copyBtnText')"><el-input v-model="selectedModule.data.copy_btn_text" :placeholder="t('portal.copyInvitePlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.showInviteRecords')"><el-switch v-model="selectedModule.data.show_records" /></el-form-item>
+                <el-form-item :label="t('portal.recordsLimit')"><el-input-number v-model="selectedModule.data.records_limit" :min="1" :max="50" /></el-form-item>
               </template>
 
               <!-- Ticket List Properties -->
               <template v-if="selectedModule.type === 'ticket_list'">
-                <el-form-item label="新建按钮文案"><el-input v-model="selectedModule.data.new_btn_text" placeholder="新建工单" /></el-form-item>
+                <el-form-item :label="t('portal.newTicketBtn')"><el-input v-model="selectedModule.data.new_btn_text" :placeholder="t('portal.newTicketPlaceholder')" /></el-form-item>
               </template>
 
               <!-- Article List Properties -->
               <template v-if="selectedModule.type === 'article_list'">
-                <el-form-item label="显示分类筛选"><el-switch v-model="selectedModule.data.show_category_filter" /></el-form-item>
-                <el-form-item label="默认分类">
+                <el-form-item :label="t('portal.showCategoryFilter')"><el-switch v-model="selectedModule.data.show_category_filter" /></el-form-item>
+                <el-form-item :label="t('portal.defaultCategory')">
                   <el-select v-model="selectedModule.data.default_category" style="width: 100%">
-                    <el-option label="全部" value="" /><el-option label="教程" value="tutorial" /><el-option label="FAQ" value="faq" /><el-option label="公告" value="notice" />
+                    <el-option :label="t('portal.catAll')" value="" /><el-option :label="t('portal.catTutorial')" value="tutorial" /><el-option :label="t('portal.catFaq')" value="faq" /><el-option :label="t('portal.catNotice')" value="notice" />
                   </el-select>
                 </el-form-item>
               </template>
 
               <!-- Shared Accounts Properties -->
               <template v-if="selectedModule.type === 'shared_accounts'">
-                <el-form-item label="说明文字"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
-                <el-form-item label="查看凭据按钮"><el-input v-model="selectedModule.data.apply_btn_text" placeholder="查看凭据" /></el-form-item>
-                <el-form-item label="修复按钮文案"><el-input v-model="selectedModule.data.repair_btn_text" placeholder="请求修复" /></el-form-item>
+                <el-form-item :label="t('portal.description')"><el-input v-model="selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item :label="t('portal.viewCredBtn')"><el-input v-model="selectedModule.data.apply_btn_text" :placeholder="t('portal.viewCredPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('portal.repairBtn')"><el-input v-model="selectedModule.data.repair_btn_text" :placeholder="t('portal.repairBtnPlaceholder')" /></el-form-item>
               </template>
             </el-form>
           </div>
@@ -841,7 +798,7 @@ ctx.moduleTitle           — 当前模块标题</pre>
           <!-- No Selection -->
           <div v-else class="props-empty">
             <span class="props-empty-icon">⚙️</span>
-            <p>选择左侧的导航项或模块进行编辑</p>
+            <p>{{ t('portal.selectToEdit') }}</p>
           </div>
         </div>
       </div>
@@ -849,13 +806,13 @@ ctx.moduleTitle           — 当前模块标题</pre>
       <!-- ===== Lang Editor Mode ===== -->
       <div v-if="editorMode === 'lang'" class="lang-mode">
         <div class="lang-toolbar">
-          <el-input v-model="langSearch" placeholder="搜索文案 key 或内容..." :prefix-icon="Search" clearable size="small" style="width: 320px" />
-          <el-button text size="small" :icon="Plus" @click="addLangKey">新增文案</el-button>
-          <el-button text size="small" @click="exportLang">导出 JSON</el-button>
+          <el-input v-model="langSearch" :placeholder="t('portal.searchLangKey')" :prefix-icon="Search" clearable size="small" style="width: 320px" />
+          <el-button text size="small" :icon="Plus" @click="addLangKey">{{ t('portal.addLangEntry') }}</el-button>
+          <el-button text size="small" @click="exportLang">{{ t('portal.exportJson') }}</el-button>
           <el-upload :show-file-list="false" :before-upload="importLang" accept=".json">
-            <el-button text size="small">导入 JSON</el-button>
+            <el-button text size="small">{{ t('portal.importJson') }}</el-button>
           </el-upload>
-          <span class="lang-count">共 {{ filteredLangEntries.length }} 条文案</span>
+          <span class="lang-count">{{ t('portal.langEntryCount', { count: filteredLangEntries.length }) }}</span>
         </div>
         <!-- Locale tabs -->
         <div class="lang-locales-bar">
@@ -867,11 +824,11 @@ ctx.moduleTitle           — 当前模块标题</pre>
             @click="switchLangLocale(loc.code)"
           >
             <span>{{ loc.flag }} {{ loc.label }}</span>
-            <el-icon v-if="loc.code === langPack.default" class="locale-default-badge" title="默认语言">★</el-icon>
+            <el-icon v-if="loc.code === langPack.default" class="locale-default-badge" :title="t('portal.defaultLang')">★</el-icon>
             <el-icon v-if="loc.code !== langPack.default" class="locale-remove-btn" @click.stop="removeLocale(loc.code)"><Close /></el-icon>
           </div>
-          <el-button text size="small" :icon="Plus" @click="addLocale">添加语言</el-button>
-          <el-select v-model="langPack.default" size="small" style="width: 160px; margin-left: auto;" placeholder="默认语言">
+          <el-button text size="small" :icon="Plus" @click="addLocale">{{ t('portal.addLocale') }}</el-button>
+          <el-select v-model="langPack.default" size="small" style="width: 160px; margin-left: auto;" :placeholder="t('portal.defaultLang')">
             <el-option v-for="loc in langAvailableLocales" :key="loc.code" :label="loc.flag + ' ' + loc.label" :value="loc.code" />
           </el-select>
         </div>
@@ -880,8 +837,8 @@ ctx.moduleTitle           — 当前模块标题</pre>
             <thead>
               <tr>
                 <th style="width: 30%">Key</th>
-                <th>{{ langAvailableLocales.find(l => l.code === langLocale)?.flag }} {{ langAvailableLocales.find(l => l.code === langLocale)?.label }} 文案内容</th>
-                <th style="width: 80px">操作</th>
+                <th>{{ langAvailableLocales.find(l => l.code === langLocale)?.flag }} {{ langAvailableLocales.find(l => l.code === langLocale)?.label }} {{ t('portal.langContent') }}</th>
+                <th style="width: 80px">{{ t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -901,8 +858,8 @@ ctx.moduleTitle           — 当前模块标题</pre>
           </table>
           <div v-if="filteredLangEntries.length === 0" class="lang-empty">
             <span style="font-size: 40px">📝</span>
-            <p>暂无文案数据</p>
-            <el-button text size="small" :icon="Plus" @click="addLangKey">新增第一条文案</el-button>
+            <p>{{ t('portal.noLangData') }}</p>
+            <el-button text size="small" :icon="Plus" @click="addLangKey">{{ t('portal.addFirstLangEntry') }}</el-button>
           </div>
         </div>
       </div>
@@ -910,31 +867,31 @@ ctx.moduleTitle           — 当前模块标题</pre>
       <!-- ===== Settings Mode ===== -->
       <div v-if="editorMode === 'settings'" class="settings-mode">
         <el-tabs v-model="settingsTab" type="border-card">
-          <el-tab-pane label="基本设置" name="basic">
+          <el-tab-pane :label="t('portal.basicSettingsTab')" name="basic">
             <el-form :model="form" label-width="140px" style="max-width: 700px; padding: 20px 0">
-              <el-form-item label="站点名称"><el-input v-model="form.name" placeholder="我的订阅站" /></el-form-item>
-              <el-form-item label="站点描述"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
-              <el-form-item label="开放注册"><el-switch v-model="registrationEnabled" /></el-form-item>
-              <el-form-item label="门户访问路径"><el-input value="/p" disabled /></el-form-item>
-              <el-form-item label="门户端口"><el-input v-model="portalPort" placeholder="留空使用面板端口" /></el-form-item>
+              <el-form-item :label="t('portal.siteName')"><el-input v-model="form.name" :placeholder="t('portal.siteNamePlaceholder')" /></el-form-item>
+              <el-form-item :label="t('portal.siteDescription')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
+              <el-form-item :label="t('portal.openRegistration')"><el-switch v-model="registrationEnabled" /></el-form-item>
+              <el-form-item :label="t('portal.portalPath')"><el-input value="/p" disabled /></el-form-item>
+              <el-form-item :label="t('portal.portalPort')"><el-input v-model="portalPort" :placeholder="t('portal.portalPortPlaceholder')" /></el-form-item>
             </el-form>
           </el-tab-pane>
-          <el-tab-pane label="外观配置" name="appearance">
+          <el-tab-pane :label="t('portal.appearanceTab')" name="appearance">
             <el-form :model="config" label-width="140px" style="max-width: 700px; padding: 20px 0">
-              <el-form-item label="站点标题"><el-input v-model="config.site_name" placeholder="CoreFusion" /></el-form-item>
-              <el-form-item label="Logo URL"><el-input v-model="config.logo_url" placeholder="https://..." /></el-form-item>
-              <el-form-item label="主色调"><div class="color-row"><el-color-picker v-model="config.primary_color" /><el-input v-model="config.primary_color" style="width: 120px" /></div></el-form-item>
-              <el-form-item label="背景色"><div class="color-row"><el-color-picker v-model="config.background_color" /><el-input v-model="config.background_color" style="width: 120px" /></div></el-form-item>
-              <el-form-item label="卡片背景色"><div class="color-row"><el-color-picker v-model="config.card_background_color" /><el-input v-model="config.card_background_color" style="width: 120px" /></div></el-form-item>
-              <el-form-item label="文字颜色"><div class="color-row"><el-color-picker v-model="config.text_color" /><el-input v-model="config.text_color" style="width: 120px" /></div></el-form-item>
-              <el-form-item label="强调色"><div class="color-row"><el-color-picker v-model="config.accent_color" /><el-input v-model="config.accent_color" style="width: 120px" /></div></el-form-item>
-              <el-form-item label="字体"><el-input v-model="config.font_family" /></el-form-item>
+              <el-form-item :label="t('portal.siteTitle')"><el-input v-model="config.site_name" placeholder="CoreFusion" /></el-form-item>
+              <el-form-item :label="t('portal.logoUrl')"><el-input v-model="config.logo_url" placeholder="https://..." /></el-form-item>
+              <el-form-item :label="t('portal.primaryColor')"><div class="color-row"><el-color-picker v-model="config.primary_color" /><el-input v-model="config.primary_color" style="width: 120px" /></div></el-form-item>
+              <el-form-item :label="t('portal.backgroundColor')"><div class="color-row"><el-color-picker v-model="config.background_color" /><el-input v-model="config.background_color" style="width: 120px" /></div></el-form-item>
+              <el-form-item :label="t('portal.cardBgColor')"><div class="color-row"><el-color-picker v-model="config.card_background_color" /><el-input v-model="config.card_background_color" style="width: 120px" /></div></el-form-item>
+              <el-form-item :label="t('portal.textColor')"><div class="color-row"><el-color-picker v-model="config.text_color" /><el-input v-model="config.text_color" style="width: 120px" /></div></el-form-item>
+              <el-form-item :label="t('portal.accentColor')"><div class="color-row"><el-color-picker v-model="config.accent_color" /><el-input v-model="config.accent_color" style="width: 120px" /></div></el-form-item>
+              <el-form-item :label="t('portal.fontFamily')"><el-input v-model="config.font_family" /></el-form-item>
             </el-form>
           </el-tab-pane>
-          <el-tab-pane label="API 参考" name="api">
+          <el-tab-pane :label="t('portal.apiRefTab')" name="api">
             <div class="api-ref-container">
               <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
-                <span style="font-size: 13px">以下为门户相关的完整 API 接口文档，含请求/响应示例。<code>admin_token</code> 为管理员登录 Token，<code>client_token</code> 为客户端登录 Token。</span>
+                <span style="font-size: 13px">{{ t('portal.apiRefHint') }}</span>
               </el-alert>
               <el-collapse v-model="activeApiNames" class="api-collapse">
                 <el-collapse-item v-for="(group, gi) in apiGroups" :key="gi" :name="gi" :title="group.title">
@@ -945,18 +902,18 @@ ctx.moduleTitle           — 当前模块标题</pre>
                       <span class="api-desc">{{ api.desc }}</span>
                     </div>
                     <div v-if="api.auth" class="api-auth">
-                      <span class="api-auth-label">认证：</span>
+                      <span class="api-auth-label">{{ t('portal.authLabel') }}</span>
                       <span class="api-auth-value">{{ api.auth }}</span>
                     </div>
                     <div v-if="api.requestBody" class="api-section-block">
-                      <div class="api-block-label">请求示例</div>
+                      <div class="api-block-label">{{ t('portal.requestExample') }}</div>
                       <div class="api-copy-bar">
-                        <el-button text size="small" :icon="CopyDocument" @click="copyText(api.requestBody)">复制</el-button>
+                        <el-button text size="small" :icon="CopyDocument" @click="copyText(api.requestBody)">{{ t('common.copy') }}</el-button>
                       </div>
                       <pre class="api-code-block"><code>{{ api.requestBody }}</code></pre>
                     </div>
                     <div v-if="api.response" class="api-section-block">
-                      <div class="api-block-label">响应示例</div>
+                      <div class="api-block-label">{{ t('portal.responseExample') }}</div>
                       <pre class="api-code-block"><code>{{ api.response }}</code></pre>
                     </div>
                   </div>
@@ -971,18 +928,18 @@ ctx.moduleTitle           — 当前模块标题</pre>
       <div v-if="editorMode === 'code'" class="code-mode">
         <el-alert type="info" :closable="false" show-icon style="margin-bottom: 0; border-radius: 0">
           <span style="font-size: 13px">
-            <b>模板编辑</b> — 可直接修改门户的 HTML/CSS/JS 模板代码。修改后点击"保存"即生效。
-            <br/>HTML 变量：<code v-pre>{{.PortalName}}</code> <code v-pre>{{.LogoURL}}</code> <code v-pre>{{.RegistrationEnabled}}</code>
-            <code v-pre>{{registrationEnabledText}}</code> &nbsp;|&nbsp; CSS 变量：<code v-pre>{{.PrimaryColor}}</code>
-            <code v-pre>{{.BackgroundColor}}</code> <code v-pre>{{.FontFamily}}</code> 等
+            <b>{{ t('portal.codeModeTitle') }}</b> — {{ t('portal.codeModeHint') }}
+            <br/>{{ t('portal.htmlVarsLabel') }}：<code v-pre>{{.PortalName}}</code> <code v-pre>{{.LogoURL}}</code> <code v-pre>{{.RegistrationEnabled}}</code>
+            <code v-pre>{{registrationEnabledText}}</code> &nbsp;|&nbsp; {{ t('portal.cssVarsLabel') }}：<code v-pre>{{.PrimaryColor}}</code>
+            <code v-pre>{{.BackgroundColor}}</code> <code v-pre>{{.FontFamily}}</code> {{ t('portal.etc') }}
           </span>
         </el-alert>
         <div class="code-tabs-bar">
           <el-radio-group v-model="codeTab" size="small">
-            <el-radio-button value="html">HTML 模板</el-radio-button>
-            <el-radio-button value="css">CSS 样式</el-radio-button>
-            <el-radio-button value="js">JavaScript</el-radio-button>
-            <el-radio-button value="advanced">重置与导出</el-radio-button>
+            <el-radio-button value="html">{{ t('portal.htmlTemplate') }}</el-radio-button>
+            <el-radio-button value="css">{{ t('portal.cssStyles') }}</el-radio-button>
+            <el-radio-button value="js">{{ t('portal.javascript') }}</el-radio-button>
+            <el-radio-button value="advanced">{{ t('portal.resetAndExport') }}</el-radio-button>
           </el-radio-group>
         </div>
         <div v-if="codeTab !== 'advanced'" class="code-editor-area">
@@ -1009,25 +966,25 @@ ctx.moduleTitle           — 当前模块标题</pre>
           />
         </div>
         <div v-else class="code-advanced-pane">
-          <el-alert type="warning" :closable="false" show-icon title="重置为默认模板" style="margin-bottom: 16px">
-            此操作将覆盖当前所有自定义配置，恢复为系统内置默认模板。此操作不可撤销。
+          <el-alert type="warning" :closable="false" show-icon :title="t('portal.resetToDefault')" style="margin-bottom: 16px">
+            t('portal.resetWarning')
           </el-alert>
-          <el-button type="danger" @click="handleReset">重置为默认模板</el-button>
+          <el-button type="danger" @click="handleReset">{{ t('portal.resetToDefaultBtn') }}</el-button>
         </div>
       </div>
     </div>
 
     <!-- Navigation Dialog -->
-    <el-dialog v-model="navDialogVisible" title="添加导航页" width="500px">
+    <el-dialog v-model="navDialogVisible" :title="t('portal.addNavPage')" width="500px">
       <el-form label-position="top" size="small">
-        <el-form-item label="页面名称"><el-input v-model="newNav.label" placeholder="如：帮助中心 / 关于我们 / 使用教程" /></el-form-item>
-        <el-form-item label="图标 (可选)"><el-input v-model="newNav.icon" placeholder="如：📖 / 🎯 / ⚙️" /></el-form-item>
-        <el-form-item label="外部链接 (可选)"><el-input v-model="newNav.href" placeholder="https://example.com — 填写后此导航跳转到外部链接" /></el-form-item>
+        <el-form-item :label="t('portal.pageName')"><el-input v-model="newNav.label" :placeholder="t('portal.pageNamePlaceholder')" /></el-form-item>
+        <el-form-item :label="t('portal.iconOptional')"><el-input v-model="newNav.icon" :placeholder="t('portal.iconPlaceholder2')" /></el-form-item>
+        <el-form-item :label="t('portal.externalLink')"><el-input v-model="newNav.href" :placeholder="t('portal.externalLinkPlaceholder2')" /></el-form-item>
       </el-form>
-      <div style="font-size: 13px; color: #909399; margin-top: 8px">💡 添加后会自动创建一个页面，你可以在该页面添加内容模块。</div>
+      <div style="font-size: 13px; color: #909399; margin-top: 8px">{{ t('portal.addNavHint') }}</div>
       <template #footer>
-        <el-button @click="navDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmAddNav">添加</el-button>
+        <el-button @click="navDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmAddNav">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1035,12 +992,15 @@ ctx.moduleTitle           — 当前模块标题</pre>
 
 <script setup>
 import { ref, reactive, computed, onMounted, shallowRef, watch, defineComponent, h, compile } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { View, Check, Plus, Delete, ArrowUp, ArrowDown, CopyDocument, Search, Close } from '@element-plus/icons-vue'
 import { getActivePortal, updateActivePortal, resetPortal, getPortalCacheStatus, clearPortalCache, rebuildPortalCache, setPortalDevMode } from '../api/portal'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import CodeEditor from '../components/common/CodeEditor.vue'
+
+const { t } = useI18n()
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true })
@@ -1086,14 +1046,14 @@ const newNav = reactive({ label: '', icon: '', target: 'overview', href: '', ena
 
 const activeApiNames = ref([0])
 
-const apiGroups = [
+const apiGroups = computed(() => [
   {
-    title: '门户管理接口（需管理员 Token）',
+    title: t('portal.api.group.portalMgmt'),
     apis: [
       {
         method: 'GET',
         path: '/api/v1/portal/active',
-        desc: '获取当前活跃门户配置（含结构化导航、模块、主题字段）',
+        desc: t('portal.api.getActive'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{
@@ -1111,11 +1071,11 @@ const apiGroups = [
     "portal_editor_version": 1,
     "registration_enabled": true,
     "navigation": [
-      { "id": "nav-overview", "label": "概览", "icon": "📊", "target": "overview", "href": "", "enabled": true, "open_external": false }
+      { "id": "nav-overview", "label": "${t('portal.api.ex.navOverview')}", "icon": "📊", "target": "overview", "href": "", "enabled": true, "open_external": false }
     ],
     "modules": [
-      { "id": "mod-hero", "type": "hero", "title": "欢迎", "visible": true,
-        "data": { "eyebrow": "CORE FUSION", "heading": "欢迎回来", "description": "..." },
+      { "id": "mod-hero", "type": "hero", "title": "${t('portal.api.ex.heroTitle')}", "visible": true,
+        "data": { "eyebrow": "CORE FUSION", "heading": "${t('portal.api.ex.heroHeading')}", "description": "..." },
         "style": { "variant": "primary", "align": "left" } }
     ]
   }
@@ -1124,17 +1084,17 @@ const apiGroups = [
       {
         method: 'PUT',
         path: '/api/v1/portal/active',
-        desc: '更新门户配置（支持结构化字段：navigation / modules / theme）',
+        desc: t('portal.api.putActive'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: `{
   "name": "MyPortal",
-  "description": "我的订阅站",
+  "description": "${t('portal.api.ex.siteDesc')}",
   "navigation": [
-    { "id": "nav-home", "label": "首页", "icon": "🏠", "target": "overview", "href": "", "enabled": true, "open_external": false }
+    { "id": "nav-home", "label": "${t('portal.api.ex.navHome')}", "icon": "🏠", "target": "overview", "href": "", "enabled": true, "open_external": false }
   ],
   "modules": [
-    { "id": "mod-hero", "type": "hero", "title": "欢迎", "visible": true,
-      "data": { "eyebrow": "WELCOME", "heading": "欢迎", "description": "...", "button_text": "查看", "button_target": "subscription" },
+    { "id": "mod-hero", "type": "hero", "title": "${t('portal.api.ex.heroTitle')}", "visible": true,
+      "data": { "eyebrow": "WELCOME", "heading": "${t('portal.api.ex.heroTitle')}", "description": "...", "button_text": "${t('portal.api.ex.buttonView')}", "button_target": "subscription" },
       "style": { "variant": "primary", "align": "left" } }
   ],
   "theme": {
@@ -1158,7 +1118,7 @@ const apiGroups = [
       {
         method: 'POST',
         path: '/api/v1/portal/reset',
-        desc: '重置门户为内置默认模板',
+        desc: t('portal.api.reset'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{
@@ -1169,7 +1129,7 @@ const apiGroups = [
       {
         method: 'GET',
         path: '/api/v1/portal/cache',
-        desc: '查看渲染缓存状态（命中/未命中次数、开发模式等）',
+        desc: t('portal.api.getCache'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{
@@ -1180,7 +1140,7 @@ const apiGroups = [
       {
         method: 'DELETE',
         path: '/api/v1/portal/cache',
-        desc: '清理渲染缓存，下次访问门户时重新编译',
+        desc: t('portal.api.deleteCache'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{ "code": 0, "data": { "message": "cache cleared" } }`,
@@ -1188,7 +1148,7 @@ const apiGroups = [
       {
         method: 'POST',
         path: '/api/v1/portal/cache/rebuild',
-        desc: '立即重建渲染缓存（编译一次并缓存结果）',
+        desc: t('portal.api.rebuildCache'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{ "code": 0, "data": { "message": "cache rebuilt", "stats": { "cached": true, "hit_count": 42, "miss_count": 2, "dev_mode": false } } }`,
@@ -1196,7 +1156,7 @@ const apiGroups = [
       {
         method: 'PUT',
         path: '/api/v1/portal/cache/dev-mode',
-        desc: '切换开发/生产模式（开发模式：每次请求都重新编译；生产模式：启用缓存）',
+        desc: t('portal.api.devMode'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: `{ "dev_mode": true }`,
         response: `{ "code": 0, "data": { "message": "dev mode set to dev", "dev_mode": true } }`,
@@ -1204,7 +1164,7 @@ const apiGroups = [
       {
         method: 'GET',
         path: '/api/v1/portal/templates',
-        desc: '获取所有门户模板列表',
+        desc: t('portal.api.getTemplates'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{
@@ -1217,11 +1177,11 @@ const apiGroups = [
       {
         method: 'POST',
         path: '/api/v1/portal/templates',
-        desc: '创建新门户模板',
+        desc: t('portal.api.postTemplates'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: `{
-  "name": "自定义模板",
-  "description": "我的自定义门户",
+  "name": "${t('portal.api.ex.templateName')}",
+  "description": "${t('portal.api.ex.customPortalDesc')}",
   "html_content": "<div>...</div>",
   "css_content": "body { ... }",
   "js_content": "console.log('hi')",
@@ -1229,13 +1189,13 @@ const apiGroups = [
 }`,
         response: `{
   "code": 0,
-  "data": { "id": 2, "name": "自定义模板", "is_active": false }
+  "data": { "id": 2, "name": "${t('portal.api.ex.templateName')}", "is_active": false }
 }`,
       },
       {
         method: 'POST',
         path: '/api/v1/portal/templates/:id/activate',
-        desc: '激活指定模板为当前门户',
+        desc: t('portal.api.activateTemplate'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{ "code": 0, "data": { "message": "activated", "id": 2 } }`,
@@ -1243,7 +1203,7 @@ const apiGroups = [
       {
         method: 'DELETE',
         path: '/api/v1/portal/templates/:id',
-        desc: '删除指定模板（不能删除内置/活跃模板）',
+        desc: t('portal.api.deleteTemplate'),
         auth: 'Authorization: Bearer <admin_token>',
         requestBody: null,
         response: `{ "code": 0, "data": { "message": "deleted" } }`,
@@ -1251,13 +1211,13 @@ const apiGroups = [
     ],
   },
   {
-    title: '公开接口（无需认证）',
+    title: t('portal.api.group.public'),
     apis: [
       {
         method: 'GET',
         path: '/api/v1/public/settings',
-        desc: '获取门户公开设置（是否开放注册等）',
-        auth: '无需认证',
+        desc: t('portal.api.publicSettings'),
+        auth: t('portal.api.noAuth'),
         requestBody: null,
         response: `{
   "code": 0,
@@ -1267,26 +1227,26 @@ const apiGroups = [
       {
         method: 'GET',
         path: '/api/v1/public/subscription-endpoints',
-        desc: '获取可用订阅端点列表',
-        auth: '无需认证',
+        desc: t('portal.api.publicSubEndpoints'),
+        auth: t('portal.api.noAuth'),
         requestBody: null,
         response: `{
   "code": 0,
   "data": [
-    { "id": 1, "name": "主站", "host": "example.com", "port": 8081 }
+    { "id": 1, "name": "${t('portal.api.ex.endpointName')}", "host": "example.com", "port": 8081 }
   ]
 }`,
       },
     ],
   },
   {
-    title: '客户端接口（公开 + 需客户端 Token）',
+    title: t('portal.api.group.client'),
     apis: [
       {
         method: 'POST',
         path: '/api/v1/client-auth/register',
-        desc: '用户注册（需开启开放注册）',
-        auth: '无需认证',
+        desc: t('portal.api.register'),
+        auth: t('portal.api.noAuth'),
         requestBody: `{
   "username": "user1",
   "password": "MyPass123!",
@@ -1294,14 +1254,14 @@ const apiGroups = [
 }`,
         response: `{
   "code": 0,
-  "data": { "message": "注册成功" }
+  "data": { "message": "${t('portal.api.ex.msgRegister')}" }
 }`,
       },
       {
         method: 'POST',
         path: '/api/v1/client-auth/login',
-        desc: '用户登录，获取客户端 Token',
-        auth: '无需认证',
+        desc: t('portal.api.login'),
+        auth: t('portal.api.noAuth'),
         requestBody: `{
   "username": "user1",
   "password": "MyPass123!"
@@ -1318,7 +1278,7 @@ const apiGroups = [
       {
         method: 'GET',
         path: '/api/v1/client-auth/me',
-        desc: '获取当前登录用户信息',
+        desc: t('portal.api.me'),
         auth: 'Authorization: Bearer <client_token>',
         requestBody: null,
         response: `{
@@ -1334,7 +1294,7 @@ const apiGroups = [
       {
         method: 'POST',
         path: '/api/v1/client-auth/rotate-token',
-        desc: '轮换订阅 Token（旧 Token 失效）',
+        desc: t('portal.api.rotateToken'),
         auth: 'Authorization: Bearer <client_token>',
         requestBody: null,
         response: `{
@@ -1345,31 +1305,31 @@ const apiGroups = [
       {
         method: 'PUT',
         path: '/api/v1/client-auth/settings',
-        desc: '更新客户端安全设置',
+        desc: t('portal.api.updateSettings'),
         auth: 'Authorization: Bearer <client_token>',
         requestBody: `{
   "alert_on_traffic_limit": true,
   "traffic_alert_threshold": 90
 }`,
-        response: `{ "code": 0, "data": { "message": "设置已更新" } }`,
+        response: `{ "code": 0, "data": { "message": "${t('portal.api.ex.msgSettings')}" } }`,
       },
       {
         method: 'POST',
         path: '/api/v1/client-auth/change-password',
-        desc: '修改密码',
+        desc: t('portal.api.changePassword'),
         auth: 'Authorization: Bearer <client_token>',
         requestBody: `{
   "old_password": "OldPass123!",
   "new_password": "NewPass456!"
 }`,
-        response: `{ "code": 0, "data": { "message": "密码修改成功" } }`,
+        response: `{ "code": 0, "data": { "message": "${t('portal.api.ex.msgPassword')}" } }`,
       },
     ],
   },
-]
+])
 
 function copyText(text) {
-  navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制到剪贴板')).catch(() => ElMessage.error('复制失败'))
+  navigator.clipboard.writeText(text).then(() => ElMessage.success(t('portal.copiedToClipboard'))).catch(() => ElMessage.error(t('portal.copyFailed')))
 }
 
 const selectedNav = computed(() => navigation.value.find(n => n.id === selectedNavId.value))
@@ -1412,7 +1372,7 @@ function ensureNoticeData(mod) {
   if (typeof d.popup_trigger !== 'string') d.popup_trigger = 'on_load'
   if (typeof d.popup_dismiss !== 'string') d.popup_dismiss = 'once'
   if (typeof d.popup_width !== 'string') d.popup_width = '480px'
-  if (typeof d.popup_button_text !== 'string') d.popup_button_text = '我知道了'
+  if (typeof d.popup_button_text !== 'string') d.popup_button_text = t('portal.api.ex.defaultPopupButton')
   if (typeof d.popup_show_close !== 'boolean') d.popup_show_close = true
   if (typeof d.popup_link_text !== 'string') d.popup_link_text = ''
   if (typeof d.popup_link_url !== 'string') d.popup_link_url = ''
@@ -1622,97 +1582,98 @@ const previewStyles = computed(() => ({
 }))
 
 const defaultNavigation = [
-  { id: 'nav-overview', label: '概览', icon: '📊', target: 'overview', href: '', enabled: true, open_external: false },
-  { id: 'nav-subscription', label: '订阅', icon: '📋', target: 'subscription', href: '', enabled: true, open_external: false },
-  { id: 'nav-store', label: '商城', icon: '💎', target: 'store', href: '', enabled: true, open_external: false },
-  { id: 'nav-security', label: '安全', icon: '🔒', target: 'security', href: '', enabled: true, open_external: false },
-  { id: 'nav-support', label: '支持', icon: '💬', target: 'support', href: '', enabled: true, open_external: false },
-  { id: 'nav-logs', label: '日志', icon: '📦', target: 'logs', href: '', enabled: true, open_external: false },
+  { id: 'nav-overview', label: t('portal.seed.nav.overview'), icon: '📊', target: 'overview', href: '', enabled: true, open_external: false },
+  { id: 'nav-subscription', label: t('portal.seed.nav.subscription'), icon: '📋', target: 'subscription', href: '', enabled: true, open_external: false },
+  { id: 'nav-store', label: t('portal.seed.nav.store'), icon: '💎', target: 'store', href: '', enabled: true, open_external: false },
+  { id: 'nav-security', label: t('portal.seed.nav.security'), icon: '🔒', target: 'security', href: '', enabled: true, open_external: false },
+  { id: 'nav-support', label: t('portal.seed.nav.support'), icon: '💬', target: 'support', href: '', enabled: true, open_external: false },
+  { id: 'nav-logs', label: t('portal.seed.nav.logs'), icon: '📦', target: 'logs', href: '', enabled: true, open_external: false },
 ]
 
 const defaultModules = [
   {
-    id: 'mod-hero', type: 'hero', title: '欢迎', page: 'overview', visible: true,
-    data: { eyebrow: 'WELCOME BACK', heading: '欢迎回来', description: '管理您的订阅与服务', button_text: '查看订阅', button_target: 'subscription' },
+    id: 'mod-hero', type: 'hero', title: t('portal.seed.mod.hero.title'), page: 'overview', visible: true,
+    data: { eyebrow: 'WELCOME BACK', heading: t('portal.seed.mod.hero.heading'), description: t('portal.seed.mod.hero.desc'), button_text: t('portal.seed.mod.hero.btn'), button_target: 'subscription' },
     style: { variant: 'primary', align: 'left' },
   },
   {
-    id: 'mod-account', type: 'account_info', title: '账户信息', page: 'overview', visible: true,
+    id: 'mod-account', type: 'account_info', title: t('portal.seed.mod.account.title'), page: 'overview', visible: true,
     data: {}, style: {},
   },
   {
-    id: 'mod-traffic', type: 'traffic_ring', title: '流量使用', page: 'overview', visible: true,
+    id: 'mod-traffic', type: 'traffic_ring', title: t('portal.seed.mod.traffic.title'), page: 'overview', visible: true,
     data: {}, style: {},
   },
   {
-    id: 'md-notice', type: 'notice', title: '站点公告', page: 'overview', visible: true,
-    data: { title: '📢 公告', markdown: '欢迎使用 **CoreFusion** 订阅管理平台！\n\n- 支持 VLESS / VMess / Trojan / TUIC 等多种协议\n- 一键复制订阅链接\n- 流量使用实时查看\n' },
+    id: 'md-notice', type: 'notice', title: t('portal.seed.mod.notice.title'), page: 'overview', visible: true,
+    data: { title: t('portal.seed.mod.notice.dataTitle'), markdown: t('portal.seed.mod.notice.markdown') },
     style: { variant: 'info' },
   },
   {
-    id: 'mod-sub', type: 'subscription_detail', title: '订阅信息', page: 'subscription', visible: true,
-    data: { description: '查看您的订阅链接和状态', copy_text: '复制', qr_text: '二维码', show_status: true, show_rotate: true }, style: {},
+    id: 'mod-sub', type: 'subscription_detail', title: t('portal.seed.mod.sub.title'), page: 'subscription', visible: true,
+    data: { description: t('portal.seed.mod.sub.desc'), copy_text: t('portal.seed.common.copy'), qr_text: t('portal.seed.common.qr'), show_status: true, show_rotate: true }, style: {},
   },
   {
-    id: 'mod-sec', type: 'security_settings', title: '安全设置', page: 'security', visible: true,
-    data: { description: '管理您的账户安全设置', show_ip_whitelist: true, show_password: true }, style: {},
+    id: 'mod-sec', type: 'security_settings', title: t('portal.seed.mod.sec.title'), page: 'security', visible: true,
+    data: { description: t('portal.seed.mod.sec.desc'), show_ip_whitelist: true, show_password: true }, style: {},
   },
   {
-    id: 'mod-log', type: 'log_packages', title: '日志打包', page: 'logs', visible: true,
-    data: { description: '请求打包最近日志，系统将在后台收集并压缩为可下载文件。', btn_1h: '打包最近1小时', btn_6h: '最近6小时', btn_24h: '最近24小时' }, style: {},
+    id: 'mod-log', type: 'log_packages', title: t('portal.seed.mod.log.title'), page: 'logs', visible: true,
+    data: { description: t('portal.seed.mod.log.desc'), btn_1h: t('portal.seed.common.btn1h'), btn_6h: t('portal.seed.common.btn6h'), btn_24h: t('portal.seed.common.btn24h') }, style: {},
   },
   {
-    id: 'mod-log-info', type: 'markdown', title: '访问日志', page: 'logs', visible: true,
-    data: { markdown: '## 访问日志\n\n在此页面查看您的连接日志和访问记录。\n\n> 日志数据由客户端实时拉取。' },
+    id: 'mod-log-info', type: 'markdown', title: t('portal.seed.mod.logInfo.title'), page: 'logs', visible: true,
+    data: { markdown: t('portal.seed.mod.logInfo.markdown') },
     style: { align: 'left' },
   },
   {
-    id: 'mod-plan-list', type: 'plan_list', title: '套餐列表', page: 'store', visible: true,
-    data: { show_price: true, show_features: true, show_quota: true, button_text: '购买', buy_text: '立即购买', renew_text: '续费', columns: 2 },
+    id: 'mod-plan-list', type: 'plan_list', title: t('portal.seed.mod.plan.title'), page: 'store', visible: true,
+    data: { show_price: true, show_features: true, show_quota: true, button_text: t('portal.seed.common.buy'), buy_text: t('portal.seed.common.buyNow'), renew_text: t('portal.seed.common.renew'), columns: 2 },
     style: {},
   },
   {
-    id: 'mod-balance', type: 'balance_display', title: '账户余额', page: 'store', visible: true,
-    data: { show_transactions: true, charge_btn_text: '去充值', tx_limit: 10 },
+    id: 'mod-balance', type: 'balance_display', title: t('portal.seed.mod.balance.title'), page: 'store', visible: true,
+    data: { show_transactions: true, charge_btn_text: t('portal.seed.common.charge'), tx_limit: 10 },
     style: {},
   },
   {
-    id: 'mod-charge', type: 'charge_panel', title: '在线充值', page: 'store', visible: false,
-    data: { description: '选择充值方式，输入金额后跳转到支付页面。', show_orders: true, orders_limit: 5, card_placeholder: '输入充值卡号', card_btn_text: '兑换' },
+    id: 'mod-charge', type: 'charge_panel', title: t('portal.seed.mod.charge.title'), page: 'store', visible: false,
+    data: { description: t('portal.seed.mod.charge.desc'), show_orders: true, orders_limit: 5, card_placeholder: t('portal.seed.mod.charge.cardPlaceholder'), card_btn_text: t('portal.seed.mod.charge.cardBtn') },
     style: {},
   },
   {
-    id: 'mod-referral', type: 'referral', title: '邀请返利', page: 'support', visible: true,
-    data: { description: '邀请好友注册并消费，即可获得返利佣金。', copy_btn_text: '复制邀请链接', show_records: true, records_limit: 10 },
+    id: 'mod-referral', type: 'referral', title: t('portal.seed.mod.referral.title'), page: 'support', visible: true,
+    data: { description: t('portal.seed.mod.referral.desc'), copy_btn_text: t('portal.seed.mod.referral.copyBtn'), show_records: true, records_limit: 10 },
     style: {},
   },
   {
-    id: 'mod-tickets', type: 'ticket_list', title: '我的工单', page: 'support', visible: true,
-    data: { new_btn_text: '新建工单', show_categories: true },
+    id: 'mod-tickets', type: 'ticket_list', title: t('portal.seed.mod.tickets.title'), page: 'support', visible: true,
+    data: { new_btn_text: t('portal.seed.mod.tickets.newBtn'), show_categories: true },
     style: {},
   },
   {
-    id: 'mod-articles', type: 'article_list', title: '教程文章', page: 'support', visible: true,
+    id: 'mod-articles', type: 'article_list', title: t('portal.seed.mod.articles.title'), page: 'support', visible: true,
     data: { show_category_filter: true, default_category: '' },
     style: {},
   },
   {
-    id: 'mod-shared-accts', type: 'shared_accounts', title: '共享账号', page: 'support', visible: true,
-    data: { description: '以下共享账号可供使用，点击查看凭据。', apply_btn_text: '查看凭据', repair_btn_text: '请求修复' },
+    id: 'mod-shared-accts', type: 'shared_accounts', title: t('portal.seed.mod.shared.title'), page: 'support', visible: true,
+    data: { description: t('portal.seed.mod.shared.desc'), apply_btn_text: t('portal.seed.mod.shared.applyBtn'), repair_btn_text: t('portal.seed.mod.shared.repairBtn') },
     style: {},
   },
 ]
 
 function moduleTypeLabel(type) {
-  return {
-    hero: '欢迎横幅', markdown: 'Markdown', notice: '公告', freeform: '自定义组件',
-    tutorial_cards: '下载与教程', article_list: '教程文章',
-    account_info: '账户信息', traffic_ring: '流量使用', subscription_detail: '订阅详情',
-    client_download: '客户端下载', streaming_status: '流媒体解锁', shared_accounts: '共享账号',
-    plan_list: '套餐列表', charge_panel: '在线充值', balance_display: '余额显示',
-    order_list: '我的账单', referral: '推广邀请',
-    node_list: '线路列表', ticket_list: '工单系统', security_settings: '安全设置', log_packages: '日志打包',
-  }[type] || type
+  const map = {
+    hero: t('portal.modHero'), markdown: 'Markdown', notice: t('portal.modNotice'), freeform: t('portal.modFreeform'),
+    tutorial_cards: t('portal.modTutorialCards'), article_list: t('portal.modArticleList'),
+    account_info: t('portal.modAccountInfo'), traffic_ring: t('portal.modTrafficRing'), subscription_detail: t('portal.modSubDetail'),
+    client_download: t('portal.modClientDownload'), streaming_status: t('portal.modStreamingStatus'), shared_accounts: t('portal.modSharedAccounts'),
+    plan_list: t('portal.modPlanList'), charge_panel: t('portal.modChargePanel'), balance_display: t('portal.modBalanceDisplay'),
+    order_list: t('portal.modOrderList'), referral: t('portal.modReferral'),
+    node_list: t('portal.modNodeList'), ticket_list: t('portal.modTicketList'), security_settings: t('portal.modSecuritySettings'), log_packages: t('portal.modLogPackages'),
+  }
+  return map[type] || type
 }
 
 function moduleStyle(mod) {
@@ -1786,7 +1747,7 @@ function openNavDialog() {
   navDialogVisible.value = true
 }
 function confirmAddNav() {
-  if (!newNav.label) { ElMessage.error('请输入显示名称'); return }
+  if (!newNav.label) { ElMessage.error(t('portal.pleaseEnterName')); return }
   // Auto-generate target from label if not set
   const target = newNav.target || newNav.label.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '') || 'page-' + Date.now()
   const navId = genId('nav')
@@ -1797,7 +1758,7 @@ function confirmAddNav() {
   hasUnsavedChanges.value = true
 }
 function removeNav(idx) {
-  ElMessageBox.confirm('确定删除此导航项？', '确认', { type: 'warning' }).then(() => {
+  ElMessageBox.confirm(t('portal.confirmDeleteNav'), t('common.confirm'), { type: 'warning' }).then(() => {
     const removedId = navigation.value[idx].id
     if (selectedNavId.value === removedId) selectedNavId.value = ''
     if (currentPageNavId.value === removedId) {
@@ -1812,35 +1773,35 @@ function removeNav(idx) {
 
 function addModule(type) {
   const defaults = {
-    hero: { data: { eyebrow: '', heading: '新标题', description: '', button_text: '', button_target: 'subscription' }, style: { variant: 'primary', align: 'left', custom_css: '' } },
-    markdown: { data: { markdown: '## 标题\n\n在这里编写 Markdown 内容。\n\n- 支持 **粗体**、*斜体*\n- 支持 [链接](https://example.com)\n- 支持代码块\n\n```js\nconsole.log("hello")\n```\n' }, style: { align: 'left', custom_css: '' } },
-    rich_text: { data: { html: '<p>在此编辑富文本内容</p>' }, style: { align: 'left', custom_css: '' } },
-    notice: { data: { title: '公告', markdown: '公告正文，支持 **Markdown** 格式。\n\n支持 [外链](https://example.com) 和列表。', display_mode: 'inline', popup_trigger: 'on_load', popup_dismiss: 'once', popup_width: '480px', popup_button_text: '我知道了', popup_show_close: true, popup_link_text: '', popup_link_url: '', popup_link_external: true }, style: { variant: 'info', custom_css: '' } },
-    feature_cards: { data: { cards: [{ icon: '⭐', title: '功能一', description: '功能描述' }] }, style: { custom_css: '' } },
+    hero: { data: { eyebrow: '', heading: t('portal.dft.hero.heading'), description: '', button_text: '', button_target: 'subscription' }, style: { variant: 'primary', align: 'left', custom_css: '' } },
+    markdown: { data: { markdown: t('portal.dft.markdown') }, style: { align: 'left', custom_css: '' } },
+    rich_text: { data: { html: t('portal.dft.richText') }, style: { align: 'left', custom_css: '' } },
+    notice: { data: { title: t('portal.dft.notice.title'), markdown: t('portal.dft.notice.markdown'), display_mode: 'inline', popup_trigger: 'on_load', popup_dismiss: 'once', popup_width: '480px', popup_button_text: t('portal.api.ex.defaultPopupButton'), popup_show_close: true, popup_link_text: '', popup_link_url: '', popup_link_external: true }, style: { variant: 'info', custom_css: '' } },
+    feature_cards: { data: { cards: [{ icon: '⭐', title: t('portal.dft.featureCards.title'), description: t('portal.dft.featureCards.desc') }] }, style: { custom_css: '' } },
     account_stats: { data: {}, style: { layout: 'grid', custom_css: '' } },
     account_info: { data: {}, style: { custom_css: '' } },
     traffic_ring: { data: {}, style: { custom_css: '' } },
-    subscription_detail: { data: { description: '', copy_text: '复制', qr_text: '二维码', show_status: true, show_rotate: true }, style: { custom_css: '' } },
+    subscription_detail: { data: { description: '', copy_text: t('portal.seed.common.copy'), qr_text: t('portal.seed.common.qr'), show_status: true, show_rotate: true }, style: { custom_css: '' } },
     security_settings: { data: { description: '', show_ip_whitelist: true, show_password: true }, style: { custom_css: '' } },
-    log_packages: { data: { description: '', btn_1h: '打包最近1小时', btn_6h: '最近6小时', btn_24h: '最近24小时' }, style: { custom_css: '' } },
-    subscription: { data: { title: '订阅信息', description: '', button_text: '复制订阅链接' }, style: { custom_css: '' } },
-    custom_html: { data: { html: '<div>自定义内容</div>' }, style: { custom_css: '' } },
+    log_packages: { data: { description: '', btn_1h: t('portal.seed.common.btn1h'), btn_6h: t('portal.seed.common.btn6h'), btn_24h: t('portal.seed.common.btn24h') }, style: { custom_css: '' } },
+    subscription: { data: { title: t('portal.seed.mod.sub.title'), description: '', button_text: t('portal.dft.subscription.btn') }, style: { custom_css: '' } },
+    custom_html: { data: { html: t('portal.dft.customHtml') }, style: { custom_css: '' } },
     freeform: {
       data: {
-        html: '<div class="my-module">\n  <h3>{{ title }}</h3>\n  <p>自定义内容区域</p>\n  <button @click="count++">点击 {{ count }}</button>\n</div>',
+        html: t('portal.dft.freeform.html'),
         css: '.my-module {\n  padding: 20px;\n  border-radius: 12px;\n  background: var(--accent-light);\n}\n.my-module h3 {\n  color: var(--accent);\n  margin-bottom: 8px;\n}\n.my-module button {\n  padding: 6px 16px;\n  border: none;\n  border-radius: 6px;\n  background: var(--accent);\n  color: #fff;\n  cursor: pointer;\n}',
-        js: '// ctx 包含：\n// ctx.ref / ctx.computed / ctx.watch  — Vue 响应式 API\n// ctx.data.client / ctx.data.token  — 用户数据\n// ctx.api.get/post/put/delete(path, body)  — API 调用\n// ctx.formatBytes / ctx.copyText / ctx.elMessage  — 工具函数\n\nvar ref = ctx.ref\n\nreturn {\n  title: ref("我的自定义模块"),\n  count: ref(0),\n}'
+        js: t('portal.dft.freeform.js')
       },
       style: { custom_css: '', custom_class: '' }
     },
-    plan_list: { data: { show_price: true, show_features: true, show_quota: true, button_text: '购买', buy_text: '立即购买', renew_text: '续费', columns: 2 }, style: { custom_css: '' } },
-    order_create: { data: { description: '选择套餐和支付方式，创建订单。' }, style: { custom_css: '' } },
-    charge_panel: { data: { description: '选择充值方式，输入金额后跳转到支付页面。', show_orders: true, orders_limit: 5, card_placeholder: '输入充值卡号', card_btn_text: '兑换' }, style: { custom_css: '' } },
-    balance_display: { data: { show_transactions: true, charge_btn_text: '去充值', tx_limit: 10 }, style: { custom_css: '' } },
-    referral: { data: { description: '邀请好友注册并消费，即可获得返利佣金。', copy_btn_text: '复制邀请链接', show_records: true, records_limit: 10 }, style: { custom_css: '' } },
-    ticket_list: { data: { new_btn_text: '新建工单', show_categories: true }, style: { custom_css: '' } },
+    plan_list: { data: { show_price: true, show_features: true, show_quota: true, button_text: t('portal.seed.common.buy'), buy_text: t('portal.seed.common.buyNow'), renew_text: t('portal.seed.common.renew'), columns: 2 }, style: { custom_css: '' } },
+    order_create: { data: { description: t('portal.dft.orderCreate.desc') }, style: { custom_css: '' } },
+    charge_panel: { data: { description: t('portal.seed.mod.charge.desc'), show_orders: true, orders_limit: 5, card_placeholder: t('portal.seed.mod.charge.cardPlaceholder'), card_btn_text: t('portal.seed.mod.charge.cardBtn') }, style: { custom_css: '' } },
+    balance_display: { data: { show_transactions: true, charge_btn_text: t('portal.seed.common.charge'), tx_limit: 10 }, style: { custom_css: '' } },
+    referral: { data: { description: t('portal.seed.mod.referral.desc'), copy_btn_text: t('portal.seed.mod.referral.copyBtn'), show_records: true, records_limit: 10 }, style: { custom_css: '' } },
+    ticket_list: { data: { new_btn_text: t('portal.seed.mod.tickets.newBtn'), show_categories: true }, style: { custom_css: '' } },
     article_list: { data: { show_category_filter: true, default_category: '' }, style: { custom_css: '' } },
-    shared_accounts: { data: { description: '以下共享账号可供使用，点击查看凭据。', apply_btn_text: '查看凭据', repair_btn_text: '请求修复' }, style: { custom_css: '' } },
+    shared_accounts: { data: { description: t('portal.seed.mod.shared.desc'), apply_btn_text: t('portal.seed.mod.shared.applyBtn'), repair_btn_text: t('portal.seed.mod.shared.repairBtn') }, style: { custom_css: '' } },
   }
   const page = currentPageTarget.value || 'overview'
   const mod = { id: genId('mod'), type, title: moduleTypeLabel(type), page, visible: true, data: defaults[type].data, style: defaults[type].style }
@@ -1855,7 +1816,7 @@ function duplicateModuleByIdx(pageIdx) {
   const realIdx = modules.value.indexOf(mod)
   const copy = JSON.parse(JSON.stringify(mod))
   copy.id = genId('mod')
-  copy.title = (mod.title || '') + ' (副本)'
+  copy.title = (mod.title || '') + t('portal.copySuffix')
   modules.value.splice(realIdx + 1, 0, copy)
   hasUnsavedChanges.value = true
 }
@@ -1863,7 +1824,7 @@ function duplicateModuleByIdx(pageIdx) {
 function removeModuleByIdx(pageIdx) {
   const mod = currentPageModules.value[pageIdx]
   if (!mod) return
-  ElMessageBox.confirm('确定删除此模块？', '确认', { type: 'warning' }).then(() => {
+  ElMessageBox.confirm(t('portal.confirmDeleteModule'), t('common.confirm'), { type: 'warning' }).then(() => {
     const realIdx = modules.value.indexOf(mod)
     if (realIdx >= 0) {
       if (selectedModuleId.value === mod.id) selectedModuleId.value = ''
@@ -1902,7 +1863,7 @@ function execCmd(cmd, val) {
   syncRichText()
 }
 function insertLink() {
-  const url = window.prompt('输入链接地址')
+  const url = window.prompt(t('portal.enterLinkUrl'))
   if (url) { document.execCommand('createLink', false, url); syncRichText() }
 }
 function onRichTextInput() { syncRichText() }
@@ -1934,19 +1895,19 @@ function insertMd(type) {
   const sel = model.getValueInRange(selection)
   let insert = ''
   switch (type) {
-    case 'heading': insert = `## ${sel || '标题'}`; break
-    case 'bold': insert = `**${sel || '粗体文字'}**`; break
-    case 'italic': insert = `*${sel || '斜体文字'}*`; break
-    case 'strikethrough': insert = `~~${sel || '删除线文字'}~~`; break
-    case 'ul': insert = `- ${sel || '列表项'}`; break
-    case 'ol': insert = `1. ${sel || '列表项'}`; break
-    case 'checklist': insert = `- [ ] ${sel || '待办项'}`; break
-    case 'link': insert = `[${sel || '链接文字'}](https://example.com)`; break
-    case 'image': insert = `![${sel || '图片描述'}](https://...)`; break
-    case 'code': insert = `\`${sel || '代码'}\``; break
-    case 'codeblock': insert = `\`\`\`\n${sel || '代码块'}\n\`\`\``; break
-    case 'quote': insert = `> ${sel || '引用文字'}`; break
-    case 'table': insert = `| 列1 | 列2 | 列3 |\n|------|------|------|\n| 内容 | 内容 | 内容 |`; break
+    case 'heading': insert = `## ${sel || t('portal.mdInsert.title')}`; break
+    case 'bold': insert = `**${sel || t('portal.mdInsert.bold')}**`; break
+    case 'italic': insert = `*${sel || t('portal.mdInsert.italic')}*`; break
+    case 'strikethrough': insert = `~~${sel || t('portal.mdInsert.strike')}~~`; break
+    case 'ul': insert = `- ${sel || t('portal.mdInsert.listItem')}`; break
+    case 'ol': insert = `1. ${sel || t('portal.mdInsert.listItem')}`; break
+    case 'checklist': insert = `- [ ] ${sel || t('portal.mdInsert.todo')}`; break
+    case 'link': insert = `[${sel || t('portal.mdInsert.linkText')}](https://example.com)`; break
+    case 'image': insert = `![${sel || t('portal.mdInsert.imageDesc')}](https://...)`; break
+    case 'code': insert = `\`${sel || t('portal.mdInsert.code')}\``; break
+    case 'codeblock': insert = `\`\`\`\n${sel || t('portal.mdInsert.codeblock')}\n\`\`\``; break
+    case 'quote': insert = `> ${sel || t('portal.mdInsert.quote')}`; break
+    case 'table': insert = `t('portal.mdInsert.table')`; break
     case 'hr': insert = `---`; break
   }
   editor.executeEdits('toolbar', [{
@@ -1967,11 +1928,11 @@ function insertNoticeMd(type) {
   const sel = model.getValueInRange(selection)
   let insert = ''
   switch (type) {
-    case 'heading': insert = `## ${sel || '标题'}`; break
-    case 'bold': insert = `**${sel || '粗体'}**`; break
-    case 'italic': insert = `*${sel || '斜体'}*`; break
-    case 'link': insert = `[${sel || '链接'}](https://...)`; break
-    case 'code': insert = `\`${sel || '代码'}\``; break
+    case 'heading': insert = `## ${sel || t('portal.mdInsert.title')}`; break
+    case 'bold': insert = `**${sel || t('portal.mdInsert.boldShort')}**`; break
+    case 'italic': insert = `*${sel || t('portal.mdInsert.italicShort')}*`; break
+    case 'link': insert = `[${sel || t('portal.mdInsert.linkShort')}](https://...)`; break
+    case 'code': insert = `\`${sel || t('portal.mdInsert.code')}\``; break
   }
   editor.executeEdits('toolbar', [{
     range: selection,
@@ -2081,7 +2042,7 @@ const fetchConfig = async () => {
   try {
     const data = await getActivePortal()
     applyData(data)
-  } catch { ElMessage.error('加载门户配置失败') }
+  } catch { ElMessage.error(t('portal.loadConfigFailed')) }
   finally { loading.value = false }
 }
 
@@ -2113,9 +2074,9 @@ const handleSave = async () => {
     applyData(res)
     // Rebuild render cache so the portal page reflects changes immediately
     try { await rebuildPortalCache() } catch { /* cache rebuild is best-effort */ }
-    ElMessage.success('门户配置已保存')
+    ElMessage.success(t('portal.saveSuccess'))
     hasUnsavedChanges.value = false
-  } catch (e) { ElMessage.error(e.response?.data?.message || '保存失败') }
+  } catch (e) { ElMessage.error(e.response?.data?.message || t('portal.saveFailed')) }
   finally { saving.value = false }
 }
 
@@ -2141,13 +2102,13 @@ function switchLangLocale(code) {
 }
 
 function addLocale() {
-  ElMessageBox.prompt('请输入语言代码（如 en, ja, ko, en-US）', '新增语言', {
-    confirmButtonText: '添加',
-    cancelButtonText: '取消',
+  ElMessageBox.prompt(t('portal.enterLangCode'), t('portal.addLocaleTitle'), {
+    confirmButtonText: t('common.create'),
+    cancelButtonText: t('common.cancel'),
     inputPattern: /^[a-z]{2}(-[A-Z]{2})?$/,
-    inputErrorMessage: '语言代码格式：如 en, en-US, ja'
+    inputErrorMessage: t('portal.langCodeFormat')
   }).then(({ value }) => {
-    if (langPack.value.locales[value]) { ElMessage.warning('该语言已存在'); return }
+    if (langPack.value.locales[value]) { ElMessage.warning(t('portal.langAlreadyExists')); return }
     // Copy keys from current locale with empty values
     const newLocale = {}
     for (const key of Object.keys(langData.value)) {
@@ -2157,13 +2118,13 @@ function addLocale() {
     newLocale._meta = { language: value, label: value, flag: '🌐' }
     langPack.value.locales[value] = newLocale
     langPack.value = { ...langPack.value }  // trigger reactivity
-    ElMessage.success('已添加语言：' + value)
+    ElMessage.success(t('portal.langAdded', { code: value }))
   }).catch(() => {})
 }
 
 function removeLocale(code) {
-  if (code === langPack.value.default) { ElMessage.warning('不能删除默认语言'); return }
-  ElMessageBox.confirm(`确定删除语言 "${code}" 吗？`, '确认', { type: 'warning' }).then(() => {
+  if (code === langPack.value.default) { ElMessage.warning(t('portal.cannotDeleteDefaultLang')); return }
+  ElMessageBox.confirm(t('portal.confirmDeleteLang', { code }), t('common.confirm'), { type: 'warning' }).then(() => {
     delete langPack.value.locales[code]
     langPack.value = { ...langPack.value }
     if (langLocale.value === code) {
@@ -2171,7 +2132,7 @@ function removeLocale(code) {
       langData.value = langPack.value.locales[langLocale.value] || {}
     }
     hasUnsavedChanges.value = true
-    ElMessage.success('已删除')
+    ElMessage.success(t('portal.deleted'))
   }).catch(() => {})
 }
 
@@ -2191,29 +2152,29 @@ const filteredLangEntries = computed(() => {
 })
 
 function addLangKey() {
-  ElMessageBox.prompt('请输入文案 Key（如 nav.home 或 common.save）', '新增文案', {
-    confirmButtonText: '添加',
-    cancelButtonText: '取消',
+  ElMessageBox.prompt(t('portal.enterLangKey'), t('portal.addLangEntryTitle'), {
+    confirmButtonText: t('common.create'),
+    cancelButtonText: t('common.cancel'),
     inputPattern: /^[a-z_]+\.[a-z_]+$/,
-    inputErrorMessage: 'Key 格式：小写字母+下划线，用点分隔，如 nav.home'
+    inputErrorMessage: t('portal.langKeyFormat')
   }).then(({ value }) => {
     if (langData.value[value] !== undefined) {
-      ElMessage.warning('该 Key 已存在')
+      ElMessage.warning(t('portal.langKeyExists'))
       return
     }
     langData.value[value] = ''
     langData.value = { ...langData.value }  // trigger reactivity
     hasUnsavedChanges.value = true
-    ElMessage.success('已添加，请编辑文案内容')
+    ElMessage.success(t('portal.langKeyAdded'))
   }).catch(() => {})
 }
 
 function deleteLangKey(key) {
-  ElMessageBox.confirm(`确定删除文案 "${key}" 吗？`, '确认', { type: 'warning' }).then(() => {
+  ElMessageBox.confirm(t('portal.confirmDeleteLangKey', { key }), t('common.confirm'), { type: 'warning' }).then(() => {
     delete langData.value[key]
     langData.value = { ...langData.value }
     hasUnsavedChanges.value = true
-    ElMessage.success('已删除')
+    ElMessage.success(t('portal.deleted'))
   }).catch(() => {})
 }
 
@@ -2241,18 +2202,18 @@ function importLang(file) {
         langLocale.value = data.default || Object.keys(data.locales)[0] || 'zh-CN'
         langData.value = langPack.value.locales[langLocale.value] || {}
         hasUnsavedChanges.value = true
-        ElMessage.success('多语言包导入成功')
+        ElMessage.success(t('portal.langPackImported'))
       } else if (typeof data === 'object' && data !== null) {
         // Legacy flat format — merge into current locale
         langData.value = { ...langData.value, ...data }
         langPack.value.locales[langLocale.value] = langData.value
         hasUnsavedChanges.value = true
-        ElMessage.success('文案导入成功（已合并到当前语言）')
+        ElMessage.success(t('portal.langImportedMerged'))
       } else {
-        ElMessage.error('文件格式不正确')
+        ElMessage.error(t('portal.invalidFileFormat'))
       }
     } catch {
-      ElMessage.error('JSON 解析失败')
+      ElMessage.error(t('portal.jsonParseFailed'))
     }
   }
   reader.readAsText(file)
@@ -2261,12 +2222,12 @@ function importLang(file) {
 
 const handleReset = async () => {
   try {
-    await ElMessageBox.confirm('此操作将覆盖当前所有自定义配置，恢复为系统内置默认模板。此操作不可撤销！', '确认重置', { type: 'warning' })
+    await ElMessageBox.confirm(t('portal.resetConfirmMsg'), t('portal.resetConfirmTitle'), { type: 'warning' })
     const res = await resetPortal()
     applyData(res)
     try { await rebuildPortalCache() } catch { /* best-effort */ }
-    ElMessage.success('已重置为默认模板')
-  } catch (e) { if (e !== 'cancel') ElMessage.error('重置失败') }
+    ElMessage.success(t('portal.resetSuccess'))
+  } catch (e) { if (e !== 'cancel') ElMessage.error(t('portal.resetFailed')) }
 }
 
 // --- Render cache management ---
@@ -2283,31 +2244,31 @@ async function handleCacheCommand(cmd) {
   if (cmd === 'status') {
     await fetchCacheStatus()
     const s = cacheStatus.value
-    const msg = `缓存状态：${s.cached ? '已缓存' : '未缓存'}\n` +
-      `模式：${s.dev_mode ? '开发模式（不缓存）' : '生产模式（已缓存）'}\n` +
-      `命中次数：${s.hit_count}\n` +
-      `未命中次数：${s.miss_count}` +
-      (s.built_at ? `\n缓存时间：${s.built_at}` : '')
-    ElMessageBox.alert(msg, '缓存状态', { confirmButtonText: '关闭' })
+    const msg = t('portal.cacheStatusCached', { status: s.cached ? t('portal.cachedStatus') : t('portal.notCachedStatus') }) + '\n' +
+      t('portal.cacheModeLabel') + '：' + (s.dev_mode ? t('portal.devModeNoCache') : t('portal.prodModeCached')) + '\n' +
+      t('portal.hitCount') + '：' + s.hit_count + '\n' +
+      t('portal.missCount') + '：' + s.miss_count +
+      (s.built_at ? '\n' + t('portal.cacheTime') + '：' + s.built_at : '')
+    ElMessageBox.alert(msg, t('portal.cacheStatusTitle'), { confirmButtonText: t('common.close') })
   } else if (cmd === 'rebuild') {
     try {
       await rebuildPortalCache()
       await fetchCacheStatus()
-      ElMessage.success('缓存已重建')
-    } catch { ElMessage.error('重建缓存失败') }
+      ElMessage.success(t('portal.cacheRebuilt'))
+    } catch { ElMessage.error(t('portal.rebuildCacheFailed')) }
   } else if (cmd === 'clear') {
     try {
       await clearPortalCache()
       await fetchCacheStatus()
-      ElMessage.success('缓存已清理')
-    } catch { ElMessage.error('清理缓存失败') }
+      ElMessage.success(t('portal.cacheCleared'))
+    } catch { ElMessage.error(t('portal.clearCacheFailed')) }
   } else if (cmd === 'dev') {
     const newMode = !cacheStatus.value.dev_mode
     try {
       await setPortalDevMode(newMode)
       await fetchCacheStatus()
-      ElMessage.success(newMode ? '已切换到开发模式（每次请求都重新编译）' : '已切换到生产模式（启用缓存）')
-    } catch { ElMessage.error('切换模式失败') }
+      ElMessage.success(newMode ? t('portal.switchedToDevMode') : t('portal.switchedToProdMode'))
+    } catch { ElMessage.error(t('portal.switchModeFailed')) }
   }
 }
 

@@ -2205,6 +2205,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User, ArrowDown } from '@element-plus/icons-vue'
 import client from '../../../api/client'
+import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
 const { t } = useI18n()
@@ -2218,7 +2219,7 @@ const apiBase = computed(() => `${nodeBase.value}/binaries`)
 const form = ref([])
 const dlg = ref(false)
 const editIdx = ref(-1)
-const activeTab = ref('basic')
+const activeTab = useQueryState('itab', 'basic')
 const certList = ref([])
 const realityTargets = ref([])
 const defaultTarget = computed(() => realityTargets.value.find(t => t.default))

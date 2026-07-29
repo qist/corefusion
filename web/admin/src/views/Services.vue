@@ -15,9 +15,10 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryState } from '../composables/useQueryState'
 import ShareDomainTab from './services/ShareDomainTab.vue'
 import CFIPTab from './services/CFIPTab.vue'
 
 const { t } = useI18n()
-const activeTab = ref('shareDomain')
+const activeTab = useQueryState('tab', 'shareDomain')
 </script>

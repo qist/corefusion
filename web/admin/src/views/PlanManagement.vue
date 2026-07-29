@@ -544,8 +544,9 @@ const { t } = useI18n()
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import * as planApi from '../api/plan'
+import { useQueryState } from '../composables/useQueryState'
 
-const activeTab = ref('templates')
+const activeTab = useQueryState('tab', 'templates')
 
 // ──────── Templates ────────
 const templates = ref([])

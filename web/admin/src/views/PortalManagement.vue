@@ -86,7 +86,7 @@
           <div class="structure-section structure-modules">
             <div class="section-header">
               <span class="section-title">
-                currentNav ? t('portal.navModules', { name: currentNav.label }) : t('portal.contentModules')
+                {{ currentNav ? currentNav.label + ' 模块' : '内容模块' }}
               </span>
               <el-dropdown @command="addModule" trigger="click" :disabled="!currentNav">
                 <el-button text size="small" :icon="Plus" :disabled="!currentNav">{{ t('portal.addModule') }}</el-button>
@@ -999,6 +999,7 @@ import { getActivePortal, updateActivePortal, resetPortal, getPortalCacheStatus,
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import CodeEditor from '../components/common/CodeEditor.vue'
+import { useQueryState } from '../composables/useQueryState'
 
 const { t } = useI18n()
 
@@ -1007,9 +1008,9 @@ marked.setOptions({ breaks: true, gfm: true })
 
 const loading = ref(false)
 const saving = ref(false)
-const editorMode = ref('builder')
-const settingsTab = ref('basic')
-const codeTab = ref('html')
+const editorMode = useQueryState('mode', 'builder')
+const settingsTab = useQueryState('stab', 'basic')
+const codeTab = useQueryState('ctab', 'html')
 const langSearch = ref('')  // search filter for lang editor
 const previewDevice = ref('desktop')
 const hasUnsavedChanges = ref(false)
@@ -1039,7 +1040,7 @@ const selectedModuleId = ref('')
 // Regions (editable system pages like auth/login)
 const regions = ref({})  // { auth: { html, css, js, data } }
 const selectedRegionType = ref('')  // 'auth' | ''
-const regionViewMode = ref('preview')  // 'preview' | 'html' | 'css' | 'js'
+const regionViewMode = useQueryState('rview', 'preview')  // 'preview' | 'html' | 'css' | 'js'
 const previewFrame = ref(null)
 
 const newNav = reactive({ label: '', icon: '', target: 'overview', href: '', enabled: true, open_external: false })
@@ -1344,8 +1345,8 @@ const currentNav = computed(() => navigation.value.find(n => n.id === currentPag
 const currentPageTarget = computed(() => currentNav.value?.target || '')
 
 // Center column view mode: 'preview' | 'editor' | 'css' | 'page-preview' | 'html' | 'js'
-const centerViewMode = ref('preview')
-const freeformTab = ref('html')
+const centerViewMode = useQueryState('cview', 'preview')
+const freeformTab = useQueryState('ftab', 'html')
 
 // Whether the selected module has a content code editor (markdown, rich_text, etc.)
 const hasContentEditor = computed(() => {

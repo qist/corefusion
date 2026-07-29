@@ -642,6 +642,7 @@ import { useI18n } from 'vue-i18n'
 import * as chargeApi from '../api/charge'
 import * as planApi from '../api/plan'
 import { CURRENCIES, getCurrencyInfo, getCurrencySymbol, getCurrencyDecimals, yuanToMinor, minorToYuan, formatAmount, getAmountStep, getValuePlaceholder } from '../utils/currency'
+import { useQueryState } from '../composables/useQueryState'
 
 const { t, locale } = useI18n()
 
@@ -659,7 +660,7 @@ async function fetchDefaultCurrency() {
   } catch {}
 }
 
-const activeTab = ref('sites')
+const activeTab = useQueryState('tab', 'sites')
 
 // ──────── Charge Sites ────────
 const sites = ref([])
@@ -872,8 +873,8 @@ function parseMethods(str) {
 // ──────── Charge Orders ────────
 const orders = ref([])
 const ordersLoading = ref(false)
-const orderStatusFilter = ref('')
-const orderPage = ref(1)
+const orderStatusFilter = useQueryState('ostatus', '', { omit: (v) => v === '' })
+const orderPage = useQueryState('opage', 1, { type: 'number' })
 const orderTotal = ref(0)
 const orderDetailDialog = ref(false)
 const currentOrder = ref(null)
@@ -900,8 +901,8 @@ const cards = ref([])
 const cardsLoading = ref(false)
 const cardStatusFilter = ref('')
 const cardTypeFilter = ref('')
-const cardAgentFilter = ref(null)
-const cardPage = ref(1)
+const cardAgentFilter = useQueryState('cagent', '', { omit: (v) => v === '' || v === null })
+const cardPage = useQueryState('cpage', 1, { type: 'number' })
 const cardTotal = ref(0)
 const agentUsers = ref([])
 const cardDialog = ref(false)
@@ -1072,7 +1073,7 @@ async function doExportCSV() {
 // ──────── Client Balances ────────
 const balances = ref([])
 const balancesLoading = ref(false)
-const balancePage = ref(1)
+const balancePage = useQueryState('bpage', 1, { type: 'number' })
 const balanceTotal = ref(0)
 const txDialog = ref(false)
 const txClientId = ref(0)

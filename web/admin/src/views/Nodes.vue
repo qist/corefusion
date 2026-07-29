@@ -43,9 +43,10 @@
 import {ref,onMounted} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {useI18n} from 'vue-i18n'
+import {useQueryState} from '../composables/useQueryState'
 import client from '../api/client'
 const {t}=useI18n()
-const protocols=ref([]);const loading=ref(false);const total=ref(0);const page=ref(1)
+const protocols=ref([]);const loading=ref(false);const total=ref(0);const page=useQueryState('page',1,{type:'number'})
 const dialogVisible=ref(false);const editing=ref(null);const saving=ref(false)
 const defaultForm={name:'',core_type:'xray',protocol:'vless',host:'',port:443,transport:'tcp',tls_mode:'tls',region:''}
 const form=ref({...defaultForm})

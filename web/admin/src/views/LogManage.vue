@@ -711,6 +711,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Plus, Refresh, Search, RefreshRight, View, CircleCheck, Setting,
   Document, Timer, DataLine, Monitor, FolderOpened,
@@ -720,11 +721,27 @@ import { listNodeServers } from '../api/nodeServer'
 
 const { t } = useI18n()
 
-// ──────────── Active Tab ────────────
-const activeTab = ref('overview')
+// ──────────── Active Tab (persisted via URL query) ────────────
+const route = useRoute()
+const router = useRouter()
+const activeTab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'overview')
 
-// ──────────── Global Node Selector ────────────
-const selectedServerId = ref(1)
+// ──────────── Global Node Selector (persisted via URL query) ────────────
+const selectedServerId = ref(
+  route.query.node !== undefined && route.query.node !== ''
+    ? Number(route.query.node)
+    : 1
+)
+
+// Keep URL query (?tab= / ?node=) in sync so a refresh restores the current view
+watch([activeTab, selectedServerId], ([tab, node]) => {
+  const q = { ...route.query }
+  if (tab && tab !== 'overview') q.tab = tab
+  else delete q.tab
+  if (node && node !== 1) q.node = String(node)
+  else delete q.node
+  router.replace({ query: q }).catch(() => {})
+})
 const selectedServerName = computed(() => {
   if (selectedServerId.value <= 1) return t('logManage.localNode')
   const s = nodeServers.value.find(s => s.id === selectedServerId.value)

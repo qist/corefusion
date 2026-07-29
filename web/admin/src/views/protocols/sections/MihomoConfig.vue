@@ -708,6 +708,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryState } from '../../../composables/useQueryState'
 
 const { t } = useI18n()
 const props = defineProps({
@@ -722,7 +723,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'update:hosts', 'update:proxyGroups', 'update:ruleProviders', 'update:proxyProviders', 'update:dns', 'update:tunnels'])
 
-const tab = ref('basic')
+const tab = useQueryState('mtab', 'basic')
 const ruleProvidersList = ref(Object.entries(props.ruleProviders || {}).map(([name, rp]) => ({
   name,
   type: rp.type || 'http',

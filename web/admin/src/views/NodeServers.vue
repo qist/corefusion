@@ -640,12 +640,13 @@ import {
   updateAllAgents,
   resumeTrafficSuspended, listInterfaces,
 } from '../api/nodeServer'
+import { useQueryState } from '../composables/useQueryState'
 
 const { t } = useI18n()
 const router = useRouter()
 
 // ─── Active Tab ───
-const activeTab = ref('servers')
+const activeTab = useQueryState('tab', 'servers')
 
 // ─── Agent Update All ───
 const updateAllLoading = ref(false)

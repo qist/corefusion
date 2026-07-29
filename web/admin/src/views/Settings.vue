@@ -683,9 +683,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
 import { CURRENCIES as currencyList } from '../utils/currency'
+import { useQueryState } from '../composables/useQueryState'
 
 const { t } = useI18n()
-const activeTab = ref('panel')
+const activeTab = useQueryState('tab', 'panel')
 
 // Currency config
 const currencyForm = ref({ default_currency: 'CNY' })

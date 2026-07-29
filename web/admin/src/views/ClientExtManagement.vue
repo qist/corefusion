@@ -483,8 +483,9 @@ import {
   listAllIPWhitelists, listOAuthBindings
 } from '../api/clientext'
 import { listPlanTemplates } from '../api/plan'
+import { useQueryState } from '../composables/useQueryState'
 
-const activeTab = ref('referrals')
+const activeTab = useQueryState('tab', 'referrals')
 
 // ════════════ Referral Stats & Records ════════════
 const referralStats = ref({})
@@ -529,8 +530,8 @@ async function fetchReferralRecords() {
 const withdrawals = ref([])
 const withdrawalsLoading = ref(false)
 const withdrawalTotal = ref(0)
-const withdrawalPage = ref(1)
-const withdrawalStatusFilter = ref('')
+const withdrawalPage = useQueryState('wpage', 1, { type: 'number' })
+const withdrawalStatusFilter = useQueryState('wstatus', '', { omit: (v) => v === '' })
 
 async function fetchWithdrawals() {
   withdrawalsLoading.value = true

@@ -197,7 +197,7 @@
     <el-dialog v-model="rulesDialog" :title="currentFormat?.name + ' - ' + t('subfmt.rules')" width="700">
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <el-select v-model="newRuleType" size="small" style="width:150px" @change="onRuleTypeChange">
-          <el-option-group label="域名">
+          <el-option-group :label="t('subfmt.groupDomain')">
             <el-option label="DOMAIN" value="DOMAIN" /><el-option label="DOMAIN-SUFFIX" value="DOMAIN-SUFFIX" />
             <el-option label="DOMAIN-KEYWORD" value="DOMAIN-KEYWORD" /><el-option label="DOMAIN-WILDCARD" value="DOMAIN-WILDCARD" />
             <el-option label="DOMAIN-REGEX" value="DOMAIN-REGEX" />
@@ -207,17 +207,17 @@
             <el-option label="IP-ASN" value="IP-ASN" /><el-option label="GEOIP" value="GEOIP" />
             <el-option label="GEOSITE" value="GEOSITE" />
           </el-option-group>
-          <el-option-group label="规则集">
+          <el-option-group :label="t('subfmt.groupRuleSet')">
             <el-option label="RULE-SET" value="RULE-SET" />
           </el-option-group>
-          <el-option-group label="网络">
+          <el-option-group :label="t('subfmt.groupNetwork')">
             <el-option label="DST-PORT" value="DST-PORT" /><el-option label="SRC-PORT" value="SRC-PORT" />
             <el-option label="NETWORK" value="NETWORK" />
           </el-option-group>
-          <el-option-group label="进程">
+          <el-option-group :label="t('subfmt.groupProcess')">
             <el-option label="PROCESS-NAME" value="PROCESS-NAME" /><el-option label="PROCESS-PATH" value="PROCESS-PATH" />
           </el-option-group>
-          <el-option-group label="逻辑">
+          <el-option-group :label="t('subfmt.groupLogic')">
             <el-option label="MATCH" value="MATCH" />
           </el-option-group>
         </el-select>
@@ -250,7 +250,7 @@
     <el-dialog v-model="epDialog" :title="editingEndpoint?t('subend.edit'):t('subend.create')" width="450">
       <el-form :model="epForm" label-width="100px">
         <el-form-item :label="t('subend.domain')"><el-input v-model="epForm.domain" placeholder="sub.example.com" /></el-form-item>
-        <el-form-item :label="t('subend.path')"><el-input v-model="epForm.path" placeholder="/ 或 /sub" /><div style="font-size:12px;color:#909399;margin-top:4px">{{ t('subend.pathHint') }}</div></el-form-item>
+        <el-form-item :label="t('subend.path')"><el-input v-model="epForm.path" :placeholder="t('subend.pathPlaceholder')" /><div style="font-size:12px;color:#909399;margin-top:4px">{{ t('subend.pathHint') }}</div></el-form-item>
         <el-form-item :label="t('subend.description')"><el-input v-model="epForm.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="t('common.enabled')"><el-switch v-model="epForm.enabled" /></el-form-item>
       </el-form>
@@ -285,9 +285,9 @@ const fmtLoading = ref(false)
 const selectedFormatType = ref('')
 
 const formatTypes = [
-  { type: 'mihomo_yaml', name: 'Mihomo', icon: '🐱', desc: 'Clash / Mihomo 内核', count: 0 },
-  { type: 'singbox_json', name: 'Sing-Box', icon: '📦', desc: 'Sing-Box 内核', count: 0 },
-  { type: 'xray_json', name: 'V2Ray', icon: '🚀', desc: 'V2Ray / Xray 内核', count: 0 }
+{ type: 'mihomo_yaml', name: 'Mihomo', icon: '🐱', desc: t('subfmt.mihomoKernel'), count: 0 },
+{ type: 'singbox_json', name: 'Sing-Box', icon: '📦', desc: t('subfmt.singboxKernel'), count: 0 },
+{ type: 'xray_json', name: 'V2Ray', icon: '🚀', desc: t('subfmt.xrayKernel'), count: 0 }
 ]
 
 const selectedFormatTypeName = computed(() => formatTypes.find(f => f.type === selectedFormatType.value)?.name || '')

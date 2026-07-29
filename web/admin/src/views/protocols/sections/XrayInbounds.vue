@@ -1720,11 +1720,11 @@
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.length')">
                     <el-input v-model="entry.settings._lengthsStr" type="textarea" :rows="2" placeholder="3-5&#10;6-8&#10;10-20" @change="emit" />
-                    <div class="hint">按行填写最新版 lengths 数组；每行一个分片长度范围。</div>
+                    <div class="hint">{{ t('protoCenter.finalmask.lengthsHint') }}</div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.delay')">
                     <el-input v-model="entry.settings._delaysStr" type="textarea" :rows="2" placeholder="10-20" @change="emit" />
-                    <div class="hint">按行填写最新版 delays 数组。</div>
+                    <div class="hint">{{ t('protoCenter.finalmask.delaysHint') }}</div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.maxSplit')">
                     <el-input v-model="entry.settings.maxSplit" placeholder="3-6" @change="emit" />
@@ -1743,38 +1743,38 @@
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.ascii')">
                     <el-select v-model="entry.settings.ascii" style="width:100%" @change="emit">
-                      <el-option label="prefer_ascii（ASCII 优先）" value="prefer_ascii" />
-                      <el-option label="prefer_entropy（熵优先）" value="prefer_entropy" />
+                      <el-option :label="t('protoCenter.finalmask.preferAscii')" value="prefer_ascii" />
+                      <el-option :label="t('protoCenter.finalmask.preferEntropy')" value="prefer_entropy" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="自定义表模式">
+                  <el-form-item :label="t('protoCenter.finalmask.customTableMode')">
                     <el-select v-model="entry.settings._tableMode" style="width:100%" @change="onSudokuTableModeChange(entry)">
-                      <el-option label="单表 customTable" value="single" />
-                      <el-option label="多表 customTables" value="multiple" />
+                      <el-option :label="t('protoCenter.finalmask.singleTable')" value="single" />
+                      <el-option :label="t('protoCenter.finalmask.multipleTables')" value="multiple" />
                     </el-select>
                   </el-form-item>
                   <el-form-item v-if="entry.settings._tableMode !== 'multiple'" :label="t('protoCenter.finalmask.customTable')">
                     <div style="display:flex;gap:8px;width:100%">
                       <el-input v-model="entry.settings.customTable" @change="emit" />
-                      <el-button size="small" @click="randomSudokuTable(entry)">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuTable(entry)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                   <el-form-item v-else :label="t('protoCenter.finalmask.customTables')">
                     <div style="display:flex;gap:8px;width:100%">
                       <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
-                      <el-button size="small" @click="randomSudokuTables(entry)">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuTables(entry)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
                     <div style="display:flex;gap:8px;align-items:center">
                       <el-input-number v-model="entry.settings.paddingMin" :min="0" :max="entry.settings.paddingMax" @change="emit" />
-                      <el-button size="small" @click="randomSudokuPadding(entry, 'min')">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'min')">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
                     <div style="display:flex;gap:8px;align-items:center">
                       <el-input-number v-model="entry.settings.paddingMax" :min="entry.settings.paddingMin" :max="100" @change="emit" />
-                      <el-button size="small" @click="randomSudokuPadding(entry, 'max')">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'max')">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                 </el-form>
@@ -1804,8 +1804,8 @@
                         <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
                       </el-select>
                       <span style="font-size:12px">packet</span>
-                      <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? 'rand 已启用' : '逗号分隔数据'" :disabled="!!item.rand" style="flex:1;min-width:140px" @change="onPacketChange(item)" />
-                      <el-button size="small" :disabled="!!item.rand" @click="generatePacket(item)">随机生成</el-button>
+                      <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? t('xray.randEnabled') : t('xray.commaSeparatedData')" :disabled="!!item.rand" style="flex:1;min-width:140px" @change="onPacketChange(item)" />
+                      <el-button size="small" :disabled="!!item.rand" @click="generatePacket(item)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                       <el-button size="small" type="danger" text @click="grp.splice(ii,1);emit()">X</el-button>
                     </div>
                   </div>
@@ -1849,8 +1849,8 @@
                       <el-option label="array" value="array" /><el-option label="str" value="str" /><el-option label="hex" value="hex" /><el-option label="base64" value="base64" />
                     </el-select>
                     <span style="font-size:12px">packet</span>
-                    <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? 'rand 已启用' : '逗号分隔数据'" :disabled="!!item.rand" style="flex:1;min-width:140px" @change="onPacketChange(item)" />
-                    <el-button size="small" :disabled="!!item.rand" @click="generatePacket(item)">随机生成</el-button>
+                    <el-input v-model="item._packetStr" size="small" :placeholder="item.rand ? t('xray.randEnabled') : t('xray.commaSeparatedData')" :disabled="!!item.rand" style="flex:1;min-width:140px" @change="onPacketChange(item)" />
+                    <el-button size="small" :disabled="!!item.rand" @click="generatePacket(item)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     <el-button size="small" type="danger" text @click="entry.settings[gKey].splice(ii,1);emit()">X</el-button>
                   </div>
                 </div>
@@ -1907,7 +1907,7 @@
                   </div>
                   <div style="margin-top:4px">
                     <el-input v-model="n._packetStr" size="small" :placeholder="n.rand ? t('protoCenter.finalmask.randSet') : t('protoCenter.finalmask.packetHint')" :disabled="!!n.rand" @change="onPacketChange(n)" />
-                    <el-button size="small" :disabled="!!n.rand" @click="generatePacket(n)">随机生成</el-button>
+                    <el-button size="small" :disabled="!!n.rand" @click="generatePacket(n)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                   </div>
                 </div>
                 <el-button size="small" style="margin-left:12px" @click="entry.settings._noise.push({type:'array',rand:'1-8192',randRange:'0-255',delay:'10-20',_packetStr:''})">{{ t('protoCenter.finalmask.addNoise') }}</el-button>
@@ -1946,38 +1946,38 @@
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.ascii')">
                     <el-select v-model="entry.settings.ascii" style="width:100%" @change="emit">
-                      <el-option label="prefer_ascii（ASCII 优先）" value="prefer_ascii" />
-                      <el-option label="prefer_entropy（熵优先）" value="prefer_entropy" />
+                      <el-option :label="t('protoCenter.finalmask.preferAscii')" value="prefer_ascii" />
+                      <el-option :label="t('protoCenter.finalmask.preferEntropy')" value="prefer_entropy" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="自定义表模式">
+                  <el-form-item :label="t('protoCenter.finalmask.customTableMode')">
                     <el-select v-model="entry.settings._tableMode" style="width:100%" @change="onSudokuTableModeChange(entry)">
-                      <el-option label="单表 customTable" value="single" />
-                      <el-option label="多表 customTables" value="multiple" />
+                      <el-option :label="t('protoCenter.finalmask.singleTable')" value="single" />
+                      <el-option :label="t('protoCenter.finalmask.multipleTables')" value="multiple" />
                     </el-select>
                   </el-form-item>
                   <el-form-item v-if="entry.settings._tableMode !== 'multiple'" :label="t('protoCenter.finalmask.customTable')">
                     <div style="display:flex;gap:8px;width:100%">
                       <el-input v-model="entry.settings.customTable" @change="emit" />
-                      <el-button size="small" @click="randomSudokuTable(entry)">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuTable(entry)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                   <el-form-item v-else :label="t('protoCenter.finalmask.customTables')">
                     <div style="display:flex;gap:8px;width:100%">
                       <el-input v-model="entry.settings._customTablesStr" type="textarea" :rows="2" :placeholder="t('protoCenter.finalmask.customTablesHint')" @change="emit" />
-                      <el-button size="small" @click="randomSudokuTables(entry)">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuTables(entry)">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMin')">
                     <div style="display:flex;gap:8px;align-items:center">
                       <el-input-number v-model="entry.settings.paddingMin" :min="0" :max="entry.settings.paddingMax" @change="emit" />
-                      <el-button size="small" @click="randomSudokuPadding(entry, 'min')">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'min')">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                   <el-form-item :label="t('protoCenter.finalmask.paddingMax')">
                     <div style="display:flex;gap:8px;align-items:center">
                       <el-input-number v-model="entry.settings.paddingMax" :min="entry.settings.paddingMin" :max="100" @change="emit" />
-                      <el-button size="small" @click="randomSudokuPadding(entry, 'max')">随机生成</el-button>
+                      <el-button size="small" @click="randomSudokuPadding(entry, 'max')">{{ t('protoCenter.finalmask.randomGenerate') }}</el-button>
                     </div>
                   </el-form-item>
                 </el-form>

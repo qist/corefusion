@@ -7,19 +7,19 @@
 
     <!-- Sources -->
     <el-card style="margin-bottom:16px">
-      <div class="hint" style="margin-bottom:8px">导入来源</div>
+      <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.importSources') }}</div>
       <el-table :data="sources" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="name" label="名称" width="180" />
-        <el-table-column prop="source_type" label="类型" width="80">
+        <el-table-column prop="name" :label="t('common.name')" width="180" />
+        <el-table-column prop="source_type" :label="t('common.type')" width="80">
           <template #default="{row}"><el-tag size="small">{{ row.source_type }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column :label="t('common.status')" width="80">
           <template #default="{row}"><el-switch v-model="row.enabled" @change="updateSource(row)" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" type="danger" text @click="deleteSource(row)">删除</el-button>
+            <el-button size="small" type="danger" text @click="deleteSource(row)">{{ t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -27,78 +27,78 @@
 
     <!-- Nodes -->
     <el-card>
-      <div class="hint" style="margin-bottom:8px">所有节点（支持单独编辑/删除）</div>
+      <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.allNodesHint') }}</div>
       <el-table :data="nodes" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column prop="name" label="名称" width="160" />
-        <el-table-column prop="protocol" label="协议" width="80">
+        <el-table-column prop="name" :label="t('common.name')" width="160" />
+        <el-table-column prop="protocol" :label="t('externalNodes.protocol')" width="80">
           <template #default="{row}"><el-tag size="small">{{ row.protocol }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="host" label="地址" width="180" />
-        <el-table-column prop="port" label="端口" width="70" />
-        <el-table-column prop="transport" label="传输" width="80" />
+        <el-table-column prop="host" :label="t('externalNodes.address')" width="180" />
+        <el-table-column prop="port" :label="t('externalNodes.port')" width="70" />
+        <el-table-column prop="transport" :label="t('externalNodes.transport')" width="80" />
         <el-table-column label="TLS" width="60">
           <template #default="{row}"><el-tag v-if="row.tls" size="small" type="success">TLS</el-tag></template>
         </el-table-column>
-        <el-table-column label="状态" width="60">
+        <el-table-column :label="t('common.status')" width="60">
           <template #default="{row}"><el-switch v-model="row.enabled" size="small" @change="updateNode(row)" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" text @click="editNode(row)">编辑</el-button>
-            <el-button size="small" type="danger" text @click="deleteNode(row)">删除</el-button>
+            <el-button size="small" text @click="editNode(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" text @click="deleteNode(row)">{{ t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- Import Dialog -->
-    <el-dialog v-model="importDlg" title="导入外部节点" width="700">
+    <el-dialog v-model="importDlg" :title="t('externalNodes.importDialogTitle')" width="700">
       <el-form label-width="100px" size="small">
-        <el-form-item label="来源名称">
+        <el-form-item :label="t('externalNodes.name')">
           <el-input v-model="form.name" placeholder="My Nodes" />
         </el-form-item>
-        <el-form-item label="导入方式">
+        <el-form-item :label="t('externalNodes.sourceType')">
           <el-select v-model="form.source_type" style="width:200px">
-            <el-option label="v2ray URI" value="uri" />
-            <el-option label="Base64 URI" value="base64_uri" />
+            <el-option :label="t('externalNodes.v2rayUri')" value="uri" />
+            <el-option :label="t('externalNodes.base64Uri')" value="base64_uri" />
             <el-option label="YAML" value="yaml" />
             <el-option label="JSON" value="json" />
-            <el-option label="订阅 URL" value="url" />
+            <el-option :label="t('externalNodes.subUrl')" value="url" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.source_type==='url'" label="订阅 URL">
+        <el-form-item v-if="form.source_type==='url'" :label="t('externalNodes.sourceUrl')">
           <el-input v-model="form.source_url" placeholder="https://..." />
         </el-form-item>
-        <el-form-item v-else label="导入内容">
-          <el-input v-model="form.source_data" type="textarea" :rows="8" placeholder="粘贴 YAML/JSON/URI 内容..." />
+        <el-form-item v-else :label="t('externalNodes.sourceData')">
+          <el-input v-model="form.source_data" type="textarea" :rows="8" :placeholder="t('externalNodes.pasteContent')" />
           <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
             <el-upload :auto-upload="false" :show-file-list="false" accept=".yaml,.yml,.json,.txt,.list" @change="onFileUpload">
-              <el-button size="small">选择文件上传</el-button>
+              <el-button size="small">{{ t('externalNodes.selectFile') }}</el-button>
             </el-upload>
-            <span style="font-size:12px;color:#909399">支持 .yaml .json .txt 文件</span>
+            <span style="font-size:12px;color:#909399">{{ t('externalNodes.supportedFiles') }}</span>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="importDlg=false">取消</el-button>
-        <el-button type="primary" @click="doImport">导入</el-button>
+        <el-button @click="importDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="doImport">{{ t('common.import') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- Edit Node Dialog -->
-    <el-dialog v-model="editDlg" title="编辑节点" width="600">
+    <el-dialog v-model="editDlg" :title="t('externalNodes.editNode')" width="600">
       <el-form label-width="100px" size="small">
-        <el-form-item label="名称">
+        <el-form-item :label="t('common.name')">
           <el-input v-model="editForm.name" />
         </el-form-item>
-        <el-form-item label="代理配置 (JSON)">
+        <el-form-item :label="t('externalNodes.proxyConfig')">
           <el-input v-model="editForm.proxy_json" type="textarea" :rows="12" style="font-family:monospace;font-size:12px" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editDlg=false">取消</el-button>
-        <el-button type="primary" @click="saveNode">保存</el-button>
+        <el-button @click="editDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveNode">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -149,17 +149,17 @@ function onFileUpload(file) {
 async function doImport() {
   try {
     const res = await client.post('/external-nodes/sources', form.value)
-    ElMessage.success(`导入成功，共 ${res?.node_count || 0} 个节点`)
+    ElMessage.success(t('externalNodes.importSuccess', { count: res?.node_count || 0 }))
     importDlg.value = false
     fetchSources()
     fetchNodes()
-  } catch (e) { ElMessage.error(e?.message || '导入失败') }
+  } catch (e) { ElMessage.error(e?.message || t('externalNodes.importError')) }
 }
 async function updateSource(row) {
   try { await client.put(`/external-nodes/sources/${row.id}`, { enabled: row.enabled, name: row.name }) } catch {}
 }
 async function deleteSource(row) {
-  await ElMessageBox.confirm('确定删除？将同时删除该来源下的所有节点。')
+  await ElMessageBox.confirm(t('externalNodes.confirmDeleteSource'))
   try { await client.delete(`/external-nodes/sources/${row.id}`); fetchSources(); fetchNodes() } catch {}
 }
 function editNode(row) {
@@ -174,14 +174,14 @@ async function saveNode() {
     })
     editDlg.value = false
     fetchNodes()
-    ElMessage.success('保存成功')
-  } catch (e) { ElMessage.error(e?.message || '保存失败') }
+    ElMessage.success(t('common.success'))
+  } catch (e) { ElMessage.error(e?.message || t('common.failed')) }
 }
 async function updateNode(row) {
   try { await client.put(`/external-nodes/${row.id}`, { enabled: row.enabled }) } catch {}
 }
 async function deleteNode(row) {
-  await ElMessageBox.confirm('确定删除该节点？')
+  await ElMessageBox.confirm(t('externalNodes.confirmDeleteNode'))
   try { await client.delete(`/external-nodes/${row.id}`); fetchNodes() } catch {}
 }
 

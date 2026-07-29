@@ -21,10 +21,10 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="下载限速" width="80">
+      <el-table-column :label="t('client.downloadSpeedLimit')" width="80">
         <template #default="{row}">{{ row.speed_limit_mbps ? row.speed_limit_mbps + 'Mbps' : '-' }}</template>
       </el-table-column>
-      <el-table-column label="上传限速" width="80">
+      <el-table-column :label="t('client.uploadSpeedLimit')" width="80">
         <template #default="{row}">{{ row.speed_limit_up_mbps ? row.speed_limit_up_mbps + 'Mbps' : '-' }}</template>
       </el-table-column>
       <el-table-column :label="t('client.subscribeUrl')" width="80">
@@ -49,10 +49,10 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="520">
         <template #default="{row}">
-          <el-button size="small" type="primary" @click="showRenewDialog(row)">续费</el-button>
-          <el-button size="small" type="success" @click="showUpgradeDialog(row)">升级</el-button>
-          <el-button size="small" @click="showDowngradeDialog(row)">降级</el-button>
-          <el-button size="small" @click="showOrdersDialog(row)">订单</el-button>
+          <el-button size="small" type="primary" @click="showRenewDialog(row)">{{ t('client.renew') }}</el-button>
+          <el-button size="small" type="success" @click="showUpgradeDialog(row)">{{ t('client.upgrade') }}</el-button>
+          <el-button size="small" @click="showDowngradeDialog(row)">{{ t('client.downgrade') }}</el-button>
+          <el-button size="small" @click="showOrdersDialog(row)">{{ t('client.orders') }}</el-button>
           <el-button v-if="row.status==='active'" size="small" type="warning" @click="suspendClient(row)">{{ t('client.suspend') }}</el-button>
           <el-button v-if="row.status==='suspended'" size="small" type="success" @click="restoreClient(row)">{{ t('client.restore') }}</el-button>
           <el-button size="small" @click="resetUsage(row)">{{ t('client.resetUsage') }}</el-button>
@@ -67,20 +67,20 @@
     <el-dialog v-model="clientDialog" :title="editingClient?t('client.editClient'):t('client.createClient')" width="500">
       <el-form :model="clientForm" label-width="100px">
         <el-form-item :label="t('client.email')"><el-input v-model="clientForm.email" :disabled="!!editingClient" /></el-form-item>
-        <el-form-item label="套餐模板">
+        <el-form-item :label="t('client.planTemplate')">
           <el-select v-model="clientForm.plan_id" style="width:100%" @change="onTemplateChange">
             <el-option v-for="tpl in planTemplates" :key="tpl.id" :label="tpl.name + ' (' + tpl.category + ')'" :value="tpl.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="套餐规格">
+        <el-form-item :label="t('client.planVariant')">
           <el-select v-model="clientForm.plan_variant_id" style="width:100%" :disabled="!clientForm.plan_id">
-            <el-option v-for="v in availableVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + '天'" :value="v.id" />
+            <el-option v-for="v in availableVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('client.quota')"><el-input v-model.number="clientForm.quota_gb" type="number" :min="0" :step="0.1" /><div class="hint">GB (0=用套餐默认)</div></el-form-item>
-        <el-form-item label="下载限速(Mbps)"><el-input-number v-model="clientForm.speed_limit_mbps" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
-        <el-form-item label="上传限速(Mbps)"><el-input-number v-model="clientForm.speed_limit_up_mbps" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
-        <el-form-item label="并发限制"><el-input-number v-model="clientForm.concurrent_limit" :min="0" size="small" /><div class="hint">0=继承模板</div></el-form-item>
+        <el-form-item :label="t('client.quota')"><el-input v-model.number="clientForm.quota_gb" type="number" :min="0" :step="0.1" /><div class="hint">{{ t('client.quotaHint') }}</div></el-form-item>
+        <el-form-item :label="t('client.downloadSpeedLimitMbps')"><el-input-number v-model="clientForm.speed_limit_mbps" :min="0" size="small" /><div class="hint">{{ t('client.inheritTemplate') }}</div></el-form-item>
+        <el-form-item :label="t('client.uploadSpeedLimitMbps')"><el-input-number v-model="clientForm.speed_limit_up_mbps" :min="0" size="small" /><div class="hint">{{ t('client.inheritTemplate') }}</div></el-form-item>
+        <el-form-item :label="t('client.concurrentLimit')"><el-input-number v-model="clientForm.concurrent_limit" :min="0" size="small" /><div class="hint">{{ t('client.inheritTemplate') }}</div></el-form-item>
         <el-form-item :label="t('client.expires')"><el-date-picker v-model="clientForm.expires_at" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
         <el-form-item :label="t('client.remark')"><el-input v-model="clientForm.remark" /></el-form-item>
       </el-form>
@@ -90,24 +90,24 @@
       </template>
     </el-dialog>
 
-    <!-- 续费弹窗 -->
-    <el-dialog v-model="renewDialog" title="续费" width="450px">
+    <!-- Renew Dialog -->
+    <el-dialog v-model="renewDialog" :title="t('client.renew')" width="450px">
       <el-form :model="renewForm" label-width="100px" size="small">
-        <el-form-item label="客户端">{{ renewForm.email }}</el-form-item>
-        <el-form-item label="选择规格">
-          <el-select v-model="renewForm.variant_id" style="width:100%" placeholder="选择续费规格">
-            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + '天'" :value="v.id" />
+        <el-form-item :label="t('client.clientEmail')">{{ renewForm.email }}</el-form-item>
+        <el-form-item :label="t('client.selectVariant')">
+          <el-select v-model="renewForm.variant_id" style="width:100%" :placeholder="t('client.selectRenewVariant')">
+            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="优惠码">
+        <el-form-item :label="t('client.promotionCode')">
           <div style="display:flex;gap:8px">
-            <el-input v-model="renewForm.promotion_code" placeholder="输入优惠码" />
-            <el-button @click="validateRenewPromo">验证</el-button>
+            <el-input v-model="renewForm.promotion_code" :placeholder="t('client.enterPromoCode')" />
+            <el-button @click="validateRenewPromo">{{ t('client.validate') }}</el-button>
           </div>
         </el-form-item>
-        <el-form-item v-if="renewPromoResult" label="优惠结果">
+        <el-form-item v-if="renewPromoResult" :label="t('client.promoResult')">
           <div style="font-size:12px">
-            <el-tag :type="renewPromoResult.valid?'success':'danger'" size="small">{{ renewPromoResult.valid?'有效':'无效' }}</el-tag>
+            <el-tag :type="renewPromoResult.valid?'success':'danger'" size="small">{{ renewPromoResult.valid?t('client.valid'):t('client.invalid') }}</el-tag>
             <span v-if="renewPromoResult.valid" style="margin-left:8px">
               ¥{{ (renewPromoResult.original_amount/100).toFixed(2) }} → ¥{{ (renewPromoResult.paid_amount/100).toFixed(2) }}
               <span style="color:#f56c6c">(-¥{{ (renewPromoResult.discount_amount/100).toFixed(2) }})</span>
@@ -117,68 +117,68 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="renewDialog=false">取消</el-button>
-        <el-button type="primary" :loading="renewLoading" @click="doRenew">确认续费</el-button>
+        <el-button @click="renewDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="renewLoading" @click="doRenew">{{ t('client.confirmRenew') }}</el-button>
       </template>
     </el-dialog>
 
-    <!-- 升级弹窗 -->
-    <el-dialog v-model="upgradeDialog" title="升级套餐" width="450px">
+    <!-- Upgrade Dialog -->
+    <el-dialog v-model="upgradeDialog" :title="t('client.upgradePlan')" width="450px">
       <el-form :model="upgradeForm" label-width="100px" size="small">
-        <el-form-item label="客户端">{{ upgradeForm.email }}</el-form-item>
-        <el-form-item label="升级到规格">
-          <el-select v-model="upgradeForm.variant_id" style="width:100%" placeholder="选择升级目标规格">
-            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + '天'" :value="v.id" />
+        <el-form-item :label="t('client.clientEmail')">{{ upgradeForm.email }}</el-form-item>
+        <el-form-item :label="t('client.upgradeToVariant')">
+          <el-select v-model="upgradeForm.variant_id" style="width:100%" :placeholder="t('client.selectUpgradeVariant')">
+            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="优惠码">
-          <el-input v-model="upgradeForm.promotion_code" placeholder="输入优惠码" />
+        <el-form-item :label="t('client.promotionCode')">
+          <el-input v-model="upgradeForm.promotion_code" :placeholder="t('client.enterPromoCode')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="upgradeDialog=false">取消</el-button>
-        <el-button type="primary" :loading="upgradeLoading" @click="doUpgrade">确认升级</el-button>
+        <el-button @click="upgradeDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="upgradeLoading" @click="doUpgrade">{{ t('client.confirmUpgrade') }}</el-button>
       </template>
     </el-dialog>
 
-    <!-- 降级弹窗 -->
-    <el-dialog v-model="downgradeDialog" title="降级套餐" width="450px">
+    <!-- Downgrade Dialog -->
+    <el-dialog v-model="downgradeDialog" :title="t('client.downgradePlan')" width="450px">
       <el-form :model="downgradeForm" label-width="100px" size="small">
-        <el-form-item label="客户端">{{ downgradeForm.email }}</el-form-item>
-        <el-form-item label="到期后降级到">
-          <el-select v-model="downgradeForm.variant_id" style="width:100%" placeholder="选择降级目标规格">
-            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + '天'" :value="v.id" />
+        <el-form-item :label="t('client.clientEmail')">{{ downgradeForm.email }}</el-form-item>
+        <el-form-item :label="t('client.downgradeToVariant')">
+          <el-select v-model="downgradeForm.variant_id" style="width:100%" :placeholder="t('client.selectDowngradeVariant')">
+            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
           </el-select>
         </el-form-item>
-        <div style="color:#e6a23c;font-size:12px;margin-left:100px">降级将在当前套餐到期后生效</div>
+        <div style="color:#e6a23c;font-size:12px;margin-left:100px">{{ t('client.downgradeHint') }}</div>
       </el-form>
       <template #footer>
-        <el-button @click="downgradeDialog=false">取消</el-button>
-        <el-button type="primary" :loading="downgradeLoading" @click="doDowngrade">确认降级</el-button>
+        <el-button @click="downgradeDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="downgradeLoading" @click="doDowngrade">{{ t('client.confirmDowngrade') }}</el-button>
       </template>
     </el-dialog>
 
-    <!-- 订单历史弹窗 -->
-    <el-dialog v-model="ordersDialog" title="订单历史" width="750px">
+    <!-- Order History Dialog -->
+    <el-dialog v-model="ordersDialog" :title="t('client.orderHistory')" width="750px">
       <el-table :data="clientOrders" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column label="类型" width="80">
+        <el-table-column :label="t('common.type')" width="80">
           <template #default="{row}">
             <el-tag :type="orderTypeColor(row.order_type)" size="small">{{ orderTypeLabel(row.order_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="to_variant_id" label="规格ID" width="70" />
-        <el-table-column label="金额" width="120">
+        <el-table-column prop="to_variant_id" :label="t('client.variantId')" width="70" />
+        <el-table-column :label="t('client.amount')" width="120">
           <template #default="{row}">¥{{ (row.paid_amount/100).toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column prop="promotion_code" label="优惠码" width="100" />
-        <el-table-column label="生效时间" width="150">
+        <el-table-column prop="promotion_code" :label="t('client.promotionCode')" width="100" />
+        <el-table-column :label="t('client.effectiveTime')" width="150">
           <template #default="{row}">{{ row.effective_from?.substring(0,10) }}</template>
         </el-table-column>
-        <el-table-column label="到期时间" width="150">
+        <el-table-column :label="t('client.expiryTime')" width="150">
           <template #default="{row}">{{ row.effective_to?.substring(0,10) || '-' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column :label="t('common.status')" width="80">
           <template #default="{row}">
             <el-tag :type="orderStatusColor(row.status)" size="small">{{ orderStatusLabel(row.status) }}</el-tag>
           </template>
@@ -193,7 +193,7 @@
           <el-input :model-value="resetPwdForm.email" disabled />
         </el-form-item>
         <el-form-item :label="t('client.newPwd')">
-          <el-input v-model="resetPwdForm.password" type="password" show-password placeholder="请输入新密码" />
+          <el-input v-model="resetPwdForm.password" type="password" show-password :placeholder="t('client.enterNewPwd')" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -208,7 +208,7 @@
         <div style="margin-bottom:12px;font-weight:500">{{ subDetailEmail }}</div>
         <div class="sub-link" style="word-break:break-all;font-family:monospace;font-size:12px;background:#f5f7fa;padding:10px;border-radius:6px;text-align:left">
           {{ subDetailUrl }}
-          <el-button size="small" text @click="copyText(subDetailUrl)" style="float:right">复制</el-button>
+          <el-button size="small" text @click="copyText(subDetailUrl)" style="float:right">{{ t('common.copy') }}</el-button>
         </div>
         <div v-if="subDetailQr" style="margin:16px 0">
           <img :src="subDetailQr" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
@@ -293,14 +293,12 @@ const subUrl = (row) => {
   const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
 
   if (ep && ep.domain) {
-    // 有端点域名：用端点的路径 + token
     const host = ep.domain
     const path = ep.path || '/'
     const basePath = path.endsWith('/') ? path : path + '/'
     return 'https://' + host + basePath + token
   }
 
-  // 无端点域名：用服务器地址
   const host = window.location.hostname
   const subPort = panelSettings.value.subscription_port
   const isDedicatedPort = subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port
@@ -312,7 +310,7 @@ const subUrl = (row) => {
 
 // Helpers
 const formatBytes = (b) => {
-  if (!b || b <= 0) return '不限'
+  if (!b || b <= 0) return t('client.unlimited')
   if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB'
   if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB'
   return (b / 1024).toFixed(0) + ' KB'
@@ -334,37 +332,37 @@ function onTemplateChange() {
   clientForm.value.plan_variant_id = null
 }
 async function validateRenewPromo() {
-  if (!renewForm.value.promotion_code || !renewForm.value.variant_id) { ElMessage.warning('请先选择规格和输入优惠码'); return }
+  if (!renewForm.value.promotion_code || !renewForm.value.variant_id) { ElMessage.warning(t('client.selectVariantAndPromoFirst')); return }
   try {
     renewPromoResult.value = await planApi.validatePromotion(renewForm.value.promotion_code, renewForm.value.variant_id)
   } catch {}
 }
 async function doRenew() {
-  if (!renewForm.value.variant_id) { ElMessage.warning('请选择续费规格'); return }
+  if (!renewForm.value.variant_id) { ElMessage.warning(t('client.selectRenewVariant')); return }
   renewLoading.value = true
   try {
     await planApi.renewClient(renewForm.value.client_id, { variant_id: renewForm.value.variant_id, promotion_code: renewForm.value.promotion_code || undefined })
-    ElMessage.success('续费成功')
+    ElMessage.success(t('client.renewSuccess'))
     renewDialog.value = false
     fetchClients()
   } catch {} finally { renewLoading.value = false }
 }
 async function doUpgrade() {
-  if (!upgradeForm.value.variant_id) { ElMessage.warning('请选择升级规格'); return }
+  if (!upgradeForm.value.variant_id) { ElMessage.warning(t('client.selectUpgradeVariant')); return }
   upgradeLoading.value = true
   try {
     await planApi.upgradeClient(upgradeForm.value.client_id, { variant_id: upgradeForm.value.variant_id, promotion_code: upgradeForm.value.promotion_code || undefined })
-    ElMessage.success('升级成功')
+    ElMessage.success(t('client.upgradeSuccess'))
     upgradeDialog.value = false
     fetchClients()
   } catch {} finally { upgradeLoading.value = false }
 }
 async function doDowngrade() {
-  if (!downgradeForm.value.variant_id) { ElMessage.warning('请选择降级规格'); return }
+  if (!downgradeForm.value.variant_id) { ElMessage.warning(t('client.selectDowngradeVariant')); return }
   downgradeLoading.value = true
   try {
     await planApi.downgradeClient(downgradeForm.value.client_id, { variant_id: downgradeForm.value.variant_id })
-    ElMessage.success('降级已安排，将在到期后生效')
+    ElMessage.success(t('client.downgradeScheduled'))
     downgradeDialog.value = false
     fetchClients()
   } catch {} finally { downgradeLoading.value = false }
@@ -389,9 +387,9 @@ async function showOrdersDialog(row) {
     clientOrders.value = r.items || []
   } catch { clientOrders.value = [] }
 }
-const orderTypeLabel = (t) => ({ new:'新购', renew:'续费', upgrade:'升级', downgrade:'降级', trial_convert:'试用转正' })[t] || t
-const orderTypeColor = (t) => ({ new:'success', renew:'', upgrade:'warning', downgrade:'info', trial_convert:'danger' })[t] || ''
-const orderStatusLabel = (s) => ({ pending:'待支付', paid:'已支付', completed:'已完成', cancelled:'已取消', refunded:'已退款' })[s] || s
+const orderTypeLabel = (type) => ({ new:t('client.orderNew'), renew:t('client.renew'), upgrade:t('client.upgrade'), downgrade:t('client.downgrade'), trial_convert:t('client.trialConvert') })[type] || type
+const orderTypeColor = (type) => ({ new:'success', renew:'', upgrade:'warning', downgrade:'info', trial_convert:'danger' })[type] || ''
+const orderStatusLabel = (s) => ({ pending:t('client.orderPending'), paid:t('client.orderPaid'), completed:t('client.orderCompleted'), cancelled:t('client.orderCancelled'), refunded:t('client.orderRefunded') })[s] || s
 const orderStatusColor = (s) => ({ pending:'warning', paid:'info', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
 async function fetchClients() {
   clientLoading.value = true

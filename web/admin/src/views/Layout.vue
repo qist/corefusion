@@ -75,14 +75,14 @@ const menuItems = [
   { path: '/services', title: 'menu.services', icon: 'Monitor' },
   { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link' },
   { path: '/plans', title: 'menu.planManagement', icon: 'Tickets' },
-  { path: '/charge', title: '充值管理', icon: 'Wallet' },
-  { path: '/tickets', title: '工单管理', icon: 'ChatDotRound' },
-  { path: '/client-ext', title: '扩展管理', icon: 'Grid' },
+  { path: '/charge', title: 'menu.chargeManagement', icon: 'Wallet' },
+  { path: '/tickets', title: 'menu.ticketManagement', icon: 'ChatDotRound' },
+  { path: '/client-ext', title: 'menu.clientExtManagement', icon: 'Grid' },
   { path: '/clients', title: 'menu.clients', icon: 'User' },
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
   { path: '/users', title: 'menu.users', icon: 'User' },
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document' },
-  { path: '/portal', title: '门户站点', icon: 'Monitor' },
+  { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting' },
 ]
 

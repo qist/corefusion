@@ -66,7 +66,7 @@
         <el-form-item :label="t('rateLimit.backendTypeLabel')">
           <el-select v-model="form.backend_type" style="width:200px">
             <el-option label="nftables + tc" value="nft_tc" />
-            <el-option label="eBPF (未来)" value="ebpf" disabled />
+            <el-option :label="t('rateLimit.ebpfFuture')" value="ebpf" disabled />
           </el-select>
         </el-form-item>
       </el-form>

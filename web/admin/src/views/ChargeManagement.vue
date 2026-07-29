@@ -3,16 +3,16 @@
     <el-tabs v-model="activeTab" type="border-card">
 
       <!-- ════════════ 充值站点 Tab ════════════ -->
-      <el-tab-pane label="充值站点" name="sites">
+      <el-tab-pane :label="t('charge.sitesTab')" name="sites">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">充值站点</h3>
-          <el-button type="primary" size="small" @click="showCreateSite">+ 新增站点</el-button>
+          <h3 style="margin:0">{{ t('charge.sitesTab') }}</h3>
+          <el-button type="primary" size="small" @click="showCreateSite">+ {{ t('charge.addSite') }}</el-button>
         </div>
         <el-table :data="sites" v-loading="sitesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="name" label="名称" width="150" />
-          <el-table-column prop="site_url" label="站点URL" show-overflow-tooltip />
-          <el-table-column label="支付方式" width="200">
+          <el-table-column prop="name" :label="t('common.name')" width="150" />
+          <el-table-column prop="site_url" :label="t('charge.siteUrl')" show-overflow-tooltip />
+          <el-table-column :label="t('charge.paymentMethods')" width="200">
             <template #default="{row}">
               <template v-if="parseMethods(row.supported_methods).length">
                 <el-tag v-for="m in parseMethods(row.supported_methods)" :key="m" size="small" style="margin:2px">{{ m }}</el-tag>
@@ -20,81 +20,81 @@
               <span v-else style="color:#999">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}">
-              <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'启用':'禁用' }}</el-tag>
+              <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?t('common.enabled'):t('common.disabled') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="验证" width="80">
+          <el-table-column :label="t('charge.verification')" width="80">
             <template #default="{row}">
-              <el-tag :type="row.verified?'success':'danger'" size="small">{{ row.verified?'已验证':'未验证' }}</el-tag>
+              <el-tag :type="row.verified?'success':'danger'" size="small">{{ row.verified?t('charge.verified'):t('charge.notVerified') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="currency" label="货币" width="70" />
-          <el-table-column prop="sort_order" label="排序" width="60" />
-          <el-table-column label="操作" width="350">
+          <el-table-column prop="currency" :label="t('charge.currency')" width="70" />
+          <el-table-column prop="sort_order" :label="t('charge.sortOrder')" width="60" />
+          <el-table-column :label="t('common.actions')" width="350">
             <template #default="{row}">
-              <el-button size="small" @click="showEditSite(row)">编辑</el-button>
-              <el-button size="small" type="primary" @click="showVerifyDialog(row)">验证</el-button>
-              <el-button size="small" type="warning" @click="rotateSiteSecret(row)">轮换密钥</el-button>
-              <el-button size="small" type="info" @click="showIntegrationDoc(row)">文档</el-button>
-              <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?'禁用':'启用' }}</el-button>
-              <el-button size="small" type="danger" @click="deleteSite(row)">删除</el-button>
+              <el-button size="small" @click="showEditSite(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="primary" @click="showVerifyDialog(row)">{{ t('charge.verify') }}</el-button>
+              <el-button size="small" type="warning" @click="rotateSiteSecret(row)">{{ t('charge.rotateSecret') }}</el-button>
+              <el-button size="small" type="info" @click="showIntegrationDoc(row)">{{ t('charge.doc') }}</el-button>
+              <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?t('common.disabled'):t('common.enabled') }}</el-button>
+              <el-button size="small" type="danger" @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
 
       <!-- ════════════ 充值订单 Tab ════════════ -->
-      <el-tab-pane label="充值订单" name="orders">
+      <el-tab-pane :label="t('charge.ordersTab')" name="orders">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">充值订单</h3>
+          <h3 style="margin:0">{{ t('charge.ordersTab') }}</h3>
           <div style="display:flex;gap:8px;align-items:center">
-            <el-select v-model="orderStatusFilter" size="small" placeholder="状态筛选" clearable style="width:120px">
-              <el-option label="待支付" value="pending" />
-              <el-option label="已支付" value="paid" />
-              <el-option label="已失败" value="failed" />
-              <el-option label="已过期" value="expired" />
+            <el-select v-model="orderStatusFilter" size="small" :placeholder="t('charge.statusFilter')" clearable style="width:120px">
+              <el-option :label="t('charge.statusPending')" value="pending" />
+              <el-option :label="t('charge.statusPaid')" value="paid" />
+              <el-option :label="t('charge.statusFailed')" value="failed" />
+              <el-option :label="t('charge.statusExpired')" value="expired" />
             </el-select>
-            <el-button size="small" @click="fetchOrders">查询</el-button>
+            <el-button size="small" @click="fetchOrders">{{ t('common.search') }}</el-button>
           </div>
         </div>
         <el-table :data="orders" v-loading="ordersLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="client_id" label="客户端ID" width="90" />
-          <el-table-column prop="client_email" label="邮箱" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="trade_no" label="交易号" width="200" show-overflow-tooltip />
-          <el-table-column label="来源" width="80">
+          <el-table-column prop="client_id" :label="t('charge.clientId')" width="90" />
+          <el-table-column prop="client_email" :label="t('charge.email')" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="trade_no" :label="t('charge.tradeNo')" width="200" show-overflow-tooltip />
+          <el-table-column :label="t('charge.source')" width="80">
             <template #default="{row}">
               <el-tag :type="row.source==='site'?'':'success'" size="small">{{ sourceLabel(row.source) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="80">
+          <el-table-column :label="t('common.type')" width="80">
             <template #default="{row}">
-              <el-tag :type="row.order_type==='charge'?'':'warning'" size="small">{{ row.order_type==='charge'?'充值':'购套' }}</el-tag>
+              <el-tag :type="row.order_type==='charge'?'':'warning'" size="small">{{ row.order_type==='charge'?t('charge.typeCharge'):t('charge.typePlan') }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column :label="t('currency.amount')" width="120">
             <template #default="{row}">{{ formatAmount(row.amount, row.currency || 'CNY') }}</template>
           </el-table-column>
-          <el-table-column label="支付方式" width="90">
+          <el-table-column :label="t('charge.paymentMethods')" width="90">
             <template #default="{row}">{{ row.method || '—' }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}">
               <el-tag :type="chargeOrderStatusColor(row.status)" size="small">{{ chargeOrderStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="创建时间" width="160">
+          <el-table-column :label="t('common.createdAt')" width="160">
             <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
           </el-table-column>
-          <el-table-column label="支付时间" width="160">
+          <el-table-column :label="t('charge.paidAt')" width="160">
             <template #default="{row}">{{ row.paid_at?.substring(0,16).replace('T',' ') || '—' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="140">
+          <el-table-column :label="t('common.actions')" width="140">
             <template #default="{row}">
-              <el-button size="small" @click="showOrderDetail(row)">详情</el-button>
-              <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">退款</el-button>
+              <el-button size="small" @click="showOrderDetail(row)">{{ t('charge.detail') }}</el-button>
+              <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">{{ t('charge.refund') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -104,81 +104,81 @@
       </el-tab-pane>
 
       <!-- ════════════ 充值卡 Tab ════════════ -->
-      <el-tab-pane label="充值卡" name="cards">
+      <el-tab-pane :label="t('charge.cardsTab')" name="cards">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">充值卡</h3>
+          <h3 style="margin:0">{{ t('charge.cardsTab') }}</h3>
           <div style="display:flex;gap:8px">
-            <el-button type="primary" size="small" @click="showCreateCard">+ 新增卡</el-button>
-            <el-button type="success" size="small" @click="showBatchCreate">批量生成</el-button>
-            <el-button type="info" size="small" @click="doExportCSV">📥 导出CSV</el-button>
+            <el-button type="primary" size="small" @click="showCreateCard">+ {{ t('charge.addCard') }}</el-button>
+            <el-button type="success" size="small" @click="showBatchCreate">{{ t('charge.batchCreate') }}</el-button>
+            <el-button type="info" size="small" @click="doExportCSV">📥 {{ t('charge.exportCSV') }}</el-button>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <el-select v-model="cardStatusFilter" size="small" placeholder="状态" clearable style="width:100px">
-            <el-option label="可用" value="active" />
-            <el-option label="已用" value="used" />
-            <el-option label="已过期" value="expired" />
-            <el-option label="已禁用" value="disabled" />
+          <el-select v-model="cardStatusFilter" size="small" :placeholder="t('common.status')" clearable style="width:100px">
+            <el-option :label="t('charge.cardActive')" value="active" />
+            <el-option :label="t('charge.cardUsed')" value="used" />
+            <el-option :label="t('charge.statusExpired')" value="expired" />
+            <el-option :label="t('charge.cardDisabled')" value="disabled" />
           </el-select>
-          <el-select v-model="cardTypeFilter" size="small" placeholder="类型" clearable style="width:120px">
-            <el-option label="金额型" value="balance" />
-            <el-option label="套餐型" value="plan" />
-            <el-option label="流量叠加包" value="traffic_pack" />
+          <el-select v-model="cardTypeFilter" size="small" :placeholder="t('common.type')" clearable style="width:120px">
+            <el-option :label="t('charge.cardTypeBalance')" value="balance" />
+            <el-option :label="t('charge.cardTypePlan')" value="plan" />
+            <el-option :label="t('charge.cardTypeTrafficPack')" value="traffic_pack" />
           </el-select>
-          <el-select v-model="cardAgentFilter" size="small" placeholder="代理员" clearable style="width:140px">
-            <el-option label="官方" :value="0" />
+          <el-select v-model="cardAgentFilter" size="small" :placeholder="t('charge.agentPlaceholder')" clearable style="width:140px">
+            <el-option :label="t('charge.official')" :value="0" />
             <el-option v-for="u in agentUsers" :key="u.id" :label="u.username" :value="u.id" />
           </el-select>
-          <el-button size="small" @click="fetchCards">查询</el-button>
+          <el-button size="small" @click="fetchCards">{{ t('common.search') }}</el-button>
         </div>
         <el-table :data="cards" v-loading="cardsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column label="卡号" width="200">
+          <el-table-column :label="t('charge.cardCode')" width="200">
             <template #default="{row}">
               <span style="font-family:monospace">{{ row.card_code_masked || row.card_code }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="100">
+          <el-table-column :label="t('common.type')" width="100">
             <template #default="{row}">
               <el-tag :type="row.card_type==='balance'?'':row.card_type==='plan'?'warning':'success'" size="small">{{ cardTypeLabel(row.card_type) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="面值/套餐" width="200" show-overflow-tooltip>
+          <el-table-column :label="t('charge.faceValue')" width="200" show-overflow-tooltip>
             <template #default="{row}">
               <span v-if="row.card_type==='balance'">{{ formatAmount(row.value, row.currency || 'CNY') }}</span>
               <el-tag v-else type="warning" size="small">{{ findVariantName(row.value) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="使用" width="70">
+          <el-table-column :label="t('charge.usage')" width="70">
             <template #default="{row}">
-              <el-tag :type="row.status==='active'?'success':'info'" size="small">{{ row.status==='active'?'未用':'已用' }}</el-tag>
+              <el-tag :type="row.status==='active'?'success':'info'" size="small">{{ row.status==='active'?t('charge.unused'):t('charge.used') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="batch_id" label="批次" width="140" show-overflow-tooltip />
-          <el-table-column label="创建者" width="100">
+          <el-table-column prop="batch_id" :label="t('charge.batch')" width="140" show-overflow-tooltip />
+          <el-table-column :label="t('charge.creator')" width="100">
             <template #default="{row}">
               <span v-if="row.created_by_admin_name">{{ row.created_by_admin_name }}</span>
               <span v-else style="color:#999">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="代理员" width="100">
+          <el-table-column :label="t('charge.agent')" width="100">
             <template #default="{row}">
               <span v-if="row.agent_name">{{ row.agent_name }}</span>
-              <span v-else style="color:#999">官方</span>
+              <span v-else style="color:#999">{{ t('charge.official') }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column :label="t('common.status')" width="80">
             <template #default="{row}">
               <el-tag :type="cardStatusColor(row.status)" size="small">{{ cardStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="过期时间" width="160">
-            <template #default="{row}">{{ row.expires_at?.substring(0,10) || '永不过期' }}</template>
+          <el-table-column :label="t('charge.expiresAt')" width="160">
+            <template #default="{row}">{{ row.expires_at?.substring(0,10) || t('charge.neverExpires') }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="150">
+          <el-table-column :label="t('common.actions')" width="150">
             <template #default="{row}">
-              <el-button size="small" @click="showCardUsages(row)">使用记录</el-button>
-              <el-button size="small" type="danger" @click="deleteCard(row)">删除</el-button>
+              <el-button size="small" @click="showCardUsages(row)">{{ t('charge.usageRecord') }}</el-button>
+              <el-button size="small" type="danger" @click="deleteCard(row)">{{ t('common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -188,24 +188,24 @@
       </el-tab-pane>
 
       <!-- ════════════ 客户余额 Tab ════════════ -->
-      <el-tab-pane label="客户余额" name="balances">
+      <el-tab-pane :label="t('charge.balancesTab')" name="balances">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-          <h3 style="margin:0">客户余额</h3>
+          <h3 style="margin:0">{{ t('charge.balancesTab') }}</h3>
         </div>
         <el-table :data="balances" v-loading="balancesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="client_id" label="客户端ID" width="100" />
-          <el-table-column prop="client_email" label="邮箱" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="client_nickname" label="昵称" width="120" show-overflow-tooltip />
+          <el-table-column prop="client_id" :label="t('charge.clientId')" width="100" />
+          <el-table-column prop="client_email" :label="t('charge.email')" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="client_nickname" :label="t('charge.nickname')" width="120" show-overflow-tooltip />
           <el-table-column :label="t('currency.balance')" width="140">
             <template #default="{row}">{{ formatAmount(row.balance, row.currency || 'CNY') }}</template>
           </el-table-column>
           <el-table-column :label="t('currency.frozen')" width="140">
             <template #default="{row}">{{ formatAmount(row.frozen, row.currency || 'CNY') }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="100">
+          <el-table-column :label="t('common.actions')" width="100">
             <template #default="{row}">
-              <el-button size="small" @click="showTransactions(row)">流水</el-button>
+              <el-button size="small" @click="showTransactions(row)">{{ t('charge.transactions') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -218,188 +218,188 @@
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 充值站点编辑弹窗 -->
-    <el-dialog v-model="siteDialog" :title="editingSite?'编辑充值站点':'新增充值站点'" width="620px">
+    <el-dialog v-model="siteDialog" :title="editingSite?t('charge.editSite'):t('charge.createSite')" width="620px">
       <el-form :model="siteForm" label-width="110px" size="small">
-        <el-form-item label="名称"><el-input v-model="siteForm.name" /></el-form-item>
-        <el-form-item label="站点URL"><el-input v-model="siteForm.site_url" placeholder="https://pay.example.com" /></el-form-item>
+        <el-form-item :label="t('common.name')"><el-input v-model="siteForm.name" /></el-form-item>
+        <el-form-item :label="t('charge.siteUrl')"><el-input v-model="siteForm.site_url" placeholder="https://pay.example.com" /></el-form-item>
         <el-form-item label="API Key"><el-input v-model="siteForm.api_key" type="password" show-password /></el-form-item>
-        <el-form-item label="回调密钥">
+        <el-form-item :label="t('charge.callbackSecret')">
           <div style="display:flex;gap:8px;width:100%">
-            <el-input v-model="siteForm.callback_secret" type="password" show-password placeholder="留空将自动生成" style="flex:1" />
-            <el-button @click="generateSecretField">🎲 自动生成</el-button>
+            <el-input v-model="siteForm.callback_secret" type="password" show-password :placeholder="t('charge.secretAutoGen')" style="flex:1" />
+            <el-button @click="generateSecretField">🎲 {{ t('charge.autoGenerate') }}</el-button>
           </div>
           <div style="font-size:11px;color:#999;margin-top:4px">
-            <span v-if="editingSite">留空不修改现有密钥。点击「轮换密钥」可生成新密钥</span>
-            <span v-else>留空将自动生成强随机密钥（推荐）</span>
+            <span v-if="editingSite">{{ t('charge.secretEditHint') }}</span>
+            <span v-else>{{ t('charge.secretCreateHint') }}</span>
           </div>
         </el-form-item>
-        <el-form-item label="IP白名单">
-          <el-input v-model="siteForm.callback_whitelist" type="textarea" :rows="2" placeholder='JSON格式，如 ["1.2.3.4","10.0.0.0/24"]' />
-          <div style="font-size:11px;color:#999;margin-top:4px">留空则不校验IP。支持单IP和CIDR网段</div>
+        <el-form-item :label="t('charge.ipWhitelist')">
+          <el-input v-model="siteForm.callback_whitelist" type="textarea" :rows="2" :placeholder="t('charge.ipWhitelistPlaceholder')" />
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('charge.ipWhitelistHint') }}</div>
         </el-form-item>
-        <el-form-item label="货币">
+        <el-form-item :label="t('charge.currency')">
           <el-select v-model="siteForm.currency" style="width:100%">
             <el-option v-for="c in CURRENCIES" :key="c.code" :label="`${c.code} ${c.symbol} (${t(c.nameKey)})`" :value="c.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="支付方式">
-          <el-select v-model="siteForm.supported_methods_arr" multiple filterable allow-create default-first-option style="width:100%" placeholder="选择或输入自定义支付方式">
-            <el-option label="支付宝" value="alipay" />
-            <el-option label="微信支付" value="wechat" />
+        <el-form-item :label="t('charge.paymentMethods')">
+          <el-select v-model="siteForm.supported_methods_arr" multiple filterable allow-create default-first-option style="width:100%" :placeholder="t('charge.selectPayMethod')">
+            <el-option :label="t('charge.alipay')" value="alipay" />
+            <el-option :label="t('charge.wechatPay')" value="wechat" />
             <el-option label="USDT" value="usdt" />
             <el-option label="PayPal" value="paypal" />
-            <el-option label="信用卡" value="credit_card" />
-            <el-option label="借记卡" value="debit_card" />
-            <el-option label="银行转账" value="bank_transfer" />
+            <el-option :label="t('charge.creditCard')" value="credit_card" />
+            <el-option :label="t('charge.debitCard')" value="debit_card" />
+            <el-option :label="t('charge.bankTransfer')" value="bank_transfer" />
             <el-option label="QIWI" value="qiwi" />
             <el-option label="ЮMoney" value="yoomoney" />
             <el-option label="SberPay" value="sberpay" />
             <el-option label="Tinkoff" value="tinkoff" />
             <el-option label="Crypto" value="crypto" />
           </el-select>
-          <div style="font-size:11px;color:#999;margin-top:4px">可直接输入自定义支付方式，回车添加</div>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('charge.customPayMethodHint') }}</div>
         </el-form-item>
-        <el-form-item label="图标URL"><el-input v-model="siteForm.icon_url" /></el-form-item>
-        <el-form-item label="排序"><el-input-number v-model="siteForm.sort_order" :min="0" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="siteForm.enabled" /></el-form-item>
+        <el-form-item :label="t('charge.iconUrl')"><el-input v-model="siteForm.icon_url" /></el-form-item>
+        <el-form-item :label="t('charge.sortOrder')"><el-input-number v-model="siteForm.sort_order" :min="0" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="siteForm.enabled" /></el-form-item>
 
         <!-- 回调地址展示 -->
-        <el-divider content-position="left">回调配置</el-divider>
-        <el-form-item v-if="editingSite" label="回调地址">
+        <el-divider content-position="left">{{ t('charge.callbackConfig') }}</el-divider>
+        <el-form-item v-if="editingSite" :label="t('charge.callbackUrl')">
           <el-input :model-value="`/api/v1/charge/callback/${editingSite.id}`" readonly>
-            <template #append><el-button @click="copyCallbackUrl(editingSite.id)">复制</el-button></template>
+            <template #append><el-button @click="copyCallbackUrl(editingSite.id)">{{ t('common.copy') }}</el-button></template>
           </el-input>
-          <div style="font-size:11px;color:#999;margin-top:4px">第三方站点需向此地址发送 POST 回调</div>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('charge.callbackHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="editingSite" label="验证状态">
-          <el-tag :type="editingSite.verified?'success':'danger'" size="small">{{ editingSite.verified?'已验证':'未验证' }}</el-tag>
-          <span style="margin-left:8px;font-size:12px;color:#909399">未验证站点的回调将被拒绝</span>
+        <el-form-item v-if="editingSite" :label="t('charge.verifyStatus')">
+          <el-tag :type="editingSite.verified?'success':'danger'" size="small">{{ editingSite.verified?t('charge.verified'):t('charge.notVerified') }}</el-tag>
+          <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('charge.unverifiedWarning') }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="siteDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveSite">保存</el-button>
+        <el-button @click="siteDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveSite">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 域名验证弹窗 -->
-    <el-dialog v-model="verifyDialog" title="域名验证" width="600px">
+    <el-dialog v-model="verifyDialog" :title="t('charge.domainVerify')" width="600px">
       <div v-if="verifySite">
         <el-alert :type="verifySite.verified?'success':'warning'" :closable="false" style="margin-bottom:16px">
           <template #title>
-            {{ verifySite.verified ? '✓ 域名已验证' : '⚠ 域名未验证，回调将被拒绝' }}
+            {{ verifySite.verified ? t('charge.domainVerified') : t('charge.domainNotVerified') }}
           </template>
         </el-alert>
 
         <el-steps :active="verifyStep" align-center style="margin-bottom:20px">
-          <el-step title="生成验证文件" />
-          <el-step title="部署验证" />
-          <el-step title="验证域名" />
+          <el-step :title="t('charge.genVerifyFile')" />
+          <el-step :title="t('charge.deployVerify')" />
+          <el-step :title="t('charge.verifyDomain')" />
         </el-steps>
 
         <div v-if="verifyData">
           <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="验证文件URL">
+            <el-descriptions-item :label="t('charge.verifyFileUrl')">
               <span style="word-break:break-all;font-family:monospace">{{ verifyData.verify_file_url }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="文件内容">
+            <el-descriptions-item :label="t('charge.fileContent')">
               <span style="font-family:monospace">{{ verifyData.verify_content }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="DNS TXT 记录名">_corefusion-verify</el-descriptions-item>
-            <el-descriptions-item label="DNS TXT 记录值">
+            <el-descriptions-item :label="t('charge.dnsTxtName')">_corefusion-verify</el-descriptions-item>
+            <el-descriptions-item :label="t('charge.dnsTxtValue')">
               <span style="font-family:monospace">{{ verifyData.verify_content }}</span>
             </el-descriptions-item>
           </el-descriptions>
 
           <div style="margin-top:16px;text-align:center">
-            <el-button type="primary" :loading="verifyLoading" @click="doVerifyHTTP">验证 HTTP 文件</el-button>
-            <el-button type="success" :loading="verifyLoading" @click="doVerifyDNS">验证 DNS TXT</el-button>
+            <el-button type="primary" :loading="verifyLoading" @click="doVerifyHTTP">{{ t('charge.verifyHttp') }}</el-button>
+            <el-button type="success" :loading="verifyLoading" @click="doVerifyDNS">{{ t('charge.verifyDns') }}</el-button>
           </div>
 
           <div style="margin-top:12px;font-size:12px;color:#909399;text-align:center">
-            方法一：将验证文件放在站点 <code>.well-known/</code> 目录下<br>
-            方法二：添加 DNS TXT 记录 <code>_corefusion-verify.您的域名</code>
+            {{ t('charge.verifyMethod1') }} <code>.well-known/</code> {{ t('charge.directory') }}<br>
+            {{ t('charge.verifyMethod2') }} <code>_corefusion-verify.{{ t('charge.yourDomain') }}</code>
           </div>
         </div>
 
         <div v-else style="text-align:center;padding:20px">
-          <el-button type="primary" :loading="verifyLoading" @click="doGenerateVerify">生成验证文件</el-button>
+          <el-button type="primary" :loading="verifyLoading" @click="doGenerateVerify">{{ t('charge.genVerifyFileBtn') }}</el-button>
         </div>
       </div>
     </el-dialog>
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 集成文档弹窗 -->
-    <el-dialog v-model="integrationDocDialog" title="对接文档" width="650px">
+    <el-dialog v-model="integrationDocDialog" :title="t('charge.integrationDoc')" width="650px">
       <div v-if="integrationDoc">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="站点ID">{{ integrationDoc.site_id }}</el-descriptions-item>
-          <el-descriptions-item label="站点名称">{{ integrationDoc.site_name }}</el-descriptions-item>
-          <el-descriptions-item label="回调地址">
+          <el-descriptions-item :label="t('charge.siteId')">{{ integrationDoc.site_id }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.siteName')">{{ integrationDoc.site_name }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.callbackUrl')">
             <span style="font-family:monospace;color:#409eff">{{ integrationDoc.callback_url }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="签名算法">{{ integrationDoc.signature_algorithm }}</el-descriptions-item>
-          <el-descriptions-item label="签名字段">
+          <el-descriptions-item :label="t('charge.signAlgorithm')">{{ integrationDoc.signature_algorithm }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.signFields')">
             <el-tag v-for="f in integrationDoc.signature_fields" :key="f" size="small" style="margin:2px">{{ f }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="时间戳容差">{{ integrationDoc.timestamp_tolerance }} 秒</el-descriptions-item>
-          <el-descriptions-item label="Nonce 要求">{{ integrationDoc.nonce_required ? '必须提供' : '可选' }}</el-descriptions-item>
-          <el-descriptions-item label="金额单位">{{ integrationDoc.amount_unit }}</el-descriptions-item>
-          <el-descriptions-item label="IP白名单">{{ integrationDoc.ip_whitelist || '未配置' }}</el-descriptions-item>
-          <el-descriptions-item label="验证状态">
-            <el-tag :type="integrationDoc.verified?'success':'danger'" size="small">{{ integrationDoc.verified?'已验证':'未验证' }}</el-tag>
+          <el-descriptions-item :label="t('charge.timestampTolerance')">{{ integrationDoc.timestamp_tolerance }} {{ t('charge.seconds') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.nonceRequirement')">{{ integrationDoc.nonce_required ? t('charge.required') : t('charge.optional') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.amountUnit')">{{ integrationDoc.amount_unit }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.ipWhitelist')">{{ integrationDoc.ip_whitelist || t('charge.notConfigured') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.verifyStatus')">
+            <el-tag :type="integrationDoc.verified?'success':'danger'" size="small">{{ integrationDoc.verified?t('charge.verified'):t('charge.notVerified') }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="回调密钥">{{ integrationDoc.callback_secret_set?'已配置':'未配置' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('charge.callbackSecret')">{{ integrationDoc.callback_secret_set?t('charge.configured'):t('charge.notConfigured') }}</el-descriptions-item>
         </el-descriptions>
 
-        <el-divider content-position="left">回调请求示例 (JSON)</el-divider>
+        <el-divider content-position="left">{{ t('charge.callbackExample') }}</el-divider>
         <pre style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:12px;overflow-x:auto">{{ JSON.stringify(integrationDoc.example_callback, null, 2) }}</pre>
 
-        <el-divider content-position="left">成功响应</el-divider>
+        <el-divider content-position="left">{{ t('charge.successResponse') }}</el-divider>
         <pre style="background:#f0f9eb;padding:12px;border-radius:4px;font-size:12px">{{ integrationDoc.response_format }}</pre>
 
-        <el-divider content-position="left">签名计算方法</el-divider>
+        <el-divider content-position="left">{{ t('charge.signMethod') }}</el-divider>
         <div style="font-size:12px;color:#606266;line-height:1.8">
-          <p>1. 将签名字段按 key 字典序排列，组成 JSON 字符串</p>
-          <p>2. 使用 <code>callback_secret</code> 作为密钥，计算 <code>HMAC-SHA256</code></p>
-          <p>3. 将结果转为十六进制字符串，放入 <code>sign</code> 字段</p>
+          <p>1. {{ t('charge.signStep1') }}</p>
+          <p>2. {{ t('charge.signStep2') }}</p>
+          <p>3. {{ t('charge.signStep3') }}</p>
         </div>
       </div>
     </el-dialog>
 
     <!-- 充值订单详情弹窗 -->
-    <el-dialog v-model="orderDetailDialog" title="充值订单详情" width="600px">
+    <el-dialog v-model="orderDetailDialog" :title="t('charge.orderDetail')" width="600px">
       <el-descriptions :column="2" border size="small" v-if="currentOrder">
         <el-descriptions-item label="ID">{{ currentOrder.id }}</el-descriptions-item>
-        <el-descriptions-item label="交易号">{{ currentOrder.trade_no }}</el-descriptions-item>
-        <el-descriptions-item label="客户端ID">{{ currentOrder.client_id }}</el-descriptions-item>
-        <el-descriptions-item label="来源">{{ sourceLabel(currentOrder.source) }}</el-descriptions-item>
-        <el-descriptions-item label="类型">{{ currentOrder.order_type==='charge'?'充值':'购套' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.tradeNo')">{{ currentOrder.trade_no }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.clientId')">{{ currentOrder.client_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.source')">{{ sourceLabel(currentOrder.source) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.type')">{{ currentOrder.order_type==='charge'?t('charge.typeCharge'):t('charge.typePlan') }}</el-descriptions-item>
         <el-descriptions-item :label="t('currency.amount')">{{ formatAmount(currentOrder.amount || 0, currentOrder.currency || 'CNY') }}</el-descriptions-item>
-        <el-descriptions-item label="支付币种">{{ currentOrder.paid_currency || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="支付金额">{{ currentOrder.paid_amount ? formatAmount(currentOrder.paid_amount, currentOrder.paid_currency || 'CNY') : '—' }}</el-descriptions-item>
-        <el-descriptions-item label="汇率">{{ currentOrder.exchange_rate || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="支付方式">{{ currentOrder.method || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item :label="t('charge.paidCurrency')">{{ currentOrder.paid_currency || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.paidAmount')">{{ currentOrder.paid_amount ? formatAmount(currentOrder.paid_amount, currentOrder.paid_currency || 'CNY') : '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.exchangeRate')">{{ currentOrder.exchange_rate || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.paymentMethods')">{{ currentOrder.method || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.status')">
           <el-tag :type="chargeOrderStatusColor(currentOrder.status)" size="small">{{ chargeOrderStatusLabel(currentOrder.status) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="站点交易号">{{ currentOrder.site_trade_no || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ currentOrder.created_at?.replace('T',' ').substring(0,19) }}</el-descriptions-item>
-        <el-descriptions-item label="支付时间">{{ currentOrder.paid_at?.replace('T',' ').substring(0,19) || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="过期时间">{{ currentOrder.expires_at?.replace('T',' ').substring(0,19) || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="备注">{{ currentOrder.remark || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.siteTradeNo')">{{ currentOrder.site_trade_no || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.createdAt')">{{ currentOrder.created_at?.replace('T',' ').substring(0,19) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.paidAt')">{{ currentOrder.paid_at?.replace('T',' ').substring(0,19) || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.expiresAt')">{{ currentOrder.expires_at?.replace('T',' ').substring(0,19) || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.remark')">{{ currentOrder.remark || '—' }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
 
     <!-- 新增充值卡弹窗 -->
-    <el-dialog v-model="cardDialog" title="新增充值卡" width="560px">
+    <el-dialog v-model="cardDialog" :title="t('charge.createCard')" width="560px">
       <el-form :model="cardForm" label-width="90px" size="small">
-        <el-form-item label="类型">
+        <el-form-item :label="t('common.type')">
           <el-select v-model="cardForm.card_type" style="width:100%">
-            <el-option label="金额型" value="balance" />
-            <el-option label="套餐型" value="plan" />
-            <el-option label="流量叠加包" value="traffic_pack" />
+            <el-option :label="t('charge.cardTypeBalance')" value="balance" />
+            <el-option :label="t('charge.cardTypePlan')" value="plan" />
+            <el-option :label="t('charge.cardTypeTrafficPack')" value="traffic_pack" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="cardForm.card_type==='balance'" :label="t('currency.amount')">
@@ -411,51 +411,51 @@
           </div>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('currency.amountHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="cardForm.card_type==='plan'" label="绑定套餐">
-          <el-select v-model="cardForm.plan_variant_id" placeholder="选择套餐规格" filterable style="width:100%">
+        <el-form-item v-if="cardForm.card_type==='plan'" :label="t('charge.bindPlan')">
+          <el-select v-model="cardForm.plan_variant_id" :placeholder="t('charge.selectPlanVariant')" filterable style="width:100%">
             <el-option v-for="v in planTypeVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
           </el-select>
-          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.bindPlanHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="cardForm.card_type==='traffic_pack'" label="绑定流量包">
-          <el-select v-model="cardForm.plan_variant_id" placeholder="选择流量叠加包规格" filterable style="width:100%">
+        <el-form-item v-if="cardForm.card_type==='traffic_pack'" :label="t('charge.bindTrafficPack')">
+          <el-select v-model="cardForm.plan_variant_id" :placeholder="t('charge.selectTrafficPack')" filterable style="width:100%">
             <el-option v-for="v in trafficPackVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
           </el-select>
-          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的流量叠加包规格，兑换时自动增加流量</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.bindTrafficPackHint') }}</div>
         </el-form-item>
-        <el-form-item label="卡号前缀">
+        <el-form-item :label="t('charge.cardPrefix')">
           <el-input v-model="cardForm.card_prefix" placeholder="CF" style="width:100%" />
-          <div style="font-size:12px;color:#909399;margin-top:4px">留空则无前缀，如 CF、VIP、GIFT 等</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.cardPrefixHint') }}</div>
         </el-form-item>
-        <el-form-item label="卡号格式">
+        <el-form-item :label="t('charge.cardFormat')">
           <el-select v-model="cardForm.card_code_format" style="width:100%">
             <el-option v-for="f in cardCodeFormats" :key="f.value" :label="formatPreview(f.value, cardForm.card_prefix)" :value="f.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="过期时间"><el-date-picker v-model="cardForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
-        <el-form-item label="代理员">
-          <el-select v-model="cardForm.agent_id" placeholder="选择代理员（默认官方）" clearable style="width:100%">
-            <el-option label="官方" :value="null" />
+        <el-form-item :label="t('charge.expiresAt')"><el-date-picker v-model="cardForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item :label="t('charge.agent')">
+          <el-select v-model="cardForm.agent_id" :placeholder="t('charge.selectAgent')" clearable style="width:100%">
+            <el-option :label="t('charge.official')" :value="null" />
             <el-option v-for="u in agentUsers" :key="u.id" :label="u.username" :value="u.id" />
           </el-select>
-          <div style="font-size:12px;color:#909399;margin-top:4px">选择销售代理员，用于追踪业绩（默认官方）</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.agentHint') }}</div>
         </el-form-item>
-        <el-form-item label="备注"><el-input v-model="cardForm.remark" /></el-form-item>
+        <el-form-item :label="t('charge.remark')"><el-input v-model="cardForm.remark" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="cardDialog=false">取消</el-button>
-        <el-button type="primary" @click="saveCard">创建</el-button>
+        <el-button @click="cardDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveCard">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 批量生成弹窗 -->
-    <el-dialog v-model="batchDialog" title="批量生成充值卡" width="560px">
+    <el-dialog v-model="batchDialog" :title="t('charge.batchCreateTitle')" width="560px">
       <el-form :model="batchForm" label-width="100px" size="small">
-        <el-form-item label="类型">
+        <el-form-item :label="t('common.type')">
           <el-select v-model="batchForm.card_type" style="width:100%">
-            <el-option label="金额型" value="balance" />
-            <el-option label="套餐型" value="plan" />
-            <el-option label="流量叠加包" value="traffic_pack" />
+            <el-option :label="t('charge.cardTypeBalance')" value="balance" />
+            <el-option :label="t('charge.cardTypePlan')" value="plan" />
+            <el-option :label="t('charge.cardTypeTrafficPack')" value="traffic_pack" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="batchForm.card_type==='balance'" :label="t('currency.amount')">
@@ -467,65 +467,65 @@
           </div>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('currency.amountHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="batchForm.card_type==='plan'" label="绑定套餐">
-          <el-select v-model="batchForm.plan_variant_id" placeholder="选择套餐规格" filterable style="width:100%">
+        <el-form-item v-if="batchForm.card_type==='plan'" :label="t('charge.bindPlan')">
+          <el-select v-model="batchForm.plan_variant_id" :placeholder="t('charge.selectPlanVariant')" filterable style="width:100%">
             <el-option v-for="v in planTypeVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
           </el-select>
-          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的套餐规格，兑换时自动分配该套餐</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.bindPlanHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="batchForm.card_type==='traffic_pack'" label="绑定流量包">
-          <el-select v-model="batchForm.plan_variant_id" placeholder="选择流量叠加包规格" filterable style="width:100%">
+        <el-form-item v-if="batchForm.card_type==='traffic_pack'" :label="t('charge.bindTrafficPack')">
+          <el-select v-model="batchForm.plan_variant_id" :placeholder="t('charge.selectTrafficPack')" filterable style="width:100%">
             <el-option v-for="v in trafficPackVariants" :key="v.id" :label="variantDisplayName(v)" :value="v.id" />
           </el-select>
-          <div style="font-size:12px;color:#909399;margin-top:4px">选择要绑定的流量叠加包规格，兑换时自动增加流量</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.bindTrafficPackHint') }}</div>
         </el-form-item>
-        <el-form-item label="数量"><el-input-number v-model="batchForm.count" :min="1" :max="1000" style="width:100%" /></el-form-item>
-        <el-form-item label="卡号前缀">
+        <el-form-item :label="t('charge.quantity')"><el-input-number v-model="batchForm.count" :min="1" :max="1000" style="width:100%" /></el-form-item>
+        <el-form-item :label="t('charge.cardPrefix')">
           <el-input v-model="batchForm.card_prefix" placeholder="CF" style="width:100%" />
-          <div style="font-size:12px;color:#909399;margin-top:4px">留空则无前缀，如 CF、VIP、GIFT 等</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.cardPrefixHint') }}</div>
         </el-form-item>
-        <el-form-item label="卡号格式">
+        <el-form-item :label="t('charge.cardFormat')">
           <el-select v-model="batchForm.card_code_format" style="width:100%">
             <el-option v-for="f in cardCodeFormats" :key="f.value" :label="formatPreview(f.value, batchForm.card_prefix)" :value="f.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="过期时间"><el-date-picker v-model="batchForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
-        <el-form-item label="代理员">
-          <el-select v-model="batchForm.agent_id" placeholder="选择代理员（默认官方）" clearable style="width:100%">
-            <el-option label="官方" :value="null" />
+        <el-form-item :label="t('charge.expiresAt')"><el-date-picker v-model="batchForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item :label="t('charge.agent')">
+          <el-select v-model="batchForm.agent_id" :placeholder="t('charge.selectAgent')" clearable style="width:100%">
+            <el-option :label="t('charge.official')" :value="null" />
             <el-option v-for="u in agentUsers" :key="u.id" :label="u.username" :value="u.id" />
           </el-select>
-          <div style="font-size:12px;color:#909399;margin-top:4px">选择销售代理员，用于追踪业绩（默认官方）</div>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('charge.agentHint') }}</div>
         </el-form-item>
-        <el-form-item label="备注"><el-input v-model="batchForm.remark" /></el-form-item>
+        <el-form-item :label="t('charge.remark')"><el-input v-model="batchForm.remark" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="batchDialog=false">取消</el-button>
-        <el-button type="primary" :loading="batchSaving" @click="saveBatch">生成</el-button>
+        <el-button @click="batchDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="batchSaving" @click="saveBatch">{{ t('charge.generate') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 余额流水弹窗 -->
-    <el-dialog v-model="txDialog" :title="'余额流水 - 客户#'+txClientId" width="800px">
+    <el-dialog v-model="txDialog" :title="t('charge.txTitle', { id: txClientId })" width="800px">
       <el-table :data="transactions" v-loading="txLoading" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column label="类型" width="80">
+        <el-table-column :label="t('common.type')" width="80">
           <template #default="{row}">
             <el-tag :type="row.type==='charge'?'success':row.type==='consume'?'danger':'info'" size="small">{{ txTypeLabel(row.type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="金额" width="120">
+        <el-table-column :label="t('currency.amount')" width="120">
           <template #default="{row}">
             <span :style="{color: row.amount>0?'#67c23a':'#f56c6c', fontWeight:600}">
               {{ row.amount>0?'+':'' }}{{ formatAmount(Math.abs(row.amount), row.currency || 'CNY') }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="余额" width="100">
+        <el-table-column :label="t('charge.balance')" width="100">
           <template #default="{row}">{{ formatAmount(row.balance_after, row.currency || 'CNY') }}</template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" show-overflow-tooltip />
-        <el-table-column label="时间" width="160">
+        <el-table-column prop="remark" :label="t('charge.remark')" show-overflow-tooltip />
+        <el-table-column :label="t('common.time')" width="160">
           <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
         </el-table-column>
       </el-table>
@@ -533,102 +533,102 @@
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 密钥展示弹窗（仅显示一次） -->
-    <el-dialog v-model="secretDialog" title="🔑 回调密钥（仅显示一次）" width="560px" :close-on-click-modal="false">
+    <el-dialog v-model="secretDialog" :title="t('charge.secretTitle')" width="560px" :close-on-click-modal="false">
       <el-alert type="warning" :closable="false" style="margin-bottom:16px">
         <template #title>
-          ⚠ 此密钥仅显示一次！请立即复制并配置到支付平台，关闭后无法再次查看。
+          ⚠ {{ t('charge.secretOnceWarning') }}
         </template>
       </el-alert>
       <el-descriptions :column="1" border size="small">
-        <el-descriptions-item label="站点">{{ secretDialogSite }}</el-descriptions-item>
-        <el-descriptions-item label="密钥版本">v{{ secretDialogVersion }}</el-descriptions-item>
-        <el-descriptions-item label="回调密钥">
+        <el-descriptions-item :label="t('charge.site')">{{ secretDialogSite }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.secretVersion')">v{{ secretDialogVersion }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.callbackSecret')">
           <div style="display:flex;gap:8px;align-items:center">
             <code style="font-family:monospace;font-size:13px;word-break:break-all;flex:1;background:#f5f7fa;padding:8px;border-radius:4px">{{ secretDialogValue }}</code>
-            <el-button size="small" type="primary" @click="copySecret(secretDialogValue)">复制</el-button>
+            <el-button size="small" type="primary" @click="copySecret(secretDialogValue)">{{ t('common.copy') }}</el-button>
           </div>
         </el-descriptions-item>
-        <el-descriptions-item label="回调地址">
+        <el-descriptions-item :label="t('charge.callbackUrl')">
           <div style="display:flex;gap:8px;align-items:center">
             <code style="font-family:monospace;font-size:12px;word-break:break-all;flex:1">{{ secretDialogCallbackUrl }}</code>
-            <el-button size="small" @click="copyText(secretDialogCallbackUrl)">复制</el-button>
+            <el-button size="small" @click="copyText(secretDialogCallbackUrl)">{{ t('common.copy') }}</el-button>
           </div>
         </el-descriptions-item>
       </el-descriptions>
       <div style="margin-top:12px;font-size:12px;color:#909399">
-        此密钥用于 HMAC-SHA256 签名验证。支付平台回调请求需使用此密钥计算签名，CoreFusion 服务端会验证签名是否正确。
+        t('charge.secretUsageHint')
       </div>
       <template #footer>
-        <el-button type="primary" @click="secretDialog=false">我已复制保存</el-button>
+        <el-button type="primary" @click="secretDialog=false">{{ t('charge.copiedSaved') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 充值卡使用记录弹窗 -->
-    <el-dialog v-model="usageDialog" :title="'使用记录 - 卡#' + usageCardId" width="750px">
+    <el-dialog v-model="usageDialog" :title="t('charge.usageRecordTitle', { id: usageCardId })" width="750px">
       <el-alert v-if="usageItems.length === 0 && !usageLoading" type="info" :closable="false">
-        <template #title>此卡尚未被使用</template>
+        <template #title>{{ t('charge.cardNotUsed') }}</template>
       </el-alert>
       <el-table :data="usageItems" v-loading="usageLoading" stripe size="small" v-else>
-        <el-table-column prop="id" label="订单ID" width="70" />
-        <el-table-column prop="trade_no" label="交易号" width="200" show-overflow-tooltip />
-        <el-table-column prop="client_email" label="使用者邮箱" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="client_nickname" label="昵称" width="100" show-overflow-tooltip />
-        <el-table-column label="金额" width="100">
+        <el-table-column prop="id" :label="t('charge.orderId')" width="70" />
+        <el-table-column prop="trade_no" :label="t('charge.tradeNo')" width="200" show-overflow-tooltip />
+        <el-table-column prop="client_email" :label="t('charge.userEmail')" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="client_nickname" :label="t('charge.nickname')" width="100" show-overflow-tooltip />
+        <el-table-column :label="t('currency.amount')" width="100">
           <template #default="{row}">{{ formatAmount(row.amount, row.currency || 'CNY') }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column :label="t('common.status')" width="80">
           <template #default="{row}">
             <el-tag :type="chargeOrderStatusColor(row.status)" size="small">{{ chargeOrderStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="使用时间" width="160">
+        <el-table-column :label="t('charge.usedAt')" width="160">
           <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="usageDialog=false">关闭</el-button>
+        <el-button @click="usageDialog=false">{{ t('common.close') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 卡号展示弹窗（仅显示一次） -->
-    <el-dialog v-model="cardCodeDialog" title="🎫 充值卡号（仅显示一次）" width="500px" :close-on-click-modal="false">
+    <el-dialog v-model="cardCodeDialog" :title="t('charge.cardCodeTitle')" width="500px" :close-on-click-modal="false">
       <el-alert type="warning" :closable="false" style="margin-bottom:16px">
         <template #title>
-          ⚠ 此卡号仅显示一次！请立即复制保存，关闭后列表中将显示脱敏卡号。
+          ⚠ {{ t('charge.cardCodeOnceWarning') }}
         </template>
       </el-alert>
       <el-descriptions :column="1" border size="small">
-        <el-descriptions-item v-if="cardCodeDialogBatchId" label="批次号">{{ cardCodeDialogBatchId }}</el-descriptions-item>
-        <el-descriptions-item label="卡号">
+        <el-descriptions-item v-if="cardCodeDialogBatchId" :label="t('charge.batchId')">{{ cardCodeDialogBatchId }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.cardCode')">
           <div style="display:flex;gap:8px;align-items:center">
             <code style="font-family:monospace;font-size:14px;word-break:break-all;flex:1;background:#f5f7fa;padding:8px;border-radius:4px">{{ cardCodeDialogValue }}</code>
-            <el-button size="small" type="primary" @click="copyCardCode(cardCodeDialogValue)">复制</el-button>
+            <el-button size="small" type="primary" @click="copyCardCode(cardCodeDialogValue)">{{ t('common.copy') }}</el-button>
           </div>
         </el-descriptions-item>
       </el-descriptions>
       <template #footer>
-        <el-button type="primary" @click="cardCodeDialog=false">我已复制保存</el-button>
+        <el-button type="primary" @click="cardCodeDialog=false">{{ t('charge.copiedSaved') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 批量生成结果弹窗 -->
-    <el-dialog v-model="batchResultDialog" title="批量生成结果" width="700px">
+    <el-dialog v-model="batchResultDialog" :title="t('charge.batchResult')" width="700px">
       <el-alert type="success" :closable="false" style="margin-bottom:12px">
-        <template #title>成功生成 {{ batchResult.length }} 张充值卡，批次号: {{ batchResultBatchId }}</template>
+        <template #title>{{ t('charge.batchResultMsg', { count: batchResult.length, batchId: batchResultBatchId }) }}</template>
       </el-alert>
       <el-table :data="batchResult" stripe size="small" max-height="400">
-        <el-table-column prop="card_code" label="卡号" width="220" />
+        <el-table-column prop="card_code" :label="t('charge.cardCode')" width="220" />
         <el-table-column :label="t('currency.amount')" width="200" show-overflow-tooltip>
           <template #default="{row}">{{ batchResultType==='balance' ? formatAmount(row.value, batchResultCurrency) : findVariantName(row.value) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="70">
-          <template #default><el-tag type="success" size="small">未用</el-tag></template>
+        <el-table-column :label="t('common.status')" width="70">
+          <template #default><el-tag type="success" size="small">{{ t('charge.unused') }}</el-tag></template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button type="primary" @click="batchResultDialog=false">确定</el-button>
+        <el-button type="primary" @click="batchResultDialog=false">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
 
@@ -691,7 +691,7 @@ function showEditSite(row) {
 function copyCallbackUrl(siteId) {
   const url = window.location.origin + `/api/v1/charge/callback/${siteId}`
   navigator.clipboard.writeText(url)
-  ElMessage.success('已复制回调地址')
+  ElMessage.success(t('charge.copiedCallbackUrl'))
 }
 
 // ──────── Secret Rotation & Generation (v3.3) ────────
@@ -711,11 +711,11 @@ function showSecretDialog(siteName, siteId, version, plaintextSecret) {
 
 function copySecret(val) {
   navigator.clipboard.writeText(val)
-  ElMessage.success('密钥已复制')
+  ElMessage.success(t('charge.secretCopied'))
 }
 function copyText(val) {
   navigator.clipboard.writeText(val)
-  ElMessage.success('已复制')
+  ElMessage.success(t('charge.copied'))
 }
 
 // 前端生成随机密钥字符串（用于编辑表单预填）
@@ -724,23 +724,23 @@ function generateSecretField() {
   crypto.getRandomValues(bytes)
   const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
   siteForm.value.callback_secret = 'cs_' + hex
-  ElMessage.success('已生成随机密钥')
+  ElMessage.success(t('charge.randomSecretGenerated'))
 }
 
 // 轮换密钥 — 后端自动生成，返回明文（仅此一次）
 async function rotateSiteSecret(row) {
   await ElMessageBox.confirm(
-    `确定轮换站点「${row.name}」的回调密钥？\n\n轮换后旧密钥将变为过渡态（过渡期内仍可验签），新密钥立即生效。\n请确保已准备好将新密钥配置到支付平台。`,
-    '轮换密钥确认',
-    { type: 'warning', confirmButtonText: '确认轮换', cancelButtonText: '取消' }
+    t('charge.confirmRotateSecret', { name: row.name }),
+    t('charge.rotateSecretConfirm'),
+    { type: 'warning', confirmButtonText: t('charge.confirmRotate'), cancelButtonText: t('common.cancel') }
   )
   try {
     const r = await chargeApi.rotateSiteSecret(row.id) // 不传 newSecret，后端自动生成
     if (r && r.plaintext_secret) {
       showSecretDialog(row.name, row.id, r.new_version, r.plaintext_secret)
-      ElMessage.success('密钥已轮换')
+      ElMessage.success(t('charge.secretRotated'))
     } else {
-      ElMessage.success('密钥已轮换')
+      ElMessage.success(t('charge.secretRotated'))
     }
     fetchSites()
   } catch (e) {
@@ -761,7 +761,7 @@ function showCardCodeDialog(plaintextCode, batchId) {
 
 function copyCardCode(val) {
   navigator.clipboard.writeText(val)
-  ElMessage.success('卡号已复制')
+  ElMessage.success(t('charge.cardCodeCopied'))
 }
 
 // ──────── Domain Verification ────────
@@ -792,7 +792,7 @@ async function doGenerateVerify() {
     const r = await chargeApi.generateVerifyFile(verifySite.value.id)
     verifyData.value = r
     verifyStep.value = 1
-    ElMessage.success('验证文件已生成')
+    ElMessage.success(t('charge.verifyFileGenerated'))
     fetchSites()
   } catch {} finally { verifyLoading.value = false }
 }
@@ -800,7 +800,7 @@ async function doVerifyHTTP() {
   verifyLoading.value = true
   try {
     await chargeApi.verifyDomainHTTP(verifySite.value.id)
-    ElMessage.success('HTTP 验证成功！')
+    ElMessage.success(t('charge.httpVerifySuccess'))
     verifyStep.value = 3
     verifySite.value.verified = true
     fetchSites()
@@ -812,7 +812,7 @@ async function doVerifyDNS() {
   verifyLoading.value = true
   try {
     await chargeApi.verifyDomainDNS(verifySite.value.id)
-    ElMessage.success('DNS 验证成功！')
+    ElMessage.success(t('charge.dnsVerifySuccess'))
     verifyStep.value = 3
     verifySite.value.verified = true
     fetchSites()
@@ -839,15 +839,15 @@ async function saveSite() {
     delete payload.id; delete payload.created_at; delete payload.updated_at
     if (editingSite.value) {
       await chargeApi.updateChargeSite(editingSite.value.id, payload)
-      ElMessage.success('保存成功')
+      ElMessage.success(t('charge.saveSuccess'))
     } else {
       // v3.3: 创建时后端自动生成密钥，返回明文（仅此一次）
       const r = await chargeApi.createChargeSite(payload)
       if (r && r.plaintext_secret) {
         showSecretDialog(r.site?.name || siteForm.value.name, r.site?.id || 0, 1, r.plaintext_secret)
-        ElMessage.success('创建成功，密钥已生成')
+        ElMessage.success(t('charge.createSuccessWithSecret'))
       } else {
-        ElMessage.success('保存成功')
+        ElMessage.success(t('charge.saveSuccess'))
       }
     }
     siteDialog.value = false
@@ -857,13 +857,13 @@ async function saveSite() {
 async function toggleSite(row) {
   try {
     await chargeApi.updateChargeSite(row.id, { ...row, enabled: !row.enabled })
-    ElMessage.success(row.enabled ? '已禁用' : '已启用')
+    ElMessage.success(row.enabled ? t('common.disabled') : t('common.enabled'))
     fetchSites()
   } catch {}
 }
 async function deleteSite(row) {
-  await ElMessageBox.confirm(`确定删除充值站点「${row.name}」？`, '确认')
-  try { await chargeApi.deleteChargeSite(row.id); ElMessage.success('删除成功'); fetchSites() } catch {}
+  await ElMessageBox.confirm(t('charge.confirmDeleteSite', { name: row.name }), t('common.confirm'))
+  try { await chargeApi.deleteChargeSite(row.id); ElMessage.success(t('common.deleteSuccess')); fetchSites() } catch {}
 }
 function parseMethods(str) {
   try { return JSON.parse(str || '[]') } catch { return [] }
@@ -971,7 +971,7 @@ async function saveCard() {
     if (r && r.plaintext_card_code) {
       showCardCodeDialog(r.plaintext_card_code, r.card?.batch_id || '')
     } else {
-      ElMessage.success('创建成功')
+      ElMessage.success(t('charge.createSuccess'))
     }
     cardDialog.value = false
     fetchCards()
@@ -992,11 +992,11 @@ function onBatchCurrencyChange(code) {
 async function saveBatch() {
   // 校验
   if (batchForm.value.card_type === 'plan' && !batchForm.value.plan_variant_id) {
-    ElMessage.warning('套餐型充值卡必须选择绑定的套餐规格')
+    ElMessage.warning(t('charge.planVariantRequired'))
     return
   }
   if (batchForm.value.card_type === 'balance' && (!batchForm.value.value_yuan || batchForm.value.value_yuan <= 0)) {
-    ElMessage.warning('金额型充值卡必须填写面值')
+    ElMessage.warning(t('charge.balanceValueRequired'))
     return
   }
   batchSaving.value = true
@@ -1015,7 +1015,7 @@ async function saveBatch() {
     const r = await chargeApi.batchCreateChargeCards(payload)
     // 记住选择
     saveFormatAndPrefix(batchForm.value.card_code_format, batchForm.value.card_prefix)
-    ElMessage.success('批量生成成功')
+    ElMessage.success(t('charge.batchCreateSuccess'))
     batchDialog.value = false
     batchResult.value = r.cards || []
     batchResultBatchId.value = r.batch_id || ''
@@ -1026,8 +1026,8 @@ async function saveBatch() {
   } catch {} finally { batchSaving.value = false }
 }
 async function deleteCard(row) {
-  await ElMessageBox.confirm(`确定删除充值卡「${row.card_code_masked || row.card_code}」？`, '确认')
-  try { await chargeApi.deleteChargeCard(row.id); ElMessage.success('删除成功'); fetchCards() } catch {}
+  await ElMessageBox.confirm(t('charge.confirmDeleteCard', { code: row.card_code_masked || row.card_code }), t('common.confirm'))
+  try { await chargeApi.deleteChargeCard(row.id); ElMessage.success(t('common.deleteSuccess')); fetchCards() } catch {}
 }
 
 // ──────── Card Usage Records (v3.3) ────────
@@ -1063,7 +1063,7 @@ async function doExportCSV() {
     a.click()
     document.body.removeChild(a)
     window.URL.revokeObjectURL(url)
-    ElMessage.success('CSV 导出成功')
+    ElMessage.success(t('charge.csvExportSuccess'))
   } catch (e) {
     if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
   }
@@ -1100,23 +1100,23 @@ async function showTransactions(row) {
 
 // ──────── Refund ────────
 async function refundOrder(row) {
-  await ElMessageBox.confirm(`确定对订单 #${row.id}（${formatAmount(row.amount, row.currency || 'CNY')}）执行退款？金额将退回客户余额。`, '退款确认', { type: 'warning' })
+  await ElMessageBox.confirm(t('charge.confirmRefund', { id: row.id, amount: formatAmount(row.amount, row.currency || 'CNY') }), t('charge.refundConfirm'), { type: 'warning' })
   try {
-    await chargeApi.refundChargeOrder(row.id, { remark: '管理员退款' })
-    ElMessage.success('退款成功')
+    await chargeApi.refundChargeOrder(row.id, { remark: t('charge.adminRefund') })
+    ElMessage.success(t('charge.refundSuccess'))
     fetchOrders()
     fetchBalances()
   } catch {}
 }
 
 // ──────── Helpers ────────
-const sourceLabel = (s) => ({ site:'支付站', card:'充值卡', balance:'余额', admin:'管理员' })[s] || s
-const chargeOrderStatusLabel = (s) => ({ pending:'待支付', paid:'已支付', failed:'已失败', expired:'已过期', refunded:'已退款' })[s] || s
+const sourceLabel = (s) => ({ site: t('charge.sourceSite'), card: t('charge.sourceCard'), balance: t('charge.sourceBalance'), admin: t('charge.sourceAdmin') })[s] || s
+const chargeOrderStatusLabel = (s) => ({ pending: t('charge.statusPending'), paid: t('charge.statusPaid'), failed: t('charge.statusFailed'), expired: t('charge.statusExpired'), refunded: t('charge.statusRefunded') })[s] || s
 const chargeOrderStatusColor = (s) => ({ pending:'warning', paid:'success', failed:'danger', expired:'info', refunded:'danger' })[s] || ''
-const cardStatusLabel = (s) => ({ active:'可用', used:'已用完', expired:'已过期', disabled:'已禁用' })[s] || s
+const cardStatusLabel = (s) => ({ active: t('charge.cardActive'), used: t('charge.cardUsedFull'), expired: t('charge.cardExpired'), disabled: t('charge.cardDisabled') })[s] || s
 const cardStatusColor = (s) => ({ active:'success', used:'info', expired:'warning', disabled:'danger' })[s] || ''
-const cardTypeLabel = (t) => ({ balance:'金额', plan:'套餐', traffic_pack:'流量包' })[t] || t
-const txTypeLabel = (t) => ({ charge:'充值', consume:'消费', refund:'退款', gift:'赠送' })[t] || t
+const cardTypeLabel = (tp) => ({ balance: t('charge.typeBalance'), plan: t('charge.typePlan'), traffic_pack: t('charge.typeTrafficPack') })[tp] || tp
+const txTypeLabel = (tp) => ({ charge: t('charge.txCharge'), consume: t('charge.txConsume'), refund: t('charge.txRefund'), gift: t('charge.txGift') })[tp] || tp
 
 // ──────── Plan Data (for card variant selection) ────────
 const planTemplates = ref([])
@@ -1140,7 +1140,7 @@ async function fetchPlanData() {
     try {
       const trafficPacks = (await planApi.listTrafficPacks()) || []
       for (const v of trafficPacks) {
-        allVariants.push({ ...v, template_name: '流量叠加包', template_id: 0 })
+        allVariants.push({ ...v, template_name: t('charge.trafficPackLabel'), template_id: 0 })
       }
     } catch {}
     planVariants.value = allVariants
@@ -1162,15 +1162,15 @@ function findVariantName(id) {
   return v ? `${v.template_name} - ${v.name}` : `#${id}`
 }
 
-const cycleLabel = (c) => ({ monthly:'月付', quarterly:'季付', semi_annual:'半年付', annual:'年付', lifetime:'终身', one_time:'一次性' })[c] || c
+const cycleLabel = (c) => ({ monthly: t('charge.cycleMonthly'), quarterly: t('charge.cycleQuarterly'), semi_annual: t('charge.cycleSemiAnnual'), annual: t('charge.cycleAnnual'), lifetime: t('charge.cycleLifetime'), one_time: t('charge.cycleOneTime') })[c] || c
 
 // ──────── Card Code Format Presets ────────
 const cardCodeFormats = [
-  { label: 'XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX (4段)', value: '{8}-{8}-{8}-{8}' },
-  { label: 'XXXXXXXX-XXXXXXXX (2段)', value: '{8}-{8}' },
-  { label: 'XXXX-XXXX-XXXX-XXXX (4段短)', value: '{4}-{4}-{4}-{4}' },
-  { label: 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (无分隔)', value: '{32}' },
-  { label: 'XXXXXXXXXXXXXXXX (16位无分隔)', value: '{16}' },
+  { label: t('charge.cardFormat4Seg'), value: '{8}-{8}-{8}-{8}' },
+  { label: t('charge.cardFormat2Seg'), value: '{8}-{8}' },
+  { label: t('charge.cardFormat4SegShort'), value: '{4}-{4}-{4}-{4}' },
+  { label: t('charge.cardFormatNoSep32'), value: '{32}' },
+  { label: t('charge.cardFormatNoSep16'), value: '{16}' },
 ]
 
 // 根据前缀+格式生成预览文本

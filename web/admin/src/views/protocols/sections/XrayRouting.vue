@@ -79,10 +79,10 @@
           <el-input v-model="rf.ruleTag" />
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
-          一条 Xray 路由规则可以同时填写多个匹配条件；多个条件必须同时满足才会命中。
+          {{ t('protoCenter.routing.multiConditionHint') }}
         </el-alert>
 
-        <el-divider content-position="left">匹配条件</el-divider>
+        <el-divider content-position="left">{{ t('protoCenter.routing.matchConditions') }}</el-divider>
         <el-form-item :label="t('protoCenter.routing.domain')">
           <el-select v-model="rf._domain" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
             <el-option-group label="Geosite">

@@ -20,13 +20,32 @@ func NewShareDomainConfigRepository(db *gorm.DB) *ShareDomainConfigRepository {
 
 // List returns all share domain configs, optionally filtered by type.
 func (r *ShareDomainConfigRepository) List(ctx context.Context, configType string) ([]entity.ShareDomainConfig, error) {
+	return r.ListPaged(ctx, configType, 0, 0)
+}
+
+// ListPaged returns share domain configs filtered by type with pagination (limit<=0 means no limit).
+func (r *ShareDomainConfigRepository) ListPaged(ctx context.Context, configType string, limit, offset int) ([]entity.ShareDomainConfig, error) {
 	var configs []entity.ShareDomainConfig
 	query := r.db.WithContext(ctx).Order("sort_order ASC, id ASC")
 	if configType != "" {
 		query = query.Where("type = ?", configType)
 	}
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
 	err := query.Find(&configs).Error
 	return configs, err
+}
+
+// CountByType returns the total number of share domain configs filtered by type.
+func (r *ShareDomainConfigRepository) CountByType(ctx context.Context, configType string) (int64, error) {
+	var count int64
+	query := r.db.WithContext(ctx).Model(&entity.ShareDomainConfig{})
+	if configType != "" {
+		query = query.Where("type = ?", configType)
+	}
+	err := query.Count(&count).Error
+	return count, err
 }
 
 // GetByID returns a share domain config by ID.

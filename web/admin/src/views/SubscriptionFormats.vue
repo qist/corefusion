@@ -28,6 +28,13 @@
       </el-table>
     </el-card>
 
+    <PaginationBar
+      v-model:page="fmtPage"
+      v-model:page-size="fmtPageSize"
+      :total="fmtTotal"
+      @change="fetchData"
+    />
+
     <!-- Create/Edit Format Dialog -->
     <el-dialog v-model="dialogVisible" :title="editing?t('subfmt.edit'):t('subfmt.create')" width="500">
       <el-form :model="form" label-width="100px">
@@ -135,8 +142,11 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
+import { usePagination } from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t } = useI18n()
+const { page: fmtPage, pageSize: fmtPageSize, total: fmtTotal, limit: fmtLimit, offset: fmtOffset } = usePagination({ pageKey: 'sfmtPage', pageSizeKey: 'sfmtSize' })
 const formats = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -170,8 +180,9 @@ const outboundType = (tag) => {
 async function fetchData() {
   loading.value = true
   try {
-    const r = await client.get('/subscription-formats')
-    formats.value = Array.isArray(r) ? r : []
+    const r = await client.get('/subscription-formats', { params: { limit: fmtLimit.value, offset: fmtOffset.value } })
+    formats.value = Array.isArray(r?.items) ? r.items : []
+    fmtTotal.value = r?.total ?? formats.value.length
   } finally {
     loading.value = false
   }

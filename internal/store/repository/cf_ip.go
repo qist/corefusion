@@ -20,9 +20,25 @@ func NewCFIPSourceRepository(db *gorm.DB) *CFIPSourceRepository {
 
 // List returns all CF IP sources.
 func (r *CFIPSourceRepository) List(ctx context.Context) ([]entity.CFIPSource, error) {
+	return r.ListPaged(ctx, 0, 0)
+}
+
+// ListPaged returns CF IP sources with pagination (limit<=0 means no limit).
+func (r *CFIPSourceRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.CFIPSource, error) {
 	var sources []entity.CFIPSource
-	err := r.db.WithContext(ctx).Order("id ASC").Find(&sources).Error
+	q := r.db.WithContext(ctx).Order("id ASC")
+	if limit > 0 {
+		q = q.Limit(limit).Offset(offset)
+	}
+	err := q.Find(&sources).Error
 	return sources, err
+}
+
+// Count returns the total number of CF IP sources.
+func (r *CFIPSourceRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.CFIPSource{}).Count(&count).Error
+	return count, err
 }
 
 // GetByID returns a CF IP source by ID.
@@ -66,13 +82,32 @@ func NewCFIPEntryRepository(db *gorm.DB) *CFIPEntryRepository {
 
 // List returns all CF IP entries, optionally filtered by source.
 func (r *CFIPEntryRepository) List(ctx context.Context, sourceID int64) ([]entity.CFIPEntry, error) {
+	return r.ListPaged(ctx, sourceID, 0, 0)
+}
+
+// ListPaged returns CF IP entries filtered by source with pagination (limit<=0 means no limit).
+func (r *CFIPEntryRepository) ListPaged(ctx context.Context, sourceID int64, limit, offset int) ([]entity.CFIPEntry, error) {
 	var entries []entity.CFIPEntry
 	query := r.db.WithContext(ctx).Order("id ASC")
 	if sourceID > 0 {
 		query = query.Where("source_id = ?", sourceID)
 	}
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
 	err := query.Find(&entries).Error
 	return entries, err
+}
+
+// CountBySource returns the total number of CF IP entries filtered by source.
+func (r *CFIPEntryRepository) CountBySource(ctx context.Context, sourceID int64) (int64, error) {
+	var count int64
+	query := r.db.WithContext(ctx).Model(&entity.CFIPEntry{})
+	if sourceID > 0 {
+		query = query.Where("source_id = ?", sourceID)
+	}
+	err := query.Count(&count).Error
+	return count, err
 }
 
 // Create creates a new CF IP entry.

@@ -23,12 +23,13 @@ func NewHandler(svc *planSvc.Service) *Handler {
 
 // ListTemplates handles GET /api/v1/plan-templates.
 func (h *Handler) ListTemplates(c *gin.Context) {
-	templates, err := h.svc.ListTemplates(c.Request.Context())
+	pg := response.ParsePagination(c)
+	templates, total, err := h.svc.ListTemplatesPaged(c.Request.Context(), pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_TEMPLATES_FAILED", err.Error())
 		return
 	}
-	response.OK(c, templates)
+	response.Paginated(c, templates, total, pg.Limit, pg.Offset)
 }
 
 // GetTemplate handles GET /api/v1/plan-templates/:id.
@@ -194,17 +195,18 @@ func (h *Handler) ListAllInboundsWithServer(c *gin.Context) {
 
 // ListVariants handles GET /api/v1/plan-templates/:id/variants.
 func (h *Handler) ListVariants(c *gin.Context) {
+	pg := response.ParsePagination(c)
 	tmplID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid template id")
 		return
 	}
-	variants, err := h.svc.ListVariants(c.Request.Context(), tmplID)
+	variants, total, err := h.svc.ListVariantsPaged(c.Request.Context(), tmplID, pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_VARIANTS_FAILED", err.Error())
 		return
 	}
-	response.OK(c, variants)
+	response.Paginated(c, variants, total, pg.Limit, pg.Offset)
 }
 
 // CreateVariant handles POST /api/v1/plan-templates/:id/variants.
@@ -265,12 +267,13 @@ func (h *Handler) DeleteVariant(c *gin.Context) {
 
 // ListTrafficPacks handles GET /api/v1/traffic-packs.
 func (h *Handler) ListTrafficPacks(c *gin.Context) {
-	packs, err := h.svc.ListTrafficPacks(c.Request.Context())
+	pg := response.ParsePagination(c)
+	packs, total, err := h.svc.ListTrafficPacksPaged(c.Request.Context(), pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_TRAFFIC_PACKS_FAILED", err.Error())
 		return
 	}
-	response.OK(c, packs)
+	response.Paginated(c, packs, total, pg.Limit, pg.Offset)
 }
 
 // CreateTrafficPack handles POST /api/v1/traffic-packs.

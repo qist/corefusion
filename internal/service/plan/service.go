@@ -72,6 +72,19 @@ func (s *Service) ListTemplates(ctx context.Context) ([]entity.PlanTemplate, err
 	return s.tmplRepo.List(ctx)
 }
 
+// ListTemplatesPaged returns plan templates with pagination and total count.
+func (s *Service) ListTemplatesPaged(ctx context.Context, limit, offset int) ([]entity.PlanTemplate, int64, error) {
+	items, err := s.tmplRepo.ListPaged(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.tmplRepo.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // GetTemplate returns a template by ID with its variants.
 func (s *Service) GetTemplate(ctx context.Context, id int64) (*entity.PlanTemplate, []entity.PlanVariant, error) {
 	tmpl, err := s.tmplRepo.GetByID(ctx, id)
@@ -349,6 +362,19 @@ func (s *Service) ListVariants(ctx context.Context, templateID int64) ([]entity.
 	return s.variantRepo.ListByTemplateID(ctx, templateID)
 }
 
+// ListVariantsPaged returns plan variants for a template with pagination and total count.
+func (s *Service) ListVariantsPaged(ctx context.Context, templateID int64, limit, offset int) ([]entity.PlanVariant, int64, error) {
+	items, err := s.variantRepo.ListByTemplateIDPaged(ctx, templateID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.variantRepo.CountByTemplateID(ctx, templateID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // CreateVariantInput is the input for creating a plan variant.
 type CreateVariantInput struct {
 	Name            string `json:"name" binding:"required"`
@@ -497,6 +523,24 @@ func (s *Service) DeleteVariant(ctx context.Context, id int64) error {
 // ListTrafficPacks returns all traffic pack variants (including disabled).
 func (s *Service) ListTrafficPacks(ctx context.Context) ([]entity.PlanVariant, error) {
 	return s.variantRepo.ListAllByVariantType(ctx, entity.VariantTypeTrafficPack)
+}
+
+// ListTrafficPacksPaged returns all traffic packs with pagination and total count.
+func (s *Service) ListTrafficPacksPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, int64, error) {
+	items, err := s.variantRepo.ListPaged(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.variantRepo.CountAll(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// ListAllVariantsPaged returns all plan variants with pagination and total count.
+func (s *Service) ListAllVariantsPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, int64, error) {
+	return s.ListTrafficPacksPaged(ctx, limit, offset)
 }
 
 // CreateTrafficPackInput is the input for creating a standalone traffic pack.

@@ -48,7 +48,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total,prev,pager,next" style="margin-top:16px;justify-content:flex-end" @current-change="fetchCertificates" />
+      <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchCertificates" />
     </el-card>
 
     <!-- Issue Certificate Dialog -->
@@ -307,6 +307,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../composables/useQueryState'
+import PaginationBar from '../components/PaginationBar.vue'
 import client from '../api/client'
 
 const { t } = useI18n()
@@ -314,7 +315,8 @@ const { t } = useI18n()
 // Certificates
 const certificates = ref([])
 const loading = ref(false)
-const page = useQueryState('page', 1, { type: 'number' })
+const page = useQueryState('certPage', 1, { type: 'number' })
+const pageSize = useQueryState('certPageSize', 20, { type: 'number' })
 const total = ref(0)
 
 // Issue
@@ -388,7 +390,7 @@ function formatDate(d) {
 async function fetchCertificates() {
   loading.value = true
   try {
-    const data = await client.get('/certificates', { params: { limit: 20, offset: (page.value - 1) * 20 } })
+    const data = await client.get('/certificates', { params: { limit: pageSize.value, offset: (page.value - 1) * pageSize.value } })
     certificates.value = (data.items || []).map(c => ({ ...c, _renewing: false, _distributing: false }))
     total.value = data.total || 0
   } finally { loading.value = false }

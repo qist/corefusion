@@ -22,7 +22,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="subPage" :page-size="20" :total="subTotal" layout="total,prev,pager,next" style="margin-top:16px;justify-content:flex-end" @current-change="fetchSubscriptions" />
+          <PaginationBar v-model:page="subPage" v-model:page-size="subPageSize" :total="subTotal" @change="fetchSubscriptions" />
         </el-card>
       </el-tab-pane>
 
@@ -66,6 +66,12 @@
                 </template>
               </el-table-column>
             </el-table>
+            <PaginationBar
+              v-model:page="fmtPage"
+              v-model:page-size="fmtSize"
+              :total="fmtTotal"
+              @change="fetchFormats"
+            />
           </el-card>
         </div>
       </el-tab-pane>
@@ -90,6 +96,12 @@
               </template>
             </el-table-column>
           </el-table>
+          <PaginationBar
+            v-model:page="epPage"
+            v-model:page-size="epSize"
+            :total="epTotal"
+            @change="fetchEndpoints"
+          />
         </el-card>
       </el-tab-pane>
 
@@ -269,6 +281,11 @@ import MihomoConfig from './protocols/sections/MihomoConfig.vue'
 import ExternalNodes from './ExternalNodes.vue'
 import SubscriptionBillingTemplates from '../components/subscription/SubscriptionBillingTemplates.vue'
 import { useQueryState } from '../composables/useQueryState'
+import { usePagination } from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
+
+const { page: fmtPage, pageSize: fmtSize, total: fmtTotal, limit: fmtLimit, offset: fmtOffset } = usePagination({ pageKey: 'scfmtPage', pageSizeKey: 'scfmtSize' })
+const { page: epPage, pageSize: epSize, total: epTotal, limit: epLimit, offset: epOffset } = usePagination({ pageKey: 'scepPage', pageSizeKey: 'scepSize' })
 
 const { t } = useI18n()
 const activeTab = useQueryState('tab', 'subscriptions')
@@ -279,6 +296,7 @@ const clientsList = ref([])
 const subLoading = ref(false)
 const subTotal = ref(0)
 const subPage = useQueryState('subPage', 1, { type: 'number' })
+const subPageSize = useQueryState('subPageSize', 20, { type: 'number' })
 
 // Formats
 const formats = ref([])
@@ -348,7 +366,7 @@ async function fetchSubscriptions() {
   subLoading.value = true
   try {
     const [subRes, clRes] = await Promise.all([
-      client.get('/subscriptions', { params: { limit: 20, offset: (subPage.value - 1) * 20 } }),
+      client.get('/subscriptions', { params: { limit: subPageSize.value, offset: (subPage.value - 1) * subPageSize.value } }),
       client.get('/clients', { params: { limit: 100 } })
     ])
     subscriptions.value = subRes.items || []
@@ -356,10 +374,10 @@ async function fetchSubscriptions() {
     clientsList.value = clRes.items || []
   } finally { subLoading.value = false }
 }
-async function fetchPlans() { try { allPlans.value = (await client.get('/plan-templates')) || [] } catch { allPlans.value = [] } }
+async function fetchPlans() { try { const r = await client.get('/plan-templates'); allPlans.value = Array.isArray(r?.items) ? r.items : (r || []) } catch { allPlans.value = [] } }
 
-async function fetchFormats() { fmtLoading.value = true; try { formats.value = (await client.get('/mihomo/configs')) || [] } catch {} finally { fmtLoading.value = false } }
-async function fetchEndpoints() { epLoading.value = true; try { endpoints.value = (await client.get('/subscription-endpoints')) || [] } catch {} finally { epLoading.value = false } }
+async function fetchFormats() { fmtLoading.value = true; try { const r = await client.get('/mihomo/configs', { params: { limit: fmtLimit.value, offset: fmtOffset.value } }); formats.value = Array.isArray(r?.items) ? r.items : (r || []); fmtTotal.value = r?.total ?? formats.value.length } catch {} finally { fmtLoading.value = false } }
+async function fetchEndpoints() { epLoading.value = true; try { const r = await client.get('/subscription-endpoints', { params: { limit: epLimit.value, offset: epOffset.value } }); endpoints.value = Array.isArray(r?.items) ? r.items : (r || []); epTotal.value = r?.total ?? endpoints.value.length } catch {} finally { epLoading.value = false } }
 
 // Subscription actions
 async function handleRotate(row) { await ElMessageBox.confirm(t('subscription.rotateConfirm'), t('common.confirm')); const r = await client.post(`/subscriptions/${row.id}/rotate`, { reason: 'manual' }); ElMessage.success(`${t('subscription.newToken')}: ${r.token}`); fetchSubscriptions() }

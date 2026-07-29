@@ -126,6 +126,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <PaginationBar v-model:page="serverPage" v-model:page-size="serverPageSize" :total="serverTotal" @change="loadServers" />
       </el-tab-pane>
 
       <!-- ════════════ Dashboard Tab ════════════ -->
@@ -641,6 +642,8 @@ import {
   resumeTrafficSuspended, listInterfaces,
 } from '../api/nodeServer'
 import { useQueryState } from '../composables/useQueryState'
+import { usePagination } from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -653,6 +656,8 @@ const updateAllLoading = ref(false)
 
 // ─── Server List ───
 const servers = ref([])
+const { page: serverPage, pageSize: serverPageSize } = usePagination({ pageKey: 'srvPage', pageSizeKey: 'srvSize' })
+const serverTotal = ref(0)
 const loading = ref(false)
 const filterRegion = ref('')
 const filterNodeType = ref('')
@@ -753,11 +758,12 @@ let refreshTimer = null
 async function loadServers() {
   loading.value = true
   try {
-    const params = {}
+    const params = { limit: serverPageSize.value, offset: (serverPage.value - 1) * serverPageSize.value }
     if (filterRegion.value) params.region = filterRegion.value
     if (filterNodeType.value) params.node_type = filterNodeType.value
     const res = await listNodeServers(params)
     servers.value = res.items || []
+    serverTotal.value = res.total || 0
     // Update region options from data
     const regionsSet = new Set(regionOptions.value)
     servers.value.forEach(s => { if (s.region) regionsSet.add(s.region) })

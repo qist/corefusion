@@ -27,6 +27,19 @@ func (s *Service) List(ctx context.Context) ([]entity.SubscriptionFormat, error)
 	return s.formatRepo.List(ctx)
 }
 
+// ListPaged returns subscription formats with pagination and total count.
+func (s *Service) ListPaged(ctx context.Context, limit, offset int) ([]entity.SubscriptionFormat, int64, error) {
+	items, err := s.formatRepo.ListPaged(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.formatRepo.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // GetByID returns a subscription format by ID with its rules.
 func (s *Service) GetByID(ctx context.Context, id int64) (*entity.SubscriptionFormat, []entity.SubscriptionRule, error) {
 	format, err := s.formatRepo.GetByID(ctx, id)

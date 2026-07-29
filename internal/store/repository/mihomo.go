@@ -19,8 +19,17 @@ func NewMihomoConfigRepository(db *gorm.DB) *MihomoConfigRepository {
 }
 
 func (r *MihomoConfigRepository) List(ctx context.Context) ([]entity.MihomoConfig, error) {
+	return r.ListPaged(ctx, 0, 0)
+}
+
+// ListPaged returns mihomo configs with pagination (limit<=0 means no limit).
+func (r *MihomoConfigRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.MihomoConfig, error) {
 	var configs []entity.MihomoConfig
-	err := r.db.WithContext(ctx).Order("sort_order ASC, id ASC").Find(&configs).Error
+	q := r.db.WithContext(ctx).Order("sort_order ASC, id ASC")
+	if limit > 0 {
+		q = q.Limit(limit).Offset(offset)
+	}
+	err := q.Find(&configs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +42,13 @@ func (r *MihomoConfigRepository) List(ctx context.Context) ([]entity.MihomoConfi
 		}
 	}
 	return configs, nil
+}
+
+// Count returns the total number of mihomo configs.
+func (r *MihomoConfigRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.MihomoConfig{}).Count(&count).Error
+	return count, err
 }
 
 func (r *MihomoConfigRepository) GetByID(ctx context.Context, id int64) (*entity.MihomoConfig, error) {

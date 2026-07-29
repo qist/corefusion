@@ -63,6 +63,19 @@ func (s *Service) List(ctx context.Context) ([]entity.MihomoConfig, error) {
 	return s.configRepo.List(ctx)
 }
 
+// ListPaged returns mihomo configs with pagination and total count.
+func (s *Service) ListPaged(ctx context.Context, limit, offset int) ([]entity.MihomoConfig, int64, error) {
+	items, err := s.configRepo.ListPaged(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.configRepo.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // GetByID returns a mihomo config with all related data.
 func (s *Service) GetByID(ctx context.Context, id int64) (*entity.MihomoConfig, map[string]interface{}, error) {
 	config, err := s.configRepo.GetByID(ctx, id)

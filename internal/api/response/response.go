@@ -2,6 +2,7 @@ package response
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -79,4 +80,64 @@ func Paginated[T any](c *gin.Context, items []T, total int64, limit, offset int)
 		Limit:  limit,
 		Offset: offset,
 	})
+}
+
+// Pagination holds resolved, clamped pagination parameters.
+type Pagination struct {
+	Page   int
+	Limit  int
+	Offset int
+}
+
+const (
+	// DefaultPageSize is used when the client does not specify a page size.
+	DefaultPageSize = 20
+	// MaxPageSize caps the page size to avoid overloading the database.
+	MaxPageSize = 100
+)
+
+// ParsePagination reads pagination params from the request and clamps them.
+// It accepts either limit+offset or page+page_size. Defaults: page=1,
+// limit=DefaultPageSize (20). Limit is capped at MaxPageSize (100).
+// This is the single source of truth for pagination and should replace
+// ad-hoc helpers such as getLimitOffset.
+func ParsePagination(c *gin.Context) Pagination {
+	atoi := func(key string, def int) int {
+		v := c.Query(key)
+		if v == "" {
+			return def
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return def
+		}
+		return n
+	}
+
+	limit := atoi("limit", 0)
+	if limit <= 0 {
+		if ps := atoi("page_size", 0); ps > 0 {
+			limit = ps
+		}
+	}
+	if limit <= 0 {
+		limit = DefaultPageSize
+	}
+	if limit > MaxPageSize {
+		limit = MaxPageSize
+	}
+
+	offset := atoi("offset", 0)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset == 0 {
+		page := atoi("page", 1)
+		if page < 1 {
+			page = 1
+		}
+		return Pagination{Page: page, Limit: limit, Offset: (page - 1) * limit}
+	}
+	// offset provided directly: derive page for convenience
+	return Pagination{Page: offset/limit + 1, Limit: limit, Offset: offset}
 }

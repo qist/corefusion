@@ -95,7 +95,7 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-if="withdrawalTotal>20" :total="withdrawalTotal" :page-size="20" v-model:current-page="withdrawalPage" layout="prev,pager,next" style="margin-top:12px" @current-change="fetchWithdrawals" />
+        <PaginationBar v-model:page="withdrawalPage" v-model:page-size="withdrawalPageSize" :total="withdrawalTotal" @change="fetchWithdrawals" />
 
         <!-- 邀请记录查询 -->
         <h4 style="margin:16px 0 12px">{{ t('clientExt.referralRecords') }}</h4>
@@ -121,6 +121,7 @@
           </el-table-column>
           <el-table-column prop="created_at" :label="t('clientExt.createdAt')" width="170" />
         </el-table>
+        <PaginationBar v-model:page="refPage" v-model:page-size="refSize" :total="refTotal" @change="fetchReferralRecords" />
       </el-tab-pane>
 
       <!-- ════════════ 福利管理 Tab ════════════ -->
@@ -180,6 +181,7 @@
             <template #default="{row}">{{ row.claimed_at || '-' }}</template>
           </el-table-column>
         </el-table>
+        <PaginationBar v-model:page="giftPage" v-model:page-size="giftSize" :total="giftTotal" @change="fetchGifts" />
 
         <el-dialog v-model="giftDialogVisible" :title="giftBatchMode?t('clientExt.batchGrantGift'):t('clientExt.grantGift')" width="500px">
           <el-form label-width="100px" size="small">
@@ -284,6 +286,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <PaginationBar v-model:page="artPage" v-model:page-size="artSize" :total="artTotal" @change="fetchArticles" />
 
         <el-dialog v-model="articleDialogVisible" :title="articleForm.id?t('clientExt.editArticle'):t('clientExt.newArticle')" width="800px">
           <el-form label-width="80px" size="small">
@@ -365,6 +368,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <PaginationBar v-model:page="acctPage" v-model:page-size="acctSize" :total="acctTotal" @change="fetchSharedAccounts" />
 
         <el-dialog v-model="sharedAccountDialogVisible" :title="sharedAccountForm.id?t('clientExt.editAccount'):t('clientExt.newAccount')" width="500px">
           <el-form label-width="120px" size="small">
@@ -441,6 +445,7 @@
           </el-table-column>
           <el-table-column prop="created_at" :label="t('clientExt.addedTime')" width="170" />
         </el-table>
+        <PaginationBar v-model:page="ipPage" v-model:page-size="ipSize" :total="ipTotal" @change="fetchIPWhitelists" />
       </el-tab-pane>
 
       <!-- ════════════ OAuth绑定 Tab ════════════ -->
@@ -463,6 +468,7 @@
           <el-table-column prop="provider_user_id" :label="t('clientExt.thirdPartyUserId')" width="200" show-overflow-tooltip />
           <el-table-column prop="created_at" :label="t('clientExt.bindingTime')" width="170" />
         </el-table>
+        <PaginationBar v-model:page="oaPage" v-model:page-size="oaSize" :total="oaTotal" @change="fetchOAuthBindings" />
       </el-tab-pane>
 
     </el-tabs>
@@ -484,12 +490,15 @@ import {
 } from '../api/clientext'
 import { listPlanTemplates } from '../api/plan'
 import { useQueryState } from '../composables/useQueryState'
+import { usePagination } from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const activeTab = useQueryState('tab', 'referrals')
 
 // ════════════ Referral Stats & Records ════════════
 const referralStats = ref({})
 const referralRecords = ref([])
+const { page: refPage, pageSize: refSize, total: refTotal, limit: refLimit, offset: refOffset } = usePagination({ pageKey: 'clxRefPage', pageSizeKey: 'clxRefSize' })
 const referralRecordsLoading = ref(false)
 const referralRecordReferrerFilter = ref('')
 const referralConfig = ref({ commission_rate: 15, min_withdraw_yuan: 10 })
@@ -519,10 +528,11 @@ async function fetchReferralStats() {
 async function fetchReferralRecords() {
   referralRecordsLoading.value = true
   try {
-    const params = { limit: 50 }
+    const params = { limit: refLimit.value, offset: refOffset.value }
     if (referralRecordReferrerFilter.value) params.referrer_id = referralRecordReferrerFilter.value
     const result = await listReferralRecords(params)
     referralRecords.value = result?.items || []
+    refTotal.value = result?.total || 0
   } finally { referralRecordsLoading.value = false }
 }
 
@@ -531,12 +541,13 @@ const withdrawals = ref([])
 const withdrawalsLoading = ref(false)
 const withdrawalTotal = ref(0)
 const withdrawalPage = useQueryState('wpage', 1, { type: 'number' })
+const withdrawalPageSize = useQueryState('wpageSize', 20, { type: 'number' })
 const withdrawalStatusFilter = useQueryState('wstatus', '', { omit: (v) => v === '' })
 
 async function fetchWithdrawals() {
   withdrawalsLoading.value = true
   try {
-    const params = { limit: 20, offset: (withdrawalPage.value - 1) * 20 }
+    const params = { limit: withdrawalPageSize.value, offset: (withdrawalPage.value - 1) * withdrawalPageSize.value }
     if (withdrawalStatusFilter.value) params.status = withdrawalStatusFilter.value
     const result = await listReferralWithdrawals(params)
     withdrawals.value = result?.items || []
@@ -563,6 +574,7 @@ function withdrawalStatusType(s) { return { pending: 'warning', approved: 'succe
 
 // ════════════ Gifts ════════════
 const gifts = ref([])
+const { page: giftPage, pageSize: giftSize, total: giftTotal, limit: giftLimit, offset: giftOffset } = usePagination({ pageKey: 'clxGiftPage', pageSizeKey: 'clxGiftSize' })
 const giftsLoading = ref(false)
 const giftDialogVisible = ref(false)
 const giftBatchMode = ref(false)
@@ -574,8 +586,9 @@ const clientSearchLoading = ref(false)
 async function fetchGifts() {
   giftsLoading.value = true
   try {
-    const result = await listClientGifts({ limit: 50 })
+    const result = await listClientGifts({ limit: giftLimit.value, offset: giftOffset.value })
     gifts.value = result?.items || []
+    giftTotal.value = result?.total || 0
   } finally { giftsLoading.value = false }
 }
 
@@ -679,6 +692,7 @@ async function saveGiftRuleConfig() {
 
 // ════════════ Articles ════════════
 const articles = ref([])
+const { page: artPage, pageSize: artSize, total: artTotal, limit: artLimit, offset: artOffset } = usePagination({ pageKey: 'clxArtPage', pageSizeKey: 'clxArtSize' })
 const articlesLoading = ref(false)
 const articleDialogVisible = ref(false)
 const articleForm = ref({ title: '', slug: '', category: 'tutorial', platform: '', sort_order: 0, is_published: false, is_popup: false, content: '' })
@@ -687,8 +701,9 @@ const articleSubmitting = ref(false)
 async function fetchArticles() {
   articlesLoading.value = true
   try {
-    const result = await listArticles({ limit: 50 })
+    const result = await listArticles({ limit: artLimit.value, offset: artOffset.value })
     articles.value = result?.items || []
+    artTotal.value = result?.total || 0
   } finally { articlesLoading.value = false }
 }
 
@@ -725,6 +740,7 @@ function articleCategoryLabel(c) { return { tutorial: t('clientExt.tutorial'), f
 
 // ════════════ Shared Accounts ════════════
 const sharedAccounts = ref([])
+const { page: acctPage, pageSize: acctSize, total: acctTotal, limit: acctLimit, offset: acctOffset } = usePagination({ pageKey: 'clxAcctPage', pageSizeKey: 'clxAcctSize' })
 const sharedAccountsLoading = ref(false)
 const sharedAccountDialogVisible = ref(false)
 const sharedAccountForm = ref({ name: '', type: 'other', icon_url: '', credentials_enc: '', min_plan_category: '', repair_cooldown: 1440, sort_order: 0, enabled: true })
@@ -749,8 +765,9 @@ async function fetchPlanTemplates() {
 async function fetchSharedAccounts() {
   sharedAccountsLoading.value = true
   try {
-    const result = await listSharedAccounts({ limit: 50 })
+    const result = await listSharedAccounts({ limit: acctLimit.value, offset: acctOffset.value })
     sharedAccounts.value = result?.items || []
+    acctTotal.value = result?.total || 0
   } finally { sharedAccountsLoading.value = false }
 }
 
@@ -793,31 +810,35 @@ function sharedAccountTypeLabel(t) { return { apple_id: 'Apple ID', netflix: 'Ne
 
 // ════════════ IP Whitelist ════════════
 const ipWhitelistEntries = ref([])
+const { page: ipPage, pageSize: ipSize, total: ipTotal, limit: ipLimit, offset: ipOffset } = usePagination({ pageKey: 'clxIpPage', pageSizeKey: 'clxIpSize' })
 const ipWhitelistLoading = ref(false)
 const ipWhitelistClientFilter = ref('')
 
 async function fetchIPWhitelists() {
   ipWhitelistLoading.value = true
   try {
-    const params = { limit: 50 }
+    const params = { limit: ipLimit.value, offset: ipOffset.value }
     if (ipWhitelistClientFilter.value) params.client_id = ipWhitelistClientFilter.value
     const result = await listAllIPWhitelists(params)
     ipWhitelistEntries.value = result?.items || []
+    ipTotal.value = result?.total || 0
   } finally { ipWhitelistLoading.value = false }
 }
 
 // ════════════ OAuth Bindings ════════════
 const oauthBindings = ref([])
+const { page: oaPage, pageSize: oaSize, total: oaTotal, limit: oaLimit, offset: oaOffset } = usePagination({ pageKey: 'clxOaPage', pageSizeKey: 'clxOaSize' })
 const oauthBindingsLoading = ref(false)
 const oauthClientFilter = ref('')
 
 async function fetchOAuthBindings() {
   oauthBindingsLoading.value = true
   try {
-    const params = { limit: 50 }
+    const params = { limit: oaLimit.value, offset: oaOffset.value }
     if (oauthClientFilter.value) params.client_id = oauthClientFilter.value
     const result = await listOAuthBindings(params)
     oauthBindings.value = result?.items || []
+    oaTotal.value = result?.total || 0
   } finally { oauthBindingsLoading.value = false }
 }
 

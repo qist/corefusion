@@ -21,12 +21,13 @@ func NewHandler(svc *mihomo.Service) *Handler {
 
 // List handles GET /api/v1/mihomo/configs.
 func (h *Handler) List(c *gin.Context) {
-	configs, err := h.svc.List(c.Request.Context())
+	pg := response.ParsePagination(c)
+	configs, total, err := h.svc.ListPaged(c.Request.Context(), pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.OK(c, configs)
+	response.Paginated(c, configs, total, pg.Limit, pg.Offset)
 }
 
 // GetByID handles GET /api/v1/mihomo/configs/:id.

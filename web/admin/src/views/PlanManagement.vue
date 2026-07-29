@@ -42,6 +42,12 @@
             </template>
           </el-table-column>
         </el-table>
+        <PaginationBar
+          v-model:page="trafficPage"
+          v-model:page-size="trafficSize"
+          :total="trafficTotal"
+          @change="fetchTrafficPacks"
+        />
       </el-tab-pane>
 
       <!-- ════════════ 套餐模板 Tab ════════════ -->
@@ -545,6 +551,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import * as planApi from '../api/plan'
 import { useQueryState } from '../composables/useQueryState'
+import { usePagination } from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const activeTab = useQueryState('tab', 'templates')
 
@@ -564,7 +572,7 @@ function emptyTemplateForm() {
   }
 }
 async function fetchTemplates() {
-  try { templates.value = (await planApi.listPlanTemplates()) || [] } catch {}
+  try { const r = await planApi.listPlanTemplates(); templates.value = r?.items || r || [] } catch {}
   fetchTemplateNodes()
 }
 function showCreateTemplate() {
@@ -680,7 +688,7 @@ function emptyVariantForm() {
 async function showVariantsDialog(tpl) {
   currentTemplate.value = tpl
   variantsDialog.value = true
-  try { variants.value = (await planApi.listPlanVariants(tpl.id)) || [] } catch { variants.value = [] }
+  try { const r = await planApi.listPlanVariants(tpl.id); variants.value = r?.items || r || [] } catch { variants.value = [] }
 }
 function showCreateVariant() {
   editingVariant.value = null
@@ -946,6 +954,7 @@ async function fetchExtNodes() {
 // ──────── Traffic Packs (独立流量叠加包) ────────
 const trafficPacksLoading = ref(false)
 const trafficPackVariants = ref([])
+const { page: trafficPage, pageSize: trafficSize, total: trafficTotal, limit: trafficLimit, offset: trafficOffset } = usePagination({ pageKey: 'trafPage', pageSizeKey: 'trafSize' })
 const trafficPackDialog = ref(false)
 const editingTrafficPack = ref(null)
 const trafficPackForm = ref({})
@@ -961,7 +970,9 @@ function emptyTrafficPackForm() {
 async function fetchTrafficPacks() {
   trafficPacksLoading.value = true
   try {
-    trafficPackVariants.value = (await planApi.listTrafficPacks()) || []
+    const r = await planApi.listTrafficPacks({ limit: trafficLimit.value, offset: trafficOffset.value })
+    trafficPackVariants.value = Array.isArray(r?.items) ? r.items : (Array.isArray(r) ? r : [])
+    trafficTotal.value = r?.total ?? trafficPackVariants.value.length
   } catch {
     trafficPackVariants.value = []
   } finally {

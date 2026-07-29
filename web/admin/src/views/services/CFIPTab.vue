@@ -68,6 +68,12 @@
         </div>
       </div>
       <div v-if="!entries.length" style="text-align:center;color:#909399;padding:16px">{{ t('common.noData') }}</div>
+      <PaginationBar
+        v-model:page="entryPage"
+        v-model:page-size="entryPageSize"
+        :total="entryTotal"
+        @change="fetchEntries"
+      />
     </el-card>
 
     <!-- Add Source Dialog -->
@@ -128,10 +134,13 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
+import { usePagination } from '../../composables/usePagination'
+import PaginationBar from '../../components/PaginationBar.vue'
 
 const { t } = useI18n()
 const sources = ref([])
 const entries = ref([])
+const { page: entryPage, pageSize: entryPageSize, total: entryTotal, limit: entryLimit, offset: entryOffset } = usePagination({ pageKey: 'cfipPage', pageSizeKey: 'cfipSize' })
 const sourceDlg = ref(false)
 const entryDlg = ref(false)
 const newSource = ref({ name: '', url: '', type: 'bestcf', interval: 3600 })
@@ -168,14 +177,15 @@ function toggleNewPort(port, checked) {
 async function fetchSources() {
   try {
     const data = await client.get('/cfip/sources')
-    sources.value = Array.isArray(data) ? data : []
+    sources.value = data?.items || (Array.isArray(data) ? data : [])
   } catch { sources.value = [] }
 }
 
 async function fetchEntries() {
   try {
-    const data = await client.get('/cfip/entries')
-    entries.value = Array.isArray(data) ? data : []
+    const data = await client.get('/cfip/entries', { params: { limit: entryLimit.value, offset: entryOffset.value } })
+    entries.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    entryTotal.value = data?.total ?? entries.value.length
   } catch { entries.value = [] }
 }
 

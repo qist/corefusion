@@ -272,7 +272,7 @@ async function loadData() {
       default_expiry_template: templateRes?.default_expiry_template || '',
       variables: Array.isArray(templateRes?.variables) ? templateRes.variables : []
     }
-    plans.value = Array.isArray(planRes) ? planRes : []
+    plans.value = planRes?.items || (Array.isArray(planRes) ? planRes : [])
     applyDefaultForm()
     if (!selectedPlanId.value && plans.value.length > 0) {
       selectedPlanId.value = plans.value[0].id

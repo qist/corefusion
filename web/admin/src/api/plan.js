@@ -2,8 +2,8 @@ import client from './client'
 
 // ──────────── Plan Templates ────────────
 
-export function listPlanTemplates() {
-  return client.get('/plan-templates')
+export function listPlanTemplates(params = {}) {
+  return client.get('/plan-templates', { params })
 }
 
 export function getPlanTemplate(id) {
@@ -66,8 +66,8 @@ export function deletePlanVariant(id) {
 
 // ──────────── Traffic Packs (独立流量叠加包) ────────────
 
-export function listTrafficPacks() {
-  return client.get('/traffic-packs')
+export function listTrafficPacks(params = {}) {
+  return client.get('/traffic-packs', { params })
 }
 
 export function createTrafficPack(data) {

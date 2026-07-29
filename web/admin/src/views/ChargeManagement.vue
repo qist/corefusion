@@ -99,7 +99,7 @@
           </el-table-column>
         </el-table>
         <div style="display:flex;justify-content:center;margin-top:16px">
-          <el-pagination v-model:current-page="orderPage" :page-size="20" :total="orderTotal" layout="prev, pager, next" @current-change="fetchOrders" />
+          <PaginationBar v-model:page="orderPage" v-model:page-size="orderPageSize" :total="orderTotal" @change="fetchOrders" />
         </div>
       </el-tab-pane>
 
@@ -183,7 +183,7 @@
           </el-table-column>
         </el-table>
         <div style="display:flex;justify-content:center;margin-top:16px">
-          <el-pagination v-model:current-page="cardPage" :page-size="20" :total="cardTotal" layout="prev, pager, next" @current-change="fetchCards" />
+          <PaginationBar v-model:page="cardPage" v-model:page-size="cardPageSize" :total="cardTotal" @change="fetchCards" />
         </div>
       </el-tab-pane>
 
@@ -210,7 +210,7 @@
           </el-table-column>
         </el-table>
         <div style="display:flex;justify-content:center;margin-top:16px">
-          <el-pagination v-model:current-page="balancePage" :page-size="20" :total="balanceTotal" layout="prev, pager, next" @current-change="fetchBalances" />
+          <PaginationBar v-model:page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" @change="fetchBalances" />
         </div>
       </el-tab-pane>
 
@@ -643,6 +643,7 @@ import * as chargeApi from '../api/charge'
 import * as planApi from '../api/plan'
 import { CURRENCIES, getCurrencyInfo, getCurrencySymbol, getCurrencyDecimals, yuanToMinor, minorToYuan, formatAmount, getAmountStep, getValuePlaceholder } from '../utils/currency'
 import { useQueryState } from '../composables/useQueryState'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t, locale } = useI18n()
 
@@ -875,6 +876,7 @@ const orders = ref([])
 const ordersLoading = ref(false)
 const orderStatusFilter = useQueryState('ostatus', '', { omit: (v) => v === '' })
 const orderPage = useQueryState('opage', 1, { type: 'number' })
+const orderPageSize = useQueryState('opageSize', 20, { type: 'number' })
 const orderTotal = ref(0)
 const orderDetailDialog = ref(false)
 const currentOrder = ref(null)
@@ -882,7 +884,7 @@ const currentOrder = ref(null)
 async function fetchOrders() {
   ordersLoading.value = true
   try {
-    const params = { limit: 20, offset: (orderPage.value - 1) * 20 }
+    const params = { limit: orderPageSize.value, offset: (orderPage.value - 1) * orderPageSize.value }
     if (orderStatusFilter.value) params.status = orderStatusFilter.value
     const r = await chargeApi.listChargeOrders(params)
     orders.value = r.items || []
@@ -903,6 +905,7 @@ const cardStatusFilter = ref('')
 const cardTypeFilter = ref('')
 const cardAgentFilter = useQueryState('cagent', '', { omit: (v) => v === '' || v === null })
 const cardPage = useQueryState('cpage', 1, { type: 'number' })
+const cardPageSize = useQueryState('cpageSize', 20, { type: 'number' })
 const cardTotal = ref(0)
 const agentUsers = ref([])
 const cardDialog = ref(false)
@@ -919,7 +922,7 @@ const batchResultCurrency = ref('CNY')
 async function fetchCards() {
   cardsLoading.value = true
   try {
-    const params = { limit: 20, offset: (cardPage.value - 1) * 20 }
+    const params = { limit: cardPageSize.value, offset: (cardPage.value - 1) * cardPageSize.value }
     if (cardStatusFilter.value) params.status = cardStatusFilter.value
     if (cardTypeFilter.value) params.card_type = cardTypeFilter.value
     if (cardAgentFilter.value !== null && cardAgentFilter.value !== undefined) params.agent_id = cardAgentFilter.value
@@ -1074,6 +1077,7 @@ async function doExportCSV() {
 const balances = ref([])
 const balancesLoading = ref(false)
 const balancePage = useQueryState('bpage', 1, { type: 'number' })
+const balancePageSize = useQueryState('bpageSize', 20, { type: 'number' })
 const balanceTotal = ref(0)
 const txDialog = ref(false)
 const txClientId = ref(0)
@@ -1083,7 +1087,7 @@ const txLoading = ref(false)
 async function fetchBalances() {
   balancesLoading.value = true
   try {
-    const params = { limit: 20, offset: (balancePage.value - 1) * 20 }
+    const params = { limit: balancePageSize.value, offset: (balancePage.value - 1) * balancePageSize.value }
     const r = await chargeApi.listClientBalances(params)
     balances.value = r.items || []
     balanceTotal.value = r.total || 0
@@ -1126,12 +1130,14 @@ const variantsLoading = ref(false)
 
 async function fetchPlanData() {
   try {
-    planTemplates.value = (await planApi.listPlanTemplates()) || []
+    const tplRes = await planApi.listPlanTemplates()
+    planTemplates.value = tplRes?.items || tplRes || []
     const allVariants = []
     // 获取模板下的规格（套餐型）
     for (const tpl of planTemplates.value) {
       try {
-        const vars = (await planApi.listPlanVariants(tpl.id)) || []
+        const vr = await planApi.listPlanVariants(tpl.id)
+        const vars = vr?.items || vr || []
         for (const v of vars) {
           allVariants.push({ ...v, template_name: tpl.name, template_id: tpl.id })
         }

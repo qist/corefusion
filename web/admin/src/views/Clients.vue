@@ -62,6 +62,7 @@
         </template>
       </el-table-column>
     </el-table>
+    <PaginationBar v-model:page="clientPage" v-model:page-size="clientPageSize" :total="clientTotal" @change="fetchClients" />
 
     <!-- Client Dialog -->
     <el-dialog v-model="clientDialog" :title="editingClient?t('client.editClient'):t('client.createClient')" width="500">
@@ -230,6 +231,8 @@ import { useI18n } from 'vue-i18n'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../utils/qrcode'
 import client from '../api/client'
 import * as planApi from '../api/plan'
+import { usePagination } from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t } = useI18n()
 const panelSettings = ref({ listen_port: '8080', subscription_port: '0' })
@@ -246,6 +249,8 @@ const variantName = (id) => allVariants.value.find(v => v.id === id)?.name || '-
 
 // Clients
 const clients = ref([])
+const { page: clientPage, pageSize: clientPageSize } = usePagination({ pageKey: 'cliPage', pageSizeKey: 'cliSize' })
+const clientTotal = ref(0)
 const subscriptions = ref([])
 const endpoints = ref([])
 const clientLoading = ref(false)
@@ -322,8 +327,9 @@ const statusType = (s) => ({ active: 'success', suspended: 'danger', expired: 'w
 // Fetch
 async function fetchPlanTemplates() {
   try {
-    planTemplates.value = (await planApi.listPlanTemplates()) || []
-    const vPromises = planTemplates.value.map(tpl => planApi.listPlanVariants(tpl.id).catch(() => []))
+    const res = await planApi.listPlanTemplates()
+    planTemplates.value = res?.items || res || []
+    const vPromises = planTemplates.value.map(tpl => planApi.listPlanVariants(tpl.id).then(r => r?.items || r).catch(() => []))
     const results = await Promise.all(vPromises)
     allVariants.value = results.flat()
   } catch {}
@@ -396,11 +402,12 @@ async function fetchClients() {
   try {
     const p = {}; if (filterPlan.value) p.plan_id = filterPlan.value
     const [clientRes, epRes] = await Promise.all([
-      client.get('/clients', { params: { limit: 100, ...p } }),
+      client.get('/clients', { params: { limit: clientPageSize.value, offset: (clientPage.value - 1) * clientPageSize.value, ...p } }),
       client.get('/subscription-endpoints')
     ])
     clients.value = clientRes.items || []
-    endpoints.value = Array.isArray(epRes) ? epRes : []
+    clientTotal.value = clientRes.total || 0
+    endpoints.value = Array.isArray(epRes) ? epRes : (epRes?.items || [])
     // Fetch full token for each client's subscription
     const subIds = clients.value.filter(c => c.subscription_id).map(c => c.subscription_id)
     const subs = await Promise.all(subIds.map(id => client.get(`/subscriptions/${id}`).catch(() => null)))

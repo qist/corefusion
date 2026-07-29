@@ -23,6 +23,20 @@ func (r *PlanTemplateRepository) List(ctx context.Context) ([]entity.PlanTemplat
 	return items, err
 }
 
+// ListPaged returns plan templates with pagination (ordered, clamped by caller).
+func (r *PlanTemplateRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.PlanTemplate, error) {
+	var items []entity.PlanTemplate
+	err := r.db.WithContext(ctx).Order("sort_order ASC, id ASC").Limit(limit).Offset(offset).Find(&items).Error
+	return items, err
+}
+
+// Count returns the total number of plan templates.
+func (r *PlanTemplateRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.PlanTemplate{}).Count(&count).Error
+	return count, err
+}
+
 func (r *PlanTemplateRepository) ListEnabled(ctx context.Context) ([]entity.PlanTemplate, error) {
 	var items []entity.PlanTemplate
 	err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("sort_order ASC, id ASC").Find(&items).Error
@@ -70,6 +84,41 @@ func (r *PlanVariantRepository) ListByTemplateID(ctx context.Context, templateID
 		Order("sort_order ASC, id ASC").
 		Find(&items).Error
 	return items, err
+}
+
+// ListByTemplateIDPaged returns plan variants for a template with pagination.
+func (r *PlanVariantRepository) ListByTemplateIDPaged(ctx context.Context, templateID int64, limit, offset int) ([]entity.PlanVariant, error) {
+	var items []entity.PlanVariant
+	err := r.db.WithContext(ctx).
+		Where("template_id = ?", templateID).
+		Order("sort_order ASC, id ASC").
+		Limit(limit).Offset(offset).
+		Find(&items).Error
+	return items, err
+}
+
+// CountByTemplateID returns the total number of plan variants for a template.
+func (r *PlanVariantRepository) CountByTemplateID(ctx context.Context, templateID int64) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.PlanVariant{}).Where("template_id = ?", templateID).Count(&count).Error
+	return count, err
+}
+
+// ListPaged returns all plan variants (traffic packs) with pagination.
+func (r *PlanVariantRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, error) {
+	var items []entity.PlanVariant
+	err := r.db.WithContext(ctx).
+		Order("id ASC").
+		Limit(limit).Offset(offset).
+		Find(&items).Error
+	return items, err
+}
+
+// CountAll returns the total number of plan variants (traffic packs).
+func (r *PlanVariantRepository) CountAll(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.PlanVariant{}).Count(&count).Error
+	return count, err
 }
 
 func (r *PlanVariantRepository) GetByID(ctx context.Context, id int64) (*entity.PlanVariant, error) {

@@ -1219,6 +1219,7 @@
 <script setup>
 import { ref, reactive, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryState } from '../../../composables/useQueryState'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
@@ -1233,7 +1234,7 @@ const form = ref([])
 const dlg = ref(false)
 const inboundTags = ref([])
 const editIdx = ref(-1)
-const activeTab = ref('basic')
+const activeTab = useQueryState('otab', 'basic')
 const rf = reactive(getDefaultOutbound())
 
 function getDefaultOutbound() {

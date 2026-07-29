@@ -265,13 +265,14 @@ import CoreProcessTab from './node-server/CoreProcessTab.vue'
 import WarpTab from './services/WarpTab.vue'
 import ShareDomainTab from './services/ShareDomainTab.vue'
 import RateLimitTab from './services/RateLimitTab.vue'
+import { useQueryState } from '../composables/useQueryState'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
 const serverId = parseInt(route.params.id) || 0
-const activeTab = ref('overview')
+const activeTab = useQueryState('tab', 'overview')
 const server = ref(null)
 const certificates = ref([])
 const certLoading = ref(false)

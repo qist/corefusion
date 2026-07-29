@@ -268,16 +268,17 @@ import client from '../api/client'
 import MihomoConfig from './protocols/sections/MihomoConfig.vue'
 import ExternalNodes from './ExternalNodes.vue'
 import SubscriptionBillingTemplates from '../components/subscription/SubscriptionBillingTemplates.vue'
+import { useQueryState } from '../composables/useQueryState'
 
 const { t } = useI18n()
-const activeTab = ref('subscriptions')
+const activeTab = useQueryState('tab', 'subscriptions')
 
 // Subscriptions
 const subscriptions = ref([])
 const clientsList = ref([])
 const subLoading = ref(false)
 const subTotal = ref(0)
-const subPage = ref(1)
+const subPage = useQueryState('subPage', 1, { type: 'number' })
 
 // Formats
 const formats = ref([])
@@ -302,7 +303,7 @@ const fmtDialog = ref(false)
 const editingFormat = ref(null)
 const fmtForm = ref({ name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', platform: '', plan_ids: [], enabled: true, listeners_json: '', proxy_groups_json: '', rule_providers_json: '', proxy_providers_json: '', dns_json: '', general_json: '' })
 const allPlans = ref([])
-const fmtTab = ref('basic')
+const fmtTab = useQueryState('fmtTab', 'basic')
 const hosts = ref([])
 const tunnels = ref([])
 const proxyGroups = ref([])

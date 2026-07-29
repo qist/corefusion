@@ -26,13 +26,14 @@
 import {ref,onMounted} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {useI18n} from 'vue-i18n'
+import {useQueryState} from '../composables/useQueryState'
 import client from '../api/client'
 const {t}=useI18n()
 const subscriptions=ref([])
 const clients=ref([])
 const loading=ref(false)
 const total=ref(0)
-const page=ref(1)
+const page=useQueryState('page',1,{type:'number'})
 
 const quotaType=(s)=>({normal:'success',near_limit:'warning',over_limit_soft:'danger',over_limit_hard:'danger',suspended:'danger',expired_days:'warning'}[s]||'info')
 function fmtBytes(b){if(!b)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;i++}return b.toFixed(1)+' '+u[i]}

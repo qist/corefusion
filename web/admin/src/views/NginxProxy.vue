@@ -667,6 +667,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryState } from '../composables/useQueryState'
 import client from '../api/client'
 
 const { t } = useI18n()
@@ -690,7 +691,7 @@ const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
 const allSites = ref([])
 const certificates = ref([])
 const settings = ref({})
-const settingsTab = ref('worker')
+const settingsTab = useQueryState('tab', 'worker')
 const nginxLogMode = ref('file')
 const nginxLogModeHint = computed(() => {
   const m = nginxLogMode.value

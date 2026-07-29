@@ -159,8 +159,11 @@ import TuicTls from './sections/TuicTls.vue'
 import TuicCongestion from './sections/TuicCongestion.vue'
 import TuicAdvanced from './sections/TuicAdvanced.vue'
 import JsonPreview from './sections/JsonPreview.vue'
+import { useQueryState } from '../../composables/useQueryState'
+import { useRoute } from 'vue-router'
 
 const { t } = useI18n()
+const route = useRoute()
 
 const props = defineProps({
   serverId: { type: Number, required: true }
@@ -210,7 +213,7 @@ const COMPS = {
 }
 
 const selectedCore = ref('')
-const activeSection = ref('')
+const activeSection = useQueryState('section', '')
 const fullConfig = ref({})
 const secData = ref(null)
 const secJson = ref('')
@@ -372,7 +375,7 @@ async function doDownload(r){
   }
 }
 
-onMounted(()=>{const s=localStorage.getItem('active_core');if(s&&cores.some(c=>c.type===s))selectCore(s);timer=setInterval(fetchStatus,10000)})
+onMounted(async ()=>{const s=localStorage.getItem('active_core');const sec=route.query.section;if(s&&cores.some(c=>c.type===s)){await selectCore(s);if(typeof sec==='string'&&sections.value.some(x=>x.key===sec))switchSection(sec)};timer=setInterval(fetchStatus,10000)})
 onUnmounted(()=>{if(timer)clearInterval(timer)})
 </script>
 

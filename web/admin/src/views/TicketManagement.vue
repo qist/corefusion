@@ -79,6 +79,7 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useQueryState } from '../composables/useQueryState'
 import { listTickets, getTicket, replyTicket, closeTicket as closeTicketApi, assignTicket } from '../api/clientext'
 
 const { t } = useI18n()
@@ -86,8 +87,8 @@ const { t } = useI18n()
 const tickets = ref([])
 const loading = ref(false)
 const total = ref(0)
-const page = ref(1)
-const statusFilter = ref('')
+const page = useQueryState('page', 1, { type: 'number' })
+const statusFilter = useQueryState('status', '', { omit: (v) => v === '' })
 const categoryFilter = ref('')
 const dialogVisible = ref(false)
 const currentTicket = ref(null)

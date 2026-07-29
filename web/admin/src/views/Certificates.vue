@@ -306,6 +306,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryState } from '../composables/useQueryState'
 import client from '../api/client'
 
 const { t } = useI18n()
@@ -313,7 +314,7 @@ const { t } = useI18n()
 // Certificates
 const certificates = ref([])
 const loading = ref(false)
-const page = ref(1)
+const page = useQueryState('page', 1, { type: 'number' })
 const total = ref(0)
 
 // Issue

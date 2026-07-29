@@ -68,7 +68,7 @@
                 <div class="nav-item-info">
                   <span class="nav-icon-emoji">{{ nav.icon || '🔗' }}</span>
                   <span class="nav-label-text">{{ nav.label }}</span>
-                  <el-tag size="small" type="info" effect="plain">t('portal.moduleCount', { count: currentPageModuleCount(nav.target) })</el-tag>
+                  <el-tag size="small" type="info" effect="plain">{{ currentPageModuleCount(nav.target) + ' 个模块' }}</el-tag>
                 </div>
                 <div class="nav-item-actions" @click.stop>
                   <el-button text size="small" :icon="ArrowUp" @click="moveItem(navigation, idx, -1)" :disabled="idx === 0" />

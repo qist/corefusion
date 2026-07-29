@@ -283,7 +283,7 @@ const subPage = useQueryState('subPage', 1, { type: 'number' })
 // Formats
 const formats = ref([])
 const fmtLoading = ref(false)
-const selectedFormatType = ref('')
+const selectedFormatType = useQueryState('ftype', '')
 
 const formatTypes = [
 { type: 'mihomo_yaml', name: 'Mihomo', icon: '🐱', desc: t('subfmt.mihomoKernel'), count: 0 },

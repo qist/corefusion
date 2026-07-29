@@ -22,7 +22,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total,prev,pager,next" style="margin-top:16px;justify-content:flex-end" @current-change="fetchData" />
+      <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchData" />
     </el-card>
     <el-dialog v-model="dialogVisible" :title="editing?t('protoCenter.edit'):t('protoCenter.create')" width="500">
       <el-form :model="form" label-width="80px">
@@ -44,13 +44,14 @@ import {ref,onMounted} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import {useQueryState} from '../composables/useQueryState'
+import PaginationBar from '../components/PaginationBar.vue'
 import client from '../api/client'
 const {t}=useI18n()
-const protocols=ref([]);const loading=ref(false);const total=ref(0);const page=useQueryState('page',1,{type:'number'})
+const protocols=ref([]);const loading=ref(false);const total=ref(0);const page=useQueryState('nodePage',1,{type:'number'});const pageSize=useQueryState('nodePageSize',20,{type:'number'})
 const dialogVisible=ref(false);const editing=ref(null);const saving=ref(false)
 const defaultForm={name:'',core_type:'xray',protocol:'vless',host:'',port:443,transport:'tcp',tls_mode:'tls',region:''}
 const form=ref({...defaultForm})
-async function fetchData(){loading.value=true;try{const r=await client.get('/nodes',{params:{limit:20,offset:(page.value-1)*20}});protocols.value=r.items||[];total.value=r.total||0}finally{loading.value=false}}
+async function fetchData(){loading.value=true;try{const r=await client.get('/nodes',{params:{limit:pageSize.value,offset:(page.value-1)*pageSize.value}});protocols.value=r.items||[];total.value=r.total||0}finally{loading.value=false}}
 function showCreate(){editing.value=null;form.value={...defaultForm};dialogVisible.value=true}
 function showEdit(row){editing.value=row;form.value={...row};dialogVisible.value=true}
 async function handleSave(){saving.value=true;try{if(editing.value){await client.put(`/nodes/${editing.value.id}`,form.value)}else{await client.post('/nodes',form.value)}ElMessage.success(t('common.success'));dialogVisible.value=false;fetchData()}finally{saving.value=false}}

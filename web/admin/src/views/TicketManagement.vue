@@ -45,7 +45,7 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination v-if="total>20" :total="total" :page-size="20" v-model:current-page="page" layout="prev,pager,next" style="margin-top:12px" @current-change="fetchTickets" />
+    <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchTickets" />
 
     <el-dialog v-model="dialogVisible" :title="t('ticket.detail')" width="700px">
       <div v-if="currentTicket">
@@ -80,6 +80,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useQueryState } from '../composables/useQueryState'
+import PaginationBar from '../components/PaginationBar.vue'
 import { listTickets, getTicket, replyTicket, closeTicket as closeTicketApi, assignTicket } from '../api/clientext'
 
 const { t } = useI18n()
@@ -87,7 +88,8 @@ const { t } = useI18n()
 const tickets = ref([])
 const loading = ref(false)
 const total = ref(0)
-const page = useQueryState('page', 1, { type: 'number' })
+const page = useQueryState('tktPage', 1, { type: 'number' })
+const pageSize = useQueryState('tktPageSize', 20, { type: 'number' })
 const statusFilter = useQueryState('status', '', { omit: (v) => v === '' })
 const categoryFilter = ref('')
 const dialogVisible = ref(false)
@@ -99,7 +101,7 @@ const replyLoading = ref(false)
 async function fetchTickets() {
   loading.value = true
   try {
-    const params = { limit: 20, offset: (page.value - 1) * 20 }
+    const params = { limit: pageSize.value, offset: (page.value - 1) * pageSize.value }
     if (statusFilter.value) params.status = statusFilter.value
     if (categoryFilter.value) params.category = categoryFilter.value
     const result = await listTickets(params)

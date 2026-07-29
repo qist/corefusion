@@ -184,7 +184,7 @@
           <el-alert type="info" :closable="false" style="margin-bottom:12px;font-size:12px">
             {{ t('nodeServer.certAutoDetectHint') }}
           </el-alert>
-          <el-table :data="certificates" v-loading="certLoading" stripe size="small">
+          <el-table :data="certPagedList" v-loading="certLoading" stripe size="small">
             <el-table-column prop="id" label="ID" width="60" />
             <el-table-column prop="domain" :label="t('nodeServer.certDomain')" min-width="140" />
             <el-table-column :label="t('nodeServer.certSource')" min-width="180">
@@ -226,6 +226,7 @@
               </template>
             </el-table-column>
           </el-table>
+          <PaginationBar v-model:page="certPage" v-model:page-size="certSize" :total="certTotal" />
           <div v-if="certificates.length === 0 && !certLoading" style="text-align:center;padding:40px;color:#909399">
             {{ t('nodeServer.noCerts') }}
           </div>
@@ -257,6 +258,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Refresh, Upload } from '@element-plus/icons-vue'
 import client from '../api/client'
+import { useClientPagination } from '../composables/useClientPagination'
+import PaginationBar from '../components/PaginationBar.vue'
 import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates, distributeCertificate, associateCertificate } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
@@ -275,6 +278,8 @@ const serverId = parseInt(route.params.id) || 0
 const activeTab = useQueryState('tab', 'overview')
 const server = ref(null)
 const certificates = ref([])
+
+const { paged: certPagedList, page: certPage, pageSize: certSize, total: certTotal } = useClientPagination(certificates, { pageKey: 'certPage', pageSizeKey: 'certSize' })
 const certLoading = ref(false)
 
 // Agent update state

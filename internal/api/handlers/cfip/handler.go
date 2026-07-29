@@ -21,12 +21,13 @@ func NewHandler(svc *cfip.Service) *Handler {
 
 // ListSources handles GET /api/v1/cfip/sources.
 func (h *Handler) ListSources(c *gin.Context) {
-	sources, err := h.svc.ListSources(c.Request.Context())
+	pg := response.ParsePagination(c)
+	sources, total, err := h.svc.ListSourcesPaged(c.Request.Context(), pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.OK(c, sources)
+	response.Paginated(c, sources, total, pg.Limit, pg.Offset)
 }
 
 // CreateSource handles POST /api/v1/cfip/sources.
@@ -123,13 +124,14 @@ func (h *Handler) FetchAll(c *gin.Context) {
 
 // ListEntries handles GET /api/v1/cfip/entries.
 func (h *Handler) ListEntries(c *gin.Context) {
+	pg := response.ParsePagination(c)
 	sourceID, _ := strconv.ParseInt(c.Query("source_id"), 10, 64)
-	entries, err := h.svc.ListEntries(c.Request.Context(), sourceID)
+	entries, total, err := h.svc.ListEntriesPaged(c.Request.Context(), sourceID, pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.OK(c, entries)
+	response.Paginated(c, entries, total, pg.Limit, pg.Offset)
 }
 
 // AddEntry handles POST /api/v1/cfip/entries.

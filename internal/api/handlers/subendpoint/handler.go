@@ -21,12 +21,13 @@ func NewHandler(svc *subendpoint.Service) *Handler {
 
 // List handles GET /api/v1/subscription-endpoints.
 func (h *Handler) List(c *gin.Context) {
-	endpoints, err := h.svc.List(c.Request.Context())
+	pg := response.ParsePagination(c)
+	endpoints, total, err := h.svc.ListPaged(c.Request.Context(), pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_ENDPOINTS_FAILED", err.Error())
 		return
 	}
-	response.OK(c, endpoints)
+	response.Paginated(c, endpoints, total, pg.Limit, pg.Offset)
 }
 
 // GetByID handles GET /api/v1/subscription-endpoints/:id.

@@ -29,7 +29,7 @@
       <el-button size="small" type="primary" @click="showAddRule" style="margin-left:12px">{{ t('protoCenter.routing.addRule') }}</el-button>
     </el-divider>
 
-    <div v-for="(r, i) in form.rules" :key="i" class="rule-item">
+    <div v-for="(r, i) in rulesPaged" :key="i" class="rule-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <el-switch v-model="r.enabled" @change="emit" style="margin-right:4px" />
@@ -45,18 +45,19 @@
           <span v-if="r.webhook" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.webhook') }}</span>
         </div>
         <div>
-          <el-button size="small" @click="editRule(i)">{{ t('common.edit') }}</el-button>
-          <el-button size="small" type="danger" text @click="rmRule(i)">X</el-button>
+          <el-button size="small" @click="editRule(r)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" text @click="rmRule(r)">X</el-button>
         </div>
       </div>
     </div>
+    <PaginationBar v-model:page="rulePage" v-model:page-size="ruleSize" :total="ruleTotal" />
 
     <!-- Balancers -->
     <el-divider content-position="left">
       {{ t('protoCenter.routing.balancers') }}
       <el-button size="small" type="primary" @click="showAddBalancer" style="margin-left:12px">{{ t('protoCenter.routing.addBalancer') }}</el-button>
     </el-divider>
-    <div v-for="(b, i) in form.balancers" :key="'b'+i" class="rule-item">
+    <div v-for="(b, i) in balPaged" :key="'b'+i" class="rule-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <el-switch v-model="b.enabled" @change="emit" style="margin-right:4px" />
@@ -66,11 +67,12 @@
           <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.fallbackShort', { value: b.fallbackTag }) }}</span>
         </div>
         <div>
-          <el-button size="small" @click="editBalancer(i)">{{ t('common.edit') }}</el-button>
-          <el-button size="small" type="danger" text @click="rmBalancer(i)">X</el-button>
+          <el-button size="small" @click="editBalancer(b)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" text @click="rmBalancer(b)">X</el-button>
         </div>
       </div>
     </div>
+    <PaginationBar v-model:page="balPage" v-model:page-size="balSize" :total="balTotal" />
 
     <!-- Rule Dialog -->
     <el-dialog v-model="dlg" :title="editIdx >= 0 ? t('protoCenter.routing.editRule') : t('protoCenter.routing.addRule')" width="700">
@@ -207,6 +209,8 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
+import { useClientPagination } from '../../../composables/useClientPagination'
+import PaginationBar from '../../../components/PaginationBar.vue'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String, serverId: Number })
@@ -215,6 +219,9 @@ const emitFn = defineEmits(['update'])
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
 
 const form = reactive({ domainStrategy: 'IPIfNonMatch', rules: [], balancers: [] })
+
+const { paged: rulesPaged, page: rulePage, pageSize: ruleSize, total: ruleTotal } = useClientPagination(computed(() => form.rules), { pageKey: 'xbRulePage', pageSizeKey: 'xbRuleSize' })
+const { paged: balPaged, page: balPage, pageSize: balSize, total: balTotal } = useClientPagination(computed(() => form.balancers), { pageKey: 'xbBalPage', pageSizeKey: 'xbBalSize' })
 const outboundTags = ref(['direct', 'blocked'])
 const inboundTags = ref([])
 const userTags = ref([])
@@ -257,9 +264,8 @@ function resetForm() {
 
 function showAddRule() { editIdx.value = -1; resetForm(); dlg.value = true }
 
-function editRule(i) {
-  editIdx.value = i
-  const r = form.rules[i]
+function editRule(r) {
+  editIdx.value = form.rules.indexOf(r)
 
   const attrs = r.attrs ? Object.entries(r.attrs).map(([k,v]) => ({key:k,value:v})) : []
   const whHeaders = r.webhook && r.webhook.headers ? Object.entries(r.webhook.headers).map(([k,v]) => ({key:k,value:v})) : []
@@ -319,8 +325,8 @@ function showAddBalancer() {
   Object.assign(bf, { tag: 'balancer-' + Math.random().toString(36).substring(2, 6), selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '' })
   balDlg.value = true
 }
-function editBalancer(i) {
-  balIdx.value = i; const b = form.balancers[i]; const s = b.settings || {}
+function editBalancer(b) {
+  balIdx.value = form.balancers.indexOf(b); const s = b.settings || {}
   Object.assign(bf, { tag: b.tag, selectorArr: [...(b.selectorArr || [])], fallbackTag: b.fallbackTag || '', strategyType: b.strategyType, _expected: s.expected || 0, _maxRTT: s.maxRTT || '', _tolerance: s.tolerance || 0, _baselinesStr: (s.baselines || []).join(', ') })
   balDlg.value = true
 }
@@ -338,7 +344,7 @@ function saveBalancer() {
   if (balIdx.value >= 0) form.balancers[balIdx.value] = bal; else form.balancers.push(bal)
   balDlg.value = false; emit()
 }
-function rmBalancer(i) { form.balancers.splice(i, 1); emit() }
+function rmBalancer(b) { const i = form.balancers.indexOf(b); form.balancers.splice(i, 1); emit() }
 
 async function loadTags() {
   try {
@@ -377,7 +383,7 @@ async function emit() {
   // Save to database and apply to xray runtime
   await saveAndApply(data)
 }
-function rmRule(i) { form.rules.splice(i, 1); emit() }
+function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
 
 async function saveAndApply(routing) {
   const invalidBalancer = getInvalidBalancer(routing)

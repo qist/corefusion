@@ -132,7 +132,7 @@
           <el-button size="small" @click="sniSettings.proxy_protocol_rules.push('')">+ {{ t('common.add') }}</el-button>
           <el-button size="small" type="success" @click="saveSNISettings" style="margin-left:8px">{{ t('common.save') }}</el-button>
         </div>
-        <el-table :data="sniRules" stripe size="small">
+        <el-table :data="sniPagedList" stripe size="small">
           <el-table-column prop="domain" label="SNI Domain" min-width="160" />
           <el-table-column label="Target" min-width="160">
             <template #default="{row}">{{ row.sni_target || row.upstream }}</template>
@@ -149,6 +149,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <PaginationBar v-model:page="sniPage" v-model:page-size="sniSize" :total="sniTotal" />
         <div style="margin-top:12px;font-size:12px;color:#909399">
           {{ t('proxy.sniFallback') }}: 127.0.0.1:{{ sniSettings.local_port }}
         </div>
@@ -163,7 +164,7 @@
           <el-button size="small" @click="showAddSite('l4')">+ L4</el-button>
         </div>
       </template>
-      <el-table :data="l4Sites" stripe size="small">
+      <el-table :data="l4PagedList" stripe size="small">
         <el-table-column :label="t('common.status')" width="70">
           <template #default="{row}">
             <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
@@ -188,6 +189,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <PaginationBar v-model:page="l4Page" v-model:page-size="l4Size" :total="l4Total" />
     </el-card>
 
     <!-- HTTP Site List -->
@@ -204,7 +206,7 @@
           </div>
         </div>
       </template>
-      <el-table :data="httpSites" stripe>
+      <el-table :data="httpPagedList" stripe>
         <el-table-column :label="t('common.status')" width="70">
           <template #default="{row}">
             <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
@@ -235,6 +237,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <PaginationBar v-model:page="httpPage" v-model:page-size="httpSize" :total="httpTotal" />
     </el-card>
 
     <!-- Config View Dialog -->
@@ -429,6 +432,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
+import { useClientPagination } from '../composables/useClientPagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t } = useI18n()
 const emit = defineEmits(['back'])
@@ -462,6 +467,10 @@ const caddyLogModeHint = computed(() => {
 const httpSites = computed(() => allSites.value.filter(s => s.template !== 'sni' && s.template !== 'l4'))
 const l4Sites = computed(() => allSites.value.filter(s => s.template === 'l4'))
 const sniRules = computed(() => allSites.value.filter(s => s.template === 'sni'))
+
+const { paged: sniPagedList, page: sniPage, pageSize: sniSize, total: sniTotal } = useClientPagination(sniRules, { pageKey: 'sniPage', pageSizeKey: 'sniSize' })
+const { paged: l4PagedList, page: l4Page, pageSize: l4Size, total: l4Total } = useClientPagination(l4Sites, { pageKey: 'l4Page', pageSizeKey: 'l4Size' })
+const { paged: httpPagedList, page: httpPage, pageSize: httpSize, total: httpTotal } = useClientPagination(httpSites, { pageKey: 'httpPage', pageSizeKey: 'httpSize' })
 
 // Inbound association: filter by template type
 const showInboundSelect = computed(() => {

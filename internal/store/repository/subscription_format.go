@@ -21,8 +21,17 @@ func NewSubscriptionFormatRepository(db *gorm.DB) *SubscriptionFormatRepository 
 
 // List returns all subscription formats.
 func (r *SubscriptionFormatRepository) List(ctx context.Context) ([]entity.SubscriptionFormat, error) {
+	return r.ListPaged(ctx, 0, 0)
+}
+
+// ListPaged returns subscription formats with pagination (limit<=0 means no limit).
+func (r *SubscriptionFormatRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.SubscriptionFormat, error) {
 	var formats []entity.SubscriptionFormat
-	err := r.db.WithContext(ctx).Order("sort_order ASC, id ASC").Find(&formats).Error
+	q := r.db.WithContext(ctx).Order("sort_order ASC, id ASC")
+	if limit > 0 {
+		q = q.Limit(limit).Offset(offset)
+	}
+	err := q.Find(&formats).Error
 	if err != nil {
 		return nil, err
 	}

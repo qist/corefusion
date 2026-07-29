@@ -8,7 +8,7 @@
     <!-- Sources -->
     <el-card style="margin-bottom:16px">
       <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.importSources') }}</div>
-      <el-table :data="sources" stripe size="small">
+      <el-table :data="sourcesPagedList" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" :label="t('common.name')" width="180" />
         <el-table-column prop="source_type" :label="t('common.type')" width="80">
@@ -23,12 +23,13 @@
           </template>
         </el-table-column>
       </el-table>
+      <PaginationBar v-model:page="sourcesPage" v-model:page-size="sourcesSize" :total="sourcesTotal" />
     </el-card>
 
     <!-- Nodes -->
     <el-card>
       <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.allNodesHint') }}</div>
-      <el-table :data="nodes" stripe size="small">
+      <el-table :data="nodesPagedList" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
         <el-table-column prop="name" :label="t('common.name')" width="160" />
         <el-table-column prop="protocol" :label="t('externalNodes.protocol')" width="80">
@@ -50,6 +51,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <PaginationBar v-model:page="nodesPage" v-model:page-size="nodesSize" :total="nodesTotal" />
     </el-card>
 
     <!-- Import Dialog -->
@@ -109,11 +111,16 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
+import { useClientPagination } from '../composables/useClientPagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t } = useI18n()
 
 const sources = ref([])
 const nodes = ref([])
+
+const { paged: sourcesPagedList, page: sourcesPage, pageSize: sourcesSize, total: sourcesTotal } = useClientPagination(sources, { pageKey: 'extSrcPage', pageSizeKey: 'extSrcSize' })
+const { paged: nodesPagedList, page: nodesPage, pageSize: nodesSize, total: nodesTotal } = useClientPagination(nodes, { pageKey: 'extNodePage', pageSizeKey: 'extNodeSize' })
 const importDlg = ref(false)
 const form = ref({ name: '', source_type: 'uri', source_data: '', source_url: '' })
 const editDlg = ref(false)

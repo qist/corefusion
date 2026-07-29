@@ -35,6 +35,19 @@ func (s *Service) ListSources(ctx context.Context) ([]entity.CFIPSource, error) 
 	return s.sourceRepo.List(ctx)
 }
 
+// ListSourcesPaged returns CF IP sources with pagination and total count.
+func (s *Service) ListSourcesPaged(ctx context.Context, limit, offset int) ([]entity.CFIPSource, int64, error) {
+	items, err := s.sourceRepo.ListPaged(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.sourceRepo.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // CreateSource creates a new CF IP source.
 func (s *Service) CreateSource(ctx context.Context, name, url, sourceType, ports string, interval int) (*entity.CFIPSource, error) {
 	if interval <= 0 {
@@ -103,6 +116,19 @@ func (s *Service) DeleteSource(ctx context.Context, id int64) error {
 // ListEntries returns all CF IP entries.
 func (s *Service) ListEntries(ctx context.Context, sourceID int64) ([]entity.CFIPEntry, error) {
 	return s.entryRepo.List(ctx, sourceID)
+}
+
+// ListEntriesPaged returns CF IP entries filtered by source with pagination and total count.
+func (s *Service) ListEntriesPaged(ctx context.Context, sourceID int64, limit, offset int) ([]entity.CFIPEntry, int64, error) {
+	items, err := s.entryRepo.ListPaged(ctx, sourceID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.entryRepo.CountBySource(ctx, sourceID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 // AddEntry adds a manual CF IP entry.

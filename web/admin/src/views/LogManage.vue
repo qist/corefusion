@@ -320,7 +320,7 @@
                 <el-button text size="small" @click="discoveredLogs = []">{{ t('common.close') }}</el-button>
               </div>
             </template>
-            <el-table :data="discoveredLogs" size="small" stripe>
+            <el-table :data="discPagedList" size="small" stripe>
               <el-table-column prop="source_type" :label="t('logManage.sourceType')" width="100">
                 <template #default="{row}">
                   <el-tag :type="sourceTagType(row.source_type)" size="small">{{ row.source_type }}</el-tag>
@@ -350,12 +350,13 @@
                 </template>
               </el-table-column>
             </el-table>
+            <PaginationBar v-model:page="discPage" v-model:page-size="discSize" :total="discTotal" />
           </el-card>
         </el-collapse-transition>
 
         <!-- Policies Table -->
         <el-card>
-          <el-table :data="policies" v-loading="loading" stripe>
+          <el-table :data="polPagedList" v-loading="loading" stripe>
             <el-table-column prop="id" :label="t('common.id')" width="60" />
             <el-table-column :label="t('logManage.nodeLabel')" width="100">
               <template #default>
@@ -403,6 +404,7 @@
               </template>
             </el-table-column>
           </el-table>
+          <PaginationBar v-model:page="polPage" v-model:page-size="polSize" :total="polTotal" />
         </el-card>
       </el-tab-pane>
 
@@ -587,7 +589,7 @@
 
     <!-- Job History Dialog -->
     <el-dialog v-model="jobsVisible" :title="t('logManage.jobHistory')" width="760">
-      <el-table :data="jobs" v-loading="jobsLoading" stripe size="small">
+      <el-table :data="jobPagedList" v-loading="jobsLoading" stripe size="small">
         <el-table-column prop="id" :label="t('common.id')" width="60" />
         <el-table-column prop="status" :label="t('common.status')" width="80">
           <template #default="{row}">
@@ -604,6 +606,7 @@
         </el-table-column>
         <el-table-column prop="error_message" :label="t('logManage.error')" min-width="150" show-overflow-tooltip />
       </el-table>
+      <PaginationBar v-model:page="jobPage" v-model:page-size="jobSize" :total="jobTotal" />
     </el-dialog>
 
     <!-- Stdout Viewer Dialog (for Writer tab) -->
@@ -667,7 +670,7 @@
 
     <!-- Writer Files Dialog -->
     <el-dialog v-model="writerFilesVisible" :title="writerConfigType.toUpperCase() + ' ' + t('logManage.writerFiles')" width="660">
-      <el-table :data="writerFiles" stripe size="small">
+      <el-table :data="wfPagedList" stripe size="small">
         <el-table-column prop="name" :label="t('common.name')" min-width="200" show-overflow-tooltip />
         <el-table-column prop="size" :label="t('logManage.maxSizeMB')" width="120">
           <template #default="{row}">{{ formatBytes(row.size) }}</template>
@@ -676,6 +679,7 @@
           <template #default="{row}">{{ formatTime(row.modified) }}</template>
         </el-table-column>
       </el-table>
+      <PaginationBar v-model:page="wfPage" v-model:page-size="wfSize" :total="wfTotal" />
       <div v-if="writerFiles.length === 0" class="log-empty">{{ t('logManage.writerNoFiles') }}</div>
     </el-dialog>
 
@@ -718,6 +722,8 @@ import {
 } from '@element-plus/icons-vue'
 import * as logApi from '../api/logManage'
 import { listNodeServers } from '../api/nodeServer'
+import { useClientPagination } from '../composables/useClientPagination'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const { t } = useI18n()
 
@@ -820,6 +826,11 @@ const writerConfigSaving = ref(false)
 const writerForm = ref({ file_path: '', retain_days: 30, compress: false, max_size_mb: 100 })
 const writerFilesVisible = ref(false)
 const writerFiles = ref([])
+
+const { paged: discPagedList, page: discPage, pageSize: discSize, total: discTotal } = useClientPagination(discoveredLogs, { pageKey: 'logDiscPage', pageSizeKey: 'logDiscSize' })
+const { paged: polPagedList, page: polPage, pageSize: polSize, total: polTotal } = useClientPagination(policies, { pageKey: 'logPolPage', pageSizeKey: 'logPolSize' })
+const { paged: jobPagedList, page: jobPage, pageSize: jobSize, total: jobTotal } = useClientPagination(jobs, { pageKey: 'logJobPage', pageSizeKey: 'logJobSize' })
+const { paged: wfPagedList, page: wfPage, pageSize: wfSize, total: wfTotal } = useClientPagination(writerFiles, { pageKey: 'logWfPage', pageSizeKey: 'logWfSize' })
 
 // ──────────── Log Viewer ────────────
 const nodeServers = ref([])

@@ -28,7 +28,7 @@
     </div>
 
     <!-- Table List -->
-    <el-table :data="form" stripe style="width:100%" size="small">
+    <el-table :data="inbPaged" stripe style="width:100%" size="small">
       <el-table-column label="ID" width="50" align="right">
         <template #default="{row, $index}">
           <span style="font-size:11px;opacity:0.6">{{ row._id || ($index + 1) }}</span>
@@ -122,6 +122,7 @@
         </template>
       </el-table-column>
     </el-table>
+    <PaginationBar v-model:page="inbPage" v-model:page-size="inbSize" :total="inbTotal" />
 
     <!-- Details Dialog -->
     <el-dialog v-model="detailsDlg" :title="t('protoCenter.inbounds.details')" width="700" top="5vh">
@@ -2208,6 +2209,8 @@ import client from '../../../api/client'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
+import { useClientPagination } from '../../../composables/useClientPagination'
+import PaginationBar from '../../../components/PaginationBar.vue'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String, serverId: Number })
 defineEmits(['update'])
@@ -2217,6 +2220,8 @@ const nodeBase = computed(() => `/node-servers/${props.serverId}`)
 const apiBase = computed(() => `${nodeBase.value}/binaries`)
 
 const form = ref([])
+
+const { paged: inbPaged, page: inbPage, pageSize: inbSize, total: inbTotal } = useClientPagination(form, { pageKey: 'xbInbPage', pageSizeKey: 'xbInbSize' })
 const dlg = ref(false)
 const editIdx = ref(-1)
 const activeTab = useQueryState('itab', 'basic')
@@ -3538,25 +3543,25 @@ async function removeUserFromXray(user) {
 async function loadTargets() {
   try {
     const data = await client.get('/system/reality-targets')
-    if (Array.isArray(data)) realityTargets.value = data
+    realityTargets.value = data?.items || (Array.isArray(data) ? data : [])
   } catch {}
 }
 async function loadCFDomains() {
   try {
     // CF domains are global
     const globalData = await client.get('/share-domains')
-    if (Array.isArray(globalData)) {
-      cfDomains.value = globalData.filter(d => d.type === 'cf_domain')
-    }
+    const global = globalData?.items || (Array.isArray(globalData) ? globalData : [])
+    cfDomains.value = global.filter(d => d.type === 'cf_domain')
     // Direct domains are per-node — only show domains bound to this server
     const nodeData = await client.get(`${nodeBase.value}/share-domains`)
-    directDomains.value = Array.isArray(nodeData) ? nodeData.filter(d => d.type === 'direct') : []
+    const direct = nodeData?.items || (Array.isArray(nodeData) ? nodeData : [])
+    directDomains.value = direct.filter(d => d.type === 'direct')
   } catch {}
 }
 async function loadCFIPEntries() {
   try {
     const data = await client.get('/cfip/entries')
-    if (Array.isArray(data)) cfIPEntries.value = data
+    cfIPEntries.value = data?.items || (Array.isArray(data) ? data : [])
   } catch {}
 }
 function toggleCfDomainPort(port, checked) {

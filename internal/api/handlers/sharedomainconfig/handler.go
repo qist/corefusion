@@ -23,13 +23,14 @@ func NewHandler(svc *sharedomainconfig.Service) *Handler {
 // List handles GET /api/v1/share-domains.
 // Returns all share domain configs (optionally filtered by type).
 func (h *Handler) List(c *gin.Context) {
+	pg := response.ParsePagination(c)
 	configType := c.Query("type")
-	configs, err := h.svc.List(c.Request.Context(), configType)
+	configs, total, err := h.svc.ListPaged(c.Request.Context(), configType, pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.OK(c, configs)
+	response.Paginated(c, configs, total, pg.Limit, pg.Offset)
 }
 
 // ListByServer handles GET /api/v1/node-servers/:id/share-domains.

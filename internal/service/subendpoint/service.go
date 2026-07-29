@@ -49,6 +49,19 @@ func (s *Service) List(ctx context.Context) ([]entity.SubscriptionEndpoint, erro
 	return s.repo.List(ctx)
 }
 
+// ListPaged returns subscription endpoints with pagination and total count.
+func (s *Service) ListPaged(ctx context.Context, limit, offset int) ([]entity.SubscriptionEndpoint, int64, error) {
+	items, err := s.repo.ListPaged(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.repo.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // GetByID returns a subscription endpoint by ID.
 func (s *Service) GetByID(ctx context.Context, id int64) (*entity.SubscriptionEndpoint, error) {
 	return s.repo.GetByID(ctx, id)

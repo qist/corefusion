@@ -107,10 +107,11 @@ async function fetchItems() {
   loading.value = true
   try {
     const data = await client.get(apiBase.value)
-    items.value = Array.isArray(data) ? data.map(item => ({
+    const raw = Array.isArray(data) ? data : (data?.items || [])
+    items.value = raw.map(item => ({
       ...item,
       ports: item.ports ? JSON.parse(item.ports) : [item.port || 443]
-    })) : []
+    }))
   } catch {
     items.value = []
   } finally {

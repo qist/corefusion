@@ -21,12 +21,13 @@ func NewHandler(svc *subformat.Service) *Handler {
 
 // List handles GET /api/v1/subscription-formats.
 func (h *Handler) List(c *gin.Context) {
-	formats, err := h.svc.List(c.Request.Context())
+	pg := response.ParsePagination(c)
+	formats, total, err := h.svc.ListPaged(c.Request.Context(), pg.Limit, pg.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_FORMATS_FAILED", err.Error())
 		return
 	}
-	response.OK(c, formats)
+	response.Paginated(c, formats, total, pg.Limit, pg.Offset)
 }
 
 // GetByID handles GET /api/v1/subscription-formats/:id.

@@ -18,7 +18,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total,prev,pager,next" style="margin-top:16px;justify-content:flex-end" @current-change="fetchData" />
+      <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchData" />
     </el-card>
   </div>
 </template>
@@ -27,13 +27,15 @@ import {ref,onMounted} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import {useQueryState} from '../composables/useQueryState'
+import PaginationBar from '../components/PaginationBar.vue'
 import client from '../api/client'
 const {t}=useI18n()
 const subscriptions=ref([])
 const clients=ref([])
 const loading=ref(false)
 const total=ref(0)
-const page=useQueryState('page',1,{type:'number'})
+const page=useQueryState('subPage',1,{type:'number'})
+const pageSize=useQueryState('subPageSize',20,{type:'number'})
 
 const quotaType=(s)=>({normal:'success',near_limit:'warning',over_limit_soft:'danger',over_limit_hard:'danger',suspended:'danger',expired_days:'warning'}[s]||'info')
 function fmtBytes(b){if(!b)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;i++}return b.toFixed(1)+' '+u[i]}
@@ -47,7 +49,7 @@ async function fetchData(){
   loading.value=true
   try{
     const [subRes, clientRes] = await Promise.all([
-      client.get('/subscriptions',{params:{limit:20,offset:(page.value-1)*20}}),
+      client.get('/subscriptions',{params:{limit:pageSize.value,offset:(page.value-1)*pageSize.value}}),
       client.get('/clients',{params:{limit:100}})
     ])
     subscriptions.value=subRes.items||[]

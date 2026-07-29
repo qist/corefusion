@@ -6,24 +6,25 @@
     </div>
 
     <!-- List -->
-    <div v-for="(ob, i) in form" :key="i" class="outbound-item">
+    <div v-for="(ob, i) in obPaged" :key="i" class="outbound-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="display:flex;align-items:center;gap:8px">
-          <el-switch v-if="!ob._isDefault" v-model="ob._enabled" @change="toggleEnabled(i)" />
-          <span style="font-weight:600">{{ ob.tag || 'outbound-' + (i+1) }}</span>
+          <el-switch v-if="!ob._isDefault" v-model="ob._enabled" @change="toggleEnabled(ob)" />
+          <span style="font-weight:600">{{ ob.tag || 'outbound-' + (obStart + i + 1) }}</span>
           <el-tag size="small">{{ ob.protocol }}</el-tag>
           <el-tag v-if="ob._isDefault" size="small" type="warning">{{ t('protoCenter.outbounds.default') }}</el-tag>
           <el-tag v-if="ob._server" size="small" type="info">{{ ob._server }}:{{ ob._port }}</el-tag>
         </div>
         <div>
-          <el-button size="small" text :disabled="i === 0" @click="moveOutbound(i, -1)">↑</el-button>
-          <el-button size="small" text :disabled="i === form.length - 1" @click="moveOutbound(i, 1)">↓</el-button>
-          <el-button size="small" text @click="showEdit(i)">{{ t('common.edit') }}</el-button>
-          <el-button v-if="!ob._isDefault" size="small" type="danger" text @click="removeOutbound(i)">{{ t('common.delete') }}</el-button>
+          <el-button size="small" text :disabled="obStart + i === 0" @click="moveOutbound(ob, -1)">↑</el-button>
+          <el-button size="small" text :disabled="obStart + i === form.length - 1" @click="moveOutbound(ob, 1)">↓</el-button>
+          <el-button size="small" text @click="showEdit(ob)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="!ob._isDefault" size="small" type="danger" text @click="removeOutbound(ob)">{{ t('common.delete') }}</el-button>
         </div>
       </div>
     </div>
     <div v-if="!form.length" style="text-align:center;color:#909399;padding:24px">{{ t('common.noData') }}</div>
+    <PaginationBar v-model:page="obPage" v-model:page-size="obSize" :total="obTotal" />
 
     <!-- Edit Dialog -->
     <el-dialog v-model="dlg" :title="editIdx >= 0 ? t('protoCenter.outbounds.edit') : t('protoCenter.outbounds.add')" width="750px" :close-on-click-modal="false" top="5vh">
@@ -1222,6 +1223,8 @@ import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
+import { useClientPagination } from '../../../composables/useClientPagination'
+import PaginationBar from '../../../components/PaginationBar.vue'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String, serverId: Number })
@@ -1231,6 +1234,9 @@ const nodeBase = computed(() => `/node-servers/${props.serverId}`)
 const apiBase = computed(() => `${nodeBase.value}/binaries`)
 
 const form = ref([])
+
+const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(form, { pageKey: 'xbOutPage', pageSizeKey: 'xbOutSize' })
+const obStart = computed(() => (obPage.value - 1) * obSize.value)
 const dlg = ref(false)
 const inboundTags = ref([])
 const editIdx = ref(-1)
@@ -1980,9 +1986,8 @@ function showAdd() {
   dlg.value = true
 }
 
-function showEdit(i) {
-  editIdx.value = i
-  const ob = form.value[i]
+function showEdit(ob) {
+  editIdx.value = form.value.indexOf(ob)
   Object.assign(rf, JSON.parse(JSON.stringify(ob)))
   activeTab.value = 'basic'
   dlg.value = true
@@ -2035,8 +2040,8 @@ async function saveOutbound() {
   } catch (e) { ElMessage.error(t('common.failed') + ': ' + (e.message || e)) }
 }
 
-async function removeOutbound(i) {
-  const ob = form.value[i]
+async function removeOutbound(ob) {
+  const i = form.value.indexOf(ob)
   if (ob._id) {
     try { await client.delete(`/node-servers/${props.serverId}/outbound-configs/${ob._id}`) } catch {}
   }
@@ -2054,8 +2059,7 @@ async function removeOutbound(i) {
   loadOutbounds()
 }
 
-async function toggleEnabled(i) {
-  const ob = form.value[i]
+async function toggleEnabled(ob) {
   if (!ob._id) return
   try {
     const outbound = buildOutbound(ob)
@@ -2094,9 +2098,10 @@ async function toggleEnabled(i) {
   }
 }
 
-async function moveOutbound(i, dir) {
+async function moveOutbound(ob, dir) {
+  const i = form.value.indexOf(ob)
   const j = i + dir
-  if (j < 0 || j >= form.value.length) return
+  if (i < 0 || j < 0 || j >= form.value.length) return
   // Swap in the local array first for immediate UI feedback
   const arr = form.value
   const tmp = arr[i]

@@ -13,6 +13,7 @@
         </el-table-column>
       </el-table>
     </el-card>
+    <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchData" />
     <el-dialog v-model="dialogVisible" :title="editing?t('user.edit'):t('user.create')" width="400">
       <el-form :model="form" label-width="80px">
         <el-form-item :label="t('user.username')"><el-input v-model="form.username" :disabled="!!editing" /></el-form-item>
@@ -29,11 +30,14 @@ import {ref,onMounted} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import client from '../api/client'
+import {usePagination} from '../composables/usePagination'
+import PaginationBar from '../components/PaginationBar.vue'
 const {t}=useI18n()
-const users=ref([]);const loading=ref(false);const dialogVisible=ref(false);const editing=ref(null);const saving=ref(false)
+const {page,pageSize}=usePagination({pageKey:'usersPage',pageSizeKey:'usersSize'})
+const users=ref([]);const loading=ref(false);const total=ref(0);const dialogVisible=ref(false);const editing=ref(null);const saving=ref(false)
 const form=ref({username:'',email:'',password:'',role:'viewer'})
 const roleLabel=(r)=>({super_admin:t('user.roles.superAdmin'),admin:t('user.roles.admin'),operator:t('user.roles.operator'),viewer:t('user.roles.viewer')}[r]||r)
-async function fetchData(){loading.value=true;try{const r=await client.get('/users',{params:{limit:100}});users.value=r.items||[]}finally{loading.value=false}}
+async function fetchData(){loading.value=true;try{const r=await client.get('/users',{params:{limit:pageSize.value,offset:(page.value-1)*pageSize.value}});users.value=r.items||[];total.value=r.total||0}finally{loading.value=false}}
 function showCreate(){editing.value=null;form.value={username:'',email:'',password:'',role:'viewer'};dialogVisible.value=true}
 function showEdit(row){editing.value=row;form.value={username:row.username,email:row.email||'',password:'',role:row.role};dialogVisible.value=true}
 async function handleSave(){saving.value=true;try{if(editing.value){const p={role:form.value.role,email:form.value.email};if(form.value.password)p.password=form.value.password;await client.put(`/users/${editing.value.id}`,p)}else{await client.post('/users',form.value)}ElMessage.success(t('common.success'));dialogVisible.value=false;fetchData()}finally{saving.value=false}}

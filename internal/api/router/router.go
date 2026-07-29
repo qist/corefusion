@@ -410,7 +410,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)
 	notifier := systemSvc.NewNotifier(systemSettingSvc)
-	backupSvcInst := backupService.NewService(backupRepo, dataDir)
+	backupSvcInst := backupService.NewService(backupRepo, dataDir, database)
+	// Start the backup scheduler so scheduled backups and the retention policy
+	// actually run (it was previously defined but never started).
+	backupScheduler := backupService.NewBackupScheduler(backupSvcInst)
+	backupScheduler.Start()
 	_ = notifier // TODO: integrate with scheduler for template notifications
 	proxySiteRepo := repository.NewProxySiteRepository(database)
 	caddySiteRepo := repository.NewCaddySiteRepository(database)

@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-tabs v-model="activeTab" type="border-card" @tab-change="onTabChange">
+    <el-tabs v-model="activeTab" type="border-card">
 
       <!-- ════════════ 服务器列表 Tab ════════════ -->
       <el-tab-pane :label="t('nodeServer.servers')" name="servers">
@@ -618,7 +618,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -897,6 +897,7 @@ async function exportAuditLogs() {
 // ════════════ Tab Change Handler ════════════
 
 function onTabChange(tab) {
+  try { window.__tabLog = (window.__tabLog || '') + 'onTabChange:' + JSON.stringify(tab) + ';' } catch (e) {}
   switch (tab) {
     case 'servers': loadServers(); break
     case 'dashboard': loadDashboard(); loadSpeedTestResults(); break
@@ -1371,11 +1372,21 @@ function fallbackCopy(text) {
 
 // ════════════ Lifecycle ════════════
 
+// Load data for the active tab whenever it changes. This covers:
+//  - the initial value restored from the ?tab= URL query by useQueryState
+//  - the programmatic update from useQueryState, which does NOT trigger el-tabs'
+//    @tab-change event (so a refreshed non-default tab like "dashboard" would
+//    otherwise stay empty until the user manually clicks a tab)
+//  - normal user tab clicks
+watch(activeTab, (tab) => {
+  try { window.__tabLog = (window.__tabLog || '') + 'watch:' + JSON.stringify(tab) + ';' } catch (e) {}
+  onTabChange(tab)
+}, { immediate: true })
+
 onMounted(() => {
-  loadServers()
-  // Auto-refresh server list every 30s when on servers tab
+  // Auto-refresh the active tab's data every 30s.
   refreshTimer = setInterval(() => {
-    if (activeTab.value === 'servers') loadServers()
+    onTabChange(activeTab.value)
   }, 30000)
 })
 

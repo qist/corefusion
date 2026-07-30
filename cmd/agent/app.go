@@ -146,6 +146,9 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// This is the SAME LocalAgent used by the Panel for is_local=1 servers.
 	// It implements NodeOperator by delegating to process.Manager / proxy.Manager.
 	localAgent := agent.NewLocalAgent(dataDir, procMgr, svcRepo)
+	localAgent = localAgent.WithDB(db.DB)
+	localAgent = localAgent.WithServerID(agentServerID)
+	localAgent.RestoreFromSnapshot(context.Background())
 	localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
 	localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
 

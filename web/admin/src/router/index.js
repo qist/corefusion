@@ -10,7 +10,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext']
+    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext', 'audit', 'runtime']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -46,6 +46,8 @@ const routes = [
       { path: 'log-manage', name: 'LogManage', component: () => import('../views/LogManage.vue'), meta: { title: 'menu.logManage', icon: 'Document' } },
       { path: 'portal', name: 'PortalManagement', component: () => import('../views/PortalManagement.vue'), meta: { title: 'menu.portalManagement', icon: 'Monitor' } },
       { path: 'settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: 'menu.settings', icon: 'Setting' } },
+      { path: 'audit', name: 'Security', component: () => import('../views/Security.vue'), meta: { title: 'menu.audit', icon: 'Bell' } },
+      { path: 'runtime', name: 'RuntimeConfig', component: () => import('../views/RuntimeConfig.vue'), meta: { title: 'menu.runtimeConfig', icon: 'Switch' } },
     ],
   },
 ]

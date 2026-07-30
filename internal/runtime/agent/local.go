@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"gorm.io/gorm"
 
 	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
 	"github.com/xtls/xray-core/common/protocol"
@@ -30,6 +31,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	"github.com/xtls/xray-core/proxy/vmess"
 
+	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/process"
@@ -48,6 +50,8 @@ import (
 // 结果通过 TaskResultCallback 回传（stream 或本地 channel）。
 type LocalAgent struct {
 	dataDir       string
+	db            *gorm.DB
+	serverID      int64
 	procMgr       *process.Manager
 	proxyMgr      ProxyManager      // 代理进程管理器（Caddy/Nginx）
 	svcRepo       *repository.ServiceRepository
@@ -119,6 +123,18 @@ func (a *LocalAgent) WithRateLimitManager(mgr *ratelimit.Manager) *LocalAgent {
 	return a
 }
 
+// WithDB injects the agent's local database for config snapshot persistence.
+func (a *LocalAgent) WithDB(db *gorm.DB) *LocalAgent {
+	a.db = db
+	return a
+}
+
+// WithServerID sets the agent's own server ID (used as the snapshot key).
+func (a *LocalAgent) WithServerID(id int64) *LocalAgent {
+	a.serverID = id
+	return a
+}
+
 // GetRateLimitManager 返回限速管理器。
 func (a *LocalAgent) GetRateLimitManager() *ratelimit.Manager {
 	return a.rateLimitMgr
@@ -127,6 +143,27 @@ func (a *LocalAgent) GetRateLimitManager() *ratelimit.Manager {
 // GetTaskQueue 返回 TaskQueue 供外部查询任务状态。
 func (a *LocalAgent) GetTaskQueue() *TaskQueue {
 	return a.taskQueue
+}
+
+// RestoreFromSnapshot re-applies the latest persisted config snapshot for each
+// supported core type from the local database. Called at agent startup so the node
+// can serve traffic even before the panel is reachable (data localization).
+func (a *LocalAgent) RestoreFromSnapshot(ctx context.Context) {
+	if a.db == nil {
+		return
+	}
+	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+		var snap entity.ConfigSnapshot
+		if err := a.db.Where("server_id = ? AND core_type = ?", a.serverID, coreType).
+			Order("version DESC").First(&snap).Error; err != nil {
+			continue
+		}
+		if err := a.procMgr.WriteRuntimeConfig(coreType, []byte(snap.Config)); err != nil {
+			log.Printf("[LocalAgent] restore snapshot %s failed: %v", coreType, err)
+			continue
+		}
+		log.Printf("[LocalAgent] restored config snapshot: %s (version=%d, %d bytes)", coreType, snap.Version, len(snap.Config))
+	}
 }
 
 // ============================================================
@@ -144,10 +181,23 @@ func (a *LocalAgent) SyncConfig(ctx context.Context, coreType string, config []b
 
 	a.taskQueue.Submit(taskID, "sync_config", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
-			if err := a.procMgr.WriteRuntimeConfig(coreType, config); err != nil {
-				return nil, fmt.Errorf("write config: %w", err)
+		if err := a.procMgr.WriteRuntimeConfig(coreType, config); err != nil {
+			return nil, fmt.Errorf("write config: %w", err)
+		}
+		// Persist a local config snapshot so the node can self-heal when the
+		// panel is unreachable on restart.
+		if a.db != nil {
+			if err := a.db.Create(&entity.ConfigSnapshot{
+				ServerID:  a.serverID,
+				CoreType:  coreType,
+				Version:   version,
+				Config:    string(config),
+				CreatedAt: time.Now(),
+			}).Error; err != nil {
+				log.Printf("[LocalAgent] save config snapshot %s failed: %v", coreType, err)
 			}
-			log.Printf("[LocalAgent] config synced: %s (version=%d, %d bytes)", coreType, version, len(config))
+		}
+		log.Printf("[LocalAgent] config synced: %s (version=%d, %d bytes)", coreType, version, len(config))
 			return map[string]interface{}{"core_type": coreType, "version": version}, nil
 		},
 		nil, // callback set by caller if needed

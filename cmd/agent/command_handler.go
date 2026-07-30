@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -349,10 +351,9 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		sendSyncResult("get_proxy_status", resp, nil)
 
 	case *agentpb.PanelCommand_SpeedTest:
-		// TODO: implement SpeedTest logic
-		sendSyncResult("speed_test", &agentpb.SpeedTestResponse{
-			Success: false, Error: "not implemented",
-		}, nil)
+		req := c.SpeedTest
+		resp := a.handleSpeedTest(ctx, req)
+		sendSyncResult("speed_test", resp, nil)
 
 	case *agentpb.PanelCommand_DownloadGeoRule:
 		req := c.DownloadGeoRule
@@ -693,6 +694,99 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)
 	}
+}
+
+// handleSpeedTest performs a TCP latency probe to the requested target and reports
+// average latency, jitter and packet loss. It backs the remote-node speed test used by
+// the panel's load balancer / latency-based sorting (SpeedTestOnServer → stream command
+// → this handler). Only the latency-related fields are populated; bandwidth fields are
+// left at 0 since this is a lightweight connect probe, not a throughput test.
+func (a *AgentApp) handleSpeedTest(ctx context.Context, req *agentpb.SpeedTestRequest) *agentpb.SpeedTestResponse {
+	host := req.GetTargetHost()
+	if host == "" {
+		return &agentpb.SpeedTestResponse{Success: false, Error: "target_host is required"}
+	}
+	port := int(req.GetTargetPort())
+	if port == 0 {
+		port = 443
+	}
+	timeout := time.Duration(req.GetTimeoutMs()) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	samples := int(req.GetSamples())
+	if samples <= 0 {
+		samples = 3
+	}
+
+	target := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	latencies := make([]int64, 0, samples)
+	var lastErr error
+	for i := 0; i < samples; i++ {
+		start := time.Now()
+		dialer := net.Dialer{Timeout: timeout}
+		conn, err := dialer.DialContext(ctx, "tcp", target)
+		if err != nil {
+			lastErr = err
+			break
+		}
+		lat := time.Since(start).Milliseconds()
+		_ = conn.Close()
+		latencies = append(latencies, lat)
+		if i < samples-1 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	if len(latencies) == 0 {
+		return &agentpb.SpeedTestResponse{
+			Success: false,
+			Error:   fmt.Sprintf("tcp connect %s: %v", target, lastErr),
+		}
+	}
+
+	// average latency (skip first sample as warmup)
+	var sum int64
+	n := 0
+	for i, l := range latencies {
+		if i == 0 {
+			continue
+		}
+		sum += l
+		n++
+	}
+	if n == 0 {
+		sum = latencies[0]
+		n = 1
+	}
+	avg := int32(sum / int64(n))
+
+	// jitter = stddev of latencies (excluding warmup)
+	var sumSq float64
+	for i, l := range latencies {
+		if i == 0 {
+			continue
+		}
+		d := float64(l) - float64(avg)
+		sumSq += d * d
+	}
+	jitter := int32(math.Sqrt(sumSq / float64(maxInt(n, 1))))
+
+	loss := float64(samples-len(latencies)) / float64(samples)
+
+	return &agentpb.SpeedTestResponse{
+		Success:    true,
+		LatencyMs:  avg,
+		JitterMs:   jitter,
+		PacketLoss: loss,
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // sendTaskResult sends a TaskResult back to the panel via the heartbeat stream.

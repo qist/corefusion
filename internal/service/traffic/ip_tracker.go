@@ -216,6 +216,9 @@ func (t *SubscriptionIPTracker) readIPCounter(subID int64, ip string) int64 {
 		Nftables []struct {
 			Rule struct {
 				Expr []struct {
+					Match *struct {
+						Right string `json:"right"`
+					} `json:"match,omitempty"`
 					Counter *struct {
 						Bytes int64 `json:"bytes"`
 					} `json:"counter,omitempty"`
@@ -228,9 +231,20 @@ func (t *SubscriptionIPTracker) readIPCounter(subID int64, ip string) int64 {
 		return 0
 	}
 
-	// Sum all counters in the chain (simplified - in production would match by IP)
+	// Sum only the counters of rules that match this exact source IP, so a
+	// subscription with multiple IPs is not over-counted.
 	var total int64
 	for _, item := range result.Nftables {
+		matched := false
+		for _, expr := range item.Rule.Expr {
+			if expr.Match != nil && expr.Match.Right == ip {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
 		for _, expr := range item.Rule.Expr {
 			if expr.Counter != nil {
 				total += expr.Counter.Bytes

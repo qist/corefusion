@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,7 @@ import (
 	planHandler "corefusion/internal/api/handlers/plan"
 	portalHandler "corefusion/internal/api/handlers/portal"
 	rateLimitHandler "corefusion/internal/api/handlers/ratelimit"
+	runtimecfgHandler "corefusion/internal/api/handlers/runtimecfg"
 	securityHandler "corefusion/internal/api/handlers/security"
 	servicesHandler "corefusion/internal/api/handlers/services"
 	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
@@ -70,6 +72,7 @@ import (
 	geoRuleSvc "corefusion/internal/service/georule"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	logManageSvc "corefusion/internal/service/logmanage"
+	runtimeapplySvc "corefusion/internal/service/runtimeapply"
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
@@ -90,8 +93,58 @@ import (
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	userService "corefusion/internal/service/user"
 	warpSvc "corefusion/internal/service/warp"
+	accessPkg "corefusion/internal/service/access"
+	"corefusion/internal/service/audit"
 	"corefusion/internal/store/repository"
 )
+
+// --- Network-layer (nftables) traffic accounting ----------------------------------
+// Shares one IP tracker + bridge across the whole process. The bridge only accounts
+// for subscriptions whose traffic is NOT already counted by xray itself.
+var (
+	networkTrafficTracker *trafficSvc.SubscriptionIPTracker
+	networkBridgeOnce     sync.Once
+)
+
+// initNetworkTrafficAccounting returns the shared nftables tracker (nil if disabled)
+// and starts the accounting bridge exactly once.
+func initNetworkTrafficAccounting(subRepo *repository.SubscriptionRepository, clientRepo *repository.ClientRepository, inboundRepo *repository.InboundConfigRepository) *trafficSvc.SubscriptionIPTracker {
+	if os.Getenv("CF_NETWORK_TRAFFIC_ACCOUNTING") == "0" {
+		return nil
+	}
+	if networkTrafficTracker == nil {
+		table := os.Getenv("CF_NETWORK_TRAFFIC_TABLE")
+		if table == "" {
+			table = "cf_traffic"
+		}
+		networkTrafficTracker = trafficSvc.NewSubscriptionIPTracker(table)
+	}
+	tracker := networkTrafficTracker
+	networkBridgeOnce.Do(func() {
+		bridge := trafficSvc.NewNetworkTrafficBridge(tracker, subRepo, clientRepo, inboundRepo)
+		go bridge.Run(context.Background(), 30*time.Second)
+	})
+	return tracker
+}
+
+// --- Access control service (service/endpoint level) --------------------------
+// Shares one access control service across the whole process; its ban + policy
+// repositories are GORM-backed (service_ip_bans / service_access_policies).
+var (
+	sharedAccessSvc *accessPkg.Service
+	accessSvcOnce   sync.Once
+)
+
+// getAccessService returns the shared access control service, instantiating it once.
+func getAccessService(db *gorm.DB) *accessPkg.Service {
+	accessSvcOnce.Do(func() {
+		sharedAccessSvc = accessPkg.NewService(
+			accessPkg.NewBanRepository(db),
+			accessPkg.NewPolicyRepository(db),
+		)
+	})
+	return sharedAccessSvc
+}
 
 // binaryListerAdapter adapts binaries.Installer to nodeserver.BinaryLister interface.
 type binaryListerAdapter struct {
@@ -365,6 +418,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	planOrderRepo := repository.NewPlanOrderRepository(database)
 	extNodeRepo := repository.NewExternalNodeRepository(database)
 	planSvcInst := planSvc.NewService(database, planTmplRepo, planVariantRepo, nodeGroupRepo, nodeGroupMemberRepo, promoRepo, planOrderRepo, clientRepo, inboundConfigRepo, extNodeRepo)
+	// Trial plan auto-convert/expiry scheduler (hourly)
+	planSvcInst.StartTrialScheduler(context.Background(), time.Hour)
 
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
@@ -383,6 +438,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// discover all registered servers (local + remote) for multi-node sync.
 	nodeServerRepoForSync := repository.NewNodeServerRepository(database)
 	configSyncSvc.SetServerLister(nodeServerRepoForSync)
+
+	// Runtime config workflow (snapshot / dry-run / apply / rollback / disable-proxy)
+	var runtimeApplyWriter runtimeapplySvc.ConfigWriter
+	if processMgr != nil {
+		runtimeApplyWriter = processMgr
+	}
+	runtimeApplySvcInst := runtimeapplySvc.NewService(database, dataDir, configSyncSvc, runtimeApplyWriter)
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -415,7 +477,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// actually run (it was previously defined but never started).
 	backupScheduler := backupService.NewBackupScheduler(backupSvcInst)
 	backupScheduler.Start()
-	_ = notifier // TODO: integrate with scheduler for template notifications
+	systemSvc.RegisterNotifier(notifier, repository.NewNotificationTemplateRepository(database))
+	audit.Register(database)
 	proxySiteRepo := repository.NewProxySiteRepository(database)
 	caddySiteRepo := repository.NewCaddySiteRepository(database)
 	nginxSiteRepo := repository.NewNginxSiteRepository(database)
@@ -542,6 +605,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
 	publicSubH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync)
+	if tracker := initNetworkTrafficAccounting(subRepo, clientRepo, inboundConfigRepo); tracker != nil {
+		publicSubH.SetNetworkTracker(tracker)
+	}
 	clientH := clientHandler.NewHandler(clientSvcInst)
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	clientauthH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync, clientRepo, planTmplRepo)
@@ -1399,6 +1465,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			trafficHook := &trafficResetHookAdapter{inboundSvc: inboundConfigSvc, syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}
 			subSvc.SetTrafficResetHook(trafficHook)
 			clientSvcInst.SetTrafficResetHook(trafficHook)
+
+			// Inject the user syncer so the quota/expiry enforcer can block users at
+			// the proxy cores, and start the periodic enforcement scan.
+			if sharedUserSyncer != nil {
+				subSvc.SetUserSyncer(sharedUserSyncer)
+				subSvc.StartEnforcer(context.Background(), 5*time.Minute)
+			}
 			nodeServersGroup := protected.Group("/node-servers")
 			{
 				nodeServersGroup.GET("", nodeServerH.List)
@@ -1780,6 +1853,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				securityGroup.GET("/alert-channels", securityH.ListAlertChannels)
 				securityGroup.POST("/alert-channels", securityH.CreateAlertChannel)
 				securityGroup.PUT("/alert-channels/:id", securityH.UpdateAlertChannel)
+				securityGroup.DELETE("/alert-channels/:id", securityH.DeleteAlertChannel)
 				securityGroup.POST("/alerts/:id/resolve", securityH.ResolveAlert)
 			}
 
@@ -1945,8 +2019,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			protected.GET("/agent/version", agentH.GetAgentVersion)
 			protected.GET("/agent/releases", agentH.GetAgentReleases)
 
-			// Placeholder routes for remaining modules
-			registerPlaceholderRoutes(protected)
+		// Placeholder routes for remaining modules
+		registerPlaceholderRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
 
 			// Portal template management (admin only)
 			portalH := portalHandler.NewHandler(portalTmplSvc)
@@ -2321,34 +2395,35 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 }
 
 // registerPlaceholderRoutes registers placeholder routes for modules not yet implemented.
-func registerPlaceholderRoutes(rg *gin.RouterGroup) {
+func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH *runtimecfgHandler.Handler) {
 	// Services (access policies, ip bans)
 	services := rg.Group("/services")
+	accessH := servicesHandler.NewAccessHandler(database, getAccessService(database))
 	{
 		services.GET("/:id/logs", placeholder("get service logs"))
-		services.GET("/:id/access-policies", placeholder("list access policies"))
-		services.POST("/:id/access-policies", placeholder("create access policy"))
-		services.PUT("/:id/access-policies/:policyId", placeholder("update access policy"))
-		services.DELETE("/:id/access-policies/:policyId", placeholder("delete access policy"))
-		services.GET("/:id/ip-bans", placeholder("list ip bans"))
-		services.POST("/:id/ip-bans", placeholder("create ip ban"))
-		services.DELETE("/:id/ip-bans/:banId", placeholder("delete ip ban"))
+		services.GET("/:id/access-policies", accessH.ListPolicies)
+		services.POST("/:id/access-policies", accessH.CreatePolicy)
+		services.PUT("/:id/access-policies/:policyId", accessH.UpdatePolicy)
+		services.DELETE("/:id/access-policies/:policyId", accessH.DeletePolicy)
+		services.GET("/:id/ip-bans", accessH.ListIPBans)
+		services.POST("/:id/ip-bans", accessH.CreateIPBan)
+		services.DELETE("/:id/ip-bans/:banId", accessH.DeleteIPBan)
 	}
 
-	// Runtime
+	// Runtime config workflow (snapshot / dry-run / apply / rollback / disable-proxy)
 	runtime := rg.Group("/runtime")
 	{
-		runtime.GET("/overview", placeholder("runtime overview"))
-		runtime.GET("/snapshots", placeholder("list snapshots"))
-		runtime.GET("/apply-jobs", placeholder("list apply jobs"))
-		runtime.GET("/apply-jobs/:id", placeholder("get apply job"))
-		runtime.POST("/snapshots", placeholder("create snapshot"))
-		runtime.POST("/dry-run", placeholder("dry run"))
-		runtime.POST("/apply", placeholder("apply"))
-		runtime.POST("/apply-jobs/:id/retry", placeholder("retry job"))
-		runtime.POST("/apply-jobs/:id/cancel", placeholder("cancel job"))
-		runtime.POST("/rollback", placeholder("rollback"))
-		runtime.POST("/disable-proxy", placeholder("disable proxy"))
+		runtime.GET("/overview", runtimeH.Overview)
+		runtime.GET("/snapshots", runtimeH.ListSnapshots)
+		runtime.GET("/apply-jobs", runtimeH.ListJobs)
+		runtime.GET("/apply-jobs/:id", runtimeH.GetJob)
+		runtime.POST("/snapshots", runtimeH.CreateSnapshot)
+		runtime.POST("/dry-run", runtimeH.DryRun)
+		runtime.POST("/apply", runtimeH.Apply)
+		runtime.POST("/apply-jobs/:id/retry", runtimeH.RetryJob)
+		runtime.POST("/apply-jobs/:id/cancel", runtimeH.CancelJob)
+		runtime.POST("/rollback", runtimeH.Rollback)
+		runtime.POST("/disable-proxy", runtimeH.DisableProxy)
 	}
 
 	// Server Share
@@ -2798,6 +2873,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		repository.NewMihomoConfigRepository(database), repository.NewMihomoRuleRepository(database),
 		systemSettingRepo, repository.NewAccessLogRepository(database),
 	)
+	if tracker := initNetworkTrafficAccounting(subRepo, clientRepo, inboundConfigRepo); tracker != nil {
+		portalPublicSubH.SetNetworkTracker(tracker)
+	}
 	clientExtH := clientextHandler.NewHandler(
 		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
 		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,

@@ -85,7 +85,22 @@ type InboundSettings struct {
 	Encryption string         `json:"encryption,omitempty"` // VLESS encryption (e.g. "mlkem768x25519plus.native.0rtt.<key>")
 	Decryption string         `json:"decryption,omitempty"` // VLESS decryption (server-side)
 	Method     string         `json:"method,omitempty"`     // Shadowsocks method
-	Network    string         `json:"network,omitempty"`    // Shadowsocks network (tcp, udp, tcp,udp)
+	Network    string         `json:"network,omitempty"`    // Shadowsocks / dokodemo network (tcp, udp, tcp,udp)
+
+	// dokodemo-door / tunnel
+	Address        string            `json:"address,omitempty"`        // rewrite destination address
+	Port           int               `json:"port,omitempty"`           // rewrite destination port
+	FollowRedirect bool              `json:"followRedirect,omitempty"` // use iptables/tproxy original destination
+	UserLevel      int               `json:"userLevel,omitempty"`
+	PortMap        map[string]string `json:"portMap,omitempty"` // local port -> "host:port"
+
+	// tun
+	Name                   string   `json:"name,omitempty"` // tun interface name (e.g. xray0)
+	MTU                    int      `json:"mtu,omitempty"`
+	Gateway                []string `json:"gateway,omitempty"` // interface addresses (CIDR)
+	DNS                    []string `json:"dns,omitempty"`
+	AutoSystemRoutingTable []string `json:"autoSystemRoutingTable,omitempty"`
+	AutoOutboundsInterface string   `json:"autoOutboundsInterface,omitempty"`
 }
 
 type ClientConfig struct {
@@ -336,6 +351,40 @@ func (g *Generator) GenerateServiceConfig(spec common.ServiceConfigSpec) ([]byte
 				settings.Clients = ssClients
 			}
 		}
+	case domain.ProtocolDokodemo:
+		// dokodemo-door: forward all traffic on the listen port to a fixed
+		// destination, or follow the redirected (iptables/tproxy) destination.
+		settings.Address = extraString(spec.Extra, "address", "rewriteAddress")
+		settings.Port = extraInt(spec.Extra, "port", "rewritePort")
+		settings.Network = extraString(spec.Extra, "network", "allowedNetwork")
+		if settings.Network == "" {
+			settings.Network = "tcp,udp"
+		}
+		settings.FollowRedirect = extraBool(spec.Extra, "followRedirect", "follow_redirect")
+		settings.UserLevel = extraInt(spec.Extra, "userLevel", "user_level")
+		if pm, ok := spec.Extra["portMap"].(map[string]any); ok && len(pm) > 0 {
+			settings.PortMap = map[string]string{}
+			for local, remote := range pm {
+				if r, ok := remote.(string); ok {
+					settings.PortMap[local] = r
+				}
+			}
+		}
+	case domain.ProtocolTUN:
+		// tun: layer-3 interface inbound.
+		settings.Name = extraString(spec.Extra, "name", "interface_name")
+		if settings.Name == "" {
+			settings.Name = "xray0"
+		}
+		settings.MTU = extraInt(spec.Extra, "mtu")
+		if settings.MTU == 0 {
+			settings.MTU = 1500
+		}
+		settings.Gateway = extraStrings(spec.Extra, "gateway", "addresses")
+		settings.DNS = extraStrings(spec.Extra, "dns")
+		settings.AutoSystemRoutingTable = extraStrings(spec.Extra, "autoSystemRoutingTable", "auto_route")
+		settings.AutoOutboundsInterface = extraString(spec.Extra, "autoOutboundsInterface", "stack")
+		settings.UserLevel = extraInt(spec.Extra, "userLevel", "user_level")
 	}
 
 	inbound.Settings = settings
@@ -388,6 +437,66 @@ func (g *Generator) GenerateServiceConfig(spec common.ServiceConfigSpec) ([]byte
 	}
 
 	return json.MarshalIndent(config, "", "  ")
+}
+
+// extraString returns the first non-empty string value among the given keys.
+func extraString(extra map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := extra[k].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// extraInt returns the first numeric value among the given keys (JSON numbers
+// decode as float64).
+func extraInt(extra map[string]any, keys ...string) int {
+	for _, k := range keys {
+		switch v := extra[k].(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
+		case int64:
+			return int(v)
+		}
+	}
+	return 0
+}
+
+// extraBool returns the first bool value among the given keys.
+func extraBool(extra map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if v, ok := extra[k].(bool); ok {
+			return v
+		}
+	}
+	return false
+}
+
+// extraStrings returns the first string-slice value among the given keys
+// (accepts []string or []any of strings).
+func extraStrings(extra map[string]any, keys ...string) []string {
+	for _, k := range keys {
+		switch v := extra[k].(type) {
+		case []string:
+			if len(v) > 0 {
+				return v
+			}
+		case []any:
+			var out []string
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					out = append(out, s)
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+	}
+	return nil
 }
 
 // GenerateClientConfig generates an Xray client configuration.

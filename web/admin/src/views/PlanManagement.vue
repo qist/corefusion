@@ -269,12 +269,7 @@
         <template v-if="templateForm.is_trial">
           <el-form-item :label="t('plan.trialDuration')">
             <el-input-number v-model="templateForm.trial_duration_hours" :min="1" />
-          </el-form-item>
-          <el-form-item :label="t('plan.trialAutoConvert')">
-            <el-select v-model="templateForm.trial_auto_convert_template_id" clearable :placeholder="t('plan.trialAutoConvertPlaceholder')" style="width:100%">
-              <el-option v-for="tpl in convertTemplateOptions" :key="tpl.id" :label="tpl.name" :value="tpl.id" />
-            </el-select>
-            <div class="form-hint">{{ t('plan.trialAutoConvertHint') }}</div>
+            <div class="form-hint">{{ t('plan.trialExpiryHint') }}</div>
           </el-form-item>
         </template>
         <el-divider content-position="left">{{ t('plan.displaySettings') }}</el-divider>
@@ -569,16 +564,12 @@ const editingTemplate = ref(null)
 const templateForm = ref({})
 
 // Non-trial templates available as the auto-convert target for a trial template.
-const convertTemplateOptions = computed(() =>
-  templates.value.filter((t) => !t.is_trial && t.id !== editingTemplate.value?.id)
-)
-
 function emptyTemplateForm() {
   return {
     name: '', description: '', category: 'standard',
     device_limit: 0, speed_limit_mbps: 0, speed_limit_up_mbps: 0, concurrent_limit: 0,
     default_quota_gb: 0, default_quota_reset_cycle: 'none',
-    suspend_on_quota_exhausted: 1, is_trial: false, trial_duration_hours: 0, trial_auto_convert_template_id: null,
+    suspend_on_quota_exhausted: 1, is_trial: false, trial_duration_hours: 0,
     sort_order: 0, enabled: true,
   }
 }
@@ -597,7 +588,6 @@ function showEditTemplate(row) {
     ...row,
     default_quota_gb: row.default_quota_bytes / 1073741824,
     is_trial: !!row.is_trial,
-    trial_auto_convert_template_id: row.trial_auto_convert_template_id ?? null,
     enabled: !!row.enabled,
     suspend_on_quota_exhausted: row.suspend_on_quota_exhausted,
   }

@@ -53,8 +53,9 @@ func (s *Service) runTrialScan(ctx context.Context) {
 }
 
 // ProcessTrialExpiry finds active clients on expired trial plans and either
-// auto-converts them to the configured template's default variant, or marks
-// them expired. Returns the number of clients processed.
+// converts them into the package they actually purchased during the trial, or
+// marks them expired when no purchase was made. Returns the number of clients
+// processed.
 func (s *Service) ProcessTrialExpiry(ctx context.Context) (int, error) {
 	now := time.Now()
 
@@ -75,9 +76,10 @@ func (s *Service) ProcessTrialExpiry(ctx context.Context) (int, error) {
 		if err != nil || tmpl == nil || !tmpl.IsTrial {
 			continue
 		}
-		if tmpl.TrialAutoConvertTemplateID != nil && *tmpl.TrialAutoConvertTemplateID > 0 {
-			if err := s.convertTrial(ctx, &client, *tmpl.TrialAutoConvertTemplateID); err != nil {
-				log.Printf("[Trial] auto-convert client %d failed: %v", client.ID, err)
+		// 试用期内买了套餐 → 转正成用户实际购买的套餐；没买 → 直接过期。
+		if variant, ok := s.findTrialPurchaseVariant(ctx, client.ID); ok {
+			if err := s.convertTrialToVariant(ctx, &client, variant); err != nil {
+				log.Printf("[Trial] convert client %d to purchased variant %d failed: %v", client.ID, variant.ID, err)
 				continue
 			}
 		} else {
@@ -91,17 +93,12 @@ func (s *Service) ProcessTrialExpiry(ctx context.Context) (int, error) {
 	return processed, nil
 }
 
-// convertTrial converts a trial client to the target template's default variant
-// (order_type=trial_convert, zero amount).
-func (s *Service) convertTrial(ctx context.Context, client *entity.Client, targetTemplateID int64) error {
-	targetTmpl, err := s.tmplRepo.GetByID(ctx, targetTemplateID)
+// convertTrialToVariant converts a trial client to the given already-resolved
+// target variant (order_type=trial_convert, zero amount).
+func (s *Service) convertTrialToVariant(ctx context.Context, client *entity.Client, variant *entity.PlanVariant) error {
+	targetTmpl, err := s.tmplRepo.GetByID(ctx, variant.TemplateID)
 	if err != nil || targetTmpl == nil || !targetTmpl.Enabled {
-		return fmt.Errorf("target template %d not available", targetTemplateID)
-	}
-
-	variant, err := s.pickDefaultVariant(ctx, targetTemplateID)
-	if err != nil {
-		return err
+		return fmt.Errorf("target template %d not available", variant.TemplateID)
 	}
 
 	now := time.Now()
@@ -133,7 +130,7 @@ func (s *Service) convertTrial(ctx context.Context, client *entity.Client, targe
 		quotaBytes = targetTmpl.DefaultQuotaBytes
 	}
 
-	client.PlanID = targetTemplateID
+	client.PlanID = variant.TemplateID
 	client.PlanVariantID = variant.ID
 	client.QuotaBytes = quotaBytes
 	client.UsedBytes = 0
@@ -170,8 +167,36 @@ func (s *Service) convertTrial(ctx context.Context, client *entity.Client, targe
 	}
 
 	log.Printf("[Trial] client %d auto-converted to template %d variant %d (expires %s)",
-		client.ID, targetTemplateID, variant.ID, newExpiry.Format(time.RFC3339))
+		client.ID, variant.TemplateID, variant.ID, newExpiry.Format(time.RFC3339))
 	return nil
+}
+
+// findTrialPurchaseVariant returns the variant the client actually purchased
+// during the trial (most recent completed paid order to a non-trial plan
+// variant), so that a trial converts into whatever package the user really
+// bought.
+func (s *Service) findTrialPurchaseVariant(ctx context.Context, clientID int64) (*entity.PlanVariant, bool) {
+	var order entity.PlanOrder
+	err := s.db.WithContext(ctx).
+		Where("client_id = ?", clientID).
+		Where("status = ?", entity.OrderStatusCompleted).
+		Where("order_type IN ?", []string{entity.OrderTypeNew, entity.OrderTypeRenew, entity.OrderTypeUpgrade}).
+		Where("to_variant_id > 0").
+		Order("created_at DESC, id DESC").
+		First(&order).Error
+	if err != nil {
+		return nil, false
+	}
+
+	variant, err := s.variantRepo.GetByID(ctx, order.ToVariantID)
+	if err != nil || !variant.Enabled || variant.VariantType != entity.VariantTypePlan {
+		return nil, false
+	}
+	vTmpl, err := s.tmplRepo.GetByID(ctx, variant.TemplateID)
+	if err != nil || vTmpl == nil || vTmpl.IsTrial {
+		return nil, false
+	}
+	return variant, true
 }
 
 // expireTrial marks a trial client (and its subscription) as expired.
@@ -190,21 +215,6 @@ func (s *Service) expireTrial(ctx context.Context, client *entity.Client) error 
 				"updated_at": now,
 			}).Error
 	}
-	log.Printf("[Trial] client %d trial expired (no auto-convert template)", client.ID)
+	log.Printf("[Trial] client %d trial expired (no purchase during trial)", client.ID)
 	return nil
-}
-
-// pickDefaultVariant returns the default (or first enabled) plan variant of a template.
-func (s *Service) pickDefaultVariant(ctx context.Context, templateID int64) (*entity.PlanVariant, error) {
-	var variants []entity.PlanVariant
-	if err := s.db.WithContext(ctx).
-		Where("template_id = ? AND enabled = ? AND variant_type = ?", templateID, true, "plan").
-		Order("is_default DESC, sort_order ASC, id ASC").
-		Find(&variants).Error; err != nil {
-		return nil, fmt.Errorf("list variants: %w", err)
-	}
-	if len(variants) == 0 {
-		return nil, fmt.Errorf("template %d has no enabled variant", templateID)
-	}
-	return &variants[0], nil
 }

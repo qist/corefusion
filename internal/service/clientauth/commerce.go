@@ -568,7 +568,13 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 	switch input.OrderType {
 	case entity.OrderTypeNew:
 		if client.PlanID > 0 && client.Status != "expired" {
-			return nil, fmt.Errorf("you already have an active plan, please use renew or upgrade")
+			// Allow a client on an active trial to buy a real (non-trial) plan:
+			// the purchase replaces the trial immediately (buy = convert).
+			curTmpl, terr := s.tmplRepo.GetByID(ctx, client.PlanID)
+			onTrial := terr == nil && curTmpl != nil && curTmpl.IsTrial
+			if !onTrial || tmpl.IsTrial {
+				return nil, fmt.Errorf("you already have an active plan, please use renew or upgrade")
+			}
 		}
 		// Trial plans can only be claimed once per client.
 		if tmpl.IsTrial {

@@ -105,8 +105,9 @@
 
 - 来源：`docs/design/plan-design.md`
 - **实现要点**：
-  - `internal/service/plan/trial.go`（新增）：`StartTrialScheduler`（router 启动，每小时扫描，sync.Once）；`ProcessTrialExpiry` 查找 `is_trial` 模板下 `expires_at` 已过期且 active 的客户端——配置了 `trial_auto_convert_template_id` 则 `convertTrial`（取目标模板默认/首个启用规格，创建 `trial_convert` 订单，更新客户端配额/到期/限速并同步订阅），否则 `expireTrial`（客户端+订阅置 expired）
-  - `clientauth/commerce.go`：`activatePlan` 新购试用套餐时到期时间按 `trial_duration_hours` 计算（而非规格天数）；`CreateOrder` 增加"试用套餐每客户端仅可领取一次"校验（历史订单关联 is_trial 模板则拒绝）
+  - `internal/service/plan/trial.go`（新增）：`StartTrialScheduler`（router 启动，每小时扫描，sync.Once）；`ProcessTrialExpiry` 查找 `is_trial` 模板下 `expires_at` 已过期且 active 的客户端——`findTrialPurchaseVariant` 查最近一笔已完成 new/renew/upgrade 订单（to_variant 须为非试用模板 plan 规格），有则 `convertTrialToVariant` 转正为**用户实际购买的套餐**（创建零金额 `trial_convert` 订单，更新客户端配额/到期/限速并同步订阅），否则 `expireTrial`（客户端+订阅置 expired）
+  - `clientauth/commerce.go`：`activatePlan` 新购试用套餐时到期时间按 `trial_duration_hours` 计算（而非规格天数）；`CreateOrder` 增加"试用套餐每客户端仅可领取一次"校验（历史订单关联 is_trial 模板则拒绝）；试用期内客户端可直接以 `order_type=new` 购买非试用套餐，购买即替换试用（到期从购买日重算，不叠加试用剩余天数）
+  - **2026-07-30 修订**：废弃并移除 `trial_auto_convert_template_id`（写死转正模板存在零金额白送付费套餐问题），实体/服务输入/前端表单及文案均已删除该字段；历史库中该列可保留，代码不再读写
 
 #### 2.10 Runtime 配置工作流（**已实现 2026-07-30**）
 

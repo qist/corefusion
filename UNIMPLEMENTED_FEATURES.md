@@ -17,24 +17,15 @@
 | 死代码/代码卫生 | 10 项 | 见第四章 |
 | 前端问题 | 6 项 | 见第五章 |
 
-关键修正：**流量子系统并非"整体不生效"**。用量统计已生效（trafficsync + TrafficEventConsumer → `subscriptions.*_bytes_cache`），限速/设备数/并发限制已由 ratelimit 模块（nftables+tc）实际执行。真正缺的只是"订阅级流量超额自动封禁"和"非 xray 协议流量统计"等三块（见 2.2、2.3）。
+关键修正：**流量子系统并非"整体不生效"**。用量统计已生效（trafficsync + TrafficEventConsumer → `subscriptions.*_bytes_cache`），限速/设备数/并发限制已由 ratelimit 模块（nftables+tc）实际执行。真正缺的只是"订阅级流量超额自动封禁"和"非 xray 协议流量统计"等三块（见 2.1、2.2）。
 
 ---
 
 ## 二、真实缺失（按优先级）
 
-### P0 — 安全相关
-
-#### 2.1 首次启动初始化向导完全缺失
-
-- 来源：`docs/design/first-boot-initialization.md`（文档自述"状态：设计阶段"）
-- 现状：全库无 `/api/v1/init/*` 路由、无 `IsFirstBoot`、无 `reset-init` 命令、无初始化前端页面；`cmd/corefusion/main.go:330` 硬编码 `CreateInitialAdmin("admin","admin123")`
-- 缺失内容：随机初始化端口/Token、五步配置向导（端口/管理员/访问路径/HTTPS）、初始化前端
-- 关联：`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）是无前端调用的死端点
-
 ### P1 — 核心功能闭环
 
-#### 2.2 订阅级流量超额/自然过期的自动处理缺失
+#### 2.1 订阅级流量超额/自然过期的自动处理缺失
 
 - **用量统计已生效**（不计缺失）：本机走 `service/trafficsync`（xray `QueryStats reset_=true` 轮询），远程走 Agent heartbeat → `traffic_consumer.go:105`，两条路径都汇聚到 `inboundconfig.Service.UpdateTraffic`，原子累加 `subscriptions.used_bytes_cache`（`inboundconfig/service.go:193-199`）
 - **真实缺口**：
@@ -43,7 +34,7 @@
   - （对照：节点级流量配额封禁已实现，`nodeserver/traffic_quota.go:210-300` 超额会 suspendNode）
 - 已知隐患：`UpdateTraffic` 只有在某 inbound config 的 JSON 里匹配到 email 才更新订阅缓存（`inboundconfig/service.go:157`），用户不在任何 inbound 中时缓存不更新
 
-#### 2.3 非 xray 协议流量统计：最新实现已就位（网络层计费），仅订阅级接线未闭合
+#### 2.2 非 xray 协议流量统计：最新实现已就位（网络层计费），仅订阅级接线未闭合
 
 > **更正（按最新实现）**：非 xray 流量统计**不再依赖各核心原生 Stats API**，已改用**网络层计费（对核心类型透明）**，最新实现分两级：
 
@@ -57,24 +48,24 @@
 
 - 结论：方案与组件代码已具备，**剩余工作是把 `SubscriptionIPTracker` 接线**（实例化 → 在订阅访问时 `RecordAccess` 建链 → `SetEventChannel` 接 Aggregator → 事件结构桥接到 `SubscriptionID`），属于接线/收尾，而非重新设计。TUIC 无原生 Stats API 的客观限制已由网络层方案规避。
 
-#### 2.4 Agent 端 SpeedTest 未实现
+#### 2.3 Agent 端 SpeedTest 未实现
 
 - `cmd/agent/command_handler.go:351-355` 固定返回 `not implemented`
 - 后果：远程节点延迟测速/按延迟排序对远端节点完全不可用（本地节点 TCP 测速正常）
 - 无任何替代路径
 
-#### 2.5 访问控制管理面缺失（底层能力已在）
+#### 2.4 访问控制管理面缺失（底层能力已在）
 
 - 已实现部分：`service/access/access.go` 的 TokenBucket/ConcurrentTracker/AutoBanManager 组件、`service_access_policies` 和 `service_ip_bans` 表已建（`entity/access.go:6-39`）
 - 真实缺口：`access.NewService` 无调用方（服务从未实例化）、`BanRepository` 只有接口无数据库实现、管理面 API（`/services/:id/access-policies`、`/services/:id/ip-bans`）是 placeholder、`CheckConnection` 未串联并发/速率检查
 
-#### 2.6 Notifier 模板通知无发送引擎
+#### 2.5 Notifier 模板通知无发送引擎
 
 - `internal/service/system/notifier.go` 完整实现了 Telegram/SMTP/模板通知（`SendTemplateNotification:117`），通知模板 CRUD 也有 handler
 - 但 `router.go:418` 创建后 `_ = notifier` 丢弃，全库无任何业务调用方——订单、工单、证书到期等场景均无通知发送
 - 注：设置页"测试 SMTP/Telegram"走 `settingSvc.TestSMTP/TestTelegram` 独立路径，不代表业务通知已通
 
-#### 2.7 Agent 节点配置快照（数据本地化）缺失
+#### 2.6 Agent 节点配置快照（数据本地化）缺失
 
 - 来源：`docs/design/node-server-architecture.md` 阶段3
 - 现状：`config_snapshots` 表/`saveConfigSnapshot` 仅存在于文档，代码无匹配
@@ -82,29 +73,29 @@
 
 ### P2 — 功能补齐
 
-#### 2.8 安全审计事件无写入逻辑（骨架已搭）
+#### 2.7 安全审计事件无写入逻辑（骨架已搭）
 
 - 修正：表**已建**（`entity/access.go:58-73` 已 AutoMigrate 注册），过期清理逻辑也有（`log_cleanup.go:103`）
 - 真实缺口：全库无任何 `SecurityAuditEvent` 写入代码 → 查询恒为空；告警（alerts）、告警渠道 CRUD 为 NOT_IMPLEMENTED；且无登录日志/管理操作日志等替代体系（entity 层无 LoginLog/OperationLog）
 
-#### 2.9 面板自身更新/回滚缺失（**后期实现**）
+#### 2.8 面板自身更新/回滚缺失（**后期实现**）
 
 - `handlers/system/handler.go:360-374` SystemUpdate/SystemRollback/ListReleases/ListUpdateJobs 全是桩
 - 指**面板自身**更新（节点 Agent 更新是另一套已实现机制）；仓库无部署/升级脚本，前端无调用入口
 - **排期：后期实现**（暂不作为近期缺口处理，但实现前需先解决分发基础设施——构建产物源，可复用 Agent 自更新机制）
 
-#### 2.10 试用套餐自动转正/过期机制缺失
+#### 2.9 试用套餐自动转正/过期机制缺失
 
 - 来源：`docs/design/plan-design.md`
 - 现状：`is_trial`/`trial_duration_hours`/`trial_auto_convert_template_id` 字段已建表，但 router/service 层无任何 trial 处理逻辑
 
-#### 2.11 Runtime 配置工作流缺失（骨架已搭）
+#### 2.10 Runtime 配置工作流缺失（骨架已搭）
 
 - placeholder：`/runtime/snapshots`、`/runtime/apply*`、`/runtime/dry-run`、`/runtime/rollback`、`/runtime/disable-proxy`、`/runtime/overview`
 - 骨架：`runtime_snapshots`/`runtime_apply_jobs` 等 4 张表已建（`entity/runtime.go:6-75`）、`RuntimeApplyService` 接口已定义（`domain/runtime/interfaces.go:73-80`）
 - 现状：配置下发是"写文件→重启核心"直写模式（`process/manager.go:153` + configsync），无快照/版本/dry-run/回滚机制
 
-#### 2.12 xray dokodemo-door / TUN 入站配置**生成未实现**
+#### 2.11 xray dokodemo-door / TUN 入站配置**生成未实现**
 
 - 澄清：前端 `XrayInbounds.vue` **已有** dokodemo-door（L295、L817-847）和 tun（L293、L784-812）的编辑 UI，但**这不代表 xray 已实现**——后端尚未支持。
 - 真实缺口：`configgen/xray/generator.go:275` 的 `switch spec.Protocol` 只处理 VLESS/VMess/Trojan/Shadowsocks 四种协议，dokodemo-door / tun 落到 default 分支生成**空的 `InboundSettings`**，即这两类入站生成出的 xray 配置不可用（仅 sing-box 生成器实现了 tun，`singbox/generator.go:321`）。ফলে 用户在前端配置 dokodemo/tun 后，面板下发的 xray 配置是残缺的。
@@ -121,6 +112,15 @@
 | gRPC `RegistrationService.Register` 未接线 | `manager.go:1503-1512` 返回未接线；现行路径走 REST bootstrap-token（已实现且够用），属可选增强 |
 | Metrics `ConnectionFailures`/`UDPQUICMetrics` | 空端点，但前端无任何调用（前端用 `/node-servers/:id/metrics-history`），死端点 |
 | 安全能力：2FA/RBAC/管理端 mTLS/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，均未落地 |
+
+#### 2.12 首次启动初始化向导（**暂缓开发**）
+
+> 原 P0 安全相关项，经评估当前不急于开发，下调至 P3 暂缓。
+
+- 来源：`docs/design/first-boot-initialization.md`（文档自述"状态：设计阶段"）
+- 现状：全库无 `/api/v1/init/*` 路由、无 `IsFirstBoot`、无 `reset-init` 命令、无初始化前端页面；`cmd/corefusion/main.go:330` 硬编码 `CreateInitialAdmin("admin","admin123")`
+- 缺失内容：随机初始化端口/Token、五步配置向导（端口/管理员/访问路径/HTTPS）、初始化前端
+- 关联：`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）是无前端调用的死端点
 
 > **明确不实现项（已排除）**：**CSRF 防护**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，**决定不实现**，从缺失清单移除。
 
@@ -152,12 +152,12 @@
 
 ## 四、死代码 / 代码卫生（2026-07-30 已清理）
 
-> 本章原列的死代码已执行清理。**保留项**（`domain/runtime/interfaces.go`、`entity/runtime.go` 的快照/区域表、`ip_tracker.go`）是 2.11 Runtime 工作流 / 2.3 网络层计费所需的脚手架，删除会与规划功能冲突，故保留。
+> 本章原列的死代码已执行清理。**保留项**（`domain/runtime/interfaces.go`、`entity/runtime.go` 的快照/区域表、`ip_tracker.go`）是 2.10 Runtime 工作流 / 2.2 网络层计费所需的脚手架，删除会与规划功能冲突，故保留。
 
 | 项 | 位置 | 处理结果 |
 |---|---|---|
-| `service/quota` 包整体 | `quota/quota.go`、`enforcer.go` | ✅ **已删除**（无调用方，2.2 将走 ratelimit 路径） |
-| `traffic/aggregator.go`、`multi_collector.go` | `service/traffic/` | ✅ **已删除**（被 main.go 停用、无外部引用）；`ip_tracker.go` 保留（2.3 所需） |
+| `service/quota` 包整体 | `quota/quota.go`、`enforcer.go` | ✅ **已删除**（无调用方，2.1 将走 ratelimit 路径） |
+| `traffic/aggregator.go`、`multi_collector.go` | `service/traffic/` | ✅ **已删除**（被 main.go 停用、无外部引用）；`ip_tracker.go` 保留（2.2 所需） |
 | 空目录模块 | `internal/observer/`、`scheduler/`、`region/`、`platform/`、`api/handlers/networkpolicy/`、`service/networkpolicy/` | ✅ **已删除**（确认无文件） |
 | proto AgentService 死定义 | `runtime/agent/proto/corefusion_agent.proto:29-71` | ⏸️ **未删**：与 HeartbeatService 同文件生成，删除需重新生成 pb.go，留待手动处理 |
 | 孤儿前端文件 | `views/Subscriptions.vue`、`SubscriptionEndpoints.vue`、`SubscriptionFormats.vue`、`Nodes.vue`、`services/ProcessTab.vue` | ✅ **已删除 5 个**（被 SubscriptionCenter/CoreProcessTab/NodeServers 取代） |
@@ -165,8 +165,8 @@
 | Legacy portal API | `api/portal.js:33-56` 的 6 个函数 | ✅ **已删除**（仅文件内部引用，无调用方） |
 | main.go 冗余初始化 | `main.go:300-302` | ✅ **已删除**（`_ = subscription.NewRegionSelector(...)` 及 `geoIPResolver` 变量），并移除多余 import |
 | Metrics 2 个死端点 | `metrics/handler.go:102-111` + `router.go:1772-1773` | ✅ **已删除** handler 方法与路由注册 |
-| 废弃 domain 接口 | `domain/runtime/interfaces.go` | ⏸️ **保留**：2.11 RuntimeApplyService 需要 |
-| `routing_regions`/`runtime_*` 空骨架表 | `entity/runtime.go` | ⏸️ **保留**：2.11 Runtime 工作流 / 路由区域需要 |
+| 废弃 domain 接口 | `domain/runtime/interfaces.go` | ⏸️ **保留**：2.10 RuntimeApplyService 需要 |
+| `routing_regions`/`runtime_*` 空骨架表 | `entity/runtime.go` | ⏸️ **保留**：2.10 Runtime 工作流 / 路由区域需要 |
 
 > 清理后已执行 `go build ./...` 通过。前端孤儿文件删除已核实无 import 引用。
 

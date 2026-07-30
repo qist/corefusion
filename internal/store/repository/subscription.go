@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -108,6 +109,39 @@ func (r *SubscriptionRepository) ListByQuotaStates(ctx context.Context, states [
 	var subs []entity.Subscription
 	err := r.db.WithContext(ctx).Where("quota_state IN ? AND status = ?", states, "active").Find(&subs).Error
 	return subs, err
+}
+
+// ListQuotaExhausted returns active subscriptions whose used traffic has reached the
+// configured quota and are not already in a suspended/terminal quota state.
+func (r *SubscriptionRepository) ListQuotaExhausted(ctx context.Context) ([]entity.Subscription, error) {
+	var subs []entity.Subscription
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND quota_bytes > 0 AND used_bytes_cache >= quota_bytes AND quota_state NOT IN ?",
+			"active", []string{"suspended", "over_limit_hard", "expired_days"}).
+		Find(&subs).Error
+	return subs, err
+}
+
+// ListExpired returns active subscriptions whose expires_at has already passed.
+func (r *SubscriptionRepository) ListExpired(ctx context.Context, now time.Time) ([]entity.Subscription, error) {
+	var subs []entity.Subscription
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND expires_at IS NOT NULL AND expires_at < ?", "active", now).
+		Find(&subs).Error
+	return subs, err
+}
+
+// AddUsedBytes atomically increments the subscription traffic cache. Used by the
+// network-layer (nftables) accounting bridge for subscriptions whose traffic is NOT
+// already counted by xray itself. nftables reports total (up+down) bytes, so only the
+// aggregate used_bytes_cache is updated here.
+func (r *SubscriptionRepository) AddUsedBytes(ctx context.Context, subID, delta int64) error {
+	if delta == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&entity.Subscription{}).
+		Where("id = ?", subID).
+		Update("used_bytes_cache", gorm.Expr("used_bytes_cache + ?", delta)).Error
 }
 
 // RotationRepository handles subscription rotation history operations.

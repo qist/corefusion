@@ -12,7 +12,7 @@
 
 | 类别 | 数量 | 说明 |
 |---|---|---|
-| 真实缺失 | 12 项 | 见第二章 |
+| 真实缺失 | 2 项 | 见第二章（2.1–2.7、2.9–2.11 已于 2026-07-30 实现；剩余 2.8 面板自更新[后期]、2.12 初始化向导[最后]） |
 | 文档过时（代码已有等价实现） | 8 项 | 见第三章，应从设计文档/placeholder 中清理 |
 | 死代码/代码卫生 | 10 项 | 见第四章 |
 | 前端问题 | 6 项 | 见第五章 |
@@ -25,58 +25,75 @@
 
 ### P1 — 核心功能闭环
 
-#### 2.1 订阅级流量超额/自然过期的自动处理缺失
+#### 2.1 订阅级流量超额/自然过期的自动处理（**已实现 2026-07-30**）
 
 - **用量统计已生效**（不计缺失）：本机走 `service/trafficsync`（xray `QueryStats reset_=true` 轮询），远程走 Agent heartbeat → `traffic_consumer.go:105`，两条路径都汇聚到 `inboundconfig.Service.UpdateTraffic`，原子累加 `subscriptions.used_bytes_cache`（`inboundconfig/service.go:193-199`）
-- **真实缺口**：
-  - 没有任何代码在 `used_bytes_cache >= quota_bytes` 时置 `quota_state` 或 suspend 订阅；`SuspendOnQuotaExhausted` 字段（`entity/subscription.go:29`）只写不读
-  - 订阅自然到期无定时扫描任务：`client.Status="expired"` 只在退款回退路径出现（`commerce.go:2115`），自然过期不会自动标记、不会自动从核心移除用户
-  - （对照：节点级流量配额封禁已实现，`nodeserver/traffic_quota.go:210-300` 超额会 suspendNode）
-- 已知隐患：`UpdateTraffic` 只有在某 inbound config 的 JSON 里匹配到 email 才更新订阅缓存（`inboundconfig/service.go:157`），用户不在任何 inbound 中时缓存不更新
+- **实现要点**（新增）：
+  - `store/repository/subscription.go` 新增 `ListQuotaExhausted`（活跃订阅中 `quota_bytes>0 && used_bytes_cache >= quota_bytes` 且非终态）与 `ListExpired`（活跃订阅中 `expires_at` 已过）
+  - `service/subscription.Service` 新增 `EnforceQuotaAndExpiry`：超额时 `quota_state=suspended`+`Status=suspended`（若 `SuspendOnQuotaExhausted=1`，否则 `over_limit_hard`），自然过期时 `Status=expired`+`quota_state=expired_days`；两者均经 `UserSyncer.SyncUserToServers(remove)` 从核心移除用户
+  - `Restore` 现会在恢复订阅时把被移除的用户经 `userSyncer` 重新加回核心（`add`）
+  - `StartEnforcer(ctx, interval)` 用 `sync.Once` 起定时扫描（默认 5 分钟，启动即跑一次），在 `router.NewWithFullConfig` 注入 `sharedUserSyncer` 后启动
+- （对照：节点级流量配额封禁已实现，`nodeserver/traffic_quota.go:210-300` 超额会 suspendNode）
+- 已知隐患（未解决，留待 2.2 的 IP 计费接线）：`UpdateTraffic` 只有在某 inbound config 的 JSON 里匹配到 email 才更新订阅缓存（`inboundconfig/service.go:157`），用户不在任何 inbound 中时缓存不更新
 
-#### 2.2 非 xray 协议流量统计：最新实现已就位（网络层计费），仅订阅级接线未闭合
+#### 2.2 非 xray 协议流量统计（**已实现 2026-07-30**）
 
-> **更正（按最新实现）**：非 xray 流量统计**不再依赖各核心原生 Stats API**，已改用**网络层计费（对核心类型透明）**，最新实现分两级：
+> **原则（用户明确）**：xray 协议的流量**走 xray 自己的统计**（`inboundconfig.UpdateTraffic` 按 email 累加 `used_bytes_cache`）；**只有不被 xray 统计的订阅才走 nft 网络层计费**，两者不重复计数。
 
-- **节点级（已完整实现并接线）**：`cmd/agent/metrics.go:46-49` 读取出口网卡（`egressInterface`）累计 rx/tx 字节，经心跳 `EgressRxBytes/EgressTxBytes`（`heartbeat.go:190-193`）上报；`nodeserver/traffic_quota.go:21-22` 按心跳做差累计到 `NodeServer.traffic_used_bytes` 并触发超额 suspendNode。该路径对任意核心（xray/singbox/hysteria2/tuic）均生效，**节点级月度配额已闭环**，不再属缺失。
-- **订阅级（组件已实现但未接线）**：`internal/service/traffic/ip_tracker.go` 的 `SubscriptionIPTracker` 通过 nftables 为每个订阅 IP 建 `sub_<id>` 链 + `counter` 规则，按 `expr.Counter.Bytes`（`ip_tracker.go:235`）统计订阅级流量（核心无关），本可作为 `used_bytes_cache` 的来源。
+- **实现要点**（新增/接线）：
+  - `internal/service/traffic/ip_tracker.go`：`SubscriptionIPTracker` 现已实例化并接线
+    - 修复 `readIPCounter`：按源 IP 精确匹配 nft rule 的 counter（原实现把整 chain 所有 counter 求和，多 IP 订阅流量会被放大 N 倍）
+    - 订阅访问时调用 `RecordAccess` 建 `sub_<id>` 链 + counter 规则；`SetEventChannel` 接 `NetworkTrafficBridge`
+  - 新增 `internal/service/traffic/bridge.go`：`NetworkTrafficBridge` 消费 `TrafficDeltaEvent`（nft **累计值**，按 sub 算增量）；对每个订阅先做 `isXrayAccounted` 判定（其 client 的 email 是否配置在任一 `CoreType=xray` 的 inbound config 中），**是则跳过（xray 已统计），否则** `subRepo.AddUsedBytes` 累加增量
+  - `store/repository/subscription.go` 新增 `AddUsedBytes(ctx, subID, delta)`（原子 `used_bytes_cache + delta`）
+  - `router.go`：`initNetworkTrafficAccounting` 包级单例创建 tracker 并 `go bridge.Run(ctx, 30s)`（`sync.Once` 防重），在 admin 与 portal 两条 `NewPublicHandler` 路径注入 `SetNetworkTracker`；受 `CF_NETWORK_TRAFFIC_ACCOUNTING=0` 关闭、`CF_NETWORK_TRAFFIC_TABLE` 配置表名（默认 `cf_traffic`）
+- 说明：nft 计的是上下行合计、无法拆分，故只更新 `used_bytes_cache`（与 xray 拆分 up/down 不同，但总量口径一致）；`used_bytes_cache` 仅被 xray 或 nft 之一累加，不重复
 
-- **当前真实缺口（接线未完成，非"从零实现"）**：`SubscriptionIPTracker` 目前是**孤立组件**——
-  - `NewSubscriptionIPTracker` 全仓库无实例化、`RecordAccess`（建 nft 规则）从未被调用；
-  - 其 `eventCh` 未接到 `Aggregator`，且它自定义的 `TrafficDeltaEvent`（`ip_tracker.go:256`，字段 `SubID`）与 `domain/metric/traffic.go` 的 `TrafficDeltaEvent`（字段 `SubscriptionID`）不是同一结构体，未经桥接；
-  - 因此 `sub_<id>` 链不会被创建，`ReadSubscriptionTraffic` 永远读到 0，**订阅级非 xray 流量暂未真正计入 `used_bytes_cache`**（xray 仍走 `inboundconfig.UpdateTraffic` 的 email 匹配）。
+#### 2.3 Agent 端 SpeedTest（**已实现 2026-07-30**）
 
-- 结论：方案与组件代码已具备，**剩余工作是把 `SubscriptionIPTracker` 接线**（实例化 → 在订阅访问时 `RecordAccess` 建链 → `SetEventChannel` 接 Aggregator → 事件结构桥接到 `SubscriptionID`），属于接线/收尾，而非重新设计。TUIC 无原生 Stats API 的客观限制已由网络层方案规避。
+- **路径**：`SpeedTestManager.testRemoteServer`（`runtime/agent/speedtest.go`）经 `nodeMgr.SpeedTestOnServer`（manager.go:872）通过 **Stream** 下发 `PanelCommand_SpeedTest`，落到 `cmd/agent/command_handler.go` 的 `case *agentpb.PanelCommand_SpeedTest`
+- **实现要点**：该 case 原固定返回 `not implemented`，现改为调用新增的 `handleSpeedTest`：
+  - 用 `net.Dialer` 对 `SpeedTestRequest.{target_host, target_port, timeout_ms, samples}` 做 TCP 连接探测（默认 443、3 次采样、跳过首次 warmup）
+  - 计算平均延迟、抖动（延迟标准差）、丢包率，返回 `SpeedTestResponse{ success, latency_ms, jitter_ms, packet_loss }`
+  - 带宽字段（download_bps/upload_bps）留 0（轻量连接探测，非吞吐测试）
+- 说明：unary gRPC `SpeedTest` RPC（proto:41）仍由 `UnimplementedAgentServiceServer` 默认占位（manager 走 stream 路径未使用），不影响功能；远程节点延迟测速/按延迟排序现已可用
 
-#### 2.3 Agent 端 SpeedTest 未实现
+#### 2.4 访问控制管理面（**已实现 2026-07-30**）
 
-- `cmd/agent/command_handler.go:351-355` 固定返回 `not implemented`
-- 后果：远程节点延迟测速/按延迟排序对远端节点完全不可用（本地节点 TCP 测速正常）
-- 无任何替代路径
+- **实现要点**（新增/接线）：
+  - `internal/service/access/repository.go`：`gormBanRepository` 实现 `BanRepository`（Create/FindActive/DeleteExpired，操作 `service_ip_bans`）；新增 `PolicyRepository` 接口 + `gormPolicyRepository`（按 service/endpoint 加载启用策略）
+  - `service/access.Service` 增加 `policyRepo` 字段，`NewService(banRepo, policyRepo)`；`CheckConnection` 现加载策略并应用并发限制（`ConcurrentTracker.TryConnect`）、速率限制（`RateLimitManager.Check`）与自动封禁（`AutoBanManager.OnRateLimitHit`），拒绝返回 `ErrAccessDeniedByRate`（新增于 `networkpolicy`）
+  - `internal/api/handlers/services/access_handler.go`：新增 `AccessHandler`，实现 `access-policies`（list/create/update/delete）与 `ip-bans`（list/create/delete）共 7 个真实端点
+  - `router.go`：`getAccessService` 包级单例实例化 `access.NewService(NewBanRepository(db), NewPolicyRepository(db))`，并将 7 个 placeholder 路由替换为 `AccessHandler` 方法
+- 说明：`access.Service` 已实例化并暴露（供后续在入站连接生命周期调用 `CheckConnection`）；当前尚无连接前调用钩子，管理面与策略评估逻辑均已可用
 
-#### 2.4 访问控制管理面缺失（底层能力已在）
+#### 2.5 Notifier 模板通知（**已实现 2026-07-30**）
 
-- 已实现部分：`service/access/access.go` 的 TokenBucket/ConcurrentTracker/AutoBanManager 组件、`service_access_policies` 和 `service_ip_bans` 表已建（`entity/access.go:6-39`）
-- 真实缺口：`access.NewService` 无调用方（服务从未实例化）、`BanRepository` 只有接口无数据库实现、管理面 API（`/services/:id/access-policies`、`/services/:id/ip-bans`）是 placeholder、`CheckConnection` 未串联并发/速率检查
+- **实现要点**（新增/接线）：
+  - `internal/store/repository/notification_template.go` 新增 `GetByName`，按名查询模板
+  - `internal/service/system/notifier_singleton.go`（新增）：包级 `RegisterNotifier(notifier, tmplRepo)` + `NotifyTemplate(ctx, name, vars)` 便捷入口——按名查启用模板并发送，未配置/无启用模板时静默 no-op，供业务事件 fire-and-forget 调用
+  - `router.go`：创建 `notifier` 后 `system.RegisterNotifier(notifier, repository.NewNotificationTemplateRepository(database))`，移除 `_ = notifier` 丢弃
+  - 业务接入：`clientauth/commerce.go` 的 `CreateOrder` 余额支付完成时异步调用 `system.NotifyTemplate(ctx, "order_paid", {order_id, amount, email, plan_name})`
+- 说明：发送引擎已闭环（模板 CRUD → 引擎 → 业务触发）。工单、证书到期等其余场景可复用同一 `system.NotifyTemplate` 入口；设置页"测试 SMTP/Telegram"走 `settingSvc.TestSMTP/TestTelegram` 独立路径不变
 
-#### 2.5 Notifier 模板通知无发送引擎
-
-- `internal/service/system/notifier.go` 完整实现了 Telegram/SMTP/模板通知（`SendTemplateNotification:117`），通知模板 CRUD 也有 handler
-- 但 `router.go:418` 创建后 `_ = notifier` 丢弃，全库无任何业务调用方——订单、工单、证书到期等场景均无通知发送
-- 注：设置页"测试 SMTP/Telegram"走 `settingSvc.TestSMTP/TestTelegram` 独立路径，不代表业务通知已通
-
-#### 2.6 Agent 节点配置快照（数据本地化）缺失
+#### 2.6 Agent 节点配置快照（数据本地化）（**已实现 2026-07-30**）
 
 - 来源：`docs/design/node-server-architecture.md` 阶段3
-- 现状：`config_snapshots` 表/`saveConfigSnapshot` 仅存在于文档，代码无匹配
-- 后果：面板失联/宕机时，远程 Agent 重启后无法从本地快照恢复配置，节点无法自治
+- **实现要点**（新增/接线）：
+  - `internal/model/entity/config_snapshot.go`（新增）：`ConfigSnapshot{ServerID, CoreType, Version, Config, CreatedAt}`，表 `config_snapshots`
+  - `runtime/agent/local.go`：`LocalAgent` 增加 `db`/`serverID` 字段（`WithDB`/`WithServerID` 注入）；`SyncConfig` 写入运行时配置成功后同步 `Create` 一条快照记录；新增 `RestoreFromSnapshot(ctx)`——启动时按核心类型（xray/singbox/hysteria2/tuic）各取最新快照经 `procMgr.WriteRuntimeConfig` 恢复
+  - `cmd/agent/app.go`：`NewLocalAgent` 后注入 `WithDB(db.DB)`/`WithServerID(agentServerID)` 并调用 `RestoreFromSnapshot`；`cmd/agent/migrate.go` AutoMigrate 增加 `&entity.ConfigSnapshot{}`
+- 效果：面板失联/宕机时，远程 Agent 重启后可从本地 `agent.db` 快照恢复上次下发的配置，节点自治
 
 ### P2 — 功能补齐
 
-#### 2.7 安全审计事件无写入逻辑（骨架已搭）
+#### 2.7 安全审计事件写入逻辑（**已实现 2026-07-30**）
 
 - 修正：表**已建**（`entity/access.go:58-73` 已 AutoMigrate 注册），过期清理逻辑也有（`log_cleanup.go:103`）
-- 真实缺口：全库无任何 `SecurityAuditEvent` 写入代码 → 查询恒为空；告警（alerts）、告警渠道 CRUD 为 NOT_IMPLEMENTED；且无登录日志/管理操作日志等替代体系（entity 层无 LoginLog/OperationLog）
+- **实现要点**：
+  - `internal/service/audit/audit.go`（新增）：包级单例 `audit.Register(db)` + `audit.Record(Event)`（异步 fire-and-forget 写 `security_audit_events`）；router 启动时注册
+  - 写入点：管理端登录成功/失败（`handlers/auth`，`admin_login`）、门户登录成功/失败（`handlers/clientauth`，`client_login`）、访问控制拒绝（`service/access`：黑名单/封禁/速率/并发 → `connection_denied`/`rate_limit_exceeded`/`concurrent_limit_exceeded`）、自动封禁触发（`ip_auto_banned`）、管理员手动封禁/解封（`ip_ban_created`/`ip_ban_deleted`）
+  - `handlers/security/handler.go` 桩全部做实：审计事件分页查询（category/event_type/result/remote_ip 过滤）、告警分页查询（status/severity/alert_type 过滤）、告警渠道 CRUD（含新增 DELETE 路由）、告警 resolve
 
 #### 2.8 面板自身更新/回滚缺失（**后期实现**）
 
@@ -84,22 +101,26 @@
 - 指**面板自身**更新（节点 Agent 更新是另一套已实现机制）；仓库无部署/升级脚本，前端无调用入口
 - **排期：后期实现**（暂不作为近期缺口处理，但实现前需先解决分发基础设施——构建产物源，可复用 Agent 自更新机制）
 
-#### 2.9 试用套餐自动转正/过期机制缺失
+#### 2.9 试用套餐自动转正/过期机制（**已实现 2026-07-30**）
 
 - 来源：`docs/design/plan-design.md`
-- 现状：`is_trial`/`trial_duration_hours`/`trial_auto_convert_template_id` 字段已建表，但 router/service 层无任何 trial 处理逻辑
+- **实现要点**：
+  - `internal/service/plan/trial.go`（新增）：`StartTrialScheduler`（router 启动，每小时扫描，sync.Once）；`ProcessTrialExpiry` 查找 `is_trial` 模板下 `expires_at` 已过期且 active 的客户端——配置了 `trial_auto_convert_template_id` 则 `convertTrial`（取目标模板默认/首个启用规格，创建 `trial_convert` 订单，更新客户端配额/到期/限速并同步订阅），否则 `expireTrial`（客户端+订阅置 expired）
+  - `clientauth/commerce.go`：`activatePlan` 新购试用套餐时到期时间按 `trial_duration_hours` 计算（而非规格天数）；`CreateOrder` 增加"试用套餐每客户端仅可领取一次"校验（历史订单关联 is_trial 模板则拒绝）
 
-#### 2.10 Runtime 配置工作流缺失（骨架已搭）
+#### 2.10 Runtime 配置工作流（**已实现 2026-07-30**）
 
-- placeholder：`/runtime/snapshots`、`/runtime/apply*`、`/runtime/dry-run`、`/runtime/rollback`、`/runtime/disable-proxy`、`/runtime/overview`
-- 骨架：`runtime_snapshots`/`runtime_apply_jobs` 等 4 张表已建（`entity/runtime.go:6-75`）、`RuntimeApplyService` 接口已定义（`domain/runtime/interfaces.go:73-80`）
-- 现状：配置下发是"写文件→重启核心"直写模式（`process/manager.go:153` + configsync），无快照/版本/dry-run/回滚机制
+- **实现要点**：
+  - `internal/service/runtimeapply/service.go`（新增）：基于 configsync 管线的运行时工作流——`CreateSnapshot`（抓取 `<dataDir>/runtime/*.jsonc` 存 `runtime_snapshots`，含 sha256 校验和）、`DryRun`（启用入站端口冲突 + config JSON 合法性校验）、`Apply`（先 pre_apply 快照 → 建 `runtime_apply_jobs`/targets/events → `SyncNow` 立即下发）、`Rollback`（先 pre_rollback 快照 → 从快照恢复运行时文件，经 `process.Manager.WriteRuntimeConfig`）、`DisableProxy`（紧急停用：xray/singbox 写空入站配置，`/runtime/apply` 恢复）、`RetryJob`/`CancelJob`/`ListJobs`/`GetJob`（含 targets+events）/`Overview`
+  - `internal/api/handlers/runtimecfg/handler.go`（新增）：11 个 `/runtime/*` placeholder 路由全部做实
+  - 注：DB 仍是配置源头，回滚为应急手段（周期 configsync 会按 DB 重新生成，事件中已记录警示）
 
-#### 2.11 xray dokodemo-door / TUN 入站配置**生成未实现**
+#### 2.11 xray dokodemo-door / TUN 入站配置生成（**已实现 2026-07-30**）
 
-- 澄清：前端 `XrayInbounds.vue` **已有** dokodemo-door（L295、L817-847）和 tun（L293、L784-812）的编辑 UI，但**这不代表 xray 已实现**——后端尚未支持。
-- 真实缺口：`configgen/xray/generator.go:275` 的 `switch spec.Protocol` 只处理 VLESS/VMess/Trojan/Shadowsocks 四种协议，dokodemo-door / tun 落到 default 分支生成**空的 `InboundSettings`**，即这两类入站生成出的 xray 配置不可用（仅 sing-box 生成器实现了 tun，`singbox/generator.go:321`）。ফলে 用户在前端配置 dokodemo/tun 后，面板下发的 xray 配置是残缺的。
-- 修复方式：在 `generator.go` switch 补 dokodemo-door（`address`/`port`/`network`/`followRedirect`）与 tun（`tun`/`auto_route`/`stack` 等）分支。
+- **实现要点**：
+  - `domain/common.go`：新增 `ProtocolDokodemo`（"dokodemo-door"）与 `ProtocolTUN`（"tun"）常量；`configgen/validate/validator.go` xray 支持列表加入两者
+  - `configgen/xray/generator.go`：`InboundSettings` 扩展 dokodemo 字段（`address`/`port`/`network`/`followRedirect`/`userLevel`/`portMap`）与 tun 字段（`name`/`mtu`/`gateway`/`dns`/`autoSystemRoutingTable`/`autoOutboundsInterface`）；`switch spec.Protocol` 补齐两个分支，字段从 `spec.Extra` 提取（兼容前端 `rewriteAddress`/`allowedNetwork` 等命名与 snake_case 别名），并新增 `extraString/extraInt/extraBool/extraStrings` 辅助函数
+  - 与前端 `XrayInbounds.vue` 的 settings 字段命名一致（dokodemo：allowedNetwork/rewriteAddress/rewritePort/followRedirect/portMap；tun：name/mtu/gateway/dns/autoSystemRoutingTable/autoOutboundsInterface）
 
 ### P3 — 规划类/低优先级
 

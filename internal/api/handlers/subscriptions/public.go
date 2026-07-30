@@ -18,6 +18,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
+	"corefusion/internal/service/traffic"
 	"corefusion/pkg/netutil"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
@@ -46,6 +47,13 @@ type PublicHandler struct {
 	accessLog         *repository.AccessLogRepository
 	rateLimitPusher   RateLimitPusher
 	nodeServerRepo    *repository.NodeServerRepository
+	networkTracker    *traffic.SubscriptionIPTracker
+}
+
+// SetNetworkTracker injects the nftables IP tracker so subscription access records can
+// feed the network-layer traffic accounting bridge.
+func (h *PublicHandler) SetNetworkTracker(t *traffic.SubscriptionIPTracker) {
+	h.networkTracker = t
 }
 
 // NewPublicHandler creates a new public subscription handler.
@@ -350,6 +358,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		go func() {
 			h.recordAccess(sub.ID, ip, ua, realIP, cdnIP, cdnProvider)
 		}()
+
+		// Feed the network-layer (nftables) accounting bridge: record this
+		// subscription's source IP. Only subscriptions NOT already counted by
+		// xray are actually billed by the bridge.
+		if h.networkTracker != nil {
+			h.networkTracker.RecordAccess(sub.ID, sub.ClientID, ip)
+		}
 
 		// Push IP association to rate limit agents (P0 trigger source).
 		// When a user accesses their subscription URL, we know their real IP

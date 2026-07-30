@@ -10,6 +10,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/pkg/netutil"
+	"corefusion/internal/service/audit"
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
 )
@@ -80,9 +81,19 @@ func (h *Handler) Login(c *gin.Context) {
 
 	result, err := h.svc.Login(c.Request.Context(), input)
 	if err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "client_login", Result: "failure",
+			RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
+			Metadata: map[string]any{"email": input.Email},
+		})
 		response.Unauthorized(c, "INVALID_CREDENTIALS", err.Error())
 		return
 	}
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "client_login", Result: "success",
+		UserID: result.Client.ID, RemoteIP: netutil.GetRealIP(c.Request),
+		Metadata: map[string]any{"email": result.Client.Email},
+	})
 
 	// Get client info
 	clientInfo, _ := h.svc.GetMe(c.Request.Context(), result.Client.ID)

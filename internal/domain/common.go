@@ -23,6 +23,8 @@ const (
 	ProtocolShadowsocks2022 ProtocolType = "shadowsocks2022"
 	ProtocolHysteria2      ProtocolType = "hysteria2"
 	ProtocolTUIC           ProtocolType = "tuic"
+	ProtocolDokodemo       ProtocolType = "dokodemo-door"
+	ProtocolTUN            ProtocolType = "tun"
 )
 
 // TransportType represents the transport layer.

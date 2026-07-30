@@ -12,6 +12,9 @@ var ErrAccessDeniedByPolicy = errors.New("access denied by policy")
 // ErrAccessDeniedByBan is returned when access is denied due to an active ban.
 var ErrAccessDeniedByBan = errors.New("access denied by ban")
 
+// ErrAccessDeniedByRate is returned when access is denied due to rate/concurrency limits.
+var ErrAccessDeniedByRate = errors.New("access denied by rate limit")
+
 // AccessGate checks if a connection should be allowed based on access policies.
 type AccessGate interface {
 	Check(ctx context.Context, ac AccessContext) error

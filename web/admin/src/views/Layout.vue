@@ -84,6 +84,8 @@ const menuItems = [
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document' },
   { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting' },
+  { path: '/audit', title: 'menu.audit', icon: 'Bell' },
+  { path: '/runtime', title: 'menu.runtimeConfig', icon: 'Switch' },
 ]
 
 const pwdVisible = ref(false)

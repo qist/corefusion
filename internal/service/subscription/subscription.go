@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -22,12 +23,14 @@ type TrafficResetHook interface {
 
 // Service handles subscription business logic.
 type Service struct {
-	repo           *repository.SubscriptionRepository
-	accessLog      *repository.AccessLogRepository
-	rotation       *repository.RotationRepository
-	clientRepo     *repository.ClientRepository
-	planSvc        *plan.Service
-	trafficHook    TrafficResetHook
+	repo         *repository.SubscriptionRepository
+	accessLog    *repository.AccessLogRepository
+	rotation     *repository.RotationRepository
+	clientRepo   *repository.ClientRepository
+	planSvc      *plan.Service
+	trafficHook  TrafficResetHook
+	userSyncer   UserSyncer
+	enforcerOnce sync.Once
 }
 
 // NewService creates a new subscription service.
@@ -50,6 +53,126 @@ func NewService(
 // SetTrafficResetHook sets the hook for resetting inbound traffic and syncing.
 func (s *Service) SetTrafficResetHook(hook TrafficResetHook) {
 	s.trafficHook = hook
+}
+
+// UserSyncer removes or re-adds a user's credentials on all proxy cores. Used to enforce
+// quota suspension and subscription expiry by cutting off the user at the core.
+type UserSyncer interface {
+	SyncUserToServers(ctx context.Context, clientID int64, action string) error
+}
+
+// SetUserSyncer injects the user sync client used to enforce quota/expiry on nodes.
+func (s *Service) SetUserSyncer(syncer UserSyncer) {
+	s.userSyncer = syncer
+}
+
+// EnforceQuotaAndExpiry scans active subscriptions and enforces quota exhaustion and
+// natural expiry. It marks the subscription, suspends/blocks the underlying client and
+// removes the user from the proxy cores when required. Already-handled rows are skipped
+// by the repository queries, so repeated calls are safe.
+func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
+	now := time.Now()
+
+	// 1. Quota exhaustion.
+	exhausted, err := s.repo.ListQuotaExhausted(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range exhausted {
+		sub := &exhausted[i]
+		if sub.SuspendOnQuotaExhausted == 1 {
+			sub.QuotaState = "suspended"
+			sub.Status = "suspended"
+		} else {
+			sub.QuotaState = "over_limit_hard"
+		}
+		suspendedAt := now
+		sub.SuspendedAt = &suspendedAt
+		if err := s.repo.Update(ctx, sub); err != nil {
+			log.Printf("[quota-enforce] update subscription %d failed: %v", sub.ID, err)
+			continue
+		}
+		if sub.SuspendOnQuotaExhausted == 1 && sub.ClientID != 0 {
+			s.blockClient(ctx, sub.ClientID)
+		}
+	}
+
+	// 2. Natural expiry.
+	expired, err := s.repo.ListExpired(ctx, now)
+	if err != nil {
+		return err
+	}
+	for i := range expired {
+		sub := &expired[i]
+		sub.Status = "expired"
+		sub.QuotaState = "expired_days"
+		if err := s.repo.Update(ctx, sub); err != nil {
+			log.Printf("[quota-enforce] expire subscription %d failed: %v", sub.ID, err)
+			continue
+		}
+		if sub.ClientID != 0 {
+			s.blockClient(ctx, sub.ClientID)
+		}
+	}
+
+	return nil
+}
+
+// blockClient suspends the client (if still active) and removes its credentials from all
+// proxy cores, effectively cutting off traffic for the subscription.
+func (s *Service) blockClient(ctx context.Context, clientID int64) {
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		log.Printf("[quota-enforce] get client %d failed: %v", clientID, err)
+		return
+	}
+	if client.Status == "suspended" || client.Status == "expired" {
+		return // already blocked
+	}
+	now := time.Now()
+	client.Status = "suspended"
+	client.SuspendedAt = &now
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		log.Printf("[quota-enforce] suspend client %d failed: %v", clientID, err)
+		return
+	}
+	if s.userSyncer == nil {
+		return
+	}
+	cid := clientID
+	go func() {
+		if err := s.userSyncer.SyncUserToServers(context.Background(), cid, "remove"); err != nil {
+			log.Printf("[quota-enforce] remove client %d from servers failed: %v", cid, err)
+		}
+	}()
+}
+
+// StartEnforcer starts the periodic quota/expiry scan. Safe to call multiple times; only
+// the first call launches the loop.
+func (s *Service) StartEnforcer(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	s.enforcerOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			// Run once immediately so enforcement applies without waiting a full interval.
+			if err := s.EnforceQuotaAndExpiry(ctx); err != nil {
+				log.Printf("[quota-enforce] scan error: %v", err)
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := s.EnforceQuotaAndExpiry(ctx); err != nil {
+						log.Printf("[quota-enforce] scan error: %v", err)
+					}
+				}
+			}
+		}()
+	})
 }
 
 // CreateSubscriptionInput is the input for creating a subscription.
@@ -257,6 +380,23 @@ func (s *Service) Restore(ctx context.Context, id int64) (*entity.Subscription, 
 	sub.QuotaState = "restored"
 	if err := s.repo.Update(ctx, sub); err != nil {
 		return nil, err
+	}
+
+	// Re-add the user to all proxy cores if it was removed due to quota suspension.
+	if sub.ClientID != 0 && s.userSyncer != nil {
+		if client, err := s.clientRepo.GetByID(ctx, sub.ClientID); err == nil && client != nil {
+			if client.Status == "suspended" {
+				client.Status = "active"
+				client.SuspendedAt = nil
+				_ = s.clientRepo.Update(ctx, client)
+				cid := client.ID
+				go func() {
+					if err := s.userSyncer.SyncUserToServers(context.Background(), cid, "add"); err != nil {
+						log.Printf("[quota-enforce] re-add client %d to servers failed: %v", cid, err)
+					}
+				}()
+			}
+		}
 	}
 
 	return sub, nil

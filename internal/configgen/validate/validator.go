@@ -37,6 +37,8 @@ func (v *DefaultCapabilityValidator) SupportsProtocol(core domain.CoreType, prot
 			domain.ProtocolVMess,
 			domain.ProtocolTrojan,
 			domain.ProtocolShadowsocks,
+			domain.ProtocolDokodemo,
+			domain.ProtocolTUN,
 		},
 		domain.CoreTypeSingBox: {
 			domain.ProtocolVLESS,

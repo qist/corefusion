@@ -50,3 +50,13 @@ func (r *NotificationTemplateRepository) Update(ctx context.Context, t *entity.N
 func (r *NotificationTemplateRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.NotificationTemplate{}, id).Error
 }
+
+// GetByName returns the template with the given name, or nil if not found.
+func (r *NotificationTemplateRepository) GetByName(ctx context.Context, name string) (*entity.NotificationTemplate, error) {
+	var t entity.NotificationTemplate
+	err := r.db.WithContext(ctx).Where("name = ?", name).First(&t).Error
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}

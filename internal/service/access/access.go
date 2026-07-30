@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"corefusion/internal/domain/networkpolicy"
+	"corefusion/internal/service/audit"
 )
 
 // TokenBucket implements a token bucket rate limiter.
@@ -168,6 +169,12 @@ func (m *AutoBanManager) OnRateLimitHit(ctx context.Context, serviceID, endpoint
 			ExpiresAt:  now.Add(banDuration),
 		})
 
+		audit.Record(audit.Event{
+			Category: "access", EventType: "ip_auto_banned", Result: "success",
+			ServiceID: serviceID, EndpointID: endpointID, RemoteIP: ip,
+			Reason: fmt.Sprintf("rate limit exceeded %d times in 5 minutes, banned for %s", vc.Count, banDuration),
+		})
+
 		bannedAt := now
 		vc.BannedAt = &bannedAt
 		vc.Count = 0
@@ -204,19 +211,21 @@ type BanRecord struct {
 
 // Service handles access control business logic.
 type Service struct {
-	rateLimit   *RateLimitManager
-	concurrent  *ConcurrentTracker
-	autoBan     *AutoBanManager
-	whitelists  sync.Map // key: "svc:ep" -> map[string]bool
-	blacklists  sync.Map // key: "svc:ep" -> map[string]bool
+	rateLimit  *RateLimitManager
+	concurrent *ConcurrentTracker
+	autoBan    *AutoBanManager
+	policyRepo PolicyRepository
+	whitelists sync.Map // key: "svc:ep" -> map[string]bool
+	blacklists sync.Map // key: "svc:ep" -> map[string]bool
 }
 
 // NewService creates a new access control service.
-func NewService(banRepo BanRepository) *Service {
+func NewService(banRepo BanRepository, policyRepo PolicyRepository) *Service {
 	return &Service{
 		rateLimit:  NewRateLimitManager(),
 		concurrent: NewConcurrentTracker(),
 		autoBan:    NewAutoBanManager(banRepo),
+		policyRepo: policyRepo,
 	}
 }
 
@@ -229,17 +238,60 @@ func (s *Service) CheckConnection(ctx context.Context, ac networkpolicy.AccessCo
 
 	// 2. Check blacklist
 	if s.isBlacklisted(ac.ServiceID, ac.EndpointID, ac.RemoteIP) {
+		audit.Record(audit.Event{
+			Category: "access", EventType: "connection_denied", Result: "denied",
+			ServiceID: ac.ServiceID, EndpointID: ac.EndpointID, RemoteIP: ac.RemoteIP,
+			Reason: "blacklisted",
+		})
 		return networkpolicy.ErrAccessDeniedByPolicy
 	}
 
 	// 3. Check ban
 	if banned, reason := s.autoBan.IsBanned(ctx, ac.ServiceID, ac.EndpointID, ac.RemoteIP); banned {
-		_ = reason
+		audit.Record(audit.Event{
+			Category: "access", EventType: "connection_denied", Result: "denied",
+			ServiceID: ac.ServiceID, EndpointID: ac.EndpointID, RemoteIP: ac.RemoteIP,
+			Reason: "banned: " + reason,
+		})
 		return networkpolicy.ErrAccessDeniedByBan
 	}
 
-	// 4. Concurrent limit (would need policy lookup)
-	// 5. Rate limit (would need policy lookup)
+	// 4 & 5. Evaluate access policies: concurrent and rate limits.
+	if s.policyRepo != nil {
+		policies, err := s.policyRepo.ListActive(ctx, ac.ServiceID, ac.EndpointID)
+		if err == nil {
+			for i := range policies {
+				p := &policies[i]
+				if p.Status != 1 {
+					continue
+				}
+				if p.MaxNewConnectionsPerMin > 0 {
+					if !s.rateLimit.Check(ac.ServiceID, ac.EndpointID, ac.RemoteIP, p.MaxNewConnectionsPerMin) {
+						if p.AutoBanEnabled == 1 {
+							s.autoBan.OnRateLimitHit(ctx, ac.ServiceID, ac.EndpointID, ac.RemoteIP,
+								true, time.Duration(p.BanDurationSeconds)*time.Second, 5)
+						}
+						audit.Record(audit.Event{
+							Category: "access", EventType: "rate_limit_exceeded", Result: "denied",
+							ServiceID: ac.ServiceID, EndpointID: ac.EndpointID, RemoteIP: ac.RemoteIP,
+							Reason: fmt.Sprintf("max_new_connections_per_min=%d exceeded", p.MaxNewConnectionsPerMin),
+						})
+						return networkpolicy.ErrAccessDeniedByRate
+					}
+				}
+				if p.MaxConcurrentConnections > 0 {
+					if !s.concurrent.TryConnect(ac.ServiceID, ac.EndpointID, ac.RemoteIP, p.MaxConcurrentConnections) {
+						audit.Record(audit.Event{
+							Category: "access", EventType: "concurrent_limit_exceeded", Result: "denied",
+							ServiceID: ac.ServiceID, EndpointID: ac.EndpointID, RemoteIP: ac.RemoteIP,
+							Reason: fmt.Sprintf("max_concurrent_connections=%d exceeded", p.MaxConcurrentConnections),
+						})
+						return networkpolicy.ErrAccessDeniedByRate
+					}
+				}
+			}
+		}
+	}
 
 	return nil
 }

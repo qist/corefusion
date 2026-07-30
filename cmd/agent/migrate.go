@@ -32,5 +32,7 @@ func migrateAgentTables(database *gorm.DB) error {
 		// Log management tables (for rotation policies + jobs, same as Panel)
 		&entity.LogRotationPolicy{},
 		&entity.LogRotationJob{},
+		// Config snapshot table (data localization: restore last known config on startup)
+		&entity.ConfigSnapshot{},
 	)
 }

@@ -21,6 +21,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
+	"corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 )
 
@@ -569,6 +570,19 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if client.PlanID > 0 && client.Status != "expired" {
 			return nil, fmt.Errorf("you already have an active plan, please use renew or upgrade")
 		}
+		// Trial plans can only be claimed once per client.
+		if tmpl.IsTrial {
+			var trialOrders int64
+			s.db.WithContext(ctx).Model(&entity.PlanOrder{}).
+				Where("client_id = ?", clientID).
+				Where("to_variant_id IN (?)", s.db.Model(&entity.PlanVariant{}).Select("plan_variants.id").
+					Joins("JOIN plan_templates ON plan_templates.id = plan_variants.template_id").
+					Where("plan_templates.is_trial = ?", true)).
+				Count(&trialOrders)
+			if trialOrders > 0 {
+				return nil, fmt.Errorf("trial plan can only be claimed once")
+			}
+		}
 	case entity.OrderTypeRenew:
 		if client.PlanID == 0 {
 			return nil, fmt.Errorf("no active plan to renew")
@@ -634,6 +648,15 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		}
 		// P1: 首次付费返利触发（余额支付）
 		s.triggerFirstPaid(ctx, clientID, paidAmount)
+		// 发送订单支付成功通知（模板通知引擎）
+		go func() {
+			_ = system.NotifyTemplate(context.Background(), "order_paid", map[string]string{
+				"order_id":  fmt.Sprintf("%d", order.ID),
+				"amount":    fmt.Sprintf("%d", paidAmount),
+				"email":     client.Email,
+				"plan_name": tmpl.Name,
+			})
+		}()
 		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
 
 	} else if input.PayMethod == "charge_site" {
@@ -1960,6 +1983,10 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		client.UsedBytes = 0
 		client.Status = "active"
 		expiresAt := now.AddDate(0, 0, variant.DurationDays)
+		// Trial plans expire after trial_duration_hours instead of the variant duration.
+		if tmpl.IsTrial && tmpl.TrialDurationHours > 0 {
+			expiresAt = now.Add(time.Duration(tmpl.TrialDurationHours) * time.Hour)
+		}
 		client.ExpiresAt = &expiresAt
 	case entity.OrderTypeRenew:
 		client.QuotaBytes = quotaBytes

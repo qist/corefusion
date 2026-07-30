@@ -3852,7 +3852,11 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
     var endpoints = ref([])
     var fetchEndpoints = function() {
       fetch('/api/v1/public/subscription-endpoints').then(function(r) { return r.json() }).then(function(d) {
-        endpoints.value = Array.isArray(d.data) ? d.data : []
+        // backend may return a plain array (d.data) or a paginated wrapper (d.data.items)
+        var list = []
+        if (Array.isArray(d.data)) list = d.data
+        else if (d.data && Array.isArray(d.data.items)) list = d.data.items
+        endpoints.value = list
       }).catch(function() {})
     }
 
@@ -3895,7 +3899,9 @@ var fetchClientConfigs = function() {
   var url = '/api/v1/public/client-configs'
   if (pid) url += '?plan_id=' + pid
   fetch(url).then(function(r) { return r.json() }).then(function(d) {
-    clientConfigs.value = Array.isArray(d.data) ? d.data : []
+    if (Array.isArray(d.data)) clientConfigs.value = d.data
+    else if (d.data && Array.isArray(d.data.items)) clientConfigs.value = d.data.items
+    else clientConfigs.value = []
   }).catch(function() { clientConfigs.value = [] })
 }
 

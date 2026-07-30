@@ -1769,8 +1769,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				metricsGroup.GET("/services", metricsH.ServiceMetrics)
 				metricsGroup.GET("/nodes", metricsH.NodeMetrics)
 				metricsGroup.GET("/certificates", metricsH.CertMetrics)
-				metricsGroup.GET("/connection-failures", metricsH.ConnectionFailures)
-				metricsGroup.GET("/udp-quic", metricsH.UDPQUICMetrics)
+
 			}
 
 			// Security

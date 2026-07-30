@@ -150,20 +150,25 @@
 
 ---
 
-## 四、死代码 / 代码卫生（建议清理，非功能缺失）
+## 四、死代码 / 代码卫生（2026-07-30 已清理）
 
-| 项 | 位置 | 说明 |
+> 本章原列的死代码已执行清理。**保留项**（`domain/runtime/interfaces.go`、`entity/runtime.go` 的快照/区域表、`ip_tracker.go`）是 2.11 Runtime 工作流 / 2.3 网络层计费所需的脚手架，删除会与规划功能冲突，故保留。
+
+| 项 | 位置 | 处理结果 |
 |---|---|---|
-| `service/quota` 包整体 | `quota/quota.go`、`enforcer.go` | NewService/NewEnforcer 均无调用方，repo 层 TODO 桩；与 2.2 一并处理（要么接线要么删除） |
-| `traffic/aggregator.go`、`multi_collector.go`、`ip_tracker.go` | `service/traffic/` | main.go 注释停用后成死代码；Ledger/Summary 表无 writer |
-| 空目录模块 | `internal/observer/`、`scheduler/`、`region/`、`platform/`、`api/handlers/networkpolicy/`、`service/networkpolicy/` | 目录存在无文件（调度逻辑散落在各 service 的 scheduler.go） |
-| 废弃 domain 接口 | `domain/runtime/interfaces.go` | 全仓库无人 import（RuntimeApplyService 若按 2.11 实施可启用） |
-| proto AgentService 死定义 | `runtime/agent/proto/corefusion_agent.proto:29-71` | 见 3.7 |
-| 孤儿前端文件 6 个 | `views/Subscriptions.vue`、`SubscriptionEndpoints.vue`、`SubscriptionFormats.vue`、`Nodes.vue`、`ProxyManagement.vue`、`services/ProcessTab.vue` | 功能完整但无引用（被 SubscriptionCenter/CoreProcessTab 取代） |
-| Legacy portal API 6 个 | `api/portal.js:33-56` | 注释自承 kept for compatibility，无调用方 |
-| main.go 冗余初始化 | `main.go:300-302` | 见 3.8 |
-| Metrics 2 个死端点 | `metrics/handler.go:102-111` | 见 P3 |
-| `routing_regions`/`runtime_*` 等空骨架表 | `entity/runtime.go` | 表已建无实现，见 2.11/P3 |
+| `service/quota` 包整体 | `quota/quota.go`、`enforcer.go` | ✅ **已删除**（无调用方，2.2 将走 ratelimit 路径） |
+| `traffic/aggregator.go`、`multi_collector.go` | `service/traffic/` | ✅ **已删除**（被 main.go 停用、无外部引用）；`ip_tracker.go` 保留（2.3 所需） |
+| 空目录模块 | `internal/observer/`、`scheduler/`、`region/`、`platform/`、`api/handlers/networkpolicy/`、`service/networkpolicy/` | ✅ **已删除**（确认无文件） |
+| proto AgentService 死定义 | `runtime/agent/proto/corefusion_agent.proto:29-71` | ⏸️ **未删**：与 HeartbeatService 同文件生成，删除需重新生成 pb.go，留待手动处理 |
+| 孤儿前端文件 | `views/Subscriptions.vue`、`SubscriptionEndpoints.vue`、`SubscriptionFormats.vue`、`Nodes.vue`、`services/ProcessTab.vue` | ✅ **已删除 5 个**（被 SubscriptionCenter/CoreProcessTab/NodeServers 取代） |
+| ~~`ProxyManagement.vue`~~ | `views/ProxyManagement.vue` | ⚠️ **更正**：经核实 `NodeServerDetail.vue:265` 实际 import 了它，并非孤儿，**已保留** |
+| Legacy portal API | `api/portal.js:33-56` 的 6 个函数 | ✅ **已删除**（仅文件内部引用，无调用方） |
+| main.go 冗余初始化 | `main.go:300-302` | ✅ **已删除**（`_ = subscription.NewRegionSelector(...)` 及 `geoIPResolver` 变量），并移除多余 import |
+| Metrics 2 个死端点 | `metrics/handler.go:102-111` + `router.go:1772-1773` | ✅ **已删除** handler 方法与路由注册 |
+| 废弃 domain 接口 | `domain/runtime/interfaces.go` | ⏸️ **保留**：2.11 RuntimeApplyService 需要 |
+| `routing_regions`/`runtime_*` 空骨架表 | `entity/runtime.go` | ⏸️ **保留**：2.11 Runtime 工作流 / 路由区域需要 |
+
+> 清理后已执行 `go build ./...` 通过。前端孤儿文件删除已核实无 import 引用。
 
 ---
 

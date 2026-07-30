@@ -98,14 +98,4 @@ func (h *Handler) CertMetrics(c *gin.Context) {
 	})
 }
 
-// ConnectionFailures handles GET /api/v1/metrics/connection-failures.
-func (h *Handler) ConnectionFailures(c *gin.Context) {
-	// TODO: implement when traffic collection is active
-	response.OK(c, gin.H{"items": []interface{}{}, "total": 0})
-}
 
-// UDPQUICMetrics handles GET /api/v1/metrics/udp-quic.
-func (h *Handler) UDPQUICMetrics(c *gin.Context) {
-	// TODO: implement when traffic collection is active
-	response.OK(c, gin.H{"items": []interface{}{}, "total": 0})
-}

@@ -2415,6 +2415,8 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 	{
 		runtime.GET("/overview", runtimeH.Overview)
 		runtime.GET("/snapshots", runtimeH.ListSnapshots)
+		runtime.GET("/snapshots/:id", runtimeH.GetSnapshot)
+		runtime.DELETE("/snapshots/:id", runtimeH.DeleteSnapshot)
 		runtime.GET("/apply-jobs", runtimeH.ListJobs)
 		runtime.GET("/apply-jobs/:id", runtimeH.GetJob)
 		runtime.POST("/snapshots", runtimeH.CreateSnapshot)
@@ -2562,6 +2564,8 @@ func isSPARoute(path string) bool {
 		"/charge",
 		"/tickets",
 		"/client-ext",
+		"/runtime",
+		"/audit",
 	}
 
 	for _, route := range knownRoutes {

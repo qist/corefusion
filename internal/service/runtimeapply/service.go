@@ -120,6 +120,20 @@ func (s *Service) ListSnapshots(ctx context.Context, limit, offset int) ([]entit
 	return snaps, total, err
 }
 
+// GetSnapshot returns a snapshot by id, including the full config payload.
+func (s *Service) GetSnapshot(ctx context.Context, id int64) (*entity.RuntimeSnapshot, error) {
+	var snap entity.RuntimeSnapshot
+	if err := s.db.WithContext(ctx).First(&snap, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
+// DeleteSnapshot removes a snapshot by id.
+func (s *Service) DeleteSnapshot(ctx context.Context, id int64) error {
+	return s.db.WithContext(ctx).Delete(&entity.RuntimeSnapshot{}, "id = ?", id).Error
+}
+
 // ---------------------------------------------------------------------------
 // Dry run
 // ---------------------------------------------------------------------------

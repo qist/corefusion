@@ -66,6 +66,27 @@ func (h *Handler) CreateSnapshot(c *gin.Context) {
 	response.Created(c, snap)
 }
 
+// GetSnapshot handles GET /runtime/snapshots/:id.
+func (h *Handler) GetSnapshot(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	snap, err := h.svc.GetSnapshot(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "SNAPSHOT_NOT_FOUND", err.Error())
+		return
+	}
+	response.OK(c, snap)
+}
+
+// DeleteSnapshot handles DELETE /runtime/snapshots/:id.
+func (h *Handler) DeleteSnapshot(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err := h.svc.DeleteSnapshot(c.Request.Context(), id); err != nil {
+		response.InternalError(c, "DELETE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"success": true})
+}
+
 // DryRun handles POST /runtime/dry-run.
 func (h *Handler) DryRun(c *gin.Context) {
 	res, err := h.svc.DryRun(c.Request.Context())

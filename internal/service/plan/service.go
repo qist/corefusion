@@ -114,7 +114,6 @@ type CreateTemplateInput struct {
 	SuspendOnQuotaExhausted   *int     `json:"suspend_on_quota_exhausted"`
 	IsTrial                   bool     `json:"is_trial"`
 	TrialDurationHours        int      `json:"trial_duration_hours"`
-	TrialAutoConvertTemplateID *int64  `json:"trial_auto_convert_template_id"`
 	BillingUsedTemplate       string   `json:"billing_used_template"`
 	BillingRemainingTemplate  string   `json:"billing_remaining_template"`
 	BillingResetTemplate      string   `json:"billing_reset_template"`
@@ -159,10 +158,9 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		DefaultQuotaResetCycle:     input.DefaultQuotaResetCycle,
 		DefaultQuotaResetDay:       input.DefaultQuotaResetDay,
 		SuspendOnQuotaExhausted:    suspendVal,
-		IsTrial:                    input.IsTrial,
-		TrialDurationHours:         input.TrialDurationHours,
-		TrialAutoConvertTemplateID: input.TrialAutoConvertTemplateID,
-		BillingUsedTemplate:        input.BillingUsedTemplate,
+		IsTrial:                  input.IsTrial,
+		TrialDurationHours:       input.TrialDurationHours,
+		BillingUsedTemplate:      input.BillingUsedTemplate,
 		BillingRemainingTemplate:   input.BillingRemainingTemplate,
 		BillingResetTemplate:       input.BillingResetTemplate,
 		BillingExpiryTemplate:      input.BillingExpiryTemplate,
@@ -195,7 +193,6 @@ type UpdateTemplateInput struct {
 	SuspendOnQuotaExhausted   *int     `json:"suspend_on_quota_exhausted"`
 	IsTrial                   *bool    `json:"is_trial"`
 	TrialDurationHours        *int     `json:"trial_duration_hours"`
-	TrialAutoConvertTemplateID *int64  `json:"trial_auto_convert_template_id"`
 	BillingUsedTemplate       *string  `json:"billing_used_template"`
 	BillingRemainingTemplate  *string  `json:"billing_remaining_template"`
 	BillingResetTemplate      *string  `json:"billing_reset_template"`
@@ -253,9 +250,6 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.TrialDurationHours != nil {
 		tmpl.TrialDurationHours = *input.TrialDurationHours
-	}
-	if input.TrialAutoConvertTemplateID != nil {
-		tmpl.TrialAutoConvertTemplateID = input.TrialAutoConvertTemplateID
 	}
 	if input.BillingUsedTemplate != nil {
 		tmpl.BillingUsedTemplate = *input.BillingUsedTemplate

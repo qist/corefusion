@@ -30,7 +30,6 @@ type PlanTemplate struct {
 	SuspendOnQuotaExhausted   int       `gorm:"not null;default:1" json:"suspend_on_quota_exhausted"`
 	IsTrial                   bool      `gorm:"not null;default:false" json:"is_trial"`
 	TrialDurationHours        int       `gorm:"not null;default:0" json:"trial_duration_hours"`
-	TrialAutoConvertTemplateID *int64   `json:"trial_auto_convert_template_id"`
 	BillingUsedTemplate       string    `gorm:"type:text" json:"billing_used_template"`
 	BillingRemainingTemplate  string    `gorm:"type:text" json:"billing_remaining_template"`
 	BillingResetTemplate      string    `gorm:"type:text" json:"billing_reset_template"`

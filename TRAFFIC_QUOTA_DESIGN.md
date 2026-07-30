@@ -1,5 +1,11 @@
 # 流量监控与配额控制设计文档
 
+> **实现状态（2026-07-30 修订）**：设计目标已部分落地，但实现路径有出入：
+> - 订阅级用量：本机走 `service/trafficsync`（xray `QueryStats reset_=true`），远程走 Agent heartbeat → `traffic_consumer.go` → `inboundconfig.UpdateTraffic`（按 inbound 中的 email 匹配累加 `subscriptions.used_bytes_cache`）；非 xray 协议走网络层计费（`traffic/ip_tracker.go` 的 `SubscriptionIPTracker`，目前组件已实现但未接线）。
+> - 节点级用量：Agent 上报出口网卡累计 rx/tx（`EgressRxBytes/EgressTxBytes`），面板做差累计到 `NodeServer.traffic_used_bytes` 并触发超额 suspendNode。
+> - 原设计的 `TrafficUsageLedger` / `TrafficUsageSummary` 表未被写入（旧方案废弃），订阅级超额自动封禁、自然过期自动下线逻辑尚未实现。
+> 详见 `UNIMPLEMENTED_FEATURES.md` 2.2、2.3。
+
 ## 1. 目标
 
 本设计用于解决以下问题：

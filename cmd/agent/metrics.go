@@ -245,6 +245,12 @@ func (m *SystemMetrics) readNetworkCounters() {
 	if err != nil {
 		return
 	}
+	// Account the configured egress interface; if none is configured, fall back
+	// to the default-route interface so NIC-level traffic is still reported.
+	egress := egressInterface
+	if egress == "" {
+		egress = detectDefaultInterface()
+	}
 	var totalRx, totalTx int64
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
@@ -265,7 +271,7 @@ func (m *SystemMetrics) readNetworkCounters() {
 			totalTx += sent
 
 			// If this is the egress interface, record its counters
-			if egressInterface != "" && iface == egressInterface {
+			if egress != "" && iface == egress {
 				m.EgressRxBytes = recv
 				m.EgressTxBytes = sent
 			}
@@ -290,8 +296,9 @@ func (m *SystemMetrics) readNetworkCounters() {
 		timestamp: now,
 	}
 
-	// Record egress interface name
-	m.EgressInterface = egressInterface
+	// Report the interface actually used for egress accounting (configured or
+	// auto-detected). The panel keys NIC traffic deltas on this name.
+	m.EgressInterface = egress
 }
 
 // ──────────────────────────────────────────────────────

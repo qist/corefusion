@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,6 +72,86 @@ func (s *NodeTrafficQuotaService) Start(ctx context.Context) {
 			s.checkAllQuotas(ctx)
 		}
 	}
+}
+
+// StartLocalCollector accounts NIC traffic for the local (panel) node directly
+// from the host's /proc/net/dev. The LocalAgent does not send heartbeats with
+// egress counters, so without this the local node's traffic_used_bytes stays at
+// 0 even though /api/v1/system/stats already reports the host NIC counters.
+// It feeds the same ProcessHeartbeat accumulation used by remote Agents, so the
+// local node shows up in the traffic dashboard alongside remote nodes.
+func (s *NodeTrafficQuotaService) StartLocalCollector(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	// Prime the baseline so the first cycle does not register a huge delta.
+	s.collectLocal()
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.collectLocal()
+			}
+		}
+	}()
+}
+
+// collectLocal builds an AgentReport from the host NIC counters and feeds it
+// through ProcessHeartbeat for every local server.
+func (s *NodeTrafficQuotaService) collectLocal() {
+	ctx := context.Background()
+	locals, err := s.serverRepo.ListLocal(ctx)
+	if err != nil || len(locals) == 0 {
+		return
+	}
+	rx, tx := readHostNetCounters()
+	if rx == 0 && tx == 0 {
+		return
+	}
+	report := &agentpb.AgentReport{
+		EgressInterface: "local",
+		EgressRxBytes:   rx,
+		EgressTxBytes:   tx,
+		Timestamp:       time.Now().Unix(),
+	}
+	for i := range locals {
+		s.ProcessHeartbeat(locals[i].ID, report)
+	}
+}
+
+// readHostNetCounters sums cumulative rx/tx bytes across all non-loopback
+// interfaces from /proc/net/dev, matching the accounting in system stats
+// readNetwork. Returns total recv and sent bytes since boot.
+func readHostNetCounters() (rx, tx int64) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return 0, 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		idx := strings.Index(line, ":")
+		if idx < 0 {
+			continue
+		}
+		iface := strings.TrimSpace(line[:idx])
+		if iface == "lo" {
+			continue
+		}
+		fields := strings.Fields(line[idx+1:])
+		if len(fields) < 9 {
+			continue
+		}
+		if v, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
+			rx += v
+		}
+		if v, err := strconv.ParseInt(fields[8], 10, 64); err == nil {
+			tx += v
+		}
+	}
+	return rx, tx
 }
 
 // ProcessHeartbeat processes egress interface traffic data from a heartbeat report.
@@ -137,9 +220,13 @@ func (s *NodeTrafficQuotaService) addTrafficDelta(serverID int64, iface string, 
 		return
 	}
 
-	if !server.HasTrafficQuota() {
-		return
-	}
+	// Traffic accounting is decoupled from quota enforcement: any node with a
+	// configured egress interface is accounted (NIC rx/tx deltas), while only
+	// nodes that also carry a quota can be suspended for exceeding it.
+	//
+	// if !server.HasTrafficQuota() {
+	// 	return
+	// }
 
 	periodStart := s.computePeriodStart(now, server.TrafficQuotaResetDay)
 	periodEnd := s.computePeriodEnd(now, server.TrafficQuotaResetDay)

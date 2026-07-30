@@ -878,11 +878,42 @@ func (s *Service) ProcessRetryQueue(ctx context.Context) {
 }
 
 // GetTrafficStats returns multi-server traffic collector statistics.
+// GetTrafficStats aggregates NIC-level traffic usage for the dashboard card. It
+// reads the per-node accumulated traffic already written by NodeTrafficQuotaService
+// (from Agent egress-interface counters) into node_server.traffic_used_bytes,
+// replacing the removed MultiServerTrafficCollector that this endpoint used to
+// depend on.
 func (s *Service) GetTrafficStats() interface{} {
-	if s.trafficStats == nil {
+	ctx := context.Background()
+	servers, err := s.repo.ListAll(ctx)
+	if err != nil {
 		return nil
 	}
-	return s.trafficStats.GetStats()
+	stats := make(map[string]interface{})
+	for _, server := range servers {
+		if server.TrafficUsedBytes <= 0 {
+			continue
+		}
+		stats[server.Name] = formatBytes(server.TrafficUsedBytes)
+	}
+	if len(stats) == 0 {
+		return nil
+	}
+	return stats
+}
+
+// formatBytes renders a byte count as a human-readable string.
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 // ──────────────────── Phase 5: Dashboard & Enhancements ────────────────────

@@ -49,6 +49,20 @@ func renderPortalHTML(htmlContent, cssContent, jsContent, configStr string, cfg 
 	cssContent = apply(cssContent)
 	jsContent = apply(jsContent)
 
+	// Inject the v-cloak rule into <head> so the uncompiled Vue template is hidden
+	// from the very first paint. Without this, the rule lives only in the CSS that
+	// renderPortalHTML appends *after* the #app markup, so the browser can paint the
+	// raw "{{ siteName }}" / v-* markup for a frame before Vue mounts (a flash of
+	// HTML). This is independent of the DB-stored css_content, so it works even when
+	// a previously-seeded template lacks the rule.
+	const criticalCloakCSS = "<style>[v-cloak]{display:none}</style>"
+	if idx := strings.Index(htmlContent, "<head>"); idx >= 0 {
+		insertAt := idx + len("<head>")
+		htmlContent = htmlContent[:insertAt] + "\n" + criticalCloakCSS + htmlContent[insertAt:]
+	} else {
+		htmlContent = criticalCloakCSS + htmlContent
+	}
+
 	// Initial config snapshot for instant first paint. The runtime refetches
 	// fresh config on boot, so this snapshot never needs to be up to the second.
 	cfgJSON, err := json.Marshal(cfg)

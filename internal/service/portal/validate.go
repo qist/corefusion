@@ -14,8 +14,6 @@ var allowedModuleTypes = map[string]bool{
 	"rich_text":           true,
 	"notice":              true,
 	"feature_cards":       true,
-	"account_stats":       true,
-	"subscription":        true,
 	"custom_html":         true,
 	"account_info":        true,
 	"traffic_ring":        true,
@@ -38,6 +36,7 @@ var allowedModuleTypes = map[string]bool{
 	"order_list":        true,
 	"node_list":         true,
 	"tutorial_cards":    true,
+	"traffic_pack_list": true,
 }
 
 const (

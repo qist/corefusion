@@ -2025,6 +2025,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		response.OK(c, result)
 	})
 
+	// Public: effective portal runtime config — lean payload served from the
+	// in-memory cache in production (fresh DB read only on cache miss).
+	r.GET("/api/v1/public/portal-config", func(c *gin.Context) {
+		body, err := portalTmplSvc.GetPublicConfigJSON(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "PORTAL_CONFIG_FAILED", err.Error())
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+	})
+
 	// Public articles (no auth required)
 	r.GET("/api/v1/public/articles", clientExtH.PublicListArticles)
 	r.GET("/api/v1/public/articles/:slug", clientExtH.PublicGetArticle)
@@ -2930,6 +2941,17 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 			result["portal_config"] = cfg
 		}
 		response.OK(c, result)
+	})
+
+	// Public: effective portal runtime config — lean payload served from the
+	// in-memory cache in production (fresh DB read only on cache miss).
+	r.GET("/api/v1/public/portal-config", func(c *gin.Context) {
+		body, err := portalTmplSvc.GetPublicConfigJSON(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "PORTAL_CONFIG_FAILED", err.Error())
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 	})
 
 	// Public: list enabled client configs (for portal "more subscriptions" dialog)

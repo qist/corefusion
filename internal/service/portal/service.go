@@ -37,10 +37,16 @@ func (s *Service) WithSettingStore(ss SettingStore) *Service {
 // RenderPage renders the portal HTML page from the active template with caching.
 // In dev mode (PORTAL_DEV_MODE=true), caching is bypassed and the page is
 // re-rendered from the database on every request.
-// In production mode, the fully rendered HTML is cached and served directly
-// until the template is modified or the cache is manually invalidated.
+// In production mode, the fully rendered HTML is served straight from memory —
+// re-rendering (DB read + template string substitution) only happens after a
+// write invalidates the cache or the TTL safety net elapses.
 func (s *Service) RenderPage(ctx context.Context) string {
-	// Get registration enabled setting
+	// Cache hit — zero DB access, zero re-rendering
+	if html, ok := s.cache.Get(); ok {
+		return html
+	}
+
+	// Cache miss — render from the database
 	registrationEnabled := false
 	if s.settingSvc != nil {
 		if v, err := s.settingSvc.GetByKey(ctx, "panel.registration_enabled"); err == nil && v == "true" {
@@ -53,29 +59,10 @@ func (s *Service) RenderPage(ctx context.Context) string {
 		return "<html><body><h1>Portal not configured</h1></body></html>"
 	}
 
-	// Build cache key from all inputs that affect the rendered output
-	input := cacheInput{
-		TemplateID:          tmpl.ID,
-		UpdatedAt:           tmpl.UpdatedAt,
-		RegistrationEnabled: registrationEnabled,
-		HTMLContent:         tmpl.HTMLContent,
-		CSSContent:          tmpl.CSSContent,
-		JSContent:           tmpl.JSContent,
-		Config:              tmpl.Config,
-	}
-	key := input.computeKey()
-
-	// Check cache first
-	if html, ok := s.cache.Get(key); ok {
-		return html
-	}
-
-	// Cache miss — render the page
 	cfg := MergeConfig(tmpl, registrationEnabled)
 	html := renderPortalHTML(tmpl.HTMLContent, tmpl.CSSContent, tmpl.JSContent, tmpl.Config, cfg)
 
-	// Store in cache
-	s.cache.Set(key, html)
+	s.cache.Set(html)
 
 	return html
 }
@@ -123,21 +110,21 @@ type CreateInput struct {
 // If structured fields (navigation, modules, theme) are provided, they take
 // precedence over the raw config string.
 type UpdateInput struct {
-	Name                *string          `json:"name"`
-	Description         *string          `json:"description"`
-	HTMLContent         *string          `json:"html_content"`
-	CSSContent          *string          `json:"css_content"`
-	JSContent           *string          `json:"js_content"`
-	Config              *string          `json:"config"`
-	RegistrationEnabled *bool            `json:"registration_enabled"`
-	PortalPort          *string          `json:"portal_port"`
+	Name                *string `json:"name"`
+	Description         *string `json:"description"`
+	HTMLContent         *string `json:"html_content"`
+	CSSContent          *string `json:"css_content"`
+	JSContent           *string `json:"js_content"`
+	Config              *string `json:"config"`
+	RegistrationEnabled *bool   `json:"registration_enabled"`
+	PortalPort          *string `json:"portal_port"`
 
 	// Structured fields — when provided, merged into config JSON
-	Navigation []NavigationItem `json:"navigation"`
-	Modules    []ModuleItem     `json:"modules"`
+	Navigation []NavigationItem   `json:"navigation"`
+	Modules    []ModuleItem       `json:"modules"`
 	Theme      *PortalThemeConfig `json:"theme"`
-	Lang       json.RawMessage   `json:"lang"`
-	Regions    json.RawMessage   `json:"regions"`
+	Lang       json.RawMessage    `json:"lang"`
+	Regions    json.RawMessage    `json:"regions"`
 }
 
 // PortalSiteConfig is the response for the active portal site.
@@ -145,25 +132,25 @@ type UpdateInput struct {
 // structured navigation/modules/theme fields parsed from the config JSON.
 type PortalSiteConfig struct {
 	*entity.PortalTemplate
-	RegistrationEnabled bool              `json:"registration_enabled"`
-	PortalPort          string            `json:"portal_port"`
+	RegistrationEnabled bool   `json:"registration_enabled"`
+	PortalPort          string `json:"portal_port"`
 
 	// Structured fields parsed from the config JSON string.
 	// These are read-only in the response; to update them, use
 	// the navigation/modules/theme fields in UpdateInput.
-	SiteName            string            `json:"site_name"`
-	LogoURL             string            `json:"logo_url"`
-	PrimaryColor        string            `json:"primary_color"`
-	BackgroundColor     string            `json:"background_color"`
-	CardBackgroundColor string            `json:"card_background_color"`
-	TextColor           string            `json:"text_color"`
-	AccentColor         string            `json:"accent_color"`
-	FontFamily          string            `json:"font_family"`
-	PortalEditorVersion int               `json:"portal_editor_version"`
-	Navigation          []NavigationItem  `json:"navigation"`
-	Modules             []ModuleItem       `json:"modules"`
-	Lang                json.RawMessage   `json:"lang"`
-	Regions             json.RawMessage   `json:"regions"`
+	SiteName            string           `json:"site_name"`
+	LogoURL             string           `json:"logo_url"`
+	PrimaryColor        string           `json:"primary_color"`
+	BackgroundColor     string           `json:"background_color"`
+	CardBackgroundColor string           `json:"card_background_color"`
+	TextColor           string           `json:"text_color"`
+	AccentColor         string           `json:"accent_color"`
+	FontFamily          string           `json:"font_family"`
+	PortalEditorVersion int              `json:"portal_editor_version"`
+	Navigation          []NavigationItem `json:"navigation"`
+	Modules             []ModuleItem     `json:"modules"`
+	Lang                json.RawMessage  `json:"lang"`
+	Regions             json.RawMessage  `json:"regions"`
 }
 
 // parseConfigToSiteConfig parses the config JSON string and populates the
@@ -178,12 +165,12 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 	}
 	// Theme fields
 	stringFields := map[string]*string{
-		"site_name":              &cfg.SiteName,
+		"site_name":             &cfg.SiteName,
 		"logo_url":              &cfg.LogoURL,
 		"primary_color":         &cfg.PrimaryColor,
 		"background_color":      &cfg.BackgroundColor,
 		"card_background_color": &cfg.CardBackgroundColor,
-		"text_color":             &cfg.TextColor,
+		"text_color":            &cfg.TextColor,
 		"accent_color":          &cfg.AccentColor,
 		"font_family":           &cfg.FontFamily,
 	}
@@ -301,6 +288,8 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 	if err := s.repo.Update(ctx, tmpl); err != nil {
 		return nil, err
 	}
+	// Invalidate cache so the next request re-renders with the new content
+	s.cache.Invalidate()
 	return tmpl, nil
 }
 
@@ -525,7 +514,7 @@ type RenderConfig struct {
 	FontFamily          string          `json:"font_family"`
 	RegistrationEnabled bool            `json:"registration_enabled"`
 	PortalEditorVersion int             `json:"portal_editor_version,omitempty"`
-	Navigation         json.RawMessage `json:"navigation,omitempty"`
+	Navigation          json.RawMessage `json:"navigation,omitempty"`
 	Modules             json.RawMessage `json:"modules,omitempty"`
 	Lang                json.RawMessage `json:"lang,omitempty"`
 	Regions             json.RawMessage `json:"regions,omitempty"`
@@ -542,11 +531,60 @@ func DefaultRenderConfig() RenderConfig {
 		AccentColor:         "#67c23a",
 		FontFamily:          "system-ui, -apple-system, sans-serif",
 		PortalEditorVersion: 1,
-		Navigation:         json.RawMessage(defaultNavigationJSON),
+		Navigation:          json.RawMessage(defaultNavigationJSON),
 		Modules:             json.RawMessage(defaultModulesJSON),
 		Lang:                json.RawMessage(defaultMultiLangJSON),
 		Regions:             json.RawMessage(defaultRegionsJSON),
 	}
+}
+
+// GetPublicConfig returns the effective runtime configuration for the portal
+// page. It is the same shape as the config injected into the page at render
+// time (window.PORTAL_CONFIG), but always freshly read from the database.
+// The portal runtime fetches this on boot so that builder changes take effect
+// immediately without relying on the render cache.
+func (s *Service) GetPublicConfig(ctx context.Context) (RenderConfig, error) {
+	registrationEnabled := false
+	if s.settingSvc != nil {
+		if v, err := s.settingSvc.GetByKey(ctx, "panel.registration_enabled"); err == nil && v == "true" {
+			registrationEnabled = true
+		}
+	}
+
+	tmpl, err := s.repo.GetActive(ctx)
+	if err != nil || tmpl == nil {
+		// No active template — seed the built-in default and use it
+		if err := s.SeedBuiltInTemplate(ctx); err != nil {
+			return RenderConfig{}, fmt.Errorf("failed to seed default template: %w", err)
+		}
+		tmpl, err = s.repo.GetActive(ctx)
+		if err != nil {
+			return RenderConfig{}, err
+		}
+	}
+
+	return MergeConfig(tmpl, registrationEnabled), nil
+}
+
+// GetPublicConfigJSON returns the portal runtime config as a ready-to-serve
+// JSON response body ({"data": ...}). In production mode the marshaled body is
+// served from the in-memory cache — the DB read + config merge + JSON marshal
+// only happens again after a write invalidates the cache or the TTL elapses.
+func (s *Service) GetPublicConfigJSON(ctx context.Context) ([]byte, error) {
+	if body, ok := s.cache.GetConfig(); ok {
+		return body, nil
+	}
+
+	cfg, err := s.GetPublicConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body, err := AssembleConfigResponse(cfg)
+	if err != nil {
+		return nil, err
+	}
+	s.cache.SetConfig(body)
+	return body, nil
 }
 
 // MergeConfig merges a template's stored config JSON with defaults.
@@ -610,31 +648,31 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 			if v, ok := stored["navigation"]; ok && len(v) > 0 && string(v) != "null" {
 				cfg.Navigation = v
 			}
-		if v, ok := stored["modules"]; ok && len(v) > 0 && string(v) != "null" {
-			cfg.Modules = v
-		}
-		// Pass through portal_editor_version
-		if v, ok := stored["portal_editor_version"]; ok {
-			var n int
-			if json.Unmarshal(v, &n) == nil && n > 0 {
-				cfg.PortalEditorVersion = n
+			if v, ok := stored["modules"]; ok && len(v) > 0 && string(v) != "null" {
+				cfg.Modules = v
+			}
+			// Pass through portal_editor_version
+			if v, ok := stored["portal_editor_version"]; ok {
+				var n int
+				if json.Unmarshal(v, &n) == nil && n > 0 {
+					cfg.PortalEditorVersion = n
+				}
+			}
+			// Pass through lang (i18n multi-language pack)
+			if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
+				// Check if it's the new multi-language format or old flat format
+				// Both are passed through as-is; the frontend handles both
+				cfg.Lang = v
+			} else {
+				cfg.Lang = json.RawMessage(defaultMultiLangJSON)
+			}
+			// Pass through regions (editable system pages)
+			if v, ok := stored["regions"]; ok && len(v) > 0 && string(v) != "null" && string(v) != "{}" {
+				cfg.Regions = v
+			} else {
+				cfg.Regions = json.RawMessage(defaultRegionsJSON)
 			}
 		}
-		// Pass through lang (i18n multi-language pack)
-		if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
-			// Check if it's the new multi-language format or old flat format
-			// Both are passed through as-is; the frontend handles both
-			cfg.Lang = v
-		} else {
-			cfg.Lang = json.RawMessage(defaultMultiLangJSON)
-		}
-		// Pass through regions (editable system pages)
-		if v, ok := stored["regions"]; ok && len(v) > 0 && string(v) != "null" && string(v) != "{}" {
-			cfg.Regions = v
-		} else {
-			cfg.Regions = json.RawMessage(defaultRegionsJSON)
-		}
-	}
 	}
 
 	return cfg

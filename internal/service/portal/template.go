@@ -24,7 +24,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
             <img v-if="logoUrl" :src="logoUrl" class="logo-img" />
             <div v-else class="logo-icon"><el-icon size="48" color="var(--accent)"><Lightning /></el-icon></div>
           </div>
-          <h1 class="auth-title">{{.PortalName}}</h1>
+          <h1 class="auth-title">{{ siteName }}</h1>
           <p class="auth-subtitle">{{ registrationEnabled ? t('auth.welcome_login') : t('auth.login_title') }}</p>
           <el-tabs v-model="authTab" class="auth-tabs">
             <el-tab-pane :label="t('auth.login')" name="login">
@@ -63,7 +63,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <header class="top-bar">
         <div class="top-bar-left">
           <img v-if="logoUrl" :src="logoUrl" class="top-logo" />
-          <span class="top-title">{{.PortalName}}</span>
+          <span class="top-title">{{ siteName }}</span>
         </div>
         <div class="top-bar-right">
           <el-dropdown trigger="click" v-if="availableLocales.length > 1" class="locale-switcher">
@@ -3163,13 +3163,20 @@ var iconPaths = {
 
 var app = createApp({
   setup: function() {
-    var token = ref(localStorage.getItem('client_token') || '')
+    // Preview mode: simulate logged-in state so the builder can preview pages
+    var urlParams = new URLSearchParams(window.location.search)
+    var isPreviewMode = urlParams.get('preview') === '1'
+    var token = ref(isPreviewMode ? 'preview-token' : (localStorage.getItem('client_token') || ''))
     var refreshToken = ref(localStorage.getItem('client_refresh_token') || '')
     var authTab = ref('login')
     var loading = ref(false)
     var rotating = ref(false)
     var refreshing = ref(false)
-    var activeTab = ref(localStorage.getItem('portal_active_tab') || 'overview')
+    // Preview mode: ?page=xxx forces the active tab (used by the admin builder)
+    var urlParams = new URLSearchParams(window.location.search)
+    var previewPage = urlParams.get('page')
+    var isPreviewMode = urlParams.get('preview') === '1'
+    var activeTab = ref(previewPage || localStorage.getItem('portal_active_tab') || 'overview')
     var showPasswordDialog = ref(false)
 var showQr = ref(false)
 var showSubQrDialog = ref(false)
@@ -3178,7 +3185,70 @@ var showSubUrl = ref(false)
 var announcementPopupVisible = ref(false)
 var activeAnnouncement = ref(null)
     var logoUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.logo_url) || '')
+    var siteName = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.site_name) || 'CoreFusion')
     var isDark = ref(localStorage.getItem('portal_theme') === 'dark' || (!localStorage.getItem('portal_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
+
+    // Latest effective portal config — refreshed on every hot fetch from the DB.
+    var latestPortalConfig = (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG) || {}
+
+    // --- Theme color engine: apply builder theme (DB config) as CSS variables ---
+    var hexToRgbParts = function(hex) {
+      if (typeof hex !== 'string') return null
+      var m = hex.trim().replace(/^#/, '')
+      if (m.length === 3) m = m[0] + m[0] + m[1] + m[1] + m[2] + m[2]
+      if (!/^[0-9a-fA-F]{6}$/.test(m)) return null
+      return { r: parseInt(m.slice(0, 2), 16), g: parseInt(m.slice(2, 4), 16), b: parseInt(m.slice(4, 6), 16) }
+    }
+    var rgbaFromHex = function(hex, alpha) {
+      var c = hexToRgbParts(hex)
+      if (!c) return null
+      return 'rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', ' + alpha + ')'
+    }
+    var darkenHex = function(hex, ratio) {
+      var c = hexToRgbParts(hex)
+      if (!c) return null
+      var to2 = function(v) {
+        var n = Math.max(0, Math.min(255, Math.round(v * (1 - ratio))))
+        var s = n.toString(16)
+        return s.length === 1 ? '0' + s : s
+      }
+      return '#' + to2(c.r) + to2(c.g) + to2(c.b)
+    }
+    // Color vars customized by the builder — removed again in dark mode so the
+    // tuned dark palette is not clobbered by light-mode colors.
+    var customThemeVarNames = ['--accent', '--accent-dark', '--accent-light', '--accent-border', '--accent-gradient', '--ring-bg', '--bg-solid', '--bg-elevated', '--glass-bg', '--glass-bg-hover', '--text-primary', '--success', '--success-light']
+    var applyThemeVars = function(cfg) {
+      if (!cfg || typeof cfg !== 'object') return
+      var style = document.documentElement.style
+      if (cfg.font_family) style.setProperty('--font-family', cfg.font_family)
+      if (isDark.value) {
+        customThemeVarNames.forEach(function(n) { style.removeProperty(n) })
+        return
+      }
+      var set = function(name, val) { if (val) style.setProperty(name, val) }
+      var primary = cfg.primary_color
+      if (primary) {
+        set('--accent', primary)
+        set('--accent-dark', darkenHex(primary, 0.12))
+        set('--accent-light', rgbaFromHex(primary, 0.1))
+        set('--accent-border', rgbaFromHex(primary, 0.2))
+        set('--ring-bg', rgbaFromHex(primary, 0.1))
+        var gradEnd = darkenHex(primary, 0.25)
+        if (gradEnd) set('--accent-gradient', 'linear-gradient(135deg, ' + primary + ' 0%, ' + gradEnd + ' 100%)')
+      }
+      set('--bg-solid', cfg.background_color)
+      var cardBg = cfg.card_background_color
+      if (cardBg) {
+        set('--bg-elevated', cardBg)
+        set('--glass-bg', rgbaFromHex(cardBg, 0.85))
+        set('--glass-bg-hover', rgbaFromHex(cardBg, 0.95))
+      }
+      set('--text-primary', cfg.text_color)
+      if (cfg.accent_color) {
+        set('--success', cfg.accent_color)
+        set('--success-light', rgbaFromHex(cfg.accent_color, 0.1))
+      }
+    }
 
     var loginForm = ref({ email: '', password: '' })
     var registerForm = ref({ email: '', password: '', referral_code: '' })
@@ -3270,9 +3340,10 @@ var showPromoInput = ref(false) // promo code fold
     // --- Auth Region (editable login page) ---
     var authComponent = ref(null)
     
-    // Compile auth region from PORTAL_CONFIG.regions
-    var compileAuthRegion = function() {
-      var region = (PORTAL_CONFIG.regions && PORTAL_CONFIG.regions.auth) || null
+    // Compile auth region from portal config regions (re-callable on hot config updates)
+    var compileAuthRegion = function(regions) {
+      var regionSource = regions || (typeof PORTAL_CONFIG !== 'undefined' ? PORTAL_CONFIG.regions : null) || {}
+      var region = regionSource.auth || null
       if (!region || !region.html) {
         authComponent.value = null
         return
@@ -3296,8 +3367,8 @@ var showPromoInput = ref(false) // promo code fold
         logoUrl: logoUrl,
         isDark: isDark,
         
-        // Site info (from PORTAL_CONFIG or fallback)
-        siteName: (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.site_name) || 'CoreFusion',
+        // Site info (reactive site name from latest config)
+        siteName: siteName.value,
         
         // Methods
         handleLogin: handleLogin,
@@ -3367,60 +3438,58 @@ var showPromoInput = ref(false) // promo code fold
     }
     
     // --- i18n / multi-language pack ---
-    var multiLang = { default: 'zh-CN', locales: {} }
-    if (typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.lang) {
-      var rawLang = PORTAL_CONFIG.lang
-      if (rawLang && rawLang.locales && typeof rawLang.locales === 'object') {
-        multiLang = rawLang
-      } else if (rawLang && typeof rawLang === 'object') {
-        multiLang = { default: 'zh-CN', locales: { 'zh-CN': rawLang } }
-      }
+    var normalizeLangPack = function(raw) {
+      if (raw && raw.locales && typeof raw.locales === 'object') return raw
+      if (raw && typeof raw === 'object') return { default: 'zh-CN', locales: { 'zh-CN': raw } }
+      return { default: 'zh-CN', locales: {} }
     }
+    // Reactive lang pack — can be hot-swapped when the builder saves new translations
+    var multiLang = ref(normalizeLangPack(typeof PORTAL_CONFIG !== 'undefined' ? PORTAL_CONFIG.lang : null))
     // Detect preferred locale
     var savedLocale = localStorage.getItem('portal_locale')
     var browserLang = (navigator.language || navigator.userLanguage || 'zh-CN').toLowerCase()
     var detectedLocale = savedLocale
-    if (!detectedLocale || !multiLang.locales[detectedLocale]) {
-      if (multiLang.locales[browserLang]) {
+    if (!detectedLocale || !multiLang.value.locales[detectedLocale]) {
+      if (multiLang.value.locales[browserLang]) {
         detectedLocale = browserLang
       } else {
         var prefix = browserLang.split('-')[0]
         var found = false
-        for (var code in multiLang.locales) {
+        for (var code in multiLang.value.locales) {
           if (code.split('-')[0] === prefix) { detectedLocale = code; found = true; break }
         }
-        if (!found) detectedLocale = multiLang.default || 'zh-CN'
+        if (!found) detectedLocale = multiLang.value.default || 'zh-CN'
       }
     }
     var currentLocale = ref(detectedLocale)
     var availableLocales = computed(function() {
       var list = []
-      for (var code in multiLang.locales) {
-        var meta = (multiLang.locales[code] && multiLang.locales[code]._meta) || {}
+      for (var code in multiLang.value.locales) {
+        var meta = (multiLang.value.locales[code] && multiLang.value.locales[code]._meta) || {}
         list.push({ code: code, label: meta.label || code, flag: meta.flag || '🌐' })
       }
       return list
     })
     var currentLocaleFlag = computed(function() {
-      var loc = multiLang.locales[currentLocale.value]
+      var loc = multiLang.value.locales[currentLocale.value]
       if (loc && loc._meta && loc._meta.flag) return loc._meta.flag
       return '🌐'
     })
     var lang = computed(function() {
-      return multiLang.locales[currentLocale.value] || multiLang.locales[multiLang.default] || {}
+      return multiLang.value.locales[currentLocale.value] || multiLang.value.locales[multiLang.value.default] || {}
     })
     var t = function(key) {
       if (!key) return ''
       var v = lang.value[key]
       if (v === undefined || v === null || v === '') {
-        var defaultPack = multiLang.locales[multiLang.default] || {}
+        var defaultPack = multiLang.value.locales[multiLang.value.default] || {}
         v = defaultPack[key]
       }
       if (v === undefined || v === null || v === '') return key
       return v
     }
     var switchLocale = function(code) {
-      if (multiLang.locales[code]) {
+      if (multiLang.value.locales[code]) {
         currentLocale.value = code
         localStorage.setItem('portal_locale', code)
         document.documentElement.lang = code
@@ -3600,8 +3669,18 @@ var showPromoInput = ref(false) // promo code fold
     var applyTheme = function() {
       document.documentElement.setAttribute('data-theme', isDark.value ? 'dark' : 'light')
       localStorage.setItem('portal_theme', isDark.value ? 'dark' : 'light')
+      // Re-apply (or clear, in dark mode) builder theme colors from latest config
+      applyThemeVars(latestPortalConfig)
     }
     applyTheme()
+
+    // Favicon follows the configured logo (including hot config updates)
+    var applyFavicon = function() {
+      var link = document.getElementById('portal-favicon')
+      if (link && logoUrl.value) link.href = logoUrl.value
+    }
+    watch(logoUrl, applyFavicon)
+    applyFavicon()
     var toggleTheme = function() { isDark.value = !isDark.value; applyTheme() }
 
     // API helper with auto token refresh
@@ -4557,23 +4636,37 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       refreshTimer = setInterval(function() { if (token.value) fetchMe() }, 30000)
     }
 
-    // Public settings
-    var fetchPublicSettings = function() {
-      fetch('/api/v1/public/settings').then(function(r) { return r.json() }).then(function(d) {
-        var data = d.data || d
-        if (data && data.registration_enabled !== undefined) registrationEnabled.value = data.registration_enabled
-        // v3.4: hot-reload portal modules/nav
-        if (data && data.portal_config) {
-          var cfg = data.portal_config
-          if (Array.isArray(cfg.modules)) {
-            portalModules.value = cfg.modules.filter(function(m) { return m.visible !== false })
-          }
-          if (Array.isArray(cfg.navigation)) {
-            portalNavItems.value = cfg.navigation.filter(function(n) { return n.enabled !== false })
-          }
-          // reload page data after module update
-          fetchPageData(activeTab.value)
-        }
+    // --- Portal config hot-load (builder changes render directly from DB) ---
+    // Apply a fresh portal config to the running page: theme, site name,
+    // navigation, modules, language pack and editable regions. Everything is
+    // reactive, so the page re-renders in place without a full reload.
+    var applyPortalConfig = function(cfg, opts) {
+      if (!cfg || typeof cfg !== 'object') return
+      latestPortalConfig = cfg
+      if (cfg.site_name) {
+        siteName.value = cfg.site_name
+        try { document.title = cfg.site_name } catch(e) {}
+      }
+      if (cfg.logo_url !== undefined) logoUrl.value = cfg.logo_url
+      if (cfg.registration_enabled !== undefined) registrationEnabled.value = !!cfg.registration_enabled
+      if (Array.isArray(cfg.modules)) {
+        portalModules.value = cfg.modules.filter(function(m) { return m.visible !== false })
+      }
+      if (Array.isArray(cfg.navigation)) {
+        portalNavItems.value = cfg.navigation.filter(function(n) { return n.enabled !== false })
+      }
+      if (cfg.lang) multiLang.value = normalizeLangPack(cfg.lang)
+      if (cfg.regions && cfg.regions.auth) compileAuthRegion(cfg.regions)
+      applyThemeVars(cfg)
+      // reload page data after module update (only for hot refreshes, not initial load)
+      if (opts && opts.reloadData) fetchPageData(activeTab.value)
+    }
+
+    // Fetch the lean portal runtime config — always a fresh DB read server-side.
+    var fetchPortalConfig = function(reloadData) {
+      fetch('/api/v1/public/portal-config').then(function(r) { return r.json() }).then(function(d) {
+        var cfg = (d && d.data) || d
+        applyPortalConfig(cfg, { reloadData: reloadData })
       }).catch(function() {})
     }
 
@@ -4601,7 +4694,17 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
     }
 
     onMounted(function() {
-      fetchPublicSettings()
+      fetchPortalConfig(false)
+      // Refetch config when the tab becomes visible again so builder changes
+      // show up without a manual reload
+      document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) fetchPortalConfig(true)
+      })
+      // Skip API data loading in preview mode (no real token)
+      if (isPreviewMode) {
+        // Just load the config and render the page structure
+        return
+      }
       if (token.value) {
         fetchMe(); fetchEndpoints(); startAutoRefresh()
         fetchAnnouncements()
@@ -4883,7 +4986,7 @@ return {
       // Auth & shell
       token: token, authTab: authTab, loading: loading,
       activeTab: activeTab, showPasswordDialog: showPasswordDialog,
-      showSubQrDialog: showSubQrDialog, logoUrl: logoUrl,
+      showSubQrDialog: showSubQrDialog, logoUrl: logoUrl, siteName: siteName,
       isDark: isDark, registrationEnabled: registrationEnabled,
       loginForm: loginForm, registerForm: registerForm, client: client,
       handleLogin: handleLogin, handleRegister: handleRegister, handleLogout: handleLogout,

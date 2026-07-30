@@ -23,10 +23,10 @@ export const disableProxy = (data) =>
   client({ url: '/runtime/disable-proxy', method: 'post', data })
 
 export const listJobs = (params) =>
-  client({ url: '/runtime/jobs', method: 'get', params })
+  client({ url: '/runtime/apply-jobs', method: 'get', params })
 export const getJob = (id) =>
-  client({ url: `/runtime/jobs/${id}`, method: 'get' })
+  client({ url: `/runtime/apply-jobs/${id}`, method: 'get' })
 export const retryJob = (id) =>
-  client({ url: `/runtime/jobs/${id}/retry`, method: 'post' })
+  client({ url: `/runtime/apply-jobs/${id}/retry`, method: 'post' })
 export const cancelJob = (id) =>
-  client({ url: `/runtime/jobs/${id}/cancel`, method: 'post' })
+  client({ url: `/runtime/apply-jobs/${id}/cancel`, method: 'post' })

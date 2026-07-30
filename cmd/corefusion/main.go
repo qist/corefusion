@@ -26,7 +26,6 @@ import (
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
-	"corefusion/internal/service/subscription"
 	planSvc "corefusion/internal/service/plan"
 	usersync "corefusion/internal/service/usersync"
 	sysService "corefusion/internal/service/system"
@@ -292,14 +291,10 @@ func runServer(args []string) {
 	// multiCollector.Start(context.Background())
 	// log.Println("Multi-server traffic collector started (remote + mirror merge)")
 
-	// Phase 5: Start MultiServerHealthChecker and RegionSelector
+	// Phase 5: Start MultiServerHealthChecker
 	multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgr, nodeServerRepo)
 	go multiHealthChecker.RunLoop(context.Background())
 	log.Println("Multi-server health checker started (30s interval + alerts)")
-
-	geoIPResolver := subscription.NewSimpleGeoIPResolver()
-	_ = subscription.NewRegionSelector(geoIPResolver, nodeServerRepo)
-	log.Println("GeoIP region selector initialized")
 
 	// Phase 3: Read panel settings from database
 	settingRepo := repository.NewSystemSettingRepository(db.DB)

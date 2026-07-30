@@ -2081,8 +2081,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		clientAuthGroup.GET("/oauth/:provider/callback", oauthH.Callback)
 	}
 
-	// Public subscription endpoints (for portal)
-	r.GET("/api/v1/public/subscription-endpoints", subendH.List)
+	// Public subscription endpoints (for portal) — direct DB read returning a plain
+	// array so the portal frontend can consume d.data directly (no pagination wrapper).
+	subendRepoPortal := repository.NewSubscriptionEndpointRepository(database)
+	r.GET("/api/v1/public/subscription-endpoints", func(c *gin.Context) {
+		endpoints, err := subendRepoPortal.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		response.OK(c, endpoints)
+	})
 
 	// Public settings (for portal)
 	// v3.4: portalTmplSvc used in public/settings to return latest portal config
@@ -3005,113 +3014,6 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		// P3-22: Shared account apply
 		clientAuthProtected.POST("/shared-accounts/:id/apply", clientExtH.ApplySharedAccount)
 	}
-
-	// Public endpoints (for portal) — direct DB read
-	subendRepo := repository.NewSubscriptionEndpointRepository(database)
-	r.GET("/api/v1/public/subscription-endpoints", func(c *gin.Context) {
-		endpoints, err := subendRepo.List(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "LIST_FAILED", err.Error())
-			return
-		}
-		response.OK(c, endpoints)
-	})
-	r.GET("/api/v1/public/settings", func(c *gin.Context) {
-		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
-		result := gin.H{
-			"registration_enabled": registrationEnabled == "true",
-		}
-		// v3.4: 返回最新 portal 配置
-		if cfg, err := portalTmplSvc.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
-			result["portal_config"] = cfg
-		}
-		response.OK(c, result)
-	})
-
-	// Public: effective portal runtime config — lean payload served from the
-	// in-memory cache in production (fresh DB read only on cache miss).
-	r.GET("/api/v1/public/portal-config", func(c *gin.Context) {
-		body, err := portalTmplSvc.GetPublicConfigJSON(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "PORTAL_CONFIG_FAILED", err.Error())
-			return
-		}
-		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
-	})
-
-	// Public: list enabled client configs (for portal "more subscriptions" dialog)
-	clientCfgRepo := repository.NewMihomoConfigRepository(database)
-	subFmtRepoAgent := repository.NewSubscriptionFormatRepository(database)
-	r.GET("/api/v1/public/client-configs", func(c *gin.Context) {
-		planIDStr := c.Query("plan_id")
-		var planID int64
-		if planIDStr != "" {
-			planID, _ = strconv.ParseInt(planIDStr, 10, 64)
-		}
-
-		// 1) Fetch enabled MihomoConfigs, filter by plan_id
-		configs, err := clientCfgRepo.List(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "LIST_FAILED", err.Error())
-			return
-		}
-		var cfgItems []gin.H
-		for _, cfg := range configs {
-			if !cfg.Enabled {
-				continue
-			}
-			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
-			if len(cfg.PlanIDs) > 0 && !containsInt64(cfg.PlanIDs, planID) {
-				continue
-			}
-			cfgItems = append(cfgItems, gin.H{
-				"id":          cfg.ID,
-				"name":        cfg.Name,
-				"description": cfg.Description,
-				"format":      cfg.Format,
-				"client_type": cfg.ClientType,
-				"platform":    cfg.Platform,
-				"sort_order":  cfg.SortOrder,
-				"plan_ids":    cfg.PlanIDs,
-				"type":        "config",
-			})
-		}
-
-		// 2) Fetch enabled SubscriptionFormats, filter by plan_id
-		formats, err := subFmtRepoAgent.List(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "LIST_FAILED", err.Error())
-			return
-		}
-		var fmtItems []gin.H
-		for _, fmt := range formats {
-			if !fmt.Enabled {
-				continue
-			}
-			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
-			if len(fmt.PlanIDs) > 0 && !containsInt64(fmt.PlanIDs, planID) {
-				continue
-			}
-			fmtItems = append(fmtItems, gin.H{
-				"id":          fmt.ID,
-				"name":        fmt.Name,
-				"description": fmt.Description,
-				"format":      fmt.Format,
-				"client_type": fmt.ClientType,
-				"platform":    "",
-				"sort_order":  fmt.SortOrder,
-				"plan_ids":    fmt.PlanIDs,
-				"type":        "format",
-			})
-		}
-
-		// Merge and return
-		allItems := append(cfgItems, fmtItems...)
-		if allItems == nil {
-			allItems = []gin.H{}
-		}
-		response.OK(c, allItems)
-	})
 
 	return r
 }

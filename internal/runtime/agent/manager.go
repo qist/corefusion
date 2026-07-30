@@ -1416,6 +1416,12 @@ func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServ
 	}
 }
 
+// egressSyncMap tracks the last egress interface name pushed to each Agent so we
+// only re-send SetEgressInterface when it changes (or after a panel restart, when
+// the Agent has lost its in-memory value). The panel previously never sent this
+// command, which is why NIC-level traffic was never accounted.
+var egressSyncMap sync.Map
+
 func (h *heartbeatServiceImpl) handleHeartbeat(ac *AgentConnection, report *agentpb.AgentReport) {
 	// Cache OS/arch/distro from heartbeat for asset filtering
 	if report.Os != "" || report.Arch != "" || report.Distro != "" {
@@ -1455,8 +1461,24 @@ func (h *heartbeatServiceImpl) handleHeartbeat(ac *AgentConnection, report *agen
 		h.mgr.metricsCollector.CollectFromHeartbeat(ac.ServerID, report)
 	}
 
-	// Phase 6b: Process egress interface traffic for quota monitoring
+	// Phase 6b: ensure the Agent knows which egress NIC to account, then process
+	// NIC-level traffic deltas for quota monitoring.
 	if h.mgr.trafficQuotaSvc != nil {
+		if server, err := h.mgr.serverRepo.GetByID(context.Background(), ac.ServerID); err == nil && server.EgressInterface != "" {
+			if prev, _ := egressSyncMap.Load(ac.ServerID); prev != server.EgressInterface {
+				cmd := &agentpb.PanelCommand{
+					Command: &agentpb.PanelCommand_SetEgressInterface{
+						SetEgressInterface: &agentpb.SetEgressInterfaceRequest{InterfaceName: server.EgressInterface},
+					},
+				}
+				if err := h.mgr.SendCommand(context.Background(), ac.ServerID, cmd); err == nil {
+					egressSyncMap.Store(ac.ServerID, server.EgressInterface)
+				} else {
+					log.Printf("[NodeServerManager] failed to push egress interface %q to server %d: %v",
+						server.EgressInterface, ac.ServerID, err)
+				}
+			}
+		}
 		h.mgr.trafficQuotaSvc.ProcessHeartbeat(ac.ServerID, report)
 	}
 }

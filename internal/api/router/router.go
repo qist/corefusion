@@ -1421,8 +1421,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServerSvcInst.WithTrafficQuotaService(trafficQuotaSvc)
 				nodeMgrForPhase3.SetTrafficQuotaProcessor(trafficQuotaSvc)
 
-				// Start the traffic quota checker in the background
-				go trafficQuotaSvc.Start(context.Background())
+			// Start the traffic quota checker in the background
+			go trafficQuotaSvc.Start(context.Background())
+
+			// Account NIC traffic for the local (panel) node, which has no
+			// Agent heartbeat reporting egress counters.
+			go trafficQuotaSvc.StartLocalCollector(context.Background(), 30*time.Second)
 
 				// Supplementary repos wiring
 				auditLogRepo := repository.NewNodeAuditLogRepository(database)

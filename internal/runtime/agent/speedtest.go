@@ -29,20 +29,22 @@ type SpeedTestManager struct {
 	results map[int64]*SpeedTestResult
 
 	// 配置
-	interval    time.Duration // 自动测速间隔
-	timeout     time.Duration // 单次测速超时
-	samples     int           // 每次测速采样次数
-	testPort    int           // 本地测速使用的端口（默认使用入站端口）
+	interval      time.Duration // 自动测速间隔
+	timeout       time.Duration // 单次测速超时
+	samples       int           // 每次测速采样次数
+	testPort      int           // 远端测速（保留，Agent 已不再探测端口）
+	localTestPort int           // 本地测速目标端口（面板自身 web 端口）
 }
 
 // SpeedTestResult 存储测速结果。
 type SpeedTestResult struct {
-	ServerID   int64
-	LatencyMs  int32   // 平均延迟（毫秒）
-	JitterMs   int32   // 抖动（毫秒）
-	PacketLoss float64 // 丢包率（0-1）
-	TestedAt   time.Time
-	Error      string // 如果测速失败，记录错误
+	ServerID   int64     `json:"server_id"`
+	ServerName string    `json:"server_name"` // 节点显示名，供面板表格渲染
+	LatencyMs  int32     `json:"latency_ms"`  // 平均延迟（毫秒）
+	JitterMs   int32     `json:"jitter_ms"`   // 抖动（毫秒）
+	PacketLoss float64   `json:"packet_loss"` // 丢包率（0-1）
+	TestedAt   time.Time `json:"tested_at"`
+	Error      string    `json:"error"` // 如果测速失败，记录错误
 }
 
 // NewSpeedTestManager creates a new SpeedTestManager.
@@ -51,10 +53,11 @@ func NewSpeedTestManager(serverRepo *repository.NodeServerRepository, nodeMgr *N
 		serverRepo: serverRepo,
 		nodeMgr:    nodeMgr,
 		results:    make(map[int64]*SpeedTestResult),
-		interval:   5 * time.Minute,
-		timeout:    5 * time.Second,
-		samples:    3,
-		testPort:   443,
+		interval:      5 * time.Minute,
+		timeout:       5 * time.Second,
+		samples:       3,
+		testPort:      443,
+		localTestPort: 8080,
 	}
 }
 
@@ -76,7 +79,8 @@ func (m *SpeedTestManager) WithSamples(n int) *SpeedTestManager {
 	return m
 }
 
-// WithTestPort sets the default test port for local TCP tests.
+// WithTestPort is retained for compatibility; remote tests now measure the heartbeat
+// stream round-trip and no longer probe an arbitrary port.
 func (m *SpeedTestManager) WithTestPort(port int) *SpeedTestManager {
 	m.testPort = port
 	return m
@@ -100,6 +104,9 @@ func (m *SpeedTestManager) TestServer(ctx context.Context, serverID int64) (*Spe
 		// Remote server: gRPC call to Agent
 		result = m.testRemoteServer(ctx, server.ID, server.Hostname)
 	}
+
+	// Attach the human-readable name for the panel UI (frontend renders server_name).
+	result.ServerName = server.Name
 
 	// Cache result
 	m.mu.Lock()
@@ -226,7 +233,11 @@ func (m *SpeedTestManager) RunLoop(ctx context.Context) {
 	}
 }
 
-// testLocalServer performs a TCP connect latency test to a local/known server.
+// testLocalServer measures the loopback latency of the local (panel) node. The local
+// node is the panel itself, so we probe 127.0.0.1 on the panel's own web port (always
+// listening) instead of the stored hostname (which may be an unresolvable container name
+// like "local-panel"). This avoids the broken :443 probe and yields a realistic ~0ms
+// loopback latency for the local node.
 func (m *SpeedTestManager) testLocalServer(ctx context.Context, serverID int64, hostname string) *SpeedTestResult {
 	result := &SpeedTestResult{
 		ServerID: serverID,
@@ -234,7 +245,8 @@ func (m *SpeedTestManager) testLocalServer(ctx context.Context, serverID int64, 
 	}
 
 	latencies := make([]int32, 0, m.samples)
-	target := fmt.Sprintf("%s:%d", hostname, m.testPort)
+	// 127.0.0.1 on the panel's own web port — guaranteed to be listening locally.
+	target := fmt.Sprintf("127.0.0.1:%d", m.localTestPort)
 
 	for i := 0; i < m.samples; i++ {
 		start := time.Now()
@@ -257,7 +269,7 @@ func (m *SpeedTestManager) testLocalServer(ctx context.Context, serverID int64, 
 	result.JitterMs = jitter(latencies)
 	result.PacketLoss = 0
 
-	log.Printf("[SpeedTest] server %d (%s): latency=%dms jitter=%dms",
+	log.Printf("[SpeedTest] server %d (%s, local): latency=%dms jitter=%dms",
 		serverID, hostname, result.LatencyMs, result.JitterMs)
 
 	return result

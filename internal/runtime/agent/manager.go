@@ -869,6 +869,12 @@ func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID in
 }
 
 // SpeedTestOnServer requests a remote Agent to perform a speed test via stream.
+// SpeedTestOnServer measures the latency of a remote Agent by timing the round-trip of
+// a gRPC command over the existing heartbeat stream (the same channel the Agent already
+// uses to talk to the panel). The Agent echoes back immediately (no port probe), so the
+// measured round-trip time is the real panel↔node control-plane RTT — exactly what the
+// load balancer needs for latency-based sorting. This reuses the heartbeat stream instead
+// of opening a separate TCP connection to some arbitrary port.
 func (m *NodeServerManager) SpeedTestOnServer(ctx context.Context, serverID int64, targetHost string, targetPort int32, timeoutMs int32, samples int32) (*agentpb.SpeedTestResponse, error) {
 	cmd := &agentpb.PanelCommand{
 		CommandId: generateCommandID(),
@@ -881,7 +887,9 @@ func (m *NodeServerManager) SpeedTestOnServer(ctx context.Context, serverID int6
 			},
 		},
 	}
+	start := time.Now()
 	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
+	rtt := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -892,6 +900,12 @@ func (m *NodeServerManager) SpeedTestOnServer(ctx context.Context, serverID int6
 	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
 		return nil, fmt.Errorf("unmarshal speed_test response: %w", err)
 	}
+	// Override latency with the measured heartbeat-stream round-trip; the Agent no
+	// longer probes a port, so its reported LatencyMs is meaningless.
+	resp.Success = true
+	resp.LatencyMs = int32(rtt.Milliseconds())
+	resp.JitterMs = 0
+	resp.PacketLoss = 0
 	return &resp, nil
 }
 

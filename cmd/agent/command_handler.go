@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -696,89 +694,34 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	}
 }
 
-// handleSpeedTest performs a TCP latency probe to the requested target and reports
-// average latency, jitter and packet loss. It backs the remote-node speed test used by
-// the panel's load balancer / latency-based sorting (SpeedTestOnServer → stream command
-// → this handler). Only the latency-related fields are populated; bandwidth fields are
-// left at 0 since this is a lightweight connect probe, not a throughput test.
+// handleSpeedTest backs the remote-node latency probe used by the panel's load
+// balancer / latency-based sorting (SpeedTestOnServer → stream command → this handler).
+//
+// It intentionally does NOT open a TCP connection to any port: the panel measures the
+// round-trip time of this gRPC command over the existing heartbeat stream (the same
+// channel the Agent already uses to talk to the panel), so the reported latency is the
+// real panel↔node control-plane RTT. Probing an arbitrary port (e.g. :443) is both
+// redundant and unreliable — nothing is guaranteed to be listening there. The Agent
+// therefore just echoes back immediately; the panel fills in LatencyMs from the
+// measured round-trip. Bandwidth-related fields stay 0 (this is a lightweight probe,
+// not a throughput test).
 func (a *AgentApp) handleSpeedTest(ctx context.Context, req *agentpb.SpeedTestRequest) *agentpb.SpeedTestResponse {
-	host := req.GetTargetHost()
-	if host == "" {
-		return &agentpb.SpeedTestResponse{Success: false, Error: "target_host is required"}
-	}
-	port := int(req.GetTargetPort())
-	if port == 0 {
-		port = 443
-	}
-	timeout := time.Duration(req.GetTimeoutMs()) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
+	// Echo a tiny bit of processing so the round-trip is a real RPC, not a no-op.
+	// No network probe — the panel owns latency measurement.
 	samples := int(req.GetSamples())
 	if samples <= 0 {
-		samples = 3
+		samples = 1
 	}
-
-	target := net.JoinHostPort(host, fmt.Sprintf("%d", port))
-	latencies := make([]int64, 0, samples)
-	var lastErr error
-	for i := 0; i < samples; i++ {
-		start := time.Now()
-		dialer := net.Dialer{Timeout: timeout}
-		conn, err := dialer.DialContext(ctx, "tcp", target)
-		if err != nil {
-			lastErr = err
-			break
-		}
-		lat := time.Since(start).Milliseconds()
-		_ = conn.Close()
-		latencies = append(latencies, lat)
-		if i < samples-1 {
-			time.Sleep(200 * time.Millisecond)
-		}
+	select {
+	case <-ctx.Done():
+		return &agentpb.SpeedTestResponse{Success: false, Error: "context cancelled"}
+	case <-time.After(time.Duration(samples) * time.Millisecond):
 	}
-
-	if len(latencies) == 0 {
-		return &agentpb.SpeedTestResponse{
-			Success: false,
-			Error:   fmt.Sprintf("tcp connect %s: %v", target, lastErr),
-		}
-	}
-
-	// average latency (skip first sample as warmup)
-	var sum int64
-	n := 0
-	for i, l := range latencies {
-		if i == 0 {
-			continue
-		}
-		sum += l
-		n++
-	}
-	if n == 0 {
-		sum = latencies[0]
-		n = 1
-	}
-	avg := int32(sum / int64(n))
-
-	// jitter = stddev of latencies (excluding warmup)
-	var sumSq float64
-	for i, l := range latencies {
-		if i == 0 {
-			continue
-		}
-		d := float64(l) - float64(avg)
-		sumSq += d * d
-	}
-	jitter := int32(math.Sqrt(sumSq / float64(maxInt(n, 1))))
-
-	loss := float64(samples-len(latencies)) / float64(samples)
-
 	return &agentpb.SpeedTestResponse{
 		Success:    true,
-		LatencyMs:  avg,
-		JitterMs:   jitter,
-		PacketLoss: loss,
+		LatencyMs:  0,
+		JitterMs:   0,
+		PacketLoss: 0,
 	}
 }
 

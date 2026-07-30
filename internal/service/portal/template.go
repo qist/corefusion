@@ -99,7 +99,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
       <!-- Desktop Sidebar -->
       <aside class="app-sidebar">
         <div v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
-          <svg class="sidebar-icon" viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor"><path :d="iconPaths[nav.icon] || iconPaths['Link']"></path></svg>
+          <svg class="sidebar-icon" viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor" fill-rule="evenodd"><path :d="navIconPath(nav)"></path></svg>
           <span>{{ t(nav.label) }}</span>
         </div>
       </aside>
@@ -171,7 +171,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
       </main>
       <nav class="bottom-nav">
         <div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
-          <svg class="nav-icon" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor"><path :d="iconPaths[nav.icon] || iconPaths['Link']"></path></svg>
+          <svg class="nav-icon" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor" fill-rule="evenodd"><path :d="navIconPath(nav)"></path></svg>
           <span class="nav-label">{{ t(nav.label) }}</span>
         </div>
       </nav>
@@ -3148,17 +3148,69 @@ var ElMessage = ElementPlus.ElMessage
 var ElMessageBox = ElementPlus.ElMessageBox
 
 // Icon SVG paths for Element Plus icons
+// Icon set for the portal navigation. Rendered with fill-rule="evenodd", so
+// nested sub-paths punch holes (outline style) instead of merging into a blob.
 var iconPaths = {
-  'HomeFilled': 'M448 96v163.072L224 384V96h224zm128 0v163.072L800 384V96H576zM256 96H96v288l160-96V96zm672 0h-160v192l160 96V96zM448 320v192h128V320H448zM96 448l160-96v288H96V448zm704 0v192h160V352l-160 96zM576 320v192h224V320H576zM256 320v192h128V320H256z',
-  'ShoppingCart': 'M432 928a48 48 0 1 1 0-96 48 48 0 0 1 0 96zm320 0a48 48 0 1 1 0-96 48 48 0 0 1 0 96zM96 128a32 32 0 0 1 32-32h64a32 32 0 0 1 31.232 24.256l21.632 86.528 508.352 101.664a32 32 0 0 1 25.6 29.12l-8 160a32 32 0 0 1-32 32H288a32 32 0 0 1-32-32v-32h448v-64H256l-32-128H128V128z',
-  'Wallet': 'M64 256v448a64 64 0 0 0 64 64h768a64 64 0 0 0 64-64V256a64 64 0 0 0-64-64H128a64 64 0 0 0-64 64zm64 0h768v448H128V256zm512 224a64 64 0 1 1 0-128 64 64 0 0 1 0 128z',
+  'HomeFilled': 'M512 96 96 448h96v416h240V608h160v256h240V448h96L512 96z',
+  'DataAnalysis': 'M160 800h704v64H160v-64zM224 576h96v192h-96V576zm160-128h96v320h-96V448zm160-192h96v512h-96V256zm160 256h96v256h-96V512z',
+  'ShoppingCart': 'M64 96h160l128 512h448v64H320L192 160H64V96zm320 704a64 64 0 1 0 128 0 64 64 0 0 0-128 0zm320 0a64 64 0 1 0 128 0 64 64 0 0 0-128 0zM288 224h672l-96 320H384l-96-320zm84 64 58 192h386l58-192H372z',
+  'Diamond': 'M320 128h384l192 256-384 512L128 384 320 128zm34 64L212 384h600L670 192H354z',
+  'Wallet': 'M64 256a64 64 0 0 1 64-64h704a64 64 0 0 1 64 64v64h-64v-64H128v448h704v-64h64v64a64 64 0 0 1-64 64H128a64 64 0 0 1-64-64V256zm576 128h320v256H640a128 128 0 0 1 0-256zm0 64a64 64 0 0 0 0 128h256V448H640zm32 32a32 32 0 1 1 0 64 32 32 0 0 1 0-64z',
+  'Ticket': 'M96 256h832v192a64 64 0 0 0 0 128v192H96V576a64 64 0 0 0 0-128V256zm64 64v82a128 128 0 0 1 0 220v82h704v-82a128 128 0 0 1 0-220v-82H160zm192 32h64v320h-64V352z',
+  'Server': 'M128 160h768v256H128V160zm64 64v128h640V224H192zm576 32a32 32 0 1 1 0 64 32 32 0 0 1 0-64zM128 608h768v256H128V608zm64 64v128h640V672H192zm576 32a32 32 0 1 1 0 64 32 32 0 0 1 0-64z',
   'List': 'M128 256h768v64H128v-64zm0 256h768v64H128v-64zm0 256h768v64H128v-64z',
-  'Reading': 'M832 128H192a64 64 0 0 0-64 64v640a64 64 0 0 0 64 64h640a64 64 0 0 0 64-64V192a64 64 0 0 0-64-64zM192 192h640v640H192V192zm128 128h384v64H320v-64zm0 192h384v64H320v-64zm0 192h256v64H320v-64z',
-  'Service': 'M512 128c-212 0-384 172-384 384 0 128 64 240 160 312v168c0 35 29 64 64 64h320c35 0 64-29 64-64v-168c96-72 160-184 160-312 0-212-172-384-384-384zm-96 832v-64h192v64H416zm144-128H416c-106 0-192-86-192-192 0-106 86-192 192-192 106 0 192 86 192 192 0 106-86 192-192 192z',
-  'Gift': 'M320 128a96 96 0 0 1 96 96v64H256v-64a96 96 0 0 1 64-96zm288 0a96 96 0 0 1 96 96v64h-160v-64a96 96 0 0 1 64-96zM128 320h768v128H128V320zm64 192h640v384H192V512z',
-  'User': 'M512 128c-141 0-256 115-256 256 0 89 46 168 115 214-83 35-144 108-160 197H192v64h640v-64h-19c-16-89-77-162-160-197 69-46 115-125 115-214 0-141-115-256-256-256zm0 64c106 0 192 86 192 192s-86 192-192 192-192-86-192-192 86-192 192-192z',
-  'Document': 'M832 128H192c-35 0-64 29-64 64v640c0 35 29 64 64 64h640c35 0 64-29 64-64V192c0-35-29-64-64-64zM192 192h640v640H192V192zm128 128h384v64H320v-64zm0 192h384v64H320v-64zm0 192h256v64H320v-64z',
+  'Reading': 'M96 224c128-48 256-40 384 24v576c-128-64-256-72-384-24V224zm64 86v426c96-20 192-10 288 30V340c-96-40-192-50-288-30zm384 162c128-64 256-72 384-24v576c-128-48-256-40-384 24V472zm64 40v426c96-40 192-50 288-30V482c-96-20-192-10-288 30z',
+  'Service': 'M512 96C299 96 128 267 128 480v160h64V480c0-177 143-320 320-320s320 143 320 320v160h64V480C896 267 725 96 512 96zM96 576h160v288H96V576zm64 64v160h32V640h-32zm608-64h160v288H768V576zm64 64v160h32V640h-32z',
+  'Gift': 'M96 288h832v160H96V288zm64 64v32h704v-32H160zm0 160h704v384H160V512zm64 64v256h576V576H224zm256-64h64v384h-64V512zM348 96c76 0 132 60 164 160h-164a80 80 0 0 1 0-160zm0 64a16 16 0 0 0 0 32h74c-24-22-49-32-74-32zm328-64a80 80 0 0 1 0 160H512c32-100 88-160 164-160zm0 64c-25 0-50 10-74 32h74a16 16 0 0 0 0-32z',
+  'User': 'M512 128a192 192 0 1 1 0 384 192 192 0 0 1 0-384zm0 64a128 128 0 1 0 0 256 128 128 0 0 0 0-256zM192 896c0-176 143-320 320-320s320 144 320 320h-64c0-141-115-256-256-256s-256 115-256 256h-64z',
+  'Lock': 'M320 448V320a192 192 0 0 1 384 0v128h-64V320a128 128 0 0 0-256 0v128h-64zM192 480h640v416H192V480zm64 64v288h512V544H256zm224 64h64v160h-64V608z',
+  'Box': 'M96 192h832v192H96V192zm64 64v64h704v-64H160zm0 192h704v416H160V448zm64 64v288h576V512H224zm192 64h192v64H416v-64z',
+  'Bell': 'M512 96a256 256 0 0 1 256 256v208l96 128v32H160v-32l96-128V352A256 256 0 0 1 512 96zm0 64a192 192 0 0 0-192 192v230l-56 74h496l-56-74V352a192 192 0 0 0-192-192zm-96 704h192a96 96 0 0 1-192 0z',
+  'Globe': 'M512 96a416 416 0 1 0 0 832 416 416 0 0 0 0-832zm0 64a352 352 0 1 1 0 704 352 352 0 0 1 0-704zM128 480h768v64H128v-64zM512 160c-88 96-136 216-136 352s48 256 136 352c88-96 136-216 136-352S600 256 512 160zm0 118c40 74 62 155 62 234s-22 160-62 234c-40-74-62-155-62-234s22-160 62-234z',
+  'Document': 'M192 96h432l208 208v624H192V96zm64 64v704h512V352H576V160H256zm384 26v102h102L640 186zM320 480h384v64H320v-64zm0 160h384v64H320v-64z',
   'Link': 'M576 128c-141 0-256 115-256 256h64c0-106 86-192 192-192s192 86 192 192-86 192-192 192h-64v64h64c141 0 256-115 256-256S717 128 576 128zm-320 320c-141 0-256 115-256 256s115 256 256 256 256-115 256-256h-64c0 106-86 192-192 192s-192-86-192-192 86-192 192-192h64v-64h-64zM384 448v64h256v-64H384z'
+}
+
+// Navigation icons are resolved by target first: the stored config historically
+// uses emoji (e.g. "🏠") which never matched an iconPaths key, so every item fell
+// back to the same 'Link' glyph. Matching on target keeps each page distinct
+// regardless of what the stored icon field contains.
+var navTargetIcons = {
+  'overview': 'HomeFilled', 'dashboard': 'DataAnalysis', 'home': 'HomeFilled',
+  'subscription': 'Ticket', 'subscribe': 'Ticket',
+  'store': 'ShoppingCart', 'shop': 'ShoppingCart', 'plan': 'Diamond', 'plans': 'Diamond',
+  'billing': 'Wallet', 'order': 'Wallet', 'orders': 'Wallet', 'finance': 'Wallet',
+  'nodes': 'Server', 'node': 'Server',
+  'tutorial': 'Reading', 'docs': 'Reading', 'help': 'Reading',
+  'support': 'Service', 'ticket': 'Service', 'tickets': 'Service',
+  'referral': 'Gift', 'invite': 'Gift',
+  'profile': 'User', 'account': 'User', 'security': 'Lock',
+  'logs': 'Box', 'notice': 'Bell', 'announcement': 'Bell'
+}
+
+// Emoji fallback, used for custom/external nav items that have no known target.
+var navEmojiIcons = {
+  '🏠': 'HomeFilled', '🏡': 'HomeFilled', '📊': 'DataAnalysis', '📈': 'DataAnalysis',
+  '🛒': 'ShoppingCart', '🛍': 'ShoppingCart', '💎': 'Diamond',
+  '💰': 'Wallet', '💵': 'Wallet', '💳': 'Wallet',
+  '📋': 'Ticket', '🎫': 'Ticket', '🎟': 'Ticket',
+  '🖥': 'Server', '🗄': 'Server', '🌐': 'Globe', '🔗': 'Link',
+  '📚': 'Reading', '📖': 'Reading', '📄': 'Document',
+  '🎧': 'Service', '💬': 'Service', '🛎': 'Service',
+  '🎁': 'Gift', '🎉': 'Gift', '👤': 'User', '🙍': 'User',
+  '🔒': 'Lock', '🔐': 'Lock', '📦': 'Box', '🔔': 'Bell', '📢': 'Bell'
+}
+
+var navIconPath = function(nav) {
+  if (!nav) return iconPaths['Link']
+  var key = nav.icon
+  if (key && iconPaths[key]) return iconPaths[key]
+  var byTarget = nav.target && navTargetIcons[String(nav.target).toLowerCase()]
+  if (byTarget && iconPaths[byTarget]) return iconPaths[byTarget]
+  var byEmoji = key && navEmojiIcons[key]
+  if (byEmoji && iconPaths[byEmoji]) return iconPaths[byEmoji]
+  if (nav.href) return iconPaths['Globe']
+  return iconPaths['Link']
 }
 
 var app = createApp({
@@ -4955,7 +5007,7 @@ if (initHasNodeList) fetchNodes()
                 moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats,
                 showMoreSubQrDialog: showMoreSubQrDialog, moreSubQrDialogUrl: moreSubQrDialogUrl,
                 moreSubQrDialogVisible: moreSubQrDialogVisible, buildSubLink: buildSubLink,
-                showNoticePanel: showNoticePanel, iconPaths: iconPaths,
+                showNoticePanel: showNoticePanel, iconPaths: iconPaths, navIconPath: navIconPath,
                 gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
                 giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts
               }
@@ -5033,7 +5085,7 @@ return {
       buildSubLink: buildSubLink, showMoreSubQrDialog: showMoreSubQrDialog,
       // Utils & icons
       copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatMoney: formatMoney,
-      iconPaths: iconPaths, authComponent: authComponent,
+      iconPaths: iconPaths, navIconPath: navIconPath, authComponent: authComponent,
       // Gifts
       gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
       giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts

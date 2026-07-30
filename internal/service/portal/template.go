@@ -199,16 +199,16 @@ const defaultPortalHTML = `<!DOCTYPE html>
     </el-dialog>
 
 <!-- Node QR Code Dialog -->
-<el-dialog v-model="showNodeQRDialog" :title="t('node.qr_code')" width="300px" align-center>
+<el-dialog v-model="showNodeQRDialog" :title="t('node.qr_code')" width="440px" align-center>
 <div style="text-align: center; padding: 20px;">
-<div ref="nodeQRContainer" style="width: 200px; height: 200px; margin: 0 auto;"></div>
+<div ref="nodeQRContainer" style="width: 360px; height: 360px; margin: 0 auto;"></div>
 </div>
 </el-dialog>
 
 <!-- Subscription QR Code Dialog -->
-<el-dialog v-model="showSubQrDialog" :title="t('sub.qr_code')" width="300px" align-center>
+<el-dialog v-model="showSubQrDialog" :title="t('sub.qr_code')" width="400px" align-center>
 <div style="text-align: center; padding: 20px;">
-<img v-if="qrCodeUrl" :src="qrCodeUrl" style="width: 200px; height: 200px; border-radius: 8px;" />
+<img v-if="qrCodeUrl" :src="qrCodeUrl" style="width: 300px; height: 300px; border-radius: 8px;" />
 <span v-else style="color: var(--text-muted)">Loading...</span>
 <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">{{ t('sub.scan_import') }}</div>
 </div>
@@ -2328,7 +2328,7 @@ border-bottom: 1px solid var(--border);
 .more-subs-config-tag { font-size: 11px; text-transform: capitalize; }
 .more-subs-config-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .more-subs-qr-section { text-align: center; margin-top: 12px; padding: 16px; background: var(--bg); border-radius: 8px; border: 1px dashed var(--border); }
-.more-subs-qr-img { width: 180px; height: 180px; border-radius: 8px; }
+.more-subs-qr-img { width: 220px; height: 220px; border-radius: 8px; }
 .more-subs-qr-hint { display: block; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 .more-subs-empty { text-align: center; padding: 40px; color: var(--text-muted); }
 .more-subs-dialog .el-dialog__body { padding: 16px 20px; }
@@ -3930,7 +3930,7 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
       if (!subUrl.value) { qrCodeUrl.value = ''; return }
       try {
         var canvas = document.createElement('canvas')
-        new QRious({ element: canvas, value: subUrl.value, size: 200, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
+        new QRious({ element: canvas, value: subUrl.value, size: 300, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
         qrCodeUrl.value = canvas.toDataURL('image/png')
       } catch(e) { qrCodeUrl.value = '' }
     }
@@ -4021,7 +4021,7 @@ var moreSubFormats = computed(function() {
 var generateMoreSubQr = function(url) {
   try {
     var canvas = document.createElement('canvas')
-    new QRious({ element: canvas, value: url, size: 200, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
+    new QRious({ element: canvas, value: url, size: 220, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
     return canvas.toDataURL('image/png')
   } catch(e) { return '' }
 }
@@ -4676,7 +4676,7 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       if (!container || typeof QRious === 'undefined') return
       container.innerHTML = ''
       var canvas = document.createElement('canvas')
-      new QRious({ element: canvas, value: text, size: 200, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
+      new QRious({ element: canvas, value: text, size: 360, background: isDark.value ? '#1a1a2e' : '#ffffff', foreground: isDark.value ? '#e0e0f0' : '#000000', level: 'M' })
       container.appendChild(canvas)
     }
     var nextTick = function(fn) {

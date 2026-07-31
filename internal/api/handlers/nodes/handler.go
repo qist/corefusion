@@ -115,3 +115,30 @@ func (h *Handler) Delete(c *gin.Context) {
 
 	response.OK(c, gin.H{"message": "node deleted"})
 }
+
+// GetOnlineUsers handles GET /api/v1/nodes/:id/online-users.
+// 返回该节点当前实时在线的订阅人（含 IP、速率、累计流量、会话明细）与聚合统计。
+func (h *Handler) GetOnlineUsers(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid node id")
+		return
+	}
+
+	res := h.nodeSvc.GetOnlineUsers(id)
+	response.OK(c, res)
+}
+
+// GetOnlineSummary handles GET /api/v1/node-servers/online-summary.
+// 返回所有节点当前实时在线订阅人汇总（避免前端逐节点轮询）。
+func (h *Handler) GetOnlineSummary(c *gin.Context) {
+	res := h.nodeSvc.GetAllOnlineSummary()
+	response.OK(c, res)
+}
+
+// GetAllOnlineUsers handles GET /api/v1/node-servers/online-users.
+// 返回所有节点在线订阅人的全局合并视图（含节点名与富化字段），供全局在线用户页使用。
+func (h *Handler) GetAllOnlineUsers(c *gin.Context) {
+	res := h.nodeSvc.GetAllOnlineUsersGlobal()
+	response.OK(c, res)
+}

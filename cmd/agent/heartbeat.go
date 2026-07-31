@@ -98,6 +98,8 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 	defer statusTicker.Stop()
 	trafficTicker := time.NewTicker(30 * time.Second)
 	defer trafficTicker.Stop()
+	onlineTicker := time.NewTicker(15 * time.Second)
+	defer onlineTicker.Stop()
 
 	// Receive loop (Panel commands via stream)
 	recvErr := make(chan error, 1)
@@ -131,6 +133,11 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 			// Errors are logged inside sendTrafficReport.
 			if err := a.sendTrafficReport(stream); err != nil {
 				log.Printf("[Agent] traffic report error: %v", err)
+			}
+		case <-onlineTicker.C:
+			// Online-users report failures should not break the heartbeat stream.
+			if err := a.sendOnlineUsersReport(stream); err != nil {
+				log.Printf("[Agent] online users report error: %v", err)
 			}
 		}
 	}

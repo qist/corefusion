@@ -34,6 +34,22 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id int64) (*entity
 	return &sub, nil
 }
 
+// FindByIDs returns subscriptions keyed by ID for the given IDs.
+func (r *SubscriptionRepository) FindByIDs(ctx context.Context, ids []int64) (map[int64]*entity.Subscription, error) {
+	result := make(map[int64]*entity.Subscription)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var subs []entity.Subscription
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&subs).Error; err != nil {
+		return nil, err
+	}
+	for i := range subs {
+		result[subs[i].ID] = &subs[i]
+	}
+	return result, nil
+}
+
 // GetByToken retrieves a subscription by token.
 func (r *SubscriptionRepository) GetByToken(ctx context.Context, token string) (*entity.Subscription, error) {
 	var sub entity.Subscription

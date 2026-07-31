@@ -43,6 +43,13 @@
           </el-card>
         </el-col>
         <el-col :span="4">
+          <el-card shadow="hover" class="summary-card online-summary-card clickable" @click="goOnlineUsers">
+            <div class="sum-label">{{ t('dashboard.liveOnlineSubs') }}</div>
+            <div class="sum-value">{{ (onlineSummary && onlineSummary.total_subscriptions) || 0 }}</div>
+            <div class="sum-foot"><span class="foot-on">{{ t('dashboard.onlineDevices') }} {{ (onlineSummary && onlineSummary.total_devices) || 0 }}</span></div>
+          </el-card>
+        </el-col>
+        <el-col :span="4">
           <el-card shadow="hover" class="summary-card">
             <div class="sum-label">{{ t('dashboard.fleetCerts') }}</div>
             <div class="sum-value">{{ (overview && overview.active_cert_count) || 0 }}</div>
@@ -357,6 +364,9 @@ export default {
     function goCerts() {
       router.push('/certificates')
     }
+    function goOnlineUsers() {
+      router.push('/online-users')
+    }
     function certDays(expiresAt) {
       if (!expiresAt) return '—'
       const exp = new Date(expiresAt)
@@ -377,19 +387,23 @@ export default {
       return b.toFixed(i > 0 ? 1 : 0) + ' ' + units[i]
     }
 
+    const onlineSummary = ref(null)
+
     async function loadAll() {
       loading.value = true
       try {
-        const [d, a, o, p] = await Promise.all([
+        const [d, a, o, p, os] = await Promise.all([
           getDashboardStatus(),
           getAggregatedMetrics(),
           getMetricsOverview(),
           client.get('/system/stats').catch(() => null),
+          client.get('/node-servers/online-summary').catch(() => null),
         ])
         fleet.value = d
         aggregated.value = a
         overview.value = o
         panelStats.value = p
+        onlineSummary.value = os
         lastUpdated.value = new Date().toLocaleTimeString()
       } catch (e) {
         // surface error via console; keep last good data
@@ -409,12 +423,12 @@ export default {
 
     return {
       t,
-      fleet, aggregated, overview, panelStats, loading, lastUpdated,
+      fleet, aggregated, overview, panelStats, loading, lastUpdated, onlineSummary,
       statusFilter, typeFilter, regionFilter, keyword,
       filteredNodes, regionOptions, onlineWithMetric,
       avgCpu, avgMem, avgDisk, totalNet, totalTraffic, topLoad,
       offlineNodes, degradedNodes, highResource, expiringCerts, expiringCertList, quotaWarn, hasAlerts,
-      typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays,
+      typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays, goOnlineUsers,
     }
   },
 }
@@ -422,6 +436,8 @@ export default {
 
 <style scoped>
 .dashboard { padding: 4px 8px 24px; }
+.clickable { cursor: pointer; transition: box-shadow .2s; }
+.clickable:hover { box-shadow: 0 2px 12px rgba(64,158,255,.35); }
 .dash-header { display: flex; justify-content: space-between; align-items: flex-end; margin: 4px 0 18px; }
 .dash-title { margin: 0; font-size: 20px; font-weight: 600; }
 .dash-sub { color: var(--el-text-color-secondary); font-size: 13px; }
@@ -430,6 +446,8 @@ export default {
 
 /* Fleet summary cards */
 .summary-row { margin-bottom: 16px; }
+/* 7 张汇总卡均分一行：覆盖 el-col 固定 span 宽度，宽屏均分、窄屏自动换行 */
+.summary-row :deep(.el-col) { flex: 1 1 140px; max-width: none; min-width: 140px; }
 .summary-card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); height: 116px; }
 .summary-card :deep(.el-card__body) {
   height: 100%;

@@ -49,6 +49,22 @@ func (r *PlanTemplateRepository) GetByID(ctx context.Context, id int64) (*entity
 	return &item, err
 }
 
+// FindByIDs returns plan templates keyed by ID for the given IDs.
+func (r *PlanTemplateRepository) FindByIDs(ctx context.Context, ids []int64) (map[int64]*entity.PlanTemplate, error) {
+	result := make(map[int64]*entity.PlanTemplate)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var items []entity.PlanTemplate
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	for i := range items {
+		result[items[i].ID] = &items[i]
+	}
+	return result, nil
+}
+
 func (r *PlanTemplateRepository) Create(ctx context.Context, item *entity.PlanTemplate) error {
 	return r.db.WithContext(ctx).Create(item).Error
 }

@@ -62,6 +62,9 @@ type NodeServerManager struct {
 	pendingTasks   map[string]chan *agentpb.TaskResult
 	pendingTasksMu sync.RWMutex
 
+	// 实时在线订阅人快照（由 Agent ONLINE_USERS 上报刷新，带 TTL 过期）
+	onlineStore *NodeOnlineStore
+
 	// Data sync provider: reads panel DB tables to build SyncDataRequest
 	dataSyncProvider DataSyncProvider
 
@@ -314,6 +317,7 @@ func NewNodeServerManager(serverRepo *repository.NodeServerRepository, ca *Certi
 		onTraffic:    make(chan *TrafficEvent, 1024),
 		onStatusChg:  make(chan *StatusEvent, 256),
 		pendingTasks: make(map[string]chan *agentpb.TaskResult),
+		onlineStore: NewNodeOnlineStore(60),
 	}
 }
 
@@ -1137,8 +1141,46 @@ func (m *NodeServerManager) DisconnectServer(ctx context.Context, serverID int64
 		ac.online = false
 		ac.mu.Unlock()
 		delete(m.connections, serverID)
+		m.onlineStore.Remove(serverID)
 		log.Printf("[NodeServerManager] server %d disconnected", serverID)
 	}
+}
+
+// UpdateOnlineUsers 用 Agent 上报的数据刷新某节点的在线快照。
+func (m *NodeServerManager) UpdateOnlineUsers(serverID int64, users []*agentpb.OnlineUserEntry) {
+	m.onlineStore.Update(serverID, users)
+}
+
+// GetNodeOnlineUsers 返回某节点当前在线订阅人（未过期）及刷新时间。
+func (m *NodeServerManager) GetNodeOnlineUsers(serverID int64) ([]*agentpb.OnlineUserEntry, int64, bool) {
+	snap, ok := m.onlineStore.GetFresh(serverID)
+	if !ok {
+		return nil, 0, false
+	}
+	return snap.Users, snap.UpdatedAt, true
+}
+
+// GetNodeOnlineCount 返回某节点在线订阅数与设备(IP)数。
+func (m *NodeServerManager) GetNodeOnlineCount(serverID int64) (subscriptions int, devices int) {
+	snap, ok := m.onlineStore.GetFresh(serverID)
+	if !ok {
+		return 0, 0
+	}
+	subscriptions = len(snap.Users)
+	for _, u := range snap.Users {
+		devices += len(u.Sessions)
+	}
+	return
+}
+
+// GetAllOnlineSummary 返回所有在线节点的实时在线汇总（serverID → 汇总）。
+func (m *NodeServerManager) GetAllOnlineSummary() map[int64]*NodeOnlineSummary {
+	return m.onlineStore.GetAllSummary()
+}
+
+// GetAllOnlineUsers 返回所有在线节点的完整在线快照（serverID → 快照），供全局视图使用。
+func (m *NodeServerManager) GetAllOnlineUsers() map[int64]*NodeOnlineSnapshot {
+	return m.onlineStore.GetAllDetail()
 }
 
 // SyncConfigToServer syncs core configuration to a specific server.
@@ -1346,6 +1388,7 @@ func (m *NodeServerManager) markOffline(serverID int64) {
 		ac.online = false
 		ac.mu.Unlock()
 		delete(m.connections, serverID)
+		m.onlineStore.Remove(serverID)
 	}
 	m.mu.Unlock()
 
@@ -1412,6 +1455,8 @@ func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServ
 			h.handleCrashReport(ac, report)
 		case agentpb.AgentReport_TASK_RESULT:
 			h.handleTaskResult(ac, report)
+		case agentpb.AgentReport_ONLINE_USERS:
+			h.handleOnlineUsersReport(ac, report)
 		}
 	}
 }
@@ -1525,6 +1570,13 @@ func (h *heartbeatServiceImpl) handleTrafficReport(ac *AgentConnection, report *
 func (h *heartbeatServiceImpl) handleCrashReport(ac *AgentConnection, report *agentpb.AgentReport) {
 	log.Printf("[NodeServerManager] server %d core crash: %s\n%s",
 		ac.ServerID, report.CrashedCore, report.CrashLog)
+}
+
+// handleOnlineUsersReport 处理 Agent 上报的实时在线订阅人。
+func (h *heartbeatServiceImpl) handleOnlineUsersReport(ac *AgentConnection, report *agentpb.AgentReport) {
+	users := report.GetOnlineUsers()
+	// 空列表也刷新时间戳：表示节点在线但当前无订阅人在线
+	h.mgr.onlineStore.Update(ac.ServerID, users)
 }
 
 // ============================================================

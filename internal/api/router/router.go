@@ -449,7 +449,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
 	userSvc := userService.NewService(userRepo)
-	nodeSvc := nodeService.NewService(nodeRepo)
+	nodeSvc := nodeService.NewService(nodeRepo, sharedNodeMgr, subRepo, clientRepo, planTmplRepo)
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
 	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planSvcInst)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
@@ -980,6 +980,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodesGroup.GET("/:id", nodeH.GetByID)
 				nodesGroup.PUT("/:id", nodeH.Update)
 				nodesGroup.DELETE("/:id", nodeH.Delete)
+				nodesGroup.GET("/:id/online-users", nodeH.GetOnlineUsers)
 			}
 
 			// Inbound Configs (moved under /node-servers/:id/)
@@ -1530,6 +1531,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				// Supplementary: Server Management
 				nodeServersGroup.GET("/:id/status", nodeServerH.GetServerStatus)
+				nodeServersGroup.GET("/:id/online-users", nodeH.GetOnlineUsers)
+				nodeServersGroup.GET("/online-summary", nodeH.GetOnlineSummary)
+				nodeServersGroup.GET("/online-users", nodeH.GetAllOnlineUsers)
 				nodeServersGroup.POST("/:id/control", nodeServerH.ControlCore)
 				nodeServersGroup.POST("/:id/sync", nodeServerH.SyncServerConfig)
 				nodeServersGroup.GET("/:id/bootstrap-cmd", nodeServerH.GetBootstrapCommand)
@@ -2498,6 +2502,7 @@ func isSPARoute(path string) bool {
 		"/",
 		"/login",
 		"/dashboard",
+		"/online-users",
 		"/nodes",
 		"/services",
 		"/subscriptions",

@@ -63,9 +63,10 @@
           <el-card shadow="hover" class="summary-card panel-card">
             <div class="sum-label">{{ t('dashboard.panelServer') }}</div>
             <template v-if="panelStats">
-              <div class="sum-value">{{ panelStats.cpu_usage != null ? Math.round(panelStats.cpu_usage) : '—' }}<span class="sum-unit">%</span></div>
+              <div class="sum-value">{{ panelStats.panel_cpu_usage != null ? (Math.round(panelStats.panel_cpu_usage * 10) / 10) : '—' }}<span class="sum-unit">%</span></div>
               <div class="sum-foot">
-                <span class="foot-muted" v-if="panelStats.mem_usage != null">MEM {{ Math.round(panelStats.mem_usage) }}%</span>
+                <span class="foot-muted" v-if="panelStats.panel_mem_usage != null">MEM {{ Math.round(panelStats.panel_mem_usage) }}% · {{ formatBytes(panelStats.panel_mem_bytes) }}</span>
+                <span class="foot-muted" v-else>—</span>
               </div>
             </template>
             <div class="sum-foot" v-else><span class="foot-muted">—</span></div>

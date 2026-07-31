@@ -16,6 +16,11 @@ import (
 var (
 	panelStartTime time.Time
 	initOnce       sync.Once
+
+	// 面板进程自身 CPU 采样状态（跨请求持久化，用于计算进程级 CPU 占用）
+	procCPUMu       sync.Mutex
+	procPrevCPUTick int64
+	procPrevCPUTS   time.Time
 )
 
 // InitStartTime records the panel start time (call once at startup).
@@ -71,6 +76,11 @@ type SystemStats struct {
 	// Runtime
 	Goroutines int `json:"goroutines"`
 
+	// 面板进程自身资源占用（区别于上面的主机级指标）
+	PanelCPUUsage float64 `json:"panel_cpu_usage"` // 面板进程 CPU 占用（基于 /proc/self/stat，相对单核，多核可超过 100%）
+	PanelMemUsage float64 `json:"panel_mem_usage"` // 进程 RSS 占机器总内存百分比
+	PanelMemBytes int64   `json:"panel_mem_bytes"` // 进程 RSS 字节数
+
 	// Time
 	CurrentTime time.Time `json:"current_time"`
 }
@@ -111,6 +121,8 @@ func (s *StatsService) GetStats() *SystemStats {
 	s.readNetwork(stats)
 	s.readConnections(stats)
 	s.readUptime(stats)
+	s.readProcessCPU(stats)
+	s.readProcessMemory(stats)
 
 	return stats
 }
@@ -192,6 +204,68 @@ func (s *StatsService) readMemory(stats *SystemStats) {
 	stats.SwapUsed = stats.SwapTotal - stats.SwapFree
 	if stats.SwapTotal > 0 {
 		stats.SwapUsage = float64(stats.SwapUsed) / float64(stats.SwapTotal) * 100
+	}
+}
+
+// readProcessCPU 计算面板进程自身的 CPU 占用（基于 /proc/self/stat 的 utime+stime 两次采样差分）。
+// 注意：这是进程级指标，与 readCPU 的主机级指标不同，前端面板卡片应使用本结果而非 CPUUsage。
+func (s *StatsService) readProcessCPU(stats *SystemStats) {
+	// /proc/self/stat：第2字段为 comm（括号包裹，可能含空格），其后第14=utime、第15=stime（时钟滴答）
+	data, err := os.ReadFile("/proc/self/stat")
+	if err != nil {
+		return
+	}
+	line := string(data)
+	idx := strings.LastIndex(line, ")")
+	if idx < 0 {
+		return
+	}
+	fields := strings.Fields(line[idx+1:])
+	if len(fields) < 13 {
+		return
+	}
+	utime, _ := strconv.ParseInt(fields[11], 10, 64)
+	stime, _ := strconv.ParseInt(fields[12], 10, 64)
+	cur := utime + stime
+
+	// Linux 用户态时钟频率（USER_HZ）固定为 100，等价于 sysconf(_SC_CLK_TCK)
+	const clkTck = 100.0
+	now := time.Now()
+
+	procCPUMu.Lock()
+	defer procCPUMu.Unlock()
+	if !procPrevCPUTS.IsZero() {
+		elapsed := now.Sub(procPrevCPUTS).Seconds()
+		if elapsed > 0 {
+			dt := float64(cur - procPrevCPUTick)
+			if dt >= 0 {
+				stats.PanelCPUUsage = dt / (elapsed * clkTck) * 100
+			}
+		}
+	}
+	procPrevCPUTick = cur
+	procPrevCPUTS = now
+}
+
+// readProcessMemory 读取面板进程自身的常驻内存（RSS），来自 /proc/self/statm 第二个字段。
+func (s *StatsService) readProcessMemory(stats *SystemStats) {
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		return
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		return
+	}
+	pageSize := int64(syscall.Getpagesize())
+	if pageSize <= 0 {
+		pageSize = 4096
+	}
+	rssPages, _ := strconv.ParseInt(fields[1], 10, 64)
+	rss := rssPages * pageSize
+	stats.PanelMemBytes = rss
+	if stats.MemTotal > 0 {
+		stats.PanelMemUsage = float64(rss) / float64(stats.MemTotal) * 100
 	}
 }
 

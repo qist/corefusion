@@ -459,6 +459,27 @@ func (s *NodeTrafficQuotaService) GetTrafficHistory(ctx context.Context, serverI
 	return usage, nil
 }
 
+// GetTrafficHistoryByServers returns monthly traffic usage rows for a set of servers
+// (used to aggregate a client's traffic history across the billing nodes of their subscription).
+func (s *NodeTrafficQuotaService) GetTrafficHistoryByServers(ctx context.Context, serverIDs []int64, months int) ([]entity.NodeTrafficUsage, error) {
+	if months <= 0 {
+		months = 6
+	}
+	if len(serverIDs) == 0 {
+		return []entity.NodeTrafficUsage{}, nil
+	}
+	cutoff := time.Now().AddDate(0, -months, 0)
+	var usage []entity.NodeTrafficUsage
+	result := s.db.WithContext(ctx).
+		Where("server_id IN ? AND period_start >= ?", serverIDs, cutoff).
+		Order("period_start DESC").
+		Find(&usage)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return usage, nil
+}
+
 // ──────────────────────────────────────────────────────
 // Period calculation helpers
 // ──────────────────────────────────────────────────────

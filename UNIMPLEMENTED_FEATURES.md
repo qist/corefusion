@@ -116,6 +116,18 @@
   - `internal/api/handlers/runtimecfg/handler.go`（新增）：11 个 `/runtime/*` placeholder 路由全部做实
   - 注：DB 仍是配置源头，回滚为应急手段（周期 configsync 会按 DB 重新生成，事件中已记录警示）
 
+##### 2.10.1 操作按节点定位（**已实现 2026-07-31**）
+
+> 来源：运维反馈——创建快照/预检/应用配置/回滚/紧急停用代理原先无法指定或识别目标节点，无法判断"针对哪个节点"。
+
+- **实现要点**（在 2.10 工作流之上扩展，不改动既有管线）：
+  - `serverIDs []int64` 作为通用节点过滤参数贯穿 `runtimeapply` 全部方法（`CreateSnapshot`/`DryRun`/`Apply`/`Rollback`/`DisableProxy`/`RetryJob`/`VerifySelected`/`runVerification`）；**空切片 = 全部节点**
+  - `RuntimeApplyJob` 与 `RuntimeSnapshot` 实体新增 `TargetServerIDsJSON string` 列（AutoMigrate 自动建列），持久化本次操作的目标节点 ID，供列表/详情展示
+  - `configsync.Service` 新增 `SyncServers(ctx, only []int64)`（仅同步指定节点集合，原 `SyncNow` 全量仍保留）；`sync`/`syncCore` 在 `len(only)>0` 时按 `idSet` 过滤
+  - `VerifySelected(ctx, serverIDs)` 取代原全量 `VerifyNodes`；新增 `POST /api/v1/runtime/verify`（body `{server_ids:[...]}`），按选中节点在线状态逐个校验
+  - 前端 `web/admin/src/views/RuntimeConfig.vue`：操作页顶部新增共享 `opNodes` 多选器；创建快照/应用/回滚/预检/停用代理均带 `server_ids`；快照列表与任务详情新增「目标节点」列，按 `server_id → 节点名 (#ID)` 解析展示（未选则显示"全部节点"）；每个操作卡片内实时显示"目标节点：节点A、节点B / 全部节点"
+- 说明：快照本身抓取的是面板**全局**运行时配置文件（`dataDir/runtime/*.jsonc`），"目标节点"记录的是本次操作预期下发的节点范围（配合 `SyncServers` 只向选中节点下发/验证）；回滚/应用会据此范围同步，避免误触全部节点。
+
 #### 2.11 xray dokodemo-door / TUN 入站配置生成（**已实现 2026-07-30**）
 
 - **实现要点**：
@@ -130,9 +142,8 @@
 | Client merge-profiles / route-profiles（22 条 placeholder）✅ 路由已清理 2026-07-30 | 多订阅源合并、客户端路由规则集 profile，完全新概念，无实体无实现，前端也无调用 |
 | Server Share profiles（12 条 placeholder）✅ 路由已清理 2026-07-30（实际挂载于 `/server-share/profiles/*`；`ServerShareProfile` 实体 schema 保留） | 比已实现的 share-domains 更高层：发布/撤销/版本历史/预览/二维码/导出，部分重叠（见 3.4） |
 | Routing Regions CRUD（4 条 placeholder）✅ 路由已清理 2026-07-30（保留 `routing_regions` 空表） | `routing_regions` 表已建（`entity/runtime.go:168-180`）无实现；与 geo-rules/region_selector 用途不同（见 3.5） |
-| `client-auth/traffic-history` | 门户自述"未来扩展"；节点级 traffic-history 已有 |
-| gRPC `RegistrationService.Register` 未接线 | `manager.go:1503-1512` 返回未接线；现行路径走 REST bootstrap-token（已实现且够用），属可选增强 |
-| Metrics `ConnectionFailures`/`UDPQUICMetrics` | 空端点，但前端无任何调用（前端用 `/node-servers/:id/metrics-history`），死端点 |
+| `client-auth/traffic-history` | ✅ **后端已实现 2026-07-31**：`GET /api/v1/client-auth/traffic-history`（受 client-auth 鉴权，可选 `?months=N` 1-24 默认 6），按当前登录用户订阅的 `BillingNodeIDs` 聚合 `node_traffic_usage`，按月返回流量趋势 `[{period_start, rx_bytes, tx_bytes, total_bytes}]`；前端门户尚未调用（仍为未来扩展） |
+| Metrics `ConnectionFailures`/`UDPQUICMetrics` | 经代码核查，当前代码中**不存在**这两个端点（仅本文档自引用）。实际 metrics 路由为 `metricsGroup.GET` 的 `/overview`、`/services`、`/nodes`、`/certificates`（`router.go:1845-1848`）与 `node-servers` 的 `/:id/metrics-history`、`/metrics/aggregated`（`router.go:1514-1515`）；前端仅调用 `/node-servers/:id/metrics-history`，其余 metrics 端点前端无调用，属低优先补充指标，**非死端点** |
 | 安全能力：2FA/RBAC/管理端 mTLS/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，均未落地 |
 
 #### 2.12 首次启动初始化向导（**暂缓开发**）
@@ -145,6 +156,7 @@
 - 关联：`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）是无前端调用的死端点
 
 > **明确不实现项（已排除）**：**CSRF 防护**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，**决定不实现**，从缺失清单移除。
+> **gRPC `RegistrationService.Register`**——节点注册已实现并走 REST 公开端点 `v1.POST("/agent/bootstrap")`（用 bootstrap token 下发证书与 agent 二进制/配置，见 `router.go:1989`），gRPC `Register` 仅返回"未接线"响应，**决定不实现**，从 P3 缺失清单移除。
 
 > **客户端设计（服务端不实现，从缺失清单剔除）**：
 > `router.go` 中 `/route-runtime/openwrt/*`（7 条 placeholder）以及 `domain/common.go:141-142` 的 `Dnsmasq`/`Fw4` 枚举常量，描述的是 **OpenWrt 客户端设备端**的能力（fw4 防火墙、dnsmasq、OpenWrt 集成下发），属于客户端（`web/client` / `corefusion client` 模式）范畴，**服务端明确不实现**。

@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"time"
 
 	"corefusion/internal/auth/jwt"
 	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/nodeserver"
 	"corefusion/internal/store/repository"
 )
 
@@ -27,6 +29,7 @@ type Service struct {
 	referralSvc  *ReferralService // P1: 邀请码注册绑定
 	settingSvc   SettingStore
 	jwt          *jwt.JWT
+	trafficQuotaSvc *nodeserver.NodeTrafficQuotaService
 }
 
 // NewService creates a new client auth service.
@@ -56,6 +59,75 @@ func (s *Service) SetBalanceRepo(repo *repository.ClientBalanceRepository) {
 // P1: 邀请码注册绑定 — 注册时自动建立邀请关系
 func (s *Service) SetReferralService(svc *ReferralService) {
 	s.referralSvc = svc
+}
+
+// SetTrafficQuotaSvc injects the node traffic quota service, used to aggregate a
+// client's traffic history across the billing nodes of their subscription.
+func (s *Service) SetTrafficQuotaSvc(svc *nodeserver.NodeTrafficQuotaService) {
+	s.trafficQuotaSvc = svc
+}
+
+// TrafficHistoryPoint is one monthly data point of a client's aggregated traffic
+// across the billing nodes of their subscription.
+type TrafficHistoryPoint struct {
+	PeriodStart time.Time `json:"period_start"`
+	RxBytes     int64     `json:"rx_bytes"`
+	TxBytes     int64     `json:"tx_bytes"`
+	TotalBytes  int64     `json:"total_bytes"`
+}
+
+// GetTrafficHistory returns the authenticated client's traffic usage history (trend),
+// aggregated across the billing nodes (Subscription.BillingNodeIDs) of the client's
+// subscription. Returns an empty slice when the client has no subscription, no billing
+// nodes, or the quota service is not wired. Safe for the portal "future extension"
+// endpoint GET /api/v1/client-auth/traffic-history.
+func (s *Service) GetTrafficHistory(ctx context.Context, clientID int64, months int) ([]TrafficHistoryPoint, error) {
+	if months <= 0 || months > 24 {
+		months = 6
+	}
+	if s.trafficQuotaSvc == nil {
+		return []TrafficHistoryPoint{}, nil
+	}
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if client.SubscriptionID == nil || *client.SubscriptionID == 0 {
+		return []TrafficHistoryPoint{}, nil
+	}
+	sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	nodeIDs := []int64(sub.BillingNodeIDs)
+	if len(nodeIDs) == 0 {
+		return []TrafficHistoryPoint{}, nil
+	}
+	usage, err := s.trafficQuotaSvc.GetTrafficHistoryByServers(ctx, nodeIDs, months)
+	if err != nil {
+		return nil, err
+	}
+	agg := make(map[time.Time]*TrafficHistoryPoint, len(usage))
+	for i := range usage {
+		u := usage[i]
+		total := u.RxBytes + u.TxBytes
+		p, ok := agg[u.PeriodStart]
+		if !ok {
+			p = &TrafficHistoryPoint{PeriodStart: u.PeriodStart}
+			agg[u.PeriodStart] = p
+		}
+		p.RxBytes += u.RxBytes
+		p.TxBytes += u.TxBytes
+		p.TotalBytes += total
+	}
+	points := make([]TrafficHistoryPoint, 0, len(agg))
+	for _, p := range agg {
+		points = append(points, *p)
+	}
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].PeriodStart.After(points[j].PeriodStart)
+	})
+	return points, nil
 }
 
 // RegisterInput is the input for client registration.

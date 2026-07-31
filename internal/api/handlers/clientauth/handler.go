@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -212,6 +213,29 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{"message": "password changed"})
+}
+
+// GetTrafficHistory handles GET /api/v1/client-auth/traffic-history.
+// Returns the authenticated client's monthly traffic usage trend, aggregated across
+// the billing nodes of their subscription. Optional ?months=N (1-24, default 6).
+func (h *Handler) GetTrafficHistory(c *gin.Context) {
+	clientID := getClientID(c)
+	if clientID == 0 {
+		response.Unauthorized(c, "UNAUTHORIZED", "client not authenticated")
+		return
+	}
+	months := 6
+	if m := c.Query("months"); m != "" {
+		if v, err := strconv.Atoi(m); err == nil && v > 0 && v <= 24 {
+			months = v
+		}
+	}
+	history, err := h.svc.GetTrafficHistory(c.Request.Context(), clientID, months)
+	if err != nil {
+		response.InternalError(c, "TRAFFIC_HISTORY_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"months": months, "history": history})
 }
 
 // getClientID extracts client ID from Gin context (set by middleware).

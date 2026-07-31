@@ -1418,8 +1418,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					nodeServerRepo,
 					nodeMgrForPhase3,
 				)
-				nodeServerSvcInst.WithTrafficQuotaService(trafficQuotaSvc)
-				nodeMgrForPhase3.SetTrafficQuotaProcessor(trafficQuotaSvc)
+			nodeServerSvcInst.WithTrafficQuotaService(trafficQuotaSvc)
+			nodeMgrForPhase3.SetTrafficQuotaProcessor(trafficQuotaSvc)
+
+			// Wire node traffic quota service into client auth for GET /client-auth/traffic-history
+			clientauthSvcInst.SetTrafficQuotaSvc(trafficQuotaSvc)
 
 			// Start the traffic quota checker in the background
 			go trafficQuotaSvc.Start(context.Background())
@@ -2216,6 +2219,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
+		clientAuthProtected.GET("/traffic-history", clientauthH.GetTrafficHistory)
 		// Client log package endpoints (subscription user log access)
 		clientAuthProtected.GET("/logs/types", clientLogH.LogPackageHealthCheck)
 		clientAuthProtected.POST("/logs/package", clientLogH.CreateLogPackage)
@@ -2745,6 +2749,13 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 
 	// P1: 注入 ReferralService — 注册时自动绑定邀请关系 + 套餐激活时触发返利
 	clientauthSvcInst.SetReferralService(referralSvcInst)
+
+	// Wire node traffic quota service for GET /client-auth/traffic-history
+	// (only the DB-backed history query is used; nodeMgr is not required here)
+	nodeServerRepoForTH := repository.NewNodeServerRepository(database)
+	portalTrafficQuotaSvc := nodeServerSvc.NewNodeTrafficQuotaService(database, nodeServerRepoForTH, nil)
+	clientauthSvcInst.SetTrafficQuotaSvc(portalTrafficQuotaSvc)
+
 	commerceSvcInst.SetReferralService(referralSvcInst)
 
 	// 注入 UserSyncer — Portal 引擎退款过期后也需从节点移除用户
@@ -2836,6 +2847,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
+		clientAuthProtected.GET("/traffic-history", clientauthH.GetTrafficHistory)
 		// Client log package endpoints (subscription user log access)
 		clientAuthProtected.GET("/logs/types", clientLogH.LogPackageHealthCheck)
 		clientAuthProtected.POST("/logs/package", clientLogH.CreateLogPackage)

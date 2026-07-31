@@ -27,6 +27,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// Services
 		&entity.InboundService{},
 		&entity.ServiceEndpoint{},
+		&entity.NodeTrafficUsage{},
 
 		// Access Control
 		&entity.ServiceAccessPolicy{},

@@ -158,6 +158,11 @@
         <CoreProcessTab :server-id="serverId" />
       </el-tab-pane>
 
+      <!-- Core Traffic Tab (per node: monthly trend + realtime rate) -->
+      <el-tab-pane :label="t('dashboard.coreTraffic')" name="traffic">
+        <CoreTrafficTab :server-id="serverId" />
+      </el-tab-pane>
+
       <!-- WARP Tab (per node) -->
       <el-tab-pane :label="t('service.tabs.warp')" name="warp">
         <WarpTab :server-id="serverId" />
@@ -268,6 +273,7 @@ import CoreProcessTab from './node-server/CoreProcessTab.vue'
 import WarpTab from './services/WarpTab.vue'
 import ShareDomainTab from './services/ShareDomainTab.vue'
 import RateLimitTab from './services/RateLimitTab.vue'
+import CoreTrafficTab from './node-server/CoreTrafficTab.vue'
 import { useQueryState } from '../composables/useQueryState'
 
 const { t } = useI18n()

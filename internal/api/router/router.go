@@ -1378,6 +1378,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				// Phase 6: Advanced Features wiring
 				metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
+				// 本地节点（面板自身）主机指标由 StatsService 直接采集，不走独立 agent 的 gRPC 接口
+				statsSvc := systemSvc.NewStatsService(version)
+				metricsCollector.SetLocalStatsProvider(statsSvc.CollectServerMetric)
+				go metricsCollector.RunLoop(context.Background())
 				speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
 				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)

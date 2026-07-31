@@ -23,7 +23,10 @@ func (h *Handler) Overview(c *gin.Context) {
 	var nodeCount, serviceCount, subCount, certCount int64
 
 	h.db.Model(&entity.Node{}).Count(&nodeCount)
-	h.db.Model(&entity.InboundService{}).Count(&serviceCount)
+	// 只统计挂在真实存在的节点服务器上的入站服务，排除指向已删除服务器的孤儿记录
+	h.db.Table("inbound_services").
+		Joins("INNER JOIN node_servers ON node_servers.id = inbound_services.server_id").
+		Count(&serviceCount)
 	h.db.Model(&entity.Subscription{}).Where("status = ?", "active").Count(&subCount)
 	h.db.Model(&entity.Certificate{}).Where("status = ?", "active").Count(&certCount)
 
@@ -35,12 +38,35 @@ func (h *Handler) Overview(c *gin.Context) {
 	var quotaWarningCount int64
 	h.db.Model(&entity.Subscription{}).Where("quota_state IN ?", []string{"near_limit", "over_limit_soft", "over_limit_hard"}).Count(&quotaWarningCount)
 
+	// 即将过期证书明细（30 天内，最多 10 条），供前端「异常告警」列出
+	var expiringCerts []entity.Certificate
+	h.db.Model(&entity.Certificate{}).
+		Where("status = ? AND expires_at IS NOT NULL AND expires_at < datetime('now', '+30 days')", "active").
+		Order("expires_at ASC").
+		Limit(10).
+		Find(&expiringCerts)
+	expiringCertList := make([]gin.H, 0, len(expiringCerts))
+	for _, c := range expiringCerts {
+		label := c.Domain
+		if label == "" {
+			label = c.Name
+		}
+		expiringCertList = append(expiringCertList, gin.H{
+			"id":         c.ID,
+			"name":       c.Name,
+			"domain":     c.Domain,
+			"label":      label,
+			"expires_at": c.ExpiresAt,
+		})
+	}
+
 	response.OK(c, gin.H{
 		"node_count":          nodeCount,
 		"service_count":       serviceCount,
 		"active_subscription_count": subCount,
 		"active_cert_count":   certCount,
 		"expiring_cert_count": expiringCertCount,
+		"expiring_certs":      expiringCertList,
 		"quota_warning_count": quotaWarningCount,
 	})
 }

@@ -1,291 +1,532 @@
 <template>
-  <div>
-    <h2 style="margin-bottom:20px">{{ t('dashboard.title') }}</h2>
-
-    <!-- Row 1: Resource Usage -->
-    <el-row :gutter="16" style="margin-bottom:16px">
-      <el-col :span="6" v-for="item in resourceCards" :key="item.label">
-        <el-card shadow="hover" style="text-align:center">
-          <div style="position:relative;width:110px;height:110px;margin:0 auto 10px">
-            <svg viewBox="0 0 36 36" style="width:100%;height:100%;transform:rotate(-90deg)">
-              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#f0f0f0" stroke-width="3" />
-              <circle cx="18" cy="18" r="15.9" fill="none" :stroke="item.color" stroke-width="3"
-                :stroke-dasharray="`${item.usage} ${100 - item.usage}`" stroke-linecap="round" />
-            </svg>
-            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
-              <div style="font-size:18px;font-weight:700;color:#303133">{{ item.usage }}%</div>
-            </div>
-          </div>
-          <div style="font-weight:600;color:#303133;margin-bottom:4px">{{ item.label }}</div>
-          <div style="font-size:12px;color:#909399">{{ item.used }} / {{ item.total }}</div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- Row 2: Quick Stats -->
-    <el-row :gutter="16" style="margin-bottom:16px">
-      <el-col :span="6" v-for="item in cards" :key="item.label">
-        <el-card shadow="hover">
-          <template #header>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:18px">{{ item.icon }}</span>
-              <span>{{ t(item.label) }}</span>
-            </div>
-          </template>
-          <div style="font-size:32px;font-weight:700;color:#303133;text-align:center;padding:8px 0">{{ item.value }}</div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- Row 3: Info Cards -->
-    <el-row :gutter="16" style="margin-bottom:16px">
-      <el-col :span="8">
-        <el-card shadow="hover" style="min-height:180px">
-          <template #header>{{ t('dashboard.systemInfo') }}</template>
-          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-            <div style="display:flex;justify-content:space-between">
-              <span style="color:#909399">{{ t('dashboard.os') }}</span>
-              <span style="font-weight:600">{{ stats.os || '-' }} / {{ stats.arch || '-' }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between">
-              <span style="color:#909399">{{ t('dashboard.hostname') }}</span>
-              <span style="font-weight:600">{{ stats.hostname || '-' }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between">
-              <span style="color:#909399">{{ t('dashboard.systemUptime') }}</span>
-              <span style="font-weight:600">{{ formatUptime(stats.uptime) }}</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="hover" style="min-height:180px">
-          <template #header>{{ t('dashboard.panelStatus') }}</template>
-          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-            <div style="display:flex;justify-content:space-between">
-              <span style="color:#909399">{{ t('dashboard.version') }}</span>
-              <span style="font-weight:600">{{ stats.version || 'v0.1.0' }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between">
-              <span style="color:#909399">{{ t('dashboard.panelUptime') }}</span>
-              <span style="font-weight:600">{{ formatUptime(stats.panel_uptime) }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between">
-              <span style="color:#909399">Goroutines</span>
-              <span style="font-weight:600">{{ stats.goroutines || 0 }}</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="hover" style="min-height:180px">
-          <template #header>{{ t('dashboard.traffic') }}</template>
-          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="color:#909399">{{ t('dashboard.upload') }}</span>
-              <span style="font-weight:600;color:#409eff">{{ formatBytes(stats.net_bytes_sent) }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="color:#909399">{{ t('dashboard.download') }}</span>
-              <span style="font-weight:600;color:#67c23a">{{ formatBytes(stats.net_bytes_recv) }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #f0f0f0;padding-top:6px">
-              <span style="color:#909399">{{ t('dashboard.totalTraffic') }}</span>
-              <span style="font-weight:700;color:#303133">{{ formatBytes((stats.net_bytes_sent || 0) + (stats.net_bytes_recv || 0)) }}</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- Row 4: Load & Connections -->
-    <el-row :gutter="16" style="margin-bottom:16px">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>{{ t('dashboard.systemLoad') }}</template>
-          <div style="display:flex;justify-content:space-around;text-align:center;padding:12px 0">
-            <div>
-              <div style="font-size:26px;font-weight:700;color:#409eff">{{ stats.load_avg_1?.toFixed(2) || '0.00' }}</div>
-              <div style="font-size:12px;color:#909399;margin-top:4px">1 {{ t('dashboard.minute') }}</div>
-            </div>
-            <div>
-              <div style="font-size:26px;font-weight:700;color:#e6a23c">{{ stats.load_avg_5?.toFixed(2) || '0.00' }}</div>
-              <div style="font-size:12px;color:#909399;margin-top:4px">5 {{ t('dashboard.minutes') }}</div>
-            </div>
-            <div>
-              <div style="font-size:26px;font-weight:700;color:#f56c6c">{{ stats.load_avg_15?.toFixed(2) || '0.00' }}</div>
-              <div style="font-size:12px;color:#909399;margin-top:4px">15 {{ t('dashboard.minutes') }}</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>{{ t('dashboard.connections') }}</template>
-          <div style="display:flex;justify-content:space-around;text-align:center;padding:12px 0">
-            <div>
-              <div style="font-size:26px;font-weight:700;color:#409eff">{{ stats.tcp_connections || 0 }}</div>
-              <div style="font-size:12px;color:#909399;margin-top:4px">TCP</div>
-            </div>
-            <div>
-              <div style="font-size:26px;font-weight:700;color:#67c23a">{{ stats.udp_connections || 0 }}</div>
-              <div style="font-size:12px;color:#909399;margin-top:4px">UDP</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- Row 5: Bandwidth -->
-    <el-card shadow="hover" style="margin-bottom:16px">
-      <template #header>{{ t('dashboard.bandwidth') }}</template>
-      <div style="display:flex;justify-content:space-around;text-align:center;padding:8px 0">
-        <div>
-          <div style="font-size:20px;font-weight:700;color:#409eff">{{ formatSpeed(uploadSpeed) }}</div>
-          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('dashboard.uploadSpeed') }}</div>
-        </div>
-        <div>
-          <div style="font-size:20px;font-weight:700;color:#67c23a">{{ formatSpeed(downloadSpeed) }}</div>
-          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('dashboard.downloadSpeed') }}</div>
-        </div>
-        <div>
-          <div style="font-size:18px;font-weight:600;color:#303133">{{ formatBytes(stats.net_bytes_sent) }}</div>
-          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('dashboard.totalUpload') }}</div>
-        </div>
-        <div>
-          <div style="font-size:18px;font-weight:600;color:#303133">{{ formatBytes(stats.net_bytes_recv) }}</div>
-          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('dashboard.totalDownload') }}</div>
-        </div>
+  <div class="dashboard">
+    <div class="dash-header">
+      <div>
+        <h2 class="dash-title">{{ t('dashboard.title') }}</h2>
+        <span class="dash-sub">{{ t('dashboard.subtitle') }}</span>
       </div>
-    </el-card>
+      <div class="dash-actions">
+        <span class="dash-updated" v-if="lastUpdated">{{ t('dashboard.lastUpdated') }}: {{ lastUpdated }}</span>
+        <el-button size="small" :loading="loading" @click="loadAll">{{ t('common.refresh') }}</el-button>
+      </div>
+    </div>
 
-    <!-- Row 6: Core Traffic -->
-    <el-card shadow="hover">
-      <template #header>{{ t('dashboard.coreTraffic') }}</template>
-      <el-table :data="coreTraffic" stripe>
-        <el-table-column prop="name" :label="t('common.name')" width="140" />
-        <el-table-column prop="core_type" :label="t('service.coreType')" width="90">
-          <template #default="{row}"><el-tag size="small">{{ row.core_type }}</el-tag></template>
-        </el-table-column>
-        <el-table-column :label="t('dashboard.state')" width="80">
-          <template #default="{row}">
-            <el-tag :type="row.state==='running'?'success':'info'" size="small">{{ row.state }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('dashboard.upload')" width="110">
-          <template #default="{row}"><span style="color:#409eff">{{ formatBytes(row.upload || 0) }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('dashboard.download')" width="110">
-          <template #default="{row}"><span style="color:#67c23a">{{ formatBytes(row.download || 0) }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('dashboard.liveUpload')" width="110">
-          <template #default="{row}"><span style="color:#409eff">{{ formatSpeed(row.live_upload || 0) }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('dashboard.liveDownload')" width="110">
-          <template #default="{row}"><span style="color:#67c23a">{{ formatSpeed(row.live_download || 0) }}</span></template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+    <div v-loading="loading">
+      <!-- Fleet summary cards -->
+      <el-row :gutter="16" class="summary-row">
+        <el-col :span="4">
+          <el-card shadow="hover" class="summary-card">
+            <div class="sum-label">{{ t('dashboard.fleetNodes') }}</div>
+            <div class="sum-value">{{ (fleet && fleet.online) || 0 }}<span class="sum-unit"> / {{ (fleet && fleet.total) || 0 }}</span></div>
+            <div class="sum-foot">
+              <span class="foot-on">{{ t('dashboard.fleetOnline') }} {{ (fleet && fleet.online) || 0 }}</span>
+              <span class="foot-off" v-if="(fleet && fleet.offline)">{{ t('dashboard.fleetOffline') }} {{ fleet.offline }}</span>
+              <span class="foot-deg" v-if="(fleet && fleet.degraded)">{{ t('dashboard.fleetDegraded') }} {{ fleet.degraded }}</span>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="4">
+          <el-card shadow="hover" class="summary-card">
+            <div class="sum-label">{{ t('dashboard.fleetServices') }}</div>
+            <div class="sum-value">{{ (overview && overview.service_count) || 0 }}</div>
+            <div class="sum-foot"><span class="foot-muted">{{ t('dashboard.fleetServices') }}</span></div>
+          </el-card>
+        </el-col>
+        <el-col :span="4">
+          <el-card shadow="hover" class="summary-card">
+            <div class="sum-label">{{ t('dashboard.fleetSubscriptions') }}</div>
+            <div class="sum-value">{{ (overview && overview.active_subscription_count) || 0 }}</div>
+            <div class="sum-foot">
+              <span class="foot-warn" v-if="(overview && overview.quota_warning_count)">{{ t('dashboard.fleetQuotaWarn') }} {{ overview.quota_warning_count }}</span>
+              <span class="foot-muted" v-else>{{ t('dashboard.fleetQuotaWarn') }} 0</span>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="4">
+          <el-card shadow="hover" class="summary-card">
+            <div class="sum-label">{{ t('dashboard.fleetCerts') }}</div>
+            <div class="sum-value">{{ (overview && overview.active_cert_count) || 0 }}</div>
+            <div class="sum-foot">
+              <span class="foot-warn" v-if="(overview && overview.expiring_cert_count)">{{ t('dashboard.alertExpiringCert') }} {{ overview.expiring_cert_count }}</span>
+              <span class="foot-muted" v-else>{{ t('dashboard.alertExpiringCert') }} 0</span>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="4">
+          <el-card shadow="hover" class="summary-card">
+            <div class="sum-label">{{ t('dashboard.fleetRegions') }}</div>
+            <div class="sum-value">{{ regionOptions.length }}</div>
+            <div class="sum-foot"><span class="foot-muted">{{ regionOptions.length }} {{ t('dashboard.filterRegion') }}</span></div>
+          </el-card>
+        </el-col>
+        <el-col :span="4">
+          <el-card shadow="hover" class="summary-card panel-card">
+            <div class="sum-label">{{ t('dashboard.panelServer') }}</div>
+            <template v-if="panelStats">
+              <div class="sum-value">{{ panelStats.cpu_usage != null ? Math.round(panelStats.cpu_usage) : '—' }}<span class="sum-unit">%</span></div>
+              <div class="sum-foot">
+                <span class="foot-muted" v-if="panelStats.mem_usage != null">MEM {{ Math.round(panelStats.mem_usage) }}%</span>
+              </div>
+            </template>
+            <div class="sum-foot" v-else><span class="foot-muted">—</span></div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- Node health grid -->
+      <el-card class="block-card">
+        <template #header>
+          <div class="card-head">
+            <span class="card-title">{{ t('dashboard.nodeGrid') }}</span>
+            <div class="filters">
+              <el-select v-model="statusFilter" :placeholder="t('dashboard.filterStatus')" clearable size="small" class="f-select">
+                <el-option :label="t('dashboard.filterAll')" value="" />
+                <el-option :label="t('dashboard.statusOnline')" value="online" />
+                <el-option :label="t('dashboard.statusOffline')" value="offline" />
+                <el-option :label="t('dashboard.statusDegraded')" value="degraded" />
+              </el-select>
+              <el-select v-model="typeFilter" :placeholder="t('dashboard.filterType')" clearable size="small" class="f-select">
+                <el-option :label="t('dashboard.filterAll')" value="" />
+                <el-option :label="t('dashboard.typeStandalone')" value="standalone" />
+                <el-option :label="t('dashboard.typeMirror')" value="mirror" />
+                <el-option :label="t('dashboard.typePrimaryBackup')" value="primary_backup" />
+                <el-option :label="t('dashboard.typeChainEntry')" value="chain_entry" />
+                <el-option :label="t('dashboard.typeChainExit')" value="chain_exit" />
+              </el-select>
+              <el-select v-model="regionFilter" :placeholder="t('dashboard.filterRegion')" clearable size="small" class="f-select" v-if="regionOptions.length">
+                <el-option :label="t('dashboard.filterAll')" value="" />
+                <el-option v-for="r in regionOptions" :key="r" :label="r" :value="r" />
+              </el-select>
+              <el-input v-model="keyword" :placeholder="t('common.search')" clearable size="small" class="f-input" />
+            </div>
+          </div>
+        </template>
+
+        <div v-if="!filteredNodes.length" class="empty-hint">{{ t('common.noData') }}</div>
+        <el-row :gutter="16" v-else>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="node in filteredNodes" :key="node.id" class="node-col">
+            <div class="node-card" :class="{ 'is-offline': !node.online }" @click="goDetail(node)">
+              <div class="node-head">
+                <span class="status-dot" :class="'dot-' + (node.status || 'offline')"></span>
+                <span class="node-name" :title="node.name">{{ node.name }}</span>
+                <el-tag size="mini" class="node-type">{{ typeLabel(node.node_type) }}</el-tag>
+              </div>
+              <div class="node-sub">{{ node.region || '—' }}<template v-if="node.hostname"> · {{ node.hostname }}</template></div>
+
+              <template v-if="node.online && node.metric">
+                <div class="metric-line">
+                  <span class="ml-label">{{ t('dashboard.cpu') }}</span>
+                  <el-progress :percentage="clampPct(node.metric.cpu_usage)" :color="pctColor(node.metric.cpu_usage)" :show-text="false" class="ml-bar" />
+                  <span class="ml-val">{{ Math.round(node.metric.cpu_usage) }}%</span>
+                </div>
+                <div class="metric-line">
+                  <span class="ml-label">{{ t('dashboard.mem') }}</span>
+                  <el-progress :percentage="clampPct(node.metric.mem_usage)" :color="pctColor(node.metric.mem_usage)" :show-text="false" class="ml-bar" />
+                  <span class="ml-val">{{ Math.round(node.metric.mem_usage) }}%</span>
+                </div>
+                <div class="metric-line">
+                  <span class="ml-label">{{ t('dashboard.disk') }}</span>
+                  <el-progress :percentage="clampPct(node.metric.disk_usage)" :color="pctColor(node.metric.disk_usage)" :show-text="false" class="ml-bar" />
+                  <span class="ml-val">{{ Math.round(node.metric.disk_usage) }}%</span>
+                </div>
+                <div class="node-foot">
+                  <span class="net-up">↑ {{ formatBytes(node.metric.net_tx_bytes) }}/s</span>
+                  <span class="net-down">↓ {{ formatBytes(node.metric.net_rx_bytes) }}/s</span>
+                  <span class="uptime" v-if="node.metric.uptime_seconds">{{ formatUptime(node.metric.uptime_seconds) }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div class="offline-box">
+                  <div class="offline-text">{{ t('dashboard.statusOffline') }}</div>
+                  <div class="offline-heart" v-if="node.last_heartbeat_age_seconds != null">{{ t('dashboard.lastHeartbeat') }} {{ node.last_heartbeat_age_seconds }}s {{ t('dashboard.heartbeatAgo') }}</div>
+                  <div class="offline-heart" v-else>—</div>
+                </div>
+              </template>
+            </div>
+          </el-col>
+        </el-row>
+      </el-card>
+
+      <!-- Cluster resource -->
+      <el-row :gutter="16" class="block-row">
+        <el-col :span="14">
+          <el-card class="block-card">
+            <template #header><span class="card-title">{{ t('dashboard.clusterResource') }}</span></template>
+            <el-row :gutter="16">
+              <el-col :span="8">
+                <div class="cluster-item">
+                  <div class="ci-label">{{ t('dashboard.clusterAvgCpu') }}</div>
+                  <el-progress type="dashboard" :width="92" :percentage="Math.round(avgCpu)" :color="pctColor(avgCpu)" />
+                </div>
+              </el-col>
+              <el-col :span="8">
+                <div class="cluster-item">
+                  <div class="ci-label">{{ t('dashboard.clusterAvgMem') }}</div>
+                  <el-progress type="dashboard" :width="92" :percentage="Math.round(avgMem)" :color="pctColor(avgMem)" />
+                </div>
+              </el-col>
+              <el-col :span="8">
+                <div class="cluster-item">
+                  <div class="ci-label">{{ t('dashboard.clusterAvgDisk') }}</div>
+                  <el-progress type="dashboard" :width="92" :percentage="Math.round(avgDisk)" :color="pctColor(avgDisk)" />
+                </div>
+              </el-col>
+            </el-row>
+            <div class="cluster-foot">
+              <span>{{ t('dashboard.netTraffic') }}: {{ formatBytes(totalNet) }}/s</span>
+              <span>{{ t('dashboard.userTraffic') }}: {{ formatBytes(totalTraffic) }}/s</span>
+              <span class="muted">{{ t('dashboard.basedOn') }} {{ onlineWithMetric.length }} {{ t('dashboard.fleetOnline') }}</span>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="10">
+          <el-card class="block-card">
+            <template #header><span class="card-title">{{ t('dashboard.topLoadNodes') }}</span></template>
+            <div v-if="!topLoad.length" class="empty-hint">{{ t('common.noData') }}</div>
+            <div v-for="n in topLoad" :key="n.id" class="top-row" @click="goDetail(n)">
+              <span class="top-name">{{ n.name }}</span>
+              <el-progress :percentage="clampPct(n.metric.cpu_usage)" :color="pctColor(n.metric.cpu_usage)" :show-text="false" class="top-bar" />
+              <span class="top-val">{{ Math.round(n.metric.cpu_usage) }}%</span>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- Alerts -->
+      <el-card class="block-card">
+        <template #header><span class="card-title">{{ t('dashboard.alerts') }}</span></template>
+        <el-alert v-if="!hasAlerts" :title="t('dashboard.noAlerts')" type="success" :closable="false" show-icon />
+        <div v-else class="alert-grid">
+          <div class="alert-group" v-if="offlineNodes.length">
+            <div class="ag-title ag-off">{{ t('dashboard.alertOffline') }} ({{ offlineNodes.length }})</div>
+            <div class="ag-list">
+              <span class="ag-chip" v-for="n in offlineNodes" :key="n.id" @click="goDetail(n)">{{ n.name }}</span>
+            </div>
+          </div>
+          <div class="alert-group" v-if="degradedNodes.length">
+            <div class="ag-title ag-deg">{{ t('dashboard.alertDegraded') }} ({{ degradedNodes.length }})</div>
+            <div class="ag-list">
+              <span class="ag-chip" v-for="n in degradedNodes" :key="n.id" @click="goDetail(n)">{{ n.name }}</span>
+            </div>
+          </div>
+          <div class="alert-group" v-if="highResource.length">
+            <div class="ag-title ag-warn">{{ t('dashboard.alertHighResource') }} ({{ highResource.length }})</div>
+            <div class="ag-list">
+              <span class="ag-chip" v-for="n in highResource" :key="n.id" @click="goDetail(n)">{{ n.name }} {{ Math.round(n.metric.cpu_usage) }}%</span>
+            </div>
+          </div>
+          <div class="alert-group" v-if="expiringCertList.length">
+            <div class="ag-title ag-warn">{{ t('dashboard.alertExpiringCert') }} ({{ expiringCertList.length }})</div>
+            <div class="ag-list">
+              <span class="ag-chip" v-for="c in expiringCertList" :key="c.id" @click="goCerts()">
+                {{ c.label }} · {{ certDays(c.expires_at) }}{{ t('dashboard.daysLeft') }}
+              </span>
+            </div>
+          </div>
+          <div class="alert-group" v-if="quotaWarn">
+            <div class="ag-title ag-warn">{{ t('dashboard.alertQuotaWarn') }} ({{ quotaWarn }})</div>
+          </div>
+        </div>
+      </el-card>
+    </div>
   </div>
 </template>
 
-<script setup>
+<script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import client from '../api/client'
+import {
+  getDashboardStatus,
+  getAggregatedMetrics,
+  getMetricsOverview,
+} from '../api/nodeServer'
 
-const { t } = useI18n()
-
-const stats = ref({
-  cpu_usage: 0, cpu_cores: 0, mem_total: 0, mem_used: 0, mem_free: 0, mem_usage: 0,
-  swap_total: 0, swap_used: 0, swap_free: 0, swap_usage: 0,
-  disk_total: 0, disk_used: 0, disk_free: 0, disk_usage: 0,
-  hostname: '', os: '', arch: '', kernel: '', uptime: 0,
-  load_avg_1: 0, load_avg_5: 0, load_avg_15: 0,
-  tcp_connections: 0, udp_connections: 0,
-  net_bytes_sent: 0, net_bytes_recv: 0, current_time: '', version: ''
-})
-
-const cards = ref([
-  { label: 'dashboard.protoCenterCount', value: 0, icon: '🖥' },
-  { label: 'dashboard.coreCount', value: 4, icon: '⚡' },
-  { label: 'dashboard.subscriptionCount', value: 0, icon: '📋' },
-  { label: 'dashboard.certCount', value: 0, icon: '🔒' },
-])
-
-const uploadSpeed = ref(0)
-const downloadSpeed = ref(0)
-const lastSent = ref(0)
-const lastRecv = ref(0)
-const coreTraffic = ref([])
-let statsTimer = null
-
-const resourceCards = computed(() => [
-  { label: 'CPU', usage: Math.round(stats.value.cpu_usage || 0), used: `${stats.value.cpu_cores} cores`, total: `${stats.value.cpu_cores} cores`, color: stats.value.cpu_usage > 80 ? '#f56c6c' : '#409eff' },
-  { label: t('dashboard.memory'), usage: Math.round(stats.value.mem_usage || 0), used: formatBytes(stats.value.mem_used), total: formatBytes(stats.value.mem_total), color: stats.value.mem_usage > 80 ? '#f56c6c' : '#67c23a' },
-  { label: 'Swap', usage: Math.round(stats.value.swap_usage || 0), used: formatBytes(stats.value.swap_used), total: formatBytes(stats.value.swap_total), color: stats.value.swap_usage > 80 ? '#f56c6c' : '#e6a23c' },
-  { label: t('dashboard.disk'), usage: Math.round(stats.value.disk_usage || 0), used: formatBytes(stats.value.disk_used), total: formatBytes(stats.value.disk_total), color: stats.value.disk_usage > 80 ? '#f56c6c' : '#909399' }
-])
-
-function formatBytes(bytes) {
-  if (!bytes || bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let i = 0, b = bytes
-  while (b >= 1024 && i < units.length - 1) { b /= 1024; i++ }
-  return b.toFixed(i > 0 ? 1 : 0) + ' ' + units[i]
+const TYPE_MAP = {
+  standalone: 'typeStandalone',
+  mirror: 'typeMirror',
+  primary_backup: 'typePrimaryBackup',
+  chain_entry: 'typeChainEntry',
+  chain_exit: 'typeChainExit',
+}
+const STATUS_MAP = {
+  online: 'statusOnline',
+  offline: 'statusOffline',
+  degraded: 'statusDegraded',
 }
 
-function formatSpeed(bps) {
-  if (!bps || bps === 0) return '0 B/s'
-  return formatBytes(bps) + '/s'
-}
+export default {
+  name: 'Dashboard',
+  setup() {
+    const { t } = useI18n()
+    const router = useRouter()
 
-function formatUptime(sec) {
-  if (!sec) return '-'
-  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return `${d}d ${h}h ${m}m`
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
-}
+    const fleet = ref(null)
+    const aggregated = ref(null)
+    const overview = ref(null)
+    const panelStats = ref(null)
+    const loading = ref(false)
+    const lastUpdated = ref('')
 
-async function fetchStats() {
-  try {
-    const data = await client.get('/system/stats')
-    if (data) {
-      if (lastSent.value > 0) {
-        uploadSpeed.value = Math.max(0, data.net_bytes_sent - lastSent.value)
-        downloadSpeed.value = Math.max(0, data.net_bytes_recv - lastRecv.value)
-      }
-      lastSent.value = data.net_bytes_sent
-      lastRecv.value = data.net_bytes_recv
-      stats.value = data
+    const statusFilter = ref('')
+    const typeFilter = ref('')
+    const regionFilter = ref('')
+    const keyword = ref('')
+
+    let timer = null
+
+    function avg(arr) {
+      if (!arr.length) return 0
+      return arr.reduce((s, v) => s + v, 0) / arr.length
     }
-  } catch (e) {}
-}
+    function clampPct(v) { return Math.max(0, Math.min(100, Math.round(v || 0))) }
+    function pctColor(v) {
+      if (v >= 80) return '#f56c6c'
+      if (v >= 60) return '#e6a23c'
+      return '#67c23a'
+    }
+    function typeLabel(v) { return t('dashboard.' + (TYPE_MAP[v] || 'typeStandalone')) }
+    function statusLabel(v) { return t('dashboard.' + (STATUS_MAP[v] || 'statusOffline')) }
+    function formatUptime(sec) {
+      if (!sec) return '—'
+      const d = Math.floor(sec / 86400)
+      const h = Math.floor((sec % 86400) / 3600)
+      const m = Math.floor((sec % 3600) / 60)
+      if (d > 0) return d + 'd ' + h + 'h'
+      if (h > 0) return h + 'h ' + m + 'm'
+      return m + 'm'
+    }
 
-async function fetchCards() {
-  try {
-    const [n, sub, c] = await Promise.all([
-      client.get('/nodes', { params: { limit: 1 } }),
-      client.get('/subscriptions', { params: { limit: 1 } }),
-      client.get('/certificates', { params: { limit: 1 } }),
-    ])
-    cards.value[0].value = n?.total || 0
-    cards.value[2].value = sub?.total || 0
-    cards.value[3].value = c?.total || 0
-  } catch (e) {}
-}
+    const nodes = computed(() => {
+      const servers = (fleet.value && fleet.value.servers) || []
+      const agg = aggregated.value || {}
+      return servers.map((s) => ({ ...s, metric: agg[s.id] || null }))
+    })
 
-async function fetchCoreTraffic() {
-  try {
-    const data = await client.get('/node-servers/1/services/process-status')
-    coreTraffic.value = (data || []).map(s => ({ ...s, upload: 0, download: 0, live_upload: 0, live_download: 0 }))
-  } catch (e) {}
-}
+    const filteredNodes = computed(() => {
+      const kw = (keyword.value || '').toLowerCase()
+      return nodes.value.filter((n) => {
+        if (statusFilter.value && n.status !== statusFilter.value) return false
+        if (typeFilter.value && n.node_type !== typeFilter.value) return false
+        if (regionFilter.value && n.region !== regionFilter.value) return false
+        if (kw && !((n.name || '').toLowerCase().includes(kw))) return false
+        return true
+      })
+    })
 
-onMounted(() => {
-  fetchStats(); fetchCards(); fetchCoreTraffic()
-  statsTimer = setInterval(fetchStats, 5000)
-})
-onUnmounted(() => { if (statsTimer) clearInterval(statsTimer) })
+    const regionOptions = computed(() => {
+      const br = (fleet.value && fleet.value.by_region) || {}
+      return Object.keys(br)
+    })
+
+    const onlineWithMetric = computed(() =>
+      nodes.value.filter((n) => n.online && n.metric)
+    )
+    const avgCpu = computed(() => avg(onlineWithMetric.value.map((n) => n.metric.cpu_usage)))
+    const avgMem = computed(() => avg(onlineWithMetric.value.map((n) => n.metric.mem_usage)))
+    const avgDisk = computed(() => avg(onlineWithMetric.value.map((n) => n.metric.disk_usage)))
+    const totalNet = computed(() =>
+      onlineWithMetric.value.reduce((s, n) => s + (n.metric.net_tx_bytes || 0) + (n.metric.net_rx_bytes || 0), 0)
+    )
+    const totalTraffic = computed(() =>
+      onlineWithMetric.value.reduce((s, n) => s + (n.metric.traffic_uplink || 0) + (n.metric.traffic_downlink || 0), 0)
+    )
+    const topLoad = computed(() =>
+      [...onlineWithMetric.value].sort((a, b) => b.metric.cpu_usage - a.metric.cpu_usage).slice(0, 5)
+    )
+
+    const offlineNodes = computed(() => nodes.value.filter((n) => !n.online))
+    const degradedNodes = computed(() => nodes.value.filter((n) => n.status === 'degraded'))
+    const highResource = computed(() =>
+      onlineWithMetric.value.filter(
+        (n) => n.metric.cpu_usage > 80 || n.metric.mem_usage > 80 || n.metric.disk_usage > 80
+      )
+    )
+    const expiringCertList = computed(() => (overview.value && overview.value.expiring_certs) || [])
+    const expiringCerts = computed(() => expiringCertList.value.length)
+    const quotaWarn = computed(() => (overview.value && overview.value.quota_warning_count) || 0)
+    const hasAlerts = computed(
+      () => offlineNodes.value.length || degradedNodes.value.length || highResource.value.length || expiringCerts.value || quotaWarn.value
+    )
+
+    function goDetail(node) {
+      router.push(`/node-servers/${node.id}/detail`)
+    }
+    function goCerts() {
+      router.push('/certificates')
+    }
+    function certDays(expiresAt) {
+      if (!expiresAt) return '—'
+      const exp = new Date(expiresAt)
+      if (isNaN(exp.getTime())) return '—'
+      const days = Math.ceil((exp.getTime() - Date.now()) / 86400000)
+      return days > 0 ? days : 0
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B'
+      const units = ['B', 'KB', 'MB', 'GB', 'TB']
+      let i = 0
+      let b = bytes
+      while (b >= 1024 && i < units.length - 1) {
+        b /= 1024
+        i++
+      }
+      return b.toFixed(i > 0 ? 1 : 0) + ' ' + units[i]
+    }
+
+    async function loadAll() {
+      loading.value = true
+      try {
+        const [d, a, o, p] = await Promise.all([
+          getDashboardStatus(),
+          getAggregatedMetrics(),
+          getMetricsOverview(),
+          client.get('/system/stats').catch(() => null),
+        ])
+        fleet.value = d
+        aggregated.value = a
+        overview.value = o
+        panelStats.value = p
+        lastUpdated.value = new Date().toLocaleTimeString()
+      } catch (e) {
+        // surface error via console; keep last good data
+        console.error('[Dashboard] load failed', e)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    onMounted(() => {
+      loadAll()
+      timer = setInterval(loadAll, 8000)
+    })
+    onUnmounted(() => {
+      if (timer) clearInterval(timer)
+    })
+
+    return {
+      t,
+      fleet, aggregated, overview, panelStats, loading, lastUpdated,
+      statusFilter, typeFilter, regionFilter, keyword,
+      filteredNodes, regionOptions, onlineWithMetric,
+      avgCpu, avgMem, avgDisk, totalNet, totalTraffic, topLoad,
+      offlineNodes, degradedNodes, highResource, expiringCerts, expiringCertList, quotaWarn, hasAlerts,
+      typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays,
+    }
+  },
+}
 </script>
+
+<style scoped>
+.dashboard { padding: 4px 8px 24px; }
+.dash-header { display: flex; justify-content: space-between; align-items: flex-end; margin: 4px 0 18px; }
+.dash-title { margin: 0; font-size: 20px; font-weight: 600; }
+.dash-sub { color: var(--el-text-color-secondary); font-size: 13px; }
+.dash-actions { display: flex; align-items: center; gap: 12px; }
+.dash-updated { color: var(--el-text-color-secondary); font-size: 12px; }
+
+/* Fleet summary cards */
+.summary-row { margin-bottom: 16px; }
+.summary-card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); height: 116px; }
+.summary-card :deep(.el-card__body) {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 18px;
+}
+.sum-label { color: var(--el-text-color-secondary); font-size: 13px; font-weight: 500; }
+.sum-value { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.5px; }
+.sum-unit { font-size: 14px; font-weight: 500; color: var(--el-text-color-secondary); margin-left: 3px; }
+.sum-foot { display: flex; gap: 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.foot-on { color: #67c23a; }
+.foot-off { color: #f56c6c; }
+.foot-deg { color: #e6a23c; }
+.foot-warn { color: #e6a23c; }
+.foot-muted { color: var(--el-text-color-secondary); }
+.panel-card { border: none; background: linear-gradient(135deg, #1f2a44, #2d3b5e); box-shadow: 0 2px 8px rgba(31,42,68,.25); }
+.panel-card .sum-label,
+.panel-card .sum-value,
+.panel-card .sum-unit { color: #fff; }
+.panel-card .foot-muted { color: rgba(255,255,255,.7); }
+
+/* Shared block cards */
+.block-card { margin-bottom: 16px; border: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+/* 同一行内的卡片等高，避免右侧卡片明显偏矮 */
+.block-row { margin-bottom: 16px; }
+.block-row > .el-col > .block-card { height: 100%; margin-bottom: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.card-title { font-weight: 600; font-size: 15px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.f-select { width: 120px; }
+.f-input { width: 160px; }
+
+/* Node health grid */
+.node-col { margin-bottom: 16px; }
+.node-card {
+  position: relative;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  padding: 14px 14px 14px 17px;
+  cursor: pointer;
+  transition: all .2s;
+  background: var(--el-bg-color);
+  display: flex;
+  flex-direction: column;
+  min-height: 172px;
+  overflow: hidden;
+}
+.node-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--el-color-primary); }
+.node-card.is-offline { background: #fafafa; }
+.node-card.is-offline::before { background: #c0c4cc; }
+.node-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,.10); transform: translateY(-2px); border-color: var(--el-color-primary-light-5); }
+.node-head { display: flex; align-items: center; gap: 8px; }
+.node-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.node-type { flex: none; }
+.node-sub { color: var(--el-text-color-secondary); font-size: 12px; margin: 4px 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.dot-online { background: #67c23a; }
+.dot-offline { background: #c0c4cc; }
+.dot-degraded { background: #e6a23c; }
+
+.metric-line { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }
+.ml-label { width: 30px; color: var(--el-text-color-secondary); flex: none; }
+.ml-bar { flex: 1; }
+.ml-val { width: 38px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+.node-foot { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; font-size: 12px; color: var(--el-text-color-secondary); border-top: 1px solid var(--el-border-color-lighter); }
+.net-up { color: #e6a23c; }
+.net-down { color: #409eff; }
+.uptime { margin-left: auto; }
+
+.offline-box { margin-top: auto; padding: 14px 0; text-align: center; }
+.offline-text { color: #909399; font-weight: 600; }
+.offline-heart { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
+
+/* Cluster resource */
+.cluster-item { text-align: center; padding: 8px 0; }
+.ci-label { font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
+.cluster-foot { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
+.cluster-foot .muted { color: var(--el-text-color-secondary); }
+
+/* Top load list */
+.top-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; border-bottom: 1px solid var(--el-border-color-lighter); }
+.top-row:last-child { border-bottom: none; }
+.top-name { width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.top-bar { flex: 1; }
+.top-val { width: 42px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* Alerts */
+.alert-grid { display: flex; flex-direction: column; gap: 14px; }
+.ag-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.ag-off { color: #f56c6c; }
+.ag-deg { color: #e6a23c; }
+.ag-warn { color: #e6a23c; }
+.ag-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.ag-chip { background: var(--el-fill-color-light); border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; transition: all .15s; }
+.ag-chip:hover { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+
+.empty-hint { color: var(--el-text-color-secondary); text-align: center; padding: 24px 0; font-size: 13px; }
+</style>

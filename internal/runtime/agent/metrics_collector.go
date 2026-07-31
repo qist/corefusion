@@ -40,6 +40,10 @@ type MetricsCollector struct {
 
 	// 上次网络计数（用于计算速率）
 	lastNetStats map[int64]*netCounter
+
+	// 本地节点（面板自身）主机指标采集器；若设置，本地节点走此路径（StatsService 直接读 /proc），
+	// 而非 gRPC GetStatus（独立 agent 接口）。
+	localStatsFn func(int64) *entity.ServerMetric
 }
 
 // netCounter tracks network byte counters for rate calculation.
@@ -159,6 +163,56 @@ func (mc *MetricsCollector) CollectFromStatus(serverID int64, resp *agentpb.GetS
 	}
 }
 
+// SetLocalStatsProvider 注入本地节点（面板自身）的主机指标采集函数。
+// 本地节点不走独立 agent 的 gRPC 接口，直接使用 StatsService 读取本机 /proc 资源。
+func (mc *MetricsCollector) SetLocalStatsProvider(fn func(int64) *entity.ServerMetric) {
+	mc.localStatsFn = fn
+}
+
+// collectFromLocalStats 采集本地节点（面板自身）的主机指标并落库。
+// 本地节点不发送心跳，且不应走独立 agent 的 GetStatus gRPC 接口，
+// 因此直接调用注入的 StatsService（读本机 /proc）。
+func (mc *MetricsCollector) collectFromLocalStats(serverID int64) {
+	if mc.localStatsFn == nil {
+		return
+	}
+	// 在锁外采集本机 /proc（可能执行外部命令），避免阻塞其他指标写入
+	metric := mc.localStatsFn(serverID)
+	if metric == nil {
+		return
+	}
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	now := time.Now()
+	metric.CreatedAt = now
+
+	// 网络速率：基于累计计数器差分计算（StatsService 返回累计 NetBytesRecv/Sent）
+	if last, ok := mc.lastNetStats[serverID]; ok {
+		elapsed := now.Sub(last.timestamp).Seconds()
+		if elapsed > 0 {
+			metric.NetRxBytes = int64(float64(metric.NetRxBytes-last.rxBytes) / elapsed)
+			metric.NetTxBytes = int64(float64(metric.NetTxBytes-last.txBytes) / elapsed)
+		}
+	} else {
+		// 无基准时首条记录不展示速率，避免把累计值误当作速率
+		metric.NetRxBytes = 0
+		metric.NetTxBytes = 0
+	}
+	mc.lastNetStats[serverID] = &netCounter{
+		rxBytes:   metric.NetRxBytes,
+		txBytes:   metric.NetTxBytes,
+		timestamp: now,
+	}
+
+	if err := mc.db.Create(metric).Error; err != nil {
+		log.Printf("[MetricsCollector] failed to store local stats metric for server %d: %v", serverID, err)
+		return
+	}
+	log.Printf("[MetricsCollector] stored local stats metric for server %d: cpu=%.1f%% mem=%d/%d bytes disk=%.1f%%",
+		serverID, metric.CPUUsage, metric.MemUsageBytes, metric.MemTotalBytes, metric.DiskUsage)
+}
+
 // CollectAllServers queries all servers and collects current metrics.
 func (mc *MetricsCollector) CollectAllServers(ctx context.Context) error {
 	servers, err := mc.serverRepo.ListAll(ctx)
@@ -172,13 +226,11 @@ func (mc *MetricsCollector) CollectAllServers(ctx context.Context) error {
 		}
 
 		if mc.nodeMgr.isLocalServer(server.ID) {
-			// Local server: use GetStatusForServer
-			resp, err := mc.nodeMgr.GetStatusForServer(ctx, server.ID)
-			if err != nil {
-				log.Printf("[MetricsCollector] local server %d: %v", server.ID, err)
-				continue
+			// 本地节点（面板自身）：直接走 StatsService 采集，不走独立 agent 的 gRPC 接口
+			if mc.localStatsFn != nil {
+				mc.collectFromLocalStats(server.ID)
 			}
-			mc.CollectFromStatus(server.ID, resp)
+			continue
 		} else {
 			// Remote server: try GetMetrics for detailed data
 			mc.collectRemoteMetrics(ctx, server.ID)
@@ -353,6 +405,11 @@ func (mc *MetricsCollector) RunLoop(ctx context.Context) {
 	defer cleanupTicker.Stop()
 
 	log.Printf("[MetricsCollector] loop started, interval=%v", mc.collectInterval)
+
+	// 启动立即采集一次，避免本地节点（不发送心跳）在首个 tick 前长期无数据
+	if err := mc.CollectAllServers(ctx); err != nil {
+		log.Printf("[MetricsCollector] initial collect error: %v", err)
+	}
 
 	for {
 		select {

@@ -138,9 +138,9 @@
                   <span class="ml-val">{{ Math.round(node.metric.disk_usage) }}%</span>
                 </div>
                 <div class="node-foot">
-                  <span class="net-up">↑ {{ formatBytes(node.metric.net_tx_bytes) }}/s</span>
-                  <span class="net-down">↓ {{ formatBytes(node.metric.net_rx_bytes) }}/s</span>
-                  <span class="uptime" v-if="node.metric.uptime_seconds">{{ formatUptime(node.metric.uptime_seconds) }}</span>
+                  <span class="net-up"><el-icon class="nf-ico"><Top /></el-icon>{{ formatBytes(node.metric.net_tx_bytes) }}/s</span>
+                  <span class="net-down"><el-icon class="nf-ico"><Bottom /></el-icon>{{ formatBytes(node.metric.net_rx_bytes) }}/s</span>
+                  <span class="uptime" v-if="node.metric.uptime_seconds"><el-icon class="nf-ico nf-time"><Timer /></el-icon>{{ formatUptime(node.metric.uptime_seconds) }}</span>
                 </div>
               </template>
               <template v-else>
@@ -203,7 +203,8 @@
           <el-card class="block-card">
             <template #header><span class="card-title"><i class="ct-bar"></i>{{ t('dashboard.topLoadNodes') }}</span></template>
             <div v-if="!topLoad.length" class="empty-hint">{{ t('common.noData') }}</div>
-            <div v-for="n in topLoad" :key="n.id" class="top-row" @click="goDetail(n)">
+            <div v-for="(n, i) in topLoad" :key="n.id" class="top-row" @click="goDetail(n)">
+              <span class="top-rank" :class="'rank-' + (i + 1)">{{ i + 1 }}</span>
               <span class="top-name">{{ n.name }}</span>
               <el-progress :percentage="clampPct(n.metric.cpu_usage)" :color="pctColor(n.metric.cpu_usage)" :show-text="false" class="top-bar" />
               <span class="top-val">{{ Math.round(n.metric.cpu_usage) }}%</span>
@@ -257,7 +258,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import client from '../api/client'
-import { Cpu, Monitor, Link, Connection, Lock, Location, Odometer, Coin, FolderOpened, Download, Sort } from '@element-plus/icons-vue'
+import { Cpu, Monitor, Link, Connection, Lock, Location, Odometer, Coin, FolderOpened, Download, Sort, Top, Bottom, Timer } from '@element-plus/icons-vue'
 import {
   getDashboardStatus,
   getAggregatedMetrics,
@@ -279,7 +280,7 @@ const STATUS_MAP = {
 
 export default {
   name: 'Dashboard',
-  components: { Cpu, Monitor, Link, Connection, Lock, Location, Odometer, Coin, FolderOpened, Download, Sort },
+  components: { Cpu, Monitor, Link, Connection, Lock, Location, Odometer, Coin, FolderOpened, Download, Sort, Top, Bottom, Timer },
   setup() {
     const { t } = useI18n()
     const router = useRouter()
@@ -568,9 +569,12 @@ export default {
 .ml-label { width: 30px; color: var(--el-text-color-secondary); flex: none; }
 .ml-bar { flex: 1; }
 .ml-val { width: 38px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
-.node-foot { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; font-size: 12px; color: var(--el-text-color-secondary); border-top: 1px solid var(--el-border-color-lighter); }
+.node-foot { display: flex; gap: 12px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; font-size: 12px; color: var(--el-text-color-secondary); border-top: 1px solid var(--el-border-color-lighter); }
+.net-up, .net-down, .uptime { display: inline-flex; align-items: center; gap: 4px; }
+.nf-ico { font-size: 13px; }
 .net-up { color: #e6a23c; }
 .net-down { color: #409eff; }
+.nf-time { color: var(--el-text-color-secondary); }
 .uptime { margin-left: auto; }
 
 .offline-box { margin-top: auto; padding: 14px 0; text-align: center; }
@@ -616,7 +620,12 @@ export default {
 /* Top load list */
 .top-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; border-bottom: 1px solid var(--el-border-color-lighter); }
 .top-row:last-child { border-bottom: none; }
-.top-name { width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.top-rank { flex: none; width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; background: #c0c4cc; }
+.top-rank.rank-1 { background: linear-gradient(135deg, #f5b942, #e6a23c); }
+.top-rank.rank-2 { background: linear-gradient(135deg, #b0b7c3, #9099a8); }
+.top-rank.rank-3 { background: linear-gradient(135deg, #d1a17a, #b98756); }
+.top-row:hover { background: var(--el-fill-color-light); border-radius: 6px; }
+.top-name { width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .top-bar { flex: 1; }
 .top-val { width: 42px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
 

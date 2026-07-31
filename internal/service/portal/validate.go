@@ -17,6 +17,7 @@ var allowedModuleTypes = map[string]bool{
 	"custom_html":         true,
 	"account_info":        true,
 	"traffic_ring":        true,
+	"traffic_history":     true,
 	"subscription_detail": true,
 	"security_settings":  true,
 	"log_packages":        true,

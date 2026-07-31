@@ -15,8 +15,8 @@
       <!-- Fleet summary cards -->
       <el-row :gutter="16" class="summary-row">
         <el-col :span="4">
-          <el-card shadow="hover" class="summary-card">
-            <div class="sum-label">{{ t('dashboard.fleetNodes') }}</div>
+          <el-card shadow="hover" class="summary-card sc-nodes">
+            <div class="sum-label"><el-icon class="sum-ico"><Cpu /></el-icon>{{ t('dashboard.fleetNodes') }}</div>
             <div class="sum-value">{{ (fleet && fleet.online) || 0 }}<span class="sum-unit"> / {{ (fleet && fleet.total) || 0 }}</span></div>
             <div class="sum-foot">
               <span class="foot-on">{{ t('dashboard.fleetOnline') }} {{ (fleet && fleet.online) || 0 }}</span>
@@ -26,15 +26,15 @@
           </el-card>
         </el-col>
         <el-col :span="4">
-          <el-card shadow="hover" class="summary-card">
-            <div class="sum-label">{{ t('dashboard.fleetServices') }}</div>
+          <el-card shadow="hover" class="summary-card sc-services">
+            <div class="sum-label"><el-icon class="sum-ico"><Monitor /></el-icon>{{ t('dashboard.fleetServices') }}</div>
             <div class="sum-value">{{ (overview && overview.service_count) || 0 }}</div>
             <div class="sum-foot"><span class="foot-muted">{{ t('dashboard.fleetServices') }}</span></div>
           </el-card>
         </el-col>
         <el-col :span="4">
-          <el-card shadow="hover" class="summary-card">
-            <div class="sum-label">{{ t('dashboard.fleetSubscriptions') }}</div>
+          <el-card shadow="hover" class="summary-card sc-subs">
+            <div class="sum-label"><el-icon class="sum-ico"><Link /></el-icon>{{ t('dashboard.fleetSubscriptions') }}</div>
             <div class="sum-value">{{ (overview && overview.active_subscription_count) || 0 }}</div>
             <div class="sum-foot">
               <span class="foot-warn" v-if="(overview && overview.quota_warning_count)">{{ t('dashboard.fleetQuotaWarn') }} {{ overview.quota_warning_count }}</span>
@@ -43,15 +43,15 @@
           </el-card>
         </el-col>
         <el-col :span="4">
-          <el-card shadow="hover" class="summary-card online-summary-card clickable" @click="goOnlineUsers">
-            <div class="sum-label">{{ t('dashboard.liveOnlineSubs') }}</div>
+          <el-card shadow="hover" class="summary-card sc-online online-summary-card clickable" @click="goOnlineUsers">
+            <div class="sum-label"><el-icon class="sum-ico"><Connection /></el-icon>{{ t('dashboard.liveOnlineSubs') }}</div>
             <div class="sum-value">{{ (onlineSummary && onlineSummary.total_subscriptions) || 0 }}</div>
             <div class="sum-foot"><span class="foot-on">{{ t('dashboard.onlineDevices') }} {{ (onlineSummary && onlineSummary.total_devices) || 0 }}</span></div>
           </el-card>
         </el-col>
         <el-col :span="4">
-          <el-card shadow="hover" class="summary-card">
-            <div class="sum-label">{{ t('dashboard.fleetCerts') }}</div>
+          <el-card shadow="hover" class="summary-card sc-certs">
+            <div class="sum-label"><el-icon class="sum-ico"><Lock /></el-icon>{{ t('dashboard.fleetCerts') }}</div>
             <div class="sum-value">{{ (overview && overview.active_cert_count) || 0 }}</div>
             <div class="sum-foot">
               <span class="foot-warn" v-if="(overview && overview.expiring_cert_count)">{{ t('dashboard.alertExpiringCert') }} {{ overview.expiring_cert_count }}</span>
@@ -60,15 +60,15 @@
           </el-card>
         </el-col>
         <el-col :span="4">
-          <el-card shadow="hover" class="summary-card">
-            <div class="sum-label">{{ t('dashboard.fleetRegions') }}</div>
+          <el-card shadow="hover" class="summary-card sc-regions">
+            <div class="sum-label"><el-icon class="sum-ico"><Location /></el-icon>{{ t('dashboard.fleetRegions') }}</div>
             <div class="sum-value">{{ regionOptions.length }}</div>
             <div class="sum-foot"><span class="foot-muted">{{ regionOptions.length }} {{ t('dashboard.filterRegion') }}</span></div>
           </el-card>
         </el-col>
         <el-col :span="4">
           <el-card shadow="hover" class="summary-card panel-card">
-            <div class="sum-label">{{ t('dashboard.panelServer') }}</div>
+            <div class="sum-label"><el-icon class="sum-ico"><Odometer /></el-icon>{{ t('dashboard.panelServer') }}</div>
             <template v-if="panelStats">
               <div class="sum-value">{{ panelStats.panel_cpu_usage != null ? (Math.round(panelStats.panel_cpu_usage * 10) / 10) : '—' }}<span class="sum-unit">%</span></div>
               <div class="sum-foot">
@@ -85,7 +85,7 @@
       <el-card class="block-card">
         <template #header>
           <div class="card-head">
-            <span class="card-title">{{ t('dashboard.nodeGrid') }}</span>
+            <span class="card-title"><i class="ct-bar"></i>{{ t('dashboard.nodeGrid') }}</span>
             <div class="filters">
               <el-select v-model="statusFilter" :placeholder="t('dashboard.filterStatus')" clearable size="small" class="f-select">
                 <el-option :label="t('dashboard.filterAll')" value="" />
@@ -159,7 +159,7 @@
       <el-row :gutter="16" class="block-row">
         <el-col :span="14">
           <el-card class="block-card">
-            <template #header><span class="card-title">{{ t('dashboard.clusterResource') }}</span></template>
+            <template #header><span class="card-title"><i class="ct-bar"></i>{{ t('dashboard.clusterResource') }}</span></template>
             <el-row :gutter="16">
               <el-col :span="8">
                 <div class="cluster-item">
@@ -189,7 +189,7 @@
         </el-col>
         <el-col :span="10">
           <el-card class="block-card">
-            <template #header><span class="card-title">{{ t('dashboard.topLoadNodes') }}</span></template>
+            <template #header><span class="card-title"><i class="ct-bar"></i>{{ t('dashboard.topLoadNodes') }}</span></template>
             <div v-if="!topLoad.length" class="empty-hint">{{ t('common.noData') }}</div>
             <div v-for="n in topLoad" :key="n.id" class="top-row" @click="goDetail(n)">
               <span class="top-name">{{ n.name }}</span>
@@ -202,7 +202,7 @@
 
       <!-- Alerts -->
       <el-card class="block-card">
-        <template #header><span class="card-title">{{ t('dashboard.alerts') }}</span></template>
+        <template #header><span class="card-title"><i class="ct-bar"></i>{{ t('dashboard.alerts') }}</span></template>
         <el-alert v-if="!hasAlerts" :title="t('dashboard.noAlerts')" type="success" :closable="false" show-icon />
         <div v-else class="alert-grid">
           <div class="alert-group" v-if="offlineNodes.length">
@@ -245,6 +245,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import client from '../api/client'
+import { Cpu, Monitor, Link, Connection, Lock, Location, Odometer } from '@element-plus/icons-vue'
 import {
   getDashboardStatus,
   getAggregatedMetrics,
@@ -266,6 +267,7 @@ const STATUS_MAP = {
 
 export default {
   name: 'Dashboard',
+  components: { Cpu, Monitor, Link, Connection, Lock, Location, Odometer },
   setup() {
     const { t } = useI18n()
     const router = useRouter()
@@ -448,7 +450,30 @@ export default {
 .summary-row { margin-bottom: 16px; }
 /* 7 张汇总卡均分一行：覆盖 el-col 固定 span 宽度，宽屏均分、窄屏自动换行 */
 .summary-row :deep(.el-col) { flex: 1 1 140px; max-width: none; min-width: 140px; }
-.summary-card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); height: 116px; }
+.summary-card {
+  position: relative;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(16,24,40,.05);
+  height: 116px;
+  overflow: hidden;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+/* 顶部渐变强调条（按语义着色） */
+.summary-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--el-color-primary), var(--el-color-primary-light-3));
+}
+.sc-nodes::before    { background: linear-gradient(90deg, #409eff, #79bbff); }
+.sc-services::before { background: linear-gradient(90deg, #626aef, #a3a8f5); }
+.sc-subs::before     { background: linear-gradient(90deg, #9b59b6, #c39bd3); }
+.sc-online::before   { background: linear-gradient(90deg, #67c23a, #95d475); }
+.sc-certs::before    { background: linear-gradient(90deg, #e6a23c, #eebe77); }
+.sc-regions::before  { background: linear-gradient(90deg, #16a085, #48c9b0); }
+.summary-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(16,24,40,.10); border-color: var(--el-color-primary-light-7); }
 .summary-card :deep(.el-card__body) {
   height: 100%;
   box-sizing: border-box;
@@ -457,8 +482,22 @@ export default {
   justify-content: space-between;
   padding: 16px 18px;
 }
-.sum-label { color: var(--el-text-color-secondary); font-size: 13px; font-weight: 500; }
-.sum-value { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.5px; }
+.sum-label { display: flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); font-size: 13px; font-weight: 500; }
+.sum-ico {
+  font-size: 15px;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.sc-nodes .sum-ico    { color: #409eff; background: #ecf5ff; }
+.sc-services .sum-ico { color: #626aef; background: #eef0fe; }
+.sc-subs .sum-ico     { color: #9b59b6; background: #f5eef8; }
+.sc-online .sum-ico   { color: #67c23a; background: #f0f9eb; }
+.sc-certs .sum-ico    { color: #e6a23c; background: #fdf6ec; }
+.sc-regions .sum-ico  { color: #16a085; background: #e8f6f3; }
+.sum-value { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.5px; color: var(--el-text-color-primary); }
 .sum-unit { font-size: 14px; font-weight: 500; color: var(--el-text-color-secondary); margin-left: 3px; }
 .sum-foot { display: flex; gap: 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .foot-on { color: #67c23a; }
@@ -473,12 +512,14 @@ export default {
 .panel-card .foot-muted { color: rgba(255,255,255,.7); }
 
 /* Shared block cards */
-.block-card { margin-bottom: 16px; border: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.block-card { margin-bottom: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+.block-card :deep(.el-card__header) { padding: 14px 18px; border-bottom: 1px solid var(--el-border-color-lighter); }
 /* 同一行内的卡片等高，避免右侧卡片明显偏矮 */
 .block-row { margin-bottom: 16px; }
 .block-row > .el-col > .block-card { height: 100%; margin-bottom: 0; }
 .card-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-.card-title { font-weight: 600; font-size: 15px; }
+.card-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.ct-bar { display: inline-block; width: 4px; height: 15px; border-radius: 2px; background: linear-gradient(180deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
 .f-select { width: 120px; }
 .f-input { width: 160px; }
@@ -488,20 +529,20 @@ export default {
 .node-card {
   position: relative;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  padding: 14px 14px 14px 17px;
+  border-radius: 12px;
+  padding: 14px 14px 14px 18px;
   cursor: pointer;
-  transition: all .2s;
+  transition: all .22s ease;
   background: var(--el-bg-color);
   display: flex;
   flex-direction: column;
   min-height: 172px;
   overflow: hidden;
 }
-.node-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--el-color-primary); }
-.node-card.is-offline { background: #fafafa; }
+.node-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg, #67c23a, #95d475); }
+.node-card.is-offline { background: #fafbfc; }
 .node-card.is-offline::before { background: #c0c4cc; }
-.node-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,.10); transform: translateY(-2px); border-color: var(--el-color-primary-light-5); }
+.node-card:hover { box-shadow: 0 10px 24px rgba(16,24,40,.12); transform: translateY(-3px); border-color: var(--el-color-primary-light-5); }
 .node-head { display: flex; align-items: center; gap: 8px; }
 .node-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .node-type { flex: none; }

@@ -31,12 +31,20 @@ type nodeOnlineProvider interface {
 
 // NodeOnlineResult 是返回给前端的节点在线订阅人聚合视图。
 type NodeOnlineResult struct {
-	OnlineSubscriptions int64                       `json:"online_subscriptions"`
-	OnlineDevices       int64                       `json:"online_devices"`
-	TotalUplinkRate     int64                       `json:"total_uplink_rate"`
-	TotalDownlinkRate   int64                       `json:"total_downlink_rate"`
-	UpdatedAt           int64                       `json:"updated_at"`
-	Users               []*agentpb.OnlineUserEntry `json:"users"`
+	OnlineSubscriptions int64                      `json:"online_subscriptions"`
+	OnlineDevices       int64                      `json:"online_devices"`
+	TotalUplinkRate     int64                      `json:"total_uplink_rate"`
+	TotalDownlinkRate   int64                      `json:"total_downlink_rate"`
+	UpdatedAt           int64                      `json:"updated_at"`
+	FilteredTotal       int64                      `json:"filtered_total"` // 符合筛选条件的总数（分页 total）
+	Users               []*agentpb.OnlineUserEntry `json:"users"`          // 本页数据
+}
+
+// NodeOnlineFilter 是单节点在线用户查询的过滤条件（服务端分页与筛选）。
+type NodeOnlineFilter struct {
+	Keyword string // 关键字（邮箱/客户端名/IP，大小写不敏感）
+	Limit   int    // 每页条数（<=0 表示不分页，返回全部）
+	Offset  int    // 偏移量
 }
 
 // NewService creates a new node service.
@@ -45,7 +53,8 @@ func NewService(repo *repository.NodeRepository, nodeOnline nodeOnlineProvider, 
 }
 
 // GetOnlineUsers 返回某节点当前的实时在线订阅人（未过期则有效，否则返回空列表）。
-func (s *Service) GetOnlineUsers(serverID int64) *NodeOnlineResult {
+// 支持服务端筛选（关键字：邮箱/客户端名/IP）与分页；汇总统计不受筛选/分页影响。
+func (s *Service) GetOnlineUsers(serverID int64, f NodeOnlineFilter) *NodeOnlineResult {
 	res := &NodeOnlineResult{Users: []*agentpb.OnlineUserEntry{}}
 	if s.nodeOnline == nil {
 		return res
@@ -66,10 +75,45 @@ func (s *Service) GetOnlineUsers(serverID int64) *NodeOnlineResult {
 	res.TotalUplinkRate = upRate
 	res.TotalDownlinkRate = downRate
 	res.UpdatedAt = updatedAt
-	if users != nil {
-		res.Users = users
+	if users == nil {
+		return res
 	}
+
+	// 富化（填充客户端名等，关键字可据此筛选）
 	s.enrichOnlineUsers(users)
+
+	// 关键字筛选
+	kw := strings.ToLower(strings.TrimSpace(f.Keyword))
+	if kw != "" {
+		filtered := make([]*agentpb.OnlineUserEntry, 0, len(users))
+		for _, u := range users {
+			if strings.Contains(strings.ToLower(u.GetEmail()), kw) ||
+				strings.Contains(strings.ToLower(u.GetClientName()), kw) {
+				filtered = append(filtered, u)
+				continue
+			}
+			for _, sess := range u.Sessions {
+				if sess != nil && strings.Contains(sess.GetIp(), kw) {
+					filtered = append(filtered, u)
+					break
+				}
+			}
+		}
+		users = filtered
+	}
+	res.FilteredTotal = int64(len(users))
+
+	// 分页切片（Limit<=0 表示返回全部）
+	if f.Limit > 0 {
+		start := max(f.Offset, 0)
+		start = min(start, len(users))
+		end := min(start+f.Limit, len(users))
+		users = users[start:end]
+	}
+	res.Users = users
+	if res.Users == nil {
+		res.Users = []*agentpb.OnlineUserEntry{}
+	}
 	return res
 }
 

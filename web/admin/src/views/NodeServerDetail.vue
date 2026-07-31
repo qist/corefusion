@@ -263,6 +263,9 @@
               <el-tag effect="plain">总下行 {{ formatRate(onlineData?.total_downlink_rate || 0) }}</el-tag>
             </div>
             <div style="display:flex;gap:8px;align-items:center">
+              <el-input v-model="onlineKeyword" placeholder="搜索 邮箱/客户端/IP" clearable size="small" style="width:200px" @input="onOnlineKeywordInput" @clear="onOnlineFilterChange">
+                <template #prefix><el-icon><Search /></el-icon></template>
+              </el-input>
               <span style="font-size:12px;color:#909399" v-if="onlineData?.updated_at">更新于 {{ formatAgo(onlineData.updated_at) }}</span>
               <el-button size="small" :loading="onlineLoading" @click="loadOnlineUsers">
                 <el-icon><Refresh /></el-icon> 刷新
@@ -331,6 +334,20 @@
           </el-table>
 
           <el-empty v-if="!onlineLoading && (!onlineData?.users || onlineData.users.length === 0)" description="当前没有在线订阅人" style="margin-top:20px" />
+
+          <div v-if="(onlineData?.filtered_total || 0) > 0" style="display:flex;justify-content:flex-end;margin-top:14px">
+            <el-pagination
+              v-model:current-page="onlinePage"
+              v-model:page-size="onlinePageSize"
+              :total="onlineData?.filtered_total || 0"
+              :page-sizes="[20, 50, 100]"
+              layout="total, sizes, prev, pager, next"
+              background
+              small
+              @size-change="onOnlineSizeChange"
+              @current-change="onOnlinePageChange"
+            />
+          </div>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -342,7 +359,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Refresh, Upload } from '@element-plus/icons-vue'
+import { ArrowLeft, Refresh, Upload, Search } from '@element-plus/icons-vue'
 import client from '../api/client'
 import { useClientPagination } from '../composables/useClientPagination'
 import PaginationBar from '../components/PaginationBar.vue'
@@ -609,12 +626,33 @@ function stopPolling() {
 const onlineData = ref(null)
 const onlineLoading = ref(false)
 const onlineError = ref('')
+const onlineKeyword = ref('')
+const onlinePage = ref(1)
+const onlinePageSize = ref(20)
+let onlineSearchDebounce = null
+
+function onOnlineFilterChange() {
+  onlinePage.value = 1
+  loadOnlineUsers()
+}
+function onOnlineKeywordInput() {
+  clearTimeout(onlineSearchDebounce)
+  onlineSearchDebounce = setTimeout(onOnlineFilterChange, 400)
+}
+function onOnlinePageChange(p) { onlinePage.value = p; loadOnlineUsers() }
+function onOnlineSizeChange(s) { onlinePageSize.value = s; onlinePage.value = 1; loadOnlineUsers() }
 
 async function loadOnlineUsers() {
   onlineLoading.value = true
   onlineError.value = ''
   try {
-    const data = await client.get(`/node-servers/${serverId}/online-users`)
+    const params = {
+      limit: onlinePageSize.value,
+      offset: (onlinePage.value - 1) * onlinePageSize.value,
+    }
+    const kw = (onlineKeyword.value || '').trim()
+    if (kw) params.keyword = kw
+    const data = await client.get(`/node-servers/${serverId}/online-users`, { params })
     onlineData.value = data
   } catch (e) {
     onlineError.value = e?.response?.data?.message || '加载在线订阅人失败'
@@ -673,6 +711,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopPolling()
   stopOnlinePolling()
+  clearTimeout(onlineSearchDebounce)
 })
 </script>
 

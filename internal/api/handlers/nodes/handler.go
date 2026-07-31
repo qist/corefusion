@@ -118,6 +118,7 @@ func (h *Handler) Delete(c *gin.Context) {
 
 // GetOnlineUsers handles GET /api/v1/nodes/:id/online-users.
 // 返回该节点当前实时在线的订阅人（含 IP、速率、累计流量、会话明细）与聚合统计。
+// 支持服务端筛选（keyword：邮箱/客户端名/IP）与分页（limit/offset 或 page/page_size，默认20封顶100）。
 func (h *Handler) GetOnlineUsers(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -125,7 +126,12 @@ func (h *Handler) GetOnlineUsers(c *gin.Context) {
 		return
 	}
 
-	res := h.nodeSvc.GetOnlineUsers(id)
+	p := response.ParsePagination(c)
+	res := h.nodeSvc.GetOnlineUsers(id, node.NodeOnlineFilter{
+		Keyword: c.Query("keyword"),
+		Limit:   p.Limit,
+		Offset:  p.Offset,
+	})
 	response.OK(c, res)
 }
 

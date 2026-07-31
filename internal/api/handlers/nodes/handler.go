@@ -138,7 +138,23 @@ func (h *Handler) GetOnlineSummary(c *gin.Context) {
 
 // GetAllOnlineUsers handles GET /api/v1/node-servers/online-users.
 // 返回所有节点在线订阅人的全局合并视图（含节点名与富化字段），供全局在线用户页使用。
+// 支持服务端筛选（server_id / keyword）与分页（limit/offset 或 page/page_size，默认20封顶100）。
 func (h *Handler) GetAllOnlineUsers(c *gin.Context) {
-	res := h.nodeSvc.GetAllOnlineUsersGlobal()
-	response.OK(c, res)
+	p := response.ParsePagination(c)
+	serverID, _ := strconv.ParseInt(c.Query("server_id"), 10, 64)
+	res := h.nodeSvc.GetAllOnlineUsersGlobal(node.GlobalOnlineFilter{
+		ServerID: serverID,
+		Keyword:  c.Query("keyword"),
+		Limit:    p.Limit,
+		Offset:   p.Offset,
+	})
+	// 用统一分页响应包裹：items=本页用户，total=筛选后总数；同时附带全局汇总。
+	response.OK(c, gin.H{
+		"items":               res.Users,
+		"total":               res.FilteredTotal,
+		"limit":               p.Limit,
+		"offset":              p.Offset,
+		"total_subscriptions": res.TotalSubscriptions,
+		"total_devices":       res.TotalDevices,
+	})
 }

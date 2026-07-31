@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strconv"
+	"strings"
 
 	"corefusion/internal/model/entity"
 	agentsvc "corefusion/internal/runtime/agent"
@@ -206,16 +207,26 @@ type GlobalOnlineUser struct {
 	Sessions           []*agentpb.OnlineSession   `json:"sessions"`
 }
 
+// GlobalOnlineFilter 是全局在线用户查询的过滤条件（服务端分页与筛选）。
+type GlobalOnlineFilter struct {
+	ServerID int64  // 按节点筛选（0 = 全部）
+	Keyword  string // 关键字（邮箱/客户端名/节点名/IP，大小写不敏感）
+	Limit    int    // 每页条数（<=0 表示不分页，返回全部）
+	Offset   int    // 偏移量
+}
+
 // GlobalOnlineResponse 是全局在线用户页的响应。
 type GlobalOnlineResponse struct {
-	TotalSubscriptions int64               `json:"total_subscriptions"`
-	TotalDevices       int64               `json:"total_devices"`
-	Users              []*GlobalOnlineUser `json:"users"`
+	TotalSubscriptions int64               `json:"total_subscriptions"` // 全部节点在线订阅总数（不受筛选/分页影响）
+	TotalDevices       int64               `json:"total_devices"`       // 全部节点在线设备总数（不受筛选/分页影响）
+	FilteredTotal      int64               `json:"filtered_total"`      // 符合筛选条件的订阅总数（分页 total）
+	Users              []*GlobalOnlineUser `json:"users"`               // 本页数据
 }
 
 // GetAllOnlineUsersGlobal 返回所有节点在线订阅人的合并视图（全局在线用户页）。
 // 每行带节点名，富化字段（客户端/套餐/限速）已随 Agent 上报由 enrichOnlineUsers 填充逻辑补全。
-func (s *Service) GetAllOnlineUsersGlobal() *GlobalOnlineResponse {
+// 支持服务端筛选（节点/关键字）与分页，避免一次返回全量。
+func (s *Service) GetAllOnlineUsersGlobal(f GlobalOnlineFilter) *GlobalOnlineResponse {
 	res := &GlobalOnlineResponse{Users: []*GlobalOnlineUser{}}
 	if s.nodeOnline == nil {
 		return res
@@ -229,8 +240,10 @@ func (s *Service) GetAllOnlineUsersGlobal() *GlobalOnlineResponse {
 	}
 	s.enrichOnlineUsers(all)
 
+	kw := strings.ToLower(strings.TrimSpace(f.Keyword))
 	nodeNameCache := map[int64]string{}
 	var totalSubs, totalDevs int64
+	matched := make([]*GlobalOnlineUser, 0)
 	for serverID, snap := range snaps {
 		name, ok := nodeNameCache[serverID]
 		if !ok {
@@ -240,7 +253,17 @@ func (s *Service) GetAllOnlineUsersGlobal() *GlobalOnlineResponse {
 		for _, u := range snap.Users {
 			totalSubs++
 			totalDevs += int64(len(u.Sessions))
-			res.Users = append(res.Users, &GlobalOnlineUser{
+
+			// 节点筛选
+			if f.ServerID > 0 && serverID != f.ServerID {
+				continue
+			}
+			// 关键字筛选（邮箱/客户端名/节点名/IP）
+			if kw != "" && !matchOnlineUser(u, name, kw) {
+				continue
+			}
+
+			matched = append(matched, &GlobalOnlineUser{
 				ServerID:           serverID,
 				NodeName:           name,
 				SubscriptionID:     u.GetSubscriptionId(),
@@ -260,11 +283,48 @@ func (s *Service) GetAllOnlineUsersGlobal() *GlobalOnlineResponse {
 			})
 		}
 	}
-	// 最近活跃的排前面，便于运营关注当前活跃用户
-	sort.Slice(res.Users, func(i, j int) bool { return res.Users[i].LastSeen > res.Users[j].LastSeen })
+	// 最近活跃的排前面，便于运营关注当前活跃用户（稳定排序保证翻页不乱）
+	sort.Slice(matched, func(i, j int) bool {
+		if matched[i].LastSeen != matched[j].LastSeen {
+			return matched[i].LastSeen > matched[j].LastSeen
+		}
+		if matched[i].ServerID != matched[j].ServerID {
+			return matched[i].ServerID < matched[j].ServerID
+		}
+		return matched[i].SubscriptionID < matched[j].SubscriptionID
+	})
+
 	res.TotalSubscriptions = totalSubs
 	res.TotalDevices = totalDevs
+	res.FilteredTotal = int64(len(matched))
+
+	// 分页切片（Limit<=0 表示返回全部）
+	if f.Limit > 0 {
+		start := max(f.Offset, 0)
+		start = min(start, len(matched))
+		end := min(start+f.Limit, len(matched))
+		matched = matched[start:end]
+	}
+	res.Users = matched
+	if res.Users == nil {
+		res.Users = []*GlobalOnlineUser{}
+	}
 	return res
+}
+
+// matchOnlineUser 判断在线用户是否命中关键字（邮箱/客户端名/节点名/任一 session IP）。
+func matchOnlineUser(u *agentpb.OnlineUserEntry, nodeName, kw string) bool {
+	if strings.Contains(strings.ToLower(u.GetEmail()), kw) ||
+		strings.Contains(strings.ToLower(u.GetClientName()), kw) ||
+		strings.Contains(strings.ToLower(nodeName), kw) {
+		return true
+	}
+	for _, s := range u.Sessions {
+		if s != nil && strings.Contains(s.GetIp(), kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // nodeName 取节点名，失败回退为 "#<id>"。

@@ -9,7 +9,7 @@
         <el-select v-model="filterNode" :placeholder="t('onlineUsers.filterNode')" clearable style="width:180px" @change="applyFilter">
           <el-option v-for="n in nodeOptions" :key="n.id" :label="n.name" :value="n.id" />
         </el-select>
-        <el-input v-model="keyword" :placeholder="t('onlineUsers.search')" clearable style="width:240px" @input="applyFilter">
+        <el-input v-model="keyword" :placeholder="t('onlineUsers.search')" clearable style="width:240px" @input="onKeywordInput" @clear="applyFilter">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
         <el-button :loading="loading" @click="loadData">
@@ -44,7 +44,7 @@
 
     <!-- 主表 -->
     <el-card shadow="never">
-      <el-table :data="filteredUsers" v-loading="loading" border stripe size="small" row-key="rowKey">
+      <el-table :data="users" v-loading="loading" border stripe size="small" row-key="rowKey">
         <el-table-column type="expand">
           <template #default="{row}">
             <el-table :data="row.sessions || []" size="mini" border>
@@ -109,6 +109,18 @@
           <el-empty :description="t('onlineUsers.noOnline')" />
         </template>
       </el-table>
+      <div class="pager-wrap">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @size-change="onSizeChange"
+          @current-change="onPageChange"
+        />
+      </div>
     </el-card>
   </div>
 </template>
@@ -124,48 +136,63 @@ const { t } = useI18n()
 const router = useRouter()
 
 const data = ref(null)
+const users = ref([])
 const loading = ref(false)
 const error = ref('')
 const filterNode = ref(null)
 const keyword = ref('')
 const nodeOptions = ref([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 let timer = null
+let searchDebounce = null
 
 const onlineNodeCount = computed(() => {
-  const ids = new Set((data.value?.users || []).map(u => u.server_id))
+  const ids = new Set((users.value || []).map(u => u.server_id))
   return ids.size
 })
 
-const filteredUsers = computed(() => {
-  let list = data.value?.users || []
-  if (filterNode.value) list = list.filter(u => u.server_id === filterNode.value)
-  const kw = (keyword.value || '').trim().toLowerCase()
-  if (kw) {
-    list = list.filter(u =>
-      (u.email || '').toLowerCase().includes(kw) ||
-      (u.client_name || '').toLowerCase().includes(kw) ||
-      (u.node_name || '').toLowerCase().includes(kw) ||
-      (u.sessions || []).some(s => (s.ip || '').includes(kw))
-    )
-  }
-  return list
-})
+// 筛选/搜索变化：回到第 1 页并从服务端重新拉取
+function applyFilter() {
+  page.value = 1
+  loadData()
+}
 
-function applyFilter() { /* computed 自动响应 */ }
+// 搜索输入防抖，避免每次击键都请求
+function onKeywordInput() {
+  clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(applyFilter, 400)
+}
+
+function onPageChange(p) { page.value = p; loadData() }
+function onSizeChange(s) { pageSize.value = s; page.value = 1; loadData() }
 
 async function loadData() {
   loading.value = true
   error.value = ''
   try {
-    const res = await client.get('/node-servers/online-users')
-    const users = (res && res.users) || []
-    users.forEach((u, i) => { u.rowKey = `${u.server_id}-${u.subscription_id}-${i}` })
-    data.value = { ...res, users }
-    // 构建节点下拉选项
-    const map = new Map()
-    users.forEach(u => { if (!map.has(u.server_id)) map.set(u.server_id, u.node_name) })
-    nodeOptions.value = [...map.entries()].map(([id, name]) => ({ id, name }))
+    const params = {
+      limit: pageSize.value,
+      offset: (page.value - 1) * pageSize.value,
+    }
+    if (filterNode.value) params.server_id = filterNode.value
+    const kw = (keyword.value || '').trim()
+    if (kw) params.keyword = kw
+    const res = await client.get('/node-servers/online-users', { params })
+    const list = (res && res.items) || []
+    list.forEach((u, i) => { u.rowKey = `${u.server_id}-${u.subscription_id}-${i}` })
+    users.value = list
+    total.value = (res && res.total) || 0
+    // 汇总卡数据（不受分页/筛选影响）
+    data.value = { total_subscriptions: res?.total_subscriptions || 0, total_devices: res?.total_devices || 0 }
+    // 节点下拉选项：仅在未做节点筛选时根据当前结果补充（避免覆盖）
+    if (!filterNode.value) {
+      const map = new Map(nodeOptions.value.map(o => [o.id, o.name]))
+      list.forEach(u => { if (!map.has(u.server_id)) map.set(u.server_id, u.node_name) })
+      nodeOptions.value = [...map.entries()].map(([id, name]) => ({ id, name }))
+    }
   } catch (e) {
     error.value = e?.response?.data?.message || t('onlineUsers.loadFailed')
   } finally {
@@ -208,7 +235,7 @@ onMounted(() => {
   loadData()
   timer = setInterval(loadData, 15000)
 })
-onUnmounted(() => { if (timer) clearInterval(timer) })
+onUnmounted(() => { if (timer) clearInterval(timer); clearTimeout(searchDebounce) })
 </script>
 
 <style scoped>
@@ -221,4 +248,5 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .summary-card { text-align: center; }
 .sum-label { font-size: 13px; color: #909399; margin-bottom: 8px; }
 .sum-value { font-size: 28px; font-weight: 600; color: #303133; }
+.pager-wrap { display: flex; justify-content: flex-end; margin-top: 14px; }
 </style>

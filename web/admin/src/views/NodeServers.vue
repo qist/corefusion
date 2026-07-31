@@ -102,6 +102,14 @@
               <span v-else style="color:#c0c4cc;font-size:12px">-</span>
             </template>
           </el-table-column>
+          <el-table-column label="在线订阅" width="100" align="center">
+            <template #default="{row}">
+              <el-tag v-if="onlineSummary[row.id] && onlineSummary[row.id].online_subscriptions > 0" type="success" size="small" effect="dark">
+                {{ onlineSummary[row.id].online_subscriptions }}
+              </el-tag>
+              <span v-else style="color:#c0c4cc;font-size:12px">0</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('common.actions')" width="320" fixed="right">
             <template #default="{row}">
               <el-button size="small" type="primary" @click="goToDetail(row)">{{ t('nodeServer.detail') }}</el-button>
@@ -622,6 +630,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import client from '../api/client'
 
 // Default Agent gRPC port (matches constants.DefaultAgentGRPCPort in Go)
 const DEFAULT_AGENT_GRPC_PORT = 18443
@@ -755,6 +764,15 @@ let refreshTimer = null
 
 // ════════════ Data Loading ════════════
 
+const onlineSummary = ref({})
+
+async function loadOnlineSummary() {
+  try {
+    const res = await client.get('/node-servers/online-summary')
+    onlineSummary.value = (res && res.nodes) || {}
+  } catch (e) { /* noop */ }
+}
+
 async function loadServers() {
   loading.value = true
   try {
@@ -773,6 +791,7 @@ async function loadServers() {
   } finally {
     loading.value = false
   }
+  loadOnlineSummary()
 }
 
 async function loadDashboard() {

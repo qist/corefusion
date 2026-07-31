@@ -65,6 +65,9 @@ type AgentApp struct {
 	// Online stats poller — polls xray GetUsersStats API for online user IPs
 	onlineStatsPoller *ratelimit.OnlineStatsPoller
 
+	// Online users reporter — collects real-time online subscribers for the Panel
+	onlineUsersReporter *onlineUsersReporter
+
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
 
@@ -306,6 +309,9 @@ func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 		log.Println("[Agent] log management service started (LogWriter + rotation scheduler)")
 	}
 
+	// 实时在线订阅人上报（与限速完全解耦，不依赖 nft 与限速配置，必须独立启动）
+	a.startOnlineUsersReporter(ctx)
+
 	// Initialize rate limit manager from previously synced config (if any)
 	a.initRateLimitFromDB(ctx)
 
@@ -452,6 +458,20 @@ func (a *AgentApp) initRateLimitFromDB(ctx context.Context) {
 
 // startOnlineStatsPoller starts the online stats poller that queries the xray
 // Stats API for online user IPs and keeps their rate limit rules active.
+// startOnlineUsersReporter initializes the online-users reporter that feeds
+// real-time online subscriber data to the Panel via the heartbeat stream.
+// Unlike startOnlineStatsPoller, it does NOT depend on nft availability.
+func (a *AgentApp) startOnlineUsersReporter(ctx context.Context) {
+	statsAddr := a.getStatsAddr()
+	if statsAddr == "" {
+		return
+	}
+	a.onlineUsersReporter = newOnlineUsersReporter(statsAddr)
+	if a.database != nil {
+		a.onlineUsersReporter.SetEmailMapping(a.buildEmailToSubIDMapping(ctx))
+	}
+}
+
 func (a *AgentApp) startOnlineStatsPoller(ctx context.Context) {
 	if a.rateLimitMgr == nil || !a.rateLimitMgr.IsAvailable().NftAvailable {
 		return

@@ -57,6 +57,22 @@ func (r *ClientRepository) GetByEmail(ctx context.Context, email string) (*entit
 	return &client, err
 }
 
+// FindByIDs returns clients keyed by ID for the given IDs.
+func (r *ClientRepository) FindByIDs(ctx context.Context, ids []int64) (map[int64]*entity.Client, error) {
+	result := make(map[int64]*entity.Client)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var clients []entity.Client
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&clients).Error; err != nil {
+		return nil, err
+	}
+	for i := range clients {
+		result[clients[i].ID] = &clients[i]
+	}
+	return result, nil
+}
+
 // SearchByEmail returns clients whose email matches the keyword (LIKE %keyword%).
 func (r *ClientRepository) SearchByEmail(ctx context.Context, keyword string, limit int) ([]entity.Client, error) {
 	var clients []entity.Client

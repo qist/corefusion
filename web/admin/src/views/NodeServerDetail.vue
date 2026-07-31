@@ -252,6 +252,87 @@
           </template>
         </el-dialog>
       </el-tab-pane>
+
+      <el-tab-pane label="在线订阅人" name="online">
+        <div style="padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <el-tag type="success" effect="dark">在线订阅 {{ onlineData?.online_subscriptions || 0 }}</el-tag>
+              <el-tag type="info" effect="dark">在线设备/IP {{ onlineData?.online_devices || 0 }}</el-tag>
+              <el-tag effect="plain">总上行 {{ formatRate(onlineData?.total_uplink_rate || 0) }}</el-tag>
+              <el-tag effect="plain">总下行 {{ formatRate(onlineData?.total_downlink_rate || 0) }}</el-tag>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:12px;color:#909399" v-if="onlineData?.updated_at">更新于 {{ formatAgo(onlineData.updated_at) }}</span>
+              <el-button size="small" :loading="onlineLoading" @click="loadOnlineUsers">
+                <el-icon><Refresh /></el-icon> 刷新
+              </el-button>
+            </div>
+          </div>
+
+          <el-alert v-if="onlineError" type="error" :closable="false" style="margin-bottom:12px">{{ onlineError }}</el-alert>
+
+          <el-table :data="onlineData?.users || []" v-loading="onlineLoading" row-key="subscription_id" border stripe size="small">
+            <el-table-column type="expand">
+              <template #default="{row}">
+                <el-table :data="row.sessions || []" size="mini" border>
+                  <el-table-column prop="ip" label="IP" min-width="150" />
+                  <el-table-column label="最近活跃" min-width="110">
+                    <template #default="{row:s}">{{ formatAgo(s.last_seen) }}</template>
+                  </el-table-column>
+                  <el-table-column label="接入时长" min-width="110">
+                    <template #default="{row:s}">{{ formatDuration((s.last_seen || 0) - (s.connected_since || 0)) }}</template>
+                  </el-table-column>
+                </el-table>
+              </template>
+            </el-table-column>
+            <el-table-column label="订阅" min-width="240">
+              <template #default="{row}">
+                <div>{{ row.email }}</div>
+                <div style="font-size:12px;color:#909399">ID: {{ row.subscription_id }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="客户端 / 套餐" min-width="170" show-overflow-tooltip>
+              <template #default="{row}">
+                <div>{{ row.client_name || row.email }}</div>
+                <div v-if="row.plan_name" style="font-size:12px;color:#909399">{{ row.plan_name }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="设备/IP" width="90" align="center">
+              <template #default="{row}">{{ (row.sessions || []).length }}</template>
+            </el-table-column>
+            <el-table-column label="限速" width="140" align="center">
+              <template #default="{row}">
+                <span v-if="(row.speed_limit_down_mbps || 0) > 0 || (row.speed_limit_up_mbps || 0) > 0">
+                  ↓{{ row.speed_limit_down_mbps || 0 }} / ↑{{ row.speed_limit_up_mbps || 0 }}
+                  <div style="font-size:11px;color:#909399">Mbps</div>
+                </span>
+                <span v-else style="color:#c0c4cc;font-size:12px">不限</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="上行速率" width="120">
+              <template #default="{row}">{{ formatRate(row.uplink_rate) }}</template>
+            </el-table-column>
+            <el-table-column label="下行速率" width="120">
+              <template #default="{row}">{{ formatRate(row.downlink_rate) }}</template>
+            </el-table-column>
+            <el-table-column label="累计上行" width="100">
+              <template #default="{row}">{{ formatBytes(row.uplink_bytes) }}</template>
+            </el-table-column>
+            <el-table-column label="累计下行" width="100">
+              <template #default="{row}">{{ formatBytes(row.downlink_bytes) }}</template>
+            </el-table-column>
+            <el-table-column label="最近活跃" width="100">
+              <template #default="{row}">{{ formatAgo(row.last_seen) }}</template>
+            </el-table-column>
+            <el-table-column label="时长" width="100">
+              <template #default="{row}">{{ formatDuration((row.last_seen || 0) - (row.first_seen || 0)) }}</template>
+            </el-table-column>
+          </el-table>
+
+          <el-empty v-if="!onlineLoading && (!onlineData?.users || onlineData.users.length === 0)" description="当前没有在线订阅人" style="margin-top:20px" />
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -525,16 +606,73 @@ function stopPolling() {
   }
 }
 
+const onlineData = ref(null)
+const onlineLoading = ref(false)
+const onlineError = ref('')
+
+async function loadOnlineUsers() {
+  onlineLoading.value = true
+  onlineError.value = ''
+  try {
+    const data = await client.get(`/node-servers/${serverId}/online-users`)
+    onlineData.value = data
+  } catch (e) {
+    onlineError.value = e?.response?.data?.message || '加载在线订阅人失败'
+  } finally {
+    onlineLoading.value = false
+  }
+}
+
+function formatRate(bps) {
+  if (!bps || bps <= 0) return '0 B/s'
+  if (bps < 1024) return bps + ' B/s'
+  if (bps < 1024 * 1024) return (bps / 1024).toFixed(1) + ' KB/s'
+  return (bps / 1024 / 1024).toFixed(2) + ' MB/s'
+}
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+  return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB'
+}
+function formatDuration(sec) {
+  if (!sec || sec <= 0) return '0s'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = Math.floor(sec % 60)
+  const pad = (n) => String(n).padStart(2, '0')
+  return (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(s)
+}
+function formatAgo(ts) {
+  if (!ts) return '-'
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - ts)
+  if (diff < 60) return diff + ' 秒前'
+  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前'
+  return Math.floor(diff / 3600) + ' 小时前'
+}
+
+let onlineTimer = null
+function startOnlinePolling() {
+  loadOnlineUsers()
+  onlineTimer = setInterval(loadOnlineUsers, 15000)
+}
+function stopOnlinePolling() {
+  if (onlineTimer) { clearInterval(onlineTimer); onlineTimer = null }
+}
+
 onMounted(() => {
   loadServer()
   loadCerts()
   loadAllCerts()
   loadPanelAgentVersion()
   loadGithubReleases()
+  startOnlinePolling()
 })
 
 onUnmounted(() => {
   stopPolling()
+  stopOnlinePolling()
 })
 </script>
 

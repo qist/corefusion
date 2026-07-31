@@ -130,10 +130,9 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	// 10. Apply log mode to the config's log section
 	ApplyLogMode(fullConfig, opts.CoreType, opts.LogMode)
 
-	// 11. Ensure online-stats policy when rate limiting is enabled
-	if opts.RateLimitEnabled {
-		EnsureOnlineStatsPolicy(fullConfig, opts.CoreType)
-	}
+	// 11. Always ensure online-stats policy for xray so the Panel can show
+	// real-time online subscribers (decoupled from rate limiting).
+	EnsureOnlineStatsPolicy(fullConfig, opts.CoreType)
 
 	// 12. Marshal to JSON
 	data, err := json.MarshalIndent(fullConfig, "", "  ")

@@ -424,7 +424,7 @@ message DownloadGeoRuleResponse {
 // ============================================================
 
 message AgentReport {
-  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; RATE_LIMIT_STATUS = 5; }
+  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; RATE_LIMIT_STATUS = 5; ONLINE_USERS = 6; }
   ReportType type = 1;
   int64  server_id = 2;
   int64  timestamp = 3;
@@ -480,6 +480,40 @@ message AgentReport {
   repeated RateLimitEntry rate_limit_entries = 60;
   int64  rate_limit_total_downlink = 61;   // 该节点总下载带宽 bps
   int64  rate_limit_total_uplink = 62;     // 该节点总上传带宽 bps
+
+  // ONLINE_USERS — 在线订阅人上报（实时推送，与限速解耦）
+  repeated OnlineUserEntry online_users = 63;
+}
+
+// OnlineSession 描述一个订阅下的单个在线会话（一个 IP + 一个入站 = 一个 session）。
+// 速率字段由 Agent 两次采样差分计算（xray 返回的是累计字节，bps 必须差分管）。
+message OnlineSession {
+  string ip              = 1;  // 单个在线 IP（多设备 = 多 session）
+  string inbound_tag     = 2;  // 入站标签（xray 当前版本可能为空）
+  string protocol        = 3;  // 协议（xray 当前版本可能为空）
+  int64  connected_since = 4;  // 接入时间(unix 秒)，首次出现时记录
+  int64  last_seen       = 5;  // 最后活跃(unix 秒)
+}
+
+// OnlineUserEntry 一个订阅的在线聚合（含其下所有 session）。
+// 流量/速率为订阅级：xray GetUsersStats 仅提供 user 级累计流量，
+// 速率由 Agent 两次采样差分计算（bps）。
+message OnlineUserEntry {
+  int64  subscription_id = 1;
+  string email           = 2;  // baseEmail（已去掉 _shortTag 后缀）
+  int64  first_seen      = 3;  // 该订阅本次会话最早连接(unix 秒)
+  int64  last_seen       = 4;
+  int64  downlink_bytes  = 5;  // 本期累计下行字节(user 级)
+  int64  uplink_bytes    = 6;  // 本期累计上行字节(user 级)
+  int64  downlink_rate   = 7;  // 下行速率 bps（Agent 差分计算）
+  int64  uplink_rate     = 8;  // 上行速率 bps（Agent 差分计算）
+  repeated OnlineSession sessions = 9;  // 每个 IP 一行
+
+  // 面板富化字段（由 Panel 联表查询订阅→客户端→套餐后填充，Agent 侧留空）
+  string client_name           = 10; // 客户端昵称/邮箱
+  string plan_name             = 11; // 套餐名称
+  int32  speed_limit_down_mbps = 12; // 下载限速 Mbps（0=不限）
+  int32  speed_limit_up_mbps   = 13; // 上传限速 Mbps（0=不限）
 }
 
 message CoreStatus {

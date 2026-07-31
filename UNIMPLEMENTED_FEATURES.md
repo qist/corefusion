@@ -142,7 +142,7 @@
 | Client merge-profiles / route-profiles（22 条 placeholder）✅ 路由已清理 2026-07-30 | 多订阅源合并、客户端路由规则集 profile，完全新概念，无实体无实现，前端也无调用 |
 | Server Share profiles（12 条 placeholder）✅ 路由已清理 2026-07-30（实际挂载于 `/server-share/profiles/*`；`ServerShareProfile` 实体 schema 保留） | 比已实现的 share-domains 更高层：发布/撤销/版本历史/预览/二维码/导出，部分重叠（见 3.4） |
 | Routing Regions CRUD（4 条 placeholder）✅ 路由已清理 2026-07-30（保留 `routing_regions` 空表） | `routing_regions` 表已建（`entity/runtime.go:168-180`）无实现；与 geo-rules/region_selector 用途不同（见 3.5） |
-| `client-auth/traffic-history` | ✅ **后端已实现 2026-07-31**：`GET /api/v1/client-auth/traffic-history`（受 client-auth 鉴权，可选 `?months=N` 1-24 默认 6），按当前登录用户订阅的 `BillingNodeIDs` 聚合 `node_traffic_usage`，按月返回流量趋势 `[{period_start, rx_bytes, tx_bytes, total_bytes}]`；前端门户尚未调用（仍为未来扩展） |
+| `client-auth/traffic-history` | ✅ **后端已实现 2026-07-31**；✅ **门户前端已接入 2026-07-31**：新增门户模块类型 `traffic_history`（`moduleDefs.js` 注册、`validate.go` 加入白名单、`defaults.go` 默认模板 overview 页加入、`lang.go` 中/英多语言补全），客户端门户渲染时调用 `GET /api/v1/client-auth/traffic-history` 并展示月度流量柱状图；模块 `visible` 开关即"是否显示历史流量"，可在门户模板搭建器中逐门户开关 |
 | Metrics `ConnectionFailures`/`UDPQUICMetrics` | 经代码核查，当前代码中**不存在**这两个端点（仅本文档自引用）。实际 metrics 路由为 `metricsGroup.GET` 的 `/overview`、`/services`、`/nodes`、`/certificates`（`router.go:1845-1848`）与 `node-servers` 的 `/:id/metrics-history`、`/metrics/aggregated`（`router.go:1514-1515`）；前端仅调用 `/node-servers/:id/metrics-history`，其余 metrics 端点前端无调用，属低优先补充指标，**非死端点** |
 | 安全能力：2FA/RBAC/管理端 mTLS/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，均未落地 |
 

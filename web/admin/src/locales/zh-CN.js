@@ -3512,6 +3512,7 @@ certAutoDetectHint: '系统会自动扫描 Xray/Caddy/Nginx 配置中引用的�
     modAccountInfo: '账户信息',
     modAccountStats: '账户统计',
     modTrafficRing: '流量使用',
+    modTrafficHistory: '历史流量',
     modSubscription: '订阅信息',
     modSubDetail: '订阅详情',
     modClientDownload: '客户端下载',

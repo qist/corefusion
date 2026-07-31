@@ -83,6 +83,18 @@ export const MODULE_DEFS = {
     icon: '📊', labelKey: 'portal.modTrafficRing', category: 'account',
     defaults: () => ({ data: {}, style: { custom_css: '' } }),
   },
+  traffic_history: {
+    icon: '📈', labelKey: 'portal.modTrafficHistory', category: 'account',
+    defaults: () => ({
+      data: {
+        months: 6,
+        html: `<div class="th-card"><div class="th-head"><span class="th-icon">📈</span><span class="th-title">{{ t(mod.title) }}</span></div><div v-if="loading" class="th-state">{{ t('traffic_history.loading') }}</div><div v-else-if="error" class="th-state th-error">{{ error }}</div><div v-else-if="history.length === 0" class="th-state">{{ t('traffic_history.empty') }}</div><div v-else class="th-list"><div class="th-row" v-for="item in history" :key="item.period_start"><div class="th-period">{{ fmtMonth(item.period_start) }}</div><div class="th-bar-wrap"><div class="th-bar" :style="{ width: barWidth(item) }"></div></div><div class="th-bytes">{{ formatBytes(item.total_bytes) }}</div></div></div></div>`,
+        css: `.th-card{padding:16px}.th-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}.th-icon{font-size:18px}.th-title{font-weight:600;font-size:15px}.th-state{color:var(--text-muted,#999);font-size:13px;padding:8px 0}.th-error{color:#f56c6c}.th-list{display:flex;flex-direction:column;gap:8px}.th-row{display:flex;align-items:center;gap:10px;font-size:13px}.th-period{width:56px;color:var(--text-muted,#999);flex:none}.th-bar-wrap{flex:1;height:8px;background:var(--bg-muted,#eee);border-radius:4px;overflow:hidden}.th-bar{height:100%;background:var(--accent,#409eff);border-radius:4px;transition:width .3s}.th-bytes{width:72px;text-align:right;flex:none;font-variant-numeric:tabular-nums}`,
+        js: `const { ref, computed } = ctx; const history = ref([]); const loading = ref(true); const error = ref(''); const months = (ctx.mod && ctx.mod.data && ctx.mod.data.months) || 6; ctx.api.get('/traffic-history', { months: months }).then(function (res) { history.value = (res && res.history) || []; }).catch(function (e) { error.value = (e && (e.message || e.error)) || t('traffic_history.error'); }).finally(function () { loading.value = false; }); const maxBytes = computed(function () { let m = 0; history.value.forEach(function (h) { if ((h.total_bytes || 0) > m) m = h.total_bytes; }); return m || 1; }); const barWidth = function (item) { return Math.max(6, Math.round(((item.total_bytes || 0) / maxBytes.value) * 100)) + '%'; }; const fmtMonth = function (s) { if (!s) return ''; return ('' + s).slice(0, 7); }; return { history: history, loading: loading, error: error, months: months, barWidth: barWidth, fmtMonth: fmtMonth, formatBytes: ctx.formatBytes, t: ctx.t };`,
+      },
+      style: { custom_css: '' },
+    }),
+  },
   subscription_detail: {
     icon: '🧾', labelKey: 'portal.modSubDetail', category: 'account',
     defaults: (t) => ({

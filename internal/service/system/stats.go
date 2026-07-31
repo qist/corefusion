@@ -9,6 +9,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"corefusion/internal/model/entity"
 )
 
 var (
@@ -111,6 +113,33 @@ func (s *StatsService) GetStats() *SystemStats {
 	s.readUptime(stats)
 
 	return stats
+}
+
+// CollectServerMetric 将当前面板自身（本地节点）的主机资源映射为 *entity.ServerMetric，
+// 供 MetricsCollector 落库。网络字段使用累计计数器（NetBytesRecv/Sent），
+// 速率由 MetricsCollector 基于两次采样差分计算。
+func (s *StatsService) CollectServerMetric(serverID int64) *entity.ServerMetric {
+	st := s.GetStats()
+	return &entity.ServerMetric{
+		ServerID:        serverID,
+		CPUUsage:        st.CPUUsage,
+		CPUCores:        st.CPUCores,
+		MemUsageBytes:   st.MemUsed,
+		MemTotalBytes:   st.MemTotal,
+		MemUsage:        st.MemUsage,
+		SwapTotalBytes:  st.SwapTotal,
+		SwapUsedBytes:   st.SwapUsed,
+		SwapUsage:       st.SwapUsage,
+		DiskUsageBytes:  st.DiskUsed,
+		DiskTotalBytes:  st.DiskTotal,
+		DiskUsage:       st.DiskUsage,
+		Load1m:          st.LoadAvg1,
+		TCPConnections:  st.TCPConnections,
+		UptimeSeconds:   st.Uptime,
+		Hostname:        st.Hostname,
+		NetRxBytes:      st.NetBytesRecv,
+		NetTxBytes:      st.NetBytesSent,
+	}
 }
 
 func (s *StatsService) readCPU(stats *SystemStats) {

@@ -156,6 +156,18 @@ export function recommendRegion(clientIp, allowedRegions) {
 
 // ──────────── Metrics ────────────
 
+export function getMetricsOverview() {
+  return client.get('/metrics/overview')
+}
+
+export function getMetricsNodes() {
+  return client.get('/metrics/nodes')
+}
+
+export function getMetricsCertificates() {
+  return client.get('/metrics/certificates')
+}
+
 export function getMetricsHistory(id, params = {}) {
   return client.get(`/node-servers/${id}/metrics-history`, { params })
 }

@@ -160,30 +160,42 @@
         <el-col :span="14">
           <el-card class="block-card">
             <template #header><span class="card-title"><i class="ct-bar"></i>{{ t('dashboard.clusterResource') }}</span></template>
-            <el-row :gutter="16">
-              <el-col :span="8">
-                <div class="cluster-item">
-                  <div class="ci-label">{{ t('dashboard.clusterAvgCpu') }}</div>
-                  <el-progress type="dashboard" :width="92" :percentage="Math.round(avgCpu)" :color="pctColor(avgCpu)" />
+            <div class="cluster-grid">
+              <div class="cluster-item ci-cpu">
+                <div class="ci-ring">
+                  <el-progress type="dashboard" :width="104" :stroke-width="9" :percentage="Math.round(avgCpu)" :color="pctColor(avgCpu)">
+                    <template #default>
+                      <div class="ci-pct">{{ Math.round(avgCpu) }}<span class="ci-unit">%</span></div>
+                    </template>
+                  </el-progress>
                 </div>
-              </el-col>
-              <el-col :span="8">
-                <div class="cluster-item">
-                  <div class="ci-label">{{ t('dashboard.clusterAvgMem') }}</div>
-                  <el-progress type="dashboard" :width="92" :percentage="Math.round(avgMem)" :color="pctColor(avgMem)" />
+                <div class="ci-label"><el-icon class="ci-ico"><Cpu /></el-icon>{{ t('dashboard.clusterAvgCpu') }}</div>
+              </div>
+              <div class="cluster-item ci-mem">
+                <div class="ci-ring">
+                  <el-progress type="dashboard" :width="104" :stroke-width="9" :percentage="Math.round(avgMem)" :color="pctColor(avgMem)">
+                    <template #default>
+                      <div class="ci-pct">{{ Math.round(avgMem) }}<span class="ci-unit">%</span></div>
+                    </template>
+                  </el-progress>
                 </div>
-              </el-col>
-              <el-col :span="8">
-                <div class="cluster-item">
-                  <div class="ci-label">{{ t('dashboard.clusterAvgDisk') }}</div>
-                  <el-progress type="dashboard" :width="92" :percentage="Math.round(avgDisk)" :color="pctColor(avgDisk)" />
+                <div class="ci-label"><el-icon class="ci-ico"><Coin /></el-icon>{{ t('dashboard.clusterAvgMem') }}</div>
+              </div>
+              <div class="cluster-item ci-disk">
+                <div class="ci-ring">
+                  <el-progress type="dashboard" :width="104" :stroke-width="9" :percentage="Math.round(avgDisk)" :color="pctColor(avgDisk)">
+                    <template #default>
+                      <div class="ci-pct">{{ Math.round(avgDisk) }}<span class="ci-unit">%</span></div>
+                    </template>
+                  </el-progress>
                 </div>
-              </el-col>
-            </el-row>
+                <div class="ci-label"><el-icon class="ci-ico"><FolderOpened /></el-icon>{{ t('dashboard.clusterAvgDisk') }}</div>
+              </div>
+            </div>
             <div class="cluster-foot">
-              <span>{{ t('dashboard.netTraffic') }}: {{ formatBytes(totalNet) }}/s</span>
-              <span>{{ t('dashboard.userTraffic') }}: {{ formatBytes(totalTraffic) }}/s</span>
-              <span class="muted">{{ t('dashboard.basedOn') }} {{ onlineWithMetric.length }} {{ t('dashboard.fleetOnline') }}</span>
+              <span class="cf-item"><el-icon class="cf-ico cf-net"><Download /></el-icon>{{ t('dashboard.netTraffic') }}: <b>{{ formatBytes(totalNet) }}/s</b></span>
+              <span class="cf-item"><el-icon class="cf-ico cf-traffic"><Sort /></el-icon>{{ t('dashboard.userTraffic') }}: <b>{{ formatBytes(totalTraffic) }}/s</b></span>
+              <span class="cf-item muted"><el-icon class="cf-ico"><Monitor /></el-icon>{{ t('dashboard.basedOn') }} {{ onlineWithMetric.length }} {{ t('dashboard.fleetOnline') }}</span>
             </div>
           </el-card>
         </el-col>
@@ -245,7 +257,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import client from '../api/client'
-import { Cpu, Monitor, Link, Connection, Lock, Location, Odometer } from '@element-plus/icons-vue'
+import { Cpu, Monitor, Link, Connection, Lock, Location, Odometer, Coin, FolderOpened, Download, Sort } from '@element-plus/icons-vue'
 import {
   getDashboardStatus,
   getAggregatedMetrics,
@@ -267,7 +279,7 @@ const STATUS_MAP = {
 
 export default {
   name: 'Dashboard',
-  components: { Cpu, Monitor, Link, Connection, Lock, Location, Odometer },
+  components: { Cpu, Monitor, Link, Connection, Lock, Location, Odometer, Coin, FolderOpened, Download, Sort },
   setup() {
     const { t } = useI18n()
     const router = useRouter()
@@ -566,9 +578,39 @@ export default {
 .offline-heart { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
 
 /* Cluster resource */
-.cluster-item { text-align: center; padding: 8px 0; }
-.ci-label { font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
-.cluster-foot { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
+.cluster-grid { display: flex; gap: 14px; }
+.cluster-item {
+  flex: 1;
+  text-align: center;
+  padding: 18px 10px 14px;
+  border-radius: 10px;
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-extra-light);
+  transition: all .2s ease;
+}
+.cluster-item:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(16,24,40,.08); }
+.ci-cpu   { background: linear-gradient(180deg, #ecf5ff, #f7fbff); border-color: #d9ecff; }
+.ci-mem   { background: linear-gradient(180deg, #f0f9eb, #f8fcf5); border-color: #e1f3d8; }
+.ci-disk  { background: linear-gradient(180deg, #fdf6ec, #fefaf3); border-color: #faecd8; }
+.ci-ring { display: flex; justify-content: center; margin-bottom: 10px; }
+.ci-pct { font-size: 22px; font-weight: 700; color: var(--el-text-color-primary); line-height: 1; }
+.ci-unit { font-size: 13px; font-weight: 500; color: var(--el-text-color-secondary); margin-left: 1px; }
+.ci-label { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; font-weight: 500; color: var(--el-text-color-regular); }
+.ci-ico { font-size: 14px; }
+.ci-cpu .ci-ico { color: #409eff; }
+.ci-mem .ci-ico { color: #67c23a; }
+.ci-disk .ci-ico { color: #e6a23c; }
+.cluster-foot {
+  display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+  margin-top: 14px; padding-top: 13px;
+  border-top: 1px solid var(--el-border-color-extra-light);
+  font-size: 13px; color: var(--el-text-color-regular);
+}
+.cf-item { display: inline-flex; align-items: center; gap: 5px; }
+.cf-item b { font-weight: 600; color: var(--el-text-color-primary); }
+.cf-ico { font-size: 15px; }
+.cf-net { color: #409eff; }
+.cf-traffic { color: #9b59b6; }
 .cluster-foot .muted { color: var(--el-text-color-secondary); }
 
 /* Top load list */

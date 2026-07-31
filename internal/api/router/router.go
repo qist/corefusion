@@ -444,7 +444,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if processMgr != nil {
 		runtimeApplyWriter = processMgr
 	}
-	runtimeApplySvcInst := runtimeapplySvc.NewService(database, dataDir, configSyncSvc, runtimeApplyWriter)
+	runtimeApplySvcInst := runtimeapplySvc.NewService(database, dataDir, configSyncSvc, runtimeApplyWriter, nodeServerRepoForSync, sharedNodeMgr)
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
@@ -2413,7 +2413,6 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 	services := rg.Group("/services")
 	accessH := servicesHandler.NewAccessHandler(database, getAccessService(database))
 	{
-		services.GET("/:id/logs", placeholder("get service logs"))
 		services.GET("/:id/access-policies", accessH.ListPolicies)
 		services.POST("/:id/access-policies", accessH.CreatePolicy)
 		services.PUT("/:id/access-policies/:policyId", accessH.UpdatePolicy)
@@ -2439,23 +2438,8 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 		runtime.POST("/apply-jobs/:id/cancel", runtimeH.CancelJob)
 		runtime.POST("/rollback", runtimeH.Rollback)
 		runtime.POST("/disable-proxy", runtimeH.DisableProxy)
-	}
-
-	// Server Share
-	share := rg.Group("/server-share")
-	{
-		share.GET("/profiles", placeholder("list share profiles"))
-		share.POST("/profiles", placeholder("create share profile"))
-		share.GET("/profiles/:id", placeholder("get share profile"))
-		share.PUT("/profiles/:id", placeholder("update share profile"))
-		share.DELETE("/profiles/:id", placeholder("delete share profile"))
-		share.GET("/profiles/:id/revisions", placeholder("list revisions"))
-		share.GET("/profiles/:id/events", placeholder("list events"))
-		share.POST("/profiles/:id/preview", placeholder("preview"))
-		share.POST("/profiles/:id/publish", placeholder("publish"))
-		share.POST("/profiles/:id/revoke", placeholder("revoke"))
-		share.GET("/profiles/:id/qrcode", placeholder("get qrcode"))
-		share.GET("/profiles/:id/export", placeholder("export"))
+		runtime.GET("/nodes", runtimeH.ListNodes)
+		runtime.POST("/verify", runtimeH.Verify)
 	}
 
 	// Traffic Quotas
@@ -2471,65 +2455,9 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 		traffic.POST("/quotas/:id/reset", placeholder("reset quota"))
 	}
 
-	// Client Config
-	client := rg.Group("/client")
-	{
-		client.GET("/merge-profiles", placeholder("list merge profiles"))
-		client.POST("/merge-profiles", placeholder("create merge profile"))
-		client.GET("/merge-profiles/:id", placeholder("get merge profile"))
-		client.PUT("/merge-profiles/:id", placeholder("update merge profile"))
-		client.POST("/merge-profiles/:id/sync", placeholder("sync merge profile"))
-		client.POST("/merge-profiles/:id/render", placeholder("render merge profile"))
-		client.GET("/merge-profiles/:id/generated-profiles", placeholder("list generated profiles"))
-		client.POST("/merge-profiles/:id/sources", placeholder("add source"))
-		client.PUT("/merge-profiles/:id/sources/:sourceId", placeholder("update source"))
-		client.POST("/merge-profiles/:id/sources/:sourceId/sync", placeholder("sync source"))
-		client.POST("/merge-profiles/:id/apply", placeholder("apply profile"))
 
-		client.GET("/route-profiles", placeholder("list route profiles"))
-		client.POST("/route-profiles", placeholder("create route profile"))
-		client.GET("/route-profiles/:id", placeholder("get route profile"))
-		client.PUT("/route-profiles/:id", placeholder("update route profile"))
-		client.GET("/route-profiles/:id/rule-sources", placeholder("list rule sources"))
-		client.POST("/route-profiles/:id/rule-sources", placeholder("create rule source"))
-		client.POST("/route-profiles/:id/rule-sources/:sourceId/sync", placeholder("sync rule source"))
-		client.POST("/route-profiles/:id/rules/preview", placeholder("preview rules"))
-		client.POST("/route-profiles/:id/rules/apply", placeholder("apply rules"))
-		client.GET("/route-profiles/:id/rule-sync-jobs", placeholder("list rule sync jobs"))
-		client.GET("/route-profiles/:id/route-apply-jobs", placeholder("list route apply jobs"))
-	}
 
-	// Routing Regions
-	regions := rg.Group("/routing/regions")
-	{
-		regions.GET("", placeholder("list regions"))
-		regions.POST("", placeholder("create region"))
-		regions.PUT("/:id", placeholder("update region"))
-		regions.DELETE("/:id", placeholder("delete region"))
-	}
 
-	// Reverse Proxies
-	proxies := rg.Group("/reverse-proxies")
-	{
-		proxies.GET("", placeholder("list reverse proxies"))
-		proxies.POST("", placeholder("create reverse proxy"))
-		proxies.PUT("/:id", placeholder("update reverse proxy"))
-		proxies.POST("/:id/reload", placeholder("reload reverse proxy"))
-		proxies.POST("/:id/restart", placeholder("restart reverse proxy"))
-		proxies.GET("/:id/config", placeholder("get reverse proxy config"))
-	}
-
-	// Route Runtime (OpenWrt)
-	routeRuntime := rg.Group("/route-runtime")
-	{
-		routeRuntime.GET("/openwrt/integration-status/:routeProfileID", placeholder("get integration status"))
-		routeRuntime.POST("/openwrt/initialize-includes", placeholder("initialize includes"))
-		routeRuntime.POST("/openwrt/repair-includes", placeholder("repair includes"))
-		routeRuntime.POST("/openwrt/dry-run", placeholder("openwrt dry run"))
-		routeRuntime.POST("/openwrt/validate", placeholder("openwrt validate"))
-		routeRuntime.POST("/openwrt/apply", placeholder("openwrt apply"))
-		routeRuntime.POST("/openwrt/rollback", placeholder("openwrt rollback"))
-	}
 }
 
 // placeholder returns a handler that returns 501 Not Implemented.

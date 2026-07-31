@@ -152,7 +152,14 @@ func (s *Service) Stop() {
 
 // SyncNow triggers an immediate config sync.
 func (s *Service) SyncNow(ctx context.Context) error {
-	return s.sync(ctx)
+	return s.sync(ctx, nil)
+}
+
+// SyncServers syncs configs to only the given server IDs. An empty slice syncs
+// every known node. It is used to scope runtime operations (apply/rollback/
+// disable) to specific nodes.
+func (s *Service) SyncServers(ctx context.Context, only []int64) error {
+	return s.sync(ctx, only)
 }
 
 // LastSync returns the last sync time.
@@ -169,7 +176,7 @@ func (s *Service) loop() {
 	// Initial sync after a short delay
 	time.Sleep(10 * time.Second)
 	ctx := context.Background()
-	if err := s.sync(ctx); err != nil {
+	if err := s.sync(ctx, nil); err != nil {
 		log.Printf("configsync: initial sync failed: %v", err)
 	}
 
@@ -179,19 +186,19 @@ func (s *Service) loop() {
 			return
 		case <-ticker.C:
 			ctx := context.Background()
-			if err := s.sync(ctx); err != nil {
+			if err := s.sync(ctx, nil); err != nil {
 				log.Printf("configsync: sync failed: %v", err)
 			}
 		}
 	}
 }
 
-func (s *Service) sync(ctx context.Context) error {
+func (s *Service) sync(ctx context.Context, only []int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Sync xray config
-	if err := s.syncCore(ctx, "xray"); err != nil {
+	if err := s.syncCore(ctx, "xray", only); err != nil {
 		log.Printf("configsync: xray sync failed: %v", err)
 	}
 
@@ -200,7 +207,7 @@ func (s *Service) sync(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) syncCore(ctx context.Context, coreType string) error {
+func (s *Service) syncCore(ctx context.Context, coreType string, only []int64) error {
 	// Determine which servers to sync.
 	// Always sync local node (server_id=1) to disk.
 	// For remote nodes, generate config from panel DB and push via Agent.
@@ -214,6 +221,21 @@ func (s *Service) syncCore(ctx context.Context, coreType string) error {
 				}
 			}
 		}
+	}
+
+	// Restrict to explicitly selected nodes (if any).
+	if len(only) > 0 {
+		pick := map[int64]struct{}{}
+		for _, id := range only {
+			pick[id] = struct{}{}
+		}
+		filtered := make([]int64, 0, len(serverIDs))
+		for _, id := range serverIDs {
+			if _, ok := pick[id]; ok {
+				filtered = append(filtered, id)
+			}
+		}
+		serverIDs = filtered
 	}
 
 	var firstErr error

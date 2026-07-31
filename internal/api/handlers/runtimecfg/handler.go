@@ -23,12 +23,14 @@ func NewHandler(svc *runtimeapply.Service) *Handler {
 }
 
 type reasonBody struct {
-	Reason string `json:"reason"`
+	Reason    string  `json:"reason"`
+	ServerIDs []int64 `json:"server_ids"`
 }
 
 type rollbackBody struct {
-	SnapshotID int64  `json:"snapshot_id" binding:"required"`
-	Reason     string `json:"reason"`
+	SnapshotID int64   `json:"snapshot_id" binding:"required"`
+	Reason     string  `json:"reason"`
+	ServerIDs  []int64 `json:"server_ids"`
 }
 
 // Overview handles GET /runtime/overview.
@@ -57,7 +59,7 @@ func (h *Handler) ListSnapshots(c *gin.Context) {
 func (h *Handler) CreateSnapshot(c *gin.Context) {
 	var body reasonBody
 	_ = c.ShouldBindJSON(&body)
-	snap, err := h.svc.CreateSnapshot(c.Request.Context(), "manual", "api", body.Reason)
+	snap, err := h.svc.CreateSnapshot(c.Request.Context(), "manual", "api", body.Reason, body.ServerIDs)
 	if err != nil {
 		response.InternalError(c, "SNAPSHOT_FAILED", err.Error())
 		return
@@ -89,7 +91,9 @@ func (h *Handler) DeleteSnapshot(c *gin.Context) {
 
 // DryRun handles POST /runtime/dry-run.
 func (h *Handler) DryRun(c *gin.Context) {
-	res, err := h.svc.DryRun(c.Request.Context())
+	var body reasonBody
+	_ = c.ShouldBindJSON(&body)
+	res, err := h.svc.DryRun(c.Request.Context(), body.ServerIDs)
 	if err != nil {
 		response.InternalError(c, "DRY_RUN_FAILED", err.Error())
 		return
@@ -101,7 +105,7 @@ func (h *Handler) DryRun(c *gin.Context) {
 func (h *Handler) Apply(c *gin.Context) {
 	var body reasonBody
 	_ = c.ShouldBindJSON(&body)
-	job, err := h.svc.Apply(c.Request.Context(), "api", body.Reason)
+	job, err := h.svc.Apply(c.Request.Context(), "api", body.Reason, body.ServerIDs)
 	if err != nil && job == nil {
 		response.InternalError(c, "APPLY_FAILED", err.Error())
 		return
@@ -164,7 +168,7 @@ func (h *Handler) Rollback(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	job, err := h.svc.Rollback(c.Request.Context(), body.SnapshotID, "api", body.Reason)
+	job, err := h.svc.Rollback(c.Request.Context(), body.SnapshotID, "api", body.Reason, body.ServerIDs)
 	if err != nil && job == nil {
 		response.BadRequest(c, "ROLLBACK_FAILED", err.Error())
 		return
@@ -176,10 +180,39 @@ func (h *Handler) Rollback(c *gin.Context) {
 func (h *Handler) DisableProxy(c *gin.Context) {
 	var body reasonBody
 	_ = c.ShouldBindJSON(&body)
-	job, err := h.svc.DisableProxy(c.Request.Context(), "api", body.Reason)
+	job, err := h.svc.DisableProxy(c.Request.Context(), "api", body.Reason, body.ServerIDs)
 	if err != nil && job == nil {
 		response.InternalError(c, "DISABLE_FAILED", err.Error())
 		return
 	}
 	response.OK(c, job)
+}
+
+type verifyBody struct {
+	ServerIDs []int64 `json:"server_ids"`
+}
+
+// Verify handles POST /runtime/verify.
+// It runs the per-node verification on the selected nodes (or all nodes when
+// no server_ids are supplied) and returns the live results, so the operator can
+// verify specific nodes from the operations panel.
+func (h *Handler) Verify(c *gin.Context) {
+	var body verifyBody
+	_ = c.ShouldBindJSON(&body)
+	nodes, err := h.svc.VerifySelected(c.Request.Context(), body.ServerIDs)
+	if err != nil {
+		response.InternalError(c, "VERIFY_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"nodes": nodes, "total": len(nodes)})
+}
+
+// ListNodes handles GET /runtime/nodes.
+func (h *Handler) ListNodes(c *gin.Context) {
+	nodes, err := h.svc.VerifyNodes(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "QUERY_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"nodes": nodes, "total": len(nodes)})
 }

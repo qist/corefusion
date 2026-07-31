@@ -127,9 +127,9 @@
 
 | 项 | 说明 |
 |---|---|
-| Client merge-profiles / route-profiles（22 条 placeholder） | 多订阅源合并、客户端路由规则集 profile，完全新概念，无实体无实现，前端也无调用 |
-| Server Share profiles（12 条 placeholder） | 比已实现的 share-domains 更高层：发布/撤销/版本历史/预览/二维码/导出，部分重叠（见 3.4） |
-| Routing Regions CRUD（4 条 placeholder） | `routing_regions` 表已建（`entity/runtime.go:168-180`）无实现；与 geo-rules/region_selector 用途不同（见 3.5） |
+| Client merge-profiles / route-profiles（22 条 placeholder）✅ 路由已清理 2026-07-30 | 多订阅源合并、客户端路由规则集 profile，完全新概念，无实体无实现，前端也无调用 |
+| Server Share profiles（12 条 placeholder）✅ 路由已清理 2026-07-30（实际挂载于 `/server-share/profiles/*`；`ServerShareProfile` 实体 schema 保留） | 比已实现的 share-domains 更高层：发布/撤销/版本历史/预览/二维码/导出，部分重叠（见 3.4） |
+| Routing Regions CRUD（4 条 placeholder）✅ 路由已清理 2026-07-30（保留 `routing_regions` 空表） | `routing_regions` 表已建（`entity/runtime.go:168-180`）无实现；与 geo-rules/region_selector 用途不同（见 3.5） |
 | `client-auth/traffic-history` | 门户自述"未来扩展"；节点级 traffic-history 已有 |
 | gRPC `RegistrationService.Register` 未接线 | `manager.go:1503-1512` 返回未接线；现行路径走 REST bootstrap-token（已实现且够用），属可选增强 |
 | Metrics `ConnectionFailures`/`UDPQUICMetrics` | 空端点，但前端无任何调用（前端用 `/node-servers/:id/metrics-history`），死端点 |
@@ -148,8 +148,7 @@
 
 > **客户端设计（服务端不实现，从缺失清单剔除）**：
 > `router.go` 中 `/route-runtime/openwrt/*`（7 条 placeholder）以及 `domain/common.go:141-142` 的 `Dnsmasq`/`Fw4` 枚举常量，描述的是 **OpenWrt 客户端设备端**的能力（fw4 防火墙、dnsmasq、OpenWrt 集成下发），属于客户端（`web/client` / `corefusion client` 模式）范畴，**服务端明确不实现**。
-> 因此这些路由不应作为"服务端未实现功能"计入；建议：
-> - 删除服务端的 7 条 `/route-runtime/openwrt/*` placeholder 路由（避免造成"服务端缺失"的误判）；
+> 因此这些路由不应作为"服务端未实现功能"计入；**已于 2026-07-30 删除**服务端的 7 条 `/route-runtime/openwrt/*` placeholder 路由（避免造成"服务端缺失"的误判）；
 > - 相关 dnsmasq/fw4 枚举常量保留，归入后续客户端设计文档，不计入本服务端审计报告。
 
 ---
@@ -161,7 +160,7 @@
 | # | 项 | 实际等价实现 | 证据 |
 |---|---|---|---|
 | 3.1 | 证书部署 Deploy() 桩 | 证书签发/续期/上传后自动分发：`fireCertUpdated` → `DistributeCertificateToAll` → Agent 磁盘 + ReloadCore；反代证书随 SyncProxyConfig 携带；断线重连补发 | `certificates/handler.go:203,239,305`、`router.go:1249-1254`、`cert_distributor.go:36,165` |
-| 3.2 | `/reverse-proxies` 6 条 placeholder | 反代管理已完整实现：`/node-servers/:id/proxy/*`（通用）、`/caddy/*`、`/nginx/*` 全套 CRUD/reload/配置查看，前端 CaddyProxy/NginxProxy 完备 | `router.go:1504-1565`、`system/caddy_handler.go`、`nginx_handler.go`、`proxy.go` |
+| 3.2 | `/reverse-proxies` 6 条 placeholder ✅ 路由已清理 2026-07-30 | 反代管理已完整实现：`/node-servers/:id/proxy/*`（通用）、`/caddy/*`、`/nginx/*` 全套 CRUD/reload/配置查看，前端 CaddyProxy/NginxProxy 完备 | `router.go:1504-1565`、`system/caddy_handler.go`、`nginx_handler.go`、`proxy.go` |
 | 3.3 | 流量聚合器被注释（"aggregator 死代码致配额不生效"） | 用量统计已改道：trafficsync（本机）+ TrafficEventConsumer（远程）→ `inboundconfig.UpdateTraffic` → `subscriptions.*_bytes_cache`；`TrafficUsageLedger/Summary` 是被废弃的旧设计 | `trafficsync/service.go:222`、`traffic_consumer.go:105`、`inboundconfig/service.go:133-208` |
 | 3.4 | Server Share 的"分享域名"能力 | `/share-domains` + `/node-servers/:id/share-domains` 全套 CRUD 已实现，前端 ShareDomainTab 在用；placeholder 多出的只是发布/版本/二维码等增强 | `router.go:937-945,1635-1639`、`sharedomainconfig/handler.go` |
 | 3.5 | 区域能力的两个相近实现 | geo-rules（GeoIP 数据文件管理，`/node-servers/:id/geo-rules`）+ region_selector（按用户 IP 推荐区域）均已在用；`/routing/regions` CRUD 是第三种用途（自定义区域定义），表已建但需求需重新确认 | `router.go:1608-1624`、`georule/service.go`、`region_selector.go` |
@@ -189,6 +188,7 @@
 | Metrics 2 个死端点 | `metrics/handler.go:102-111` + `router.go:1772-1773` | ✅ **已删除** handler 方法与路由注册 |
 | 废弃 domain 接口 | `domain/runtime/interfaces.go` | ⏸️ **保留**：2.10 RuntimeApplyService 需要 |
 | `routing_regions`/`runtime_*` 空骨架表 | `entity/runtime.go` | ⏸️ **保留**：2.10 Runtime 工作流 / 路由区域需要 |
+| P3 / 第3章 死 placeholder 路由 | `router.go` `registerPlaceholderRoutes` | ✅ **已删除 52 条**：`/client/merge-profiles`(11)+`/client/route-profiles`(11)、`/routing/regions`(4)、`/route-runtime/openwrt/*`(7)、`/reverse-proxies`(6)、`/server-share/profiles`(12)、`/services/:id/logs`(1)；`/traffic/*`(8) 属"保留项"未动 |
 
 > 清理后已执行 `go build ./...` 通过。前端孤儿文件删除已核实无 import 引用。
 

@@ -8,6 +8,7 @@ type RuntimeSnapshot struct {
 	SnapshotType    string    `json:"snapshot_type" gorm:"size:32;not null"`
 	TriggerSource   string    `json:"trigger_source" gorm:"size:32"`
 	Reason          string    `json:"reason" gorm:"type:text"`
+	TargetServerIDsJSON string `json:"target_server_ids_json" gorm:"type:text"` // intended target nodes (empty = all)
 	ConfigJSON      string    `json:"config_json" gorm:"type:text"`
 	FilePathsJSON   string    `json:"file_paths_json" gorm:"type:text"`
 	ChecksumSHA256  string    `json:"checksum_sha256" gorm:"size:64"`
@@ -29,6 +30,8 @@ type RuntimeApplyJob struct {
 	TargetCount       int        `json:"target_count" gorm:"not null;default:0"`
 	SuccessCount      int        `json:"success_count" gorm:"not null;default:0"`
 	FailedCount       int        `json:"failed_count" gorm:"not null;default:0"`
+	VerifyStatus      string     `json:"verify_status" gorm:"size:32;not null;default:''"` // pending|verifying|ok|partial|failed|skipped
+	TargetServerIDsJSON string   `json:"target_server_ids_json" gorm:"type:text"`           // selected target nodes (empty = all)
 	ErrorMessage      string     `json:"error_message" gorm:"type:text"`
 	StartedAt         *time.Time `json:"started_at"`
 	FinishedAt        *time.Time `json:"finished_at"`

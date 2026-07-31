@@ -12,8 +12,8 @@ export const getSnapshot = (id) =>
 export const deleteSnapshot = (id) =>
   client({ url: `/runtime/snapshots/${id}`, method: 'delete' })
 
-export const dryRun = () =>
-  client({ url: '/runtime/dry-run', method: 'post' })
+export const dryRun = (data) =>
+  client({ url: '/runtime/dry-run', method: 'post', data: data || {} })
 
 export const applyRuntime = (data) =>
   client({ url: '/runtime/apply', method: 'post', data })
@@ -30,3 +30,9 @@ export const retryJob = (id) =>
   client({ url: `/runtime/apply-jobs/${id}/retry`, method: 'post' })
 export const cancelJob = (id) =>
   client({ url: `/runtime/apply-jobs/${id}/cancel`, method: 'post' })
+
+export const listRuntimeNodes = () =>
+  client({ url: '/runtime/nodes', method: 'get' })
+
+export const verifyRuntimeNodes = (serverIDs = []) =>
+  client({ url: '/runtime/verify', method: 'post', data: { server_ids: serverIDs } })

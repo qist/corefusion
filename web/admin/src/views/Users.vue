@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:20px"><h2>{{ t('user.title') }}</h2><el-button type="primary" @click="showCreate">{{ t('user.create') }}</el-button></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:20px"><h2>{{ t('user.title') }}</h2><el-button type="primary" v-if="$can('admin')" @click="showCreate">{{ t('user.create') }}</el-button></div>
     <el-card>
       <el-table :data="users" v-loading="loading" stripe>
         <el-table-column prop="id" :label="t('common.id')" width="60" />
@@ -9,7 +9,7 @@
         <el-table-column prop="role" :label="t('user.role')" width="120"><template #default="{row}"><el-tag size="small">{{ roleLabel(row.role) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('common.status')" width="80"><template #default="{row}"><el-tag :type="row.status===1?'success':'danger'" size="small">{{ row.status===1?t('common.enabled'):t('common.disabled') }}</el-tag></template></el-table-column>
         <el-table-column :label="t('common.actions')" width="160">
-          <template #default="{row}"><el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button><el-button size="small" type="danger" @click="handleDelete(row)" :disabled="row.id===1">{{ t('common.delete') }}</el-button></template>
+          <template #default="{row}"><el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button><el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)" :disabled="row.id===1">{{ t('common.delete') }}</el-button></template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -19,7 +19,7 @@
         <el-form-item :label="t('user.username')"><el-input v-model="form.username" :disabled="!!editing" /></el-form-item>
         <el-form-item :label="t('user.email')"><el-input v-model="form.email" placeholder="user@example.com" /></el-form-item>
         <el-form-item :label="t('user.password')"><el-input v-model="form.password" type="password" :placeholder="editing?t('user.passwordPlaceholder'):t('user.password')" /></el-form-item>
-        <el-form-item :label="t('user.role')"><el-select v-model="form.role" style="width:100%"><el-option :label="t('user.roles.superAdmin')" value="super_admin" /><el-option :label="t('user.roles.admin')" value="admin" /><el-option :label="t('user.roles.operator')" value="operator" /><el-option :label="t('user.roles.viewer')" value="viewer" /></el-select></el-form-item>
+        <el-form-item :label="t('user.role')"><el-select v-model="form.role" style="width:100%"><el-option v-if="$can('super_admin')" :label="t('user.roles.superAdmin')" value="super_admin" /><el-option :label="t('user.roles.admin')" value="admin" /><el-option :label="t('user.roles.operator')" value="operator" /><el-option :label="t('user.roles.viewer')" value="viewer" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="handleSave">{{ t('common.save') }}</el-button></template>
     </el-dialog>

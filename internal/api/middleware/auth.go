@@ -50,7 +50,7 @@ func AuthRequired() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := jwtHandler.Validate(tokenStr)
+		claims, err := jwtHandler.ValidateTyped(tokenStr, jwt.TokenTypeAccess)
 		if err != nil {
 			response.Unauthorized(c, "INVALID_TOKEN", err.Error())
 			c.Abort()

@@ -117,17 +117,17 @@
                 <el-button size="small">{{ t('nodeServer.actions') }} <el-icon><ArrowDown /></el-icon></el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="deploy" v-if="row.bootstrap_required">{{ t('nodeServer.deployCommand') }}</el-dropdown-item>
+                    <el-dropdown-item command="deploy" v-if="row.bootstrap_required && $can('admin')">{{ t('nodeServer.deployCommand') }}</el-dropdown-item>
                     <el-dropdown-item command="status" divided>{{ t('nodeServer.realtimeStatus') }}</el-dropdown-item>
-                    <el-dropdown-item command="control">{{ t('nodeServer.controlCore') }}</el-dropdown-item>
-                    <el-dropdown-item command="sync">{{ t('nodeServer.syncConfig') }}</el-dropdown-item>
+                    <el-dropdown-item command="control" v-if="$can('super_admin')">{{ t('nodeServer.controlCore') }}</el-dropdown-item>
+                    <el-dropdown-item command="sync" v-if="$can('super_admin')">{{ t('nodeServer.syncConfig') }}</el-dropdown-item>
                     <el-dropdown-item command="tags" divided>{{ t('nodeServer.tags') }}</el-dropdown-item>
-                    <el-dropdown-item command="revoke" v-if="row.agent_cert_expires_at">{{ t('nodeServer.revokeCert') }}</el-dropdown-item>
-                    <el-dropdown-item command="reconnect">{{ t('nodeServer.forceReconnect') }}</el-dropdown-item>
+                    <el-dropdown-item command="revoke" v-if="row.agent_cert_expires_at && $can('admin')">{{ t('nodeServer.revokeCert') }}</el-dropdown-item>
+                    <el-dropdown-item command="reconnect" v-if="$can('admin')">{{ t('nodeServer.forceReconnect') }}</el-dropdown-item>
                     <el-dropdown-item command="resumeTraffic" v-if="row.traffic_suspended" divided style="color:#e6a23c">⚠ {{ t('nodeServer.resumeTraffic') }}</el-dropdown-item>
-                    <el-dropdown-item command="updateAgent" v-if="!row.is_local" divided>{{ t('nodeServer.updateAgent') }}</el-dropdown-item>
+                    <el-dropdown-item command="updateAgent" v-if="!row.is_local && $can('admin')" divided>{{ t('nodeServer.updateAgent') }}</el-dropdown-item>
                     <el-dropdown-item command="edit" divided>{{ t('common.edit') }}</el-dropdown-item>
-                    <el-dropdown-item command="delete" v-if="!row.is_local">{{ t('common.delete') }}</el-dropdown-item>
+                    <el-dropdown-item command="delete" v-if="!row.is_local && $can('admin')">{{ t('common.delete') }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -329,7 +329,7 @@
           <el-input v-model="auditFilter.server_id" :placeholder="t('nodeServer.serverId')" clearable size="small" style="width:100px" @keyup.enter="loadAuditLogs" />
           <el-input v-model="auditFilter.action" :placeholder="t('nodeServer.actionType')" clearable size="small" style="width:140px" @keyup.enter="loadAuditLogs" />
           <el-button size="small" type="primary" @click="loadAuditLogs">{{ t('common.search') }}</el-button>
-          <el-button size="small" @click="exportAuditLogs">{{ t('common.export') }}</el-button>
+          <el-button size="small" v-if="$can('admin')" @click="exportAuditLogs">{{ t('common.export') }}</el-button>
         </div>
         <el-table :data="auditLogs" v-loading="auditLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />

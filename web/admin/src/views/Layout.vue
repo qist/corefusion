@@ -58,6 +58,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { setLocale, availableLocales } from '../locales'
+import { hasRole } from '../utils/permission'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -69,25 +70,32 @@ const currentLocaleName = computed(() => {
   return found ? `${found.flag} ${found.name}` : locale.value
 })
 
-const menuItems = [
-  { path: '/dashboard', title: 'menu.dashboard', icon: 'Odometer' },
-  { path: '/node-servers', title: 'menu.nodeServers', icon: 'Cpu' },
-  { path: '/online-users', title: 'menu.onlineUsers', icon: 'Connection' },
-  { path: '/services', title: 'menu.services', icon: 'Monitor' },
-  { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link' },
-  { path: '/plans', title: 'menu.planManagement', icon: 'Tickets' },
-  { path: '/charge', title: 'menu.chargeManagement', icon: 'Wallet' },
-  { path: '/tickets', title: 'menu.ticketManagement', icon: 'ChatDotRound' },
-  { path: '/client-ext', title: 'menu.clientExtManagement', icon: 'Grid' },
-  { path: '/clients', title: 'menu.clients', icon: 'User' },
-  { path: '/certificates', title: 'menu.certificates', icon: 'Lock' },
-  { path: '/users', title: 'menu.users', icon: 'User' },
-  { path: '/log-manage', title: 'menu.logManage', icon: 'Document' },
-  { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor' },
-  { path: '/settings', title: 'menu.settings', icon: 'Setting' },
-  { path: '/audit', title: 'menu.audit', icon: 'Bell' },
-  { path: '/runtime', title: 'menu.runtimeConfig', icon: 'Switch' },
+// `role` is the minimum role required to see the menu entry (fail-closed:
+// entries without a role default to admin so ordinary operators/viewers don't
+// see management surfaces).
+const allMenuItems = [
+  { path: '/dashboard', title: 'menu.dashboard', icon: 'Odometer', role: 'operator' },
+  { path: '/node-servers', title: 'menu.nodeServers', icon: 'Cpu', role: 'admin' },
+  { path: '/online-users', title: 'menu.onlineUsers', icon: 'Connection', role: 'operator' },
+  { path: '/services', title: 'menu.services', icon: 'Monitor', role: 'operator' },
+  { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link', role: 'operator' },
+  { path: '/plans', title: 'menu.planManagement', icon: 'Tickets', role: 'operator' },
+  { path: '/charge', title: 'menu.chargeManagement', icon: 'Wallet', role: 'admin' },
+  { path: '/tickets', title: 'menu.ticketManagement', icon: 'ChatDotRound', role: 'operator' },
+  { path: '/client-ext', title: 'menu.clientExtManagement', icon: 'Grid', role: 'admin' },
+  { path: '/clients', title: 'menu.clients', icon: 'User', role: 'operator' },
+  { path: '/certificates', title: 'menu.certificates', icon: 'Lock', role: 'admin' },
+  { path: '/users', title: 'menu.users', icon: 'User', role: 'admin' },
+  { path: '/log-manage', title: 'menu.logManage', icon: 'Document', role: 'admin' },
+  { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor', role: 'admin' },
+  { path: '/settings', title: 'menu.settings', icon: 'Setting', role: 'admin' },
+  { path: '/audit', title: 'menu.audit', icon: 'Bell', role: 'admin' },
+  { path: '/runtime', title: 'menu.runtimeConfig', icon: 'Switch', role: 'admin' },
 ]
+
+const menuItems = computed(() =>
+  allMenuItems.filter(item => hasRole(item.role, authStore.role))
+)
 
 const pwdVisible = ref(false)
 const pwdSaving = ref(false)

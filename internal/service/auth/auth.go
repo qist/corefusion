@@ -60,7 +60,7 @@ func (s *Service) Login(ctx context.Context, username, passwordStr string) (acce
 
 // RefreshToken validates a refresh token and returns new tokens.
 func (s *Service) RefreshToken(ctx context.Context, refreshTokenStr string) (accessToken, refreshToken string, err error) {
-	claims, err := s.jwt.Validate(refreshTokenStr)
+	claims, err := s.jwt.ValidateTyped(refreshTokenStr, jwt.TokenTypeRefresh)
 	if err != nil {
 		return "", "", err
 	}

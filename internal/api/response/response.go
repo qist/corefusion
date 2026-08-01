@@ -67,6 +67,11 @@ func PaymentRequired(c *gin.Context, code, message string) {
 	Error(c, http.StatusPaymentRequired, code, message)
 }
 
+// TooManyRequests sends a 429 error response (rate limited).
+func TooManyRequests(c *gin.Context, code, message string) {
+	Error(c, http.StatusTooManyRequests, code, message)
+}
+
 // InternalError sends a 500 error response.
 func InternalError(c *gin.Context, code, message string) {
 	Error(c, http.StatusInternalServerError, code, message)

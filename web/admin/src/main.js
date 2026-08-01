@@ -27,6 +27,8 @@ loader.config({ monaco })
 import App from './App.vue'
 import router from './router'
 import i18n from './locales'
+import { useAuthStore } from './store/auth'
+import { hasRole } from './utils/permission'
 
 const app = createApp(App)
 
@@ -40,6 +42,13 @@ app.use(ElementPlus, {
 // Register all icons
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
+}
+
+// Global permission helper: can('admin') / can('super_admin') — read in
+// templates to hide buttons the current role is not allowed to use.
+app.config.globalProperties.$can = (requiredRole = 'admin') => {
+  const auth = useAuthStore()
+  return hasRole(requiredRole, auth.role)
 }
 
 app.mount('#app')

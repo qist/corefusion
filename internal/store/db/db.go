@@ -11,7 +11,7 @@ import (
 
 	"corefusion/internal/model/entity"
 
-	"github.com/glebarez/sqlite"
+	"github.com/qist/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

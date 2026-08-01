@@ -8,12 +8,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.3
 	github.com/gin-gonic/gin v1.12.0
-	github.com/glebarez/sqlite v1.11.0
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jlaffaye/ftp v0.2.2
+	github.com/qist/sqlite v1.12.0
 	github.com/xtls/xray-core v1.260327.1-0.20260627131803-45cf2898ab12
 	golang.org/x/crypto v0.54.0
 	golang.org/x/oauth2 v0.36.0
@@ -146,8 +146,3 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.55.0 // indirect
 )
-
-// Use github.com/qist/sqlite (glebarez/sqlite fork) latest tag v1.9.0.
-// The fork declares module path as github.com/glebarez/sqlite, so import path
-// stays unchanged and we redirect via replace.
-replace github.com/glebarez/sqlite => github.com/qist/sqlite v1.12.0

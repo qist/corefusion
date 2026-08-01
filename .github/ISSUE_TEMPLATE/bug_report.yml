@@ -1,0 +1,144 @@
+name: 问题报告 / Bug Report
+description: "请创建一个问题报告以帮助我们改进。Create a bug report to help us improve."
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈问题！请尽量用中文或英文填写，信息越完整我们越能快速定位。
+        Thanks for reporting! Please fill in as much detail as possible (Chinese or English).
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 提交前确认 / Pre-submission checklist
+      options:
+        - label: 我正在使用最新的主要版本（仅此受支持）。 / I am on the latest major version.
+          required: true
+        - label: 我正在使用受支持的操作系统。 / I am on a supported OS.
+          required: true
+        - label: 我已阅读相关文档仍无法解决。 / I have read the docs and still cannot resolve it.
+          required: true
+        - label: 我已搜索过类似 Issue，未找到相同问题。 / I searched existing issues and found none.
+          required: true
+        - label: 我确认该问题非第三方插件/修改引起。 / Not caused by third-party plugins or local modifications.
+          required: false
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题分类 / Category
+      description: 问题大致属于哪个模块？ / Which module is affected?
+      options:
+        - 控制面 / Master (Web 面板、API)
+        - 数据面 / Node (代理、传输、流量)
+        - 认证 / 订阅 (登录、JWT、用户、订阅)
+        - 证书 (SSL/TLS、ACME)
+        - 安装 / 部署 (安装脚本、升级)
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: CoreFusion 版本 / Version
+      description: 例如 v1.2.3 或 git commit hash。 / e.g. v1.2.3 or commit hash.
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 / Operating System
+      options:
+        - Ubuntu 22.04+
+        - Debian 11+
+        - CentOS 7 / Rocky / Alma
+        - Alpine
+        - Other Linux
+        - macOS
+        - Windows (WSL)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述 / Problem description
+      description: 简明描述你遇到的问题。 / A clear and concise description of the bug.
+      placeholder: 发生了什么？ / What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 一步步说明如何复现。 / Steps to reproduce the behavior.
+      value: |-
+        1. 进入 '...'
+        2. 点击 '...'
+        3. 滚动到 '...'
+        4. 出现错误
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / Expected behavior
+      description: 你期望发生什么？ / What did you expect to happen?
+    validations:
+      required: false
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为 / Actual behavior
+      description: 实际发生了什么（含报错信息）？ / What actually happened (with errors)?
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: 日志 / Logs
+      description: 请粘贴 CoreFusion 或 xray 的相关日志（脱敏后）。 / Paste relevant logs (sanitized).
+      value: |-
+        <details>
+
+        ```console
+        # 请在此粘贴日志 / paste logs here
+        ```
+
+        </details>
+      render: console
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: 相关配置 / Configuration (optional)
+      description: 相关配置文件片段（请隐藏敏感信息如 token、密码、域名）。 / Sanitized config snippets.
+      value: |-
+        <details>
+
+        ```yaml
+        # 请在此粘贴（脱敏） / paste here (redacted)
+        ```
+
+        </details>
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充说明 / Additional context
+      description: 截图、录屏、相关链接等。 / Screenshots, links, or anything else.
+    validations:
+      required: false

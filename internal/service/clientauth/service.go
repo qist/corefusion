@@ -371,7 +371,7 @@ func (s *Service) ChangePassword(ctx context.Context, clientID int64, oldPwd, ne
 
 // ValidateAccessToken validates a JWT token and returns the client ID.
 func (s *Service) ValidateAccessToken(tokenStr string) (int64, error) {
-	claims, err := s.jwt.Validate(tokenStr)
+	claims, err := s.jwt.ValidateTyped(tokenStr, jwt.TokenTypeAccess)
 	if err != nil {
 		return 0, err
 	}
@@ -381,7 +381,7 @@ func (s *Service) ValidateAccessToken(tokenStr string) (int64, error) {
 
 // RefreshToken validates a refresh token and issues a new token pair.
 func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
-	claims, err := s.jwt.Validate(refreshToken)
+	claims, err := s.jwt.ValidateTyped(refreshToken, jwt.TokenTypeRefresh)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token")
 	}

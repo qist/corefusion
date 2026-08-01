@@ -55,6 +55,7 @@ import (
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
+	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/runtime/agent"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/firewall"
@@ -949,27 +950,37 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// API v1
 	v1 := r.Group("/api/v1")
 	{
-		// Auth (public)
+		// Auth (public): only credential exchange belongs here. Anything that
+		// resolves the caller's identity must sit behind AuthRequired, or the
+		// user_id read from the context is silently 0.
 		authGroup := v1.Group("/auth")
 		{
-			authGroup.POST("/login", authH.Login)
+			authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
 			authGroup.POST("/refresh", authH.Refresh)
 			authGroup.POST("/logout", authH.Logout)
-			authGroup.GET("/me", authH.Me)
-			authGroup.POST("/change-password", authH.ChangePassword)
+		}
+
+		// Auth (authenticated): operates on the calling user.
+		authSelfGroup := v1.Group("/auth")
+		authSelfGroup.Use(middleware.AuthRequired())
+		{
+			authSelfGroup.GET("/me", authH.Me)
+			authSelfGroup.POST("/change-password", authH.ChangePassword)
 		}
 
 		// Protected routes
 		protected := v1.Group("")
 		protected.Use(middleware.AuthRequired())
 		{
-			// Users
+			// Users: administrator account management is super_admin only,
+			// otherwise any authenticated principal could mint itself a
+			// super_admin account. Listing stays at admin level.
 			usersGroup := protected.Group("/users")
 			{
-				usersGroup.GET("", userH.List)
-				usersGroup.POST("", userH.Create)
-				usersGroup.PUT("/:id", userH.Update)
-				usersGroup.DELETE("/:id", userH.Delete)
+				usersGroup.GET("", middleware.RequireRole(domainuser.RoleAdmin), userH.List)
+				usersGroup.POST("", middleware.RequireRole(domainuser.RoleSuperAdmin), userH.Create)
+				usersGroup.PUT("/:id", middleware.RequireRole(domainuser.RoleSuperAdmin), userH.Update)
+				usersGroup.DELETE("/:id", middleware.RequireRole(domainuser.RoleSuperAdmin), userH.Delete)
 			}
 
 			// Nodes
@@ -1141,7 +1152,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			)
 			// 注入 PlanRefunder — 退款时回退套餐时间 + 移除节点账号
 			chargeAdminH.SetPlanRefunder(commerceSvcInst)
-			chargeSiteGroup := protected.Group("/charge-sites")
+			// Charge sites — admin only (includes rotate-secret / clear-prev-secret
+			// which expose/rotate signing secrets).
+			chargeSiteGroup := protected.Group("/charge-sites").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				chargeSiteGroup.GET("", chargeAdminH.ListSites)
 				chargeSiteGroup.GET("/:id", chargeAdminH.GetSite)
@@ -1158,13 +1171,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				chargeSiteGroup.POST("/:id/rotate-secret", chargeAdminH.RotateSecret)
 				chargeSiteGroup.POST("/:id/clear-prev-secret", chargeAdminH.ClearPrevSecret)
 			}
-			chargeOrderGroup := protected.Group("/charge-orders")
+			// Charge orders (incl. refund) — admin only (money-affecting).
+			chargeOrderGroup := protected.Group("/charge-orders").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				chargeOrderGroup.GET("", chargeAdminH.ListOrders)
 				chargeOrderGroup.GET("/:id", chargeAdminH.GetOrder)
 				chargeOrderGroup.POST("/:id/refund", chargeAdminH.RefundOrder)
 			}
-			chargeCardGroup := protected.Group("/charge-cards")
+			// Charge cards — admin only (includes CSV export of card data).
+			chargeCardGroup := protected.Group("/charge-cards").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				chargeCardGroup.GET("", chargeAdminH.ListCards)
 				chargeCardGroup.POST("", chargeAdminH.CreateCard)
@@ -1191,7 +1206,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			// P1-P3: Admin routes for extended modules
-			referralWithdrawalGroup := protected.Group("/referral-withdrawals")
+			// Referral withdrawals (approve/reject payouts) — admin only.
+			referralWithdrawalGroup := protected.Group("/referral-withdrawals").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				referralWithdrawalGroup.GET("", clientExtH.AdminListWithdrawals)
 				referralWithdrawalGroup.POST("/:id/approve", clientExtH.AdminApproveWithdrawal)
@@ -1484,7 +1500,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subSvc.SetUserSyncer(sharedUserSyncer)
 				subSvc.StartEnforcer(context.Background(), 5*time.Minute)
 			}
+			// Node servers: administrative surface (delete, certificate
+			// distribution, core control, data sync). Gated at admin; the few
+			// most destructive routes are additionally restricted to super_admin.
 			nodeServersGroup := protected.Group("/node-servers")
+			nodeServersGroup.Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				nodeServersGroup.GET("", nodeServerH.List)
 				nodeServersGroup.POST("", nodeServerH.Create)
@@ -1534,7 +1554,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/online-users", nodeH.GetOnlineUsers)
 				nodeServersGroup.GET("/online-summary", nodeH.GetOnlineSummary)
 				nodeServersGroup.GET("/online-users", nodeH.GetAllOnlineUsers)
-				nodeServersGroup.POST("/:id/control", nodeServerH.ControlCore)
+				// Stop/control the core process — most destructive, super_admin only.
+				nodeServersGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin)).POST("/:id/control", nodeServerH.ControlCore)
 				nodeServersGroup.POST("/:id/sync", nodeServerH.SyncServerConfig)
 				nodeServersGroup.GET("/:id/bootstrap-cmd", nodeServerH.GetBootstrapCommand)
 				nodeServersGroup.PUT("/:id/node-type", nodeServerH.UpdateNodeType)
@@ -1727,8 +1748,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.DELETE("/:id/share-domains/all", shareDomainH.ClearAll)
 			}
 
-			// CA Center (separate group, reuses nodeServerH)
-			caCenterGroup := protected.Group("/ca")
+			// CA Center (separate group, reuses nodeServerH) — admin only.
+			caCenterGroup := protected.Group("/ca").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				caCenterGroup.GET("/status", nodeServerH.GetCAStatus)
 				caCenterGroup.GET("/agent-certs", nodeServerH.ListAgentCerts)
@@ -1747,15 +1768,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				regionsOverviewGroup.GET("/:region/servers", nodeServerH.ListServersByRegion)
 			}
 
-			// Node Audit Logs (separate group, reuses nodeServerH)
-			nodeAuditGroup := protected.Group("/node-audit-logs")
+			// Node Audit Logs (separate group, reuses nodeServerH) — admin only.
+			nodeAuditGroup := protected.Group("/node-audit-logs").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				nodeAuditGroup.GET("", nodeServerH.ListNodeAuditLogs)
 				nodeAuditGroup.GET("/export", nodeServerH.ExportNodeAuditLogs)
 			}
 
-			// Certificates
-			certsGroup := protected.Group("/certificates")
+			// Certificates — admin only (issue/deploy/delete are high-risk).
+			certsGroup := protected.Group("/certificates").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				certsGroup.GET("", certH.List)
 				certsGroup.POST("", certH.Create)
@@ -1770,8 +1791,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certsGroup.POST("/:id/deploy", certH.Deploy)
 			}
 
-			// DNS Channels
-			certChannelsGroup := protected.Group("/cert-channels")
+			// DNS Channels — admin only.
+			certChannelsGroup := protected.Group("/cert-channels").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				certChannelsGroup.GET("", certChannelH.List)
 				certChannelsGroup.POST("", certChannelH.Create)
@@ -1780,8 +1801,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certChannelsGroup.DELETE("/:id", certChannelH.Delete)
 			}
 
-			// ACME Accounts
-			acmeAccountsGroup := protected.Group("/acme-accounts")
+			// ACME Accounts — admin only.
+			acmeAccountsGroup := protected.Group("/acme-accounts").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				acmeAccountsGroup.GET("", certEmailH.List)
 				acmeAccountsGroup.POST("", certEmailH.Create)
@@ -1825,8 +1846,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				c.JSON(200, gin.H{"message": "config synced successfully", "last_sync": configSyncSvc.LastSync()})
 			})
 
-			// Data sync: push full DB tables to remote Agent (for Agent startup / manual refresh)
-			nodeServersGroup.POST("/:id/sync-data", func(c *gin.Context) {
+			// Data sync: push full DB tables to remote Agent (for Agent startup / manual refresh).
+			// Most destructive (apply_and_start defaults to true) — super_admin only.
+			nodeServersGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin)).POST("/:id/sync-data", func(c *gin.Context) {
 				serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 				if err != nil {
 					c.JSON(400, gin.H{"error": "invalid server id"})
@@ -1850,8 +1872,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			// Geo Rules (moved under /node-servers/:id/geo-rules)
 
-			// Metrics
-			metricsGroup := protected.Group("/metrics")
+			// Metrics — admin only (operational data).
+			metricsGroup := protected.Group("/metrics").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				metricsGroup.GET("/overview", metricsH.Overview)
 				metricsGroup.GET("/services", metricsH.ServiceMetrics)
@@ -1860,8 +1882,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			}
 
-			// Security
-			securityGroup := protected.Group("/security")
+			// Security — admin only (audit, alerts, channels).
+			securityGroup := protected.Group("/security").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				securityGroup.GET("/audit-events", securityH.ListAuditEvents)
 				securityGroup.GET("/alerts", securityH.ListAlerts)
@@ -1872,15 +1894,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				securityGroup.POST("/alerts/:id/resolve", securityH.ResolveAlert)
 			}
 
-			// Backups
+			// Backups — admin for read/manage; destructive restore/delete/upload
+			// requires super_admin.
 			backupsGroup := protected.Group("/backups")
+			backupsGroup.Use(middleware.RequireRole(domainuser.RoleAdmin))
+			superAdminBackups := backupsGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin))
 			{
 				backupsGroup.GET("/configs", backupsH.ListConfigBackups)
 				backupsGroup.POST("/configs", backupsH.CreateConfigBackup)
-				backupsGroup.POST("/configs/restore", backupsH.RestoreConfigBackup)
 				backupsGroup.GET("/database", backupsH.ListDBBackups)
 				backupsGroup.POST("/database", backupsH.CreateDBBackup)
-				backupsGroup.POST("/database/restore", backupsH.RestoreDBBackup)
 				backupsGroup.GET("/retention-policies", backupsH.ListRetentionPolicies)
 				backupsGroup.POST("/retention-policies", backupsH.CreateRetentionPolicy)
 				backupsGroup.PUT("/retention-policies/:id", backupsH.UpdateRetentionPolicy)
@@ -1894,12 +1917,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				backupsGroup.POST("/create", backupsH.CreateFullBackup)
 				backupsGroup.GET("/list", backupsH.ListFullBackups)
 				backupsGroup.GET("/:id/download", backupsH.DownloadBackup)
-				backupsGroup.POST("/:id/restore", backupsH.RestoreBackup)
-				backupsGroup.DELETE("/:id", backupsH.DeleteBackup)
-				backupsGroup.POST("/upload-restore", backupsH.UploadRestore)
-				backupsGroup.POST("/:id/upload-ftp", backupsH.UploadToFTP)
-				backupsGroup.POST("/:id/upload-s3", backupsH.UploadToS3)
-				backupsGroup.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
 
 				// Schedules
 				backupsGroup.GET("/schedules", backupsH.ListSchedules)
@@ -1912,17 +1929,29 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				backupsGroup.POST("/storages", backupsH.CreateStorage)
 				backupsGroup.PUT("/storages/:id", backupsH.UpdateStorage)
 				backupsGroup.DELETE("/storages/:id", backupsH.DeleteStorage)
+
+				// Destructive (super_admin only)
+				superAdminBackups.POST("/configs/restore", backupsH.RestoreConfigBackup)
+				superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
+				superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
+				superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
+				superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
+				superAdminBackups.POST("/:id/upload-ftp", backupsH.UploadToFTP)
+				superAdminBackups.POST("/:id/upload-s3", backupsH.UploadToS3)
+				superAdminBackups.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
 			}
 
-			// System
+			// System — admin for config/management; the most destructive
+			// operations (system update/rollback/restart/migrate, db migrate,
+			// encryption key generation, reality reset) require super_admin.
 			systemGroup := protected.Group("/system")
+			systemGroup.Use(middleware.RequireRole(domainuser.RoleAdmin))
+			superAdminSystem := systemGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin))
 			{
 				systemGroup.GET("/stats", systemH.GetSystemStats)
 				systemGroup.GET("/bootstrap-state", systemH.GetBootstrapState)
 				systemGroup.PUT("/bootstrap-finish", systemH.FinishBootstrap)
 				systemGroup.GET("/releases", systemH.ListReleases)
-				systemGroup.POST("/update", systemH.SystemUpdate)
-				systemGroup.POST("/rollback", systemH.SystemRollback)
 				systemGroup.GET("/update-jobs", systemH.ListUpdateJobs)
 				systemGroup.GET("/panel-config", systemH.GetPanelConfig)
 				systemGroup.PUT("/panel-config", systemH.UpdatePanelConfig)
@@ -1930,15 +1959,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.PUT("/notification-config", systemH.UpdateNotificationConfig)
 				systemGroup.POST("/test-smtp", systemH.TestSMTP)
 				systemGroup.POST("/test-telegram", systemH.TestTelegram)
-				systemGroup.POST("/restart", systemH.Restart)
-				systemGroup.POST("/migrate-data", systemH.MigrateData)
 				systemGroup.POST("/upload-mtls-ca", systemH.UploadMTLSCA)
 				systemGroup.GET("/github-config", systemH.GetGitHubConfig)
 				systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
 				systemGroup.GET("/db-config", systemH.GetDBConfig)
 				systemGroup.PUT("/db-config", systemH.UpdateDBConfig)
 				systemGroup.POST("/db-config/test", systemH.TestDBConnection)
-				systemGroup.POST("/db-config/migrate", systemH.MigrateDBData)
 				systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
 				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
@@ -1947,20 +1973,26 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.DELETE("/notification-templates/:id", systemH.DeleteTemplate)
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
 				systemGroup.PUT("/reality-targets", systemH.UpdateRealityTargets)
-				systemGroup.POST("/reality-targets/reset", systemH.ResetRealityTargets)
 				systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
 				// Generic settings API (used by self-unban, OAuth config, etc.)
 				systemGroup.GET("/settings", systemH.GetSettings)
 				systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
-				// Encryption key config
 				systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
-				systemGroup.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
+
+				// Destructive (super_admin only)
+				superAdminSystem.POST("/update", systemH.SystemUpdate)
+				superAdminSystem.POST("/rollback", systemH.SystemRollback)
+				superAdminSystem.POST("/restart", systemH.Restart)
+				superAdminSystem.POST("/migrate-data", systemH.MigrateData)
+				superAdminSystem.POST("/db-config/migrate", systemH.MigrateDBData)
+				superAdminSystem.POST("/reality-targets/reset", systemH.ResetRealityTargets)
+				superAdminSystem.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
 			}
 
 			// Proxy/Caddy/Nginx management routes moved under /node-servers/:id/
 
-			// Log management
-			logManageGroup := protected.Group("/log-manage")
+			// Log management — admin only (writer takeover, stdout capture).
+			logManageGroup := protected.Group("/log-manage").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				logManageGroup.GET("/status", logManageH.GetStatus)
 				logManageGroup.GET("/policies", logManageH.ListPolicies)
@@ -2031,8 +2063,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			v1.GET("/agent/download", agentH.DownloadAgent)
 			v1.GET("/agent/install", agentH.GetInstallScript)
 			// Agent version & releases (requires auth — admin only)
-			protected.GET("/agent/version", agentH.GetAgentVersion)
-			protected.GET("/agent/releases", agentH.GetAgentReleases)
+			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
+			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/releases", agentH.GetAgentReleases)
 
 		// Placeholder routes for remaining modules
 		registerPlaceholderRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
@@ -2049,8 +2081,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				portalGroup.POST("/:id/activate", portalH.Activate)
 			}
 
-			// Portal site management (active config — direct edit, no template list needed)
-			portalActiveGroup := protected.Group("/portal")
+			// Portal site management (active config / cache) — admin only.
+			portalActiveGroup := protected.Group("/portal").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				portalActiveGroup.GET("/active", portalH.GetActive)
 				portalActiveGroup.PUT("/active", portalH.UpdateActive)

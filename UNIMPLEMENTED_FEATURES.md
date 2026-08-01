@@ -144,7 +144,7 @@
 | Routing Regions CRUD（4 条 placeholder）✅ 路由已清理 2026-07-30（保留 `routing_regions` 空表） | `routing_regions` 表已建（`entity/runtime.go:168-180`）无实现；与 geo-rules/region_selector 用途不同（见 3.5） |
 | `client-auth/traffic-history` | ✅ **后端已实现 2026-07-31**；✅ **门户前端已接入 2026-07-31**：新增门户模块类型 `traffic_history`（`moduleDefs.js` 注册、`validate.go` 加入白名单、`defaults.go` 默认模板 overview 页加入、`lang.go` 中/英多语言补全），客户端门户渲染时调用 `GET /api/v1/client-auth/traffic-history` 并展示月度流量柱状图；模块 `visible` 开关即"是否显示历史流量"，可在门户模板搭建器中逐门户开关 |
 | Metrics 指标端点（6 个已实现） | **已实现的 6 个（均后端可用）**：`metricsGroup`（router.go:1846-1851）下 `/api/v1/metrics/overview`（节点/服务/活跃订阅/活跃证书/近 30 天过期证书/配额预警计数）、`/metrics/services`（入站服务列表含 `process_status`）、`/metrics/nodes`（节点 total/active/inactive 计数）、`/metrics/certificates`（证书 total/active/expiring 计数）；`node-servers` 下 `/:id/metrics-history`（单节点时序指标，支持 `?duration` 默认 1h、`?interval` 默认 5m，经 `metricsCollector` 取数，前端 `web/admin/src/api/nodeServer.js:159`）、`/metrics/aggregated`（全节点聚合指标，前端 `nodeServer.js:163`）。**均未在前端 UI 真正调用**：`getMetricsHistory`/`getAggregatedMetrics` 等 api 包装已定义，但无任何 `.vue` 视图 import 使用；`metricsGroup` 四个端点前端更无调用——属后台/可观测性数据接口，需补仪表盘页面才有展示价值，非死端点。**已决议不实现的设计占位**：原文档规划过 `ConnectionFailures`（连接失败计数/比率）与 `UDPQUICMetrics`（QUIC-over-UDP 传输指标）两个端点，经核查代码 0 处引用、且需 agent 端新埋点、收益低，**决议删除、不再实现**。其诊断意图可由现有 `metrics-history` 扩充 `connection_errors` 等字段顺带覆盖，无需独立端点 |
-| 安全能力：2FA/RBAC/管理端 mTLS/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，均未落地 |
+| 安全能力：2FA/管理端 mTLS/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，仍未落地。**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离已于 2026-08-01 实现**，见下方 2.13 |
 
 #### 2.12 首次启动初始化向导（**暂缓开发**）
 
@@ -154,6 +154,32 @@
 - 现状：全库无 `/api/v1/init/*` 路由、无 `IsFirstBoot`、无 `reset-init` 命令、无初始化前端页面；`cmd/corefusion/main.go:330` 硬编码 `CreateInitialAdmin("admin","admin123")`
 - 缺失内容：随机初始化端口/Token、五步配置向导（端口/管理员/访问路径/HTTPS）、初始化前端
 - 关联：`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）是无前端调用的死端点
+
+#### 2.13 后台账号权限（**部分已实现 2026-08-01**）
+
+此前状态：只做了**认证（Authentication）**，完全没做**授权（Authorization）**。`role` 字段贯穿数据库、JWT、前端下拉框，但全库搜索 `RequireRole`/`casbin` 零命中——任何登录账号（哪怕 `viewer`）都能调用全部接口，**包括创建管理员账号本身**。
+
+已修复：
+
+| 问题 | 修复 |
+|---|---|
+| `/auth/me`、`/auth/change-password` 挂在公开路由组，`c.GetInt64("user_id")` 恒为 0，导致普通用户无法改密码 | 拆出 `authSelfGroup` 并挂载 `AuthRequired()` |
+| `/users` 增删改查零权限校验，viewer 可自建 super_admin | 接入 `RequireRole`：查询需 `admin`，增删改需 `super_admin` |
+| access token 与 refresh token 结构相同，可互换使用 | JWT 新增 `typ` 声明，两侧强制校验用途（管理端 + 客户端） |
+| 无登录失败限流 | 新增 `LoginRateLimit()`，IP 维度 15 分钟 5 次失败锁定 15 分钟 |
+| `domain/user` 四个角色常量为死代码 | RBAC 中间件启用为分级依据 |
+
+新增文件：`internal/api/middleware/rbac.go`、`internal/api/middleware/loginlimit.go`（含单元测试，覆盖越权拒绝、失败关闭、限流衰减、Token 用途隔离与向后兼容）。
+
+**已落地（2026-08-01 补充）**：
+
+- **高危操作权限点（后端）**：`RequireRole` 已接入全部管理面高危路由——节点删除/核心控制/证书下发/数据同步、证书签发部署、CA 中心、备份恢复/删除/上传（super_admin）、系统升级/回滚/重启/迁移/生成加密密钥/重置 reality（super_admin）、日志接管、Portal 缓存、充值密钥轮转/CSV 导出、充值订单退款、返利提现审批、Agent 版本/发布查询等。分级策略：`viewer` 只读，`operator` 常规操作，`admin` 管理面，`super_admin` 账号管理与最危险系统级操作。
+- **页面级 / 按钮级权限（前端）**：新增 `src/utils/permission.js` 与全局 `can(role)` 助手（rank 与后端一致）；`Layout.vue` 按角色过滤侧边菜单（管理面入口仅 admin/super_admin 可见）；关键高危按钮（节点删除/控制核心/同步配置/审计导出、证书删除、用户增删、生成加密密钥、重启面板，含非 super_admin 不可创建 super_admin 账户）按角色 `v-if` 收敛。
+
+**仍未实现**（按建议优先级）：
+
+- **2FA / TOTP**：无实现
+- **限流分布式化**：**评估后不作为本阶段必要项**。当前登录失败限流（`loginlimit.go`）为进程内内存态，多副本部署时实际阈值 = 阈值 × 副本数。但管理面板（master/控制面）在标准部署下为**单副本**（控制面多副本会引入状态一致性、任务重复执行等额外复杂度，且通常配合 leader election，无需依赖分布式限流），进程内限流已足够拖慢撞库；数据面（node-server）各自独立、本地限流亦合理。故仅在"明确出现多面板实例 + 无 leader 选举 + 共享入口"的场景下才值得上 Redis 后端，否则不实现。
 
 > **明确不实现项（已排除）**：**CSRF 防护**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，**决定不实现**，从缺失清单移除。
 > **gRPC `RegistrationService.Register`**——节点注册已实现并走 REST 公开端点 `v1.POST("/agent/bootstrap")`（用 bootstrap token 下发证书与 agent 二进制/配置，见 `router.go:1989`），gRPC `Register` 仅返回"未接线"响应，**决定不实现**，从 P3 缺失清单移除。

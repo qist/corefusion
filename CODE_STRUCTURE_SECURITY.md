@@ -1,6 +1,6 @@
 # 开发代码目录结构与安全建议
 
-> **实现状态（2026-07-30 修订）**：本文档中的安全建议多数尚未落地：2FA/TOTP、RBAC 权限控制、管理端 mTLS、CLI 恢复命令均未实现。其中 **CSRF 防护明确不实现**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，不适用。敏感字段加密（如充值卡号 AES-256-GCM）已落地。详见 `UNIMPLEMENTED_FEATURES.md` P3 安全能力项。
+> **实现状态（2026-08-01 修订）**：**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离、高危操作权限点（后端）、页面级/按钮级权限（前端）均已落地**（详见第 8 章）。仍未实现：2FA/TOTP、管理端 mTLS、CLI 恢复命令。其中 **Token 撤销与强制下线经评估不作为本阶段必要项**——当前 Refresh Token 有效期较短（7d）且已与 Access Token 分离、登录失败已限流，Token 撤销（Redis 黑名单 / 用户级 Token 版本号）的边际收益有限；如需支持管理员强制下线可后续追加，`POST /auth/logout` 当前仍为空实现（前端丢弃 Token 即可）。**CSRF 防护明确不实现**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，不适用。敏感字段加密（如充值卡号 AES-256-GCM）已落地。详见 `UNIMPLEMENTED_FEATURES.md` P3 安全能力项。
 
 ## 1. 文档目标
 
@@ -547,14 +547,21 @@ data/
 
 必须实现：
 
-- 密码哈希存储，使用 `bcrypt` 或等效安全算法
-- 支持账号密码修改
-- `2FA` 支持，优先 `TOTP`
-- Refresh Token 与 Access Token 分离
-- 登录失败限流
-- 登录日志记录
+- ✅ 密码哈希存储，使用 `bcrypt` 或等效安全算法 —— 已实现，bcrypt cost=12（`internal/auth/password`）
+- ✅ 支持账号密码修改 —— 已实现（`POST /api/v1/auth/change-password`）
+- ❌ `2FA` 支持，优先 `TOTP` —— **未实现**
+- ✅ Refresh Token 与 Access Token 分离 —— **已实现 2026-08-01**，见 8.2
+- ✅ 登录失败限流 —— **已实现 2026-08-01**（`internal/api/middleware/loginlimit.go`）
+- ✅ 登录日志记录 —— 已实现，登录成功/失败均写审计（`audit.Record`，category=`auth`）
 
-建议：
+登录失败限流实现说明：
+
+- 按客户端 IP 计数，滑动窗口 15 分钟内累计 5 次失败即锁定 15 分钟
+- 登录成功立即清空该 IP 的失败历史，避免误伤偶发输错密码的用户
+- 超窗口的失败记录自动衰减，不会长期累积成封禁
+- 状态为**进程内内存态**：管理面板（master/控制面）标准部署为**单副本**，多副本会引入状态一致性与任务重复执行问题，故进程内限流已足够拖慢撞库，阈值不会被放大；只有当"多面板实例 + 无 leader 选举 + 共享入口"时才需改为 Redis 后端，**评估后不作为本阶段必要项**
+
+建议（暂未实现）：
 
 - 新设备登录提醒
 - 风险登录二次验证
@@ -564,21 +571,54 @@ data/
 
 要求：
 
-- Token 必须设置过期时间
-- Refresh Token 必须可撤销
-- 不要把长期凭据明文存在前端
-- 管理端必须支持强制下线
+- ✅ Token 必须设置过期时间 —— 已实现（access 24h / refresh 7d）
+- ⚠️ Refresh Token 必须可撤销 —— **评估后不作为本阶段必要项**。当前 Refresh Token 有效期较短（7d）且已与 Access Token 分离、登录失败已限流，撤销（Redis 黑名单 / Token 版本号）边际收益有限；`POST /auth/logout` 目前仍为空实现（前端丢弃 Token 即可），后续如需管理员强制下线可追加
+- ✅ 不要把长期凭据明文存在前端
+- ⚠️ 管理端必须支持强制下线 —— **评估后不作为本阶段必要项**，理由同上；`POST /auth/logout` 当前为空实现，前端丢弃 Token 后即失效于客户端，服务端暂不维护黑名单
+
+Access / Refresh Token 分离（2026-08-01）：
+
+JWT Claims 新增 `typ` 字段区分令牌用途（`internal/auth/jwt/jwt.go`）：
+
+- 此前两类 Token 结构完全相同，仅 TTL 不同 —— 意味着**泄露的 access token 可当作 refresh token 无限换取新凭据**
+- 现在鉴权中间件强制要求 `typ=access`，刷新接口强制要求 `typ=refresh`，交叉使用返回 `ErrWrongTokenUse`
+- 管理端（`service/auth`）与客户端（`service/clientauth`）两套 Token 体系均已加固
+- **向后兼容**：升级前签发的 Token 无 `typ` 字段，仅在"要求 access"处被接受，避免升级即踢掉所有在线会话；而真正能换取新凭据的 refresh 一侧强制要求新字段
 
 ### 8.3 权限控制
 
 要求：
 
-- 使用 RBAC
-- 接口级权限校验
-- 页面级权限控制
-- 高危操作单独权限点
+- ✅ 使用 RBAC —— **已实现 2026-08-01**（`internal/api/middleware/rbac.go`）
+- ✅ 接口级权限校验 —— 已实现，`middleware.RequireRole(minRole)`
+- ✅ 页面级 / 按钮级权限控制 —— 已实现：前端 `Layout.vue` 按角色过滤菜单，`can(role)` 全局助手按角色收敛高危按钮（含非 super_admin 不可创建 super_admin 账户）；后端已拦截，UI 不再展示越权入口
+- ✅ 高危操作单独权限点 —— 已实现：节点删除/核心控制/证书下发/数据同步、证书签发部署、CA 中心、备份恢复/删除/上传（super_admin）、系统升级/回滚/重启/迁移/生成加密密钥/重置 reality（super_admin）、日志接管、Portal 缓存、充值密钥轮转/CSV 导出、订单退款、返利提现审批、Agent 版本/发布查询等均已接入 `RequireRole` 分级校验
 
-高危操作示例：
+RBAC 模型说明：
+
+采用**角色分级（rank）**而非完整权限矩阵，高等级隐含低等级的全部能力：
+
+| 角色 | rank |
+|---|---|
+| `viewer` | 10 |
+| `operator` | 20 |
+| `admin` | 30 |
+| `super_admin` | 40 |
+
+- 未知角色 rank 为 0，**失败关闭（fail closed）**，不会被误判为高权限
+- 上下文中缺少 `role` 视为 `AuthRequired` 未挂载的接线错误，返回 401 而非放行
+- 选择分级而非 casbin：管理面接口数量有限，完整策略引擎引入的复杂度大于收益。若将来需要按资源粒度授权，应替换为策略表，而不是在此 map 上继续堆特例
+
+已收敛的接口：
+
+| 接口 | 最低角色 |
+|---|---|
+| `GET /api/v1/users` | `admin` |
+| `POST /api/v1/users` | `super_admin` |
+| `PUT /api/v1/users/:id` | `super_admin` |
+| `DELETE /api/v1/users/:id` | `super_admin` |
+
+高危操作示例（**以下多数尚未接入权限点，仅校验登录态**）：
 
 - 删除服务
 - 查看密钥

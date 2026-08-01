@@ -315,7 +315,7 @@
               </div>
             </el-form-item>
             <el-form-item v-if="!encryptionKeyStatus.configured" :label="t('settings.security.genKey')">
-              <el-button type="primary" :loading="generatingKey" @click="generateEncryptionKey">
+              <el-button type="primary" v-if="$can('super_admin')" :loading="generatingKey" @click="generateEncryptionKey">
                 {{ t('settings.security.randomGenSave') }}
               </el-button>
               <div style="font-size:11px;color:#999;margin-top:4px">
@@ -671,7 +671,7 @@
           <div style="font-weight:500">{{ t('settings.restart.title') }}</div>
           <div style="font-size:12px;color:#999;margin-top:4px">{{ t('settings.restart.hint') }}</div>
         </div>
-        <el-button type="danger" :loading="restarting" @click="handleRestart">{{ t('settings.restart.button') }}</el-button>
+        <el-button type="danger" v-if="$can('super_admin')" :loading="restarting" @click="handleRestart">{{ t('settings.restart.button') }}</el-button>
       </div>
     </el-card>
   </div>

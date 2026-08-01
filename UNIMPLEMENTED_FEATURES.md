@@ -240,7 +240,7 @@
 | 5.2 | ~~Dashboard 核心数卡片硬编码为 4~~ ❌ **已核查否证（2026-08-01）**：核心数由 `panelStats`/`node.metric` 动态渲染，无写死 4 |
 | 5.3 | Services 页面与 i18n 设计不符 | `Services.vue`（25 行）vs `zh-CN.js:1030-1036` | i18n 定义 5 个 tab，页面只渲染 2 个；但 Process/Rule/Warp 在 NodeServerDetail 已正常可用（用的是 `CoreProcessTab.vue`），services/ProcessTab.vue 是孤儿——倾向定性为设计变更遗留，确认后清理 i18n 与孤儿文件即可 |
 | 5.4 | ~~硬编码 server ID=1~~ ❌ **已核查否证（2026-08-01）**：`Dashboard.vue` 节点列表 `v-for="node in filteredNodes" :key="node.id"` 动态渲染，无硬编码 ID=1；后端 `xraystats/handler.go` 是否仍硬编码需另查，前端侧不构成问题 |
-| 5.5 | 约 150 处空 catch | `Settings.vue` 36 处（保存配置/测试 SMTP/Telegram 失败无提示，L816-831）、`PlanManagement.vue` 21 处、`ChargeManagement.vue` 19 处等 | 错误处理缺失，操作失败用户无感知 |
+| 5.5 | 空 catch 吞错（操作失败无感知） | 实测 `.vue` 中共 86 处 `catch (e) {}`，主要分布 `Settings.vue`(36)、`CaddyProxy.vue`(14)、`NginxProxy.vue`(14)、`CoreProcessTab.vue`(8)、`Certificates.vue`(7) 等 | **已修复（2026-08-01）**：上述 8 个文件的 83 处空 catch 统一改为 `catch (e) { ElMessage.error(t('common.failed')) }`，失败时弹错误提示；保留 3 处故意静默的（NodeServers.vue 调试日志 ×2、Proxy.vue 初始化探测 ×1）。另 `PlanManagement.vue`/`ChargeManagement.vue` 的 catch 非此空形式，未纳入本轮 |
 | 5.6 | 修改密码失败无提示；工单指派手输 admin ID | `Layout.vue:104-115`、`TicketManagement.vue:142-151` | 半成品 UX |
 
 前端无调用任何 placeholder 路由（已全量搜索确认），placeholder 是纯后端预留。

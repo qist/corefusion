@@ -122,7 +122,7 @@ async function handleChangePassword() {
     await authStore.changePassword(pwdForm.value.old_password, pwdForm.value.new_password)
     ElMessage.success(t('auth.passwordChanged'))
     pwdVisible.value = false
-  } catch (e) {} finally { pwdSaving.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { pwdSaving.value = false }
 }
 </script>
 

@@ -410,7 +410,7 @@ async function handleDetectIP() {
     if (data.ipv6) ips.push(data.ipv6)
     issueForm.value.ips_text = ips.join('\n')
     ElMessage.success(t('common.success'))
-  } catch (e) {} finally { detectingIP.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { detectingIP.value = false }
 }
 
 async function handleIssue() {
@@ -469,12 +469,12 @@ async function handleIssue() {
       await client.post('/certificates/issue', p2)
       fetchCertificates()
     }
-  } catch (e) {} finally { issuing.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { issuing.value = false }
 }
 
 async function handleRenew(row) {
   row._renewing = true
-  try { await client.post(`/certificates/${row.id}/renew`); ElMessage.success(t('common.success')); fetchCertificates() } catch (e) {} finally { row._renewing = false }
+  try { await client.post(`/certificates/${row.id}/renew`); ElMessage.success(t('common.success')); fetchCertificates() } catch (e) { ElMessage.error(t('common.failed')) } finally { row._renewing = false }
 }
 
 async function handleDelete(row) {
@@ -535,8 +535,8 @@ async function handleMigrate() {
 }
 
 // --- DNS Channels ---
-async function fetchChannels() { try { channels.value = await client.get('/cert-channels') || [] } catch (e) {} }
-async function fetchProviders() { try { providerOptions.value = await client.get('/cert-channels/providers') || {} } catch (e) {} }
+async function fetchChannels() { try { channels.value = await client.get('/cert-channels') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchProviders() { try { providerOptions.value = await client.get('/cert-channels/providers') || {} } catch (e) { ElMessage.error(t('common.failed')) } }
 function showChannelDialog() { channelVisible.value = true; fetchChannels() }
 function showAddChannel() { editingChannel.value = null; channelForm.value = { name: '', provider: 'cloudflare', env_vars: {} }; channelFormVisible.value = true }
 function showEditChannel(row) { editingChannel.value = row; channelForm.value = { name: row.name, provider: row.provider, env_vars: {} }; channelFormVisible.value = true }
@@ -590,7 +590,7 @@ async function handleSaveChannel() {
 async function handleDeleteChannel(row) { await ElMessageBox.confirm(t('certificate.deleteChannelConfirm', { name: row.name }), t('common.confirm')); await client.delete(`/cert-channels/${row.id}`); ElMessage.success(t('common.success')); fetchChannels() }
 
 // --- Emails ---
-async function fetchEmails() { try { emails.value = await client.get('/acme-accounts') || [] } catch (e) {} }
+async function fetchEmails() { try { emails.value = await client.get('/acme-accounts') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 function showEmailDialog() { emailVisible.value = true; fetchEmails() }
 function showAddEmail() { editingEmail.value = null; emailForm.value = { email: '', is_default: false }; emailFormVisible.value = true }
 function showEditEmail(row) { editingEmail.value = row; emailForm.value = { email: row.email, is_default: row.is_default }; emailFormVisible.value = true }
@@ -640,7 +640,7 @@ async function handleUpload() {
     ElMessage.success(t('common.success'))
     uploadVisible.value = false
     fetchCertificates()
-  } catch (e) {} finally { uploading.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { uploading.value = false }
 }
 
 onMounted(() => { fetchCertificates(); fetchChannels(); fetchEmails(); fetchProviders() })

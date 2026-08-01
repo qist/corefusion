@@ -144,14 +144,14 @@
 | Routing Regions CRUD（4 条 placeholder）✅ 路由已清理 2026-07-30（保留 `routing_regions` 空表） | `routing_regions` 表已建（`entity/runtime.go:168-180`）无实现；与 geo-rules/region_selector 用途不同（见 3.5） |
 | `client-auth/traffic-history` | ✅ **后端已实现 2026-07-31**；✅ **门户前端已接入 2026-07-31**：新增门户模块类型 `traffic_history`（`moduleDefs.js` 注册、`validate.go` 加入白名单、`defaults.go` 默认模板 overview 页加入、`lang.go` 中/英多语言补全），客户端门户渲染时调用 `GET /api/v1/client-auth/traffic-history` 并展示月度流量柱状图；模块 `visible` 开关即"是否显示历史流量"，可在门户模板搭建器中逐门户开关 |
 | Metrics 指标端点（6 个已实现） | **已实现的 6 个（均后端可用）**：`metricsGroup`（router.go:1846-1851）下 `/api/v1/metrics/overview`（节点/服务/活跃订阅/活跃证书/近 30 天过期证书/配额预警计数）、`/metrics/services`（入站服务列表含 `process_status`）、`/metrics/nodes`（节点 total/active/inactive 计数）、`/metrics/certificates`（证书 total/active/expiring 计数）；`node-servers` 下 `/:id/metrics-history`（单节点时序指标，支持 `?duration` 默认 1h、`?interval` 默认 5m，经 `metricsCollector` 取数，前端 `web/admin/src/api/nodeServer.js:159`）、`/metrics/aggregated`（全节点聚合指标，前端 `nodeServer.js:163`）。**均未在前端 UI 真正调用**：`getMetricsHistory`/`getAggregatedMetrics` 等 api 包装已定义，但无任何 `.vue` 视图 import 使用；`metricsGroup` 四个端点前端更无调用——属后台/可观测性数据接口，需补仪表盘页面才有展示价值，非死端点。**已决议不实现的设计占位**：原文档规划过 `ConnectionFailures`（连接失败计数/比率）与 `UDPQUICMetrics`（QUIC-over-UDP 传输指标）两个端点，经核查代码 0 处引用、且需 agent 端新埋点、收益低，**决议删除、不再实现**。其诊断意图可由现有 `metrics-history` 扩充 `connection_errors` 等字段顺带覆盖，无需独立端点 |
-| 安全能力：2FA/管理端 mTLS/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，仍未落地。**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离已于 2026-08-01 实现**，见下方 2.13 |
+| 安全能力：2FA/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，仍未落地。**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离、管理端 mTLS 已于 2026-08-01 实现**（mTLS 证据：`cmd/corefusion/main.go` 读取 `mtls_enabled`+`mtls_ca_path` 并设 `RequireAndVerifyClientCert`），见下方 2.13 |
 
 #### 2.12 首次启动初始化向导（**暂缓开发**）
 
 > 原 P0 安全相关项，经评估当前不急于开发，下调至 P3 暂缓。
 
 - 来源：`docs/design/first-boot-initialization.md`（文档自述"状态：设计阶段"）
-- 现状：全库无 `/api/v1/init/*` 路由、无 `IsFirstBoot`、无 `reset-init` 命令、无初始化前端页面；`cmd/corefusion/main.go:330` 硬编码 `CreateInitialAdmin("admin","admin123")`
+- 现状：全库无 `/api/v1/init/*` 路由、无 `IsFirstBoot`、无 CLI 恢复/重置命令（CLI 仅有 `server`/`migrate` 子命令，`runClient` 仍是 "client mode not yet implemented"，`main.go:548`）、无初始化前端页面；`cmd/corefusion/main.go:330` 硬编码 `CreateInitialAdmin("admin","admin123")`
 - 缺失内容：随机初始化端口/Token、五步配置向导（端口/管理员/访问路径/HTTPS）、初始化前端
 - 关联：`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）是无前端调用的死端点
 
@@ -236,10 +236,10 @@
 
 | # | 问题 | 位置 | 说明 |
 |---|---|---|---|
-| 5.1 | Dashboard 核心流量表四列硬编码为 0 | `Dashboard.vue:279-284` | 数据**部分现成**：`GET /node-servers/:id/xray/stats` 返回按 inbound tag 的累计 uplink/downlink（可聚合到核心维度）；实时速率无现成 API，需轮询取差值 |
-| 5.2 | Dashboard 核心数卡片硬编码为 4 | `Dashboard.vue:211,273-275` | 数据现成：`fetchCoreTraffic` 已调的 process-status 数组长度即是（本地固定 seed 4 核心），一行修复 |
+| 5.1 | ~~Dashboard 核心流量表四列硬编码为 0~~ ❌ **已核查否证（2026-08-01）**：`Dashboard.vue` 流量/CPU 全部来自 `aggregated`/`overview`/`node.metric` 动态聚合（见 `totalTraffic`/`totalNet` computed 及 `filteredNodes` 遍历），无硬编码 0；原描述行号已不存在 |
+| 5.2 | ~~Dashboard 核心数卡片硬编码为 4~~ ❌ **已核查否证（2026-08-01）**：核心数由 `panelStats`/`node.metric` 动态渲染，无写死 4 |
 | 5.3 | Services 页面与 i18n 设计不符 | `Services.vue`（25 行）vs `zh-CN.js:1030-1036` | i18n 定义 5 个 tab，页面只渲染 2 个；但 Process/Rule/Warp 在 NodeServerDetail 已正常可用（用的是 `CoreProcessTab.vue`），services/ProcessTab.vue 是孤儿——倾向定性为设计变更遗留，确认后清理 i18n 与孤儿文件即可 |
-| 5.4 | 硬编码 server ID=1 | `Dashboard.vue:281` 等 8 处 | 本地节点 ID 固定为 1（`xraystats/handler.go:84` 等多处后端同样硬编码），属架构约定而非 bug，但建议常量化 |
+| 5.4 | ~~硬编码 server ID=1~~ ❌ **已核查否证（2026-08-01）**：`Dashboard.vue` 节点列表 `v-for="node in filteredNodes" :key="node.id"` 动态渲染，无硬编码 ID=1；后端 `xraystats/handler.go` 是否仍硬编码需另查，前端侧不构成问题 |
 | 5.5 | 约 150 处空 catch | `Settings.vue` 36 处（保存配置/测试 SMTP/Telegram 失败无提示，L816-831）、`PlanManagement.vue` 21 处、`ChargeManagement.vue` 19 处等 | 错误处理缺失，操作失败用户无感知 |
 | 5.6 | 修改密码失败无提示；工单指派手输 admin ID | `Layout.vue:104-115`、`TicketManagement.vue:142-151` | 半成品 UX |
 

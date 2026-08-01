@@ -278,6 +278,10 @@ func runServer(args []string) {
 	// 套餐激活后自动同步用户凭证到所有节点 + 退款时移除用户
 	router.SetUserSyncer(userSyncSvc)
 
+	// Wire UserSyncService into the FailoverManager so that failover/recovery
+	// replays user credentials onto the newly active primary (Phase 4).
+	failoverMgr.SetUserSync(userSyncSvc)
+
 	// NOTE: MultiServerTrafficCollector was removed because it competed with
 	// TrafficEventConsumer (started in router.go) for the same onTraffic channel.
 	// Having two consumers on the same channel caused every other traffic event

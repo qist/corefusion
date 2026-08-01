@@ -231,7 +231,7 @@ async function fetchAssetsForSource() {
     const data = await client.get(`/node-servers/${props.serverId}/geo-rules/github-assets`, { params: { repo } })
     sourceAssets.value = (data.assets || []).map(a => ({ name: a.name, size: a.size, download_url: a.download_url }))
     sourceSelectedFiles.value = []
-  } catch (e) {} finally { sourceAssetsLoading.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { sourceAssetsLoading.value = false }
 }
 
 async function handleSaveSource() {
@@ -388,7 +388,7 @@ async function handleDownload(row) {
     await client.post(`/node-servers/${props.serverId}/geo-rules/files/${row.id}/download`)
     ElMessage.success(t('common.success'))
     fetchFiles()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function handleDeleteFile(row) {

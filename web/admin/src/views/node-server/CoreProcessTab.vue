@@ -233,7 +233,7 @@ async function handleStart(row) {
     await client.post(`/node-servers/${props.serverId}/services/${row.service_id}/start`)
     ElMessage.success(t('common.success'))
     fetchData()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function handleStop(row) {
@@ -243,7 +243,7 @@ async function handleStop(row) {
     await client.post(`/node-servers/${props.serverId}/services/${row.service_id}/stop`)
     ElMessage.success(t('common.success'))
     fetchData()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function handleRestart(row) {
@@ -252,7 +252,7 @@ async function handleRestart(row) {
     await client.post(`/node-servers/${props.serverId}/services/${row.service_id}/restart`)
     ElMessage.success(t('common.success'))
     fetchData()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function updateGuardian(row) {
@@ -303,7 +303,7 @@ async function handleDownloadVersion(release) {
     // Wait a moment for the async install task to complete and restart the core
     await new Promise(resolve => setTimeout(resolve, 3000))
     fetchData()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 // Proxy binaries
@@ -356,7 +356,7 @@ async function handleProxyStart(row) {
     await startProxy(props.serverId, row.type)
     ElMessage.success(t('common.success'))
     loadProxyStatuses()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function handleProxyStop(row) {
@@ -366,7 +366,7 @@ async function handleProxyStop(row) {
     await stopProxy(props.serverId, row.type)
     ElMessage.success(t('common.success'))
     loadProxyStatuses()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function handleProxyRestart(row) {
@@ -375,7 +375,7 @@ async function handleProxyRestart(row) {
     await restartProxy(props.serverId, row.type)
     ElMessage.success(t('common.success'))
     loadProxyStatuses()
-  } catch (e) {} finally { row._loading = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { row._loading = false }
 }
 
 async function updateProxyGuardian(row) {
@@ -422,7 +422,7 @@ async function handleProxyDownloadVersion(release) {
     })
     ElMessage.success(t('common.success'))
     loadProxyStatuses()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 function startTimer() {

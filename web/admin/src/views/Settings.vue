@@ -786,16 +786,16 @@ const googleCallbackURL = computed(() => {
 
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 
-async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) panelForm.value = { ...panelForm.value, ...d } } catch (e) {} }
-async function fetchNotifyConfig() { try { const d = await client.get('/system/notification-config'); if (d) notifyForm.value = { ...notifyForm.value, ...d } } catch (e) {} }
-async function fetchCertificates() { try { const d = await client.get('/certificates', { params: { limit: 100, offset: 0 } }); certificates.value = d.items || [] } catch (e) {} }
-async function fetchTemplates() { try { templates.value = await client.get('/system/notification-templates') || [] } catch (e) {} }
+async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) panelForm.value = { ...panelForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchNotifyConfig() { try { const d = await client.get('/system/notification-config'); if (d) notifyForm.value = { ...notifyForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchCertificates() { try { const d = await client.get('/certificates', { params: { limit: 100, offset: 0 } }); certificates.value = d.items || [] } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchTemplates() { try { templates.value = await client.get('/system/notification-templates') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchEmails() {
-  try { emails.value = await client.get('/acme-accounts') || [] } catch (e) {}
+  try { emails.value = await client.get('/acme-accounts') || [] } catch (e) { ElMessage.error(t('common.failed')) }
   try {
     const data = await client.get('/users', { params: { limit: 100 } })
     userEmails.value = (data.items || []).filter(u => u.email).map(u => ({ id: u.id, email: u.email }))
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 function onCertSelect(id) {
@@ -810,10 +810,10 @@ async function handleMTLSUpload(file) {
     const d = await client.post('/system/upload-mtls-ca', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
     panelForm.value.mtls_ca_path = d.path
     ElMessage.success(t('common.success'))
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
-async function savePanelConfig() { panelSaving.value = true; try { await client.put('/system/panel-config', panelForm.value); ElMessage.success(t('common.success')) } catch (e) {} finally { panelSaving.value = false } }
+async function savePanelConfig() { panelSaving.value = true; try { await client.put('/system/panel-config', panelForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { panelSaving.value = false } }
 
 async function handleMigrateData() {
   await ElMessageBox.confirm(t('settings.panel.migrateConfirm', { dir: panelForm.value.data_dir }), t('common.confirm'), { type: 'warning' })
@@ -824,11 +824,11 @@ async function handleMigrateData() {
     // Auto restart
     await client.post('/system/restart')
     setTimeout(() => { window.location.reload() }, 3000)
-  } catch (e) {} finally { migrating.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { migrating.value = false }
 }
-async function saveNotifyConfig() { notifySaving.value = true; try { await client.put('/system/notification-config', notifyForm.value); ElMessage.success(t('common.success')) } catch (e) {} finally { notifySaving.value = false } }
-async function testSMTP() { smtpTesting.value = true; try { await client.post('/system/test-smtp', notifyForm.value); ElMessage.success(t('settings.smtp.testSuccess')) } catch (e) {} finally { smtpTesting.value = false } }
-async function testTelegram() { tgTesting.value = true; try { await client.post('/system/test-telegram', notifyForm.value); ElMessage.success(t('settings.telegram.testSuccess')) } catch (e) {} finally { tgTesting.value = false } }
+async function saveNotifyConfig() { notifySaving.value = true; try { await client.put('/system/notification-config', notifyForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { notifySaving.value = false } }
+async function testSMTP() { smtpTesting.value = true; try { await client.post('/system/test-smtp', notifyForm.value); ElMessage.success(t('settings.smtp.testSuccess')) } catch (e) { ElMessage.error(t('common.failed')) } finally { smtpTesting.value = false } }
+async function testTelegram() { tgTesting.value = true; try { await client.post('/system/test-telegram', notifyForm.value); ElMessage.success(t('settings.telegram.testSuccess')) } catch (e) { ElMessage.error(t('common.failed')) } finally { tgTesting.value = false } }
 
 function showAddTemplate() {
   editingTmpl.value = null
@@ -848,7 +848,7 @@ async function handleSaveTemplate() {
     if (editingTmpl.value) { await client.put(`/system/notification-templates/${editingTmpl.value.id}`, payload) }
     else { await client.post('/system/notification-templates', payload) }
     ElMessage.success(t('common.success')); tmplDialogVisible.value = false; fetchTemplates()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 async function handleDeleteTemplate(row) { await ElMessageBox.confirm(t('common.confirm')); await client.delete(`/system/notification-templates/${row.id}`); ElMessage.success(t('common.success')); fetchTemplates() }
 
@@ -863,13 +863,13 @@ async function handleRestart() {
 // Backup functions
 function formatSize(bytes) { if (!bytes) return '-'; if (bytes < 1024) return bytes + ' B'; if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'; return (bytes / 1048576).toFixed(1) + ' MB' }
 
-async function fetchBackups() { backupsLoading.value = true; try { backups.value = await client.get('/backups/list') || [] } catch (e) {} finally { backupsLoading.value = false } }
-async function fetchSchedules() { try { schedules.value = await client.get('/backups/schedules') || [] } catch (e) {} }
-async function fetchStorages() { try { storages.value = await client.get('/backups/storages') || [] } catch (e) {} }
+async function fetchBackups() { backupsLoading.value = true; try { backups.value = await client.get('/backups/list') || [] } catch (e) { ElMessage.error(t('common.failed')) } finally { backupsLoading.value = false } }
+async function fetchSchedules() { try { schedules.value = await client.get('/backups/schedules') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchStorages() { try { storages.value = await client.get('/backups/storages') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 
 async function handleCreateBackup() {
   backupCreating.value = true
-  try { await client.post('/backups/create', {}); ElMessage.success(t('common.success')); fetchBackups() } catch (e) {} finally { backupCreating.value = false }
+  try { await client.post('/backups/create', {}); ElMessage.success(t('common.success')); fetchBackups() } catch (e) { ElMessage.error(t('common.failed')) } finally { backupCreating.value = false }
 }
 
 function handleDownload(row) {
@@ -879,7 +879,7 @@ function handleDownload(row) {
 
 async function handleRestore(row) {
   await ElMessageBox.confirm(t('settings.backup.restoreConfirm'), t('common.confirm'), { type: 'warning' })
-  try { await client.post(`/backups/${row.id}/restore`); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) {}
+  try { await client.post(`/backups/${row.id}/restore`); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function handleDeleteBackup(row) {
@@ -891,7 +891,7 @@ async function handleUploadRestore(file) {
   await ElMessageBox.confirm(t('settings.backup.uploadRestoreConfirm'), t('common.confirm'), { type: 'warning' })
   const formData = new FormData()
   formData.append('file', file.raw)
-  try { await client.post('/backups/upload-restore', formData, { headers: { 'Content-Type': 'multipart/form-data' } }); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) {}
+  try { await client.post('/backups/upload-restore', formData, { headers: { 'Content-Type': 'multipart/form-data' } }); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 function getStorageName(storageId) {
@@ -906,7 +906,7 @@ async function handleSaveSchedule() {
     if (editingSched.value) { await client.put(`/backups/schedules/${editingSched.value.id}`, schedForm.value) }
     else { await client.post('/backups/schedules', schedForm.value) }
     ElMessage.success(t('common.success')); schedDialogVisible.value = false; fetchSchedules()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 async function handleDeleteSchedule(row) { await ElMessageBox.confirm(t('common.confirm')); await client.delete(`/backups/schedules/${row.id}`); ElMessage.success(t('common.success')); fetchSchedules() }
 
@@ -918,7 +918,7 @@ async function handleSaveStorage() {
     if (editingStorage.value) { await client.put(`/backups/storages/${editingStorage.value.id}`, payload) }
     else { await client.post('/backups/storages', payload) }
     ElMessage.success(t('common.success')); storageDialogVisible.value = false; fetchStorages()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 async function handleDeleteStorage(row) { await ElMessageBox.confirm(t('common.confirm')); await client.delete(`/backups/storages/${row.id}`); ElMessage.success(t('common.success')); fetchStorages() }
 
@@ -941,7 +941,7 @@ async function handleUploadFTP() {
     await client.post(`/backups/${ftpBackupId.value}/upload-ftp`, ftpForm.value)
     ElMessage.success('Uploaded to FTP successfully')
     ftpDialogVisible.value = false
-  } catch (e) {} finally { ftpUploading.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { ftpUploading.value = false }
 }
 
 // S3 Upload
@@ -963,7 +963,7 @@ async function handleUploadS3() {
     await client.post(`/backups/${s3BackupId.value}/upload-s3`, s3Form.value)
     ElMessage.success('Uploaded to S3 successfully')
     s3DialogVisible.value = false
-  } catch (e) {} finally { s3Uploading.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { s3Uploading.value = false }
 }
 
 // WebDAV Upload
@@ -985,12 +985,12 @@ async function handleUploadWebDAV() {
     await client.post(`/backups/${webdavBackupId.value}/upload-webdav`, webdavForm.value)
     ElMessage.success('Uploaded to WebDAV successfully')
     webdavDialogVisible.value = false
-  } catch (e) {} finally { webdavUploading.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { webdavUploading.value = false }
 }
 
 // GitHub acceleration
-async function fetchGitHubConfig() { try { const d = await client.get('/system/github-config'); if (d) githubForm.value = { ...githubForm.value, ...d } } catch (e) {} }
-async function saveGitHubConfig() { githubSaving.value = true; try { await client.put('/system/github-config', githubForm.value); ElMessage.success(t('common.success')) } catch (e) {} finally { githubSaving.value = false } }
+async function fetchGitHubConfig() { try { const d = await client.get('/system/github-config'); if (d) githubForm.value = { ...githubForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
+async function saveGitHubConfig() { githubSaving.value = true; try { await client.put('/system/github-config', githubForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { githubSaving.value = false } }
 
 // Self-unban config
 async function fetchSelfUnbanConfig() {
@@ -1005,7 +1005,7 @@ async function fetchSelfUnbanConfig() {
         }
       }
     }
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 async function saveSelfUnbanConfig() {
   selfUnbanSaving.value = true
@@ -1018,7 +1018,7 @@ async function saveSelfUnbanConfig() {
       ]
     })
     ElMessage.success(t('common.success'))
-  } catch (e) {} finally { selfUnbanSaving.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { selfUnbanSaving.value = false }
 }
 
 // Security config (encryption key)
@@ -1065,7 +1065,7 @@ async function fetchOAuthConfig() {
         if (item.key === 'oauth.google_client_secret') oauthForm.value.google_client_secret = item.value
       }
     }
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 async function saveOAuthConfig() {
   oauthSaving.value = true
@@ -1081,7 +1081,7 @@ async function saveOAuthConfig() {
       ]
     })
     ElMessage.success(t('common.success'))
-  } catch (e) {} finally { oauthSaving.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { oauthSaving.value = false }
 }
 
 // Currency config
@@ -1093,7 +1093,7 @@ async function fetchCurrencyConfig() {
         if (item.key === 'currency.default') currencyForm.value.default_currency = item.value || 'CNY'
       }
     }
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 async function saveCurrencyConfig() {
   currencySaving.value = true
@@ -1104,7 +1104,7 @@ async function saveCurrencyConfig() {
       ]
     })
     ElMessage.success(t('common.success'))
-  } catch (e) {} finally { currencySaving.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { currencySaving.value = false }
 }
 
 // Database config
@@ -1113,7 +1113,7 @@ async function fetchDBConfig() {
     dbTypeInitializing.value = true
     const d = await client.get('/system/db-config')
     if (d) dbForm.value = { ...dbForm.value, ...d }
-  } catch (e) {} finally { dbTypeInitializing.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { dbTypeInitializing.value = false }
 }
 async function saveDBConfig() {
   dbSaving.value = true
@@ -1121,14 +1121,14 @@ async function saveDBConfig() {
     await client.put('/system/db-config', dbForm.value)
     ElMessage.success(t('settings.db.saveSuccess'))
     fetchDBConfig() // refresh to show updated restart_needed
-  } catch (e) {} finally { dbSaving.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { dbSaving.value = false }
 }
 async function testDBConnection() {
   dbTesting.value = true
   try {
     await client.post('/system/db-config/test', dbForm.value)
     ElMessage.success(t('settings.db.testSuccess'))
-  } catch (e) {} finally { dbTesting.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { dbTesting.value = false }
 }
 async function handleMigrateDB() {
   if (!dbForm.value.dsn) {
@@ -1143,7 +1143,7 @@ async function handleMigrateDB() {
   try {
     const d = await client.post('/system/db-config/migrate', { type: dbForm.value.type, dsn: dbForm.value.dsn, max_open_conns: dbForm.value.max_open_conns, max_idle_conns: dbForm.value.max_idle_conns })
     ElMessage.success(t('settings.db.migrateSuccess') + ' (' + (d.tables_copied || 0) + ' tables, ' + (d.rows_copied || 0) + ' rows)')
-  } catch (e) {} finally { dbMigrating.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { dbMigrating.value = false }
 }
 function showAddDomain() { editingDomainIndex.value = null; domainForm.value = { name: '', url: '' }; domainDialogVisible.value = true }
 function showEditDomain(row, index) { editingDomainIndex.value = index; domainForm.value = { ...row }; domainDialogVisible.value = true }

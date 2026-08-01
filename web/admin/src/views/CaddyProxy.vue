@@ -653,7 +653,7 @@ async function fetchProxyInfo() {
     guardianConfig.value.maxRestarts = guardian.value.max_restarts || 5
     if (status.panel_port) panelPort.value = status.panel_port
     nginxRunning.value = (status.nginx && status.nginx.status === 'running')
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function saveGuardianConfig() {
@@ -663,7 +663,7 @@ async function saveGuardianConfig() {
       max_restarts: guardianConfig.value.maxRestarts
     })
     fetchProxyInfo()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 function formatTime(ts) {
@@ -679,7 +679,7 @@ async function fetchSites() {
   try {
     const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
     if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function saveCaddyLogMode() {
@@ -708,21 +708,21 @@ function onCaddyLogModeChange(mode) {
 }
 
 async function fetchCertificates() {
-  try { certificates.value = (await client.get('/certificates', { params: { limit: 100 } })).items || [] } catch (e) {}
+  try { certificates.value = (await client.get('/certificates', { params: { limit: 100 } })).items || [] } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function fetchSNISettings() {
   try {
     const data = await client.get(`${caddyApi.value}/sni-settings`)
     if (data) sniSettings.value = data
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function saveSNISettings() {
   try {
     await client.post(`${caddyApi.value}/sni-settings`, sniSettings.value)
     ElMessage.success(t('common.success'))
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function onSNIToggle(enabled) {
@@ -756,7 +756,7 @@ async function onSNIToggle(enabled) {
     }
     await applyConfig()
     fetchSites()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function batchMigrate() {
@@ -775,7 +775,7 @@ async function batchMigrate() {
     await applyConfig()
     ElMessage.success(t('proxy.migrateDone', { count: res.updated || 0 }))
     fetchSites()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function showReleases() {
@@ -808,7 +808,7 @@ async function proxyAction(action) {
     await client.post(`${proxyApi.value}/${action}?type=caddy`)
     ElMessage.success(t('common.success'))
     fetchProxyInfo()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 function showAddSite(template) {
@@ -961,7 +961,7 @@ async function applyConfig() {
       await client.post(`${proxyApi.value}/reload?type=caddy`)
     }
     fetchProxyInfo()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function saveSite() {
@@ -1021,7 +1021,7 @@ template: siteForm.value.template,
     ElMessage.success(t('proxy.siteSaved'))
     siteDialogVisible.value = false
     fetchSites()
-  } catch (e) {} finally { siteSaving.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { siteSaving.value = false }
 }
 
 async function toggleSite(row) {
@@ -1039,7 +1039,7 @@ async function deleteSite(row) {
     await applyConfig()
     ElMessage.success(t('common.success'))
     fetchSites()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function viewConfig() {
@@ -1047,7 +1047,7 @@ async function viewConfig() {
     const data = await client.get(`${proxyApi.value}/config?type=caddy`)
     configViewContent.value = data.config
     configViewVisible.value = true
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 function copyConfig() {
@@ -1084,7 +1084,7 @@ async function saveSNIRule() {
     ElMessage.success(t('common.success'))
     sniDialogVisible.value = false
     fetchSites()
-  } catch (e) {}
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 onMounted(() => {

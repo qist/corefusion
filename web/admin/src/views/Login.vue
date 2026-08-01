@@ -59,7 +59,7 @@ async function handleLogin() {
     await authStore.login(form.username, form.password)
     ElMessage.success(t('auth.loginSuccess'))
     router.push('/dashboard')
-  } catch (e) {} finally { loading.value = false }
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { loading.value = false }
 }
 </script>
 

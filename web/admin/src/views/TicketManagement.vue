@@ -72,6 +72,15 @@
         </div>
       </div>
     </el-dialog>
+    <el-dialog v-model="assignDialogVisible" :title="t('ticket.assignTicket')" width="420px">
+      <el-select v-model="selectedAdminId" :loading="adminsLoading" filterable :placeholder="t('ticket.adminId')" style="width:100%">
+        <el-option v-for="a in admins" :key="a.id" :label="`${a.username} (${a.role || 'user'})`" :value="a.id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="assignDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="assignLoading" @click="confirmAssign">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -79,6 +88,7 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import client from '../api/client'
 import { useQueryState } from '../composables/useQueryState'
 import PaginationBar from '../components/PaginationBar.vue'
 import { listTickets, getTicket, replyTicket, closeTicket as closeTicketApi, assignTicket } from '../api/clientext'
@@ -139,15 +149,41 @@ async function closeTicket(row) {
   fetchTickets()
 }
 
-async function assignTicketTo(row) {
-  const { value: adminId } = await ElMessageBox.prompt(t('ticket.enterAdminId'), t('ticket.assignTicket'), { inputPlaceholder: t('ticket.adminId') })
-  if (!adminId || isNaN(parseInt(adminId))) {
+// 工单指派：从管理员列表下拉选择，避免手输 admin ID
+const admins = ref([])
+const adminsLoading = ref(false)
+const assignDialogVisible = ref(false)
+const assignLoading = ref(false)
+const selectedAdminId = ref(null)
+const currentAssignRow = ref(null)
+
+async function loadAdmins() {
+  adminsLoading.value = true
+  try {
+    const r = await client.get('/users', { params: { limit: 200 } })
+    admins.value = r.items || r || []
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { adminsLoading.value = false }
+}
+
+function assignTicketTo(row) {
+  currentAssignRow.value = row
+  selectedAdminId.value = null
+  assignDialogVisible.value = true
+  loadAdmins()
+}
+
+async function confirmAssign() {
+  if (!selectedAdminId.value) {
     ElMessage.warning(t('ticket.invalidAdminId'))
     return
   }
-  await assignTicket(row.id, { admin_id: parseInt(adminId) })
-  ElMessage.success(t('ticket.assignedSuccess'))
-  fetchTickets()
+  assignLoading.value = true
+  try {
+    await assignTicket(currentAssignRow.value.id, { admin_id: parseInt(selectedAdminId.value) })
+    ElMessage.success(t('ticket.assignedSuccess'))
+    assignDialogVisible.value = false
+    fetchTickets()
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { assignLoading.value = false }
 }
 
 function categoryLabel(c) { return { technical: t('ticket.categoryTechnical'), billing: t('ticket.categoryBilling'), account: t('ticket.categoryAccount'), other: t('ticket.categoryOther') }[c] || c }

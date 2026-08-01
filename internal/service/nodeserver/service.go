@@ -146,6 +146,12 @@ type UserSyncServiceInterface interface {
 	SyncUserRemoval(ctx context.Context, clientID int64) error
 	GetRetryQueueSize() int
 	ProcessRetryQueue(ctx context.Context)
+	// SyncServerFull re-sends all in-scope users to a server (used after a
+	// failover promotes a backup to primary).
+	SyncServerFull(ctx context.Context, serverID int64) error
+	// RemoveServerUsers removes all users from a server (used after a failover
+	// demotes the previous primary back to backup).
+	RemoveServerUsers(ctx context.Context, serverID int64) error
 }
 
 // TrafficStatsInterface defines the interface for traffic stats.

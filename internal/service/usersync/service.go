@@ -312,6 +312,106 @@ func (s *UserSyncService) OnServerReconnect(ctx context.Context, serverID int64)
 	wg.Wait()
 }
 
+// SyncServerFull performs a full reconciliation of all users that should be
+// present on the given server. It is used after a failover switches the active
+// primary, so the newly-promoted node receives a complete user set and the
+// demoted node has its users removed elsewhere.
+//
+// For each active client, we resolve the plan's accessible nodes and, if the
+// target server is among them and the BillingFilter allows it, we re-send the
+// user's credentials (add). This guarantees the promoted primary is in sync.
+func (s *UserSyncService) SyncServerFull(ctx context.Context, serverID int64) error {
+	// Respect the billing filter: do not push users to non-billable servers.
+	if s.billingFilter != nil && !s.billingFilter.ShouldSyncUsers(ctx, serverID) {
+		log.Printf("[UserSync] SyncServerFull skipped for server %d (billing filter: not billable)", serverID)
+		return nil
+	}
+
+	clients, _, err := s.clientRepo.List(ctx, 0, "", 10000, 0)
+	if err != nil {
+		return fmt.Errorf("list clients: %w", err)
+	}
+
+	var wg sync.WaitGroup
+	for _, client := range clients {
+		c := client
+		// Skip clients without a plan or already-expired/deleted ones.
+		if c.PlanID == 0 {
+			continue
+		}
+		accessResult, err := s.planSvc.GetAccessibleNodes(ctx, c.PlanID)
+		if err != nil {
+			log.Printf("[UserSync] SyncServerFull: get accessible nodes for plan %d: %v", c.PlanID, err)
+			continue
+		}
+		found := false
+		for _, inbound := range accessResult.InboundConfigs {
+			if inbound.ServerID == serverID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+
+		wg.Add(1)
+		go func(cl entity.Client) {
+			defer wg.Done()
+			if err := s.syncUserToServer(ctx, serverID, s.inboundIDsForServer(accessResult, serverID), &cl, "add"); err != nil {
+				log.Printf("[UserSync] SyncServerFull: server %d client %d: %v", serverID, cl.ID, err)
+			}
+		}(c)
+	}
+	wg.Wait()
+	log.Printf("[UserSync] SyncServerFull completed for server %d", serverID)
+	return nil
+}
+
+// inboundIDsForServer extracts inbound IDs for a given server from an
+// AccessibleNodesResult.
+func (s *UserSyncService) inboundIDsForServer(result *plan.AccessibleNodesResult, serverID int64) []int64 {
+	var ids []int64
+	for _, inbound := range result.InboundConfigs {
+		if inbound.ServerID == serverID {
+			ids = append(ids, inbound.ID)
+		}
+	}
+	return ids
+}
+
+// RemoveServerUsers removes every user from a specific server. Used when a node
+// is demoted (failover back to the original primary) so it no longer serves
+// traffic as the active primary.
+func (s *UserSyncService) RemoveServerUsers(ctx context.Context, serverID int64) error {
+	if !s.nodeMgr.IsOnlineForServer(serverID) {
+		log.Printf("[UserSync] RemoveServerUsers: server %d offline, nothing to remove now", serverID)
+		return nil
+	}
+
+	inbounds, err := s.inboundRepo.ListByServerID(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("list inbounds for server %d: %w", serverID, err)
+	}
+	if len(inbounds) == 0 {
+		return nil
+	}
+
+	for _, ib := range inbounds {
+		req := &agentpb.AlterUsersRequest{
+			CoreType:   ib.CoreType,
+			InboundTag: ib.Tag,
+			Action:     "remove",
+			Users:      []*agentpb.UserOp{{Email: "*", Uuid: "*"}},
+		}
+		if err := s.nodeMgr.AlterUsers(ctx, serverID, req); err != nil {
+			log.Printf("[UserSync] RemoveServerUsers: server %d inbound %s: %v", serverID, ib.Tag, err)
+		}
+	}
+	log.Printf("[UserSync] RemoveServerUsers completed for server %d", serverID)
+	return nil
+}
+
 // GetRetryQueueSize returns the current number of pending retry entries.
 func (s *UserSyncService) GetRetryQueueSize() int {
 	s.retryMu.Lock()

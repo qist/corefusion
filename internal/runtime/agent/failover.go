@@ -10,6 +10,16 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// UserSyncer is the subset of UserSyncService used by the FailoverManager to
+// replay credentials after a role switch. Defined locally to avoid an import
+// cycle with the service layer.
+type UserSyncer interface {
+	// SyncServerFull re-sends all in-scope users to the given server.
+	SyncServerFull(ctx context.Context, serverID int64) error
+	// RemoveServerUsers removes all users from the given server.
+	RemoveServerUsers(ctx context.Context, serverID int64) error
+}
+
 // FailoverManager monitors primary_backup node pairs and automatically
 // promotes a backup to primary when the primary goes offline.
 // When the primary recovers, it re-syncs and switches back.
@@ -18,10 +28,16 @@ type FailoverManager struct {
 	nodeMgr       *NodeServerManager
 	checkInterval time.Duration
 	offlineThreshold time.Duration // how long before triggering failover
+	recoverGrace     time.Duration // how long the original primary must be stable before switching back
 
 	// Track which primaries have been failed over (to detect recovery)
-	mu              sync.RWMutex
+	mu                  sync.RWMutex
 	failedOverPrimaries map[int64]bool // original primary server_id → failed over?
+
+	// userSyncer replays user credentials after a failover switches the
+	// active primary. Guarded by userSyncMu.
+	userSyncMu sync.Mutex
+	userSyncer UserSyncer
 }
 
 // NewFailoverManager creates a new FailoverManager.
@@ -31,6 +47,7 @@ func NewFailoverManager(serverRepo *repository.NodeServerRepository, nodeMgr *No
 		nodeMgr:             nodeMgr,
 		checkInterval:       30 * time.Second,
 		offlineThreshold:    2 * time.Minute,
+		recoverGrace:        1 * time.Minute,
 		failedOverPrimaries: make(map[int64]bool),
 	}
 }
@@ -45,6 +62,22 @@ func (m *FailoverManager) WithCheckInterval(d time.Duration) *FailoverManager {
 func (m *FailoverManager) WithOfflineThreshold(d time.Duration) *FailoverManager {
 	m.offlineThreshold = d
 	return m
+}
+
+// WithRecoverGrace sets how long the original primary must be online and stable
+// before the failover manager switches traffic back to it.
+func (m *FailoverManager) WithRecoverGrace(d time.Duration) *FailoverManager {
+	m.recoverGrace = d
+	return m
+}
+
+// SetUserSync injects the UserSyncService so that credential sets are re-pushed
+// to the newly active primary (and removed from the demoted node) after a
+// failover/recovery. This is the Phase-4 wiring that makes promotion live.
+func (m *FailoverManager) SetUserSync(s UserSyncer) {
+	m.userSyncMu.Lock()
+	m.userSyncer = s
+	m.userSyncMu.Unlock()
 }
 
 // RunLoop starts the failover check loop. Blocks until ctx is cancelled.
@@ -75,32 +108,31 @@ func (m *FailoverManager) checkAllPairs(ctx context.Context) error {
 		return err
 	}
 
-	for _, server := range servers {
-		if server.FailoverRole == entity.FailoverRolePrimary {
-			m.checkPrimary(ctx, &server)
+	for i := range servers {
+		server := servers[i]
+		switch server.FailoverRole {
+		case entity.FailoverRolePrimary:
+			// Current active primary: fail over if it has been offline too long.
+			m.checkActivePrimary(ctx, &server)
+		case "backup_recovering":
+			// Original primary that was demoted during failover; switch back
+			// once it has been stable online for the grace period.
+			m.checkRecovering(ctx, &server)
 		}
 	}
 	return nil
 }
 
-// checkPrimary checks if a primary node needs failover or recovery.
-func (m *FailoverManager) checkPrimary(ctx context.Context, primary *entity.NodeServer) {
+// checkActivePrimary fails over a primary that has been offline past the
+// threshold, then hands user replay to the UserSyncService.
+func (m *FailoverManager) checkActivePrimary(ctx context.Context, primary *entity.NodeServer) {
 	// Skip local servers
 	if primary.IsLocal {
 		return
 	}
 
-	// Check if primary is online
+	// Primary is online — nothing to do.
 	if m.nodeMgr.IsOnline(primary.ID) {
-		// Primary is online — check if we need to recover
-		m.mu.RLock()
-		failedOver := m.failedOverPrimaries[primary.ID]
-		m.mu.RUnlock()
-
-		if failedOver {
-			// Primary recovered — attempt switch back
-			m.recoverPrimary(ctx, primary)
-		}
 		return
 	}
 
@@ -124,6 +156,24 @@ func (m *FailoverManager) checkPrimary(ctx context.Context, primary *entity.Node
 
 	// Trigger failover
 	m.promoteBackup(ctx, primary)
+}
+
+// checkRecovering switches traffic back to the original primary after it has
+// been online and stable for the grace period.
+func (m *FailoverManager) checkRecovering(ctx context.Context, originalPrimary *entity.NodeServer) {
+	if originalPrimary.IsLocal {
+		return
+	}
+	if !m.nodeMgr.IsOnline(originalPrimary.ID) {
+		return
+	}
+	// Require the recovered node to be stable for recoverGrace to avoid
+	// flapping right after a brief reconnect.
+	if originalPrimary.LastHeartbeatAt != nil &&
+		time.Since(*originalPrimary.LastHeartbeatAt) > m.recoverGrace {
+		return
+	}
+	m.recoverPrimary(ctx, originalPrimary)
 }
 
 // promoteBackup promotes the backup node to primary.
@@ -182,9 +232,10 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	log.Printf("[FailoverManager] failover complete: %s is now primary, %s is recovering",
 		backup.Name, primary.Name)
 
-	// Note: User sync and subscription address switching will be handled
-	// by the UserSyncService (Phase 4) which reads failover_role to determine
-	// which server to sync users to.
+	// Phase-4: replay user credentials to the newly promoted primary and
+	// strip them from the demoted (recovering) node so only the active
+	// primary serves traffic.
+	m.replayAfterSwitch(ctx, backup.ID, primary.ID)
 }
 
 // recoverPrimary switches back to the original primary after it recovers.
@@ -231,6 +282,31 @@ func (m *FailoverManager) recoverPrimary(ctx context.Context, originalPrimary *e
 
 	log.Printf("[FailoverManager] recovery complete: %s is primary again, %s is backup",
 		originalPrimary.Name, actingPrimary.Name)
+
+	// Phase-4: replay user credentials back to the restored primary and
+	// strip them from the demoted backup.
+	m.replayAfterSwitch(ctx, originalPrimary.ID, actingPrimary.ID)
+}
+
+// replayAfterSwitch pushes all in-scope users to the now-active primary and
+// removes them from the node that just stepped down. It tolerates a nil
+// UserSyncService (e.g. during early boot before wiring completes) by logging
+// and continuing. Failures are logged but do not roll back the role change.
+func (m *FailoverManager) replayAfterSwitch(ctx context.Context, newPrimaryID, demotedID int64) {
+	m.userSyncMu.Lock()
+	syncer := m.userSyncer
+	m.userSyncMu.Unlock()
+	if syncer == nil {
+		log.Printf("[FailoverManager] user sync not wired; skipping credential replay for primary %d", newPrimaryID)
+		return
+	}
+
+	if err := syncer.SyncServerFull(ctx, newPrimaryID); err != nil {
+		log.Printf("[FailoverManager] failed to replay users to new primary %d: %v", newPrimaryID, err)
+	}
+	if err := syncer.RemoveServerUsers(ctx, demotedID); err != nil {
+		log.Printf("[FailoverManager] failed to remove users from demoted node %d: %v", demotedID, err)
+	}
 }
 
 // GetFailoverStatus returns the current failover status for a primary_backup pair.

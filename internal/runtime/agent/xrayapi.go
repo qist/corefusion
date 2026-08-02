@@ -27,6 +27,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vmess"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/coredata"
 )
 
 // XrayAPIProxy handles generic xray API calls by proxying them to the local
@@ -400,76 +401,15 @@ func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req 
 }
 
 // buildStatsResponse converts xray stats response to JSON.
+// 解析逻辑复用 coredata.ParseStatsResponse，避免与面板侧/采集器重复实现。
 func buildStatsResponse(resp *statsCommand.QueryStatsResponse) (*agentpb.XrayAPIResponse, error) {
-	type userTraffic struct {
-		Email    string `json:"email"`
-		Uplink   int64  `json:"uplink"`
-		Downlink int64  `json:"downlink"`
-		Total    int64  `json:"total"`
+	sr, err := coredata.ParseStatsResponse(resp)
+	if err != nil {
+		return nil, err
 	}
-	type inboundTraffic struct {
-		Tag      string `json:"tag"`
-		Uplink   int64  `json:"uplink"`
-		Downlink int64  `json:"downlink"`
-		Total    int64  `json:"total"`
-	}
-
-	users := make(map[string]*userTraffic)
-	inbounds := make(map[string]*inboundTraffic)
-
-	for _, stat := range resp.GetStat() {
-		name := stat.GetName()
-		value := stat.GetValue()
-
-		// user>>>email>>>traffic>>>uplink/downlink
-		if contains(name, "user>>>") && contains(name, ">>>traffic>>>") {
-			parts := splitN(name, ">>>")
-			if len(parts) == 4 {
-				email := parts[1]
-				direction := parts[3]
-				if users[email] == nil {
-					users[email] = &userTraffic{Email: email}
-				}
-				if direction == "uplink" {
-					users[email].Uplink = value
-				} else {
-					users[email].Downlink = value
-				}
-			}
-		}
-
-		// inbound>>>tag>>>traffic>>>uplink/downlink
-		if contains(name, "inbound>>>") && contains(name, ">>>traffic>>>") {
-			parts := splitN(name, ">>>")
-			if len(parts) == 4 {
-				tag := parts[1]
-				direction := parts[3]
-				if inbounds[tag] == nil {
-					inbounds[tag] = &inboundTraffic{Tag: tag}
-				}
-				if direction == "uplink" {
-					inbounds[tag].Uplink = value
-				} else {
-					inbounds[tag].Downlink = value
-				}
-			}
-		}
-	}
-
-	userList := make([]userTraffic, 0, len(users))
-	for _, u := range users {
-		u.Total = u.Uplink + u.Downlink
-		userList = append(userList, *u)
-	}
-	inboundList := make([]inboundTraffic, 0, len(inbounds))
-	for _, ib := range inbounds {
-		ib.Total = ib.Uplink + ib.Downlink
-		inboundList = append(inboundList, *ib)
-	}
-
 	result := map[string]interface{}{
-		"users":    userList,
-		"inbounds": inboundList,
+		"users":    sr.Users,
+		"inbounds": sr.Inbounds,
 	}
 	respJSON, _ := json.Marshal(result)
 	return &agentpb.XrayAPIResponse{Success: true, Response: respJSON}, nil

@@ -25,6 +25,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vmess"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/coredata"
 	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
@@ -160,30 +161,33 @@ func (h *Handler) getStatsAddr(ctx context.Context, serverID int64) string {
 	if serverID != localServerID {
 		return "" // Remote nodes: xray API not directly accessible from panel
 	}
-	// 1. Check DB setting
-	if h.settingSvc != nil {
-		val, err := h.settingSvc.GetByKey(ctx, "xray.stats_addr")
-		if err == nil && val != "" {
-			return val
-		}
+	deps := coredata.StatsAddrDeps{
+		SettingGetter: func(c context.Context, key string) (string, error) {
+			return h.settingSvc.GetByKey(c, key)
+		},
 	}
-
-	// 2. Check config file api.listen
 	if h.coreConfigSvc != nil {
-		fullConfig, err := h.coreConfigSvc.GetFull(ctx, serverID, "xray")
-		if err == nil {
-			if apiRaw, ok := fullConfig["api"]; ok {
-				if apiMap, ok := apiRaw.(map[string]interface{}); ok {
-					if listen, ok := apiMap["listen"].(string); ok && listen != "" {
-						return listen
-					}
-				}
+		deps.APIListenGetter = func(c context.Context) (string, error) {
+			fullConfig, err := h.coreConfigSvc.GetFull(c, serverID, "xray")
+			if err != nil {
+				return "", err
 			}
+			apiRaw, ok := fullConfig["api"]
+			if !ok {
+				return "", fmt.Errorf("no api section")
+			}
+			apiMap, ok := apiRaw.(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("api not map")
+			}
+			listen, ok := apiMap["listen"].(string)
+			if !ok || listen == "" {
+				return "", fmt.Errorf("no listen")
+			}
+			return listen, nil
 		}
 	}
-
-	// 3. Default (when listen is empty, auto-added dokodemo-door listens on 10085)
-	return "127.0.0.1:10085"
+	return coredata.ResolveStatsAddr(ctx, deps)
 }
 
 // connect creates a fresh gRPC connection to xray for a given server.

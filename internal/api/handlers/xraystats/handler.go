@@ -38,7 +38,7 @@ type Handler struct {
 }
 
 // localServerID is the server ID of the local node.
-const localServerID = int64(1)
+const localServerID = coredata.LocalServerID
 
 // NewHandler creates a new xray stats handler. Dependencies are injected
 // via SetCoreConfigService / SetNodeOperator; the provider is built lazily.

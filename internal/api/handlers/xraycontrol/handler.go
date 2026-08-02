@@ -116,7 +116,7 @@ func ensureImplicitAPIRoutingRule(routerConf *conf.RouterConfig) {
 }
 
 // localServerID is the server ID of the local node.
-const localServerID = int64(1)
+const localServerID = coredata.LocalServerID
 
 // parseServerID extracts the :id parameter from the URL.
 // Returns localServerID (1) if the parameter is missing or invalid.
@@ -130,7 +130,7 @@ func parseServerID(c *gin.Context) int64 {
 
 // isRemote returns true if the server ID refers to a remote node.
 func isRemote(serverID int64) bool {
-	return serverID != localServerID
+	return !coredata.IsLocalNode(serverID)
 }
 
 // remoteXrayAPI calls the remote Agent's XrayAPI RPC.

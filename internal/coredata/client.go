@@ -15,6 +15,16 @@ import (
 // DefaultStatsAddr 是 xray stats API 的默认地址。
 const DefaultStatsAddr = "127.0.0.1:10085"
 
+// LocalServerID 是本地节点（面板的 xray 直连节点）的固定 server ID。
+// 此约定此前在 xraystats/xraycontrol handler 中各自硬编码为 localServerID = 1，
+// 抽到此统一，保证单一来源。
+const LocalServerID int64 = 1
+
+// IsLocalNode 判断 serverID 是否为本地直连节点。
+func IsLocalNode(serverID int64) bool {
+	return serverID == LocalServerID
+}
+
 // StatsAddrDeps 描述解析 stats 地址所需的依赖。所有字段可选，nil 表示跳过。
 type StatsAddrDeps struct {
 	// SettingGetter 从配置存储读取 key（如 "xray.stats_addr"）。

@@ -202,7 +202,7 @@
 | 3.3 | 流量聚合器被注释（"aggregator 死代码致配额不生效"） | 用量统计已改道：trafficsync（本机）+ TrafficEventConsumer（远程）→ `inboundconfig.UpdateTraffic` → `subscriptions.*_bytes_cache`；`TrafficUsageLedger/Summary` 是被废弃的旧设计 | `trafficsync/service.go:222`、`traffic_consumer.go:105`、`inboundconfig/service.go:133-208` |
 | 3.4 | Server Share 的"分享域名"能力 | `/share-domains` + `/node-servers/:id/share-domains` 全套 CRUD 已实现，前端 ShareDomainTab 在用；placeholder 多出的只是发布/版本/二维码等增强 | `router.go:937-945,1635-1639`、`sharedomainconfig/handler.go` |
 | 3.5 | 区域能力的两个相近实现 | geo-rules（GeoIP 数据文件管理，`/node-servers/:id/geo-rules`）+ region_selector（按用户 IP 推荐区域）均已在用；`/routing/regions` CRUD 是第三种用途（自定义区域定义），表已建但需求需重新确认 | `router.go:1608-1624`、`georule/service.go`、`region_selector.go` |
-| 3.6 | `adapters/` 四个流量采集器"空实现/近似实现" | 该包整体**无人 import**，是未完成即被废弃的平行新架构；实际采集由 trafficsync（xray）承担 | `runtime/adapters/*` 无引用；`trafficsync/service.go` |
+| 3.6 | `adapters/` 四个流量采集器"空实现/近似实现" | ~~该包整体**无人 import**，是未完成即被废弃的平行新架构~~ **已于 2026-08-02 删除**（`internal/runtime/adapters/` 连同 hysteria2/singbox/tuic/xray 子目录），全仓库 0 处引用；实际采集由 trafficsync（xray）承担 | `trafficsync/service.go` |
 | 3.7 | proto `AgentService` 20 个 RPC "未注册未实现" | 命令全部走 Heartbeat 双向 stream 的 PanelCommand（`SendCommandAndWait` 20+ 处调用），proto 的 AgentService 是消除反向拨号后的死定义 | `eliminate-reverse-dial.md`、`manager.go:1023` |
 | 3.8 | main.go:301 RegionSelector 创建后丢弃 | `router.go:1307-1311` 已正确接线到 `nodeserver.Service.WithRegionSelector`，功能正常；main.go 那行是冗余 | `router.go:1307`、`nodeserver/service.go:899` |
 | 3.9 | CreateConfigBackup 写空文件 | "完整备份"已打包整个 dataDir（含全部配置，仅排除 backup/rules_tmp/cache/logs）+ DB dump，配置不会丢；config 单项端点是冗余桩 | `backup/service.go:44-86` |
@@ -225,6 +225,7 @@
 | main.go 冗余初始化 | `main.go:300-302` | ✅ **已删除**（`_ = subscription.NewRegionSelector(...)` 及 `geoIPResolver` 变量），并移除多余 import |
 | Metrics 2 个死端点 | `metrics/handler.go:102-111` + `router.go:1772-1773` | ✅ **已删除** handler 方法与路由注册 |
 | 废弃 domain 接口 | `domain/runtime/interfaces.go` | ⏸️ **保留**：2.10 RuntimeApplyService 需要 |
+| 废弃 adapters 采集器包 | `internal/runtime/adapters/`（hysteria2/singbox/tuic/xray） | ✅ **已删除 2026-08-02**（全仓库 0 处 import，未完成即被废弃的平行架构；采集由 trafficsync 承担） |
 | `routing_regions`/`runtime_*` 空骨架表 | `entity/runtime.go` | ⏸️ **保留**：2.10 Runtime 工作流 / 路由区域需要 |
 | P3 / 第3章 死 placeholder 路由 | `router.go` `registerPlaceholderRoutes` | ✅ **已删除 52 条**：`/client/merge-profiles`(11)+`/client/route-profiles`(11)、`/routing/regions`(4)、`/route-runtime/openwrt/*`(7)、`/reverse-proxies`(6)、`/server-share/profiles`(12)、`/services/:id/logs`(1)；`/traffic/*`(8) 属"保留项"未动 |
 

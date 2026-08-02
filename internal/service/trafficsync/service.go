@@ -53,12 +53,14 @@ func NewService(settingSvc SettingStore, inboundSvc InboundConfigService, interv
 
 // getStatsAddrDefault resolves the xray stats address from settings or default.
 func getStatsAddrDefault(settingSvc SettingStore) string {
+	var getter func(ctx context.Context, key string) (string, error)
 	if settingSvc != nil {
-		if v, err := settingSvc.GetByKey(context.Background(), "xray.stats_addr"); err == nil && v != "" {
-			return v
-		}
+		getter = settingSvc.GetByKey
 	}
-	return coredata.DefaultStatsAddr
+	return coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+		SettingGetter: getter,
+		// 无核心配置兜底（trafficsync 不持有 coreConfigSvc），缺失时回退默认地址。
+	})
 }
 
 // Start starts the traffic sync service.

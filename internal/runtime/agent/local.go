@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/insecure"
 	"gorm.io/gorm"
 
 	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
@@ -31,6 +29,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	"github.com/xtls/xray-core/proxy/vmess"
 
+	"corefusion/internal/coredata"
 	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/runtime/agent/ratelimit"
@@ -67,6 +66,7 @@ type LocalAgent struct {
 	// Persistent xray gRPC connection (lazy-initialized, reused across AlterUsers calls)
 	xrayConn   *grpc.ClientConn
 	xrayConnMu sync.Mutex
+	xrayClient *coredata.XrayClient
 }
 
 // NewLocalAgent 创建本地节点适配器，直接复用现有的 process.Manager。
@@ -75,7 +75,7 @@ func NewLocalAgent(dataDir string, procMgr *process.Manager, svcRepo *repository
 		dataDir:   dataDir,
 		procMgr:   procMgr,
 		svcRepo:   svcRepo,
-		statsAddr: "127.0.0.1:10085",
+		statsAddr: coredata.DefaultStatsAddr,
 		taskQueue: NewTaskQueue(4),
 	}
 }
@@ -578,7 +578,7 @@ func (a *LocalAgent) resolveServiceID(coreType string) (int64, error) {
 // alterUsersViaXrayGRPC 通过 xray gRPC API 执行用户增删改。
 // 使用持久连接（lazy-initialized）避免频繁创建/销毁 gRPC 连接。
 func (a *LocalAgent) alterUsersViaXrayGRPC(ctx context.Context, req *agentpb.AlterUsersRequest) error {
-	client, err := a.getXrayClient()
+	client, err := a.getXrayClient(ctx)
 	if err != nil {
 		return fmt.Errorf("connect to xray: %w", err)
 	}
@@ -604,26 +604,16 @@ func (a *LocalAgent) alterUsersViaXrayGRPC(ctx context.Context, req *agentpb.Alt
 }
 
 // getXrayClient returns a persistent xray gRPC client, creating the connection
-// lazily on first call.
-func (a *LocalAgent) getXrayClient() (proxymanCommand.HandlerServiceClient, error) {
+// lazily on first call. 建连逻辑复用 coredata.XrayClient，避免在写操作层重复
+// grpc.DialContext + insecure + WithBlock。
+func (a *LocalAgent) getXrayClient(ctx context.Context) (proxymanCommand.HandlerServiceClient, error) {
 	a.xrayConnMu.Lock()
 	defer a.xrayConnMu.Unlock()
 
-	if a.xrayConn != nil {
-		if st := a.xrayConn.GetState(); st == connectivity.Ready {
-			return proxymanCommand.NewHandlerServiceClient(a.xrayConn), nil
-		}
-		a.xrayConn.Close()
-		a.xrayConn = nil
+	if a.xrayClient == nil {
+		a.xrayClient = coredata.NewXrayClient(a.statsAddr)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, a.statsAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+	conn, err := a.xrayClient.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("connect to xray: %w", err)
 	}
@@ -641,6 +631,10 @@ func (a *LocalAgent) Close() {
 	if a.xrayConn != nil {
 		a.xrayConn.Close()
 		a.xrayConn = nil
+	}
+	if a.xrayClient != nil {
+		a.xrayClient.Close()
+		a.xrayClient = nil
 	}
 }
 

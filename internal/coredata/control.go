@@ -21,7 +21,7 @@ type CoreControl interface {
 	// LocalConn 返回本地节点 serverID 的 xray gRPC 连接（每次新建，不缓存）。
 	LocalConn(ctx context.Context, serverID int64) (*grpc.ClientConn, error)
 	// RemoteCall 经 Agent 转发一次写操作，返回远程 JSON 响应。
-	RemoteCall(ctx context.Context, serverID int64, service, method string, payload interface{}) (json.RawMessage, error)
+	RemoteCall(ctx context.Context, serverID int64, service, method string, payload any) (json.RawMessage, error)
 }
 
 // ControlProvider 组合本地/远程两种后端，按 serverID 路由。
@@ -72,7 +72,7 @@ func (p *ControlProvider) LocalConn(ctx context.Context, serverID int64) (*grpc.
 }
 
 // RemoteCall 经 Agent 转发一次写操作，返回远程 JSON 响应。
-func (p *ControlProvider) RemoteCall(ctx context.Context, serverID int64, service, method string, payload interface{}) (json.RawMessage, error) {
+func (p *ControlProvider) RemoteCall(ctx context.Context, serverID int64, service, method string, payload any) (json.RawMessage, error) {
 	if p.remote == nil {
 		return nil, fmt.Errorf("node operator not configured for remote server %d", serverID)
 	}

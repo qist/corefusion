@@ -138,7 +138,7 @@ func isRemote(serverID int64) bool {
 //   - (resp, true, false):  remote call succeeded, resp contains JSON
 //   - (nil, true, true):    remote call failed, error already written to response
 //   - (nil, false, false):  server is local, caller should use direct connection
-func (h *Handler) remoteXrayAPI(c *gin.Context, service, method string, payload interface{}) (json.RawMessage, bool, bool) {
+func (h *Handler) remoteXrayAPI(c *gin.Context, service, method string, payload any) (json.RawMessage, bool, bool) {
 	serverID := parseServerID(c)
 	if !isRemote(serverID) {
 		return nil, false, false // local — caller continues with direct gRPC

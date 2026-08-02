@@ -927,12 +927,20 @@
                 <div class="hint">{{ t('protoCenter.tls.masterKeyLogHint') }}</div>
               </el-form-item>
               <el-form-item :label="t('protoCenter.tls.fingerprint')">
-                <el-select v-model="rf.streamSettings.tls.fingerprint" style="width:100%" clearable @change="emit">
+                  <el-select v-model="rf.streamSettings.tls.fingerprint" style="width:100%" clearable @change="emit">
                   <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
                   <el-option label="safari" value="safari" /><el-option label="edge" value="edge" />
                   <el-option label="random" value="random" /><el-option label="randomized" value="randomized" />
                   <el-option label="unsafe" value="unsafe" />
                 </el-select>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.verifyPeerCertByName')">
+                <el-input v-model="rf.streamSettings.tls._verifyPeerCertByName" :placeholder="t('protoCenter.tls.verifyPeerCertByNamePlaceholder')" @change="emit" />
+                <div class="hint">{{ t('protoCenter.tls.verifyPeerCertByNameHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.pinnedPeerCertSha256')">
+                <el-input v-model="rf.streamSettings.tls._pinnedPeerCertSha256" type="textarea" :rows="2" :placeholder="t('protoCenter.tls.pinnedPeerCertSha256Placeholder')" @change="emit" />
+                <div class="hint">{{ t('protoCenter.tls.pinnedPeerCertSha256Hint') }}</div>
               </el-form-item>
             </template>
 
@@ -1045,6 +1053,10 @@
                     <el-option label="android" value="android" /><el-option label="edge" value="edge" />
                     <el-option label="random" value="random" /><el-option label="randomized" value="randomized" />
                   </el-select>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.reality.spiderX')">
+                  <el-input v-model="rf.streamSettings.reality.spiderX" :placeholder="t('protoCenter.reality.spiderXPlaceholder')" @change="emit" />
+                  <div class="hint">{{ t('protoCenter.reality.spiderXHint') }}</div>
                 </el-form-item>
                 <el-form-item label="Show">
                   <el-switch v-model="rf.streamSettings.reality.show" @change="emit" />

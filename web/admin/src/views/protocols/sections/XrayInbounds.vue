@@ -4787,6 +4787,19 @@ function buildInbound(ib, isApiCall = false) {
           const value = s.value || ''
           return { type: 'mkcp-legacy', settings: { header, value } }
         }
+        // salamander: build gecko object from internal fields, drop internal keys
+        if (e.type === 'salamander') {
+          const settings = { password: s.password || '' }
+          if (s._gecko) {
+            const min = Number(s._geckoMin) || 1
+            const max = Number(s._geckoMax) || 2048
+            settings.gecko = { min, max }
+          }
+          delete settings._gecko
+          delete settings._geckoMin
+          delete settings._geckoMax
+          return { type: 'salamander', settings }
+        }
         return { type: e.type, settings: cleanInternal(s) }
       })
     }

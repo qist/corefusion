@@ -3,14 +3,10 @@ package trafficsync
 import (
 	"context"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
-	statsService "github.com/xtls/xray-core/app/stats/command"
+	"corefusion/internal/coredata"
 )
 
 // InboundConfigService provides access to inbound configurations.
@@ -38,8 +34,7 @@ type Service struct {
 	running     bool
 	stopCh      chan struct{}
 	initialized bool // false until first reset query completes
-	conn        *grpc.ClientConn
-	connMu      sync.Mutex
+	client      *coredata.XrayClient
 }
 
 // NewService creates a new traffic sync service.
@@ -52,7 +47,18 @@ func NewService(settingSvc SettingStore, inboundSvc InboundConfigService, interv
 		inboundSvc: inboundSvc,
 		interval:   interval,
 		stopCh:     make(chan struct{}),
+		client:     coredata.NewXrayClient(getStatsAddrDefault(settingSvc)),
 	}
+}
+
+// getStatsAddrDefault resolves the xray stats address from settings or default.
+func getStatsAddrDefault(settingSvc SettingStore) string {
+	if settingSvc != nil {
+		if v, err := settingSvc.GetByKey(context.Background(), "xray.stats_addr"); err == nil && v != "" {
+			return v
+		}
+	}
+	return coredata.DefaultStatsAddr
 }
 
 // Start starts the traffic sync service.
@@ -80,51 +86,7 @@ func (s *Service) Stop() {
 	s.running = false
 	close(s.stopCh)
 
-	s.connMu.Lock()
-	if s.conn != nil {
-		s.conn.Close()
-		s.conn = nil
-	}
-	s.connMu.Unlock()
-
 	log.Println("trafficsync: stopped")
-}
-
-// getStatsAddr returns the xray stats API address.
-func (s *Service) getStatsAddr(ctx context.Context) string {
-	if s.settingSvc != nil {
-		val, err := s.settingSvc.GetByKey(ctx, "xray.stats_addr")
-		if err == nil && val != "" {
-			return val
-		}
-	}
-	return "127.0.0.1:10085"
-}
-
-// connect returns a shared gRPC connection.
-func (s *Service) connect(ctx context.Context) (*grpc.ClientConn, error) {
-	s.connMu.Lock()
-	defer s.connMu.Unlock()
-
-	if s.conn != nil && s.conn.GetState().String() != "SHUTDOWN" {
-		return s.conn, nil
-	}
-
-	if s.conn != nil {
-		s.conn.Close()
-		s.conn = nil
-	}
-
-	addr := s.getStatsAddr(ctx)
-	conn, err := grpc.DialContext(ctx, addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, err
-	}
-	s.conn = conn
-	return conn, nil
 }
 
 func (s *Service) loop() {
@@ -145,19 +107,10 @@ func (s *Service) sync() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := s.connect(ctx)
-	if err != nil {
-		log.Printf("trafficsync: connect failed: %v", err)
-		return
-	}
-
-	client := statsService.NewStatsServiceClient(conn)
-
 	// First call: reset xray counters to 0.
 	// Discard returned values (old accumulated traffic).
 	if !s.initialized {
-		_, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: true})
-		if err != nil {
+		if _, err := s.client.RawStats(ctx, true); err != nil {
 			log.Printf("trafficsync: initial reset failed: %v", err)
 			return
 		}
@@ -166,62 +119,29 @@ func (s *Service) sync() {
 	}
 
 	// Subsequent calls: reset_=true so xray returns deltas and resets counters.
-	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: true})
+	resp, err := s.client.RawStats(ctx, true)
 	if err != nil {
 		log.Printf("trafficsync: query stats failed: %v", err)
 		return
 	}
 
-	// Parse user traffic deltas
-	type userTraffic struct {
-		email string
-		up    int64
-		down  int64
-	}
-	userDeltas := make(map[string]*userTraffic)
-
-	for _, stat := range resp.GetStat() {
-		name := stat.GetName()
-		value := stat.GetValue()
-
-		if !strings.Contains(name, "user>>>") || !strings.Contains(name, ">>>traffic>>>") {
-			continue
-		}
-
-		parts := strings.Split(name, ">>>")
-		if len(parts) != 4 {
-			continue
-		}
-
-		email := parts[1]
-		direction := parts[3]
-
-		// With reset_=true, value IS the delta since last query.
-		if value <= 0 {
-			continue
-		}
-
-		if userDeltas[email] == nil {
-			userDeltas[email] = &userTraffic{email: email}
-		}
-
-		switch direction {
-		case "uplink":
-			userDeltas[email].up += value
-		case "downlink":
-			userDeltas[email].down += value
-		}
+	// 复用公共解析，仅取 user 方向；增量语义（value<=0 跳过）由调用方保留。
+	sr, err := coredata.ParseStatsResponse(resp)
+	if err != nil {
+		log.Printf("trafficsync: parse stats failed: %v", err)
+		return
 	}
 
 	// Update database
-	if len(userDeltas) > 0 {
-		log.Printf("trafficsync: updating %d users", len(userDeltas))
-		for _, ut := range userDeltas {
-			if ut.up > 0 || ut.down > 0 {
-				log.Printf("trafficsync: %s up=%d down=%d", ut.email, ut.up, ut.down)
-				if err := s.inboundSvc.UpdateTraffic(ctx, "", ut.email, ut.up, ut.down); err != nil {
-					log.Printf("trafficsync: failed to update traffic for %s: %v", ut.email, err)
-				}
+	if len(sr.Users) > 0 {
+		log.Printf("trafficsync: updating %d users", len(sr.Users))
+		for _, u := range sr.Users {
+			if u.Uplink <= 0 && u.Downlink <= 0 {
+				continue
+			}
+			log.Printf("trafficsync: %s up=%d down=%d", u.Email, u.Uplink, u.Downlink)
+			if err := s.inboundSvc.UpdateTraffic(ctx, "", u.Email, u.Uplink, u.Downlink); err != nil {
+				log.Printf("trafficsync: failed to update traffic for %s: %v", u.Email, err)
 			}
 		}
 	}

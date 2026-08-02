@@ -7,13 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/insecure"
-
-	statsService "github.com/xtls/xray-core/app/stats/command"
-
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/coredata"
 )
 
 // onlineUsersReporter 定期查询 xray GetUsersStats，计算实时速率，
@@ -23,6 +18,7 @@ import (
 // 流量是订阅级（xray 只提供 user 级累计流量），速率由两次采样差分计算。
 type onlineUsersReporter struct {
 	statsAddr string
+	client    *coredata.XrayClient
 
 	mu       sync.RWMutex
 	emailMap map[string]int64 // xray client email (baseEmail) -> subscriptionID
@@ -30,9 +26,6 @@ type onlineUsersReporter struct {
 	// 速率差分：email -> 上次采样（累计流量 + 时间 + 首次出现）
 	prevMu     sync.Mutex
 	prevTraffic map[string]*trafficSample
-
-	conn   *grpc.ClientConn
-	connMu sync.Mutex
 
 	unsupportedOnce sync.Once
 }
@@ -46,10 +39,11 @@ type trafficSample struct {
 
 func newOnlineUsersReporter(statsAddr string) *onlineUsersReporter {
 	if statsAddr == "" {
-		statsAddr = "127.0.0.1:10085"
+		statsAddr = coredata.DefaultStatsAddr
 	}
 	return &onlineUsersReporter{
 		statsAddr:   statsAddr,
+		client:      coredata.NewXrayClient(statsAddr),
 		emailMap:    make(map[string]int64),
 		prevTraffic: make(map[string]*trafficSample),
 	}
@@ -72,14 +66,7 @@ func (r *onlineUsersReporter) markUnsupported() {
 // Collect queries xray and returns the current online users (rate-differentiated).
 // Returns (nil, nil) when there are no online users; (nil, err) on transport error.
 func (r *onlineUsersReporter) Collect(ctx context.Context) ([]*agentpb.OnlineUserEntry, error) {
-	conn, err := r.getConn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	client := statsService.NewStatsServiceClient(conn)
-	resp, err := client.GetUsersStats(ctx, &statsService.GetUsersStatsRequest{
-		IncludeTraffic: true,
-	})
+	resp, err := r.client.GetUsersStats(ctx, true)
 	if err != nil {
 		if strings.Contains(err.Error(), "Unimplemented") {
 			r.markUnsupported()
@@ -219,30 +206,6 @@ func (r *onlineUsersReporter) cleanupStale(seen map[string]struct{}) {
 		}
 	}
 	r.prevMu.Unlock()
-}
-
-// getConn returns a shared gRPC connection to the local xray Stats API.
-func (r *onlineUsersReporter) getConn(ctx context.Context) (*grpc.ClientConn, error) {
-	r.connMu.Lock()
-	defer r.connMu.Unlock()
-	if r.conn != nil {
-		if r.conn.GetState() == connectivity.Ready {
-			return r.conn, nil
-		}
-		r.conn.Close()
-		r.conn = nil
-	}
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	conn, err := grpc.DialContext(dialCtx, r.statsAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, err
-	}
-	r.conn = conn
-	return conn, nil
 }
 
 // stripShortTag removes the trailing "_shortTag" suffix appended by

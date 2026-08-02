@@ -9,11 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/insecure"
-
-	statsCommand "github.com/xtls/xray-core/app/stats/command"
+	"corefusion/internal/coredata"
 )
 
 // OnlineStatsPoller polls the Xray Stats API for online user IPs
@@ -25,9 +21,9 @@ import (
 type OnlineStatsPoller struct {
 	mgr       *Manager
 	statsAddr string
+	client    *coredata.XrayClient
 
 	mu       sync.Mutex
-	conn     *grpc.ClientConn
 	running  bool
 	cancelFn context.CancelFunc
 
@@ -40,9 +36,13 @@ type OnlineStatsPoller struct {
 
 // NewOnlineStatsPoller creates a new online stats poller.
 func NewOnlineStatsPoller(mgr *Manager, statsAddr string) *OnlineStatsPoller {
+	if statsAddr == "" {
+		statsAddr = coredata.DefaultStatsAddr
+	}
 	return &OnlineStatsPoller{
 		mgr:          mgr,
 		statsAddr:    statsAddr,
+		client:       coredata.NewXrayClient(statsAddr),
 		emailToSubID: make(map[string]int64),
 		pollInterval: 30 * time.Second,
 	}
@@ -95,6 +95,9 @@ func (p *OnlineStatsPoller) Stop() {
 		p.cancelFn = nil
 	}
 	p.running = false
+	if p.client != nil {
+		p.client.Close()
+	}
 }
 
 func (p *OnlineStatsPoller) pollLoop(ctx context.Context) {
@@ -120,17 +123,8 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 		return
 	}
 
-	conn, err := p.getConn(ctx)
-	if err != nil {
-		return // xray not running, skip this poll
-	}
-
-	client := statsCommand.NewStatsServiceClient(conn)
-
 	// Call GetUsersStats to get online IPs per user
-	resp, err := client.GetUsersStats(ctx, &statsCommand.GetUsersStatsRequest{
-		IncludeTraffic: false,
-	})
+	resp, err := p.client.GetUsersStats(ctx, false)
 	if err != nil {
 		// Unimplemented means the xray version doesn't support this API
 		if strings.Contains(err.Error(), "Unimplemented") {
@@ -188,33 +182,6 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 	if applied > 0 {
 		log.Printf("[OnlineStatsPoller] processed %d online IPs from %d users", applied, len(resp.Users))
 	}
-}
-
-// getConn returns a persistent gRPC connection to the local xray Stats API.
-func (p *OnlineStatsPoller) getConn(ctx context.Context) (*grpc.ClientConn, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.conn != nil {
-		if st := p.conn.GetState(); st == connectivity.Ready {
-			return p.conn, nil
-		}
-		p.conn.Close()
-		p.conn = nil
-	}
-
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(dialCtx, p.statsAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("connect to xray stats: %w", err)
-	}
-	p.conn = conn
-	return conn, nil
 }
 
 // ParseOnlineStatsFromXrayAPI parses the JSON response from the xray API proxy

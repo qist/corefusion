@@ -37,6 +37,16 @@ func NewXrayClient(addr string) *XrayClient {
 // Addr 返回当前使用的连接地址。
 func (c *XrayClient) Addr() string { return c.addr }
 
+// Close 关闭底层连接（若已建立）。
+func (c *XrayClient) Close() {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
+}
+
 // dial 为本次请求建立（或复用）连接。复用仅在连接仍 Ready 时生效。
 func (c *XrayClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
 	c.connMu.Lock()
@@ -78,6 +88,24 @@ func (c *XrayClient) RawStats(ctx context.Context, reset bool) (*statsService.Qu
 	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: reset})
 	if err != nil {
 		return nil, fmt.Errorf("query xray stats: %w", err)
+	}
+	return resp, nil
+}
+
+// GetUsersStats 返回在线用户（含 IP 与可选流量）。在线用户/限速采集复用此方法，
+// 替代此前在 cmd/agent/online_users.go、ratelimit/online_stats_poller.go 中重复的
+// grpc.DialContext + NewStatsServiceClient 建连。
+func (c *XrayClient) GetUsersStats(ctx context.Context, includeTraffic bool) (*statsService.GetUsersStatsResponse, error) {
+	conn, err := c.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client := statsService.NewStatsServiceClient(conn)
+	resp, err := client.GetUsersStats(ctx, &statsService.GetUsersStatsRequest{
+		IncludeTraffic: includeTraffic,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get xray users stats: %w", err)
 	}
 	return resp, nil
 }

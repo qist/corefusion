@@ -2,6 +2,7 @@ package xraystats
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -68,24 +69,33 @@ func (h *Handler) rebuildProvider() {
 		h.provider = nil
 		return
 	}
-	addr := coredata.DefaultStatsAddr
-	if h.settingSvc != nil {
-		if v, err := h.settingSvc.GetByKey(context.Background(), "xray.stats_addr"); err == nil && v != "" {
-			addr = v
-		}
+	deps := coredata.StatsAddrDeps{
+		SettingGetter: func(ctx context.Context, key string) (string, error) {
+			return h.settingSvc.GetByKey(ctx, key)
+		},
 	}
-	// 兜底：从 core config 的 api.listen 解析（与原 getStatsAddr 保持一致）。
-	if addr == coredata.DefaultStatsAddr && h.coreConfigSvc != nil {
-		if full, err := h.coreConfigSvc.GetFull(context.Background(), localServerID, "xray"); err == nil {
-			if apiRaw, ok := full["api"]; ok {
-				if apiMap, ok := apiRaw.(map[string]interface{}); ok {
-					if listen, ok := apiMap["listen"].(string); ok && listen != "" {
-						addr = listen
-					}
-				}
+	if h.coreConfigSvc != nil {
+		deps.APIListenGetter = func(ctx context.Context) (string, error) {
+			full, err := h.coreConfigSvc.GetFull(ctx, localServerID, "xray")
+			if err != nil {
+				return "", err
 			}
+			apiRaw, ok := full["api"]
+			if !ok {
+				return "", fmt.Errorf("no api section")
+			}
+			apiMap, ok := apiRaw.(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("api not map")
+			}
+			listen, ok := apiMap["listen"].(string)
+			if !ok || listen == "" {
+				return "", fmt.Errorf("no listen")
+			}
+			return listen, nil
 		}
 	}
+	addr := coredata.ResolveStatsAddr(context.Background(), deps)
 	h.provider = coredata.NewProvider(localServerID, coredata.Options{
 		IsLocal: func(serverID int64) bool { return serverID == localServerID },
 		AddrResolver: func(ctx context.Context, serverID int64) (string, error) {

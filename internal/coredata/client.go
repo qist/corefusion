@@ -15,6 +15,33 @@ import (
 // DefaultStatsAddr 是 xray stats API 的默认地址。
 const DefaultStatsAddr = "127.0.0.1:10085"
 
+// StatsAddrDeps 描述解析 stats 地址所需的依赖。所有字段可选，nil 表示跳过。
+type StatsAddrDeps struct {
+	// SettingGetter 从配置存储读取 key（如 "xray.stats_addr"）。
+	SettingGetter func(ctx context.Context, key string) (string, error)
+	// APIListenGetter 从核心配置解析 api.listen 作为兜底（写操作层无此依赖时可传 nil）。
+	APIListenGetter func(ctx context.Context) (string, error)
+}
+
+// ResolveStatsAddr 统一解析 xray stats gRPC 地址：
+//   DB "xray.stats_addr" → 核心配置 "api.listen" 兜底 → DefaultStatsAddr
+//
+// 此前该逻辑在 xraystats/handler.go 与 trafficsync/service.go 各有一份，
+// 且后者缺少 api.listen 兜底，行为不一致。抽到此统一，保证单一来源。
+func ResolveStatsAddr(ctx context.Context, deps StatsAddrDeps) string {
+	if deps.SettingGetter != nil {
+		if v, err := deps.SettingGetter(ctx, "xray.stats_addr"); err == nil && v != "" {
+			return v
+		}
+	}
+	if deps.APIListenGetter != nil {
+		if v, err := deps.APIListenGetter(ctx); err == nil && v != "" {
+			return v
+		}
+	}
+	return DefaultStatsAddr
+}
+
 // XrayClient 封装 xray gRPC 建连与原始调用，统一此前在 xraystats/handler.go
 // 与 agent/xrayapi.go 中重复的 grpc.DialContext 逻辑。
 //
@@ -45,6 +72,13 @@ func (c *XrayClient) Close() {
 		c.conn.Close()
 		c.conn = nil
 	}
+}
+
+// Conn 返回底层 gRPC 连接（懒建连并复用），供需要其他 xray 服务客户端
+// （如 proxyman/router）的调用方复用同一建连逻辑，避免在写操作层重复
+// grpc.DialContext + insecure + WithBlock。
+func (c *XrayClient) Conn(ctx context.Context) (*grpc.ClientConn, error) {
+	return c.dial(ctx)
 }
 
 // dial 为本次请求建立（或复用）连接。复用仅在连接仍 Ready 时生效。

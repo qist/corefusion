@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
 	routerCommand "github.com/xtls/xray-core/app/router/command"
@@ -50,21 +49,41 @@ type Handler struct {
 	settingSvc    SettingStore
 	coreConfigSvc CoreConfigService
 	nodeOperator  RemoteXrayAPI
+	control       *coredata.ControlProvider
 }
 
 // NewHandler creates a new xray control handler.
 func NewHandler(settingSvc SettingStore) *Handler {
-	return &Handler{settingSvc: settingSvc}
+	h := &Handler{settingSvc: settingSvc}
+	h.rebuildControlProvider()
+	return h
 }
 
 // SetCoreConfigService sets the core config service.
 func (h *Handler) SetCoreConfigService(svc CoreConfigService) {
 	h.coreConfigSvc = svc
+	h.rebuildControlProvider()
 }
 
 // SetNodeOperator sets the node operator for remote xray API proxying.
 func (h *Handler) SetNodeOperator(op RemoteXrayAPI) {
 	h.nodeOperator = op
+	h.rebuildControlProvider()
+}
+
+// rebuildControlProvider 重建写操作公共层，将建连/远程转发下沉到 coredata.ControlProvider。
+func (h *Handler) rebuildControlProvider() {
+	h.control = coredata.NewControlProvider(coredata.ControlOptions{
+		IsLocal: func(serverID int64) bool { return !isRemote(serverID) },
+		AddrResolver: func(ctx context.Context, serverID int64) (string, error) {
+			addr := h.getStatsAddr(ctx, serverID)
+			if addr == "" {
+				return "", fmt.Errorf("xray API not available for server %d", serverID)
+			}
+			return addr, nil
+		},
+		Remote: h.nodeOperator,
+	})
 }
 
 // Close is kept for API compatibility.
@@ -124,34 +143,17 @@ func (h *Handler) remoteXrayAPI(c *gin.Context, service, method string, payload 
 	if !isRemote(serverID) {
 		return nil, false, false // local — caller continues with direct gRPC
 	}
-	if h.nodeOperator == nil {
-		response.InternalError(c, "NOT_CONFIGURED", "node operator not configured for remote servers")
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured for remote servers")
 		return nil, true, true
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		response.BadRequest(c, "INVALID_PARAMS", "failed to marshal payload: "+err.Error())
-		return nil, true, true
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-	defer cancel()
-
-	resp, err := h.nodeOperator.XrayAPIOnServer(ctx, serverID, &agentpb.XrayAPIRequest{
-		Service: service,
-		Method:  method,
-		Payload: payloadBytes,
-	})
+	resp, err := h.control.RemoteCall(c.Request.Context(), serverID, service, method, payload)
 	if err != nil {
 		response.InternalError(c, "REMOTE_API_FAILED", err.Error())
 		return nil, true, true
 	}
-	if !resp.Success {
-		response.InternalError(c, "REMOTE_API_ERROR", resp.Error)
-		return nil, true, true
-	}
-	return json.RawMessage(resp.Response), true, false
+	return resp, true, false
 }
 
 // getStatsAddr returns the xray stats API address for a given server.
@@ -192,20 +194,13 @@ func (h *Handler) getStatsAddr(ctx context.Context, serverID int64) string {
 
 // connect creates a fresh gRPC connection to xray for a given server.
 // Xray may restart independently from the panel process, so reusing a cached
-// connection can leave control APIs talking to a stale transport.
+// connection can leave control APIs talking to a stale transport. 建连逻辑
+// 委托 coredata.ControlProvider.LocalConn（每次新建，不缓存）。
 func (h *Handler) connect(ctx context.Context, serverID int64) (*grpc.ClientConn, error) {
-	addr := h.getStatsAddr(ctx, serverID)
-	if addr == "" {
-		return nil, fmt.Errorf("xray API not available for remote server %d", serverID)
+	if h.control == nil {
+		return nil, fmt.Errorf("control provider not configured")
 	}
-	conn, err := grpc.DialContext(ctx, addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to xray: %w", err)
-	}
-	return conn, nil
+	return h.control.LocalConn(ctx, serverID)
 }
 
 // ==================== Inbound Management ====================

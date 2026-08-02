@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"corefusion/internal/constants"
+	"corefusion/internal/coredata"
 	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
@@ -41,7 +42,7 @@ func (a *AgentApp) RunHeartbeatLoop(ctx context.Context) {
 }
 
 // dialPanel establishes a gRPC connection to the Panel using mTLS.
-func (a *AgentApp) dialPanel() (*grpc.ClientConn, error) {
+func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 	cert, err := tls.LoadX509KeyPair(a.certPath, a.keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load cert: %w", err)
@@ -64,8 +65,15 @@ func (a *AgentApp) dialPanel() (*grpc.ClientConn, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", a.cfg.Panel.Host, a.cfg.Panel.GRPCPort)
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	// grpc.NewClient（非阻塞，Dial 的推荐替代）。创建时不拨号，需显式等待 Ready。
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	if err != nil {
+		return nil, fmt.Errorf("create panel client: %w", err)
+	}
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := coredata.WaitForReady(dialCtx, conn); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("dial panel: %w", err)
 	}
 	return conn, nil
@@ -74,7 +82,7 @@ func (a *AgentApp) dialPanel() (*grpc.ClientConn, error) {
 // connectAndStream opens a heartbeat stream with the Panel and runs the
 // send/receive loop until the stream breaks or the context is cancelled.
 func (a *AgentApp) connectAndStream(ctx context.Context) error {
-	conn, err := a.dialPanel()
+	conn, err := a.dialPanel(ctx)
 	if err != nil {
 		return err
 	}

@@ -253,6 +253,8 @@ func (r *remoteBackend) ResetUserTraffic(ctx context.Context, _ int64, email str
 	if err != nil {
 		return fmt.Errorf("remote reset: %w", err)
 	}
-	_ = resp
+	if !resp.GetSuccess() {
+		return fmt.Errorf("remote reset error: %s", resp.GetError())
+	}
 	return nil
 }

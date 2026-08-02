@@ -3,6 +3,7 @@ package inboundconfig
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -97,6 +98,10 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
 	if err != nil {
+		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
+			response.BadRequest(c, "SERVER_NAMES_CONFLICT", err.Error())
+			return
+		}
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
@@ -131,6 +136,10 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 	cfg, err := h.svc.Update(c.Request.Context(), id, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
 	if err != nil {
+		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
+			response.BadRequest(c, "SERVER_NAMES_CONFLICT", err.Error())
+			return
+		}
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}

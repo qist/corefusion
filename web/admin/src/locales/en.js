@@ -876,6 +876,7 @@ export default {
       serverNames: 'Server Names',
       serverNamesHint: 'One domain per line, no * wildcard, empty accepts any SNI',
       serverNamesPlaceholder: 'One domain per line, can be empty',
+      serverNamesConflict: 'Server Names (SNI) must be unique across this machine',
       shortIdsPlaceholder: 'One hex ID per line, first line can be empty',
       // Target Management
       manageTitle: 'Manage Target Presets',

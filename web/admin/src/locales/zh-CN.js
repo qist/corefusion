@@ -876,6 +876,7 @@ export default {
       serverNames: 'Server Names',
       serverNamesHint: '每行一个域名，不支持 * 通配符，留空接受任意 SNI',
       serverNamesPlaceholder: '一行一个域名，可留空',
+      serverNamesConflict: '同一台机器上 Server Names（SNI）不能重复',
       shortIdsPlaceholder: '一行一个 hex ID，第一行可为空',
       // Target Management
       manageTitle: '管理 Target 预设',

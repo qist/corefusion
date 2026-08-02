@@ -3,6 +3,7 @@ package inboundconfig
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -14,6 +15,12 @@ import (
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/repository"
 )
+
+// ErrServerNamesConflict is returned when a reality inbound tries to reuse a
+// serverName (SNI) that is already used by another inbound on the same machine
+// (node-server). A SNI must be unique per machine, otherwise the SNI routing
+// cannot decide which inbound to forward to.
+var ErrServerNamesConflict = errors.New("server names conflict")
 
 // Service handles inbound config business logic.
 type Service struct {
@@ -48,6 +55,11 @@ func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, 
 	if serverID == 0 {
 		serverID = 1 // default to local node
 	}
+	if snis := extractServerNames(configJSON); len(snis) > 0 {
+		if err := s.checkServerNamesConflict(ctx, serverID, 0, snis); err != nil {
+			return nil, err
+		}
+	}
 	cfg := &entity.InboundConfig{
 		ServerID:   serverID,
 		CoreType:   coreType,
@@ -73,6 +85,11 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 	if err != nil {
 		return nil, err
 	}
+	if snis := extractServerNames(configJSON); len(snis) > 0 {
+		if err := s.checkServerNamesConflict(ctx, cfg.ServerID, id, snis); err != nil {
+			return nil, err
+		}
+	}
 	cfg.Remark = remark
 	cfg.Protocol = protocol
 	cfg.Tag = tag
@@ -90,6 +107,73 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 // Delete deletes an inbound config.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.repo.Delete(ctx, id)
+}
+
+// extractServerNames parses the reality serverNames (SNI) from an inbound
+// config JSON. It reads both the array form ("serverNames") and the
+// newline/comma separated string form ("serverNamesStr"), returning a
+// lower-cased, de-duplicated slice. Returns nil when the inbound is not a
+// reality inbound or has no serverNames.
+func extractServerNames(cfgJSON string) []string {
+	var inbound struct {
+		StreamSettings struct {
+			Security string `json:"security"`
+			Reality  struct {
+				ServerNames    []string `json:"serverNames"`
+				ServerNamesStr string   `json:"serverNamesStr"`
+			} `json:"reality"`
+		} `json:"streamSettings"`
+	}
+	if err := json.Unmarshal([]byte(cfgJSON), &inbound); err != nil {
+		return nil
+	}
+	if strings.TrimSpace(inbound.StreamSettings.Security) != "reality" {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(strings.ToLower(s))
+		if s == "" || seen[s] {
+			return
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	for _, s := range inbound.StreamSettings.Reality.ServerNames {
+		add(s)
+	}
+	for _, s := range strings.FieldsFunc(inbound.StreamSettings.Reality.ServerNamesStr, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t'
+	}) {
+		add(s)
+	}
+	return out
+}
+
+// checkServerNamesConflict verifies that none of the given serverNames are
+// already used by another inbound on the same machine (node-server).
+// excludeID is the inbound being updated (0 when creating).
+func (s *Service) checkServerNamesConflict(ctx context.Context, serverID, excludeID int64, newSNIs []string) error {
+	existing, err := s.repo.List(ctx, serverID, "")
+	if err != nil {
+		return err
+	}
+	newSet := make(map[string]struct{}, len(newSNIs))
+	for _, sn := range newSNIs {
+		newSet[sn] = struct{}{}
+	}
+	for _, cfg := range existing {
+		if cfg.ID == excludeID {
+			continue
+		}
+		for _, sn := range extractServerNames(cfg.ConfigJSON) {
+			if _, ok := newSet[sn]; ok {
+				return fmt.Errorf("%w: server name %q already used by inbound %q on this machine", ErrServerNamesConflict, sn, cfg.Remark)
+			}
+		}
+	}
+	return nil
 }
 
 // UpdateTraffic updates traffic stats for a user by email.

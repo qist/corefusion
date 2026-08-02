@@ -5268,6 +5268,32 @@ async function saveInbound() {
     }
   }
 
+  // Validate serverNames uniqueness across this node-server:
+  // a SNI (serverName) must not be reused by another inbound on the same machine,
+  // otherwise the SNI routing cannot decide which inbound to forward to.
+  {
+    const sniRaw = rf.streamSettings?.reality?.serverNamesStr || ''
+    const mySnis = sniRaw.split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
+    if (rf.streamSettings?.security === 'reality' && mySnis.length) {
+      // collect serverNames already used by OTHER inbounds on this node-server
+      const usedByOthers = new Map() // sni -> remark/tag
+      form.value.forEach((other, idx) => {
+        if (editIdx.value >= 0 && idx === editIdx.value) return // skip self
+        if (other.streamSettings?.security !== 'reality') return
+        const others = (other.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
+        for (const s of others) {
+          if (!usedByOthers.has(s)) usedByOthers.set(s, other._remark || other.tag || `#${idx + 1}`)
+        }
+      })
+      const dups = mySnis.filter(s => usedByOthers.has(s))
+      if (dups.length) {
+        const details = dups.map(s => `"${s}" (already used by ${usedByOthers.get(s)})`).join(', ')
+        ElMessage.error(t('protoCenter.reality.serverNamesConflict') + ': ' + details)
+        return
+      }
+    }
+  }
+
   // Build config for database (with relative paths)
   const ib = buildInbound(rf, false)
   // Build config for API call (with absolute paths)

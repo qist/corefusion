@@ -1,7 +1,12 @@
 package coredata
 
 import (
+	"context"
 	"testing"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	statsService "github.com/xtls/xray-core/app/stats/command"
 )
@@ -47,5 +52,34 @@ func TestParseStatsResponse(t *testing.T) {
 
 	if sr.Inbounds[0].Tag != "grpc" || sr.Inbounds[0].Uplink != 5 || sr.Inbounds[0].Downlink != 7 || sr.Inbounds[0].Total != 12 {
 		t.Fatalf("inbound traffic wrong: %+v", sr.Inbounds[0])
+	}
+}
+
+// TestWaitForReady_Timeout 验证 NewClient 迁移后 fail-safe 语义保留：
+// 连接一个确定不可达的地址时，应在 ctx 超时（5s）内返回 error，而非永久阻塞。
+func TestWaitForReady_Timeout(t *testing.T) {
+	conn, err := grpc.NewClient("127.0.0.1:1", // 端口 1 通常无监听，触发拨号失败
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("NewClient error: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- WaitForReady(ctx, conn)
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected error for unreachable address, got nil")
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("WaitForReady blocked beyond timeout, fail-safe semantics broken")
 	}
 }

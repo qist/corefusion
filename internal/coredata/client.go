@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
 	statsService "github.com/xtls/xray-core/app/stats/command"
@@ -87,18 +88,23 @@ func (c *XrayClient) Close() {
 
 // Conn 返回底层 gRPC 连接（懒建连并复用），供需要其他 xray 服务客户端
 // （如 proxyman/router）的调用方复用同一建连逻辑，避免在写操作层重复
-// grpc.DialContext + insecure + WithBlock。
+// grpc.NewClient + WaitForReady 建连。
 func (c *XrayClient) Conn(ctx context.Context) (*grpc.ClientConn, error) {
 	return c.dial(ctx)
 }
 
 // dial 为本次请求建立（或复用）连接。复用仅在连接仍 Ready 时生效。
+//
+// 建连使用 grpc.NewClient（非阻塞，官方推荐的 DialContext 替代）。
+// NewClient 创建时不会真正拨号，错误会延迟到首次 RPC，因此这里显式
+// Connect 并等待 Ready（带 5s 超时），保留原 DialContext + WithBlock 的
+// fail-safe 语义：xray 未启动/地址错误时立即报错，而非把错误推迟到 RPC。
 func (c *XrayClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
 	if c.conn != nil {
-		if c.conn.GetState().String() != "SHUTDOWN" {
+		if c.conn.GetState() != connectivity.Shutdown {
 			return c.conn, nil
 		}
 		c.conn.Close()
@@ -108,15 +114,41 @@ func (c *XrayClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(dialCtx, c.addr,
+	conn, err := grpc.NewClient(c.addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
+		return nil, fmt.Errorf("create xray client %s: %w", c.addr, err)
+	}
+	if err := WaitForReady(dialCtx, conn); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("dial xray stats %s: %w", c.addr, err)
 	}
 	c.conn = conn
 	return conn, nil
+}
+
+// WaitForReady 阻塞直到 conn 进入 Ready 或 ctx 超时/取消。用于在 grpc.NewClient
+// （非阻塞）创建连接后显式等待传输层就绪，等价于旧 DialContext + WithBlock 的
+// fail-safe 语义。遇到 Shutdown/非瞬态失败会立即返回错误。
+func WaitForReady(ctx context.Context, conn *grpc.ClientConn) error {
+	conn.Connect()
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return nil
+		}
+		if state == connectivity.Shutdown {
+			return fmt.Errorf("connection shutdown before ready")
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			// ctx 超时或取消：WaitForStateChange 返回 false。
+			if state == connectivity.TransientFailure {
+				return fmt.Errorf("connection failed (transient): %w", ctx.Err())
+			}
+			return fmt.Errorf("timeout waiting for connection: %w", ctx.Err())
+		}
+	}
 }
 
 // RawStats 返回 xray QueryStats 的原始响应。reset 控制是否复位计数器：

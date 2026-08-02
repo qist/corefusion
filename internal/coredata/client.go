@@ -52,8 +52,9 @@ func ResolveStatsAddr(ctx context.Context, deps StatsAddrDeps) string {
 	return DefaultStatsAddr
 }
 
-// XrayClient 封装 xray gRPC 建连与原始调用，统一此前在 xraystats/handler.go
-// 与 agent/xrayapi.go 中重复的 grpc.DialContext 逻辑。
+// XrayClient 封装 xray gRPC 建连与原始调用，是 xray gRPC 连接唯一来源。
+// xraystats/handler.go、trafficsync/service.go 及 agent/xrayapi.go 的 getXrayConn
+// 均复用本 XrayClient.Conn，避免重复建连逻辑。
 //
 // 注意：每次 RawStats 重建连接（参考原 xraystats.connect 注释，避免 xray
 // 重启/重载后传输层失效）。如需连接池可在此扩展，但保持 fail-safe 语义。

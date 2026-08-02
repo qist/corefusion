@@ -7,12 +7,10 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/insecure"
 
+	"corefusion/internal/coredata"
 	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
 	routerCommand "github.com/xtls/xray-core/app/router/command"
 	statsCommand "github.com/xtls/xray-core/app/stats/command"
@@ -27,7 +25,6 @@ import (
 	"github.com/xtls/xray-core/proxy/vmess"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
-	"corefusion/internal/coredata"
 )
 
 // XrayAPIProxy handles generic xray API calls by proxying them to the local
@@ -61,21 +58,10 @@ func (a *LocalAgent) getXrayConn() (*grpc.ClientConn, error) {
 	a.xrayConnMu.Lock()
 	defer a.xrayConnMu.Unlock()
 
-	if a.xrayConn != nil {
-		if st := a.xrayConn.GetState(); st == connectivity.Ready {
-			return a.xrayConn, nil
-		}
-		a.xrayConn.Close()
-		a.xrayConn = nil
+	if a.xrayClient == nil {
+		a.xrayClient = coredata.NewXrayClient(a.statsAddr)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, a.statsAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+	conn, err := a.xrayClient.Conn(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("connect to xray: %w", err)
 	}

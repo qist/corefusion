@@ -4853,6 +4853,8 @@ function buildInbound(ib, isApiCall = false) {
       const settingsObj = {}
       if (tls.fingerprint) settingsObj.fingerprint = tls.fingerprint
       if (tls.echConfigList) settingsObj.echConfigList = tls.echConfigList
+      if (tls._verifyPeerCertByName) settingsObj.verifyPeerCertByName = tls._verifyPeerCertByName
+      if (tls._pinnedPeerCertSha256) settingsObj.pinnedPeerCertSha256 = tls._pinnedPeerCertSha256
       if (Object.keys(settingsObj).length) tlsSettings.settings = [settingsObj]
       // Certificates with ../../../ prefix
       const hasCert = (tls._certMode === 'file' && (tls._certificateFile || tls._keyFile)) || (tls._certMode === 'content' && (tls._certificateContent || tls._keyContent))
@@ -4916,6 +4918,7 @@ function buildInbound(ib, isApiCall = false) {
       if (r._fingerprint) settingsObj.fingerprint = r._fingerprint
       if (r._password) settingsObj.password = r._password
       if (r._mldsa65Verify) settingsObj.mldsa65Verify = r._mldsa65Verify
+      if (r.spiderX) settingsObj.spiderX = r.spiderX
       if (Object.keys(settingsObj).length) rs.settings = [settingsObj]
       result.streamSettings.realitySettings = rs
     }

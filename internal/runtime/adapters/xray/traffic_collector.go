@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"corefusion/internal/coredata"
 	"corefusion/internal/domain"
 	"corefusion/internal/domain/metric"
 )
@@ -15,6 +16,7 @@ import (
 type TrafficCollector struct {
 	serviceID   int64
 	statsAddr   string
+	client      *coredata.XrayClient
 	subscribers []chan<- metric.TrafficDeltaEvent
 	lastValues  map[string]int64
 	mu          sync.RWMutex
@@ -40,14 +42,18 @@ func (c *TrafficCollector) CoreType() domain.CoreType {
 func (c *TrafficCollector) Start(ctx context.Context, in metric.CollectorStartInput) error {
 	c.statsAddr = in.RuntimeMeta["stats_addr"]
 	if c.statsAddr == "" {
-		c.statsAddr = "127.0.0.1:10085"
+		c.statsAddr = coredata.DefaultStatsAddr
 	}
+	c.client = coredata.NewXrayClient(c.statsAddr)
 	go c.pollLoop(ctx)
 	return nil
 }
 
 // Stop stops the traffic collector.
 func (c *TrafficCollector) Stop(ctx context.Context) error {
+	if c.client != nil {
+		c.client.Close()
+	}
 	return nil
 }
 
@@ -139,15 +145,19 @@ func (c *TrafficCollector) collect(ctx context.Context) {
 }
 
 func (c *TrafficCollector) queryStats(ctx context.Context) map[string]int64 {
-	// TODO: implement actual gRPC call to Xray Stats API
-	// conn, _ := grpc.Dial(c.statsAddr, grpc.WithInsecure())
-	// client := stats.NewStatsServiceClient(conn)
-	// resp, _ := client.QueryStats(ctx, &stats.QueryStatsRequest{
-	//     Pattern: "user>>>*>>>traffic>>>*",
-	//     Reset_:  true,
-	// })
-	// Parse resp.GetStat() into map
-	return nil
+	if c.client == nil {
+		return nil
+	}
+	// 增量采集：不 reset，依靠 collect 维护的 lastValues 计算 delta。
+	resp, err := c.client.RawStats(ctx, false)
+	if err != nil {
+		return nil
+	}
+	stats := make(map[string]int64, len(resp.GetStat()))
+	for _, stat := range resp.GetStat() {
+		stats[stat.GetName()] = stat.GetValue()
+	}
+	return stats
 }
 
 func (c *TrafficCollector) emit(event metric.TrafficDeltaEvent) {

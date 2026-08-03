@@ -65,10 +65,14 @@
         <el-card shadow="never">
           <el-form :inline="true" class="filter-form" @submit.prevent>
             <el-form-item :label="t('nodeServer.serverId')">
-              <el-input v-model="nodeAuditQuery.server_id" clearable :placeholder="t('nodeServer.serverId')" style="width:120px" @keyup.enter="loadNodeAudit(1)" />
+              <el-select v-model="nodeAuditQuery.server_id" clearable filterable :placeholder="t('common.all')" style="width:180px">
+                <el-option v-for="s in serverOptions" :key="s.id" :label="s.name" :value="s.id" />
+              </el-select>
             </el-form-item>
             <el-form-item :label="t('nodeServer.actionType')">
-              <el-input v-model="nodeAuditQuery.action" clearable :placeholder="t('nodeServer.actionType')" style="width:160px" @keyup.enter="loadNodeAudit(1)" />
+              <el-select v-model="nodeAuditQuery.action" clearable filterable :placeholder="t('common.all')" style="width:200px">
+                <el-option v-for="a in actionOptions" :key="a.value" :label="a.label" :value="a.value" />
+              </el-select>
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="loadNodeAudit(1)">{{ t('common.query') }}</el-button>
@@ -250,7 +254,7 @@ import {
   listAlerts, resolveAlert, resolveAllAlerts,
   listAlertChannels, createAlertChannel, updateAlertChannel, deleteAlertChannel,
 } from '../api/security'
-import { listNodeAuditLogs, exportNodeAuditLogs } from '../api/nodeServer'
+import { listNodeAuditLogs, exportNodeAuditLogs, listNodeServers } from '../api/nodeServer'
 
 const { t } = useI18n()
 const activeTab = ref('audit')
@@ -306,6 +310,56 @@ const nodeAuditList = ref([])
 const nodeAuditTotal = ref(0)
 const nodeAuditLoading = ref(false)
 const nodeAuditQuery = reactive({ page: 1, limit: 20, server_id: '', action: '' })
+const serverOptions = ref([])
+const actionOptions = [
+  { value: 'create', label: 'create' },
+  { value: 'update', label: 'update' },
+  { value: 'delete', label: 'delete' },
+  { value: 'control_core', label: 'control_core' },
+  { value: 'sync_config', label: 'sync_config' },
+  { value: 'generate_token', label: 'generate_token' },
+  { value: 'revoke_cert', label: 'revoke_cert' },
+  { value: 'renew_cert', label: 'renew_cert' },
+  { value: 'distribute_cert', label: 'distribute_cert' },
+  { value: 'distribute_cert_all', label: 'distribute_cert_all' },
+  { value: 'associate_cert', label: 'associate_cert' },
+  { value: 'dissociate_cert', label: 'dissociate_cert' },
+  { value: 'update_agent', label: 'update_agent' },
+  { value: 'update_all_agents', label: 'update_all_agents' },
+  { value: 'update_node_type', label: 'update_node_type' },
+  { value: 'sync_mirror', label: 'sync_mirror' },
+  { value: 'trigger_failover', label: 'trigger_failover' },
+  { value: 'save_protocol', label: 'save_protocol' },
+  { value: 'save_protocol_section', label: 'save_protocol_section' },
+  { value: 'control_proxy', label: 'control_proxy' },
+  { value: 'sync_proxy', label: 'sync_proxy' },
+  { value: 'update_ratelimit', label: 'update_ratelimit' },
+  { value: 'user_create', label: 'user_create' },
+  { value: 'user_update', label: 'user_update' },
+  { value: 'user_delete', label: 'user_delete' },
+  { value: 'cert_create', label: 'cert_create' },
+  { value: 'cert_update', label: 'cert_update' },
+  { value: 'cert_delete', label: 'cert_delete' },
+  { value: 'cert_issue', label: 'cert_issue' },
+  { value: 'cert_renew', label: 'cert_renew' },
+  { value: 'xray_add_inbound', label: 'xray_add_inbound' },
+  { value: 'xray_remove_inbound', label: 'xray_remove_inbound' },
+  { value: 'xray_add_outbound', label: 'xray_add_outbound' },
+  { value: 'xray_remove_outbound', label: 'xray_remove_outbound' },
+  { value: 'xray_add_user', label: 'xray_add_user' },
+  { value: 'xray_remove_user', label: 'xray_remove_user' },
+  { value: 'xray_apply_routing', label: 'xray_apply_routing' },
+  { value: 'xray_add_routing_rule', label: 'xray_add_routing_rule' },
+  { value: 'xray_remove_routing_rule', label: 'xray_remove_routing_rule' },
+  { value: 'xray_set_balancer', label: 'xray_set_balancer' },
+  { value: 'xray_reset_stats', label: 'xray_reset_stats' },
+]
+
+function loadServerOptions() {
+  listNodeServers({ limit: 500 }).then((r) => {
+    serverOptions.value = (r.items || []).map((s) => ({ id: s.id, name: s.name }))
+  }).catch(() => {})
+}
 
 function loadNodeAudit(p) {
   if (p) nodeAuditQuery.page = p
@@ -422,7 +476,10 @@ onMounted(() => { loadAudit(1); loadAlerts(1); loadChannels() })
 
 // Lazy-load node audit logs when the tab is first activated
 watch(activeTab, (val) => {
-  if (val === 'nodeAudit' && nodeAuditList.value.length === 0) loadNodeAudit(1)
+  if (val === 'nodeAudit') {
+    if (nodeAuditList.value.length === 0) loadNodeAudit(1)
+    if (serverOptions.value.length === 0) loadServerOptions()
+  }
 })
 </script>
 

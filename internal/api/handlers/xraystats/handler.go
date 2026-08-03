@@ -10,6 +10,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/coredata"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/audit"
 )
 
 // SettingStore provides access to system settings.
@@ -142,14 +143,17 @@ func (h *Handler) GetUserStats(c *gin.Context) {
 
 // ResetUserStats handles POST /api/v1/xray/stats/reset/:email.
 func (h *Handler) ResetUserStats(c *gin.Context) {
+	sid := parseServerID(c)
 	email := c.Param("email")
 	if email == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "email is required")
 		return
 	}
-	if err := h.provider.ResetUserTraffic(c.Request.Context(), parseServerID(c), email); err != nil {
+	if err := h.provider.ResetUserTraffic(c.Request.Context(), sid, email); err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_reset_stats", email, false, err.Error())
 		response.InternalError(c, "STATS_RESET_FAILED", err.Error())
 		return
 	}
+	audit.RecordNodeFromCtx(c, sid, "xray_reset_stats", email, true, "")
 	response.OK(c, gin.H{"message": "stats reset successfully", "email": email})
 }

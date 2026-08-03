@@ -26,6 +26,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/coredata"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/audit"
 )
 
 // SettingStore provides access to system settings.
@@ -207,6 +208,7 @@ func (h *Handler) connect(ctx context.Context, serverID int64) (*grpc.ClientConn
 
 // AddInbound handles POST /api/v1/xray/control/inbound.
 func (h *Handler) AddInbound(c *gin.Context) {
+	sid := parseServerID(c)
 	var req struct {
 		Inbound json.RawMessage `json:"inbound" binding:"required"`
 	}
@@ -216,7 +218,12 @@ func (h *Handler) AddInbound(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "proxyman", "addInbound", map[string]interface{}{"config": req.Inbound}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "addInbound", map[string]interface{}{"config": req.Inbound}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "remote", false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "remote", true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -228,8 +235,9 @@ func (h *Handler) AddInbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "", false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -251,15 +259,18 @@ func (h *Handler) AddInbound(c *gin.Context) {
 
 	_, err = client.AddInbound(ctx, &proxymanCommand.AddInboundRequest{Inbound: config})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "", false, err.Error())
 		response.InternalError(c, "ADD_INBOUND_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "", true, "")
 	response.OK(c, gin.H{"message": "inbound added successfully"})
 }
 
 // RemoveInbound handles DELETE /api/v1/xray/control/inbound/:tag.
 func (h *Handler) RemoveInbound(c *gin.Context) {
+	sid := parseServerID(c)
 	tag := c.Param("tag")
 	if tag == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "tag is required")
@@ -267,7 +278,12 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "proxyman", "removeInbound", map[string]interface{}{"tag": tag}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "removeInbound", map[string]interface{}{"tag": tag}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -279,8 +295,9 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -290,10 +307,12 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 
 	_, err = client.RemoveInbound(ctx, &proxymanCommand.RemoveInboundRequest{Tag: tag})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, false, err.Error())
 		response.InternalError(c, "REMOVE_INBOUND_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, true, "")
 	response.OK(c, gin.H{"message": "inbound removed successfully", "tag": tag})
 }
 
@@ -301,6 +320,7 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 
 // AddOutbound handles POST /api/v1/xray/control/outbound.
 func (h *Handler) AddOutbound(c *gin.Context) {
+	sid := parseServerID(c)
 	var req struct {
 		Outbound json.RawMessage `json:"outbound" binding:"required"`
 	}
@@ -310,7 +330,12 @@ func (h *Handler) AddOutbound(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "proxyman", "addOutbound", map[string]interface{}{"config": req.Outbound}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "addOutbound", map[string]interface{}{"config": req.Outbound}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "remote", false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "remote", true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -322,8 +347,9 @@ func (h *Handler) AddOutbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "", false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -345,15 +371,18 @@ func (h *Handler) AddOutbound(c *gin.Context) {
 
 	_, err = client.AddOutbound(ctx, &proxymanCommand.AddOutboundRequest{Outbound: config})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "", false, err.Error())
 		response.InternalError(c, "ADD_OUTBOUND_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "", true, "")
 	response.OK(c, gin.H{"message": "outbound added successfully"})
 }
 
 // RemoveOutbound handles DELETE /api/v1/xray/control/outbound/:tag.
 func (h *Handler) RemoveOutbound(c *gin.Context) {
+	sid := parseServerID(c)
 	tag := c.Param("tag")
 	if tag == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "tag is required")
@@ -361,7 +390,12 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "proxyman", "removeOutbound", map[string]interface{}{"tag": tag}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "removeOutbound", map[string]interface{}{"tag": tag}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -373,8 +407,9 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -384,10 +419,12 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 
 	_, err = client.RemoveOutbound(ctx, &proxymanCommand.RemoveOutboundRequest{Tag: tag})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, false, err.Error())
 		response.InternalError(c, "REMOVE_OUTBOUND_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, true, "")
 	response.OK(c, gin.H{"message": "outbound removed successfully", "tag": tag})
 }
 
@@ -396,6 +433,7 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 // AddUser handles POST /api/v1/xray/control/inbound/:tag/user.
 // Supported protocols: VLESS, VMess, Trojan, Shadowsocks
 func (h *Handler) AddUser(c *gin.Context) {
+	sid := parseServerID(c)
 	tag := c.Param("tag")
 	if tag == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "tag is required")
@@ -423,7 +461,13 @@ func (h *Handler) AddUser(c *gin.Context) {
 		"flow":     req.Flow,
 		"method":   req.Method,
 	}
-	if resp, handled, _ := h.remoteXrayAPI(c, "proxyman", "addUser", payload); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "addUser", payload); handled {
+		detail := fmt.Sprintf("tag=%s email=%s", tag, req.Email)
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_user", detail, false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_user", detail, true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -435,8 +479,9 @@ func (h *Handler) AddUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_user", fmt.Sprintf("tag=%s email=%s", tag, req.Email), false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -514,15 +559,18 @@ func (h *Handler) AddUser(c *gin.Context) {
 		Operation: serial.ToTypedMessage(&proxymanCommand.AddUserOperation{User: user}),
 	})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_user", fmt.Sprintf("tag=%s email=%s", tag, req.Email), false, err.Error())
 		response.InternalError(c, "ADD_USER_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_add_user", fmt.Sprintf("tag=%s email=%s", tag, req.Email), true, "")
 	response.OK(c, gin.H{"message": "user added successfully", "email": req.Email, "tag": tag})
 }
 
 // RemoveUser handles DELETE /api/v1/xray/control/inbound/:tag/user/:email.
 func (h *Handler) RemoveUser(c *gin.Context) {
+	sid := parseServerID(c)
 	tag := c.Param("tag")
 	email := c.Param("email")
 	if tag == "" || email == "" {
@@ -531,7 +579,13 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "proxyman", "removeUser", map[string]interface{}{"tag": tag, "email": email}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "removeUser", map[string]interface{}{"tag": tag, "email": email}); handled {
+		detail := fmt.Sprintf("tag=%s email=%s", tag, email)
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_user", detail, false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_user", detail, true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -543,8 +597,9 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_user", fmt.Sprintf("tag=%s email=%s", tag, email), false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -557,10 +612,12 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 		Operation: serial.ToTypedMessage(&proxymanCommand.RemoveUserOperation{Email: email}),
 	})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_user", fmt.Sprintf("tag=%s email=%s", tag, email), false, err.Error())
 		response.InternalError(c, "REMOVE_USER_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_remove_user", fmt.Sprintf("tag=%s email=%s", tag, email), true, "")
 	response.OK(c, gin.H{"message": "user removed from xray", "email": email, "tag": tag})
 }
 
@@ -568,6 +625,7 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 
 // ApplyRouting handles POST /api/v1/xray/control/routing.
 func (h *Handler) ApplyRouting(c *gin.Context) {
+	sid := parseServerID(c)
 	var req struct {
 		Routing json.RawMessage `json:"routing" binding:"required"`
 	}
@@ -577,7 +635,12 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "router", "applyRouting", map[string]interface{}{"routing": req.Routing}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "router", "applyRouting", map[string]interface{}{"routing": req.Routing}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -589,8 +652,9 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -618,15 +682,18 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 		Config:       serial.ToTypedMessage(config),
 	})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, err.Error())
 		response.InternalError(c, "APPLY_ROUTING_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", true, "")
 	response.OK(c, gin.H{"message": "routing applied successfully"})
 }
 
 // AddRoutingRule handles POST /api/v1/xray/control/routing/rule.
 func (h *Handler) AddRoutingRule(c *gin.Context) {
+	sid := parseServerID(c)
 	var req struct {
 		Rule   json.RawMessage `json:"rule" binding:"required"`
 		Append bool            `json:"append"`
@@ -637,7 +704,12 @@ func (h *Handler) AddRoutingRule(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "router", "addRoutingRule", map[string]interface{}{"rule": req.Rule, "append": req.Append}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "router", "addRoutingRule", map[string]interface{}{"rule": req.Rule, "append": req.Append}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_routing_rule", "", false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_add_routing_rule", "", true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -649,8 +721,9 @@ func (h *Handler) AddRoutingRule(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_routing_rule", "", false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -673,15 +746,18 @@ func (h *Handler) AddRoutingRule(c *gin.Context) {
 		Config:       serial.ToTypedMessage(config),
 	})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_routing_rule", "", false, err.Error())
 		response.InternalError(c, "ADD_RULE_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_add_routing_rule", "", true, "")
 	response.OK(c, gin.H{"message": "routing rule added successfully"})
 }
 
 // RemoveRoutingRule handles DELETE /api/v1/xray/control/routing/rule/:tag.
 func (h *Handler) RemoveRoutingRule(c *gin.Context) {
+	sid := parseServerID(c)
 	tag := c.Param("tag")
 	if tag == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "tag is required")
@@ -689,7 +765,12 @@ func (h *Handler) RemoveRoutingRule(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "router", "removeRoutingRule", map[string]interface{}{"tag": tag}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "router", "removeRoutingRule", map[string]interface{}{"tag": tag}); handled {
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_routing_rule", tag, false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_remove_routing_rule", tag, true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -701,8 +782,9 @@ func (h *Handler) RemoveRoutingRule(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_routing_rule", tag, false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -712,10 +794,12 @@ func (h *Handler) RemoveRoutingRule(c *gin.Context) {
 
 	_, err = client.RemoveRule(ctx, &routerCommand.RemoveRuleRequest{RuleTag: tag})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_routing_rule", tag, false, err.Error())
 		response.InternalError(c, "REMOVE_RULE_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_remove_routing_rule", tag, true, "")
 	response.OK(c, gin.H{"message": "routing rule removed successfully", "tag": tag})
 }
 
@@ -813,6 +897,7 @@ func (h *Handler) GetBalancerInfo(c *gin.Context) {
 
 // SetBalancerTarget handles POST /api/v1/xray/control/balancer/:tag.
 func (h *Handler) SetBalancerTarget(c *gin.Context) {
+	sid := parseServerID(c)
 	tag := c.Param("tag")
 	if tag == "" {
 		response.BadRequest(c, "INVALID_PARAMS", "tag is required")
@@ -828,7 +913,13 @@ func (h *Handler) SetBalancerTarget(c *gin.Context) {
 	}
 
 	// Remote: proxy via Agent
-	if resp, handled, _ := h.remoteXrayAPI(c, "router", "setBalancerTarget", map[string]interface{}{"tag": tag, "target": req.Target}); handled {
+	if resp, handled, errOcc := h.remoteXrayAPI(c, "router", "setBalancerTarget", map[string]interface{}{"tag": tag, "target": req.Target}); handled {
+		detail := fmt.Sprintf("tag=%s target=%s", tag, req.Target)
+		if errOcc {
+			audit.RecordNodeFromCtx(c, sid, "xray_set_balancer", detail, false, "remote API failed")
+		} else {
+			audit.RecordNodeFromCtx(c, sid, "xray_set_balancer", detail, true, "")
+		}
 		if resp != nil {
 			var result interface{}
 			json.Unmarshal(resp, &result)
@@ -840,8 +931,9 @@ func (h *Handler) SetBalancerTarget(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	conn, err := h.connect(ctx, parseServerID(c))
+	conn, err := h.connect(ctx, sid)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_set_balancer", fmt.Sprintf("tag=%s target=%s", tag, req.Target), false, err.Error())
 		response.InternalError(c, "CONNECT_FAILED", err.Error())
 		return
 	}
@@ -854,10 +946,12 @@ func (h *Handler) SetBalancerTarget(c *gin.Context) {
 		Target:      req.Target,
 	})
 	if err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_set_balancer", fmt.Sprintf("tag=%s target=%s", tag, req.Target), false, err.Error())
 		response.InternalError(c, "SET_BALANCER_FAILED", err.Error())
 		return
 	}
 
+	audit.RecordNodeFromCtx(c, sid, "xray_set_balancer", fmt.Sprintf("tag=%s target=%s", tag, req.Target), true, "")
 	response.OK(c, gin.H{"message": "balancer target set successfully", "tag": tag, "target": req.Target})
 }
 

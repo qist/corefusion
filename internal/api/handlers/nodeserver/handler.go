@@ -2,6 +2,7 @@ package nodeserver
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -61,6 +62,17 @@ func (h *Handler) SetProxyHandler(ph *system.ProxyHandler) {
 // SetGeoRuleService sets the geo rule service for triggering rule sync after core install.
 func (h *Handler) SetGeoRuleService(svc *geoRuleSvc.Service) {
 	h.geoRuleSvc = svc
+}
+
+// auditLog records an administrative action to the audit log.
+// It extracts admin identity and request metadata from the gin context.
+func (h *Handler) auditLog(c *gin.Context, serverID int64, action, detail string, success bool, errMsg string) {
+	adminID, _ := c.Get("user_id")
+	var aid int64
+	if v, ok := adminID.(int64); ok {
+		aid = v
+	}
+	h.svc.CreateAuditLog(c.Request.Context(), serverID, aid, action, detail, c.ClientIP(), c.Request.UserAgent(), success, errMsg)
 }
 
 // List returns all node servers with optional filtering.
@@ -134,6 +146,7 @@ func (h *Handler) Create(c *gin.Context) {
 	// The frontend knows the real scheme/host/port from window.location —
 	// the backend can't reliably detect TLS behind a reverse proxy (Caddy/Nginx).
 
+	h.auditLog(c, result.ID, "create", fmt.Sprintf("created node server: %s", req.Name), true, "")
 	response.Created(c, result)
 }
 
@@ -157,6 +170,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	h.auditLog(c, id, "update", fmt.Sprintf("updated server: %s", server.Name), true, "")
 	response.OK(c, h.svc.ToResponse(server))
 }
 
@@ -173,6 +187,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
+	h.auditLog(c, id, "delete", "deleted node server", true, "")
 	response.OK(c, gin.H{"deleted": true})
 }
 
@@ -191,6 +206,7 @@ func (h *Handler) GenerateBootstrapToken(c *gin.Context) {
 		return
 	}
 
+	h.auditLog(c, id, "generate_token", "generated bootstrap token", true, "")
 	response.OK(c, result)
 }
 
@@ -231,10 +247,12 @@ func (h *Handler) RevokeAgentCertificate(c *gin.Context) {
 	}
 
 	if err := h.svc.RevokeAgentCertificate(c.Request.Context(), id, aid, req.Reason); err != nil {
+		h.auditLog(c, id, "revoke_cert", fmt.Sprintf("revoke failed: %s", req.Reason), false, err.Error())
 		response.InternalError(c, "REVOKE_FAILED", err.Error())
 		return
 	}
 
+	h.auditLog(c, id, "revoke_cert", fmt.Sprintf("revoked agent certificate: %s", req.Reason), true, "")
 	response.OK(c, gin.H{"revoked": true, "server_id": id, "reason": req.Reason})
 }
 
@@ -255,10 +273,12 @@ func (h *Handler) DistributeCertificate(c *gin.Context) {
 	}
 
 	if err := h.svc.DistributeCertificate(c.Request.Context(), id, req.CertificateID); err != nil {
+		h.auditLog(c, id, "distribute_cert", fmt.Sprintf("cert %d", req.CertificateID), false, err.Error())
 		response.InternalError(c, "DISTRIBUTE_FAILED", err.Error())
 		return
 	}
 
+	h.auditLog(c, id, "distribute_cert", fmt.Sprintf("distributed certificate %d", req.CertificateID), true, "")
 	response.OK(c, gin.H{"distributed": true, "server_id": id, "certificate_id": req.CertificateID})
 }
 
@@ -273,10 +293,12 @@ func (h *Handler) DistributeCertificateToAll(c *gin.Context) {
 	}
 
 	if err := h.svc.DistributeCertificateToAll(c.Request.Context(), req.CertificateID); err != nil {
+		h.auditLog(c, 0, "distribute_cert_all", fmt.Sprintf("cert %d", req.CertificateID), false, err.Error())
 		response.InternalError(c, "DISTRIBUTE_FAILED", err.Error())
 		return
 	}
 
+	h.auditLog(c, 0, "distribute_cert_all", fmt.Sprintf("distributed certificate %d to all servers", req.CertificateID), true, "")
 	response.OK(c, gin.H{"distributed": true, "certificate_id": req.CertificateID})
 }
 
@@ -317,10 +339,12 @@ func (h *Handler) SyncMirror(c *gin.Context) {
 	}
 
 	if err := h.svc.SyncMirrorNow(c.Request.Context(), id); err != nil {
+		h.auditLog(c, id, "sync_mirror", "mirror sync", false, err.Error())
 		response.InternalError(c, "MIRROR_SYNC_FAILED", err.Error())
 		return
 	}
 
+	h.auditLog(c, id, "sync_mirror", "triggered mirror sync", true, "")
 	response.OK(c, gin.H{"synced": true, "mirror_id": id})
 }
 
@@ -671,18 +695,22 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateAgent(c.Request.Context(), id, req.Version, req.DownloadURL, req.Checksum); err != nil {
+		h.auditLog(c, id, "update_agent", fmt.Sprintf("version: %s", req.Version), false, err.Error())
 		response.InternalError(c, "AGENT_UPDATE_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "update_agent", fmt.Sprintf("triggered agent update, version: %s", req.Version), true, "")
 	response.OK(c, gin.H{"updating": true, "server_id": id})
 }
 
 // UpdateAllAgents triggers Agent updates on all eligible remote servers.
 func (h *Handler) UpdateAllAgents(c *gin.Context) {
 	if err := h.svc.UpdateAllAgents(c.Request.Context()); err != nil {
+		h.auditLog(c, 0, "update_all_agents", "", false, err.Error())
 		response.InternalError(c, "AGENT_UPDATE_ALL_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, 0, "update_all_agents", "triggered agent update on all servers", true, "")
 	response.OK(c, gin.H{"triggered": true})
 }
 
@@ -753,6 +781,7 @@ func (h *Handler) ControlCore(c *gin.Context) {
 	// but the gRPC round-trip still waits for the RPC to complete. By running
 	// the gRPC call in a goroutine, the HTTP handler returns instantly.
 	if isRemote && (req.Action == "stop" || req.Action == "restart") {
+		h.auditLog(c, id, "control_core", fmt.Sprintf("%s %s (async)", req.Action, req.CoreType), true, "")
 		go func(serverID int64, coreType, action string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
@@ -773,9 +802,11 @@ func (h *Handler) ControlCore(c *gin.Context) {
 	defer cancel()
 
 	if err := h.svc.ControlCore(ctx, id, req.CoreType, req.Action); err != nil {
+		h.auditLog(c, id, "control_core", fmt.Sprintf("%s %s", req.Action, req.CoreType), false, err.Error())
 		response.InternalError(c, "CONTROL_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "control_core", fmt.Sprintf("%s %s", req.Action, req.CoreType), true, "")
 	response.OK(c, gin.H{"controlled": true, "server_id": id, "action": req.Action})
 }
 
@@ -825,9 +856,11 @@ func (h *Handler) SyncServerConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.SyncServerConfig(c.Request.Context(), id, req.CoreType, configData, req.Version); err != nil {
+		h.auditLog(c, id, "sync_config", fmt.Sprintf("%s", req.CoreType), false, err.Error())
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "sync_config", fmt.Sprintf("synced %s config", req.CoreType), true, "")
 	response.OK(c, gin.H{"synced": true, "server_id": id})
 }
 
@@ -879,9 +912,11 @@ func (h *Handler) UpdateNodeType(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateNodeType(c.Request.Context(), id, req.NodeType); err != nil {
+		h.auditLog(c, id, "update_node_type", req.NodeType, false, err.Error())
 		response.InternalError(c, "NODE_TYPE_UPDATE_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "update_node_type", fmt.Sprintf("changed to %s", req.NodeType), true, "")
 	response.OK(c, gin.H{"updated": true, "server_id": id, "node_type": req.NodeType})
 }
 
@@ -893,9 +928,11 @@ func (h *Handler) TriggerServerFailover(c *gin.Context) {
 		return
 	}
 	if err := h.svc.TriggerServerFailover(c.Request.Context(), id); err != nil {
+		h.auditLog(c, id, "trigger_failover", "", false, err.Error())
 		response.InternalError(c, "FAILOVER_TRIGGER_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "trigger_failover", "triggered server failover", true, "")
 	response.OK(c, gin.H{"triggered": true, "server_id": id})
 }
 
@@ -927,9 +964,12 @@ func (h *Handler) AssociateCertificate(c *gin.Context) {
 		return
 	}
 	if err := h.svc.AssociateCertificate(c.Request.Context(), id, cid); err != nil {
+		h.auditLog(c, id, "associate_cert", fmt.Sprintf("cert %d", cid), false, err.Error())
 		response.InternalError(c, "ASSOCIATE_FAILED", err.Error())
 		return
 	}
+
+	h.auditLog(c, id, "associate_cert", fmt.Sprintf("associated certificate %d", cid), true, "")
 
 	// Trigger SyncData to push the certificate to the remote node asynchronously.
 	// This ensures the certificate PEM content lands on the Agent's disk.
@@ -960,9 +1000,11 @@ func (h *Handler) DissociateCertificate(c *gin.Context) {
 	}
 	_ = cid // we just clear the association regardless of cid
 	if err := h.svc.DissociateCertificate(c.Request.Context(), id); err != nil {
+		h.auditLog(c, id, "dissociate_cert", "", false, err.Error())
 		response.InternalError(c, "DISSOCIATE_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "dissociate_cert", "dissociated certificate", true, "")
 	response.OK(c, gin.H{"dissociated": true, "server_id": id})
 }
 
@@ -1013,9 +1055,11 @@ func (h *Handler) RenewAgentCertificate(c *gin.Context) {
 		return
 	}
 	if err := h.svc.RenewAgentCertificate(c.Request.Context(), serverID); err != nil {
+		h.auditLog(c, serverID, "renew_cert", "", false, err.Error())
 		response.InternalError(c, "RENEW_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, serverID, "renew_cert", "renewed agent certificate", true, "")
 	response.OK(c, gin.H{"renewed": true, "server_id": serverID})
 }
 

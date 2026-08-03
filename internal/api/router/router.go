@@ -1947,9 +1947,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				}
 				resp, err := nodeServerSvcInst.SyncServerData(c.Request.Context(), serverID, req.ApplyAndStart)
 				if err != nil {
+					nodeServerSvcInst.CreateAuditLog(c.Request.Context(), serverID, 0, "sync_data", fmt.Sprintf("apply_and_start=%v", req.ApplyAndStart), c.ClientIP(), c.Request.UserAgent(), false, err.Error())
 					c.JSON(500, gin.H{"error": err.Error()})
 					return
 				}
+				nodeServerSvcInst.CreateAuditLog(c.Request.Context(), serverID, 0, "sync_data", fmt.Sprintf("synced data, apply_and_start=%v", req.ApplyAndStart), c.ClientIP(), c.Request.UserAgent(), true, "")
 				c.JSON(200, resp)
 			})
 

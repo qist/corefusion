@@ -253,22 +253,22 @@
         </el-dialog>
       </el-tab-pane>
 
-      <el-tab-pane label="在线订阅人" name="online">
+      <el-tab-pane :label="t('onlineUsers.tabLabel')" name="online">
         <div style="padding:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
             <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <el-tag type="success" effect="dark">在线订阅 {{ onlineData?.online_subscriptions || 0 }}</el-tag>
-              <el-tag type="info" effect="dark">在线设备/IP {{ onlineData?.online_devices || 0 }}</el-tag>
-              <el-tag effect="plain">总上行 {{ formatRate(onlineData?.total_uplink_rate || 0) }}</el-tag>
-              <el-tag effect="plain">总下行 {{ formatRate(onlineData?.total_downlink_rate || 0) }}</el-tag>
+              <el-tag type="success" effect="dark">{{ t('onlineUsers.totalSubscriptions') }} {{ onlineData?.online_subscriptions || 0 }}</el-tag>
+              <el-tag type="info" effect="dark">{{ t('onlineUsers.totalDevices') }} {{ onlineData?.online_devices || 0 }}</el-tag>
+              <el-tag effect="plain">{{ t('onlineUsers.totalUp') }} {{ formatRate(onlineData?.total_uplink_rate || 0) }}</el-tag>
+              <el-tag effect="plain">{{ t('onlineUsers.totalDown') }} {{ formatRate(onlineData?.total_downlink_rate || 0) }}</el-tag>
             </div>
             <div style="display:flex;gap:8px;align-items:center">
-              <el-input v-model="onlineKeyword" placeholder="搜索 邮箱/客户端/IP" clearable size="small" style="width:200px" @input="onOnlineKeywordInput" @clear="onOnlineFilterChange">
+              <el-input v-model="onlineKeyword" :placeholder="t('onlineUsers.search')" clearable size="small" style="width:200px" @input="onOnlineKeywordInput" @clear="onOnlineFilterChange">
                 <template #prefix><el-icon><Search /></el-icon></template>
               </el-input>
-              <span style="font-size:12px;color:#909399" v-if="onlineData?.updated_at">更新于 {{ formatAgo(onlineData.updated_at) }}</span>
+              <span style="font-size:12px;color:#909399" v-if="onlineData?.updated_at">{{ t('onlineUsers.updatedAt') }} {{ formatAgo(onlineData.updated_at) }}</span>
               <el-button size="small" :loading="onlineLoading" @click="loadOnlineUsers">
-                <el-icon><Refresh /></el-icon> 刷新
+                <el-icon><Refresh /></el-icon> {{ t('common.refresh') }}
               </el-button>
             </div>
           </div>
@@ -280,60 +280,60 @@
               <template #default="{row}">
                 <el-table :data="row.sessions || []" size="mini" border>
                   <el-table-column prop="ip" label="IP" min-width="150" />
-                  <el-table-column label="最近活跃" min-width="110">
+                  <el-table-column :label="t('onlineUsers.lastActive')" min-width="110">
                     <template #default="{row:s}">{{ formatAgo(s.last_seen) }}</template>
                   </el-table-column>
-                  <el-table-column label="接入时长" min-width="110">
+                  <el-table-column :label="t('onlineUsers.duration')" min-width="110">
                     <template #default="{row:s}">{{ formatDuration((s.last_seen || 0) - (s.connected_since || 0)) }}</template>
                   </el-table-column>
                 </el-table>
               </template>
             </el-table-column>
-            <el-table-column label="订阅" min-width="240">
+            <el-table-column :label="t('onlineUsers.subscription')" min-width="240">
               <template #default="{row}">
                 <div>{{ row.email }}</div>
                 <div style="font-size:12px;color:#909399">ID: {{ row.subscription_id }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="客户端 / 套餐" min-width="170" show-overflow-tooltip>
+            <el-table-column :label="t('onlineUsers.clientPlan')" min-width="170" show-overflow-tooltip>
               <template #default="{row}">
                 <div>{{ row.client_name || row.email }}</div>
                 <div v-if="row.plan_name" style="font-size:12px;color:#909399">{{ row.plan_name }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="设备/IP" width="90" align="center">
+            <el-table-column :label="t('onlineUsers.devices')" width="90" align="center">
               <template #default="{row}">{{ (row.sessions || []).length }}</template>
             </el-table-column>
-            <el-table-column label="限速" width="140" align="center">
+            <el-table-column :label="t('onlineUsers.speedLimit')" width="140" align="center">
               <template #default="{row}">
                 <span v-if="(row.speed_limit_down_mbps || 0) > 0 || (row.speed_limit_up_mbps || 0) > 0">
                   ↓{{ row.speed_limit_down_mbps || 0 }} / ↑{{ row.speed_limit_up_mbps || 0 }}
                   <div style="font-size:11px;color:#909399">Mbps</div>
                 </span>
-                <span v-else style="color:#c0c4cc;font-size:12px">不限</span>
+                <span v-else style="color:#c0c4cc;font-size:12px">{{ t('onlineUsers.unlimited') }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="上行速率" width="120">
+            <el-table-column :label="t('onlineUsers.upRate')" width="120">
               <template #default="{row}">{{ formatRate(row.uplink_rate) }}</template>
             </el-table-column>
-            <el-table-column label="下行速率" width="120">
+            <el-table-column :label="t('onlineUsers.downRate')" width="120">
               <template #default="{row}">{{ formatRate(row.downlink_rate) }}</template>
             </el-table-column>
-            <el-table-column label="累计上行" width="100">
+            <el-table-column :label="t('onlineUsers.totalUp')" width="100">
               <template #default="{row}">{{ formatBytes(row.uplink_bytes) }}</template>
             </el-table-column>
-            <el-table-column label="累计下行" width="100">
+            <el-table-column :label="t('onlineUsers.totalDown')" width="100">
               <template #default="{row}">{{ formatBytes(row.downlink_bytes) }}</template>
             </el-table-column>
-            <el-table-column label="最近活跃" width="100">
+            <el-table-column :label="t('onlineUsers.lastActive')" width="100">
               <template #default="{row}">{{ formatAgo(row.last_seen) }}</template>
             </el-table-column>
-            <el-table-column label="时长" width="100">
+            <el-table-column :label="t('onlineUsers.duration')" width="100">
               <template #default="{row}">{{ formatDuration((row.last_seen || 0) - (row.first_seen || 0)) }}</template>
             </el-table-column>
           </el-table>
 
-          <el-empty v-if="!onlineLoading && (!onlineData?.users || onlineData.users.length === 0)" description="当前没有在线订阅人" style="margin-top:20px" />
+          <el-empty v-if="!onlineLoading && (!onlineData?.users || onlineData.users.length === 0)" :description="t('onlineUsers.noOnline')" style="margin-top:20px" />
 
           <div v-if="(onlineData?.filtered_total || 0) > 0" style="display:flex;justify-content:flex-end;margin-top:14px">
             <el-pagination
@@ -655,7 +655,7 @@ async function loadOnlineUsers() {
     const data = await client.get(`/node-servers/${serverId}/online-users`, { params })
     onlineData.value = data
   } catch (e) {
-    onlineError.value = e?.response?.data?.message || '加载在线订阅人失败'
+    onlineError.value = e?.response?.data?.message || t('onlineUsers.loadFailed')
   } finally {
     onlineLoading.value = false
   }

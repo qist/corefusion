@@ -325,9 +325,13 @@
 
       <!-- ════════════ 审计日志 Tab ════════════ -->
       <el-tab-pane :label="t('nodeServer.auditLogs')" name="audit">
-        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-          <el-input v-model="auditFilter.server_id" :placeholder="t('nodeServer.serverId')" clearable size="small" style="width:100px" @keyup.enter="loadAuditLogs" />
-          <el-input v-model="auditFilter.action" :placeholder="t('nodeServer.actionType')" clearable size="small" style="width:140px" @keyup.enter="loadAuditLogs" />
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+          <el-select v-model="auditFilter.server_id" clearable filterable :placeholder="t('nodeServer.serverId')" size="small" style="width:160px" @change="loadAuditLogs">
+            <el-option v-for="s in auditServerOptions" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+          <el-select v-model="auditFilter.action" clearable filterable :placeholder="t('nodeServer.actionType')" size="small" style="width:180px" @change="loadAuditLogs">
+            <el-option v-for="a in auditActionOptions" :key="a.value" :label="a.label" :value="a.value" />
+          </el-select>
           <el-button size="small" type="primary" @click="loadAuditLogs">{{ t('common.search') }}</el-button>
           <el-button size="small" v-if="$can('admin')" @click="exportAuditLogs">{{ t('common.export') }}</el-button>
         </div>
@@ -711,6 +715,56 @@ const auditLogs = ref([])
 const auditLoading = ref(false)
 const auditTotal = ref(0)
 const auditFilter = reactive({ server_id: '', action: '', limit: 50, offset: 0 })
+const auditServerOptions = ref([])
+const auditActionOptions = [
+  { value: 'create', label: 'create' },
+  { value: 'update', label: 'update' },
+  { value: 'delete', label: 'delete' },
+  { value: 'control_core', label: 'control_core' },
+  { value: 'sync_config', label: 'sync_config' },
+  { value: 'generate_token', label: 'generate_token' },
+  { value: 'revoke_cert', label: 'revoke_cert' },
+  { value: 'renew_cert', label: 'renew_cert' },
+  { value: 'distribute_cert', label: 'distribute_cert' },
+  { value: 'distribute_cert_all', label: 'distribute_cert_all' },
+  { value: 'associate_cert', label: 'associate_cert' },
+  { value: 'dissociate_cert', label: 'dissociate_cert' },
+  { value: 'update_agent', label: 'update_agent' },
+  { value: 'update_all_agents', label: 'update_all_agents' },
+  { value: 'update_node_type', label: 'update_node_type' },
+  { value: 'sync_mirror', label: 'sync_mirror' },
+  { value: 'trigger_failover', label: 'trigger_failover' },
+  { value: 'save_protocol', label: 'save_protocol' },
+  { value: 'save_protocol_section', label: 'save_protocol_section' },
+  { value: 'control_proxy', label: 'control_proxy' },
+  { value: 'sync_proxy', label: 'sync_proxy' },
+  { value: 'update_ratelimit', label: 'update_ratelimit' },
+  { value: 'user_create', label: 'user_create' },
+  { value: 'user_update', label: 'user_update' },
+  { value: 'user_delete', label: 'user_delete' },
+  { value: 'cert_create', label: 'cert_create' },
+  { value: 'cert_update', label: 'cert_update' },
+  { value: 'cert_delete', label: 'cert_delete' },
+  { value: 'cert_issue', label: 'cert_issue' },
+  { value: 'cert_renew', label: 'cert_renew' },
+  { value: 'xray_add_inbound', label: 'xray_add_inbound' },
+  { value: 'xray_remove_inbound', label: 'xray_remove_inbound' },
+  { value: 'xray_add_outbound', label: 'xray_add_outbound' },
+  { value: 'xray_remove_outbound', label: 'xray_remove_outbound' },
+  { value: 'xray_add_user', label: 'xray_add_user' },
+  { value: 'xray_remove_user', label: 'xray_remove_user' },
+  { value: 'xray_apply_routing', label: 'xray_apply_routing' },
+  { value: 'xray_add_routing_rule', label: 'xray_add_routing_rule' },
+  { value: 'xray_remove_routing_rule', label: 'xray_remove_routing_rule' },
+  { value: 'xray_set_balancer', label: 'xray_set_balancer' },
+  { value: 'xray_reset_stats', label: 'xray_reset_stats' },
+]
+
+function loadAuditServerOptions() {
+  listNodeServers({ limit: 500 }).then((r) => {
+    auditServerOptions.value = (r.items || []).map((s) => ({ id: s.id, name: s.name }))
+  }).catch(() => {})
+}
 
 // ─── Create/Edit Form ───
 const formVisible = ref(false)
@@ -927,7 +981,7 @@ function onTabChange(tab) {
     case 'ca':
       loadCA(); loadAgentCerts(); loadRevocations(); loadDistQueue(); loadRetryQueue()
       break
-    case 'audit': loadAuditLogs(); break
+    case 'audit': loadAuditLogs(); loadAuditServerOptions(); break
   }
 }
 

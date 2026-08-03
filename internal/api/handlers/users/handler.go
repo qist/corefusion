@@ -1,12 +1,14 @@
 package users
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
+	"corefusion/internal/service/audit"
 	"corefusion/internal/service/user"
 )
 
@@ -64,9 +66,12 @@ func (h *Handler) Create(c *gin.Context) {
 
 	u, err := h.userSvc.Create(c.Request.Context(), input)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "user_create", input.Username, false, err.Error())
 		response.InternalError(c, "CREATE_USER_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "user_create", fmt.Sprintf("created user: %s", u.Username), true, "")
 
 	response.Created(c, gin.H{
 		"id":         u.ID,
@@ -94,9 +99,12 @@ func (h *Handler) Update(c *gin.Context) {
 
 	u, err := h.userSvc.Update(c.Request.Context(), id, input)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "user_update", fmt.Sprintf("user %d", id), false, err.Error())
 		response.InternalError(c, "UPDATE_USER_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "user_update", fmt.Sprintf("updated user %d: %s", id, u.Username), true, "")
 
 	response.OK(c, gin.H{
 		"id":         u.ID,
@@ -117,9 +125,12 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.userSvc.Delete(c.Request.Context(), id); err != nil {
+		audit.RecordNodeFromCtx(c, 0, "user_delete", fmt.Sprintf("user %d", id), false, err.Error())
 		response.InternalError(c, "DELETE_USER_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "user_delete", fmt.Sprintf("deleted user %d", id), true, "")
 
 	response.OK(c, gin.H{"message": "user deleted"})
 }

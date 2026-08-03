@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
+	"corefusion/internal/service/audit"
 	ratelimitsvc "corefusion/internal/service/ratelimit"
 )
 
@@ -54,9 +56,12 @@ func (h *Handler) UpdateConfig(c *gin.Context) {
 
 	config, err := h.svc.UpdateConfig(c.Request.Context(), serverID, &req)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "update_ratelimit", "", false, err.Error())
 		response.InternalError(c, "UPDATE_RATE_LIMIT_CONFIG_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, serverID, "update_ratelimit", fmt.Sprintf("enabled=%v", config.Enabled), true, "")
 
 	c.JSON(http.StatusOK, config)
 }

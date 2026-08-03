@@ -3,6 +3,7 @@ package nodeserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/service/audit"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 )
@@ -94,9 +96,12 @@ func (h *Handler) SaveProtocol(c *gin.Context) {
 	}
 
 	if err := h.coreConfigSvc.SaveFull(c.Request.Context(), serverID, coreType, body); err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "save_protocol", coreType, false, err.Error())
 		response.InternalError(c, "SAVE_PROTOCOL_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, serverID, "save_protocol", fmt.Sprintf("saved %s config", coreType), true, "")
 
 	// Sync to target node asynchronously
 	go h.syncConfigToServer(serverID, coreType)
@@ -163,9 +168,12 @@ func (h *Handler) SaveProtocolSection(c *gin.Context) {
 	}
 
 	if err := h.coreConfigSvc.SaveSection(c.Request.Context(), serverID, coreType, section, body); err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "save_protocol_section", fmt.Sprintf("%s/%s", coreType, section), false, err.Error())
 		response.InternalError(c, "SAVE_SECTION_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, serverID, "save_protocol_section", fmt.Sprintf("saved %s/%s", coreType, section), true, "")
 
 	// Sync to target node asynchronously
 	go h.syncConfigToServer(serverID, coreType)
@@ -309,9 +317,11 @@ func (h *Handler) ControlProxy(c *gin.Context) {
 	}
 
 	if err := h.svc.ControlProxy(c.Request.Context(), serverID, req.ProxyType, req.Action); err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "control_proxy", fmt.Sprintf("%s %s", req.Action, req.ProxyType), false, err.Error())
 		response.InternalError(c, "PROXY_CONTROL_FAILED", err.Error())
 		return
 	}
+	audit.RecordNodeFromCtx(c, serverID, "control_proxy", fmt.Sprintf("%s %s", req.Action, req.ProxyType), true, "")
 	response.OK(c, gin.H{"controlled": true, "server_id": serverID, "proxy_type": req.ProxyType, "action": req.Action})
 }
 
@@ -335,9 +345,12 @@ func (h *Handler) SyncProxyConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.SyncProxyConfig(c.Request.Context(), serverID, req.ProxyType, []byte(req.Config)); err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "sync_proxy", req.ProxyType, false, err.Error())
 		response.InternalError(c, "PROXY_SYNC_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, serverID, "sync_proxy", fmt.Sprintf("synced %s config", req.ProxyType), true, "")
 
 	// For remote servers, also trigger SyncData to land TLS certificates
 	// that are referenced by the proxy config (Caddy/Nginx tls directives).

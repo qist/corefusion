@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
@@ -84,9 +85,72 @@ func Record(ev Event) {
 	}()
 }
 
+// truncate ensures a string does not exceed n characters.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
 	return s[:n]
+}
+
+// NodeEvent describes a node-level administrative audit event to record.
+// These are written to the node_audit_logs table and displayed in the
+// Node Servers → Audit tab in the admin UI.
+type NodeEvent struct {
+	ServerID int64  // 0 = global/not node-specific
+	AdminID  int64  // 0 = system/unknown
+	Action   string // e.g. create, update, delete, control_core, save_protocol
+	Detail   string
+	SourceIP string
+	UserAgent string
+	Success  bool
+	ErrMsg   string
+}
+
+// RecordNode writes a node audit log entry asynchronously. Never blocks, never fails the caller.
+func RecordNode(ev NodeEvent) {
+	mu.RLock()
+	database := db
+	mu.RUnlock()
+	if database == nil {
+		return
+	}
+
+	row := &entity.NodeAuditLog{
+		ServerID:     ev.ServerID,
+		AdminID:      ev.AdminID,
+		Action:       truncate(ev.Action, 64),
+		Detail:       ev.Detail,
+		SourceIP:     truncate(ev.SourceIP, 64),
+		UserAgent:    truncate(ev.UserAgent, 256),
+		Success:      ev.Success,
+		ErrorMessage: truncate(ev.ErrMsg, 512),
+		CreatedAt:    time.Now(),
+	}
+
+	go func() {
+		if err := database.Create(row).Error; err != nil {
+			log.Printf("[Audit] failed to record node event %s: %v", ev.Action, err)
+		}
+	}()
+}
+
+// RecordNodeFromCtx is a convenience wrapper that extracts admin ID, source IP,
+// and user agent from a gin context, then calls RecordNode.
+func RecordNodeFromCtx(c *gin.Context, serverID int64, action, detail string, success bool, errMsg string) {
+	ev := NodeEvent{
+		ServerID:  serverID,
+		Action:    action,
+		Detail:    detail,
+		SourceIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+		Success:   success,
+		ErrMsg:    errMsg,
+	}
+	if uid, ok := c.Get("user_id"); ok {
+		if v, ok := uid.(int64); ok {
+			ev.AdminID = v
+		}
+	}
+	RecordNode(ev)
 }

@@ -2,6 +2,7 @@ package certificates
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/cert"
+	"corefusion/internal/service/audit"
 	certService "corefusion/internal/service/certificate"
 )
 
@@ -87,9 +89,12 @@ func (h *Handler) Create(c *gin.Context) {
 
 	cert, err := h.certSvc.Create(c.Request.Context(), input)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "cert_create", input.Domain, false, err.Error())
 		response.InternalError(c, "CREATE_CERTIFICATE_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "cert_create", fmt.Sprintf("created cert: %s", cert.Domain), true, "")
 
 	response.Created(c, cert)
 }
@@ -128,9 +133,12 @@ func (h *Handler) Update(c *gin.Context) {
 
 	cert, err := h.certSvc.Update(c.Request.Context(), id, input)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "cert_update", fmt.Sprintf("cert %d", id), false, err.Error())
 		response.InternalError(c, "UPDATE_CERTIFICATE_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "cert_update", fmt.Sprintf("updated cert %d: %s", id, cert.Domain), true, "")
 
 	h.fireCertUpdated(id)
 	response.OK(c, cert)
@@ -145,9 +153,12 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.certSvc.Delete(c.Request.Context(), id); err != nil {
+		audit.RecordNodeFromCtx(c, 0, "cert_delete", fmt.Sprintf("cert %d", id), false, err.Error())
 		response.InternalError(c, "DELETE_CERTIFICATE_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "cert_delete", fmt.Sprintf("deleted cert %d", id), true, "")
 
 	response.OK(c, gin.H{"message": "certificate deleted"})
 }
@@ -194,9 +205,12 @@ func (h *Handler) Issue(c *gin.Context) {
 
 	cert, err := h.certSvc.IssueACME(c.Request.Context(), input)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "cert_issue", strings.Join(req.Domains, ","), false, err.Error())
 		response.InternalError(c, "ISSUE_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "cert_issue", fmt.Sprintf("issued cert %d: %s", cert.ID, cert.Domain), true, "")
 
 	// Trigger distribution to nodes — new cert may be referenced by
 	// configs that were previously using an older cert for the same domain.
@@ -232,9 +246,12 @@ func (h *Handler) Renew(c *gin.Context) {
 
 	cert, err := h.certSvc.RenewACME(c.Request.Context(), id, dnsConfig)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("cert %d", id), false, err.Error())
 		response.InternalError(c, "RENEW_FAILED", err.Error())
 		return
 	}
+
+	audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("renewed cert %d: %s", id, cert.Domain), true, "")
 
 	h.fireCertUpdated(id)
 	log.Printf("[certificates] cert %d renewed, triggering distribution to nodes", id)

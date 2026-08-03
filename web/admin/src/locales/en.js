@@ -1,6 +1,7 @@
 export default {
   common: {
     appName: 'CoreFusion',
+    all: 'All',
     confirm: 'Confirm',
     cancel: 'Cancel',
     save: 'Save',

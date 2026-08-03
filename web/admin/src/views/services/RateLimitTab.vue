@@ -25,7 +25,12 @@
         <el-divider content-position="left">{{ t('rateLimit.networkConfig') }}</el-divider>
 
         <el-form-item :label="t('rateLimit.ifaceLabel')">
-          <el-input v-model="form.iface" :placeholder="t('rateLimit.ifacePlaceholder')" />
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="form.iface" clearable filterable allow-create style="flex:1" :placeholder="t('rateLimit.ifacePlaceholder')" :loading="interfacesLoading">
+              <el-option v-for="iface in interfaceOptions" :key="iface" :label="iface" :value="iface" />
+            </el-select>
+            <el-button size="small" @click="loadInterfaces" :loading="interfacesLoading" style="flex-shrink:0">{{ t('common.refresh') }}</el-button>
+          </div>
           <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('rateLimit.ifaceHint') }}</div>
         </el-form-item>
 
@@ -113,6 +118,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { getRateLimitConfig, updateRateLimitConfig, getRateLimitStatus } from '../../api/rateLimit'
+import { listInterfaces } from '../../api/nodeServer'
 
 const props = defineProps({
   serverId: { type: Number, required: true }
@@ -124,6 +130,8 @@ const saving = ref(false)
 const config = ref(null)
 const status = ref({ nft_available: false, tc_available: false, ifb_available: false })
 const activeEntries = ref([])
+const interfaceOptions = ref([])
+const interfacesLoading = ref(false)
 
 const form = ref({
   enabled: false,
@@ -179,6 +187,19 @@ async function fetchStatus() {
   }
 }
 
+async function loadInterfaces() {
+  if (!props.serverId) return
+  interfacesLoading.value = true
+  try {
+    const res = await listInterfaces(props.serverId)
+    interfaceOptions.value = res || []
+  } catch {
+    interfaceOptions.value = []
+  } finally {
+    interfacesLoading.value = false
+  }
+}
+
 async function handleSave() {
   saving.value = true
   try {
@@ -196,5 +217,6 @@ async function handleSave() {
 onMounted(() => {
   fetchConfig()
   fetchStatus()
+  loadInterfaces()
 })
 </script>

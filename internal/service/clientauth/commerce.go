@@ -2268,37 +2268,17 @@ func (s *CommerceService) validatePromotion(ctx context.Context, promo *entity.P
 			return false
 		}
 	}
+	// Check applicability using shared entity method
 	switch promo.ApplicableScope {
 	case entity.PromoScopeAll:
 		// OK
-	case entity.PromoScopeTemplate:
+	case entity.PromoScopeTemplate, entity.PromoScopeSpecificVariant:
 		if promo.ApplicableIDs != nil {
-			// Look up the variant to get its TemplateID for comparison
 			variant, err := s.variantRepo.GetByID(ctx, variantID)
 			if err != nil || variant == nil {
 				return false
 			}
-			found := false
-			for _, id := range []int64(promo.ApplicableIDs) {
-				if id == variant.TemplateID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-		}
-	case entity.PromoScopeSpecificVariant:
-		if promo.ApplicableIDs != nil {
-			found := false
-			for _, id := range []int64(promo.ApplicableIDs) {
-				if id == variantID {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !promo.IsPromotionApplicable(variant) {
 				return false
 			}
 		}

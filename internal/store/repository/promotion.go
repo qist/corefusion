@@ -56,3 +56,18 @@ func (r *PromotionRepository) IncrementUsedCount(ctx context.Context, id int64) 
 		Where("id = ?", id).
 		UpdateColumn("used_count", gorm.Expr("used_count + 1")).Error
 }
+
+// TryIncrementUsedCount atomically increments used_count only if the max_uses
+// limit has not been reached. Returns true if the increment succeeded.
+// When maxUses is 0, the promotion has unlimited total uses (always succeeds).
+func (r *PromotionRepository) TryIncrementUsedCount(ctx context.Context, id int64, maxUses int) (bool, error) {
+	q := r.db.WithContext(ctx).Model(&entity.Promotion{}).Where("id = ?", id)
+	if maxUses > 0 {
+		q = q.Where("used_count < ?", maxUses)
+	}
+	result := q.UpdateColumn("used_count", gorm.Expr("used_count + 1"))
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}

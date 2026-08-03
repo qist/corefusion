@@ -1111,9 +1111,6 @@ export default {
     isDefault: 'Default',
     addEndpoint: 'Add Endpoint',
     tabs: {
-      process: 'Processes',
-      rules: 'Rules',
-      warp: 'WARP',
       shareDomain: 'Direct & CF Domains',
       cfip: 'CF IP Pool',
     },

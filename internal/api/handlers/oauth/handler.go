@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -169,7 +170,10 @@ func (h *Handler) Callback(c *gin.Context) {
 	}
 
 	// Return HTML page that posts the tokens to the parent window (for popup-based OAuth)
-	// or redirect to the portal with tokens as query params
+	// or redirect to the portal with tokens as query params.
+	// S-6 fix: restrict postMessage target origin to the panel's own origin
+	// to prevent token leakage to malicious opener windows.
+	panelOrigin := scheme + "://" + host
 	responseHTML := `<!DOCTYPE html>
 <html>
 <head><title>OAuth Login</title></head>
@@ -177,8 +181,9 @@ func (h *Handler) Callback(c *gin.Context) {
 <script>
 (function() {
   var data = ` + jsonEscape(accessToken, refreshToken, result) + `;
+  var targetOrigin = ` + fmt.Sprintf("%q", panelOrigin) + `;
   if (window.opener) {
-    window.opener.postMessage({ type: 'oauth-callback', data: data }, '*');
+    window.opener.postMessage({ type: 'oauth-callback', data: data }, targetOrigin);
     window.close();
   } else {
     window.location.href = '/p?access_token=' + encodeURIComponent(data.access_token) + '&refresh_token=' + encodeURIComponent(data.refresh_token);

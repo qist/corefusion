@@ -640,7 +640,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 	now := time.Now()
 
 	if input.PayMethod == "balance" {
-		// v3.3: 先检查余额，不足时返回特殊错误码让前端引导选择其他支付方式
+		// Pre-check balance for user-friendly error message
 		if paidAmount > 0 {
 			bal, err := s.balanceRepo.GetByClientID(ctx, clientID)
 			haveBalance := int64(0)
@@ -657,14 +657,44 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			PromotionID: promotionID, PromotionCode: input.PromotionCode,
 			EffectiveFrom: now, Status: entity.OrderStatusCompleted,
 		}
-		if err := s.orderRepo.Create(ctx, order); err != nil {
-			return nil, fmt.Errorf("failed to create order: %v", err)
-		}
-		// 先创建订单再扣款，这样流水可以关联订单 ID
-		if paidAmount > 0 {
-			if err := s.deductBalanceForOrder(ctx, clientID, paidAmount, &order.ID); err != nil {
-				return nil, fmt.Errorf("insufficient balance: %v", err)
+		// S-3 fix: wrap order creation + balance deduction in a transaction so
+		// a failure in either step leaves no orphan order or missing deduction.
+		var orderID int64
+		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(order).Error; err != nil {
+				return fmt.Errorf("failed to create order: %v", err)
 			}
+			orderID = order.ID
+			if paidAmount > 0 {
+				// Atomic conditional deduction: only deduct if balance is sufficient.
+				result := tx.Model(&entity.ClientBalance{}).
+					Where("client_id = ? AND balance >= ?", clientID, paidAmount).
+					Updates(map[string]interface{}{
+						"balance":   gorm.Expr("balance - ?", paidAmount),
+						"updated_at": now,
+					})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected == 0 {
+					return fmt.Errorf("INSUFFICIENT_BALANCE")
+				}
+				// Read updated balance for the ledger record
+				var bal entity.ClientBalance
+				tx.Where("client_id = ?", clientID).First(&bal)
+				txRecord := &entity.BalanceTransaction{
+					ClientID: clientID, Type: entity.BalanceTxTypeConsume,
+					Amount: -paidAmount, BalanceBefore: bal.Balance + paidAmount, BalanceAfter: bal.Balance,
+					RelatedPlanOrderID: &orderID, Remark: "余额购买套餐扣款",
+				}
+				if err := tx.Create(txRecord).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
 			return nil, fmt.Errorf("failed to activate plan: %v", err)
@@ -748,33 +778,59 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 
 		// 流量叠加包类型处理
 		if card.CardType == entity.ChargeCardTypeTrafficPack {
-			// 使用流量叠加包
+			// S-2 fix: wrap card status update + order creation in a transaction with
+			// row lock and conditional WHERE to prevent concurrent double-use.
+			var trafficPackOrderID int64
+			err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				// Lock card row
+				var lockedCard entity.ChargeCard
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ?", card.ID).First(&lockedCard).Error; err != nil {
+					return err
+				}
+				if lockedCard.Status != entity.ChargeCardStatusActive {
+					return fmt.Errorf("gift card is not active")
+				}
+				// Atomic conditional update: only succeeds if card is still active
+				result := tx.Model(&entity.ChargeCard{}).
+					Where("id = ? AND status = ?", lockedCard.ID, entity.ChargeCardStatusActive).
+					Updates(map[string]interface{}{
+						"status":     entity.ChargeCardStatusUsed,
+						"used_count": 1,
+					})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected == 0 {
+					return fmt.Errorf("gift card has already been used")
+				}
+				// Create ChargeOrder
+				chargeOrder := &entity.ChargeOrder{
+					ClientID:      clientID,
+					TradeNo:       generateTradeNo(),
+					Source:        entity.ChargeSourceCard,
+					Amount:        0,
+					Currency:      "CNY",
+					PlanVariantID: &input.VariantID,
+					OrderType:     entity.ChargeOrderTypePurchase,
+					Status:        entity.ChargeStatusPaid,
+					ChargeCardID:  &card.ID,
+					PaidAt:        &now,
+				}
+				if err := tx.Create(chargeOrder).Error; err != nil {
+					return err
+				}
+				trafficPackOrderID = chargeOrder.ID
+				return nil
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to redeem gift card: %v", err)
+			}
+			_ = trafficPackOrderID
+
+			// Apply traffic pack outside transaction (uses s.clientRepo)
 			if err := s.applyTrafficPack(ctx, client, variant); err != nil {
 				return nil, fmt.Errorf("failed to apply traffic pack: %v", err)
-			}
-
-			// 创建 ChargeOrder 记录流量包卡使用
-			chargeOrder := &entity.ChargeOrder{
-				ClientID:       clientID,
-				TradeNo:        generateTradeNo(),
-				Source:         entity.ChargeSourceCard,
-				Amount:         0,
-				Currency:       "CNY",
-				PlanVariantID:  &input.VariantID,
-				OrderType:      entity.ChargeOrderTypePurchase,
-				Status:         entity.ChargeStatusPaid,
-				ChargeCardID:   &card.ID,
-				PaidAt:         &now,
-			}
-			if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
-				log.Printf("[gift_card] failed to create charge order: %v", err)
-			}
-
-			// 标记流量包卡为已使用
-			card.UsedCount = 1
-			card.Status = entity.ChargeCardStatusUsed
-			if err := s.chargeCardRepo.Update(ctx, card); err != nil {
-				log.Printf("[gift_card] failed to update card status: %v", err)
 			}
 
 			// P1: 首次付费返利触发（流量包卡支付）
@@ -783,41 +839,65 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			return &CreateOrderResult{OrderID: 0, Status: entity.OrderStatusCompleted}, nil
 		}
 
-		// 套餐型处理（原有逻辑）
-		// 创建 ChargeOrder 记录套餐卡使用（用于后台追踪）
-		chargeOrder := &entity.ChargeOrder{
-			ClientID:       clientID,
-			TradeNo:        generateTradeNo(),
-			Source:         entity.ChargeSourceCard,
-			Amount:         0, // 套餐卡支付，金额为0
-			Currency:       "CNY",
-			PlanVariantID:  &input.VariantID,
-			OrderType:      entity.ChargeOrderTypePurchase,
-			Status:         entity.ChargeStatusPaid,
-			ChargeCardID:   &card.ID,
-			PaidAt:         &now,
-		}
-		if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {
-			log.Printf("[gift_card] failed to create charge order: %v", err)
-		}
-
-		// 创建已完成订单
-		order := &entity.PlanOrder{
-			ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
-			OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: 0, // 套餐卡支付，实际支付金额为0
-			PromotionID: promotionID, PromotionCode: input.PromotionCode,
-			EffectiveFrom: now, Status: entity.OrderStatusCompleted,
-			Remark: "套餐卡支付: " + card.CardCodeMasked,
-		}
-		if err := s.orderRepo.Create(ctx, order); err != nil {
-			return nil, fmt.Errorf("failed to create order: %v", err)
-		}
-
-		// 标记套餐卡为已使用
-		card.UsedCount = 1
-		card.Status = entity.ChargeCardStatusUsed
-		if err := s.chargeCardRepo.Update(ctx, card); err != nil {
-			log.Printf("[gift_card] failed to update card status: %v", err)
+		// 套餐型处理
+		// S-2 fix: wrap card status update + order creation in a transaction with
+		// row lock and conditional WHERE to prevent concurrent double-use.
+		var planOrderID int64
+		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Lock card row
+			var lockedCard entity.ChargeCard
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", card.ID).First(&lockedCard).Error; err != nil {
+				return err
+			}
+			if lockedCard.Status != entity.ChargeCardStatusActive {
+				return fmt.Errorf("gift card is not active")
+			}
+			// Atomic conditional update
+			result := tx.Model(&entity.ChargeCard{}).
+				Where("id = ? AND status = ?", lockedCard.ID, entity.ChargeCardStatusActive).
+				Updates(map[string]interface{}{
+					"status":     entity.ChargeCardStatusUsed,
+					"used_count": 1,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("gift card has already been used")
+			}
+			// Create ChargeOrder for tracking
+			chargeOrder := &entity.ChargeOrder{
+				ClientID:      clientID,
+				TradeNo:       generateTradeNo(),
+				Source:        entity.ChargeSourceCard,
+				Amount:        0,
+				Currency:      "CNY",
+				PlanVariantID: &input.VariantID,
+				OrderType:     entity.ChargeOrderTypePurchase,
+				Status:        entity.ChargeStatusPaid,
+				ChargeCardID:  &card.ID,
+				PaidAt:        &now,
+			}
+			if err := tx.Create(chargeOrder).Error; err != nil {
+				return err
+			}
+			// Create completed plan order
+			order := &entity.PlanOrder{
+				ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
+				OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: 0,
+				PromotionID: promotionID, PromotionCode: input.PromotionCode,
+				EffectiveFrom: now, Status: entity.OrderStatusCompleted,
+				Remark: "套餐卡支付: " + card.CardCodeMasked,
+			}
+			if err := tx.Create(order).Error; err != nil {
+				return err
+			}
+			planOrderID = order.ID
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to redeem gift card: %v", err)
 		}
 
 		// 激活套餐
@@ -828,7 +908,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		// P1: 首次付费返利触发（套餐卡支付 — 按原价计算返利，套餐卡等价于预付原价）
 		s.triggerFirstPaid(ctx, clientID, originalAmount)
 
-		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
+		return &CreateOrderResult{OrderID: planOrderID, Status: entity.OrderStatusCompleted}, nil
 	}
 
 	// No pay_method: pending order
@@ -1933,23 +2013,24 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 			if err != nil {
 				return fmt.Errorf("template not found")
 			}
-			client, err := s.clientRepo.GetByID(ctx, order.ClientID)
-			if err != nil {
+			// S-4 fix: load client using tx so subsequent writes are in the transaction
+			var client entity.Client
+			if err := tx.Where("id = ?", order.ClientID).First(&client).Error; err != nil {
 				return err
 			}
 
 			// Traffic pack: add traffic (and optionally extend expiry)
 			if variant.VariantType == entity.VariantTypeTrafficPack {
-				if err := s.applyTrafficPack(ctx, client, variant); err != nil {
+				if err := s.applyTrafficPackTx(ctx, tx, &client, variant); err != nil {
 					return err
 				}
 			} else {
-				// Regular plan activation
+				// Regular plan activation — use tx-aware version
 				orderType := entity.OrderTypeNew
 				if client.PlanID > 0 && client.Status != "expired" {
 					orderType = entity.OrderTypeRenew
 				}
-				if err := s.activatePlan(ctx, client, tmpl, variant, orderType); err != nil {
+				if err := s.activatePlanTx(ctx, tx, &client, tmpl, variant, orderType); err != nil {
 					return err
 				}
 			}
@@ -1975,9 +2056,12 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 				if order.Source == entity.ChargeSourceSite {
 					remark = "充值站点支付购买套餐"
 				}
+				// S-10 fix: record actual balance before/after for audit trail
+				var balAfter entity.ClientBalance
+				tx.Where("client_id = ?", order.ClientID).First(&balAfter)
 				txRecord := &entity.BalanceTransaction{
 					ClientID: order.ClientID, Type: entity.BalanceTxTypeConsume,
-					Amount: -order.Amount, BalanceBefore: 0, BalanceAfter: 0,
+					Amount: -order.Amount, BalanceBefore: balAfter.Balance + order.Amount, BalanceAfter: balAfter.Balance,
 					RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &planOrder.ID,
 					Remark: remark,
 				}
@@ -2092,6 +2176,158 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 				log.Printf("[commerce] failed to sync accounts for plan %d: %v", planID, err)
 			}
 		}(tmpl.ID)
+	}
+
+	return nil
+}
+
+// activatePlanTx is a tx-aware version of activatePlan that uses the provided
+// gorm.DB executor (which may be a transaction) instead of the service's repos.
+// This ensures plan activation writes are included in the caller's transaction
+// and roll back on failure. (S-4 fix)
+func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, client *entity.Client, tmpl *entity.PlanTemplate, variant *entity.PlanVariant, orderType string) error {
+	now := time.Now()
+	client.PlanID = tmpl.ID
+	client.PlanVariantID = variant.ID
+
+	quotaBytes := variant.QuotaBytes
+	if quotaBytes == 0 {
+		quotaBytes = tmpl.DefaultQuotaBytes
+	}
+
+	switch orderType {
+	case entity.OrderTypeNew:
+		client.QuotaBytes = quotaBytes
+		client.UsedBytes = 0
+		client.Status = "active"
+		expiresAt := now.AddDate(0, 0, variant.DurationDays)
+		if tmpl.IsTrial && tmpl.TrialDurationHours > 0 {
+			expiresAt = now.Add(time.Duration(tmpl.TrialDurationHours) * time.Hour)
+		}
+		client.ExpiresAt = &expiresAt
+	case entity.OrderTypeRenew:
+		client.QuotaBytes = quotaBytes
+		baseTime := now
+		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+			baseTime = *client.ExpiresAt
+		}
+		expiresAt := baseTime.AddDate(0, 0, variant.DurationDays)
+		client.ExpiresAt = &expiresAt
+		client.Status = "active"
+	case entity.OrderTypeUpgrade:
+		client.QuotaBytes = quotaBytes
+		expiresAt := now.AddDate(0, 0, variant.DurationDays)
+		client.ExpiresAt = &expiresAt
+		client.Status = "active"
+	}
+
+	if tmpl.DeviceLimit > 0 {
+		client.DeviceLimit = tmpl.DeviceLimit
+	}
+	if tmpl.SpeedLimitMbps > 0 {
+		client.SpeedLimitMbps = tmpl.SpeedLimitMbps
+	}
+	if tmpl.SpeedLimitUpMbps > 0 {
+		client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
+	}
+	if tmpl.ConcurrentLimit > 0 {
+		client.ConcurrentLimit = tmpl.ConcurrentLimit
+	}
+
+	if err := tx.Save(client).Error; err != nil {
+		return err
+	}
+
+	if client.SubscriptionID == nil {
+		sub := &entity.Subscription{
+			ClientID: client.ID, Format: "xray", Token: generateToken(32),
+			Status: "active", QuotaBytes: quotaBytes,
+			QuotaResetCycle: variant.QuotaResetCycle, QuotaResetDay: variant.QuotaResetDay,
+			ExpiresAt: client.ExpiresAt,
+		}
+		if sub.QuotaResetCycle == "" {
+			sub.QuotaResetCycle = tmpl.DefaultQuotaResetCycle
+		}
+		if sub.QuotaResetDay == nil {
+			sub.QuotaResetDay = tmpl.DefaultQuotaResetDay
+		}
+		if err := tx.Create(sub).Error; err != nil {
+			return err
+		}
+		client.SubscriptionID = &sub.ID
+		tx.Save(client)
+	} else {
+		var sub entity.Subscription
+		if err := tx.Where("id = ?", *client.SubscriptionID).First(&sub).Error; err != nil {
+			return err
+		}
+		sub.QuotaBytes = quotaBytes
+		sub.QuotaResetCycle = variant.QuotaResetCycle
+		sub.QuotaResetDay = variant.QuotaResetDay
+		sub.ExpiresAt = client.ExpiresAt
+		sub.Status = "active"
+		if sub.QuotaResetCycle == "" {
+			sub.QuotaResetCycle = tmpl.DefaultQuotaResetCycle
+		}
+		if sub.QuotaResetDay == nil {
+			sub.QuotaResetDay = tmpl.DefaultQuotaResetDay
+		}
+		tx.Save(&sub)
+	}
+
+	// Account sync is async and side-effectful — do it outside the tx path.
+	if (orderType == entity.OrderTypeNew || orderType == entity.OrderTypeRenew) && s.accountSyncer != nil {
+		go func(planID int64) {
+			if _, err := s.accountSyncer.SyncAccountsForTemplate(context.Background(), planID); err != nil {
+				log.Printf("[commerce] failed to sync accounts for plan %d: %v", planID, err)
+			}
+		}(tmpl.ID)
+	}
+
+	return nil
+}
+
+// applyTrafficPackTx is a tx-aware version of applyTrafficPack. (S-4 fix)
+func (s *CommerceService) applyTrafficPackTx(ctx context.Context, tx *gorm.DB, client *entity.Client, variant *entity.PlanVariant) error {
+	now := time.Now()
+
+	// 1. Add traffic bytes to subscription (cumulative)
+	if client.SubscriptionID != nil {
+		if err := tx.Model(&entity.Subscription{}).
+			Where("id = ?", *client.SubscriptionID).
+			UpdateColumn("quota_bytes", gorm.Expr("quota_bytes + ?", variant.QuotaBytes)).Error; err != nil {
+			return err
+		}
+	}
+
+	// 2. Add to client.QuotaBytes (cumulative)
+	client.QuotaBytes += variant.QuotaBytes
+	client.UpdatedAt = now
+
+	// 3. Extend plan expiry if mode is extend_plan
+	if variant.ExpiryMode == entity.ExpiryModeExtendPlan && variant.DurationDays > 0 {
+		var newExpiry time.Time
+		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+			newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
+		} else {
+			newExpiry = now.AddDate(0, 0, variant.DurationDays)
+		}
+		client.ExpiresAt = &newExpiry
+
+		if client.SubscriptionID != nil {
+			tx.Model(&entity.Subscription{}).
+				Where("id = ?", *client.SubscriptionID).
+				UpdateColumn("expires_at", newExpiry)
+		}
+	}
+
+	if err := tx.Save(client).Error; err != nil {
+		return fmt.Errorf("failed to update client after traffic pack: %v", err)
+	}
+
+	// Async sync — outside tx
+	if s.userSyncer != nil {
+		go s.userSyncer.SyncUserToServers(context.Background(), client.ID, "update")
 	}
 
 	return nil

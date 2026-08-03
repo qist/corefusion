@@ -38,7 +38,7 @@ func NewScheduler(sourceRepo *repository.RuleSourceRepository, svc *Service) *Sc
 
 // Start loads all enabled sources and starts their cron jobs.
 func (s *Scheduler) Start() {
-	sources, err := s.sourceRepo.List(nil)
+	sources, err := s.sourceRepo.List(context.Background())
 	if err != nil {
 		log.Printf("scheduler: failed to load sources: %v", err)
 		return

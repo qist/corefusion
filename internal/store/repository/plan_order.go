@@ -39,3 +39,13 @@ func (r *PlanOrderRepository) Create(ctx context.Context, item *entity.PlanOrder
 func (r *PlanOrderRepository) Update(ctx context.Context, item *entity.PlanOrder) error {
 	return r.db.WithContext(ctx).Save(item).Error
 }
+
+// CountByClientAndPromotion counts non-cancelled orders for a specific client
+// and promotion, used to enforce the max_uses_per_user limit.
+func (r *PlanOrderRepository) CountByClientAndPromotion(ctx context.Context, clientID, promotionID int64) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.PlanOrder{}).
+		Where("client_id = ? AND promotion_id = ? AND status != ?", clientID, promotionID, entity.OrderStatusCancelled).
+		Count(&count).Error
+	return count, err
+}

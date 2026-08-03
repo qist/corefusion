@@ -154,6 +154,9 @@
           <el-table-column :label="t('plan.usageLimit')" width="100">
             <template #default="{row}">{{ row.used_count }}{{ row.max_uses > 0 ? '/' + row.max_uses : '/∞' }}</template>
           </el-table-column>
+          <el-table-column :label="t('plan.perUserLimit')" width="90">
+            <template #default="{row}">{{ row.max_uses_per_user > 0 ? row.max_uses_per_user : '∞' }}</template>
+          </el-table-column>
           <el-table-column :label="t('plan.validPeriod')" width="200">
             <template #default="{row}">
               <span style="font-size:12px">

@@ -628,7 +628,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			discountAmount = s.calculateDiscount(promo, originalAmount)
 			pid := promo.ID
 			promotionID = &pid
-			s.promotionRepo.IncrementUsedCount(ctx, promo.ID)
+			s.promotionRepo.TryIncrementUsedCount(ctx, promo.ID, promo.MaxUses)
 		}
 	}
 

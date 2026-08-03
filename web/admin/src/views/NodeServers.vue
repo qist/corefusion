@@ -333,8 +333,12 @@
         </div>
         <el-table :data="auditLogs" v-loading="auditLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
-          <el-table-column prop="server_id" :label="t('nodeServer.serverId')" width="80" />
-          <el-table-column prop="admin_id" :label="t('nodeServer.adminId')" width="80" />
+          <el-table-column :label="t('nodeServer.serverId')" min-width="140">
+            <template #default="{row}">{{ row.server_name || row.server_id || '-' }}</template>
+          </el-table-column>
+          <el-table-column :label="t('nodeServer.adminId')" min-width="100">
+            <template #default="{row}">{{ row.admin_name || row.admin_id || '-' }}</template>
+          </el-table-column>
           <el-table-column prop="action" :label="t('nodeServer.actionType')" width="140" />
           <el-table-column prop="detail" :label="t('nodeServer.detail')" show-overflow-tooltip />
           <el-table-column prop="source_ip" :label="t('nodeServer.sourceIp')" width="120" />

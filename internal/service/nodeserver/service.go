@@ -1929,11 +1929,72 @@ func (s *Service) CreateAuditLog(ctx context.Context, serverID, adminID int64, a
 }
 
 // ListAuditLogs returns audit logs with optional filtering.
+// Results are enriched with server_name and admin_name for display.
 func (s *Service) ListAuditLogs(ctx context.Context, serverID int64, action string, limit, offset int) (interface{}, int64, error) {
 	if s.auditLogRepo == nil {
 		return []interface{}{}, 0, nil
 	}
-	return s.auditLogRepo.List(ctx, serverID, action, limit, offset)
+	logs, total, err := s.auditLogRepo.List(ctx, serverID, action, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s.db == nil || len(logs) == 0 {
+		return logs, total, nil
+	}
+
+	// Collect unique server IDs and admin IDs for batch lookup
+	serverIDs := make(map[int64]string)
+	adminIDs := make(map[int64]string)
+	for _, l := range logs {
+		if l.ServerID > 0 {
+			serverIDs[l.ServerID] = ""
+		}
+		if l.AdminID > 0 {
+			adminIDs[l.AdminID] = ""
+		}
+	}
+
+	// Batch fetch server names
+	if len(serverIDs) > 0 {
+		ids := make([]int64, 0, len(serverIDs))
+		for id := range serverIDs {
+			ids = append(ids, id)
+		}
+		var servers []entity.NodeServer
+		s.db.WithContext(ctx).Where("id IN ?", ids).Select("id, name").Find(&servers)
+		for _, srv := range servers {
+			serverIDs[srv.ID] = srv.Name
+		}
+	}
+
+	// Batch fetch admin usernames
+	if len(adminIDs) > 0 {
+		ids := make([]int64, 0, len(adminIDs))
+		for id := range adminIDs {
+			ids = append(ids, id)
+		}
+		var users []entity.User
+		s.db.WithContext(ctx).Where("id IN ?", ids).Select("id, username").Find(&users)
+		for _, u := range users {
+			adminIDs[u.ID] = u.Username
+		}
+	}
+
+	// Build enriched result
+	type auditLogWithNames struct {
+		entity.NodeAuditLog
+		ServerName string `json:"server_name"`
+		AdminName  string `json:"admin_name"`
+	}
+	result := make([]auditLogWithNames, 0, len(logs))
+	for _, l := range logs {
+		result = append(result, auditLogWithNames{
+			NodeAuditLog: l,
+			ServerName:   serverIDs[l.ServerID],
+			AdminName:    adminIDs[l.AdminID],
+		})
+	}
+	return result, total, nil
 }
 
 // ListAuditLogsByTimeRange returns audit logs within a time range (for export).

@@ -121,7 +121,7 @@ func extractServerNames(cfgJSON string) []string {
 			Reality  struct {
 				ServerNames    []string `json:"serverNames"`
 				ServerNamesStr string   `json:"serverNamesStr"`
-			} `json:"reality"`
+			} `json:"realitySettings"`
 		} `json:"streamSettings"`
 	}
 	if err := json.Unmarshal([]byte(cfgJSON), &inbound); err != nil {

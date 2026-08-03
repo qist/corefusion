@@ -132,8 +132,22 @@
             <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
           </el-select>
         </el-form-item>
+        <div style="color:#909399;font-size:12px;margin-left:100px;margin-bottom:12px">{{ t('client.upgradeProrationHint') }}</div>
         <el-form-item :label="t('client.promotionCode')">
-          <el-input v-model="upgradeForm.promotion_code" :placeholder="t('client.enterPromoCode')" />
+          <div style="display:flex;gap:8px">
+            <el-input v-model="upgradeForm.promotion_code" :placeholder="t('client.enterPromoCode')" />
+            <el-button @click="validateUpgradePromo">{{ t('client.validate') }}</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="upgradePromoResult" :label="t('client.promoResult')">
+          <div style="font-size:12px">
+            <el-tag :type="upgradePromoResult.valid?'success':'danger'" size="small">{{ upgradePromoResult.valid?t('client.valid'):t('client.invalid') }}</el-tag>
+            <span v-if="upgradePromoResult.valid" style="margin-left:8px">
+              ¥{{ (upgradePromoResult.original_amount/100).toFixed(2) }} → ¥{{ (upgradePromoResult.paid_amount/100).toFixed(2) }}
+              <span style="color:#f56c6c">(-¥{{ (upgradePromoResult.discount_amount/100).toFixed(2) }})</span>
+            </span>
+            <span v-else style="margin-left:8px;color:#f56c6c">{{ upgradePromoResult.error_message }}</span>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -152,6 +166,7 @@
           </el-select>
         </el-form-item>
         <div style="color:#e6a23c;font-size:12px;margin-left:100px">{{ t('client.downgradeHint') }}</div>
+        <div style="color:#909399;font-size:12px;margin-left:100px;margin-top:4px">{{ t('client.downgradePriceHint') }}</div>
       </el-form>
       <template #footer>
         <el-button @click="downgradeDialog=false">{{ t('common.cancel') }}</el-button>
@@ -266,6 +281,7 @@ const renewPromoResult = ref(null)
 const renewLoading = ref(false)
 const upgradeDialog = ref(false)
 const upgradeForm = ref({ email: '', client_id: 0, variant_id: null, promotion_code: '' })
+const upgradePromoResult = ref(null)
 const upgradeLoading = ref(false)
 const downgradeDialog = ref(false)
 const downgradeForm = ref({ email: '', client_id: 0, variant_id: null })
@@ -351,7 +367,15 @@ async function doRenew() {
     ElMessage.success(t('client.renewSuccess'))
     renewDialog.value = false
     fetchClients()
-  } catch {} finally { renewLoading.value = false }
+  } catch (err) {
+    ElMessage.error(err?.response?.data?.message || t('common.operationFailed'))
+  } finally { renewLoading.value = false }
+}
+async function validateUpgradePromo() {
+  if (!upgradeForm.value.promotion_code || !upgradeForm.value.variant_id) { ElMessage.warning(t('client.selectVariantAndPromoFirst')); return }
+  try {
+    upgradePromoResult.value = await planApi.validatePromotion(upgradeForm.value.promotion_code, upgradeForm.value.variant_id)
+  } catch {}
 }
 async function doUpgrade() {
   if (!upgradeForm.value.variant_id) { ElMessage.warning(t('client.selectUpgradeVariant')); return }
@@ -361,7 +385,9 @@ async function doUpgrade() {
     ElMessage.success(t('client.upgradeSuccess'))
     upgradeDialog.value = false
     fetchClients()
-  } catch {} finally { upgradeLoading.value = false }
+  } catch (err) {
+    ElMessage.error(err?.response?.data?.message || t('common.operationFailed'))
+  } finally { upgradeLoading.value = false }
 }
 async function doDowngrade() {
   if (!downgradeForm.value.variant_id) { ElMessage.warning(t('client.selectDowngradeVariant')); return }
@@ -371,7 +397,9 @@ async function doDowngrade() {
     ElMessage.success(t('client.downgradeScheduled'))
     downgradeDialog.value = false
     fetchClients()
-  } catch {} finally { downgradeLoading.value = false }
+  } catch (err) {
+    ElMessage.error(err?.response?.data?.message || t('common.operationFailed'))
+  } finally { downgradeLoading.value = false }
 }
 function showRenewDialog(row) {
   renewForm.value = { email: row.email, client_id: row.id, variant_id: row.plan_variant_id || null, promotion_code: '' }
@@ -380,6 +408,7 @@ function showRenewDialog(row) {
 }
 function showUpgradeDialog(row) {
   upgradeForm.value = { email: row.email, client_id: row.id, variant_id: null, promotion_code: '' }
+  upgradePromoResult.value = null
   upgradeDialog.value = true
 }
 function showDowngradeDialog(row) {

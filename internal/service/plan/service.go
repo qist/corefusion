@@ -1050,29 +1050,9 @@ func (s *Service) ValidatePromotion(ctx context.Context, code string, variantID 
 		return nil, fmt.Errorf("variant not found: %w", err)
 	}
 
-	// Check applicability
-	if promo.ApplicableScope == entity.PromoScopeTemplate {
-		found := false
-		for _, id := range promo.ApplicableIDs {
-			if id == variant.TemplateID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return &ValidatePromotionResult{Valid: false, ErrorMessage: "promotion not applicable to this plan template"}, nil
-		}
-	} else if promo.ApplicableScope == entity.PromoScopeSpecificVariant {
-		found := false
-		for _, id := range promo.ApplicableIDs {
-			if id == variantID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return &ValidatePromotionResult{Valid: false, ErrorMessage: "promotion not applicable to this variant"}, nil
-		}
+	// Check applicability using shared entity method
+	if !promo.IsPromotionApplicable(variant) {
+		return &ValidatePromotionResult{Valid: false, ErrorMessage: "promotion not applicable to this variant"}, nil
 	}
 
 	originalAmount := variant.Price
@@ -1226,9 +1206,11 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 		go s.userSyncer.SyncUserToServers(context.Background(), clientID, "update")
 	}
 
-	// Increment promo usage
+	// Atomically increment promo usage (fails silently if limit reached between validate and increment)
 	if promoID != nil {
-		_ = s.promoRepo.IncrementUsedCount(ctx, *promoID)
+		if promo, _ := s.promoRepo.GetByID(ctx, *promoID); promo != nil {
+			_, _ = s.promoRepo.TryIncrementUsedCount(ctx, *promoID, promo.MaxUses)
+		}
 	}
 
 	return &RenewResult{
@@ -1289,7 +1271,22 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		}
 	}
 
+	// Calculate upgrade cost: new variant price minus remaining value of old variant
 	originalAmount := variant.Price
+	if oldVariantID > 0 {
+		if oldVariant, err := s.variantRepo.GetByID(ctx, oldVariantID); err == nil && oldVariant != nil && oldVariant.DurationDays > 0 {
+			if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+				remainingDays := int(client.ExpiresAt.Sub(now).Hours() / 24)
+				if remainingDays > 0 {
+					remainingValue := oldVariant.Price * int64(remainingDays) / int64(oldVariant.DurationDays)
+					originalAmount = variant.Price - remainingValue
+					if originalAmount < 0 {
+						originalAmount = 0
+					}
+				}
+			}
+		}
+	}
 	paidAmount := originalAmount - discountAmount
 
 	var fromVariantID *int64
@@ -1353,7 +1350,9 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 	}
 
 	if promoID != nil {
-		_ = s.promoRepo.IncrementUsedCount(ctx, *promoID)
+		if promo, _ := s.promoRepo.GetByID(ctx, *promoID); promo != nil {
+			_, _ = s.promoRepo.TryIncrementUsedCount(ctx, *promoID, promo.MaxUses)
+		}
 	}
 
 	return &RenewResult{
@@ -1411,6 +1410,19 @@ func (s *Service) Downgrade(ctx context.Context, clientID int64, input Downgrade
 	variant, err := s.variantRepo.GetByID(ctx, input.VariantID)
 	if err != nil {
 		return nil, fmt.Errorf("variant not found: %w", err)
+	}
+
+	// Validate that the target variant is actually a downgrade (lower or equal price)
+	if oldVariantID > 0 {
+		oldVariant, err := s.variantRepo.GetByID(ctx, oldVariantID)
+		if err == nil && oldVariant != nil {
+			if variant.Price > oldVariant.Price {
+				return nil, fmt.Errorf("target variant price (%d) is higher than current (%d); use upgrade instead", variant.Price, oldVariant.Price)
+			}
+			if variant.TemplateID != oldVariant.TemplateID && variant.Price == oldVariant.Price {
+				return nil, fmt.Errorf("cannot downgrade to a different template at the same price")
+			}
+		}
 	}
 
 	now := time.Now()

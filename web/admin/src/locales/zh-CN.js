@@ -1111,9 +1111,6 @@ export default {
     isDefault: '默认',
     addEndpoint: '添加端点',
     tabs: {
-      process: '核心进程',
-      rules: '规则管理',
-      warp: 'WARP 配置',
       shareDomain: '直连 & CF 优选域名',
       cfip: 'CF IP 池',
     },

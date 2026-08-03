@@ -37,3 +37,36 @@ type Promotion struct {
 }
 
 func (Promotion) TableName() string { return "promotions" }
+
+// IsPromotionApplicable checks whether a promotion applies to the given variant.
+// It handles all three scopes: all, template, and specific_variant.
+// For scope=template, it compares the variant's TemplateID against ApplicableIDs.
+// For scope=specific_variant, it compares the variant's ID against ApplicableIDs.
+// Returns true if the promotion is applicable (or when ApplicableIDs is empty).
+func (p Promotion) IsPromotionApplicable(variant *PlanVariant) bool {
+	switch p.ApplicableScope {
+	case PromoScopeAll:
+		return true
+	case PromoScopeTemplate:
+		if len(p.ApplicableIDs) == 0 {
+			return true
+		}
+		for _, id := range p.ApplicableIDs {
+			if id == variant.TemplateID {
+				return true
+			}
+		}
+		return false
+	case PromoScopeSpecificVariant:
+		if len(p.ApplicableIDs) == 0 {
+			return true
+		}
+		for _, id := range p.ApplicableIDs {
+			if id == variant.ID {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}

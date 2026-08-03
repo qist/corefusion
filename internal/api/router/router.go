@@ -421,6 +421,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	planSvcInst := planSvc.NewService(database, planTmplRepo, planVariantRepo, nodeGroupRepo, nodeGroupMemberRepo, promoRepo, planOrderRepo, clientRepo, inboundConfigRepo, extNodeRepo)
 	// Trial plan auto-convert/expiry scheduler (hourly)
 	planSvcInst.StartTrialScheduler(context.Background(), time.Hour)
+	// Pending downgrade auto-execution scheduler (every 5 minutes)
+	planSvcInst.StartDowngradeScheduler(context.Background(), 5*time.Minute)
 
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)

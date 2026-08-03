@@ -18,6 +18,11 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// TrafficIfaceXrayUser is the interface name used for xray core user traffic
+// records in node_traffic_usage. This separates xray user traffic from old
+// NIC-based traffic records (which use "local", "eth0", etc.).
+const TrafficIfaceXrayUser = "xray-user"
+
 // NodeTrafficQuotaService manages monthly traffic quotas for node servers.
 //
 // Core logic:
@@ -155,59 +160,16 @@ func readHostNetCounters() (rx, tx int64) {
 }
 
 // ProcessHeartbeat processes egress interface traffic data from a heartbeat report.
-// This should be called by NodeServerManager when a HEARTBEAT report is received.
+//
+// Deprecated: NIC-based traffic accounting has been replaced by xray user traffic
+// accounting via AddUserTrafficDelta, called from:
+//   - trafficsync.Service (local node, reset_=true xray stats)
+//   - TrafficEventConsumer (remote nodes, via Agent heartbeat TrafficStats)
+//
+// This method is kept to satisfy the TrafficQuotaProcessor interface but no longer
+// accumulates traffic, avoiding double counting with the xray user traffic path.
 func (s *NodeTrafficQuotaService) ProcessHeartbeat(serverID int64, report *agentpb.AgentReport) {
-	if report.EgressInterface == "" {
-		return // No egress interface configured for this node
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	rxBytes := report.EgressRxBytes
-	txBytes := report.EgressTxBytes
-
-	last, exists := s.lastEgressStat[serverID]
-
-	// Detect counter reset (e.g. node reboot) — if counters went down, reset baseline
-	if exists && (rxBytes < last.rxBytes || txBytes < last.txBytes) {
-		// Counter reset detected — just update baseline, don't compute delta
-		s.lastEgressStat[serverID] = &egressStat{
-			rxBytes:   rxBytes,
-			txBytes:   txBytes,
-			timestamp: time.Now(),
-		}
-		return
-	}
-
-	if !exists {
-		// First heartbeat with egress data — just store baseline
-		s.lastEgressStat[serverID] = &egressStat{
-			rxBytes:   rxBytes,
-			txBytes:   txBytes,
-			timestamp: time.Now(),
-		}
-		return
-	}
-
-	// Compute delta
-	dRx := rxBytes - last.rxBytes
-	dTx := txBytes - last.txBytes
-	total := dRx + dTx
-
-	// Update baseline
-	s.lastEgressStat[serverID] = &egressStat{
-		rxBytes:   rxBytes,
-		txBytes:   txBytes,
-		timestamp: time.Now(),
-	}
-
-	if total <= 0 {
-		return
-	}
-
-	// Add delta to the current period's usage
-	s.addTrafficDelta(serverID, report.EgressInterface, dRx, dTx)
+	// No-op: traffic accounting is now handled by AddUserTrafficDelta.
 }
 
 // addTrafficDelta adds a traffic delta to the current billing period.
@@ -269,6 +231,24 @@ func (s *NodeTrafficQuotaService) addTrafficDelta(serverID int64, iface string, 
 	})
 }
 
+// AddUserTrafficDelta accumulates xray user traffic deltas into the current
+// billing period's node_traffic_usage record. This replaces the NIC egress
+// counter approach (addTrafficDelta) for traffic accounting: only xray user
+// traffic (user>>>email>>>traffic>>>) is counted, automatically excluding
+// API inbound and system traffic.
+//
+// Called by:
+//   - trafficsync.Service (local node, via callback)
+//   - TrafficEventConsumer (remote nodes, via callback)
+func (s *NodeTrafficQuotaService) AddUserTrafficDelta(serverID int64, upDelta, downDelta int64) {
+	if upDelta <= 0 && downDelta <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addTrafficDelta(serverID, TrafficIfaceXrayUser, downDelta, upDelta)
+}
+
 // checkAllQuotas checks all servers with traffic quotas and takes action.
 func (s *NodeTrafficQuotaService) checkAllQuotas(ctx context.Context) {
 	servers, err := s.serverRepo.ListAll(ctx)
@@ -313,9 +293,9 @@ func (s *NodeTrafficQuotaService) resetPeriod(ctx context.Context, server *entit
 	now := time.Now()
 	periodEnd := s.computePeriodEnd(now, server.TrafficQuotaResetDay)
 
-	// Get the old period's total for the reset log
+	// Get the old period's total for the reset log (xray-user only)
 	var oldUsage entity.NodeTrafficUsage
-	s.db.Where("server_id = ? AND period_start = ?", server.ID, server.TrafficPeriodStart).First(&oldUsage)
+	s.db.Where("server_id = ? AND period_start = ? AND interface = ?", server.ID, server.TrafficPeriodStart, TrafficIfaceXrayUser).First(&oldUsage)
 
 	// Create reset log
 	if server.TrafficPeriodStart != nil {
@@ -450,7 +430,8 @@ func (s *NodeTrafficQuotaService) GetTrafficHistory(ctx context.Context, serverI
 	}
 	cutoff := time.Now().AddDate(0, -months, 0)
 	var usage []entity.NodeTrafficUsage
-	result := s.db.Where("server_id = ? AND period_start >= ?", serverID, cutoff).
+	// 仅返回 xray 核心用户流量记录，排除旧 NIC 网卡流量（interface="local" 等）
+	result := s.db.Where("server_id = ? AND period_start >= ? AND interface = ?", serverID, cutoff, TrafficIfaceXrayUser).
 		Order("period_start DESC").
 		Find(&usage)
 	if result.Error != nil {
@@ -470,8 +451,9 @@ func (s *NodeTrafficQuotaService) GetTrafficHistoryByServers(ctx context.Context
 	}
 	cutoff := time.Now().AddDate(0, -months, 0)
 	var usage []entity.NodeTrafficUsage
+	// 仅返回 xray 核心用户流量记录
 	result := s.db.WithContext(ctx).
-		Where("server_id IN ? AND period_start >= ?", serverIDs, cutoff).
+		Where("server_id IN ? AND period_start >= ? AND interface = ?", serverIDs, cutoff, TrafficIfaceXrayUser).
 		Order("period_start DESC").
 		Find(&usage)
 	if result.Error != nil {

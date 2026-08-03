@@ -14,6 +14,13 @@ type InboundConfigService interface {
 	UpdateTraffic(ctx context.Context, tag string, email string, upDelta int64, downDelta int64) error
 }
 
+// NodeTrafficAccumulator is an optional callback to accumulate xray user
+// traffic deltas into a node-level monthly traffic record. Implemented by
+// nodeserver.NodeTrafficQuotaService.AddUserTrafficDelta.
+type NodeTrafficAccumulator interface {
+	AddUserTrafficDelta(serverID int64, upDelta, downDelta int64)
+}
+
 // SettingStore provides access to system settings.
 type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
@@ -29,6 +36,8 @@ type SettingStore interface {
 type Service struct {
 	settingSvc  SettingStore
 	inboundSvc  InboundConfigService
+	nodeAccum   NodeTrafficAccumulator
+	localSID    int64 // local node server ID (always 1)
 	interval    time.Duration
 	mu          sync.RWMutex
 	running     bool
@@ -48,6 +57,7 @@ func NewService(settingSvc SettingStore, inboundSvc InboundConfigService, interv
 		interval:   interval,
 		stopCh:     make(chan struct{}),
 		client:     coredata.NewXrayClient(getStatsAddrDefault(settingSvc)),
+		localSID:   1, // local node server ID is always 1
 	}
 }
 
@@ -61,6 +71,12 @@ func getStatsAddrDefault(settingSvc SettingStore) string {
 		SettingGetter: getter,
 		// 无核心配置兜底（trafficsync 不持有 coreConfigSvc），缺失时回退默认地址。
 	})
+}
+
+// SetNodeAccumulator injects a node traffic accumulator to also update
+// node-level monthly traffic records when syncing user traffic.
+func (s *Service) SetNodeAccumulator(acc NodeTrafficAccumulator) {
+	s.nodeAccum = acc
 }
 
 // Start starts the traffic sync service.
@@ -137,6 +153,7 @@ func (s *Service) sync() {
 	// Update database
 	if len(sr.Users) > 0 {
 		log.Printf("trafficsync: updating %d users", len(sr.Users))
+		var nodeUp, nodeDown int64
 		for _, u := range sr.Users {
 			if u.Uplink <= 0 && u.Downlink <= 0 {
 				continue
@@ -145,6 +162,12 @@ func (s *Service) sync() {
 			if err := s.inboundSvc.UpdateTraffic(ctx, "", u.Email, u.Uplink, u.Downlink); err != nil {
 				log.Printf("trafficsync: failed to update traffic for %s: %v", u.Email, err)
 			}
+			nodeUp += u.Uplink
+			nodeDown += u.Downlink
+		}
+		// Also accumulate into node-level monthly traffic record
+		if s.nodeAccum != nil && (nodeUp > 0 || nodeDown > 0) {
+			s.nodeAccum.AddUserTrafficDelta(s.localSID, nodeUp, nodeDown)
 		}
 	}
 }

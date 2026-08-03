@@ -95,6 +95,7 @@ import (
 	userService "corefusion/internal/service/user"
 	warpSvc "corefusion/internal/service/warp"
 	accessPkg "corefusion/internal/service/access"
+	"corefusion/internal/coredata"
 	"corefusion/internal/service/audit"
 	"corefusion/internal/store/repository"
 )
@@ -1401,12 +1402,77 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					WithHealthChecker(multiHealthChecker).
 					WithRegionSelector(regionSelector)
 
-				// Phase 6: Advanced Features wiring
-				metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
-				// 本地节点（面板自身）主机指标由 StatsService 直接采集，不走独立 agent 的 gRPC 接口
-				statsSvc := systemSvc.NewStatsService(version)
-				metricsCollector.SetLocalStatsProvider(statsSvc.CollectServerMetric)
-				go metricsCollector.RunLoop(context.Background())
+			// Phase 6: Advanced Features wiring
+			metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
+			// 本地节点（面板自身）主机指标由 StatsService 直接采集，不走独立 agent 的 gRPC 接口
+			statsSvc := systemSvc.NewStatsService(version)
+			metricsCollector.SetLocalStatsProvider(statsSvc.CollectServerMetric)
+
+			// 注入 xray 核心用户流量采集（本地 + 远程），用于实时速率图表
+			// 本地：直连 xray gRPC Stats API（reset_=false，累计值）
+			// 远程：通过 coredata.Provider → Agent RPC 查询
+			// 仅统计 user>>> 条目，自动排除 inbound>>>api>>> 等 API 流量
+			localXrayClient := coredata.NewXrayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+				SettingGetter: func(ctx context.Context, key string) (string, error) {
+					return systemSettingSvc.GetByKey(ctx, key)
+				},
+				APIListenGetter: func(ctx context.Context) (string, error) {
+					full, err := coreConfigSvc.GetFull(ctx, coredata.LocalServerID, "xray")
+					if err != nil {
+						return "", err
+					}
+					apiRaw, ok := full["api"]
+					if !ok {
+						return "", fmt.Errorf("no api section")
+					}
+					apiMap, ok := apiRaw.(map[string]interface{})
+					if !ok {
+						return "", fmt.Errorf("api not map")
+					}
+					listen, ok := apiMap["listen"].(string)
+					if !ok || listen == "" {
+						return "", fmt.Errorf("no listen")
+					}
+					return listen, nil
+				},
+			}))
+			metricsCollector.SetLocalTrafficProvider(func() (int64, int64) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				resp, err := localXrayClient.RawStats(ctx, false)
+				if err != nil {
+					return 0, 0
+				}
+				sr, err := coredata.ParseStatsResponse(resp)
+				if err != nil {
+					return 0, 0
+				}
+				var up, down int64
+				for _, u := range sr.Users {
+					up += u.Uplink
+					down += u.Downlink
+				}
+				return up, down
+			})
+			metricsCollector.SetRemoteTrafficProvider(func(ctx context.Context, serverID int64) (int64, int64) {
+				// 通过 coredata.Provider 查询远程节点 xray 用户流量
+				p := coredata.NewProvider(serverID, coredata.Options{
+					IsLocal: nodeMgrForPhase3.IsLocalServer,
+					Remote:  nodeServerSvcInst,
+				})
+				users, err := p.GetUserTraffic(ctx, serverID)
+				if err != nil {
+					return 0, 0
+				}
+				var up, down int64
+				for _, u := range users {
+					up += u.Uplink
+					down += u.Downlink
+				}
+				return up, down
+			})
+
+			go metricsCollector.RunLoop(context.Background())
 				speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
 				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
@@ -1456,9 +1522,18 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// Start the traffic quota checker in the background
 			go trafficQuotaSvc.Start(context.Background())
 
-			// Account NIC traffic for the local (panel) node, which has no
-			// Agent heartbeat reporting egress counters.
-			go trafficQuotaSvc.StartLocalCollector(context.Background(), 30*time.Second)
+			// Wire trafficsync to also accumulate node-level monthly traffic
+			trafficSyncSvc.SetNodeAccumulator(trafficQuotaSvc)
+
+			// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
+			// This consumes TrafficEvent from the NodeServerManager's onTraffic channel
+			// and persists remote node traffic deltas to the database.
+			if sharedNodeMgr != nil {
+				trafficEventConsumer := agent.NewTrafficEventConsumer(
+					sharedNodeMgr, nil, inboundConfigSvc,
+				).WithServerRepo(nodeServerRepo).WithNodeAccumulator(trafficQuotaSvc)
+				go trafficEventConsumer.Start(context.Background())
+			}
 
 				// Supplementary repos wiring
 				auditLogRepo := repository.NewNodeAuditLogRepository(database)
@@ -2445,16 +2520,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Start log cleanup service (periodically removes old log/event records)
 	logCleanupSvc := trafficSvc.NewLogCleanupService(database)
 	logCleanupSvc.Start(context.Background())
-
-	// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
-	// This consumes TrafficEvent from the NodeServerManager's onTraffic channel
-	// and persists remote node traffic deltas to the database.
-	if sharedNodeMgr != nil {
-		trafficEventConsumer := agent.NewTrafficEventConsumer(
-			sharedNodeMgr, nil, inboundConfigSvc,
-		)
-		go trafficEventConsumer.Start(context.Background())
-	}
 
 	return r
 }

@@ -9,6 +9,13 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// NodeTrafficAccumulator accumulates xray user traffic deltas into a
+// node-level monthly traffic record. Implemented by
+// nodeserver.NodeTrafficQuotaService.AddUserTrafficDelta.
+type NodeTrafficAccumulator interface {
+	AddUserTrafficDelta(serverID int64, upDelta, downDelta int64)
+}
+
 // InboundConfigUpdater is the interface needed by TrafficEventConsumer
 // to persist traffic deltas into the database.
 // Implemented by inboundconfig.Service.
@@ -28,6 +35,7 @@ type TrafficEventConsumer struct {
 	billingFilter     *BillingFilter
 	inboundConfigSvc  InboundConfigUpdater
 	serverRepo        *repository.NodeServerRepository
+	nodeAccum         NodeTrafficAccumulator
 }
 
 // NewTrafficEventConsumer creates a new TrafficEventConsumer.
@@ -47,6 +55,13 @@ func NewTrafficEventConsumer(
 // Optional: if not set, mirror traffic will not be redirected to primary.
 func (c *TrafficEventConsumer) WithServerRepo(repo *repository.NodeServerRepository) *TrafficEventConsumer {
 	c.serverRepo = repo
+	return c
+}
+
+// WithNodeAccumulator injects a node traffic accumulator to also update
+// node-level monthly traffic records when processing remote node traffic events.
+func (c *TrafficEventConsumer) WithNodeAccumulator(acc NodeTrafficAccumulator) *TrafficEventConsumer {
+	c.nodeAccum = acc
 	return c
 }
 
@@ -105,5 +120,10 @@ func (c *TrafficEventConsumer) processEvent(ctx context.Context, event *TrafficE
 	if err := c.inboundConfigSvc.UpdateTraffic(persistCtx, "", processed.Email, processed.Uplink, processed.Downlink); err != nil {
 		log.Printf("[TrafficEventConsumer] failed to update traffic for %s (server %d): %v",
 			processed.Email, processed.ServerID, err)
+	}
+
+	// Also accumulate into node-level monthly traffic record
+	if c.nodeAccum != nil && (processed.Uplink > 0 || processed.Downlink > 0) {
+		c.nodeAccum.AddUserTrafficDelta(processed.ServerID, processed.Uplink, processed.Downlink)
 	}
 }

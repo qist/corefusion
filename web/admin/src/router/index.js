@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../store/auth'
 
 // Use injected base path from server, or detect from URL
 function getBasePath() {
@@ -58,12 +59,34 @@ const router = createRouter({
   routes,
 })
 
-// Navigation guard
-router.beforeEach((to, from, next) => {
+// Navigation guard — restores user info on page refresh
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('access_token')
   const loginPath = basePath === '/' ? '/login' : basePath + '/login'
-  if (!to.path.endsWith('/login') && !token) {
+
+  // Allow login page through
+  if (to.path.endsWith('/login')) {
+    next()
+    return
+  }
+
+  // No token → redirect to login
+  if (!token) {
     next(loginPath)
+    return
+  }
+
+  // Token exists but user info not loaded (e.g. after page refresh) → fetch it
+  const authStore = useAuthStore()
+  if (!authStore.user) {
+    try {
+      await authStore.fetchMe()
+      next()
+    } catch {
+      // Token expired or invalid → clear and redirect to login
+      authStore.logout()
+      next(loginPath)
+    }
   } else {
     next()
   }

@@ -18,6 +18,15 @@ type AccountSyncer interface {
 	SyncAccountsForNewInbound(ctx context.Context, templateID int64, inboundConfigID int64) error
 }
 
+// UserSyncer defines the interface for syncing user credentials to nodes.
+// Implemented by usersync.UserSyncService. Used to push updated client
+// configuration (expiry, quota, speed limit, etc.) to all core servers
+// after admin-initiated renew/upgrade operations.
+// This avoids circular dependency between plan and usersync packages.
+type UserSyncer interface {
+	SyncUserToServers(ctx context.Context, clientID int64, action string) error
+}
+
 // Service handles plan template, variant, node group, promotion, and order business logic.
 type Service struct {
 	db             *gorm.DB
@@ -31,11 +40,25 @@ type Service struct {
 	inboundRepo    *repository.InboundConfigRepository
 	extNodeRepo    *repository.ExternalNodeRepository
 	accountSyncer  AccountSyncer
+	subRepo        *repository.SubscriptionRepository
+	userSyncer     UserSyncer
 }
 
 // SetAccountSyncer injects the account syncer (client.Service).
 func (s *Service) SetAccountSyncer(syncer AccountSyncer) {
 	s.accountSyncer = syncer
+}
+
+// SetUserSyncer injects the user syncer (usersync.UserSyncService).
+// Used to push updated client config to all core servers after renew/upgrade.
+func (s *Service) SetUserSyncer(syncer UserSyncer) {
+	s.userSyncer = syncer
+}
+
+// SetSubscriptionRepo injects the subscription repository.
+// Used to update subscription table after renew/upgrade operations.
+func (s *Service) SetSubscriptionRepo(subRepo *repository.SubscriptionRepository) {
+	s.subRepo = subRepo
 }
 
 // NewService creates a new plan service.
@@ -991,7 +1014,9 @@ type ValidatePromotionResult struct {
 }
 
 // ValidatePromotion validates a promotion code against a variant and returns the discount.
-func (s *Service) ValidatePromotion(ctx context.Context, code string, variantID int64) (*ValidatePromotionResult, error) {
+// clientID > 0 enables per-user usage limit (max_uses_per_user) checking;
+// pass 0 for admin preview calls where no client context exists.
+func (s *Service) ValidatePromotion(ctx context.Context, code string, variantID int64, clientID int64) (*ValidatePromotionResult, error) {
 	promo, err := s.promoRepo.GetByCode(ctx, code)
 	if err != nil {
 		return &ValidatePromotionResult{Valid: false, ErrorMessage: "invalid promotion code"}, nil
@@ -1008,6 +1033,16 @@ func (s *Service) ValidatePromotion(ctx context.Context, code string, variantID 
 	}
 	if promo.MaxUses > 0 && promo.UsedCount >= promo.MaxUses {
 		return &ValidatePromotionResult{Valid: false, ErrorMessage: "promotion usage limit reached"}, nil
+	}
+	// Check per-user usage limit when clientID is provided
+	if clientID > 0 && promo.MaxUsesPerUser > 0 {
+		usedByUser, err := s.orderRepo.CountByClientAndPromotion(ctx, clientID, promo.ID)
+		if err != nil {
+			return nil, fmt.Errorf("check per-user promotion usage: %w", err)
+		}
+		if int(usedByUser) >= promo.MaxUsesPerUser {
+			return &ValidatePromotionResult{Valid: false, ErrorMessage: "promotion per-user usage limit reached"}, nil
+		}
 	}
 
 	variant, err := s.variantRepo.GetByID(ctx, variantID)
@@ -1131,7 +1166,7 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 	var promoID *int64
 	var promoCode string
 	if input.PromotionCode != "" {
-		result, err := s.ValidatePromotion(ctx, input.PromotionCode, input.VariantID)
+		result, err := s.ValidatePromotion(ctx, input.PromotionCode, input.VariantID, clientID)
 		if err != nil {
 			return nil, fmt.Errorf("validate promotion: %w", err)
 		}
@@ -1181,6 +1216,14 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 	client.UpdatedAt = now
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return nil, fmt.Errorf("update client: %w", err)
+	}
+
+	// Update subscription table to keep quota/expiry consistent
+	s.syncSubscriptionAfterOrder(ctx, client, variant)
+
+	// Sync updated client config to all core servers (local + remote)
+	if s.userSyncer != nil {
+		go s.userSyncer.SyncUserToServers(context.Background(), clientID, "update")
 	}
 
 	// Increment promo usage
@@ -1235,7 +1278,7 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 	var promoID *int64
 	var promoCode string
 	if input.PromotionCode != "" {
-		result, _ := s.ValidatePromotion(ctx, input.PromotionCode, input.VariantID)
+		result, _ := s.ValidatePromotion(ctx, input.PromotionCode, input.VariantID, clientID)
 		if result != nil && result.Valid {
 			discountAmount = result.DiscountAmount
 			promo, _ := s.promoRepo.GetByCode(ctx, input.PromotionCode)
@@ -1301,6 +1344,14 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		return nil, fmt.Errorf("update client: %w", err)
 	}
 
+	// Update subscription table to keep quota/expiry consistent
+	s.syncSubscriptionAfterOrder(ctx, client, variant)
+
+	// Sync updated client config to all core servers (local + remote)
+	if s.userSyncer != nil {
+		go s.userSyncer.SyncUserToServers(context.Background(), clientID, "update")
+	}
+
 	if promoID != nil {
 		_ = s.promoRepo.IncrementUsedCount(ctx, *promoID)
 	}
@@ -1318,6 +1369,30 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		EffectiveTo:    &newExpiry,
 		ClientExpiresAt: &newExpiry,
 	}, nil
+}
+
+// syncSubscriptionAfterOrder updates the subscription table after a renew/upgrade
+// to keep quota_bytes, quota_reset_cycle, expires_at, and status consistent with
+// the updated client record. If the client has no subscription or subRepo is not
+// injected, it is a no-op.
+func (s *Service) syncSubscriptionAfterOrder(ctx context.Context, client *entity.Client, variant *entity.PlanVariant) {
+	if s.subRepo == nil || client.SubscriptionID == nil {
+		return
+	}
+	sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID)
+	if err != nil || sub == nil {
+		return
+	}
+	sub.QuotaBytes = client.QuotaBytes
+	if variant.QuotaResetCycle != "" {
+		sub.QuotaResetCycle = variant.QuotaResetCycle
+	}
+	if variant.QuotaResetDay != nil {
+		sub.QuotaResetDay = variant.QuotaResetDay
+	}
+	sub.ExpiresAt = client.ExpiresAt
+	sub.Status = "active"
+	s.subRepo.Update(ctx, sub)
 }
 
 // DowngradeInput is the input for downgrading a client's plan (takes effect at expiry).

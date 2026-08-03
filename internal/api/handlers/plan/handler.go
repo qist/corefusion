@@ -518,7 +518,7 @@ func (h *Handler) ValidatePromotion(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	result, err := h.svc.ValidatePromotion(c.Request.Context(), req.Code, req.VariantID)
+	result, err := h.svc.ValidatePromotion(c.Request.Context(), req.Code, req.VariantID, 0)
 	if err != nil {
 		response.InternalError(c, "VALIDATE_PROMOTION_FAILED", err.Error())
 		return

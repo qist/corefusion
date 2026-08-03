@@ -2261,10 +2261,35 @@ func (s *CommerceService) validatePromotion(ctx context.Context, promo *entity.P
 	if promo.MaxUses > 0 && promo.UsedCount >= promo.MaxUses {
 		return false
 	}
+	// Check per-user usage limit
+	if promo.MaxUsesPerUser > 0 && clientID > 0 {
+		usedByUser, err := s.orderRepo.CountByClientAndPromotion(ctx, clientID, promo.ID)
+		if err == nil && int(usedByUser) >= promo.MaxUsesPerUser {
+			return false
+		}
+	}
 	switch promo.ApplicableScope {
 	case entity.PromoScopeAll:
 		// OK
-	case entity.PromoScopeTemplate, entity.PromoScopeSpecificVariant:
+	case entity.PromoScopeTemplate:
+		if promo.ApplicableIDs != nil {
+			// Look up the variant to get its TemplateID for comparison
+			variant, err := s.variantRepo.GetByID(ctx, variantID)
+			if err != nil || variant == nil {
+				return false
+			}
+			found := false
+			for _, id := range []int64(promo.ApplicableIDs) {
+				if id == variant.TemplateID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+	case entity.PromoScopeSpecificVariant:
 		if promo.ApplicableIDs != nil {
 			found := false
 			for _, id := range []int64(promo.ApplicableIDs) {

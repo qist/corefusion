@@ -563,6 +563,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Inject client service into plan service for account synchronization
 	// when new nodes are added to a plan's node group.
 	planSvcInst.SetAccountSyncer(clientSvcInst)
+	// Inject subscription repo so Renew/Upgrade can update the subscriptions table.
+	planSvcInst.SetSubscriptionRepo(subRepo)
+	// Inject user syncer so Renew/Upgrade push updated client config to all nodes.
+	if sharedUserSyncer != nil {
+		planSvcInst.SetUserSyncer(sharedUserSyncer)
+	}
 
 	// Mihomo service
 	mihomoConfigRepo := repository.NewMihomoConfigRepository(database)

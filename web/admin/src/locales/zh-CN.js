@@ -1,6 +1,7 @@
 export default {
   common: {
     appName: 'CoreFusion',
+    all: '全部',
     confirm: '确认',
     cancel: '取消',
     save: '保存',

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,24 @@ import (
 
 	"corefusion/internal/api/response"
 )
+
+// portRangePattern matches valid port ranges: single port (e.g. "443") or range (e.g. "20000-30000").
+var portRangePattern = regexp.MustCompile(`^\d+(-\d+)?$`)
+
+// ifacePattern matches valid network interface names (e.g. "eth0", "wlan1", "br-lan").
+var ifacePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,15}$`)
+
+// validateFirewallInput validates the port_range and interface fields to prevent
+// injection of unexpected arguments into nft/iptables commands.
+func validateFirewallInput(req FirewallRule) error {
+	if !portRangePattern.MatchString(req.PortRange) {
+		return fmt.Errorf("invalid port_range format: must be a single port or range (e.g. 443 or 20000-30000)")
+	}
+	if req.Interface != "" && !ifacePattern.MatchString(req.Interface) {
+		return fmt.Errorf("invalid interface name: must be alphanumeric with optional . _ - (max 15 chars)")
+	}
+	return nil
+}
 
 // FirewallRule represents a firewall rule for port hopping.
 type FirewallRule struct {
@@ -29,6 +48,10 @@ func (h *Handler) ApplyFirewallRules(c *gin.Context) {
 
 	if req.PortRange == "" || req.TargetPort == 0 {
 		response.BadRequest(c, "INVALID_PARAMS", "port_range and target_port are required")
+		return
+	}
+	if err := validateFirewallInput(req); err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
 
@@ -73,6 +96,10 @@ func (h *Handler) RemoveFirewallRules(c *gin.Context) {
 
 	if req.PortRange == "" || req.TargetPort == 0 {
 		response.BadRequest(c, "INVALID_PARAMS", "port_range and target_port are required")
+		return
+	}
+	if err := validateFirewallInput(req); err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
 

@@ -128,10 +128,12 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 	}
 
 	// Save cert content to temp file first to parse it
+	// S-7 fix: use random temp file names to prevent concurrent uploads from overwriting each other
 	tmpDir := filepath.Join(s.dataDir, "certs_tmp")
 	os.MkdirAll(tmpDir, 0750)
-	tmpCert := filepath.Join(tmpDir, "tmp_cert.pem")
-	tmpKey := filepath.Join(tmpDir, "tmp_key.pem")
+	randSuffix := fmt.Sprintf("%x", time.Now().UnixNano())
+	tmpCert := filepath.Join(tmpDir, "tmp_cert_"+randSuffix+".pem")
+	tmpKey := filepath.Join(tmpDir, "tmp_key_"+randSuffix+".pem")
 	os.WriteFile(tmpCert, []byte(input.CertContent), 0600)
 	os.WriteFile(tmpKey, []byte(input.KeyContent), 0600)
 
@@ -242,8 +244,16 @@ func parseCertDomainList(certPath string) []string {
 }
 
 // sanitizeDomain converts a domain to a safe directory name.
+// S-8 fix: strip path separators and traversal sequences to prevent directory traversal.
 func sanitizeDomain(domain string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(domain, "*", "_wildcard"), ".", "_")
+	// Remove any path components — only keep the base name
+	domain = filepath.Base(domain)
+	// Replace wildcard and dots, and remove any remaining path separators
+	domain = strings.ReplaceAll(strings.ReplaceAll(domain, "*", "_wildcard"), ".", "_")
+	domain = strings.ReplaceAll(domain, "/", "_")
+	domain = strings.ReplaceAll(domain, "\\", "_")
+	domain = strings.ReplaceAll(domain, "..", "_")
+	return domain
 }
 
 // parseCertExpiry parses a PEM certificate file and returns the expiry time.

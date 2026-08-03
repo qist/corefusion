@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
@@ -404,50 +405,69 @@ func (s *GiftService) ListAvailable(ctx context.Context, clientID int64) ([]enti
 }
 
 func (s *GiftService) ClaimGift(ctx context.Context, clientID, giftID int64) (*entity.ClientGift, error) {
-	gift, err := s.giftRepo.GetByID(ctx, giftID)
-	if err != nil || gift.ClientID != clientID {
-		return nil, fmt.Errorf("gift not found")
-	}
-	if gift.Status != entity.GiftStatusAvailable {
-		return nil, fmt.Errorf("gift is not available")
-	}
-	if gift.ExpiresAt != nil && gift.ExpiresAt.Before(time.Now()) {
-		gift.Status = entity.GiftStatusExpired
-		s.giftRepo.Update(ctx, gift)
-		return nil, fmt.Errorf("gift has expired")
-	}
-	switch gift.Type {
-	case entity.GiftTypeDays:
-		client, err := s.clientRepo.GetByID(ctx, clientID)
-		if err != nil {
-			return nil, err
+	// Use transaction + row lock to prevent concurrent double-claim.
+	var claimedGift *entity.ClientGift
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Lock the gift row for update
+		var gift entity.ClientGift
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND client_id = ?", giftID, clientID).
+			First(&gift).Error; err != nil {
+			return fmt.Errorf("gift not found")
 		}
-		if client.ExpiresAt != nil {
-			newExpiry := client.ExpiresAt.AddDate(0, 0, int(gift.Value))
-			client.ExpiresAt = &newExpiry
-			s.clientRepo.Update(ctx, client)
+		if gift.Status != entity.GiftStatusAvailable {
+			return fmt.Errorf("gift is not available")
 		}
-	case entity.GiftTypeTraffic:
-		client, err := s.clientRepo.GetByID(ctx, clientID)
-		if err != nil {
-			return nil, err
+		if gift.ExpiresAt != nil && gift.ExpiresAt.Before(time.Now()) {
+			gift.Status = entity.GiftStatusExpired
+			tx.Save(&gift)
+			return fmt.Errorf("gift has expired")
 		}
-		client.QuotaBytes += gift.Value
-		s.clientRepo.Update(ctx, client)
-		if client.SubscriptionID != nil {
-			if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
-				sub.QuotaBytes += gift.Value
-				s.subRepo.Update(ctx, sub)
+
+		switch gift.Type {
+		case entity.GiftTypeDays:
+			var client entity.Client
+			if err := tx.Where("id = ?", clientID).First(&client).Error; err != nil {
+				return err
+			}
+			if client.ExpiresAt != nil {
+				newExpiry := client.ExpiresAt.AddDate(0, 0, int(gift.Value))
+				client.ExpiresAt = &newExpiry
+			}
+			if err := tx.Save(&client).Error; err != nil {
+				return err
+			}
+		case entity.GiftTypeTraffic:
+			var client entity.Client
+			if err := tx.Where("id = ?", clientID).First(&client).Error; err != nil {
+				return err
+			}
+			client.QuotaBytes += gift.Value
+			if err := tx.Save(&client).Error; err != nil {
+				return err
+			}
+			if client.SubscriptionID != nil {
+				if err := tx.Model(&entity.Subscription{}).
+					Where("id = ?", *client.SubscriptionID).
+					UpdateColumn("quota_bytes", gorm.Expr("quota_bytes + ?", gift.Value)).Error; err != nil {
+					return err
+				}
 			}
 		}
-	}
-	now := time.Now()
-	gift.Status = entity.GiftStatusClaimed
-	gift.ClaimedAt = &now
-	if err := s.giftRepo.Update(ctx, gift); err != nil {
+
+		now := time.Now()
+		gift.Status = entity.GiftStatusClaimed
+		gift.ClaimedAt = &now
+		if err := tx.Save(&gift).Error; err != nil {
+			return err
+		}
+		claimedGift = &gift
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return gift, nil
+	return claimedGift, nil
 }
 
 func (s *GiftService) AdminCreateGift(ctx context.Context, gift *entity.ClientGift) error {

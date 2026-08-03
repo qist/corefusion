@@ -60,6 +60,58 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- ===================== 节点操作日志 ===================== -->
+      <el-tab-pane :label="t('security.nodeAuditTitle')" name="nodeAudit">
+        <el-card shadow="never">
+          <el-form :inline="true" class="filter-form" @submit.prevent>
+            <el-form-item :label="t('nodeServer.serverId')">
+              <el-input v-model="nodeAuditQuery.server_id" clearable :placeholder="t('nodeServer.serverId')" style="width:120px" @keyup.enter="loadNodeAudit(1)" />
+            </el-form-item>
+            <el-form-item :label="t('nodeServer.actionType')">
+              <el-input v-model="nodeAuditQuery.action" clearable :placeholder="t('nodeServer.actionType')" style="width:160px" @keyup.enter="loadNodeAudit(1)" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="loadNodeAudit(1)">{{ t('common.query') }}</el-button>
+              <el-button @click="resetNodeAudit">{{ t('common.reset') }}</el-button>
+              <el-button @click="exportNodeAudit">{{ t('common.export') }}</el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-table :data="nodeAuditList" v-loading="nodeAuditLoading" border stripe size="default">
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column :label="t('nodeServer.serverId')" min-width="140">
+              <template #default="{ row }">{{ row.server_name || row.server_id || '-' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('nodeServer.adminId')" min-width="100">
+              <template #default="{ row }">{{ row.admin_name || row.admin_id || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="action" :label="t('nodeServer.actionType')" width="140" />
+            <el-table-column prop="detail" :label="t('security.detail')" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="source_ip" :label="t('security.remoteIp')" width="130" />
+            <el-table-column :label="t('common.status')" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? '✓' : '✗' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.time')" width="180">
+              <template #default="{ row }">{{ formatNodeAuditTime(row.created_at) }}</template>
+            </el-table-column>
+          </el-table>
+
+          <div class="pager">
+            <el-pagination
+              v-model:current-page="nodeAuditQuery.page"
+              v-model:page-size="nodeAuditQuery.limit"
+              :total="nodeAuditTotal"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @current-change="loadNodeAudit"
+              @size-change="loadNodeAudit(1)"
+            />
+          </div>
+        </el-card>
+      </el-tab-pane>
+
       <!-- ===================== 安全告警 ===================== -->
       <el-tab-pane :label="t('security.alertsTitle')" name="alerts">
         <el-card shadow="never">
@@ -190,7 +242,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -198,6 +250,7 @@ import {
   listAlerts, resolveAlert, resolveAllAlerts,
   listAlertChannels, createAlertChannel, updateAlertChannel, deleteAlertChannel,
 } from '../api/security'
+import { listNodeAuditLogs, exportNodeAuditLogs } from '../api/nodeServer'
 
 const { t } = useI18n()
 const activeTab = ref('audit')
@@ -246,6 +299,51 @@ function exportAudit() {
     a.click()
     window.URL.revokeObjectURL(url)
   }).catch(() => {})
+}
+
+// ---------------- 节点操作日志 ----------------
+const nodeAuditList = ref([])
+const nodeAuditTotal = ref(0)
+const nodeAuditLoading = ref(false)
+const nodeAuditQuery = reactive({ page: 1, limit: 20, server_id: '', action: '' })
+
+function loadNodeAudit(p) {
+  if (p) nodeAuditQuery.page = p
+  nodeAuditLoading.value = true
+  const params = {
+    limit: nodeAuditQuery.limit,
+    offset: (nodeAuditQuery.page - 1) * nodeAuditQuery.limit,
+  }
+  if (nodeAuditQuery.server_id) params.server_id = nodeAuditQuery.server_id
+  if (nodeAuditQuery.action) params.action = nodeAuditQuery.action
+  listNodeAuditLogs(params).then((r) => {
+    nodeAuditList.value = r.items || []
+    nodeAuditTotal.value = r.total || 0
+  }).catch(() => {}).finally(() => { nodeAuditLoading.value = false })
+}
+function resetNodeAudit() {
+  nodeAuditQuery.server_id = ''; nodeAuditQuery.action = ''
+  loadNodeAudit(1)
+}
+function exportNodeAudit() {
+  const params = {}
+  if (nodeAuditQuery.server_id) params.server_id = nodeAuditQuery.server_id
+  if (nodeAuditQuery.action) params.action = nodeAuditQuery.action
+  exportNodeAuditLogs(params).then((data) => {
+    const blob = new Blob([data], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'node-audit-logs.csv'
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }).catch(() => {})
+}
+function formatNodeAuditTime(time) {
+  if (!time) return ''
+  const d = new Date(time)
+  if (isNaN(d)) return String(time)
+  return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 // ---------------- 告警 ----------------
@@ -321,6 +419,11 @@ function removeChannel(row) {
 }
 
 onMounted(() => { loadAudit(1); loadAlerts(1); loadChannels() })
+
+// Lazy-load node audit logs when the tab is first activated
+watch(activeTab, (val) => {
+  if (val === 'nodeAudit' && nodeAuditList.value.length === 0) loadNodeAudit(1)
+})
 </script>
 
 <style scoped>

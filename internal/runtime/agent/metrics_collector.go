@@ -41,16 +41,35 @@ type MetricsCollector struct {
 	// 上次网络计数（用于计算速率）
 	lastNetStats map[int64]*netCounter
 
+	// 上次 xray 核心用户流量累计计数（用于计算实时速率）
+	lastTrafficStats map[int64]*trafficCounter
+
 	// 本地节点（面板自身）主机指标采集器；若设置，本地节点走此路径（StatsService 直接读 /proc），
 	// 而非 gRPC GetStatus（独立 agent 接口）。
 	localStatsFn func(int64) *entity.ServerMetric
+
+	// 本地节点 xray 核心用户流量采集器；若设置，查询 xray Stats API 返回累计 (uplink, downlink)。
+	// 速率由 collectFromLocalStats 基于两次采样差分计算。
+	// 仅统计 user>>> 流量，自动排除 inbound>>>api>>> 等 API 流量。
+	localTrafficFn func() (uplink int64, downlink int64)
+
+	// 远程节点 xray 核心用户流量采集器；若设置，按 serverID 查询远程节点 xray 累计流量。
+	// 通过 coredata.CoreDataProvider 在 router.go 中注入实现。
+	remoteTrafficFn func(ctx context.Context, serverID int64) (uplink int64, downlink int64)
 }
 
 // netCounter tracks network byte counters for rate calculation.
 type netCounter struct {
-	rxBytes    int64
-	txBytes    int64
-	timestamp  time.Time
+	rxBytes   int64
+	txBytes   int64
+	timestamp time.Time
+}
+
+// trafficCounter tracks xray core user traffic cumulative counters for rate calculation.
+type trafficCounter struct {
+	uplink    int64
+	downlink  int64
+	timestamp time.Time
 }
 
 // NewMetricsCollector creates a new MetricsCollector.
@@ -63,7 +82,8 @@ func NewMetricsCollector(db *gorm.DB, serverRepo *repository.NodeServerRepositor
 		retentionShort:  1 * time.Hour,
 		retentionMedium: 7 * 24 * time.Hour,
 		retentionLong:   90 * 24 * time.Hour,
-		lastNetStats:    make(map[int64]*netCounter),
+		lastNetStats:     make(map[int64]*netCounter),
+		lastTrafficStats: make(map[int64]*trafficCounter),
 	}
 }
 
@@ -169,39 +189,83 @@ func (mc *MetricsCollector) SetLocalStatsProvider(fn func(int64) *entity.ServerM
 	mc.localStatsFn = fn
 }
 
+// SetLocalTrafficProvider 注入本地节点 xray 核心用户流量采集函数。
+// 该函数应查询 xray Stats API（reset_=false，累计值）并返回所有用户的
+// 总 uplink/downlink 字节。仅统计 user>>> 条目，自动排除 API inbound 流量。
+// 速率由 collectFromLocalStats 基于两次采样差分计算。
+func (mc *MetricsCollector) SetLocalTrafficProvider(fn func() (int64, int64)) {
+	mc.localTrafficFn = fn
+}
+
+// SetRemoteTrafficProvider 注入远程节点 xray 核心用户流量采集函数。
+// 该函数应通过 coredata.CoreDataProvider 查询指定 serverID 的 xray 累计用户流量。
+// 速率由 collectRemoteMetrics 基于两次采样差分计算。
+func (mc *MetricsCollector) SetRemoteTrafficProvider(fn func(ctx context.Context, serverID int64) (int64, int64)) {
+	mc.remoteTrafficFn = fn
+}
+
 // collectFromLocalStats 采集本地节点（面板自身）的主机指标并落库。
 // 本地节点不发送心跳，且不应走独立 agent 的 GetStatus gRPC 接口，
 // 因此直接调用注入的 StatsService（读本机 /proc）。
+// 同时查询 xray Stats API 获取核心用户流量，计算实时速率。
 func (mc *MetricsCollector) collectFromLocalStats(serverID int64) {
 	if mc.localStatsFn == nil {
 		return
 	}
-	// 在锁外采集本机 /proc（可能执行外部命令），避免阻塞其他指标写入
+	// 在锁外采集本机 /proc 和 xray stats（可能执行外部命令/gRPC），避免阻塞其他指标写入
 	metric := mc.localStatsFn(serverID)
 	if metric == nil {
 		return
 	}
+
+	// 查询 xray 核心用户流量（累计值，不含 API inbound）
+	var trafficUp, trafficDown int64
+	if mc.localTrafficFn != nil {
+		trafficUp, trafficDown = mc.localTrafficFn()
+	}
+
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	now := time.Now()
 	metric.CreatedAt = now
 
-	// 网络速率：基于累计计数器差分计算（StatsService 返回累计 NetBytesRecv/Sent）
+	// --- 网卡速率：基于累计计数器差分计算 ---
+	// StatsService 返回累计 NetBytesRecv/Sent，存入 rawRx/rawRx 用于下次差分
+	rawRx := metric.NetRxBytes
+	rawTx := metric.NetTxBytes
 	if last, ok := mc.lastNetStats[serverID]; ok {
 		elapsed := now.Sub(last.timestamp).Seconds()
 		if elapsed > 0 {
-			metric.NetRxBytes = int64(float64(metric.NetRxBytes-last.rxBytes) / elapsed)
-			metric.NetTxBytes = int64(float64(metric.NetTxBytes-last.txBytes) / elapsed)
+			metric.NetRxBytes = int64(float64(rawRx-last.rxBytes) / elapsed)
+			metric.NetTxBytes = int64(float64(rawTx-last.txBytes) / elapsed)
 		}
 	} else {
 		// 无基准时首条记录不展示速率，避免把累计值误当作速率
 		metric.NetRxBytes = 0
 		metric.NetTxBytes = 0
 	}
+	// 保存原始累计值（而非速率），供下次差分使用
 	mc.lastNetStats[serverID] = &netCounter{
-		rxBytes:   metric.NetRxBytes,
-		txBytes:   metric.NetTxBytes,
+		rxBytes:   rawRx,
+		txBytes:   rawTx,
+		timestamp: now,
+	}
+
+	// --- xray 核心用户流量速率：基于累计计数器差分计算 ---
+	if last, ok := mc.lastTrafficStats[serverID]; ok {
+		elapsed := now.Sub(last.timestamp).Seconds()
+		if elapsed > 0 {
+			metric.TrafficUplink = int64(float64(trafficUp-last.uplink) / elapsed)
+			metric.TrafficDownlink = int64(float64(trafficDown-last.downlink) / elapsed)
+		}
+	} else {
+		metric.TrafficUplink = 0
+		metric.TrafficDownlink = 0
+	}
+	mc.lastTrafficStats[serverID] = &trafficCounter{
+		uplink:    trafficUp,
+		downlink:  trafficDown,
 		timestamp: now,
 	}
 
@@ -209,8 +273,9 @@ func (mc *MetricsCollector) collectFromLocalStats(serverID int64) {
 		log.Printf("[MetricsCollector] failed to store local stats metric for server %d: %v", serverID, err)
 		return
 	}
-	log.Printf("[MetricsCollector] stored local stats metric for server %d: cpu=%.1f%% mem=%d/%d bytes disk=%.1f%%",
-		serverID, metric.CPUUsage, metric.MemUsageBytes, metric.MemTotalBytes, metric.DiskUsage)
+	log.Printf("[MetricsCollector] stored local stats metric for server %d: cpu=%.1f%% mem=%d/%d bytes disk=%.1f%% traffic_up=%d/s traffic_down=%d/s",
+		serverID, metric.CPUUsage, metric.MemUsageBytes, metric.MemTotalBytes, metric.DiskUsage,
+		metric.TrafficUplink, metric.TrafficDownlink)
 }
 
 // CollectAllServers queries all servers and collects current metrics.
@@ -267,6 +332,18 @@ func (mc *MetricsCollector) collectRemoteMetrics(ctx context.Context, serverID i
 	}
 
 	p := resp.Points[0]
+
+	// 查询远程节点 xray 用户流量（通过注入的 remoteTrafficFn，底层走 coredata.Provider）
+	var trafficUp, trafficDown int64
+	if mc.remoteTrafficFn != nil {
+		trafficUp, trafficDown = mc.remoteTrafficFn(ctx, serverID)
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	now := time.Unix(p.Timestamp, 0)
+
 	metric := &entity.ServerMetric{
 		ServerID:          serverID,
 		CPUUsage:          p.CpuUsage,
@@ -287,13 +364,22 @@ func (mc *MetricsCollector) collectRemoteMetrics(ctx context.Context, serverID i
 		Load1m:            p.Load_1M,
 		TCPConnections:    int(p.TcpConnections),
 		UptimeSeconds:     p.UptimeSeconds,
-		TrafficUplink:     p.TrafficUplink,
-		TrafficDownlink:   p.TrafficDownlink,
-		CreatedAt:          time.Unix(p.Timestamp, 0),
+		CreatedAt:         now,
 	}
 
-	mc.mu.Lock()
-	defer mc.mu.Unlock()
+	// 计算 xray 用户流量速率（差分）
+	if last, ok := mc.lastTrafficStats[serverID]; ok {
+		elapsed := now.Sub(last.timestamp).Seconds()
+		if elapsed > 0 {
+			metric.TrafficUplink = int64(float64(trafficUp-last.uplink) / elapsed)
+			metric.TrafficDownlink = int64(float64(trafficDown-last.downlink) / elapsed)
+		}
+	}
+	mc.lastTrafficStats[serverID] = &trafficCounter{
+		uplink:    trafficUp,
+		downlink:  trafficDown,
+		timestamp: now,
+	}
 
 	if err := mc.db.Create(metric).Error; err != nil {
 		log.Printf("[MetricsCollector] failed to store remote metric for server %d: %v", serverID, err)

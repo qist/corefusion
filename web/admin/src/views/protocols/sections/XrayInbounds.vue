@@ -65,7 +65,7 @@
       </el-table-column>
       <el-table-column :label="t('common.enabled')" width="60" align="center">
         <template #default="{row, $index}">
-          <el-switch v-model="row._enabled" size="small" @change="toggleEnabled($index)" />
+          <el-switch v-model="row._enabled" size="small" @change="toggleEnabled(row)" />
         </template>
       </el-table-column>
       <el-table-column :label="t('protoCenter.inbounds.remark')" min-width="120" show-overflow-tooltip>
@@ -2485,19 +2485,31 @@ function getUsers(ib) {
   return []
 }
 
+function realIndex(row) {
+  // row may come from a paginated slice; resolve its true index in the full form list
+  const key = row._id !== undefined ? '_id' : (row.tag !== undefined ? 'tag' : null)
+  if (key) {
+    const i = form.value.findIndex((x) => x[key] === row[key])
+    if (i !== -1) return i
+  }
+  return form.value.indexOf(row)
+}
+
 function handleAction(cmd, row, index) {
+  // ignore el-table page-local index; resolve the real global index
+  const ri = realIndex(row)
   if (cmd === 'edit') {
-    showEdit(index)
+    showEdit(ri)
   } else if (cmd === 'qrcode') {
     showQrCode(row)
   } else if (cmd === 'reset-traffic') {
-    showResetTraffic(row, index)
+    showResetTraffic(row, ri)
   } else if (cmd === 'add-user') {
     showAddUser(row)
   } else if (cmd === 'manage-users') {
     showManageUsers(row)
   } else if (cmd === 'delete') {
-    rmInbound(index)
+    rmInbound(ri)
   }
 }
 
@@ -5482,9 +5494,10 @@ async function saveInbound() {
   }
 }
 
-async function toggleEnabled(i) {
+async function toggleEnabled(row) {
+  const i = realIndex(row)
   const ib = form.value[i]
-  if (!ib._id) return
+  if (!ib || !ib._id) return
   const configJson = buildInbound(ib)
   delete configJson._remark
   delete configJson._enabled

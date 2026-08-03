@@ -1025,7 +1025,7 @@
                     </el-select>
                     <el-button size="small" @click="showTargetMgr=true">{{ t('protoCenter.reality.manage') }}</el-button>
                   </div>
-                  <div v-if="defaultTarget" class="hint">{{ t('protoCenter.reality.defaultPreset') }}：{{ defaultTarget.target }}（{{ t('protoCenter.reality.defaultPresetHint') }}）</div>
+                  <div v-if="usedSnis.size > 0" class="hint">{{ t('protoCenter.reality.defaultPreset') }}：{{ usedSnis.size }} {{ t('protoCenter.reality.defaultPresetHint') }}</div>
                 </el-form-item>
                 <el-form-item label="Server Names">
                   <el-input v-model="rf.streamSettings.reality.serverNamesStr" type="textarea" :rows="3" :placeholder="t('protoCenter.reality.serverNamesPlaceholder')" @change="emit" />
@@ -2198,10 +2198,10 @@
         <el-button size="small" @click="resetTargets">{{ t('protoCenter.reality.resetTargets') }}</el-button>
       </div>
       <div style="max-height:400px;overflow-y:auto">
-        <div v-for="(target, i) in realityTargets" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;padding:4px 0" :style="target.default ? 'background:#ecf5ff;border-radius:4px;padding:4px 8px' : ''">
-          <el-button size="small" :type="target.default ? 'primary' : 'info'" text @click="setDefaultTarget(i)" :title="t('protoCenter.reality.setDefault')">
-            {{ target.default ? '★' : '☆' }}
-          </el-button>
+        <div v-for="(target, i) in realityTargets" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;padding:4px 8px;border-radius:4px" :style="isSniUsed(target.sni) ? 'background:#fdf6ec' : 'background:#f0f9eb'">
+          <span style="font-size:16px;cursor:default" :title="isSniUsed(target.sni) ? t('protoCenter.reality.sniInUse') : t('protoCenter.reality.sniAvailable')">
+            {{ isSniUsed(target.sni) ? '★' : '☆' }}
+          </span>
           <span style="flex:1;font-size:13px">{{ target.target }}</span>
           <span style="flex:1;font-size:13px;color:#909399">{{ target.sni }}</span>
           <el-tag size="small" :type="target.type === 'sock' ? 'warning' : ''">{{ target.type || 'tcp' }}</el-tag>
@@ -2239,9 +2239,22 @@ const editIdx = ref(-1)
 const activeTab = useQueryState('itab', 'basic')
 const certList = ref([])
 const realityTargets = ref([])
-const defaultTarget = computed(() => realityTargets.value.find(t => t.default))
 const showTargetMgr = ref(false)
-const newTarget = ref({ target: '', sni: '', type: 'tcp', default: false })
+const newTarget = ref({ target: '', sni: '', type: 'tcp' })
+// SNIs already used by existing reality inbounds on this node-server
+const usedSnis = computed(() => {
+  const set = new Set()
+  form.value.forEach(ib => {
+    if (ib.streamSettings?.security !== 'reality') return
+    const snis = (ib.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
+    snis.forEach(s => set.add(s))
+  })
+  return set
+})
+function isSniUsed(sni) {
+  if (!sni) return false
+  return usedSnis.value.has(sni.trim().toLowerCase())
+}
 const vlessEncAuths = ref([])
 // Details dialog
 const detailsDlg = ref(false)
@@ -3611,15 +3624,9 @@ function addTarget() {
     realityTargets.value.push({ ...newTarget.value })
     saveTargets()
   }
-  newTarget.value = { target: '', sni: '', type: 'tcp', default: false }
+  newTarget.value = { target: '', sni: '', type: 'tcp' }
 }
 function removeTarget(i) { realityTargets.value.splice(i, 1); saveTargets() }
-function setDefaultTarget(i) {
-  const isDefault = realityTargets.value[i].default
-  realityTargets.value.forEach(t => { t.default = false })
-  if (!isDefault) realityTargets.value[i].default = true
-  saveTargets()
-}
 async function resetTargets() {
   try {
     const data = await client.post('/system/reality-targets/reset')
@@ -3964,7 +3971,12 @@ function genRandomShortId(rf) {
 
 function onTargetChange() {
   const t = realityTargets.value.find(rt => rt.target === rf.streamSettings.reality.target)
-  if (t) rf.streamSettings.reality.serverNamesStr = t.sni
+  if (t) {
+    rf.streamSettings.reality.serverNamesStr = t.sni
+    if (isSniUsed(t.sni)) {
+      ElMessage.warning(t('protoCenter.reality.serverNamesConflict') + ': ' + t.sni)
+    }
+  }
   emit()
 }
 
@@ -5236,9 +5248,10 @@ function showAdd() {
   rf._portHopInterface = d._portHopInterface
   activeTab.value = 'basic'
   dlg.value = true
-  // Auto-select default target or random
-  const def = realityTargets.value.find(t => t.default)
-  const rt = def || realityTargets.value[Math.floor(Math.random() * realityTargets.value.length)]
+  // Auto-select random target, excluding those whose SNI is already used
+  const available = realityTargets.value.filter(t => !isSniUsed(t.sni))
+  const pool = available.length > 0 ? available : realityTargets.value
+  const rt = pool[Math.floor(Math.random() * pool.length)]
   rf.streamSettings.reality.target = rt.target
   rf.streamSettings.reality.serverNamesStr = rt.sni
   genRealityKey(rf)

@@ -489,15 +489,23 @@ func (s *CommerceService) addTrafficToSubscription(ctx context.Context, client *
 // Depending on the variant's ExpiryMode, it may also extend the plan's expiry date:
 //   - align_with_plan (default): only adds traffic bytes, does not change expiry.
 //   - extend_plan: adds traffic bytes AND extends client/subscription expiry by DurationDays.
+//
+// Traffic bytes are CUMULATIVE: they are added to both client.QuotaBytes and
+// subscription.QuotaBytes, not replacing the existing quota.
 func (s *CommerceService) applyTrafficPack(ctx context.Context, client *entity.Client, variant *entity.PlanVariant) error {
-	// 1. Add traffic bytes
+	now := time.Now()
+
+	// 1. Add traffic bytes to subscription (cumulative)
 	if err := s.addTrafficToSubscription(ctx, client, variant.QuotaBytes); err != nil {
 		return err
 	}
 
-	// 2. Extend plan expiry if mode is extend_plan
+	// 2. Also add to client.QuotaBytes (cumulative, keeps client table in sync)
+	client.QuotaBytes += variant.QuotaBytes
+	client.UpdatedAt = now
+
+	// 3. Extend plan expiry if mode is extend_plan
 	if variant.ExpiryMode == entity.ExpiryModeExtendPlan && variant.DurationDays > 0 {
-		now := time.Now()
 		var newExpiry time.Time
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
@@ -505,10 +513,6 @@ func (s *CommerceService) applyTrafficPack(ctx context.Context, client *entity.C
 			newExpiry = now.AddDate(0, 0, variant.DurationDays)
 		}
 		client.ExpiresAt = &newExpiry
-		client.UpdatedAt = now
-		if err := s.clientRepo.Update(ctx, client); err != nil {
-			return fmt.Errorf("failed to extend client expiry: %v", err)
-		}
 
 		// Also update subscription expiry
 		if client.SubscriptionID != nil {
@@ -522,6 +526,19 @@ func (s *CommerceService) applyTrafficPack(ctx context.Context, client *entity.C
 		log.Printf("[commerce] traffic pack %d extended client %d expiry by %d days to %v",
 			variant.ID, client.ID, variant.DurationDays, newExpiry)
 	}
+
+	// Update client record (quota + optionally expiry)
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		return fmt.Errorf("failed to update client after traffic pack: %v", err)
+	}
+
+	// Sync updated client config to all core servers
+	if s.userSyncer != nil {
+		go s.userSyncer.SyncUserToServers(context.Background(), client.ID, "update")
+	}
+
+	log.Printf("[commerce] traffic pack %d applied to client %d: +%d bytes (total: %d)",
+		variant.ID, client.ID, variant.QuotaBytes, client.QuotaBytes)
 
 	return nil
 }

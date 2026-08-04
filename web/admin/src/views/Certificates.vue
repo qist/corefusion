@@ -108,6 +108,11 @@
         </el-form-item>
         <el-form-item v-if="issueForm.ca_provider!=='lets_encrypt'" :label="'EAB-KID'">
           <el-input v-model="issueForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">
+            {{ issueForm.ca_provider === 'zerossl'
+              ? t('certificate.eabOptionalHint')
+              : t('certificate.eabRequiredHint') }}
+          </div>
         </el-form-item>
         <el-form-item v-if="issueForm.ca_provider!=='lets_encrypt'" :label="'EAB-HMAC-Key'">
           <el-input v-model="issueForm.eab_mac_key" :placeholder="t('certificate.eabMACKeyPlaceholder')" />

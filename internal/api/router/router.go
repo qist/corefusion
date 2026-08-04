@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"runtime"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -543,6 +544,89 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Seed default geo rules for local node (server_id=1)
 	geoRuleSvcInst.SeedDefaults(nil, 1)
+
+	// Auto-download missing binaries and rules on startup (async, non-blocking).
+	// After a backup restore (database-only backup), binaries and rules are
+	// absent from disk. This ensures they are re-downloaded automatically so
+	// the system can resume normal operation without manual intervention.
+	go func() {
+		ctx := context.Background()
+
+		// --- 1. Auto-download missing core binaries ---
+		// Only download cores that have auto_start=true in inbound_services.
+		// Cores that are configured but not enabled don't need their binary on disk.
+		startupInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
+		if processMgr != nil {
+			startupInstaller.SetProcessController(processMgr)
+		}
+
+		var neededCores []string
+		database.Table("inbound_services").
+			Joins("JOIN process_guardians ON process_guardians.service_id = inbound_services.id").
+			Where("process_guardians.auto_start = ? AND process_guardians.manually_stopped = ?", true, false).
+			Distinct("inbound_services.core_type").
+			Pluck("inbound_services.core_type", &neededCores)
+
+		installed := binaryResolver.ListInstalled()
+		installedMap := make(map[string]bool)
+		for _, b := range installed {
+			if b.Installed {
+				installedMap[b.CoreType] = true
+			}
+		}
+
+		for _, ct := range neededCores {
+			if installedMap[ct] {
+				continue
+			}
+			log.Printf("[startup] auto-downloading missing binary: %s", ct)
+			info, err := startupInstaller.InstallForPlatform(ctx, ct, "", "", "", runtime.GOOS, runtime.GOARCH)
+			if err != nil {
+				log.Printf("[startup] failed to download %s: %v", ct, err)
+			} else {
+				log.Printf("[startup] successfully downloaded %s (version: %s)", ct, info.Version)
+			}
+		}
+
+		// --- 2. Auto-download missing proxy binaries (Caddy/Nginx) ---
+		// If a proxy has auto_start enabled but its binary is not on disk
+		// (e.g. after a database-only restore), download it automatically.
+		for _, pt := range []proxySvc.ProxyType{proxySvc.ProxyCaddy, proxySvc.ProxyNginx} {
+			info := proxyMgr.DetectProxy(pt)
+			if info.Installed {
+				continue
+			}
+			autoStart, _, _ := proxyMgr.GetProxyGuardianSettings(ctx, pt)
+			if !autoStart {
+				continue
+			}
+			log.Printf("[startup] auto-downloading missing proxy binary: %s", pt)
+			if err := proxyMgr.InstallProxy(ctx, pt); err != nil {
+				log.Printf("[startup] failed to download %s: %v", pt, err)
+			} else {
+				log.Printf("[startup] successfully downloaded %s", pt)
+			}
+		}
+
+		// --- 3. Auto-download missing geo rule files ---
+		// Check if any rule files referenced in the DB are missing from disk.
+		// If so, trigger an async sync to download them.
+		rulesDir := filepath.Join(dataDir, "rules")
+		ruleFiles, err := geoRuleRepo.ListByServer(ctx, 1)
+		if err == nil {
+			needSync := false
+			for _, f := range ruleFiles {
+				if _, err := os.Stat(filepath.Join(rulesDir, f.FileName)); err != nil {
+					needSync = true
+					break
+				}
+			}
+			if needSync {
+				log.Println("[startup] downloading missing geo rule files")
+				geoRuleSvcInst.StartSyncAllByServer(1)
+			}
+		}
+	}()
 
 	// Subscription format service
 	subfmtSvcInst := subfmtSvc.NewService(subfmtRepo, subfmtRuleRepo)

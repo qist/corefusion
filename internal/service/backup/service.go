@@ -40,7 +40,18 @@ func NewService(repo *repository.BackupRepository, dataDir string, database *gor
 	return &Service{repo: repo, dataDir: dataDir, db: database}
 }
 
-// CreateBackup creates a backup of the data directory.
+// CreateBackup creates a database-only backup.
+//
+// Only the database is backed up — everything else can be reconstructed on
+// startup from the database:
+//   - CA roots (ca_roots table) → EnsureCA materializes PEM to disk
+//   - Domain certs (certificates table cert_content/key_content) → SyncCertsToDisk
+//   - Core binaries (xray/singbox/…) → auto-downloaded from GitHub Releases
+//   - Rules (GeoIP/geosite) → auto-downloaded from configured URLs
+//   - Runtime configs → regenerated from database core_configs
+//
+// This keeps the backup small (~DB size only) and avoids "cannot overwrite
+// running binary" issues during restore.
 func (s *Service) CreateBackup(ctx context.Context, name, backupType string) (*entity.BackupRecord, error) {
 	if name == "" {
 		name = fmt.Sprintf("backup_%s", time.Now().Format("20060102_150405"))
@@ -55,35 +66,30 @@ func (s *Service) CreateBackup(ctx context.Context, name, backupType string) (*e
 	// Create backup in a temporary file first, then rename to avoid including it in the archive
 	tmpPath := filePath + ".tmp"
 
-	// Dump the database into the archive so the backup is valid for every DB type.
-	// sqlite: consistent VACUUM copy; mysql/postgres: pure-Go SQL dump (no external tools).
+	// Dump the database — this is the only content in the backup archive.
 	dbType, dsn := db.StartupConfig()
-	var extra []extraTarEntry
-	var excludeFiles []string
+	var dumpPath, archiveName string
 	if dbType != "" && dbType != db.DBTypeSQLite {
-		dumpTmp := tmpPath + ".sqldump"
-		if err := s.DumpDatabase(ctx, dbType, dsn, dumpTmp); err != nil {
-			os.Remove(tmpPath)
-			os.Remove(dumpTmp)
+		dumpPath = tmpPath + ".sqldump"
+		if err := s.DumpDatabase(ctx, dbType, dsn, dumpPath); err != nil {
+			os.Remove(dumpPath)
 			return nil, fmt.Errorf("dump database for backup: %w", err)
 		}
-		defer os.Remove(dumpTmp)
 		dbName := dbNameFromDSN(dbType, dsn)
-		extra = append(extra, extraTarEntry{HeaderName: "db_dump/" + dbName + ".sql", SourcePath: dumpTmp})
+		archiveName = "db_dump/" + dbName + ".sql"
 	} else {
-		// sqlite: replace the live (possibly WAL'd) db file with a consistent VACUUM copy
-		dumpTmp := tmpPath + ".vaccumdb"
-		if err := s.DumpDatabase(ctx, dbType, dsn, dumpTmp); err != nil {
-			os.Remove(tmpPath)
-			os.Remove(dumpTmp)
+		// sqlite: consistent VACUUM copy (handles WAL correctly)
+		dumpPath = tmpPath + ".vaccumdb"
+		if err := s.DumpDatabase(ctx, dbType, dsn, dumpPath); err != nil {
+			os.Remove(dumpPath)
 			return nil, fmt.Errorf("dump database for backup: %w", err)
 		}
-		defer os.Remove(dumpTmp)
-		extra = append(extra, extraTarEntry{HeaderName: "sqlite/app.db", SourcePath: dumpTmp})
-		excludeFiles = append(excludeFiles, "sqlite/app.db", "sqlite/app.db-wal", "sqlite/app.db-shm")
+		archiveName = "sqlite/app.db"
 	}
+	defer os.Remove(dumpPath)
 
-	if err := s.createTarGz(s.dataDir, tmpPath, []string{"backup", "rules_tmp", "cache", "logs"}, excludeFiles, extra); err != nil {
+	// Create a tar.gz containing ONLY the database dump.
+	if err := s.createDumpOnlyTarGz(tmpPath, dumpPath, archiveName); err != nil {
 		os.Remove(tmpPath)
 		return nil, fmt.Errorf("create backup: %w", err)
 	}
@@ -108,6 +114,25 @@ func (s *Service) CreateBackup(ctx context.Context, name, backupType string) (*e
 	}
 
 	return rec, nil
+}
+
+// createDumpOnlyTarGz creates a tar.gz archive containing only the database
+// dump file. This replaces the old createTarGz approach that walked the entire
+// data directory, keeping backups minimal (database-only).
+func (s *Service) createDumpOnlyTarGz(dest, dumpPath, archiveName string) error {
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gw := gzip.NewWriter(f)
+	defer gw.Close()
+
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	return s.addFileToTar(tw, dumpPath, archiveName)
 }
 
 // ListBackups returns all backup records.
@@ -511,106 +536,8 @@ func ParseStorageConfig(configJSON string, target interface{}) error {
 	return json.Unmarshal([]byte(configJSON), target)
 }
 
-// extraTarEntry is an additional file injected into the archive by an in-memory/created source.
-type extraTarEntry struct {
-	HeaderName string // path inside the archive
-	SourcePath string // real file on disk to read
-}
-
-// createTarGz creates a tar.gz archive of the source directory.
-// excludeFiles skips exact relative paths; extra injects additional files (e.g. a DB dump).
-func (s *Service) createTarGz(source, dest string, excludeDirs, excludeFiles []string, extra []extraTarEntry) error {
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	gw := gzip.NewWriter(f)
-	defer gw.Close()
-
-	tw := tar.NewWriter(gw)
-	defer tw.Close()
-
-	// Normalize paths for comparison
-	absSource, _ := filepath.Abs(source)
-	absDest, _ := filepath.Abs(dest)
-
-	walkErr := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Get absolute path for comparison
-		absPath, _ := filepath.Abs(path)
-
-		// Skip the destination file itself
-		if absPath == absDest {
-			return nil
-		}
-
-		// Skip excluded directories
-		rel, _ := filepath.Rel(absSource, absPath)
-		for _, excl := range excludeDirs {
-			if rel == excl || strings.HasPrefix(rel, excl+"/") {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-		}
-
-		// Skip exact file excludes (e.g. the live sqlite db, replaced by a VACUUM copy)
-		for _, excl := range excludeFiles {
-			if rel == excl {
-				return nil
-			}
-		}
-
-		// Skip symlinks to avoid issues
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return nil // Skip files that can't be read
-		}
-		header.Name = rel
-
-		if err := tw.WriteHeader(header); err != nil {
-			return nil // Skip files that can't be written
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return nil // Skip files that can't be opened
-		}
-		defer file.Close()
-
-		_, err = io.Copy(tw, file)
-		if err != nil {
-			return nil // Skip files that can't be copied
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return walkErr
-	}
-
-	// Inject extra entries (DB dumps) after the directory walk.
-	for _, e := range extra {
-		if err := s.addFileToTar(tw, e.SourcePath, e.HeaderName); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
+// (createTarGz and extraTarEntry removed — backups are now database-only via
+// createDumpOnlyTarGz, so walking the data directory is no longer needed.)
 
 // addFileToTar writes a single file into the tar writer with the given archive path.
 func (s *Service) addFileToTar(tw *tar.Writer, path, rel string) error {

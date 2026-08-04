@@ -72,6 +72,9 @@ Commands:
 }
 
 // loadEnv reads the .env file and returns a map of key-value pairs.
+// It also populates os.Environ so that code using os.Getenv (e.g.
+// CF_SECRET_ENCRYPTION_KEY, JWT_SECRET, CF_TRUSTED_PROXIES) can read values
+// from .env. Existing system environment variables are NOT overwritten.
 func loadEnv() map[string]string {
 	env := make(map[string]string)
 	f, err := os.Open(".env")
@@ -88,7 +91,14 @@ func loadEnv() map[string]string {
 		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
-			env[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			env[key] = val
+			// Populate os.Environ; don't overwrite values already set
+			// by the system environment (system env takes precedence).
+			if os.Getenv(key) == "" {
+				os.Setenv(key, val)
+			}
 		}
 	}
 	return env

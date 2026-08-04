@@ -12,8 +12,8 @@ type MihomoConfig struct {
 	Platform    string    `gorm:"size:50;default:''" json:"platform"`   // win, mac, android, ios, universal (empty = universal)
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
-	ConfigJSON  string    `gorm:"type:text" json:"config_json"` // Complete JSON for import/export
-	PlanIDs     Int64List `gorm:"type:text;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
+	ConfigJSON  string    `gorm:"type:longtext" json:"config_json"` // Complete JSON for import/export
+	PlanIDs     Int64List `gorm:"type:longtext;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -35,10 +35,10 @@ type MihomoGeneral struct {
 	LogLevel           string `gorm:"size:20;default:'info'" json:"log_level"`
 	IPv6               bool   `gorm:"default:true" json:"ipv6"`
 	FindProcessMode    string `gorm:"size:20;default:'strict'" json:"find_process_mode"`
-	Authentication     string `gorm:"type:text" json:"authentication"`
-	SkipAuthPrefixes   string `gorm:"type:text" json:"skip_auth_prefixes"`
-	LanAllowedIPs      string `gorm:"type:text" json:"lan_allowed_ips"`
-	LanDisallowedIPs   string `gorm:"type:text" json:"lan_disallowed_ips"`
+	Authentication     string `gorm:"type:longtext" json:"authentication"`
+	SkipAuthPrefixes   string `gorm:"type:longtext" json:"skip_auth_prefixes"`
+	LanAllowedIPs      string `gorm:"type:longtext" json:"lan_allowed_ips"`
+	LanDisallowedIPs   string `gorm:"type:longtext" json:"lan_disallowed_ips"`
 	StoreSelected      bool   `gorm:"default:false" json:"store_selected"`
 	StoreFakeIP        bool   `gorm:"default:true" json:"store_fake_ip"`
 	InterfaceName      string `gorm:"size:100" json:"interface_name"`
@@ -69,19 +69,19 @@ type MihomoDNS struct {
 	IPv6                   bool   `gorm:"default:true" json:"ipv6"`
 	UseHosts               bool   `gorm:"default:true" json:"use_hosts"`
 	RespectRules           bool   `gorm:"default:false" json:"respect_rules"`
-	DefaultNameserver      string `gorm:"type:text" json:"default_nameserver"`
-	Nameserver             string `gorm:"type:text" json:"nameserver"`
-	Fallback               string `gorm:"type:text" json:"fallback"`
-	ProxyServerNameserver  string `gorm:"type:text" json:"proxy_server_nameserver"`
-	DirectNameserver       string `gorm:"type:text" json:"direct_nameserver"`
+	DefaultNameserver      string `gorm:"type:longtext" json:"default_nameserver"`
+	Nameserver             string `gorm:"type:longtext" json:"nameserver"`
+	Fallback               string `gorm:"type:longtext" json:"fallback"`
+	ProxyServerNameserver  string `gorm:"type:longtext" json:"proxy_server_nameserver"`
+	DirectNameserver       string `gorm:"type:longtext" json:"direct_nameserver"`
 	FakeIPRange            string `gorm:"size:50;default:'198.18.0.1/16'" json:"fake_ip_range"`
 	FakeIPFilterMode       string `gorm:"size:20;default:'blacklist'" json:"fake_ip_filter_mode"`
-	FakeIPFilter           string `gorm:"type:text" json:"fake_ip_filter"`
+	FakeIPFilter           string `gorm:"type:longtext" json:"fake_ip_filter"`
 	FallbackGeoIP          bool   `gorm:"default:true" json:"fallback_geoip"`
 	FallbackGeoIPCode      string `gorm:"size:10;default:'CN'" json:"fallback_geoip_code"`
-	FallbackIPCIDR         string `gorm:"type:text" json:"fallback_ipcidr"`
-	FallbackDomain         string `gorm:"type:text" json:"fallback_domain"`
-	NameserverPolicy       string `gorm:"type:text" json:"nameserver_policy"`
+	FallbackIPCIDR         string `gorm:"type:longtext" json:"fallback_ipcidr"`
+	FallbackDomain         string `gorm:"type:longtext" json:"fallback_domain"`
+	NameserverPolicy       string `gorm:"type:longtext" json:"nameserver_policy"`
 	CreatedAt              time.Time `json:"created_at"`
 	UpdatedAt              time.Time `json:"updated_at"`
 }
@@ -105,7 +105,7 @@ func (MihomoHost) TableName() string { return "mihomo_hosts" }
 type MihomoTunnel struct {
 	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	ConfigID  int64     `gorm:"index;not null" json:"config_id"`
-	Network   string    `gorm:"type:text" json:"network"`   // JSON array ["tcp","udp"]
+	Network   string    `gorm:"type:longtext" json:"network"`   // JSON array ["tcp","udp"]
 	Address   string    `gorm:"size:255" json:"address"`
 	Target    string    `gorm:"size:255" json:"target"`
 	Proxy     string    `gorm:"size:100" json:"proxy"`
@@ -131,10 +131,10 @@ type MihomoSniffer struct {
 	TLSPorts             string `gorm:"size:200;default:'443, 8443'" json:"tls_ports"`
 	QUICEnabled          bool   `gorm:"default:true" json:"quic_enabled"`
 	QUICPorts            string `gorm:"size:200;default:'443, 8443'" json:"quic_ports"`
-	ForceDomain          string `gorm:"type:text" json:"force_domain"`
-	SkipDomain           string `gorm:"type:text" json:"skip_domain"`
-	SkipSrcAddress       string `gorm:"type:text" json:"skip_src_address"`
-	SkipDstAddress       string `gorm:"type:text" json:"skip_dst_address"`
+	ForceDomain          string `gorm:"type:longtext" json:"force_domain"`
+	SkipDomain           string `gorm:"type:longtext" json:"skip_domain"`
+	SkipSrcAddress       string `gorm:"type:longtext" json:"skip_src_address"`
+	SkipDstAddress       string `gorm:"type:longtext" json:"skip_dst_address"`
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }
@@ -161,8 +161,8 @@ type MihomoTLS struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	ConfigID    int64     `gorm:"index;not null" json:"config_id"`
 	Enable      bool      `gorm:"default:false" json:"enable"`
-	Certificate string    `gorm:"type:text" json:"certificate"`
-	PrivateKey  string    `gorm:"type:text" json:"private_key"`
+	Certificate string    `gorm:"type:longtext" json:"certificate"`
+	PrivateKey  string    `gorm:"type:longtext" json:"private_key"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -176,7 +176,7 @@ type MihomoTun struct {
 	Enable                  bool   `gorm:"default:false" json:"enable"`
 	Stack                   string `gorm:"size:20;default:'system'" json:"stack"`
 	Device                  string `gorm:"size:100" json:"device"`
-	DNSHijack               string `gorm:"type:text" json:"dns_hijack"`
+	DNSHijack               string `gorm:"type:longtext" json:"dns_hijack"`
 	AutoRoute               bool   `gorm:"default:true" json:"auto_route"`
 	AutoDetectInterface     bool   `gorm:"default:true" json:"auto_detect_interface"`
 	AutoRedirect            bool   `gorm:"default:false" json:"auto_redirect"`
@@ -188,21 +188,21 @@ type MihomoTun struct {
 	Inet6Address            string `gorm:"size:100" json:"inet6_address"`
 	UDPTimeout              int    `gorm:"default:300" json:"udp_timeout"`
 	EndpointIndependentNAT  bool   `gorm:"default:false" json:"endpoint_independent_nat"`
-	RouteAddress            string `gorm:"type:text" json:"route_address"`
-	RouteExcludeAddress     string `gorm:"type:text" json:"route_exclude_address"`
-	RouteAddressSet         string `gorm:"type:text" json:"route_address_set"`
-	RouteExcludeAddressSet  string `gorm:"type:text" json:"route_exclude_address_set"`
-	IncludeInterface        string `gorm:"type:text" json:"include_interface"`
-	ExcludeInterface        string `gorm:"type:text" json:"exclude_interface"`
-	IncludeUID              string `gorm:"type:text" json:"include_uid"`
-	ExcludeUID              string `gorm:"type:text" json:"exclude_uid"`
-	IncludeUIDRange         string `gorm:"type:text" json:"include_uid_range"`
-	ExcludeUIDRange         string `gorm:"type:text" json:"exclude_uid_range"`
-	IncludeMACAddress       string `gorm:"type:text" json:"include_mac_address"`
-	ExcludeMACAddress       string `gorm:"type:text" json:"exclude_mac_address"`
-	IncludeAndroidUser      string `gorm:"type:text" json:"include_android_user"`
-	IncludePackage          string `gorm:"type:text" json:"include_package"`
-	ExcludePackage          string `gorm:"type:text" json:"exclude_package"`
+	RouteAddress            string `gorm:"type:longtext" json:"route_address"`
+	RouteExcludeAddress     string `gorm:"type:longtext" json:"route_exclude_address"`
+	RouteAddressSet         string `gorm:"type:longtext" json:"route_address_set"`
+	RouteExcludeAddressSet  string `gorm:"type:longtext" json:"route_exclude_address_set"`
+	IncludeInterface        string `gorm:"type:longtext" json:"include_interface"`
+	ExcludeInterface        string `gorm:"type:longtext" json:"exclude_interface"`
+	IncludeUID              string `gorm:"type:longtext" json:"include_uid"`
+	ExcludeUID              string `gorm:"type:longtext" json:"exclude_uid"`
+	IncludeUIDRange         string `gorm:"type:longtext" json:"include_uid_range"`
+	ExcludeUIDRange         string `gorm:"type:longtext" json:"exclude_uid_range"`
+	IncludeMACAddress       string `gorm:"type:longtext" json:"include_mac_address"`
+	ExcludeMACAddress       string `gorm:"type:longtext" json:"exclude_mac_address"`
+	IncludeAndroidUser      string `gorm:"type:longtext" json:"include_android_user"`
+	IncludePackage          string `gorm:"type:longtext" json:"include_package"`
+	ExcludePackage          string `gorm:"type:longtext" json:"exclude_package"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
 }
@@ -215,7 +215,7 @@ type MihomoProxyGroup struct {
 	ConfigID        int64  `gorm:"index;not null" json:"config_id"`
 	Name            string `gorm:"size:100;not null" json:"name"`
 	Type            string `gorm:"size:20;default:'select'" json:"type"`
-	Proxies         string `gorm:"type:text" json:"proxies"` // JSON array
+	Proxies         string `gorm:"type:longtext" json:"proxies"` // JSON array
 	Hidden          bool   `gorm:"default:false" json:"hidden"`
 	URL             string `gorm:"size:500" json:"url"`
 	Interval        int    `gorm:"default:300" json:"interval"`

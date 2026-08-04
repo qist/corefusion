@@ -11,7 +11,7 @@ type InboundConfig struct {
 	Tag          string    `json:"tag" gorm:"size:128;uniqueIndex:idx_inbound_tag_server"`
 	Listen       string    `json:"listen" gorm:"size:256"`
 	Port         int       `json:"port"`
-	ConfigJSON   string    `json:"config_json" gorm:"type:text;not null"`
+	ConfigJSON   string    `json:"config_json" gorm:"type:longtext;not null"`
 	Enabled      bool      `json:"enabled" gorm:"not null"`
 
 	// 多区域：关联的 NodeServer ID，0=本地节点（兼容旧数据）

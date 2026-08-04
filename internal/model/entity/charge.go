@@ -14,11 +14,11 @@ type ChargeSite struct {
 	Domain            string    `gorm:"size:255" json:"domain"`
 	APIKey            string    `gorm:"size:255" json:"api_key"`
 	CallbackSecret    string    `gorm:"size:255" json:"callback_secret"`         // 明文（仅内存中使用，写库前加密）
-	EncryptedSecret   string    `gorm:"type:text" json:"encrypted_secret"`       // AES-256-GCM 加密后的当前密钥（兼容旧逻辑，新逻辑用 charge_site_secrets 表）
-	EncryptedSecretPrev string  `gorm:"type:text" json:"encrypted_secret_prev"`  // 兼容旧逻辑
+	EncryptedSecret   string    `gorm:"type:longtext" json:"encrypted_secret"`       // AES-256-GCM 加密后的当前密钥（兼容旧逻辑，新逻辑用 charge_site_secrets 表）
+	EncryptedSecretPrev string  `gorm:"type:longtext" json:"encrypted_secret_prev"`  // 兼容旧逻辑
 	SecretVersion     int       `gorm:"not null;default:1" json:"secret_version"` // 当前密钥版本号
 	CallbackWhitelist string    `gorm:"size:1000" json:"callback_whitelist"`     // JSON array of allowed IPs/CIDRs（P2 辅助）
-	SupportedMethods  string    `gorm:"type:text" json:"supported_methods"`      // JSON array
+	SupportedMethods  string    `gorm:"type:longtext" json:"supported_methods"`      // JSON array
 	Currency          string    `gorm:"size:16;not null;default:CNY" json:"currency"`
 	IconURL           string    `gorm:"size:500" json:"icon_url"`
 	Enabled           bool      `gorm:"not null;default:true" json:"enabled"`
@@ -29,7 +29,7 @@ type ChargeSite struct {
 	VerifiedMethod    string    `gorm:"size:16" json:"verified_method"`
 	VerifiedAt        *time.Time `gorm:"index" json:"verified_at"`
 	VerifyExpireAt    *time.Time `gorm:"index" json:"verify_expire_at"`
-	ConfigJSON        string    `gorm:"type:text" json:"config_json"`
+	ConfigJSON        string    `gorm:"type:longtext" json:"config_json"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -53,7 +53,7 @@ type ChargeSiteSecret struct {
 	ID              int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	SiteID          int64      `gorm:"not null;index:idx_site_version,unique,priority:1" json:"site_id"`
 	Version         int        `gorm:"not null;index:idx_site_version,unique,priority:2" json:"version"` // (site_id, version) 联合唯一
-	EncryptedSecret string     `gorm:"type:text;not null" json:"encrypted_secret"`                       // AES-256-GCM 加密
+	EncryptedSecret string     `gorm:"type:longtext;not null" json:"encrypted_secret"`                       // AES-256-GCM 加密
 	Status          string     `gorm:"size:16;not null;default:active;index" json:"status"`              // active / legacy / expired
 	CreatedAt       time.Time  `json:"created_at"`
 	ExpiredAt       *time.Time `gorm:"index" json:"expired_at"` // 过期时间（legacy → expired 的自动转换）
@@ -140,7 +140,7 @@ type ChargeOrder struct {
 	PaidAt         *time.Time `json:"paid_at"`
 	ProcessingAt   *time.Time `gorm:"index" json:"processing_at"` // 进入 processing 状态的时间，用于超时恢复
 	ExpiresAt      *time.Time `json:"expires_at"`
-	CallbackRaw    string     `gorm:"type:text" json:"callback_raw"`
+	CallbackRaw    string     `gorm:"type:longtext" json:"callback_raw"`
 	CallbackCount  int        `gorm:"not null;default:0" json:"callback_count"`     // v3.2: 回调次数（异常频率检测）
 	LastCallbackAt *time.Time `gorm:"index" json:"last_callback_at"`                // v3.2: 最后回调时间
 	ChargeCardID   *int64     `json:"charge_card_id"`
@@ -172,7 +172,7 @@ type ChargeCard struct {
 	ID                int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	CardCode          string     `gorm:"-" json:"card_code"`                                          // 明文，仅内存中使用（从 CardCodeEncrypted 解密填充）
 	CardCodeHash      string     `gorm:"size:64;index;not null;default:''" json:"-"`                       // SHA-256 hash，用于快速查找（不返回前端）
-	CardCodeEncrypted string     `gorm:"type:text" json:"-"`                                          // AES-256-GCM 加密存储（不返回前端）
+	CardCodeEncrypted string     `gorm:"type:longtext" json:"-"`                                          // AES-256-GCM 加密存储（不返回前端）
 	CardCodeMasked    string     `gorm:"-" json:"card_code_masked"`                                  // 脱敏卡号（列表展示用）
 	CardType          string     `gorm:"size:32;not null" json:"card_type"`
 	Value             int64      `gorm:"not null;default:0" json:"value"`
@@ -343,7 +343,7 @@ type ChargeSecurityEvent struct {
 	EventType  string    `gorm:"size:32;not null;index" json:"event_type"`
 	Severity   string    `gorm:"size:16;not null;default:medium" json:"severity"`
 	RemoteIP   string    `gorm:"size:64" json:"remote_ip"`
-	Detail     string    `gorm:"type:text" json:"detail"`
+	Detail     string    `gorm:"type:longtext" json:"detail"`
 	CreatedAt  time.Time `gorm:"index" json:"created_at"`
 }
 

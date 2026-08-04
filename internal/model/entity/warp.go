@@ -25,7 +25,7 @@ type WarpConfig struct {
 	LicenseKey     string    `json:"license_key" gorm:"size:255"`
 	RegistrationAt time.Time `json:"registration_at"`
 	Status         string    `json:"status" gorm:"size:32;not null;default:'not_registered'"`
-	ConfigJSON     string    `json:"config_json" gorm:"type:text"`
+	ConfigJSON     string    `json:"config_json" gorm:"type:longtext"`
 	CreatedAt      time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"not null"`
 }

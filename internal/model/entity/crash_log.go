@@ -10,8 +10,8 @@ type CoreCrashLog struct {
 	ExitCode       int       `json:"exit_code"`
 	Signal         string    `json:"signal" gorm:"size:32"`
 	RuntimeSeconds int64     `json:"runtime_seconds" gorm:"not null;default:0"`
-	StdoutTail     string    `json:"stdout_tail" gorm:"type:text"`
-	StderrTail     string    `json:"stderr_tail" gorm:"type:text"`
+	StdoutTail     string    `json:"stdout_tail" gorm:"type:longtext"`
+	StderrTail     string    `json:"stderr_tail" gorm:"type:longtext"`
 	RestartAttempt int       `json:"restart_attempt" gorm:"not null;default:0"`
 	AutoRestarted  bool      `json:"auto_restarted" gorm:"not null;default:false"`
 	CrashAt        time.Time `json:"crash_at" gorm:"not null"`

@@ -116,8 +116,8 @@ type TicketMessage struct {
 	TicketID    int64     `gorm:"not null;index" json:"ticket_id"`
 	SenderType  string    `gorm:"size:32;not null" json:"sender_type"` // client/admin
 	SenderID    int64     `gorm:"not null" json:"sender_id"`
-	Content     string    `gorm:"type:text;not null" json:"content"`
-	Attachments string    `gorm:"type:text" json:"attachments"` // JSON array of URLs
+	Content     string    `gorm:"type:longtext;not null" json:"content"`
+	Attachments string    `gorm:"type:longtext" json:"attachments"` // JSON array of URLs
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -218,8 +218,8 @@ type SharedAccount struct {
 	Name            string    `gorm:"size:255;not null" json:"name"`
 	Type            string    `gorm:"size:32;not null;default:other" json:"type"`
 	IconURL         string    `gorm:"size:500" json:"icon_url"`
-	Credentials     string    `gorm:"type:text;not null" json:"-"`    // encrypted, never JSON exposed
-	CredentialsEnc  string    `gorm:"type:text;not null" json:"credentials_enc"`
+	Credentials     string    `gorm:"type:longtext;not null" json:"-"`    // encrypted, never JSON exposed
+	CredentialsEnc  string    `gorm:"type:longtext;not null" json:"credentials_enc"`
 	MinPlanCategory string    `gorm:"size:32" json:"min_plan_category"` // minimum plan category to view
 	SortOrder       int       `gorm:"not null;default:0" json:"sort_order"`
 	RepairCooldown  int       `gorm:"not null;default:1440" json:"repair_cooldown"` // minutes

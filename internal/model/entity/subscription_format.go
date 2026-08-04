@@ -14,14 +14,14 @@ type SubscriptionFormat struct {
 	IsDefault   bool      `gorm:"default:false" json:"is_default"`
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
-	PlanIDs     Int64List `gorm:"type:text;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
+	PlanIDs     Int64List `gorm:"type:longtext;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
 	// Mihomo/Clash specific config sections (JSON)
-	ListenersJSON      string `gorm:"type:text" json:"listeners_json"`
-	ProxyGroupsJSON    string `gorm:"type:text" json:"proxy_groups_json"`
-	RuleProvidersJSON  string `gorm:"type:text" json:"rule_providers_json"`
-	ProxyProvidersJSON string `gorm:"type:text" json:"proxy_providers_json"`
-	DNSJSON            string `gorm:"type:text" json:"dns_json"`
-	GeneralJSON        string `gorm:"type:text" json:"general_json"`
+	ListenersJSON      string `gorm:"type:longtext" json:"listeners_json"`
+	ProxyGroupsJSON    string `gorm:"type:longtext" json:"proxy_groups_json"`
+	RuleProvidersJSON  string `gorm:"type:longtext" json:"rule_providers_json"`
+	ProxyProvidersJSON string `gorm:"type:longtext" json:"proxy_providers_json"`
+	DNSJSON            string `gorm:"type:longtext" json:"dns_json"`
+	GeneralJSON        string `gorm:"type:longtext" json:"general_json"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }

@@ -15,8 +15,8 @@ type NginxSite struct {
 	ListenSocket    string    `json:"listen_socket" gorm:"size:255"`
 	CertPath        string    `json:"cert_path" gorm:"size:512"`
 	KeyPath         string    `json:"key_path" gorm:"size:512"`
-	ServerConfig    string    `json:"server_config" gorm:"type:text"`
-	LocationConfig  string    `json:"location_config" gorm:"type:text"`
+	ServerConfig    string    `json:"server_config" gorm:"type:longtext"`
+	LocationConfig  string    `json:"location_config" gorm:"type:longtext"`
 	L4Protocol      string    `json:"l4_protocol" gorm:"size:16"`
 	SNITarget       string    `json:"sni_target" gorm:"size:255"`
 	LocalPort       string    `json:"local_port" gorm:"size:16"`

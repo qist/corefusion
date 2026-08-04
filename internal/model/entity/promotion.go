@@ -25,7 +25,7 @@ type Promotion struct {
 	DiscountValue     int64      `gorm:"not null;default:0" json:"discount_value"`
 	MaxDiscountAmount int64      `gorm:"not null;default:0" json:"max_discount_amount"`
 	ApplicableScope   string     `gorm:"size:32;not null;default:all" json:"applicable_scope"`
-	ApplicableIDs     Int64List  `gorm:"type:text;not null" json:"applicable_ids"`
+	ApplicableIDs     Int64List  `gorm:"type:longtext;not null" json:"applicable_ids"`
 	MaxUses           int        `gorm:"not null;default:0" json:"max_uses"`
 	MaxUsesPerUser    int        `gorm:"not null;default:1" json:"max_uses_per_user"`
 	UsedCount         int        `gorm:"not null;default:0" json:"used_count"`

@@ -13,7 +13,7 @@ type InboundService struct {
 	ListenPort int `json:"listen_port" gorm:"not null"`
 	Transport string `json:"transport" gorm:"size:32"`
 	TLSEnabled int `json:"tls_enabled" gorm:"not null;default:0"`
-	ConfigJSON string `json:"config_json" gorm:"type:text;not null"`
+	ConfigJSON string `json:"config_json" gorm:"type:longtext;not null"`
 	ProcessStatus string `json:"process_status" gorm:"size:32"`
 	AutoStart     bool      `json:"auto_start" gorm:"not null;default:false"`
 	AutoRestart   bool      `json:"auto_restart" gorm:"not null;default:false"`

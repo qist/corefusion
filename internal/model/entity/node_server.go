@@ -42,7 +42,7 @@ type NodeServer struct {
 	FailoverPriority int    `json:"failover_priority" gorm:"not null;default:0"`
 
 	// 链式代理配置（JSON）
-	ChainConfig string `json:"chain_config" gorm:"type:text"`
+	ChainConfig string `json:"chain_config" gorm:"type:longtext"`
 
 	// Agent 连接
 	AgentPort       int        `json:"agent_port" gorm:"not null;default:18443"` // default see constants.DefaultAgentGRPCPort
@@ -79,7 +79,7 @@ type NodeServer struct {
 	BillingEnabled bool `json:"billing_enabled" gorm:"not null;default:true"`
 
 	// 元数据
-	Metadata  string    `json:"metadata" gorm:"type:text"`
+	Metadata  string    `json:"metadata" gorm:"type:longtext"`
 	SortOrder int       `json:"sort_order" gorm:"not null;default:0"`
 	Enabled   bool      `json:"enabled" gorm:"not null;default:true"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`

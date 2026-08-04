@@ -19,7 +19,7 @@ type PlanTemplate struct {
 	Name                      string    `gorm:"size:100;not null" json:"name"`
 	Description               string    `gorm:"size:500" json:"description"`
 	Category                  string    `gorm:"size:32;not null;default:general" json:"category"`
-	NodeGroupIDs              Int64List `gorm:"type:text;not null" json:"node_group_ids"`
+	NodeGroupIDs              Int64List `gorm:"type:longtext;not null" json:"node_group_ids"`
 	DeviceLimit               int       `gorm:"not null;default:0" json:"device_limit"`
 	SpeedLimitMbps            int       `gorm:"not null;default:0" json:"speed_limit_mbps"`         // 下载限速 Mbps（0=不限）
 	SpeedLimitUpMbps          int       `gorm:"not null;default:0" json:"speed_limit_up_mbps"`      // 上传限速 Mbps（0=不限）
@@ -30,14 +30,14 @@ type PlanTemplate struct {
 	SuspendOnQuotaExhausted   int       `gorm:"not null;default:1" json:"suspend_on_quota_exhausted"`
 	IsTrial                   bool      `gorm:"not null;default:false" json:"is_trial"`
 	TrialDurationHours        int       `gorm:"not null;default:0" json:"trial_duration_hours"`
-	BillingUsedTemplate       string    `gorm:"type:text" json:"billing_used_template"`
-	BillingRemainingTemplate  string    `gorm:"type:text" json:"billing_remaining_template"`
-	BillingResetTemplate      string    `gorm:"type:text" json:"billing_reset_template"`
-	BillingExpiryTemplate     string    `gorm:"type:text" json:"billing_expiry_template"`
-	BillingNodeIDs            Int64List `gorm:"type:text" json:"billing_node_ids"` // NodeGroupMember IDs selected for billing info rendering
+	BillingUsedTemplate       string    `gorm:"type:longtext" json:"billing_used_template"`
+	BillingRemainingTemplate  string    `gorm:"type:longtext" json:"billing_remaining_template"`
+	BillingResetTemplate      string    `gorm:"type:longtext" json:"billing_reset_template"`
+	BillingExpiryTemplate     string    `gorm:"type:longtext" json:"billing_expiry_template"`
+	BillingNodeIDs            Int64List `gorm:"type:longtext" json:"billing_node_ids"` // NodeGroupMember IDs selected for billing info rendering
 	SortOrder                 int       `gorm:"not null;default:0" json:"sort_order"`
 	Enabled                   bool      `gorm:"not null;default:true" json:"enabled"`
-	Metadata                  string    `gorm:"type:text" json:"metadata"`
+	Metadata                  string    `gorm:"type:longtext" json:"metadata"`
 	CreatedAt                 time.Time `json:"created_at"`
 	UpdatedAt                 time.Time `json:"updated_at"`
 }

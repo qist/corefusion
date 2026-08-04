@@ -6,7 +6,7 @@ import "time"
 type SystemSetting struct {
 	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Key       string    `json:"key" gorm:"size:128;uniqueIndex;not null"`
-	Value     string    `json:"value" gorm:"type:text"`
+	Value     string    `json:"value" gorm:"type:longtext"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
 }

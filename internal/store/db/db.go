@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"corefusion/internal/migration"
 	"corefusion/internal/model/entity"
 
 	"github.com/qist/sqlite"
@@ -331,6 +332,59 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 			continue
 		}
 
+		// Only keep columns that actually exist in the target table.
+		// This makes migration robust against schema drift (e.g. source has a
+		// column that was later removed from the entity/model).
+		var dstCols []string
+		if err := dstDB.Raw(
+			"SELECT column_name FROM information_schema.columns WHERE table_name = ?", table,
+		).Scan(&dstCols).Error; err != nil {
+			log.Printf("migrate: warning: cannot read target columns for %s: %v", table, err)
+		}
+		colSet := make(map[string]struct{}, len(dstCols))
+		for _, c := range dstCols {
+			colSet[c] = struct{}{}
+		}
+		// Detect boolean columns in the target so we can coerce source values
+		// (MySQL stores bool as tinyint, read back as int64) into real bool for
+		// databases like PostgreSQL that require a native boolean type.
+		boolCols := make(map[string]struct{})
+		var boolColRows []string
+		if err := dstDB.Raw(
+			"SELECT column_name FROM information_schema.columns WHERE table_name = ? AND data_type IN ('boolean','bool')", table,
+		).Scan(&boolColRows).Error; err == nil {
+			for _, c := range boolColRows {
+				boolCols[c] = struct{}{}
+			}
+		}
+		if len(colSet) > 0 {
+			for i := range rows {
+				for k := range rows[i] {
+					if _, ok := colSet[k]; !ok {
+						delete(rows[i], k)
+						continue
+					}
+					// Coerce int64 (0/1) from MySQL tinyint into native bool for
+					// the target (PostgreSQL driver rejects int64 for bool columns).
+					if _, isBool := boolCols[k]; isBool {
+						switch v := rows[i][k].(type) {
+						case int64:
+							rows[i][k] = v != 0
+						case int:
+							rows[i][k] = v != 0
+						case bool:
+							// already bool, keep
+						default:
+							rows[i][k] = rows[i][k] != nil && rows[i][k] != 0
+						}
+					}
+				}
+				// gorm expects a gorm.DeletedAt key for soft-delete columns;
+				// when absent it is fine to drop.
+				delete(rows[i], "DeletedAt")
+			}
+		}
+
 		// Clear target table data
 		if err := dstDB.Exec(fmt.Sprintf("DELETE FROM %s", table)).Error; err != nil {
 			log.Printf("migrate: warning: could not clear target table %s: %v", table, err)
@@ -365,6 +419,18 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 // runAutoMigrate runs the same AutoMigrate logic as the main application on a given DB.
 // This ensures the target database has all required tables before data is copied.
 func runAutoMigrate(db *gorm.DB) error {
+	// PostgreSQL has no "longtext" type. Register a DOMAIN alias longtext->text
+	// so the cross-database entity definitions (type:longtext) work on PG too.
+	if db.Dialector.Name() == "postgres" {
+		ddl := `DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'longtext') THEN
+				CREATE DOMAIN longtext AS text;
+			END IF;
+		END $$;`
+		if err := db.Exec(ddl).Error; err != nil {
+			return fmt.Errorf("create longtext domain: %w", err)
+		}
+	}
 	// Import the entity package to get all models
 	// We use the same model list as migration.AutoMigrate
 	models := allEntityModels()
@@ -372,6 +438,12 @@ func runAutoMigrate(db *gorm.DB) error {
 		if err := db.AutoMigrate(model); err != nil {
 			return fmt.Errorf("auto-migrate %T: %w", model, err)
 		}
+	}
+	// Run post-AutoMigrate data migrations/seeds (e.g. charge_cards
+	// plaintext→encrypted column drop) BEFORE copying data, so the target
+	// schema matches the source. Safe to run on any dialect.
+	if err := migration.RunDataMigrations(db); err != nil {
+		return fmt.Errorf("post auto-migrate data migrations: %w", err)
 	}
 	return nil
 }

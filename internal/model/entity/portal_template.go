@@ -10,13 +10,13 @@ type PortalTemplate struct {
 	Name        string    `gorm:"size:255;not null" json:"name"`
 	Description string    `gorm:"size:500" json:"description"`
 	// HTMLContent is the full HTML page (with template variables like {{.SiteName}}).
-	HTMLContent string `gorm:"type:text" json:"html_content"`
+	HTMLContent string `gorm:"type:longtext" json:"html_content"`
 	// CSSContent is custom CSS injected into <style> tags.
-	CSSContent string `gorm:"type:text" json:"css_content"`
+	CSSContent string `gorm:"type:longtext" json:"css_content"`
 	// JSContent is custom JS injected into <script> tags.
-	JSContent string `gorm:"type:text" json:"js_content"`
+	JSContent string `gorm:"type:longtext" json:"js_content"`
 	// Config is a JSON object with template variables (site_name, logo_url, primary_color, etc.).
-	Config string `gorm:"type:text" json:"config"`
+	Config string `gorm:"type:longtext" json:"config"`
 	// IsActive marks the currently active template (only one can be active).
 	IsActive bool `gorm:"not null;default:false" json:"is_active"`
 	// IsBuiltIn marks system-provided templates (cannot be deleted).

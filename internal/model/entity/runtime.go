@@ -7,10 +7,10 @@ type RuntimeSnapshot struct {
 	ID              int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	SnapshotType    string    `json:"snapshot_type" gorm:"size:32;not null"`
 	TriggerSource   string    `json:"trigger_source" gorm:"size:32"`
-	Reason          string    `json:"reason" gorm:"type:text"`
-	TargetServerIDsJSON string `json:"target_server_ids_json" gorm:"type:text"` // intended target nodes (empty = all)
-	ConfigJSON      string    `json:"config_json" gorm:"type:text"`
-	FilePathsJSON   string    `json:"file_paths_json" gorm:"type:text"`
+	Reason          string    `json:"reason" gorm:"type:longtext"`
+	TargetServerIDsJSON string `json:"target_server_ids_json" gorm:"type:longtext"` // intended target nodes (empty = all)
+	ConfigJSON      string    `json:"config_json" gorm:"type:longtext"`
+	FilePathsJSON   string    `json:"file_paths_json" gorm:"type:longtext"`
 	ChecksumSHA256  string    `json:"checksum_sha256" gorm:"size:64"`
 	CreatedAt       time.Time `json:"created_at" gorm:"not null"`
 }
@@ -21,7 +21,7 @@ func (RuntimeSnapshot) TableName() string { return "runtime_snapshots" }
 type RuntimeApplyJob struct {
 	ID                int64      `json:"id" gorm:"primaryKey;autoIncrement"`
 	TriggerSource     string     `json:"trigger_source" gorm:"size:32;index;not null"`
-	Reason            string     `json:"reason" gorm:"type:text"`
+	Reason            string     `json:"reason" gorm:"type:longtext"`
 	OperationKind     string     `json:"operation_kind" gorm:"size:32;not null;default:apply"`
 	Status            string     `json:"status" gorm:"size:32;index;not null"`
 	Phase             string     `json:"phase" gorm:"size:64"`
@@ -31,8 +31,8 @@ type RuntimeApplyJob struct {
 	SuccessCount      int        `json:"success_count" gorm:"not null;default:0"`
 	FailedCount       int        `json:"failed_count" gorm:"not null;default:0"`
 	VerifyStatus      string     `json:"verify_status" gorm:"size:32;not null;default:''"` // pending|verifying|ok|partial|failed|skipped
-	TargetServerIDsJSON string   `json:"target_server_ids_json" gorm:"type:text"`           // selected target nodes (empty = all)
-	ErrorMessage      string     `json:"error_message" gorm:"type:text"`
+	TargetServerIDsJSON string   `json:"target_server_ids_json" gorm:"type:longtext"`           // selected target nodes (empty = all)
+	ErrorMessage      string     `json:"error_message" gorm:"type:longtext"`
 	StartedAt         *time.Time `json:"started_at"`
 	FinishedAt        *time.Time `json:"finished_at"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"not null"`
@@ -53,7 +53,7 @@ type RuntimeApplyJobTarget struct {
 	VersionBefore   string     `json:"version_before" gorm:"size:64"`
 	VersionAfter    string     `json:"version_after" gorm:"size:64"`
 	RollbackVersion string     `json:"rollback_version" gorm:"size:64"`
-	ErrorMessage    string     `json:"error_message" gorm:"type:text"`
+	ErrorMessage    string     `json:"error_message" gorm:"type:longtext"`
 	StartedAt       *time.Time `json:"started_at"`
 	FinishedAt      *time.Time `json:"finished_at"`
 	CreatedAt       time.Time  `json:"created_at" gorm:"not null"`
@@ -70,8 +70,8 @@ type RuntimeApplyJobEvent struct {
 	EventLevel string    `json:"event_level" gorm:"size:16;not null"`
 	EventType  string    `json:"event_type" gorm:"size:64;not null"`
 	Phase      string    `json:"phase" gorm:"size:64"`
-	Message    string    `json:"message" gorm:"type:text;not null"`
-	DetailJSON string    `json:"detail_json" gorm:"type:text"`
+	Message    string    `json:"message" gorm:"type:longtext;not null"`
+	DetailJSON string    `json:"detail_json" gorm:"type:longtext"`
 	CreatedAt  time.Time `json:"created_at" gorm:"not null"`
 }
 
@@ -120,7 +120,7 @@ type BackupCleanupJob struct {
 	ExpiredCount   int        `json:"expired_count" gorm:"not null;default:0"`
 	DeletedCount   int        `json:"deleted_count" gorm:"not null;default:0"`
 	ProtectedCount int        `json:"protected_count" gorm:"not null;default:0"`
-	ErrorMessage   string     `json:"error_message" gorm:"type:text"`
+	ErrorMessage   string     `json:"error_message" gorm:"type:longtext"`
 	StartedAt      *time.Time `json:"started_at"`
 	FinishedAt     *time.Time `json:"finished_at"`
 }
@@ -140,7 +140,7 @@ type BinaryRelease struct {
 	Signature       string    `json:"signature" gorm:"size:512"`
 	ReleaseChannel  string    `json:"release_channel" gorm:"size:32;not null;default:stable"`
 	MinUpgradeable  string    `json:"min_upgradeable" gorm:"size:64"`
-	Notes           string    `json:"notes" gorm:"type:text"`
+	Notes           string    `json:"notes" gorm:"type:longtext"`
 	CreatedAt       time.Time `json:"created_at" gorm:"not null"`
 }
 
@@ -157,7 +157,7 @@ type UpdateJob struct {
 	ReleaseChannel    string     `json:"release_channel" gorm:"size:32;not null;default:stable"`
 	Status            string     `json:"status" gorm:"size:32;not null;default:pending"`
 	Phase             string     `json:"phase" gorm:"size:64"`
-	ErrorMessage      string     `json:"error_message" gorm:"type:text"`
+	ErrorMessage      string     `json:"error_message" gorm:"type:longtext"`
 	RollbackAvailable int        `json:"rollback_available" gorm:"not null;default:0"`
 	StartedAt         *time.Time `json:"started_at"`
 	FinishedAt        *time.Time `json:"finished_at"`
@@ -172,9 +172,9 @@ type RoutingRegion struct {
 	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name        string    `json:"name" gorm:"size:64;not null;uniqueIndex"`
 	Label       string    `json:"label" gorm:"size:128;not null"`
-	Description string    `json:"description" gorm:"type:text"`
-	Countries   string    `json:"countries" gorm:"type:text"`
-	CIDRs       string    `json:"cidrs" gorm:"type:text"`
+	Description string    `json:"description" gorm:"type:longtext"`
+	Countries   string    `json:"countries" gorm:"type:longtext"`
+	CIDRs       string    `json:"cidrs" gorm:"type:longtext"`
 	Status      int       `json:"status" gorm:"not null;default:1"`
 	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`
@@ -188,7 +188,7 @@ type ACMEAccount struct {
 	Email           string    `json:"email" gorm:"size:255;not null"`
 	CAProvider      string    `json:"ca_provider" gorm:"size:32;not null"`
 	CAUrl           string    `json:"ca_url" gorm:"size:512;not null"`
-	AccountKeyPEM   string    `json:"account_key_pem" gorm:"type:text;not null"`
+	AccountKeyPEM   string    `json:"account_key_pem" gorm:"type:longtext;not null"`
 	RegistrationURI string    `json:"registration_uri" gorm:"size:512"`
 	EABKeyID        string    `json:"eab_key_id" gorm:"size:255"`
 	EABMACKey       string    `json:"eab_mac_key" gorm:"size:255"`
@@ -206,10 +206,10 @@ type CertificateJob struct {
 	JobType       string     `json:"job_type" gorm:"size:32;not null"`
 	CAProvider    string     `json:"ca_provider" gorm:"size:32"`
 	ChallengeType string     `json:"challenge_type" gorm:"size:32"`
-	Domains       string     `json:"domains" gorm:"type:text;not null"`
+	Domains       string     `json:"domains" gorm:"type:longtext;not null"`
 	Status        string     `json:"status" gorm:"size:32;not null;default:pending"`
 	Phase         string     `json:"phase" gorm:"size:64"`
-	ErrorMessage  string     `json:"error_message" gorm:"type:text"`
+	ErrorMessage  string     `json:"error_message" gorm:"type:longtext"`
 	StartedAt     *time.Time `json:"started_at"`
 	FinishedAt    *time.Time `json:"finished_at"`
 	CreatedAt     time.Time  `json:"created_at" gorm:"not null"`

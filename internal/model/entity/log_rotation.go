@@ -28,7 +28,7 @@ type LogRotationJob struct {
 	RotatedFiles int       `json:"rotated_files" gorm:"not null;default:0"`
 	CleanedFiles int       `json:"cleaned_files" gorm:"not null;default:0"`
 	FreedBytes   int64     `json:"freed_bytes" gorm:"not null;default:0"`
-	ErrorMessage string    `json:"error_message" gorm:"type:text"`
+	ErrorMessage string    `json:"error_message" gorm:"type:longtext"`
 	StartedAt    time.Time `json:"started_at" gorm:"not null"`
 	FinishedAt   time.Time `json:"finished_at" gorm:"not null"`
 }

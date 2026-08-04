@@ -7,7 +7,7 @@ type ExternalNodeSource struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name       string    `json:"name" gorm:"not null"`
 	SourceType string    `json:"source_type" gorm:"not null"`
-	SourceData string    `json:"source_data" gorm:"type:text"`
+	SourceData string    `json:"source_data" gorm:"type:longtext"`
 	SourceURL  string    `json:"source_url"`
 	Enabled    bool      `json:"enabled" gorm:"not null;default:true"`
 	SortOrder  int       `json:"sort_order" gorm:"not null;default:0"`
@@ -28,7 +28,7 @@ type ExternalNode struct {
 	Transport  string    `json:"transport"`
 	TLS        bool      `json:"tls"`
 	ServerName string    `json:"server_name"`
-	ProxyJSON  string    `json:"proxy_json" gorm:"type:text;not null"` // full mihomo proxy map JSON
+	ProxyJSON  string    `json:"proxy_json" gorm:"type:longtext;not null"` // full mihomo proxy map JSON
 	Enabled    bool      `json:"enabled" gorm:"not null;default:true"`
 	SortOrder  int       `json:"sort_order" gorm:"not null;default:0"`
 	CreatedAt  time.Time `json:"created_at"`

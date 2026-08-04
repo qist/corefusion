@@ -34,7 +34,7 @@ type Subscription struct {
 	AccessCount int64 `json:"access_count" gorm:"not null;default:0"`
 	LastIP string `json:"ip" gorm:"size:64"`
 	LastUserAgent string `json:"user_agent" gorm:"size:512"`
-	BillingNodeIDs         Int64List  `json:"billing_node_ids" gorm:"type:text"`
+	BillingNodeIDs         Int64List  `json:"billing_node_ids" gorm:"type:longtext"`
 	CreatedAt               time.Time  `json:"created_at" gorm:"not null"`
 	UpdatedAt     time.Time `json:"updated_at" gorm:"not null"`
 }

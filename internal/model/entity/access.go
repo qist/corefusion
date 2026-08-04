@@ -66,7 +66,7 @@ type SecurityAuditEvent struct {
 	RemoteIP     string    `json:"remote_ip" gorm:"size:64"`
 	Result       string    `json:"result" gorm:"size:32"`
 	Reason       string    `json:"reason" gorm:"size:255"`
-	MetadataJSON string    `json:"metadata_json" gorm:"type:text"`
+	MetadataJSON string    `json:"metadata_json" gorm:"type:longtext"`
 	CreatedAt    time.Time `json:"created_at" gorm:"index;not null"`
 }
 
@@ -81,7 +81,7 @@ type SecurityAlert struct {
 	EndpointID *int64     `json:"endpoint_id"`
 	DedupKey   string     `json:"dedup_key" gorm:"size:128;index"`
 	Title      string     `json:"title" gorm:"size:255;not null"`
-	Message    string     `json:"message" gorm:"type:text"`
+	Message    string     `json:"message" gorm:"type:longtext"`
 	Status     string     `json:"status" gorm:"size:32;not null;default:active"`
 	TriggeredAt time.Time `json:"triggered_at" gorm:"not null"`
 	ResolvedAt *time.Time `json:"resolved_at"`
@@ -94,7 +94,7 @@ type AlertChannel struct {
 	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name        string    `json:"name" gorm:"size:128;not null"`
 	ChannelType string    `json:"channel_type" gorm:"size:32;not null"`
-	ConfigJSON  string    `json:"config_json" gorm:"type:text;not null"`
+	ConfigJSON  string    `json:"config_json" gorm:"type:longtext;not null"`
 	Status      int       `json:"status" gorm:"not null;default:1"`
 	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`

@@ -10,7 +10,7 @@ type OutboundConfig struct {
 	CoreType   string    `json:"core_type" gorm:"size:32;not null;index"`
 	Protocol   string    `json:"protocol" gorm:"size:32;not null"`
 	Tag        string    `json:"tag" gorm:"size:128;uniqueIndex:idx_outbound_tag_server"`
-	ConfigJSON string    `json:"config_json" gorm:"type:text;not null"`
+	ConfigJSON string    `json:"config_json" gorm:"type:longtext;not null"`
 	Enabled    bool      `json:"enabled" gorm:"not null"`
 	IsDefault  bool      `json:"is_default" gorm:"not null"`
 	SortOrder  int       `json:"sort_order" gorm:"not null;default:0;index:idx_outbound_sort"`

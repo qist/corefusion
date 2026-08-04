@@ -1,7 +1,9 @@
 package migration
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -220,6 +222,24 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.RateLimitConfig{},
 	}
 
+	// PostgreSQL has no "longtext" type. CoreFusion entities use type:longtext
+	// for large-text columns (MySQL maps it to LONGTEXT, 4GB). To keep a single
+	// entity definition across databases, we register a PostgreSQL DOMAIN that
+	// aliases longtext -> text (which is unbounded in PG). This must run before
+	// AutoMigrate so the type exists when tables are created.
+	if db.Dialector.Name() == "postgres" {
+		// CREATE DOMAIN ... IF NOT EXISTS is not supported on all PG versions;
+		// use a DO block to create the alias idempotently.
+		ddl := `DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'longtext') THEN
+				CREATE DOMAIN longtext AS text;
+			END IF;
+		END $$;`
+		if err := db.Exec(ddl).Error; err != nil {
+			return fmt.Errorf("create longtext domain: %w", err)
+		}
+	}
+
 	for _, model := range models {
 		if err := db.AutoMigrate(model); err != nil {
 			return err
@@ -229,6 +249,20 @@ func AutoMigrate(db *gorm.DB) error {
 
 	log.Println("all migrations completed")
 
+	// Run all post-AutoMigrate data migrations / seeds.
+	// Exported so the cross-DB migration tool (db.MigrateTo) can run them on
+	// the target database BEFORE copying data, ensuring the target schema
+	// matches the source (e.g. charge_cards plaintext→encrypted column drop).
+	if err := RunDataMigrations(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// RunDataMigrations runs all post-AutoMigrate data migrations and seeds.
+// It is safe to call multiple times (all steps are idempotent).
+func RunDataMigrations(db *gorm.DB) error {
 	// Migrate existing data to server_id=1 (local node)
 	migrateServerID(db)
 
@@ -273,17 +307,56 @@ func migrateUniqueIndexes(db *gorm.DB) {
 }
 
 // dropIndex drops an index if it exists, logging the result.
+// 兼容 MySQL 与 PostgreSQL: MySQL 不支持 DROP INDEX ... IF EXISTS,
+// 且语法为 DROP INDEX idx ON table;PostgreSQL 支持 DROP INDEX IF EXISTS idx。
 func dropIndex(db *gorm.DB, table, indexName string) {
-	if err := db.Exec("DROP INDEX IF EXISTS " + indexName).Error; err != nil {
+	var sql string
+	if db.Dialector.Name() == "mysql" {
+		sql = "DROP INDEX " + indexName + " ON " + table
+	} else {
+		sql = "DROP INDEX IF EXISTS " + indexName
+	}
+	if err := db.Exec(sql).Error; err != nil {
+		// MySQL: 索引不存在(错误码 1091)属幂等场景,视为成功
+		if isIgnorableIndexError(err) {
+			return
+		}
 		log.Printf("WARNING: drop index %s on %s: %v", indexName, table, err)
 	}
 }
 
 // createIndex creates a new index, logging the result.
+// PostgreSQL 支持 CREATE INDEX IF NOT EXISTS;MySQL 不支持 IF NOT EXISTS。
 func createIndex(db *gorm.DB, sql string) {
+	if db.Dialector.Name() == "mysql" {
+		sql = strings.Replace(sql, " IF NOT EXISTS", "", 1)
+	}
 	if err := db.Exec(sql).Error; err != nil {
+		// MySQL: 索引已存在(错误码 1061)属幂等场景,视为成功
+		if isIgnorableIndexError(err) {
+			return
+		}
 		log.Printf("WARNING: create index: %s: %v", sql, err)
 	}
+}
+
+// isIgnorableIndexError reports whether a DDL index error is benign and can be
+// ignored during migration. MySQL returns 1091 (index to drop does not exist)
+// and 1061 (index already exists) when migrations are re-run; both are expected
+// in idempotent migration flows.
+func isIgnorableIndexError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "1091") || strings.Contains(msg, "1061") {
+		return true
+	}
+	// Fallback: match by English message fragments.
+	if strings.Contains(msg, "Can't DROP") || strings.Contains(msg, "Duplicate key name") {
+		return true
+	}
+	return false
 }
 
 // recreateIndex drops the old index and creates a new one with the given SQL.
@@ -298,9 +371,9 @@ func recreateIndex(db *gorm.DB, table, indexName, createSQL string) {
 //   1. AutoMigrate 已添加新列 (card_code_hash, card_code_encrypted, created_by_admin_id, created_by_admin_name)
 //   2. 对已有行：card_code → hash + encrypt，然后删除旧 card_code 列
 func migrateChargeCardEncryption(db *gorm.DB) {
-	// 检查是否有旧的 card_code 明文列
-	var hasOldColumn bool
-	db.Raw("SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = 'charge_cards' AND column_name = 'card_code'").Scan(&hasOldColumn)
+	// 检查是否有旧的 card_code 明文列(兼容 SQLite: 用 Migrator().HasColumn,
+	// 而非 information_schema.columns,后者在 SQLite 上不存在)。
+	hasOldColumn := db.Migrator().HasColumn("charge_cards", "card_code")
 	if !hasOldColumn {
 		return // 已迁移过
 	}
@@ -341,9 +414,8 @@ func migrateChargeCardEncryption(db *gorm.DB) {
 // migrateChargeCardAgentColumn v3.3: 添加 agent_id 和 agent_name 列到 charge_cards 表
 // 用于追踪充值卡的销售代理员/推广员
 func migrateChargeCardAgentColumn(db *gorm.DB) {
-	// 检查是否已有 agent_id 列
-	var hasAgentIDColumn bool
-	db.Raw("SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = 'charge_cards' AND column_name = 'agent_id'").Scan(&hasAgentIDColumn)
+	// 检查是否已有 agent_id 列(兼容 SQLite: 用 Migrator().HasColumn)
+	hasAgentIDColumn := db.Migrator().HasColumn("charge_cards", "agent_id")
 	if hasAgentIDColumn {
 		return // 已存在，无需迁移
 	}

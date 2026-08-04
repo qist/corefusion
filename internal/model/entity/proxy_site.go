@@ -15,9 +15,9 @@ type ProxySite struct {
 	ListenSocket   string    `json:"listen_socket" gorm:"size:255"`
 	CertPath       string    `json:"cert_path" gorm:"size:512"`
 	KeyPath        string    `json:"key_path" gorm:"size:512"`
-	CustomConfig   string    `json:"custom_config" gorm:"type:text"`    // Caddy: site-level directives
-	ServerConfig   string    `json:"server_config" gorm:"type:text"`    // Nginx: server block directives
-	LocationConfig string    `json:"location_config" gorm:"type:text"`  // Nginx: location block directives
+	CustomConfig   string    `json:"custom_config" gorm:"type:longtext"`    // Caddy: site-level directives
+	ServerConfig   string    `json:"server_config" gorm:"type:longtext"`    // Nginx: server block directives
+	LocationConfig string    `json:"location_config" gorm:"type:longtext"`  // Nginx: location block directives
 	L4Protocol     string    `json:"l4_protocol" gorm:"size:16"`
 	SNITarget      string    `json:"sni_target" gorm:"size:255"`
 	LocalPort      string    `json:"local_port" gorm:"size:16"`

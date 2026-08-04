@@ -10,7 +10,7 @@ type ConfigSnapshot struct {
 	ServerID  int64     `json:"server_id" gorm:"index;not null"`
 	CoreType  string    `json:"core_type" gorm:"size:32;index;not null"`
 	Version   int64     `json:"version"`
-	Config    string    `json:"config" gorm:"type:text;not null"`
+	Config    string    `json:"config" gorm:"type:longtext;not null"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 }
 

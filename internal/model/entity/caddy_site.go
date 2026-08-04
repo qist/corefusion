@@ -13,8 +13,8 @@ type CaddySite struct {
 	BackendPath   string    `json:"backend_path" gorm:"size:255"`
 	CertPath      string    `json:"cert_path" gorm:"size:512"`
 	KeyPath       string    `json:"key_path" gorm:"size:512"`
-	ProxyConfig   string    `json:"proxy_config" gorm:"type:text"`   // inside reverse_proxy { }
-	CustomConfig  string    `json:"custom_config" gorm:"type:text"`  // outside reverse_proxy (e.g. encode gzip)
+	ProxyConfig   string    `json:"proxy_config" gorm:"type:longtext"`   // inside reverse_proxy { }
+	CustomConfig  string    `json:"custom_config" gorm:"type:longtext"`  // outside reverse_proxy (e.g. encode gzip)
 	LbPolicy      string    `json:"lb_policy" gorm:"size:32"`        // round_robin, least_conn, etc.
 	LogEnabled    bool      `json:"log_enabled" gorm:"not null;default:false"`
 	LogPath       string    `json:"log_path" gorm:"size:255"`        // e.g. logs/example.com.log

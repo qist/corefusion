@@ -48,6 +48,7 @@ import (
 	subfmtHandler "corefusion/internal/api/handlers/subformat"
 	subsHandler "corefusion/internal/api/handlers/subscriptions"
 	systemHandler "corefusion/internal/api/handlers/system"
+	trafficHandler "corefusion/internal/api/handlers/traffic"
 	usersHandler "corefusion/internal/api/handlers/users"
 	warpHandler "corefusion/internal/api/handlers/warp"
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
@@ -1473,7 +1474,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			})
 
 			go metricsCollector.RunLoop(context.Background())
-				speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
+
+			// Periodic speed test: run once shortly after startup, then on an
+			// interval driven by SPEEDTEST_INTERVAL_MIN (default 5 minutes).
+			speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
+			if iv := os.Getenv("SPEEDTEST_INTERVAL_MIN"); iv != "" {
+				if mins, err := strconv.Atoi(iv); err == nil && mins > 0 {
+					speedTestMgr = speedTestMgr.WithInterval(time.Duration(mins) * time.Minute)
+				}
+			}
+			go speedTestMgr.RunLoop(context.Background())
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
 				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
 
@@ -1870,9 +1880,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certsGroup.GET("/:id", certH.GetByID)
 				certsGroup.PUT("/:id", certH.Update)
 				certsGroup.DELETE("/:id", certH.Delete)
-				certsGroup.POST("/:id/renew", certH.Renew)
-				certsGroup.POST("/:id/deploy", certH.Deploy)
-			}
+			certsGroup.POST("/:id/renew", certH.Renew)
+		}
 
 			// DNS Channels — admin only.
 			certChannelsGroup := protected.Group("/cert-channels").Use(middleware.RequireRole(domainuser.RoleAdmin))
@@ -1984,21 +1993,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			backupsGroup := protected.Group("/backups")
 			backupsGroup.Use(middleware.RequireRole(domainuser.RoleAdmin))
 			superAdminBackups := backupsGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin))
-			{
-				backupsGroup.GET("/configs", backupsH.ListConfigBackups)
-				backupsGroup.POST("/configs", backupsH.CreateConfigBackup)
-				backupsGroup.GET("/database", backupsH.ListDBBackups)
-				backupsGroup.POST("/database", backupsH.CreateDBBackup)
-				backupsGroup.GET("/retention-policies", backupsH.ListRetentionPolicies)
-				backupsGroup.POST("/retention-policies", backupsH.CreateRetentionPolicy)
-				backupsGroup.PUT("/retention-policies/:id", backupsH.UpdateRetentionPolicy)
-				backupsGroup.DELETE("/retention-policies/:id", backupsH.DeleteRetentionPolicy)
-				backupsGroup.GET("/cleanup-jobs", backupsH.ListCleanupJobs)
-				backupsGroup.POST("/cleanup-jobs", backupsH.CreateCleanupJob)
-				backupsGroup.GET("/snapshots/:id/validation", backupsH.GetSnapshotValidation)
-				backupsGroup.POST("/snapshots/:id/validate", backupsH.ValidateSnapshot)
+		{
+			backupsGroup.GET("/database", backupsH.ListDBBackups)
+			backupsGroup.POST("/database", backupsH.CreateDBBackup)
+			backupsGroup.POST("/cleanup-jobs", backupsH.CreateCleanupJob)
 
-				// Full backup
+			// Full backup
 				backupsGroup.POST("/create", backupsH.CreateFullBackup)
 				backupsGroup.GET("/list", backupsH.ListFullBackups)
 				backupsGroup.GET("/:id/download", backupsH.DownloadBackup)
@@ -2015,9 +2015,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				backupsGroup.PUT("/storages/:id", backupsH.UpdateStorage)
 				backupsGroup.DELETE("/storages/:id", backupsH.DeleteStorage)
 
-				// Destructive (super_admin only)
-				superAdminBackups.POST("/configs/restore", backupsH.RestoreConfigBackup)
-				superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
+			// Destructive (super_admin only)
+			superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
 				superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
 				superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
 				superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
@@ -2562,16 +2561,17 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 	}
 
 	// Traffic Quotas
+	trafficNodeServerRepo := repository.NewNodeServerRepository(database)
+	trafficH := trafficHandler.NewHandler(trafficNodeServerRepo, repository.NewTrafficQuotaRepository(database))
 	traffic := rg.Group("/traffic")
 	{
-		traffic.GET("/quotas", placeholder("list quotas"))
-		traffic.POST("/quotas", placeholder("create quota"))
-		traffic.PUT("/quotas/:id", placeholder("update quota"))
-		traffic.GET("/quotas/:id/usage", placeholder("get quota usage"))
-		traffic.GET("/usage-summary", placeholder("get usage summary"))
-		traffic.GET("/sessions", placeholder("list sessions"))
-		traffic.GET("/reset-logs", placeholder("list reset logs"))
-		traffic.POST("/quotas/:id/reset", placeholder("reset quota"))
+		// Read-only monitoring view. Quota enforcement lives in the
+		// subscription/plan engine (subscription.EnforceQuotaAndExpiry,
+		// NodeTrafficQuotaService); this surface only observes it.
+		traffic.GET("/quotas", trafficH.ListQuotas)
+		traffic.GET("/quotas/:id/usage", trafficH.GetQuotaUsage)
+		traffic.GET("/usage-history", trafficH.GetUsageHistory)
+		traffic.GET("/reset-logs", trafficH.ListResetLogs)
 	}
 
 
@@ -2627,6 +2627,7 @@ func isSPARoute(path string) bool {
 		"/client-ext",
 		"/runtime",
 		"/audit",
+		"/traffic-quota",
 	}
 
 	for _, route := range knownRoutes {

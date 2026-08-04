@@ -12,7 +12,7 @@
 
 | 类别 | 数量 | 说明 |
 |---|---|---|
-| 真实缺失 | 2 项 | 见第二章（2.1–2.7、2.9–2.11 已于 2026-07-30 实现；剩余 2.8 面板自更新[后期]、2.12 初始化向导[最后]） |
+| 真实缺失 | 1 项 | 见第二章（2.1–2.7、2.9–2.11、2.12 已于 2026-07-30/2026-08-04 实现；剩余 2.8 面板自更新[后期]） |
 | 文档过时（代码已有等价实现） | 8 项 | 见第三章，应从设计文档/placeholder 中清理 |
 | 死代码/代码卫生 | 10 项 | 见第四章 |
 | 前端问题 | 6 项 | 见第五章 |
@@ -146,14 +146,15 @@
 | Metrics 指标端点（6 个已实现） | **已实现的 6 个（均后端可用）**：`metricsGroup`（router.go:1846-1851）下 `/api/v1/metrics/overview`（节点/服务/活跃订阅/活跃证书/近 30 天过期证书/配额预警计数）、`/metrics/services`（入站服务列表含 `process_status`）、`/metrics/nodes`（节点 total/active/inactive 计数）、`/metrics/certificates`（证书 total/active/expiring 计数）；`node-servers` 下 `/:id/metrics-history`（单节点时序指标，支持 `?duration` 默认 1h、`?interval` 默认 5m，经 `metricsCollector` 取数，前端 `web/admin/src/api/nodeServer.js:159`）、`/metrics/aggregated`（全节点聚合指标，前端 `nodeServer.js:163`）。**均未在前端 UI 真正调用**：`getMetricsHistory`/`getAggregatedMetrics` 等 api 包装已定义，但无任何 `.vue` 视图 import 使用；`metricsGroup` 四个端点前端更无调用——属后台/可观测性数据接口，需补仪表盘页面才有展示价值，非死端点。**已决议不实现的设计占位**：原文档规划过 `ConnectionFailures`（连接失败计数/比率）与 `UDPQUICMetrics`（QUIC-over-UDP 传输指标）两个端点，经核查代码 0 处引用、且需 agent 端新埋点、收益低，**决议删除、不再实现**。其诊断意图可由现有 `metrics-history` 扩充 `connection_errors` 等字段顺带覆盖，无需独立端点 |
 | 安全能力：2FA/CLI 恢复命令/`corefusion client` 模式/`web/client` 前端 | `CODE_STRUCTURE_SECURITY.md` 的建议项，仍未落地。**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离、管理端 mTLS 已于 2026-08-01 实现**（mTLS 证据：`cmd/corefusion/main.go` 读取 `mtls_enabled`+`mtls_ca_path` 并设 `RequireAndVerifyClientCert`），见下方 2.13 |
 
-#### 2.12 首次启动初始化向导（**暂缓开发**）
+#### 2.12 首次启动初始化向导（**不开发 — 2026-08-04 用户确认已实现**）
 
-> 原 P0 安全相关项，经评估当前不急于开发，下调至 P3 暂缓。
+> 经用户确认：bootstrap（启动初始化）已实现，**本轮不进行代码修改**，仅在此标注。
 
 - 来源：`docs/design/first-boot-initialization.md`（文档自述"状态：设计阶段"）
-- 现状：全库无 `/api/v1/init/*` 路由、无 `IsFirstBoot`、无 CLI 恢复/重置命令（CLI 仅有 `server`/`migrate` 子命令，`runClient` 仍是 "client mode not yet implemented"，`main.go:548`）、无初始化前端页面；`cmd/corefusion/main.go:330` 硬编码 `CreateInitialAdmin("admin","admin123")`
-- 缺失内容：随机初始化端口/Token、五步配置向导（端口/管理员/访问路径/HTTPS）、初始化前端
-- 关联：`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）是无前端调用的死端点
+- **已实现的事实依据**：
+  - 面板初始化：首个用户自动成为 admin（`auth.CreateInitialAdmin`，`main.go` 启动创建 `admin/admin123`），即"首次启动即有管理员"，无需独立向导端点
+  - 节点 Agent bootstrap：完整的真实流程 —— `v1.POST("/agent/bootstrap")` 用 bootstrap token 下发证书与 agent 二进制/配置（`router.go:1989`）、`internal/runtime/agent/bootstrap.go` + 前端 `NodeServers.vue` 的 bootstrap command / install script，均已实现并可用
+- 结论：原认为缺失的"五步配置向导"/`/api/v1/init/*` 端点**不实现**；`handlers/system/handler.go` 的 `GetBootstrapState`/`FinishBootstrap`（L350-358）保留为无前端调用的死端点（不影响功能，列入死代码表待后续清理，但本轮不删）
 
 #### 2.13 后台账号权限（**部分已实现 2026-08-01**）
 
@@ -197,7 +198,7 @@
 
 | # | 项 | 实际等价实现 | 证据 |
 |---|---|---|---|
-| 3.1 | 证书部署 Deploy() 桩 | 证书签发/续期/上传后自动分发：`fireCertUpdated` → `DistributeCertificateToAll` → Agent 磁盘 + ReloadCore；反代证书随 SyncProxyConfig 携带；断线重连补发 | `certificates/handler.go:203,239,305`、`router.go:1249-1254`、`cert_distributor.go:36,165` |
+| 3.1 | 证书部署 Deploy() 桩 | 证书签发/续期/上传后自动分发：`fireCertUpdated` → `DistributeCertificateToAll` → Agent 磁盘 + ReloadCore；反代证书随 SyncProxyConfig 携带；断线重连补发；功能与 `node-servers/distribute-cert`、`node-servers/:id/distribute-cert` 手动分发端点完全重叠 | `certificates/handler.go:203,239,305`、`router.go:1249-1254`、`cert_distributor.go:36,165`；**端点已删除 2026-08-04**：`POST /certificates/:id/deploy` 路由与 `Deploy` handler 已移除（重叠功能由自动分发 + nodeserver 手动分发覆盖） |
 | 3.2 | `/reverse-proxies` 6 条 placeholder ✅ 路由已清理 2026-07-30 | 反代管理已完整实现：`/node-servers/:id/proxy/*`（通用）、`/caddy/*`、`/nginx/*` 全套 CRUD/reload/配置查看，前端 CaddyProxy/NginxProxy 完备 | `router.go:1504-1565`、`system/caddy_handler.go`、`nginx_handler.go`、`proxy.go` |
 | 3.3 | 流量聚合器被注释（"aggregator 死代码致配额不生效"） | 用量统计已改道：trafficsync（本机）+ TrafficEventConsumer（远程）→ `inboundconfig.UpdateTraffic` → `subscriptions.*_bytes_cache`；`TrafficUsageLedger/Summary` 是被废弃的旧设计 | `trafficsync/service.go:222`、`traffic_consumer.go:105`、`inboundconfig/service.go:133-208` |
 | 3.4 | Server Share 的"分享域名"能力 | `/share-domains` + `/node-servers/:id/share-domains` 全套 CRUD 已实现，前端 ShareDomainTab 在用；placeholder 多出的只是发布/版本/二维码等增强 | `router.go:937-945,1635-1639`、`sharedomainconfig/handler.go` |
@@ -205,7 +206,8 @@
 | 3.6 | `adapters/` 四个流量采集器"空实现/近似实现" | ~~该包整体**无人 import**，是未完成即被废弃的平行新架构~~ **已于 2026-08-02 删除**（`internal/runtime/adapters/` 连同 hysteria2/singbox/tuic/xray 子目录），全仓库 0 处引用；实际采集由 trafficsync（xray）承担 | `trafficsync/service.go` |
 | 3.7 | proto `AgentService` 20 个 RPC "未注册未实现" | 命令全部走 Heartbeat 双向 stream 的 PanelCommand（`SendCommandAndWait` 20+ 处调用），proto 的 AgentService 是消除反向拨号后的死定义 | `eliminate-reverse-dial.md`、`manager.go:1023` |
 | 3.8 | main.go:301 RegionSelector 创建后丢弃 | `router.go:1307-1311` 已正确接线到 `nodeserver.Service.WithRegionSelector`，功能正常；main.go 那行是冗余 | `router.go:1307`、`nodeserver/service.go:899` |
-| 3.9 | CreateConfigBackup 写空文件 | "完整备份"已打包整个 dataDir（含全部配置，仅排除 backup/rules_tmp/cache/logs）+ DB dump，配置不会丢；config 单项端点是冗余桩 | `backup/service.go:44-86` |
+| 3.9 | CreateConfigBackup 写空文件 | "完整备份"已打包整个 dataDir（含全部配置，仅排除 backup/rules_tmp/cache/logs）+ DB dump，配置不会丢；config 单项端点是冗余桩 | `backup/service.go:44-86`；**端点已删除 2026-08-04**：`backups/configs`（GET/POST）、`backups/configs/restore`（POST）路由与 `ListConfigBackups`/`CreateConfigBackup`/`RestoreConfigBackup` handler 均已移除，功能由完整备份端点覆盖 |
+| 3.10 | backups 冗余桩端点（retention-policies CRUD / snapshots validation / ListCleanupJobs） | `retention-policies` 4 端点与 `snapshots/:id/validation`、`snapshots/:id/validate`、`ListCleanupJobs` 均为 `// TODO: implement` 空返回；`CreateCleanupJob`（调 `svc.EnforceRetention`）为真功能，已保留 | `backups/handler.go:177-244`；**端点已删除 2026-08-04**：上述 7 个桩路由与对应 handler 均已移除，仅保留 `POST /cleanup-jobs`（真功能） |
 
 ---
 
@@ -227,7 +229,9 @@
 | 废弃 domain 接口 | `domain/runtime/interfaces.go` | ⏸️ **保留**：2.10 RuntimeApplyService 需要 |
 | 废弃 adapters 采集器包 | `internal/runtime/adapters/`（hysteria2/singbox/tuic/xray） | ✅ **已删除 2026-08-02**（全仓库 0 处 import，未完成即被废弃的平行架构；采集由 trafficsync 承担） |
 | `routing_regions`/`runtime_*` 空骨架表 | `entity/runtime.go` | ⏸️ **保留**：2.10 Runtime 工作流 / 路由区域需要 |
-| P3 / 第3章 死 placeholder 路由 | `router.go` `registerPlaceholderRoutes` | ✅ **已删除 52 条**：`/client/merge-profiles`(11)+`/client/route-profiles`(11)、`/routing/regions`(4)、`/route-runtime/openwrt/*`(7)、`/reverse-proxies`(6)、`/server-share/profiles`(12)、`/services/:id/logs`(1)；`/traffic/*`(8) 属"保留项"未动 |
+| P3 / 第3章 死 placeholder 路由 | `router.go` `registerPlaceholderRoutes` | ✅ **已删除 52 条**：`/client/merge-profiles`(11)+`/client/route-profiles`(11)、`/routing/regions`(4)、`/route-runtime/openwrt/*`(7)、`/reverse-proxies`(6)、`/server-share/profiles`(12)、`/services/:id/logs`(1)；**`/traffic/*` 已于 2026-08-04 实现，2026-08-04 收敛为只读监控**：新增 `internal/store/repository/traffic_quota.go` + `internal/api/handlers/traffic/handler.go`，接真实数据层（`traffic_quotas`/`traffic_usage_summary`/`traffic_sessions`/`traffic_quota_reset_logs`）；**与套餐/订阅配额引擎（`subscription.EnforceQuotaAndExpiry` + `NodeTrafficQuotaService`，数据在 `Plan.QuotaBytes`/`Subscription.QuotaBytes`/`node_server.traffic_quota_bytes`）存在概念重叠**，经评估 `traffic_quotas` 表写入后不被执行引擎读取，故按方案 1 将写接口（POST/PUT/DELETE /quotas、POST /quotas/:id/reset）全部移除，仅保留 5 个只读端点（list quotas / quotas/:id/usage / usage-summary / sessions / reset-logs）；前端 `TrafficQuota.vue` 收敛为只读监控页（去新建/编辑/删除/重置按钮，顶部加"只读监控"提示，引导用户在套餐管理/节点服务器配置配额） |
+| 证书 Deploy 冗余端点 | `router.go:1874` + `certificates/handler.go:261-267` | ✅ **已删除 2026-08-04**：`POST /certificates/:id/deploy` 路由与 `Deploy` handler；功能与自动分发 + `node-servers/distribute-cert` 手动分发完全重叠 |
+| backups 冗余桩端点 | `router.go:1986-2000` + `backups/handler.go` | ✅ **已删除 2026-08-04**：`GET/POST /backups/configs`、`POST /backups/configs/restore`、`GET/POST/PUT/DELETE /backups/retention-policies`、`GET /backups/cleanup-jobs`、`GET/POST /backups/snapshots/:id/validation|validate` 共 10 个桩路由及其 handler；保留 `POST /backups/cleanup-jobs`（真功能） |
 
 > 清理后已执行 `go build ./...` 通过。前端孤儿文件删除已核实无 import 引用。
 

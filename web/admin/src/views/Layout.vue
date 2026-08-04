@@ -85,6 +85,7 @@ const allMenuItems = [
   { path: '/client-ext', title: 'menu.clientExtManagement', icon: 'Grid', role: 'admin' },
   { path: '/clients', title: 'menu.clients', icon: 'User', role: 'operator' },
   { path: '/certificates', title: 'menu.certificates', icon: 'Lock', role: 'admin' },
+  { path: '/traffic-quota', title: 'menu.trafficQuota', icon: 'DataLine', role: 'admin' },
   { path: '/users', title: 'menu.users', icon: 'User', role: 'admin' },
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document', role: 'admin' },
   { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor', role: 'admin' },

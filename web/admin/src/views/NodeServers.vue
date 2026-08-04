@@ -977,7 +977,10 @@ function onTabChange(tab) {
   try { window.__tabLog = (window.__tabLog || '') + 'onTabChange:' + JSON.stringify(tab) + ';' } catch (e) {}
   switch (tab) {
     case 'servers': loadServers(); break
-    case 'dashboard': loadDashboard(); loadSpeedTestResults(); break
+    case 'dashboard':
+      loadDashboard()
+      loadSpeedTestResults()
+      break
     case 'ca':
       loadCA(); loadAgentCerts(); loadRevocations(); loadDistQueue(); loadRetryQueue()
       break

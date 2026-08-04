@@ -28,62 +28,6 @@ func NewHandler(db *gorm.DB, dataDir string, svc *backupSvc.Service) *Handler {
 	return &Handler{db: db, dataDir: dataDir, svc: svc}
 }
 
-// ListConfigBackups handles GET /api/v1/backups/configs.
-func (h *Handler) ListConfigBackups(c *gin.Context) {
-	backupDir := filepath.Join(h.dataDir, "backup", "configs")
-	files, _ := filepath.Glob(filepath.Join(backupDir, "*.tar.gz"))
-
-	items := make([]gin.H, 0, len(files))
-	for _, f := range files {
-		info, err := os.Stat(f)
-		if err == nil {
-			items = append(items, gin.H{
-				"filename":  filepath.Base(f),
-				"size":      info.Size(),
-				"created_at": info.ModTime(),
-			})
-		}
-	}
-
-	response.OK(c, items)
-}
-
-// CreateConfigBackup handles POST /api/v1/backups/configs.
-func (h *Handler) CreateConfigBackup(c *gin.Context) {
-	backupDir := filepath.Join(h.dataDir, "backup", "configs")
-	os.MkdirAll(backupDir, 0750)
-
-	filename := fmt.Sprintf("config-backup-%s.tar.gz", time.Now().Format("20060102-150405"))
-	backupPath := filepath.Join(backupDir, filename)
-
-	// TODO: implement actual config backup (tar configs directory)
-	// For now, create an empty file as placeholder
-	if err := os.WriteFile(backupPath, []byte{}, 0640); err != nil {
-		response.InternalError(c, "BACKUP_FAILED", err.Error())
-		return
-	}
-
-	response.Created(c, gin.H{
-		"filename":  filename,
-		"path":      backupPath,
-		"created_at": time.Now(),
-	})
-}
-
-// RestoreConfigBackup handles POST /api/v1/backups/configs/restore.
-func (h *Handler) RestoreConfigBackup(c *gin.Context) {
-	var req struct {
-		Filename string `json:"filename" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-
-	// TODO: implement actual config restore
-	response.OK(c, gin.H{"message": "config restore initiated", "filename": req.Filename})
-}
-
 // ListDBBackups handles GET /api/v1/backups/database.
 func (h *Handler) ListDBBackups(c *gin.Context) {
 	backupDir := filepath.Join(h.dataDir, "backup", "database")
@@ -174,36 +118,6 @@ func (h *Handler) RestoreDBBackup(c *gin.Context) {
 	response.OK(c, gin.H{"message": "database restored", "filename": req.Filename, "restart_required": needRestart})
 }
 
-// ListRetentionPolicies handles GET /api/v1/backups/retention-policies.
-func (h *Handler) ListRetentionPolicies(c *gin.Context) {
-	// TODO: implement
-	response.OK(c, []interface{}{})
-}
-
-// CreateRetentionPolicy handles POST /api/v1/backups/retention-policies.
-func (h *Handler) CreateRetentionPolicy(c *gin.Context) {
-	// TODO: implement
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED"})
-}
-
-// UpdateRetentionPolicy handles PUT /api/v1/backups/retention-policies/:id.
-func (h *Handler) UpdateRetentionPolicy(c *gin.Context) {
-	// TODO: implement
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED"})
-}
-
-// DeleteRetentionPolicy handles DELETE /api/v1/backups/retention-policies/:id.
-func (h *Handler) DeleteRetentionPolicy(c *gin.Context) {
-	// TODO: implement
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED"})
-}
-
-// ListCleanupJobs handles GET /api/v1/backups/cleanup-jobs.
-func (h *Handler) ListCleanupJobs(c *gin.Context) {
-	// TODO: implement
-	response.Paginated(c, []interface{}{}, 0, 20, 0)
-}
-
 // CreateCleanupJob handles POST /api/v1/backups/cleanup-jobs.
 // Triggers the retention policy manually: removes backups older than retain_days
 // (defaults to 30 when not provided or <= 0).
@@ -229,18 +143,6 @@ func (h *Handler) CreateCleanupJob(c *gin.Context) {
 		"retain_days": req.RetainDays,
 		"message":     fmt.Sprintf("已清理 %d 个超过 %d 天的备份", removed, req.RetainDays),
 	})
-}
-
-// GetSnapshotValidation handles GET /api/v1/backups/snapshots/:id/validation.
-func (h *Handler) GetSnapshotValidation(c *gin.Context) {
-	// TODO: implement
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED"})
-}
-
-// ValidateSnapshot handles POST /api/v1/backups/snapshots/:id/validate.
-func (h *Handler) ValidateSnapshot(c *gin.Context) {
-	// TODO: implement
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED"})
 }
 
 // --- Full Backup ---

@@ -258,15 +258,6 @@ func (h *Handler) Renew(c *gin.Context) {
 	response.OK(c, cert)
 }
 
-// Deploy handles POST /api/v1/certificates/:id/deploy.
-func (h *Handler) Deploy(c *gin.Context) {
-	// TODO: implement certificate deployment to services
-	response.OK(c, gin.H{
-		"code":    "NOT_IMPLEMENTED",
-		"message": "certificate deployment not yet implemented",
-	})
-}
-
 // FindExpiringSoon returns certificates expiring within 30 days.
 func (h *Handler) FindExpiringSoon(c *gin.Context) {
 	certs, err := h.certSvc.FindExpiringSoon(c.Request.Context(), 30*24*time.Hour)

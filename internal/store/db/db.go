@@ -366,18 +366,44 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 					}
 					// Coerce int64 (0/1) from MySQL tinyint into native bool for
 					// the target (PostgreSQL driver rejects int64 for bool columns).
-					if _, isBool := boolCols[k]; isBool {
-						switch v := rows[i][k].(type) {
-						case int64:
-							rows[i][k] = v != 0
-						case int:
-							rows[i][k] = v != 0
-						case bool:
-							// already bool, keep
-						default:
-							rows[i][k] = rows[i][k] != nil && rows[i][k] != 0
-						}
+				if _, isBool := boolCols[k]; isBool {
+					switch v := rows[i][k].(type) {
+					case bool:
+						// already bool, keep
+					case int64:
+						rows[i][k] = v != 0
+					case int:
+						rows[i][k] = v != 0
+					case int32:
+						rows[i][k] = v != 0
+					case int16:
+						rows[i][k] = v != 0
+					case int8:
+						rows[i][k] = v != 0
+					case uint64:
+						rows[i][k] = v != 0
+					case uint:
+						rows[i][k] = v != 0
+					case uint32:
+						rows[i][k] = v != 0
+					case uint16:
+						rows[i][k] = v != 0
+					case uint8:
+						rows[i][k] = v != 0
+					case float64:
+						rows[i][k] = v != 0
+					case float32:
+						rows[i][k] = v != 0
+					case string:
+						// MySQL tinyint may be returned as "0"/"1" []byte or string
+						rows[i][k] = v == "1" || v == "true" || v == "t"
+					case []byte:
+						rows[i][k] = string(v) == "1" || string(v) == "true" || string(v) == "t"
+					default:
+						// Fallback: treat zero/nil as false
+						rows[i][k] = false
 					}
+				}
 				}
 				// gorm expects a gorm.DeletedAt key for soft-delete columns;
 				// when absent it is fine to drop.
@@ -498,6 +524,7 @@ func allEntityModels() []interface{} {
 		&entity.NginxSite{},
 		&entity.DNSChannel{},
 		&entity.ACMEAccountConfig{},
+		&entity.CARoot{},
 		&entity.LogRotationPolicy{},
 		&entity.LogRotationJob{},
 		&entity.SystemSetting{},

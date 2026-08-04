@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -350,9 +349,11 @@ func (m *NodeServerManager) StartGRPCServer(ctx context.Context, addr string) er
 		Certificates: []tls.Certificate{serverCert},
 		MinVersion:   tls.VersionTLS13,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    x509.NewCertPool(),
+		// Trust all valid CA roots (both the outgoing and incoming CA during a
+		// rotation) so Agents keep working while their short-lived certificates
+		// re-enroll onto the new CA.
+		ClientCAs: m.ca.ClientCAPool(),
 	}
-	tlsConfig.ClientCAs.AddCert(m.ca.GetCACert())
 
 	// Add CRL verification if available
 	if m.crl != nil {

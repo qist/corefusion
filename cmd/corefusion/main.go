@@ -161,7 +161,8 @@ func runServer(args []string) {
 	}
 
 	// Phase 2.5: Initialize internal CA (for Agent mTLS)
-	caService, err := agent.InitCA(dataDir)
+	caRepo := repository.NewCARootRepository(db.DB)
+	caService, err := agent.EnsureCA(dataDir, caRepo)
 	if err != nil {
 		log.Fatalf("failed to initialize CA: %v", err)
 	}

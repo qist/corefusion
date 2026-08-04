@@ -1752,21 +1752,39 @@ func (s *Service) MigrateCertificate(ctx context.Context, oldCertID, newCertID i
 
 // ──────────────────── Supplementary: CA Center ────────────────────
 
-// GetCAStatus returns the CA root certificate status.
+// GetCAStatus returns the CA root certificate status, including rotation
+// observability. During a CA rotation the response contains multiple entries in
+// ca_roots (an outgoing + incoming pair) and rotation_in_progress is true.
+//
+// The top-level fields (subject, serial, not_before, not_after) reflect the
+// newest CA root and are kept backward-compatible with the frontend.
 func (s *Service) GetCAStatus() interface{} {
 	if s.caService == nil {
 		return gin.H{"initialized": false}
 	}
-	cert := s.caService.GetCACert()
-	return gin.H{
-		"initialized":   true,
-		"subject":       cert.Subject.String(),
-		"serial":        cert.SerialNumber.String(),
-		"not_before":    cert.NotBefore,
-		"not_after":     cert.NotAfter,
-		"issuer":        cert.Issuer.String(),
-		"fingerprint":   fmt.Sprintf("%x", cert.SerialNumber),
+
+	caRoots := s.caService.ListCAStatus()
+
+	result := gin.H{
+		"initialized":          true,
+		"ca_roots":             caRoots,
+		"ca_count":             len(caRoots),
+		"rotation_in_progress": len(caRoots) > 1,
+		"overlap_window_days":  int(agent.CAOverlapWindow / (24 * time.Hour)),
 	}
+
+	// Flatten the newest CA root fields to the top level so the frontend can
+	// access them directly (backward compatible).
+	if len(caRoots) > 0 {
+		latest := caRoots[len(caRoots)-1]
+		result["subject"]    = latest.Subject
+		result["serial"]     = latest.SerialNumber
+		result["not_before"] = latest.NotBefore
+		result["not_after"]  = latest.NotAfter
+		result["expires_in"] = latest.ExpiresIn
+	}
+
+	return result
 }
 
 // ListAgentCerts returns all Agent certificates (from node servers that have one).

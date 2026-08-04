@@ -2451,6 +2451,13 @@ certAutoDetectHint: '系统会自动扫描 Xray/Caddy/Nginx 配置中引用的�
     // CA Center
     caStatus: 'CA 根证书状态',
     caNotInit: 'CA 未初始化',
+    caRotating: '轮换中',
+    caNormal: '正常',
+    caIncoming: '新 CA',
+    caOutgoing: '旧 CA',
+    caInOverlap: '即将过期',
+    caRotationHint: 'CA 正在轮换，提前 {days} 天生成新 CA，新旧 CA 同时有效',
+    caExpiresIn: '剩余有效期: {remaining}',
     subject: '主题',
     serial: '序列号',
     notBefore: '生效时间',

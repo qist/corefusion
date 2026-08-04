@@ -227,13 +227,32 @@
         <el-row :gutter="16" style="margin-bottom:16px">
           <el-col :span="12">
             <el-card shadow="hover">
-              <template #header><span>{{ t('nodeServer.caStatus') }}</span></template>
-              <div v-loading="caLoading" style="font-size:13px;line-height:2;color:#606266">
+              <template #header>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span>{{ t('nodeServer.caStatus') }}</span>
+                  <el-tag v-if="caStatus && caStatus.rotation_in_progress" type="warning" size="small">{{ t('nodeServer.caRotating') }}</el-tag>
+                  <el-tag v-else-if="caStatus && caStatus.initialized" type="success" size="small">{{ t('nodeServer.caNormal') }}</el-tag>
+                </div>
+              </template>
+              <div v-loading="caLoading" style="font-size:13px;color:#606266">
                 <template v-if="caStatus && caStatus.initialized">
-                  <div>{{ t('nodeServer.subject') }}: <code style="font-size:12px">{{ caStatus.subject }}</code></div>
-                  <div>{{ t('nodeServer.serial') }}: <code style="font-size:12px">{{ caStatus.serial }}</code></div>
-                  <div>{{ t('nodeServer.notBefore') }}: {{ formatTime(caStatus.not_before) }}</div>
-                  <div>{{ t('nodeServer.notAfter') }}: <span :style="{color: certExpiringSoon(caStatus.not_after) ? '#e6a23c' : '#67c23a'}">{{ formatTime(caStatus.not_after) }}</span></div>
+                  <div v-if="caStatus.rotation_in_progress" style="margin-bottom:8px;padding:6px 10px;background:#fdf6ec;border-radius:4px;font-size:12px;color:#e6a23c">
+                    {{ t('nodeServer.caRotationHint', { days: caStatus.overlap_window_days }) }}
+                  </div>
+                  <div v-for="(root, idx) in (caStatus.ca_roots || [])" :key="idx" style="border:1px solid #ebeef5;border-radius:6px;padding:10px 12px;margin-bottom:8px">
+                    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+                      <el-tag v-if="root.is_incoming" type="success" size="small">{{ t('nodeServer.caIncoming') }}</el-tag>
+                      <el-tag v-if="root.is_outgoing" type="warning" size="small">{{ t('nodeServer.caOutgoing') }}</el-tag>
+                      <el-tag v-if="root.in_overlap" type="danger" size="small">{{ t('nodeServer.caInOverlap') }}</el-tag>
+                    </div>
+                    <div style="line-height:1.8">
+                      <div>{{ t('nodeServer.subject') }}: <code style="font-size:12px">{{ root.subject }}</code></div>
+                      <div>{{ t('nodeServer.serial') }}: <code style="font-size:12px">{{ root.serial_number }}</code></div>
+                      <div>{{ t('nodeServer.notBefore') }}: {{ formatTime(root.not_before) }}</div>
+                      <div>{{ t('nodeServer.notAfter') }}: <span :style="{color: certExpiringSoon(root.not_after) ? '#e6a23c' : '#67c23a'}">{{ formatTime(root.not_after) }}</span></div>
+                      <div style="color:#909399;font-size:12px">{{ t('nodeServer.caExpiresIn', { remaining: root.expires_in }) }}</div>
+                    </div>
+                  </div>
                 </template>
                 <el-empty v-else :description="t('nodeServer.caNotInit')" :image-size="60" />
               </div>

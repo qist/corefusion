@@ -97,6 +97,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// Certificate Management
 		&entity.DNSChannel{},
 		&entity.ACMEAccountConfig{},
+		&entity.CARoot{},
 
 		// Log Rotation
 		&entity.LogRotationPolicy{},

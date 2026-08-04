@@ -1602,6 +1602,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("", nodeServerH.List)
 				nodeServersGroup.POST("", nodeServerH.Create)
 				nodeServersGroup.GET("/ca-cert", nodeServerH.GetCACert)
+				nodeServersGroup.GET("/ca-status", nodeServerH.GetCAStatus)
 				nodeServersGroup.POST("/distribute-cert", nodeServerH.DistributeCertificateToAll)
 				nodeServersGroup.POST("/migrate-cert", nodeServerH.MigrateCertificate)
 				nodeServersGroup.GET("/:id", nodeServerH.GetByID)

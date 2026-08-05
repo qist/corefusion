@@ -2046,6 +2046,15 @@ func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.
 			return
 		}
 		log.Printf("[BackupScheduler] Uploaded to %s storage: %s", storage.Type, storage.Name)
+
+		// Optionally delete the local backup after successful upload
+		if sched.DeleteLocalAfterUpload {
+			if err := s.svc.DeleteBackup(ctx, rec.ID); err != nil {
+				log.Printf("[BackupScheduler] Delete local backup error: %v", err)
+			} else {
+				log.Printf("[BackupScheduler] Local backup deleted after upload: %s", name)
+			}
+		}
 	}
 
 	// Update last run time

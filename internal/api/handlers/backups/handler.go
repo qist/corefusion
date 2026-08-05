@@ -399,18 +399,30 @@ func (h *Handler) UploadToFTP(c *gin.Context) {
 		return
 	}
 
-	var config backupSvc.FTPConfig
-	if err := c.ShouldBindJSON(&config); err != nil {
+	var req struct {
+		backupSvc.FTPConfig
+		DeleteLocal bool `json:"delete_local"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
 
-	if err := h.svc.UploadToFTP(c.Request.Context(), id, config); err != nil {
+	if err := h.svc.UploadToFTP(c.Request.Context(), id, req.FTPConfig); err != nil {
 		response.InternalError(c, "UPLOAD_FAILED", err.Error())
 		return
 	}
 
-	response.OK(c, gin.H{"message": "uploaded to FTP successfully"})
+	if req.DeleteLocal {
+		if err := h.svc.DeleteBackup(c.Request.Context(), id); err != nil {
+			response.OK(c, gin.H{"message": "uploaded to FTP successfully (local cleanup failed)", "local_deleted": false})
+			return
+		}
+		response.OK(c, gin.H{"message": "uploaded to FTP successfully, local backup cleaned", "local_deleted": true})
+		return
+	}
+
+	response.OK(c, gin.H{"message": "uploaded to FTP successfully", "local_deleted": false})
 }
 
 // UploadToS3 handles POST /api/v1/backups/:id/upload-s3.
@@ -421,18 +433,30 @@ func (h *Handler) UploadToS3(c *gin.Context) {
 		return
 	}
 
-	var config backupSvc.S3Config
-	if err := c.ShouldBindJSON(&config); err != nil {
+	var req struct {
+		backupSvc.S3Config
+		DeleteLocal bool `json:"delete_local"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
 
-	if err := h.svc.UploadToS3(c.Request.Context(), id, config); err != nil {
+	if err := h.svc.UploadToS3(c.Request.Context(), id, req.S3Config); err != nil {
 		response.InternalError(c, "UPLOAD_FAILED", err.Error())
 		return
 	}
 
-	response.OK(c, gin.H{"message": "uploaded to S3 successfully"})
+	if req.DeleteLocal {
+		if err := h.svc.DeleteBackup(c.Request.Context(), id); err != nil {
+			response.OK(c, gin.H{"message": "uploaded to S3 successfully (local cleanup failed)", "local_deleted": false})
+			return
+		}
+		response.OK(c, gin.H{"message": "uploaded to S3 successfully, local backup cleaned", "local_deleted": true})
+		return
+	}
+
+	response.OK(c, gin.H{"message": "uploaded to S3 successfully", "local_deleted": false})
 }
 
 // UploadToWebDAV handles POST /api/v1/backups/:id/upload-webdav.
@@ -443,18 +467,30 @@ func (h *Handler) UploadToWebDAV(c *gin.Context) {
 		return
 	}
 
-	var config backupSvc.WebDAVConfig
-	if err := c.ShouldBindJSON(&config); err != nil {
+	var req struct {
+		backupSvc.WebDAVConfig
+		DeleteLocal bool `json:"delete_local"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
 
-	if err := h.svc.UploadToWebDAV(c.Request.Context(), id, config); err != nil {
+	if err := h.svc.UploadToWebDAV(c.Request.Context(), id, req.WebDAVConfig); err != nil {
 		response.InternalError(c, "UPLOAD_FAILED", err.Error())
 		return
 	}
 
-	response.OK(c, gin.H{"message": "uploaded to WebDAV successfully"})
+	if req.DeleteLocal {
+		if err := h.svc.DeleteBackup(c.Request.Context(), id); err != nil {
+			response.OK(c, gin.H{"message": "uploaded to WebDAV successfully (local cleanup failed)", "local_deleted": false})
+			return
+		}
+		response.OK(c, gin.H{"message": "uploaded to WebDAV successfully, local backup cleaned", "local_deleted": true})
+		return
+	}
+
+	response.OK(c, gin.H{"message": "uploaded to WebDAV successfully", "local_deleted": false})
 }
 
 // ListRemoteFiles handles GET /api/v1/backups/storages/:id/files.

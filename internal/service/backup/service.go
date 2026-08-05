@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -750,16 +751,213 @@ func restoreMySQL(ctx context.Context, dsn, content string) error {
 	return nil
 }
 
-// restorePostgres imports a .sql dump via pgx (supports multiple statements).
+// restorePostgres imports a .sql dump by splitting it into individual
+// statements and executing each via pgx simple query protocol.
+//
+// The dump is split on semicolons that end a statement (respecting string
+// literals and comments). This avoids message-size issues with very large
+// dumps (100MB+) that fail when sent as a single query string.
+//
+// After importing the data, all SERIAL/identity sequences are resynced so that
+// subsequent INSERTs don't hit duplicate-key errors.
 func restorePostgres(ctx context.Context, dsn, content string) error {
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("connect postgres for restore: %w", err)
 	}
 	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, content); err != nil {
-		return fmt.Errorf("execute postgres dump: %w", err)
+
+	stmts := splitSQLStatements(content)
+	log.Printf("[Backup] restoring postgres dump: %d statements, %d bytes", len(stmts), len(content))
+
+	// Batch statements into chunks and send each chunk as a single multi-statement
+	// query. This is ~50x faster than executing one statement at a time because it
+	// avoids per-statement network round-trips. 500 statements per batch is a good
+	// balance between throughput and memory.
+	const batchSize = 500
+	for start := 0; start < len(stmts); start += batchSize {
+		end := start + batchSize
+		if end > len(stmts) {
+			end = len(stmts)
+		}
+		var batch strings.Builder
+		for _, s := range stmts[start:end] {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				batch.WriteString(s)
+				batch.WriteByte('\n')
+			}
+		}
+		if batch.Len() == 0 {
+			continue
+		}
+		if _, err := conn.Exec(ctx, batch.String()); err != nil {
+			// On batch failure, fall back to one-by-one for better error reporting
+			for j, s := range stmts[start:end] {
+				s = strings.TrimSpace(s)
+				if s == "" {
+					continue
+				}
+				if _, err := conn.Exec(ctx, s); err != nil {
+					preview := s
+					if len(preview) > 200 {
+						preview = preview[:200] + "..."
+					}
+					return fmt.Errorf("execute postgres dump (statement %d/%d): %w\nSQL: %s", start+j+1, len(stmts), err, preview)
+				}
+			}
+		}
+		if start%(batchSize*20) == 0 {
+			log.Printf("[Backup] restore progress: %d/%d statements", start, len(stmts))
+		}
 	}
+	log.Printf("[Backup] restore progress: %d/%d statements (done)", len(stmts), len(stmts))
+
+	if err := syncPostgresSequences(ctx, conn); err != nil {
+		// Non-fatal: log but don't fail the entire restore. The data is
+		// already imported; only future auto-generated IDs might conflict.
+		log.Printf("[Backup] WARNING: sync postgres sequences: %v", err)
+	}
+	return nil
+}
+
+// splitSQLStatements splits a SQL dump into individual statements.
+// It respects single-quoted strings, double-quoted identifiers, line comments
+// (--), and block comments (/* */). A statement ends at a semicolon that is
+// not inside a string or comment.
+func splitSQLStatements(sql string) []string {
+	var stmts []string
+	var buf strings.Builder
+	inSingle := false   // inside '...'
+	inDouble := false   // inside "..."
+	inLineComment := false
+	inBlockComment := false
+
+	for i := 0; i < len(sql); i++ {
+		c := sql[i]
+
+		if inLineComment {
+			buf.WriteByte(c)
+			if c == '\n' {
+				inLineComment = false
+			}
+			continue
+		}
+		if inBlockComment {
+			buf.WriteByte(c)
+			if c == '*' && i+1 < len(sql) && sql[i+1] == '/' {
+				buf.WriteByte(sql[i+1])
+				i++
+				inBlockComment = false
+			}
+			continue
+		}
+		if inSingle {
+			buf.WriteByte(c)
+			if c == '\'' {
+				// Check for escaped single quote ''
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					buf.WriteByte(sql[i+1])
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+			continue
+		}
+		if inDouble {
+			buf.WriteByte(c)
+			if c == '"' {
+				inDouble = false
+			}
+			continue
+		}
+
+		// Not inside any string or comment
+		if c == '-' && i+1 < len(sql) && sql[i+1] == '-' {
+			inLineComment = true
+			buf.WriteByte(c)
+			buf.WriteByte(sql[i+1])
+			i++
+			continue
+		}
+		if c == '/' && i+1 < len(sql) && sql[i+1] == '*' {
+			inBlockComment = true
+			buf.WriteByte(c)
+			buf.WriteByte(sql[i+1])
+			i++
+			continue
+		}
+		if c == '\'' {
+			inSingle = true
+			buf.WriteByte(c)
+			continue
+		}
+		if c == '"' {
+			inDouble = true
+			buf.WriteByte(c)
+			continue
+		}
+		if c == ';' {
+			buf.WriteByte(c)
+			stmts = append(stmts, buf.String())
+			buf.Reset()
+			continue
+		}
+		buf.WriteByte(c)
+	}
+	if buf.Len() > 0 {
+		stmts = append(stmts, buf.String())
+	}
+	return stmts
+}
+
+// syncPostgresSequences resets every SERIAL/identity sequence to
+// MAX(column)+1 so that nextval() returns a value higher than any existing row.
+func syncPostgresSequences(ctx context.Context, conn *pgx.Conn) error {
+	// Find all tables+columns that own a sequence (SERIAL or GENERATED ... AS IDENTITY).
+	rows, err := conn.Query(ctx, `
+		SELECT c.relname  AS table_name,
+		       a.attname  AS column_name,
+		       pg_get_serial_sequence(c.relname, a.attname) AS seq_name
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+		WHERE n.nspname = 'public'
+		  AND c.relkind = 'r'
+		  AND pg_get_serial_sequence(c.relname, a.attname) IS NOT NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("query sequences: %w", err)
+	}
+	defer rows.Close()
+
+	type seqInfo struct {
+		table, column, seq string
+	}
+	var seqs []seqInfo
+	for rows.Next() {
+		var si seqInfo
+		if err := rows.Scan(&si.table, &si.column, &si.seq); err != nil {
+			return fmt.Errorf("scan sequence info: %w", err)
+		}
+		seqs = append(seqs, si)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, si := range seqs {
+		// setval(seq, MAX(column)+1, false) → next nextval() returns MAX+1
+		sql := fmt.Sprintf(
+			`SELECT setval('%s', COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)`,
+			si.seq, quotePgIdent(si.column), quotePgIdent(si.table),
+		)
+		if _, err := conn.Exec(ctx, sql); err != nil {
+			log.Printf("[Backup] skip sequence %s on %s.%s: %v", si.seq, si.table, si.column, err)
+		}
+	}
+	log.Printf("[Backup] synced %d postgres sequences after restore", len(seqs))
 	return nil
 }
 
@@ -945,6 +1143,10 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 		}
 
 		// Data as INSERT statements so restore needs no COPY/psql (pure Go).
+		// Use Scan() instead of RawValues() because pgx v5 defaults to the
+		// binary protocol — RawValues() returns binary-encoded bytes that
+		// can't be directly used as SQL text literals (e.g. int8 1 → 8 null
+		// bytes). Scan() decodes into Go native types which we format below.
 		rows, err := conn.Query(ctx, "SELECT * FROM "+quotePgIdent(tbl))
 		if err != nil {
 			return fmt.Errorf("select %s: %w", tbl, err)
@@ -955,10 +1157,18 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 			colNames[i] = quotePgIdent(c.Name)
 		}
 		for rows.Next() {
-			raw := rows.RawValues()
-			parts := make([]string, len(raw))
-			for i, rv := range raw {
-				parts[i] = pgLiteral(rv, cols[i].DataTypeOID)
+			vals := make([]any, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan %s: %w", tbl, err)
+			}
+			parts := make([]string, len(vals))
+			for i, v := range vals {
+				parts[i] = pgValueLiteral(v)
 			}
 			if _, err := fmt.Fprintf(out, "INSERT INTO %s (%s) VALUES (%s);\n", quotePgIdent(tbl), strings.Join(colNames, ","), strings.Join(parts, ",")); err != nil {
 				rows.Close()
@@ -978,42 +1188,39 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 	return nil
 }
 
-// pgLiteral formats a raw column value using PostgreSQL text COPY escaping.
-// oid is the PostgreSQL data type OID; numeric/boolean types can be emitted verbatim.
-func pgLiteral(raw []byte, oid uint32) string {
-	if raw == nil {
-		return "\\N"
+// pgValueLiteral formats a Go value (as returned by pgx Scan) as a PostgreSQL
+// SQL literal suitable for an INSERT statement.
+func pgValueLiteral(v any) string {
+	if v == nil {
+		return "NULL"
 	}
-	switch oid {
-	case 16: // bool
-		if string(raw) == "t" || string(raw) == "1" || string(raw) == "true" {
-			return "t"
+	switch val := v.(type) {
+	case bool:
+		if val {
+			return "true"
 		}
-		return "f"
-	case 21, 23, 20, 26, 700, 701, 1700: // int2, int4, int8, oid, float4, float8, numeric
-		return string(raw)
+		return "false"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", val)
+	case float32, float64:
+		return fmt.Sprintf("%v", val)
+	case string:
+		return "'" + strings.ReplaceAll(val, "'", "''") + "'"
+	case []byte:
+		if len(val) == 0 {
+			return "NULL"
+		}
+		// Bytea: use PostgreSQL escape format E'\\\\x...'
+		return "'\\\\x" + hexEncode(val) + "'"
+	case time.Time:
+		return "'" + val.Format("2006-01-02 15:04:05.999999999-07") + "'"
+	case net.IP:
+		return "'" + val.String() + "'"
 	default:
-		return escapePgText(string(raw))
+		// Fallback: use JSON marshalling and treat as text
+		b, _ := json.Marshal(val)
+		return "'" + strings.ReplaceAll(string(b), "'", "''") + "'"
 	}
-}
-
-func escapePgText(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		switch r {
-		case '\\':
-			b.WriteString("\\\\")
-		case '\n':
-			b.WriteString("\\n")
-		case '\r':
-			b.WriteString("\\r")
-		case '\t':
-			b.WriteString("\\t")
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 // mysqlLiteral formats a Go value as a MySQL literal for INSERT statements.

@@ -1,8 +1,10 @@
 package system
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,9 +13,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/system"
+	"corefusion/internal/store/repository"
 )
 
 // Handler handles system HTTP requests.
@@ -574,4 +578,80 @@ func (h *Handler) UpdateEnvConfig(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "env config updated, restart required"})
+}
+
+// --- Maintenance Mode ---
+
+// GetMaintenance handles GET /api/v1/system/maintenance.
+// Returns current maintenance mode status. This endpoint is PUBLIC (no auth)
+// so that subscription/portal engines can also check it.
+func (h *Handler) GetMaintenance(c *gin.Context) {
+	active, message, source := middleware.GetMaintenanceInfo()
+	response.OK(c, gin.H{
+		"enabled": active,
+		"message": message,
+		"source":  source,
+	})
+}
+
+// UpdateMaintenance handles PUT /api/v1/system/maintenance.
+// Toggles maintenance mode on/off with a custom message.
+func (h *Handler) UpdateMaintenance(c *gin.Context) {
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		Message string `json:"message"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	// Persist to database so it survives restarts
+	ctx := c.Request.Context()
+	if err := h.settingSvc.SetByKey(ctx, "maintenance.enabled", boolStr(req.Enabled)); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	msg := req.Message
+	if msg == "" {
+		msg = "System is under maintenance. Please try again later."
+	}
+	if err := h.settingSvc.SetByKey(ctx, "maintenance.message", msg); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+
+	// Apply in-memory
+	source := "manual"
+	if !req.Enabled {
+		source = ""
+	}
+	middleware.SetMaintenance(req.Enabled, msg, source)
+
+	response.OK(c, gin.H{
+		"enabled": req.Enabled,
+		"message": msg,
+		"source":  source,
+	})
+}
+
+// LoadMaintenanceFromDB reads maintenance settings from database and applies them.
+// Called on startup to restore maintenance state across restarts.
+func LoadMaintenanceFromDB(ctx context.Context, repo *repository.SystemSettingRepository) {
+	enabled, _ := repo.GetByKey(ctx, "maintenance.enabled")
+	message, _ := repo.GetByKey(ctx, "maintenance.message")
+	if message == "" {
+		message = "System is under maintenance. Please try again later."
+	}
+	if enabled == "true" {
+		middleware.SetMaintenance(true, message, "manual")
+		log.Println("[startup] maintenance mode restored from DB: enabled")
+	}
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }

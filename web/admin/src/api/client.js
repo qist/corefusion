@@ -43,6 +43,11 @@ client.interceptors.response.use(
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         window.location.href = basePath + '/login'
+      } else if (status === 503 && data?.code === 'MAINTENANCE_MODE') {
+        // Maintenance mode — redirect to maintenance page if not already there
+        if (!window.location.pathname.endsWith('/maintenance')) {
+          window.location.href = basePath + '/maintenance'
+        }
       } else if (!suppressErrorMessage && status === 403) {
         ElMessage.error(t('error.forbidden'))
       } else if (!suppressErrorMessage && status === 404) {

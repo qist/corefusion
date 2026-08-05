@@ -368,6 +368,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
+	// Note: MaintenanceGuard is NOT mounted on the admin panel engine.
+	// It is only mounted on the subscription and portal engines so that
+	// admins can always access the panel to toggle maintenance on/off.
 
 	if dataDir == "" {
 		dataDir = "data"
@@ -2097,19 +2100,22 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				backupsGroup.DELETE("/schedules/:id", backupsH.DeleteSchedule)
 
 				// Storages
-				backupsGroup.GET("/storages", backupsH.ListStorages)
-				backupsGroup.POST("/storages", backupsH.CreateStorage)
-				backupsGroup.PUT("/storages/:id", backupsH.UpdateStorage)
-				backupsGroup.DELETE("/storages/:id", backupsH.DeleteStorage)
+backupsGroup.GET("/storages", backupsH.ListStorages)
+backupsGroup.POST("/storages", backupsH.CreateStorage)
+backupsGroup.PUT("/storages/:id", backupsH.UpdateStorage)
+backupsGroup.DELETE("/storages/:id", backupsH.DeleteStorage)
+backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 
 			// Destructive (super_admin only)
 			superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
-				superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
-				superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
-				superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
-				superAdminBackups.POST("/:id/upload-ftp", backupsH.UploadToFTP)
-				superAdminBackups.POST("/:id/upload-s3", backupsH.UploadToS3)
-				superAdminBackups.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
+			superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
+			superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
+			superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
+			superAdminBackups.POST("/remote-restore", backupsH.RemoteRestore)
+			superAdminBackups.GET("/restore-status", backupsH.GetRestoreStatus)
+			superAdminBackups.POST("/:id/upload-ftp", backupsH.UploadToFTP)
+			superAdminBackups.POST("/:id/upload-s3", backupsH.UploadToS3)
+			superAdminBackups.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
 			}
 
 			// System — admin for config/management; the most destructive
@@ -2150,8 +2156,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
 				systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
 				systemGroup.GET("/jwt-secret-status", systemH.GetJWTSecretStatus)
-				systemGroup.GET("/env-config", systemH.GetEnvConfig)
+	systemGroup.GET("/env-config", systemH.GetEnvConfig)
 				systemGroup.PUT("/env-config", systemH.UpdateEnvConfig)
+
+	// Maintenance mode (GET is public via v1 group below; PUT requires admin)
+			systemGroup.PUT("/maintenance", systemH.UpdateMaintenance)
+
+			// Public maintenance status (no auth, for sub/portal engines)
+			v1.GET("/system/maintenance", systemH.GetMaintenance)
 
 				// Destructive (super_admin only)
 				superAdminSystem.POST("/update", systemH.SystemUpdate)
@@ -2271,12 +2283,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 	}
 
-	// Public subscription endpoint
-	r.GET("/sub/:token", publicSubH.ServeSubscription)
+	// Public subscription endpoint — guarded by maintenance mode
+	r.GET("/sub/:token", middleware.MaintenanceGuard(), publicSubH.ServeSubscription)
 
 	// Portal page — served from active custom template (cached)
 	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
-	r.GET("/p", func(c *gin.Context) {
+	// Guarded by maintenance mode so portal visitors see the maintenance page.
+	r.GET("/p", middleware.MaintenanceGuard(), func(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
@@ -2299,10 +2312,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		clientAuthGroup.GET("/oauth/:provider/callback", oauthH.Callback)
 	}
 
-	// Public subscription endpoints (for portal) — direct DB read returning a plain
-	// array so the portal frontend can consume d.data directly (no pagination wrapper).
+	// Public subscription endpoints (for portal) — guarded by maintenance mode
+	// Direct DB read returning a plain array so the portal frontend can consume d.data directly (no pagination wrapper).
 	subendRepoPortal := repository.NewSubscriptionEndpointRepository(database)
-	r.GET("/api/v1/public/subscription-endpoints", func(c *gin.Context) {
+	r.GET("/api/v1/public/subscription-endpoints", middleware.MaintenanceGuard(), func(c *gin.Context) {
 		endpoints, err := subendRepoPortal.List(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "LIST_FAILED", err.Error())
@@ -2313,7 +2326,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Public settings (for portal)
 	// v3.4: portalTmplSvc used in public/settings to return latest portal config
-	r.GET("/api/v1/public/settings", func(c *gin.Context) {
+	r.GET("/api/v1/public/settings", middleware.MaintenanceGuard(), func(c *gin.Context) {
 		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
 		chatProvider, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.provider")
 		chatSiteID, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.site_id")
@@ -2331,7 +2344,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Public: effective portal runtime config — lean payload served from the
 	// in-memory cache in production (fresh DB read only on cache miss).
-	r.GET("/api/v1/public/portal-config", func(c *gin.Context) {
+	r.GET("/api/v1/public/portal-config", middleware.MaintenanceGuard(), func(c *gin.Context) {
 		body, err := portalTmplSvc.GetPublicConfigJSON(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "PORTAL_CONFIG_FAILED", err.Error())
@@ -2341,13 +2354,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	// Public articles (no auth required)
-	r.GET("/api/v1/public/articles", clientExtH.PublicListArticles)
-	r.GET("/api/v1/public/articles/:slug", clientExtH.PublicGetArticle)
+	r.GET("/api/v1/public/articles", middleware.MaintenanceGuard(), clientExtH.PublicListArticles)
+	r.GET("/api/v1/public/articles/:slug", middleware.MaintenanceGuard(), clientExtH.PublicGetArticle)
 
 	// Public: list enabled client configs (for portal "more subscriptions" dialog)
 	mihomoCfgRepoPublic := repository.NewMihomoConfigRepository(database)
 	subFmtRepoPublic := repository.NewSubscriptionFormatRepository(database)
-	r.GET("/api/v1/public/client-configs", func(c *gin.Context) {
+	r.GET("/api/v1/public/client-configs", middleware.MaintenanceGuard(), func(c *gin.Context) {
 		planIDStr := c.Query("plan_id")
 		var planID int64
 		if planIDStr != "" {
@@ -2426,8 +2439,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Charge callback (public, called by charge sites)
 	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
 
-	// Client auth (protected)
+	// Client auth (protected) — guarded by maintenance mode
 	clientAuthProtected := r.Group("/api/v1/client-auth")
+	clientAuthProtected.Use(middleware.MaintenanceGuard())
 	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
 	{
 		clientAuthProtected.GET("/me", clientauthH.GetMe)
@@ -2781,6 +2795,7 @@ func restoreFirewallRules(ctx context.Context, repo *repository.InboundConfigRep
 func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.MaintenanceGuard())
 
 	subRepo := repository.NewSubscriptionRepository(database)
 	inboundRepo := repository.NewInboundConfigRepository(database)
@@ -2879,6 +2894,7 @@ func (p *proxySettingsProvider) GetCaddySNISettingsForServer(ctx context.Context
 func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.MaintenanceGuard())
 
 	// Repositories
 	systemSettingRepo := repository.NewSystemSettingRepository(database)
@@ -2976,6 +2992,16 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		commerceSvcInst.SetAccountSyncer(sharedAccountSyncer)
 	}
 
+	// Public maintenance status (no auth, for portal frontend polling)
+	r.GET("/api/v1/system/maintenance", func(c *gin.Context) {
+		active, message, source := middleware.GetMaintenanceInfo()
+		response.OK(c, gin.H{
+			"enabled": active,
+			"message": message,
+			"source":  source,
+		})
+	})
+
 	// Root path serves the portal page (cached)
 	r.GET("/", func(c *gin.Context) {
 		html := portalTmplSvc.RenderPage(c.Request.Context())
@@ -3047,8 +3073,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		subRepo, subEndpointRepo2, portalPublicSubH, database,
 	)
 
-	// Client auth (protected)
+	// Client auth (protected) — guarded by maintenance mode
 	clientAuthProtected := r.Group("/api/v1/client-auth")
+	clientAuthProtected.Use(middleware.MaintenanceGuard())
 	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
 	{
 		clientAuthProtected.GET("/me", clientauthH.GetMe)

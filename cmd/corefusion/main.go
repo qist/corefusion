@@ -21,6 +21,7 @@ import (
 	"corefusion/internal/constants"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/router"
+	"corefusion/internal/api/handlers/system"
 	"corefusion/internal/auth/jwt"
 	"corefusion/internal/migration"
 	"corefusion/internal/runtime/agent"
@@ -382,6 +383,9 @@ func runServer(args []string) {
 	router.SetProcessManager(processMgr)              // share processMgr with router (HTTP API handlers)
 	router.SetNodeServerManager(nodeMgr)              // share nodeMgr with router (same gRPC server instance)
 	r := router.NewWithFullConfig(db.DB, jwtSecret, settings["web_path"], dataDir, Version, apiPort)
+
+	// Load maintenance mode from database (survives restarts)
+	system.LoadMaintenanceFromDB(context.Background(), grpcSettingRepo)
 
 	// Phase 7: TLS configuration
 	tlsEnabled := settings["tls_enabled"] == "true"

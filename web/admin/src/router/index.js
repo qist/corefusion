@@ -28,6 +28,11 @@ const routes = [
     component: () => import('../views/Login.vue'),
   },
   {
+    path: '/maintenance',
+    name: 'Maintenance',
+    component: () => import('../views/Maintenance.vue'),
+  },
+  {
     path: '/',
     component: () => import('../views/Layout.vue'),
     redirect: '/dashboard',
@@ -65,8 +70,8 @@ router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('access_token')
   const loginPath = basePath === '/' ? '/login' : basePath + '/login'
 
-  // Allow login page through
-  if (to.path.endsWith('/login')) {
+  // Allow login and maintenance pages through
+  if (to.path.endsWith('/login') || to.path.endsWith('/maintenance')) {
     next()
     return
   }

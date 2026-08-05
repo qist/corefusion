@@ -10,10 +10,15 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
+
+	"corefusion/internal/api/middleware"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
@@ -29,11 +34,23 @@ import (
 	"gorm.io/gorm"
 )
 
+// RestoreStatus tracks the state of an async restore operation.
+type RestoreStatus struct {
+	ID        int64     `json:"id"`
+	Status    string    `json:"status"` // pending, downloading, restoring, done, error
+	Message   string    `json:"message"`
+	StartedAt time.Time `json:"started_at"`
+	DoneAt    time.Time `json:"done_at,omitempty"`
+}
+
 // Service handles backup business logic.
 type Service struct {
-	repo    *repository.BackupRepository
-	dataDir string
-	db      *gorm.DB
+	repo          *repository.BackupRepository
+	dataDir       string
+	db            *gorm.DB
+	restoreMu     sync.Mutex
+	restoreStatus *RestoreStatus
+	nextRestoreID int64
 }
 
 // NewService creates a new backup service.
@@ -219,35 +236,13 @@ func (s *Service) pruneDir(dir string, exts []string, cutoff time.Time) int {
 	return removed
 }
 
-// RestoreBackup restores from a backup file.
+// RestoreBackup restores from a backup file (legacy sync version, use RestoreBackupAsync for non-blocking).
 func (s *Service) RestoreBackup(ctx context.Context, id int64) error {
 	rec, err := s.repo.GetRecordByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if err := s.extractTarGz(rec.FilePath, s.dataDir); err != nil {
-		return err
-	}
-
-	// After extracting, import the database dump that was baked into the archive,
-	// using the current environment DB configuration as the authority.
-	dbType, dsn := db.StartupConfig()
-	switch dbType {
-	case db.DBTypeMySQL, db.DBTypePostgres:
-		if dsn == "" {
-			return fmt.Errorf("数据库 DSN 未配置（环境变量 CF_DB_DSN），无法还原 %s 备份", dbTypeLabel(dbType))
-		}
-		if err := s.importDumpsFromArchive(ctx, dbType, dsn); err != nil {
-			return err
-		}
-	default:
-		// sqlite: drop stale WAL/SHM so the restored snapshot is authoritative.
-		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-wal"))
-		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-shm"))
-		// Any db_dump/*.sql in the archive belongs to a different DB type; discard it.
-		os.RemoveAll(filepath.Join(s.dataDir, "db_dump"))
-	}
-	return nil
+	return s.restoreFromArchive(ctx, rec.FilePath)
 }
 
 // importDumpsFromArchive imports any db_dump/*.sql files extracted from a full backup.
@@ -274,9 +269,10 @@ func (s *Service) importDumpsFromArchive(ctx context.Context, dbType, dsn string
 	return nil
 }
 
-// RestoreFromFile restores from an uploaded file.
+// RestoreFromFile restores from an uploaded file (upload-restore).
+// The file must be a .tar.gz archive containing either sqlite/app.db or
+// db_dump/*.sql, produced by CreateBackup.
 func (s *Service) RestoreFromFile(ctx context.Context, reader io.Reader) error {
-	// Save to temp file
 	tmpPath := filepath.Join(s.dataDir, "backup", "restore_tmp.tar.gz")
 	os.MkdirAll(filepath.Dir(tmpPath), 0750)
 	f, err := os.Create(tmpPath)
@@ -291,7 +287,516 @@ func (s *Service) RestoreFromFile(ctx context.Context, reader io.Reader) error {
 	f.Close()
 	defer os.Remove(tmpPath)
 
-	return s.extractTarGz(tmpPath, s.dataDir)
+	return s.restoreFromArchive(ctx, tmpPath)
+}
+
+// restoreFromArchive extracts a tar.gz archive and imports the database dump
+// it contains, using the current environment DB configuration. This is the
+// shared logic used by RestoreBackup (local), RestoreFromFile (upload), and
+// RemoteRestore (FTP/S3/WebDAV pull).
+func (s *Service) restoreFromArchive(ctx context.Context, archivePath string) error {
+	if err := s.extractTarGz(archivePath, s.dataDir); err != nil {
+		return err
+	}
+
+	dbType, dsn := db.StartupConfig()
+	switch dbType {
+	case db.DBTypeMySQL, db.DBTypePostgres:
+		if dsn == "" {
+			return fmt.Errorf("数据库 DSN 未配置（环境变量 CF_DB_DSN），无法还原 %s 备份", dbTypeLabel(dbType))
+		}
+		if err := s.importDumpsFromArchive(ctx, dbType, dsn); err != nil {
+			return err
+		}
+	default:
+		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-wal"))
+		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-shm"))
+		os.RemoveAll(filepath.Join(s.dataDir, "db_dump"))
+	}
+	return nil
+}
+
+// RemoteRestore downloads a backup file from remote storage and restores it.
+// The backup file is downloaded to a temporary location, restored, then deleted.
+// This supports the "backup to remote only, restore from remote" workflow.
+func (s *Service) RemoteRestore(ctx context.Context, storageID int64, filename string) error {
+	storage, err := s.GetStorage(ctx, storageID)
+	if err != nil {
+		return fmt.Errorf("get storage config: %w", err)
+	}
+
+	tmpPath := filepath.Join(s.dataDir, "backup", "remote_restore_tmp.tar.gz")
+	os.MkdirAll(filepath.Dir(tmpPath), 0750)
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpPath)
+
+	log.Printf("[Backup] downloading %s from %s storage...", filename, storage.Type)
+	switch storage.Type {
+	case "s3":
+		var cfg S3Config
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			out.Close()
+			return err
+		}
+		if err := s.downloadFromS3(ctx, cfg, filename, out); err != nil {
+			out.Close()
+			return err
+		}
+	case "ftp":
+		var cfg FTPConfig
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			out.Close()
+			return err
+		}
+		if err := s.downloadFromFTP(ctx, cfg, filename, out); err != nil {
+			out.Close()
+			return err
+		}
+	case "webdav":
+		var cfg WebDAVConfig
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			out.Close()
+			return err
+		}
+		if err := s.downloadFromWebDAV(ctx, cfg, filename, out); err != nil {
+			out.Close()
+			return err
+		}
+	default:
+		out.Close()
+		return fmt.Errorf("unsupported storage type: %s", storage.Type)
+	}
+	out.Close()
+
+	info, _ := os.Stat(tmpPath)
+	log.Printf("[Backup] downloaded %s (%d bytes), restoring...", filename, info.Size())
+	return s.restoreFromArchive(ctx, tmpPath)
+}
+
+// GetRestoreStatus returns the current async restore status, or nil if none.
+func (s *Service) GetRestoreStatus() *RestoreStatus {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	return s.restoreStatus
+}
+
+// startAsyncRestore launches a goroutine that downloads (if needed) and restores.
+// It returns immediately with a RestoreStatus. During restore, maintenance mode
+// is auto-enabled to block all other API traffic.
+func (s *Service) startAsyncRestore(downloadFn func() (string, error), restoreFn func(ctx context.Context, archivePath string) error) *RestoreStatus {
+	s.restoreMu.Lock()
+	s.nextRestoreID++
+	st := &RestoreStatus{
+		ID:        s.nextRestoreID,
+		Status:    "pending",
+		StartedAt: time.Now(),
+	}
+	s.restoreStatus = st
+	s.restoreMu.Unlock()
+
+	// Enable maintenance mode for the entire process
+	middleware.SetMaintenance(true, "系统正在还原数据，请稍后再试", "restore")
+	log.Printf("[Backup] maintenance mode enabled for restore #%d", st.ID)
+
+	go func() {
+		// Always disable maintenance when done (success or error)
+		defer func() {
+			middleware.SetMaintenance(false, "", "")
+			log.Printf("[Backup] maintenance mode disabled after restore #%d", st.ID)
+		}()
+
+		var archivePath string
+		if downloadFn != nil {
+			s.setRestoreStatus(st.ID, "downloading", "downloading from remote storage...")
+			p, err := downloadFn()
+			if err != nil {
+				s.setRestoreStatus(st.ID, "error", err.Error())
+				return
+			}
+			archivePath = p
+		}
+
+		s.setRestoreStatus(st.ID, "restoring", "restoring database from archive...")
+		if err := restoreFn(context.Background(), archivePath); err != nil {
+			s.setRestoreStatus(st.ID, "error", err.Error())
+			return
+		}
+
+		s.setRestoreStatus(st.ID, "done", "restore completed successfully")
+	}()
+
+	return st
+}
+
+func (s *Service) setRestoreStatus(id int64, status, msg string) {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	if s.restoreStatus != nil && s.restoreStatus.ID == id {
+		s.restoreStatus.Status = status
+		s.restoreStatus.Message = msg
+		if status == "done" || status == "error" {
+			s.restoreStatus.DoneAt = time.Now()
+		}
+	}
+}
+
+// RemoteRestoreAsync downloads a backup from remote storage and restores it asynchronously.
+func (s *Service) RemoteRestoreAsync(ctx context.Context, storageID int64, filename string) (*RestoreStatus, error) {
+	storage, err := s.GetStorage(ctx, storageID)
+	if err != nil {
+		return nil, fmt.Errorf("get storage config: %w", err)
+	}
+
+	downloadFn := func() (string, error) {
+		tmpPath := filepath.Join(s.dataDir, "backup", "remote_restore_tmp.tar.gz")
+		os.MkdirAll(filepath.Dir(tmpPath), 0750)
+		out, err := os.Create(tmpPath)
+		if err != nil {
+			return "", err
+		}
+		defer out.Close()
+
+		log.Printf("[Backup] downloading %s from %s storage...", filename, storage.Type)
+		switch storage.Type {
+		case "s3":
+			var cfg S3Config
+			if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+				return "", err
+			}
+			if err := s.downloadFromS3(ctx, cfg, filename, out); err != nil {
+				return "", err
+			}
+		case "ftp":
+			var cfg FTPConfig
+			if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+				return "", err
+			}
+			if err := s.downloadFromFTP(ctx, cfg, filename, out); err != nil {
+				return "", err
+			}
+		case "webdav":
+			var cfg WebDAVConfig
+			if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+				return "", err
+			}
+			if err := s.downloadFromWebDAV(ctx, cfg, filename, out); err != nil {
+				return "", err
+			}
+		default:
+			return "", fmt.Errorf("unsupported storage type: %s", storage.Type)
+		}
+
+		info, _ := os.Stat(tmpPath)
+		log.Printf("[Backup] downloaded %s (%d bytes)", filename, info.Size())
+		return tmpPath, nil
+	}
+
+	restoreFn := func(ctx context.Context, archivePath string) error {
+		if archivePath != "" {
+			defer os.Remove(archivePath)
+		}
+		return s.restoreFromArchive(ctx, archivePath)
+	}
+
+	return s.startAsyncRestore(downloadFn, restoreFn), nil
+}
+
+// RestoreBackupAsync restores from a local backup by ID asynchronously.
+func (s *Service) RestoreBackupAsync(ctx context.Context, id int64) (*RestoreStatus, error) {
+	rec, err := s.repo.GetRecordByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	archivePath := rec.FilePath
+
+	restoreFn := func(ctx context.Context, _ string) error {
+		return s.restoreFromArchive(ctx, archivePath)
+	}
+
+	return s.startAsyncRestore(nil, restoreFn), nil
+}
+
+// RestoreFromFileAsync restores from an uploaded file asynchronously.
+func (s *Service) RestoreFromFileAsync(ctx context.Context, reader io.Reader) (*RestoreStatus, error) {
+	tmpPath := filepath.Join(s.dataDir, "backup", "restore_tmp.tar.gz")
+	os.MkdirAll(filepath.Dir(tmpPath), 0750)
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(f, reader); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return nil, err
+	}
+	f.Close()
+
+	restoreFn := func(ctx context.Context, _ string) error {
+		defer os.Remove(tmpPath)
+		return s.restoreFromArchive(ctx, tmpPath)
+	}
+
+	return s.startAsyncRestore(nil, restoreFn), nil
+}
+
+// ListRemoteFiles lists backup files available on remote storage.
+func (s *Service) ListRemoteFiles(ctx context.Context, storageID int64) ([]RemoteFile, error) {
+	storage, err := s.GetStorage(ctx, storageID)
+	if err != nil {
+		return nil, fmt.Errorf("get storage config: %w", err)
+	}
+	switch storage.Type {
+	case "s3":
+		var cfg S3Config
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			return nil, err
+		}
+		return s.listS3Files(ctx, cfg)
+	case "ftp":
+		var cfg FTPConfig
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			return nil, err
+		}
+		return s.listFTPFiles(ctx, cfg)
+	case "webdav":
+		var cfg WebDAVConfig
+		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
+			return nil, err
+		}
+		return s.listWebDAVFiles(ctx, cfg)
+	default:
+		return nil, fmt.Errorf("unsupported storage type: %s", storage.Type)
+	}
+}
+
+// RemoteFile represents a file on remote storage.
+type RemoteFile struct {
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	Modified string `json:"modified"`
+}
+
+// --- S3 download/list ---
+
+func (s *Service) downloadFromS3(ctx context.Context, cfg S3Config, key string, dest *os.File) error {
+	var opts []func(*config.LoadOptions) error
+	if cfg.AccessKey != "" && cfg.SecretKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+		))
+	}
+	if cfg.Region != "" {
+		opts = append(opts, config.WithRegion(cfg.Region))
+	}
+	awsCfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+	s3Opts := []func(*s3.Options){}
+	if cfg.Endpoint != "" {
+		s3Opts = append(s3Opts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+			o.UsePathStyle = true
+		})
+	}
+	s3Client := s3.NewFromConfig(awsCfg, s3Opts...)
+
+	result, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(cfg.Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("S3 download: %w", err)
+	}
+	defer result.Body.Close()
+	if _, err := io.Copy(dest, result.Body); err != nil {
+		return fmt.Errorf("S3 download copy: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) listS3Files(ctx context.Context, cfg S3Config) ([]RemoteFile, error) {
+	var opts []func(*config.LoadOptions) error
+	if cfg.AccessKey != "" && cfg.SecretKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+		))
+	}
+	if cfg.Region != "" {
+		opts = append(opts, config.WithRegion(cfg.Region))
+	}
+	awsCfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+	s3Opts := []func(*s3.Options){}
+	if cfg.Endpoint != "" {
+		s3Opts = append(s3Opts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+			o.UsePathStyle = true
+		})
+	}
+	s3Client := s3.NewFromConfig(awsCfg, s3Opts...)
+
+	result, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: aws.String(cfg.Bucket),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("S3 list: %w", err)
+	}
+	var files []RemoteFile
+	for _, obj := range result.Contents {
+		name := aws.ToString(obj.Key)
+		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".sql") || strings.HasSuffix(name, ".db") {
+			files = append(files, RemoteFile{
+				Name:     name,
+				Size:     aws.ToInt64(obj.Size),
+				Modified: obj.LastModified.Format(time.RFC3339),
+			})
+		}
+	}
+	return files, nil
+}
+
+// --- FTP download/list ---
+
+func (s *Service) downloadFromFTP(ctx context.Context, cfg FTPConfig, filename string, dest *os.File) error {
+	port := cfg.Port
+	if port == 0 {
+		port = 21
+	}
+	addr := fmt.Sprintf("%s:%d", cfg.Host, port)
+	conn, err := ftp.Dial(addr, ftp.DialWithTimeout(30*time.Second))
+	if err != nil {
+		return fmt.Errorf("FTP connect: %w", err)
+	}
+	defer conn.Quit()
+	if err := conn.Login(cfg.Username, cfg.Password); err != nil {
+		return fmt.Errorf("FTP login: %w", err)
+	}
+	remotePath := cfg.Path
+	if remotePath == "" {
+		remotePath = "/"
+	}
+	fullPath := strings.TrimRight(remotePath, "/") + "/" + filename
+	resp, err := conn.Retr(fullPath)
+	if err != nil {
+		return fmt.Errorf("FTP download: %w", err)
+	}
+	defer resp.Close()
+	if _, err := io.Copy(dest, resp); err != nil {
+		return fmt.Errorf("FTP download copy: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) listFTPFiles(ctx context.Context, cfg FTPConfig) ([]RemoteFile, error) {
+	port := cfg.Port
+	if port == 0 {
+		port = 21
+	}
+	addr := fmt.Sprintf("%s:%d", cfg.Host, port)
+	conn, err := ftp.Dial(addr, ftp.DialWithTimeout(10*time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("FTP connect: %w", err)
+	}
+	defer conn.Quit()
+	if err := conn.Login(cfg.Username, cfg.Password); err != nil {
+		return nil, fmt.Errorf("FTP login: %w", err)
+	}
+	remotePath := cfg.Path
+	if remotePath == "" {
+		remotePath = "/"
+	}
+	entries, err := conn.List(remotePath)
+	if err != nil {
+		return nil, fmt.Errorf("FTP list: %w", err)
+	}
+	var files []RemoteFile
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name, ".tar.gz") || strings.HasSuffix(e.Name, ".sql") || strings.HasSuffix(e.Name, ".db") {
+			files = append(files, RemoteFile{
+				Name:     e.Name,
+				Size:     int64(e.Size),
+				Modified: e.Time.Format(time.RFC3339),
+			})
+		}
+	}
+	return files, nil
+}
+
+// --- WebDAV download/list ---
+
+func (s *Service) downloadFromWebDAV(ctx context.Context, cfg WebDAVConfig, filename string, dest *os.File) error {
+	webdavURL := strings.TrimRight(cfg.URL, "/") + "/" + filename
+	req, err := http.NewRequestWithContext(ctx, "GET", webdavURL, nil)
+	if err != nil {
+		return err
+	}
+	if cfg.Username != "" {
+		req.SetBasicAuth(cfg.Username, cfg.Password)
+	}
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("WebDAV download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("WebDAV download failed: HTTP %d", resp.StatusCode)
+	}
+	if _, err := io.Copy(dest, resp.Body); err != nil {
+		return fmt.Errorf("WebDAV download copy: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) listWebDAVFiles(ctx context.Context, cfg WebDAVConfig) ([]RemoteFile, error) {
+	webdavURL := strings.TrimRight(cfg.URL, "/") + "/"
+	req, err := http.NewRequestWithContext(ctx, "PROPFIND", webdavURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Depth", "1")
+	req.Header.Set("Content-Type", "application/xml")
+	if cfg.Username != "" {
+		req.SetBasicAuth(cfg.Username, cfg.Password)
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("WebDAV PROPFIND: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("WebDAV PROPFIND failed: HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	// Parse href entries from the WebDAV XML response
+	var files []RemoteFile
+	hrefRe := regexp.MustCompile(`<[^:]*:href>([^<]+)</[^:]*:href>`)
+	matches := hrefRe.FindAllStringSubmatch(string(body), -1)
+	seen := map[string]bool{}
+	for _, m := range matches {
+		href := m[1]
+		name := filepath.Base(href)
+		// Unescape WebDAV URL encoding
+		name, _ = url.QueryUnescape(name)
+		if name == "" || name == "/" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".sql") || strings.HasSuffix(name, ".db") {
+			files = append(files, RemoteFile{Name: name})
+		}
+	}
+	return files, nil
 }
 
 // GetBackupFile returns the file path for download.
@@ -387,6 +892,7 @@ func (s *Service) UploadToS3(ctx context.Context, backupID int64, cfg S3Config) 
 	if cfg.Endpoint != "" {
 		s3Opts = append(s3Opts, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
+			o.UsePathStyle = true
 		})
 	}
 
@@ -727,14 +1233,15 @@ func dbTypeLabel(t string) string {
 	return t
 }
 
-// restoreMySQL imports a .sql dump using a connection with multiStatements enabled.
+// restoreMySQL imports a .sql dump by splitting it into individual statements
+// and executing them in batches, similar to restorePostgres.
 func restoreMySQL(ctx context.Context, dsn, content string) error {
 	// GORM mysql driver expects raw DSN without "mysql://" prefix.
 	connDSN := strings.TrimPrefix(dsn, "mysql://")
 	if strings.Contains(connDSN, "?") {
-		connDSN += "&multiStatements=true"
+		connDSN += "&multiStatements=true&maxAllowedPacket=268435456"
 	} else {
-		connDSN += "?multiStatements=true"
+		connDSN += "?multiStatements=true&maxAllowedPacket=268435456"
 	}
 	gdb, err := gorm.Open(mysql.Open(connDSN), &gorm.Config{})
 	if err != nil {
@@ -745,9 +1252,49 @@ func restoreMySQL(ctx context.Context, dsn, content string) error {
 			_ = c.Close()
 		}
 	}()
-	if err := gdb.WithContext(ctx).Exec(content).Error; err != nil {
-		return fmt.Errorf("execute mysql dump: %w", err)
+
+	stmts := splitSQLStatements(content)
+	log.Printf("[Backup] restoring mysql dump: %d statements, %d bytes", len(stmts), len(content))
+
+	// Batch statements to avoid "packet for query is too large" errors.
+	const batchSize = 500
+	for start := 0; start < len(stmts); start += batchSize {
+		end := start + batchSize
+		if end > len(stmts) {
+			end = len(stmts)
+		}
+		var batch strings.Builder
+		for _, s := range stmts[start:end] {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				batch.WriteString(s)
+				batch.WriteByte('\n')
+			}
+		}
+		if batch.Len() == 0 {
+			continue
+		}
+		if err := gdb.WithContext(ctx).Exec(batch.String()).Error; err != nil {
+			// Fall back to one-by-one for better error reporting
+			for j, s := range stmts[start:end] {
+				s = strings.TrimSpace(s)
+				if s == "" {
+					continue
+				}
+				if err := gdb.WithContext(ctx).Exec(s).Error; err != nil {
+					preview := s
+					if len(preview) > 200 {
+						preview = preview[:200] + "..."
+					}
+					return fmt.Errorf("execute mysql dump (statement %d/%d): %w\nSQL: %s", start+j+1, len(stmts), err, preview)
+				}
+			}
+		}
+		if start%(batchSize*20) == 0 {
+			log.Printf("[Backup] mysql restore progress: %d/%d statements", start, len(stmts))
+		}
 	}
+	log.Printf("[Backup] mysql restore progress: %d/%d statements (done)", len(stmts), len(stmts))
 	return nil
 }
 
@@ -1015,7 +1562,7 @@ func dumpMySQL(ctx context.Context, dsn, destPath string) error {
 		return fmt.Errorf("list mysql tables: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(out, "-- MySQL dump (pure Go)\n-- Database: %s\nSET FOREIGN_KEY_CHECKS=0;\n\n", dbName); err != nil {
+	if _, err := fmt.Fprintf(out, "-- MySQL dump (pure Go)\n-- Database: %s\nSET FOREIGN_KEY_CHECKS=0;\nSET sql_mode='';\n\n", dbName); err != nil {
 		return err
 	}
 
@@ -1233,13 +1780,19 @@ func mysqlLiteral(v interface{}) string {
 		return "X'" + hexEncode(val) + "'"
 	case string:
 		return "'" + strings.ReplaceAll(strings.ReplaceAll(val, "\\", "\\\\"), "'", "''") + "'"
-	case int, int32, int64, float32, float64:
+	case int, int32, int64, uint, uint32, uint64:
+		return fmt.Sprintf("%d", val)
+	case float32, float64:
 		return fmt.Sprintf("%v", val)
 	case bool:
 		if val {
 			return "1"
 		}
 		return "0"
+	case time.Time:
+		return "'" + val.Format("2006-01-02 15:04:05.999999999") + "'"
+	case net.IP:
+		return "'" + val.String() + "'"
 	default:
 		return "'" + strings.ReplaceAll(strings.ReplaceAll(fmt.Sprintf("%v", val), "\\", "\\\\"), "'", "''") + "'"
 	}

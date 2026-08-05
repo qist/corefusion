@@ -524,3 +524,54 @@ func (h *Handler) GenerateEncryptionKey(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"success": true, "message": "encryption key generated and saved to .env", "key_preview": key[:8] + "****"})
 }
+
+// --- JWT Secret Config ---
+
+// GetJWTSecretStatus handles GET /api/v1/system/jwt-secret-status.
+func (h *Handler) GetJWTSecretStatus(c *gin.Context) {
+	configured, preview := h.settingSvc.JWTSecretStatus()
+	response.OK(c, gin.H{"configured": configured, "preview": preview})
+}
+
+// RegenerateJWTSecret handles POST /api/v1/system/regenerate-jwt-secret.
+func (h *Handler) RegenerateJWTSecret(c *gin.Context) {
+	secret, err := h.settingSvc.RegenerateJWTSecret()
+	if err != nil {
+		response.InternalError(c, "GENERATE_FAILED", err.Error())
+		return
+	}
+	preview := secret[:8] + "****"
+	response.OK(c, gin.H{"success": true, "message": "JWT secret regenerated and saved to .env. All users will need to re-login.", "preview": preview})
+}
+
+// --- Env Config (SAFE_PATHS) ---
+
+// GetEnvConfig handles GET /api/v1/system/env-config.
+// Returns .env file values for SAFE_PATHS and other env-only settings.
+func (h *Handler) GetEnvConfig(c *gin.Context) {
+	safePaths := h.settingSvc.GetSafePaths()
+	response.OK(c, gin.H{
+		"safe_paths": safePaths,
+	})
+}
+
+// UpdateEnvConfig handles PUT /api/v1/system/env-config.
+// Updates SAFE_PATHS in .env file. Restart required.
+func (h *Handler) UpdateEnvConfig(c *gin.Context) {
+	var req struct {
+		SafePaths string `json:"safe_paths"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if req.SafePaths == "" {
+		response.BadRequest(c, "INVALID_REQUEST", "safe_paths is required")
+		return
+	}
+	if err := h.settingSvc.UpdateSafePaths(req.SafePaths); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "env config updated, restart required"})
+}

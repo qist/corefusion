@@ -2147,6 +2147,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.GET("/settings", systemH.GetSettings)
 				systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
 				systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
+				systemGroup.GET("/jwt-secret-status", systemH.GetJWTSecretStatus)
+				systemGroup.GET("/env-config", systemH.GetEnvConfig)
+				systemGroup.PUT("/env-config", systemH.UpdateEnvConfig)
 
 				// Destructive (super_admin only)
 				superAdminSystem.POST("/update", systemH.SystemUpdate)
@@ -2156,6 +2159,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				superAdminSystem.POST("/db-config/migrate", systemH.MigrateDBData)
 				superAdminSystem.POST("/reality-targets/reset", systemH.ResetRealityTargets)
 				superAdminSystem.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
+				superAdminSystem.POST("/regenerate-jwt-secret", systemH.RegenerateJWTSecret)
 			}
 
 			// Proxy/Caddy/Nginx management routes moved under /node-servers/:id/

@@ -14,11 +14,17 @@
             </el-form-item>
             <el-form-item :label="t('settings.panel.dataDir')">
               <div style="display:flex;gap:8px;width:100%">
-                <el-input v-model="panelForm.data_dir" placeholder="data" style="flex:1" />
+                <el-input v-model="envForm.safe_paths" placeholder="data" style="flex:1" />
                 <el-button type="warning" @click="handleMigrateData" :loading="migrating">{{ t('settings.panel.migrate') }}</el-button>
               </div>
               <div style="font-size:11px;color:#999;margin-top:4px">
                 {{ t('settings.panel.dataDirHint') }}
+              </div>
+            </el-form-item>
+            <el-form-item :label="t('settings.panel.trustedProxies')">
+              <el-input v-model="panelForm.trusted_proxies" placeholder="cloudflare" />
+              <div style="font-size:11px;color:#999;margin-top:4px">
+                {{ t('settings.panel.trustedProxiesHint') }}
               </div>
             </el-form-item>
             <el-form-item :label="t('settings.panel.webPath')">
@@ -79,6 +85,7 @@
             </el-form-item>
             <el-form-item>
               <el-button type="primary" :loading="panelSaving" @click="savePanelConfig">{{ t('common.save') }}</el-button>
+              <el-button type="warning" :loading="envSaving" @click="saveEnvConfig">{{ t('settings.panel.saveEnv') }}</el-button>
             </el-form-item>
           </el-form>
         </el-card>
@@ -301,7 +308,8 @@
 
       <!-- Security Config -->
       <el-tab-pane :label="t('settings.security.tab')" name="security">
-        <el-card>
+        <el-card style="margin-bottom:20px">
+          <template #header><span>{{ t('settings.security.encryptionKeyTitle') }}</span></template>
           <el-form label-width="180px" style="max-width:600px">
             <el-form-item :label="t('settings.security.keyStatus')">
               <div style="display:flex;align-items:center;gap:12px">
@@ -331,6 +339,33 @@
                   {{ t('settings.security.keyEditHint') }}
                 </div>
               </el-alert>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <el-card>
+          <template #header><span>{{ t('settings.security.jwtSecretTitle') }}</span></template>
+          <el-form label-width="180px" style="max-width:600px">
+            <el-form-item :label="t('settings.security.jwtStatus')">
+              <div style="display:flex;align-items:center;gap:12px">
+                <el-tag :type="jwtSecretStatus.configured ? 'success' : 'danger'">
+                  {{ jwtSecretStatus.configured ? t('settings.security.statusConfigured') : t('settings.security.statusNotConfigured') }}
+                </el-tag>
+                <span v-if="jwtSecretStatus.preview" style="font-size:12px;color:#666;font-family:monospace">
+                  {{ jwtSecretStatus.preview }}
+                </span>
+              </div>
+              <div style="font-size:11px;color:#999;margin-top:4px">
+                {{ t('settings.security.jwtDesc') }}
+              </div>
+            </el-form-item>
+            <el-form-item :label="t('settings.security.regenerateJwt')">
+              <el-button type="danger" v-if="$can('super_admin')" :loading="regeneratingJwt" @click="regenerateJWTSecret">
+                {{ t('settings.security.regenerateJwtBtn') }}
+              </el-button>
+              <div style="font-size:11px;color:#e6a23c;margin-top:4px">
+                {{ t('settings.security.regenerateJwtWarn') }}
+              </div>
             </el-form-item>
           </el-form>
         </el-card>
@@ -693,7 +728,9 @@ const currencyForm = ref({ default_currency: 'CNY' })
 const currencySaving = ref(false)
 
 // Panel config
-const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', profile_web_page_url: '', mode: 'full' })
+const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', trusted_proxies: '', profile_web_page_url: '', mode: 'full' })
+const envForm = ref({ safe_paths: 'data' })
+const envSaving = ref(false)
 const panelPort = computed({ get: () => parseInt(panelForm.value.listen_port) || 8080, set: (v) => { panelForm.value.listen_port = String(v) } })
 const subPort = computed({ get: () => parseInt(panelForm.value.subscription_port) || 0, set: (v) => { panelForm.value.subscription_port = String(v) } })
 const agentGRPCPort = computed({ get: () => parseInt(panelForm.value.agent_grpc_port) || 18443, set: (v) => { panelForm.value.agent_grpc_port = String(v) } })
@@ -744,6 +781,9 @@ const selfUnbanSaving = ref(false)
 // Security config (encryption key)
 const encryptionKeyStatus = ref({ configured: false, text: '未配置', type: 'danger' })
 const generatingKey = ref(false)
+// JWT secret
+const jwtSecretStatus = ref({ configured: false, preview: '' })
+const regeneratingJwt = ref(false)
 
 // OAuth config
 const oauthForm = ref({ github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
@@ -787,6 +827,8 @@ const googleCallbackURL = computed(() => {
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 
 async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) panelForm.value = { ...panelForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchEnvConfig() { try { const d = await client.get('/system/env-config'); if (d) envForm.value = { ...envForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
+async function saveEnvConfig() { envSaving.value = true; try { await client.put('/system/env-config', envForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { envSaving.value = false } }
 async function fetchNotifyConfig() { try { const d = await client.get('/system/notification-config'); if (d) notifyForm.value = { ...notifyForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchCertificates() { try { const d = await client.get('/certificates', { params: { limit: 100, offset: 0 } }); certificates.value = d.items || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchTemplates() { try { templates.value = await client.get('/system/notification-templates') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
@@ -816,10 +858,10 @@ async function handleMTLSUpload(file) {
 async function savePanelConfig() { panelSaving.value = true; try { await client.put('/system/panel-config', panelForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { panelSaving.value = false } }
 
 async function handleMigrateData() {
-  await ElMessageBox.confirm(t('settings.panel.migrateConfirm', { dir: panelForm.value.data_dir }), t('common.confirm'), { type: 'warning' })
+  await ElMessageBox.confirm(t('settings.panel.migrateConfirm', { dir: envForm.value.safe_paths }), t('common.confirm'), { type: 'warning' })
   migrating.value = true
   try {
-    await client.post('/system/migrate-data', { new_dir: panelForm.value.data_dir })
+    await client.post('/system/migrate-data', { new_dir: envForm.value.safe_paths })
     ElMessage.success(t('settings.panel.migrateSuccess'))
     // Auto restart
     await client.post('/system/restart')
@@ -1051,6 +1093,29 @@ async function generateEncryptionKey() {
   } finally { generatingKey.value = false }
 }
 
+// JWT secret
+async function fetchJWTSecretStatus() {
+  try {
+    const d = await client.get('/system/jwt-secret-status')
+    if (d) jwtSecretStatus.value = { configured: d.configured || false, preview: d.preview || '' }
+  } catch (e) { /* ignore */ }
+}
+async function regenerateJWTSecret() {
+  try {
+    await ElMessageBox.confirm(t('settings.security.regenerateJwtConfirm'), t('common.confirm'), { type: 'warning' })
+  } catch { return }
+  regeneratingJwt.value = true
+  try {
+    const d = await client.post('/system/regenerate-jwt-secret')
+    if (d && d.success) {
+      ElMessage.success(t('settings.security.regenerateJwtSuccess'))
+      await fetchJWTSecretStatus()
+    } else {
+      ElMessage.error(d.message || t('settings.security.regenerateJwtFailed'))
+    }
+  } catch (e) { ElMessage.error(t('settings.security.regenerateJwtFailed')) } finally { regeneratingJwt.value = false }
+}
+
 // OAuth config
 async function fetchOAuthConfig() {
   try {
@@ -1157,5 +1222,5 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig() })
+onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig() })
 </script>

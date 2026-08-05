@@ -728,10 +728,8 @@ func dbTypeLabel(t string) string {
 
 // restoreMySQL imports a .sql dump using a connection with multiStatements enabled.
 func restoreMySQL(ctx context.Context, dsn, content string) error {
-	connDSN := dsn
-	if !strings.HasPrefix(dsn, "mysql://") {
-		connDSN = "mysql://" + dsn
-	}
+	// GORM mysql driver expects raw DSN without "mysql://" prefix.
+	connDSN := strings.TrimPrefix(dsn, "mysql://")
 	if strings.Contains(connDSN, "?") {
 		connDSN += "&multiStatements=true"
 	} else {
@@ -793,10 +791,11 @@ func dumpMySQL(ctx context.Context, dsn, destPath string) error {
 		return err
 	}
 
-	connDSN := dsn
-	if !strings.HasPrefix(dsn, "mysql://") {
-		connDSN = "mysql://" + dsn
-	}
+	// GORM mysql driver expects the raw Go MySQL DSN
+	// (user:pass@tcp(host:port)/db?params) WITHOUT a "mysql://" prefix.
+	// The StartupConfig already strips the prefix via ParseDSN, so dsn
+	// here should be the raw DSN. Strip any residual prefix just in case.
+	connDSN := strings.TrimPrefix(dsn, "mysql://")
 	gdb, err := gorm.Open(mysql.Open(connDSN), &gorm.Config{})
 	if err != nil {
 		return fmt.Errorf("connect mysql for dump: %w", err)
@@ -937,13 +936,11 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 	}
 
 	for _, tbl := range tables {
-		var def string
-		if err := conn.QueryRow(ctx, "SELECT pg_get_tabledef($1::text)", tbl).Scan(&def); err != nil {
-			return fmt.Errorf("table def %s: %w", tbl, err)
-		}
-		defStr := strings.TrimSpace(def)
-		defStr = strings.TrimSuffix(defStr, ";")
-		if _, err := fmt.Fprintf(out, "DROP TABLE IF EXISTS %s CASCADE;\n%s;\n\n", quotePgIdent(tbl), defStr); err != nil {
+		// Use TRUNCATE instead of DROP+CREATE. The table schema is already
+		// created by AutoMigrate on startup, so we only need to clear existing
+		// data before inserting. This avoids needing pg_get_tabledef (which is
+		// not a built-in PostgreSQL function).
+		if _, err := fmt.Fprintf(out, "TRUNCATE TABLE %s CASCADE;\n", quotePgIdent(tbl)); err != nil {
 			return err
 		}
 

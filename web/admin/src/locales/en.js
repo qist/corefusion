@@ -1450,6 +1450,7 @@ export default {
   settings: {
     security: {
       tab: 'Security',
+      encryptionKeyTitle: 'Encryption Key',
       keyStatus: 'Encryption Key Status',
       configuredNoEdit: 'Configured (read-only)',
       keyDesc: 'Used to encrypt sensitive data such as top-up card numbers; the key value is not displayed',
@@ -1465,6 +1466,15 @@ export default {
       genSuccess: 'Encryption key generated and saved',
       genFailed: 'Generation failed',
       genError: 'Failed to generate encryption key',
+      jwtSecretTitle: 'JWT Secret',
+      jwtStatus: 'JWT Secret Status',
+      jwtDesc: 'Used to sign admin panel login tokens; the secret value is not fully displayed',
+      regenerateJwt: 'Regenerate',
+      regenerateJwtBtn: 'Regenerate JWT Secret',
+      regenerateJwtWarn: 'After regeneration, all logged-in users will be forced to log out and re-login',
+      regenerateJwtConfirm: 'Regenerate JWT secret? All logged-in users will be forced to log out.',
+      regenerateJwtSuccess: 'JWT secret regenerated and saved',
+      regenerateJwtFailed: 'Regeneration failed',
     },
     oauth: {
       tab: 'OAuth Config',
@@ -1545,6 +1555,9 @@ export default {
       modeFull: 'Full Mode',
       modeManagementOnly: 'Management Only',
       modeHint: 'Full Mode: Panel also runs local core processes; Management Only: Panel only manages and distributes configs, no local core processes',
+      trustedProxies: 'Trusted Proxies',
+      trustedProxiesHint: 'Comma-separated IPs/CIDRs, or "cloudflare" for all Cloudflare IPs. Used to extract real client IP.',
+      saveEnv: 'Save Env Config',
     },
     notification: {
       title: 'Notification Settings',

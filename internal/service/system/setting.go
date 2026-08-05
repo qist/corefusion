@@ -47,6 +47,7 @@ type PanelConfig struct {
 	WebPath             string `json:"web_path"`
 	Timezone            string `json:"timezone"`
 	DataDir             string `json:"data_dir"`
+	TrustedProxies      string `json:"trusted_proxies"`
 	ProfileWebPageUrl   string `json:"profile_web_page_url"`
 	Mode                string `json:"mode"` // "full" (default) or "management_only"
 }
@@ -179,6 +180,7 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	setIfExist(settings, "panel.web_path", &config.WebPath)
 	setIfExist(settings, "panel.timezone", &config.Timezone)
 	setIfExist(settings, "panel.data_dir", &config.DataDir)
+	setIfExist(settings, "panel.trusted_proxies", &config.TrustedProxies)
 	setIfExist(settings, "panel.profile_web_page_url", &config.ProfileWebPageUrl)
 	setIfExist(settings, "panel.mode", &config.Mode)
 
@@ -202,6 +204,7 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.web_path":             config.WebPath,
 		"panel.timezone":             config.Timezone,
 		"panel.data_dir":             config.DataDir,
+		"panel.trusted_proxies":      config.TrustedProxies,
 		"panel.profile_web_page_url":  config.ProfileWebPageUrl,
 		"panel.mode":                 config.Mode,
 	}
@@ -839,4 +842,55 @@ func (s *SettingService) GenerateAndSaveEncryptionKey() (string, error) {
 	}
 	
 	return key, nil
+}
+
+// --- JWT Secret Config ---
+
+// JWTSecretStatus returns whether JWT_SECRET is configured and a masked preview.
+func (s *SettingService) JWTSecretStatus() (configured bool, preview string) {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		env := loadEnvFile()
+		secret = env["JWT_SECRET"]
+	}
+	if secret == "" {
+		return false, ""
+	}
+	if len(secret) <= 8 {
+		return true, secret[:len(secret)/2] + "****"
+	}
+	return true, secret[:8] + "****"
+}
+
+// RegenerateJWTSecret generates a new random JWT secret and saves it to .env.
+// Also updates the running process environment so the new secret takes effect
+// immediately without requiring a restart.
+func (s *SettingService) RegenerateJWTSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	secret := hex.EncodeToString(b)
+	if err := saveEnvFile("JWT_SECRET", secret); err != nil {
+		return "", err
+	}
+	os.Setenv("JWT_SECRET", secret)
+	return secret, nil
+}
+
+// --- Env Config (SAFE_PATHS) ---
+
+// GetSafePaths reads SAFE_PATHS from .env file. Returns "data" if not set.
+func (s *SettingService) GetSafePaths() string {
+	env := loadEnvFile()
+	sp := env["SAFE_PATHS"]
+	if sp == "" {
+		sp = "data"
+	}
+	return sp
+}
+
+// UpdateSafePaths writes SAFE_PATHS to .env file. Restart required to take effect.
+func (s *SettingService) UpdateSafePaths(safePaths string) error {
+	return saveEnvFile("SAFE_PATHS", safePaths)
 }

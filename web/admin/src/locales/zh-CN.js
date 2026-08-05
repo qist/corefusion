@@ -1455,6 +1455,7 @@ export default {
   settings: {
     security: {
       tab: '安全设置',
+      encryptionKeyTitle: '加密密钥',
       keyStatus: '加密密钥状态',
       configuredNoEdit: '已配置（不可修改）',
       keyDesc: '用于加密充值卡号等敏感数据，密钥值不会显示',
@@ -1470,6 +1471,15 @@ export default {
       genSuccess: '加密密钥已生成并保存',
       genFailed: '生成失败',
       genError: '生成加密密钥失败',
+      jwtSecretTitle: 'JWT 密钥',
+      jwtStatus: 'JWT 密钥状态',
+      jwtDesc: '用于签发管理面板的登录 Token，密钥值不会完整显示',
+      regenerateJwt: '重新生成',
+      regenerateJwtBtn: '重新生成 JWT 密钥',
+      regenerateJwtWarn: '重新生成后所有已登录用户将被强制下线，需要重新登录',
+      regenerateJwtConfirm: '确定重新生成 JWT 密钥？所有已登录用户将被强制下线。',
+      regenerateJwtSuccess: 'JWT 密钥已重新生成并保存',
+      regenerateJwtFailed: '重新生成失败',
     },
     oauth: {
       tab: 'OAuth 配置',
@@ -1550,6 +1560,9 @@ export default {
       modeFull: '完整模式',
       modeManagementOnly: '纯管理模式',
       modeHint: '完整模式：面板同时作为本地节点运行核心进程；纯管理模式：面板只做管理分发，不运行核心进程',
+      trustedProxies: '可信代理',
+      trustedProxiesHint: '逗号分隔的 IP/CIDR，或 cloudflare 表示所有 Cloudflare IP。用于正确获取客户端真实 IP。',
+      saveEnv: '保存环境配置',
     },
     notification: {
       title: '通知设置',

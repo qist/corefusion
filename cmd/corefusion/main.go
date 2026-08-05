@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -324,12 +326,21 @@ func runServer(args []string) {
 	log.Printf("Data directory: %s", dataDir)
 
 	// Initialize trusted proxies for real IP extraction
-	initTrustedProxies(env, settings)
+	initTrustedProxies(settings)
 
 	// Phase 4: Setup JWT
+	// JWT_SECRET: auto-generate a random secret on first run if not set.
+	// This avoids the insecure default "corefusion-dev-secret".
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "corefusion-dev-secret"
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate JWT secret: %v", err)
+		}
+		jwtSecret = hex.EncodeToString(b)
+		saveEnvValue("JWT_SECRET", jwtSecret)
+		os.Setenv("JWT_SECRET", jwtSecret)
+		log.Println("[startup] generated random JWT_SECRET and saved to .env")
 	}
 	jwtHandler := jwt.New(jwtSecret, 0, 0)
 	middleware.SetJWT(jwtHandler)
@@ -341,7 +352,7 @@ func runServer(args []string) {
 		log.Printf("initial admin: %v", err)
 	}
 
-	// Phase 5: Build listen address
+	// Phase 5: Build listen address (from database settings only; PORT env removed)
 	listenAddr := ":8080"
 	if addr := settings["listen_addr"]; addr != "" {
 		listenAddr = addr + ":"
@@ -350,9 +361,6 @@ func runServer(args []string) {
 		if listenAddr[len(listenAddr)-1] == ':' {
 			listenAddr = listenAddr + port
 		}
-	}
-	if envPort := os.Getenv("PORT"); envPort != "" {
-		listenAddr = ":" + envPort
 	}
 
 	// Extract port for internal API calls
@@ -505,14 +513,11 @@ func initDataDir(dataDir string) {
 }
 
 // initTrustedProxies configures the trusted proxy list for netutil.GetRealIP.
-// Priority: CF_TRUSTED_PROXIES env > panel.trusted_proxies DB setting.
+// Reads from database setting panel.trusted_proxies only (CF_TRUSTED_PROXIES env removed).
 // Format: comma-separated IPs/CIDRs, or "cloudflare" for all Cloudflare ranges.
 // If not set, no headers are trusted (only RemoteAddr is used — safest default).
-func initTrustedProxies(env map[string]string, settings map[string]string) {
-	raw := os.Getenv("CF_TRUSTED_PROXIES")
-	if raw == "" {
-		raw = settings["trusted_proxies"]
-	}
+func initTrustedProxies(settings map[string]string) {
+	raw := settings["trusted_proxies"]
 	if raw == "" {
 		log.Println("[netutil] no trusted proxies configured — only RemoteAddr will be used for IP extraction")
 		return

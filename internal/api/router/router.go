@@ -657,6 +657,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if sharedUserSyncer != nil {
 		planSvcInst.SetUserSyncer(sharedUserSyncer)
 	}
+	// Inject setting store so plan service can read currency.default from DB.
+	planSvcInst.SetSettingStore(systemSettingRepo)
 
 	// Mihomo service
 	mihomoConfigRepo := repository.NewMihomoConfigRepository(database)

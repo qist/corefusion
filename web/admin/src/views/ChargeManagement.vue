@@ -1161,7 +1161,7 @@ const planTypeVariants = computed(() => planVariants.value.filter(v => v.variant
 const trafficPackVariants = computed(() => planVariants.value.filter(v => v.variant_type === 'traffic_pack' && v.enabled))
 
 function variantDisplayName(v) {
-  return `${v.template_name} - ${v.name} (${cycleLabel(v.billing_cycle)}, ${formatAmount(v.price, 'CNY')})`
+  return `${v.template_name} - ${v.name} (${cycleLabel(v.billing_cycle)}, ${formatAmount(v.price, v.currency || 'CNY')})`
 }
 
 function findVariantName(id) {

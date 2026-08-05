@@ -180,13 +180,65 @@
 
       <!-- Backup & Restore -->
       <el-tab-pane :label="t('settings.backup.title')" name="backup">
+        <!-- Restore Progress (shown during async restore) -->
+        <el-card v-if="restorePolling || restoreProgress" style="margin-bottom:20px">
+          <template #header><span>{{ t('settings.backup.restoreProgress') }}</span></template>
+          <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding:20px">
+            <el-tag :type="restoreProgress?.status === 'error' ? 'danger' : restoreProgress?.status === 'done' ? 'success' : 'warning'" size="large">
+              {{ restoreProgress?.status || 'pending' }}
+            </el-tag>
+            <span v-if="restoreProgress?.message" style="font-size:13px;color:#606266">{{ restoreProgress.message }}</span>
+            <el-progress v-if="restorePolling" :percentage="restoreProgress?.status === 'downloading' ? 30 : restoreProgress?.status === 'restoring' ? 70 : 100" :indeterminate="restoreProgress?.status === 'pending'" />
+          </div>
+        </el-card>
+
+        <!-- Maintenance Mode Toggle -->
+        <el-card style="margin-bottom:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="font-weight:bold">{{ t('maintenance.title') }}</span>
+              <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('maintenance.description') }}</div>
+              <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                <el-tag :type="maintenanceInfo.enabled ? 'danger' : 'success'" size="small">
+                  {{ maintenanceInfo.enabled ? t('maintenance.statusOn') : t('maintenance.statusOff') }}
+                </el-tag>
+                <span v-if="maintenanceInfo.message" style="font-size:12px;color:#606266">"{{ maintenanceInfo.message }}"</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+              <el-input
+                v-model="maintenanceMessage"
+                :placeholder="t('maintenance.messagePlaceholder')"
+                style="width:280px"
+                size="small"
+              />
+              <el-button
+                :loading="maintenanceLoading"
+                @click="toggleMaintenance(!maintenanceInfo.enabled)"
+                :type="maintenanceInfo.enabled ? 'success' : 'warning'"
+                :plain="!maintenanceInfo.enabled"
+              >
+                {{ maintenanceInfo.enabled ? t('maintenance.disableBtn') : t('maintenance.enableBtn') }}
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+
         <!-- Create & Upload -->
         <el-card style="margin-bottom:20px">
-          <div style="display:flex;gap:12px;align-items:center">
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             <el-button type="primary" :loading="backupCreating" @click="handleCreateBackup">{{ t('settings.backup.create') }}</el-button>
             <el-upload :auto-upload="false" :show-file-list="false" :on-change="handleUploadRestore" accept=".tar.gz,.gz">
               <el-button type="warning">{{ t('settings.backup.uploadRestore') }}</el-button>
             </el-upload>
+            <el-dropdown trigger="click" v-if="storages.length > 0">
+              <el-button type="success">{{ t('settings.backup.remoteRestore') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="s in storages" :key="s.id" @click="showRemoteRestore(s.id)">{{ s.name }} ({{ s.type }})</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </el-card>
 
@@ -645,6 +697,24 @@
       </template>
     </el-dialog>
 
+    <!-- Remote Restore Dialog -->
+    <el-dialog v-model="remoteRestoreDialogVisible" :title="t('settings.backup.remoteRestore')" width="600">
+      <el-table :data="remoteRestoreFiles" v-loading="remoteRestoreLoading" stripe max-height="400">
+        <el-table-column prop="name" :label="t('common.name')" />
+        <el-table-column prop="size" label="Size" width="120">
+          <template #default="{row}">{{ formatSize(row.size) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="120">
+          <template #default="{row}">
+            <el-button size="small" type="warning" @click="handleRemoteRestore(row.name)">{{ t('settings.backup.restore') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!remoteRestoreLoading && remoteRestoreFiles.length === 0" style="text-align:center;padding:20px;color:#909399">
+        {{ t('settings.backup.noRemoteFiles') }}
+      </div>
+    </el-dialog>
+
     <!-- Template Dialog -->
     <el-dialog v-model="tmplDialogVisible" :title="editingTmpl ? t('common.edit') : t('settings.templates.add')" width="600">
       <el-form :model="tmplForm" label-width="100px">
@@ -921,7 +991,11 @@ function handleDownload(row) {
 
 async function handleRestore(row) {
   await ElMessageBox.confirm(t('settings.backup.restoreConfirm'), t('common.confirm'), { type: 'warning' })
-  try { await client.post(`/backups/${row.id}/restore`); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) { ElMessage.error(t('common.failed')) }
+  try {
+    await client.post(`/backups/${row.id}/restore`)
+    ElMessage.success(t('settings.backup.restoreStarted'))
+    startRestorePolling()
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function handleDeleteBackup(row) {
@@ -933,7 +1007,101 @@ async function handleUploadRestore(file) {
   await ElMessageBox.confirm(t('settings.backup.uploadRestoreConfirm'), t('common.confirm'), { type: 'warning' })
   const formData = new FormData()
   formData.append('file', file.raw)
-  try { await client.post('/backups/upload-restore', formData, { headers: { 'Content-Type': 'multipart/form-data' } }); ElMessage.success(t('settings.backup.restoreSuccess')) } catch (e) { ElMessage.error(t('common.failed')) }
+  try {
+    await client.post('/backups/upload-restore', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    ElMessage.success(t('settings.backup.restoreStarted'))
+    startRestorePolling()
+  } catch (e) { ElMessage.error(t('common.failed')) }
+}
+
+// Async restore polling
+const restorePolling = ref(false)
+const restoreProgress = ref(null)
+let restorePollTimer = null
+
+async function startRestorePolling() {
+  restorePolling.value = true
+  await pollRestoreStatus()
+  restorePollTimer = setInterval(pollRestoreStatus, 2000)
+}
+
+async function pollRestoreStatus() {
+  try {
+    const data = await client.get('/backups/restore-status', { suppressErrorMessage: true })
+    if (data && data.status && data.status !== 'idle') {
+      restoreProgress.value = data
+      if (data.status === 'done' || data.status === 'error') {
+        clearInterval(restorePollTimer)
+        restorePollTimer = null
+        restorePolling.value = false
+        if (data.status === 'done') {
+          ElMessage.success(t('settings.backup.restoreSuccess'))
+          setTimeout(() => window.location.reload(), 2000)
+        } else {
+          ElMessage.error(data.message || t('common.failed'))
+        }
+      }
+    } else if (data && data.maintenance === false && restoreProgress.value) {
+      // Restore finished, maintenance off
+      clearInterval(restorePollTimer)
+      restorePollTimer = null
+      restorePolling.value = false
+      restoreProgress.value = null
+      ElMessage.success(t('settings.backup.restoreSuccess'))
+      setTimeout(() => window.location.reload(), 1000)
+    }
+  } catch (e) {
+    // 503 expected during maintenance — keep polling
+  }
+}
+
+// Remote restore from storage
+const remoteRestoreDialogVisible = ref(false)
+const remoteRestoreStorageId = ref(null)
+const remoteRestoreFiles = ref([])
+const remoteRestoreLoading = ref(false)
+
+async function showRemoteRestore(storageId) {
+  remoteRestoreStorageId.value = storageId
+  remoteRestoreDialogVisible.value = true
+  remoteRestoreLoading.value = true
+  try {
+    const data = await client.get(`/backups/storages/${storageId}/files`)
+    remoteRestoreFiles.value = data || []
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { remoteRestoreLoading.value = false }
+}
+
+async function handleRemoteRestore(filename) {
+  await ElMessageBox.confirm(t('settings.backup.remoteRestoreConfirm'), t('common.confirm'), { type: 'warning' })
+  try {
+    await client.post('/backups/remote-restore', { storage_id: remoteRestoreStorageId.value, filename })
+    ElMessage.success(t('settings.backup.restoreStarted'))
+    remoteRestoreDialogVisible.value = false
+    startRestorePolling()
+  } catch (e) { ElMessage.error(t('common.failed')) }
+}
+
+// Maintenance mode
+const maintenanceLoading = ref(false)
+const maintenanceInfo = ref({ enabled: false, message: '', source: '' })
+const maintenanceMessage = ref('')
+
+async function fetchMaintenanceStatus() {
+  try {
+    const data = await client.get('/system/maintenance')
+    maintenanceInfo.value = { enabled: data?.enabled || false, message: data?.message || '', source: data?.source || '' }
+    maintenanceMessage.value = data?.message || ''
+  } catch { /* ignore */ }
+}
+
+async function toggleMaintenance(enabled) {
+  maintenanceLoading.value = true
+  try {
+    const msg = enabled ? maintenanceMessage.value.trim() : ''
+    await client.put('/system/maintenance', { enabled, message: msg })
+    ElMessage.success(enabled ? t('maintenance.enabled') : t('maintenance.disabled'))
+    await fetchMaintenanceStatus()
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { maintenanceLoading.value = false }
 }
 
 function getStorageName(storageId) {
@@ -1222,5 +1390,5 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig() })
+onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
 </script>

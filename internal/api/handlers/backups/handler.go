@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
@@ -194,16 +195,30 @@ func (h *Handler) RestoreBackup(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
 	}
-	if err := h.svc.RestoreBackup(c.Request.Context(), id); err != nil {
+	st, err := h.svc.RestoreBackupAsync(c.Request.Context(), id)
+	if err != nil {
 		response.InternalError(c, "RESTORE_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"message": "restore completed, restarting..."})
+	response.OK(c, gin.H{"message": "restore started", "restore_id": st.ID, "status": st.Status})
 
-	// Auto restart after restore
+	// Auto restart after restore completes (checked via status polling)
 	go func() {
-		time.Sleep(500 * time.Millisecond)
-		restartProcess()
+		for i := 0; i < 3600; i++ {
+			time.Sleep(2 * time.Second)
+			cur := h.svc.GetRestoreStatus()
+			if cur == nil || cur.ID != st.ID {
+				continue
+			}
+			if cur.Status == "done" {
+				time.Sleep(500 * time.Millisecond)
+				restartProcess()
+				return
+			}
+			if cur.Status == "error" {
+				return
+			}
+		}
 	}()
 }
 
@@ -230,11 +245,30 @@ func (h *Handler) UploadRestore(c *gin.Context) {
 	}
 	defer file.Close()
 
-	if err := h.svc.RestoreFromFile(c.Request.Context(), file); err != nil {
+	st, err := h.svc.RestoreFromFileAsync(c.Request.Context(), file)
+	if err != nil {
 		response.InternalError(c, "RESTORE_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"message": "restore completed, restart recommended"})
+	response.OK(c, gin.H{"message": "restore started", "restore_id": st.ID, "status": st.Status})
+
+	go func() {
+		for i := 0; i < 3600; i++ {
+			time.Sleep(2 * time.Second)
+			cur := h.svc.GetRestoreStatus()
+			if cur == nil || cur.ID != st.ID {
+				continue
+			}
+			if cur.Status == "done" {
+				time.Sleep(500 * time.Millisecond)
+				restartProcess()
+				return
+			}
+			if cur.Status == "error" {
+				return
+			}
+		}
+	}()
 }
 
 // --- Schedules ---
@@ -421,4 +455,85 @@ func (h *Handler) UploadToWebDAV(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{"message": "uploaded to WebDAV successfully"})
+}
+
+// ListRemoteFiles handles GET /api/v1/backups/storages/:id/files.
+// Lists backup files available on remote storage.
+func (h *Handler) ListRemoteFiles(c *gin.Context) {
+	storageID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid storage id")
+		return
+	}
+
+	files, err := h.svc.ListRemoteFiles(c.Request.Context(), storageID)
+	if err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+	response.OK(c, files)
+}
+
+// RemoteRestore handles POST /api/v1/backups/remote-restore.
+// Downloads a backup from remote storage and restores it asynchronously.
+func (h *Handler) RemoteRestore(c *gin.Context) {
+	var req struct {
+		StorageID int64  `json:"storage_id" binding:"required"`
+		Filename  string `json:"filename" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	st, err := h.svc.RemoteRestoreAsync(c.Request.Context(), req.StorageID, req.Filename)
+	if err != nil {
+		response.InternalError(c, "RESTORE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "restore started", "restore_id": st.ID, "status": st.Status})
+
+	go func() {
+		for i := 0; i < 3600; i++ {
+			time.Sleep(2 * time.Second)
+			cur := h.svc.GetRestoreStatus()
+			if cur == nil || cur.ID != st.ID {
+				continue
+			}
+			if cur.Status == "done" {
+				time.Sleep(500 * time.Millisecond)
+				restartProcess()
+				return
+			}
+			if cur.Status == "error" {
+				return
+			}
+		}
+	}()
+}
+
+// GetRestoreStatus handles GET /api/v1/backups/restore-status.
+// Returns the current async restore status + maintenance info.
+func (h *Handler) GetRestoreStatus(c *gin.Context) {
+	st := h.svc.GetRestoreStatus()
+	maintActive, maintMsg, maintSource := middleware.GetMaintenanceInfo()
+	if st == nil {
+		response.OK(c, gin.H{
+			"status":              "idle",
+			"maintenance":         maintActive,
+			"maintenance_message": maintMsg,
+			"maintenance_source":  maintSource,
+		})
+		return
+	}
+	response.OK(c, gin.H{
+		"id":                  st.ID,
+		"status":              st.Status,
+		"message":             st.Message,
+		"started_at":          st.StartedAt,
+		"finished_at":         st.DoneAt,
+		"maintenance":         maintActive,
+		"maintenance_message": maintMsg,
+		"maintenance_source":  maintSource,
+	})
 }

@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/mysql"
-	"gorm.io/driver/sqlite"
+	"github.com/qist/sqlite"
 	"gorm.io/gorm"
 )
 

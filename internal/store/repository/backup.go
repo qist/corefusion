@@ -43,6 +43,14 @@ func (r *BackupRepository) DeleteRecord(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.BackupRecord{}, id).Error
 }
 
+// MarkRemoteOnly sets remote_only=true, keeping the record but indicating
+// the local file has been deleted (backup exists on remote storage only).
+func (r *BackupRepository) MarkRemoteOnly(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Model(&entity.BackupRecord{}).
+		Where("id = ?", id).
+		Update("remote_only", true).Error
+}
+
 // --- Backup Schedules ---
 
 func (r *BackupRepository) CreateSchedule(ctx context.Context, s *entity.BackupSchedule) error {

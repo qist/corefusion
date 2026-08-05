@@ -10,6 +10,7 @@ type BackupRecord struct {
 	FilePath   string    `json:"file_path" gorm:"size:512;not null"`
 	FileSize   int64     `json:"file_size"`
 	Status     string    `json:"status" gorm:"size:32;not null;default:'completed'"`
+	RemoteOnly bool      `json:"remote_only" gorm:"not null;default:false"` // true = local file deleted, exists on remote only
 	CreatedAt  time.Time `json:"created_at" gorm:"not null"`
 }
 

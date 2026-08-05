@@ -246,33 +246,39 @@
         <el-card style="margin-bottom:20px">
           <template #header><span>{{ t('settings.backup.list') }}</span></template>
           <el-table :data="backups" v-loading="backupsLoading" stripe>
-            <el-table-column prop="name" :label="t('common.name')" width="200" />
-            <el-table-column prop="type" label="Type" width="80">
-              <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
-            </el-table-column>
-            <el-table-column label="Size" width="100">
-              <template #default="{row}">{{ formatSize(row.file_size) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.createdAt')" width="180">
-              <template #default="{row}">{{ new Date(row.created_at).toLocaleString() }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.actions')" width="400">
-              <template #default="{row}">
-                <el-button size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
-                <el-button size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
-                <el-dropdown trigger="click" style="margin:0 8px">
-                  <el-button size="small" type="success">{{ t('settings.backup.uploadTo') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item @click="showUploadS3(row)">S3 / MinIO</el-dropdown-item>
-                      <el-dropdown-item @click="showUploadWebDAV(row)">WebDAV</el-dropdown-item>
-                      <el-dropdown-item @click="showUploadFTP(row)">FTP</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-                <el-button size="small" type="danger" @click="handleDeleteBackup(row)">{{ t('common.delete') }}</el-button>
-              </template>
-            </el-table-column>
+<el-table-column prop="name" :label="t('common.name')" width="200">
+<template #default="{row}">
+{{ row.name }}
+<el-tag v-if="row.remote_only" size="small" type="warning" style="margin-left:4px">Remote Only</el-tag>
+</template>
+</el-table-column>
+<el-table-column prop="type" label="Type" width="80">
+<template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
+</el-table-column>
+<el-table-column label="Size" width="100">
+<template #default="{row}">{{ formatSize(row.file_size) }}</template>
+</el-table-column>
+<el-table-column :label="t('common.createdAt')" width="180">
+<template #default="{row}">{{ new Date(row.created_at).toLocaleString() }}</template>
+</el-table-column>
+<el-table-column :label="t('common.actions')" width="400">
+<template #default="{row}">
+<el-button v-if="!row.remote_only" size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
+<el-button v-if="!row.remote_only" size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
+<el-button v-if="row.remote_only" size="small" type="warning" disabled title="Use Remote Restore below">Local Restore</el-button>
+<el-dropdown trigger="click" style="margin:0 8px">
+<el-button size="small" type="success">{{ t('settings.backup.uploadTo') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+<template #dropdown>
+<el-dropdown-menu>
+<el-dropdown-item @click="showUploadS3(row)">S3 / MinIO</el-dropdown-item>
+<el-dropdown-item @click="showUploadWebDAV(row)">WebDAV</el-dropdown-item>
+<el-dropdown-item @click="showUploadFTP(row)">FTP</el-dropdown-item>
+</el-dropdown-menu>
+</template>
+</el-dropdown>
+<el-button size="small" type="danger" @click="handleDeleteBackup(row)">{{ t('common.delete') }}</el-button>
+</template>
+</el-table-column>
           </el-table>
         </el-card>
 

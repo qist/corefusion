@@ -398,7 +398,7 @@ func (s *Service) startAsyncRestore(downloadFn func() (string, error), restoreFn
 	s.restoreMu.Unlock()
 
 	// Enable maintenance mode for the entire process
-	middleware.SetMaintenance(true, "系统正在还原数据，请稍后再试", "restore")
+	middleware.SetMaintenance(true, "System restore in progress. Please try again later.", "restore")
 	log.Printf("[Backup] maintenance mode enabled for restore #%d", st.ID)
 
 	go func() {
@@ -450,6 +450,11 @@ func (s *Service) RemoteRestoreAsync(ctx context.Context, storageID int64, filen
 		return nil, fmt.Errorf("get storage config: %w", err)
 	}
 
+	// Use a detached context for the async download — the HTTP request
+	// context (ctx) will be canceled as soon as the handler returns, but
+	// the download runs in a background goroutine.
+	dlCtx := context.Background()
+
 	downloadFn := func() (string, error) {
 		tmpPath := filepath.Join(s.dataDir, "backup", "remote_restore_tmp.tar.gz")
 		os.MkdirAll(filepath.Dir(tmpPath), 0750)
@@ -466,7 +471,7 @@ func (s *Service) RemoteRestoreAsync(ctx context.Context, storageID int64, filen
 			if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
 				return "", err
 			}
-			if err := s.downloadFromS3(ctx, cfg, filename, out); err != nil {
+			if err := s.downloadFromS3(dlCtx, cfg, filename, out); err != nil {
 				return "", err
 			}
 		case "ftp":
@@ -474,7 +479,7 @@ func (s *Service) RemoteRestoreAsync(ctx context.Context, storageID int64, filen
 			if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
 				return "", err
 			}
-			if err := s.downloadFromFTP(ctx, cfg, filename, out); err != nil {
+			if err := s.downloadFromFTP(dlCtx, cfg, filename, out); err != nil {
 				return "", err
 			}
 		case "webdav":
@@ -482,7 +487,7 @@ func (s *Service) RemoteRestoreAsync(ctx context.Context, storageID int64, filen
 			if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
 				return "", err
 			}
-			if err := s.downloadFromWebDAV(ctx, cfg, filename, out); err != nil {
+			if err := s.downloadFromWebDAV(dlCtx, cfg, filename, out); err != nil {
 				return "", err
 			}
 		default:

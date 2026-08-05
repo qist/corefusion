@@ -610,6 +610,7 @@
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.backup.storageHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('settings.backup.retainDays')"><el-input-number v-model="schedForm.retain_days" :min="1" :max="365" /></el-form-item>
+<el-form-item label="Delete Local After Upload"><el-switch v-model="schedForm.delete_local_after_upload" /> <span style="color:#909399;font-size:12px">Remove local backup after successful remote upload</span></el-form-item>
         <el-form-item label="Enabled"><el-switch v-model="schedForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
@@ -663,6 +664,7 @@
         <el-form-item label="Username"><el-input v-model="ftpForm.username" /></el-form-item>
         <el-form-item label="Password"><el-input v-model="ftpForm.password" type="password" show-password /></el-form-item>
         <el-form-item label="Path"><el-input v-model="ftpForm.path" placeholder="/backups" /></el-form-item>
+<el-form-item label="Delete Local"><el-switch v-model="ftpForm.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="ftpDialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -676,26 +678,28 @@
         <el-form-item label="Endpoint"><el-input v-model="s3Form.endpoint" placeholder="https://s3.amazonaws.com" /></el-form-item>
         <el-form-item label="Bucket"><el-input v-model="s3Form.bucket" /></el-form-item>
         <el-form-item label="Access Key"><el-input v-model="s3Form.access_key" /></el-form-item>
-        <el-form-item label="Secret Key"><el-input v-model="s3Form.secret_key" type="password" show-password /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="s3DialogVisible=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="s3Uploading" @click="handleUploadS3">{{ t('common.upload') }}</el-button>
-      </template>
-    </el-dialog>
+<el-form-item label="Secret Key"><el-input v-model="s3Form.secret_key" type="password" show-password /></el-form-item>
+<el-form-item label="Delete Local"><el-switch v-model="s3Form.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
+</el-form>
+<template #footer>
+<el-button @click="s3DialogVisible=false">{{ t('common.cancel') }}</el-button>
+<el-button type="primary" :loading="s3Uploading" @click="handleUploadS3">{{ t('common.upload') }}</el-button>
+</template>
+</el-dialog>
 
-    <!-- WebDAV Upload Dialog -->
-    <el-dialog v-model="webdavDialogVisible" :title="'Upload to WebDAV'" width="500">
-      <el-form :model="webdavForm" label-width="100px">
-        <el-form-item label="URL"><el-input v-model="webdavForm.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
-        <el-form-item label="Username"><el-input v-model="webdavForm.username" /></el-form-item>
-        <el-form-item label="Password"><el-input v-model="webdavForm.password" type="password" show-password /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="webdavDialogVisible=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="webdavUploading" @click="handleUploadWebDAV">{{ t('common.upload') }}</el-button>
-      </template>
-    </el-dialog>
+<!-- WebDAV Upload Dialog -->
+<el-dialog v-model="webdavDialogVisible" :title="'Upload to WebDAV'" width="500">
+<el-form :model="webdavForm" label-width="100px">
+<el-form-item label="URL"><el-input v-model="webdavForm.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
+<el-form-item label="Username"><el-input v-model="webdavForm.username" /></el-form-item>
+<el-form-item label="Password"><el-input v-model="webdavForm.password" type="password" show-password /></el-form-item>
+<el-form-item label="Delete Local"><el-switch v-model="webdavForm.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
+</el-form>
+<template #footer>
+<el-button @click="webdavDialogVisible=false">{{ t('common.cancel') }}</el-button>
+<el-button type="primary" :loading="webdavUploading" @click="handleUploadWebDAV">{{ t('common.upload') }}</el-button>
+</template>
+</el-dialog>
 
     <!-- Remote Restore Dialog -->
     <el-dialog v-model="remoteRestoreDialogVisible" :title="t('settings.backup.remoteRestore')" width="600">
@@ -828,7 +832,7 @@ const schedules = ref([])
 const storages = ref([])
 const schedDialogVisible = ref(false)
 const editingSched = ref(null)
-const schedForm = ref({ name: '', cron: '0 3 * * *', retain_days: 30, enabled: true })
+const schedForm = ref({ name: '', cron: '0 3 * * *', retain_days: 30, delete_local_after_upload: false, enabled: true })
 const storageDialogVisible = ref(false)
 const editingStorage = ref(null)
 const storageForm = ref({ name: '', type: 's3', config: {}, enabled: false })
@@ -1109,7 +1113,7 @@ function getStorageName(storageId) {
   return s ? `${s.name} (${s.type})` : '-'
 }
 
-function showAddSchedule() { editingSched.value = null; schedForm.value = { name: '', cron: '0 3 * * *', storage_id: null, retain_days: 30, enabled: true }; schedDialogVisible.value = true }
+function showAddSchedule() { editingSched.value = null; schedForm.value = { name: '', cron: '0 3 * * *', storage_id: null, retain_days: 30, delete_local_after_upload: false, enabled: true }; schedDialogVisible.value = true }
 function showEditSchedule(row) { editingSched.value = row; schedForm.value = { ...row }; schedDialogVisible.value = true }
 async function handleSaveSchedule() {
   try {
@@ -1140,7 +1144,7 @@ const ftpForm = ref({ host: '', port: 21, username: '', password: '', path: '/ba
 
 function showUploadFTP(row) {
   ftpBackupId.value = row.id
-  ftpForm.value = { host: '', port: 21, username: '', password: '', path: '/backups' }
+  ftpForm.value = { host: '', port: 21, username: '', password: '', path: '/backups', delete_local: false }
   ftpDialogVisible.value = true
 }
 
@@ -1151,6 +1155,7 @@ async function handleUploadFTP() {
     await client.post(`/backups/${ftpBackupId.value}/upload-ftp`, ftpForm.value)
     ElMessage.success('Uploaded to FTP successfully')
     ftpDialogVisible.value = false
+    fetchBackups()
   } catch (e) { ElMessage.error(t('common.failed')) } finally { ftpUploading.value = false }
 }
 
@@ -1162,7 +1167,7 @@ const s3Form = ref({ endpoint: '', bucket: '', access_key: '', secret_key: '' })
 
 function showUploadS3(row) {
   s3BackupId.value = row.id
-  s3Form.value = { endpoint: '', bucket: '', access_key: '', secret_key: '' }
+  s3Form.value = { endpoint: '', bucket: '', access_key: '', secret_key: '', delete_local: false }
   s3DialogVisible.value = true
 }
 
@@ -1173,6 +1178,7 @@ async function handleUploadS3() {
     await client.post(`/backups/${s3BackupId.value}/upload-s3`, s3Form.value)
     ElMessage.success('Uploaded to S3 successfully')
     s3DialogVisible.value = false
+    fetchBackups()
   } catch (e) { ElMessage.error(t('common.failed')) } finally { s3Uploading.value = false }
 }
 
@@ -1184,7 +1190,7 @@ const webdavForm = ref({ url: '', username: '', password: '' })
 
 function showUploadWebDAV(row) {
   webdavBackupId.value = row.id
-  webdavForm.value = { url: '', username: '', password: '' }
+  webdavForm.value = { url: '', username: '', password: '', delete_local: false }
   webdavDialogVisible.value = true
 }
 
@@ -1195,6 +1201,7 @@ async function handleUploadWebDAV() {
     await client.post(`/backups/${webdavBackupId.value}/upload-webdav`, webdavForm.value)
     ElMessage.success('Uploaded to WebDAV successfully')
     webdavDialogVisible.value = false
+    fetchBackups()
   } catch (e) { ElMessage.error(t('common.failed')) } finally { webdavUploading.value = false }
 }
 

@@ -27,6 +27,12 @@ type UserSyncer interface {
 	SyncUserToServers(ctx context.Context, clientID int64, action string) error
 }
 
+// SettingStore provides access to system settings (implemented by repository).
+// Used to read currency.default and other DB-stored configuration.
+type SettingStore interface {
+	GetByKey(ctx context.Context, key string) (string, error)
+}
+
 // Service handles plan template, variant, node group, promotion, and order business logic.
 type Service struct {
 	db             *gorm.DB
@@ -42,6 +48,7 @@ type Service struct {
 	accountSyncer  AccountSyncer
 	subRepo        *repository.SubscriptionRepository
 	userSyncer     UserSyncer
+	settingStore   SettingStore
 }
 
 // SetAccountSyncer injects the account syncer (client.Service).
@@ -53,6 +60,22 @@ func (s *Service) SetAccountSyncer(syncer AccountSyncer) {
 // Used to push updated client config to all core servers after renew/upgrade.
 func (s *Service) SetUserSyncer(syncer UserSyncer) {
 	s.userSyncer = syncer
+}
+
+// SetSettingStore injects the setting store for reading DB-stored defaults
+// (e.g. currency.default).
+func (s *Service) SetSettingStore(store SettingStore) {
+	s.settingStore = store
+}
+
+// defaultCurrency reads currency.default from DB; returns "CNY" if not set.
+func (s *Service) defaultCurrency(ctx context.Context) string {
+	if s.settingStore != nil {
+		if v, err := s.settingStore.GetByKey(ctx, "currency.default"); err == nil && v != "" {
+			return v
+		}
+	}
+	return "CNY"
 }
 
 // SetSubscriptionRepo injects the subscription repository.
@@ -421,7 +444,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 	}
 	currency := input.Currency
 	if currency == "" {
-		currency = "CNY"
+		currency = s.defaultCurrency(ctx)
 	}
 	enabled := true
 	if input.Enabled != nil {
@@ -591,7 +614,7 @@ func (s *Service) CreateTrafficPack(ctx context.Context, input CreateTrafficPack
 	}
 	currency := input.Currency
 	if currency == "" {
-		currency = "CNY"
+		currency = s.defaultCurrency(ctx)
 	}
 	enabled := true
 	if input.Enabled != nil {

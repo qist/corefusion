@@ -804,13 +804,13 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 				if result.RowsAffected == 0 {
 					return fmt.Errorf("gift card has already been used")
 				}
-				// Create ChargeOrder
+				// Create ChargeOrder — inherit currency from the card
 				chargeOrder := &entity.ChargeOrder{
 					ClientID:      clientID,
 					TradeNo:       generateTradeNo(),
 					Source:        entity.ChargeSourceCard,
 					Amount:        0,
-					Currency:      "CNY",
+					Currency:      card.Currency,
 					PlanVariantID: &input.VariantID,
 					OrderType:     entity.ChargeOrderTypePurchase,
 					Status:        entity.ChargeStatusPaid,
@@ -866,19 +866,19 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			if result.RowsAffected == 0 {
 				return fmt.Errorf("gift card has already been used")
 			}
-			// Create ChargeOrder for tracking
-			chargeOrder := &entity.ChargeOrder{
-				ClientID:      clientID,
-				TradeNo:       generateTradeNo(),
-				Source:        entity.ChargeSourceCard,
-				Amount:        0,
-				Currency:      "CNY",
-				PlanVariantID: &input.VariantID,
-				OrderType:     entity.ChargeOrderTypePurchase,
-				Status:        entity.ChargeStatusPaid,
-				ChargeCardID:  &card.ID,
-				PaidAt:        &now,
-			}
+			// Create ChargeOrder for tracking — inherit currency from the card
+				chargeOrder := &entity.ChargeOrder{
+					ClientID:      clientID,
+					TradeNo:       generateTradeNo(),
+					Source:        entity.ChargeSourceCard,
+					Amount:        0,
+					Currency:      card.Currency,
+					PlanVariantID: &input.VariantID,
+					OrderType:     entity.ChargeOrderTypePurchase,
+					Status:        entity.ChargeStatusPaid,
+					ChargeCardID:  &card.ID,
+					PaidAt:        &now,
+				}
 			if err := tx.Create(chargeOrder).Error; err != nil {
 				return err
 			}

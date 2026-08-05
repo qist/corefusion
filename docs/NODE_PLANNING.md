@@ -130,20 +130,24 @@ SQLite ──> MySQL(N7) ──> PostgreSQL(N8) ──> MySQL(N7)   # 三向相�
 
 ---
 
-## 4. 备份/还原节点部署与测试(FTP + S3 接口)
+## 4. 备份/还原节点部署与测试(FTP + S3 + WebDAV 接口)
 
-> 目标:在测试节点上部署 **FTP 服务** 与 **S3 兼容存储(MinIO)**,用 CoreFusion 已有的备份/上传/还原工具
-> 验证"本地备份 → 上传 FTP → 上传 S3 → 从备份还原 → 数据库级还原"全链路。
+> 目标:在测试节点上部署 **FTP 服务**、**S3 兼容存储(MinIO)** 与 **WebDAV 服务**,用 CoreFusion 已有的备份/上传/还原工具
+> 验证"本地备份 → 上传 FTP → 上传 S3 → 上传 WebDAV → 从备份还原 → 数据库级还原"全链路。
 > CoreFusion 代码(见 `internal/service/backup/service.go`)已内置 FTP(`jlaffaye/ftp`)、
-> S3(`aws-sdk-go-v2/service/s3`,支持自定义 Endpoint 兼容 MinIO)、WebDAV 上传能力,及数据库纯 Go dump/restore。
+> S3(`aws-sdk-go-v2/service/s3`,支持自定义 Endpoint 兼容 MinIO)、WebDAV(`studio-b12/gowebdav`)上传能力,及数据库纯 Go dump/restore。
 
 ### 4.1 节点角色分配(在既有 9 节点内)
 
 | 节点 | 角色 | 部署内容 | 访问地址 |
 |------|------|----------|----------|
-| N5 | FTP Server | `vsftpd`(被动模式,开启 `pasv_enable`) | `ftp://<N5>:21` |
-| N6 | S3 兼容存储 | `minio`(单节点 single drive) | `http://<N6>:9000`,控制台 `:9001` |
+| N5 (192.168.2.187) | FTP Server | `vsftpd`(被动模式,开启 `pasv_enable`) | `ftp://192.168.2.187:21` |
+| N6 (192.168.3.62) | S3 兼容存储 | `minio`(单节点 single drive) | `http://192.168.3.62:9000`,控制台 `:9001` |
+| 192.168.1.117 | WebDAV Server | nginx + dav-ext-module(OpenResty) | `http://192.168.1.117:80/webdav/corefusion/` |
 | 127.0.0.1 | Panel(已有) | CoreFusion + 备份 API | 管理后台 `/admin/backups` |
+
+> 注:N5/N6 节点无外网,`vsftpd` / `minio` 二进制通过 Panel 代理 `127.0.0.1:7890` 下载。
+> 192.168.1.117 可直接访问外网,nginx 已预装(OpenResty + dav-ext-module)。
 
 > 注:节点无外网,`vsftpd` / `minio` 二进制通过 Panel 代理 `127.0.0.1:7890` 下载,或离线拷入 `/opt/corefusion/data`。
 
@@ -175,7 +179,41 @@ chown -R ftpuser:ftpuser /srv/ftp
 systemctl restart vsftpd && systemctl enable vsftpd
 ```
 
-### 4.3 部署 MinIO(S3 兼容, N6)
+### 4.3 部署 WebDAV(192.168.1.117,已完成)
+
+```bash
+# 192.168.1.117 可直接访问外网,无需代理
+apt-get install -y apache2-utils
+
+# 创建 WebDAV 目录和认证
+mkdir -p /srv/webdav/corefusion
+htpasswd -bc /etc/nginx/.webdav-passwd cf_webdav 'CFwd@2026'
+chown -R www-data:www-data /srv/webdav
+
+# nginx 已预装 OpenResty + dav-ext-module
+# 配置 /etc/nginx/nginx.conf,添加 WebDAV server (port 80):
+#   location /webdav/ {
+#       root /srv/webdav;
+#       auth_basic "CoreFusion WebDAV";
+#       auth_basic_user_file /etc/nginx/.webdav-passwd;
+#       dav_methods PUT DELETE MKCOL COPY MOVE;
+#       dav_ext_methods PROPFIND OPTIONS;
+#       create_full_put_path on;
+#       client_max_body_size 0;
+#   }
+
+# 启动并加入 rc.local 开机自启
+nginx
+echo '/usr/sbin/nginx' >> /etc/rc.local
+```
+
+**WebDAV 访问信息:**
+- URL: `http://192.168.1.117:80/webdav/corefusion/`
+- 用户名: `cf_webdav`
+- 密码: `CFwd@2026`
+- 已验证: PUT(201) / GET(200) / PROPFIND(207) / DELETE(204) 全部正常
+
+### 4.4 部署 MinIO(S3 兼容, N6)
 
 ```bash
 export http_proxy=http://127.0.0.1:7890 https_proxy=http://127.0.0.1:7890
@@ -194,7 +232,7 @@ mc alias set local http://<N6>:9000 cf_s3 CHANGE_ME_S3_PASSWORD
 mc mb local/corefusion-backup
 ```
 
-### 4.4 在 Panel 配置备份存储(走 API 或后台)
+### 4.5 在 Panel 配置备份存储(走 API 或后台)
 
 CoreFusion 备份 API 支持 FTP / S3 / WebDAV 存储配置(`/backups/storages`)。示例 S3 存储配置:
 
@@ -216,43 +254,56 @@ POST /api/backups/storages
 {
   "name": "ftp-n5",
   "type": "ftp",
-  "endpoint": "ftp://<N5>:21",
+  "endpoint": "ftp://192.168.2.187:21",
   "access_key": "ftpuser",
   "secret_key": "CHANGE_ME_FTP_PASSWORD"
 }
 ```
 
-### 4.5 测试矩阵:备份 → 上传 → 还原
+```json
+POST /api/backups/storages
+{
+  "name": "webdav-117",
+  "type": "webdav",
+  "endpoint": "http://192.168.1.117:80/webdav/corefusion/",
+  "access_key": "cf_webdav",
+  "secret_key": "CFwd@2026"
+}
+```
+
+### 4.6 测试矩阵:备份 → 上传 → 还原
 
 | 步骤 | 操作(API) | 预期 |
 |------|-----------|------|
 | ① 创建全量备份 | `POST /backups/create` | 返回备份 ID,文件落 `data/storage/backups/`(含 `*.sql` + `data.tar.gz` + `manifest.json`) |
 | ② 上传 FTP | `POST /backups/:id/upload-ftp` | FTP 服务端 `/srv/ftp/corefusion/<备份tar>` 出现;返回 `url` 可下载 |
 | ③ 上传 S3 | `POST /backups/:id/upload-s3` | MinIO `corefusion-backup` 桶出现对象;返回 `url` |
+| ③b 上传 WebDAV | `POST /backups/:id/upload-webdav` | WebDAV `/srv/webdav/corefusion/<备份tar>` 出现;返回 `url` |
 | ④ 下载校验 | `GET /backups/:id/download` | 与本地 `sha256` 一致 |
 | ⑤ 全量还原 | `POST /backups/:id/restore` | 暂停服务 → 解包 → 覆盖 data 目录 + `mysql/psql/sqlite` 纯 Go 导入 → 重启 → 校验任务/用户数 |
 | ⑥ 数据库级还原 | `POST /backups/database/restore`(含 `db_dump` 字段的 JSON body) | 仅还原 DB,不动数据目录 |
 | ⑦ 上传即还原 | `POST /backups/upload-restore`(multipart 上传 tar) | 直接套用一份外来备份 |
 
-### 4.6 数据流与还原链路
+### 4.7 数据流与还原链路
 
 ```text
 Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest.json }
-                         ├─②upload-ftp──> N5 vsftpd  /srv/ftp/corefusion/<id>.tar.gz
-                         └─③upload-s3───> N6 MinIO    corefusion-backup/<id>.tar.gz
+                         ├─②upload-ftp────> N5 vsftpd       /srv/ftp/corefusion/<id>.tar.gz
+                         ├─③upload-s3─────> N6 MinIO         corefusion-backup/<id>.tar.gz
+                         └─③bupload-webdav> 192.168.1.117 nginx /srv/webdav/corefusion/<id>.tar.gz
                               │
    ⑤restore ◀── 下载回 data/ ──┘
    ⑥database/restore ◀── 解析 *.sql 做纯 Go import(支持 sqlite/mysql/pg)
 ```
 
-### 4.7 校验要点
+### 4.8 校验要点
 
 - FTP 被动端口段(21100-21110)需在防火墙放行,否则上传卡死(节点间走内网,一般不挡)。
 - S3 必须 `use_path_style=true`(MinIO 默认 path-style),否则 `UploadToS3` 拼出 `bucket.endpoint` 虚拟主机风格报 DNS 错误。
 - 还原前必须确认备份 `manifest.json` 的 `db_type` 与当前 `CF_DB_DSN` 一致(SQLite/MySQL/PostgreSQL 不可混用)。
 - 还原会停服务、覆盖 `data/` 与数据库,**测试请在独立测试库/测试节点执行**,避免污染 `127.0.0.1` 生产开发数据。
 
-### 4.8 涉及文件(已实现,无需重写)
+### 4.9 涉及文件(已实现,无需重写)
 
 - `internal/service/backup/service.go`:`CreateBackup` / `RestoreBackup` / `UploadToFTP` / `UploadToS3` / `UploadToWebDAV` / `DatabaseDump` / `DatabaseRestore`
 - `internal/service/backup/storage.go`:存储配置(含 S3 custom Endpoint 支持)
@@ -261,8 +312,17 @@ Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest
 
 ---
 
-## 5. 待确认项(备份节点)
+## 5. 部署状态汇总
 
-- [ ] FTP/S3 节点复用 N5/N6 还是单独新增测试机(本文按复用 N5/N6 规划)。
+| 服务 | 节点 | 状态 | 访问信息 |
+|------|------|------|----------|
+| FTP (vsftpd) | N5 (192.168.2.187) | ✅ 已部署运行 | `ftp://192.168.2.187:21`, user=`ftpuser`, pass=`CHANGE_ME_FTP_PASSWORD` |
+| S3 (MinIO) | N6 (192.168.3.62) | ✅ 已部署运行 | `http://192.168.3.62:9000`, key=`cf_s3`, secret=`CHANGE_ME_S3_PASSWORD` |
+| WebDAV (nginx) | 192.168.1.117 | ✅ 已部署运行 | `http://192.168.1.117:80/webdav/corefusion/`, user=`cf_webdav`, pass=`CFwd@2026` |
+| MySQL 8.x | N7 (192.168.3.70) | ✅ 已部署运行 | `corefusion@192.168.3.70:3306`, pass=`Cf@2026test` |
+| PostgreSQL 16 | N8 (192.168.3.100) | ✅ 已部署运行 | `corefusion@192.168.3.100:5432`, pass=`Cf@2026test` |
+
+## 6. 待确认项
+
 - [ ] 备份还原是否纳入定时调度(`/backups/schedules`)做周期性演练。
 - [ ] MinIO 是否需要开启 TLS(测试环境先用 http)。

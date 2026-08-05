@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/mysql"
@@ -16,10 +17,10 @@ func main() {
 	dsn := os.Args[1]
 	var dial gorm.Dialector
 	switch {
-	case len(dsn) > 8 && dsn[:8] == "postgres":
+	case strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://"):
 		dial = postgres.Open(dsn)
-	case len(dsn) > 5 && dsn[:5] == "mysql":
-		dial = mysql.Open(dsn)
+	case strings.HasPrefix(dsn, "mysql://"):
+		dial = mysql.Open(strings.TrimPrefix(dsn, "mysql://"))
 	default:
 		dial = sqlite.Open(dsn)
 	}

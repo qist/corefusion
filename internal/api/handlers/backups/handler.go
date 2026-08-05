@@ -414,7 +414,7 @@ func (h *Handler) UploadToFTP(c *gin.Context) {
 	}
 
 	if req.DeleteLocal {
-		if err := h.svc.DeleteBackup(c.Request.Context(), id); err != nil {
+		if err := h.svc.DeleteLocalFile(c.Request.Context(), id); err != nil {
 			response.OK(c, gin.H{"message": "uploaded to FTP successfully (local cleanup failed)", "local_deleted": false})
 			return
 		}
@@ -448,7 +448,7 @@ func (h *Handler) UploadToS3(c *gin.Context) {
 	}
 
 	if req.DeleteLocal {
-		if err := h.svc.DeleteBackup(c.Request.Context(), id); err != nil {
+		if err := h.svc.DeleteLocalFile(c.Request.Context(), id); err != nil {
 			response.OK(c, gin.H{"message": "uploaded to S3 successfully (local cleanup failed)", "local_deleted": false})
 			return
 		}
@@ -482,7 +482,7 @@ func (h *Handler) UploadToWebDAV(c *gin.Context) {
 	}
 
 	if req.DeleteLocal {
-		if err := h.svc.DeleteBackup(c.Request.Context(), id); err != nil {
+		if err := h.svc.DeleteLocalFile(c.Request.Context(), id); err != nil {
 			response.OK(c, gin.H{"message": "uploaded to WebDAV successfully (local cleanup failed)", "local_deleted": false})
 			return
 		}

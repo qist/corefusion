@@ -168,6 +168,21 @@ func (s *Service) DeleteBackup(ctx context.Context, id int64) error {
 	return s.repo.DeleteRecord(ctx, id)
 }
 
+// DeleteLocalFile removes the local backup file but keeps the database record,
+// marking it as remote_only. This is used after a successful remote upload when
+// the user wants to free local disk space but still see the backup in the list
+// and be able to restore it from remote.
+func (s *Service) DeleteLocalFile(ctx context.Context, id int64) error {
+	rec, err := s.repo.GetRecordByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if rec.FilePath != "" {
+		os.Remove(rec.FilePath)
+	}
+	return s.repo.MarkRemoteOnly(ctx, id)
+}
+
 // EnforceRetention removes backups older than retainDays days.
 // retainDays <= 0 disables cleanup (nothing is removed). It prunes both the
 // database-tracked full backups (backup_records) and the standalone
@@ -2049,10 +2064,10 @@ func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.
 
 		// Optionally delete the local backup after successful upload
 		if sched.DeleteLocalAfterUpload {
-			if err := s.svc.DeleteBackup(ctx, rec.ID); err != nil {
+			if err := s.svc.DeleteLocalFile(ctx, rec.ID); err != nil {
 				log.Printf("[BackupScheduler] Delete local backup error: %v", err)
 			} else {
-				log.Printf("[BackupScheduler] Local backup deleted after upload: %s", name)
+				log.Printf("[BackupScheduler] Local backup deleted after upload (remote_only): %s", name)
 			}
 		}
 	}

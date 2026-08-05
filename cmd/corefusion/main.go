@@ -95,9 +95,15 @@ func loadEnv() map[string]string {
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
 			val := strings.TrimSpace(parts[1])
+			// System environment variables take precedence over .env file
+			// values. If a key is already set in the system environment
+			// (e.g. via `export CF_DB_DSN=mysql://...`), use that value
+			// instead of the .env file value.
+			if sysVal := os.Getenv(key); sysVal != "" {
+				val = sysVal
+			}
 			env[key] = val
-			// Populate os.Environ; don't overwrite values already set
-			// by the system environment (system env takes precedence).
+			// Populate os.Environ for keys not yet set.
 			if os.Getenv(key) == "" {
 				os.Setenv(key, val)
 			}

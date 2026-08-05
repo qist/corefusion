@@ -1610,6 +1610,22 @@ func dumpMySQL(ctx context.Context, dsn, destPath string) error {
 		if err != nil {
 			return fmt.Errorf("select from %s: %w", tbl, err)
 		}
+
+		// Use extended INSERT (like mysqldump --extended-insert): one INSERT
+		// statement covers up to extBatch rows. This dramatically reduces dump
+		// file size and speeds up restore (fewer statements to parse/execute).
+		const extBatch = 1000
+		rowBuf := make([]string, 0, extBatch)
+		flush := func() error {
+			if len(rowBuf) == 0 {
+				return nil
+			}
+			_, err := fmt.Fprintf(out, "INSERT INTO %s (%s) VALUES %s;\n",
+				quoteMySQLIdent(tbl), colList, strings.Join(rowBuf, ","))
+			rowBuf = rowBuf[:0]
+			return err
+		}
+
 		for rows.Next() {
 			vals, err := rows.Columns()
 			if err != nil {
@@ -1629,12 +1645,18 @@ func dumpMySQL(ctx context.Context, dsn, destPath string) error {
 			for i, v := range scan {
 				parts[i] = mysqlLiteral(v)
 			}
-			if _, err := fmt.Fprintf(out, "INSERT INTO %s (%s) VALUES (%s);\n", quoteMySQLIdent(tbl), colList, strings.Join(parts, ",")); err != nil {
-				rows.Close()
-				return err
+			rowBuf = append(rowBuf, "("+strings.Join(parts, ",")+")")
+			if len(rowBuf) >= extBatch {
+				if err := flush(); err != nil {
+					rows.Close()
+					return err
+				}
 			}
 		}
 		rows.Close()
+		if err := flush(); err != nil { // flush remaining rows
+			return err
+		}
 		if _, err := fmt.Fprintln(out); err != nil {
 			return err
 		}
@@ -1695,10 +1717,8 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 		}
 
 		// Data as INSERT statements so restore needs no COPY/psql (pure Go).
-		// Use Scan() instead of RawValues() because pgx v5 defaults to the
-		// binary protocol — RawValues() returns binary-encoded bytes that
-		// can't be directly used as SQL text literals (e.g. int8 1 → 8 null
-		// bytes). Scan() decodes into Go native types which we format below.
+		// Use extended INSERT (multi-row VALUES) like mysqldump to reduce dump
+		// size and speed up restore.
 		rows, err := conn.Query(ctx, "SELECT * FROM "+quotePgIdent(tbl))
 		if err != nil {
 			return fmt.Errorf("select %s: %w", tbl, err)
@@ -1708,6 +1728,20 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 		for i, c := range cols {
 			colNames[i] = quotePgIdent(c.Name)
 		}
+		colList := strings.Join(colNames, ",")
+
+		const extBatch = 1000
+		rowBuf := make([]string, 0, extBatch)
+		flush := func() error {
+			if len(rowBuf) == 0 {
+				return nil
+			}
+			_, err := fmt.Fprintf(out, "INSERT INTO %s (%s) VALUES %s;\n",
+				quotePgIdent(tbl), colList, strings.Join(rowBuf, ","))
+			rowBuf = rowBuf[:0]
+			return err
+		}
+
 		for rows.Next() {
 			vals := make([]any, len(cols))
 			ptrs := make([]any, len(cols))
@@ -1722,9 +1756,12 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 			for i, v := range vals {
 				parts[i] = pgValueLiteral(v)
 			}
-			if _, err := fmt.Fprintf(out, "INSERT INTO %s (%s) VALUES (%s);\n", quotePgIdent(tbl), strings.Join(colNames, ","), strings.Join(parts, ",")); err != nil {
-				rows.Close()
-				return err
+			rowBuf = append(rowBuf, "("+strings.Join(parts, ",")+")")
+			if len(rowBuf) >= extBatch {
+				if err := flush(); err != nil {
+					rows.Close()
+					return err
+				}
 			}
 		}
 		if err := rows.Err(); err != nil {
@@ -1732,6 +1769,9 @@ func dumpPostgres(ctx context.Context, dsn, destPath string) error {
 			return err
 		}
 		rows.Close()
+		if err := flush(); err != nil { // flush remaining rows
+			return err
+		}
 		if _, err := fmt.Fprintln(out); err != nil {
 			return err
 		}

@@ -1953,8 +1953,11 @@ func pgValueLiteral(v any) string {
 		if len(val) == 0 {
 			return "NULL"
 		}
-		// Bytea: use PostgreSQL escape format E'\\\\x...'
-		return "'\\\\x" + hexEncode(val) + "'"
+		// pgx may return []byte for text/varchar columns. Treat as string
+		// for cross-db compatibility (E'\\x...' hex format corrupts text
+		// when imported into SQLite during cross-db restore).
+		s := string(val)
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	case time.Time:
 		return "'" + val.Format("2006-01-02 15:04:05.999999999-07") + "'"
 	case net.IP:
@@ -1973,7 +1976,12 @@ func mysqlLiteral(v interface{}) string {
 	}
 	switch val := v.(type) {
 	case []byte:
-		return "X'" + hexEncode(val) + "'"
+		// MySQL driver returns []byte for varchar/text/longtext/blob columns.
+		// Treat as string — this is safe for text columns and produces
+		// correct cross-db compatible SQL (X'hex' would corrupt text data
+		// when imported into SQLite/PostgreSQL during cross-db restore).
+		s := string(val)
+		return "'" + strings.ReplaceAll(strings.ReplaceAll(s, "\\", "\\\\"), "'", "''") + "'"
 	case string:
 		return "'" + strings.ReplaceAll(strings.ReplaceAll(val, "\\", "\\\\"), "'", "''") + "'"
 	case int, int32, int64, uint, uint32, uint64:

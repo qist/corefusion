@@ -227,6 +227,10 @@ func (h *NginxHandler) GenerateConfig(c *gin.Context) {
 	}
 	if isLocal {
 		h.proxyMgr.WriteConfigFile(proxy.ProxyNginx, config)
+		// Push config to mirror nodes so they get the updated nginx.conf.
+		if h.nodeOp != nil {
+			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, "nginx", []byte(config))
+		}
 	} else if h.nodeOp != nil {
 		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, "nginx", []byte(config)); err != nil {
 			response.InternalError(c, "SYNC_FAILED", err.Error())
@@ -243,7 +247,12 @@ func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
-	if !isLocal && h.nodeOp != nil {
+	if isLocal {
+		// Push config to mirror nodes so they get the updated nginx.conf.
+		if h.nodeOp != nil {
+			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, "nginx", []byte(config))
+		}
+	} else if h.nodeOp != nil {
 		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, "nginx", []byte(config)); err != nil {
 			response.InternalError(c, "SYNC_FAILED", err.Error())
 			return

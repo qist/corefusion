@@ -284,8 +284,14 @@ func SetUserSyncer(syncer clientauthSvc.UserSyncer) {
 
 // configSyncHookAdapter adapts configsync.Service to the ConfigSyncHook interface
 // used by inboundconfig and outboundconfig handlers.
+// When triggerMirrorSync is true (inbound changes), it also triggers mirror node
+// sync so that mirrors take effect at the same time as the primary.
+// Outbound changes do NOT trigger mirror sync — mirrors only replicate inbounds
+// and caddy/nginx proxy configs.
 type configSyncHookAdapter struct {
-	syncSvc *configsyncSvc.Service
+	syncSvc           *configsyncSvc.Service
+	nodeServerSvc     *nodeServerSvc.Service
+	triggerMirrorSync bool
 }
 
 func (a *configSyncHookAdapter) SyncServerConfig(_ context.Context, serverID int64, coreType string) {
@@ -293,6 +299,11 @@ func (a *configSyncHookAdapter) SyncServerConfig(_ context.Context, serverID int
 		if err := a.syncSvc.SyncNow(context.Background()); err != nil {
 			log.Printf("[router] configSyncHook: SyncNow failed for server %d: %v", serverID, err)
 		}
+	}
+	// Only trigger mirror sync for inbound changes (not outbound).
+	// Mirrors only replicate inbounds and caddy/nginx proxy configs.
+	if a.triggerMirrorSync && a.nodeServerSvc != nil {
+		a.nodeServerSvc.SyncMirrorsForPrimary(context.Background(), serverID)
 	}
 }
 
@@ -1099,11 +1110,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// Outbound Configs (moved under /node-servers/:id/)
 			outboundCfgH := outboundconfigHandler.NewHandler(outboundConfigSvc)
 
-			// Inject config sync hook so inbound/outbound changes trigger
+			// Inject config sync hooks so inbound/outbound changes trigger
 			// full config sync to remote nodes.
-			syncHook := &configSyncHookAdapter{syncSvc: configSyncSvc}
-			inboundCfgH.SetSyncHook(syncHook)
-			outboundCfgH.SetSyncHook(syncHook)
+			// Inbound changes also trigger mirror sync (mirrors replicate inbounds
+			// and caddy/nginx proxy configs); outbound changes do NOT trigger
+			// mirror sync.
+			inboundSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: true}
+			outboundSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
+			inboundCfgH.SetSyncHook(inboundSyncHook)
+			outboundCfgH.SetSyncHook(outboundSyncHook)
 
 			// NOTE: SyncData and traffic reset hooks are injected after
 			// nodeServerSvcInst is created (see below).
@@ -1466,10 +1481,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				// Phase 3: Node Types & Chain Proxy wiring
 				inboundRepoForNodeServer := repository.NewInboundConfigRepository(database)
+				caddySiteRepoForMirror := repository.NewCaddySiteRepository(database)
+				nginxSiteRepoForMirror := repository.NewNginxSiteRepository(database)
 				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
 
 				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
-				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3)
+				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3).
+					SetCaddySiteRepository(caddySiteRepoForMirror).
+					SetNginxSiteRepository(nginxSiteRepoForMirror)
 				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
 				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
 				billingFilter := agent.NewBillingFilter(nodeServerRepo)
@@ -1670,6 +1689,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			syncDataHook := &syncDataHookAdapter{nodeServerSvc: nodeServerSvcInst}
 			inboundCfgH.SetSyncDataHook(syncDataHook)
 
+			// Wire nodeServerSvc into the configSyncHookAdapter so that
+			// inbound config changes also trigger mirror node sync.
+			inboundSyncHook.nodeServerSvc = nodeServerSvcInst
+			outboundSyncHook.nodeServerSvc = nodeServerSvcInst
+
 			// Inject traffic reset hook so subscription/client reset propagates
 			// to inbound configs and remote Agent nodes.
 			trafficHook := &trafficResetHookAdapter{inboundSvc: inboundConfigSvc, syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}
@@ -1702,6 +1726,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/distribute-cert", nodeServerH.DistributeCertificate)
 				// Phase 3: Node Types & Chain Proxy
 				nodeServersGroup.GET("/:id/failover-status", nodeServerH.GetFailoverStatus)
+				nodeServersGroup.GET("/:id/recover-mode", nodeServerH.GetServerRecoverMode)
+				nodeServersGroup.PUT("/:id/recover-mode", nodeServerH.SetServerRecoverMode)
 				nodeServersGroup.POST("/failover-check", nodeServerH.TriggerFailoverCheck)
 				nodeServersGroup.POST("/:id/sync-mirror", nodeServerH.SyncMirror)
 				nodeServersGroup.GET("/:id/mirror-status", nodeServerH.GetMirrorStatus)

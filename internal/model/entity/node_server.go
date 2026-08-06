@@ -20,8 +20,9 @@ const (
 
 // FailoverRole constants for primary_backup nodes.
 const (
-	FailoverRolePrimary = "primary"
-	FailoverRoleBackup  = "backup"
+	FailoverRolePrimary          = "primary"
+	FailoverRoleBackup           = "backup"
+	FailoverRoleBackupRecovering = "backup_recovering"
 )
 
 // NodeServer represents a remote server node managed by the panel.
@@ -40,6 +41,9 @@ type NodeServer struct {
 	PartnerServerID  int64  `json:"partner_server_id" gorm:"not null;default:0;index"`
 	FailoverRole     string `json:"failover_role" gorm:"size:16;not null;default:''"`
 	FailoverPriority int    `json:"failover_priority" gorm:"not null;default:0"`
+	// 故障转移回切模式: auto_switch_back (默认) / stay_on_promoted
+	// 按主备对配置，Primary 和 Backup 应保持一致
+	RecoverMode string `json:"recover_mode" gorm:"size:32;not null;default:'auto_switch_back'"`
 
 	// 链式代理配置（JSON）
 	ChainConfig string `json:"chain_config" gorm:"type:longtext"`

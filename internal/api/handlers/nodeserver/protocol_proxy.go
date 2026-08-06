@@ -411,6 +411,13 @@ func (h *Handler) syncConfigToServer(serverID int64, coreType string) {
 	} else {
 		log.Printf("[nodeserver] config file synced to server %d (%s)", serverID, coreType)
 	}
+
+	// 4. Sync to mirror nodes bound to this primary.
+	// This ensures mirrors get the updated config at the same time as the
+	// primary. SyncMirrorsForPrimary copies the primary's inbound configs
+	// to each mirror's DB, then pushes the config to each mirror's Agent
+	// and applies it immediately (hot-reload).
+	h.svc.SyncMirrorsForPrimary(ctx, serverID)
 }
 
 func isValidCoreType(ct string) bool {

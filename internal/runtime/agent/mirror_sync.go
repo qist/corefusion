@@ -2,12 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"corefusion/internal/model/entity"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
 
@@ -15,10 +17,12 @@ import (
 // Mirror nodes copy the primary node's inbound configs and user lists,
 // but do not independently bill — their traffic is merged into the primary.
 type MirrorSyncManager struct {
-	serverRepo   *repository.NodeServerRepository
-	inboundRepo  *repository.InboundConfigRepository
-	nodeMgr      *NodeServerManager
-	syncInterval time.Duration
+	serverRepo      *repository.NodeServerRepository
+	inboundRepo     *repository.InboundConfigRepository
+	caddySiteRepo   *repository.CaddySiteRepository
+	nginxSiteRepo   *repository.NginxSiteRepository
+	nodeMgr         *NodeServerManager
+	syncInterval    time.Duration
 
 	// Track last sync time per mirror
 	mu        sync.RWMutex
@@ -32,12 +36,24 @@ func NewMirrorSyncManager(
 	nodeMgr *NodeServerManager,
 ) *MirrorSyncManager {
 	return &MirrorSyncManager{
-		serverRepo:   serverRepo,
-		inboundRepo:  inboundRepo,
-		nodeMgr:      nodeMgr,
-		syncInterval: 5 * time.Minute,
-		lastSync:     make(map[int64]time.Time),
+		serverRepo:    serverRepo,
+		inboundRepo:   inboundRepo,
+		nodeMgr:       nodeMgr,
+		syncInterval:  5 * time.Minute,
+		lastSync:      make(map[int64]time.Time),
 	}
+}
+
+// SetCaddySiteRepository sets the Caddy site repository for syncing Caddy configs.
+func (m *MirrorSyncManager) SetCaddySiteRepository(repo *repository.CaddySiteRepository) *MirrorSyncManager {
+	m.caddySiteRepo = repo
+	return m
+}
+
+// SetNginxSiteRepository sets the Nginx site repository for syncing Nginx configs.
+func (m *MirrorSyncManager) SetNginxSiteRepository(repo *repository.NginxSiteRepository) *MirrorSyncManager {
+	m.nginxSiteRepo = repo
+	return m
 }
 
 // WithSyncInterval sets the sync check interval.
@@ -96,6 +112,13 @@ func (m *MirrorSyncManager) syncAllMirrors(ctx context.Context) error {
 }
 
 // syncMirrorWithPrimary replicates the primary's inbound configs to the mirror.
+// It performs a full bidirectional sync:
+//   - New inbounds on primary → cloned to mirror (tag suffixed with -mirror)
+//   - Existing inbounds → updated (enabled status, config, port, etc.)
+//   - Inbounds deleted on primary → deleted from mirror
+//   - Caddy/Nginx sites → same create/update/delete logic
+// After DB sync, pushes config to mirror's Agent via SyncData and hot-reloads
+// inbounds via xray gRPC API (addInbound for new, delInbound for removed).
 func (m *MirrorSyncManager) syncMirrorWithPrimary(ctx context.Context, mirror *entity.NodeServer) error {
 	// Get the primary (partner) server
 	primary, err := m.serverRepo.GetByID(ctx, mirror.PartnerServerID)
@@ -121,45 +144,282 @@ func (m *MirrorSyncManager) syncMirrorWithPrimary(ctx context.Context, mirror *e
 		return fmt.Errorf("list mirror inbounds: %w", err)
 	}
 
-	// Build a map of existing mirror inbound tags
-	existingTags := make(map[string]bool)
-	for _, ib := range mirrorInbounds {
-		existingTags[ib.Tag] = true
+	// Build a map of existing mirror inbounds by tag (for lookup)
+	existingMap := make(map[string]*entity.InboundConfig)
+	for i := range mirrorInbounds {
+		existingMap[mirrorInbounds[i].Tag] = &mirrorInbounds[i]
 	}
 
-	// For each primary inbound, ensure a mirror copy exists
-	synced := 0
+	// Track which mirror tags correspond to primary inbounds (for pruning)
+	primaryMirrorTags := make(map[string]bool)
+
+	// Track what changed for hot-reload
+	var newInbounds []entity.InboundConfig  // inbounds newly created on mirror
+	var removedTags []string                // inbounds deleted from mirror
+	inboundChanged := false                  // any create/update/delete happened
+
 	for _, pib := range primaryInbounds {
 		mirrorTag := fmt.Sprintf("%s-mirror", pib.Tag)
-		if existingTags[mirrorTag] {
-			continue // Already exists
-		}
+		primaryMirrorTags[mirrorTag] = true
 
-		// Clone the inbound config for the mirror
-		mib := pib // copy
-		mib.ID = 0 // new record
-		mib.ServerID = mirror.ID
-		mib.Tag = mirrorTag
-		mib.Region = mirror.Region
-		mib.CreatedAt = time.Now()
-		mib.UpdatedAt = time.Now()
+		if existing, ok := existingMap[mirrorTag]; ok {
+			// Update existing mirror inbound to match primary
+			updated := pib
+			updated.ID = existing.ID
+			updated.ServerID = mirror.ID
+			updated.Tag = mirrorTag
+			updated.Region = mirror.Region
+			updated.CreatedAt = existing.CreatedAt
+			updated.UpdatedAt = time.Now()
 
-		if err := m.inboundRepo.Create(ctx, &mib); err != nil {
-			log.Printf("[MirrorSync] failed to clone inbound %s to mirror %d: %v", pib.Tag, mirror.ID, err)
-			continue
+			if err := m.inboundRepo.Update(ctx, &updated); err != nil {
+				log.Printf("[MirrorSync] failed to update inbound %s on mirror %d: %v",
+					mirrorTag, mirror.ID, err)
+				continue
+			}
+			inboundChanged = true
+		} else {
+			// Clone new inbound for mirror
+			mib := pib
+			mib.ID = 0
+			mib.ServerID = mirror.ID
+			mib.Tag = mirrorTag
+			mib.Region = mirror.Region
+			mib.CreatedAt = time.Now()
+			mib.UpdatedAt = time.Now()
+
+			if err := m.inboundRepo.Create(ctx, &mib); err != nil {
+				log.Printf("[MirrorSync] failed to clone inbound %s to mirror %d: %v",
+					pib.Tag, mirror.ID, err)
+				continue
+			}
+			newInbounds = append(newInbounds, pib)
+			inboundChanged = true
 		}
-		synced++
 	}
 
-	if synced > 0 {
-		log.Printf("[MirrorSync] mirrored %d inbound(s) from primary %s to mirror %s",
-			synced, primary.Name, mirror.Name)
+	// Delete mirror inbounds whose primary counterpart no longer exists
+	for _, mib := range mirrorInbounds {
+		if !primaryMirrorTags[mib.Tag] {
+			if err := m.inboundRepo.Delete(ctx, mib.ID); err != nil {
+				log.Printf("[MirrorSync] failed to delete stale inbound %s on mirror %d: %v",
+					mib.Tag, mirror.ID, err)
+				continue
+			}
+			removedTags = append(removedTags, mib.Tag)
+			inboundChanged = true
+		}
+	}
+
+	if inboundChanged {
+		log.Printf("[MirrorSync] inbound sync: %d new, %d removed for mirror %s",
+			len(newInbounds), len(removedTags), mirror.Name)
+	}
+
+	// Sync Caddy sites from primary to mirror
+	if m.caddySiteRepo != nil {
+		if err := m.syncCaddySites(ctx, primary.ID, mirror.ID); err != nil {
+			log.Printf("[MirrorSync] failed to sync Caddy sites for mirror %d: %v", mirror.ID, err)
+		}
+	}
+
+	// Sync Nginx sites from primary to mirror
+	if m.nginxSiteRepo != nil {
+		if err := m.syncNginxSites(ctx, primary.ID, mirror.ID); err != nil {
+			log.Printf("[MirrorSync] failed to sync Nginx sites for mirror %d: %v", mirror.ID, err)
+		}
+	}
+
+	// After syncing DB data, push the updated config to the mirror's Agent
+	// and apply it immediately. SyncData writes data to the Agent's local SQLite
+	// DB, generates the runtime config file, and starts the core if not running.
+	// However, if the core is already running, SyncData does NOT restart it —
+	// so we also hot-reload via xray gRPC API (addInbound/delInbound).
+	if m.nodeMgr != nil && !m.nodeMgr.isLocalServer(mirror.ID) && m.nodeMgr.dataSyncProvider != nil {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		resp, err := m.nodeMgr.SyncDataToServer(syncCtx, mirror.ID, true)
+		if err != nil {
+			log.Printf("[MirrorSync] SyncData to mirror %d failed: %v", mirror.ID, err)
+		} else {
+			log.Printf("[MirrorSync] SyncData to mirror %d: success=%v core_started=%v",
+				mirror.ID, resp.Success, resp.CoreStarted)
+		}
+
+		// Hot-reload: addInbound for new inbounds, delInbound for removed ones.
+		// SyncData updates the config file but doesn't restart a running core.
+		if len(newInbounds) > 0 {
+			m.hotReloadAddInbounds(syncCtx, mirror.ID, newInbounds)
+		}
+		if len(removedTags) > 0 {
+			m.hotReloadDelInbounds(syncCtx, mirror.ID, removedTags)
+		}
 	}
 
 	// Record sync time
 	m.mu.Lock()
 	m.lastSync[mirror.ID] = time.Now()
 	m.mu.Unlock()
+
+	return nil
+}
+
+// syncCaddySites syncs Caddy site configs from primary to mirror.
+// It creates new sites, updates existing ones (including enabled status,
+// SNI target, proxy_protocol, etc.), and deletes sites that no longer
+// exist on the primary.
+func (m *MirrorSyncManager) syncCaddySites(ctx context.Context, primaryID, mirrorID int64) error {
+	// Get primary's Caddy sites
+	primarySites, err := m.caddySiteRepo.List(ctx, primaryID)
+	if err != nil {
+		return fmt.Errorf("list primary Caddy sites: %w", err)
+	}
+
+	// Get mirror's existing Caddy sites
+	mirrorSites, err := m.caddySiteRepo.List(ctx, mirrorID)
+	if err != nil {
+		return fmt.Errorf("list mirror Caddy sites: %w", err)
+	}
+
+	// Build a map of existing mirror sites by domain for lookup
+	existingMap := make(map[string]*entity.CaddySite)
+	for i := range mirrorSites {
+		existingMap[mirrorSites[i].Domain] = &mirrorSites[i]
+	}
+
+	// Track which primary domains exist (for pruning stale mirror sites)
+	primaryDomains := make(map[string]bool)
+
+	synced := 0
+	for _, primarySite := range primarySites {
+		primaryDomains[primarySite.Domain] = true
+
+		if existing, ok := existingMap[primarySite.Domain]; ok {
+			// Update existing site to match primary (enabled, SNI target, etc.)
+			updated := primarySite
+			updated.ID = existing.ID
+			updated.ServerID = mirrorID
+			updated.CreatedAt = existing.CreatedAt
+			updated.UpdatedAt = time.Now()
+			if err := m.caddySiteRepo.Update(ctx, &updated); err != nil {
+				log.Printf("[MirrorSync] failed to update Caddy site %s on mirror %d: %v",
+					primarySite.Domain, mirrorID, err)
+				continue
+			}
+			synced++
+		} else {
+			// Clone new site for mirror
+			mirrorSite := primarySite
+			mirrorSite.ID = 0
+			mirrorSite.ServerID = mirrorID
+			mirrorSite.CreatedAt = time.Now()
+			mirrorSite.UpdatedAt = time.Now()
+
+			if err := m.caddySiteRepo.Create(ctx, &mirrorSite); err != nil {
+				log.Printf("[MirrorSync] failed to clone Caddy site %s to mirror %d: %v",
+					primarySite.Domain, mirrorID, err)
+				continue
+			}
+			synced++
+		}
+	}
+
+	// Delete sites on mirror that no longer exist on primary
+	for _, mirrorSite := range mirrorSites {
+		if !primaryDomains[mirrorSite.Domain] {
+			if err := m.caddySiteRepo.Delete(ctx, mirrorSite.ID); err != nil {
+				log.Printf("[MirrorSync] failed to delete stale Caddy site %s on mirror %d: %v",
+					mirrorSite.Domain, mirrorID, err)
+			} else {
+				synced++
+			}
+		}
+	}
+
+	if synced > 0 {
+		log.Printf("[MirrorSync] synced %d Caddy site(s) from primary %d to mirror %d",
+			synced, primaryID, mirrorID)
+	}
+
+	return nil
+}
+
+// syncNginxSites syncs Nginx site configs from primary to mirror.
+// It creates new sites, updates existing ones (including enabled status,
+// SNI target, proxy_protocol, etc.), and deletes sites that no longer
+// exist on the primary.
+func (m *MirrorSyncManager) syncNginxSites(ctx context.Context, primaryID, mirrorID int64) error {
+	// Get primary's Nginx sites
+	primarySites, err := m.nginxSiteRepo.List(ctx, primaryID)
+	if err != nil {
+		return fmt.Errorf("list primary Nginx sites: %w", err)
+	}
+
+	// Get mirror's existing Nginx sites
+	mirrorSites, err := m.nginxSiteRepo.List(ctx, mirrorID)
+	if err != nil {
+		return fmt.Errorf("list mirror Nginx sites: %w", err)
+	}
+
+	// Build a map of existing mirror sites by domain for lookup
+	existingMap := make(map[string]*entity.NginxSite)
+	for i := range mirrorSites {
+		existingMap[mirrorSites[i].Domain] = &mirrorSites[i]
+	}
+
+	// Track which primary domains exist (for pruning stale mirror sites)
+	primaryDomains := make(map[string]bool)
+
+	synced := 0
+	for _, primarySite := range primarySites {
+		primaryDomains[primarySite.Domain] = true
+
+		if existing, ok := existingMap[primarySite.Domain]; ok {
+			// Update existing site to match primary
+			updated := primarySite
+			updated.ID = existing.ID
+			updated.ServerID = mirrorID
+			updated.CreatedAt = existing.CreatedAt
+			updated.UpdatedAt = time.Now()
+			if err := m.nginxSiteRepo.Update(ctx, &updated); err != nil {
+				log.Printf("[MirrorSync] failed to update Nginx site %s on mirror %d: %v",
+					primarySite.Domain, mirrorID, err)
+				continue
+			}
+			synced++
+		} else {
+			// Clone new site for mirror
+			mirrorSite := primarySite
+			mirrorSite.ID = 0
+			mirrorSite.ServerID = mirrorID
+			mirrorSite.CreatedAt = time.Now()
+			mirrorSite.UpdatedAt = time.Now()
+
+			if err := m.nginxSiteRepo.Create(ctx, &mirrorSite); err != nil {
+				log.Printf("[MirrorSync] failed to clone Nginx site %s to mirror %d: %v",
+					primarySite.Domain, mirrorID, err)
+				continue
+			}
+			synced++
+		}
+	}
+
+	// Delete sites on mirror that no longer exist on primary
+	for _, mirrorSite := range mirrorSites {
+		if !primaryDomains[mirrorSite.Domain] {
+			if err := m.nginxSiteRepo.Delete(ctx, mirrorSite.ID); err != nil {
+				log.Printf("[MirrorSync] failed to delete stale Nginx site %s on mirror %d: %v",
+					mirrorSite.Domain, mirrorID, err)
+			} else {
+				synced++
+			}
+		}
+	}
+
+	if synced > 0 {
+		log.Printf("[MirrorSync] synced %d Nginx site(s) from primary %d to mirror %d",
+			synced, primaryID, mirrorID)
+	}
 
 	return nil
 }
@@ -237,4 +497,80 @@ func MergeTrafficToPrimary(servers []entity.NodeServer, event *TrafficEvent) *Tr
 		}
 	}
 	return event // Not a mirror, return as-is
+}
+
+// hotReloadAddInbounds hot-reloads newly created inbounds on a mirror node via
+// xray gRPC API (addInbound). This is needed because SyncData updates the config
+// file but does NOT restart a running xray process. By calling addInbound for
+// each newly created mirror inbound, the new ports are immediately listening
+// without restarting xray.
+func (m *MirrorSyncManager) hotReloadAddInbounds(ctx context.Context, mirrorID int64, newInbounds []entity.InboundConfig) {
+	for _, pib := range newInbounds {
+		mirrorTag := fmt.Sprintf("%s-mirror", pib.Tag)
+
+		// Parse the primary's config_json to get the inbound definition,
+		// then adjust the tag to the mirror tag and ensure listen/port are set.
+		var inboundCfg map[string]interface{}
+		if err := json.Unmarshal([]byte(pib.ConfigJSON), &inboundCfg); err != nil {
+			log.Printf("[MirrorSync] hotReload: parse config for inbound %s failed: %v", pib.Tag, err)
+			continue
+		}
+		inboundCfg["tag"] = mirrorTag
+		inboundCfg["listen"] = pib.Listen
+		inboundCfg["port"] = pib.Port
+
+		payload := map[string]interface{}{
+			"config": inboundCfg,
+		}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("[MirrorSync] hotReload: marshal payload for inbound %s failed: %v", mirrorTag, err)
+			continue
+		}
+
+		req := &agentpb.XrayAPIRequest{
+			Service: "proxyman",
+			Method:  "addInbound",
+			Payload: payloadBytes,
+		}
+		resp, err := m.nodeMgr.XrayAPIOnServer(ctx, mirrorID, req)
+		if err != nil {
+			log.Printf("[MirrorSync] hotReload: addInbound %s to mirror %d failed: %v", mirrorTag, mirrorID, err)
+		} else if !resp.Success {
+			log.Printf("[MirrorSync] hotReload: addInbound %s to mirror %d returned failure: %s", mirrorTag, mirrorID, resp.Error)
+		} else {
+			log.Printf("[MirrorSync] hotReload: addInbound %s to mirror %d: success", mirrorTag, mirrorID)
+		}
+	}
+}
+
+// hotReloadDelInbounds removes inbounds from a mirror node's running xray via
+// xray gRPC API (delInbound). This is called when an inbound was deleted on
+// the primary and the mirror copy was pruned — the port needs to be released
+// on the running xray without a full restart.
+func (m *MirrorSyncManager) hotReloadDelInbounds(ctx context.Context, mirrorID int64, removedTags []string) {
+	for _, tag := range removedTags {
+		payload := map[string]interface{}{
+			"tag": tag,
+		}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("[MirrorSync] hotReload: marshal delInbound payload for %s failed: %v", tag, err)
+			continue
+		}
+
+		req := &agentpb.XrayAPIRequest{
+			Service: "proxyman",
+			Method:  "delInbound",
+			Payload: payloadBytes,
+		}
+		resp, err := m.nodeMgr.XrayAPIOnServer(ctx, mirrorID, req)
+		if err != nil {
+			log.Printf("[MirrorSync] hotReload: delInbound %s on mirror %d failed: %v", tag, mirrorID, err)
+		} else if !resp.Success {
+			log.Printf("[MirrorSync] hotReload: delInbound %s on mirror %d returned failure: %s", tag, mirrorID, resp.Error)
+		} else {
+			log.Printf("[MirrorSync] hotReload: delInbound %s on mirror %d: success", tag, mirrorID)
+		}
+	}
 }

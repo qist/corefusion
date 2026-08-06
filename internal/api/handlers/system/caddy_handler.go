@@ -203,6 +203,12 @@ func (h *CaddyHandler) GenerateConfig(c *gin.Context) {
 	}
 	if isLocal {
 		h.proxyMgr.WriteConfigFile(proxy.ProxyCaddy, config)
+		// Push config to mirror nodes so they get the updated Caddyfile.
+		// For local primary, the handler writes config directly to disk,
+		// bypassing nodeOp — so we explicitly sync to mirrors here.
+		if h.nodeOp != nil {
+			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config))
+		}
 	} else if h.nodeOp != nil {
 		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config)); err != nil {
 			response.InternalError(c, "SYNC_FAILED", err.Error())
@@ -219,7 +225,12 @@ func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
-	if !isLocal && h.nodeOp != nil {
+	if isLocal {
+		// Push config to mirror nodes so they get the updated Caddyfile.
+		if h.nodeOp != nil {
+			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config))
+		}
+	} else if h.nodeOp != nil {
 		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config)); err != nil {
 			response.InternalError(c, "SYNC_FAILED", err.Error())
 			return

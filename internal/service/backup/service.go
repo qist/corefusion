@@ -320,14 +320,150 @@ func (s *Service) restoreFromArchive(ctx context.Context, archivePath string) er
 		if dsn == "" {
 			return fmt.Errorf("数据库 DSN 未配置（环境变量 CF_DB_DSN），无法还原 %s 备份", dbTypeLabel(dbType))
 		}
-		if err := s.importDumpsFromArchive(ctx, dbType, dsn); err != nil {
-			return err
+		// First try importing db_dump/*.sql (same-db-type backup)
+		importErr := s.importDumpsFromArchive(ctx, dbType, dsn)
+		if importErr != nil {
+			// Direct import failed — this might be a cross-db restore
+			// (e.g. MySQL dump on PostgreSQL). Try the cross-db fallback:
+			// load the SQL dump into a temporary SQLite database, then
+			// migrate from SQLite to the target DB.
+			log.Printf("[Backup] direct SQL import failed, trying cross-db migration: %v", importErr)
+			if crossErr := s.crossDBDumpRestore(ctx, dbType, dsn); crossErr != nil {
+				// Cross-db also failed — return the original error
+				return importErr
+			}
+			importErr = nil
+		}
+		if importErr != nil {
+			return importErr
+		}
+		// If no SQL dumps were found, check for a SQLite app.db in the archive.
+		// This is a cross-database restore: the backup was created on SQLite,
+		// but the panel is now running on MySQL/PostgreSQL. We need to open
+		// the extracted SQLite file and migrate its data into the target DB.
+		sqlitePath := filepath.Join(s.dataDir, "sqlite", "app.db")
+		if info, err := os.Stat(sqlitePath); err == nil && info.Size() > 0 {
+			log.Printf("[Backup] cross-db restore: migrating SQLite data into %s...", dbType)
+			if err := s.migrateSQLiteToTarget(ctx, sqlitePath, dbType, dsn); err != nil {
+				return fmt.Errorf("cross-db migrate sqlite to %s: %w", dbType, err)
+			}
+			log.Printf("[Backup] cross-db restore: SQLite data migrated to %s successfully", dbType)
 		}
 	default:
 		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-wal"))
 		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-shm"))
 		os.RemoveAll(filepath.Join(s.dataDir, "db_dump"))
 	}
+	return nil
+}
+
+// crossDBDumpRestore handles cross-database SQL dump restore by loading the
+// dump into a temporary SQLite database and then migrating to the target DB.
+// This is used when the SQL dump format doesn't match the target DB type
+// (e.g. MySQL dump restored on PostgreSQL).
+func (s *Service) crossDBDumpRestore(ctx context.Context, targetDBType, targetDSN string) error {
+	matches, _ := filepath.Glob(filepath.Join(s.dataDir, "db_dump", "*.sql"))
+	if len(matches) == 0 {
+		return fmt.Errorf("no SQL dump files found for cross-db restore")
+	}
+
+	// Create a temporary SQLite database
+	tmpSQLite := filepath.Join(s.dataDir, "db_dump", "_cross_db_tmp.sqlite")
+	os.Remove(tmpSQLite)
+	defer os.Remove(tmpSQLite)
+
+	log.Printf("[Backup] cross-db: creating temporary SQLite database for SQL import...")
+	srcCfg := db.Config{
+		Type: db.DBTypeSQLite,
+		DSN:  tmpSQLite,
+	}
+	srcDB, srcCleanup, err := db.OpenDBPublic(srcCfg)
+	if err != nil {
+		return fmt.Errorf("create temp sqlite: %w", err)
+	}
+	defer srcCleanup()
+
+	// Run AutoMigrate to create all tables in the temporary SQLite database
+	if err := db.AutoMigrateOnDB(srcDB); err != nil {
+		return fmt.Errorf("auto-migrate temp sqlite: %w", err)
+	}
+
+	// Execute INSERT statements from each SQL dump file on the SQLite database
+	for _, m := range matches {
+		content, err := os.ReadFile(m)
+		if err != nil {
+			return fmt.Errorf("read db dump %s: %w", m, err)
+		}
+
+		// Parse and execute only INSERT statements (skip MySQL/PG-specific DDL)
+		stmts := splitSQLStatements(string(content))
+		insertCount := 0
+		for _, stmt := range stmts {
+			trimmed := strings.TrimSpace(stmt)
+			if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+				continue
+			}
+			upper := strings.ToUpper(trimmed)
+			if !strings.HasPrefix(upper, "INSERT") {
+				continue
+			}
+			if err := srcDB.Exec(trimmed).Error; err != nil {
+				log.Printf("[Backup] cross-db: skip statement (sqlite error): %v", err)
+				continue
+			}
+			insertCount++
+		}
+		log.Printf("[Backup] cross-db: imported %d INSERT statements from %s into temp SQLite", insertCount, filepath.Base(m))
+		os.Remove(m)
+	}
+
+	// Close the source SQLite connection so data is flushed to disk
+	// before MigrateFromSQLite opens a new connection to read it.
+	srcCleanup()
+	srcCleanup = func() {} // prevent double-close in deferred call
+
+	// Debug: check temp SQLite file
+	if info, err := os.Stat(tmpSQLite); err == nil {
+		log.Printf("[Backup] cross-db: temp SQLite file size: %d bytes", info.Size())
+	} else {
+		log.Printf("[Backup] cross-db: WARNING temp SQLite file not found: %v", err)
+	}
+
+	// Now migrate from the temporary SQLite database to the target DB
+	log.Printf("[Backup] cross-db: migrating from temp SQLite to %s...", targetDBType)
+	dstCfg := db.Config{
+		Type: targetDBType,
+		DSN:  targetDSN,
+	}
+	tables, rows, err := db.MigrateFromSQLite(tmpSQLite, dstCfg)
+	if err != nil {
+		return fmt.Errorf("migrate temp sqlite to %s: %w", targetDBType, err)
+	}
+	log.Printf("[Backup] cross-db: migrated %d tables, %d rows from temp SQLite to %s", tables, rows, targetDBType)
+
+	// Clean up db_dump directory (temp SQLite file is removed by defer)
+	os.RemoveAll(filepath.Join(s.dataDir, "db_dump"))
+	return nil
+}
+
+// migrateSQLiteToTarget opens a SQLite database file and migrates all its
+// data into the target MySQL/PostgreSQL database using db.MigrateFromSQLite.
+func (s *Service) migrateSQLiteToTarget(ctx context.Context, sqlitePath, targetDBType, targetDSN string) error {
+	// Construct target Config directly from the type and DSN.
+	// Note: StartupConfig() returns the already-stripped DSN (without the
+	// "mysql://" or "postgres://" prefix), so we must NOT use ParseDSN here
+	// (it would fail to detect the type and default to SQLite).
+	dstCfg := db.Config{
+		Type: targetDBType,
+		DSN:  targetDSN,
+	}
+
+	// Run the migration from SQLite to target DB
+	tables, rows, err := db.MigrateFromSQLite(sqlitePath, dstCfg)
+	if err != nil {
+		return err
+	}
+	log.Printf("[Backup] cross-db migrate: copied %d tables, %d rows from SQLite to %s", tables, rows, targetDBType)
 	return nil
 }
 

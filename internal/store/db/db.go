@@ -444,6 +444,11 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 
 // runAutoMigrate runs the same AutoMigrate logic as the main application on a given DB.
 // This ensures the target database has all required tables before data is copied.
+// AutoMigrateOnDB runs AutoMigrate on the given database connection.
+func AutoMigrateOnDB(gormDB *gorm.DB) error {
+	return runAutoMigrate(gormDB)
+}
+
 func runAutoMigrate(db *gorm.DB) error {
 	// PostgreSQL has no "longtext" type. Register a DOMAIN alias longtext->text
 	// so the cross-database entity definitions (type:longtext) work on PG too.
@@ -594,6 +599,137 @@ func allEntityModels() []interface{} {
 		&entity.ClientSelfUnbanLog{},
 		&entity.IPWhitelistEntry{},
 	}
+}
+
+// MigrateFromSQLite opens a SQLite database file and migrates all its data
+// into the target database specified by dstCfg. This is used for cross-database
+// restore: when a backup created on SQLite needs to be restored into a MySQL or
+// PostgreSQL instance. Unlike MigrateTo, this does not use the global DB.
+func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
+	// Open source SQLite database
+	srcCfg := Config{
+		Type: DBTypeSQLite,
+		DSN:  sqlitePath,
+	}
+	srcDB, srcCleanup, err := openDB(srcCfg)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open source sqlite: %w", err)
+	}
+	defer srcCleanup()
+
+	// Open target database
+	dstDB, dstCleanup, err := openDB(dstCfg)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open target database: %w", err)
+	}
+	defer dstCleanup()
+
+	// Step 1: Run AutoMigrate on target to create all tables
+	log.Println("migrate: running AutoMigrate on target database...")
+	if err := runAutoMigrate(dstDB); err != nil {
+		return 0, 0, fmt.Errorf("auto-migrate target: %w", err)
+	}
+	log.Println("migrate: target database schema created")
+
+	// Step 2: Get list of tables from source SQLite database
+	tableNames, err := listTables(srcDB, DBTypeSQLite)
+	if err != nil {
+		return 0, 0, fmt.Errorf("list source tables: %w", err)
+	}
+
+	// Step 3: Copy data table by table
+	for _, table := range tableNames {
+		if strings.HasPrefix(table, "sqlite_") || strings.HasPrefix(table, "_cf_") {
+			continue
+		}
+
+		var rows []map[string]interface{}
+		if err := srcDB.Table(table).Find(&rows).Error; err != nil {
+			log.Printf("migrate: skip table %s (read error): %v", table, err)
+			continue
+		}
+		if len(rows) == 0 {
+			log.Printf("migrate: skip table %s (empty)", table)
+			continue
+		}
+
+		var dstCols []string
+		if err := dstDB.Raw(
+			"SELECT column_name FROM information_schema.columns WHERE table_name = ?", table,
+		).Scan(&dstCols).Error; err != nil {
+			log.Printf("migrate: warning: cannot read target columns for %s: %v", table, err)
+		}
+		colSet := make(map[string]struct{}, len(dstCols))
+		for _, c := range dstCols {
+			colSet[c] = struct{}{}
+		}
+		boolCols := make(map[string]struct{})
+		var boolColRows []string
+		if err := dstDB.Raw(
+			"SELECT column_name FROM information_schema.columns WHERE table_name = ? AND data_type IN ('boolean','bool')", table,
+		).Scan(&boolColRows).Error; err == nil {
+			for _, c := range boolColRows {
+				boolCols[c] = struct{}{}
+			}
+		}
+		if len(colSet) > 0 {
+			for i := range rows {
+				filtered := make(map[string]interface{}, len(rows[i]))
+				for k, v := range rows[i] {
+					if _, ok := colSet[k]; ok {
+						if _, isBool := boolCols[k]; isBool {
+							switch tv := v.(type) {
+							case int64:
+								filtered[k] = tv != 0
+							case int:
+								filtered[k] = tv != 0
+							case bool:
+								filtered[k] = tv
+							default:
+								filtered[k] = v
+							}
+						} else {
+							filtered[k] = v
+						}
+					}
+				}
+				rows[i] = filtered
+			}
+		}
+
+		// Clear target table
+		if err := dstDB.Exec("TRUNCATE TABLE " + table).Error; err != nil {
+			// TRUNCATE may fail (e.g. foreign key constraints), try DELETE
+			if err := dstDB.Exec("DELETE FROM " + table).Error; err != nil {
+				log.Printf("migrate: skip table %s (clear error): %v", table, err)
+				continue
+			}
+		}
+
+		// Batch insert (clear target table first to avoid conflicts)
+		batchSize := 500
+		for i := 0; i < len(rows); i += batchSize {
+			end := i + batchSize
+			if end > len(rows) {
+				end = len(rows)
+			}
+			if err := dstDB.Table(table).Create(rows[i:end]).Error; err != nil {
+				log.Printf("migrate: error inserting batch into %s (offset %d): %v", table, i, err)
+				// continue instead of break — don't let one bad batch skip the rest
+			}
+		}
+		tablesCopied++
+		rowsCopied += int64(len(rows))
+		log.Printf("migrate: copied %d rows from %s", len(rows), table)
+	}
+
+	return tablesCopied, rowsCopied, nil
+}
+
+// OpenDBPublic opens a temporary database connection from a Config.
+// Returns the gorm.DB and a cleanup function.
+func OpenDBPublic(cfg Config) (*gorm.DB, func(), error) {
+	return openDB(cfg)
 }
 
 // openDB opens a temporary database connection from a Config.

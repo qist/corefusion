@@ -37,6 +37,29 @@ func getKey() ([]byte, error) {
 	return key, nil
 }
 
+// ExportKey returns the current encryption key as a hex string.
+// This is used during backup to include the key in the archive so that
+// CA private keys can be decrypted on a different machine during restore.
+func ExportKey() (string, error) {
+	key, err := getKey()
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(key), nil
+}
+
+// SetKey overrides the encryption key with the given hex string.
+// This is used during restore to temporarily use the source machine's key
+// so that encrypted secrets (like CA private keys) can be decrypted.
+func SetKey(hexKey string) error {
+	key, err := hex.DecodeString(hexKey)
+	if err != nil || len(key) != 32 {
+		return fmt.Errorf("invalid key: must be 64 hex chars (32 bytes)")
+	}
+	defaultKey = key
+	return nil
+}
+
 // generateDefaultKey generates a deterministic 32-byte key from hostname.
 // This ensures the same key is generated across restarts on the same machine.
 func generateDefaultKey() []byte {

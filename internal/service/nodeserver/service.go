@@ -70,6 +70,7 @@ type Service struct {
 	distQueueRepo *repository.CertDistributionQueueRepository
 	certRepo      *repository.CertificateRepository
 	crlRepo       *repository.CertRevocationRepository
+	settingRepo   *repository.SystemSettingRepository
 	db            *gorm.DB
 
 	// Binary management
@@ -266,6 +267,7 @@ func (s *Service) WithCRLRepo(r *repository.CertRevocationRepository) *Service {
 // WithDB sets the underlying gorm.DB handle.
 func (s *Service) WithDB(db *gorm.DB) *Service {
 	s.db = db
+	s.settingRepo = repository.NewSystemSettingRepository(db)
 	return s
 }
 
@@ -541,6 +543,7 @@ func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.Res
 		PartnerServerID:        server.PartnerServerID,
 		FailoverRole:           server.FailoverRole,
 		FailoverPriority:       server.FailoverPriority,
+		RecoverMode:            server.RecoverMode,
 		ChainConfig:            server.ChainConfig,
 		AgentPort:              server.AgentPort,
 		AgentStatus:            server.AgentStatus,
@@ -757,6 +760,58 @@ func (s *Service) GetFailoverStatus(ctx context.Context, serverID int64) (*agent
 	return s.failoverMgr.GetFailoverStatus(ctx, serverID)
 }
 
+// GetServerRecoverMode returns the recover mode for a specific server.
+func (s *Service) GetServerRecoverMode(ctx context.Context, serverID int64) (string, error) {
+	server, err := s.repo.GetByID(ctx, serverID)
+	if err != nil {
+		return "", err
+	}
+	if server.RecoverMode == "" {
+		return string(agent.RecoverModeAutoSwitchBack), nil
+	}
+	return server.RecoverMode, nil
+}
+
+// SetServerRecoverMode updates the recover mode for a specific server and its partner.
+// For primary_backup pairs, both nodes should have the same recover mode.
+func (s *Service) SetServerRecoverMode(ctx context.Context, serverID int64, mode string) error {
+	// Validate mode
+	switch agent.RecoverMode(mode) {
+	case agent.RecoverModeAutoSwitchBack, agent.RecoverModeStayOnPromoted:
+		// valid
+	default:
+		return fmt.Errorf("invalid recover mode: %s (must be auto_switch_back or stay_on_promoted)", mode)
+	}
+
+	server, err := s.repo.GetByID(ctx, serverID)
+	if err != nil {
+		return err
+	}
+
+	// Update this server's recover mode
+	server.RecoverMode = mode
+	server.UpdatedAt = time.Now()
+	if err := s.repo.Update(ctx, server); err != nil {
+		return fmt.Errorf("update server recover mode: %w", err)
+	}
+
+	// If this is a primary_backup pair, also update the partner's recover mode
+	// to keep them in sync
+	if server.NodeType == entity.NodeTypePrimaryBackup && server.PartnerServerID != 0 {
+		partner, err := s.repo.GetByID(ctx, server.PartnerServerID)
+		if err == nil && partner != nil {
+			partner.RecoverMode = mode
+			partner.UpdatedAt = time.Now()
+			if err := s.repo.Update(ctx, partner); err != nil {
+				log.Printf("[NodeServerService] failed to update partner %d recover mode: %v", partner.ID, err)
+				// Non-fatal: partner update failed, but primary update succeeded
+			}
+		}
+	}
+
+	return nil
+}
+
 // TriggerFailoverCheck forces a failover check for all primary_backup pairs.
 func (s *Service) TriggerFailoverCheck(ctx context.Context) error {
 	if s.failoverMgr == nil {
@@ -783,6 +838,32 @@ func (s *Service) SyncMirrorNow(ctx context.Context, mirrorID int64) error {
 		return fmt.Errorf("mirror sync manager not initialized")
 	}
 	return s.mirrorSync.SyncMirrorNow(ctx, mirrorID)
+}
+
+// SyncMirrorsForPrimary syncs all mirror nodes bound to the given primary server.
+// After syncing DB data (inbound configs, Caddy/Nginx sites) from the primary to
+// each mirror, it pushes the updated config to each mirror's Agent and applies it
+// immediately (hot-reload). This is called after primary node config changes to
+// ensure mirrors take effect at the same time as the primary, without requiring
+// a manual restart.
+func (s *Service) SyncMirrorsForPrimary(ctx context.Context, primaryServerID int64) {
+	if s.mirrorSync == nil {
+		return
+	}
+	mirrors, err := s.repo.ListByPartner(ctx, primaryServerID)
+	if err != nil {
+		log.Printf("[nodeserver] list mirrors for primary %d failed: %v", primaryServerID, err)
+		return
+	}
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		if err := s.mirrorSync.SyncMirrorNow(ctx, mirror.ID); err != nil {
+			log.Printf("[nodeserver] sync mirror %d for primary %d failed: %v",
+				mirror.ID, primaryServerID, err)
+		}
+	}
 }
 
 // GetMirrorStatus returns the sync status of a mirror node.
@@ -1142,7 +1223,41 @@ func (s *Service) ControlProxy(ctx context.Context, serverID int64, proxyType, a
 	if s.nodeMgr == nil {
 		return fmt.Errorf("node manager not initialized")
 	}
-	return s.nodeMgr.ControlProxy(ctx, serverID, proxyType, action)
+	if err := s.nodeMgr.ControlProxy(ctx, serverID, proxyType, action); err != nil {
+		return err
+	}
+
+	// Fanout control command to mirror nodes so they take effect at the same
+	// time as the primary. Only start/restart/reload actions are fanned out;
+	// stop is not (mirrors should keep running unless explicitly stopped).
+	if action == "start" || action == "restart" || action == "reload" {
+		go func() {
+			syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			mirrors, err := s.repo.ListByPartner(syncCtx, serverID)
+			if err != nil {
+				log.Printf("[nodeserver] ControlProxy: list mirrors for primary %d failed: %v", serverID, err)
+				return
+			}
+			for _, mirror := range mirrors {
+				if mirror.NodeType != entity.NodeTypeMirror {
+					continue
+				}
+				if !s.nodeMgr.IsOnline(mirror.ID) {
+					continue
+				}
+				if err := s.nodeMgr.ControlProxy(syncCtx, mirror.ID, proxyType, action); err != nil {
+					log.Printf("[nodeserver] ControlProxy: %s %s on mirror %d failed: %v",
+						proxyType, action, mirror.ID, err)
+				} else {
+					log.Printf("[nodeserver] ControlProxy: %s %s on mirror %d: success",
+						proxyType, action, mirror.ID)
+				}
+			}
+		}()
+	}
+
+	return nil
 }
 
 // SyncProxyConfig syncs proxy configuration to a specific server.
@@ -1150,7 +1265,113 @@ func (s *Service) SyncProxyConfig(ctx context.Context, serverID int64, proxyType
 	if s.nodeMgr == nil {
 		return fmt.Errorf("node manager not initialized")
 	}
-	return s.nodeMgr.SyncProxyConfig(ctx, serverID, proxyType, config)
+	if err := s.nodeMgr.SyncProxyConfig(ctx, serverID, proxyType, config); err != nil {
+		return err
+	}
+
+	// Sync proxy config to mirror nodes bound to this primary.
+	// Mirrors replicate caddy/nginx sites from the primary's DB (via
+	// SyncMirrorsForPrimary), so the proxy config content is the same.
+	// We push the same config to each mirror's Agent and reload the proxy.
+	// This ensures mirrors take effect at the same time as the primary.
+	go func() {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		mirrors, err := s.repo.ListByPartner(syncCtx, serverID)
+		if err != nil {
+			log.Printf("[nodeserver] SyncProxyConfig: list mirrors for primary %d failed: %v", serverID, err)
+			return
+		}
+		for _, mirror := range mirrors {
+			if mirror.NodeType != entity.NodeTypeMirror {
+				continue
+			}
+			if !s.nodeMgr.IsOnline(mirror.ID) {
+				log.Printf("[nodeserver] SyncProxyConfig: mirror %d offline, skipping", mirror.ID)
+				continue
+			}
+			if err := s.nodeMgr.SyncProxyConfig(syncCtx, mirror.ID, proxyType, config); err != nil {
+				log.Printf("[nodeserver] SyncProxyConfig: sync %s config to mirror %d failed: %v",
+					proxyType, mirror.ID, err)
+			} else {
+				log.Printf("[nodeserver] SyncProxyConfig: synced %s config to mirror %d", proxyType, mirror.ID)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// SyncMirrorsProxyConfig pushes proxy config to all mirror nodes of a primary.
+// This is called after local proxy config changes (e.g., SNI toggle, site
+// enable/disable, config edit) to ensure mirrors get the updated config file
+// and reload their proxy. Unlike SyncProxyConfig which also pushes to the
+// primary, this method ONLY targets mirrors — the primary has already been
+// handled locally by the handler.
+func (s *Service) SyncMirrorsProxyConfig(ctx context.Context, primaryServerID int64, proxyType string, config []byte) error {
+	if s.nodeMgr == nil {
+		return nil
+	}
+	go func() {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		mirrors, err := s.repo.ListByPartner(syncCtx, primaryServerID)
+		if err != nil {
+			log.Printf("[nodeserver] SyncMirrorsProxyConfig: list mirrors for primary %d failed: %v", primaryServerID, err)
+			return
+		}
+		for _, mirror := range mirrors {
+			if mirror.NodeType != entity.NodeTypeMirror {
+				continue
+			}
+			if !s.nodeMgr.IsOnline(mirror.ID) {
+				log.Printf("[nodeserver] SyncMirrorsProxyConfig: mirror %d offline, skipping", mirror.ID)
+				continue
+			}
+			if err := s.nodeMgr.SyncProxyConfig(syncCtx, mirror.ID, proxyType, config); err != nil {
+				log.Printf("[nodeserver] SyncMirrorsProxyConfig: sync %s config to mirror %d failed: %v",
+					proxyType, mirror.ID, err)
+			} else {
+				log.Printf("[nodeserver] SyncMirrorsProxyConfig: synced %s config to mirror %d", proxyType, mirror.ID)
+			}
+		}
+	}()
+	return nil
+}
+
+// ControlMirrorsProxy sends a control command (reload/restart) to all mirror
+// nodes of a primary. This is called after local proxy reload to ensure
+// mirrors also reload their proxy with the updated config.
+func (s *Service) ControlMirrorsProxy(ctx context.Context, primaryServerID int64, proxyType, action string) error {
+	if s.nodeMgr == nil {
+		return nil
+	}
+	go func() {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		mirrors, err := s.repo.ListByPartner(syncCtx, primaryServerID)
+		if err != nil {
+			log.Printf("[nodeserver] ControlMirrorsProxy: list mirrors for primary %d failed: %v", primaryServerID, err)
+			return
+		}
+		for _, mirror := range mirrors {
+			if mirror.NodeType != entity.NodeTypeMirror {
+				continue
+			}
+			if !s.nodeMgr.IsOnline(mirror.ID) {
+				log.Printf("[nodeserver] ControlMirrorsProxy: mirror %d offline, skipping", mirror.ID)
+				continue
+			}
+			if err := s.nodeMgr.ControlProxy(syncCtx, mirror.ID, proxyType, action); err != nil {
+				log.Printf("[nodeserver] ControlMirrorsProxy: %s %s on mirror %d failed: %v",
+					proxyType, action, mirror.ID, err)
+			} else {
+				log.Printf("[nodeserver] ControlMirrorsProxy: %s %s on mirror %d: success",
+					proxyType, action, mirror.ID)
+			}
+		}
+	}()
+	return nil
 }
 
 // InstallBinary installs a core binary on a specific server (local or remote via Agent).

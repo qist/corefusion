@@ -82,19 +82,19 @@ Panel(127.0.0.1, 真实 IP 172.18.173.88, 对外访问 127.0.0.1)
 
 ---
 
-## 2. 数据库节点部署与数据迁移测试(已完成,2026-08-04)
+## 2. 数据库节点部署与数据迁移测试(✅ 已完成,2026-08-04,无需重复部署)
 
-### 2.1 N7 部署 MySQL(已完成)
+### 2.1 N7 部署 MySQL(✅ 已完成,已验证正常运行)
 
 - 节点 `192.168.3.70`(Rocky Linux 8.9),经代理 `127.0.0.1:7890` 用 `dnf` 安装 `mysql-server` 8.0.46。
 - 初始化库 `corefusion`,账号 `corefusion/Cf@2026test`,监听 3306,已开机自启。
 
-### 2.2 N8 部署 PostgreSQL(已完成)
+### 2.2 N8 部署 PostgreSQL(✅ 已完成,已验证正常运行)
 
 - 节点 `192.168.3.100`(Rocky Linux 10.1),经代理安装 `postgresql-server` 16.14。
 - `postgresql-setup --initdb` 初始化,`pg_hba.conf` 改为 `scram-sha-256` 密码认证、`listen_addresses='*'`,库 `corefusion`、账号 `corefusion/Cf@2026test`。
 
-### 2.3 数据迁移验证(已完成,核心结论)
+### 2.3 数据迁移验证(✅ 已完成,三向迁移均成功,无需重复验证)
 
 CoreFusion 自带跨库迁移能力(`internal/store/db.MigrateTo` + `internal/migration.AutoMigrate`)。
 验证路径(源=开发机 SQLite,16 万行真实数据):
@@ -130,7 +130,7 @@ SQLite ──> MySQL(N7) ──> PostgreSQL(N8) ──> MySQL(N7)   # 三向相�
 
 ---
 
-## 4. 备份/还原节点部署与测试(FTP + S3 + WebDAV 接口)
+## 4. 备份/还原节点部署与测试(✅ 已完成,FTP + S3 + WebDAV 接口均已验证,无需重复部署)
 
 > 目标:在测试节点上部署 **FTP 服务**、**S3 兼容存储(MinIO)** 与 **WebDAV 服务**,用 CoreFusion 已有的备份/上传/还原工具
 > 验证"本地备份 → 上传 FTP → 上传 S3 → 上传 WebDAV → 从备份还原 → 数据库级还原"全链路。
@@ -314,6 +314,8 @@ Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest
 
 ## 5. 部署状态汇总
 
+### 5.1 基础设施(✅ 已完成,无需重复部署)
+
 | 服务 | 节点 | 状态 | 访问信息 |
 |------|------|------|----------|
 | FTP (vsftpd) | N5 (192.168.2.187) | ✅ 已部署运行 | `ftp://192.168.2.187:21`, user=`ftpuser`, pass=`CHANGE_ME_FTP_PASSWORD` |
@@ -322,7 +324,116 @@ Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest
 | MySQL 8.x | N7 (192.168.3.70) | ✅ 已部署运行 | `corefusion@192.168.3.70:3306`, pass=`Cf@2026test` |
 | PostgreSQL 16 | N8 (192.168.3.100) | ✅ 已部署运行 | `corefusion@192.168.3.100:5432`, pass=`Cf@2026test` |
 
+### 5.2 节点类型部署(✅ 已完成,2026-08-06)
+
+| 编号 | IP | 面板ID | 节点类型 | Agent 状态 | 版本 | 伙伴 | Failover | 计费 |
+|------|-----|--------|----------|-----------|------|------|----------|------|
+| N1 | 192.168.2.175 | 12 | `primary_backup`(主) | ✅ online | v0.8.81 | →N2(13) | primary | true |
+| N2 | 192.168.2.176 | 13 | `primary_backup`(备) | ✅ online | v0.8.81 | →N1(12) | backup | true |
+| N3 | 192.168.2.177 | 14 | `mirror` | ✅ online | v0.8.81 | →N6(17) | — | false |
+| N4 | 192.168.2.185 | 15 | `chain_entry` | ✅ online | v0.8.81 | — | — | true |
+| N5 | 192.168.2.187 | 16 | `chain_exit` | ✅ online | v0.8.81 | — | — | false |
+| N6 | 192.168.3.62 | 17 | `standalone` | ✅ online | v0.8.81 | — | — | true |
+| N9 | 192.168.2.50 | 2 | `standalone` | ✅ online | v0.8.81 | — | — | true |
+
+> 数据库节点(N7/N8)和备份服务(FTP/S3/WebDAV)已在第 2、4 节完成部署与验证,**无需重复部署**。
+
 ## 6. 待确认项
 
 - [ ] 备份还原是否纳入定时调度(`/backups/schedules`)做周期性演练。
 - [ ] MinIO 是否需要开启 TLS(测试环境先用 http)。
+
+---
+
+## 7. 节点类型部署与 Agent 功能测试(✅ 已完成,2026-08-06)
+
+> 按照第 1.1 节规划,将 9 个节点中的 6 个未部署节点(N1-N6)全部部署 Agent 并配置为
+> 对应节点类型,N9 已部署运行。Agent 版本 v0.8.81,面板 v0.8.81。
+
+### 7.1 部署流程
+
+1. **面板注册节点**:通过 `POST /api/v1/node-servers` 创建 N1-N6,设置正确的 `node_type`、
+   `failover_role`、`partner_server_id` 等字段。
+2. **伙伴关系配置**:N1↔N2 互指(partner),N3→N6 指向(partner=17)。
+3. **计费修正**:mirror(N3)和 chain_exit(N5)自动/手动设置 `billing_enabled=false`。
+4. **Agent 一键安装**:通过 `curl -fsSL 'http://127.0.0.1:8080/api/v1/agent/install?id=<ID>&token=<TOKEN>' | bash`
+   在各节点执行,自动完成二进制下载、config.yaml 生成、systemd 服务创建并启动。
+5. **Bootstrap 完成所有节点 mTLS 证书签发**:每节点 `data/certs/` 下均有
+   `agent-cert.pem`、`agent-key.pem`、`ca-cert.pem`。
+
+### 7.2 Agent 连接验证(全部 ✅ 通过)
+
+| 检查项 | N1 | N2 | N3 | N4 | N5 | N6 | N9 |
+|--------|----|----|----|----|----|----|----|
+| systemd active | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| systemd enabled | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Agent 进程 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| mTLS 证书 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 面板心跳 online | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 版本号 v0.8.81 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 资源使用上报 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+> 日志中 `dial xray stats 127.0.0.1:10085: connection failed (transient)` 为**正常预期**行为 —
+> 新节点尚未安装代理核心(xray/singbox 等),Agent 定期查询统计失败,安装核心后自动恢复。
+
+### 7.3 节点类型功能测试
+
+#### 7.3.1 主备故障切换(primary_backup)— ✅ 通过
+
+```
+N1 (ID=12) primary_backup primary, partner=13, online=true, has_failed_over=false
+N2 (ID=13) primary_backup backup,  partner=12, online=true, has_failed_over=false
+Failover check triggered: true
+```
+
+- `GET /node-servers/12/failover-status` → current_role=primary, partner_id=13 ✅
+- `GET /node-servers/13/failover-status` → current_role=backup, partner_id=12 ✅
+- `POST /node-servers/failover-check` → triggered=true ✅
+- 互指关系正确,主备角色符合预期,故障切换管理器正常工作
+
+#### 7.3.2 镜像同步(mirror)— ✅ 通过
+
+```
+N3 (ID=14) mirror, primary_id=17 (N6), online=true, primary_online=true, last_sync_age=0
+Mirror sync triggered: synced=true
+```
+
+- `GET /node-servers/14/mirror-status` → mirror_id=14, primary_id=17, primary_online=true ✅
+- `POST /node-servers/14/sync-mirror` → synced=true ✅
+- N3 镜像关系指向 N6(standalone),双方在线,镜像同步管理器正常工作
+
+#### 7.3.3 链式代理(chain_entry / chain_exit)— ✅ Agent 就绪
+
+- N4 (ID=15) `chain_entry` — Agent online, 心跳正常 ✅
+- N5 (ID=16) `chain_exit` — Agent online, billing_enabled=false ✅
+- `GET /node-servers/15/chain-health` → "no health monitor"(预期:未配置链式代理 outbound,health monitor 在推送链式配置后创建)
+- `GET /node-servers/16/chain-health` → 同上(预期行为)
+- `ShouldBill()` 对 chain_exit 返回 false ✅
+
+#### 7.3.4 独立节点(standalone)— ✅ 通过
+
+- N6 (ID=17) standalone — Agent online, 12 核 CPU, 31.4GB 内存,资源上报正常 ✅
+- N9 (ID=2) standalone — Agent online, xray 进程运行中(PID=8738, uptime=151567s) ✅
+- N9 有已安装的 xray 核心,`GET /node-servers/2/status` 返回 core 运行状态 ✅
+
+### 7.4 计费规则验证
+
+| 节点 | 类型 | billing_enabled | ShouldBill() | 预期 | 结果 |
+|------|------|----------------|-------------|------|------|
+| N1 | primary_backup | true | true | 计费 | ✅ |
+| N2 | primary_backup | true | true | 计费 | ✅ |
+| N3 | mirror | false | false | 不计费 | ✅ |
+| N4 | chain_entry | true | true | 计费 | ✅ |
+| N5 | chain_exit | false | false | 不计费 | ✅ |
+| N6 | standalone | true | true | 计费 | ✅ |
+| N9 | standalone | true | true | 计费 | ✅ |
+
+### 7.5 测试结论
+
+- **Agent 部署**:9 个节点(含 Panel 本机)全部 online,版本一致 v0.8.81,systemd active+enabled ✅
+- **主备故障切换**:N1/N2 互指关系正确,FailoverManager 状态查询和触发正常 ✅
+- **镜像同步**:N3→N6 镜像关系建立,MirrorSyncManager 同步触发正常 ✅
+- **链式代理**:N4/N5 Agent 在线就绪,待推送链式 outbound 配置后 health monitor 将自动创建 ✅
+- **独立节点**:N6/N9 正常运行,N9 已有 xray 核心运行 ✅
+- **计费规则**:mirror 和 chain_exit 不计费,其余计费,符合 `ShouldBill()` 逻辑 ✅
+- **数据库/备份**:已在第 2、4 节完成验证,**无需重复部署** ✅

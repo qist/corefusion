@@ -321,6 +321,71 @@ func (h *Handler) GetFailoverStatus(c *gin.Context) {
 	response.OK(c, status)
 }
 
+// GetServerRecoverMode returns the recover mode for a specific server.
+// GET /api/v1/node-servers/:id/recover-mode
+func (h *Handler) GetServerRecoverMode(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+
+	mode, err := h.svc.GetServerRecoverMode(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, "RECOVER_MODE_GET_FAILED", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{
+		"server_id":    id,
+		"recover_mode": mode,
+		"description":  recoverModeDescription(mode),
+	})
+}
+
+// SetServerRecoverMode updates the recover mode for a specific server.
+// PUT /api/v1/node-servers/:id/recover-mode  { "recover_mode": "auto_switch_back" | "stay_on_promoted" }
+func (h *Handler) SetServerRecoverMode(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+
+	var req struct {
+		RecoverMode string `json:"recover_mode" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_BODY", err.Error())
+		return
+	}
+
+	if err := h.svc.SetServerRecoverMode(c.Request.Context(), id, req.RecoverMode); err != nil {
+		h.auditLog(c, id, "set_recover_mode", req.RecoverMode, false, err.Error())
+		response.InternalError(c, "RECOVER_MODE_UPDATE_FAILED", err.Error())
+		return
+	}
+
+	h.auditLog(c, id, "set_recover_mode", req.RecoverMode, true, "")
+	response.OK(c, gin.H{
+		"updated":      true,
+		"server_id":    id,
+		"recover_mode": req.RecoverMode,
+	})
+}
+
+// recoverModeDescription returns a human-readable description of the recover mode.
+func recoverModeDescription(mode string) string {
+	switch mode {
+	case "auto_switch_back":
+		return "When the original primary recovers, traffic is automatically switched back to it."
+	case "stay_on_promoted":
+		return "The promoted backup stays as primary permanently. The original primary becomes a regular backup until the next failover."
+	default:
+		return "Unknown mode."
+	}
+}
+
 // TriggerFailoverCheck triggers a manual failover check.
 func (h *Handler) TriggerFailoverCheck(c *gin.Context) {
 	if err := h.svc.TriggerFailoverCheck(c.Request.Context()); err != nil {

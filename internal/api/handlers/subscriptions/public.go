@@ -479,6 +479,23 @@ func renderedFormatterNodes(items []renderedSubscriptionNode) []formatter.Node {
 func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, members []entity.NodeGroupMember, clientEmail string, templates billingTemplateConfig) []renderedSubscriptionNode {
 	var items []renderedSubscriptionNode
 
+	// Preload node servers to filter out non-primary primary_backup nodes.
+	// Only the active primary should appear in subscription output.
+	// Both "backup" and "backup_recovering" nodes must NOT be returned —
+	// they become visible only after failover promotes them to primary.
+	backupServerIDs := make(map[int64]bool)
+	if h.nodeServerRepo != nil {
+		if servers, err := h.nodeServerRepo.ListAll(ctx); err == nil {
+			for _, s := range servers {
+				if s.NodeType == entity.NodeTypePrimaryBackup &&
+					(s.FailoverRole == entity.FailoverRoleBackup ||
+						s.FailoverRole == entity.FailoverRoleBackupRecovering) {
+					backupServerIDs[s.ID] = true
+				}
+			}
+		}
+	}
+
 	inboundMemberIDs := make(map[int64][]int64)
 	externalMemberIDs := make(map[int64][]int64)
 	if len(members) > 0 {
@@ -518,6 +535,12 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		}
 		for _, cfg := range configs {
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
+				continue
+			}
+			// Skip inbound configs on primary_backup backup nodes.
+			// Only the active primary should serve traffic; the backup
+			// becomes visible after failover promotes it to primary.
+			if backupServerIDs[cfg.ServerID] {
 				continue
 			}
 			memberIDs := inboundMemberIDs[cfg.ID]

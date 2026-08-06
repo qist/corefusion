@@ -259,7 +259,7 @@ func runServer(args []string) {
 	inboundRepoForPhase3 := repository.NewInboundConfigRepository(db.DB)
 	failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgr)
 	go failoverMgr.RunLoop(context.Background())
-	log.Println("Failover manager started (primary_backup auto-switch)")
+	log.Println("Failover manager started (primary_backup auto-switch, per-pair recover mode)")
 
 	mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForPhase3, nodeMgr)
 	go mirrorSyncMgr.RunLoop(context.Background())

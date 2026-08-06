@@ -299,6 +299,10 @@ func (h *ProxyHandler) Reload(c *gin.Context) {
 		response.InternalError(c, "RELOAD_FAILED", err.Error())
 		return
 	}
+	// Reload proxy on mirror nodes so they pick up the updated config.
+	if h.nodeOp != nil {
+		h.nodeOp.ControlMirrorsProxy(c.Request.Context(), serverID, string(proxyType), "reload")
+	}
 	response.OK(c, gin.H{"message": "reloaded"})
 }
 
@@ -585,6 +589,10 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 
 	if isLocal {
 		h.proxyMgr.WriteConfigFile(proxyType, config)
+		// Push config to mirror nodes so they get the updated config file.
+		if h.nodeOp != nil {
+			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(config))
+		}
 	} else if h.nodeOp != nil {
 		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(config)); err != nil {
 			response.InternalError(c, "SYNC_FAILED", err.Error())
@@ -658,8 +666,17 @@ func (h *ProxyHandler) UpdateConfig(c *gin.Context) {
 				response.OK(c, gin.H{"message": "config saved", "reload_error": err.Error()})
 				return
 			}
+			// Sync config + reload on mirror nodes
+			if h.nodeOp != nil {
+				h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(req.Config))
+				h.nodeOp.ControlMirrorsProxy(c.Request.Context(), serverID, string(proxyType), "reload")
+			}
 			response.OK(c, gin.H{"message": "config saved and reloaded"})
 			return
+		}
+		// Even if proxy is not running, sync config to mirrors
+		if h.nodeOp != nil {
+			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(req.Config))
 		}
 	} else if h.nodeOp != nil {
 		if err := h.nodeOp.SyncProxyConfig(c.Request.Context(), serverID, string(proxyType), []byte(req.Config)); err != nil {

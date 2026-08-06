@@ -92,6 +92,14 @@ export function triggerServerFailover(id) {
   return client.post(`/node-servers/${id}/failover`)
 }
 
+export function getServerRecoverMode(id) {
+  return client.get(`/node-servers/${id}/recover-mode`)
+}
+
+export function setServerRecoverMode(id, mode) {
+  return client.put(`/node-servers/${id}/recover-mode`, { recover_mode: mode })
+}
+
 export function syncMirror(id) {
   return client.post(`/node-servers/${id}/sync-mirror`)
 }

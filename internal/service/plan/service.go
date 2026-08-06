@@ -1606,23 +1606,35 @@ func (s *Service) GetAccessibleNodes(ctx context.Context, templateID int64) (*Ac
 // InboundWithServer is an InboundConfig enriched with its NodeServer name.
 type InboundWithServer struct {
 	entity.InboundConfig
-	ServerName string `json:"server_name" gorm:"column:server_name"`
+	ServerName     string `json:"server_name" gorm:"column:server_name"`
+	ServerNodeType string `json:"server_node_type" gorm:"column:server_node_type"`
 }
 
 // ListAllInboundsWithServer returns all inbound configs across all servers,
 // enriched with the associated NodeServer name.
+// Mirror node inbounds are excluded to avoid duplicates (they share the primary's config).
 func (s *Service) ListAllInboundsWithServer(ctx context.Context) ([]InboundWithServer, error) {
 	var results []InboundWithServer
 	err := s.db.WithContext(ctx).
 		Table("inbound_configs AS ic").
-		Select("ic.*, ns.name AS server_name").
+		Select("ic.*, ns.name AS server_name, ns.node_type AS server_node_type").
 		Joins("LEFT JOIN node_servers AS ns ON ns.id = ic.server_id").
 		Order("ns.sort_order, ns.id, ic.id").
 		Find(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("list inbounds with server: %w", err)
 	}
-	return results, nil
+
+	// Filter out mirror node inbounds to avoid duplicates in the UI
+	filtered := make([]InboundWithServer, 0, len(results))
+	for _, r := range results {
+		if r.ServerNodeType == string(entity.NodeTypeMirror) {
+			continue // Skip mirror nodes
+		}
+		filtered = append(filtered, r)
+	}
+
+	return filtered, nil
 }
 
 // BillingNodeOption represents a node group member enriched with display info

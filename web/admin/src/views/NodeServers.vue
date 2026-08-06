@@ -32,6 +32,22 @@
               <el-tag size="small" :type="nodeTypeTag(row.node_type)">{{ nodeTypeLabel(row.node_type) }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column :label="t('nodeServer.relationship')" width="200" show-overflow-tooltip>
+            <template #default="{row}">
+              <div v-if="row.node_type === 'mirror' && row.partner_server_id" style="display:flex;align-items:center;gap:4px;font-size:12px">
+                <el-tag size="small" type="warning" effect="plain">{{ t('nodeServer.mirrorOf') }}</el-tag>
+                <el-link type="primary" :underline="false" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
+              </div>
+              <div v-else-if="row.node_type === 'primary_backup' && row.partner_server_id" style="display:flex;align-items:center;gap:4px;font-size:12px">
+                <el-tag size="small" :type="row.failover_role === 'primary' ? 'danger' : 'info'" effect="plain">{{ row.failover_role === 'primary' ? t('nodeServer.failoverPrimary') : t('nodeServer.failoverBackup') }}</el-tag>
+                <span style="color:#909399">⇄</span>
+                <el-link type="primary" :underline="false" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
+              </div>
+              <el-tag v-else-if="row.node_type === 'chain_entry'" size="small" type="success" effect="plain">{{ t('nodeServer.chainEntry') }}</el-tag>
+              <el-tag v-else-if="row.node_type === 'chain_exit'" size="small" type="success" effect="plain">{{ t('nodeServer.chainExit') }}</el-tag>
+              <span v-else style="color:#c0c4cc;font-size:12px">{{ t('nodeServer.noPartner') }}</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('nodeServer.agentStatus')" width="100">
             <template #default="{row}">
               <el-tag size="small" :type="statusTag(row.agent_status)">
@@ -175,19 +191,19 @@
             </el-col>
           </el-row>
 
-          <el-card shadow="hover" style="margin-bottom:16px">
-            <template #header><span>{{ t('nodeServer.regionOverview') }}</span></template>
-            <el-table :data="regions" v-loading="regionsLoading" size="small">
-              <el-table-column prop="region" :label="t('nodeServer.region')" width="100" />
-              <el-table-column prop="region_label" :label="t('nodeServer.regionLabel')" width="120" />
-              <el-table-column prop="total" :label="t('nodeServer.total')" width="80" />
-              <el-table-column prop="online" :label="t('nodeServer.online')" width="80" />
-              <el-table-column prop="offline" :label="t('nodeServer.offline')" width="80" />
-              <el-table-column prop="billable" :label="t('nodeServer.billable')" width="80" />
-            </el-table>
-          </el-card>
+        <el-card shadow="hover" style="margin-bottom:16px">
+          <template #header><span>{{ t('nodeServer.regionOverview') }}</span></template>
+          <el-table :data="regions" v-loading="regionsLoading" size="small">
+            <el-table-column prop="region" :label="t('nodeServer.region')" width="100" />
+            <el-table-column prop="region_label" :label="t('nodeServer.regionLabel')" width="120" />
+            <el-table-column prop="total" :label="t('nodeServer.total')" width="80" />
+            <el-table-column prop="online" :label="t('nodeServer.online')" width="80" />
+            <el-table-column prop="offline" :label="t('nodeServer.offline')" width="80" />
+            <el-table-column prop="billable" :label="t('nodeServer.billable')" width="80" />
+          </el-table>
+        </el-card>
 
-          <el-row :gutter="16">
+        <el-row :gutter="16">
             <el-col :span="12">
               <el-card shadow="hover">
                 <template #header><span>{{ t('nodeServer.speedTest') }}</span></template>
@@ -422,7 +438,10 @@
         </el-form-item>
         <template v-if="form.node_type === 'primary_backup'">
           <el-form-item :label="t('nodeServer.partnerServerId')">
-            <el-input-number v-model="form.partner_server_id" :min="0" controls-position="right" style="width:100%" />
+            <el-select v-model="form.partner_server_id" filterable clearable style="width:100%" :placeholder="t('nodeServer.partnerServerPlaceholder')">
+              <el-option v-for="s in partnerOptions" :key="s.id" :label="`${s.name} (${s.hostname})`" :value="s.id" :disabled="s.id === editingId" />
+            </el-select>
+            <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.primaryBackupHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('nodeServer.failoverRole')">
             <el-select v-model="form.failover_role" style="width:100%" clearable>
@@ -432,6 +451,29 @@
           </el-form-item>
           <el-form-item :label="t('nodeServer.failoverPriority')">
             <el-input-number v-model="form.failover_priority" :min="0" controls-position="right" style="width:100%" />
+          </el-form-item>
+          <el-form-item :label="t('nodeServer.recoverModeLabel')">
+            <el-radio-group v-model="form.recover_mode" style="width:100%">
+              <el-radio-button label="auto_switch_back">{{ t('nodeServer.recoverModeAuto') }}</el-radio-button>
+              <el-radio-button label="stay_on_promoted">{{ t('nodeServer.recoverModeStay') }}</el-radio-button>
+            </el-radio-group>
+            <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.recoverModeHint') }}</div>
+          </el-form-item>
+          <el-form-item v-if="form.partner_server_id">
+            <el-checkbox v-model="form.auto_set_reverse">{{ t('nodeServer.autoSetReverse') }}</el-checkbox>
+            <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.autoSetReverseHint') }}</div>
+          </el-form-item>
+        </template>
+        <template v-if="form.node_type === 'mirror'">
+          <el-form-item :label="t('nodeServer.partnerServerId')">
+            <el-select v-model="form.partner_server_id" filterable clearable style="width:100%" :placeholder="t('nodeServer.partnerServerPlaceholder')">
+              <el-option v-for="s in mirrorTargetOptions" :key="s.id" :label="`${s.name} (${s.hostname})`" :value="s.id" :disabled="s.id === editingId" />
+            </el-select>
+            <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.mirrorTargetHint') }}</div>
+          </el-form-item>
+          <el-form-item v-if="form.partner_server_id">
+            <el-checkbox v-model="form.auto_set_reverse">{{ t('nodeServer.autoSetReverse') }}</el-checkbox>
+            <div style="color:#909399;font-size:11px;margin-top:4px">{{ t('nodeServer.autoSetReverseHint') }}</div>
           </el-form-item>
         </template>
         <el-form-item :label="t('nodeServer.chainConfig')" v-if="form.node_type === 'chain_entry' || form.node_type === 'chain_exit'">
@@ -662,20 +704,20 @@ import client from '../api/client'
 // Default Agent gRPC port (matches constants.DefaultAgentGRPCPort in Go)
 const DEFAULT_AGENT_GRPC_PORT = 18443
 
-import {
-  listNodeServers, createNodeServer, updateNodeServer, deleteNodeServer,
-  getServerStatus, controlCore, generateBootstrapToken, getBootstrapCommand,
-  getAgentInstallScript, revokeAgentCertificate, forceReconnect,
-  listServerTags, addServerTag, removeServerTag,
-  getDashboardStatus, getRegionsOverview, getTrafficStats,
-  testAllServersSpeed, getSpeedTestResults,
-  getCAStatus, listAgentCerts, renewAgentCertificate, listRevocations,
-  getDistributionQueue, retryDistribution, deleteDistributionQueueItem,
-  getRetryQueueStatus, processRetryQueue,
-  listNodeAuditLogs, exportNodeAuditLogs,
-  syncServerConfig,
-  updateAllAgents,
-  resumeTrafficSuspended, listInterfaces,
+import { 
+  listNodeServers, createNodeServer, updateNodeServer, deleteNodeServer, 
+  getServerStatus, controlCore, generateBootstrapToken, getBootstrapCommand, 
+  getAgentInstallScript, revokeAgentCertificate, forceReconnect, 
+  listServerTags, addServerTag, removeServerTag, 
+  getDashboardStatus, getRegionsOverview, getTrafficStats, 
+  testAllServersSpeed, getSpeedTestResults, 
+  getCAStatus, listAgentCerts, renewAgentCertificate, listRevocations, 
+  getDistributionQueue, retryDistribution, deleteDistributionQueueItem, 
+  getRetryQueueStatus, processRetryQueue, 
+  listNodeAuditLogs, exportNodeAuditLogs, 
+  syncServerConfig, 
+  updateAllAgents, 
+  resumeTrafficSuspended, listInterfaces, 
 } from '../api/nodeServer'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
@@ -793,13 +835,39 @@ const editingId = ref(null)
 const form = reactive({
   name: '', hostname: '', region: '', region_label: '',
   node_type: 'standalone', partner_server_id: 0, failover_role: '', failover_priority: 0,
+  recover_mode: 'auto_switch_back', // 故障转移回切模式
   chain_config: '', agent_port: DEFAULT_AGENT_GRPC_PORT,
   supported_cores_arr: ['xray', 'singbox', 'hysteria2', 'tuic'],
   max_inbounds: 0, public_ip: '', internal_ip: '', bandwidth_mbps: 0,
   billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
   // 流量配额
   egress_interface: '', traffic_quota_gb: 0, traffic_quota_reset_day: 1,
+  // 关系配置
+  auto_set_reverse: true,
 })
+
+// ─── All servers list for partner dropdown ───
+const allServersList = ref([])
+
+// Partner options for primary_backup: all remote servers except self
+const partnerOptions = computed(() => {
+  return allServersList.value.filter(s => !s.is_local && s.id !== editingId.value)
+})
+
+// Mirror target options: only standalone and primary_backup nodes
+const mirrorTargetOptions = computed(() => {
+  return allServersList.value.filter(s => 
+    !s.is_local && s.id !== editingId.value && 
+    (s.node_type === 'standalone' || s.node_type === 'primary_backup')
+  )
+})
+
+async function loadAllServersList() {
+  try {
+    const res = await listNodeServers({ limit: 500, offset: 0 })
+    allServersList.value = res.items || []
+  } catch (e) { /* noop */ }
+}
 
 // ─── Interfaces for egress selection ───
 const interfaceOptions = ref([])
@@ -843,6 +911,29 @@ let refreshTimer = null
 
 const onlineSummary = ref({})
 
+// ─── Server ID→Name map for partner/relationship display ───
+const serverMap = ref({})
+
+async function loadServerMap() {
+  try {
+    const res = await listNodeServers({ limit: 500, offset: 0 })
+    const map = {}
+    ;(res.items || []).forEach(s => { map[s.id] = s.name })
+    serverMap.value = map
+  } catch (e) { /* noop */ }
+}
+
+function goToPartner(partnerId) {
+  if (!partnerId) return
+  const row = servers.value.find(s => s.id === partnerId)
+  if (row) {
+    goToDetail(row)
+  } else {
+    // Partner not on current page, navigate by ID
+    router.push(`/node-servers/${partnerId}/detail`)
+  }
+}
+
 async function loadOnlineSummary() {
   try {
     const res = await client.get('/node-servers/online-summary')
@@ -863,6 +954,10 @@ async function loadServers() {
     const regionsSet = new Set(regionOptions.value)
     servers.value.forEach(s => { if (s.region) regionsSet.add(s.region) })
     regionOptions.value = [...regionsSet]
+    // Refresh server map if new servers appeared
+    if (serverTotal.value > Object.keys(serverMap.value).length) {
+      loadServerMap()
+    }
   } catch (e) {
     // error handled by interceptor
   } finally {
@@ -1068,6 +1163,7 @@ function showEditDialog(row) {
     region: row.region, region_label: row.region_label,
     node_type: row.node_type, partner_server_id: row.partner_server_id,
     failover_role: row.failover_role, failover_priority: row.failover_priority,
+    recover_mode: row.recover_mode || 'auto_switch_back',
     chain_config: row.chain_config || '', agent_port: row.agent_port,
     supported_cores_arr: parseCores(row.supported_cores),
     max_inbounds: row.max_inbounds, public_ip: row.public_ip,
@@ -1078,8 +1174,11 @@ function showEditDialog(row) {
     egress_interface: row.egress_interface || '',
     traffic_quota_gb: row.traffic_quota_bytes ? Math.round(row.traffic_quota_bytes / (1024 * 1024 * 1024)) : 0,
     traffic_quota_reset_day: row.traffic_quota_reset_day || 1,
+    // 关系配置
+    auto_set_reverse: true,
   })
   formVisible.value = true
+  loadAllServersList()
   loadInterfaces()
 }
 
@@ -1103,6 +1202,7 @@ async function saveForm() {
       partner_server_id: form.partner_server_id,
       failover_role: form.failover_role,
       failover_priority: form.failover_priority,
+      recover_mode: form.recover_mode,
       chain_config: form.chain_config,
       agent_port: form.agent_port,
       supported_cores: JSON.stringify(form.supported_cores_arr),
@@ -1137,6 +1237,26 @@ async function saveForm() {
     } else {
       await updateNodeServer(editingId.value, payload)
       ElMessage.success(t('common.success'))
+
+      // Auto-set reverse relationship on partner node
+      if (form.auto_set_reverse && form.partner_server_id && form.partner_server_id !== editingId.value) {
+        try {
+          // For primary_backup: set partner's partner to this node, with opposite failover role
+          if (form.node_type === 'primary_backup') {
+            const reverseRole = form.failover_role === 'primary' ? 'backup' : (form.failover_role === 'backup' ? 'primary' : '')
+            await updateNodeServer(form.partner_server_id, {
+              partner_server_id: editingId.value,
+              failover_role: reverseRole,
+              node_type: 'primary_backup',
+            })
+          }
+          // For mirror: unidirectional, no reverse needed
+          ElMessage.success(t('nodeServer.autoSetReverse'))
+        } catch (e) {
+          // Non-fatal: partner update failed
+          ElMessage.warning(t('nodeServer.autoSetReverse') + ' (partial)')
+        }
+      }
     }
     formVisible.value = false
     loadServers()
@@ -1483,6 +1603,8 @@ watch(activeTab, (tab) => {
 }, { immediate: true })
 
 onMounted(() => {
+  // Load server ID→name map for relationship display
+  loadServerMap()
   // Auto-refresh the active tab's data every 30s.
   refreshTimer = setInterval(() => {
     onTabChange(activeTab.value)

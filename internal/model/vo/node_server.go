@@ -10,10 +10,11 @@ type NodeServerResponse struct {
 	Region            string     `json:"region"`
 	RegionLabel       string     `json:"region_label"`
 	NodeType          string     `json:"node_type"`
-	PartnerServerID   int64      `json:"partner_server_id"`
-	FailoverRole      string     `json:"failover_role"`
-	FailoverPriority  int        `json:"failover_priority"`
-	ChainConfig       string     `json:"chain_config,omitempty"`
+	PartnerServerID   int64  `json:"partner_server_id"`
+	FailoverRole      string `json:"failover_role"`
+	FailoverPriority  int    `json:"failover_priority"`
+	RecoverMode       string `json:"recover_mode"`
+	ChainConfig       string `json:"chain_config,omitempty"`
 	AgentPort         int        `json:"agent_port"`
 	AgentStatus       string     `json:"agent_status"`
 	AgentVersion      string     `json:"agent_version"`

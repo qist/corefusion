@@ -81,8 +81,13 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 		return false
 
 	case entity.NodeTypePrimaryBackup:
-		// Only collect from the active primary
-		return server.FailoverRole == entity.FailoverRolePrimary
+		// Collect from active primary and recovering backup (to capture traffic
+		// from existing connections that haven't switched to the new primary yet).
+		// No duplicate counting since connections don't overlap:
+		// - primary: new connections after failover
+		// - backup_recovering: existing connections before failover
+		return server.FailoverRole == entity.FailoverRolePrimary ||
+			server.FailoverRole == entity.FailoverRoleBackupRecovering
 
 	case entity.NodeTypeMirror:
 		// Collect from mirror, but attribute to primary

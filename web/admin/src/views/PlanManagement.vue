@@ -80,11 +80,12 @@
               </div>
               <div v-if="templateNodes[tpl.id] && templateNodes[tpl.id].length" style="margin-top:8px;border-top:1px solid #ebeef5;padding-top:8px">
                 <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('plan.relatedNodes') }}</div>
-                <div v-for="node in templateNodes[tpl.id].slice(0,5)" :key="node.member_id" style="font-size:12px;line-height:1.8">
-                  <el-tag :type="node.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ node.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
-                  <span style="color:#409eff">{{ node.server_name }}</span> - {{ node.node_name }}
-                  <span style="color:#909399">({{ node.protocol }}:{{ node.port }})</span>
-                </div>
+<div v-for="node in templateNodes[tpl.id].slice(0,5)" :key="node.member_id" style="font-size:12px;line-height:1.8">
+<el-tag :type="node.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ node.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
+<el-tag v-if="node.has_mirror" type="warning" size="small" style="margin-right:4px">{{ t('plan.mirrored') }}</el-tag>
+<span style="color:#409eff">{{ node.server_name }}</span> - {{ node.node_name }}
+<span style="color:#909399">({{ node.protocol }}:{{ node.port }})</span>
+</div>
                 <div v-if="templateNodes[tpl.id].length > 5" style="font-size:12px;color:#909399;margin-top:4px">...{{ t('plan.totalCount') }} {{ templateNodes[tpl.id].length }} {{ t('plan.unitNodes') }}</div>
               </div>
               <div style="margin-top:12px;display:flex;gap:4px;flex-wrap:wrap">
@@ -384,13 +385,14 @@
           {{ t('plan.billingNodeSelectHint') }}
         </div>
         <el-checkbox-group v-model="selectedBillingNodeIds">
-          <div v-for="opt in billingNodeOptions" :key="opt.member_id" style="margin-bottom:8px">
-            <el-checkbox :value="opt.member_id">
-              <el-tag :type="opt.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ opt.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
-              <span style="color:#409eff">{{ opt.server_name }}</span> - {{ opt.node_name }}
-              <span style="color:#909399;font-size:12px">({{ opt.protocol }}:{{ opt.port }})</span>
-            </el-checkbox>
-          </div>
+<div v-for="opt in billingNodeOptions" :key="opt.member_id" style="margin-bottom:8px">
+<el-checkbox :value="opt.member_id">
+<el-tag :type="opt.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ opt.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
+<el-tag v-if="opt.has_mirror" type="warning" size="small" style="margin-right:4px">{{ t('plan.mirrored') }}</el-tag>
+<span style="color:#409eff">{{ opt.server_name }}</span> - {{ opt.node_name }}
+<span style="color:#909399;font-size:12px">({{ opt.protocol }}:{{ opt.port }})</span>
+</el-checkbox>
+</div>
         </el-checkbox-group>
         <el-empty v-if="!billingNodesLoading && billingNodeOptions.length === 0" description="{{ t('plan.noRelatedNodesHint') }}" />
       </div>

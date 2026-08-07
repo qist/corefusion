@@ -1290,11 +1290,11 @@ func (s *Service) SyncProxyConfig(ctx context.Context, serverID int64, proxyType
 				log.Printf("[nodeserver] SyncProxyConfig: mirror %d offline, skipping", mirror.ID)
 				continue
 			}
-			if err := s.nodeMgr.SyncProxyConfig(syncCtx, mirror.ID, proxyType, config); err != nil {
+			if err := s.nodeMgr.SyncProxyConfigFromPrimary(syncCtx, mirror.ID, serverID, proxyType, config); err != nil {
 				log.Printf("[nodeserver] SyncProxyConfig: sync %s config to mirror %d failed: %v",
 					proxyType, mirror.ID, err)
 			} else {
-				log.Printf("[nodeserver] SyncProxyConfig: synced %s config to mirror %d", proxyType, mirror.ID)
+				log.Printf("[nodeserver] SyncProxyConfig: synced %s config to mirror %d (from primary %d)", proxyType, mirror.ID, serverID)
 			}
 		}
 	}()
@@ -1328,13 +1328,38 @@ func (s *Service) SyncMirrorsProxyConfig(ctx context.Context, primaryServerID in
 				log.Printf("[nodeserver] SyncMirrorsProxyConfig: mirror %d offline, skipping", mirror.ID)
 				continue
 			}
-			if err := s.nodeMgr.SyncProxyConfig(syncCtx, mirror.ID, proxyType, config); err != nil {
+			// Use SyncProxyConfigFromPrimary so mirrors get the PRIMARY's SNI settings
+			// and certs, not their own stale ones. This is critical for SNI toggle sync:
+			// when SNI is turned off on the primary, mirrors must receive SNI=off.
+			if err := s.nodeMgr.SyncProxyConfigFromPrimary(syncCtx, mirror.ID, primaryServerID, proxyType, config); err != nil {
 				log.Printf("[nodeserver] SyncMirrorsProxyConfig: sync %s config to mirror %d failed: %v",
 					proxyType, mirror.ID, err)
 			} else {
-				log.Printf("[nodeserver] SyncMirrorsProxyConfig: synced %s config to mirror %d", proxyType, mirror.ID)
+				log.Printf("[nodeserver] SyncMirrorsProxyConfig: synced %s config to mirror %d (from primary %d)", proxyType, mirror.ID, primaryServerID)
 			}
 		}
+	}()
+	return nil
+}
+
+// SyncMirrorsData triggers a full mirror sync from primary to all mirror nodes.
+// This first copies the primary's DB data (caddy/nginx sites, inbound configs,
+// SNI settings) to each mirror's DB in the panel database, then pushes the
+// updated data to each mirror's Agent via SyncData.
+// Used after DB-level changes (ToggleSNI, BatchUpdatePorts, SaveSNISettings)
+// to ensure mirrors' local DBs match the primary's state.
+func (s *Service) SyncMirrorsData(ctx context.Context, primaryServerID int64) error {
+	if s.nodeMgr == nil {
+		return nil
+	}
+	go func() {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		// SyncMirrorsForPrimary copies primary's DB data (caddy_sites, nginx_sites,
+		// inbound_configs) to each mirror's DB, then pushes SyncData to each mirror's
+		// Agent. This ensures mirrors' local DBs and Agent DBs are both updated.
+		s.SyncMirrorsForPrimary(syncCtx, primaryServerID)
+		log.Printf("[nodeserver] SyncMirrorsData: completed for primary %d", primaryServerID)
 	}()
 	return nil
 }

@@ -1648,6 +1648,7 @@ type BillingNodeOption struct {
 	Protocol     string `json:"protocol"`
 	Port         int    `json:"port"`
 	DisplayLabel string `json:"display_label"` // "主机节点 - 入口/节点名称 (protocol:port)"
+	HasMirror    bool   `json:"has_mirror"`    // true if this server has mirror nodes
 }
 
 // GetBillingNodeOptions returns enriched node group members for a plan template,
@@ -1697,6 +1698,16 @@ func (s *Service) GetBillingNodeOptions(ctx context.Context, templateID int64) (
 		}
 	}
 
+	// Query which servers have mirror nodes (node_type='mirror' AND partner_server_id = serverID)
+	mirroredServerIDs := make(map[int64]bool)
+	var mirrorServers []entity.NodeServer
+	s.db.WithContext(ctx).
+		Where("node_type = ?", entity.NodeTypeMirror).
+		Find(&mirrorServers)
+	for _, ms := range mirrorServers {
+		mirroredServerIDs[ms.PartnerServerID] = true
+	}
+
 	options := make([]BillingNodeOption, 0, len(members))
 	for _, m := range members {
 		if !m.Enabled {
@@ -1721,6 +1732,7 @@ func (s *Service) GetBillingNodeOptions(ctx context.Context, templateID int64) (
 			}
 			opt.Protocol = ib.Protocol
 			opt.Port = ib.Port
+			opt.HasMirror = mirroredServerIDs[ib.ServerID]
 			opt.DisplayLabel = fmt.Sprintf("%s - %s (%s:%d)", opt.ServerName, opt.NodeName, opt.Protocol, opt.Port)
 		} else if m.ExternalNodeID > 0 {
 			en, ok := extNodeMap[m.ExternalNodeID]

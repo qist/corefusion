@@ -1486,9 +1486,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
 
 				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
-				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3).
-					SetCaddySiteRepository(caddySiteRepoForMirror).
-					SetNginxSiteRepository(nginxSiteRepoForMirror)
+			mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3).
+				SetCaddySiteRepository(caddySiteRepoForMirror).
+				SetNginxSiteRepository(nginxSiteRepoForMirror).
+				SetSettingRepository(systemSettingRepo)
 				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
 				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
 				billingFilter := agent.NewBillingFilter(nodeServerRepo)

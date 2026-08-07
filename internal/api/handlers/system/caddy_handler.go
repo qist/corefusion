@@ -252,7 +252,7 @@ func (h *CaddyHandler) GetSNISettings(c *gin.Context) {
 }
 
 func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var settings proxy.SNISettings
 	if err := c.ShouldBindJSON(&settings); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -262,11 +262,15 @@ func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
+	// Sync DB changes to mirror nodes so their local DBs match the primary's SNI state
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), serverID)
+	}
 	response.OK(c, settings)
 }
 
 func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -278,6 +282,10 @@ func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, "TOGGLE_FAILED", err.Error())
 		return
+	}
+	// Sync DB changes to mirror nodes so their local DBs match the primary's SNI state
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), serverID)
 	}
 	response.OK(c, gin.H{"updated": count})
 }
@@ -293,7 +301,7 @@ func (h *CaddyHandler) DeleteAllSNI(c *gin.Context) {
 }
 
 func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var req struct {
 		Port   string `json:"port" binding:"required"`
 		Enable bool   `json:"enable"`
@@ -306,6 +314,10 @@ func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
+	}
+	// Sync DB changes to mirror nodes so their local DBs match the primary's site ports
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), serverID)
 	}
 	response.OK(c, gin.H{"updated": count})
 }

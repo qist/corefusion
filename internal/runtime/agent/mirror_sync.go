@@ -21,6 +21,7 @@ type MirrorSyncManager struct {
 	inboundRepo     *repository.InboundConfigRepository
 	caddySiteRepo   *repository.CaddySiteRepository
 	nginxSiteRepo   *repository.NginxSiteRepository
+	settingRepo     *repository.SystemSettingRepository
 	nodeMgr         *NodeServerManager
 	syncInterval    time.Duration
 
@@ -53,6 +54,12 @@ func (m *MirrorSyncManager) SetCaddySiteRepository(repo *repository.CaddySiteRep
 // SetNginxSiteRepository sets the Nginx site repository for syncing Nginx configs.
 func (m *MirrorSyncManager) SetNginxSiteRepository(repo *repository.NginxSiteRepository) *MirrorSyncManager {
 	m.nginxSiteRepo = repo
+	return m
+}
+
+// SetSettingRepository sets the system setting repository for syncing SNI settings.
+func (m *MirrorSyncManager) SetSettingRepository(repo *repository.SystemSettingRepository) *MirrorSyncManager {
+	m.settingRepo = repo
 	return m
 }
 
@@ -227,6 +234,15 @@ func (m *MirrorSyncManager) syncMirrorWithPrimary(ctx context.Context, mirror *e
 	if m.nginxSiteRepo != nil {
 		if err := m.syncNginxSites(ctx, primary.ID, mirror.ID); err != nil {
 			log.Printf("[MirrorSync] failed to sync Nginx sites for mirror %d: %v", mirror.ID, err)
+		}
+	}
+
+	// Sync SNI settings (proxy.sni_enabled, proxy.sni_listen_port, proxy.sni_local_port,
+	// proxy.proxy_protocol_rules) from primary to mirror in the panel DB.
+	// Without this, the frontend still shows the mirror's old SNI state.
+	if m.settingRepo != nil {
+		if err := m.syncSNISettings(ctx, primary.ID, mirror.ID); err != nil {
+			log.Printf("[MirrorSync] failed to sync SNI settings for mirror %d: %v", mirror.ID, err)
 		}
 	}
 
@@ -418,6 +434,55 @@ func (m *MirrorSyncManager) syncNginxSites(ctx context.Context, primaryID, mirro
 
 	if synced > 0 {
 		log.Printf("[MirrorSync] synced %d Nginx site(s) from primary %d to mirror %d",
+			synced, primaryID, mirrorID)
+	}
+
+	return nil
+}
+
+// syncSNISettings syncs SNI-related system_settings from primary to mirror.
+// SNI settings are stored with per-node keys: proxy.sni_enabled.{serverID},
+// proxy.sni_listen_port.{serverID}, proxy.sni_local_port.{serverID},
+// proxy.proxy_protocol_rules.{serverID}.
+// Without this sync, the frontend shows stale SNI state for mirror nodes.
+func (m *MirrorSyncManager) syncSNISettings(ctx context.Context, primaryID, mirrorID int64) error {
+	if m.settingRepo == nil {
+		return nil
+	}
+
+	// SNI setting keys that need to be synced (base key → per-node key pattern)
+	sniKeys := []string{
+		"proxy.sni_enabled",
+		"proxy.sni_listen_port",
+		"proxy.sni_local_port",
+		"proxy.proxy_protocol_rules",
+	}
+
+	synced := 0
+	for _, baseKey := range sniKeys {
+		primaryKey := fmt.Sprintf("%s.%d", baseKey, primaryID)
+		mirrorKey := fmt.Sprintf("%s.%d", baseKey, mirrorID)
+
+		// Read primary's value (fall back to global key if per-node doesn't exist)
+		val, err := m.settingRepo.GetByKey(ctx, primaryKey)
+		if err != nil {
+			// Fall back to global key (for primaryID=1 or unconfigured nodes)
+			val, err = m.settingRepo.GetByKey(ctx, baseKey)
+			if err != nil {
+				continue // key doesn't exist, skip
+			}
+		}
+
+		// Write to mirror's per-node key
+		if err := m.settingRepo.Set(ctx, mirrorKey, val); err != nil {
+			log.Printf("[MirrorSync] failed to sync SNI setting %s → %s: %v", primaryKey, mirrorKey, err)
+			continue
+		}
+		synced++
+	}
+
+	if synced > 0 {
+		log.Printf("[MirrorSync] synced %d SNI setting(s) from primary %d to mirror %d",
 			synced, primaryID, mirrorID)
 	}
 

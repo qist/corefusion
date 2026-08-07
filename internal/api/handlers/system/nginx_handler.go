@@ -290,7 +290,7 @@ func (h *NginxHandler) SaveSettings(c *gin.Context) {
 // --- SNI ---
 
 func (h *NginxHandler) ToggleSNI(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -302,6 +302,10 @@ func (h *NginxHandler) ToggleSNI(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, "TOGGLE_FAILED", err.Error())
 		return
+	}
+	// Sync DB changes to mirror nodes so their local DBs match the primary's SNI state
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), serverID)
 	}
 	response.OK(c, gin.H{"updated": count})
 }
@@ -317,7 +321,7 @@ func (h *NginxHandler) DeleteAllSNI(c *gin.Context) {
 }
 
 func (h *NginxHandler) BatchUpdatePorts(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var req struct {
 		Port   string `json:"port" binding:"required"`
 		Enable bool   `json:"enable"`
@@ -330,6 +334,10 @@ func (h *NginxHandler) BatchUpdatePorts(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
+	}
+	// Sync DB changes to mirror nodes so their local DBs match the primary's site ports
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), serverID)
 	}
 	response.OK(c, gin.H{"updated": count})
 }

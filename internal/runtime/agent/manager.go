@@ -560,6 +560,49 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 	return nil
 }
 
+// SyncProxyConfigFromPrimary syncs proxy config to a mirror node, but fetches
+// TLS certificates and per-node settings (SNI/nginx) from the PRIMARY's server ID
+// instead of the mirror's own. This ensures mirrors receive the same settings as
+// the primary (e.g., when SNI is toggled off on the primary, mirrors get SNI=off
+// instead of their own stale SNI=on).
+func (m *NodeServerManager) SyncProxyConfigFromPrimary(ctx context.Context, mirrorServerID, primaryServerID int64, proxyType string, config []byte) error {
+	if m.isLocalServer(mirrorServerID) {
+		// Local mirror — shouldn't happen, but handle gracefully
+		return m.SyncProxyConfig(ctx, mirrorServerID, proxyType, config)
+	}
+	// Collect certs from the PRIMARY's server ID (mirrors replicate primary's sites)
+	var certs []*agentpb.CertificateEntry
+	if m.proxyCertCollector != nil {
+		certs = m.proxyCertCollector.CollectProxyCertificates(ctx, primaryServerID)
+	}
+
+	// Collect settings from the PRIMARY's server ID
+	var nginxSettings, caddySNISettings string
+	if m.proxySettingsProvider != nil {
+		if proxyType == "nginx" {
+			nginxSettings, _ = m.proxySettingsProvider.GetNginxSettingsForServer(ctx, primaryServerID)
+		} else if proxyType == "caddy" {
+			caddySNISettings, _ = m.proxySettingsProvider.GetCaddySNISettingsForServer(ctx, primaryServerID)
+		}
+	}
+
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_SyncProxyConfig{
+			SyncProxyConfig: &agentpb.SyncProxyConfigRequest{
+				ProxyType:        proxyType,
+				ConfigContent:    config,
+				Certificates:     certs,
+				NginxSettings:    nginxSettings,
+				CaddySniSettings: caddySNISettings,
+			},
+		},
+	}
+	if err := m.SendCommand(ctx, mirrorServerID, cmd); err != nil {
+		return fmt.Errorf("send SyncProxyConfig (from primary %d) to mirror %d: %w", primaryServerID, mirrorServerID, err)
+	}
+	return nil
+}
+
 // ControlProxy controls a proxy process (Caddy/Nginx) on a server.
 // For local servers, delegates to LocalAgent → proxy.Manager.StartProxy/StopProxy/etc.
 // For remote servers, sends control command via the heartbeat stream.

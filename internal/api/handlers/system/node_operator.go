@@ -21,4 +21,9 @@ type NodeOperator interface {
 	// ControlMirrorsProxy sends a control command (reload/restart) to all mirror
 	// nodes of a primary. Used after local proxy reload to trigger mirror reload.
 	ControlMirrorsProxy(ctx context.Context, primaryServerID int64, proxyType, action string) error
+	// SyncMirrorsData triggers a full database-level data sync (SyncData) to all
+	// mirror nodes of a primary. Used after DB-level changes (SNI toggle, port
+	// batch update, site enable/disable) to ensure mirrors' local DBs are updated
+	// with the primary's latest data.
+	SyncMirrorsData(ctx context.Context, primaryServerID int64) error
 }

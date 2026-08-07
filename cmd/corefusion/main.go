@@ -261,7 +261,8 @@ func runServer(args []string) {
 	go failoverMgr.RunLoop(context.Background())
 	log.Println("Failover manager started (primary_backup auto-switch, per-pair recover mode)")
 
-	mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForPhase3, nodeMgr)
+	mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForPhase3, nodeMgr).
+		SetSettingRepository(grpcSettingRepo)
 	go mirrorSyncMgr.RunLoop(context.Background())
 	log.Println("Mirror sync manager started (config replication)")
 

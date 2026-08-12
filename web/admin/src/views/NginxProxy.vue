@@ -67,7 +67,7 @@
               <el-button type="primary" :loading="releasesLoading" @click="showReleases">{{ t('proxy.download') }}</el-button>
             </template>
             <template v-else>
-<el-button v-if="proxyInfo.status!=='running'" type="success" :disabled="caddyRunning" @click="proxyAction('start')">{{ t('proxy.start') }}</el-button>
+<el-button v-if="proxyInfo.status!=='running'" type="success" @click="proxyAction('start')">{{ t('proxy.start') }}</el-button>
 <el-button v-else type="danger" @click="proxyAction('stop')">{{ t('proxy.stop') }}</el-button>
               <el-button @click="proxyAction('restart')">{{ t('proxy.restart') }}</el-button>
               <el-button type="warning" plain @click="showReleases">{{ t('proxy.switchVersion') }}</el-button>
@@ -741,7 +741,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -1177,11 +1177,14 @@ async function downloadVersion(url, tagName) {
 }
 
 async function proxyAction(action) {
-  try {
-    await client.post(`${proxyApi.value}/${action}?type=nginx`)
-    ElMessage.success(t('common.success'))
-    fetchProxyInfo()
-  } catch (e) { ElMessage.error(t('common.failed')) }
+try {
+await client.post(`${proxyApi.value}/${action}?type=nginx`)
+ElMessage.success(t('common.success'))
+fetchProxyInfo()
+} catch (e) { 
+  const msg = e?.response?.data?.message || t('common.failed')
+  ElMessage.error(msg)
+}
 }
 
 function showAddSite(template) {

@@ -343,7 +343,7 @@
             <el-divider content-position="left">CC Protection</el-divider>
             <el-form-item label="CC Check"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item label="CC Rate"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
-            <el-form-item label="CC Block TTL (sec)"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="60" style="width:120px" /></el-form-item>
+            <el-form-item label="CC Block TTL (sec)"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
             <el-divider content-position="left">Output</el-divider>
             <el-form-item label="WAF Output">
               <el-select v-model="wafConfigForm.waf_output" style="width:120px">
@@ -409,7 +409,7 @@
             <el-divider content-position="left">CC Protection</el-divider>
             <el-form-item label="CC Check"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item label="CC Rate"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
-            <el-form-item label="CC Block TTL (sec)"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="60" style="width:120px" /></el-form-item>
+            <el-form-item label="CC Block TTL (sec)"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
             <el-divider content-position="left">Output</el-divider>
             <el-form-item label="WAF Output">
               <el-select v-model="siteWAFConfig.waf_output" style="width:120px">
@@ -1058,7 +1058,7 @@ function parseWAFConfigForm() {
     post_check: get('post_check') || 'on',
     cc_check: get('cc_check') || 'on',
     cc_rate: get('cc_rate') || '',
-    cc_block_ttl: get('cc_block_ttl') || '',
+    cc_block_ttl: get('cc_block_ttl') || '600',
     waf_output: get('waf_output') || 'html',
     waf_redirect_url: get('waf_redirect_url') || '',
     log_dir: get('log_dir') || '',
@@ -1161,8 +1161,8 @@ async function openSiteWAF(row) {
       white_ip_check: cfg.white_ip_check || 'on',
       black_ip_check: cfg.black_ip_check || 'on',
       cc_check: cfg.cc_check || 'on',
-      cc_rate: cfg.cc_rate || '',
-      cc_block_ttl: cfg.cc_block_ttl || '',
+      cc_rate: cfg.cc_rate || '60/60',
+      cc_block_ttl: cfg.cc_block_ttl || '600',
       waf_output: cfg.waf_output || 'html',
       waf_redirect_url: cfg.waf_redirect_url || ''
     }

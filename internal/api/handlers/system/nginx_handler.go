@@ -500,6 +500,42 @@ func (h *NginxHandler) SaveWAFDomainRule(c *gin.Context) {
 	response.OK(c, gin.H{"message": "saved"})
 }
 
+// ToggleWAFDomain handles POST /api/v1/node-servers/:id/nginx/waf/toggle-domain.
+// Enables or disables WAF for a specific domain by adding/removing it from domain.json.
+// When enabling, copies global rule files to domains/<domain>/ for independent editing.
+func (h *NginxHandler) ToggleWAFDomain(c *gin.Context) {
+	serverID, _ := h.applyServerID(c)
+	var req struct {
+		Domain  string `json:"domain" binding:"required"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if req.Enabled {
+		if err := h.nginxMgr.EnableWAFDomain(req.Domain); err != nil {
+			response.InternalError(c, "ENABLE_FAILED", err.Error())
+			return
+		}
+	} else {
+		if err := h.nginxMgr.DisableWAFDomain(req.Domain); err != nil {
+			response.InternalError(c, "DISABLE_FAILED", err.Error())
+			return
+		}
+	}
+	h.syncWAFFiles(c, serverID)
+	response.OK(c, gin.H{"domain": req.Domain, "enabled": req.Enabled})
+}
+
+// CheckWAFDomain handles GET /api/v1/node-servers/:id/nginx/waf/domain-status.
+func (h *NginxHandler) CheckWAFDomain(c *gin.Context) {
+	h.applyServerID(c)
+	domain := c.Query("domain")
+	enabled := h.nginxMgr.IsWAFDomainEnabled(domain)
+	response.OK(c, gin.H{"domain": domain, "enabled": enabled})
+}
+
 // syncWAFFiles collects all WAF files from disk and pushes them to the remote node
 // (fire-and-forget, non-blocking). For local nodes this is a no-op.
 func (h *NginxHandler) syncWAFFiles(c *gin.Context, serverID int64) {

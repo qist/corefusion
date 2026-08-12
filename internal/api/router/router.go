@@ -1894,6 +1894,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/nginx/waf/domain-rules", nginxH.ListWAFDomainDirs)
 				nodeServersGroup.GET("/:id/nginx/waf/domain-rules/:domain/:rule", nginxH.GetWAFDomainRule)
 				nodeServersGroup.PUT("/:id/nginx/waf/domain-rules/:domain/:rule", nginxH.SaveWAFDomainRule)
+				nodeServersGroup.POST("/:id/nginx/waf/toggle-domain", nginxH.ToggleWAFDomain)
+				nodeServersGroup.GET("/:id/nginx/waf/domain-status", nginxH.CheckWAFDomain)
 
 				// Inbound Configs (per node)
 				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)

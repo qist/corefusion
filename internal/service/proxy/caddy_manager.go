@@ -182,22 +182,28 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				matcher = strings.ReplaceAll(matcher, "*", "wildcard")
 				sb.WriteString(fmt.Sprintf("\t\t\t# SNI: %s -> %s\n", domain, target))
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
-				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
-				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
-if site.ProxyProtocol {
-				sb.WriteString("\t\t\t\tproxy_protocol v2\n")
-			}
+sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
+				if site.ProxyProtocol {
+					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", target))
+					sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
+					sb.WriteString("\t\t\t\t}\n")
+				} else {
+					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
+				}
 				sb.WriteString("\t\t\t}\n")
 			}
 			if fallbackTarget == "" {
 				fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
 			}
-			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
+sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t\t\troute {\n")
-			sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", fallbackTarget))
-if fallbackPP {
-			sb.WriteString("\t\t\t\tproxy_protocol v2\n")
-		}
+			if fallbackPP {
+				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", fallbackTarget))
+				sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
+				sb.WriteString("\t\t\t\t}\n")
+			} else {
+				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", fallbackTarget))
+			}
 			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t}\n")
 		}
@@ -429,9 +435,12 @@ func (m *CaddyManager) generateL4Block(site *entity.CaddySite) string {
 	sb.WriteString(fmt.Sprintf("# L4 %s forward on :%s\n", proto, port))
 	sb.WriteString(fmt.Sprintf(":%s {\n", port))
 	sb.WriteString("\troute {\n")
-	sb.WriteString(fmt.Sprintf("\t\tproxy %s\n", upstream))
 	if site.ProxyProtocol {
-		sb.WriteString("\t\tproxy_protocol\n")
+		sb.WriteString(fmt.Sprintf("\t\tproxy %s {\n", upstream))
+		sb.WriteString("\t\t\tproxy_protocol v2\n")
+		sb.WriteString("\t\t}\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("\t\tproxy %s\n", upstream))
 	}
 	sb.WriteString("\t}\n")
 	sb.WriteString("}\n")

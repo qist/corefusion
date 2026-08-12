@@ -455,6 +455,98 @@ type WAFFileEntry struct {
 	Content []byte
 }
 
+// EnableWAFDomain enables WAF for a domain by adding it to domain.json and
+// copying global rule files to domains/<domain>/ directory for independent editing.
+func (m *NginxManager) EnableWAFDomain(domain string) error {
+	if strings.Contains(domain, "..") || domain == "" {
+		return fmt.Errorf("invalid domain")
+	}
+	// 1. Copy global rule files to domains/<domain>/
+	domainRuleDir := filepath.Join(m.wafRuleDir(), "domains", domain)
+	os.MkdirAll(domainRuleDir, 0755)
+	ruleFiles := []string{"args.rule", "blackip.rule", "cookie.rule", "post.rule",
+		"url.rule", "useragent.rule", "whiteip.rule", "whiteurl.rule"}
+	for _, rf := range ruleFiles {
+		src := filepath.Join(m.wafRuleDir(), rf)
+		dst := filepath.Join(domainRuleDir, rf)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue // skip missing files
+		}
+		os.WriteFile(dst, data, 0644)
+	}
+	// 2. Add entry to domain.json
+	return m.updateDomainJSON(domain, map[string]string{
+		"rule_dir": fmt.Sprintf("domains/%s", domain),
+	})
+}
+
+// DisableWAFDomain disables WAF for a domain by removing it from domain.json.
+// The domain's rule directory is kept on disk for potential future re-enable.
+func (m *NginxManager) DisableWAFDomain(domain string) error {
+	if strings.Contains(domain, "..") || domain == "" {
+		return fmt.Errorf("invalid domain")
+	}
+	return m.removeFromDomainJSON(domain)
+}
+
+// IsWAFDomainEnabled checks if a domain has WAF config in domain.json.
+func (m *NginxManager) IsWAFDomainEnabled(domain string) bool {
+	data, err := os.ReadFile(filepath.Join(m.wafRuleDir(), "domain.json"))
+	if err != nil {
+		return false
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return false
+	}
+	_, ok := obj[domain]
+	return ok
+}
+
+// updateDomainJSON adds or updates a domain entry in domain.json.
+func (m *NginxManager) updateDomainJSON(domain string, config map[string]string) error {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	data, err := os.ReadFile(path)
+	var obj map[string]interface{}
+	if err == nil {
+		json.Unmarshal(data, &obj)
+	}
+	if obj == nil {
+		obj = map[string]interface{}{}
+	}
+	// Preserve _comment
+	cfg := map[string]interface{}{}
+	for k, v := range config {
+		cfg[k] = v
+	}
+	obj[domain] = cfg
+	out, err := json.MarshalIndent(obj, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0644)
+}
+
+// removeFromDomainJSON removes a domain entry from domain.json.
+func (m *NginxManager) removeFromDomainJSON(domain string) error {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil // no file = nothing to remove
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil
+	}
+	delete(obj, domain)
+	out, err := json.MarshalIndent(obj, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0644)
+}
+
 // GenerateDefaultConfig returns a minimal nginx.conf for when no sites exist.
 func (m *NginxManager) GenerateDefaultConfig() string {
 	var sb strings.Builder

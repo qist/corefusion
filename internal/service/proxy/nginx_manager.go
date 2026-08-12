@@ -500,7 +500,9 @@ func (m *NginxManager) DisableWAFDomain(domain string) error {
 	return m.removeFromDomainJSON(domain)
 }
 
-// IsWAFDomainEnabled checks if a domain has WAF config in domain.json.
+// IsWAFDomainEnabled checks if a domain has WAF enabled in domain.json.
+// Returns true only if the domain exists in domain.json AND waf_enable is not "off".
+// If waf_enable is "off", the switch should show as off (WAF disabled for this domain).
 func (m *NginxManager) IsWAFDomainEnabled(domain string) bool {
 	data, err := os.ReadFile(filepath.Join(m.wafRuleDir(), "domain.json"))
 	if err != nil {
@@ -510,8 +512,17 @@ func (m *NginxManager) IsWAFDomainEnabled(domain string) bool {
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return false
 	}
-	_, ok := obj[domain]
-	return ok
+	cfg, ok := obj[domain]
+	if !ok {
+		return false
+	}
+	// Check waf_enable: default to enabled if not set
+	if cfgMap, ok := cfg.(map[string]interface{}); ok {
+		if wafEnable, ok := cfgMap["waf_enable"].(string); ok && wafEnable == "off" {
+			return false
+		}
+	}
+	return true
 }
 
 // updateDomainJSON adds or updates a domain entry in domain.json.

@@ -2244,8 +2244,8 @@ http {
     default_type application/octet-stream;
 
     # Lua module paths (lua-resty ecosystem + WAF)
-    lua_package_path "proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;";
-    lua_code_cache on;
+lua_package_path "proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;";
+lua_code_cache on;
 
     server {
         listen 80;

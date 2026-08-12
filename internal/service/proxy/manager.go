@@ -506,6 +506,7 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		sb.WriteString("\t\t\t\tallow 172.16.0.0/12\n")
 		sb.WriteString("\t\t\t\tallow 192.168.0.0/16\n")
 		sb.WriteString("\t\t\t\tfallback_policy ignore\n")
+		sb.WriteString("\t\t\t\tversions 1 2\n")
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")
@@ -600,9 +601,9 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
 				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
 				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
-				if site.ProxyProtocol {
-					sb.WriteString("\t\t\t\tproxy_protocol\n")
-				}
+if site.ProxyProtocol {
+				sb.WriteString("\t\t\t\tproxy_protocol v2\n")
+			}
 				sb.WriteString("\t\t\t}\n")
 			}
 			// Fallback route at the end - no SNI matcher, catches all unmatched
@@ -612,9 +613,9 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t\t\troute {\n")
 			sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", fallbackTarget))
-			if fallbackPP {
-				sb.WriteString("\t\t\t\tproxy_protocol\n")
-			}
+if fallbackPP {
+			sb.WriteString("\t\t\t\tproxy_protocol v2\n")
+		}
 			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t}\n")
 		}
@@ -800,7 +801,7 @@ func (m *Manager) generateL4Block(site *entity.ProxySite) string {
 	sb.WriteString("\troute {\n")
 	sb.WriteString(fmt.Sprintf("\t\tproxy %s\n", upstream))
 	if site.ProxyProtocol {
-		sb.WriteString("\t\tproxy_protocol\n")
+		sb.WriteString("\t\tproxy_protocol v2\n")
 	}
 	sb.WriteString("\t}\n")
 	sb.WriteString("}\n")

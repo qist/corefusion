@@ -143,6 +143,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString(fmt.Sprintf("\t\t\t\tallow %s\n", rule))
 		}
 		sb.WriteString("\t\t\t\tfallback_policy ignore\n")
+		sb.WriteString("\t\t\t\tversions 1 2\n")
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")
@@ -184,9 +185,9 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
 				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
 				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
-				if site.ProxyProtocol {
-					sb.WriteString("\t\t\t\tproxy_protocol\n")
-				}
+if site.ProxyProtocol {
+				sb.WriteString("\t\t\t\tproxy_protocol v2\n")
+			}
 				sb.WriteString("\t\t\t}\n")
 			}
 			if fallbackTarget == "" {
@@ -195,9 +196,9 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t\t\troute {\n")
 			sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", fallbackTarget))
-			if fallbackPP {
-				sb.WriteString("\t\t\t\tproxy_protocol\n")
-			}
+if fallbackPP {
+			sb.WriteString("\t\t\t\tproxy_protocol v2\n")
+		}
 			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t}\n")
 		}

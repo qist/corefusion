@@ -1401,13 +1401,63 @@ if (settings.value.waf_enabled) {
 }
 
 async function toggleSiteWAF(row, val) {
-try {
-await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: row.domain, enabled: val })
-ElMessage.success(val ? 'WAF enabled for ' + row.domain : 'WAF disabled for ' + row.domain)
-} catch (e) {
-  row._waf_enabled = !val
-  ElMessage.error(t('common.failed'))
+  if (val) {
+    // Enable: add to domain.json with rule_dir
+    try {
+      await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: row.domain, enabled: true })
+      ElMessage.success(t('proxy.wafSiteEnabled', { domain: row.domain }))
+    } catch (e) {
+      row._waf_enabled = false
+      ElMessage.error(t('common.failed'))
+    }
+  } else {
+    // Disable: ask user — disable WAF entirely or fall back to global rules
+    try {
+      const action = await ElMessageBox.confirm(
+        t('proxy.wafDisableHint', { domain: row.domain }),
+        t('proxy.wafDisableTitle'),
+        {
+          distinguishCancelAndClose: true,
+          confirmButtonText: t('proxy.wafDisableSite'),
+          cancelButtonText: t('proxy.wafUseGlobal'),
+          type: 'warning',
+        }
+      )
+      // confirmButtonText clicked → disable WAF for this domain (waf_enable: off)
+      try {
+        await client.put(`${nginxApi.value}/waf/domain-config`, {
+          content: await updateDomainJSON(row.domain, { waf_enable: 'off' })
+        })
+        ElMessage.success(t('proxy.wafSiteDisabled', { domain: row.domain }))
+      } catch (e) {
+        row._waf_enabled = true
+        ElMessage.error(t('common.failed'))
+      }
+    } catch (action) {
+      if (action === 'cancel') {
+        // cancelButtonText clicked → use global rules (remove from domain.json)
+        try {
+          await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: row.domain, enabled: false })
+          ElMessage.success(t('proxy.wafUseGlobalRules', { domain: row.domain }))
+        } catch (e) {
+          row._waf_enabled = true
+          ElMessage.error(t('common.failed'))
+        }
+      } else {
+        // closed (X) → revert switch
+        row._waf_enabled = true
+      }
+    }
+  }
 }
+
+// Helper: read current domain.json, update a domain's config, return new content
+async function updateDomainJSON(domain, patch) {
+  const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+  const obj = JSON.parse(data.content || '{}')
+  if (!obj[domain]) obj[domain] = {}
+  Object.assign(obj[domain], patch)
+  return JSON.stringify(obj, null, 4)
 }
 
 async function fetchCertificates() {

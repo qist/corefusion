@@ -238,6 +238,17 @@ func (h *ProxyHandler) Start(c *gin.Context) {
 		response.OK(c, gin.H{"message": "started"})
 		return
 	}
+	// Local node: check port conflict before starting
+	var otherType proxy.ProxyType
+	if proxyType == proxy.ProxyNginx {
+		otherType = proxy.ProxyCaddy
+	} else {
+		otherType = proxy.ProxyNginx
+	}
+	if other := h.proxyMgr.DetectProxy(otherType); other.Status == "running" {
+		response.BadRequest(c, "PORT_CONFLICT", string(otherType)+" is running, please stop it first (ports 80/443 conflict)")
+		return
+	}
 	if err := h.proxyMgr.StartProxy(c.Request.Context(), proxyType); err != nil {
 		response.InternalError(c, "START_FAILED", err.Error())
 		return

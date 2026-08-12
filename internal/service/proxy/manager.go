@@ -984,8 +984,12 @@ func (m *Manager) ensureNginxDependencies() error {
 	proxyDir := filepath.Join(m.dataDir, "proxy")
 	os.Chmod(proxyDir, 0755)
 
-	// Set temp directory and lua directory ownership to nginx user
+	// Set temp directory, lua directory, and logs directory ownership to nginx user
 	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+		// Chown logs directory (WAF writes log files here via io.open)
+		logsDir := filepath.Join(m.dataDir, "logs")
+		os.MkdirAll(logsDir, 0775)
+		os.Chown(logsDir, nginxUID, nginxGID)
 		// Chown temp directory tree
 		tempDir := filepath.Join(m.dataDir, "temp")
 		filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
@@ -2248,6 +2252,8 @@ http {
 // patchWAFConfig rewrites the WAF config.lua with paths matching this installation.
 // The original config.lua has hardcoded paths like /apps/nginx/... which need to be
 // updated to the panel's data directory layout.
+// Uses absolute paths because WAF's log_record() uses io.open() which resolves
+// relative paths against the nginx prefix, not the working directory.
 func (m *Manager) patchWAFConfig() {
 	configPath := filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
 	data, err := os.ReadFile(configPath)
@@ -2255,18 +2261,25 @@ func (m *Manager) patchWAFConfig() {
 		return
 	}
 	content := string(data)
-	// Replace log dir
+	// Replace log dir with absolute path to dataDir/logs
+	absLogDir := filepath.Join(m.dataDir, "logs")
 	content = strings.Replace(content,
 		"config_log_dir = \"/apps/nginx/log/\"",
-		"config_log_dir = \"logs/\"",
+		fmt.Sprintf("config_log_dir = %q", absLogDir),
 		1)
-	// Replace rule dir
+	// Replace rule dir with absolute path to dataDir/proxy/lua/waf/rule-config
+	absRuleDir := filepath.Join(m.dataDir, "proxy", "lua", "waf", "rule-config")
 	content = strings.Replace(content,
 		"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
-		"config_rule_dir = \"proxy/lua/waf/rule-config\"",
+		fmt.Sprintf("config_rule_dir = %q", absRuleDir),
 		1)
 	if err := os.WriteFile(configPath, []byte(content), 0644); err == nil {
-		log.Printf("patched WAF config.lua with installation paths")
+		log.Printf("patched WAF config.lua: log_dir=%s, rule_dir=%s", absLogDir, absRuleDir)
+	}
+	// Ensure logs directory is writable by nginx user
+	os.MkdirAll(absLogDir, 0775)
+	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+		os.Chown(absLogDir, nginxUID, nginxGID)
 	}
 }
 

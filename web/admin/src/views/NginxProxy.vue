@@ -1900,15 +1900,16 @@ async function saveSNIRule() {
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchProxyInfo()
-  fetchSites()
   fetchCertificates()
-  fetchSettings()
   fetchInbounds()
   fetchWAFConfig()
   fetchWAFRules()
   fetchWAFDomainConfig()
+  // Load settings first, then fetch sites (fetchSites depends on settings.waf_enabled)
+  await fetchSettings()
+  fetchSites()
 })
 </script>
 <style scoped>

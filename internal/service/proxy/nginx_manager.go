@@ -363,9 +363,18 @@ func (m *NginxManager) ReadWAFConfig() (string, error) {
 }
 
 // SaveWAFConfig writes the WAF config.lua file.
+// Automatically corrects log_dir and rule_dir to relative paths so the config
+// works on both panel and remote Agents regardless of installation directory.
 func (m *NginxManager) SaveWAFConfig(content string) error {
 	path := filepath.Join(m.wafBaseDir(), "config.lua")
 	os.MkdirAll(filepath.Dir(path), 0755)
+	// Patch paths to relative (in case user pasted original /apps/nginx/ paths)
+	content = strings.Replace(content,
+		"config_log_dir = \"/apps/nginx/log/\"",
+		"config_log_dir = \"logs\"", 1)
+	content = strings.Replace(content,
+		"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
+		"config_rule_dir = \"proxy/lua/waf/rule-config\"", 1)
 	return os.WriteFile(path, []byte(content), 0644)
 }
 

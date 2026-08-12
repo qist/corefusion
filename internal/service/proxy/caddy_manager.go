@@ -143,7 +143,6 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString(fmt.Sprintf("\t\t\t\tallow %s\n", rule))
 		}
 		sb.WriteString("\t\t\t\tfallback_policy ignore\n")
-		sb.WriteString("\t\t\t\tversions 1 2\n")
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")

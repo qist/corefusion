@@ -464,8 +464,9 @@ func (m *NginxManager) EnableWAFDomain(domain string) error {
 	// 1. Copy global rule files to domains/<domain>/
 	domainRuleDir := filepath.Join(m.wafRuleDir(), "domains", domain)
 	os.MkdirAll(domainRuleDir, 0755)
-	ruleFiles := []string{"args.rule", "blackip.rule", "cookie.rule", "post.rule",
-		"url.rule", "useragent.rule", "whiteip.rule", "whiteurl.rule"}
+ruleFiles := []string{"args.rule", "blackip.rule", "cookie.rule", "post.rule",
+"url.rule", "useragent.rule", "whiteip.rule", "whiteurl.rule",
+"whiteua.rule", "referer.rule", "fileext.rule"}
 	for _, rf := range ruleFiles {
 		src := filepath.Join(m.wafRuleDir(), rf)
 		dst := filepath.Join(domainRuleDir, rf)

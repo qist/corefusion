@@ -347,35 +347,6 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
-        <el-tab-pane label="domain.json" name="domain">
-          <div style="margin-bottom:8px;font-size:12px;color:#909399">{{ t('proxy.wafDomainHint') }}</div>
-          <el-input v-model="wafDomainContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
-          <div style="margin-top:8px;text-align:right">
-            <el-button type="success" @click="saveWAFDomainConfig">{{ t('common.save') }}</el-button>
-            <el-button @click="fetchWAFDomainConfig">{{ t('common.reset') }}</el-button>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane :label="t('proxy.wafDomainRules')" name="domain-rules">
-          <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:13px;color:#606266">{{ t('proxy.wafDomainRulesHint') }}</span>
-            <el-button type="primary" size="small" @click="addWAFDomain">+ {{ t('proxy.wafAddDomain') }}</el-button>
-          </div>
-          <el-table :data="wafDomainList" stripe>
-            <el-table-column prop="domain" label="Domain" min-width="180" />
-            <el-table-column label="WAF" width="80">
-              <template #default="{ row }"><el-tag :type="row.config.waf_enable===false?'danger':'success'" size="small">{{ row.config.waf_enable===false?'OFF':'ON' }}</el-tag></template>
-            </el-table-column>
-            <el-table-column label="URL" width="70"><template #default="{ row }"><el-tag :type="row.config.url_check==='off'?'info':'success'" size="small">{{ row.config.url_check==='off'?'OFF':'ON' }}</el-tag></template></el-table-column>
-            <el-table-column label="CC Rate" width="100"><template #default="{ row }">{{ row.config.cc_rate || '-' }}</template></el-table-column>
-            <el-table-column label="Rules" width="80"><template #default="{ row }">{{ row.config.rule_dir ? 'Custom' : 'Global' }}</template></el-table-column>
-            <el-table-column :label="t('common.action')" width="150">
-              <template #default="{ row }">
-                <el-button size="small" @click="editWAFDomain(row)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="danger" @click="deleteWAFDomain(row)">Delete</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -388,36 +359,64 @@
       </template>
     </el-dialog>
 
-    <!-- WAF Domain Edit Dialog -->
-    <el-dialog v-model="wafDomainEditVisible" :title="wafDomainEditMode === 'add' ? t('proxy.wafAddDomain') : `${t('proxy.wafEditDomain')}: ${wafDomainEditForm.domain}`" width="750px">
-      <el-form :model="wafDomainEditForm" label-width="180px" size="small">
-        <el-form-item label="Domain" v-if="wafDomainEditMode === 'add'">
-          <el-input v-model="wafDomainEditForm.domain" placeholder="www.example.com or *.example.com" />
-        </el-form-item>
-        <el-divider content-position="left">Switches</el-divider>
-        <el-form-item label="WAF Enable"><el-switch v-model="wafDomainEditForm.config.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="URL Check"><el-switch v-model="wafDomainEditForm.config.url_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="URL Args Check"><el-switch v-model="wafDomainEditForm.config.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="User-Agent Check"><el-switch v-model="wafDomainEditForm.config.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="Cookie Check"><el-switch v-model="wafDomainEditForm.config.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="POST Check"><el-switch v-model="wafDomainEditForm.config.post_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="CC Check"><el-switch v-model="wafDomainEditForm.config.cc_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="White URL Check"><el-switch v-model="wafDomainEditForm.config.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="White IP Check"><el-switch v-model="wafDomainEditForm.config.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-form-item label="Black IP Check"><el-switch v-model="wafDomainEditForm.config.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
-        <el-divider content-position="left">Advanced</el-divider>
-        <el-form-item label="CC Rate"><el-input v-model="wafDomainEditForm.config.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
-        <el-form-item label="WAF Output">
-          <el-select v-model="wafDomainEditForm.config.waf_output" style="width:120px" placeholder="html">
-            <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="Redirect URL" v-if="wafDomainEditForm.config.waf_output==='redirect'"><el-input v-model="wafDomainEditForm.config.waf_redirect_url" placeholder="https://example.com" /></el-form-item>
-        <el-form-item label="Rule Dir"><el-input v-model="wafDomainEditForm.config.rule_dir" placeholder="domains/www.example.com (blank=global)" /></el-form-item>
-      </el-form>
+    <!-- Site WAF Config Dialog -->
+    <el-dialog v-model="siteWAFVisible" :title="`WAF: ${siteWAFDomain}`" width="800px">
+      <el-tabs v-model="siteWAFTab">
+        <el-tab-pane label="Config" name="config">
+          <el-form :model="siteWAFConfig" label-width="160px" size="small">
+            <el-divider content-position="left">Module Switches</el-divider>
+            <el-form-item label="WAF Enable"><el-switch v-model="siteWAFConfig.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="URL Check"><el-switch v-model="siteWAFConfig.url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="URL Args Check"><el-switch v-model="siteWAFConfig.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="User-Agent Check"><el-switch v-model="siteWAFConfig.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="Cookie Check"><el-switch v-model="siteWAFConfig.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="POST Check"><el-switch v-model="siteWAFConfig.post_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="White URL Check"><el-switch v-model="siteWAFConfig.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="White IP Check"><el-switch v-model="siteWAFConfig.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="Black IP Check"><el-switch v-model="siteWAFConfig.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">CC Protection</el-divider>
+            <el-form-item label="CC Check"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="CC Rate"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item label="CC Block TTL (sec)"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="60" style="width:120px" /></el-form-item>
+            <el-divider content-position="left">Output</el-divider>
+            <el-form-item label="WAF Output">
+              <el-select v-model="siteWAFConfig.waf_output" style="width:120px">
+                <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Redirect URL" v-if="siteWAFConfig.waf_output==='redirect'"><el-input v-model="siteWAFConfig.waf_redirect_url" placeholder="https://example.com" /></el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="Rules" name="rules">
+          <el-form-item label="Rule Source" label-width="120px">
+            <el-select v-model="siteWAFRuleMode" @change="onSiteWAFRuleModeChange" style="width:180px">
+              <el-option label="Global Rules" value="global" />
+              <el-option label="Custom Rules" value="custom" />
+            </el-select>
+          </el-form-item>
+          <el-table v-if="siteWAFRuleMode==='custom'" :data="siteWAFDomainRules" stripe size="small">
+            <el-table-column prop="name" label="Rule" width="160" />
+            <el-table-column prop="size" label="Size" width="100" />
+            <el-table-column label="Action" width="100">
+              <template #default="{ row }">
+                <el-button size="small" @click="openSiteWAFDomainRule(row)">Edit</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
-        <el-button @click="wafDomainEditVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="success" @click="saveWAFDomainEdit">{{ t('common.save') }}</el-button>
+        <el-button @click="siteWAFVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="success" @click="saveSiteWAFConfig">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Site WAF Rule Editor -->
+    <el-dialog v-model="siteWAFRuleEditorVisible" :title="`${siteWAFDomain} / ${siteWAFRuleEditing}`" width="70%">
+      <el-input v-model="siteWAFRuleEditingContent" type="textarea" :rows="18" style="font-family:monospace;font-size:13px" />
+      <template #footer>
+        <el-button @click="siteWAFRuleEditorVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="success" @click="saveSiteWAFDomainRule">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -575,9 +574,12 @@
             <el-tag v-else type="info" size="small">-</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="WAF" width="70" v-if="settings.waf_enabled">
+        <el-table-column label="WAF" width="100" v-if="settings.waf_enabled">
           <template #default="{row}">
-            <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
+            <div style="display:flex;align-items:center;gap:4px">
+              <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
+              <el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="160" fixed="right">
@@ -1022,91 +1024,127 @@ async function fetchWAFDomainConfig() {
     const data = await client.get(`${nginxApi.value}/waf/domain-config`)
     wafDomainContent.value = data.content || ''
   } catch { wafDomainContent.value = '' }
-  parseWAFDomainList()
 }
 async function saveWAFDomainConfig() {
   try {
     await client.put(`${nginxApi.value}/waf/domain-config`, { content: wafDomainContent.value })
     ElMessage.success(t('common.success'))
-    parseWAFDomainList()
   } catch { ElMessage.error(t('common.failed')) }
 }
 
-// WAF Domain Rules Management
-const wafDomainList = ref([])
-const wafDomainEditVisible = ref(false)
-const wafDomainEditMode = ref('add')
-const wafDomainEditForm = ref({ domain: '', config: {} })
+// WAF Domain Rules Management (site-level, not standalone)
+// parseWAFDomainList and serializeWAFDomainList are no longer needed —
+// domain.json is managed via site WAF toggle + config dialog.
 
-function parseWAFDomainList() {
+// Site WAF Config Dialog state
+const siteWAFVisible = ref(false)
+const siteWAFDomain = ref('')
+const siteWAFTab = ref('config')
+const siteWAFConfig = ref({})
+const siteWAFRuleMode = ref('global')
+const siteWAFDomainRules = ref([])
+const siteWAFRuleEditorVisible = ref(false)
+const siteWAFRuleEditing = ref('')
+const siteWAFRuleEditingContent = ref('')
+
+async function openSiteWAF(row) {
+  siteWAFDomain.value = row.domain
+  siteWAFTab.value = 'config'
+  // Load current domain config from domain.json
   try {
-    const obj = JSON.parse(wafDomainContent.value || '{}')
-    const list = []
-    for (const [domain, config] of Object.entries(obj)) {
-      if (domain === '_comment') continue
-      list.push({ domain, config: config || {} })
+    const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+    const obj = JSON.parse(data.content || '{}')
+    const cfg = obj[row.domain] || {}
+    siteWAFConfig.value = {
+      waf_enable: cfg.waf_enable || 'on',
+      url_check: cfg.url_check || 'on',
+      url_args_check: cfg.url_args_check || 'on',
+      user_agent_check: cfg.user_agent_check || 'on',
+      cookie_check: cfg.cookie_check || 'on',
+      post_check: cfg.post_check || 'on',
+      white_url_check: cfg.white_url_check || 'on',
+      white_ip_check: cfg.white_ip_check || 'on',
+      black_ip_check: cfg.black_ip_check || 'on',
+      cc_check: cfg.cc_check || 'on',
+      cc_rate: cfg.cc_rate || '',
+      cc_block_ttl: cfg.cc_block_ttl || '',
+      waf_output: cfg.waf_output || 'html',
+      waf_redirect_url: cfg.waf_redirect_url || ''
     }
-    wafDomainList.value = list
-  } catch { wafDomainList.value = [] }
+    siteWAFRuleMode.value = cfg.rule_dir ? 'custom' : 'global'
+    await loadSiteWAFDomainRules(row.domain)
+  } catch { ElMessage.error(t('common.failed')) }
+  siteWAFVisible.value = true
 }
 
-function serializeWAFDomainList() {
-  const obj = { _comment: 'Domain-level WAF config. Only override global config.lua for specific domains.' }
-  for (const item of wafDomainList.value) {
+async function loadSiteWAFDomainRules(domain) {
+  try {
+    const dirs = await client.get(`${nginxApi.value}/waf/domain-rules`)
+    if (dirs && dirs.includes(domain)) {
+      // Domain has a rule directory — list rule files
+      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule']
+      const rules = []
+      for (const name of ruleNames) {
+        try {
+          const data = await client.get(`${nginxApi.value}/waf/domain-rules/${domain}/${name}`)
+          rules.push({ name, size: (data.content || '').length })
+        } catch { /* skip missing */ }
+      }
+      siteWAFDomainRules.value = rules
+    } else {
+      siteWAFDomainRules.value = []
+    }
+  } catch { siteWAFDomainRules.value = [] }
+}
+
+async function onSiteWAFRuleModeChange(val) {
+  if (val === 'custom') {
+    // Enable custom rules: ensure rule_dir is set, copy global rules if needed
+    try {
+      await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: siteWAFDomain.value, enabled: true })
+      await loadSiteWAFDomainRules(siteWAFDomain.value)
+    } catch { ElMessage.error(t('common.failed')) }
+  }
+}
+
+async function openSiteWAFDomainRule(row) {
+  siteWAFRuleEditing.value = row.name
+  try {
+    const data = await client.get(`${nginxApi.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
+    siteWAFRuleEditingContent.value = data.content || ''
+    siteWAFRuleEditorVisible.value = true
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
+async function saveSiteWAFDomainRule() {
+  try {
+    await client.put(`${nginxApi.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
+    ElMessage.success(t('common.success'))
+    siteWAFRuleEditorVisible.value = false
+    await loadSiteWAFDomainRules(siteWAFDomain.value)
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
+async function saveSiteWAFConfig() {
+  // Serialize config back to domain.json
+  try {
+    const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+    const obj = JSON.parse(data.content || '{}')
     const cfg = {}
-    for (const [k, v] of Object.entries(item.config)) {
+    for (const [k, v] of Object.entries(siteWAFConfig.value)) {
       if (v !== '' && v !== undefined && v !== null) cfg[k] = v
     }
-    if (Object.keys(cfg).length > 0) obj[item.domain] = cfg
-  }
-  wafDomainContent.value = JSON.stringify(obj, null, 4)
-}
-
-function addWAFDomain() {
-  wafDomainEditMode.value = 'add'
-  wafDomainEditForm.value = {
-    domain: '',
-    config: {
-      waf_enable: 'on', url_check: 'on', url_args_check: 'on', user_agent_check: 'on',
-      cookie_check: 'on', cc_check: 'on', post_check: 'on',
-      white_url_check: 'on', white_ip_check: 'on', black_ip_check: 'on',
-      cc_rate: '', waf_output: 'html', waf_redirect_url: '', rule_dir: ''
+    if (siteWAFRuleMode.value === 'custom') {
+      cfg.rule_dir = `domains/${siteWAFDomain.value}`
     }
-  }
-  wafDomainEditVisible.value = true
-}
-
-function editWAFDomain(row) {
-  wafDomainEditMode.value = 'edit'
-  wafDomainEditForm.value = { domain: row.domain, config: { ...row.config } }
-  if (!wafDomainEditForm.value.config.waf_enable) wafDomainEditForm.value.config.waf_enable = 'on'
-  wafDomainEditVisible.value = true
-}
-
-function saveWAFDomainEdit() {
-  const form = wafDomainEditForm.value
-  if (!form.domain) { ElMessage.error('Domain is required'); return }
-  if (wafDomainEditMode.value === 'add') {
-    if (wafDomainList.value.some(d => d.domain === form.domain)) {
-      ElMessage.error('Domain already exists'); return
-    }
-    wafDomainList.value.push({ domain: form.domain, config: { ...form.config } })
-  } else {
-    const idx = wafDomainList.value.findIndex(d => d.domain === form.domain)
-    if (idx >= 0) wafDomainList.value[idx].config = { ...form.config }
-  }
-  serializeWAFDomainList()
-  wafDomainEditVisible.value = false
-  saveWAFDomainConfig()
-}
-
-async function deleteWAFDomain(row) {
-  try {
-    await ElMessageBox.confirm(`Delete WAF config for ${row.domain}?`, 'Confirm', { type: 'warning' })
-  } catch { return }
-  wafDomainList.value = wafDomainList.value.filter(d => d.domain !== row.domain)
-  serializeWAFDomainList()
-  saveWAFDomainConfig()
+    obj[siteWAFDomain.value] = cfg
+    // Remove _comment if accidentally at wrong level
+    delete obj['_comment']
+    const content = JSON.stringify(obj, null, 4)
+    await client.put(`${nginxApi.value}/waf/domain-config`, { content })
+    ElMessage.success(t('common.success'))
+    siteWAFVisible.value = false
+  } catch { ElMessage.error(t('common.failed')) }
 }
 
 // Site dialog

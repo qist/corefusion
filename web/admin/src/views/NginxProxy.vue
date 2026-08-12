@@ -328,7 +328,39 @@
         </div>
       </template>
       <el-tabs v-model="wafTab">
-        <el-tab-pane label="config.lua" name="config">
+        <el-tab-pane label="Config" name="config-form">
+          <el-form :model="wafConfigForm" label-width="170px" size="small">
+            <el-divider content-position="left">Switches</el-divider>
+            <el-form-item label="WAF Enable"><el-switch v-model="wafConfigForm.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="White URL Check"><el-switch v-model="wafConfigForm.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="White IP Check"><el-switch v-model="wafConfigForm.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="Black IP Check"><el-switch v-model="wafConfigForm.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="URL Check"><el-switch v-model="wafConfigForm.url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="URL Args Check"><el-switch v-model="wafConfigForm.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="User-Agent Check"><el-switch v-model="wafConfigForm.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="Cookie Check"><el-switch v-model="wafConfigForm.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="POST Check"><el-switch v-model="wafConfigForm.post_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">CC Protection</el-divider>
+            <el-form-item label="CC Check"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item label="CC Rate"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item label="CC Block TTL (sec)"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="60" style="width:120px" /></el-form-item>
+            <el-divider content-position="left">Output</el-divider>
+            <el-form-item label="WAF Output">
+              <el-select v-model="wafConfigForm.waf_output" style="width:120px">
+                <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Redirect URL" v-if="wafConfigForm.waf_output==='redirect'"><el-input v-model="wafConfigForm.waf_redirect_url" placeholder="https://example.com" style="width:300px" /></el-form-item>
+            <el-divider content-position="left">Paths</el-divider>
+            <el-form-item label="Log Dir"><el-input v-model="wafConfigForm.log_dir" style="width:300px" /></el-form-item>
+            <el-form-item label="Rule Dir"><el-input v-model="wafConfigForm.rule_dir" style="width:300px" /></el-form-item>
+          </el-form>
+          <div style="margin-top:8px;text-align:right">
+            <el-button type="success" @click="saveWAFConfigForm">{{ t('common.save') }}</el-button>
+            <el-button @click="parseWAFConfigForm">{{ t('common.reset') }}</el-button>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="Source" name="config-source">
           <div style="margin-bottom:8px;font-size:12px;color:#909399">{{ t('proxy.wafConfigHint') }}</div>
           <el-input v-model="wafConfigContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
           <div style="margin-top:8px;text-align:right">
@@ -977,7 +1009,7 @@ const downloading = ref(false)
 const downloadProgress = ref('')
 
 // WAF Management
-const wafTab = ref('config')
+const wafTab = ref('config-form')
 const wafConfigContent = ref('')
 const wafRules = ref([])
 const wafDomainContent = ref('')
@@ -990,12 +1022,75 @@ async function fetchWAFConfig() {
     const data = await client.get(`${nginxApi.value}/waf/config`)
     wafConfigContent.value = data.content || ''
   } catch { wafConfigContent.value = '' }
+  parseWAFConfigForm()
 }
 async function saveWAFConfig() {
   try {
     await client.put(`${nginxApi.value}/waf/config`, { content: wafConfigContent.value })
     ElMessage.success(t('common.success'))
+    parseWAFConfigForm()
   } catch { ElMessage.error(t('common.failed')) }
+}
+
+// WAF Config Form (parse config.lua text ↔ form object)
+const wafConfigForm = ref({
+  waf_enable: 'on', white_url_check: 'on', white_ip_check: 'on', black_ip_check: 'on',
+  url_check: 'on', url_args_check: 'on', user_agent_check: 'on', cookie_check: 'on',
+  post_check: 'on', cc_check: 'on', cc_rate: '', cc_block_ttl: '',
+  waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
+})
+
+function parseWAFConfigForm() {
+  const text = wafConfigContent.value || ''
+  const get = (key) => {
+    const m = text.match(new RegExp(`config_${key}\\s*=\\s*"([^"]*)"`))
+    return m ? m[1] : ''
+  }
+  wafConfigForm.value = {
+    waf_enable: get('waf_enable') || 'on',
+    white_url_check: get('white_url_check') || 'on',
+    white_ip_check: get('white_ip_check') || 'on',
+    black_ip_check: get('black_ip_check') || 'on',
+    url_check: get('url_check') || 'on',
+    url_args_check: get('url_args_check') || 'on',
+    user_agent_check: get('user_agent_check') || 'on',
+    cookie_check: get('cookie_check') || 'on',
+    post_check: get('post_check') || 'on',
+    cc_check: get('cc_check') || 'on',
+    cc_rate: get('cc_rate') || '',
+    cc_block_ttl: get('cc_block_ttl') || '',
+    waf_output: get('waf_output') || 'html',
+    waf_redirect_url: get('waf_redirect_url') || '',
+    log_dir: get('log_dir') || '',
+    rule_dir: get('rule_dir') || ''
+  }
+}
+
+async function saveWAFConfigForm() {
+  let text = wafConfigContent.value || ''
+  const set = (key, val) => {
+    if (val !== '' && val != null) {
+      text = text.replace(new RegExp(`config_${key}\\s*=\\s*"[^"]*"`), `config_${key} = "${val}"`)
+    }
+  }
+  set('waf_enable', wafConfigForm.value.waf_enable)
+  set('white_url_check', wafConfigForm.value.white_url_check)
+  set('white_ip_check', wafConfigForm.value.white_ip_check)
+  set('black_ip_check', wafConfigForm.value.black_ip_check)
+  set('url_check', wafConfigForm.value.url_check)
+  set('url_args_check', wafConfigForm.value.url_args_check)
+  set('user_agent_check', wafConfigForm.value.user_agent_check)
+  set('cookie_check', wafConfigForm.value.cookie_check)
+  set('post_check', wafConfigForm.value.post_check)
+  set('cc_check', wafConfigForm.value.cc_check)
+  set('cc_rate', wafConfigForm.value.cc_rate)
+  set('cc_block_ttl', wafConfigForm.value.cc_block_ttl)
+  set('waf_output', wafConfigForm.value.waf_output)
+  set('waf_redirect_url', wafConfigForm.value.waf_redirect_url)
+  set('log_dir', wafConfigForm.value.log_dir)
+  set('rule_dir', wafConfigForm.value.rule_dir)
+  wafConfigContent.value = text
+  await saveWAFConfig()
 }
 async function fetchWAFRules() {
   try {

@@ -330,30 +330,37 @@
       <el-tabs v-model="wafTab">
         <el-tab-pane label="Config" name="config-form">
           <el-form :model="wafConfigForm" label-width="170px" size="small">
-            <el-divider content-position="left">Switches</el-divider>
-            <el-form-item label="WAF Enable"><el-switch v-model="wafConfigForm.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="White URL Check"><el-switch v-model="wafConfigForm.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="White IP Check"><el-switch v-model="wafConfigForm.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="Black IP Check"><el-switch v-model="wafConfigForm.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="URL Check"><el-switch v-model="wafConfigForm.url_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="URL Args Check"><el-switch v-model="wafConfigForm.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="User-Agent Check"><el-switch v-model="wafConfigForm.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="Cookie Check"><el-switch v-model="wafConfigForm.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="POST Check"><el-switch v-model="wafConfigForm.post_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-divider content-position="left">CC Protection</el-divider>
-            <el-form-item label="CC Check"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="CC Rate"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
-            <el-form-item label="CC Block TTL (sec)"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
-            <el-divider content-position="left">Output</el-divider>
-            <el-form-item label="WAF Output">
+            <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
+            <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="wafConfigForm.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafTrustProxy')"><el-switch v-model="wafConfigForm.trust_proxy_headers" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUrl')"><el-switch v-model="wafConfigForm.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteIp')"><el-switch v-model="wafConfigForm.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUa')">
+              <el-switch v-model="wafConfigForm.white_ua_check" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafWhiteUaHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafBlackIp')"><el-switch v-model="wafConfigForm.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlCheck')"><el-switch v-model="wafConfigForm.url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlArgs')"><el-switch v-model="wafConfigForm.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUserAgent')"><el-switch v-model="wafConfigForm.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCookie')"><el-switch v-model="wafConfigForm.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="wafConfigForm.post_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="wafConfigForm.referer_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafFileUpload')"><el-switch v-model="wafConfigForm.file_upload_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
+            <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
+            <el-form-item :label="t('proxy.wafOutput')">
               <el-select v-model="wafConfigForm.waf_output" style="width:120px">
                 <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Redirect URL" v-if="wafConfigForm.waf_output==='redirect'"><el-input v-model="wafConfigForm.waf_redirect_url" placeholder="https://example.com" style="width:300px" /></el-form-item>
-            <el-divider content-position="left">Paths</el-divider>
-            <el-form-item label="Log Dir"><el-input v-model="wafConfigForm.log_dir" style="width:300px" /></el-form-item>
-            <el-form-item label="Rule Dir"><el-input v-model="wafConfigForm.rule_dir" style="width:300px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafRedirectUrl')" v-if="wafConfigForm.waf_output==='redirect'"><el-input v-model="wafConfigForm.waf_redirect_url" placeholder="https://example.com" style="width:300px" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafPaths') }}</el-divider>
+            <el-form-item :label="t('proxy.wafLogDir')"><el-input v-model="wafConfigForm.log_dir" style="width:300px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafRuleDir')"><el-input v-model="wafConfigForm.rule_dir" style="width:300px" /></el-form-item>
           </el-form>
           <div style="margin-top:8px;text-align:right">
             <el-button type="success" @click="saveWAFConfigForm">{{ t('common.save') }}</el-button>
@@ -396,42 +403,49 @@
       <el-tabs v-model="siteWAFTab">
         <el-tab-pane label="Config" name="config">
           <el-form :model="siteWAFConfig" label-width="160px" size="small">
-            <el-divider content-position="left">Module Switches</el-divider>
-            <el-form-item label="WAF Enable"><el-switch v-model="siteWAFConfig.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="URL Check"><el-switch v-model="siteWAFConfig.url_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="URL Args Check"><el-switch v-model="siteWAFConfig.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="User-Agent Check"><el-switch v-model="siteWAFConfig.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="Cookie Check"><el-switch v-model="siteWAFConfig.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="POST Check"><el-switch v-model="siteWAFConfig.post_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="White URL Check"><el-switch v-model="siteWAFConfig.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="White IP Check"><el-switch v-model="siteWAFConfig.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="Black IP Check"><el-switch v-model="siteWAFConfig.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-divider content-position="left">CC Protection</el-divider>
-            <el-form-item label="CC Check"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
-            <el-form-item label="CC Rate"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
-            <el-form-item label="CC Block TTL (sec)"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
-            <el-divider content-position="left">Output</el-divider>
-            <el-form-item label="WAF Output">
+            <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
+            <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="siteWAFConfig.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafTrustProxy')"><el-switch v-model="siteWAFConfig.trust_proxy_headers" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlCheck')"><el-switch v-model="siteWAFConfig.url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlArgs')"><el-switch v-model="siteWAFConfig.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUserAgent')"><el-switch v-model="siteWAFConfig.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCookie')"><el-switch v-model="siteWAFConfig.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="siteWAFConfig.post_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="siteWAFConfig.referer_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafFileUpload')"><el-switch v-model="siteWAFConfig.file_upload_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUrl')"><el-switch v-model="siteWAFConfig.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteIp')"><el-switch v-model="siteWAFConfig.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUa')">
+              <el-switch v-model="siteWAFConfig.white_ua_check" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafWhiteUaHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafBlackIp')"><el-switch v-model="siteWAFConfig.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
+            <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
+            <el-form-item :label="t('proxy.wafOutput')">
               <el-select v-model="siteWAFConfig.waf_output" style="width:120px">
                 <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Redirect URL" v-if="siteWAFConfig.waf_output==='redirect'"><el-input v-model="siteWAFConfig.waf_redirect_url" placeholder="https://example.com" /></el-form-item>
+            <el-form-item :label="t('proxy.wafRedirectUrl')" v-if="siteWAFConfig.waf_output==='redirect'"><el-input v-model="siteWAFConfig.waf_redirect_url" placeholder="https://example.com" /></el-form-item>
           </el-form>
         </el-tab-pane>
         <el-tab-pane label="Rules" name="rules">
-          <el-form-item label="Rule Source" label-width="120px">
+          <el-form-item :label="t('proxy.wafRuleSource')" label-width="120px">
             <el-select v-model="siteWAFRuleMode" @change="onSiteWAFRuleModeChange" style="width:180px">
-              <el-option label="Global Rules" value="global" />
-              <el-option label="Custom Rules" value="custom" />
+              <el-option :label="t('proxy.wafRuleGlobal')" value="global" />
+              <el-option :label="t('proxy.wafRuleCustom')" value="custom" />
             </el-select>
           </el-form-item>
           <el-table v-if="siteWAFRuleMode==='custom'" :data="siteWAFDomainRules" stripe size="small">
-            <el-table-column prop="name" label="Rule" width="160" />
-            <el-table-column prop="size" label="Size" width="100" />
-            <el-table-column label="Action" width="100">
+            <el-table-column prop="name" :label="t('proxy.wafRule')" width="160" />
+            <el-table-column prop="size" :label="t('proxy.wafSize')" width="100" />
+            <el-table-column :label="t('common.action')" width="100">
               <template #default="{ row }">
-                <el-button size="small" @click="openSiteWAFDomainRule(row)">Edit</el-button>
+                <el-button size="small" @click="openSiteWAFDomainRule(row)">{{ t('common.edit') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1034,9 +1048,12 @@ async function saveWAFConfig() {
 
 // WAF Config Form (parse config.lua text ↔ form object)
 const wafConfigForm = ref({
-  waf_enable: 'on', white_url_check: 'on', white_ip_check: 'on', black_ip_check: 'on',
-  url_check: 'on', url_args_check: 'on', user_agent_check: 'on', cookie_check: 'on',
-  post_check: 'on', cc_check: 'on', cc_rate: '', cc_block_ttl: '',
+  waf_enable: 'on', trust_proxy_headers: 'on',
+  white_url_check: 'on', white_ip_check: 'on', white_ua_check: 'on',
+  black_ip_check: 'on',
+  url_check: 'on', url_args_check: 'on', user_agent_check: 'on',
+  cookie_check: 'on', post_check: 'on', referer_check: 'on', file_upload_check: 'on',
+  cc_check: 'on', cc_rate: '', cc_block_ttl: '',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
 
@@ -1044,18 +1061,25 @@ function parseWAFConfigForm() {
   const text = wafConfigContent.value || ''
   const get = (key) => {
     const m = text.match(new RegExp(`config_${key}\\s*=\\s*"([^"]*)"`))
-    return m ? m[1] : ''
+    if (m) return m[1]
+    // try unquoted number (e.g. config_cc_block_ttl = 600)
+    const m2 = text.match(new RegExp(`config_${key}\\s*=\\s*([0-9]+)`))
+    return m2 ? m2[1] : ''
   }
   wafConfigForm.value = {
     waf_enable: get('waf_enable') || 'on',
+    trust_proxy_headers: get('trust_proxy_headers') || 'on',
     white_url_check: get('white_url_check') || 'on',
     white_ip_check: get('white_ip_check') || 'on',
+    white_ua_check: get('white_ua_check') || 'on',
     black_ip_check: get('black_ip_check') || 'on',
     url_check: get('url_check') || 'on',
     url_args_check: get('url_args_check') || 'on',
     user_agent_check: get('user_agent_check') || 'on',
     cookie_check: get('cookie_check') || 'on',
     post_check: get('post_check') || 'on',
+    referer_check: get('referer_check') || 'on',
+    file_upload_check: get('file_upload_check') || 'on',
     cc_check: get('cc_check') || 'on',
     cc_rate: get('cc_rate') || '',
     cc_block_ttl: get('cc_block_ttl') || '600',
@@ -1074,17 +1098,25 @@ async function saveWAFConfigForm() {
     }
   }
   set('waf_enable', wafConfigForm.value.waf_enable)
+  set('trust_proxy_headers', wafConfigForm.value.trust_proxy_headers)
   set('white_url_check', wafConfigForm.value.white_url_check)
   set('white_ip_check', wafConfigForm.value.white_ip_check)
+  set('white_ua_check', wafConfigForm.value.white_ua_check)
   set('black_ip_check', wafConfigForm.value.black_ip_check)
   set('url_check', wafConfigForm.value.url_check)
   set('url_args_check', wafConfigForm.value.url_args_check)
   set('user_agent_check', wafConfigForm.value.user_agent_check)
   set('cookie_check', wafConfigForm.value.cookie_check)
   set('post_check', wafConfigForm.value.post_check)
+  set('referer_check', wafConfigForm.value.referer_check)
+  set('file_upload_check', wafConfigForm.value.file_upload_check)
   set('cc_check', wafConfigForm.value.cc_check)
   set('cc_rate', wafConfigForm.value.cc_rate)
-  set('cc_block_ttl', wafConfigForm.value.cc_block_ttl)
+  // cc_block_ttl is a Lua number (no quotes), use special handling
+  const ttl = wafConfigForm.value.cc_block_ttl
+  if (ttl !== '' && ttl != null) {
+    text = text.replace(new RegExp(`config_cc_block_ttl\\s*=\\s*[^\n]+`), `config_cc_block_ttl = ${ttl}`)
+  }
   set('waf_output', wafConfigForm.value.waf_output)
   set('waf_redirect_url', wafConfigForm.value.waf_redirect_url)
   set('log_dir', wafConfigForm.value.log_dir)
@@ -1152,13 +1184,17 @@ async function openSiteWAF(row) {
     const cfg = obj[row.domain] || {}
     siteWAFConfig.value = {
       waf_enable: cfg.waf_enable || 'on',
+      trust_proxy_headers: cfg.trust_proxy_headers || 'on',
       url_check: cfg.url_check || 'on',
       url_args_check: cfg.url_args_check || 'on',
       user_agent_check: cfg.user_agent_check || 'on',
       cookie_check: cfg.cookie_check || 'on',
       post_check: cfg.post_check || 'on',
+      referer_check: cfg.referer_check || 'off',
+      file_upload_check: cfg.file_upload_check || 'on',
       white_url_check: cfg.white_url_check || 'on',
       white_ip_check: cfg.white_ip_check || 'on',
+      white_ua_check: cfg.white_ua_check || 'on',
       black_ip_check: cfg.black_ip_check || 'on',
       cc_check: cfg.cc_check || 'on',
       cc_rate: cfg.cc_rate || '60/60',

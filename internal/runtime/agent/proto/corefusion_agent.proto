@@ -162,6 +162,18 @@ message SyncProxyConfigRequest {
   string caddy_sni_settings = 5;  // JSON 序列化的 SNISettings（仅 caddy 类型时使用）
 }
 
+// SyncWAFFilesRequest — Panel→Agent 同步 WAF 文件 (config.lua, domain.json, *.rule)
+// Agent 收到后将文件写入 dataDir/proxy/lua/waf/ 对应路径
+message SyncWAFFilesRequest {
+  repeated WAFFile files = 1;       // WAF 文件列表
+}
+
+// WAFFile 描述单个 WAF 文件
+message WAFFile {
+  string path = 1;     // 相对于 waf/ 的路径，如 "config.lua", "rule-config/domain.json", "rule-config/url.rule"
+  bytes  content = 2;   // 文件内容
+}
+
 message ControlProxyRequest {
   string proxy_type = 1;          // caddy/nginx
   string action = 2;              // start/stop/restart/reload
@@ -576,6 +588,9 @@ message PanelCommand {
     StartWriterRequest start_writer = 32;            // 启动/恢复 LogWriter
     StopWriterRequest stop_writer = 33;              // 停止 LogWriter
     UpdateWriterConfigRequest update_writer_config = 34; // 更新 LogWriter 配置
+
+    // --- WAF 文件同步 ---
+    SyncWAFFilesRequest sync_waf_files = 35;                  // 同步 WAF 文件到远程节点
 
     // --- 限速扩展指令 ---
     AssociateIPRequest associate_ip = 100;                    // IP 归属推送

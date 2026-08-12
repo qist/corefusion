@@ -282,6 +282,31 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxCollisionWaf')" name="waf">
+          <el-form :model="settings" label-width="200px" size="small">
+<el-form-item :label="t('proxy.luaEnabled')">
+<el-tag type="success" size="small">ON</el-tag>
+<span style="margin-left:12px;font-size:12px;color:#909399">{{ t('proxy.luaEnabledHint') }}</span>
+</el-form-item>
+            <el-divider />
+            <el-form-item :label="t('proxy.wafEnabled')">
+              <el-switch v-model="settings.waf_enabled" />
+              <span style="margin-left:12px;font-size:12px;color:#909399">{{ t('proxy.wafEnabledHint') }}</span>
+            </el-form-item>
+            <div v-if="settings.waf_enabled" style="margin-left:20px;padding:12px;background:#f5f7fa;border-radius:4px;font-size:13px;color:#606266">
+              <div>{{ t('proxy.wafFeatures') }}</div>
+              <ul style="margin-top:8px;line-height:1.8">
+                <li>{{ t('proxy.wafFeatureUrl') }}</li>
+                <li>{{ t('proxy.wafFeatureArgs') }}</li>
+                <li>{{ t('proxy.wafFeatureUa') }}</li>
+                <li>{{ t('proxy.wafFeatureCookie') }}</li>
+                <li>{{ t('proxy.wafFeaturePost') }}</li>
+                <li>{{ t('proxy.wafFeatureCc') }}</li>
+                <li>{{ t('proxy.wafFeatureIp') }}</li>
+              </ul>
+            </div>
+          </el-form>
+        </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxCustom')" name="custom">
           <el-input v-model="settings.custom_config" type="textarea" :rows="10" style="font-family:monospace" :placeholder="t('proxy.nginxCustomHint')" />
         </el-tab-pane>
@@ -291,6 +316,56 @@
         <el-button @click="fetchSettings">{{ t('common.reset') }}</el-button>
       </div>
     </el-card>
+
+    <!-- WAF Management -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>WAF {{ t('proxy.management') }}</span>
+          <el-tag :type="settings.waf_enabled ? 'success' : 'info'" size="small">
+            {{ settings.waf_enabled ? 'ON' : 'OFF' }}
+          </el-tag>
+        </div>
+      </template>
+      <el-tabs v-model="wafTab">
+        <el-tab-pane label="config.lua" name="config">
+          <div style="margin-bottom:8px;font-size:12px;color:#909399">{{ t('proxy.wafConfigHint') }}</div>
+          <el-input v-model="wafConfigContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
+          <div style="margin-top:8px;text-align:right">
+            <el-button type="success" @click="saveWAFConfig">{{ t('common.save') }}</el-button>
+            <el-button @click="fetchWAFConfig">{{ t('common.reset') }}</el-button>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.wafRules')" name="rules">
+          <el-table :data="wafRules" stripe @row-click="openWAFRule" style="cursor:pointer">
+            <el-table-column prop="name" label="Rule" width="200" />
+            <el-table-column prop="size" label="Size (bytes)" width="150" />
+            <el-table-column :label="t('common.action')">
+              <template #default="{ row }">
+                <el-button size="small" @click.stop="openWAFRule(row)">{{ t('common.edit') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="domain.json" name="domain">
+          <div style="margin-bottom:8px;font-size:12px;color:#909399">{{ t('proxy.wafDomainHint') }}</div>
+          <el-input v-model="wafDomainContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
+          <div style="margin-top:8px;text-align:right">
+            <el-button type="success" @click="saveWAFDomainConfig">{{ t('common.save') }}</el-button>
+            <el-button @click="fetchWAFDomainConfig">{{ t('common.reset') }}</el-button>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <!-- WAF Rule Editor Dialog -->
+    <el-dialog v-model="wafRuleVisible" :title="`WAF Rule: ${wafRuleName}`" width="70%">
+      <el-input v-model="wafRuleContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
+      <template #footer>
+        <el-button @click="wafRuleVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="success" @click="saveWAFRule">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
 
     <!-- SNI Routing -->
     <el-card style="margin-bottom:20px">
@@ -840,6 +915,62 @@ const downloadingAsset = ref('')
 const downloading = ref(false)
 const downloadProgress = ref('')
 
+// WAF Management
+const wafTab = ref('config')
+const wafConfigContent = ref('')
+const wafRules = ref([])
+const wafDomainContent = ref('')
+const wafRuleVisible = ref(false)
+const wafRuleName = ref('')
+const wafRuleContent = ref('')
+
+async function fetchWAFConfig() {
+  try {
+    const data = await client.get(`${nginxApi.value}/waf/config`)
+    wafConfigContent.value = data.content || ''
+  } catch { wafConfigContent.value = '' }
+}
+async function saveWAFConfig() {
+  try {
+    await client.put(`${nginxApi.value}/waf/config`, { content: wafConfigContent.value })
+    ElMessage.success(t('common.success'))
+  } catch { ElMessage.error(t('common.failed')) }
+}
+async function fetchWAFRules() {
+  try {
+    const data = await client.get(`${nginxApi.value}/waf/rules`)
+    wafRules.value = Array.isArray(data) ? data : (data.items || [])
+  } catch { wafRules.value = [] }
+}
+async function openWAFRule(row) {
+  wafRuleName.value = row.name
+  try {
+    const data = await client.get(`${nginxApi.value}/waf/rules/${row.name}`)
+    wafRuleContent.value = data.content || ''
+    wafRuleVisible.value = true
+  } catch { ElMessage.error(t('common.failed')) }
+}
+async function saveWAFRule() {
+  try {
+    await client.put(`${nginxApi.value}/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
+    ElMessage.success(t('common.success'))
+    wafRuleVisible.value = false
+    fetchWAFRules()
+  } catch { ElMessage.error(t('common.failed')) }
+}
+async function fetchWAFDomainConfig() {
+  try {
+    const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+    wafDomainContent.value = data.content || ''
+  } catch { wafDomainContent.value = '' }
+}
+async function saveWAFDomainConfig() {
+  try {
+    await client.put(`${nginxApi.value}/waf/domain-config`, { content: wafDomainContent.value })
+    ElMessage.success(t('common.success'))
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
 // Site dialog
 const siteDialogVisible = ref(false)
 const siteDialogTitle = ref('')
@@ -1374,6 +1505,9 @@ onMounted(() => {
   fetchCertificates()
   fetchSettings()
   fetchInbounds()
+  fetchWAFConfig()
+  fetchWAFRules()
+  fetchWAFDomainConfig()
 })
 </script>
 <style scoped>

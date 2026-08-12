@@ -1302,6 +1302,14 @@ func (s *Service) SyncProxyConfig(ctx context.Context, serverID int64, proxyType
 	return nil
 }
 
+// SyncWAFFiles syncs WAF files (config.lua, domain.json, *.rule) to a specific server's Agent.
+func (s *Service) SyncWAFFiles(ctx context.Context, serverID int64, files []*agentpb.WAFFile) error {
+	if s.nodeMgr == nil {
+		return fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.SyncWAFFiles(ctx, serverID, files)
+}
+
 // SyncMirrorsProxyConfig pushes proxy config to all mirror nodes of a primary.
 // This is called after local proxy config changes (e.g., SNI toggle, site
 // enable/disable, config edit) to ensure mirrors get the updated config file

@@ -1883,6 +1883,18 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)
 				nodeServersGroup.DELETE("/:id/nginx/l4-rules", nginxH.DeleteAllL4)
 
+				// Nginx WAF Management
+				nodeServersGroup.GET("/:id/nginx/waf/config", nginxH.GetWAFConfig)
+				nodeServersGroup.PUT("/:id/nginx/waf/config", nginxH.SaveWAFConfig)
+				nodeServersGroup.GET("/:id/nginx/waf/rules", nginxH.ListWAFRules)
+				nodeServersGroup.GET("/:id/nginx/waf/rules/:name", nginxH.GetWAFRule)
+				nodeServersGroup.PUT("/:id/nginx/waf/rules/:name", nginxH.SaveWAFRule)
+				nodeServersGroup.GET("/:id/nginx/waf/domain-config", nginxH.GetWAFDomainConfig)
+				nodeServersGroup.PUT("/:id/nginx/waf/domain-config", nginxH.SaveWAFDomainConfig)
+				nodeServersGroup.GET("/:id/nginx/waf/domain-rules", nginxH.ListWAFDomainDirs)
+				nodeServersGroup.GET("/:id/nginx/waf/domain-rules/:domain/:rule", nginxH.GetWAFDomainRule)
+				nodeServersGroup.PUT("/:id/nginx/waf/domain-rules/:domain/:rule", nginxH.SaveWAFDomainRule)
+
 				// Inbound Configs (per node)
 				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
 				nodeServersGroup.POST("/:id/inbound-configs", inboundCfgH.Create)

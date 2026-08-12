@@ -183,6 +183,23 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			}
 		}
 
+	case *agentpb.PanelCommand_SyncWafFiles:
+		req := c.SyncWafFiles
+		wafDir := filepath.Join(a.dataDir, "proxy", "lua", "waf")
+		for _, f := range req.Files {
+			// Prevent path traversal
+			if strings.Contains(f.Path, "..") {
+				continue
+			}
+			outPath := filepath.Join(wafDir, f.Path)
+			os.MkdirAll(filepath.Dir(outPath), 0755)
+			if err := os.WriteFile(outPath, f.Content, 0644); err != nil {
+				log.Printf("[Agent] SyncWAFFiles: write %s: %v", f.Path, err)
+			} else {
+				log.Printf("[Agent] SyncWAFFiles: wrote %s (%d bytes)", f.Path, len(f.Content))
+			}
+		}
+
 	case *agentpb.PanelCommand_ControlProxy:
 		req := c.ControlProxy
 		if err := a.localAgent.ControlProxy(ctx, req.ProxyType, req.Action); err != nil {

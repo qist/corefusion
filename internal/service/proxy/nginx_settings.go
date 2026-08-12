@@ -126,6 +126,10 @@ type NginxSettings struct {
 	// Vhost traffic status
 	VhostTrafficStatus bool `json:"vhost_traffic_status"`
 
+	// Lua & WAF
+	LuaEnabled bool `json:"lua_enabled"` // enable Lua module paths (default: true)
+	WAFEnabled bool `json:"waf_enabled"` // enable WAF access filtering (default: false)
+
 	// Stream (SNI + L4)
 	StreamSNIEnabled     bool   `json:"stream_sni_enabled"`
 	StreamSNICacheSize   string `json:"stream_sni_cache_size"`
@@ -236,6 +240,8 @@ func DefaultNginxSettings() *NginxSettings {
 		LimitConnZone: "$binary_remote_addr zone=addr:5m",
 		LimitConn:     "addr 2000",
 		VhostTrafficStatus: !isWindows,
+		LuaEnabled:          true,
+		WAFEnabled:          false,
 		// Stream defaults
 		StreamSNIEnabled:     false,
 		StreamSNICacheSize:   "64",
@@ -398,6 +404,8 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	dst.Brotli = src.Brotli
 	dst.BrotliStatic = src.BrotliStatic
 	dst.VhostTrafficStatus = src.VhostTrafficStatus
+	dst.LuaEnabled = src.LuaEnabled
+	dst.WAFEnabled = src.WAFEnabled
 	dst.StreamSNIEnabled = src.StreamSNIEnabled
 	dst.StreamIPv6 = src.StreamIPv6
 	dst.StreamProxyProtocol = src.StreamProxyProtocol

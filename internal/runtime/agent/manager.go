@@ -560,6 +560,26 @@ func (m *NodeServerManager) SyncProxyConfig(ctx context.Context, serverID int64,
 	return nil
 }
 
+// SyncWAFFiles syncs WAF files (config.lua, domain.json, *.rule) to a remote Agent.
+// For local servers, files are already on disk (the API handler wrote them directly).
+// For remote servers, files are sent via the heartbeat stream.
+func (m *NodeServerManager) SyncWAFFiles(ctx context.Context, serverID int64, files []*agentpb.WAFFile) error {
+	if m.isLocalServer(serverID) {
+		return nil // local files already written by API handler
+	}
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_SyncWafFiles{
+			SyncWafFiles: &agentpb.SyncWAFFilesRequest{
+				Files: files,
+			},
+		},
+	}
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return fmt.Errorf("send SyncWAFFiles to server %d: %w", serverID, err)
+	}
+	return nil
+}
+
 // SyncProxyConfigFromPrimary syncs proxy config to a mirror node, but fetches
 // TLS certificates and per-node settings (SNI/nginx) from the PRIMARY's server ID
 // instead of the mirror's own. This ensures mirrors receive the same settings as

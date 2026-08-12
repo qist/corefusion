@@ -115,8 +115,8 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	// without lua_package_path the Lua VM cannot locate modules and nginx may
 	// fail to start when any lua_* directive is encountered.
 	// Always emit these unconditionally.
-	sb.WriteString("    lua_package_path \"proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;\";\n")
-	sb.WriteString("    lua_code_cache on;\n")
+sb.WriteString("    lua_package_path \"proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;\";\n")
+sb.WriteString("    lua_code_cache on;\n")
 
 	// WAF directives (only when WAF is enabled)
 	if s.WAFEnabled {
@@ -662,6 +662,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	needStream := (s.StreamSNIEnabled && len(sniSites) > 0) || len(l4Sites) > 0
 	if needStream {
 		sb.WriteString("\nstream {\n")
+		// Lua module paths in stream context too — needed so resty.core can be
+		// found when lua-nginx-module initializes in the stream block.
+		sb.WriteString("    lua_package_path \"proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;\";\n")
 
 		// Stream log format
 		logFmt := s.StreamLogFormat

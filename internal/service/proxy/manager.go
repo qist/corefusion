@@ -986,7 +986,9 @@ func (m *Manager) ensureNginxDependencies() error {
 
 	// Set temp directory, lua directory, and logs directory ownership to nginx user
 	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
-		// Chown logs directory (WAF writes log files here via io.open)
+		// Chown logs directory to nginx user so WAF (running as nginx) can create
+		// daily log files via io.open(). Don't chown existing log files — xray/caddy
+		// logs are written by root and should stay root-owned.
 		logsDir := filepath.Join(m.dataDir, "logs")
 		os.MkdirAll(logsDir, 0775)
 		os.Chown(logsDir, nginxUID, nginxGID)
@@ -2096,6 +2098,12 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 		}
 		// Ensure proxy dir is accessible (0755, not 0750)
 		os.Chmod(filepath.Join(m.dataDir, "proxy"), 0755)
+		// Ensure logs dir is owned by nginx so WAF can create log files
+		logsDir := filepath.Join(m.dataDir, "logs")
+		os.MkdirAll(logsDir, 0775)
+		if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+			os.Chown(logsDir, nginxUID, nginxGID)
+		}
 	}
 
 	if !binaryFound {
@@ -2250,10 +2258,10 @@ http {
 }
 
 // patchWAFConfig rewrites the WAF config.lua with paths matching this installation.
-// The original config.lua has hardcoded paths like /apps/nginx/... which need to be
-// updated to the panel's data directory layout.
-// Uses absolute paths because WAF's log_record() uses io.open() which resolves
-// relative paths against the nginx prefix, not the working directory.
+// Uses relative paths (relative to the nginx working directory = dataDir) so the
+// same config.lua works on both the panel and remote Agents without modification.
+// - "logs" resolves to dataDir/logs (CWD = dataDir when nginx starts)
+// - "proxy/lua/waf/rule-config" resolves to dataDir/proxy/lua/waf/rule-config
 func (m *Manager) patchWAFConfig() {
 	configPath := filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
 	data, err := os.ReadFile(configPath)
@@ -2261,25 +2269,18 @@ func (m *Manager) patchWAFConfig() {
 		return
 	}
 	content := string(data)
-	// Replace log dir with absolute path to dataDir/logs
-	absLogDir := filepath.Join(m.dataDir, "logs")
+	// Replace log dir with relative path (works on panel AND agent)
 	content = strings.Replace(content,
 		"config_log_dir = \"/apps/nginx/log/\"",
-		fmt.Sprintf("config_log_dir = %q", absLogDir),
+		"config_log_dir = \"logs\"",
 		1)
-	// Replace rule dir with absolute path to dataDir/proxy/lua/waf/rule-config
-	absRuleDir := filepath.Join(m.dataDir, "proxy", "lua", "waf", "rule-config")
+	// Replace rule dir with relative path
 	content = strings.Replace(content,
 		"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
-		fmt.Sprintf("config_rule_dir = %q", absRuleDir),
+		"config_rule_dir = \"proxy/lua/waf/rule-config\"",
 		1)
 	if err := os.WriteFile(configPath, []byte(content), 0644); err == nil {
-		log.Printf("patched WAF config.lua: log_dir=%s, rule_dir=%s", absLogDir, absRuleDir)
-	}
-	// Ensure logs directory is writable by nginx user
-	os.MkdirAll(absLogDir, 0775)
-	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
-		os.Chown(absLogDir, nginxUID, nginxGID)
+		log.Printf("patched WAF config.lua with relative paths (log_dir=logs, rule_dir=proxy/lua/waf/rule-config)")
 	}
 }
 

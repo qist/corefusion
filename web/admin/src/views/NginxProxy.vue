@@ -377,9 +377,12 @@
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.wafRules')" name="rules">
           <el-table :data="wafRules" stripe @row-click="openWAFRule" style="cursor:pointer">
-            <el-table-column prop="name" label="Rule" width="200" />
-            <el-table-column prop="size" label="Size (bytes)" width="150" />
-            <el-table-column :label="t('common.action')">
+            <el-table-column prop="name" :label="t('proxy.wafRule')" width="180" />
+            <el-table-column :label="t('proxy.wafRuleDesc')" min-width="200">
+              <template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
+            </el-table-column>
+            <el-table-column prop="size" :label="t('proxy.wafSize')" width="120" />
+            <el-table-column :label="t('common.action')" width="100">
               <template #default="{ row }">
                 <el-button size="small" @click.stop="openWAFRule(row)">{{ t('common.edit') }}</el-button>
               </template>
@@ -440,15 +443,18 @@
               <el-option :label="t('proxy.wafRuleCustom')" value="custom" />
             </el-select>
           </el-form-item>
-          <el-table v-if="siteWAFRuleMode==='custom'" :data="siteWAFDomainRules" stripe size="small">
-            <el-table-column prop="name" :label="t('proxy.wafRule')" width="160" />
-            <el-table-column prop="size" :label="t('proxy.wafSize')" width="100" />
-            <el-table-column :label="t('common.action')" width="100">
-              <template #default="{ row }">
-                <el-button size="small" @click="openSiteWAFDomainRule(row)">{{ t('common.edit') }}</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+<el-table v-if="siteWAFRuleMode==='custom'" :data="siteWAFDomainRules" stripe size="small">
+<el-table-column prop="name" :label="t('proxy.wafRule')" width="140" />
+<el-table-column :label="t('proxy.wafRuleDesc')" min-width="180">
+<template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
+</el-table-column>
+<el-table-column prop="size" :label="t('proxy.wafSize')" width="80" />
+<el-table-column :label="t('common.action')" width="100">
+<template #default="{ row }">
+<el-button size="small" @click="openSiteWAFDomainRule(row)">{{ t('common.edit') }}</el-button>
+</template>
+</el-table-column>
+</el-table>
         </el-tab-pane>
       </el-tabs>
       <template #footer>
@@ -1031,6 +1037,18 @@ const wafRuleVisible = ref(false)
 const wafRuleName = ref('')
 const wafRuleContent = ref('')
 
+// Rule file name → i18n key mapping
+const wafRuleDescMap = {
+  'args.rule': 'wafRuleArgs', 'blackip.rule': 'wafRuleBlackip', 'cookie.rule': 'wafRuleCookie',
+  'post.rule': 'wafRulePost', 'url.rule': 'wafRuleUrl', 'useragent.rule': 'wafRuleUseragent',
+  'whiteip.rule': 'wafRuleWhiteip', 'whiteurl.rule': 'wafRuleWhiteurl', 'whiteua.rule': 'wafRuleWhiteua',
+  'referer.rule': 'wafRuleReferer', 'fileext.rule': 'wafRuleFileext'
+}
+function wafRuleDesc(name) {
+  const key = wafRuleDescMap[name]
+  return key ? t(`proxy.${key}`) : name
+}
+
 async function fetchWAFConfig() {
   try {
     const data = await client.get(`${nginxApi.value}/waf/config`)
@@ -1213,7 +1231,7 @@ async function loadSiteWAFDomainRules(domain) {
     const dirs = await client.get(`${nginxApi.value}/waf/domain-rules`)
     if (dirs && dirs.includes(domain)) {
       // Domain has a rule directory — list rule files
-      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule']
+      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule']
       const rules = []
       for (const name of ruleNames) {
         try {

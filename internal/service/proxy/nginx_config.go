@@ -111,6 +111,24 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	sb.WriteString("    include mime.types;\n")
 	sb.WriteString("    default_type application/octet-stream;\n")
 
+	// Lua module paths — required: the nginx binary has LuaJIT compiled in,
+	// without lua_package_path the Lua VM cannot locate modules and nginx may
+	// fail to start when any lua_* directive is encountered.
+	// Always emit these unconditionally.
+	sb.WriteString("    lua_package_path \"proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;\";\n")
+	sb.WriteString("    lua_code_cache on;\n")
+
+	// WAF directives (only when WAF is enabled)
+	if s.WAFEnabled {
+		sb.WriteString("    lua_shared_dict limit 100m;\n")
+		sb.WriteString("    lua_shared_dict badGuys 100m;\n")
+		sb.WriteString("    lua_shared_dict waf_cache 10m;\n")
+		sb.WriteString("    lua_need_request_body on;\n")
+		sb.WriteString("    init_by_lua_file proxy/lua/waf/init.lua;\n")
+		sb.WriteString("    access_by_lua_file proxy/lua/waf/access.lua;\n")
+	}
+
+
 	// Maps
 	sb.WriteString("    map $http_x_forwarded_for $clientRealIp {\n")
 	sb.WriteString("        \"\" $remote_addr;\n")

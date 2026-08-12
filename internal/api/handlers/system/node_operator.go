@@ -1,6 +1,10 @@
 package system
 
-import "context"
+import (
+	"context"
+
+	agentpb "corefusion/internal/runtime/agent/proto"
+)
 
 // NodeOperator provides node-level proxy operations for both local and remote nodes.
 // For local nodes, the handlers use the proxy/caddy/nginx managers directly.
@@ -26,4 +30,6 @@ type NodeOperator interface {
 	// batch update, site enable/disable) to ensure mirrors' local DBs are updated
 	// with the primary's latest data.
 	SyncMirrorsData(ctx context.Context, primaryServerID int64) error
+	// SyncWAFFiles pushes WAF files (config.lua, domain.json, *.rule) to a remote Agent.
+	SyncWAFFiles(ctx context.Context, serverID int64, files []*agentpb.WAFFile) error
 }

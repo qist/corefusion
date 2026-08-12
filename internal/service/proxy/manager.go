@@ -866,8 +866,8 @@ func (m *Manager) SaveAndApply(ctx context.Context) (string, error) {
 // SaveAndApplyNginxDefault writes a default nginx.conf to disk.
 func (m *Manager) SaveAndApplyNginxDefault(ctx context.Context) error {
 	path := filepath.Join(m.configDir, "nginx.conf")
-	os.MkdirAll(m.configDir, 0750)
-	return os.WriteFile(path, []byte(m.defaultNginxConf()), 0644)
+os.MkdirAll(m.configDir, 0755)
+return os.WriteFile(path, []byte(m.defaultNginxConf()), 0644)
 }
 
 // InstallProxy installs a proxy using system package manager or download.
@@ -965,6 +965,7 @@ func (m *Manager) ensureNginxDependencies() error {
 		filepath.Join(m.dataDir, "logs"),
 		filepath.Join(m.dataDir, "runtime"),
 		filepath.Join(m.dataDir, "proxy"),
+		filepath.Join(m.dataDir, "proxy", "lua"),
 		filepath.Join(m.dataDir, "temp"),
 		filepath.Join(m.dataDir, "temp", "client_body_temp"),
 		filepath.Join(m.dataDir, "temp", "proxy_temp"),
@@ -977,10 +978,27 @@ func (m *Manager) ensureNginxDependencies() error {
 			return fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
-	// Set temp directory ownership to nginx user
+	// Ensure proxy directory is accessible by nginx worker (0755, not 0750)
+	// nginx.conf and lua files live here; worker process (user nginx) must be
+	// able to read them. Without this, access_by_lua_file fails with Permission denied.
+	proxyDir := filepath.Join(m.dataDir, "proxy")
+	os.Chmod(proxyDir, 0755)
+
+	// Set temp directory and lua directory ownership to nginx user
 	if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+		// Chown temp directory tree
 		tempDir := filepath.Join(m.dataDir, "temp")
 		filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				if chownErr := os.Chown(path, nginxUID, nginxGID); chownErr != nil {
+					log.Printf("proxy nginx: failed to chown %s to %d:%d: %v", path, nginxUID, nginxGID, chownErr)
+				}
+			}
+			return nil
+		})
+		// Chown lua directory tree so nginx worker can read lua/waf files
+		luaDir := filepath.Join(proxyDir, "lua")
+		filepath.Walk(luaDir, func(path string, info os.FileInfo, err error) error {
 			if err == nil {
 				if chownErr := os.Chown(path, nginxUID, nginxGID); chownErr != nil {
 					log.Printf("proxy nginx: failed to chown %s to %d:%d: %v", path, nginxUID, nginxGID, chownErr)
@@ -991,7 +1009,6 @@ func (m *Manager) ensureNginxDependencies() error {
 	}
 
 	// Ensure mime.types exists in proxy config directory (same as nginx.conf)
-	proxyDir := filepath.Join(m.dataDir, "proxy")
 	mimePath := filepath.Join(proxyDir, "mime.types")
 	if _, err := os.Stat(mimePath); os.IsNotExist(err) {
 		if err := os.WriteFile(mimePath, []byte(defaultMimeTypes), 0644); err != nil {
@@ -1798,8 +1815,13 @@ func parseOSReleaseID(content string) string {
 	return ""
 }
 
-// detectNginxDistro returns the distro name matching nginx binary naming convention.
-// Supported: alpine (alpine/openwrt), debian, ubuntu, redhat (centos/rhel/rocky/almalinux/oracle/fedora), macos, windows.
+// detectNginxDistro returns the distro identifier matching nginx binary naming convention.
+// The qist/nginx-binaries repo uses glibc/musl libc as the distro tag:
+//   - glibc  — all glibc-based Linux (debian, ubuntu, RHEL, centos, rocky, almalinux, fedora, etc.)
+//     Built on CentOS 7 (glibc 2.17), compatible with any glibc distro.
+//   - musl   — Alpine / OpenWrt
+//   - macos  — macOS
+//   - windows — Windows
 func detectNginxDistro() string {
 	switch runtime.GOOS {
 	case "darwin":
@@ -1807,31 +1829,28 @@ func detectNginxDistro() string {
 	case "windows":
 		return "windows"
 	case "linux":
-		// Read /etc/os-release to determine distro
+		// Read /etc/os-release to determine libc variant
 		data, err := os.ReadFile("/etc/os-release")
 		if err != nil {
-			return "debian" // fallback to most common
+			return "glibc" // fallback: most common
 		}
 		id := parseOSReleaseID(string(data))
 		switch id {
 		case "alpine", "openwrt":
-			// alpine and openwrt both use musl libc, share the same binary
-			return "alpine"
-		case "ubuntu":
-			return "ubuntu"
-		case "centos", "rhel", "rocky", "almalinux", "ol", "fedora":
-			// ol = Oracle Linux; all map to redhat binary
-			return "redhat"
+			return "musl"
 		default:
-			return "debian" // debian and derivatives
+			// All other distros (debian, ubuntu, centos, rhel, rocky, almalinux, fedora, etc.)
+			// are glibc-based and share the same glibc binary.
+			return "glibc"
 		}
 	}
-	return "debian"
+	return "glibc"
 }
 
 // isMatchingNginxBinary checks if an asset name matches the target platform for nginx binaries.
-// nginx binary naming: nginx_{version}_{distro}_{arch}.tar.gz
-// If distroHint is non-empty, it is used directly (from Agent heartbeat). Otherwise, the local /etc/os-release is read as fallback.
+// nginx binary naming: nginx_{version}_{glibc|musl|macos|windows}_{arch}.tar.gz
+// distroHint (from Agent heartbeat) is a raw distro ID like "ubuntu", "alpine", "redhat";
+// it is normalized to glibc/musl by detectNginxDistroForOS.
 func (m *Manager) isMatchingNginxBinary(name, osName, archName, distroHint string) bool {
 	lower := strings.ToLower(name)
 	if strings.HasSuffix(lower, ".sig") || strings.HasSuffix(lower, ".pem") ||
@@ -1850,10 +1869,11 @@ func (m *Manager) isMatchingNginxBinary(name, osName, archName, distroHint strin
 	return strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".zip")
 }
 
-// detectNginxDistroForOS returns the distro name for nginx binary naming.
+// detectNginxDistroForOS returns the distro identifier for nginx binary naming.
 // For non-linux OS, returns the OS name directly (macos, windows).
-// For linux, if distroHint is non-empty (from Agent heartbeat), uses it directly.
-// Otherwise, reads local /etc/os-release as fallback.
+// For linux, normalizes the distroHint (raw distro ID from Agent heartbeat, e.g.
+// "ubuntu", "debian", "alpine", "redhat") to glibc or musl.
+// If distroHint is empty, reads local /etc/os-release as fallback.
 func detectNginxDistroForOS(osName, distroHint string) string {
 	switch osName {
 	case "darwin":
@@ -1861,39 +1881,31 @@ func detectNginxDistroForOS(osName, distroHint string) string {
 	case "windows":
 		return "windows"
 	case "linux":
-		// If Agent reported a distro, normalize and use it
+		// If Agent reported a distro, normalize to glibc/musl
 		if distroHint != "" {
 			switch distroHint {
 			case "alpine", "openwrt":
-				return "alpine"
-			case "ubuntu":
-				return "ubuntu"
-			case "redhat":
-				return "redhat"
-			case "debian":
-				return "debian"
+				return "musl"
 			default:
-				// Unknown distro from Agent — fall through to local detection
+				// All other Linux distros (debian, ubuntu, redhat, centos, rocky, etc.)
+				// are glibc-based and share the same glibc binary.
+				return "glibc"
 			}
 		}
 		// Fallback: read local /etc/os-release
 		data, err := os.ReadFile("/etc/os-release")
 		if err != nil {
-			return "debian" // fallback to most common
+			return "glibc" // fallback: most common
 		}
 		id := parseOSReleaseID(string(data))
 		switch id {
 		case "alpine", "openwrt":
-			return "alpine"
-		case "ubuntu":
-			return "ubuntu"
-		case "centos", "rhel", "rocky", "almalinux", "ol", "fedora":
-			return "redhat"
+			return "musl"
 		default:
-			return "debian"
+			return "glibc"
 		}
 	}
-	return "debian"
+	return "glibc"
 }
 
 // ListNginxReleases fetches nginx releases from qist/nginx-binaries with local platform filtering.
@@ -1993,6 +2005,10 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 
 	var binaryFound bool
 	tr := tar.NewReader(gz)
+
+	// For nginx: track whether lua/conf directories were extracted
+	var luaExtracted bool
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -2028,6 +2044,25 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 			binaryFound = true
 		}
 
+		// Extract nginx lua/ directory to dataDir/proxy/lua/
+		if name == "nginx" && strings.Contains(header.Name, "/lua/") {
+			// Determine the sub-path after "nginx/lua/"
+			idx := strings.Index(header.Name, "/lua/")
+			if idx >= 0 {
+				subPath := header.Name[idx+len("/lua/"):]
+				if subPath != "" {
+					outPath := filepath.Join(m.dataDir, "proxy", "lua", subPath)
+					if err := os.MkdirAll(filepath.Dir(outPath), 0755); err == nil {
+						if f, err := os.Create(outPath); err == nil {
+							io.Copy(f, tr)
+							f.Close()
+							luaExtracted = true
+						}
+					}
+				}
+			}
+		}
+
 		// Extract mime.types for nginx (to proxy config dir)
 		if name == "nginx" && baseName == "mime.types" {
 			mimePath := filepath.Join(m.dataDir, "proxy", "mime.types")
@@ -2039,6 +2074,24 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 				}
 			}
 		}
+	}
+
+	// Patch WAF config.lua with correct paths after lua extraction
+	if name == "nginx" && luaExtracted {
+		m.patchWAFConfig()
+		// Chown lua directory to nginx user so worker process can read files
+		luaDir := filepath.Join(m.dataDir, "proxy", "lua")
+		if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
+			filepath.Walk(luaDir, func(path string, info os.FileInfo, err error) error {
+				if err == nil {
+					os.Chown(path, nginxUID, nginxGID)
+				}
+				return nil
+			})
+			log.Printf("chown proxy/lua/ to nginx user (%d:%d)", nginxUID, nginxGID)
+		}
+		// Ensure proxy dir is accessible (0755, not 0750)
+		os.Chmod(filepath.Join(m.dataDir, "proxy"), 0755)
 	}
 
 	if !binaryFound {
@@ -2168,7 +2221,7 @@ func (m *Manager) defaultCaddyfile() string {
 `
 }
 
-// defaultNginxConf returns a simple default nginx.conf template.
+// defaultNginxConf returns a simple default nginx.conf template with Lua module paths.
 func (m *Manager) defaultNginxConf() string {
 	return `worker_processes auto;
 events {
@@ -2177,6 +2230,11 @@ events {
 http {
     include mime.types;
     default_type application/octet-stream;
+
+    # Lua module paths (lua-resty ecosystem + WAF)
+    lua_package_path "proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;";
+    lua_code_cache on;
+
     server {
         listen 80;
         location / {
@@ -2185,6 +2243,31 @@ http {
     }
 }
 `
+}
+
+// patchWAFConfig rewrites the WAF config.lua with paths matching this installation.
+// The original config.lua has hardcoded paths like /apps/nginx/... which need to be
+// updated to the panel's data directory layout.
+func (m *Manager) patchWAFConfig() {
+	configPath := filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	content := string(data)
+	// Replace log dir
+	content = strings.Replace(content,
+		"config_log_dir = \"/apps/nginx/log/\"",
+		"config_log_dir = \"logs/\"",
+		1)
+	// Replace rule dir
+	content = strings.Replace(content,
+		"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
+		"config_rule_dir = \"proxy/lua/waf/rule-config\"",
+		1)
+	if err := os.WriteFile(configPath, []byte(content), 0644); err == nil {
+		log.Printf("patched WAF config.lua with installation paths")
+	}
 }
 
 func run(ctx context.Context, name string, args ...string) error {

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,7 +172,7 @@ func (m *NginxManager) SaveAndApply(ctx context.Context) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(m.configDir, "nginx.conf")
-	os.MkdirAll(m.configDir, 0750)
+	os.MkdirAll(m.configDir, 0755)
 	if err := os.WriteFile(path, []byte(config), 0644); err != nil {
 		return "", err
 	}
@@ -281,6 +282,177 @@ func nginxUpstreamKey(name string) string {
 		s = "default"
 	}
 	return s
+}
+
+// --- WAF Management ---
+
+// wafBaseDir returns the WAF root directory: dataDir/proxy/lua/waf
+func (m *NginxManager) wafBaseDir() string {
+	return filepath.Join(m.dataDir, "proxy", "lua", "waf")
+}
+
+// wafRuleDir returns the WAF rule-config directory.
+func (m *NginxManager) wafRuleDir() string {
+	return filepath.Join(m.wafBaseDir(), "rule-config")
+}
+
+// WAFRuleFile describes a rule file in rule-config/.
+type WAFRuleFile struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+// ListWAFRules lists all global rule files in rule-config/.
+func (m *NginxManager) ListWAFRules() []WAFRuleFile {
+	dir := m.wafRuleDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var files []WAFRuleFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// Only list .rule files
+		if !strings.HasSuffix(name, ".rule") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, WAFRuleFile{Name: name, Size: info.Size()})
+	}
+	return files
+}
+
+// ReadWAFRule reads a global rule file by name (e.g. "url.rule").
+func (m *NginxManager) ReadWAFRule(name string) (string, error) {
+	// Prevent path traversal
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		return "", fmt.Errorf("invalid rule name")
+	}
+	path := filepath.Join(m.wafRuleDir(), name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFRule writes a global rule file by name.
+func (m *NginxManager) SaveWAFRule(name, content string) error {
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		return fmt.Errorf("invalid rule name")
+	}
+	path := filepath.Join(m.wafRuleDir(), name)
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// ReadWAFConfig reads the WAF config.lua file.
+func (m *NginxManager) ReadWAFConfig() (string, error) {
+	path := filepath.Join(m.wafBaseDir(), "config.lua")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFConfig writes the WAF config.lua file.
+func (m *NginxManager) SaveWAFConfig(content string) error {
+	path := filepath.Join(m.wafBaseDir(), "config.lua")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// ReadWAFDomainConfig reads the domain.json file.
+func (m *NginxManager) ReadWAFDomainConfig() (string, error) {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFDomainConfig writes the domain.json file.
+func (m *NginxManager) SaveWAFDomainConfig(content string) error {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// ListWAFDomainRuleDirs lists domain directories under rule-config/domains/.
+func (m *NginxManager) ListWAFDomainRuleDirs() []string {
+	dir := filepath.Join(m.wafRuleDir(), "domains")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+// ReadWAFDomainRule reads a per-domain rule file.
+// domain is the directory name under rule-config/domains/, ruleName is the file (e.g. "url.rule").
+func (m *NginxManager) ReadWAFDomainRule(domain, ruleName string) (string, error) {
+	if strings.Contains(domain, "..") || strings.Contains(ruleName, "..") {
+		return "", fmt.Errorf("invalid path")
+	}
+	path := filepath.Join(m.wafRuleDir(), "domains", domain, ruleName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFDomainRule writes a per-domain rule file.
+func (m *NginxManager) SaveWAFDomainRule(domain, ruleName, content string) error {
+	if strings.Contains(domain, "..") || strings.Contains(ruleName, "..") {
+		return fmt.Errorf("invalid path")
+	}
+	path := filepath.Join(m.wafRuleDir(), "domains", domain, ruleName)
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// CollectWAFFiles reads all WAF files from disk and returns them as a slice of
+// (relativePath, content) pairs for syncing to remote Agent nodes.
+func (m *NginxManager) CollectWAFFiles() []WAFFileEntry {
+	wafDir := m.wafBaseDir()
+	var entries []WAFFileEntry
+	filepath.Walk(wafDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(wafDir, path)
+		if err != nil {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		entries = append(entries, WAFFileEntry{Path: filepath.ToSlash(rel), Content: data})
+		return nil
+	})
+	return entries
+}
+
+// WAFFileEntry is a (path, content) pair for WAF file syncing.
+type WAFFileEntry struct {
+	Path    string
+	Content []byte
 }
 
 // GenerateDefaultConfig returns a minimal nginx.conf for when no sites exist.

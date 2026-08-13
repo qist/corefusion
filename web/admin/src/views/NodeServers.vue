@@ -361,13 +361,13 @@
       <!-- ════════════ 审计日志 Tab ════════════ -->
       <el-tab-pane :label="t('nodeServer.auditLogs')" name="audit">
         <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-          <el-select v-model="auditFilter.server_id" clearable filterable :placeholder="t('nodeServer.serverId')" size="small" style="width:160px" @change="loadAuditLogs">
+          <el-select v-model="auditFilter.server_id" clearable filterable :placeholder="t('nodeServer.serverId')" size="small" style="width:160px" @change="resetAuditPage">
             <el-option v-for="s in auditServerOptions" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
-          <el-select v-model="auditFilter.action" clearable filterable :placeholder="t('nodeServer.actionType')" size="small" style="width:180px" @change="loadAuditLogs">
+          <el-select v-model="auditFilter.action" clearable filterable :placeholder="t('nodeServer.actionType')" size="small" style="width:180px" @change="resetAuditPage">
             <el-option v-for="a in auditActionOptions" :key="a.value" :label="a.label" :value="a.value" />
           </el-select>
-          <el-button size="small" type="primary" @click="loadAuditLogs">{{ t('common.search') }}</el-button>
+          <el-button size="small" type="primary" @click="resetAuditPage">{{ t('common.search') }}</el-button>
           <el-button size="small" v-if="$can('admin')" @click="exportAuditLogs">{{ t('common.export') }}</el-button>
         </div>
         <el-table :data="auditLogs" v-loading="auditLoading" stripe size="small">
@@ -390,7 +390,7 @@
             <template #default="{row}">{{ formatTime(row.created_at) }}</template>
           </el-table-column>
         </el-table>
-        <div style="margin-top:8px;text-align:right;color:#909399;font-size:12px">{{ t('common.total', {count: auditTotal}) }}</div>
+        <PaginationBar v-model:page="auditPage" v-model:page-size="auditPageSize" :total="auditTotal" @change="loadAuditLogs" />
       </el-tab-pane>
 
     </el-tabs>
@@ -775,7 +775,8 @@ const retryProcessing = ref(false)
 const auditLogs = ref([])
 const auditLoading = ref(false)
 const auditTotal = ref(0)
-const auditFilter = reactive({ server_id: '', action: '', limit: 50, offset: 0 })
+const { page: auditPage, pageSize: auditPageSize, limit: auditLimit, offset: auditOffset } = usePagination({ defaultSize: 20, pageKey: 'auditPage', pageSizeKey: 'auditSize' })
+const auditFilter = reactive({ server_id: '', action: '' })
 const auditServerOptions = ref([])
 const auditActionOptions = [
   { value: 'create', label: 'create' },
@@ -1058,10 +1059,15 @@ async function processRetryQueueManual() {
   }
 }
 
+function resetAuditPage() {
+  auditPage.value = 1
+  loadAuditLogs()
+}
+
 async function loadAuditLogs() {
   auditLoading.value = true
   try {
-    const params = { limit: auditFilter.limit, offset: auditFilter.offset }
+    const params = { limit: auditLimit.value, offset: auditOffset.value }
     if (auditFilter.server_id) params.server_id = auditFilter.server_id
     if (auditFilter.action) params.action = auditFilter.action
     const res = await listNodeAuditLogs(params)

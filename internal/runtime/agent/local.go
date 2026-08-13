@@ -765,7 +765,28 @@ func (a *LocalAgent) resolveBinaryPath(coreType string) (string, error) {
 
 // ReadConfigFile reads the runtime config file for the given core type
 // from the agent's data directory (runtime/{coreType}.jsonc).
+// Also supports WAF file types:
+//   - "waf_config"  → proxy/lua/waf/config.lua
+//   - "waf_domain"  → proxy/lua/waf/rule-config/domain.json
+//   - "waf_rule:xxx.rule" → proxy/lua/waf/rule-config/xxx.rule
 func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
+	// WAF file types
+	switch {
+	case coreType == "waf_config":
+		p := filepath.Join(a.dataDir, "proxy", "lua", "waf", "config.lua")
+		data, err := os.ReadFile(p)
+		return data, p, err
+	case coreType == "waf_domain":
+		p := filepath.Join(a.dataDir, "proxy", "lua", "waf", "rule-config", "domain.json")
+		data, err := os.ReadFile(p)
+		return data, p, err
+	case strings.HasPrefix(coreType, "waf_rule:"):
+		ruleName := strings.TrimPrefix(coreType, "waf_rule:")
+		p := filepath.Join(a.dataDir, "proxy", "lua", "waf", "rule-config", ruleName)
+		data, err := os.ReadFile(p)
+		return data, p, err
+	}
+	// Default: runtime config file
 	configPath := filepath.Join(a.dataDir, "runtime", coreType+".jsonc")
 	data, err := os.ReadFile(configPath)
 	if err != nil {

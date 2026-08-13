@@ -1,6 +1,8 @@
 package system
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -513,7 +515,31 @@ func (h *NginxHandler) SaveWAFDomainConfig(c *gin.Context) {
 
 // ListWAFDomainDirs handles GET /api/v1/node-servers/:id/nginx/waf/domain-rules.
 func (h *NginxHandler) ListWAFDomainDirs(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		// Remote: derive domain list from remote domain.json entries that have rule_dir set
+		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_domain")
+		if err != nil {
+			response.OK(c, []string{})
+			return
+		}
+		var obj map[string]map[string]interface{}
+		if err := json.Unmarshal(data, &obj); err != nil {
+			response.OK(c, []string{})
+			return
+		}
+		var dirs []string
+		for domain, cfg := range obj {
+			if _, ok := cfg["rule_dir"]; ok {
+				dirs = append(dirs, domain)
+			}
+		}
+		if dirs == nil {
+			dirs = []string{}
+		}
+		response.OK(c, dirs)
+		return
+	}
 	dirs := h.nginxMgr.ListWAFDomainRuleDirs()
 	if dirs == nil {
 		dirs = []string{}
@@ -523,9 +549,24 @@ func (h *NginxHandler) ListWAFDomainDirs(c *gin.Context) {
 
 // GetWAFDomainRule handles GET /api/v1/node-servers/:id/nginx/waf/domain-rules/:domain/:rule.
 func (h *NginxHandler) GetWAFDomainRule(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	domain := c.Param("domain")
 	ruleName := c.Param("rule")
+	if strings.Contains(domain, "..") || strings.Contains(ruleName, "..") {
+		response.BadRequest(c, "INVALID_PATH", "invalid domain or rule name")
+		return
+	}
+	if !isLocal && h.nodeOp != nil {
+		// Remote: read domain rule file from agent via waf_rule:domains/<domain>/<rule>
+		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID,
+			fmt.Sprintf("waf_rule:domains/%s/%s", domain, ruleName))
+		if err != nil {
+			response.NotFound(c, "RULE_NOT_FOUND", "domain rule not found: "+err.Error())
+			return
+		}
+		response.OK(c, gin.H{"domain": domain, "rule": ruleName, "content": string(data)})
+		return
+	}
 	content, err := h.nginxMgr.ReadWAFDomainRule(domain, ruleName)
 	if err != nil {
 		response.NotFound(c, "RULE_NOT_FOUND", "domain rule not found: "+err.Error())
@@ -536,9 +577,13 @@ func (h *NginxHandler) GetWAFDomainRule(c *gin.Context) {
 
 // SaveWAFDomainRule handles PUT /api/v1/node-servers/:id/nginx/waf/domain-rules/:domain/:rule.
 func (h *NginxHandler) SaveWAFDomainRule(c *gin.Context) {
-	serverID, _ := h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	domain := c.Param("domain")
 	ruleName := c.Param("rule")
+	if strings.Contains(domain, "..") || strings.Contains(ruleName, "..") {
+		response.BadRequest(c, "INVALID_PATH", "invalid domain or rule name")
+		return
+	}
 	var req struct {
 		Content string `json:"content"`
 	}
@@ -546,11 +591,18 @@ func (h *NginxHandler) SaveWAFDomainRule(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.nginxMgr.SaveWAFDomainRule(domain, ruleName, req.Content); err != nil {
-		response.InternalError(c, "SAVE_FAILED", err.Error())
-		return
+	if isLocal {
+		if err := h.nginxMgr.SaveWAFDomainRule(domain, ruleName, req.Content); err != nil {
+			response.InternalError(c, "SAVE_FAILED", err.Error())
+			return
+		}
+		h.syncWAFFiles(c, serverID)
+	} else {
+		// Remote: send the single domain rule file to agent only
+		h.syncWAFFileRemote(c, serverID,
+			fmt.Sprintf("rule-config/domains/%s/%s", domain, ruleName),
+			[]byte(req.Content))
 	}
-	h.syncWAFFiles(c, serverID)
 	response.OK(c, gin.H{"message": "saved"})
 }
 
@@ -558,7 +610,7 @@ func (h *NginxHandler) SaveWAFDomainRule(c *gin.Context) {
 // Enables or disables WAF for a specific domain by adding/removing it from domain.json.
 // When enabling, copies global rule files to domains/<domain>/ for independent editing.
 func (h *NginxHandler) ToggleWAFDomain(c *gin.Context) {
-	serverID, _ := h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	var req struct {
 		Domain  string `json:"domain" binding:"required"`
 		Enabled bool   `json:"enabled"`
@@ -567,25 +619,122 @@ func (h *NginxHandler) ToggleWAFDomain(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if req.Enabled {
-		if err := h.nginxMgr.EnableWAFDomain(req.Domain); err != nil {
-			response.InternalError(c, "ENABLE_FAILED", err.Error())
-			return
+	if isLocal {
+		if req.Enabled {
+			if err := h.nginxMgr.EnableWAFDomain(req.Domain); err != nil {
+				response.InternalError(c, "ENABLE_FAILED", err.Error())
+				return
+			}
+		} else {
+			if err := h.nginxMgr.DisableWAFDomain(req.Domain); err != nil {
+				response.InternalError(c, "DISABLE_FAILED", err.Error())
+				return
+			}
 		}
+		h.syncWAFFiles(c, serverID)
 	} else {
-		if err := h.nginxMgr.DisableWAFDomain(req.Domain); err != nil {
-			response.InternalError(c, "DISABLE_FAILED", err.Error())
+		// Remote: modify domain.json in memory and send to agent only
+		if err := h.toggleWAFDomainRemote(c, serverID, req.Domain, req.Enabled); err != nil {
+			response.InternalError(c, "TOGGLE_FAILED", err.Error())
 			return
 		}
 	}
-	h.syncWAFFiles(c, serverID)
 	response.OK(c, gin.H{"domain": req.Domain, "enabled": req.Enabled})
+}
+
+// toggleWAFDomainRemote toggles WAF for a domain on a remote node without
+// modifying the local domain.json. It reads the remote domain.json, modifies
+// it in memory, and sends the updated file (plus rule files if enabling) to
+// the remote Agent via SyncWAFFiles.
+func (h *NginxHandler) toggleWAFDomainRemote(c *gin.Context, serverID int64, domain string, enabled bool) error {
+	if h.nodeOp == nil {
+		return fmt.Errorf("node operator not available")
+	}
+	if strings.Contains(domain, "..") || domain == "" {
+		return fmt.Errorf("invalid domain")
+	}
+	// Read remote domain.json
+	data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_domain")
+	if err != nil {
+		data = []byte("{}")
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		obj = map[string]interface{}{}
+	}
+	if obj == nil {
+		obj = map[string]interface{}{}
+	}
+
+	var files []*agentpb.WAFFile
+
+	if enabled {
+		// Add domain entry with rule_dir
+		obj[domain] = map[string]interface{}{
+			"rule_dir": fmt.Sprintf("domains/%s", domain),
+		}
+		// Copy global rule files to domains/<domain>/ on remote
+		ruleFiles := []string{"args.rule", "blackip.rule", "cookie.rule", "post.rule",
+			"url.rule", "useragent.rule", "whiteip.rule", "whiteurl.rule",
+			"whiteua.rule", "referer.rule", "fileext.rule"}
+		for _, rf := range ruleFiles {
+			content, err := h.nginxMgr.ReadWAFRule(rf)
+			if err != nil {
+				continue // skip missing files
+			}
+			files = append(files, &agentpb.WAFFile{
+				Path:    fmt.Sprintf("rule-config/domains/%s/%s", domain, rf),
+				Content: []byte(content),
+			})
+		}
+	} else {
+		delete(obj, domain)
+	}
+
+	// Send updated domain.json
+	out, err := json.MarshalIndent(obj, "", "    ")
+	if err != nil {
+		return err
+	}
+	files = append(files, &agentpb.WAFFile{
+		Path:    "rule-config/domain.json",
+		Content: out,
+	})
+
+	if err := h.nodeOp.SyncWAFFiles(c.Request.Context(), serverID, files); err != nil {
+		log.Printf("sync WAF files to server %d: %v", serverID, err)
+	}
+	return nil
 }
 
 // CheckWAFDomain handles GET /api/v1/node-servers/:id/nginx/waf/domain-status.
 func (h *NginxHandler) CheckWAFDomain(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	domain := c.Query("domain")
+	if !isLocal && h.nodeOp != nil {
+		// Remote: read remote domain.json and check
+		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_domain")
+		if err != nil {
+			response.OK(c, gin.H{"domain": domain, "enabled": false})
+			return
+		}
+		var obj map[string]map[string]interface{}
+		if err := json.Unmarshal(data, &obj); err != nil {
+			response.OK(c, gin.H{"domain": domain, "enabled": false})
+			return
+		}
+		cfg, ok := obj[domain]
+		if !ok {
+			response.OK(c, gin.H{"domain": domain, "enabled": false})
+			return
+		}
+		if wafEnable, ok := cfg["waf_enable"].(string); ok && wafEnable == "off" {
+			response.OK(c, gin.H{"domain": domain, "enabled": false})
+			return
+		}
+		response.OK(c, gin.H{"domain": domain, "enabled": true})
+		return
+	}
 	enabled := h.nginxMgr.IsWAFDomainEnabled(domain)
 	response.OK(c, gin.H{"domain": domain, "enabled": enabled})
 }

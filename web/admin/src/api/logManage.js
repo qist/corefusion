@@ -144,6 +144,24 @@ export function rotateNodeLog(serverId, type, logPath = '') {
   return client.post(`/log-manage/nodes/${serverId}/logs/${type}/rotate`, null, { params })
 }
 
+// ──────────── DB Log Cleanup Rules ────────────
+
+export function listCleanupRules() {
+  return client.get('/log-manage/cleanup-rules')
+}
+
+export function updateCleanupRule(id, data) {
+  return client.put(`/log-manage/cleanup-rules/${id}`, data)
+}
+
+export function cleanupAll() {
+  return client.post('/log-manage/cleanup-all')
+}
+
+export function cleanupTable(table) {
+  return client.post(`/log-manage/cleanup-table/${table}`)
+}
+
 // ──────────── SSE Stream Helpers ────────────
 
 export function buildSSEUrl(path, params = {}) {

@@ -861,6 +861,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
 	logManageH := logManageHandler.NewHandler(logManageSvc)
+	// Create log cleanup service for DB table cleanup rules
+	logCleanupSvc := trafficSvc.NewLogCleanupService(database)
+	cleanupH := logManageHandler.NewCleanupHandler(logCleanupSvc)
 	// Wire node log manager for centralized remote node log management
 	if sharedNodeMgr != nil {
 		logManageHandler.SetNodeLogManager(sharedNodeMgr)
@@ -2253,6 +2256,12 @@ backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 				logManageGroup.POST("/writers/:type/stop", logManageH.StopWriter)
 				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
 				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
+
+// Database table cleanup rules
+logManageGroup.GET("/cleanup-rules", cleanupH.ListCleanupRules)
+logManageGroup.PUT("/cleanup-rules/:id", cleanupH.UpdateCleanupRule)
+logManageGroup.POST("/cleanup-all", cleanupH.CleanupAll)
+logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
 				// Node-based centralized log management
 				logManageGroup.GET("/nodes/:serverId/logs", logManageH.ListNodeLogs)
 				logManageGroup.GET("/nodes/:serverId/logs/:type", logManageH.GetNodeLog)
@@ -2669,7 +2678,6 @@ backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 	trafficSyncSvc.Start()
 
 	// Start log cleanup service (periodically removes old log/event records)
-	logCleanupSvc := trafficSvc.NewLogCleanupService(database)
 	logCleanupSvc.Start(context.Background())
 
 	return r

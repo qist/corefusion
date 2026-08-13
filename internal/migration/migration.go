@@ -103,6 +103,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.LogRotationPolicy{},
 		&entity.LogRotationJob{},
 
+		// Log Cleanup (database table cleanup rules)
+		&entity.LogCleanupRule{},
+
 		// System Settings
 		&entity.SystemSetting{},
 		&entity.NotificationTemplate{},
@@ -284,6 +287,9 @@ func RunDataMigrations(db *gorm.DB) error {
 
 	// Migrate legacy plans to plan_templates (one-time data migration)
 	migratePlansToTemplates(db)
+
+	// Seed default log cleanup rules
+	seedDefaultLogCleanupRules(db)
 
 	return nil
 }
@@ -685,4 +691,64 @@ func migratePlansToTemplates(db *gorm.DB) {
 	if migratedCount > 0 {
 		log.Printf("migrated %d legacy plans to plan_templates with node groups", migratedCount)
 	}
+}
+
+// seedDefaultLogCleanupRules seeds the default log cleanup rules if none exist.
+// These rules replace the previously hardcoded retention periods in log_cleanup.go.
+func seedDefaultLogCleanupRules(db *gorm.DB) {
+	var count int64
+	db.Model(&entity.LogCleanupRule{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	defaults := []entity.LogCleanupRule{
+		// ── Traffic tables (30-day retention) ──
+		{Category: "traffic", Table: "traffic_usage_ledger", DisplayName: "Traffic Usage Ledger", RetainDays: 30, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "traffic", Table: "traffic_sessions", DisplayName: "Traffic Sessions", RetainDays: 30, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "traffic", Table: "traffic_quota_reset_logs", DisplayName: "Traffic Quota Reset Logs", RetainDays: 30, Enabled: true, CleanupCron: "0 */6 * * *"},
+
+		// ── Audit / Access log tables (90-day retention) ──
+		{Category: "audit", Table: "subscription_access_logs", DisplayName: "Subscription Access Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "subscription_rotations", DisplayName: "Subscription Token Rotations", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "security_audit_events", DisplayName: "Security Audit Events", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "security_alerts", DisplayName: "Security Alerts (resolved)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "node_audit_logs", DisplayName: "Node Audit Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "charge_security_events", DisplayName: "Charge Security Events", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+
+		// ── Runtime tables (90-day retention) ──
+		{Category: "runtime", Table: "core_crash_logs", DisplayName: "Core Crash Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "runtime_apply_job_events", DisplayName: "Runtime Apply Job Events", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "runtime_apply_job_targets", DisplayName: "Runtime Apply Job Targets", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "runtime_snapshots", DisplayName: "Runtime Snapshots", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "runtime_apply_jobs", DisplayName: "Runtime Apply Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "update_jobs", DisplayName: "Update Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "config_snapshots", DisplayName: "Config Snapshots", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "certificate_jobs", DisplayName: "Certificate Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "log_rotation_jobs", DisplayName: "Log Rotation Job History", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "backup_cleanup_jobs", DisplayName: "Backup Cleanup Job History", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+
+		// ── Commerce log tables (180-day retention, financial logs need longer retention) ──
+		{Category: "commerce", Table: "charge_callback_events", DisplayName: "Charge Callback Events", RetainDays: 180, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "commerce", Table: "charge_callback_retries", DisplayName: "Charge Callback Retries (resolved)", RetainDays: 180, Enabled: true, CleanupCron: "0 */6 * * *"},
+
+		// ── Client log tables (90-day retention) ──
+		{Category: "client", Table: "client_self_unban_logs", DisplayName: "Client Self-Unban Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "client", Table: "shared_account_repair_logs", DisplayName: "Shared Account Repair Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "client", Table: "client_log_packages", DisplayName: "Client Log Packages", RetainDays: 7, Enabled: true, CleanupCron: "0 */6 * * *"},
+
+		// ── Metrics tables (7-day retention, time-series data needs short retention) ──
+		{Category: "metrics", Table: "server_metrics", DisplayName: "Server Metrics", RetainDays: 7, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "metrics", Table: "speed_test_records", DisplayName: "Speed Test Records", RetainDays: 30, Enabled: true, CleanupCron: "0 */6 * * *"},
+	}
+
+	now := time.Now()
+	for i := range defaults {
+		defaults[i].CreatedAt = now
+		defaults[i].UpdatedAt = now
+		if err := db.Create(&defaults[i]).Error; err != nil {
+			log.Printf("WARNING: seed log cleanup rule %s failed: %v", defaults[i].Table, err)
+		}
+	}
+	log.Printf("seeded %d default log cleanup rules", len(defaults))
 }

@@ -513,6 +513,96 @@
           </div>
         </el-card>
       </el-tab-pane>
+
+      <!-- ═══════════════ Tab 5: DB Log Cleanup ═══════════════ -->
+      <el-tab-pane :label="t('logManage.tabCleanup')" name="cleanup">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="card-header-flex">
+              <div>
+                <span style="font-weight:600">{{ t('logManage.cleanupTitle') }}</span>
+                <span class="header-hint">{{ t('logManage.cleanupHint') }}</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <el-button type="danger" :loading="cleanupAllLoading" @click="handleCleanupAll">
+                  <el-icon><Delete /></el-icon>{{ t('logManage.cleanupAll') }}
+                </el-button>
+                <el-button @click="fetchCleanupRules" :loading="cleanupLoading">
+                  <el-icon><Refresh /></el-icon>{{ t('common.refresh') }}
+                </el-button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Category filter -->
+          <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
+            <span style="font-size:13px;color:#606266">{{ t('logManage.cleanupCategory') }}:</span>
+            <el-select v-model="cleanupCategoryFilter" :placeholder="t('logManage.cleanupCategoryAll')" clearable style="width:180px">
+              <el-option :label="t('logManage.cleanupCategoryAll')" value="" />
+              <el-option :label="t('logManage.cleanupCatTraffic')" value="traffic" />
+              <el-option :label="t('logManage.cleanupCatAudit')" value="audit" />
+              <el-option :label="t('logManage.cleanupCatRuntime')" value="runtime" />
+              <el-option :label="t('logManage.cleanupCatCommerce')" value="commerce" />
+              <el-option :label="t('logManage.cleanupCatClient')" value="client" />
+              <el-option :label="t('logManage.cleanupCatMetrics')" value="metrics" />
+            </el-select>
+          </div>
+
+          <el-table :data="cleanupFilteredRules" v-loading="cleanupLoading" stripe size="small">
+            <el-table-column prop="id" label="ID" width="50" />
+            <el-table-column prop="category" :label="t('common.type')" width="100">
+              <template #default="{row}">
+                <el-tag :type="cleanupCategoryTagType(row.category)" size="small">{{ row.category }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="display_name" :label="t('logManage.cleanupColTable')" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="table_name" :label="t('logManage.cleanupColDbTable')" width="220" show-overflow-tooltip>
+              <template #default="{row}">
+                <code style="font-size:12px;color:#909399">{{ row.table_name }}</code>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('logManage.cleanupColRetain')" width="120">
+              <template #default="{row}">
+                <el-input-number
+                  v-model="row.retain_days"
+                  :min="1"
+                  :max="365"
+                  size="small"
+                  style="width:100px"
+                  @change="handleCleanupRuleChange(row)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('logManage.cleanupColInterval')" width="160">
+              <template #default="{row}">
+                <el-select v-model="row.cleanup_cron" size="small" style="width:130px" @change="handleCleanupRuleChange(row)">
+                  <el-option :label="t('logManage.cleanupInterval6h')" value="0 */6 * * *" />
+                  <el-option :label="t('logManage.cleanupInterval12h')" value="0 */12 * * *" />
+                  <el-option :label="t('logManage.cleanupIntervalDaily')" value="0 0 * * *" />
+                  <el-option :label="t('logManage.cleanupIntervalWeekly')" value="0 0 * * 0" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.status')" width="70">
+              <template #default="{row}">
+                <el-switch v-model="row.enabled" @change="handleCleanupRuleChange(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.actions')" width="120" fixed="right">
+              <template #default="{row}">
+                <el-button
+                  size="small"
+                  type="warning"
+                  :loading="cleanupTableLoading === row.table_name"
+                  @click="handleCleanupTable(row)"
+                >
+                  <el-icon><Delete /></el-icon>{{ t('logManage.cleanupTable') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- ═══════════════ Dialogs ═══════════════ -->
@@ -718,7 +808,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Plus, Refresh, Search, RefreshRight, View, CircleCheck, Setting,
-  Document, Timer, DataLine, Monitor, FolderOpened,
+  Document, Timer, DataLine, Monitor, FolderOpened, Delete,
 } from '@element-plus/icons-vue'
 import * as logApi from '../api/logManage'
 import { listNodeServers } from '../api/nodeServer'
@@ -1584,12 +1674,100 @@ function onLogScroll() {
   logAutoScroll.value = scrollHeight - scrollTop - clientHeight < 50
 }
 
+// ═══════════════ DB Log Cleanup ═══════════════
+
+const cleanupRules = ref([])
+const cleanupLoading = ref(false)
+const cleanupAllLoading = ref(false)
+const cleanupTableLoading = ref(null)
+const cleanupCategoryFilter = ref('')
+const cleanupRuleSaveTimer = ref(null)
+
+const cleanupFilteredRules = computed(() => {
+  if (!cleanupCategoryFilter.value) return cleanupRules.value
+  return cleanupRules.value.filter(r => r.category === cleanupCategoryFilter.value)
+})
+
+function cleanupCategoryTagType(cat) {
+  const map = { traffic: 'success', audit: 'danger', runtime: 'warning', commerce: 'primary', client: 'info', metrics: '' }
+  return map[cat] || ''
+}
+
+async function fetchCleanupRules() {
+  cleanupLoading.value = true
+  try {
+    const r = await logApi.listCleanupRules()
+    cleanupRules.value = Array.isArray(r) ? r : []
+  } catch {
+    cleanupRules.value = []
+  } finally {
+    cleanupLoading.value = false
+  }
+}
+
+async function handleCleanupRuleChange(row) {
+  // Debounce saves to avoid spamming API on rapid input-number changes
+  if (cleanupRuleSaveTimer.value) clearTimeout(cleanupRuleSaveTimer.value)
+  cleanupRuleSaveTimer.value = setTimeout(async () => {
+    try {
+      await logApi.updateCleanupRule(row.id, {
+        retain_days: row.retain_days,
+        enabled: row.enabled,
+        cleanup_cron: row.cleanup_cron,
+        display_name: row.display_name,
+      })
+      ElMessage.success(t('logManage.cleanupSaveSuccess'))
+    } catch {
+      ElMessage.error(t('logManage.cleanupSaveFail'))
+    }
+  }, 600)
+}
+
+async function handleCleanupAll() {
+  await ElMessageBox.confirm(t('logManage.cleanupConfirmAll'), t('common.confirm'), { type: 'warning' })
+  cleanupAllLoading.value = true
+  try {
+    const r = await logApi.cleanupAll()
+    const total = r?.total_deleted || 0
+    if (total > 0) {
+      ElMessage.success(t('logManage.cleanupSuccess', { count: total }))
+    } else {
+      ElMessage.info(t('logManage.cleanupNothing'))
+    }
+  } catch (e) {
+    ElMessage.error(e?.message || 'Cleanup failed')
+  } finally {
+    cleanupAllLoading.value = false
+  }
+}
+
+async function handleCleanupTable(row) {
+  await ElMessageBox.confirm(
+    t('logManage.cleanupConfirmTable', { name: row.display_name, days: row.retain_days }),
+    t('common.confirm'),
+    { type: 'warning' }
+  )
+  cleanupTableLoading.value = row.table_name
+  try {
+    const r = await logApi.cleanupTable(row.table_name)
+    const deleted = r?.deleted || 0
+    ElMessage.success(t('logManage.cleanupTableSuccess', { name: row.display_name, count: deleted }))
+  } catch (e) {
+    ElMessage.error(e?.message || 'Cleanup failed')
+  } finally {
+    cleanupTableLoading.value = null
+  }
+}
+
 // ═══════════════ Lifecycle ═══════════════
 
 // Auto-initialize viewer when tab is first opened
 watch(activeTab, (val) => {
   if (val === 'viewer' && viewerLogTypes.value.length === 0) {
     onViewerNodeChange()
+  }
+  if (val === 'cleanup' && cleanupRules.value.length === 0) {
+    fetchCleanupRules()
   }
 })
 

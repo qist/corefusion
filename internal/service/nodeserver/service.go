@@ -1563,6 +1563,11 @@ func (s *Service) ReadConfigFile(ctx context.Context, serverID int64, coreType s
 	return s.nodeMgr.ReadConfigFileOnServer(ctx, serverID, coreType)
 }
 
+// ReadConfigFileOnServer is an alias for ReadConfigFile to satisfy the NodeOperator interface.
+func (s *Service) ReadConfigFileOnServer(ctx context.Context, serverID int64, coreType string) ([]byte, string, error) {
+	return s.ReadConfigFile(ctx, serverID, coreType)
+}
+
 // GetBootstrapCommand generates the bootstrap installation command for a server.
 func (s *Service) GetBootstrapCommand(ctx context.Context, serverID int64, panelHost string, panelPort int) (string, error) {
 	required, err := s.tokenMgr.IsBootstrapRequired(ctx, serverID)

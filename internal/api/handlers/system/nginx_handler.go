@@ -3,6 +3,7 @@ package system
 import (
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -360,7 +361,16 @@ func (h *NginxHandler) DeleteAllL4(c *gin.Context) {
 
 // GetWAFConfig handles GET /api/v1/node-servers/:id/nginx/waf/config.
 func (h *NginxHandler) GetWAFConfig(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_config")
+		if err != nil {
+			response.NotFound(c, "WAF_NOT_FOUND", "WAF config.lua not found: "+err.Error())
+			return
+		}
+		response.OK(c, gin.H{"content": string(data)})
+		return
+	}
 	content, err := h.nginxMgr.ReadWAFConfig()
 	if err != nil {
 		response.NotFound(c, "WAF_NOT_FOUND", "WAF config.lua not found: "+err.Error())
@@ -371,7 +381,7 @@ func (h *NginxHandler) GetWAFConfig(c *gin.Context) {
 
 // SaveWAFConfig handles PUT /api/v1/node-servers/:id/nginx/waf/config.
 func (h *NginxHandler) SaveWAFConfig(c *gin.Context) {
-	serverID, _ := h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	var req struct {
 		Content string `json:"content"`
 	}
@@ -379,8 +389,22 @@ func (h *NginxHandler) SaveWAFConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.nginxMgr.SaveWAFConfig(req.Content); err != nil {
-		response.InternalError(c, "SAVE_FAILED", err.Error())
+	if isLocal {
+		if err := h.nginxMgr.SaveWAFConfig(req.Content); err != nil {
+			response.InternalError(c, "SAVE_FAILED", err.Error())
+			return
+		}
+	} else {
+		// Remote: patch paths and send to agent only
+		content := req.Content
+		content = strings.Replace(content,
+			"config_log_dir = \"/apps/nginx/log/\"",
+			"config_log_dir = \"logs\"", 1)
+		content = strings.Replace(content,
+			"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
+			"config_rule_dir = \"proxy/lua/waf/rule-config\"", 1)
+		h.syncWAFFileRemote(c, serverID, "config.lua", []byte(content))
+		response.OK(c, gin.H{"message": "saved"})
 		return
 	}
 	h.syncWAFFiles(c, serverID)
@@ -399,8 +423,17 @@ func (h *NginxHandler) ListWAFRules(c *gin.Context) {
 
 // GetWAFRule handles GET /api/v1/node-servers/:id/nginx/waf/rules/:name.
 func (h *NginxHandler) GetWAFRule(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	name := c.Param("name")
+	if !isLocal && h.nodeOp != nil {
+		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_rule:"+name)
+		if err != nil {
+			response.NotFound(c, "RULE_NOT_FOUND", "rule file not found: "+err.Error())
+			return
+		}
+		response.OK(c, gin.H{"name": name, "content": string(data)})
+		return
+	}
 	content, err := h.nginxMgr.ReadWAFRule(name)
 	if err != nil {
 		response.NotFound(c, "RULE_NOT_FOUND", "rule file not found: "+err.Error())
@@ -411,7 +444,7 @@ func (h *NginxHandler) GetWAFRule(c *gin.Context) {
 
 // SaveWAFRule handles PUT /api/v1/node-servers/:id/nginx/waf/rules/:name.
 func (h *NginxHandler) SaveWAFRule(c *gin.Context) {
-	serverID, _ := h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	name := c.Param("name")
 	var req struct {
 		Content string `json:"content"`
@@ -420,8 +453,14 @@ func (h *NginxHandler) SaveWAFRule(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.nginxMgr.SaveWAFRule(name, req.Content); err != nil {
-		response.InternalError(c, "SAVE_FAILED", err.Error())
+	if isLocal {
+		if err := h.nginxMgr.SaveWAFRule(name, req.Content); err != nil {
+			response.InternalError(c, "SAVE_FAILED", err.Error())
+			return
+		}
+	} else {
+		h.syncWAFFileRemote(c, serverID, "rule-config/"+name, []byte(req.Content))
+		response.OK(c, gin.H{"message": "saved"})
 		return
 	}
 	h.syncWAFFiles(c, serverID)
@@ -430,7 +469,16 @@ func (h *NginxHandler) SaveWAFRule(c *gin.Context) {
 
 // GetWAFDomainConfig handles GET /api/v1/node-servers/:id/nginx/waf/domain-config.
 func (h *NginxHandler) GetWAFDomainConfig(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
+	if !isLocal && h.nodeOp != nil {
+		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_domain")
+		if err != nil {
+			response.NotFound(c, "DOMAIN_CONFIG_NOT_FOUND", "domain.json not found: "+err.Error())
+			return
+		}
+		response.OK(c, gin.H{"content": string(data)})
+		return
+	}
 	content, err := h.nginxMgr.ReadWAFDomainConfig()
 	if err != nil {
 		response.NotFound(c, "DOMAIN_CONFIG_NOT_FOUND", "domain.json not found: "+err.Error())
@@ -441,7 +489,7 @@ func (h *NginxHandler) GetWAFDomainConfig(c *gin.Context) {
 
 // SaveWAFDomainConfig handles PUT /api/v1/node-servers/:id/nginx/waf/domain-config.
 func (h *NginxHandler) SaveWAFDomainConfig(c *gin.Context) {
-	serverID, _ := h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	var req struct {
 		Content string `json:"content"`
 	}
@@ -449,8 +497,14 @@ func (h *NginxHandler) SaveWAFDomainConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.nginxMgr.SaveWAFDomainConfig(req.Content); err != nil {
-		response.InternalError(c, "SAVE_FAILED", err.Error())
+	if isLocal {
+		if err := h.nginxMgr.SaveWAFDomainConfig(req.Content); err != nil {
+			response.InternalError(c, "SAVE_FAILED", err.Error())
+			return
+		}
+	} else {
+		h.syncWAFFileRemote(c, serverID, "rule-config/domain.json", []byte(req.Content))
+		response.OK(c, gin.H{"message": "saved"})
 		return
 	}
 	h.syncWAFFiles(c, serverID)
@@ -534,6 +588,17 @@ func (h *NginxHandler) CheckWAFDomain(c *gin.Context) {
 	domain := c.Query("domain")
 	enabled := h.nginxMgr.IsWAFDomainEnabled(domain)
 	response.OK(c, gin.H{"domain": domain, "enabled": enabled})
+}
+
+// syncWAFFileRemote sends a single WAF file to a remote agent (non-blocking).
+func (h *NginxHandler) syncWAFFileRemote(c *gin.Context, serverID int64, path string, content []byte) {
+	if h.nodeOp == nil {
+		return
+	}
+	files := []*agentpb.WAFFile{{Path: path, Content: content}}
+	if err := h.nodeOp.SyncWAFFiles(c.Request.Context(), serverID, files); err != nil {
+		log.Printf("sync WAF file %s to server %d: %v", path, serverID, err)
+	}
 }
 
 // syncWAFFiles collects all WAF files from disk and pushes them to the remote node

@@ -32,4 +32,7 @@ type NodeOperator interface {
 	SyncMirrorsData(ctx context.Context, primaryServerID int64) error
 	// SyncWAFFiles pushes WAF files (config.lua, domain.json, *.rule) to a remote Agent.
 	SyncWAFFiles(ctx context.Context, serverID int64, files []*agentpb.WAFFile) error
+	// ReadConfigFileOnServer reads a config file from a node (local or remote).
+	// For remote nodes, sends ReadConfigFile via heartbeat stream.
+	ReadConfigFileOnServer(ctx context.Context, serverID int64, coreType string) ([]byte, string, error)
 }

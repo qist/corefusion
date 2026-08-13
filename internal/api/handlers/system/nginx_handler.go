@@ -367,7 +367,8 @@ func (h *NginxHandler) GetWAFConfig(c *gin.Context) {
 	if !isLocal && h.nodeOp != nil {
 		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_config")
 		if err != nil {
-			response.NotFound(c, "WAF_NOT_FOUND", "WAF config.lua not found: "+err.Error())
+			// Node may not have WAF configured — return empty content instead of error
+			response.OK(c, gin.H{"content": ""})
 			return
 		}
 		response.OK(c, gin.H{"content": string(data)})
@@ -375,7 +376,7 @@ func (h *NginxHandler) GetWAFConfig(c *gin.Context) {
 	}
 	content, err := h.nginxMgr.ReadWAFConfig()
 	if err != nil {
-		response.NotFound(c, "WAF_NOT_FOUND", "WAF config.lua not found: "+err.Error())
+		response.OK(c, gin.H{"content": ""})
 		return
 	}
 	response.OK(c, gin.H{"content": content})
@@ -430,7 +431,7 @@ func (h *NginxHandler) GetWAFRule(c *gin.Context) {
 	if !isLocal && h.nodeOp != nil {
 		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_rule:"+name)
 		if err != nil {
-			response.NotFound(c, "RULE_NOT_FOUND", "rule file not found: "+err.Error())
+			response.OK(c, gin.H{"name": name, "content": ""})
 			return
 		}
 		response.OK(c, gin.H{"name": name, "content": string(data)})
@@ -438,7 +439,7 @@ func (h *NginxHandler) GetWAFRule(c *gin.Context) {
 	}
 	content, err := h.nginxMgr.ReadWAFRule(name)
 	if err != nil {
-		response.NotFound(c, "RULE_NOT_FOUND", "rule file not found: "+err.Error())
+		response.OK(c, gin.H{"name": name, "content": ""})
 		return
 	}
 	response.OK(c, gin.H{"name": name, "content": content})
@@ -475,7 +476,8 @@ func (h *NginxHandler) GetWAFDomainConfig(c *gin.Context) {
 	if !isLocal && h.nodeOp != nil {
 		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_domain")
 		if err != nil {
-			response.NotFound(c, "DOMAIN_CONFIG_NOT_FOUND", "domain.json not found: "+err.Error())
+			// Node may not have WAF configured — return empty content instead of error
+			response.OK(c, gin.H{"content": "{}"})
 			return
 		}
 		response.OK(c, gin.H{"content": string(data)})
@@ -483,7 +485,7 @@ func (h *NginxHandler) GetWAFDomainConfig(c *gin.Context) {
 	}
 	content, err := h.nginxMgr.ReadWAFDomainConfig()
 	if err != nil {
-		response.NotFound(c, "DOMAIN_CONFIG_NOT_FOUND", "domain.json not found: "+err.Error())
+		response.OK(c, gin.H{"content": "{}"})
 		return
 	}
 	response.OK(c, gin.H{"content": content})
@@ -561,7 +563,7 @@ func (h *NginxHandler) GetWAFDomainRule(c *gin.Context) {
 		data, _, err := h.nodeOp.ReadConfigFileOnServer(c.Request.Context(), serverID,
 			fmt.Sprintf("waf_rule:domains/%s/%s", domain, ruleName))
 		if err != nil {
-			response.NotFound(c, "RULE_NOT_FOUND", "domain rule not found: "+err.Error())
+			response.OK(c, gin.H{"domain": domain, "rule": ruleName, "content": ""})
 			return
 		}
 		response.OK(c, gin.H{"domain": domain, "rule": ruleName, "content": string(data)})
@@ -569,7 +571,7 @@ func (h *NginxHandler) GetWAFDomainRule(c *gin.Context) {
 	}
 	content, err := h.nginxMgr.ReadWAFDomainRule(domain, ruleName)
 	if err != nil {
-		response.NotFound(c, "RULE_NOT_FOUND", "domain rule not found: "+err.Error())
+		response.OK(c, gin.H{"domain": domain, "rule": ruleName, "content": ""})
 		return
 	}
 	response.OK(c, gin.H{"domain": domain, "rule": ruleName, "content": content})

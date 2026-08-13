@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	"corefusion/internal/constants"
 	"corefusion/internal/coredata"
@@ -66,7 +67,16 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 
 	addr := fmt.Sprintf("%s:%d", a.cfg.Panel.Host, a.cfg.Panel.GRPCPort)
 	// grpc.NewClient（非阻塞，Dial 的推荐替代）。创建时不拨号，需显式等待 Ready。
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	// 启用 keepalive：每 10 秒发送一次 PING，5 秒内无 PONG 响应则判定连接死亡，
+	// 避免 TCP 静默断开时长时间等待 OS 级 TCP 超时（默认可达 60+ 秒）。
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create panel client: %w", err)
 	}

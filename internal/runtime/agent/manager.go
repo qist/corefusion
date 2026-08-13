@@ -17,6 +17,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
@@ -362,7 +363,15 @@ func (m *NodeServerManager) StartGRPCServer(ctx context.Context, addr string) er
 
 	creds := credentials.NewTLS(tlsConfig)
 
-	m.grpcServer = grpc.NewServer(grpc.Creds(creds))
+	// 启用 keepalive enforcement：允许 Agent 客户端每 5 秒发送一次 PING，
+	// 配合 Agent 侧的 keepalive 参数，使静默断开的 TCP 连接能在 ~15 秒内被检测到。
+	m.grpcServer = grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	)
 
 	// Register HeartbeatService (Agent→Panel bidirectional stream)
 	agentpb.RegisterHeartbeatServiceServer(m.grpcServer, &heartbeatServiceImpl{mgr: m})

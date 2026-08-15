@@ -4,7 +4,19 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
+    # 将 aws-sdk-go-v2 所有子模块归到同一个 PR，避免每次升级要改好几处
+    groups:
+      aws-sdk-go-v2:
+        patterns:
+          - "github.com/aws/aws-sdk-go-v2"
+          - "github.com/aws/aws-sdk-go-v2/*"
+          - "github.com/aws/smithy-go"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "gomod"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    open-pull-requests-limit: 10

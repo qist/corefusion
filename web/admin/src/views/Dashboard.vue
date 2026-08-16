@@ -408,9 +408,9 @@ export default {
       loading.value = true
       try {
         const [d, a, o, p, os] = await Promise.all([
-          getDashboardStatus(),
-          getAggregatedMetrics(),
-          getMetricsOverview(),
+          getDashboardStatus().catch(() => null),
+          getAggregatedMetrics().catch(() => null),
+          getMetricsOverview().catch(() => null),
           client.get('/system/stats').catch(() => null),
           client.get('/node-servers/online-summary').catch(() => null),
         ])

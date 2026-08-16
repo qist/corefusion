@@ -90,6 +90,7 @@ const allMenuItems = [
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document', role: 'admin' },
   { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor', role: 'admin' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting', role: 'admin' },
+  { path: '/db-stats', title: 'menu.dbStats', icon: 'DataAnalysis', role: 'admin' },
   { path: '/audit', title: 'menu.audit', icon: 'Bell', role: 'admin' },
   { path: '/runtime', title: 'menu.runtimeConfig', icon: 'Switch', role: 'admin' },
 ]

@@ -155,7 +155,7 @@ export function getTrafficStats() {
 // ──────────── Dashboard ────────────
 
 export function getDashboardStatus() {
-  return client.get('/node-servers/dashboard')
+  return client.get('/node-servers/dashboard', { suppressErrorMessage: true })
 }
 
 export function recommendRegion(clientIp, allowedRegions) {
@@ -165,7 +165,7 @@ export function recommendRegion(clientIp, allowedRegions) {
 // ──────────── Metrics ────────────
 
 export function getMetricsOverview() {
-  return client.get('/metrics/overview')
+  return client.get('/metrics/overview', { suppressErrorMessage: true })
 }
 
 export function getMetricsNodes() {
@@ -181,7 +181,7 @@ export function getMetricsHistory(id, params = {}) {
 }
 
 export function getAggregatedMetrics() {
-  return client.get('/node-servers/metrics/aggregated')
+  return client.get('/node-servers/metrics/aggregated', { suppressErrorMessage: true })
 }
 
 // ──────────── Speed Test ────────────

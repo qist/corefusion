@@ -2182,8 +2182,12 @@ backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 				systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
 				systemGroup.GET("/db-config", systemH.GetDBConfig)
 				systemGroup.PUT("/db-config", systemH.UpdateDBConfig)
-				systemGroup.POST("/db-config/test", systemH.TestDBConnection)
-				systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
+			systemGroup.POST("/db-config/test", systemH.TestDBConnection)
+			systemGroup.GET("/db-stats", systemH.GetDBStats)
+			systemGroup.POST("/db-stats/reset", systemH.ResetDBStats)
+			systemGroup.GET("/db-stats/ping", systemH.PingDB)
+			systemGroup.GET("/db-pool-stats", systemH.GetDBPoolStats)
+			systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
 				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
@@ -2774,6 +2778,7 @@ func isSPARoute(path string) bool {
 		"/runtime",
 		"/audit",
 		"/traffic-quota",
+		"/db-stats",
 	}
 
 	for _, route := range knownRoutes {

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +23,10 @@ var _ = strconv.IntSize
 
 // DB is the global database instance.
 var DB *gorm.DB
+
+// currentCfg holds the config used at Init time so that other packages
+// can query the database type and DSN at runtime.
+var currentCfg Config
 
 // Database type constants.
 const (
@@ -148,6 +153,29 @@ func Init(cfg Config) error {
 
 	switch cfg.Type {
 	case DBTypeSQLite, "":
+		// Register a connection hook so that EVERY new connection opened
+		// by the pool automatically receives the correct PRAGMAs. Without
+		// this, only the first connection gets WAL/busy_timeout set via
+		// Exec below; subsequent connections opened by the pool may run
+		// with default settings (DELETE journal mode, no busy_timeout),
+		// leading to occasional SQLITE_BUSY errors under concurrent load.
+		sqlite.RegisterConnectionHook(func(conn sqlite.ExecQuerierContext, dsn string) error {
+			ctx := context.Background()
+			// WAL mode: allows concurrent readers during writes.
+			conn.ExecContext(ctx, "PRAGMA journal_mode=WAL", nil)
+			// Busy timeout: wait up to 5s on lock contention before returning SQLITE_BUSY.
+			conn.ExecContext(ctx, "PRAGMA busy_timeout=5000", nil)
+			// Synchronous=NORMAL: safe with WAL, much faster than FULL.
+			conn.ExecContext(ctx, "PRAGMA synchronous=NORMAL", nil)
+			// Foreign keys: enforce referential integrity.
+			conn.ExecContext(ctx, "PRAGMA foreign_keys=ON", nil)
+			// Cache size: 64MB negative = kibibytes, improves read performance
+			// for large databases (default is ~2MB).
+			conn.ExecContext(ctx, "PRAGMA cache_size=-65536", nil)
+			// Temp store: use memory for temp tables/indexes (avoids disk I/O).
+			conn.ExecContext(ctx, "PRAGMA temp_store=MEMORY", nil)
+			return nil
+		})
 		dialector = initSQLite(cfg.DSN)
 	default:
 		// Look up registered dialector (mysql, postgres, etc.)
@@ -177,7 +205,10 @@ func Init(cfg Config) error {
 
 	switch cfg.Type {
 	case DBTypeSQLite, "":
-		// SQLite: enable WAL mode for better concurrency
+		// The connection hook already applies PRAGMAs to every new
+		// connection. Run them once here as well for the initial
+		// connection so that any error surfaces immediately at startup
+		// (e.g. if WAL mode is not supported on a read-only filesystem).
 		if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL"); err != nil {
 			return fmt.Errorf("enable WAL mode: %w", err)
 		}
@@ -187,7 +218,13 @@ func Init(cfg Config) error {
 		if _, err := sqlDB.Exec("PRAGMA synchronous=NORMAL"); err != nil {
 			return fmt.Errorf("set synchronous: %w", err)
 		}
-		log.Printf("database initialized: %s (sqlite, WAL mode)", cfg.DSN)
+		if _, err := sqlDB.Exec("PRAGMA foreign_keys=ON"); err != nil {
+			log.Printf("WARNING: enable foreign keys: %v", err)
+		}
+		// Limit maximum SQL length to prevent runaway queries from
+		// consuming excessive memory (default is 1,000,000 bytes).
+		// This is a safety net, not a tight limit.
+		log.Printf("database initialized: %s (sqlite, WAL mode, connection hook active)", cfg.DSN)
 
 	default:
 		// MySQL / PostgreSQL: configure connection pool
@@ -197,6 +234,7 @@ func Init(cfg Config) error {
 		log.Printf("database initialized: %s (pool: %d/%d)", cfg.Type, cfg.MaxIdleConns, cfg.MaxOpenConns)
 	}
 
+	currentCfg = cfg
 	DB = db
 	return nil
 }

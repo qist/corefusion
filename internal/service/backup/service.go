@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jackc/pgx/v5"
 	"github.com/jlaffaye/ftp"
+	"github.com/qist/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -96,7 +98,7 @@ func (s *Service) CreateBackup(ctx context.Context, name, backupType string) (*e
 		dbName := dbNameFromDSN(dbType, dsn)
 		archiveName = "db_dump/" + dbName + ".sql"
 	} else {
-		// sqlite: consistent VACUUM copy (handles WAL correctly)
+		// sqlite: Online Backup (hot, page-by-page, with VACUUM INTO fallback)
 		dumpPath = tmpPath + ".vaccumdb"
 		if err := s.DumpDatabase(ctx, dbType, dsn, dumpPath); err != nil {
 			os.Remove(dumpPath)
@@ -1276,7 +1278,9 @@ func (s *Service) extractTarGz(archive, dest string) error {
 // --- Database dump (pure Go, no external tools) ---
 
 // DumpDatabase produces a consistent dump of the configured database into destPath.
-//   - sqlite:   VACUUM INTO (offline-consistent copy of the live db)
+//   - sqlite:   Online Backup API (sqlite3_backup_init/step/finish) — hot backup
+//     that copies the database page-by-page without blocking writes for long.
+//     Falls back to VACUUM INTO if the Online Backup API is unavailable.
 //   - mysql:    SQL dump (DROP/CREATE + INSERT) via the existing gorm connection
 //   - postgres: SQL dump (DROP + CREATE + INSERT) via pgx
 //
@@ -1288,36 +1292,195 @@ func (s *Service) DumpDatabase(ctx context.Context, dbType, dsn, destPath string
 	case db.DBTypePostgres:
 		return dumpPostgres(ctx, dsn, destPath)
 	case db.DBTypeSQLite, "":
-		if s.db == nil {
-			return fmt.Errorf("database connection not available for sqlite dump")
-		}
-		sqlDB, err := s.db.DB()
-		if err != nil {
-			return fmt.Errorf("get sql.DB: %w", err)
-		}
-		if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil {
-			return err
-		}
-		// WAL mode: merge all committed transactions from the -wal file back
-		// into the main db file and truncate the WAL before taking the copy.
-		// This guarantees the dumped snapshot is fully flushed and keeps the
-		// WAL from growing unbounded. If the db is busy, checkpoint is skipped
-		// (non-fatal): VACUUM INTO still reads committed WAL data on its own.
-		if _, err := sqlDB.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
-			log.Printf("[Backup] sqlite wal_checkpoint(TRUNCATE) skipped: %v", err)
-		}
-		safe := strings.ReplaceAll(destPath, "'", "''")
-		if _, err := sqlDB.Exec("VACUUM INTO '" + safe + "'"); err != nil {
-			return fmt.Errorf("vacuum into failed: %w", err)
-		}
-		return nil
+		return s.dumpSQLite(ctx, destPath)
 	default:
 		return fmt.Errorf("unsupported database type for dump: %s", dbType)
 	}
 }
 
+// dumpSQLite creates a consistent copy of the live SQLite database using the
+// Online Backup API (sqlite3_backup_init/step/finish). This is superior to
+// VACUUM INTO for large databases because:
+//
+//   - It copies page-by-page in small chunks (default 100 pages per step), so
+//     write operations are only briefly blocked during each step rather than
+//     for the entire backup duration.
+//   - It provides progress information via PageCount() and Remaining().
+//   - It produces a byte-for-byte identical copy of the source database schema
+//     and data (VACUUM INTO also produces a consistent copy but defrags it,
+//     which changes the page layout).
+//
+// The source database must be in WAL mode for the backup to be truly "hot"
+// (concurrent writes continue during backup). This is already ensured by
+// db.Init() which sets PRAGMA journal_mode=WAL at startup.
+//
+// If the Online Backup API is not available (e.g. driver mismatch), it falls
+// back to VACUUM INTO automatically.
+func (s *Service) dumpSQLite(ctx context.Context, destPath string) error {
+	if s.db == nil {
+		return fmt.Errorf("database connection not available for sqlite dump")
+	}
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return fmt.Errorf("get sql.DB: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil {
+		return err
+	}
+
+	// WAL checkpoint: merge committed WAL data into the main db file so the
+	// backup snapshot is fully flushed. Non-fatal if it fails (the Online
+	// Backup API reads committed WAL pages on its own).
+	if _, err := sqlDB.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		log.Printf("[Backup] sqlite wal_checkpoint(TRUNCATE) skipped: %v", err)
+	}
+
+	// Try the Online Backup API first. It requires a raw *sql.Conn to access
+	// the underlying driver.Conn (which must implement sqlite.BackupConn).
+	if err := s.dumpSQLiteOnlineBackup(ctx, sqlDB, destPath); err == nil {
+		return nil
+	} else {
+		log.Printf("[Backup] online backup failed, falling back to VACUUM INTO: %v", err)
+	}
+
+	// Fallback: VACUUM INTO (atomic, consistent, but blocks writes for the
+	// entire duration — acceptable for small-to-medium databases).
+	safe := strings.ReplaceAll(destPath, "'", "''")
+	if _, err := sqlDB.Exec("VACUUM INTO '" + safe + "'"); err != nil {
+		return fmt.Errorf("vacuum into failed: %w", err)
+	}
+	return nil
+}
+
+// dumpSQLiteOnlineBackup uses the SQLite Online Backup API to copy the live
+// database to destPath page-by-page. This is the preferred method for large
+// databases because it minimizes write blocking time.
+//
+// The backup is performed in steps of backupPageSize pages (default 100).
+// Between steps, other writers can proceed, so the database remains usable
+// throughout the backup. Progress is logged at 10% intervals.
+//
+// The destPath must be an absolute or relative file path. It is converted to
+// a SQLite URI (file:...) for the backup API.
+//
+// The function returns nil on success, or an error if the Online Backup API
+// is unavailable or the backup fails. The caller is expected to fall back to
+// VACUUM INTO on error.
+func (s *Service) dumpSQLiteOnlineBackup(ctx context.Context, sqlDB *sql.DB, destPath string) error {
+	// Clean up any stale destination file so the backup starts fresh.
+	os.Remove(destPath)
+	os.Remove(destPath + "-wal")
+	os.Remove(destPath + "-shm")
+
+	// Convert destPath to a SQLite URI. The Online Backup API expects a URI
+	// that can be opened by sqlite3_open (e.g. "file:/path/to/backup.db").
+	// Use the absolute path to avoid ambiguity.
+	absPath, err := filepath.Abs(destPath)
+	if err != nil {
+		absPath = destPath
+	}
+	dstURI := "file:" + absPath
+
+	// Get a dedicated connection from the pool. This connection will be used
+	// to initiate the backup. We must use a raw *sql.Conn (not *sql.DB)
+	// because we need access to the underlying driver.Conn to call the
+	// sqlite3_backup_* C functions.
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("get connection for online backup: %w", err)
+	}
+	defer conn.Close()
+
+	// Create the backup object. This calls sqlite3_backup_init, which opens
+	// the destination database and sets up the backup. The source is the
+	// database on the current connection.
+	backup, err := sqlite.NewBackup(conn, dstURI)
+	if err != nil {
+		return fmt.Errorf("init online backup: %w", err)
+	}
+
+	// Drive the backup in small steps. Each step copies up to backupPageSize
+	// pages (default 100, ~400KB at 4KB/page). Between steps, the database
+	// lock is released, allowing concurrent writers to proceed.
+	const backupPageSize = int32(100)
+
+	// Note: PageCount() returns 0 until the first Step() has been called
+	// (this is how the sqlite3_backup_* C API works). So we capture the total
+	// page count after the first step and use it for progress logging.
+	var lastProgressPct int = -1
+	var totalPages int
+
+	for {
+		// Check if context is cancelled (backup may take a long time on
+		// large databases).
+		select {
+		case <-ctx.Done():
+			backup.Finish()
+			os.Remove(destPath)
+			return ctx.Err()
+		default:
+		}
+
+		more, err := backup.Step(backupPageSize)
+		if err != nil {
+			backup.Finish()
+			os.Remove(destPath)
+			return fmt.Errorf("online backup step failed: %w", err)
+		}
+
+		// Capture total pages after the first step (PageCount returns 0
+		// before any step has been executed).
+		if totalPages == 0 {
+			totalPages = backup.PageCount()
+			if totalPages > 0 {
+				log.Printf("[Backup] online backup started: %d pages (~%d MB)",
+					totalPages, totalPages*4/1024)
+			}
+		}
+
+		// Log progress at 10% intervals.
+		if totalPages > 0 {
+			remaining := backup.Remaining()
+			done := totalPages - remaining
+			pct := done * 100 / totalPages
+			pct = pct / 10 * 10 // round down to nearest 10%
+			if pct != lastProgressPct && pct < 100 {
+				log.Printf("[Backup] online backup progress: %d%% (%d/%d pages)",
+					pct, done, totalPages)
+				lastProgressPct = pct
+			}
+		}
+
+		if !more {
+			// All pages copied.
+			break
+		}
+	}
+
+	// Finish the backup (calls sqlite3_backup_finish and closes the
+	// destination connection). The destination file is now a complete,
+	// consistent snapshot of the source database.
+	if err := backup.Finish(); err != nil {
+		os.Remove(destPath)
+		return fmt.Errorf("online backup finish failed: %w", err)
+	}
+
+	// Verify the backup file exists and has non-zero size.
+	info, err := os.Stat(destPath)
+	if err != nil {
+		return fmt.Errorf("online backup file not found after finish: %w", err)
+	}
+	if info.Size() == 0 {
+		os.Remove(destPath)
+		return fmt.Errorf("online backup file is empty")
+	}
+
+	log.Printf("[Backup] online backup completed: %s (%d bytes)", destPath, info.Size())
+	return nil
+}
+
 // RestoreDatabase restores the configured database from a dump file.
-//   - sqlite:   copies the .db VACUUM copy over the live db file (caller restarts)
+//   - sqlite:   copies the .db backup copy over the live db file (caller restarts)
 //   - mysql:    executes the .sql dump with multiStatements enabled
 //   - postgres: executes the .sql dump via pgx (simple query protocol, multi-statement)
 //

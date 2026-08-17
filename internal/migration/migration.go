@@ -224,6 +224,11 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Rate Limit Config / 限速配置
 		&entity.RateLimitConfig{},
+
+		// WAF Rule Store (nginx/caddy shared rules)
+		&entity.WafRule{},
+		&entity.WafConfig{},
+		&entity.WafDomainConfig{},
 	}
 
 	// PostgreSQL has no "longtext" type. CoreFusion entities use type:longtext

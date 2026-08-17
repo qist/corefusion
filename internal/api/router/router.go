@@ -51,6 +51,7 @@ import (
 	systemHandler "corefusion/internal/api/handlers/system"
 	trafficHandler "corefusion/internal/api/handlers/traffic"
 	usersHandler "corefusion/internal/api/handlers/users"
+	wafHandler "corefusion/internal/api/handlers/waf"
 	warpHandler "corefusion/internal/api/handlers/warp"
 	xrayControlHandler "corefusion/internal/api/handlers/xraycontrol"
 	xrayStatsHandler "corefusion/internal/api/handlers/xraystats"
@@ -59,6 +60,7 @@ import (
 	"corefusion/internal/app/embed"
 	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/runtime/agent"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/healthcheck"
@@ -95,6 +97,7 @@ import (
 	trafficSvc "corefusion/internal/service/traffic"
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
 	userService "corefusion/internal/service/user"
+	wafSvc "corefusion/internal/service/waf"
 	warpSvc "corefusion/internal/service/warp"
 	accessPkg "corefusion/internal/service/access"
 	"corefusion/internal/coredata"
@@ -483,6 +486,23 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
 	geoRuleSvcInst := geoRuleSvc.NewService(ruleSourceRepo, geoRuleRepo, dataDir, systemSettingSvc)
 
+	// WAF Rule Store (unified nginx/caddy rules in database)
+	wafRuleRepo := repository.NewWafRuleRepository(database)
+	wafCfgRepo := repository.NewWafConfigRepository(database)
+	wafDomainCfgRepo := repository.NewWafDomainConfigRepository(database)
+	wafSvcInst := wafSvc.NewService(wafRuleRepo, wafCfgRepo, wafDomainCfgRepo, dataDir, systemSettingSvc)
+	// Initialize from GitHub if table is empty (async, non-blocking)
+	go func() {
+		if err := wafSvcInst.EnsureInitialized(context.Background()); err != nil {
+			log.Printf("WARNING: waf rule initialization failed: %v", err)
+		} else {
+			// Land rules to local disk
+			if err := wafSvcInst.LandAllRules(context.Background()); err != nil {
+				log.Printf("WARNING: waf rule land to disk failed: %v", err)
+			}
+		}
+	}()
+
 	// Traffic sync service (periodically syncs traffic stats to DB)
 	trafficSyncSvc := trafficsyncSvc.NewService(systemSettingSvc, inboundConfigSvc, 30*time.Second)
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
@@ -849,8 +869,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyH := systemHandler.NewCaddyHandler(caddyMgr, proxyMgr)
 	nginxH := systemHandler.NewNginxHandler(nginxMgr, proxyMgr)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
+	wafH := wafHandler.NewHandler(wafSvcInst)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
+		wafSvcInst.SetSyncer(&wafNodeSyncerAdapter{mgr: sharedNodeMgr})
 		// Inject RemoteSyncer so configsync can push configs to remote Agents.
 		configSyncSvc.SetRemoteSyncer(sharedNodeMgr)
 		// Wire rate limit service so PushIPAssociation can reach remote Agents.
@@ -1081,9 +1103,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			authSelfGroup.POST("/change-password", authH.ChangePassword)
 		}
 
-		// Protected routes
-		protected := v1.Group("")
-		protected.Use(middleware.AuthRequired())
+// Protected routes
+protected := v1.Group("")
+
+// WAF Rule Library (global, not per-node)
+protected.GET("/waf/rules", wafH.ListRules)
+protected.GET("/waf/rules/:name", wafH.GetRule)
+protected.PUT("/waf/rules/:name", wafH.SaveRule)
+protected.DELETE("/waf/rules/:name", wafH.DeleteRule)
+protected.POST("/waf/sync-github", wafH.SyncFromGitHub)
+protected.POST("/waf/sync-all", wafH.SyncAll)
+	protected.Use(middleware.AuthRequired())
 		{
 			// Users: administrator account management is super_admin only,
 			// otherwise any authenticated principal could mint itself a
@@ -1872,22 +1902,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateLogEnabled)
 				nodeServersGroup.DELETE("/:id/caddy/l4-rules", caddyH.DeleteAllL4)
 
-	// Caddy WAF Management (CaddyGuard)
-	nodeServersGroup.GET("/:id/caddy/waf/config", caddyH.GetWAFConfig)
-	nodeServersGroup.PUT("/:id/caddy/waf/config", caddyH.SaveWAFConfig)
-	nodeServersGroup.GET("/:id/caddy/waf/rules", caddyH.ListWAFRules)
-	nodeServersGroup.GET("/:id/caddy/waf/rules/:name", caddyH.GetWAFRule)
-	nodeServersGroup.PUT("/:id/caddy/waf/rules/:name", caddyH.SaveWAFRule)
-	nodeServersGroup.GET("/:id/caddy/waf/domain-config", caddyH.GetWAFDomainConfig)
-	nodeServersGroup.PUT("/:id/caddy/waf/domain-config", caddyH.SaveWAFDomainConfig)
-	nodeServersGroup.GET("/:id/caddy/waf/domain-rules", caddyH.ListWAFDomainDirs)
-	nodeServersGroup.GET("/:id/caddy/waf/domain-rules/:domain/:rule", caddyH.GetWAFDomainRule)
-	nodeServersGroup.PUT("/:id/caddy/waf/domain-rules/:domain/:rule", caddyH.SaveWAFDomainRule)
-	nodeServersGroup.POST("/:id/caddy/waf/enable-domain", caddyH.EnableWAFDomain)
-	nodeServersGroup.POST("/:id/caddy/waf/disable-domain", caddyH.DisableWAFDomain)
-	nodeServersGroup.GET("/:id/caddy/waf/domain-status", caddyH.GetWAFDomainStatus)
-
-				// Nginx site management (per node)
+					// Nginx site management (per node)
 				nodeServersGroup.GET("/:id/nginx/sites", nginxH.ListSites)
 				nodeServersGroup.POST("/:id/nginx/sites", nginxH.CreateSite)
 				nodeServersGroup.PUT("/:id/nginx/sites/:siteId", nginxH.UpdateSite)
@@ -1901,19 +1916,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)
 				nodeServersGroup.DELETE("/:id/nginx/l4-rules", nginxH.DeleteAllL4)
 
-				// Nginx WAF Management
-				nodeServersGroup.GET("/:id/nginx/waf/config", nginxH.GetWAFConfig)
-				nodeServersGroup.PUT("/:id/nginx/waf/config", nginxH.SaveWAFConfig)
-				nodeServersGroup.GET("/:id/nginx/waf/rules", nginxH.ListWAFRules)
-				nodeServersGroup.GET("/:id/nginx/waf/rules/:name", nginxH.GetWAFRule)
-				nodeServersGroup.PUT("/:id/nginx/waf/rules/:name", nginxH.SaveWAFRule)
-				nodeServersGroup.GET("/:id/nginx/waf/domain-config", nginxH.GetWAFDomainConfig)
-				nodeServersGroup.PUT("/:id/nginx/waf/domain-config", nginxH.SaveWAFDomainConfig)
-				nodeServersGroup.GET("/:id/nginx/waf/domain-rules", nginxH.ListWAFDomainDirs)
-				nodeServersGroup.GET("/:id/nginx/waf/domain-rules/:domain/:rule", nginxH.GetWAFDomainRule)
-				nodeServersGroup.PUT("/:id/nginx/waf/domain-rules/:domain/:rule", nginxH.SaveWAFDomainRule)
-				nodeServersGroup.POST("/:id/nginx/waf/toggle-domain", nginxH.ToggleWAFDomain)
-				nodeServersGroup.GET("/:id/nginx/waf/domain-status", nginxH.CheckWAFDomain)
+			// Unified WAF Management (database-backed, shared nginx/caddy)
+			// Per-node WAF config
+			nodeServersGroup.GET("/:id/waf/config", wafH.GetConfig)
+			nodeServersGroup.PUT("/:id/waf/config", wafH.SaveConfig)
+			nodeServersGroup.GET("/:id/waf/rules", wafH.ListNodeRules)
+			nodeServersGroup.GET("/:id/waf/rules/:name", wafH.GetNodeRule)
+			nodeServersGroup.PUT("/:id/waf/rules/:name", wafH.SaveNodeRule)
+			nodeServersGroup.DELETE("/:id/waf/rules/:name", wafH.DeleteNodeRule)
+			nodeServersGroup.GET("/:id/waf/domain-config", wafH.ListDomainConfigs)
+			nodeServersGroup.GET("/:id/waf/domain-config/:domain", wafH.GetDomainConfig)
+			nodeServersGroup.PUT("/:id/waf/domain-config/:domain", wafH.SaveDomainConfig)
+			nodeServersGroup.GET("/:id/waf/domain-status", wafH.GetDomainStatus)
+			nodeServersGroup.POST("/:id/waf/enable-domain", wafH.EnableDomain)
+			nodeServersGroup.POST("/:id/waf/disable-domain", wafH.DisableDomain)
+			nodeServersGroup.POST("/:id/waf/sync", wafH.SyncToNode)
 
 				// Inbound Configs (per node)
 				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
@@ -3270,4 +3287,23 @@ func containsInt64(slice []int64, val int64) bool {
 		}
 	}
 	return false
+}
+
+// wafNodeSyncerAdapter adapts *agent.NodeServerManager to waf.NodeSyncer.
+// It converts waf.WAFFile (service layer) to agentpb.WAFFile (proto layer)
+// before forwarding to NodeServerManager.SyncWAFFiles.
+type wafNodeSyncerAdapter struct {
+	mgr *agent.NodeServerManager
+}
+
+func (a *wafNodeSyncerAdapter) SyncWAFFiles(ctx context.Context, serverID int64, files []*wafSvc.WAFFile) error {
+	pbFiles := make([]*agentpb.WAFFile, 0, len(files))
+	for _, f := range files {
+		pbFiles = append(pbFiles, &agentpb.WAFFile{
+			Path:    f.Path,
+			Content: f.Content,
+			Hash:    f.Hash,
+		})
+	}
+	return a.mgr.SyncWAFFiles(ctx, serverID, pbFiles)
 }

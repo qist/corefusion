@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -185,19 +187,30 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_SyncWafFiles:
 		req := c.SyncWafFiles
+		wafDir := filepath.Join(a.dataDir, "proxy", "waf-rules")
+		nginxConfigDir := filepath.Join(a.dataDir, "proxy", "lua", "waf")
+		os.MkdirAll(wafDir, 0755)
 		for _, f := range req.Files {
 			// Prevent path traversal
 			if strings.Contains(f.Path, "..") {
 				continue
 			}
-			// Nginx WAF files have paths relative to lua/waf/ (e.g. "config.lua", "rule-config/url.rule")
-			// CaddyGuard WAF files have paths relative to caddyguard/ (e.g. "rule-config/config.json")
-			// Both write under dataDir/proxy/
+			// config.lua goes to proxy/lua/waf/config.lua (Lua engine loads it there)
+			// All other files go to proxy/waf-rules/
 			var outPath string
-			if strings.HasPrefix(f.Path, "caddyguard/") {
-				outPath = filepath.Join(a.dataDir, "proxy", f.Path)
+			if f.Path == "config.lua" {
+				outPath = filepath.Join(nginxConfigDir, "config.lua")
 			} else {
-				outPath = filepath.Join(a.dataDir, "proxy", "lua", "waf", f.Path)
+				outPath = filepath.Join(wafDir, filepath.FromSlash(f.Path))
+			}
+			// Hash comparison: skip if content unchanged
+			if f.Hash != "" {
+				if existing, err := os.ReadFile(outPath); err == nil {
+					h := sha256.Sum256(existing)
+					if hex.EncodeToString(h[:]) == f.Hash {
+						continue
+					}
+				}
 			}
 			os.MkdirAll(filepath.Dir(outPath), 0755)
 			if err := os.WriteFile(outPath, f.Content, 0644); err != nil {

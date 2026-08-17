@@ -286,14 +286,25 @@ func nginxUpstreamKey(name string) string {
 
 // --- WAF Management ---
 
-// wafBaseDir returns the WAF root directory: dataDir/proxy/lua/waf
+// wafBaseDir returns the unified WAF rules directory: dataDir/proxy/waf-rules
+// This is where .rule files, domain.json, and Caddy's config.json live.
+// Note: Nginx's config.lua lives with the Lua source at proxy/lua/waf/config.lua
+// because the Lua engine requires it there. See ReadWAFConfig/SaveWAFConfig.
 func (m *NginxManager) wafBaseDir() string {
-	return filepath.Join(m.dataDir, "proxy", "lua", "waf")
+	return filepath.Join(m.dataDir, "proxy", "waf-rules")
 }
 
-// wafRuleDir returns the WAF rule-config directory.
+// wafRuleDir returns the WAF rules directory (same as wafBaseDir for compatibility).
 func (m *NginxManager) wafRuleDir() string {
-	return filepath.Join(m.wafBaseDir(), "rule-config")
+	return m.wafBaseDir()
+}
+
+// wafConfigPath returns the path to config.lua.
+// config.lua lives with the NginxGuard Lua source at proxy/lua/waf/config.lua
+// because the Lua engine loads it via lua_package_path. The config_rule_dir
+// inside config.lua points to the unified proxy/waf-rules/ directory.
+func (m *NginxManager) wafConfigPath() string {
+	return filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
 }
 
 // WAFRuleFile describes a rule file in rule-config/.
@@ -352,9 +363,10 @@ func (m *NginxManager) SaveWAFRule(name, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-// ReadWAFConfig reads the WAF config.lua file.
+// ReadWAFConfig reads the WAF config.lua file from the Lua source directory.
+// config.lua lives at proxy/lua/waf/config.lua (loaded by NginxGuard's Lua engine).
 func (m *NginxManager) ReadWAFConfig() (string, error) {
-	path := filepath.Join(m.wafBaseDir(), "config.lua")
+	path := m.wafConfigPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -362,11 +374,13 @@ func (m *NginxManager) ReadWAFConfig() (string, error) {
 	return string(data), nil
 }
 
-// SaveWAFConfig writes the WAF config.lua file.
+// SaveWAFConfig writes the WAF config.lua file to the Lua source directory.
 // Automatically corrects log_dir and rule_dir to relative paths so the config
 // works on both panel and remote Agents regardless of installation directory.
+// config.lua lives at proxy/lua/waf/config.lua (where NginxGuard's Lua engine loads it).
+// config_rule_dir inside it points to proxy/waf-rules (the unified rule directory).
 func (m *NginxManager) SaveWAFConfig(content string) error {
-	path := filepath.Join(m.wafBaseDir(), "config.lua")
+	path := m.wafConfigPath()
 	os.MkdirAll(filepath.Dir(path), 0755)
 	// Patch paths to relative (in case user pasted original /apps/nginx/ paths)
 	content = strings.Replace(content,
@@ -374,7 +388,10 @@ func (m *NginxManager) SaveWAFConfig(content string) error {
 		"config_log_dir = \"logs\"", 1)
 	content = strings.Replace(content,
 		"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
-		"config_rule_dir = \"proxy/lua/waf/rule-config\"", 1)
+		"config_rule_dir = \"proxy/waf-rules\"", 1)
+	content = strings.Replace(content,
+		"config_rule_dir = \"proxy/lua/waf/rule-config\"",
+		"config_rule_dir = \"proxy/waf-rules\"", 1)
 	return os.WriteFile(path, []byte(content), 0644)
 }
 

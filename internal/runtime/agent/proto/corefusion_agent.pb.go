@@ -584,8 +584,8 @@ func (x *SyncProxyConfigRequest) GetCaddySniSettings() string {
 	return ""
 }
 
-// SyncWAFFilesRequest — Panel→Agent 同步 WAF 文件 (config.lua, domain.json, *.rule)
-// Agent 收到后将文件写入 dataDir/proxy/lua/waf/ 对应路径
+// SyncWAFFilesRequest — Panel→Agent 同步 WAF 文件 (config.json/config.lua, domain.json, *.rule)
+// Agent 收到后将文件写入 dataDir/proxy/waf-rules/ 对应路径
 type SyncWAFFilesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Files         []*WAFFile             `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty"` // WAF 文件列表
@@ -633,8 +633,9 @@ func (x *SyncWAFFilesRequest) GetFiles() []*WAFFile {
 // WAFFile 描述单个 WAF 文件
 type WAFFile struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`       // 相对于 waf/ 的路径，如 "config.lua", "rule-config/domain.json", "rule-config/url.rule"
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`       // 相对于 waf-rules/ 的路径，如 "config.lua", "domain.json", "url.rule"
 	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"` // 文件内容
+	Hash          string                 `protobuf:"bytes,3,opt,name=hash,proto3" json:"hash,omitempty"`       // 内容 hash（Agent 端对比，相同则跳过写入）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -681,6 +682,13 @@ func (x *WAFFile) GetContent() []byte {
 		return x.Content
 	}
 	return nil
+}
+
+func (x *WAFFile) GetHash() string {
+	if x != nil {
+		return x.Hash
+	}
+	return ""
 }
 
 type ControlProxyRequest struct {
@@ -7614,10 +7622,11 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\x0enginx_settings\x18\x04 \x01(\tR\rnginxSettings\x12,\n" +
 	"\x12caddy_sni_settings\x18\x05 \x01(\tR\x10caddySniSettings\"I\n" +
 	"\x13SyncWAFFilesRequest\x122\n" +
-	"\x05files\x18\x01 \x03(\v2\x1c.corefusion.agent.v1.WAFFileR\x05files\"7\n" +
+	"\x05files\x18\x01 \x03(\v2\x1c.corefusion.agent.v1.WAFFileR\x05files\"K\n" +
 	"\aWAFFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
-	"\acontent\x18\x02 \x01(\fR\acontent\"L\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\x12\x12\n" +
+	"\x04hash\x18\x03 \x01(\tR\x04hash\"L\n" +
 	"\x13ControlProxyRequest\x12\x1d\n" +
 	"\n" +
 	"proxy_type\x18\x01 \x01(\tR\tproxyType\x12\x16\n" +

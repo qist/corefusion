@@ -2023,8 +2023,8 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 
 	// For nginx: track whether lua/conf directories were extracted
 	var luaExtracted bool
-	// For caddy: track whether caddyguard rule files were extracted
-	var caddyGuardExtracted bool
+	// For caddy: track whether waf-rules files were extracted
+	var wafRulesExtracted bool
 
 	for {
 		header, err := tr.Next()
@@ -2092,17 +2092,17 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 			}
 		}
 
-		// Extract caddyguard/ directory to dataDir/proxy/caddyguard/rule-config/
+		// Extract caddyguard/ directory to dataDir/proxy/waf-rules/
 		if name == "caddy" && strings.HasPrefix(header.Name, "caddyguard/") {
-			// Map "caddyguard/xxx" → "proxy/caddyguard/rule-config/xxx"
+			// Map "caddyguard/xxx" → "proxy/waf-rules/xxx"
 			subPath := strings.TrimPrefix(header.Name, "caddyguard/")
 			if subPath != "" {
-				outPath := filepath.Join(m.dataDir, "proxy", "caddyguard", "rule-config", subPath)
+				outPath := filepath.Join(m.dataDir, "proxy", "waf-rules", subPath)
 				if err := os.MkdirAll(filepath.Dir(outPath), 0755); err == nil {
 					if f, err := os.Create(outPath); err == nil {
 						io.Copy(f, tr)
 						f.Close()
-						caddyGuardExtracted = true
+						wafRulesExtracted = true
 					}
 				}
 			}
@@ -2110,15 +2110,16 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 	}
 
 	// Patch CaddyGuard config.json with correct relative paths after extraction
-	if name == "caddy" && caddyGuardExtracted {
-		configPath := filepath.Join(m.dataDir, "proxy", "caddyguard", "rule-config", "config.json")
+	if name == "caddy" && wafRulesExtracted {
+		configPath := filepath.Join(m.dataDir, "proxy", "waf-rules", "config.json")
 		if data, err := os.ReadFile(configPath); err == nil {
 			content := string(data)
 			content = strings.Replace(content, `"log_dir": "/var/log/caddyguard"`, `"log_dir": "logs"`, 1)
 			content = strings.Replace(content, `"log_dir": "/var/log/caddy"`, `"log_dir": "logs"`, 1)
-			content = strings.Replace(content, `"rule_dir": "/opt/corefusion/data/proxy/caddyguard/rule-config"`, `"rule_dir": "proxy/caddyguard/rule-config"`, 1)
+			content = strings.Replace(content, `"rule_dir": "/opt/corefusion/data/proxy/caddyguard/rule-config"`, `"rule_dir": "proxy/waf-rules"`, 1)
+			content = strings.Replace(content, `"rule_dir": "proxy/caddyguard/rule-config"`, `"rule_dir": "proxy/waf-rules"`, 1)
 			os.WriteFile(configPath, []byte(content), 0644)
-			log.Printf("patched CaddyGuard config.json with relative paths (log_dir=logs, rule_dir=proxy/caddyguard/rule-config)")
+			log.Printf("patched CaddyGuard config.json with relative paths (log_dir=logs, rule_dir=proxy/waf-rules)")
 		}
 		// Ensure logs directory exists
 		os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0775)
@@ -2303,7 +2304,10 @@ lua_code_cache on;
 // Uses relative paths (relative to the nginx working directory = dataDir) so the
 // same config.lua works on both the panel and remote Agents without modification.
 // - "logs" resolves to dataDir/logs (CWD = dataDir when nginx starts)
-// - "proxy/lua/waf/rule-config" resolves to dataDir/proxy/lua/waf/rule-config
+// - "proxy/waf-rules" resolves to dataDir/proxy/waf-rules (unified rule dir)
+//
+// Note: config.lua lives at proxy/lua/waf/config.lua (part of the Lua source
+// tree), but config_rule_dir inside it points to the unified rule directory.
 func (m *Manager) patchWAFConfig() {
 	configPath := filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
 	data, err := os.ReadFile(configPath)
@@ -2316,13 +2320,18 @@ func (m *Manager) patchWAFConfig() {
 		"config_log_dir = \"/apps/nginx/log/\"",
 		"config_log_dir = \"logs\"",
 		1)
-	// Replace rule dir with relative path
+	// Replace rule dir with unified relative path
 	content = strings.Replace(content,
 		"config_rule_dir = \"/apps/nginx/conf/waf/rule-config\"",
+		"config_rule_dir = \"proxy/waf-rules\"",
+		1)
+	// Also handle previously-patched configs that used the old path
+	content = strings.Replace(content,
 		"config_rule_dir = \"proxy/lua/waf/rule-config\"",
+		"config_rule_dir = \"proxy/waf-rules\"",
 		1)
 	if err := os.WriteFile(configPath, []byte(content), 0644); err == nil {
-		log.Printf("patched WAF config.lua with relative paths (log_dir=logs, rule_dir=proxy/lua/waf/rule-config)")
+		log.Printf("patched WAF config.lua with relative paths (log_dir=logs, rule_dir=proxy/waf-rules)")
 	}
 }
 

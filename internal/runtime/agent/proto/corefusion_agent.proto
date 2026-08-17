@@ -162,16 +162,17 @@ message SyncProxyConfigRequest {
   string caddy_sni_settings = 5;  // JSON 序列化的 SNISettings（仅 caddy 类型时使用）
 }
 
-// SyncWAFFilesRequest — Panel→Agent 同步 WAF 文件 (config.lua, domain.json, *.rule)
-// Agent 收到后将文件写入 dataDir/proxy/lua/waf/ 对应路径
+// SyncWAFFilesRequest — Panel→Agent 同步 WAF 文件 (config.json/config.lua, domain.json, *.rule)
+// Agent 收到后将文件写入 dataDir/proxy/waf-rules/ 对应路径
 message SyncWAFFilesRequest {
   repeated WAFFile files = 1;       // WAF 文件列表
 }
 
 // WAFFile 描述单个 WAF 文件
 message WAFFile {
-  string path = 1;     // 相对于 waf/ 的路径，如 "config.lua", "rule-config/domain.json", "rule-config/url.rule"
+  string path = 1;     // 相对于 waf-rules/ 的路径，如 "config.lua", "domain.json", "url.rule"
   bytes  content = 2;   // 文件内容
+  string hash = 3;      // 内容 hash（Agent 端对比，相同则跳过写入）
 }
 
 message ControlProxyRequest {

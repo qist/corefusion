@@ -623,12 +623,17 @@ func (m *CaddyManager) GetSNISettingsForServer(ctx context.Context, serverID int
 		return settings, nil
 	}
 
-	// Try per-node keys first
+	// Try per-node keys first.
+	// IMPORTANT: if the per-node key exists (even if value is "false"), use it.
+	// Only fall back to the global key when the per-node key does NOT exist.
+	// This prevents a remote node from inheriting the local node's "true" when
+	// the remote node has explicitly disabled SNI.
 	enabledKey := perNodeSNISettingsKey("proxy.sni_enabled", serverID)
-	if v, err := m.settingStore.GetByKey(ctx, enabledKey); err == nil && v == "true" {
-		settings.Enabled = true
+	if v, err := m.settingStore.GetByKey(ctx, enabledKey); err == nil {
+		// per-node key exists — use its value directly
+		settings.Enabled = v == "true"
 	} else if serverID > 1 {
-		// Fallback to global key for backward compatibility
+		// per-node key doesn't exist — fall back to global key
 		if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_enabled"); err == nil && v == "true" {
 			settings.Enabled = true
 		}

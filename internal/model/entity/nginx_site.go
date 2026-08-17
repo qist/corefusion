@@ -29,6 +29,7 @@ type NginxSite struct {
 	SslProtocols    string    `json:"ssl_protocols" gorm:"size:128"`
 	SslCiphers      string    `json:"ssl_ciphers" gorm:"size:512"`
 	SslEcdhCurve    string    `json:"ssl_ecdh_curve" gorm:"size:255"`
+	WafEnabled      *bool     `json:"waf_enabled" gorm:"default:true"` // per-location WAF switch (nil=true=inherit, false=disable WAF for this location)
 	Enabled         bool      `json:"enabled" gorm:"not null;default:true"`
 	IsPanel         bool      `json:"is_panel" gorm:"not null;default:false"`
 	Priority        int       `json:"priority" gorm:"not null;default:100"`

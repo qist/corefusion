@@ -560,9 +560,16 @@ sb.WriteString("    lua_code_cache on;\n")
 			upstreamKey = strings.ReplaceAll(upstreamKey, ":", "_")
 			upstreamKey = strings.ReplaceAll(upstreamKey, ",", "_")
 
+			// Per-location WAF bypass: set $waf_enable off; when WafEnabled is false
+			wafBypass := ""
+			if site.WafEnabled != nil && !*site.WafEnabled {
+				wafBypass = "            set $waf_enable off;\n"
+			}
+
 			// gRPC uses a different location block syntax
 			if site.Template == "grpc" {
 				sb.WriteString(fmt.Sprintf("        location %s {\n", path))
+				sb.WriteString(wafBypass)
 				sb.WriteString("            client_max_body_size 0;\n")
 				sb.WriteString("            keepalive_requests 4294967296;\n")
 				sb.WriteString("            client_body_timeout 1h;\n")
@@ -589,6 +596,7 @@ sb.WriteString("    lua_code_cache on;\n")
 			}
 
 			sb.WriteString(fmt.Sprintf("        location %s {\n", path))
+			sb.WriteString(wafBypass)
 
 		switch site.Template {
 		case "static":

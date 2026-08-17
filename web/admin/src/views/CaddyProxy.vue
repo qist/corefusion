@@ -228,6 +228,14 @@
             <el-tag v-else type="info" size="small">-</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="WAF" width="80">
+          <template #default="{row}">
+            <div style="display:flex;align-items:center;gap:4px">
+              <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
+              <el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('common.actions')" width="160" fixed="right">
           <template #default="{row}">
             <div style="display:inline-flex;gap:6px">
@@ -239,6 +247,161 @@
       </el-table>
       <PaginationBar v-model:page="httpPage" v-model:page-size="httpSize" :total="httpTotal" />
     </el-card>
+
+    <!-- WAF Management (CaddyGuard) -->
+    <el-card style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>WAF {{ t('proxy.management') }}</span>
+          <el-tag :type="wafConfigForm.waf_enable === 'on' ? 'success' : 'info'" size="small">
+            {{ wafConfigForm.waf_enable === 'on' ? 'ON' : 'OFF' }}
+          </el-tag>
+        </div>
+      </template>
+      <el-tabs v-model="wafTab">
+        <el-tab-pane label="Config" name="config-form">
+          <el-form :model="wafConfigForm" label-width="170px" size="small">
+            <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
+            <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="wafConfigForm.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafTrustProxy')"><el-switch v-model="wafConfigForm.trust_proxy_headers" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUrl')"><el-switch v-model="wafConfigForm.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteIp')"><el-switch v-model="wafConfigForm.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUa')">
+              <el-switch v-model="wafConfigForm.white_ua_check" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafWhiteUaHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafBlackIp')"><el-switch v-model="wafConfigForm.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlCheck')"><el-switch v-model="wafConfigForm.url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlArgs')"><el-switch v-model="wafConfigForm.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUserAgent')"><el-switch v-model="wafConfigForm.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCookie')"><el-switch v-model="wafConfigForm.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="wafConfigForm.post_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="wafConfigForm.referer_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafFileUpload')"><el-switch v-model="wafConfigForm.file_upload_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
+            <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
+            <el-form-item :label="t('proxy.wafOutput')">
+              <el-select v-model="wafConfigForm.waf_output" style="width:120px">
+                <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafRedirectUrl')" v-if="wafConfigForm.waf_output==='redirect'"><el-input v-model="wafConfigForm.waf_redirect_url" placeholder="https://example.com" style="width:300px" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafPaths') }}</el-divider>
+            <el-form-item :label="t('proxy.wafLogDir')"><el-input v-model="wafConfigForm.log_dir" style="width:300px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafRuleDir')"><el-input v-model="wafConfigForm.rule_dir" style="width:300px" /></el-form-item>
+          </el-form>
+          <div style="margin-top:8px;text-align:right">
+            <el-button type="success" @click="saveWAFConfigForm">{{ t('common.save') }}</el-button>
+            <el-button @click="parseWAFConfigForm">{{ t('common.reset') }}</el-button>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="Source" name="config-source">
+          <div style="margin-bottom:8px;font-size:12px;color:#909399">{{ t('proxy.wafConfigHint') }}</div>
+          <el-input v-model="wafConfigContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
+          <div style="margin-top:8px;text-align:right">
+            <el-button type="success" @click="saveWAFConfig">{{ t('common.save') }}</el-button>
+            <el-button @click="fetchWAFConfig">{{ t('common.reset') }}</el-button>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane :label="t('proxy.wafRules')" name="rules">
+          <el-table :data="wafRules" stripe @row-click="openWAFRule" style="cursor:pointer">
+            <el-table-column prop="name" :label="t('proxy.wafRule')" width="180" />
+            <el-table-column :label="t('proxy.wafRuleDesc')" min-width="200">
+              <template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
+            </el-table-column>
+            <el-table-column prop="size" :label="t('proxy.wafSize')" width="120" />
+            <el-table-column :label="t('common.action')" width="100">
+              <template #default="{ row }">
+                <el-button size="small" @click.stop="openWAFRule(row)">{{ t('common.edit') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <!-- WAF Rule Editor Dialog -->
+    <el-dialog v-model="wafRuleVisible" :title="`WAF Rule: ${wafRuleName}`" width="70%">
+      <el-input v-model="wafRuleContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
+      <template #footer>
+        <el-button @click="wafRuleVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="success" @click="saveWAFRule">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Site WAF Config Dialog -->
+    <el-dialog v-model="siteWAFVisible" :title="`WAF: ${siteWAFDomain}`" width="800px">
+      <el-tabs v-model="siteWAFTab">
+        <el-tab-pane label="Config" name="config">
+          <el-form :model="siteWAFConfig" label-width="160px" size="small">
+            <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
+            <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="siteWAFConfig.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafTrustProxy')"><el-switch v-model="siteWAFConfig.trust_proxy_headers" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlCheck')"><el-switch v-model="siteWAFConfig.url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUrlArgs')"><el-switch v-model="siteWAFConfig.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafUserAgent')"><el-switch v-model="siteWAFConfig.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCookie')"><el-switch v-model="siteWAFConfig.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="siteWAFConfig.post_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="siteWAFConfig.referer_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafFileUpload')"><el-switch v-model="siteWAFConfig.file_upload_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUrl')"><el-switch v-model="siteWAFConfig.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteIp')"><el-switch v-model="siteWAFConfig.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafWhiteUa')">
+              <el-switch v-model="siteWAFConfig.white_ua_check" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafWhiteUaHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafBlackIp')"><el-switch v-model="siteWAFConfig.black_ip_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
+            <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
+            <el-form-item :label="t('proxy.wafOutput')">
+              <el-select v-model="siteWAFConfig.waf_output" style="width:120px">
+                <el-option label="html" value="html" /><el-option label="redirect" value="redirect" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafRedirectUrl')" v-if="siteWAFConfig.waf_output==='redirect'"><el-input v-model="siteWAFConfig.waf_redirect_url" placeholder="https://example.com" /></el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="Rules" name="rules">
+          <el-form-item :label="t('proxy.wafRuleSource')" label-width="120px">
+            <el-select v-model="siteWAFRuleMode" @change="onSiteWAFRuleModeChange" style="width:180px">
+              <el-option :label="t('proxy.wafRuleGlobal')" value="global" />
+              <el-option :label="t('proxy.wafRuleCustom')" value="custom" />
+            </el-select>
+          </el-form-item>
+          <el-table v-if="siteWAFRuleMode==='custom'" :data="siteWAFDomainRules" stripe size="small">
+            <el-table-column prop="name" :label="t('proxy.wafRule')" width="140" />
+            <el-table-column :label="t('proxy.wafRuleDesc')" min-width="180">
+              <template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
+            </el-table-column>
+            <el-table-column prop="size" :label="t('proxy.wafSize')" width="80" />
+            <el-table-column :label="t('common.action')" width="100">
+              <template #default="{ row }">
+                <el-button size="small" @click="openSiteWAFDomainRule(row)">{{ t('common.edit') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+      <template #footer>
+        <el-button @click="siteWAFVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="success" @click="saveSiteWAFConfig">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Site WAF Rule Editor -->
+    <el-dialog v-model="siteWAFRuleEditorVisible" :title="`${siteWAFDomain} / ${siteWAFRuleEditing}`" width="70%">
+      <el-input v-model="siteWAFRuleEditingContent" type="textarea" :rows="18" style="font-family:monospace;font-size:13px" />
+      <template #footer>
+        <el-button @click="siteWAFRuleEditorVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="success" @click="saveSiteWAFDomainRule">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
 
     <!-- Config View Dialog -->
     <el-dialog v-model="configViewVisible" title="Caddyfile" width="700">
@@ -672,14 +835,71 @@ function formatTime(ts) {
 }
 
 async function fetchSites() {
-  try {
-    allSites.value = await client.get(`${caddyApi.value}/sites`) || []
-  } catch (e) { allSites.value = [] }
-  // Load log output mode (per-node)
-  try {
-    const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
-    if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
-  } catch (e) { ElMessage.error(t('common.failed')) }
+try {
+allSites.value = await client.get(`${caddyApi.value}/sites`) || []
+// Check WAF status for each site
+for (const site of allSites.value) {
+if (site.domain && site.template !== 'sni' && site.template !== 'l4') {
+try {
+const res = await client.get(`${caddyApi.value}/waf/domain-status`, { params: { domain: site.domain } })
+site._waf_enabled = res.enabled
+} catch { site._waf_enabled = false }
+} else {
+site._waf_enabled = false
+}
+}
+} catch (e) { allSites.value = [] }
+// Load log output mode (per-node)
+try {
+const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
+if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
+} catch (e) { ElMessage.error(t('common.failed')) }
+}
+
+async function toggleSiteWAF(row, val) {
+if (val) {
+try {
+await client.post(`${caddyApi.value}/waf/enable-domain`, { domain: row.domain })
+ElMessage.success(t('proxy.wafSiteEnabled', { domain: row.domain }))
+} catch (e) {
+row._waf_enabled = false
+ElMessage.error(t('common.failed'))
+}
+} else {
+try {
+const action = await ElMessageBox.confirm(
+t('proxy.wafDisableHint', { domain: row.domain }),
+t('proxy.wafDisableTitle'),
+{
+distinguishCancelAndClose: true,
+confirmButtonText: t('proxy.wafDisableSite'),
+cancelButtonText: t('proxy.wafUseGlobal'),
+type: 'warning',
+}
+)
+// confirmButtonText → disable WAF for this domain
+try {
+await client.post(`${caddyApi.value}/waf/disable-domain`, { domain: row.domain })
+ElMessage.success(t('proxy.wafSiteDisabled', { domain: row.domain }))
+} catch (e) {
+row._waf_enabled = true
+ElMessage.error(t('common.failed'))
+}
+} catch (action) {
+if (action === 'cancel') {
+// Use global rules — remove domain from domain.json
+try {
+await client.post(`${caddyApi.value}/waf/disable-domain`, { domain: row.domain })
+ElMessage.success(t('proxy.wafUseGlobalRules', { domain: row.domain }))
+} catch (e) {
+row._waf_enabled = true
+ElMessage.error(t('common.failed'))
+}
+} else {
+row._waf_enabled = true
+}
+}
+}
 }
 
 async function saveCaddyLogMode() {
@@ -1087,12 +1307,246 @@ async function saveSNIRule() {
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
+// --- WAF Management (CaddyGuard) ---
+const wafTab = ref('config-form')
+const wafConfigContent = ref('')
+const wafRules = ref([])
+const wafRuleVisible = ref(false)
+const wafRuleName = ref('')
+const wafRuleContent = ref('')
+
+const wafRuleDescMap = {
+  'args.rule': 'wafRuleArgs', 'blackip.rule': 'wafRuleBlackip', 'cookie.rule': 'wafRuleCookie',
+  'post.rule': 'wafRulePost', 'url.rule': 'wafRuleUrl', 'useragent.rule': 'wafRuleUseragent',
+  'whiteip.rule': 'wafRuleWhiteip', 'whiteurl.rule': 'wafRuleWhiteurl', 'whiteua.rule': 'wafRuleWhiteua',
+  'referer.rule': 'wafRuleReferer', 'fileext.rule': 'wafRuleFileext'
+}
+function wafRuleDesc(name) {
+  const key = wafRuleDescMap[name]
+  return key ? t(`proxy.${key}`) : name
+}
+
+const wafConfigForm = ref({
+  waf_enable: 'on', trust_proxy_headers: 'on',
+  white_url_check: 'on', white_ip_check: 'on', white_ua_check: 'on',
+  black_ip_check: 'on',
+  url_check: 'on', url_args_check: 'on', user_agent_check: 'on',
+  cookie_check: 'on', post_check: 'on', referer_check: 'off', file_upload_check: 'on',
+  cc_check: 'on', cc_rate: '', cc_block_ttl: '',
+  waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
+})
+
+async function fetchWAFConfig() {
+  try {
+    const data = await client.get(`${caddyApi.value}/waf/config`)
+    wafConfigContent.value = data.content || ''
+  } catch { wafConfigContent.value = '' }
+  parseWAFConfigForm()
+}
+async function saveWAFConfig() {
+  try {
+    await client.put(`${caddyApi.value}/waf/config`, { content: wafConfigContent.value })
+    ElMessage.success(t('common.success'))
+    parseWAFConfigForm()
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
+// CaddyGuard config.json is JSON, so parse with JSON.parse
+function parseWAFConfigForm() {
+  try {
+    const obj = JSON.parse(wafConfigContent.value || '{}')
+    wafConfigForm.value = {
+      waf_enable: obj.waf_enable || 'on',
+      trust_proxy_headers: obj.trust_proxy_headers || 'on',
+      white_url_check: obj.white_url_check || 'on',
+      white_ip_check: obj.white_ip_check || 'on',
+      white_ua_check: obj.white_ua_check || 'on',
+      black_ip_check: obj.black_ip_check || 'on',
+      url_check: obj.url_check || 'on',
+      url_args_check: obj.url_args_check || 'on',
+      user_agent_check: obj.user_agent_check || 'on',
+      cookie_check: obj.cookie_check || 'on',
+      post_check: obj.post_check || 'on',
+      referer_check: obj.referer_check || 'off',
+      file_upload_check: obj.file_upload_check || 'on',
+      cc_check: obj.cc_check || 'on',
+      cc_rate: obj.cc_rate || '',
+      cc_block_ttl: String(obj.cc_block_ttl || '600'),
+      waf_output: obj.waf_output || 'html',
+      waf_redirect_url: obj.waf_redirect_url || '',
+      log_dir: obj.log_dir || '',
+      rule_dir: obj.rule_dir || ''
+    }
+  } catch { /* keep defaults */ }
+}
+
+async function saveWAFConfigForm() {
+  const obj = JSON.parse(wafConfigContent.value || '{}')
+  obj.waf_enable = wafConfigForm.value.waf_enable
+  obj.trust_proxy_headers = wafConfigForm.value.trust_proxy_headers
+  obj.white_url_check = wafConfigForm.value.white_url_check
+  obj.white_ip_check = wafConfigForm.value.white_ip_check
+  obj.white_ua_check = wafConfigForm.value.white_ua_check
+  obj.black_ip_check = wafConfigForm.value.black_ip_check
+  obj.url_check = wafConfigForm.value.url_check
+  obj.url_args_check = wafConfigForm.value.url_args_check
+  obj.user_agent_check = wafConfigForm.value.user_agent_check
+  obj.cookie_check = wafConfigForm.value.cookie_check
+  obj.post_check = wafConfigForm.value.post_check
+  obj.referer_check = wafConfigForm.value.referer_check
+  obj.file_upload_check = wafConfigForm.value.file_upload_check
+  obj.cc_check = wafConfigForm.value.cc_check
+  obj.cc_rate = wafConfigForm.value.cc_rate
+  obj.cc_block_ttl = parseInt(wafConfigForm.value.cc_block_ttl) || 600
+  obj.waf_output = wafConfigForm.value.waf_output
+  obj.waf_redirect_url = wafConfigForm.value.waf_redirect_url
+  obj.log_dir = wafConfigForm.value.log_dir
+  obj.rule_dir = wafConfigForm.value.rule_dir
+  wafConfigContent.value = JSON.stringify(obj, null, 4)
+  await saveWAFConfig()
+}
+
+async function fetchWAFRules() {
+  try {
+    const data = await client.get(`${caddyApi.value}/waf/rules`)
+    wafRules.value = Array.isArray(data) ? data : (data.items || [])
+  } catch { wafRules.value = [] }
+}
+async function openWAFRule(row) {
+  wafRuleName.value = row.name
+  try {
+    const data = await client.get(`${caddyApi.value}/waf/rules/${row.name}`)
+    wafRuleContent.value = data.content || ''
+    wafRuleVisible.value = true
+  } catch { ElMessage.error(t('common.failed')) }
+}
+async function saveWAFRule() {
+  try {
+    await client.put(`${caddyApi.value}/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
+    ElMessage.success(t('common.success'))
+    wafRuleVisible.value = false
+    fetchWAFRules()
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
+// Site WAF Config Dialog
+const siteWAFVisible = ref(false)
+const siteWAFDomain = ref('')
+const siteWAFTab = ref('config')
+const siteWAFConfig = ref({})
+const siteWAFRuleMode = ref('global')
+const siteWAFDomainRules = ref([])
+const siteWAFRuleEditorVisible = ref(false)
+const siteWAFRuleEditing = ref('')
+const siteWAFRuleEditingContent = ref('')
+
+async function openSiteWAF(row) {
+  siteWAFDomain.value = row.domain
+  siteWAFTab.value = 'config'
+  try {
+    const data = await client.get(`${caddyApi.value}/waf/domain-config`)
+    const obj = JSON.parse(data.content || '{}')
+    const cfg = obj[row.domain] || {}
+    siteWAFConfig.value = {
+      waf_enable: cfg.waf_enable || 'on',
+      trust_proxy_headers: cfg.trust_proxy_headers || 'on',
+      url_check: cfg.url_check || 'on',
+      url_args_check: cfg.url_args_check || 'on',
+      user_agent_check: cfg.user_agent_check || 'on',
+      cookie_check: cfg.cookie_check || 'on',
+      post_check: cfg.post_check || 'on',
+      referer_check: cfg.referer_check || 'off',
+      file_upload_check: cfg.file_upload_check || 'on',
+      white_url_check: cfg.white_url_check || 'on',
+      white_ip_check: cfg.white_ip_check || 'on',
+      white_ua_check: cfg.white_ua_check || 'on',
+      black_ip_check: cfg.black_ip_check || 'on',
+      cc_check: cfg.cc_check || 'on',
+      cc_rate: cfg.cc_rate || '60/60',
+      cc_block_ttl: String(cfg.cc_block_ttl || '600'),
+      waf_output: cfg.waf_output || 'html',
+      waf_redirect_url: cfg.waf_redirect_url || ''
+    }
+    siteWAFRuleMode.value = cfg.rule_dir ? 'custom' : 'global'
+    await loadSiteWAFDomainRules(row.domain)
+  } catch { ElMessage.error(t('common.failed')) }
+  siteWAFVisible.value = true
+}
+
+async function loadSiteWAFDomainRules(domain) {
+  try {
+    const dirs = await client.get(`${caddyApi.value}/waf/domain-rules`)
+    if (dirs && dirs.includes(domain)) {
+      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule']
+      const rules = []
+      for (const name of ruleNames) {
+        try {
+          const data = await client.get(`${caddyApi.value}/waf/domain-rules/${domain}/${name}`)
+          rules.push({ name, size: (data.content || '').length })
+        } catch { /* skip missing */ }
+      }
+      siteWAFDomainRules.value = rules
+    } else {
+      siteWAFDomainRules.value = []
+    }
+  } catch { siteWAFDomainRules.value = [] }
+}
+
+async function onSiteWAFRuleModeChange(val) {
+  if (val === 'custom') {
+    try {
+      await client.post(`${caddyApi.value}/waf/enable-domain`, { domain: siteWAFDomain.value })
+      await loadSiteWAFDomainRules(siteWAFDomain.value)
+    } catch { ElMessage.error(t('common.failed')) }
+  }
+}
+
+async function openSiteWAFDomainRule(row) {
+  siteWAFRuleEditing.value = row.name
+  try {
+    const data = await client.get(`${caddyApi.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
+    siteWAFRuleEditingContent.value = data.content || ''
+    siteWAFRuleEditorVisible.value = true
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
+async function saveSiteWAFDomainRule() {
+  try {
+    await client.put(`${caddyApi.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
+    ElMessage.success(t('common.success'))
+    siteWAFRuleEditorVisible.value = false
+    await loadSiteWAFDomainRules(siteWAFDomain.value)
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
+async function saveSiteWAFConfig() {
+  try {
+    const data = await client.get(`${caddyApi.value}/waf/domain-config`)
+    const obj = JSON.parse(data.content || '{}')
+    const cfg = {}
+    for (const [k, v] of Object.entries(siteWAFConfig.value)) {
+      if (v !== '' && v !== undefined && v !== null) cfg[k] = v
+    }
+    if (siteWAFRuleMode.value === 'custom') {
+      cfg.rule_dir = `domains/${siteWAFDomain.value}`
+    }
+    obj[siteWAFDomain.value] = cfg
+    delete obj['_comment']
+    const content = JSON.stringify(obj, null, 4)
+    await client.put(`${caddyApi.value}/waf/domain-config`, { content })
+    ElMessage.success(t('common.success'))
+    siteWAFVisible.value = false
+  } catch { ElMessage.error(t('common.failed')) }
+}
+
 onMounted(() => {
   fetchProxyInfo()
   fetchSites()
   fetchCertificates()
   fetchSNISettings()
   fetchInbounds()
+  fetchWAFConfig()
+  fetchWAFRules()
 })
 </script>
 <style scoped>

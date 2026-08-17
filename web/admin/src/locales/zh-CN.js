@@ -1978,6 +1978,8 @@ export default {
     cipherCompatible: '兼容 (HTTP/1.1)',
     cipherLegacy: '全兼容 (含旧客户端)',
     ecdhDefault: 'X25519:prime256v1:secp384r1 (默认)',
+wafEnabled: 'WAF 防火墙',
+wafEnabledHint: '关闭后此 Location 不执行 WAF 检查',
     sniEnabled: 'SNI 已开启，迁移 {count} 个站点',
     sniDisabled: 'SNI 已关闭，规则已保留（禁用）',
     migrationComplete: '迁移完成，更新 {count} 个站点',

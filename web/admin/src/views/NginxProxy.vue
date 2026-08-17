@@ -810,6 +810,11 @@
             </el-select>
           </el-form-item>
         </template>
+        <el-divider content-position="left">WAF</el-divider>
+        <el-form-item :label="t('proxy.wafEnabled')">
+          <el-switch v-model="siteForm.waf_enabled" :active-value="true" :inactive-value="false" />
+          <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.wafEnabledHint') }}</span>
+        </el-form-item>
       </el-form>
       <div v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('proxy.configPreview') }}</div>
@@ -1310,6 +1315,7 @@ const siteForm = ref({
   enable_http2: true, enable_ipv6: false, enable_quic: false,
   enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
+  waf_enabled: true,
   editMode: 'form'
 })
 
@@ -1597,8 +1603,9 @@ domain: '', upstreams: [''], path: '', backend_path: '', template,
     proxy_protocol: false, is_panel: false,
     enable_http2: true, enable_ipv6: false, enable_quic: false,
     enable_early_data: false, enable_stapling: false,
-    ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-    editMode: 'form',
+  ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
+  waf_enabled: true,
+  editMode: 'form',
     inbound_id: null
   }
   siteDialogVisible.value = true
@@ -1616,8 +1623,9 @@ function showPanelProxy() {
     proxy_protocol: false, is_panel: true,
     enable_http2: true, enable_ipv6: false, enable_quic: false,
     enable_early_data: false, enable_stapling: false,
-    ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-    editMode: 'form',
+  ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
+  waf_enabled: true,
+  editMode: 'form',
     inbound_id: null
   }
   siteDialogVisible.value = true
@@ -1675,6 +1683,7 @@ function editSite(row) {
     ssl_protocols: row.ssl_protocols,
     ssl_ciphers: row.ssl_ciphers,
     ssl_ecdh_curve: row.ssl_ecdh_curve,
+    waf_enabled: row.waf_enabled !== false,
     editMode: 'form',
     inbound_id: null
   }
@@ -1823,7 +1832,8 @@ template: siteForm.value.template,
       enable_stapling: siteForm.value.enable_stapling || false,
       ssl_protocols: siteForm.value.ssl_protocols,
       ssl_ciphers: siteForm.value.ssl_ciphers,
-      ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve
+      ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve,
+      waf_enabled: siteForm.value.waf_enabled !== false
     }
     if (siteForm.value.id) {
       await client.put(`${nginxApi.value}/sites/${siteForm.value.id}`, payload)

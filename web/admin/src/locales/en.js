@@ -2037,6 +2037,8 @@ export default {
     cipherCompatible: 'Compatible (HTTP/1.1)',
     cipherLegacy: 'Full compatibility (incl. legacy clients)',
     ecdhDefault: 'X25519:prime256v1:secp384r1 (default)',
+wafEnabled: 'WAF Firewall',
+wafEnabledHint: 'When off, WAF checks are skipped for this location',
     sniEnabled: 'SNI enabled, migrated {count} sites',
     sniDisabled: 'SNI disabled, rules kept (disabled)',
     migrationComplete: 'Migration complete, updated {count} sites',

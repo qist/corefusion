@@ -91,6 +91,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		SslProtocols    string `json:"ssl_protocols"`
 		SslCiphers      string `json:"ssl_ciphers"`
 		SslEcdhCurve    string `json:"ssl_ecdh_curve"`
+		WafEnabled      *bool  `json:"waf_enabled"`
 		IsPanel         bool   `json:"is_panel"`
 		Priority        int    `json:"priority"`
 	}
@@ -121,6 +122,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		SslProtocols:    req.SslProtocols,
 		SslCiphers:      req.SslCiphers,
 		SslEcdhCurve:    req.SslEcdhCurve,
+		WafEnabled:      req.WafEnabled,
 		Enabled:         true,
 		IsPanel:         req.IsPanel,
 		Priority:        req.Priority,
@@ -168,6 +170,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		SslProtocols    *string `json:"ssl_protocols"`
 		SslCiphers      *string `json:"ssl_ciphers"`
 		SslEcdhCurve    *string `json:"ssl_ecdh_curve"`
+		WafEnabled      *bool  `json:"waf_enabled"`
 		IsPanel         *bool   `json:"is_panel"`
 		Priority        *int    `json:"priority"`
 	}
@@ -198,6 +201,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	if req.SslProtocols != nil { existing.SslProtocols = *req.SslProtocols }
 	if req.SslCiphers != nil { existing.SslCiphers = *req.SslCiphers }
 	if req.SslEcdhCurve != nil { existing.SslEcdhCurve = *req.SslEcdhCurve }
+	if req.WafEnabled != nil { existing.WafEnabled = req.WafEnabled }
 	if req.IsPanel != nil { existing.IsPanel = *req.IsPanel }
 	if req.Priority != nil { existing.Priority = *req.Priority }
 	if err := h.nginxMgr.UpdateSite(c.Request.Context(), existing); err != nil {

@@ -582,6 +582,14 @@ func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.Res
 		resp.ResourceUsage = resourceUsage[0]
 	}
 
+	// Local node doesn't run a separate Agent binary — it's managed directly
+	// by the Panel. Show the Panel version as its "agent version" so the UI
+	// displays something meaningful instead of a blank field.
+	// This is purely a presentation-level override; the DB value is untouched.
+	if server.IsLocal && resp.AgentVersion == "" {
+		resp.AgentVersion = constants.Version
+	}
+
 	return resp
 }
 

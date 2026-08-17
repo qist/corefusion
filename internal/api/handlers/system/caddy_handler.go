@@ -91,19 +91,30 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Auto-generate log path from domain (without port) if not provided
+	logPath := req.LogPath
+	if logPath == "" && req.LogEnabled {
+		logPath = proxy.SanitizeLogName(proxy.StripPort(req.Domain))
+		if logPath == "default" {
+			logPath = "logs/default.log"
+		} else {
+			logPath = "logs/" + logPath + ".log"
+		}
+	}
+
 	site := &entity.CaddySite{
 		Domain:          req.Domain,
-		Upstream:        req.Upstream,
+		Upstream:         req.Upstream,
 		Template:        req.Template,
-		Path:            req.Path,
-		CertPath:        req.CertPath,
-		KeyPath:         req.KeyPath,
+		Path:             req.Path,
+		CertPath:         req.CertPath,
+		KeyPath:          req.KeyPath,
 		ProxyConfig:     req.ProxyConfig,
 		CustomConfig:    req.CustomConfig,
 		WafEnabled:     req.WafEnabled,
 		LbPolicy:        req.LbPolicy,
-		LogEnabled:      req.LogEnabled,
-		LogPath:         req.LogPath,
+		LogEnabled:       req.LogEnabled,
+		LogPath:         logPath,
 		LogFormat:       req.LogFormat,
 		L4Protocol:      req.L4Protocol,
 		SNITarget:       req.SNITarget,
@@ -169,7 +180,17 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		if req.WafEnabled != nil { existing.WafEnabled = req.WafEnabled }
 	if req.LbPolicy != nil { existing.LbPolicy = *req.LbPolicy }
 	if req.LogEnabled != nil { existing.LogEnabled = *req.LogEnabled }
-	if req.LogPath != nil { existing.LogPath = *req.LogPath }
+	if req.LogPath != nil {
+		existing.LogPath = *req.LogPath
+	} else if req.Domain != nil && existing.LogPath == "" && existing.LogEnabled {
+		// Auto-generate log path from domain (without port) if not provided
+		lp := proxy.SanitizeLogName(proxy.StripPort(*req.Domain))
+		if lp == "default" {
+			existing.LogPath = "logs/default.log"
+		} else {
+			existing.LogPath = "logs/" + lp + ".log"
+		}
+	}
 	if req.LogFormat != nil { existing.LogFormat = *req.LogFormat }
 	if req.L4Protocol != nil { existing.L4Protocol = *req.L4Protocol }
 	if req.SNITarget != nil { existing.SNITarget = *req.SNITarget }

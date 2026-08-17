@@ -546,6 +546,11 @@
             <el-option label="console" value="console" />
           </el-select>
         </el-form-item>
+        <el-divider content-position="left">WAF</el-divider>
+        <el-form-item label="WAF排除路径">
+          <el-input v-model="siteForm.waf_exclude_paths" type="textarea" :rows="2" style="font-family:monospace;font-size:13px" placeholder="/api/webhook/*&#10;/health" />
+          <div style="font-size:11px;color:#909399;margin-top:4px">每行一个路径，匹配的路径将跳过 WAF 检测</div>
+        </el-form-item>
       </el-form>
       <div v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('proxy.configPreview') }}</div>
@@ -763,7 +768,7 @@ const downloadProgress = ref('')
 const siteDialogVisible = ref(false)
 const siteDialogTitle = ref('')
 const siteSaving = ref(false)
-const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form' })
+const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', waf_exclude_paths: '', l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form' })
 
 // Panel port
 const panelPort = ref('8080')
@@ -1036,12 +1041,12 @@ function showAddSite(template) {
 siteForm.value = {
 domain: '', upstreams: [''], path: '', backend_path: '', template,
     use_cert: false, cert_id: null, cert_path: '', key_path: '',
-    proxy_config: '', custom_config: '', lb_policy: '',
-    log_enabled: false, log_path: '', log_format: 'json',
-    l4_protocol: 'tcp', sni_target: '',
-    proxy_protocol: false, is_panel: false, editMode: 'form',
-    inbound_id: null
-  }
+proxy_config: '', custom_config: '', waf_exclude_paths: '', lb_policy: '',
+log_enabled: false, log_path: '', log_format: 'json',
+l4_protocol: 'tcp', sni_target: '',
+proxy_protocol: false, is_panel: false, editMode: 'form',
+inbound_id: null
+}
   siteDialogVisible.value = true
 }
 
@@ -1050,12 +1055,12 @@ function showPanelProxy() {
   siteForm.value = {
     domain: ':80', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'http',
     use_cert: false, cert_id: null, cert_path: '', key_path: '',
-    proxy_config: '', custom_config: '', lb_policy: '',
-    log_enabled: false, log_path: '', log_format: 'json',
-    l4_protocol: 'tcp', sni_target: '',
-    proxy_protocol: false, is_panel: true, editMode: 'form',
-    inbound_id: null
-  }
+proxy_config: '', custom_config: '', waf_exclude_paths: '', lb_policy: '',
+log_enabled: false, log_path: '', log_format: 'json',
+l4_protocol: 'tcp', sni_target: '',
+proxy_protocol: false, is_panel: true, editMode: 'form',
+inbound_id: null
+}
   siteDialogVisible.value = true
 }
 
@@ -1109,6 +1114,7 @@ template: row.template,
     cert_path: row.cert_path, key_path: row.key_path,
     proxy_config: row.proxy_config,
     custom_config: row.custom_config,
+waf_exclude_paths: row.waf_exclude_paths || '',
     lb_policy: row.lb_policy,
     log_enabled: row.log_enabled || false,
     log_path: row.log_path,
@@ -1138,6 +1144,20 @@ function generatePreview(site) {
   }
   lines.push(`${domain} {`)
   if (site.cert_path && site.key_path) lines.push(`\ttls ${site.cert_path} ${site.key_path}`)
+  // WAF exclude paths
+  if (site.waf_exclude_paths) {
+    for (const line of site.waf_exclude_paths.split('\n')) {
+      const p = line.trim()
+      if (!p) continue
+      const name = 'waf_excl_' + p.replace(/[\/\-.]/g, '_').replace(/^_+|_+$/g, '').replace(/\*$/, '')
+      lines.push(`\t@${name} path ${p}`)
+      lines.push(`\troute @${name} {`)
+      lines.push(`\t\tcaddyguard waf_enable off`)
+      const firstUp = (site.upstreams || []).filter(u => u.trim())[0] || '127.0.0.1:8080'
+      lines.push(`\t\treverse_proxy ${firstUp}`)
+      lines.push(`\t}`)
+    }
+  }
   if (site.template === 'static') {
     const rootDir = (site.upstreams || []).filter(u => u.trim())[0]
     lines.push(`\troot * ${rootDir}`)
@@ -1221,6 +1241,7 @@ template: siteForm.value.template,
       key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
       proxy_config: siteForm.value.proxy_config,
       custom_config: siteForm.value.custom_config,
+waf_exclude_paths: siteForm.value.waf_exclude_paths,
       lb_policy: siteForm.value.lb_policy,
       log_enabled: siteForm.value.log_enabled || false,
       log_path: siteForm.value.log_path,

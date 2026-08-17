@@ -75,7 +75,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		KeyPath          string `json:"key_path"`
 		ProxyConfig      string `json:"proxy_config"`
 		CustomConfig     string `json:"custom_config"`
-		WafExcludePaths  string `json:"waf_exclude_paths"`
+		WafEnabled      *bool   `json:"waf_enabled"`
 		LbPolicy         string `json:"lb_policy"`
 		LogEnabled       bool   `json:"log_enabled"`
 		LogPath          string `json:"log_path"`
@@ -100,7 +100,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		KeyPath:         req.KeyPath,
 		ProxyConfig:     req.ProxyConfig,
 		CustomConfig:    req.CustomConfig,
-		WafExcludePaths: req.WafExcludePaths,
+		WafEnabled:     req.WafEnabled,
 		LbPolicy:        req.LbPolicy,
 		LogEnabled:      req.LogEnabled,
 		LogPath:         req.LogPath,
@@ -141,7 +141,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		KeyPath         *string `json:"key_path"`
 		ProxyConfig     *string `json:"proxy_config"`
 		CustomConfig    *string `json:"custom_config"`
-		WafExcludePaths *string `json:"waf_exclude_paths"`
+		WafEnabled     *bool   `json:"waf_enabled"`
 		LbPolicy        *string `json:"lb_policy"`
 		LogEnabled      *bool   `json:"log_enabled"`
 		LogPath         *string `json:"log_path"`
@@ -166,7 +166,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	if req.KeyPath != nil { existing.KeyPath = *req.KeyPath }
 	if req.ProxyConfig != nil { existing.ProxyConfig = *req.ProxyConfig }
 	if req.CustomConfig != nil { existing.CustomConfig = *req.CustomConfig }
-	if req.WafExcludePaths != nil { existing.WafExcludePaths = *req.WafExcludePaths }
+		if req.WafEnabled != nil { existing.WafEnabled = req.WafEnabled }
 	if req.LbPolicy != nil { existing.LbPolicy = *req.LbPolicy }
 	if req.LogEnabled != nil { existing.LogEnabled = *req.LogEnabled }
 	if req.LogPath != nil { existing.LogPath = *req.LogPath }

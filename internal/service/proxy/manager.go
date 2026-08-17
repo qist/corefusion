@@ -1205,7 +1205,7 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	case ProxyNginx:
 		args = []string{"-c", configPath}
 	case ProxyCaddy:
-		args = []string{"run", "--config", configPath, "--adapter", "caddyfile"}
+		args = []string{"run", "--config", configPath, "--adapter", "caddyguardfile"}
 	}
 
 	// Use relative binary path from dataDir
@@ -2165,7 +2165,7 @@ func (m *Manager) ValidateConfig(proxyType ProxyType, config string) error {
 	case ProxyNginx:
 		cmd = exec.Command(info.Path, "-t", "-c", tmpFile)
 	case ProxyCaddy:
-		cmd = exec.Command(info.Path, "validate", "--config", tmpFile, "--adapter", "caddyfile")
+		cmd = exec.Command(info.Path, "validate", "--config", tmpFile, "--adapter", "caddyguardfile")
 	default:
 		return nil
 	}
@@ -2220,7 +2220,7 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 			binPath, _ = filepath.Rel(m.dataDir, binPath)
 		}
 		configPath := m.GetConfigPath(proxyType)
-		reloadCmd := exec.Command(binPath, "reload", "--config", configPath, "--adapter", "caddyfile")
+		reloadCmd := exec.Command(binPath, "reload", "--config", configPath, "--adapter", "caddyguardfile")
 		reloadCmd.Dir = m.dataDir
 		if out, err := reloadCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("caddy reload failed: %s", strings.TrimSpace(string(out)))

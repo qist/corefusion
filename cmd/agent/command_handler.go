@@ -185,13 +185,20 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_SyncWafFiles:
 		req := c.SyncWafFiles
-		wafDir := filepath.Join(a.dataDir, "proxy", "lua", "waf")
 		for _, f := range req.Files {
 			// Prevent path traversal
 			if strings.Contains(f.Path, "..") {
 				continue
 			}
-			outPath := filepath.Join(wafDir, f.Path)
+			// Nginx WAF files have paths relative to lua/waf/ (e.g. "config.lua", "rule-config/url.rule")
+			// CaddyGuard WAF files have paths relative to caddyguard/ (e.g. "rule-config/config.json")
+			// Both write under dataDir/proxy/
+			var outPath string
+			if strings.HasPrefix(f.Path, "caddyguard/") {
+				outPath = filepath.Join(a.dataDir, "proxy", f.Path)
+			} else {
+				outPath = filepath.Join(a.dataDir, "proxy", "lua", "waf", f.Path)
+			}
 			os.MkdirAll(filepath.Dir(outPath), 0755)
 			if err := os.WriteFile(outPath, f.Content, 0644); err != nil {
 				log.Printf("[Agent] SyncWAFFiles: write %s: %v", f.Path, err)

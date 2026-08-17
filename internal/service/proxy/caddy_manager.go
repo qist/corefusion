@@ -22,6 +22,16 @@ serverID     int64
 isLocal      bool
 }
 
+// wafBaseDir returns the CaddyGuard WAF root directory: dataDir/proxy/caddyguard
+func (m *CaddyManager) wafBaseDir() string {
+	return filepath.Join(m.dataDir, "proxy", "caddyguard")
+}
+
+// wafRuleDir returns the CaddyGuard rule-config directory.
+func (m *CaddyManager) wafRuleDir() string {
+	return filepath.Join(m.wafBaseDir(), "rule-config")
+}
+
 // SetServerID sets the server ID for per-node site filtering.
 func (m *CaddyManager) SetServerID(id int64) { m.serverID = id }
 
@@ -135,6 +145,12 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 	// Global options
 	sb.WriteString("{\n")
 	sb.WriteString("\tauto_https off\n")
+
+	// CaddyGuard WAF global config — when enabled, all sites automatically get WAF.
+	// The caddyguardfile adapter injects the Guard handler into every HTTP server.
+	sb.WriteString("\tcaddyguard {\n")
+	sb.WriteString(fmt.Sprintf("\t\trule_dir %s\n", m.wafRuleDir()))
+	sb.WriteString("\t}\n")
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -277,8 +293,8 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			}
 		}
 
-		for _, site := range siteList {
-			// Static file server: root + file_server instead of reverse_proxy
+	for _, site := range siteList {
+		// Static file server: root + file_server instead of reverse_proxy
 			if site.Template == "static" {
 				rootDir := strings.TrimSpace(site.Upstream)
 				if rootDir == "" {
@@ -717,4 +733,257 @@ func (m *CaddyManager) BatchUpdateLogEnabled(ctx context.Context, enabled bool) 
 		count++
 	}
 	return count, nil
+}
+
+// --- WAF Management (CaddyGuard) ---
+// CaddyGuard uses JSON config (config.json) and .rule files, same format as
+// NginxGuard. The WAF root is dataDir/proxy/caddyguard/rule-config/.
+
+// ReadWAFConfig reads the CaddyGuard config.json file.
+func (m *CaddyManager) ReadWAFConfig() (string, error) {
+	path := filepath.Join(m.wafRuleDir(), "config.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFConfig writes the CaddyGuard config.json file.
+func (m *CaddyManager) SaveWAFConfig(content string) error {
+	path := filepath.Join(m.wafRuleDir(), "config.json")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// ReadWAFDomainConfig reads the domain.json file.
+func (m *CaddyManager) ReadWAFDomainConfig() (string, error) {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFDomainConfig writes the domain.json file.
+func (m *CaddyManager) SaveWAFDomainConfig(content string) error {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// ListWAFRules lists all global .rule files in rule-config/.
+func (m *CaddyManager) ListWAFRules() []WAFRuleFile {
+	dir := m.wafRuleDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var files []WAFRuleFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".rule") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, WAFRuleFile{Name: name, Size: info.Size()})
+	}
+	return files
+}
+
+// ReadWAFRule reads a global rule file by name (e.g. "url.rule").
+func (m *CaddyManager) ReadWAFRule(name string) (string, error) {
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		return "", fmt.Errorf("invalid rule name")
+	}
+	path := filepath.Join(m.wafRuleDir(), name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFRule writes a global rule file by name.
+func (m *CaddyManager) SaveWAFRule(name, content string) error {
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		return fmt.Errorf("invalid rule name")
+	}
+	path := filepath.Join(m.wafRuleDir(), name)
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// ListWAFDomainRuleDirs lists domain directories under rule-config/domains/.
+func (m *CaddyManager) ListWAFDomainRuleDirs() []string {
+	dir := filepath.Join(m.wafRuleDir(), "domains")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+// ReadWAFDomainRule reads a per-domain rule file.
+func (m *CaddyManager) ReadWAFDomainRule(domain, ruleName string) (string, error) {
+	if strings.Contains(domain, "..") || strings.Contains(ruleName, "..") {
+		return "", fmt.Errorf("invalid path")
+	}
+	path := filepath.Join(m.wafRuleDir(), "domains", domain, ruleName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveWAFDomainRule writes a per-domain rule file.
+func (m *CaddyManager) SaveWAFDomainRule(domain, ruleName, content string) error {
+	if strings.Contains(domain, "..") || strings.Contains(ruleName, "..") {
+		return fmt.Errorf("invalid path")
+	}
+	path := filepath.Join(m.wafRuleDir(), "domains", domain, ruleName)
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// CollectWAFFiles reads all CaddyGuard WAF files from disk and returns them
+// as (relativePath, content) pairs for syncing to remote Agent nodes.
+// Paths are prefixed with "caddyguard/" so Agent writes to proxy/caddyguard/.
+func (m *CaddyManager) CollectWAFFiles() []WAFFileEntry {
+	wafDir := m.wafBaseDir()
+	var entries []WAFFileEntry
+	filepath.Walk(wafDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(wafDir, path)
+		if err != nil {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		entries = append(entries, WAFFileEntry{
+			Path:    "caddyguard/" + filepath.ToSlash(rel),
+			Content: data,
+		})
+		return nil
+	})
+	return entries
+}
+
+// IsWAFDomainEnabled checks if a domain has WAF enabled in domain.json.
+func (m *CaddyManager) IsWAFDomainEnabled(domain string) bool {
+	data, err := os.ReadFile(filepath.Join(m.wafRuleDir(), "domain.json"))
+	if err != nil {
+		return false
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return false
+	}
+	cfg, ok := obj[domain]
+	if !ok {
+		return false
+	}
+	if cfgMap, ok := cfg.(map[string]interface{}); ok {
+		if wafEnable, ok := cfgMap["waf_enable"].(string); ok && wafEnable == "off" {
+			return false
+		}
+	}
+	return true
+}
+
+// EnableWAFDomain enables WAF for a domain by adding it to domain.json and
+// creating a per-domain rule directory with default rules.
+func (m *CaddyManager) EnableWAFDomain(domain string) error {
+	if strings.Contains(domain, "..") || domain == "" {
+		return fmt.Errorf("invalid domain")
+	}
+	domainDir := filepath.Join(m.wafRuleDir(), "domains", domain)
+	os.MkdirAll(domainDir, 0755)
+	globalDir := m.wafRuleDir()
+	entries, _ := os.ReadDir(globalDir)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".rule") {
+			continue
+		}
+		src := filepath.Join(globalDir, e.Name())
+		dst := filepath.Join(domainDir, e.Name())
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+		os.WriteFile(dst, data, 0644)
+	}
+	return m.updateDomainJSON(domain, map[string]string{
+		"rule_dir": fmt.Sprintf("domains/%s", domain),
+	})
+}
+
+// DisableWAFDomain disables WAF for a domain by setting waf_enable off in domain.json.
+func (m *CaddyManager) DisableWAFDomain(domain string) error {
+	if strings.Contains(domain, "..") || domain == "" {
+		return fmt.Errorf("invalid domain")
+	}
+	return m.updateDomainJSON(domain, map[string]string{
+		"waf_enable": "off",
+	})
+}
+
+// updateDomainJSON updates a domain's config in domain.json (merge keys).
+func (m *CaddyManager) updateDomainJSON(domain string, updates map[string]string) error {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	data, err := os.ReadFile(path)
+	var obj map[string]map[string]interface{}
+	if err != nil {
+		obj = make(map[string]map[string]interface{})
+	} else {
+		json.Unmarshal(data, &obj)
+		if obj == nil {
+			obj = make(map[string]map[string]interface{})
+		}
+	}
+	cfg, ok := obj[domain]
+	if !ok {
+		cfg = make(map[string]interface{})
+	}
+	for k, v := range updates {
+		cfg[k] = v
+	}
+	obj[domain] = cfg
+	out, _ := json.MarshalIndent(obj, "", "  ")
+	return os.WriteFile(path, out, 0644)
+}
+
+// removeFromDomainJSON removes a domain from domain.json.
+func (m *CaddyManager) removeFromDomainJSON(domain string) error {
+	path := filepath.Join(m.wafRuleDir(), "domain.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var obj map[string]map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	delete(obj, domain)
+	out, _ := json.MarshalIndent(obj, "", "  ")
+	return os.WriteFile(path, out, 0644)
 }

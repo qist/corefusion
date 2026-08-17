@@ -1462,12 +1462,13 @@ const siteWAFRuleEditing = ref('')
 const siteWAFRuleEditingContent = ref('')
 
 async function openSiteWAF(row) {
-  siteWAFDomain.value = row.domain
-  siteWAFTab.value = 'config'
-  try {
-    const data = await client.get(`${caddyApi.value}/waf/domain-config`)
-    const obj = JSON.parse(data.content || '{}')
-    const cfg = obj[row.domain] || {}
+const d = row.domain.replace(/:\d+$/, '')
+siteWAFDomain.value = d
+siteWAFTab.value = 'config'
+try {
+const data = await client.get(`${caddyApi.value}/waf/domain-config`)
+const obj = JSON.parse(data.content || '{}')
+const cfg = obj[d] || {}
     siteWAFConfig.value = {
       waf_enable: cfg.waf_enable || 'on',
       trust_proxy_headers: cfg.trust_proxy_headers || 'on',

@@ -915,6 +915,7 @@ func (m *CaddyManager) CollectWAFFiles() []WAFFileEntry {
 
 // IsWAFDomainEnabled checks if a domain has WAF enabled in domain.json.
 func (m *CaddyManager) IsWAFDomainEnabled(domain string) bool {
+	domain = stripPort(domain)
 	data, err := os.ReadFile(filepath.Join(m.wafRuleDir(), "domain.json"))
 	if err != nil {
 		return false
@@ -938,6 +939,7 @@ func (m *CaddyManager) IsWAFDomainEnabled(domain string) bool {
 // EnableWAFDomain enables WAF for a domain by adding it to domain.json and
 // creating a per-domain rule directory with default rules.
 func (m *CaddyManager) EnableWAFDomain(domain string) error {
+	domain = stripPort(domain)
 	if strings.Contains(domain, "..") || domain == "" {
 		return fmt.Errorf("invalid domain")
 	}
@@ -964,6 +966,7 @@ func (m *CaddyManager) EnableWAFDomain(domain string) error {
 
 // DisableWAFDomain disables WAF for a domain by setting waf_enable off in domain.json.
 func (m *CaddyManager) DisableWAFDomain(domain string) error {
+	domain = stripPort(domain)
 	if strings.Contains(domain, "..") || domain == "" {
 		return fmt.Errorf("invalid domain")
 	}
@@ -1037,4 +1040,14 @@ func firstUpstream(upstream string) string {
 		}
 	}
 	return "127.0.0.1:8080"
+}
+
+// stripPort removes the port from a domain string (e.g. "example.com:8443" -> "example.com").
+// CaddyGuard's getDomain() strips port from r.Host before matching against domain.json,
+// so domain.json keys must not contain ports.
+func stripPort(domain string) string {
+	if idx := strings.LastIndex(domain, ":"); idx > 0 {
+		return domain[:idx]
+	}
+	return domain
 }

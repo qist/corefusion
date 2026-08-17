@@ -67,49 +67,51 @@ func (h *CaddyHandler) ListSites(c *gin.Context) {
 func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	h.applyServerID(c)
 	var req struct {
-		Domain        string `json:"domain" binding:"required"`
-		Upstream      string `json:"upstream"`
-		Template      string `json:"template"`
-		Path          string `json:"path"`
-		CertPath      string `json:"cert_path"`
-		KeyPath       string `json:"key_path"`
-		ProxyConfig   string `json:"proxy_config"`
-		CustomConfig  string `json:"custom_config"`
-		LbPolicy      string `json:"lb_policy"`
-		LogEnabled    bool   `json:"log_enabled"`
-		LogPath       string `json:"log_path"`
-		LogFormat     string `json:"log_format"`
-		L4Protocol    string `json:"l4_protocol"`
-		SNITarget     string `json:"sni_target"`
-		LocalPort     string `json:"local_port"`
-		ProxyProtocol bool   `json:"proxy_protocol"`
-		IsPanel       bool   `json:"is_panel"`
-		Priority      int    `json:"priority"`
+		Domain          string `json:"domain" binding:"required"`
+		Upstream         string `json:"upstream"`
+		Template         string `json:"template"`
+		Path             string `json:"path"`
+		CertPath         string `json:"cert_path"`
+		KeyPath          string `json:"key_path"`
+		ProxyConfig      string `json:"proxy_config"`
+		CustomConfig     string `json:"custom_config"`
+		WafExcludePaths  string `json:"waf_exclude_paths"`
+		LbPolicy         string `json:"lb_policy"`
+		LogEnabled       bool   `json:"log_enabled"`
+		LogPath          string `json:"log_path"`
+		LogFormat        string `json:"log_format"`
+		L4Protocol       string `json:"l4_protocol"`
+		SNITarget        string `json:"sni_target"`
+		LocalPort        string `json:"local_port"`
+		ProxyProtocol    bool   `json:"proxy_protocol"`
+		IsPanel          bool   `json:"is_panel"`
+		Priority         int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
 	site := &entity.CaddySite{
-		Domain:        req.Domain,
-		Upstream:      req.Upstream,
-		Template:      req.Template,
-		Path:          req.Path,
-		CertPath:      req.CertPath,
-		KeyPath:       req.KeyPath,
-		ProxyConfig:   req.ProxyConfig,
-		CustomConfig:  req.CustomConfig,
-		LbPolicy:      req.LbPolicy,
-		LogEnabled:    req.LogEnabled,
-		LogPath:       req.LogPath,
-		LogFormat:     req.LogFormat,
-		L4Protocol:    req.L4Protocol,
-		SNITarget:     req.SNITarget,
-		LocalPort:     req.LocalPort,
-		ProxyProtocol: req.ProxyProtocol,
-		Enabled:       true,
-		IsPanel:       req.IsPanel,
-		Priority:      req.Priority,
+		Domain:          req.Domain,
+		Upstream:        req.Upstream,
+		Template:        req.Template,
+		Path:            req.Path,
+		CertPath:        req.CertPath,
+		KeyPath:         req.KeyPath,
+		ProxyConfig:     req.ProxyConfig,
+		CustomConfig:    req.CustomConfig,
+		WafExcludePaths: req.WafExcludePaths,
+		LbPolicy:        req.LbPolicy,
+		LogEnabled:      req.LogEnabled,
+		LogPath:         req.LogPath,
+		LogFormat:       req.LogFormat,
+		L4Protocol:      req.L4Protocol,
+		SNITarget:       req.SNITarget,
+		LocalPort:       req.LocalPort,
+		ProxyProtocol:   req.ProxyProtocol,
+		Enabled:         true,
+		IsPanel:         req.IsPanel,
+		Priority:        req.Priority,
 	}
 	if err := h.caddyMgr.CreateSite(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -131,25 +133,26 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Domain        *string `json:"domain"`
-		Upstream      *string `json:"upstream"`
-		Template      *string `json:"template"`
-		Path          *string `json:"path"`
-		CertPath      *string `json:"cert_path"`
-		KeyPath       *string `json:"key_path"`
-		ProxyConfig   *string `json:"proxy_config"`
-		CustomConfig  *string `json:"custom_config"`
-		LbPolicy      *string `json:"lb_policy"`
-		LogEnabled    *bool   `json:"log_enabled"`
-		LogPath       *string `json:"log_path"`
-		LogFormat     *string `json:"log_format"`
-		L4Protocol    *string `json:"l4_protocol"`
-		SNITarget     *string `json:"sni_target"`
-		LocalPort     *string `json:"local_port"`
-		ProxyProtocol *bool   `json:"proxy_protocol"`
-		Enabled       *bool   `json:"enabled"`
-		IsPanel       *bool   `json:"is_panel"`
-		Priority      *int    `json:"priority"`
+		Domain          *string `json:"domain"`
+		Upstream        *string `json:"upstream"`
+		Template        *string `json:"template"`
+		Path            *string `json:"path"`
+		CertPath        *string `json:"cert_path"`
+		KeyPath         *string `json:"key_path"`
+		ProxyConfig     *string `json:"proxy_config"`
+		CustomConfig    *string `json:"custom_config"`
+		WafExcludePaths *string `json:"waf_exclude_paths"`
+		LbPolicy        *string `json:"lb_policy"`
+		LogEnabled      *bool   `json:"log_enabled"`
+		LogPath         *string `json:"log_path"`
+		LogFormat       *string `json:"log_format"`
+		L4Protocol      *string `json:"l4_protocol"`
+		SNITarget       *string `json:"sni_target"`
+		LocalPort       *string `json:"local_port"`
+		ProxyProtocol   *bool   `json:"proxy_protocol"`
+		Enabled         *bool   `json:"enabled"`
+		IsPanel         *bool   `json:"is_panel"`
+		Priority        *int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -163,6 +166,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	if req.KeyPath != nil { existing.KeyPath = *req.KeyPath }
 	if req.ProxyConfig != nil { existing.ProxyConfig = *req.ProxyConfig }
 	if req.CustomConfig != nil { existing.CustomConfig = *req.CustomConfig }
+	if req.WafExcludePaths != nil { existing.WafExcludePaths = *req.WafExcludePaths }
 	if req.LbPolicy != nil { existing.LbPolicy = *req.LbPolicy }
 	if req.LogEnabled != nil { existing.LogEnabled = *req.LogEnabled }
 	if req.LogPath != nil { existing.LogPath = *req.LogPath }

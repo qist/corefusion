@@ -765,46 +765,53 @@ func (a *LocalAgent) resolveBinaryPath(coreType string) (string, error) {
 
 // ReadConfigFile reads the runtime config file for the given core type
 // from the agent's data directory (runtime/{coreType}.jsonc).
-// Also supports WAF file types:
-//   NginxGuard:
-//   - "waf_config"  → proxy/lua/waf/config.lua
-//   - "waf_domain"  → proxy/lua/waf/rule-config/domain.json
-//   - "waf_rule:xxx.rule" → proxy/lua/waf/rule-config/xxx.rule
-//   CaddyGuard:
-//   - "caddy_waf_config"  → proxy/caddyguard/rule-config/config.json
-//   - "caddy_waf_domain"  → proxy/caddyguard/rule-config/domain.json
-//   - "caddy_waf_rule:xxx.rule" → proxy/caddyguard/rule-config/xxx.rule
+// Also supports WAF file types (all read from the unified proxy/waf-rules/ dir):
+//   - "waf_config"            → proxy/waf-rules/config.lua
+//   - "waf_domain"            → proxy/waf-rules/domain.json
+//   - "waf_rule:xxx.rule"     → proxy/waf-rules/xxx.rule
+//   - "waf_rule_list"         → JSON list of .rule files in waf-rules/
+//   - "caddy_waf_config"      → proxy/waf-rules/config.json
+//   - "caddy_waf_domain"      → proxy/waf-rules/domain.json
+//   - "caddy_waf_rule:xxx.rule"→ proxy/waf-rules/xxx.rule
+//   - "caddy_waf_rule_list"   → JSON list of .rule files in waf-rules/
 func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
+	wafDir := filepath.Join(a.dataDir, "proxy", "waf-rules")
 	// WAF file types
 	switch {
 	// --- NginxGuard WAF ---
+	// config.lua lives with the Lua source at proxy/lua/waf/config.lua
+	// (loaded by NginxGuard's Lua engine via lua_package_path).
 	case coreType == "waf_config":
 		p := filepath.Join(a.dataDir, "proxy", "lua", "waf", "config.lua")
 		data, err := os.ReadFile(p)
 		return data, p, err
 	case coreType == "waf_domain":
-		p := filepath.Join(a.dataDir, "proxy", "lua", "waf", "rule-config", "domain.json")
+		p := filepath.Join(wafDir, "domain.json")
 		data, err := os.ReadFile(p)
 		return data, p, err
 	case strings.HasPrefix(coreType, "waf_rule:"):
 		ruleName := strings.TrimPrefix(coreType, "waf_rule:")
-		p := filepath.Join(a.dataDir, "proxy", "lua", "waf", "rule-config", ruleName)
+		p := filepath.Join(wafDir, ruleName)
 		data, err := os.ReadFile(p)
 		return data, p, err
+	case coreType == "waf_rule_list":
+		return a.listWAFRules()
 	// --- CaddyGuard WAF ---
 	case coreType == "caddy_waf_config":
-		p := filepath.Join(a.dataDir, "proxy", "caddyguard", "rule-config", "config.json")
+		p := filepath.Join(wafDir, "config.json")
 		data, err := os.ReadFile(p)
 		return data, p, err
 	case coreType == "caddy_waf_domain":
-		p := filepath.Join(a.dataDir, "proxy", "caddyguard", "rule-config", "domain.json")
+		p := filepath.Join(wafDir, "domain.json")
 		data, err := os.ReadFile(p)
 		return data, p, err
 	case strings.HasPrefix(coreType, "caddy_waf_rule:"):
 		ruleName := strings.TrimPrefix(coreType, "caddy_waf_rule:")
-		p := filepath.Join(a.dataDir, "proxy", "caddyguard", "rule-config", ruleName)
+		p := filepath.Join(wafDir, ruleName)
 		data, err := os.ReadFile(p)
 		return data, p, err
+	case coreType == "caddy_waf_rule_list":
+		return a.listWAFRules()
 	}
 	// Default: runtime config file
 	configPath := filepath.Join(a.dataDir, "runtime", coreType+".jsonc")
@@ -813,4 +820,42 @@ func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
 		return nil, configPath, err
 	}
 	return data, configPath, nil
+}
+
+// listWAFRules returns a JSON-encoded list of .rule files in the unified WAF rules directory.
+// Path: proxy/waf-rules/
+func (a *LocalAgent) listWAFRules() ([]byte, string, error) {
+	ruleDir := filepath.Join(a.dataDir, "proxy", "waf-rules")
+	entries, err := os.ReadDir(ruleDir)
+	if err != nil {
+		// Return empty list if directory doesn't exist
+		return []byte("[]"), ruleDir, nil
+	}
+	type ruleFile struct {
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+	}
+	var files []ruleFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".rule") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, ruleFile{Name: name, Size: info.Size()})
+	}
+	if files == nil {
+		files = []ruleFile{}
+	}
+	data, err := json.Marshal(files)
+	if err != nil {
+		return nil, ruleDir, err
+	}
+	return data, ruleDir, nil
 }

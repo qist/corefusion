@@ -2023,6 +2023,8 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 
 	// For nginx: track whether lua/conf directories were extracted
 	var luaExtracted bool
+	// For caddy: track whether caddyguard rule files were extracted
+	var caddyGuardExtracted bool
 
 	for {
 		header, err := tr.Next()
@@ -2089,6 +2091,37 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 				}
 			}
 		}
+
+		// Extract caddyguard/ directory to dataDir/proxy/caddyguard/rule-config/
+		if name == "caddy" && strings.HasPrefix(header.Name, "caddyguard/") {
+			// Map "caddyguard/xxx" → "proxy/caddyguard/rule-config/xxx"
+			subPath := strings.TrimPrefix(header.Name, "caddyguard/")
+			if subPath != "" {
+				outPath := filepath.Join(m.dataDir, "proxy", "caddyguard", "rule-config", subPath)
+				if err := os.MkdirAll(filepath.Dir(outPath), 0755); err == nil {
+					if f, err := os.Create(outPath); err == nil {
+						io.Copy(f, tr)
+						f.Close()
+						caddyGuardExtracted = true
+					}
+				}
+			}
+		}
+	}
+
+	// Patch CaddyGuard config.json with correct relative paths after extraction
+	if name == "caddy" && caddyGuardExtracted {
+		configPath := filepath.Join(m.dataDir, "proxy", "caddyguard", "rule-config", "config.json")
+		if data, err := os.ReadFile(configPath); err == nil {
+			content := string(data)
+			content = strings.Replace(content, `"log_dir": "/var/log/caddyguard"`, `"log_dir": "logs"`, 1)
+			content = strings.Replace(content, `"log_dir": "/var/log/caddy"`, `"log_dir": "logs"`, 1)
+			content = strings.Replace(content, `"rule_dir": "/opt/corefusion/data/proxy/caddyguard/rule-config"`, `"rule_dir": "proxy/caddyguard/rule-config"`, 1)
+			os.WriteFile(configPath, []byte(content), 0644)
+			log.Printf("patched CaddyGuard config.json with relative paths (log_dir=logs, rule_dir=proxy/caddyguard/rule-config)")
+		}
+		// Ensure logs directory exists
+		os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0775)
 	}
 
 	// Patch WAF config.lua with correct paths after lua extraction

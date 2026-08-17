@@ -279,10 +279,10 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 					case "stdout":
 						sb.WriteString("\t\toutput stdout\n")
 					default: // "file"
-						logPath := site.LogPath
-						if logPath == "" {
-							logPath = fmt.Sprintf("logs/%s.log", sanitizeLogName(domain))
-						}
+					logPath := site.LogPath
+					if logPath == "" {
+						logPath = fmt.Sprintf("logs/%s.log", SanitizeLogName(StripPort(domain)))
+					}
 						sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
 					}
 					if site.LogFormat == "json" {
@@ -714,9 +714,9 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISetting
 	return nil
 }
 
-// sanitizeLogName converts a domain to a clean log file name.
+// SanitizeLogName converts a domain to a clean log file name.
 // :80 -> default, _ -> default, www.example.com -> www.example.com
-func sanitizeLogName(domain string) string {
+func SanitizeLogName(domain string) string {
 	if domain == "" || domain == "_" || domain == ":80" || domain == ":443" {
 		return "default"
 	}
@@ -942,7 +942,7 @@ func (m *CaddyManager) CollectWAFFiles() []WAFFileEntry {
 
 // IsWAFDomainEnabled checks if a domain has WAF enabled in domain.json.
 func (m *CaddyManager) IsWAFDomainEnabled(domain string) bool {
-	domain = stripPort(domain)
+	domain = StripPort(domain)
 	data, err := os.ReadFile(filepath.Join(m.wafRuleDir(), "domain.json"))
 	if err != nil {
 		return false
@@ -966,7 +966,7 @@ func (m *CaddyManager) IsWAFDomainEnabled(domain string) bool {
 // EnableWAFDomain enables WAF for a domain by adding it to domain.json and
 // creating a per-domain rule directory with default rules.
 func (m *CaddyManager) EnableWAFDomain(domain string) error {
-	domain = stripPort(domain)
+	domain = StripPort(domain)
 	if strings.Contains(domain, "..") || domain == "" {
 		return fmt.Errorf("invalid domain")
 	}
@@ -993,7 +993,7 @@ func (m *CaddyManager) EnableWAFDomain(domain string) error {
 
 // DisableWAFDomain disables WAF for a domain by setting waf_enable off in domain.json.
 func (m *CaddyManager) DisableWAFDomain(domain string) error {
-	domain = stripPort(domain)
+	domain = StripPort(domain)
 	if strings.Contains(domain, "..") || domain == "" {
 		return fmt.Errorf("invalid domain")
 	}
@@ -1044,10 +1044,10 @@ func (m *CaddyManager) removeFromDomainJSON(domain string) error {
 	return os.WriteFile(path, out, 0644)
 }
 
-// stripPort removes the port from a domain string (e.g. "example.com:8443" -> "example.com").
+// StripPort removes the port from a domain string (e.g. "example.com:8443" -> "example.com").
 // CaddyGuard's getDomain() strips port from r.Host before matching against domain.json,
 // so domain.json keys must not contain ports.
-func stripPort(domain string) string {
+func StripPort(domain string) string {
 	if idx := strings.LastIndex(domain, ":"); idx > 0 {
 		return domain[:idx]
 	}

@@ -295,21 +295,11 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 		}
 
 	for _, site := range siteList {
-		// Generate WAF exclude path routes (caddyguard waf_enable off)
-		if site.WafExcludePaths != "" {
-			for _, line := range strings.Split(site.WafExcludePaths, "\n") {
-				p := strings.TrimSpace(line)
-				if p == "" {
-					continue
-				}
-				// Generate a unique matcher name from the path
-				matcherName := "waf_excl_" + sanitizeMatcherName(p)
-				sb.WriteString(fmt.Sprintf("\t@%s path %s\n", matcherName, p))
-				sb.WriteString(fmt.Sprintf("\troute @%s {\n", matcherName))
-				sb.WriteString("\t\tcaddyguard waf_enable off\n")
-				sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", firstUpstream(site.Upstream)))
-				sb.WriteString("\t}\n")
-			}
+		// Per-site WAF switch: when WafEnabled is explicitly false,
+		// inject `caddyguard waf_enable off` into the site's route block.
+		wafBypass := false
+		if site.WafEnabled != nil && !*site.WafEnabled {
+			wafBypass = true
 		}
 		// Static file server: root + file_server instead of reverse_proxy
 			if site.Template == "static" {
@@ -332,19 +322,48 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			if backendPath == "" {
 				backendPath = "/"
 			}
-			useHandlePath := false
+			useRouteWrap := false  // wraps in route { ... } for WAF bypass
+			useHandlePath := false // uses handle_path to strip prefix
 			if site.Path == "" || site.Path == "/" {
-				sb.WriteString("\treverse_proxy {\n")
+				if wafBypass {
+					sb.WriteString("\troute {\n")
+					sb.WriteString("\t\tcaddyguard waf_enable off\n")
+					sb.WriteString("\t\treverse_proxy {\n")
+					useRouteWrap = true
+				} else {
+					sb.WriteString("\treverse_proxy {\n")
+				}
 			} else if backendPath == "/" {
 				// Backend expects root path: use handle_path to strip the location prefix
-				sb.WriteString(fmt.Sprintf("\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
-				sb.WriteString("\t\treverse_proxy {\n")
+				if wafBypass {
+					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+					sb.WriteString("\t}\n")
+					sb.WriteString(fmt.Sprintf("\troute @%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString("\t\tcaddyguard waf_enable off\n")
+					sb.WriteString(fmt.Sprintf("\t\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
+					sb.WriteString("\t\t\treverse_proxy {\n")
+					useRouteWrap = true
+				} else {
+					sb.WriteString(fmt.Sprintf("\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
+					sb.WriteString("\t\treverse_proxy {\n")
+				}
 				useHandlePath = true
 			} else {
-				sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
-				sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
-				sb.WriteString("\t}\n")
-				sb.WriteString(fmt.Sprintf("\treverse_proxy @%s {\n", pathToMatcher(site.Path)))
+				if wafBypass {
+					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+					sb.WriteString("\t}\n")
+					sb.WriteString(fmt.Sprintf("\troute @%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString("\t\tcaddyguard waf_enable off\n")
+					sb.WriteString(fmt.Sprintf("\t\treverse_proxy @%s {\n", pathToMatcher(site.Path)))
+					useRouteWrap = true
+				} else {
+					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+					sb.WriteString("\t}\n")
+					sb.WriteString(fmt.Sprintf("\treverse_proxy @%s {\n", pathToMatcher(site.Path)))
+				}
 			}
 			// Multiple upstream targets
 			for _, up := range strings.Split(site.Upstream, ",") {
@@ -369,6 +388,9 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 				sb.WriteString("\t}\n")   // close handle_path
 			} else {
 				sb.WriteString("\t}\n") // close reverse_proxy
+			}
+			if useRouteWrap {
+				sb.WriteString("\t}\n") // close route block (WAF bypass wrapper)
 			}
 			// Site-level custom config (outside reverse_proxy)
 			if site.CustomConfig != "" {
@@ -1015,31 +1037,6 @@ func (m *CaddyManager) removeFromDomainJSON(domain string) error {
 	delete(obj, domain)
 	out, _ := json.MarshalIndent(obj, "", "  ")
 	return os.WriteFile(path, out, 0644)
-}
-
-// sanitizeMatcherName converts a path like "/api/webhook/*" to "api_webhook"
-// for use as a Caddy path matcher name.
-func sanitizeMatcherName(path string) string {
-	s := strings.Trim(path, "/")
-	s = strings.TrimSuffix(s, "*")
-	s = strings.ReplaceAll(s, "/", "_")
-	s = strings.ReplaceAll(s, "-", "_")
-	s = strings.ReplaceAll(s, ".", "_")
-	if s == "" {
-		s = "root"
-	}
-	return s
-}
-
-// firstUpstream returns the first upstream from a comma-separated list.
-func firstUpstream(upstream string) string {
-	for _, up := range strings.Split(upstream, ",") {
-		up = strings.TrimSpace(up)
-		if up != "" {
-			return up
-		}
-	}
-	return "127.0.0.1:8080"
 }
 
 // stripPort removes the port from a domain string (e.g. "example.com:8443" -> "example.com").

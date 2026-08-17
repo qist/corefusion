@@ -148,8 +148,9 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 
 	// CaddyGuard WAF global config — when enabled, all sites automatically get WAF.
 	// The caddyguardfile adapter injects the Guard handler into every HTTP server.
+	// Use relative path so it works on both panel and remote Agents.
 	sb.WriteString("\tcaddyguard {\n")
-	sb.WriteString(fmt.Sprintf("\t\trule_dir %s\n", m.wafRuleDir()))
+	sb.WriteString("\t\trule_dir proxy/caddyguard/rule-config\n")
 	sb.WriteString("\t}\n")
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
@@ -750,9 +751,18 @@ func (m *CaddyManager) ReadWAFConfig() (string, error) {
 }
 
 // SaveWAFConfig writes the CaddyGuard config.json file.
+// Automatically corrects log_dir and rule_dir to relative paths so the config
+// works on both panel and remote Agents regardless of installation directory.
 func (m *CaddyManager) SaveWAFConfig(content string) error {
 	path := filepath.Join(m.wafRuleDir(), "config.json")
 	os.MkdirAll(filepath.Dir(path), 0755)
+	// Patch paths to relative (in case user pasted absolute paths)
+	content = strings.Replace(content, `"log_dir": "/var/log/caddyguard"`, `"log_dir": "logs"`, 1)
+	content = strings.Replace(content, `"log_dir": "/var/log/caddy"`, `"log_dir": "logs"`, 1)
+	// Ensure rule_dir is relative
+	content = strings.Replace(content, `"rule_dir": "/opt/corefusion/data/proxy/caddyguard/rule-config"`, `"rule_dir": "proxy/caddyguard/rule-config"`, 1)
+	// Ensure logs directory exists
+	os.MkdirAll(filepath.Join(m.dataDir, "logs"), 0775)
 	return os.WriteFile(path, []byte(content), 0644)
 }
 

@@ -15,6 +15,7 @@ type CaddySite struct {
 	KeyPath       string    `json:"key_path" gorm:"size:512"`
 	ProxyConfig   string    `json:"proxy_config" gorm:"type:longtext"`   // inside reverse_proxy { }
 	CustomConfig  string    `json:"custom_config" gorm:"type:longtext"`  // outside reverse_proxy (e.g. encode gzip)
+	WafExcludePaths string `json:"waf_exclude_paths" gorm:"type:text"` // WAF exclude paths, one per line (e.g. /api/webhook/*)
 	LbPolicy      string    `json:"lb_policy" gorm:"size:32"`        // round_robin, least_conn, etc.
 	LogEnabled    bool      `json:"log_enabled" gorm:"not null;default:false"`
 	LogPath       string    `json:"log_path" gorm:"size:255"`        // e.g. logs/example.com.log

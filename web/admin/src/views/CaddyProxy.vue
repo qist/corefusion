@@ -846,7 +846,7 @@ allSites.value = await client.get(`${caddyApi.value}/sites`) || []
 for (const site of allSites.value) {
 if (site.domain && site.template !== 'sni' && site.template !== 'l4') {
 try {
-const res = await client.get(`${caddyApi.value}/waf/domain-status`, { params: { domain: site.domain } })
+const res = await client.get(`${apiBase.value}/waf/domain-status`, { params: { domain: site.domain } })
 site._waf_enabled = res.enabled
 } catch { site._waf_enabled = false }
 } else {
@@ -864,7 +864,7 @@ if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
 async function toggleSiteWAF(row, val) {
 if (val) {
 try {
-await client.post(`${caddyApi.value}/waf/enable-domain`, { domain: row.domain })
+await client.post(`${apiBase.value}/waf/enable-domain`, { domain: row.domain })
 ElMessage.success(t('proxy.wafSiteEnabled', { domain: row.domain }))
 } catch (e) {
 row._waf_enabled = false
@@ -884,7 +884,7 @@ type: 'warning',
 )
 // confirmButtonText → disable WAF for this domain
 try {
-await client.post(`${caddyApi.value}/waf/disable-domain`, { domain: row.domain })
+await client.post(`${apiBase.value}/waf/disable-domain`, { domain: row.domain })
 ElMessage.success(t('proxy.wafSiteDisabled', { domain: row.domain }))
 } catch (e) {
 row._waf_enabled = true
@@ -894,7 +894,7 @@ ElMessage.error(t('common.failed'))
 if (action === 'cancel') {
 // Use global rules — remove domain from domain.json
 try {
-await client.post(`${caddyApi.value}/waf/disable-domain`, { domain: row.domain })
+await client.post(`${apiBase.value}/waf/disable-domain`, { domain: row.domain })
 ElMessage.success(t('proxy.wafUseGlobalRules', { domain: row.domain }))
 } catch (e) {
 row._waf_enabled = true
@@ -1354,14 +1354,14 @@ const wafConfigForm = ref({
 
 async function fetchWAFConfig() {
   try {
-    const data = await client.get(`${caddyApi.value}/waf/config`)
+    const data = await client.get(`${apiBase.value}/waf/config`, { params: { proxy_type: 'caddy' } })
     wafConfigContent.value = data.content || ''
   } catch { wafConfigContent.value = '' }
   parseWAFConfigForm()
 }
 async function saveWAFConfig() {
   try {
-    await client.put(`${caddyApi.value}/waf/config`, { content: wafConfigContent.value })
+    await client.put(`${apiBase.value}/waf/config`, { proxy_type: 'caddy', content: wafConfigContent.value })
     ElMessage.success(t('common.success'))
     parseWAFConfigForm()
   } catch { ElMessage.error(t('common.failed')) }
@@ -1424,21 +1424,21 @@ async function saveWAFConfigForm() {
 
 async function fetchWAFRules() {
   try {
-    const data = await client.get(`${caddyApi.value}/waf/rules`)
+    const data = await client.get('/waf/rules')
     wafRules.value = Array.isArray(data) ? data : (data.items || [])
   } catch { wafRules.value = [] }
 }
 async function openWAFRule(row) {
   wafRuleName.value = row.name
   try {
-    const data = await client.get(`${caddyApi.value}/waf/rules/${row.name}`)
+    const data = await client.get(`/waf/rules/${row.name}`)
     wafRuleContent.value = data.content || ''
     wafRuleVisible.value = true
   } catch { ElMessage.error(t('common.failed')) }
 }
 async function saveWAFRule() {
   try {
-    await client.put(`${caddyApi.value}/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
+    await client.put(`/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
     ElMessage.success(t('common.success'))
     wafRuleVisible.value = false
     fetchWAFRules()
@@ -1461,7 +1461,7 @@ const d = row.domain.replace(/:\d+$/, '')
 siteWAFDomain.value = d
 siteWAFTab.value = 'config'
 try {
-const data = await client.get(`${caddyApi.value}/waf/domain-config`)
+const data = await client.get(`${apiBase.value}/waf/domain-config`)
 const obj = JSON.parse(data.content || '{}')
 const cfg = obj[d] || {}
     siteWAFConfig.value = {
@@ -1492,13 +1492,13 @@ const cfg = obj[d] || {}
 
 async function loadSiteWAFDomainRules(domain) {
   try {
-    const dirs = await client.get(`${caddyApi.value}/waf/domain-rules`)
+    const dirs = await client.get(`${apiBase.value}/waf/domain-rules`)
     if (dirs && dirs.includes(domain)) {
       const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule']
       const rules = []
       for (const name of ruleNames) {
         try {
-          const data = await client.get(`${caddyApi.value}/waf/domain-rules/${domain}/${name}`)
+          const data = await client.get(`${apiBase.value}/waf/domain-rules/${domain}/${name}`)
           rules.push({ name, size: (data.content || '').length })
         } catch { /* skip missing */ }
       }
@@ -1512,7 +1512,7 @@ async function loadSiteWAFDomainRules(domain) {
 async function onSiteWAFRuleModeChange(val) {
   if (val === 'custom') {
     try {
-      await client.post(`${caddyApi.value}/waf/enable-domain`, { domain: siteWAFDomain.value })
+      await client.post(`${apiBase.value}/waf/enable-domain`, { domain: siteWAFDomain.value })
       await loadSiteWAFDomainRules(siteWAFDomain.value)
     } catch { ElMessage.error(t('common.failed')) }
   }
@@ -1521,7 +1521,7 @@ async function onSiteWAFRuleModeChange(val) {
 async function openSiteWAFDomainRule(row) {
   siteWAFRuleEditing.value = row.name
   try {
-    const data = await client.get(`${caddyApi.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
+    const data = await client.get(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
     siteWAFRuleEditingContent.value = data.content || ''
     siteWAFRuleEditorVisible.value = true
   } catch { ElMessage.error(t('common.failed')) }
@@ -1529,7 +1529,7 @@ async function openSiteWAFDomainRule(row) {
 
 async function saveSiteWAFDomainRule() {
   try {
-    await client.put(`${caddyApi.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
+    await client.put(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
     ElMessage.success(t('common.success'))
     siteWAFRuleEditorVisible.value = false
     await loadSiteWAFDomainRules(siteWAFDomain.value)
@@ -1538,7 +1538,7 @@ async function saveSiteWAFDomainRule() {
 
 async function saveSiteWAFConfig() {
   try {
-    const data = await client.get(`${caddyApi.value}/waf/domain-config`)
+    const data = await client.get(`${apiBase.value}/waf/domain-config`)
     const obj = JSON.parse(data.content || '{}')
     const cfg = {}
     for (const [k, v] of Object.entries(siteWAFConfig.value)) {
@@ -1550,7 +1550,7 @@ async function saveSiteWAFConfig() {
     obj[siteWAFDomain.value] = cfg
     delete obj['_comment']
     const content = JSON.stringify(obj, null, 4)
-    await client.put(`${caddyApi.value}/waf/domain-config`, { content })
+    await client.put(`${apiBase.value}/waf/domain-config`, { content })
     ElMessage.success(t('common.success'))
     siteWAFVisible.value = false
   } catch { ElMessage.error(t('common.failed')) }

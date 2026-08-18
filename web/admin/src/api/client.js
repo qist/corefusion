@@ -7,7 +7,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'protocols', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'proxy', 'log-manage', 'charge', 'tickets', 'client-ext', 'portal', 'db-stats']
+    const knownRoutes = ['login', 'dashboard', 'protocols', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'plans', 'clients', 'proxy', 'log-manage', 'charge', 'tickets', 'client-ext', 'portal', 'db-stats', 'waf-rules']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }

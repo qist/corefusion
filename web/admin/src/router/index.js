@@ -11,7 +11,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'online-users', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext', 'audit', 'runtime', 'traffic-quota', 'db-stats']
+    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'online-users', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext', 'audit', 'runtime', 'traffic-quota', 'db-stats', 'waf-rules']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -57,6 +57,7 @@ const routes = [
       { path: 'audit', name: 'Security', component: () => import('../views/Security.vue'), meta: { title: 'menu.audit', icon: 'Bell' } },
       { path: 'runtime', name: 'RuntimeConfig', component: () => import('../views/RuntimeConfig.vue'), meta: { title: 'menu.runtimeConfig', icon: 'Switch' } },
       { path: 'traffic-quota', name: 'TrafficQuota', component: () => import('../views/TrafficQuota.vue'), meta: { title: 'menu.trafficQuota', icon: 'DataLine' } },
+      { path: 'waf-rules', name: 'WafRules', component: () => import('../views/WafRules.vue'), meta: { title: 'menu.wafRules', icon: 'Shield' } },
     ],
   },
 ]

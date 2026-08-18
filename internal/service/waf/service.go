@@ -34,6 +34,7 @@ type NodeSyncer interface {
 // SettingStore provides access to system settings.
 type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key, value string) error
 }
 
 // Service manages WAF rules stored in the database.
@@ -146,6 +147,44 @@ func (s *Service) SaveNodeRule(ctx context.Context, name string, serverID int64,
 // DeleteNodeRule removes a node-scoped WAF rule (falls back to global).
 func (s *Service) DeleteNodeRule(ctx context.Context, name string, serverID int64) error {
 	return s.ruleRepo.Delete(ctx, name, serverID)
+}
+
+// --- WAF Master Switch ---
+
+// IsWAFEnabled checks if WAF is enabled for a server.
+// Reads the per-node WAF switch from settings.
+// When disabled, no WAF config is generated in Caddyfile/nginx.conf.
+func (s *Service) IsWAFEnabled(ctx context.Context, serverID int64) bool {
+	if s.settingSvc == nil {
+		return false
+	}
+	key := "proxy.waf_enabled"
+	if serverID > 1 {
+		key = fmt.Sprintf("proxy.waf_enabled.%d", serverID)
+	}
+	v, err := s.settingSvc.GetByKey(ctx, key)
+	if err != nil || v == "" {
+		return false
+	}
+	return v == "true"
+}
+
+// SetWAFEnabled enables or disables WAF for a server.
+// When disabled, Caddyfile will not include caddyguard block,
+// and nginx.conf will not include WAF Lua directives.
+func (s *Service) SetWAFEnabled(ctx context.Context, serverID int64, enabled bool) error {
+	if s.settingSvc == nil {
+		return fmt.Errorf("setting store not configured")
+	}
+	key := "proxy.waf_enabled"
+	if serverID > 1 {
+		key = fmt.Sprintf("proxy.waf_enabled.%d", serverID)
+	}
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+	return s.settingSvc.Set(ctx, key, val)
 }
 
 // --- WAF Config ---

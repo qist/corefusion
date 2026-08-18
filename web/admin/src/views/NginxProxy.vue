@@ -290,10 +290,10 @@
 </el-form-item>
             <el-divider />
             <el-form-item :label="t('proxy.wafEnabled')">
-              <el-switch v-model="settings.waf_enabled" />
+              <el-switch v-model="wafMasterEnabled" :loading="wafStatusSaving" @change="saveWafMasterSwitch" />
               <span style="margin-left:12px;font-size:12px;color:#909399">{{ t('proxy.wafEnabledHint') }}</span>
             </el-form-item>
-            <div v-if="settings.waf_enabled" style="margin-left:20px;padding:12px;background:#f5f7fa;border-radius:4px;font-size:13px;color:#606266">
+            <div v-if="wafMasterEnabled" style="margin-left:20px;padding:12px;background:#f5f7fa;border-radius:4px;font-size:13px;color:#606266">
               <div>{{ t('proxy.wafFeatures') }}</div>
               <ul style="margin-top:8px;line-height:1.8">
                 <li>{{ t('proxy.wafFeatureUrl') }}</li>
@@ -322,8 +322,8 @@
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>WAF {{ t('proxy.management') }}</span>
-          <el-tag :type="settings.waf_enabled ? 'success' : 'info'" size="small">
-            {{ settings.waf_enabled ? 'ON' : 'OFF' }}
+<el-tag :type="wafMasterEnabled ? 'success' : 'info'" size="small">
+{{ wafMasterEnabled ? 'ON' : 'OFF' }}
           </el-tag>
         </div>
       </template>
@@ -626,7 +626,7 @@
             <el-tag v-else type="info" size="small">-</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="WAF" width="100" v-if="settings.waf_enabled">
+        <el-table-column label="WAF" width="100" v-if="wafMasterEnabled">
           <template #default="{row}">
             <div style="display:flex;align-items:center;gap:4px">
               <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
@@ -889,6 +889,8 @@ const guardianConfig = ref({ autoRestart: true, maxRestarts: 5 })
 const allSites = ref([])
 const certificates = ref([])
 const settings = ref({})
+const wafMasterEnabled = ref(false)
+const wafStatusSaving = ref(false)
 const settingsTab = useQueryState('tab', 'worker')
 const nginxLogMode = ref('file')
 const nginxLogModeHint = computed(() => {
@@ -1391,7 +1393,7 @@ async function fetchSites() {
 try {
 allSites.value = await client.get(`${nginxApi.value}/sites`) || []
 // Check WAF status for each site
-if (settings.value.waf_enabled) {
+if (wafMasterEnabled.value) {
   for (const site of allSites.value) {
     if (site.domain && site.template !== 'sni' && site.template !== 'stream') {
       try {
@@ -1470,6 +1472,23 @@ async function fetchCertificates() {
   try { certificates.value = (await client.get('/certificates', { params: { limit: 100 } })).items || [] } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
+async function fetchWAFStatus() {
+  try {
+    const data = await client.get(`${apiBase.value}/waf/status`)
+    wafMasterEnabled.value = data.enabled || false
+  } catch { wafMasterEnabled.value = false }
+}
+async function saveWafMasterSwitch(val) {
+  wafStatusSaving.value = true
+  try {
+    await client.put(`${apiBase.value}/waf/status`, { enabled: val })
+    await applyConfig()
+  } catch {
+    wafMasterEnabled.value = !val
+  } finally {
+    wafStatusSaving.value = false
+  }
+}
 async function fetchSettings() {
   try {
     const data = await client.get(`${nginxApi.value}/settings`)
@@ -1917,7 +1936,8 @@ onMounted(async () => {
   fetchWAFConfig()
   fetchWAFRules()
   fetchWAFDomainConfig()
-  // Load settings first, then fetch sites (fetchSites depends on settings.waf_enabled)
+  // Load WAF status and settings first, then fetch sites (fetchSites depends on wafMasterEnabled)
+  await fetchWAFStatus()
   await fetchSettings()
   fetchSites()
 })

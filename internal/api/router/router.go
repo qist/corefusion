@@ -1931,6 +1931,8 @@ protected.POST("/waf/sync-all", wafH.SyncAll)
 			nodeServersGroup.POST("/:id/waf/enable-domain", wafH.EnableDomain)
 			nodeServersGroup.POST("/:id/waf/disable-domain", wafH.DisableDomain)
 			nodeServersGroup.POST("/:id/waf/sync", wafH.SyncToNode)
+			nodeServersGroup.GET("/:id/waf/status", wafH.GetWAFStatus)
+			nodeServersGroup.PUT("/:id/waf/status", wafH.SetWAFStatus)
 
 				// Inbound Configs (per node)
 				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)

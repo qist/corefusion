@@ -146,12 +146,15 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 	sb.WriteString("{\n")
 	sb.WriteString("\tauto_https off\n")
 
-	// CaddyGuard WAF global config — when enabled, all sites automatically get WAF.
-	// The caddyguardfile adapter injects the Guard handler into every HTTP server.
-	// Use relative path so it works on both panel and remote Agents.
+// CaddyGuard WAF global config — only generated when WAF is enabled for this node.
+// The caddyguardfile adapter injects the Guard handler into every HTTP server.
+// Use relative path so it works on both panel and remote Agents.
+wafEnabled := m.isWAFEnabledForServer(ctx, serverID)
+if wafEnabled {
 	sb.WriteString("\tcaddyguard {\n")
 	sb.WriteString("\t\trule_dir proxy/waf-rules\n")
 	sb.WriteString("\t}\n")
+}
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -415,6 +418,24 @@ func (m *CaddyManager) panelAddr(ctx context.Context) string {
 		}
 	}
 	return "127.0.0.1:" + port
+}
+
+// isWAFEnabledForServer checks if WAF is enabled for a specific server.
+// Reads the per-node WAF switch from settings (proxy.waf_enabled.<serverID>).
+// When WAF is disabled, no caddyguard block is generated in the Caddyfile.
+func (m *CaddyManager) isWAFEnabledForServer(ctx context.Context, serverID int64) bool {
+	if m.settingStore == nil {
+		return false
+	}
+	key := "proxy.waf_enabled"
+	if serverID > 1 {
+		key = fmt.Sprintf("proxy.waf_enabled.%d", serverID)
+	}
+	v, err := m.settingStore.GetByKey(ctx, key)
+	if err != nil || v == "" {
+		return false
+	}
+	return v == "true"
 }
 
 func (m *CaddyManager) resolvePath(path string) string {

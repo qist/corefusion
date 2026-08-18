@@ -316,6 +316,10 @@ func migrateUniqueIndexes(db *gorm.DB) {
 	dropIndex(db, "outbound_configs", "idx_outbound_configs_tag")
 	dropIndex(db, "outbound_configs", "idx_outbound_tag")
 	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_tag_server ON outbound_configs(server_id, tag)")
+
+	// waf_rules: ensure unique (name, rule_scope, server_id)
+	// GORM AutoMigrate creates the table but may not enforce the composite unique index.
+	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_rules_scope ON waf_rules(name, rule_scope, server_id)")
 }
 
 // dropIndex drops an index if it exists, logging the result.

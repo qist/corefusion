@@ -396,3 +396,38 @@ func (h *Handler) SyncToNode(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"message": "synced"})
 }
+
+// --- WAF Master Switch ---
+
+// GetWAFStatus handles GET /api/v1/node-servers/:id/waf/status.
+// Returns whether WAF is enabled for this node.
+func (h *Handler) GetWAFStatus(c *gin.Context) {
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
+	}
+	enabled := h.svc.IsWAFEnabled(c.Request.Context(), serverID)
+	response.OK(c, gin.H{"enabled": enabled})
+}
+
+// SetWAFStatus handles PUT /api/v1/node-servers/:id/waf/status.
+// Body: { "enabled": true/false }
+// When disabled, no WAF config is generated in Caddyfile/nginx.conf.
+func (h *Handler) SetWAFStatus(c *gin.Context) {
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.svc.SetWAFEnabled(c.Request.Context(), serverID, req.Enabled); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"enabled": req.Enabled})
+}

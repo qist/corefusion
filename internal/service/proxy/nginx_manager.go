@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -228,6 +229,18 @@ func (m *NginxManager) GetNginxSettingsForServer(ctx context.Context, serverID i
 		return settings, nil
 	}
 	mergeNginxSettings(settings, &saved)
+
+	// Check unified WAF master switch (proxy.waf_enabled)
+	// This overrides the per-settings WAFEnabled field.
+	wafKey := "proxy.waf_enabled"
+	if serverID > 1 {
+		wafKey = fmt.Sprintf("proxy.waf_enabled.%d", serverID)
+	}
+	wafVal, err := m.settingStore.GetByKey(ctx, wafKey)
+	if err == nil && wafVal != "" {
+		settings.WAFEnabled = wafVal == "true"
+	}
+
 	return settings, nil
 }
 

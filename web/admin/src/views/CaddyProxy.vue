@@ -78,6 +78,22 @@
       </el-row>
     </el-card>
 
+    <!-- WAF Master Switch -->
+    <el-card shadow="hover" style="margin-bottom:20px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:600">WAF {{ t('proxy.firewall') }}</span>
+          <el-switch v-model="wafMasterEnabled" :loading="wafStatusSaving" @change="saveWafMasterSwitch" />
+        </div>
+      </template>
+      <div v-if="wafMasterEnabled" style="font-size:13px;color:#67C23A">
+        WAF 已启用 — Caddyfile 将包含 caddyguard 配置
+      </div>
+      <div v-else style="font-size:13px;color:#909399">
+        WAF 已关闭 — 不会生成任何 WAF 配置
+      </div>
+    </el-card>
+
     <!-- Log Output Mode -->
     <el-card style="margin-bottom:20px">
       <template #header>
@@ -625,6 +641,8 @@ const allSites = ref([])
 const certificates = ref([])
 const caddyLogMode = ref('file')
 const logModeSaving = ref(false)
+const wafMasterEnabled = ref(false)
+const wafStatusSaving = ref(false)
 const caddyLogModeHint = computed(() => {
   const m = caddyLogMode.value
   if (m === 'stdout') return t('proxy.caddyHintStdout')
@@ -1352,6 +1370,22 @@ const wafConfigForm = ref({
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
 
+async function fetchWAFStatus() {
+  try {
+    const data = await client.get(`${apiBase.value}/waf/status`)
+    wafMasterEnabled.value = data.enabled || false
+  } catch { wafMasterEnabled.value = false }
+}
+async function saveWafMasterSwitch(val) {
+  wafStatusSaving.value = true
+  try {
+    await client.put(`${apiBase.value}/waf/status`, { enabled: val })
+  } catch {
+    wafMasterEnabled.value = !val
+  } finally {
+    wafStatusSaving.value = false
+  }
+}
 async function fetchWAFConfig() {
   try {
     const data = await client.get(`${apiBase.value}/waf/config`, { params: { proxy_type: 'caddy' } })
@@ -1564,6 +1598,7 @@ onMounted(() => {
   fetchInbounds()
   fetchWAFConfig()
   fetchWAFRules()
+  fetchWAFStatus()
 })
 </script>
 <style scoped>

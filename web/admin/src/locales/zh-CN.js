@@ -98,6 +98,7 @@ export default {
     clientExtManagement: '扩展管理',
     portalManagement: '门户站点',
     trafficQuota: '流量配额',
+    wafRules: 'WAF 规则',
     dbStats: '数据库监控',
   },
   onlineUsers: {

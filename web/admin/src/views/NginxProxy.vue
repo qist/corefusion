@@ -1056,14 +1056,14 @@ function wafRuleDesc(name) {
 
 async function fetchWAFConfig() {
   try {
-    const data = await client.get(`${nginxApi.value}/waf/config`)
+    const data = await client.get(`${apiBase.value}/waf/config`, { params: { proxy_type: 'nginx' } })
     wafConfigContent.value = data.content || ''
   } catch { wafConfigContent.value = '' }
   parseWAFConfigForm()
 }
 async function saveWAFConfig() {
   try {
-    await client.put(`${nginxApi.value}/waf/config`, { content: wafConfigContent.value })
+    await client.put(`${apiBase.value}/waf/config`, { proxy_type: 'nginx', content: wafConfigContent.value })
     ElMessage.success(t('common.success'))
     parseWAFConfigForm()
   } catch { ElMessage.error(t('common.failed')) }
@@ -1149,21 +1149,21 @@ async function saveWAFConfigForm() {
 }
 async function fetchWAFRules() {
   try {
-    const data = await client.get(`${nginxApi.value}/waf/rules`)
+    const data = await client.get('/waf/rules')
     wafRules.value = Array.isArray(data) ? data : (data.items || [])
   } catch { wafRules.value = [] }
 }
 async function openWAFRule(row) {
   wafRuleName.value = row.name
   try {
-    const data = await client.get(`${nginxApi.value}/waf/rules/${row.name}`)
+    const data = await client.get(`/waf/rules/${row.name}`)
     wafRuleContent.value = data.content || ''
     wafRuleVisible.value = true
   } catch { ElMessage.error(t('common.failed')) }
 }
 async function saveWAFRule() {
   try {
-    await client.put(`${nginxApi.value}/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
+    await client.put(`/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
     ElMessage.success(t('common.success'))
     wafRuleVisible.value = false
     fetchWAFRules()
@@ -1171,13 +1171,13 @@ async function saveWAFRule() {
 }
 async function fetchWAFDomainConfig() {
   try {
-    const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+    const data = await client.get(`${apiBase.value}/waf/domain-config`)
     wafDomainContent.value = data.content || ''
   } catch { wafDomainContent.value = '' }
 }
 async function saveWAFDomainConfig() {
   try {
-    await client.put(`${nginxApi.value}/waf/domain-config`, { content: wafDomainContent.value })
+    await client.put(`${apiBase.value}/waf/domain-config`, { content: wafDomainContent.value })
     ElMessage.success(t('common.success'))
   } catch { ElMessage.error(t('common.failed')) }
 }
@@ -1202,7 +1202,7 @@ async function openSiteWAF(row) {
   siteWAFTab.value = 'config'
   // Load current domain config from domain.json
   try {
-    const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+    const data = await client.get(`${apiBase.value}/waf/domain-config`)
     const obj = JSON.parse(data.content || '{}')
     const cfg = obj[row.domain] || {}
     siteWAFConfig.value = {
@@ -1233,14 +1233,14 @@ async function openSiteWAF(row) {
 
 async function loadSiteWAFDomainRules(domain) {
   try {
-    const dirs = await client.get(`${nginxApi.value}/waf/domain-rules`)
+    const dirs = await client.get(`${apiBase.value}/waf/domain-rules`)
     if (dirs && dirs.includes(domain)) {
       // Domain has a rule directory — list rule files
       const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule']
       const rules = []
       for (const name of ruleNames) {
         try {
-          const data = await client.get(`${nginxApi.value}/waf/domain-rules/${domain}/${name}`)
+          const data = await client.get(`${apiBase.value}/waf/domain-rules/${domain}/${name}`)
           rules.push({ name, size: (data.content || '').length })
         } catch { /* skip missing */ }
       }
@@ -1255,7 +1255,7 @@ async function onSiteWAFRuleModeChange(val) {
   if (val === 'custom') {
     // Enable custom rules: ensure rule_dir is set, copy global rules if needed
     try {
-      await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: siteWAFDomain.value, enabled: true })
+      await client.post(`${apiBase.value}/waf/enable-domain`, { domain: siteWAFDomain.value })
       await loadSiteWAFDomainRules(siteWAFDomain.value)
     } catch { ElMessage.error(t('common.failed')) }
   }
@@ -1264,7 +1264,7 @@ async function onSiteWAFRuleModeChange(val) {
 async function openSiteWAFDomainRule(row) {
   siteWAFRuleEditing.value = row.name
   try {
-    const data = await client.get(`${nginxApi.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
+    const data = await client.get(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
     siteWAFRuleEditingContent.value = data.content || ''
     siteWAFRuleEditorVisible.value = true
   } catch { ElMessage.error(t('common.failed')) }
@@ -1272,7 +1272,7 @@ async function openSiteWAFDomainRule(row) {
 
 async function saveSiteWAFDomainRule() {
   try {
-    await client.put(`${nginxApi.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
+    await client.put(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
     ElMessage.success(t('common.success'))
     siteWAFRuleEditorVisible.value = false
     await loadSiteWAFDomainRules(siteWAFDomain.value)
@@ -1282,7 +1282,7 @@ async function saveSiteWAFDomainRule() {
 async function saveSiteWAFConfig() {
   // Serialize config back to domain.json
   try {
-    const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+    const data = await client.get(`${apiBase.value}/waf/domain-config`)
     const obj = JSON.parse(data.content || '{}')
     const cfg = {}
     for (const [k, v] of Object.entries(siteWAFConfig.value)) {
@@ -1295,7 +1295,7 @@ async function saveSiteWAFConfig() {
     // Remove _comment if accidentally at wrong level
     delete obj['_comment']
     const content = JSON.stringify(obj, null, 4)
-    await client.put(`${nginxApi.value}/waf/domain-config`, { content })
+    await client.put(`${apiBase.value}/waf/domain-config`, { content })
     ElMessage.success(t('common.success'))
     siteWAFVisible.value = false
   } catch { ElMessage.error(t('common.failed')) }
@@ -1395,7 +1395,7 @@ if (settings.value.waf_enabled) {
   for (const site of allSites.value) {
     if (site.domain && site.template !== 'sni' && site.template !== 'stream') {
       try {
-        const res = await client.get(`${nginxApi.value}/waf/domain-status`, { params: { domain: site.domain } })
+        const res = await client.get(`${apiBase.value}/waf/domain-status`, { params: { domain: site.domain } })
         site._waf_enabled = res.enabled
       } catch { site._waf_enabled = false }
     } else {
@@ -1410,7 +1410,7 @@ async function toggleSiteWAF(row, val) {
   if (val) {
     // Enable: add to domain.json with rule_dir
     try {
-      await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: row.domain, enabled: true })
+      await client.post(`${apiBase.value}/waf/enable-domain`, { domain: row.domain })
       ElMessage.success(t('proxy.wafSiteEnabled', { domain: row.domain }))
     } catch (e) {
       row._waf_enabled = false
@@ -1431,7 +1431,7 @@ async function toggleSiteWAF(row, val) {
       )
       // confirmButtonText clicked → disable WAF for this domain (waf_enable: off)
       try {
-        await client.put(`${nginxApi.value}/waf/domain-config`, {
+        await client.put(`${apiBase.value}/waf/domain-config`, {
           content: await updateDomainJSON(row.domain, { waf_enable: 'off' })
         })
         ElMessage.success(t('proxy.wafSiteDisabled', { domain: row.domain }))
@@ -1443,7 +1443,7 @@ async function toggleSiteWAF(row, val) {
       if (action === 'cancel') {
         // cancelButtonText clicked → use global rules (remove from domain.json)
         try {
-          await client.post(`${nginxApi.value}/waf/toggle-domain`, { domain: row.domain, enabled: false })
+          await client.post(`${apiBase.value}/waf/disable-domain`, { domain: row.domain })
           ElMessage.success(t('proxy.wafUseGlobalRules', { domain: row.domain }))
         } catch (e) {
           row._waf_enabled = true
@@ -1459,7 +1459,7 @@ async function toggleSiteWAF(row, val) {
 
 // Helper: read current domain.json, update a domain's config, return new content
 async function updateDomainJSON(domain, patch) {
-  const data = await client.get(`${nginxApi.value}/waf/domain-config`)
+  const data = await client.get(`${apiBase.value}/waf/domain-config`)
   const obj = JSON.parse(data.content || '{}')
   if (!obj[domain]) obj[domain] = {}
   Object.assign(obj[domain], patch)

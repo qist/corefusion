@@ -98,6 +98,7 @@ export default {
     clientExtManagement: 'Extension Management',
     portalManagement: 'Portal',
     trafficQuota: 'Traffic Quota',
+    wafRules: 'WAF Rules',
     dbStats: 'DB Monitor',
   },
   onlineUsers: {

@@ -74,6 +74,13 @@ type AgentApp struct {
 	// streamSendMu protects stream.Send calls from concurrent goroutines
 	// (heartbeat ticker, status ticker, traffic ticker, recv loop, TaskQueue workers)
 	streamSendMu sync.Mutex
+
+	// lastRecvTime tracks the last time a message was received from the panel.
+	// Used by the dead-connection watchdog in connectAndStream to detect
+	// half-open connections where the panel side has closed the stream but
+	// the Agent's stream.Send/Recv don't error (data sits in TCP buffer).
+	lastRecvTime time.Time
+	lastRecvMu   sync.RWMutex
 }
 
 // NewAgentApp initialises the Agent application:

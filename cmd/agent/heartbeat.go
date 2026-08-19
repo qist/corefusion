@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
@@ -91,6 +92,17 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 
 // connectAndStream opens a heartbeat stream with the Panel and runs the
 // send/receive loop until the stream breaks or the context is cancelled.
+//
+// Dead-connection detection:
+//
+// gRPC keepalive PING/PONG handles TCP-level silent drops, but a "half-open"
+// state can still occur: the panel's Stream() handler returns (e.g. due to a
+// send error on its side) and calls markOffline, while the Agent's stream.Send
+// succeeds (data goes into the local TCP buffer) and stream.Recv blocks forever.
+//
+// To detect this, we track lastRecvTime — the last time we received ANY message
+// from the panel (PanelCommand). If no message arrives within recvTimeout
+// (90s), we proactively close the stream and reconnect.
 func (a *AgentApp) connectAndStream(ctx context.Context) error {
 	conn, err := a.dialPanel(ctx)
 	if err != nil {
@@ -119,6 +131,14 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 	onlineTicker := time.NewTicker(15 * time.Second)
 	defer onlineTicker.Stop()
 
+	// Dead-connection watchdog: if no message from panel in 90s, force reconnect.
+	const recvTimeout = 90 * time.Second
+	a.lastRecvMu.Lock()
+	a.lastRecvTime = time.Now()
+	a.lastRecvMu.Unlock()
+	watchdogTicker := time.NewTicker(15 * time.Second)
+	defer watchdogTicker.Stop()
+
 	// Receive loop (Panel commands via stream)
 	recvErr := make(chan error, 1)
 	go func() {
@@ -128,6 +148,12 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 				recvErr <- err
 				return
 			}
+			// Update last-received time — any message from panel means the
+			// connection is alive (including keepalive PONG frames which
+			// surface as empty messages at the HTTP/2 level).
+			a.lastRecvMu.Lock()
+			a.lastRecvTime = time.Now()
+			a.lastRecvMu.Unlock()
 			a.handlePanelCommand(cmd, stream)
 		}
 	}()
@@ -138,6 +164,20 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-recvErr:
 			return err
+		case <-watchdogTicker.C:
+			// Check if we haven't heard from the panel in too long.
+			a.lastRecvMu.RLock()
+			lr := a.lastRecvTime
+			a.lastRecvMu.RUnlock()
+			if time.Since(lr) > recvTimeout {
+				return fmt.Errorf("no panel messages received in %v, forcing reconnect", recvTimeout)
+			}
+			// Also check the gRPC transport state — if it's not READY/IDLE,
+			// the connection is broken but stream.Send might not have noticed.
+			st := conn.GetState()
+			if st == connectivity.TransientFailure || st == connectivity.Shutdown {
+				return fmt.Errorf("gRPC connection state %s, forcing reconnect", st.String())
+			}
 		case <-heartbeatTicker.C:
 			if err := a.sendHeartbeat(stream); err != nil {
 				return fmt.Errorf("heartbeat: %w", err)

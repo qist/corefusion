@@ -290,6 +290,45 @@ func (s *Service) SaveDomainConfig(ctx context.Context, serverID int64, domain, 
 	return s.domainRepo.Upsert(ctx, cfg)
 }
 
+// GetDomainJSONContent returns the domain.json content for a server.
+// This builds the JSON from all domain configs in the database.
+func (s *Service) GetDomainJSONContent(ctx context.Context, serverID int64) (string, error) {
+	return s.buildDomainJSON(ctx, serverID)
+}
+
+// SaveDomainConfigsBulk replaces all domain configs for a server from a JSON object.
+// The JSON format is: {"domain1": {...config...}, "domain2": {...config...}}
+func (s *Service) SaveDomainConfigsBulk(ctx context.Context, serverID int64, content string) error {
+	// Parse the JSON content
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		return fmt.Errorf("invalid domain JSON: %w", err)
+	}
+
+	// Delete all existing domain configs for this server
+	if err := s.domainRepo.DeleteByServer(ctx, serverID); err != nil {
+		return fmt.Errorf("failed to clear domain configs: %w", err)
+	}
+
+	// Insert each domain config
+	for domain, cfgRaw := range raw {
+		if domain == "_comment" {
+			continue
+		}
+		cfg := &entity.WafDomainConfig{
+			ServerID: serverID,
+			Domain:   domain,
+			Config:   string(cfgRaw),
+		}
+		if err := s.domainRepo.Upsert(ctx, cfg); err != nil {
+			log.Printf("[WAF] failed to upsert domain config for %s: %v", domain, err)
+			continue
+		}
+	}
+
+	return nil
+}
+
 // DeleteDomainConfig removes a domain WAF config.
 func (s *Service) DeleteDomainConfig(ctx context.Context, serverID int64, domain string) error {
 	return s.domainRepo.DeleteByServerAndDomain(ctx, serverID, domain)

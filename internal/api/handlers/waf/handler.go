@@ -269,17 +269,43 @@ func (h *Handler) SaveConfig(c *gin.Context) {
 // --- Per-Node Domain Config ---
 
 // ListDomainConfigs handles GET /api/v1/node-servers/:id/waf/domain-config.
+// Returns the entire domain.json content as {content: "..."}.
 func (h *Handler) ListDomainConfigs(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
 		serverID = localServerID
 	}
-	configs, err := h.svc.ListDomainConfigs(c.Request.Context(), serverID)
+	content, err := h.svc.GetDomainJSONContent(c.Request.Context(), serverID)
 	if err != nil {
-		response.OK(c, []interface{}{})
+		response.OK(c, gin.H{"content": "{}"})
 		return
 	}
-	response.OK(c, configs)
+	response.OK(c, gin.H{"content": content})
+}
+
+// SaveDomainConfigsBulk handles PUT /api/v1/node-servers/:id/waf/domain-config.
+// Replaces all domain configs from a JSON body {content: "<domain.json content>"}.
+func (h *Handler) SaveDomainConfigsBulk(c *gin.Context) {
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
+	}
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.svc.SaveDomainConfigsBulk(c.Request.Context(), serverID, req.Content); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	// Land updated domain config to local disk
+	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
+		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	}
+	response.OK(c, gin.H{"message": "saved"})
 }
 
 // GetDomainConfig handles GET /api/v1/node-servers/:id/waf/domain-config/:domain.

@@ -182,3 +182,8 @@ func (r *WafDomainConfigRepository) Delete(ctx context.Context, id int64) error 
 func (r *WafDomainConfigRepository) DeleteByServerAndDomain(ctx context.Context, serverID int64, domain string) error {
 	return r.db.WithContext(ctx).Where("server_id = ? AND domain = ?", serverID, domain).Delete(&entity.WafDomainConfig{}).Error
 }
+
+// DeleteByServer removes all domain WAF configs for a server.
+func (r *WafDomainConfigRepository) DeleteByServer(ctx context.Context, serverID int64) error {
+	return r.db.WithContext(ctx).Where("server_id = ?", serverID).Delete(&entity.WafDomainConfig{}).Error
+}

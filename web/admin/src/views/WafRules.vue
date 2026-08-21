@@ -74,6 +74,23 @@
           Node rules will replace this global rule entirely
         </span>
       </div>
+      <el-alert v-if="editingRule.name === 'cdnip.rule'" type="info" :closable="false" style="margin-bottom:8px">
+        <template #title>CDN/Trusted Proxy IP List</template>
+        <div style="font-size:12px;line-height:1.6">
+          Only IPs listed here are trusted for X-Forwarded-For / X-Real-IP headers (when <code>trust_proxy_headers=on</code>).<br/>
+          Supports: IPv4 CIDR (1.2.3.0/24), IPv6 CIDR (2001:db8::/32), wildcards (192.168.*), exact IPs.<br/>
+          Hot-reloaded via mtime check, no restart needed.<br/>
+          <b>Major CDN providers reference:</b>
+          <ul style="margin:4px 0 0 16px;padding:0">
+            <li>Cloudflare: <a href="https://www.cloudflare.com/ips/" target="_blank">https://www.cloudflare.com/ips/</a></li>
+            <li>Alibaba CDN: 47.0.0.0/8, 120.0.0.0/8 (approximate, check official)</li>
+            <li>Tencent CDN: 101.0.0.0/8, 111.0.0.0/8 (approximate, check official)</li>
+            <li>Amazon CloudFront: <a href="https://d7uri8nf7uskq.cloudfront.net/tools/list-cloudfront-ips" target="_blank">CloudFront IP list</a></li>
+            <li>Google Cloud: 35.132.0.0/14 (check official)</li>
+          </ul>
+          This file is <b>not created by default</b>. Only create it when you need CDN trust.
+        </div>
+      </el-alert>
       <el-input
         v-model="editingRule.content"
         type="textarea"
@@ -122,6 +139,7 @@ const ruleDescriptions = {
   'blackip.rule': 'Blacklist IP rules (user-defined)',
   'whiteip.rule': 'Whitelist IP rules (user-defined)',
   'whiteurl.rule': 'Whitelist URL rules (user-defined)',
+  'cdnip.rule': 'CDN/Trusted Proxy IP list — only these IPs are trusted for X-Forwarded-For',
 }
 
 function wafRuleDesc(name) {

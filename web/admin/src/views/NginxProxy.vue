@@ -1083,7 +1083,8 @@ const wafRuleDescMap = {
   'args.rule': 'wafRuleArgs', 'blackip.rule': 'wafRuleBlackip', 'cookie.rule': 'wafRuleCookie',
   'post.rule': 'wafRulePost', 'url.rule': 'wafRuleUrl', 'useragent.rule': 'wafRuleUseragent',
   'whiteip.rule': 'wafRuleWhiteip', 'whiteurl.rule': 'wafRuleWhiteurl', 'whiteua.rule': 'wafRuleWhiteua',
-  'referer.rule': 'wafRuleReferer', 'fileext.rule': 'wafRuleFileext'
+  'referer.rule': 'wafRuleReferer', 'fileext.rule': 'wafRuleFileext',
+'cdnip.rule': 'wafRuleCdnip'
 }
 function wafRuleDesc(name) {
   const key = wafRuleDescMap[name]

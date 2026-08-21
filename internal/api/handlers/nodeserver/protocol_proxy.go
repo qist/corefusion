@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -231,6 +232,24 @@ func (h *Handler) GetConfigFile(c *gin.Context) {
 	if coreType == "" {
 		coreType = "xray"
 	}
+
+	// WAF rule files are read via the node operator (local disk or remote gRPC),
+	// not through the core config generator. coreType format: "waf_rule:<name>".
+	if strings.HasPrefix(coreType, "waf_rule:") {
+		ruleName := strings.TrimPrefix(coreType, "waf_rule:")
+		if h.svc == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node service not configured")
+			return
+		}
+		data, _, err := h.svc.ReadConfigFileOnServer(c.Request.Context(), serverID, "waf_rule:"+ruleName)
+		if err != nil {
+			response.NotFound(c, "WAF_RULE_NOT_FOUND", err.Error())
+			return
+		}
+		c.JSON(200, gin.H{"path": "waf-rules/" + ruleName, "content": string(data)})
+		return
+	}
+
 	if !isValidCoreType(coreType) {
 		response.BadRequest(c, "INVALID_CORE_TYPE", "unsupported core type: "+coreType)
 		return

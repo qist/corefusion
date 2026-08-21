@@ -106,9 +106,15 @@ func (h *Handler) SaveRule(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
-	// Land to local disk
+	// Land to local disk AND push the updated (global + node-merged) rules to
+	// every remote node. Global changes must reach all online nodes immediately,
+	// otherwise each node's merged rule file stays stale (it cannot read global
+	// directly — it only has its own merged copy).
 	if err := h.svc.LandAllRules(c.Request.Context()); err != nil {
 		log.Printf("[WAF] land rules to disk: %v", err)
+	}
+	if err := h.svc.SyncToAllNodesFromDB(c.Request.Context()); err != nil {
+		log.Printf("[WAF] push global rule %q to all nodes: %v", name, err)
 	}
 	response.OK(c, gin.H{"message": "saved"})
 }
@@ -120,20 +126,35 @@ func (h *Handler) DeleteRule(c *gin.Context) {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
 	}
+	// Land locally and push the updated merged rules to every remote node.
 	if err := h.svc.LandAllRules(c.Request.Context()); err != nil {
 		log.Printf("[WAF] land rules to disk: %v", err)
+	}
+	if err := h.svc.SyncToAllNodesFromDB(c.Request.Context()); err != nil {
+		log.Printf("[WAF] push global rule deletion %q to all nodes: %v", name, err)
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
 // SyncFromGitHub handles POST /api/v1/waf/sync-github.
+// Downloads rules from the configured GitHub source, then pushes to all nodes.
 func (h *Handler) SyncFromGitHub(c *gin.Context) {
-	if err := h.svc.SyncFromGitHub(c.Request.Context()); err != nil {
+	// Get configured source URL
+	source, _ := h.svc.GetGitHubSource(c.Request.Context())
+	sourceURL := ""
+	if source != nil {
+		sourceURL = source.URL
+	}
+	if err := h.svc.SyncFromGitHubWithSource(c.Request.Context(), sourceURL); err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
 	if err := h.svc.LandAllRules(c.Request.Context()); err != nil {
 		log.Printf("[WAF] land rules to disk: %v", err)
+	}
+	// Push to all nodes after GitHub sync
+	if err := h.svc.SyncToAllNodesFromDB(c.Request.Context()); err != nil {
+		log.Printf("[WAF] push to all nodes after github sync: %v", err)
 	}
 	response.OK(c, gin.H{"message": "synced"})
 }
@@ -145,13 +166,73 @@ func (h *Handler) SyncAll(c *gin.Context) {
 		response.InternalError(c, "LAND_FAILED", err.Error())
 		return
 	}
+	// Push to all online nodes
+	if err := h.svc.SyncToAllNodesFromDB(c.Request.Context()); err != nil {
+		response.OK(c, gin.H{"message": "synced locally, remote sync had errors", "error": err.Error()})
+		return
+	}
 	response.OK(c, gin.H{"message": "synced"})
+}
+
+// GetGitHubSource handles GET /api/v1/waf/github-source.
+// Returns the configured GitHub source URL and sync schedule.
+func (h *Handler) GetGitHubSource(c *gin.Context) {
+	source, err := h.svc.GetGitHubSource(c.Request.Context())
+	if err != nil {
+		response.OK(c, gin.H{"url": "", "sync_cron": "", "enabled": false})
+		return
+	}
+	response.OK(c, source)
+}
+
+// SaveGitHubSource handles PUT /api/v1/waf/github-source.
+// Body: { "url": "...", "sync_cron": "...", "enabled": true/false }
+func (h *Handler) SaveGitHubSource(c *gin.Context) {
+	var req struct {
+		URL      string `json:"url"`
+		SyncCron string `json:"sync_cron"`
+		Enabled  bool   `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.svc.SaveGitHubSource(c.Request.Context(), req.URL, req.SyncCron, req.Enabled); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "saved"})
+}
+
+// PushToAllNodes handles POST /api/v1/waf/push-all.
+// Collects all WAF files from DB and pushes to all online nodes.
+func (h *Handler) PushToAllNodes(c *gin.Context) {
+	if err := h.svc.SyncToAllNodesFromDB(c.Request.Context()); err != nil {
+		response.InternalError(c, "PUSH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "pushed"})
+}
+
+// PushToNode handles POST /api/v1/node-servers/:id/waf/push.
+// Pushes all WAF files for this specific node.
+func (h *Handler) PushToNode(c *gin.Context) {
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
+	}
+	if err := h.svc.SyncToNode(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "PUSH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "pushed"})
 }
 
 // --- Per-Node WAF Rules ---
 
 // ListNodeRules handles GET /api/v1/node-servers/:id/waf/rules.
-// Returns both global rules and node-level overrides for this server.
+// Returns merged rules (global + node override) for this server.
+// Each rule includes a "source" field: "global" | "node" | "merged".
 func (h *Handler) ListNodeRules(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -166,6 +247,8 @@ func (h *Handler) ListNodeRules(c *gin.Context) {
 }
 
 // GetNodeRule handles GET /api/v1/node-servers/:id/waf/rules/:name.
+// Returns the merged content (global + node override) for a specific rule.
+// The "source" field indicates: "global" (from global only), "node" (node only), "merged" (both combined).
 func (h *Handler) GetNodeRule(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -174,15 +257,28 @@ func (h *Handler) GetNodeRule(c *gin.Context) {
 	name := c.Param("name")
 	rule, err := h.svc.GetNodeRule(c.Request.Context(), name, serverID)
 	if err != nil {
-		response.OK(c, gin.H{"name": name, "content": "", "exists": false})
+		response.OK(c, gin.H{"name": name, "content": "", "exists": false, "source": "none"})
 		return
 	}
-	response.OK(c, gin.H{"name": rule.Name, "content": rule.Content, "exists": true})
+	resp := gin.H{
+		"name":       rule.Name,
+		"content":    rule.Content,
+		"exists":     true,
+		"source":     rule.Source,
+		"merge_mode": rule.MergeMode,
+		"hash":       rule.Hash,
+	}
+	if rule.Source == "merged" {
+		resp["global_content"] = rule.GlobalContent
+		resp["node_content"] = rule.NodeContent
+	}
+	response.OK(c, resp)
 }
 
 // SaveNodeRule handles PUT /api/v1/node-servers/:id/waf/rules/:name.
 // Creates or updates a node-level override for the given rule.
 // Body: { "content": "...", "merge_mode": "append|replace" }
+// After saving, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) SaveNodeRule(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -201,11 +297,16 @@ func (h *Handler) SaveNodeRule(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
+	}
 	response.OK(c, gin.H{"message": "saved"})
 }
 
 // DeleteNodeRule handles DELETE /api/v1/node-servers/:id/waf/rules/:name.
 // Removes the node-level override, falling back to the global rule.
+// After deleting, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) DeleteNodeRule(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -214,6 +315,10 @@ func (h *Handler) DeleteNodeRule(c *gin.Context) {
 	name := c.Param("name")
 	if err := h.svc.DeleteNodeRule(c.Request.Context(), name, serverID); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
+		return
+	}
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
 	response.OK(c, gin.H{"message": "deleted, falling back to global rule"})
@@ -239,6 +344,7 @@ func (h *Handler) GetConfig(c *gin.Context) {
 
 // SaveConfig handles PUT /api/v1/node-servers/:id/waf/config.
 // Body: { "proxy_type": "caddy|nginx", "content": "..." }
+// After saving, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) SaveConfig(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -259,9 +365,9 @@ func (h *Handler) SaveConfig(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
-	// Land updated config to local disk
-	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
-		log.Printf("[WAF] failed to land config for server %d: %v", serverID, err)
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
 	}
 	response.OK(c, gin.H{"message": "saved"})
 }
@@ -285,6 +391,7 @@ func (h *Handler) ListDomainConfigs(c *gin.Context) {
 
 // SaveDomainConfigsBulk handles PUT /api/v1/node-servers/:id/waf/domain-config.
 // Replaces all domain configs from a JSON body {content: "<domain.json content>"}.
+// After saving, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) SaveDomainConfigsBulk(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -301,9 +408,9 @@ func (h *Handler) SaveDomainConfigsBulk(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
-	// Land updated domain config to local disk
-	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
-		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
 	}
 	response.OK(c, gin.H{"message": "saved"})
 }
@@ -324,6 +431,7 @@ func (h *Handler) GetDomainConfig(c *gin.Context) {
 }
 
 // SaveDomainConfig handles PUT /api/v1/node-servers/:id/waf/domain-config/:domain.
+// After saving, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) SaveDomainConfig(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -341,15 +449,16 @@ func (h *Handler) SaveDomainConfig(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
-	// Land updated domain config to local disk
-	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
-		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
 	}
 	response.OK(c, gin.H{"message": "saved"})
 }
 
 // DeleteDomainConfig handles DELETE /api/v1/node-servers/:id/waf/domain-config/:domain.
 // Removes the domain entry from domain.json entirely (fall back to global rules).
+// After deleting, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) DeleteDomainConfig(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -360,14 +469,15 @@ func (h *Handler) DeleteDomainConfig(c *gin.Context) {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
 	}
-	// Land updated domain config to local disk
-	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
-		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
 // EnableDomain handles POST /api/v1/node-servers/:id/waf/enable-domain.
+// After enabling, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) EnableDomain(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -388,9 +498,9 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 		response.InternalError(c, "ENABLE_FAILED", err.Error())
 		return
 	}
-	// Land updated domain config to local disk
-	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
-		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
 	}
 	// Copy global rule files to domain directory (skip existing files)
 	if err := h.svc.InitDomainRules(c.Request.Context(), domain); err != nil {
@@ -400,6 +510,7 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 }
 
 // DisableDomain handles POST /api/v1/node-servers/:id/waf/disable-domain.
+// After disabling, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) DisableDomain(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -420,9 +531,9 @@ func (h *Handler) DisableDomain(c *gin.Context) {
 		response.InternalError(c, "DISABLE_FAILED", err.Error())
 		return
 	}
-	// Land updated domain config to local disk
-	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
-		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
 	}
 	response.OK(c, gin.H{"domain": domain, "enabled": false})
 }
@@ -486,6 +597,7 @@ func (h *Handler) GetWAFStatus(c *gin.Context) {
 // SetWAFStatus handles PUT /api/v1/node-servers/:id/waf/status.
 // Body: { "enabled": true/false }
 // When disabled, no WAF config is generated in Caddyfile/nginx.conf.
+// After toggling, lands to local disk (local node) or pushes to remote Agent.
 func (h *Handler) SetWAFStatus(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -500,6 +612,10 @@ func (h *Handler) SetWAFStatus(c *gin.Context) {
 	}
 	if err := h.svc.SetWAFEnabled(c.Request.Context(), serverID, req.Enabled); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
 	response.OK(c, gin.H{"enabled": req.Enabled})
@@ -529,6 +645,42 @@ func (h *Handler) GetDomainRuleFile(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"name": name, "content": content})
+}
+
+// landAndSync is the common post-save hook for node-level WAF operations.
+// For local node: writes rules/configs to local disk (LandRulesForServer) and
+// returns any error. For remote node: collects all WAF files from DB and pushes
+// them via SyncWAFFiles. A remote node's rules are NEVER written to the panel's
+// local disk — that would pollute the local node's waf-rules/ directory while
+// leaving the remote node's file unchanged.
+func (h *Handler) landAndSync(ctx context.Context, serverID int64) error {
+	isLocal := h.nodeOp == nil || h.nodeOp.IsLocalServer(ctx, serverID)
+	if isLocal {
+		if err := h.svc.LandRulesForServer(ctx, serverID); err != nil {
+			return fmt.Errorf("land rules for local server %d: %w", serverID, err)
+		}
+		return nil
+	}
+	return h.pushToRemote(ctx, serverID)
+}
+
+// pushToRemote pushes all WAF files for serverID to the remote Agent synchronously.
+func (h *Handler) pushToRemote(ctx context.Context, serverID int64) error {
+	if h.nodeOp == nil {
+		return fmt.Errorf("node operator not configured for remote server %d", serverID)
+	}
+	files, err := h.svc.CollectAllFiles(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("collect files for server %d: %w", serverID, err)
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	if err := h.nodeOp.SyncWAFFiles(ctx, serverID, files); err != nil {
+		return fmt.Errorf("sync to server %d: %w", serverID, err)
+	}
+	log.Printf("[WAF] synced %d files to server %d", len(files), serverID)
+	return nil
 }
 
 // SaveDomainRuleFile handles PUT /api/v1/node-servers/:id/waf/domain-rules/:domain/:name.

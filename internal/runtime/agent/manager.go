@@ -83,6 +83,16 @@ type NodeServerManager struct {
 
 	// Rate limit syncer: syncs rate limit config to Agent on reconnect
 	rateLimitSyncer RateLimitSyncer
+
+	// WAF syncer: syncs WAF rules/configs to Agent on reconnect
+	wafSyncer WAFSyncer
+}
+
+// WAFSyncer syncs WAF files (rules, configs, domain.json) to a remote Agent.
+// Implemented by the WAF service via an adapter in router.go.
+// On Agent reconnect, this ensures the remote node has the latest waf-rules/ directory.
+type WAFSyncer interface {
+	SyncToNode(ctx context.Context, serverID int64) error
 }
 
 // NodeSettingStore provides access to system settings for GitHub acceleration
@@ -210,6 +220,13 @@ type RateLimitSyncer interface {
 // SetRateLimitSyncer sets the rate limit syncer for pushing rate limit config on Agent reconnect.
 func (m *NodeServerManager) SetRateLimitSyncer(s RateLimitSyncer) {
 	m.rateLimitSyncer = s
+}
+
+// SetWAFSyncer sets the WAF syncer for pushing WAF rules/configs on Agent reconnect.
+// On reconnect, the remote node gets all WAF files (rules, config.lua, config.json, domain.json)
+// pushed to its proxy/waf-rules/ directory.
+func (m *NodeServerManager) SetWAFSyncer(s WAFSyncer) {
+	m.wafSyncer = s
 }
 
 // isLocalServer checks if a server is the local panel server.
@@ -1446,6 +1463,21 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 		//    On reconnect, the Agent needs to re-initialize its RateLimitManager.
 		if m.rateLimitSyncer != nil && serverID != m.localServerID {
 			m.rateLimitSyncer.SyncConfigToAgent(context.Background(), serverID)
+		}
+
+		// 5. Push WAF rules/configs to the remote node.
+		//    On reconnect, the remote node may not have the waf-rules/ directory
+		//    (e.g., first connect, or directory was deleted). This ensures the
+		//    Agent always has the latest rules, config.lua, config.json, domain.json
+		//    from the panel's database.
+		if m.wafSyncer != nil && serverID != m.localServerID {
+			wafCtx, wafCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer wafCancel()
+			if err := m.wafSyncer.SyncToNode(wafCtx, serverID); err != nil {
+				log.Printf("[NodeServerManager] WAF sync to server %d on connect failed: %v", serverID, err)
+			} else {
+				log.Printf("[NodeServerManager] WAF sync to server %d on connect: success", serverID)
+			}
 		}
 	}()
 

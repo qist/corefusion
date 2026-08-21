@@ -26,7 +26,27 @@ export function syncWafAll() {
   return client.post('/waf/sync-all')
 }
 
-// ──────────── Per-Node WAF Rules ────────────
+// ──────────── WAF GitHub Source Config ────────────
+
+export function getWafGitHubSource() {
+  return client.get('/waf/github-source')
+}
+
+export function saveWafGitHubSource(url, syncCron, enabled) {
+  return client.put('/waf/github-source', { url, sync_cron: syncCron, enabled })
+}
+
+// ──────────── WAF Push to Nodes ────────────
+
+export function pushWafToAllNodes() {
+  return client.post('/waf/push-all')
+}
+
+export function pushWafToNode(serverId) {
+  return client.post(`/node-servers/${serverId}/waf/push`)
+}
+
+// ──────────── Per-Node WAF Rules (merged: global + node override) ────────────
 
 export function listNodeWafRules(serverId) {
   return client.get(`/node-servers/${serverId}/waf/rules`)

@@ -366,6 +366,10 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
 		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
 	}
+	// Copy global rule files to domain directory (skip existing files)
+	if err := h.svc.InitDomainRules(c.Request.Context(), domain); err != nil {
+		log.Printf("[WAF] failed to init domain rules for %s: %v", domain, err)
+	}
 	response.OK(c, gin.H{"domain": domain, "enabled": true})
 }
 

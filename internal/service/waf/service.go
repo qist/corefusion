@@ -899,3 +899,33 @@ func (s *Service) SaveDomainRuleFile(domain, name, content string) error {
 	path := filepath.Join(domainDir, name)
 	return os.WriteFile(path, []byte(content), 0644)
 }
+
+// InitDomainRules copies global rule files to a domain's rule directory.
+// If the domain directory already has a rule file, it is preserved (not overwritten).
+// Empty-content rules (blackip, whiteip, whiteurl, cdnip) are copied as empty files.
+func (s *Service) InitDomainRules(ctx context.Context, domain string) error {
+	domainDir := filepath.Join(s.wafRulesDir(), "domains", domain)
+	if err := os.MkdirAll(domainDir, 0755); err != nil {
+		return err
+	}
+
+	// Get all global rules
+	rules, err := s.ruleRepo.ListGlobal(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, rule := range rules {
+		destPath := filepath.Join(domainDir, rule.Name)
+		// Don't overwrite if the domain already has this file
+		if _, err := os.Stat(destPath); err == nil {
+			continue
+		}
+		// Copy global rule content to domain directory
+		if err := os.WriteFile(destPath, []byte(rule.Content), 0644); err != nil {
+			log.Printf("[WAF] failed to copy rule %s to domain %s: %v", rule.Name, domain, err)
+			continue
+		}
+	}
+	return nil
+}

@@ -1140,6 +1140,27 @@ const wafConfigForm = ref({
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
 
+// Parse config.lua text into a key-value object
+function parseLuaConfig(text) {
+  const obj = {}
+  const get = (key) => {
+    const m = text.match(new RegExp(`config_${key}\\s*=\\s*"([^"]*)"`))
+    if (m) return m[1]
+    const m2 = text.match(new RegExp(`config_${key}\\s*=\\s*([0-9]+)`))
+    return m2 ? m2[1] : ''
+  }
+  const keys = ['waf_enable','trust_proxy_headers','white_url_check','white_ip_check','white_ua_check',
+    'black_ip_check','url_check','url_args_check','user_agent_check','cookie_check','post_check',
+    'referer_check','file_upload_check','bodyless','multipart_streaming_check',
+    'upload_filename_scan_limit','post_body_scan_limit','cc_check','cc_rate','cc_block_ttl',
+    'waf_output','waf_redirect_url','log_dir','rule_dir']
+  for (const k of keys) {
+    const v = get(k)
+    if (v !== '') obj[k] = v
+  }
+  return obj
+}
+
 function parseWAFConfigForm() {
   const text = wafConfigContent.value || ''
   const get = (key) => {
@@ -1276,34 +1297,39 @@ async function openSiteWAF(row) {
   const d = row.domain.replace(/:\d+$/, '')
   siteWAFDomain.value = d
   siteWAFTab.value = 'config'
-  // Load current domain config from domain.json
   try {
+    // Load global WAF config as baseline
+    const globalRes = await client.get(`${apiBase.value}/waf/config`, { params: { proxy_type: 'nginx' } })
+    const globalCfg = parseLuaConfig(globalRes.content || '')
+    // Load domain config from domain.json
     const data = await client.get(`${apiBase.value}/waf/domain-config`)
     const obj = JSON.parse(data.content || '{}')
     const cfg = obj[d] || {}
+    // Merge: domain config overrides global config
+    const merged = { ...globalCfg, ...cfg }
     siteWAFConfig.value = {
-      waf_enable: cfg.waf_enable || 'on',
-      trust_proxy_headers: cfg.trust_proxy_headers || 'on',
-      url_check: cfg.url_check || 'on',
-      url_args_check: cfg.url_args_check || 'on',
-      user_agent_check: cfg.user_agent_check || 'on',
-      cookie_check: cfg.cookie_check || 'on',
-      post_check: cfg.post_check || 'on',
-      referer_check: cfg.referer_check || 'off',
-file_upload_check: cfg.file_upload_check || 'on',
-bodyless: cfg.bodyless || 'on',
-multipart_streaming_check: cfg.multipart_streaming_check || 'off',
-upload_filename_scan_limit: String(cfg.upload_filename_scan_limit ?? '0'),
-post_body_scan_limit: String(cfg.post_body_scan_limit ?? '2097152'),
-white_url_check: cfg.white_url_check || 'on',
-      white_ip_check: cfg.white_ip_check || 'on',
-      white_ua_check: cfg.white_ua_check || 'on',
-      black_ip_check: cfg.black_ip_check || 'on',
-      cc_check: cfg.cc_check || 'on',
-      cc_rate: cfg.cc_rate || '60/60',
-      cc_block_ttl: cfg.cc_block_ttl || '600',
-      waf_output: cfg.waf_output || 'html',
-      waf_redirect_url: cfg.waf_redirect_url || ''
+      waf_enable: merged.waf_enable || 'on',
+      trust_proxy_headers: merged.trust_proxy_headers || 'on',
+      url_check: merged.url_check || 'on',
+      url_args_check: merged.url_args_check || 'on',
+      user_agent_check: merged.user_agent_check || 'on',
+      cookie_check: merged.cookie_check || 'on',
+      post_check: merged.post_check || 'on',
+      referer_check: merged.referer_check || 'off',
+file_upload_check: merged.file_upload_check || 'on',
+bodyless: merged.bodyless || 'on',
+multipart_streaming_check: merged.multipart_streaming_check || 'off',
+upload_filename_scan_limit: String(merged.upload_filename_scan_limit ?? '0'),
+post_body_scan_limit: String(merged.post_body_scan_limit ?? '2097152'),
+white_url_check: merged.white_url_check || 'on',
+      white_ip_check: merged.white_ip_check || 'on',
+      white_ua_check: merged.white_ua_check || 'on',
+      black_ip_check: merged.black_ip_check || 'on',
+      cc_check: merged.cc_check || 'off',
+      cc_rate: merged.cc_rate || '150/60',
+      cc_block_ttl: merged.cc_block_ttl || '600',
+      waf_output: merged.waf_output || 'html',
+      waf_redirect_url: merged.waf_redirect_url || ''
     }
     siteWAFRuleMode.value = cfg.rule_dir ? 'custom' : 'global'
     await loadSiteWAFDomainRules(d)

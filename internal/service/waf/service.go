@@ -170,6 +170,8 @@ func (s *Service) IsWAFEnabled(ctx context.Context, serverID int64) bool {
 }
 
 // SetWAFEnabled enables or disables WAF for a server.
+// When enabled for the first time, seeds default config.json (Caddy)
+// and config.lua (Nginx) into the database if they don't exist yet.
 // When disabled, Caddyfile will not include caddyguard block,
 // and nginx.conf will not include WAF Lua directives.
 func (s *Service) SetWAFEnabled(ctx context.Context, serverID int64, enabled bool) error {
@@ -184,20 +186,68 @@ func (s *Service) SetWAFEnabled(ctx context.Context, serverID int64, enabled boo
 	if enabled {
 		val = "true"
 	}
-	return s.settingSvc.Set(ctx, key, val)
+	if err := s.settingSvc.Set(ctx, key, val); err != nil {
+		return err
+	}
+	// When enabling, seed default WAF configs if they don't exist yet
+	if enabled {
+		if err := s.ensureDefaultConfig(ctx, serverID, "caddy"); err != nil {
+			log.Printf("[WAF] failed to seed default caddy config for server %d: %v", serverID, err)
+		}
+		if err := s.ensureDefaultConfig(ctx, serverID, "nginx"); err != nil {
+			log.Printf("[WAF] failed to seed default nginx config for server %d: %v", serverID, err)
+		}
+		// Land all rules and configs to local disk (for local node)
+		if err := s.LandRulesForServer(ctx, serverID); err != nil {
+			log.Printf("[WAF] failed to land rules for server %d: %v", serverID, err)
+		}
+	}
+	return nil
+}
+
+// ensureDefaultConfig checks if a WAF config exists for the given server and proxy type.
+// If not, creates one with the default content.
+func (s *Service) ensureDefaultConfig(ctx context.Context, serverID int64, proxyType string) error {
+	_, err := s.cfgRepo.Get(ctx, serverID, proxyType)
+	if err == nil {
+		// Config already exists, check if global fallback exists too
+		return nil
+	}
+	// Check if global default exists
+	_, err = s.cfgRepo.Get(ctx, 0, proxyType)
+	if err == nil {
+		return nil // global default exists
+	}
+	// Neither per-node nor global exists: seed global default
+	defaultContent := DefaultCaddyWAFConfig
+	if proxyType == "nginx" {
+		defaultContent = DefaultNginxWAFConfig
+	}
+	cfg := &entity.WafConfig{
+		ServerID:  0,
+		ProxyType: proxyType,
+		Content:   defaultContent,
+		Hash:      hashContent(defaultContent),
+	}
+	return s.cfgRepo.Upsert(ctx, cfg)
 }
 
 // --- WAF Config ---
 
 // GetConfig returns the WAF config for a server and proxy type.
 // Falls back to global (server_id=0) if per-node config not found.
+// If neither exists, returns the built-in default.
 func (s *Service) GetConfig(ctx context.Context, serverID int64, proxyType string) (string, error) {
 	cfg, err := s.cfgRepo.Get(ctx, serverID, proxyType)
 	if err != nil {
 		// Fall back to global default
 		cfg, err = s.cfgRepo.Get(ctx, 0, proxyType)
 		if err != nil {
-			return "", err
+			// Neither per-node nor global: return built-in default
+			if proxyType == "nginx" {
+				return DefaultNginxWAFConfig, nil
+			}
+			return DefaultCaddyWAFConfig, nil
 		}
 	}
 	return cfg.Content, nil
@@ -420,6 +470,7 @@ func (s *Service) LandAllRules(ctx context.Context) error {
 }
 
 // LandRulesForServer writes merged rules for a specific server to local disk.
+// Also writes config.json (Caddy WAF) and config.lua (Nginx WAF) to the same directory.
 func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error {
 	rules, err := s.ruleRepo.ListByServer(ctx, serverID)
 	if err != nil {
@@ -437,6 +488,34 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 			continue
 		}
 	}
+
+	// Write config.json (Caddy WAF config)
+	caddyCfg, err := s.GetConfig(ctx, serverID, "caddy")
+	if err == nil && caddyCfg != "" {
+		path := filepath.Join(ruleDir, "config.json")
+		if err := os.WriteFile(path, []byte(caddyCfg), 0644); err != nil {
+			log.Printf("[WAF] failed to write config.json: %v", err)
+		}
+	}
+
+	// Write config.lua (Nginx WAF config)
+	nginxCfg, err := s.GetConfig(ctx, serverID, "nginx")
+	if err == nil && nginxCfg != "" {
+		path := filepath.Join(ruleDir, "config.lua")
+		if err := os.WriteFile(path, []byte(nginxCfg), 0644); err != nil {
+			log.Printf("[WAF] failed to write config.lua: %v", err)
+		}
+	}
+
+	// Write domain.json (domain-level WAF config)
+	domainJSON, err := s.buildDomainJSON(ctx, serverID)
+	if err == nil {
+		path := filepath.Join(ruleDir, "domain.json")
+		if err := os.WriteFile(path, []byte(domainJSON), 0644); err != nil {
+			log.Printf("[WAF] failed to write domain.json: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -627,6 +706,116 @@ func (s *Service) SyncToAllNodes(ctx context.Context, nodeIDs []int64) {
 		}
 	}
 }
+
+// --- Default WAF Configs ---
+
+// DefaultCaddyWAFConfig is the default config.json for CaddyGuard (Caddy WAF).
+const DefaultCaddyWAFConfig = `{
+    "waf_enable": "on",
+    "trust_proxy_headers": "on",
+    "log_dir": "logs",
+    "rule_dir": "proxy/waf-rules",
+    "white_url_check": "on",
+    "white_ip_check": "on",
+    "white_ua_check": "on",
+    "black_ip_check": "on",
+    "url_check": "on",
+    "url_args_check": "on",
+    "user_agent_check": "on",
+    "cookie_check": "on",
+    "cc_check": "on",
+    "cc_rate": "150/60",
+    "cc_block_ttl": 600,
+    "post_check": "on",
+    "referer_check": "off",
+    "file_upload_check": "on",
+    "bodyless": "on",
+    "multipart_streaming_check": "off",
+    "upload_filename_scan_limit": 0,
+    "post_body_scan_limit": 2097152,
+    "waf_output": "html",
+    "waf_redirect_url": "https://www.caddyguard.com"
+}`
+
+// DefaultNginxWAFConfig is the default config.lua for NginxGuard (Nginx WAF).
+const DefaultNginxWAFConfig = `--NginxGuard config file,enable = "on",disable = "off"
+
+--waf status
+config_waf_enable = "on"
+--trust proxy forwarded headers (X-Forwarded-For, X-Real-IP, CF-Connecting-IP)
+config_trust_proxy_headers = "on"
+--log dir
+config_log_dir = "logs"
+--rule setting
+config_rule_dir = "proxy/waf-rules"
+--enable/disable white url
+config_white_url_check = "on"
+--enable/disable white ip
+config_white_ip_check = "on"
+--enable/disable white ua (search engine bots skip UA blacklist only, other checks still apply)
+config_white_ua_check = "on"
+--enable/disable block ip
+config_black_ip_check = "on"
+--enable/disable url filtering
+config_url_check = "on"
+--enalbe/disable url args filtering
+config_url_args_check = "on"
+--enable/disable user agent filtering
+config_user_agent_check = "on"
+--enable/disable cookie deny filtering
+config_cookie_check = "on"
+--enable/disable cc filtering
+config_cc_check = "on"
+--cc rate the xxx of xxx seconds
+config_cc_rate = "150/60"
+--cc block ttl (seconds), auto-ban IP when CC triggered, 0=disable auto-ban
+config_cc_block_ttl = 600
+--enable/disable post filtering
+config_post_check = "on"
+--enable/disable referer filtering
+config_referer_check = "off"
+--enable/disable file upload extension filtering
+config_file_upload_check = "on"
+--enable/disable bodyless method skip (GET/HEAD/OPTIONS skip body/post/file_upload checks)
+config_bodyless = "on"
+--enable/disable multipart temp-file body streaming scan (post.rule)
+config_multipart_streaming_check = "off"
+--multipart upload filename scan limit in bytes
+config_upload_filename_scan_limit = 0
+--inspection limit in bytes for large temp-file bodies (JSON/XML/plain text, etc.)
+config_post_body_scan_limit = 2097152
+--config waf output redirect/html
+config_waf_output = "html"
+--if config_waf_output ,setting url
+config_waf_redirect_url = "https://www.waf.com"
+config_output_html=[[
+<html xmlns="http://www.w3.org/1999/xhtml"><head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>NginxGuard防火墙</title>
+<style>
+p {
+\tline-height:20px;
+}
+ul{ list-style-type:none;}
+li{ list-style-type:none;}
+</style>
+</head>
+<body style=" padding:0; margin:0; font:14px/1.5 Microsoft Yahei, 宋体,sans-serif; color:#555;">
+ <div style="margin: 0 auto; width:1000px; padding-top:70px; overflow:hidden;">
+  <div style="width:600px; float:left;">
+    <div style=" height:40px; line-height:40px; color:#fff; font-size:16px; overflow:hidden; background:#6bb3f6; padding-left:20px;">  </div>
+    <div style="border:1px dashed #cdcece; border-top:none; font-size:14px; background:#fff; color:#555; line-height:24px; height:220px; padding:20px 20px 0 20px; overflow-y:auto;background:#f3f7f9;">
+      <p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"><span style=" font-weight:600; color:#fc4f03;">您的请求带有不合法参数，已被网站管理员设置拦截！</span></p>
+<p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">可能原因：您提交的内容包含危险的攻击请求</p>
+<p style=" margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:1; text-indent:0px;">欢迎大神进行安全测试：</p>
+<ul style="margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;"><li style=" margin-top:12px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">如有安全漏洞请发邮件:admin@waf.com；</li>
+</ul>
+    </div>
+  </div>
+</div>
+</body></html>
+]]
+`
 
 // --- Helpers ---
 

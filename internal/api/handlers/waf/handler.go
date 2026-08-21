@@ -259,6 +259,10 @@ func (h *Handler) SaveConfig(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
+	// Land updated config to local disk
+	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
+		log.Printf("[WAF] failed to land config for server %d: %v", serverID, err)
+	}
 	response.OK(c, gin.H{"message": "saved"})
 }
 
@@ -311,6 +315,10 @@ func (h *Handler) SaveDomainConfig(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
+	// Land updated domain config to local disk
+	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
+		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	}
 	response.OK(c, gin.H{"message": "saved"})
 }
 
@@ -333,6 +341,10 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 		response.InternalError(c, "ENABLE_FAILED", err.Error())
 		return
 	}
+	// Land updated domain config to local disk
+	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
+		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	}
 	response.OK(c, gin.H{"domain": req.Domain, "enabled": true})
 }
 
@@ -354,6 +366,10 @@ func (h *Handler) DisableDomain(c *gin.Context) {
 	if err := h.svc.SaveDomainConfig(c.Request.Context(), serverID, req.Domain, config); err != nil {
 		response.InternalError(c, "DISABLE_FAILED", err.Error())
 		return
+	}
+	// Land updated domain config to local disk
+	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
+		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
 	}
 	response.OK(c, gin.H{"domain": req.Domain, "enabled": false})
 }

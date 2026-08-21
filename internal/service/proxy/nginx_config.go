@@ -344,6 +344,23 @@ sb.WriteString("    lua_code_cache on;\n")
 		case "l4":
 			l4Sites = append(l4Sites, site)
 		default:
+			// portal_forward: dynamically resolve upstream from panel.portal_port
+			if site.Template == "portal_forward" {
+				site.Upstream = m.portalAddr(ctx)
+				// If portal has a dedicated port, no path needed (whole domain forwards).
+				// If portal shares the panel port, use /p path.
+				if site.Path == "" {
+					portalPort := ""
+					if m.settingStore != nil {
+						if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
+							portalPort = v
+						}
+					}
+					if portalPort == "" || portalPort == "0" {
+						site.Path = "/p"
+					}
+				}
+			}
 			httpSites = append(httpSites, site)
 		}
 	}

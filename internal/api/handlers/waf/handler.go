@@ -398,6 +398,10 @@ func (h *Handler) DisableDomain(c *gin.Context) {
 }
 
 // GetDomainStatus handles GET /api/v1/node-servers/:id/waf/domain-status.
+// Returns the WAF status for a domain:
+// - status="global": no domain config, uses global rules
+// - status="site": domain config exists with waf_enable=on (site-specific rules)
+// - status="off": domain config exists with waf_enable=off (WAF disabled for this domain)
 func (h *Handler) GetDomainStatus(c *gin.Context) {
 	serverID := parseServerID(c)
 	if serverID == 0 {
@@ -406,20 +410,20 @@ func (h *Handler) GetDomainStatus(c *gin.Context) {
 	domain := waf.StripPort(c.Query("domain"))
 	config, err := h.svc.GetDomainConfig(c.Request.Context(), serverID, domain)
 	if err != nil {
-		response.OK(c, gin.H{"domain": domain, "enabled": false})
+		response.OK(c, gin.H{"domain": domain, "enabled": false, "status": "global"})
 		return
 	}
 	// Parse config JSON to check waf_enable
 	var cfg map[string]interface{}
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
-		response.OK(c, gin.H{"domain": domain, "enabled": false})
+		response.OK(c, gin.H{"domain": domain, "enabled": false, "status": "global"})
 		return
 	}
 	if wafEnable, ok := cfg["waf_enable"].(string); ok && wafEnable == "off" {
-		response.OK(c, gin.H{"domain": domain, "enabled": false})
+		response.OK(c, gin.H{"domain": domain, "enabled": false, "status": "off"})
 		return
 	}
-	response.OK(c, gin.H{"domain": domain, "enabled": true})
+	response.OK(c, gin.H{"domain": domain, "enabled": true, "status": "site"})
 }
 
 // SyncToNode handles POST /api/v1/node-servers/:id/waf/sync.

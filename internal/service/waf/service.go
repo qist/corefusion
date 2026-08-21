@@ -327,6 +327,7 @@ var userDefinedRules = []githubRuleDefault{
 	{Name: "blackip.rule", MergeMode: "append"},
 	{Name: "whiteip.rule", MergeMode: "append"},
 	{Name: "whiteurl.rule", MergeMode: "append"},
+	{Name: "cdnip.rule", MergeMode: "append"},
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -424,14 +425,36 @@ func (s *Service) SyncFromGitHub(ctx context.Context) error {
 
 // EnsureInitialized checks if the waf_rules table has global rules and initializes if not.
 // 1. Downloads engine rules + whiteua from GitHub
-// 2. Creates empty user-defined rules (blackip, whiteip, whiteurl)
+// 2. Creates empty user-defined rules (blackip, whiteip, whiteurl, cdnip)
+// 3. Ensures all user-defined rules exist (for upgrades that add new rules)
 func (s *Service) EnsureInitialized(ctx context.Context) error {
 	count, err := s.ruleRepo.CountGlobal(ctx)
 	if err != nil {
 		return err
 	}
 	if count > 0 {
-		return nil // already initialized
+		// Already initialized — but check for missing user-defined rules (e.g. cdnip.rule added later)
+		for _, ud := range userDefinedRules {
+			_, err := s.ruleRepo.GetGlobalByName(ctx, ud.Name)
+			if err != nil {
+				// Rule doesn't exist, create it
+				rule := &entity.WafRule{
+					Name:      ud.Name,
+					RuleScope: "global",
+					ServerID:  0,
+					MergeMode: ud.MergeMode,
+					Content:   "",
+					Hash:      "",
+					Enabled:   true,
+				}
+				if err := s.ruleRepo.Upsert(ctx, rule); err != nil {
+					log.Printf("[WAF] failed to create missing user-defined rule %s: %v", ud.Name, err)
+					continue
+				}
+				log.Printf("[WAF] created missing user-defined rule %s", ud.Name)
+			}
+		}
+		return nil
 	}
 	log.Printf("[WAF] waf_rules table has no global rules, initializing...")
 

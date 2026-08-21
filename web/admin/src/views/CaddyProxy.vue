@@ -1633,7 +1633,7 @@ async function loadSiteWAFDomainRules(domain) {
   try {
     const dirs = await client.get(`${apiBase.value}/waf/domain-rules`)
     if (dirs && dirs.includes(domain)) {
-      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule']
+      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'cdnip.rule']
       const rules = []
       for (const name of ruleNames) {
         try {

@@ -114,6 +114,23 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		} else if site.Template == "l4" {
 			l4Sites = append(l4Sites, site)
 		} else {
+			// portal_forward: dynamically resolve upstream from panel.portal_port
+			if site.Template == "portal_forward" {
+				site.Upstream = m.portalAddr(ctx)
+				// If portal has a dedicated port, no path needed (whole domain forwards).
+				// If portal shares the panel port, use /p path.
+				if site.Path == "" {
+					portalPort := ""
+					if m.settingStore != nil {
+						if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
+							portalPort = v
+						}
+					}
+					if portalPort == "" || portalPort == "0" {
+						site.Path = "/p"
+					}
+				}
+			}
 			httpSites = append(httpSites, site)
 		}
 	}
@@ -416,6 +433,21 @@ func (m *CaddyManager) panelAddr(ctx context.Context) string {
 		if v, err := m.settingStore.GetByKey(ctx, "panel.listen_port"); err == nil && v != "" {
 			port = v
 		}
+	}
+	return "127.0.0.1:" + port
+}
+
+// portalAddr returns the portal address (host:port) for portal_forward template.
+// Reads panel.portal_port from settings; falls back to panel.listen_port.
+func (m *CaddyManager) portalAddr(ctx context.Context) string {
+	port := ""
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil && v != "" {
+			port = v
+		}
+	}
+	if port == "" || port == "0" {
+		return m.panelAddr(ctx)
 	}
 	return "127.0.0.1:" + port
 }

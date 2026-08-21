@@ -726,13 +726,16 @@
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" placeholder="example.com" />
         </el-form-item>
-        <el-form-item label="Upstream" v-if="siteForm.template!=='static'">
-          <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
-            <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
-            <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
-          </div>
-          <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') }}</el-button>
-        </el-form-item>
+<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward'">
+<div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+<el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
+<el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
+</div>
+<el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') }}</el-button>
+</el-form-item>
+<el-form-item v-if="siteForm.template==='portal_forward'" :label="t('proxy.portalForwardHint')">
+<span style="font-size:12px;color:#909399">{{ t('proxy.portalForwardDesc') }}</span>
+</el-form-item>
         <el-form-item label="Root Directory" v-if="siteForm.template==='static'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="/var/www/mysite" style="flex:1" />
@@ -766,7 +769,7 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static'" :label="t('proxy.template')">
+<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static' && siteForm.template!=='portal_forward'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -774,9 +777,10 @@
             <el-option label="XHTTP" value="xhttp" />
             <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
+            <el-option :label="t('proxy.templatePortalForward')" value="portal_forward" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template==='static'" :label="t('proxy.template')">
+        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward'" :label="t('proxy.template')">
           <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -785,6 +789,7 @@
             <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
             <el-option label="Static" value="static" />
+            <el-option :label="t('proxy.templatePortalForward')" value="portal_forward" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('proxy.proxyProtocol')">

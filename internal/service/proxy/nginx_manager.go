@@ -269,6 +269,21 @@ func (m *NginxManager) panelAddr(ctx context.Context) string {
 	return "127.0.0.1:" + port
 }
 
+// portalAddr returns the portal address (host:port) for portal_forward template.
+// Reads panel.portal_port from settings; falls back to panel.listen_port.
+func (m *NginxManager) portalAddr(ctx context.Context) string {
+	port := ""
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil && v != "" {
+			port = v
+		}
+	}
+	if port == "" || port == "0" {
+		return m.panelAddr(ctx)
+	}
+	return "127.0.0.1:" + port
+}
+
 // resolvePath resolves a relative cert path against dataDir.
 func (m *NginxManager) resolvePath(path string) string {
 	if path == "" {

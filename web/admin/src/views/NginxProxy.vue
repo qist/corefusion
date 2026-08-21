@@ -660,14 +660,17 @@
             <el-tag v-else type="info" size="small">-</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="WAF" width="100" v-if="wafMasterEnabled">
-          <template #default="{row}">
-            <div style="display:flex;align-items:center;gap:4px">
-              <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
-              <el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
-            </div>
-          </template>
-        </el-table-column>
+<el-table-column label="WAF" width="120" v-if="wafMasterEnabled">
+<template #default="{row}">
+<div style="display:flex;align-items:center;gap:4px">
+<el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
+<el-tag v-if="row._waf_status === 'site'" type="success" size="small">{{ t('proxy.wafStatusSite') }}</el-tag>
+<el-tag v-else-if="row._waf_status === 'off'" type="danger" size="small">{{ t('proxy.wafStatusOff') }}</el-tag>
+<el-tag v-else type="info" size="small">{{ t('proxy.wafStatusGlobal') }}</el-tag>
+<el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
+</div>
+</template>
+</el-table-column>
         <el-table-column :label="t('common.actions')" width="160" fixed="right">
           <template #default="{row}">
             <div style="display:inline-flex;gap:6px">
@@ -1474,9 +1477,11 @@ if (wafMasterEnabled.value) {
       try {
         const res = await client.get(`${apiBase.value}/waf/domain-status`, { params: { domain: site.domain } })
         site._waf_enabled = res.enabled
-      } catch { site._waf_enabled = false }
+        site._waf_status = res.status || 'global'
+      } catch { site._waf_enabled = false; site._waf_status = 'global' }
     } else {
       site._waf_enabled = false
+      site._waf_status = 'global'
     }
   }
 }
@@ -1489,6 +1494,7 @@ async function toggleSiteWAF(row, val) {
     // Enable: add to domain.json with rule_dir
     try {
       await client.post(`${apiBase.value}/waf/enable-domain`, { domain: d })
+      row._waf_status = 'site'
       ElMessage.success(t('proxy.wafSiteEnabled', { domain: d }))
     } catch (e) {
       row._waf_enabled = false
@@ -1512,6 +1518,7 @@ async function toggleSiteWAF(row, val) {
         await client.put(`${apiBase.value}/waf/domain-config`, {
           content: await updateDomainJSON(d, { waf_enable: 'off' })
         })
+        row._waf_status = 'off'
         ElMessage.success(t('proxy.wafSiteDisabled', { domain: d }))
       } catch (e) {
         row._waf_enabled = true
@@ -1522,6 +1529,7 @@ async function toggleSiteWAF(row, val) {
         // cancelButtonText clicked → use global rules (delete from domain.json)
         try {
           await client.delete(`${apiBase.value}/waf/domain-config/${d}`)
+          row._waf_status = 'global'
           ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
         } catch (e) {
           row._waf_enabled = true

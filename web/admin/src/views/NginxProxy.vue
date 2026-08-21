@@ -1120,6 +1120,7 @@ async function saveWAFConfig() {
     await client.put(`${apiBase.value}/waf/config`, { proxy_type: 'nginx', content: wafConfigContent.value })
     ElMessage.success(t('common.success'))
     parseWAFConfigForm()
+    await applyConfig()
   } catch { ElMessage.error(t('common.failed')) }
 }
 

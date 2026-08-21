@@ -120,10 +120,9 @@ sb.WriteString("    lua_code_cache on;\n")
 
 	// WAF directives (only when WAF is enabled)
 	if s.WAFEnabled {
-		sb.WriteString("    lua_shared_dict limit 100m;\n")
-		sb.WriteString("    lua_shared_dict badGuys 100m;\n")
-		sb.WriteString("    lua_shared_dict waf_cache 10m;\n")
-		sb.WriteString("    lua_need_request_body on;\n")
+		sb.WriteString("    lua_shared_dict limit 10m;\n")
+		sb.WriteString("    lua_shared_dict badGuys 10m;\n")
+		sb.WriteString("    lua_need_request_body off;\n")
 		sb.WriteString("    init_by_lua_file proxy/lua/waf/init.lua;\n")
 		sb.WriteString("    access_by_lua_file proxy/lua/waf/access.lua;\n")
 	}
@@ -241,11 +240,15 @@ sb.WriteString("    lua_code_cache on;\n")
 		sb.WriteString("    reset_timedout_connection on;\n")
 	}
 	sb.WriteString(fmt.Sprintf("    send_timeout %s;\n", s.SendTimeout))
-	if s.LimitConnZone != "" {
-		sb.WriteString(fmt.Sprintf("    limit_conn_zone %s;\n", s.LimitConnZone))
-	}
-	if s.LimitConn != "" {
-		sb.WriteString(fmt.Sprintf("    limit_conn %s;\n", s.LimitConn))
+	// limit_conn_zone / limit_conn are skipped when WAF is enabled —
+	// the WAF Lua module handles rate limiting and concurrency control.
+	if !s.WAFEnabled {
+		if s.LimitConnZone != "" {
+			sb.WriteString(fmt.Sprintf("    limit_conn_zone %s;\n", s.LimitConnZone))
+		}
+		if s.LimitConn != "" {
+			sb.WriteString(fmt.Sprintf("    limit_conn %s;\n", s.LimitConn))
+		}
 	}
 	if s.Charset != "" {
 		sb.WriteString(fmt.Sprintf("    charset '%s';\n", s.Charset))

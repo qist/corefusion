@@ -1819,6 +1819,7 @@ export default {
     wafRuleWhiteua: '白名单 UA（搜索引擎爬虫）',
     wafRuleReferer: 'Referer 规则',
     wafRuleFileext: '文件上传扩展名规则',
+    wafRuleCdnip: 'CDN/可信代理 IP 列表',
     wafRuleDesc: '说明',
     wafSiteEnabled: 'WAF 已开启: {domain}',
     wafSiteDisabled: 'WAF 已关闭: {domain}',

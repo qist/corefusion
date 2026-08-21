@@ -1199,9 +1199,14 @@ func normalizeRuleContent(content string) string {
 // joinRuleContent merges global + node rule text with a single newline separator,
 // trimming both sides and ignoring empty halves. This avoids doubled blank lines
 // when the global text already ends (or the node text starts) with a newline.
+//
+// In append mode the node content may contain a copy of the global rules plus
+// a few extra lines. To avoid duplicating the global block, we deduplicate by
+// line: any line in the node content that already appears in the global content
+// is dropped, keeping only the genuinely new lines.
 func joinRuleContent(global, node string) string {
-	g := strings.TrimSpace(global)
-	n := strings.TrimSpace(node)
+	g := normalizeRuleContent(global)
+	n := normalizeRuleContent(node)
 	switch {
 	case g == "" && n == "":
 		return ""
@@ -1209,9 +1214,36 @@ func joinRuleContent(global, node string) string {
 		return n
 	case n == "":
 		return g
-	default:
-		return g + "\n" + n
 	}
+
+	// Build a set of lines already present in the global block.
+	globalLines := strings.Split(g, "\n")
+	seen := make(map[string]bool, len(globalLines))
+	for _, ln := range globalLines {
+		seen[ln] = true
+	}
+
+	// Keep only node lines that are NOT in the global block.
+	// Empty lines are also dropped so they don't sneak through
+	// the dedup check (an empty line in the node content that
+	// happens between global-copy and new lines would survive
+	// because the global block, after normalizeRuleContent, has
+	// no trailing empty lines).
+	nodeLines := strings.Split(n, "\n")
+	var extra []string
+	for _, ln := range nodeLines {
+		if ln == "" {
+			continue
+		}
+		if !seen[ln] {
+			extra = append(extra, ln)
+		}
+	}
+
+	if len(extra) == 0 {
+		return g // All node lines were duplicates of global
+	}
+	return g + "\n" + strings.Join(extra, "\n")
 }
 
 // StripPort removes the port from a domain string.

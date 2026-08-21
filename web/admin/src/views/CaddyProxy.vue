@@ -962,9 +962,9 @@ ElMessage.error(t('common.failed'))
 }
 } catch (action) {
 if (action === 'cancel') {
-// Use global rules — remove domain from domain.json
+// Use global rules — delete domain from domain.json entirely
 try {
-await client.post(`${apiBase.value}/waf/disable-domain`, { domain: d })
+await client.delete(`${apiBase.value}/waf/domain-config/${d}`)
 ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
 } catch (e) {
 row._waf_enabled = true

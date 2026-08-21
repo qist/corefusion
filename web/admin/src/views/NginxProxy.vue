@@ -1519,9 +1519,9 @@ async function toggleSiteWAF(row, val) {
       }
     } catch (action) {
       if (action === 'cancel') {
-        // cancelButtonText clicked → use global rules (remove from domain.json)
+        // cancelButtonText clicked → use global rules (delete from domain.json)
         try {
-          await client.post(`${apiBase.value}/waf/disable-domain`, { domain: d })
+          await client.delete(`${apiBase.value}/waf/domain-config/${d}`)
           ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
         } catch (e) {
           row._waf_enabled = true

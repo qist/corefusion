@@ -322,6 +322,25 @@ func (h *Handler) SaveDomainConfig(c *gin.Context) {
 	response.OK(c, gin.H{"message": "saved"})
 }
 
+// DeleteDomainConfig handles DELETE /api/v1/node-servers/:id/waf/domain-config/:domain.
+// Removes the domain entry from domain.json entirely (fall back to global rules).
+func (h *Handler) DeleteDomainConfig(c *gin.Context) {
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
+	}
+	domain := waf.StripPort(c.Param("domain"))
+	if err := h.svc.DeleteDomainConfig(c.Request.Context(), serverID, domain); err != nil {
+		response.InternalError(c, "DELETE_FAILED", err.Error())
+		return
+	}
+	// Land updated domain config to local disk
+	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
+		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
+	}
+	response.OK(c, gin.H{"message": "deleted"})
+}
+
 // EnableDomain handles POST /api/v1/node-servers/:id/waf/enable-domain.
 func (h *Handler) EnableDomain(c *gin.Context) {
 	serverID := parseServerID(c)

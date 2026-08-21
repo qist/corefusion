@@ -1270,13 +1270,14 @@ const siteWAFRuleEditing = ref('')
 const siteWAFRuleEditingContent = ref('')
 
 async function openSiteWAF(row) {
-  siteWAFDomain.value = row.domain
+  const d = row.domain.replace(/:\d+$/, '')
+  siteWAFDomain.value = d
   siteWAFTab.value = 'config'
   // Load current domain config from domain.json
   try {
     const data = await client.get(`${apiBase.value}/waf/domain-config`)
     const obj = JSON.parse(data.content || '{}')
-    const cfg = obj[row.domain] || {}
+    const cfg = obj[d] || {}
     siteWAFConfig.value = {
       waf_enable: cfg.waf_enable || 'on',
       trust_proxy_headers: cfg.trust_proxy_headers || 'on',
@@ -1302,7 +1303,7 @@ white_url_check: cfg.white_url_check || 'on',
       waf_redirect_url: cfg.waf_redirect_url || ''
     }
     siteWAFRuleMode.value = cfg.rule_dir ? 'custom' : 'global'
-    await loadSiteWAFDomainRules(row.domain)
+    await loadSiteWAFDomainRules(d)
   } catch { ElMessage.error(t('common.failed')) }
   siteWAFVisible.value = true
 }
@@ -1483,11 +1484,12 @@ if (wafMasterEnabled.value) {
 }
 
 async function toggleSiteWAF(row, val) {
+  const d = row.domain.replace(/:\d+$/, '')
   if (val) {
     // Enable: add to domain.json with rule_dir
     try {
-      await client.post(`${apiBase.value}/waf/enable-domain`, { domain: row.domain })
-      ElMessage.success(t('proxy.wafSiteEnabled', { domain: row.domain }))
+      await client.post(`${apiBase.value}/waf/enable-domain`, { domain: d })
+      ElMessage.success(t('proxy.wafSiteEnabled', { domain: d }))
     } catch (e) {
       row._waf_enabled = false
       ElMessage.error(t('common.failed'))
@@ -1496,7 +1498,7 @@ async function toggleSiteWAF(row, val) {
     // Disable: ask user — disable WAF entirely or fall back to global rules
     try {
       const action = await ElMessageBox.confirm(
-        t('proxy.wafDisableHint', { domain: row.domain }),
+        t('proxy.wafDisableHint', { domain: d }),
         t('proxy.wafDisableTitle'),
         {
           distinguishCancelAndClose: true,
@@ -1508,9 +1510,9 @@ async function toggleSiteWAF(row, val) {
       // confirmButtonText clicked → disable WAF for this domain (waf_enable: off)
       try {
         await client.put(`${apiBase.value}/waf/domain-config`, {
-          content: await updateDomainJSON(row.domain, { waf_enable: 'off' })
+          content: await updateDomainJSON(d, { waf_enable: 'off' })
         })
-        ElMessage.success(t('proxy.wafSiteDisabled', { domain: row.domain }))
+        ElMessage.success(t('proxy.wafSiteDisabled', { domain: d }))
       } catch (e) {
         row._waf_enabled = true
         ElMessage.error(t('common.failed'))
@@ -1519,8 +1521,8 @@ async function toggleSiteWAF(row, val) {
       if (action === 'cancel') {
         // cancelButtonText clicked → use global rules (remove from domain.json)
         try {
-          await client.post(`${apiBase.value}/waf/disable-domain`, { domain: row.domain })
-          ElMessage.success(t('proxy.wafUseGlobalRules', { domain: row.domain }))
+          await client.post(`${apiBase.value}/waf/disable-domain`, { domain: d })
+          ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
         } catch (e) {
           row._waf_enabled = true
           ElMessage.error(t('common.failed'))

@@ -931,10 +931,11 @@ if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
 }
 
 async function toggleSiteWAF(row, val) {
+const d = row.domain.replace(/:\d+$/, '')
 if (val) {
 try {
-await client.post(`${apiBase.value}/waf/enable-domain`, { domain: row.domain })
-ElMessage.success(t('proxy.wafSiteEnabled', { domain: row.domain }))
+await client.post(`${apiBase.value}/waf/enable-domain`, { domain: d })
+ElMessage.success(t('proxy.wafSiteEnabled', { domain: d }))
 } catch (e) {
 row._waf_enabled = false
 ElMessage.error(t('common.failed'))
@@ -942,7 +943,7 @@ ElMessage.error(t('common.failed'))
 } else {
 try {
 const action = await ElMessageBox.confirm(
-t('proxy.wafDisableHint', { domain: row.domain }),
+t('proxy.wafDisableHint', { domain: d }),
 t('proxy.wafDisableTitle'),
 {
 distinguishCancelAndClose: true,
@@ -953,8 +954,8 @@ type: 'warning',
 )
 // confirmButtonText → disable WAF for this domain
 try {
-await client.post(`${apiBase.value}/waf/disable-domain`, { domain: row.domain })
-ElMessage.success(t('proxy.wafSiteDisabled', { domain: row.domain }))
+await client.post(`${apiBase.value}/waf/disable-domain`, { domain: d })
+ElMessage.success(t('proxy.wafSiteDisabled', { domain: d }))
 } catch (e) {
 row._waf_enabled = true
 ElMessage.error(t('common.failed'))
@@ -963,8 +964,8 @@ ElMessage.error(t('common.failed'))
 if (action === 'cancel') {
 // Use global rules — remove domain from domain.json
 try {
-await client.post(`${apiBase.value}/waf/disable-domain`, { domain: row.domain })
-ElMessage.success(t('proxy.wafUseGlobalRules', { domain: row.domain }))
+await client.post(`${apiBase.value}/waf/disable-domain`, { domain: d })
+ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
 } catch (e) {
 row._waf_enabled = true
 ElMessage.error(t('common.failed'))

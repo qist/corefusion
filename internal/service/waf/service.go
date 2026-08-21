@@ -836,3 +836,43 @@ func StripPort(domain string) string {
 	}
 	return domain
 }
+
+// --- Domain Rule Files ---
+
+// ListDomainRuleDirs returns a list of domain names that have rule directories on disk.
+func (s *Service) ListDomainRuleDirs() ([]string, error) {
+	domainsDir := filepath.Join(s.wafRulesDir(), "domains")
+	entries, err := os.ReadDir(domainsDir)
+	if err != nil {
+		return []string{}, nil // directory doesn't exist yet
+	}
+	var dirs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+	return dirs, nil
+}
+
+// GetDomainRuleFile reads a rule file for a specific domain.
+// name is the rule file name, e.g. "args.rule".
+func (s *Service) GetDomainRuleFile(domain, name string) (string, error) {
+	path := filepath.Join(s.wafRulesDir(), "domains", domain, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveDomainRuleFile writes a rule file for a specific domain.
+// Creates the domain directory if it doesn't exist.
+func (s *Service) SaveDomainRuleFile(domain, name, content string) error {
+	domainDir := filepath.Join(s.wafRulesDir(), "domains", domain)
+	if err := os.MkdirAll(domainDir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(domainDir, name)
+	return os.WriteFile(path, []byte(content), 0644)
+}

@@ -335,9 +335,11 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Strip port from domain (caddyguard matches without port)
+	domain := waf.StripPort(req.Domain)
 	// Save domain config with waf_enable=on
-	config := fmt.Sprintf(`{"waf_enable":"on","rule_dir":"domains/%s"}`, req.Domain)
-	if err := h.svc.SaveDomainConfig(c.Request.Context(), serverID, req.Domain, config); err != nil {
+	config := fmt.Sprintf(`{"waf_enable":"on","rule_dir":"domains/%s"}`, domain)
+	if err := h.svc.SaveDomainConfig(c.Request.Context(), serverID, domain, config); err != nil {
 		response.InternalError(c, "ENABLE_FAILED", err.Error())
 		return
 	}
@@ -345,7 +347,7 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
 		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
 	}
-	response.OK(c, gin.H{"domain": req.Domain, "enabled": true})
+	response.OK(c, gin.H{"domain": domain, "enabled": true})
 }
 
 // DisableDomain handles POST /api/v1/node-servers/:id/waf/disable-domain.
@@ -361,9 +363,11 @@ func (h *Handler) DisableDomain(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Strip port from domain (caddyguard matches without port)
+	domain := waf.StripPort(req.Domain)
 	// Save domain config with waf_enable=off
 	config := `{"waf_enable":"off"}`
-	if err := h.svc.SaveDomainConfig(c.Request.Context(), serverID, req.Domain, config); err != nil {
+	if err := h.svc.SaveDomainConfig(c.Request.Context(), serverID, domain, config); err != nil {
 		response.InternalError(c, "DISABLE_FAILED", err.Error())
 		return
 	}
@@ -371,7 +375,7 @@ func (h *Handler) DisableDomain(c *gin.Context) {
 	if err := h.svc.LandRulesForServer(c.Request.Context(), serverID); err != nil {
 		log.Printf("[WAF] failed to land domain config for server %d: %v", serverID, err)
 	}
-	response.OK(c, gin.H{"domain": req.Domain, "enabled": false})
+	response.OK(c, gin.H{"domain": domain, "enabled": false})
 }
 
 // GetDomainStatus handles GET /api/v1/node-servers/:id/waf/domain-status.
@@ -380,7 +384,7 @@ func (h *Handler) GetDomainStatus(c *gin.Context) {
 	if serverID == 0 {
 		serverID = localServerID
 	}
-	domain := c.Query("domain")
+	domain := waf.StripPort(c.Query("domain"))
 	config, err := h.svc.GetDomainConfig(c.Request.Context(), serverID, domain)
 	if err != nil {
 		response.OK(c, gin.H{"domain": domain, "enabled": false})
@@ -446,4 +450,49 @@ func (h *Handler) SetWAFStatus(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"enabled": req.Enabled})
+}
+
+// --- Domain Rule Files ---
+
+// ListDomainRuleDirs handles GET /api/v1/node-servers/:id/waf/domain-rules.
+// Returns a list of domain names that have rule directories on disk.
+func (h *Handler) ListDomainRuleDirs(c *gin.Context) {
+	dirs, err := h.svc.ListDomainRuleDirs()
+	if err != nil {
+		response.OK(c, []string{})
+		return
+	}
+	response.OK(c, dirs)
+}
+
+// GetDomainRuleFile handles GET /api/v1/node-servers/:id/waf/domain-rules/:domain/:name.
+// Returns the content of a rule file for a specific domain.
+func (h *Handler) GetDomainRuleFile(c *gin.Context) {
+	domain := waf.StripPort(c.Param("domain"))
+	name := c.Param("name")
+	content, err := h.svc.GetDomainRuleFile(domain, name)
+	if err != nil {
+		response.OK(c, gin.H{"name": name, "content": ""})
+		return
+	}
+	response.OK(c, gin.H{"name": name, "content": content})
+}
+
+// SaveDomainRuleFile handles PUT /api/v1/node-servers/:id/waf/domain-rules/:domain/:name.
+// Saves the content of a rule file for a specific domain.
+func (h *Handler) SaveDomainRuleFile(c *gin.Context) {
+	domain := waf.StripPort(c.Param("domain"))
+	name := c.Param("name")
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.svc.SaveDomainRuleFile(domain, name, req.Content); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "saved"})
 }

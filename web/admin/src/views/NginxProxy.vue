@@ -1556,6 +1556,10 @@ async function saveWafMasterSwitch(val) {
   try {
     await client.put(`${apiBase.value}/waf/status`, { enabled: val })
     await applyConfig()
+    if (val) {
+      await fetchWAFConfig()
+      await fetchWAFRules()
+    }
   } catch {
     wafMasterEnabled.value = !val
   } finally {

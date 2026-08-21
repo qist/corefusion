@@ -466,8 +466,12 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		} else if site.Template == "l4" {
 			l4Sites = append(l4Sites, site)
 		} else {
-			// portal_forward: dynamically resolve upstream from panel.portal_port
+			// portal_forward: only valid on the panel node (isLocal). Remote
+			// nodes have no panel process, so skip generating it for them.
 			if site.Template == "portal_forward" {
+				if !m.isLocal {
+					continue
+				}
 				site.Upstream = m.portalAddr(ctx)
 				// If portal has a dedicated port, no path needed (whole domain forwards).
 				// If portal shares the panel port, use /p path.
@@ -480,6 +484,17 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 					}
 					if portalPort == "" || portalPort == "0" {
 						site.Path = "/p"
+					}
+				} else if site.Template == "subscription_forward" {
+					// subscription_forward: only valid on the panel node (isLocal).
+					// Subscription URLs are served by the panel process on its
+					// main port under the /sub path.
+					if !m.isLocal {
+						continue
+					}
+					site.Upstream = m.panelAddr(ctx)
+					if site.Path == "" {
+						site.Path = "/sub"
 					}
 				}
 			}
@@ -852,6 +867,9 @@ func (m *Manager) ListSitesByType(ctx context.Context, proxyType string) ([]enti
 
 // CreateSite creates a new proxy site in the database.
 func (m *Manager) CreateSite(ctx context.Context, site *entity.ProxySite) error {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocal {
+		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
+	}
 	if site.ServerID == 0 {
 		site.ServerID = m.serverID
 	}

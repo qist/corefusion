@@ -333,9 +333,10 @@ sb.WriteString("    lua_code_cache on;\n")
 		sb.WriteString("\n")
 	}
 
-	// Separate SNI, L4, and HTTP sites
+	// Separate SNI, L4, Reality, and HTTP sites
 	var sniSites []entity.NginxSite
 	var l4Sites []entity.NginxSite
+	var realitySites []entity.NginxSite
 	var httpSites []entity.NginxSite
 	for _, site := range sites {
 		switch site.Template {
@@ -343,9 +344,15 @@ sb.WriteString("    lua_code_cache on;\n")
 			sniSites = append(sniSites, site)
 		case "l4":
 			l4Sites = append(l4Sites, site)
+		case "reality":
+			realitySites = append(realitySites, site)
 		default:
-			// portal_forward: dynamically resolve upstream from panel.portal_port
+			// portal_forward: only valid on the panel node (isLocal). Remote
+			// nodes have no panel process, so skip generating it for them.
 			if site.Template == "portal_forward" {
+				if !m.isLocal {
+					continue
+				}
 				site.Upstream = m.portalAddr(ctx)
 				// If portal has a dedicated port, no path needed (whole domain forwards).
 				// If portal shares the panel port, use /p path.
@@ -358,6 +365,17 @@ sb.WriteString("    lua_code_cache on;\n")
 					}
 					if portalPort == "" || portalPort == "0" {
 						site.Path = "/p"
+					}
+				} else if site.Template == "subscription_forward" {
+					// subscription_forward: only valid on the panel node (isLocal).
+					// Subscription URLs are served by the panel process on its
+					// main port under the /sub path.
+					if !m.isLocal {
+						continue
+					}
+					site.Upstream = m.panelAddr(ctx)
+					if site.Path == "" {
+						site.Path = "/sub"
 					}
 				}
 			}
@@ -671,6 +689,65 @@ sb.WriteString("    lua_code_cache on;\n")
 			sb.WriteString("        }\n")
 		}
 
+		sb.WriteString("    }\n\n")
+	}
+
+	// Reality server blocks: forced TLS, HTTP/2, PROXY Protocol, no domain required
+	for _, rs := range realitySites {
+		port := rs.ListenPort
+		if port == "" {
+			port = "9443"
+		}
+		sb.WriteString(fmt.Sprintf("    # Reality :%s\n", port))
+		sb.WriteString("    server {\n")
+        sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
+        if rs.EnableIpv6 {
+            sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
+        }
+		sb.WriteString("        http2 on;\n")
+		if rs.Domain == "" {
+			sb.WriteString("        server_name _;\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("        server_name %s;\n", rs.Domain))
+		}
+		if rs.CertPath != "" && rs.KeyPath != "" {
+			sb.WriteString(fmt.Sprintf("        ssl_certificate ../%s;\n", stripDataDirPrefix(rs.CertPath, m.dataDir)))
+			sb.WriteString(fmt.Sprintf("        ssl_certificate_key ../%s;\n", stripDataDirPrefix(rs.KeyPath, m.dataDir)))
+		}
+		sslProtocols := rs.SslProtocols
+		if sslProtocols == "" {
+			sslProtocols = "TLSv1.2 TLSv1.3"
+		}
+		sb.WriteString(fmt.Sprintf("        ssl_protocols %s;\n", sslProtocols))
+		if rs.SslCiphers != "" {
+			sb.WriteString(fmt.Sprintf("        ssl_ciphers %s;\n", rs.SslCiphers))
+		}
+		if rs.SslEcdhCurve != "" {
+			sb.WriteString(fmt.Sprintf("        ssl_ecdh_curve %s;\n", rs.SslEcdhCurve))
+		}
+		// PROXY Protocol real_ip settings
+		sb.WriteString("        set_real_ip_from 127.0.0.1;\n")
+		if rs.EnableIpv6 {
+			sb.WriteString("        set_real_ip_from ::1;\n")
+		}
+		sb.WriteString("        real_ip_header proxy_protocol;\n")
+		// Server-level custom config
+		if rs.ServerConfig != "" {
+			for _, line := range strings.Split(strings.TrimSpace(rs.ServerConfig), "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" {
+					if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
+						trimmed += ";"
+					}
+					sb.WriteString("        " + trimmed + "\n")
+				}
+			}
+		}
+		// Default location
+		sb.WriteString("        location = / {\n")
+		sb.WriteString("            default_type 'text/html';\n")
+		sb.WriteString("            return 200 'Success';\n")
+		sb.WriteString("        }\n")
 		sb.WriteString("    }\n\n")
 	}
 

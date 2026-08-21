@@ -65,6 +65,9 @@ func (m *CaddyManager) ListEnabledSites(ctx context.Context) ([]entity.CaddySite
 }
 
 func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) error {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocal {
+		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
+	}
 	if site.ServerID == 0 {
 		site.ServerID = m.serverID
 	}
@@ -102,6 +105,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 	var sb strings.Builder
 	var httpSites []entity.CaddySite
 	var l4Sites []entity.CaddySite
+	var realitySites []entity.CaddySite
 	sniByPort := make(map[string][]entity.CaddySite)
 
 	for _, site := range sites {
@@ -113,9 +117,15 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sniByPort[port] = append(sniByPort[port], site)
 		} else if site.Template == "l4" {
 			l4Sites = append(l4Sites, site)
+		} else if site.Template == "reality" {
+			realitySites = append(realitySites, site)
 		} else {
-			// portal_forward: dynamically resolve upstream from panel.portal_port
+			// portal_forward: only valid on the panel node (isLocal). Remote
+			// nodes have no panel process, so skip generating it for them.
 			if site.Template == "portal_forward" {
+				if !m.isLocal {
+					continue
+				}
 				site.Upstream = m.portalAddr(ctx)
 				// If portal has a dedicated port, no path needed (whole domain forwards).
 				// If portal shares the panel port, use /p path.
@@ -128,6 +138,17 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 					}
 					if portalPort == "" || portalPort == "0" {
 						site.Path = "/p"
+					}
+				} else if site.Template == "subscription_forward" {
+					// subscription_forward: only valid on the panel node (isLocal).
+					// Subscription URLs are served by the panel process on its
+					// main port under the /sub path.
+					if !m.isLocal {
+						continue
+					}
+					site.Upstream = m.panelAddr(ctx)
+					if site.Path == "" {
+						site.Path = "/sub"
 					}
 				}
 			}
@@ -246,7 +267,57 @@ sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 		}
 		sb.WriteString("\t}\n")
 	}
+	// Reality: add servers block with listener_wrappers (proxy_protocol + tls) and protocols h1 h2
+	if len(realitySites) > 0 {
+		for _, rs := range realitySites {
+			port := strings.TrimPrefix(rs.Domain, ":")
+			if port == "" {
+				port = "9443"
+			}
+			sb.WriteString(fmt.Sprintf("\tservers 127.0.0.1:%s {\n", port))
+			sb.WriteString("\t\tlistener_wrappers {\n")
+			sb.WriteString("\t\t\tproxy_protocol {\n")
+			sb.WriteString("\t\t\t\tallow 127.0.0.1/32\n")
+			sb.WriteString("\t\t\t}\n")
+			sb.WriteString("\t\t\ttls\n")
+			sb.WriteString("\t\t}\n")
+			sb.WriteString("\t\tprotocols h1 h2\n")
+			sb.WriteString("\t}\n")
+		}
+	}
 	sb.WriteString("}\n\n")
+
+	// Reality: generate independent server blocks (bind 127.0.0.1, tls, no domain required)
+	for _, rs := range realitySites {
+		port := strings.TrimPrefix(rs.Domain, ":")
+		if port == "" {
+			port = "9443"
+		}
+		sb.WriteString(fmt.Sprintf("# Reality :%s\n", port))
+		sb.WriteString(fmt.Sprintf(":%s {\n", port))
+		sb.WriteString("\tbind 127.0.0.1\n")
+		if rs.CertPath != "" && rs.KeyPath != "" {
+			sb.WriteString(fmt.Sprintf("\ttls %s %s\n", m.resolvePath(rs.CertPath), m.resolvePath(rs.KeyPath)))
+		}
+		if rs.LogEnabled {
+			sb.WriteString("\tlog {\n")
+			logPath := rs.LogPath
+			if logPath == "" {
+				logPath = fmt.Sprintf("logs/reality_%s.log", port)
+			}
+			sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
+			if rs.LogFormat == "json" {
+				sb.WriteString("\t\tformat json\n")
+			}
+			sb.WriteString("\t}\n")
+		}
+		if rs.CustomConfig != "" {
+			for _, line := range strings.Split(strings.TrimSpace(rs.CustomConfig), "\n") {
+				sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
+			}
+		}
+		sb.WriteString("}\n\n")
+	}
 
 	if len(httpSites) == 0 && !hasL4 {
 		sb.WriteString(":80 {\n")

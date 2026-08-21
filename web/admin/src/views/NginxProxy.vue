@@ -726,7 +726,7 @@
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" placeholder="example.com" />
         </el-form-item>
-<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward'">
+<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'">
 <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
 <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
 <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
@@ -735,6 +735,12 @@
 </el-form-item>
 <el-form-item v-if="siteForm.template==='portal_forward'" :label="t('proxy.portalForwardHint')">
 <span style="font-size:12px;color:#909399">{{ t('proxy.portalForwardDesc') }}</span>
+</el-form-item>
+<el-form-item v-if="siteForm.template==='subscription_forward'" :label="t('proxy.subscriptionForwardHint')">
+<span style="font-size:12px;color:#909399">{{ t('proxy.subscriptionForwardDesc') }}</span>
+</el-form-item>
+<el-form-item v-if="siteForm.template==='reality'" :label="t('proxy.templateReality')">
+<span style="font-size:12px;color:#909399">{{ t('proxy.realityDesc') }}</span>
 </el-form-item>
         <el-form-item label="Root Directory" v-if="siteForm.template==='static'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
@@ -769,7 +775,7 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static' && siteForm.template!=='portal_forward'" :label="t('proxy.template')">
+<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -777,10 +783,12 @@
             <el-option label="XHTTP" value="xhttp" />
             <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
-            <el-option :label="t('proxy.templatePortalForward')" value="portal_forward" />
+            <el-option v-if="isLocal" :label="t('proxy.templatePortalForward')" value="portal_forward" />
+            <el-option v-if="isLocal" :label="t('proxy.templateSubscriptionForward')" value="subscription_forward" />
+            <el-option :label="t('proxy.templateReality')" value="reality" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward'" :label="t('proxy.template')">
+        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
           <el-select v-model="siteForm.template" style="width:100%">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -789,17 +797,21 @@
             <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option :label="t('proxy.templateL4')" value="l4" />
             <el-option label="Static" value="static" />
-            <el-option :label="t('proxy.templatePortalForward')" value="portal_forward" />
+            <el-option v-if="isLocal" :label="t('proxy.templatePortalForward')" value="portal_forward" />
+            <el-option v-if="isLocal" :label="t('proxy.templateSubscriptionForward')" value="subscription_forward" />
+            <el-option :label="t('proxy.templateReality')" value="reality" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('proxy.proxyProtocol')">
-          <el-switch v-model="siteForm.proxy_protocol" />
+          <el-switch v-model="siteForm.proxy_protocol" :disabled="siteForm.template==='reality'" />
+          <span v-if="siteForm.template==='reality'" style="font-size:12px;color:#909399;margin-left:8px">{{ t('common.required') }}</span>
         </el-form-item>
         <el-form-item label="IPv6">
           <el-switch v-model="siteForm.enable_ipv6" />
         </el-form-item>
         <el-form-item :label="t('proxy.useCertificate')">
-          <el-switch v-model="siteForm.use_cert" @change="onToggleCert" />
+          <el-switch v-model="siteForm.use_cert" :disabled="siteForm.template==='reality'" @change="onToggleCert" />
+          <span v-if="siteForm.template==='reality'" style="font-size:12px;color:#909399;margin-left:8px">{{ t('common.required') }}</span>
         </el-form-item>
         <el-form-item v-if="siteForm.use_cert" :label="t('proxy.selectCert')">
           <el-select v-model="siteForm.cert_id" style="width:100%" clearable @change="onSiteCertSelect" :placeholder="t('proxy.selectCert')">
@@ -1674,17 +1686,18 @@ fetchProxyInfo()
 function showAddSite(template) {
   siteDialogTitle.value = t('proxy.addSite')
   const defaultPort = settings.value.default_http_port
+  const isReality = template === 'reality'
 siteForm.value = {
 domain: '', upstreams: [''], path: '', backend_path: '', template,
-    listen_port: template === 'l4' ? '443' : defaultPort, listen_socket: '',
-    use_cert: false, cert_id: null, cert_path: '', key_path: '',
+    listen_port: isReality ? '9443' : (template === 'l4' ? '443' : defaultPort), listen_socket: '',
+    use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
-    proxy_protocol: false, is_panel: false,
+    proxy_protocol: isReality, is_panel: false,
     enable_http2: true, enable_ipv6: false, enable_quic: false,
     enable_early_data: false, enable_stapling: false,
-  ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-  waf_enabled: true,
+  ssl_protocols: isReality ? 'TLSv1.2 TLSv1.3' : '', ssl_ciphers: '', ssl_ecdh_curve: '',
+  waf_enabled: !isReality,
   editMode: 'form',
     inbound_id: null
   }
@@ -1792,6 +1805,27 @@ function generatePreview(site) {
     lines.push(`    proxy_pass ${upstreamName};`)
     lines.push(`    proxy_timeout 5m;`)
     lines.push(`    proxy_connect_timeout 2s;`)
+    lines.push(`}`)
+    return lines.join('\n')
+  }
+  // Reality preview
+  if (site.template === 'reality') {
+    const port = site.listen_port || '9443'
+    const certPath = site.cert_path || '/path/to/cert.pem'
+    const keyPath = site.key_path || '/path/to/key.pem'
+    lines.push(`server {`)
+    lines.push(`    listen 127.0.0.1:${port} ssl proxy_protocol;`)
+    lines.push(`    http2 on;`)
+    lines.push(`    server_name _;`)
+    lines.push(`    ssl_certificate ${certPath};`)
+    lines.push(`    ssl_certificate_key ${keyPath};`)
+    lines.push(`    ssl_protocols TLSv1.2 TLSv1.3;`)
+    lines.push(`    set_real_ip_from 127.0.0.1;`)
+    lines.push(`    real_ip_header proxy_protocol;`)
+    lines.push(`    location = / {`)
+    lines.push(`        default_type 'text/html';`)
+    lines.push(`        return 200 'Success';`)
+    lines.push(`    }`)
     lines.push(`}`)
     return lines.join('\n')
   }

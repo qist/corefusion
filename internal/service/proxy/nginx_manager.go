@@ -55,6 +55,9 @@ func (m *NginxManager) ListEnabledSites(ctx context.Context) ([]entity.NginxSite
 }
 
 func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) error {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocal {
+		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
+	}
 	if site.ServerID == 0 {
 		site.ServerID = m.serverID
 	}

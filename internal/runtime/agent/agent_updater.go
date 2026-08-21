@@ -170,6 +170,7 @@ func (u *AgentUpdater) GetPendingUpdates() []UpdateTask {
 // 优先使用手动指定的 URL（WithVersion），否则按节点 os/arch 从本地扫描结果中选择。
 func (u *AgentUpdater) resolveBinaryForServer(serverID int64) (version, downloadURL, checksum string, err error) {
 	version = u.currentVersion
+	log.Printf("[AgentUpdater][DEBUG] resolveBinary server=%d currentVersion=%q dataDir=%q platformKeys=%v", serverID, u.currentVersion, u.dataDir, keysOf(u.platformBinaries))
 	if version == "" {
 		return "", "", "", fmt.Errorf("no target version set")
 	}
@@ -597,4 +598,13 @@ func computeFileChecksum(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// keysOf returns the keys of a map as a slice (for debug logging).
+func keysOf(m map[string]*AgentBinaryInfo) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

@@ -96,6 +96,18 @@ func (r *WafRuleRepository) Delete(ctx context.Context, name string, serverID in
 	return r.db.WithContext(ctx).Where("name = ? AND rule_scope = ? AND server_id = ?", name, "node", serverID).Delete(&entity.WafRule{}).Error
 }
 
+// MigrateNodeReplaceToAppend flips legacy node-scoped rules whose merge_mode is
+// "replace" (or empty) to "append". Node rules are meant to supplement the global
+// rule of the same name; "replace" silently drops the global content. This is
+// idempotent and only affects node-scoped rows. Returns rows affected.
+func (r *WafRuleRepository) MigrateNodeReplaceToAppend(ctx context.Context) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Model(&entity.WafRule{}).
+		Where("rule_scope = ? AND (merge_mode = ? OR merge_mode = ? OR merge_mode IS NULL)", "node", "replace", "").
+		Update("merge_mode", "append")
+	return res.RowsAffected, res.Error
+}
+
 // Count returns the total number of global WAF rules.
 func (r *WafRuleRepository) Count(ctx context.Context) (int64, error) {
 	var count int64

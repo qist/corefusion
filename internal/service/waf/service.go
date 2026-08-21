@@ -37,6 +37,18 @@ type SettingStore interface {
 	Set(ctx context.Context, key, value string) error
 }
 
+// NodeLister provides the list of all server IDs (for push-to-all).
+type NodeLister interface {
+	ListAllServerIDs(ctx context.Context) ([]int64, error)
+}
+
+// GitHubSourceConfig holds the GitHub source URL and sync schedule for WAF rules.
+type GitHubSourceConfig struct {
+	URL      string `json:"url"`
+	SyncCron string `json:"sync_cron"`
+	Enabled  bool   `json:"enabled"`
+}
+
 // Service manages WAF rules stored in the database.
 type Service struct {
 	ruleRepo   *repository.WafRuleRepository
@@ -44,6 +56,7 @@ type Service struct {
 	domainRepo *repository.WafDomainConfigRepository
 	syncer     NodeSyncer
 	settingSvc SettingStore
+	nodeLister NodeLister
 	dataDir    string
 }
 
@@ -67,6 +80,22 @@ func NewService(
 // SetSyncer sets the node syncer for pushing WAF files to remote nodes.
 func (s *Service) SetSyncer(syncer NodeSyncer) {
 	s.syncer = syncer
+}
+
+// SetNodeLister sets the node lister for push-to-all operations.
+func (s *Service) SetNodeLister(lister NodeLister) {
+	s.nodeLister = lister
+}
+
+// MigrateNodeRulesMergeMode fixes legacy node-scoped WAF rules whose merge_mode
+// was left as "replace" (the old frontend never sent merge_mode, so the backend
+// defaulted to "replace"). A "replace" node rule silently drops the global rule
+// of the same name, which is almost never what the user intends — node rules are
+// meant to SUPPLEMENT the global rule. This idempotent migration flips any node
+// rule that is "replace" (or empty) to "append" so global rules are preserved.
+// It returns the number of rows migrated.
+func (s *Service) MigrateNodeRulesMergeMode(ctx context.Context) (int64, error) {
+	return s.ruleRepo.MigrateNodeReplaceToAppend(ctx)
 }
 
 // wafRulesDir returns the shared WAF rules directory: dataDir/proxy/waf-rules
@@ -97,6 +126,7 @@ func (s *Service) SaveRule(ctx context.Context, name, content, mergeMode string)
 	if mergeMode == "" {
 		mergeMode = "replace"
 	}
+	content = normalizeRuleContent(content)
 	rule := &entity.WafRule{
 		Name:      name,
 		RuleScope: "global",
@@ -114,24 +144,119 @@ func (s *Service) DeleteRule(ctx context.Context, name string) error {
 	return s.ruleRepo.Delete(ctx, name, 0)
 }
 
-// --- WAF Rules (Node-level) ---
+// --- WAF Rules (Node-level, merged with global) ---
 
-// ListNodeRules returns all node-scoped rules for a specific server.
-func (s *Service) ListNodeRules(ctx context.Context, serverID int64) ([]entity.WafRule, error) {
-	return s.ruleRepo.ListNodeRules(ctx, serverID)
+// MergedRule represents a rule merged from global + node scope.
+// It includes the source indicator so the UI can show whether a rule
+// comes from global, node, or merged (append).
+type MergedRule struct {
+	Name         string `json:"name"`
+	MergeMode    string `json:"merge_mode"`            // append | replace (from node rule, or global if no node rule)
+	Content      string `json:"content"`               // merged content (what actually lands on disk)
+	GlobalContent string `json:"global_content,omitempty"` // global part (only when source=merged)
+	NodeContent  string `json:"node_content,omitempty"`    // node-only part (only when source=merged)
+	Hash         string `json:"hash"`                    // hash of merged content
+	Source       string `json:"source"`                  // "global" | "node" | "merged"
+	Enabled      bool   `json:"enabled"`
+	UpdatedAt    string `json:"updated_at"`              // latest update time
 }
 
-// GetNodeRule returns a node-scoped rule by name and server_id.
-func (s *Service) GetNodeRule(ctx context.Context, name string, serverID int64) (*entity.WafRule, error) {
-	return s.ruleRepo.GetNodeByName(ctx, name, serverID)
+// ListNodeRules returns merged rules (global + node override) for a specific server.
+// Each rule shows the effective content after merge, with a source field indicating:
+//   - "global": rule only exists in global scope
+//   - "node": rule only exists in node scope (no global counterpart)
+//   - "merged": rule exists in both, node appended to global
+func (s *Service) ListNodeRules(ctx context.Context, serverID int64) ([]MergedRule, error) {
+	rules, err := s.ruleRepo.ListByServer(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	merged := s.mergeRulesWithMeta(ctx, rules, serverID)
+	result := make([]MergedRule, 0, len(merged))
+	for name, mr := range merged {
+		result = append(result, MergedRule{
+			Name:      name,
+			MergeMode: mr.mergeMode,
+			Content:   mr.content,
+			Hash:      hashContent(mr.content),
+			Source:    mr.source,
+			Enabled:   true,
+			UpdatedAt: mr.updatedAt,
+		})
+	}
+	return result, nil
+}
+
+// GetNodeRule returns a merged rule by name for a specific server.
+// Falls back to global if no node-level rule exists.
+func (s *Service) GetNodeRule(ctx context.Context, name string, serverID int64) (*MergedRule, error) {
+	// Try node-level first
+	nodeRule, nodeErr := s.ruleRepo.GetNodeByName(ctx, name, serverID)
+	globalRule, globalErr := s.ruleRepo.GetGlobalByName(ctx, name)
+
+	if nodeErr != nil && globalErr != nil {
+		return nil, fmt.Errorf("rule %s not found", name)
+	}
+
+	mr := &MergedRule{Name: name}
+
+	if nodeErr != nil {
+		// Only global exists
+		mr.Content = globalRule.Content
+		mr.MergeMode = globalRule.MergeMode
+		mr.Source = "global"
+		mr.Hash = hashContent(globalRule.Content)
+		mr.UpdatedAt = globalRule.UpdatedAt.Format(time.RFC3339)
+		return mr, nil
+	}
+
+	if globalErr != nil {
+		// Only node exists
+		mr.Content = nodeRule.Content
+		mr.MergeMode = nodeRule.MergeMode
+		mr.Source = "node"
+		mr.Hash = hashContent(nodeRule.Content)
+		mr.UpdatedAt = nodeRule.UpdatedAt.Format(time.RFC3339)
+		return mr, nil
+	}
+
+	// Both exist: merge
+	mergeMode := nodeRule.MergeMode
+	if mergeMode == "" {
+		mergeMode = "append"
+	}
+	mr.MergeMode = mergeMode
+	mr.Source = "merged"
+	mr.GlobalContent = normalizeRuleContent(globalRule.Content)
+	mr.NodeContent = normalizeRuleContent(nodeRule.Content)
+
+	switch mergeMode {
+	case "append":
+		mr.Content = joinRuleContent(globalRule.Content, nodeRule.Content)
+	default:
+		mr.Content = normalizeRuleContent(nodeRule.Content)
+	}
+	mr.Hash = hashContent(mr.Content)
+
+	// Use the later of the two timestamps
+	if nodeRule.UpdatedAt.After(globalRule.UpdatedAt) {
+		mr.UpdatedAt = nodeRule.UpdatedAt.Format(time.RFC3339)
+	} else {
+		mr.UpdatedAt = globalRule.UpdatedAt.Format(time.RFC3339)
+	}
+
+	return mr, nil
 }
 
 // SaveNodeRule saves a node-scoped WAF rule.
-// mergeMode: "append" or "replace" (default: "replace")
+// mergeMode: "append" or "replace". Default is "append" so that a node rule
+// supplements (rather than silently replaces) the global rule — a node editing
+// a rule inherits the global content plus its own additions.
 func (s *Service) SaveNodeRule(ctx context.Context, name string, serverID int64, content, mergeMode string) error {
 	if mergeMode == "" {
-		mergeMode = "replace"
+		mergeMode = "append"
 	}
+	content = normalizeRuleContent(content)
 	rule := &entity.WafRule{
 		Name:      name,
 		RuleScope: "node",
@@ -583,6 +708,14 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 
 // --- Sync to Nodes ---
 
+// mergedRuleEntry holds the merged content and metadata for a rule.
+type mergedRuleEntry struct {
+	content   string
+	mergeMode string
+	source    string // "global" | "node" | "merged"
+	updatedAt string
+}
+
 // mergeRules merges global and node-level rules into a single map.
 // Each rule carries its own merge_mode:
 //   - "append":   node content is appended to global content (global + "\n" + node)
@@ -591,15 +724,27 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 // Rules with no global counterpart are included as-is.
 // Returns map[ruleName]content.
 func (s *Service) mergeRules(ctx context.Context, rules []entity.WafRule, serverID int64) map[string]string {
+	merged := s.mergeRulesWithMeta(ctx, rules, serverID)
+	result := make(map[string]string, len(merged))
+	for name, mr := range merged {
+		result[name] = mr.content
+	}
+	return result
+}
+
+// mergeRulesWithMeta merges global and node-level rules with source metadata.
+// Returns map[ruleName]mergedRuleEntry with content, mergeMode, source, and updatedAt.
+func (s *Service) mergeRulesWithMeta(ctx context.Context, rules []entity.WafRule, serverID int64) map[string]mergedRuleEntry {
 	type ruleEntry struct {
 		content   string
 		mergeMode string
+		updatedAt time.Time
 	}
 	globalRules := make(map[string]ruleEntry)
 	nodeRules := make(map[string]ruleEntry)
 
 	for _, r := range rules {
-		entry := ruleEntry{content: r.Content, mergeMode: r.MergeMode}
+		entry := ruleEntry{content: r.Content, mergeMode: r.MergeMode, updatedAt: r.UpdatedAt}
 		if entry.mergeMode == "" {
 			entry.mergeMode = "replace"
 		}
@@ -610,7 +755,7 @@ func (s *Service) mergeRules(ctx context.Context, rules []entity.WafRule, server
 		}
 	}
 
-	merged := make(map[string]string)
+	merged := make(map[string]mergedRuleEntry)
 
 	// Process all unique rule names
 	names := make(map[string]bool)
@@ -624,31 +769,56 @@ func (s *Service) mergeRules(ctx context.Context, rules []entity.WafRule, server
 	for name := range names {
 		gEntry, hasGlobal := globalRules[name]
 		nEntry, hasNode := nodeRules[name]
+		var latestTS time.Time
+		if hasGlobal && hasNode {
+			if gEntry.updatedAt.After(nEntry.updatedAt) {
+				latestTS = gEntry.updatedAt
+			} else {
+				latestTS = nEntry.updatedAt
+			}
+		} else if hasGlobal {
+			latestTS = gEntry.updatedAt
+		} else if hasNode {
+			latestTS = nEntry.updatedAt
+		}
 
 		if !hasNode || nEntry.content == "" {
 			// No node override, use global as-is
 			if hasGlobal {
-				merged[name] = gEntry.content
+				merged[name] = mergedRuleEntry{
+					content:   gEntry.content,
+					mergeMode: gEntry.mergeMode,
+					source:    "global",
+					updatedAt: latestTS.Format(time.RFC3339),
+				}
 			}
 			continue
 		}
 
 		if !hasGlobal {
 			// Node-only rule
-			merged[name] = nEntry.content
+			merged[name] = mergedRuleEntry{
+				content:   nEntry.content,
+				mergeMode: nEntry.mergeMode,
+				source:    "node",
+				updatedAt: latestTS.Format(time.RFC3339),
+			}
 			continue
 		}
 
 		// Both exist: merge based on the node rule's merge_mode
+		var content string
 		switch nEntry.mergeMode {
 		case "append":
-			if gEntry.content != "" {
-				merged[name] = gEntry.content + "\n" + nEntry.content
-			} else {
-				merged[name] = nEntry.content
-			}
+			content = joinRuleContent(gEntry.content, nEntry.content)
 		default: // "replace"
-			merged[name] = nEntry.content
+			content = normalizeRuleContent(nEntry.content)
+		}
+		merged[name] = mergedRuleEntry{
+			content:   content,
+			mergeMode: nEntry.mergeMode,
+			source:    "merged",
+			updatedAt: latestTS.Format(time.RFC3339),
 		}
 	}
 
@@ -767,6 +937,115 @@ func (s *Service) SyncToAllNodes(ctx context.Context, nodeIDs []int64) {
 			log.Printf("[WAF] synced rules to server %d", id)
 		}
 	}
+}
+
+// SyncToAllNodesFromDB pushes all WAF files to all known nodes.
+// Uses the NodeLister to get all server IDs, then pushes to each.
+// Local node (ID=1) is skipped (already landed to disk).
+func (s *Service) SyncToAllNodesFromDB(ctx context.Context) error {
+	if s.nodeLister == nil {
+		return nil // no lister configured, skip
+	}
+	nodeIDs, err := s.nodeLister.ListAllServerIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list server IDs: %w", err)
+	}
+	var lastErr error
+	for _, id := range nodeIDs {
+		if id == 1 {
+			continue // skip local node, already landed
+		}
+		if err := s.SyncToNode(ctx, id); err != nil {
+			log.Printf("[WAF] push to server %d failed: %v", id, err)
+			lastErr = err
+		} else {
+			log.Printf("[WAF] pushed rules to server %d", id)
+		}
+	}
+	return lastErr
+}
+
+// GetGitHubSource returns the configured GitHub source URL and sync schedule.
+func (s *Service) GetGitHubSource(ctx context.Context) (*GitHubSourceConfig, error) {
+	if s.settingSvc == nil {
+		return &GitHubSourceConfig{}, nil
+	}
+	val, err := s.settingSvc.GetByKey(ctx, "waf.github_source")
+	if err != nil || val == "" {
+		return &GitHubSourceConfig{}, nil
+	}
+	var cfg GitHubSourceConfig
+	if err := json.Unmarshal([]byte(val), &cfg); err != nil {
+		return &GitHubSourceConfig{}, nil
+	}
+	return &cfg, nil
+}
+
+// SaveGitHubSource saves the GitHub source URL and sync schedule.
+func (s *Service) SaveGitHubSource(ctx context.Context, url, syncCron string, enabled bool) error {
+	if s.settingSvc == nil {
+		return fmt.Errorf("setting store not configured")
+	}
+	cfg := GitHubSourceConfig{URL: url, SyncCron: syncCron, Enabled: enabled}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return s.settingSvc.Set(ctx, "waf.github_source", string(data))
+}
+
+// SyncFromGitHubWithSource downloads rule files from a configurable GitHub source.
+// If the source URL is a full direct URL (starts with http), download that single file.
+// Otherwise, treat it as a GitHub repo path (e.g. "qist/nginxguard/main/rule-config")
+// and download all default rule files from it.
+func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL string) error {
+	client := s.githubHTTPClient(ctx, 60*time.Second)
+
+	if sourceURL == "" {
+		sourceURL = githubRawBase
+	}
+
+	for _, rd := range defaultRuleFiles {
+		var rawURL string
+		if strings.HasPrefix(sourceURL, "http://") || strings.HasPrefix(sourceURL, "https://") {
+			// Direct URL: append /{filename}
+			rawURL = strings.TrimSuffix(sourceURL, "/") + "/" + rd.Name
+		} else {
+			// GitHub repo path: construct raw URL
+			rawURL = sourceURL + "/" + rd.Name
+		}
+
+		req, _ := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("[WAF] failed to download %s: %v", rd.Name, err)
+			continue
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			log.Printf("[WAF] failed to read %s: %v", rd.Name, err)
+			continue
+		}
+
+		content := string(body)
+		rule := &entity.WafRule{
+			Name:      rd.Name,
+			RuleScope: "global",
+			ServerID:  0,
+			MergeMode: rd.MergeMode,
+			Content:   content,
+			Hash:      hashContent(content),
+			Enabled:   true,
+		}
+		if err := s.ruleRepo.Upsert(ctx, rule); err != nil {
+			log.Printf("[WAF] failed to upsert rule %s: %v", rd.Name, err)
+			continue
+		}
+		log.Printf("[WAF] synced rule %s from source (%d bytes, merge=%s)", rd.Name, len(body), rd.MergeMode)
+	}
+
+	return nil
 }
 
 // --- Default WAF Configs ---
@@ -889,6 +1168,50 @@ func hashContent(content string) string {
 	}
 	h := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(h[:])
+}
+
+// normalizeRuleContent trims surrounding whitespace and collapses runs of blank
+// lines into a single newline, so stored/merged rule files stay clean.
+func normalizeRuleContent(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if t == "" {
+			if len(out) > 0 && out[len(out)-1] != "" {
+				out = append(out, "")
+			}
+			continue
+		}
+		out = append(out, t)
+	}
+	// Drop a single trailing blank line left by the collapse above.
+	if len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return strings.Join(out, "\n")
+}
+
+// joinRuleContent merges global + node rule text with a single newline separator,
+// trimming both sides and ignoring empty halves. This avoids doubled blank lines
+// when the global text already ends (or the node text starts) with a newline.
+func joinRuleContent(global, node string) string {
+	g := strings.TrimSpace(global)
+	n := strings.TrimSpace(node)
+	switch {
+	case g == "" && n == "":
+		return ""
+	case g == "":
+		return n
+	case n == "":
+		return g
+	default:
+		return g + "\n" + n
+	}
 }
 
 // StripPort removes the port from a domain string.

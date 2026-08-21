@@ -361,7 +361,28 @@
 
     <!-- WAF Rule Editor Dialog -->
     <el-dialog v-model="wafRuleVisible" :title="`WAF Rule: ${wafRuleName}`" width="70%">
-      <el-input v-model="wafRuleContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
+      <el-alert
+        v-if="wafRuleSource === 'global'"
+        :title="t('proxy.wafGlobalOnlyTip')"
+        type="info"
+        :closable="false"
+        style="margin-bottom:10px"
+      />
+      <template v-if="wafRuleGlobalPreview">
+        <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.wafGlobalPreview') }}</div>
+        <el-input :model-value="wafRuleGlobalPreview" type="textarea" :rows="6" readonly style="font-family:monospace;font-size:13px;margin-bottom:10px" />
+      </template>
+      <div style="font-size:12px;color:#909399;margin-bottom:4px">
+        {{ wafRuleSource === 'global' ? t('proxy.wafNodeAddTip') : t('proxy.wafNodeContent') }}
+      </div>
+      <el-input v-model="wafRuleContent" type="textarea" :rows="14" style="font-family:monospace;font-size:13px" />
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px">{{ t('proxy.wafMergeMode') }}:</span>
+        <el-radio-group v-model="wafRuleMergeMode">
+          <el-radio value="append">{{ t('proxy.wafMergeAppend') }}</el-radio>
+          <el-radio value="replace">{{ t('proxy.wafMergeReplace') }}</el-radio>
+        </el-radio-group>
+      </div>
       <template #footer>
         <el-button @click="wafRuleVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="success" @click="saveWAFRule">{{ t('common.save') }}</el-button>
@@ -1431,7 +1452,10 @@ const wafConfigContent = ref('')
 const wafRules = ref([])
 const wafRuleVisible = ref(false)
 const wafRuleName = ref('')
-const wafRuleContent = ref('')
+const wafRuleContent = ref('')      // node-specific editable content
+const wafRuleGlobalPreview = ref('') // read-only global content preview
+const wafRuleSource = ref('')
+const wafRuleMergeMode = ref('append') // append (default) | replace
 
 const wafRuleDescMap = {
   'args.rule': 'wafRuleArgs', 'blackip.rule': 'wafRuleBlackip', 'cookie.rule': 'wafRuleCookie',
@@ -1558,26 +1582,39 @@ async function saveWAFConfigForm() {
 }
 
 async function fetchWAFRules() {
-  try {
-    const data = await client.get('/waf/rules')
-    wafRules.value = Array.isArray(data) ? data : (data.items || [])
-  } catch { wafRules.value = [] }
+try {
+const data = await client.get(`${apiBase.value}/waf/rules`)
+wafRules.value = Array.isArray(data) ? data : (data.items || [])
+} catch { wafRules.value = [] }
 }
 async function openWAFRule(row) {
-  wafRuleName.value = row.name
-  try {
-    const data = await client.get(`/waf/rules/${row.name}`)
-    wafRuleContent.value = data.content || ''
-    wafRuleVisible.value = true
-  } catch { ElMessage.error(t('common.failed')) }
+wafRuleName.value = row.name
+try {
+const data = await client.get(`${apiBase.value}/waf/rules/${row.name}`)
+wafRuleSource.value = data.source || 'global'
+wafRuleMergeMode.value = data.merge_mode || 'append'
+// When the effective rule is merged (global + node), the editor shows ONLY the
+// node-specific part so saving won't duplicate/overwrite the global content.
+if (data.source === 'merged') {
+  wafRuleGlobalPreview.value = data.global_content || ''
+  wafRuleContent.value = data.node_content || ''
+} else {
+  wafRuleGlobalPreview.value = data.source === 'global' ? (data.content || '') : ''
+  wafRuleContent.value = data.source === 'global' ? '' : (data.content || '')
+}
+wafRuleVisible.value = true
+} catch { ElMessage.error(t('common.failed')) }
 }
 async function saveWAFRule() {
-  try {
-    await client.put(`/waf/rules/${wafRuleName.value}`, { content: wafRuleContent.value })
-    ElMessage.success(t('common.success'))
-    wafRuleVisible.value = false
-    fetchWAFRules()
-  } catch { ElMessage.error(t('common.failed')) }
+try {
+await client.put(`${apiBase.value}/waf/rules/${wafRuleName.value}`, {
+  content: wafRuleContent.value,
+  merge_mode: wafRuleMergeMode.value
+})
+ElMessage.success(t('common.success'))
+wafRuleVisible.value = false
+fetchWAFRules()
+} catch { ElMessage.error(t('common.failed')) }
 }
 
 // Site WAF Config Dialog

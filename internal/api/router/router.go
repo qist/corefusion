@@ -1113,6 +1113,9 @@ protected.PUT("/waf/rules/:name", wafH.SaveRule)
 protected.DELETE("/waf/rules/:name", wafH.DeleteRule)
 protected.POST("/waf/sync-github", wafH.SyncFromGitHub)
 protected.POST("/waf/sync-all", wafH.SyncAll)
+protected.GET("/waf/github-source", wafH.GetGitHubSource)
+protected.PUT("/waf/github-source", wafH.SaveGitHubSource)
+protected.POST("/waf/push-all", wafH.PushToAllNodes)
 	protected.Use(middleware.AuthRequired())
 		{
 			// Users: administrator account management is super_admin only,
@@ -1632,6 +1635,26 @@ protected.POST("/waf/sync-all", wafH.SyncAll)
 				nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 				nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
 				nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
+// Wire WAF syncer so remote nodes get WAF rules on reconnect
+nodeMgrForPhase3.SetWAFSyncer(wafSvcInst)
+// Wire node lister so WAF can push to all nodes
+wafSvcInst.SetNodeLister(nodeServerRepo)
+// Idempotent migration: legacy node rules defaulted to "replace" (old frontend
+// never sent merge_mode), which silently dropped the global rule. Flip them to
+// "append" so global rules are preserved when merged per-node.
+if n, err := wafSvcInst.MigrateNodeRulesMergeMode(context.Background()); err != nil {
+	log.Printf("[WAF] migrate node rule merge_mode: %v", err)
+} else if n > 0 {
+	log.Printf("[WAF] migrated %d node rule(s) from replace to append", n)
+	// Re-land local disk and push the corrected (global+node merged) rules to
+	// every remote node so the fix takes effect immediately without manual save.
+	if err := wafSvcInst.LandAllRules(context.Background()); err != nil {
+		log.Printf("[WAF] re-land local after migration: %v", err)
+	}
+	if err := wafSvcInst.SyncToAllNodesFromDB(context.Background()); err != nil {
+		log.Printf("[WAF] re-sync all nodes after migration: %v", err)
+	}
+}
 
 				// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
 				// Also generates final runtime config via PrepareFullConfig so Agent
@@ -1936,6 +1959,7 @@ protected.POST("/waf/sync-all", wafH.SyncAll)
 			nodeServersGroup.POST("/:id/waf/enable-domain", wafH.EnableDomain)
 			nodeServersGroup.POST("/:id/waf/disable-domain", wafH.DisableDomain)
 			nodeServersGroup.POST("/:id/waf/sync", wafH.SyncToNode)
+			nodeServersGroup.POST("/:id/waf/push", wafH.PushToNode)
 			nodeServersGroup.GET("/:id/waf/status", wafH.GetWAFStatus)
 			nodeServersGroup.PUT("/:id/waf/status", wafH.SetWAFStatus)
 

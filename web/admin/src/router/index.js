@@ -57,8 +57,7 @@ const routes = [
       { path: 'audit', name: 'Security', component: () => import('../views/Security.vue'), meta: { title: 'menu.audit', icon: 'Bell' } },
       { path: 'runtime', name: 'RuntimeConfig', component: () => import('../views/RuntimeConfig.vue'), meta: { title: 'menu.runtimeConfig', icon: 'Switch' } },
       { path: 'traffic-quota', name: 'TrafficQuota', component: () => import('../views/TrafficQuota.vue'), meta: { title: 'menu.trafficQuota', icon: 'DataLine' } },
-      { path: 'waf-rules', name: 'WafRules', component: () => import('../views/WafRules.vue'), meta: { title: 'menu.wafRules', icon: 'Shield' } },
-    ],
+          ],
   },
 ]
 

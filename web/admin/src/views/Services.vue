@@ -8,6 +8,9 @@
       <el-tab-pane :label="t('service.tabs.cfip')" name="cfip">
         <CFIPTab />
       </el-tab-pane>
+      <el-tab-pane :label="t('proxy.wafGlobalRules')" name="waf">
+        <WafRulesTab />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -18,6 +21,7 @@ import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../composables/useQueryState'
 import ShareDomainTab from './services/ShareDomainTab.vue'
 import CFIPTab from './services/CFIPTab.vue'
+import WafRulesTab from './services/WafRulesTab.vue'
 
 const { t } = useI18n()
 const activeTab = useQueryState('tab', 'shareDomain')

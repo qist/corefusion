@@ -82,15 +82,15 @@
     <el-card shadow="hover" style="margin-bottom:20px">
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-weight:600">WAF {{ t('proxy.firewall') }}</span>
+          <span style="font-weight:600">{{ t('proxy.wafEnabled') }}</span>
           <el-switch v-model="wafMasterEnabled" :loading="wafStatusSaving" @change="saveWafMasterSwitch" />
         </div>
       </template>
       <div v-if="wafMasterEnabled" style="font-size:13px;color:#67C23A">
-        WAF 已启用 — Caddyfile 将包含 caddyguard 配置
+        {{ t('proxy.wafEnabledHintCaddy') }}
       </div>
       <div v-else style="font-size:13px;color:#909399">
-        WAF 已关闭 — 不会生成任何 WAF 配置
+        {{ t('proxy.wafDisabledHintCaddy') }}
       </div>
     </el-card>
 

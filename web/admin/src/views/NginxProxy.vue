@@ -347,6 +347,23 @@
             <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="wafConfigForm.post_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="wafConfigForm.referer_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafFileUpload')"><el-switch v-model="wafConfigForm.file_upload_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafAdvanced') }}</el-divider>
+            <el-form-item :label="t('proxy.wafBodyless')">
+              <el-switch v-model="wafConfigForm.bodyless" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafBodylessHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafMultipartStreaming')">
+              <el-switch v-model="wafConfigForm.multipart_streaming_check" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafMultipartStreamingHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafUploadFilenameScan')">
+              <el-input v-model="wafConfigForm.upload_filename_scan_limit" placeholder="0" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafUploadFilenameScanHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafPostBodyScan')">
+              <el-input v-model="wafConfigForm.post_body_scan_limit" placeholder="2097152" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafPostBodyScanHint') }}</span>
+            </el-form-item>
             <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
             <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
@@ -416,6 +433,23 @@
             <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="siteWAFConfig.post_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="siteWAFConfig.referer_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafFileUpload')"><el-switch v-model="siteWAFConfig.file_upload_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-divider content-position="left">{{ t('proxy.wafAdvanced') }}</el-divider>
+            <el-form-item :label="t('proxy.wafBodyless')">
+              <el-switch v-model="siteWAFConfig.bodyless" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafBodylessHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafMultipartStreaming')">
+              <el-switch v-model="siteWAFConfig.multipart_streaming_check" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafMultipartStreamingHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafUploadFilenameScan')">
+              <el-input v-model="siteWAFConfig.upload_filename_scan_limit" placeholder="0" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafUploadFilenameScanHint') }}</span>
+            </el-form-item>
+            <el-form-item :label="t('proxy.wafPostBodyScan')">
+              <el-input v-model="siteWAFConfig.post_body_scan_limit" placeholder="2097152" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafPostBodyScanHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafWhiteUrl')"><el-switch v-model="siteWAFConfig.white_url_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafWhiteIp')"><el-switch v-model="siteWAFConfig.white_ip_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafWhiteUa')">
@@ -1079,6 +1113,8 @@ const wafConfigForm = ref({
   url_check: 'on', url_args_check: 'on', user_agent_check: 'on',
   cookie_check: 'on', post_check: 'on', referer_check: 'on', file_upload_check: 'on',
   cc_check: 'on', cc_rate: '', cc_block_ttl: '',
+  bodyless: 'on', multipart_streaming_check: 'off',
+  upload_filename_scan_limit: '0', post_body_scan_limit: '2097152',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
 
@@ -1105,6 +1141,10 @@ function parseWAFConfigForm() {
     post_check: get('post_check') || 'on',
     referer_check: get('referer_check') || 'on',
     file_upload_check: get('file_upload_check') || 'on',
+    bodyless: get('bodyless') || 'on',
+    multipart_streaming_check: get('multipart_streaming_check') || 'off',
+    upload_filename_scan_limit: get('upload_filename_scan_limit') || '0',
+    post_body_scan_limit: get('post_body_scan_limit') || '2097152',
     cc_check: get('cc_check') || 'on',
     cc_rate: get('cc_rate') || '',
     cc_block_ttl: get('cc_block_ttl') || '600',
@@ -1135,6 +1175,17 @@ async function saveWAFConfigForm() {
   set('post_check', wafConfigForm.value.post_check)
   set('referer_check', wafConfigForm.value.referer_check)
   set('file_upload_check', wafConfigForm.value.file_upload_check)
+  set('bodyless', wafConfigForm.value.bodyless)
+  set('multipart_streaming_check', wafConfigForm.value.multipart_streaming_check)
+  // upload_filename_scan_limit and post_body_scan_limit are Lua numbers (no quotes)
+  const ulScanLimit = wafConfigForm.value.upload_filename_scan_limit
+  if (ulScanLimit !== '' && ulScanLimit != null) {
+    text = text.replace(new RegExp(`config_upload_filename_scan_limit\s*=\s*[^\n]+`), `config_upload_filename_scan_limit = ${ulScanLimit}`)
+  }
+  const postBodyLimit = wafConfigForm.value.post_body_scan_limit
+  if (postBodyLimit !== '' && postBodyLimit != null) {
+    text = text.replace(new RegExp(`config_post_body_scan_limit\s*=\s*[^\n]+`), `config_post_body_scan_limit = ${postBodyLimit}`)
+  }
   set('cc_check', wafConfigForm.value.cc_check)
   set('cc_rate', wafConfigForm.value.cc_rate)
   // cc_block_ttl is a Lua number (no quotes), use special handling
@@ -1216,8 +1267,12 @@ async function openSiteWAF(row) {
       cookie_check: cfg.cookie_check || 'on',
       post_check: cfg.post_check || 'on',
       referer_check: cfg.referer_check || 'off',
-      file_upload_check: cfg.file_upload_check || 'on',
-      white_url_check: cfg.white_url_check || 'on',
+file_upload_check: cfg.file_upload_check || 'on',
+bodyless: cfg.bodyless || 'on',
+multipart_streaming_check: cfg.multipart_streaming_check || 'off',
+upload_filename_scan_limit: String(cfg.upload_filename_scan_limit ?? '0'),
+post_body_scan_limit: String(cfg.post_body_scan_limit ?? '2097152'),
+white_url_check: cfg.white_url_check || 'on',
       white_ip_check: cfg.white_ip_check || 'on',
       white_ua_check: cfg.white_ua_check || 'on',
       black_ip_check: cfg.black_ip_check || 'on',

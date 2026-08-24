@@ -33,11 +33,32 @@ func (r *WafRuleRepository) ListGlobal(ctx context.Context) ([]entity.WafRule, e
 }
 
 // ListByServer returns all WAF rules for a specific server (global + node-scoped).
+// Does NOT include domain-scoped rules.
 func (r *WafRuleRepository) ListByServer(ctx context.Context, serverID int64) ([]entity.WafRule, error) {
 	var rules []entity.WafRule
 	err := r.db.WithContext(ctx).
 		Where("rule_scope = ? OR (rule_scope = ? AND server_id = ?)", "global", "node", serverID).
 		Order("rule_scope ASC, name ASC").
+		Find(&rules).Error
+	return rules, err
+}
+
+// ListDomainRules returns all domain-scoped rules for a specific server+domain.
+func (r *WafRuleRepository) ListDomainRules(ctx context.Context, serverID int64, domain string) ([]entity.WafRule, error) {
+	var rules []entity.WafRule
+	err := r.db.WithContext(ctx).
+		Where("rule_scope = ? AND server_id = ? AND domain = ?", "domain", serverID, domain).
+		Order("name ASC").
+		Find(&rules).Error
+	return rules, err
+}
+
+// ListAllDomainRules returns all domain-scoped rules for a specific server (all domains).
+func (r *WafRuleRepository) ListAllDomainRules(ctx context.Context, serverID int64) ([]entity.WafRule, error) {
+	var rules []entity.WafRule
+	err := r.db.WithContext(ctx).
+		Where("rule_scope = ? AND server_id = ?", "domain", serverID).
+		Order("domain ASC, name ASC").
 		Find(&rules).Error
 	return rules, err
 }
@@ -72,34 +93,49 @@ func (r *WafRuleRepository) GetNodeByName(ctx context.Context, name string, serv
 	return &rule, nil
 }
 
+// GetDomainByName returns a domain-scoped WAF rule by name, server_id and domain.
+func (r *WafRuleRepository) GetDomainByName(ctx context.Context, name string, serverID int64, domain string) (*entity.WafRule, error) {
+	var rule entity.WafRule
+	err := r.db.WithContext(ctx).
+		Where("name = ? AND rule_scope = ? AND server_id = ? AND domain = ?", name, "domain", serverID, domain).
+		First(&rule).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
 // Upsert creates or updates a WAF rule.
-// For global rules: unique on (name, rule_scope='global')
-// For node rules: unique on (name, rule_scope='node', server_id)
+// Unique key: (name, rule_scope, server_id, domain)
 func (r *WafRuleRepository) Upsert(ctx context.Context, rule *entity.WafRule) error {
 	if rule.RuleScope == "" {
 		rule.RuleScope = "global"
 	}
-	// Use clause.OnConflict for upsert by composite key
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "name"}, {Name: "rule_scope"}, {Name: "server_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"content", "hash", "enabled", "updated_at"}),
+		Columns: []clause.Column{{Name: "name"}, {Name: "rule_scope"}, {Name: "server_id"}, {Name: "domain"}},
+		DoUpdates: clause.AssignmentColumns([]string{"content", "hash", "merge_mode", "enabled", "updated_at"}),
 	}).Create(rule).Error
 }
 
 // Delete removes a WAF rule by name and scope.
 // For global rules: deletes where name=? AND rule_scope='global'
 // For node rules: deletes where name=? AND rule_scope='node' AND server_id=?
-func (r *WafRuleRepository) Delete(ctx context.Context, name string, serverID int64) error {
-	if serverID == 0 {
+// For domain rules: deletes where name=? AND rule_scope='domain' AND server_id=? AND domain=?
+func (r *WafRuleRepository) Delete(ctx context.Context, name string, serverID int64, domain string) error {
+	if serverID == 0 && domain == "" {
 		return r.db.WithContext(ctx).Where("name = ? AND rule_scope = ?", name, "global").Delete(&entity.WafRule{}).Error
 	}
-	return r.db.WithContext(ctx).Where("name = ? AND rule_scope = ? AND server_id = ?", name, "node", serverID).Delete(&entity.WafRule{}).Error
+	if domain == "" {
+		return r.db.WithContext(ctx).Where("name = ? AND rule_scope = ? AND server_id = ?", name, "node", serverID).Delete(&entity.WafRule{}).Error
+	}
+	return r.db.WithContext(ctx).
+		Where("name = ? AND rule_scope = ? AND server_id = ? AND domain = ?", name, "domain", serverID, domain).
+		Delete(&entity.WafRule{}).Error
 }
 
 // MigrateNodeReplaceToAppend flips legacy node-scoped rules whose merge_mode is
 // "replace" (or empty) to "append". Node rules are meant to supplement the global
-// rule of the same name; "replace" silently drops the global content. This is
-// idempotent and only affects node-scoped rows. Returns rows affected.
+// rule of the same name; "replace" silently drops the global content.
 func (r *WafRuleRepository) MigrateNodeReplaceToAppend(ctx context.Context) (int64, error) {
 	res := r.db.WithContext(ctx).
 		Model(&entity.WafRule{}).
@@ -160,7 +196,6 @@ func NewWafDomainConfigRepository(db *gorm.DB) *WafDomainConfigRepository {
 }
 
 // ListByServer returns all domain WAF configs for a server.
-// server_id=0 means global.
 func (r *WafDomainConfigRepository) ListByServer(ctx context.Context, serverID int64) ([]entity.WafDomainConfig, error) {
 	var configs []entity.WafDomainConfig
 	err := r.db.WithContext(ctx).Where("server_id = ?", serverID).Order("domain ASC").Find(&configs).Error

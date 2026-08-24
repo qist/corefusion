@@ -42,11 +42,25 @@ type NodeLister interface {
 	ListAllServerIDs(ctx context.Context) ([]int64, error)
 }
 
-// GitHubSourceConfig holds the GitHub source URL and sync schedule for WAF rules.
+// SourceFileMapping defines a single rule file and its full download URL.
+// If URL is empty, the file is downloaded from the base URL + "/" + Name.
+type SourceFileMapping struct {
+	Name string `json:"name"` // e.g. "args.rule"
+	URL  string `json:"url"`  // full URL; empty = use base URL + "/" + Name
+}
+
+// GitHubSourceConfig holds the source URL and sync schedule for WAF rules.
+// URL is the base URL for downloading rule files.
+// FileMappings is a list of {name, url} pairs. If a mapping's URL is empty,
+// the file is downloaded from URL + "/" + Name. If URL is non-empty, it is
+// used as the full download address (no concatenation).
+// For backward compatibility, if FileMappings is empty, defaultRuleFiles are used.
 type GitHubSourceConfig struct {
-	URL      string `json:"url"`
-	SyncCron string `json:"sync_cron"`
-	Enabled  bool   `json:"enabled"`
+	URL           string              `json:"url"`
+	FileMappings  []SourceFileMapping `json:"file_mappings"`
+	Files         string              `json:"files"`        // deprecated: comma-separated list, kept for backward compat
+	SyncCron      string              `json:"sync_cron"`
+	Enabled       bool                `json:"enabled"`
 }
 
 // Service manages WAF rules stored in the database.
@@ -141,7 +155,7 @@ func (s *Service) SaveRule(ctx context.Context, name, content, mergeMode string)
 
 // DeleteRule removes a global WAF rule from the database.
 func (s *Service) DeleteRule(ctx context.Context, name string) error {
-	return s.ruleRepo.Delete(ctx, name, 0)
+	return s.ruleRepo.Delete(ctx, name, 0, "")
 }
 
 // --- WAF Rules (Node-level, merged with global) ---
@@ -271,7 +285,62 @@ func (s *Service) SaveNodeRule(ctx context.Context, name string, serverID int64,
 
 // DeleteNodeRule removes a node-scoped WAF rule (falls back to global).
 func (s *Service) DeleteNodeRule(ctx context.Context, name string, serverID int64) error {
-	return s.ruleRepo.Delete(ctx, name, serverID)
+	return s.ruleRepo.Delete(ctx, name, serverID, "")
+}
+
+// --- WAF Rules (Domain-level, merged with global+node) ---
+
+// ListDomainRules returns all domain-scoped rules for a server+domain.
+func (s *Service) ListDomainRules(ctx context.Context, serverID int64, domain string) ([]entity.WafRule, error) {
+	return s.ruleRepo.ListDomainRules(ctx, serverID, domain)
+}
+
+// DeleteDomainRule removes a domain-scoped WAF rule.
+func (s *Service) DeleteDomainRule(ctx context.Context, name string, serverID int64, domain string) error {
+	return s.ruleRepo.Delete(ctx, name, serverID, domain)
+}
+
+// mergeDomainRules merges global+node rules with domain-level rules.
+// Takes the global+node merged result and applies domain-level overrides:
+//   - append: domain content appended to merged result
+//   - replace: domain content replaces merged result entirely
+// Returns the final merged content for each rule file.
+func (s *Service) mergeDomainRules(ctx context.Context, baseMerged map[string]string, serverID int64, domain string) map[string]string {
+	result := make(map[string]string, len(baseMerged))
+	// Copy base merged
+	for k, v := range baseMerged {
+		result[k] = v
+	}
+
+	// Apply domain overrides
+	domainRules, err := s.ruleRepo.ListDomainRules(ctx, serverID, domain)
+	if err != nil {
+		return result // no domain rules, return base
+	}
+
+	for _, dr := range domainRules {
+		if !dr.Enabled {
+			continue
+		}
+		base, hasBase := result[dr.Name]
+		mode := dr.MergeMode
+		if mode == "" {
+			mode = "append"
+		}
+		if !hasBase || dr.Content == "" {
+			// No base or empty domain content — use domain content as-is
+			result[dr.Name] = dr.Content
+			continue
+		}
+		switch mode {
+		case "append":
+			result[dr.Name] = joinRuleContent(base, dr.Content)
+		default: // replace
+			result[dr.Name] = normalizeRuleContent(dr.Content)
+		}
+	}
+
+	return result
 }
 
 // --- WAF Master Switch ---
@@ -461,7 +530,8 @@ func (s *Service) DeleteDomainConfig(ctx context.Context, serverID int64, domain
 
 // --- GitHub Sync ---
 
-// githubRawBase is the base URL for rule files in the nginxguard repo.
+// githubRawBase is the default base URL for rule files in the nginxguard repo.
+// Used only when the user has not configured a custom source URL.
 const githubRawBase = "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config"
 
 // githubRuleDefault defines a default rule file from GitHub with its merge mode.
@@ -491,7 +561,7 @@ var userDefinedRules = []githubRuleDefault{
 	{Name: "blackip.rule", MergeMode: "append"},
 	{Name: "whiteip.rule", MergeMode: "append"},
 	{Name: "whiteurl.rule", MergeMode: "append"},
-	{Name: "cdnip.rule", MergeMode: "append"},
+	{Name: "cdnip.rule", MergeMode: "replace"},
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -544,45 +614,18 @@ func (s *Service) githubHTTPClient(ctx context.Context, timeout time.Duration) *
 	return netutil.GitHubHTTPClientWithProxy(timeout, s.githubAccelDomain(ctx), s.githubProxyURL(ctx))
 }
 
-// SyncFromGitHub downloads rule files from qist/nginxguard and stores them in the database.
+// SyncFromGitHub downloads rule files from the configured source.
+// Reads the user-saved source config (URL, file mappings) from settings.
+// Falls back to the default GitHub source only if no config has been saved.
 // Only syncs global-scope rules. Node-level rules are preserved.
 func (s *Service) SyncFromGitHub(ctx context.Context) error {
-	client := s.githubHTTPClient(ctx, 60*time.Second)
-
-	for _, rd := range defaultRuleFiles {
-		rawURL := fmt.Sprintf("%s/%s", githubRawBase, rd.Name)
-
-		req, _ := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("[WAF] failed to download %s: %v", rd.Name, err)
-			continue
-		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Printf("[WAF] failed to read %s: %v", rd.Name, err)
-			continue
-		}
-
-		content := string(body)
-		rule := &entity.WafRule{
-			Name:      rd.Name,
-			RuleScope: "global",
-			ServerID:  0,
-			MergeMode: rd.MergeMode,
-			Content:   content,
-			Hash:      hashContent(content),
-			Enabled:   true,
-		}
-		if err := s.ruleRepo.Upsert(ctx, rule); err != nil {
-			log.Printf("[WAF] failed to upsert rule %s: %v", rd.Name, err)
-			continue
-		}
-		log.Printf("[WAF] synced rule %s from GitHub (%d bytes, merge=%s)", rd.Name, len(body), rd.MergeMode)
+	// Try to read user-saved config
+	source, _ := s.GetGitHubSource(ctx)
+	if source != nil && (source.URL != "" || len(source.FileMappings) > 0) {
+		return s.SyncFromGitHubWithSource(ctx, source.URL, source.Files, source.FileMappings)
 	}
-
-	return nil
+	// No user config: use defaults
+	return s.SyncFromGitHubWithSource(ctx, githubRawBase, "", nil)
 }
 
 // --- Initialization ---
@@ -658,6 +701,8 @@ func (s *Service) LandAllRules(ctx context.Context) error {
 
 // LandRulesForServer writes merged rules for a specific server to local disk.
 // Also writes config.json (Caddy WAF) and config.lua (Nginx WAF) to the same directory.
+// After writing root-level rules, syncs the merged content to every domain rule
+// directory so that domain-specific rule files stay in sync with global updates.
 func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error {
 	rules, err := s.ruleRepo.ListByServer(ctx, serverID)
 	if err != nil {
@@ -673,6 +718,40 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			log.Printf("[WAF] failed to write rule %s: %v", name, err)
 			continue
+		}
+	}
+
+	// Sync merged rules to domain-specific directories.
+	// For each domain with WAF enabled and a custom rule_dir, merge global+node
+	// rules with domain-level rules (from DB) and write the complete result to
+	// the domain directory. This ensures:
+	//   1. Domain has a complete rule set (no missing checks → no bypassed attacks)
+	//   2. Domain-level user customizations are preserved (stored in DB, not overwritten)
+	//   3. WAF engine reads from domain directory directly (no fallback needed)
+	if domainConfigs, err := s.domainRepo.ListByServer(ctx, serverID); err == nil {
+		for _, dc := range domainConfigs {
+			var cfg map[string]interface{}
+			if json.Unmarshal([]byte(dc.Config), &cfg) != nil {
+				continue
+			}
+			wafEnable, _ := cfg["waf_enable"].(string)
+			if wafEnable != "on" {
+				continue
+			}
+			ruleDir, _ := cfg["rule_dir"].(string)
+			if ruleDir == "" {
+				continue // No custom rule_dir → domain uses global rules directly
+			}
+			// Three-layer merge: global+node (already in `merged`) + domain rules
+			domainMerged := s.mergeDomainRules(ctx, merged, serverID, dc.Domain)
+			domainDir := filepath.Join(s.wafRulesDir(), ruleDir)
+			os.MkdirAll(domainDir, 0755)
+			for name, content := range domainMerged {
+				filePath := filepath.Join(domainDir, name)
+				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+					log.Printf("[WAF] failed to sync rule %s to domain %s: %v", name, dc.Domain, err)
+				}
+			}
 		}
 	}
 
@@ -858,6 +937,9 @@ func (s *Service) buildDomainJSON(ctx context.Context, serverID int64) (string, 
 // 2. config.json (Caddy WAF config, per-node)
 // 3. config.lua (Nginx WAF config, per-node)
 // 4. domain.json (domain-level WAF config, per-node)
+// 5. Domain-specific .rule files (domains/{domain}/*.rule)
+//    — built from DB, not disk: for each domain with waf_enable=on,
+//      push the merged rule content so remote Agents get their own copy.
 func (s *Service) CollectAllFiles(ctx context.Context, serverID int64) ([]*WAFFile, error) {
 	var files []*WAFFile
 
@@ -875,6 +957,38 @@ func (s *Service) CollectAllFiles(ctx context.Context, serverID int64) ([]*WAFFi
 			Content: []byte(content),
 			Hash:    h,
 		})
+	}
+
+	// 5. Domain-specific .rule files — three-layer merged (global+node+domain).
+	// For each domain that has WAF enabled AND has a custom rule_dir,
+	// merge global+node rules with domain-level rules (from DB) and push
+	// the complete result to domains/{rule_dir}/{filename}.
+	// This ensures remote nodes get complete domain rule sets.
+	if domainConfigs, err := s.domainRepo.ListByServer(ctx, serverID); err == nil {
+		for _, dc := range domainConfigs {
+			var cfg map[string]interface{}
+			if json.Unmarshal([]byte(dc.Config), &cfg) != nil {
+				continue
+			}
+			wafEnable, _ := cfg["waf_enable"].(string)
+			if wafEnable != "on" {
+				continue
+			}
+			ruleDir, _ := cfg["rule_dir"].(string)
+			if ruleDir == "" {
+				continue // No custom rule_dir → domain uses global rules
+			}
+			// Three-layer merge: global+node (already in `merged`) + domain rules
+			domainMerged := s.mergeDomainRules(ctx, merged, serverID, dc.Domain)
+			for name, content := range domainMerged {
+				relPath := filepath.Join(ruleDir, name)
+				files = append(files, &WAFFile{
+					Path:    relPath,
+					Content: []byte(content),
+					Hash:    hashContent(content),
+				})
+			}
+		}
 	}
 
 	// 2. Caddy config (config.json) — synced to proxy/waf-rules/config.json
@@ -981,12 +1095,11 @@ func (s *Service) GetGitHubSource(ctx context.Context) (*GitHubSourceConfig, err
 	return &cfg, nil
 }
 
-// SaveGitHubSource saves the GitHub source URL and sync schedule.
-func (s *Service) SaveGitHubSource(ctx context.Context, url, syncCron string, enabled bool) error {
+// SaveGitHubSource saves the source URL, file mappings, and sync schedule.
+func (s *Service) SaveGitHubSource(ctx context.Context, cfg *GitHubSourceConfig) error {
 	if s.settingSvc == nil {
 		return fmt.Errorf("setting store not configured")
 	}
-	cfg := GitHubSourceConfig{URL: url, SyncCron: syncCron, Enabled: enabled}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
@@ -994,55 +1107,115 @@ func (s *Service) SaveGitHubSource(ctx context.Context, url, syncCron string, en
 	return s.settingSvc.Set(ctx, "waf.github_source", string(data))
 }
 
-// SyncFromGitHubWithSource downloads rule files from a configurable GitHub source.
-// If the source URL is a full direct URL (starts with http), download that single file.
-// Otherwise, treat it as a GitHub repo path (e.g. "qist/nginxguard/main/rule-config")
-// and download all default rule files from it.
-func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL string) error {
+// SyncFromGitHubWithSource downloads rule files from a configurable source.
+// sourceURL is the base URL (used when a file mapping has no explicit URL).
+// files is a legacy comma-separated list (used when fileMappings is empty).
+// fileMappings is the preferred format: each entry has Name + optional full URL.
+// If a mapping's URL is non-empty, it is used directly (no concatenation).
+// If a mapping's URL is empty, the file is downloaded from sourceURL + "/" + Name.
+func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL, files string, fileMappings []SourceFileMapping) error {
 	client := s.githubHTTPClient(ctx, 60*time.Second)
 
 	if sourceURL == "" {
-		sourceURL = githubRawBase
+		// Try reading user-saved config as fallback
+		source, _ := s.GetGitHubSource(ctx)
+		if source != nil && source.URL != "" {
+			sourceURL = source.URL
+			// Also pick up file mappings if the caller didn't provide any
+			if len(fileMappings) == 0 && len(source.FileMappings) > 0 {
+				fileMappings = source.FileMappings
+			}
+		} else {
+			sourceURL = githubRawBase
+		}
 	}
 
+	// Build merge-mode lookup from known rules
+	mergeMap := make(map[string]string)
 	for _, rd := range defaultRuleFiles {
-		var rawURL string
-		if strings.HasPrefix(sourceURL, "http://") || strings.HasPrefix(sourceURL, "https://") {
-			// Direct URL: append /{filename}
-			rawURL = strings.TrimSuffix(sourceURL, "/") + "/" + rd.Name
-		} else {
-			// GitHub repo path: construct raw URL
-			rawURL = sourceURL + "/" + rd.Name
+		mergeMap[rd.Name] = rd.MergeMode
+	}
+	for _, rd := range userDefinedRules {
+		mergeMap[rd.Name] = rd.MergeMode
+	}
+
+	type syncItem struct {
+		name string
+		url  string
+		mm   string
+	}
+	var items []syncItem
+
+	if len(fileMappings) > 0 {
+		// Use file mappings (preferred path)
+		for _, fm := range fileMappings {
+			name := strings.TrimSpace(fm.Name)
+			if name == "" {
+				continue
+			}
+			mm := mergeMap[name]
+			if mm == "" {
+				mm = "replace"
+			}
+			items = append(items, syncItem{name: name, url: strings.TrimSpace(fm.URL), mm: mm})
 		}
+	} else if files != "" {
+		// Legacy: comma-separated file names, URL = sourceURL + "/" + name
+		for _, name := range strings.Split(files, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			mm := mergeMap[name]
+			if mm == "" {
+				mm = "replace"
+			}
+			items = append(items, syncItem{name: name, url: "", mm: mm})
+		}
+	} else {
+		// Use defaults
+		for _, rd := range defaultRuleFiles {
+			items = append(items, syncItem{name: rd.Name, url: "", mm: rd.MergeMode})
+		}
+	}
+
+	for _, item := range items {
+		// Determine the full download URL
+		rawURL := item.url
+		if rawURL == "" {
+			// Fall back to base URL + "/" + filename
+			rawURL = strings.TrimSuffix(sourceURL, "/") + "/" + item.name
+		}
+		// else: rawURL is the full address provided by the user — use as-is
 
 		req, _ := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("[WAF] failed to download %s: %v", rd.Name, err)
+			log.Printf("[WAF] failed to download %s from %s: %v", item.name, rawURL, err)
 			continue
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			log.Printf("[WAF] failed to read %s: %v", rd.Name, err)
+			log.Printf("[WAF] failed to read %s: %v", item.name, err)
 			continue
 		}
 
 		content := string(body)
 		rule := &entity.WafRule{
-			Name:      rd.Name,
+			Name:      item.name,
 			RuleScope: "global",
 			ServerID:  0,
-			MergeMode: rd.MergeMode,
+			MergeMode: item.mm,
 			Content:   content,
 			Hash:      hashContent(content),
 			Enabled:   true,
 		}
 		if err := s.ruleRepo.Upsert(ctx, rule); err != nil {
-			log.Printf("[WAF] failed to upsert rule %s: %v", rd.Name, err)
+			log.Printf("[WAF] failed to upsert rule %s: %v", item.name, err)
 			continue
 		}
-		log.Printf("[WAF] synced rule %s from source (%d bytes, merge=%s)", rd.Name, len(body), rd.MergeMode)
+		log.Printf("[WAF] synced rule %s from %s (%d bytes, merge=%s)", item.name, rawURL, len(body), item.mm)
 	}
 
 	return nil
@@ -1272,54 +1445,68 @@ func (s *Service) ListDomainRuleDirs() ([]string, error) {
 	return dirs, nil
 }
 
-// GetDomainRuleFile reads a rule file for a specific domain.
-// name is the rule file name, e.g. "args.rule".
-func (s *Service) GetDomainRuleFile(domain, name string) (string, error) {
-	path := filepath.Join(s.wafRulesDir(), "domains", domain, name)
-	data, err := os.ReadFile(path)
+// GetDomainRuleFile reads a domain-scoped rule from the DB.
+// Returns the domain-specific content only. If the domain doesn't have
+// this rule in the DB, returns empty string.
+func (s *Service) GetDomainRuleFile(ctx context.Context, domain, name string, serverID int64) (string, error) {
+	rule, err := s.ruleRepo.GetDomainByName(ctx, name, serverID, domain)
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return rule.Content, nil
 }
 
-// SaveDomainRuleFile writes a rule file for a specific domain.
-// Creates the domain directory if it doesn't exist.
-func (s *Service) SaveDomainRuleFile(domain, name, content string) error {
-	domainDir := filepath.Join(s.wafRulesDir(), "domains", domain)
-	if err := os.MkdirAll(domainDir, 0755); err != nil {
-		return err
+// GetDomainRuleWithGlobal returns the global rule content (read-only reference),
+// the domain-specific rule content (editable, from DB), and the domain rule's
+// merge_mode ("append" or "replace").
+// If the domain doesn't have its own rule in the DB, domainContent is empty
+// and mergeMode defaults to "append".
+func (s *Service) GetDomainRuleWithGlobal(ctx context.Context, domain, name string, serverID int64) (globalContent, domainContent, mergeMode string, err error) {
+	// Get global rule from DB
+	globalRule, gErr := s.ruleRepo.GetGlobalByName(ctx, name)
+	if gErr == nil {
+		globalContent = globalRule.Content
 	}
-	path := filepath.Join(domainDir, name)
-	return os.WriteFile(path, []byte(content), 0644)
+
+	// Get domain-specific rule from DB
+	domainRule, dErr := s.ruleRepo.GetDomainByName(ctx, name, serverID, domain)
+	if dErr == nil {
+		domainContent = domainRule.Content
+		mergeMode = domainRule.MergeMode
+	}
+	if mergeMode == "" {
+		mergeMode = "append"
+	}
+
+	return globalContent, domainContent, mergeMode, nil
 }
 
-// InitDomainRules copies global rule files to a domain's rule directory.
-// If the domain directory already has a rule file, it is preserved (not overwritten).
-// Empty-content rules (blackip, whiteip, whiteurl, cdnip) are copied as empty files.
+// SaveDomainRuleFileWithMode saves a domain-scoped rule to the DB with a merge_mode.
+// merge_mode controls how the domain rule combines with the global+node merged result:
+//   - "append":  domain content appended to global+node (supplements existing rules)
+//   - "replace": domain content replaces global+node entirely (independent rule set)
+func (s *Service) SaveDomainRuleFileWithMode(ctx context.Context, domain, name, content, mergeMode string, serverID int64) error {
+	if mergeMode == "" {
+		mergeMode = "append"
+	}
+	rule := &entity.WafRule{
+		Name:      name,
+		RuleScope: "domain",
+		ServerID:  serverID,
+		Domain:    domain,
+		MergeMode: mergeMode,
+		Content:   content,
+		Hash:      hashContent(content),
+		Enabled:   true,
+		UpdatedAt: time.Now(),
+	}
+	return s.ruleRepo.Upsert(ctx, rule)
+}
+
+// InitDomainRules creates an empty directory for a domain's WAF rules.
+// Domain rules are stored in the DB, not on disk — the directory is only
+// needed for LandRulesForServer to write merged results to.
 func (s *Service) InitDomainRules(ctx context.Context, domain string) error {
 	domainDir := filepath.Join(s.wafRulesDir(), "domains", domain)
-	if err := os.MkdirAll(domainDir, 0755); err != nil {
-		return err
-	}
-
-	// Get all global rules
-	rules, err := s.ruleRepo.ListGlobal(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, rule := range rules {
-		destPath := filepath.Join(domainDir, rule.Name)
-		// Don't overwrite if the domain already has this file
-		if _, err := os.Stat(destPath); err == nil {
-			continue
-		}
-		// Copy global rule content to domain directory
-		if err := os.WriteFile(destPath, []byte(rule.Content), 0644); err != nil {
-			log.Printf("[WAF] failed to copy rule %s to domain %s: %v", rule.Name, domain, err)
-			continue
-		}
-	}
-	return nil
+	return os.MkdirAll(domainDir, 0755)
 }

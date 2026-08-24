@@ -1,18 +1,79 @@
 <template>
   <div>
-    <!-- GitHub Source Config -->
+    <!-- Rule Source Config -->
     <el-card style="margin-bottom:20px">
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-weight:600">{{ t('proxy.wafGitHubSource') }}</span>
-          <el-button size="small" type="primary" @click="saveGitHubSource" :loading="sourceSaving">{{ t('common.save') }}</el-button>
+          <span style="font-weight:600">{{ t('proxy.wafRuleSource') }}</span>
+          <div style="display:flex;gap:8px">
+            <el-button size="small" @click="syncFromGitHub" :loading="syncing">{{ t('proxy.wafSyncNow') }}</el-button>
+            <el-button size="small" type="primary" @click="saveGitHubSource" :loading="sourceSaving">{{ t('common.save') }}</el-button>
+          </div>
         </div>
       </template>
       <el-form label-width="120px" size="small">
-        <el-form-item label="URL">
-          <el-input v-model="githubSource.url" :placeholder="t('proxy.wafGitHubUrlHint')" />
+        <el-form-item :label="t('proxy.wafSourceURL')">
+          <el-input v-model="githubSource.url" :placeholder="t('proxy.wafSourceUrlHint')" />
           <div style="font-size:11px;color:#909399;margin-top:4px;line-height:1.6">
-            {{ t('proxy.wafGitHubUrlDesc') }}
+            {{ t('proxy.wafSourceUrlDesc') }}
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('proxy.wafSyncFiles')">
+          <el-table :data="fileMappings" stripe size="small" style="width:100%">
+            <el-table-column prop="name" :label="t('proxy.wafFileName')" width="140" />
+            <el-table-column :label="t('proxy.wafFileURL')" min-width="300">
+              <template #default="{ row }">
+                <el-input
+                  v-model="row.url"
+                  size="small"
+                  :placeholder="previewUrl(row.name)"
+                >
+                  <template v-if="!row.url" #append>
+                    <span style="font-size:11px;color:#c0c4cc">{{ t('proxy.wafInherit') }}</span>
+                  </template>
+                </el-input>
+                <div v-if="!row.url" style="font-size:10px;color:#c0c4cc;margin-top:2px;font-family:monospace">
+                  → {{ previewUrl(row.name) }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('proxy.wafFileMode')" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.merge_mode === 'append' ? 'warning' : 'info'" size="small">
+                  {{ row.merge_mode || 'replace' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.actions')" width="80">
+              <template #default="{ $index }">
+                <el-button size="small" text type="danger" @click="removeFileMapping($index)">
+                  {{ t('common.delete') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <el-select
+              v-model="newFileName"
+              filterable
+              allow-create
+              size="small"
+              style="width:200px"
+              :placeholder="t('proxy.wafFileNameHint')"
+            >
+              <el-option
+                v-for="f in availableRuleFiles"
+                :key="f.name"
+                :label="f.name"
+                :value="f.name"
+              />
+            </el-select>
+            <el-button size="small" type="primary" @click="addFileMapping">
+              {{ t('proxy.wafAddFile') }}
+            </el-button>
+          </div>
+          <div style="font-size:11px;color:#909399;margin-top:4px;line-height:1.6">
+            {{ t('proxy.wafSyncFilesDesc') }}
           </div>
         </el-form-item>
         <el-form-item :label="t('proxy.wafSyncCron')">
@@ -93,10 +154,9 @@
     <el-dialog v-model="ruleEditorVisible" :title="`WAF Rule: ${editingRule.name}`" width="70%" @close="onEditorClose">
       <div style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
         <span style="font-size:13px;color:#606266">Merge Mode:</span>
-        <el-radio-group v-model="editingRule.merge_mode" size="small">
-          <el-radio-button label="replace">Replace</el-radio-button>
-          <el-radio-button label="append">Append</el-radio-button>
-        </el-radio-group>
+        <el-tag :type="editingRule.merge_mode === 'append' ? 'warning' : 'info'" size="small">
+          {{ editingRule.merge_mode || 'replace' }}
+        </el-tag>
         <span v-if="editingRule.merge_mode === 'append'" style="font-size:11px;color:#909399">
           Node rules will be appended to this global rule
         </span>
@@ -128,7 +188,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Refresh, Promotion } from '@element-plus/icons-vue'
@@ -145,8 +205,38 @@ const pushing = ref(false)
 const saving = ref(false)
 const sourceSaving = ref(false)
 const ruleEditorVisible = ref(false)
-const editingRule = ref({ name: '', content: '', merge_mode: 'replace' })
-const githubSource = ref({ url: '', sync_cron: '', enabled: false })
+const editingRule = ref({ name: '', content: '', merge_mode: 'replace', _origMergeMode: 'replace' })
+const githubSource = ref({ url: '', file_mappings: [], files: '', sync_cron: '', enabled: false })
+const fileMappings = ref([])
+const newFileName = ref('')
+
+// All known rule files with their default merge modes
+const allKnownRules = [
+  { name: 'args.rule', merge_mode: 'replace' },
+  { name: 'cookie.rule', merge_mode: 'replace' },
+  { name: 'fileext.rule', merge_mode: 'replace' },
+  { name: 'post.rule', merge_mode: 'replace' },
+  { name: 'referer.rule', merge_mode: 'replace' },
+  { name: 'url.rule', merge_mode: 'replace' },
+  { name: 'useragent.rule', merge_mode: 'replace' },
+  { name: 'whiteua.rule', merge_mode: 'append' },
+  { name: 'blackip.rule', merge_mode: 'append' },
+  { name: 'whiteip.rule', merge_mode: 'append' },
+  { name: 'whiteurl.rule', merge_mode: 'append' },
+  { name: 'cdnip.rule', merge_mode: 'replace' },
+]
+
+// Files not yet in the table, available for the dropdown
+const availableRuleFiles = computed(() =>
+  allKnownRules.filter(r => !fileMappings.value.some(f => f.name === r.name))
+)
+
+// Lookup merge mode by file name
+const mergeModeMap = computed(() => {
+  const m = {}
+  for (const r of allKnownRules) m[r.name] = r.merge_mode
+  return m
+})
 
 const ruleDescriptions = {
   'args.rule': 'URL argument rules',
@@ -161,6 +251,29 @@ const ruleDescriptions = {
   'whiteip.rule': 'Whitelist IP rules (user-defined)',
   'whiteurl.rule': 'Whitelist URL rules (user-defined)',
   'cdnip.rule': 'CDN/Trusted Proxy IP list',
+}
+
+function addFileMapping() {
+  const name = newFileName.value.trim()
+  if (!name) return
+  if (fileMappings.value.some(f => f.name === name)) {
+    ElMessage.warning(t('proxy.wafFileExists'))
+    return
+  }
+  const mm = mergeModeMap.value[name] || 'replace'
+  fileMappings.value.push({ name, url: '', merge_mode: mm })
+  newFileName.value = ''
+}
+
+function removeFileMapping(index) {
+  fileMappings.value.splice(index, 1)
+}
+
+// Preview the inherited URL for a file (base URL + / + filename)
+function previewUrl(name) {
+  const base = (githubSource.value.url || '').trim()
+  if (!base) return t('proxy.wafFileUrlHint')
+  return base.replace(/\/+$/, '') + '/' + name
 }
 
 function wafRuleDesc(name) {
@@ -187,8 +300,25 @@ async function loadGitHubSource() {
     const data = await getWafGitHubSource()
     githubSource.value = {
       url: data.url || '',
+      file_mappings: data.file_mappings || [],
+      files: data.files || '',
       sync_cron: data.sync_cron || '',
       enabled: data.enabled || false,
+    }
+    // Load file mappings into the table; if empty, seed with defaults
+    if (data.file_mappings && data.file_mappings.length > 0) {
+      fileMappings.value = data.file_mappings.map(fm => ({
+        name: fm.name || '',
+        url: fm.url || '',
+        merge_mode: mergeModeMap.value[fm.name] || 'replace',
+      }))
+    } else {
+      // Seed with all default rule files (URLs empty = use base URL)
+      fileMappings.value = allKnownRules.map(r => ({
+        name: r.name,
+        url: '',
+        merge_mode: r.merge_mode,
+      }))
     }
   } catch (e) {
     // handled
@@ -198,7 +328,13 @@ async function loadGitHubSource() {
 async function saveGitHubSource() {
   sourceSaving.value = true
   try {
-    await saveWafGitHubSource(githubSource.value.url, githubSource.value.sync_cron, githubSource.value.enabled)
+    const payload = {
+      url: githubSource.value.url,
+      file_mappings: fileMappings.value.map(f => ({ name: f.name, url: f.url })),
+      sync_cron: githubSource.value.sync_cron,
+      enabled: githubSource.value.enabled,
+    }
+    await saveWafGitHubSource(payload)
     ElMessage.success(t('common.saved'))
   } catch (e) {
     // handled
@@ -210,10 +346,12 @@ async function saveGitHubSource() {
 async function openRuleEditor(row) {
   try {
     const data = await getWafRule(row.name)
+    const mm = row.merge_mode || mergeModeMap.value[row.name] || 'replace'
     editingRule.value = {
       name: row.name,
       content: data.content || '',
-      merge_mode: row.merge_mode || 'replace',
+      merge_mode: mm,
+      _origMergeMode: mm,
     }
     ruleEditorVisible.value = true
   } catch (e) {
@@ -222,13 +360,14 @@ async function openRuleEditor(row) {
 }
 
 function onEditorClose() {
-  editingRule.value = { name: '', content: '', merge_mode: 'replace' }
+  editingRule.value = { name: '', content: '', merge_mode: 'replace', _origMergeMode: 'replace' }
 }
 
 async function saveRule() {
   saving.value = true
   try {
-    await saveWafRule(editingRule.value.name, editingRule.value.content, editingRule.value.merge_mode)
+    // Keep the original merge mode — it's determined by rule type, not editable
+    await saveWafRule(editingRule.value.name, editingRule.value.content, editingRule.value._origMergeMode)
     ElMessage.success(t('common.saved'))
     ruleEditorVisible.value = false
     await loadRules()

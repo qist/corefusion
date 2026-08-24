@@ -137,24 +137,26 @@ func (h *Handler) DeleteRule(c *gin.Context) {
 }
 
 // SyncFromGitHub handles POST /api/v1/waf/sync-github.
-// Downloads rules from the configured GitHub source, then pushes to all nodes.
+// Downloads rules from the configured source URL, then pushes to all nodes.
 func (h *Handler) SyncFromGitHub(c *gin.Context) {
-	// Get configured source URL
+	// Get configured source URL and file mappings
 	source, _ := h.svc.GetGitHubSource(c.Request.Context())
 	sourceURL := ""
+	var fileMappings []waf.SourceFileMapping
 	if source != nil {
 		sourceURL = source.URL
+		fileMappings = source.FileMappings
 	}
-	if err := h.svc.SyncFromGitHubWithSource(c.Request.Context(), sourceURL); err != nil {
+	if err := h.svc.SyncFromGitHubWithSource(c.Request.Context(), sourceURL, source.Files, fileMappings); err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
 	if err := h.svc.LandAllRules(c.Request.Context()); err != nil {
 		log.Printf("[WAF] land rules to disk: %v", err)
 	}
-	// Push to all nodes after GitHub sync
+	// Push to all nodes after sync
 	if err := h.svc.SyncToAllNodesFromDB(c.Request.Context()); err != nil {
-		log.Printf("[WAF] push to all nodes after github sync: %v", err)
+		log.Printf("[WAF] push to all nodes after sync: %v", err)
 	}
 	response.OK(c, gin.H{"message": "synced"})
 }
@@ -186,18 +188,14 @@ func (h *Handler) GetGitHubSource(c *gin.Context) {
 }
 
 // SaveGitHubSource handles PUT /api/v1/waf/github-source.
-// Body: { "url": "...", "sync_cron": "...", "enabled": true/false }
+// Body: { "url": "...", "file_mappings": [{"name":"args.rule","url":"https://..."}], "sync_cron": "...", "enabled": true/false }
 func (h *Handler) SaveGitHubSource(c *gin.Context) {
-	var req struct {
-		URL      string `json:"url"`
-		SyncCron string `json:"sync_cron"`
-		Enabled  bool   `json:"enabled"`
-	}
+	var req waf.GitHubSourceConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.svc.SaveGitHubSource(c.Request.Context(), req.URL, req.SyncCron, req.Enabled); err != nil {
+	if err := h.svc.SaveGitHubSource(c.Request.Context(), &req); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
@@ -502,9 +500,12 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
-	// Copy global rule files to domain directory (skip existing files)
-	if err := h.svc.InitDomainRules(c.Request.Context(), domain); err != nil {
-		log.Printf("[WAF] failed to init domain rules for %s: %v", domain, err)
+	// Copy global rule files to domain directory (skip existing files).
+	// Only for local node — remote nodes get their domain rules via gRPC push.
+	if h.nodeOp == nil || h.nodeOp.IsLocalServer(c.Request.Context(), serverID) {
+		if err := h.svc.InitDomainRules(c.Request.Context(), domain); err != nil {
+			log.Printf("[WAF] failed to init domain rules for %s: %v", domain, err)
+		}
 	}
 	response.OK(c, gin.H{"domain": domain, "enabled": true})
 }
@@ -635,16 +636,24 @@ func (h *Handler) ListDomainRuleDirs(c *gin.Context) {
 }
 
 // GetDomainRuleFile handles GET /api/v1/node-servers/:id/waf/domain-rules/:domain/:name.
-// Returns the content of a rule file for a specific domain.
+// Returns the domain-specific rule content plus the global rule content (read-only reference).
+// If the domain doesn't have its own file, domain_content is empty — the WAF engine
+// falls back to the global rule at runtime.
 func (h *Handler) GetDomainRuleFile(c *gin.Context) {
 	domain := waf.StripPort(c.Param("domain"))
 	name := c.Param("name")
-	content, err := h.svc.GetDomainRuleFile(domain, name)
-	if err != nil {
-		response.OK(c, gin.H{"name": name, "content": ""})
-		return
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
 	}
-	response.OK(c, gin.H{"name": name, "content": content})
+	globalContent, domainContent, mergeMode, _ := h.svc.GetDomainRuleWithGlobal(c.Request.Context(), domain, name, serverID)
+	response.OK(c, gin.H{
+		"name":            name,
+		"content":         domainContent,  // domain-specific content (editable)
+		"global_content":  globalContent,  // global rule content (read-only reference)
+		"has_domain_file": domainContent != "",
+		"merge_mode":      mergeMode,
+	})
 }
 
 // landAndSync is the common post-save hook for node-level WAF operations.
@@ -688,15 +697,28 @@ func (h *Handler) pushToRemote(ctx context.Context, serverID int64) error {
 func (h *Handler) SaveDomainRuleFile(c *gin.Context) {
 	domain := waf.StripPort(c.Param("domain"))
 	name := c.Param("name")
+	serverID := parseServerID(c)
+	if serverID == 0 {
+		serverID = localServerID
+	}
 	var req struct {
-		Content string `json:"content"`
+		Content   string `json:"content"`
+		MergeMode string `json:"merge_mode"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.svc.SaveDomainRuleFile(domain, name, req.Content); err != nil {
+	if req.MergeMode == "" {
+		req.MergeMode = "append"
+	}
+	if err := h.svc.SaveDomainRuleFileWithMode(c.Request.Context(), domain, name, req.Content, req.MergeMode, serverID); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	// Land and sync
+	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
 	response.OK(c, gin.H{"message": "saved"})

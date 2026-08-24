@@ -210,8 +210,8 @@ const githubSource = ref({ url: '', file_mappings: [], files: '', sync_cron: '',
 const fileMappings = ref([])
 const newFileName = ref('')
 
-// All known rule files with their default merge modes
-const allKnownRules = [
+// Rule files that ARE synced from GitHub (engine rules + whiteua)
+const syncedRuleFiles = [
   { name: 'args.rule', merge_mode: 'replace' },
   { name: 'cookie.rule', merge_mode: 'replace' },
   { name: 'fileext.rule', merge_mode: 'replace' },
@@ -220,11 +220,18 @@ const allKnownRules = [
   { name: 'url.rule', merge_mode: 'replace' },
   { name: 'useragent.rule', merge_mode: 'replace' },
   { name: 'whiteua.rule', merge_mode: 'append' },
+]
+
+// User-defined rules — NOT synced from GitHub, created as empty for users to fill in
+const userDefinedRuleFiles = [
   { name: 'blackip.rule', merge_mode: 'append' },
   { name: 'whiteip.rule', merge_mode: 'append' },
   { name: 'whiteurl.rule', merge_mode: 'append' },
   { name: 'cdnip.rule', merge_mode: 'replace' },
 ]
+
+// All known rule files (for merge mode lookup and dropdown)
+const allKnownRules = [...syncedRuleFiles, ...userDefinedRuleFiles]
 
 // Files not yet in the table, available for the dropdown
 const availableRuleFiles = computed(() =>
@@ -313,8 +320,9 @@ async function loadGitHubSource() {
         merge_mode: mergeModeMap.value[fm.name] || 'replace',
       }))
     } else {
-      // Seed with all default rule files (URLs empty = use base URL)
-      fileMappings.value = allKnownRules.map(r => ({
+      // Seed with synced rule files only (URLs empty = use base URL)
+      // User-defined rules (blackip/whiteip/whiteurl/cdnip) are NOT synced from GitHub.
+      fileMappings.value = syncedRuleFiles.map(r => ({
         name: r.name,
         url: '',
         merge_mode: r.merge_mode,

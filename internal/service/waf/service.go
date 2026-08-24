@@ -556,12 +556,24 @@ var defaultRuleFiles = []githubRuleDefault{
 }
 
 // userDefinedRules are created as empty rules for users to fill in.
-// These are NOT downloaded from GitHub.
+// These are NOT downloaded from GitHub — syncing them would overwrite
+// user-entered data with repo example/placeholder content.
 var userDefinedRules = []githubRuleDefault{
 	{Name: "blackip.rule", MergeMode: "append"},
 	{Name: "whiteip.rule", MergeMode: "append"},
 	{Name: "whiteurl.rule", MergeMode: "append"},
 	{Name: "cdnip.rule", MergeMode: "replace"},
+}
+
+// isUserDefinedRule returns true if the file name is a user-defined rule
+// that should never be overwritten by GitHub sync.
+func isUserDefinedRule(name string) bool {
+	for _, r := range userDefinedRules {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -1147,10 +1159,11 @@ func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL, files
 	var items []syncItem
 
 	if len(fileMappings) > 0 {
-		// Use file mappings (preferred path)
+		// Use file mappings (preferred path) — skip user-defined rules
+		// so GitHub sync never overwrites user-entered data.
 		for _, fm := range fileMappings {
 			name := strings.TrimSpace(fm.Name)
-			if name == "" {
+			if name == "" || isUserDefinedRule(name) {
 				continue
 			}
 			mm := mergeMap[name]
@@ -1163,7 +1176,7 @@ func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL, files
 		// Legacy: comma-separated file names, URL = sourceURL + "/" + name
 		for _, name := range strings.Split(files, ",") {
 			name = strings.TrimSpace(name)
-			if name == "" {
+			if name == "" || isUserDefinedRule(name) {
 				continue
 			}
 			mm := mergeMap[name]

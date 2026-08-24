@@ -86,12 +86,21 @@ type NodeServerManager struct {
 
 	// WAF syncer: syncs WAF rules/configs to Agent on reconnect
 	wafSyncer WAFSyncer
+
+	// GeoRule syncer: pushes geo rule files (geoip.dat, geosite.dat) to Agent on reconnect
+	geoRuleSyncer GeoRuleSyncer
 }
 
 // WAFSyncer syncs WAF files (rules, configs, domain.json) to a remote Agent.
 // Implemented by the WAF service via an adapter in router.go.
 // On Agent reconnect, this ensures the remote node has the latest waf-rules/ directory.
 type WAFSyncer interface {
+	SyncToNode(ctx context.Context, serverID int64) error
+}
+
+// GeoRuleSyncer pushes geo rule files to a remote Agent on reconnect.
+// Implemented by the georule service.
+type GeoRuleSyncer interface {
 	SyncToNode(ctx context.Context, serverID int64) error
 }
 
@@ -227,6 +236,13 @@ func (m *NodeServerManager) SetRateLimitSyncer(s RateLimitSyncer) {
 // pushed to its proxy/waf-rules/ directory.
 func (m *NodeServerManager) SetWAFSyncer(s WAFSyncer) {
 	m.wafSyncer = s
+}
+
+// SetGeoRuleSyncer sets the geo rule syncer for pushing geo rule files on Agent reconnect.
+// On reconnect, the remote node gets all geo rule files (geoip.dat, geosite.dat, etc.)
+// pushed to its data/rules/ directory via the panel's HTTP download endpoint.
+func (m *NodeServerManager) SetGeoRuleSyncer(s GeoRuleSyncer) {
+	m.geoRuleSyncer = s
 }
 
 // isLocalServer checks if a server is the local panel server.
@@ -1477,6 +1493,19 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 				log.Printf("[NodeServerManager] WAF sync to server %d on connect failed: %v", serverID, err)
 			} else {
 				log.Printf("[NodeServerManager] WAF sync to server %d on connect: success", serverID)
+			}
+		}
+
+		// 6. Push geo rule files (geoip.dat, geosite.dat) to the remote node.
+		//    On reconnect, the remote node needs the latest geo rule files for
+		//    xray/singbox routing. Files are downloaded from the panel's HTTP endpoint.
+		if m.geoRuleSyncer != nil && serverID != m.localServerID {
+			geoCtx, geoCancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer geoCancel()
+			if err := m.geoRuleSyncer.SyncToNode(geoCtx, serverID); err != nil {
+				log.Printf("[NodeServerManager] geo rule sync to server %d on connect failed: %v", serverID, err)
+			} else {
+				log.Printf("[NodeServerManager] geo rule sync to server %d on connect: success", serverID)
 			}
 		}
 	}()

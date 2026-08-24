@@ -1205,6 +1205,7 @@ export default {
       browseFiles: 'Browse Files',
       sync: 'Sync',
       syncAll: 'Sync All',
+      pushAll: 'Push to All Nodes',
       syncStarted: 'Sync started',
       syncDone: 'Sync done: {downloaded}/{total} files, version {tag}',
       syncAllDone: 'All synced: {count} files downloaded',

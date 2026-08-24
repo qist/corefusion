@@ -30,6 +30,16 @@ type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
 }
 
+// NodeLister provides the list of all server IDs (for push-to-all).
+type NodeLister interface {
+	ListAllServerIDs(ctx context.Context) ([]int64, error)
+}
+
+// PanelURLProvider returns the panel's external URL for Agent downloads.
+type PanelURLProvider interface {
+	GetPanelBaseURL(ctx context.Context) string
+}
+
 // GitHubRelease represents a GitHub release with assets.
 type GitHubRelease struct {
 	TagName string `json:"tag_name"`
@@ -48,12 +58,17 @@ type ReleaseAsset struct {
 }
 
 // Service handles geo rule file business logic.
+// Geo rules are global (server_id=0) — all nodes share the same rule files.
+// The panel downloads files to data/rules/, then pushes them to all nodes
+// via the DownloadGeoRule command (Agent downloads from panel's HTTP endpoint).
 type Service struct {
-	sourceRepo *repository.RuleSourceRepository
-	fileRepo   *repository.GeoRuleRepository
-	dataDir    string
-	settingSvc SettingStore
-	nodeOp     NodeOperator
+	sourceRepo   *repository.RuleSourceRepository
+	fileRepo     *repository.GeoRuleRepository
+	dataDir      string
+	settingSvc   SettingStore
+	nodeOp       NodeOperator
+	nodeLister   NodeLister
+	panelURLProv PanelURLProvider
 }
 
 // NewService creates a new geo rule service.
@@ -69,6 +84,16 @@ func NewService(sourceRepo *repository.RuleSourceRepository, fileRepo *repositor
 // SetNodeOperator sets the node operator for remote node downloads.
 func (s *Service) SetNodeOperator(op NodeOperator) {
 	s.nodeOp = op
+}
+
+// SetNodeLister sets the node lister for push-to-all operations.
+func (s *Service) SetNodeLister(lister NodeLister) {
+	s.nodeLister = lister
+}
+
+// SetPanelURLProvider sets the panel URL provider for building Agent download URLs.
+func (s *Service) SetPanelURLProvider(p PanelURLProvider) {
+	s.panelURLProv = p
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -122,13 +147,12 @@ func (s *Service) httpClientWithAccel(ctx context.Context) *http.Client {
 }
 
 // SeedDefaults creates the default Loyalsoldier source if not exists.
+// Geo rules are global (server_id=0), shared by all nodes.
 // Default files geoip.dat and geosite.dat are pre-selected with direct download
 // URLs so they are available immediately without depending on the GitHub API.
 func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
-	if serverID == 0 {
-		serverID = 1
-	}
-	sources, err := s.sourceRepo.ListByServer(ctx, serverID)
+	// serverID is ignored — geo rules are always global (server_id=0)
+	sources, err := s.sourceRepo.ListByServer(ctx, 0)
 	if err != nil {
 		return err
 	}
@@ -139,7 +163,7 @@ func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 	os.MkdirAll(filepath.Join(s.dataDir, "rules"), 0750)
 
 	src := &entity.RuleSource{
-		ServerID: serverID,
+		ServerID: 0, // global
 		Name:     "Loyalsoldier v2ray-rules-dat",
 		RepoURL:  "Loyalsoldier/v2ray-rules-dat",
 		Enabled:  false,
@@ -162,7 +186,7 @@ func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 	}
 	for _, df := range defaultFiles {
 		rule := &entity.GeoRuleFile{
-			ServerID:    serverID,
+			ServerID:    0, // global
 			SourceID:    src.ID,
 			Name:        df.name,
 			FileName:    df.name,
@@ -212,17 +236,22 @@ func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 // EnsureDefaultsAndSync ensures default geo rule sources and files exist for the
 // given server, then triggers an async sync to download them. This is intended
 // to be called after a core binary is installed so that geoip.dat/geosite.dat
-// are available for the core to use.
+// are available for the core to use. Geo rules are global, so the download
+// happens once on the panel and is then pushed to all nodes.
 func (s *Service) EnsureDefaultsAndSync(serverID int64) {
-	if serverID == 0 {
-		serverID = 1
-	}
-	// Ensure default source and files exist (idempotent)
-	if err := s.SeedDefaults(context.Background(), serverID); err != nil {
+	// Ensure default source and files exist (idempotent) — global
+	if err := s.SeedDefaults(context.Background(), 0); err != nil {
 		log.Printf("EnsureDefaultsAndSync: SeedDefaults failed: %v", err)
 	}
-	// Trigger async sync to download the files
-	s.StartSyncAllByServer(serverID)
+	// Trigger async sync to download the files to panel's data/rules/
+	s.StartSyncAll()
+	// After download, push to all nodes (including the one that triggered this)
+	go func() {
+		time.Sleep(5 * time.Second) // give download time to complete
+		if err := s.SyncToAllNodes(context.Background()); err != nil {
+			log.Printf("EnsureDefaultsAndSync: push to all nodes failed: %v", err)
+		}
+	}()
 }
 
 // --- Rule Source CRUD ---
@@ -237,11 +266,9 @@ func (s *Service) ListSourcesByServer(ctx context.Context, serverID int64) ([]en
 }
 
 func (s *Service) CreateSource(ctx context.Context, serverID int64, name, repoURL, syncCron string) (*entity.RuleSource, error) {
-	if serverID == 0 {
-		serverID = 1
-	}
+	// serverID ignored — geo rules are always global
 	src := &entity.RuleSource{
-		ServerID: serverID,
+		ServerID: 0, // global
 		Name:    name,
 		RepoURL: repoURL,
 		Enabled: false,
@@ -466,11 +493,7 @@ func (s *Service) Download(ctx context.Context, fileID int64) (*entity.GeoRuleFi
 	if err != nil {
 		return nil, err
 	}
-
-	// Check if this file belongs to a remote node
-	if s.nodeOp != nil && !s.nodeOp.IsLocalServer(rule.ServerID) {
-		return s.downloadRemote(ctx, rule)
-	}
+	// Geo rules are global — always download to panel's local data/rules/
 	return s.downloadLocal(ctx, rule)
 }
 
@@ -542,33 +565,11 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 	return rule, nil
 }
 
-// downloadRemote sends a gRPC command to the Agent to download the file on the remote node.
+// downloadRemote is no longer used — geo rules are always downloaded to the
+// panel's local directory first, then pushed to remote nodes via SyncToNode.
+// Kept for backward compatibility but just delegates to downloadLocal.
 func (s *Service) downloadRemote(ctx context.Context, rule *entity.GeoRuleFile) (*entity.GeoRuleFile, error) {
-	rule.Status = "downloading"
-	s.fileRepo.Update(ctx, rule)
-
-	accelDomain := s.githubAccelDomain(ctx)
-	proxyURL := s.githubProxyURL(ctx)
-
-	success, size, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, rule.ServerID, rule.FileName, rule.DownloadURL, accelDomain, proxyURL)
-	if err != nil {
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, fmt.Errorf("remote download: %w", err)
-	}
-	if !success {
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, fmt.Errorf("remote download failed: %s", errMsg)
-	}
-
-	rule.FileSize = size
-	rule.LastUpdated = time.Now()
-	rule.Status = "available"
-	s.fileRepo.Update(ctx, rule)
-
-	log.Printf("[georule] remote download OK: server=%d, file=%s, size=%d", rule.ServerID, rule.FileName, size)
-	return rule, nil
+	return s.downloadLocal(ctx, rule)
 }
 
 func (s *Service) DeleteFile(ctx context.Context, fileID int64) error {
@@ -775,7 +776,6 @@ func (s *Service) StartSyncAll() string {
 	go func() {
 		results, err := s.SyncAll(context.Background())
 		syncMu.Lock()
-		defer syncMu.Unlock()
 		job := syncJobs[key]
 		if err != nil {
 			job.Status = "error"
@@ -785,6 +785,17 @@ func (s *Service) StartSyncAll() string {
 			job.Results = results
 		}
 		job.FinishedAt = time.Now()
+		syncMu.Unlock()
+
+		// After sync completes, push all files to remote nodes
+		if err == nil {
+			go func() {
+				time.Sleep(1 * time.Second)
+				if err := s.SyncToAllNodes(context.Background()); err != nil {
+					log.Printf("[georule] auto-push to all nodes after sync failed: %v", err)
+				}
+			}()
+		}
 	}()
 
 	return key
@@ -829,4 +840,110 @@ func (s *Service) GetSyncJobStatus(key string) *SyncJobStatus {
 		return nil
 	}
 	return job
+}
+
+// --- Push to Nodes ---
+
+// getPanelBaseURL returns the panel's base URL for Agent downloads.
+// Reads from the "panel.external_url" system setting, or falls back to
+// the request host. Agent will use this URL to download geo rule files
+// from the panel's HTTP endpoint.
+func (s *Service) getPanelBaseURL(ctx context.Context) string {
+	if s.panelURLProv != nil {
+		if u := s.panelURLProv.GetPanelBaseURL(ctx); u != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	if s.settingSvc != nil {
+		val, err := s.settingSvc.GetByKey(ctx, "panel.external_url")
+		if err == nil && val != "" {
+			return strings.TrimRight(val, "/")
+		}
+	}
+	return ""
+}
+
+// SyncToNode pushes all geo rule files to a specific node.
+// For local nodes, files are already on disk (downloaded by the panel).
+// For remote nodes, sends DownloadGeoRule commands so the Agent downloads
+// the files from the panel's HTTP endpoint.
+func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
+	if s.nodeOp == nil {
+		return nil
+	}
+	// Local node already has the files in data/rules/
+	if s.nodeOp.IsLocalServer(serverID) {
+		return nil
+	}
+
+	// Get all global geo rule files
+	files, err := s.fileRepo.ListByServer(ctx, 0)
+	if err != nil {
+		return err
+	}
+
+	panelBaseURL := s.getPanelBaseURL(ctx)
+	if panelBaseURL == "" {
+		return fmt.Errorf("panel external URL not configured — set panel.external_url in settings")
+	}
+
+	for _, f := range files {
+		// Skip files that are not yet downloaded or in error state
+		if f.Status != "available" {
+			continue
+		}
+		// Build the panel download URL for this file
+		// Agent will GET this URL to download the file
+		downloadURL := fmt.Sprintf("%s/api/v1/geo-rules/files/%d/download-file", panelBaseURL, f.ID)
+
+		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, "", "")
+		if err != nil {
+			log.Printf("[georule] push file %s to server %d failed: %v", f.FileName, serverID, err)
+			continue
+		}
+		if !success {
+			log.Printf("[georule] push file %s to server %d failed: %s", f.FileName, serverID, errMsg)
+			continue
+		}
+		log.Printf("[georule] pushed file %s to server %d", f.FileName, serverID)
+	}
+	return nil
+}
+
+// SyncToAllNodes pushes all geo rule files to all known nodes.
+// Skips the local node (files already on disk). This is called
+// automatically after sync completes, or manually from the UI.
+func (s *Service) SyncToAllNodes(ctx context.Context) error {
+	if s.nodeLister == nil {
+		return nil
+	}
+	nodeIDs, err := s.nodeLister.ListAllServerIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list server IDs: %w", err)
+	}
+	var lastErr error
+	for _, id := range nodeIDs {
+		if s.nodeOp != nil && s.nodeOp.IsLocalServer(id) {
+			continue // local node already has files
+		}
+		if err := s.SyncToNode(ctx, id); err != nil {
+			log.Printf("[georule] push to server %d failed: %v", id, err)
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
+// ServeFileContent returns the file content from disk for HTTP download by Agents.
+// Called by the HTTP handler when an Agent requests a geo rule file.
+func (s *Service) ServeFileContent(fileID int64) (filePath string, fileName string, err error) {
+	rule, err := s.fileRepo.GetByID(context.Background(), fileID)
+	if err != nil {
+		return "", "", err
+	}
+	filePath = filepath.Join(s.dataDir, "rules", rule.FileName)
+	if _, err := os.Stat(filePath); err != nil {
+		return "", "", fmt.Errorf("file %s not found on disk", rule.FileName)
+	}
+	return filePath, rule.FileName, nil
 }

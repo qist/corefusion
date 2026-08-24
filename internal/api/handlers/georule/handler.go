@@ -11,6 +11,7 @@ import (
 )
 
 // Handler handles geo rule HTTP requests.
+// Geo rules are global (not per-node), so most endpoints don't require a server ID.
 type Handler struct {
 	svc       *georule.Service
 	scheduler *georule.Scheduler
@@ -21,15 +22,11 @@ func NewHandler(svc *georule.Service, scheduler *georule.Scheduler) *Handler {
 	return &Handler{svc: svc, scheduler: scheduler}
 }
 
-// --- Rule Sources ---
+// --- Rule Sources (global, no server ID needed) ---
 
-// ListSources handles GET /api/v1/node-servers/:id/geo-rules/sources.
+// ListSources handles GET /api/v1/geo-rules/sources.
 func (h *Handler) ListSources(c *gin.Context) {
-	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		serverID = 1
-	}
-	sources, err := h.svc.ListSourcesByServer(c.Request.Context(), serverID)
+	sources, err := h.svc.ListSourcesByServer(c.Request.Context(), 0)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -37,12 +34,8 @@ func (h *Handler) ListSources(c *gin.Context) {
 	response.OK(c, sources)
 }
 
-// CreateSource handles POST /api/v1/node-servers/:id/geo-rules/sources.
+// CreateSource handles POST /api/v1/geo-rules/sources.
 func (h *Handler) CreateSource(c *gin.Context) {
-	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		serverID = 1
-	}
 	var req struct {
 		Name     string `json:"name" binding:"required"`
 		RepoURL  string `json:"repo_url" binding:"required"`
@@ -52,7 +45,7 @@ func (h *Handler) CreateSource(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	src, err := h.svc.CreateSource(c.Request.Context(), serverID, req.Name, req.RepoURL, req.SyncCron)
+	src, err := h.svc.CreateSource(c.Request.Context(), 0, req.Name, req.RepoURL, req.SyncCron)
 	if err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
@@ -63,7 +56,7 @@ func (h *Handler) CreateSource(c *gin.Context) {
 	response.Created(c, src)
 }
 
-// UpdateSource handles PUT /api/v1/node-servers/:id/geo-rules/sources/:sourceId.
+// UpdateSource handles PUT /api/v1/geo-rules/sources/:sourceId.
 func (h *Handler) UpdateSource(c *gin.Context) {
 	var req struct {
 		Name     string `json:"name" binding:"required"`
@@ -91,7 +84,7 @@ func (h *Handler) UpdateSource(c *gin.Context) {
 	response.OK(c, src)
 }
 
-// DeleteSource handles DELETE /api/v1/node-servers/:id/geo-rules/sources/:sourceId.
+// DeleteSource handles DELETE /api/v1/geo-rules/sources/:sourceId.
 func (h *Handler) DeleteSource(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	if h.scheduler != nil {
@@ -104,7 +97,7 @@ func (h *Handler) DeleteSource(c *gin.Context) {
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
-// ToggleSchedule handles PUT /api/v1/node-servers/:id/geo-rules/sources/:sourceId/schedule.
+// ToggleSchedule handles PUT /api/v1/geo-rules/sources/:sourceId/schedule.
 func (h *Handler) ToggleSchedule(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	var req struct {
@@ -142,7 +135,7 @@ func (h *Handler) FetchGitHubAssets(c *gin.Context) {
 	response.OK(c, gin.H{"assets": assets, "tag": tag})
 }
 
-// FetchReleaseAssets handles GET /api/v1/node-servers/:id/geo-rules/sources/:sourceId/assets.
+// FetchReleaseAssets handles GET /api/v1/geo-rules/sources/:sourceId/assets.
 func (h *Handler) FetchReleaseAssets(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	assets, tag, err := h.svc.FetchReleaseAssets(c.Request.Context(), id)
@@ -153,7 +146,7 @@ func (h *Handler) FetchReleaseAssets(c *gin.Context) {
 	response.OK(c, gin.H{"assets": assets, "tag": tag})
 }
 
-// SelectFiles handles POST /api/v1/node-servers/:id/geo-rules/sources/:sourceId/select.
+// SelectFiles handles POST /api/v1/geo-rules/sources/:sourceId/select.
 func (h *Handler) SelectFiles(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	var req struct {
@@ -170,20 +163,17 @@ func (h *Handler) SelectFiles(c *gin.Context) {
 	response.OK(c, gin.H{"message": "selected"})
 }
 
-// SyncSource handles POST /api/v1/node-servers/:id/geo-rules/sources/:sourceId/sync.
+// SyncSource handles POST /api/v1/geo-rules/sources/:sourceId/sync.
 func (h *Handler) SyncSource(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	key := h.svc.StartSyncSource(id)
 	response.OK(c, gin.H{"job_key": key, "status": "running"})
 }
 
-// SyncAll handles POST /api/v1/node-servers/:id/geo-rules/sync-all.
+// SyncAll handles POST /api/v1/geo-rules/sync-all.
+// Syncs all sources globally, then auto-pushes to all nodes.
 func (h *Handler) SyncAll(c *gin.Context) {
-	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		serverID = 1
-	}
-	key := h.svc.StartSyncAllByServer(serverID)
+	key := h.svc.StartSyncAll()
 	response.OK(c, gin.H{"job_key": key, "status": "running"})
 }
 
@@ -198,15 +188,11 @@ func (h *Handler) SyncStatus(c *gin.Context) {
 	response.OK(c, job)
 }
 
-// --- Rule Files ---
+// --- Rule Files (global) ---
 
-// ListFiles handles GET /api/v1/node-servers/:id/geo-rules/files.
+// ListFiles handles GET /api/v1/geo-rules/files.
 func (h *Handler) ListFiles(c *gin.Context) {
-	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		serverID = 1
-	}
-	files, err := h.svc.ListFilesByServer(c.Request.Context(), serverID)
+	files, err := h.svc.ListFilesByServer(c.Request.Context(), 0)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -214,7 +200,8 @@ func (h *Handler) ListFiles(c *gin.Context) {
 	response.OK(c, files)
 }
 
-// Download handles POST /api/v1/node-servers/:id/geo-rules/files/:fileId/download.
+// Download handles POST /api/v1/geo-rules/files/:fileId/download.
+// Triggers a download from GitHub to the panel's local data/rules/ directory.
 func (h *Handler) Download(c *gin.Context) {
 	id := parseIntParam(c, "fileId")
 	rule, err := h.svc.Download(c.Request.Context(), id)
@@ -222,10 +209,12 @@ func (h *Handler) Download(c *gin.Context) {
 		response.InternalError(c, "DOWNLOAD_FAILED", err.Error())
 		return
 	}
+	// After download, auto-push this file to all nodes
+	go h.svc.SyncToAllNodes(c.Request.Context())
 	response.OK(c, rule)
 }
 
-// DeleteFile handles DELETE /api/v1/node-servers/:id/geo-rules/files/:fileId.
+// DeleteFile handles DELETE /api/v1/geo-rules/files/:fileId.
 func (h *Handler) DeleteFile(c *gin.Context) {
 	id := parseIntParam(c, "fileId")
 	if err := h.svc.DeleteFile(c.Request.Context(), id); err != nil {
@@ -235,7 +224,7 @@ func (h *Handler) DeleteFile(c *gin.Context) {
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
-// SetAutoSync handles PUT /api/v1/node-servers/:id/geo-rules/files/:fileId/auto-sync.
+// SetAutoSync handles PUT /api/v1/geo-rules/files/:fileId/auto-sync.
 func (h *Handler) SetAutoSync(c *gin.Context) {
 	id := parseIntParam(c, "fileId")
 	var req struct {
@@ -252,41 +241,65 @@ func (h *Handler) SetAutoSync(c *gin.Context) {
 	response.OK(c, gin.H{"auto_sync": req.AutoSync})
 }
 
-func parseIntParam(c *gin.Context, name string) int64 {
-	var id int64
-	fmt.Sscanf(c.Param(name), "%d", &id)
-	return id
+// DownloadFile handles GET /api/v1/geo-rules/files/:fileId/download-file.
+// Serves the actual file content from the panel's data/rules/ directory.
+// This endpoint is used by remote Agents to download geo rule files from the panel.
+func (h *Handler) DownloadFile(c *gin.Context) {
+	id := parseIntParam(c, "fileId")
+	filePath, fileName, err := h.svc.ServeFileContent(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	c.File(filePath)
 }
 
-// SeedDefaults handles POST /api/v1/node-servers/:id/geo-rules/seed.
-// Creates default rule sources and files for the node if none exist.
-func (h *Handler) SeedDefaults(c *gin.Context) {
+// PushToAllNodes handles POST /api/v1/geo-rules/push-all.
+// Pushes all geo rule files to all online nodes.
+func (h *Handler) PushToAllNodes(c *gin.Context) {
+	if err := h.svc.SyncToAllNodes(c.Request.Context()); err != nil {
+		response.InternalError(c, "PUSH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "pushed"})
+}
+
+// PushToNode handles POST /api/v1/node-servers/:id/geo-rules/push.
+// Pushes all geo rule files to a specific node.
+func (h *Handler) PushToNode(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		serverID = 1
+		serverID = 0
 	}
-	if err := h.svc.SeedDefaults(c.Request.Context(), serverID); err != nil {
+	if err := h.svc.SyncToNode(c.Request.Context(), serverID); err != nil {
+		response.InternalError(c, "PUSH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "pushed"})
+}
+
+// SeedDefaults handles POST /api/v1/geo-rules/seed.
+// Creates default rule sources and files if none exist.
+func (h *Handler) SeedDefaults(c *gin.Context) {
+	if err := h.svc.SeedDefaults(c.Request.Context(), 0); err != nil {
 		response.InternalError(c, "SEED_FAILED", err.Error())
 		return
 	}
 	response.OK(c, gin.H{"message": "seeded"})
 }
 
-// Status handles GET /api/v1/node-servers/:id/geo-rules/status.
+// Status handles GET /api/v1/geo-rules/status.
 // Returns which geo files exist and are usable.
 func (h *Handler) Status(c *gin.Context) {
-	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		serverID = 1
-	}
-	files, err := h.svc.ListFilesByServer(c.Request.Context(), serverID)
+	files, err := h.svc.ListFilesByServer(c.Request.Context(), 0)
 	if err != nil {
 		response.InternalError(c, "STATUS_FAILED", err.Error())
 		return
 	}
 	result := map[string]bool{
-		"geoip.dat":    false,
-		"geosite.dat":  false,
+		"geoip.dat":   false,
+		"geosite.dat": false,
 	}
 	for _, f := range files {
 		if _, ok := result[f.FileName]; ok {
@@ -294,4 +307,10 @@ func (h *Handler) Status(c *gin.Context) {
 		}
 	}
 	response.OK(c, result)
+}
+
+func parseIntParam(c *gin.Context, name string) int64 {
+	var id int64
+	fmt.Sscanf(c.Param(name), "%d", &id)
+	return id
 }

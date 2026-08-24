@@ -1205,6 +1205,7 @@ export default {
       browseFiles: '浏览文件',
       sync: '同步',
       syncAll: '全部同步',
+      pushAll: '推送到所有节点',
       syncStarted: '同步已开始',
       syncDone: '同步完成，已下载 {downloaded}/{total} 个文件，版本 {tag}',
       syncAllDone: '全部同步完成，共下载 {count} 个文件',

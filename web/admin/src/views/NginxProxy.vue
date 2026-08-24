@@ -520,7 +520,18 @@
 
     <!-- Site WAF Rule Editor -->
     <el-dialog v-model="siteWAFRuleEditorVisible" :title="`${siteWAFDomain} / ${siteWAFRuleEditing}`" width="70%">
-      <el-input v-model="siteWAFRuleEditingContent" type="textarea" :rows="18" style="font-family:monospace;font-size:13px" />
+      <template v-if="siteWAFRuleGlobalPreview">
+        <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.wafGlobalRuleRef') || 'Global Rule (synced from repo — read-only reference)' }}</div>
+        <el-input :model-value="siteWAFRuleGlobalPreview" type="textarea" :rows="6" readonly style="font-family:monospace;font-size:13px;margin-bottom:10px" />
+      </template>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:12px;color:#909399">{{ t('proxy.wafDomainRuleEdit') || 'Domain Rule (editable)' }}</span>
+        <el-select v-model="siteWAFDomainMergeMode" size="small" style="width:140px">
+          <el-option label="Append (合并)" value="append" />
+          <el-option label="Replace (替换)" value="replace" />
+        </el-select>
+      </div>
+      <el-input v-model="siteWAFRuleEditingContent" type="textarea" :rows="14" style="font-family:monospace;font-size:13px" />
       <template #footer>
         <el-button @click="siteWAFRuleEditorVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="success" @click="saveSiteWAFDomainRule">{{ t('common.save') }}</el-button>
@@ -1327,6 +1338,8 @@ const siteWAFDomainRules = ref([])
 const siteWAFRuleEditorVisible = ref(false)
 const siteWAFRuleEditing = ref('')
 const siteWAFRuleEditingContent = ref('')
+const siteWAFRuleGlobalPreview = ref('')
+const siteWAFDomainMergeMode = ref('append')
 
 async function openSiteWAF(row) {
   const d = row.domain.replace(/:\d+$/, '')
@@ -1367,29 +1380,28 @@ white_url_check: merged.white_url_check || 'on',
       waf_redirect_url: merged.waf_redirect_url || ''
     }
     siteWAFRuleMode.value = cfg.rule_dir ? 'custom' : 'global'
-    await loadSiteWAFDomainRules(d)
+    if (siteWAFRuleMode.value === 'custom') {
+      await loadSiteWAFDomainRules(d)
+    }
   } catch { ElMessage.error(t('common.failed')) }
   siteWAFVisible.value = true
 }
 
+const domainRuleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'cdnip.rule']
+
 async function loadSiteWAFDomainRules(domain) {
-  try {
-    const dirs = await client.get(`${apiBase.value}/waf/domain-rules`)
-    if (dirs && dirs.includes(domain)) {
-      // Domain has a rule directory — list rule files
-      const ruleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'cdnip.rule']
-      const rules = []
-      for (const name of ruleNames) {
-        try {
-          const data = await client.get(`${apiBase.value}/waf/domain-rules/${domain}/${name}`)
-          rules.push({ name, size: (data.content || '').length })
-        } catch { /* skip missing */ }
-      }
-      siteWAFDomainRules.value = rules
-    } else {
-      siteWAFDomainRules.value = []
+  // Always show all rule files, even if empty — user can click Edit to create content
+  const rules = []
+  for (const name of domainRuleNames) {
+    try {
+      const data = await client.get(`${apiBase.value}/waf/domain-rules/${domain}/${name}`)
+      rules.push({ name, size: (data.content || '').length })
+    } catch {
+      // File doesn't exist yet — still show it so user can create it
+      rules.push({ name, size: 0 })
     }
-  } catch { siteWAFDomainRules.value = [] }
+  }
+  siteWAFDomainRules.value = rules
 }
 
 async function onSiteWAFRuleModeChange(val) {
@@ -1406,14 +1418,19 @@ async function openSiteWAFDomainRule(row) {
   siteWAFRuleEditing.value = row.name
   try {
     const data = await client.get(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${row.name}`)
+    siteWAFRuleGlobalPreview.value = data.global_content || ''
     siteWAFRuleEditingContent.value = data.content || ''
+    siteWAFDomainMergeMode.value = data.merge_mode || 'append'
     siteWAFRuleEditorVisible.value = true
   } catch { ElMessage.error(t('common.failed')) }
 }
 
 async function saveSiteWAFDomainRule() {
   try {
-    await client.put(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, { content: siteWAFRuleEditingContent.value })
+    await client.put(`${apiBase.value}/waf/domain-rules/${siteWAFDomain.value}/${siteWAFRuleEditing.value}`, {
+      content: siteWAFRuleEditingContent.value,
+      merge_mode: siteWAFDomainMergeMode.value,
+    })
     ElMessage.success(t('common.success'))
     siteWAFRuleEditorVisible.value = false
     await loadSiteWAFDomainRules(siteWAFDomain.value)
@@ -1431,6 +1448,9 @@ async function saveSiteWAFConfig() {
     }
     if (siteWAFRuleMode.value === 'custom') {
       cfg.rule_dir = `domains/${siteWAFDomain.value}`
+    } else {
+      // Global mode: remove rule_dir entirely so WAF engine reads global rules
+      delete cfg.rule_dir
     }
     obj[siteWAFDomain.value] = cfg
     // Remove _comment if accidentally at wrong level

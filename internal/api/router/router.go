@@ -1639,22 +1639,10 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 nodeMgrForPhase3.SetWAFSyncer(wafSvcInst)
 // Wire node lister so WAF can push to all nodes
 wafSvcInst.SetNodeLister(nodeServerRepo)
-// Idempotent migration: legacy node rules defaulted to "replace" (old frontend
-// never sent merge_mode), which silently dropped the global rule. Flip them to
-// "append" so global rules are preserved when merged per-node.
-if n, err := wafSvcInst.MigrateNodeRulesMergeMode(context.Background()); err != nil {
-	log.Printf("[WAF] migrate node rule merge_mode: %v", err)
-} else if n > 0 {
-	log.Printf("[WAF] migrated %d node rule(s) from replace to append", n)
-	// Re-land local disk and push the corrected (global+node merged) rules to
-	// every remote node so the fix takes effect immediately without manual save.
-	if err := wafSvcInst.LandAllRules(context.Background()); err != nil {
-		log.Printf("[WAF] re-land local after migration: %v", err)
-	}
-	if err := wafSvcInst.SyncToAllNodesFromDB(context.Background()); err != nil {
-		log.Printf("[WAF] re-sync all nodes after migration: %v", err)
-	}
-}
+// NOTE: The automatic migration that flipped node rule merge_mode from
+// "replace" to "append" has been removed. It was overriding the user's
+// explicit merge_mode choice on every restart. The merge_mode is now
+// fully user-controlled and persisted correctly via Upsert.
 
 				// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
 				// Also generates final runtime config via PrepareFullConfig so Agent
@@ -1740,6 +1728,7 @@ if n, err := wafSvcInst.MigrateNodeRulesMergeMode(context.Background()); err != 
 			caddyH.SetNodeOperator(nodeServerSvcInst)
 			nginxH.SetNodeOperator(nodeServerSvcInst)
 			processH.SetNodeOperator(nodeServerSvcInst)
+			wafH.SetNodeOperator(&wafNodeOperatorAdapter{svc: nodeServerSvcInst, mgr: sharedNodeMgr})
 
 			// Inject SyncData hook so traffic reset also pushes inbound_configs
 			// table to remote Agent's local SQLite DB.
@@ -3328,6 +3317,43 @@ type wafNodeSyncerAdapter struct {
 }
 
 func (a *wafNodeSyncerAdapter) SyncWAFFiles(ctx context.Context, serverID int64, files []*wafSvc.WAFFile) error {
+	pbFiles := make([]*agentpb.WAFFile, 0, len(files))
+	for _, f := range files {
+		pbFiles = append(pbFiles, &agentpb.WAFFile{
+			Path:    f.Path,
+			Content: f.Content,
+			Hash:    f.Hash,
+		})
+	}
+	return a.mgr.SyncWAFFiles(ctx, serverID, pbFiles)
+}
+
+// wafNodeOperatorAdapter adapts nodeserver.Service + agent.NodeServerManager
+// to wafHandler.NodeOperator. It delegates IsLocalServer to nodeserver.Service
+// and converts waf.WAFFile to agentpb.WAFFile for SyncWAFFiles.
+type wafNodeOperatorAdapter struct {
+	svc *nodeServerSvc.Service
+	mgr *agent.NodeServerManager
+}
+
+func (a *wafNodeOperatorAdapter) IsLocalServer(ctx context.Context, serverID int64) bool {
+	if a.svc != nil {
+		return a.svc.IsLocalServer(ctx, serverID)
+	}
+	if a.mgr != nil {
+		return a.mgr.IsLocalServer(serverID)
+	}
+	return true
+}
+
+func (a *wafNodeOperatorAdapter) ReadConfigFileOnServer(ctx context.Context, serverID int64, coreType string) ([]byte, string, error) {
+	if a.svc != nil {
+		return a.svc.ReadConfigFileOnServer(ctx, serverID, coreType)
+	}
+	return nil, "", fmt.Errorf("node operator not configured")
+}
+
+func (a *wafNodeOperatorAdapter) SyncWAFFiles(ctx context.Context, serverID int64, files []*wafSvc.WAFFile) error {
 	pbFiles := make([]*agentpb.WAFFile, 0, len(files))
 	for _, f := range files {
 		pbFiles = append(pbFiles, &agentpb.WAFFile{

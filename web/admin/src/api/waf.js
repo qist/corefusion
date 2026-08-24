@@ -32,8 +32,8 @@ export function getWafGitHubSource() {
   return client.get('/waf/github-source')
 }
 
-export function saveWafGitHubSource(url, syncCron, enabled) {
-  return client.put('/waf/github-source', { url, sync_cron: syncCron, enabled })
+export function saveWafGitHubSource(payload) {
+  return client.put('/waf/github-source', payload)
 }
 
 // ──────────── WAF Push to Nodes ────────────

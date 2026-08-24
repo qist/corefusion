@@ -872,6 +872,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	wafH := wafHandler.NewHandler(wafSvcInst)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
+		geoRuleSvcInst.SetNodeLister(nodeServerRepoForSync)
 		wafSvcInst.SetSyncer(&wafNodeSyncerAdapter{mgr: sharedNodeMgr})
 		// Inject RemoteSyncer so configsync can push configs to remote Agents.
 		configSyncSvc.SetRemoteSyncer(sharedNodeMgr)
@@ -1637,6 +1638,8 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 				nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
 // Wire WAF syncer so remote nodes get WAF rules on reconnect
 nodeMgrForPhase3.SetWAFSyncer(wafSvcInst)
+// Wire geo rule syncer so remote nodes get geoip.dat/geosite.dat on reconnect
+nodeMgrForPhase3.SetGeoRuleSyncer(geoRuleSvcInst)
 // Wire node lister so WAF can push to all nodes
 wafSvcInst.SetNodeLister(nodeServerRepo)
 // NOTE: The automatic migration that flipped node rule merge_mode from
@@ -1992,24 +1995,10 @@ wafSvcInst.SetNodeLister(nodeServerRepo)
 				nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
 				nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
 
-				// Geo Rules (per node) — rule source and file management
-				nodeServersGroup.GET("/:id/geo-rules/github-assets", geoRuleH.FetchGitHubAssets)
-				nodeServersGroup.GET("/:id/geo-rules/sources", geoRuleH.ListSources)
-				nodeServersGroup.POST("/:id/geo-rules/sources", geoRuleH.CreateSource)
-				nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId", geoRuleH.UpdateSource)
-				nodeServersGroup.DELETE("/:id/geo-rules/sources/:sourceId", geoRuleH.DeleteSource)
-				nodeServersGroup.GET("/:id/geo-rules/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
-				nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/select", geoRuleH.SelectFiles)
-				nodeServersGroup.POST("/:id/geo-rules/sources/:sourceId/sync", geoRuleH.SyncSource)
-				nodeServersGroup.PUT("/:id/geo-rules/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
-				nodeServersGroup.POST("/:id/geo-rules/sync-all", geoRuleH.SyncAll)
-				nodeServersGroup.GET("/:id/geo-rules/sync-status/:key", geoRuleH.SyncStatus)
-				nodeServersGroup.GET("/:id/geo-rules/files", geoRuleH.ListFiles)
-				nodeServersGroup.POST("/:id/geo-rules/files/:fileId/download", geoRuleH.Download)
-				nodeServersGroup.DELETE("/:id/geo-rules/files/:fileId", geoRuleH.DeleteFile)
-				nodeServersGroup.PUT("/:id/geo-rules/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
-				nodeServersGroup.POST("/:id/geo-rules/seed", geoRuleH.SeedDefaults)
-				nodeServersGroup.GET("/:id/geo-rules/status", geoRuleH.Status)
+			// Geo Rules — global rule source and file management (migrated from per-node to global)
+			// These are now under /api/v1/geo-rules/* (no node-servers/:id prefix)
+			// Per-node push endpoint stays under node-servers for backwards compat
+			nodeServersGroup.POST("/:id/geo-rules/push", geoRuleH.PushToNode)
 
 				// WARP (per node) — each node has its own independent WARP configs
 				nodeServersGroup.GET("/:id/warp", warpH.List)
@@ -2361,6 +2350,31 @@ logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
 
 		// Placeholder routes for remaining modules
 		registerPlaceholderRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
+
+		// Geo Rules — global rule source and file management (no node-servers prefix)
+		// These routes are public-except-auth (any authenticated user can read, admin can write).
+		geoRuleGlobalGroup := protected.Group("/geo-rules")
+		{
+			geoRuleGlobalGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
+			geoRuleGlobalGroup.GET("/sources", geoRuleH.ListSources)
+			geoRuleGlobalGroup.POST("/sources", geoRuleH.CreateSource)
+			geoRuleGlobalGroup.PUT("/sources/:sourceId", geoRuleH.UpdateSource)
+			geoRuleGlobalGroup.DELETE("/sources/:sourceId", geoRuleH.DeleteSource)
+			geoRuleGlobalGroup.GET("/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
+			geoRuleGlobalGroup.POST("/sources/:sourceId/select", geoRuleH.SelectFiles)
+			geoRuleGlobalGroup.POST("/sources/:sourceId/sync", geoRuleH.SyncSource)
+			geoRuleGlobalGroup.PUT("/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
+			geoRuleGlobalGroup.POST("/sync-all", geoRuleH.SyncAll)
+			geoRuleGlobalGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
+			geoRuleGlobalGroup.GET("/files", geoRuleH.ListFiles)
+			geoRuleGlobalGroup.POST("/files/:fileId/download", geoRuleH.Download)
+			geoRuleGlobalGroup.GET("/files/:fileId/download-file", geoRuleH.DownloadFile)
+			geoRuleGlobalGroup.DELETE("/files/:fileId", geoRuleH.DeleteFile)
+			geoRuleGlobalGroup.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
+			geoRuleGlobalGroup.POST("/seed", geoRuleH.SeedDefaults)
+			geoRuleGlobalGroup.GET("/status", geoRuleH.Status)
+			geoRuleGlobalGroup.POST("/push-all", geoRuleH.PushToAllNodes)
+		}
 
 			// Portal template management (admin only)
 			portalH := portalHandler.NewHandler(portalTmplSvc)

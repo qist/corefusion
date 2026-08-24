@@ -275,6 +275,9 @@ func RunDataMigrations(db *gorm.DB) error {
 	// Migrate existing data to server_id=1 (local node)
 	migrateServerID(db)
 
+	// Migrate geo rules from per-node (server_id=1) to global (server_id=0)
+	migrateGeoRulesToGlobal(db)
+
 	// Fix unique indexes to be per-server (GORM AutoMigrate cannot alter existing indexes)
 	migrateUniqueIndexes(db)
 
@@ -481,6 +484,21 @@ func migrateServerID(db *gorm.DB) {
 			log.Printf("WARNING: migrate server_id for %s: %v", table, result.Error)
 		} else if result.RowsAffected > 0 {
 			log.Printf("migrated %d rows in %s to server_id=1", result.RowsAffected, table)
+		}
+	}
+}
+
+// migrateGeoRulesToGlobal migrates geo rule sources and files from per-node
+// (server_id=1) to global (server_id=0). Geo rules are now managed globally
+// and synced to all nodes, so all existing data is moved to server_id=0.
+func migrateGeoRulesToGlobal(db *gorm.DB) {
+	tables := []string{"rule_sources", "geo_rule_files"}
+	for _, table := range tables {
+		result := db.Table(table).Where("server_id = 1").Update("server_id", 0)
+		if result.Error != nil {
+			log.Printf("WARNING: migrate geo rules %s to global: %v", table, result.Error)
+		} else if result.RowsAffected > 0 {
+			log.Printf("migrated %d rows in %s to global (server_id=0)", result.RowsAffected, table)
 		}
 	}
 }

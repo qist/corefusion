@@ -11,6 +11,9 @@
       <el-tab-pane :label="t('proxy.wafGlobalRules')" name="waf">
         <WafRulesTab />
       </el-tab-pane>
+      <el-tab-pane :label="t('service.tabs.rules')" name="rules">
+        <RuleTab />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -22,6 +25,7 @@ import { useQueryState } from '../composables/useQueryState'
 import ShareDomainTab from './services/ShareDomainTab.vue'
 import CFIPTab from './services/CFIPTab.vue'
 import WafRulesTab from './services/WafRulesTab.vue'
+import RuleTab from './services/RuleTab.vue'
 
 const { t } = useI18n()
 const activeTab = useQueryState('tab', 'shareDomain')

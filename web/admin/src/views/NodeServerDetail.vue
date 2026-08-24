@@ -148,11 +148,6 @@
         <ProxyManagement :server-id="serverId" :is-local="server?.is_local || false" />
       </el-tab-pane>
 
-      <!-- Geo Rules Tab -->
-      <el-tab-pane :label="t('service.tabs.rules')" name="rules">
-        <RuleTab :server-id="serverId" />
-      </el-tab-pane>
-
       <!-- Core Process Tab (merged: binary management + process control + guardian) -->
       <el-tab-pane :label="t('service.tabs.process')" name="process">
         <CoreProcessTab :server-id="serverId" />
@@ -366,7 +361,6 @@ import PaginationBar from '../components/PaginationBar.vue'
 import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates, distributeCertificate, associateCertificate } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
-import RuleTab from './services/RuleTab.vue'
 import CoreProcessTab from './node-server/CoreProcessTab.vue'
 import WarpTab from './services/WarpTab.vue'
 import ShareDomainTab from './services/ShareDomainTab.vue'

@@ -2748,6 +2748,8 @@ type DownloadGeoRuleRequest struct {
 	DownloadUrl   string                 `protobuf:"bytes,2,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"` // 下载 URL
 	AccelDomain   string                 `protobuf:"bytes,3,opt,name=accel_domain,json=accelDomain,proto3" json:"accel_domain,omitempty"` // GitHub 加速域名（可选）
 	ProxyUrl      string                 `protobuf:"bytes,4,opt,name=proxy_url,json=proxyUrl,proto3" json:"proxy_url,omitempty"`          // HTTP 代理 URL（可选）
+	FileHash      string                 `protobuf:"bytes,5,opt,name=file_hash,json=fileHash,proto3" json:"file_hash,omitempty"`          // 文件 SHA-256（Agent 对比，相同则跳过下载）
+	FileSize      int64                  `protobuf:"varint,6,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"`         // 文件大小（字节）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2808,6 +2810,20 @@ func (x *DownloadGeoRuleRequest) GetProxyUrl() string {
 		return x.ProxyUrl
 	}
 	return ""
+}
+
+func (x *DownloadGeoRuleRequest) GetFileHash() string {
+	if x != nil {
+		return x.FileHash
+	}
+	return ""
+}
+
+func (x *DownloadGeoRuleRequest) GetFileSize() int64 {
+	if x != nil {
+		return x.FileSize
+	}
+	return 0
 }
 
 type DownloadGeoRuleResponse struct {
@@ -7938,12 +7954,14 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1e\n" +
 	"\n" +
 	"prerelease\x18\x02 \x01(\bR\n" +
-	"prerelease\"\x98\x01\n" +
+	"prerelease\"\xd2\x01\n" +
 	"\x16DownloadGeoRuleRequest\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12!\n" +
 	"\fdownload_url\x18\x02 \x01(\tR\vdownloadUrl\x12!\n" +
 	"\faccel_domain\x18\x03 \x01(\tR\vaccelDomain\x12\x1b\n" +
-	"\tproxy_url\x18\x04 \x01(\tR\bproxyUrl\"\x83\x01\n" +
+	"\tproxy_url\x18\x04 \x01(\tR\bproxyUrl\x12\x1b\n" +
+	"\tfile_hash\x18\x05 \x01(\tR\bfileHash\x12\x1b\n" +
+	"\tfile_size\x18\x06 \x01(\x03R\bfileSize\"\x83\x01\n" +
 	"\x17DownloadGeoRuleResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1b\n" +

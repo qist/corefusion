@@ -1047,7 +1047,8 @@ func (m *NodeServerManager) GetMetricsFromServer(ctx context.Context, serverID i
 // DownloadGeoRule downloads a geo rule file on a server.
 // For local servers, the caller (georule service) handles the download directly.
 // For remote servers, sends DownloadGeoRule via heartbeat stream.
-func (m *NodeServerManager) DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, accelDomain, proxyURL string) (bool, int64, string, error) {
+// fileHash and fileSize are sent so the Agent can skip download if unchanged.
+func (m *NodeServerManager) DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, fileHash string, fileSize int64, accelDomain, proxyURL string) (bool, int64, string, error) {
 	if m.isLocalServer(serverID) {
 		// Local: signal that it should be handled by the caller
 		return false, 0, "LOCAL", nil
@@ -1061,6 +1062,8 @@ func (m *NodeServerManager) DownloadGeoRule(ctx context.Context, serverID int64,
 				DownloadUrl: downloadURL,
 				AccelDomain: accelDomain,
 				ProxyUrl:    proxyURL,
+				FileHash:    fileHash,
+				FileSize:    fileSize,
 			},
 		},
 	}

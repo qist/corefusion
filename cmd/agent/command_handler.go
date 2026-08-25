@@ -395,6 +395,11 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		resp := a.handleDownloadGeoRule(ctx, req)
 		sendSyncResult("download_geo_rule", resp, nil)
 
+	case *agentpb.PanelCommand_DeleteGeoRule:
+		req := c.DeleteGeoRule
+		resp := a.handleDeleteGeoRule(req)
+		sendSyncResult("delete_geo_rule", resp, nil)
+
 	case *agentpb.PanelCommand_ListInterfaces:
 		names, err := a.localAgent.ListInterfaces()
 		sendSyncResult("list_interfaces", &agentpb.ListInterfacesResponse{Interfaces: names}, err)
@@ -839,8 +844,21 @@ func (a *AgentApp) handleDownloadGeoRule(ctx context.Context, req *agentpb.Downl
 	filePath := filepath.Join(rulesDir, req.FileName)
 	tmpPath := filepath.Join(tmpDir, req.FileName)
 
-	// Apply GitHub acceleration domain if provided
+	// Resolve relative download URL using the panel address from config.
+	// The panel sends relative paths like "/api/v1/geo-rules/files/3/download-file"
+	// so it doesn't need to know its own external URL — the Agent resolves it
+	// using the panel host/port from its config (same as UpdateAgent).
 	downloadURL := req.DownloadUrl
+	if strings.HasPrefix(downloadURL, "/") {
+		scheme := "http"
+		if a.cfg.Panel.TLS {
+			scheme = "https"
+		}
+		downloadURL = fmt.Sprintf("%s://%s:%d%s", scheme, a.cfg.Panel.Host, a.cfg.Panel.Port, downloadURL)
+		log.Printf("[Agent] resolved relative geo rule download URL to %s", downloadURL)
+	}
+
+	// Apply GitHub acceleration domain if provided (only for GitHub URLs)
 	if req.AccelDomain != "" {
 		downloadURL = netutil.AccelerateGitHubURL(downloadURL, req.AccelDomain)
 	}
@@ -883,6 +901,38 @@ func (a *AgentApp) handleDownloadGeoRule(ctx context.Context, req *agentpb.Downl
 	return &agentpb.DownloadGeoRuleResponse{
 		Success:  true,
 		FileSize: size,
+		FilePath: filePath,
+	}
+}
+
+// handleDeleteGeoRule deletes a geo rule file from the Agent's local data/rules/ directory.
+// Called when the panel deletes a geo rule file and propagates the deletion to all nodes.
+func (a *AgentApp) handleDeleteGeoRule(req *agentpb.DeleteGeoRuleRequest) *agentpb.DeleteGeoRuleResponse {
+	if req.FileName == "" {
+		return &agentpb.DeleteGeoRuleResponse{Success: false, Error: "file_name is required"}
+	}
+
+	// Prevent path traversal
+	if strings.Contains(req.FileName, "..") || strings.Contains(req.FileName, "/") {
+		return &agentpb.DeleteGeoRuleResponse{Success: false, Error: "invalid file name"}
+	}
+
+	filePath := filepath.Join(a.dataDir, "rules", req.FileName)
+	if err := os.Remove(filePath); err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist — treat as success (idempotent)
+			log.Printf("[Agent] geo rule file %s not found, already removed", req.FileName)
+			return &agentpb.DeleteGeoRuleResponse{
+				Success:  true,
+				FilePath: filePath,
+			}
+		}
+		return &agentpb.DeleteGeoRuleResponse{Success: false, Error: err.Error()}
+	}
+
+	log.Printf("[Agent] geo rule deleted: %s → %s", req.FileName, filePath)
+	return &agentpb.DeleteGeoRuleResponse{
+		Success:  true,
 		FilePath: filePath,
 	}
 }

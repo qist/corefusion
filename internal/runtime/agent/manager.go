@@ -1078,6 +1078,36 @@ func (m *NodeServerManager) DownloadGeoRule(ctx context.Context, serverID int64,
 	return resp.Success, resp.FileSize, resp.Error, nil
 }
 
+// DeleteGeoRule deletes a geo rule file from a remote server.
+// For local servers, the caller (georule service) handles the deletion directly.
+// For remote servers, sends DeleteGeoRule via heartbeat stream.
+func (m *NodeServerManager) DeleteGeoRule(ctx context.Context, serverID int64, fileName string) (bool, string, error) {
+	if m.isLocalServer(serverID) {
+		// Local: caller handles deletion
+		return false, "LOCAL", nil
+	}
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_DeleteGeoRule{
+			DeleteGeoRule: &agentpb.DeleteGeoRuleRequest{
+				FileName: fileName,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 30*time.Second)
+	if err != nil {
+		return false, "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return false, result.Error, nil
+	}
+	var resp agentpb.DeleteGeoRuleResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return false, "", fmt.Errorf("unmarshal delete_geo_rule response: %w", err)
+	}
+	return resp.Success, resp.Error, nil
+}
+
 // StopGRPCServer gracefully stops the gRPC server.
 func (m *NodeServerManager) StopGRPCServer() {
 	if m.grpcServer != nil {

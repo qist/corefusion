@@ -2,6 +2,8 @@ package georule
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +22,7 @@ import (
 
 // NodeOperator handles remote node operations for geo rule files.
 type NodeOperator interface {
-	DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, accelDomain, proxyURL string) (success bool, fileSize int64, errMsg string, err error)
+	DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, fileHash string, fileSize int64, accelDomain, proxyURL string) (success bool, retFileSize int64, errMsg string, err error)
 	DeleteGeoRule(ctx context.Context, serverID int64, fileName string) (success bool, errMsg string, err error)
 	IsLocalServer(serverID int64) bool
 }
@@ -908,7 +910,10 @@ func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 		// the panel host/port from its config (same as UpdateAgent).
 		downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
 
-		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, "", "")
+		// Compute file hash so Agent can skip download if file is unchanged.
+		fileHash, fileSize := s.computeFileHash(f.FileName)
+
+		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
 		if err != nil {
 			log.Printf("[georule] push file %s to server %d failed: %v", f.FileName, serverID, err)
 			continue
@@ -958,4 +963,26 @@ func (s *Service) ServeFileContent(fileID int64) (filePath string, fileName stri
 		return "", "", fmt.Errorf("file %s not found on disk", rule.FileName)
 	}
 	return filePath, rule.FileName, nil
+}
+
+// computeFileHash returns the SHA-256 hash and size of a geo rule file on disk.
+// Returns empty hash and 0 size if the file doesn't exist.
+func (s *Service) computeFileHash(fileName string) (string, int64) {
+	filePath := filepath.Join(s.dataDir, "rules", fileName)
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", 0
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return "", 0
+	}
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", 0
+	}
+	return hex.EncodeToString(h.Sum(nil)), fi.Size()
 }

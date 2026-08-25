@@ -423,6 +423,8 @@ message DownloadGeoRuleRequest {
   string download_url = 2;         // 下载 URL
   string accel_domain = 3;         // GitHub 加速域名（可选）
   string proxy_url = 4;            // HTTP 代理 URL（可选）
+  string file_hash = 5;            // 文件 SHA-256（Agent 对比，相同则跳过下载）
+  int64  file_size = 6;            // 文件大小（字节）
 }
 
 message DownloadGeoRuleResponse {

@@ -844,6 +844,22 @@ func (a *AgentApp) handleDownloadGeoRule(ctx context.Context, req *agentpb.Downl
 	filePath := filepath.Join(rulesDir, req.FileName)
 	tmpPath := filepath.Join(tmpDir, req.FileName)
 
+	// Hash comparison: if panel sent a file hash and the local file exists,
+	// compute its hash and skip download if they match (saves bandwidth).
+	if req.FileHash != "" {
+		if existing, err := os.ReadFile(filePath); err == nil {
+			h := sha256.Sum256(existing)
+			if hex.EncodeToString(h[:]) == req.FileHash {
+				log.Printf("[Agent] geo rule %s unchanged (hash match), skipping download", req.FileName)
+				return &agentpb.DownloadGeoRuleResponse{
+					Success:  true,
+					FileSize: int64(len(existing)),
+					FilePath: filePath,
+				}
+			}
+		}
+	}
+
 	// Resolve relative download URL using the panel address from config.
 	// The panel sends relative paths like "/api/v1/geo-rules/files/3/download-file"
 	// so it doesn't need to know its own external URL — the Agent resolves it

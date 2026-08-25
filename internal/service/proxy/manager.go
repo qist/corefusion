@@ -2376,6 +2376,14 @@ func (m *Manager) patchWAFConfig() {
 	if err := os.WriteFile(configPath, []byte(content), 0644); err == nil {
 		log.Printf("patched WAF config.lua with relative paths (log_dir=logs, rule_dir=proxy/waf-rules)")
 	}
+	// Remove the old rule-config directory — rules are now unified under
+	// proxy/waf-rules/. The nginx tar.gz still includes rule-config, so
+	// delete it here as a safety net (also catches upgrades from old versions).
+	oldRuleDir := filepath.Join(m.dataDir, "proxy", "lua", "waf", "rule-config")
+	if _, err := os.Stat(oldRuleDir); err == nil {
+		os.RemoveAll(oldRuleDir)
+		log.Printf("removed obsolete proxy/lua/waf/rule-config/ directory (patchWAFConfig)")
+	}
 }
 
 func run(ctx context.Context, name string, args ...string) error {

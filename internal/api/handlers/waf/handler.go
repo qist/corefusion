@@ -19,12 +19,21 @@ type NodeOperator interface {
 	IsLocalServer(ctx context.Context, serverID int64) bool
 	ReadConfigFileOnServer(ctx context.Context, serverID int64, coreType string) ([]byte, string, error)
 	SyncWAFFiles(ctx context.Context, serverID int64, files []*waf.WAFFile) error
+	// ControlProxy sends a control command (e.g. "reload") to the proxy on the node.
+	ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error
 }
 
 // Handler handles unified WAF HTTP requests (both global rules and per-node configs).
 type Handler struct {
-	svc    *waf.Service
-	nodeOp NodeOperator
+	svc     *waf.Service
+	nodeOp  NodeOperator
+	proxyMgr ProxyReloader
+}
+
+// ProxyReloader provides proxy reload capability for local nodes.
+// Implemented by *proxy.Manager via an adapter.
+type ProxyReloader interface {
+	ReloadProxy(ctx context.Context, proxyType string) error
 }
 
 // NewHandler creates a new WAF handler.
@@ -35,6 +44,11 @@ func NewHandler(svc *waf.Service) *Handler {
 // SetNodeOperator sets the node operator for remote WAF operations.
 func (h *Handler) SetNodeOperator(op NodeOperator) {
 	h.nodeOp = op
+}
+
+// SetProxyManager sets the proxy manager for local proxy reload.
+func (h *Handler) SetProxyManager(mgr ProxyReloader) {
+	h.proxyMgr = mgr
 }
 
 // localServerID is the server ID of the local node.
@@ -658,19 +672,54 @@ func (h *Handler) GetDomainRuleFile(c *gin.Context) {
 
 // landAndSync is the common post-save hook for node-level WAF operations.
 // For local node: writes rules/configs to local disk (LandRulesForServer) and
-// returns any error. For remote node: collects all WAF files from DB and pushes
-// them via SyncWAFFiles. A remote node's rules are NEVER written to the panel's
-// local disk — that would pollute the local node's waf-rules/ directory while
-// leaving the remote node's file unchanged.
+// reloads the running proxy so changes take effect immediately.
+// For remote node: collects all WAF files from DB and pushes them via SyncWAFFiles,
+// then sends a reload command so the remote Agent reloads its proxy.
+// A remote node's rules are NEVER written to the panel's local disk.
 func (h *Handler) landAndSync(ctx context.Context, serverID int64) error {
 	isLocal := h.nodeOp == nil || h.nodeOp.IsLocalServer(ctx, serverID)
 	if isLocal {
 		if err := h.svc.LandRulesForServer(ctx, serverID); err != nil {
 			return fmt.Errorf("land rules for local server %d: %w", serverID, err)
 		}
+		// Reload local proxies so WAF changes take effect immediately.
+		h.reloadLocalProxies(ctx)
 		return nil
 	}
-	return h.pushToRemote(ctx, serverID)
+	if err := h.pushToRemote(ctx, serverID); err != nil {
+		return err
+	}
+	// Send reload command to remote Agent for both nginx and caddy.
+	h.reloadRemoteProxies(ctx, serverID)
+	return nil
+}
+
+// reloadLocalProxies reloads both nginx and caddy on the local node.
+// Errors are logged but not returned — WAF rules are already on disk,
+// and a failed reload (e.g. proxy not running) should not block the API response.
+func (h *Handler) reloadLocalProxies(ctx context.Context) {
+	if h.proxyMgr == nil {
+		return
+	}
+	for _, pt := range []string{"nginx", "caddy"} {
+		if err := h.proxyMgr.ReloadProxy(ctx, pt); err != nil {
+			log.Printf("[WAF] local reload %s: %v", pt, err)
+		}
+	}
+}
+
+// reloadRemoteProxies sends reload commands to the remote Agent for both nginx and caddy.
+// Errors are logged but not returned — WAF files are already pushed,
+// and a failed reload should not block the API response.
+func (h *Handler) reloadRemoteProxies(ctx context.Context, serverID int64) {
+	if h.nodeOp == nil {
+		return
+	}
+	for _, pt := range []string{"nginx", "caddy"} {
+		if err := h.nodeOp.ControlProxy(ctx, serverID, pt, "reload"); err != nil {
+			log.Printf("[WAF] remote reload %s on server %d: %v", pt, serverID, err)
+		}
+	}
 }
 
 // pushToRemote pushes all WAF files for serverID to the remote Agent synchronously.

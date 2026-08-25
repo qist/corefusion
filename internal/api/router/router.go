@@ -3411,6 +3411,14 @@ type wafProxyReloaderAdapter struct {
 	mgr *proxySvc.Manager
 }
 
+func (a *wafProxyReloaderAdapter) DetectProxy(proxyType string) wafHandler.ProxyInfo {
+	info := a.mgr.DetectProxy(proxySvc.ProxyType(proxyType))
+	return wafHandler.ProxyInfo{
+		Installed: info.Installed,
+		Status:    info.Status,
+	}
+}
+
 func (a *wafProxyReloaderAdapter) ReloadProxy(ctx context.Context, proxyType string) error {
 	return a.mgr.ReloadProxy(ctx, proxySvc.ProxyType(proxyType))
 }

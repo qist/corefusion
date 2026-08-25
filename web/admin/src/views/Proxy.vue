@@ -32,7 +32,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CaddyProxy from './CaddyProxy.vue'
 import NginxProxy from './NginxProxy.vue'
@@ -45,8 +45,16 @@ const props = defineProps({
   isLocal: { type: Boolean, default: false }
 })
 
-const activeProxy = ref(localStorage.getItem('active_proxy') || '')
+const activeProxy = ref('')
 const runningProxy = ref('')
+
+// When serverId changes (user switches to a different node),
+// reset the proxy selection so the correct proxy panel is shown
+// based on the new node's actual running state.
+watch(() => props.serverId, () => {
+  activeProxy.value = ''
+  fetchStatus()
+})
 
 const proxyOptions = [
   { type: 'nginx', name: 'Nginx', icon: '🌐', desc: t('proxy.nginxDesc') },
@@ -60,12 +68,10 @@ const runningProxyName = computed(() => {
 
 function selectProxy(type) {
   activeProxy.value = type
-  localStorage.setItem('active_proxy', type)
 }
 
 function switchProxy() {
   activeProxy.value = ''
-  localStorage.removeItem('active_proxy')
   fetchStatus()
 }
 
@@ -79,13 +85,16 @@ async function fetchStatus() {
     } else {
       runningProxy.value = ''
     }
+    // Auto-select the running proxy if no manual selection has been made.
+    // This ensures each node shows the correct proxy panel based on its
+    // actual running state, rather than a stale localStorage value.
+    if (!activeProxy.value && runningProxy.value) {
+      activeProxy.value = runningProxy.value
+    }
   } catch (e) {}
 }
 
 onMounted(() => {
-  // Restore last selection
-  const saved = localStorage.getItem('active_proxy')
-  if (saved) activeProxy.value = saved
   fetchStatus()
 })
 </script>

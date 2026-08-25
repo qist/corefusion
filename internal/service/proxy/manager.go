@@ -74,26 +74,30 @@ func (m *Manager) SetCrashLogRepo(repo CrashLogInserter) {
 
 // Manager handles proxy program management.
 type Manager struct {
-dataDir      string
-binDir       string
-configDir    string
-siteRepo     *repository.ProxySiteRepository
-settingStore SettingStore
-crashLogRepo CrashLogInserter
-serverID     int64
-isLocal      bool
-// Config generators (set by router to use new separated managers)
-caddyConfigGen func(ctx context.Context) (string, error)
-nginxConfigGen func(ctx context.Context) (string, error)
-// Stdout log broker for real-time log viewing
-logBrokers map[ProxyType]*LogBroker
-// Process guardian for auto-restart on crash (shared healthcheck)
-guardians map[ProxyType]*healthcheck.Guardian
-// Tracked PIDs for precise process killing (avoids pkill -f killing wrong processes)
-processPIDs map[ProxyType]int
-// mu protects logBrokers and guardians from concurrent access
-// (StartProxy can be called from Guardian's crash-recovery goroutine)
-mu sync.Mutex
+	dataDir      string
+	binDir       string
+	configDir    string
+	siteRepo     *repository.ProxySiteRepository
+	settingStore SettingStore
+	crashLogRepo CrashLogInserter
+	serverID     int64
+	isLocal      bool
+	// Config generators (set by router to use new separated managers)
+	caddyConfigGen func(ctx context.Context) (string, error)
+	nginxConfigGen func(ctx context.Context) (string, error)
+	// onProxyInstalled is called after a proxy binary is installed/updated.
+	// Used to re-sync WAF configs from DB so user customizations survive
+	// the tar.gz overwrite during nginx reinstall.
+	onProxyInstalled func(ctx context.Context, proxyType string)
+	// Stdout log broker for real-time log viewing
+	logBrokers map[ProxyType]*LogBroker
+	// Process guardian for auto-restart on crash (shared healthcheck)
+	guardians map[ProxyType]*healthcheck.Guardian
+	// Tracked PIDs for precise process killing (avoids pkill -f killing wrong processes)
+	processPIDs map[ProxyType]int
+	// mu protects logBrokers and guardians from concurrent access
+	// (StartProxy can be called from Guardian's crash-recovery goroutine)
+	mu sync.Mutex
 }
 
 // SetServerID sets the server ID for per-node site filtering.
@@ -110,6 +114,13 @@ func (m *Manager) SetCaddyConfigGen(fn func(ctx context.Context) (string, error)
 // SetNginxConfigGen sets the Nginx config generator function.
 func (m *Manager) SetNginxConfigGen(fn func(ctx context.Context) (string, error)) {
 	m.nginxConfigGen = fn
+}
+
+// SetOnProxyInstalled sets a callback invoked after a proxy binary install.
+// The router wires this to WAF service LandRulesForServer so that user's
+// custom WAF config (stored in DB) overwrites the tar.gz default config.lua.
+func (m *Manager) SetOnProxyInstalled(fn func(ctx context.Context, proxyType string)) {
+	m.onProxyInstalled = fn
 }
 
 // getNginxAccessLogPath returns the nginx access log path from settings.
@@ -2145,6 +2156,21 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 	// Patch WAF config.lua with correct paths after lua extraction
 	if name == "nginx" && luaExtracted {
 		m.patchWAFConfig()
+		// Remove the old rule-config directory from proxy/lua/waf/ —
+		// rules are now unified under proxy/waf-rules/ (pushed by WAF syncer).
+		// The nginx tar.gz still includes rule-config, so delete it after extraction.
+		oldRuleDir := filepath.Join(m.dataDir, "proxy", "lua", "waf", "rule-config")
+		if _, err := os.Stat(oldRuleDir); err == nil {
+			os.RemoveAll(oldRuleDir)
+			log.Printf("removed obsolete proxy/lua/waf/rule-config/ directory")
+		}
+		// Re-sync WAF config from DB so user customizations (cc_rate, etc.)
+		// survive the tar.gz overwrite. patchWAFConfig only fixes paths;
+		// this call restores the user's actual WAF settings from database.
+		if m.onProxyInstalled != nil {
+			m.onProxyInstalled(context.Background(), "nginx")
+			log.Printf("re-synced WAF config from DB after nginx install")
+		}
 		// Chown lua directory to nginx user so worker process can read files
 		luaDir := filepath.Join(m.dataDir, "proxy", "lua")
 		if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {

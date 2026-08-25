@@ -534,6 +534,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyMgr.SetServerID(1)
 	nginxMgr.SetServerID(1)
 
+	// After nginx (re)install, tar.gz overwrites config.lua with defaults.
+	// This callback re-syncs WAF config from DB so user customizations survive.
+	proxyMgr.SetOnProxyInstalled(func(ctx context.Context, proxyType string) {
+		if proxyType == "nginx" {
+			if err := wafSvcInst.LandRulesForServer(ctx, 1); err != nil {
+				log.Printf("[WAF] post-install re-sync failed: %v", err)
+			}
+		}
+	})
+
 	// Log management
 	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
 	logJobRepo := repository.NewLogRotationJobRepository(database)

@@ -3404,6 +3404,27 @@ func (a *wafNodeOperatorAdapter) ControlProxy(ctx context.Context, serverID int6
 	return fmt.Errorf("node operator not configured for ControlProxy")
 }
 
+func (a *wafNodeOperatorAdapter) GetInstalledProxyTypes(ctx context.Context, serverID int64) ([]string, error) {
+	if a.svc == nil {
+		return nil, fmt.Errorf("node service not configured")
+	}
+	result, err := a.svc.GetProxyStatusRemote(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	resp, ok := result.(*agentpb.GetProxyStatusResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected proxy status response type")
+	}
+	var types []string
+	for _, p := range resp.Proxies {
+		if p.Installed {
+			types = append(types, p.Type)
+		}
+	}
+	return types, nil
+}
+
 // wafProxyReloaderAdapter adapts *proxy.Manager to wafHandler.ProxyReloader.
 // proxy.Manager.ReloadProxy takes proxy.ProxyType (a string typedef),
 // so we convert the string argument.

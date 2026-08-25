@@ -21,6 +21,9 @@ type NodeOperator interface {
 	SyncWAFFiles(ctx context.Context, serverID int64, files []*waf.WAFFile) error
 	// ControlProxy sends a control command (e.g. "reload") to the proxy on the node.
 	ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error
+	// GetInstalledProxyTypes returns the set of proxy types installed on the node
+	// (e.g. ["nginx"], ["caddy"], ["nginx","caddy"], or [] if none).
+	GetInstalledProxyTypes(ctx context.Context, serverID int64) ([]string, error)
 }
 
 // Handler handles unified WAF HTTP requests (both global rules and per-node configs).
@@ -719,14 +722,20 @@ func (h *Handler) reloadLocalProxies(ctx context.Context) {
 	}
 }
 
-// reloadRemoteProxies sends reload commands to the remote Agent for both nginx and caddy.
-// Errors are logged but not returned — WAF files are already pushed,
-// and a failed reload should not block the API response.
+// reloadRemoteProxies sends reload commands to the remote Agent.
+// Only reloads proxies that are installed and running on the remote node.
 func (h *Handler) reloadRemoteProxies(ctx context.Context, serverID int64) {
 	if h.nodeOp == nil {
 		return
 	}
-	for _, pt := range []string{"nginx", "caddy"} {
+	// Query which proxies are installed on the remote node.
+	proxyTypes, err := h.nodeOp.GetInstalledProxyTypes(ctx, serverID)
+	if err != nil {
+		// Fallback: try both nginx and caddy — ReloadProxy on the
+		// Agent side will silently skip uninstalled/stopped proxies.
+		proxyTypes = []string{"nginx", "caddy"}
+	}
+	for _, pt := range proxyTypes {
 		if err := h.nodeOp.ControlProxy(ctx, serverID, pt, "reload"); err != nil {
 			log.Printf("[WAF] remote reload %s on server %d: %v", pt, serverID, err)
 		}
@@ -734,11 +743,20 @@ func (h *Handler) reloadRemoteProxies(ctx context.Context, serverID int64) {
 }
 
 // pushToRemote pushes all WAF files for serverID to the remote Agent synchronously.
+// Only pushes config files for proxies that are actually installed on the remote node
+// (e.g. config.lua for nginx, config.json for caddy). Rule files are always pushed.
 func (h *Handler) pushToRemote(ctx context.Context, serverID int64) error {
 	if h.nodeOp == nil {
 		return fmt.Errorf("node operator not configured for remote server %d", serverID)
 	}
-	files, err := h.svc.CollectAllFiles(ctx, serverID)
+	// Query which proxies are installed on the remote node so we only
+	// push relevant config files (config.lua for nginx, config.json for caddy).
+	proxyTypes, err := h.nodeOp.GetInstalledProxyTypes(ctx, serverID)
+	if err != nil {
+		log.Printf("[WAF] failed to query installed proxy types for server %d: %v, pushing all files", serverID, err)
+		proxyTypes = []string{"nginx", "caddy"} // fallback: push everything
+	}
+	files, err := h.svc.CollectAllFilesForProxyTypes(ctx, serverID, proxyTypes)
 	if err != nil {
 		return fmt.Errorf("collect files for server %d: %w", serverID, err)
 	}

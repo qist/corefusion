@@ -196,10 +196,23 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			os.RemoveAll(oldRuleDir)
 			log.Printf("[Agent] SyncWAFFiles: removed obsolete rule-config directory")
 		}
+		// Check which proxies are installed so we only write relevant config files.
+		nginxInfo := a.proxyMgr.DetectProxy(proxySvc.ProxyNginx)
+		caddyInfo := a.proxyMgr.DetectProxy(proxySvc.ProxyCaddy)
 		anyWritten := false
 		for _, f := range req.Files {
 			// Prevent path traversal
 			if strings.Contains(f.Path, "..") {
+				continue
+			}
+			// config.lua is the Nginx WAF config — skip if nginx not installed.
+			// config.json is the Caddy WAF config — skip if caddy not installed.
+			// Rule files (.rule, domain.json, domain-specific rules) are shared
+			// and always written regardless of which proxy is installed.
+			if f.Path == "config.lua" && !nginxInfo.Installed {
+				continue
+			}
+			if f.Path == "config.json" && !caddyInfo.Installed {
 				continue
 			}
 			// config.lua goes to proxy/lua/waf/config.lua (Lua engine loads it there)

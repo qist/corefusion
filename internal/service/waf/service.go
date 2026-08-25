@@ -962,6 +962,19 @@ func (s *Service) buildDomainJSON(ctx context.Context, serverID int64) (string, 
 //    — built from DB, not disk: for each domain with waf_enable=on,
 //      push the merged rule content so remote Agents get their own copy.
 func (s *Service) CollectAllFiles(ctx context.Context, serverID int64) ([]*WAFFile, error) {
+	return s.CollectAllFilesForProxyTypes(ctx, serverID, []string{"nginx", "caddy"})
+}
+
+// CollectAllFilesForProxyTypes collects WAF files but only includes
+// config files (config.lua for nginx, config.json for caddy) for proxies
+// that are actually installed on the target node. Rule files, domain.json,
+// and domain-specific rules are always included since they are shared.
+func (s *Service) CollectAllFilesForProxyTypes(ctx context.Context, serverID int64, proxyTypes []string) ([]*WAFFile, error) {
+	installed := make(map[string]bool)
+	for _, pt := range proxyTypes {
+		installed[pt] = true
+	}
+
 	var files []*WAFFile
 
 	// 1. Collect and merge global + node rules
@@ -1012,24 +1025,28 @@ func (s *Service) CollectAllFiles(ctx context.Context, serverID int64) ([]*WAFFi
 		}
 	}
 
-	// 2. Caddy config (config.json) — synced to proxy/waf-rules/config.json
-	caddyCfg, err := s.GetConfig(ctx, serverID, "caddy")
-	if err == nil && caddyCfg != "" {
-		files = append(files, &WAFFile{
-			Path:    "config.json",
-			Content: []byte(caddyCfg),
-			Hash:    hashContent(caddyCfg),
-		})
+	// 2. Caddy config (config.json) — only if caddy is installed on the node
+	if installed["caddy"] {
+		caddyCfg, err := s.GetConfig(ctx, serverID, "caddy")
+		if err == nil && caddyCfg != "" {
+			files = append(files, &WAFFile{
+				Path:    "config.json",
+				Content: []byte(caddyCfg),
+				Hash:    hashContent(caddyCfg),
+			})
+		}
 	}
 
-	// 3. Nginx config (config.lua) — synced to proxy/waf-rules/config.lua
-	nginxCfg, err := s.GetConfig(ctx, serverID, "nginx")
-	if err == nil && nginxCfg != "" {
-		files = append(files, &WAFFile{
-			Path:    "config.lua",
-			Content: []byte(nginxCfg),
-			Hash:    hashContent(nginxCfg),
-		})
+	// 3. Nginx config (config.lua) — only if nginx is installed on the node
+	if installed["nginx"] {
+		nginxCfg, err := s.GetConfig(ctx, serverID, "nginx")
+		if err == nil && nginxCfg != "" {
+			files = append(files, &WAFFile{
+				Path:    "config.lua",
+				Content: []byte(nginxCfg),
+				Hash:    hashContent(nginxCfg),
+			})
+		}
 	}
 
 	// 4. domain.json — per-node domain WAF config, built from waf_domain_configs

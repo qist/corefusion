@@ -189,7 +189,6 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		req := c.SyncWafFiles
 		wafDir := filepath.Join(a.dataDir, "proxy", "waf-rules")
 		nginxConfigDir := filepath.Join(a.dataDir, "proxy", "lua", "waf")
-		os.MkdirAll(wafDir, 0755)
 		// Clean up obsolete rule-config directory from old nginx tar.gz
 		oldRuleDir := filepath.Join(nginxConfigDir, "rule-config")
 		if _, err := os.Stat(oldRuleDir); err == nil {
@@ -199,6 +198,13 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		// Check which proxies are installed so we only write relevant config files.
 		nginxInfo := a.proxyMgr.DetectProxy(proxySvc.ProxyNginx)
 		caddyInfo := a.proxyMgr.DetectProxy(proxySvc.ProxyCaddy)
+		// If neither proxy is installed, skip all file writes — WAF rules
+		// are useless without a proxy to enforce them.
+		if !nginxInfo.Installed && !caddyInfo.Installed {
+			log.Printf("[Agent] SyncWAFFiles: no proxy installed, skipping all file writes")
+			break
+		}
+		os.MkdirAll(wafDir, 0755)
 		anyWritten := false
 		for _, f := range req.Files {
 			// Prevent path traversal

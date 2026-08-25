@@ -21,8 +21,8 @@ type NodeOperator interface {
 	SyncWAFFiles(ctx context.Context, serverID int64, files []*waf.WAFFile) error
 	// ControlProxy sends a control command (e.g. "reload") to the proxy on the node.
 	ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error
-	// GetInstalledProxyTypes returns the set of proxy types installed on the node
-	// (e.g. ["nginx"], ["caddy"], ["nginx","caddy"], or [] if none).
+	// GetInstalledProxyTypes returns the set of proxy types that are installed
+	// on the node. Only installed proxies get their WAF config files pushed.
 	GetInstalledProxyTypes(ctx context.Context, serverID int64) ([]string, error)
 }
 
@@ -743,18 +743,25 @@ func (h *Handler) reloadRemoteProxies(ctx context.Context, serverID int64) {
 }
 
 // pushToRemote pushes all WAF files for serverID to the remote Agent synchronously.
-// Only pushes config files for proxies that are actually installed on the remote node
-// (e.g. config.lua for nginx, config.json for caddy). Rule files are always pushed.
+// Only pushes files when at least one proxy is installed on the remote node.
+// config.lua is only pushed if nginx is installed; config.json only if caddy is.
+// If neither proxy is installed, the entire push is skipped — WAF rules have no
+// effect on a node without a proxy.
 func (h *Handler) pushToRemote(ctx context.Context, serverID int64) error {
 	if h.nodeOp == nil {
 		return fmt.Errorf("node operator not configured for remote server %d", serverID)
 	}
-	// Query which proxies are installed on the remote node so we only
-	// push relevant config files (config.lua for nginx, config.json for caddy).
+	// Query which proxies are installed on the remote node.
 	proxyTypes, err := h.nodeOp.GetInstalledProxyTypes(ctx, serverID)
 	if err != nil {
 		log.Printf("[WAF] failed to query installed proxy types for server %d: %v, pushing all files", serverID, err)
 		proxyTypes = []string{"nginx", "caddy"} // fallback: push everything
+	}
+	// If no proxy is installed, skip the push entirely — WAF rules are useless
+	// without a proxy to enforce them.
+	if len(proxyTypes) == 0 {
+		log.Printf("[WAF] no proxy installed on server %d, skipping WAF file push", serverID)
+		return nil
 	}
 	files, err := h.svc.CollectAllFilesForProxyTypes(ctx, serverID, proxyTypes)
 	if err != nil {

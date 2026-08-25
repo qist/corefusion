@@ -2343,6 +2343,8 @@ logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
 			// Agent download + install script (public — no auth, bootstrap token verifies identity)
 			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
 			v1.GET("/agent/download", agentH.DownloadAgent)
+	// Geo rule file download — public (no auth), used by remote Agents
+	v1.GET("/geo-rules/files/:fileId/download-file", geoRuleH.DownloadFile)
 			v1.GET("/agent/install", agentH.GetInstallScript)
 			// Agent version & releases (requires auth — admin only)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
@@ -2368,7 +2370,9 @@ logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
 			geoRuleGlobalGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
 			geoRuleGlobalGroup.GET("/files", geoRuleH.ListFiles)
 			geoRuleGlobalGroup.POST("/files/:fileId/download", geoRuleH.Download)
-			geoRuleGlobalGroup.GET("/files/:fileId/download-file", geoRuleH.DownloadFile)
+			// download-file is public (no auth) — Agent downloads geo rule files
+			// from the panel using a relative URL, same as /agent/download.
+			// Registered in the public v1 group below.
 			geoRuleGlobalGroup.DELETE("/files/:fileId", geoRuleH.DeleteFile)
 			geoRuleGlobalGroup.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
 			geoRuleGlobalGroup.POST("/seed", geoRuleH.SeedDefaults)

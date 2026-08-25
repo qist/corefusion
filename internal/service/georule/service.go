@@ -18,10 +18,10 @@ import (
 	"corefusion/pkg/netutil"
 )
 
-// NodeOperator handles remote node operations for geo rule downloads.
-// This is implemented by agent.NodeServerManager.
+// NodeOperator handles remote node operations for geo rule files.
 type NodeOperator interface {
 	DownloadGeoRule(ctx context.Context, serverID int64, fileName, downloadURL, accelDomain, proxyURL string) (success bool, fileSize int64, errMsg string, err error)
+	DeleteGeoRule(ctx context.Context, serverID int64, fileName string) (success bool, errMsg string, err error)
 	IsLocalServer(serverID int64) bool
 }
 
@@ -33,11 +33,6 @@ type SettingStore interface {
 // NodeLister provides the list of all server IDs (for push-to-all).
 type NodeLister interface {
 	ListAllServerIDs(ctx context.Context) ([]int64, error)
-}
-
-// PanelURLProvider returns the panel's external URL for Agent downloads.
-type PanelURLProvider interface {
-	GetPanelBaseURL(ctx context.Context) string
 }
 
 // GitHubRelease represents a GitHub release with assets.
@@ -67,8 +62,7 @@ type Service struct {
 	dataDir      string
 	settingSvc   SettingStore
 	nodeOp       NodeOperator
-	nodeLister   NodeLister
-	panelURLProv PanelURLProvider
+	nodeLister NodeLister
 }
 
 // NewService creates a new geo rule service.
@@ -89,11 +83,6 @@ func (s *Service) SetNodeOperator(op NodeOperator) {
 // SetNodeLister sets the node lister for push-to-all operations.
 func (s *Service) SetNodeLister(lister NodeLister) {
 	s.nodeLister = lister
-}
-
-// SetPanelURLProvider sets the panel URL provider for building Agent download URLs.
-func (s *Service) SetPanelURLProvider(p PanelURLProvider) {
-	s.panelURLProv = p
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -572,13 +561,57 @@ func (s *Service) downloadRemote(ctx context.Context, rule *entity.GeoRuleFile) 
 	return s.downloadLocal(ctx, rule)
 }
 
+// DeleteFile deletes a geo rule file from the panel's local disk and database,
+// then propagates the deletion to all remote nodes asynchronously.
 func (s *Service) DeleteFile(ctx context.Context, fileID int64) error {
 	rule, err := s.fileRepo.GetByID(ctx, fileID)
 	if err != nil {
 		return err
 	}
-	os.Remove(filepath.Join(s.dataDir, "rules", rule.FileName))
-	return s.fileRepo.Delete(ctx, fileID)
+	fileName := rule.FileName
+	os.Remove(filepath.Join(s.dataDir, "rules", fileName))
+	if err := s.fileRepo.Delete(ctx, fileID); err != nil {
+		return err
+	}
+
+	// Propagate deletion to all remote nodes asynchronously
+	go func() {
+		if err := s.DeleteFromAllNodes(context.Background(), fileName); err != nil {
+			log.Printf("[georule] propagate deletion of %s to all nodes failed: %v", fileName, err)
+		}
+	}()
+
+	return nil
+}
+
+// DeleteFromAllNodes sends DeleteGeoRule commands to all remote nodes.
+// The local node's file is already deleted by the caller.
+func (s *Service) DeleteFromAllNodes(ctx context.Context, fileName string) error {
+	if s.nodeOp == nil || s.nodeLister == nil {
+		return nil
+	}
+	nodeIDs, err := s.nodeLister.ListAllServerIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list server IDs: %w", err)
+	}
+	var lastErr error
+	for _, id := range nodeIDs {
+		if s.nodeOp.IsLocalServer(id) {
+			continue // local node file already deleted
+		}
+		success, errMsg, err := s.nodeOp.DeleteGeoRule(ctx, id, fileName)
+		if err != nil {
+			log.Printf("[georule] delete file %s on server %d failed: %v", fileName, id, err)
+			lastErr = err
+			continue
+		}
+		if !success && errMsg != "LOCAL" {
+			log.Printf("[georule] delete file %s on server %d failed: %s", fileName, id, errMsg)
+			continue
+		}
+		log.Printf("[georule] deleted file %s on server %d", fileName, id)
+	}
+	return lastErr
 }
 
 func (s *Service) SetAutoSync(ctx context.Context, fileID int64, autoSync bool) error {
@@ -844,29 +877,13 @@ func (s *Service) GetSyncJobStatus(key string) *SyncJobStatus {
 
 // --- Push to Nodes ---
 
-// getPanelBaseURL returns the panel's base URL for Agent downloads.
-// Reads from the "panel.external_url" system setting, or falls back to
-// the request host. Agent will use this URL to download geo rule files
-// from the panel's HTTP endpoint.
-func (s *Service) getPanelBaseURL(ctx context.Context) string {
-	if s.panelURLProv != nil {
-		if u := s.panelURLProv.GetPanelBaseURL(ctx); u != "" {
-			return strings.TrimRight(u, "/")
-		}
-	}
-	if s.settingSvc != nil {
-		val, err := s.settingSvc.GetByKey(ctx, "panel.external_url")
-		if err == nil && val != "" {
-			return strings.TrimRight(val, "/")
-		}
-	}
-	return ""
-}
-
 // SyncToNode pushes all geo rule files to a specific node.
 // For local nodes, files are already on disk (downloaded by the panel).
-// For remote nodes, sends DownloadGeoRule commands so the Agent downloads
-// the files from the panel's HTTP endpoint.
+// For remote nodes, sends DownloadGeoRule commands with **relative** download
+// URLs (e.g. "/api/v1/geo-rules/files/3/download-file"). The Agent resolves
+// the relative URL using the panel host/port from its own config — same
+// pattern as AgentUpdater for Agent binary updates. This avoids the need
+// to configure panel.external_url.
 func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 	if s.nodeOp == nil {
 		return nil
@@ -882,19 +899,14 @@ func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 		return err
 	}
 
-	panelBaseURL := s.getPanelBaseURL(ctx)
-	if panelBaseURL == "" {
-		return fmt.Errorf("panel external URL not configured — set panel.external_url in settings")
-	}
-
 	for _, f := range files {
 		// Skip files that are not yet downloaded or in error state
 		if f.Status != "available" {
 			continue
 		}
-		// Build the panel download URL for this file
-		// Agent will GET this URL to download the file
-		downloadURL := fmt.Sprintf("%s/api/v1/geo-rules/files/%d/download-file", panelBaseURL, f.ID)
+		// Build a **relative** download URL — the Agent resolves it using
+		// the panel host/port from its config (same as UpdateAgent).
+		downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
 
 		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, "", "")
 		if err != nil {

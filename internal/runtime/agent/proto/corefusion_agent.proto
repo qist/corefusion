@@ -432,6 +432,16 @@ message DownloadGeoRuleResponse {
   string file_path = 4;            // 保存路径
 }
 
+message DeleteGeoRuleRequest {
+  string file_name = 1;            // 要删除的文件名（如 geoip.dat）
+}
+
+message DeleteGeoRuleResponse {
+  bool   success = 1;
+  string error = 2;
+  string file_path = 3;            // 被删除的文件路径
+}
+
 // ============================================================
 // Agent → 面板 上报消息
 // ============================================================
@@ -575,6 +585,7 @@ message PanelCommand {
     GetProxyStatusRequest get_proxy_status = 16;     // 查询代理状态
     SpeedTestRequest speed_test = 17;                // 节点测速
     DownloadGeoRuleRequest download_geo_rule = 18;   // 下载 Geo 规则
+    DeleteGeoRuleRequest delete_geo_rule = 36;       // 删除 Geo 规则文件
     ListInterfacesRequest list_interfaces = 19;      // 列出网络接口
     ExecuteBinaryRequest execute_binary = 22;        // 执行二进制命令
     XrayAPIRequest xray_api = 23;                    // Xray API 代理

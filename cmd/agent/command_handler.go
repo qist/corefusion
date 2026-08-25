@@ -190,6 +190,13 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		wafDir := filepath.Join(a.dataDir, "proxy", "waf-rules")
 		nginxConfigDir := filepath.Join(a.dataDir, "proxy", "lua", "waf")
 		os.MkdirAll(wafDir, 0755)
+		// Clean up obsolete rule-config directory from old nginx tar.gz
+		oldRuleDir := filepath.Join(nginxConfigDir, "rule-config")
+		if _, err := os.Stat(oldRuleDir); err == nil {
+			os.RemoveAll(oldRuleDir)
+			log.Printf("[Agent] SyncWAFFiles: removed obsolete rule-config directory")
+		}
+		anyWritten := false
 		for _, f := range req.Files {
 			// Prevent path traversal
 			if strings.Contains(f.Path, "..") {
@@ -217,6 +224,15 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 				log.Printf("[Agent] SyncWAFFiles: write %s: %v", f.Path, err)
 			} else {
 				log.Printf("[Agent] SyncWAFFiles: wrote %s (%d bytes)", f.Path, len(f.Content))
+				anyWritten = true
+			}
+		}
+		// Reload proxies so WAF changes take effect immediately
+		if anyWritten {
+			for _, pt := range []string{"nginx", "caddy"} {
+				if err := a.localAgent.ControlProxy(ctx, pt, "reload"); err != nil {
+					log.Printf("[Agent] SyncWAFFiles: reload %s: %v", pt, err)
+				}
 			}
 		}
 

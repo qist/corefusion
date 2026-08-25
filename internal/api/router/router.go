@@ -1742,6 +1742,7 @@ wafSvcInst.SetNodeLister(nodeServerRepo)
 			nginxH.SetNodeOperator(nodeServerSvcInst)
 			processH.SetNodeOperator(nodeServerSvcInst)
 			wafH.SetNodeOperator(&wafNodeOperatorAdapter{svc: nodeServerSvcInst, mgr: sharedNodeMgr})
+wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 
 			// Inject SyncData hook so traffic reset also pushes inbound_configs
 			// table to remote Agent's local SQLite DB.
@@ -3391,4 +3392,25 @@ func (a *wafNodeOperatorAdapter) SyncWAFFiles(ctx context.Context, serverID int6
 		})
 	}
 	return a.mgr.SyncWAFFiles(ctx, serverID, pbFiles)
+}
+
+func (a *wafNodeOperatorAdapter) ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error {
+	if a.svc != nil {
+		return a.svc.ControlProxy(ctx, serverID, proxyType, action)
+	}
+	if a.mgr != nil {
+		return a.mgr.ControlProxy(ctx, serverID, proxyType, action)
+	}
+	return fmt.Errorf("node operator not configured for ControlProxy")
+}
+
+// wafProxyReloaderAdapter adapts *proxy.Manager to wafHandler.ProxyReloader.
+// proxy.Manager.ReloadProxy takes proxy.ProxyType (a string typedef),
+// so we convert the string argument.
+type wafProxyReloaderAdapter struct {
+	mgr *proxySvc.Manager
+}
+
+func (a *wafProxyReloaderAdapter) ReloadProxy(ctx context.Context, proxyType string) error {
+	return a.mgr.ReloadProxy(ctx, proxySvc.ProxyType(proxyType))
 }

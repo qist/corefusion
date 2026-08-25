@@ -837,12 +837,13 @@ func (s *Service) StartSyncAll() string {
 		syncMu.Unlock()
 
 		if err != nil {
-			log.Printf("[georule] sync-all completed with error: %v", err)
+			log.Printf("[georule] sync-all completed with error, skipping push: %v", err)
+			return
 		}
 
-		// After sync completes, push all available files to remote nodes.
-		// We push even if some sources had errors — any file that successfully
-		// downloaded (status=available) should be synced to nodes.
+		// Only push to nodes when all sources synced successfully.
+		// SyncToNode further filters by status=available, so only
+		// fully downloaded files are actually pushed.
 		log.Printf("[georule] sync-all finished, pushing files to all nodes")
 		if err := s.SyncToAllNodes(context.Background()); err != nil {
 			log.Printf("[georule] auto-push to all nodes after sync failed: %v", err)
@@ -924,12 +925,17 @@ func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 		if f.Status != "available" {
 			continue
 		}
+		// Compute file hash so Agent can skip download if file is unchanged.
+		fileHash, fileSize := s.computeFileHash(f.FileName)
+		// Skip if file doesn't exist on disk (shouldn't happen if status=available,
+		// but guard against corruption / manual deletion)
+		if fileHash == "" {
+			log.Printf("[georule] skip file %s: not found on disk", f.FileName)
+			continue
+		}
 		// Build a **relative** download URL — the Agent resolves it using
 		// the panel host/port from its config (same as UpdateAgent).
 		downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
-
-		// Compute file hash so Agent can skip download if file is unchanged.
-		fileHash, fileSize := s.computeFileHash(f.FileName)
 
 		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
 		if err != nil {

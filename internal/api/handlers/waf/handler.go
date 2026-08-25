@@ -30,10 +30,17 @@ type Handler struct {
 	proxyMgr ProxyReloader
 }
 
-// ProxyReloader provides proxy reload capability for local nodes.
+// ProxyReloader provides proxy detection and reload capability for local nodes.
 // Implemented by *proxy.Manager via an adapter.
 type ProxyReloader interface {
+	DetectProxy(proxyType string) ProxyInfo
 	ReloadProxy(ctx context.Context, proxyType string) error
+}
+
+// ProxyInfo describes a proxy's installation and running status.
+type ProxyInfo struct {
+	Installed bool
+	Status    string
 }
 
 // NewHandler creates a new WAF handler.
@@ -694,14 +701,18 @@ func (h *Handler) landAndSync(ctx context.Context, serverID int64) error {
 	return nil
 }
 
-// reloadLocalProxies reloads both nginx and caddy on the local node.
-// Errors are logged but not returned — WAF rules are already on disk,
-// and a failed reload (e.g. proxy not running) should not block the API response.
+// reloadLocalProxies reloads installed and running proxies on the local node.
+// Proxies that are not installed or not running are silently skipped —
+// WAF rules are already on disk and will take effect on next start.
 func (h *Handler) reloadLocalProxies(ctx context.Context) {
 	if h.proxyMgr == nil {
 		return
 	}
 	for _, pt := range []string{"nginx", "caddy"} {
+		info := h.proxyMgr.DetectProxy(pt)
+		if !info.Installed || info.Status != "running" {
+			continue
+		}
 		if err := h.proxyMgr.ReloadProxy(ctx, pt); err != nil {
 			log.Printf("[WAF] local reload %s: %v", pt, err)
 		}

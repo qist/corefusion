@@ -380,12 +380,18 @@ func (a *AgentApp) startProxyProcesses(ctx context.Context) {
 
 	for _, proxyType := range []proxySvc.ProxyType{proxySvc.ProxyNginx, proxySvc.ProxyCaddy} {
 		proxyTypeStr := string(proxyType)
-		
+
+		// Check installation first — skip entirely if not installed
+		info := a.proxyMgr.DetectProxy(proxyType)
+		if !info.Installed {
+			log.Printf("[Agent] %s not installed, skipping auto-start", proxyTypeStr)
+			continue
+		}
+
 		// Check if manually stopped (the actual control flag)
 		manuallyStopped := a.proxyMgr.IsManuallyStopped(ctx, proxyType)
-		
-		// Also check if the process is already running
-		info := a.proxyMgr.DetectProxy(proxyType)
+
+		// Check if the process is already running
 		isRunning := info.Status == "running"
 
 		if !manuallyStopped && !isRunning {

@@ -227,9 +227,15 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 				anyWritten = true
 			}
 		}
-		// Reload proxies so WAF changes take effect immediately
+		// Reload proxies so WAF changes take effect immediately.
+		// Only reload proxies that are installed and running — skip
+		// uninstalled or stopped proxies to avoid triggering auto-start.
 		if anyWritten {
 			for _, pt := range []string{"nginx", "caddy"} {
+				info := a.proxyMgr.DetectProxy(proxySvc.ProxyType(pt))
+				if !info.Installed || info.Status != "running" {
+					continue
+				}
 				if err := a.localAgent.ControlProxy(ctx, pt, "reload"); err != nil {
 					log.Printf("[Agent] SyncWAFFiles: reload %s: %v", pt, err)
 				}

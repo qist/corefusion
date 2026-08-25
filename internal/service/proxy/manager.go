@@ -2260,7 +2260,15 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 		// Test config first, then reload
 		info := m.DetectProxy(proxyType)
 		if !info.Installed {
-			return fmt.Errorf("nginx not installed")
+			// Not installed — silently skip. This happens when WAF changes
+			// trigger reload for both nginx and caddy but only one is installed.
+			log.Printf("proxy %s: not installed, skipping reload", proxyType)
+			return nil
+		}
+		if info.Status != "running" {
+			// Not running — config is on disk, will take effect on next start.
+			log.Printf("proxy %s: not running (state=%s), skipping reload", proxyType, info.Status)
+			return nil
 		}
 		binPath := info.Path
 		if strings.HasPrefix(binPath, m.dataDir) {
@@ -2279,17 +2287,15 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 		return reloadCmd.Run()
 	case ProxyCaddy:
 		// Caddy supports in-process hot config reload via "caddy reload" command.
-		// This atomically replaces the running configuration without restarting
-		// the process — existing connections are preserved.
-		// See: https://caddyserver.com/docs/command-line#caddy-reload
 		info := m.DetectProxy(proxyType)
 		if !info.Installed {
-			return fmt.Errorf("caddy not installed")
+			// Not installed — silently skip.
+			log.Printf("proxy %s: not installed, skipping reload", proxyType)
+			return nil
 		}
 		if info.Status != "running" {
-			// Caddy is not running — config file is already written to disk,
-			// so it will be picked up on next start. No need to return an error.
-			log.Printf("proxy caddy: not running (state=%s), config saved to disk", info.Status)
+			// Not running — config is on disk, will be picked up on next start.
+			log.Printf("proxy %s: not running (state=%s), skipping reload", proxyType, info.Status)
 			return nil
 		}
 		binPath := info.Path

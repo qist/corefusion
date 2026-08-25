@@ -777,11 +777,20 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 	}
 
 	// Write config.lua (Nginx WAF config)
+	// config.lua must go to proxy/lua/waf/config.lua — the location Nginx's Lua
+	// engine actually loads via `require 'config'`. Writing it to waf-rules/ would
+	// create a dead file that nobody reads.
 	nginxCfg, err := s.GetConfig(ctx, serverID, "nginx")
 	if err == nil && nginxCfg != "" {
-		path := filepath.Join(ruleDir, "config.lua")
-		if err := os.WriteFile(path, []byte(nginxCfg), 0644); err != nil {
+		nginxConfigPath := filepath.Join(s.dataDir, "proxy", "lua", "waf", "config.lua")
+		if err := os.WriteFile(nginxConfigPath, []byte(nginxCfg), 0644); err != nil {
 			log.Printf("[WAF] failed to write config.lua: %v", err)
+		}
+		// Remove the old dead config.lua from waf-rules/ if it exists (legacy)
+		deadPath := filepath.Join(ruleDir, "config.lua")
+		if _, err := os.Stat(deadPath); err == nil {
+			os.Remove(deadPath)
+			log.Printf("[WAF] removed dead config.lua from waf-rules/")
 		}
 	}
 

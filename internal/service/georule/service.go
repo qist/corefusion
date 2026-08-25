@@ -443,6 +443,7 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 			continue
 		}
 
+		// New file — create record with "pending" status, then download
 		rule := &entity.GeoRuleFile{
 			ServerID:    src.ServerID,
 			SourceID:    sourceID,
@@ -452,9 +453,22 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 			FileSize:    asset.Size,
 			Version:     tag,
 			AutoSync:    true,
-			Status:      "available",
+			Status:      "pending",
 		}
 		s.fileRepo.Create(ctx, rule)
+
+		// Download to panel's local data/rules/ directory
+		go func(r *entity.GeoRuleFile) {
+			if _, err := s.downloadLocal(context.Background(), r); err != nil {
+				log.Printf("[georule] download new file %s failed: %v", r.FileName, err)
+				return
+			}
+			log.Printf("[georule] downloaded new file %s, pushing to all nodes", r.FileName)
+			// Push to all nodes after download completes
+			if err := s.SyncToAllNodes(context.Background()); err != nil {
+				log.Printf("[georule] auto-push after select failed: %v", err)
+			}
+		}(rule)
 	}
 
 	// Update source last sync tag

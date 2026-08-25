@@ -836,14 +836,18 @@ func (s *Service) StartSyncAll() string {
 		job.FinishedAt = time.Now()
 		syncMu.Unlock()
 
-		// After sync completes, push all files to remote nodes
-		if err == nil {
-			go func() {
-				time.Sleep(1 * time.Second)
-				if err := s.SyncToAllNodes(context.Background()); err != nil {
-					log.Printf("[georule] auto-push to all nodes after sync failed: %v", err)
-				}
-			}()
+		if err != nil {
+			log.Printf("[georule] sync-all completed with error: %v", err)
+		}
+
+		// After sync completes, push all available files to remote nodes.
+		// We push even if some sources had errors — any file that successfully
+		// downloaded (status=available) should be synced to nodes.
+		log.Printf("[georule] sync-all finished, pushing files to all nodes")
+		if err := s.SyncToAllNodes(context.Background()); err != nil {
+			log.Printf("[georule] auto-push to all nodes after sync failed: %v", err)
+		} else {
+			log.Printf("[georule] auto-push to all nodes after sync: done")
 		}
 	}()
 

@@ -99,10 +99,15 @@ func (s *Service) rotateFile(policy *entity.LogRotationPolicy) (int, error) {
 	}
 
 	// If MaxSize is configured, only rotate when file size reaches the threshold.
-	// This prevents splitting small log files that haven't grown enough.
 	if policy.MaxSize > 0 && info.Size() < policy.MaxSize {
 		log.Printf("logmanage: skip rotation for %s (size=%d, threshold=%d)",
 			logPath, info.Size(), policy.MaxSize)
+		return 0, nil
+	}
+
+	// When MaxSize is 0 (unlimited), skip files smaller than 1KB to avoid
+	// rotating tiny/empty-ish files that haven't accumulated meaningful content.
+	if policy.MaxSize == 0 && info.Size() < 1024 {
 		return 0, nil
 	}
 

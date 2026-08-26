@@ -193,6 +193,11 @@ if wafEnabled {
 	sb.WriteString("\t\trule_dir proxy/waf-rules\n")
 	sb.WriteString("\t}\n")
 }
+	// Disable HTTP/3 (QUIC) and HTTP/2 when layer4 SNI is active.
+	// Caddy v2.11.x has a bug where HTTP/2 connections intermittently
+	// return empty NOP responses under concurrent load (status 0, size 0).
+	// Using protocols h1 only avoids this entirely.
+	// When SNI is not enabled, keep h1 h2 for better performance.
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -204,6 +209,11 @@ if wafEnabled {
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t\tprotocols h1\n")
+		sb.WriteString("\t}\n")
+	} else if hasL4 {
+		sb.WriteString("\n\tservers {\n")
+		sb.WriteString("\t\tprotocols h1\n")
 		sb.WriteString("\t}\n")
 	}
 	if hasL4 {
@@ -267,6 +277,26 @@ sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 		}
 		sb.WriteString("\t}\n")
 	}
+
+	// Global named logger: all sites share a single access log file.
+	// Sites reference this logger by name ("log default") instead of each
+	// creating their own file. This is the recommended Caddy pattern.
+	caddyLogMode := m.getCaddyLogModeForServer(ctx, serverID)
+	switch caddyLogMode {
+	case "off":
+		// no global logger
+	case "stdout":
+		sb.WriteString("\n\tlog default {\n")
+		sb.WriteString("\t\toutput stdout\n")
+		sb.WriteString("\t\tformat json\n")
+		sb.WriteString("\t}\n")
+	default: // "file"
+		sb.WriteString("\n\tlog default {\n")
+		sb.WriteString("\t\toutput file logs/caddy_access.log\n")
+		sb.WriteString("\t\tformat json\n")
+		sb.WriteString("\t}\n")
+	}
+
 	// Reality: add servers block with listener_wrappers (proxy_protocol + tls) and protocols h1 h2
 	if len(realitySites) > 0 {
 		for _, rs := range realitySites {
@@ -298,18 +328,6 @@ sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 		sb.WriteString("\tbind 127.0.0.1\n")
 		if rs.CertPath != "" && rs.KeyPath != "" {
 			sb.WriteString(fmt.Sprintf("\ttls %s %s\n", m.resolvePath(rs.CertPath), m.resolvePath(rs.KeyPath)))
-		}
-		if rs.LogEnabled {
-			sb.WriteString("\tlog {\n")
-			logPath := rs.LogPath
-			if logPath == "" {
-				logPath = fmt.Sprintf("logs/reality_%s.log", port)
-			}
-			sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
-			if rs.LogFormat == "json" {
-				sb.WriteString("\t\tformat json\n")
-			}
-			sb.WriteString("\t}\n")
 		}
 		if rs.CustomConfig != "" {
 			for _, line := range strings.Split(strings.TrimSpace(rs.CustomConfig), "\n") {
@@ -359,30 +377,36 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 		sb.WriteString("\t}\n")
 		}
 
-		// Per-site log block
-		// Check log output mode (per-node)
-		caddyLogMode := m.getCaddyLogModeForServer(ctx, serverID)
+		// Per-site log configuration:
+		// - LogEnabled=true + LogPath=""  → use global "default" logger (unified file)
+		// - LogEnabled=true + LogPath!=""  → custom per-site log file (overrides global)
+		// - LogEnabled=false              → no logging for this site
 		if caddyLogMode != "off" {
+			siteHasLog := false
 			for _, site := range siteList {
 				if site.LogEnabled {
-					sb.WriteString("\tlog {\n")
-					switch caddyLogMode {
-					case "stdout":
-						sb.WriteString("\t\toutput stdout\n")
-					default: // "file"
-					logPath := site.LogPath
-					if logPath == "" {
-						logPath = fmt.Sprintf("logs/%s.log", SanitizeLogName(StripPort(domain)))
+					siteHasLog = true
+					if site.LogPath != "" {
+						// Custom per-site log file
+						sb.WriteString("\tlog {\n")
+						switch caddyLogMode {
+						case "stdout":
+							sb.WriteString("\t\toutput stdout\n")
+						default:
+							sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", site.LogPath))
+						}
+						if site.LogFormat == "json" {
+							sb.WriteString("\t\tformat json\n")
+						}
+						sb.WriteString("\t}\n")
+					} else {
+						// Reference the global named logger
+						sb.WriteString("\tlog default\n")
 					}
-						sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
-					}
-					if site.LogFormat == "json" {
-						sb.WriteString("\t\tformat json\n")
-					}
-					sb.WriteString("\t}\n")
 					break
 				}
 			}
+			_ = siteHasLog
 		}
 
 	for _, site := range siteList {

@@ -811,7 +811,7 @@
           </el-select>
         </el-form-item>
 <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
-            <el-select v-model="siteForm.template" style="width:100%">
+            <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
@@ -824,7 +824,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
-          <el-select v-model="siteForm.template" style="width:100%">
+          <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
@@ -1779,6 +1779,9 @@ fetchProxyInfo()
 }
 }
 
+// Templates where WAF is disabled by default (non-HTTP traffic, WAF would interfere)
+const wafDisabledTemplates = ['reality', 'websocket', 'grpc', 'xhttp', 'httpupgrade']
+
 function showAddSite(template) {
   siteDialogTitle.value = t('proxy.addSite')
   const defaultPort = settings.value.default_http_port
@@ -1793,11 +1796,34 @@ domain: '', upstreams: [''], path: '', backend_path: '', template,
     enable_http2: true, enable_ipv6: false, enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: isReality ? 'TLSv1.2 TLSv1.3' : '', ssl_ciphers: '', ssl_ecdh_curve: '',
-  waf_enabled: !isReality,
+  waf_enabled: !wafDisabledTemplates.includes(template),
   editMode: 'form',
     inbound_id: null
   }
   siteDialogVisible.value = true
+}
+
+// Handle template change: sync dependent fields when switching templates
+function onTemplateChange(newTemplate) {
+  const isReality = newTemplate === 'reality'
+  if (isReality) {
+    siteForm.value.use_cert = true
+    siteForm.value.proxy_protocol = true
+    siteForm.value.waf_enabled = false
+    siteForm.value.listen_port = '9443'
+    siteForm.value.ssl_protocols = 'TLSv1.2 TLSv1.3'
+  } else {
+    if (!siteForm.value.cert_path) {
+      siteForm.value.use_cert = false
+    }
+    siteForm.value.proxy_protocol = false
+    siteForm.value.waf_enabled = !wafDisabledTemplates.includes(newTemplate)
+    // Reset listen_port for non-reality if it was 9443
+    if (siteForm.value.listen_port === '9443') {
+      siteForm.value.listen_port = newTemplate === 'l4' ? '443' : (settings.value.default_http_port || '80')
+    }
+    siteForm.value.ssl_protocols = ''
+  }
 }
 
 function showPanelProxy() {
@@ -1856,14 +1882,14 @@ function editSite(row) {
     backend_path: row.backend_path,
     template: row.template, listen_port: listenPort,
     listen_socket: row.listen_socket,
-    use_cert: !!row.cert_path, cert_id: certId,
+    use_cert: row.template === 'reality' ? true : !!row.cert_path, cert_id: certId,
     cert_path: row.cert_path, key_path: row.key_path,
     custom_config: row.custom_config,
     server_config: row.server_config,
     location_config: row.location_config,
     l4_protocol: row.l4_protocol,
     sni_target: row.sni_target, local_port: row.local_port,
-    proxy_protocol: row.proxy_protocol || false, is_panel: row.is_panel,
+    proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false), is_panel: row.is_panel,
     enable_http2: row.enable_http2 !== false,
     enable_ipv6: row.enable_ipv6 || false,
     enable_quic: row.enable_quic || false,

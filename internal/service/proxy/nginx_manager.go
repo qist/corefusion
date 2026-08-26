@@ -182,22 +182,6 @@ func (m *NginxManager) SaveAndApply(ctx context.Context) (string, error) {
 	return config, nil
 }
 
-// DefaultNginxConf returns a simple default nginx.conf.
-func (m *NginxManager) DefaultNginxConf() string {
-	return `worker_processes auto;
-events {
-    worker_connections 1024;
-}
-http {
-    server {
-        listen 80;
-        location / {
-            return 200 "CoreFusion Proxy - OK";
-        }
-    }
-}
-`
-}
 
 // --- NginxSettings ---
 
@@ -336,20 +320,4 @@ func (m *NginxManager) wafConfigPath() string {
 	return filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
 }
 
-// GenerateDefaultConfig returns a minimal nginx.conf for when no sites exist.
-func (m *NginxManager) GenerateDefaultConfig() string {
-	var sb strings.Builder
-	sb.WriteString("worker_processes auto;\n")
-	sb.WriteString("events {\n")
-	sb.WriteString("    worker_connections 1024;\n")
-	sb.WriteString("}\n")
-	sb.WriteString("http {\n")
-	sb.WriteString("    server {\n")
-	sb.WriteString("        listen 80;\n")
-	sb.WriteString("        location / {\n")
-	sb.WriteString("            return 200 \"CoreFusion Proxy - OK\";\n")
-	sb.WriteString("        }\n")
-	sb.WriteString("    }\n")
-	sb.WriteString("}\n")
-	return sb.String()
-}
+

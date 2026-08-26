@@ -552,6 +552,11 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t\tprotocols h1\n")
+		sb.WriteString("\t}\n")
+	} else if hasL4 {
+		sb.WriteString("\n\tservers {\n")
+		sb.WriteString("\t\tprotocols h1\n")
 		sb.WriteString("\t}\n")
 	}
 	// Log configuration - check log output mode (per-node)
@@ -577,30 +582,19 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 			}
 		}
 	}
-	logOutput := "stdout"
-	logPath := ""
-	if m.settingStore != nil {
-		if v, err := m.settingStore.GetByKey(ctx, "proxy.log_output"); err == nil && v != "" {
-			logOutput = v
-		}
-		if v, err := m.settingStore.GetByKey(ctx, "proxy.log_path"); err == nil && v != "" {
-			logPath = v
-		}
-	}
+	// Global named logger: all sites share a single access log file.
 	switch caddyLogMode {
 	case "off":
-		// no global log block
+		// no global logger
 	case "stdout":
-		sb.WriteString("\n\tlog {\n")
+		sb.WriteString("\n\tlog default {\n")
 		sb.WriteString("\t\toutput stdout\n")
+		sb.WriteString("\t\tformat json\n")
 		sb.WriteString("\t}\n")
 	default: // "file"
-		sb.WriteString("\n\tlog {\n")
-		if logOutput == "file" && logPath != "" {
-			sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", logPath))
-		} else {
-			sb.WriteString("\t\toutput stdout\n")
-		}
+		sb.WriteString("\n\tlog default {\n")
+		sb.WriteString("\t\toutput file logs/caddy_access.log\n")
+		sb.WriteString("\t\tformat json\n")
 		sb.WriteString("\t}\n")
 	}
 	if hasL4 {
@@ -918,12 +912,6 @@ func (m *Manager) SaveAndApply(ctx context.Context) (string, error) {
 	return config, nil
 }
 
-// SaveAndApplyNginxDefault writes a default nginx.conf to disk.
-func (m *Manager) SaveAndApplyNginxDefault(ctx context.Context) error {
-	path := filepath.Join(m.configDir, "nginx.conf")
-os.MkdirAll(m.configDir, 0755)
-return os.WriteFile(path, []byte(m.defaultNginxConf()), 0644)
-}
 
 // InstallProxy installs a proxy using system package manager or download.
 func (m *Manager) InstallProxy(ctx context.Context, proxyType ProxyType) error {
@@ -972,8 +960,18 @@ func (m *Manager) installNginx(ctx context.Context) error {
 		return fmt.Errorf("download nginx: %w", err)
 	}
 
-	// Save default nginx config
-	m.SaveAndApplyNginxDefault(ctx)
+	// Generate config from DB (database = source of truth).
+	// On Panel mode, nginxConfigGen generates from DB.
+	// On Agent mode, config is synced by panel via RPC — skip generation.
+	if m.nginxConfigGen != nil {
+		config, err := m.nginxConfigGen(ctx)
+		if err != nil {
+			return fmt.Errorf("generate nginx config: %w", err)
+		}
+		if err := m.WriteConfigFile(ProxyNginx, config); err != nil {
+			return fmt.Errorf("write nginx config: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -992,8 +990,18 @@ func (m *Manager) installCaddy(ctx context.Context) error {
 		return fmt.Errorf("download caddy: %w", err)
 	}
 
-	// Save default config to DB
-	m.SaveAndApply(ctx)
+	// Generate config from DB (database = source of truth).
+	// On Panel mode, caddyConfigGen generates from DB.
+	// On Agent mode, config is synced by panel via RPC — skip generation.
+	if m.caddyConfigGen != nil {
+		config, err := m.caddyConfigGen(ctx)
+		if err != nil {
+			return fmt.Errorf("generate caddy config: %w", err)
+		}
+		if err := m.WriteConfigFile(ProxyCaddy, config); err != nil {
+			return fmt.Errorf("write caddy config: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -1212,34 +1220,34 @@ func (m *Manager) StartProxy(ctx context.Context, proxyType ProxyType) error {
 	switch proxyType {
 	case ProxyNginx:
 		if m.nginxConfigGen != nil {
+			// Panel mode: generate config from DB (database = source of truth)
 			config, err := m.nginxConfigGen(bgCtx)
 			if err != nil {
 				return fmt.Errorf("generate nginx config: %w", err)
 			}
 			m.WriteConfigFile(ProxyNginx, config)
 		} else {
-			// Agent mode: use existing config file if it exists (synced by panel)
+			// Agent mode: config file is synced by panel via RPC.
+			// If it doesn't exist, the panel hasn't synced yet — refuse to start.
 			configPath := filepath.Join(m.dataDir, m.GetConfigPath(ProxyNginx))
 			if _, err := os.Stat(configPath); os.IsNotExist(err) {
-				if err := m.SaveAndApplyNginxDefault(bgCtx); err != nil {
-					return fmt.Errorf("generate nginx config: %w", err)
-				}
+				return fmt.Errorf("nginx config not yet synced by panel, cannot start")
 			}
 		}
 	default:
 		if m.caddyConfigGen != nil {
+			// Panel mode: generate config from DB (database = source of truth)
 			config, err := m.caddyConfigGen(bgCtx)
 			if err != nil {
 				return fmt.Errorf("generate caddy config: %w", err)
 			}
 			m.WriteConfigFile(ProxyCaddy, config)
 		} else {
-			// Agent mode: use existing config file if it exists (synced by panel)
+			// Agent mode: config file is synced by panel via RPC.
+			// If it doesn't exist, the panel hasn't synced yet — refuse to start.
 			configPath := filepath.Join(m.dataDir, m.GetConfigPath(ProxyCaddy))
 			if _, err := os.Stat(configPath); os.IsNotExist(err) {
-				if _, err := m.SaveAndApply(bgCtx); err != nil {
-					return fmt.Errorf("generate config: %w", err)
-				}
+				return fmt.Errorf("caddy config not yet synced by panel, cannot start")
 			}
 		}
 	}
@@ -2313,41 +2321,6 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 	return fmt.Errorf("unsupported proxy type")
 }
 
-// defaultCaddyfile returns a simple default Caddyfile template.
-func (m *Manager) defaultCaddyfile() string {
-	return `{
-	auto_https off
-}
-
-:80 {
-	respond "CoreFusion Proxy - OK" 200
-}
-`
-}
-
-// defaultNginxConf returns a simple default nginx.conf template with Lua module paths.
-func (m *Manager) defaultNginxConf() string {
-	return `worker_processes auto;
-events {
-    worker_connections 1024;
-}
-http {
-    include mime.types;
-    default_type application/octet-stream;
-
-    # Lua module paths (lua-resty ecosystem + WAF)
-lua_package_path "proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;";
-lua_code_cache on;
-
-    server {
-        listen 80;
-        location / {
-            return 200 "CoreFusion Proxy - OK";
-        }
-    }
-}
-`
-}
 
 // patchWAFConfig rewrites the WAF config.lua with paths matching this installation.
 // Uses relative paths (relative to the nginx working directory = dataDir) so the

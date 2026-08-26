@@ -368,6 +368,9 @@ func (s *Service) IsWAFEnabled(ctx context.Context, serverID int64) bool {
 // and config.lua (Nginx) into the database if they don't exist yet.
 // When disabled, Caddyfile will not include caddyguard block,
 // and nginx.conf will not include WAF Lua directives.
+// Additionally, config.json (Caddy) and config.lua (Nginx) have their
+// waf_enable field set to "off" on disk so the caddyguardfile adapter
+// and Lua WAF engine stop blocking requests immediately.
 func (s *Service) SetWAFEnabled(ctx context.Context, serverID int64, enabled bool) error {
 	if s.settingSvc == nil {
 		return fmt.Errorf("setting store not configured")
@@ -396,7 +399,56 @@ func (s *Service) SetWAFEnabled(ctx context.Context, serverID int64, enabled boo
 			log.Printf("[WAF] failed to land rules for server %d: %v", serverID, err)
 		}
 	}
+	// Update waf_enable in config.json (Caddy) and config.lua (Nginx) on disk.
+	// The caddyguardfile adapter reads config.json at runtime; even without
+	// a caddyguard block in the Caddyfile, the adapter still enforces rules
+	// if waf_enable="on". Setting it to "off" disables runtime enforcement.
+	// For Nginx, config.lua's config_waf_enable controls the Lua WAF engine.
+	s.updateDiskWAFEnable(serverID, enabled)
 	return nil
+}
+
+// updateDiskWAFEnable updates the waf_enable field in config.json (Caddy)
+// and config.lua (Nginx) on disk to match the enabled state.
+// This ensures the caddyguardfile adapter and Lua WAF engine respect the
+// global WAF toggle even when the config file was previously written
+// with waf_enable="on".
+func (s *Service) updateDiskWAFEnable(serverID int64, enabled bool) {
+	state := "off"
+	if enabled {
+		state = "on"
+	}
+
+	// Update Caddy config.json
+	caddyConfigPath := filepath.Join(s.wafRulesDir(), "config.json")
+	if data, err := os.ReadFile(caddyConfigPath); err == nil {
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) == nil {
+			if cur, _ := cfg["waf_enable"].(string); cur != state {
+				cfg["waf_enable"] = state
+				if out, err := json.MarshalIndent(cfg, "", "    "); err == nil {
+					if err := os.WriteFile(caddyConfigPath, out, 0644); err != nil {
+						log.Printf("[WAF] failed to update config.json waf_enable: %v", err)
+					}
+				}
+			}
+		}
+	}
+
+	// Update Nginx config.lua
+	nginxConfigPath := filepath.Join(s.dataDir, "proxy", "lua", "waf", "config.lua")
+	if data, err := os.ReadFile(nginxConfigPath); err == nil {
+		content := string(data)
+		// Replace config_waf_enable = "on" or "off" with the new state
+		newLine := fmt.Sprintf(`config_waf_enable = "%s"`, state)
+		if strings.Contains(content, `config_waf_enable = "on"`) && state == "off" {
+			content = strings.Replace(content, `config_waf_enable = "on"`, newLine, 1)
+			os.WriteFile(nginxConfigPath, []byte(content), 0644)
+		} else if strings.Contains(content, `config_waf_enable = "off"`) && state == "on" {
+			content = strings.Replace(content, `config_waf_enable = "off"`, newLine, 1)
+			os.WriteFile(nginxConfigPath, []byte(content), 0644)
+		}
+	}
 }
 
 // ensureDefaultConfig checks if a WAF config exists for the given server and proxy type.
@@ -773,6 +825,22 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 		path := filepath.Join(ruleDir, "config.json")
 		if err := os.WriteFile(path, []byte(caddyCfg), 0644); err != nil {
 			log.Printf("[WAF] failed to write config.json: %v", err)
+		} else {
+			// If WAF is disabled for this server, override waf_enable to "off"
+			// in the on-disk config.json. The caddyguardfile adapter reads this
+			// file at runtime and enforces rules even without a caddyguard block
+			// in the Caddyfile when waf_enable="on".
+			if !s.IsWAFEnabled(ctx, serverID) {
+				if data, err := os.ReadFile(path); err == nil {
+					var cfg map[string]interface{}
+					if json.Unmarshal(data, &cfg) == nil {
+						cfg["waf_enable"] = "off"
+						if out, err := json.MarshalIndent(cfg, "", "    "); err == nil {
+							os.WriteFile(path, out, 0644)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -783,6 +851,10 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 	nginxCfg, err := s.GetConfig(ctx, serverID, "nginx")
 	if err == nil && nginxCfg != "" {
 		nginxConfigPath := filepath.Join(s.dataDir, "proxy", "lua", "waf", "config.lua")
+		// If WAF is disabled, override config_waf_enable to "off" before writing
+		if !s.IsWAFEnabled(ctx, serverID) {
+			nginxCfg = strings.Replace(nginxCfg, `config_waf_enable = "on"`, `config_waf_enable = "off"`, 1)
+		}
 		if err := os.WriteFile(nginxConfigPath, []byte(nginxCfg), 0644); err != nil {
 			log.Printf("[WAF] failed to write config.lua: %v", err)
 		}

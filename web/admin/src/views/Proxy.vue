@@ -47,12 +47,16 @@ const props = defineProps({
 
 const activeProxy = ref('')
 const runningProxy = ref('')
+// When true, skip auto-selecting the running proxy in fetchStatus().
+// Set by switchProxy() so user can see the selection page even when a proxy is running.
+const manualOverride = ref(false)
 
 // When serverId changes (user switches to a different node),
 // reset the proxy selection so the correct proxy panel is shown
 // based on the new node's actual running state.
 watch(() => props.serverId, () => {
   activeProxy.value = ''
+  manualOverride.value = false
   fetchStatus()
 })
 
@@ -67,10 +71,14 @@ const runningProxyName = computed(() => {
 })
 
 function selectProxy(type) {
+  manualOverride.value = false
   activeProxy.value = type
 }
 
 function switchProxy() {
+  // Set manualOverride so fetchStatus doesn't auto-select the running proxy.
+  // This lets the user see the proxy selection page to pick a different proxy.
+  manualOverride.value = true
   activeProxy.value = ''
   fetchStatus()
 }
@@ -88,7 +96,8 @@ async function fetchStatus() {
     // Auto-select the running proxy if no manual selection has been made.
     // This ensures each node shows the correct proxy panel based on its
     // actual running state, rather than a stale localStorage value.
-    if (!activeProxy.value && runningProxy.value) {
+    // Skip auto-select when manualOverride is set (user clicked "Switch Proxy").
+    if (!activeProxy.value && runningProxy.value && !manualOverride.value) {
       activeProxy.value = runningProxy.value
     }
   } catch (e) {}

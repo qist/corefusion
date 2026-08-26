@@ -578,7 +578,7 @@
           </el-select>
         </el-form-item>
 <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
-            <el-select v-model="siteForm.template" style="width:100%">
+            <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
@@ -590,7 +590,7 @@
             </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
-            <el-select v-model="siteForm.template" style="width:100%">
+            <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
@@ -640,7 +640,8 @@
           <el-switch v-model="siteForm.log_enabled" />
         </el-form-item>
         <el-form-item v-if="siteForm.log_enabled" :label="t('proxy.logPath')">
-          <el-input v-model="siteForm.log_path" placeholder="logs/example.com.log" />
+          <el-input v-model="siteForm.log_path" placeholder="留空则使用全局统一日志 (logs/caddy_access.log)" />
+          <div style="font-size:11px;color:#909399;margin-top:4px">填写自定义路径则该站点独立输出日志文件；留空则输出到全局统一日志</div>
         </el-form-item>
         <el-form-item v-if="siteForm.log_enabled" :label="t('proxy.logFormat')">
           <el-select v-model="siteForm.log_format" style="width:100%">
@@ -1146,19 +1147,46 @@ async function proxyAction(action) {
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
+// Templates where WAF is disabled by default (non-HTTP traffic, WAF would interfere)
+const wafDisabledTemplates = ['reality', 'websocket', 'grpc', 'xhttp', 'httpupgrade']
+
 function showAddSite(template) {
   siteDialogTitle.value = t('proxy.addSite')
   const isReality = template === 'reality'
 siteForm.value = {
 domain: isReality ? ':9443' : '', upstreams: isReality ? [''] : [''], path: '', backend_path: '', template,
     use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
-proxy_config: '', custom_config: '', waf_enabled: !isReality, lb_policy: '',
+proxy_config: '', custom_config: '', waf_enabled: !wafDisabledTemplates.includes(template), lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',
 l4_protocol: 'tcp', sni_target: '',
 proxy_protocol: isReality, is_panel: false, editMode: 'form',
 inbound_id: null
 }
   siteDialogVisible.value = true
+}
+
+// Handle template change: sync dependent fields when switching templates
+function onTemplateChange(newTemplate) {
+  const isReality = newTemplate === 'reality'
+  if (isReality) {
+    // Reality requires cert and proxy_protocol
+    siteForm.value.use_cert = true
+    siteForm.value.proxy_protocol = true
+    siteForm.value.waf_enabled = false
+    if (!siteForm.value.domain || !siteForm.value.domain.startsWith(':')) {
+      siteForm.value.domain = ':9443'
+    }
+  } else {
+    if (!siteForm.value.cert_path) {
+      siteForm.value.use_cert = false
+    }
+    siteForm.value.proxy_protocol = false
+    // WAF defaults off for non-HTTP templates (WS, gRPC, XHTTP, etc.)
+    siteForm.value.waf_enabled = !wafDisabledTemplates.includes(newTemplate)
+    if (siteForm.value.domain === ':9443') {
+      siteForm.value.domain = ''
+    }
+  }
 }
 
 function showPanelProxy() {
@@ -1221,7 +1249,7 @@ siteForm.value = {
 id: row.id, domain: row.domain, upstreams: upstreams,
 path: row.path, backend_path: row.backend_path,
 template: row.template,
-    use_cert: !!row.cert_path, cert_id: certId,
+    use_cert: row.template === 'reality' ? true : !!row.cert_path, cert_id: certId,
     cert_path: row.cert_path, key_path: row.key_path,
     proxy_config: row.proxy_config,
     custom_config: row.custom_config,
@@ -1232,7 +1260,7 @@ waf_enabled: row.waf_enabled !== false,
     log_format: row.log_format,
     l4_protocol: row.l4_protocol,
     sni_target: row.sni_target,
-    proxy_protocol: row.proxy_protocol || false,
+    proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false),
     is_panel: row.is_panel, editMode: 'form',
     inbound_id: null
   }

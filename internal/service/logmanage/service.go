@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +24,7 @@ type SettingStore interface {
 // Supported log source types.
 var (
 	// proxyLogTypes are the proxy process types managed by the log center.
-	proxyLogTypes = []string{"nginx", "caddy"}
+	proxyLogTypes = []string{"nginx", "caddy", "waf"}
 	// coreLogTypes are the core process types managed by the log center.
 	coreLogTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
 	// allLogTypes is the combined list for iteration.
@@ -190,6 +191,8 @@ func (s *Service) Start() {
 	if s.clientLogDeps != nil {
 		go s.clientLogCleanupLoop()
 	}
+	// Start WAF log cleanup (daily, removes date-based WAF logs older than retain days)
+	go s.wafLogCleanupLoop()
 }
 
 // Stop stops the background scheduler.
@@ -669,12 +672,20 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 		logs = append(logs, nginxLogs...)
 	}
 
-	// Discover caddy logs from site configs
+	// Discover caddy logs (unified access log file)
 	caddyLogs, err := s.discoverCaddyLogs(ctx)
 	if err != nil {
 		log.Printf("logmanage: failed to discover caddy logs: %v", err)
 	} else {
 		logs = append(logs, caddyLogs...)
+	}
+
+	// Discover WAF logs (date-based, e.g. logs/2026-08-25_waf.log)
+	wafLogs, err := s.discoverWAFLogs(ctx)
+	if err != nil {
+		log.Printf("logmanage: failed to discover WAF logs: %v", err)
+	} else {
+		logs = append(logs, wafLogs...)
 	}
 
 	// Cross-check with existing local policies
@@ -883,40 +894,84 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 	return logs, nil
 }
 
-// discoverCaddyLogs reads log paths from caddy site configs.
-// Always discovers file-based log paths regardless of the log_output_config mode.
-// Caddy collects logs per-domain. If LogPath is empty, it defaults to logs/<domain>.log.
-// L4 and SNI sites are excluded as they don't produce HTTP access logs.
+// discoverCaddyLogs discovers the unified Caddy access log file.
+// All sites share a single log file (logs/caddy_access.log) via a named logger.
+// Per-site custom log paths are also discovered if configured.
 func (s *Service) discoverCaddyLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	if s.caddySiteRepo == nil {
 		return nil, nil
 	}
-	sites, err := s.caddySiteRepo.List(ctx, 1)
-	if err != nil {
-		return nil, err
+
+	// Check log output mode
+	logMode := "file"
+	if s.settingStore != nil {
+		if v, err := s.settingStore.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
+			var cfg struct {
+				Caddy struct {
+					Mode string `json:"mode"`
+				} `json:"caddy"`
+			}
+			if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
+				logMode = cfg.Caddy.Mode
+			}
+		}
+	}
+	if logMode == "off" {
+		return nil, nil
 	}
 
 	var logs []DiscoveredLog
-	for _, site := range sites {
-		// Skip L4 and SNI sites - they don't have HTTP-level logs
-		if site.Template == "l4" || site.Template == "sni" {
-			continue
+
+	// Unified access log file
+	logs = append(logs, DiscoveredLog{
+		SourceType: "caddy",
+		Domain:     "access",
+		LogPath:    s.resolveLogPath("logs/caddy_access.log"),
+		LogFormat:  "json",
+	})
+
+	// Discover per-site custom log paths (sites that override the global logger)
+	sites, err := s.caddySiteRepo.List(ctx, 1)
+	if err == nil {
+		seen := make(map[string]bool)
+		for _, site := range sites {
+			if site.Template == "l4" || site.Template == "sni" {
+				continue
+			}
+			if !site.LogEnabled || site.LogPath == "" {
+				continue
+			}
+			path := s.resolveLogPath(site.LogPath)
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			logs = append(logs, DiscoveredLog{
+				SourceType: "caddy",
+				Domain:     site.Domain,
+				LogPath:    path,
+				LogFormat:  site.LogFormat,
+			})
 		}
-		if !site.LogEnabled {
-			continue
-		}
-		logPath := site.LogPath
-		if logPath == "" {
-			logPath = fmt.Sprintf("logs/%s.log", sanitizeDomain(site.Domain))
-		}
-		logs = append(logs, DiscoveredLog{
-			SourceType: "caddy",
-			Domain:     site.Domain,
-			LogPath:    s.resolveLogPath(logPath),
-			LogFormat:  site.LogFormat,
-		})
 	}
+
 	return logs, nil
+}
+
+// discoverWAFLogs discovers WAF log files.
+// WAF writes logs by date: logs/<date>_waf.log (e.g. logs/2026-08-25_waf.log).
+// We discover the current day's log file.
+func (s *Service) discoverWAFLogs(ctx context.Context) ([]DiscoveredLog, error) {
+	today := time.Now().Format("2006-01-02")
+	logPath := fmt.Sprintf("logs/%s_waf.log", today)
+	return []DiscoveredLog{
+		{
+			SourceType: "waf",
+			Domain:     "waf",
+			LogPath:    s.resolveLogPath(logPath),
+			LogFormat:  "json",
+		},
+	}, nil
 }
 
 // sanitizeDomain converts a domain to a safe log file name.
@@ -1085,4 +1140,63 @@ func (s *Service) resolveLogPath(path string) string {
 		return path
 	}
 	return filepath.Join(s.dataDir, path)
+}
+
+// wafLogCleanupLoop runs daily to clean up expired WAF log files.
+// WAF logs are date-based: logs/<date>_waf.log (e.g. logs/2026-08-25_waf.log).
+// Retain days are read from the "waf.log_retain_days" setting (default 30).
+func (s *Service) wafLogCleanupLoop() {
+	// Run once at startup, then daily
+	s.cleanExpiredWAFLogs()
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.cleanExpiredWAFLogs()
+	}
+}
+
+// cleanExpiredWAFLogs scans the logs directory for date-based WAF log files
+// and removes those older than the configured retain days.
+func (s *Service) cleanExpiredWAFLogs() {
+	retainDays := 30
+	if s.settingStore != nil {
+		if v, err := s.settingStore.GetByKey(context.Background(), "waf.log_retain_days"); err == nil && v != "" {
+			if d, err := strconv.Atoi(v); err == nil && d > 0 {
+				retainDays = d
+			}
+		}
+	}
+
+	logDir := filepath.Join(s.dataDir, "logs")
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -retainDays)
+	cleaned := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		// Match: <date>_waf.log or <date>_waf.log.old
+		if !strings.HasSuffix(name, "_waf.log") && !strings.HasSuffix(name, "_waf.log.old") {
+			continue
+		}
+		// Extract date prefix: "2026-08-25" from "2026-08-25_waf.log"
+		datePart := name[:10] // first 10 chars = date
+		fileDate, err := time.Parse("2006-01-02", datePart)
+		if err != nil {
+			continue
+		}
+		if fileDate.Before(cutoff) {
+			fullPath := filepath.Join(logDir, name)
+			if err := os.Remove(fullPath); err != nil {
+				log.Printf("logmanage: failed to delete WAF log %s: %v", fullPath, err)
+				continue
+			}
+			cleaned++
+		}
+	}
+	if cleaned > 0 {
+		log.Printf("logmanage: cleaned %d expired WAF log files (retain=%dd)", cleaned, retainDays)
+	}
 }

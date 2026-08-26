@@ -82,12 +82,20 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	switch logOutputMode {
 	case "stdout":
 		ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_error.log"), "/dev/stderr")
-		sb.WriteString(fmt.Sprintf("error_log logs/stdout_error.log %s;\n", s.ErrorLogLevel))
+		if s.ErrorLogLevel != "" {
+			sb.WriteString(fmt.Sprintf("error_log logs/stdout_error.log %s;\n", s.ErrorLogLevel))
+		} else {
+			sb.WriteString("error_log logs/stdout_error.log;\n")
+		}
 	case "off":
 		sb.WriteString("error_log /dev/null;\n")
 	default: // "file"
 		if s.ErrorLog {
-			sb.WriteString(fmt.Sprintf("error_log %s %s;\n", s.ErrorLogPath, s.ErrorLogLevel))
+			if s.ErrorLogLevel != "" {
+				sb.WriteString(fmt.Sprintf("error_log %s %s;\n", s.ErrorLogPath, s.ErrorLogLevel))
+			} else {
+				sb.WriteString(fmt.Sprintf("error_log %s;\n", s.ErrorLogPath))
+			}
 		} else {
 			sb.WriteString("error_log /dev/null;\n")
 		}

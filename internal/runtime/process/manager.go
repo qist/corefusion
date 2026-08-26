@@ -324,10 +324,19 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	// Calling Start on an already-running core should be a no-op, not a restart.
 	// This prevents accidental core restarts when the panel's status cache is
 	// stale (e.g. after panel restart) and the UI sends a spurious "start" command.
-	if p, ok := m.processes[serviceID]; ok && p.state == "running" {
-		m.mu.Unlock()
-		log.Printf("service %d already running (pid=%d), start skipped", serviceID, p.pid)
-		return nil
+	if p, ok := m.processes[serviceID]; ok {
+		if p.state == "running" {
+			m.mu.Unlock()
+			log.Printf("service %d already running (pid=%d), start skipped", serviceID, p.pid)
+			return nil
+		}
+		// If a restart or stop is in progress, skip to avoid starting a
+		// duplicate process while the async goroutine is between kill and start.
+		if p.state == "restarting" || p.state == "stopping" {
+			m.mu.Unlock()
+			log.Printf("service %d is %s, start skipped", serviceID, p.state)
+			return nil
+		}
 	}
 
 	// Kill existing process if any (e.g. crashed but not yet cleaned up)

@@ -692,7 +692,9 @@ func (h *Handler) landAndSync(ctx context.Context, serverID int64) error {
 		if err := h.svc.LandRulesForServer(ctx, serverID); err != nil {
 			return fmt.Errorf("land rules for local server %d: %w", serverID, err)
 		}
-		// Reload local proxies so WAF changes take effect immediately.
+		// Reload local proxies so WAF changes take effect.
+		// caddyguard hot-reloads config.json within ~2s, but we reload
+		// anyway for nginx (Lua WAF needs reload to re-read config.lua).
 		h.reloadLocalProxies(ctx)
 		return nil
 	}

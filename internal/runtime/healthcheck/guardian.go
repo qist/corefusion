@@ -346,12 +346,19 @@ func (g *Guardian) handleCrash() {
 			g.state = "crashed"
 			g.mu.Unlock()
 		} else {
-			log.Printf("healthcheck %s: restarted successfully", g.name)
+			// restartFn (StartProxy / process.Manager.Start) creates a NEW
+			// guardian and registers it in the manager's map. This old guardian
+			// must stop its monitorLoop to avoid two guardians racing on the
+			// same process (duplicate crash detection, duplicate restarts).
+			log.Printf("healthcheck %s: restarted successfully, old guardian stopping", g.name)
 			g.mu.Lock()
-			g.state = "running"
-			g.startedAt = time.Now()
-			g.pid = 0 // Will be updated by caller
+			g.state = "stopped"
 			g.mu.Unlock()
+			// Signal monitorLoop to exit.
+			select {
+			case g.stopCh <- struct{}{}:
+			default:
+			}
 		}
 	}()
 }

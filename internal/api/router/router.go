@@ -3443,3 +3443,7 @@ func (a *wafProxyReloaderAdapter) DetectProxy(proxyType string) wafHandler.Proxy
 func (a *wafProxyReloaderAdapter) ReloadProxy(ctx context.Context, proxyType string) error {
 	return a.mgr.ReloadProxy(ctx, proxySvc.ProxyType(proxyType))
 }
+
+func (a *wafProxyReloaderAdapter) SaveAndApply(ctx context.Context, proxyType string) error {
+	return a.mgr.SaveAndApplyProxy(ctx, proxySvc.ProxyType(proxyType))
+}

@@ -552,11 +552,11 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t\tprotocols h1\n")
+		sb.WriteString("\t\tprotocols h1 h2\n")
 		sb.WriteString("\t}\n")
 	} else if hasL4 {
 		sb.WriteString("\n\tservers {\n")
-		sb.WriteString("\t\tprotocols h1\n")
+		sb.WriteString("\t\tprotocols h1 h2\n")
 		sb.WriteString("\t}\n")
 	}
 	// Log configuration - check log output mode (per-node)
@@ -686,8 +686,24 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 	}
 
 	for domain, siteList := range domainSites {
+		// Check if this domain has TLS certificates
+		hasCert := false
+		for _, site := range siteList {
+			if site.CertPath != "" && site.KeyPath != "" {
+				hasCert = true
+				break
+			}
+		}
+		// When layer4 is active, non-TLS sites must use :80 to avoid
+		// conflicting with layer4's :443 listener (SO_REUSEPORT causes
+		// ~50% of connections to bypass layer4 and return empty responses).
+		// Skip domains that already specify a port (e.g. ":80", "0.0.0.0:8080").
+		siteAddr := domain
+		if hasL4 && !hasCert && !strings.HasPrefix(domain, ":") {
+			siteAddr = domain + ":80"
+		}
 		sb.WriteString(fmt.Sprintf("# %s\n", domain))
-		sb.WriteString(fmt.Sprintf("%s {\n", domain))
+		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
 
 		// TLS from first site that has it
 		for _, site := range siteList {

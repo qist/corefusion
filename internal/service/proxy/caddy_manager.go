@@ -193,11 +193,11 @@ if wafEnabled {
 	sb.WriteString("\t\trule_dir proxy/waf-rules\n")
 	sb.WriteString("\t}\n")
 }
-	// Disable HTTP/3 (QUIC) and HTTP/2 when layer4 SNI is active.
-	// Caddy v2.11.x has a bug where HTTP/2 connections intermittently
-	// return empty NOP responses under concurrent load (status 0, size 0).
-	// Using protocols h1 only avoids this entirely.
-	// When SNI is not enabled, keep h1 h2 for better performance.
+	// When layer4 SNI is active, listener_wrappers (proxy_protocol + tls)
+	// are needed for the backend HTTPS server to receive real client IP.
+	// We no longer force protocols h1: the real fix for the empty response
+	// bug is ensuring non-TLS sites use :80 so layer4 owns :443 exclusively.
+	// Keep h1 h2 (no h3) to avoid UDP 443 conflict with layer4.
 	if needPP {
 		sb.WriteString("\n\tservers {\n")
 		sb.WriteString("\t\tlistener_wrappers {\n")
@@ -209,11 +209,11 @@ if wafEnabled {
 		sb.WriteString("\t\t\t}\n")
 		sb.WriteString("\t\t\ttls\n")
 		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t\tprotocols h1\n")
+		sb.WriteString("\t\tprotocols h1 h2\n")
 		sb.WriteString("\t}\n")
 	} else if hasL4 {
 		sb.WriteString("\n\tservers {\n")
-		sb.WriteString("\t\tprotocols h1\n")
+		sb.WriteString("\t\tprotocols h1 h2\n")
 		sb.WriteString("\t}\n")
 	}
 	if hasL4 {
@@ -358,8 +358,24 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 	}
 
 	for domain, siteList := range domainSites {
+		// Check if this domain has TLS certificates
+		hasCert := false
+		for _, site := range siteList {
+			if site.CertPath != "" && site.KeyPath != "" {
+				hasCert = true
+				break
+			}
+		}
+		// When layer4 is active, non-TLS sites must use :80 to avoid
+		// conflicting with layer4's :443 listener (SO_REUSEPORT causes
+		// ~50% of connections to bypass layer4 and return empty responses).
+		// Skip domains that already specify a port (e.g. ":80", "0.0.0.0:8080").
+		siteAddr := domain
+		if hasL4 && !hasCert && !strings.HasPrefix(domain, ":") {
+			siteAddr = domain + ":80"
+		}
 		sb.WriteString(fmt.Sprintf("# %s\n", domain))
-		sb.WriteString(fmt.Sprintf("%s {\n", domain))
+		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
 
 		for _, site := range siteList {
 			if site.CertPath != "" && site.KeyPath != "" {

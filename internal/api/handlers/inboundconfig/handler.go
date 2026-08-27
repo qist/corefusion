@@ -13,7 +13,10 @@ import (
 )
 
 // ConfigSyncHook triggers config sync to a specific server after data changes.
-// Implemented by a closure that calls configsync.Service or nodeserver.Service.
+// Implemented by configSyncHookAdapter in router.go.
+// When triggerMirrorSync=true (inbound changes), the adapter also triggers
+// SyncMirrorsForPrimary, which calls SyncDataToServer for each mirror node.
+// SyncData detects mirror nodes and generates config from the primary's data.
 type ConfigSyncHook interface {
 	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
 }
@@ -24,11 +27,19 @@ type SyncDataHook interface {
 	SyncServerData(ctx context.Context, serverID int64)
 }
 
+// MirrorChecker checks if a server is a mirror node.
+// Mirror nodes are read-only — inbound configs can only be modified on
+// the primary node. Implemented by nodeserver.Service or a closure.
+type MirrorChecker interface {
+	IsMirrorNode(ctx context.Context, serverID int64) bool
+}
+
 // Handler handles inbound config HTTP requests.
 type Handler struct {
-	svc          *inboundconfig.Service
-	syncHook     ConfigSyncHook
-	syncDataHook SyncDataHook
+	svc           *inboundconfig.Service
+	syncHook      ConfigSyncHook
+	syncDataHook  SyncDataHook
+	mirrorChecker MirrorChecker
 }
 
 // NewHandler creates a new inbound config handler.
@@ -37,6 +48,10 @@ func NewHandler(svc *inboundconfig.Service) *Handler {
 }
 
 // SetSyncHook sets the config sync hook for triggering remote sync after changes.
+// The hook adapter (configSyncHookAdapter) handles both config sync and mirror
+// fanout — when triggerMirrorSync=true, it calls SyncMirrorsForPrimary which
+// triggers SyncData to all mirror nodes. SyncData detects mirror nodes and
+// generates config from the primary's data at runtime.
 func (h *Handler) SetSyncHook(hook ConfigSyncHook) {
 	h.syncHook = hook
 }
@@ -44,6 +59,13 @@ func (h *Handler) SetSyncHook(hook ConfigSyncHook) {
 // SetSyncDataHook sets the SyncData hook for triggering full data sync to remote Agents.
 func (h *Handler) SetSyncDataHook(hook SyncDataHook) {
 	h.syncDataHook = hook
+}
+
+// SetMirrorChecker sets the mirror checker for read-only enforcement.
+// When set, Create/Update/Delete on mirror nodes will be rejected with
+// MIRROR_READONLY error.
+func (h *Handler) SetMirrorChecker(checker MirrorChecker) {
+	h.mirrorChecker = checker
 }
 
 // List handles GET /api/v1/node-servers/:id/inbound-configs.
@@ -76,6 +98,20 @@ func (h *Handler) Get(c *gin.Context) {
 	response.OK(c, cfg)
 }
 
+// checkMirrorReadOnly rejects write operations on mirror nodes.
+// Mirror nodes are read-only — their config is synced from the primary.
+func (h *Handler) checkMirrorReadOnly(c *gin.Context, serverID int64) bool {
+	if h.mirrorChecker == nil {
+		return false
+	}
+	if h.mirrorChecker.IsMirrorNode(c.Request.Context(), serverID) {
+		response.BadRequest(c, "MIRROR_READONLY",
+			"镜像节点配置只能从主节点同步，不能手动修改")
+		return true
+	}
+	return false
+}
+
 // Create handles POST /api/v1/node-servers/:id/inbound-configs.
 func (h *Handler) Create(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -96,6 +132,10 @@ func (h *Handler) Create(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Reject writes on mirror nodes (read-only)
+	if h.checkMirrorReadOnly(c, serverID) {
+		return
+	}
 	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
 	if err != nil {
 		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
@@ -106,8 +146,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	// Trigger config sync to the target server asynchronously
-	if h.syncHook != nil && serverID > 1 {
+	// Trigger config sync to the target server asynchronously.
+	// No serverID > 1 restriction: for the primary node (serverID=1),
+	// the configSyncHookAdapter with triggerMirrorSync=true will
+	// call SyncMirrorsForPrimary, which triggers SyncData to all mirror
+	// nodes. SyncData detects mirror nodes and generates config from
+	// the primary's data at runtime.
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, req.CoreType)
 	}
 
@@ -134,6 +179,16 @@ func (h *Handler) Update(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Reject writes on mirror nodes (read-only)
+	// First get the config to find its serverID
+	existing, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", err.Error())
+		return
+	}
+	if h.checkMirrorReadOnly(c, existing.ServerID) {
+		return
+	}
 	cfg, err := h.svc.Update(c.Request.Context(), id, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
 	if err != nil {
 		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
@@ -144,8 +199,10 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	// Trigger config sync to the target server asynchronously
-	if h.syncHook != nil && cfg.ServerID > 1 {
+	// Trigger config sync to the target server asynchronously.
+	// No serverID > 1 restriction: primary node changes must trigger
+	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), cfg.ServerID, cfg.CoreType)
 	}
 
@@ -165,6 +222,10 @@ func (h *Handler) Delete(c *gin.Context) {
 	if existing, err := h.svc.GetByID(c.Request.Context(), id); err == nil {
 		serverID = existing.ServerID
 		coreType = existing.CoreType
+		// Reject writes on mirror nodes (read-only)
+		if h.checkMirrorReadOnly(c, serverID) {
+			return
+		}
 	}
 
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -172,8 +233,10 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Trigger config sync to the target server asynchronously
-	if h.syncHook != nil && serverID > 1 {
+	// Trigger config sync to the target server asynchronously.
+	// No serverID > 1 restriction: primary node changes must trigger
+	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, coreType)
 	}
 
@@ -194,11 +257,13 @@ func (h *Handler) ResetAllTraffic(c *gin.Context) {
 		return
 	}
 
-	// Trigger config sync AND SyncData to the target server asynchronously
-	if h.syncHook != nil && serverID > 1 {
+	// Trigger config sync AND SyncData to the target server asynchronously.
+	// No serverID > 1 restriction: primary node changes must trigger
+	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, "xray")
 	}
-	if h.syncDataHook != nil && serverID > 1 {
+	if h.syncDataHook != nil {
 		go h.syncDataHook.SyncServerData(context.Background(), serverID)
 	}
 

@@ -72,6 +72,10 @@ type Service struct {
 	settingSvc SettingStore
 	nodeLister NodeLister
 	dataDir    string
+	// nodeServerRepo is used to detect mirror nodes and resolve their primary
+	// server ID for WAF rule collection. When set, CollectAllFiles checks
+	// if the target is a mirror and uses the primary's server_id for queries.
+	nodeServerRepo *repository.NodeServerRepository
 }
 
 // NewService creates a new WAF service.
@@ -99,6 +103,50 @@ func (s *Service) SetSyncer(syncer NodeSyncer) {
 // SetNodeLister sets the node lister for push-to-all operations.
 func (s *Service) SetNodeLister(lister NodeLister) {
 	s.nodeLister = lister
+}
+
+// SetNodeServerRepo sets the node server repository for mirror node detection.
+// When set, SyncToNode and CollectAllFiles will check if the target is a mirror
+// node and use its primary's server_id to collect WAF rules.
+func (s *Service) SetNodeServerRepo(repo *repository.NodeServerRepository) {
+	s.nodeServerRepo = repo
+}
+
+// GetMirrorServerIDs returns the IDs of all mirror nodes that reference
+// primaryServerID as their partner (primary) server.
+// This is used by the WAF handler to fan-out changes to mirror nodes.
+func (s *Service) GetMirrorServerIDs(ctx context.Context, primaryServerID int64) ([]int64, error) {
+	if s.nodeServerRepo == nil {
+		return nil, nil
+	}
+	servers, err := s.nodeServerRepo.ListByPartner(ctx, primaryServerID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(servers))
+	for _, srv := range servers {
+		if srv.NodeType == entity.NodeTypeMirror {
+			ids = append(ids, srv.ID)
+		}
+	}
+	return ids, nil
+}
+
+// resolveMirrorSourceServerID checks if the given serverID is a mirror node.
+// If it is, returns the primary server's ID and true.
+// Otherwise, returns the original serverID and false.
+func (s *Service) resolveMirrorSourceServerID(ctx context.Context, serverID int64) (int64, bool) {
+	if s.nodeServerRepo == nil {
+		return serverID, false
+	}
+	server, err := s.nodeServerRepo.GetByID(ctx, serverID)
+	if err != nil || server == nil {
+		return serverID, false
+	}
+	if server.NodeType == entity.NodeTypeMirror && server.PartnerServerID > 0 {
+		return server.PartnerServerID, true
+	}
+	return serverID, false
 }
 
 // MigrateNodeRulesMergeMode fixes legacy node-scoped WAF rules whose merge_mode
@@ -1137,11 +1185,19 @@ func (s *Service) CollectAllFilesForProxyTypes(ctx context.Context, serverID int
 }
 
 // SyncToNode pushes all WAF files from DB to a specific node.
+// If the target server is a mirror node, WAF rules are collected from the
+// primary server's data (partner_server_id) to ensure mirrors get the same
+// rules as the primary.
 func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 	if s.syncer == nil {
 		return fmt.Errorf("node syncer not configured")
 	}
-	files, err := s.CollectAllFiles(ctx, serverID)
+	// For mirror nodes, collect WAF files from the primary's server_id
+	sourceServerID, isMirror := s.resolveMirrorSourceServerID(ctx, serverID)
+	if isMirror {
+		log.Printf("[WAF] server %d is mirror, using source server %d for rules", serverID, sourceServerID)
+	}
+	files, err := s.CollectAllFiles(ctx, sourceServerID)
 	if err != nil {
 		return err
 	}

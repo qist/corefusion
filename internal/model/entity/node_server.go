@@ -6,6 +6,7 @@ import "time"
 const (
 	NodeTypeStandalone     = "standalone"     // 独立服务节点
 	NodeTypeMirror         = "mirror"         // 镜像节点（流量合并到主节点）
+	NodeTypeSync          = "sync"           // 同步节点（配置从主节点复制，可独立修改，独立计费）
 	NodeTypePrimaryBackup  = "primary_backup" // 主备节点（自动故障切换）
 	NodeTypeChainEntry     = "chain_entry"    // 链式代理入口（国内中转）
 	NodeTypeChainExit      = "chain_exit"      // 链式代理出口（国际出口，不计费）
@@ -113,6 +114,10 @@ func (n *NodeServer) IsChainExit() bool { return n.NodeType == NodeTypeChainExit
 
 // IsMirror returns true if this node mirrors another node's traffic.
 func (n *NodeServer) IsMirror() bool { return n.NodeType == NodeTypeMirror }
+
+// IsSync returns true if this node is a sync node (copies config from primary
+// but can be independently modified and billed).
+func (n *NodeServer) IsSync() bool { return n.NodeType == NodeTypeSync }
 
 // ShouldBill returns true if this node participates in billing (user creation + traffic stats).
 func (n *NodeServer) ShouldBill() bool { return n.Enabled && n.BillingEnabled && !n.IsChainExit() }

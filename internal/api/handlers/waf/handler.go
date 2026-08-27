@@ -696,14 +696,39 @@ func (h *Handler) landAndSync(ctx context.Context, serverID int64) error {
 		// caddyguard hot-reloads config.json within ~2s, but we reload
 		// anyway for nginx (Lua WAF needs reload to re-read config.lua).
 		h.reloadLocalProxies(ctx)
-		return nil
+	} else {
+		if err := h.pushToRemote(ctx, serverID); err != nil {
+			return err
+		}
+		// Send reload command to remote Agent for both nginx and caddy.
+		h.reloadRemoteProxies(ctx, serverID)
 	}
-	if err := h.pushToRemote(ctx, serverID); err != nil {
-		return err
-	}
-	// Send reload command to remote Agent for both nginx and caddy.
-	h.reloadRemoteProxies(ctx, serverID)
+
+	// Fan-out: if this server has mirror nodes, sync WAF to them too.
+	// This ensures WAF changes on the primary node are immediately
+	// propagated to all its mirrors.
+	h.fanOutMirrorSync(ctx, serverID)
+
 	return nil
+}
+
+// fanOutMirrorSync finds all mirror nodes that reference serverID as their
+// primary (partner_server_id) and pushes WAF files to them.
+// SyncToNode internally detects mirror nodes and collects rules from the
+// primary's server_id, so the mirror gets the correct WAF configuration.
+func (h *Handler) fanOutMirrorSync(ctx context.Context, primaryServerID int64) {
+	mirrorIDs, err := h.svc.GetMirrorServerIDs(ctx, primaryServerID)
+	if err != nil || len(mirrorIDs) == 0 {
+		return
+	}
+	for _, mirrorID := range mirrorIDs {
+		if err := h.pushToRemote(ctx, mirrorID); err != nil {
+			log.Printf("[WAF] fan-out to mirror %d: %v", mirrorID, err)
+			continue
+		}
+		h.reloadRemoteProxies(ctx, mirrorID)
+		log.Printf("[WAF] fan-out to mirror %d: success", mirrorID)
+	}
 }
 
 // reloadLocalProxies reloads installed and running proxies on the local node.

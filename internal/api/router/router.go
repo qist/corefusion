@@ -303,6 +303,20 @@ func (a *configSyncHookAdapter) SyncServerConfig(_ context.Context, serverID int
 			log.Printf("[router] configSyncHook: SyncNow failed for server %d: %v", serverID, err)
 		}
 	}
+	// For remote nodes (serverID > 1), also trigger SyncData to push
+	// inbound_configs to the Agent's local SQLite and—crucially—land
+	// TLS certificate PEM files on disk. SyncNow only pushes the xray
+	// config file, but certificates referenced in the config are only
+	// sent via SyncData's collectCertificates step.
+	if a.nodeServerSvc != nil && serverID > 1 {
+		go func() {
+			if _, err := a.nodeServerSvc.SyncServerData(context.Background(), serverID, true); err != nil {
+				log.Printf("[router] configSyncHook: SyncData failed for server %d: %v", serverID, err)
+			} else {
+				log.Printf("[router] configSyncHook: SyncData success for server %d", serverID)
+			}
+		}()
+	}
 	// Only trigger mirror sync for inbound changes (not outbound).
 	// Mirrors only replicate inbounds and caddy/nginx proxy configs.
 	if a.triggerMirrorSync && a.nodeServerSvc != nil {
@@ -357,6 +371,23 @@ func (a *syncDataHookAdapter) SyncServerData(_ context.Context, serverID int64) 
 			}
 		}()
 	}
+}
+
+// mirrorCheckerAdapter adapts nodeserver.Service to the MirrorChecker interface.
+// It checks if a server is a mirror node to enforce read-only constraints.
+type mirrorCheckerAdapter struct {
+	nodeServerSvc *nodeServerSvc.Service
+}
+
+func (a *mirrorCheckerAdapter) IsMirrorNode(ctx context.Context, serverID int64) bool {
+	if a.nodeServerSvc == nil {
+		return false
+	}
+	srv, err := a.nodeServerSvc.GetByID(ctx, serverID)
+	if err != nil || srv == nil {
+		return false
+	}
+	return srv.NodeType == "mirror"
 }
 
 // Shutdown stops all managed processes. Call this when the panel exits.
@@ -461,6 +492,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// discover all registered servers (local + remote) for multi-node sync.
 	nodeServerRepoForSync := repository.NewNodeServerRepository(database)
 	configSyncSvc.SetServerLister(nodeServerRepoForSync)
+
+	// Inject serverRepo into inboundConfigSvc so that List queries for
+	// mirror nodes resolve to the primary's inbound configs.
+	inboundConfigSvc.SetServerRepo(nodeServerRepoForSync)
 
 	// Runtime config workflow (snapshot / dry-run / apply / rollback / disable-proxy)
 	var runtimeApplyWriter runtimeapplySvc.ConfigWriter
@@ -575,8 +610,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planSvcInst, inboundConfigRepo, nil)
 	}
 
-	// Wire log mode provider to configsync so generated configs include correct log section
-	configSyncSvc.SetLogModeProvider(logManageSvc)
+// Wire log mode provider to configsync so generated configs include correct log section
+configSyncSvc.SetLogModeProvider(logManageSvc)
+// Wire server repo so configsync can detect mirror nodes and use primary's data
+configSyncSvc.SetServerRepo(nodeServerRepoForSync)
 
 	// Wire core config section getter so logmanage can derive output mode from
 	// the actual xray/singbox log section (syncs with protocol center changes)
@@ -688,9 +725,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 	})
 
-	// Client service
-	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
-	clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
+// Client service
+inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
+inboundMgr.SetServerRepo(nodeServerRepoForSync)
+clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
 
 	// Inject client service into plan service for account synchronization
 	// when new nodes are added to a plan's node group.
@@ -1541,14 +1579,22 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
 				billingFilter := agent.NewBillingFilter(nodeServerRepo)
 
-				nodeServerSvcInst.
-					WithInboundRepo(inboundRepoForNodeServer).
-					WithNodeManager(nodeMgrForPhase3).
-					WithFailoverManager(failoverMgr).
-					WithMirrorSync(mirrorSyncMgr).
-					WithChainGenerator(chainGen).
-					WithChainHealthRegistry(chainHealthRegistry).
-					WithBillingFilter(billingFilter)
+			nodeServerSvcInst.
+				WithInboundRepo(inboundRepoForNodeServer).
+				WithNodeManager(nodeMgrForPhase3).
+				WithFailoverManager(failoverMgr).
+				WithMirrorSync(mirrorSyncMgr).
+				WithChainGenerator(chainGen).
+				WithChainHealthRegistry(chainHealthRegistry).
+				WithBillingFilter(billingFilter)
+
+			// Inject nodeServerRepo into CaddyManager and NginxManager so they
+			// can detect mirror nodes and generate config from the primary's data.
+			caddyMgr.SetNodeServerRepo(nodeServerRepo)
+			nginxMgr.SetNodeServerRepo(nodeServerRepo)
+			// Inject nodeServerRepo into WAF Service so it can detect mirror
+			// nodes and collect WAF rules from the primary's server_id.
+			wafSvcInst.SetNodeServerRepo(nodeServerRepo)
 
 				// Phase 5: Dashboard & Enhancements wiring
 				multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
@@ -1668,7 +1714,7 @@ wafSvcInst.SetNodeLister(nodeServerRepo)
 						warpRepo,
 						shareDomainRepo,
 					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo),
-				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc)
+				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo)
 				nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 				nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 
@@ -1748,6 +1794,10 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 			// table to remote Agent's local SQLite DB.
 			syncDataHook := &syncDataHookAdapter{nodeServerSvc: nodeServerSvcInst}
 			inboundCfgH.SetSyncDataHook(syncDataHook)
+
+			// Inject mirror checker so inbound write operations on mirror
+			// nodes are rejected (mirror configs are read-only).
+			inboundCfgH.SetMirrorChecker(&mirrorCheckerAdapter{nodeServerSvc: nodeServerSvcInst})
 
 			// Wire nodeServerSvc into the configSyncHookAdapter so that
 			// inbound config changes also trigger mirror node sync.

@@ -584,3 +584,54 @@ func hashClientPassword(pwd string) string {
 	}
 	return hashed
 }
+
+// userExistsInConfig checks if a user with the given email already exists
+// in the inbound config JSON's settings.clients or settings.users array.
+func userExistsInConfig(configJSON, email string) bool {
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		return false
+	}
+	settings, ok := config["settings"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"clients", "users"} {
+		arr, ok := settings[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, u := range arr {
+			user, ok := u.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if userEmail, ok := user["email"].(string); ok && userEmail == email {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// detectProtocol extracts the protocol type from an inbound tag.
+// Tags follow the convention "inbound-{protocol}-{port}" (e.g. "inbound-vless-443").
+// Returns the protocol string ("vless", "vmess", "trojan", "hysteria", "shadowsocks").
+func detectProtocol(tag string) string {
+	parts := strings.Split(tag, "-")
+	if len(parts) >= 2 {
+		protocol := parts[1]
+		switch protocol {
+		case "vless", "vmess", "trojan", "hysteria", "shadowsocks":
+			return protocol
+		}
+	}
+	// Fallback: check if tag contains a protocol keyword
+	lower := strings.ToLower(tag)
+	for _, p := range []string{"vless", "vmess", "trojan", "hysteria", "shadowsocks"} {
+		if strings.Contains(lower, p) {
+			return p
+		}
+	}
+	return "vless" // default
+}

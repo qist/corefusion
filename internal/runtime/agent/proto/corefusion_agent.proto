@@ -781,6 +781,15 @@ message SyncDataRequest {
   bool  caddy_auto_start = 20;
   bool  caddy_auto_restart = 21;
   int32 caddy_max_restarts = 22;
+
+  // --- 重载策略（镜像节点同步时使用） ---
+  // 控制 Agent 收到 SyncData 后如何让运行中的核心重新加载配置。
+  enum ReloadStrategy {
+    RELOAD_STRATEGY_NONE = 0;          // 只更新配置文件，不触发任何操作
+    RELOAD_STRATEGY_RESTART = 1;       // 重启核心进程（默认 for mirror）
+    RELOAD_STRATEGY_HOT_RELOAD = 2;    // 热加载（通过 xray gRPC API 增删改 inbound）
+  }
+  ReloadStrategy reload_strategy = 24;
 }
 
 // CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。
@@ -885,6 +894,7 @@ message SyncDataResponse {
   int32  share_domain_configs_applied = 7;
   bool   config_generated = 8;
   bool   core_started = 9;
+  bool   core_restarted = 10;  // 核心是否被重启（reload_strategy=restart 时）
 }
 
 // ============================================================

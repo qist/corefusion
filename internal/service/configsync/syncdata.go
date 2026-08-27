@@ -10,6 +10,7 @@ import (
 
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 
+	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
@@ -136,6 +137,7 @@ type DataSyncBuilder struct {
 	inboundSvc      InboundConfigService
 	outboundSvc     OutboundConfigService
 	logModeProvider LogModeProvider
+	serverRepo     *repository.NodeServerRepository
 }
 
 // NewDataSyncBuilder creates a new DataSyncBuilder.
@@ -160,6 +162,31 @@ func (b *DataSyncBuilder) WithLogModeProvider(p LogModeProvider) *DataSyncBuilde
 	return b
 }
 
+// WithServerRepo sets the node server repository for mirror node detection.
+// When set, BuildSyncDataRequest will check if the target server is a mirror
+// node and use its partner (primary) server's DB records as the data source.
+func (b *DataSyncBuilder) WithServerRepo(repo *repository.NodeServerRepository) *DataSyncBuilder {
+	b.serverRepo = repo
+	return b
+}
+
+// resolveMirrorSourceServerID checks if the given serverID is a mirror node.
+// If it is, returns the primary server's ID and true.
+// Otherwise, returns the original serverID and false.
+func (b *DataSyncBuilder) resolveMirrorSourceServerID(ctx context.Context, serverID int64) (int64, bool) {
+	if b.serverRepo == nil {
+		return serverID, false
+	}
+	server, err := b.serverRepo.GetByID(ctx, serverID)
+	if err != nil || server == nil {
+		return serverID, false
+	}
+	if server.NodeType == entity.NodeTypeMirror && server.PartnerServerID > 0 {
+		return server.PartnerServerID, true
+	}
+	return serverID, false
+}
+
 // BuildSyncDataRequest builds a SyncDataRequest from the panel database
 // for the given server ID.
 //
@@ -177,9 +204,26 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		ApplyAndStart: true,
 	}
 
-	// === Part 1: Raw DB rows for Agent local persistence ===
+	// === Mirror node detection ===
+	// If the target server is a mirror node, use its partner (primary) server's
+	// DB records as the data source. The config content is identical to the
+	// primary's, but the target is the mirror node. Tags stay the same (no
+	// -mirror suffix) because the mirror's xray config must match the primary's.
+	sourceServerID := serverID
+	sourceServerID, isMirror := b.resolveMirrorSourceServerID(ctx, serverID)
+	if isMirror {
+		log.Printf("[DataSyncBuilder] server %d is mirror, using source server %d for data", serverID, sourceServerID)
+		// Mirror nodes use restart strategy by default — SyncData should restart
+		// the core to apply changes, not just start if not running.
+		req.ReloadStrategy = agentpb.SyncDataRequest_RELOAD_STRATEGY_RESTART
+	}
 
-	// 1. Core configs (all sections for all core types)
+	// === Part 1: Raw DB rows for Agent local persistence ===
+	// For mirror nodes, only inbound configs come from the primary (sourceServerID).
+	// Core configs (routing, dns, etc.) and outbound configs come from the
+	// mirror's own DB (serverID) — mirrors can have their own routing and outbounds.
+
+	// 1. Core configs (all sections for all core types) — from mirror's own DB
 	coreConfigs, err := b.rawProvider.ListCoreConfigs(ctx, serverID)
 	if err != nil {
 		log.Printf("[DataSyncBuilder] failed to list core configs for server %d: %v", serverID, err)
@@ -199,7 +243,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	}
 
 	// 2. Inbound configs
-	inboundConfigs, err := b.rawProvider.ListInboundConfigs(ctx, serverID)
+	inboundConfigs, err := b.rawProvider.ListInboundConfigs(ctx, sourceServerID)
 	if err != nil {
 		log.Printf("[DataSyncBuilder] failed to list inbound configs for server %d: %v", serverID, err)
 	} else {
@@ -224,7 +268,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		log.Printf("[DataSyncBuilder] server %d: %d inbound config entries", serverID, len(inboundConfigs))
 	}
 
-	// 3. Outbound configs
+	// 3. Outbound configs — from mirror's own DB (not the primary's)
 	outboundConfigs, err := b.rawProvider.ListOutboundConfigs(ctx, serverID)
 	if err != nil {
 		log.Printf("[DataSyncBuilder] failed to list outbound configs for server %d: %v", serverID, err)
@@ -250,7 +294,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	}
 
 	// 4. WARP configs (per-server, not global)
-	warpConfigs, err := b.rawProvider.ListWarpConfigs(ctx, serverID)
+	warpConfigs, err := b.rawProvider.ListWarpConfigs(ctx, sourceServerID)
 	if err != nil {
 		log.Printf("[DataSyncBuilder] failed to list warp configs: %v", err)
 	} else {
@@ -284,11 +328,10 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				Remark:         c.Remark,
 			}
 		}
-		log.Printf("[DataSyncBuilder] %d warp config entries", len(warpConfigs))
+				log.Printf("[DataSyncBuilder] %d warp config entries", len(warpConfigs))
 	}
-
 	// 5. Share domain configs (effective for this server)
-	shareDomainConfigs, err := b.rawProvider.ListShareDomainConfigs(ctx, serverID)
+	shareDomainConfigs, err := b.rawProvider.ListShareDomainConfigs(ctx, sourceServerID)
 	if err != nil {
 		log.Printf("[DataSyncBuilder] failed to list share domain configs for server %d: %v", serverID, err)
 	} else {
@@ -317,18 +360,21 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 
 	if b.coreSvc != nil && b.inboundSvc != nil && b.outboundSvc != nil {
 		coreType := "xray"
+		// For mirror nodes: core_configs (routing, dns, etc.) come from the
+		// mirror's own DB, but inbounds come from the primary's DB.
 		fullConfig, err := b.coreSvc.GetFull(ctx, serverID, coreType)
 		if err != nil {
 			log.Printf("[DataSyncBuilder] failed to get full config for server %d: %v", serverID, err)
 		} else {
 			configData, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
-				Ctx:              ctx,
-				ServerID:         serverID,
-				CoreType:         coreType,
-				FullConfig:       fullConfig,
-				InboundProvider:  b.inboundSvc,
-				OutboundProvider: b.outboundSvc,
-				LogMode:          b.resolveLogMode(ctx, serverID, coreType),
+				Ctx:               ctx,
+				ServerID:          sourceServerID, // inbounds from primary
+				OutboundServerID:  serverID,      // outbounds from mirror's own DB
+				CoreType:          coreType,
+				FullConfig:        fullConfig,
+				InboundProvider:   b.inboundSvc,
+				OutboundProvider:  b.outboundSvc,
+				LogMode:           b.resolveLogMode(ctx, serverID, coreType),
 			})
 			if err != nil {
 				log.Printf("[DataSyncBuilder] PrepareFullConfig failed for server %d: %v", serverID, err)
@@ -343,11 +389,12 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	}
 
 	// === Part 3: Collect TLS certificates used by this server ===
+	// For mirror nodes, certificates come from the primary server's inbound configs.
 	// Scan inbound configs for certificateFile references and match against
 	// the certificates table. Also include node_servers.certificate_id if set.
 	// All matching certificates are sent as PEM content so the Agent can land
 	// them on local disk at the correct paths.
-	req.Certificates = b.collectCertificates(ctx, serverID, inboundConfigs)
+	req.Certificates = b.collectCertificates(ctx, sourceServerID, inboundConfigs)
 	if len(req.Certificates) > 0 {
 		log.Printf("[DataSyncBuilder] server %d: %d certificate entries", serverID, len(req.Certificates))
 	}
@@ -356,8 +403,11 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	// These are needed by the Agent to generate correct proxy configs on startup.
 	rdp, ok := b.rawProvider.(*RepositoryDataProvider)
 	if ok && rdp.systemSettingRepo != nil {
+		// For mirror nodes, settings come from the primary server.
+		settingsServerID := sourceServerID
+
 		// Nginx settings
-		nginxKey := perNodeSettingsKey("proxy.nginx_settings", serverID)
+		nginxKey := perNodeSettingsKey("proxy.nginx_settings", settingsServerID)
 		if v, err := rdp.systemSettingRepo.GetByKey(ctx, nginxKey); err == nil && v != "" {
 			req.NginxSettings = v
 			log.Printf("[DataSyncBuilder] server %d: nginx settings from %s (%d bytes)", serverID, nginxKey, len(v))
@@ -367,7 +417,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		}
 
 		// Log output config
-		logOutputKey := perNodeSettingsKey("proxy.log_output_config", serverID)
+		logOutputKey := perNodeSettingsKey("proxy.log_output_config", settingsServerID)
 		if v, err := rdp.systemSettingRepo.GetByKey(ctx, logOutputKey); err == nil && v != "" {
 			req.LogOutputConfig = v
 			log.Printf("[DataSyncBuilder] server %d: log output config from %s (%d bytes)", serverID, logOutputKey, len(v))
@@ -377,7 +427,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		}
 
 		// Core log output config
-		coreLogOutputKey := perNodeSettingsKey("core.log_output_config", serverID)
+		coreLogOutputKey := perNodeSettingsKey("core.log_output_config", settingsServerID)
 		if v, err := rdp.systemSettingRepo.GetByKey(ctx, coreLogOutputKey); err == nil && v != "" {
 			req.CoreLogOutputConfig = v
 			log.Printf("[DataSyncBuilder] server %d: core log output config from %s (%d bytes)", serverID, coreLogOutputKey, len(v))
@@ -387,6 +437,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		}
 
 		// Proxy manually_stopped config (for auto-start on agent startup)
+		// Mirror nodes use their own manually_stopped state (not the primary's).
 		nginxManuallyStoppedKey := perNodeSettingsKey("proxy.nginx.manually_stopped", serverID)
 		if v, err := rdp.systemSettingRepo.GetByKey(ctx, nginxManuallyStoppedKey); err == nil && v == "true" {
 			req.NginxManuallyStopped = true
@@ -401,10 +452,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		}
 
 		// Proxy guardian settings (auto_start, auto_restart, max_restarts)
-		// These are stored in the Panel DB with per-server keys:
-		//   proxy.server_{id}.{type}.auto_start / .auto_restart / .max_restarts
-		// They need to be synced to the Agent's local DB so that the Agent's
-		// proxy.Manager.GetProxyGuardianSettings() can read them.
+		// Mirror nodes use their own guardian settings (not the primary's).
 		req.NginxAutoStart, req.NginxAutoRestart, req.NginxMaxRestarts = readProxyGuardianSettings(ctx, rdp.systemSettingRepo, serverID, "nginx")
 		req.CaddyAutoStart, req.CaddyAutoRestart, req.CaddyMaxRestarts = readProxyGuardianSettings(ctx, rdp.systemSettingRepo, serverID, "caddy")
 		log.Printf("[DataSyncBuilder] server %d: guardian settings: nginx(auto_start=%v,auto_restart=%v,max=%d) caddy(auto_start=%v,auto_restart=%v,max=%d)",

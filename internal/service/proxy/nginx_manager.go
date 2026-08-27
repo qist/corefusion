@@ -20,6 +20,10 @@ type NginxManager struct {
 	settingStore SettingStore
 	serverID     int64
 	isLocal      bool
+	// nodeServerRepo is used to detect mirror nodes and resolve their primary
+	// server ID for config generation. When set, GenerateConfigForServer checks
+	// if the target is a mirror and uses the primary's server_id to query sites.
+	nodeServerRepo *repository.NodeServerRepository
 }
 
 // SetServerID sets the server ID for per-node site filtering.
@@ -27,6 +31,13 @@ func (m *NginxManager) SetServerID(id int64) { m.serverID = id }
 
 // SetIsLocal sets whether this manager is operating on the local node.
 func (m *NginxManager) SetIsLocal(v bool) { m.isLocal = v }
+
+// SetNodeServerRepo sets the node server repository for mirror node detection.
+// When set, GenerateConfigForServer will check if the target is a mirror node
+// and use its primary's server_id to query nginx_sites and settings.
+func (m *NginxManager) SetNodeServerRepo(repo *repository.NodeServerRepository) {
+	m.nodeServerRepo = repo
+}
 
 // NewNginxManager creates a new NginxManager.
 func NewNginxManager(dataDir string, siteRepo *repository.NginxSiteRepository, settingStore SettingStore) *NginxManager {

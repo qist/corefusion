@@ -484,6 +484,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 	// Both "backup" and "backup_recovering" nodes must NOT be returned —
 	// they become visible only after failover promotes them to primary.
 	backupServerIDs := make(map[int64]bool)
+	// Also build mirror node mapping: primaryServerID → []mirrorNodeServer
+	// This is used for virtual expansion of mirror nodes in subscription output.
+	mirrorMap := make(map[int64][]entity.NodeServer)
 	if h.nodeServerRepo != nil {
 		if servers, err := h.nodeServerRepo.ListAll(ctx); err == nil {
 			for _, s := range servers {
@@ -491,6 +494,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 					(s.FailoverRole == entity.FailoverRoleBackup ||
 						s.FailoverRole == entity.FailoverRoleBackupRecovering) {
 					backupServerIDs[s.ID] = true
+				}
+				if s.NodeType == entity.NodeTypeMirror && s.PartnerServerID > 0 && s.Enabled {
+					mirrorMap[s.PartnerServerID] = append(mirrorMap[s.PartnerServerID], s)
 				}
 			}
 		}
@@ -649,7 +655,73 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				}
 				items = append(items, item)
 			}
-		}
+
+			// Virtual expansion: if this inbound belongs to a primary server
+			// that has mirror nodes, generate an additional subscription
+			// entry for each mirror. The mirror uses the same protocol/port/
+			// credentials as the primary, but with its own host address.
+			if mirrors, ok := mirrorMap[cfg.ServerID]; ok {
+				for _, mirror := range mirrors {
+					mirrorHost := mirror.PublicIP
+					if mirrorHost == "" {
+						mirrorHost = mirror.Hostname
+					}
+					if mirrorHost == "" {
+						continue
+					}
+
+					// Deep-copy the config and replace _accessDomain
+					mirrorConfig := deepCopyMap(config)
+					replaceAccessDomainForMirror(mirrorConfig, mirror)
+					mirrorHostResolved, mirrorPort := resolveHostPort(mirrorConfig, cfg.Listen, cfg.Port, shareDomains)
+
+					mirrorNodeName := fmt.Sprintf("%s (镜像 %s)", nodeName, mirror.Name)
+					if mirror.Name == "" {
+						mirrorNodeName = fmt.Sprintf("%s (镜像 %d)", nodeName, mirror.ID)
+					}
+
+					mirrorShareNode := sharelink.Node{
+						Tag:            mirrorNodeName,
+						Protocol:       cfg.Protocol,
+						Host:           mirrorHostResolved,
+						Port:           mirrorPort,
+						Settings:       linkSettings,
+						StreamSettings: getMap(mirrorConfig, "streamSettings"),
+						FinalMask:      getFinalMask(mirrorConfig),
+					}
+					mirrorLink := sharelink.Generate(mirrorShareNode)
+
+					mirrorNode := &formatter.Node{
+						Name:       mirrorNodeName,
+						Protocol:   protocol,
+						Host:       mirrorHostResolved,
+						Port:       mirrorPort,
+						Transport:  transport,
+						TLS:        node.TLS,
+						ServerName: node.ServerName,
+						UUID:       uuid,
+						Password:   password,
+						Flow:       flow,
+						Encryption: method,
+						Extra:      node.Extra,
+					}
+
+					for _, memberID := range memberIDs {
+						item := renderedSubscriptionNode{
+							MemberID:        memberID,
+							InboundConfigID: cfg.ID,
+							Link:            mirrorLink,
+						}
+						nodeCopy := *mirrorNode
+						item.Node = &nodeCopy
+						if item.Link == "" && item.Node == nil {
+							continue
+						}
+						items = append(items, item)
+					}
+				}
+			}
+	}
 	}
 
 	if h.extNodeRepo == nil {
@@ -1677,6 +1749,45 @@ func cloneProxyMap(src map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 	return dst
+}
+
+// deepCopyMap creates a deep copy of a map[string]interface{} via JSON round-trip.
+// Used for cloning inbound config before modifying _accessDomain for mirror nodes.
+func deepCopyMap(src map[string]interface{}) map[string]interface{} {
+	return cloneProxyMap(src)
+}
+
+// replaceAccessDomainForMirror replaces the host/IP in _accessDomain with the
+// mirror node's own address. The mirror node uses the same protocol/port/
+// credentials as the primary, but users connect to the mirror's IP/domain.
+func replaceAccessDomainForMirror(config map[string]interface{}, mirror entity.NodeServer) {
+	ad, ok := config["_accessDomain"].(map[string]interface{})
+	if !ok {
+		ad = map[string]interface{}{}
+		config["_accessDomain"] = ad
+	}
+
+	// Determine the mirror's address
+	mirrorHost := mirror.PublicIP
+	if mirrorHost == "" {
+		mirrorHost = mirror.Hostname
+	}
+	if mirrorHost == "" {
+		return
+	}
+
+	adType, _ := ad["type"].(string)
+	switch adType {
+	case "direct":
+		ad["directDomain"] = mirrorHost
+	case "cf_domain":
+		// For CDN-type, use the mirror's IP (may point to different CDN edge)
+		ad["cfIP"] = mirrorHost
+	case "cf_ip":
+		ad["cfIP"] = mirrorHost
+	case "custom":
+		ad["customDomain"] = mirrorHost
+	}
 }
 
 func normalizeVMessSubscriptionProxyMap(link string, proxy map[string]interface{}) {

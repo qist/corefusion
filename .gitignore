@@ -11,3 +11,4 @@ geoip.dat
 /corefusion-agent
 /agent
 corefusion.log
+.codebuddy/

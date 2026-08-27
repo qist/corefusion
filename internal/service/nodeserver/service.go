@@ -280,8 +280,8 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*vo.Cr
 	if req.BillingEnabled != nil {
 		billingEnabled = *req.BillingEnabled
 	}
-	if req.NodeType == entity.NodeTypeChainExit || req.NodeType == entity.NodeTypeMirror {
-		billingEnabled = false // chain_exit and mirror nodes don't bill by default
+	if req.NodeType == entity.NodeTypeMirror {
+		billingEnabled = false // mirror nodes don't bill by default
 	}
 
 	enabled := true
@@ -423,7 +423,7 @@ func (s *Service) Update(ctx context.Context, id int64, req *dto.NodeServerUpdat
 	if req.NodeType != nil {
 		server.NodeType = *req.NodeType
 		// Adjust billing when type changes
-		if server.NodeType == entity.NodeTypeChainExit || server.NodeType == entity.NodeTypeMirror {
+		if server.NodeType == entity.NodeTypeMirror {
 			server.BillingEnabled = false
 		}
 	}
@@ -1604,8 +1604,8 @@ func (s *Service) UpdateNodeType(ctx context.Context, serverID int64, nodeType s
 		return fmt.Errorf("server not found: %w", err)
 	}
 	server.NodeType = nodeType
-	// chain_exit and mirror nodes are non-billing by default
-	if nodeType == entity.NodeTypeChainExit || nodeType == entity.NodeTypeMirror {
+	// mirror nodes are non-billing by default
+	if nodeType == entity.NodeTypeMirror {
 		server.BillingEnabled = false
 	}
 	server.UpdatedAt = time.Now()

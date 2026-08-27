@@ -232,7 +232,7 @@ func NewChainHealthMonitorRegistry(nodeMgr *NodeServerManager, serverRepo *repos
 
 // StartAll discovers all chain_entry nodes and starts health monitors for them.
 func (r *ChainHealthMonitorRegistry) StartAll(ctx context.Context) error {
-	entries, err := r.serverRepo.ListByType(ctx, entity.NodeTypeChainEntry)
+	entries, err := r.serverRepo.ListByType(ctx, "chain_entry")
 	if err != nil {
 		return err
 	}

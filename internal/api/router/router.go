@@ -21,6 +21,7 @@ import (
 	agentHandler "corefusion/internal/api/handlers/agent"
 	authHandler "corefusion/internal/api/handlers/auth"
 	backupsHandler "corefusion/internal/api/handlers/backups"
+	chainlinkHandler "corefusion/internal/api/handlers/chainlink"
 
 	certsHandler "corefusion/internal/api/handlers/certificates"
 	cfipHandler "corefusion/internal/api/handlers/cfip"
@@ -1514,6 +1515,13 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 			revocationRepo := repository.NewCertRevocationRepository(database)
 			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService)
+
+			// Chain Proxy (chain links, exit configs, external node servers, topology)
+			chainLinkRepo := repository.NewChainLinkRepository(database)
+			chainExitCfgRepo := repository.NewChainExitConfigRepository(database)
+			extNodeServerRepo := repository.NewExternalNodeServerRepository(database)
+			chainLinkH := chainlinkHandler.NewHandler(chainLinkRepo, chainExitCfgRepo, extNodeServerRepo, nodeServerRepo, extNodeRepo)
+			chainLinkH.RegisterRoutes(protected)
 
 			// Wire up CRL and CertDistributor if CA is available
 			if caService != nil {

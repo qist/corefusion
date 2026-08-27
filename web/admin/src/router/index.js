@@ -11,7 +11,7 @@ function getBasePath() {
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {
-    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'online-users', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext', 'audit', 'runtime', 'traffic-quota', 'db-stats', 'waf-rules']
+    const knownRoutes = ['login', 'dashboard', 'services', 'subscriptions', 'certificates', 'users', 'settings', 'node-servers', 'online-users', 'plans', 'clients', 'log-manage', 'portal', 'detail', 'charge', 'tickets', 'client-ext', 'audit', 'runtime', 'traffic-quota', 'db-stats', 'waf-rules', 'chain-proxy']
     if (segments.length > 1 && !knownRoutes.includes(segments[0])) {
       return '/' + segments[0]
     }
@@ -44,6 +44,7 @@ const routes = [
       { path: 'node-servers', name: 'NodeServers', component: () => import('../views/NodeServers.vue'), meta: { title: 'menu.nodeServers', icon: 'Cpu' } },
       { path: 'online-users', name: 'OnlineUsers', component: () => import('../views/OnlineUsers.vue'), meta: { title: 'menu.onlineUsers', icon: 'Connection' } },
       { path: 'node-servers/:id/detail', name: 'NodeServerDetail', component: () => import('../views/NodeServerDetail.vue'), meta: { title: 'menu.nodeServers', icon: 'Cpu' } },
+      { path: 'chain-proxy', name: 'ChainProxy', component: () => import('../views/ChainProxy.vue'), meta: { title: 'menu.chainProxy', icon: 'Share' } },
       { path: 'charge', name: 'ChargeManagement', component: () => import('../views/ChargeManagement.vue'), meta: { title: 'menu.chargeManagement', icon: 'Wallet' } },
       { path: 'tickets', name: 'TicketManagement', component: () => import('../views/TicketManagement.vue'), meta: { title: 'menu.ticketManagement', icon: 'ChatDotRound' } },
       { path: 'client-ext', name: 'ClientExtManagement', component: () => import('../views/ClientExtManagement.vue'), meta: { title: 'menu.clientExtManagement', icon: 'Grid' } },

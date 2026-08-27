@@ -13,58 +13,57 @@ import (
 // traffic billing. Servers with billing_enabled=false (chain_exit, mirror
 // non-primary, backup nodes) are skipped during user sync and traffic collection.
 type BillingFilter struct {
-	serverRepo *repository.NodeServerRepository
+	serverRepo  *repository.NodeServerRepository
+	exitCfgRepo *repository.ChainExitConfigRepository
 	// Cache for performance
-	mu      sync.RWMutex
-	cache   map[int64]*entity.NodeServer
+	mu    sync.RWMutex
+	cache map[int64]*entity.NodeServer
 }
 
 // NewBillingFilter creates a new BillingFilter.
 func NewBillingFilter(serverRepo *repository.NodeServerRepository) *BillingFilter {
 	return &BillingFilter{
 		serverRepo: serverRepo,
-		cache:     make(map[int64]*entity.NodeServer),
+		cache:      make(map[int64]*entity.NodeServer),
 	}
 }
 
+// SetExitConfigRepo injects the chain exit config repository.
+// This is called after construction when the exit config repo is available.
+func (f *BillingFilter) SetExitConfigRepo(repo *repository.ChainExitConfigRepository) {
+	f.exitCfgRepo = repo
+}
+
 // ShouldSyncUsers returns true if users should be synced to this server.
-// chain_exit: never sync users (no user inbounds)
-// mirror: do NOT sync via AlterUsers — user credentials are included in the
-//   primary's config_json which is synced via SyncData. User add/remove is
-//   handled by InboundManager.fanOutAddUserToMirrors/fanOutRemoveUserToMirrors
-//   which directly calls xray API on the mirror node (using the primary's tag).
-// primary_backup backup: sync users only when it's the active primary (after failover)
-// standalone, chain_entry: always sync users
+// Pure exit nodes (relay_only=true) never receive user sync.
+// Mirror nodes do NOT receive AlterUsers.
+// primary_backup backup: sync users only when it's the active primary (after failover).
+// standalone, sync: always sync users (billing_enabled permitting).
 func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) bool {
 	server, err := f.getServer(ctx, serverID)
 	if err != nil || server == nil {
 		return false
 	}
 
-	// Disabled servers don't get users
 	if !server.Enabled {
 		return false
 	}
 
-	switch server.NodeType {
-	case entity.NodeTypeChainExit:
-		// chain_exit never gets user sync
-		return false
+	// Check if this server is a pure exit (relay_only=true)
+	if f.exitCfgRepo != nil {
+		exitCfg, err := f.exitCfgRepo.GetByServerID(ctx, serverID)
+		if err == nil && exitCfg != nil && exitCfg.Enabled && exitCfg.RelayOnly {
+			return false
+		}
+	}
 
+	switch server.NodeType {
 	case entity.NodeTypeMirror:
-		// Mirror nodes do NOT receive AlterUsers — their config comes from
-		// the primary via SyncData. User add/remove hot operations go through
-		// InboundManager.fanOutAddUserToMirrors / fanOutRemoveUserToMirrors.
 		return false
 
 	case entity.NodeTypePrimaryBackup:
-		// Only the active primary gets users (not the backup)
 		return server.FailoverRole == entity.FailoverRolePrimary ||
-			server.FailoverRole == "backup_recovering" // recovering gets users to be ready
-
-	case entity.NodeTypeStandalone, entity.NodeTypeChainEntry, entity.NodeTypeSync:
-		// Sync nodes have independent billing and user records — they need AlterUsers.
-		return server.BillingEnabled
+			server.FailoverRole == "backup_recovering"
 
 	default:
 		return server.BillingEnabled
@@ -72,9 +71,9 @@ func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) boo
 }
 
 // ShouldCollectTraffic returns true if traffic should be collected from this server.
-// chain_exit: no traffic collection
-// mirror: collect traffic but merge to primary
-// primary_backup backup (not active): no traffic collection
+// Pure exit nodes (relay_only=true): no traffic collection.
+// Mirror: collect traffic but merge to primary.
+// primary_backup backup (not active): no traffic collection.
 func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64) bool {
 	server, err := f.getServer(ctx, serverID)
 	if err != nil || server == nil {
@@ -85,21 +84,19 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 		return false
 	}
 
-	switch server.NodeType {
-	case entity.NodeTypeChainExit:
-		return false
+	if f.exitCfgRepo != nil {
+		exitCfg, err := f.exitCfgRepo.GetByServerID(ctx, serverID)
+		if err == nil && exitCfg != nil && exitCfg.Enabled && exitCfg.RelayOnly {
+			return false
+		}
+	}
 
+	switch server.NodeType {
 	case entity.NodeTypePrimaryBackup:
-		// Collect from active primary and recovering backup (to capture traffic
-		// from existing connections that haven't switched to the new primary yet).
-		// No duplicate counting since connections don't overlap:
-		// - primary: new connections after failover
-		// - backup_recovering: existing connections before failover
 		return server.FailoverRole == entity.FailoverRolePrimary ||
 			server.FailoverRole == entity.FailoverRoleBackupRecovering
 
 	case entity.NodeTypeMirror:
-		// Collect from mirror, but attribute to primary
 		return true
 
 	default:
@@ -109,9 +106,7 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 
 // ShouldAppearInSubscription returns true if the server's address should
 // appear in user subscription output.
-// chain_exit: never appears in subscription
-// mirror: appears (provides additional entry points)
-// primary_backup backup: appears as fallback (lower priority)
+// Pure exit nodes (relay_only=true): never appear in subscription.
 func (f *BillingFilter) ShouldAppearInSubscription(ctx context.Context, serverID int64) bool {
 	server, err := f.getServer(ctx, serverID)
 	if err != nil || server == nil {
@@ -122,12 +117,15 @@ func (f *BillingFilter) ShouldAppearInSubscription(ctx context.Context, serverID
 		return false
 	}
 
-	switch server.NodeType {
-	case entity.NodeTypeChainExit:
-		return false
+	if f.exitCfgRepo != nil {
+		exitCfg, err := f.exitCfgRepo.GetByServerID(ctx, serverID)
+		if err == nil && exitCfg != nil && exitCfg.Enabled && exitCfg.RelayOnly {
+			return false
+		}
+	}
 
+	switch server.NodeType {
 	case entity.NodeTypePrimaryBackup:
-		// Both primary and backup can appear (backup as fallback)
 		return true
 
 	default:

@@ -18,6 +18,22 @@ type OutboundConfigProvider interface {
 	GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error)
 }
 
+// ChainLinkProvider provides chain proxy outbounds, routing rules, and relay
+// inbound for a server. Implemented by the ChainLinkGenerator in the agent
+// package. When set, PrepareFullConfig merges chain link outbounds and
+// routing rules into the config, and adds a relay-in inbound if the server
+// is configured as a chain exit.
+type ChainLinkProvider interface {
+	// GenerateEntryOutbounds returns chain proxy outbounds and routing rules
+	// for the entry side of this server.
+	GenerateEntryOutbounds(ctx context.Context, serverID int64) (outbounds []interface{}, routingRules []interface{}, err error)
+	// GenerateExitInbound returns the relay-in inbound config map for the
+	// exit side of this server, or nil if not an exit.
+	GenerateExitInbound(ctx context.Context, serverID int64) (map[string]interface{}, error)
+	// IsRelayOnlyServer returns true if the server is a pure exit (no user inbounds).
+	IsRelayOnlyServer(ctx context.Context, serverID int64) bool
+}
+
 // PrepareFullConfigOptions holds the parameters for PrepareFullConfig.
 type PrepareFullConfigOptions struct {
 	// Ctx is the context for database queries.
@@ -49,6 +65,11 @@ type PrepareFullConfigOptions struct {
 	// RateLimitEnabled indicates whether rate limiting is enabled for this node.
 	// When true, EnsureOnlineStatsPolicy will add statsUserOnline to the policy section.
 	RateLimitEnabled bool
+	// ChainLinkProvider optionally provides chain proxy outbounds, routing
+	// rules, and relay-in inbound. When set, chain link outbounds and routing
+	// rules are merged into the config, and a relay-in inbound is added if
+	// the server is configured as a chain exit.
+	ChainLinkProvider ChainLinkProvider
 }
 
 // PrepareFullConfig applies all standard config preparation steps to produce
@@ -135,6 +156,43 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				}
 				fullConfig["outbounds"] = existingOutbounds
 			}
+		}
+	}
+
+	// 8b. If ChainLinkProvider is set, merge chain link outbounds and routing rules.
+	if opts.ChainLinkProvider != nil {
+		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, opts.ServerID)
+		if err != nil {
+			log.Printf("[PrepareFullConfig] chain link outbounds failed for server %d: %v", opts.ServerID, err)
+		} else {
+			if len(chainOutbounds) > 0 {
+				existingObs, _ := fullConfig["outbounds"].([]interface{})
+				fullConfig["outbounds"] = mergeChainOutbounds(existingObs, chainOutbounds)
+			}
+			if len(chainRules) > 0 {
+				routing, _ := fullConfig["routing"].(map[string]interface{})
+				if routing == nil {
+					routing = map[string]interface{}{}
+				}
+				existingRules, _ := routing["rules"].([]interface{})
+				routing["rules"] = mergeChainRoutingRules(existingRules, chainRules)
+				fullConfig["routing"] = routing
+			}
+		}
+
+		// 8c. If this server is a chain exit, add relay-in inbound.
+		exitInbound, err := opts.ChainLinkProvider.GenerateExitInbound(opts.Ctx, opts.ServerID)
+		if err != nil {
+			log.Printf("[PrepareFullConfig] chain exit inbound failed for server %d: %v", opts.ServerID, err)
+		} else if exitInbound != nil {
+			existingInbounds, _ := fullConfig["inbounds"].([]interface{})
+			fullConfig["inbounds"] = append(existingInbounds, exitInbound)
+		}
+
+		// 8d. If this server is relay_only, filter out user inbounds
+		// (keep only relay-in and api inbounds).
+		if opts.ChainLinkProvider.IsRelayOnlyServer(opts.Ctx, opts.ServerID) {
+			filterRelayOnlyInbounds(fullConfig)
 		}
 	}
 
@@ -536,4 +594,61 @@ func EnsureOnlineStatsPolicy(fullConfig map[string]interface{}, coreType string)
 	// Only add when rate limiting is enabled; nodes without rate limiting
 	// keep the default (no online tracking) to avoid the extra memory overhead.
 	level0["statsUserOnline"] = true
+}
+
+// mergeChainOutbounds merges chain link outbounds into existing outbounds.
+// Removes any existing outbounds with the same tags first (idempotent).
+func mergeChainOutbounds(existing []interface{}, chainOutbounds []interface{}) []interface{} {
+	existingTags := make(map[string]bool)
+	filtered := make([]interface{}, 0, len(existing)+len(chainOutbounds))
+	for _, ob := range existing {
+		if obMap, ok := ob.(map[string]interface{}); ok {
+			if tag, ok := obMap["tag"].(string); ok {
+				existingTags[tag] = true
+			}
+		}
+		filtered = append(filtered, ob)
+	}
+	for _, cob := range chainOutbounds {
+		if obMap, ok := cob.(map[string]interface{}); ok {
+			if tag, ok := obMap["tag"].(string); ok && existingTags[tag] {
+				continue
+			}
+		}
+		filtered = append(filtered, cob)
+	}
+	return filtered
+}
+
+// mergeChainRoutingRules merges chain link routing rules into existing rules.
+// Chain rules go first (higher priority).
+func mergeChainRoutingRules(existing []interface{}, chainRules []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(existing)+len(chainRules))
+	result = append(result, chainRules...)
+	result = append(result, existing...)
+	return result
+}
+
+// filterRelayOnlyInbounds removes user inbounds from the config, keeping only
+// relay-in and api inbounds. This is used for pure exit nodes (relay_only=true)
+// that should not accept user connections.
+func filterRelayOnlyInbounds(fullConfig map[string]interface{}) {
+	inbounds, ok := fullConfig["inbounds"].([]interface{})
+	if !ok {
+		return
+	}
+	filtered := make([]interface{}, 0, len(inbounds))
+	for _, ib := range inbounds {
+		ibMap, ok := ib.(map[string]interface{})
+		if !ok {
+			filtered = append(filtered, ib)
+			continue
+		}
+		tag, _ := ibMap["tag"].(string)
+		// Keep only relay-in and api inbounds for pure exit nodes
+		if tag == "relay-in" || tag == "api" {
+			filtered = append(filtered, ib)
+		}
+	}
+	fullConfig["inbounds"] = filtered
 }

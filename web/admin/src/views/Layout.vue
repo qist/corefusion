@@ -76,6 +76,7 @@ const currentLocaleName = computed(() => {
 const allMenuItems = [
   { path: '/dashboard', title: 'menu.dashboard', icon: 'Odometer', role: 'operator' },
   { path: '/node-servers', title: 'menu.nodeServers', icon: 'Cpu', role: 'admin' },
+  { path: '/chain-proxy', title: 'menu.chainProxy', icon: 'Share', role: 'admin' },
   { path: '/online-users', title: 'menu.onlineUsers', icon: 'Connection', role: 'operator' },
   { path: '/services', title: 'menu.services', icon: 'Monitor', role: 'operator' },
   { path: '/subscriptions', title: 'menu.subscriptions', icon: 'Link', role: 'operator' },

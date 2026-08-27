@@ -40,7 +40,7 @@ type ChainRoutingRule struct {
 // GenerateChainEntryOutbounds generates outbound configs for a chain_entry node.
 // Each exit in the chain_config becomes an outbound pointing to the chain_exit server.
 func (g *ChainConfigGenerator) GenerateChainEntryOutbounds(ctx context.Context, server *entity.NodeServer) ([]ChainEntryOutbound, []ChainRoutingRule, error) {
-	if server.NodeType != entity.NodeTypeChainEntry {
+	if server.NodeType != "chain_entry" {
 		return nil, nil, fmt.Errorf("server %d is not a chain_entry", server.ID)
 	}
 
@@ -84,7 +84,7 @@ func (g *ChainConfigGenerator) GenerateChainEntryOutbounds(ctx context.Context, 
 // GenerateChainExitInbound generates the relay inbound config for a chain_exit node.
 // This inbound accepts connections from chain_entry nodes (not end users).
 func (g *ChainConfigGenerator) GenerateChainExitInbound(ctx context.Context, server *entity.NodeServer) (map[string]interface{}, error) {
-	if server.NodeType != entity.NodeTypeChainExit {
+	if server.NodeType != "chain_exit" {
 		return nil, fmt.Errorf("server %d is not a chain_exit", server.ID)
 	}
 

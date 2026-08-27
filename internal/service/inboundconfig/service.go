@@ -24,8 +24,33 @@ var ErrServerNamesConflict = errors.New("server names conflict")
 
 // Service handles inbound config business logic.
 type Service struct {
-	repo *repository.InboundConfigRepository
-	db   *gorm.DB
+	repo       *repository.InboundConfigRepository
+	db         *gorm.DB
+	serverRepo *repository.NodeServerRepository
+}
+
+// SetServerRepo sets the node server repository for mirror node detection.
+// When set, List queries for mirror nodes will resolve to the primary server's data.
+func (s *Service) SetServerRepo(repo *repository.NodeServerRepository) {
+	s.serverRepo = repo
+}
+
+// resolveMirrorSource checks if the given serverID is a mirror node.
+// If it is, returns the primary (partner) server ID.
+// This allows the frontend to query a mirror node's inbound configs
+// and see the same data as the primary.
+func (s *Service) resolveMirrorSource(ctx context.Context, serverID int64) int64 {
+	if s.serverRepo == nil {
+		return serverID
+	}
+	server, err := s.serverRepo.GetByID(ctx, serverID)
+	if err != nil || server == nil {
+		return serverID
+	}
+	if server.NodeType == entity.NodeTypeMirror && server.PartnerServerID > 0 {
+		return server.PartnerServerID
+	}
+	return serverID
 }
 
 // NewService creates a new inbound config service.
@@ -34,8 +59,10 @@ func NewService(repo *repository.InboundConfigRepository, db *gorm.DB) *Service 
 }
 
 // List returns all inbound configs for a core type on a specific server.
+// For mirror nodes, returns the primary server's inbound configs.
 func (s *Service) List(ctx context.Context, serverID int64, coreType string) ([]entity.InboundConfig, error) {
-	return s.repo.List(ctx, serverID, coreType)
+	sourceID := s.resolveMirrorSource(ctx, serverID)
+	return s.repo.List(ctx, sourceID, coreType)
 }
 
 // ListAll returns all inbound configs across all servers (for traffic sync).
@@ -519,8 +546,10 @@ func (s *Service) ResetUserTrafficByEmail(ctx context.Context, email string) ([]
 }
 
 // GetEnabledInbounds returns all enabled inbound configs as parsed JSON for a specific server.
+// For mirror nodes, returns the primary server's inbound configs.
 func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
-	configs, err := s.repo.List(ctx, serverID, coreType)
+	sourceID := s.resolveMirrorSource(ctx, serverID)
+	configs, err := s.repo.List(ctx, sourceID, coreType)
 	if err != nil {
 		return nil, err
 	}

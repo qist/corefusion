@@ -18,6 +18,7 @@ import (
 // and calls xray control API for live user management.
 type InboundManager struct {
 	inboundRepo *repository.InboundConfigRepository
+	serverRepo  *repository.NodeServerRepository
 	apiBaseURL  string
 	jwtSecret   string
 }
@@ -31,9 +32,18 @@ func NewInboundManager(inboundRepo *repository.InboundConfigRepository, apiPort,
 	}
 }
 
+// SetServerRepo sets the node server repository for mirror node fanout.
+// This is used to find mirror nodes of a primary server so that user
+// add/remove operations can be directly forwarded to mirror nodes' xray
+// via the panel's xray control API (using the primary's tag).
+func (m *InboundManager) SetServerRepo(repo *repository.NodeServerRepository) {
+	m.serverRepo = repo
+}
+
 // AddUserToInbound adds a user entry to ALL inbound configs matching the tag
 // (across local and remote nodes) and calls xray API for real-time user management.
-// It also fans out to mirror nodes whose tags use the "{tag}-mirror" convention.
+// It also fans out to mirror nodes by directly calling xray API on each mirror
+// using the primary's tag (mirror's xray config uses the same tag as the primary).
 func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email, uuid, password, flow, method string) error {
 	// Find ALL inbounds with this tag across all servers (local + remote)
 	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)
@@ -41,14 +51,8 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 		return fmt.Errorf("inbound not found: %s", inboundTag)
 	}
 
-	// Also find mirror inbounds (tag + "-mirror") so users are added in real-time
-	// on mirror nodes without waiting for the periodic mirror sync.
-	mirrorTag := fmt.Sprintf("%s-mirror", inboundTag)
-	mirrorInbounds, _ := m.inboundRepo.ListByTag(ctx, mirrorTag)
-	allInbounds := append(inbounds, mirrorInbounds...)
-
-	for i := range allInbounds {
-		inbound := &allInbounds[i]
+	for i := range inbounds {
+		inbound := &inbounds[i]
 
 		// Check if user already exists in this inbound's config
 		if userExistsInConfig(inbound.ConfigJSON, email) {
@@ -61,15 +65,19 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 			continue
 		}
 
-		// Call xray API for real-time user addition (both local and remote)
+		// Call xray API for real-time user addition on the primary
 		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+
+		// Fan out to mirror nodes: directly call xray API on each mirror
+		// using the primary's tag (mirror's tag is the same as primary's in new design).
+		m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
 	}
 	return nil
 }
 
 // RemoveUserFromInbound removes a user entry from ALL inbound configs matching the tag
 // (across local and remote nodes) and calls xray API for real-time user removal.
-// It also fans out to mirror nodes whose tags use the "{tag}-mirror" convention.
+// It also fans out to mirror nodes by directly calling xray API on each mirror.
 func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error {
 	// Find ALL inbounds with this tag across all servers (local + remote)
 	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)
@@ -77,13 +85,8 @@ func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, 
 		return nil
 	}
 
-	// Also find mirror inbounds (tag + "-mirror")
-	mirrorTag := fmt.Sprintf("%s-mirror", inboundTag)
-	mirrorInbounds, _ := m.inboundRepo.ListByTag(ctx, mirrorTag)
-	allInbounds := append(inbounds, mirrorInbounds...)
-
-	for i := range allInbounds {
-		inbound := &allInbounds[i]
+	for i := range inbounds {
+		inbound := &inbounds[i]
 
 		// Remove user from config_json
 		if err := m.removeUserFromInboundConfig(ctx, inbound, email); err != nil {
@@ -91,8 +94,11 @@ func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, 
 			continue
 		}
 
-		// Call xray API for real-time user removal (both local and remote)
+		// Call xray API for real-time user removal on the primary
 		go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+
+		// Fan out to mirror nodes
+		m.fanOutRemoveUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email)
 	}
 	return nil
 }
@@ -113,9 +119,8 @@ func (m *InboundManager) PauseUser(ctx context.Context, inboundID int64, email s
 	// Call xray API to remove user from running instance on primary
 	go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
 
-	// Fan out to mirror nodes: find inbounds with tag "{primary_tag}-mirror"
-	// and remove the user from their xray runtime as well.
-	m.fanOutPauseToMirrors(ctx, inbound.Tag, email, true)
+	// Fan out to mirror nodes: remove user from their xray runtime
+	m.fanOutPauseToMirrors(ctx, inbound.ServerID, inbound.Tag, email, true)
 	return nil
 }
 
@@ -176,9 +181,8 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
 	}
 
-	// Fan out to mirror nodes: find inbounds with tag "{primary_tag}-mirror"
-	// and add the user back to their xray runtime as well.
-	m.fanOutResumeToMirrors(ctx, inbound.Tag, email, uuid, password, flow, method)
+	// Fan out to mirror nodes: add user back to their xray runtime
+	m.fanOutResumeToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
 	return nil
 }
 
@@ -328,42 +332,76 @@ func (m *InboundManager) setUserPaused(ctx context.Context, inboundID int64, ema
 	return m.inboundRepo.Update(ctx, inbound)
 }
 
-// fanOutPauseToMirrors finds mirror inbounds for the given primary tag and
-// removes the user from their xray runtime. The mirror tag convention is
-// "{primaryTag}-mirror". This ensures that pausing a user on the primary
-// also takes effect immediately on all mirror nodes without waiting for the
-// periodic mirror sync (which only updates the config file, not xray memory).
-func (m *InboundManager) fanOutPauseToMirrors(ctx context.Context, primaryTag, email string, paused bool) {
-	mirrorTag := fmt.Sprintf("%s-mirror", primaryTag)
-	mirrorInbounds, err := m.inboundRepo.ListByTag(ctx, mirrorTag)
+// fanOutAddUserToMirrors calls xray API on all mirror nodes of the given primary
+// to add the user. Uses the primary's tag (mirror's xray config uses the same tag).
+func (m *InboundManager) fanOutAddUserToMirrors(ctx context.Context, primaryServerID int64, tag, email, uuid, password, flow, method string) {
+	if m.serverRepo == nil {
+		return
+	}
+	mirrors, err := m.serverRepo.ListByPartner(ctx, primaryServerID)
 	if err != nil {
 		return
 	}
-	for i := range mirrorInbounds {
-		mi := &mirrorInbounds[i]
-		// Update _paused flag in mirror's config_json
-		m.setUserPaused(ctx, mi.ID, email, paused)
-		// Remove user from mirror's xray runtime
-		go m.callXrayRemoveUser(mi.ServerID, mi.Tag, email)
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		// Use the primary's tag (mirror's tag is the same in new design)
+		go m.callXrayAddUser(mirror.ID, tag, email, uuid, password, flow, method)
 	}
 }
 
-// fanOutResumeToMirrors finds mirror inbounds for the given primary tag and
-// adds the user back to their xray runtime. The mirror tag convention is
-// "{primaryTag}-mirror". This ensures that resuming a user on the primary
-// also takes effect immediately on all mirror nodes.
-func (m *InboundManager) fanOutResumeToMirrors(ctx context.Context, primaryTag, email, uuid, password, flow, method string) {
-	mirrorTag := fmt.Sprintf("%s-mirror", primaryTag)
-	mirrorInbounds, err := m.inboundRepo.ListByTag(ctx, mirrorTag)
+// fanOutRemoveUserToMirrors calls xray API on all mirror nodes of the given primary
+// to remove the user.
+func (m *InboundManager) fanOutRemoveUserToMirrors(ctx context.Context, primaryServerID int64, tag, email string) {
+	if m.serverRepo == nil {
+		return
+	}
+	mirrors, err := m.serverRepo.ListByPartner(ctx, primaryServerID)
 	if err != nil {
 		return
 	}
-	for i := range mirrorInbounds {
-		mi := &mirrorInbounds[i]
-		// Update _paused flag in mirror's config_json
-		m.setUserPaused(ctx, mi.ID, email, false)
-		// Add user back to mirror's xray runtime
-		go m.callXrayAddUser(mi.ServerID, mi.Tag, email, uuid, password, flow, method)
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		go m.callXrayRemoveUser(mirror.ID, tag, email)
+	}
+}
+
+// fanOutPauseToMirrors calls xray API on all mirror nodes to pause (remove) the user.
+func (m *InboundManager) fanOutPauseToMirrors(ctx context.Context, primaryServerID int64, tag, email string, paused bool) {
+	if m.serverRepo == nil {
+		return
+	}
+	mirrors, err := m.serverRepo.ListByPartner(ctx, primaryServerID)
+	if err != nil {
+		return
+	}
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		if paused {
+			go m.callXrayRemoveUser(mirror.ID, tag, email)
+		}
+	}
+}
+
+// fanOutResumeToMirrors calls xray API on all mirror nodes to resume (add back) the user.
+func (m *InboundManager) fanOutResumeToMirrors(ctx context.Context, primaryServerID int64, tag, email, uuid, password, flow, method string) {
+	if m.serverRepo == nil {
+		return
+	}
+	mirrors, err := m.serverRepo.ListByPartner(ctx, primaryServerID)
+	if err != nil {
+		return
+	}
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		go m.callXrayAddUser(mirror.ID, tag, email, uuid, password, flow, method)
 	}
 }
 
@@ -442,45 +480,4 @@ func (m *InboundManager) generateInternalToken() string {
 		return ""
 	}
 	return token
-}
-
-// userExistsInConfig checks if a user with the given email already exists in the config_json.
-func userExistsInConfig(configJSON, email string) bool {
-	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
-		return false
-	}
-	settings, ok := config["settings"].(map[string]interface{})
-	if !ok {
-		return false
-	}
-	for _, key := range []string{"clients", "users"} {
-		arr, ok := settings[key].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, u := range arr {
-			user, ok := u.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if user["email"] == email {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// detectProtocol extracts protocol from inbound tag.
-func detectProtocol(tag string) string {
-	for _, p := range []string{"vless", "vmess", "trojan", "hysteria", "shadowsocks", "ss-"} {
-		if strings.Contains(tag, p) {
-			if p == "ss-" {
-				return "shadowsocks"
-			}
-			return p
-		}
-	}
-	return "vless"
 }

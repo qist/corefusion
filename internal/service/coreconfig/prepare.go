@@ -23,7 +23,16 @@ type PrepareFullConfigOptions struct {
 	// Ctx is the context for database queries.
 	Ctx context.Context
 	// ServerID is the target server ID for loading inbounds/outbounds.
+	// For mirror nodes, this should be the primary (partner) server ID
+	// so that inbounds and core_configs (routing, dns, etc.) come from
+	// the primary's data.
 	ServerID int64
+	// OutboundServerID overrides the server ID used for loading outbounds.
+	// For mirror nodes, this should be the mirror's own server ID so that
+	// outbounds (e.g. chain relay, custom routing) come from the mirror's
+	// own outbound_configs table, not the primary's.
+	// If 0, defaults to ServerID.
+	OutboundServerID int64
 	// CoreType is the proxy core type (xray, singbox, etc.).
 	CoreType string
 	// FullConfig is the raw merged config from core_configs table.
@@ -103,8 +112,14 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	}
 
 	// 8. Merge enabled outbounds from outbound_configs table
+	// For mirror nodes, OutboundServerID is the mirror's own server ID,
+	// so outbounds come from the mirror's own DB, not the primary's.
+	outboundServerID := opts.OutboundServerID
+	if outboundServerID == 0 {
+		outboundServerID = opts.ServerID
+	}
 	if opts.OutboundProvider != nil {
-		enabledOutbounds, err := opts.OutboundProvider.GetEnabledOutbounds(opts.Ctx, opts.ServerID, opts.CoreType)
+		enabledOutbounds, err := opts.OutboundProvider.GetEnabledOutbounds(opts.Ctx, outboundServerID, opts.CoreType)
 		if err != nil {
 			log.Printf("[PrepareFullConfig] failed to load outbounds for server %d: %v", opts.ServerID, err)
 		}

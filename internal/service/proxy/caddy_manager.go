@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,10 @@ siteRepo     *repository.CaddySiteRepository
 settingStore SettingStore
 serverID     int64
 isLocal      bool
+// nodeServerRepo is used to detect mirror nodes and resolve their primary
+// server ID for config generation. When set, GenerateConfigForServer checks
+// if the target is a mirror and uses the primary's server_id to query sites.
+nodeServerRepo *repository.NodeServerRepository
 }
 
 // wafBaseDir returns the unified WAF rules directory: dataDir/proxy/waf-rules
@@ -37,6 +42,13 @@ func (m *CaddyManager) SetServerID(id int64) { m.serverID = id }
 
 // SetIsLocal sets whether this manager is operating on the local node.
 func (m *CaddyManager) SetIsLocal(v bool) { m.isLocal = v }
+
+// SetNodeServerRepo sets the node server repository for mirror node detection.
+// When set, GenerateConfigForServer will check if the target is a mirror node
+// and use its primary's server_id to query caddy_sites, SNI settings, and WAF.
+func (m *CaddyManager) SetNodeServerRepo(repo *repository.NodeServerRepository) {
+	m.nodeServerRepo = repo
+}
 
 // NewCaddyManager creates a new CaddyManager.
 func NewCaddyManager(dataDir string, siteRepo *repository.CaddySiteRepository, settingStore SettingStore) *CaddyManager {
@@ -93,14 +105,41 @@ func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
 	return m.GenerateConfigForServer(ctx, m.serverID)
 }
 
+// resolveSourceServerID checks if the given serverID is a mirror node.
+// If it is, returns the primary server's ID and true.
+// Otherwise, returns the original serverID and false.
+func (m *CaddyManager) resolveSourceServerID(ctx context.Context, serverID int64) (int64, bool) {
+	if m.nodeServerRepo == nil {
+		return serverID, false
+	}
+	server, err := m.nodeServerRepo.GetByID(ctx, serverID)
+	if err != nil || server == nil {
+		return serverID, false
+	}
+	if server.NodeType == entity.NodeTypeMirror && server.PartnerServerID > 0 {
+		return server.PartnerServerID, true
+	}
+	return serverID, false
+}
+
 // GenerateConfigForServer assembles the full Caddyfile from all enabled sites for a specific server.
+// If the target server is a mirror node, sites and settings are fetched from
+// the primary server's data (partner_server_id). This ensures mirrors get the
+// same Caddyfile as the primary without needing separate DB records.
 func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int64) (string, error) {
-	sites, err := m.siteRepo.ListEnabled(ctx, serverID)
+	// Determine the source server ID for site/SNI/WAF queries.
+	// For mirror nodes, use the primary's server_id.
+	sourceServerID, isMirror := m.resolveSourceServerID(ctx, serverID)
+	if isMirror {
+		log.Printf("[CaddyManager] server %d is mirror, using source server %d for sites", serverID, sourceServerID)
+	}
+
+	sites, err := m.siteRepo.ListEnabled(ctx, sourceServerID)
 	if err != nil {
 		return "", err
 	}
-	// Read SNI settings for proxy_protocol rules
-	sniSettings, _ := m.GetSNISettingsForServer(ctx, serverID)
+	// Read SNI settings for proxy_protocol rules from the primary
+	sniSettings, _ := m.GetSNISettingsForServer(ctx, sourceServerID)
 
 	var sb strings.Builder
 	var httpSites []entity.CaddySite
@@ -187,7 +226,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 // CaddyGuard WAF global config — only generated when WAF is enabled for this node.
 // The caddyguardfile adapter injects the Guard handler into every HTTP server.
 // Use relative path so it works on both panel and remote Agents.
-wafEnabled := m.isWAFEnabledForServer(ctx, serverID)
+wafEnabled := m.isWAFEnabledForServer(ctx, sourceServerID)
 if wafEnabled {
 	sb.WriteString("\tcaddyguard {\n")
 	sb.WriteString("\t\trule_dir proxy/waf-rules\n")

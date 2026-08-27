@@ -29,7 +29,10 @@ func NewBillingFilter(serverRepo *repository.NodeServerRepository) *BillingFilte
 
 // ShouldSyncUsers returns true if users should be synced to this server.
 // chain_exit: never sync users (no user inbounds)
-// mirror: sync users (they share the primary's credentials)
+// mirror: do NOT sync via AlterUsers — user credentials are included in the
+//   primary's config_json which is synced via SyncData. User add/remove is
+//   handled by InboundManager.fanOutAddUserToMirrors/fanOutRemoveUserToMirrors
+//   which directly calls xray API on the mirror node (using the primary's tag).
 // primary_backup backup: sync users only when it's the active primary (after failover)
 // standalone, chain_entry: always sync users
 func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) bool {
@@ -48,14 +51,20 @@ func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) boo
 		// chain_exit never gets user sync
 		return false
 
+	case entity.NodeTypeMirror:
+		// Mirror nodes do NOT receive AlterUsers — their config comes from
+		// the primary via SyncData. User add/remove hot operations go through
+		// InboundManager.fanOutAddUserToMirrors / fanOutRemoveUserToMirrors.
+		return false
+
 	case entity.NodeTypePrimaryBackup:
 		// Only the active primary gets users (not the backup)
 		return server.FailoverRole == entity.FailoverRolePrimary ||
 			server.FailoverRole == "backup_recovering" // recovering gets users to be ready
 
-	case entity.NodeTypeMirror, entity.NodeTypeStandalone, entity.NodeTypeChainEntry:
-		// These types sync users if billing_enabled (mirror copies primary's users)
-		return server.BillingEnabled || server.NodeType == entity.NodeTypeMirror
+	case entity.NodeTypeStandalone, entity.NodeTypeChainEntry, entity.NodeTypeSync:
+		// Sync nodes have independent billing and user records — they need AlterUsers.
+		return server.BillingEnabled
 
 	default:
 		return server.BillingEnabled

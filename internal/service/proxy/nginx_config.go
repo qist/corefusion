@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,14 +24,41 @@ func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
 	return m.GenerateConfigForServer(ctx, m.serverID)
 }
 
+// resolveSourceServerID checks if the given serverID is a mirror node.
+// If it is, returns the primary server's ID and true.
+// Otherwise, returns the original serverID and false.
+func (m *NginxManager) resolveSourceServerID(ctx context.Context, serverID int64) (int64, bool) {
+	if m.nodeServerRepo == nil {
+		return serverID, false
+	}
+	server, err := m.nodeServerRepo.GetByID(ctx, serverID)
+	if err != nil || server == nil {
+		return serverID, false
+	}
+	if server.NodeType == entity.NodeTypeMirror && server.PartnerServerID > 0 {
+		return server.PartnerServerID, true
+	}
+	return serverID, false
+}
+
 // GenerateConfigForServer assembles an nginx.conf from settings and sites for a specific server.
+// If the target server is a mirror node, sites and settings are fetched from
+// the primary server's data (partner_server_id). This ensures mirrors get the
+// same nginx.conf as the primary without needing separate DB records.
 func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int64) (string, error) {
-	sites, err := m.siteRepo.ListEnabled(ctx, serverID)
+	// Determine the source server ID for site/settings queries.
+	// For mirror nodes, use the primary's server_id.
+	sourceServerID, isMirror := m.resolveSourceServerID(ctx, serverID)
+	if isMirror {
+		log.Printf("[NginxManager] server %d is mirror, using source server %d for sites", serverID, sourceServerID)
+	}
+
+	sites, err := m.siteRepo.ListEnabled(ctx, sourceServerID)
 	if err != nil {
 		return "", err
 	}
 
-	s, err := m.GetNginxSettingsForServer(ctx, serverID)
+	s, err := m.GetNginxSettingsForServer(ctx, sourceServerID)
 	if err != nil {
 		s = DefaultNginxSettings()
 	}

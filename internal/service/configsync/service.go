@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"corefusion/internal/model/entity"
+	"corefusion/internal/store/repository"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 )
 
@@ -75,6 +77,9 @@ type Service struct {
 
 	// logModeProvider provides the log mode for each core type.
 	logModeProvider LogModeProvider
+
+	// serverRepo is used to detect mirror nodes and resolve their primary's ID.
+	serverRepo *repository.NodeServerRepository
 }
 
 // ConfigWriter writes runtime config files. Implemented by process.Manager.
@@ -100,6 +105,11 @@ func (s *Service) SetRemoteSyncer(r RemoteConfigSyncer) {
 // SetLogModeProvider sets the provider for log output mode per core type.
 func (s *Service) SetLogModeProvider(p LogModeProvider) {
 	s.logModeProvider = p
+}
+
+// SetServerRepo sets the node server repository for mirror node detection.
+func (s *Service) SetServerRepo(repo *repository.NodeServerRepository) {
+	s.serverRepo = repo
 }
 
 // NewService creates a new config sync service.
@@ -253,8 +263,23 @@ func (s *Service) syncCore(ctx context.Context, coreType string, only []int64) e
 // syncCoreForServer generates the full config for a specific server and syncs it.
 // For server_id=1 (local), writes to disk via configWriter.
 // For remote servers, pushes config via Agent gRPC.
+// For mirror nodes: inbounds come from the primary's DB, but core_configs
+// (routing, dns, etc.) and outbounds come from the mirror's own DB.
 func (s *Service) syncCoreForServer(ctx context.Context, coreType string, serverID int64) error {
-	// Get full config from core_configs table for this server
+	// Resolve the inbound source server ID. For mirror nodes, inbounds
+	// come from the primary (partner) server.
+	inboundServerID := serverID
+	if s.serverRepo != nil {
+		if server, err := s.serverRepo.GetByID(ctx, serverID); err == nil && server != nil {
+			if server.NodeType == entity.NodeTypeMirror && server.PartnerServerID > 0 {
+				inboundServerID = server.PartnerServerID
+				log.Printf("configsync: server %d is mirror, inbounds from primary %d", serverID, inboundServerID)
+			}
+		}
+	}
+
+	// Get full config from core_configs table for the mirror's own DB
+	// (routing, dns, etc. are per-node, not shared from primary)
 	fullConfig, err := s.coreSvc.GetFull(ctx, serverID, coreType)
 	if err != nil {
 		return err
@@ -266,10 +291,13 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 		logMode = s.logModeProvider.GetLogModeForServer(ctx, serverID, coreType)
 	}
 
-	// Use the shared PrepareFullConfig to apply all standard steps
+	// Use the shared PrepareFullConfig to apply all standard steps.
+	// ServerID = inboundServerID (inbounds from primary for mirrors)
+	// OutboundServerID = serverID (outbounds from mirror's own DB)
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
 		Ctx:              ctx,
-		ServerID:         serverID,
+		ServerID:         inboundServerID,
+		OutboundServerID: serverID,
 		CoreType:         coreType,
 		FullConfig:       fullConfig,
 		InboundProvider:  s.inboundSvc,

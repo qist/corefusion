@@ -310,22 +310,41 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 
 	resp.Success = true
 
-	// 7. If apply_and_start, generate config from local DB and start core
-	// After upserting all rows above, the local DB is the single source of truth.
-	// generateConfigFromLocalDB uses PrepareFullConfig (same as panel) to produce
-	// the final clean config — disabled inbounds/outbounds are filtered out,
-	// internal fields are stripped, etc.
+	// 7. If apply_and_start, write the runtime config and start core
+	//
+	// Priority:
+	//  a) If the panel sent ConfigContent (pre-built by PrepareFullConfig),
+	//     use it directly — it already contains all enabled inbounds/outbounds
+	//     for the correct source server (primary for mirror nodes).
+	//  b) Otherwise, generate config from local DB via generateConfigFromLocalDB.
+	//     This is the fallback for offline scenarios or older panel versions.
+	//
+	// Important for mirror nodes: the panel sets req.ServerId to the mirror's ID
+	// (e.g. 14) but the data rows have ServerId=primary's ID (e.g. 17).
+	// generateConfigFromLocalDB queries by req.ServerId, so it would only find
+	// the mirror's own (stale) records, not the primary's. Using ConfigContent
+	// avoids this mismatch entirely.
 	if req.ApplyAndStart {
 		coreType := "xray"
 		if req.ConfigCoreType != "" {
 			coreType = req.ConfigCoreType
 		}
 
-		configData, err := generateConfigFromLocalDB(ctx, req.ServerId, coreType)
-		if err != nil {
-			resp.Error = fmt.Sprintf("generate config: %v", err)
-			log.Printf("[Agent] SyncData: config generation failed: %v", err)
-			return resp, nil
+		var configData []byte
+		if len(req.ConfigContent) > 0 {
+			// Panel already generated the final config via PrepareFullConfig.
+			configData = req.ConfigContent
+			log.Printf("[Agent] SyncData: using panel-provided config_content (%d bytes)", len(configData))
+		} else {
+			// Fallback: generate from local DB (offline/older panel).
+			var err error
+			configData, err = generateConfigFromLocalDB(ctx, req.ServerId, coreType)
+			if err != nil {
+				resp.Error = fmt.Sprintf("generate config: %v", err)
+				log.Printf("[Agent] SyncData: config generation failed: %v", err)
+				return resp, nil
+			}
+			log.Printf("[Agent] SyncData: generated config from local DB (%d bytes)", len(configData))
 		}
 		if len(configData) > 0 {
 			if err := a.procMgr.WriteRuntimeConfig(coreType, configData); err != nil {
@@ -334,11 +353,9 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 				return resp, nil
 			}
 			resp.ConfigGenerated = true
-			log.Printf("[Agent] SyncData: generated config from local DB (%d bytes)", len(configData))
 		}
 
-		// Start the core process (configGenerator will also call generateConfigFromLocalDB,
-		// which produces the same result — no conflict)
+		// Start or restart the core process based on reload_strategy.
 		// Resolve the correct serviceID from DB — must match what ControlCore uses,
 		// otherwise the healthcheck will monitor a different serviceID and report "crashed".
 		serviceID := int64(0)
@@ -348,13 +365,79 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 				serviceID = services[0].ID
 			}
 		}
-		if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
-			resp.Error = fmt.Sprintf("start core: %v", err)
-			log.Printf("[Agent] SyncData: core start failed: %v", err)
-			return resp, nil
+
+		// Determine the reload strategy:
+		// - NONE:       only update config file, don't touch the running process
+		// - RESTART:    restart the core if it's already running (default for mirror nodes)
+		// - HOT_RELOAD: (future) use xray gRPC API to add/del inbounds without restart
+		// Default (0/none) preserves backward compatibility: Start is a no-op if running.
+		strategy := req.ReloadStrategy
+		isRunning := false
+		if serviceID > 0 {
+			isRunning = a.procMgr.IsRunning(serviceID)
 		}
-		resp.CoreStarted = true
-		log.Printf("[Agent] SyncData: core started successfully")
+
+		switch strategy {
+		case agentpb.SyncDataRequest_RELOAD_STRATEGY_NONE:
+			// Only update config file, don't start or restart
+			log.Printf("[Agent] SyncData: reload_strategy=none, config written, core untouched")
+
+		case agentpb.SyncDataRequest_RELOAD_STRATEGY_RESTART:
+			if isRunning {
+				// Core is already running — restart it to pick up the new config
+				if err := a.procMgr.Restart(ctx, serviceID, coreType); err != nil {
+					resp.Error = fmt.Sprintf("restart core: %v", err)
+					log.Printf("[Agent] SyncData: core restart failed: %v", err)
+					return resp, nil
+				}
+				resp.CoreRestarted = true
+				log.Printf("[Agent] SyncData: core restarted successfully (reload_strategy=restart)")
+			} else {
+				// Core not running — start it fresh
+				if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
+					resp.Error = fmt.Sprintf("start core: %v", err)
+					log.Printf("[Agent] SyncData: core start failed: %v", err)
+					return resp, nil
+				}
+				resp.CoreStarted = true
+				log.Printf("[Agent] SyncData: core started successfully (was not running, reload_strategy=restart)")
+			}
+
+		case agentpb.SyncDataRequest_RELOAD_STRATEGY_HOT_RELOAD:
+			// Future: implement xray gRPC API hot reload (add/del inbounds)
+			// For now, fall back to restart behavior
+			if isRunning {
+				if err := a.procMgr.Restart(ctx, serviceID, coreType); err != nil {
+					resp.Error = fmt.Sprintf("restart core: %v", err)
+					log.Printf("[Agent] SyncData: core restart failed (hot_reload fallback): %v", err)
+					return resp, nil
+				}
+				resp.CoreRestarted = true
+				log.Printf("[Agent] SyncData: core restarted (hot_reload not yet implemented, used restart)")
+			} else {
+				if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
+					resp.Error = fmt.Sprintf("start core: %v", err)
+					log.Printf("[Agent] SyncData: core start failed: %v", err)
+					return resp, nil
+				}
+				resp.CoreStarted = true
+				log.Printf("[Agent] SyncData: core started successfully")
+			}
+
+		default:
+			// Backward-compatible behavior: Start is a no-op if already running
+			if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
+				resp.Error = fmt.Sprintf("start core: %v", err)
+				log.Printf("[Agent] SyncData: core start failed: %v", err)
+				return resp, nil
+			}
+			if isRunning {
+				log.Printf("[Agent] SyncData: core already running, Start is no-op (reload_strategy unspecified)")
+			} else {
+				resp.CoreStarted = true
+				log.Printf("[Agent] SyncData: core started successfully")
+			}
+		}
 	}
 
 	// 8. Refresh LogWriters based on the updated configs.

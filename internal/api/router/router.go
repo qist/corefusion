@@ -1736,8 +1736,19 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 						outboundConfigRepo,
 						warpRepo,
 						shareDomainRepo,
-					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo),
-				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo)
+					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo).WithChainRepos(
+						repository.NewChainLinkRepository(database),
+						repository.NewChainExitConfigRepository(database),
+						repository.NewExternalNodeRepository(database),
+					),
+				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo).WithChainLinkProvider(
+					agent.NewChainLinkGenerator(
+						repository.NewChainLinkRepository(database),
+						repository.NewChainExitConfigRepository(database),
+						nodeServerRepo,
+						repository.NewExternalNodeRepository(database),
+					),
+				)
 				nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 				nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 

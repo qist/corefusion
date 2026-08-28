@@ -26,6 +26,11 @@ func migrateAgentTables(database *gorm.DB) error {
 		&entity.OutboundConfig{},
 		&entity.WarpConfig{},
 		&entity.ShareDomainConfig{},
+		// Chain proxy config tables (populated by SyncData, used for local chain generation)
+		&entity.ChainLink{},
+		&entity.ChainExitConfig{},
+		&entity.NodeServer{},
+		&entity.ExternalNode{},
 		// Rate limit config table (populated by SyncData, used for nft+tc rate limiting)
 		&entity.RateLimitConfig{},
 		&entity.RateLimitIPEntry{},

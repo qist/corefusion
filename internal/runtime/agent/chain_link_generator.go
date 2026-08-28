@@ -173,19 +173,29 @@ func (g *ChainLinkGenerator) GenerateExitInbound(ctx context.Context, serverID i
 		return nil, nil
 	}
 
+	client := map[string]interface{}{
+		"id":    exitCfg.RelayUUID,
+		"email": "chain-relay",
+	}
+	// xray vless inbound requires "decryption":"none" at both the settings and
+	// each client level, otherwise xray refuses to start.
+	if exitCfg.RelayProtocol == "vless" {
+		client["decryption"] = "none"
+	}
+
+	settings := map[string]interface{}{
+		"clients": []map[string]interface{}{client},
+	}
+	if exitCfg.RelayProtocol == "vless" {
+		settings["decryption"] = "none"
+	}
+
 	inbound := map[string]interface{}{
 		"tag":      "relay-in",
 		"listen":   "0.0.0.0",
 		"port":     exitCfg.RelayPort,
 		"protocol": exitCfg.RelayProtocol,
-		"settings": map[string]interface{}{
-			"clients": []map[string]interface{}{
-				{
-					"id":    exitCfg.RelayUUID,
-					"email": "chain-relay",
-				},
-			},
-		},
+		"settings": settings,
 	}
 
 	// If relay_only, the server should not have user inbounds.

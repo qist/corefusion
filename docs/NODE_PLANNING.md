@@ -343,8 +343,8 @@ Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest
 | N1 | 192.168.2.175 | 12 | `primary_backup`(主) | ✅ online | v0.8.81 | →N2(13) | primary | true |
 | N2 | 192.168.2.176 | 13 | `primary_backup`(备) | ✅ online | v0.8.81 | →N1(12) | backup | true |
 | N3 | 192.168.2.177 | 14 | `mirror` | ✅ online | v0.8.81 | →N6(17) | — | false |
-| N4 | 192.168.2.185 | 15 | `standalone`(入口) | ✅ online | v0.8.81 | →N5(16) `chain_links` | — | true |
-| N5 | 192.168.2.187 | 16 | `standalone`(出口) | ✅ online | v0.8.81 | — | — | false |
+| N4 | 192.168.2.185 | 15 | `standalone`(入口) | ✅ online | v0.10.0 | →N5(16) `chain_links` | — | true |
+| N5 | 192.168.2.187 | 16 | `standalone`(出口) | ✅ online | v0.10.0 | — | — | false |
 | N6 | 192.168.3.62 | 17 | `standalone` | ✅ online | v0.8.81 | — | — | true |
 | N9 | 192.168.2.50 | 2 | `standalone` | ✅ online | v0.8.81 | — | — | true |
 
@@ -416,12 +416,16 @@ Mirror sync triggered: synced=true
 - `POST /node-servers/14/sync-mirror` → synced=true ✅
 - N3 镜像关系指向 N6(standalone),双方在线,镜像同步管理器正常工作
 
-#### 7.3.3 链式代理(入口/出口角色,节点类型均为 `standalone`)— ✅ Agent 就绪
+#### 7.3.3 链式代理(入口/出口角色,节点类型均为 `standalone`)— ✅ 已打通全链路
 
-- N4 (ID=15) `standalone`(链式入口,`chain_links` 指向 N5)— Agent online, 心跳正常 ✅
-- N5 (ID=16) `standalone`(链式出口,`chain_exit_configs`,可设 `relay_only`,billing_enabled=false)— Agent online ✅
-- `GET /node-servers/15/chain-health` → "no health monitor"(预期:未配置链式代理 outbound,health monitor 在推送链式配置后创建)
-- `GET /node-servers/16/chain-health` → 同上(预期行为)
+- N4 (ID=15) `standalone`(链式入口,`chain_links` 指向 N5)— Agent online v0.10.0 ✅
+- N5 (ID=16) `standalone`(链式出口,`chain_exit_configs` `relay_only`,billing_enabled=false)— Agent online v0.10.0 ✅
+- **配置落地**:configsync 全节点同步,入口 N4 `config_content`=2153B(含 `chain-117-16` outbound + 路由 `in-117→chain-117-16`),
+  出口 N5 `config_content`=1457B(含 `relay-in` vless:443 + `chain-relay-uuid`);修复 `GenerateExitInbound` 缺 `decryption:none`。
+- **SyncData 本地落地**:面板→Agent 下传 `chain_links`/`chain_exit_configs`/`node_servers`/`external_nodes`,
+  N4 本地 3 条 chain_links、N5 本地 2 条 chain_exit_configs,离线可还原。✅
+- **端到端链路**:两机 xray 26.7.28 运行——N4 `in-chain-entry`:10090 / N5 `relay-in`:443。面板侧客户端
+  →N4 入口→`chain-117-16`→N5 `relay-in`→N5 direct 出网,`curl --socks5 http://example.com/` 返回 **HTTP 200** ✅
 - 纯出口(N5 relay_only)`ShouldBill()` 返回 false ✅
 
 #### 7.3.4 独立节点(standalone)— ✅ 通过
@@ -447,7 +451,8 @@ Mirror sync triggered: synced=true
 - **Agent 部署**:9 个节点(含 Panel 本机)全部 online,版本一致 v0.8.81,systemd active+enabled ✅
 - **主备故障切换**:N1/N2 互指关系正确,FailoverManager 状态查询和触发正常 ✅
 - **镜像同步**:N3→N6 镜像关系建立,MirrorSyncManager 同步触发正常 ✅
-- **链式代理**:N4(入口)/N5(出口,`chain_exit_configs` + `relay_only`)Agent 在线就绪,待推送链式 outbound 配置后 health monitor 将自动创建 ✅
+- **链式代理**:N4(入口)/N5(出口,`chain_exit_configs` + `relay_only`)Agent v0.10.0 在线;配置与 SyncData 落地
+  (N4 `chain-117-16`+路由 / N5 `relay-in`:443),端到端链路验证 `curl` 经链式代理返回 HTTP 200 ✅
 - **独立节点**:N6/N9 正常运行,N9 已有 xray 核心运行 ✅
 - **计费规则**:mirror 和链式纯出口 relay_only(N5)不计费,其余计费,符合 `ShouldBill()` 逻辑 ✅
 - **数据库/备份**:已在第 2、4 节完成验证,**无需重复部署** ✅

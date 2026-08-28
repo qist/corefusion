@@ -29,6 +29,15 @@ type RawDataProvider interface {
 	ListWarpConfigs(ctx context.Context, serverID int64) ([]WarpConfigRow, error)
 	// ListShareDomainConfigs returns effective share domain configs for a server
 	ListShareDomainConfigs(ctx context.Context, serverID int64) ([]ShareDomainConfigRow, error)
+
+	// ListChainLinks returns all chain_links records (用于 Agent 本地链式生成).
+	ListChainLinks(ctx context.Context) ([]entity.ChainLink, error)
+	// ListChainExitConfigs returns all chain_exit_configs records.
+	ListChainExitConfigs(ctx context.Context) ([]entity.ChainExitConfig, error)
+	// ListNodeServers returns all enabled node_servers (entry/exit 地址解析).
+	ListNodeServers(ctx context.Context) ([]entity.NodeServer, error)
+	// ListExternalNodes returns all enabled external_nodes (外部出口).
+	ListExternalNodes(ctx context.Context) ([]entity.ExternalNode, error)
 }
 
 // CoreConfigRow represents a row from core_configs table.
@@ -59,6 +68,9 @@ type RepositoryDataProvider struct {
 	caddySiteRepo      *repository.CaddySiteRepository
 	nginxSiteRepo      *repository.NginxSiteRepository
 	systemSettingRepo  *repository.SystemSettingRepository
+	chainLinkRepo      *repository.ChainLinkRepository
+	chainExitRepo      *repository.ChainExitConfigRepository
+	extNodeRepo        *repository.ExternalNodeRepository
 }
 
 // NewRepositoryDataProvider creates a new RawDataProvider backed by repositories.
@@ -103,6 +115,16 @@ func (p *RepositoryDataProvider) WithSystemSettingProvider(systemSettingRepo *re
 	return p
 }
 
+// WithChainRepos injects chain proxy repositories for collecting chain_links,
+// chain_exit_configs, and external_nodes during SyncData. These are used by the
+// Agent's local chain proxy generation (offline fallback).
+func (p *RepositoryDataProvider) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository, chainExitRepo *repository.ChainExitConfigRepository, extNodeRepo *repository.ExternalNodeRepository) *RepositoryDataProvider {
+	p.chainLinkRepo = chainLinkRepo
+	p.chainExitRepo = chainExitRepo
+	p.extNodeRepo = extNodeRepo
+	return p
+}
+
 func (p *RepositoryDataProvider) ListCoreConfigs(ctx context.Context, serverID int64) ([]CoreConfigRow, error) {
 	return p.coreConfigRepo.ListRows(ctx, serverID)
 }
@@ -123,6 +145,44 @@ func (p *RepositoryDataProvider) ListShareDomainConfigs(ctx context.Context, ser
 	return p.shareDomainRepo.ListRows(ctx, serverID)
 }
 
+func (p *RepositoryDataProvider) ListChainLinks(ctx context.Context) ([]entity.ChainLink, error) {
+	if p.chainLinkRepo == nil {
+		return nil, nil
+	}
+	return p.chainLinkRepo.ListAll(ctx)
+}
+
+func (p *RepositoryDataProvider) ListChainExitConfigs(ctx context.Context) ([]entity.ChainExitConfig, error) {
+	if p.chainExitRepo == nil {
+		return nil, nil
+	}
+	return p.chainExitRepo.ListAll(ctx)
+}
+
+func (p *RepositoryDataProvider) ListNodeServers(ctx context.Context) ([]entity.NodeServer, error) {
+	if p.serverRepo == nil {
+		return nil, nil
+	}
+	return p.serverRepo.ListEnabled(ctx)
+}
+
+func (p *RepositoryDataProvider) ListExternalNodes(ctx context.Context) ([]entity.ExternalNode, error) {
+	if p.extNodeRepo == nil {
+		return nil, nil
+	}
+	nodes, err := p.extNodeRepo.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	enabled := nodes[:0]
+	for _, n := range nodes {
+		if n.Enabled {
+			enabled = append(enabled, n)
+		}
+	}
+	return enabled, nil
+}
+
 // DataSyncBuilder implements agent.DataSyncProvider using configsync.Service.
 // It builds SyncDataRequest messages from the panel database for a specific server.
 //
@@ -132,12 +192,13 @@ func (p *RepositoryDataProvider) ListShareDomainConfigs(ctx context.Context, ser
 // The raw DB rows are also included so the Agent can persist them locally
 // for offline startup scenarios.
 type DataSyncBuilder struct {
-	rawProvider     RawDataProvider
-	coreSvc         CoreConfigService
-	inboundSvc      InboundConfigService
-	outboundSvc     OutboundConfigService
-	logModeProvider LogModeProvider
-	serverRepo     *repository.NodeServerRepository
+	rawProvider       RawDataProvider
+	coreSvc           CoreConfigService
+	inboundSvc        InboundConfigService
+	outboundSvc       OutboundConfigService
+	logModeProvider   LogModeProvider
+	serverRepo        *repository.NodeServerRepository
+	chainLinkProvider coreconfigSvc.ChainLinkProvider
 }
 
 // NewDataSyncBuilder creates a new DataSyncBuilder.
@@ -167,6 +228,15 @@ func (b *DataSyncBuilder) WithLogModeProvider(p LogModeProvider) *DataSyncBuilde
 // node and use its partner (primary) server's DB records as the data source.
 func (b *DataSyncBuilder) WithServerRepo(repo *repository.NodeServerRepository) *DataSyncBuilder {
 	b.serverRepo = repo
+	return b
+}
+
+// WithChainLinkProvider sets the chain proxy provider so the panel's
+// PrepareFullConfig merges chain-link outbounds/rules/balancers/relay-in into
+// the config_content pushed to remote agents. Without this, remote entries and
+// exits would miss their chain outbounds/relay-in inbound.
+func (b *DataSyncBuilder) WithChainLinkProvider(p coreconfigSvc.ChainLinkProvider) *DataSyncBuilder {
+	b.chainLinkProvider = p
 	return b
 }
 
@@ -328,7 +398,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				Remark:         c.Remark,
 			}
 		}
-				log.Printf("[DataSyncBuilder] %d warp config entries", len(warpConfigs))
+		log.Printf("[DataSyncBuilder] %d warp config entries", len(warpConfigs))
 	}
 	// 5. Share domain configs (effective for this server)
 	shareDomainConfigs, err := b.rawProvider.ListShareDomainConfigs(ctx, sourceServerID)
@@ -354,6 +424,91 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		log.Printf("[DataSyncBuilder] server %d: %d share domain config entries", serverID, len(shareDomainConfigs))
 	}
 
+	// 6. Chain proxy data (chain_links, chain_exit_configs, node_servers, external_nodes).
+	// These are sent so the Agent can store them locally and regenerate the chain
+	// config offline (fallback when config_content is unavailable).
+	if chainLinks, err := b.rawProvider.ListChainLinks(ctx); err == nil {
+		req.ChainLinks = make([]*agentpb.ChainLinkEntry, len(chainLinks))
+		for i, c := range chainLinks {
+			req.ChainLinks[i] = &agentpb.ChainLinkEntry{
+				Id:             c.ID,
+				EntryServerId:  c.EntryServerID,
+				EntryInboundId: c.EntryInboundID,
+				ExitServerId:   c.ExitServerID,
+				ExitExternalId: c.ExitExternalID,
+				ExitTag:        c.ExitTag,
+				Weight:         int32(c.Weight),
+				Priority:       int32(c.Priority),
+				Enabled:        c.Enabled,
+				SortOrder:      int32(c.SortOrder),
+				CreatedAt:      c.CreatedAt.Unix(),
+				UpdatedAt:      c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d chain link entries", serverID, len(chainLinks))
+	}
+	if exitConfigs, err := b.rawProvider.ListChainExitConfigs(ctx); err == nil {
+		req.ChainExitConfigs = make([]*agentpb.ChainExitConfigEntry, len(exitConfigs))
+		for i, c := range exitConfigs {
+			req.ChainExitConfigs[i] = &agentpb.ChainExitConfigEntry{
+				Id:             c.ID,
+				ServerId:       c.ServerID,
+				RelayPort:      int32(c.RelayPort),
+				RelayProtocol:  c.RelayProtocol,
+				RelayTransport: c.RelayTransport,
+				RelaySecurity:  c.RelaySecurity,
+				RelayUuid:      c.RelayUUID,
+				RelayOnly:      c.RelayOnly,
+				Enabled:        c.Enabled,
+				CreatedAt:      c.CreatedAt.Unix(),
+				UpdatedAt:      c.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d chain exit config entries", serverID, len(exitConfigs))
+	}
+	if nodeServers, err := b.rawProvider.ListNodeServers(ctx); err == nil {
+		req.NodeServers = make([]*agentpb.NodeServerEntry, len(nodeServers))
+		for i, s := range nodeServers {
+			req.NodeServers[i] = &agentpb.NodeServerEntry{
+				Id:             s.ID,
+				Name:           s.Name,
+				Hostname:       s.Hostname,
+				Region:         s.Region,
+				RegionLabel:    s.RegionLabel,
+				NodeType:       s.NodeType,
+				PublicIp:       s.PublicIP,
+				InternalIp:     s.InternalIP,
+				Enabled:        s.Enabled,
+				BillingEnabled: s.BillingEnabled,
+				CreatedAt:      s.CreatedAt.Unix(),
+				UpdatedAt:      s.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d node server entries", serverID, len(nodeServers))
+	}
+	if externalNodes, err := b.rawProvider.ListExternalNodes(ctx); err == nil {
+		req.ExternalNodes = make([]*agentpb.ExternalNodeEntry, len(externalNodes))
+		for i, n := range externalNodes {
+			req.ExternalNodes[i] = &agentpb.ExternalNodeEntry{
+				Id:         n.ID,
+				SourceId:   n.SourceID,
+				Name:       n.Name,
+				Protocol:   n.Protocol,
+				Host:       n.Host,
+				Port:       int32(n.Port),
+				Transport:  n.Transport,
+				Tls:        n.TLS,
+				ServerName: n.ServerName,
+				ProxyJson:  n.ProxyJSON,
+				Enabled:    n.Enabled,
+				SortOrder:  int32(n.SortOrder),
+				CreatedAt:  n.CreatedAt.Unix(),
+				UpdatedAt:  n.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d external node entries", serverID, len(externalNodes))
+	}
+
 	// === Part 2: Generate final runtime config via PrepareFullConfig ===
 	// This is the same logic as configsync.Service.syncCoreForServer().
 	// The Agent can use this config directly — no need to re-assemble from DB rows.
@@ -369,12 +524,13 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			configData, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
 				Ctx:               ctx,
 				ServerID:          sourceServerID, // inbounds from primary
-				OutboundServerID:  serverID,      // outbounds from mirror's own DB
+				OutboundServerID:  serverID,       // outbounds from mirror's own DB
 				CoreType:          coreType,
 				FullConfig:        fullConfig,
 				InboundProvider:   b.inboundSvc,
 				OutboundProvider:  b.outboundSvc,
 				LogMode:           b.resolveLogMode(ctx, serverID, coreType),
+				ChainLinkProvider: b.chainLinkProvider,
 			})
 			if err != nil {
 				log.Printf("[DataSyncBuilder] PrepareFullConfig failed for server %d: %v", serverID, err)
@@ -461,7 +617,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	}
 
 	// Log summary
-	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs) + len(req.Certificates)
+	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs) + len(req.Certificates) + len(req.ChainLinks) + len(req.ChainExitConfigs) + len(req.NodeServers) + len(req.ExternalNodes)
 	hasConfig := len(req.ConfigContent) > 0
 	log.Printf("[DataSyncBuilder] built SyncDataRequest for server %d: %d total entries, config_content=%v, certs=%d", serverID, total, hasConfig, len(req.Certificates))
 
@@ -703,14 +859,18 @@ func MarshalSyncDataRequest(req *agentpb.SyncDataRequest) ([]byte, error) {
 	summary := map[string]interface{}{
 		"server_id":            req.ServerId,
 		"config_version":       req.ConfigVersion,
-		"apply_and_start":     req.ApplyAndStart,
+		"apply_and_start":      req.ApplyAndStart,
 		"core_configs":         len(req.CoreConfigs),
 		"inbound_configs":      len(req.InboundConfigs),
-		"outbound_configs":    len(req.OutboundConfigs),
+		"outbound_configs":     len(req.OutboundConfigs),
 		"warp_configs":         len(req.WarpConfigs),
 		"share_domain_configs": len(req.ShareDomainConfigs),
+		"chain_links":          len(req.ChainLinks),
+		"chain_exit_configs":   len(req.ChainExitConfigs),
+		"node_servers":         len(req.NodeServers),
+		"external_nodes":       len(req.ExternalNodes),
 		"has_config_content":  len(req.ConfigContent) > 0,
-		"config_core_type":    req.ConfigCoreType,
+		"config_core_type":     req.ConfigCoreType,
 	}
 	return json.MarshalIndent(summary, "", "  ")
 }

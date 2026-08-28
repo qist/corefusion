@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 
+	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
 
 	"gorm.io/gorm"
@@ -197,6 +198,128 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			resp.ShareDomainConfigsApplied++
 		} else {
 			log.Printf("[Agent] upsert share_domain_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 6. Upsert chain_links (链式入口链路)
+	for _, entry := range req.ChainLinks {
+		record := entity.ChainLink{
+			EntryServerID:  entry.EntryServerId,
+			EntryInboundID: entry.EntryInboundId,
+			ExitServerID:   entry.ExitServerId,
+			ExitExternalID: entry.ExitExternalId,
+			ExitTag:        entry.ExitTag,
+			Weight:         int(entry.Weight),
+			Priority:       int(entry.Priority),
+			Enabled:        entry.Enabled,
+			SortOrder:      int(entry.SortOrder),
+		}
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"entry_server_id", "entry_inbound_id", "exit_server_id", "exit_external_id", "exit_tag", "weight", "priority", "enabled", "sort_order", "updated_at"}),
+		}).Select("id", "entry_server_id", "entry_inbound_id", "exit_server_id", "exit_external_id", "exit_tag", "weight", "priority", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.ChainLinksApplied++
+		} else {
+			log.Printf("[Agent] upsert chain_link id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 7. Upsert chain_exit_configs (链式出口配置)
+	for _, entry := range req.ChainExitConfigs {
+		record := entity.ChainExitConfig{
+			ServerID:       entry.ServerId,
+			RelayPort:      int(entry.RelayPort),
+			RelayProtocol:  entry.RelayProtocol,
+			RelayTransport: entry.RelayTransport,
+			RelaySecurity:  entry.RelaySecurity,
+			RelayUUID:      entry.RelayUuid,
+			RelayOnly:      entry.RelayOnly,
+			Enabled:        entry.Enabled,
+		}
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"server_id", "relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "updated_at"}),
+		}).Select("id", "server_id", "relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.ChainExitConfigsApplied++
+		} else {
+			log.Printf("[Agent] upsert chain_exit_config id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 8. Upsert node_servers (节点地址/内网网段，用于出口地址智能选择，仅非敏感字段)
+	for _, entry := range req.NodeServers {
+		record := entity.NodeServer{
+			Name:           entry.Name,
+			Hostname:       entry.Hostname,
+			Region:         entry.Region,
+			RegionLabel:    entry.RegionLabel,
+			NodeType:       entry.NodeType,
+			PublicIP:       entry.PublicIp,
+			InternalIP:     entry.InternalIp,
+			Enabled:        entry.Enabled,
+			BillingEnabled: entry.BillingEnabled,
+		}
+		record.ID = entry.Id
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "hostname", "region", "region_label", "node_type", "public_ip", "internal_ip", "enabled", "billing_enabled", "updated_at"}),
+		}).Select("id", "name", "hostname", "region", "region_label", "node_type", "public_ip", "internal_ip", "enabled", "billing_enabled", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.NodeServersApplied++
+		} else {
+			log.Printf("[Agent] upsert node_server id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 9. Upsert external_nodes (外部出口节点)
+	for _, entry := range req.ExternalNodes {
+		record := entity.ExternalNode{
+			Name:       entry.Name,
+			Protocol:   entry.Protocol,
+			Host:       entry.Host,
+			Port:       int(entry.Port),
+			Transport:  entry.Transport,
+			TLS:        entry.Tls,
+			ServerName: entry.ServerName,
+			ProxyJSON:  entry.ProxyJson,
+			Enabled:    entry.Enabled,
+			SortOrder:  int(entry.SortOrder),
+		}
+		record.ID = entry.Id
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "protocol", "host", "port", "transport", "tls", "server_name", "proxy_json", "enabled", "sort_order", "updated_at"}),
+		}).Select("id", "name", "protocol", "host", "port", "transport", "tls", "server_name", "proxy_json", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.ExternalNodesApplied++
+		} else {
+			log.Printf("[Agent] upsert external_node id=%d: %v", entry.Id, result.Error)
 		}
 	}
 
@@ -563,6 +686,54 @@ func pruneStaleRecords(database *gorm.DB, req *agentpb.SyncDataRequest) {
 			}
 		}
 	}
+
+	// --- Prune chain_links by id (panel sends the full set) ---
+	if len(req.ChainLinks) > 0 {
+		keepIDs := make([]int64, 0, len(req.ChainLinks))
+		for _, e := range req.ChainLinks {
+			keepIDs = append(keepIDs, e.Id)
+		}
+		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.ChainLink{})
+		if result.RowsAffected > 0 {
+			log.Printf("[Agent] SyncData: pruned %d stale chain_links", result.RowsAffected)
+		}
+	}
+
+	// --- Prune chain_exit_configs by id (panel sends the full set) ---
+	if len(req.ChainExitConfigs) > 0 {
+		keepIDs := make([]int64, 0, len(req.ChainExitConfigs))
+		for _, e := range req.ChainExitConfigs {
+			keepIDs = append(keepIDs, e.Id)
+		}
+		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.ChainExitConfig{})
+		if result.RowsAffected > 0 {
+			log.Printf("[Agent] SyncData: pruned %d stale chain_exit_configs", result.RowsAffected)
+		}
+	}
+
+	// --- Prune node_servers by id (panel sends the full enabled set) ---
+	if len(req.NodeServers) > 0 {
+		keepIDs := make([]int64, 0, len(req.NodeServers))
+		for _, e := range req.NodeServers {
+			keepIDs = append(keepIDs, e.Id)
+		}
+		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.NodeServer{})
+		if result.RowsAffected > 0 {
+			log.Printf("[Agent] SyncData: pruned %d stale node_servers", result.RowsAffected)
+		}
+	}
+
+	// --- Prune external_nodes by id (panel sends the full enabled set) ---
+	if len(req.ExternalNodes) > 0 {
+		keepIDs := make([]int64, 0, len(req.ExternalNodes))
+		for _, e := range req.ExternalNodes {
+			keepIDs = append(keepIDs, e.Id)
+		}
+		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.ExternalNode{})
+		if result.RowsAffected > 0 {
+			log.Printf("[Agent] SyncData: pruned %d stale external_nodes", result.RowsAffected)
+		}
+	}
 }
 
 // generateConfigFromLocalDB generates a complete runtime config from the local
@@ -593,13 +764,24 @@ func generateConfigFromLocalDB(ctx context.Context, serverID int64, coreType str
 	// filtering disabled routing rules, removing outbounds from core_configs,
 	// ensuring stats section, applying API inbound/routing, merging enabled
 	// inbounds/outbounds from inbound_configs/outbound_configs tables.
+	//
+	// ChainLinkProvider: read chain_links / chain_exit_configs / node_servers /
+	// external_nodes from the local DB (populated by SyncData) so the generated
+	// config also includes chain outbounds, routing rules, and relay-in inbound.
+	localChainGen := agent.NewChainLinkGenerator(
+		repository.NewChainLinkRepository(db.DB),
+		repository.NewChainExitConfigRepository(db.DB),
+		repository.NewNodeServerRepository(db.DB),
+		repository.NewExternalNodeRepository(db.DB),
+	)
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
-		Ctx:              ctx,
-		ServerID:         serverID,
-		CoreType:         coreType,
-		FullConfig:       fullConfig,
-		InboundProvider:  &localInboundProvider{},
-		OutboundProvider: &localOutboundProvider{},
+		Ctx:               ctx,
+		ServerID:          serverID,
+		CoreType:          coreType,
+		FullConfig:        fullConfig,
+		InboundProvider:   &localInboundProvider{},
+		OutboundProvider:  &localOutboundProvider{},
+		ChainLinkProvider: localChainGen,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("PrepareFullConfig: %w", err)

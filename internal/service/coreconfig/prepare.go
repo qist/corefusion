@@ -27,6 +27,10 @@ type ChainLinkProvider interface {
 	// GenerateEntryOutbounds returns chain proxy outbounds and routing rules
 	// for the entry side of this server.
 	GenerateEntryOutbounds(ctx context.Context, serverID int64) (outbounds []interface{}, routingRules []interface{}, err error)
+	// GenerateEntryBalancers returns routing.balancers[] entries and the root
+	// observatory config for load-balanced (multi-exit) entries. Returns nil
+	// slices when no entry uses load balancing. See design doc §6.5 / §6.6.
+	GenerateEntryBalancers(ctx context.Context, serverID int64) (balancers []interface{}, observatory map[string]interface{})
 	// GenerateExitInbound returns the relay-in inbound config map for the
 	// exit side of this server, or nil if not an exit.
 	GenerateExitInbound(ctx context.Context, serverID int64) (map[string]interface{}, error)
@@ -176,6 +180,19 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				}
 				existingRules, _ := routing["rules"].([]interface{})
 				routing["rules"] = mergeChainRoutingRules(existingRules, chainRules)
+
+				// 多出口负载均衡（设计文档 §6.6）：合并 balancers 与根 observatory
+				chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID)
+				if len(chainBalancers) > 0 {
+					existingBal, _ := routing["balancers"].([]interface{})
+					routing["balancers"] = append(existingBal, chainBalancers...)
+				}
+				if chainObservatory != nil {
+					// observatory 放根配置（burstObservatory 视具体策略决定键名，这里统一用 observatory）
+					if _, ok := fullConfig["observatory"]; !ok {
+						fullConfig["observatory"] = chainObservatory
+					}
+				}
 				fullConfig["routing"] = routing
 			}
 		}

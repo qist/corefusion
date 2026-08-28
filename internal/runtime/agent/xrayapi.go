@@ -451,7 +451,7 @@ func buildXrayAccountFromParams(tag, email, id, password, flow, method string) *
 		case "xchacha20-ietf-poly1305":
 			cipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
 		case "none":
-			cipherType = shadowsocks.CipherType_NONE
+			cipherType = shadowsocks.CipherType_UNKNOWN
 		}
 		account := &shadowsocks.Account{
 			Password:   password,

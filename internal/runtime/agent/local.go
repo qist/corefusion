@@ -685,7 +685,7 @@ func buildXrayAccount(tag string, user *agentpb.UserOp) *serial.TypedMessage {
 		case "xchacha20-ietf-poly1305":
 			cipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
 		case "none":
-			cipherType = shadowsocks.CipherType_NONE
+			cipherType = shadowsocks.CipherType_UNKNOWN
 		}
 		return serial.ToTypedMessage(&shadowsocks.Account{Password: user.Password, CipherType: cipherType})
 	}

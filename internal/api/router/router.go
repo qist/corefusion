@@ -1520,7 +1520,8 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 			chainLinkRepo := repository.NewChainLinkRepository(database)
 			chainExitCfgRepo := repository.NewChainExitConfigRepository(database)
 			extNodeServerRepo := repository.NewExternalNodeServerRepository(database)
-			chainLinkH := chainlinkHandler.NewHandler(chainLinkRepo, chainExitCfgRepo, extNodeServerRepo, nodeServerRepo, extNodeRepo)
+			inboundConfigRepo := repository.NewInboundConfigRepository(database)
+			chainLinkH := chainlinkHandler.NewHandler(chainLinkRepo, chainExitCfgRepo, extNodeServerRepo, nodeServerRepo, extNodeRepo, inboundConfigRepo)
 			chainLinkH.RegisterRoutes(protected)
 
 			// Wire up CRL and CertDistributor if CA is available

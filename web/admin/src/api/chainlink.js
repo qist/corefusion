@@ -22,6 +22,12 @@ export function deleteLink(id) {
   return client.delete(`/chain/links/${id}`)
 }
 
+// ──────────── Create Chain Proxy Wizard (§5.5) ────────────
+// Body: { entry_server_id, entry_inbound_id, exits: [{ is_external, id, priority, weight, sort_order }] }
+export function createChainProxy(data) {
+  return client.post('/chain/proxy', data)
+}
+
 // ──────────── Chain Exit Configs ────────────
 
 export function listExitConfigs() {

@@ -22,6 +22,11 @@ export function deleteNodeServer(id) {
   return client.delete(`/node-servers/${id}`)
 }
 
+// Inbound configs of a node server (used as entry inbounds in chain proxy wizard)
+export function getInboundConfigs(serverId) {
+  return client.get(`/node-servers/${serverId}/inbound-configs`)
+}
+
 export function getServerStatus(id) {
   return client.get(`/node-servers/${id}/status`)
 }

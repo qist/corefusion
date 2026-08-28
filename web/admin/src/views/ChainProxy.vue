@@ -99,49 +99,70 @@
       </el-table>
     </el-card>
 
-    <!-- Link Dialog -->
-    <el-dialog v-model="linkDlg" :title="linkEditing ? t('chainProxy.editLink') : t('chainProxy.addLink')" width="560">
-      <el-form label-width="110px" size="small">
-        <el-form-item :label="t('chainProxy.entryNode')">
-          <el-select v-model="linkForm.entry_server_id" filterable style="width:100%">
-            <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.exitNodeType')">
-          <el-radio-group v-model="linkForm.exit_type" @change="onExitTypeChange">
-            <el-radio label="server">{{ t('chainProxy.managedServer') }}</el-radio>
-            <el-radio label="external">{{ t('chainProxy.externalNode') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="linkForm.exit_type==='server'" :label="t('chainProxy.exitNode')">
-          <el-select v-model="linkForm.exit_server_id" filterable style="width:100%">
-            <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-else :label="t('chainProxy.exitNode')">
-          <el-select v-model="linkForm.exit_external_id" filterable style="width:100%">
-            <el-option v-for="s in externalServers" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.exitTag')">
-          <el-input v-model="linkForm.exit_tag" placeholder="chain-exit-1" />
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.priority')">
-          <el-input-number v-model="linkForm.priority" :min="1" :max="99" />
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.weight')">
-          <el-input-number v-model="linkForm.weight" :min="1" :max="100" />
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.sortOrder')">
-          <el-input-number v-model="linkForm.sort_order" :min="0" />
-        </el-form-item>
-        <el-form-item :label="t('common.status')">
-          <el-switch v-model="linkForm.enabled" />
-        </el-form-item>
-      </el-form>
+    <!-- Create Chain Proxy Wizard Dialog (see design doc §12.2) -->
+    <el-dialog v-model="linkDlg" :title="t('chainProxy.createWizard')" width="680">
+      <el-steps :active="wizardStep" finish-status="success" align-center>
+        <el-step :title="t('chainProxy.stepEntry')" />
+        <el-step :title="t('chainProxy.stepExits')" />
+        <el-step :title="t('chainProxy.stepConfirm')" />
+      </el-steps>
+      <div style="margin-top:18px">
+        <!-- Step 1: choose entry node + entry inbound -->
+        <div v-show="wizardStep===0">
+          <el-form label-width="110px" size="small">
+            <el-form-item :label="t('chainProxy.entryNode')">
+              <el-select v-model="wiz.entryServerId" filterable style="width:100%" @change="onEntryServerChange">
+                <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('chainProxy.entryInbound')">
+              <el-select v-model="wiz.entryInboundId" filterable style="width:100%">
+                <el-option v-for="ib in inboundConfigs" :key="ib.id" :label="`${ib.tag || ('in-'+ib.id)} · ${ib.protocol||''}`" :value="ib.id" />
+              </el-select>
+              <span style="font-size:12px;color:#909399">{{ t('chainProxy.entryInboundHint') }}</span>
+            </el-form-item>
+          </el-form>
+        </div>
+        <!-- Step 2: choose exits (cluster + external, both multi-select, like Plan/NodeGroup) -->
+        <div v-show="wizardStep===1">
+          <el-alert :title="t('chainProxy.multiExitHint')" type="info" :closable="false" style="margin-bottom:12px" />
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <div class="exit-group-title">{{ t('chainProxy.clusterNodes') }}</div>
+              <el-select v-model="wiz.clusterExits" multiple filterable style="width:100%" :placeholder="t('chainProxy.selectExits')">
+                <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
+              </el-select>
+            </el-col>
+            <el-col :span="12">
+              <div class="exit-group-title">{{ t('chainProxy.externalNodes') }}</div>
+              <el-select v-model="wiz.externalExits" multiple filterable style="width:100%" :placeholder="t('chainProxy.selectExits')">
+                <el-option v-for="s in externalServers" :key="s.id" :label="s.name" :value="s.id" />
+              </el-select>
+            </el-col>
+          </el-row>
+          <div style="margin-top:10px;font-size:12px;color:#909399">
+            {{ t('chainProxy.selectedCount', { n: totalSelectedExits }) }}
+            <span v-if="totalSelectedExits>1" style="color:#e6a23c"> · {{ t('chainProxy.willLoadBalance') }}</span>
+            <span v-else-if="totalSelectedExits===1" style="color:#67c23a"> · {{ t('chainProxy.willDirect') }}</span>
+          </div>
+        </div>
+        <!-- Step 3: confirm -->
+        <div v-show="wizardStep===2">
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item :label="t('chainProxy.entryNode')">{{ entryServerName }}</el-descriptions-item>
+            <el-descriptions-item :label="t('chainProxy.entryInbound')">{{ entryInboundLabel }}</el-descriptions-item>
+            <el-descriptions-item :label="t('chainProxy.exitType')">
+              {{ totalSelectedExits>1 ? t('chainProxy.loadBalance') : t('chainProxy.direct') }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('chainProxy.exitCount')">{{ totalSelectedExits }}</el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </div>
       <template #footer>
         <el-button @click="linkDlg=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="linkSaving" @click="saveLink">{{ t('common.save') }}</el-button>
+        <el-button v-if="wizardStep>0" @click="wizardStep--">{{ t('common.prev') }}</el-button>
+        <el-button v-if="wizardStep<2" type="primary" @click="nextWizardStep" :disabled="!canNextStep">{{ t('common.next') }}</el-button>
+        <el-button v-else type="primary" :loading="linkSaving" @click="createChainProxy">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
 
@@ -201,7 +222,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import * as chainApi from '../api/chainlink'
-import { listNodeServers } from '../api/nodeServer'
+import { listNodeServers, getInboundConfigs } from '../api/nodeServer'
 
 const { t } = useI18n()
 
@@ -219,18 +240,32 @@ const externalServers = ref([])
 const linkDlg = ref(false)
 const linkEditing = ref(false)
 const linkSaving = ref(false)
-const linkForm = ref({
-  id: 0,
-  entry_server_id: 0,
-  exit_type: 'server',
-  exit_server_id: 0,
-  exit_external_id: 0,
-  exit_tag: '',
-  priority: 1,
-  weight: 100,
-  sort_order: 0,
-  enabled: true,
+
+// ── Create Chain Proxy Wizard (§5.5 / §12.2) ──
+const wizardStep = ref(0)
+const inboundConfigs = ref([])
+const wiz = ref({
+  entryServerId: 0,
+  entryInboundId: 0,
+  clusterExits: [],   // 选中的集群节点 server_id 列表
+  externalExits: [],  // 选中的外部节点 external_id 列表
 })
+const totalSelectedExits = computed(() => wiz.value.clusterExits.length + wiz.value.externalExits.length)
+const canNextStep = computed(() => {
+  if (wizardStep.value === 0) return wiz.value.entryServerId && wiz.value.entryInboundId
+  if (wizardStep.value === 1) return totalSelectedExits.value > 0
+  return true
+})
+const entryServerName = computed(() => serverName(wiz.value.entryServerId))
+const entryInboundLabel = computed(() => {
+  const ib = inboundConfigs.value.find(x => x.id === wiz.value.entryInboundId)
+  return ib ? `${ib.tag || ('in-' + ib.id)} · ${ib.protocol || ''}` : `#${wiz.value.entryInboundId}`
+})
+function resetWizard() {
+  wizardStep.value = 0
+  inboundConfigs.value = []
+  wiz.value = { entryServerId: 0, entryInboundId: 0, clusterExits: [], externalExits: [] }
+}
 
 // ── Exit Config Dialog ──
 const exitDlg = ref(false)
@@ -282,14 +317,6 @@ function roleTagType(role) {
   return map[role] || ''
 }
 
-function onExitTypeChange(val) {
-  if (val === 'server') {
-    linkForm.value.exit_external_id = 0
-  } else {
-    linkForm.value.exit_server_id = 0
-  }
-}
-
 // ── Fetch ──
 async function fetchAll() {
   await Promise.all([fetchTopology(), fetchLinks(), fetchExitConfigs(), fetchServers(), fetchExternalServers()])
@@ -327,68 +354,71 @@ async function fetchExternalServers() {
 
 // ── Link CRUD ──
 function showLinkDlg() {
+  // 打开「创建链式代理」向导（§5.5），取代原单条创建表单
   linkEditing.value = false
-  linkForm.value = {
-    id: 0, entry_server_id: 0, exit_type: 'server',
-    exit_server_id: 0, exit_external_id: 0, exit_tag: '',
-    priority: 1, weight: 100, sort_order: 0, enabled: true,
-  }
+  resetWizard()
   linkDlg.value = true
 }
 
-function editLink(row) {
-  linkEditing.value = true
-  linkForm.value = {
-    id: row.id,
-    entry_server_id: row.entry_server_id,
-    exit_type: row.exit_external_id ? 'external' : 'server',
-    exit_server_id: row.exit_server_id || 0,
-    exit_external_id: row.exit_external_id || 0,
-    exit_tag: row.exit_tag || '',
-    priority: row.priority,
-    weight: row.weight,
-    sort_order: row.sort_order,
-    enabled: row.enabled,
-  }
-  linkDlg.value = true
+async function onEntryServerChange(serverId) {
+  wiz.value.entryInboundId = 0
+  inboundConfigs.value = []
+  if (!serverId) return
+  try {
+    const data = await getInboundConfigs(serverId)
+    inboundConfigs.value = Array.isArray(data) ? data : (data.inbound_configs || [])
+  } catch { /* ignore */ }
 }
 
-async function saveLink() {
-  if (!linkForm.value.entry_server_id) {
-    ElMessage.warning(t('chainProxy.selectEntry'))
-    return
-  }
-  if (linkForm.value.exit_type === 'server' && !linkForm.value.exit_server_id) {
-    ElMessage.warning(t('chainProxy.selectExit'))
-    return
-  }
-  if (linkForm.value.exit_type === 'external' && !linkForm.value.exit_external_id) {
-    ElMessage.warning(t('chainProxy.selectExit'))
-    return
-  }
+function nextWizardStep() {
+  if (!canNextStep.value) return
+  if (wizardStep.value < 2) wizardStep.value++
+}
 
+async function createChainProxy() {
+  if (!canNextStep.value) return
+  const exits = [
+    ...wiz.value.clusterExits.map(id => ({ is_external: false, id })),
+    ...wiz.value.externalExits.map(id => ({ is_external: true, id })),
+  ]
+  if (exits.length === 0) {
+    ElMessage.warning(t('chainProxy.selectExit'))
+    return
+  }
   linkSaving.value = true
   try {
     const payload = {
-      entry_server_id: linkForm.value.entry_server_id,
-      exit_server_id: linkForm.value.exit_type === 'server' ? linkForm.value.exit_server_id : 0,
-      exit_external_id: linkForm.value.exit_type === 'external' ? linkForm.value.exit_external_id : 0,
-      exit_tag: linkForm.value.exit_tag,
-      priority: linkForm.value.priority,
-      weight: linkForm.value.weight,
-      sort_order: linkForm.value.sort_order,
-      enabled: linkForm.value.enabled,
+      entry_server_id: wiz.value.entryServerId,
+      entry_inbound_id: wiz.value.entryInboundId,
+      exits,
     }
-    if (linkEditing.value) {
-      await chainApi.updateLink(linkForm.value.id, payload)
-    } else {
-      await chainApi.createLink(payload)
-    }
+    await chainApi.createChainProxy(payload)
     ElMessage.success(t('common.success'))
     linkDlg.value = false
     await fetchLinks()
     await fetchTopology()
   } catch { /* error handled by interceptor */ } finally { linkSaving.value = false }
+}
+
+async function editLink(row) {
+  // 编辑复用创建向导：预填入口与单个出口，保存时统一走清后建（§5.4）
+  linkEditing.value = true
+  resetWizard()
+  wiz.value.entryServerId = row.entry_server_id
+  wiz.value.entryInboundId = row.entry_inbound_id || row.entryInboundId || 0
+  if (row.exit_external_id) {
+    wiz.value.externalExits = [row.exit_external_id]
+  } else if (row.exit_server_id) {
+    wiz.value.clusterExits = [row.exit_server_id]
+  }
+  // 加载该入口节点的入站列表，便于回显入站标签
+  if (wiz.value.entryServerId) {
+    try {
+      const data = await getInboundConfigs(wiz.value.entryServerId)
+      inboundConfigs.value = Array.isArray(data) ? data : (data.inbound_configs || [])
+    } catch { /* ignore */ }
+  }
+  linkDlg.value = true
 }
 
 async function toggleLink(row) {

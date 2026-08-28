@@ -532,7 +532,7 @@ func (h *Handler) AddUser(c *gin.Context) {
 				case "xchacha20-ietf-poly1305":
 					cipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
 				case "none":
-					cipherType = shadowsocks.CipherType_NONE
+					cipherType = shadowsocks.CipherType_UNKNOWN
 				}
 			}
 			ssAccount := &shadowsocks.Account{

@@ -40,52 +40,126 @@ func NewChainLinkGenerator(
 	}
 }
 
-// generateEntryOutboundsTyped generates outbound configs for an entry node
-// based on its chain_links. Each active link becomes an xray outbound
+// generateEntryOutboundsTyped generates chain proxy outbounds and routing rules
+// for an entry server based on its chain_links. Each active link becomes an xray outbound
 // pointing to the exit target (cluster server or external node).
-// Returns typed results; use GenerateEntryOutbounds for the interface method.
-func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, serverID int64) ([]ChainEntryOutbound, []ChainRoutingRule, error) {
+// Returns typed results; use GenerateEntryOutbounds / GenerateEntryBalancers for the interface methods.
+//
+// Multi-exit support (see design doc §6.5 / §6.6): links are grouped by
+// EntryInboundID. Within a group:
+//   - a single exit  → one field rule (inboundTag → chain-* outboundTag)
+//   - multiple exits → a balancer (prefix selector "chain-<in>-") + observatory,
+//     and the field rule points to balancerTag instead of a single outbound.
+func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, serverID int64) ([]ChainEntryOutbound, []ChainRoutingRule, []ChainBalancer, *ChainObservatory, error) {
 	links, err := g.linkRepo.ListByEntry(ctx, serverID, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list chain links: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("list chain links: %w", err)
 	}
 	if len(links) == 0 {
-		return nil, nil, nil
+		return nil, nil, nil, nil, nil
+	}
+
+	// 入口节点（用于决策点 ①：出口地址内网/公网智能选择，见设计文档 §6.1.1）
+	entry, err := g.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("entry server %d not found: %w", serverID, err)
 	}
 
 	var outbounds []ChainEntryOutbound
 	var routingRules []ChainRoutingRule
+	var balancers []ChainBalancer
+	var observatory *ChainObservatory
 
+	// 按 EntryInboundID 分组（同一入口可关联多个出口，见 §6.5）
+	groups := make(map[int64][]entity.ChainLink)
+	order := make([]int64, 0)
 	for _, link := range links {
 		if !link.Enabled {
 			continue
 		}
-
-		var outbound ChainEntryOutbound
-		var err error
-
-		if link.IsExitExternal() {
-			outbound, err = g.buildExternalOutbound(ctx, link)
-		} else if link.IsExitServer() {
-			outbound, err = g.buildServerOutbound(ctx, link)
-		} else {
-			log.Printf("[ChainLink] link %d has no valid exit target (server_id=0, external_id=0)", link.ID)
-			continue
+		if _, ok := groups[link.EntryInboundID]; !ok {
+			order = append(order, link.EntryInboundID)
 		}
-
-		if err != nil {
-			log.Printf("[ChainLink] link %d: %v", link.ID, err)
-			continue
-		}
-
-		outbounds = append(outbounds, outbound)
-		routingRules = append(routingRules, ChainRoutingRule{
-			Type:        "field",
-			OutboundTag: outbound.Tag,
-		})
+		groups[link.EntryInboundID] = append(groups[link.EntryInboundID], link)
 	}
 
-	return outbounds, routingRules, nil
+	for _, inID := range order {
+		groupLinks := groups[inID]
+		inboundTag := fmt.Sprintf("in-%d", inID)
+
+		// 先为每个出口生成 outbound（无论单/多出口，全部产出，balancer 靠 selector 前缀圈定）
+		for _, link := range groupLinks {
+			var outbound ChainEntryOutbound
+			var berr error
+			if link.IsExitExternal() {
+				outbound, berr = g.buildExternalOutbound(ctx, link)
+			} else if link.IsExitServer() {
+				outbound, berr = g.buildServerOutbound(ctx, link, entry)
+			} else {
+				log.Printf("[ChainLink] link %d has no valid exit target (server_id=0, external_id=0)", link.ID)
+				continue
+			}
+			if berr != nil {
+				log.Printf("[ChainLink] link %d: %v", link.ID, berr)
+				continue
+			}
+			outbounds = append(outbounds, outbound)
+		}
+
+		if len(groupLinks) == 1 {
+			// 单出口：直接 field 规则 inboundTag → chain-* outboundTag（见 §6.4）
+			link := groupLinks[0]
+			tag := link.ExitTag
+			if tag == "" {
+				tag = g.exitTagFor(link)
+			}
+			routingRules = append(routingRules, ChainRoutingRule{
+				Type:        "field",
+				InboundTag:  []string{inboundTag},
+				OutboundTag: tag,
+				RuleTag:     fmt.Sprintf("exit-%d-single", inID),
+			})
+			continue
+		}
+
+		// 多出口：负载均衡模式（见 §6.6）—— 多选自动判定为负载均衡
+		balTag := fmt.Sprintf("bal-chain-%d", inID)
+		prefix := fmt.Sprintf("chain-%d-", inID) // selector 前缀，自动圈定本入口全部出口
+		balancers = append(balancers, ChainBalancer{
+			Tag:         balTag,
+			Selector:    []string{prefix},
+			FallbackTag: "direct",
+			Strategy:    map[string]interface{}{"type": "leastPing"},
+		})
+		routingRules = append(routingRules, ChainRoutingRule{
+			Type:        "field",
+			InboundTag:  []string{inboundTag},
+			BalancerTag: balTag,
+			RuleTag:     fmt.Sprintf("exit-%d-lb", inID),
+		})
+		// 仅当该入口存在负载均衡时才注入 observatory，subjectSelector 用前缀隔离（§6.6.5）
+		if observatory == nil {
+			observatory = &ChainObservatory{
+				SubjectSelector:   []string{prefix},
+				ProbeURL:          "https://www.google.com/generate_204",
+				ProbeInterval:     "10s",
+				EnableConcurrency: true,
+			}
+		} else {
+			// 多个负载均衡入口时，把所有前缀合并进同一个 observatory 的 subjectSelector
+			observatory.SubjectSelector = append(observatory.SubjectSelector, prefix)
+		}
+	}
+
+	return outbounds, routingRules, balancers, observatory, nil
+}
+
+// exitTagFor returns the canonical chain-* outbound tag for a link (§6.1).
+func (g *ChainLinkGenerator) exitTagFor(link entity.ChainLink) string {
+	if link.IsExitExternal() {
+		return fmt.Sprintf("chain-%d-ext%d", link.EntryInboundID, link.ExitExternalID)
+	}
+	return fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
 }
 
 // GenerateExitInbound generates the relay inbound for an exit server.
@@ -136,7 +210,9 @@ func (g *ChainLinkGenerator) HasChainLinks(ctx context.Context, serverID int64) 
 }
 
 // buildServerOutbound builds an outbound pointing to a cluster exit server.
-func (g *ChainLinkGenerator) buildServerOutbound(ctx context.Context, link entity.ChainLink) (ChainEntryOutbound, error) {
+// entry is the entry (source) server, used to pick the optimal exit address
+// (internal IP when both nodes share a private network, otherwise public IP).
+func (g *ChainLinkGenerator) buildServerOutbound(ctx context.Context, link entity.ChainLink, entry *entity.NodeServer) (ChainEntryOutbound, error) {
 	exitServer, err := g.serverRepo.GetByID(ctx, link.ExitServerID)
 	if err != nil {
 		return ChainEntryOutbound{}, fmt.Errorf("exit server %d not found: %w", link.ExitServerID, err)
@@ -159,20 +235,46 @@ func (g *ChainLinkGenerator) buildServerOutbound(ctx context.Context, link entit
 		}
 	}
 
+	// tag 统一以 chain- 开头：chain-<入口inboundID>-<出口serverID>（见设计文档 §6.1 / §6.1.1）
 	tag := link.ExitTag
 	if tag == "" {
-		tag = fmt.Sprintf("to-exit-%d", link.ExitServerID)
+		tag = fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
 	}
+
+	// 决策点 ①：出口地址内网/公网智能选择（见设计文档 §6.1.1 resolveExitAddress）
+	address := resolveExitAddress(entry, exitServer)
 
 	return ChainEntryOutbound{
 		Tag:      tag,
 		Protocol: protocol,
-		Settings: buildLinkOutboundSettings(protocol, exitServer.Hostname, port, relayUUID),
+		Settings: buildLinkOutboundSettings(protocol, address, port, relayUUID),
 		StreamSettings: map[string]interface{}{
 			"network":  transport,
 			"security": security,
 		},
 	}, nil
+}
+
+// resolveExitAddress selects the best address for an exit server:
+//   - if both entry and exit are in the same private network (same region and
+//     the exit exposes an InternalIP), use InternalIP to save public bandwidth;
+//   - otherwise use PublicIP, falling back to Hostname.
+// External nodes carry their own address (from ProxyJSON) and do not use this.
+func resolveExitAddress(entry, exit *entity.NodeServer) string {
+	if exit.InternalIP != "" && samePrivateNetwork(entry, exit) {
+		return exit.InternalIP
+	}
+	if exit.PublicIP != "" {
+		return exit.PublicIP
+	}
+	return exit.Hostname
+}
+
+// samePrivateNetwork reports whether two servers are co-located such that the
+// entry can reach the exit via its internal IP. We approximate this by matching
+// the region field; extend with subnet/VPC awareness if needed.
+func samePrivateNetwork(entry, exit *entity.NodeServer) bool {
+	return entry.Region != "" && entry.Region == exit.Region
 }
 
 // buildExternalOutbound builds an outbound pointing to an external node.
@@ -190,9 +292,10 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 		return ChainEntryOutbound{}, fmt.Errorf("failed to parse proxy_json for external node %d", link.ExitExternalID)
 	}
 
+	// 外部节点出口 tag 同样以 chain- 开头，保持全局一致：chain-<入口inboundID>-ext<外部ID>（§6.1.1）
 	tag := link.ExitTag
 	if tag == "" {
-		tag = fmt.Sprintf("to-ext-%d", link.ExitExternalID)
+		tag = fmt.Sprintf("chain-%d-ext%d", link.EntryInboundID, link.ExitExternalID)
 	}
 
 	protocol := extNode.Protocol
@@ -505,8 +608,10 @@ func MergeChainLinkRoutingRules(existingRules []interface{}, chainRules []ChainR
 
 // GenerateEntryOutbounds implements coreconfig.ChainLinkProvider.
 // It wraps generateEntryOutboundsTyped, converting the typed results to []interface{}.
+// Balancers and observatory (multi-exit load balancing, see design doc §6.6) are
+// returned separately via GenerateEntryBalancers.
 func (g *ChainLinkGenerator) GenerateEntryOutbounds(ctx context.Context, serverID int64) ([]interface{}, []interface{}, error) {
-	outbounds, rules, err := g.generateEntryOutboundsTyped(ctx, serverID)
+	outbounds, rules, _, _, err := g.generateEntryOutboundsTyped(ctx, serverID)
 	if err != nil || (len(outbounds) == 0 && len(rules) == 0) {
 		return nil, nil, err
 	}
@@ -525,4 +630,29 @@ func (g *ChainLinkGenerator) GenerateEntryOutbounds(ctx context.Context, serverI
 		rls = append(rls, m)
 	}
 	return obs, rls, nil
+}
+
+// GenerateEntryBalancers implements coreconfig.ChainLinkProvider.
+// It returns the routing.balancers[] entries and the root observatory config
+// for load-balanced (multi-exit) entries. Returns nil slices when no entry uses
+// load balancing. See design doc §6.5 / §6.6.
+func (g *ChainLinkGenerator) GenerateEntryBalancers(ctx context.Context, serverID int64) (balancers []interface{}, observatory map[string]interface{}) {
+	_, _, bals, obs, err := g.generateEntryOutboundsTyped(ctx, serverID)
+	if err != nil || len(bals) == 0 {
+		return nil, nil
+	}
+	bal := make([]interface{}, 0, len(bals))
+	for _, b := range bals {
+		data, _ := json.Marshal(b)
+		var m map[string]interface{}
+		json.Unmarshal(data, &m)
+		bal = append(bal, m)
+	}
+	if obs != nil {
+		data, _ := json.Marshal(obs)
+		var m map[string]interface{}
+		json.Unmarshal(data, &m)
+		observatory = m
+	}
+	return bal, observatory
 }

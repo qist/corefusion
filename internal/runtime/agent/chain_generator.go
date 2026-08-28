@@ -34,7 +34,31 @@ type ChainEntryOutbound struct {
 type ChainRoutingRule struct {
 	Type        string   `json:"type"`
 	InboundTag  []string `json:"inboundTag,omitempty"`
-	OutboundTag string   `json:"outboundTag"`
+	OutboundTag string   `json:"outboundTag,omitempty"`
+	BalancerTag string   `json:"balancerTag,omitempty"`
+	RuleTag     string   `json:"ruleTag,omitempty"`
+}
+
+// ChainBalancer represents a routing balancer object for load-balanced exits.
+// Corresponds to xray routing.balancers[] (see design doc §6.6).
+type ChainBalancer struct {
+	Tag         string                 `json:"tag"`
+	Selector    []string               `json:"selector"`
+	FallbackTag string                 `json:"fallbackTag,omitempty"`
+	Strategy    map[string]interface{} `json:"strategy,omitempty"`
+}
+
+// ChainObservatory holds the observatory config injected at the root of a
+// load-balanced entry node (see design doc §6.6.5). subjectSelector uses the
+// "chain-<inboundID>-" prefix so only this entry's exits are probed.
+type ChainObservatory struct {
+	SubjectSelector   []string `json:"subjectSelector"`
+	ProbeURL          string   `json:"probeURL,omitempty"`
+	ProbeInterval     string   `json:"probeInterval,omitempty"`
+	EnableConcurrency bool     `json:"enableConcurrency,omitempty"`
+	BurstObservatory  bool     `json:"burstObservatory,omitempty"`
+	Interval          string   `json:"interval,omitempty"`
+	Sampling          int      `json:"sampling,omitempty"`
 }
 
 // GenerateChainEntryOutbounds generates outbound configs for a chain_entry node.

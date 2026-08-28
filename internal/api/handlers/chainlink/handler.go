@@ -20,6 +20,7 @@ type Handler struct {
 	extServerRepo *repository.ExternalNodeServerRepository
 	serverRepo    *repository.NodeServerRepository
 	extNodeRepo   *repository.ExternalNodeRepository
+	inboundRepo   *repository.InboundConfigRepository
 }
 
 // NewHandler creates a new chainlink Handler.
@@ -29,6 +30,7 @@ func NewHandler(
 	extServerRepo *repository.ExternalNodeServerRepository,
 	serverRepo *repository.NodeServerRepository,
 	extNodeRepo *repository.ExternalNodeRepository,
+	inboundRepo *repository.InboundConfigRepository,
 ) *Handler {
 	return &Handler{
 		linkRepo:      linkRepo,
@@ -36,6 +38,7 @@ func NewHandler(
 		extServerRepo: extServerRepo,
 		serverRepo:    serverRepo,
 		extNodeRepo:   extNodeRepo,
+		inboundRepo:   inboundRepo,
 	}
 }
 
@@ -63,6 +66,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 
 	// Topology view
 	g.GET("/topology", h.GetTopology)
+
+	// 创建链式代理：选择入口 → 选择出口（单/多，多选自动判定为负载均衡）→ 自动关联
+	// 见设计文档 §5.5 创建链式代理向导（端到端操作与后端自动行为）
+	g.POST("/proxy", h.CreateChainProxy)
 }
 
 // ── Chain Links ──
@@ -568,6 +575,114 @@ func (h *Handler) GetTopology(c *gin.Context) {
 		"nodes": nodes,
 		"links": links,
 		"exit_configs": exitConfigs,
+	})
+}
+
+// ── Create Chain Proxy (wizard, see design doc §5.5) ──
+
+// ExitTarget describes a single chosen exit in the create-chain-proxy wizard.
+type ExitTarget struct {
+	IsExternal bool   `json:"is_external"`
+	ID         int64  `json:"id"` // cluster server_id (IsExternal=false) or external node server id (IsExternal=true)
+	Priority   int    `json:"priority"`
+	Weight     int    `json:"weight"`
+	SortOrder  int    `json:"sort_order"`
+}
+
+// CreateChainProxy handles the create-chain-proxy wizard flow (§5.5):
+//  1. validate entry server + entry inbound exist;
+//  2. validate every chosen exit has a configured chain_exit_config (cluster) or is an enabled external node;
+//  3. SyncFromEntry: clear-then-insert chain_links for this entry;
+//  4. multi-exit (≥2) auto-selects load balancing strategy (§6.6); single exit → direct.
+//
+// Config regeneration is automatic: nodes pull their config via configsync on the
+// next heartbeat, which calls PrepareFullConfig with the updated chain_links.
+func (h *Handler) CreateChainProxy(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req struct {
+		EntryServerID  int64        `json:"entry_server_id" binding:"required"`
+		EntryInboundID int64        `json:"entry_inbound_id" binding:"required"`
+		Exits          []ExitTarget `json:"exits" binding:"required,min=1"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_BODY", err.Error())
+		return
+	}
+
+	// 1. validate entry server + inbound exist
+	entryServer, err := h.serverRepo.GetByID(ctx, req.EntryServerID)
+	if err != nil || entryServer == nil {
+		response.BadRequest(c, "ENTRY_NOT_FOUND", "entry server not found")
+		return
+	}
+	inbound, err := h.inboundRepo.GetByID(ctx, req.EntryInboundID)
+	if err != nil || inbound == nil || inbound.ServerID != req.EntryServerID {
+		response.BadRequest(c, "INBOUND_NOT_FOUND", "entry inbound not found on this server")
+		return
+	}
+
+	// 2. validate every exit target
+	for _, ex := range req.Exits {
+		if ex.IsExternal {
+			extSrv, eerr := h.extServerRepo.GetByID(ctx, ex.ID)
+			if eerr != nil || extSrv == nil || !extSrv.Enabled {
+				response.BadRequest(c, "EXIT_EXT_NOT_FOUND", fmt.Sprintf("external exit %d not found or disabled", ex.ID))
+				return
+			}
+		} else {
+			cfg, cerr := h.exitCfgRepo.GetByServerID(ctx, ex.ID)
+			if cerr != nil || cfg == nil || !cfg.Enabled || cfg.RelayPort == 0 {
+				response.BadRequest(c, "EXIT_NOT_CONFIGURED", fmt.Sprintf("exit server %d has no valid chain_exit_config (relay_port must be > 0)", ex.ID))
+				return
+			}
+		}
+	}
+
+	// 3. clear-then-insert (SyncFromEntry, §5.4/§5.5)
+	if err := h.linkRepo.DeleteByEntry(ctx, req.EntryServerID); err != nil {
+		response.InternalError(c, "SYNC_FAILED", err.Error())
+		return
+	}
+	for i, ex := range req.Exits {
+		priority := ex.Priority
+		if priority == 0 {
+			priority = i + 1 // default priority by selection order
+		}
+		weight := ex.Weight
+		if weight == 0 {
+			weight = 100
+		}
+		link := &entity.ChainLink{
+			EntryServerID:  req.EntryServerID,
+			EntryInboundID: req.EntryInboundID,
+			Priority:       priority,
+			Weight:         weight,
+			SortOrder:      ex.SortOrder,
+			Enabled:        true,
+		}
+		if ex.IsExternal {
+			link.ExitExternalID = ex.ID
+		} else {
+			link.ExitServerID = ex.ID
+		}
+		if err := h.linkRepo.Create(ctx, link); err != nil {
+			response.InternalError(c, "CREATE_LINK_FAILED", err.Error())
+			return
+		}
+	}
+
+	// 4. strategy auto-selection: ≥2 exits ⇒ load balancing (§6.6); single ⇒ direct
+	strategy := "single"
+	if len(req.Exits) > 1 {
+		strategy = "loadbalance"
+	}
+
+	response.OK(c, gin.H{
+		"message":        "chain proxy created",
+		"strategy":       strategy,
+		"entry_server_id":  req.EntryServerID,
+		"entry_inbound_id": req.EntryInboundID,
+		"exit_count":     len(req.Exits),
 	})
 }
 

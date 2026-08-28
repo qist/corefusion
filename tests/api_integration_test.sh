@@ -374,14 +374,16 @@ if [ "$NS_ID" != "0" ]; then
   RESP=$(req GET "/api/v1/node-servers/$NS_ID/rate-limit" "$ADMIN_TOKEN")
   check "GET /node-servers/:id/rate-limit" "$RESP" "ok"
 
-  RESP=$(req GET "/api/v1/node-servers/$NS_ID/geo-rules/sources" "$ADMIN_TOKEN")
-  check "GET /node-servers/:id/geo-rules/sources" "$RESP" "ok"
+  # Geo rules are now globally managed (centered) and synced to nodes, so the
+  # API lives under /api/v1/geo-rules/* (no node-servers/:id prefix).
+  RESP=$(req GET "/api/v1/geo-rules/sources" "$ADMIN_TOKEN")
+  check "GET /geo-rules/sources" "$RESP" "ok"
 
-  RESP=$(req GET "/api/v1/node-servers/$NS_ID/geo-rules/files" "$ADMIN_TOKEN")
-  check "GET /node-servers/:id/geo-rules/files" "$RESP" "ok"
+  RESP=$(req GET "/api/v1/geo-rules/files" "$ADMIN_TOKEN")
+  check "GET /geo-rules/files" "$RESP" "ok"
 
-  RESP=$(req GET "/api/v1/node-servers/$NS_ID/geo-rules/status" "$ADMIN_TOKEN")
-  check "GET /node-servers/:id/geo-rules/status" "$RESP" "ok"
+  RESP=$(req GET "/api/v1/geo-rules/status" "$ADMIN_TOKEN")
+  check "GET /geo-rules/status" "$RESP" "ok"
 
   RESP=$(req GET "/api/v1/node-servers/$NS_ID/share-domains" "$ADMIN_TOKEN")
   check "GET /node-servers/:id/share-domains" "$RESP" "ok"

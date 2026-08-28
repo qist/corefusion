@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
-	"corefusion/internal/store/repository"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	"corefusion/internal/store/repository"
 )
 
 // CoreConfigService provides access to core configuration.
@@ -80,6 +80,11 @@ type Service struct {
 
 	// serverRepo is used to detect mirror nodes and resolve their primary's ID.
 	serverRepo *repository.NodeServerRepository
+
+	// chainLinkProvider optionally provides chain proxy outbounds/rules/balancers
+	// (see design doc §5/§6). When set, PrepareFullConfig merges them into the
+	// generated xray config for the entry server.
+	chainLinkProvider coreconfigSvc.ChainLinkProvider
 }
 
 // ConfigWriter writes runtime config files. Implemented by process.Manager.
@@ -110,6 +115,12 @@ func (s *Service) SetLogModeProvider(p LogModeProvider) {
 // SetServerRepo sets the node server repository for mirror node detection.
 func (s *Service) SetServerRepo(repo *repository.NodeServerRepository) {
 	s.serverRepo = repo
+}
+
+// SetChainLinkProvider sets the chain proxy provider so PrepareFullConfig merges
+// chain-link outbounds/rules/balancers into the generated config.
+func (s *Service) SetChainLinkProvider(p coreconfigSvc.ChainLinkProvider) {
+	s.chainLinkProvider = p
 }
 
 // NewService creates a new config sync service.
@@ -295,14 +306,15 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 	// ServerID = inboundServerID (inbounds from primary for mirrors)
 	// OutboundServerID = serverID (outbounds from mirror's own DB)
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
-		Ctx:              ctx,
-		ServerID:         inboundServerID,
-		OutboundServerID: serverID,
-		CoreType:         coreType,
-		FullConfig:       fullConfig,
-		InboundProvider:  s.inboundSvc,
-		OutboundProvider: s.outboundSvc,
-		LogMode:          logMode,
+		Ctx:               ctx,
+		ServerID:          inboundServerID,
+		OutboundServerID:  serverID,
+		CoreType:          coreType,
+		FullConfig:        fullConfig,
+		InboundProvider:   s.inboundSvc,
+		OutboundProvider:  s.outboundSvc,
+		LogMode:           logMode,
+		ChainLinkProvider: s.chainLinkProvider,
 	})
 	if err != nil {
 		return err

@@ -7,8 +7,8 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"runtime"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,6 +59,7 @@ import (
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
+	"corefusion/internal/coredata"
 	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
@@ -66,6 +67,8 @@ import (
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
+	accessPkg "corefusion/internal/service/access"
+	"corefusion/internal/service/audit"
 	authService "corefusion/internal/service/auth"
 	backupService "corefusion/internal/service/backup"
 	binariesSvc "corefusion/internal/service/binaries"
@@ -78,7 +81,6 @@ import (
 	geoRuleSvc "corefusion/internal/service/georule"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	logManageSvc "corefusion/internal/service/logmanage"
-	runtimeapplySvc "corefusion/internal/service/runtimeapply"
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
@@ -88,6 +90,7 @@ import (
 	portalSvc "corefusion/internal/service/portal"
 	proxySvc "corefusion/internal/service/proxy"
 	rateLimitSvc "corefusion/internal/service/ratelimit"
+	runtimeapplySvc "corefusion/internal/service/runtimeapply"
 	svcService "corefusion/internal/service/service"
 	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
 	subendSvc "corefusion/internal/service/subendpoint"
@@ -100,9 +103,6 @@ import (
 	userService "corefusion/internal/service/user"
 	wafSvc "corefusion/internal/service/waf"
 	warpSvc "corefusion/internal/service/warp"
-	accessPkg "corefusion/internal/service/access"
-	"corefusion/internal/coredata"
-	"corefusion/internal/service/audit"
 	"corefusion/internal/store/repository"
 )
 
@@ -611,10 +611,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		logManageSvc.InitClientLogDeps(clientLogPkgRepo, clientRepo, planSvcInst, inboundConfigRepo, nil)
 	}
 
-// Wire log mode provider to configsync so generated configs include correct log section
-configSyncSvc.SetLogModeProvider(logManageSvc)
-// Wire server repo so configsync can detect mirror nodes and use primary's data
-configSyncSvc.SetServerRepo(nodeServerRepoForSync)
+	// Wire log mode provider to configsync so generated configs include correct log section
+	configSyncSvc.SetLogModeProvider(logManageSvc)
+	// Wire server repo so configsync can detect mirror nodes and use primary's data
+	configSyncSvc.SetServerRepo(nodeServerRepoForSync)
+
+	// 注入链式代理生成器到 configsync（设计文档 §6.3 / §13.2）：入口选出口生成的
+	// chain-* outbounds / 路由规则 / balancers / observatory / relay-in 通过
+	// PrepareFullConfig 合并进每个节点（本地 + 远程）的最终 xray 配置。
+	chainLinkGen := agent.NewChainLinkGenerator(
+		repository.NewChainLinkRepository(database),
+		repository.NewChainExitConfigRepository(database),
+		nodeServerRepoForSync,
+		extNodeRepo,
+	)
+	configSyncSvc.SetChainLinkProvider(chainLinkGen)
 
 	// Wire core config section getter so logmanage can derive output mode from
 	// the actual xray/singbox log section (syncs with protocol center changes)
@@ -726,10 +737,10 @@ configSyncSvc.SetServerRepo(nodeServerRepoForSync)
 		}
 	})
 
-// Client service
-inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
-inboundMgr.SetServerRepo(nodeServerRepoForSync)
-clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
+	// Client service
+	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
+	inboundMgr.SetServerRepo(nodeServerRepoForSync)
+	clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
 
 	// Inject client service into plan service for account synchronization
 	// when new nodes are added to a plan's node group.
@@ -895,13 +906,16 @@ clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundC
 			return err
 		}
 
+		// 注入链式代理生成器（§5/§6）：使入口选出口生成的 outbounds/rules/balancers
+		// 在 PrepareFullConfig 时合并进最终 xray 配置（复用上面为 configsync 构建的实例）。
 		data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
-			Ctx:              ctx,
-			ServerID:         1,
-			CoreType:         coreType,
-			FullConfig:       fullConfig,
-			InboundProvider:  inboundConfigSvc,
-			OutboundProvider: outboundConfigSvc,
+			Ctx:               ctx,
+			ServerID:          1,
+			CoreType:          coreType,
+			FullConfig:        fullConfig,
+			InboundProvider:   inboundConfigSvc,
+			OutboundProvider:  outboundConfigSvc,
+			ChainLinkProvider: chainLinkGen,
 		})
 		if err != nil {
 			return err
@@ -1153,20 +1167,20 @@ clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundC
 			authSelfGroup.POST("/change-password", authH.ChangePassword)
 		}
 
-// Protected routes
-protected := v1.Group("")
+		// Protected routes
+		protected := v1.Group("")
 
-// WAF Rule Library (global, not per-node)
-protected.GET("/waf/rules", wafH.ListRules)
-protected.GET("/waf/rules/:name", wafH.GetRule)
-protected.PUT("/waf/rules/:name", wafH.SaveRule)
-protected.DELETE("/waf/rules/:name", wafH.DeleteRule)
-protected.POST("/waf/sync-github", wafH.SyncFromGitHub)
-protected.POST("/waf/sync-all", wafH.SyncAll)
-protected.GET("/waf/github-source", wafH.GetGitHubSource)
-protected.PUT("/waf/github-source", wafH.SaveGitHubSource)
-protected.POST("/waf/push-all", wafH.PushToAllNodes)
-	protected.Use(middleware.AuthRequired())
+		// WAF Rule Library (global, not per-node)
+		protected.GET("/waf/rules", wafH.ListRules)
+		protected.GET("/waf/rules/:name", wafH.GetRule)
+		protected.PUT("/waf/rules/:name", wafH.SaveRule)
+		protected.DELETE("/waf/rules/:name", wafH.DeleteRule)
+		protected.POST("/waf/sync-github", wafH.SyncFromGitHub)
+		protected.POST("/waf/sync-all", wafH.SyncAll)
+		protected.GET("/waf/github-source", wafH.GetGitHubSource)
+		protected.PUT("/waf/github-source", wafH.SaveGitHubSource)
+		protected.POST("/waf/push-all", wafH.PushToAllNodes)
+		protected.Use(middleware.AuthRequired())
 		{
 			// Users: administrator account management is super_admin only,
 			// otherwise any authenticated principal could mint itself a
@@ -1580,30 +1594,30 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
 
 				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
-			mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3).
-				SetCaddySiteRepository(caddySiteRepoForMirror).
-				SetNginxSiteRepository(nginxSiteRepoForMirror).
-				SetSettingRepository(systemSettingRepo)
+				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3).
+					SetCaddySiteRepository(caddySiteRepoForMirror).
+					SetNginxSiteRepository(nginxSiteRepoForMirror).
+					SetSettingRepository(systemSettingRepo)
 				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
 				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
 				billingFilter := agent.NewBillingFilter(nodeServerRepo)
 
-			nodeServerSvcInst.
-				WithInboundRepo(inboundRepoForNodeServer).
-				WithNodeManager(nodeMgrForPhase3).
-				WithFailoverManager(failoverMgr).
-				WithMirrorSync(mirrorSyncMgr).
-				WithChainGenerator(chainGen).
-				WithChainHealthRegistry(chainHealthRegistry).
-				WithBillingFilter(billingFilter)
+				nodeServerSvcInst.
+					WithInboundRepo(inboundRepoForNodeServer).
+					WithNodeManager(nodeMgrForPhase3).
+					WithFailoverManager(failoverMgr).
+					WithMirrorSync(mirrorSyncMgr).
+					WithChainGenerator(chainGen).
+					WithChainHealthRegistry(chainHealthRegistry).
+					WithBillingFilter(billingFilter)
 
-			// Inject nodeServerRepo into CaddyManager and NginxManager so they
-			// can detect mirror nodes and generate config from the primary's data.
-			caddyMgr.SetNodeServerRepo(nodeServerRepo)
-			nginxMgr.SetNodeServerRepo(nodeServerRepo)
-			// Inject nodeServerRepo into WAF Service so it can detect mirror
-			// nodes and collect WAF rules from the primary's server_id.
-			wafSvcInst.SetNodeServerRepo(nodeServerRepo)
+				// Inject nodeServerRepo into CaddyManager and NginxManager so they
+				// can detect mirror nodes and generate config from the primary's data.
+				caddyMgr.SetNodeServerRepo(nodeServerRepo)
+				nginxMgr.SetNodeServerRepo(nodeServerRepo)
+				// Inject nodeServerRepo into WAF Service so it can detect mirror
+				// nodes and collect WAF rules from the primary's server_id.
+				wafSvcInst.SetNodeServerRepo(nodeServerRepo)
 
 				// Phase 5: Dashboard & Enhancements wiring
 				multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
@@ -1614,103 +1628,103 @@ protected.POST("/waf/push-all", wafH.PushToAllNodes)
 					WithHealthChecker(multiHealthChecker).
 					WithRegionSelector(regionSelector)
 
-			// Phase 6: Advanced Features wiring
-			metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
-			// 本地节点（面板自身）主机指标由 StatsService 直接采集，不走独立 agent 的 gRPC 接口
-			statsSvc := systemSvc.NewStatsService(version)
-			metricsCollector.SetLocalStatsProvider(statsSvc.CollectServerMetric)
+				// Phase 6: Advanced Features wiring
+				metricsCollector := agent.NewMetricsCollector(database, nodeServerRepo, nodeMgrForPhase3)
+				// 本地节点（面板自身）主机指标由 StatsService 直接采集，不走独立 agent 的 gRPC 接口
+				statsSvc := systemSvc.NewStatsService(version)
+				metricsCollector.SetLocalStatsProvider(statsSvc.CollectServerMetric)
 
-			// 注入 xray 核心用户流量采集（本地 + 远程），用于实时速率图表
-			// 本地：直连 xray gRPC Stats API（reset_=false，累计值）
-			// 远程：通过 coredata.Provider → Agent RPC 查询
-			// 仅统计 user>>> 条目，自动排除 inbound>>>api>>> 等 API 流量
-			localXrayClient := coredata.NewXrayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
-				SettingGetter: func(ctx context.Context, key string) (string, error) {
-					return systemSettingSvc.GetByKey(ctx, key)
-				},
-				APIListenGetter: func(ctx context.Context) (string, error) {
-					full, err := coreConfigSvc.GetFull(ctx, coredata.LocalServerID, "xray")
+				// 注入 xray 核心用户流量采集（本地 + 远程），用于实时速率图表
+				// 本地：直连 xray gRPC Stats API（reset_=false，累计值）
+				// 远程：通过 coredata.Provider → Agent RPC 查询
+				// 仅统计 user>>> 条目，自动排除 inbound>>>api>>> 等 API 流量
+				localXrayClient := coredata.NewXrayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+					SettingGetter: func(ctx context.Context, key string) (string, error) {
+						return systemSettingSvc.GetByKey(ctx, key)
+					},
+					APIListenGetter: func(ctx context.Context) (string, error) {
+						full, err := coreConfigSvc.GetFull(ctx, coredata.LocalServerID, "xray")
+						if err != nil {
+							return "", err
+						}
+						apiRaw, ok := full["api"]
+						if !ok {
+							return "", fmt.Errorf("no api section")
+						}
+						apiMap, ok := apiRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("api not map")
+						}
+						listen, ok := apiMap["listen"].(string)
+						if !ok || listen == "" {
+							return "", fmt.Errorf("no listen")
+						}
+						return listen, nil
+					},
+				}))
+				metricsCollector.SetLocalTrafficProvider(func() (int64, int64) {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					resp, err := localXrayClient.RawStats(ctx, false)
 					if err != nil {
-						return "", err
+						return 0, 0
 					}
-					apiRaw, ok := full["api"]
-					if !ok {
-						return "", fmt.Errorf("no api section")
+					sr, err := coredata.ParseStatsResponse(resp)
+					if err != nil {
+						return 0, 0
 					}
-					apiMap, ok := apiRaw.(map[string]interface{})
-					if !ok {
-						return "", fmt.Errorf("api not map")
+					var up, down int64
+					for _, u := range sr.Users {
+						up += u.Uplink
+						down += u.Downlink
 					}
-					listen, ok := apiMap["listen"].(string)
-					if !ok || listen == "" {
-						return "", fmt.Errorf("no listen")
-					}
-					return listen, nil
-				},
-			}))
-			metricsCollector.SetLocalTrafficProvider(func() (int64, int64) {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				resp, err := localXrayClient.RawStats(ctx, false)
-				if err != nil {
-					return 0, 0
-				}
-				sr, err := coredata.ParseStatsResponse(resp)
-				if err != nil {
-					return 0, 0
-				}
-				var up, down int64
-				for _, u := range sr.Users {
-					up += u.Uplink
-					down += u.Downlink
-				}
-				return up, down
-			})
-			metricsCollector.SetRemoteTrafficProvider(func(ctx context.Context, serverID int64) (int64, int64) {
-				// 通过 coredata.Provider 查询远程节点 xray 用户流量
-				p := coredata.NewProvider(serverID, coredata.Options{
-					IsLocal: nodeMgrForPhase3.IsLocalServer,
-					Remote:  nodeServerSvcInst,
+					return up, down
 				})
-				users, err := p.GetUserTraffic(ctx, serverID)
-				if err != nil {
-					return 0, 0
-				}
-				var up, down int64
-				for _, u := range users {
-					up += u.Uplink
-					down += u.Downlink
-				}
-				return up, down
-			})
+				metricsCollector.SetRemoteTrafficProvider(func(ctx context.Context, serverID int64) (int64, int64) {
+					// 通过 coredata.Provider 查询远程节点 xray 用户流量
+					p := coredata.NewProvider(serverID, coredata.Options{
+						IsLocal: nodeMgrForPhase3.IsLocalServer,
+						Remote:  nodeServerSvcInst,
+					})
+					users, err := p.GetUserTraffic(ctx, serverID)
+					if err != nil {
+						return 0, 0
+					}
+					var up, down int64
+					for _, u := range users {
+						up += u.Uplink
+						down += u.Downlink
+					}
+					return up, down
+				})
 
-			go metricsCollector.RunLoop(context.Background())
+				go metricsCollector.RunLoop(context.Background())
 
-			// Periodic speed test: run once shortly after startup, then on an
-			// interval driven by SPEEDTEST_INTERVAL_MIN (default 5 minutes).
-			speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
-			if iv := os.Getenv("SPEEDTEST_INTERVAL_MIN"); iv != "" {
-				if mins, err := strconv.Atoi(iv); err == nil && mins > 0 {
-					speedTestMgr = speedTestMgr.WithInterval(time.Duration(mins) * time.Minute)
+				// Periodic speed test: run once shortly after startup, then on an
+				// interval driven by SPEEDTEST_INTERVAL_MIN (default 5 minutes).
+				speedTestMgr := agent.NewSpeedTestManager(nodeServerRepo, nodeMgrForPhase3)
+				if iv := os.Getenv("SPEEDTEST_INTERVAL_MIN"); iv != "" {
+					if mins, err := strconv.Atoi(iv); err == nil && mins > 0 {
+						speedTestMgr = speedTestMgr.WithInterval(time.Duration(mins) * time.Minute)
+					}
 				}
-			}
-			go speedTestMgr.RunLoop(context.Background())
+				go speedTestMgr.RunLoop(context.Background())
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
 				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
 
 				nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 				nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
 				nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
-// Wire WAF syncer so remote nodes get WAF rules on reconnect
-nodeMgrForPhase3.SetWAFSyncer(wafSvcInst)
-// Wire geo rule syncer so remote nodes get geoip.dat/geosite.dat on reconnect
-nodeMgrForPhase3.SetGeoRuleSyncer(geoRuleSvcInst)
-// Wire node lister so WAF can push to all nodes
-wafSvcInst.SetNodeLister(nodeServerRepo)
-// NOTE: The automatic migration that flipped node rule merge_mode from
-// "replace" to "append" has been removed. It was overriding the user's
-// explicit merge_mode choice on every restart. The merge_mode is now
-// fully user-controlled and persisted correctly via Upsert.
+				// Wire WAF syncer so remote nodes get WAF rules on reconnect
+				nodeMgrForPhase3.SetWAFSyncer(wafSvcInst)
+				// Wire geo rule syncer so remote nodes get geoip.dat/geosite.dat on reconnect
+				nodeMgrForPhase3.SetGeoRuleSyncer(geoRuleSvcInst)
+				// Wire node lister so WAF can push to all nodes
+				wafSvcInst.SetNodeLister(nodeServerRepo)
+				// NOTE: The automatic migration that flipped node rule merge_mode from
+				// "replace" to "append" has been removed. It was overriding the user's
+				// explicit merge_mode choice on every restart. The merge_mode is now
+				// fully user-controlled and persisted correctly via Upsert.
 
 				// Wire DataSyncBuilder: reads panel DB tables → builds SyncDataRequest → sends to Agent
 				// Also generates final runtime config via PrepareFullConfig so Agent
@@ -1744,27 +1758,27 @@ wafSvcInst.SetNodeLister(nodeServerRepo)
 					nodeServerRepo,
 					nodeMgrForPhase3,
 				)
-			nodeServerSvcInst.WithTrafficQuotaService(trafficQuotaSvc)
-			nodeMgrForPhase3.SetTrafficQuotaProcessor(trafficQuotaSvc)
+				nodeServerSvcInst.WithTrafficQuotaService(trafficQuotaSvc)
+				nodeMgrForPhase3.SetTrafficQuotaProcessor(trafficQuotaSvc)
 
-			// Wire node traffic quota service into client auth for GET /client-auth/traffic-history
-			clientauthSvcInst.SetTrafficQuotaSvc(trafficQuotaSvc)
+				// Wire node traffic quota service into client auth for GET /client-auth/traffic-history
+				clientauthSvcInst.SetTrafficQuotaSvc(trafficQuotaSvc)
 
-			// Start the traffic quota checker in the background
-			go trafficQuotaSvc.Start(context.Background())
+				// Start the traffic quota checker in the background
+				go trafficQuotaSvc.Start(context.Background())
 
-			// Wire trafficsync to also accumulate node-level monthly traffic
-			trafficSyncSvc.SetNodeAccumulator(trafficQuotaSvc)
+				// Wire trafficsync to also accumulate node-level monthly traffic
+				trafficSyncSvc.SetNodeAccumulator(trafficQuotaSvc)
 
-			// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
-			// This consumes TrafficEvent from the NodeServerManager's onTraffic channel
-			// and persists remote node traffic deltas to the database.
-			if sharedNodeMgr != nil {
-				trafficEventConsumer := agent.NewTrafficEventConsumer(
-					sharedNodeMgr, nil, inboundConfigSvc,
-				).WithServerRepo(nodeServerRepo).WithNodeAccumulator(trafficQuotaSvc)
-				go trafficEventConsumer.Start(context.Background())
-			}
+				// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
+				// This consumes TrafficEvent from the NodeServerManager's onTraffic channel
+				// and persists remote node traffic deltas to the database.
+				if sharedNodeMgr != nil {
+					trafficEventConsumer := agent.NewTrafficEventConsumer(
+						sharedNodeMgr, nil, inboundConfigSvc,
+					).WithServerRepo(nodeServerRepo).WithNodeAccumulator(trafficQuotaSvc)
+					go trafficEventConsumer.Start(context.Background())
+				}
 
 				// Supplementary repos wiring
 				auditLogRepo := repository.NewNodeAuditLogRepository(database)
@@ -1797,7 +1811,7 @@ wafSvcInst.SetNodeLister(nodeServerRepo)
 			nginxH.SetNodeOperator(nodeServerSvcInst)
 			processH.SetNodeOperator(nodeServerSvcInst)
 			wafH.SetNodeOperator(&wafNodeOperatorAdapter{svc: nodeServerSvcInst, mgr: sharedNodeMgr})
-wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
+			wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 
 			// Inject SyncData hook so traffic reset also pushes inbound_configs
 			// table to remote Agent's local SQLite DB.
@@ -1987,7 +2001,7 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 				nodeServersGroup.POST("/:id/caddy/batch-update-log-enabled", caddyH.BatchUpdateLogEnabled)
 				nodeServersGroup.DELETE("/:id/caddy/l4-rules", caddyH.DeleteAllL4)
 
-					// Nginx site management (per node)
+				// Nginx site management (per node)
 				nodeServersGroup.GET("/:id/nginx/sites", nginxH.ListSites)
 				nodeServersGroup.POST("/:id/nginx/sites", nginxH.CreateSite)
 				nodeServersGroup.PUT("/:id/nginx/sites/:siteId", nginxH.UpdateSite)
@@ -2001,29 +2015,29 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 				nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)
 				nodeServersGroup.DELETE("/:id/nginx/l4-rules", nginxH.DeleteAllL4)
 
-			// Unified WAF Management (database-backed, shared nginx/caddy)
-			// Per-node WAF config
-			nodeServersGroup.GET("/:id/waf/config", wafH.GetConfig)
-			nodeServersGroup.PUT("/:id/waf/config", wafH.SaveConfig)
-			nodeServersGroup.GET("/:id/waf/rules", wafH.ListNodeRules)
-			nodeServersGroup.GET("/:id/waf/rules/:name", wafH.GetNodeRule)
-			nodeServersGroup.PUT("/:id/waf/rules/:name", wafH.SaveNodeRule)
-			nodeServersGroup.DELETE("/:id/waf/rules/:name", wafH.DeleteNodeRule)
-			nodeServersGroup.GET("/:id/waf/domain-config", wafH.ListDomainConfigs)
-			nodeServersGroup.PUT("/:id/waf/domain-config", wafH.SaveDomainConfigsBulk)
-			nodeServersGroup.GET("/:id/waf/domain-config/:domain", wafH.GetDomainConfig)
-			nodeServersGroup.PUT("/:id/waf/domain-config/:domain", wafH.SaveDomainConfig)
-			nodeServersGroup.DELETE("/:id/waf/domain-config/:domain", wafH.DeleteDomainConfig)
-			nodeServersGroup.GET("/:id/waf/domain-rules", wafH.ListDomainRuleDirs)
-			nodeServersGroup.GET("/:id/waf/domain-rules/:domain/:name", wafH.GetDomainRuleFile)
-			nodeServersGroup.PUT("/:id/waf/domain-rules/:domain/:name", wafH.SaveDomainRuleFile)
-			nodeServersGroup.GET("/:id/waf/domain-status", wafH.GetDomainStatus)
-			nodeServersGroup.POST("/:id/waf/enable-domain", wafH.EnableDomain)
-			nodeServersGroup.POST("/:id/waf/disable-domain", wafH.DisableDomain)
-			nodeServersGroup.POST("/:id/waf/sync", wafH.SyncToNode)
-			nodeServersGroup.POST("/:id/waf/push", wafH.PushToNode)
-			nodeServersGroup.GET("/:id/waf/status", wafH.GetWAFStatus)
-			nodeServersGroup.PUT("/:id/waf/status", wafH.SetWAFStatus)
+				// Unified WAF Management (database-backed, shared nginx/caddy)
+				// Per-node WAF config
+				nodeServersGroup.GET("/:id/waf/config", wafH.GetConfig)
+				nodeServersGroup.PUT("/:id/waf/config", wafH.SaveConfig)
+				nodeServersGroup.GET("/:id/waf/rules", wafH.ListNodeRules)
+				nodeServersGroup.GET("/:id/waf/rules/:name", wafH.GetNodeRule)
+				nodeServersGroup.PUT("/:id/waf/rules/:name", wafH.SaveNodeRule)
+				nodeServersGroup.DELETE("/:id/waf/rules/:name", wafH.DeleteNodeRule)
+				nodeServersGroup.GET("/:id/waf/domain-config", wafH.ListDomainConfigs)
+				nodeServersGroup.PUT("/:id/waf/domain-config", wafH.SaveDomainConfigsBulk)
+				nodeServersGroup.GET("/:id/waf/domain-config/:domain", wafH.GetDomainConfig)
+				nodeServersGroup.PUT("/:id/waf/domain-config/:domain", wafH.SaveDomainConfig)
+				nodeServersGroup.DELETE("/:id/waf/domain-config/:domain", wafH.DeleteDomainConfig)
+				nodeServersGroup.GET("/:id/waf/domain-rules", wafH.ListDomainRuleDirs)
+				nodeServersGroup.GET("/:id/waf/domain-rules/:domain/:name", wafH.GetDomainRuleFile)
+				nodeServersGroup.PUT("/:id/waf/domain-rules/:domain/:name", wafH.SaveDomainRuleFile)
+				nodeServersGroup.GET("/:id/waf/domain-status", wafH.GetDomainStatus)
+				nodeServersGroup.POST("/:id/waf/enable-domain", wafH.EnableDomain)
+				nodeServersGroup.POST("/:id/waf/disable-domain", wafH.DisableDomain)
+				nodeServersGroup.POST("/:id/waf/sync", wafH.SyncToNode)
+				nodeServersGroup.POST("/:id/waf/push", wafH.PushToNode)
+				nodeServersGroup.GET("/:id/waf/status", wafH.GetWAFStatus)
+				nodeServersGroup.PUT("/:id/waf/status", wafH.SetWAFStatus)
 
 				// Inbound Configs (per node)
 				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
@@ -2065,10 +2079,10 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 				nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
 				nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
 
-			// Geo Rules — global rule source and file management (migrated from per-node to global)
-			// These are now under /api/v1/geo-rules/* (no node-servers/:id prefix)
-			// Per-node push endpoint stays under node-servers for backwards compat
-			nodeServersGroup.POST("/:id/geo-rules/push", geoRuleH.PushToNode)
+				// Geo Rules — global rule source and file management (migrated from per-node to global)
+				// These are now under /api/v1/geo-rules/* (no node-servers/:id prefix)
+				// Per-node push endpoint stays under node-servers for backwards compat
+				nodeServersGroup.POST("/:id/geo-rules/push", geoRuleH.PushToNode)
 
 				// WARP (per node) — each node has its own independent WARP configs
 				nodeServersGroup.GET("/:id/warp", warpH.List)
@@ -2125,8 +2139,8 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 				certsGroup.GET("/:id", certH.GetByID)
 				certsGroup.PUT("/:id", certH.Update)
 				certsGroup.DELETE("/:id", certH.Delete)
-			certsGroup.POST("/:id/renew", certH.Renew)
-		}
+				certsGroup.POST("/:id/renew", certH.Renew)
+			}
 
 			// DNS Channels — admin only.
 			certChannelsGroup := protected.Group("/cert-channels").Use(middleware.RequireRole(domainuser.RoleAdmin))
@@ -2238,12 +2252,12 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 			backupsGroup := protected.Group("/backups")
 			backupsGroup.Use(middleware.RequireRole(domainuser.RoleAdmin))
 			superAdminBackups := backupsGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin))
-		{
-			backupsGroup.GET("/database", backupsH.ListDBBackups)
-			backupsGroup.POST("/database", backupsH.CreateDBBackup)
-			backupsGroup.POST("/cleanup-jobs", backupsH.CreateCleanupJob)
+			{
+				backupsGroup.GET("/database", backupsH.ListDBBackups)
+				backupsGroup.POST("/database", backupsH.CreateDBBackup)
+				backupsGroup.POST("/cleanup-jobs", backupsH.CreateCleanupJob)
 
-			// Full backup
+				// Full backup
 				backupsGroup.POST("/create", backupsH.CreateFullBackup)
 				backupsGroup.GET("/list", backupsH.ListFullBackups)
 				backupsGroup.GET("/:id/download", backupsH.DownloadBackup)
@@ -2255,22 +2269,22 @@ wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 				backupsGroup.DELETE("/schedules/:id", backupsH.DeleteSchedule)
 
 				// Storages
-backupsGroup.GET("/storages", backupsH.ListStorages)
-backupsGroup.POST("/storages", backupsH.CreateStorage)
-backupsGroup.PUT("/storages/:id", backupsH.UpdateStorage)
-backupsGroup.DELETE("/storages/:id", backupsH.DeleteStorage)
-backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
+				backupsGroup.GET("/storages", backupsH.ListStorages)
+				backupsGroup.POST("/storages", backupsH.CreateStorage)
+				backupsGroup.PUT("/storages/:id", backupsH.UpdateStorage)
+				backupsGroup.DELETE("/storages/:id", backupsH.DeleteStorage)
+				backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 
-			// Destructive (super_admin only)
-			superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
-			superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
-			superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
-			superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
-			superAdminBackups.POST("/remote-restore", backupsH.RemoteRestore)
-			superAdminBackups.GET("/restore-status", backupsH.GetRestoreStatus)
-			superAdminBackups.POST("/:id/upload-ftp", backupsH.UploadToFTP)
-			superAdminBackups.POST("/:id/upload-s3", backupsH.UploadToS3)
-			superAdminBackups.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
+				// Destructive (super_admin only)
+				superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
+				superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
+				superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
+				superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
+				superAdminBackups.POST("/remote-restore", backupsH.RemoteRestore)
+				superAdminBackups.GET("/restore-status", backupsH.GetRestoreStatus)
+				superAdminBackups.POST("/:id/upload-ftp", backupsH.UploadToFTP)
+				superAdminBackups.POST("/:id/upload-s3", backupsH.UploadToS3)
+				superAdminBackups.POST("/:id/upload-webdav", backupsH.UploadToWebDAV)
 			}
 
 			// System — admin for config/management; the most destructive
@@ -2296,12 +2310,12 @@ backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 				systemGroup.PUT("/github-config", systemH.UpdateGitHubConfig)
 				systemGroup.GET("/db-config", systemH.GetDBConfig)
 				systemGroup.PUT("/db-config", systemH.UpdateDBConfig)
-			systemGroup.POST("/db-config/test", systemH.TestDBConnection)
-			systemGroup.GET("/db-stats", systemH.GetDBStats)
-			systemGroup.POST("/db-stats/reset", systemH.ResetDBStats)
-			systemGroup.GET("/db-stats/ping", systemH.PingDB)
-			systemGroup.GET("/db-pool-stats", systemH.GetDBPoolStats)
-			systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
+				systemGroup.POST("/db-config/test", systemH.TestDBConnection)
+				systemGroup.GET("/db-stats", systemH.GetDBStats)
+				systemGroup.POST("/db-stats/reset", systemH.ResetDBStats)
+				systemGroup.GET("/db-stats/ping", systemH.PingDB)
+				systemGroup.GET("/db-pool-stats", systemH.GetDBPoolStats)
+				systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
 				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
@@ -2315,14 +2329,14 @@ backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 				systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
 				systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
 				systemGroup.GET("/jwt-secret-status", systemH.GetJWTSecretStatus)
-	systemGroup.GET("/env-config", systemH.GetEnvConfig)
+				systemGroup.GET("/env-config", systemH.GetEnvConfig)
 				systemGroup.PUT("/env-config", systemH.UpdateEnvConfig)
 
-	// Maintenance mode (GET is public via v1 group below; PUT requires admin)
-			systemGroup.PUT("/maintenance", systemH.UpdateMaintenance)
+				// Maintenance mode (GET is public via v1 group below; PUT requires admin)
+				systemGroup.PUT("/maintenance", systemH.UpdateMaintenance)
 
-			// Public maintenance status (no auth, for sub/portal engines)
-			v1.GET("/system/maintenance", systemH.GetMaintenance)
+				// Public maintenance status (no auth, for sub/portal engines)
+				v1.GET("/system/maintenance", systemH.GetMaintenance)
 
 				// Destructive (super_admin only)
 				superAdminSystem.POST("/update", systemH.SystemUpdate)
@@ -2368,11 +2382,11 @@ backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
 				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
 
-// Database table cleanup rules
-logManageGroup.GET("/cleanup-rules", cleanupH.ListCleanupRules)
-logManageGroup.PUT("/cleanup-rules/:id", cleanupH.UpdateCleanupRule)
-logManageGroup.POST("/cleanup-all", cleanupH.CleanupAll)
-logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
+				// Database table cleanup rules
+				logManageGroup.GET("/cleanup-rules", cleanupH.ListCleanupRules)
+				logManageGroup.PUT("/cleanup-rules/:id", cleanupH.UpdateCleanupRule)
+				logManageGroup.POST("/cleanup-all", cleanupH.CleanupAll)
+				logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
 				// Node-based centralized log management
 				logManageGroup.GET("/nodes/:serverId/logs", logManageH.ListNodeLogs)
 				logManageGroup.GET("/nodes/:serverId/logs/:type", logManageH.GetNodeLog)
@@ -2413,42 +2427,42 @@ logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
 			// Agent download + install script (public — no auth, bootstrap token verifies identity)
 			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
 			v1.GET("/agent/download", agentH.DownloadAgent)
-	// Geo rule file download — public (no auth), used by remote Agents
-	v1.GET("/geo-rules/files/:fileId/download-file", geoRuleH.DownloadFile)
+			// Geo rule file download — public (no auth), used by remote Agents
+			v1.GET("/geo-rules/files/:fileId/download-file", geoRuleH.DownloadFile)
 			v1.GET("/agent/install", agentH.GetInstallScript)
 			// Agent version & releases (requires auth — admin only)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/releases", agentH.GetAgentReleases)
 
-		// Placeholder routes for remaining modules
-		registerPlaceholderRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
+			// Placeholder routes for remaining modules
+			registerPlaceholderRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
 
-		// Geo Rules — global rule source and file management (no node-servers prefix)
-		// These routes are public-except-auth (any authenticated user can read, admin can write).
-		geoRuleGlobalGroup := protected.Group("/geo-rules")
-		{
-			geoRuleGlobalGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
-			geoRuleGlobalGroup.GET("/sources", geoRuleH.ListSources)
-			geoRuleGlobalGroup.POST("/sources", geoRuleH.CreateSource)
-			geoRuleGlobalGroup.PUT("/sources/:sourceId", geoRuleH.UpdateSource)
-			geoRuleGlobalGroup.DELETE("/sources/:sourceId", geoRuleH.DeleteSource)
-			geoRuleGlobalGroup.GET("/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
-			geoRuleGlobalGroup.POST("/sources/:sourceId/select", geoRuleH.SelectFiles)
-			geoRuleGlobalGroup.POST("/sources/:sourceId/sync", geoRuleH.SyncSource)
-			geoRuleGlobalGroup.PUT("/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
-			geoRuleGlobalGroup.POST("/sync-all", geoRuleH.SyncAll)
-			geoRuleGlobalGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
-			geoRuleGlobalGroup.GET("/files", geoRuleH.ListFiles)
-			geoRuleGlobalGroup.POST("/files/:fileId/download", geoRuleH.Download)
-			// download-file is public (no auth) — Agent downloads geo rule files
-			// from the panel using a relative URL, same as /agent/download.
-			// Registered in the public v1 group below.
-			geoRuleGlobalGroup.DELETE("/files/:fileId", geoRuleH.DeleteFile)
-			geoRuleGlobalGroup.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
-			geoRuleGlobalGroup.POST("/seed", geoRuleH.SeedDefaults)
-			geoRuleGlobalGroup.GET("/status", geoRuleH.Status)
-			geoRuleGlobalGroup.POST("/push-all", geoRuleH.PushToAllNodes)
-		}
+			// Geo Rules — global rule source and file management (no node-servers prefix)
+			// These routes are public-except-auth (any authenticated user can read, admin can write).
+			geoRuleGlobalGroup := protected.Group("/geo-rules")
+			{
+				geoRuleGlobalGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
+				geoRuleGlobalGroup.GET("/sources", geoRuleH.ListSources)
+				geoRuleGlobalGroup.POST("/sources", geoRuleH.CreateSource)
+				geoRuleGlobalGroup.PUT("/sources/:sourceId", geoRuleH.UpdateSource)
+				geoRuleGlobalGroup.DELETE("/sources/:sourceId", geoRuleH.DeleteSource)
+				geoRuleGlobalGroup.GET("/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
+				geoRuleGlobalGroup.POST("/sources/:sourceId/select", geoRuleH.SelectFiles)
+				geoRuleGlobalGroup.POST("/sources/:sourceId/sync", geoRuleH.SyncSource)
+				geoRuleGlobalGroup.PUT("/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
+				geoRuleGlobalGroup.POST("/sync-all", geoRuleH.SyncAll)
+				geoRuleGlobalGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
+				geoRuleGlobalGroup.GET("/files", geoRuleH.ListFiles)
+				geoRuleGlobalGroup.POST("/files/:fileId/download", geoRuleH.Download)
+				// download-file is public (no auth) — Agent downloads geo rule files
+				// from the panel using a relative URL, same as /agent/download.
+				// Registered in the public v1 group below.
+				geoRuleGlobalGroup.DELETE("/files/:fileId", geoRuleH.DeleteFile)
+				geoRuleGlobalGroup.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
+				geoRuleGlobalGroup.POST("/seed", geoRuleH.SeedDefaults)
+				geoRuleGlobalGroup.GET("/status", geoRuleH.Status)
+				geoRuleGlobalGroup.POST("/push-all", geoRuleH.PushToAllNodes)
+			}
 
 			// Portal template management (admin only)
 			portalH := portalHandler.NewHandler(portalTmplSvc)
@@ -2871,9 +2885,6 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 		traffic.GET("/usage-history", trafficH.GetUsageHistory)
 		traffic.GET("/reset-logs", trafficH.ListResetLogs)
 	}
-
-
-
 
 }
 

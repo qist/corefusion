@@ -1,8 +1,10 @@
 # CoreFusion 测试环境节点规划文档
 
-> 版本日期:2026-08-04
+> 版本日期:2026-08-04(▸ 2026-08-28 依 chain-proxy-redesign 更新:取消 chain_entry/chain_exit 节点类型)
 > 作者:运维/测试规划
 > 状态:规划定稿(9 节点 K8S 已关闭并禁用自启,节点重新规划为 CoreFusion 用途)
+> 说明:本版 N4/N5 由 `chain_entry`/`chain_exit` 类型改为 `standalone`,链式入口/出口角色改由
+> `chain_links`(N4→N5)与 `chain_exit_configs`(N5,relay_only 纯出口)表达,边界见 §0 变更注记。
 
 ---
 
@@ -33,7 +35,16 @@
 
 > 规划原则:Panel 复用现有开发机;9 个节点按 CoreFusion 真实节点类型
 > (`internal/model/entity/node_server.go` 中 `NodeType*` 枚举)分配,覆盖
-> 主备 / 镜像 / 链式入口 / 链式出口 / 独立 / 数据库 全类型,用于功能测试。
+> 主备 / 镜像 / 独立 / 同步 / 数据库 全类型,用于功能测试。
+>
+> > **⚠️ 2026 链式代理设计变更**:链式入口/链式出口**不再是节点类型**。
+> > 见 `docs/design/chain-proxy-redesign.md`:节点类型回归为 `standalone / mirror /
+> > sync / primary_backup`;链式代理角色改用独立的 `chain_links`(入口→出口关系)与
+> > `chain_exit_configs`(出口中转配置)表达。任何节点(通常 `standalone`)只要：
+> > - 有 `chain_links` 记录 → 即**入口**(其入站流量路由到出口)；
+> > - 有 `chain_exit_configs`(且 `relay_only` 可设) → 即**出口**(接收中转)。
+> > 因此本文 N4/N5 的 `chain_entry`/`chain_exit` 类型改为 `standalone`,
+> > 改由 `chain_links`(N4→N5)与 `chain_exit_configs`(N5)表达链式拓扑。
 
 ### 1.1 角色分配(按节点类型)
 
@@ -43,15 +54,16 @@
 | N1 | 192.168.2.175 | `primary_backup`(主) | Agent + 代理核心 | 主备主节点,Partner=192.168.2.176 |
 | N2 | 192.168.2.176 | `primary_backup`(备) | Agent + 代理核心 | 主备备节点,Partner=192.168.2.175,自动故障切换 |
 | N3 | 192.168.2.177 | `mirror` | Agent + 代理核心 | 镜像节点,1对1 镜像主节点 N6(192.168.3.62),`PartnerServerID` 指向 .3.62,流量合并归 .3.62 |
-| N4 | 192.168.2.185 | `chain_entry` | Agent + 代理核心 | 链式代理入口(国内中转) |
-| N5 | 192.168.2.187 | `chain_exit` | Agent + 代理核心 | 链式代理出口(国际出口,`billing_enabled=false`) |
+| N4 | 192.168.2.185 | `standalone` | Agent + 代理核心 | 链式代理**入口**(国内中转,`chain_links` 指向 N5;有用户入站,计费) |
+| N5 | 192.168.2.187 | `standalone` | Agent + 代理核心 | 链式代理**出口**(`chain_exit_configs`,可设 `relay_only=1` 纯出口,`billing_enabled=false` 不计费) |
 | N6 | 192.168.3.62  | `standalone` | Agent + 代理核心 | 独立服务节点,被 N3 镜像 |
 | N7 | 192.168.3.70  | 数据库(MySQL) | MySQL 8.x | 主业务库,数据迁移源 |
 | N8 | 192.168.3.100 | 数据库(PostgreSQL) | PostgreSQL 15+ | 数据迁移目标/对账库 |
 | N9 | 192.168.2.50  | `standalone` | Agent + 监控采集 | 独立节点,已部署运行 |
 
 > 说明:
-> - 链式拓扑:`chain_entry(N4)` → `chain_exit(N5)`,出口不计费(`ShouldBill()` 对 chain_exit 返回 false)。
+> - 链式拓扑:N4(入口 `standalone`,含 `chain_links`) → N5(出口 `standalone`,含 `chain_exit_configs`)。
+>   出口为纯中转时设 `relay_only=1` 且 `billing_enabled=false`(纯出口不创建用户、不计费,见 §7)。
 > - 主备:`primary_backup` 主(N1)与备(N2)通过 `PartnerServerID` 互指,`FailoverRole` 分别为 primary/backup。
 > - 镜像:`mirror(N3, 192.168.2.177)` 1对1 镜像主节点 `standalone(N6, 192.168.3.62)`,`PartnerServerID` 指向 N6,配置同步 + 流量合并归 N6。
 > - 数据库:N7(MySQL)、N8(PostgreSQL)即"拿一个节点部署 MySQL、一个节点部署 PGSQL 测试数据迁移"的落点(分两节点更贴近真实迁移;若需同节点双库可改 N7 同装)。
@@ -64,7 +76,7 @@ Panel(127.0.0.1, 真实 IP 172.18.173.88, 对外访问 127.0.0.1)
    │  gRPC/configsync
    ├── primary_backup 主(N1) ⇄ 备(N2)   # 故障切换
    │        └── mirror(N3) ──镜像──> standalone(N6)   # 1对1 镜像,流量合并归 N6
-   ├── chain_entry(N4) ──> chain_exit(N5)   # 链式代理,出口不计费
+   ├── N4(入口 standalone) ──chain_link──> N5(出口 standalone)   # 链式代理,出口 relay_only 不计费
    ├── standalone(N6)
    └── standalone/观测(N9)
    └── DB: MySQL(N7) / PostgreSQL(N8)
@@ -331,12 +343,14 @@ Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest
 | N1 | 192.168.2.175 | 12 | `primary_backup`(主) | ✅ online | v0.8.81 | →N2(13) | primary | true |
 | N2 | 192.168.2.176 | 13 | `primary_backup`(备) | ✅ online | v0.8.81 | →N1(12) | backup | true |
 | N3 | 192.168.2.177 | 14 | `mirror` | ✅ online | v0.8.81 | →N6(17) | — | false |
-| N4 | 192.168.2.185 | 15 | `chain_entry` | ✅ online | v0.8.81 | — | — | true |
-| N5 | 192.168.2.187 | 16 | `chain_exit` | ✅ online | v0.8.81 | — | — | false |
+| N4 | 192.168.2.185 | 15 | `standalone`(入口) | ✅ online | v0.8.81 | →N5(16) `chain_links` | — | true |
+| N5 | 192.168.2.187 | 16 | `standalone`(出口) | ✅ online | v0.8.81 | — | — | false |
 | N6 | 192.168.3.62 | 17 | `standalone` | ✅ online | v0.8.81 | — | — | true |
 | N9 | 192.168.2.50 | 2 | `standalone` | ✅ online | v0.8.81 | — | — | true |
 
 > 数据库节点(N7/N8)和备份服务(FTP/S3/WebDAV)已在第 2、4 节完成部署与验证,**无需重复部署**。
+> **注**:N4/N5 类型按 2026 链式代理设计变更为 `standalone`,入口/出口角色由
+> `chain_links`(N4→N5)与 `chain_exit_configs`(N5)表达;N5 作纯出口可设 `relay_only`,故不计费。
 
 ## 6. 待确认项
 
@@ -355,7 +369,7 @@ Panel(data/) ──①create──> backups/<id>/ { *.sql, data.tar.gz, manifest
 1. **面板注册节点**:通过 `POST /api/v1/node-servers` 创建 N1-N6,设置正确的 `node_type`、
    `failover_role`、`partner_server_id` 等字段。
 2. **伙伴关系配置**:N1↔N2 互指(partner),N3→N6 指向(partner=17)。
-3. **计费修正**:mirror(N3)和 chain_exit(N5)自动/手动设置 `billing_enabled=false`。
+3. **计费修正**:mirror(N3)和链式纯出口 N5(relay_only)自动/手动设置 `billing_enabled=false`。
 4. **Agent 一键安装**:通过 `curl -fsSL 'http://127.0.0.1:8080/api/v1/agent/install?id=<ID>&token=<TOKEN>' | bash`
    在各节点执行,自动完成二进制下载、config.yaml 生成、systemd 服务创建并启动。
 5. **Bootstrap 完成所有节点 mTLS 证书签发**:每节点 `data/certs/` 下均有
@@ -402,13 +416,13 @@ Mirror sync triggered: synced=true
 - `POST /node-servers/14/sync-mirror` → synced=true ✅
 - N3 镜像关系指向 N6(standalone),双方在线,镜像同步管理器正常工作
 
-#### 7.3.3 链式代理(chain_entry / chain_exit)— ✅ Agent 就绪
+#### 7.3.3 链式代理(入口/出口角色,节点类型均为 `standalone`)— ✅ Agent 就绪
 
-- N4 (ID=15) `chain_entry` — Agent online, 心跳正常 ✅
-- N5 (ID=16) `chain_exit` — Agent online, billing_enabled=false ✅
+- N4 (ID=15) `standalone`(链式入口,`chain_links` 指向 N5)— Agent online, 心跳正常 ✅
+- N5 (ID=16) `standalone`(链式出口,`chain_exit_configs`,可设 `relay_only`,billing_enabled=false)— Agent online ✅
 - `GET /node-servers/15/chain-health` → "no health monitor"(预期:未配置链式代理 outbound,health monitor 在推送链式配置后创建)
 - `GET /node-servers/16/chain-health` → 同上(预期行为)
-- `ShouldBill()` 对 chain_exit 返回 false ✅
+- 纯出口(N5 relay_only)`ShouldBill()` 返回 false ✅
 
 #### 7.3.4 独立节点(standalone)— ✅ 通过
 
@@ -423,8 +437,8 @@ Mirror sync triggered: synced=true
 | N1 | primary_backup | true | true | 计费 | ✅ |
 | N2 | primary_backup | true | true | 计费 | ✅ |
 | N3 | mirror | false | false | 不计费 | ✅ |
-| N4 | chain_entry | true | true | 计费 | ✅ |
-| N5 | chain_exit | false | false | 不计费 | ✅ |
+| N4 | standalone(入口) | true | true | 计费 | ✅ |
+| N5 | standalone(出口) | false | false | 不计费 | ✅ |
 | N6 | standalone | true | true | 计费 | ✅ |
 | N9 | standalone | true | true | 计费 | ✅ |
 
@@ -433,7 +447,7 @@ Mirror sync triggered: synced=true
 - **Agent 部署**:9 个节点(含 Panel 本机)全部 online,版本一致 v0.8.81,systemd active+enabled ✅
 - **主备故障切换**:N1/N2 互指关系正确,FailoverManager 状态查询和触发正常 ✅
 - **镜像同步**:N3→N6 镜像关系建立,MirrorSyncManager 同步触发正常 ✅
-- **链式代理**:N4/N5 Agent 在线就绪,待推送链式 outbound 配置后 health monitor 将自动创建 ✅
+- **链式代理**:N4(入口)/N5(出口,`chain_exit_configs` + `relay_only`)Agent 在线就绪,待推送链式 outbound 配置后 health monitor 将自动创建 ✅
 - **独立节点**:N6/N9 正常运行,N9 已有 xray 核心运行 ✅
-- **计费规则**:mirror 和 chain_exit 不计费,其余计费,符合 `ShouldBill()` 逻辑 ✅
+- **计费规则**:mirror 和链式纯出口 relay_only(N5)不计费,其余计费,符合 `ShouldBill()` 逻辑 ✅
 - **数据库/备份**:已在第 2、4 节完成验证,**无需重复部署** ✅

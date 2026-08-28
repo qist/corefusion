@@ -357,7 +357,7 @@ async function loadTags() {
     inboundTags.value = (ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean)
   } catch {}
 }
-async function loadGeoStatus() { try { const d = await client.get(`${nodeBase.value}/geo-rules/status`); if (d) geoStatus.value = d } catch {} }
+async function loadGeoStatus() { try { const d = await client.get('/geo-rules/status'); if (d) geoStatus.value = d } catch {} }
 
 function sync() {
   if (!props.data) return

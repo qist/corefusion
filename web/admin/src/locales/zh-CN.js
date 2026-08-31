@@ -2855,6 +2855,11 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     confirmDeleteSource: '确定删除？将同时删除该来源下的所有节点。',
     confirmDeleteNode: '确定删除该节点？',
     pasteContent: '粘贴 YAML/JSON/URI 内容...',
+    registerAsEntry: '注册为入口',
+    unregisterEntry: '取消入口',
+    registered: '已注册',
+    externalNode: '外部节点',
+    nameHint: '留空则使用外部节点名称',
   },
   chainProxy: {
     title: '链式代理',

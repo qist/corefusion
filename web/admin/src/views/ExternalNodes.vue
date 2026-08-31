@@ -41,12 +41,19 @@
         <el-table-column label="TLS" width="60">
           <template #default="{row}"><el-tag v-if="row.tls" size="small" type="success">TLS</el-tag></template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="60">
-          <template #default="{row}"><el-switch v-model="row.enabled" size="small" @change="updateNode(row)" /></template>
+        <el-table-column :label="t('common.status')" width="100">
+          <template #default="{row}">
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+              <el-switch v-model="row.enabled" size="small" @change="updateNode(row)" />
+              <el-tag v-if="registeredNodeIds.has(row.id)" size="small" type="success">{{ t('externalNodes.registered') }}</el-tag>
+            </div>
+          </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="120">
+        <el-table-column :label="t('common.actions')" width="180">
           <template #default="{row}">
             <el-button size="small" text @click="editNode(row)">{{ t('common.edit') }}</el-button>
+            <el-button v-if="!registeredNodeIds.has(row.id)" size="small" type="success" text @click="registerAsEntry(row)">{{ t('externalNodes.registerAsEntry') }}</el-button>
+            <el-button v-else size="small" type="warning" text @click="unregisterEntry(row)">{{ t('externalNodes.unregisterEntry') }}</el-button>
             <el-button size="small" type="danger" text @click="deleteNode(row)">{{ t('common.delete') }}</el-button>
           </template>
         </el-table-column>
@@ -103,14 +110,40 @@
         <el-button type="primary" @click="saveNode">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Register as Entry Dialog (§12.3) -->
+    <el-dialog v-model="regDlg" :title="t('externalNodes.registerAsEntry')" width="520">
+      <el-form label-width="100px" size="small">
+        <el-form-item :label="t('externalNodes.externalNode')">
+          <el-input :model-value="regForm.node_display" disabled />
+        </el-form-item>
+        <el-form-item :label="t('common.name')">
+          <el-input v-model="regForm.name" :placeholder="t('externalNodes.nameHint')" />
+        </el-form-item>
+        <el-form-item :label="t('chainProxy.region')">
+          <el-input v-model="regForm.region" placeholder="e.g. HK" />
+        </el-form-item>
+        <el-form-item :label="t('chainProxy.regionLabel')">
+          <el-input v-model="regForm.region_label" placeholder="e.g. Hong Kong" />
+        </el-form-item>
+        <el-form-item :label="t('common.status')">
+          <el-switch v-model="regForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="regDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="regSaving" @click="doRegister">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
+import * as chainApi from '../api/chainlink'
 import { useClientPagination } from '../composables/useClientPagination'
 import PaginationBar from '../components/PaginationBar.vue'
 
@@ -126,11 +159,21 @@ const form = ref({ name: '', source_type: 'uri', source_data: '', source_url: ''
 const editDlg = ref(false)
 const editForm = ref({ id: 0, name: '', proxy_json: '' })
 
+// ── Register as Entry (§12.3) ──
+const regDlg = ref(false)
+const regSaving = ref(false)
+const regForm = ref({ external_node_id: 0, node_display: '', name: '', region: '', region_label: '', enabled: true })
+const registeredServers = ref([]) // external_node_servers from chain API
+const registeredNodeIds = computed(() => new Set(registeredServers.value.map(s => s.external_node_id)))
+
 async function fetchSources() {
   try { sources.value = (await client.get('/external-nodes/sources')) || [] } catch {}
 }
 async function fetchNodes() {
   try { nodes.value = (await client.get('/external-nodes')) || [] } catch {}
+}
+async function fetchRegisteredServers() {
+  try { registeredServers.value = (await chainApi.listExternalServers()) || [] } catch {}
 }
 function showImport() {
   form.value = { name: '', source_type: 'uri', source_data: '', source_url: '' }
@@ -192,7 +235,51 @@ async function deleteNode(row) {
   try { await client.delete(`/external-nodes/${row.id}`); fetchNodes() } catch {}
 }
 
-onMounted(() => { fetchSources(); fetchNodes() })
+// ── Register as Entry (§12.3) ──
+function registerAsEntry(row) {
+  regForm.value = {
+    external_node_id: row.id,
+    node_display: `${row.name} (${row.host || row.protocol || ''})`,
+    name: row.name,
+    region: '',
+    region_label: '',
+    enabled: true,
+  }
+  regDlg.value = true
+}
 
-defineExpose({ fetchSources, fetchNodes })
+async function doRegister() {
+  if (!regForm.value.external_node_id) {
+    ElMessage.warning(t('chainProxy.selectExternalNode'))
+    return
+  }
+  regSaving.value = true
+  try {
+    await chainApi.createExternalServer({
+      external_node_id: regForm.value.external_node_id,
+      name: regForm.value.name,
+      region: regForm.value.region,
+      region_label: regForm.value.region_label,
+      enabled: regForm.value.enabled,
+    })
+    ElMessage.success(t('common.success'))
+    regDlg.value = false
+    await fetchRegisteredServers()
+  } catch (e) { ElMessage.error(e?.message || t('common.failed')) } finally { regSaving.value = false }
+}
+
+async function unregisterEntry(row) {
+  const server = registeredServers.value.find(s => s.external_node_id === row.id)
+  if (!server) return
+  try {
+    await ElMessageBox.confirm(t('chainProxy.confirmDeleteExtServer'), t('common.confirm'), { type: 'warning' })
+    await chainApi.deleteExternalServer(server.id)
+    ElMessage.success(t('common.success'))
+    await fetchRegisteredServers()
+  } catch { /* cancelled */ }
+}
+
+onMounted(() => { fetchSources(); fetchNodes(); fetchRegisteredServers() })
+
+defineExpose({ fetchSources, fetchNodes, fetchRegisteredServers })
 </script>

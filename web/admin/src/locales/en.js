@@ -2931,6 +2931,11 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     confirmDeleteSource: 'Are you sure? All nodes under this source will be deleted.',
     confirmDeleteNode: 'Are you sure to delete this node?',
     pasteContent: 'Paste YAML/JSON/URI content...',
+    registerAsEntry: 'Register as Entry',
+    unregisterEntry: 'Unregister',
+    registered: 'Registered',
+    externalNode: 'External Node',
+    nameHint: 'Leave empty to use the node name',
   },
   chainProxy: {
     title: 'Chain Proxy',

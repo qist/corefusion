@@ -5,10 +5,11 @@
       <div style="display:flex;gap:8px">
         <el-button type="primary" size="small" @click="showLinkDlg">{{ t('chainProxy.addLink') }}</el-button>
         <el-button size="small" @click="showExitDlg">{{ t('chainProxy.addExit') }}</el-button>
+        <el-button size="small" @click="showExtServerDlg">{{ t('chainProxy.registerExternalEntry') }}</el-button>
       </div>
     </div>
 
-    <!-- Topology Overview -->
+    <!-- Topology Graph (§12.1 directed graph) -->
     <el-card style="margin-bottom:16px">
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -16,7 +17,54 @@
           <el-button text size="small" @click="fetchTopology" :icon="Refresh">{{ t('common.reset') }}</el-button>
         </div>
       </template>
-      <el-table :data="topoNodes" stripe size="small" v-loading="topoLoading">
+      <div v-loading="topoLoading" style="min-height:200px">
+        <!-- Directed graph visualization using SVG -->
+        <div v-if="topoNodes.length > 0" style="position:relative;overflow-x:auto">
+          <svg :width="svgWidth" :height="svgHeight" style="display:block">
+            <!-- Edges (arrows from entry to exit) -->
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#909399" />
+              </marker>
+              <marker id="arrowhead-health" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#67c23a" />
+              </marker>
+              <marker id="arrowhead-degraded" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#e6a23c" />
+              </marker>
+              <marker id="arrowhead-down" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#f56c6c" />
+              </marker>
+            </defs>
+            <!-- Draw edges -->
+            <line v-for="edge in topoEdges" :key="edge.key"
+              :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
+              :stroke="edge.color" stroke-width="2"
+              :marker-end="edge.marker"
+            />
+            <!-- Edge labels (priority / loadbalance) -->
+            <text v-for="edge in topoEdges" :key="'label-'+edge.key"
+              :x="(edge.x1+edge.x2)/2" :y="(edge.y1+edge.y2)/2 - 5"
+              text-anchor="middle" :fill="edge.color" font-size="11"
+            >{{ edge.label }}</text>
+            <!-- Draw nodes -->
+            <g v-for="node in topoLayout" :key="node.id" @click="nodeClick(node)" style="cursor:pointer">
+              <rect :x="node.x" :y="node.y" width="140" height="44" rx="8"
+                :fill="nodeFill(node)" :stroke="nodeStroke(node)" stroke-width="2"
+              />
+              <text :x="node.x+70" :y="node.y+18" text-anchor="middle" font-size="13" font-weight="bold" fill="#303133">
+                {{ node.name.length > 14 ? node.name.slice(0,13)+'…' : node.name }}
+              </text>
+              <text :x="node.x+70" :y="node.y+34" text-anchor="middle" font-size="10" fill="#909399">
+                {{ roleLabel(node.role) }}
+              </text>
+            </g>
+          </svg>
+        </div>
+        <el-empty v-else :description="t('chainProxy.noTopology')" />
+      </div>
+      <!-- Topology node detail table (below graph) -->
+      <el-table v-if="topoNodes.length > 0" :data="topoNodes" stripe size="small" style="margin-top:12px">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" :label="t('common.name')" width="180" />
         <el-table-column prop="type" :label="t('common.type')" width="90">
@@ -94,6 +142,28 @@
           <template #default="{row}">
             <el-button size="small" text @click="editExit(row)">{{ t('common.edit') }}</el-button>
             <el-button size="small" type="danger" text @click="removeExit(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- External Node Servers (§12.3) -->
+    <el-card style="margin-top:16px">
+      <template #header>{{ t('chainProxy.externalEntryServers') }}</template>
+      <el-table :data="externalServers" stripe size="small">
+        <el-table-column prop="id" label="ID" width="50" />
+        <el-table-column prop="name" :label="t('common.name')" width="160" />
+        <el-table-column prop="hostname" :label="t('common.host')" width="160" />
+        <el-table-column prop="region" :label="t('chainProxy.region')" width="100" />
+        <el-table-column prop="region_label" :label="t('chainProxy.regionLabel')" width="100" />
+        <el-table-column :label="t('common.status')" width="70">
+          <template #default="{row}">
+            <el-tag size="small" :type="row.enabled ? 'success' : 'danger'">{{ row.enabled ? '✓' : '✗' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="100">
+          <template #default="{row}">
+            <el-button size="small" type="danger" text @click="removeExtServer(row)">{{ t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -247,6 +317,33 @@
         <el-button type="primary" :loading="exitSaving" @click="saveExit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- External Node Server Registration Dialog (§12.3) -->
+    <el-dialog v-model="extServerDlg" :title="t('chainProxy.registerExternalEntry')" width="520">
+      <el-form label-width="110px" size="small">
+        <el-form-item :label="t('chainProxy.externalNode')">
+          <el-select v-model="extServerForm.external_node_id" filterable style="width:100%" :placeholder="t('chainProxy.selectExternalNode')">
+            <el-option v-for="n in externalNodes" :key="n.id" :label="n.name + ' (' + (n.host || n.protocol || '') + ')'" :value="n.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('common.name')">
+          <el-input v-model="extServerForm.name" :placeholder="t('chainProxy.nameHint')" />
+        </el-form-item>
+        <el-form-item :label="t('chainProxy.region')">
+          <el-input v-model="extServerForm.region" placeholder="e.g. HK" />
+        </el-form-item>
+        <el-form-item :label="t('chainProxy.regionLabel')">
+          <el-input v-model="extServerForm.region_label" placeholder="e.g. Hong Kong" />
+        </el-form-item>
+        <el-form-item :label="t('common.status')">
+          <el-switch v-model="extServerForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="extServerDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="extServerSaving" @click="saveExtServer">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -289,6 +386,7 @@ function extServerName(id) {
 
 // ── Data ──
 const topoNodes = ref([])
+const topoLinks = ref([])
 const topoLoading = ref(false)
 const links = ref([])
 const linksLoading = ref(false)
@@ -296,6 +394,7 @@ const exitConfigs = ref([])
 const exitsLoading = ref(false)
 const servers = ref([])
 const externalServers = ref([])
+const externalNodes = ref([]) // available external nodes for registration dropdown
 
 // ── Health ──
 const healthData = ref([])
@@ -312,8 +411,8 @@ const inboundConfigs = ref([])
 const wiz = ref({
   entryServerId: 0,
   entryInboundId: 0,
-  clusterExits: [],   // 选中的集群节点 server_id 列表
-  externalExits: [],  // 选中的外部节点 external_id 列表
+  clusterExits: [],
+  externalExits: [],
 })
 const totalSelectedExits = computed(() => wiz.value.clusterExits.length + wiz.value.externalExits.length)
 const canNextStep = computed(() => {
@@ -345,6 +444,138 @@ const exitForm = ref({
   relay_only: false,
   enabled: true,
 })
+
+// ── External Node Server Registration Dialog (§12.3) ──
+const extServerDlg = ref(false)
+const extServerSaving = ref(false)
+const extServerForm = ref({
+  external_node_id: 0,
+  name: '',
+  region: '',
+  region_label: '',
+  enabled: true,
+})
+
+// ── Topology Graph Layout (§12.1) ──
+// Compute node positions in a left-to-right directed graph
+const topoLayout = computed(() => {
+  if (!topoNodes.value.length) return []
+  // Separate entries (left) from exits (right) from external (far right)
+  const entries = topoNodes.value.filter(n => n.role === 'entry' || n.role === 'entry+exit' || n.role === 'exit+entry')
+  const exits = topoNodes.value.filter(n => n.role === 'exit')
+  const externals = topoNodes.value.filter(n => n.role === 'external_entry' || n.type === 'external')
+
+  const nodeH = 54
+  const colW = 200
+  const padX = 20
+  const padY = 20
+
+  const layout = []
+  // Place entries in left column
+  entries.forEach((n, i) => {
+    layout.push({ ...n, x: padX, y: padY + i * nodeH, col: 0 })
+  })
+  // Place exits in middle column
+  exits.forEach((n, i) => {
+    layout.push({ ...n, x: padX + colW, y: padY + i * nodeH, col: 1 })
+  })
+  // Place externals in right column
+  externals.forEach((n, i) => {
+    layout.push({ ...n, x: padX + colW * 2, y: padY + i * nodeH, col: 2 })
+  })
+  return layout
+})
+
+const svgWidth = computed(() => 480)
+const svgHeight = computed(() => Math.max(200, topoLayout.value.length * 54 + 40))
+
+// Compute edges for the directed graph
+const topoEdges = computed(() => {
+  if (!topoLinks.value.length || !topoLayout.value.length) return []
+  const nodeMap = new Map()
+  topoLayout.value.forEach(n => nodeMap.set(n.id, n))
+
+  // Also map external node IDs (they use a different ID space in links)
+  const edges = []
+  const seen = new Set()
+
+  topoLinks.value.forEach(link => {
+    // Entry → Exit edge
+    if (link.entry_server_id && link.exit_server_id) {
+      const src = nodeMap.get(link.entry_server_id)
+      const dst = nodeMap.get(link.exit_server_id)
+      if (src && dst) {
+        const key = `${src.id}-${dst.id}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          edges.push(buildEdge(src, dst, link, 'server'))
+        }
+      }
+    }
+    // Entry → External exit edge
+    if (link.entry_server_id && link.exit_external_id) {
+      const src = nodeMap.get(link.entry_server_id)
+      const dst = nodeMap.get(link.exit_external_id)
+      if (src && dst) {
+        const key = `${src.id}-ext${dst.id}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          edges.push(buildEdge(src, dst, link, 'external'))
+        }
+      }
+    }
+  })
+  return edges
+})
+
+function buildEdge(src, dst, link, type) {
+  const x1 = src.x + 140 // right edge of source node
+  const y1 = src.y + 22
+  const x2 = dst.x // left edge of dest node
+  const y2 = dst.y + 22
+
+  // Determine health-based color
+  const healthEntry = healthData.value.find(h => h.link_id === link.id)
+  let color = '#909399'
+  let marker = 'url(#arrowhead)'
+  if (healthEntry) {
+    if (healthEntry.status === 'healthy') {
+      color = '#67c23a'
+      marker = 'url(#arrowhead-health)'
+    } else if (healthEntry.status === 'degraded') {
+      color = '#e6a23c'
+      marker = 'url(#arrowhead-degraded)'
+    } else {
+      color = '#f56c6c'
+      marker = 'url(#arrowhead-down)'
+    }
+  }
+
+  // Label: priority or "LB" for loadbalance
+  let label = ''
+  if (link.priority) label = `P${link.priority}`
+  if (type === 'external') label = `ext${label}`
+
+  return { key: `${src.id}-${dst.id}`, x1, y1, x2, y2, color, marker, label }
+}
+
+function nodeFill(node) {
+  if (node.role === 'entry') return '#ecf5ff'
+  if (node.role === 'exit') return '#f0f9eb'
+  if (node.role === 'entry+exit' || node.role === 'exit+entry') return '#fdf6ec'
+  if (node.type === 'external') return '#fef0f0'
+  return '#f4f4f5'
+}
+function nodeStroke(node) {
+  if (node.role === 'entry') return '#409eff'
+  if (node.role === 'exit') return '#67c23a'
+  if (node.role === 'entry+exit' || node.role === 'exit+entry') return '#e6a23c'
+  if (node.type === 'external') return '#f56c6c'
+  return '#dcdfe6'
+}
+function nodeClick(node) {
+  // Could open detail panel — for now just a visual feedback
+}
 
 // ── Helpers ──
 function serverName(id) {
@@ -384,7 +615,7 @@ function roleTagType(role) {
 
 // ── Fetch ──
 async function fetchAll() {
-await Promise.all([fetchTopology(), fetchLinks(), fetchExitConfigs(), fetchServers(), fetchExternalServers(), fetchHealth()])
+  await Promise.all([fetchTopology(), fetchLinks(), fetchExitConfigs(), fetchServers(), fetchExternalServers(), fetchExternalNodes(), fetchHealth()])
 }
 
 async function fetchTopology() {
@@ -392,6 +623,7 @@ async function fetchTopology() {
   try {
     const data = await chainApi.getTopology()
     topoNodes.value = data.nodes || []
+    topoLinks.value = data.links || []
   } finally { topoLoading.value = false }
 }
 
@@ -417,9 +649,14 @@ async function fetchExternalServers() {
   externalServers.value = await chainApi.listExternalServers()
 }
 
+async function fetchExternalNodes() {
+  try {
+    externalNodes.value = await chainApi.listExternalNodes()
+  } catch { /* ignore */ }
+}
+
 // ── Link CRUD ──
 function showLinkDlg() {
-  // 打开「创建链式代理」向导（§5.5），取代原单条创建表单
   linkEditing.value = false
   resetWizard()
   linkDlg.value = true
@@ -466,7 +703,6 @@ async function createChainProxy() {
 }
 
 async function editLink(row) {
-  // 编辑复用创建向导：预填入口与单个出口，保存时统一走清后建（§5.4）
   linkEditing.value = true
   resetWizard()
   wiz.value.entryServerId = row.entry_server_id
@@ -476,7 +712,6 @@ async function editLink(row) {
   } else if (row.exit_server_id) {
     wiz.value.clusterExits = [row.exit_server_id]
   }
-  // 加载该入口节点的入站列表，便于回显入站标签
   if (wiz.value.entryServerId) {
     try {
       const data = await getInboundConfigs(wiz.value.entryServerId)
@@ -559,6 +794,47 @@ async function removeExit(row) {
     await chainApi.deleteExitConfig(row.server_id)
     ElMessage.success(t('common.success'))
     await fetchExitConfigs()
+    await fetchTopology()
+  } catch { /* cancelled */ }
+}
+
+// ── External Node Server Registration CRUD (§12.3) ──
+function showExtServerDlg() {
+  extServerForm.value = {
+    external_node_id: 0,
+    name: '',
+    region: '',
+    region_label: '',
+    enabled: true,
+  }
+  extServerDlg.value = true
+  // Ensure we have the latest external nodes list for the dropdown
+  if (!externalNodes.value.length) {
+    fetchExternalNodes()
+  }
+}
+
+async function saveExtServer() {
+  if (!extServerForm.value.external_node_id) {
+    ElMessage.warning(t('chainProxy.selectExternalNode'))
+    return
+  }
+  extServerSaving.value = true
+  try {
+    await chainApi.createExternalServer(extServerForm.value)
+    ElMessage.success(t('common.success'))
+    extServerDlg.value = false
+    await fetchExternalServers()
+    await fetchTopology()
+  } catch { /* handled */ } finally { extServerSaving.value = false }
+}
+
+async function removeExtServer(row) {
+  try {
+    await ElMessageBox.confirm(t('chainProxy.confirmDeleteExtServer'), t('common.confirm'), { type: 'warning' })
+    await chainApi.deleteExternalServer(row.id)
+    ElMessage.success(t('common.success'))
+    await fetchExternalServers()
     await fetchTopology()
   } catch { /* cancelled */ }
 }

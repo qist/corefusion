@@ -48,6 +48,10 @@ type PublicHandler struct {
 	rateLimitPusher   RateLimitPusher
 	nodeServerRepo    *repository.NodeServerRepository
 	networkTracker    *traffic.SubscriptionIPTracker
+	// Chain proxy repos for filtering relay_only nodes from subscription
+	// and rendering external node servers (design doc §8.1 / §8.2)
+	chainExitCfgRepo  *repository.ChainExitConfigRepository
+	extServerRepo     *repository.ExternalNodeServerRepository
 }
 
 // SetNetworkTracker injects the nftables IP tracker so subscription access records can
@@ -89,6 +93,17 @@ func NewPublicHandler(
 func (h *PublicHandler) SetRateLimitPusher(pusher RateLimitPusher, nodeServerRepo *repository.NodeServerRepository) {
 	h.rateLimitPusher = pusher
 	h.nodeServerRepo = nodeServerRepo
+}
+
+// SetChainProxyRepos injects chain exit config and external node server repos
+// for filtering relay_only nodes from subscription output (§8.1) and
+// rendering external node servers as virtual entries (§8.2).
+func (h *PublicHandler) SetChainProxyRepos(
+	chainExitCfgRepo *repository.ChainExitConfigRepository,
+	extServerRepo *repository.ExternalNodeServerRepository,
+) {
+	h.chainExitCfgRepo = chainExitCfgRepo
+	h.extServerRepo = extServerRepo
 }
 
 // shareableProtocols are protocols that generate share links.
@@ -487,6 +502,18 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 	// Also build mirror node mapping: primaryServerID → []mirrorNodeServer
 	// This is used for virtual expansion of mirror nodes in subscription output.
 	mirrorMap := make(map[int64][]entity.NodeServer)
+	// Build set of relay_only server IDs — pure exit nodes must not appear
+	// in subscription output (design doc §8.1).
+	relayOnlyServerIDs := make(map[int64]bool)
+	if h.chainExitCfgRepo != nil {
+		if exitCfgs, err := h.chainExitCfgRepo.ListAll(ctx); err == nil {
+			for _, ec := range exitCfgs {
+				if ec.Enabled && ec.RelayOnly {
+					relayOnlyServerIDs[ec.ServerID] = true
+				}
+			}
+		}
+	}
 	if h.nodeServerRepo != nil {
 		if servers, err := h.nodeServerRepo.ListAll(ctx); err == nil {
 			for _, s := range servers {
@@ -547,6 +574,11 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			// Only the active primary should serve traffic; the backup
 			// becomes visible after failover promotes it to primary.
 			if backupServerIDs[cfg.ServerID] {
+				continue
+			}
+			// Skip pure exit nodes (relay_only=true) — they must not
+			// appear in subscription output (design doc §8.1).
+			if relayOnlyServerIDs[cfg.ServerID] {
 				continue
 			}
 			memberIDs := inboundMemberIDs[cfg.ID]
@@ -774,6 +806,59 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				continue
 			}
 			items = append(items, item)
+		}
+	}
+
+	// Render external node servers registered as virtual entries (§8.2).
+	// These are external_node_servers records — external nodes that the
+	// admin has explicitly registered as "virtual entry" nodes for
+	// subscription display. Unlike regular external_nodes (which appear
+	// via node group membership), external_node_servers are always shown
+	// when enabled and the subscription has no plan restriction on them.
+	if h.extServerRepo != nil {
+		extServers, err := h.extServerRepo.ListAll(ctx)
+		if err == nil {
+			for _, es := range extServers {
+				if !es.Enabled {
+					continue
+				}
+				// Get the underlying external node for proxy JSON
+				extNode, err := h.extNodeRepo.GetByID(ctx, es.ExternalNodeID)
+				if err != nil || extNode == nil || !extNode.Enabled {
+					continue
+				}
+
+				var pm map[string]interface{}
+				if json.Unmarshal([]byte(extNode.ProxyJSON), &pm) != nil {
+					continue
+				}
+
+				node := mihomoProxyMapToNode(pm)
+				if node != nil && es.Name != "" {
+					node.Name = es.Name
+				}
+				link := formatter.MihomoToURI(pm)
+				if link != "" {
+					link = renameShareLink(link, es.Name)
+				}
+
+				item := renderedSubscriptionNode{
+					ExternalNodeID: extNode.ID,
+					Link:           link,
+				}
+				if node != nil {
+					nodeCopy := *node
+					item.Node = &nodeCopy
+				}
+				item.ProxyMap = cloneProxyMap(pm)
+				if item.ProxyMap != nil && es.Name != "" {
+					item.ProxyMap["name"] = es.Name
+				}
+				if item.Link == "" && item.Node == nil {
+					continue
+				}
+				items = append(items, item)
+			}
 		}
 	}
 

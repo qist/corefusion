@@ -188,9 +188,16 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 					routing["balancers"] = append(existingBal, chainBalancers...)
 				}
 				if chainObservatory != nil {
-					// observatory 放根配置（burstObservatory 视具体策略决定键名，这里统一用 observatory）
-					if _, ok := fullConfig["observatory"]; !ok {
-						fullConfig["observatory"] = chainObservatory
+					// §6.6.5: 当 Sampling > 0 时使用 burstObservatory（特征弱，适合入口节点）
+					// 否则使用标准 observatory
+					if sampling, ok := chainObservatory["sampling"]; ok && sampling != nil {
+						if _, ok := fullConfig["burstObservatory"]; !ok {
+							fullConfig["burstObservatory"] = chainObservatory
+						}
+					} else {
+						if _, ok := fullConfig["observatory"]; !ok {
+							fullConfig["observatory"] = chainObservatory
+						}
 					}
 				}
 				fullConfig["routing"] = routing

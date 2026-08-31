@@ -3,6 +3,7 @@ package chainlink
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,14 @@ type HealthChecker interface {
 	IsOnline(serverID int64) bool
 }
 
+// ConfigSyncHook triggers config regeneration and push to remote nodes.
+// Implemented by *configSyncHookAdapter in router.go.
+// When chain_links or chain_exit_configs change, the handler calls this
+// to ensure the new topology takes effect immediately (design doc §13.2).
+type ConfigSyncHook interface {
+	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
+}
+
 // Handler handles chain link and chain exit config API requests.
 type Handler struct {
 	linkRepo      *repository.ChainLinkRepository
@@ -27,7 +36,8 @@ type Handler struct {
 	serverRepo    *repository.NodeServerRepository
 	extNodeRepo   *repository.ExternalNodeRepository
 	inboundRepo   *repository.InboundConfigRepository
-	healthChecker HealthChecker // optional, injected via SetHealthChecker
+	healthChecker  HealthChecker   // optional, injected via SetHealthChecker
+	configSyncHook ConfigSyncHook // optional, injected via SetConfigSyncHook
 }
 
 // NewHandler creates a new chainlink Handler.
@@ -52,6 +62,34 @@ func NewHandler(
 // SetHealthChecker injects a health checker (typically *NodeServerManager).
 func (h *Handler) SetHealthChecker(hc HealthChecker) {
 	h.healthChecker = hc
+}
+
+// SetConfigSyncHook injects a config sync hook (typically *configSyncHookAdapter).
+// When set, chain_links / chain_exit_configs mutations automatically trigger
+// config regeneration and push to affected remote nodes (design doc §13.2).
+func (h *Handler) SetConfigSyncHook(hook ConfigSyncHook) {
+	h.configSyncHook = hook
+}
+
+// triggerSync triggers config sync for the entry server and all exit servers
+// referenced by the given links. This ensures both the entry node (which gets
+// new chain-* outbounds / routing) and exit nodes (which get relay-in inbounds)
+// receive updated configurations.
+func (h *Handler) triggerSync(links ...entity.ChainLink) {
+	if h.configSyncHook == nil {
+		return
+	}
+	synced := make(map[int64]bool)
+	for _, l := range links {
+		if l.EntryServerID > 0 && !synced[l.EntryServerID] {
+			synced[l.EntryServerID] = true
+			h.configSyncHook.SyncServerConfig(context.Background(), l.EntryServerID, "xray")
+		}
+		if l.ExitServerID > 0 && !synced[l.ExitServerID] {
+			synced[l.ExitServerID] = true
+			h.configSyncHook.SyncServerConfig(context.Background(), l.ExitServerID, "xray")
+		}
+	}
 }
 
 // RegisterRoutes registers all chain proxy routes under the given group.
@@ -190,6 +228,9 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		return
 	}
 
+	// Trigger config sync for entry and exit nodes (§13.2)
+	h.triggerSync(*link)
+
 	response.OK(c, link)
 }
 
@@ -239,6 +280,9 @@ func (h *Handler) UpdateLink(c *gin.Context) {
 		return
 	}
 
+	// Trigger config sync for entry and exit nodes (§13.2)
+	h.triggerSync(*link)
+
 	response.OK(c, link)
 }
 
@@ -249,9 +293,15 @@ func (h *Handler) DeleteLink(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid link ID")
 		return
 	}
+	// Capture link info before delete for config sync
+	link, _ := h.linkRepo.GetByID(ctx, id)
 	if err := h.linkRepo.Delete(ctx, id); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
+	}
+	// Trigger config sync for affected nodes (§13.2)
+	if link != nil {
+		h.triggerSync(*link)
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }
@@ -337,6 +387,11 @@ func (h *Handler) CreateExitConfig(c *gin.Context) {
 		return
 	}
 
+	// Trigger config sync for the exit node (it now has a relay-in inbound)
+	if h.configSyncHook != nil {
+		h.configSyncHook.SyncServerConfig(context.Background(), cfg.ServerID, "xray")
+	}
+
 	response.OK(c, cfg)
 }
 
@@ -390,6 +445,11 @@ func (h *Handler) UpdateExitConfig(c *gin.Context) {
 		return
 	}
 
+	// Trigger config sync for the exit node
+	if h.configSyncHook != nil {
+		h.configSyncHook.SyncServerConfig(context.Background(), cfg.ServerID, "xray")
+	}
+
 	response.OK(c, cfg)
 }
 
@@ -400,6 +460,15 @@ func (h *Handler) DeleteExitConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
+	// Collect entry server IDs from links pointing to this exit
+	entryIDs := make(map[int64]bool)
+	if existingLinks, err := h.linkRepo.ListByExit(ctx, serverID); err == nil {
+		for _, l := range existingLinks {
+			if l.EntryServerID > 0 {
+				entryIDs[l.EntryServerID] = true
+			}
+		}
+	}
 	// Also delete any chain links pointing to this server as exit
 	if err := h.linkRepo.DeleteByExit(ctx, serverID); err != nil {
 		// Log but don't fail — the exit config is the primary target
@@ -408,6 +477,14 @@ func (h *Handler) DeleteExitConfig(c *gin.Context) {
 	if err := h.exitCfgRepo.Delete(ctx, serverID); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
+	}
+	// Trigger config sync for the deleted exit node and all entry nodes
+	// that had links to it (their chain-* outbounds are now gone)
+	if h.configSyncHook != nil {
+		h.configSyncHook.SyncServerConfig(context.Background(), serverID, "xray")
+		for eid := range entryIDs {
+			h.configSyncHook.SyncServerConfig(context.Background(), eid, "xray")
+		}
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }
@@ -690,6 +767,21 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 	strategy := "single"
 	if len(req.Exits) > 1 {
 		strategy = "loadbalance"
+	}
+
+	// 5. Trigger config sync for entry + all exit nodes (§13.2)
+	if h.configSyncHook != nil {
+		h.configSyncHook.SyncServerConfig(context.Background(), req.EntryServerID, "xray")
+		synced := make(map[int64]bool)
+		synced[req.EntryServerID] = true
+		for _, ex := range req.Exits {
+			if !ex.IsExternal && ex.ID > 0 && !synced[ex.ID] {
+				synced[ex.ID] = true
+				h.configSyncHook.SyncServerConfig(context.Background(), ex.ID, "xray")
+			}
+		}
+		log.Printf("[chainlink] CreateChainProxy: triggered config sync for entry %d + %d exit nodes",
+			req.EntryServerID, len(synced)-1)
 	}
 
 	response.OK(c, gin.H{

@@ -64,6 +64,12 @@ export function deleteExternalServer(id) {
   return client.delete(`/chain/external-servers/${id}`)
 }
 
+// ──────────── External Nodes (for registration dropdown) ────────────
+
+export function listExternalNodes() {
+  return client.get('/external-nodes')
+}
+
 // ──────────── Topology ────────────
 
 export function getTopology() {

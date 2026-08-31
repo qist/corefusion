@@ -1538,6 +1538,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			chainLinkH := chainlinkHandler.NewHandler(chainLinkRepo, chainExitCfgRepo, extNodeServerRepo, nodeServerRepo, extNodeRepo, inboundConfigRepo)
 			chainLinkH.RegisterRoutes(protected)
 
+			// Inject chain proxy repos into public subscription handler so that
+			// relay_only nodes are filtered from subscription output (§8.1) and
+			// external node servers are rendered as virtual entries (§8.2).
+			publicSubH.SetChainProxyRepos(chainExitCfgRepo, extNodeServerRepo)
+
 			// Wire up CRL and CertDistributor if CA is available
 			if caService != nil {
 				certRepoForNodeServer := repository.NewCertificateRepository(database)
@@ -1842,6 +1847,13 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 			// inbound config changes also trigger mirror node sync.
 			inboundSyncHook.nodeServerSvc = nodeServerSvcInst
 			outboundSyncHook.nodeServerSvc = nodeServerSvcInst
+
+			// Inject config sync hook into chainlink handler so that
+			// chain_links / chain_exit_configs mutations automatically
+			// trigger config regeneration and push to affected nodes
+			// (design doc §13.2).
+			chainSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}
+			chainLinkH.SetConfigSyncHook(chainSyncHook)
 
 			// Inject traffic reset hook so subscription/client reset propagates
 			// to inbound configs and remote Agent nodes.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
@@ -48,8 +49,8 @@ func NewChainLinkGenerator(
 // Multi-exit support (see design doc §6.5 / §6.6): links are grouped by
 // EntryInboundID. Within a group:
 //   - a single exit  → one field rule (inboundTag → chain-* outboundTag)
-//   - multiple exits → a balancer (prefix selector "chain-<in>-") + observatory,
-//     and the field rule points to balancerTag instead of a single outbound.
+//   - multiple exits with same priority → loadbalance (balancer + observatory)
+//   - multiple exits with different priorities → failover (多条独立 field 规则, 按 priority 排序)
 func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, serverID int64) ([]ChainEntryOutbound, []ChainRoutingRule, []ChainBalancer, *ChainObservatory, error) {
 	links, err := g.linkRepo.ListByEntry(ctx, serverID, 0)
 	if err != nil {
@@ -122,7 +123,44 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 			continue
 		}
 
-		// 多出口：负载均衡模式（见 §6.6）—— 多选自动判定为负载均衡
+		// 判定多出口策略：failover vs loadbalance（见 §6.5）
+		// 启发式：如果所有 link 的 Priority 相同 → loadbalance；否则 → failover
+		strategy := "loadbalance"
+		firstPriority := groupLinks[0].Priority
+		for _, l := range groupLinks[1:] {
+			if l.Priority != firstPriority {
+				strategy = "failover"
+				break
+			}
+		}
+
+		if strategy == "failover" {
+			// failover 模式（§6.5.3）：按 Priority 升序生成多条独立 field 规则
+			// xray 首规则命中即转发，主出口排最前；主 down 时规则不生效，自动落下一优先级
+			sortedLinks := make([]entity.ChainLink, len(groupLinks))
+			copy(sortedLinks, groupLinks)
+			sort.SliceStable(sortedLinks, func(i, j int) bool {
+				if sortedLinks[i].Priority != sortedLinks[j].Priority {
+					return sortedLinks[i].Priority < sortedLinks[j].Priority
+				}
+				return sortedLinks[i].SortOrder < sortedLinks[j].SortOrder
+			})
+			for _, link := range sortedLinks {
+				tag := link.ExitTag
+				if tag == "" {
+					tag = g.exitTagFor(link)
+				}
+				routingRules = append(routingRules, ChainRoutingRule{
+					Type:        "field",
+					InboundTag:  []string{inboundTag},
+					OutboundTag: tag,
+					RuleTag:     fmt.Sprintf("exit-%d-pri%d", inID, link.Priority),
+				})
+			}
+			continue
+		}
+
+		// loadbalance 模式（§6.6）—— 等权多出口，balancer + observatory
 		balTag := fmt.Sprintf("bal-chain-%d", inID)
 		prefix := fmt.Sprintf("chain-%d-", inID) // selector 前缀，自动圈定本入口全部出口
 		balancers = append(balancers, ChainBalancer{
@@ -138,12 +176,16 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 			RuleTag:     fmt.Sprintf("exit-%d-lb", inID),
 		})
 		// 仅当该入口存在负载均衡时才注入 observatory，subjectSelector 用前缀隔离（§6.6.5）
+		// 使用 burstObservatory 配置参数，适合入口节点隐蔽性（§6.6.5）
 		if observatory == nil {
 			observatory = &ChainObservatory{
 				SubjectSelector:   []string{prefix},
 				ProbeURL:          "http://cp.cloudflare.com",
-				ProbeInterval:     "10s",
+				ProbeInterval:     "1m",
 				EnableConcurrency: true,
+				// burstObservatory 参数（§6.6.5）：interval=1m, sampling=10
+				// 探测周期 10 分钟，特征弱，适合入口节点
+				Sampling: 10,
 			}
 		} else {
 			// 多个负载均衡入口时，把所有前缀合并进同一个 observatory 的 subjectSelector

@@ -141,7 +141,7 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 		if observatory == nil {
 			observatory = &ChainObservatory{
 				SubjectSelector:   []string{prefix},
-				ProbeURL:          "https://www.google.com/generate_204",
+				ProbeURL:          "http://cp.cloudflare.com",
 				ProbeInterval:     "10s",
 				EnableConcurrency: true,
 			}

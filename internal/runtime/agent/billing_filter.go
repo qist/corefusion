@@ -71,7 +71,9 @@ func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) boo
 }
 
 // ShouldCollectTraffic returns true if traffic should be collected from this server.
-// Pure exit nodes (relay_only=true): no traffic collection.
+// Pure exit nodes (relay_only=true): traffic IS collected — the relay-in
+// inbound has its own user-level stats (email=chain-relay), and this
+// traffic must be visible on the exit node's dashboard.
 // Mirror: collect traffic but merge to primary.
 // primary_backup backup (not active): no traffic collection.
 func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64) bool {
@@ -84,12 +86,9 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 		return false
 	}
 
-	if f.exitCfgRepo != nil {
-		exitCfg, err := f.exitCfgRepo.GetByServerID(ctx, serverID)
-		if err == nil && exitCfg != nil && exitCfg.Enabled && exitCfg.RelayOnly {
-			return false
-		}
-	}
+	// relay_only exit nodes DO collect traffic — their relay-in inbound
+	// has user-level stats that should be attributed to the exit node.
+	// We deliberately do NOT skip them here.
 
 	switch server.NodeType {
 	case entity.NodeTypePrimaryBackup:

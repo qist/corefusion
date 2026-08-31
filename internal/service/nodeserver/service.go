@@ -906,14 +906,16 @@ func (s *Service) GenerateChainExitConfig(ctx context.Context, serverID int64) (
 	return s.chainGen.GenerateChainExitInbound(ctx, server)
 }
 
-// GetChainHealthStatus returns the health status of all chain_exit nodes for a chain_entry.
+// GetChainHealthStatus returns the health status of all chain exit nodes.
+// In the new chain_links model, there is a single global health monitor
+// that checks all exit nodes referenced by chain_links.
 func (s *Service) GetChainHealthStatus(ctx context.Context, entryServerID int64) (map[int64]*agent.ExitHealthStatus, error) {
 	if s.chainHealth == nil {
 		return nil, fmt.Errorf("chain health registry not initialized")
 	}
-	monitor := s.chainHealth.GetMonitor(entryServerID)
+	monitor := s.chainHealth.GetMonitor()
 	if monitor == nil {
-		return nil, fmt.Errorf("no health monitor for server %d (is it a chain_entry?)", entryServerID)
+		return nil, fmt.Errorf("health monitor not started")
 	}
 	return monitor.GetAllExitStatuses(), nil
 }

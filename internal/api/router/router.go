@@ -1599,8 +1599,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					SetNginxSiteRepository(nginxSiteRepoForMirror).
 					SetSettingRepository(systemSettingRepo)
 				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
-				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo)
-				billingFilter := agent.NewBillingFilter(nodeServerRepo)
+chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo).WithChainRepos(chainLinkRepo, chainExitCfgRepo)
+				go chainHealthRegistry.StartAll(context.Background())
+billingFilter := agent.NewBillingFilter(nodeServerRepo)
+billingFilter.SetExitConfigRepo(chainExitCfgRepo)
+
+// Inject NodeServerManager as HealthChecker for chain link health API
+chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 
 				nodeServerSvcInst.
 					WithInboundRepo(inboundRepoForNodeServer).

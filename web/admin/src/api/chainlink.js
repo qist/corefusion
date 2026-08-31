@@ -69,3 +69,9 @@ export function deleteExternalServer(id) {
 export function getTopology() {
   return client.get('/chain/topology')
 }
+
+// ──────────── Health ────────────
+
+export function getChainHealth() {
+  return client.get('/chain/health')
+}

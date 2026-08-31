@@ -13,6 +13,12 @@ import (
 	"corefusion/internal/store/repository"
 )
 
+// HealthChecker checks if a server's Agent is online.
+// Implemented by *agent.NodeServerManager.
+type HealthChecker interface {
+	IsOnline(serverID int64) bool
+}
+
 // Handler handles chain link and chain exit config API requests.
 type Handler struct {
 	linkRepo      *repository.ChainLinkRepository
@@ -21,6 +27,7 @@ type Handler struct {
 	serverRepo    *repository.NodeServerRepository
 	extNodeRepo   *repository.ExternalNodeRepository
 	inboundRepo   *repository.InboundConfigRepository
+	healthChecker HealthChecker // optional, injected via SetHealthChecker
 }
 
 // NewHandler creates a new chainlink Handler.
@@ -40,6 +47,11 @@ func NewHandler(
 		extNodeRepo:   extNodeRepo,
 		inboundRepo:   inboundRepo,
 	}
+}
+
+// SetHealthChecker injects a health checker (typically *NodeServerManager).
+func (h *Handler) SetHealthChecker(hc HealthChecker) {
+	h.healthChecker = hc
 }
 
 // RegisterRoutes registers all chain proxy routes under the given group.
@@ -66,6 +78,9 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 
 	// Topology view
 	g.GET("/topology", h.GetTopology)
+
+	// Health status of all chain links
+	g.GET("/health", h.GetHealth)
 
 	// 创建链式代理：选择入口 → 选择出口（单/多，多选自动判定为负载均衡）→ 自动关联
 	// 见设计文档 §5.5 创建链式代理向导（端到端操作与后端自动行为）
@@ -688,3 +703,71 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 
 // Ensure context is used (avoids unused import warning in some build configs)
 var _ = context.Background
+
+// ── Health ──
+
+// GetHealth returns the health status of all chain links.
+// For each entry→exit pair, returns whether both nodes are online and
+// the relay-in inbound is reachable.
+func (h *Handler) GetHealth(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	links, err := h.linkRepo.ListAll(ctx)
+	if err != nil {
+		response.InternalError(c, "DB_ERROR", fmt.Sprintf("list links: %v", err))
+		return
+	}
+
+	type LinkHealth struct {
+		LinkID         int64  `json:"link_id"`
+		EntryServerID  int64  `json:"entry_server_id"`
+		EntryInboundID int64  `json:"entry_inbound_id"`
+		ExitServerID   int64  `json:"exit_server_id"`
+		ExitExternalID int64  `json:"exit_external_id"`
+		EntryOnline    bool   `json:"entry_online"`
+		ExitOnline     bool   `json:"exit_online"`
+		Healthy        bool   `json:"healthy"`
+		Status         string `json:"status"` // healthy | degraded | down
+	}
+
+	result := make([]LinkHealth, 0, len(links))
+	for _, link := range links {
+		if !link.Enabled {
+			continue
+		}
+
+		entryOnline := false
+		exitOnline := false
+		status := "down"
+
+		if h.healthChecker != nil {
+			entryOnline = h.healthChecker.IsOnline(link.EntryServerID)
+			if link.ExitExternalID > 0 {
+				exitOnline = true // external exits are always "online"
+			} else if link.ExitServerID > 0 {
+				exitOnline = h.healthChecker.IsOnline(link.ExitServerID)
+			}
+		}
+
+		healthy := entryOnline && exitOnline
+		if healthy {
+			status = "healthy"
+		} else if entryOnline || exitOnline {
+			status = "degraded"
+		}
+
+		result = append(result, LinkHealth{
+			LinkID:         link.ID,
+			EntryServerID:  link.EntryServerID,
+			EntryInboundID: link.EntryInboundID,
+			ExitServerID:   link.ExitServerID,
+			ExitExternalID: link.ExitExternalID,
+			EntryOnline:    entryOnline,
+			ExitOnline:     exitOnline,
+			Healthy:        healthy,
+			Status:         status,
+		})
+	}
+
+	response.OK(c, result)
+}

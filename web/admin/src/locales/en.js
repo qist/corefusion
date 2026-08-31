@@ -2984,6 +2984,12 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     loadBalance: 'Load Balance',
     direct: 'Single Direct',
     exitCount: 'Exit Count',
+    healthStatus: 'Health Status',
+    entryOnline: 'Entry Online',
+    exitOnline: 'Exit Online',
+    healthy: 'Healthy',
+    degraded: 'Degraded',
+    down: 'Down',
   },
   currency: {
     CNY: 'Chinese Yuan',

@@ -250,9 +250,9 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
 		}
 		result := database.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"server_id", "relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "updated_at"}),
-		}).Select("id", "server_id", "relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "created_at", "updated_at").Create(&record)
+			Columns:   []clause.Column{{Name: "server_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "updated_at"}),
+		}).Select("server_id", "relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "created_at", "updated_at").Create(&record)
 		if result.Error == nil {
 			resp.ChainExitConfigsApplied++
 		} else {
@@ -294,6 +294,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 	// 9. Upsert external_nodes (外部出口节点)
 	for _, entry := range req.ExternalNodes {
 		record := entity.ExternalNode{
+			SourceID:   entry.SourceId,
 			Name:       entry.Name,
 			Protocol:   entry.Protocol,
 			Host:       entry.Host,
@@ -314,8 +315,8 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		}
 		result := database.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"name", "protocol", "host", "port", "transport", "tls", "server_name", "proxy_json", "enabled", "sort_order", "updated_at"}),
-		}).Select("id", "name", "protocol", "host", "port", "transport", "tls", "server_name", "proxy_json", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
+			DoUpdates: clause.AssignmentColumns([]string{"source_id", "name", "protocol", "host", "port", "transport", "tls", "server_name", "proxy_json", "enabled", "sort_order", "updated_at"}),
+		}).Select("id", "source_id", "name", "protocol", "host", "port", "transport", "tls", "server_name", "proxy_json", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
 		if result.Error == nil {
 			resp.ExternalNodesApplied++
 		} else {
@@ -502,8 +503,22 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 
 		switch strategy {
 		case agentpb.SyncDataRequest_RELOAD_STRATEGY_NONE:
-			// Only update config file, don't start or restart
-			log.Printf("[Agent] SyncData: reload_strategy=none, config written, core untouched")
+			// Reload strategy NONE means "don't force a restart if already running".
+			// But if apply_and_start=true and the core is NOT running, we must start it.
+			// This fixes the issue where sync-data with apply_and_start=true but
+			// reload_strategy=NONE (the default) would leave xray stopped after
+			// an Agent restart.
+			if isRunning {
+				log.Printf("[Agent] SyncData: reload_strategy=none, core already running, config written")
+			} else {
+				if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
+					resp.Error = fmt.Sprintf("start core: %v", err)
+					log.Printf("[Agent] SyncData: core start failed (reload_strategy=none, was not running): %v", err)
+					return resp, nil
+				}
+				resp.CoreStarted = true
+				log.Printf("[Agent] SyncData: core started successfully (reload_strategy=none, was not running)")
+			}
 
 		case agentpb.SyncDataRequest_RELOAD_STRATEGY_RESTART:
 			if isRunning {

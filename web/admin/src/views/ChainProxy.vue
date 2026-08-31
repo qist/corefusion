@@ -99,6 +99,40 @@
       </el-table>
     </el-card>
 
+    <!-- Chain Health Status -->
+    <el-card style="margin-top:16px">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>{{ t('chainProxy.healthStatus') }}</span>
+          <el-button text size="small" @click="fetchHealth" :icon="Refresh">Refresh</el-button>
+        </div>
+      </template>
+      <el-table :data="healthData" stripe size="small" v-loading="healthLoading">
+        <el-table-column prop="link_id" label="ID" width="60" />
+        <el-table-column :label="t('chainProxy.entryNode')" width="160">
+          <template #default="{row}">{{ serverName(row.entry_server_id) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('chainProxy.exitNode')" width="160">
+          <template #default="{row}">{{ row.exit_external_id ? extServerName(row.exit_external_id) : serverName(row.exit_server_id) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('chainProxy.entryOnline')" width="100">
+          <template #default="{row}">
+            <el-tag size="small" :type="row.entry_online ? 'success' : 'danger'">{{ row.entry_online ? '✓' : '✗' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('chainProxy.exitOnline')" width="100">
+          <template #default="{row}">
+            <el-tag size="small" :type="row.exit_online ? 'success' : 'danger'">{{ row.exit_online ? '✓' : '✗' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.status')" width="120">
+          <template #default="{row}">
+            <el-tag size="small" :type="healthTagType(row.status)">{{ healthLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <!-- Create Chain Proxy Wizard Dialog (see design doc §12.2) -->
     <el-dialog v-model="linkDlg" :title="t('chainProxy.createWizard')" width="680">
       <el-steps :active="wizardStep" finish-status="success" align-center>
@@ -226,6 +260,33 @@ import { listNodeServers, getInboundConfigs } from '../api/nodeServer'
 
 const { t } = useI18n()
 
+// ── Health helpers ──
+function healthTagType(status) {
+  if (status === 'healthy') return 'success'
+  if (status === 'degraded') return 'warning'
+  return 'danger'
+}
+function healthLabel(status) {
+  if (status === 'healthy') return t('chainProxy.healthy')
+  if (status === 'degraded') return t('chainProxy.degraded')
+  return t('chainProxy.down')
+}
+async function fetchHealth() {
+  healthLoading.value = true
+  try {
+    const res = await chainApi.getChainHealth()
+    healthData.value = res.data || []
+  } catch (e) {
+    healthData.value = []
+  } finally {
+    healthLoading.value = false
+  }
+}
+function extServerName(id) {
+  const s = externalServers.value.find(x => x.id === id)
+  return s ? s.name : `External #${id}`
+}
+
 // ── Data ──
 const topoNodes = ref([])
 const topoLoading = ref(false)
@@ -235,6 +296,10 @@ const exitConfigs = ref([])
 const exitsLoading = ref(false)
 const servers = ref([])
 const externalServers = ref([])
+
+// ── Health ──
+const healthData = ref([])
+const healthLoading = ref(false)
 
 // ── Link Dialog ──
 const linkDlg = ref(false)
@@ -319,7 +384,7 @@ function roleTagType(role) {
 
 // ── Fetch ──
 async function fetchAll() {
-  await Promise.all([fetchTopology(), fetchLinks(), fetchExitConfigs(), fetchServers(), fetchExternalServers()])
+await Promise.all([fetchTopology(), fetchLinks(), fetchExitConfigs(), fetchServers(), fetchExternalServers(), fetchHealth()])
 }
 
 async function fetchTopology() {

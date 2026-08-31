@@ -2908,6 +2908,12 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     loadBalance: '负载均衡',
     direct: '单出口直连',
     exitCount: '出口数量',
+    healthStatus: '健康状态',
+    entryOnline: '入口在线',
+    exitOnline: '出口在线',
+    healthy: '健康',
+    degraded: '降级',
+    down: '离线',
   },
   currency: {
     CNY: '人民币',

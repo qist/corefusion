@@ -10,75 +10,80 @@ import (
 	"corefusion/internal/store/repository"
 )
 
-// ExitHealthStatus represents the health of a single chain_exit node.
+// ExitHealthStatus represents the health of a single chain exit node.
 type ExitHealthStatus struct {
 	ServerID    int64         `json:"server_id"`
 	Online      bool          `json:"online"`
 	Latency     time.Duration `json:"latency_ms"`
-	LastCheckAt time.Time     `json:"last_check_at"`
+	LastCheckAt time.Time    `json:"last_check_at"`
 	ConsecFail  int           `json:"consec_fail"`
 	Health      string        `json:"health"` // healthy | degraded | down
 }
 
-// ChainExitHealthMonitor monitors the health of chain_exit nodes
-// for a chain_entry, enabling multi-exit failover.
-type ChainExitHealthMonitor struct {
+// EntryHealthStatus represents the health of a chain entry node and all its exits.
+type EntryHealthStatus struct {
+	EntryServerID  int64               `json:"entry_server_id"`
+	EntryInboundID int64               `json:"entry_inbound_id"`
+	Online         bool               `json:"online"`
+	Exits          []ExitHealthStatus  `json:"exits"`
+	HealthyExits   int                `json:"healthy_exits"`
+	TotalExits     int                `json:"total_exits"`
+	LastCheckAt    time.Time          `json:"last_check_at"`
+}
+
+// ChainHealthMonitor monitors the health of chain proxy exits
+// using the new chain_links table (not the legacy node_type/chain_config approach).
+type ChainHealthMonitor struct {
 	mu            sync.RWMutex
-	entryServerID int64
-	exits         []ChainExitSpec
 	nodeMgr       *NodeServerManager
 	serverRepo    *repository.NodeServerRepository
+	chainLinkRepo *repository.ChainLinkRepository
+	exitCfgRepo   *repository.ChainExitConfigRepository
 	healthStatus  map[int64]*ExitHealthStatus // exit_server_id → status
 	checkInterval time.Duration
 	failThreshold int
 
 	// Callback when health status changes (triggers config regeneration)
-	onStatusChange func(entryID int64)
+	onStatusChange func()
 }
 
-// NewChainExitHealthMonitor creates a new ChainExitHealthMonitor.
-func NewChainExitHealthMonitor(
-	entryServerID int64,
-	exits []ChainExitSpec,
+// NewChainHealthMonitor creates a new ChainHealthMonitor.
+func NewChainHealthMonitor(
 	nodeMgr *NodeServerManager,
 	serverRepo *repository.NodeServerRepository,
-) *ChainExitHealthMonitor {
-	return &ChainExitHealthMonitor{
-		entryServerID: entryServerID,
-		exits:         exits,
-		nodeMgr:       nodeMgr,
-		serverRepo:    serverRepo,
-		healthStatus:  make(map[int64]*ExitHealthStatus),
-		checkInterval: 30 * time.Second,
-		failThreshold: 3,
+	chainLinkRepo *repository.ChainLinkRepository,
+	exitCfgRepo *repository.ChainExitConfigRepository,
+) *ChainHealthMonitor {
+	return &ChainHealthMonitor{
+		nodeMgr:        nodeMgr,
+		serverRepo:     serverRepo,
+		chainLinkRepo:  chainLinkRepo,
+		exitCfgRepo:    exitCfgRepo,
+		healthStatus:   make(map[int64]*ExitHealthStatus),
+		checkInterval:  30 * time.Second,
+		failThreshold:  3,
 	}
 }
 
 // WithCheckInterval sets the health check interval.
-func (m *ChainExitHealthMonitor) WithCheckInterval(d time.Duration) *ChainExitHealthMonitor {
+func (m *ChainHealthMonitor) WithCheckInterval(d time.Duration) *ChainHealthMonitor {
 	m.checkInterval = d
 	return m
 }
 
 // WithFailThreshold sets the consecutive failure count before marking an exit as down.
-func (m *ChainExitHealthMonitor) WithFailThreshold(n int) *ChainExitHealthMonitor {
+func (m *ChainHealthMonitor) WithFailThreshold(n int) *ChainHealthMonitor {
 	m.failThreshold = n
 	return m
 }
 
 // OnStatusChange sets a callback invoked when any exit health status changes.
-func (m *ChainExitHealthMonitor) OnStatusChange(fn func(entryID int64)) {
+func (m *ChainHealthMonitor) OnStatusChange(fn func()) {
 	m.onStatusChange = fn
 }
 
 // RunLoop starts the health monitoring loop. Blocks until ctx is cancelled.
-func (m *ChainExitHealthMonitor) RunLoop(ctx context.Context) {
-	if len(m.exits) == 0 {
-		return
-	}
-
-	log.Printf("[ChainHealth] monitoring %d exit(s) for chain_entry %d", len(m.exits), m.entryServerID)
-
+func (m *ChainHealthMonitor) RunLoop(ctx context.Context) {
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
 
@@ -95,36 +100,58 @@ func (m *ChainExitHealthMonitor) RunLoop(ctx context.Context) {
 	}
 }
 
-// checkAllExits checks all chain_exit nodes in parallel.
-func (m *ChainExitHealthMonitor) checkAllExits(ctx context.Context) {
-	var wg sync.WaitGroup
+// checkAllExits discovers all unique exit servers from chain_links and checks them.
+func (m *ChainHealthMonitor) checkAllExits(ctx context.Context) {
+	links, err := m.chainLinkRepo.ListAll(ctx)
+	if err != nil {
+		log.Printf("[ChainHealth] failed to list chain links: %v", err)
+		return
+	}
 
-	for _, exit := range m.exits {
+	// Collect unique exit server IDs
+	exitIDs := make(map[int64]struct{})
+	for _, link := range links {
+		if !link.Enabled {
+			continue
+		}
+		if link.ExitExternalID > 0 {
+			// External exit — skip gRPC health check (no Agent)
+			continue
+		}
+		if link.ExitServerID > 0 {
+			exitIDs[link.ExitServerID] = struct{}{}
+		}
+	}
+
+	var wg sync.WaitGroup
+	changed := false
+
+	for exitID := range exitIDs {
 		wg.Add(1)
-		go func(spec ChainExitSpec) {
+		go func(serverID int64) {
 			defer wg.Done()
-			m.checkSingleExit(ctx, spec)
-		}(exit)
+			if m.checkSingleExit(ctx, serverID) {
+				changed = true
+			}
+		}(exitID)
 	}
 	wg.Wait()
 
-	// Check if any status changed
-	if m.hasStatusChanged() && m.onStatusChange != nil {
-		m.onStatusChange(m.entryServerID)
+	if changed && m.onStatusChange != nil {
+		m.onStatusChange()
 	}
 }
 
-// checkSingleExit checks one chain_exit node's health.
-func (m *ChainExitHealthMonitor) checkSingleExit(ctx context.Context, spec ChainExitSpec) {
+// checkSingleExit checks one exit node's health. Returns true if status changed.
+func (m *ChainHealthMonitor) checkSingleExit(ctx context.Context, serverID int64) bool {
 	status := &ExitHealthStatus{
-		ServerID:    spec.ExitServerID,
+		ServerID:    serverID,
 		LastCheckAt: time.Now(),
 	}
 
 	// Check if the exit server's Agent is online
-	// In a full implementation, this would also do a latency probe (e.g., gRPC health check)
 	start := time.Now()
-	online := m.nodeMgr.IsOnline(spec.ExitServerID)
+	online := m.nodeMgr.IsOnline(serverID)
 	status.Latency = time.Since(start)
 	status.Online = online
 
@@ -132,9 +159,8 @@ func (m *ChainExitHealthMonitor) checkSingleExit(ctx context.Context, spec Chain
 		status.ConsecFail = 0
 		status.Health = "healthy"
 	} else {
-		// Get previous status to increment fail count
 		m.mu.RLock()
-		prev := m.healthStatus[spec.ExitServerID]
+		prev := m.healthStatus[serverID]
 		m.mu.RUnlock()
 
 		if prev != nil {
@@ -150,20 +176,21 @@ func (m *ChainExitHealthMonitor) checkSingleExit(ctx context.Context, spec Chain
 		}
 	}
 
-	// Update status
 	m.mu.Lock()
-	changed := m.isStatusDifferent(spec.ExitServerID, status)
-	m.healthStatus[spec.ExitServerID] = status
+	changed := m.isStatusDifferent(serverID, status)
+	m.healthStatus[serverID] = status
 	m.mu.Unlock()
 
 	if changed {
-		log.Printf("[ChainHealth] exit %d status changed: %s (fails=%d, latency=%v)",
-			spec.ExitServerID, status.Health, status.ConsecFail, status.Latency)
+		log.Printf("[ChainHealth] exit %d status changed: %s (online=%v, fails=%d, latency=%v)",
+			serverID, status.Health, status.Online, status.ConsecFail, status.Latency)
 	}
+
+	return changed
 }
 
 // isStatusDifferent compares new status with stored status. Caller must hold m.mu.
-func (m *ChainExitHealthMonitor) isStatusDifferent(serverID int64, newStatus *ExitHealthStatus) bool {
+func (m *ChainHealthMonitor) isStatusDifferent(serverID int64, newStatus *ExitHealthStatus) bool {
 	old, ok := m.healthStatus[serverID]
 	if !ok {
 		return true // New entry
@@ -171,29 +198,8 @@ func (m *ChainExitHealthMonitor) isStatusDifferent(serverID int64, newStatus *Ex
 	return old.Health != newStatus.Health
 }
 
-// hasStatusChanged returns true if any exit changed since last check.
-func (m *ChainExitHealthMonitor) hasStatusChanged() bool {
-	// The checkSingleExit already logged changes; this is a simplified version.
-	return false // Individual changes are tracked in checkSingleExit
-}
-
-// GetHealthyExits returns all currently healthy exit specs, sorted by priority.
-func (m *ChainExitHealthMonitor) GetHealthyExits() []ChainExitSpec {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var healthy []ChainExitSpec
-	for _, exit := range m.exits {
-		status, ok := m.healthStatus[exit.ExitServerID]
-		if !ok || status.Health == "healthy" {
-			healthy = append(healthy, exit)
-		}
-	}
-	return healthy
-}
-
 // GetExitStatus returns the health status of a specific exit.
-func (m *ChainExitHealthMonitor) GetExitStatus(serverID int64) *ExitHealthStatus {
+func (m *ChainHealthMonitor) GetExitStatus(serverID int64) *ExitHealthStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if s, ok := m.healthStatus[serverID]; ok {
@@ -203,7 +209,7 @@ func (m *ChainExitHealthMonitor) GetExitStatus(serverID int64) *ExitHealthStatus
 }
 
 // GetAllExitStatuses returns the health status of all exits.
-func (m *ChainExitHealthMonitor) GetAllExitStatuses() map[int64]*ExitHealthStatus {
+func (m *ChainHealthMonitor) GetAllExitStatuses() map[int64]*ExitHealthStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := make(map[int64]*ExitHealthStatus, len(m.healthStatus))
@@ -213,74 +219,204 @@ func (m *ChainExitHealthMonitor) GetAllExitStatuses() map[int64]*ExitHealthStatu
 	return result
 }
 
-// ChainHealthMonitorRegistry manages health monitors for all chain_entry nodes.
+// GetEntryHealthStatus returns the health status for a chain entry,
+// including the health of all its exit nodes.
+func (m *ChainHealthMonitor) GetEntryHealthStatus(ctx context.Context, entryServerID int64, entryInboundID int64) *EntryHealthStatus {
+	links, err := m.chainLinkRepo.ListByEntry(ctx, entryServerID, entryInboundID)
+	if err != nil {
+		return nil
+	}
+
+	entryStatus := &EntryHealthStatus{
+		EntryServerID:  entryServerID,
+		EntryInboundID: entryInboundID,
+		Online:         m.nodeMgr.IsOnline(entryServerID),
+		LastCheckAt:   time.Now(),
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	seenExits := make(map[int64]struct{})
+	for _, link := range links {
+		if link.ExitExternalID > 0 {
+			// External exits are always considered healthy (no Agent to check)
+			entryStatus.Exits = append(entryStatus.Exits, ExitHealthStatus{
+				ServerID: link.ExitExternalID,
+				Online:   true,
+				Health:   "healthy",
+			})
+			entryStatus.HealthyExits++
+			entryStatus.TotalExits++
+			continue
+		}
+		if _, seen := seenExits[link.ExitServerID]; seen {
+			continue
+		}
+		seenExits[link.ExitServerID] = struct{}{}
+
+		status, ok := m.healthStatus[link.ExitServerID]
+		if !ok {
+			status = &ExitHealthStatus{
+				ServerID: link.ExitServerID,
+				Health:   "degraded",
+			}
+		}
+		entryStatus.Exits = append(entryStatus.Exits, *status)
+		entryStatus.TotalExits++
+		if status.Health == "healthy" {
+			entryStatus.HealthyExits++
+		}
+	}
+
+	return entryStatus
+}
+
+// GetAllEntriesHealthStatus returns health status for all chain entries.
+func (m *ChainHealthMonitor) GetAllEntriesHealthStatus(ctx context.Context) []EntryHealthStatus {
+	links, err := m.chainLinkRepo.ListAll(ctx)
+	if err != nil {
+		return nil
+	}
+
+	// Group by entry (server_id + inbound_id)
+	type entryKey struct {
+		ServerID  int64
+		InboundID int64
+	}
+	entries := make(map[entryKey][]entity.ChainLink)
+	for _, link := range links {
+		if !link.Enabled {
+			continue
+		}
+		key := entryKey{link.EntryServerID, link.EntryInboundID}
+		entries[key] = append(entries[key], link)
+	}
+
+	var result []EntryHealthStatus
+	for key, entryLinks := range entries {
+		status := &EntryHealthStatus{
+			EntryServerID:  key.ServerID,
+			EntryInboundID: key.InboundID,
+			Online:         m.nodeMgr.IsOnline(key.ServerID),
+			LastCheckAt:   time.Now(),
+		}
+
+		m.mu.RLock()
+		seenExits := make(map[int64]struct{})
+		for _, link := range entryLinks {
+			if link.ExitExternalID > 0 {
+				status.Exits = append(status.Exits, ExitHealthStatus{
+					ServerID: link.ExitExternalID,
+					Online:   true,
+					Health:   "healthy",
+				})
+				status.HealthyExits++
+				status.TotalExits++
+				continue
+			}
+			if _, seen := seenExits[link.ExitServerID]; seen {
+				continue
+			}
+			seenExits[link.ExitServerID] = struct{}{}
+
+			exitStatus, ok := m.healthStatus[link.ExitServerID]
+			if !ok {
+				exitStatus = &ExitHealthStatus{
+					ServerID: link.ExitServerID,
+					Health:   "degraded",
+				}
+			}
+			status.Exits = append(status.Exits, *exitStatus)
+			status.TotalExits++
+			if exitStatus.Health == "healthy" {
+				status.HealthyExits++
+			}
+		}
+		m.mu.RUnlock()
+
+		result = append(result, *status)
+	}
+
+	return result
+}
+
+// ChainHealthMonitorRegistry manages the health monitor for all chain links.
+// In the new model there is a single monitor that checks all exit nodes
+// referenced by chain_links (instead of per-entry monitors in the old model).
 type ChainHealthMonitorRegistry struct {
-	mu         sync.RWMutex
-	monitors   map[int64]*ChainExitHealthMonitor // entry_server_id → monitor
-	nodeMgr    *NodeServerManager
-	serverRepo *repository.NodeServerRepository
+	mu          sync.RWMutex
+	monitor     *ChainHealthMonitor
+	nodeMgr     *NodeServerManager
+	serverRepo  *repository.NodeServerRepository
+	chainLinkRepo *repository.ChainLinkRepository
+	exitCfgRepo   *repository.ChainExitConfigRepository
+	started     bool
+	cancel      context.CancelFunc
 }
 
 // NewChainHealthMonitorRegistry creates a new registry.
 func NewChainHealthMonitorRegistry(nodeMgr *NodeServerManager, serverRepo *repository.NodeServerRepository) *ChainHealthMonitorRegistry {
 	return &ChainHealthMonitorRegistry{
-		monitors:   make(map[int64]*ChainExitHealthMonitor),
 		nodeMgr:    nodeMgr,
 		serverRepo: serverRepo,
 	}
 }
 
-// StartAll discovers all chain_entry nodes and starts health monitors for them.
+// WithChainRepos injects the chain link and exit config repositories.
+func (r *ChainHealthMonitorRegistry) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository, exitCfgRepo *repository.ChainExitConfigRepository) *ChainHealthMonitorRegistry {
+	r.chainLinkRepo = chainLinkRepo
+	r.exitCfgRepo = exitCfgRepo
+	return r
+}
+
+// StartAll starts the health monitor for all chain links.
 func (r *ChainHealthMonitorRegistry) StartAll(ctx context.Context) error {
-	entries, err := r.serverRepo.ListByType(ctx, "chain_entry")
-	if err != nil {
-		return err
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.started {
+		return nil
 	}
 
-	for _, entry := range entries {
-		r.startMonitor(ctx, &entry)
+	if r.chainLinkRepo == nil {
+		log.Println("[ChainHealthRegistry] chain link repo not set, skipping")
+		return nil
 	}
 
-	log.Printf("[ChainHealthRegistry] started %d monitor(s)", len(r.monitors))
+	monitorCtx, cancel := context.WithCancel(ctx)
+	r.cancel = cancel
+
+	monitor := NewChainHealthMonitor(r.nodeMgr, r.serverRepo, r.chainLinkRepo, r.exitCfgRepo)
+	monitor.OnStatusChange(func() {
+		log.Println("[ChainHealthRegistry] exit status changed, config sync will pick up on next cycle")
+	})
+
+	r.monitor = monitor
+	r.started = true
+
+	go monitor.RunLoop(monitorCtx)
+
+	log.Println("[ChainHealthRegistry] health monitor started")
 	return nil
 }
 
-// startMonitor starts a health monitor for a single chain_entry.
-func (r *ChainHealthMonitorRegistry) startMonitor(ctx context.Context, entry *entity.NodeServer) {
-	cfg, err := ParseChainConfig(entry.ChainConfig)
-	if err != nil || cfg == nil || len(cfg.Exits) == 0 {
-		log.Printf("[ChainHealthRegistry] chain_entry %d has no valid chain_config, skipping", entry.ID)
-		return
-	}
-
-	monitor := NewChainExitHealthMonitor(entry.ID, cfg.Exits, r.nodeMgr, r.serverRepo).
-		WithCheckInterval(cfg.HealthCheckInterval()).
-		WithFailThreshold(cfg.HealthCheckFailThreshold())
-
-	monitor.OnStatusChange(func(entryID int64) {
-		log.Printf("[ChainHealthRegistry] entry %d exit status changed, triggering config regeneration", entryID)
-		// Config regeneration will be handled by the config sync service
-	})
-
-	r.mu.Lock()
-	r.monitors[entry.ID] = monitor
-	r.mu.Unlock()
-
-	go monitor.RunLoop(ctx)
-}
-
-// GetMonitor returns the health monitor for a specific chain_entry.
-func (r *ChainHealthMonitorRegistry) GetMonitor(entryID int64) *ChainExitHealthMonitor {
+// GetMonitor returns the health monitor.
+func (r *ChainHealthMonitorRegistry) GetMonitor() *ChainHealthMonitor {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.monitors[entryID]
+	return r.monitor
 }
 
-// StopAll stops all health monitors.
+// StopAll stops the health monitor.
 func (r *ChainHealthMonitorRegistry) StopAll() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Monitors will stop when their context is cancelled
-	r.monitors = make(map[int64]*ChainExitHealthMonitor)
-	log.Println("[ChainHealthRegistry] all monitors stopped")
+
+	if r.cancel != nil {
+		r.cancel()
+	}
+	r.started = false
+	r.monitor = nil
+	log.Println("[ChainHealthRegistry] health monitor stopped")
 }

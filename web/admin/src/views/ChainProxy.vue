@@ -460,9 +460,13 @@ const extServerForm = ref({
 // Compute node positions in a left-to-right directed graph
 const topoLayout = computed(() => {
   if (!topoNodes.value.length) return []
-  // Separate entries (left) from exits (right) from external (far right)
-  const entries = topoNodes.value.filter(n => n.role === 'entry' || n.role === 'entry+exit' || n.role === 'exit+entry')
-  const exits = topoNodes.value.filter(n => n.role === 'exit')
+  // Layout strategy: 3 columns
+  // Col 0 (left):  pure entry nodes (role === 'entry')
+  // Col 1 (mid):   entry+exit nodes (role === 'entry+exit' or 'exit+entry')
+  // Col 2 (right): pure exit nodes (role === 'exit') + external entries
+  const pureEntries = topoNodes.value.filter(n => n.role === 'entry')
+  const dualRoles = topoNodes.value.filter(n => n.role === 'entry+exit' || n.role === 'exit+entry')
+  const pureExits = topoNodes.value.filter(n => n.role === 'exit')
   const externals = topoNodes.value.filter(n => n.role === 'external_entry' || n.type === 'external')
 
   const nodeH = 54
@@ -471,22 +475,26 @@ const topoLayout = computed(() => {
   const padY = 20
 
   const layout = []
-  // Place entries in left column
-  entries.forEach((n, i) => {
+  // Place pure entries in left column
+  pureEntries.forEach((n, i) => {
     layout.push({ ...n, x: padX, y: padY + i * nodeH, col: 0 })
   })
-  // Place exits in middle column
-  exits.forEach((n, i) => {
+  // Place dual-role nodes in middle column
+  dualRoles.forEach((n, i) => {
     layout.push({ ...n, x: padX + colW, y: padY + i * nodeH, col: 1 })
   })
-  // Place externals in right column
-  externals.forEach((n, i) => {
+  // Place pure exits in right column
+  pureExits.forEach((n, i) => {
     layout.push({ ...n, x: padX + colW * 2, y: padY + i * nodeH, col: 2 })
+  })
+  // Place externals in far-right column
+  externals.forEach((n, i) => {
+    layout.push({ ...n, x: padX + colW * 3, y: padY + i * nodeH, col: 3 })
   })
   return layout
 })
 
-const svgWidth = computed(() => 480)
+const svgWidth = computed(() => Math.max(480, (Math.max(...topoLayout.value.map(n => n.col), 0) + 1) * 200 + 40))
 const svgHeight = computed(() => Math.max(200, topoLayout.value.length * 54 + 40))
 
 // Compute edges for the directed graph

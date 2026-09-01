@@ -201,6 +201,49 @@
         <el-button type="primary" @click="saveBalancer">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Chain Proxy Auto-Injected (read-only) -->
+    <el-divider content-position="left">
+      {{ t('protoCenter.routing.chainAutoInjected') }}
+    </el-divider>
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+      {{ t('protoCenter.routing.chainAutoInjectedHint') }}
+    </el-alert>
+    <div v-if="!chainRules.length && !chainBalancers.length && !chainOutbounds.length" class="rule-item" style="text-align:center;color:#909399">
+      {{ t('common.noData') }}
+    </div>
+    <template v-if="chainOutbounds.length">
+      <div style="font-size:13px;color:#909399;margin-bottom:6px">{{ t('protoCenter.routing.chainOutbounds') }} ({{ chainOutbounds.length }})</div>
+      <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="rule-item chain-item">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
+          <el-tag size="small">{{ ob.protocol }}</el-tag>
+          <span v-if="ob._server" style="font-size:12px;color:#909399">{{ ob._server }}:{{ ob._port }}</span>
+        </div>
+      </div>
+    </template>
+    <template v-if="chainRules.length">
+      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainRules') }} ({{ chainRules.length }})</div>
+      <div v-for="(r, i) in chainRules" :key="'cr'+i" class="rule-item chain-item">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-tag v-if="r.ruleTag" size="small" type="warning">{{ r.ruleTag }}</el-tag>
+          <el-tag v-if="r.outboundTag" size="small" type="info">{{ r.outboundTag }}</el-tag>
+          <el-tag v-if="r.balancerTag" size="small" type="warning">{{ r.balancerTag }}</el-tag>
+          <span v-if="r.inboundTag && r.inboundTag.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: r.inboundTag.join(',') }) }}</span>
+        </div>
+      </div>
+    </template>
+    <template v-if="chainBalancers.length">
+      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainBalancers') }} ({{ chainBalancers.length }})</div>
+      <div v-for="(b, i) in chainBalancers" :key="'cb'+i" class="rule-item chain-item">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
+          <el-tag size="small" type="info">{{ b.strategy?.type || 'random' }}</el-tag>
+          <span v-if="b.selector && b.selector.length" style="font-size:12px;color:#909399">selector: {{ b.selector.join(', ') }}</span>
+          <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.fallbackShort', { value: b.fallbackTag }) }}</span>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -413,10 +456,54 @@ async function saveAndApply(routing) {
   ElMessage.success(t('common.success'))
 }
 
-onMounted(function() { sync(); loadTags(); loadGeoStatus() })
+onMounted(function() { sync(); loadTags(); loadGeoStatus(); loadChainProxy() })
+
+// Chain proxy auto-injected content (read-only, from final xray config)
+const chainRules = ref([])
+const chainBalancers = ref([])
+const chainOutbounds = ref([])
+
+async function loadChainProxy() {
+  try {
+    // Fetch the final xray config (includes chain proxy auto-injected content)
+    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType || 'xray'}/config-file`, { suppressErrorMessage: true })
+    if (!data) return
+    const cfg = typeof data === 'string' ? JSON.parse(data) : data
+    // Extract chain proxy outbounds (tag starts with 'chain-')
+    const allObs = cfg.outbounds || []
+    chainOutbounds.value = allObs.filter(ob => {
+      const tag = ob?.tag || ''
+      return tag.startsWith('chain-')
+    }).map(ob => {
+      let server = '', port = ''
+      const vnext = ob?.settings?.vnext?.[0]
+      if (vnext) { server = vnext.address || ''; port = vnext.port || '' }
+      const servers = ob?.settings?.servers?.[0]
+      if (servers) { server = servers.address || ''; port = servers.port || '' }
+      return { ...ob, _server: server, _port: port }
+    })
+    // Extract chain proxy routing rules (ruleTag starts with 'exit-')
+    const routing = cfg.routing || {}
+    const allRules = routing.rules || []
+    chainRules.value = allRules.filter(r => {
+      const rt = r?.ruleTag || ''
+      return rt.startsWith('exit-')
+    })
+    // Extract chain proxy balancers (tag starts with 'bal-chain-')
+    chainBalancers.value = (routing.balancers || []).filter(b => {
+      const tag = b?.tag || ''
+      return tag.startsWith('bal-chain-')
+    })
+  } catch {
+    chainRules.value = []
+    chainBalancers.value = []
+    chainOutbounds.value = []
+  }
+}
 </script>
 
 <style scoped>
 .rule-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+.chain-item { background: var(--el-color-warning-light-9); border: 1px dashed var(--el-color-warning-light-5); }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
 </style>

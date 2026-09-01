@@ -403,6 +403,11 @@ export default {
       baselinesHint: 'Max acceptable RTT standard deviation',
       geoWarning: 'Missing geo files: ',
       geoWarningHint: 'Download from Rule Management before using geoip:/geosite: rules',
+      chainAutoInjected: 'Chain Proxy Auto-Injected (Read-Only)',
+      chainAutoInjectedHint: 'The following outbounds, routing rules, and balancers are automatically generated from chain proxy config. They are re-injected on every config sync. Do not edit manually — use the Chain Proxy page to modify.',
+      chainOutbounds: 'Chain Outbounds',
+      chainRules: 'Chain Routing Rules',
+      chainBalancers: 'Chain Balancers',
     },
     inbounds: {
       title: 'Inbound List',

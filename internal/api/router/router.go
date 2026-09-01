@@ -2946,7 +2946,7 @@ func isSPARoute(path string) bool {
 		"/",
 		"/login",
 		"/dashboard",
-		"chain-proxy",
+		"/chain-proxy",
 		"/online-users",
 		"/nodes",
 		"/services",

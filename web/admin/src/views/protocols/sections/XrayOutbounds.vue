@@ -1214,6 +1214,26 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- Chain Proxy Auto-Injected Outbounds (read-only) -->
+    <el-divider content-position="left">
+      {{ t('protoCenter.routing.chainAutoInjected') }}
+    </el-divider>
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+      {{ t('protoCenter.routing.chainAutoInjectedHint') }}
+    </el-alert>
+    <div v-if="!chainOutbounds.length" class="outbound-item" style="text-align:center;color:#909399">
+      {{ t('common.noData') }}
+    </div>
+    <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="outbound-item chain-item">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:8px">
+          <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
+          <el-tag size="small">{{ ob.protocol }}</el-tag>
+          <span v-if="ob._server" style="font-size:12px;color:#909399">{{ ob._server }}:{{ ob._port }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -2341,10 +2361,36 @@ async function importWarp() {
 
 
 watch(() => props.data, loadOutbounds, { deep: true })
-onMounted(() => { loadOutbounds(); loadInboundTags() })
+onMounted(() => { loadOutbounds(); loadInboundTags(); loadChainOutbounds() })
+
+// Chain proxy auto-injected outbounds (read-only, from final xray config)
+const chainOutbounds = ref([])
+
+async function loadChainOutbounds() {
+  try {
+    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType || 'xray'}/config-file`, { suppressErrorMessage: true })
+    if (!data) return
+    const cfg = typeof data === 'string' ? JSON.parse(data) : data
+    const allObs = cfg.outbounds || []
+    chainOutbounds.value = allObs.filter(ob => {
+      const tag = ob?.tag || ''
+      return tag.startsWith('chain-')
+    }).map(ob => {
+      let server = '', port = ''
+      const vnext = ob?.settings?.vnext?.[0]
+      if (vnext) { server = vnext.address || ''; port = vnext.port || '' }
+      const servers = ob?.settings?.servers?.[0]
+      if (servers) { server = servers.address || ''; port = servers.port || '' }
+      return { ...ob, _server: server, _port: port }
+    })
+  } catch {
+    chainOutbounds.value = []
+  }
+}
 </script>
 <style scoped>
 .outbound-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+.chain-item { background: var(--el-color-warning-light-9); border: 1px dashed var(--el-color-warning-light-5); }
 .hint { font-size: 12px; color: #909399; margin-top: 2px; }
 :deep(.el-dialog__body) { max-height: calc(100vh - 200px); overflow-y: auto; }
 </style>

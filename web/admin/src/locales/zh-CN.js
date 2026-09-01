@@ -403,6 +403,11 @@ export default {
       baselinesHint: '最高可接受 RTT 标准差',
       geoWarning: '缺少 geo 文件：',
       geoWarningHint: '请先到规则管理下载后再使用 geoip:/geosite: 规则',
+      chainAutoInjected: '链式代理自动注入（只读）',
+      chainAutoInjectedHint: '以下 outbounds、路由规则和负载均衡器由链式代理配置自动生成，每次配置同步时重新注入。请勿手动编辑，如需修改请在「链式代理」页面操作。',
+      chainOutbounds: '链式出站',
+      chainRules: '链式路由规则',
+      chainBalancers: '链式负载均衡器',
     },
     inbounds: {
       title: '入站列表',

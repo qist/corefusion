@@ -602,6 +602,49 @@
             </el-table-column>
           </el-table>
         </el-card>
+
+        <!-- Scheduler Interval Config -->
+        <el-card shadow="hover" style="margin-top:16px">
+          <template #header>
+            <div class="card-header-flex">
+              <div>
+                <span style="font-weight:600">{{ t('logManage.schedulerConfigTitle') }}</span>
+                <span class="header-hint">{{ t('logManage.schedulerConfigHint') }}</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <el-button type="primary" :loading="schedulerSaving" @click="saveSchedulerConfig">
+                  {{ t('common.save') }}
+                </el-button>
+                <el-button @click="fetchSchedulerConfig" :loading="schedulerLoading">
+                  <el-icon><Refresh /></el-icon>{{ t('common.refresh') }}
+                </el-button>
+              </div>
+            </div>
+          </template>
+          <el-table :data="schedulerItems" v-loading="schedulerLoading" stripe size="small">
+            <el-table-column prop="label" :label="t('logManage.schedulerColName')" min-width="280" />
+            <el-table-column :label="t('logManage.schedulerColInterval')" width="180">
+              <template #default="{row}">
+                <el-input-number
+                  v-model="row.value"
+                  :min="1"
+                  :max="10080"
+                  size="small"
+                  style="width:120px"
+                />
+                <span style="margin-left:6px;font-size:12px;color:#909399">{{ t('logManage.schedulerUnitMin') }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('logManage.schedulerColDefault')" width="120">
+              <template #default="{row}">
+                <span style="font-size:12px;color:#909399">{{ row.default }} {{ t('logManage.schedulerUnitMin') }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div style="margin-top:8px;font-size:11px;color:#909399">
+            {{ t('logManage.schedulerRestartHint') }}
+          </div>
+        </el-card>
       </el-tab-pane>
     </el-tabs>
 
@@ -1741,6 +1784,38 @@ async function handleCleanupAll() {
   }
 }
 
+// ═══════════════ Scheduler Interval Config ═══════════════
+
+const schedulerItems = ref([])
+const schedulerLoading = ref(false)
+const schedulerSaving = ref(false)
+
+async function fetchSchedulerConfig() {
+  schedulerLoading.value = true
+  try {
+    const r = await logApi.getSchedulerConfig()
+    schedulerItems.value = Array.isArray(r?.items) ? r.items : []
+  } catch {
+    schedulerItems.value = []
+  } finally {
+    schedulerLoading.value = false
+  }
+}
+
+async function saveSchedulerConfig() {
+  schedulerSaving.value = true
+  try {
+    await logApi.updateSchedulerConfig(
+      schedulerItems.value.map(item => ({ key: item.key, value: item.value }))
+    )
+    ElMessage.success(t('logManage.schedulerSaveSuccess'))
+  } catch (e) {
+    ElMessage.error(e?.message || 'Save failed')
+  } finally {
+    schedulerSaving.value = false
+  }
+}
+
 async function handleCleanupTable(row) {
   await ElMessageBox.confirm(
     t('logManage.cleanupConfirmTable', { name: row.display_name, days: row.retain_days }),
@@ -1768,6 +1843,9 @@ watch(activeTab, (val) => {
   }
   if (val === 'cleanup' && cleanupRules.value.length === 0) {
     fetchCleanupRules()
+  }
+  if (val === 'cleanup' && schedulerItems.value.length === 0) {
+    fetchSchedulerConfig()
   }
 })
 

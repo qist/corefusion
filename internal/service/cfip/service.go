@@ -289,13 +289,16 @@ func (s *Service) SeedDefaultSources(ctx context.Context) error {
 	return nil
 }
 
-// StartScheduler starts the background scheduler.
-func (s *Service) StartScheduler(ctx context.Context) {
+// StartScheduler starts the background scheduler with the given check interval.
+func (s *Service) StartScheduler(ctx context.Context, checkInterval time.Duration) {
+	if checkInterval <= 0 {
+		checkInterval = 5 * time.Minute
+	}
 	go func() {
 		// Run an initial check immediately on startup
 		s.checkAndFetch(ctx)
 
-		ticker := time.NewTicker(5 * time.Minute)
+		ticker := time.NewTicker(checkInterval)
 		defer ticker.Stop()
 
 		for {

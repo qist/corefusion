@@ -18,10 +18,13 @@ type LogCleanupService struct {
 }
 
 // NewLogCleanupService creates a new log cleanup service.
-func NewLogCleanupService(db *gorm.DB) *LogCleanupService {
+func NewLogCleanupService(db *gorm.DB, cleanupInterval time.Duration) *LogCleanupService {
+	if cleanupInterval <= 0 {
+		cleanupInterval = 6 * time.Hour
+	}
 	return &LogCleanupService{
 		db:       db,
-		interval: 6 * time.Hour,
+		interval: cleanupInterval,
 	}
 }
 

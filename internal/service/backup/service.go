@@ -2284,16 +2284,21 @@ func maskDSN(dsn string) string {
 
 // BackupScheduler handles scheduled backup execution.
 type BackupScheduler struct {
-	svc     *Service
-	stopCh  chan struct{}
-	running bool
+	svc      *Service
+	stopCh   chan struct{}
+	running  bool
+	interval time.Duration
 }
 
-// NewBackupScheduler creates a new backup scheduler.
-func NewBackupScheduler(svc *Service) *BackupScheduler {
+// NewBackupScheduler creates a new backup scheduler with the given check interval.
+func NewBackupScheduler(svc *Service, checkInterval time.Duration) *BackupScheduler {
+	if checkInterval <= 0 {
+		checkInterval = 1 * time.Minute
+	}
 	return &BackupScheduler{
-		svc:    svc,
-		stopCh: make(chan struct{}),
+		svc:      svc,
+		stopCh:   make(chan struct{}),
+		interval: checkInterval,
 	}
 }
 
@@ -2318,7 +2323,7 @@ func (s *BackupScheduler) Stop() {
 }
 
 func (s *BackupScheduler) run() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
 	for {

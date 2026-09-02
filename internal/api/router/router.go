@@ -471,10 +471,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	planOrderRepo := repository.NewPlanOrderRepository(database)
 	extNodeRepo := repository.NewExternalNodeRepository(database)
 	planSvcInst := planSvc.NewService(database, planTmplRepo, planVariantRepo, nodeGroupRepo, nodeGroupMemberRepo, promoRepo, planOrderRepo, clientRepo, inboundConfigRepo, extNodeRepo)
-	// Trial plan auto-convert/expiry scheduler (hourly)
-	planSvcInst.StartTrialScheduler(context.Background(), time.Hour)
-	// Pending downgrade auto-execution scheduler (every 5 minutes)
-	planSvcInst.StartDowngradeScheduler(context.Background(), 5*time.Minute)
+	// Scheduler start is deferred until after systemSettingSvc is created (below)
+	// to allow reading configurable intervals from DB.
 
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
@@ -520,6 +518,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	certSvc.SyncCertsToDisk(nil)
 	binaryResolver := binariesSvc.NewResolver(dataDir)
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
+
+	// ── Start background schedulers with configurable intervals ──
+	// All intervals are read from system_settings (scheduler.* prefix).
+	// Defaults are used if settings are missing or invalid.
+	schedCfg, _ := systemSettingSvc.GetSchedulerConfig(context.Background())
+	// Trial plan auto-convert/expiry scheduler
+	planSvcInst.StartTrialScheduler(context.Background(), time.Duration(schedCfg.TrialScanInterval)*time.Minute)
+	// Pending downgrade auto-execution scheduler
+	planSvcInst.StartDowngradeScheduler(context.Background(), time.Duration(schedCfg.DowngradeScanInterval)*time.Minute)
+
 	geoRuleSvcInst := geoRuleSvc.NewService(ruleSourceRepo, geoRuleRepo, dataDir, systemSettingSvc)
 
 	// WAF Rule Store (unified nginx/caddy rules in database)
@@ -551,7 +559,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	backupSvcInst := backupService.NewService(backupRepo, dataDir, database)
 	// Start the backup scheduler so scheduled backups and the retention policy
 	// actually run (it was previously defined but never started).
-	backupScheduler := backupService.NewBackupScheduler(backupSvcInst)
+	backupScheduler := backupService.NewBackupScheduler(backupSvcInst, time.Duration(schedCfg.BackupCheckInterval)*time.Minute)
 	backupScheduler.Start()
 	systemSvc.RegisterNotifier(notifier, repository.NewNotificationTemplateRepository(database))
 	audit.Register(database)
@@ -817,15 +825,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	commerceH := clientauthHandler.NewCommerceHandler(commerceSvcInst)
 
-	// Start callback retry scheduler (runs every 1 minute)
-	commerceSvcInst.StartRetryScheduler(1 * time.Minute)
+	// Start callback retry scheduler
+	commerceSvcInst.StartRetryScheduler(time.Duration(schedCfg.CallbackRetryInterval) * time.Minute)
 
-	// v3.2: Start processing recovery scheduler (runs every 1 minute)
+	// v3.2: Start processing recovery scheduler
 	// Recovers stuck processing orders, cleans up nonces (24h) and expired secrets (7d)
-	commerceSvcInst.StartProcessingRecovery(1 * time.Minute)
+	commerceSvcInst.StartProcessingRecovery(time.Duration(schedCfg.ProcessingRecoveryInterval) * time.Minute)
 
-	// Start expired order cleanup scheduler (runs every 5 minutes)
-	commerceSvcInst.StartCleanupScheduler(5 * time.Minute)
+	// Start expired order cleanup scheduler
+	commerceSvcInst.StartCleanupScheduler(time.Duration(schedCfg.OrderCleanupInterval) * time.Minute)
 
 	// P1-P3 extended services
 	referralSvcInst := clientauthSvc.NewReferralService(
@@ -948,8 +956,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
 	logManageH := logManageHandler.NewHandler(logManageSvc)
 	// Create log cleanup service for DB table cleanup rules
-	logCleanupSvc := trafficSvc.NewLogCleanupService(database)
-	cleanupH := logManageHandler.NewCleanupHandler(logCleanupSvc)
+	logCleanupSvc := trafficSvc.NewLogCleanupService(database, time.Duration(schedCfg.LogCleanupInterval)*time.Minute)
+	cleanupH := logManageHandler.NewCleanupHandler(logCleanupSvc).WithSettingStore(systemSettingSvc)
 	// Wire node log manager for centralized remote node log management
 	if sharedNodeMgr != nil {
 		logManageHandler.SetNodeLogManager(sharedNodeMgr)
@@ -1240,7 +1248,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			cfipSourceRepo := repository.NewCFIPSourceRepository(database)
 			cfipEntryRepo := repository.NewCFIPEntryRepository(database)
 			cfipSvcInst := cfipSvc.NewService(cfipSourceRepo, cfipEntryRepo)
-			cfipSvcInst.StartScheduler(context.Background())
+			cfipSvcInst.StartScheduler(context.Background(), time.Duration(schedCfg.CFIPCheckInterval)*time.Minute)
 			cfipH := cfipHandler.NewHandler(cfipSvcInst)
 			cfipGroup := protected.Group("/cfip")
 			{
@@ -2357,8 +2365,8 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 				systemGroup.PUT("/settings/batch", systemH.BatchUpdateSettings)
 				systemGroup.GET("/encryption-key-status", systemH.GetEncryptionKeyStatus)
 				systemGroup.GET("/jwt-secret-status", systemH.GetJWTSecretStatus)
-				systemGroup.GET("/env-config", systemH.GetEnvConfig)
-				systemGroup.PUT("/env-config", systemH.UpdateEnvConfig)
+systemGroup.GET("/env-config", systemH.GetEnvConfig)
+	systemGroup.PUT("/env-config", systemH.UpdateEnvConfig)
 
 				// Maintenance mode (GET is public via v1 group below; PUT requires admin)
 				systemGroup.PUT("/maintenance", systemH.UpdateMaintenance)
@@ -2410,11 +2418,14 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
 				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
 
-				// Database table cleanup rules
-				logManageGroup.GET("/cleanup-rules", cleanupH.ListCleanupRules)
-				logManageGroup.PUT("/cleanup-rules/:id", cleanupH.UpdateCleanupRule)
-				logManageGroup.POST("/cleanup-all", cleanupH.CleanupAll)
-				logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
+// Database table cleanup rules
+logManageGroup.GET("/cleanup-rules", cleanupH.ListCleanupRules)
+logManageGroup.PUT("/cleanup-rules/:id", cleanupH.UpdateCleanupRule)
+logManageGroup.POST("/cleanup-all", cleanupH.CleanupAll)
+logManageGroup.POST("/cleanup-table/:table", cleanupH.CleanupTable)
+// Scheduler interval configuration
+logManageGroup.GET("/scheduler-config", cleanupH.GetSchedulerConfig)
+logManageGroup.PUT("/scheduler-config", cleanupH.UpdateSchedulerConfig)
 				// Node-based centralized log management
 				logManageGroup.GET("/nodes/:serverId/logs", logManageH.ListNodeLogs)
 				logManageGroup.GET("/nodes/:serverId/logs/:type", logManageH.GetNodeLog)
@@ -2851,7 +2862,7 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 		// Start auto-writers after proxy is started (broker is available)
 		logManageSvc.StartAutoWriters()
 	}()
-	logManageSvc.Start()
+	logManageSvc.Start(time.Duration(schedCfg.ClientLogCleanupInterval)*time.Minute, time.Duration(schedCfg.WAFLogCleanupInterval)*time.Minute)
 
 	// Start config sync service (periodically syncs DB configs to disk)
 	configSyncSvc.Start()

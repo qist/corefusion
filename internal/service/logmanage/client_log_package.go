@@ -270,8 +270,8 @@ func (s *Service) CleanupExpiredPackages(ctx context.Context) error {
 }
 
 // clientLogCleanupLoop periodically cleans up expired client log packages.
-func (s *Service) clientLogCleanupLoop() {
-	ticker := time.NewTicker(10 * time.Minute)
+func (s *Service) clientLogCleanupLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for range ticker.C {
 		ctx := context.Background()

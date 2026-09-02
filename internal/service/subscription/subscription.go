@@ -98,7 +98,7 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 	}
 
 	// 2. Natural expiry.
-	expired, err := s.repo.ListExpired(ctx, now)
+	expired, err := s.repo.ListExpired(ctx, now, 5000)
 	if err != nil {
 		return err
 	}

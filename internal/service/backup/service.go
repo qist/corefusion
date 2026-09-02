@@ -1252,7 +1252,14 @@ func (s *Service) extractTarGz(archive, dest string) error {
 		}
 
 		target := filepath.Join(dest, header.Name)
-		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dest)) {
+		cleanDest := filepath.Clean(dest)
+		cleanTarget := filepath.Clean(target)
+
+		// Security: use filepath.Rel to detect path traversal attempts.
+		// HasPrefix alone is insufficient — "/data/backup-evil" would pass
+		// a HasPrefix("/data/backup") check but escapes the destination.
+		rel, err := filepath.Rel(cleanDest, cleanTarget)
+		if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
 			continue // skip path traversal
 		}
 
@@ -1270,6 +1277,10 @@ func (s *Service) extractTarGz(archive, dest string) error {
 				return err
 			}
 			f.Close()
+		case tar.TypeSymlink, tar.TypeLink:
+			// Security: explicitly skip symlinks and hardlinks to prevent
+			// arbitrary file writes/reads via crafted archives.
+			continue
 		}
 	}
 	return nil

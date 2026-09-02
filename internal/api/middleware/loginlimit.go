@@ -145,3 +145,117 @@ func LoginRateLimit() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// --- Client (portal) login rate limiter ---
+//
+// Portal users have a larger user base than admins, so we use more lenient
+// thresholds: 10 failures in 30 minutes → 30 minute lockout. This still
+// slows down credential stuffing without overly penalizing legitimate users
+// who mistype their password.
+
+const (
+	clientLoginMaxFailures   = 10
+	clientLoginLockout        = 30 * time.Minute
+	clientLoginFailureWindow  = 30 * time.Minute
+)
+
+type clientLoginLimiterType struct {
+	mu       sync.Mutex
+	attempts map[string]*loginAttempt
+	lastGC   time.Time
+}
+
+func newClientLoginLimiter() *clientLoginLimiterType {
+	return &clientLoginLimiterType{
+		attempts: make(map[string]*loginAttempt),
+		lastGC:   time.Now(),
+	}
+}
+
+func (l *clientLoginLimiterType) prune(a *loginAttempt, now time.Time) {
+	cutoff := now.Add(-clientLoginFailureWindow)
+	kept := a.failures[:0]
+	for _, ts := range a.failures {
+		if ts.After(cutoff) {
+			kept = append(kept, ts)
+		}
+	}
+	a.failures = kept
+}
+
+func (l *clientLoginLimiterType) gc(now time.Time) {
+	if now.Sub(l.lastGC) < time.Minute {
+		return
+	}
+	l.lastGC = now
+	for key, a := range l.attempts {
+		l.prune(a, now)
+		if len(a.failures) == 0 && now.After(a.lockedUntil) {
+			delete(l.attempts, key)
+		}
+	}
+}
+
+func (l *clientLoginLimiterType) Allowed(key string) (bool, time.Duration) {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.gc(now)
+
+	a, ok := l.attempts[key]
+	if !ok {
+		return true, 0
+	}
+	if now.Before(a.lockedUntil) {
+		return false, time.Until(a.lockedUntil)
+	}
+	return true, 0
+}
+
+func (l *clientLoginLimiterType) RecordFailure(key string) {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	a, ok := l.attempts[key]
+	if !ok {
+		a = &loginAttempt{}
+		l.attempts[key] = a
+	}
+
+	l.prune(a, now)
+	a.failures = append(a.failures, now)
+
+	if len(a.failures) >= clientLoginMaxFailures {
+		a.lockedUntil = now.Add(clientLoginLockout)
+		a.failures = nil
+	}
+}
+
+func (l *clientLoginLimiterType) RecordSuccess(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, key)
+}
+
+var defaultClientLoginLimiter = newClientLoginLimiter()
+
+// DefaultClientLoginLimiter returns the process-wide client login limiter.
+func DefaultClientLoginLimiter() *clientLoginLimiterType {
+	return defaultClientLoginLimiter
+}
+
+// ClientLoginRateLimit rejects client login attempts from an IP that has
+// recently failed too many times. More lenient than admin limiter.
+func ClientLoginRateLimit() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := c.ClientIP()
+		if allowed, retryAfter := defaultClientLoginLimiter.Allowed(key); !allowed {
+			response.TooManyRequests(c, "TOO_MANY_ATTEMPTS",
+				"too many failed login attempts, retry in "+retryAfter.Round(time.Second).String())
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}

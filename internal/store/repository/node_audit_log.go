@@ -47,12 +47,17 @@ func (r *NodeAuditLogRepository) List(ctx context.Context, serverID int64, actio
 	return logs, total, err
 }
 
-// ListByTimeRange returns audit logs within a time range.
-func (r *NodeAuditLogRepository) ListByTimeRange(ctx context.Context, from, to time.Time) ([]entity.NodeAuditLog, error) {
+// ListByTimeRange returns audit logs within a time range, limited to prevent
+// unbounded memory consumption under high audit traffic.
+func (r *NodeAuditLogRepository) ListByTimeRange(ctx context.Context, from, to time.Time, limit int) ([]entity.NodeAuditLog, error) {
+	if limit <= 0 || limit > 10000 {
+		limit = 1000
+	}
 	var logs []entity.NodeAuditLog
 	err := r.db.WithContext(ctx).
 		Where("created_at BETWEEN ? AND ?", from, to).
 		Order("created_at DESC").
+		Limit(limit).
 		Find(&logs).Error
 	return logs, err
 }

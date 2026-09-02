@@ -2289,7 +2289,7 @@ func (s *Service) ListAuditLogsByTimeRange(ctx context.Context, from, to time.Ti
 	if s.auditLogRepo == nil {
 		return nil, nil
 	}
-	return s.auditLogRepo.ListByTimeRange(ctx, from, to)
+	return s.auditLogRepo.ListByTimeRange(ctx, from, to, 1000)
 }
 
 // ──────────────────── Supplementary: Node Tags ────────────────────

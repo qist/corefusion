@@ -314,7 +314,7 @@ func validateMarkdownModule(mod map[string]interface{}) error {
 
 // validateFreeformModule validates a freeform module (HTML+CSS+JS).
 // Unlike other modules, freeform content is NOT sanitized — the admin has full control.
-// Basic safety checks only: size limits and blocking of eval().
+// Basic safety checks only: size limits and blocking of dangerous JS patterns.
 func validateFreeformModule(mod map[string]interface{}) error {
 	data, ok := mod["data"].(map[string]interface{})
 	if !ok {
@@ -328,10 +328,10 @@ func validateFreeformModule(mod map[string]interface{}) error {
 		}
 	}
 
-	// Basic safety: block eval() in JS
+	// Basic safety: block dangerous JS patterns in freeform JS
 	if js, ok := data["js"].(string); ok {
-		if strings.Contains(js, "eval(") {
-			return fmt.Errorf("eval() is not allowed in freeform JS")
+		if err := checkDangerousJS(js, "freeform"); err != nil {
+			return err
 		}
 	}
 
@@ -400,6 +400,31 @@ func stripHTMLTags(s string) string {
 	return htmlTagRe.ReplaceAllString(s, "")
 }
 
+// dangerousJSPatterns are patterns that allow arbitrary code execution
+// or data exfiltration from the browser. These are blocked in freeform
+// and region JS to reduce the blast radius of a compromised admin session.
+var dangerousJSPatterns = []struct {
+	pattern string
+	reason  string
+}{
+	{"eval(", "eval()"},
+	{"Function(", "new Function()"},
+	{"setTimeout(", "setTimeout with string argument"},
+	{"setInterval(", "setInterval with string argument"},
+}
+
+// checkDangerousJS scans JS source for dangerous patterns that could enable
+// arbitrary code execution or credential exfiltration. It catches common
+// bypasses of the simple eval() check.
+func checkDangerousJS(js, context string) error {
+	for _, p := range dangerousJSPatterns {
+		if strings.Contains(js, p.pattern) {
+			return fmt.Errorf("%s: %s is not allowed in JS", context, p.reason)
+		}
+	}
+	return nil
+}
+
 // joinAllowedTypes returns a comma-separated list of allowed module types.
 func joinAllowedTypes() string {
 	types := make([]string, 0, len(allowedModuleTypes))
@@ -435,10 +460,10 @@ func validateRegions(regionsRaw json.RawMessage) (json.RawMessage, error) {
 			}
 		}
 
-		// Basic safety: block eval() in JS
+		// Basic safety: block dangerous JS patterns in region JS
 		if js, ok := region["js"].(string); ok {
-			if strings.Contains(js, "eval(") {
-				return nil, fmt.Errorf("region %q: eval() is not allowed in JS", name)
+			if err := checkDangerousJS(js, fmt.Sprintf("region %q", name)); err != nil {
+				return nil, err
 			}
 		}
 	}

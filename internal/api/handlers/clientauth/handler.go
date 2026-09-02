@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/pkg/netutil"
 	"corefusion/internal/service/audit"
@@ -82,6 +83,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	result, err := h.svc.Login(c.Request.Context(), input)
 	if err != nil {
+		middleware.DefaultClientLoginLimiter().RecordFailure(c.ClientIP())
 		audit.Record(audit.Event{
 			Category: "auth", EventType: "client_login", Result: "failure",
 			RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
@@ -90,6 +92,7 @@ func (h *Handler) Login(c *gin.Context) {
 		response.Unauthorized(c, "INVALID_CREDENTIALS", err.Error())
 		return
 	}
+	middleware.DefaultClientLoginLimiter().RecordSuccess(c.ClientIP())
 	audit.Record(audit.Event{
 		Category: "auth", EventType: "client_login", Result: "success",
 		UserID: result.Client.ID, RemoteIP: netutil.GetRealIP(c.Request),

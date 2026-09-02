@@ -2576,8 +2576,11 @@ func (s *CommerceService) verifyChargeCallback(input ChargeCallbackInput, bodyHa
 	payloadBytes, _ := json.Marshal(payload)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payloadBytes)
-	expectedSign := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(input.Sign), []byte(expectedSign))
+	got, err := hex.DecodeString(input.Sign)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(got, mac.Sum(nil))
 }
 
 // signChargePayload signs a charge request payload.

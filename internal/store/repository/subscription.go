@@ -138,11 +138,16 @@ func (r *SubscriptionRepository) ListQuotaExhausted(ctx context.Context) ([]enti
 	return subs, err
 }
 
-// ListExpired returns active subscriptions whose expires_at has already passed.
-func (r *SubscriptionRepository) ListExpired(ctx context.Context, now time.Time) ([]entity.Subscription, error) {
+// ListExpired returns active subscriptions whose expires_at has already passed,
+// limited to prevent unbounded memory consumption.
+func (r *SubscriptionRepository) ListExpired(ctx context.Context, now time.Time, limit int) ([]entity.Subscription, error) {
+	if limit <= 0 || limit > 10000 {
+		limit = 5000
+	}
 	var subs []entity.Subscription
 	err := r.db.WithContext(ctx).
 		Where("status = ? AND expires_at IS NOT NULL AND expires_at < ?", "active", now).
+		Limit(limit).
 		Find(&subs).Error
 	return subs, err
 }

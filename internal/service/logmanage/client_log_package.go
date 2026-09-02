@@ -254,7 +254,7 @@ func (s *Service) CleanupExpiredPackages(ctx context.Context) error {
 	if s.clientLogDeps == nil {
 		return nil
 	}
-	pkgs, err := s.clientLogDeps.PkgRepo.ListExpired(ctx)
+	pkgs, err := s.clientLogDeps.PkgRepo.ListExpired(ctx, 500)
 	if err != nil {
 		return err
 	}

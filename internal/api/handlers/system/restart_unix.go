@@ -3,21 +3,23 @@
 package system
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 // restartProcess restarts the current process (Unix).
+// Uses exec.Command with argument array (not sh -c) to eliminate the
+// command injection surface area entirely.
 func restartProcess() {
 	executable, err := os.Executable()
 	if err != nil {
 		os.Exit(0)
 	}
 
-	args := strings.Join(os.Args[1:], " ")
-	cmd := fmt.Sprintf("sleep 1 && exec %s %s", executable, args)
-	exec.Command("sh", "-c", cmd).Start()
+	// Pass args as an array — no shell interpretation needed.
+	cmd := exec.Command(executable, os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Start()
 	os.Exit(0)
 }

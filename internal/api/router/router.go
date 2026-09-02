@@ -2537,7 +2537,7 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
 	{
 		clientAuthGroup.POST("/register", clientauthH.Register)
-		clientAuthGroup.POST("/login", clientauthH.Login)
+		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)
 		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
 
 		// OAuth2 login routes (public — no auth required)
@@ -3265,7 +3265,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	clientAuthGroup := r.Group("/api/v1/client-auth")
 	{
 		clientAuthGroup.POST("/register", clientauthH.Register)
-		clientAuthGroup.POST("/login", clientauthH.Login)
+		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)
 		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
 	}
 

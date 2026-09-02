@@ -24,12 +24,17 @@ func (r *CertDistributionQueueRepository) Create(ctx context.Context, item *enti
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
-// ListPending returns all pending distribution items.
-func (r *CertDistributionQueueRepository) ListPending(ctx context.Context) ([]entity.CertDistributionQueueItem, error) {
+// ListPending returns pending distribution items, limited to prevent
+// unbounded memory consumption when many tasks accumulate.
+func (r *CertDistributionQueueRepository) ListPending(ctx context.Context, limit int) ([]entity.CertDistributionQueueItem, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
 	var items []entity.CertDistributionQueueItem
 	err := r.db.WithContext(ctx).
 		Where("status IN ?", []string{"pending", "failed"}).
 		Order("created_at ASC").
+		Limit(limit).
 		Find(&items).Error
 	return items, err
 }

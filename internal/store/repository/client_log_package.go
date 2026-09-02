@@ -37,11 +37,16 @@ func (r *ClientLogPackageRepository) Update(ctx context.Context, pkg *entity.Cli
 	return r.db.WithContext(ctx).Save(pkg).Error
 }
 
-// ListExpired returns all expired packages that need cleanup.
-func (r *ClientLogPackageRepository) ListExpired(ctx context.Context) ([]entity.ClientLogPackage, error) {
+// ListExpired returns expired packages that need cleanup, limited to prevent
+// unbounded memory consumption when many packages accumulate.
+func (r *ClientLogPackageRepository) ListExpired(ctx context.Context, limit int) ([]entity.ClientLogPackage, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
 	var pkgs []entity.ClientLogPackage
 	err := r.db.WithContext(ctx).
 		Where("status IN ? AND expires_at < ?", []string{"ready", "processing"}, time.Now()).
+		Limit(limit).
 		Find(&pkgs).Error
 	return pkgs, err
 }

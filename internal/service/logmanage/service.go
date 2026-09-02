@@ -184,15 +184,21 @@ func (s *Service) SetOnModeSwitch(fn func(proxyType string)) {
 	s.onModeSwitch = fn
 }
 
-// Start starts the background scheduler.
-func (s *Service) Start() {
+// Start starts the background scheduler with configurable cleanup intervals.
+func (s *Service) Start(clientLogCleanupInterval, wafLogCleanupInterval time.Duration) {
+	if clientLogCleanupInterval <= 0 {
+		clientLogCleanupInterval = 10 * time.Minute
+	}
+	if wafLogCleanupInterval <= 0 {
+		wafLogCleanupInterval = 24 * time.Hour
+	}
 	s.scheduler.Start()
 	// Start expired client log package cleanup if configured
 	if s.clientLogDeps != nil {
-		go s.clientLogCleanupLoop()
+		go s.clientLogCleanupLoop(clientLogCleanupInterval)
 	}
 	// Start WAF log cleanup (daily, removes date-based WAF logs older than retain days)
-	go s.wafLogCleanupLoop()
+	go s.wafLogCleanupLoop(wafLogCleanupInterval)
 }
 
 // Stop stops the background scheduler.
@@ -1142,13 +1148,13 @@ func (s *Service) resolveLogPath(path string) string {
 	return filepath.Join(s.dataDir, path)
 }
 
-// wafLogCleanupLoop runs daily to clean up expired WAF log files.
+// wafLogCleanupLoop runs at the given interval to clean up expired WAF log files.
 // WAF logs are date-based: logs/<date>_waf.log (e.g. logs/2026-08-25_waf.log).
 // Retain days are read from the "waf.log_retain_days" setting (default 30).
-func (s *Service) wafLogCleanupLoop() {
-	// Run once at startup, then daily
+func (s *Service) wafLogCleanupLoop(interval time.Duration) {
+	// Run once at startup, then on interval
 	s.cleanExpiredWAFLogs()
-	ticker := time.NewTicker(24 * time.Hour)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for range ticker.C {
 		s.cleanExpiredWAFLogs()
@@ -1160,9 +1166,13 @@ func (s *Service) wafLogCleanupLoop() {
 func (s *Service) cleanExpiredWAFLogs() {
 	retainDays := 30
 	if s.settingStore != nil {
-		if v, err := s.settingStore.GetByKey(context.Background(), "waf.log_retain_days"); err == nil && v != "" {
-			if d, err := strconv.Atoi(v); err == nil && d > 0 {
-				retainDays = d
+		// Try scheduler.waf_log_retain_days first, fall back to legacy waf.log_retain_days
+		for _, key := range []string{"scheduler.waf_log_retain_days", "waf.log_retain_days"} {
+			if v, err := s.settingStore.GetByKey(context.Background(), key); err == nil && v != "" {
+				if d, err := strconv.Atoi(v); err == nil && d > 0 {
+					retainDays = d
+					break
+				}
 			}
 		}
 	}

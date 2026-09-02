@@ -102,6 +102,83 @@ type SubscriptionBillingTemplateConfig struct {
 	Variables                []string `json:"variables,omitempty"`
 }
 
+// SchedulerConfig contains configurable intervals for background scheduled tasks.
+// All intervals are in minutes. A value of 0 means "use default".
+type SchedulerConfig struct {
+	LogCleanupInterval      int `json:"log_cleanup_interval"`       // DB log cleanup check interval (default: 360 = 6h)
+	ClientLogCleanupInterval int `json:"client_log_cleanup_interval"` // Expired client log package cleanup interval (default: 10 = 10m)
+	WAFLogCleanupInterval   int `json:"waf_log_cleanup_interval"`   // WAF log file cleanup interval (default: 1440 = 24h)
+	WAFLogRetainDays        int `json:"waf_log_retain_days"`        // WAF log retain days (default: 30)
+	BackupCheckInterval     int `json:"backup_check_interval"`      // Backup scheduler check interval (default: 1 = 1m)
+	CallbackRetryInterval   int `json:"callback_retry_interval"`   // Charge callback retry interval (default: 1 = 1m)
+	ProcessingRecoveryInterval int `json:"processing_recovery_interval"` // Stuck processing recovery interval (default: 1 = 1m)
+	OrderCleanupInterval   int `json:"order_cleanup_interval"`     // Expired order cleanup interval (default: 5 = 5m)
+	TrialScanInterval      int `json:"trial_scan_interval"`       // Trial expiry scan interval (default: 60 = 1h)
+	DowngradeScanInterval  int `json:"downgrade_scan_interval"`    // Pending downgrade scan interval (default: 5 = 5m)
+	CFIPCheckInterval      int `json:"cfip_check_interval"`       // CFIP source fetch check interval (default: 5 = 5m)
+}
+
+// DefaultSchedulerConfig returns default scheduler configuration.
+func DefaultSchedulerConfig() *SchedulerConfig {
+	return &SchedulerConfig{
+		LogCleanupInterval:          360,
+		ClientLogCleanupInterval:    10,
+		WAFLogCleanupInterval:       1440,
+		WAFLogRetainDays:            30,
+		BackupCheckInterval:         1,
+		CallbackRetryInterval:       1,
+		ProcessingRecoveryInterval: 1,
+		OrderCleanupInterval:        5,
+		TrialScanInterval:           60,
+		DowngradeScanInterval:       5,
+		CFIPCheckInterval:           5,
+	}
+}
+
+// GetSchedulerConfig retrieves scheduler configuration from database.
+func (s *SettingService) GetSchedulerConfig(ctx context.Context) (*SchedulerConfig, error) {
+	settings, err := s.repo.GetByPrefix(ctx, "scheduler.")
+	if err != nil {
+		return nil, err
+	}
+	config := DefaultSchedulerConfig()
+	setIntIfExist(settings, "scheduler.log_cleanup_interval", &config.LogCleanupInterval)
+	setIntIfExist(settings, "scheduler.client_log_cleanup_interval", &config.ClientLogCleanupInterval)
+	setIntIfExist(settings, "scheduler.waf_log_cleanup_interval", &config.WAFLogCleanupInterval)
+	setIntIfExist(settings, "scheduler.waf_log_retain_days", &config.WAFLogRetainDays)
+	setIntIfExist(settings, "scheduler.backup_check_interval", &config.BackupCheckInterval)
+	setIntIfExist(settings, "scheduler.callback_retry_interval", &config.CallbackRetryInterval)
+	setIntIfExist(settings, "scheduler.processing_recovery_interval", &config.ProcessingRecoveryInterval)
+	setIntIfExist(settings, "scheduler.order_cleanup_interval", &config.OrderCleanupInterval)
+	setIntIfExist(settings, "scheduler.trial_scan_interval", &config.TrialScanInterval)
+	setIntIfExist(settings, "scheduler.downgrade_scan_interval", &config.DowngradeScanInterval)
+	setIntIfExist(settings, "scheduler.cfip_check_interval", &config.CFIPCheckInterval)
+	return config, nil
+}
+
+// UpdateSchedulerConfig saves scheduler configuration to database.
+func (s *SettingService) UpdateSchedulerConfig(ctx context.Context, config *SchedulerConfig) error {
+	settings := map[string]string{
+		"scheduler.log_cleanup_interval":          strconv.Itoa(config.LogCleanupInterval),
+		"scheduler.client_log_cleanup_interval":    strconv.Itoa(config.ClientLogCleanupInterval),
+		"scheduler.waf_log_cleanup_interval":       strconv.Itoa(config.WAFLogCleanupInterval),
+		"scheduler.waf_log_retain_days":             strconv.Itoa(config.WAFLogRetainDays),
+		"scheduler.backup_check_interval":          strconv.Itoa(config.BackupCheckInterval),
+		"scheduler.callback_retry_interval":        strconv.Itoa(config.CallbackRetryInterval),
+		"scheduler.processing_recovery_interval":    strconv.Itoa(config.ProcessingRecoveryInterval),
+		"scheduler.order_cleanup_interval":         strconv.Itoa(config.OrderCleanupInterval),
+		"scheduler.trial_scan_interval":            strconv.Itoa(config.TrialScanInterval),
+		"scheduler.downgrade_scan_interval":        strconv.Itoa(config.DowngradeScanInterval),
+		"scheduler.cfip_check_interval":             strconv.Itoa(config.CFIPCheckInterval),
+	}
+	for key, value := range settings {
+		if err := s.repo.Set(ctx, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DefaultPanelConfig returns default panel configuration.
 func DefaultPanelConfig() *PanelConfig {
 	return &PanelConfig{
@@ -813,6 +890,14 @@ func (s *SettingService) Delete(ctx context.Context, key string) error {
 func setIfExist(m map[string]string, key string, target *string) {
 	if v, ok := m[key]; ok && v != "" {
 		*target = v
+	}
+}
+
+func setIntIfExist(m map[string]string, key string, target *int) {
+	if v, ok := m[key]; ok && v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			*target = n
+		}
 	}
 }
 

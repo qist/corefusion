@@ -162,6 +162,16 @@ export function cleanupTable(table) {
   return client.post(`/log-manage/cleanup-table/${table}`)
 }
 
+// ──────────── Scheduler Interval Config ────────────
+
+export function getSchedulerConfig() {
+  return client.get('/log-manage/scheduler-config')
+}
+
+export function updateSchedulerConfig(items) {
+  return client.put('/log-manage/scheduler-config', { items })
+}
+
 // ──────────── SSE Stream Helpers ────────────
 
 export function buildSSEUrl(path, params = {}) {

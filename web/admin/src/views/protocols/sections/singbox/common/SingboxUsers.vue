@@ -1,36 +1,36 @@
 <template>
   <div>
     <div v-for="(u, ui) in model.users" :key="ui" class="user-row">
-      <el-input v-model="u.name" placeholder="Email/Name" style="width:150px" @change="emit" />
+      <el-input v-model="u.name" :placeholder="t('singbox.users.name')" style="width:150px" @change="emit" />
       <template v-if="UUID_PROTOCOLS.includes(model.type)">
-        <el-input v-model="u.uuid" placeholder="UUID" style="width:190px" @change="emit" />
-        <el-button size="small" @click="u.uuid = generateUuid(); emit()">Generate</el-button>
+        <el-input v-model="u.uuid" :placeholder="t('singbox.users.uuid')" style="width:190px" @change="emit" />
+        <el-button size="small" @click="u.uuid = generateUuid(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
       <template v-if="AUTH_USER_PROTOCOLS.includes(model.type)">
-        <el-input v-model="u.username" placeholder="Username" style="width:130px" @change="emit" />
-        <el-button size="small" @click="u.username = generateUsername(); emit()">Gen</el-button>
+        <el-input v-model="u.username" :placeholder="t('singbox.users.username')" style="width:130px" @change="emit" />
+        <el-button size="small" @click="u.username = generateUsername(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
       <template v-if="PASSWORD_PROTOCOLS.includes(model.type) || AUTH_USER_PROTOCOLS.includes(model.type)">
-        <el-input v-model="u.password" placeholder="Password" style="width:150px" @change="emit" />
-        <el-button size="small" @click="u.password = generatePassword(); emit()">Gen</el-button>
+        <el-input v-model="u.password" :placeholder="t('singbox.users.password')" style="width:150px" @change="emit" />
+        <el-button size="small" @click="u.password = generatePassword(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
       <template v-if="USERKEY_PROTOCOLS.includes(model.type)">
-        <el-input v-model="u.userkey" placeholder="UserKey" style="width:150px" @change="emit" />
-        <el-button size="small" @click="u.userkey = generateKey(); emit()">Gen</el-button>
+        <el-input v-model="u.userkey" :placeholder="t('singbox.users.userkey')" style="width:150px" @change="emit" />
+        <el-button size="small" @click="u.userkey = generateKey(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
-      <el-input-number v-if="model.type === 'vmess'" v-model="u.alterId" :min="0" :max="65535" placeholder="AlterID" style="width:100px" @change="emit" />
-      <el-select v-if="model.type === 'vless'" v-model="u.flow" style="width:150px" clearable placeholder="Flow" @change="emit">
+      <el-input-number v-if="model.type === 'vmess'" v-model="u.alterId" :min="0" :max="65535" :placeholder="t('singbox.users.alterId')" style="width:100px" @change="emit" />
+      <el-select v-if="model.type === 'vless'" v-model="u.flow" style="width:150px" clearable :placeholder="t('singbox.users.flow')" @change="emit">
         <el-option label="" value="" />
         <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
       </el-select>
       <!-- Share per user -->
       <div style="display:flex;gap:4px">
-        <el-button size="small" @click="copyShare(u, ui)">分享</el-button>
-        <el-button size="small" type="primary" plain @click="showQr(u, ui)">二维码</el-button>
+        <el-button size="small" @click="copyShare(u, ui)">{{ t('singbox.users.share') }}</el-button>
+        <el-button size="small" type="primary" plain @click="showQr(u, ui)">{{ t('singbox.users.qrCode') }}</el-button>
       </div>
       <el-button size="small" type="danger" text @click="model.users.splice(ui, 1); emit()">X</el-button>
     </div>
-    <el-button size="small" @click="addUser">Add User</el-button>
+    <el-button size="small" @click="addUser">{{ t('singbox.users.addUser') }}</el-button>
 
     <!-- QR Dialog -->
     <el-dialog v-model="qrDlg" :title="qrTitle" width="400" top="10vh">
@@ -45,11 +45,13 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../../../utils/qrcode'
-import { generateUuid, generatePassword, generateUsername, generateKey, UUID_PROTOCOLS, PASSWORD_PROTOCOLS, AUTH_USER_PROTOCOLS, USERKEY_PROTOCOLS } from '../utils/singboxDefaults'
+import { generateUuid, generatePassword, generateUsername, generateKey, generateEmail, UUID_PROTOCOLS, PASSWORD_PROTOCOLS, AUTH_USER_PROTOCOLS, USERKEY_PROTOCOLS } from '../utils/singboxDefaults'
 import { generateShareLink } from '../utils/singboxShareLink'
 
+const { t } = useI18n()
 const props = defineProps({
   model: { type: Object, required: true },
   accessHost: { type: String, default: '' },
@@ -58,13 +60,13 @@ const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
 
 function addUser() {
-  const u = { name: '' }
-  if (UUID_PROTOCOLS.includes(model.type)) { u.uuid = generateUuid(); if (model.type === 'vless') u.flow = 'xtls-rprx-vision'; if (model.type === 'vmess') u.alterId = 0 }
-  if (PASSWORD_PROTOCOLS.includes(model.type)) u.password = generatePassword()
-  if (AUTH_USER_PROTOCOLS.includes(model.type)) { u.username = generateUsername(); u.password = generatePassword() }
-  if (USERKEY_PROTOCOLS.includes(model.type)) u.userkey = generateKey()
-  model.users = model.users || []
-  model.users.push(u)
+  const u = { name: generateEmail() }
+  if (UUID_PROTOCOLS.includes(props.model.type)) { u.uuid = generateUuid(); if (props.model.type === 'vless') u.flow = 'xtls-rprx-vision'; if (props.model.type === 'vmess') u.alterId = 0 }
+  if (PASSWORD_PROTOCOLS.includes(props.model.type)) u.password = generatePassword()
+  if (AUTH_USER_PROTOCOLS.includes(props.model.type)) { u.username = generateUsername(); u.password = generatePassword() }
+  if (USERKEY_PROTOCOLS.includes(props.model.type)) u.userkey = generateKey()
+  props.model.users = props.model.users || []
+  props.model.users.push(u)
   emit()
 }
 
@@ -74,28 +76,28 @@ const qrCodeUrl = ref('')
 const qrTitle = ref('')
 
 function buildShareLink(u) {
-  return generateShareLink(model, u, props.accessHost || model.listen || '', model.listen_port || 0, model.tag)
+  return generateShareLink(props.model, u, props.accessHost || props.model.listen || '', props.model.listen_port || 0, props.model.tag)
 }
 
 function copyShare(u) {
   const link = buildShareLink(u)
-  if (!link) { ElMessage.warning('该协议暂不支持分享链接'); return }
+  if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   copyToClipboard(link)
-  ElMessage.success('已复制分享链接')
+  ElMessage.success(t('singbox.inbound.shareCopied'))
 }
 
 async function showQr(u) {
   const link = buildShareLink(u)
-  if (!link) { ElMessage.warning('该协议暂不支持分享链接'); return }
+  if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   qrLink.value = link
-  qrTitle.value = `${model.type} @ ${u.name || u.uuid || u.username || 'user'}`
+  qrTitle.value = `${props.model.type} @ ${u.name || u.uuid || u.username || 'user'}`
   qrDlg.value = true
   qrCodeUrl.value = ''
   try {
     qrCodeUrl.value = await generateQrDataUrl(link)
   } catch (e) {
-    if (isQrDataTooLargeError(e)) ElMessage.warning('链接过长，二维码无法生成')
-    else ElMessage.error('二维码生成失败')
+    if (isQrDataTooLargeError(e)) ElMessage.warning(t('singbox.inbound.linkTooLong'))
+    else ElMessage.error(t('singbox.inbound.qrFailed'))
   }
 }
 
@@ -105,7 +107,7 @@ function copyToClipboard(text) {
   ta.value = text
   document.body.appendChild(ta)
   ta.select()
-  try { document.execCommand('copy'); ElMessage.success('已复制') } catch { ElMessage.error('复制失败') }
+  try { document.execCommand('copy'); ElMessage.success(t('singbox.inbound.shareCopied')) } catch { ElMessage.error(t('singbox.users.copyError')) }
   document.body.removeChild(ta)
 }
 </script>

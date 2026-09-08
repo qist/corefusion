@@ -1,6 +1,7 @@
 // sing-box outbound 通用 build/parse（表单模型 <-> sing-box 配置）
 // 出站用 _ 前缀字段表达表单，build 时映射为标准 sing-box 字段。
 import { inboundDefaultsForType } from './singboxDefaults'
+import { supportsReality, REALITY_PROTOCOLS } from './singboxDefaults'
 
 export function buildOutbound(ob) {
   const out = { type: ob.type, tag: ob.tag }
@@ -35,13 +36,24 @@ export function buildOutbound(ob) {
   }
   if (ob._tlsEnabled) {
     const tls = { enabled: true }
-    if (ob._tlsServerName) tls.server_name = ob._tlsServerName
-    if (ob._tlsAlpn?.length) tls.alpn = ob._tlsAlpn
-    if (ob._tlsInsecure) tls.insecure = ob._tlsInsecure
-    if (ob._tlsFingerprint) tls.utls = { enabled: true, fingerprint: ob._tlsFingerprint }
-    if (ob._tlsEchConfig) tls.ech_config = ob._tlsEchConfig
-    if (ob._tlsClientCertPath) tls.client_certificate_path = ob._tlsClientCertPath
-    if (ob._tlsClientKeyPath) tls.client_key_path = ob._tlsClientKeyPath
+    const realityOk = supportsReality(ob.type, ob._transportType)
+    if (ob._realityEnabled && realityOk) {
+      // 客户端 Reality：public_key + short_id + utls
+      if (ob._tlsServerName) tls.server_name = ob._tlsServerName
+      if (ob._tlsAlpn?.length) tls.alpn = ob._tlsAlpn
+      if (ob._utlsFingerprint) tls.utls = { enabled: true, fingerprint: ob._utlsFingerprint }
+      if (ob._realityPublicKey) tls.reality = { enabled: true, public_key: ob._realityPublicKey }
+      if (ob._realityShortId) tls.reality.short_id = ob._realityShortId
+      if (!tls.reality) tls.reality = { enabled: true }
+    } else {
+      if (ob._tlsServerName) tls.server_name = ob._tlsServerName
+      if (ob._tlsAlpn?.length) tls.alpn = ob._tlsAlpn
+      if (ob._tlsInsecure) tls.insecure = ob._tlsInsecure
+      if (ob._tlsFingerprint) tls.utls = { enabled: true, fingerprint: ob._tlsFingerprint }
+      if (ob._tlsEchConfig) tls.ech_config = ob._tlsEchConfig
+      if (ob._tlsClientCertPath) tls.client_certificate_path = ob._tlsClientCertPath
+      if (ob._tlsClientKeyPath) tls.client_key_path = ob._tlsClientKeyPath
+    }
     out.tls = tls
   }
   if (ob._transportType) {
@@ -53,7 +65,14 @@ export function buildOutbound(ob) {
     if (ob._transportEarlyDataHeader) tp.early_data_header_name = ob._transportEarlyDataHeader
     if (ob._transportIdleTimeout) tp.idle_timeout = ob._transportIdleTimeout
     if (ob._transportPingTimeout) tp.ping_timeout = ob._transportPingTimeout
-    if (ob._transportSeed) tp.seed = ob._transportSeed
+    if (ob._transportPermitWithoutStream) tp.permit_without_stream = true
+    if (ob._transportMethod) tp.method = ob._transportMethod
+    // headers: [{key,value}] → {key:value}
+    if (Array.isArray(ob._transportHeaders) && ob._transportHeaders.length) {
+      const hdrs = {}
+      for (const h of ob._transportHeaders) { if (h.key) hdrs[h.key] = h.value || '' }
+      if (Object.keys(hdrs).length) tp.headers = hdrs
+    }
     out.transport = tp
   }
   if (ob._multiplexEnabled) {
@@ -92,7 +111,14 @@ export function parseOutbound(ob) {
   o._transportEarlyDataHeader = ob.transport?.early_data_header_name || ''
   o._transportIdleTimeout = ob.transport?.idle_timeout || ''
   o._transportPingTimeout = ob.transport?.ping_timeout || ''
-  o._transportSeed = ob.transport?.seed || ''
+  o._transportPermitWithoutStream = ob.transport?.permit_without_stream || false
+  o._transportMethod = ob.transport?.method || ''
+  // headers: {key:value} → [{key,value}]
+  if (ob.transport?.headers && typeof ob.transport.headers === 'object') {
+    o._transportHeaders = Object.entries(ob.transport.headers).map(([k, v]) => ({ key: k, value: v ? String(v) : '' }))
+  } else {
+    o._transportHeaders = []
+  }
   o._multiplexEnabled = ob.multiplex?.enabled || false
   o._multiplexProtocol = ob.multiplex?.protocol || 'smux'
   o._multiplexMaxConn = ob.multiplex?.max_connections || 0
@@ -102,6 +128,11 @@ export function parseOutbound(ob) {
   o._multiplexBrutalUp = ob.multiplex?.brutal?.up_mbps || 0
   o._multiplexBrutalDown = ob.multiplex?.brutal?.down_mbps || 0
   o._outboundsStr = (ob.outbounds || []).join(', ')
+  // Reality（客户端）
+  o._realityEnabled = ob.tls?.reality?.enabled || false
+  o._realityPublicKey = ob.tls?.reality?.public_key || ''
+  o._realityShortId = ob.tls?.reality?.short_id || ''
+  o._utlsFingerprint = ob.tls?.utls?.fingerprint || ''
   // WireGuard
   o._wg_private_key = ob.private_key || ''
   o._wg_address = Array.isArray(ob.local_address) ? ob.local_address.join(',') : (ob.local_address || '')
@@ -118,10 +149,14 @@ export function outboundDefaultsForType(type) {
     _tlsEnabled: false, _tlsServerName: '', _tlsAlpn: [], _tlsInsecure: false,
     _tlsFingerprint: '', _tlsEchConfig: '', _tlsClientCertPath: '', _tlsClientKeyPath: '',
     _transportType: '', _transportPath: '/', _transportHost: '', _transportServiceName: '',
-    _transportMaxEarlyData: 0, _transportEarlyDataHeader: '', _transportIdleTimeout: '', _transportPingTimeout: '', _transportSeed: '',
+    _transportMaxEarlyData: 0, _transportEarlyDataHeader: '', _transportIdleTimeout: '', _transportPingTimeout: '',
+    _transportMethod: '', _transportHeaders: [],
+    _transportPermitWithoutStream: false,
     _multiplexEnabled: false, _multiplexProtocol: 'smux', _multiplexMaxConn: 0,
     _multiplexMinStreams: 0, _multiplexMaxStreams: 0, _multiplexPadding: false,
     _multiplexBrutalUp: 0, _multiplexBrutalDown: 0,
+    // Reality（客户端）
+    _realityEnabled: false, _realityPublicKey: '', _realityShortId: '', _utlsFingerprint: 'chrome',
     bind_interface: '', routing_mark: 0, domain_resolver: '',
   }
   if (type === 'direct' || type === 'block' || type === 'dns') {

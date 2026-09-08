@@ -1,5 +1,6 @@
 // sing-box inbound 通用 build/parse（表单 模型 <-> sing-box 配置）
 // 表单里用 _ 前缀字段表达配置，build 时映射为标准 sing-box 字段。
+import { supportsReality } from './singboxDefaults'
 
 export function buildInbound(ib) {
   const out = { type: ib.type, tag: ib.tag }
@@ -82,23 +83,27 @@ export function buildInbound(ib) {
     if (ib.listen_port) out.listen_port = ib.listen_port
   }
 
-  // TLS
+  // TLS（Reality 仅支持 vless / vmess / trojan + tcp/http/ws/httpupgrade/grpc）
+  const realityOk = supportsReality(ib.type, ib._transportType)
   if (ib._tlsEnabled) {
     const tls = { enabled: true }
     if (ib._tlsServerName) tls.server_name = ib._tlsServerName
     if (ib._tlsAlpn?.length) tls.alpn = ib._tlsAlpn
     if (ib._tlsMinVersion) tls.min_version = ib._tlsMinVersion
-    if (ib._tlsCertPath) tls.certificate_path = ib._tlsCertPath
-    if (ib._tlsKeyPath) tls.key_path = ib._tlsKeyPath
-    if (ib._utlsFingerprint) tls.utls = { enabled: true, fingerprint: ib._utlsFingerprint }
-    if (ib._realityEnabled) {
+    // Reality 与标准证书模式互斥：启用 Reality 时不输出证书字段
+    if (ib._realityEnabled && realityOk) {
       tls.reality = { enabled: true }
       if (ib._realityHandshakeServer) tls.reality.handshake = { server: ib._realityHandshakeServer, server_port: ib._realityHandshakePort }
       if (ib._realityPrivateKey) tls.reality.private_key = ib._realityPrivateKey
-      if (ib._realityPublicKey) tls.reality.public_key = ib._realityPublicKey
+      // 入站(服务端) reality 不含 public_key（仅给客户端/分享链接使用）
       const sids = ib._realityShortIds ? ib._realityShortIds.split('\n').map(s => s.trim()).filter(Boolean) : []
       if (sids.length) tls.reality.short_id = sids
       if (ib._realityMaxTimeDiff) tls.reality.max_time_difference = ib._realityMaxTimeDiff
+    } else {
+      // 标准 TLS（含协议/传输不支持 Reality 时的回退）
+      if (ib._tlsCertPath) tls.certificate_path = ib._tlsCertPath
+      if (ib._tlsKeyPath) tls.key_path = ib._tlsKeyPath
+      if (ib._utlsFingerprint) tls.utls = { enabled: true, fingerprint: ib._utlsFingerprint }
     }
     out.tls = tls
   }
@@ -113,7 +118,14 @@ export function buildInbound(ib) {
     if (ib._transportEarlyDataHeader) tp.early_data_header_name = ib._transportEarlyDataHeader
     if (ib._transportIdleTimeout) tp.idle_timeout = ib._transportIdleTimeout
     if (ib._transportPingTimeout) tp.ping_timeout = ib._transportPingTimeout
-    if (ib._transportSeed) tp.seed = ib._transportSeed
+    if (ib._transportPermitWithoutStream) tp.permit_without_stream = true
+    if (ib._transportMethod) tp.method = ib._transportMethod
+    // headers: [{key,value}] → {key:value}
+    if (Array.isArray(ib._transportHeaders) && ib._transportHeaders.length) {
+      const hdrs = {}
+      for (const h of ib._transportHeaders) { if (h.key) hdrs[h.key] = h.value || '' }
+      if (Object.keys(hdrs).length) tp.headers = hdrs
+    }
     out.transport = tp
   }
 
@@ -155,7 +167,14 @@ export function parseInbound(ib) {
   o._transportEarlyDataHeader = ib.transport?.early_data_header_name || ''
   o._transportIdleTimeout = ib.transport?.idle_timeout || ''
   o._transportPingTimeout = ib.transport?.ping_timeout || ''
-  o._transportSeed = ib.transport?.seed || ''
+  o._transportPermitWithoutStream = ib.transport?.permit_without_stream || false
+  o._transportMethod = ib.transport?.method || ''
+  // headers: {key:value} → [{key,value}]
+  if (ib.transport?.headers && typeof ib.transport.headers === 'object') {
+    o._transportHeaders = Object.entries(ib.transport.headers).map(([k, v]) => ({ key: k, value: v ? String(v) : '' }))
+  } else {
+    o._transportHeaders = []
+  }
   o._multiplexEnabled = ib.multiplex?.enabled || false
   o._multiplexProtocol = ib.multiplex?.protocol || 'smux'
   o._multiplexMaxConn = ib.multiplex?.max_connections || 0

@@ -22,7 +22,6 @@ function getTransportParams(ib) {
   if (t === 'ws') { p.path = ib._transportPath || ib.transport?.path || '/'; p.host = ib._transportHost || ib.transport?.host || '' }
   else if (t === 'grpc') { p.serviceName = ib._transportServiceName || ib.transport?.service_name || '' }
   else if (t === 'http' || t === 'httpupgrade') { p.path = ib._transportPath || ib.transport?.path || '/'; p.host = ib._transportHost || ib.transport?.host || '' }
-  else if (t === 'kcp') { p.seed = ib._transportSeed || '' }
   return p
 }
 

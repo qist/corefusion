@@ -28,6 +28,30 @@ export const USERKEY_PROTOCOLS = ['snell']
 // 非用户型（wireguard 用 peers）
 export const NON_USER_PROTOCOLS = ['wireguard']
 
+// Reality 支持矩阵（sing-box 官方）
+// 协议仅限 vless / vmess / trojan
+export const REALITY_PROTOCOLS = ['vless', 'vmess', 'trojan']
+// 传输仅限 tcp(无 transport) / http / ws / httpupgrade / grpc
+export const REALITY_TRANSPORTS = ['', 'http', 'ws', 'httpupgrade', 'grpc']
+export const REALITY_TRANSPORT_LABELS = { '': 'TCP', http: 'HTTP', ws: 'WebSocket', httpupgrade: 'HTTPUpgrade', grpc: 'gRPC' }
+// 该协议是否支持 Reality（协议 + 传输组合）
+export function supportsReality(type, transportType) {
+  return REALITY_PROTOCOLS.includes(type) && REALITY_TRANSPORTS.includes(transportType || '')
+}
+
+// ---------- 出站支持矩阵 ----------
+
+// 出站（客户端）协议：支持 TLS
+export const OUTBOUND_TLS_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'http', 'socks']
+// 出站（客户端）协议：支持 V2Ray Transport
+export const OUTBOUND_TRANSPORT_PROTOCOLS = ['vmess', 'vless', 'trojan']
+// 出站（客户端）协议：支持 Multiplex
+export const OUTBOUND_MULTIPLEX_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks']
+// 出站（客户端）协议：使用服务器地址（server/server_port）
+export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks', 'wireguard']
+// 出站（客户端）协议：协议专属设置（需要 Protocol tab）
+export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'tuic', 'http', 'socks', 'wireguard', 'selector', 'urltest', 'direct', 'block', 'dns']
+
 // 该协议支持的 Inbound type 白名单
 export const INBOUND_TYPES = [
   'mixed', 'http', 'socks', 'naive', 'tun',
@@ -70,6 +94,9 @@ export function generateKey() {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// 随机未使用端口（对齐 xray：10000-60000 范围随机）
+export function generatePort() { return Math.floor(Math.random() * 50000 + 10000) }
+
 // 按协议类型给单个用户生成默认凭证字段
 export function userDefaultsForType(type) {
   const u = { name: generateEmail() }
@@ -88,7 +115,7 @@ export function inboundDefaultsForType(type) {
     type,
     tag: type + '-in',
     listen: '0.0.0.0',
-    listen_port: DEFAULT_PORTS[type] || 1080,
+    listen_port: generatePort(),
     domain_strategy: '',
     sniff: true,
     sniff_override_destination: false,
@@ -114,9 +141,11 @@ export function inboundDefaultsForType(type) {
     _realityEnabled: false, _realityHandshakeServer: '', _realityHandshakePort: 443,
     _realityPrivateKey: '', _realityPublicKey: '', _realityShortIds: '', _realityMaxTimeDiff: '',
     _utlsEnabled: false, _utlsFingerprint: 'chrome',
-    // transport
+    // transport（参考 docs/configuration/shared/v2ray-transport.md）
     _transportType: '', _transportPath: '/', _transportHost: '', _transportServiceName: '',
-    _transportMaxEarlyData: 0, _transportEarlyDataHeader: '', _transportIdleTimeout: '', _transportPingTimeout: '', _transportSeed: '',
+    _transportMaxEarlyData: 0, _transportEarlyDataHeader: '', _transportIdleTimeout: '', _transportPingTimeout: '',
+    _transportMethod: '', _transportHeaders: [],
+    _transportPermitWithoutStream: false,
     // multiplex
     _multiplexEnabled: false, _multiplexProtocol: 'smux', _multiplexMaxConn: 0,
     _multiplexMinStreams: 0, _multiplexMaxStreams: 0, _multiplexPadding: false,

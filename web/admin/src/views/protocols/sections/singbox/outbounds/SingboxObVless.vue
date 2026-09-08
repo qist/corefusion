@@ -1,35 +1,26 @@
 <template>
-  <el-tabs>
-    <el-tab-pane label="Basic" name="basic"><SingboxOutboundBase :model="model" @update="emit" /></el-tab-pane>
-    <el-tab-pane label="Auth" name="auth">
-      <el-form label-width="150px" label-position="left">
-        <el-form-item label="UUID">
-          <div style="display:flex;gap:8px;flex:1">
-            <el-input v-model="model.uuid" @change="emit" />
-            <el-button size="small" @click="model.uuid = generateUuid(); emit()">Generate</el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="Flow">
-          <el-select v-model="model.flow" style="width:100%" clearable @change="emit">
-            <el-option label="" value="" />
-            <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
-            <el-option label="xtls-rprx-vision-udp443" value="xtls-rprx-vision-udp443" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-    </el-tab-pane>
-    <el-tab-pane label="TLS" name="tls"><SingboxOutboundTls :model="model" @update="emit" /></el-tab-pane>
-    <el-tab-pane label="Transport" name="transport"><SingboxTransport :model="model" @update="emit" /></el-tab-pane>
-    <el-tab-pane label="Multiplex" name="multiplex"><SingboxMultiplex :model="model" @update="emit" /></el-tab-pane>
-  </el-tabs>
+  <el-form label-width="150px" label-position="left">
+    <el-form-item :label="t('singbox.obProtocol.uuid')">
+      <div style="display:flex;gap:8px;flex:1">
+        <el-input v-model="model.uuid" @change="emit" />
+        <el-button size="small" @click="model.uuid = generateUuid(); emit()">{{ t('singbox.users.generate') }}</el-button>
+      </div>
+    </el-form-item>
+    <el-form-item :label="t('singbox.obProtocol.flow')">
+      <el-select v-model="model.flow" style="width:100%" clearable @change="emit">
+        <el-option label="" value="" />
+        <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
+        <el-option label="xtls-rprx-vision-udp443" value="xtls-rprx-vision-udp443" />
+      </el-select>
+    </el-form-item>
+  </el-form>
 </template>
 
 <script setup>
-import SingboxOutboundBase from '../common/SingboxOutboundBase.vue'
-import SingboxOutboundTls from '../common/SingboxOutboundTls.vue'
-import SingboxTransport from '../common/SingboxTransport.vue'
-import SingboxMultiplex from '../common/SingboxMultiplex.vue'
+// VLESS 出站：专属设置(UUID/Flow)；Base/TLS/Transport/Multiplex 由容器层提供
+import { useI18n } from 'vue-i18n'
 import { generateUuid } from '../utils/singboxDefaults'
+const { t } = useI18n()
 defineProps({ model: { type: Object, required: true } })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }

@@ -74,8 +74,12 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 	outbounds := make([]map[string]interface{}, 0, len(nodes)+2)
 
 	for _, node := range nodes {
+		proto := node.Protocol
+		if proto == "shadowsocks2022" || proto == "ss" {
+			proto = "shadowsocks"
+		}
 		ob := map[string]interface{}{
-			"type":        node.Protocol,
+			"type":        proto,
 			"tag":         node.Name,
 			"server":      node.Host,
 			"server_port": node.Port,
@@ -88,9 +92,33 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["password"] = node.Password
 		}
 
+		// Username for http/socks/mixed
+		if username, ok := node.Extra["username"].(string); ok && username != "" {
+			ob["username"] = username
+		}
+
 		// Add flow for VLESS with XTLS Vision
 		if node.Protocol == "vless" && node.Flow != "" {
 			ob["flow"] = node.Flow
+		}
+
+		// SSL/SS method + packet encoding
+		if node.Protocol == "shadowsocks" || node.Protocol == "shadowsocks2022" {
+			if node.Encryption != "" {
+				ob["method"] = node.Encryption
+			} else if m, ok := node.Extra["cipher"].(string); ok && m != "" {
+				ob["method"] = m
+			}
+			if pe, ok := node.Extra["packet-encoding"].(string); ok && pe != "" {
+				ob["packet_encoding"] = pe
+			}
+		}
+
+		// tuic congestion control
+		if node.Protocol == "tuic" {
+			if cc, ok := node.Extra["congestion-controller"].(string); ok && cc != "" {
+				ob["congestion_control"] = cc
+			}
 		}
 
 		// Add VLESS encryption if configured
@@ -99,16 +127,24 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 
 		if node.TLS {
-			ob["tls"] = map[string]interface{}{
+			tls := map[string]interface{}{
 				"enabled":     true,
 				"server_name": node.ServerName,
 			}
+			if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+				tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": fp}
+			}
+			if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
+				tls["insecure"] = true
+			}
+			if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
+				tls["alpn"] = alpn
+			}
+			ob["tls"] = tls
 		}
 
-		if node.Transport != "" && node.Transport != "tcp" {
-			ob["transport"] = map[string]interface{}{
-				"type": node.Transport,
-			}
+		if node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
+			ob["transport"] = buildSingboxTransport(node)
 		}
 
 		outbounds = append(outbounds, ob)
@@ -125,6 +161,72 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(result, "", "  ")
+}
+
+// buildSingboxTransport builds a sing-box transport object from node transport params.
+func buildSingboxTransport(node Node) map[string]interface{} {
+	t := map[string]interface{}{"type": node.Transport}
+	switch node.Transport {
+	case "ws":
+		if opts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
+			if path, ok := opts["path"].(string); ok && path != "" {
+				t["path"] = path
+			}
+			if headers, ok := opts["headers"].(map[string]interface{}); ok && len(headers) > 0 {
+				t["headers"] = headers
+			}
+			if ed, ok := opts["max-early-data"].(int); ok && ed > 0 {
+				t["max_early_data"] = ed
+			}
+		}
+	case "grpc":
+		if opts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
+			if sn, ok := opts["grpc-service-name"].(string); ok && sn != "" {
+				t["service_name"] = sn
+			}
+		}
+	case "http", "h2":
+		if node.Transport == "h2" {
+			t["type"] = "http"
+		}
+		if opts, ok := node.Extra["h2-opts"].(map[string]interface{}); ok {
+			if path, ok := opts["path"].(string); ok && path != "" {
+				t["path"] = path
+			}
+		} else if opts, ok := node.Extra["http-opts"].(map[string]interface{}); ok {
+			if paths, ok := opts["path"].([]string); ok && len(paths) > 0 {
+				t["path"] = paths[0]
+			}
+		}
+	case "httpupgrade":
+		if opts, ok := node.Extra["httpupgrade-opts"].(map[string]interface{}); ok {
+			if path, ok := opts["path"].(string); ok && path != "" {
+				t["path"] = path
+			}
+			if host, ok := opts["host"].(string); ok && host != "" {
+				t["host"] = host
+			}
+		}
+	case "xhttp":
+		if opts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
+			if mode, ok := opts["mode"].(string); ok && mode != "" {
+				t["mode"] = mode
+			}
+			if path, ok := opts["path"].(string); ok && path != "" {
+				t["path"] = path
+			}
+			if host, ok := opts["host"].(string); ok && host != "" {
+				t["host"] = host
+			}
+		}
+	case "kcp":
+		if opts, ok := node.Extra["kcp-settings"].(map[string]interface{}); ok {
+			if seed, ok := opts["seed"].(string); ok && seed != "" {
+				t["seed"] = seed
+			}
+		}
+	}
+	return t
 }
 
 // XrayFormatter formats nodes as Xray JSON.
@@ -1326,6 +1428,42 @@ func formatURI(node Node) string {
 		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
 
 		uri := fmt.Sprintf("hysteria2://%s@%s:%d", url.QueryEscape(node.Password), node.Host, port)
+		if encoded != "" {
+			uri += "?" + encoded
+		}
+		uri += "#" + url.PathEscape(node.Name)
+		return uri
+
+	case "http", "socks":
+		// http://user:pass@host:port#name / socks://user:pass@host:port#name
+		params := url.Values{}
+		params.Set("type", node.Protocol)
+		if node.Transport != "" && node.Transport != "tcp" {
+			params.Set("network", node.Transport)
+		} else if n, ok := node.Extra["network"].(string); ok && n != "" {
+			params.Set("network", n)
+		}
+		if node.TLS {
+			params.Set("security", "tls")
+		} else {
+			params.Set("security", "none")
+		}
+		if node.ServerName != "" {
+			params.Set("sni", node.ServerName)
+		}
+		user := ""
+		if u, ok := node.Extra["username"].(string); ok && u != "" {
+			user = u
+		}
+		userinfo := ""
+		if user != "" {
+			userinfo = url.QueryEscape(user)
+			if node.Password != "" {
+				userinfo += ":" + url.QueryEscape(node.Password)
+			}
+		}
+		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
+		uri := fmt.Sprintf("%s://%s@%s:%d", node.Protocol, userinfo, node.Host, node.Port)
 		if encoded != "" {
 			uri += "?" + encoded
 		}

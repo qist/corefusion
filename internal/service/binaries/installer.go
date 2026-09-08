@@ -293,7 +293,14 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 			binaryName += ".exe"
 		}
 		destPath := filepath.Join(destDir, binaryName)
-		return os.WriteFile(destPath, bodyBytes, 0755)
+			if err := os.WriteFile(destPath, bodyBytes, 0755); err != nil {
+				return err
+			}
+			if err := validateBinary(destPath, coreType); err != nil {
+				os.Remove(destPath)
+				return fmt.Errorf("downloaded file is not a valid binary: %w", err)
+			}
+			return nil
 	}
 
 	tr := tar.NewReader(gz)
@@ -323,6 +330,10 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 			}
 			f.Close()
 			os.Chmod(destPath, 0755)
+			if err := validateBinary(destPath, coreType); err != nil {
+				os.Remove(destPath)
+				return fmt.Errorf("extracted file is not a valid binary: %w", err)
+			}
 			return nil
 		}
 	}
@@ -364,6 +375,10 @@ func extractZip(data []byte, destDir, coreType string) error {
 				return err
 			}
 			os.Chmod(destPath, 0755)
+			if err := validateBinary(destPath, coreType); err != nil {
+				os.Remove(destPath)
+				return fmt.Errorf("extracted file is not a valid binary: %w", err)
+			}
 			return nil
 		}
 	}
@@ -427,16 +442,90 @@ func buildDownloadURL(coreType, repoURL, version, osName, archName string) strin
 }
 
 // matchCoreBinary checks if an archive entry name corresponds to the
-// given core type. Handles naming variations like "sing-box" vs "singbox".
+// given core type. It examines only the base name (not the full path)
+// to avoid false matches like "sing-box-1.10.0/LICENSE" matching "sing-box".
 func matchCoreBinary(name, coreType string) bool {
+	// Extract the base name (last path component) to avoid matching
+	// directory prefixes like "sing-box-1.10.0-linux-amd64/LICENSE"
+	base := filepath.Base(name)
+
+	// Exclude common non-binary files by extension
+	lower := strings.ToLower(base)
+	if strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".md") ||
+		strings.HasSuffix(lower, ".sha256") || strings.HasSuffix(lower, ".sig") ||
+		strings.HasSuffix(lower, ".dgst") || strings.HasSuffix(lower, ".sbom") ||
+		strings.HasSuffix(lower, ".pem") || strings.HasSuffix(lower, ".apk") ||
+		strings.HasSuffix(lower, ".deb") || strings.HasSuffix(lower, ".rpm") ||
+		strings.HasSuffix(lower, ".zst") {
+		return false
+	}
+	// Exclude known non-binary file names
+	switch lower {
+	case "license", "license.txt", "license.md", "readme", "readme.md", "changelog", "changelog.md":
+		return false
+	}
+
 	switch coreType {
 	case "singbox":
-		return strings.Contains(name, "sing-box") || strings.Contains(name, "singbox")
+		// Match "sing-box" or "singbox" as the base name itself
+		// (e.g. "sing-box" inside the tar.gz, not "sing-box-1.10.0/LICENSE")
+		return base == "sing-box" || base == "singbox" ||
+			strings.HasPrefix(base, "sing-box-") || strings.HasPrefix(base, "singbox-")
 	case "hysteria2":
-		return strings.Contains(name, "hysteria")
+		return base == "hysteria" || strings.HasPrefix(base, "hysteria-") || strings.HasPrefix(base, "hysteria_")
+	case "tuic":
+		return strings.HasPrefix(base, "tuic")
 	default:
-		return strings.Contains(name, coreType)
+		return strings.Contains(base, coreType)
 	}
+}
+
+// validateBinary checks that a file looks like a real executable binary
+// (ELF on Linux, Mach-O on macOS, PE on Windows) rather than a text file
+// that was mistakenly extracted (e.g. LICENSE, README).
+func validateBinary(path, coreType string) error {
+	// On Windows, skip magic check — just verify it's a reasonable size
+	if runtime.GOOS == "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if info.Size() < 1024 {
+			return fmt.Errorf("file too small (%d bytes), likely not a binary", info.Size())
+		}
+		return nil
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	magic := make([]byte, 4)
+	n, err := f.Read(magic)
+	if err != nil || n < 4 {
+		return fmt.Errorf("cannot read file header: %w", err)
+	}
+
+	// ELF binary: 0x7f 'E' 'L' 'F'
+	if magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F' {
+		return nil
+	}
+	// Mach-O (macOS): 0xFE 0xED 0xFA 0xCE or 0xCF 0xFA 0xED 0xFE
+	if (magic[0] == 0xFE && magic[1] == 0xED && magic[2] == 0xFA && (magic[3] == 0xCE || magic[3] == 0xCF)) ||
+		(magic[0] == 0xCF && magic[1] == 0xFA && magic[2] == 0xED && magic[3] == 0xFE) ||
+		(magic[0] == 0xCA && magic[1] == 0xFE && magic[2] == 0xBA && (magic[3] == 0xBE || magic[3] == 0xBF)) {
+		return nil
+	}
+	// PE (Windows): 'M' 'Z'
+	if magic[0] == 'M' && magic[1] == 'Z' {
+		return nil
+	}
+
+	// Not a known binary format
+	return fmt.Errorf("file does not have a valid executable magic number (got: %x %x %x %x)",
+		magic[0], magic[1], magic[2], magic[3])
 }
 
 // filterAsset returns true if the asset name is relevant for the core type

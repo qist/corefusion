@@ -31,20 +31,39 @@ type StatsAddrDeps struct {
 	// SettingGetter 从配置存储读取 key（如 "xray.stats_addr"）。
 	SettingGetter func(ctx context.Context, key string) (string, error)
 	// APIListenGetter 从核心配置解析 api.listen 作为兜底（写操作层无此依赖时可传 nil）。
+	// 用于 xray: 解析 full_config["api"]["listen"]。
 	APIListenGetter func(ctx context.Context) (string, error)
+	// V2RayAPIListenGetter 从 sing-box 核心配置解析 experimental.v2ray_api.listen 作为兜底。
+	// 用于 sing-box: 解析 full_config["experimental"]["v2ray_api"]["listen"]。
+	V2RayAPIListenGetter func(ctx context.Context) (string, error)
 }
 
-// ResolveStatsAddr 统一解析 xray stats gRPC 地址：
-//   DB "xray.stats_addr" → 核心配置 "api.listen" 兜底 → DefaultStatsAddr
+// ResolveStatsAddr 统一解析 stats gRPC 地址：
+//   xray:      DB "xray.stats_addr" → 核心配置 "api.listen" → DefaultStatsAddr
+//   singbox:   DB "singbox.stats_addr" → 核心配置 "experimental.v2ray_api.listen" → DefaultStatsAddr
+//
+// 对于 sing-box，设置 V2RayAPIListenGetter 而非 APIListenGetter。
+// SettingGetter 会尝试两个 key：先 "singbox.stats_addr" 再 "xray.stats_addr"，
+// 以兼容统一设置场景。
 //
 // 此前该逻辑在 xraystats/handler.go 与 trafficsync/service.go 各有一份，
 // 且后者缺少 api.listen 兜底，行为不一致。抽到此统一，保证单一来源。
 func ResolveStatsAddr(ctx context.Context, deps StatsAddrDeps) string {
 	if deps.SettingGetter != nil {
-		if v, err := deps.SettingGetter(ctx, "xray.stats_addr"); err == nil && v != "" {
+		// Try singbox-specific key first, then xray key
+		for _, key := range []string{"singbox.stats_addr", "xray.stats_addr"} {
+			if v, err := deps.SettingGetter(ctx, key); err == nil && v != "" {
+				return v
+			}
+		}
+	}
+	// For sing-box: try V2Ray API listen address
+	if deps.V2RayAPIListenGetter != nil {
+		if v, err := deps.V2RayAPIListenGetter(ctx); err == nil && v != "" {
 			return v
 		}
 	}
+	// For xray: try api.listen
 	if deps.APIListenGetter != nil {
 		if v, err := deps.APIListenGetter(ctx); err == nil && v != "" {
 			return v

@@ -298,8 +298,15 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	// file is already up-to-date — skip configGen to avoid overwriting.
 	if m.skipConfigGen.CompareAndSwap(true, false) {
 		// Config was already written by WriteRuntimeConfig, skip generation.
+		// But if the file is missing, fall through to configGen.
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return fmt.Errorf("config not found: %s", configPath)
+			if m.configGen != nil {
+				if err := m.configGen(ctx, coreType, configPath); err != nil {
+					return fmt.Errorf("generate config: %w", err)
+				}
+			} else {
+				return fmt.Errorf("config not found: %s", configPath)
+			}
 		}
 	} else if m.configGen != nil {
 		if err := m.configGen(ctx, coreType, configPath); err != nil {
@@ -389,7 +396,14 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		symlinkGeoFiles(rulesDir)
 	}
 
-	cmd := exec.CommandContext(context.Background(), relBinPath, "-c", relConfigPath)
+	// sing-box needs "run" subcommand: "sing-box run -c config.json"
+	// xray uses: "xray -c config.json"
+	var cmd *exec.Cmd
+	if coreType == "singbox" {
+		cmd = exec.CommandContext(context.Background(), relBinPath, "run", "-c", relConfigPath)
+	} else {
+		cmd = exec.CommandContext(context.Background(), relBinPath, "-c", relConfigPath)
+	}
 	cmd.Dir = m.dataDir
 
 	// Configure process output based on log mode

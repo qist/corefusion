@@ -58,6 +58,7 @@ type LocalAgent struct {
 	limitOp       LimitApplier      // 可选：限速操作器
 	binaryInst    BinaryInstaller   // 可选：核心二进制安装器
 	statsAddr     string             // xray gRPC API 地址
+	singboxStatsAddr string          // sing-box V2Ray API 地址 (experimental.v2ray_api.listen)
 	taskQueue     *TaskQueue         // 异步任务队列
 
 	// 限速管理器（nft + tc）
@@ -107,6 +108,16 @@ func (a *LocalAgent) WithLimitApplier(la LimitApplier) *LocalAgent {
 func (a *LocalAgent) WithStatsAddr(addr string) *LocalAgent {
 	if addr != "" {
 		a.statsAddr = addr
+	}
+	return a
+}
+
+// WithSingboxStatsAddr 设置 sing-box V2Ray API 地址。
+// sing-box 的 V2Ray API 与 xray StatsService 协议兼容，但监听地址不同
+// （从 experimental.v2ray_api.listen 获取，默认 127.0.0.1:8080）。
+func (a *LocalAgent) WithSingboxStatsAddr(addr string) *LocalAgent {
+	if addr != "" {
+		a.singboxStatsAddr = addr
 	}
 	return a
 }

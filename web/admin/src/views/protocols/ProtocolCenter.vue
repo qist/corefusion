@@ -159,7 +159,6 @@ import TuicTls from './sections/TuicTls.vue'
 import TuicCongestion from './sections/TuicCongestion.vue'
 import TuicAdvanced from './sections/TuicAdvanced.vue'
 import JsonPreview from './sections/JsonPreview.vue'
-import { useQueryState } from '../../composables/useQueryState'
 import { useRoute } from 'vue-router'
 
 const { t } = useI18n()
@@ -213,9 +212,14 @@ const COMPS = {
 }
 
 const selectedCore = ref('')
-const activeSection = useQueryState('section', '')
+const activeSection = ref('')
 const fullConfig = ref({})
 const secData = ref(null)
+// Latest normalized output emitted by the section component. Never written back
+// into secData: section components deep-watch props.data and re-emit on every
+// change, so echoing the emitted object into secData creates an infinite
+// render loop that freezes the page.
+const secOutput = ref(undefined)
 const secJson = ref('')
 const saving = ref(false)
 
@@ -250,29 +254,32 @@ function goBack(){selectedCore.value='';activeSection.value='';localStorage.remo
 
 function switchSection(k){
   activeSection.value=k
+  secOutput.value=undefined
   const d=fullConfig.value[k]
   if(k==='_preview'){secData.value=fullConfig.value;secJson.value=JSON.stringify(fullConfig.value,null,2);return}
-  secData.value=d!==undefined?d:(Array.isArray(d)?[]:{})
+  if(d===undefined){const arraySections=['inbounds','outbounds','rules','servers','balancers'];secData.value=arraySections.includes(k)?[]:{}}
+  else{secData.value=d}
   secJson.value=JSON.stringify(secData.value,null,2)
 }
 
 function onUpdate(d){
-  secData.value=d
+  secOutput.value=d
   secJson.value=d===null?'null (disabled)':JSON.stringify(d,null,2)
 }
-function onJsonChange(v){try{secData.value=JSON.parse(v)}catch{}}
+function onJsonChange(v){try{secData.value=JSON.parse(v);secOutput.value=undefined}catch{}}
 function resetSection(){switchSection(activeSection.value);ElMessage.success(t('common.reset'))}
 
 async function saveSection(){
   if(activeSection.value==='_preview')return
   saving.value=true
   try{
-    if(secData.value===null){
+    const payload=secOutput.value!==undefined?secOutput.value:secData.value
+    if(payload===null){
       delete fullConfig.value[activeSection.value]
       await client.put(`${apiBase.value}/${selectedCore.value}`,fullConfig.value)
     } else {
-      await client.put(`${apiBase.value}/${selectedCore.value}/section/${activeSection.value}`,secData.value)
-      fullConfig.value[activeSection.value]=secData.value
+      await client.put(`${apiBase.value}/${selectedCore.value}/section/${activeSection.value}`,payload)
+      fullConfig.value[activeSection.value]=payload
     }
     // inbounds/outbounds/routing are hot-updated via Xray gRPC API by their
     // own component logic — do NOT restart the core for these sections.

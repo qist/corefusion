@@ -312,7 +312,7 @@ func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 	// LogBrokers and persist captured stdout to logs/{type}-stdout.log files.
 	if a.logMgr != nil {
 		a.logMgr.StartAutoWritersForServer(a.cfg.Panel.ServerID)
-		a.logMgr.Start()
+		a.logMgr.Start(0, 0)
 		log.Println("[Agent] log management service started (LogWriter + rotation scheduler)")
 	}
 

@@ -30,10 +30,16 @@ func Generate(node Node) string {
 		return generateVmessLink(node)
 	case "trojan":
 		return generateTrojanLink(node)
-	case "hysteria":
+	case "hysteria", "hysteria2":
 		return generateHysteriaLink(node)
-	case "shadowsocks":
+	case "shadowsocks", "shadowsocks2022", "ss":
 		return generateShadowsocksLink(node)
+	case "tuic":
+		return generateTuicLink(node)
+	case "http":
+		return generateAuthLink("http://", node)
+	case "socks", "socks5":
+		return generateAuthLink("socks://", node)
 	}
 	return ""
 }
@@ -269,6 +275,84 @@ func generateShadowsocksLink(n Node) string {
 	auth := base64.StdEncoding.EncodeToString([]byte(method + ":" + password))
 	return fmt.Sprintf("shadowsocks://%s@%s:%d#%s",
 		auth, formatHost(n.Host), n.Port, url.PathEscape(n.Tag))
+}
+
+// --- TUIC ---
+func generateTuicLink(n Node) string {
+	ss := n.StreamSettings
+	clients := getClients(n.Settings)
+
+	params := url.Values{}
+	uuid := getClientField(clients, "uuid")
+	password := getClientField(clients, "password")
+	// Also allow settings-level id/password (sing-box tuic uses uuid+password)
+	if uuid == "" {
+		uuid = getString(n.Settings, "id", "")
+	}
+	if password == "" {
+		password = getString(n.Settings, "password", "")
+	}
+
+	userinfo := uuid
+	if password != "" {
+		userinfo += ":" + password
+	}
+
+	// TLS params
+	tls := getMap(ss, "tlsSettings")
+	if fp := getFingerprint(tls); fp != "" {
+		params.Set("fp", fp)
+	}
+	if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
+		params.Set("alpn", strings.Join(alpn, ","))
+	}
+	if sni := getString(tls, "serverName", ""); sni != "" {
+		params.Set("sni", sni)
+	}
+
+	if cc, ok := n.Settings["congestionControl"].(string); ok && cc != "" {
+		params.Set("congestion_control", cc)
+	} else if cc, ok := n.Settings["congestion_control"].(string); ok && cc != "" {
+		params.Set("congestion_control", cc)
+	}
+
+	return fmt.Sprintf("tuic://%s@%s:%d?%s#%s",
+		url.QueryEscape(userinfo), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
+}
+
+// generateAuthLink generates http:// or socks:// userinfo-based share links.
+func generateAuthLink(scheme string, n Node) string {
+	ss := n.StreamSettings
+	clients := getClients(n.Settings)
+	username := getClientField(clients, "username")
+	password := getClientField(clients, "password")
+	if username == "" {
+		username = getString(n.Settings, "username", "")
+	}
+	if password == "" {
+		password = getString(n.Settings, "password", "")
+	}
+
+	params := url.Values{}
+	network := getString(ss, "network", "")
+	if network != "" && network != "tcp" && network != "raw" {
+		params.Set("network", network)
+	}
+	security := getString(ss, "security", "none")
+	params.Set("security", security)
+	tls := getMap(ss, "tlsSettings")
+	if sni := getString(tls, "serverName", ""); sni != "" {
+		params.Set("sni", sni)
+	}
+	setFinalMaskParams(params, n.FinalMask)
+
+	userinfo := username
+	if password != "" {
+		userinfo += ":" + password
+	}
+
+	return fmt.Sprintf("%s%s@%s:%d?%s#%s",
+		scheme, url.QueryEscape(userinfo), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- helpers ---

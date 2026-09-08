@@ -1594,6 +1594,41 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				if sharedNodeMgr != nil {
 					sharedNodeMgr.SetLocalAgent(localAgent)
 				}
+				// Inject sing-box V2Ray API address so the Agent's XrayAPIProxy
+				// can serve stats requests for sing-box nodes too.
+				sbAddr := coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+					SettingGetter: func(ctx context.Context, key string) (string, error) {
+						return systemSettingSvc.GetByKey(ctx, key)
+					},
+					V2RayAPIListenGetter: func(ctx context.Context) (string, error) {
+						full, err := coreConfigSvc.GetFull(ctx, coredata.LocalServerID, "singbox")
+						if err != nil {
+							return "", err
+						}
+						expRaw, ok := full["experimental"]
+						if !ok {
+							return "", fmt.Errorf("no experimental section")
+						}
+						expMap, ok := expRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("experimental not map")
+						}
+						v2apiRaw, ok := expMap["v2ray_api"]
+						if !ok {
+							return "", fmt.Errorf("no v2ray_api section")
+						}
+						v2apiMap, ok := v2apiRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("v2ray_api not map")
+						}
+						listen, ok := v2apiMap["listen"].(string)
+						if !ok || listen == "" {
+							return "", fmt.Errorf("no listen")
+						}
+						return listen, nil
+					},
+				})
+				localAgent.WithSingboxStatsAddr(sbAddr)
 				nodeMgrForCRL.SetSettingStore(systemSettingSvc)
 
 				// Set binary lister for node server service (used for ListReleases API)
@@ -1652,9 +1687,11 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 				statsSvc := systemSvc.NewStatsService(version)
 				metricsCollector.SetLocalStatsProvider(statsSvc.CollectServerMetric)
 
-				// 注入 xray 核心用户流量采集（本地 + 远程），用于实时速率图表
-				// 本地：直连 xray gRPC Stats API（reset_=false，累计值）
-				// 远程：通过 coredata.Provider → Agent RPC 查询
+				// 注入核心用户流量采集（本地 + 远程），用于实时速率图表
+				// 支持 xray 和 sing-box 两种核心类型：
+				//   xray:    直连 xray gRPC Stats API (api.listen, 默认 127.0.0.1:10085)
+				//   singbox: 直连 sing-box V2Ray API (experimental.v2ray_api.listen, 默认 127.0.0.1:8080)
+				// 远程：通过 coredata.Provider → Agent RPC 查询（协议兼容，统一走 XrayAPIOnServer）
 				// 仅统计 user>>> 条目，自动排除 inbound>>>api>>> 等 API 流量
 				localXrayClient := coredata.NewXrayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
 					SettingGetter: func(ctx context.Context, key string) (string, error) {
@@ -1680,26 +1717,71 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 						return listen, nil
 					},
 				}))
-				metricsCollector.SetLocalTrafficProvider(func() (int64, int64) {
+				// sing-box V2Ray API client (sing-box's experimental.v2ray_api uses
+				// the same gRPC StatsService protobuf as xray, so XrayClient works)
+				localSingboxClient := coredata.NewXrayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+					SettingGetter: func(ctx context.Context, key string) (string, error) {
+						return systemSettingSvc.GetByKey(ctx, key)
+					},
+					V2RayAPIListenGetter: func(ctx context.Context) (string, error) {
+						full, err := coreConfigSvc.GetFull(ctx, coredata.LocalServerID, "singbox")
+						if err != nil {
+							return "", err
+						}
+						expRaw, ok := full["experimental"]
+						if !ok {
+							return "", fmt.Errorf("no experimental section")
+						}
+						expMap, ok := expRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("experimental not map")
+						}
+						v2apiRaw, ok := expMap["v2ray_api"]
+						if !ok {
+							return "", fmt.Errorf("no v2ray_api section")
+						}
+						v2apiMap, ok := v2apiRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("v2ray_api not map")
+						}
+						listen, ok := v2apiMap["listen"].(string)
+						if !ok || listen == "" {
+							return "", fmt.Errorf("no listen")
+						}
+						return listen, nil
+					},
+				}))
+				// collectLocalTraffic tries xray first, then sing-box, summing
+				// user traffic from whichever core is running. This handles
+				// nodes that run xray only, sing-box only, or both.
+				collectLocalTraffic := func() (int64, int64) {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
-					resp, err := localXrayClient.RawStats(ctx, false)
-					if err != nil {
-						return 0, 0
-					}
-					sr, err := coredata.ParseStatsResponse(resp)
-					if err != nil {
-						return 0, 0
-					}
 					var up, down int64
-					for _, u := range sr.Users {
-						up += u.Uplink
-						down += u.Downlink
+					// Try xray
+					if resp, err := localXrayClient.RawStats(ctx, false); err == nil {
+						if sr, err := coredata.ParseStatsResponse(resp); err == nil {
+							for _, u := range sr.Users {
+								up += u.Uplink
+								down += u.Downlink
+							}
+						}
+					}
+					// Try sing-box (V2Ray API is protocol-compatible with xray StatsService)
+					if resp, err := localSingboxClient.RawStats(ctx, false); err == nil {
+						if sr, err := coredata.ParseStatsResponse(resp); err == nil {
+							for _, u := range sr.Users {
+								up += u.Uplink
+								down += u.Downlink
+							}
+						}
 					}
 					return up, down
-				})
+				}
+				metricsCollector.SetLocalTrafficProvider(collectLocalTraffic)
 				metricsCollector.SetRemoteTrafficProvider(func(ctx context.Context, serverID int64) (int64, int64) {
-					// 通过 coredata.Provider 查询远程节点 xray 用户流量
+					// 通过 coredata.Provider 查询远程节点用户流量
+					// 协议兼容：sing-box V2Ray API 使用与 xray 相同的 StatsService protobuf
 					p := coredata.NewProvider(serverID, coredata.Options{
 						IsLocal: nodeMgrForPhase3.IsLocalServer,
 						Remote:  nodeServerSvcInst,
@@ -1798,6 +1880,43 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 
 				// Wire trafficsync to also accumulate node-level monthly traffic
 				trafficSyncSvc.SetNodeAccumulator(trafficQuotaSvc)
+
+				// Inject sing-box V2Ray API address into trafficsync so it can
+				// also collect traffic from sing-box inbounds (protocol-compatible
+				// with xray's StatsService gRPC).
+				sbStatsAddr := coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+					SettingGetter: func(ctx context.Context, key string) (string, error) {
+						return systemSettingSvc.GetByKey(ctx, key)
+					},
+					V2RayAPIListenGetter: func(ctx context.Context) (string, error) {
+						full, err := coreConfigSvc.GetFull(ctx, coredata.LocalServerID, "singbox")
+						if err != nil {
+							return "", err
+						}
+						expRaw, ok := full["experimental"]
+						if !ok {
+							return "", fmt.Errorf("no experimental section")
+						}
+						expMap, ok := expRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("experimental not map")
+						}
+						v2apiRaw, ok := expMap["v2ray_api"]
+						if !ok {
+							return "", fmt.Errorf("no v2ray_api section")
+						}
+						v2apiMap, ok := v2apiRaw.(map[string]interface{})
+						if !ok {
+							return "", fmt.Errorf("v2ray_api not map")
+						}
+						listen, ok := v2apiMap["listen"].(string)
+						if !ok || listen == "" {
+							return "", fmt.Errorf("no listen")
+						}
+						return listen, nil
+					},
+				})
+				trafficSyncSvc.SetSingboxStatsAddr(sbStatsAddr)
 
 				// Start traffic event consumer for remote node traffic (Agent → Panel via heartbeat stream)
 				// This consumes TrafficEvent from the NodeServerManager's onTraffic channel
@@ -1959,6 +2078,7 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 
 				// Binary Commands (key generation, interface listing)
 				nodeServersGroup.POST("/:id/binaries/x25519-key", nodeServerH.GenerateX25519Key)
+				nodeServersGroup.POST("/:id/binaries/reality-key", nodeServerH.GenerateRealityKey)
 				nodeServersGroup.POST("/:id/binaries/mldsa65-key", nodeServerH.GenerateMldsa65Key)
 				nodeServersGroup.POST("/:id/binaries/wg-key", nodeServerH.GenerateWgKey)
 				nodeServersGroup.POST("/:id/binaries/ech-generate", nodeServerH.GenerateEchKeys)

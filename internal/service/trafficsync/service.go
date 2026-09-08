@@ -34,16 +34,18 @@ type SettingStore interface {
 //   - Subsequent queries: QueryStats(reset_=true) — each value IS the delta
 //     since last query. No baseline, no per-user first-sample skip.
 type Service struct {
-	settingSvc  SettingStore
-	inboundSvc  InboundConfigService
-	nodeAccum   NodeTrafficAccumulator
-	localSID    int64 // local node server ID (always 1)
-	interval    time.Duration
-	mu          sync.RWMutex
-	running     bool
-	stopCh      chan struct{}
-	initialized bool // false until first reset query completes
-	client      *coredata.XrayClient
+	settingSvc    SettingStore
+	inboundSvc    InboundConfigService
+	nodeAccum     NodeTrafficAccumulator
+	localSID      int64 // local node server ID (always 1)
+	interval      time.Duration
+	mu            sync.RWMutex
+	running       bool
+	stopCh        chan struct{}
+	initialized  bool // false until first reset query completes
+	client        *coredata.XrayClient     // xray stats client
+	singboxClient *coredata.XrayClient     // sing-box V2Ray API client (nil if not configured)
+	initializedSb bool // sing-box init state
 }
 
 // NewService creates a new traffic sync service.
@@ -77,6 +79,16 @@ func getStatsAddrDefault(settingSvc SettingStore) string {
 // node-level monthly traffic records when syncing user traffic.
 func (s *Service) SetNodeAccumulator(acc NodeTrafficAccumulator) {
 	s.nodeAccum = acc
+}
+
+// SetSingboxStatsAddr configures the sing-box V2Ray API address.
+// When set, the traffic sync service will also query sing-box's V2Ray API
+// (which is protocol-compatible with xray's StatsService) and merge
+// the traffic deltas.
+func (s *Service) SetSingboxStatsAddr(addr string) {
+	if addr != "" {
+		s.singboxClient = coredata.NewXrayClient(addr)
+	}
 }
 
 // Start starts the traffic sync service.
@@ -125,36 +137,64 @@ func (s *Service) sync() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// First call: reset xray counters to 0.
-	// Discard returned values (old accumulated traffic).
+	// First call: reset counters to 0 for xray.
 	if !s.initialized {
 		if _, err := s.client.RawStats(ctx, true); err != nil {
-			log.Printf("trafficsync: initial reset failed: %v", err)
-			return
+			log.Printf("trafficsync: xray initial reset failed: %v", err)
+		} else {
+			s.initialized = true
 		}
-		s.initialized = true
-		return // counters reset, next call gets real deltas
 	}
-
-	// Subsequent calls: reset_=true so xray returns deltas and resets counters.
-	resp, err := s.client.RawStats(ctx, true)
-	if err != nil {
-		log.Printf("trafficsync: query stats failed: %v", err)
+	// First call: reset counters for sing-box (if configured).
+	if s.singboxClient != nil && !s.initializedSb {
+		if _, err := s.singboxClient.RawStats(ctx, true); err != nil {
+			log.Printf("trafficsync: singbox initial reset failed: %v", err)
+		} else {
+			s.initializedSb = true
+		}
+	}
+	// If neither initialized, wait for next cycle
+	if !s.initialized && (s.singboxClient == nil || !s.initializedSb) {
 		return
 	}
 
-	// 复用公共解析，仅取 user 方向；增量语义（value<=0 跳过）由调用方保留。
-	sr, err := coredata.ParseStatsResponse(resp)
-	if err != nil {
-		log.Printf("trafficsync: parse stats failed: %v", err)
-		return
+	// Collect user traffic from xray
+	var allUsers []coredata.UserTraffic
+	if s.initialized {
+		resp, err := s.client.RawStats(ctx, true)
+		if err != nil {
+			log.Printf("trafficsync: xray query stats failed: %v", err)
+		} else {
+			sr, err := coredata.ParseStatsResponse(resp)
+			if err != nil {
+				log.Printf("trafficsync: xray parse stats failed: %v", err)
+			} else {
+				allUsers = append(allUsers, sr.Users...)
+			}
+		}
+	}
+
+	// Collect user traffic from sing-box (if configured)
+	if s.singboxClient != nil && s.initializedSb {
+		resp, err := s.singboxClient.RawStats(ctx, true)
+		if err != nil {
+			log.Printf("trafficsync: singbox query stats failed: %v", err)
+		} else {
+			sr, err := coredata.ParseStatsResponse(resp)
+			if err != nil {
+				log.Printf("trafficsync: singbox parse stats failed: %v", err)
+			} else {
+				// Merge: add sing-box user traffic to xray user traffic
+				allUsers = mergeUserTraffic(allUsers, sr.Users)
+			}
+		}
 	}
 
 	// Update database
-	if len(sr.Users) > 0 {
-		log.Printf("trafficsync: updating %d users", len(sr.Users))
+	if len(allUsers) > 0 {
+		log.Printf("trafficsync: updating %d users", len(allUsers))
 		var nodeUp, nodeDown int64
-		for _, u := range sr.Users {
+		for _, u := range allUsers {
 			if u.Uplink <= 0 && u.Downlink <= 0 {
 				continue
 			}
@@ -170,4 +210,32 @@ func (s *Service) sync() {
 			s.nodeAccum.AddUserTrafficDelta(s.localSID, nodeUp, nodeDown)
 		}
 	}
+}
+
+// mergeUserTraffic merges two user traffic slices, summing uplink/downlink
+// for users that appear in both.
+func mergeUserTraffic(a, b []coredata.UserTraffic) []coredata.UserTraffic {
+	if len(b) == 0 {
+		return a
+	}
+	merged := make(map[string]*coredata.UserTraffic, len(a))
+	for i := range a {
+		u := a[i]
+		merged[u.Email] = &u
+	}
+	for _, u := range b {
+		if existing, ok := merged[u.Email]; ok {
+			existing.Uplink += u.Uplink
+			existing.Downlink += u.Downlink
+			existing.Total += u.Total
+		} else {
+			tmp := u
+			merged[u.Email] = &tmp
+		}
+	}
+	result := make([]coredata.UserTraffic, 0, len(merged))
+	for _, u := range merged {
+		result = append(result, *u)
+	}
+	return result
 }

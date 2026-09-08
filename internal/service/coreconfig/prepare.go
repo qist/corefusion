@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 )
 
 // InboundConfigProvider loads enabled inbound configs for a server.
@@ -109,9 +110,11 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		delete(fullConfig, "outbounds")
 	}
 
-	// 5. Ensure stats section exists
-	if _, exists := fullConfig["stats"]; !exists {
-		fullConfig["stats"] = map[string]interface{}{}
+	// 5. Ensure stats section exists (xray only — sing-box uses experimental.v2ray_api.stats)
+	if opts.CoreType == "xray" {
+		if _, exists := fullConfig["stats"]; !exists {
+			fullConfig["stats"] = map[string]interface{}{}
+		}
 	}
 
 	// 6. For xray: apply API inbound/routing auto-add logic
@@ -169,6 +172,11 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		if err != nil {
 			log.Printf("[PrepareFullConfig] chain link outbounds failed for server %d: %v", opts.ServerID, err)
 		} else {
+			// For sing-box: convert xray-format chain outbounds/rules to sing-box format
+			if opts.CoreType == "singbox" {
+				chainOutbounds = convertChainOutboundsToSingbox(chainOutbounds)
+				chainRules = convertChainRulesToSingbox(chainRules)
+			}
 			if len(chainOutbounds) > 0 {
 				existingObs, _ := fullConfig["outbounds"].([]interface{})
 				fullConfig["outbounds"] = mergeChainOutbounds(existingObs, chainOutbounds)
@@ -182,21 +190,24 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				routing["rules"] = mergeChainRoutingRules(existingRules, chainRules)
 
 				// 多出口负载均衡（设计文档 §6.6）：合并 balancers 与根 observatory
-				chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID)
-				if len(chainBalancers) > 0 {
-					existingBal, _ := routing["balancers"].([]interface{})
-					routing["balancers"] = append(existingBal, chainBalancers...)
-				}
-				if chainObservatory != nil {
-					// §6.6.5: 当 Sampling > 0 时使用 burstObservatory（特征弱，适合入口节点）
-					// 否则使用标准 observatory
-					if sampling, ok := chainObservatory["sampling"]; ok && sampling != nil {
-						if _, ok := fullConfig["burstObservatory"]; !ok {
-							fullConfig["burstObservatory"] = chainObservatory
-						}
-					} else {
-						if _, ok := fullConfig["observatory"]; !ok {
-							fullConfig["observatory"] = chainObservatory
+				// sing-box 不使用 balancers/observatory（用 selector/urltest outbound 代替）
+				if opts.CoreType != "singbox" {
+					chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID)
+					if len(chainBalancers) > 0 {
+						existingBal, _ := routing["balancers"].([]interface{})
+						routing["balancers"] = append(existingBal, chainBalancers...)
+					}
+					if chainObservatory != nil {
+						// §6.6.5: 当 Sampling > 0 时使用 burstObservatory（特征弱，适合入口节点）
+						// 否则使用标准 observatory
+						if sampling, ok := chainObservatory["sampling"]; ok && sampling != nil {
+							if _, ok := fullConfig["burstObservatory"]; !ok {
+								fullConfig["burstObservatory"] = chainObservatory
+							}
+						} else {
+							if _, ok := fullConfig["observatory"]; !ok {
+								fullConfig["observatory"] = chainObservatory
+							}
 						}
 					}
 				}
@@ -209,6 +220,10 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		if err != nil {
 			log.Printf("[PrepareFullConfig] chain exit inbound failed for server %d: %v", opts.ServerID, err)
 		} else if exitInbound != nil {
+			// For sing-box: convert xray-format relay-in inbound to sing-box format
+			if opts.CoreType == "singbox" {
+				exitInbound = convertRelayInboundToSingbox(exitInbound)
+			}
 			existingInbounds, _ := fullConfig["inbounds"].([]interface{})
 			fullConfig["inbounds"] = append(existingInbounds, exitInbound)
 		}
@@ -220,9 +235,21 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		}
 	}
 
-	// 9. Ensure default outbounds (direct, blocked) exist — safety net so every
-	// node always has freedom+blackhole even if missing from DB.
+	// 9. Ensure default outbounds exist — safety net so every
+	// node always has direct/block even if missing from DB.
 	EnsureDefaultOutbounds(fullConfig, opts.CoreType)
+
+	// 9b. For singbox: migrate legacy inbound fields to route rule actions
+	// (sniff, sniff_override_destination, domain_strategy were removed in 1.13.0)
+	if opts.CoreType == "singbox" {
+		MigrateSingboxLegacyFields(fullConfig)
+	}
+
+	// 9c. For singbox: ensure V2Ray API stats is enabled and populate targets
+	if opts.CoreType == "singbox" {
+		EnsureSingboxV2RayAPI(fullConfig)
+		PopulateSingboxStatsTargets(fullConfig)
+	}
 
 	// 10. Apply log mode to the config's log section
 	ApplyLogMode(fullConfig, opts.CoreType, opts.LogMode)
@@ -241,13 +268,21 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 
 // EnsureDefaultOutbounds checks that the standard default outbounds exist in
 // the final config. For xray, these are "direct" (freedom) and "blocked"
-// (blackhole). If they are missing, they are appended. This guarantees that
-// every node — local or remote — always has these two essential outbounds,
+// (blackhole). For singbox, these are "direct", "block", and "dns-out".
+// If they are missing, they are appended. This guarantees that
+// every node — local or remote — always has these essential outbounds,
 // even if the outbound_configs table doesn't have them for that server.
 func EnsureDefaultOutbounds(fullConfig map[string]interface{}, coreType string) {
-	if coreType != "xray" {
-		return
+	switch coreType {
+	case "xray":
+		ensureXrayDefaultOutbounds(fullConfig)
+	case "singbox":
+		ensureSingboxDefaultOutbounds(fullConfig)
 	}
+}
+
+// ensureXrayDefaultOutbounds adds missing direct/blocked outbounds for xray.
+func ensureXrayDefaultOutbounds(fullConfig map[string]interface{}) {
 	// Normalize outbounds to []interface{} regardless of underlying type.
 	// GetEnabledOutbounds returns []map[string]interface{}, which does NOT
 	// match []interface{} type assertion — so we must convert explicitly.
@@ -675,4 +710,557 @@ func filterRelayOnlyInbounds(fullConfig map[string]interface{}) {
 		}
 	}
 	fullConfig["inbounds"] = filtered
+}
+
+// ensureSingboxDefaultOutbounds adds missing direct/block outbounds for sing-box.
+// Note: sing-box 1.13.0 removed "dns" outbound type — DNS hijacking is now
+// done via route rule action "hijack-dns" (handled by MigrateSingboxLegacyFields).
+func ensureSingboxDefaultOutbounds(fullConfig map[string]interface{}) {
+	// Normalize outbounds to []interface{}
+	var outbounds []interface{}
+	switch raw := fullConfig["outbounds"].(type) {
+	case []interface{}:
+		outbounds = raw
+	case []map[string]interface{}:
+		for _, m := range raw {
+			outbounds = append(outbounds, m)
+		}
+	default:
+		outbounds = []interface{}{}
+	}
+
+	hasDirect := false
+	hasBlock := false
+	for _, ob := range outbounds {
+		if m, ok := ob.(map[string]interface{}); ok {
+			tag, _ := m["tag"].(string)
+			switch tag {
+			case "direct":
+				hasDirect = true
+			case "block":
+				hasBlock = true
+			}
+		}
+	}
+	if !hasDirect {
+		outbounds = append(outbounds, map[string]interface{}{
+			"type": "direct",
+			"tag":  "direct",
+		})
+	}
+	if !hasBlock {
+		outbounds = append(outbounds, map[string]interface{}{
+			"type": "block",
+			"tag":  "block",
+		})
+	}
+	fullConfig["outbounds"] = outbounds
+}
+
+// parseMbpsStr parses a bandwidth string like "100 Mbps" or "50" into an int (Mbps).
+func parseMbpsStr(s string) int {
+	s = strings.TrimSpace(strings.ToLower(s))
+	s = strings.TrimSuffix(s, "mbps")
+	s = strings.TrimSuffix(s, "mb")
+	s = strings.TrimSpace(s)
+	n := 0
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			break
+		}
+	}
+	return n
+}
+
+// MigrateSingboxLegacyFields removes deprecated inbound fields (sniff,
+// sniff_override_destination, sniff_timeout, domain_strategy) that were
+// removed in sing-box 1.13.0, and adds equivalent route rule actions.
+// https://sing-box.sagernet.org/migration/#migrate-legacy-inbound-fields-to-rule-actions
+func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
+	route, ok := fullConfig["route"].(map[string]interface{})
+	if !ok {
+		route = map[string]interface{}{}
+		fullConfig["route"] = route
+	}
+	rules, _ := route["rules"].([]interface{})
+
+	// Check if any inbound has legacy sniff fields
+	needsSniffRule := false
+
+	inbounds, _ := fullConfig["inbounds"].([]interface{})
+	for _, raw := range inbounds {
+		ib, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if sniff, ok := ib["sniff"].(bool); ok && sniff {
+			needsSniffRule = true
+			delete(ib, "sniff")
+		}
+		delete(ib, "sniff_override_destination")
+		delete(ib, "sniff_timeout")
+		delete(ib, "domain_strategy")
+
+		// Migrate Hysteria2 up/down → up_mbps/down_mbps (sing-box 1.14+)
+		if ibType, _ := ib["type"].(string); ibType == "hysteria2" {
+			if up, ok := ib["up"].(string); ok {
+				ib["up_mbps"] = parseMbpsStr(up)
+				delete(ib, "up")
+			}
+			if down, ok := ib["down"].(string); ok {
+				ib["down_mbps"] = parseMbpsStr(down)
+				delete(ib, "down")
+			}
+		}
+	}
+
+	// Migrate outbounds: Hysteria2 up/down → up_mbps/down_mbps
+	// Also remove deprecated "dns" outbound (removed in 1.13.0, use hijack-dns rule action)
+	outbounds, _ := fullConfig["outbounds"].([]interface{})
+	var filteredOutbounds []interface{}
+	for _, raw := range outbounds {
+		ob, ok := raw.(map[string]interface{})
+		if !ok {
+			filteredOutbounds = append(filteredOutbounds, raw)
+			continue
+		}
+		if obType, _ := ob["type"].(string); obType == "dns" {
+			// Skip dns outbound — it's replaced by hijack-dns route action
+			continue
+		} else if obType == "hysteria2" {
+			if up, ok := ob["up"].(string); ok {
+				ob["up_mbps"] = parseMbpsStr(up)
+				delete(ob, "up")
+			}
+			if down, ok := ob["down"].(string); ok {
+				ob["down_mbps"] = parseMbpsStr(down)
+				delete(ob, "down")
+			}
+		}
+		filteredOutbounds = append(filteredOutbounds, ob)
+	}
+	fullConfig["outbounds"] = filteredOutbounds
+
+	// Also remove from listen fields at top level (if present)
+	delete(fullConfig, "sniff")
+	delete(fullConfig, "sniff_override_destination")
+	delete(fullConfig, "sniff_timeout")
+	delete(fullConfig, "domain_strategy")
+
+	if !needsSniffRule {
+		return
+	}
+
+	// Check existing rules for sniff/hijack-dns actions
+	hasSniffAction := false
+	hasDNSHijack := false
+	for _, r := range rules {
+		if rm, ok := r.(map[string]interface{}); ok {
+			if a, _ := rm["action"].(string); a == "sniff" {
+				hasSniffAction = true
+			}
+			if a, _ := rm["action"].(string); a == "hijack-dns" {
+				hasDNSHijack = true
+			}
+		}
+	}
+
+	// Prepend sniff rule and DNS hijack rule at the beginning of route rules
+	var newRules []interface{}
+	if !hasSniffAction {
+		newRules = append(newRules, map[string]interface{}{
+			"action": "sniff",
+		})
+	}
+	if !hasDNSHijack {
+		newRules = append(newRules, map[string]interface{}{
+			"protocol": []interface{}{"dns"},
+			"action":   "hijack-dns",
+		})
+	}
+
+	// Prepend new rules to existing rules
+	newRules = append(newRules, rules...)
+	route["rules"] = newRules
+}
+
+// EnsureSingboxV2RayAPI ensures the experimental section exists for traffic
+// statistics. It prefers v2ray_api (gRPC stats, same protocol as xray) when
+// the binary supports it, falling back to clash_api otherwise.
+//
+// Since sing-box 1.15+ default builds don't include the with_v2ray_api tag,
+// we use clash_api as the traffic stats backend. The Panel's trafficsync
+// service can query clash_api's /connections endpoint for per-user traffic.
+//
+// https://sing-box.sagernet.org/configuration/experimental/v2ray-api/
+// https://sing-box.sagernet.org/configuration/experimental/clash-api/
+func EnsureSingboxV2RayAPI(fullConfig map[string]interface{}) {
+	exp, ok := fullConfig["experimental"].(map[string]interface{})
+	if !ok {
+		exp = map[string]interface{}{}
+		fullConfig["experimental"] = exp
+	}
+
+	// If v2ray_api is already present (user explicitly configured it),
+	// respect that choice and ensure stats is enabled.
+	if v2api, ok := exp["v2ray_api"].(map[string]interface{}); ok {
+		if _, ok := v2api["listen"].(string); !ok {
+			v2api["listen"] = "127.0.0.1:10086"
+		}
+		stats, ok := v2api["stats"].(map[string]interface{})
+		if !ok {
+			stats = map[string]interface{}{}
+			v2api["stats"] = stats
+		}
+		stats["enabled"] = true
+		return
+	}
+
+	// Otherwise, ensure clash_api exists for traffic monitoring.
+	// clash_api provides connection stats via RESTful API.
+	clashAPI, ok := exp["clash_api"].(map[string]interface{})
+	if !ok {
+		clashAPI = map[string]interface{}{}
+		exp["clash_api"] = clashAPI
+	}
+	if _, ok := clashAPI["external_controller"].(string); !ok {
+		clashAPI["external_controller"] = "127.0.0.1:10086"
+	}
+}
+
+// PopulateSingboxStatsTargets populates the v2ray_api.stats.inbounds/outbounds
+// lists with all inbound and outbound tags so that traffic counters are created
+// for every proxy endpoint. This mirrors the xray policy "statsInboundUplink/
+// statsInboundDownlink" mechanism — sing-box uses explicit tag lists instead.
+//
+// If the user already specified inbounds/outbounds in stats, we merge (append
+// missing tags) rather than replace.
+func PopulateSingboxStatsTargets(fullConfig map[string]interface{}) {
+	// Collect all inbound tags
+	var inboundTags []string
+	if inbounds, ok := fullConfig["inbounds"].([]interface{}); ok {
+		for _, ib := range inbounds {
+			if m, ok := ib.(map[string]interface{}); ok {
+				if tag, _ := m["tag"].(string); tag != "" {
+					// Skip internal inbounds that don't need per-tag stats
+					switch m["type"] {
+					case "tun", "redirect", "tuic":
+						continue
+					}
+					inboundTags = append(inboundTags, tag)
+				}
+			}
+		}
+	}
+
+	// Collect all outbound tags (only proxy outbounds, not direct/block/dns)
+	var outboundTags []string
+	if outbounds, ok := fullConfig["outbounds"].([]interface{}); ok {
+		for _, ob := range outbounds {
+			if m, ok := ob.(map[string]interface{}); ok {
+				tag, _ := m["tag"].(string)
+				if tag == "" {
+					continue
+				}
+				switch m["type"] {
+				case "direct", "block", "dns", "selector", "urltest":
+					continue
+				}
+				outboundTags = append(outboundTags, tag)
+			}
+		}
+	}
+
+	// Merge into stats section
+	exp, ok := fullConfig["experimental"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	v2api, ok := exp["v2ray_api"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	stats, ok := v2api["stats"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// Merge inbound tags
+	if len(inboundTags) > 0 {
+		existing := toStringSlice(stats["inbounds"])
+		merged := mergeUnique(existing, inboundTags)
+		if len(merged) > 0 {
+			stats["inbounds"] = merged
+		}
+	}
+	// Merge outbound tags
+	if len(outboundTags) > 0 {
+		existing := toStringSlice(stats["outbounds"])
+		merged := mergeUnique(existing, outboundTags)
+		if len(merged) > 0 {
+			stats["outbounds"] = merged
+		}
+	}
+}
+
+// toStringSlice converts an interface{} to []string.
+func toStringSlice(v interface{}) []string {
+	switch s := v.(type) {
+	case []string:
+		return s
+	case []interface{}:
+		out := make([]string, 0, len(s))
+		for _, item := range s {
+			if str, ok := item.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// mergeUnique merges two string slices, skipping duplicates.
+func mergeUnique(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	result := make([]string, 0, len(a)+len(b))
+	for _, s := range a {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	for _, s := range b {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// ---------------------------------------------------------------------------
+// ChainLink sing-box format converters
+// ---------------------------------------------------------------------------
+
+// convertChainOutboundsToSingbox converts xray-format chain outbounds
+// (generated by ChainLinkGenerator) to sing-box format.
+//
+// xray format:
+//
+//	{"tag":"chain-1-2", "protocol":"vless",
+//	 "settings":{"vnext":[{"address":"1.2.3.4","port":443,
+//	 "users":[{"id":"uuid","email":"chain-relay","encryption":"none"}]}]},
+//	 "streamSettings":{"network":"tcp","security":"none"}}
+//
+// sing-box format:
+//
+//	{"tag":"chain-1-2", "type":"vless",
+//	 "server":"1.2.3.4", "server_port":443,
+//	 "uuid":"uuid"}
+func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(outbounds))
+	for _, ob := range outbounds {
+		m, ok := ob.(map[string]interface{})
+		if !ok {
+			result = append(result, ob) // pass through if not a map
+			continue
+		}
+		protocol, _ := m["protocol"].(string)
+		tag, _ := m["tag"].(string)
+		settings, _ := m["settings"].(map[string]interface{})
+
+		sb := map[string]interface{}{
+			"tag":  tag,
+			"type": protocol,
+		}
+
+		// Extract server/port/uuid/password from xray settings
+		switch protocol {
+		case "vless", "vmess":
+			if vnext, ok := settings["vnext"].([]interface{}); ok && len(vnext) > 0 {
+				if first, ok := vnext[0].(map[string]interface{}); ok {
+					sb["server"] = first["address"]
+					sb["server_port"] = first["port"]
+					if users, ok := first["users"].([]interface{}); ok && len(users) > 0 {
+						if user, ok := users[0].(map[string]interface{}); ok {
+							sb["uuid"] = user["id"]
+						}
+					}
+				}
+			}
+		case "trojan":
+			if servers, ok := settings["servers"].([]interface{}); ok && len(servers) > 0 {
+				if first, ok := servers[0].(map[string]interface{}); ok {
+					sb["server"] = first["address"]
+					sb["server_port"] = first["port"]
+					sb["password"] = first["password"]
+				}
+			}
+		case "shadowsocks":
+			if servers, ok := settings["servers"].([]interface{}); ok && len(servers) > 0 {
+				if first, ok := servers[0].(map[string]interface{}); ok {
+					sb["server"] = first["address"]
+					sb["server_port"] = first["port"]
+					sb["password"] = first["password"]
+					sb["method"] = first["method"]
+				}
+			}
+		default:
+			// Fall back: try vnext format
+			if vnext, ok := settings["vnext"].([]interface{}); ok && len(vnext) > 0 {
+				if first, ok := vnext[0].(map[string]interface{}); ok {
+					sb["server"] = first["address"]
+					sb["server_port"] = first["port"]
+					if users, ok := first["users"].([]interface{}); ok && len(users) > 0 {
+						if user, ok := users[0].(map[string]interface{}); ok {
+							sb["uuid"] = user["id"]
+						}
+					}
+				}
+			}
+		}
+
+		// Convert streamSettings to transport + tls
+		if ss, ok := m["streamSettings"].(map[string]interface{}); ok {
+			network, _ := ss["network"].(string)
+			security, _ := ss["security"].(string)
+			if network != "" && network != "tcp" {
+				transport := map[string]interface{}{"type": network}
+				if path, ok := ss["path"].(string); ok {
+					transport["path"] = path
+				}
+				if sn, ok := ss["serviceName"].(string); ok {
+					transport["service_name"] = sn
+				}
+				sb["transport"] = transport
+			}
+			if security == "tls" {
+				sb["tls"] = map[string]interface{}{"enabled": true}
+				if sni, ok := ss["serverName"].(string); ok && sni != "" {
+					sb["tls"].(map[string]interface{})["server_name"] = sni
+				}
+			}
+		}
+
+		result = append(result, sb)
+	}
+	return result
+}
+
+// convertChainRulesToSingbox converts xray-format routing rules to sing-box format.
+//
+// xray:  {"type":"field", "inboundTag":["in-1"], "outboundTag":"chain-1-2"}
+// sing-box: {"inbound":["in-1"], "outbound":"chain-1-2"}
+//
+// For balancer rules (balancerTag set), sing-box uses selector/urltest outbounds
+// instead of balancers. These rules are skipped (handled by selector outbounds).
+func convertChainRulesToSingbox(rules []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(rules))
+	for _, r := range rules {
+		m, ok := r.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		// Skip balancer rules — sing-box doesn't use balancers
+		if balTag, ok := m["balancerTag"].(string); ok && balTag != "" {
+			continue
+		}
+		sb := map[string]interface{}{}
+		if inTag, ok := m["inboundTag"].([]interface{}); ok {
+			tags := make([]string, 0, len(inTag))
+			for _, t := range inTag {
+				if s, ok := t.(string); ok {
+					tags = append(tags, s)
+				}
+			}
+			if len(tags) > 0 {
+				sb["inbound"] = tags
+			}
+		}
+		if outTag, ok := m["outboundTag"].(string); ok && outTag != "" {
+			sb["outbound"] = outTag
+		}
+		if len(sb) > 0 {
+			result = append(result, sb)
+		}
+	}
+	return result
+}
+
+// convertRelayInboundToSingbox converts xray-format relay-in inbound to sing-box format.
+//
+// xray:  {"tag":"relay-in","protocol":"vless","listen":"0.0.0.0","port":443,
+//	  "settings":{"clients":[{"id":"uuid","email":"chain-relay"}]}}
+// sing-box: {"tag":"relay-in","type":"vless","listen":"0.0.0.0","listen_port":443,
+//	  "users":[{"name":"chain-relay","uuid":"uuid"}]}
+func convertRelayInboundToSingbox(inbound map[string]interface{}) map[string]interface{} {
+	protocol, _ := inbound["protocol"].(string)
+	tag, _ := inbound["tag"].(string)
+	listen, _ := inbound["listen"].(string)
+	port := inbound["port"]
+
+	sb := map[string]interface{}{
+		"tag":    tag,
+		"type":   protocol,
+		"listen": listen,
+	}
+	if port != nil {
+		sb["listen_port"] = port
+	}
+
+	// Convert settings.clients to users[]
+	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+		if clients, ok := settings["clients"].([]interface{}); ok {
+			users := make([]interface{}, 0, len(clients))
+			for _, c := range clients {
+				cm, ok := c.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				user := map[string]interface{}{}
+				if email, ok := cm["email"].(string); ok && email != "" {
+					user["name"] = email
+				}
+				if id, ok := cm["id"].(string); ok && id != "" {
+					user["uuid"] = id
+				}
+				if pw, ok := cm["password"].(string); ok && pw != "" {
+					user["password"] = pw
+				}
+				users = append(users, user)
+			}
+			if len(users) > 0 {
+				sb["users"] = users
+			}
+		}
+	}
+
+	// Convert streamSettings if present (for TLS/transport)
+	if ss, ok := inbound["streamSettings"].(map[string]interface{}); ok {
+		security, _ := ss["security"].(string)
+		if security == "tls" {
+			tls := map[string]interface{}{"enabled": true}
+			if sni, ok := ss["serverName"].(string); ok && sni != "" {
+				tls["server_name"] = sni
+			}
+			sb["tls"] = tls
+		}
+		network, _ := ss["network"].(string)
+		if network != "" && network != "tcp" {
+			transport := map[string]interface{}{"type": network}
+			if path, ok := ss["path"].(string); ok {
+				transport["path"] = path
+			}
+			if sn, ok := ss["serviceName"].(string); ok {
+				transport["service_name"] = sn
+			}
+			sb["transport"] = transport
+		}
+	}
+
+	return sb
 }

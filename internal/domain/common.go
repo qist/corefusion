@@ -25,18 +25,35 @@ const (
 	ProtocolTUIC           ProtocolType = "tuic"
 	ProtocolDokodemo       ProtocolType = "dokodemo-door"
 	ProtocolTUN            ProtocolType = "tun"
+	// sing-box specific multi-purpose and auth inbounds
+	ProtocolMixed          ProtocolType = "mixed"
+	ProtocolHTTP           ProtocolType = "http"
+	ProtocolSocks          ProtocolType = "socks"
+	ProtocolNaive          ProtocolType = "naive"
+	// sing-box advanced inbounds
+	ProtocolAnyTLS        ProtocolType = "anytls"
+	ProtocolShadowTLS     ProtocolType = "shadowtls"
+	ProtocolHysteria      ProtocolType = "hysteria"
+	ProtocolWireGuard     ProtocolType = "wireguard"
+	ProtocolSnell         ProtocolType = "snell"
 )
 
 // TransportType represents the transport layer.
 type TransportType string
 
 const (
-	TransportTCP     TransportType = "tcp"
-	TransportWS      TransportType = "ws"
-	TransportGRPC    TransportType = "grpc"
-	TransportHTTP2   TransportType = "http2"
-	TransportQUIC    TransportType = "quic"
-	TransportReality TransportType = "reality"
+	TransportTCP          TransportType = "tcp"
+	TransportWS           TransportType = "ws"
+	TransportGRPC         TransportType = "grpc"
+	TransportHTTP2        TransportType = "http2"
+	TransportQUIC         TransportType = "quic"
+	TransportReality      TransportType = "reality"
+	TransportHTTPUpgrade  TransportType = "httpupgrade"
+	// Additional transports supported by xray/sing-box
+	TransportKCP          TransportType = "kcp"
+	TransportMKCP         TransportType = "mkcp"
+	TransportH2           TransportType = "h2"
+	TransportXHTTP        TransportType = "xhttp"
 )
 
 // TLSMode represents the TLS mode.

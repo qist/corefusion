@@ -48,6 +48,17 @@ func (v *DefaultCapabilityValidator) SupportsProtocol(core domain.CoreType, prot
 			domain.ProtocolShadowsocks2022,
 			domain.ProtocolHysteria2,
 			domain.ProtocolTUIC,
+			domain.ProtocolMixed,
+			domain.ProtocolHTTP,
+			domain.ProtocolSocks,
+			domain.ProtocolNaive,
+			domain.ProtocolAnyTLS,
+			domain.ProtocolShadowTLS,
+			domain.ProtocolHysteria,
+			domain.ProtocolWireGuard,
+			domain.ProtocolSnell,
+			domain.ProtocolTUN,
+			domain.ProtocolDokodemo,
 		},
 		domain.CoreTypeHysteria2: {
 			domain.ProtocolHysteria2,
@@ -72,8 +83,8 @@ func (v *DefaultCapabilityValidator) SupportsProtocol(core domain.CoreType, prot
 
 // SupportsTransport checks if a core+protocol supports a transport.
 func (v *DefaultCapabilityValidator) SupportsTransport(core domain.CoreType, protocol domain.ProtocolType, transport domain.TransportType) bool {
-	// Hysteria2 and TUIC always use QUIC
-	if protocol == domain.ProtocolHysteria2 || protocol == domain.ProtocolTUIC {
+	// Hysteria2, TUIC and Hysteria always use QUIC
+	if protocol == domain.ProtocolHysteria2 || protocol == domain.ProtocolTUIC || protocol == domain.ProtocolHysteria {
 		return transport == domain.TransportQUIC || transport == ""
 	}
 
@@ -85,14 +96,20 @@ func (v *DefaultCapabilityValidator) SupportsTransport(core domain.CoreType, pro
 			domain.TransportGRPC,
 			domain.TransportHTTP2,
 			domain.TransportReality,
+			domain.TransportKCP,
+			domain.TransportMKCP,
+			domain.TransportXHTTP,
+			domain.TransportH2,
 		},
 		domain.CoreTypeSingBox: {
 			domain.TransportTCP,
 			domain.TransportWS,
 			domain.TransportGRPC,
 			domain.TransportHTTP2,
+			domain.TransportHTTPUpgrade,
 			domain.TransportQUIC,
 			domain.TransportReality,
+			domain.TransportKCP,
 		},
 	}
 
@@ -127,8 +144,8 @@ func (v *DefaultCapabilityValidator) SupportsTLS(core domain.CoreType, protocol 
 		}
 	}
 
-	// Hysteria2 and TUIC always use TLS
-	if protocol == domain.ProtocolHysteria2 || protocol == domain.ProtocolTUIC {
+	// Hysteria2, TUIC and Hysteria always use TLS
+	if protocol == domain.ProtocolHysteria2 || protocol == domain.ProtocolTUIC || protocol == domain.ProtocolHysteria {
 		return tls == domain.TLSModeTLS || tls == domain.TLSModeNone
 	}
 

@@ -310,28 +310,37 @@ func (h *Handler) setUserPaused(c *gin.Context, paused bool) {
 		return
 	}
 
-	// Find user in settings.users or settings.clients
-	settings, ok := config["settings"].(map[string]interface{})
-	if !ok {
-		response.BadRequest(c, "INVALID_CONFIG", "no settings found")
-		return
+	// Find user in the inbound's user containers.
+	// xray-style configs put users in settings.users/clients;
+	// sing-box style configs put users directly in the top-level users array.
+	containers := []map[string]interface{}{config}
+	if settings, ok := config["settings"].(map[string]interface{}); ok {
+		containers = append(containers, settings)
 	}
 
 	found := false
-	for _, key := range []string{"users", "clients"} {
-		users, ok := settings[key].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, u := range users {
-			user, ok := u.(map[string]interface{})
+	for _, container := range containers {
+		for _, key := range []string{"users", "clients"} {
+			users, ok := container[key].([]interface{})
 			if !ok {
 				continue
 			}
-		 userEmail, _ := user["email"].(string)
-			if userEmail == email {
-				user["_paused"] = paused
-				found = true
+			for _, u := range users {
+				user, ok := u.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				userEmail, _ := user["email"].(string)
+				if userEmail == "" {
+					userEmail, _ = user["name"].(string)
+				}
+				if userEmail == email {
+					user["_paused"] = paused
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}

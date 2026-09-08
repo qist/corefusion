@@ -217,35 +217,37 @@ func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, u
 			continue
 		}
 
-		// Check if this inbound has the user
-		settings, ok := inbound["settings"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
+		// Find the user in this inbound's user containers.
+		// xray-style configs put users in settings.users/clients/accounts;
+		// sing-box style configs put users directly in the top-level users array.
 		updated := false
-		for _, key := range []string{"users", "clients", "accounts"} {
-			items, ok := settings[key].([]interface{})
-			if !ok {
-				continue
-			}
-			for _, item := range items {
-				m, ok := item.(map[string]interface{})
+		for _, container := range userContainers(inbound) {
+			for _, key := range []string{"users", "clients", "accounts"} {
+				items, ok := container[key].([]interface{})
 				if !ok {
 					continue
 				}
-				// Match by email or user field
-				itemEmail, _ := m["email"].(string)
-				if itemEmail == "" {
-					itemEmail, _ = m["user"].(string)
-				}
-				if itemEmail == email {
-					// Update traffic
-					up, _ := m["_usedUp"].(float64)
-					down, _ := m["_usedDown"].(float64)
-					m["_usedUp"] = int64(up) + upDelta
-					m["_usedDown"] = int64(down) + downDelta
-					updated = true
+				for _, item := range items {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					// Match by email or user field
+					itemEmail, _ := m["email"].(string)
+					if itemEmail == "" {
+						itemEmail, _ = m["user"].(string)
+					}
+					if itemEmail == "" {
+						itemEmail, _ = m["name"].(string)
+					}
+					if itemEmail == email {
+						// Update traffic
+						up, _ := m["_usedUp"].(float64)
+						down, _ := m["_usedDown"].(float64)
+						m["_usedUp"] = int64(up) + upDelta
+						m["_usedDown"] = int64(down) + downDelta
+						updated = true
+					}
 				}
 			}
 		}
@@ -321,6 +323,18 @@ func (s *Service) updateSubscriptionTraffic(ctx context.Context, statsEmail stri
 	}
 }
 
+// userContainers returns the containers that may hold user entries in an
+// inbound config JSON. xray-style configs put users in settings.users/clients/
+// accounts; sing-box style configs put users directly in the top-level users
+// array. This mirrors the container logic in coreconfig.CleanInboundFields.
+func userContainers(inbound map[string]interface{}) []map[string]interface{} {
+	containers := []map[string]interface{}{inbound}
+	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+		containers = append(containers, settings)
+	}
+	return containers
+}
+
 // ResetAllTraffic resets _usedUp and _usedDown to 0 for all users in all
 // inbound configs on the given server. Also resets subscription traffic
 // cache columns for affected clients.
@@ -337,30 +351,27 @@ func (s *Service) ResetAllTraffic(ctx context.Context, serverID int64) (int, err
 			continue
 		}
 
-		settings, ok := inbound["settings"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
 		configReset := false
-		for _, key := range []string{"users", "clients", "accounts"} {
-			items, ok := settings[key].([]interface{})
-			if !ok {
-				continue
-			}
-			for _, item := range items {
-				m, ok := item.(map[string]interface{})
+		for _, container := range userContainers(inbound) {
+			for _, key := range []string{"users", "clients", "accounts"} {
+				items, ok := container[key].([]interface{})
 				if !ok {
 					continue
 				}
-				if _, hasUp := m["_usedUp"]; hasUp {
-					m["_usedUp"] = int64(0)
-					configReset = true
-					resetCount++
-				}
-				if _, hasDown := m["_usedDown"]; hasDown {
-					m["_usedDown"] = int64(0)
-					configReset = true
+				for _, item := range items {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if _, hasUp := m["_usedUp"]; hasUp {
+						m["_usedUp"] = int64(0)
+						configReset = true
+						resetCount++
+					}
+					if _, hasDown := m["_usedDown"]; hasDown {
+						m["_usedDown"] = int64(0)
+						configReset = true
+					}
 				}
 			}
 		}
@@ -405,34 +416,35 @@ func (s *Service) resetSubscriptionTrafficForServer(ctx context.Context, serverI
 		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
 			continue
 		}
-		settings, ok := inbound["settings"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		for _, key := range []string{"users", "clients", "accounts"} {
-			items, ok := settings[key].([]interface{})
-			if !ok {
-				continue
-			}
-			for _, item := range items {
-				m, ok := item.(map[string]interface{})
+		for _, container := range userContainers(inbound) {
+			for _, key := range []string{"users", "clients", "accounts"} {
+				items, ok := container[key].([]interface{})
 				if !ok {
 					continue
 				}
-				email, _ := m["email"].(string)
-				if email == "" {
-					email, _ = m["user"].(string)
-				}
-				if email != "" {
-					// Extract real email from "user@email.com_tag" format
-					realEmail := email
-					if idx := strings.LastIndex(email, "_"); idx > 0 {
-						candidate := email[:idx]
-						if strings.Contains(candidate, "@") {
-							realEmail = candidate
-						}
+				for _, item := range items {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
 					}
-					emailSet[realEmail] = true
+					email, _ := m["email"].(string)
+					if email == "" {
+						email, _ = m["user"].(string)
+					}
+					if email == "" {
+						email, _ = m["name"].(string)
+					}
+					if email != "" {
+						// Extract real email from "user@email.com_tag" format
+						realEmail := email
+						if idx := strings.LastIndex(email, "_"); idx > 0 {
+							candidate := email[:idx]
+							if strings.Contains(candidate, "@") {
+								realEmail = candidate
+							}
+						}
+						emailSet[realEmail] = true
+					}
 				}
 			}
 		}
@@ -487,31 +499,31 @@ func (s *Service) ResetUserTrafficByEmail(ctx context.Context, email string) ([]
 			continue
 		}
 
-		settings, ok := inbound["settings"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
 		configReset := false
-		for _, key := range []string{"users", "clients", "accounts"} {
-			items, ok := settings[key].([]interface{})
-			if !ok {
-				continue
-			}
-			for _, item := range items {
-				m, ok := item.(map[string]interface{})
+		for _, container := range userContainers(inbound) {
+			for _, key := range []string{"users", "clients", "accounts"} {
+				items, ok := container[key].([]interface{})
 				if !ok {
 					continue
 				}
-				itemEmail, _ := m["email"].(string)
-				if itemEmail == "" {
-					itemEmail, _ = m["user"].(string)
-				}
-				// Match exact email or "email_tag" format
-				if itemEmail == email || strings.HasPrefix(itemEmail, email+"_") {
-					m["_usedUp"] = int64(0)
-					m["_usedDown"] = int64(0)
-					configReset = true
+				for _, item := range items {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					itemEmail, _ := m["email"].(string)
+					if itemEmail == "" {
+						itemEmail, _ = m["user"].(string)
+					}
+					if itemEmail == "" {
+						itemEmail, _ = m["name"].(string)
+					}
+					// Match exact email or "email_tag" format
+					if itemEmail == email || strings.HasPrefix(itemEmail, email+"_") {
+						m["_usedUp"] = int64(0)
+						m["_usedDown"] = int64(0)
+						configReset = true
+					}
 				}
 			}
 		}

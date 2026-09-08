@@ -28,12 +28,23 @@ import (
 )
 
 // XrayAPIProxy handles generic xray API calls by proxying them to the local
-// xray gRPC API. This is used by the Agent to serve xray control requests
+// core's gRPC API. This is used by the Agent to serve xray API requests
 // from the panel for remote nodes.
 //
-// The Agent connects to the local xray process's gRPC API (default 127.0.0.1:10085)
-// and forwards the request, returning the JSON-encoded response.
+// For xray: connects to xray gRPC API (default 127.0.0.1:10085)
+// For sing-box: connects to sing-box V2Ray API (experimental.v2ray_api.listen)
+//
+// sing-box's V2Ray API is protocol-compatible with xray's StatsService,
+// so the same gRPC client (statsCommand.NewStatsServiceClient) works.
+// However, sing-box does not implement HandlerService (proxyman) or
+// RoutingService — those requests will fail gracefully.
 func (a *LocalAgent) XrayAPIProxy(ctx context.Context, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
+	// For stats service: try xray first, then sing-box (both use same gRPC protobuf)
+	if req.Service == "stats" {
+		return a.proxyStatsAny(ctx, req)
+	}
+
+	// For proxyman/router/firewall: only xray supports these
 	conn, err := a.getXrayConn()
 	if err != nil {
 		return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("connect to xray: %v", err)}, nil
@@ -44,8 +55,6 @@ func (a *LocalAgent) XrayAPIProxy(ctx context.Context, req *agentpb.XrayAPIReque
 		return a.proxyProxyman(ctx, conn, req)
 	case "router":
 		return a.proxyRouter(ctx, conn, req)
-	case "stats":
-		return a.proxyStats(ctx, conn, req)
 	case "firewall":
 		return a.proxyFirewall(ctx, req)
 	default:
@@ -330,6 +339,171 @@ func (a *LocalAgent) proxyRouter(ctx context.Context, conn *grpc.ClientConn, req
 // ============================================================
 // stats service proxy
 // ============================================================
+
+// proxyStatsAny tries xray first, then sing-box, for stats requests.
+// This is needed because sing-box's V2Ray API uses a different listen
+// address (experimental.v2ray_api.listen, default 127.0.0.1:8080) but
+// the same gRPC StatsService protobuf.
+//
+// For "getStats" and "getUserStats": tries xray first; if connection fails,
+// tries sing-box. If both succeed, merges results.
+// For "resetStats" and "resetUserStats": tries xray first, then sing-box.
+func (a *LocalAgent) proxyStatsAny(ctx context.Context, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
+	// Try xray connection
+	xrayConn, xrayErr := a.getXrayConn()
+	xrayResp := (*agentpb.XrayAPIResponse)(nil)
+	if xrayErr == nil {
+		xrayResp, _ = a.proxyStats(ctx, xrayConn, req)
+	}
+
+	// Try sing-box connection (V2Ray API)
+	singboxResp := (*agentpb.XrayAPIResponse)(nil)
+	sbConn, sbErr := a.getSingboxV2RayConn()
+	if sbErr == nil {
+		singboxResp, _ = a.proxyStats(ctx, sbConn, req)
+	}
+
+	// If neither worked
+	if xrayResp == nil && singboxResp == nil {
+		return &agentpb.XrayAPIResponse{
+			Success: false,
+			Error:   fmt.Sprintf("connect failed: xray(%v), singbox(%v)", xrayErr, sbErr),
+		}, nil
+	}
+
+	// For reset operations, success from either is fine
+	if req.Method == "resetStats" || req.Method == "resetUserStats" {
+		if xrayResp != nil && xrayResp.Success {
+			return xrayResp, nil
+		}
+		return singboxResp, nil
+	}
+
+	// For query operations, merge results from both cores
+	// If only one succeeded, return that one
+	if xrayResp == nil || !xrayResp.Success {
+		return singboxResp, nil
+	}
+	if singboxResp == nil || !singboxResp.Success {
+		return xrayResp, nil
+	}
+
+	// Both succeeded — merge user and inbound stats
+	return mergeStatsResponses(xrayResp, singboxResp)
+}
+
+// getSingboxV2RayConn returns a gRPC connection to the local sing-box V2Ray API.
+// The address is resolved from the sing-box config's experimental.v2ray_api.listen
+// field, falling back to the same statsAddr as xray (which may be configured
+// to point to sing-box), then to the default sing-box V2Ray API address.
+func (a *LocalAgent) getSingboxV2RayConn() (*grpc.ClientConn, error) {
+	a.xrayConnMu.Lock()
+	defer a.xrayConnMu.Unlock()
+
+	// Determine sing-box V2Ray API address
+	// Priority: singboxStatsAddr (if set) > sing-box config v2ray_api.listen > default
+	addr := a.singboxStatsAddr
+	if addr == "" {
+		addr = "127.0.0.1:8080" // sing-box V2Ray API default
+	}
+
+	client := coredata.NewXrayClient(addr)
+	conn, err := client.Conn(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("connect to sing-box v2ray_api %s: %w", addr, err)
+	}
+	return conn, nil
+}
+
+// mergeStatsResponses merges two XrayAPIResponse stats results into one.
+// Both responses contain JSON with "users" and "inbounds" arrays.
+func mergeStatsResponses(responses ...*agentpb.XrayAPIResponse) (*agentpb.XrayAPIResponse, error) {
+	mergedUsers := make(map[string]map[string]int64)  // email -> {uplink, downlink}
+	mergedInbounds := make(map[string]map[string]int64)
+
+	for _, resp := range responses {
+		if resp == nil || !resp.Success {
+			continue
+		}
+		var data struct {
+			Users    []map[string]interface{} `json:"users"`
+			Inbounds []map[string]interface{} `json:"inbounds"`
+		}
+		if err := json.Unmarshal(resp.Response, &data); err != nil {
+			continue
+		}
+		for _, u := range data.Users {
+			email, _ := u["email"].(string)
+			if email == "" {
+				continue
+			}
+			if mergedUsers[email] == nil {
+				mergedUsers[email] = map[string]int64{}
+			}
+			up, _ := toInt64(u["uplink"])
+			down, _ := toInt64(u["downlink"])
+			mergedUsers[email]["uplink"] += up
+			mergedUsers[email]["downlink"] += down
+		}
+		for _, ib := range data.Inbounds {
+			tag, _ := ib["tag"].(string)
+			if tag == "" {
+				continue
+			}
+			if mergedInbounds[tag] == nil {
+				mergedInbounds[tag] = map[string]int64{}
+			}
+			up, _ := toInt64(ib["uplink"])
+			down, _ := toInt64(ib["downlink"])
+			mergedInbounds[tag]["uplink"] += up
+			mergedInbounds[tag]["downlink"] += down
+		}
+	}
+
+	// Build merged output
+	users := make([]map[string]interface{}, 0, len(mergedUsers))
+	for email, v := range mergedUsers {
+		users = append(users, map[string]interface{}{
+			"email":    email,
+			"uplink":   v["uplink"],
+			"downlink": v["downlink"],
+			"total":    v["uplink"] + v["downlink"],
+		})
+	}
+	inbounds := make([]map[string]interface{}, 0, len(mergedInbounds))
+	for tag, v := range mergedInbounds {
+		inbounds = append(inbounds, map[string]interface{}{
+			"tag":      tag,
+			"uplink":   v["uplink"],
+			"downlink": v["downlink"],
+			"total":    v["uplink"] + v["downlink"],
+		})
+	}
+
+	result := map[string]interface{}{
+		"users":    users,
+		"inbounds": inbounds,
+	}
+	respJSON, _ := json.Marshal(result)
+	return &agentpb.XrayAPIResponse{Success: true, Response: respJSON}, nil
+}
+
+// toInt64 converts an interface{} to int64 (handles float64, int, int64, json.Number).
+func toInt64(v interface{}) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), true
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	case json.Number:
+		i, err := n.Int64()
+		return i, err == nil
+	default:
+		return 0, false
+	}
+}
 
 func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
 	client := statsCommand.NewStatsServiceClient(conn)

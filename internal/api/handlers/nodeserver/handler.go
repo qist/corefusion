@@ -1508,6 +1508,41 @@ func (h *Handler) GenerateX25519Key(c *gin.Context) {
 	response.OK(c, result)
 }
 
+// GenerateRealityKey handles POST /api/v1/node-servers/:id/binaries/reality-key.
+// Generates a Reality (X25519) key pair. Prefers the sing-box binary
+// (`sing-box generate reality-keypair`) so nodes that do not have xray
+// installed still work; falls back to `xray x25519` when sing-box is absent.
+func (h *Handler) GenerateRealityKey(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	// Prefer sing-box's native generate command.
+	raw, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "singbox", "generate", "reality-keypair")
+	if err != nil {
+		// Fall back to xray x25519 for nodes that only have xray installed.
+		raw, err = h.svc.ExecuteBinaryCommand(c.Request.Context(), id, "xray", "x25519")
+		if err != nil {
+			response.InternalError(c, "EXEC_FAILED", "neither singbox nor xray could generate a Reality key: "+err.Error())
+			return
+		}
+		// xray x25519 exposes the public key as "Password (PublicKey)".
+		response.OK(c, map[string]string{
+			"privateKey": raw["PrivateKey"],
+			"publicKey":  raw["Password (PublicKey)"],
+			"engine":     "xray",
+		})
+		return
+	}
+	// sing-box reality-keypair prints "PrivateKey:" and "PublicKey:".
+	response.OK(c, map[string]string{
+		"privateKey": raw["PrivateKey"],
+		"publicKey":  raw["PublicKey"],
+		"engine":     "singbox",
+	})
+}
+
 // GenerateMldsa65Key handles POST /api/v1/node-servers/:id/binaries/mldsa65-key.
 // Generates an ML-DSA-65 key pair using the xray binary on the target node.
 func (h *Handler) GenerateMldsa65Key(c *gin.Context) {

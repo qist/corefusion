@@ -560,14 +560,28 @@
                 <el-form-item label="Target">
                   <div style="display:flex;gap:8px;width:100%">
                     <el-select v-model="rf.streamSettings.reality.target" style="flex:1" filterable allow-create default-first-option @change="onTargetChange">
-                      <el-option v-for="t in realityTargets" :key="t.target" :label="t.target + ' (' + t.sni + ')'" :value="t.target" />
+                      <!-- 本地代理 Reality 服务器分组 -->
+                      <el-option-group v-if="localRealityServers.length > 0" :label="t('protoCenter.reality.localRealityGroup')">
+                        <el-option v-for="t in allRealityTargets.filter(t => t.source === 'local')" :key="'local-' + t.target" :label="t.target" :value="t.target">
+                          <span style="color:#67c23a">●</span>
+                          <span style="margin-left:6px">{{ t.target }}</span>
+                          <span style="color:#909399;margin-left:8px;font-size:12px">— {{ t('protoCenter.reality.serverNamesRandom') }}</span>
+                        </el-option>
+                      </el-option-group>
+                      <!-- 预设公共服务器分组 -->
+                      <el-option-group :label="t('protoCenter.reality.presetGroup')">
+                        <el-option v-for="t in allRealityTargets.filter(t => t.source === 'preset')" :key="'preset-' + t.target" :label="t.target + ' (' + t.sni + ')'" :value="t.target" />
+                      </el-option-group>
                     </el-select>
                     <el-button size="small" @click="showTargetMgr=true">{{ t('protoCenter.reality.manage') }}</el-button>
                   </div>
                   <div v-if="usedSnis.size > 0" class="hint">{{ t('protoCenter.reality.defaultPreset') }}：{{ usedSnis.size }} {{ t('protoCenter.reality.defaultPresetHint') }}</div>
                 </el-form-item>
                 <el-form-item label="Server Names">
-                  <el-input v-model="rf.streamSettings.reality.serverNamesStr" type="textarea" :rows="3" :placeholder="t('protoCenter.reality.serverNamesPlaceholder')" @change="emit" />
+                  <div style="display:flex;gap:8px;align-items:flex-start;width:100%">
+                    <el-input v-model="rf.streamSettings.reality.serverNamesStr" type="textarea" :rows="3" :placeholder="t('protoCenter.reality.serverNamesPlaceholder')" style="flex:1" @change="emit" />
+                    <el-button size="small" style="margin-top:0" :title="t('protoCenter.reality.serverNamesRandomTip')" @click="refreshRandomDomains">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
+                  </div>
                   <div class="hint">{{ t('protoCenter.reality.serverNamesHint') }}</div>
                 </el-form-item>
                 <el-form-item label="Private Key">
@@ -1726,6 +1740,19 @@ const editIdx = ref(-1)
 const activeTab = useQueryState('itab', 'basic')
 const certList = ref([])
 const realityTargets = ref([])
+// 本地代理 Reality 握手服务器（来自 caddy/nginx 代理站点）
+const localRealityServers = ref([])
+// 所有可用的 Reality 目标（本地 + 预设）
+const allRealityTargets = computed(() => {
+  const locals = localRealityServers.value.map(s => ({
+    target: `127.0.0.1:${s.port}`,
+    port: s.port,
+    source: 'local',
+    id: s.id,
+  }))
+  const presets = realityTargets.value.map(t => ({ ...t, source: 'preset' }))
+  return [...locals, ...presets]
+})
 const showTargetMgr = ref(false)
 const newTarget = ref({ target: '', sni: '', type: 'tcp' })
 // SNIs already used by existing reality inbounds on this node-server
@@ -3070,6 +3097,33 @@ async function loadTargets() {
     realityTargets.value = data?.items || (Array.isArray(data) ? data : [])
   } catch {}
 }
+
+// 加载本地代理 Reality 握手服务器（来自 caddy/nginx 代理站点）
+async function loadLocalRealityServers() {
+  const servers = []
+  // 从 caddy 获取
+  try {
+    const caddySites = await client.get(`${nodeBase.value}/caddy/sites`)
+    if (Array.isArray(caddySites)) {
+      caddySites.filter(s => s.template === 'reality').forEach(s => {
+        const port = (s.domain || ':9443').replace(/^:/, '') || '9443'
+        const sni = s.reality_sni || s._reality_sni || s.domain?.replace(/^:/, '') || `reality-local-${port}`
+        servers.push({ id: s.id, sni, port, source: 'caddy' })
+      })
+    }
+  } catch {}
+  // 从 nginx 获取
+  try {
+    const nginxSites = await client.get(`${nodeBase.value}/nginx/sites`)
+    if (Array.isArray(nginxSites)) {
+      nginxSites.filter(s => s.template === 'reality').forEach(s => {
+        const port = parseInt(s.listen_port || s.domain || '9443') || 9443
+        servers.push({ id: s.id, port, source: 'nginx' })
+      })
+    }
+  } catch {}
+  localRealityServers.value = servers
+}
 async function loadCFDomains() {
   try {
     // CF domains are global
@@ -3122,6 +3176,27 @@ async function resetTargets() {
 }
 const rf = reactive(getDefaultInbound())
 
+// Generate a random domain name (completely random — not from preset list)
+function randomDomain() {
+  const syllables = ['ab','ac','ad','af','ag','al','am','an','ap','ar','as','at','av','ba','be','bi','bo','bu','ca','ce','ci','co','da','de','di','do','du','ea','ed','el','em','en','ep','er','es','et','ev','ex','fa','fe','fi','fo','fu','ga','ge','gi','go','gu','ha','he','hi','ho','hu','id','if','in','ir','is','it','ka','ke','ki','ko','la','le','li','lo','lu','ma','me','mi','mo','mu','na','ne','ni','no','nu','ob','od','of','ok','ol','om','on','op','or','os','ot','pa','pe','pi','po','pu','ra','re','ri','ro','ru','sa','se','si','so','su','ta','te','ti','to','tu','ul','um','un','up','ur','us','ut','va','ve','vi','vo','wa','we','wi','wo','xu','ya','ye','yi','yu','za','ze','zi','zo']
+  const tlds = ['com','net','org','io','info','dev','app','xyz','me','cc','top','site','online']
+  let domain = ''
+  const len = 2 + Math.floor(Math.random() * 3)
+  for (let i = 0; i < len; i++) domain += syllables[Math.floor(Math.random() * syllables.length)]
+  return domain + '.' + tlds[Math.floor(Math.random() * tlds.length)]
+}
+// Generate N unique random domains (avoiding already-used SNIs)
+function randomDomains(count, excludeSet) {
+  const set = new Set()
+  const ex = excludeSet || new Set()
+  let attempts = 0
+  while (set.size < count && attempts < count * 50) {
+    attempts++
+    const d = randomDomain()
+    if (!ex.has(d.toLowerCase())) set.add(d)
+  }
+  return [...set]
+}
 function genRemark() { return 'Node-' + Math.random().toString(36).substring(2, 8) }
 function genPort() { return Math.floor(Math.random() * 50000 + 10000) }
 function genId(len) { const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < len; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
@@ -3456,15 +3531,64 @@ function genRandomShortId(rf) {
   emit()
 }
 
+// Check if a target is a local Reality server (127.0.0.1:port format)
+function isLocalTarget(target) {
+  return target && target.startsWith('127.0.0.1:')
+}
+
 function onTargetChange() {
-  const t = realityTargets.value.find(rt => rt.target === rf.streamSettings.reality.target)
-  if (t) {
-    rf.streamSettings.reality.serverNamesStr = t.sni
-    if (isSniUsed(t.sni)) {
-      ElMessage.warning(t('protoCenter.reality.serverNamesConflict') + ': ' + t.sni)
+  const target = rf.streamSettings.reality.target
+  if (!target) { emit(); return }
+
+  if (isLocalTarget(target)) {
+    // Local Reality server: generate multiple completely random domains, xver=1
+    const count = 2 + Math.floor(Math.random() * 3) // 2-4 random domains
+    const used = collectUsedSnis()
+    const domains = randomDomains(count, used)
+    rf.streamSettings.reality.serverNamesStr = domains.join('\n')
+    rf.streamSettings.reality.xver = 1
+  } else {
+    // Preset: use the SNI from the preset target, xver=0
+    const tgt = allRealityTargets.value.find(rt => rt.target === target)
+    if (tgt && tgt.sni) {
+      rf.streamSettings.reality.serverNamesStr = tgt.sni
+      rf.streamSettings.reality.xver = 0
     }
   }
   emit()
+}
+
+// Collect already-used SNIs from other inbounds on this node-server
+function collectUsedSnis() {
+  const used = new Set()
+  form.value.forEach(ib => {
+    if (ib === rf) return
+    if (ib.streamSettings?.security !== 'reality') return
+    const snis = (ib.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
+    snis.forEach(s => used.add(s))
+  })
+  return used
+}
+
+// Regenerate random domains for Server Names (local Reality only)
+function refreshRandomDomains() {
+  const count = 2 + Math.floor(Math.random() * 3)
+  const used = collectUsedSnis()
+  const existing = (rf.streamSettings.reality.serverNamesStr || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean)
+  // Exclude already-used SNIs from other inbounds
+  existing.forEach(s => { if (!collectHasOtherInboundSni(s)) used.add(s.toLowerCase()) })
+  const domains = randomDomains(count, used)
+  rf.streamSettings.reality.serverNamesStr = domains.join('\n')
+  emit()
+}
+
+function collectHasOtherInboundSni(sni) {
+  const low = sni.toLowerCase()
+  return form.value.some(ib => {
+    if (ib === rf) return false
+    if (ib.streamSettings?.security !== 'reality') return false
+    return (ib.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean).includes(low)
+  })
 }
 
 const ifaceList = ref([])
@@ -4735,12 +4859,23 @@ function showAdd() {
   rf._portHopInterface = d._portHopInterface
   activeTab.value = 'basic'
   dlg.value = true
-  // Auto-select random target, excluding those whose SNI is already used
-  const available = realityTargets.value.filter(t => !isSniUsed(t.sni))
-  const pool = available.length > 0 ? available : realityTargets.value
-  const rt = pool[Math.floor(Math.random() * pool.length)]
-  rf.streamSettings.reality.target = rt.target
-  rf.streamSettings.reality.serverNamesStr = rt.sni
+  // Auto-select: prefer local Reality server (random domains), else random preset
+  if (localRealityServers.value.length > 0) {
+    // Pick first available local server
+    const ls = localRealityServers.value[0]
+    rf.streamSettings.reality.target = `127.0.0.1:${ls.port}`
+    const count = 2 + Math.floor(Math.random() * 3)
+    const domains = randomDomains(count, collectUsedSnis())
+    rf.streamSettings.reality.serverNamesStr = domains.join('\n')
+    rf.streamSettings.reality.xver = 1
+  } else {
+    const available = realityTargets.value.filter(t => !isSniUsed(t.sni))
+    const pool = available.length > 0 ? available : realityTargets.value
+    const rt = pool[Math.floor(Math.random() * pool.length)]
+    rf.streamSettings.reality.target = rt.target
+    rf.streamSettings.reality.serverNamesStr = rt.sni
+    rf.streamSettings.reality.xver = 0
+  }
   genRealityKey(rf)
 }
 
@@ -5137,7 +5272,7 @@ async function loadInbounds() {
 
 function emit() { /* no longer needed, saves directly to API */ }
 
-onMounted(() => { loadInbounds(); loadCertList(); loadTargets(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries() })
+onMounted(() => { loadInbounds(); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries() })
 </script>
 
 <style scoped>

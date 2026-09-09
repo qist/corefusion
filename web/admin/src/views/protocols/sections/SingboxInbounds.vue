@@ -94,7 +94,7 @@
 
         <!-- TLS -->
         <el-tab-pane v-if="TLS_ENABLED_PROTOCOLS.includes(rf.type)" :label="t('singbox.inbound.tabs.tls')" name="tls">
-          <SingboxTls :model="rf" :server-id="serverId" @update="noop" />
+          <SingboxTls :model="rf" :server-id="serverId" :inbounds="form" @update="noop" />
         </el-tab-pane>
 
         <!-- Multiplex -->

@@ -264,6 +264,7 @@ function switchSection(k){
 
 function onUpdate(d){
   secOutput.value=d
+  secData.value=d
   secJson.value=d===null?'null (disabled)':JSON.stringify(d,null,2)
 }
 function onJsonChange(v){try{secData.value=JSON.parse(v);secOutput.value=undefined}catch{}}

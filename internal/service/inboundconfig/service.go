@@ -576,7 +576,7 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreTy
 			return nil, fmt.Errorf("parse inbound %s: %w", cfg.Tag, err)
 		}
 		// Clean internal fields and filter paused users (shared logic)
-		coreconfigSvc.CleanInboundFields(inbound, cfg.Tag, cfg.Listen, cfg.Protocol, cfg.Port)
+		coreconfigSvc.CleanInboundFields(inbound, cfg.Tag, cfg.Listen, cfg.Protocol, cfg.Port, coreType)
 		data, err := json.Marshal(inbound)
 		if err != nil {
 			return nil, fmt.Errorf("marshal inbound %s: %w", cfg.Tag, err)

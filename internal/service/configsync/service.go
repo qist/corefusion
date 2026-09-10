@@ -223,6 +223,11 @@ func (s *Service) sync(ctx context.Context, only []int64) error {
 		log.Printf("configsync: xray sync failed: %v", err)
 	}
 
+	// Sync singbox config
+	if err := s.syncCore(ctx, "singbox", only); err != nil {
+		log.Printf("configsync: singbox sync failed: %v", err)
+	}
+
 	s.lastSync = time.Now()
 	log.Printf("configsync: sync completed at %v", s.lastSync)
 	return nil

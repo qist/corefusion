@@ -24,25 +24,6 @@
     <el-form-item v-if="model.sniff" :label="t('singbox.listen.sniffOverride')">
       <el-switch v-model="model.sniff_override_destination" @change="emit" />
     </el-form-item>
-    <!-- TUN specific -->
-    <template v-if="model.type === 'tun'">
-      <el-form-item :label="t('singbox.listen.interface')">
-        <el-input v-model="model.interface_name" :placeholder="t('singbox.listen.interfacePlaceholder')" @change="emit" />
-      </el-form-item>
-      <el-form-item :label="t('singbox.listen.stack')">
-        <el-select v-model="model.stack" style="width:100%" @change="emit">
-          <el-option label="system" value="system" />
-          <el-option label="gvisor" value="gvisor" />
-          <el-option label="mixed" value="mixed" />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="t('singbox.listen.autoRoute')">
-        <el-switch v-model="model.auto_route" @change="emit" />
-      </el-form-item>
-      <el-form-item :label="t('singbox.listen.strictRoute')">
-        <el-switch v-model="model.strict_route" @change="emit" />
-      </el-form-item>
-    </template>
   </el-form>
 </template>
 

@@ -365,7 +365,12 @@ func CleanEmpty(m map[string]interface{}) {
 // both the Panel's inboundconfig.Service and the Agent's localInboundProvider
 // to ensure consistent, clean output — no _accessDomain, _portHop, etc. in the
 // final runtime config.
-func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol string, port int) {
+//
+// coreType determines which fields are injected from the DB record:
+//   - xray:    "port" and "protocol" (xray uses these in inbound config)
+//   - singbox: "listen_port" and "type" (sing-box uses these; config_json
+//     already contains them from buildInbound, but we ensure consistency)
+func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol string, port int, coreType string) {
 	// Ensure required fields are set from the record
 	if tag != "" {
 		inbound["tag"] = tag
@@ -373,22 +378,41 @@ func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol st
 	if listen != "" {
 		inbound["listen"] = listen
 	}
-	if port > 0 {
-		inbound["port"] = port
+	if coreType == "singbox" {
+		// sing-box uses "listen_port" (not "port") and "type" (not "protocol")
+		if port > 0 {
+			inbound["listen_port"] = port
+		}
+		// "type" should already be in config_json from buildInbound; ensure it
+		if protocol != "" {
+			if _, exists := inbound["type"]; !exists {
+				inbound["type"] = protocol
+			}
+		}
+		// Remove xray-specific fields that may have been stored in config_json
+		delete(inbound, "port")
+		delete(inbound, "protocol")
+	} else {
+		// xray: inject "port" and "protocol" from DB record
+		if port > 0 {
+			inbound["port"] = port
+		}
+		if protocol != "" {
+			inbound["protocol"] = protocol
+		}
 	}
-	if protocol != "" {
-		inbound["protocol"] = protocol
+	// Remove ALL internal (underscore-prefixed) fields recursively from top level
+	for k := range inbound {
+		if strings.HasPrefix(k, "_") {
+			delete(inbound, k)
+		}
 	}
-	// Remove internal fields
-	delete(inbound, "_remark")
-	delete(inbound, "_enabled")
-	delete(inbound, "_listenType")
-	delete(inbound, "_socketPath")
-	delete(inbound, "_socketPerm")
-	delete(inbound, "_wgPublicKey")
-	delete(inbound, "_accessDomain")
-	delete(inbound, "_portHop")
 	// Clean nested _ fields from users/clients/accounts and filter paused users
+	// For sing-box: naive/mixed/http/socks use auth.User which only has
+	// username+password — remove the "name" field that frontend may have stored.
+	// sing-box uses DisallowUnknownFields so "name" causes FATAL on these protocols.
+	authUserProtocols := map[string]bool{"naive": true, "mixed": true, "http": true, "socks": true}
+	_, isAuthUserProto := authUserProtocols[protocol]
 	containers := []map[string]interface{}{inbound}
 	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
 		containers = append(containers, settings)
@@ -408,6 +432,10 @@ func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol st
 						delete(m, "_usedUp")
 						delete(m, "_usedDown")
 						delete(m, "_paused")
+						// sing-box auth.User protocols: remove "name" field
+						if coreType == "singbox" && isAuthUserProto {
+							delete(m, "name")
+						}
 						filtered = append(filtered, m)
 					}
 				}
@@ -813,6 +841,59 @@ func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
 				ib["down_mbps"] = parseMbpsStr(down)
 				delete(ib, "down")
 			}
+		}
+
+		// NetworkList: sing-box requires ["tcp","udp"] JSON array or single "tcp"/"udp" string.
+		// Frontend stores as comma-separated string (e.g. "tcp,udp") — convert to array.
+		// sing-box UnmarshalJSON rejects "tcp,udp" as a single unknown network name.
+		if net, ok := ib["network"].(string); ok && net != "" {
+			parts := strings.Split(net, ",")
+			valid := true
+			var nets []string
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "tcp" && p != "udp" {
+					valid = false
+					break
+				}
+				nets = append(nets, p)
+			}
+			if valid && len(nets) == 1 {
+				ib["network"] = nets[0]
+			} else if valid && len(nets) > 1 {
+				ib["network"] = nets
+			}
+		}
+
+		// Clean transport fields: remove fields not valid for the transport type.
+		// sing-box is strict — unknown fields cause FATAL errors.
+		//   http: host, path, method, headers
+		//   ws: path, headers, max_early_data, early_data_header_name
+		//   quic: (no extra fields)
+		//   grpc: service_name, idle_timeout, permit_without_stream, ping_timeout
+		//   httpupgrade: host, path, headers
+		if transport, ok := ib["transport"].(map[string]interface{}); ok {
+			tpType, _ := transport["type"].(string)
+			validFields := map[string]map[string]bool{
+				"http":        {"type": true, "host": true, "path": true, "method": true, "headers": true},
+				"ws":          {"type": true, "path": true, "headers": true, "max_early_data": true, "early_data_header_name": true},
+				"quic":        {"type": true},
+				"grpc":        {"type": true, "service_name": true, "idle_timeout": true, "permit_without_stream": true, "ping_timeout": true},
+				"httpupgrade": {"type": true, "host": true, "path": true, "headers": true},
+			}
+			if allowed, ok := validFields[tpType]; ok {
+				for k := range transport {
+					if !allowed[k] {
+						delete(transport, k)
+					}
+				}
+			}
+		}
+
+		// Clean inbound TLS: remove "utls" field (outbound-only in sing-box).
+		// InboundTLSOptions does not have a UTLS field — including it causes FATAL.
+		if tls, ok := ib["tls"].(map[string]interface{}); ok {
+			delete(tls, "utls")
 		}
 	}
 

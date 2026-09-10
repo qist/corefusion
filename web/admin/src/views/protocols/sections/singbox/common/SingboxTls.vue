@@ -37,7 +37,7 @@
       </el-form-item>
       <!-- 证书选择：从证书中心选择 -->
       <el-form-item :label="t('singbox.tls.selectCert')">
-        <el-select v-model="_certId" style="width:100%" clearable @change="onCertSelect" :placeholder="t('singbox.tls.selectCertPlaceholder')">
+        <el-select v-model="model._certId" style="width:100%" clearable @change="onCertSelect" :placeholder="t('singbox.tls.selectCertPlaceholder')">
           <el-option v-for="c in certificates" :key="c.id" :label="c.name + ' (' + c.domain + ')'" :value="c.id">
             <span>{{ c.name }}</span>
             <span style="color:#909399;margin-left:8px;font-size:12px">{{ c.domain }}</span>
@@ -152,7 +152,6 @@ function collectUsedSnis() {
 
 // 证书中心证书列表
 const certificates = ref([])
-const _certId = ref('')
 
 // Reality 目标选择
 const _realityTarget = ref('')
@@ -202,7 +201,7 @@ async function loadCertificates() {
         (c.fullchain_path && props.model._tlsCertPath.includes(c.fullchain_path)) ||
         (c.cert_path && props.model._tlsCertPath.includes(c.cert_path))
       )
-      if (found) _certId.value = found.id
+      if (found) props.model._certId = found.id
     }
   } catch {}
 }
@@ -238,13 +237,17 @@ function onCertSelect(certId) {
   if (!certId) {
     props.model._tlsCertPath = ''
     props.model._tlsKeyPath = ''
+    props.model._certId = ''
     emit()
     return
   }
-  const cert = certificates.value.find(c => c.id === certId)
+  // certId may be number or string; find with loose comparison
+  const cert = certificates.value.find(c => c.id == certId)
   if (cert) {
+    // Prefer fullchain_path; fall back to cert_path
     props.model._tlsCertPath = cert.fullchain_path || cert.cert_path || ''
     props.model._tlsKeyPath = cert.key_path || ''
+    // Auto-fill server name from cert domain if empty
     if (cert.domain && !props.model._tlsServerName) {
       props.model._tlsServerName = cert.domain
     }
@@ -346,6 +349,12 @@ function onSecurityChange(val) {
     // 启用 Reality 后清空标准证书字段，避免同时存在
     props.model._tlsCertPath = ''
     props.model._tlsKeyPath = ''
+    // 自动选择随机预设握手服务器
+    autoSelectRealityTarget()
+    // 自动生成 short_id（keypair 需要异步调用 API，单独触发）
+    genRandomShortId()
+    // 自动生成 keypair
+    genRealityKey()
   } else if (val === 'tls') {
     props.model._tlsEnabled = true
     props.model._realityEnabled = false
@@ -356,6 +365,19 @@ function onSecurityChange(val) {
     resetReality()
   }
   emit()
+}
+
+// 自动选择随机预设握手服务器（不选本地，因为本地需要先配置代理站点）
+function autoSelectRealityTarget() {
+  const presets = ALL_REALITY_TARGETS.value.filter(t => t.source === 'preset')
+  if (!presets.length) return
+  const tgt = presets[Math.floor(Math.random() * presets.length)]
+  _realityTarget.value = tgt.target
+  // 公共预设服务器：地址和 SNI 相同，xver=0
+  props.model._realityHandshakeServer = tgt.sni
+  props.model._realityHandshakePort = parseInt(tgt.target.split(':')[1]) || 443
+  props.model._tlsServerName = tgt.sni
+  props.model._realityXver = 0
 }
 
 function resetReality() {

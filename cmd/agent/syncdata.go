@@ -821,7 +821,7 @@ func (p *localInboundProvider) GetEnabledInbounds(ctx context.Context, serverID 
 			log.Printf("[Agent] skip inbound_config tag=%s: %v", c.Tag, err)
 			continue
 		}
-		coreconfigSvc.CleanInboundFields(inbound, c.Tag, c.Listen, c.Protocol, c.Port)
+		coreconfigSvc.CleanInboundFields(inbound, c.Tag, c.Listen, c.Protocol, c.Port, coreType)
 		data, err := json.Marshal(inbound)
 		if err != nil {
 			log.Printf("[Agent] marshal inbound_config tag=%s: %v", c.Tag, err)

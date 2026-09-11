@@ -11,7 +11,7 @@ require (
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/qist/sqlite v1.14.0
 	github.com/xtls/xray-core v1.260327.1-0.20260827223245-c1958dba04ba

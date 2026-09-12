@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jlaffaye/ftp v0.2.4
-	github.com/qist/sqlite v1.14.0
+	github.com/qist/sqlite v1.15.0
 	github.com/xtls/xray-core v1.260327.1-0.20260827223245-c1958dba04ba
 	golang.org/x/crypto v0.55.0
 	golang.org/x/oauth2 v0.37.0
@@ -147,5 +147,5 @@ require (
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.56.0 // indirect
+	modernc.org/sqlite v1.57.0 // indirect
 )

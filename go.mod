@@ -17,7 +17,7 @@ require (
 	github.com/xtls/xray-core v1.260327.1-0.20260827223245-c1958dba04ba
 	golang.org/x/crypto v0.57.0
 	golang.org/x/oauth2 v0.37.0
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.6.0

@@ -356,7 +356,6 @@ import SingboxHysteria2 from './singbox/inbounds/SingboxHysteria2.vue'
 import SingboxTuic from './singbox/inbounds/SingboxTuic.vue'
 import SingboxShadowtls from './singbox/inbounds/SingboxShadowtls.vue'
 import SingboxHysteria from './singbox/inbounds/SingboxHysteria.vue'
-import SingboxWireguard from './singbox/inbounds/SingboxWireguard.vue'
 import SingboxSnell from './singbox/inbounds/SingboxSnell.vue'
 import SingboxNaive from './singbox/inbounds/SingboxNaive.vue'
 import SingboxTun from './singbox/inbounds/SingboxTun.vue'
@@ -370,13 +369,13 @@ const { paged: inbPaged, page: inbPage, pageSize: inbSize, total: inbTotal } = u
 
 const PROTOCOL_COMPS = {
   shadowsocks: SingboxShadowsocks, hysteria2: SingboxHysteria2, tuic: SingboxTuic,
-  shadowtls: SingboxShadowtls, hysteria: SingboxHysteria, wireguard: SingboxWireguard, snell: SingboxSnell,
+  shadowtls: SingboxShadowtls, hysteria: SingboxHysteria, snell: SingboxSnell,
   naive: SingboxNaive, tun: SingboxTun, tproxy: SingboxTproxy,
 }
 function getProtocolComp(t) { return PROTOCOL_COMPS[t] || null }
 
 // 有协议专属 tab 的类型（其余参数全部由通用 tab 提供）
-const PROTO_SPECIFIC_TYPES = ['shadowsocks', 'hysteria2', 'tuic', 'shadowtls', 'hysteria', 'wireguard', 'snell', 'naive', 'tun', 'tproxy']
+const PROTO_SPECIFIC_TYPES = ['shadowsocks', 'hysteria2', 'tuic', 'shadowtls', 'hysteria', 'snell', 'naive', 'tun', 'tproxy']
 function hasProtoTab(t) { return PROTO_SPECIFIC_TYPES.includes(t) }
 
 // 访问地址：优先使用 server 域名/IP（由父级传入 data 时可附带），无则用 listen

@@ -28,12 +28,6 @@ export function buildOutbound(ob) {
   if (ob.bind_interface) out.bind_interface = ob.bind_interface
   if (ob.routing_mark) out.routing_mark = ob.routing_mark
   if (ob.domain_resolver) out.domain_resolver = ob.domain_resolver
-  // WireGuard
-  if (ob.type === 'wireguard') {
-    if (ob._wg_private_key) out.private_key = ob._wg_private_key
-    if (ob._wg_address) out.local_address = ob._wg_address.split(',').map(s => s.trim()).filter(Boolean)
-    if (ob.peers?.length) out.peers = ob.peers.map(p => ({ ...p }))
-  }
   if (ob._tlsEnabled) {
     const tls = { enabled: true }
     const realityOk = supportsReality(ob.type, ob._transportType)
@@ -133,10 +127,6 @@ export function parseOutbound(ob) {
   o._realityPublicKey = ob.tls?.reality?.public_key || ''
   o._realityShortId = ob.tls?.reality?.short_id || ''
   o._utlsFingerprint = ob.tls?.utls?.fingerprint || ''
-  // WireGuard
-  o._wg_private_key = ob.private_key || ''
-  o._wg_address = Array.isArray(ob.local_address) ? ob.local_address.join(',') : (ob.local_address || '')
-  o.peers = ob.peers || []
   return o
 }
 

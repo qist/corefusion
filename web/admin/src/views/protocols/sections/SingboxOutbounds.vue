@@ -120,7 +120,6 @@ import SingboxObShadowsocks from './singbox/outbounds/SingboxObShadowsocks.vue'
 import SingboxObTUIC from './singbox/outbounds/SingboxObTUIC.vue'
 import SingboxObHysteria2 from './singbox/outbounds/SingboxObHysteria2.vue'
 import SingboxObHttp from './singbox/outbounds/SingboxObHttp.vue'
-import SingboxObWireguard from './singbox/outbounds/SingboxObWireguard.vue'
 import SingboxObGroup from './singbox/outbounds/SingboxObGroup.vue'
 import SingboxObSimple from './singbox/outbounds/SingboxObSimple.vue'
 
@@ -130,11 +129,11 @@ const emitFn = defineEmits(['update'])
 const form = reactive([])
 const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(computed(() => form), { pageKey: 'sbObPage', pageSizeKey: 'sbObSize' })
 
-const OUTBOUND_TYPES = ['direct', 'block', 'dns', 'selector', 'urltest', 'vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks', 'wireguard']
+const OUTBOUND_TYPES = ['direct', 'block', 'dns', 'selector', 'urltest', 'vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks']
 const PROTOCOL_COMPS = {
   vmess: SingboxObVmess, vless: SingboxObVless, trojan: SingboxObTrojan,
   shadowsocks: SingboxObShadowsocks, tuic: SingboxObTUIC, hysteria2: SingboxObHysteria2,
-  http: SingboxObHttp, socks: SingboxObHttp, wireguard: SingboxObWireguard,
+  http: SingboxObHttp, socks: SingboxObHttp,
   selector: SingboxObGroup, urltest: SingboxObGroup,
   direct: SingboxObSimple, block: SingboxObSimple, dns: SingboxObSimple,
 }

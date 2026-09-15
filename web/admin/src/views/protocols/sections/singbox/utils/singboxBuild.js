@@ -250,14 +250,6 @@ export function buildInbound(ib) {
     if (ib.quic_congestion_control) out.quic_congestion_control = ib.quic_congestion_control
   }
 
-  // WireGuard
-  if (ib.type === 'wireguard') {
-    if (ib._wg_private_key) out.private_key = ib._wg_private_key
-    if (ib._wg_address) out.address = ib._wg_address.split(',').map(s => s.trim()).filter(Boolean)
-    if (ib._wg_peers?.length) out.peers = ib._wg_peers.map(p => ({ ...p }))
-    if (ib.listen_port) out.listen_port = ib.listen_port
-  }
-
   // TLS（Reality 仅支持 vless / vmess / trojan + tcp/http/ws/httpupgrade/grpc）
   const realityOk = supportsReality(ib.type, ib._transportType)
   if (ib._tlsEnabled) {
@@ -447,9 +439,6 @@ o._snellMode = ib.mode || ''
   o._hy2StreamRecvWindow = ib.stream_receive_window || ''
   o._hy2ConnRecvWindow = ib.connection_receive_window || ''
   o._hy2MaxConcurrentStreams = ib.max_concurrent_streams || 0
-  o._wg_private_key = ib.private_key || ''
-  o._wg_address = Array.isArray(ib.address) ? ib.address.join(',') : (ib.address || '')
-  o._wg_peers = ib.peers || []
   // naive
   o.quic_congestion_control = ib.quic_congestion_control || ''
   // tuic (TUICInboundOptions + QUICOptions)

@@ -2,6 +2,8 @@ package nodeserver
 
 import (
 	"context"
+	"encoding/base64"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/curve25519"
 
 	"corefusion/internal/api/handlers/system"
 	"corefusion/internal/api/response"
@@ -1565,7 +1568,8 @@ func (h *Handler) GenerateMldsa65Key(c *gin.Context) {
 }
 
 // GenerateWgKey handles POST /api/v1/node-servers/:id/binaries/wg-key.
-// Generates a WireGuard key pair using the xray binary on the target node.
+// Generates a WireGuard key pair. For sing-box, generates locally; for xray, uses xray binary.
+// If body contains "private_key", derives the public key locally instead of generating new pair.
 func (h *Handler) GenerateWgKey(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -1573,6 +1577,44 @@ func (h *Handler) GenerateWgKey(c *gin.Context) {
 		return
 	}
 	coreType := c.DefaultQuery("core_type", "xray")
+
+	// Check if caller wants to derive public key from existing private key
+	var req struct {
+		PrivateKey string `json:"private_key"`
+	}
+	if c.Request.ContentLength > 0 {
+		_ = c.ShouldBindJSON(&req)
+	}
+
+	// If a private key is provided, derive the public key locally (no need to call any binary)
+	if req.PrivateKey != "" {
+		pubKey, err := deriveWgPublicKey(req.PrivateKey)
+		if err != nil {
+			response.BadRequest(c, "DERIVE_FAILED", "invalid private key: "+err.Error())
+			return
+		}
+		response.OK(c, map[string]string{
+			"privateKey": req.PrivateKey,
+			"publicKey":  pubKey,
+		})
+		return
+	}
+
+	// For sing-box, generate key pair locally using curve25519
+	if coreType == "singbox" {
+		privKey, pubKey, err := generateWgKeyPairLocal()
+		if err != nil {
+			response.InternalError(c, "GENERATE_FAILED", err.Error())
+			return
+		}
+		response.OK(c, map[string]string{
+			"privateKey": privKey,
+			"publicKey":  pubKey,
+		})
+		return
+	}
+
+	// For xray, generate a new key pair via xray binary
 	raw, err := h.svc.ExecuteBinaryCommand(c.Request.Context(), id, coreType, "wg")
 	if err != nil {
 		response.InternalError(c, "EXEC_FAILED", err.Error())
@@ -1587,6 +1629,46 @@ func (h *Handler) GenerateWgKey(c *gin.Context) {
 		result["hash32"] = v
 	}
 	response.OK(c, result)
+}
+
+// generateWgKeyPairLocal generates a WireGuard key pair locally using curve25519.
+// Returns base64-encoded private and public keys.
+func generateWgKeyPairLocal() (string, string, error) {
+	// Generate 32 random bytes for private key
+	privKeyBytes := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, privKeyBytes); err != nil {
+		return "", "", fmt.Errorf("generate random key: %w", err)
+	}
+	// Clamp the private key per WireGuard spec
+	privKeyBytes[0] &= 248
+	privKeyBytes[31] &= 127
+	privKeyBytes[31] |= 64
+
+	// Derive public key from private key
+	pubKeyBytes, err := curve25519.X25519(privKeyBytes, curve25519.Basepoint)
+	if err != nil {
+		return "", "", fmt.Errorf("derive public key: %w", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(privKeyBytes),
+		base64.StdEncoding.EncodeToString(pubKeyBytes), nil
+}
+
+// deriveWgPublicKey derives a WireGuard public key from a base64-encoded private key.
+// Uses curve25519 scalar base-point multiplication.
+func deriveWgPublicKey(privateKeyBase64 string) (string, error) {
+	privateKey, err := base64.StdEncoding.DecodeString(privateKeyBase64)
+	if err != nil {
+		return "", fmt.Errorf("decode private key: %w", err)
+	}
+	if len(privateKey) != 32 {
+		return "", fmt.Errorf("invalid private key length: %d (expected 32)", len(privateKey))
+	}
+	publicKey, err := curve25519.X25519(privateKey, curve25519.Basepoint)
+	if err != nil {
+		return "", fmt.Errorf("curve25519 derive: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(publicKey), nil
 }
 
 // GenerateEchKeys handles POST /api/v1/node-servers/:id/binaries/ech-generate.

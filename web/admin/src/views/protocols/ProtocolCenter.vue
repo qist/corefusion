@@ -147,6 +147,7 @@ import SingboxRoute from './sections/SingboxRoute.vue'
 import SingboxInbounds from './sections/SingboxInbounds.vue'
 import SingboxOutbounds from './sections/SingboxOutbounds.vue'
 import SingboxExperimental from './sections/SingboxExperimental.vue'
+import SingboxEndpoints from './sections/SingboxEndpoints.vue'
 import Hy2Listen from './sections/Hy2Listen.vue'
 import Hy2Tls from './sections/Hy2Tls.vue'
 import Hy2Auth from './sections/Hy2Auth.vue'
@@ -189,7 +190,8 @@ function getSections() {
     ],
     singbox: [
       {key:'log',label:t('protoCenter.sections.log')},{key:'dns',label:t('protoCenter.sections.dns')},{key:'route',label:t('protoCenter.sections.route')},
-      {key:'inbounds',label:t('protoCenter.sections.inbounds')},{key:'outbounds',label:t('protoCenter.sections.outbounds')},{key:'experimental',label:t('protoCenter.sections.experimental')},
+      {key:'inbounds',label:t('protoCenter.sections.inbounds')},{key:'outbounds',label:t('protoCenter.sections.outbounds')},
+      {key:'endpoints',label:t('protoCenter.sections.endpoints')},{key:'experimental',label:t('protoCenter.sections.experimental')},
       {key:'_preview',label:t('protoCenter.sections.preview')},
     ],
     hysteria2: [
@@ -206,7 +208,7 @@ function getSections() {
 
 const COMPS = {
   xray: {log:XrayLog,api:XrayApi,dns:XrayDns,routing:XrayRouting,policy:XrayPolicy,inbounds:XrayInbounds,outbounds:XrayOutbounds,stats:XrayStats,metrics:XrayMetrics,fakedns:XrayFakeDns,observatory:XrayObservatory,burstObservatory:XrayBurstObs,version:XrayVersion,geodata:XrayGeodata,_preview:JsonPreview},
-  singbox: {log:SingboxLog,dns:SingboxDns,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,experimental:SingboxExperimental,_preview:JsonPreview},
+  singbox: {log:SingboxLog,dns:SingboxDns,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,endpoints:SingboxEndpoints,experimental:SingboxExperimental,_preview:JsonPreview},
   hysteria2: {listen:Hy2Listen,tls:Hy2Tls,auth:Hy2Auth,bandwidth:Hy2Bandwidth,quic:Hy2Quic,trafficStats:Hy2TrafficStats,_preview:JsonPreview},
   tuic: {server:TuicServer,users:TuicUsers,certificate:TuicTls,congestion_control:TuicCongestion,_preview:JsonPreview},
 }

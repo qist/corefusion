@@ -38,6 +38,7 @@ import (
 	nodesHandler "corefusion/internal/api/handlers/nodes"
 	nodeServerHandler "corefusion/internal/api/handlers/nodeserver"
 	oauthHandler "corefusion/internal/api/handlers/oauth"
+	endpointconfigHandler "corefusion/internal/api/handlers/endpointconfig"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
 	planHandler "corefusion/internal/api/handlers/plan"
 	portalHandler "corefusion/internal/api/handlers/portal"
@@ -85,6 +86,7 @@ import (
 	nodeService "corefusion/internal/service/node"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
 	oauthService "corefusion/internal/service/oauth"
+	endpointconfigSvc "corefusion/internal/service/endpointconfig"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
 	planSvc "corefusion/internal/service/plan"
 	portalSvc "corefusion/internal/service/portal"
@@ -477,6 +479,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
 	outboundConfigSvc := outboundconfigSvc.NewService(outboundConfigRepo)
+	endpointConfigRepo := repository.NewEndpointConfigRepository(database)
+	endpointConfigSvc := endpointconfigSvc.NewService(endpointConfigRepo)
 
 	// Config sync service (periodically syncs DB configs to disk)
 	configSyncSvc := configsyncSvc.NewService(coreConfigSvc, inboundConfigSvc, outboundConfigSvc, dataDir, 5*time.Minute)
@@ -1218,15 +1222,19 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// Outbound Configs (moved under /node-servers/:id/)
 			outboundCfgH := outboundconfigHandler.NewHandler(outboundConfigSvc)
 
-			// Inject config sync hooks so inbound/outbound changes trigger
+			// Endpoint Configs (WireGuard/Tailscale/OpenConnect/OpenVPN endpoints)
+			endpointCfgH := endpointconfigHandler.NewHandler(endpointConfigSvc)
+
+			// Inject config sync hooks so inbound/outbound/endpoint changes trigger
 			// full config sync to remote nodes.
 			// Inbound changes also trigger mirror sync (mirrors replicate inbounds
-			// and caddy/nginx proxy configs); outbound changes do NOT trigger
-			// mirror sync.
+			// and caddy/nginx proxy configs); outbound/endpoint changes do NOT.
 			inboundSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: true}
 			outboundSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
+			endpointSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
 			inboundCfgH.SetSyncHook(inboundSyncHook)
 			outboundCfgH.SetSyncHook(outboundSyncHook)
+			endpointCfgH.SetSyncHook(endpointSyncHook)
 
 			// NOTE: SyncData and traffic reset hooks are injected after
 			// nodeServerSvcInst is created (see below).
@@ -2205,55 +2213,62 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 				nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/resume", inboundCfgH.ResumeUser)
 				nodeServersGroup.POST("/:id/inbound-configs/reset-all-traffic", inboundCfgH.ResetAllTraffic)
 
-				// Outbound Configs (per node)
-				nodeServersGroup.GET("/:id/outbound-configs", outboundCfgH.List)
-				nodeServersGroup.POST("/:id/outbound-configs", outboundCfgH.Create)
-				nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
-				nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
-				nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
-				nodeServersGroup.PUT("/:id/outbound-configs/reorder", outboundCfgH.Reorder)
+			// Outbound Configs (per node)
+			nodeServersGroup.GET("/:id/outbound-configs", outboundCfgH.List)
+			nodeServersGroup.POST("/:id/outbound-configs", outboundCfgH.Create)
+			nodeServersGroup.GET("/:id/outbound-configs/:cfgId", outboundCfgH.Get)
+			nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
+			nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
+			nodeServersGroup.PUT("/:id/outbound-configs/reorder", outboundCfgH.Reorder)
+
+			// Endpoint Configs (per node — WireGuard/Tailscale/OpenConnect/OpenVPN)
+			nodeServersGroup.GET("/:id/endpoint-configs", endpointCfgH.List)
+			nodeServersGroup.POST("/:id/endpoint-configs", endpointCfgH.Create)
+			nodeServersGroup.GET("/:id/endpoint-configs/:cfgId", endpointCfgH.Get)
+			nodeServersGroup.PUT("/:id/endpoint-configs/:cfgId", endpointCfgH.Update)
+			nodeServersGroup.DELETE("/:id/endpoint-configs/:cfgId", endpointCfgH.Delete)
 
 				// Services (per node) — service management with process control
-				nodeServersGroup.GET("/:id/services", svcH.List)
-				nodeServersGroup.POST("/:id/services", svcH.Create)
-				nodeServersGroup.GET("/:id/services/:serviceId", svcH.GetByID)
-				nodeServersGroup.PUT("/:id/services/:serviceId", svcH.Update)
-				nodeServersGroup.DELETE("/:id/services/:serviceId", svcH.Delete)
-				nodeServersGroup.GET("/:id/services/:serviceId/endpoints", svcH.ListEndpoints)
-				nodeServersGroup.POST("/:id/services/:serviceId/endpoints", svcH.CreateEndpoint)
-				nodeServersGroup.PUT("/:id/services/:serviceId/endpoints/:endpointId", svcH.UpdateEndpoint)
-				nodeServersGroup.DELETE("/:id/services/:serviceId/endpoints/:endpointId", svcH.DeleteEndpoint)
+			nodeServersGroup.GET("/:id/services", svcH.List)
+			nodeServersGroup.POST("/:id/services", svcH.Create)
+			nodeServersGroup.GET("/:id/services/:serviceId", svcH.GetByID)
+			nodeServersGroup.PUT("/:id/services/:serviceId", svcH.Update)
+			nodeServersGroup.DELETE("/:id/services/:serviceId", svcH.Delete)
+			nodeServersGroup.GET("/:id/services/:serviceId/endpoints", svcH.ListEndpoints)
+			nodeServersGroup.POST("/:id/services/:serviceId/endpoints", svcH.CreateEndpoint)
+			nodeServersGroup.PUT("/:id/services/:serviceId/endpoints/:endpointId", svcH.UpdateEndpoint)
+			nodeServersGroup.DELETE("/:id/services/:serviceId/endpoints/:endpointId", svcH.DeleteEndpoint)
 
-				// Process management (per node service)
-				nodeServersGroup.POST("/:id/services/:serviceId/start", processH.Start)
-				nodeServersGroup.POST("/:id/services/:serviceId/stop", processH.Stop)
-				nodeServersGroup.POST("/:id/services/:serviceId/restart", processH.Restart)
-				nodeServersGroup.GET("/:id/services/:serviceId/process-status", processH.GetProcessStatus)
-				nodeServersGroup.PUT("/:id/services/:serviceId/guardian", processH.UpdateGuardian)
-				nodeServersGroup.GET("/:id/services/:serviceId/crash-logs", processH.GetCrashLogs)
-				nodeServersGroup.GET("/:id/services/:serviceId/crash-logs/:logId", processH.GetCrashLog)
-				nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
-				nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
+			// Process management (per node service)
+			nodeServersGroup.POST("/:id/services/:serviceId/start", processH.Start)
+			nodeServersGroup.POST("/:id/services/:serviceId/stop", processH.Stop)
+			nodeServersGroup.POST("/:id/services/:serviceId/restart", processH.Restart)
+			nodeServersGroup.GET("/:id/services/:serviceId/process-status", processH.GetProcessStatus)
+			nodeServersGroup.PUT("/:id/services/:serviceId/guardian", processH.UpdateGuardian)
+			nodeServersGroup.GET("/:id/services/:serviceId/crash-logs", processH.GetCrashLogs)
+			nodeServersGroup.GET("/:id/services/:serviceId/crash-logs/:logId", processH.GetCrashLog)
+			nodeServersGroup.DELETE("/:id/services/:serviceId/crash-logs", processH.ClearCrashLogs)
+			nodeServersGroup.GET("/:id/services/process-status", processH.ListAllProcessStatuses)
 
-				// Geo Rules — global rule source and file management (migrated from per-node to global)
-				// These are now under /api/v1/geo-rules/* (no node-servers/:id prefix)
-				// Per-node push endpoint stays under node-servers for backwards compat
-				nodeServersGroup.POST("/:id/geo-rules/push", geoRuleH.PushToNode)
+			// Geo Rules — global rule source and file management (migrated from per-node to global)
+			// These are now under /api/v1/geo-rules/* (no node-servers/:id prefix)
+			// Per-node push endpoint stays under node-servers for backwards compat
+			nodeServersGroup.POST("/:id/geo-rules/push", geoRuleH.PushToNode)
 
-				// WARP (per node) — each node has its own independent WARP configs
-				nodeServersGroup.GET("/:id/warp", warpH.List)
-				nodeServersGroup.GET("/:id/warp/status", warpH.Status)
-				nodeServersGroup.POST("/:id/warp/register", warpH.Register)
-				nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
-				nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
-				nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)
+			// WARP (per node) — each node has its own independent WARP configs
+			nodeServersGroup.GET("/:id/warp", warpH.List)
+			nodeServersGroup.GET("/:id/warp/status", warpH.Status)
+			nodeServersGroup.POST("/:id/warp/register", warpH.Register)
+			nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
+			nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
+			nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)
 
-				// Share Domain Configs (per node — direct domains only)
-				nodeServersGroup.GET("/:id/share-domains", shareDomainH.ListByServer)
-				nodeServersGroup.POST("/:id/share-domains", shareDomainH.Create)
-				nodeServersGroup.PUT("/:id/share-domains/:domainId", shareDomainH.Update)
-				nodeServersGroup.DELETE("/:id/share-domains/:domainId", shareDomainH.Delete)
-				nodeServersGroup.DELETE("/:id/share-domains/all", shareDomainH.ClearAll)
+			// Share Domain Configs (per node — direct domains only)
+			nodeServersGroup.GET("/:id/share-domains", shareDomainH.ListByServer)
+			nodeServersGroup.POST("/:id/share-domains", shareDomainH.Create)
+			nodeServersGroup.PUT("/:id/share-domains/:domainId", shareDomainH.Update)
+			nodeServersGroup.DELETE("/:id/share-domains/:domainId", shareDomainH.Delete)
+			nodeServersGroup.DELETE("/:id/share-domains/all", shareDomainH.ClearAll)
 			}
 
 			// CA Center (separate group, reuses nodeServerH) — admin only.

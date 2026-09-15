@@ -30,8 +30,8 @@ export const AUTH_USER_PROTOCOLS = ['mixed', 'http', 'socks', 'naive']
 // 用户使用 userkey 的协议（snell）
 export const USERKEY_PROTOCOLS = ['snell']
 
-// 非用户型（wireguard 用 peers）
-export const NON_USER_PROTOCOLS = ['wireguard']
+// 保留此常量用于兼容性（wireguard 已独立为 endpoint）
+export const NON_USER_PROTOCOLS = []
 
 // Reality 支持矩阵（sing-box 官方）
 // 协议仅限 vless / vmess / trojan
@@ -53,22 +53,22 @@ export const OUTBOUND_TRANSPORT_PROTOCOLS = ['vmess', 'vless', 'trojan']
 // 出站（客户端）协议：支持 Multiplex
 export const OUTBOUND_MULTIPLEX_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks']
 // 出站（客户端）协议：使用服务器地址（server/server_port）
-export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks', 'wireguard']
+export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks']
 // 出站（客户端）协议：协议专属设置（需要 Protocol tab）
-export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'tuic', 'http', 'socks', 'wireguard', 'selector', 'urltest', 'direct', 'block', 'dns']
+export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'tuic', 'http', 'socks', 'selector', 'urltest', 'direct', 'block', 'dns']
 
 // 该协议支持的 Inbound type 白名单
 export const INBOUND_TYPES = [
   'mixed', 'http', 'socks', 'naive', 'tun', 'redirect', 'tproxy',
   'vless', 'vmess', 'trojan', 'hysteria2', 'shadowsocks', 'tuic',
-  'anytls', 'shadowtls', 'hysteria', 'wireguard', 'snell',
+  'anytls', 'shadowtls', 'hysteria', 'snell',
 ]
 
 // 每种协议默认监听端口（打开就自动填入）
 export const DEFAULT_PORTS = {
   vless: 443, vmess: 443, trojan: 443, shadowsocks: 8388, hysteria2: 8443,
   tuic: 8443, mixed: 1080, http: 8080, socks: 1080, naive: 80,
-  anytls: 8443, shadowtls: 8443, hysteria: 36712, wireguard: 51820, snell: 6153,
+  anytls: 8443, shadowtls: 8443, hysteria: 36712, snell: 6153,
   redirect: 1080,
   tproxy: 1080,
   tun: 0,

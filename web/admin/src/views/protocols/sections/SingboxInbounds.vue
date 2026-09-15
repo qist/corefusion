@@ -74,7 +74,7 @@
         <template #default="{row}"><span>{{ row.tag || '-' }}</span></template>
       </el-table-column>
       <el-table-column :label="t('singbox.inbound.port')" width="70" align="center">
-        <template #default="{row}"><span style="font-weight:500">{{ row.listen_port }}</span></template>
+        <template #default="{row}"><span style="font-weight:500">{{ row.listen_port || '-' }}</span></template>
       </el-table-column>
       <el-table-column :label="t('singbox.inbound.protocol')" min-width="170" align="left">
         <template #default="{row}">
@@ -144,7 +144,7 @@
               <el-input v-model="rf.listen" :placeholder="t('singbox.listen.listenPlaceholder')" />
             </el-form-item>
             <el-form-item :label="t('singbox.listen.listenPort')">
-              <el-input-number v-model="rf.listen_port" :min="0" :max="65535" :disabled="rf.type==='tun'" style="width:100%" />
+              <el-input-number v-model="rf.listen_port" :min="0" :max="65535" :disabled="rf.type==='tun' || rf.type==='cloudflared'" style="width:100%" />
             </el-form-item>
             <el-form-item :label="t('singbox.listen.domainStrategy')">
               <el-select v-model="rf.domain_strategy" style="width:100%" clearable>
@@ -360,6 +360,7 @@ import SingboxSnell from './singbox/inbounds/SingboxSnell.vue'
 import SingboxNaive from './singbox/inbounds/SingboxNaive.vue'
 import SingboxTun from './singbox/inbounds/SingboxTun.vue'
 import SingboxTproxy from './singbox/inbounds/SingboxTproxy.vue'
+import SingboxCloudflared from './singbox/inbounds/SingboxCloudflared.vue'
 
 const props = defineProps({ data: Array, coreType: String, serverId: Number, serverInfo: { type: Object, default: () => ({}) } })
 const emitFn = defineEmits(['update'])
@@ -371,11 +372,12 @@ const PROTOCOL_COMPS = {
   shadowsocks: SingboxShadowsocks, hysteria2: SingboxHysteria2, tuic: SingboxTuic,
   shadowtls: SingboxShadowtls, hysteria: SingboxHysteria, snell: SingboxSnell,
   naive: SingboxNaive, tun: SingboxTun, tproxy: SingboxTproxy,
+  cloudflared: SingboxCloudflared,
 }
 function getProtocolComp(t) { return PROTOCOL_COMPS[t] || null }
 
 // 有协议专属 tab 的类型（其余参数全部由通用 tab 提供）
-const PROTO_SPECIFIC_TYPES = ['shadowsocks', 'hysteria2', 'tuic', 'shadowtls', 'hysteria', 'snell', 'naive', 'tun', 'tproxy']
+const PROTO_SPECIFIC_TYPES = ['shadowsocks', 'hysteria2', 'tuic', 'shadowtls', 'hysteria', 'snell', 'naive', 'tun', 'tproxy', 'cloudflared']
 function hasProtoTab(t) { return PROTO_SPECIFIC_TYPES.includes(t) }
 
 // 访问地址：优先使用 server 域名/IP（由父级传入 data 时可附带），无则用 listen

@@ -61,7 +61,7 @@ export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadows
 export const INBOUND_TYPES = [
   'mixed', 'http', 'socks', 'naive', 'tun', 'redirect', 'tproxy',
   'vless', 'vmess', 'trojan', 'hysteria2', 'shadowsocks', 'tuic',
-  'anytls', 'shadowtls', 'hysteria', 'snell',
+  'anytls', 'shadowtls', 'hysteria', 'snell', 'cloudflared',
 ]
 
 // 每种协议默认监听端口（打开就自动填入）
@@ -277,6 +277,25 @@ export function inboundDefaultsForType(type) {
     base._tproxyUdpMapping = ''
     base._tproxyUdpFiltering = ''
     base._tproxyUdpNatMax = 0
+  }
+  if (type === 'cloudflared') {
+    // Cloudflare Tunnel inbound - no local port needed (edge-initiated)
+    base.listen_port = 0
+    base.token = ''
+    base.ha_connections = 0
+    base.protocol = ''
+    base.post_quantum = false
+    base.edge_ip_version = 0
+    base._edgeIpVersion = '0'
+    base.datagram_version = ''
+    base.grace_period = ''
+    base.region = ''
+    base._cfdControlDetour = ''
+    base._cfdControlBindInterface = ''
+    base._cfdControlRoutingMark = 0
+    base._cfdTunnelDetour = ''
+    base._cfdTunnelBindInterface = ''
+    base._cfdTunnelRoutingMark = 0
   }
   return base
 }

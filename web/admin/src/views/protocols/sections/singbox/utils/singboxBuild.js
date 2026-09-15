@@ -84,6 +84,34 @@ export function buildInbound(ib) {
     if (ib._tproxyUdpNatMax) out.udp_nat_max = ib._tproxyUdpNatMax
   }
 
+  // Cloudflared (Cloudflare Tunnel)
+  if (ib.type === 'cloudflared') {
+    if (ib.token) out.token = ib.token
+    if (ib.ha_connections > 0) out.ha_connections = ib.ha_connections
+    if (ib.protocol) out.protocol = ib.protocol
+    if (ib.post_quantum) out.post_quantum = true
+    if (ib.edge_ip_version) out.edge_ip_version = ib.edge_ip_version
+    if (ib.datagram_version) out.datagram_version = ib.datagram_version
+    if (ib.grace_period) out.grace_period = ib.grace_period
+    if (ib.region) out.region = ib.region
+    // ControlDialer
+    if (ib._cfdControlDetour || ib._cfdControlBindInterface || ib._cfdControlRoutingMark) {
+      const cd = {}
+      if (ib._cfdControlDetour) cd.detour = ib._cfdControlDetour
+      if (ib._cfdControlBindInterface) cd.bind_interface = ib._cfdControlBindInterface
+      if (ib._cfdControlRoutingMark) cd.routing_mark = ib._cfdControlRoutingMark
+      if (Object.keys(cd).length) out.control_dialer = cd
+    }
+    // TunnelDialer
+    if (ib._cfdTunnelDetour || ib._cfdTunnelBindInterface || ib._cfdTunnelRoutingMark) {
+      const td = {}
+      if (ib._cfdTunnelDetour) td.detour = ib._cfdTunnelDetour
+      if (ib._cfdTunnelBindInterface) td.bind_interface = ib._cfdTunnelBindInterface
+      if (ib._cfdTunnelRoutingMark) td.routing_mark = ib._cfdTunnelRoutingMark
+      if (Object.keys(td).length) out.tunnel_dialer = td
+    }
+  }
+
   // Users
   // 注意：naive/mixed/http/socks 使用 auth.User，只有 username+password，没有 name 字段
   // 其他协议（vless/vmess/trojan/hysteria2/tuic/ss 等）的 User 都有 name 字段
@@ -534,6 +562,24 @@ o._snellMode = ib.mode || ''
   o._tproxyUdpMapping = ib.udp_mapping || ''
   o._tproxyUdpFiltering = ib.udp_filtering || ''
   o._tproxyUdpNatMax = ib.udp_nat_max || 0
+  // cloudflared parse
+  if (ib.type === 'cloudflared') {
+    o.token = ib.token || ''
+    o.ha_connections = ib.ha_connections || 0
+    o.protocol = ib.protocol || ''
+    o.post_quantum = ib.post_quantum || false
+    o.edge_ip_version = ib.edge_ip_version || 0
+    o._edgeIpVersion = String(ib.edge_ip_version || 0)
+    o.datagram_version = ib.datagram_version || ''
+    o.grace_period = ib.grace_period || ''
+    o.region = ib.region || ''
+    o._cfdControlDetour = ib.control_dialer?.detour || ''
+    o._cfdControlBindInterface = ib.control_dialer?.bind_interface || ''
+    o._cfdControlRoutingMark = ib.control_dialer?.routing_mark || 0
+    o._cfdTunnelDetour = ib.tunnel_dialer?.detour || ''
+    o._cfdTunnelBindInterface = ib.tunnel_dialer?.bind_interface || ''
+    o._cfdTunnelRoutingMark = ib.tunnel_dialer?.routing_mark || 0
+  }
   o._remark = ib._remark || ''
   o._accessDomainEnabled = ib._accessDomainEnabled || false
   o._accessDomainType = ib._accessDomainType || 'direct'

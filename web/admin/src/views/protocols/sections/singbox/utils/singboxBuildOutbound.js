@@ -1,6 +1,6 @@
 // sing-box outbound 通用 build/parse（表单模型 <-> sing-box 配置）
 // 出站用 _ 前缀字段表达表单，build 时映射为标准 sing-box 字段。
-import { inboundDefaultsForType, generateKey } from './singboxDefaults'
+import { inboundDefaultsForType, generateKey, generatePassword } from './singboxDefaults'
 import { supportsReality, REALITY_PROTOCOLS } from './singboxDefaults'
 
 export function buildOutbound(ob) {
@@ -28,7 +28,15 @@ export function buildOutbound(ob) {
   if (ob.bind_interface) out.bind_interface = ob.bind_interface
   if (ob.routing_mark) out.routing_mark = ob.routing_mark
   if (ob.domain_resolver) out.domain_resolver = ob.domain_resolver
-
+  // Dial common: network / TCP fast open / multi-path / UDP fragment
+  if (ob.network) out.network = ob.network
+  if (ob.tcp_fast_open) out.tcp_fast_open = true
+  if (ob.tcp_multi_path) out.tcp_multi_path = true
+  if (ob.udp_fragment) out.udp_fragment = true
+  // VMess security
+  if (ob.type === 'vmess' && ob.security && ob.security !== 'auto') out.security = ob.security
+  // VLESS encryption
+  if (ob.type === 'vless' && ob.encryption && ob.encryption !== 'none') out.encryption = ob.encryption
   // Snell: obfs_mode (source field is obfs_mode, not obfs)
   if (ob.type === 'snell') {
     if (ob.obfs_mode) out.obfs_mode = ob.obfs_mode
@@ -38,6 +46,25 @@ export function buildOutbound(ob) {
     if (ob.version) out.version = ob.version
     if (ob._snellMode) out.mode = ob._snellMode
   }
+  // TUIC extra fields
+  if (ob.type === 'tuic') {
+    if (ob.auth_timeout) out.auth_timeout = ob.auth_timeout
+    if (ob.max_idle_time) out.max_idle_time = ob.max_idle_time
+    if (ob.zero_rtt_handshake) out.zero_rtt_handshake = true
+    if (ob.heartbeat) out.heartbeat = ob.heartbeat
+    if (ob.udp_relay_mode) out.udp_relay_mode = ob.udp_relay_mode
+  }
+  // Hysteria2 outbound obfs: { password: ... }
+  if (ob.type === 'hysteria2' && ob._hy2ObfsPassword) out.obfs = { password: ob._hy2ObfsPassword }
+  // Hysteria (legacy) outbound fields
+  if (ob.type === 'hysteria') {
+    if (ob.auth_str) out.auth_str = ob.auth_str
+    if (ob.recv_window_conn) out.recv_window_conn = ob.recv_window_conn
+    if (ob.recv_window) out.recv_window = ob.recv_window
+    if (ob.disable_mtu_discovery) out.disable_mtu_discovery = true
+  }
+  // SSH outbound fields
+  if (ob.type === 'ssh' && ob.host_key) out.host_key = ob.host_key.split(',').map(s => s.trim()).filter(Boolean)
   if (ob._tlsEnabled) {
     const tls = { enabled: true }
     const realityOk = supportsReality(ob.type, ob._transportType)
@@ -145,6 +172,31 @@ export function parseOutbound(ob) {
   o._realityPublicKey = ob.tls?.reality?.public_key || ''
   o._realityShortId = ob.tls?.reality?.short_id || ''
   o._utlsFingerprint = ob.tls?.utls?.fingerprint || ''
+  // VMess security / VLESS encryption
+  o.security = ob.security || 'auto'
+  o.encryption = ob.encryption || 'none'
+  // Dial common
+  o.network = ob.network || ''
+  o.tcp_fast_open = ob.tcp_fast_open || false
+  o.tcp_multi_path = ob.tcp_multi_path || false
+  o.udp_fragment = ob.udp_fragment || false
+  // TUIC extra fields parse
+  o.auth_timeout = ob.auth_timeout || ''
+  o.max_idle_time = ob.max_idle_time || ''
+  o.zero_rtt_handshake = ob.zero_rtt_handshake || false
+  o.heartbeat = ob.heartbeat || ''
+  o.udp_relay_mode = ob.udp_relay_mode || ''
+  // Hysteria2 outbound obfs parse: { password } → _hy2ObfsPassword
+  if (ob.type === 'hysteria2' && ob.obfs && typeof ob.obfs === 'object') {
+    o._hy2ObfsPassword = ob.obfs.password || ''
+  }
+  // Hysteria (legacy) outbound fields parse
+  o.auth_str = ob.auth_str || ''
+  o.recv_window_conn = ob.recv_window_conn || 0
+  o.recv_window = ob.recv_window || 0
+  o.disable_mtu_discovery = ob.disable_mtu_discovery || false
+  // SSH host_key parse: array → string
+  o.host_key = Array.isArray(ob.host_key) ? ob.host_key.join(', ') : (ob.host_key || '')
   return o
 }
 
@@ -174,6 +226,20 @@ export function outboundDefaultsForType(type) {
     user: 'root', private_key: '', private_key_path: '', _sshHostKey: '',
     // ShadowTLS
     _shadowtlsStrictMode: false, _shadowtlsWildcardSni: 'off',
+    // Dial common
+    network: '', tcp_fast_open: false, tcp_multi_path: false, udp_fragment: false,
+    // VMess security
+    security: 'auto',
+    // VLESS encryption
+    encryption: 'none',
+    // SSH host_key (array)
+    host_key: '',
+    // TUIC extra
+    max_idle_time: '', auth_timeout: '', zero_rtt_handshake: false, heartbeat: '', udp_relay_mode: '',
+    // Hysteria2 obfs (outbound): { password }
+    _hy2ObfsPassword: '',
+    // AnyTLS padding
+    _anytlsPadding: false,
   }
   if (type === 'direct' || type === 'block' || type === 'dns') {
     delete base.server; delete base.server_port

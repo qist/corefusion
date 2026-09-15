@@ -47,15 +47,15 @@ export function supportsReality(type, transportType) {
 // ---------- 出站支持矩阵 ----------
 
 // 出站（客户端）协议：支持 TLS
-export const OUTBOUND_TLS_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'http', 'socks']
+export const OUTBOUND_TLS_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'tuic', 'http', 'socks', 'anytls', 'shadowtls', 'snell']
 // 出站（客户端）协议：支持 V2Ray Transport
 export const OUTBOUND_TRANSPORT_PROTOCOLS = ['vmess', 'vless', 'trojan']
 // 出站（客户端）协议：支持 Multiplex
 export const OUTBOUND_MULTIPLEX_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks']
 // 出站（客户端）协议：使用服务器地址（server/server_port）
-export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks']
+export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'shadowsocks', 'shadowsocks2022', 'tuic', 'anytls', 'shadowtls', 'snell', 'http', 'socks']
 // 出站（客户端）协议：协议专属设置（需要 Protocol tab）
-export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'tuic', 'http', 'socks', 'selector', 'urltest', 'direct', 'block', 'dns']
+export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'shadowsocks2022', 'hysteria2', 'hysteria', 'tuic', 'anytls', 'shadowtls', 'snell', 'http', 'socks', 'selector', 'urltest', 'direct', 'block', 'dns', 'tor', 'ssh']
 
 // 该协议支持的 Inbound type 白名单
 export const INBOUND_TYPES = [

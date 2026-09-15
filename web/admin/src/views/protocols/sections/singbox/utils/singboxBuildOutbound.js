@@ -1,6 +1,6 @@
 // sing-box outbound 通用 build/parse（表单模型 <-> sing-box 配置）
 // 出站用 _ 前缀字段表达表单，build 时映射为标准 sing-box 字段。
-import { inboundDefaultsForType } from './singboxDefaults'
+import { inboundDefaultsForType, generateKey } from './singboxDefaults'
 import { supportsReality, REALITY_PROTOCOLS } from './singboxDefaults'
 
 export function buildOutbound(ob) {
@@ -28,6 +28,16 @@ export function buildOutbound(ob) {
   if (ob.bind_interface) out.bind_interface = ob.bind_interface
   if (ob.routing_mark) out.routing_mark = ob.routing_mark
   if (ob.domain_resolver) out.domain_resolver = ob.domain_resolver
+
+  // Snell: obfs_mode (source field is obfs_mode, not obfs)
+  if (ob.type === 'snell') {
+    if (ob.obfs_mode) out.obfs_mode = ob.obfs_mode
+    else if (ob.obfs) out.obfs_mode = ob.obfs
+    if (ob.obfs_host) out.obfs_host = ob.obfs_host
+    if (ob.psk) out.psk = ob.psk
+    if (ob.version) out.version = ob.version
+    if (ob._snellMode) out.mode = ob._snellMode
+  }
   if (ob._tlsEnabled) {
     const tls = { enabled: true }
     const realityOk = supportsReality(ob.type, ob._transportType)
@@ -88,6 +98,14 @@ export function buildOutbound(ob) {
 
 export function parseOutbound(ob) {
   const o = { ...ob }
+  // Snell: obfs_mode → obfs (form), mode → _snellMode
+  if (ob.type === 'snell') {
+    o.obfs = ob.obfs_mode || ''
+    o._snellMode = ob.mode || ''
+    o.psk = ob.psk || ''
+    o.version = ob.version || 5
+    o.obfs_host = ob.obfs_host || ''
+  }
   o.username = ob.username || ''
   o._tlsEnabled = ob.tls?.enabled || false
   o._tlsServerName = ob.tls?.server_name || ''
@@ -148,9 +166,24 @@ export function outboundDefaultsForType(type) {
     // Reality（客户端）
     _realityEnabled: false, _realityPublicKey: '', _realityShortId: '', _utlsFingerprint: 'chrome',
     bind_interface: '', routing_mark: 0, domain_resolver: '',
+    // Snell
+    psk: '', version: 0, obfs: '', obfs_host: '', _snellMode: '',
+    // Tor
+    executable_path: 'tor', data_directory: '', _torExtraArgs: '',
+    // SSH
+    user: 'root', private_key: '', private_key_path: '', _sshHostKey: '',
+    // ShadowTLS
+    _shadowtlsStrictMode: false, _shadowtlsWildcardSni: 'off',
   }
   if (type === 'direct' || type === 'block' || type === 'dns') {
     delete base.server; delete base.server_port
+  }
+  if (type === 'shadowsocks2022') {
+    base.method = '2022-blake3-aes-256-gcm'
+  }
+  if (type === 'snell') {
+    base.version = 5
+    base.psk = generateKey()
   }
   return base
 }

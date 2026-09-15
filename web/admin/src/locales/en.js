@@ -4990,6 +4990,28 @@ ctx.moduleTitle           — Current module title`,
       tolerance: 'Tolerance',
       interruptConns: 'Interrupt Existing Connections',
       outbounds: 'Outbounds',
+      // Snell / ShadowTLS common
+      psk: 'PSK',
+      version: 'Version',
+      obfs: 'Obfs',
+      obfsHost: 'Obfs Host',
+      mode: 'Mode',
+      strictMode: 'Strict Mode',
+      wildcardSni: 'Wildcard SNI',
+      off: 'off',
+    },
+    obTor: {
+      executablePath: 'Executable Path',
+      extraArgs: 'Extra Args',
+      extraArgsPlaceholder: 'Comma-separated arguments',
+      dataDirectory: 'Data Directory',
+    },
+    obSsh: {
+      user: 'User',
+      privateKeyPath: 'Private Key Path',
+      privateKey: 'Private Key',
+      hostKey: 'Host Key',
+      hostKeyPlaceholder: 'Comma-separated algorithms',
     },
     protocol: {
       shadowsocks: {

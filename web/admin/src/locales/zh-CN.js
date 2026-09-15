@@ -4922,6 +4922,28 @@ ctx.moduleTitle           — 当前模块标题`,
       tolerance: '容差',
       interruptConns: '中断已有连接',
       outbounds: '出站',
+      // Snell / ShadowTLS 通用
+      psk: '预共享密钥',
+      version: '版本',
+      obfs: '混淆',
+      obfsHost: '混淆主机',
+      mode: '模式',
+      strictMode: '严格模式',
+      wildcardSni: '通配符 SNI',
+      off: '关闭',
+    },
+    obTor: {
+      executablePath: '可执行文件路径',
+      extraArgs: '额外参数',
+      extraArgsPlaceholder: '逗号分隔的参数',
+      dataDirectory: '数据目录',
+    },
+    obSsh: {
+      user: '用户名',
+      privateKeyPath: '私钥路径',
+      privateKey: '私钥',
+      hostKey: '主机密钥',
+      hostKeyPlaceholder: '逗号分隔的算法',
     },
     protocol: {
       shadowsocks: {

@@ -117,9 +117,16 @@ import SingboxObVless from './singbox/outbounds/SingboxObVless.vue'
 import SingboxObVmess from './singbox/outbounds/SingboxObVmess.vue'
 import SingboxObTrojan from './singbox/outbounds/SingboxObTrojan.vue'
 import SingboxObShadowsocks from './singbox/outbounds/SingboxObShadowsocks.vue'
+import SingboxObShadowsocks2022 from './singbox/outbounds/SingboxObShadowsocks2022.vue'
 import SingboxObTUIC from './singbox/outbounds/SingboxObTUIC.vue'
 import SingboxObHysteria2 from './singbox/outbounds/SingboxObHysteria2.vue'
+import SingboxObHysteria from './singbox/outbounds/SingboxObHysteria.vue'
 import SingboxObHttp from './singbox/outbounds/SingboxObHttp.vue'
+import SingboxObAnyTls from './singbox/outbounds/SingboxObAnyTls.vue'
+import SingboxObShadowtls from './singbox/outbounds/SingboxObShadowtls.vue'
+import SingboxObSnell from './singbox/outbounds/SingboxObSnell.vue'
+import SingboxObTor from './singbox/outbounds/SingboxObTor.vue'
+import SingboxObSsh from './singbox/outbounds/SingboxObSsh.vue'
 import SingboxObGroup from './singbox/outbounds/SingboxObGroup.vue'
 import SingboxObSimple from './singbox/outbounds/SingboxObSimple.vue'
 
@@ -129,13 +136,16 @@ const emitFn = defineEmits(['update'])
 const form = reactive([])
 const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(computed(() => form), { pageKey: 'sbObPage', pageSizeKey: 'sbObSize' })
 
-const OUTBOUND_TYPES = ['direct', 'block', 'dns', 'selector', 'urltest', 'vmess', 'vless', 'trojan', 'hysteria2', 'shadowsocks', 'tuic', 'http', 'socks']
+const OUTBOUND_TYPES = ['direct', 'block', 'dns', 'selector', 'urltest', 'vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'shadowsocks', 'shadowsocks2022', 'tuic', 'anytls', 'shadowtls', 'snell', 'http', 'socks', 'tor', 'ssh']
 const PROTOCOL_COMPS = {
   vmess: SingboxObVmess, vless: SingboxObVless, trojan: SingboxObTrojan,
-  shadowsocks: SingboxObShadowsocks, tuic: SingboxObTUIC, hysteria2: SingboxObHysteria2,
-  http: SingboxObHttp, socks: SingboxObHttp,
+  shadowsocks: SingboxObShadowsocks, shadowsocks2022: SingboxObShadowsocks2022,
+  tuic: SingboxObTUIC, hysteria2: SingboxObHysteria2, hysteria: SingboxObHysteria,
+  http: SingboxObHttp, socks: SingboxObHttp, anytls: SingboxObAnyTls,
+  shadowtls: SingboxObShadowtls, snell: SingboxObSnell,
   selector: SingboxObGroup, urltest: SingboxObGroup,
   direct: SingboxObSimple, block: SingboxObSimple, dns: SingboxObSimple,
+  tor: SingboxObTor, ssh: SingboxObSsh,
 }
 function getProtocolComp(t) { return PROTOCOL_COMPS[t] || null }
 

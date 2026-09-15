@@ -4945,6 +4945,9 @@ ctx.moduleTitle           — 当前模块标题`,
       hostKey: '主机密钥',
       hostKeyPlaceholder: '逗号分隔的算法',
     },
+    obBridge: {
+      hint: 'Bridge 是一个透传出站，无协议专属设置，仅使用标签和基础字段。',
+    },
     protocol: {
       shadowsocks: {
         method: '加密方式',

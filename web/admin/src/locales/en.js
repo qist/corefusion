@@ -5013,6 +5013,9 @@ ctx.moduleTitle           — Current module title`,
       hostKey: 'Host Key',
       hostKeyPlaceholder: 'Comma-separated algorithms',
     },
+    obBridge: {
+      hint: 'Bridge is a passthrough bridge outbound. It has no protocol-specific settings. Only tag and basic base settings apply.',
+    },
     protocol: {
       shadowsocks: {
         method: 'Method',

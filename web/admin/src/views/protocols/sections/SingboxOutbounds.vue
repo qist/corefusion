@@ -56,7 +56,7 @@
           <el-form label-width="150px" label-position="left">
             <el-form-item :label="t('singbox.outbound.type')">
               <el-select v-model="rf.type" style="width:100%" @change="onTypeChange">
-                <el-option v-for="t in OUTBOUND_TYPES" :key="t" :label="t" :value="t" />
+                <el-option v-for="t in OUTBOUND_TYPES" :key="t.value" :label="t.label" :value="t.value" />
               </el-select>
             </el-form-item>
           </el-form>
@@ -127,6 +127,8 @@ import SingboxObShadowtls from './singbox/outbounds/SingboxObShadowtls.vue'
 import SingboxObSnell from './singbox/outbounds/SingboxObSnell.vue'
 import SingboxObTor from './singbox/outbounds/SingboxObTor.vue'
 import SingboxObSsh from './singbox/outbounds/SingboxObSsh.vue'
+import SingboxObNaive from './singbox/outbounds/SingboxObNaive.vue'
+import SingboxObBridge from './singbox/outbounds/SingboxObBridge.vue'
 import SingboxObGroup from './singbox/outbounds/SingboxObGroup.vue'
 import SingboxObSimple from './singbox/outbounds/SingboxObSimple.vue'
 
@@ -136,13 +138,38 @@ const emitFn = defineEmits(['update'])
 const form = reactive([])
 const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(computed(() => form), { pageKey: 'sbObPage', pageSizeKey: 'sbObSize' })
 
-const OUTBOUND_TYPES = ['direct', 'block', 'dns', 'selector', 'urltest', 'vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'shadowsocks', 'shadowsocks2022', 'tuic', 'anytls', 'shadowtls', 'snell', 'http', 'socks', 'tor', 'ssh']
+// 出站类型选项（value 用于存储/判断，label 用于显示）
+const OUTBOUND_TYPES = [
+  { value: 'direct', label: 'Direct' },
+  { value: 'block', label: 'Block' },
+  { value: 'dns', label: 'DNS' },
+  { value: 'selector', label: 'Selector' },
+  { value: 'urltest', label: 'URLTest' },
+  { value: 'socks', label: 'SOCKS' },
+  { value: 'http', label: 'HTTP' },
+  { value: 'shadowsocks', label: 'Shadowsocks' },
+  { value: 'shadowsocks2022', label: 'Shadowsocks2022' },
+  { value: 'vmess', label: 'VMess' },
+  { value: 'vless', label: 'VLESS' },
+  { value: 'trojan', label: 'Trojan' },
+  { value: 'hysteria', label: 'Hysteria' },
+  { value: 'hysteria2', label: 'Hysteria2' },
+  { value: 'tuic', label: 'TUIC' },
+  { value: 'anytls', label: 'AnyTLS' },
+  { value: 'shadowtls', label: 'ShadowTLS' },
+  { value: 'snell', label: 'Snell' },
+  { value: 'naive', label: 'NaiveProxy' },
+  { value: 'bridge', label: 'Bridge' },
+  { value: 'tor', label: 'Tor' },
+  { value: 'ssh', label: 'SSH' },
+]
 const PROTOCOL_COMPS = {
   vmess: SingboxObVmess, vless: SingboxObVless, trojan: SingboxObTrojan,
   shadowsocks: SingboxObShadowsocks, shadowsocks2022: SingboxObShadowsocks2022,
   tuic: SingboxObTUIC, hysteria2: SingboxObHysteria2, hysteria: SingboxObHysteria,
   http: SingboxObHttp, socks: SingboxObHttp, anytls: SingboxObAnyTls,
   shadowtls: SingboxObShadowtls, snell: SingboxObSnell,
+  naive: SingboxObNaive, bridge: SingboxObBridge,
   selector: SingboxObGroup, urltest: SingboxObGroup,
   direct: SingboxObSimple, block: SingboxObSimple, dns: SingboxObSimple,
   tor: SingboxObTor, ssh: SingboxObSsh,

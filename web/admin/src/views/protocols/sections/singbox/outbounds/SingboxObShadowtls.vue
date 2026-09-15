@@ -1,7 +1,12 @@
 <template>
   <el-form label-width="150px" label-position="left">
+    <!-- ShadowTLS 出站：仅 version / password / outbound TLS 的 server_name 等 -->
     <el-form-item :label="t('singbox.obProtocol.version')">
-      <el-input-number v-model="model.version" :min="1" :max="3" style="width:100%" @change="emit" />
+      <el-select v-model="model.version" style="width:100%" @change="emit">
+        <el-option :label="t('singbox.obProtocol.v1')" :value="1" />
+        <el-option :label="t('singbox.obProtocol.v2')" :value="2" />
+        <el-option :label="t('singbox.obProtocol.v3')" :value="3" />
+      </el-select>
     </el-form-item>
     <el-form-item :label="t('singbox.obProtocol.password')">
       <div style="display:flex;gap:8px;flex:1">
@@ -12,18 +17,11 @@
     <el-form-item :label="t('singbox.obProtocol.strictMode')">
       <el-switch v-model="model._shadowtlsStrictMode" @change="emit" />
     </el-form-item>
-    <el-form-item :label="t('singbox.obProtocol.wildcardSni')">
-      <el-select v-model="model._shadowtlsWildcardSni" style="width:100%" clearable @change="emit">
-        <el-option :label="t('singbox.obProtocol.off')" value="off" />
-        <el-option label="authed" value="authed" />
-        <el-option label="all" value="all" />
-      </el-select>
-    </el-form-item>
   </el-form>
 </template>
 
 <script setup>
-// ShadowTLS 出站：专属设置(Version/Password/StrictMode/WildcardSni)；Base/TLS 由容器层提供
+// ShadowTLS 出站：专属设置(Version/Password/StrictMode)
 import { useI18n } from 'vue-i18n'
 import { generatePassword } from '../utils/singboxDefaults'
 const { t } = useI18n()

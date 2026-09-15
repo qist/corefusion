@@ -7,16 +7,22 @@
       </div>
     </el-form-item>
     <el-form-item :label="t('singbox.obProtocol.upMbps')">
-      <el-input v-model="model['up_mbps']" placeholder="100" @change="emit" />
+      <el-input v-model="model['up_mbps']" :placeholder="t('singbox.obProtocol.speedPlaceholder')" @change="emit" />
     </el-form-item>
     <el-form-item :label="t('singbox.obProtocol.downMbps')">
-      <el-input v-model="model['down_mbps']" placeholder="100" @change="emit" />
+      <el-input v-model="model['down_mbps']" :placeholder="t('singbox.obProtocol.speedPlaceholder')" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.obProtocol.obfs')">
+      <el-input v-model="model._hy2ObfsPassword" :placeholder="t('singbox.obProtocol.obfsPasswordHint')" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.obProtocol.disableMtuDiscovery')">
+      <el-switch v-model="model.disable_mtu_discovery" @change="emit" />
     </el-form-item>
   </el-form>
 </template>
 
 <script setup>
-// Hysteria2 出站：专属设置(Password/带宽)；Base/TLS 由容器层提供
+// Hysteria2 出站：专属设置(Password/UpMbps/DownMbps/Obfs/DisableMtu)；Base/TLS 由容器层提供
 import { useI18n } from 'vue-i18n'
 import { generatePassword } from '../utils/singboxDefaults'
 const { t } = useI18n()

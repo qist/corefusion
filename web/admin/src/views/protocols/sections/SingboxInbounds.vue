@@ -196,11 +196,8 @@
                 </el-form-item>
                 <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
                   <el-select v-model="rf._portHopRange" style="width:100%">
-                    <el-option label="10000-20000" value="10000-20000" />
-                    <el-option label="20000-50000" value="20000-50000" />
-                    <el-option label="30000-60000" value="30000-60000" />
-                    <el-option label="40000-50000" value="40000-50000" />
-                    <el-option label="40000-65000" value="40000-65000" />
+                    <!-- 预设段互不重叠，避免同一节点多个入站开启端口跳跃时互相覆盖 -->
+                    <el-option v-for="r in portHopRangeOptions" :key="r" :label="r" :value="r" />
                   </el-select>
                 </el-form-item>
                 <el-form-item v-else label="Port Range">
@@ -902,6 +899,12 @@ async function restartCore() {
 // ==================== Access Domain data loading ====================
 
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+// 端口跳跃预设段：互不重叠（10000 宽）；历史值也显示，避免编辑旧入站时下拉框空白
+const PORT_HOP_PRESETS = ['10000-19999', '20000-29999', '30000-39999', '40000-49999', '50000-59999']
+const portHopRangeOptions = computed(() => {
+  const cur = rf._portHopRange
+  return cur && !PORT_HOP_PRESETS.includes(cur) ? [...PORT_HOP_PRESETS, cur] : PORT_HOP_PRESETS
+})
 // 端口跳跃：网卡列表（留空 = 全部网卡）
 const ifaceList = ref([])
 async function loadInterfaces() {

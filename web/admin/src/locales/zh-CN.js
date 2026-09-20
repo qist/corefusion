@@ -25,7 +25,7 @@ export default {
     actions: '操作',
     id: 'ID',
     name: '名称',
-    type: '类型',
+    type: '类型', protocol: '协议',
     time: '时间',
     createdAt: '创建时间',
     updatedAt: '更新时间',

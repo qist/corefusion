@@ -436,8 +436,14 @@
     <!-- 分组成员管理弹窗 -->
     <el-dialog v-model="membersDialog" :title="currentGroup?.name + ' - ' + t('plan.memberManagement')" width="650px">
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <el-select v-model="newMemberInboundId" size="small" filterable :placeholder="t('plan.selectInbound')" style="width:320px">
-          <el-option v-for="ib in inbounds" :key="ib.id" :label="(ib.server_name || t('plan.localNode')) + ' - ' + (ib.remark || ib.tag) + ' (' + ib.protocol + ':' + ib.port + ')'" :value="ib.id" />
+        <el-select v-model="newMemberInboundId" size="small" filterable :placeholder="t('plan.selectInbound')" style="width:360px">
+          <!-- 按节点排序；标签里带上「核心 · 协议 · 传输 · 安全」，避免同协议条目看起来一样 -->
+          <el-option v-for="ib in sortedInbounds" :key="ib.id" :value="ib.id" :label="inboundLabel(ib)">
+            <span style="font-weight:600">{{ ib.remark || ib.tag }}</span>
+            <span style="color:#909399;font-size:12px;margin-left:8px">
+              {{ ib.server_name || t('plan.localNode') }} · {{ inboundDetail(ib) }} :{{ ib.port }}
+            </span>
+          </el-option>
         </el-select>
         <el-button size="small" type="primary" @click="addInboundMember">{{ t('plan.addInbound') }}</el-button>
         <el-select v-model="newMemberExtNodeId" size="small" filterable :placeholder="t('plan.selectExtNode')" style="width:260px">
@@ -459,6 +465,12 @@
             <template v-if="row.inbound_config_id">{{ inboundName(row.inbound_config_id) }}</template>
             <template v-else-if="row.external_node_id">{{ extNodeName(row.external_node_id) }}</template>
             <template v-else>—</template>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.protocol')" width="180">
+          <template #default="{row}">
+            <span v-if="row.inbound_config_id" style="font-size:12px">{{ inboundDetailById(row.inbound_config_id) }}</span>
+            <span v-else style="color:#c0c4cc">—</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('common.type')" width="80">
@@ -1060,6 +1072,31 @@ const orderTypeColor = (t) => ({ new:'success', renew:'', upgrade:'warning', dow
 const orderStatusLabel = (s) => ({ pending: t('plan.orderPending'), paid: t('plan.orderPaid'), completed: t('plan.orderCompleted'), cancelled: t('plan.orderCancelled'), refunded: t('plan.orderRefunded') })[s] || s
 const orderStatusColor = (s) => ({ pending:'warning', paid:'info', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
 const inboundName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.remark || ib.tag) : '#' + id }
+// sortedInbounds：按「节点 → 入站」排序，让同节点条目聚在一起（后端已按 sort_order 排序，这里再兜底一次）
+const sortedInbounds = computed(() => {
+  const list = [...(inbounds.value || [])]
+  return list.sort((a, b) => {
+    const an = a.server_name || '', bn = b.server_name || ''
+    if (an !== bn) return an.localeCompare(bn)
+    if ((a.server_id || 0) !== (b.server_id || 0)) return (a.server_id || 0) - (b.server_id || 0)
+    return (a.tag || '').localeCompare(b.tag || '')
+  })
+})
+
+// inboundDetail：核心 · 协议 · 传输 · 安全（空值自动省略）
+function inboundDetail(ib) {
+  if (!ib) return '—'
+  return [ib.core_type, ib.protocol, ib.transport, ib.security].filter(Boolean).join(' · ') || '—'
+}
+function inboundDetailById(id) {
+  const ib = inbounds.value.find(i => i.id === id)
+  return ib ? inboundDetail(ib) : '—'
+}
+// inboundLabel：下拉的纯文本标签（供搜索过滤）
+function inboundLabel(ib) {
+  return `${ib.server_name || t('plan.localNode')} · ${inboundDetail(ib)} :${ib.port} — ${ib.remark || ib.tag}`
+}
+
 const inboundServerName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.server_name || t('plan.localNode')) : '—' }
 const extNodeName = (id) => { const n = extNodes.value.find(n => n.id === id); return n ? n.name : '#' + id }
 

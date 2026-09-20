@@ -21,6 +21,16 @@ type InboundManager struct {
 	serverRepo  *repository.NodeServerRepository
 	apiBaseURL  string
 	jwtSecret   string
+
+	// coreReloader 可选：让「不支持热加用户」的核心（sing-box 的 v2ray API 只提供
+	// StatsService，没有 AlterInbound/AddUser）通过「重新生成配置 + 重启核心」生效。
+	// 由 router 在 nodeServerSvc 就绪后注入。
+	coreReloader func(ctx context.Context, serverID int64, coreType string) error
+}
+
+// SetCoreReloader 注入配置重载能力（远端节点走 SyncServerData，本地走重新生成 + 重启核心）。
+func (m *InboundManager) SetCoreReloader(fn func(ctx context.Context, serverID int64, coreType string) error) {
+	m.coreReloader = fn
 }
 
 // NewInboundManager creates a new InboundManager.
@@ -65,6 +75,13 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 			continue
 		}
 
+		// 运行时下发：xray 走 gRPC 热加；sing-box 无热加接口，改为重载核心。
+		if isSingboxInbound(inbound) {
+			go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "add user "+email)
+			m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "add user "+email)
+			continue
+		}
+
 		// Call xray API for real-time user addition on the primary
 		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
 
@@ -94,6 +111,13 @@ func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, 
 			continue
 		}
 
+		// 运行时下发：sing-box 需要重载核心才能移除用户
+		if isSingboxInbound(inbound) {
+			go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "remove user "+email)
+			m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "remove user "+email)
+			continue
+		}
+
 		// Call xray API for real-time user removal on the primary
 		go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
 
@@ -114,6 +138,13 @@ func (m *InboundManager) PauseUser(ctx context.Context, inboundID int64, email s
 	// Update database (_paused flag) on primary
 	if err := m.setUserPaused(ctx, inboundID, email, true); err != nil {
 		return err
+	}
+
+	// 运行时下发：sing-box 需要重载核心才会应用 _paused 过滤
+	if isSingboxInbound(inbound) {
+		go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "pause user "+email)
+		m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "pause user "+email)
+		return nil
 	}
 
 	// Call xray API to remove user from running instance on primary
@@ -137,27 +168,7 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
 		return err
 	}
-	settings, _ := config["settings"].(map[string]interface{})
-	var userEntry map[string]interface{}
-	for _, key := range []string{"clients", "users"} {
-		arr, ok := settings[key].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, u := range arr {
-			user, ok := u.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if user["email"] == email {
-				userEntry = user
-				break
-			}
-		}
-		if userEntry != nil {
-			break
-		}
-	}
+	userEntry := findUserEntry(config, email)
 
 	// Update database (_paused flag) on primary
 	if err := m.setUserPaused(ctx, inboundID, email, false); err != nil {
@@ -191,6 +202,20 @@ func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *en
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
 		return err
+	}
+
+	// sing-box 入站没有 settings，用户挂在顶层 users[]，字段名也与 xray 不同
+	if isSingboxInbound(inbound) {
+		protocol := singboxProtocolOf(config, inbound.Tag)
+		user := singboxUserEntry(protocol, email, uuid, password, flow, method)
+		users, _ := config["users"].([]interface{})
+		config["users"] = append(users, user)
+		data, err := json.Marshal(config)
+		if err != nil {
+			return err
+		}
+		inbound.ConfigJSON = string(data)
+		return m.inboundRepo.Update(ctx, inbound)
 	}
 
 	settings, ok := config["settings"].(map[string]interface{})
@@ -251,27 +276,9 @@ func (m *InboundManager) removeUserFromInboundConfig(ctx context.Context, inboun
 		return err
 	}
 
-	settings, ok := config["settings"].(map[string]interface{})
-	if !ok {
+	// 兼容 xray（settings.clients/users）与 sing-box（顶层 users[]）
+	if !deleteUserFromConfig(config, email) {
 		return nil
-	}
-
-	for _, key := range []string{"clients", "users"} {
-		arr, ok := settings[key].([]interface{})
-		if !ok {
-			continue
-		}
-		var filtered []interface{}
-		for _, u := range arr {
-			user, ok := u.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if user["email"] != email {
-				filtered = append(filtered, u)
-			}
-		}
-		settings[key] = filtered
 	}
 
 	data, err := json.Marshal(config)
@@ -293,34 +300,8 @@ func (m *InboundManager) setUserPaused(ctx context.Context, inboundID int64, ema
 		return err
 	}
 
-	settings, ok := config["settings"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	found := false
-	for _, key := range []string{"clients", "users"} {
-		arr, ok := settings[key].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, u := range arr {
-			user, ok := u.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if user["email"] == email {
-				user["_paused"] = paused
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
-
-	if !found {
+	// 兼容 xray（settings.clients/users）与 sing-box（顶层 users[]）
+	if !setUserPausedInConfig(config, email, paused) {
 		return nil
 	}
 
@@ -465,6 +446,43 @@ func (m *InboundManager) callXrayRemoveUser(serverID int64, tag, email string) {
 		log.Printf("xray remove user %s from %s (serverID=%d): status %d", email, tag, serverID, resp.StatusCode)
 	} else {
 		log.Printf("xray remove user %s from %s (serverID=%d): ok", email, tag, serverID)
+	}
+}
+
+// reloadCoreForInbound 重新生成并下发配置、重启核心，使配置变更生效。
+// sing-box 的 v2ray API 只实现 StatsService（无 AlterInbound/AddUser），
+// 无法像 xray 那样热加用户，只能重启核心。
+func (m *InboundManager) reloadCoreForInbound(serverID int64, coreType, reason string) {
+	if m.coreReloader == nil {
+		log.Printf("inbound_manager: core reloader not configured, %s on server %d (core=%s) will take effect after next config sync", reason, serverID, coreType)
+		return
+	}
+	if coreType == "" {
+		coreType = "singbox"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if err := m.coreReloader(ctx, serverID, coreType); err != nil {
+		log.Printf("inbound_manager: reload core failed (%s, server=%d, core=%s): %v", reason, serverID, coreType, err)
+		return
+	}
+	log.Printf("inbound_manager: core reloaded for %s (server=%d, core=%s)", reason, serverID, coreType)
+}
+
+// reloadMirrorsForInbound 让该主节点的镜像节点也重载核心（镜像共用主节点的 tag/配置）。
+func (m *InboundManager) reloadMirrorsForInbound(ctx context.Context, primaryServerID int64, coreType, reason string) {
+	if m.serverRepo == nil {
+		return
+	}
+	mirrors, err := m.serverRepo.ListByPartner(ctx, primaryServerID)
+	if err != nil {
+		return
+	}
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		go m.reloadCoreForInbound(mirror.ID, coreType, reason+" (mirror)")
 	}
 }
 

@@ -592,6 +592,10 @@ func userExistsInConfig(configJSON, email string) bool {
 	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
 		return false
 	}
+	// 兼容 xray（settings.clients/users）与 sing-box（顶层 users[]，标识字段是 name）
+	if findUserEntry(config, email) != nil {
+		return true
+	}
 	settings, ok := config["settings"].(map[string]interface{})
 	if !ok {
 		return false

@@ -386,6 +386,48 @@ export function buildInbound(ib) {
     if (ib._multiplexPadding) mp.padding = ib._multiplexPadding
     out.multiplex = mp
   }
+
+  // ── 面板内部字段（顶层 _ 前缀，生成核心配置时由后端 CleanInboundFields 剥离）──
+  // 访问域名：必须写成与 xray 同款的 _accessDomain **对象** —— 订阅渲染与分享链接
+  // （resolveHostPort / ensureAccessDomain）读的都是 config["_accessDomain"]；只写扁平
+  // 字段会被后端当内部字段剔除，表现为「订阅/二维码里没有域名，回退成 127.0.0.1」。
+  // ⚠ 这段以前被误写进了 parseInbound（读取方向），导致 sing-box 的访问域名从未落库。
+  out._accessDomainEnabled = ib._accessDomainEnabled || false
+  out._accessDomainType = ib._accessDomainType || 'direct'
+  out._directDomain = ib._directDomain || ''
+  out._directPortMode = ib._directPortMode || 'config'
+  out._cfDomain = ib._cfDomain || ''
+  out._cfIP = ib._cfIP || ''
+  out._customDomain = ib._customDomain || ''
+  out._customPortMode = ib._customPortMode || 'custom'
+  out._accessCustomPort = ib._accessCustomPort || 443
+  out._accessDomain = {
+    enabled: out._accessDomainEnabled,
+    type: out._accessDomainType,
+    directDomain: out._directDomain,
+    directPortMode: out._directPortMode,
+    cfDomain: out._cfDomain,
+    cfIP: out._cfIP,
+    customDomain: out._customDomain,
+    customPortMode: out._customPortMode,
+    customPort: out._accessCustomPort,
+  }
+  // 端口跳跃：同样以对象形态落库 —— 面板启动时按它恢复 DNAT 规则
+  // （firewall.ParsePortHopFromConfig），分享链接据此下发 mport，编辑器回显也靠它。
+  out._portHopEnabled = ib._portHopEnabled || false
+  out._portHopMode = ib._portHopMode || 'preset'
+  out._portHopRange = ib._portHopRange || '10000-19999'
+  out._portHopStart = ib._portHopStart || 10000
+  out._portHopEnd = ib._portHopEnd || 19999
+  out._portHopInterface = ib._portHopInterface || ''
+  out._portHop = {
+    enabled: out._portHopEnabled,
+    mode: out._portHopMode,
+    range: out._portHopRange,
+    start: out._portHopStart,
+    end: out._portHopEnd,
+    interface: out._portHopInterface,
+  }
   return out
 }
 
@@ -604,40 +646,39 @@ o._snellMode = ib.mode || ''
     o._cfdTunnelRoutingMark = ib.tunnel_dialer?.routing_mark || 0
   }
   o._remark = ib._remark || ''
-  o._accessDomainEnabled = ib._accessDomainEnabled || false
-  o._accessDomainType = ib._accessDomainType || 'direct'
-  o._directDomain = ib._directDomain || ''
-  o._directPortMode = ib._directPortMode || 'config'
-  o._cfDomain = ib._cfDomain || ''
-  o._cfIP = ib._cfIP || ''
-  o._customDomain = ib._customDomain || ''
-  o._customPortMode = ib._customPortMode || 'custom'
-  o._accessCustomPort = ib._accessCustomPort || 443
-  // Access Domain：必须写成与 xray 同款的 _accessDomain 对象。
-  // 订阅端读的是 config["_accessDomain"]（对象），而下面这些扁平的
-  // _accessDomainEnabled / _directDomain 等字段会被后端当作内部字段剔除，
-  // 只写扁平字段会导致「订阅里没有域名/端口，客户端访问不了」。
-  // Port Hopping（hysteria2 / hysteria）：sing-box 入站**不支持** server_ports
-  // （那是出站字段，写进入站会 FATAL），所以服务端靠防火墙把端口段 DNAT 到
-  // 入站端口（与 xray 一致）；客户端跳跃范围通过分享链接的 mport 下发。
-  o._portHop = {
-    enabled: ib._portHopEnabled || false,
-    mode: ib._portHopMode || 'preset',
-    range: ib._portHopRange || '20000-50000',
-    start: ib._portHopStart || 20000,
-    end: ib._portHopEnd || 50000,
-    interface: ib._portHopInterface || '',
+  // 访问域名：入库形态是 _accessDomain 对象（与 xray 一致），扁平字段仅作旧数据兜底。
+  // 以前这里方向写反了（在 parse 里构造对象），所以访问域名从来没被写进数据库。
+  {
+    const ad = ib._accessDomain || {}
+    const pick = (objKey, flatKey, def) => {
+      if (ad[objKey] !== undefined && ad[objKey] !== null) return ad[objKey]
+      if (ib[flatKey] !== undefined && ib[flatKey] !== null) return ib[flatKey]
+      return def
+    }
+    o._accessDomainEnabled = pick('enabled', '_accessDomainEnabled', false)
+    o._accessDomainType = pick('type', '_accessDomainType', 'direct')
+    o._directDomain = pick('directDomain', '_directDomain', '')
+    o._directPortMode = pick('directPortMode', '_directPortMode', 'config')
+    o._cfDomain = pick('cfDomain', '_cfDomain', '')
+    o._cfIP = pick('cfIP', '_cfIP', '')
+    o._customDomain = pick('customDomain', '_customDomain', '')
+    o._customPortMode = pick('customPortMode', '_customPortMode', 'custom')
+    o._accessCustomPort = pick('customPort', '_accessCustomPort', 443)
   }
-  o._accessDomain = {
-    enabled: ib._accessDomainEnabled || false,
-    type: ib._accessDomainType || 'direct',
-    directDomain: ib._directDomain || '',
-    directPortMode: ib._directPortMode || 'config',
-    cfDomain: ib._cfDomain || '',
-    cfIP: ib._cfIP || '',
-    customDomain: ib._customDomain || '',
-    customPortMode: ib._customPortMode || 'custom',
-    customPort: ib._accessCustomPort || 443,
+  // 端口跳跃：同样是对象形态（旧数据可能只有扁平字段）
+  {
+    const ph = ib._portHop || {}
+    const pick = (objKey, flatKey, def) => {
+      if (ph[objKey] !== undefined && ph[objKey] !== null) return ph[objKey]
+      if (ib[flatKey] !== undefined && ib[flatKey] !== null) return ib[flatKey]
+      return def
+    }
+    o._portHopEnabled = pick('enabled', '_portHopEnabled', false)
+    o._portHopMode = pick('mode', '_portHopMode', 'preset')
+    o._portHopRange = pick('range', '_portHopRange', '10000-19999')
+    o._portHopStart = pick('start', '_portHopStart', 10000)
+    o._portHopEnd = pick('end', '_portHopEnd', 19999)
+    o._portHopInterface = pick('interface', '_portHopInterface', '')
   }
   return o
 }

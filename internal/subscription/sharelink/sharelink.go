@@ -332,10 +332,21 @@ func generateTuicLink(n Node) string {
 		params.Set("sni", sni)
 	}
 
-	if cc, ok := n.Settings["congestionControl"].(string); ok && cc != "" {
+	// sing-box 把 tuic 的拥塞控制 / UDP 中继模式放在**顶层**，由
+	// singboxToXrayStreamSettings 归一进 streamSettings.tuicSettings；xray 形态没有这两个字段。
+	tuicSettings := getMap(ss, "tuicSettings")
+	if cc := getString(tuicSettings, "congestion_control", ""); cc != "" {
+		params.Set("congestion_control", cc)
+	} else if cc, ok := n.Settings["congestionControl"].(string); ok && cc != "" {
 		params.Set("congestion_control", cc)
 	} else if cc, ok := n.Settings["congestion_control"].(string); ok && cc != "" {
 		params.Set("congestion_control", cc)
+	}
+	if m := getString(tuicSettings, "udp_relay_mode", ""); m != "" {
+		params.Set("udp_relay_mode", m)
+	}
+	if z, ok := tuicSettings["zero_rtt_handshake"].(bool); ok && z {
+		params.Set("zero_rtt_handshake", "1")
 	}
 
 	return fmt.Sprintf("tuic://%s@%s:%d?%s#%s",
@@ -368,13 +379,15 @@ func generateAuthLink(scheme string, n Node) string {
 	}
 	setFinalMaskParams(params, n.FinalMask)
 
-	userinfo := username
+	// 用户名 / 密码**分别**转义：此前把 "user:pass" 整体 QueryEscape 会把分隔用的
+	// ':' 编成 %3A，很多客户端按第一个 ':' 切分 userinfo → 认证直接失败。
+	userinfo := encodeValue(username)
 	if password != "" {
-		userinfo += ":" + password
+		userinfo += ":" + encodeValue(password)
 	}
 
 	return fmt.Sprintf("%s%s@%s:%d?%s#%s",
-		scheme, url.QueryEscape(userinfo), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
+		scheme, userinfo, formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- helpers ---
@@ -746,6 +759,13 @@ func setSecurityParams(params url.Values, ss map[string]interface{}, security st
 		}
 	case "reality":
 		params.Set("security", "reality")
+		// REALITY 的 ALPN 也要下发（v2ray 系客户端会按它做 TLS 握手，
+		// 缺了可能与服务端协商到不同协议；前端生成器一直有，后端此前漏了）。
+		if tls := getMap(ss, "tlsSettings"); tls != nil {
+			if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
+				params.Set("alpn", strings.Join(alpn, ","))
+			}
+		}
 		reality := getMap(ss, "realitySettings")
 		// pbk from settings[0].password or _password
 		if pwd, ok := reality["_password"].(string); ok && pwd != "" {

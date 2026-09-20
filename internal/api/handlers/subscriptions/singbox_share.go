@@ -281,6 +281,24 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 		}
 	}
 
+	// TUIC：sing-box 把 congestion_control / udp_relay_mode / zero_rtt_handshake 放在**顶层**，
+	// xray 形态里没有对应位置 —— 归一到一个内部 tuicSettings，供分享链接取用（否则链接丢
+	// 拥塞控制与 UDP 中继模式，客户端只能吃默认值）。
+	if t, _ := config["type"].(string); t == "tuic" {
+		tuicSettings := map[string]interface{}{}
+		for _, k := range []string{"congestion_control", "udp_relay_mode"} {
+			if v := getString(config, k, ""); v != "" {
+				tuicSettings[k] = v
+			}
+		}
+		if z, _ := config["zero_rtt_handshake"].(bool); z {
+			tuicSettings["zero_rtt_handshake"] = true
+		}
+		if len(tuicSettings) > 0 {
+			ss["tuicSettings"] = tuicSettings
+		}
+	}
+
 	// Hysteria2 / Hysteria：sing-box 把这些放在**顶层**（obfs / up_mbps / down_mbps /
 	// bbr_profile / ignore_client_bandwidth），xray 口径在 streamSettings.hysteriaSettings。
 	// 分享链接的 obfs / obfs-password / bbr-profile / insecure 都从这里取 —— 少了它们，

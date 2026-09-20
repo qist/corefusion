@@ -31,9 +31,16 @@ function getSecurityParams(ib) {
   p.security = 'tls'
   p.sni = ib._tlsServerName || ib.tls?.server_name || ''
   if (ib.tls?.alpn?.length) p.alpn = ib.tls.alpn.join(',')
+  // 客户端 uTLS 指纹：内部字段 → tls.utls（口径与后端 setSecurityParams 一致）
+  const fp = ib._utlsFingerprint || ib.tls?.utls?.fingerprint || ''
+  if (fp) p.fp = fp
+  if (ib.tls?.insecure) p.insecure = '1'
   if (ib._realityEnabled || ib.tls?.reality?.enabled) {
     p.security = 'reality'
     p.pbk = ib._realityPublicKey || ib.tls?.reality?.public_key || ''
+    // REALITY 客户端**强制要求 uTLS**（sing-box 报 "uTLS is required by reality client"），
+    // 没有显式指纹时必须给一个，否则拿到的链接客户端直接用不了。
+    if (!p.fp) p.fp = 'chrome'
     if (ib._realityShortIds) {
       const sids = ib._realityShortIds.split('\n').map(s => s.trim()).filter(Boolean)
       if (sids.length) p.sid = sids[Math.floor(Math.random() * sids.length)]
@@ -78,10 +85,13 @@ export function generateShareLink(ib, user, host, port, tag) {
       return `ss://${auth}@${formatHost(host)}:${port}#${encodeURIComponent(remark)}`
     }
     case 'hysteria2': {
-      // 与服务端 config 对齐：混淆、端口跳跃、BBR、跳过证书校验都要带上
-      // （口径与后端 sharelink.generateHysteriaLink 一致）
-      const obfsType = ib.obfs?.type || ''
-      const obfsPwd = ib.obfs?.password || ''
+      // 与服务端 config 对齐：混淆、端口跳跃、BBR、带宽、ALPN、指纹、跳过证书校验
+      // 都要带上（口径与后端 sharelink.generateHysteriaLink 一致）。
+      // 注意 parseInbound 会把 sing-box 的 obfs 结构体搬到 _hy2ObfsType/_hy2ObfsPassword，
+      // 只读 ib.obfs 会拿不到 → 服务端开了混淆时链接缺 obfs，客户端连不上。
+      const obfsType = ib._hy2ObfsType || ib.obfs?.type || ''
+      const obfsPwd = ib._hy2ObfsPassword || ib.obfs?.password || ''
+      const bbr = ib._hy2BbrProfile || ib.bbr_profile || ''
       const ph = ib._portHop || {}
       let mport = ''
       if (ph.enabled) {
@@ -89,13 +99,22 @@ export function generateShareLink(ib, user, host, port, tag) {
           ? `${ph.start || ''}-${ph.end || ''}`
           : (ph.range || '')
       }
+      // fm：端口跳跃写在 quicParams.udpHop、混淆写在 udp（后端同样下发，供 mihomo 互转）
+      const fm = {}
+      if (mport) fm.quicParams = { udpHop: { ports: mport } }
+      if (obfsType && obfsPwd) fm.udp = [{ type: obfsType, settings: { password: obfsPwd } }]
       const params = {
-        sni: ib._tlsServerName || ib.tls?.server_name || host,
-        ...(ib.tls?.insecure ? { insecure: '1' } : {}),
+        ...sec,
+        sni: sec.sni || ib._tlsServerName || ib.tls?.server_name || host,
+        ...(ib.up_mbps ? { upmbps: ib.up_mbps } : {}),
+        ...(ib.down_mbps ? { downmbps: ib.down_mbps } : {}),
         ...(obfsType && obfsPwd ? { obfs: obfsType, 'obfs-password': obfsPwd } : {}),
-        ...(ib.bbr_profile ? { 'bbr-profile': ib.bbr_profile } : {}),
+        ...(bbr ? { 'bbr-profile': bbr } : {}),
         ...(mport ? { mport } : {}),
+        ...(Object.keys(fm).length ? { fm: JSON.stringify(fm) } : {}),
       }
+      if (params.security === 'reality') delete params.security
+      params.security = params.security || 'tls'
       return `hysteria2://${encodeURIComponent(user?.password || '')}@${formatHost(host)}:${port}?${encodeParams(params)}#${encodeURIComponent(remark)}`
     }
     case 'hysteria': {
@@ -108,18 +127,24 @@ export function generateShareLink(ib, user, host, port, tag) {
     }
     case 'tuic': {
       const userinfo = user?.uuid ? `${user.uuid}${user?.password ? ':' + user.password : ''}` : (user?.password || '')
-      const params = { congestion_control: ib.congestion_control || 'bbr', ...sec }
+      const params = {
+        ...sec,
+        congestion_control: ib.congestion_control || 'bbr',
+        ...(ib.udp_relay_mode ? { udp_relay_mode: ib.udp_relay_mode } : {}),
+      }
       return `tuic://${encodeURIComponent(userinfo)}@${formatHost(host)}:${port}?${encodeParams({ ...params, security: 'tls' })}#${encodeURIComponent(remark)}`
     }
     case 'http': {
       const ui = user?.username ? `${encodeURIComponent(user.username)}:${encodeURIComponent(user.password || '')}` : ''
-      return `http://${ui}@${formatHost(host)}:${port}?security=${sec.security || 'none'}&sni=${encodeURIComponent(sec.sni || '')}#${encodeURIComponent(remark)}`
+      const params = { security: sec.security || 'none', ...(sec.sni ? { sni: sec.sni } : {}) }
+      return `http://${ui}@${formatHost(host)}:${port}?${encodeParams(params)}#${encodeURIComponent(remark)}`
     }
     case 'socks':
     case 'mixed': {
-      const scheme = type === 'socks' ? 'socks' : 'socks'
+      // mixed = socks + http 同端口，客户端按 socks 识别（与后端 generateAuthLink 一致）
       const ui = user?.username ? `${encodeURIComponent(user.username)}:${encodeURIComponent(user.password || '')}` : ''
-      return `${scheme}://${ui}@${formatHost(host)}:${port}?security=${sec.security || 'none'}&type=${tp.type || ''}#${encodeURIComponent(remark)}`
+      const params = { security: sec.security || 'none', ...(tp.type ? { type: tp.type } : {}) }
+      return `socks://${ui}@${formatHost(host)}:${port}?${encodeParams(params)}#${encodeURIComponent(remark)}`
     }
     default:
       return ''

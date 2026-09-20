@@ -668,7 +668,9 @@ async function toggleEnabled(row) {
 function buildShareLinkForUser(ib, user) {
   const parsed = parseInbound(JSON.parse(JSON.stringify(ib)))
   const hp = getAccessHostPort(parsed)
-  return generateShareLink(parsed, user || parsed.users?.[0] || {}, hp.host, hp.port, parsed.tag)
+  // 节点名口径与后端 /share-links 一致：优先备注（后端用 cfg.Remark），没有才用 tag
+  const remark = ib?.remark || parsed._remark || parsed.tag
+  return generateShareLink(parsed, user || parsed.users?.[0] || {}, hp.host, hp.port, remark)
 }
 
 // 该入站逐用户的分享链接（后端生成：与订阅同源 —— 正常只走这条路）

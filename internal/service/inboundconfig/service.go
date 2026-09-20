@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/runtime/firewall"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/repository"
 )
@@ -189,6 +190,53 @@ func extractServerNames(cfgJSON string) []string {
 		add(inbound.TLS.ServerName)
 	}
 	return out
+}
+
+// PortHopRule 一条已启用的端口跳跃规则（由入站配置推导，等价于节点上实际存在的规则）。
+type PortHopRule struct {
+	InboundID  int64  `json:"inbound_id"`
+	PortRange  string `json:"port_range"`
+	TargetPort int    `json:"target_port"`
+	Interface  string `json:"interface"`
+	CoreType   string `json:"core_type"`
+	Tag        string `json:"tag"`
+	Remark     string `json:"remark"`
+}
+
+// PortHopRules 返回某节点上所有入站已启用的端口跳跃规则，以及按 10000 宽切块算出的
+// 第一个空闲段（没有则空串）。
+//
+// 端口段是**节点级全局资源**：同一段只能指向一个入站端口（xray / sing-box 可能同时开）。
+// 前端编辑器用它提前标出「已被占用/会冲突」的预设段，避免保存时才被
+// firewall.CheckConflict 拦下（用户反馈：选 20000-29999 撞上旧规则 10000-20000 才报错）。
+// 口径与保存时完全一致（区间重叠 + 目标端口不同 = 冲突）。
+func (s *Service) PortHopRules(ctx context.Context, serverID int64) ([]PortHopRule, string) {
+	configs, err := s.repo.List(ctx, serverID, "")
+	if err != nil {
+		return nil, ""
+	}
+	var out []PortHopRule
+	var specs []firewall.RuleSpec
+	for _, cfg := range configs {
+		if cfg.ServerID != serverID {
+			continue
+		}
+		ph := firewall.ParsePortHopFromConfig(cfg.ConfigJSON, cfg.Port)
+		if ph == nil {
+			continue
+		}
+		out = append(out, PortHopRule{
+			InboundID:  cfg.ID,
+			PortRange:  ph.PortRange,
+			TargetPort: ph.TargetPort,
+			Interface:  ph.Interface,
+			CoreType:   cfg.CoreType,
+			Tag:        cfg.Tag,
+			Remark:     cfg.Remark,
+		})
+		specs = append(specs, firewall.RuleSpec{PortRange: ph.PortRange, TargetPort: ph.TargetPort, Interface: ph.Interface})
+	}
+	return out, firewall.SuggestFreeRange(specs, 10000)
 }
 
 // UsedServerName 描述一个已被占用的 Server Name（SNI）及其占用方。

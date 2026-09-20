@@ -196,9 +196,15 @@
                 </el-form-item>
                 <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
                   <el-select v-model="rf._portHopRange" style="width:100%">
-                    <!-- 预设段互不重叠，避免同一节点多个入站开启端口跳跃时互相覆盖 -->
-                    <el-option v-for="r in portHopRangeOptions" :key="r" :label="r" :value="r" />
+                    <!-- 预设段互不重叠；已被本节点其它入站占用的段直接标出来（端口段是节点级资源） -->
+                    <el-option v-for="r in portHopRangeOptions" :key="r.value" :label="r.label" :value="r.value">
+                      <span>{{ r.label }}</span>
+                      <el-tag v-if="r.conflict" size="small" type="warning" style="margin-left:8px">
+                        已被 {{ r.conflict.port_range }} → {{ r.conflict.target_port }} 占用
+                      </el-tag>
+                    </el-option>
                   </el-select>
+                  <div v-if="portHopUsageHint" class="hint">{{ portHopUsageHint }}</div>
                 </el-form-item>
                 <el-form-item v-else label="Port Range">
                   <div style="display:flex;gap:8px;align-items:center">
@@ -409,6 +415,7 @@ const { t } = useI18n()
 import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { snisOfInbound, collectUsedSnis, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
+import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -919,11 +926,30 @@ async function restartCore() {
 // ==================== Access Domain data loading ====================
 
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
-// 端口跳跃预设段：互不重叠（10000 宽）；历史值也显示，避免编辑旧入站时下拉框空白
-const PORT_HOP_PRESETS = ['10000-19999', '20000-29999', '30000-39999', '40000-49999', '50000-59999']
+// 端口跳跃预设段来自 utils/portHopPresets（与 xray 编辑器同一份定义）；历史值也显示。
+const portHopRules = ref([])
+const portHopSuggest = ref('')
+async function loadPortHopRules() {
+  try {
+    const data = await client.get(`${nodeBase.value}/port-hop/rules`)
+    portHopRules.value = data?.items || (Array.isArray(data) ? data : [])
+    portHopSuggest.value = data?.suggest || ''
+  } catch { portHopRules.value = []; portHopSuggest.value = '' }
+}
 const portHopRangeOptions = computed(() => {
   const cur = rf._portHopRange
-  return cur && !PORT_HOP_PRESETS.includes(cur) ? [...PORT_HOP_PRESETS, cur] : PORT_HOP_PRESETS
+  const base = [...PORT_HOP_PRESETS]
+  if (cur && !base.includes(cur)) base.push(cur)
+  const selfId = rf._id ?? null
+  const selfTarget = Number(rf.listen_port) || 0
+  return base.map(v => ({ value: v, label: v, conflict: findConflict(portHopRules.value, { portRange: v, targetPort: selfTarget }, selfId) }))
+})
+const portHopUsageHint = computed(() => {
+  const parts = []
+  const used = portHopRules.value.map(r => `${r.port_range} → ${r.target_port}`)
+  if (used.length) parts.push('本节点已用端口段：' + used.join('，'))
+  if (portHopSuggest.value) parts.push('空闲可用段：' + portHopSuggest.value)
+  return parts.join('；')
 })
 // 端口跳跃：网卡列表（留空 = 全部网卡）
 const ifaceList = ref([])
@@ -1053,6 +1079,7 @@ onMounted(() => {
   loadCFDomains()
   loadCFIPEntries()
   loadUsedServerNames()
+  loadPortHopRules() // 该节点已用的端口跳跃段，用于标记冲突段
 })
 </script>
 

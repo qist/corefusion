@@ -2284,6 +2284,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/inbound-configs", inboundCfgH.List)
 				// 该节点上（xray + sing-box）已占用的 Server Names，供编辑器标记「已使用」
 				nodeServersGroup.GET("/:id/used-server-names", inboundCfgH.UsedServerNames)
+				// 该节点已启用的端口跳跃规则 + 空闲段建议，供编辑器提前标出冲突段
+				nodeServersGroup.GET("/:id/port-hop/rules", inboundCfgH.PortHopRules)
 				nodeServersGroup.POST("/:id/inbound-configs", inboundCfgH.Create)
 				nodeServersGroup.GET("/:id/inbound-configs/:cfgId", inboundCfgH.Get)
 				nodeServersGroup.PUT("/:id/inbound-configs/:cfgId", inboundCfgH.Update)

@@ -107,6 +107,10 @@ func (h *PublicHandler) SetChainProxyRepos(
 }
 
 // shareableProtocols are protocols that generate share links.
+// shareableProtocols 是「可渲染成订阅节点」的协议全集。
+// 注意：这里只判断「有没有能力渲染」，具体某订阅格式是否支持该协议由
+// formatSupportedProtocols 决定（例如 anytls 只能进 sing-box/mihomo 格式，
+// 不能进 xray_json）。sing-box 专属协议此前被这个 map 直接挡掉，永远不会出现在订阅里。
 var shareableProtocols = map[string]bool{
 	"vless":           true,
 	"vmess":           true,
@@ -116,6 +120,13 @@ var shareableProtocols = map[string]bool{
 	"hysteria":        true,
 	"hysteria2":       true,
 	"tuic":            true,
+	"socks":           true,
+	"http":            true,
+	"mixed":           true,
+	// sing-box 专属（仅 singbox_json / mihomo_yaml 格式支持）
+	"anytls": true,
+	"naive":  true,
+	"snell":  true,
 }
 
 // shareDomainEntry holds a share domain with its ports.
@@ -263,6 +274,8 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		billingTemplates.BillingNodeIDs = []int64(tmpl.BillingNodeIDs)
 	}
 	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, members, clientEmail, billingTemplates)
+	// 各订阅格式支持的协议不同：不支持的协议不要写进订阅（客户端会解析失败/忽略）
+	renderedNodes = filterRenderedNodesForFormat(renderedNodes, formatStr)
 	links := renderedNodeLinks(renderedNodes)
 	nodes := renderedFormatterNodes(renderedNodes)
 	billingNodes := buildBillingInfoEntries(sub, billingTemplates, renderedNodes)
@@ -421,6 +434,12 @@ func (h *PublicHandler) collectShareLinks(
 			var config map[string]interface{}
 			if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
 				continue
+			}
+			// sing-box 入站归一成 xray 形态（否则用户凭证找不到，该节点会被整体跳过）
+			if view, skip := subscriptionView(cfg.Tag, config, clientEmail); skip {
+				continue
+			} else {
+				config = view
 			}
 			// Only nodes with _accessDomain enabled
 			ad, ok := config["_accessDomain"].(map[string]interface{})
@@ -593,6 +612,12 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			var config map[string]interface{}
 			if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
 				continue
+			}
+			// sing-box 入站归一成 xray 形态（否则用户凭证找不到，该节点会被整体跳过）
+			if view, skip := subscriptionView(cfg.Tag, config, clientEmail); skip {
+				continue
+			} else {
+				config = view
 			}
 			ad, ok := config["_accessDomain"].(map[string]interface{})
 			if !ok {
@@ -1020,6 +1045,12 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			var config map[string]interface{}
 			if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
 				continue
+			}
+			// sing-box 入站归一成 xray 形态（否则用户凭证找不到，该节点会被整体跳过）
+			if view, skip := subscriptionView(cfg.Tag, config, clientEmail); skip {
+				continue
+			} else {
+				config = view
 			}
 			ad, ok := config["_accessDomain"].(map[string]interface{})
 			if !ok || !ad["enabled"].(bool) {

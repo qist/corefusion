@@ -112,8 +112,10 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 	if err != nil {
 		return nil, err
 	}
-	if snis := extractServerNames(configJSON); len(snis) > 0 {
-		if err := s.checkServerNamesConflict(ctx, cfg.ServerID, id, snis); err != nil {
+	// 只校验「本次新增」的域名：存量数据里可能存在同节点重复（历史数据、镜像/批量导入
+	// 等绕过校验的路径都有），若对全量报错，这些入站连改个备注都存不下去。
+	if added := addedServerNames(cfg.ConfigJSON, configJSON); len(added) > 0 {
+		if err := s.checkServerNamesConflict(ctx, cfg.ServerID, id, added); err != nil {
 			return nil, err
 		}
 	}
@@ -143,6 +145,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 // reality inbound or has no serverNames.
 func extractServerNames(cfgJSON string) []string {
 	var inbound struct {
+		// xray：streamSettings.security=reality 时用 realitySettings.serverNames / serverNamesStr
 		StreamSettings struct {
 			Security string `json:"security"`
 			Reality  struct {
@@ -150,11 +153,16 @@ func extractServerNames(cfgJSON string) []string {
 				ServerNamesStr string   `json:"serverNamesStr"`
 			} `json:"realitySettings"`
 		} `json:"streamSettings"`
+		// sing-box：reality 入站的 SNI 是 tls.server_name
+		// （tls.reality.handshake.server 是握手转发目标，等价于 xray 的 target，不参与互斥）
+		TLS struct {
+			ServerName string `json:"server_name"`
+			Reality    struct {
+				Enabled bool `json:"enabled"`
+			} `json:"reality"`
+		} `json:"tls"`
 	}
 	if err := json.Unmarshal([]byte(cfgJSON), &inbound); err != nil {
-		return nil
-	}
-	if strings.TrimSpace(inbound.StreamSettings.Security) != "reality" {
 		return nil
 	}
 	seen := make(map[string]bool)
@@ -167,20 +175,43 @@ func extractServerNames(cfgJSON string) []string {
 		seen[s] = true
 		out = append(out, s)
 	}
-	for _, s := range inbound.StreamSettings.Reality.ServerNames {
-		add(s)
+	if strings.TrimSpace(inbound.StreamSettings.Security) == "reality" {
+		for _, s := range inbound.StreamSettings.Reality.ServerNames {
+			add(s)
+		}
+		for _, s := range strings.FieldsFunc(inbound.StreamSettings.Reality.ServerNamesStr, func(r rune) bool {
+			return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t'
+		}) {
+			add(s)
+		}
 	}
-	for _, s := range strings.FieldsFunc(inbound.StreamSettings.Reality.ServerNamesStr, func(r rune) bool {
-		return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t'
-	}) {
-		add(s)
+	if inbound.TLS.Reality.Enabled {
+		add(inbound.TLS.ServerName)
 	}
 	return out
 }
 
-// checkServerNamesConflict verifies that none of the given serverNames are
-// already used by another inbound on the same machine (node-server).
-// excludeID is the inbound being updated (0 when creating).
+// addedServerNames 返回「新配置里相对旧配置新增的 Server Names」。
+func addedServerNames(oldCfg, newCfg string) []string {
+	oldSet := make(map[string]struct{})
+	for _, sn := range extractServerNames(oldCfg) {
+		oldSet[sn] = struct{}{}
+	}
+	var added []string
+	for _, sn := range extractServerNames(newCfg) {
+		if _, ok := oldSet[sn]; !ok {
+			added = append(added, sn)
+		}
+	}
+	return added
+}
+
+// checkServerNamesConflict 校验这些 Server Names 是否已被**同一节点**的其它入站占用。
+// excludeID 是正在编辑的入站 ID（新建时为 0，自身不参与比较）。
+//
+// 口径：同节点内互斥，跨节点允许重复（SNI 路由只在单机内需要区分；不同机器的同一
+// 诱饵域名互不影响）。覆盖 xray 的 realitySettings.serverNames 与 sing-box 的
+// tls.server_name（见 extractServerNames）。
 func (s *Service) checkServerNamesConflict(ctx context.Context, serverID, excludeID int64, newSNIs []string) error {
 	existing, err := s.repo.List(ctx, serverID, "")
 	if err != nil {
@@ -196,7 +227,7 @@ func (s *Service) checkServerNamesConflict(ctx context.Context, serverID, exclud
 		}
 		for _, sn := range extractServerNames(cfg.ConfigJSON) {
 			if _, ok := newSet[sn]; ok {
-				return fmt.Errorf("%w: server name %q already used by inbound %q on this machine", ErrServerNamesConflict, sn, cfg.Remark)
+				return fmt.Errorf("%w: 域名 %q 已被本节点的入站 %q 使用", ErrServerNamesConflict, sn, cfg.Remark)
 			}
 		}
 	}

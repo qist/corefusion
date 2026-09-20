@@ -560,17 +560,19 @@
                 <el-form-item label="Target">
                   <div style="display:flex;gap:8px;width:100%">
                     <el-select v-model="rf.streamSettings.reality.target" style="flex:1" filterable allow-create default-first-option @change="onTargetChange">
-                      <!-- 本地代理 Reality 服务器分组 -->
+                      <!-- 本地代理 Reality 服务器分组
+                           注意：这里的循环变量不能叫 t，否则会遮蔽 i18n 的 t()，
+                           导致选项内 t('...') 调用失败、整组选项渲染不出来（无法选择）。 -->
                       <el-option-group v-if="localRealityServers.length > 0" :label="t('protoCenter.reality.localRealityGroup')">
-                        <el-option v-for="t in allRealityTargets.filter(t => t.source === 'local')" :key="'local-' + t.target" :label="t.target" :value="t.target">
+                        <el-option v-for="tgt in allRealityTargets.filter(x => x.source === 'local')" :key="'local-' + tgt.target" :label="tgt.target" :value="tgt.target">
                           <span style="color:#67c23a">●</span>
-                          <span style="margin-left:6px">{{ t.target }}</span>
+                          <span style="margin-left:6px">{{ tgt.target }}</span>
                           <span style="color:#909399;margin-left:8px;font-size:12px">— {{ t('protoCenter.reality.serverNamesRandom') }}</span>
                         </el-option>
                       </el-option-group>
                       <!-- 预设公共服务器分组 -->
                       <el-option-group :label="t('protoCenter.reality.presetGroup')">
-                        <el-option v-for="t in allRealityTargets.filter(t => t.source === 'preset')" :key="'preset-' + t.target" :label="t.target + ' (' + t.sni + ')'" :value="t.target" />
+                        <el-option v-for="tgt in allRealityTargets.filter(x => x.source === 'preset')" :key="'preset-' + tgt.target" :label="tgt.target + ' (' + tgt.sni + ')'" :value="tgt.target" />
                       </el-option-group>
                     </el-select>
                     <el-button size="small" @click="showTargetMgr=true">{{ t('protoCenter.reality.manage') }}</el-button>

@@ -702,9 +702,15 @@
               </el-form-item>
               <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
                 <el-select v-model="rf._portHopRange" style="width:100%" @change="onPortHopRangeChange">
-                  <!-- 预设段互不重叠，避免同一节点多个入站开启端口跳跃时互相覆盖 -->
-                  <el-option v-for="r in portHopRangeOptions" :key="r" :label="r" :value="r" />
+                  <!-- 预设段互不重叠；已被本节点其它入站占用的段直接标出来（端口段是节点级资源） -->
+                  <el-option v-for="r in portHopRangeOptions" :key="r.value" :label="r.label" :value="r.value">
+                    <span>{{ r.label }}</span>
+                    <el-tag v-if="r.conflict" size="small" type="warning" style="margin-left:8px">
+                      已被 {{ r.conflict.port_range }} → {{ r.conflict.target_port }} 占用
+                    </el-tag>
+                  </el-option>
                 </el-select>
+                <div v-if="portHopUsageHint" class="hint">{{ portHopUsageHint }}</div>
               </el-form-item>
               <el-form-item v-if="rf._portHopMode === 'manual'" label="Port Range">
                 <div style="display:flex;gap:8px;align-items:center">
@@ -1708,6 +1714,7 @@ import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User
 import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { splitNames, snisOfInbound, collectUsedSnis as collectUsedSnisFromInbounds, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
+import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
@@ -3615,12 +3622,35 @@ function collectHasOtherInboundSni(sni) {
 }
 
 const ifaceList = ref([])
-// 端口跳跃预设段：互不重叠（10000 宽），方便同一节点给多个入站分配不同段；
+// 端口跳跃预设段来自 utils/portHopPresets（与 sing-box 编辑器同一份定义）。
 // 历史值不在列表里时也一并显示，避免编辑旧入站时下拉框空白。
-const PORT_HOP_PRESETS = ['10000-19999', '20000-29999', '30000-39999', '40000-49999', '50000-59999']
+// 本节点已用的端口段（后端按入站配置推导，含 xray + sing-box）
+const portHopRules = ref([])
+const portHopSuggest = ref('')
+async function loadPortHopRules() {
+  try {
+    const data = await client.get(`${nodeBase.value}/port-hop/rules`)
+    portHopRules.value = data?.items || (Array.isArray(data) ? data : [])
+    portHopSuggest.value = data?.suggest || ''
+  } catch { portHopRules.value = []; portHopSuggest.value = '' }
+}
 const portHopRangeOptions = computed(() => {
   const cur = rf._portHopRange
-  return cur && !PORT_HOP_PRESETS.includes(cur) ? [...PORT_HOP_PRESETS, cur] : PORT_HOP_PRESETS
+  const base = [...PORT_HOP_PRESETS]
+  if (cur && !base.includes(cur)) base.push(cur)
+  const selfId = rf._id ?? null
+  const selfTarget = Number(rf.port) || 0
+  // 端口段是节点级全局资源：已被其它入站占用（区间重叠且目标不同）的段标出来，
+  // 免得保存时才被后端 firewall.CheckConflict 拦下。
+  return base.map(v => ({ value: v, label: v, conflict: findConflict(portHopRules.value, { portRange: v, targetPort: selfTarget }, selfId) }))
+})
+// 本节点已用的端口段 + 空闲建议（提示行）
+const portHopUsageHint = computed(() => {
+  const parts = []
+  const used = portHopRules.value.map(r => `${r.port_range} → ${r.target_port}`)
+  if (used.length) parts.push('本节点已用端口段：' + used.join('，'))
+  if (portHopSuggest.value) parts.push('空闲可用段：' + portHopSuggest.value)
+  return parts.join('；')
 })
 const dataDir = ref('/opt/corefusion/data') // default fallback
 async function loadInterfaces() {
@@ -5297,6 +5327,7 @@ onMounted(() => {
   loadInbounds(); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
   prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
   loadServerNameUsage() // 该节点已占用的 Server Names（含另一核心），用于标记与互斥
+  loadPortHopRules() // 该节点已用的端口跳跃段，用于标记冲突段
 })
 </script>
 

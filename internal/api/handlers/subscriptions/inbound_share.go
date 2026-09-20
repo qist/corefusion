@@ -40,6 +40,8 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		return
 	}
 
+	// format=uri（默认）：逐用户分享链接；format=mihomo：逐用户的 mihomo 配置片段。
+	format := strings.ToLower(strings.TrimSpace(c.Query("format")))
 	shareDomains := h.loadShareDomains(c.Request.Context())
 	nodeName := cfg.Remark
 	if nodeName == "" {
@@ -70,8 +72,17 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 			StreamSettings: getMap(view, "streamSettings"),
 			FinalMask:      finalMaskWithPortHop(config),
 		})
-		if link != "" {
-			items = append(items, gin.H{"user": u.label, "link": link})
+		switch format {
+		case "mihomo":
+			snippet := mihomoProxySnippet(link)
+			if snippet == "" {
+				continue
+			}
+			items = append(items, gin.H{"user": u.label, "text": snippet})
+		default:
+			if link != "" {
+				items = append(items, gin.H{"user": u.label, "link": link})
+			}
 		}
 	}
 
@@ -82,7 +93,25 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		"port":     port,
 		"protocol": cfg.Protocol,
 		"enabled":  cfg.Enabled,
+		"format":   format,
 	})
+}
+
+// mihomoProxySnippet 把分享链接转成可直接粘进 mihomo(clash) 配置的 proxies 片段。
+// 刻意复用 **mihomo 订阅的链路**（mihomoconv + 订阅归一化 + writeMihomoProxyMap），
+// 这样"编辑器里复制的片段"与"订阅里的节点"逐字段一致，不会出现两套口径。
+func mihomoProxySnippet(link string) string {
+	if strings.TrimSpace(link) == "" {
+		return ""
+	}
+	converted := convertLinksToMihomoProxyMaps([]string{link})
+	if len(converted) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("proxies:\n")
+	writeMihomoProxyMap(&b, converted[0])
+	return b.String()
 }
 
 // hostForLink 计算分享链接里的主机名：

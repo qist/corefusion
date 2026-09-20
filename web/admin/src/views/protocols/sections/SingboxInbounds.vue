@@ -358,14 +358,27 @@
       <div v-else-if="qrUsers.length === 1" style="margin-bottom:12px;color:#909399;font-size:12px">
         {{ qrUsers[0].label }}
       </div>
+      <el-radio-group v-model="qrFormat" size="small" style="margin-bottom:12px" @change="onQrFormatChange">
+        <el-radio-button value="uri">{{ t('protoCenter.inbounds.shareFormatUri') }}</el-radio-button>
+        <el-radio-button value="mihomo">{{ t('protoCenter.inbounds.shareFormatMihomo') }}</el-radio-button>
+      </el-radio-group>
       <div style="text-align:center;padding:20px">
-        <div v-if="qrCodeUrl" style="margin-bottom:16px">
-          <img :src="qrCodeUrl" style="max-width:250px" />
-        </div>
-        <div v-else-if="qrGenerating" style="margin-bottom:16px;height:250px;display:flex;align-items:center;justify-content:center;color:#909399">
-          {{ t('protoCenter.inbounds.qrGenerating') }}
-        </div>
-        <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
+        <template v-if="qrFormat === 'uri'">
+          <div v-if="qrCodeUrl" style="margin-bottom:16px">
+            <img :src="qrCodeUrl" style="max-width:250px" />
+          </div>
+          <div v-else-if="qrGenerating" style="margin-bottom:16px;height:250px;display:flex;align-items:center;justify-content:center;color:#909399">
+            {{ t('protoCenter.inbounds.qrGenerating') }}
+          </div>
+          <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
+        </template>
+        <template v-else>
+          <div style="margin-bottom:8px;color:#909399;font-size:12px;text-align:left">
+            {{ t('protoCenter.inbounds.mihomoSnippetHint') }}
+          </div>
+          <el-input v-model="qrSnippet" type="textarea" :rows="10" readonly
+                    :placeholder="t('protoCenter.inbounds.mihomoSnippetEmpty')" />
+        </template>
         <el-button size="small" style="margin-top:8px" @click="copyQrLink">{{ t('protoCenter.inbounds.copyLink') }}</el-button>
       </div>
     </el-dialog>
@@ -490,6 +503,9 @@ const qrUsers = ref([])          // [{ key, label, raw }]
 const qrSelectedUser = ref('')
 const qrCurrentIb = ref(null)
 const qrLinks = ref(new Map())   // 用户 → 分享链接（后端生成）
+const qrMihomo = ref(new Map())  // 用户 → mihomo 配置片段（后端生成，与 mihomo 订阅同源）
+const qrSnippet = ref('')
+const qrFormat = ref('uri')      // uri | mihomo
 
 // Reset Traffic Dialog
 const resetDlg = ref(false)
@@ -674,16 +690,24 @@ function buildShareLinkForUser(ib, user) {
 }
 
 // 该入站逐用户的分享链接（后端生成：与订阅同源 —— 正常只走这条路）
-async function loadShareLinks(ib) {
-  qrLinks.value = new Map()
+async function loadShareLinks(ib, format = 'uri') {
   const id = ib?._id ?? ib?.id
   if (!id) return
+  const store = format === 'mihomo' ? qrMihomo : qrLinks
+  store.value = new Map()
   try {
-    const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`)
+    const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`, { params: { format } })
     for (const it of data?.items || []) {
-      qrLinks.value.set(String(it.user || '').trim().toLowerCase(), it.link)
+      const key = String(it.user || '').trim().toLowerCase()
+      store.value.set(key, format === 'mihomo' ? (it.text || '') : (it.link || ''))
     }
-  } catch { /* 后端不可用时回退本地生成器 */ }
+  } catch { /* 后端不可用时回退本地生成器（仅 uri 模式有本地兜底） */ }
+}
+
+// 该用户的 mihomo 配置片段（后端生成；与 mihomo 订阅完全同一条链路）
+function mihomoSnippetForUser(user) {
+  const key = String(user?.name || user?.username || '').trim().toLowerCase()
+  return (key && qrMihomo.value.get(key)) || ''
 }
 
 // 该用户的分享链接：优先后端（与订阅一致、参数完整），拿不到再回退本地生成
@@ -719,21 +743,39 @@ async function showQr(row) {
   })).filter(u => u.key)
   if (!qrUsers.value.length) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   qrSelectedUser.value = qrUsers.value[0].key
+  qrFormat.value = 'uri'
   qrDlg.value = true
   await loadShareLinks(row)
   await onQrUserChange()
 }
 
 async function onQrUserChange() {
+  await renderCurrentShare()
+}
+
+function onQrFormatChange() {
+  void renderCurrentShare()
+}
+
+async function renderCurrentShare() {
   const row = qrCurrentIb.value
   if (!row) return
   const u = qrUsers.value.find(x => x.key === qrSelectedUser.value)
+  if (qrFormat.value === 'mihomo') {
+    if (!qrMihomo.value.size) await loadShareLinks(row, 'mihomo')
+    qrCodeUrl.value = ''
+    qrLink.value = ''
+    qrSnippet.value = mihomoSnippetForUser(u?.raw)
+    return
+  }
+  qrSnippet.value = ''
   await renderQr(linkForUser(row, u?.raw))
 }
 
 function copyQrLink() {
-  if (!qrLink.value) return
-  copyToClipboard(qrLink.value)
+  const text = qrFormat.value === 'mihomo' ? qrSnippet.value : qrLink.value
+  if (!text) return
+  copyToClipboard(text)
   ElMessage.success(t('singbox.inbound.shareCopied'))
 }
 

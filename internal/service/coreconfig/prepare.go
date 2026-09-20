@@ -223,13 +223,26 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 			log.Printf("[PrepareFullConfig] chain link outbounds failed for server %d: %v", opts.ServerID, err)
 		} else {
 			// For sing-box: convert xray-format chain outbounds/rules to sing-box format
+			var sbBalancerOutbounds []interface{}
 			if opts.CoreType == "singbox" {
 				chainOutbounds = convertChainOutboundsToSingbox(chainOutbounds)
-				chainRules = convertChainRulesToSingbox(chainRules)
+
+				// 多出口负载均衡（设计文档 §6.6 / §11.1）：xray 用 routing.balancers[]，
+				// sing-box 没有 balancer，改用 urltest outbound 承担同样的职责。
+				// 必须在这里处理：balancer 规则原来被直接丢弃，而 balancers 又不生成任何
+				// outbound，结果是入口入站没有任何规则命中 → 流量落到 route.final(direct)
+				// 直连，多出口链路静默失效（等于流量泄漏）。
+				balancerTagMap := map[string]string{}
+				if chainBalancers, _ := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID); len(chainBalancers) > 0 {
+					sbBalancerOutbounds, balancerTagMap = convertChainBalancersToSingbox(chainBalancers, chainOutbounds)
+				}
+				chainRules = convertChainRulesToSingbox(chainRules, balancerTagMap)
 			}
-			if len(chainOutbounds) > 0 {
+			if len(chainOutbounds) > 0 || len(sbBalancerOutbounds) > 0 {
 				existingObs, _ := fullConfig["outbounds"].([]interface{})
-				fullConfig["outbounds"] = mergeChainOutbounds(existingObs, chainOutbounds)
+				merged := mergeChainOutbounds(existingObs, chainOutbounds)
+				merged = mergeChainOutbounds(merged, sbBalancerOutbounds)
+				fullConfig["outbounds"] = merged
 			}
 			if len(chainRules) > 0 {
 				// 路由段名随核心不同：xray 是 routing，sing-box 是 route。
@@ -1356,17 +1369,15 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 // xray:  {"type":"field", "inboundTag":["in-1"], "outboundTag":"chain-1-2"}
 // sing-box: {"inbound":["in-1"], "outbound":"chain-1-2"}
 //
-// For balancer rules (balancerTag set), sing-box uses selector/urltest outbounds
-// instead of balancers. These rules are skipped (handled by selector outbounds).
-func convertChainRulesToSingbox(rules []interface{}) []interface{} {
+// balancerTag 规则（多出口）在 sing-box 里改指向 urltest outbound：
+// balancerTagMap 由 convertChainBalancersToSingbox 生成（balancerTag → urltest 标签）。
+// 若某个 balancer 没有解析出任何成员（map 里没有它），该规则会被丢弃并打日志 ——
+// 丢弃会导致入口流量落到 route.final，因此这种情况需要在日志里可见。
+func convertChainRulesToSingbox(rules []interface{}, balancerTagMap map[string]string) []interface{} {
 	result := make([]interface{}, 0, len(rules))
 	for _, r := range rules {
 		m, ok := r.(map[string]interface{})
 		if !ok {
-			continue
-		}
-		// Skip balancer rules — sing-box doesn't use balancers
-		if balTag, ok := m["balancerTag"].(string); ok && balTag != "" {
 			continue
 		}
 		sb := map[string]interface{}{}
@@ -1381,7 +1392,19 @@ func convertChainRulesToSingbox(rules []interface{}) []interface{} {
 				sb["inbound"] = tags
 			}
 		}
-		if outTag, ok := m["outboundTag"].(string); ok && outTag != "" {
+		// 出口：优先 outboundTag；多出口时用 balancerTag 映射出的 urltest 标签
+		outTag, _ := m["outboundTag"].(string)
+		if outTag == "" {
+			if balTag, _ := m["balancerTag"].(string); balTag != "" {
+				mapped, exists := balancerTagMap[balTag]
+				if !exists {
+					log.Printf("[PrepareFullConfig] sing-box: balancer %q 没有可用出口成员，规则被跳过（入口流量将落到 route.final）", balTag)
+					continue
+				}
+				outTag = mapped
+			}
+		}
+		if outTag != "" {
 			sb["outbound"] = outTag
 		}
 		if len(sb) > 0 {
@@ -1389,6 +1412,78 @@ func convertChainRulesToSingbox(rules []interface{}) []interface{} {
 		}
 	}
 	return result
+}
+
+// convertChainBalancersToSingbox 把 xray 的 routing.balancers[] 转成 sing-box 的
+// urltest outbound（设计文档 §11.1：Balancer → outbounds[].type:"selector"/"urltest"）。
+//
+// xray 的 balancer 用 selector（子串/正则匹配出站 tag）选定成员，而 sing-box 的
+// urltest 需要显式 outbounds 列表，因此这里用 selector 去匹配本次生成的链路出站 tag 集合。
+//
+// 返回：urltest outbounds + balancerTag → urltest tag 的映射（供路由规则改写）。
+func convertChainBalancersToSingbox(balancers []interface{}, chainOutbounds []interface{}) ([]interface{}, map[string]string) {
+	outbounds := make([]interface{}, 0, len(balancers))
+	tagMap := make(map[string]string, len(balancers))
+
+	// 本次入口生成的链路出站 tag 集合（成员只能从这里面选）
+	chainTags := make([]string, 0, len(chainOutbounds))
+	for _, raw := range chainOutbounds {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if tag, _ := m["tag"].(string); tag != "" {
+			chainTags = append(chainTags, tag)
+		}
+	}
+
+	for _, raw := range balancers {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tag, _ := m["tag"].(string)
+		if tag == "" {
+			continue
+		}
+		var patterns []string
+		if sel, ok := m["selector"].([]interface{}); ok {
+			for _, s := range sel {
+				if str, ok := s.(string); ok && str != "" {
+					patterns = append(patterns, str)
+				}
+			}
+		}
+		members := make([]string, 0, len(chainTags))
+		seen := map[string]bool{}
+		for _, ct := range chainTags {
+			if seen[ct] {
+				continue
+			}
+			for _, p := range patterns {
+				if strings.Contains(ct, p) {
+					members = append(members, ct)
+					seen[ct] = true
+					break
+				}
+			}
+		}
+		if len(members) == 0 {
+			log.Printf("[PrepareFullConfig] sing-box: balancer %q 的 selector %v 未匹配到任何链路出站", tag, patterns)
+			continue
+		}
+		outbounds = append(outbounds, map[string]interface{}{
+			"type":         "urltest",
+			"tag":          tag,
+			"outbounds":    members,
+			"url":          "https://www.gstatic.com/generate_204",
+			"interval":     "3m",
+			"tolerance":    50,
+			"idle_timeout": "30m",
+		})
+		tagMap[tag] = tag
+	}
+	return outbounds, tagMap
 }
 
 // convertRelayInboundToSingbox converts xray-format relay-in inbound to sing-box format.

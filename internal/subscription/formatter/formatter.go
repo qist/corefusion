@@ -72,6 +72,7 @@ func (f *SingBoxFormatter) FileExtension() string { return "json" }
 
 func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 	outbounds := make([]map[string]interface{}, 0, len(nodes)+2)
+	usedTags := make(map[string]int, len(nodes))
 
 	for _, node := range nodes {
 		proto := node.Protocol
@@ -80,7 +81,7 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 		ob := map[string]interface{}{
 			"type":        proto,
-			"tag":         node.Name,
+			"tag":         uniqueNodeTag(node.Name, usedTags),
 			"server":      node.Host,
 			"server_port": node.Port,
 		}
@@ -143,8 +144,17 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["tls"] = tls
 		}
 
-		if node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
+		// hysteria2 出站没有 transport 字段（写了客户端直接 FATAL：
+		// "outbounds[0].transport: json: unknown field"）—— 它自带 QUIC 传输，其余协议照旧。
+		isHysteria := node.Protocol == "hysteria" || node.Protocol == "hysteria2"
+		if !isHysteria && node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
 			ob["transport"] = buildSingboxTransport(node)
+		}
+
+		// Hysteria2 专属参数（obfs / 带宽 / BBR / 动态端口）。服务端开了混淆或指定 BBR、
+		// 开了动态端口时，缺这些字段客户端要么连不上、要么享受不到跳端口。
+		if isHysteria {
+			applySingboxHysteriaParams(ob, node)
 		}
 
 		outbounds = append(outbounds, ob)
@@ -161,6 +171,108 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(result, "", "  ")
+}
+
+// applySingboxHysteriaParams 把 Node.Extra 里的 hy2 参数写成 sing-box 出站字段。
+// 字段名已用本机 sing-box（1.15）的 `sing-box check` 实证：
+// obfs{type,password} / up_mbps / down_mbps / bbr_profile / server_ports / hop_interval。
+func applySingboxHysteriaParams(ob map[string]interface{}, node Node) {
+	if obfs, ok := node.Extra["obfs"].(string); ok && obfs != "" {
+		entry := map[string]interface{}{"type": obfs}
+		if pwd, ok := node.Extra["obfs-password"].(string); ok && pwd != "" {
+			entry["password"] = pwd
+		}
+		ob["obfs"] = entry
+	}
+	if v := bandwidthToMbps(node.Extra["up"]); v > 0 {
+		ob["up_mbps"] = v
+	}
+	if v := bandwidthToMbps(node.Extra["down"]); v > 0 {
+		ob["down_mbps"] = v
+	}
+	if bbr, ok := node.Extra["bbr-profile"].(string); ok && bbr != "" {
+		ob["bbr_profile"] = bbr
+	}
+	// 动态端口：sing-box 出站用 server_ports（"起:止"），与 xray / mihomo 的
+	// "起-止"（mport）写法不同 —— 这是 sing-box 客户端原生支持跳端口的方式。
+	if ports, ok := node.Extra["ports"].(string); ok && ports != "" {
+		if ranges := singboxPortRanges(ports); len(ranges) > 0 {
+			ob["server_ports"] = ranges
+		}
+	}
+	if hop, ok := node.Extra["hop-interval"].(string); ok && hop != "" {
+		ob["hop_interval"] = singboxHopInterval(hop)
+	}
+}
+
+// bandwidthToMbps 把 "200 mbps" / 200 / "200" 解析成整数 Mbps（解析不出返回 0）。
+func bandwidthToMbps(v interface{}) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case float64:
+		return int(t)
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0
+		}
+		s = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(s), "mbps"))
+		if n, err := strconv.ParseFloat(s, 64); err == nil {
+			return int(n)
+		}
+	}
+	return 0
+}
+
+// singboxPortRanges 把 "10000-19999,30000" 转成 sing-box 的 ["10000:19999","30000"]。
+func singboxPortRanges(ports string) []string {
+	result := make([]string, 0, 2)
+	for _, part := range strings.Split(ports, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		result = append(result, strings.Replace(part, "-", ":", 1))
+	}
+	return result
+}
+
+// singboxHopInterval 把 hop-interval 转成 sing-box 需要的时长字符串。
+// xray / mihomo 的 hop-interval 是"秒数或秒数区间"（"30" / "5-10"），而 sing-box
+// 只接受单个 duration（"30s"）—— 区间取上界，避免过于频繁地换端口。
+func singboxHopInterval(v string) string {
+	s := strings.TrimSpace(v)
+	if s == "" {
+		return ""
+	}
+	if idx := strings.IndexAny(s, "-~"); idx > 0 {
+		s = strings.TrimSpace(s[idx+1:])
+	} else if idx == 0 {
+		// 形如 "-10" 的异常写法，取剩余部分
+		s = strings.TrimSpace(s[1:])
+	}
+	if s == "" {
+		return ""
+	}
+	if _, err := strconv.Atoi(s); err == nil {
+		return s + "s"
+	}
+	return s
+}
+
+// uniqueNodeTag 保证出站 tag 唯一：重名时追加 " 2"、" 3"…
+// sing-box / xray 都要求 tag 唯一，否则会因为 "duplicate outbound/endpoint tag"
+// 拒绝加载**整个**订阅（多个节点用了同一个备注时很容易踩到）。
+func uniqueNodeTag(name string, used map[string]int) string {
+	if name == "" {
+		name = "node"
+	}
+	used[name]++
+	if used[name] == 1 {
+		return name
+	}
+	return fmt.Sprintf("%s %d", name, used[name])
 }
 
 // buildSingboxTransport builds a sing-box transport object from node transport params.
@@ -237,6 +349,7 @@ func (f *XrayFormatter) FileExtension() string { return "json" }
 
 func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 	outbounds := make([]map[string]interface{}, 0, len(nodes)+2)
+	usedTags := make(map[string]int, len(nodes))
 
 	for _, node := range nodes {
 		protocol := node.Protocol
@@ -245,7 +358,7 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 		ob := map[string]interface{}{
 			"protocol": protocol,
-			"tag":      node.Name,
+			"tag":      uniqueNodeTag(node.Name, usedTags),
 		}
 
 		settings := map[string]interface{}{}
@@ -429,6 +542,24 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			}
 			if hopInterval, ok := node.Extra["hop-interval"].(string); ok && hopInterval != "" {
 				hysteriaSettings["hopInterval"] = hopInterval
+			}
+			// BBR：xray 口径放在 finalmask.quicParams.bbrProfile。sing-box 侧 bbr 是以
+			// 链接参数 bbr-profile 下发的（不在 fm 里），这里补进 finalmask，
+			// 保证从 sing-box 互转过来的 hy2 也不丢拥塞控制。
+			if bbr, ok := node.Extra["bbr-profile"].(string); ok && bbr != "" {
+				fm, _ := streamSettings["finalmask"].(map[string]interface{})
+				if fm == nil {
+					fm = map[string]interface{}{}
+				}
+				qp, _ := fm["quicParams"].(map[string]interface{})
+				if qp == nil {
+					qp = map[string]interface{}{}
+					fm["quicParams"] = qp
+				}
+				if _, has := qp["bbrProfile"]; !has {
+					qp["bbrProfile"] = bbr
+				}
+				streamSettings["finalmask"] = fm
 			}
 			streamSettings["hysteriaSettings"] = hysteriaSettings
 		}
@@ -685,20 +816,21 @@ func serializeFinalMaskJSON(fm map[string]interface{}) string {
 // buildFinalMaskFromMihomo reconstructs the fm (finalmask) JSON from
 // mihomo-style flat keys stored in Extra.
 // Mapping: mihomo flat key → finalmask JSON path
-//   up                          → quicParams.brutalUp
-//   down                        → quicParams.brutalDown
-//   ports                       → quicParams.udpHop.ports
-//   hop-interval                → quicParams.udpHop.interval
-//   bbr-profile                 → quicParams.bbrProfile
-//   obfs + obfs-password        → udp[0].type + udp[0].settings.password
-//   initial-stream-receive-window    → quicParams.initStreamReceiveWindow
-//   max-stream-receive-window        → quicParams.maxStreamReceiveWindow
-//   initial-connection-receive-window → quicParams.initConnectionReceiveWindow
-//   max-connection-receive-window    → quicParams.maxConnectionReceiveWindow
-//   max-idle-timeout                → quicParams.maxIdleTimeout
-//   keep-alive-period               → quicParams.keepAlivePeriod
-//   disable-path-mtu-discovery      → quicParams.disablePathMTUDiscovery
-//   max-incoming-streams            → quicParams.maxIncomingStreams
+//
+//	up                          → quicParams.brutalUp
+//	down                        → quicParams.brutalDown
+//	ports                       → quicParams.udpHop.ports
+//	hop-interval                → quicParams.udpHop.interval
+//	bbr-profile                 → quicParams.bbrProfile
+//	obfs + obfs-password        → udp[0].type + udp[0].settings.password
+//	initial-stream-receive-window    → quicParams.initStreamReceiveWindow
+//	max-stream-receive-window        → quicParams.maxStreamReceiveWindow
+//	initial-connection-receive-window → quicParams.initConnectionReceiveWindow
+//	max-connection-receive-window    → quicParams.maxConnectionReceiveWindow
+//	max-idle-timeout                → quicParams.maxIdleTimeout
+//	keep-alive-period               → quicParams.keepAlivePeriod
+//	disable-path-mtu-discovery      → quicParams.disablePathMTUDiscovery
+//	max-incoming-streams            → quicParams.maxIncomingStreams
 func buildFinalMaskFromMihomo(extra map[string]interface{}) string {
 	if len(extra) == 0 {
 		return ""
@@ -1877,6 +2009,9 @@ func parseHysteria2URI(body, name string) *Node {
 		if obfsPassword := params["obfs-password"]; obfsPassword != "" {
 			extra["obfs-password"] = obfsPassword
 		}
+	}
+	if bbr := params["bbr-profile"]; bbr != "" {
+		extra["bbr-profile"] = bbr
 	}
 	if insecure := params["insecure"]; insecure == "1" || insecure == "true" {
 		extra["skip-cert-verify"] = true

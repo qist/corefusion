@@ -405,7 +405,7 @@ func TestBuildRenderedMihomoProxyMapsPreservesExternalXHTTPFields(t *testing.T) 
 func TestParseSubscriptionLinksToFormatterNodesPreservesKCPAndHysteria2(t *testing.T) {
 	links := []string{
 		"vless://0c333ab9-1c3a-4c01-a96f-a59743e64d93@www.example.com:54461?encryption=none&headerType=wireguard&mtu=1350&security=none&seed=SwOzlkxeZpKaCxWysYucYQ%3D%3D&tti=50&type=kcp#inbound-vless-54461",
-		"hysteria2://i%2Bcvb54Txqci333NMLE%2BxWoyGD13hLkzrRZxXaV8qYo%3D@www.example.com:51071?alpn=h3&fm=%7B%22quicParams%22%3A%7B%22udpHop%22%3A%7B%22interval%22%3A%225-10%22%2C%22ports%22%3A%2240000-50000%22%7D%7D%2C%22udp%22%3A%5B%7B%22settings%22%3A%7B%22password%22%3A%222k7wdHOubCfS%22%7D%2C%22type%22%3A%22salamander%22%7D%5D%7D&fp=chrome&mport=40000-50000&obfs=salamander&obfs-password=2k7wdHOubCfS&security=tls&sni=www.example.com#inbound-hysteria-51071",
+		"hysteria2://i%2Bcvb54Txqci333NMLE%2BxWoyGD13hLkzrRZxXaV8qYo%3D@www.example.com:51071?alpn=h3&fm=%7B%22quicParams%22%3A%7B%22bbrProfile%22%3A%22conservative%22%2C%22congestion%22%3A%22bbr%22%2C%22udpHop%22%3A%7B%22interval%22%3A%225-10%22%2C%22ports%22%3A%2240000-50000%22%7D%7D%2C%22udp%22%3A%5B%7B%22settings%22%3A%7B%22password%22%3A%222k7wdHOubCfS%22%7D%2C%22type%22%3A%22salamander%22%7D%5D%7D&fp=chrome&mport=40000-50000&obfs=salamander&obfs-password=2k7wdHOubCfS&security=tls&sni=www.example.com#inbound-hysteria-51071",
 	}
 
 	nodes := parseSubscriptionLinksToFormatterNodes(links)
@@ -452,7 +452,7 @@ func TestParseSubscriptionLinksToFormatterNodesPreservesKCPAndHysteria2(t *testi
 func TestXrayFormatterFromRawLinksPreservesKCPAndHysteria2Fields(t *testing.T) {
 	links := []string{
 		"vless://0c333ab9-1c3a-4c01-a96f-a59743e64d93@www.example.com:54461?encryption=none&headerType=wireguard&mtu=1350&security=none&seed=SwOzlkxeZpKaCxWysYucYQ%3D%3D&tti=50&type=kcp#inbound-vless-54461",
-		"hysteria2://i%2Bcvb54Txqci333NMLE%2BxWoyGD13hLkzrRZxXaV8qYo%3D@www.example.com:51071?alpn=h3&fm=%7B%22quicParams%22%3A%7B%22udpHop%22%3A%7B%22interval%22%3A%225-10%22%2C%22ports%22%3A%2240000-50000%22%7D%7D%2C%22udp%22%3A%5B%7B%22settings%22%3A%7B%22password%22%3A%222k7wdHOubCfS%22%7D%2C%22type%22%3A%22salamander%22%7D%5D%7D&fp=chrome&mport=40000-50000&obfs=salamander&obfs-password=2k7wdHOubCfS&security=tls&sni=www.example.com#inbound-hysteria-51071",
+		"hysteria2://i%2Bcvb54Txqci333NMLE%2BxWoyGD13hLkzrRZxXaV8qYo%3D@www.example.com:51071?alpn=h3&fm=%7B%22quicParams%22%3A%7B%22bbrProfile%22%3A%22conservative%22%2C%22congestion%22%3A%22bbr%22%2C%22udpHop%22%3A%7B%22interval%22%3A%225-10%22%2C%22ports%22%3A%2240000-50000%22%7D%7D%2C%22udp%22%3A%5B%7B%22settings%22%3A%7B%22password%22%3A%222k7wdHOubCfS%22%7D%2C%22type%22%3A%22salamander%22%7D%5D%7D&fp=chrome&mport=40000-50000&obfs=salamander&obfs-password=2k7wdHOubCfS&security=tls&sni=www.example.com#inbound-hysteria-51071",
 	}
 
 	nodes := parseSubscriptionLinksToFormatterNodes(links)

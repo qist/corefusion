@@ -105,8 +105,35 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			if pin := query.Get("pinSHA256"); pin != "" {
 				hysteria2["fingerprint"] = pin
 			}
-			hysteria2["down"] = query.Get("down")
-			hysteria2["up"] = query.Get("up")
+			// 带宽：链接可能用 up/down（xray 口径）或 upmbps/downmbps（hysteria 官方口径，
+			// sing-box 侧就用这个），两种都认。
+			up := query.Get("up")
+			if up == "" {
+				up = query.Get("upmbps")
+			}
+			down := query.Get("down")
+			if down == "" {
+				down = query.Get("downmbps")
+			}
+			if up != "" {
+				hysteria2["up"] = up
+			}
+			if down != "" {
+				hysteria2["down"] = down
+			}
+			// 动态端口：链接以 mport 下发跳跃段（兼容 ports 写法）
+			if ports := query.Get("mport"); ports != "" {
+				hysteria2["ports"] = ports
+			} else if ports := query.Get("ports"); ports != "" {
+				hysteria2["ports"] = ports
+			}
+			if hop := query.Get("hop-interval"); hop != "" {
+				hysteria2["hop-interval"] = hop
+			}
+			// bbr-profile：sing-box 侧以独立链接参数下发（不在 fm 里），漏读就丢拥塞控制
+			if bbr := query.Get("bbr-profile"); bbr != "" && bbr != "standard" {
+				hysteria2["bbr-profile"] = bbr
+			}
 
 			// Parse fm param for quicParams
 			if fmStr := query.Get("fm"); fmStr != "" {

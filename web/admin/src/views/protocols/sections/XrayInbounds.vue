@@ -5080,7 +5080,7 @@ async function saveInbound() {
               interface: newIface
             })
           } catch (fwErr) {
-            console.warn('Failed to apply firewall rules:', fwErr)
+            ElMessage.error(fwErr?.response?.data?.message || '端口跳跃防火墙规则应用失败')
           }
         } else if (isEnabled && wasEnabled) {
           // Port hop stayed enabled: check if port range, target port, or interface changed

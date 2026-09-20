@@ -556,7 +556,8 @@ async function save() {
           await client.post(`${fwBase}/apply`, { port_range: newRange, target_port: newPort, interface: newIface })
         }
       } catch (fwErr) {
-        console.warn('Failed to update port hop firewall rules:', fwErr)
+        // 端口段冲突等错误必须让用户看到（否则以为保存成功但规则没生效）
+        ElMessage.error(fwErr?.response?.data?.message || '端口跳跃防火墙规则应用失败')
       }
     }
 

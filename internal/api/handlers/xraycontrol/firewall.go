@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/runtime/firewall"
 )
 
 // portRangePattern matches valid port ranges: single port (e.g. "443") or range (e.g. "20000-30000").
@@ -78,6 +79,15 @@ func (h *Handler) ApplyFirewallRules(c *gin.Context) {
 		return
 	}
 
+	// 端口段是节点级全局资源：同一段只能指向一个入站端口（xray / sing-box 可能同时开启）
+	if err := firewall.CheckConflict(firewall.RuleSpec{
+		PortRange:  req.PortRange,
+		TargetPort: req.TargetPort,
+		Interface:  req.Interface,
+	}); err != nil {
+		response.BadRequest(c, "PORT_RANGE_CONFLICT", err.Error())
+		return
+	}
 	if err := applyFirewallRuleLocal(useNft, req.PortRange, req.TargetPort, req.Interface); err != nil {
 		response.InternalError(c, "APPLY_FAILED", err.Error())
 		return

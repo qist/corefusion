@@ -24,6 +24,8 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	"github.com/xtls/xray-core/proxy/vmess"
 
+	"corefusion/internal/runtime/firewall"
+
 	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
@@ -716,6 +718,15 @@ func (a *LocalAgent) proxyFirewall(ctx context.Context, req *agentpb.XrayAPIRequ
 			}
 			resp, _ := json.Marshal(map[string]string{"message": "rule already exists", "type": ftype})
 			return &agentpb.XrayAPIResponse{Success: true, Response: resp}, nil
+		}
+		// 端口段是节点级全局资源：同一段只能指向一个入站端口，
+		// 否则后加的规则不生效、入站静默不可达（xray 与 sing-box 可能同时开）。
+		if err := firewall.CheckConflict(firewall.RuleSpec{
+			PortRange:  payload.PortRange,
+			TargetPort: payload.TargetPort,
+			Interface:  payload.Interface,
+		}); err != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
 		}
 		if err := applyFirewallRule(useNft, payload.PortRange, payload.TargetPort, payload.Interface); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil

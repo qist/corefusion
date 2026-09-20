@@ -845,6 +845,7 @@ import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
 import { buildEndpoint, parseEndpoint, endpointDefaultsForType, ENDPOINT_TYPES, ENDPOINT_TYPE_LABELS } from './singbox/utils/singboxEndpointBuild'
+import { prefetchFreePort, takeFreePort } from './utils/freePort'
 
 const props = defineProps({ data: Array, serverId: Number })
 const emitFn = defineEmits(['update'])
@@ -876,7 +877,9 @@ watch(() => rf.type, (newType) => {
 async function showAdd() {
   editIdx.value = -1
   activeTab.value = 'basic'
-  Object.assign(rf, endpointDefaultsForType('wireguard'))
+  // 端口与入站编辑器对齐：取该节点未被占用的端口（含其它入站/端点占用）
+  await prefetchFreePort(props.serverId)
+  Object.assign(rf, endpointDefaultsForType('wireguard', takeFreePort(props.serverId)))
   dlg.value = true
   // 自动生成 WireGuard 密钥对
   if (rf.type === 'wireguard') {
@@ -902,7 +905,7 @@ function showEdit(row) {
 async function onTypeChange() {
   const oldTag = rf.tag
   const oldRemark = rf._remark
-  Object.assign(rf, endpointDefaultsForType(rf.type))
+  Object.assign(rf, endpointDefaultsForType(rf.type, takeFreePort(props.serverId)))
   rf.tag = oldTag || rf.tag
   rf._remark = oldRemark || ''
   // 切换到 WireGuard 时自动生成密钥对
@@ -1130,7 +1133,10 @@ async function loadEndpoints() {
   emitFn('update', form.map(r => buildEndpoint(r)))
 }
 
-onMounted(() => { loadEndpoints() })
+onMounted(() => {
+  loadEndpoints()
+  prefetchFreePort(props.serverId) // 预热空闲端口，新建端点时不再撞端口
+})
 
 defineExpose({ loadEndpoints })
 </script>

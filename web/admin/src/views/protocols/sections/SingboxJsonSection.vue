@@ -49,6 +49,7 @@
 // 类型清单取自 sing-box 官方 schema.json，模板字段取自各文档示例。
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { prefetchFreePort, takeFreePort } from './utils/freePort'
 
 const props = defineProps({ data: Object, coreType: String, serverId: Number, sectionKey: String })
 const emitFn = defineEmits(['update'])
@@ -59,18 +60,20 @@ const REGISTRY = {
     desc: 'sing-box 顶层 services 段（与 inbounds/outbounds 并列）。服务端常用：hysteria-realm（P2P 中继）、usbip-server（共享 USB 设备）、ssm-api、api、ccm/ocm/derp/resolved。',
     docUrl: 'https://sing-box.sagernet.org/configuration/service/',
     types: ['api', 'ccm', 'derp', 'dynamic', 'hysteria-realm', 'ocm', 'oom-killer', 'resolved', 'ssm-api', 'usbip-client', 'usbip-server'],
+    // 注意：listen_port 留空（listenPort: true 标记），创建时用后端 free-port 填入，
+    // 避免与面板自身端口（8080/8443）或已有入站/端点撞端口。
     templates: {
-      api: { type: 'api', tag: 'api', listen: '127.0.0.1', listen_port: 8080 },
-      ccm: { type: 'ccm', tag: 'ccm', listen: '0.0.0.0', listen_port: 8443 },
-      derp: { type: 'derp', tag: 'derp', listen: '0.0.0.0', listen_port: 8443 },
+      api: { type: 'api', tag: 'api', listen: '127.0.0.1', listenPort: true },
+      ccm: { type: 'ccm', tag: 'ccm', listen: '0.0.0.0', listenPort: true },
+      derp: { type: 'derp', tag: 'derp', listen: '0.0.0.0', listenPort: true },
       dynamic: { type: 'dynamic', tag: 'dynamic' },
-      'hysteria-realm': { type: 'hysteria-realm', tag: 'realm', listen: '0.0.0.0', listen_port: 443, users: [{ name: 'realm1', token: 'CHANGE_ME', max_realms: 0 }] },
-      ocm: { type: 'ocm', tag: 'ocm', listen: '0.0.0.0', listen_port: 8443 },
+      'hysteria-realm': { type: 'hysteria-realm', tag: 'realm', listen: '0.0.0.0', listenPort: true, users: [{ name: 'realm1', token: 'CHANGE_ME', max_realms: 0 }] },
+      ocm: { type: 'ocm', tag: 'ocm', listen: '0.0.0.0', listenPort: true },
       'oom-killer': { type: 'oom-killer', tag: 'oom-killer' },
       resolved: { type: 'resolved', tag: 'resolved' },
-      'ssm-api': { type: 'ssm-api', tag: 'ssm-api', listen: '0.0.0.0', listen_port: 8080 },
+      'ssm-api': { type: 'ssm-api', tag: 'ssm-api', listen: '0.0.0.0', listenPort: true },
       'usbip-client': { type: 'usbip-client', tag: 'usbip-client', server: '', server_port: 3240, devices: [] },
-      'usbip-server': { type: 'usbip-server', tag: 'usbip-server', listen: '0.0.0.0', listen_port: 3240, devices: [] },
+      'usbip-server': { type: 'usbip-server', tag: 'usbip-server', listen: '0.0.0.0', listenPort: true, devices: [] },
     },
   },
   certificate_providers: {
@@ -164,8 +167,10 @@ function build() {
 function addItem() {
   const key = addType.value || 'default'
   const tpl = (meta.value.templates && meta.value.templates[key]) || { ...(addType.value ? { type: addType.value } : {}) }
-  const { type, tag, ...rest } = tpl
+  const { type, tag, listenPort, ...rest } = tpl
+  // listenPort 标记的模板：用该节点未被占用的端口填充
   const payload = { ...(type ? { type } : {}), ...(tag ? { tag } : {}), ...rest }
+  if (listenPort) payload.listen_port = takeFreePort(props.serverId)
   items.push({ type: type || '', tag: tag || '', _json: pretty(payload), _err: '', _raw: payload })
   addType.value = ''
   emit()
@@ -206,7 +211,10 @@ function emit() { emitFn('update', build()) }
 
 watch(() => props.data, sync)
 watch(() => props.sectionKey, () => { lastSynced.value = ''; sync() })
-onMounted(sync)
+onMounted(() => {
+  sync()
+  prefetchFreePort(props.serverId) // 预热空闲端口，模板新增时不撞面板自身/已有入站端口
+})
 </script>
 <style scoped>
 .rule-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }

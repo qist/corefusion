@@ -94,14 +94,29 @@ func (h *Handler) collectNodeUsedPorts(ctx context.Context, serverID int64, core
 		}
 	}
 
-	// 2) core_configs 各核心的 inbounds / endpoints 段
+	// 2) endpoint_configs（端点表）——端点编辑器写的是这张表，必须一起算，
+	// 否则「入站端口」会撞上「端点端口」（反之亦然）。
+	if h.endpointConfigSvc != nil {
+		for _, ct := range coreTypes {
+			eps, err := h.endpointConfigSvc.List(ctx, serverID, ct)
+			if err != nil {
+				continue
+			}
+			for _, ep := range eps {
+				addPortsFromJSON(used, json.RawMessage(ep.ConfigJSON))
+			}
+		}
+	}
+
+	// 3) core_configs 各核心的 inbounds / endpoints 段
 	if h.coreConfigSvc != nil {
 		for _, ct := range coreTypes {
 			full, err := h.coreConfigSvc.GetFull(ctx, serverID, ct)
 			if err != nil || full == nil {
 				continue
 			}
-			for _, key := range []string{"inbounds", "endpoints"} {
+			// services 段也含本地监听端口（api/ccm/derp/ssm-api/usbip-server 等）
+			for _, key := range []string{"inbounds", "endpoints", "services"} {
 				raw, ok := full[key]
 				if !ok {
 					continue
@@ -140,7 +155,12 @@ func collectPorts(v interface{}, used map[int]bool, depth int) {
 	case map[string]interface{}:
 		for k, item := range val {
 			switch k {
-			case "port", "listen_port", "server_port", "override_port", "target_port":
+			// 只统计「本地监听」意义的端口：
+			//   port        —— xray inbound 的监听端口（含嵌套 settings.port）
+			//   listen_port —— sing-box inbound / endpoint 的监听端口
+			// 以下字段是「远端/转发目标」端口，不能算作本地占用，否则会把合法端口也排除：
+			//   server_port / remote_port / peer_port（对端）、override_port（direct 转发目标）
+			case "port", "listen_port":
 				if p, ok := toPort(item); ok {
 					used[p] = true
 				}

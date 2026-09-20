@@ -2,6 +2,7 @@ package endpointconfig
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -21,6 +22,29 @@ func NewService(repo *repository.EndpointConfigRepository) *Service {
 // List returns all endpoint configs for a server and core type.
 func (s *Service) List(ctx context.Context, serverID int64, coreType string) ([]entity.EndpointConfig, error) {
 	return s.repo.List(ctx, serverID, coreType)
+}
+
+// GetEnabledEndpoints returns the raw JSON of enabled endpoint configs.
+//
+// 实现 coreconfig.EndpointConfigProvider：sing-box 的 WireGuard / Tailscale /
+// OpenConnect / OpenVPN 端点属于顶层 endpoints[]（与 inbounds/outbounds 并列），
+// 需要在 PrepareFullConfig 时合并进运行时配置，否则这些端点只落库、核心侧不可见。
+func (s *Service) GetEnabledEndpoints(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
+	configs, err := s.repo.List(ctx, serverID, coreType)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]json.RawMessage, 0, len(configs))
+	for _, c := range configs {
+		if !c.Enabled || c.ConfigJSON == "" {
+			continue
+		}
+		if !json.Valid([]byte(c.ConfigJSON)) {
+			continue
+		}
+		result = append(result, json.RawMessage(c.ConfigJSON))
+	}
+	return result, nil
 }
 
 // GetByID returns a single endpoint config by ID.

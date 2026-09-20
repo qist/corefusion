@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
-	"corefusion/internal/service/audit"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/audit"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 )
 
@@ -277,6 +277,7 @@ func (h *Handler) GetConfigFile(c *gin.Context) {
 			FullConfig:       fullConfig,
 			InboundProvider:  h.inboundConfigSvc,
 			OutboundProvider: h.outboundConfigSvc,
+			EndpointProvider: h.endpointConfigSvc,
 		})
 		if err != nil {
 			response.InternalError(c, "GENERATE_FAILED", err.Error())
@@ -418,6 +419,7 @@ func (h *Handler) syncConfigToServer(serverID int64, coreType string) {
 		FullConfig:       fullConfig,
 		InboundProvider:  h.inboundConfigSvc,
 		OutboundProvider: h.outboundConfigSvc,
+		EndpointProvider: h.endpointConfigSvc,
 	})
 	if err != nil {
 		log.Printf("[nodeserver] syncConfigToServer: PrepareFullConfig failed for server %d: %v", serverID, err)

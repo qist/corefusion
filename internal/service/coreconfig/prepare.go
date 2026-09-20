@@ -19,6 +19,16 @@ type OutboundConfigProvider interface {
 	GetEnabledOutbounds(ctx context.Context, serverID int64, coreType string) ([]map[string]interface{}, error)
 }
 
+// EndpointConfigProvider loads enabled endpoint configs for a server.
+// Implemented by endpointconfig.Service.
+//
+// sing-box 的 endpoints 是与 inbounds/outbounds 并列的顶层段
+// （WireGuard / Tailscale / OpenConnect / OpenVPN），xray 没有对应概念，
+// 因此只在 CoreType == "singbox" 时合并。
+type EndpointConfigProvider interface {
+	GetEnabledEndpoints(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error)
+}
+
 // ChainLinkProvider provides chain proxy outbounds, routing rules, and relay
 // inbound for a server. Implemented by the ChainLinkGenerator in the agent
 // package. When set, PrepareFullConfig merges chain link outbounds and
@@ -63,6 +73,9 @@ type PrepareFullConfigOptions struct {
 	InboundProvider InboundConfigProvider
 	// OutboundProvider optionally provides enabled outbound configs.
 	OutboundProvider OutboundConfigProvider
+	// EndpointProvider optionally provides enabled endpoint configs.
+	// Only used when CoreType == "singbox" (top-level endpoints[]).
+	EndpointProvider EndpointConfigProvider
 	// LogMode controls the log section in the generated config.
 	// Values: "file" (default), "stdout", "off".
 	// If empty, defaults to "file".
@@ -166,6 +179,43 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		}
 	}
 
+	// 8a. Merge enabled endpoints from endpoint_configs table (sing-box only).
+	// sing-box 的 endpoints 是与 inbounds/outbounds 并列的顶层段。此前这些配置
+	// 只写进 endpoint_configs 表，从未合并进运行时配置 —— 保存后重启核心依然看不到
+	// 端点，引用 endpoint tag 的路由 / DNS detour / 出站会报 "outbound not found"。
+	if opts.CoreType == "singbox" && opts.EndpointProvider != nil {
+		endpoints, err := opts.EndpointProvider.GetEnabledEndpoints(opts.Ctx, opts.ServerID, opts.CoreType)
+		if err != nil {
+			log.Printf("[PrepareFullConfig] failed to load endpoints for server %d: %v", opts.ServerID, err)
+		} else if len(endpoints) > 0 {
+			existingEndpoints, _ := fullConfig["endpoints"].([]interface{})
+			// 按 tag 去重：sing-box 要求 endpoints 与 outbounds 之间的 tag 也不能重复
+			seen := make(map[string]bool, len(existingEndpoints))
+			for _, raw := range existingEndpoints {
+				if m, ok := raw.(map[string]interface{}); ok {
+					if tag, _ := m["tag"].(string); tag != "" {
+						seen[tag] = true
+					}
+				}
+			}
+			for _, raw := range endpoints {
+				var ep map[string]interface{}
+				if json.Unmarshal(raw, &ep) != nil {
+					continue
+				}
+				tag, _ := ep["tag"].(string)
+				if tag != "" && seen[tag] {
+					continue
+				}
+				existingEndpoints = append(existingEndpoints, ep)
+				if tag != "" {
+					seen[tag] = true
+				}
+			}
+			fullConfig["endpoints"] = existingEndpoints
+		}
+	}
+
 	// 8b. If ChainLinkProvider is set, merge chain link outbounds and routing rules.
 	if opts.ChainLinkProvider != nil {
 		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, opts.ServerID)
@@ -182,7 +232,14 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				fullConfig["outbounds"] = mergeChainOutbounds(existingObs, chainOutbounds)
 			}
 			if len(chainRules) > 0 {
-				routing, _ := fullConfig["routing"].(map[string]interface{})
+				// 路由段名随核心不同：xray 是 routing，sing-box 是 route。
+				// 此前无条件写 "routing"，会让 sing-box 顶层多出未知键，
+				// 而 sing-box 的 JSON 解码是 DisallowUnknownFields —— 配置直接 FATAL。
+				routeKey := "routing"
+				if opts.CoreType == "singbox" {
+					routeKey = "route"
+				}
+				routing, _ := fullConfig[routeKey].(map[string]interface{})
 				if routing == nil {
 					routing = map[string]interface{}{}
 				}
@@ -198,9 +255,10 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 						routing["balancers"] = append(existingBal, chainBalancers...)
 					}
 					if chainObservatory != nil {
-						// §6.6.5: 当 Sampling > 0 时使用 burstObservatory（特征弱，适合入口节点）
+						// §6.6.5: 当存在 pingConfig 时使用 burstObservatory（特征弱，适合入口节点）
 						// 否则使用标准 observatory
-						if sampling, ok := chainObservatory["sampling"]; ok && sampling != nil {
+						// 依据 xray 官方文档：burstObservatory 结构为 {subjectSelector, pingConfig:{...}}
+						if _, hasPingConfig := chainObservatory["pingConfig"]; hasPingConfig {
 							if _, ok := fullConfig["burstObservatory"]; !ok {
 								fullConfig["burstObservatory"] = chainObservatory
 							}
@@ -211,7 +269,7 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 						}
 					}
 				}
-				fullConfig["routing"] = routing
+				fullConfig[routeKey] = routing
 			}
 		}
 
@@ -313,14 +371,14 @@ func ensureXrayDefaultOutbounds(fullConfig map[string]interface{}) {
 	if !hasDirect {
 		outbounds = append(outbounds, map[string]interface{}{
 			"protocol": "freedom",
-			"tag":     "direct",
+			"tag":      "direct",
 		})
 		log.Printf("[PrepareFullConfig] added missing 'direct' (freedom) outbound")
 	}
 	if !hasBlocked {
 		outbounds = append(outbounds, map[string]interface{}{
 			"protocol": "blackhole",
-			"tag":     "blocked",
+			"tag":      "blocked",
 		})
 		log.Printf("[PrepareFullConfig] added missing 'blocked' (blackhole) outbound")
 	}
@@ -646,8 +704,8 @@ func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode strin
 			// Do nothing.
 		}
 
-	// hysteria2 and tuic don't have config-level log settings.
-	// Their log output is controlled by process.Manager (file/stdout/off).
+		// hysteria2 and tuic don't have config-level log settings.
+		// Their log output is controlled by process.Manager (file/stdout/off).
 	}
 }
 
@@ -802,6 +860,35 @@ func parseMbpsStr(s string) int {
 	return n
 }
 
+// normalizeSingboxRouteRuleFields 把前端/xray 习惯的字段名改写为 sing-box 的字段名：
+//
+//	inbound_tag → inbound
+//	process     → process_name
+//
+// 这两组字段名在 xray 里是 inboundTag/process，前端曾直接落库为下划线形式；
+// sing-box 解码时是 DisallowUnknownFields，带未知字段的规则会让核心起不来。
+// 只在目标字段不存在时搬运，避免覆盖用户已正确配置的值。
+func normalizeSingboxRouteRuleFields(rules []interface{}) {
+	for _, raw := range rules {
+		rule, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if v, exists := rule["inbound_tag"]; exists {
+			if _, has := rule["inbound"]; !has {
+				rule["inbound"] = v
+			}
+			delete(rule, "inbound_tag")
+		}
+		if v, exists := rule["process"]; exists {
+			if _, has := rule["process_name"]; !has {
+				rule["process_name"] = v
+			}
+			delete(rule, "process")
+		}
+	}
+}
+
 // MigrateSingboxLegacyFields removes deprecated inbound fields (sniff,
 // sniff_override_destination, sniff_timeout, domain_strategy) that were
 // removed in sing-box 1.13.0, and adds equivalent route rule actions.
@@ -813,6 +900,10 @@ func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
 		fullConfig["route"] = route
 	}
 	rules, _ := route["rules"].([]interface{})
+
+	// 归一化 route 规则的字段名：前端历史数据写的是 inbound_tag / process，
+	// 而 sing-box 的字段是 inbound / process_name —— 未知字段会导致 FATAL。
+	normalizeSingboxRouteRuleFields(rules)
 
 	// Check if any inbound has legacy sniff fields
 	needsSniffRule := false
@@ -967,70 +1058,100 @@ func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
 	route["rules"] = newRules
 }
 
-// EnsureSingboxV2RayAPI ensures the experimental section exists for traffic
-// statistics. It prefers v2ray_api (gRPC stats, same protocol as xray) when
-// the binary supports it, falling back to clash_api otherwise.
+// defaultSingboxV2RayAPIListen 是 sing-box v2ray_api 的默认监听地址。
+const defaultSingboxV2RayAPIListen = "127.0.0.1:10086"
+
+// EnsureSingboxV2RayAPI 确保 experimental.v2ray_api 存在并启用流量统计。
 //
-// Since sing-box 1.15+ default builds don't include the with_v2ray_api tag,
-// we use clash_api as the traffic stats backend. The Panel's trafficsync
-// service can query clash_api's /connections endpoint for per-user traffic.
+// 面板统一使用 v2ray_api 作为 sing-box 的统计通道，理由：
+//   - 它与 xray 的 StatsService 协议同名，可直接复用现有 gRPC 客户端与解析逻辑
+//     （trafficsync → coredata.XrayClient.RawStats → ParseStatsResponse）；
+//   - 提供 user>>>name>>>traffic>>>uplink/downlink 计数，且支持 reset_ 原子取增量；
+//   - clash_api 的 /connections 不暴露 user 字段，无法按订阅用户出账。
+//
+// 两个前置条件（否则统计拿不到数据）：
+//  1. 节点二进制必须带 with_v2ray_api —— 官方 release 不含该 tag，缺失时核心启动即
+//     FATAL（create v2ray-server: v2ray api is not included in this build），
+//     因此节点要用 qist/singbox-binaries 的自建产物；
+//  2. stats.users / stats.inbounds 是白名单（见 PopulateSingboxStatsTargets），
+//     没列进去的标签/用户不会产生计数器。
+//
+// 本函数不再自动创建 clash_api（默认不配置）。若用户显式配置了 clash_api 且与
+// v2ray_api 抢同一端口，则自动为其换到备用端口，避免两个监听互相冲突。
 //
 // https://sing-box.sagernet.org/configuration/experimental/v2ray-api/
-// https://sing-box.sagernet.org/configuration/experimental/clash-api/
 func EnsureSingboxV2RayAPI(fullConfig map[string]interface{}) {
 	exp, ok := fullConfig["experimental"].(map[string]interface{})
-	if !ok {
+	if !ok || exp == nil {
 		exp = map[string]interface{}{}
 		fullConfig["experimental"] = exp
 	}
 
-	// If v2ray_api is already present (user explicitly configured it),
-	// respect that choice and ensure stats is enabled.
-	if v2api, ok := exp["v2ray_api"].(map[string]interface{}); ok {
-		if _, ok := v2api["listen"].(string); !ok {
-			v2api["listen"] = "127.0.0.1:10086"
-		}
-		stats, ok := v2api["stats"].(map[string]interface{})
-		if !ok {
-			stats = map[string]interface{}{}
-			v2api["stats"] = stats
-		}
-		stats["enabled"] = true
-		return
+	v2api, ok := exp["v2ray_api"].(map[string]interface{})
+	if !ok || v2api == nil {
+		v2api = map[string]interface{}{}
+		exp["v2ray_api"] = v2api
 	}
+	listen, _ := v2api["listen"].(string)
+	if listen == "" {
+		listen = defaultSingboxV2RayAPIListen
+		v2api["listen"] = listen
+	}
+	stats, ok := v2api["stats"].(map[string]interface{})
+	if !ok || stats == nil {
+		stats = map[string]interface{}{}
+		v2api["stats"] = stats
+	}
+	stats["enabled"] = true
 
-	// Otherwise, ensure clash_api exists for traffic monitoring.
-	// clash_api provides connection stats via RESTful API.
-	clashAPI, ok := exp["clash_api"].(map[string]interface{})
-	if !ok {
-		clashAPI = map[string]interface{}{}
-		exp["clash_api"] = clashAPI
-	}
-	if _, ok := clashAPI["external_controller"].(string); !ok {
-		clashAPI["external_controller"] = "127.0.0.1:10086"
+	// clash_api 是可选的（默认不配置）。仅在用户显式配置且端口与 v2ray_api 冲突时避让。
+	if clashAPI, ok := exp["clash_api"].(map[string]interface{}); ok && clashAPI != nil {
+		if ctrl, _ := clashAPI["external_controller"].(string); ctrl != "" && ctrl == listen {
+			clashAPI["external_controller"] = "127.0.0.1:9090"
+			log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 127.0.0.1:9090", listen)
+		}
 	}
 }
 
-// PopulateSingboxStatsTargets populates the v2ray_api.stats.inbounds/outbounds
-// lists with all inbound and outbound tags so that traffic counters are created
-// for every proxy endpoint. This mirrors the xray policy "statsInboundUplink/
-// statsInboundDownlink" mechanism — sing-box uses explicit tag lists instead.
+// PopulateSingboxStatsTargets 自动填充 v2ray_api.stats 的白名单。
 //
-// If the user already specified inbounds/outbounds in stats, we merge (append
-// missing tags) rather than replace.
+// 这是 sing-box 与 xray 最大的差异点：xray 用 policy.levels.0.statsUserUplink/
+// statsUserDownlink 统一开启 per-user 统计，而 sing-box 的 stats 是**显式白名单** ——
+// 只有当 inbound tag / outbound tag / 用户名出现在 stats.inbounds / stats.outbounds /
+// stats.users 中，才会创建对应计数器（见 sing-box experimental/v2rayapi/stats.go 的
+// RoutedConnection：未命中白名单直接 return，不计数）。
+//
+// 因此这里必须把配置中所有用户补进 stats.users，否则面板拿不到 user>>> 计数，
+// sing-box 节点的按用户计费会恒为 0（v2ray_api 白装了）。
+// 同时补齐 inbounds/outbounds 维度：入站全部纳入（含 tun/tproxy 等网关场景），
+// 出站排除 direct/block/dns/selector/urltest 这类非代理出站。
+//
+// 合并策略：保留用户已有配置并追加缺失项，不覆盖已有值。
 func PopulateSingboxStatsTargets(fullConfig map[string]interface{}) {
-	// Collect all inbound tags
 	var inboundTags []string
+	var userNames []string
 	if inbounds, ok := fullConfig["inbounds"].([]interface{}); ok {
 		for _, ib := range inbounds {
-			if m, ok := ib.(map[string]interface{}); ok {
-				if tag, _ := m["tag"].(string); tag != "" {
-					// Skip internal inbounds that don't need per-tag stats
-					switch m["type"] {
-					case "tun", "redirect", "tuic":
-						continue
-					}
-					inboundTags = append(inboundTags, tag)
+			m, ok := ib.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if tag, _ := m["tag"].(string); tag != "" {
+				inboundTags = append(inboundTags, tag)
+			}
+			// 用户名字段：vless/vmess/trojan/ss/hysteria2/tuic/anytls/snell 等用 users[].name，
+			// socks/http/mixed 用 users[].username。
+			users, _ := m["users"].([]interface{})
+			for _, u := range users {
+				um, ok := u.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if n, _ := um["name"].(string); n != "" {
+					userNames = append(userNames, n)
+				}
+				if n, _ := um["username"].(string); n != "" {
+					userNames = append(userNames, n)
 				}
 			}
 		}
@@ -1068,21 +1189,19 @@ func PopulateSingboxStatsTargets(fullConfig map[string]interface{}) {
 		return
 	}
 
-	// Merge inbound tags
-	if len(inboundTags) > 0 {
-		existing := toStringSlice(stats["inbounds"])
-		merged := mergeUnique(existing, inboundTags)
-		if len(merged) > 0 {
-			stats["inbounds"] = merged
-		}
+	mergeStatsList(stats, "inbounds", inboundTags)
+	mergeStatsList(stats, "outbounds", outboundTags)
+	mergeStatsList(stats, "users", userNames)
+}
+
+// mergeStatsList 把 targets 合并进 stats[key]（保留已有值并追加缺失项）。
+func mergeStatsList(stats map[string]interface{}, key string, targets []string) {
+	if len(targets) == 0 {
+		return
 	}
-	// Merge outbound tags
-	if len(outboundTags) > 0 {
-		existing := toStringSlice(stats["outbounds"])
-		merged := mergeUnique(existing, outboundTags)
-		if len(merged) > 0 {
-			stats["outbounds"] = merged
-		}
+	merged := mergeUnique(toStringSlice(stats[key]), targets)
+	if len(merged) > 0 {
+		stats[key] = merged
 	}
 }
 
@@ -1275,9 +1394,12 @@ func convertChainRulesToSingbox(rules []interface{}) []interface{} {
 // convertRelayInboundToSingbox converts xray-format relay-in inbound to sing-box format.
 //
 // xray:  {"tag":"relay-in","protocol":"vless","listen":"0.0.0.0","port":443,
-//	  "settings":{"clients":[{"id":"uuid","email":"chain-relay"}]}}
+//
+//	"settings":{"clients":[{"id":"uuid","email":"chain-relay"}]}}
+//
 // sing-box: {"tag":"relay-in","type":"vless","listen":"0.0.0.0","listen_port":443,
-//	  "users":[{"name":"chain-relay","uuid":"uuid"}]}
+//
+//	"users":[{"name":"chain-relay","uuid":"uuid"}]}
 func convertRelayInboundToSingbox(inbound map[string]interface{}) map[string]interface{} {
 	protocol, _ := inbound["protocol"].(string)
 	tag, _ := inbound["tag"].(string)

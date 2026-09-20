@@ -639,6 +639,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	configSyncSvc.SetChainLinkProvider(chainLinkGen)
 
+	// 注入 endpoint provider：让 sing-box 的 WireGuard/Tailscale/OpenConnect/OpenVPN
+	// 端点（endpoint_configs 表）真正进入运行时配置的顶层 endpoints[]。
+	configSyncSvc.SetEndpointProvider(endpointConfigSvc)
+
 	// Wire core config section getter so logmanage can derive output mode from
 	// the actual xray/singbox log section (syncs with protocol center changes)
 	logManageSvc.SetCoreConfigSectionGetter(coreConfigSvc)
@@ -927,6 +931,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			FullConfig:        fullConfig,
 			InboundProvider:   inboundConfigSvc,
 			OutboundProvider:  outboundConfigSvc,
+			EndpointProvider:  endpointConfigSvc,
 			ChainLinkProvider: chainLinkGen,
 		})
 		if err != nil {
@@ -1856,7 +1861,7 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 						nodeServerRepo,
 						repository.NewExternalNodeRepository(database),
 					),
-				)
+				).WithEndpointProvider(endpointConfigSvc)
 				nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 				nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 
@@ -1956,6 +1961,7 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 			nodeServerH.SetCoreConfigService(coreConfigSvc)
 			nodeServerH.SetInboundConfigService(inboundConfigSvc)
 			nodeServerH.SetOutboundConfigService(outboundConfigSvc)
+			nodeServerH.SetEndpointConfigService(endpointConfigSvc)
 			nodeServerH.SetProxyHandler(proxyH)
 			nodeServerH.SetGeoRuleService(geoRuleSvcInst)
 

@@ -2,8 +2,8 @@ package nodeserver
 
 import (
 	"context"
-	"encoding/base64"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +20,7 @@ import (
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/vo"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	endpointconfigSvc "corefusion/internal/service/endpointconfig"
 	geoRuleSvc "corefusion/internal/service/georule"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	nodeserverSvc "corefusion/internal/service/nodeserver"
@@ -29,12 +30,13 @@ import (
 
 // Handler handles node server HTTP requests.
 type Handler struct {
-	svc              *nodeserverSvc.Service
-	coreConfigSvc    *coreconfigSvc.Service
-	inboundConfigSvc *inboundconfigSvc.Service
+	svc               *nodeserverSvc.Service
+	coreConfigSvc     *coreconfigSvc.Service
+	inboundConfigSvc  *inboundconfigSvc.Service
 	outboundConfigSvc *outboundconfigSvc.Service
-	proxyH           *system.ProxyHandler
-	geoRuleSvc       *geoRuleSvc.Service
+	endpointConfigSvc *endpointconfigSvc.Service
+	proxyH            *system.ProxyHandler
+	geoRuleSvc        *geoRuleSvc.Service
 }
 
 // NewHandler creates a new node server handler.
@@ -55,6 +57,11 @@ func (h *Handler) SetInboundConfigService(svc *inboundconfigSvc.Service) {
 // SetOutboundConfigService sets the outbound config service.
 func (h *Handler) SetOutboundConfigService(svc *outboundconfigSvc.Service) {
 	h.outboundConfigSvc = svc
+}
+
+// SetEndpointConfigService sets the endpoint config service (sing-box endpoints[]).
+func (h *Handler) SetEndpointConfigService(svc *endpointconfigSvc.Service) {
+	h.endpointConfigSvc = svc
 }
 
 // SetProxyHandler sets the proxy handler for local proxy management delegation.
@@ -501,8 +508,8 @@ func (h *Handler) ListBillableServers(c *gin.Context) {
 // ValidateChainConfig validates a chain_config JSON.
 func (h *Handler) ValidateChainConfig(c *gin.Context) {
 	var req struct {
-		NodeType      string `json:"node_type" binding:"required"`
-		ChainConfig   string `json:"chain_config"`
+		NodeType    string `json:"node_type" binding:"required"`
+		ChainConfig string `json:"chain_config"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
@@ -718,9 +725,9 @@ func (h *Handler) GetSpeedTestResults(c *gin.Context) {
 // SelectNodesForSubscription selects best nodes for a subscription request.
 func (h *Handler) SelectNodesForSubscription(c *gin.Context) {
 	var req struct {
-		UserRegion  string  `json:"user_region"`
-		Count       int     `json:"count"`
-		ExcludeIDs  []int64 `json:"exclude_ids"`
+		UserRegion string  `json:"user_region"`
+		Count      int     `json:"count"`
+		ExcludeIDs []int64 `json:"exclude_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
@@ -915,6 +922,7 @@ func (h *Handler) SyncServerConfig(c *gin.Context) {
 			FullConfig:       fullConfig,
 			InboundProvider:  h.inboundConfigSvc,
 			OutboundProvider: h.outboundConfigSvc,
+			EndpointProvider: h.endpointConfigSvc,
 		})
 		if err != nil {
 			response.InternalError(c, "SYNC_FAILED", "failed to prepare config: "+err.Error())

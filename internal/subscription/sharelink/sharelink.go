@@ -452,30 +452,45 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 	if m == nil {
 		return nil
 	}
-	v, ok := m[key].([]interface{})
-	if !ok {
-		return nil
-	}
-	var result []string
-	for _, item := range v {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
+	// 同时支持 []string（面板内部构造的视图，如 singboxToXrayStreamSettings 的
+	// realmSettings.serverNames/shortIds）与 []interface{}（从 JSON 反序列化的 xray 配置）。
+	// 只认 []interface{} 会让前者静默丢空 —— 表现就是 REALITY 分享链接缺 sni / sid。
+	switch v := m[key].(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if item != "" {
+				out = append(out, item)
+			}
 		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
 	}
-	return result
+	return nil
 }
 
 func getFingerprint(tls map[string]interface{}) string {
 	if tls == nil {
 		return ""
 	}
-	// settings[0].fingerprint
+	// settings[0].fingerprint（xray 形态）
 	if settings, ok := tls["settings"].([]interface{}); ok && len(settings) > 0 {
 		if s, ok := settings[0].(map[string]interface{}); ok {
-			if fp, ok := s["fingerprint"].(string); ok {
+			if fp, ok := s["fingerprint"].(string); ok && fp != "" {
 				return fp
 			}
 		}
+	}
+	// 顶层 fingerprint（面板内部构造的视图，如 sing-box 反推的 realitySettings）
+	if fp, ok := tls["fingerprint"].(string); ok && fp != "" {
+		return fp
 	}
 	return ""
 }
@@ -637,6 +652,16 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 		}
 		if seed != "" {
 			params.Set("seed", seed)
+		}
+	case "h2", "http":
+		// h2（sing-box 的 transport.type=http / xray 的 network=h2）
+		http := getMap(ss, "httpSettings")
+		if http == nil {
+			http = getMap(ss, "http")
+		}
+		params.Set("path", getString(http, "path", "/"))
+		if h := getString(http, "host", ""); h != "" {
+			params.Set("host", h)
 		}
 	case "ws":
 		ws := getMap(ss, "wsSettings")

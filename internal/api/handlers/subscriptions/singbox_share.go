@@ -245,21 +245,33 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 	// transport：sing-box 的 "http" 表示 HTTP/2（xray 里叫 h2）
 	if tr, ok := config["transport"].(map[string]interface{}); ok {
 		switch t, _ := tr["type"].(string); t {
+		// 注意：sharelink.Generate 读的是 xray 形态的**嵌套**设置
+		// （wsSettings / grpcSettings / httpSettings / httpupgradeSettings），
+		// 只写顶层的 path/host/serviceName 会被忽略 —— 表现就是分享链接里
+		// serviceName 为空、ws 的 path/host 丢失。所以两种形态都写一份。
 		case "ws":
 			ss["network"] = "ws"
-			setIfNotEmpty(ss, "path", getString(tr, "path", ""))
-			setIfNotEmpty(ss, "host", firstString(tr["host"]))
+			path, host := getString(tr, "path", ""), firstString(tr["host"])
+			setIfNotEmpty(ss, "path", path)
+			setIfNotEmpty(ss, "host", host)
+			ss["wsSettings"] = map[string]interface{}{"path": path, "host": host}
 		case "grpc":
 			ss["network"] = "grpc"
-			setIfNotEmpty(ss, "serviceName", getString(tr, "service_name", ""))
+			svc := getString(tr, "service_name", "")
+			setIfNotEmpty(ss, "serviceName", svc)
+			ss["grpcSettings"] = map[string]interface{}{"serviceName": svc}
 		case "http":
 			ss["network"] = "h2"
-			setIfNotEmpty(ss, "path", getString(tr, "path", ""))
-			setIfNotEmpty(ss, "host", firstString(tr["host"]))
+			path, host := getString(tr, "path", ""), firstString(tr["host"])
+			setIfNotEmpty(ss, "path", path)
+			setIfNotEmpty(ss, "host", host)
+			ss["httpSettings"] = map[string]interface{}{"path": path, "host": host}
 		case "httpupgrade":
 			ss["network"] = "httpupgrade"
-			setIfNotEmpty(ss, "path", getString(tr, "path", ""))
-			setIfNotEmpty(ss, "host", firstString(tr["host"]))
+			path, host := getString(tr, "path", ""), firstString(tr["host"])
+			setIfNotEmpty(ss, "path", path)
+			setIfNotEmpty(ss, "host", host)
+			ss["httpupgradeSettings"] = map[string]interface{}{"path": path, "host": host}
 		case "quic":
 			ss["network"] = "quic"
 		case "":
@@ -332,6 +344,10 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 			}
 			if fp, ok := tlsSettings["fingerprint"].(string); ok && fp != "" {
 				rs["fingerprint"] = fp
+			} else {
+				// 客户端 uTLS 指纹：xray 侧编辑器默认写 chrome，sing-box 入站没有 utls 字段，
+				// 这里补同一个默认值，避免分享链接缺 fp（多数客户端缺省会自己兜底，但不统一）。
+				rs["fingerprint"] = "chrome"
 			}
 			if spx := getString(reality, "spider_x", ""); spx != "" {
 				rs["spiderX"] = spx

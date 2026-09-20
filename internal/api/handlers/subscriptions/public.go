@@ -19,11 +19,11 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
 	"corefusion/internal/service/traffic"
-	"corefusion/pkg/netutil"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/mihomoconv"
 	"corefusion/internal/subscription/sharelink"
+	"corefusion/pkg/netutil"
 )
 
 // RateLimitPusher pushes IP association to rate limit agents.
@@ -50,8 +50,8 @@ type PublicHandler struct {
 	networkTracker    *traffic.SubscriptionIPTracker
 	// Chain proxy repos for filtering relay_only nodes from subscription
 	// and rendering external node servers (design doc §8.1 / §8.2)
-	chainExitCfgRepo  *repository.ChainExitConfigRepository
-	extServerRepo     *repository.ExternalNodeServerRepository
+	chainExitCfgRepo *repository.ChainExitConfigRepository
+	extServerRepo    *repository.ExternalNodeServerRepository
 }
 
 // SetNetworkTracker injects the nftables IP tracker so subscription access records can
@@ -778,7 +778,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 					}
 				}
 			}
-	}
+		}
 	}
 
 	if h.extNodeRepo == nil {
@@ -1720,17 +1720,27 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 	if m == nil {
 		return nil
 	}
-	v, ok := m[key].([]interface{})
-	if !ok {
-		return nil
-	}
-	var result []string
-	for _, item := range v {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
+	// 同时支持 []string（面板内部构造的视图）与 []interface{}（JSON 反序列化的 xray 配置），
+	// 只认后者会让前者静默丢空（REALITY 链接缺 sni/sid、alpn 丢失等）。
+	switch v := m[key].(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if item != "" {
+				out = append(out, item)
+			}
 		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
 	}
-	return result
+	return nil
 }
 
 // findClientByEmail finds a specific client entry in the inbound config by matching the email pattern.
@@ -2636,8 +2646,8 @@ func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, tmpl *ent
 			config.ResetTemplate = v
 		}
 		if v := strings.TrimSpace(tmpl.BillingExpiryTemplate); v != "" {
-				config.ExpiryTemplate = v
-			}
+			config.ExpiryTemplate = v
+		}
 	}
 	return config
 }
@@ -2741,18 +2751,18 @@ func t(lang, key string) string {
 
 // ClientVisibleNode represents a node visible to a client, with its share link.
 type ClientVisibleNode struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Protocol    string `json:"protocol"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Transport   string `json:"transport"`
-	TLS         bool   `json:"tls"`
-	Region      string `json:"region,omitempty"`
-	GroupName   string `json:"group_name,omitempty"`
-	Link        string `json:"link,omitempty"`
-	InboundID   int64  `json:"inbound_id,omitempty"`
-	ExternalID  int64  `json:"external_id,omitempty"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Protocol   string `json:"protocol"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Transport  string `json:"transport"`
+	TLS        bool   `json:"tls"`
+	Region     string `json:"region,omitempty"`
+	GroupName  string `json:"group_name,omitempty"`
+	Link       string `json:"link,omitempty"`
+	InboundID  int64  `json:"inbound_id,omitempty"`
+	ExternalID int64  `json:"external_id,omitempty"`
 }
 
 // ListClientVisibleNodes returns all nodes visible to the given client,

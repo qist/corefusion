@@ -320,6 +320,14 @@ export function buildInbound(ib) {
     }
     out.tls = tls
   }
+  // Reality 公钥（pbk）：sing-box 入站不接受 public_key 字段（DisallowUnknownFields 会 FATAL），
+  // 所以存成顶层 _realityPublicKey —— 顶层 `_` 字段生成核心配置时会被剥离，不会进 sing-box。
+  // 「公钥（客户端）」只读框、前端 singboxShareLink.js 与后端 sharelink/singbox_share.go 都从这里取；
+  // 缺失时两端都会由 private_key 推导（x25519）。⚠ 以前这行被误写在 parseInbound 里，从未落库，
+  // 且会把 parse 从 tls.reality.public_key 读到的旧值覆盖成空串。
+  if (out.tls && out.tls.reality && out.tls.reality.enabled) {
+    out._realityPublicKey = ib._realityPublicKey || ''
+  }
 
   // Transport（仅 vless/vmess/trojan 支持 V2Ray Transport）
   // 每种 transport 只输出该类型支持的合法字段，参考 sing-box 文档：
@@ -575,10 +583,6 @@ o._snellMode = ib.mode || ''
   // remark + enabled + access domain (对齐 xray，表单专用字段)
   o._remark = ib._remark || ''
   o._enabled = ib._enabled !== false
-  // 客户端公钥（pbk）：sing-box 入站不接受 public_key 字段（DisallowUnknownFields 会 FATAL），
-  // 所以存成顶层 _realityPublicKey —— 面板生成核心配置时会剥离顶层 _ 前缀字段，
-  // 分享链接（subscriptions/singbox_share.go）与再次打开编辑器都从这里取。
-  o._realityPublicKey = ib._realityPublicKey || '' 
   // tun parse
   o._tunNetns = ib.netns || ''
   o._tunMtu = ib.mtu || 0

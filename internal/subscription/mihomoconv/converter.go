@@ -586,7 +586,9 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			}
 			proxies = append(proxies, vmess)
 
-		case "ss":
+		// shadowsocks / shadowsocks2022：同一标准 URI 的别名。只认 "ss" 时，
+		// 面板早期用 shadowsocks:// 生成的链接会被静默丢弃（整批 ss 节点丢出订阅）。
+		case "ss", "shadowsocks", "shadowsocks2022":
 			urlSS, err := url.Parse(line)
 			if err != nil {
 				continue
@@ -619,7 +621,9 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			}
 			ss := make(map[string]any, 10)
 			ss["name"] = name
-			ss["type"] = scheme
+			// mihomo 的出站类型只有 "ss"（别名 shadowsocks / shadowsocks2022 不是合法
+			// 类型名，照抄 scheme 会被 mihomo 判为未知类型），统一收敛成 ss。
+			ss["type"] = "ss"
 			ss["server"] = urlSS.Hostname()
 			ss["port"] = urlSS.Port()
 			ss["cipher"] = cipher

@@ -40,16 +40,25 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		return
 	}
 
-	// format=uri（默认）：逐用户分享链接；format=mihomo：逐用户的 mihomo 配置片段。
-	format := strings.ToLower(strings.TrimSpace(c.Query("format")))
+	// format=uri（默认，分享链接）/ mihomo / singbox / xray（可直接粘贴的配置片段）。
+	format := normalizeShareFormat(c.Query("format"))
 	shareDomains := h.loadShareDomains(c.Request.Context())
 	nodeName := cfg.Remark
 	if nodeName == "" {
 		nodeName = cfg.Tag
 	}
 
+	// 协议是否在该客户端里受支持（与订阅同一份矩阵）——决定前端是显示
+	// "该客户端不支持此协议" 还是 "无可渲染内容"。
+	matrix := snippetSupportMatrix(format)
+	matrixProto := strings.ToLower(cfg.Protocol)
+	if matrixProto == "hysteria" {
+		matrixProto = "hysteria2"
+	}
+	protocolSupported := matrix[matrixProto]
+
 	items := make([]gin.H, 0, 4)
-	for _, u := range inboundUserRecords(config) {
+	for idx, u := range inboundUserRecords(config) {
 		view := shareViewForUser(cfg.Tag, config, u)
 		if view == nil {
 			continue
@@ -60,40 +69,50 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 			continue
 		}
 		host, port := h.hostForLink(c.Request.Context(), cfg, view, shareDomains)
+		// 注意：这里传**完整的 settings**（而不是只挑 clients/encryption）——
+		// ss 的加密方式（method）、http/socks 的认证等都从这里取，
+		// 只挑两个键会让链接用错 cipher（如把 2022-blake3 写成 aes-256-gcm）。
 		link := sharelink.Generate(sharelink.Node{
-			Tag:      nodeName,
-			Protocol: cfg.Protocol,
-			Host:     host,
-			Port:     port,
-			Settings: map[string]interface{}{
-				"clients":    []interface{}{client},
-				"encryption": getString(settings, "encryption", "none"),
-			},
+			Tag:            nodeName,
+			Protocol:       cfg.Protocol,
+			Host:           host,
+			Port:           port,
+			Settings:       settings,
 			StreamSettings: getMap(view, "streamSettings"),
 			FinalMask:      finalMaskWithPortHop(config),
 		})
-		switch format {
-		case "mihomo":
-			snippet := mihomoProxySnippet(link)
-			if snippet == "" {
-				continue
-			}
-			items = append(items, gin.H{"user": u.label, "text": snippet})
-		default:
-			if link != "" {
-				items = append(items, gin.H{"user": u.label, "link": link})
-			}
+		if !protocolSupported {
+			continue
 		}
+		node := formatterNodeForShare(nodeName, cfg, view, client, host, port)
+		text, ok := renderShareSnippet(format, link, node)
+		if !ok {
+			continue
+		}
+		items = append(items, gin.H{
+			"user":  u.label,
+			"keys":  inboundUserKeys(u),
+			"index": idx,
+			"link":  link,
+			"text":  text,
+		})
+	}
+
+	// 协议在矩阵里、但一条都没渲染出来（如 sing-box 表达不了的 xhttp 传输）时，
+	// 同样按"不支持"返回 —— 前端才能给出明确提示，而不是一个空框。
+	if protocolSupported && len(items) == 0 {
+		protocolSupported = false
 	}
 
 	host, port := h.hostForLink(c.Request.Context(), cfg, config, shareDomains)
 	response.OK(c, gin.H{
-		"items":    items,
-		"host":     host,
-		"port":     port,
-		"protocol": cfg.Protocol,
-		"enabled":  cfg.Enabled,
-		"format":   format,
+		"items":     items,
+		"host":      host,
+		"port":      port,
+		"protocol":  cfg.Protocol,
+		"enabled":   cfg.Enabled,
+		"format":    format,
+		"supported": protocolSupported,
 	})
 }
 
@@ -145,7 +164,9 @@ type inboundUser struct {
 }
 
 // inboundUserRecords 列出该入站里的用户记录：
-//   - xray    : settings.clients[]
+//   - xray    : settings.clients[]（vless/vmess/trojan/ss/hysteria…）
+//     settings.accounts[]（http/socks，形状是 {user, pass} —— 不认这个形状
+//     会导致这类入站在分享/二维码/片段里"一个用户都没有"）
 //   - sing-box: 顶层 users[]
 func inboundUserRecords(config map[string]interface{}) []inboundUser {
 	out := make([]inboundUser, 0, 4)
@@ -166,6 +187,29 @@ func inboundUserRecords(config map[string]interface{}) []inboundUser {
 				}
 			}
 		}
+		if accounts, ok := settings["accounts"].([]interface{}); ok {
+			for _, a := range accounts {
+				m, ok := a.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				label := getString(m, "user", "")
+				if label == "" {
+					label = getString(m, "username", "")
+				}
+				// 归一成 client 形状，下游（链接生成 / 节点构造）只认 username/password
+				rec := make(map[string]interface{}, len(m)+3)
+				for k, v := range m {
+					rec[k] = v
+				}
+				rec["email"] = label
+				rec["username"] = label
+				if pw := getString(m, "pass", ""); pw != "" {
+					rec["password"] = pw
+				}
+				add(label, rec)
+			}
+		}
 	}
 	if users, ok := config["users"].([]interface{}); ok {
 		for _, u := range users {
@@ -183,6 +227,27 @@ func inboundUserRecords(config map[string]interface{}) []inboundUser {
 	return out
 }
 
+// inboundUserKeys 该用户的所有候选标识（小写）。
+// 前端选择用户用的键与后端 label 口径未必一致（xray 用 email、sing-box 用 name/username），
+// 把候选标识一并返回，前端"任一命中即算同一个用户"，避免匹配不上导致空片段。
+func inboundUserKeys(u inboundUser) []string {
+	out := make([]string, 0, 4)
+	seen := map[string]bool{}
+	add := func(v string) {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "" || seen[v] {
+			return
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	add(u.label) // 最权威的标识放最前
+	for _, k := range []string{"email", "name", "username", "id", "uuid", "user"} {
+		add(getString(u.record, k, ""))
+	}
+	return out
+}
+
 // shareViewForUser 取出「该用户视角」的归一化配置：
 // sing-box 走 singboxViewForUser（只保留该用户 + 反推 streamSettings）；
 // xray 复制一份并把 settings.clients 收敛成该用户（绝不把他人凭证带进分享链接）。
@@ -195,10 +260,16 @@ func shareViewForUser(tag string, config map[string]interface{}, u inboundUser) 
 	for k, v := range config {
 		out[k] = v
 	}
-	out["settings"] = map[string]interface{}{
-		"clients":    []interface{}{u.record},
-		"encryption": getString(getMap(config, "settings"), "encryption", "none"),
+	// 保留原有 settings 的其它键（method / network / auth …）：只留 clients+encryption
+	// 会让 ss 的加密方式退回默认值，生成出**连不上**的链接（2022-blake3 被写成 aes-256-gcm）。
+	merged := map[string]interface{}{}
+	if settings := getMap(config, "settings"); settings != nil {
+		for k, v := range settings {
+			merged[k] = v
+		}
 	}
+	merged["clients"] = []interface{}{u.record}
+	out["settings"] = merged
 	return out
 }
 

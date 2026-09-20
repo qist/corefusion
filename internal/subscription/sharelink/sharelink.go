@@ -332,8 +332,10 @@ func generateShadowsocksLink(n Node) string {
 	}
 
 	// ss://base64(method:password)@host:port#tag
+	// 用标准 scheme "ss"（SIP002）：mihomo 的转换器只认 ss://，发 shadowsocks://
+	// 会让 ss 节点在 mihomo / xray 订阅里被静默丢弃。
 	auth := base64.StdEncoding.EncodeToString([]byte(method + ":" + password))
-	return fmt.Sprintf("shadowsocks://%s@%s:%d#%s",
+	return fmt.Sprintf("ss://%s@%s:%d#%s",
 		auth, formatHost(n.Host), n.Port, url.PathEscape(n.Tag))
 }
 

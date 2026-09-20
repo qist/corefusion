@@ -443,14 +443,20 @@ func formatSupportedProtocols(format string) map[string]bool {
 			"shadowsocks": true, "shadowsocks2022": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
 			"socks": true, "http": true, "anytls": true,
+			// mixed = HTTP+SOCKS 同端口，链接形态即 socks5://（sharelink 已支持）
+			"mixed": true,
 		}
 	case "xray_json":
-		// xray 客户端：不支持 anytls / naive / snell / mixed 等 sing-box 专属协议
+		// xray 客户端：不支持 anytls / naive / snell 等 sing-box 专属协议。
+		// **tuic 不列入**：实测本机 xray（26.7.28）没有 tuic 出站，写了会报
+		// `unknown config id: tuic` 并让**整份**客户端配置加载失败。
 		return map[string]bool{
 			"vless": true, "vmess": true, "trojan": true,
 			"shadowsocks": true, "shadowsocks2022": true,
-			"hysteria": true, "hysteria2": true, "tuic": true,
-			"socks": true, "http": true,
+			"hysteria": true, "hysteria2": true,
+			"socks": true, "http": true, "socks5": true, "https": true,
+			// mixed 由 socks5 出站表达（xray 有 socks 出站）
+			"mixed": true,
 		}
 	case "singbox_json":
 		// sing-box 客户端：支持面最广。注意：
@@ -483,6 +489,8 @@ func formatSupportedProtocols(format string) map[string]bool {
 			"shadowsocksr": true, "ssr": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
 			"socks": true, "socks5": true, "http": true, "https": true,
+			// mixed 由 socks5 出站表达（mihomo 有 socks5 出站）
+			"mixed":  true,
 			"anytls": true, "snell": true, "ssh": true,
 			"wireguard": true, "mieru": true, "shadowquic": true, "gost-relay": true,
 		}

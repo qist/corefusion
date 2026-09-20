@@ -20,7 +20,10 @@ function randSuffix() {
 }
 
 // 端点表单默认值
-export function endpointDefaultsForType(type) {
+export function endpointDefaultsForType(type, customPort) {
+  // customPort：由调用方传入（后端 free-port 接口返回的空闲端口），
+  // 保证新建端点不会与已有入站/端点撞端口。
+  const listenPort = customPort > 0 ? customPort : 0
   const base = {
     type,
     tag: '',
@@ -45,7 +48,7 @@ export function endpointDefaultsForType(type) {
         _addressStr: defaultAddr,
         private_key: '',
         public_key: '',
-        listen_port: 51820,
+        listen_port: listenPort > 0 ? listenPort : 51820,
         peers: [],
         workers: 0,
         on_demand: false,
@@ -228,6 +231,8 @@ export function endpointDefaultsForType(type) {
         mtu: 1500,
         mode: 'tls',
         network: 'udp',
+        // 监听端口默认给一个该节点空闲端口（与入站编辑器的取端口方式对齐）
+        listen_port: listenPort,
         remote: '',
         remote_port: 0,
         max_clients: 1024,

@@ -570,9 +570,13 @@
                           <span style="color:#909399;margin-left:8px;font-size:12px">— {{ t('protoCenter.reality.serverNamesRandom') }}</span>
                         </el-option>
                       </el-option-group>
-                      <!-- 预设公共服务器分组 -->
+                      <!-- 预设公共服务器分组（本节点已用过的打「已使用」标记；跨节点不算） -->
                       <el-option-group :label="t('protoCenter.reality.presetGroup')">
-                        <el-option v-for="tgt in allRealityTargets.filter(x => x.source === 'preset')" :key="'preset-' + tgt.target" :label="tgt.target + ' (' + tgt.sni + ')'" :value="tgt.target" />
+                        <el-option v-for="tgt in allRealityTargets.filter(x => x.source === 'preset')" :key="'preset-' + tgt.target" :label="tgt.sni + ' (' + tgt.target + ')'" :value="tgt.target">
+                          <span>{{ tgt.sni }}</span>
+                          <span style="color:#909399;margin-left:8px;font-size:12px">{{ tgt.target }}</span>
+                          <el-tag v-if="isSniUsed(tgt.sni)" size="small" type="warning" style="margin-left:8px">{{ t('protoCenter.reality.sniInUse') }}</el-tag>
+                        </el-option>
                       </el-option-group>
                     </el-select>
                     <el-button size="small" @click="showTargetMgr=true">{{ t('protoCenter.reality.manage') }}</el-button>
@@ -585,6 +589,9 @@
                     <el-button size="small" style="margin-top:0" :title="t('protoCenter.reality.serverNamesRandomTip')" @click="refreshRandomDomains">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
                   </div>
                   <div class="hint">{{ t('protoCenter.reality.serverNamesHint') }}</div>
+                  <div v-if="sniConflicts.length" class="hint" style="color:#e6a23c">
+                    {{ t('protoCenter.reality.serverNamesConflict') }}：{{ sniConflicts.map(c => c.sni + '（已被 ' + c.by + ' 使用）').join('，') }}
+                  </div>
                 </el-form-item>
                 <el-form-item label="Private Key">
                   <div style="display:flex;gap:8px;flex:1">
@@ -1700,6 +1707,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User, ArrowDown } from '@element-plus/icons-vue'
 import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
+import { splitNames, snisOfInbound, collectUsedSnis as collectUsedSnisFromInbounds, findNewConflicts } from './utils/sniUsage'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
@@ -1755,15 +1763,20 @@ const allRealityTargets = computed(() => {
 })
 const showTargetMgr = ref(false)
 const newTarget = ref({ target: '', sni: '', type: 'tcp' })
-// SNIs already used by existing reality inbounds on this node-server
-const usedSnis = computed(() => {
-  const set = new Set()
-  form.value.forEach(ib => {
-    if (ib.streamSettings?.security !== 'reality') return
-    const snis = (ib.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
-    snis.forEach(s => set.add(s))
-  })
-  return set
+// 本节点已被占用的 SNI（Map: sni -> 占用方标签）。
+// 口径：同节点内互斥、跨节点允许重复；数据源与 sing-box 编辑器共用 utils/sniUsage。
+const usedSnis = computed(() => collectUsedSnisFromInbounds(form.value, null))
+// 当前编辑的入站（编辑模式），用于「排除自身」比较
+const selfInbound = computed(() => (editIdx.value >= 0 ? form.value[editIdx.value] : null))
+// 当前填写的 SNI 里「本次新增、已被本节点其它入站占用」的（即时提示，保存时同样拦截）
+const sniConflicts = computed(() => {
+  if (rf.streamSettings?.security !== 'reality') return []
+  const my = splitNames(rf.streamSettings?.reality?.serverNamesStr)
+  if (!my.length) return []
+  const self = selfInbound.value
+  const others = collectUsedSnisFromInbounds(form.value, self)
+  const old = self ? snisOfInbound(self) : []
+  return findNewConflicts(my, old, others).map(s => ({ sni: s, by: others.get(s) }))
 })
 function isSniUsed(sni) {
   if (!sni) return false
@@ -3560,15 +3573,10 @@ function onTargetChange() {
 }
 
 // Collect already-used SNIs from other inbounds on this node-server
+// 本节点「其它入站」占用的 SNI（Set），供随机域名生成避开。
+// 委托共用工具 utils/sniUsage（按 id 排除自身），口径：同节点互斥、跨节点允许重复。
 function collectUsedSnis() {
-  const used = new Set()
-  form.value.forEach(ib => {
-    if (ib === rf) return
-    if (ib.streamSettings?.security !== 'reality') return
-    const snis = (ib.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
-    snis.forEach(s => used.add(s))
-  })
-  return used
+  return new Set(collectUsedSnisFromInbounds(form.value, selfInbound.value).keys())
 }
 
 // Regenerate random domains for Server Names (local Reality only)
@@ -4951,26 +4959,17 @@ async function saveInbound() {
     }
   }
 
-  // Validate serverNames uniqueness across this node-server:
-  // a SNI (serverName) must not be reused by another inbound on the same machine,
-  // otherwise the SNI routing cannot decide which inbound to forward to.
-  {
-    const sniRaw = rf.streamSettings?.reality?.serverNamesStr || ''
-    const mySnis = sniRaw.split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
-    if (rf.streamSettings?.security === 'reality' && mySnis.length) {
-      // collect serverNames already used by OTHER inbounds on this node-server
-      const usedByOthers = new Map() // sni -> remark/tag
-      form.value.forEach((other, idx) => {
-        if (editIdx.value >= 0 && idx === editIdx.value) return // skip self
-        if (other.streamSettings?.security !== 'reality') return
-        const others = (other.streamSettings?.reality?.serverNamesStr || '').split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(Boolean)
-        for (const s of others) {
-          if (!usedByOthers.has(s)) usedByOthers.set(s, other._remark || other.tag || `#${idx + 1}`)
-        }
-      })
-      const dups = mySnis.filter(s => usedByOthers.has(s))
+  // Server Names（Reality SNI）互斥校验：同一节点内不能重复、跨节点允许重复
+  // （SNI 路由只在单机内需要区分）。只拦截「本次新增的重复」，存量重复不阻塞编辑，
+  // 与后端 inboundconfig.checkServerNamesConflict 口径一致。
+  if (rf.streamSettings?.security === 'reality') {
+    const mySnis = splitNames(rf.streamSettings?.reality?.serverNamesStr)
+    if (mySnis.length) {
+      const self = selfInbound.value
+      const usedByOthers = collectUsedSnisFromInbounds(form.value, self)
+      const dups = findNewConflicts(mySnis, self ? snisOfInbound(self) : [], usedByOthers)
       if (dups.length) {
-        const details = dups.map(s => `"${s}" (already used by ${usedByOthers.get(s)})`).join(', ')
+        const details = dups.map(s => `"${s}" (已被 ${usedByOthers.get(s)} 使用)`).join(', ')
         ElMessage.error(t('protoCenter.reality.serverNamesConflict') + ': ' + details)
         return
       }

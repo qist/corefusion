@@ -67,9 +67,10 @@
             </el-option-group>
             <!-- 预设公共服务器分组 -->
             <el-option-group :label="t('singbox.tls.presetGroup')">
-              <el-option v-for="tgt in ALL_REALITY_TARGETS.filter(t => t.source === 'preset')" :key="tgt.target" :label="tgt.target" :value="tgt.target">
+              <el-option v-for="tgt in ALL_REALITY_TARGETS.filter(t => t.source === 'preset')" :key="tgt.target" :label="tgt.sni + ' (' + tgt.target + ')'" :value="tgt.target">
                 <span>{{ tgt.sni }}</span>
                 <span style="color:#909399;margin-left:8px;font-size:12px">{{ tgt.target }}</span>
+                <el-tag v-if="isPresetSniUsed(tgt.sni)" size="small" type="warning" style="margin-left:8px">{{ t('singbox.tls.sniInUse') }}</el-tag>
               </el-option>
             </el-option-group>
           </el-select>
@@ -117,6 +118,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../../../api/client'
 import { REALITY_PROTOCOLS, REALITY_TRANSPORTS } from '../utils/singboxDefaults'
+import { collectUsedSnis as collectUsedSnisShared } from '../../utils/sniUsage'
 
 const { t } = useI18n()
 const props = defineProps({
@@ -138,16 +140,15 @@ function randomDomain() {
 }
 
 // Collect already-used SNI from other inbounds
+// 本节点「其它入站」已占用的 SNI（共用 utils/sniUsage：按 id 排除自身，
+// 口径为同节点互斥、跨节点允许重复）。
 function collectUsedSnis() {
-  const used = new Set()
-  if (!props.inbounds) return used
-  props.inbounds.forEach(ib => {
-    if (ib === props.model) return
-    if (!ib._realityEnabled) return
-    const sni = (ib._tlsServerName || '').trim().toLowerCase()
-    if (sni) used.add(sni)
-  })
-  return used
+  return collectUsedSnisShared(props.inbounds || [], props.model)
+}
+
+// 预设列表里的「已使用」标记数据源
+function isPresetSniUsed(sni) {
+  return collectUsedSnis().has(String(sni || '').trim().toLowerCase())
 }
 
 // 证书中心证书列表
@@ -160,15 +161,21 @@ const _realityTarget = ref('')
 const localRealityServers = ref([])
 
 // 所有可用的 Reality 目标（预设 + 本地服务器）
+// 预设公共服务器：与 xray 编辑器同源（面板 /system/reality-targets），
+// 此前这里硬编码了 6 个，和 xray 侧的 12 个不一致（用户反馈"两个显示的预设不一样"）。
+const realityPresets = ref([])
+async function loadRealityTargets() {
+  try {
+    const data = await client.get('/system/reality-targets')
+    const items = data?.items || (Array.isArray(data) ? data : [])
+    realityPresets.value = items
+      .filter(t => t && t.target)
+      .map(t => ({ target: t.target, sni: t.sni || String(t.target).split(':')[0], source: 'preset' }))
+  } catch { realityPresets.value = [] }
+}
+
 const ALL_REALITY_TARGETS = computed(() => {
-  const presets = [
-    { target: 'www.amazon.com:443', sni: 'www.amazon.com', source: 'preset' },
-    { target: 'www.apple.com:443', sni: 'www.apple.com', source: 'preset' },
-    { target: 'www.microsoft.com:443', sni: 'www.microsoft.com', source: 'preset' },
-    { target: 'addons.mozilla.org:443', sni: 'addons.mozilla.org', source: 'preset' },
-    { target: 'www.cloudflare.com:443', sni: 'www.cloudflare.com', source: 'preset' },
-    { target: 'www.yahoo.com:443', sni: 'www.yahoo.com', source: 'preset' },
-  ]
+  const presets = realityPresets.value
   const locals = localRealityServers.value.map(s => ({
     target: `127.0.0.1:${s.port}`,
     port: s.port,
@@ -414,6 +421,7 @@ function initRealityTarget() {
 onMounted(() => {
   loadCertificates()
   loadLocalRealityServers()
+  loadRealityTargets()
   initRealityTarget()
 })
 

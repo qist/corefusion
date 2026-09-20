@@ -612,6 +612,17 @@ o._snellMode = ib.mode || ''
   // 订阅端读的是 config["_accessDomain"]（对象），而下面这些扁平的
   // _accessDomainEnabled / _directDomain 等字段会被后端当作内部字段剔除，
   // 只写扁平字段会导致「订阅里没有域名/端口，客户端访问不了」。
+  // Port Hopping（hysteria2 / hysteria）：sing-box 入站**不支持** server_ports
+  // （那是出站字段，写进入站会 FATAL），所以服务端靠防火墙把端口段 DNAT 到
+  // 入站端口（与 xray 一致）；客户端跳跃范围通过分享链接的 mport 下发。
+  o._portHop = {
+    enabled: ib._portHopEnabled || false,
+    mode: ib._portHopMode || 'preset',
+    range: ib._portHopRange || '20000-50000',
+    start: ib._portHopStart || 20000,
+    end: ib._portHopEnd || 50000,
+    interface: ib._portHopInterface || '',
+  }
   o._accessDomain = {
     enabled: ib._accessDomainEnabled || false,
     type: ib._accessDomainType || 'direct',

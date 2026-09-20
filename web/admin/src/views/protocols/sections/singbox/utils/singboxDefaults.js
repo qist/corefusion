@@ -147,6 +147,13 @@ export function inboundDefaultsForType(type, customPort) {
     udp_fragment: false,
     udp_timeout: '',
     detour: '',
+    // Port Hopping（端口跳跃）：字段与 xray 一致，供防火墙规则增删与恢复读取
+    _portHopEnabled: false,
+    _portHopMode: 'preset',
+    _portHopRange: '20000-50000',
+    _portHopStart: 20000,
+    _portHopEnd: 50000,
+    _portHopInterface: '',
     // direct inbound（静态转发）
     override_address: '',
     override_port: 0,

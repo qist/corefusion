@@ -21,6 +21,7 @@ func (s *stubEndpointProvider) GetEnabledEndpoints(ctx context.Context, serverID
 type stubChainLinkProvider struct {
 	entryOutbounds []interface{}
 	entryRules     []interface{}
+	entryBalancers []interface{}
 	exitInbound    map[string]interface{}
 	relayOnly      bool
 }
@@ -30,7 +31,7 @@ func (s *stubChainLinkProvider) GenerateEntryOutbounds(ctx context.Context, serv
 }
 
 func (s *stubChainLinkProvider) GenerateEntryBalancers(ctx context.Context, serverID int64) ([]interface{}, map[string]interface{}) {
-	return nil, nil
+	return s.entryBalancers, nil
 }
 
 func (s *stubChainLinkProvider) GenerateExitInbound(ctx context.Context, serverID int64) (map[string]interface{}, error) {
@@ -129,6 +130,121 @@ func TestPrepareFullConfigSingboxChainRulesUseRouteSection(t *testing.T) {
 	}
 	if _, ok := chainOb["protocol"]; ok {
 		t.Error("outbound 仍带 xray 风格的 protocol 字段")
+	}
+}
+
+// 多出口：xray 的 routing.balancers[] 要转成 sing-box 的 urltest outbound，
+// 并且 balancerTag 规则必须被改写成指向该 urltest —— 之前这类规则被直接丢弃，
+// 入口入站没有任何规则命中，流量会落到 route.final(direct)，等于多出口链路静默失效。
+func TestPrepareFullConfigSingboxBalancerBecomesURLTest(t *testing.T) {
+	chainOutbound := func(exitID string) interface{} {
+		return map[string]interface{}{
+			"tag":      "chain-1-" + exitID,
+			"protocol": "vless",
+			"settings": map[string]interface{}{
+				"vnext": []interface{}{map[string]interface{}{
+					"address": "1.2.3." + exitID,
+					"port":    float64(443),
+					"users":   []interface{}{map[string]interface{}{"id": "uuid-" + exitID}},
+				}},
+			},
+			"streamSettings": map[string]interface{}{"network": "tcp"},
+		}
+	}
+
+	full := map[string]interface{}{
+		"route":    map[string]interface{}{"rules": []interface{}{}},
+		"inbounds": []interface{}{map[string]interface{}{"type": "vless", "tag": "in-1"}},
+	}
+	chain := &stubChainLinkProvider{
+		entryOutbounds: []interface{}{chainOutbound("2"), chainOutbound("3")},
+		entryRules: []interface{}{map[string]interface{}{
+			"type":        "field",
+			"inboundTag":  []interface{}{"in-1"},
+			"balancerTag": "bal-chain-1",
+		}},
+		entryBalancers: []interface{}{map[string]interface{}{
+			"tag":      "bal-chain-1",
+			"selector": []interface{}{"chain-1-"},
+		}},
+	}
+
+	if _, err := PrepareFullConfig(PrepareFullConfigOptions{
+		Ctx: context.Background(), ServerID: 1, CoreType: "singbox",
+		FullConfig: full, ChainLinkProvider: chain,
+	}); err != nil {
+		t.Fatalf("PrepareFullConfig: %v", err)
+	}
+
+	// 1) 生成 urltest outbound，成员为两个出口
+	outbounds, _ := full["outbounds"].([]interface{})
+	var urltest map[string]interface{}
+	for _, raw := range outbounds {
+		m, _ := raw.(map[string]interface{})
+		if m["type"] == "urltest" {
+			urltest = m
+		}
+	}
+	if urltest == nil {
+		t.Fatalf("未生成 urltest outbound: %#v", outbounds)
+	}
+	if urltest["tag"] != "bal-chain-1" {
+		t.Errorf("urltest tag = %v，期望 bal-chain-1", urltest["tag"])
+	}
+	members, _ := urltest["outbounds"].([]string)
+	if len(members) != 2 {
+		t.Fatalf("urltest 成员数 = %d，期望 2: %#v", len(members), members)
+	}
+
+	// 2) 路由规则必须指向该 urltest（不能被丢弃）
+	route, _ := full["route"].(map[string]interface{})
+	rules, _ := route["rules"].([]interface{})
+	found := false
+	for _, raw := range rules {
+		rm, _ := raw.(map[string]interface{})
+		if rm["outbound"] == "bal-chain-1" {
+			found = true
+			in, _ := rm["inbound"].([]string)
+			if len(in) != 1 || in[0] != "in-1" {
+				t.Errorf("规则 inbound 不正确: %#v", rm["inbound"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("balancer 规则被丢弃 —— 入口流量会直连泄漏（route.final）")
+	}
+}
+
+// 单出口（无 balancer）时不应生成 urltest
+func TestPrepareFullConfigSingboxSingleExitHasNoURLTest(t *testing.T) {
+	full := map[string]interface{}{
+		"route":    map[string]interface{}{"rules": []interface{}{}},
+		"inbounds": []interface{}{map[string]interface{}{"type": "vless", "tag": "in-1"}},
+	}
+	chain := &stubChainLinkProvider{
+		entryOutbounds: []interface{}{map[string]interface{}{
+			"tag": "chain-1-2", "protocol": "vless",
+			"settings": map[string]interface{}{"vnext": []interface{}{map[string]interface{}{
+				"address": "1.2.3.4", "port": float64(443),
+				"users": []interface{}{map[string]interface{}{"id": "uuid-1"}},
+			}}},
+			"streamSettings": map[string]interface{}{"network": "tcp"},
+		}},
+		entryRules: []interface{}{map[string]interface{}{
+			"type": "field", "inboundTag": []interface{}{"in-1"}, "outboundTag": "chain-1-2",
+		}},
+	}
+	if _, err := PrepareFullConfig(PrepareFullConfigOptions{
+		Ctx: context.Background(), ServerID: 1, CoreType: "singbox",
+		FullConfig: full, ChainLinkProvider: chain,
+	}); err != nil {
+		t.Fatalf("PrepareFullConfig: %v", err)
+	}
+	outbounds, _ := full["outbounds"].([]interface{})
+	for _, raw := range outbounds {
+		if m, _ := raw.(map[string]interface{}); m["type"] == "urltest" {
+			t.Errorf("单出口不应生成 urltest: %#v", m)
+		}
 	}
 }
 

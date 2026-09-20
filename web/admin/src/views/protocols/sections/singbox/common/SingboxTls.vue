@@ -35,6 +35,14 @@
           <el-option label="1.3" value="1.3" />
         </el-select>
       </el-form-item>
+      <!-- 客户端 uTLS 指纹（fp）：sing-box 入站没有 utls 字段，值存内部字段 _utlsFingerprint，
+           写入分享链接的 fp 参数（不影响服务端行为）。与 xray 编辑器一样可自由选择。 -->
+      <el-form-item :label="t('singbox.tls.utlsFingerprint')">
+        <el-select v-model="model._utlsFingerprint" style="width:100%" clearable @change="emit">
+          <el-option v-for="fp in utlsFingerprints" :key="fp" :label="fp" :value="fp" />
+        </el-select>
+        <div class="hint">{{ t('singbox.tls.utlsFingerprintHint') }}</div>
+      </el-form-item>
       <!-- 证书选择：从证书中心选择 -->
       <el-form-item :label="t('singbox.tls.selectCert')">
         <el-select v-model="model._certId" style="width:100%" clearable @change="onCertSelect" :placeholder="t('singbox.tls.selectCertPlaceholder')">
@@ -101,6 +109,14 @@
         </div>
         <div class="hint">{{ t('singbox.tls.publicKeyClientHint') }}</div>
       </el-form-item>
+      <!-- 客户端 uTLS 指纹（fp）：sing-box 入站没有 utls 字段，值存内部字段 _utlsFingerprint，
+           写入分享链接的 fp 参数（不影响服务端行为）。与 xray 编辑器一样可自由选择。 -->
+      <el-form-item :label="t('singbox.tls.utlsFingerprint')">
+        <el-select v-model="model._utlsFingerprint" style="width:100%" clearable @change="emit">
+          <el-option v-for="fp in utlsFingerprints" :key="fp" :label="fp" :value="fp" />
+        </el-select>
+        <div class="hint">{{ t('singbox.tls.utlsFingerprintHint') }}</div>
+      </el-form-item>
       <el-form-item :label="t('singbox.tls.shortIds')">
         <el-input v-model="model._realityShortIds" type="textarea" :rows="2" :placeholder="t('singbox.tls.shortIdsPlaceholder')" @change="emit" />
         <el-button size="small" style="margin-top:4px" @click="genRandomShortId">{{ t('singbox.tls.generateRandomShortIds') }}</el-button>
@@ -160,6 +176,9 @@ function isPresetSniUsed(sni) {
 
 // 证书中心证书列表
 const certificates = ref([])
+
+// uTLS 指纹候选项（与 sing-box 出站组件 SingboxOutboundTls.vue 保持一致）
+const utlsFingerprints = ['chrome', 'firefox', 'edge', 'safari', '360', 'qq', 'ios', 'android', 'random', 'randomized']
 
 // Reality 目标选择
 const _realityTarget = ref('')

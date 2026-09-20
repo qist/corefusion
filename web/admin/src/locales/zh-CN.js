@@ -842,6 +842,8 @@ export default {
       alpnPlaceholder: 'h2, http/1.1, h3',
       allowInsecure: 'Allow Insecure',
       minVersion: '最低 TLS 版本',
+      utlsFingerprint: 'uTLS 指纹 (fp)',
+      utlsFingerprintHint: '客户端 uTLS 指纹，写入分享链接的 fp 参数（服务端不受影响）',
       maxVersion: '最高 TLS 版本',
       cipherSuites: 'Cipher Suites',
       cipherSuitesHint: '冒号分隔，留空使用 Go 自动选择',

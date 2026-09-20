@@ -461,8 +461,11 @@ export function parseInbound(ib) {
   o._tlsMinVersion = ib.tls?.min_version || ''
   o._tlsCertPath = ib.tls?.certificate_path || ''
   o._tlsKeyPath = ib.tls?.key_path || ''
-  // 客户端 uTLS 指纹：优先内部字段（build 落库的），兼容历史写在 tls.utls.fingerprint 的数据
-  o._utlsFingerprint = ib._utlsFingerprint || ib.tls?.utls?.fingerprint || ''
+  // 客户端 uTLS 指纹：字段存在于配置就用它（允许为空 = 不下发 fp），
+  // 老数据没有该字段时回退 tls.utls.fingerprint，仍没有则默认 chrome（与 xray 表单默认一致）。
+  o._utlsFingerprint = ib._utlsFingerprint !== undefined
+    ? (ib._utlsFingerprint || '')
+    : (ib.tls?.utls?.fingerprint || 'chrome')
   o._certId = ib._certId || ''
   o._realityEnabled = ib.tls?.reality?.enabled || false
   o._realityHandshakeServer = ib.tls?.reality?.handshake?.server || ''

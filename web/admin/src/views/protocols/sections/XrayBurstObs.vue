@@ -19,19 +19,19 @@
       <el-divider content-position="left">Ping Config</el-divider>
       <el-form label-width="160px" label-position="left">
         <el-form-item :label="t('protoCenter.observatory.destination')">
-          <el-input v-model="form.pingConfig.destination" placeholder="http://www.google.com/generate_204" @change="emit" />
+          <el-input v-model="form.pingConfig.destination" placeholder="https://connectivitycheck.gstatic.com/generate_204" @change="emit" />
         </el-form-item>
         <el-form-item :label="t('protoCenter.observatory.connectivity')">
           <el-input v-model="form.pingConfig.connectivity" @change="emit" />
         </el-form-item>
         <el-form-item :label="t('protoCenter.observatory.interval')">
-          <el-input v-model="form.pingConfig.interval" placeholder="120s" @change="emit" />
+          <el-input v-model="form.pingConfig.interval" placeholder="1m" @change="emit" />
         </el-form-item>
         <el-form-item :label="t('protoCenter.observatory.sampling')">
           <el-input-number v-model="form.pingConfig.sampling" :min="1" @change="emit" />
         </el-form-item>
         <el-form-item :label="t('protoCenter.observatory.timeout')">
-          <el-input v-model="form.pingConfig.timeout" placeholder="16s" @change="emit" />
+          <el-input v-model="form.pingConfig.timeout" placeholder="5s" @change="emit" />
         </el-form-item>
         <el-form-item :label="t('protoCenter.observatory.httpMethod')">
           <el-select v-model="form.pingConfig.httpMethod" style="width:100%" @change="emit">
@@ -52,7 +52,9 @@ const emitFn = defineEmits(['update'])
 const enabled = ref(false)
 const form = reactive({
   subjectSelector: [],
-  pingConfig: { destination: 'http://www.google.com/generate_204', connectivity: '', interval: '120s', sampling: 5, timeout: '16s', httpMethod: 'HEAD' },
+  // 默认值与链式代理负载均衡的 burstObservatory 自动生成参数保持一致（设计文档 §6.6.5）
+  // interval=1m, sampling=10 → 探测周期 10 分钟，特征弱，适合入口节点
+  pingConfig: { destination: 'https://connectivitycheck.gstatic.com/generate_204', connectivity: '', interval: '1m', sampling: 10, timeout: '5s', httpMethod: 'HEAD' },
 })
 const outboundTags = ref([])
 

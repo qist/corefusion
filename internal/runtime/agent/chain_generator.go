@@ -51,14 +51,27 @@ type ChainBalancer struct {
 // ChainObservatory holds the observatory config injected at the root of a
 // load-balanced entry node (see design doc §6.6.5). subjectSelector uses the
 // "chain-<inboundID>-" prefix so only this entry's exits are probed.
+// 支持两种形态：
+//   1. 标准 observatory（PingConfig==nil）→ {subjectSelector, probeUrl, probeInterval, enableConcurrency}
+//   2. burstObservatory（PingConfig!=nil）→ {subjectSelector, pingConfig:{destination, interval, sampling, timeout, httpMethod}}
+// 依据 xray 官方文档：https://xtls.github.io/config/observatory.html
 type ChainObservatory struct {
-	SubjectSelector   []string `json:"subjectSelector"`
-	ProbeURL          string   `json:"probeURL,omitempty"`
-	ProbeInterval     string   `json:"probeInterval,omitempty"`
-	EnableConcurrency bool     `json:"enableConcurrency,omitempty"`
-	BurstObservatory  bool     `json:"burstObservatory,omitempty"`
-	Interval          string   `json:"interval,omitempty"`
-	Sampling          int      `json:"sampling,omitempty"`
+	SubjectSelector   []string         `json:"subjectSelector"`
+	ProbeURL          string           `json:"probeUrl,omitempty"`
+	ProbeInterval     string           `json:"probeInterval,omitempty"`
+	EnableConcurrency bool             `json:"enableConcurrency,omitempty"`
+	PingConfig        *ChainPingConfig `json:"pingConfig,omitempty"`
+}
+
+// ChainPingConfig 是 burstObservatory 的嵌套 pingConfig 结构。
+// xray burstObservatory 使用 pingConfig 包含探测参数，而非扁平字段。
+type ChainPingConfig struct {
+	Destination  string `json:"destination,omitempty"`
+	Connectivity string `json:"connectivity,omitempty"`
+	Interval     string `json:"interval,omitempty"`
+	Sampling     int    `json:"sampling,omitempty"`
+	Timeout      string `json:"timeout,omitempty"`
+	HttpMethod   string `json:"httpMethod,omitempty"`
 }
 
 // GenerateChainEntryOutbounds generates outbound configs for a chain_entry node.

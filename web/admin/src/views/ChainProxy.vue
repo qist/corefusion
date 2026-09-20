@@ -372,7 +372,8 @@ async function fetchHealth() {
   healthLoading.value = true
   try {
     const res = await chainApi.getChainHealth()
-    healthData.value = res.data || []
+    // API interceptor 已解包 response.data.data，res 就是数组
+    healthData.value = Array.isArray(res) ? res : (res?.data || [])
   } catch (e) {
     healthData.value = []
   } finally {
@@ -380,7 +381,7 @@ async function fetchHealth() {
   }
 }
 function extServerName(id) {
-  const s = externalServers.value.find(x => x.id === id)
+  const s = externalServers.value?.find(x => x.id === id)
   return s ? s.name : `External #${id}`
 }
 
@@ -543,7 +544,7 @@ function buildEdge(src, dst, link, type) {
   const y2 = dst.y + 22
 
   // Determine health-based color
-  const healthEntry = healthData.value.find(h => h.link_id === link.id)
+  const healthEntry = healthData.value?.find(h => h.link_id === link.id)
   let color = '#909399'
   let marker = 'url(#arrowhead)'
   if (healthEntry) {
@@ -587,13 +588,13 @@ function nodeClick(node) {
 
 // ── Helpers ──
 function serverName(id) {
-  const s = servers.value.find(x => x.id === id)
+  const s = servers.value?.find(x => x.id === id)
   return s ? s.name : `#${id}`
 }
 
 function exitName(row) {
   if (row.exit_server_id) return serverName(row.exit_server_id)
-  const es = externalServers.value.find(x => x.id === row.exit_external_id)
+  const es = externalServers.value?.find(x => x.id === row.exit_external_id)
   return es ? es.name : `ext:${row.exit_external_id}`
 }
 
@@ -650,7 +651,9 @@ async function fetchExitConfigs() {
 }
 
 async function fetchServers() {
-  servers.value = await listNodeServers()
+  // /node-servers returns {items:[], total:N} pagination; extract the array
+  const res = await listNodeServers()
+  servers.value = Array.isArray(res) ? res : (res?.items || [])
 }
 
 async function fetchExternalServers() {

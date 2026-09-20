@@ -118,7 +118,7 @@ import SingboxObVmess from './singbox/outbounds/SingboxObVmess.vue'
 import SingboxObTrojan from './singbox/outbounds/SingboxObTrojan.vue'
 import SingboxObShadowsocks from './singbox/outbounds/SingboxObShadowsocks.vue'
 import SingboxObShadowsocks2022 from './singbox/outbounds/SingboxObShadowsocks2022.vue'
-import SingboxObTUIC from './singbox/outbounds/SingboxObTUIC.vue'
+import SingboxObTuic from './singbox/outbounds/SingboxObTuic.vue'
 import SingboxObHysteria2 from './singbox/outbounds/SingboxObHysteria2.vue'
 import SingboxObHysteria from './singbox/outbounds/SingboxObHysteria.vue'
 import SingboxObHttp from './singbox/outbounds/SingboxObHttp.vue'
@@ -166,7 +166,7 @@ const OUTBOUND_TYPES = [
 const PROTOCOL_COMPS = {
   vmess: SingboxObVmess, vless: SingboxObVless, trojan: SingboxObTrojan,
   shadowsocks: SingboxObShadowsocks, shadowsocks2022: SingboxObShadowsocks2022,
-  tuic: SingboxObTUIC, hysteria2: SingboxObHysteria2, hysteria: SingboxObHysteria,
+  tuic: SingboxObTuic, hysteria2: SingboxObHysteria2, hysteria: SingboxObHysteria,
   http: SingboxObHttp, socks: SingboxObHttp, anytls: SingboxObAnyTls,
   shadowtls: SingboxObShadowtls, snell: SingboxObSnell,
   naive: SingboxObNaive, bridge: SingboxObBridge,

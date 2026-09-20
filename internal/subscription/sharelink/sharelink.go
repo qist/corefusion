@@ -218,23 +218,41 @@ func generateHysteriaLink(n Node) string {
 		}
 	}
 
-	// Obfs from finalmask salamander
+	// Obfs / bbr-profile / insecure：sing-box 侧由 singbox_share 归一化进 hysteriaSettings
+	//（sing-box 把混淆放在顶层 obfs 结构体、拥塞控制叫 bbr_profile），xray 侧仍写在 finalmask。
+	// 少了它们，服务端开了混淆/指定 BBR 时客户端拿到的链接就是"参数不全"。
+	hy := getMap(ss, "hysteriaSettings")
+	obfsType := getString(hy, "obfs", "")
+	obfsPwd := getString(hy, "obfs_password", "")
+	if obfsPwd == "" {
+		obfsPwd = getString(hy, "obfsPassword", "")
+	}
+	if bbr := getString(hy, "bbr_profile", ""); bbr != "" {
+		params.Set("bbr-profile", bbr)
+	}
+	if insecure, ok := hy["insecure"].(bool); ok && insecure {
+		params.Set("insecure", "1")
+	}
+
 	if fm := n.FinalMask; fm != nil {
-		if udp, ok := fm["udp"].([]interface{}); ok {
-			for _, item := range udp {
-				if m, ok := item.(map[string]interface{}); ok {
-					if m["type"] == "salamander" {
-						if s, ok := m["settings"].(map[string]interface{}); ok {
-							if pwd, ok := s["password"].(string); ok && pwd != "" {
-								params.Set("obfs", "salamander")
-								params.Set("obfs-password", pwd)
+		// xray 口径：salamander 写在 finalmask.udp[] 里，仅当上面没拿到 obfs 时使用
+		if obfsType == "" {
+			if udp, ok := fm["udp"].([]interface{}); ok {
+				for _, item := range udp {
+					if m, ok := item.(map[string]interface{}); ok {
+						if m["type"] == "salamander" {
+							if st, ok := m["settings"].(map[string]interface{}); ok {
+								if pwd, ok := st["password"].(string); ok && pwd != "" {
+									obfsType = "salamander"
+									obfsPwd = pwd
+								}
 							}
 						}
 					}
 				}
 			}
 		}
-		// mport from quicParams.udpHop
+		// mport from quicParams.udpHop（sing-box 的 _portHop 由 finalMaskWithPortHop 合成到此）
 		if qp, ok := fm["quicParams"].(map[string]interface{}); ok {
 			if hop, ok := qp["udpHop"].(map[string]interface{}); ok {
 				if ports, ok := hop["ports"].(string); ok && ports != "" {
@@ -248,9 +266,12 @@ func generateHysteriaLink(n Node) string {
 			params.Set("fm", fmData)
 		}
 	}
+	if obfsType != "" && obfsPwd != "" {
+		params.Set("obfs", obfsType)
+		params.Set("obfs-password", obfsPwd)
+	}
 
-	// Hysteria specific settings
-	hy := getMap(ss, "hysteriaSettings")
+	// Hysteria specific settings（hy 已在上面取过 hysteriaSettings）
 	if upMbps, ok := hy["up_mbps"]; ok {
 		params.Set("upmbps", fmt.Sprintf("%v", upMbps))
 	}

@@ -473,8 +473,29 @@ func getClientField(clients []interface{}, field string) string {
 	if !ok {
 		return ""
 	}
-	v, _ := c[field].(string)
-	return v
+	// 各核心/编辑器的字段名不统一：xray 的 socks/http 客户端用 user/pass，
+	// mihomo 用 username/password，sing-box 归一后是 username/password。
+	for _, key := range clientFieldAliases(field) {
+		if v, ok := c[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// clientFieldAliases 返回字段的等价写法（按优先级）。
+func clientFieldAliases(field string) []string {
+	switch field {
+	case "username":
+		return []string{"username", "user"}
+	case "password":
+		return []string{"password", "pass"}
+	case "uuid":
+		return []string{"uuid", "id"}
+	case "id":
+		return []string{"id", "uuid"}
+	}
+	return []string{field}
 }
 
 func getString(m map[string]interface{}, key, def string) string {

@@ -1810,6 +1810,8 @@ const detailsInbound = ref(null)
 
 const qrDlg = ref(false)
 const qrLink = ref('')
+// 后端逐用户分享链接（与订阅同源，参数最全）；本地生成器只作兜底
+const qrLinks = ref(new Map())
 const qrCodeUrl = ref('')
 const qrUsers = ref([])
 const qrSelectedUser = ref('')
@@ -2132,7 +2134,37 @@ function fallbackCopy(text) {
 }
 
 function copyShareLink(ib, user) {
-  const link = generateShareLink(ib, user)
+  void copyShareLinkAsync(ib, user)
+}
+
+// 该入站逐用户的分享链接（后端生成：与订阅同源 —— 正常只走这条路）
+async function loadShareLinks(ib) {
+  qrLinks.value = new Map()
+  const id = ib?._id ?? ib?.id
+  if (!id) return
+  try {
+    const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`)
+    for (const it of data?.items || []) {
+      qrLinks.value.set(String(it.user || '').trim().toLowerCase(), it.link)
+    }
+  } catch { /* 后端不可用时回退本地生成器 */ }
+}
+
+// 该用户的分享链接：优先后端（与订阅一致、参数完整），拿不到再回退本地生成
+function linkForUser(ib, user) {
+  const key = String(user?.email || user?.id || '').trim().toLowerCase()
+  if (key && qrLinks.value.has(key)) return qrLinks.value.get(key)
+  return generateShareLink(ib, user)
+}
+
+async function copyShareLinkAsync(ib, user) {
+  // 惰性加载后端链接（与订阅同源）
+  if (!qrLinks.value.size) await loadShareLinks(ib)
+  const link = linkForUser(ib, user)
+  if (!link) {
+    ElMessage.warning(t('protoCenter.inbounds.shareNotSupported'))
+    return
+  }
   copyToClipboard(link)
 }
 
@@ -2142,7 +2174,7 @@ function showQrCode(ib) {
   qrUsers.value = getUsers(ib).filter(u => !u._paused)
   if (qrUsers.value.length === 0) return
   qrSelectedUser.value = qrUsers.value[0].email || qrUsers.value[0].id
-  void updateQrCode()
+  void loadShareLinks(ib).then(() => updateQrCode())
   qrDlg.value = true
 }
 
@@ -2155,7 +2187,7 @@ async function updateQrCode() {
   if (!ib) return
   const user = qrUsers.value.find(u => (u.email || u.id) === qrSelectedUser.value)
   if (!user) return
-  qrLink.value = generateShareLink(ib, user)
+  qrLink.value = linkForUser(ib, user)
   qrCodeUrl.value = ''
   const token = ++qrGenerationToken
   qrGenerating.value = true
@@ -2368,8 +2400,24 @@ function generateShareLink(ib, user) {
     return generateShadowsocksLink(ib, user, host, port, remark)
   } else if (protocol === 'hysteria') {
     return generateHysteriaLink(ib, user, host, port, remark)
+  } else if (protocol === 'socks' || protocol === 'http') {
+    return generateAuthLink(ib, user, host, port, remark)
   }
   return ''
+}
+
+// socks / http：口径与后端 sharelink.generateAuthLink 一致 ——
+// 用户名密码分别转义、分隔的 ':' 保持字面量（整体转义会让客户端认证失败），
+// security 必带、sni 有才带。xray 的客户端凭据字段是 user/pass。
+function generateAuthLink(ib, user, host, port, remark) {
+  const scheme = ib.protocol === 'socks' ? 'socks' : 'http'
+  const username = user?.user || user?.username || ''
+  const password = user?.pass || user?.password || ''
+  const userinfo = username ? encodeURIComponent(username) + (password ? ':' + encodeURIComponent(password) : '') + '@' : ''
+  const params = new URLSearchParams()
+  params.set('security', ib.streamSettings?.security || 'none')
+  if (ib.streamSettings?.tls?.serverName) params.set('sni', ib.streamSettings.tls.serverName)
+  return `${scheme}://${userinfo}${formatUrlHost(host)}:${port}?${params.toString().replaceAll('+', '%20')}#${encodeURIComponent(remark)}`
 }
 
 function generateVmessLink(ib, user, host, port, remark) {

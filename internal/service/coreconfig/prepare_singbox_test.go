@@ -492,3 +492,145 @@ func TestMigrateSingboxLegacyFieldsRenamesRouteRuleKeys(t *testing.T) {
 		t.Errorf("已有 inbound 字段被破坏: %#v", second["inbound"])
 	}
 }
+
+// 历史 DNS 配置（sing-box 1.12 之前）必须被归一，否则核心启动即 FATAL：
+// server.address / server 级 strategy / server 级 disable_cache / type=predefined
+// / 顶层 dns.fakeip / 顶层 dns.hosts / dns.domain_matcher / dns.independent_cache
+func TestMigrateSingboxLegacyDNSNormalizesLegacyFormat(t *testing.T) {
+	full := map[string]interface{}{
+		"inbounds": []interface{}{},
+		"dns": map[string]interface{}{
+			"strategy":          "",
+			"domain_matcher":    "adguard",
+			"independent_cache": true,
+			"fakeip": map[string]interface{}{
+				"enabled":     true,
+				"inet4_range": "198.18.0.0/15",
+			},
+			"hosts": map[string]interface{}{
+				"example.com": "1.2.3.4",
+			},
+			"servers": []interface{}{
+				map[string]interface{}{
+					"type":          "https",
+					"tag":           "dns-remote",
+					"address":       "https://1.1.1.1/dns-query",
+					"strategy":      "prefer_ipv4",
+					"disable_cache": true,
+				},
+				map[string]interface{}{
+					"type":    "predefined",
+					"tag":     "pre",
+					"address": "8.8.8.8",
+				},
+			},
+		},
+	}
+
+	MigrateSingboxLegacyFields(full)
+
+	dns, _ := full["dns"].(map[string]interface{})
+	if _, ok := dns["domain_matcher"]; ok {
+		t.Error("domain_matcher 未清理（sing-box 会因未知字段 FATAL）")
+	}
+	if _, ok := dns["independent_cache"]; ok {
+		t.Error("independent_cache 未清理（1.14 起已弃用）")
+	}
+	if _, ok := dns["fakeip"]; ok {
+		t.Error("顶层 fakeip 未清理（1.14 起移除，会 FATAL）")
+	}
+	if _, ok := dns["hosts"]; ok {
+		t.Error("顶层 hosts 未清理（1.14 起移除，会 FATAL）")
+	}
+	if st, _ := dns["strategy"].(string); st != "prefer_ipv4" {
+		t.Errorf("server 级 strategy 未提升为顶层 strategy: %q", st)
+	}
+
+	servers, _ := dns["servers"].([]interface{})
+	if len(servers) != 3 { // 2 个原 server + fakeip；顶层 hosts 合并进已有的 hosts server
+		t.Fatalf("servers 数量 = %d, want 3: %#v", len(servers), servers)
+	}
+
+	first, _ := servers[0].(map[string]interface{})
+	if _, ok := first["address"]; ok {
+		t.Error("address 未清理")
+	}
+	if srv, _ := first["server"].(string); srv != "1.1.1.1" {
+		t.Errorf("URL 形式 address 未拆出 server: %#v", first["server"])
+	}
+	if port, _ := first["server_port"].(int); port != 0 {
+		// URL 未带端口时不应产生 server_port
+		if _, ok := first["server_port"]; ok {
+			t.Errorf("不应生成 server_port: %#v", first["server_port"])
+		}
+	}
+	if p, _ := first["path"].(string); p != "/dns-query" {
+		t.Errorf("URL 形式 address 未拆出 path: %#v", first["path"])
+	}
+	if _, ok := first["strategy"]; ok {
+		t.Error("server 级 strategy 未清理")
+	}
+	if _, ok := first["disable_cache"]; ok {
+		t.Error("server 级 disable_cache 未清理")
+	}
+
+	second, _ := servers[1].(map[string]interface{})
+	if typ, _ := second["type"].(string); typ != "hosts" {
+		t.Errorf("predefined 未改名为 hosts: %#v", second["type"])
+	}
+	// hosts 类型不接受 server/server_port（HostsDNSServerOptions 只有 path/predefined），
+	// 迁移时必须按类型裁剪，否则 sing-box 严格解码会 FATAL。
+	if _, ok := second["server"]; ok {
+		t.Errorf("hosts 类型残留 server 字段（会 FATAL）: %#v", second["server"])
+	}
+
+	// 顶层 hosts 记录必须合并进已有 hosts server（不能丢数据）
+	if pre, ok := second["predefined"].(map[string]interface{}); !ok || pre["example.com"] != "1.2.3.4" {
+		t.Errorf("顶层 hosts 记录未合并进 hosts server: %#v", second["predefined"])
+	}
+
+	// fakeip 必须追加在末尾（不能成为默认 server，否则 sing-box 报错）
+	fakeip, _ := servers[2].(map[string]interface{})
+	if typ, _ := fakeip["type"].(string); typ != "fakeip" {
+		t.Errorf("顶层 fakeip 未转成 server: %#v", servers[2])
+	}
+	if r, _ := fakeip["inet4_range"].(string); r != "198.18.0.0/15" {
+		t.Errorf("fakeip 范围未保留: %#v", fakeip["inet4_range"])
+	}
+}
+
+// 已是新格式的 DNS 配置不应被改动
+func TestMigrateSingboxLegacyDNSKeepsNewFormat(t *testing.T) {
+	full := map[string]interface{}{
+		"inbounds": []interface{}{},
+		"dns": map[string]interface{}{
+			"servers": []interface{}{
+				map[string]interface{}{
+					"type":        "udp",
+					"tag":         "d1",
+					"server":      "8.8.8.8",
+					"server_port": 53,
+					"detour":      "direct",
+				},
+			},
+			"final": "d1",
+		},
+	}
+	MigrateSingboxLegacyFields(full)
+
+	dns, _ := full["dns"].(map[string]interface{})
+	servers, _ := dns["servers"].([]interface{})
+	if len(servers) != 1 {
+		t.Fatalf("servers 数量被改动: %d", len(servers))
+	}
+	s, _ := servers[0].(map[string]interface{})
+	if s["server"] != "8.8.8.8" || s["detour"] != "direct" {
+		t.Errorf("新格式字段被破坏: %#v", s)
+	}
+	if port, _ := s["server_port"].(int); port != 53 {
+		t.Errorf("server_port 被破坏: %#v", s["server_port"])
+	}
+	if _, ok := dns["servers"]; !ok {
+		t.Error("servers 丢失")
+	}
+}

@@ -16,7 +16,7 @@ var SupportedCoreTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
 // CoreSections defines the ordered sections for each core type.
 var CoreSections = map[string][]string{
 	"xray":       {"log", "dns", "routing", "policy", "inbounds", "outbounds", "stats", "metrics", "api", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
-	"singbox":    {"log", "dns", "ntp", "route", "inbounds", "outbounds", "experimental"},
+	"singbox":    {"log", "dns", "ntp", "certificate", "certificate_providers", "http_clients", "network_namespaces", "route", "inbounds", "outbounds", "services", "experimental"},
 	"hysteria2":  {"listen", "tls", "auth", "bandwidth", "quic", "trafficStats"},
 	"tuic":       {"server", "users", "certificate", "congestion_control"},
 }
@@ -74,9 +74,14 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"log":          `{"level":"info","timestamp":true}`,
 		"dns":          `{"servers":[],"rules":[],"final":""}`,
 		"ntp":          `{}`,
+		"certificate":  `{}`,
+		"certificate_providers": `[]`,
+		"http_clients":          `[]`,
+		"network_namespaces":    `[]`,
 		"route":       `{"rules":[],"auto_detect_interface":true,"final":"direct"}`,
 		"inbounds":    `[]`,
 		"outbounds":   `[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}]`,
+		"services":    `[]`,
 		"experimental":`{"v2ray_api":{"listen":"127.0.0.1:10086","stats":{"enabled":true}}}`,
 	},
 	"hysteria2": {

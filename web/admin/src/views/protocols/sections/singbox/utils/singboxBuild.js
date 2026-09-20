@@ -7,6 +7,24 @@ export function buildInbound(ib) {
   if (ib.listen) out.listen = ib.listen
   if (ib.listen_port) out.listen_port = ib.listen_port
   if (ib.domain_strategy) out.domain_strategy = ib.domain_strategy
+  // 通用监听字段（sing-box Listen Fields）
+  if (ib.tcp_fast_open) out.tcp_fast_open = true
+  if (ib.tcp_multi_path) out.tcp_multi_path = true
+  if (ib.udp_fragment) out.udp_fragment = true
+  if (ib.udp_timeout) out.udp_timeout = ib.udp_timeout
+  if (ib.detour) out.detour = ib.detour
+  // sniff 相关：sing-box 1.13 起入站不再接受这些字段，但后端
+  // coreconfig.MigrateSingboxLegacyFields 会据此生成等价的 route action
+  // （action: sniff / hijack-dns），因此这里仍按 legacy 字段写出。
+  if (ib.sniff) {
+    out.sniff = true
+    if (ib.sniff_override_destination) out.sniff_override_destination = true
+  }
+  // direct inbound：静态转发目标
+  if (ib.type === 'direct') {
+    if (ib.override_address) out.override_address = ib.override_address
+    if (ib.override_port) out.override_port = ib.override_port
+  }
   // NetworkList: sing-box 要求 ["tcp","udp"] 数组或单个 "tcp"/"udp" 字符串
   // 表单用逗号分隔字符串表达（如 "tcp,udp"），build 时转换为数组
   if (ib.network && (ib.type === 'shadowsocks' || ib.type === 'naive')) {

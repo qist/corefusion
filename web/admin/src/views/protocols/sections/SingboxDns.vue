@@ -27,10 +27,6 @@
           <el-switch v-model="form.disable_expire" @change="emit" />
           <div class="hint">Disable cache expiration</div>
         </el-form-item>
-        <el-form-item label="Independent Cache">
-          <el-switch v-model="form.independent_cache" @change="emit" />
-          <div class="hint">Each DNS server uses an independent cache</div>
-        </el-form-item>
         <el-form-item label="Reverse Mapping">
           <el-switch v-model="form.reverse_mapping" @change="emit" />
           <div class="hint">Store reverse DNS mapping for IPs</div>
@@ -41,44 +37,25 @@
         </el-form-item>
         <el-form-item label="Final Server">
           <el-input v-model="form.final" placeholder="dns-remote" @change="emit" />
-          <div class="hint">Tag of the final DNS server used as fallback</div>
+          <div class="hint">Tag of the final DNS server used as fallback（不能指向 fakeip server）</div>
         </el-form-item>
-        <el-form-item label="Domain Matcher">
-          <el-select v-model="form.domain_matcher" style="width:100%" clearable @change="emit">
-            <el-option label="" value="" />
-            <el-option label="adguard" value="adguard" />
-            <el-option label="compression" value="compression" />
-            <el-option label="full" value="full" />
-            <el-option label="hybrid" value="hybrid" />
-          </el-select>
-        </el-form-item>
+        <el-alert type="warning" :closable="false" style="margin-bottom:12px">
+          <span style="font-size:12px">
+            <code>domain_matcher</code>（已移除，写入会导致核心启动失败）与 <code>independent_cache</code>（1.14 起弃用）已从界面移除。
+          </span>
+        </el-alert>
       </el-form>
 
-      <!-- FakeIP -->
-      <el-divider content-position="left">FakeIP</el-divider>
-      <el-form label-width="160px" label-position="left">
-        <el-form-item label="Enabled">
-          <el-switch v-model="form._fakeipEnabled" @change="emit" />
-        </el-form-item>
-        <template v-if="form._fakeipEnabled">
-          <el-form-item label="IPv4 Range">
-            <el-input v-model="form._fakeipInet4Range" placeholder="198.18.0.0/15" @change="emit" />
-          </el-form-item>
-          <el-form-item label="IPv6 Range">
-            <el-input v-model="form._fakeipInet6Range" placeholder="fc00::/18" @change="emit" />
-          </el-form-item>
-          <el-form-item label="Exclude">
-            <el-input v-model="form._fakeipExcludeStr" type="textarea" :rows="2" placeholder="One domain per line" @change="emit" />
-            <div class="hint">Domains excluded from FakeIP</div>
-          </el-form-item>
-          <el-form-item label="Inet4 Bind">
-            <el-input v-model="form._fakeipInet4Bind" placeholder="198.18.0.0/15" @change="emit" />
-          </el-form-item>
-          <el-form-item label="Inet6 Bind">
-            <el-input v-model="form._fakeipInet6Bind" placeholder="fc00::/18" @change="emit" />
-          </el-form-item>
-        </template>
-      </el-form>
+      <!-- FakeIP：sing-box 1.14 起顶层 dns.fakeip 已被移除（写入会导致核心启动失败） -->
+      <el-divider content-position="left">FakeIP / Hosts</el-divider>
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+        <div style="font-size:12px;line-height:1.8">
+          sing-box 1.14 起，顶层 <code>dns.fakeip</code> 与 <code>dns.hosts</code> 都已被移除，写入会让核心启动失败。<br>
+          <b>FakeIP</b>：在下方 DNS Servers 添加 <code>type = fakeip</code> 的 server（填 inet4_range / inet6_range），
+          再用 DNS Rule 把 <code>query_type = A,AAAA</code> 指向它；注意 fakeip 不能作为 Final / 默认 server。<br>
+          <b>Hosts</b>：添加 <code>type = hosts</code> 的 server，在 “Predefined” 里填域名到 IP 的映射。
+        </div>
+      </el-alert>
 
       <!-- DNS Servers -->
       <el-divider content-position="left">
@@ -91,7 +68,7 @@
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <el-tag size="small">{{ s.type || 'udp' }}</el-tag>
             <span style="font-weight:600;font-size:13px">{{ s.tag || 'unnamed' }}</span>
-            <span v-if="s.address" style="font-size:12px;color:#909399">{{ s.address }}</span>
+            <span v-if="s.server || s.address" style="font-size:12px;color:#909399">{{ s.server || s.address }}</span>
             <el-tag v-if="s.detour" size="small" type="info">{{ s.detour }}</el-tag>
           </div>
           <div>
@@ -125,16 +102,10 @@
         </div>
       </div>
 
-      <!-- Static Hosts -->
-      <el-divider content-position="left">
-        Static Hosts
-        <el-button size="small" type="primary" @click="addHost" style="margin-left:12px">Add Host</el-button>
-      </el-divider>
-      <div class="hint" style="margin-bottom:8px">Static DNS records (domain → IP)</div>
-      <div v-for="(h, i) in form.hostsList" :key="'h'+i" class="sub-item">
-        <el-input v-model="h.domain" placeholder="domain:example.com" style="width:40%" @change="emit" />
-        <el-input v-model="h.ip" placeholder="1.2.3.4" style="width:40%" @change="emit" />
-        <el-button size="small" type="danger" text @click="rmHost(i)">X</el-button>
+      <!-- Static Hosts：顶层 dns.hosts 已被移除，改由 type=hosts 的 DNS server 承载 -->
+      <el-divider content-position="left">Static Hosts</el-divider>
+      <div class="hint" style="margin-bottom:8px">
+        顶层 <code>dns.hosts</code> 已被 sing-box 1.14 移除；请添加 <code>type = hosts</code> 的 DNS server，在其 “Predefined” 字段里写域名映射。
       </div>
     </template>
 
@@ -143,40 +114,74 @@
       <el-form label-width="140px" label-position="left">
         <el-form-item label="Type">
           <el-select v-model="srvForm.type" style="width:100%">
-            <el-option label="udp" value="udp" />
-            <el-option label="tcp" value="tcp" />
-            <el-option label="tls" value="tls" />
-            <el-option label="https" value="https" />
-            <el-option label="quic" value="quic" />
-            <el-option label="h3" value="h3" />
-            <el-option label="local" value="local" />
-            <el-option label="dhcp" value="dhcp" />
-            <el-option label="predefined" value="predefined" />
+            <el-option v-for="tp in DNS_SERVER_TYPES" :key="tp.value" :label="tp.label" :value="tp.value" />
           </el-select>
+          <div class="hint">{{ currentTypeHint }}</div>
         </el-form-item>
         <el-form-item label="Tag">
           <el-input v-model="srvForm.tag" placeholder="dns-google" />
         </el-form-item>
-        <el-form-item label="Address">
-          <el-input v-model="srvForm.address" placeholder="8.8.8.8 / https://dns.google/dns-query / eth0" />
+        <!-- 远程类型：server / server_port -->
+        <template v-if="REMOTE_TYPES.includes(srvForm.type)">
+          <el-form-item label="Server">
+            <el-input v-model="srvForm.server" placeholder="8.8.8.8 / dns.google / 1.1.1.1" />
+            <div class="hint">sing-box 1.12+ 使用 <code>server</code>（旧字段 <code>address</code> 已移除）</div>
+          </el-form-item>
+          <el-form-item label="Server Port">
+            <el-input-number v-model="srvForm.server_port" :min="0" :max="65535" placeholder="53" />
+          </el-form-item>
+          <el-form-item v-if="['https', 'h3'].includes(srvForm.type)" label="Path">
+            <el-input v-model="srvForm.path" placeholder="/dns-query" />
+          </el-form-item>
+          <el-form-item v-if="['tls', 'https', 'h3', 'quic'].includes(srvForm.type)" label="TLS Server Name">
+            <el-input v-model="srvForm.tls_server_name" placeholder="dns.google" />
+          </el-form-item>
+          <el-form-item v-if="['tls', 'https', 'h3', 'quic'].includes(srvForm.type)" label="TLS Insecure">
+            <el-switch v-model="srvForm.tls_insecure" />
+          </el-form-item>
+        </template>
+        <!-- fakeip -->
+        <template v-if="srvForm.type === 'fakeip'">
+          <el-form-item label="IPv4 Range">
+            <el-input v-model="srvForm.inet4_range" placeholder="198.18.0.0/15" />
+          </el-form-item>
+          <el-form-item label="IPv6 Range">
+            <el-input v-model="srvForm.inet6_range" placeholder="fc00::/18" />
+          </el-form-item>
+          <el-alert type="warning" :closable="false" style="margin-bottom:12px"
+            title="fakeip 不能作为 Final / 默认 server，请在 DNS Rule 里用 query_type A,AAAA 指向它。" />
+        </template>
+        <!-- hosts -->
+        <template v-if="srvForm.type === 'hosts'">
+          <el-form-item label="Predefined">
+            <el-input v-model="srvForm._predefinedStr" type="textarea" :rows="5"
+              placeholder="example.com=1.2.3.4&#10;test.com=1.1.1.1, 2.2.2.2" />
+            <div class="hint">每行一条：<code>域名=IP[,IP...]</code></div>
+          </el-form-item>
+          <el-form-item label="Path">
+            <el-input v-model="srvForm._hostsPathStr" type="textarea" :rows="2" placeholder="每行一个 hosts 文件路径" />
+          </el-form-item>
+        </template>
+        <!-- local / dhcp / mdns -->
+        <template v-if="['local', 'dhcp', 'mdns'].includes(srvForm.type)">
+          <el-form-item v-if="srvForm.type === 'local'" label="Prefer Go">
+            <el-switch v-model="srvForm.prefer_go" />
+          </el-form-item>
+          <el-form-item v-if="['dhcp', 'mdns'].includes(srvForm.type)" label="Interface">
+            <el-input v-model="srvForm._interfaceStr" placeholder="eth0（mdns 可逗号分隔多个）" />
+          </el-form-item>
+        </template>
+        <!-- 依赖 endpoint 的类型 -->
+        <el-form-item v-if="ENDPOINT_TYPES.includes(srvForm.type)" label="Endpoint Tag">
+          <el-input v-model="srvForm.endpoint" placeholder="endpoint 段中的 tag，如 ts-ep / vpn-ep" />
+          <div class="hint">该类型的 DNS server 需要引用 endpoints 段里的 tag</div>
         </el-form-item>
         <el-form-item label="Detour">
           <el-input v-model="srvForm.detour" placeholder="Outbound tag (optional)" />
         </el-form-item>
-        <el-form-item label="Server Port">
-          <el-input-number v-model="srvForm.server_port" :min="0" :max="65535" placeholder="53" />
-        </el-form-item>
-        <el-form-item label="Strategy">
-          <el-select v-model="srvForm.strategy" style="width:100%" clearable>
-            <el-option label="" value="" />
-            <el-option label="prefer_ipv4" value="prefer_ipv4" />
-            <el-option label="prefer_ipv6" value="prefer_ipv6" />
-            <el-option label="ipv4_only" value="ipv4_only" />
-            <el-option label="ipv6_only" value="ipv6_only" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="Disable Cache">
-          <el-switch v-model="srvForm.disable_cache" />
+        <el-form-item label="Domain Resolver">
+          <el-input v-model="srvForm.domain_resolver" placeholder="用于解析 server 域名的 DNS server tag" />
+          <div class="hint">Server 填域名时必填（否则核心报 missing domain resolver）</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -246,22 +251,72 @@
   </div>
 </template>
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 const props = defineProps({ data: Object })
 const emitFn = defineEmits(['update'])
 const enabled = ref(true)
 const form = reactive({
   strategy: '', disable_cache: false, disable_expire: false,
-  independent_cache: false, reverse_mapping: false,
-  client_subnet: '', final: '', domain_matcher: '',
-  _fakeipEnabled: false, _fakeipInet4Range: '', _fakeipInet6Range: '',
-  _fakeipExcludeStr: '', _fakeipInet4Bind: '', _fakeipInet6Bind: '',
-  servers: [], rules: [], hostsList: [],
+  reverse_mapping: false,
+  client_subnet: '', final: '',
+  servers: [], rules: [],
 })
 
 const serverDlg = ref(false)
 const editingServerIdx = ref(-1)
-const srvForm = reactive({ type: 'udp', tag: '', address: '', detour: '', server_port: 0, strategy: '', disable_cache: false })
+
+// sing-box 支持的 DNS server 类型（constant/dns.go）
+// 注意：legacy / 无 type 已被移除；predefined 已改名为 hosts；h3 = http3
+const DNS_SERVER_TYPES = [
+  { value: 'udp', label: 'udp — 明文 UDP' },
+  { value: 'tcp', label: 'tcp — 明文 TCP' },
+  { value: 'tls', label: 'tls — DNS over TLS' },
+  { value: 'https', label: 'https — DoH' },
+  { value: 'h3', label: 'h3 — DoH (HTTP/3)' },
+  { value: 'quic', label: 'quic — DoQ' },
+  { value: 'local', label: 'local — 系统解析器' },
+  { value: 'hosts', label: 'hosts — 静态记录' },
+  { value: 'fakeip', label: 'fakeip — Fake IP' },
+  { value: 'dhcp', label: 'dhcp' },
+  { value: 'mdns', label: 'mdns' },
+  { value: 'resolved', label: 'resolved' },
+  { value: 'tailscale', label: 'tailscale' },
+  { value: 'openconnect', label: 'openconnect' },
+  { value: 'openvpn', label: 'openvpn' },
+]
+const REMOTE_TYPES = ['udp', 'tcp', 'tls', 'https', 'h3', 'quic']
+const ENDPOINT_TYPES = ['tailscale', 'openconnect', 'openvpn']
+// 不支持 server/server_port 的类型
+const NO_SERVER_TYPES = ['local', 'dhcp', 'mdns', 'hosts', 'fakeip', 'resolved', 'tailscale', 'openconnect', 'openvpn']
+// 支持拨号字段（detour / domain_resolver）的类型：hosts、fakeip 与 endpoint 类不支持
+const DIAL_TYPES = ['udp', 'tcp', 'tls', 'https', 'h3', 'quic', 'local', 'dhcp', 'mdns']
+const TYPE_HINTS = {
+  udp: '明文 UDP，server 填 IP 或域名',
+  tcp: '明文 TCP',
+  tls: 'server 填域名时需同时填 TLS Server Name',
+  https: 'DoH，路径一般为 /dns-query',
+  h3: 'DoH over HTTP/3，路径一般为 /dns-query',
+  quic: 'DoQ，端口通常 853',
+  local: '使用系统解析器（Linux 可启用 Prefer Go）',
+  hosts: '静态域名记录 + 可选 hosts 文件路径',
+  fakeip: '需在 DNS Rule 中用 query_type A,AAAA 指向；不能作为默认 server',
+  dhcp: '从 DHCP 获取 DNS，需指定 Interface',
+  mdns: '局域网组播 DNS，需指定 Interface',
+  resolved: '使用 systemd-resolved',
+  tailscale: '需引用 endpoints 段的 tailscale endpoint tag',
+  openconnect: '需引用 endpoints 段的 openconnect endpoint tag',
+  openvpn: '需引用 endpoints 段的 openvpn endpoint tag',
+}
+const srvForm = reactive({
+  type: 'udp', tag: '', server: '', server_port: 0, detour: '', domain_resolver: '',
+  path: '', tls_server_name: '', tls_insecure: false,
+  inet4_range: '', inet6_range: '',
+  _predefinedStr: '', _hostsPathStr: '',
+  prefer_go: false, _interfaceStr: '',
+  endpoint: '',
+})
+const currentTypeHint = computed(() => TYPE_HINTS[srvForm.type] || '')
 
 const ruleDlg = ref(false)
 const editingRuleIdx = ref(-1)
@@ -272,22 +327,88 @@ const ruleForm = reactive({
 
 function showAddServer() {
   editingServerIdx.value = -1
-  Object.assign(srvForm, { type: 'udp', tag: '', address: '', detour: '', server_port: 0, strategy: '', disable_cache: false })
+  Object.assign(srvForm, blankServer())
   serverDlg.value = true
+}
+function blankServer() {
+  return {
+    type: 'udp', tag: '', server: '', server_port: 0, detour: '', domain_resolver: '',
+    path: '', tls_server_name: '', tls_insecure: false,
+    inet4_range: '', inet6_range: '',
+    _predefinedStr: '', _hostsPathStr: '',
+    prefer_go: false, _interfaceStr: '',
+    endpoint: '',
+  }
 }
 function editServer(i) {
   editingServerIdx.value = i
-  const s = form.servers[i]
-  Object.assign(srvForm, { ...s })
+  const s = form.servers[i] || {}
+  const predefined = s.predefined || {}
+  Object.assign(srvForm, blankServer(), {
+    type: s.type || 'udp', tag: s.tag || '',
+    // 兼容历史配置：旧字段 address
+    server: s.server || s.address || '',
+    server_port: s.server_port || 0,
+    detour: s.detour || '', domain_resolver: s.domain_resolver || '',
+    path: s.path || '', tls_server_name: s.tls?.server_name || '',
+    tls_insecure: !!s.tls?.insecure,
+    inet4_range: s.inet4_range || '', inet6_range: s.inet6_range || '',
+    _predefinedStr: Object.entries(predefined).map(([d, ip]) => `${d}=${Array.isArray(ip) ? ip.join(', ') : ip}`).join('\n'),
+    _hostsPathStr: (Array.isArray(s.path) ? s.path : (s.path ? [s.path] : [])).join('\n'),
+    prefer_go: !!s.prefer_go,
+    _interfaceStr: Array.isArray(s.interface) ? s.interface.join(', ') : (s.interface || ''),
+    endpoint: s.endpoint || '',
+  })
   serverDlg.value = true
 }
 function saveServer() {
   const srv = { type: srvForm.type, tag: srvForm.tag }
-  if (srvForm.address) srv.address = srvForm.address
-  if (srvForm.detour) srv.detour = srvForm.detour
-  if (srvForm.server_port) srv.server_port = srvForm.server_port
-  if (srvForm.strategy) srv.strategy = srvForm.strategy
-  if (srvForm.disable_cache) srv.disable_cache = true
+  if (REMOTE_TYPES.includes(srvForm.type)) {
+    if (srvForm.server) srv.server = srvForm.server
+    if (srvForm.server_port) srv.server_port = srvForm.server_port
+    if (srvForm.path) srv.path = srvForm.path
+    if (srvForm.tls_server_name || srvForm.tls_insecure) {
+      srv.tls = {}
+      if (srvForm.tls_server_name) srv.tls.server_name = srvForm.tls_server_name
+      if (srvForm.tls_insecure) srv.tls.insecure = true
+      if (srvForm.tls_server_name) srv.tls.enabled = true
+    }
+  }
+  if (srvForm.type === 'fakeip') {
+    if (srvForm.inet4_range) srv.inet4_range = srvForm.inet4_range
+    if (srvForm.inet6_range) srv.inet6_range = srvForm.inet6_range
+    if (!srvForm.inet4_range && !srvForm.inet6_range) {
+      ElMessage.error('fakeip server 必须至少填写 IPv4 Range 或 IPv6 Range')
+      return
+    }
+  }
+  if (srvForm.type === 'hosts') {
+    const predefined = {}
+    for (const line of (srvForm._predefinedStr || '').split('\n')) {
+      const s = line.trim()
+      if (!s) continue
+      const eq = s.indexOf('=')
+      if (eq < 0) { ElMessage.error(`Predefined 行格式应为 域名=IP：${s}`); return }
+      const domain = s.slice(0, eq).trim()
+      const ips = s.slice(eq + 1).split(',').map(x => x.trim()).filter(Boolean)
+      if (!domain || !ips.length) { ElMessage.error(`Predefined 行格式应为 域名=IP：${s}`); return }
+      predefined[domain] = ips.length === 1 ? ips[0] : ips
+    }
+    if (Object.keys(predefined).length) srv.predefined = predefined
+    const paths = (srvForm._hostsPathStr || '').split('\n').map(x => x.trim()).filter(Boolean)
+    if (paths.length) srv.path = paths
+  }
+  if (srvForm.type === 'local' && srvForm.prefer_go) srv.prefer_go = true
+  if (['dhcp', 'mdns'].includes(srvForm.type)) {
+    const ifs = (srvForm._interfaceStr || '').split(',').map(x => x.trim()).filter(Boolean)
+    if (srvForm.type === 'dhcp') { if (ifs.length) srv.interface = ifs[0] }
+    else if (ifs.length) srv.interface = ifs
+  }
+  if (ENDPOINT_TYPES.includes(srvForm.type) && srvForm.endpoint) srv.endpoint = srvForm.endpoint
+  if (DIAL_TYPES.includes(srvForm.type)) {
+    if (srvForm.detour) srv.detour = srvForm.detour
+    if (srvForm.domain_resolver) srv.domain_resolver = srvForm.domain_resolver
+  }
   if (editingServerIdx.value >= 0) form.servers[editingServerIdx.value] = srv
   else form.servers.push(srv)
   serverDlg.value = false
@@ -339,8 +460,40 @@ function saveRule() {
 }
 function rmRule(i) { form.rules.splice(i, 1); emit() }
 
-function addHost() { form.hostsList.push({ domain: '', ip: '' }); emit() }
-function rmHost(i) { form.hostsList.splice(i, 1); emit() }
+// 历史 DNS server（sing-box < 1.12 形态）归一：address → server、URL 形式拆解、去掉已移除字段
+function normalizeLegacyServer(s) {
+  const o = { ...s }
+  if (!o.server && o.address) {
+    const addr = String(o.address)
+    const m = addr.match(/^([a-z0-9]+):\/\/([^/]+)(\/.*)?$/i)
+    if (m) {
+      const scheme = m[1].toLowerCase()
+      const typeMap = { https: 'https', h3: 'h3', tls: 'tls', quic: 'quic', tcp: 'tcp', udp: 'udp' }
+      if (typeMap[scheme]) o.type = typeMap[scheme]
+      const [host, port] = m[2].split(':')
+      o.server = host
+      if (port) o.server_port = Number(port)
+      if (m[3]) o.path = m[3]
+    } else {
+      o.server = addr
+    }
+  }
+  delete o.address
+  delete o.strategy      // server 级 strategy 已被移除
+  delete o.disable_cache // server 级 disable_cache 已被移除
+  if (o.type === 'predefined') o.type = 'hosts' // predefined 已改名 hosts
+  if (!o.type) o.type = 'udp'
+  // 按类型裁剪不支持的字段（sing-box 严格解码，多写字段会 FATAL）
+  if (NO_SERVER_TYPES.includes(o.type)) {
+    delete o.server
+    delete o.server_port
+  }
+  if (!DIAL_TYPES.includes(o.type)) {
+    delete o.detour
+    delete o.domain_resolver
+  }
+  return o
+}
 
 function sync() {
   if (!props.data || Object.keys(props.data).length === 0) { enabled.value = false; return }
@@ -349,18 +502,28 @@ function sync() {
   form.strategy = props.data.strategy || ''
   form.disable_cache = props.data.disable_cache || false
   form.disable_expire = props.data.disable_expire || false
-  form.independent_cache = props.data.independent_cache || false
   form.reverse_mapping = props.data.reverse_mapping || false
   form.client_subnet = props.data.client_subnet || ''
   form.final = props.data.final || ''
-  form.domain_matcher = props.data.domain_matcher || ''
-  form._fakeipEnabled = props.data.fakeip?.enabled || false
-  form._fakeipInet4Range = props.data.fakeip?.inet4_range || '198.18.0.0/15'
-  form._fakeipInet6Range = props.data.fakeip?.inet6_range || 'fc00::/18'
-  form._fakeipExcludeStr = (props.data.fakeip?.exclude || []).join('\n')
-  form._fakeipInet4Bind = props.data.fakeip?.inet4_bind_address || ''
-  form._fakeipInet6Bind = props.data.fakeip?.inet6_bind_address || ''
-  form.servers = (props.data.servers || []).map(s => ({ ...s }))
+  form.servers = (props.data.servers || []).map(normalizeLegacyServer)
+  // 历史配置迁移：顶层 dns.fakeip / dns.hosts → 对应类型的 server（1.14 起顶层字段已移除）
+  const legacyFakeip = props.data.fakeip
+  if (legacyFakeip && Object.keys(legacyFakeip).length && !form.servers.some(s => s.type === 'fakeip')) {
+    form.servers.push({
+      type: 'fakeip', tag: 'fakeip',
+      inet4_range: legacyFakeip.inet4_range || '198.18.0.0/15',
+      inet6_range: legacyFakeip.inet6_range || 'fc00::/18',
+    })
+  }
+  const legacyHosts = props.data.hosts
+  if (legacyHosts && Object.keys(legacyHosts).length && !form.servers.some(s => s.type === 'hosts')) {
+    form.servers.push({ type: 'hosts', tag: 'hosts', predefined: { ...legacyHosts } })
+  }
+  // 历史 server 级 strategy → 提升为顶层 strategy
+  if (!form.strategy) {
+    const legacyStrategy = (props.data.servers || []).map(s => s.strategy).find(Boolean)
+    if (legacyStrategy) form.strategy = legacyStrategy
+  }
   form.rules = (props.data.rules || []).map(r => ({
     ...r,
     _domain: (r.domain || []).join('\n'),
@@ -369,8 +532,6 @@ function sync() {
     _ipCIDR: (r.ip_cidr || []).join('\n'),
     _protocol: r.protocol || [],
   }))
-  const hosts = props.data.hosts || {}
-  form.hostsList = Object.entries(hosts).map(([domain, ip]) => ({ domain, ip: Array.isArray(ip) ? ip.join(', ') : ip }))
 }
 
 function build() {
@@ -378,30 +539,26 @@ function build() {
     strategy: form.strategy || undefined,
     disable_cache: form.disable_cache || undefined,
     disable_expire: form.disable_expire || undefined,
-    independent_cache: form.independent_cache || undefined,
     reverse_mapping: form.reverse_mapping || undefined,
     client_subnet: form.client_subnet || undefined,
     final: form.final || undefined,
-    domain_matcher: form.domain_matcher || undefined,
   }
-  if (form._fakeipEnabled) {
-    const fakeip = { enabled: true }
-    if (form._fakeipInet4Range) fakeip.inet4_range = form._fakeipInet4Range
-    if (form._fakeipInet6Range) fakeip.inet6_range = form._fakeipInet6Range
-    const exclude = form._fakeipExcludeStr ? form._fakeipExcludeStr.split('\n').map(s => s.trim()).filter(Boolean) : []
-    if (exclude.length) fakeip.exclude = exclude
-    if (form._fakeipInet4Bind) fakeip.inet4_bind_address = form._fakeipInet4Bind
-    if (form._fakeipInet6Bind) fakeip.inet6_bind_address = form._fakeipInet6Bind
-    out.fakeip = fakeip
-  }
+  // 顶层 dns.fakeip / dns.hosts 已被 sing-box 1.14 移除，这里按原样透传（由后端迁移兜底）
   out.servers = form.servers.filter(s => s.tag).map(s => {
     const srv = { tag: s.tag }
     if (s.type) srv.type = s.type
-    if (s.address) srv.address = s.address
-    if (s.detour) srv.detour = s.detour
+    if (s.server) srv.server = s.server
     if (s.server_port) srv.server_port = s.server_port
-    if (s.strategy) srv.strategy = s.strategy
-    if (s.disable_cache) srv.disable_cache = true
+    if (s.path) srv.path = s.path
+    if (s.tls && Object.keys(s.tls).length) srv.tls = { ...s.tls }
+    if (s.detour) srv.detour = s.detour
+    if (s.domain_resolver) srv.domain_resolver = s.domain_resolver
+    if (s.inet4_range) srv.inet4_range = s.inet4_range
+    if (s.inet6_range) srv.inet6_range = s.inet6_range
+    if (s.predefined && Object.keys(s.predefined).length) srv.predefined = { ...s.predefined }
+    if (s.prefer_go) srv.prefer_go = true
+    if (s.interface) srv.interface = Array.isArray(s.interface) ? [...s.interface] : s.interface
+    if (s.endpoint) srv.endpoint = s.endpoint
     return srv
   })
   out.rules = form.rules.filter(r => r.server || r.outbound || r.action).map(r => {
@@ -422,13 +579,6 @@ function build() {
     if (r.action) rule.action = r.action
     return rule
   })
-  const hosts = {}
-  form.hostsList.forEach(h => {
-    if (!h.domain) return
-    const ips = h.ip.split(',').map(s => s.trim()).filter(Boolean)
-    hosts[h.domain] = ips.length === 1 ? ips[0] : ips
-  })
-  if (Object.keys(hosts).length) out.hosts = hosts
   return out
 }
 
@@ -441,8 +591,8 @@ function onToggle() {
   }
   if (form.servers.length === 0) {
     form.servers = [
-      { type: 'https', tag: 'dns-remote', address: 'https://1.1.1.1/dns-query' },
-      { type: 'https', tag: 'dns-google', address: 'https://8.8.8.8/dns-query' },
+      { type: 'https', tag: 'dns-remote', server: '1.1.1.1', server_port: 443, path: '/dns-query' },
+      { type: 'https', tag: 'dns-google', server: '8.8.8.8', server_port: 443, path: '/dns-query' },
     ]
   }
   emit()

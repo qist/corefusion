@@ -816,6 +816,8 @@ export default {
       listen: 'Listen', tls: 'TLS', auth: 'Auth', bandwidth: 'Bandwidth', quic: 'QUIC',
       trafficStats: 'Traffic Stats', server: 'Listen', users: 'Users', congestion: 'Congestion Control',
       advanced: 'Advanced', endpoints: 'Endpoints',
+      ntp: 'NTP', services: 'Services', certificate: 'Certificate',
+      certificateProviders: 'Certificate Providers', httpClients: 'HTTP Clients', networkNamespaces: 'Network Namespaces',
     },
     preview: {
       loadFromFile: 'Load from file',

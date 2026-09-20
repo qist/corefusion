@@ -264,6 +264,22 @@ func (h *Handler) Delete(c *gin.Context) {
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
+// UsedServerNames handles GET /api/v1/node-servers/:id/used-server-names.
+// 返回该节点上所有入站（xray + sing-box）已占用的 Server Names，供编辑器标记「已使用」。
+func (h *Handler) UsedServerNames(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server id")
+		return
+	}
+	items, err := h.svc.UsedServerNames(c.Request.Context(), serverID)
+	if err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"items": items})
+}
+
 // ResetAllTraffic handles POST /api/v1/node-servers/:id/inbound-configs/reset-all-traffic.
 // Resets _usedUp and _usedDown to 0 for all users in all inbound configs on the server.
 func (h *Handler) ResetAllTraffic(c *gin.Context) {

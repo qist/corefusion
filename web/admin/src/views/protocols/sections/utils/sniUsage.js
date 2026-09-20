@@ -66,3 +66,16 @@ export function findNewConflicts(mySnis, oldSnis, usedByOthers) {
   const old = new Set(oldSnis || [])
   return (mySnis || []).filter(s => !old.has(s) && usedByOthers.has(s))
 }
+
+// mergeUsedSnis 把后端登记的已用 SNI 合并进本地 Map（用于跨核心标记）。
+// items: [{ inbound_id, server_name, core_type, tag, remark }]
+// selfId：当前编辑的入站 id，相同则跳过（不把自己算成「已占用」）。
+export function mergeUsedSnis(map, items, selfId) {
+  for (const it of items || []) {
+    if (selfId != null && it.inbound_id != null && String(it.inbound_id) === String(selfId)) continue
+    const sn = String(it.server_name || '').trim().toLowerCase()
+    if (!sn || map.has(sn)) continue
+    map.set(sn, it.remark || it.tag || it.core_type || 'unknown')
+  }
+  return map
+}

@@ -321,7 +321,7 @@
 
         <!-- TLS -->
         <el-tab-pane v-if="TLS_ENABLED_PROTOCOLS.includes(rf.type)" :label="t('singbox.inbound.tabs.tls')" name="tls">
-          <SingboxTls :model="rf" :server-id="serverId" :inbounds="form" @update="noop" />
+          <SingboxTls :model="rf" :server-id="serverId" :inbounds="form" :used-server-names="usedServerNames" @update="noop" />
         </el-tab-pane>
 
         <!-- Multiplex -->
@@ -408,7 +408,7 @@ import { MoreFilled, Edit, Delete, View, Refresh, RefreshRight, Plus, User } fro
 const { t } = useI18n()
 import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
-import { snisOfInbound, collectUsedSnis, findNewConflicts } from './utils/sniUsage'
+import { snisOfInbound, collectUsedSnis, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -517,7 +517,8 @@ async function save() {
     const mySni = String(rf._tlsServerName || '').trim().toLowerCase()
     if (mySni) {
       const self = editIdx.value >= 0 ? form[editIdx.value] : null
-      const used = collectUsedSnis(form, self)
+      // 本核心内存中的其它入站 + 后端登记的跨核心占用（同节点 xray 入站也要算）
+      const used = mergeUsedSnis(collectUsedSnis(form, self), usedServerNames.value, self?._id ?? null)
       const added = findNewConflicts([mySni], self ? snisOfInbound(self) : [], used)
       if (added.length) {
         ElMessage.error(t('singbox.tls.sniConflict', { sni: mySni, tag: used.get(mySni) || '' }))
@@ -1036,12 +1037,22 @@ function getAccessHostPort(ib) {
   return { host, port: ib.listen_port || 443 }
 }
 
+// 该节点上（xray + sing-box）已占用的 Server Names（后端登记，用于跨核心标记与互斥判断）
+const usedServerNames = ref([])
+async function loadUsedServerNames() {
+  try {
+    const data = await client.get(`${nodeBase.value}/used-server-names`)
+    usedServerNames.value = data?.items || (Array.isArray(data) ? data : [])
+  } catch { usedServerNames.value = [] }
+}
+
 onMounted(() => {
   prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
   loadInterfaces()
   sync()
   loadCFDomains()
   loadCFIPEntries()
+  loadUsedServerNames()
 })
 </script>
 

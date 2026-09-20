@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	realityutil "corefusion/internal/reality"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,12 +285,22 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 	ss["tlsSettings"] = tlsSettings
 
 	// Reality：分享链接需要 pbk（公钥）。sing-box 服务端只存 private_key，
-	// 编辑器会把公钥额外存到 tls.reality.public_key 供分享链接使用。
+	// 公钥的取用顺序（重要，缺 pbk 客户端根本连不上）：
+	//   1) tls.reality.public_key（历史/手工填写）
+	//   2) 顶层 _realityPublicKey（编辑器保存的，生成核心配置时会被剥离，不会进 sing-box）
+	//   3) 由 private_key 推导（x25519 私钥可推导公钥，覆盖只存了私钥的老数据）
 	if reality, ok := tlsCfg["reality"].(map[string]interface{}); ok && reality != nil {
 		if on, has := reality["enabled"].(bool); !has || on {
 			ss["security"] = "reality"
 			rs := map[string]interface{}{}
-			if pbk := getString(reality, "public_key", ""); pbk != "" {
+			pbk := getString(reality, "public_key", "")
+			if pbk == "" {
+				pbk = getString(config, "_realityPublicKey", "")
+			}
+			if pbk == "" {
+				pbk = realityutil.PublicKeyFromPrivate(getString(reality, "private_key", ""))
+			}
+			if pbk != "" {
 				rs["_password"] = pbk
 			}
 			if sids := getStringSlice(reality, "short_id"); len(sids) > 0 {
@@ -315,7 +327,7 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 			}
 			ss["realitySettings"] = rs
 			if pbk, _ := rs["_password"].(string); pbk == "" {
-				log.Printf("[subscriptions] sing-box reality 入站缺少 public_key，分享链接将不含 pbk（请在入站里填写公钥）")
+				log.Printf("[subscriptions] sing-box reality 入站既无 public_key 也无法由 private_key 推导，分享链接将不含 pbk（请重新生成密钥对）")
 			}
 		}
 	}

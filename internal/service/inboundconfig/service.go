@@ -191,6 +191,37 @@ func extractServerNames(cfgJSON string) []string {
 	return out
 }
 
+// UsedServerName 描述一个已被占用的 Server Name（SNI）及其占用方。
+type UsedServerName struct {
+	InboundID  int64  `json:"inbound_id"`
+	ServerName string `json:"server_name"`
+	CoreType   string `json:"core_type"`
+	Tag        string `json:"tag"`
+	Remark     string `json:"remark"`
+}
+
+// UsedServerNames 返回某节点上所有入站（xray + sing-box）已占用的 Server Names。
+//
+// 用途：编辑器标记「已使用」的预设/域名。编辑器自己只能看到本核心的入站，看不到同一
+// 节点另一核心占用的域名（用户反馈：sing-box 用了 www.apple.com，xray 那边没标已使用）。
+// 提取口径与 checkServerNamesConflict 完全一致（同一函数 extractServerNames）。
+func (s *Service) UsedServerNames(ctx context.Context, serverID int64) ([]UsedServerName, error) {
+	configs, err := s.repo.List(ctx, serverID, "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UsedServerName, 0, len(configs))
+	for _, cfg := range configs {
+		if cfg.ServerID != serverID {
+			continue // 只看本节点自身的行（镜像/主备的另一侧属于另一台机器）
+		}
+		for _, sn := range extractServerNames(cfg.ConfigJSON) {
+			out = append(out, UsedServerName{InboundID: cfg.ID, ServerName: sn, CoreType: cfg.CoreType, Tag: cfg.Tag, Remark: cfg.Remark})
+		}
+	}
+	return out, nil
+}
+
 // addedServerNames 返回「新配置里相对旧配置新增的 Server Names」。
 func addedServerNames(oldCfg, newCfg string) []string {
 	oldSet := make(map[string]struct{})

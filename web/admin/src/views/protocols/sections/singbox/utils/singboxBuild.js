@@ -410,7 +410,8 @@ export function parseInbound(ib) {
   o._realityHandshakeServer = ib.tls?.reality?.handshake?.server || ''
   o._realityHandshakePort = ib.tls?.reality?.handshake?.server_port || 443
   o._realityPrivateKey = ib.tls?.reality?.private_key || ''
-  o._realityPublicKey = ib.tls?.reality?.public_key || ''
+  // 优先顶层 _realityPublicKey（编辑器保存的），兼容历史写在 tls.reality.public_key 的数据
+  o._realityPublicKey = ib._realityPublicKey || ib.tls?.reality?.public_key || ''
   o._realityShortIds = (ib.tls?.reality?.short_id || []).join('\n')
   o._realityMaxTimeDiff = ib.tls?.reality?.max_time_difference || ''
   o._transportType = ib.transport?.type || ''
@@ -532,6 +533,10 @@ o._snellMode = ib.mode || ''
   // remark + enabled + access domain (对齐 xray，表单专用字段)
   o._remark = ib._remark || ''
   o._enabled = ib._enabled !== false
+  // 客户端公钥（pbk）：sing-box 入站不接受 public_key 字段（DisallowUnknownFields 会 FATAL），
+  // 所以存成顶层 _realityPublicKey —— 面板生成核心配置时会剥离顶层 _ 前缀字段，
+  // 分享链接（subscriptions/singbox_share.go）与再次打开编辑器都从这里取。
+  o._realityPublicKey = ib._realityPublicKey || '' 
   // tun parse
   o._tunNetns = ib.netns || ''
   o._tunMtu = ib.mtu || 0

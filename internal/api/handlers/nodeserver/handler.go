@@ -19,6 +19,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/vo"
+	realityutil "corefusion/internal/reality"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	endpointconfigSvc "corefusion/internal/service/endpointconfig"
 	geoRuleSvc "corefusion/internal/service/georule"
@@ -1517,6 +1518,25 @@ func (h *Handler) GenerateX25519Key(c *gin.Context) {
 		"password":   raw["Password (PublicKey)"],
 	}
 	response.OK(c, result)
+}
+
+// DeriveRealityPublicKey handles POST /api/v1/node-servers/:id/binaries/reality-public-key.
+// 由已有私钥推导公钥（x25519 私钥可推导公钥，无需重新生成密钥对）。
+// 用途：sing-box 入站只存 private_key，编辑器重新打开时无法显示「公钥（客户端）」。
+func (h *Handler) DeriveRealityPublicKey(c *gin.Context) {
+	var req struct {
+		PrivateKey string `json:"private_key"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	pub := realityutil.PublicKeyFromPrivate(req.PrivateKey)
+	if pub == "" {
+		response.BadRequest(c, "INVALID_PRIVATE_KEY", "not a valid x25519 private key")
+		return
+	}
+	response.OK(c, gin.H{"publicKey": pub, "password": pub})
 }
 
 // GenerateRealityKey handles POST /api/v1/node-servers/:id/binaries/reality-key.

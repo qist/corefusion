@@ -158,17 +158,28 @@ func subscriptionView(tag string, config map[string]interface{}, clientEmail str
 		// 该订阅用户在此 sing-box 入站没有账号 → 跳过（安全：不使用他人凭证）
 		return nil, true
 	}
+	return singboxViewForUser(config, user, getString(user, "name", "")), false
+}
 
+// singboxViewForUser 把 sing-box 入站 + 一条 users[] 记录归一成 xray 形态
+// （settings.clients 只保留该用户，streamSettings 由 transport/tls 反推）。
+// clientEmail 为该记录对外的标识：订阅链路传 users[].name，面板二维码链路传原始记录名。
+func singboxViewForUser(config map[string]interface{}, user map[string]interface{}, clientEmail string) map[string]interface{} {
 	client := map[string]interface{}{}
-	if v, ok := user["name"].(string); ok {
+	if clientEmail != "" {
+		client["email"] = clientEmail
+	} else if v, ok := user["name"].(string); ok {
 		client["email"] = v
 	}
 	// sing-box: uuid（vless/vmess/tuic），password（trojan/hysteria2/ss/anytls），psk（snell），username（naive/mixed/http/socks）
 	if v, ok := user["uuid"].(string); ok && v != "" {
 		client["id"] = v
+		client["uuid"] = v // sharelink 的 tuic 分支读 clients[].uuid
 	}
 	if v, ok := user["password"].(string); ok && v != "" {
 		client["password"] = v
+		// xray 形态里 hysteria/hysteria2 的密码字段叫 auth，sharelink 的 hysteria 分支读它
+		client["auth"] = v
 	}
 	if v, ok := user["flow"].(string); ok && v != "" {
 		client["flow"] = v
@@ -202,7 +213,7 @@ func subscriptionView(tag string, config map[string]interface{}, clientEmail str
 		out["method"] = method // ss：sharelink 从 settings/clients 之外取 method
 	}
 	out["streamSettings"] = singboxToXrayStreamSettings(config)
-	return out, false
+	return out
 }
 
 // findSingboxUserForSubscription 在 sing-box 顶层 users[] 中按 name 匹配订阅用户。

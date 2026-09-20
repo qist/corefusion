@@ -150,7 +150,7 @@ export function inboundDefaultsForType(type, customPort) {
     // Port Hopping（端口跳跃）：字段与 xray 一致，供防火墙规则增删与恢复读取
     _portHopEnabled: false,
     _portHopMode: 'preset',
-    _portHopRange: '20000-50000',
+    _portHopRange: '10000-19999',
     _portHopStart: 20000,
     _portHopEnd: 50000,
     _portHopInterface: '',

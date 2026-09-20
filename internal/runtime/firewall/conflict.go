@@ -91,7 +91,29 @@ func FormatConflicts(conflicts []RuleSpec, want RuleSpec) string {
 		parts = append(parts, fmt.Sprintf("%s → 端口 %d (%s)", c.PortRange, c.TargetPort, iface))
 	}
 	return fmt.Sprintf("端口段 %s 与已有规则冲突：%s。同一端口段只能指向一个入站端口，"+
-		"请改用不重叠的端口段（例如另一个入站改成 40000-65000）", want.PortRange, strings.Join(parts, "；"))
+		"请给另一个入站改用不重叠的端口段", want.PortRange, strings.Join(parts, "；"))
+}
+
+// SuggestFreeRange 在 10000-60000 内按 width 宽切块，返回第一个与既有规则
+// 完全不重叠的空闲段（找不到返回空串）。用在冲突提示里，直接给用户可操作的方案。
+func SuggestFreeRange(existing []RuleSpec, width int) string {
+	if width <= 0 {
+		width = 10000
+	}
+	for start := 10000; start+width-1 <= 60000; start += width {
+		cand := fmt.Sprintf("%d-%d", start, start+width-1)
+		free := true
+		for _, e := range existing {
+			if RangesOverlap(e.PortRange, cand) {
+				free = false
+				break
+			}
+		}
+		if free {
+			return cand
+		}
+	}
+	return ""
 }
 
 // CheckConflict 读取节点当前规则并检查冲突，返回可直接展示给用户的错误。
@@ -105,7 +127,11 @@ func CheckConflict(want RuleSpec) error {
 	if len(conflicts) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s", FormatConflicts(conflicts, want))
+	msg := FormatConflicts(conflicts, want)
+	if free := SuggestFreeRange(existing, 10000); free != "" {
+		msg += fmt.Sprintf("；当前空闲可用段：%s", free)
+	}
+	return fmt.Errorf("%s", msg)
 }
 
 // ListRules 读取当前节点的端口跳跃规则（nft 优先，其次 iptables）。

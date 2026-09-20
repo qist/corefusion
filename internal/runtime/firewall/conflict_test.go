@@ -76,3 +76,30 @@ func TestRangesOverlap(t *testing.T) {
 		t.Error("同端口应判定为重叠")
 	}
 }
+
+// 冲突提示要给出可直接使用的空闲段，否则用户仍会反复试错。
+func TestSuggestFreeRange(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing []RuleSpec
+		want     string
+	}{
+		{"占用 40000-65000 → 建议 10000-19999", []RuleSpec{{PortRange: "40000-65000", TargetPort: 10195}}, "10000-19999"},
+		{"占用前两段 → 建议第三段", []RuleSpec{
+			{PortRange: "10000-19999", TargetPort: 1},
+			{PortRange: "20000-29999", TargetPort: 2},
+		}, "30000-39999"},
+		{"全部占满 → 无建议", []RuleSpec{
+			{PortRange: "10000-19999", TargetPort: 1},
+			{PortRange: "20000-29999", TargetPort: 2},
+			{PortRange: "30000-39999", TargetPort: 3},
+			{PortRange: "40000-49999", TargetPort: 4},
+			{PortRange: "50000-59999", TargetPort: 5},
+		}, ""},
+	}
+	for _, c := range cases {
+		if got := SuggestFreeRange(c.existing, 10000); got != c.want {
+			t.Errorf("%s: 建议段 = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

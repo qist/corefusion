@@ -107,8 +107,8 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["password"] = node.Password
 		}
 
-		// Username for http/socks/mixed
-		if username, ok := node.Extra["username"].(string); ok && username != "" {
+		// Username for http/socks/mixed（ssh 出站用的是 user，见下方 ssh 分支）
+		if username, ok := node.Extra["username"].(string); ok && username != "" && node.Protocol != "ssh" {
 			ob["username"] = username
 		}
 
@@ -149,6 +149,19 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			}
 			if v := anyToInt(node.Extra["version"]); v > 0 {
 				ob["version"] = v
+			}
+		}
+
+		// ssh：sing-box 出站的字段是 `user`（不是 username），凭据可以是密码或私钥
+		if node.Protocol == "ssh" {
+			if u, ok := node.Extra["username"].(string); ok && u != "" {
+				ob["user"] = u
+			}
+			if k, ok := node.Extra["private-key"].(string); ok && k != "" {
+				ob["private_key"] = k
+			}
+			if kp, ok := node.Extra["private-key-passphrase"].(string); ok && kp != "" {
+				ob["private_key_passphrase"] = kp
 			}
 		}
 
@@ -214,10 +227,15 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["transport"] = buildSingboxTransport(node)
 		}
 
-		// Hysteria2 专属参数（obfs / 带宽 / BBR / 动态端口）。服务端开了混淆或指定 BBR、
+		// Hysteria 专属参数（obfs / 带宽 / BBR / 动态端口）。服务端开了混淆或指定 BBR、
 		// 开了动态端口时，缺这些字段客户端要么连不上、要么享受不到跳端口。
+		// 注意 v1 与 v2 字段口径不同（v1 的 obfs 是字符串、凭据叫 auth_str）。
 		if isHysteria {
-			applySingboxHysteriaParams(ob, node)
+			if node.Protocol == "hysteria" {
+				applySingboxHysteria1Params(ob, node)
+			} else {
+				applySingboxHysteriaParams(ob, node)
+			}
 		}
 
 		outbounds = append(outbounds, ob)
@@ -234,6 +252,36 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(result, "", "  ")
+}
+
+// applySingboxHysteria1Params 写 hysteria **v1** 出站字段（与 v2 口径不同）：
+// 凭据叫 auth_str，obfs 是**字符串**（不是 {type,password} 对象），
+// 且 up_mbps / down_mbps 是**必填**（缺了报 "missing upload speed"）。
+func applySingboxHysteria1Params(ob map[string]interface{}, node Node) {
+	for _, k := range []string{"auth-str", "auth_str"} {
+		if v, ok := node.Extra[k].(string); ok && v != "" {
+			ob["auth_str"] = v
+			break
+		}
+	}
+	if obfs, ok := node.Extra["obfs"].(string); ok && obfs != "" {
+		ob["obfs"] = obfs
+	}
+	if v := bandwidthToMbps(node.Extra["up"]); v > 0 {
+		ob["up_mbps"] = v
+	}
+	if v := bandwidthToMbps(node.Extra["down"]); v > 0 {
+		ob["down_mbps"] = v
+	}
+	if v := anyToInt(node.Extra["recv-window"]); v > 0 {
+		ob["recv_window"] = v
+	}
+	if v := anyToInt(node.Extra["recv-window-conn"]); v > 0 {
+		ob["recv_window_conn"] = v
+	}
+	if v, ok := node.Extra["disable-mtu-discovery"].(bool); ok && v {
+		ob["disable_mtu_discovery"] = true
+	}
 }
 
 // applySingboxHysteriaParams 把 Node.Extra 里的 hy2 参数写成 sing-box 出站字段。
@@ -1157,6 +1205,7 @@ func NodeToMihomoProxy(node Node) string {
 func mihomoProxyToNode(p map[string]interface{}) *Node {
 	name, _ := p["name"].(string)
 	proto, _ := p["type"].(string)
+	proto = normalizeMihomoProtocol(proto)
 	server, _ := p["server"].(string)
 	port := 0
 	if v, ok := p["port"].(float64); ok {
@@ -1166,13 +1215,20 @@ func mihomoProxyToNode(p map[string]interface{}) *Node {
 	}
 	uuid, _ := p["uuid"].(string)
 	password, _ := p["password"].(string)
+	if password == "" {
+		password, _ = p["psk"].(string) // snell 用 psk
+	}
 	flow, _ := p["flow"].(string)
 	encryption, _ := p["encryption"].(string)
 
-	// TLS
+	// TLS（mihomo 的 trojan/hysteria/hysteria2/tuic/anytls 选项里没有 tls 字段，恒为 TLS）
 	tls := false
 	if v, ok := p["tls"].(bool); ok {
 		tls = v
+	}
+	switch proto {
+	case "trojan", "hysteria", "hysteria2", "tuic", "anytls":
+		tls = true
 	}
 	sni := ""
 	if v, ok := p["sni"].(string); ok && v != "" {
@@ -1209,6 +1265,20 @@ func mihomoProxyToNode(p map[string]interface{}) *Node {
 		"username",
 		// SS specific
 		"obfs-min-packet-size", "obfs-max-packet-size",
+		// Snell specific（psk 是凭据、version 出站必填）
+		"psk", "version", "reuse",
+		// AnyTLS specific
+		"idle-session-check-interval", "idle-session-timeout", "min-idle-session",
+		"disable-reuse", "client-metadata",
+		// SSH specific
+		"private-key", "private-key-passphrase", "host-key", "host-key-algorithms",
+		// Hysteria2 / TUIC 扩展
+		"cwnd", "udp-mtu", "handshake-timeout", "reduce-rtt", "heartbeat-interval",
+		"max-open-streams", "udp-over-stream", "udp-over-stream-version",
+		"max-udp-relay-packet-size", "max-datagram-frame-size",
+		"recv-window", "recv-window-conn", "fast-open",
+		// 安全包装（mihomo / sing-box 都认）
+		"shadow-tls-opts", "restls-opts", "jls-opts", "tlsmirror-opts",
 	}
 	for _, k := range copyKeys {
 		if v, ok := p[k]; ok {
@@ -1237,6 +1307,27 @@ func mihomoProxyToNode(p map[string]interface{}) *Node {
 		Encryption: encryption,
 		Extra:      extra,
 	}
+}
+
+// normalizeMihomoProtocol 把 mihomo 的代理类型名归一成面板 / 其它核心通用的名字。
+// mihomo 与 sing-box 的类型名并不一致（ss / shadowsocks、socks5 / socks、hy2 / hysteria2），
+// 原样透传会让外部订阅里的节点在 sing-box 订阅里被当成未知协议整条丢掉。
+func normalizeMihomoProtocol(t string) string {
+	switch strings.ToLower(t) {
+	case "ss":
+		return "shadowsocks"
+	case "ssr":
+		return "shadowsocksr"
+	case "socks5", "socks5h":
+		return "socks"
+	case "https":
+		return "http"
+	case "hy2":
+		return "hysteria2"
+	case "any-tls":
+		return "anytls"
+	}
+	return t
 }
 
 func formatURI(node Node) string {
@@ -1691,6 +1782,28 @@ func formatURI(node Node) string {
 		uri += "#" + url.PathEscape(node.Name)
 		return uri
 
+	case "anytls":
+		// anytls 有官方 URI 规范：anytls://[auth@]host[:port]/?sni=&insecure=
+		params := url.Values{}
+		if node.ServerName != "" {
+			params.Set("sni", node.ServerName)
+		}
+		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
+			params.Set("insecure", "1")
+		}
+		if fp := extraFingerprint(node.Extra); fp != "" {
+			params.Set("fp", fp)
+		}
+		if alpn := extraStringList(node.Extra["alpn"]); len(alpn) > 0 {
+			params.Set("alpn", strings.Join(alpn, ","))
+		}
+		uri := fmt.Sprintf("anytls://%s@%s:%d/",
+			strings.ReplaceAll(url.QueryEscape(node.Password), "+", "%20"), node.Host, node.Port)
+		if encoded := strings.ReplaceAll(params.Encode(), "+", "%20"); encoded != "" {
+			uri += "?" + encoded
+		}
+		return uri + "#" + url.PathEscape(node.Name)
+
 	case "http", "socks":
 		// http://user:pass@host:port#name / socks://user:pass@host:port#name
 		params := url.Values{}
@@ -1728,7 +1841,10 @@ func formatURI(node Node) string {
 		return uri
 
 	default:
-		return fmt.Sprintf("%s://%s:%d#%s", node.Protocol, node.Host, node.Port, node.Name)
+		// 无法用 URI 表达的协议（ssr / wireguard / snell / ssh / mieru / shadowquic …）：
+		// 宁可返回空 —— 返回 `xxx://host:port#name` 这种没有凭据的链接会被客户端导入成
+		// 一个永远连不上的"坏节点"，比没有更糟。
+		return ""
 	}
 }
 

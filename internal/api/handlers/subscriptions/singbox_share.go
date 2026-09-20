@@ -3,9 +3,11 @@ package subscriptions
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	realityutil "corefusion/internal/reality"
+	"corefusion/internal/subscription/formatter"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -451,26 +453,38 @@ func formatSupportedProtocols(format string) map[string]bool {
 			"socks": true, "http": true,
 		}
 	case "singbox_json":
-		// sing-box 客户端：支持面最广。注意 **naive 不列入** —— naive **出站**需要单独
-		// 编译（本机构建报 "not included in this build, rebuild with -tags
-		// with_naive_outbound"，官方默认构建同样不带），混进订阅会让客户端拒绝加载
-		// **整份**订阅（不是跳过该节点）。mixed 保留：渲染时映射成 http 出站。
+		// sing-box 客户端：支持面最广。注意：
+		// - **naive 不列入**：naive **出站**要单独编译（本机构建报 "not included in this
+		//   build, rebuild with -tags with_naive_outbound"，官方默认构建同样不带），
+		//   混进订阅会让客户端拒绝加载**整份**订阅（不是跳过该节点）。
+		// - **wireguard 不列入**：sing-box 1.13 已移除 wireguard 出站（改用 endpoint），
+		//   而订阅只输出 outbounds 段 → 表达不了（实测 "WireGuard outbound is deprecated
+		//   in sing-box 1.11.0 and removed in 1.13.0"）。
+		// - mixed 保留：渲染时映射成 http 出站。
 		return map[string]bool{
 			"vless": true, "vmess": true, "trojan": true,
 			"shadowsocks": true, "shadowsocks2022": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
 			"socks": true, "http": true, "mixed": true,
-			"anytls": true, "snell": true,
+			"anytls": true, "snell": true, "ssh": true,
 		}
 	case "mihomo_yaml":
-		// mihomo(clash.meta)：实测能渲染的是这些。anytls 有官方 URI 规范、mihomo 也有
-		// anytls 出站，链接与转换都通，故列入；snell / naive 既无标准 URI、mihomo 侧
-		// 也拿不到 ProxyMap，塞进去只会得到空条目，仍不列入。
+		// mihomo(clash.meta)。以 mihomo 自己的解析器（/opt/mihomo adapter/parser.go 的
+		// switch）为准：ss / ssr / socks5 / http / vmess / vless / snell / trojan /
+		// hysteria / hysteria2 / wireguard / tuic / shadowquic / gost-relay / ssh /
+		// mieru / anytls / tailscale / zerotier / openvpn / masque / sudoku /
+		// trusttunnel / easytier。
+		// 面板内部用规范名（shadowsocks / socks），mihomo 用别名（ss / socks5），故两种都列。
+		// 外部订阅节点走 ProxyMap 直出（原样交给 mihomo）；面板自己的入站靠链接转换，
+		// 无链接的协议（snell 等）在 mihomo 侧仍会自然跳过。
 		return map[string]bool{
 			"vless": true, "vmess": true, "trojan": true,
-			"shadowsocks": true, "shadowsocks2022": true,
+			"shadowsocks": true, "shadowsocks2022": true, "ss": true,
+			"shadowsocksr": true, "ssr": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
-			"socks": true, "http": true, "anytls": true,
+			"socks": true, "socks5": true, "http": true, "https": true,
+			"anytls": true, "snell": true, "ssh": true,
+			"wireguard": true, "mieru": true, "shadowquic": true, "gost-relay": true,
 		}
 	default:
 		return nil
@@ -484,6 +498,45 @@ func formatSupportedProtocols(format string) map[string]bool {
 // mKCP 系列 sing-box 没有对应传输。
 var singboxUnsupportedTransports = map[string]bool{
 	"xhttp": true, "splithttp": true, "kcp": true, "mkcp": true,
+}
+
+// singboxNodeDropReason 返回该节点**不能**进 sing-box 订阅的原因（空串=可以进）。
+// 这类节点一旦下发会让客户端拒绝加载**整份**订阅（不是跳过该节点），必须整条剔除。
+func singboxNodeDropReason(node *formatter.Node) string {
+	if node == nil {
+		return ""
+	}
+	if singboxUnsupportedTransports[strings.ToLower(node.Transport)] {
+		return "transport=" + node.Transport
+	}
+	// hysteria v1 出站的 up_mbps/down_mbps 是必填（缺了报 "missing upload speed"）
+	if strings.EqualFold(node.Protocol, "hysteria") {
+		if nodeExtraInt(node, "up") <= 0 && nodeExtraInt(node, "down") <= 0 {
+			return "hysteria v1 缺上下行带宽"
+		}
+	}
+	return ""
+}
+
+// nodeExtraInt 从 Node.Extra 取整数（兼容 float64 / 字符串 "200 mbps"）。
+func nodeExtraInt(node *formatter.Node, key string) int {
+	if node == nil || node.Extra == nil {
+		return 0
+	}
+	switch v := node.Extra[key].(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	case string:
+		fields := strings.Fields(v)
+		if len(fields) > 0 {
+			if n, err := strconv.Atoi(fields[0]); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 // filterRenderedNodesForFormat 按目标格式过滤渲染结果：不支持的协议 / 传输直接剔除，
@@ -507,9 +560,11 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 			dropped = append(dropped, fmt.Sprintf("%s(%s)", name, proto))
 			continue
 		}
-		if isSingbox && item.Node != nil && singboxUnsupportedTransports[strings.ToLower(item.Node.Transport)] {
-			dropped = append(dropped, fmt.Sprintf("%s(transport=%s)", name, item.Node.Transport))
-			continue
+		if isSingbox && item.Node != nil {
+			if reason := singboxNodeDropReason(item.Node); reason != "" {
+				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
+				continue
+			}
 		}
 		kept = append(kept, item)
 	}

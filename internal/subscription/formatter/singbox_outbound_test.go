@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -98,6 +99,46 @@ func TestSingBoxFormatterPortFallback(t *testing.T) {
 	ports, _ := ob["server_ports"].([]interface{})
 	if len(ports) != 1 || ports[0] != "10000:19999" {
 		t.Fatalf("server_ports 缺失: %v", ob["server_ports"])
+	}
+}
+
+// hysteria v1 与 v2 的出站字段口径不同：v1 的 obfs 是**字符串**、凭据叫 auth_str、
+// up_mbps/down_mbps 必填；v2 的 obfs 才是 {type,password} 对象（写错会报
+// "cannot unmarshal object into Go struct field Hysteria.obfs"）。
+func TestSingBoxFormatterHysteria1(t *testing.T) {
+	ob := renderFirstOutbound(t, Node{
+		Name: "hy1", Protocol: "hysteria", Host: "1.2.3.4", Port: 36712,
+		Extra: map[string]interface{}{
+			"auth-str": "AUTH", "obfs": "obfs1", "up": "100 Mbps", "down": "200 Mbps",
+		},
+	})
+	if ob["auth_str"] != "AUTH" {
+		t.Errorf("v1 凭据字段应为 auth_str: %v", ob["auth_str"])
+	}
+	if ob["obfs"] != "obfs1" {
+		t.Errorf("v1 的 obfs 必须是字符串: %#v", ob["obfs"])
+	}
+	if ob["up_mbps"] != float64(100) || ob["down_mbps"] != float64(200) {
+		t.Errorf("v1 带宽: up=%v down=%v", ob["up_mbps"], ob["down_mbps"])
+	}
+}
+
+// anytls 有官方 URI 规范；无法用 URI 表达的协议必须返回空 —— 返回
+// `xxx://host:port#name` 这种没有凭据的链接会被客户端导入成永远连不上的坏节点。
+func TestFormatURIAnyTLSAndUnknown(t *testing.T) {
+	uri := formatURI(Node{
+		Name: "n", Protocol: "anytls", Host: "1.2.3.4", Port: 8443, Password: "P@ss word",
+		ServerName: "a.example.com", Extra: map[string]interface{}{"skip-cert-verify": true},
+	})
+	for _, want := range []string{"anytls://P%40ss%20word@1.2.3.4:8443/?", "sni=a.example.com", "insecure=1"} {
+		if !strings.Contains(uri, want) {
+			t.Errorf("anytls 链接缺 %q: %s", want, uri)
+		}
+	}
+	for _, proto := range []string{"wireguard", "ssr", "snell", "ssh", "mieru"} {
+		if got := formatURI(Node{Protocol: proto, Host: "1.2.3.4", Port: 51820}); got != "" {
+			t.Errorf("%s 没有标准 URI，应返回空: %s", proto, got)
+		}
 	}
 }
 

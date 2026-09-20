@@ -2012,22 +2012,20 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 					if coreType == "" {
 						coreType = "singbox"
 					}
-					// 1) 重新生成并下发配置
-					if serverID > 1 && nodeServerSvcInst != nil {
-						// 远端节点：SyncData(applyAndStart=true) 写入新配置。
-						// 注意其默认 reload 策略是 NONE —— 核心**已在运行**时只写配置
-						// 不重启，用户变更不会生效，所以下面必须再显式重启一次
-						// （与前端保存入站后调用 /control restart 的做法一致）。
-						if _, err := nodeServerSvcInst.SyncServerData(ctx, serverID, true); err != nil {
-							return fmt.Errorf("sync server data: %w", err)
-						}
-					} else if configSyncSvc != nil {
-						if err := configSyncSvc.SyncNow(ctx); err != nil {
-							return fmt.Errorf("sync local config: %w", err)
-						}
+					// 1) 按核心重新生成并下发配置。
+					//    注意：SyncServerData(applyAndStart=true) 内部只生成 xray
+					//    配置（coreType 硬编码为 xray），sing-box 的配置不会更新，
+					//    因此这里必须走 configsync 的按核心同步入口。
+					if configSyncSvc == nil {
+						return fmt.Errorf("config sync service not available")
 					}
-					// 2) 重启核心加载新用户（sing-box 无热加接口）
-					if nodeServerSvcInst != nil {
+					if err := configSyncSvc.SyncServerCore(ctx, serverID, coreType); err != nil {
+						return fmt.Errorf("sync %s config for server %d: %w", coreType, serverID, err)
+					}
+					// 2) 远端节点：SyncConfig 只负责写文件，需要显式重启核心才会
+					//    加载新用户（sing-box 的 v2ray API 没有热加接口）。
+					//    本地节点在 SyncServerCore 内已 RestartIfRunning，不重复重启。
+					if serverID != 1 && nodeServerSvcInst != nil {
 						if err := nodeServerSvcInst.ControlCore(ctx, serverID, coreType, "restart"); err != nil {
 							return fmt.Errorf("restart core: %w", err)
 						}

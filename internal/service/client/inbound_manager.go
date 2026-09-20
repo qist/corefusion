@@ -175,11 +175,22 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 		return err
 	}
 
+	// 运行时下发：sing-box 没有热加接口，必须重载核心才会让用户恢复生效
+	if isSingboxInbound(inbound) {
+		go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "resume user "+email)
+		m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "resume user "+email)
+		return nil
+	}
+
 	// Extract credentials for xray API calls
 	var uuid, password, flow, method string
 	if userEntry != nil {
 		protocol := detectProtocol(inbound.Tag)
 		uuid, _ = userEntry["id"].(string)
+		if uuid == "" {
+			// sing-box 用的是 uuid 字段
+			uuid, _ = userEntry["uuid"].(string)
+		}
 		password, _ = userEntry["password"].(string)
 		auth, _ := userEntry["auth"].(string)
 		flow, _ = userEntry["flow"].(string)

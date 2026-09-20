@@ -974,6 +974,7 @@ export default {
       udpMask: 'UDP Mask',
       udpMaskHint: '支持类型: header-custom, mkcp-legacy, noise, salamander, sudoku, xdns, xicmp, realm',
       addTcpMask: '+ 添加 TCP Mask',
+      invalidJson: 'JSON 格式错误：{msg}',
       addUdpMask: '+ 添加 UDP Mask',
       // fragment
       packets: 'Packets',

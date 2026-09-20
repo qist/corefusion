@@ -793,7 +793,7 @@
               </template>
               <template v-if="entry.type === 'header-custom'">
                 <div class="hint" style="margin-bottom:4px">clients / servers / errors</div>
-                <el-input v-model="entry._json" type="textarea" :rows="4" placeholder='{"clients":[[]],"servers":[[]],"errors":[[]]}' @change="emit" />
+                <el-input v-model="entry._json" type="textarea" :rows="4" placeholder='{"clients":[[]],"servers":[[]],"errors":[[]]}' @change="onMaskJsonChange(entry)" />
               </template>
             </div>
             <el-button size="small" @click="rf._finalmaskTcp.push({type:'',settings:{},_json:''})">{{ t('protoCenter.finalmask.addTcpMask') }}</el-button>
@@ -863,7 +863,7 @@
               </template>
               <!-- header-custom (UDP) -->
               <template v-if="entry.type === 'header-custom'">
-                <el-input v-model="entry._json" type="textarea" :rows="3" placeholder='{"client":[],"server":[]}' @change="emit" />
+                <el-input v-model="entry._json" type="textarea" :rows="3" placeholder='{"client":[],"server":[]}' @change="onMaskJsonChange(entry)" />
               </template>
               <!-- xdns -->
               <template v-if="entry.type === 'xdns'">
@@ -1528,6 +1528,15 @@ function buildStreamSettings(ob) {
     if (ob._tlsDisableSystemRoot) tls.disableSystemRoot = true
     if (ob._tlsEchConfigList) tls.echConfigList = ob._tlsEchConfigList
     if (ob._tlsMasterKeyLog) tls.masterKeyLog = ob._tlsMasterKeyLog
+    // ⚠ 下面 5 项 parseOutbound 会读（tls.minVersion / maxVersion / cipherSuites /
+    // curvePreferences / pinnedPeerCertSha256），build 过去不写 → 保存一次就永久丢失。
+    // 格式与 xray 配置一致：cipherSuites 用冒号连接，pinnedPeerCertSha256 是数组。
+    if (ob._tlsMinVersion) tls.minVersion = ob._tlsMinVersion
+    if (ob._tlsMaxVersion) tls.maxVersion = ob._tlsMaxVersion
+    if (ob._tlsCipherSuites && ob._tlsCipherSuites.length) tls.cipherSuites = ob._tlsCipherSuites.join(':')
+    if (ob._tlsCurvePreferences && ob._tlsCurvePreferences.length) tls.curvePreferences = [...ob._tlsCurvePreferences]
+    const pinnedCerts = String(ob._tlsPinnedPeerCert || '').split(/[\s,]+/).filter(Boolean)
+    if (pinnedCerts.length) tls.pinnedPeerCertSha256 = pinnedCerts
     // Client params in settings array
     const settingsObj = {}
     if (ob._fingerprint) settingsObj.fingerprint = ob._fingerprint
@@ -2041,6 +2050,22 @@ function onFinalmaskUdpHopToggle(val) {
 
 function onOutboundCongestionChange(val) {
   emit()
+}
+
+// onMaskJsonChange 把 header-custom 的 JSON 文本框内容真正写回 entry.settings。
+// 过去文本框只绑定 entry._json（@change="emit"），谁都不解析它 → 用户改的内容保存时被丢掉。
+function onMaskJsonChange(entry) {
+  if (!entry) return
+  const raw = String(entry._json || '').trim()
+  if (!raw) { entry.settings = {}; emit(); return }
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') entry.settings = parsed
+    else throw new Error('not an object')
+    emit()
+  } catch (e) {
+    ElMessage.error(t('protoCenter.finalmask.invalidJson', { msg: e.message || e }))
+  }
 }
 
 function parseFinalmask(fm) {

@@ -305,6 +305,18 @@ func (s *Service) syncCore(ctx context.Context, coreType string, only []int64) e
 // For remote servers, pushes config via Agent gRPC.
 // For mirror nodes: inbounds come from the primary's DB, but core_configs
 // (routing, dns, etc.) and outbounds come from the mirror's own DB.
+// SyncServerCore 立即按「节点 + 核心」重新生成并下发该核心的配置。
+//
+// 与 SyncNow 的区别：SyncNow 会全量推送所有节点/核心，粒度过粗；而
+// DataSyncBuilder（SyncServerData）只会生成 **xray** 配置（coreType 硬编码），
+// 因此 sing-box 的用户/入站变更必须走这个按核心的入口，否则配置要等到下一次
+// 定时同步才会到达节点（表现为「库里改了但节点跑的是旧配置」）。
+//
+// 本地节点：内容变化时写盘并 RestartIfRunning；远端节点：经 Agent SyncConfig 下发。
+func (s *Service) SyncServerCore(ctx context.Context, serverID int64, coreType string) error {
+	return s.syncCoreForServer(ctx, coreType, serverID)
+}
+
 func (s *Service) syncCoreForServer(ctx context.Context, coreType string, serverID int64) error {
 	// Resolve the inbound source server ID. For mirror nodes, inbounds
 	// come from the primary (partner) server.

@@ -480,6 +480,10 @@ export default {
       qrCode: 'QR Code',
       qrGenerating: 'Generating QR code...',
       qrGenerateFailed: 'Failed to generate QR code',
+      shareFormatUri: 'Share Link',
+      shareFormatMihomo: 'Mihomo Config',
+      mihomoSnippetHint: 'Paste under proxies: in your mihomo / clash config',
+      mihomoSnippetEmpty: 'No mihomo snippet for this protocol',
       qrDataTooLarge: 'QR code data is too large, please copy the link instead',
       // Traffic reset
       resetTraffic: 'Reset Traffic',

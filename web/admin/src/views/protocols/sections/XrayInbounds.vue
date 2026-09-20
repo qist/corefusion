@@ -1707,7 +1707,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User, ArrowDown } from '@element-plus/icons-vue'
 import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
-import { splitNames, snisOfInbound, collectUsedSnis as collectUsedSnisFromInbounds, findNewConflicts } from './utils/sniUsage'
+import { splitNames, snisOfInbound, collectUsedSnis as collectUsedSnisFromInbounds, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
@@ -1763,9 +1763,23 @@ const allRealityTargets = computed(() => {
 })
 const showTargetMgr = ref(false)
 const newTarget = ref({ target: '', sni: '', type: 'tcp' })
-// 本节点已被占用的 SNI（Map: sni -> 占用方标签）。
+// 该节点上（xray + sing-box）已占用的 Server Names，由后端登记 ——
+// 编辑器自己只能看到本核心的入站，看不到同一节点另一核心占用的域名。
+const serverNameUsage = ref([])
+async function loadServerNameUsage() {
+  try {
+    const data = await client.get(`${nodeBase.value}/used-server-names`)
+    serverNameUsage.value = data?.items || (Array.isArray(data) ? data : [])
+  } catch { serverNameUsage.value = [] }
+}
+// 「其它入站」已占用的 SNI（Map: sni -> 占用方）：内存中的其它入站 + 后端登记的跨核心占用。
 // 口径：同节点内互斥、跨节点允许重复；数据源与 sing-box 编辑器共用 utils/sniUsage。
-const usedSnis = computed(() => collectUsedSnisFromInbounds(form.value, null))
+function usedByOthersMap(self) {
+  const map = collectUsedSnisFromInbounds(form.value, self)
+  return mergeUsedSnis(map, serverNameUsage.value, self?._id ?? self?.id ?? null)
+}
+// 本节点已被占用的 SNI（用于列表标记，包含自身）
+const usedSnis = computed(() => mergeUsedSnis(collectUsedSnisFromInbounds(form.value, null), serverNameUsage.value, null))
 // 当前编辑的入站（编辑模式），用于「排除自身」比较
 const selfInbound = computed(() => (editIdx.value >= 0 ? form.value[editIdx.value] : null))
 // 当前填写的 SNI 里「本次新增、已被本节点其它入站占用」的（即时提示，保存时同样拦截）
@@ -1774,7 +1788,7 @@ const sniConflicts = computed(() => {
   const my = splitNames(rf.streamSettings?.reality?.serverNamesStr)
   if (!my.length) return []
   const self = selfInbound.value
-  const others = collectUsedSnisFromInbounds(form.value, self)
+  const others = usedByOthersMap(self)
   const old = self ? snisOfInbound(self) : []
   return findNewConflicts(my, old, others).map(s => ({ sni: s, by: others.get(s) }))
 })
@@ -4966,7 +4980,7 @@ async function saveInbound() {
     const mySnis = splitNames(rf.streamSettings?.reality?.serverNamesStr)
     if (mySnis.length) {
       const self = selfInbound.value
-      const usedByOthers = collectUsedSnisFromInbounds(form.value, self)
+      const usedByOthers = usedByOthersMap(self)
       const dups = findNewConflicts(mySnis, self ? snisOfInbound(self) : [], usedByOthers)
       if (dups.length) {
         const details = dups.map(s => `"${s}" (已被 ${usedByOthers.get(s)} 使用)`).join(', ')
@@ -5282,6 +5296,7 @@ function emit() { /* no longer needed, saves directly to API */ }
 onMounted(() => {
   loadInbounds(); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
   prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
+  loadServerNameUsage() // 该节点已占用的 Server Names（含另一核心），用于标记与互斥
 })
 </script>
 

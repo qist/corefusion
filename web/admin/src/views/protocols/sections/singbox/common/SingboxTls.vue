@@ -113,18 +113,21 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../../../api/client'
 import { REALITY_PROTOCOLS, REALITY_TRANSPORTS } from '../utils/singboxDefaults'
-import { collectUsedSnis as collectUsedSnisShared } from '../../utils/sniUsage'
+import { collectUsedSnis as collectUsedSnisShared, mergeUsedSnis } from '../../utils/sniUsage'
 
 const { t } = useI18n()
 const props = defineProps({
   model: { type: Object, required: true },
   serverId: { type: Number, required: true },
   inbounds: { type: Array, default: () => [] },
+  // 该节点上所有入站（xray + sing-box）已占用的 Server Names，由后端登记：
+  // 编辑器自己只能看到本核心的入站，跨核心占用需要它（后端 /used-server-names）。
+  usedServerNames: { type: Array, default: () => [] },
 })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
@@ -146,9 +149,13 @@ function collectUsedSnis() {
   return collectUsedSnisShared(props.inbounds || [], props.model)
 }
 
-// 预设列表里的「已使用」标记数据源
+// 预设列表里的「已使用」标记数据源（本核心内存中的其它入站 + 后端登记的跨核心占用）
 function isPresetSniUsed(sni) {
-  return collectUsedSnis().has(String(sni || '').trim().toLowerCase())
+  const sn = String(sni || '').trim().toLowerCase()
+  if (!sn) return false
+  const map = collectUsedSnisShared(props.inbounds || [], props.model)
+  mergeUsedSnis(map, props.usedServerNames, props.model._id ?? null)
+  return map.has(sn)
 }
 
 // 证书中心证书列表
@@ -416,6 +423,27 @@ function initRealityTarget() {
     _realityTarget.value = server + ':' + port
   }
 }
+
+// 由私钥推导公钥并回填：sing-box 入站（服务端）不接受 public_key 字段，
+// 历史数据里没存公钥时，重新打开编辑器会看不到「公钥（客户端）」。
+// x25519 私钥可推导公钥，交给后端算（internal/reality.PublicKeyFromPrivate）。
+async function ensureRealityPublicKey() {
+  if (!props.model._realityEnabled) return
+  if (props.model._realityPublicKey) return
+  const pk = String(props.model._realityPrivateKey || '').trim()
+  if (!pk) return
+  try {
+    const data = await client.post(`/node-servers/${props.serverId}/binaries/reality-public-key`, { private_key: pk })
+    const pub = data?.publicKey || data?.password || ''
+    if (pub) props.model._realityPublicKey = pub
+  } catch {}
+}
+
+watch(
+  () => [props.model._realityEnabled, props.model._realityPrivateKey],
+  () => { ensureRealityPublicKey() },
+  { immediate: true }
+)
 
 // 组件挂载时加载证书和本地 Reality 服务器
 onMounted(() => {

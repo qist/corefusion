@@ -363,6 +363,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Edit, Delete, View, Refresh, RefreshRight, Plus, User } from '@element-plus/icons-vue'
 const { t } = useI18n()
 import client from '../../../api/client'
+import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -443,7 +444,7 @@ function noop() {}
 function showAdd() {
   editIdx.value = -1
   activeTab.value = 'basic'
-  Object.assign(rf, inboundDefaultsForType('vless'))
+  Object.assign(rf, inboundDefaultsForType('vless', takeFreePort(props.serverId)))
   dlg.value = true
 }
 
@@ -455,7 +456,7 @@ function showEdit(row) {
 }
 
 function onTypeChange() {
-  Object.assign(rf, inboundDefaultsForType(rf.type))
+  Object.assign(rf, inboundDefaultsForType(rf.type, takeFreePort(props.serverId)))
 }
 
 async function save() {
@@ -927,6 +928,7 @@ function getAccessHostPort(ib) {
 }
 
 onMounted(() => {
+  prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
   sync()
   loadCFDomains()
   loadCFIPEntries()

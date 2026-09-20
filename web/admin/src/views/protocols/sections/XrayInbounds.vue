@@ -1700,6 +1700,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More, MoreFilled, Edit, View, RefreshRight, Delete, Refresh, Plus, User, ArrowDown } from '@element-plus/icons-vue'
 import client from '../../../api/client'
+import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
@@ -3198,7 +3199,8 @@ function randomDomains(count, excludeSet) {
   return [...set]
 }
 function genRemark() { return 'Node-' + Math.random().toString(36).substring(2, 8) }
-function genPort() { return Math.floor(Math.random() * 50000 + 10000) }
+// 优先使用后端返回的「该节点未占用」端口，避免与已有入站/端点重复（含 TCP/UDP）
+function genPort() { return takeFreePort(props.serverId) }
 function genId(len) { const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < len; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
 function genPath() { return '/' + genId(10) }
 async function genWgKeyPair() {
@@ -5272,7 +5274,10 @@ async function loadInbounds() {
 
 function emit() { /* no longer needed, saves directly to API */ }
 
-onMounted(() => { loadInbounds(); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries() })
+onMounted(() => {
+  loadInbounds(); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
+  prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
+})
 </script>
 
 <style scoped>

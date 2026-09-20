@@ -59,6 +59,9 @@ type AgentApp struct {
 	// Traffic collector for periodic xray Stats API polling
 	trafficCollector *trafficCollector
 
+	// coreGate 核心门禁：未安装/未运行的核心不探测其 stats API
+	coreGate *coreProbeGate
+
 	// Rate limit manager (nft + tc) — lazily initialized when SyncData provides config
 	rateLimitMgr *ratelimit.Manager
 
@@ -206,6 +209,8 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	resolveSbAddr := func() string {
 		return resolveSingboxStatsAddr(context.Background(), dataDir, agentSettings)
 	}
+	// 核心门禁：xray / sing-box 未安装或未运行时，不再反复探测其 stats API
+	coreGate := newCoreProbeGate(procMgr)
 
 	app := &AgentApp{
 		cfg:                cfg,
@@ -224,7 +229,8 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		outboundConfigRepo: outboundConfigRepo,
 		caddySiteRepo:      caddySiteRepo,
 		logMgr:             logMgr,
-		trafficCollector:   newTrafficCollector(statsAddr, resolveSbAddr),
+		trafficCollector:   newTrafficCollector(statsAddr, resolveSbAddr, coreGate),
+		coreGate:           coreGate,
 		rateLimitMgr:       rateLimitMgr,
 	}
 
@@ -485,7 +491,7 @@ func (a *AgentApp) startOnlineUsersReporter(ctx context.Context) {
 	if statsAddr == "" {
 		return
 	}
-	a.onlineUsersReporter = newOnlineUsersReporter(statsAddr)
+	a.onlineUsersReporter = newOnlineUsersReporter(statsAddr, a.coreGate)
 	if a.database != nil {
 		a.onlineUsersReporter.SetEmailMapping(a.buildEmailToSubIDMapping(ctx))
 	}
@@ -501,7 +507,18 @@ func (a *AgentApp) startOnlineStatsPoller(ctx context.Context) {
 		return
 	}
 
-	a.onlineStatsPoller = ratelimit.NewOnlineStatsPoller(a.rateLimitMgr, statsAddr)
+	a.onlineStatsPoller = ratelimit.NewOnlineStatsPoller(a.rateLimitMgr, statsAddr).
+		WithShouldPoll(func() bool {
+			if a.coreGate == nil {
+				return true
+			}
+			return a.coreGate.Allowed("xray")
+		}).
+		WithResultCallback(func(ok bool) {
+			if a.coreGate != nil {
+				a.coreGate.Report("xray", ok)
+			}
+		})
 
 	// Build email → subscriptionID mapping from local DB
 	if a.database != nil {

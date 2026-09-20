@@ -35,22 +35,34 @@ type trafficCollector struct {
 	// singboxAddrResolver 懒解析 sing-box V2Ray API 地址（返回空表示未启用）。
 	// 每次采集都会调用，因为核可能在 Agent 启动后才安装/启用 v2ray_api。
 	singboxAddrResolver func() string
-	pollInterval        time.Duration
-	initialized         bool // false until first reset query completes
-	initializedSb       bool // sing-box 基线状态
+	// gate 核心门禁：未安装/未运行的核心不探测（避免无效连接与日志刷屏）。
+	gate          *coreProbeGate
+	pollInterval  time.Duration
+	initialized   bool // false until first reset query completes
+	initializedSb bool // sing-box 基线状态
 }
 
 // newTrafficCollector creates a traffic collector for the local cores' stats API.
 // singboxAddrResolver 返回该节点的 sing-box V2Ray API 地址（空 = 未启用，不采集）。
-func newTrafficCollector(statsAddr string, singboxAddrResolver func() string) *trafficCollector {
+// gate 为 nil 时不做门禁（仅测试用），生产路径应始终传入。
+func newTrafficCollector(statsAddr string, singboxAddrResolver func() string, gate *coreProbeGate) *trafficCollector {
 	if statsAddr == "" {
 		statsAddr = coredata.DefaultStatsAddr
 	}
 	return &trafficCollector{
 		client:              coredata.NewXrayClient(statsAddr),
 		singboxAddrResolver: singboxAddrResolver,
+		gate:                gate,
 		pollInterval:        30 * time.Second,
 	}
+}
+
+// probeAllowed 报告该核心当前是否允许探测（gate 为空时按允许处理）。
+func (tc *trafficCollector) probeAllowed(coreType string) bool {
+	if tc.gate == nil {
+		return true
+	}
+	return tc.gate.Allowed(coreType)
 }
 
 // collect queries both cores' stats APIs and returns traffic deltas as TrafficStat list.
@@ -60,24 +72,40 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 	// （例如刚给节点装了 sing-box 并启用 v2ray_api）。
 	tc.ensureSingboxClient()
 
+	// 门禁：核心没装/没跑就不探测。同时把基线标志复位，
+	// 等核心起来后重新建立基线（否则会把启动前的累计值当成增量上报）。
+	xrayOK := tc.probeAllowed("xray")
+	if !xrayOK {
+		tc.initialized = false
+	}
+	// sing-box 需要「门禁通过 + 有 v2ray_api 地址」两个条件
+	sbOK := tc.singboxClient != nil && tc.probeAllowed("singbox")
+	if !sbOK {
+		tc.initializedSb = false
+	}
+
 	// First call: reset counters to 0.
 	// Discard the returned values (they are old accumulated traffic).
 	// This ensures subsequent queries return only new traffic.
 	baseline := false
-	if !tc.initialized {
+	if xrayOK && !tc.initialized {
 		if _, err := tc.client.RawStats(ctx, true); err != nil {
 			// 单核心不可用时不能中断另一核心的上报：节点可能只跑 sing-box
 			// （xray 未启用 api/stats 时 10085 连不上），失败则下轮重试。
+			tc.report("xray", false)
 			log.Printf("traffic: initial reset xray stats failed (will retry): %v", err)
 		} else {
+			tc.report("xray", true)
 			tc.initialized = true
 			baseline = true
 		}
 	}
-	if tc.singboxClient != nil && !tc.initializedSb {
+	if sbOK && !tc.initializedSb {
 		if _, err := tc.singboxClient.RawStats(ctx, true); err != nil {
+			tc.report("singbox", false)
 			log.Printf("traffic: initial reset sing-box stats failed (will retry): %v", err)
 		} else {
+			tc.report("singbox", true)
 			tc.initializedSb = true
 			baseline = true
 		}
@@ -90,21 +118,25 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 
 	// Subsequent calls: reset_=true so the core returns deltas and resets counters。
 	// 两个核心各自独立处理失败，互不影响。
-	if tc.initialized {
+	if tc.initialized && xrayOK {
 		if resp, err := tc.client.RawStats(ctx, true); err != nil {
+			tc.report("xray", false)
 			log.Printf("traffic: query xray stats failed: %v", err)
 		} else if sr, err := coredata.ParseStatsResponse(resp); err != nil {
 			log.Printf("traffic: parse xray stats failed: %v", err)
 		} else {
+			tc.report("xray", true)
 			stats = append(stats, trafficStatsFromUsers(sr.Users, "xray")...)
 		}
 	}
 
-	if tc.singboxClient != nil && tc.initializedSb {
+	if sbOK && tc.initializedSb {
 		if resp, err := tc.singboxClient.RawStats(ctx, true); err != nil {
+			tc.report("singbox", false)
 			// 单核心失败不影响另一个核心的上报（例如 sing-box 滚动重启中）。
 			log.Printf("traffic: query sing-box stats failed: %v", err)
 		} else if sr, err := coredata.ParseStatsResponse(resp); err == nil {
+			tc.report("singbox", true)
 			stats = append(stats, trafficStatsFromUsers(sr.Users, "singbox")...)
 		} else {
 			log.Printf("traffic: parse sing-box stats failed: %v", err)
@@ -112,6 +144,13 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 	}
 
 	return stats, nil
+}
+
+// report 回填探测结果给门禁（连续失败会触发退避暂停）。
+func (tc *trafficCollector) report(coreType string, ok bool) {
+	if tc.gate != nil {
+		tc.gate.Report(coreType, ok)
+	}
 }
 
 // ensureSingboxClient 懒创建/更新 sing-box stats 客户端。

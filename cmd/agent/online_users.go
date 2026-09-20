@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/coredata"
+	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
 // onlineUsersReporter 定期查询 xray GetUsersStats，计算实时速率，
@@ -19,12 +19,14 @@ import (
 type onlineUsersReporter struct {
 	statsAddr string
 	client    *coredata.XrayClient
+	// gate 核心门禁：xray 未安装/未运行时直接跳过，不产生无效连接与报错
+	gate *coreProbeGate
 
 	mu       sync.RWMutex
 	emailMap map[string]int64 // xray client email (baseEmail) -> subscriptionID
 
 	// 速率差分：email -> 上次采样（累计流量 + 时间 + 首次出现）
-	prevMu     sync.Mutex
+	prevMu      sync.Mutex
 	prevTraffic map[string]*trafficSample
 
 	unsupportedOnce sync.Once
@@ -37,13 +39,14 @@ type trafficSample struct {
 	firstSeen int64
 }
 
-func newOnlineUsersReporter(statsAddr string) *onlineUsersReporter {
+func newOnlineUsersReporter(statsAddr string, gate *coreProbeGate) *onlineUsersReporter {
 	if statsAddr == "" {
 		statsAddr = coredata.DefaultStatsAddr
 	}
 	return &onlineUsersReporter{
 		statsAddr:   statsAddr,
 		client:      coredata.NewXrayClient(statsAddr),
+		gate:        gate,
 		emailMap:    make(map[string]int64),
 		prevTraffic: make(map[string]*trafficSample),
 	}
@@ -66,7 +69,14 @@ func (r *onlineUsersReporter) markUnsupported() {
 // Collect queries xray and returns the current online users (rate-differentiated).
 // Returns (nil, nil) when there are no online users; (nil, err) on transport error.
 func (r *onlineUsersReporter) Collect(ctx context.Context) ([]*agentpb.OnlineUserEntry, error) {
+	// xray 未安装/未运行时不必探测：直接返回空（面板会收到空列表，快照时间戳照常刷新）。
+	if r.gate != nil && !r.gate.Allowed("xray") {
+		return nil, nil
+	}
 	resp, err := r.client.GetUsersStats(ctx, true)
+	if r.gate != nil {
+		r.gate.Report("xray", err == nil)
+	}
 	if err != nil {
 		if strings.Contains(err.Error(), "Unimplemented") {
 			r.markUnsupported()
@@ -130,9 +140,9 @@ func (r *onlineUsersReporter) Collect(ctx context.Context) ([]*agentpb.OnlineUse
 				lastSeen = ls
 			}
 			sessions = append(sessions, &agentpb.OnlineSession{
-				Ip:            ipStr,
+				Ip:             ipStr,
 				ConnectedSince: firstSeen, // 近似：xray 不返回接入时间
-				LastSeen:      ls,
+				LastSeen:       ls,
 			})
 		}
 		if len(sessions) == 0 {

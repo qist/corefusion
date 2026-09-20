@@ -32,6 +32,12 @@ type OnlineStatsPoller struct {
 
 	// How often to poll the Stats API
 	pollInterval time.Duration
+
+	// shouldPoll 可选门禁：返回 false 时跳过本轮探测。
+	// 用于「xray 未安装/未运行就不去连 10085」——否则每 30s 刷一次连接失败日志。
+	shouldPoll func() bool
+	// onResult 可选：回填本轮探测结果，供门禁做连续失败退避。
+	onResult func(ok bool)
 }
 
 // NewOnlineStatsPoller creates a new online stats poller.
@@ -51,6 +57,18 @@ func NewOnlineStatsPoller(mgr *Manager, statsAddr string) *OnlineStatsPoller {
 // WithPollInterval sets the poll interval.
 func (p *OnlineStatsPoller) WithPollInterval(d time.Duration) *OnlineStatsPoller {
 	p.pollInterval = d
+	return p
+}
+
+// WithShouldPoll sets a gate called before each poll; returning false skips the round.
+func (p *OnlineStatsPoller) WithShouldPoll(fn func() bool) *OnlineStatsPoller {
+	p.shouldPoll = fn
+	return p
+}
+
+// WithResultCallback sets a callback receiving each poll result (for backoff).
+func (p *OnlineStatsPoller) WithResultCallback(fn func(ok bool)) *OnlineStatsPoller {
+	p.onResult = fn
 	return p
 }
 
@@ -122,9 +140,16 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 	if p.mgr == nil || !p.mgr.IsAvailable().NftAvailable {
 		return
 	}
+	// 门禁：核未安装/未运行时不探测（避免无意义连接与日志刷屏）
+	if p.shouldPoll != nil && !p.shouldPoll() {
+		return
+	}
 
 	// Call GetUsersStats to get online IPs per user
 	resp, err := p.client.GetUsersStats(ctx, false)
+	if p.onResult != nil {
+		p.onResult(err == nil)
+	}
 	if err != nil {
 		// Unimplemented means the xray version doesn't support this API
 		if strings.Contains(err.Error(), "Unimplemented") {

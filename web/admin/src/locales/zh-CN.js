@@ -819,6 +819,12 @@ export default {
       ntp: 'NTP 校时', services: '服务', certificate: '证书',
       certificateProviders: '证书提供者', httpClients: 'HTTP 客户端', networkNamespaces: '网络命名空间',
     },
+    validate: {
+      btn: '校验配置',
+      pass: '配置校验通过',
+      skipped: '核心未安装或不支持检查，已跳过二进制校验',
+      failed: '配置校验失败',
+    },
     preview: {
       loadFromFile: '读取配置文件',
       loadedFromFile: '已加载自',

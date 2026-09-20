@@ -909,7 +909,8 @@ const portHopRangeOptions = computed(() => {
 const ifaceList = ref([])
 async function loadInterfaces() {
   try {
-    const data = await client.get(`${nodeBase.value}/interfaces`)
+    // 网卡列表接口在 /binaries 下（与 xray 编辑器一致）：/node-servers/:id/binaries/interfaces
+    const data = await client.get(`${nodeBase.value}/binaries/interfaces`)
     if (Array.isArray(data)) ifaceList.value = data
   } catch { ifaceList.value = ['eth0', 'wg0', 'lo'] }
 }

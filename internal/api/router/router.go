@@ -2014,18 +2014,19 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 					}
 					// 1) 重新生成并下发配置
 					if serverID > 1 && nodeServerSvcInst != nil {
-						// 远端节点：SyncData(applyAndStart=true) 会写入新配置并让核心重启
+						// 远端节点：SyncData(applyAndStart=true) 写入新配置。
+						// 注意其默认 reload 策略是 NONE —— 核心**已在运行**时只写配置
+						// 不重启，用户变更不会生效，所以下面必须再显式重启一次
+						// （与前端保存入站后调用 /control restart 的做法一致）。
 						if _, err := nodeServerSvcInst.SyncServerData(ctx, serverID, true); err != nil {
 							return fmt.Errorf("sync server data: %w", err)
 						}
-						return nil
-					}
-					if configSyncSvc != nil {
+					} else if configSyncSvc != nil {
 						if err := configSyncSvc.SyncNow(ctx); err != nil {
 							return fmt.Errorf("sync local config: %w", err)
 						}
 					}
-					// 2) 本地节点：重启核心加载新用户
+					// 2) 重启核心加载新用户（sing-box 无热加接口）
 					if nodeServerSvcInst != nil {
 						if err := nodeServerSvcInst.ControlCore(ctx, serverID, coreType, "restart"); err != nil {
 							return fmt.Errorf("restart core: %w", err)

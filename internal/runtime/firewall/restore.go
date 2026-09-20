@@ -135,11 +135,26 @@ func RestoreRules(ctx context.Context, applier FirewallApplier, configFetcher fu
 		return
 	}
 
+	// 去重 + 冲突跳过：多个入站（甚至 xray 与 sing-box 同时）可能配了相同/重叠的
+	// 端口段，而 nft 前一条规则会吃掉后一条 —— 这里只保留第一条，其余跳过并告警，
+	// 避免恢复出一堆互相覆盖的规则。
+	applied := make([]RuleSpec, 0, len(configs))
+	seen := make(map[string]bool, len(configs))
 	for _, c := range configs {
 		ph := ParsePortHopFromConfig(c.ConfigJSON, c.Port)
 		if ph == nil {
 			continue
 		}
+		spec := RuleSpec{PortRange: ph.PortRange, TargetPort: ph.TargetPort, Interface: ph.Interface}
+		if seen[spec.Key()] {
+			continue // 完全重复
+		}
+		if conflicts := FindConflicts(applied, spec); len(conflicts) > 0 {
+			log.Printf("[Firewall] 跳过入站 %s 的端口跳跃规则：%s", c.Tag, FormatConflicts(conflicts, spec))
+			continue
+		}
+		seen[spec.Key()] = true
+		applied = append(applied, spec)
 
 		if err := applier.Apply(ph.PortRange, ph.TargetPort, ph.Interface); err != nil {
 			log.Printf("[Firewall] failed to restore rule for inbound %s (port %d, range %s): %v",

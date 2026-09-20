@@ -347,9 +347,10 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 					rs["serverNames"] = []string{sni}
 				}
 			}
-			// 客户端 uTLS 指纹：优先 tls.utls.fingerprint，其次面板内部字段 _utlsFingerprint，
-			// 最后补 chrome（与 xray 侧编辑器默认一致）——sing-box 入站没有 utls 字段，
-			// 编辑器只能把它存成内部字段。
+			// 客户端 uTLS 指纹：优先 tls.utls.fingerprint，其次面板内部字段 _utlsFingerprint
+			//（sing-box 入站没有 utls 字段，编辑器只能把它存成内部字段）。
+			// 这里**不补默认值** —— 编辑器下拉是 clearable 的，用户清空就该真的不带 fp
+			//（xray 侧同样由编辑器表单的默认值决定，不在订阅端硬编码）。
 			fp := ""
 			if v, ok := tlsSettings["fingerprint"].(string); ok {
 				fp = v
@@ -357,10 +358,9 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 			if fp == "" {
 				fp = getString(config, "_utlsFingerprint", "")
 			}
-			if fp == "" {
-				fp = "chrome"
+			if fp != "" {
+				rs["fingerprint"] = fp
 			}
-			rs["fingerprint"] = fp
 			if spx := getString(reality, "spider_x", ""); spx != "" {
 				rs["spiderX"] = spx
 			}

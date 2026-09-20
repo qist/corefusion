@@ -204,14 +204,32 @@ func (s *Service) checkServerNamesConflict(ctx context.Context, serverID, exclud
 }
 
 // UpdateTraffic updates traffic stats for a user by email.
-func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, upDelta int64, downDelta int64) error {
-	// Find all inbound configs across all servers
+// UpdateTraffic 把一份流量增量归户到入站用户，并累加订阅流量缓存。
+//
+// 归户范围控制（重要，此前缺这两层过滤会造成成倍虚高）：
+//   - serverID > 0：只匹配该节点上的入站。远端流量事件带节点信息，必须按节点归户，
+//     否则同一用户在多节点都有入站时，每个节点的流量都会加到所有节点上。
+//   - tag != ""：进一步限定到具体入站。
+//   - 无论命中多少个入站，订阅流量缓存对同一份增量**只累加一次**
+//     （此前按“匹配到的入站数量”累加，用户存在于 N 个入站时订阅流量虚高 N 倍）。
+func (s *Service) UpdateTraffic(ctx context.Context, serverID int64, tag string, email string, upDelta int64, downDelta int64) error {
+	// Find inbound configs (optionally scoped to a single server)
 	configs, err := s.ListAll(ctx)
 	if err != nil {
 		return err
 	}
 
+	attributed := false
 	for _, cfg := range configs {
+		if attributed {
+			break // 一份增量只归户到一个入站
+		}
+		if serverID > 0 && cfg.ServerID != serverID {
+			continue
+		}
+		if tag != "" && cfg.Tag != tag {
+			continue
+		}
 		var inbound map[string]interface{}
 		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
 			continue
@@ -271,8 +289,9 @@ func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, u
 			} else {
 				log.Printf("trafficsync: saved config %s successfully", cfg.Tag)
 			}
-			// Also update subscription traffic caches
+			// 订阅流量缓存只累加一次（见函数注释：按入站数量累加会成倍虚高）
 			s.updateSubscriptionTraffic(ctx, email, upDelta, downDelta)
+			attributed = true
 		}
 	}
 	return nil

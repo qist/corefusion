@@ -20,7 +20,7 @@ type NodeTrafficAccumulator interface {
 // to persist traffic deltas into the database.
 // Implemented by inboundconfig.Service.
 type InboundConfigUpdater interface {
-	UpdateTraffic(ctx context.Context, tag string, email string, upDelta int64, downDelta int64) error
+	UpdateTraffic(ctx context.Context, serverID int64, tag string, email string, upDelta int64, downDelta int64) error
 }
 
 // TrafficEventConsumer consumes TrafficEvent from the NodeServerManager's
@@ -31,11 +31,11 @@ type InboundConfigUpdater interface {
 //   - Database persistence (via InboundConfigUpdater)
 //   - Graceful shutdown via context cancellation
 type TrafficEventConsumer struct {
-	nodeMgr           *NodeServerManager
-	billingFilter     *BillingFilter
-	inboundConfigSvc  InboundConfigUpdater
-	serverRepo        *repository.NodeServerRepository
-	nodeAccum         NodeTrafficAccumulator
+	nodeMgr          *NodeServerManager
+	billingFilter    *BillingFilter
+	inboundConfigSvc InboundConfigUpdater
+	serverRepo       *repository.NodeServerRepository
+	nodeAccum        NodeTrafficAccumulator
 }
 
 // NewTrafficEventConsumer creates a new TrafficEventConsumer.
@@ -117,7 +117,7 @@ func (c *TrafficEventConsumer) processEvent(ctx context.Context, event *TrafficE
 	persistCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if err := c.inboundConfigSvc.UpdateTraffic(persistCtx, "", processed.Email, processed.Uplink, processed.Downlink); err != nil {
+	if err := c.inboundConfigSvc.UpdateTraffic(persistCtx, processed.ServerID, "", processed.Email, processed.Uplink, processed.Downlink); err != nil {
 		log.Printf("[TrafficEventConsumer] failed to update traffic for %s (server %d): %v",
 			processed.Email, processed.ServerID, err)
 	}

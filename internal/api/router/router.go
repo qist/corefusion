@@ -489,6 +489,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// mutex-protected write path as LocalAgent.SyncConfig, avoiding race conditions.
 	if processMgr != nil {
 		configSyncSvc.SetConfigWriter(processMgr)
+		// 本地节点写盘后重启核心：xray/sing-box 均不支持配置热加载（远端由 Agent 重启）
+		configSyncSvc.SetLocalCoreRestarter(processMgr)
 	}
 
 	// Inject NodeServerRepository as the server lister so configsync can

@@ -11,7 +11,7 @@ import (
 
 // InboundConfigService provides access to inbound configurations.
 type InboundConfigService interface {
-	UpdateTraffic(ctx context.Context, tag string, email string, upDelta int64, downDelta int64) error
+	UpdateTraffic(ctx context.Context, serverID int64, tag string, email string, upDelta int64, downDelta int64) error
 }
 
 // NodeTrafficAccumulator is an optional callback to accumulate xray user
@@ -219,7 +219,7 @@ func (s *Service) sync() {
 				continue
 			}
 			log.Printf("trafficsync: %s up=%d down=%d", u.Email, u.Uplink, u.Downlink)
-			if err := s.inboundSvc.UpdateTraffic(ctx, "", u.Email, u.Uplink, u.Downlink); err != nil {
+			if err := s.inboundSvc.UpdateTraffic(ctx, s.localSID, "", u.Email, u.Uplink, u.Downlink); err != nil {
 				log.Printf("trafficsync: failed to update traffic for %s: %v", u.Email, err)
 			}
 			nodeUp += u.Uplink

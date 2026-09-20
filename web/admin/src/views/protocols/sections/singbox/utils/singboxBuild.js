@@ -608,5 +608,20 @@ o._snellMode = ib.mode || ''
   o._customDomain = ib._customDomain || ''
   o._customPortMode = ib._customPortMode || 'custom'
   o._accessCustomPort = ib._accessCustomPort || 443
+  // Access Domain：必须写成与 xray 同款的 _accessDomain 对象。
+  // 订阅端读的是 config["_accessDomain"]（对象），而下面这些扁平的
+  // _accessDomainEnabled / _directDomain 等字段会被后端当作内部字段剔除，
+  // 只写扁平字段会导致「订阅里没有域名/端口，客户端访问不了」。
+  o._accessDomain = {
+    enabled: ib._accessDomainEnabled || false,
+    type: ib._accessDomainType || 'direct',
+    directDomain: ib._directDomain || '',
+    directPortMode: ib._directPortMode || 'config',
+    cfDomain: ib._cfDomain || '',
+    cfIP: ib._cfIP || '',
+    customDomain: ib._customDomain || '',
+    customPortMode: ib._customPortMode || 'custom',
+    customPort: ib._accessCustomPort || 443,
+  }
   return o
 }

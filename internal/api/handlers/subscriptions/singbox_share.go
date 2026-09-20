@@ -33,11 +33,64 @@ func isSingboxInboundConfig(config map[string]interface{}) bool {
 	return hasType
 }
 
+// ensureAccessDomain 把历史遗留的扁平字段（_accessDomainEnabled / _directDomain …）
+// 归一成订阅端真正读取的 _accessDomain 对象。
+//
+// 背景：xray 编辑器一直写的是 _accessDomain 对象，而 sing-box 编辑器此前只写扁平
+// 字段（且这些扁平字段会被后端当内部字段剔除），导致 sing-box 入站在订阅里
+// 拿不到域名与端口 —— 客户端就算拿到链接也访问不了。这里做一次归一，
+// 老数据无需重新保存即可生效。
+func ensureAccessDomain(config map[string]interface{}) {
+	if config == nil {
+		return
+	}
+	if _, ok := config["_accessDomain"].(map[string]interface{}); ok {
+		return
+	}
+	enabled, _ := config["_accessDomainEnabled"].(bool)
+	adType, _ := config["_accessDomainType"].(string)
+	if !enabled && adType == "" {
+		return // 未配置接入域名
+	}
+	str := func(key string) string {
+		v, _ := config[key].(string)
+		return v
+	}
+	port := 443
+	if v, ok := config["_accessCustomPort"].(float64); ok && v > 0 {
+		port = int(v)
+	}
+	ad := map[string]interface{}{
+		"enabled":        enabled,
+		"type":           adType,
+		"directDomain":   str("_directDomain"),
+		"directPortMode": str("_directPortMode"),
+		"cfDomain":       str("_cfDomain"),
+		"cfIP":           str("_cfIP"),
+		"customDomain":   str("_customDomain"),
+		"customPortMode": str("_customPortMode"),
+		"customPort":     port,
+	}
+	if ad["type"] == "" {
+		ad["type"] = "direct"
+	}
+	if ad["directPortMode"] == "" {
+		ad["directPortMode"] = "config"
+	}
+	if ad["customPortMode"] == "" {
+		ad["customPortMode"] = "custom"
+	}
+	config["_accessDomain"] = ad
+	log.Printf("[subscriptions] 入站 %v 使用扁平接入域名字段，已归一为 _accessDomain 对象", config["tag"])
+}
+
 // subscriptionView 把某个入站配置归一成「订阅渲染用的 xray 形态」。
 //
 // 返回值 skip=true 表示该节点不该出现在这个订阅里（例如该订阅用户在此节点没有账号，
 // 绝不复用他人凭证）。xray 入站原样返回。
 func subscriptionView(tag string, config map[string]interface{}, clientEmail string) (map[string]interface{}, bool) {
+	// 接入域名归一（xray 与 sing-box 都走一次，历史数据也能生效）
+	ensureAccessDomain(config)
 	if !isSingboxInboundConfig(config) {
 		return config, false
 	}

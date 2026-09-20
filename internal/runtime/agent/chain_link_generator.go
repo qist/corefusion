@@ -177,15 +177,19 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 		})
 		// 仅当该入口存在负载均衡时才注入 observatory，subjectSelector 用前缀隔离（§6.6.5）
 		// 使用 burstObservatory 配置参数，适合入口节点隐蔽性（§6.6.5）
+		// 依据 xray 官方文档：burstObservatory 使用嵌套 pingConfig 结构
 		if observatory == nil {
 			observatory = &ChainObservatory{
-				SubjectSelector:   []string{prefix},
-				ProbeURL:          "http://cp.cloudflare.com",
-				ProbeInterval:     "1m",
-				EnableConcurrency: true,
-				// burstObservatory 参数（§6.6.5）：interval=1m, sampling=10
-				// 探测周期 10 分钟，特征弱，适合入口节点
-				Sampling: 10,
+				SubjectSelector: []string{prefix},
+				PingConfig: &ChainPingConfig{
+					// burstObservatory 参数（§6.6.5）：interval=1m, sampling=10
+					// 探测周期 10 分钟，特征弱，适合入口节点
+					Destination: "https://connectivitycheck.gstatic.com/generate_204",
+					Interval:    "1m",
+					Sampling:    10,
+					Timeout:     "5s",
+					HttpMethod:  "HEAD",
+				},
 			}
 		} else {
 			// 多个负载均衡入口时，把所有前缀合并进同一个 observatory 的 subjectSelector

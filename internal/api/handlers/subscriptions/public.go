@@ -2297,6 +2297,111 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 		}
 	}
 
+	// Hysteria2：三种订阅格式（Mihomo / xray / sing-box）都从 Extra 取参数，
+	// 而 hy2 的参数在两种核心里放的位置完全不同：
+	//   sing-box 放在**顶层**（obfs{type,password} / up_mbps / down_mbps / bbr_profile）；
+	//   xray 放在 streamSettings.hysteriaSettings + finalmask（obfs / up / down / quicParams）。
+	// 这里统一归一到 mihomo 风格的扁平键（obfs / obfs-password / up / down / ports /
+	// hop-interval / bbr-profile / QUIC 窗口…）。缺了这段，服务端开了混淆、指定了 BBR
+	// 或开了动态端口时，订阅里拿到的就是"能连但参数不全"的裸节点（分享链接却正常）。
+	if protocol == "hysteria" || protocol == "hysteria2" {
+		hy := getMap(ss, "hysteriaSettings")
+		fm := finalMaskWithPortHop(config) // 已把 _portHop 合成到 quicParams.udpHop
+		var qp map[string]interface{}
+		if fm != nil {
+			extra["finalmask"] = fm
+			qp = getMap(fm, "quicParams")
+		}
+
+		obfsType := getString(hy, "obfs", "")
+		obfsPassword := getString(hy, "obfs_password", "")
+		if obfsPassword == "" {
+			obfsPassword = getString(hy, "obfsPassword", "")
+		}
+		if fm != nil {
+			if udp, ok := fm["udp"].([]interface{}); ok {
+				for _, item := range udp {
+					entry, ok := item.(map[string]interface{})
+					if !ok || entry["type"] != "salamander" {
+						continue
+					}
+					if obfsType == "" {
+						obfsType = "salamander"
+					}
+					if obfsPassword == "" {
+						if st := getMap(entry, "settings"); st != nil {
+							obfsPassword = getString(st, "password", "")
+						}
+					}
+				}
+			}
+		}
+		if obfsType != "" {
+			extra["obfs"] = obfsType
+		}
+		if obfsPassword != "" {
+			extra["obfs-password"] = obfsPassword
+		}
+
+		// 带宽：xray 写 hysteriaSettings.up/down，sing-box 写 up_mbps/down_mbps，
+		// brutal 拥塞时又只写在 finalmask.quicParams.brutalUp/Down。
+		if up := hysteriaBandwidth(hy, qp, "up", "up_mbps", "brutalUp"); up != "" {
+			extra["up"] = up
+		}
+		if down := hysteriaBandwidth(hy, qp, "down", "down_mbps", "brutalDown"); down != "" {
+			extra["down"] = down
+		}
+
+		// 动态端口 / 跳跃间隔（xray: hopPorts/hopInterval；finalmask: quicParams.udpHop）
+		ports := getString(hy, "hopPorts", "")
+		interval := valueToText(hy["hopInterval"])
+		if qp != nil {
+			if hop := getMap(qp, "udpHop"); hop != nil {
+				if ports == "" {
+					ports = getString(hop, "ports", "")
+				}
+				if interval == "" {
+					interval = valueToText(hop["interval"])
+				}
+			}
+		}
+		if ports != "" {
+			extra["ports"] = ports
+		}
+		if interval != "" {
+			extra["hop-interval"] = interval
+		}
+
+		// BBR 拥塞控制：xray 在 finalmask.quicParams.bbrProfile，sing-box 在顶层 bbr_profile
+		if bbr := getString(hy, "bbr_profile", ""); bbr != "" {
+			extra["bbr-profile"] = bbr
+		} else if qp != nil {
+			if bbr := getString(qp, "bbrProfile", ""); bbr != "" && bbr != "standard" {
+				extra["bbr-profile"] = bbr
+			}
+		}
+
+		// QUIC 窗口等：有值就下发（mihomo / sing-box 的字段名在这些键上是一致的）
+		if qp != nil {
+			for _, pair := range [][2]string{
+				{"initStreamReceiveWindow", "initial-stream-receive-window"},
+				{"maxStreamReceiveWindow", "max-stream-receive-window"},
+				{"initConnectionReceiveWindow", "initial-connection-receive-window"},
+				{"maxConnectionReceiveWindow", "max-connection-receive-window"},
+				{"maxIdleTimeout", "max-idle-timeout"},
+				{"keepAlivePeriod", "keep-alive-period"},
+				{"maxIncomingStreams", "max-incoming-streams"},
+			} {
+				if v := getInt(qp, pair[0], 0); v > 0 {
+					extra[pair[1]] = v
+				}
+			}
+			if v, ok := qp["disablePathMTUDiscovery"].(bool); ok && v {
+				extra["disable-path-mtu-discovery"] = true
+			}
+		}
+	}
+
 	// Sockopt
 	if sockopt := getMap(ss, "sockopt"); sockopt != nil {
 		if tfo, ok := sockopt["tcpFastOpen"].(bool); ok && tfo {
@@ -2314,6 +2419,76 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 		return nil
 	}
 	return extra
+}
+
+// hysteriaBandwidth 依次从 hysteriaSettings 的两个键、再从 finalmask.quicParams
+// 的 brutal 键里取带宽，统一成 "200 Mbps" 文本；都没有返回空串。
+func hysteriaBandwidth(hy, qp map[string]interface{}, directKey, mbpsKey, brutalKey string) string {
+	for _, key := range []string{directKey, mbpsKey} {
+		if v, ok := hy[key]; ok && v != nil {
+			if s := bandwidthText(v); s != "" {
+				return s
+			}
+		}
+	}
+	// finalmask 里的 brutalUp/brutalDown 只在 brutal 拥塞下才有效：用在 BBR 上会让
+	// sing-box 客户端反过来请求 brutal，与服务端设定的 bbr_profile 冲突
+	//（mihomoconv 也是这个口径）。
+	if qp != nil && isBrutalCongestion(qp) {
+		if v, ok := qp[brutalKey]; ok && v != nil {
+			return bandwidthText(v)
+		}
+	}
+	return ""
+}
+
+// isBrutalCongestion 判断 quicParams.congestion 是否为 brutal / force-brutal。
+func isBrutalCongestion(qp map[string]interface{}) bool {
+	cc := strings.ToLower(getString(qp, "congestion", ""))
+	return cc == "brutal" || cc == "force-brutal"
+}
+
+// bandwidthText 把带宽值统一成 mihomo / sing-box 都认的 "200 Mbps" 文本。
+func bandwidthText(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return ""
+		}
+		if _, err := strconv.ParseFloat(s, 64); err == nil {
+			return s + " Mbps"
+		}
+		return s
+	case float64:
+		if t <= 0 {
+			return ""
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64) + " Mbps"
+	case int:
+		if t <= 0 {
+			return ""
+		}
+		return strconv.Itoa(t) + " Mbps"
+	}
+	return ""
+}
+
+// valueToText 把标量值转成文本（nil / 空串返回空），用于 hopInterval 这类可能是
+// 数字也可能是字符串的字段。
+func valueToText(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(t)
+	}
+	return ""
 }
 
 func extractHTTPDisguiseOpts(header map[string]interface{}) map[string]interface{} {

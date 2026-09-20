@@ -454,13 +454,23 @@ func formatSupportedProtocols(format string) map[string]bool {
 	}
 }
 
-// filterRenderedNodesForFormat 按目标格式过滤渲染结果：不支持的协议直接剔除，
-// 避免客户端拿到无法解析的条目。
+// singboxUnsupportedTransports 是 sing-box 出站**表达不了**的传输（xray 专属）。
+// 只要订阅里混进一个，sing-box 客户端会因 "unknown transport type: xhttp" 拒绝
+// 加载**整个**订阅 —— 所以必须整条剔除，而不是原样下发。
+// 已用本机 sing-box（1.15）实测：xhttp / splithttp 报 unknown transport type；
+// mKCP 系列 sing-box 没有对应传输。
+var singboxUnsupportedTransports = map[string]bool{
+	"xhttp": true, "splithttp": true, "kcp": true, "mkcp": true,
+}
+
+// filterRenderedNodesForFormat 按目标格式过滤渲染结果：不支持的协议 / 传输直接剔除，
+// 避免客户端拿到无法解析的条目（甚至因此拒绝加载整个订阅）。
 func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format string) []renderedSubscriptionNode {
 	supported := formatSupportedProtocols(format)
 	if supported == nil {
 		return items
 	}
+	isSingbox := strings.ToLower(format) == "singbox_json"
 	kept := make([]renderedSubscriptionNode, 0, len(items))
 	dropped := make([]string, 0, 4)
 	for _, item := range items {
@@ -470,14 +480,18 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 			proto = strings.ToLower(item.Node.Protocol)
 			name = item.Node.Name
 		}
-		if proto == "" || supported[proto] {
-			kept = append(kept, item)
+		if proto != "" && !supported[proto] {
+			dropped = append(dropped, fmt.Sprintf("%s(%s)", name, proto))
 			continue
 		}
-		dropped = append(dropped, fmt.Sprintf("%s(%s)", name, proto))
+		if isSingbox && item.Node != nil && singboxUnsupportedTransports[strings.ToLower(item.Node.Transport)] {
+			dropped = append(dropped, fmt.Sprintf("%s(transport=%s)", name, item.Node.Transport))
+			continue
+		}
+		kept = append(kept, item)
 	}
 	if len(dropped) > 0 {
-		log.Printf("[subscriptions] format=%s 不支持以下协议，已从订阅中剔除: %s", format, strings.Join(dropped, ", "))
+		log.Printf("[subscriptions] format=%s 不支持以下条目，已从订阅中剔除: %s", format, strings.Join(dropped, ", "))
 	}
 	return kept
 }

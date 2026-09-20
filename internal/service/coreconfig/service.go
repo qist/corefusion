@@ -15,10 +15,10 @@ var SupportedCoreTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
 
 // CoreSections defines the ordered sections for each core type.
 var CoreSections = map[string][]string{
-	"xray":       {"log", "dns", "routing", "policy", "inbounds", "outbounds", "stats", "metrics", "api", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
-	"singbox":    {"log", "dns", "ntp", "certificate", "certificate_providers", "http_clients", "network_namespaces", "route", "inbounds", "outbounds", "services", "experimental"},
-	"hysteria2":  {"listen", "tls", "auth", "bandwidth", "quic", "trafficStats"},
-	"tuic":       {"server", "users", "certificate", "congestion_control"},
+	"xray":      {"log", "dns", "routing", "policy", "inbounds", "outbounds", "stats", "metrics", "api", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
+	"singbox":   {"log", "dns", "ntp", "certificate", "certificate_providers", "http_clients", "network_namespaces", "route", "inbounds", "outbounds", "services", "experimental"},
+	"hysteria2": {"listen", "tls", "auth", "bandwidth", "quic", "trafficStats"},
+	"tuic":      {"server", "users", "certificate", "congestion_control"},
 }
 
 // DefaultSectionJSON provides default JSON for each section.
@@ -32,7 +32,7 @@ var DefaultSectionJSON = map[string]map[string]string{
   "timestamp": true,
   "maskAddress": ""
 }`,
-		"dns":         `{}`,
+		"dns": `{}`,
 		"routing": `{
   "domainStrategy": "IPIfNonMatch",
   "domainMatcher": "",
@@ -58,31 +58,31 @@ var DefaultSectionJSON = map[string]map[string]string{
   {"protocol": "freedom", "tag": "direct"},
   {"protocol": "blackhole", "tag": "blocked"}
 ]`,
-		"stats": `{}`,
-		"metrics": `{}`,
-		"fakedns": `{}`,
-		"observatory":  `{}`,
+		"stats":            `{}`,
+		"metrics":          `{}`,
+		"fakedns":          `{}`,
+		"observatory":      `{}`,
 		"burstObservatory": `{}`,
 		"api": `{
   "tag": "api",
   "services": ["HandlerService", "LoggerService", "StatsService"]
 }`,
-		"version":    `{}`,
-		"geodata":   `{}`,
+		"version": `{}`,
+		"geodata": `{}`,
 	},
 	"singbox": {
-		"log":          `{"level":"info","timestamp":true}`,
-		"dns":          `{"servers":[],"rules":[],"final":""}`,
-		"ntp":          `{}`,
-		"certificate":  `{}`,
+		"log":                   `{"level":"info","timestamp":true}`,
+		"dns":                   `{"servers":[],"rules":[],"final":""}`,
+		"ntp":                   `{}`,
+		"certificate":           `{}`,
 		"certificate_providers": `[]`,
 		"http_clients":          `[]`,
 		"network_namespaces":    `[]`,
-		"route":       `{"rules":[],"auto_detect_interface":true,"final":"direct"}`,
-		"inbounds":    `[]`,
-		"outbounds":   `[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}]`,
-		"services":    `[]`,
-		"experimental":`{"v2ray_api":{"listen":"127.0.0.1:10086","stats":{"enabled":true}}}`,
+		"route":                 `{"rules":[],"auto_detect_interface":true,"final":"direct"}`,
+		"inbounds":              `[]`,
+		"outbounds":             `[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}]`,
+		"services":              `[]`,
+		"experimental":          `{"v2ray_api":{"listen":"127.0.0.1:10086","stats":{"enabled":true}}}`,
 	},
 	"hysteria2": {
 		"listen":       `":443"`,
@@ -102,7 +102,8 @@ var DefaultSectionJSON = map[string]map[string]string{
 
 // Service handles core config business logic.
 type Service struct {
-	repo *repository.CoreConfigRepository
+	repo            *repository.CoreConfigRepository
+	binaryValidator BinaryConfigValidator
 }
 
 // NewService creates a new core config service.
@@ -287,9 +288,46 @@ func (s *Service) List(ctx context.Context, serverID int64) (map[string][]entity
 }
 
 // Validate checks if a JSON/JSONC string is valid.
-func (s *Service) Validate(configJSON string) error {
+// Validate 校验配置：先做 JSON 语法检查，再用真实核心二进制做一次「能否启动」级别的检查。
+//
+// 只做语法检查不足以发现面板拼装配置时的字段问题——sing-box 对未知字段是严格
+// 解码（直接 FATAL），例如 dns.servers[].address、顶层 dns.fakeip、route 规则上的
+// strategy 都会让核心起不来，但 JSON 语法完全合法。因此这里会调用
+// binaries.CoreValidator 跑核心自带的 check 命令。
+//
+// 核心未安装或不支持检查命令时只会跳过二进制校验（Checked=false），不影响返回。
+func (s *Service) Validate(coreType, configJSON string) (ValidateResult, error) {
+	res := ValidateResult{}
 	if !ValidJSONC([]byte(configJSON)) {
-		return fmt.Errorf("invalid JSON")
+		return res, fmt.Errorf("invalid JSON")
 	}
-	return nil
+	res.JSONValid = true
+	if s.binaryValidator == nil {
+		return res, nil
+	}
+	checked, version, output, err := s.binaryValidator.ValidateConfig(coreType, []byte(configJSON))
+	res.Checked = checked
+	res.Version = version
+	res.Output = output
+	if err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// BinaryConfigValidator 用真实核心二进制校验配置。
+// 由 binaries.CoreValidator 实现（接口在此声明，避免包依赖倒置）。
+type BinaryConfigValidator interface {
+	ValidateConfig(coreType string, configJSON []byte) (checked bool, version string, output string, err error)
+}
+
+// SetBinaryValidator 注入核心二进制校验器（未注入时 Validate 只做 JSON 语法检查）。
+func (s *Service) SetBinaryValidator(v BinaryConfigValidator) { s.binaryValidator = v }
+
+// ValidateResult 描述一次配置校验的结果。
+type ValidateResult struct {
+	JSONValid bool   `json:"json_valid"`
+	Checked   bool   `json:"checked"` // 是否真的跑了核心二进制
+	Version   string `json:"version,omitempty"`
+	Output    string `json:"output,omitempty"`
 }

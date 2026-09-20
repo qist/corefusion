@@ -521,6 +521,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Sync cert content from DB to disk on startup
 	certSvc.SyncCertsToDisk(nil)
 	binaryResolver := binariesSvc.NewResolver(dataDir)
+	// 让配置校验跑真实核心二进制（sing-box check / xray -test）：
+	// 面板拼装配置时写入未知字段（如 dns.servers[].address、route 规则的 strategy）
+	// 在 sing-box 上会直接 FATAL，纯 JSON 语法检查发现不了。
+	coreConfigSvc.SetBinaryValidator(binariesSvc.NewValidator(binaryResolver))
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
 
 	// ── Start background schedulers with configurable intervals ──

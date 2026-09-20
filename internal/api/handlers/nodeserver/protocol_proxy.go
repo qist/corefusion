@@ -204,16 +204,49 @@ func (h *Handler) ValidateProtocol(c *gin.Context) {
 	var body struct {
 		ConfigJSON string `json:"config_json"`
 	}
-	if err := json.Unmarshal(stripped, &body); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+	// 空 body / 空 config_json 都是允许的：此时校验该节点「当前会下发的完整配置」
+	// （走与 config-file 相同的生成链路），用于发现面板拼装出来的非法字段。
+	if len(stripped) > 0 {
+		if err := json.Unmarshal(stripped, &body); err != nil {
+			response.BadRequest(c, "INVALID_REQUEST", err.Error())
+			return
+		}
+	}
+
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
 
-	if err := h.coreConfigSvc.Validate(body.ConfigJSON); err != nil {
-		response.BadRequest(c, "VALIDATION_FAILED", err.Error())
+	target := body.ConfigJSON
+	source := "request"
+	if target == "" {
+		generated, genErr := h.generateCoreConfig(c.Request.Context(), serverID, coreType)
+		if genErr != nil {
+			response.InternalError(c, "GENERATE_FAILED", genErr.Error())
+			return
+		}
+		target = string(generated)
+		source = "generated"
+	}
+
+	res, err := h.coreConfigSvc.Validate(coreType, target)
+	if err != nil {
+		msg := err.Error()
+		if res.Output != "" {
+			msg += "：" + res.Output
+		}
+		response.BadRequest(c, "VALIDATION_FAILED", msg)
 		return
 	}
-	response.OK(c, gin.H{"valid": true})
+	response.OK(c, gin.H{
+		"valid":   true,
+		"source":  source,
+		"checked": res.Checked,
+		"version": res.Version,
+		"output":  res.Output,
+	})
 }
 
 // GetConfigFile handles GET /api/v1/node-servers/:id/protocols/:coreType/config-file
@@ -222,6 +255,28 @@ func (h *Handler) ValidateProtocol(c *gin.Context) {
 // For remote nodes, calls the ReadConfigFile gRPC RPC on the Agent.
 // If reading from the node fails (e.g. file not found, agent not connected),
 // falls back to generating config from the database.
+// generateCoreConfig 用「与下发节点完全相同」的链路生成一份完整核心配置：
+// 读全部分段 → PrepareFullConfig（含 providers 合并、历史字段迁移、统计目标补全）。
+// 供 GetConfigFile 的回退路径与 ValidateProtocol 的「校验当前配置」模式复用。
+func (h *Handler) generateCoreConfig(ctx context.Context, serverID int64, coreType string) ([]byte, error) {
+	if h.coreConfigSvc == nil {
+		return nil, fmt.Errorf("core config service not configured")
+	}
+	fullConfig, err := h.coreConfigSvc.GetFull(ctx, serverID, coreType)
+	if err != nil {
+		return nil, err
+	}
+	return coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
+		Ctx:              ctx,
+		ServerID:         serverID,
+		CoreType:         coreType,
+		FullConfig:       fullConfig,
+		InboundProvider:  h.inboundConfigSvc,
+		OutboundProvider: h.outboundConfigSvc,
+		EndpointProvider: h.endpointConfigSvc,
+	})
+}
+
 func (h *Handler) GetConfigFile(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -265,24 +320,12 @@ func (h *Handler) GetConfigFile(c *gin.Context) {
 			response.InternalError(c, "NOT_CONFIGURED", "core config service not configured")
 			return
 		}
-		fullConfig, genErr := h.coreConfigSvc.GetFull(c.Request.Context(), serverID, coreType)
+		generated, genErr := h.generateCoreConfig(c.Request.Context(), serverID, coreType)
 		if genErr != nil {
-			response.NotFound(c, "PROTOCOL_NOT_FOUND", genErr.Error())
+			response.InternalError(c, "GENERATE_FAILED", genErr.Error())
 			return
 		}
-		data, err = coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
-			Ctx:              c.Request.Context(),
-			ServerID:         serverID,
-			CoreType:         coreType,
-			FullConfig:       fullConfig,
-			InboundProvider:  h.inboundConfigSvc,
-			OutboundProvider: h.outboundConfigSvc,
-			EndpointProvider: h.endpointConfigSvc,
-		})
-		if err != nil {
-			response.InternalError(c, "GENERATE_FAILED", err.Error())
-			return
-		}
+		data = generated
 	}
 	c.Data(200, "application/json", data)
 }

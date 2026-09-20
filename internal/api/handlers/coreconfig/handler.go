@@ -201,11 +201,17 @@ func (h *Handler) Validate(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Validate(body.ConfigJSON); err != nil {
+	res, err := h.svc.Validate(coreType, body.ConfigJSON)
+	if err != nil {
 		response.BadRequest(c, "VALIDATION_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"valid": true})
+	response.OK(c, gin.H{
+		"valid":   true,
+		"checked": res.Checked,
+		"version": res.Version,
+		"output":  res.Output,
+	})
 }
 
 func isValidCoreType(ct string) bool {

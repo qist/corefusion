@@ -819,6 +819,12 @@ export default {
       ntp: 'NTP', services: 'Services', certificate: 'Certificate',
       certificateProviders: 'Certificate Providers', httpClients: 'HTTP Clients', networkNamespaces: 'Network Namespaces',
     },
+    validate: {
+      btn: 'Validate config',
+      pass: 'Config validation passed',
+      skipped: 'Core binary missing or unsupported, binary check skipped',
+      failed: 'Config validation failed',
+    },
     preview: {
       loadFromFile: 'Load from file',
       loadedFromFile: 'Loaded from',

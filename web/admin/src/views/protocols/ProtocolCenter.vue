@@ -63,9 +63,18 @@
         <div v-if="activeSection">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <span style="font-size:15px;font-weight:600">{{ getLabel(activeSection) }}</span>
-            <div v-if="activeSection !== '_preview' && activeSection !== 'inbounds' && activeSection !== 'outbounds' && activeSection !== 'routing'">
-              <el-button size="small" @click="resetSection">{{ t('common.reset') }}</el-button>
-              <el-button size="small" type="primary" :loading="saving" @click="saveSection">{{ t('common.save') }}</el-button>
+            <div style="display:flex;align-items:center;gap:10px">
+              <!-- 用真实核心二进制校验「当前会下发的完整配置」（sing-box check / xray -test） -->
+              <span v-if="validateResult" :style="{fontSize:'12px', color: validateResult.ok ? '#67c23a' : '#f56c6c'}">
+                {{ validateResult.text }}
+              </span>
+              <el-button size="small" :loading="validating" @click="validateConfig">
+                {{ t('protoCenter.validate.btn') }}
+              </el-button>
+              <div v-if="activeSection !== '_preview' && activeSection !== 'inbounds' && activeSection !== 'outbounds' && activeSection !== 'routing'">
+                <el-button size="small" @click="resetSection">{{ t('common.reset') }}</el-button>
+                <el-button size="small" type="primary" :loading="saving" @click="saveSection">{{ t('common.save') }}</el-button>
+              </div>
             </div>
           </div>
           <!-- Component -->
@@ -230,6 +239,31 @@ const secData = ref(null)
 const secOutput = ref(undefined)
 const secJson = ref('')
 const saving = ref(false)
+const validating = ref(false)
+const validateResult = ref(null)
+
+// 用真实核心二进制校验「当前会下发的完整配置」：面板会先按相同链路生成配置
+// （含分段合并、历史字段迁移、endpoints/stats 补全），再跑 sing-box check /
+// xray -test。能发现语法检查看不到的字段问题（未知字段会让核心直接 FATAL）。
+async function validateConfig() {
+  validating.value = true
+  validateResult.value = null
+  try {
+    const res = await client.post(`${apiBase.value}/${selectedCore.value}/validate`, {})
+    const ver = res?.version ? `（${res.version}）` : ''
+    const text = res?.checked === false
+      ? t('protoCenter.validate.skipped')
+      : t('protoCenter.validate.pass') + ver
+    validateResult.value = { ok: true, text }
+    ElMessage.success(text)
+  } catch (e) {
+    const msg = e?.response?.data?.message || e?.message || t('common.failed')
+    validateResult.value = { ok: false, text: t('protoCenter.validate.failed') }
+    ElMessageBox.alert(msg, t('protoCenter.validate.failed'), { dangerouslyUseHTMLString: false, customStyle: { maxWidth: '640px' } }).catch(() => {})
+  } finally {
+    validating.value = false
+  }
+}
 
 const svc = reactive({service_id:0,state:'unknown',binary_installed:false,version:'',pid:0,cpu:0,mem:0})
 const acting = ref(false)

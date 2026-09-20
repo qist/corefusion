@@ -386,6 +386,16 @@ var xrayRequireTLS = map[string]bool{
 
 // extraFingerprint 取客户端 uTLS 指纹：内部构造写 client-fingerprint（mihomo 口径），
 // 外部节点可能写 fingerprint。
+// extraStringField 依次取 Extra 里第一个非空字符串（不同来源的键名不一致）。
+func extraStringField(extra map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := extra[k].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func extraFingerprint(extra map[string]interface{}) string {
 	if fp, ok := extra["client-fingerprint"].(string); ok && fp != "" {
 		return fp
@@ -526,8 +536,14 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 
 	for _, node := range nodes {
 		protocol := node.Protocol
-		if protocol == "hysteria2" {
+		switch protocol {
+		case "hysteria2":
+			// xray 侧的协议名是 hysteria（v2 靠 settings.version=2 表达）
 			protocol = "hysteria"
+		case "ss", "shadowsocks2022":
+			protocol = "shadowsocks"
+		case "mixed", "socks5":
+			protocol = "socks"
 		}
 		ob := map[string]interface{}{
 			"protocol": protocol,
@@ -574,6 +590,35 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			settings["version"] = 2
 			settings["address"] = node.Host
 			settings["port"] = node.Port
+		// shadowsocks / http / socks(mixed)：xray 出站都是 settings.servers[]，
+		// 且 ss 的加密方式字段名是 **method**（不是 mihomo 的 cipher，写错会
+		// `unknown cipher method`）。
+		// 漏掉这些分支时 settings 会是空对象 → xray 以
+		// `"servers" should have one and only one member` 拒绝**整份**客户端配置。
+		case "shadowsocks", "shadowsocks2022", "ss":
+			server := map[string]interface{}{
+				"address":  node.Host,
+				"port":     node.Port,
+				"password": node.Password,
+			}
+			if node.Encryption != "" {
+				server["method"] = node.Encryption
+			}
+			settings["servers"] = []map[string]interface{}{server}
+		case "socks", "socks5", "mixed", "http":
+			server := map[string]interface{}{
+				"address": node.Host,
+				"port":    node.Port,
+			}
+			user := extraStringField(node.Extra, "username", "user")
+			pass := extraStringField(node.Extra, "password", "pass")
+			if pass == "" {
+				pass = node.Password
+			}
+			if user != "" || pass != "" {
+				server["users"] = []map[string]interface{}{{"user": user, "pass": pass}}
+			}
+			settings["servers"] = []map[string]interface{}{server}
 		}
 		ob["settings"] = settings
 
@@ -1915,7 +1960,7 @@ func ParseURIToNode(uri string) *Node {
 	if len(parts) != 2 {
 		return nil
 	}
-	scheme := parts[0]
+	scheme := strings.ToLower(strings.TrimSpace(parts[0]))
 	body := parts[1]
 
 	switch scheme {
@@ -1929,7 +1974,9 @@ func ParseURIToNode(uri string) *Node {
 		return parseHysteria2URI(body, name)
 	case "tuic":
 		return parseTuicURI(body, name)
-	case "ss":
+	// shadowsocks / shadowsocks2022 是同一标准 URI 的别名：面板早期用
+	// shadowsocks:// 生成链接，不认它会让 ss 节点在订阅里被静默丢弃。
+	case "ss", "shadowsocks", "shadowsocks2022":
 		return parseSSURI(body, name)
 	}
 	return nil

@@ -130,3 +130,61 @@ func mustJSON(t *testing.T, v interface{}) string {
 	}
 	return string(b)
 }
+
+// xray 出站的 settings 不能是空对象 —— 之前只处理 vless/vmess/trojan/hysteria2，
+// ss / socks / http / mixed 一律写成 `settings: {}`，客户端会以
+// `"servers" should have one and only one member` 拒绝加载**整份**配置。
+func TestXrayFormatterSettingsForServersProtocols(t *testing.T) {
+	for _, c := range []struct {
+		node     Node
+		wantProt string
+	}{
+		{Node{Name: "ss1", Protocol: "shadowsocks", Host: "1.2.3.4", Port: 443,
+			Password: "pw", Encryption: "2022-blake3-aes-128-gcm"}, "shadowsocks"},
+		{Node{Name: "s1", Protocol: "socks", Host: "1.2.3.4", Port: 1080, Password: "pw"}, "socks"},
+		{Node{Name: "m1", Protocol: "mixed", Host: "1.2.3.4", Port: 1080}, "socks"},
+		{Node{Name: "h1", Protocol: "http", Host: "1.2.3.4", Port: 8080}, "http"},
+	} {
+		ob := renderFirstXrayOutbound(t, c.node)
+		if ob["protocol"] != c.wantProt {
+			t.Errorf("%s: protocol = %v, want %s", c.node.Name, ob["protocol"], c.wantProt)
+		}
+		settings, _ := ob["settings"].(map[string]interface{})
+		servers, _ := settings["servers"].([]interface{})
+		if len(servers) != 1 {
+			t.Fatalf("%s: settings.servers 应恰好 1 条（空 settings 会让 xray 拒载整份配置）: %#v",
+				c.node.Name, ob["settings"])
+		}
+		server, _ := servers[0].(map[string]interface{})
+		if server["address"] != "1.2.3.4" || server["port"] == nil {
+			t.Errorf("%s: servers[0] 缺 address/port: %v", c.node.Name, server)
+		}
+		if c.node.Protocol == "shadowsocks" {
+			// 字段名是 method（不是 mihomo 的 cipher；写错报 unknown cipher method）
+			if server["method"] != "2022-blake3-aes-128-gcm" || server["password"] != "pw" {
+				t.Errorf("ss: servers[0] 应带 method/password: %v", server)
+			}
+		}
+	}
+}
+
+// 面板早期生成 shadowsocks:// 链接；两个解析器（xray 订阅 / mihomo 订阅）都必须认这个别名，
+// 否则整批 ss 节点会被静默丢出订阅。
+func TestParseURIToNodeAcceptsShadowsocksAlias(t *testing.T) {
+	for _, uri := range []string{
+		"ss://YWVzLTI1Ni1nY206cHc=@1.2.3.4:443#t",
+		"shadowsocks://YWVzLTI1Ni1nY206cHc=@1.2.3.4:443#t",
+		"shadowsocks2022://YWVzLTI1Ni1nY206cHc=@1.2.3.4:443#t",
+	} {
+		node := ParseURIToNode(uri)
+		if node == nil {
+			t.Fatalf("解析失败: %s", uri)
+		}
+		if node.Password != "pw" || node.Host != "1.2.3.4" {
+			t.Errorf("%s: node = %+v", uri, node)
+		}
+		if node.Protocol != "shadowsocks" && node.Protocol != "ss" {
+			t.Errorf("%s: protocol = %s", uri, node.Protocol)
+		}
+	}
+}

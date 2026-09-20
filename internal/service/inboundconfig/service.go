@@ -232,13 +232,18 @@ func (s *Service) UpdateTraffic(ctx context.Context, tag string, email string, u
 					if !ok {
 						continue
 					}
-					// Match by email or user field
-					itemEmail, _ := m["email"].(string)
-					if itemEmail == "" {
-						itemEmail, _ = m["user"].(string)
-					}
-					if itemEmail == "" {
-						itemEmail, _ = m["name"].(string)
+					// Match by the identity field used by each protocol/core:
+					//   xray:   clients[].email / user
+					//   sing-box: users[].name（vless/vmess/trojan/ss/hysteria2/tuic/anytls…）
+					//             users[].username（socks/http/mixed/naive）
+					// 缺 username 会导致 socks/http/mixed/naive 用户的流量
+					// 「采集到了但永远不归户」（不报错、不落库）。
+					itemEmail := ""
+					for _, key := range []string{"email", "user", "name", "username"} {
+						if v, _ := m[key].(string); v != "" {
+							itemEmail = v
+							break
+						}
 					}
 					if itemEmail == email {
 						// Update traffic

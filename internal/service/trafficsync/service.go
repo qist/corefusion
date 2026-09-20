@@ -34,18 +34,19 @@ type SettingStore interface {
 //   - Subsequent queries: QueryStats(reset_=true) — each value IS the delta
 //     since last query. No baseline, no per-user first-sample skip.
 type Service struct {
-	settingSvc    SettingStore
-	inboundSvc    InboundConfigService
-	nodeAccum     NodeTrafficAccumulator
-	localSID      int64 // local node server ID (always 1)
-	interval      time.Duration
-	mu            sync.RWMutex
-	running       bool
-	stopCh        chan struct{}
-	initialized  bool // false until first reset query completes
-	client        *coredata.XrayClient     // xray stats client
-	singboxClient *coredata.XrayClient     // sing-box V2Ray API client (nil if not configured)
-	initializedSb bool // sing-box init state
+	settingSvc       SettingStore
+	inboundSvc       InboundConfigService
+	nodeAccum        NodeTrafficAccumulator
+	localSID         int64 // local node server ID (always 1)
+	interval         time.Duration
+	mu               sync.RWMutex
+	running          bool
+	stopCh           chan struct{}
+	initialized      bool                 // false until first reset query completes
+	client           *coredata.XrayClient // xray stats client
+	singboxClient    *coredata.XrayClient // sing-box V2Ray API client (nil if not configured)
+	initializedSb    bool                 // sing-box init state
+	warnedNilSingbox bool                 // sing-box 客户端未配置时只提示一次
 }
 
 // NewService creates a new traffic sync service.
@@ -85,10 +86,23 @@ func (s *Service) SetNodeAccumulator(acc NodeTrafficAccumulator) {
 // When set, the traffic sync service will also query sing-box's V2Ray API
 // (which is protocol-compatible with xray's StatsService) and merge
 // the traffic deltas.
+//
+// 必须用 coredata.NewV2RayClient：sing-box 注册的 gRPC 服务名是
+// v2ray.core.app.stats.command.StatsService，与 xray 的
+// xray.app.stats.command.StatsService 不同；用 xray 的客户端查 sing-box 会一直
+// Unimplemented，流量采集静默失效。
 func (s *Service) SetSingboxStatsAddr(addr string) {
-	if addr != "" {
-		s.singboxClient = coredata.NewXrayClient(addr)
+	if addr == "" {
+		log.Printf("trafficsync: sing-box stats address is empty, sing-box traffic will NOT be collected")
+		return
 	}
+	if s.client != nil && addr == s.client.Addr() {
+		log.Printf("trafficsync: WARNING sing-box stats address (%s) equals xray stats address; "+
+			"sing-box traffic collection is likely misconfigured", addr)
+	}
+	s.singboxClient = coredata.NewV2RayClient(addr)
+	log.Printf("trafficsync: sing-box stats client configured at %s (service=%s)",
+		addr, coredata.V2RayStatsServiceName)
 }
 
 // Start starts the traffic sync service.
@@ -156,6 +170,12 @@ func (s *Service) sync() {
 	// If neither initialized, wait for next cycle
 	if !s.initialized && (s.singboxClient == nil || !s.initializedSb) {
 		return
+	}
+	if !s.warnedNilSingbox && s.singboxClient == nil {
+		// 只提示一次：sing-box 客户端未配置时，sing-box 的流量不会被采集，
+		// 但 xray 侧仍正常，很容易被误认为「采集正常」。
+		s.warnedNilSingbox = true
+		log.Printf("trafficsync: sing-box stats client not configured (sing-box traffic collection disabled)")
 	}
 
 	// Collect user traffic from xray

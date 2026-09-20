@@ -12,14 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"corefusion/internal/model/entity"
 	agent "corefusion/internal/runtime/agent"
+	ratelimit "corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/process"
-	ratelimit "corefusion/internal/runtime/agent/ratelimit"
 	binariesSvc "corefusion/internal/service/binaries"
 	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
-	"corefusion/internal/model/entity"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 
@@ -200,6 +200,9 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 
 	// Resolve xray stats API address from local settings (or default)
 	statsAddr := resolveStatsAddr(context.Background(), &agentSettingStore{repo: settingRepo})
+	// sing-box 的 stats 走 V2Ray API（服务名与 xray 不同），地址从运行时配置解析；
+	// 拿不到表示本机没有 sing-box v2ray_api，则只上报 xray 流量。
+	singboxStatsAddr := resolveSingboxStatsAddr(context.Background(), dataDir, &agentSettingStore{repo: settingRepo})
 
 	app := &AgentApp{
 		cfg:                cfg,
@@ -218,7 +221,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		outboundConfigRepo: outboundConfigRepo,
 		caddySiteRepo:      caddySiteRepo,
 		logMgr:             logMgr,
-		trafficCollector:   newTrafficCollector(statsAddr),
+		trafficCollector:   newTrafficCollector(statsAddr, singboxStatsAddr),
 		rateLimitMgr:       rateLimitMgr,
 	}
 

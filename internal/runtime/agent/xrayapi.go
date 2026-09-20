@@ -353,14 +353,14 @@ func (a *LocalAgent) proxyStatsAny(ctx context.Context, req *agentpb.XrayAPIRequ
 	xrayConn, xrayErr := a.getXrayConn()
 	xrayResp := (*agentpb.XrayAPIResponse)(nil)
 	if xrayErr == nil {
-		xrayResp, _ = a.proxyStats(ctx, xrayConn, req)
+		xrayResp, _ = a.proxyStats(ctx, xrayConn, req, false)
 	}
 
 	// Try sing-box connection (V2Ray API)
 	singboxResp := (*agentpb.XrayAPIResponse)(nil)
 	sbConn, sbErr := a.getSingboxV2RayConn()
 	if sbErr == nil {
-		singboxResp, _ = a.proxyStats(ctx, sbConn, req)
+		singboxResp, _ = a.proxyStats(ctx, sbConn, req, true)
 	}
 
 	// If neither worked
@@ -404,7 +404,7 @@ func (a *LocalAgent) getSingboxV2RayConn() (*grpc.ClientConn, error) {
 	// Priority: singboxStatsAddr (if set) > sing-box config v2ray_api.listen > default
 	addr := a.singboxStatsAddr
 	if addr == "" {
-		addr = "127.0.0.1:8080" // sing-box V2Ray API default
+		addr = coredata.DefaultSingboxStatsAddr // sing-box V2Ray API 默认 127.0.0.1:10086
 	}
 
 	client := coredata.NewXrayClient(addr)
@@ -418,7 +418,7 @@ func (a *LocalAgent) getSingboxV2RayConn() (*grpc.ClientConn, error) {
 // mergeStatsResponses merges two XrayAPIResponse stats results into one.
 // Both responses contain JSON with "users" and "inbounds" arrays.
 func mergeStatsResponses(responses ...*agentpb.XrayAPIResponse) (*agentpb.XrayAPIResponse, error) {
-	mergedUsers := make(map[string]map[string]int64)  // email -> {uplink, downlink}
+	mergedUsers := make(map[string]map[string]int64) // email -> {uplink, downlink}
 	mergedInbounds := make(map[string]map[string]int64)
 
 	for _, resp := range responses {
@@ -505,19 +505,34 @@ func toInt64(v interface{}) (int64, bool) {
 	}
 }
 
-func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
-	client := statsCommand.NewStatsServiceClient(conn)
+// proxyStats 通过给定连接代理 stats 请求。
+//
+// singbox=true 时必须以 sing-box 注册的服务名
+// （v2ray.core.app.stats.command.StatsService）调用：sing-box 与 xray 的 stats
+// protobuf 字段一致但服务名不同，用 xray 的客户端查 sing-box 会一直得到
+// Unimplemented，而调用方往往「只用一个成功的结果」，于是静默退化成只有 xray 数据。
+func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req *agentpb.XrayAPIRequest, singbox bool) (*agentpb.XrayAPIResponse, error) {
+	queryStats := func(r *statsCommand.QueryStatsRequest) (*statsCommand.QueryStatsResponse, error) {
+		if singbox {
+			resp := &statsCommand.QueryStatsResponse{}
+			if err := conn.Invoke(ctx, coredata.SingboxStatsMethod("QueryStats"), r, resp); err != nil {
+				return nil, err
+			}
+			return resp, nil
+		}
+		return statsCommand.NewStatsServiceClient(conn).QueryStats(ctx, r)
+	}
 
 	switch req.Method {
 	case "getStats":
-		resp, err := client.QueryStats(ctx, &statsCommand.QueryStatsRequest{Reset_: false})
+		resp, err := queryStats(&statsCommand.QueryStatsRequest{Reset_: false})
 		if err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
 		}
 		return buildStatsResponse(resp)
 
 	case "resetStats":
-		_, err := client.QueryStats(ctx, &statsCommand.QueryStatsRequest{Reset_: true})
+		_, err := queryStats(&statsCommand.QueryStatsRequest{Reset_: true})
 		if err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
 		}
@@ -530,7 +545,7 @@ func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req 
 		if err := json.Unmarshal(req.Payload, &payload); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse payload: %v", err)}, nil
 		}
-		resp, err := client.QueryStats(ctx, &statsCommand.QueryStatsRequest{
+		resp, err := queryStats(&statsCommand.QueryStatsRequest{
 			Pattern: fmt.Sprintf("user>>>%s>>>traffic>>>", payload.Email),
 			Reset_:  false,
 		})
@@ -546,7 +561,7 @@ func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req 
 		if err := json.Unmarshal(req.Payload, &payload); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse payload: %v", err)}, nil
 		}
-		_, err := client.QueryStats(ctx, &statsCommand.QueryStatsRequest{
+		_, err := queryStats(&statsCommand.QueryStatsRequest{
 			Pattern: fmt.Sprintf("user>>>%s>>>traffic>>>", payload.Email),
 			Reset_:  true,
 		})
@@ -953,9 +968,10 @@ func rewriteCertPaths(configJSON json.RawMessage, dataDir string) json.RawMessag
 // to the Agent's local filesystem.
 //
 // Examples:
-//   /opt/corefusion/data/certs/gg/cert.pem → /opt/corefusion-agent/data/certs/gg/cert.pem
-//   ../../../certs/gg/cert.pem             → /opt/corefusion-agent/data/certs/gg/cert.pem
-//   certs/gg/cert.pem                      → /opt/corefusion-agent/data/certs/gg/cert.pem
+//
+//	/opt/corefusion/data/certs/gg/cert.pem → /opt/corefusion-agent/data/certs/gg/cert.pem
+//	../../../certs/gg/cert.pem             → /opt/corefusion-agent/data/certs/gg/cert.pem
+//	certs/gg/cert.pem                      → /opt/corefusion-agent/data/certs/gg/cert.pem
 func rewritePathToLocal(path, dataDir string) string {
 	// Find "certs/" in the path — everything from there is the relative part
 	idx := strings.Index(path, "certs/")

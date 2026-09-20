@@ -544,12 +544,23 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			if node.Protocol == "vless" && node.Flow != "" {
 				user["flow"] = node.Flow
 			}
+			// Xray 25+ 要求 VLESS 的每个 user **显式**带 encryption（至少 "none"），
+			// 缺了会报 `VLESS users: please add/set "encryption":"none" for every user`
+			// 让**整份**客户端配置加载失败；新版 VLESS 加密串也写在这里（实测放在
+			// user 上或两处都写都被接受，只写 settings 不行）。
+			if node.Protocol == "vless" {
+				enc := node.Encryption
+				if enc == "" {
+					enc = "none"
+				}
+				user["encryption"] = enc
+			}
 			settings["vnext"] = []map[string]interface{}{{
 				"address": node.Host,
 				"port":    node.Port,
 				"users":   []map[string]interface{}{user},
 			}}
-			// Add VLESS encryption if configured
+			// 兼容旧客户端：同时在 settings 层写一份（Xray 26 实测两处都写也 OK）
 			if node.Protocol == "vless" && node.Encryption != "" && node.Encryption != "none" {
 				settings["encryption"] = node.Encryption
 			}
@@ -597,14 +608,19 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		if ro, ok := node.Extra["reality-opts"].(map[string]interface{}); ok {
 			streamSettings["security"] = "reality"
 			realitySettings := map[string]interface{}{}
-			if pk, ok := ro["public-key"].(string); ok {
-				realitySettings["serverNames"] = []string{node.ServerName}
+			// 客户端 REALITY 用的是 serverName（**单数**）；serverNames 是**服务端**字段，
+			// Xray 25+ 见到客户端写 serverNames 会直接报
+			// `non-empty "serverNames", please use "serverName" instead` → 整份配置拒载。
+			if node.ServerName != "" {
+				realitySettings["serverName"] = node.ServerName
+			}
+			if pk, ok := ro["public-key"].(string); ok && pk != "" {
 				realitySettings["publicKey"] = pk
 			}
-			if sid, ok := ro["short-id"].(string); ok {
+			if sid, ok := ro["short-id"].(string); ok && sid != "" {
 				realitySettings["shortId"] = sid
 			}
-			if fp, ok := node.Extra["fingerprint"].(string); ok {
+			if fp := extraFingerprint(node.Extra); fp != "" {
 				realitySettings["fingerprint"] = fp
 			}
 			streamSettings["realitySettings"] = realitySettings
@@ -645,14 +661,14 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			streamSettings["xhttpSettings"] = xhttpSettings
 		}
 		if kcpOpts, ok := node.Extra["kcp-settings"].(map[string]interface{}); ok {
+			// 注意：Xray 25+ 已移除 kcpSettings.header / seed（写进客户端配置会直接
+			// "feature mkcp header & seed has been removed"，整份配置加载失败）——
+			// 它们改由 finalmask.udp 的 mkcp-legacy 表达，见下方 finalmask 合并。
 			kcpSettings := map[string]interface{}{}
-			for _, key := range []string{"mtu", "tti", "uplinkCapacity", "downlinkCapacity", "congestion", "readBufferSize", "writeBufferSize", "seed"} {
+			for _, key := range []string{"mtu", "tti", "uplinkCapacity", "downlinkCapacity", "congestion", "readBufferSize", "writeBufferSize"} {
 				if value, exists := kcpOpts[key]; exists {
 					kcpSettings[key] = value
 				}
-			}
-			if headerType, ok := kcpOpts["headerType"].(string); ok && headerType != "" {
-				kcpSettings["header"] = map[string]interface{}{"type": headerType}
 			}
 			if len(kcpSettings) > 0 {
 				streamSettings["kcpSettings"] = kcpSettings
@@ -692,6 +708,37 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 		if finalmask, ok := node.Extra["finalmask"].(map[string]interface{}); ok && len(finalmask) > 0 {
 			streamSettings["finalmask"] = finalmask
+		}
+		// mkcp 的 header / seed 迁到 finalmask.udp（type=mkcp-legacy）——Xray 25+ 的新口径，
+		// 与服务端运行配置一致（server 也是这么写的）。链接仍是老的 headerType/seed 参数，
+		// 在这里转回去。
+		if kcpOpts, ok := node.Extra["kcp-settings"].(map[string]interface{}); ok {
+			var udp []interface{}
+			if fm, ok := streamSettings["finalmask"].(map[string]interface{}); ok {
+				if exist, ok := fm["udp"].([]interface{}); ok {
+					udp = append(udp, exist...)
+				}
+			}
+			if headerType, ok := kcpOpts["headerType"].(string); ok && headerType != "" && headerType != "none" {
+				udp = append(udp, map[string]interface{}{
+					"type":     "mkcp-legacy",
+					"settings": map[string]interface{}{"header": headerType, "value": ""},
+				})
+			}
+			if seed, ok := kcpOpts["seed"].(string); ok && seed != "" {
+				udp = append(udp, map[string]interface{}{
+					"type":     "mkcp-legacy",
+					"settings": map[string]interface{}{"header": "", "value": seed},
+				})
+			}
+			if len(udp) > 0 {
+				fm, _ := streamSettings["finalmask"].(map[string]interface{})
+				if fm == nil {
+					fm = map[string]interface{}{}
+				}
+				fm["udp"] = udp
+				streamSettings["finalmask"] = fm
+			}
 		}
 		if node.Protocol == "hysteria2" {
 			hysteriaSettings := map[string]interface{}{"version": 2}

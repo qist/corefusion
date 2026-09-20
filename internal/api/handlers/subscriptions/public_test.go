@@ -464,10 +464,15 @@ func TestXrayFormatterFromRawLinksPreservesKCPAndHysteria2Fields(t *testing.T) {
 
 	for _, want := range []string{
 		"\"address\": \"www.example.com\"",
+		// VLESS 的每个 user 必须显式带 encryption（Xray 25+ 强制，缺了整份配置加载失败）
+		"\"encryption\": \"none\"",
 		"\"network\": \"kcp\"",
 		"\"kcpSettings\": {",
-		"\"seed\": \"SwOzlkxeZpKaCxWysYucYQ==\"",
-		"\"type\": \"wireguard\"",
+		// mkcp 的 header/seed 已从 kcpSettings 迁到 finalmask.udp 的 mkcp-legacy 条目
+		// （写回 kcpSettings.header/seed 会被 Xray 26 拒绝：feature has been removed）
+		"\"type\": \"mkcp-legacy\"",
+		"\"header\": \"wireguard\"",
+		"\"value\": \"SwOzlkxeZpKaCxWysYucYQ==\"",
 		"\"protocol\": \"hysteria\"",
 		"\"network\": \"hysteria\"",
 		"\"auth\": \"i+cvb54Txqci333NMLE+xWoyGD13hLkzrRZxXaV8qYo=\"",

@@ -31,6 +31,24 @@ func TestGenerateAuthLinkKeepsUserinfoSeparator(t *testing.T) {
 	}
 }
 
+// xray 的 socks/http 客户端凭据字段是 user/pass（不是 username/password），
+// 别名取不到的话生成的链接就没有凭据。
+func TestGenerateAuthLinkSupportsUserPassAlias(t *testing.T) {
+	link := Generate(Node{
+		Tag:      "t",
+		Protocol: "http",
+		Host:     "1.2.3.4",
+		Port:     8080,
+		Settings: map[string]interface{}{
+			"clients": []interface{}{map[string]interface{}{"user": "u@x.com", "pass": "p#ss"}},
+		},
+		StreamSettings: map[string]interface{}{"security": "none"},
+	})
+	if !strings.HasPrefix(link, "http://u%40x.com:p%23ss@1.2.3.4:8080?") {
+		t.Fatalf("http 链接未取到 user/pass: %s", link)
+	}
+}
+
 // anytls 有官方 URI 规范：anytls://[auth@]host[:port]/?sni=&insecure=
 // （Shadowrocket 可直接导入，所以不能用"无标准 scheme"当理由跳过）。
 func TestGenerateAnyTLSLink(t *testing.T) {

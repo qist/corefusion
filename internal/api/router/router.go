@@ -1734,9 +1734,11 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 						return listen, nil
 					},
 				}))
-				// sing-box V2Ray API client (sing-box's experimental.v2ray_api uses
-				// the same gRPC StatsService protobuf as xray, so XrayClient works)
-				localSingboxClient := coredata.NewXrayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
+				// sing-box V2Ray API client。注意：sing-box 与 xray 的 stats protobuf
+				// 字段一致，但 gRPC 服务名不同（sing-box 用
+				// v2ray.core.app.stats.command.StatsService），必须用 NewV2RayClient，
+				// 否则查询一直 Unimplemented，实时速率里 sing-box 部分恒为 0。
+				localSingboxClient := coredata.NewV2RayClient(coredata.ResolveStatsAddr(context.Background(), coredata.StatsAddrDeps{
 					SettingGetter: func(ctx context.Context, key string) (string, error) {
 						return systemSettingSvc.GetByKey(ctx, key)
 					},

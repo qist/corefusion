@@ -16,6 +16,31 @@ import (
 // DefaultStatsAddr 是 xray stats API 的默认地址。
 const DefaultStatsAddr = "127.0.0.1:10085"
 
+// DefaultSingboxStatsAddr 是 sing-box V2Ray API 的默认地址
+// （与 coreconfig 的 defaultSingboxV2RayAPIListen 保持一致）。
+const DefaultSingboxStatsAddr = "127.0.0.1:10086"
+
+// stats gRPC 服务名。两者 protobuf 消息完全相同，只有服务名不同：
+//
+//   - xray 注册：xray.app.stats.command.StatsService
+//
+//   - sing-box 注册：v2ray.core.app.stats.command.StatsService
+//
+//     后者见 sing-box 源码 experimental/v2rayapi/stats.go：
+//     `StatsService_ServiceDesc.ServiceName = "v2ray.core.app.stats.command.StatsService"`
+//
+// 用错服务名会得到 `Unimplemented desc = unknown service ...`，
+// 而 sing-box 与 xray 常常同时运行在不同端口，很容易被误判成「拿到了数据」。
+const (
+	XrayStatsServiceName  = "xray.app.stats.command.StatsService"
+	V2RayStatsServiceName = "v2ray.core.app.stats.command.StatsService"
+)
+
+// SingboxStatsMethod 返回 sing-box V2Ray API 的完整方法名（供 grpc.Invoke 使用）。
+func SingboxStatsMethod(method string) string {
+	return "/" + V2RayStatsServiceName + "/" + method
+}
+
 // LocalServerID 是本地节点（面板的 xray 直连节点）的固定 server ID。
 // 此约定此前在 xraystats/xraycontrol handler 中各自硬编码为 localServerID = 1，
 // 抽到此统一，保证单一来源。
@@ -39,8 +64,9 @@ type StatsAddrDeps struct {
 }
 
 // ResolveStatsAddr 统一解析 stats gRPC 地址：
-//   xray:      DB "xray.stats_addr" → 核心配置 "api.listen" → DefaultStatsAddr
-//   singbox:   DB "singbox.stats_addr" → 核心配置 "experimental.v2ray_api.listen" → DefaultStatsAddr
+//
+//	xray:      DB "xray.stats_addr" → 核心配置 "api.listen" → DefaultStatsAddr
+//	singbox:   DB "singbox.stats_addr" → 核心配置 "experimental.v2ray_api.listen" → DefaultStatsAddr
 //
 // 对于 sing-box，设置 V2RayAPIListenGetter 而非 APIListenGetter。
 // SettingGetter 会尝试两个 key：先 "singbox.stats_addr" 再 "xray.stats_addr"，
@@ -49,17 +75,25 @@ type StatsAddrDeps struct {
 // 此前该逻辑在 xraystats/handler.go 与 trafficsync/service.go 各有一份，
 // 且后者缺少 api.listen 兜底，行为不一致。抽到此统一，保证单一来源。
 func ResolveStatsAddr(ctx context.Context, deps StatsAddrDeps) string {
-	if deps.SettingGetter != nil {
-		// Try singbox-specific key first, then xray key
-		for _, key := range []string{"singbox.stats_addr", "xray.stats_addr"} {
-			if v, err := deps.SettingGetter(ctx, key); err == nil && v != "" {
+	// sing-box 模式（只传 V2RayAPIListenGetter）：解析链必须与 xray 完全隔离。
+	// 否则 sing-box 的客户端会拿到 xray 的地址，然后用「xray 能应答的服务名」去
+	// 查询 → 不报错但永远拿不到 sing-box 数据（流量采集静默失效）。
+	if deps.V2RayAPIListenGetter != nil {
+		if deps.SettingGetter != nil {
+			if v, err := deps.SettingGetter(ctx, "singbox.stats_addr"); err == nil && v != "" {
 				return v
 			}
 		}
-	}
-	// For sing-box: try V2Ray API listen address
-	if deps.V2RayAPIListenGetter != nil {
 		if v, err := deps.V2RayAPIListenGetter(ctx); err == nil && v != "" {
+			return v
+		}
+		// 段落里可能没有 v2ray_api（由 PrepareFullConfig 的 EnsureSingboxV2RayAPI 注入），
+		// 此时用 sing-box 的默认地址，而不是 xray 的。
+		return DefaultSingboxStatsAddr
+	}
+
+	if deps.SettingGetter != nil {
+		if v, err := deps.SettingGetter(ctx, "xray.stats_addr"); err == nil && v != "" {
 			return v
 		}
 	}
@@ -79,9 +113,13 @@ func ResolveStatsAddr(ctx context.Context, deps StatsAddrDeps) string {
 // 注意：每次 RawStats 重建连接（参考原 xraystats.connect 注释，避免 xray
 // 重启/重载后传输层失效）。如需连接池可在此扩展，但保持 fail-safe 语义。
 type XrayClient struct {
-	addr   string
-	connMu sync.Mutex
-	conn   *grpc.ClientConn
+	addr string
+	// serviceName 决定 stats RPC 走哪个 gRPC 服务名（xray 或 sing-box）。
+	// 默认 xray；sing-box 必须用 NewV2RayClient 创建，否则服务名不匹配。
+	serviceName string
+	isSingbox   bool
+	connMu      sync.Mutex
+	conn        *grpc.ClientConn
 }
 
 // NewXrayClient 创建客户端，addr 为空时回退到 DefaultStatsAddr。
@@ -89,8 +127,21 @@ func NewXrayClient(addr string) *XrayClient {
 	if addr == "" {
 		addr = DefaultStatsAddr
 	}
-	return &XrayClient{addr: addr}
+	return &XrayClient{addr: addr, serviceName: XrayStatsServiceName}
 }
+
+// NewV2RayClient 创建用于 sing-box V2Ray API 的客户端。
+// sing-box 与 xray 的 stats protobuf 消息一致，但注册的服务名不同
+// （v2ray.core.app.stats.command.StatsService），必须用它才不会 Unimplemented。
+func NewV2RayClient(addr string) *XrayClient {
+	if addr == "" {
+		addr = DefaultSingboxStatsAddr
+	}
+	return &XrayClient{addr: addr, serviceName: V2RayStatsServiceName, isSingbox: true}
+}
+
+// IsSingbox 标识该客户端是否用于 sing-box（服务名为 v2ray 兼容名）。
+func (c *XrayClient) IsSingbox() bool { return c.isSingbox }
 
 // Addr 返回当前使用的连接地址。
 func (c *XrayClient) Addr() string { return c.addr }
@@ -180,10 +231,16 @@ func (c *XrayClient) RawStats(ctx context.Context, reset bool) (*statsService.Qu
 	if err != nil {
 		return nil, err
 	}
-	client := statsService.NewStatsServiceClient(conn)
-	resp, err := client.QueryStats(ctx, &statsService.QueryStatsRequest{Reset_: reset})
-	if err != nil {
-		return nil, fmt.Errorf("query xray stats: %w", err)
+	// 按客户端配置的服务名调用：xray 与 sing-box 的 stats proto 字段编号完全一致
+	// （见 sing-box experimental/v2rayapi/stats.proto），只有 gRPC 服务名不同。
+	resp := &statsService.QueryStatsResponse{}
+	if err := conn.Invoke(ctx, "/"+c.serviceName+"/QueryStats",
+		&statsService.QueryStatsRequest{Reset_: reset}, resp); err != nil {
+		core := "xray"
+		if c.isSingbox {
+			core = "sing-box"
+		}
+		return nil, fmt.Errorf("query %s stats (%s, service=%s): %w", core, c.addr, c.serviceName, err)
 	}
 	return resp, nil
 }

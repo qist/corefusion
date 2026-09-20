@@ -408,6 +408,7 @@ import { MoreFilled, Edit, Delete, View, Refresh, RefreshRight, Plus, User } fro
 const { t } = useI18n()
 import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
+import { snisOfInbound, collectUsedSnis, findNewConflicts } from './utils/sniUsage'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -489,6 +490,7 @@ function showAdd() {
   editIdx.value = -1
   activeTab.value = 'basic'
   Object.assign(rf, inboundDefaultsForType('vless', takeFreePort(props.serverId)))
+  rf._id = null
   dlg.value = true
 }
 
@@ -496,6 +498,8 @@ function showEdit(row) {
   editIdx.value = form.indexOf(row)
   activeTab.value = 'basic'
   Object.assign(rf, parseInbound(JSON.parse(JSON.stringify(row))))
+  // 带上自身 id：SNI 互斥比较时要排除自己（utils/sniUsage 按 id 判断）
+  rf._id = row._id ?? row.id ?? null
   dlg.value = true
 }
 
@@ -506,6 +510,21 @@ function onTypeChange() {
 async function save() {
   const cfg = buildInbound(rf)
   if (!cfg.tag) { ElMessage.warning(t('singbox.inbound.tagRequired')); return }
+
+  // Reality SNI（Server Name）互斥：同节点内不能重复、跨节点允许重复；
+  // 只拦截「本次新增的重复」（存量重复不阻塞编辑），与后端保持一致。
+  if (rf._realityEnabled) {
+    const mySni = String(rf._tlsServerName || '').trim().toLowerCase()
+    if (mySni) {
+      const self = editIdx.value >= 0 ? form[editIdx.value] : null
+      const used = collectUsedSnis(form, self)
+      const added = findNewConflicts([mySni], self ? snisOfInbound(self) : [], used)
+      if (added.length) {
+        ElMessage.error(t('singbox.tls.sniConflict', { sni: mySni, tag: used.get(mySni) || '' }))
+        return
+      }
+    }
+  }
   // Build payload (same structure as xray inbound-configs)
   const configJson = { ...cfg }
   delete configJson._remark

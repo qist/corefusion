@@ -117,6 +117,14 @@ export function generateShareLink(ib, user, host, port, tag) {
       params.security = params.security || 'tls'
       return `hysteria2://${encodeURIComponent(user?.password || '')}@${formatHost(host)}:${port}?${encodeParams(params)}#${encodeURIComponent(remark)}`
     }
+    case 'anytls': {
+      // anytls 官方 URI 规范：anytls://auth@host:port/?sni=&insecure=
+      // （Shadowrocket 支持导入；alpn / fp 是面板扩展，mihomo 认）
+      const params = { ...sec }
+      delete params.security // anytls 恒为 TLS，规范里没有 security 参数
+      if (sec.sni) params.sni = sec.sni
+      return `anytls://${encodeURIComponent(user?.password || user?.auth || '')}@${formatHost(host)}:${port}/?${encodeParams(params)}#${encodeURIComponent(remark)}`
+    }
     case 'hysteria': {
       const params = {
         sni: ib._tlsServerName || ib.tls?.server_name || host,

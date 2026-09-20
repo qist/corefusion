@@ -434,12 +434,13 @@ func firstString(v interface{}) string {
 func formatSupportedProtocols(format string) map[string]bool {
 	switch strings.ToLower(format) {
 	case "base64_uri", "raw_uri":
-		// 分享链接（URI）形态：标准 scheme，任何客户端都能解析
+		// 分享链接（URI）形态：标准 scheme，任何客户端都能解析。
+		// anytls 有官方 URI 规范（Shadowrocket 可直接导入），故列入。
 		return map[string]bool{
 			"vless": true, "vmess": true, "trojan": true,
 			"shadowsocks": true, "shadowsocks2022": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
-			"socks": true, "http": true,
+			"socks": true, "http": true, "anytls": true,
 		}
 	case "xray_json":
 		// xray 客户端：不支持 anytls / naive / snell / mixed 等 sing-box 专属协议
@@ -462,13 +463,14 @@ func formatSupportedProtocols(format string) map[string]bool {
 			"anytls": true, "snell": true,
 		}
 	case "mihomo_yaml":
-		// mihomo(clash.meta)：实测能渲染的是这些；anytls / snell / naive 目前
-		// 拿不到 ProxyMap 也生成不出链接，塞进去只会得到一个空/无效条目，故不列入。
+		// mihomo(clash.meta)：实测能渲染的是这些。anytls 有官方 URI 规范、mihomo 也有
+		// anytls 出站，链接与转换都通，故列入；snell / naive 既无标准 URI、mihomo 侧
+		// 也拿不到 ProxyMap，塞进去只会得到空条目，仍不列入。
 		return map[string]bool{
 			"vless": true, "vmess": true, "trojan": true,
 			"shadowsocks": true, "shadowsocks2022": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
-			"socks": true, "http": true,
+			"socks": true, "http": true, "anytls": true,
 		}
 	default:
 		return nil

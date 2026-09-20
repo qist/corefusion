@@ -1,6 +1,7 @@
 package configsync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,6 +71,9 @@ type Service struct {
 	// to protect against concurrent writes from LocalAgent.SyncConfig.
 	configWriter ConfigWriter
 
+	// localCoreRestarter 在本地节点配置内容变化后重启核心（核心不支持热加载）。
+	localCoreRestarter LocalCoreRestarter
+
 	// serverLister lists all registered server IDs for multi-node sync.
 	serverLister ServerLister
 
@@ -91,6 +95,18 @@ type Service struct {
 // ConfigWriter writes runtime config files. Implemented by process.Manager.
 type ConfigWriter interface {
 	WriteRuntimeConfig(coreType string, data []byte) error
+}
+
+// LocalCoreRestarter 重启正在运行的本地核心。
+// xray / sing-box 都不支持热加载配置，本地节点写盘后必须重启才生效
+// （远端节点由 Agent 在 SyncConfig 时自动重启）。
+type LocalCoreRestarter interface {
+	RestartIfRunning(ctx context.Context, coreType string) error
+}
+
+// SetLocalCoreRestarter 注入本地核心重启器（通常为 process.Manager）。
+func (s *Service) SetLocalCoreRestarter(r LocalCoreRestarter) {
+	s.localCoreRestarter = r
 }
 
 // SetConfigWriter sets the config writer delegate for thread-safe config writes.
@@ -336,6 +352,14 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 
 	if serverID == 1 {
 		// Local node: write to runtime directory
+		//
+		// 内容未变化时直接返回：既避免周期性全量同步反复写盘，更重要的是避免
+		// 因此反复重启本地核心（核心不支持热加载，见下方 restart）。
+		configPath := filepath.Join(s.dataDir, "runtime", coreType+".jsonc")
+		if old, readErr := os.ReadFile(configPath); readErr == nil && bytes.Equal(old, data) {
+			return nil
+		}
+
 		if s.configWriter != nil {
 			// Use the shared config writer (process.Manager.WriteRuntimeConfig)
 			// for thread-safe writes that avoid conflicts with LocalAgent.SyncConfig.
@@ -348,9 +372,19 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 			if err := os.MkdirAll(runtimeDir, 0755); err != nil {
 				return err
 			}
-			configPath := filepath.Join(runtimeDir, coreType+".jsonc")
 			if err := os.WriteFile(configPath, data, 0640); err != nil {
 				return err
+			}
+		}
+
+		// xray / sing-box 都没有配置热加载，写盘后必须重启核心才会生效。
+		// 远端节点由 Agent 在 SyncConfig 时重启，本地节点此前只写盘不重启，
+		// 表现为「面板保存了配置但核心仍跑旧配置」（配置校验也发现不了）。
+		if s.localCoreRestarter != nil {
+			if err := s.localCoreRestarter.RestartIfRunning(ctx, coreType); err != nil {
+				log.Printf("configsync: restart local %s after config change failed: %v", coreType, err)
+			} else {
+				log.Printf("configsync: local %s config changed (%d bytes), restart requested", coreType, len(data))
 			}
 		}
 	} else {

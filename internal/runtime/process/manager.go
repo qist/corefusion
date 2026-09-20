@@ -27,16 +27,16 @@ type LogModeProvider interface {
 
 // Manager manages core process lifecycle with persistence and daemon support.
 type Manager struct {
-	processes map[int64]*managedProcess
-	guardians map[int64]*healthcheck.Guardian
-	mu        sync.RWMutex
-	dataDir   string
-	svcRepo   *repository.ServiceRepository
-	guardRepo *repository.ProcessGuardianRepository
-	crashRepo *repository.CrashLogRepository
-	resolver  BinaryResolver
-	configGen       ConfigGenerator
-	skipConfigGen   atomic.Bool // set by WriteRuntimeConfig to skip configGen in next Start()
+	processes     map[int64]*managedProcess
+	guardians     map[int64]*healthcheck.Guardian
+	mu            sync.RWMutex
+	dataDir       string
+	svcRepo       *repository.ServiceRepository
+	guardRepo     *repository.ProcessGuardianRepository
+	crashRepo     *repository.CrashLogRepository
+	resolver      BinaryResolver
+	configGen     ConfigGenerator
+	skipConfigGen atomic.Bool // set by WriteRuntimeConfig to skip configGen in next Start()
 	// configMu protects concurrent writes to runtime config files.
 	// Both configsync.Service and LocalAgent.SyncConfig may write to the same
 	// runtime/<coreType>.jsonc file; this mutex ensures atomic writes.
@@ -644,6 +644,29 @@ func (m *Manager) reapZombies(serviceID int64) {
 // a goroutine to perform the actual stop → sleep → start sequence.
 // This prevents the HTTP handler from being blocked for 10+ seconds while
 // waiting for the process to exit and the new one to start.
+// RestartIfRunning 重启「正在运行」的本地核心（server_id=1）。
+//
+// 用途：xray / sing-box 都不支持热加载配置文件，面板把新配置写盘后必须重启核心
+// 才会生效（远端节点由 Agent 在 SyncConfig 时重启，本地节点此前只写盘不重启，
+// 表现为「保存了配置但没生效」）。未运行的核心不会被启动，避免保存配置意外拉起进程。
+func (m *Manager) RestartIfRunning(ctx context.Context, coreType string) error {
+	if m.svcRepo == nil {
+		return fmt.Errorf("service repository not configured")
+	}
+	services, _, err := m.svcRepo.List(ctx, 1, coreType, 1, 0)
+	if err != nil {
+		return fmt.Errorf("query local service for %s: %w", coreType, err)
+	}
+	if len(services) == 0 {
+		return fmt.Errorf("no local service found for core type %s", coreType)
+	}
+	serviceID := services[0].ID
+	if !m.IsRunning(serviceID) {
+		return nil
+	}
+	return m.Restart(ctx, serviceID, coreType)
+}
+
 func (m *Manager) Restart(ctx context.Context, serviceID int64, coreType string) error {
 	m.mu.Lock()
 	p, ok := m.processes[serviceID]

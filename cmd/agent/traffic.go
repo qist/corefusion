@@ -30,77 +30,78 @@ import (
 //   - Works correctly across xray restarts (counter starts at 0)
 type trafficCollector struct {
 	client        *coredata.XrayClient
-	singboxClient *coredata.XrayClient // nil = 该节点没有 sing-box v2ray_api
-	pollInterval  time.Duration
-	initialized   bool // false until first reset query completes
-	initializedSb bool // sing-box 基线状态
+	singboxClient *coredata.XrayClient // nil = 尚未发现 sing-box v2ray_api
+	singboxAddr   string
+	// singboxAddrResolver 懒解析 sing-box V2Ray API 地址（返回空表示未启用）。
+	// 每次采集都会调用，因为核可能在 Agent 启动后才安装/启用 v2ray_api。
+	singboxAddrResolver func() string
+	pollInterval        time.Duration
+	initialized         bool // false until first reset query completes
+	initializedSb       bool // sing-box 基线状态
 }
 
 // newTrafficCollector creates a traffic collector for the local cores' stats API.
-// singboxStatsAddr 为空表示该节点未启用 sing-box v2ray_api（不采集 sing-box）。
-func newTrafficCollector(statsAddr, singboxStatsAddr string) *trafficCollector {
+// singboxAddrResolver 返回该节点的 sing-box V2Ray API 地址（空 = 未启用，不采集）。
+func newTrafficCollector(statsAddr string, singboxAddrResolver func() string) *trafficCollector {
 	if statsAddr == "" {
 		statsAddr = coredata.DefaultStatsAddr
 	}
-	tc := &trafficCollector{
-		client:       coredata.NewXrayClient(statsAddr),
-		pollInterval: 30 * time.Second,
+	return &trafficCollector{
+		client:              coredata.NewXrayClient(statsAddr),
+		singboxAddrResolver: singboxAddrResolver,
+		pollInterval:        30 * time.Second,
 	}
-	if singboxStatsAddr != "" {
-		// sing-box 的 stats protobuf 与 xray 一致，但 gRPC 服务名不同，
-		// 必须用 NewV2RayClient，否则查询一直 Unimplemented（流量静默漏采）。
-		tc.singboxClient = coredata.NewV2RayClient(singboxStatsAddr)
-	}
-	return tc
 }
 
 // collect queries both cores' stats APIs and returns traffic deltas as TrafficStat list.
 // Returns nil stats (no error) when there are no deltas to report.
 func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat, error) {
+	// 懒解析 sing-box 地址：核可能是在 Agent 启动之后才安装/配置的
+	// （例如刚给节点装了 sing-box 并启用 v2ray_api）。
+	tc.ensureSingboxClient()
+
 	// First call: reset counters to 0.
 	// Discard the returned values (they are old accumulated traffic).
 	// This ensures subsequent queries return only new traffic.
-	if !tc.initialized || (tc.singboxClient != nil && !tc.initializedSb) {
-		baseline := false
-		if !tc.initialized {
-			if _, err := tc.client.RawStats(ctx, true); err != nil {
-				return nil, fmt.Errorf("initial reset query xray stats: %w", err)
-			}
+	baseline := false
+	if !tc.initialized {
+		if _, err := tc.client.RawStats(ctx, true); err != nil {
+			// 单核心不可用时不能中断另一核心的上报：节点可能只跑 sing-box
+			// （xray 未启用 api/stats 时 10085 连不上），失败则下轮重试。
+			log.Printf("traffic: initial reset xray stats failed (will retry): %v", err)
+		} else {
 			tc.initialized = true
 			baseline = true
 		}
-		if tc.singboxClient != nil && !tc.initializedSb {
-			if _, err := tc.singboxClient.RawStats(ctx, true); err != nil {
-				// sing-box 未启动/v2ray_api 未监听时不阻断 xray 上报，下轮重试。
-				log.Printf("traffic: initial reset sing-box stats failed: %v", err)
-			} else {
-				tc.initializedSb = true
-				baseline = true
-			}
+	}
+	if tc.singboxClient != nil && !tc.initializedSb {
+		if _, err := tc.singboxClient.RawStats(ctx, true); err != nil {
+			log.Printf("traffic: initial reset sing-box stats failed (will retry): %v", err)
+		} else {
+			tc.initializedSb = true
+			baseline = true
 		}
-		if baseline {
-			return nil, nil
-		}
+	}
+	if baseline {
+		return nil, nil
 	}
 
 	var stats []*agentpb.TrafficStat
 
-	// Subsequent calls: reset_=true so the core returns deltas and resets counters.
+	// Subsequent calls: reset_=true so the core returns deltas and resets counters。
+	// 两个核心各自独立处理失败，互不影响。
 	if tc.initialized {
-		resp, err := tc.client.RawStats(ctx, true)
-		if err != nil {
-			return nil, fmt.Errorf("query xray stats: %w", err)
+		if resp, err := tc.client.RawStats(ctx, true); err != nil {
+			log.Printf("traffic: query xray stats failed: %v", err)
+		} else if sr, err := coredata.ParseStatsResponse(resp); err != nil {
+			log.Printf("traffic: parse xray stats failed: %v", err)
+		} else {
+			stats = append(stats, trafficStatsFromUsers(sr.Users, "xray")...)
 		}
-		sr, err := coredata.ParseStatsResponse(resp)
-		if err != nil {
-			return nil, err
-		}
-		stats = append(stats, trafficStatsFromUsers(sr.Users, "xray")...)
 	}
 
 	if tc.singboxClient != nil && tc.initializedSb {
-		resp, err := tc.singboxClient.RawStats(ctx, true)
-		if err != nil {
+		if resp, err := tc.singboxClient.RawStats(ctx, true); err != nil {
 			// 单核心失败不影响另一个核心的上报（例如 sing-box 滚动重启中）。
 			log.Printf("traffic: query sing-box stats failed: %v", err)
 		} else if sr, err := coredata.ParseStatsResponse(resp); err == nil {
@@ -111,6 +112,26 @@ func (tc *trafficCollector) collect(ctx context.Context) ([]*agentpb.TrafficStat
 	}
 
 	return stats, nil
+}
+
+// ensureSingboxClient 懒创建/更新 sing-box stats 客户端。
+// sing-box 可能在 Agent 启动之后才安装或启用 v2ray_api，因此地址不能只在启动时解析一次。
+func (tc *trafficCollector) ensureSingboxClient() {
+	if tc.singboxAddrResolver == nil {
+		return
+	}
+	addr := tc.singboxAddrResolver()
+	if addr == "" {
+		return
+	}
+	if tc.singboxClient != nil && addr == tc.singboxAddr {
+		return
+	}
+	tc.singboxClient = coredata.NewV2RayClient(addr)
+	tc.singboxAddr = addr
+	tc.initializedSb = false // 地址变化后需要重新建立基线
+	log.Printf("traffic: sing-box stats client initialized at %s (service=%s)",
+		addr, coredata.V2RayStatsServiceName)
 }
 
 // trafficStatsFromUsers 复用公共解析结果，仅取 user 方向；

@@ -200,9 +200,12 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 
 	// Resolve xray stats API address from local settings (or default)
 	statsAddr := resolveStatsAddr(context.Background(), &agentSettingStore{repo: settingRepo})
-	// sing-box 的 stats 走 V2Ray API（服务名与 xray 不同），地址从运行时配置解析；
-	// 拿不到表示本机没有 sing-box v2ray_api，则只上报 xray 流量。
-	singboxStatsAddr := resolveSingboxStatsAddr(context.Background(), dataDir, &agentSettingStore{repo: settingRepo})
+	// sing-box 的 stats 走 V2Ray API（服务名与 xray 不同）。地址用懒解析回调传入：
+	// sing-box 可能在 Agent 启动之后才安装/启用 v2ray_api，启动时解析一次会漏采。
+	agentSettings := &agentSettingStore{repo: settingRepo}
+	resolveSbAddr := func() string {
+		return resolveSingboxStatsAddr(context.Background(), dataDir, agentSettings)
+	}
 
 	app := &AgentApp{
 		cfg:                cfg,
@@ -221,7 +224,7 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		outboundConfigRepo: outboundConfigRepo,
 		caddySiteRepo:      caddySiteRepo,
 		logMgr:             logMgr,
-		trafficCollector:   newTrafficCollector(statsAddr, singboxStatsAddr),
+		trafficCollector:   newTrafficCollector(statsAddr, resolveSbAddr),
 		rateLimitMgr:       rateLimitMgr,
 	}
 

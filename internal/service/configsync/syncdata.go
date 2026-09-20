@@ -196,6 +196,7 @@ type DataSyncBuilder struct {
 	coreSvc           CoreConfigService
 	inboundSvc        InboundConfigService
 	outboundSvc       OutboundConfigService
+	endpointProvider  coreconfigSvc.EndpointConfigProvider
 	logModeProvider   LogModeProvider
 	serverRepo        *repository.NodeServerRepository
 	chainLinkProvider coreconfigSvc.ChainLinkProvider
@@ -237,6 +238,13 @@ func (b *DataSyncBuilder) WithServerRepo(repo *repository.NodeServerRepository) 
 // exits would miss their chain outbounds/relay-in inbound.
 func (b *DataSyncBuilder) WithChainLinkProvider(p coreconfigSvc.ChainLinkProvider) *DataSyncBuilder {
 	b.chainLinkProvider = p
+	return b
+}
+
+// WithEndpointProvider sets the endpoint config provider so the generated
+// config includes sing-box endpoints (WireGuard/Tailscale/OpenConnect/OpenVPN).
+func (b *DataSyncBuilder) WithEndpointProvider(p coreconfigSvc.EndpointConfigProvider) *DataSyncBuilder {
+	b.endpointProvider = p
 	return b
 }
 
@@ -529,6 +537,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				FullConfig:        fullConfig,
 				InboundProvider:   b.inboundSvc,
 				OutboundProvider:  b.outboundSvc,
+				EndpointProvider:  b.endpointProvider,
 				LogMode:           b.resolveLogMode(ctx, serverID, coreType),
 				ChainLinkProvider: b.chainLinkProvider,
 			})
@@ -869,7 +878,7 @@ func MarshalSyncDataRequest(req *agentpb.SyncDataRequest) ([]byte, error) {
 		"chain_exit_configs":   len(req.ChainExitConfigs),
 		"node_servers":         len(req.NodeServers),
 		"external_nodes":       len(req.ExternalNodes),
-		"has_config_content":  len(req.ConfigContent) > 0,
+		"has_config_content":   len(req.ConfigContent) > 0,
 		"config_core_type":     req.ConfigCoreType,
 	}
 	return json.MarshalIndent(summary, "", "  ")

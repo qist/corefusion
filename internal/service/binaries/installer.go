@@ -84,7 +84,10 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 		return nil, fmt.Errorf("unsupported core type: %s", coreType)
 	}
 
-	// If version is empty, fetch latest
+	// If version is empty, fetch latest.
+	// 优先取最新的「正式版」：singbox 的自建仓库（qist/singbox-binaries）会同时发布
+	// alpha 预发布与稳定版，若直接取列表第一个（按创建时间倒序）可能装上 alpha。
+	// 全部都是预发布时才回退到最新一个。
 	if version == "" {
 		releases, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
 		if err != nil {
@@ -94,6 +97,12 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 			return nil, fmt.Errorf("no releases found for %s", coreType)
 		}
 		version = releases[0].TagName
+		for _, r := range releases {
+			if !r.Prerelease {
+				version = r.TagName
+				break
+			}
+		}
 	}
 
 	// Build download URL if not provided
@@ -387,10 +396,21 @@ func extractZip(data []byte, destDir, coreType string) error {
 }
 
 // githubRepo maps core type to GitHub repo path.
+//
+// 注意：singbox 指向本组织的自建打包仓库 qist/singbox-binaries。
+// 官方 SagerNet/sing-box 的 release 一律不含 with_v2ray_api 这个 build tag，
+// 配置里一旦出现 experimental.v2ray_api 就会启动失败：
+//
+//	create v2ray-server: v2ray api is not included in this build, rebuild with -tags with_v2ray_api
+//
+// 而 v2ray_api 是面板按订阅用户统计 sing-box 流量的唯一可用通道
+// （clash_api 的 /connections 不暴露 user 字段，无法按用户聚合）。
+// 自建仓库的产物命名与官方完全一致（sing-box-<ver>-<os>-<arch>.tar.gz / .zip），
+// 因此 buildDownloadURL() 与资产过滤逻辑无需任何其他改动。
 func githubRepo(coreType string) string {
 	repos := map[string]string{
 		"xray":      "XTLS/Xray-core",
-		"singbox":   "SagerNet/sing-box",
+		"singbox":   "qist/singbox-binaries",
 		"hysteria2": "apernet/hysteria",
 		"tuic":      "Itsusinn/tuic",
 	}
@@ -398,7 +418,27 @@ func githubRepo(coreType string) string {
 }
 
 // buildDownloadURL constructs the correct download URL for each core type.
+//
+// 各上游（及本组织自建的 singbox-binaries）资产命名并不统一，下面按实测结果逐核心处理，
+// 所有差异都用真实 release 资产名 + HTTP 200/404 对照验证过：
+//   - xray:      Xray-<os>-<arch>.zip，macOS 用 "macos"（不是 runtime.GOOS 的 "darwin"）
+//   - singbox:   sing-box-<ver>-<os>-<arch>.tar.gz；Windows 是 .zip
+//   - hysteria2: hysteria-<os>-<arch>；Windows 需 .exe 后缀
+//   - tuic:      tuic-server-<arch>-<os>；Windows 需 .exe 后缀
+//
+// 注意 macOS 命名：xray 用 macos，其余核心（含 sing-box）用 darwin。
 func buildDownloadURL(coreType, repoURL, version, osName, archName string) string {
+	// Windows 可执行文件后缀（上游只有 hysteria/tuic 直接发裸可执行文件）
+	windowsExe := ""
+	if osName == "windows" {
+		windowsExe = ".exe"
+	}
+	// Xray 的 macOS 资产名用 macos
+	xrayOSName := osName
+	if osName == "darwin" {
+		xrayOSName = "macos"
+	}
+
 	switch coreType {
 	case "xray":
 		archPart := "64"
@@ -410,7 +450,7 @@ func buildDownloadURL(coreType, repoURL, version, osName, archName string) strin
 		case "386":
 			archPart = "32"
 		}
-		asset := fmt.Sprintf("Xray-%s-%s.zip", osName, archPart)
+		asset := fmt.Sprintf("Xray-%s-%s.zip", xrayOSName, archPart)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 
 	case "singbox":
@@ -418,11 +458,16 @@ func buildDownloadURL(coreType, repoURL, version, osName, archName string) strin
 		if arch == "arm" {
 			arch = "armv7"
 		}
-		asset := fmt.Sprintf("sing-box-%s-%s-%s.tar.gz", strings.TrimPrefix(version, "v"), osName, arch)
+		// 官方与自建仓库：Windows 为 .zip，其余平台为 .tar.gz
+		ext := "tar.gz"
+		if osName == "windows" {
+			ext = "zip"
+		}
+		asset := fmt.Sprintf("sing-box-%s-%s-%s.%s", strings.TrimPrefix(version, "v"), osName, arch, ext)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 
 	case "hysteria2":
-		asset := fmt.Sprintf("hysteria-%s-%s", osName, archName)
+		asset := fmt.Sprintf("hysteria-%s-%s%s", osName, archName, windowsExe)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 
 	case "tuic":
@@ -435,7 +480,7 @@ func buildDownloadURL(coreType, repoURL, version, osName, archName string) strin
 		case "386":
 			archPart = "i686"
 		}
-		asset := fmt.Sprintf("tuic-server-%s-%s", archPart, osName)
+		asset := fmt.Sprintf("tuic-server-%s-%s%s", archPart, osName, windowsExe)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 	}
 	return ""
@@ -444,6 +489,12 @@ func buildDownloadURL(coreType, repoURL, version, osName, archName string) strin
 // matchCoreBinary checks if an archive entry name corresponds to the
 // given core type. It examines only the base name (not the full path)
 // to avoid false matches like "sing-box-1.10.0/LICENSE" matching "sing-box".
+//
+// 匹配大小写不敏感，并剥离 Windows 的 .exe 后缀：
+//   - Linux/macOS/BSD: sing-box            → 命中
+//   - Windows:         sing-box.exe        → 命中（旧实现中 "sing-box.exe" 既不等于
+//     "sing-box" 也不以 "sing-box-" 开头，导致 Windows 包解压后找不到二进制）
+//   - Windows xray:    Xray-windows-64.exe → 命中（旧实现 Contains 大小写敏感，漏判）
 func matchCoreBinary(name, coreType string) bool {
 	// Extract the base name (last path component) to avoid matching
 	// directory prefixes like "sing-box-1.10.0-linux-amd64/LICENSE"
@@ -465,18 +516,21 @@ func matchCoreBinary(name, coreType string) bool {
 		return false
 	}
 
+	// 统一比较基准：小写 + 去 .exe（.exe 不在上面的排除列表里）
+	stem := strings.TrimSuffix(lower, ".exe")
+
 	switch coreType {
 	case "singbox":
 		// Match "sing-box" or "singbox" as the base name itself
 		// (e.g. "sing-box" inside the tar.gz, not "sing-box-1.10.0/LICENSE")
-		return base == "sing-box" || base == "singbox" ||
-			strings.HasPrefix(base, "sing-box-") || strings.HasPrefix(base, "singbox-")
+		return stem == "sing-box" || stem == "singbox" ||
+			strings.HasPrefix(stem, "sing-box-") || strings.HasPrefix(stem, "singbox-")
 	case "hysteria2":
-		return base == "hysteria" || strings.HasPrefix(base, "hysteria-") || strings.HasPrefix(base, "hysteria_")
+		return stem == "hysteria" || strings.HasPrefix(stem, "hysteria-") || strings.HasPrefix(stem, "hysteria_")
 	case "tuic":
-		return strings.HasPrefix(base, "tuic")
+		return strings.HasPrefix(stem, "tuic")
 	default:
-		return strings.Contains(base, coreType)
+		return strings.Contains(stem, strings.ToLower(coreType))
 	}
 }
 

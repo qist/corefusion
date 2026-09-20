@@ -196,7 +196,7 @@ function editRule(r) {
     _ipCIDR: r._ipCIDR || '', _sourceIPCIDR: r._sourceIPCIDR || '',
     _port: r.port || '', _sourcePort: r.source_port || '',
     _network: r.network || '', _protocol: r.protocol || [],
-    _inboundTag: r.inbound_tag || [], _process: (r.process || []).join('\n'),
+    _inboundTag: r.inbound || r.inbound_tag || [], _process: (r.process_name || r.process || []).join('\n'),
     action: r.action || '', outbound: r.outbound || '',
     domain_resolver: r.domain_resolver || '', strategy: r.strategy || '',
   })
@@ -223,9 +223,9 @@ function saveRule() {
   if (rf._sourcePort) rule.source_port = rf._sourcePort
   if (rf._network) rule.network = rf._network
   if (rf._protocol?.length) rule.protocol = [...rf._protocol]
-  if (rf._inboundTag?.length) rule.inbound_tag = [...rf._inboundTag]
+  if (rf._inboundTag?.length) rule.inbound = [...rf._inboundTag]
   const procs = rf._process ? rf._process.split('\n').map(d => d.trim()).filter(Boolean) : []
-  if (procs.length) rule.process = procs
+  if (procs.length) rule.process_name = procs
   if (rf.action) rule.action = rf.action
   if (rf.outbound) rule.outbound = rf.outbound
   if (rf.domain_resolver) rule.domain_resolver = rf.domain_resolver
@@ -240,8 +240,8 @@ function saveRule() {
   if (rf._sourcePort) rule.source_port = rf._sourcePort
   if (rf._network) rule.network = rf._network
   if (rf._protocol?.length) rule.protocol = [...rf._protocol]
-  if (rf._inboundTag?.length) rule.inbound_tag = [...rf._inboundTag]
-  if (procs.length) rule.process = procs
+  if (rf._inboundTag?.length) rule.inbound = [...rf._inboundTag]
+  if (procs.length) rule.process_name = procs
 
   if (editIdx.value >= 0) form.rules[editIdx.value] = rule
   else form.rules.push(rule)
@@ -278,7 +278,7 @@ function sync() {
     _ipCIDR: (r.ip_cidr || []).join('\n'),
     _sourceIPCIDR: (r.source_ip_cidr || []).join('\n'),
     _protocol: r.protocol || [],
-    _inboundTag: r.inbound_tag || [],
+    _inboundTag: r.inbound || r.inbound_tag || [],
   }))
 }
 
@@ -309,8 +309,8 @@ function build() {
     if (r.source_port) rule.source_port = r.source_port
     if (r.network) rule.network = r.network
     if (r.protocol?.length) rule.protocol = [...r.protocol]
-    if (r.inbound_tag?.length) rule.inbound_tag = [...r.inbound_tag]
-    if (r.process?.length) rule.process = [...r.process]
+    if (r.inbound?.length) rule.inbound = [...r.inbound]
+    if (r.process_name?.length) rule.process_name = [...r.process_name]
     if (r.action) rule.action = r.action
     if (r.outbound) rule.outbound = r.outbound
     if (r.domain_resolver) rule.domain_resolver = r.domain_resolver

@@ -53,15 +53,16 @@ type LogModeProvider interface {
 
 // Service handles periodic config synchronization to disk.
 type Service struct {
-	coreSvc     CoreConfigService
-	inboundSvc  InboundConfigService
-	outboundSvc OutboundConfigService
-	dataDir     string
-	interval    time.Duration
-	mu          sync.RWMutex
-	running     bool
-	stopCh      chan struct{}
-	lastSync    time.Time
+	coreSvc          CoreConfigService
+	inboundSvc       InboundConfigService
+	outboundSvc      OutboundConfigService
+	endpointProvider coreconfigSvc.EndpointConfigProvider
+	dataDir          string
+	interval         time.Duration
+	mu               sync.RWMutex
+	running          bool
+	stopCh           chan struct{}
+	lastSync         time.Time
 
 	// configWriter is an optional delegate for writing runtime config files.
 	// When set, configsync uses this instead of direct os.WriteFile.
@@ -121,6 +122,13 @@ func (s *Service) SetServerRepo(repo *repository.NodeServerRepository) {
 // chain-link outbounds/rules/balancers into the generated config.
 func (s *Service) SetChainLinkProvider(p coreconfigSvc.ChainLinkProvider) {
 	s.chainLinkProvider = p
+}
+
+// SetEndpointProvider sets the endpoint config provider so PrepareFullConfig
+// merges enabled endpoints (sing-box WireGuard/Tailscale/OpenConnect/OpenVPN)
+// into the generated config.
+func (s *Service) SetEndpointProvider(p coreconfigSvc.EndpointConfigProvider) {
+	s.endpointProvider = p
 }
 
 // NewService creates a new config sync service.
@@ -318,6 +326,7 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 		FullConfig:        fullConfig,
 		InboundProvider:   s.inboundSvc,
 		OutboundProvider:  s.outboundSvc,
+		EndpointProvider:  s.endpointProvider,
 		LogMode:           logMode,
 		ChainLinkProvider: s.chainLinkProvider,
 	})

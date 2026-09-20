@@ -796,6 +796,7 @@ func generateConfigFromLocalDB(ctx context.Context, serverID int64, coreType str
 		FullConfig:        fullConfig,
 		InboundProvider:   &localInboundProvider{},
 		OutboundProvider:  &localOutboundProvider{},
+		EndpointProvider:  &localEndpointProvider{},
 		ChainLinkProvider: localChainGen,
 	})
 	if err != nil {
@@ -849,6 +850,28 @@ func (p *localOutboundProvider) GetEnabledOutbounds(ctx context.Context, serverI
 			continue
 		}
 		result = append(result, m)
+	}
+	return result, nil
+}
+
+// localEndpointProvider implements EndpointConfigProvider using the Agent's local DB.
+// Only enabled endpoints are returned — matching the panel's behavior.
+// sing-box 的 endpoints[]（WireGuard/Tailscale/OpenConnect/OpenVPN）必须随配置下发，
+// 否则节点上引用 endpoint tag 的路由/DNS detour 会报 outbound not found。
+type localEndpointProvider struct{}
+
+func (p *localEndpointProvider) GetEnabledEndpoints(ctx context.Context, serverID int64, coreType string) ([]json.RawMessage, error) {
+	var configs []entity.EndpointConfig
+	if err := db.DB.WithContext(ctx).Where("server_id = ? AND core_type = ? AND enabled = ?", serverID, coreType, true).Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	result := make([]json.RawMessage, 0, len(configs))
+	for _, c := range configs {
+		if c.ConfigJSON == "" || !json.Valid([]byte(c.ConfigJSON)) {
+			log.Printf("[Agent] skip endpoint_config tag=%s: invalid JSON", c.Tag)
+			continue
+		}
+		result = append(result, json.RawMessage(c.ConfigJSON))
 	}
 	return result, nil
 }

@@ -1,33 +1,39 @@
 <template>
   <div>
-    <!-- Clash API -->
+    <!-- Clash API（默认不配置：流量统计走 v2ray_api） -->
     <el-divider content-position="left">Clash API</el-divider>
     <el-form label-width="160px" label-position="left">
-      <el-form-item label="External Controller">
-        <el-input v-model="clashApi.external_controller" placeholder="127.0.0.1:9090" @change="emit" />
-        <div class="hint">Clash API listening address</div>
+      <el-form-item label="Enabled">
+        <el-switch v-model="clashApi.enabled" @change="emit" />
+        <div class="hint">默认关闭。节点流量统计由 v2ray_api 负责；clash_api 仅供第三方面板（yacd / metacubexd）连接</div>
       </el-form-item>
-      <el-form-item label="Secret">
-        <el-input v-model="clashApi.secret" placeholder="Optional auth secret" @change="emit" />
-      </el-form-item>
-      <el-form-item label="Default Mode">
-        <el-select v-model="clashApi.default_mode" style="width:100%" @change="emit">
-          <el-option label="rule" value="rule" />
-          <el-option label="global" value="global" />
-          <el-option label="direct" value="direct" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="External UI">
-        <el-input v-model="clashApi.external_ui" placeholder="/path/to/ui" @change="emit" />
-        <div class="hint">Path to Clash dashboard static files</div>
-      </el-form-item>
-      <el-form-item label="External UI URL">
-        <el-input v-model="clashApi.external_ui_url" placeholder="https://github.com/..." @change="emit" />
-        <div class="hint">Download URL for Clash dashboard</div>
-      </el-form-item>
-      <el-form-item label="Cache ID">
-        <el-input v-model="clashApi.cache_id" placeholder="Optional cache identifier" @change="emit" />
-      </el-form-item>
+      <template v-if="clashApi.enabled">
+        <el-form-item label="External Controller">
+          <el-input v-model="clashApi.external_controller" placeholder="127.0.0.1:9090" @change="emit" />
+          <div class="hint">Clash API listening address（不要与 v2ray_api 的 10086 冲突）</div>
+        </el-form-item>
+        <el-form-item label="Secret">
+          <el-input v-model="clashApi.secret" placeholder="Optional auth secret" @change="emit" />
+        </el-form-item>
+        <el-form-item label="Default Mode">
+          <el-select v-model="clashApi.default_mode" style="width:100%" @change="emit">
+            <el-option label="rule" value="rule" />
+            <el-option label="global" value="global" />
+            <el-option label="direct" value="direct" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="External UI">
+          <el-input v-model="clashApi.external_ui" placeholder="/path/to/ui" @change="emit" />
+          <div class="hint">Path to Clash dashboard static files</div>
+        </el-form-item>
+        <el-form-item label="External UI URL">
+          <el-input v-model="clashApi.external_ui_url" placeholder="https://github.com/..." @change="emit" />
+          <div class="hint">Download URL for Clash dashboard</div>
+        </el-form-item>
+        <el-form-item label="Cache ID">
+          <el-input v-model="clashApi.cache_id" placeholder="Optional cache identifier" @change="emit" />
+        </el-form-item>
+      </template>
     </el-form>
 
     <!-- Cache File -->
@@ -44,22 +50,25 @@
       </el-form-item>
     </el-form>
 
-    <!-- v2ray API (optional, for sing-box stats) -->
-    <el-divider content-position="left">v2ray API</el-divider>
+    <!-- v2ray API（面板流量统计通道，默认启用） -->
+    <el-divider content-position="left">v2ray API（流量统计）</el-divider>
     <el-form label-width="160px" label-position="left">
       <el-form-item label="Enabled">
-        <el-switch v-model="v2rayApi.enabled" @change="emit" />
+        <el-tag type="success" size="small">always on</el-tag>
+        <div class="hint">
+          面板按订阅用户统计流量依赖此项（与 xray 的 StatsService 协议一致），下发配置时会自动启用。<br />
+          注意：节点必须使用带 <code>with_v2ray_api</code> 的 sing-box 构建（官方 release 不含该 tag，
+          缺失时核心启动即失败），请安装 <code>qist/singbox-binaries</code> 的产物。
+        </div>
       </el-form-item>
-      <template v-if="v2rayApi.enabled">
-        <el-form-item label="Listen">
-          <el-input v-model="v2rayApi.listen" placeholder="127.0.0.1:10085" @change="emit" />
-          <div class="hint">gRPC API listening address</div>
-        </el-form-item>
-        <el-form-item label="Stats Service">
-          <el-switch v-model="v2rayApi.stats" @change="emit" />
-          <div class="hint">Enable stats service for traffic monitoring</div>
-        </el-form-item>
-      </template>
+      <el-form-item label="Listen">
+        <el-input v-model="v2rayApi.listen" placeholder="127.0.0.1:10086" @change="emit" />
+        <div class="hint">gRPC API listening address</div>
+      </el-form-item>
+      <el-form-item label="Stats Service">
+        <el-switch v-model="v2rayApi.stats" @change="emit" />
+        <div class="hint">Enable stats service for traffic monitoring（用户/入站/出站白名单由面板自动补齐）</div>
+      </el-form-item>
     </el-form>
   </div>
 </template>
@@ -67,13 +76,17 @@
 import { reactive, onMounted } from 'vue'
 const props = defineProps({ data: Object })
 const emitFn = defineEmits(['update'])
-const clashApi = reactive({ external_controller: '', secret: '', default_mode: 'rule', external_ui: '', external_ui_url: '', cache_id: '' })
+const clashApi = reactive({ enabled: false, external_controller: '', secret: '', default_mode: 'rule', external_ui: '', external_ui_url: '', cache_id: '' })
 const cacheFile = reactive({ enabled: false, path: '', store_fakeip: false })
-const v2rayApi = reactive({ enabled: false, listen: '', stats: true })
+const v2rayApi = reactive({ listen: '127.0.0.1:10086', stats: true })
+
+const DEFAULT_V2RAY_LISTEN = '127.0.0.1:10086'
 
 function sync() {
   if (!props.data) return
   const ca = props.data.clash_api || {}
+  // clash_api 默认不配置：只有显式填了监听地址才视为启用
+  clashApi.enabled = !!ca.external_controller
   clashApi.external_controller = ca.external_controller || ''
   clashApi.secret = ca.secret || ''
   clashApi.default_mode = ca.default_mode || 'rule'
@@ -85,16 +98,15 @@ function sync() {
   cacheFile.path = cf.path || ''
   cacheFile.store_fakeip = cf.store_fakeip || false
   const va = props.data.v2ray_api || {}
-  v2rayApi.enabled = va.listen ? true : false
-  v2rayApi.listen = va.listen || ''
+  v2rayApi.listen = va.listen || DEFAULT_V2RAY_LISTEN
   v2rayApi.stats = va.stats?.enabled !== false
 }
 
 function build() {
   const out = {}
-  if (clashApi.external_controller || clashApi.secret || clashApi.default_mode) {
-    out.clash_api = { default_mode: clashApi.default_mode }
-    if (clashApi.external_controller) out.clash_api.external_controller = clashApi.external_controller
+  // clash_api：默认不配置；仅当用户显式启用并填了监听地址时才写入
+  if (clashApi.enabled && clashApi.external_controller) {
+    out.clash_api = { external_controller: clashApi.external_controller, default_mode: clashApi.default_mode }
     if (clashApi.secret) out.clash_api.secret = clashApi.secret
     if (clashApi.external_ui) out.clash_api.external_ui = clashApi.external_ui
     if (clashApi.external_ui_url) out.clash_api.external_ui_url = clashApi.external_ui_url
@@ -105,10 +117,9 @@ function build() {
     if (cacheFile.path) out.cache_file.path = cacheFile.path
     if (cacheFile.store_fakeip) out.cache_file.store_fakeip = true
   }
-  if (v2rayApi.enabled) {
-    out.v2ray_api = { listen: v2rayApi.listen || '127.0.0.1:10085' }
-    if (v2rayApi.stats) out.v2ray_api.stats = { enabled: true }
-  }
+  // v2ray_api：始终写入（面板计费依赖；后端也会自动补齐用户/入站/出站白名单）
+  out.v2ray_api = { listen: v2rayApi.listen || DEFAULT_V2RAY_LISTEN }
+  out.v2ray_api.stats = { enabled: v2rayApi.stats !== false }
   return out
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/qist/sqlite"
 	"gorm.io/gorm"
@@ -41,8 +42,16 @@ func realityConfig(serverNames ...string) string {
 	for _, s := range serverNames {
 		quoted = append(quoted, `"`+s+`"`)
 	}
-	return `{"protocol":"vless","streamSettings":{"security":"reality","reality":{"serverNames":[` +
+	// 键名必须与真实数据一致：xray 生成的是 streamSettings.realitySettings
+	// （历史上这里写成 reality，导致本条测试长期失效，重新对齐）
+	return `{"protocol":"vless","streamSettings":{"security":"reality","realitySettings":{"serverNames":[` +
 		joinQuoted(quoted) + `]}}}`
+}
+
+// singboxRealityConfig 造一个 sing-box reality 入站（SNI 存在 tls.server_name）。
+func singboxRealityConfig(serverName string) string {
+	return `{"type":"vless","tag":"sb","tls":{"enabled":true,"server_name":"` + serverName +
+		`","reality":{"enabled":true,"handshake":{"server":"` + serverName + `","server_port":443}}}}`
 }
 
 func joinQuoted(parts []string) string {
@@ -64,17 +73,28 @@ func TestExtractServerNames(t *testing.T) {
 	}{
 		{
 			name: "array form",
-			json: `{"streamSettings":{"security":"reality","reality":{"serverNames":["A.com","b.com","A.com"]}}}`,
+			json: `{"streamSettings":{"security":"reality","realitySettings":{"serverNames":["A.com","b.com","A.com"]}}}`,
 			want: []string{"a.com", "b.com"},
 		},
 		{
 			name: "string form newline/comma",
-			json: `{"streamSettings":{"security":"reality","reality":{"serverNamesStr":"x.com\nY.com, z.com\nx.com"}}}`,
+			json: `{"streamSettings":{"security":"reality","realitySettings":{"serverNamesStr":"x.com\nY.com, z.com\nx.com"}}}`,
 			want: []string{"x.com", "y.com", "z.com"},
 		},
 		{
 			name: "not reality",
-			json: `{"streamSettings":{"security":"tls","reality":{"serverNames":["a.com"]}}}`,
+			json: `{"streamSettings":{"security":"tls","realitySettings":{"serverNames":["a.com"]}}}`,
+			want: nil,
+		},
+		{
+			name: "singbox reality server_name",
+			json: `{"type":"vless","tls":{"enabled":true,"server_name":"A.com","reality":{"enabled":true,"handshake":{"server":"a.com","server_port":443}}}}`,
+			want: []string{"a.com"},
+		},
+		{
+			// 非 reality 的 TLS SNI 不算（与 xray 一侧口径一致）
+			name: "singbox tls without reality",
+			json: `{"type":"vless","tls":{"enabled":true,"server_name":"a.com"}}`,
 			want: nil,
 		},
 		{
@@ -141,6 +161,55 @@ func TestCreateNonRealitySkipsCheck(t *testing.T) {
 	}
 	if _, err := svc.Create(ctx, 1, "xray", "n2", "vless", "tag-f", "0.0.0.0", 443, cfg, true); err != nil {
 		t.Fatalf("non-reality should not conflict: %v", err)
+	}
+}
+
+func TestServerNamesConflictSingbox(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Create(ctx, 1, "singbox", "sb-A", "vless", "sb-a", "0.0.0.0", 443, singboxRealityConfig("a.com"), true); err != nil {
+		t.Fatalf("seed singbox: %v", err)
+	}
+	// 同节点重复 SNI -> 冲突
+	if _, err := svc.Create(ctx, 1, "singbox", "sb-B", "vless", "sb-b", "0.0.0.0", 443, singboxRealityConfig("a.com"), true); !errors.Is(err, ErrServerNamesConflict) {
+		t.Fatalf("expected conflict for duplicate singbox SNI, got %v", err)
+	}
+	// 跨节点允许重复
+	if _, err := svc.Create(ctx, 2, "singbox", "sb-C", "vless", "sb-c", "0.0.0.0", 443, singboxRealityConfig("a.com"), true); err != nil {
+		t.Fatalf("cross-node duplicate should be allowed: %v", err)
+	}
+	// 同节点内 xray 与 sing-box 共用同一 SNI 也要冲突（同一台机器的 SNI 路由会打架）
+	if _, err := svc.Create(ctx, 1, "xray", "x-A", "vless", "x-a", "0.0.0.0", 443, realityConfig("a.com"), true); !errors.Is(err, ErrServerNamesConflict) {
+		t.Fatalf("expected cross-core conflict on same node, got %v", err)
+	}
+}
+
+func TestUpdateLegacyDuplicateUnchangedAllowed(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	mk := func(remark, tag, cfg string) *entity.InboundConfig {
+		c := &entity.InboundConfig{
+			Remark: remark, CoreType: "xray", Protocol: "vless", Tag: tag,
+			Listen: "0.0.0.0", Port: 443, ConfigJSON: cfg, Enabled: true, ServerID: 1,
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		if err := svc.repo.Create(ctx, c); err != nil {
+			t.Fatalf("seed %s: %v", tag, err)
+		}
+		return c
+	}
+	// 绕过校验直接写库，模拟存量重复（同节点两个入站共用 dup.com）
+	a := mk("legacy-A", "l-a", realityConfig("dup.com"))
+	_ = mk("legacy-B", "l-b", realityConfig("dup.com", "used-elsewhere.com"))
+
+	// 1) 域名没变（只改备注）-> 存量重复不阻塞
+	if _, err := svc.Update(ctx, a.ID, "legacy-A-renamed", "vless", "l-a", "0.0.0.0", 443, realityConfig("dup.com"), true); err != nil {
+		t.Fatalf("unchanged duplicate should not block unrelated edit: %v", err)
+	}
+	// 2) 新增一个已被占用域名 -> 必须拒绝
+	if _, err := svc.Update(ctx, a.ID, "legacy-A", "vless", "l-a", "0.0.0.0", 443, realityConfig("dup.com", "used-elsewhere.com"), true); !errors.Is(err, ErrServerNamesConflict) {
+		t.Fatalf("adding a conflicting name should be rejected, got %v", err)
 	}
 }
 

@@ -58,8 +58,9 @@ export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2
 export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'shadowsocks2022', 'hysteria2', 'hysteria', 'tuic', 'anytls', 'shadowtls', 'snell', 'naive', 'bridge', 'http', 'socks', 'selector', 'urltest', 'direct', 'block', 'dns', 'tor', 'ssh']
 
 // 该协议支持的 Inbound type 白名单
+// direct：静态端口转发（override_address/override_port），sing-box 官方文档 inbound/direct
 export const INBOUND_TYPES = [
-  'mixed', 'http', 'socks', 'naive', 'tun', 'redirect', 'tproxy',
+  'mixed', 'http', 'socks', 'naive', 'tun', 'redirect', 'tproxy', 'direct',
   'vless', 'vmess', 'trojan', 'hysteria2', 'shadowsocks', 'tuic',
   'anytls', 'shadowtls', 'hysteria', 'snell', 'cloudflared',
 ]
@@ -139,6 +140,15 @@ export function inboundDefaultsForType(type) {
     domain_strategy: '',
     sniff: true,
     sniff_override_destination: false,
+    // 通用监听字段（sing-box Listen Fields）
+    tcp_fast_open: false,
+    tcp_multi_path: false,
+    udp_fragment: false,
+    udp_timeout: '',
+    detour: '',
+    // direct inbound（静态转发）
+    override_address: '',
+    override_port: 0,
     interface_name: '',
     stack: 'system',
     auto_route: true,

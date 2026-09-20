@@ -161,6 +161,33 @@
             <el-form-item v-if="rf.sniff" :label="t('singbox.listen.sniffOverride')">
               <el-switch v-model="rf.sniff_override_destination" />
             </el-form-item>
+
+            <!-- direct inbound：静态转发目标（sing-box inbound/direct） -->
+            <template v-if="rf.type === 'direct'">
+              <el-form-item label="Override Address">
+                <el-input v-model="rf.override_address" placeholder="1.2.3.4" />
+                <div class="hint">把命中该入站的流量转发到该地址</div>
+              </el-form-item>
+              <el-form-item label="Override Port">
+                <el-input-number v-model="rf.override_port" :min="0" :max="65535" style="width:100%" />
+              </el-form-item>
+            </template>
+
+            <!-- 通用监听字段（sing-box Listen Fields） -->
+            <el-divider content-position="left">Advanced Listen</el-divider>
+            <el-form-item label="Detour">
+              <el-input v-model="rf.detour" placeholder="direct" />
+              <div class="hint">inbound 级 detour（把该入站流量交给指定 outbound）</div>
+            </el-form-item>
+            <el-row :gutter="12">
+              <el-col :span="8"><el-form-item label="TCP Fast Open"><el-switch v-model="rf.tcp_fast_open" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="TCP Multi Path"><el-switch v-model="rf.tcp_multi_path" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="UDP Fragment"><el-switch v-model="rf.udp_fragment" /></el-form-item></el-col>
+            </el-row>
+            <el-form-item label="UDP Timeout">
+              <el-input v-model="rf.udp_timeout" placeholder="5m" />
+              <div class="hint">UDP NAT 超时，如 5m / 300s</div>
+            </el-form-item>
           </el-form>
 
           <!-- Access Domain (对齐 xray) -->

@@ -815,7 +815,9 @@ export default {
       version: '版本限制', geodata: 'Geo数据', preview: '配置预览',
       listen: '监听', tls: 'TLS', auth: '认证', bandwidth: '带宽', quic: 'QUIC',
       trafficStats: '流量统计', server: '监听', users: '用户', congestion: '拥塞控制',
-      advanced: '高级设置',
+      advanced: '高级设置', endpoints: '端点',
+      ntp: 'NTP 校时', services: '服务', certificate: '证书',
+      certificateProviders: '证书提供者', httpClients: 'HTTP 客户端', networkNamespaces: '网络命名空间',
     },
     preview: {
       loadFromFile: '读取配置文件',

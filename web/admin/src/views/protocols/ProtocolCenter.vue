@@ -76,6 +76,7 @@
             :data="secData"
             :core-type="selectedCore"
             :server-id="serverId"
+            :section-key="activeSection"
             @update="onUpdate"
           />
           <!-- Fallback JSON -->
@@ -148,6 +149,8 @@ import SingboxInbounds from './sections/SingboxInbounds.vue'
 import SingboxOutbounds from './sections/SingboxOutbounds.vue'
 import SingboxExperimental from './sections/SingboxExperimental.vue'
 import SingboxEndpoints from './sections/SingboxEndpoints.vue'
+import SingboxNtp from './sections/SingboxNtp.vue'
+import SingboxJsonSection from './sections/SingboxJsonSection.vue'
 import Hy2Listen from './sections/Hy2Listen.vue'
 import Hy2Tls from './sections/Hy2Tls.vue'
 import Hy2Auth from './sections/Hy2Auth.vue'
@@ -189,9 +192,12 @@ function getSections() {
       {key:'version',label:t('protoCenter.sections.version')},{key:'geodata',label:t('protoCenter.sections.geodata')},{key:'_preview',label:t('protoCenter.sections.preview')},
     ],
     singbox: [
-      {key:'log',label:t('protoCenter.sections.log')},{key:'dns',label:t('protoCenter.sections.dns')},{key:'route',label:t('protoCenter.sections.route')},
+      {key:'log',label:t('protoCenter.sections.log')},{key:'dns',label:t('protoCenter.sections.dns')},{key:'ntp',label:t('protoCenter.sections.ntp')},{key:'route',label:t('protoCenter.sections.route')},
       {key:'inbounds',label:t('protoCenter.sections.inbounds')},{key:'outbounds',label:t('protoCenter.sections.outbounds')},
-      {key:'endpoints',label:t('protoCenter.sections.endpoints')},{key:'experimental',label:t('protoCenter.sections.experimental')},
+      {key:'endpoints',label:t('protoCenter.sections.endpoints')},{key:'services',label:t('protoCenter.sections.services')},
+      {key:'certificate',label:t('protoCenter.sections.certificate')},{key:'certificate_providers',label:t('protoCenter.sections.certificateProviders')},
+      {key:'http_clients',label:t('protoCenter.sections.httpClients')},{key:'network_namespaces',label:t('protoCenter.sections.networkNamespaces')},
+      {key:'experimental',label:t('protoCenter.sections.experimental')},
       {key:'_preview',label:t('protoCenter.sections.preview')},
     ],
     hysteria2: [
@@ -208,7 +214,7 @@ function getSections() {
 
 const COMPS = {
   xray: {log:XrayLog,api:XrayApi,dns:XrayDns,routing:XrayRouting,policy:XrayPolicy,inbounds:XrayInbounds,outbounds:XrayOutbounds,stats:XrayStats,metrics:XrayMetrics,fakedns:XrayFakeDns,observatory:XrayObservatory,burstObservatory:XrayBurstObs,version:XrayVersion,geodata:XrayGeodata,_preview:JsonPreview},
-  singbox: {log:SingboxLog,dns:SingboxDns,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,endpoints:SingboxEndpoints,experimental:SingboxExperimental,_preview:JsonPreview},
+  singbox: {log:SingboxLog,dns:SingboxDns,ntp:SingboxNtp,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,endpoints:SingboxEndpoints,services:SingboxJsonSection,certificate:SingboxJsonSection,certificate_providers:SingboxJsonSection,http_clients:SingboxJsonSection,network_namespaces:SingboxJsonSection,experimental:SingboxExperimental,_preview:JsonPreview},
   hysteria2: {listen:Hy2Listen,tls:Hy2Tls,auth:Hy2Auth,bandwidth:Hy2Bandwidth,quic:Hy2Quic,trafficStats:Hy2TrafficStats,_preview:JsonPreview},
   tuic: {server:TuicServer,users:TuicUsers,certificate:TuicTls,congestion_control:TuicCongestion,_preview:JsonPreview},
 }
@@ -259,7 +265,7 @@ function switchSection(k){
   secOutput.value=undefined
   const d=fullConfig.value[k]
   if(k==='_preview'){secData.value=fullConfig.value;secJson.value=JSON.stringify(fullConfig.value,null,2);return}
-  if(d===undefined){const arraySections=['inbounds','outbounds','rules','servers','balancers'];secData.value=arraySections.includes(k)?[]:{}}
+  if(d===undefined){const arraySections=['inbounds','outbounds','rules','servers','balancers','services','certificate_providers','http_clients','network_namespaces'];secData.value=arraySections.includes(k)?[]:{}}
   else{secData.value=d}
   secJson.value=JSON.stringify(secData.value,null,2)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -899,6 +900,27 @@ func normalizeSingboxRouteRuleFields(rules []interface{}) {
 			}
 			delete(rule, "process")
 		}
+		// 规则上的 domain_resolver 不是合法字段（拨号字段才有），
+		// 但 action=resolve 时对应的字段是 server —— 有该动作时做等价改写。
+		if v, exists := rule["domain_resolver"]; exists {
+			action, _ := rule["action"].(string)
+			if action == "resolve" {
+				if _, has := rule["server"]; !has {
+					rule["server"] = v
+				}
+			} else {
+				log.Printf("[coreconfig] route rule: 删除非法字段 domain_resolver（仅拨号字段支持，resolve 动作用 server）")
+			}
+			delete(rule, "domain_resolver")
+		}
+		// 规则上的 strategy 只对 action=resolve 合法，其它情况是未知字段（FATAL）。
+		if _, exists := rule["strategy"]; exists {
+			action, _ := rule["action"].(string)
+			if action != "resolve" {
+				log.Printf("[coreconfig] route rule: 删除非法字段 strategy（仅 action=resolve 支持）")
+				delete(rule, "strategy")
+			}
+		}
 	}
 }
 
@@ -917,6 +939,11 @@ func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
 	// 归一化 route 规则的字段名：前端历史数据写的是 inbound_tag / process，
 	// 而 sing-box 的字段是 inbound / process_name —— 未知字段会导致 FATAL。
 	normalizeSingboxRouteRuleFields(rules)
+
+	// 归一化 DNS 段：sing-box 1.12～1.14 先后移除了 server.address、server 级
+	// strategy/disable_cache、顶层 fakeip/hosts、domain_matcher 等，历史数据必须
+	// 转换，否则核心启动即 FATAL。
+	migrateSingboxLegacyDNS(fullConfig)
 
 	// Check if any inbound has legacy sniff fields
 	needsSniffRule := false
@@ -1073,6 +1100,299 @@ func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
 
 // defaultSingboxV2RayAPIListen 是 sing-box v2ray_api 的默认监听地址。
 const defaultSingboxV2RayAPIListen = "127.0.0.1:10086"
+
+// migrateSingboxLegacyDNS 把历史 DNS 配置归一为 sing-box 1.14+ 的格式。
+//
+// 背景（均以真实二进制 `sing-box check` 验证过）：
+//   - dns.servers[].address        —— 1.12 起移除，未知字段直接 FATAL
+//   - dns.servers[].strategy       —— server 级已移除（FATAL），提升到顶层 dns.strategy
+//   - dns.servers[].disable_cache  —— server 级已移除（FATAL），丢弃
+//   - dns.servers[].type ""/"legacy" —— 旧格式已移除（FATAL），按 udp 处理
+//   - dns.servers[].type "predefined" —— 已改名 hosts
+//   - dns.fakeip（顶层）           —— 1.14 移除（FATAL），转成 type=fakeip 的 server
+//   - dns.hosts（顶层）            —— 1.14 移除（FATAL），转成 type=hosts 的 server
+//   - dns.domain_matcher           —— 未知字段（FATAL），删除
+//   - dns.independent_cache        —— 1.14 起弃用（会打印 ERROR），删除
+func migrateSingboxLegacyDNS(fullConfig map[string]interface{}) {
+	dns, ok := fullConfig["dns"].(map[string]interface{})
+	if !ok || dns == nil {
+		return
+	}
+
+	servers, _ := dns["servers"].([]interface{})
+	legacyStrategy := ""
+	hasFakeIP := false
+
+	for _, raw := range servers {
+		s, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		// address → server；URL 形式（https://1.1.1.1/dns-query、tls://1.1.1.1:853）拆解
+		if _, hasServer := s["server"]; !hasServer {
+			if addr, _ := s["address"].(string); addr != "" {
+				if scheme, host, port, path, isURL := parseLegacyDNSAddress(addr); isURL {
+					switch scheme {
+					case "https", "h3", "tls", "tcp", "udp", "quic":
+						s["type"] = scheme
+					}
+					if host != "" {
+						s["server"] = host
+					}
+					if port > 0 {
+						s["server_port"] = port
+					}
+					if path != "" {
+						s["path"] = path
+					}
+				} else {
+					s["server"] = addr
+				}
+			}
+		}
+		delete(s, "address")
+
+		if st, _ := s["strategy"].(string); st != "" && legacyStrategy == "" {
+			legacyStrategy = st
+		}
+		delete(s, "strategy")
+		delete(s, "disable_cache")
+
+		typ, _ := s["type"].(string)
+		switch typ {
+		case "predefined":
+			s["type"] = "hosts"
+			typ = "hosts"
+		case "", "legacy":
+			// 旧格式（无 type / legacy）已移除：能拿到 server 就按 udp，否则丢弃
+			if _, hasServer := s["server"]; hasServer {
+				s["type"] = "udp"
+				typ = "udp"
+			}
+		}
+		switch typ {
+		case "fakeip":
+			hasFakeIP = true
+		}
+
+		// 按类型裁剪不支持的字段（如 hosts 带 server、fakeip 带 detour 都会 FATAL）
+		sanitizeSingboxDNSServer(s)
+	}
+
+	// 顶层 fakeip → type=fakeip 的 server（追加在末尾，避免成为默认 server；
+	// sing-box 明确禁止 fakeip 作为默认 server）
+	if fp, ok := dns["fakeip"].(map[string]interface{}); ok && fp != nil {
+		if enabled, hasFlag := fp["enabled"].(bool); (!hasFlag || enabled) && !hasFakeIP {
+			srv := map[string]interface{}{"type": "fakeip", "tag": "fakeip"}
+			if v, _ := fp["inet4_range"].(string); v != "" {
+				srv["inet4_range"] = v
+			} else {
+				srv["inet4_range"] = "198.18.0.0/15"
+			}
+			if v, _ := fp["inet6_range"].(string); v != "" {
+				srv["inet6_range"] = v
+			}
+			servers = append(servers, srv)
+		}
+		delete(dns, "fakeip")
+	}
+
+	// 顶层 hosts → 合并进已有 type=hosts 的 server（避免丢弃用户记录），否则新建一个
+	if hs, ok := dns["hosts"].(map[string]interface{}); ok && hs != nil && len(hs) > 0 {
+		merged := false
+		for _, raw := range servers {
+			s, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if typ, _ := s["type"].(string); typ != "hosts" {
+				continue
+			}
+			pre, _ := s["predefined"].(map[string]interface{})
+			if pre == nil {
+				pre = map[string]interface{}{}
+			}
+			for domain, ip := range hs {
+				if _, exists := pre[domain]; !exists {
+					pre[domain] = ip
+				}
+			}
+			s["predefined"] = pre
+			merged = true
+			break
+		}
+		if !merged {
+			servers = append(servers, map[string]interface{}{
+				"type":       "hosts",
+				"tag":        "hosts",
+				"predefined": hs,
+			})
+		}
+		delete(dns, "hosts")
+	}
+
+	if len(servers) > 0 {
+		// fakeip 不能作为默认 server（sing-box: "default server cannot be fakeip"）：
+		// 若它排在首位且 dns.final 未指定，移到末尾。
+		if first, _ := servers[0].(map[string]interface{}); first != nil {
+			if typ, _ := first["type"].(string); typ == "fakeip" {
+				if fin, _ := dns["final"].(string); fin == "" {
+					servers = append(servers[1:], servers[0])
+				}
+			}
+		}
+		dns["servers"] = servers
+	}
+	if legacyStrategy != "" {
+		if cur, _ := dns["strategy"].(string); cur == "" {
+			dns["strategy"] = legacyStrategy
+		}
+	}
+	delete(dns, "domain_matcher")
+	delete(dns, "independent_cache")
+
+	// sing-box 1.12+ 要求显式声明“用哪个 DNS server 解析拨号字段”
+	// （route.default_domain_resolver / domain_resolver）。缺失时，只要配置同时存在
+	// fakeip/hosts 与常规 server，就会命中
+	// "missing route.default_domain_resolver or domain_resolver in dial fields"
+	// 并在 1.14+ 直接 FATAL（1.15 构建实测）。这里在缺失时自动补一个可用 tag。
+	if len(servers) == 0 {
+		return
+	}
+	route, _ := fullConfig["route"].(map[string]interface{})
+	if route == nil {
+		route = map[string]interface{}{}
+		fullConfig["route"] = route
+	}
+	if cur, _ := route["default_domain_resolver"].(string); cur != "" {
+		return
+	}
+	if tag := pickDefaultDomainResolver(dns, servers); tag != "" {
+		route["default_domain_resolver"] = tag
+	}
+}
+
+// pickDefaultDomainResolver 选一个适合做 route.default_domain_resolver 的 DNS server tag：
+// 优先 dns.final 指向的 server，其次第一个可解析的 server（跳过 fakeip）。
+func pickDefaultDomainResolver(dns map[string]interface{}, servers []interface{}) string {
+	tagOf := func(raw interface{}) (string, string) {
+		s, ok := raw.(map[string]interface{})
+		if !ok {
+			return "", ""
+		}
+		tag, _ := s["tag"].(string)
+		typ, _ := s["type"].(string)
+		return tag, typ
+	}
+	if final, _ := dns["final"].(string); final != "" {
+		for _, raw := range servers {
+			if tag, typ := tagOf(raw); tag == final && typ != "fakeip" {
+				return tag
+			}
+		}
+	}
+	for _, raw := range servers {
+		if tag, typ := tagOf(raw); tag != "" && typ != "fakeip" {
+			return tag
+		}
+	}
+	return ""
+}
+
+// singboxDNSServerDialFields 是 DialerOptions 允许的字段（远程/本地类 server 可用）
+var singboxDNSServerDialFields = []string{
+	"detour", "bind_interface", "inet4_bind_address", "inet6_bind_address",
+	"bind_address_no_port", "protect_path", "routing_mark", "reuse_addr", "netns",
+	"connect_timeout", "tcp_fast_open", "tcp_multi_path", "disable_tcp_keep_alive",
+	"tcp_keep_alive", "tcp_keep_alive_interval", "udp_fragment", "domain_resolver",
+	"network_strategy",
+}
+
+func withDialFields(base ...string) map[string]bool {
+	out := map[string]bool{"type": true, "tag": true}
+	for _, f := range base {
+		out[f] = true
+	}
+	for _, f := range singboxDNSServerDialFields {
+		out[f] = true
+	}
+	return out
+}
+
+// singboxDNSServerAllowedFields 按 server 类型给出允许字段白名单。
+// sing-box 对每个类型都用严格解码，多写一个字段（如给 hosts 写 server、给 fakeip
+// 写 detour）都会 FATAL，因此必须按类型裁剪。
+func singboxDNSServerAllowedFields(typ string) map[string]bool {
+	switch typ {
+	case "udp", "tcp":
+		return withDialFields("server", "server_port")
+	case "tls":
+		return withDialFields("server", "server_port", "tls")
+	case "https", "h3":
+		return withDialFields("server", "server_port", "path", "method", "headers", "tls")
+	case "quic":
+		return withDialFields("server", "server_port", "tls")
+	case "local":
+		return withDialFields("prefer_go", "neighbor_domain")
+	case "dhcp", "mdns":
+		return withDialFields("interface", "prefer_go", "neighbor_domain")
+	case "hosts":
+		// HostsDNSServerOptions: 只有 path / predefined（无拨号字段）
+		return map[string]bool{"type": true, "tag": true, "path": true, "predefined": true}
+	case "fakeip":
+		// FakeIPDNSServerOptions: 只有 inet4_range / inet6_range
+		return map[string]bool{"type": true, "tag": true, "inet4_range": true, "inet6_range": true}
+	case "tailscale", "openconnect", "openvpn":
+		return map[string]bool{
+			"type": true, "tag": true, "endpoint": true,
+			"accept_default_resolvers": true, "accept_search_domain": true,
+		}
+	case "resolved":
+		return map[string]bool{
+			"type": true, "tag": true, "service": true, "accept_default_resolvers": true,
+		}
+	default:
+		return nil // 未知类型：交给 sing-box 报错，不做裁剪
+	}
+}
+
+// sanitizeSingboxDNSServer 删除该 server 类型不支持的字段（避免 FATAL）。
+func sanitizeSingboxDNSServer(s map[string]interface{}) {
+	typ, _ := s["type"].(string)
+	allowed := singboxDNSServerAllowedFields(typ)
+	if allowed == nil {
+		return
+	}
+	for k := range s {
+		if !allowed[k] {
+			log.Printf("[coreconfig] DNS server %q (type=%s): 删除该类型不支持的字段 %q", s["tag"], typ, k)
+			delete(s, k)
+		}
+	}
+}
+
+// parseLegacyDNSAddress 解析旧版 DNS address 字段：
+// "8.8.8.8" 返回 isURL=false；"https://1.1.1.1/dns-query" 返回拆解结果。
+func parseLegacyDNSAddress(addr string) (scheme, host string, port int, path string, isURL bool) {
+	idx := strings.Index(addr, "://")
+	if idx <= 0 {
+		return "", "", 0, "", false
+	}
+	scheme = strings.ToLower(addr[:idx])
+	rest := addr[idx+3:]
+	if i := strings.Index(rest, "/"); i >= 0 {
+		path = rest[i:]
+		rest = rest[:i]
+	}
+	host = rest
+	if i := strings.LastIndex(rest, ":"); i > 0 {
+		if p, err := strconv.Atoi(rest[i+1:]); err == nil {
+			host = rest[:i]
+			port = p
+		}
+	}
+	return scheme, host, port, path, true
+}
 
 // EnsureSingboxV2RayAPI 确保 experimental.v2ray_api 存在并启用流量统计。
 //

@@ -24,6 +24,27 @@
     <el-form-item v-if="model.sniff" :label="t('singbox.listen.sniffOverride')">
       <el-switch v-model="model.sniff_override_destination" @change="emit" />
     </el-form-item>
+
+    <!-- 通用监听字段（sing-box Listen Fields） -->
+    <el-divider content-position="left">Advanced</el-divider>
+    <el-form-item label="Detour">
+      <el-input v-model="model.detour" placeholder="将入站流量交给该 outbound（如 direct）" @change="emit" />
+      <div class="hint">inbound 级 detour，等价于对该入站加一条 route 规则</div>
+    </el-form-item>
+    <el-form-item label="TCP Fast Open">
+      <el-switch v-model="model.tcp_fast_open" @change="emit" />
+    </el-form-item>
+    <el-form-item label="TCP Multi Path">
+      <el-switch v-model="model.tcp_multi_path" @change="emit" />
+      <div class="hint">仅 Linux，需内核支持 MPTCP</div>
+    </el-form-item>
+    <el-form-item label="UDP Fragment">
+      <el-switch v-model="model.udp_fragment" @change="emit" />
+    </el-form-item>
+    <el-form-item label="UDP Timeout">
+      <el-input v-model="model.udp_timeout" placeholder="5m" @change="emit" />
+      <div class="hint">UDP NAT 超时，如 5m / 300s</div>
+    </el-form-item>
   </el-form>
 </template>
 
@@ -36,3 +57,7 @@ defineProps({ model: { type: Object, required: true } })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
 </script>
+
+<style scoped>
+.hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+</style>

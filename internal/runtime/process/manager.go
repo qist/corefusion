@@ -667,6 +667,29 @@ func (m *Manager) RestartIfRunning(ctx context.Context, coreType string) error {
 	return m.Restart(ctx, serviceID, coreType)
 }
 
+// IsCoreRunning 报告指定核心当前是否有正在运行的进程。
+//
+// 用途：stats/gRPC API 探测前的门禁。核心未运行（或未安装）时不应反复去连它的
+// API —— 例如 xray 没装的节点每 30s 去连 127.0.0.1:10085，只会在日志里刷
+// “connection failed” 并白等超时。
+func (m *Manager) IsCoreRunning(coreType string) bool {
+	for _, p := range m.ListAll() {
+		if p.CoreType == coreType && p.State == "running" {
+			return true
+		}
+	}
+	return false
+}
+
+// IsCoreInstalled 报告指定核心的二进制是否已安装。
+func (m *Manager) IsCoreInstalled(coreType string) bool {
+	if m.resolver == nil {
+		return false
+	}
+	_, _, err := m.resolver.Resolve(coreType)
+	return err == nil
+}
+
 func (m *Manager) Restart(ctx context.Context, serviceID int64, coreType string) error {
 	m.mu.Lock()
 	p, ok := m.processes[serviceID]

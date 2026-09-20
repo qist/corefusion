@@ -559,6 +559,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Traffic sync service (periodically syncs traffic stats to DB)
 	trafficSyncSvc := trafficsyncSvc.NewService(systemSettingSvc, inboundConfigSvc, 30*time.Second)
+	// 核心未运行/未安装时不去探测其 stats API（避免每 30s 无效连接与日志刷屏）
+	if processMgr != nil {
+		trafficSyncSvc.SetCoreProbeGate(processMgr.IsCoreRunning)
+	}
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
 	warpSvcInst := warpSvc.NewService(warpRepo)
 	rateLimitConfigRepo := repository.NewRateLimitConfigRepository(database)
@@ -1779,8 +1783,11 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
 					var up, down int64
+					// 核心未运行时跳过该核心的探测（本地节点常常只跑其中一个核心）
+					xrayRunning := processMgr == nil || processMgr.IsCoreRunning("xray")
+					sboxRunning := processMgr == nil || processMgr.IsCoreRunning("singbox")
 					// Try xray
-					if resp, err := localXrayClient.RawStats(ctx, false); err == nil {
+					if resp, err := localXrayClient.RawStats(ctx, false); xrayRunning && err == nil {
 						if sr, err := coredata.ParseStatsResponse(resp); err == nil {
 							for _, u := range sr.Users {
 								up += u.Uplink
@@ -1789,7 +1796,7 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 						}
 					}
 					// Try sing-box (V2Ray API is protocol-compatible with xray StatsService)
-					if resp, err := localSingboxClient.RawStats(ctx, false); err == nil {
+					if resp, err := localSingboxClient.RawStats(ctx, false); sboxRunning && err == nil {
 						if sr, err := coredata.ParseStatsResponse(resp); err == nil {
 							for _, u := range sr.Users {
 								up += u.Uplink
@@ -2126,6 +2133,8 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 				nodeServersGroup.GET("/:id/protocols/:coreType/section/:section", nodeServerH.GetProtocolSection)
 				nodeServersGroup.PUT("/:id/protocols/:coreType/section/:section", nodeServerH.SaveProtocolSection)
 				nodeServersGroup.POST("/:id/protocols/:coreType/validate", nodeServerH.ValidateProtocol)
+				// 创建入站/端点时取一个该节点未占用的端口（避免同端口 TCP/UDP 重复）
+				nodeServersGroup.GET("/:id/free-port", nodeServerH.GetFreePort)
 				nodeServersGroup.GET("/:id/protocols/:coreType/config-file", nodeServerH.GetConfigFile)
 
 				// Node-server-scoped Proxy Management

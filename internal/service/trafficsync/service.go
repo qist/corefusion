@@ -47,6 +47,38 @@ type Service struct {
 	singboxClient    *coredata.XrayClient // sing-box V2Ray API client (nil if not configured)
 	initializedSb    bool                 // sing-box init state
 	warnedNilSingbox bool                 // sing-box 客户端未配置时只提示一次
+
+	// coreRunning 可选门禁：核心未安装/未运行时跳过探测（本地节点常见：
+	// 只跑 sing-box 的机器不该每 30s 去连 xray 的 10085）。
+	coreRunning func(coreType string) bool
+	// gateState 记录上次门禁结果，仅在变化时打日志，避免刷屏。
+	gateState map[string]bool
+}
+
+// SetCoreProbeGate 注入「核心是否可探测」门禁（通常用 process.Manager.IsCoreRunning）。
+func (s *Service) SetCoreProbeGate(fn func(coreType string) bool) {
+	s.coreRunning = fn
+}
+
+// probeAllowed 报告该核心当前是否允许探测；门禁为空时按允许处理。
+// 状态变化时打印一行日志，便于定位「为什么没采集」。
+func (s *Service) probeAllowed(coreType string) bool {
+	if s.coreRunning == nil {
+		return true
+	}
+	allowed := s.coreRunning(coreType)
+	if s.gateState == nil {
+		s.gateState = make(map[string]bool)
+	}
+	if prev, seen := s.gateState[coreType]; !seen || prev != allowed {
+		s.gateState[coreType] = allowed
+		if allowed {
+			log.Printf("trafficsync: %s is running, stats probing enabled", coreType)
+		} else {
+			log.Printf("trafficsync: %s not running, stats probing skipped", coreType)
+		}
+	}
+	return allowed
 }
 
 // NewService creates a new traffic sync service.
@@ -151,8 +183,19 @@ func (s *Service) sync() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// 门禁：核心未运行就不探测（并复位基线标志，等核心起来后重新取基线，
+	// 否则会把核心启动前的累计值当成增量统计）。
+	xrayOK := s.probeAllowed("xray")
+	if !xrayOK {
+		s.initialized = false
+	}
+	sbOK := s.singboxClient != nil && s.probeAllowed("singbox")
+	if !sbOK {
+		s.initializedSb = false
+	}
+
 	// First call: reset counters to 0 for xray.
-	if !s.initialized {
+	if xrayOK && !s.initialized {
 		if _, err := s.client.RawStats(ctx, true); err != nil {
 			log.Printf("trafficsync: xray initial reset failed: %v", err)
 		} else {
@@ -160,7 +203,7 @@ func (s *Service) sync() {
 		}
 	}
 	// First call: reset counters for sing-box (if configured).
-	if s.singboxClient != nil && !s.initializedSb {
+	if sbOK && !s.initializedSb {
 		if _, err := s.singboxClient.RawStats(ctx, true); err != nil {
 			log.Printf("trafficsync: singbox initial reset failed: %v", err)
 		} else {
@@ -180,7 +223,7 @@ func (s *Service) sync() {
 
 	// Collect user traffic from xray
 	var allUsers []coredata.UserTraffic
-	if s.initialized {
+	if s.initialized && xrayOK {
 		resp, err := s.client.RawStats(ctx, true)
 		if err != nil {
 			log.Printf("trafficsync: xray query stats failed: %v", err)
@@ -195,7 +238,7 @@ func (s *Service) sync() {
 	}
 
 	// Collect user traffic from sing-box (if configured)
-	if s.singboxClient != nil && s.initializedSb {
+	if sbOK && s.initializedSb {
 		resp, err := s.singboxClient.RawStats(ctx, true)
 		if err != nil {
 			log.Printf("trafficsync: singbox query stats failed: %v", err)

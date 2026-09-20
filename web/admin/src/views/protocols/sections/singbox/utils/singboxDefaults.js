@@ -130,8 +130,9 @@ export function userDefaultsForType(type) {
 }
 
 // 按协议类型生成完整 inbound 默认参数（打开新入站就自动填入，可手动修改）
-export function inboundDefaultsForType(type) {
-  const port = generatePort()
+export function inboundDefaultsForType(type, customPort) {
+  // customPort 由调用方传入（通常来自后端 free-port 接口，保证不与已有入站重复）
+  const port = customPort > 0 ? customPort : generatePort()
   const base = {
     type,
     tag: 'inbound-' + type + '-' + port,

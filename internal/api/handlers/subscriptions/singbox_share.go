@@ -1,0 +1,311 @@
+package subscriptions
+
+import (
+	"fmt"
+	"log"
+	"strings"
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sing-box 入站 → 订阅渲染（xray 形态归一）
+//
+// 订阅渲染链路（分享链接 sharelink.Generate / formatter.Node）原本只认 xray 形态：
+//
+//	xray    : settings.clients[]（用户凭证，email 标识）+ streamSettings（network/security）
+//	sing-box: 顶层 users[]（name 标识）+ transport/tls
+//
+// 结果就是 sing-box 入站**永远不会出现在订阅里**（用户凭证在 settings 里找不到）。
+//
+// 这里把 sing-box 入站归一成 xray 形态（settings.clients 只保留该订阅用户，
+// streamSettings 由 transport/tls 反推），下游 sharelink / formatter 即可原样复用；
+// 字段口径与前端 web/admin/.../singbox/utils/singboxShareLink.js 保持一致。
+// ─────────────────────────────────────────────────────────────────────────────
+
+// isSingboxInboundConfig 判断入站配置是否为 sing-box 形态。
+func isSingboxInboundConfig(config map[string]interface{}) bool {
+	if config == nil {
+		return false
+	}
+	if _, hasSettings := config["settings"]; hasSettings {
+		return false // xray 形态
+	}
+	_, hasType := config["type"]
+	return hasType
+}
+
+// subscriptionView 把某个入站配置归一成「订阅渲染用的 xray 形态」。
+//
+// 返回值 skip=true 表示该节点不该出现在这个订阅里（例如该订阅用户在此节点没有账号，
+// 绝不复用他人凭证）。xray 入站原样返回。
+func subscriptionView(tag string, config map[string]interface{}, clientEmail string) (map[string]interface{}, bool) {
+	if !isSingboxInboundConfig(config) {
+		return config, false
+	}
+	user := findSingboxUserForSubscription(config, clientEmail, tag)
+	if user == nil {
+		// 该订阅用户在此 sing-box 入站没有账号 → 跳过（安全：不使用他人凭证）
+		return nil, true
+	}
+
+	client := map[string]interface{}{}
+	if v, ok := user["name"].(string); ok {
+		client["email"] = v
+	}
+	// sing-box: uuid（vless/vmess/tuic），password（trojan/hysteria2/ss/anytls），psk（snell），username（naive/mixed/http/socks）
+	if v, ok := user["uuid"].(string); ok && v != "" {
+		client["id"] = v
+	}
+	if v, ok := user["password"].(string); ok && v != "" {
+		client["password"] = v
+	}
+	if v, ok := user["flow"].(string); ok && v != "" {
+		client["flow"] = v
+	}
+	if v, ok := user["method"].(string); ok && v != "" {
+		client["method"] = v
+	}
+	if v, ok := user["psk"].(string); ok && v != "" {
+		client["psk"] = v
+	}
+	if v, ok := user["username"].(string); ok && v != "" {
+		client["username"] = v
+		client["email"] = v
+	}
+
+	protocol, _ := config["type"].(string)
+	encryption := "none"
+	if protocol == "shadowsocks" {
+		encryption = "" // ss 用 method，不需要 encryption
+	}
+
+	out := make(map[string]interface{}, len(config)+2)
+	for k, v := range config {
+		out[k] = v
+	}
+	out["settings"] = map[string]interface{}{
+		"clients":    []interface{}{client},
+		"encryption": encryption,
+	}
+	if method, ok := config["method"].(string); ok && method != "" {
+		out["method"] = method // ss：sharelink 从 settings/clients 之外取 method
+	}
+	out["streamSettings"] = singboxToXrayStreamSettings(config)
+	return out, false
+}
+
+// findSingboxUserForSubscription 在 sing-box 顶层 users[] 中按 name 匹配订阅用户。
+// 复用与 xray 相同的邮箱规则：{client_email}_{tag 前缀+末段}。
+func findSingboxUserForSubscription(config map[string]interface{}, clientEmail, tag string) map[string]interface{} {
+	if clientEmail == "" {
+		return nil
+	}
+	inboundEmail := generateInboundEmail(clientEmail, tag)
+	users, _ := config["users"].([]interface{})
+	for _, u := range users {
+		user, ok := u.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if name, _ := user["name"].(string); name == inboundEmail {
+			return user
+		}
+	}
+	return nil
+}
+
+// singboxToXrayStreamSettings 由 sing-box 的 transport / tls 反推 xray 的 streamSettings，
+// 字段口径与前端 singboxShareLink.js 一致（network / path / host / serviceName /
+// tlsSettings / realitySettings）。
+func singboxToXrayStreamSettings(config map[string]interface{}) map[string]interface{} {
+	ss := map[string]interface{}{"network": "tcp", "security": "none"}
+
+	// transport：sing-box 的 "http" 表示 HTTP/2（xray 里叫 h2）
+	if tr, ok := config["transport"].(map[string]interface{}); ok {
+		switch t, _ := tr["type"].(string); t {
+		case "ws":
+			ss["network"] = "ws"
+			setIfNotEmpty(ss, "path", getString(tr, "path", ""))
+			setIfNotEmpty(ss, "host", firstString(tr["host"]))
+		case "grpc":
+			ss["network"] = "grpc"
+			setIfNotEmpty(ss, "serviceName", getString(tr, "service_name", ""))
+		case "http":
+			ss["network"] = "h2"
+			setIfNotEmpty(ss, "path", getString(tr, "path", ""))
+			setIfNotEmpty(ss, "host", firstString(tr["host"]))
+		case "httpupgrade":
+			ss["network"] = "httpupgrade"
+			setIfNotEmpty(ss, "path", getString(tr, "path", ""))
+			setIfNotEmpty(ss, "host", firstString(tr["host"]))
+		case "quic":
+			ss["network"] = "quic"
+		case "":
+			// 无 transport
+		default:
+			ss["network"] = t
+		}
+	}
+
+	tlsCfg, _ := config["tls"].(map[string]interface{})
+	if tlsCfg == nil {
+		return ss
+	}
+	if enabled, _ := tlsCfg["enabled"].(bool); !enabled {
+		return ss
+	}
+
+	ss["security"] = "tls"
+	tlsSettings := map[string]interface{}{}
+	if sni := getString(tlsCfg, "server_name", ""); sni != "" {
+		tlsSettings["serverName"] = sni
+	}
+	if alpn := getStringSlice(tlsCfg, "alpn"); len(alpn) > 0 {
+		tlsSettings["alpn"] = alpn
+	}
+	if insecure, _ := tlsCfg["insecure"].(bool); insecure {
+		tlsSettings["allowInsecure"] = true
+	}
+	if utls, ok := tlsCfg["utls"].(map[string]interface{}); ok {
+		if fp := getString(utls, "fingerprint", ""); fp != "" {
+			tlsSettings["fingerprint"] = fp
+		}
+	}
+	ss["tlsSettings"] = tlsSettings
+
+	// Reality：分享链接需要 pbk（公钥）。sing-box 服务端只存 private_key，
+	// 编辑器会把公钥额外存到 tls.reality.public_key 供分享链接使用。
+	if reality, ok := tlsCfg["reality"].(map[string]interface{}); ok && reality != nil {
+		if on, has := reality["enabled"].(bool); !has || on {
+			ss["security"] = "reality"
+			rs := map[string]interface{}{}
+			if pbk := getString(reality, "public_key", ""); pbk != "" {
+				rs["_password"] = pbk
+			}
+			if sids := getStringSlice(reality, "short_id"); len(sids) > 0 {
+				rs["shortIds"] = sids
+			} else if sids := getStringSlice(reality, "short_ids"); len(sids) > 0 {
+				rs["shortIds"] = sids
+			}
+			// sni：优先 handshake.server（Reality 伪装目标），其次 tls.server_name
+			if hs, ok := reality["handshake"].(map[string]interface{}); ok {
+				if s := getString(hs, "server", ""); s != "" {
+					rs["serverNames"] = []string{s}
+				}
+			}
+			if _, has := rs["serverNames"]; !has {
+				if sni := getString(tlsCfg, "server_name", ""); sni != "" {
+					rs["serverNames"] = []string{sni}
+				}
+			}
+			if fp, ok := tlsSettings["fingerprint"].(string); ok && fp != "" {
+				rs["fingerprint"] = fp
+			}
+			if spx := getString(reality, "spider_x", ""); spx != "" {
+				rs["spiderX"] = spx
+			}
+			ss["realitySettings"] = rs
+			if pbk, _ := rs["_password"].(string); pbk == "" {
+				log.Printf("[subscriptions] sing-box reality 入站缺少 public_key，分享链接将不含 pbk（请在入站里填写公钥）")
+			}
+		}
+	}
+	return ss
+}
+
+func setIfNotEmpty(m map[string]interface{}, key, val string) {
+	if val != "" {
+		m[key] = val
+	}
+}
+
+// firstString 取字符串或字符串列表的第一个元素（sing-box 的 host 两种形态都有）。
+func firstString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case []interface{}:
+		if len(t) > 0 {
+			if s, ok := t[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 订阅格式 ↔ 协议支持矩阵
+//
+// 不同客户端/格式能表达的协议不同：把某个格式不支持的协议塞进去，客户端要么忽略、
+// 要么直接报错解析失败。因此每种格式都只保留它真正支持的协议。
+// ─────────────────────────────────────────────────────────────────────────────
+
+// formatSupportedProtocols 返回某订阅格式支持的协议集合；返回 nil 表示不做限制。
+func formatSupportedProtocols(format string) map[string]bool {
+	switch strings.ToLower(format) {
+	case "base64_uri", "raw_uri":
+		// 分享链接（URI）形态：标准 scheme，任何客户端都能解析
+		return map[string]bool{
+			"vless": true, "vmess": true, "trojan": true,
+			"shadowsocks": true, "shadowsocks2022": true,
+			"hysteria": true, "hysteria2": true, "tuic": true,
+			"socks": true, "http": true,
+		}
+	case "xray_json":
+		// xray 客户端：不支持 anytls / naive / snell / mixed 等 sing-box 专属协议
+		return map[string]bool{
+			"vless": true, "vmess": true, "trojan": true,
+			"shadowsocks": true, "shadowsocks2022": true,
+			"hysteria": true, "hysteria2": true, "tuic": true,
+			"socks": true, "http": true,
+		}
+	case "singbox_json":
+		// sing-box 客户端：支持面最广
+		return map[string]bool{
+			"vless": true, "vmess": true, "trojan": true,
+			"shadowsocks": true, "shadowsocks2022": true,
+			"hysteria": true, "hysteria2": true, "tuic": true,
+			"socks": true, "http": true, "mixed": true,
+			"anytls": true, "naive": true, "snell": true,
+		}
+	case "mihomo_yaml":
+		// mihomo(clash.meta)：实测能渲染的是这些；anytls / snell / naive 目前
+		// 拿不到 ProxyMap 也生成不出链接，塞进去只会得到一个空/无效条目，故不列入。
+		return map[string]bool{
+			"vless": true, "vmess": true, "trojan": true,
+			"shadowsocks": true, "shadowsocks2022": true,
+			"hysteria": true, "hysteria2": true, "tuic": true,
+			"socks": true, "http": true,
+		}
+	default:
+		return nil
+	}
+}
+
+// filterRenderedNodesForFormat 按目标格式过滤渲染结果：不支持的协议直接剔除，
+// 避免客户端拿到无法解析的条目。
+func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format string) []renderedSubscriptionNode {
+	supported := formatSupportedProtocols(format)
+	if supported == nil {
+		return items
+	}
+	kept := make([]renderedSubscriptionNode, 0, len(items))
+	dropped := make([]string, 0, 4)
+	for _, item := range items {
+		proto := ""
+		name := ""
+		if item.Node != nil {
+			proto = strings.ToLower(item.Node.Protocol)
+			name = item.Node.Name
+		}
+		if proto == "" || supported[proto] {
+			kept = append(kept, item)
+			continue
+		}
+		dropped = append(dropped, fmt.Sprintf("%s(%s)", name, proto))
+	}
+	if len(dropped) > 0 {
+		log.Printf("[subscriptions] format=%s 不支持以下协议，已从订阅中剔除: %s", format, strings.Join(dropped, ", "))
+	}
+	return kept
+}

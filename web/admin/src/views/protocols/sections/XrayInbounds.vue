@@ -3395,6 +3395,24 @@ function onSSMethodChange(method) {
     // Switching to single-user: clear clients
     rf.settings.clients = []
   }
+  normalizeSSClientKeys(method)
+}
+
+// ssKeyBytes 返回 base64 密钥的字节数（不是合法 base64 返回 -1）。
+function ssKeyBytes(v) {
+  try { return atob(String(v || '')).length } catch (e) { return -1 }
+}
+
+// normalizeSSClientKeys 把已有客户端密钥长度校正到当前加密方式要求的长度。
+// 2022-blake3 的密钥长度是强制的（128→16 字节 / 256→32 字节），长度不匹配时
+// sing-box / mihomo 客户端会以 `bad key length` 拒载整份配置（xray 反而接受，
+// 所以从服务端看不出问题）。切换加密方式时旧值本来就用不了，直接重生成。
+function normalizeSSClientKeys(method) {
+  if (!isSS2022(method)) return
+  const want = method === '2022-blake3-aes-128-gcm' ? 16 : 32
+  for (const c of (rf.settings.clients || [])) {
+    if (ssKeyBytes(c.password) !== want) c.password = genSSPassword(method)
+  }
 }
 function genEmail() { return Math.random().toString(36).substring(2, 8) + '@xray.com' }
 function formatTraffic(bytes) { if (!bytes) return '0 B'; const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0, b = bytes; while (b >= 1024 && i < u.length - 1) { b /= 1024; i++ } return b.toFixed(1) + ' ' + u[i] }

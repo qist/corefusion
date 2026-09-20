@@ -420,6 +420,13 @@ export function buildInbound(ib) {
     customPortMode: out._customPortMode,
     customPort: out._accessCustomPort,
   }
+  // 面板内部字段（顶层 `_`，生成核心配置时由 CleanInboundFields 剥离）：**必须落库**，
+  // 否则重开编辑器就不知道用户当初选了什么（只在生成时过滤，不在保存时丢弃）。
+  // _utlsFingerprint：客户端 uTLS 指纹。sing-box 入站不支持 tls.utls（服务端会报未知字段），
+  //   所以只能存内部字段 —— 分享链接的 fp 取它，缺失时后端默认 chrome。
+  // _certId：TLS 证书选择（界面回显；证书文件路径已在 tls.certificate_path/key_path）。
+  out._utlsFingerprint = ib._utlsFingerprint || ''
+  out._certId = ib._certId || ''
   // 端口跳跃：同样以对象形态落库 —— 面板启动时按它恢复 DNAT 规则
   // （firewall.ParsePortHopFromConfig），分享链接据此下发 mport，编辑器回显也靠它。
   out._portHopEnabled = ib._portHopEnabled || false
@@ -454,7 +461,8 @@ export function parseInbound(ib) {
   o._tlsMinVersion = ib.tls?.min_version || ''
   o._tlsCertPath = ib.tls?.certificate_path || ''
   o._tlsKeyPath = ib.tls?.key_path || ''
-  o._utlsFingerprint = ib.tls?.utls?.fingerprint || ''
+  // 客户端 uTLS 指纹：优先内部字段（build 落库的），兼容历史写在 tls.utls.fingerprint 的数据
+  o._utlsFingerprint = ib._utlsFingerprint || ib.tls?.utls?.fingerprint || ''
   o._certId = ib._certId || ''
   o._realityEnabled = ib.tls?.reality?.enabled || false
   o._realityHandshakeServer = ib.tls?.reality?.handshake?.server || ''

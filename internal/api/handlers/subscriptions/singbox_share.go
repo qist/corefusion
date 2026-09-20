@@ -305,6 +305,11 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 			tlsSettings["fingerprint"] = fp
 		}
 	}
+	if _, has := tlsSettings["fingerprint"]; !has {
+		if fp := getString(config, "_utlsFingerprint", ""); fp != "" {
+			tlsSettings["fingerprint"] = fp
+		}
+	}
 	ss["tlsSettings"] = tlsSettings
 
 	// Reality：分享链接需要 pbk（公钥）。sing-box 服务端只存 private_key，
@@ -342,13 +347,20 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 					rs["serverNames"] = []string{sni}
 				}
 			}
-			if fp, ok := tlsSettings["fingerprint"].(string); ok && fp != "" {
-				rs["fingerprint"] = fp
-			} else {
-				// 客户端 uTLS 指纹：xray 侧编辑器默认写 chrome，sing-box 入站没有 utls 字段，
-				// 这里补同一个默认值，避免分享链接缺 fp（多数客户端缺省会自己兜底，但不统一）。
-				rs["fingerprint"] = "chrome"
+			// 客户端 uTLS 指纹：优先 tls.utls.fingerprint，其次面板内部字段 _utlsFingerprint，
+			// 最后补 chrome（与 xray 侧编辑器默认一致）——sing-box 入站没有 utls 字段，
+			// 编辑器只能把它存成内部字段。
+			fp := ""
+			if v, ok := tlsSettings["fingerprint"].(string); ok {
+				fp = v
 			}
+			if fp == "" {
+				fp = getString(config, "_utlsFingerprint", "")
+			}
+			if fp == "" {
+				fp = "chrome"
+			}
+			rs["fingerprint"] = fp
 			if spx := getString(reality, "spider_x", ""); spx != "" {
 				rs["spiderX"] = spx
 			}

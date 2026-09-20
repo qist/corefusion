@@ -1576,21 +1576,30 @@ func resolveHostPort(config map[string]interface{}, listenHost string, listenPor
 			return d.Host, resolvePortFromEntry(d, portMode, listenPort)
 		}
 	case "cf_domain":
+		// cf_domain / cf_ip 用的是 CDN 条目自身配置的端口（界面上这两种类型
+		// 没有「端口模式」选项），因此显式传空 portMode —— 否则 direct 类型下
+		// 残留的 "inbound" 选择会串到 CDN 域名上，链接端口与界面预览不一致。
 		if domain, _ := ad["cfDomain"].(string); domain != "" {
-			return domain, resolvePort(ad, portMode, listenPort, shareDomains, "cf_domain", domain)
+			return domain, resolvePort(ad, "", listenPort, shareDomains, "cf_domain", domain)
 		}
 		if d := pickByType(shareDomains, "cf_domain"); d != nil {
-			return d.Host, resolvePortFromEntry(d, portMode, listenPort)
+			return d.Host, resolvePortFromEntry(d, "", listenPort)
 		}
 	case "cf_ip":
 		if ip, _ := ad["cfIP"].(string); ip != "" {
-			return ip, resolvePort(ad, portMode, listenPort, shareDomains, "cf_ip", ip)
+			return ip, resolvePort(ad, "", listenPort, shareDomains, "cf_ip", ip)
 		}
 		if d := pickByType(shareDomains, "cf_ip"); d != nil {
-			return d.Host, resolvePortFromEntry(d, portMode, listenPort)
+			return d.Host, resolvePortFromEntry(d, "", listenPort)
 		}
 	case "custom":
 		if domain, _ := ad["customDomain"].(string); domain != "" {
+			// custom 类型自己的「端口模式」：inbound = 用入站监听端口（与界面一致），
+			// 否则用自定义端口（默认 443）。此前完全没有读 customPortMode，
+			// 导致界面上选了「使用入站端口」也不生效。
+			if mode, _ := ad["customPortMode"].(string); mode == "inbound" {
+				return domain, listenPort
+			}
 			customPort := 443
 			if p, ok := ad["customPort"].(float64); ok && p > 0 {
 				customPort = int(p)

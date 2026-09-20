@@ -174,6 +174,53 @@
             </template>
 
             <!-- 通用监听字段（sing-box Listen Fields） -->
+            <!-- Port Hopping（端口跳跃）：sing-box 入站不支持 server_ports（那是出站
+                 字段），服务端靠防火墙把端口段 DNAT 到入站端口（与 xray 一致）；
+                 客户端跳跃范围通过分享链接的 mport 下发。保存时自动增删规则。 -->
+            <template v-if="rf.type === 'hysteria2' || rf.type === 'hysteria'">
+              <el-divider content-position="left">Port Hopping</el-divider>
+              <el-form-item label="Enable">
+                <el-switch v-model="rf._portHopEnabled" />
+                <span class="hint" style="margin-left:8px">端口段转发到本入站端口（保存时自动增删防火墙规则）</span>
+              </el-form-item>
+              <template v-if="rf._portHopEnabled">
+                <el-form-item label="Target Port">
+                  <el-input-number v-model="rf.listen_port" :min="1" :max="65535" disabled />
+                  <div class="hint">当前入站监听端口（端口段会转发到这里）</div>
+                </el-form-item>
+                <el-form-item label="Range Mode">
+                  <el-select v-model="rf._portHopMode" style="width:100%">
+                    <el-option label="Preset" value="preset" />
+                    <el-option label="Manual" value="manual" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
+                  <el-select v-model="rf._portHopRange" style="width:100%">
+                    <el-option label="10000-20000" value="10000-20000" />
+                    <el-option label="20000-50000" value="20000-50000" />
+                    <el-option label="30000-60000" value="30000-60000" />
+                    <el-option label="40000-50000" value="40000-50000" />
+                    <el-option label="40000-65000" value="40000-65000" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item v-else label="Port Range">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <el-input-number v-model="rf._portHopStart" :min="1" :max="65535" style="width:120px" />
+                    <span>-</span>
+                    <el-input-number v-model="rf._portHopEnd" :min="1" :max="65535" style="width:120px" />
+                  </div>
+                </el-form-item>
+                <el-form-item label="Interface">
+                  <div style="display:flex;gap:8px;width:100%">
+                    <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create placeholder="All interfaces">
+                      <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
+                    </el-select>
+                    <el-button size="small" @click="loadInterfaces">Refresh</el-button>
+                  </div>
+                  <div class="hint">留空表示所有网卡</div>
+                </el-form-item>
+              </template>
+            </template>
             <el-divider content-position="left">Advanced Listen</el-divider>
             <el-form-item label="Detour">
               <el-input v-model="rf.detour" placeholder="direct" />
@@ -483,6 +530,36 @@ async function save() {
     } else {
       await client.post(`${nodeBase.value}/inbound-configs`, payload)
     }
+    // 端口跳跃：保存时自动增删防火墙规则（端口段 DNAT → 入站端口）。
+    // 规则与核心无关，但 sing-box 入站不能写 server_ports，只能靠这套规则实现。
+    if (rf.type === 'hysteria2' || rf.type === 'hysteria') {
+      const isEnabled = rf._portHopEnabled || false
+      const newRange = rf._portHopMode === 'preset' ? (rf._portHopRange || '20000-50000') : `${rf._portHopStart || 20000}-${rf._portHopEnd || 50000}`
+      const newIface = rf._portHopInterface || ''
+      const newPort = rf.listen_port || 0
+      const fwBase = `${nodeBase.value}/singbox/control/firewall`
+      try {
+        if (editIdx.value >= 0) {
+          const oldIb = form[editIdx.value] || {}
+          const wasEnabled = oldIb._portHopEnabled || false
+          const oldRange = oldIb._portHopMode === 'preset' ? (oldIb._portHopRange || '20000-50000') : `${oldIb._portHopStart || 20000}-${oldIb._portHopEnd || 50000}`
+          const oldIface = oldIb._portHopInterface || ''
+          const oldPort = oldIb.listen_port || 0
+          const changed = oldRange !== newRange || oldIface !== newIface || oldPort !== newPort
+          if (wasEnabled && (!isEnabled || changed)) {
+            await client.post(`${fwBase}/remove`, { port_range: oldRange, target_port: oldPort, interface: oldIface })
+          }
+          if (isEnabled && (!wasEnabled || changed)) {
+            await client.post(`${fwBase}/apply`, { port_range: newRange, target_port: newPort, interface: newIface })
+          }
+        } else if (isEnabled) {
+          await client.post(`${fwBase}/apply`, { port_range: newRange, target_port: newPort, interface: newIface })
+        }
+      } catch (fwErr) {
+        console.warn('Failed to update port hop firewall rules:', fwErr)
+      }
+    }
+
     // Restart sing-box to apply changes (no hot-reload API)
     await restartCore()
     ElMessage.success(t('common.success'))
@@ -824,6 +901,14 @@ async function restartCore() {
 // ==================== Access Domain data loading ====================
 
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+// 端口跳跃：网卡列表（留空 = 全部网卡）
+const ifaceList = ref([])
+async function loadInterfaces() {
+  try {
+    const data = await client.get(`${nodeBase.value}/interfaces`)
+    if (Array.isArray(data)) ifaceList.value = data
+  } catch { ifaceList.value = ['eth0', 'wg0', 'lo'] }
+}
 
 async function loadCFDomains() {
   try {
@@ -929,6 +1014,7 @@ function getAccessHostPort(ib) {
 
 onMounted(() => {
   prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
+  loadInterfaces()
   sync()
   loadCFDomains()
   loadCFIPEntries()

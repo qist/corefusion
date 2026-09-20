@@ -33,6 +33,63 @@ func isSingboxInboundConfig(config map[string]interface{}) bool {
 	return hasType
 }
 
+// finalMaskWithPortHop 返回订阅渲染用的 finalmask：原本取 inbound 的 finalmask，
+// 但如果入站只配了 _portHop（端口跳跃）而没有 finalmask，就用 _portHop 合成一个
+// 只含 udpHop 的 finalmask，让分享链接带上 mport（客户端需要它才能在端口段内跳跃）。
+//
+// 为什么不在入站配置里直接写 finalmask：sing-box 入站是严格解码，finalmask /
+// quicParams 不是它的字段，写进去会 FATAL —— 因此端口跳跃对 sing-box 靠
+// 「防火墙 DNAT 端口段 → 单端口」实现，客户端跳跃范围则通过链接的 mport 下发。
+func finalMaskWithPortHop(config map[string]interface{}) map[string]interface{} {
+	fm := getFinalMask(config)
+	if fm != nil {
+		if qp, ok := fm["quicParams"].(map[string]interface{}); ok {
+			if hop, ok := qp["udpHop"].(map[string]interface{}); ok {
+				if ports, _ := hop["ports"].(string); ports != "" {
+					return fm
+				}
+			}
+		}
+	}
+	ports := portHopRange(config)
+	if ports == "" {
+		return fm
+	}
+	hop := map[string]interface{}{"ports": ports}
+	if fm == nil {
+		fm = map[string]interface{}{}
+	}
+	qp, _ := fm["quicParams"].(map[string]interface{})
+	if qp == nil {
+		qp = map[string]interface{}{}
+		fm["quicParams"] = qp
+	}
+	qp["udpHop"] = hop
+	return fm
+}
+
+// portHopRange 从 _portHop 取端口段（预设用 range，手动用 start-end）。
+func portHopRange(config map[string]interface{}) string {
+	ph, ok := config["_portHop"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if enabled, _ := ph["enabled"].(bool); !enabled {
+		return ""
+	}
+	if mode, _ := ph["mode"].(string); mode == "manual" {
+		start, _ := ph["start"].(float64)
+		end, _ := ph["end"].(float64)
+		if start > 0 && end > 0 {
+			return fmt.Sprintf("%d-%d", int(start), int(end))
+		}
+	}
+	if r, _ := ph["range"].(string); r != "" {
+		return r
+	}
+	return ""
+}
+
 // ensureAccessDomain 把历史遗留的扁平字段（_accessDomainEnabled / _directDomain …）
 // 归一成订阅端真正读取的 _accessDomain 对象。
 //

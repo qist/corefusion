@@ -478,7 +478,7 @@ func (h *PublicHandler) collectShareLinks(
 				Port:           port,
 				Settings:       settings,
 				StreamSettings: getMap(config, "streamSettings"),
-				FinalMask:      getFinalMask(config),
+				FinalMask:      finalMaskWithPortHop(config),
 			}
 
 			link := sharelink.Generate(node)
@@ -668,7 +668,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				Port:           port,
 				Settings:       linkSettings,
 				StreamSettings: getMap(config, "streamSettings"),
-				FinalMask:      getFinalMask(config),
+				FinalMask:      finalMaskWithPortHop(config),
 			}
 			link := sharelink.Generate(shareNode)
 

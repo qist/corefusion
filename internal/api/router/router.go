@@ -2407,6 +2407,11 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 			nodeServersGroup.DELETE("/:id/xray/control/inbound/:tag/user/:email", xrayControlH.RemoveUser)
 			nodeServersGroup.POST("/:id/xray/control/firewall/apply", xrayControlH.ApplyFirewallRules)
 			nodeServersGroup.POST("/:id/xray/control/firewall/remove", xrayControlH.RemoveFirewallRules)
+			// sing-box 的 hysteria2/hysteria 端口跳跃（端口段 → 入站端口转发）。
+			// 防火墙规则本身与核心无关（nft/iptables DNAT），因此复用同一套实现，
+			// 只是给 sing-box 编辑器一个同名的调用入口。
+			nodeServersGroup.POST("/:id/singbox/control/firewall/apply", xrayControlH.ApplyFirewallRules)
+			nodeServersGroup.POST("/:id/singbox/control/firewall/remove", xrayControlH.RemoveFirewallRules)
 			nodeServersGroup.POST("/:id/xray/control/routing", xrayControlH.ApplyRouting)
 			nodeServersGroup.POST("/:id/xray/control/routing/rule", xrayControlH.AddRoutingRule)
 			nodeServersGroup.DELETE("/:id/xray/control/routing/rule/:tag", xrayControlH.RemoveRoutingRule)
@@ -3198,24 +3203,35 @@ func (a *coreLogBrokerAdapter) GetCoreLogBroker(coreType string) logManageSvc.Lo
 // after process reconcile to restore rules lost on machine reboot.
 func restoreFirewallRules(ctx context.Context, repo *repository.InboundConfigRepository) {
 	// Local server ID is 1
-	configs, err := repo.List(ctx, 1, "xray")
-	if err != nil {
-		log.Printf("[Firewall] failed to list inbound configs for rule restore: %v", err)
-		return
-	}
-
 	var infos []firewall.InboundConfigInfo
-	for _, c := range configs {
-		if !c.Enabled || c.Protocol != "hysteria" {
+	// 端口跳跃规则与核心无关（nft DNAT 端口段 → 入站端口），因此 xray 的 hysteria
+	// 与 sing-box 的 hysteria2/hysteria 都要恢复；否则机器重启后 sing-box 的
+	// 端口跳跃会静默失效（配置里 _portHop 还在，但规则没了）。
+	targets := []struct {
+		coreType  string
+		protocols map[string]bool
+	}{
+		{"xray", map[string]bool{"hysteria": true}},
+		{"singbox", map[string]bool{"hysteria2": true, "hysteria": true}},
+	}
+	for _, t := range targets {
+		configs, err := repo.List(ctx, 1, t.coreType)
+		if err != nil {
+			log.Printf("[Firewall] failed to list %s inbound configs for rule restore: %v", t.coreType, err)
 			continue
 		}
-		infos = append(infos, firewall.InboundConfigInfo{
-			Tag:        c.Tag,
-			Protocol:   c.Protocol,
-			Port:       c.Port,
-			ConfigJSON: c.ConfigJSON,
-			Enabled:    c.Enabled,
-		})
+		for _, c := range configs {
+			if !c.Enabled || !t.protocols[c.Protocol] {
+				continue
+			}
+			infos = append(infos, firewall.InboundConfigInfo{
+				Tag:        c.Tag,
+				Protocol:   c.Protocol,
+				Port:       c.Port,
+				ConfigJSON: c.ConfigJSON,
+				Enabled:    c.Enabled,
+			})
+		}
 	}
 
 	firewall.RestoreRules(ctx, firewall.LocalApplier{}, func() ([]firewall.InboundConfigInfo, error) {

@@ -12,13 +12,13 @@ import (
 
 // Node holds parsed inbound info for share link generation.
 type Node struct {
-	Tag          string
-	Protocol     string
-	Host         string
-	Port         int
-	Settings     map[string]interface{}
+	Tag            string
+	Protocol       string
+	Host           string
+	Port           int
+	Settings       map[string]interface{}
 	StreamSettings map[string]interface{}
-	FinalMask    map[string]interface{}
+	FinalMask      map[string]interface{}
 }
 
 // Generate generates a share link for the given node (mirrors frontend generateShareLink).
@@ -38,7 +38,8 @@ func Generate(node Node) string {
 		return generateTuicLink(node)
 	case "http":
 		return generateAuthLink("http://", node)
-	case "socks", "socks5":
+	case "socks", "socks5", "mixed":
+		// sing-box 的 mixed = socks + http 同端口，分享用 socks:// 客户端可识别
 		return generateAuthLink("socks://", node)
 	}
 	return ""

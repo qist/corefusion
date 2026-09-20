@@ -348,8 +348,16 @@
       </template>
     </el-dialog>
 
-    <!-- QR Code Dialog (简化：不选用户，直接显示第一个用户) -->
+    <!-- QR Code Dialog（多用户可选；链接优先用后端生成，与订阅完全同源） -->
     <el-dialog v-model="qrDlg" :title="t('protoCenter.inbounds.qrCode')" width="400" top="10vh">
+      <div v-if="qrUsers.length > 1" style="margin-bottom:12px">
+        <el-select v-model="qrSelectedUser" style="width:100%" @change="onQrUserChange">
+          <el-option v-for="u in qrUsers" :key="u.key" :label="u.label" :value="u.key" />
+        </el-select>
+      </div>
+      <div v-else-if="qrUsers.length === 1" style="margin-bottom:12px;color:#909399;font-size:12px">
+        {{ qrUsers[0].label }}
+      </div>
       <div style="text-align:center;padding:20px">
         <div v-if="qrCodeUrl" style="margin-bottom:16px">
           <img :src="qrCodeUrl" style="max-width:250px" />
@@ -478,6 +486,10 @@ const qrDlg = ref(false)
 const qrLink = ref('')
 const qrCodeUrl = ref('')
 const qrGenerating = ref(false)
+const qrUsers = ref([])          // [{ key, label, raw }]
+const qrSelectedUser = ref('')
+const qrCurrentIb = ref(null)
+const qrLinks = ref(new Map())   // 用户 → 分享链接（后端生成）
 
 // Reset Traffic Dialog
 const resetDlg = ref(false)
@@ -659,15 +671,30 @@ function buildShareLinkForUser(ib, user) {
   return generateShareLink(parsed, user || parsed.users?.[0] || {}, hp.host, hp.port, parsed.tag)
 }
 
-async function showQr(row) {
-  const users = row.users || []
-  if (!users.length) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
-  qrDlg.value = true
-  // 直接显示第一个用户的 QR 码（不提供用户选择列表）
-  const link = buildShareLinkForUser(row, users[0])
-  if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
-  qrLink.value = link
+// 该入站逐用户的分享链接（后端生成：与订阅同源 —— 正常只走这条路）
+async function loadShareLinks(ib) {
+  qrLinks.value = new Map()
+  const id = ib?._id ?? ib?.id
+  if (!id) return
+  try {
+    const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`)
+    for (const it of data?.items || []) {
+      qrLinks.value.set(String(it.user || '').trim().toLowerCase(), it.link)
+    }
+  } catch { /* 后端不可用时回退本地生成器 */ }
+}
+
+// 该用户的分享链接：优先后端（与订阅一致、参数完整），拿不到再回退本地生成
+function linkForUser(ib, user) {
+  const key = String(user?.name || user?.username || '').trim().toLowerCase()
+  if (key && qrLinks.value.has(key)) return qrLinks.value.get(key)
+  return buildShareLinkForUser(ib, user)
+}
+
+async function renderQr(link) {
+  qrLink.value = link || ''
   qrCodeUrl.value = ''
+  if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   qrGenerating.value = true
   try {
     qrCodeUrl.value = await generateQrDataUrl(link)
@@ -677,6 +704,29 @@ async function showQr(row) {
   } finally {
     qrGenerating.value = false
   }
+}
+
+async function showQr(row) {
+  const users = (row.users || []).filter(u => !u._paused)
+  if (!users.length) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
+  qrCurrentIb.value = row
+  qrUsers.value = users.map(u => ({
+    key: u.name || u.username || '',
+    raw: u,
+    label: u.name || u.username || '',
+  })).filter(u => u.key)
+  if (!qrUsers.value.length) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
+  qrSelectedUser.value = qrUsers.value[0].key
+  qrDlg.value = true
+  await loadShareLinks(row)
+  await onQrUserChange()
+}
+
+async function onQrUserChange() {
+  const row = qrCurrentIb.value
+  if (!row) return
+  const u = qrUsers.value.find(x => x.key === qrSelectedUser.value)
+  await renderQr(linkForUser(row, u?.raw))
 }
 
 function copyQrLink() {
@@ -739,8 +789,10 @@ function addUser(ib) {
   showAddUser(ib)
 }
 
-function copyShareForUser(ib, user) {
-  const link = buildShareLinkForUser(ib, user)
+async function copyShareForUser(ib, user) {
+  // 管理弹窗里点复制时惰性加载后端链接（与订阅同源）
+  if (!qrLinks.value.size) await loadShareLinks(ib)
+  const link = linkForUser(ib, user)
   if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   copyToClipboard(link)
   ElMessage.success(t('singbox.inbound.shareCopied'))

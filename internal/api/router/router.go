@@ -2288,6 +2288,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/port-hop/rules", inboundCfgH.PortHopRules)
 				nodeServersGroup.POST("/:id/inbound-configs", inboundCfgH.Create)
 				nodeServersGroup.GET("/:id/inbound-configs/:cfgId", inboundCfgH.Get)
+				// 该入站逐用户的分享链接（与订阅同源：subscriptionView + resolveHostPort +
+				// finalMaskWithPortHop + sharelink.Generate），供编辑器二维码/复制使用
+				nodeServersGroup.GET("/:id/inbound-configs/:cfgId/share-links", publicSubH.InboundShareLinks)
 				nodeServersGroup.PUT("/:id/inbound-configs/:cfgId", inboundCfgH.Update)
 				nodeServersGroup.DELETE("/:id/inbound-configs/:cfgId", inboundCfgH.Delete)
 				nodeServersGroup.POST("/:id/inbound-configs/:cfgId/users/:email/pause", inboundCfgH.PauseUser)

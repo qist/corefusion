@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/domain"
 	"corefusion/internal/service/inboundconfig"
 )
 
@@ -19,6 +20,32 @@ import (
 // SyncData detects mirror nodes and generates config from the primary's data.
 type ConfigSyncHook interface {
 	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
+}
+
+// HotApplySyncHook 是 ConfigSyncHook 的可选扩展：声明该核心的改动已经通过核心 API
+// 热下发到运行中的进程（xray 的入站/出站/路由），配置写盘后不要重启核心。
+// Implemented by configSyncHookAdapter in router.go.
+type HotApplySyncHook interface {
+	SyncServerConfigHotApplied(ctx context.Context, serverID int64, coreType string)
+}
+
+// triggerConfigSync 触发该节点的配置同步。
+//
+// 支持热下发的核心（见 domain.CoreType.SupportsHotApply）只写盘、不重启核心：面板的
+// 入站/出站/路由编辑器写库后一定会调用 xray/control/* 把改动下发到运行中的进程。
+// 其余核心（sing-box / hysteria2 / tuic）没有热下发接口，必须重启核心才能生效。
+func (h *Handler) triggerConfigSync(serverID int64, coreType string) {
+	if h.syncHook == nil {
+		return
+	}
+	if domain.CoreType(coreType).SupportsHotApply() {
+		if hot, ok := h.syncHook.(HotApplySyncHook); ok {
+			go hot.SyncServerConfigHotApplied(context.Background(), serverID, coreType)
+			return
+		}
+	}
+	// 兜底：hook 未实现热下发扩展（或核心不支持），照旧同步（会重启核心）
+	go h.syncHook.SyncServerConfig(context.Background(), serverID, coreType)
 }
 
 // SyncDataHook triggers a full SyncData push to a remote Agent.
@@ -152,9 +179,7 @@ func (h *Handler) Create(c *gin.Context) {
 	// call SyncMirrorsForPrimary, which triggers SyncData to all mirror
 	// nodes. SyncData detects mirror nodes and generates config from
 	// the primary's data at runtime.
-	if h.syncHook != nil {
-		go h.syncHook.SyncServerConfig(context.Background(), serverID, req.CoreType)
-	}
+	h.triggerConfigSync(serverID, req.CoreType)
 
 	response.OK(c, cfg)
 }
@@ -202,9 +227,7 @@ func (h *Handler) Update(c *gin.Context) {
 	// Trigger config sync to the target server asynchronously.
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
-	if h.syncHook != nil {
-		go h.syncHook.SyncServerConfig(context.Background(), cfg.ServerID, cfg.CoreType)
-	}
+	h.triggerConfigSync(cfg.ServerID, cfg.CoreType)
 
 	response.OK(c, cfg)
 }
@@ -236,9 +259,7 @@ func (h *Handler) Delete(c *gin.Context) {
 	// Trigger config sync to the target server asynchronously.
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
-	if h.syncHook != nil {
-		go h.syncHook.SyncServerConfig(context.Background(), serverID, coreType)
-	}
+	h.triggerConfigSync(serverID, coreType)
 
 	response.OK(c, gin.H{"message": "deleted"})
 }
@@ -260,9 +281,9 @@ func (h *Handler) ResetAllTraffic(c *gin.Context) {
 	// Trigger config sync AND SyncData to the target server asynchronously.
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
-	if h.syncHook != nil {
-		go h.syncHook.SyncServerConfig(context.Background(), serverID, "xray")
-	}
+	// 流量重置不改变核心行为（计数由 xray stats API 清零），xray 走热下发不重启。
+	h.triggerConfigSync(serverID, "xray")
+
 	if h.syncDataHook != nil {
 		go h.syncDataHook.SyncServerData(context.Background(), serverID)
 	}

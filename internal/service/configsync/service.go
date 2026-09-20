@@ -195,16 +195,42 @@ func (s *Service) Stop() {
 	log.Println("configsync: stopped")
 }
 
+// SyncOptions 控制单次同步的行为。
+type SyncOptions struct {
+	// NoRestartCores 中的核心本次「只写盘、不重启本地进程」。
+	//
+	// 用途：调用方已经通过该核心的 API（xray 的 gRPC AlterInbound /
+	// AddInbound / RemoveInbound 等）把改动热下发到运行中的进程，重启反而会
+	// 踢掉该核心的全部在线连接。写盘仍然要做，保证下次重启后配置一致。
+	// 只影响本地节点（server_id=1）；远端节点由 SyncData 的 reload_strategy 控制。
+	NoRestartCores map[string]bool
+}
+
+// NoRestart 返回一份「指定核心不重启」的选项。
+func NoRestart(coreTypes ...string) SyncOptions {
+	m := make(map[string]bool, len(coreTypes))
+	for _, ct := range coreTypes {
+		m[ct] = true
+	}
+	return SyncOptions{NoRestartCores: m}
+}
+
 // SyncNow triggers an immediate config sync.
 func (s *Service) SyncNow(ctx context.Context) error {
-	return s.sync(ctx, nil)
+	return s.sync(ctx, nil, SyncOptions{})
+}
+
+// SyncNowOpts 与 SyncNow 相同，但可指定本次同步的额外行为
+// （典型用法：改动已通过核心 API 热下发，本地只写盘不重启）。
+func (s *Service) SyncNowOpts(ctx context.Context, opts SyncOptions) error {
+	return s.sync(ctx, nil, opts)
 }
 
 // SyncServers syncs configs to only the given server IDs. An empty slice syncs
 // every known node. It is used to scope runtime operations (apply/rollback/
 // disable) to specific nodes.
 func (s *Service) SyncServers(ctx context.Context, only []int64) error {
-	return s.sync(ctx, only)
+	return s.sync(ctx, only, SyncOptions{})
 }
 
 // LastSync returns the last sync time.
@@ -221,7 +247,7 @@ func (s *Service) loop() {
 	// Initial sync after a short delay
 	time.Sleep(10 * time.Second)
 	ctx := context.Background()
-	if err := s.sync(ctx, nil); err != nil {
+	if err := s.sync(ctx, nil, SyncOptions{}); err != nil {
 		log.Printf("configsync: initial sync failed: %v", err)
 	}
 
@@ -231,24 +257,24 @@ func (s *Service) loop() {
 			return
 		case <-ticker.C:
 			ctx := context.Background()
-			if err := s.sync(ctx, nil); err != nil {
+			if err := s.sync(ctx, nil, SyncOptions{}); err != nil {
 				log.Printf("configsync: sync failed: %v", err)
 			}
 		}
 	}
 }
 
-func (s *Service) sync(ctx context.Context, only []int64) error {
+func (s *Service) sync(ctx context.Context, only []int64, opts SyncOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Sync xray config
-	if err := s.syncCore(ctx, "xray", only); err != nil {
+	if err := s.syncCore(ctx, "xray", only, opts); err != nil {
 		log.Printf("configsync: xray sync failed: %v", err)
 	}
 
 	// Sync singbox config
-	if err := s.syncCore(ctx, "singbox", only); err != nil {
+	if err := s.syncCore(ctx, "singbox", only, opts); err != nil {
 		log.Printf("configsync: singbox sync failed: %v", err)
 	}
 
@@ -257,7 +283,7 @@ func (s *Service) sync(ctx context.Context, only []int64) error {
 	return nil
 }
 
-func (s *Service) syncCore(ctx context.Context, coreType string, only []int64) error {
+func (s *Service) syncCore(ctx context.Context, coreType string, only []int64, opts SyncOptions) error {
 	// Determine which servers to sync.
 	// Always sync local node (server_id=1) to disk.
 	// For remote nodes, generate config from panel DB and push via Agent.
@@ -290,7 +316,7 @@ func (s *Service) syncCore(ctx context.Context, coreType string, only []int64) e
 
 	var firstErr error
 	for _, serverID := range serverIDs {
-		if err := s.syncCoreForServer(ctx, coreType, serverID); err != nil {
+		if err := s.syncCoreForServer(ctx, coreType, serverID, opts); err != nil {
 			log.Printf("configsync: %s sync failed for server %d: %v", coreType, serverID, err)
 			if firstErr == nil {
 				firstErr = err
@@ -314,10 +340,10 @@ func (s *Service) syncCore(ctx context.Context, coreType string, only []int64) e
 //
 // 本地节点：内容变化时写盘并 RestartIfRunning；远端节点：经 Agent SyncConfig 下发。
 func (s *Service) SyncServerCore(ctx context.Context, serverID int64, coreType string) error {
-	return s.syncCoreForServer(ctx, coreType, serverID)
+	return s.syncCoreForServer(ctx, coreType, serverID, SyncOptions{})
 }
 
-func (s *Service) syncCoreForServer(ctx context.Context, coreType string, serverID int64) error {
+func (s *Service) syncCoreForServer(ctx context.Context, coreType string, serverID int64, opts SyncOptions) error {
 	// Resolve the inbound source server ID. For mirror nodes, inbounds
 	// come from the primary (partner) server.
 	inboundServerID := serverID
@@ -392,7 +418,12 @@ func (s *Service) syncCoreForServer(ctx context.Context, coreType string, server
 		// xray / sing-box 都没有配置热加载，写盘后必须重启核心才会生效。
 		// 远端节点由 Agent 在 SyncConfig 时重启，本地节点此前只写盘不重启，
 		// 表现为「面板保存了配置但核心仍跑旧配置」（配置校验也发现不了）。
-		if s.localCoreRestarter != nil {
+		if opts.NoRestartCores[coreType] {
+			// 调用方已通过核心 API 把改动热下发到运行中的进程（例如 xray 的
+			// AlterInbound）：配置照常写盘以保证重启后一致，但不重启进程 ——
+			// 重启会断开该核心的全部在线连接。
+			log.Printf("configsync: local %s config changed (%d bytes), restart skipped (hot-applied via core API)", coreType, len(data))
+		} else if s.localCoreRestarter != nil {
 			if err := s.localCoreRestarter.RestartIfRunning(ctx, coreType); err != nil {
 				log.Printf("configsync: restart local %s after config change failed: %v", coreType, err)
 			} else {

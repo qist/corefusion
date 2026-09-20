@@ -301,8 +301,30 @@ type configSyncHookAdapter struct {
 }
 
 func (a *configSyncHookAdapter) SyncServerConfig(_ context.Context, serverID int64, coreType string) {
+	a.syncServerConfig(serverID, coreType, false)
+}
+
+// SyncServerConfigHotApplied 与 SyncServerConfig 相同，但声明「该核心的改动已经通过核心
+// API 热下发到运行中的进程」——xray 的入站/出站/路由都是这样（面板改完会立刻调
+// xray/control/inbound|outbound|routing）。此时本地节点只写盘、不重启核心，避免把
+// 该核心的全部在线连接踢掉；配置写盘保证下次重启后仍然一致。
+//
+// 远端节点无需特殊处理：SyncData 默认 reload_strategy=NONE（已运行时只写文件不重启）。
+// 目前只有 xray 具备热下发能力：sing-box 的 v2ray API 仅注册 StatsService，没有
+// AlterInbound，入站/用户变更必须重启核心才能生效。
+func (a *configSyncHookAdapter) SyncServerConfigHotApplied(_ context.Context, serverID int64, coreType string) {
+	a.syncServerConfig(serverID, coreType, true)
+}
+
+func (a *configSyncHookAdapter) syncServerConfig(serverID int64, coreType string, hotApplied bool) {
 	if a.syncSvc != nil {
-		if err := a.syncSvc.SyncNow(context.Background()); err != nil {
+		var err error
+		if hotApplied {
+			err = a.syncSvc.SyncNowOpts(context.Background(), configsyncSvc.NoRestart(coreType))
+		} else {
+			err = a.syncSvc.SyncNow(context.Background())
+		}
+		if err != nil {
 			log.Printf("[router] configSyncHook: SyncNow failed for server %d: %v", serverID, err)
 		}
 	}

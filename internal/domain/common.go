@@ -12,48 +12,59 @@ const (
 	CoreTypeTUIC      CoreType = "tuic"
 )
 
+// SupportsHotApply 报告该核心的配置改动能否通过运行时 API 热下发（无需重启进程）。
+//
+// xray：gRPC HandlerService 支持 AlterInbound / AddInbound / RemoveInbound 与 routing
+// 更新，面板的入站/出站/路由编辑器在写库后一定会调用 xray/control/* 把改动下发到
+// 运行中的进程，因此这些改动不需要重启核心（重启会断开该核心的全部在线连接）。
+// sing-box：v2ray API 只注册了 StatsService（没有 AlterInbound），入站/用户变更只能
+// 「重新生成配置 + 重启核心」才能生效。
+func (c CoreType) SupportsHotApply() bool {
+	return c == CoreTypeXray
+}
+
 // ProtocolType represents the proxy protocol.
 type ProtocolType string
 
 const (
-	ProtocolVLESS          ProtocolType = "vless"
-	ProtocolVMess          ProtocolType = "vmess"
-	ProtocolTrojan         ProtocolType = "trojan"
-	ProtocolShadowsocks    ProtocolType = "shadowsocks"
+	ProtocolVLESS           ProtocolType = "vless"
+	ProtocolVMess           ProtocolType = "vmess"
+	ProtocolTrojan          ProtocolType = "trojan"
+	ProtocolShadowsocks     ProtocolType = "shadowsocks"
 	ProtocolShadowsocks2022 ProtocolType = "shadowsocks2022"
-	ProtocolHysteria2      ProtocolType = "hysteria2"
-	ProtocolTUIC           ProtocolType = "tuic"
-	ProtocolDokodemo       ProtocolType = "dokodemo-door"
-	ProtocolTUN            ProtocolType = "tun"
+	ProtocolHysteria2       ProtocolType = "hysteria2"
+	ProtocolTUIC            ProtocolType = "tuic"
+	ProtocolDokodemo        ProtocolType = "dokodemo-door"
+	ProtocolTUN             ProtocolType = "tun"
 	// sing-box specific multi-purpose and auth inbounds
-	ProtocolMixed          ProtocolType = "mixed"
-	ProtocolHTTP           ProtocolType = "http"
-	ProtocolSocks          ProtocolType = "socks"
-	ProtocolNaive          ProtocolType = "naive"
+	ProtocolMixed ProtocolType = "mixed"
+	ProtocolHTTP  ProtocolType = "http"
+	ProtocolSocks ProtocolType = "socks"
+	ProtocolNaive ProtocolType = "naive"
 	// sing-box advanced inbounds
-	ProtocolAnyTLS        ProtocolType = "anytls"
-	ProtocolShadowTLS     ProtocolType = "shadowtls"
-	ProtocolHysteria      ProtocolType = "hysteria"
-	ProtocolWireGuard     ProtocolType = "wireguard"
-	ProtocolSnell         ProtocolType = "snell"
+	ProtocolAnyTLS    ProtocolType = "anytls"
+	ProtocolShadowTLS ProtocolType = "shadowtls"
+	ProtocolHysteria  ProtocolType = "hysteria"
+	ProtocolWireGuard ProtocolType = "wireguard"
+	ProtocolSnell     ProtocolType = "snell"
 )
 
 // TransportType represents the transport layer.
 type TransportType string
 
 const (
-	TransportTCP          TransportType = "tcp"
-	TransportWS           TransportType = "ws"
-	TransportGRPC         TransportType = "grpc"
-	TransportHTTP2        TransportType = "http2"
-	TransportQUIC         TransportType = "quic"
-	TransportReality      TransportType = "reality"
-	TransportHTTPUpgrade  TransportType = "httpupgrade"
+	TransportTCP         TransportType = "tcp"
+	TransportWS          TransportType = "ws"
+	TransportGRPC        TransportType = "grpc"
+	TransportHTTP2       TransportType = "http2"
+	TransportQUIC        TransportType = "quic"
+	TransportReality     TransportType = "reality"
+	TransportHTTPUpgrade TransportType = "httpupgrade"
 	// Additional transports supported by xray/sing-box
-	TransportKCP          TransportType = "kcp"
-	TransportMKCP         TransportType = "mkcp"
-	TransportH2           TransportType = "h2"
-	TransportXHTTP        TransportType = "xhttp"
+	TransportKCP   TransportType = "kcp"
+	TransportMKCP  TransportType = "mkcp"
+	TransportH2    TransportType = "h2"
+	TransportXHTTP TransportType = "xhttp"
 )
 
 // TLSMode represents the TLS mode.

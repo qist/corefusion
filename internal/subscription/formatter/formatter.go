@@ -79,17 +79,31 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 		if proto == "shadowsocks2022" || proto == "ss" {
 			proto = "shadowsocks"
 		}
+		// sing-box **没有** "mixed" 出站类型（实测 unknown outbound type: mixed），
+		// 但 mixed 入站同时提供 HTTP 代理 → 用 http 出站即可连上，不能原样下发。
+		if proto == "mixed" {
+			proto = "http"
+		}
+		// 端口跳跃的节点 port 是 0（真身在 ports 区间里）：sing-box 用 server_port
+		// 作主端口 + server_ports 作跳跃段，主端口不能留 0。
+		port := node.Port
+		if port == 0 {
+			if ranges, ok := node.Extra["ports"].(string); ok && ranges != "" {
+				port = extractFirstPort(ranges)
+			}
+		}
 		ob := map[string]interface{}{
 			"type":        proto,
 			"tag":         uniqueNodeTag(node.Name, usedTags),
 			"server":      node.Host,
-			"server_port": node.Port,
+			"server_port": port,
 		}
 
 		if node.UUID != "" {
 			ob["uuid"] = node.UUID
 		}
-		if node.Password != "" {
+		// snell 的凭据字段是 psk（不是 password）——写了 password 会因未知字段 FATAL
+		if node.Password != "" && node.Protocol != "snell" {
 			ob["password"] = node.Password
 		}
 
@@ -115,10 +129,39 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			}
 		}
 
-		// tuic congestion control
+		// tuic：拥塞控制 / UDP 中继模式 / 0-RTT
 		if node.Protocol == "tuic" {
 			if cc, ok := node.Extra["congestion-controller"].(string); ok && cc != "" {
 				ob["congestion_control"] = cc
+			}
+			if m, ok := node.Extra["udp-relay-mode"].(string); ok && m != "" {
+				ob["udp_relay_mode"] = m
+			}
+			if z, ok := node.Extra["zero-rtt-handshake"].(bool); ok && z {
+				ob["zero_rtt_handshake"] = true
+			}
+		}
+
+		// snell：出站必须有 psk + version（缺 version 实测报 "snell: missing version"）
+		if node.Protocol == "snell" {
+			if psk := node.Password; psk != "" {
+				ob["psk"] = psk
+			}
+			if v := anyToInt(node.Extra["version"]); v > 0 {
+				ob["version"] = v
+			}
+		}
+
+		// anytls：空闲会话参数（有值才下发）
+		if node.Protocol == "anytls" {
+			if v, ok := node.Extra["idle-session-check-interval"].(string); ok && v != "" {
+				ob["idle_session_check_interval"] = v
+			}
+			if v, ok := node.Extra["idle-session-timeout"].(string); ok && v != "" {
+				ob["idle_session_timeout"] = v
+			}
+			if v := anyToInt(node.Extra["min-idle-session"]); v > 0 {
+				ob["min_idle_session"] = v
 			}
 		}
 
@@ -127,19 +170,39 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["packet_encoding"] = "xudp" // sing-box uses packet_encoding for VLESS encryption
 		}
 
-		if node.TLS {
-			tls := map[string]interface{}{
-				"enabled":     true,
-				"server_name": node.ServerName,
+		// REALITY：sing-box 客户端必须写 tls.reality（public_key / short_id），缺了它不会
+		// 报错，而是把 REALITY 当普通 TLS 握手 → 永远连不上（这类节点在面板里很多）。
+		realityOpts, _ := node.Extra["reality-opts"].(map[string]interface{})
+
+		// TLS：tuic / hysteria2 / anytls 在 sing-box 里**强制 TLS**（实测缺 tls 直接
+		// "initialize outbound: TLS required"），而外部节点从 mihomo 映射转过来时通常
+		// 不带 tls: true（这些协议在 mihomo 里隐含 TLS）→ 不补齐会让**整份**订阅加载失败。
+		// REALITY 同理隐含 TLS。
+		if node.TLS || singboxRequireTLS[proto] || len(realityOpts) > 0 {
+			tls := map[string]interface{}{"enabled": true}
+			if node.ServerName != "" {
+				tls["server_name"] = node.ServerName
 			}
-			if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+			if fp := extraFingerprint(node.Extra); fp != "" {
 				tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": fp}
 			}
 			if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
 				tls["insecure"] = true
 			}
-			if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
+			if alpn := extraStringList(node.Extra["alpn"]); len(alpn) > 0 {
 				tls["alpn"] = alpn
+			}
+			if pk, ok := realityOpts["public-key"].(string); ok && pk != "" {
+				reality := map[string]interface{}{"enabled": true, "public_key": pk}
+				if sid, ok := realityOpts["short-id"].(string); ok && sid != "" {
+					reality["short_id"] = sid
+				}
+				// sing-box 的 reality 客户端**强制要求 uTLS**（实测缺 utls 报
+				// "uTLS is required by reality client"），没有指纹时补 chrome。
+				if _, has := tls["utls"]; !has {
+					tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": "chrome"}
+				}
+				tls["reality"] = reality
 			}
 			ob["tls"] = tls
 		}
@@ -259,6 +322,68 @@ func singboxHopInterval(v string) string {
 		return s + "s"
 	}
 	return s
+}
+
+// singboxRequireTLS 是 sing-box 强制 TLS 的出站类型（缺 tls 实测报
+// "initialize outbound: TLS required"，会让整份订阅加载失败）。
+// 外部节点从 mihomo 映射转换时通常不带 tls: true，必须按协议补齐。
+var singboxRequireTLS = map[string]bool{
+	"hysteria2": true, "hysteria": true, "tuic": true, "anytls": true,
+}
+
+// xrayRequireTLS 同理：xray 侧这些协议也必须 TLS。
+var xrayRequireTLS = map[string]bool{
+	"hysteria2": true, "hysteria": true, "tuic": true,
+}
+
+// extraFingerprint 取客户端 uTLS 指纹：内部构造写 client-fingerprint（mihomo 口径），
+// 外部节点可能写 fingerprint。
+func extraFingerprint(extra map[string]interface{}) string {
+	if fp, ok := extra["client-fingerprint"].(string); ok && fp != "" {
+		return fp
+	}
+	if fp, ok := extra["fingerprint"].(string); ok && fp != "" {
+		return fp
+	}
+	return ""
+}
+
+// extraStringList 取多值字段，兼容 []string（内部构造）、[]interface{}（外部节点 JSON）
+// 与逗号分隔字符串。此前只用 .([]string) 断言，外部节点的 alpn/host 会静默丢失。
+func extraStringList(v interface{}) []string {
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []interface{}:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if t == "" {
+			return nil
+		}
+		return strings.Split(t, ",")
+	}
+	return nil
+}
+
+// anyToInt 把 int / float64 / 数字字符串转成 int（转不出返回 0）。
+func anyToInt(v interface{}) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case float64:
+		return int(t)
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(t)); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 // uniqueNodeTag 保证出站 tag 唯一：重名时追加 " 2"、" 3"…
@@ -402,17 +527,17 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		} else if node.Transport != "" {
 			streamSettings["network"] = node.Transport
 		}
-		if node.TLS {
+		if node.TLS || xrayRequireTLS[node.Protocol] {
 			streamSettings["security"] = "tls"
 			tlsSettings := map[string]interface{}{}
 			if node.ServerName != "" {
 				tlsSettings["serverName"] = node.ServerName
 			}
 			// Copy TLS-related fields from Extra
-			if fp, ok := node.Extra["fingerprint"].(string); ok && fp != "" {
+			if fp := extraFingerprint(node.Extra); fp != "" {
 				tlsSettings["fingerprint"] = fp
 			}
-			if alpn, ok := node.Extra["alpn"].([]string); ok && len(alpn) > 0 {
+			if alpn := extraStringList(node.Extra["alpn"]); len(alpn) > 0 {
 				tlsSettings["alpn"] = alpn
 			}
 			if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {

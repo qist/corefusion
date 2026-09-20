@@ -432,13 +432,16 @@ func formatSupportedProtocols(format string) map[string]bool {
 			"socks": true, "http": true,
 		}
 	case "singbox_json":
-		// sing-box 客户端：支持面最广
+		// sing-box 客户端：支持面最广。注意 **naive 不列入** —— naive **出站**需要单独
+		// 编译（本机构建报 "not included in this build, rebuild with -tags
+		// with_naive_outbound"，官方默认构建同样不带），混进订阅会让客户端拒绝加载
+		// **整份**订阅（不是跳过该节点）。mixed 保留：渲染时映射成 http 出站。
 		return map[string]bool{
 			"vless": true, "vmess": true, "trojan": true,
 			"shadowsocks": true, "shadowsocks2022": true,
 			"hysteria": true, "hysteria2": true, "tuic": true,
 			"socks": true, "http": true, "mixed": true,
-			"anytls": true, "naive": true, "snell": true,
+			"anytls": true, "snell": true,
 		}
 	case "mihomo_yaml":
 		// mihomo(clash.meta)：实测能渲染的是这些；anytls / snell / naive 目前

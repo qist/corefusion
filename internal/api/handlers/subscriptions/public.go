@@ -652,6 +652,12 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 						password = auth
 					}
 				}
+				if cfg.Protocol == "snell" {
+					// snell 的 psk 在入站**顶层**（不是每个用户一条），客户端出站需要它
+					if psk := getString(config, "psk", ""); psk != "" {
+						password = psk
+					}
+				}
 			} else {
 				// No client email → skip nodes requiring authentication (security)
 				continue
@@ -1076,6 +1082,12 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				if cfg.Protocol == "hysteria" {
 					if auth, ok := userClient["auth"].(string); ok && auth != "" {
 						password = auth
+					}
+				}
+				if cfg.Protocol == "snell" {
+					// snell 的 psk 在入站**顶层**（不是每个用户一条），客户端出站需要它
+					if psk := getString(config, "psk", ""); psk != "" {
+						password = psk
 					}
 				}
 			} else {
@@ -2399,6 +2411,35 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			if v, ok := qp["disablePathMTUDiscovery"].(bool); ok && v {
 				extra["disable-path-mtu-discovery"] = true
 			}
+		}
+	}
+
+	// 部分 sing-box 专属协议把参数放在**顶层**（不走 transport / tls），这里按协议透传：
+	// 少了它，订阅里的该节点要么缺必填字段（snell 的 version），要么丢可选参数。
+	switch protocol {
+	case "snell":
+		if v := getInt(config, "version", 0); v > 0 {
+			extra["version"] = v
+		}
+	case "tuic":
+		if cc := getString(config, "congestion_control", ""); cc != "" {
+			extra["congestion-controller"] = cc
+		}
+		if m := getString(config, "udp_relay_mode", ""); m != "" {
+			extra["udp-relay-mode"] = m
+		}
+		if z, _ := config["zero_rtt_handshake"].(bool); z {
+			extra["zero-rtt-handshake"] = true
+		}
+	case "anytls":
+		if v := getString(config, "idle_session_check_interval", ""); v != "" {
+			extra["idle-session-check-interval"] = v
+		}
+		if v := getString(config, "idle_session_timeout", ""); v != "" {
+			extra["idle-session-timeout"] = v
+		}
+		if v := getInt(config, "min_idle_session", 0); v > 0 {
+			extra["min-idle-session"] = v
 		}
 	}
 

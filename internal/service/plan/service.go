@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -1608,6 +1609,82 @@ type InboundWithServer struct {
 	entity.InboundConfig
 	ServerName     string `json:"server_name" gorm:"column:server_name"`
 	ServerNodeType string `json:"server_node_type" gorm:"column:server_node_type"`
+
+	// Transport / Security 是从 config_json 解析出来的展示字段：
+	// 仅凭 protocol 无法区分 vless 的 gRPC/TLS/Reality 等形态，UI 需要一个
+	// 直观的「协议 · 传输 · 安全」三元组，否则列表里条目看起来全混在一起。
+	Transport string `json:"transport" gorm:"-"`
+	Security  string `json:"security" gorm:"-"`
+}
+
+// fillInboundTransportSecurity 从 config_json 解析传输层与安全层，填充展示字段。
+//
+//	xray    : streamSettings.network（raw/ws/grpc/httpupgrade/xhttp/kcp/quic/http）
+//	          streamSettings.security（none/tls/reality）
+//	sing-box: transport.type（http/ws/grpc/httpupgrade/quic）
+//	          tls.enabled + tls.reality.enabled；hysteria2/tuic/naive 天然走 TLS
+func fillInboundTransportSecurity(rows []InboundWithServer) {
+	for i := range rows {
+		var cfg map[string]interface{}
+		if json.Unmarshal([]byte(rows[i].ConfigJSON), &cfg) != nil {
+			continue
+		}
+		if isSingboxInboundConfig(cfg) {
+			rows[i].Transport, rows[i].Security = singboxTransportSecurity(cfg)
+			continue
+		}
+		if ss, ok := cfg["streamSettings"].(map[string]interface{}); ok {
+			if n, ok := ss["network"].(string); ok && n != "" && n != "raw" && n != "tcp" {
+				rows[i].Transport = n
+			}
+			if sec, ok := ss["security"].(string); ok && sec != "" && sec != "none" {
+				rows[i].Security = sec
+			}
+		}
+	}
+}
+
+// isSingboxInboundConfig 判断配置是否为 sing-box 形态（有 type 字段、无 settings）。
+func isSingboxInboundConfig(cfg map[string]interface{}) bool {
+	if cfg == nil {
+		return false
+	}
+	if _, hasSettings := cfg["settings"]; hasSettings {
+		return false
+	}
+	_, hasType := cfg["type"]
+	return hasType
+}
+
+// singboxTransportSecurity 解析 sing-box 入站的传输层与安全层。
+func singboxTransportSecurity(cfg map[string]interface{}) (transport, security string) {
+	if t, ok := cfg["transport"].(map[string]interface{}); ok {
+		if tt, ok := t["type"].(string); ok {
+			switch tt {
+			case "http":
+				transport = "h2"
+			case "":
+			default:
+				transport = tt
+			}
+		}
+	}
+	proto, _ := cfg["type"].(string)
+	switch proto {
+	case "hysteria2", "tuic", "naive":
+		security = "tls" // 这些协议天然走 TLS/QUIC
+	}
+	if tls, ok := cfg["tls"].(map[string]interface{}); ok {
+		if enabled, _ := tls["enabled"].(bool); enabled || tls["reality"] != nil {
+			security = "tls"
+			if reality, ok := tls["reality"].(map[string]interface{}); ok && reality != nil {
+				if on, has := reality["enabled"].(bool); !has || on {
+					security = "reality"
+				}
+			}
+		}
+	}
+	return transport, security
 }
 
 // ListAllInboundsWithServer returns all inbound configs across all servers,
@@ -1633,6 +1710,9 @@ func (s *Service) ListAllInboundsWithServer(ctx context.Context) ([]InboundWithS
 		}
 		filtered = append(filtered, r)
 	}
+
+	// 补上展示用的传输层/安全层信息（协议 · 传输 · 安全）
+	fillInboundTransportSecurity(filtered)
 
 	return filtered, nil
 }

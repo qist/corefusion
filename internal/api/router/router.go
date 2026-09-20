@@ -2004,6 +2004,37 @@ chainLinkH.SetHealthChecker(nodeMgrForPhase3)
 			inboundSyncHook.nodeServerSvc = nodeServerSvcInst
 			outboundSyncHook.nodeServerSvc = nodeServerSvcInst
 
+			// 注入「核心重载」能力：sing-box 的 v2ray API 只有 StatsService，
+			// 不支持 xray 那样的 AlterInbound 热加用户，用户变更只能
+			// 「重新生成并下发配置 + 重启核心」才能生效。
+			if inboundMgr != nil {
+				inboundMgr.SetCoreReloader(func(ctx context.Context, serverID int64, coreType string) error {
+					if coreType == "" {
+						coreType = "singbox"
+					}
+					// 1) 重新生成并下发配置
+					if serverID > 1 && nodeServerSvcInst != nil {
+						// 远端节点：SyncData(applyAndStart=true) 会写入新配置并让核心重启
+						if _, err := nodeServerSvcInst.SyncServerData(ctx, serverID, true); err != nil {
+							return fmt.Errorf("sync server data: %w", err)
+						}
+						return nil
+					}
+					if configSyncSvc != nil {
+						if err := configSyncSvc.SyncNow(ctx); err != nil {
+							return fmt.Errorf("sync local config: %w", err)
+						}
+					}
+					// 2) 本地节点：重启核心加载新用户
+					if nodeServerSvcInst != nil {
+						if err := nodeServerSvcInst.ControlCore(ctx, serverID, coreType, "restart"); err != nil {
+							return fmt.Errorf("restart core: %w", err)
+						}
+					}
+					return nil
+				})
+			}
+
 			// Inject config sync hook into chainlink handler so that
 			// chain_links / chain_exit_configs mutations automatically
 			// trigger config regeneration and push to affected nodes

@@ -25,7 +25,7 @@ export default {
     actions: 'Actions',
     id: 'ID',
     name: 'Name',
-    type: 'Type',
+    type: 'Type', protocol: 'Protocol',
     time: 'Time',
     createdAt: 'Created At',
     updatedAt: 'Updated At',

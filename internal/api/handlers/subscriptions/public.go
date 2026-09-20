@@ -2004,6 +2004,7 @@ func trimEmptyALPN(proxy map[string]interface{}) {
 func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 	name, _ := p["name"].(string)
 	proto, _ := p["type"].(string)
+	proto = normalizeMihomoProtocol(proto)
 	server, _ := p["server"].(string)
 
 	// Filter unsupported transports for mihomo
@@ -2023,12 +2024,22 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 	}
 	uuid, _ := p["uuid"].(string)
 	password, _ := p["password"].(string)
+	// snell 的凭据字段是 psk（不是 password），不取就永远认不上
+	if password == "" {
+		password, _ = p["psk"].(string)
+	}
 	flow, _ := p["flow"].(string)
 	encryption, _ := p["encryption"].(string)
 
 	tls := false
 	if v, ok := p["tls"].(bool); ok {
 		tls = v
+	}
+	// mihomo 的这几个类型选项里**没有 tls 字段**（协议本身就恒为 TLS），
+	// 不补 tls=true 的话 sni/证书校验等参数在后续渲染里会全部丢掉。
+	switch proto {
+	case "trojan", "hysteria", "hysteria2", "tuic", "anytls":
+		tls = true
 	}
 	sni := ""
 	if v, ok := p["servername"].(string); ok && v != "" {
@@ -2060,6 +2071,20 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 		"username",
 		// SS specific
 		"obfs-min-packet-size", "obfs-max-packet-size",
+		// Snell specific（psk 是凭据、version 出站必填）
+		"psk", "version", "reuse",
+		// AnyTLS specific
+		"idle-session-check-interval", "idle-session-timeout", "min-idle-session",
+		"disable-reuse", "client-metadata",
+		// SSH specific
+		"private-key", "private-key-passphrase", "host-key", "host-key-algorithms",
+		// Hysteria2 / TUIC 扩展
+		"cwnd", "udp-mtu", "handshake-timeout", "reduce-rtt", "heartbeat-interval",
+		"max-open-streams", "udp-over-stream", "udp-over-stream-version",
+		"max-udp-relay-packet-size", "max-datagram-frame-size",
+		"recv-window", "recv-window-conn", "fast-open",
+		// 安全包装（mihomo / sing-box 都认）
+		"shadow-tls-opts", "restls-opts", "jls-opts", "tlsmirror-opts",
 	}
 	for _, k := range copyKeys {
 		if v, ok := p[k]; ok {
@@ -2084,6 +2109,27 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 		Encryption: encryption,
 		Extra:      extra,
 	}
+}
+
+// normalizeMihomoProtocol 把 mihomo 的代理类型名归一成面板 / 其它核心通用的名字。
+// mihomo 与 sing-box 的类型名并不一致（ss / shadowsocks、socks5 / socks、hy2 / hysteria2），
+// 原样透传会让外部订阅里的节点在 sing-box 订阅里被当成未知协议整条丢掉。
+func normalizeMihomoProtocol(t string) string {
+	switch strings.ToLower(t) {
+	case "ss":
+		return "shadowsocks"
+	case "ssr":
+		return "shadowsocksr"
+	case "socks5", "socks5h":
+		return "socks"
+	case "https":
+		return "http"
+	case "hy2":
+		return "hysteria2"
+	case "any-tls":
+		return "anytls"
+	}
+	return t
 }
 
 func getTLSServerName(ss map[string]interface{}) string {

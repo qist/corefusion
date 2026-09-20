@@ -66,6 +66,43 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			hysteria["skip-cert-verify"], _ = strconv.ParseBool(query.Get("insecure"))
 			proxies = append(proxies, hysteria)
 
+		case "anytls", "any-tls":
+			// anytls://password@host:port/?sni=..&insecure=1&fp=..&alpn=..（官方 URI 规范）
+			urlAnyTLS, err := url.Parse(line)
+			if err != nil {
+				continue
+			}
+			query := urlAnyTLS.Query()
+			anytls := map[string]any{
+				"name":   uniqueName(names, urlAnyTLS.Fragment),
+				"type":   "anytls",
+				"server": urlAnyTLS.Hostname(),
+				"udp":    true,
+			}
+			if port := urlAnyTLS.Port(); port != "" {
+				anytls["port"] = port
+			} else {
+				anytls["port"] = "443"
+			}
+			// 注意用 Username()（已解码）：User.String() 返回的是**转义后**的 userinfo，
+			// 密码里的 %40 / %2B 之类会原样带进配置 → 认证失败。
+			if auth := urlAnyTLS.User.Username(); auth != "" {
+				anytls["password"] = auth
+			}
+			if sni := query.Get("sni"); sni != "" {
+				anytls["sni"] = sni
+			}
+			if insecure := query.Get("insecure"); insecure == "1" || insecure == "true" {
+				anytls["skip-cert-verify"] = true
+			}
+			if fp := query.Get("fp"); fp != "" {
+				anytls["client-fingerprint"] = fp
+			}
+			if alpn := query.Get("alpn"); alpn != "" {
+				anytls["alpn"] = strings.Split(alpn, ",")
+			}
+			proxies = append(proxies, anytls)
+
 		case "hysteria2", "hy2":
 			urlHysteria2, err := url.Parse(line)
 			if err != nil {
@@ -89,7 +126,9 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			if alpn := query.Get("alpn"); alpn != "" {
 				hysteria2["alpn"] = strings.Split(alpn, ",")
 			}
-			if auth := urlHysteria2.User.String(); auth != "" {
+			// 同 anytls：必须用已解码的 Username()，否则 base64 密码里的 + / = 会变成
+			// %2B / %2F / %3D 带进 mihomo 配置 → 认证必然失败。
+			if auth := urlHysteria2.User.Username(); auth != "" {
 				hysteria2["password"] = auth
 			}
 			// TLS (hysteria2 always uses TLS)
@@ -606,14 +645,18 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				remarks = fmt.Sprintf("%s:%s", server, portStr)
 			}
 			name := uniqueName(names, remarks)
-			encodeStr := link.User.String()
+			// 面板生成的是明文 user:pass（用户名 / 密码分别转义）；也兼容
+			// `socks://base64(user:pass)@` 这种历史/第三方写法。
+			// 注意不能用 link.User.String()：它返回**未解码**的串，会把用户名里的
+			// %40 / %23 之类原样留下 → mihomo 拿错误的用户名去认证。
 			var username, password string
-			if encodeStr != "" {
-				decodeStr := string(DecodeBase64([]byte(encodeStr)))
-				splitStr := strings.Split(decodeStr, ":")
-				username = splitStr[0]
-				if len(splitStr) == 2 {
-					password = splitStr[1]
+			username = link.User.Username()
+			if p, ok := link.User.Password(); ok {
+				password = p
+			} else if username != "" && !strings.Contains(username, "@") {
+				// 没有明文密码 → 可能整段是 base64(user:pass)
+				if dec := string(DecodeBase64([]byte(username))); strings.Count(dec, ":") == 1 {
+					username, password, _ = strings.Cut(dec, ":")
 				}
 			}
 			socks := make(map[string]any, 10)

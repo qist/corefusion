@@ -41,8 +41,46 @@ func Generate(node Node) string {
 	case "socks", "socks5", "mixed":
 		// sing-box 的 mixed = socks + http 同端口，分享用 socks:// 客户端可识别
 		return generateAuthLink("socks://", node)
+	case "anytls":
+		return generateAnyTLSLink(node)
 	}
 	return ""
+}
+
+// --- AnyTLS ---
+// anytls 有**官方 URI 规范**（https://github.com/anytls/anytls-go/blob/main/docs/uri_scheme.md）：
+//
+//	anytls://[auth@]hostname[:port]/?[key=value]...
+//
+// 官方只定义 sni / insecure 两个参数，并声明"第三方实现可加扩展参数，但不保证被理解"。
+// 这里在官方参数之外补 alpn / fp（面板扩展）：mihomo 的 anytls 出站认这两个字段，
+// 不认的实现会忽略，不影响连接。Shadowrocket 可直接导入该链接。
+func generateAnyTLSLink(n Node) string {
+	ss := n.StreamSettings
+	clients := getClients(n.Settings)
+	password := getClientField(clients, "password")
+	if password == "" {
+		password = getString(n.Settings, "password", "")
+	}
+
+	params := url.Values{}
+	tls := getMap(ss, "tlsSettings")
+	if sni := getString(tls, "serverName", ""); sni != "" {
+		params.Set("sni", sni)
+	}
+	if insecure, ok := tls["allowInsecure"].(bool); ok && insecure {
+		params.Set("insecure", "1")
+	}
+	if fp := getFingerprint(tls); fp != "" {
+		params.Set("fp", fp)
+	}
+	if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
+		params.Set("alpn", strings.Join(alpn, ","))
+	}
+
+	// 规范里 host 与查询串之间带一个 '/'：anytls://letmein@example.com/?sni=...
+	return fmt.Sprintf("anytls://%s@%s:%d/?%s#%s",
+		encodeValue(password), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- VLESS ---
@@ -191,7 +229,7 @@ func generateTrojanLink(n Node) string {
 	}
 
 	return fmt.Sprintf("trojan://%s@%s:%d?%s#%s",
-		url.QueryEscape(password), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
+		encodeValue(password), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- Hysteria ---
@@ -280,7 +318,7 @@ func generateHysteriaLink(n Node) string {
 	}
 
 	return fmt.Sprintf("hysteria2://%s@%s:%d?%s#%s",
-		url.QueryEscape(auth), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
+		encodeValue(auth), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // --- Shadowsocks ---
@@ -350,7 +388,7 @@ func generateTuicLink(n Node) string {
 	}
 
 	return fmt.Sprintf("tuic://%s@%s:%d?%s#%s",
-		url.QueryEscape(userinfo), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
+		encodeValue(userinfo), formatHost(n.Host), n.Port, encodeParams(params), url.PathEscape(n.Tag))
 }
 
 // generateAuthLink generates http:// or socks:// userinfo-based share links.

@@ -31,6 +31,39 @@ func TestGenerateAuthLinkKeepsUserinfoSeparator(t *testing.T) {
 	}
 }
 
+// anytls 有官方 URI 规范：anytls://[auth@]host[:port]/?sni=&insecure=
+// （Shadowrocket 可直接导入，所以不能用"无标准 scheme"当理由跳过）。
+func TestGenerateAnyTLSLink(t *testing.T) {
+	link := Generate(Node{
+		Tag:      "any",
+		Protocol: "anytls",
+		Host:     "1.2.3.4",
+		Port:     8443,
+		Settings: map[string]interface{}{
+			"clients": []interface{}{map[string]interface{}{"password": "P@ss word"}},
+		},
+		StreamSettings: map[string]interface{}{
+			"security": "tls",
+			"tlsSettings": map[string]interface{}{
+				"serverName":    "real.example.com",
+				"allowInsecure": true,
+				"fingerprint":   "chrome",
+				"alpn":          []interface{}{"h2", "http/1.1"},
+			},
+		},
+	})
+	for _, want := range []string{
+		"anytls://P%40ss%20word@1.2.3.4:8443/?",
+		"sni=real.example.com",
+		"insecure=1",
+		"fp=chrome",
+	} {
+		if !strings.Contains(link, want) {
+			t.Errorf("anytls 链接缺 %q: %s", want, link)
+		}
+	}
+}
+
 // tuic 的拥塞控制 / UDP 中继模式在 sing-box 里是顶层字段，归一进 streamSettings.tuicSettings
 // 后必须出现在链接里（此前只读 settings，永远取不到）。
 func TestGenerateTuicLinkCarriesCongestionAndRelayMode(t *testing.T) {

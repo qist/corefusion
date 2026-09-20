@@ -78,10 +78,23 @@ export function generateShareLink(ib, user, host, port, tag) {
       return `ss://${auth}@${formatHost(host)}:${port}#${encodeURIComponent(remark)}`
     }
     case 'hysteria2': {
+      // 与服务端 config 对齐：混淆、端口跳跃、BBR、跳过证书校验都要带上
+      // （口径与后端 sharelink.generateHysteriaLink 一致）
+      const obfsType = ib.obfs?.type || ''
+      const obfsPwd = ib.obfs?.password || ''
+      const ph = ib._portHop || {}
+      let mport = ''
+      if (ph.enabled) {
+        mport = (ph.mode || 'preset') === 'manual'
+          ? `${ph.start || ''}-${ph.end || ''}`
+          : (ph.range || '')
+      }
       const params = {
         sni: ib._tlsServerName || ib.tls?.server_name || host,
-        insecure: (ib.tls?.insecure ? '1' : ''),
-        ...(ib._transportHost ? { obfs: 'salamander', 'obfs-password': ib._transportHost } : {}),
+        ...(ib.tls?.insecure ? { insecure: '1' } : {}),
+        ...(obfsType && obfsPwd ? { obfs: obfsType, 'obfs-password': obfsPwd } : {}),
+        ...(ib.bbr_profile ? { 'bbr-profile': ib.bbr_profile } : {}),
+        ...(mport ? { mport } : {}),
       }
       return `hysteria2://${encodeURIComponent(user?.password || '')}@${formatHost(host)}:${port}?${encodeParams(params)}#${encodeURIComponent(remark)}`
     }

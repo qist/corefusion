@@ -281,6 +281,14 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 		}
 	}
 
+	// Hysteria2 / Hysteria：sing-box 把这些放在**顶层**（obfs / up_mbps / down_mbps /
+	// bbr_profile / ignore_client_bandwidth），xray 口径在 streamSettings.hysteriaSettings。
+	// 分享链接的 obfs / obfs-password / bbr-profile / insecure 都从这里取 —— 少了它们，
+	// 服务端开了混淆或指定 BBR 时，客户端拿到的链接就是"能连但参数不全"。
+	if hy := hysteriaViewSettings(config); len(hy) > 0 {
+		ss["hysteriaSettings"] = hy
+	}
+
 	tlsCfg, _ := config["tls"].(map[string]interface{})
 	if tlsCfg == nil {
 		return ss
@@ -299,6 +307,9 @@ func singboxToXrayStreamSettings(config map[string]interface{}) map[string]inter
 	}
 	if insecure, _ := tlsCfg["insecure"].(bool); insecure {
 		tlsSettings["allowInsecure"] = true
+		if hy, ok := ss["hysteriaSettings"].(map[string]interface{}); ok {
+			hy["insecure"] = true
+		}
 	}
 	if utls, ok := tlsCfg["utls"].(map[string]interface{}); ok {
 		if fp := getString(utls, "fingerprint", ""); fp != "" {
@@ -469,4 +480,33 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 		log.Printf("[subscriptions] format=%s 不支持以下协议，已从订阅中剔除: %s", format, strings.Join(dropped, ", "))
 	}
 	return kept
+}
+
+// hysteriaViewSettings 把 sing-box hysteria2 / hysteria 的顶层字段整理成 xray 口径的
+// hysteriaSettings，供 sharelink.generateHysteriaLink 生成 obfs / obfs-password /
+// bbr-profile / insecure 等链接参数。非 hysteria 入站返回空 map，调用方据此跳过。
+func hysteriaViewSettings(config map[string]interface{}) map[string]interface{} {
+	hy := map[string]interface{}{}
+	if v, ok := config["up_mbps"]; ok && v != nil {
+		hy["up_mbps"] = v
+	}
+	if v, ok := config["down_mbps"]; ok && v != nil {
+		hy["down_mbps"] = v
+	}
+	// obfs：sing-box 是 {type, password} 结构体（服务端开 salamander 时客户端必须带上）
+	if obfs, ok := config["obfs"].(map[string]interface{}); ok {
+		if obfsType := getString(obfs, "type", ""); obfsType != "" {
+			hy["obfs"] = obfsType
+		}
+		if pwd := getString(obfs, "password", ""); pwd != "" {
+			hy["obfs_password"] = pwd
+		}
+	}
+	if bbr := getString(config, "bbr_profile", ""); bbr != "" {
+		hy["bbr_profile"] = bbr
+	}
+	if icb, _ := config["ignore_client_bandwidth"].(bool); icb {
+		hy["ignore_client_bandwidth"] = true
+	}
+	return hy
 }

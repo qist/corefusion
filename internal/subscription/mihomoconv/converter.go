@@ -16,6 +16,29 @@ import (
 var encRaw = base64.RawStdEncoding
 var enc = base64.StdEncoding
 
+// looksLikeUUID 判断字符串是否形如 8-4-4-4-12 的 UUID。
+// 用于区分 tuic 的两种凭据：UUID（v5）与 token（legacy v4）。
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ConvertsV2Ray converts V2Ray subscribe proxies data to mihomo proxies config.
 func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 	data := DecodeBase64(buf)
@@ -327,10 +350,17 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			tuic["port"] = urlTUIC.Port()
 			tuic["udp"] = true
 			password, v5 := urlTUIC.User.Password()
-			if v5 {
+			switch {
+			case v5:
 				tuic["uuid"] = urlTUIC.User.Username()
 				tuic["password"] = password
-			} else {
+			case looksLikeUUID(urlTUIC.User.Username()):
+				// ⚠ tuic **v5** 的链接常常只有 uuid、没有密码（sing-box 的 users 就只有 uuid）。
+				// mihomo 的 `token` 是 **legacy tuic v4** 的字段：写了它 mihomo 会走 v4 协议
+				// （见 adapter/outbound/tuic.go：Token 非空时用 GenTKN(token)），与 v5 服务端
+				// 认证不上 —— e2e 实测就是"mihomo 连不上、sing-box 正常"。有 uuid 就必须走 uuid 模式。
+				tuic["uuid"] = urlTUIC.User.Username()
+			default:
 				tuic["token"] = urlTUIC.User.Username()
 			}
 			if cc := query.Get("congestion_control"); cc != "" {
@@ -338,6 +368,11 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			}
 			if alpn := query.Get("alpn"); alpn != "" {
 				tuic["alpn"] = strings.Split(alpn, ",")
+			} else {
+				// TUIC 的 QUIC 握手按规范必须协商 ALPN=h3；链接里没带时补默认值。
+				// 缺了它 mihomo 报 `CRYPTO_ERROR ... tls: server did not select an ALPN protocol`
+				// （服务端 alpn=[h3]），e2e 实测。
+				tuic["alpn"] = []string{"h3"}
 			}
 			if sni := query.Get("sni"); sni != "" {
 				tuic["sni"] = sni

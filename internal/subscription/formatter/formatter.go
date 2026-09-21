@@ -951,6 +951,67 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 				}
 				streamSettings["finalmask"] = fm
 			}
+			// ⚠ xray 25+ 的**混淆/带宽/跳端口径在 finalmask**（用户给的可连样本就是这个形状：
+			// hysteriaSettings 只留 version+auth，obfs 走 `finalmask.udp[] = {type: salamander,
+			// settings:{password}}`，带宽/跳端口径在 `finalmask.quicParams.{brutalUp,brutalDown,
+			// udpHop}`）。只写 hysteriaSettings.obfs/up/down/hopPorts 时 xray 26 **不生效** ——
+			// 表现是"配置能加载、连不上"（服务端在等混淆握手）。两个都写：老版本核心认
+			// hysteriaSettings，新版本认 finalmask。
+			obfsName, _ := node.Extra["obfs"].(string)
+			obfsPassword, _ := node.Extra["obfs-password"].(string)
+			hyUp, _ := node.Extra["up"].(string)
+			hyDown, _ := node.Extra["down"].(string)
+			hyPorts, _ := node.Extra["ports"].(string)
+			hyHopInterval, _ := node.Extra["hop-interval"].(string)
+			if obfsName != "" || hyUp != "" || hyDown != "" || hyPorts != "" || hyHopInterval != "" {
+				fm, _ := streamSettings["finalmask"].(map[string]interface{})
+				if fm == nil {
+					fm = map[string]interface{}{}
+				}
+				if obfsName == "salamander" {
+					udpList, _ := fm["udp"].([]interface{})
+					hasSalamander := false
+					for _, item := range udpList {
+						if entry, ok := item.(map[string]interface{}); ok && entry["type"] == "salamander" {
+							hasSalamander = true
+						}
+					}
+					if !hasSalamander {
+						entry := map[string]interface{}{"type": "salamander"}
+						if obfsPassword != "" {
+							entry["settings"] = map[string]interface{}{"password": obfsPassword}
+						}
+						fm["udp"] = append(udpList, entry)
+					}
+				}
+				qp, _ := fm["quicParams"].(map[string]interface{})
+				if qp == nil && (hyUp != "" || hyDown != "" || hyPorts != "" || hyHopInterval != "") {
+					qp = map[string]interface{}{}
+					fm["quicParams"] = qp
+				}
+				if qp != nil {
+					if hyUp != "" {
+						qp["brutalUp"] = hyUp
+					}
+					if hyDown != "" {
+						qp["brutalDown"] = hyDown
+					}
+					if hyPorts != "" || hyHopInterval != "" {
+						hop, _ := qp["udpHop"].(map[string]interface{})
+						if hop == nil {
+							hop = map[string]interface{}{}
+							qp["udpHop"] = hop
+						}
+						if hyPorts != "" {
+							hop["ports"] = hyPorts
+						}
+						if hyHopInterval != "" {
+							hop["interval"] = hyHopInterval
+						}
+					}
+				}
+				streamSettings["finalmask"] = fm
+			}
 			streamSettings["hysteriaSettings"] = hysteriaSettings
 		}
 		ob["streamSettings"] = streamSettings

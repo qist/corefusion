@@ -65,3 +65,36 @@ func TestBareTCPOmitsMihomoNetwork(t *testing.T) {
 		t.Errorf("raw+headerType=http 应带 http-opts: %v", proxies[0])
 	}
 }
+
+// tuic：只有 uuid（没有密码）的 v5 链接必须落成 `uuid`，不能落成 `token`。
+// mihomo 的 `token` 是 legacy tuic v4 的字段 —— 写了它 mihomo 会走 v4 协议，
+// 与 v5 服务端认证不上（e2e 实测：mihomo 连不上、sing-box 正常）。
+func TestTUICUUIDWithoutPasswordStaysV5(t *testing.T) {
+	link := "tuic://6ab4e475-888d-4005-af5f-7f2b50d0dd47@1.2.3.4:443?sni=x.com&congestion_control=bbr#n"
+	proxies, err := ConvertsV2Ray([]byte(link))
+	if err != nil || len(proxies) != 1 {
+		t.Fatalf("转换失败: %v (%d)", err, len(proxies))
+	}
+	if _, has := proxies[0]["token"]; has {
+		t.Errorf("uuid-only 的 tuic 不该写 token: %v", proxies[0])
+	}
+	if got := proxies[0]["uuid"]; got != "6ab4e475-888d-4005-af5f-7f2b50d0dd47" {
+		t.Errorf("uuid = %v", got)
+	}
+	// 带密码的照旧 uuid+password
+	proxies, err = ConvertsV2Ray([]byte("tuic://6ab4e475-888d-4005-af5f-7f2b50d0dd47:pw@1.2.3.4:443#n2"))
+	if err != nil || len(proxies) != 1 {
+		t.Fatalf("转换失败: %v", err)
+	}
+	if proxies[0]["uuid"] == nil || proxies[0]["password"] != "pw" {
+		t.Errorf("应写 uuid+password: %v", proxies[0])
+	}
+	// 非 UUID（legacy v4 token）仍走 token
+	proxies, err = ConvertsV2Ray([]byte("tuic://legacy-token-value@1.2.3.4:443#n3"))
+	if err != nil || len(proxies) != 1 {
+		t.Fatalf("转换失败: %v", err)
+	}
+	if proxies[0]["token"] != "legacy-token-value" {
+		t.Errorf("legacy token 应保留 token 形式: %v", proxies[0])
+	}
+}

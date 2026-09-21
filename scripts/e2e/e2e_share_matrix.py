@@ -143,8 +143,13 @@ CASES: list[dict] = [
          expect={"xray": "skip"}),
     dict(id="sb-naive", core="singbox", protocol="naive", transport="raw", security="tls",
          expect={"uri": "skip", "mihomo": "skip", "singbox": "skip", "xray": "skip"}),
+    # snell 的**版本区间在两个客户端之间不重叠**：mihomo 只支持 v1-4
+    # （adapter/outbound/snell.go: `snell version error`），本机 sing-box 只支持 v6
+    # （v4/v5 报 `snell: unsupported version`）。服务端版本由用户决定，所以按"客户端版本差异"标注
+    # 而不是假装通过。实测：服务端 v6 + sing-box 客户端 = 连通。
     dict(id="sb-snell", core="singbox", protocol="snell", transport="raw", security="none",
-         expect={"uri": "skip", "xray": "skip"}),
+         expect={"uri": "skip", "xray": "skip"},
+         client_skip={"mihomo": "mihomo 只支持 snell v1-4，本机 sing-box 只支持 v6（区间不重叠；服务端用 v6）"}),
     dict(id="sb-mixed", core="singbox", protocol="mixed", transport="raw", security="none"),
 ]
 
@@ -428,6 +433,12 @@ def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: 
     if case.get("security", "none") == "tls":
         cfg["tls"] = {"enabled": True, "server_name": case.get("sni", TLS_SNI),
                       "certificate_path": "certs/gg/cert.pem", "key_path": "certs/gg/key.pem"}
+        # QUIC 系协议（hysteria2 / tuic）的 ALPN 必须是 h3（面板自建入站就是这么配的）。
+        # 服务端不带 ALPN 时客户端会报 `tls: server did not select an ALPN protocol`。
+        if proto in ("hysteria2", "tuic"):
+            cfg["tls"]["alpn"] = ["h3"]
+        else:
+            cfg["tls"]["alpn"] = ["h2", "http/1.1"]
     return cfg
 
 

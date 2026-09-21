@@ -12,3 +12,7 @@ geoip.dat
 /agent
 corefusion.log
 .codebuddy/
+
+# e2e 连通性测试产物（含测试用户凭据与客户端日志，不入库）
+scripts/e2e/artifacts/
+scripts/e2e/__pycache__/

@@ -1930,6 +1930,21 @@ func normalizeSubscriptionMihomoProxyMap(link string, proxy map[string]interface
 		}
 	}
 
+	// mihomo **没有** `network: httpupgrade`：它的 vless/vmess 运行时 switch 只认 "ws"，
+	// HTTP Upgrade 是 ws 上的开关（ws-opts.v2ray-http-upgrade，见 mihomo docs/config.yaml 与
+	// adapter/outbound/vless.go 的 V2rayHttpUpgrade）。写 network: httpupgrade 会被当未知值
+	// → 客户端静默回退成裸 TCP → 连不上（e2e 矩阵实测：mihomo 报 connect error，xray/sing-box 正常）。
+	// 这里统一改写（链接转换 / 外部节点 ProxyMap 两条路都会经过），并保证 ws-opts 存在。
+	if v, ok := proxy["network"].(string); ok && strings.EqualFold(strings.TrimSpace(v), "httpupgrade") {
+		proxy["network"] = "ws"
+		wsOpts, _ := proxy["ws-opts"].(map[string]interface{})
+		if wsOpts == nil {
+			wsOpts = map[string]interface{}{}
+			proxy["ws-opts"] = wsOpts
+		}
+		wsOpts["v2ray-http-upgrade"] = true
+	}
+
 	proxyType, _ := proxy["type"].(string)
 	switch proxyType {
 	case "vmess":

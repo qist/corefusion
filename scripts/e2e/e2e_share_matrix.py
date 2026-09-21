@@ -75,12 +75,16 @@ CASES: list[dict] = [
     dict(id="vless-tls-vision", core="xray", protocol="vless", transport="raw", security="tls",
          flow="xtls-rprx-vision"),
     dict(id="vless-tls-ws", core="xray", protocol="vless", transport="ws", security="tls"),
+    # REALITY + gRPC（用户要求补的组合；固定端口避免用例表增删导致端口错位）
+    dict(id="vless-reality-grpc", core="xray", protocol="vless", transport="grpc", security="reality",
+         sni="www.microsoft.com", port=31160,
+         expect={"singbox": "skip"}),
     dict(id="vless-reality-raw", core="xray", protocol="vless", transport="raw", security="reality",
-         client_skip={"singbox": "sing-box 该构建连 xray 26 的 REALITY 一律认证失败（chrome/firefox/safari/randomized 四种 uTLS 指纹都试过；同一服务器 mihomo/xray 正常）"}),
+         expect={"singbox": "skip"}),
     # 同一节点上 serverNames 不能重复（面板会报 SERVER_NAMES_CONFLICT），故换一个伪装站点
     dict(id="vless-reality-vision", core="xray", protocol="vless", transport="raw", security="reality",
          sni="www.apple.com", flow="xtls-rprx-vision",
-         client_skip={"singbox": "sing-box 该构建连 xray 26 的 REALITY 一律认证失败（chrome/firefox/safari/randomized 四种 uTLS 指纹都试过；同一服务器 mihomo/xray 正常）"}),
+         expect={"singbox": "skip"}),
 
     # ══════════ vmess ══════════
     dict(id="vmess-ws-none", core="xray", protocol="vmess", transport="ws", security="none"),
@@ -106,7 +110,7 @@ CASES: list[dict] = [
          ss_method="2022-blake3-aes-128-gcm"),
     dict(id="ss2022-multi-raw-none", core="xray", protocol="shadowsocks", transport="raw", security="none",
          ss_method="2022-blake3-aes-128-gcm", ss_multi=True, port=31030,
-         client_skip={"singbox": "sing-box 与该 xray 服务端的多用户 ss2022 不互通（三种密钥形式实测都不通，xray/mihomo 正常）"}),
+         expect={"singbox": "skip"}),
 
     # ══════════ http / socks（无认证 + 带认证）══════════
     dict(id="http-raw-none", core="xray", protocol="http", transport="raw", security="none"),
@@ -127,6 +131,8 @@ CASES: list[dict] = [
     dict(id="sb-vless-tls", core="singbox", protocol="vless", transport="raw", security="tls"),
     dict(id="sb-vmess-ws-none", core="singbox", protocol="vmess", transport="ws", security="none"),
     dict(id="sb-vmess-raw-none", core="singbox", protocol="vmess", transport="raw", security="none"),
+    # 对照用例：两边都是 sing-box（用来区分"sing-box 客户端的 vmess+TLS"问题与"xray 服务端"问题）
+    dict(id="sb-vmess-tls-ws", core="singbox", protocol="vmess", transport="ws", security="tls", port=31150),
     dict(id="sb-trojan-tls-ws", core="singbox", protocol="trojan", transport="ws", security="tls"),
 
     # ══════════ sing-box 服务端：ss / hysteria2 / tuic / anytls / naive / snell / mixed ══════════

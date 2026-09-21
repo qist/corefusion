@@ -34,6 +34,10 @@ type Node struct {
 	AlterID    int    `json:"alter_id,omitempty"`
 	Encryption string `json:"encryption,omitempty"` // VLESS encryption or SS cipher method
 	Flow       string `json:"flow,omitempty"`       // XTLS Vision flow
+	// CoreType 是该节点**服务端**的核心类型（xray / singbox / hysteria2 / tuic）。
+	// 只有个别"客户端能力与核心实现相关"的判定需要它（例如 xray ≥26.9.8 的 REALITY
+	// 让 sing-box 客户端连不上，见 singboxNodeDropReason）。
+	CoreType string `json:"core_type,omitempty"`
 	// Extra holds all additional fields for mihomo/clash output.
 	// Keys are mihomo YAML field names. Only non-nil values are rendered.
 	Extra map[string]interface{} `json:"extra,omitempty"`

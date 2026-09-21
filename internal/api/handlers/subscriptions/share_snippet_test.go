@@ -1,11 +1,14 @@
 package subscriptions
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
+	"corefusion/internal/subscription/sharelink"
 )
 
 func TestNormalizeShareFormat(t *testing.T) {
@@ -159,6 +162,215 @@ func TestShareViewKeepsCipherMethod(t *testing.T) {
 	}
 	if email := getString(firstClient(settings), "email", ""); email != "a@x.com" {
 		t.Errorf("client email = %q, want a@x.com", email)
+	}
+}
+
+// 单用户入站（凭证写在 settings.password，没有 clients[]）此前"一个用户都没有" →
+// 四种格式全部 0 条，前端显示"不支持该协议"（mihomo/sing-box/xray 其实都直接支持它）。
+func TestInboundUserRecordsSynthesizesSingleUser(t *testing.T) {
+	config := map[string]interface{}{
+		"protocol": "shadowsocks",
+		"settings": map[string]interface{}{
+			"method":   "aes-256-gcm",
+			"password": "server-pass",
+			"network":  "tcp",
+		},
+	}
+	users := inboundUserRecords(config)
+	if len(users) != 1 {
+		t.Fatalf("单用户 ss 应合成 1 条用户记录, got %d", len(users))
+	}
+	// label 必须与前端 XrayInbounds.getUsers() 的虚拟用户一致，否则弹窗选中后匹配不上
+	if users[0].label != "default" {
+		t.Errorf("label = %q, want default", users[0].label)
+	}
+
+	view := shareViewForUser("inbound-shadowsocks-1", config, users[0])
+	link := sharelink.Generate(sharelink.Node{
+		Tag: "inbound-shadowsocks-1", Protocol: "shadowsocks", Host: "1.2.3.4", Port: 12345,
+		Settings:       getMap(view, "settings"),
+		StreamSettings: getMap(view, "streamSettings"),
+	})
+	if !strings.HasPrefix(link, "ss://") {
+		t.Fatalf("应生成 ss:// 链接, got %q", link)
+	}
+	want := base64.StdEncoding.EncodeToString([]byte("aes-256-gcm:server-pass"))
+	if !strings.Contains(link, want) {
+		t.Errorf("链接未带服务端凭据/加密方式（客户端会连不上）: %q", link)
+	}
+	// mihomo 片段同样必须能生成（用户报的"YAML 显示不支持该协议"）
+	if snippet := mihomoProxySnippet(link); !strings.Contains(snippet, "type: ss") {
+		t.Errorf("mihomo 片段应含 type: ss:\n%s", snippet)
+	}
+	if snippet := mihomoProxySnippetFromNode(nodeForSingleUserShare(config, view, users[0])); snippet == "" {
+		t.Error("节点直出（兜底路径）也应能生成 mihomo 片段")
+	}
+
+	// 无认证的 socks 也要能分享（settings.auth 缺省即 noauth）
+	socks := inboundUserRecords(map[string]interface{}{
+		"protocol": "socks",
+		"settings": map[string]interface{}{"auth": "noauth"},
+	})
+	if len(socks) != 1 {
+		t.Errorf("noauth socks 应合成 1 条用户记录, got %d", len(socks))
+	}
+	// 有认证但没账号（坏配置）→ 不合成，避免生成无效链接
+	if got := inboundUserRecords(map[string]interface{}{
+		"protocol": "socks",
+		"settings": map[string]interface{}{"auth": "password"},
+	}); len(got) != 0 {
+		t.Errorf("auth=password 且无账号时不应合成, got %d", len(got))
+	}
+}
+
+// nodeForSingleUserShare 模拟 InboundShareLinks 里 formatterNodeForShare 的取参（供兜底路径断言）。
+func nodeForSingleUserShare(config, view map[string]interface{}, u inboundUser) *formatter.Node {
+	settings := getMap(view, "settings")
+	return &formatter.Node{
+		Name:       "inbound-shadowsocks-1",
+		Protocol:   "shadowsocks",
+		Host:       "1.2.3.4",
+		Port:       12345,
+		Password:   getString(firstClient(settings), "password", ""),
+		Encryption: getString(settings, "method", ""),
+	}
+}
+
+// mihomo 对**重名代理是整份拒绝**（不是跳过该条）：
+//
+//	proxy trojan-worker is the duplicate name → configuration file xxx test failed
+//
+// 于是用户导入订阅后"很多节点不显示"。命名口径要与 sing-box/xray 的出站 tag 一致。
+func TestMihomoProxyMapsDedupeNames(t *testing.T) {
+	items := []renderedSubscriptionNode{
+		{ProxyMap: map[string]interface{}{"name": "trojan-worker", "type": "trojan", "server": "1.1.1.1", "port": 443}},
+		{ProxyMap: map[string]interface{}{"name": "trojan-worker", "type": "trojan", "server": "2.2.2.2", "port": 443}},
+		{ProxyMap: map[string]interface{}{"name": "", "type": "ss", "server": "3.3.3.3", "port": 443}},
+		{ProxyMap: map[string]interface{}{"name": "trojan-worker 2", "type": "trojan", "server": "5.5.5.5", "port": 443}},
+	}
+	got := buildRenderedMihomoProxyMaps(items)
+	names := getMihomoProxyNames(got)
+	want := []string{"trojan-worker", "trojan-worker 2", "node", "trojan-worker 2 2"}
+	if len(names) != len(want) {
+		t.Fatalf("代理数 = %d, want %d (%v)", len(names), len(want), names)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("第 %d 个代理名 = %q, want %q", i, names[i], want[i])
+		}
+	}
+	// 产出必须是合法 YAML 形状：名字带空格也要原样写出
+	if yaml := buildMihomoProxiesYAML(got); !strings.Contains(yaml, "- name: trojan-worker 2") {
+		t.Errorf("YAML 未含去重后的名字:\n%s", yaml)
+	}
+}
+
+// 裸 TCP（raw/tcp）在 mihomo 里**不写 network**：mihomo 的 network 取值只有
+// ws/http/h2/grpc/httpupgrade/xhttp（裸 TCP 就是省略该字段），写 raw/tcp 都是
+// 客户端不认识的值。两条路（链接转换 / 外部节点 ProxyMap）都要处理。
+func TestMihomoOutputOmitsBareTCPTransport(t *testing.T) {
+	// 路径①：分享链接（vmess 的传输在 base64 JSON 的 net 字段里）
+	body, _ := json.Marshal(map[string]interface{}{
+		"v": "2", "ps": "n", "add": "1.2.3.4", "port": 443,
+		"id": "11111111-1111-1111-1111-111111111111", "aid": 0, "net": "raw",
+	})
+	snippet := mihomoProxySnippet("vmess://" + base64.StdEncoding.EncodeToString(body))
+	if strings.Contains(snippet, "network:") {
+		t.Errorf("裸 TCP 的 mihomo 片段不应出现 network 字段:\n%s", snippet)
+	}
+	if !strings.Contains(snippet, "type: vmess") {
+		t.Errorf("片段本体丢了:\n%s", snippet)
+	}
+
+	// 路径②：外部节点直接给的 ProxyMap（不经过链接）
+	maps := buildRenderedMihomoProxyMaps([]renderedSubscriptionNode{
+		{ProxyMap: map[string]interface{}{
+			"name": "ext-node", "type": "trojan", "server": "1.1.1.1", "port": 443,
+			"password": "pw", "network": "raw",
+		}},
+	})
+	if len(maps) != 1 {
+		t.Fatalf("应保留 1 个代理, got %d", len(maps))
+	}
+	if got, ok := maps[0]["network"]; ok {
+		t.Errorf("外部节点的 network = %v, want 删掉该字段", got)
+	}
+	// 其它传输不受影响
+	maps = buildRenderedMihomoProxyMaps([]renderedSubscriptionNode{
+		{ProxyMap: map[string]interface{}{
+			"name": "ws-node", "type": "trojan", "server": "1.1.1.1", "port": 443,
+			"password": "pw", "network": "ws",
+		}},
+	})
+	if got := maps[0]["network"]; got != "ws" {
+		t.Errorf("ws 不应被改写, got %v", got)
+	}
+}
+
+// mKCP（面板里存 "mkcp"）这类传输**不能**被悄悄改成 tcp：
+//   - sing-box / mihomo 表达不了 → 必须整条剔除（原来被改成 tcp，于是漏出一个
+//     "参数全丢、看起来能用"的节点，用户拿到的配置连不上）；
+//   - xray 表达得了 → 片段必须带上 network: kcp + kcpSettings + finalmask。
+func TestKcpTransportIsNotDegradedToTCP(t *testing.T) {
+	cfg := &entity.InboundConfig{Tag: "kcp-in", Protocol: "vless", Listen: "0.0.0.0", Port: 54461}
+	config := map[string]interface{}{
+		"streamSettings": map[string]interface{}{
+			"network":  "mkcp",
+			"security": "none",
+			"kcpSettings": map[string]interface{}{
+				"mtu": float64(1350), "tti": float64(50), "congestion": true,
+			},
+			"finalmask": map[string]interface{}{
+				"udp": []interface{}{map[string]interface{}{
+					"type":     "mkcp-legacy",
+					"settings": map[string]interface{}{"header": "wireguard", "value": ""},
+				}},
+			},
+		},
+		"settings": map[string]interface{}{
+			"clients": []interface{}{map[string]interface{}{"email": "a@x", "id": "11111111-1111-1111-1111-111111111111"}},
+		},
+	}
+	view := shareViewForUser("kcp-in", config, inboundUser{label: "a@x", record: map[string]interface{}{
+		"email": "a@x", "id": "11111111-1111-1111-1111-111111111111",
+	}})
+	node := formatterNodeForShare("kcp-in", cfg, view, firstClient(getMap(view, "settings")), "1.2.3.4", 54461)
+	if node.Transport != "kcp" {
+		t.Fatalf("transport = %q, want kcp（mkcp 只做命名归一，不能降级成 tcp）", node.Transport)
+	}
+
+	// sing-box / mihomo 都不支持 mKCP → 不产出片段，并给出原因
+	if _, ok := renderShareSnippet("singbox", "", node); ok {
+		t.Error("sing-box 不应产出 kcp 片段")
+	}
+	if _, ok := renderShareSnippet("mihomo", "vless://11111111-1111-1111-1111-111111111111@1.2.3.4:54461?type=kcp", node); ok {
+		t.Error("mihomo 不应产出 kcp 片段")
+	}
+	if got := shareUnsupportedReason("mihomo", node); got != "transport=kcp" {
+		t.Errorf("reason = %q, want transport=kcp", got)
+	}
+	if got := shareUnsupportedReason("singbox", node); got != "transport=kcp" {
+		t.Errorf("singbox reason = %q, want transport=kcp", got)
+	}
+
+	// xray 支持 → 片段必须带全参数
+	text, ok := renderShareSnippet("xray", "", node)
+	if !ok {
+		t.Fatal("xray 应能产出 kcp 片段")
+	}
+	var ob map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &ob); err != nil {
+		t.Fatalf("片段不是合法 JSON: %v", err)
+	}
+	ss, _ := ob["streamSettings"].(map[string]interface{})
+	if ss["network"] != "kcp" {
+		t.Errorf("network = %v, want kcp", ss["network"])
+	}
+	if _, has := ss["kcpSettings"]; !has {
+		t.Errorf("缺 kcpSettings（mtu/tti 等参数丢了）: %v", ss)
+	}
+	if _, has := ss["finalmask"]; !has {
+		t.Errorf("缺 finalmask（mkcp-legacy 的 header/seed 要在这里）: %v", ss)
 	}
 }
 

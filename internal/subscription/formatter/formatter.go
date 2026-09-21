@@ -222,9 +222,13 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 
 		// hysteria2 出站没有 transport 字段（写了客户端直接 FATAL：
 		// "outbounds[0].transport: json: unknown field"）—— 它自带 QUIC 传输，其余协议照旧。
+		// buildSingboxTransport 返回 nil 表示"这个节点不该写 transport"（裸 TCP 就是省略；
+		// 但 HTTP 伪装的裸 TCP 要写成 transport.type=http，见函数内注释）。
 		isHysteria := node.Protocol == "hysteria" || node.Protocol == "hysteria2"
-		if !isHysteria && node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
-			ob["transport"] = buildSingboxTransport(node)
+		if !isHysteria {
+			if t := buildSingboxTransport(node); t != nil {
+				ob["transport"] = t
+			}
 		}
 
 		// Hysteria 专属参数（obfs / 带宽 / BBR / 动态端口）。服务端开了混淆或指定 BBR、
@@ -447,21 +451,45 @@ func anyToInt(v interface{}) int {
 // uniqueNodeTag 保证出站 tag 唯一：重名时追加 " 2"、" 3"…
 // sing-box / xray 都要求 tag 唯一，否则会因为 "duplicate outbound/endpoint tag"
 // 拒绝加载**整个**订阅（多个节点用了同一个备注时很容易踩到）。
+// 生成出来的新名字同样要登记：否则"已有一个节点本身就叫 X 2"时，两个 X 去重后会
+// 与它再撞一次，等于没去重。
 func uniqueNodeTag(name string, used map[string]int) string {
 	if name == "" {
 		name = "node"
 	}
-	used[name]++
-	if used[name] == 1 {
+	if used[name] == 0 {
+		used[name] = 1
 		return name
 	}
-	return fmt.Sprintf("%s %d", name, used[name])
+	for n := used[name] + 1; ; n++ {
+		candidate := fmt.Sprintf("%s %d", name, n)
+		if used[candidate] == 0 {
+			used[name] = n
+			used[candidate] = 1
+			return candidate
+		}
+	}
 }
 
 // buildSingboxTransport builds a sing-box transport object from node transport params.
+//
+// 返回 nil 表示**不该写 transport**：sing-box 没有 tcp/raw 这个 type，裸 TCP 就是省略
+// 该字段（写了会 FATAL: unknown transport type）。
+//
+// 唯一例外：**裸 TCP + HTTP 伪装**（面板/服务端里是 rawSettings.header.type=http）——
+// xray 侧的语义是"裸 TCP 里套 HTTP 请求"，sing-box 要用 transport.type=http 表达。
+// 以前这里直接按"tcp/raw"整段跳过，伪装参数被丢掉、客户端按裸 TCP 连 → 连不上。
 func buildSingboxTransport(node Node) map[string]interface{} {
-	t := map[string]interface{}{"type": node.Transport}
-	switch node.Transport {
+	transport := strings.ToLower(strings.TrimSpace(node.Transport))
+	switch transport {
+	case "", "tcp", "raw":
+		if _, has := node.Extra["http-opts"]; !has {
+			return nil
+		}
+		transport = "http"
+	}
+	t := map[string]interface{}{"type": transport}
+	switch transport {
 	case "ws":
 		if opts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
 			if path, ok := opts["path"].(string); ok && path != "" {
@@ -488,9 +516,23 @@ func buildSingboxTransport(node Node) map[string]interface{} {
 			if path, ok := opts["path"].(string); ok && path != "" {
 				t["path"] = path
 			}
+			if hosts, ok := opts["host"].([]string); ok && len(hosts) > 0 {
+				t["host"] = hosts
+			}
 		} else if opts, ok := node.Extra["http-opts"].(map[string]interface{}); ok {
 			if paths, ok := opts["path"].([]string); ok && len(paths) > 0 {
 				t["path"] = paths[0]
+			}
+			// 裸 TCP + HTTP 伪装（headerType=http）时 Host 在 request.headers 里：
+			// sing-box 的 http transport 认 headers，host 也认（listable），两个都带上。
+			if headers, ok := opts["headers"].(map[string]interface{}); ok && len(headers) > 0 {
+				t["headers"] = headers
+				if hosts, ok := headers["Host"].([]string); ok && len(hosts) > 0 {
+					t["host"] = hosts
+				}
+			}
+			if method, ok := opts["method"].(string); ok && method != "" {
+				t["method"] = method
 			}
 		}
 	case "httpupgrade":
@@ -629,7 +671,10 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		if node.Protocol == "hysteria2" {
 			streamSettings["network"] = "hysteria"
 		} else if node.Transport != "" {
-			streamSettings["network"] = node.Transport
+			// **不降级**：是什么传输就写什么。raw 是 xray 25+ 的正式名（面板里存的、
+			// 服务端配置里用的都是 raw），tcp 是旧名；两者服务端等价，
+			// 但把 raw 改写成 tcp 属于"改了用户的协议描述"，用户明确要求保持原样。
+			streamSettings["network"] = strings.ToLower(strings.TrimSpace(node.Transport))
 		}
 		if node.TLS || xrayRequireTLS[node.Protocol] {
 			streamSettings["security"] = "tls"
@@ -740,7 +785,14 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			if headers, ok := httpOpts["headers"].(map[string]interface{}); ok {
 				httpSettings["headers"] = headers
 			}
-			streamSettings["tcpSettings"] = map[string]interface{}{
+			// 伪装配置的键要和 network 对上：network=raw 时用 rawSettings（xray 25+ 的
+			// 标准形态，与服务端配置一致），network=tcp 时才用旧键 tcpSettings。
+			// 两个键 xray 都认，但写混了会让人误判"配置被改了"。
+			settingsKey := "tcpSettings"
+			if net, _ := streamSettings["network"].(string); net == "raw" {
+				settingsKey = "rawSettings"
+			}
+			streamSettings[settingsKey] = map[string]interface{}{
 				"header": map[string]interface{}{
 					"type":    "http",
 					"request": httpSettings,
@@ -1527,7 +1579,7 @@ func formatURI(node Node) string {
 	case "vless":
 		uri := fmt.Sprintf("vless://%s@%s:%d", node.UUID, node.Host, node.Port)
 		params := url.Values{}
-		if node.Transport != "" && node.Transport != "tcp" {
+		if node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
 			params.Set("type", node.Transport)
 		}
 		if node.Encryption != "" && node.Encryption != "none" {
@@ -1657,7 +1709,7 @@ func formatURI(node Node) string {
 	case "trojan":
 		uri := fmt.Sprintf("trojan://%s@%s:%d", url.QueryEscape(node.Password), node.Host, node.Port)
 		params := url.Values{}
-		if node.Transport != "" && node.Transport != "tcp" {
+		if node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
 			params.Set("type", node.Transport)
 		}
 		// TLS / Reality
@@ -1900,7 +1952,7 @@ func formatURI(node Node) string {
 		// http://user:pass@host:port#name / socks://user:pass@host:port#name
 		params := url.Values{}
 		params.Set("type", node.Protocol)
-		if node.Transport != "" && node.Transport != "tcp" {
+		if node.Transport != "" && node.Transport != "tcp" && node.Transport != "raw" {
 			params.Set("network", node.Transport)
 		} else if n, ok := node.Extra["network"].(string); ok && n != "" {
 			params.Set("network", n)
@@ -2094,7 +2146,9 @@ func parseVlessURI(body, name string) *Node {
 
 	params := parseQueryParams(query)
 	transport := params["type"]
-	if transport == "" || transport == "raw" {
+	// 保留 raw（xray 25+ 的正式名），只有"完全没写"才默认 tcp；
+	// 这样外部链接里的 raw 在 xray JSON 里仍是 raw，不会被改写
+	if transport == "" {
 		transport = "tcp"
 	}
 	security := params["security"]
@@ -2264,7 +2318,9 @@ func parseTrojanURI(body, name string) *Node {
 
 	params := parseQueryParams(query)
 	transport := params["type"]
-	if transport == "" || transport == "raw" {
+	// 保留 raw（xray 25+ 的正式名），只有"完全没写"才默认 tcp；
+	// 这样外部链接里的 raw 在 xray JSON 里仍是 raw，不会被改写
+	if transport == "" {
 		transport = "tcp"
 	}
 	sni := params["sni"]

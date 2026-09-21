@@ -389,7 +389,8 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				}
 			}
 			network := strings.ToLower(query.Get("type"))
-			if network != "" {
+			// 裸 TCP（""/tcp/raw）不写 network —— mihomo 的 network 里没有这些取值
+			if network != "" && network != "tcp" && network != "raw" {
 				trojan["network"] = network
 			}
 			switch network {
@@ -514,7 +515,11 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				} else if network == "http" {
 					network = "h2"
 				}
-				vmess["network"] = network
+				// mihomo 的 network 里没有 "tcp"/"raw"：裸 TCP 就**不写**这个字段
+				// （xray 的 "raw" 与 "tcp" 都是裸 TCP，mihomo 那边省略即可）。
+				if network != "" && network != "tcp" && network != "raw" {
+					vmess["network"] = network
+				}
 			}
 			tls, ok := values["tls"].(string)
 			if ok {
@@ -756,7 +761,11 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 	} else if network == "http" {
 		network = "h2"
 	}
-	proxy["network"] = network
+	// mihomo 的 network 取值里**没有** "tcp"/"raw"（裸 TCP 就不写这个字段）：
+	// 写了 mihomo 会当未知值忽略，部分 Clash 系客户端还会直接校验报错。
+	if network != "tcp" {
+		proxy["network"] = network
+	}
 
 	switch network {
 	case "tcp":

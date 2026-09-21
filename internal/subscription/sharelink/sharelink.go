@@ -94,7 +94,7 @@ func generateVlessLink(n Node) string {
 	security := getString(ss, "security", "none")
 
 	params := url.Values{}
-	params.Set("type", mkcpToKcp(network))
+	params.Set("type", linkTransport(network))
 	params.Set("encryption", encryption)
 
 	setNetworkParams(params, ss, network)
@@ -123,7 +123,7 @@ func generateVmessLink(n Node) string {
 		"id":   getClientField(clients, "id"),
 		"aid":  0,
 		"scy":  "auto",
-		"net":  mkcpToKcp(network),
+		"net":  linkTransport(network),
 		"type": "none",
 		"host": "",
 		"path": "",
@@ -218,7 +218,7 @@ func generateTrojanLink(n Node) string {
 	security := getString(ss, "security", "tls")
 
 	params := url.Values{}
-	params.Set("type", mkcpToKcp(network))
+	params.Set("type", linkTransport(network))
 
 	setNetworkParams(params, ss, network)
 	setSecurityParams(params, ss, security)
@@ -432,11 +432,22 @@ func generateAuthLink(scheme string, n Node) string {
 
 // --- helpers ---
 
-func mkcpToKcp(network string) string {
-	if network == "mkcp" {
+// linkTransport 把内部（xray）传输名转换成**分享链接里的标准写法**：
+//   - xray 25 起把 TCP 传输改名为 "raw"（"tcp" 是旧名），但链接里的标准值是 **"tcp"**：
+//     并非所有客户端都认识 "raw"（mihomo 的 network 只认 tcp/ws/http/h2/grpc/httpupgrade/xhttp，
+//     写成 raw 会被当成未知值）；两种写法在服务端等价，所以统一发 "tcp"。
+//   - mKCP 在链接里写作 "kcp"。
+//
+// 注意：这里只影响**链接里的取值**，读取配置仍需同时支持 raw/tcp（见各 generate*Link 内部）。
+func linkTransport(network string) string {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "", "raw", "tcp":
+		return "tcp"
+	case "mkcp":
 		return "kcp"
+	default:
+		return strings.ToLower(strings.TrimSpace(network))
 	}
-	return network
 }
 
 // encodeParams encodes URL params with %20 for spaces instead of +.

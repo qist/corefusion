@@ -1,6 +1,7 @@
 package inboundconfig
 
 import (
+	"strings"
 	"context"
 	"encoding/json"
 	"errors"
@@ -153,6 +154,7 @@ func (h *Handler) Create(c *gin.Context) {
 		Listen     string          `json:"listen"`
 		Port       int             `json:"port"`
 		ConfigJSON json.RawMessage `json:"config_json"`
+		// 用指针区分"没传 enabled"与"传了 false"：全量覆盖语义下，漏传会把入站意外禁用。
 		Enabled    bool            `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -198,7 +200,8 @@ func (h *Handler) Update(c *gin.Context) {
 		Listen     string          `json:"listen"`
 		Port       int             `json:"port"`
 		ConfigJSON json.RawMessage `json:"config_json"`
-		Enabled    bool            `json:"enabled"`
+		// 用指针区分"没传 enabled"与"传了 false"：全量覆盖语义下漏传会把入站意外禁用。
+		Enabled    *bool           `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -214,7 +217,30 @@ func (h *Handler) Update(c *gin.Context) {
 	if h.checkMirrorReadOnly(c, existing.ServerID) {
 		return
 	}
-	cfg, err := h.svc.Update(c.Request.Context(), id, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
+	// ⚠ Update 是**全量覆盖**语义（service 用入参把整行写回）。以前传部分 payload（例如只给
+	// {"enabled": true}）会把 tag / protocol / config_json / port 一起清空 → 该入站直接从生成
+	// 配置里消失（实测踩过：行被清空后节点上不再监听、运行配置里也搜不到它，排查很久）。
+	// 这里对"关键字段缺失或为空"的情况**保留原值**；要真正清空请走删除接口。
+	if strings.TrimSpace(req.Tag) == "" {
+		req.Tag = existing.Tag
+	}
+	if strings.TrimSpace(req.Protocol) == "" {
+		req.Protocol = existing.Protocol
+	}
+	if req.Port <= 0 {
+		req.Port = existing.Port
+	}
+	if strings.TrimSpace(req.Listen) == "" {
+		req.Listen = existing.Listen
+	}
+	if v := strings.TrimSpace(string(req.ConfigJSON)); v == "" || v == "null" {
+		req.ConfigJSON = json.RawMessage(existing.ConfigJSON)
+	}
+	enabled := existing.Enabled
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	cfg, err := h.svc.Update(c.Request.Context(), id, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), enabled)
 	if err != nil {
 		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
 			response.BadRequest(c, "SERVER_NAMES_CONFLICT", err.Error())

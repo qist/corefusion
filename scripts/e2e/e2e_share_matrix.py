@@ -77,6 +77,28 @@ CASES: list[dict] = [
          ss_method="2022-blake3-aes-128-gcm"),
     dict(id="http-raw-none", core="xray", protocol="http", transport="raw", security="none"),
     dict(id="socks-raw-none", core="xray", protocol="socks", transport="raw", security="none"),
+
+    # ─────────── sing-box 当**服务端核心**（core_type=singbox，入站配置是 sing-box 自己的 JSON 形状）───────────
+    # 此前 sing-box 只作为**客户端**测过（全通）；这一组验证"面板从 sing-box 入站派生的分享产物"
+    # 也能真连（之前只做过 `sing-box check` 配置级校验，没做端到端）。
+    dict(id="sb-vless-raw-none", core="singbox", protocol="vless", transport="raw", security="none"),
+    dict(id="sb-vless-ws-none", core="singbox", protocol="vless", transport="ws", security="none"),
+    dict(id="sb-vless-grpc-none", core="singbox", protocol="vless", transport="grpc", security="none"),
+    dict(id="sb-vmess-ws-none", core="singbox", protocol="vmess", transport="ws", security="none"),
+    dict(id="sb-ss-raw-none", core="singbox", protocol="shadowsocks", transport="raw", security="none",
+         ss_method="aes-256-gcm"),
+
+    # 多用户 ss2022（xray 服务端）：客户端密码必须是 `服务端密钥:用户密钥`，
+    # 只给用户密钥时 xray 服务端会**静默丢弃**连接（表现就是"配置能加载、节点连不上"）。
+    # sing-box 客户端对本项目的 xray 多用户 ss2022 服务端**互不兼容**：实测
+    # `服务端:用户` / 只给用户密钥 / 只给服务端密钥三种形式都连不通（同一入站、同一用户，
+    # xray 与 mihomo 用 `服务端:用户` 都能连通）→ 属该客户端实现的限制，如实标 SKIP。
+    dict(id="ss2022-multi-raw-none", core="xray", protocol="shadowsocks", transport="raw", security="none",
+         ss_method="2022-blake3-aes-128-gcm", ss_multi=True, port=31030,
+         client_skip={"singbox": "sing-box 与该 xray 服务端的多用户 ss2022 不互通（三种密钥形式实测都不通，xray/mihomo 正常）"}),
+    # 说明：**明文 trojan** 的 sing-box 用例已去掉 —— mihomo 的 trojan 出站强制 TLS
+    # （产物里 client-fingerprint/skip-cert-verify 都按 TLS 写），连明文入站必然失败，
+    # 这是"用例本身不成立"，不是产物问题。要覆盖 trojan 需要节点上有可用证书（或 REALITY）。
 ]
 
 
@@ -224,8 +246,13 @@ def server_config(case: dict, port: int, client_uuid: str, client_pass: str,
         if method.startswith("2022-blake3"):
             keylen = 16 if "aes-128-gcm" in method else 32
             password = _b64.b64encode(os.urandom(keylen)).decode()
-            # 单用户形态：密钥即服务端密钥（多用户形态在本环境连不通，见用例注释）
-            cfg["settings"] = {"method": method, "password": password, "network": "tcp"}
+            if case.get("ss_multi"):
+                cfg["settings"] = {"method": method, "password": password, "network": "tcp",
+                                   "clients": [{"email": "e2e@test.local",
+                                                "password": _b64.b64encode(os.urandom(keylen)).decode()}]}
+            else:
+                # 单用户形态：密钥即服务端密钥
+                cfg["settings"] = {"method": method, "password": password, "network": "tcp"}
         else:
             cfg["settings"] = {"method": method, "password": client_pass, "network": "tcp,udp"}
     elif proto == "http":
@@ -236,6 +263,42 @@ def server_config(case: dict, port: int, client_uuid: str, client_pass: str,
         cfg["settings"] = {"clients": [{"password": client_pass, "email": "e2e@test.local"}]}
     else:
         cfg["settings"] = {"clients": [{"id": client_uuid, "email": "e2e@test.local"}]}
+    return cfg
+
+
+def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: str) -> dict:
+    """sing-box 入站的 config_json 形状（照抄面板自建入站，如 id=118 vless / id=121 naive）：
+    `type` / `listen` / `listen_port` / `users[]`（vless=uuid、trojan/hysteria2=password）/ `transport`，
+    **不是** xray 的 `settings` + `streamSettings`。"""
+    proto = case["protocol"]
+    transport = case.get("transport", "raw")
+    cfg: dict = {
+        "type": proto,
+        "tag": "e2e-" + case["id"],
+        "listen": "0.0.0.0",
+        "listen_port": port,
+        "_accessDomain": {"enabled": False, "type": "direct", "directDomain": "", "directPortMode": "config",
+                          "cfDomain": "", "cfIP": "", "customDomain": "", "customPortMode": "custom",
+                          "customPort": 443},
+        "_portHop": {"enabled": False, "mode": "preset", "range": "20000-50000", "start": 20000,
+                     "end": 50000, "interface": ""},
+    }
+    if proto == "vless":
+        cfg["users"] = [{"name": "e2e@test.local", "uuid": client_uuid}]
+    elif proto == "vmess":
+        cfg["users"] = [{"name": "e2e@test.local", "uuid": client_uuid, "alterId": 0}]
+    elif proto == "trojan":
+        cfg["users"] = [{"name": "e2e@test.local", "password": client_pass}]
+    elif proto in ("shadowsocks", "shadowsocks2022"):
+        cfg["method"] = case.get("ss_method", "aes-256-gcm")
+        cfg["password"] = client_pass
+    else:
+        cfg["users"] = [{"name": "e2e@test.local", "uuid": client_uuid, "password": client_pass}]
+    if transport == "ws":
+        cfg["transport"] = {"type": "ws", "path": case.get("ws_path", "/e2esb")}
+    elif transport == "grpc":
+        cfg["transport"] = {"type": "grpc", "service_name": case.get("grpc_service", "e2esb")}
+    # raw/tcp：sing-box 的裸 TCP 就是**不写** transport
     return cfg
 
 
@@ -308,6 +371,13 @@ def connect_check(fmt: str, cmd: list[str], socks_port: int, workdir: str) -> tu
                 f.write(out_txt or "")
         except Exception:
             pass
+        # 端口必须**真正释放**再测下一个：否则下个用例的客户端绑不上端口，而 wait_port 会看到
+        # 上一个用例的进程占着的端口 —— curl 就发给了旧配置，表现是随机的"未取到出口信息"。
+        run(["pkill", "-f", workdir], timeout=10)
+        for _ in range(20):
+            if not tcp_open("127.0.0.1", socks_port, timeout=0.5):
+                break
+            time.sleep(0.5)
 
 
 CLIENTS_BIN = {"xray": [XRAY_BIN], "singbox": [SBOX_BIN], "mihomo": [MIHOMO_BIN]}
@@ -381,7 +451,9 @@ def main() -> int:
     # 否则会与已存在入站的端口撞车 → 测出的是别的用例的入站）
     all_ids = [c["id"] for c in CASES]
     for idx, case in enumerate(cases):
-        port = PORT_BASE + all_ids.index(case["id"]) + 1
+        # 用例可以显式指定端口（用例表增删不会打乱别人；也避免与已建入站抢同一端口 ——
+        # 曾因两个入站都用 31012，后绑定的那个被顶掉，测试结果随机失败）
+        port = case.get("port") or (PORT_BASE + all_ids.index(case["id"]) + 1)
         tag = "e2e-" + case["id"]
         row = dict(case_id=case["id"], protocol=case["protocol"], transport=case["transport"],
                    security=case["security"], port=port)
@@ -389,7 +461,10 @@ def main() -> int:
         client_uuid = str(uuid.uuid4())
         client_pass = "e2e-pass-" + uuid.uuid4().hex[:8]
         if tag not in existing:
-            cfg = server_config(case, port, client_uuid, client_pass, vless_enc)
+            if case["core"] == "singbox":
+                cfg = singbox_server_config(case, port, client_uuid, client_pass)
+            else:
+                cfg = server_config(case, port, client_uuid, client_pass, vless_enc)
             # ⚠ config_json 必须是 **JSON 对象**（后端字段是 json.RawMessage）：
             # 传 json.dumps(cfg) 会被当成字符串再编码一次 → 面板 PrepareFullConfig 报
             # `parse inbound xxx: json: cannot unmarshal string into Go value of type map[string]interface{}`
@@ -411,12 +486,23 @@ def main() -> int:
             restart_core(args.panel, args.token, args.node, case["core"])
         else:
             cfg_id = existing[tag]["id"]
+            # 用例表增删会让"按下标算的端口"与已建入站错位 → 复用一律以入站自己的端口为准
+            real_port = existing[tag].get("port")
+            if isinstance(real_port, int) and real_port > 0 and real_port != port:
+                port = real_port
+                row["port"] = port
             # 复用现有入站的客户端凭据（保证产物里的用户与服务器一致）
             try:
                 cj = json.loads(existing[tag]["config_json"])
-                first = (cj.get("settings", {}).get("clients") or [{}])[0]
-                client_uuid = first.get("id") or client_uuid
-                client_pass = (cj.get("settings", {}).get("password") or first.get("password") or client_pass)
+                if case["core"] == "singbox":
+                    # sing-box 形状：顶层 users[]（vless/vmess=uuid、trojan=password），ss 是顶层 password
+                    first = (cj.get("users") or [{}])[0]
+                    client_uuid = first.get("uuid") or client_uuid
+                    client_pass = (first.get("password") or cj.get("password") or client_pass)
+                else:
+                    first = (cj.get("settings", {}).get("clients") or [{}])[0]
+                    client_uuid = first.get("id") or client_uuid
+                    client_pass = (cj.get("settings", {}).get("password") or first.get("password") or client_pass)
             except Exception:
                 pass
         row["cfg_id"] = cfg_id
@@ -448,6 +534,13 @@ def main() -> int:
                 row[f"{fmt}_detail"] = f"supported={d.get('supported')} reason={d.get('reason')}"
                 if not ok:
                     print(f"  ✗ {fmt}: 期望 {expect} 但无产物且 reason={d.get('reason')}")
+                continue
+            # 客户端侧的已知限制（产物本身没问题，是那个客户端做不到）——如实标 SKIP 并写明原因，
+            # 不用"FAIL"掩盖，也不假装通过。
+            if why := (case.get("client_skip") or {}).get(fmt):
+                row[f"{fmt}"] = "SKIP"
+                row[f"{fmt}_detail"] = why
+                print(f"  ⏭ {fmt}: {why}")
                 continue
             artifact = items[0].get("text") or items[0].get("link") or ""
             workdir = os.path.join(outdir, case["id"], fmt)

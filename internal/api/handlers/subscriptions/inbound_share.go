@@ -83,7 +83,7 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 			Protocol:       cfg.Protocol,
 			Host:           host,
 			Port:           port,
-			Settings:       settings,
+			Settings:       linkSettingsForUser(view, settings, cfg.Protocol, getString(client, "password", "")),
 			StreamSettings: getMap(view, "streamSettings"),
 			FinalMask:      finalMaskWithPortHop(config),
 		})

@@ -157,6 +157,11 @@ CASES: list[dict] = [
          expect={"uri": "skip", "xray": "skip"},
          client_skip={"mihomo": "mihomo 只支持 snell v1-4，本机 sing-box 只支持 v6（区间不重叠；服务端用 v6）"}),
     dict(id="sb-mixed", core="singbox", protocol="mixed", transport="raw", security="none"),
+    # 反向 REALITY：**sing-box 当服务端**时没有 xray ≥26.9.8 的 X25519MLKEM768 key-share 校验，
+    # 所以 xray / mihomo / sing-box 三种客户端都能连（实测都是 exit ip=203.0.113.48 loc=HK）。
+    # 这也是面板**保留**这类节点进 sing-box 格式的依据（见 singboxNodeDropReason）。
+    dict(id="sb-vless-reality", core="singbox", protocol="vless", transport="raw", security="reality",
+         sni="www.bing.com", port=31162),
 ]
 
 
@@ -436,7 +441,16 @@ def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: 
     elif transport == "grpc":
         cfg["transport"] = {"type": "grpc", "service_name": case.get("grpc_service", "e2esb")}
     # raw/tcp：sing-box 的裸 TCP 就是**不写** transport
-    if case.get("security", "none") == "tls":
+    if case.get("security", "none") == "reality":
+        # sing-box 的 REALITY 是 tls.reality（服务端只存私钥；客户端要的公钥由面板从私钥推导）
+        sni = case.get("sni", "www.amazon.com")
+        cfg["tls"] = {
+            "enabled": True,
+            "server_name": sni,
+            "reality": {"enabled": True, "handshake": {"server": sni, "server_port": 443},
+                        "private_key": REALITY.get("privateKey", ""), "short_id": ["e2e1a2b3"]},
+        }
+    elif case.get("security", "none") == "tls":
         cfg["tls"] = {"enabled": True, "server_name": case.get("sni", TLS_SNI),
                       "certificate_path": "certs/gg/cert.pem", "key_path": "certs/gg/key.pem"}
         # QUIC 系协议（hysteria2 / tuic）的 ALPN 必须是 h3（面板自建入站就是这么配的）。

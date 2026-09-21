@@ -508,6 +508,27 @@ var singboxUnsupportedTransports = map[string]bool{
 	"xhttp": true, "splithttp": true, "kcp": true, "mkcp": true,
 }
 
+// mihomoUnsupportedTransports 是 mihomo 出站**表达不了**的传输。
+//
+// mihomo 的 vless/vmess 只实现了 ws / http / h2 / grpc / httpupgrade / xhttp（其余走裸 TCP）：
+// kcp/mkcp（mihomo 只在 vmess 下实现 mKCP，且需要 kcp-opts，我们没有输出那些参数）、
+// quic、splithttp 都会被当成未知值 → 网络层**静默回退成普通 TCP**，
+// 表现是"配置能加载、节点却连不上、参数全丢"。所以必须整条剔除。
+var mihomoUnsupportedTransports = map[string]bool{
+	"kcp": true, "mkcp": true, "quic": true, "splithttp": true,
+}
+
+// mihomoNodeDropReason 返回该节点**不能**进 mihomo 片段/订阅的原因（空串=可以）。
+func mihomoNodeDropReason(node *formatter.Node) string {
+	if node == nil {
+		return ""
+	}
+	if mihomoUnsupportedTransports[strings.ToLower(node.Transport)] {
+		return "transport=" + node.Transport
+	}
+	return ""
+}
+
 // singboxNodeDropReason 返回该节点**不能**进 sing-box 订阅的原因（空串=可以进）。
 // 这类节点一旦下发会让客户端拒绝加载**整份**订阅（不是跳过该节点），必须整条剔除。
 func singboxNodeDropReason(node *formatter.Node) string {
@@ -555,6 +576,7 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 		return items
 	}
 	isSingbox := strings.ToLower(format) == "singbox_json"
+	isMihomo := strings.ToLower(format) == "mihomo_yaml"
 	kept := make([]renderedSubscriptionNode, 0, len(items))
 	dropped := make([]string, 0, 4)
 	for _, item := range items {
@@ -570,6 +592,14 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 		}
 		if isSingbox && item.Node != nil {
 			if reason := singboxNodeDropReason(item.Node); reason != "" {
+				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
+				continue
+			}
+		}
+		if isMihomo && item.ProxyMap == nil && item.Node != nil {
+			// 外部节点（ProxyMap）是从用户自己的 mihomo 配置原样搬过来的，不动它；
+			// 我们自己从链接渲染出来的节点才做传输体检（kcp 等 mihomo 表达不了）。
+			if reason := mihomoNodeDropReason(item.Node); reason != "" {
 				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
 				continue
 			}

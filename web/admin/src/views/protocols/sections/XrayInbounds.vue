@@ -195,7 +195,9 @@
           <div style="margin-bottom:8px;font-size:12px;text-align:left"
                :style="{ color: qrUnsupported ? '#E6A23C' : '#909399' }">
             {{ qrUnsupported
-              ? t('protoCenter.inbounds.snippetUnsupported', { client: qrFormatName })
+              ? (qrUnsupportedTransport
+                  ? t('protoCenter.inbounds.snippetUnsupportedTransport', { client: qrFormatName, transport: qrUnsupportedTransport })
+                  : t('protoCenter.inbounds.snippetUnsupported', { client: qrFormatName }))
               : t('protoCenter.inbounds.snippetHint', { client: qrFormatName }) }}
           </div>
           <el-input v-model="qrSnippet" type="textarea" :rows="10" readonly />
@@ -346,6 +348,9 @@
                   <el-option :label="t('protoCenter.inbounds.accessTypeCustom')" value="custom" />
                 </el-select>
               </el-form-item>
+              <div v-if="!accessDomainSelected" class="hint warn-hint" style="margin-bottom:12px">
+                {{ t('protoCenter.inbounds.accessDomainNotSelected') }}
+              </div>
               <!-- Direct -->
               <template v-if="rf._accessDomainType === 'direct'">
                 <el-form-item :label="t('protoCenter.inbounds.directDomain')">
@@ -825,15 +830,18 @@
             <el-divider content-position="left">Client Settings</el-divider>
             <el-form label-width="140px" label-position="left">
               <el-form-item label="Headers">
-                <div v-for="(h, i) in rf.streamSettings.ws.settings._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
+                <!-- 模型是**扁平**的 `ws._headers`（parseWsSettings 产出、序列化读它）：
+                     写成 ws.settings._headers 会在打开已有 ws 入站时抛
+                     "Cannot read properties of undefined (reading '_headers')"（整页渲染失败）。 -->
+                <div v-for="(h, i) in rf.streamSettings.ws._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
                   <el-input v-model="h.key" placeholder="Header name" style="width:30%" />
                   <el-input v-model="h.value" placeholder="Header value" style="width:50%" />
-                  <el-button size="small" type="danger" text @click="rf.streamSettings.ws.settings._headers.splice(i,1)">X</el-button>
+                  <el-button size="small" type="danger" text @click="rf.streamSettings.ws._headers.splice(i,1)">X</el-button>
                 </div>
-                <el-button size="small" @click="rf.streamSettings.ws.settings._headers.push({key:'',value:''})">+ Add Header</el-button>
+                <el-button size="small" @click="rf.streamSettings.ws._headers.push({key:'',value:''})">+ Add Header</el-button>
               </el-form-item>
               <el-form-item label="Heartbeat Period">
-                <el-input-number v-model="rf.streamSettings.ws.settings.heartbeatPeriod" :min="0" />
+                <el-input-number v-model="rf.streamSettings.ws.heartbeatPeriod" :min="0" />
                 <div class="hint">Seconds, 0 = disabled</div>
               </el-form-item>
             </el-form>
@@ -893,12 +901,13 @@
             <el-divider content-position="left">Client Settings</el-divider>
             <el-form label-width="140px" label-position="left">
               <el-form-item label="Headers">
-                <div v-for="(h, i) in rf.streamSettings.httpupgrade.settings._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
+                <!-- 同上：模型是扁平 `httpupgrade._headers` -->
+                <div v-for="(h, i) in rf.streamSettings.httpupgrade._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
                   <el-input v-model="h.key" placeholder="Header name" style="width:30%" />
                   <el-input v-model="h.value" placeholder="Header value" style="width:50%" />
-                  <el-button size="small" type="danger" text @click="rf.streamSettings.httpupgrade.settings._headers.splice(i,1)">X</el-button>
+                  <el-button size="small" type="danger" text @click="rf.streamSettings.httpupgrade._headers.splice(i,1)">X</el-button>
                 </div>
-                <el-button size="small" @click="rf.streamSettings.httpupgrade.settings._headers.push({key:'',value:''})">+ Add Header</el-button>
+                <el-button size="small" @click="rf.streamSettings.httpupgrade._headers.push({key:'',value:''})">+ Add Header</el-button>
               </el-form-item>
             </el-form>
           </template>
@@ -1833,6 +1842,12 @@ const qrLink = ref('')
 const qrCache = ref({})
 const qrSnippet = ref('')
 const qrUnsupported = ref(false)
+// 后端给出的不支持原因（如 transport=kcp）：只在"传输不支持"时用于更准确的提示
+const qrUnsupportedReason = ref('')
+const qrUnsupportedTransport = computed(() => {
+  const r = qrUnsupportedReason.value || ''
+  return r.startsWith('transport=') ? r.slice('transport='.length) : ''
+})
 const qrFormat = ref('uri')      // uri | mihomo | singbox | xray
 const qrFormatName = computed(() => t('protoCenter.inbounds.shareFormat' + qrFormat.value.charAt(0).toUpperCase() + qrFormat.value.slice(1)))
 const qrCodeUrl = ref('')
@@ -1897,6 +1912,18 @@ const canEnableFlow = computed(() => {
 })
 
 // Check if any user has flow enabled
+// 接入域名启用后是否真的选了域名/IP：没选时不能从面板域名池里随机抓一个
+// （那样分享链接/订阅里的 server 与这里的下拉选择对不上），而应退回节点自身地址。
+const accessDomainSelected = computed(() => {
+  switch (rf.value?._accessDomainType) {
+    case 'direct': return !!rf.value?._directDomain
+    case 'cf_domain': return !!rf.value?._cfDomain
+    case 'cf_ip': return !!rf.value?._cfIP
+    case 'custom': return !!rf.value?._customDomain
+    default: return false
+  }
+})
+
 const hasFlowUser = computed(() => {
   return (rf.settings?.clients || []).some(u => u.flow)
 })
@@ -2160,25 +2187,40 @@ function copyShareLink(ib, user) {
   void copyShareLinkAsync(ib, user)
 }
 
+// 入站的唯一标识（缓存归属用它判定）
+function inboundKey(ib) {
+  return ib?._id ?? ib?.id ?? null
+}
+
+// shareEntry 取「该入站」在某格式下的缓存；id 不匹配视为未缓存。
+// 曾经只按 format 缓存 → 打开另一个入站的分享弹窗时 mihomo/singbox/xray 标签
+// 一直显示**上一个入站**的内容（uri 因为每次都重新拉所以看不出来）。
+function shareEntry(format, ib) {
+  const entry = qrCache.value[format]
+  if (!entry || entry.id !== inboundKey(ib)) return null
+  return entry
+}
+
 // 后端逐用户生成（与订阅同源）：uri=分享链接，其余=可直接粘贴的配置片段。
 async function loadShareLinks(ib, format = 'uri') {
-  const id = ib?._id ?? ib?.id
+  const id = inboundKey(ib)
   if (!id) return
-  const cache = { ...qrCache.value }
+  const entry = { id, supported: true, items: [], reason: '' }
   try {
     const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`, { params: { format } })
-    cache[format] = {
-      // 协议是否受该客户端支持（后端按订阅同一份矩阵判定）
-      supported: data?.supported !== false,
-      items: (data?.items || []).map(it => ({
-        keys: (it.keys || [it.user || '']).map(k => String(k || '').trim().toLowerCase()).filter(Boolean),
-        text: it.text || it.link || '',
-      })),
-    }
+    // 协议是否受该客户端支持（后端按订阅同一份矩阵判定）
+    entry.supported = data?.supported !== false
+    entry.reason = data?.reason || ''
+    entry.items = (data?.items || []).map(it => ({
+      keys: (it.keys || [it.user || '']).map(k => String(k || '').trim().toLowerCase()).filter(Boolean),
+      text: it.text || it.link || '',
+    }))
   } catch {
-    cache[format] = { supported: true, items: [] }
+    entry.supported = true
+    entry.items = []
+    entry.reason = ''
   }
-  qrCache.value = cache
+  qrCache.value = { ...qrCache.value, [format]: entry }
 }
 
 // 该用户的候选标识：后端 label 口径未必等于本地的 name/email，故"任一标识命中即算匹配"。
@@ -2191,8 +2233,8 @@ function shareUserKeys(user) {
 }
 
 // 取该用户在某格式下的片段：先按标识匹配；单用户入站再兜底取唯一一条。
-function pickShareEntry(format, user) {
-  const entry = qrCache.value[format]
+function pickShareEntry(format, ib, user) {
+  const entry = shareEntry(format, ib)
   if (!entry || !entry.items.length) return null
   const keys = shareUserKeys(user)
   const hit = entry.items.find(it => it.keys.some(k => keys.includes(k)))
@@ -2202,14 +2244,14 @@ function pickShareEntry(format, user) {
 
 // 该用户的分享链接：优先后端（与订阅一致、参数完整），拿不到再回退本地生成
 function linkForUser(ib, user) {
-  const hit = pickShareEntry('uri', user)
+  const hit = pickShareEntry('uri', ib, user)
   if (hit && hit.text) return hit.text
   return generateShareLink(ib, user)
 }
 
 async function copyShareLinkAsync(ib, user) {
   // 惰性加载后端链接（与订阅同源）
-  if (!qrCache.value.uri) await loadShareLinks(ib, 'uri')
+  if (!shareEntry('uri', ib)) await loadShareLinks(ib, 'uri')
   const link = linkForUser(ib, user)
   if (!link) {
     ElMessage.warning(t('protoCenter.inbounds.shareNotSupported'))
@@ -2222,7 +2264,12 @@ function showQrCode(ib) {
   qrCurrentIb.value = ib
   // Filter out paused users
   qrUsers.value = getUsers(ib).filter(u => !u._paused)
-  if (qrUsers.value.length === 0) return
+  // 没有任何可用用户时以前是静默 return（点了按钮什么都不发生，看起来像"不支持"）。
+  // 明确提示一下，与 sing-box 编辑器口径一致。
+  if (qrUsers.value.length === 0) {
+    ElMessage.warning(t('protoCenter.inbounds.shareNotSupported'))
+    return
+  }
   qrSelectedUser.value = qrUsers.value[0].email || qrUsers.value[0].id
   qrFormat.value = 'uri'
   void loadShareLinks(ib, 'uri').then(() => updateQrCode())
@@ -2244,15 +2291,19 @@ async function updateQrCode() {
   if (!user) return
   if (qrFormat.value !== 'uri') {
     const format = qrFormat.value
-    if (!qrCache.value[format]) await loadShareLinks(ib, format)
+    // 缓存按「入站 + 格式」判定：换入站后必须重新拉，否则显示的是上一个入站的片段
+    if (!shareEntry(format, ib)) await loadShareLinks(ib, format)
+    const entry = shareEntry(format, ib)
     qrCodeUrl.value = ''
     qrLink.value = ''
-    qrUnsupported.value = qrCache.value[format]?.supported === false
-    qrSnippet.value = pickShareEntry(format, user)?.text || ''
+    qrUnsupported.value = entry?.supported === false
+    qrUnsupportedReason.value = entry?.reason || ''
+    qrSnippet.value = pickShareEntry(format, ib, user)?.text || ''
     return
   }
   qrSnippet.value = ''
   qrUnsupported.value = false
+  qrUnsupportedReason.value = ''
   qrLink.value = linkForUser(ib, user)
   qrCodeUrl.value = ''
   const token = ++qrGenerationToken
@@ -2314,18 +2365,9 @@ function getAccessHostPort(ib) {
               result = { host: domain.value, port: getRandomItem(ports) || 443 }
             }
           }
-        } else {
-          // Random from all direct domains
-          const domain = getRandomItem(directDomains.value)
-          if (domain) {
-            if (ib._directPortMode === 'inbound') {
-              result = { host: domain.value, port: ib.port }
-            } else {
-              const ports = domain.ports ? JSON.parse(domain.ports) : [443]
-              result = { host: domain.value, port: getRandomItem(ports) || 443 }
-            }
-          }
         }
+        // 没选域名时**不要**从域名池里随机抓一个：那样预览/链接里的 server 与下拉里的
+        // 选择毫无关系（后端原来也是这么干的，已一并修掉）。落到函数末尾的统一兜底。
         break
       case 'cf_domain':
         // CF Domain: random domain + its ports
@@ -2336,13 +2378,11 @@ function getAccessHostPort(ib) {
             const ports = domain.ports ? JSON.parse(domain.ports) : [443]
             result = { host: domain.value, port: getRandomItem(ports) || 443 }
           }
-        } else {
-          // Random from all CF domains
-          result = getRandomDomainPort(cfDomains.value)
         }
+        // 同上：没选 CF 域名就不要随机取一个
         break
       case 'cf_ip':
-        // CF IP: random IP + its ports
+        // CF IP: 用选中的 IP + 它的端口
         if (ib._cfIP) {
           // Use selected IP
           const entry = cfIPEntries.value.find(e => e.ip === ib._cfIP)
@@ -2350,10 +2390,8 @@ function getAccessHostPort(ib) {
             const ports = entry.ports ? JSON.parse(entry.ports) : [443]
             result = { host: entry.ip, port: getRandomItem(ports) || 443 }
           }
-        } else {
-          // Random from all CF IPs
-          result = getRandomIPPort(cfIPEntries.value)
         }
+        // 同上：没选 CF IP 就不要随机取一个
         break
       case 'custom':
         // Custom: use custom domain, port depends on mode
@@ -2451,6 +2489,16 @@ function serializeFinalMask(finalmask) {
   return Object.keys(data).length > 0 ? JSON.stringify(data) : ''
 }
 
+// 分享链接里的传输名归一：xray 25 起把 TCP 传输改名为 "raw"，但链接里的标准值是 "tcp"
+// （并非所有客户端都认识 raw；mihomo 的 network 只认 tcp/ws/http/h2/grpc/httpupgrade/xhttp），
+// mKCP 则统一写作 "kcp"。两者在服务端等价，所以对外一律发 tcp。
+function linkTransport(network) {
+  const n = String(network || '').toLowerCase()
+  if (n === '' || n === 'raw' || n === 'tcp') return 'tcp'
+  if (n === 'mkcp') return 'kcp'
+  return n
+}
+
 function generateShareLink(ib, user) {
   const protocol = ib.protocol || 'vless'
   const { host, port } = getAccessHostPort(ib)
@@ -2498,7 +2546,7 @@ function generateVmessLink(ib, user, host, port, remark) {
     id: user.id || '',
     aid: user.alterId || 0,
     scy: user.security || 'auto',
-    net: network === 'mkcp' ? 'kcp' : network,
+    net: linkTransport(network),
     type: 'none',
     host: '',
     path: '',
@@ -2538,8 +2586,11 @@ function generateVmessLink(ib, user, host, port, remark) {
     obj.path = ws.path || '/'
     // Host: use ws.host or first Host header
     let wsHost = ws.host || ''
-    if (!wsHost && ws.settings?._headers?.length) {
-      const hostHeader = ws.settings._headers.find(h => h.key?.toLowerCase() === 'host')
+    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
+    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
+    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
+    if (!wsHost && wsHeaderList.length) {
+      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
       if (hostHeader?.value) wsHost = hostHeader.value
     }
     obj.host = wsHost
@@ -2593,7 +2644,7 @@ function generateVlessLink(ib, user, host, port, remark) {
   const security = ib.streamSettings?.security || 'none'
 
   const params = new URLSearchParams()
-  params.set('type', network === 'mkcp' ? 'kcp' : network)
+  params.set('type', linkTransport(network))
   params.set('encryption', encryption)
 
   // Network-specific params
@@ -2623,8 +2674,11 @@ function generateVlessLink(ib, user, host, port, remark) {
     params.set('path', ws.path || '/')
     // Host: use ws.host or first Host header
     let wsHost = ws.host || ''
-    if (!wsHost && ws.settings?._headers?.length) {
-      const hostHeader = ws.settings._headers.find(h => h.key?.toLowerCase() === 'host')
+    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
+    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
+    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
+    if (!wsHost && wsHeaderList.length) {
+      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
       if (hostHeader?.value) wsHost = hostHeader.value
     }
     params.set('host', wsHost)
@@ -2730,7 +2784,7 @@ function generateTrojanLink(ib, user, host, port, remark) {
   const security = ib.streamSettings?.security || 'tls'
 
   const params = new URLSearchParams()
-  params.set('type', network === 'mkcp' ? 'kcp' : network)
+  params.set('type', linkTransport(network))
 
   // Network-specific params
   if (network === 'tcp' || network === 'raw') {
@@ -2759,8 +2813,11 @@ function generateTrojanLink(ib, user, host, port, remark) {
     params.set('path', ws.path || '/')
     // Host: use ws.host or first Host header
     let wsHost = ws.host || ''
-    if (!wsHost && ws.settings?._headers?.length) {
-      const hostHeader = ws.settings._headers.find(h => h.key?.toLowerCase() === 'host')
+    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
+    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
+    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
+    if (!wsHost && wsHeaderList.length) {
+      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
       if (hostHeader?.value) wsHost = hostHeader.value
     }
     params.set('host', wsHost)
@@ -2839,7 +2896,7 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
   const password = isMultiUser ? (user.password || '') : (ib.settings?.password || '')
 
   const params = new URLSearchParams()
-  params.set('type', network === 'mkcp' ? 'kcp' : network)
+  params.set('type', linkTransport(network))
 
   // Network-specific params
   if (network === 'tcp' || network === 'raw') {
@@ -2867,8 +2924,11 @@ function generateShadowsocksLink(ib, user, host, port, remark) {
     const ws = ib.streamSettings?.ws || {}
     params.set('path', ws.path || '/')
     let wsHost = ws.host || ''
-    if (!wsHost && ws.settings?._headers?.length) {
-      const hostHeader = ws.settings._headers.find(h => h.key?.toLowerCase() === 'host')
+    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
+    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
+    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
+    if (!wsHost && wsHeaderList.length) {
+      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
       if (hostHeader?.value) wsHost = hostHeader.value
     }
     if (wsHost) params.set('host', wsHost)
@@ -3444,7 +3504,7 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [], heartbeatPeriod: 0 } }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', settings: { _headers: [] } }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },

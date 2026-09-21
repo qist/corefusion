@@ -59,15 +59,11 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 	if protocol == "hysteria" {
 		protocol = "hysteria2"
 	}
-	transport := getString(ss, "network", "raw")
-	switch transport {
-	case "raw", "tcp", "":
-		transport = "tcp"
-	case "ws", "grpc", "httpupgrade", "xhttp", "h2", "http":
-		// 保留
-	default:
-		transport = "tcp"
-	}
+	// 传输名只做命名归一（raw/tcp→tcp、mkcp→kcp），**不把表达不了的传输悄悄改成 tcp**：
+	// 一旦改成 tcp，片段就会变成一个"少了全部传输参数、但看起来能用"的坏节点
+	// （sing-box 的 kcp、mihomo 的 kcp 都是这么漏出去的）——应该由各格式的
+	// 支持性判断整条剔除，并在弹窗里明说原因。
+	transport := normalizeNodeTransport(getString(ss, "network", "raw"))
 	settings := getMap(view, "settings")
 	uuid := getString(client, "id", "")
 	if uuid == "" {
@@ -94,6 +90,11 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 func renderShareSnippet(format, link string, node *formatter.Node) (string, bool) {
 	switch format {
 	case "mihomo":
+		// mihomo 表达不了的传输（kcp/mkcp/quic/splithttp）必须整条剔除：
+		// 写进去客户端只会静默回退成普通 TCP —— 参数全丢、还装作能用。
+		if mihomoNodeDropReason(node) != "" {
+			return "", false
+		}
 		// 优先走链接（与 mihomo 订阅**逐字段一致**）…
 		if snippet := mihomoProxySnippet(link); snippet != "" {
 			return snippet, true
@@ -114,6 +115,22 @@ func renderShareSnippet(format, link string, node *formatter.Node) (string, bool
 		return outboundJSONSnippet(formatter.FormatXrayJSON, node)
 	default:
 		return link, link != ""
+	}
+}
+
+// shareUnsupportedReason 说明"该格式下为什么生不出片段"（供前端把原因显示出来）。
+// 空串 = 能生成。
+func shareUnsupportedReason(format string, node *formatter.Node) string {
+	if node == nil {
+		return ""
+	}
+	switch format {
+	case "singbox":
+		return singboxNodeDropReason(node)
+	case "mihomo":
+		return mihomoNodeDropReason(node)
+	default:
+		return ""
 	}
 }
 

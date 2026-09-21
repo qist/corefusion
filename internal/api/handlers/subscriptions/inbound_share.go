@@ -56,6 +56,11 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		matrixProto = "hysteria2"
 	}
 	protocolSupported := matrix[matrixProto]
+	// 生不出片段时要把**原因**告诉前端（协议不支持 / 传输不支持），而不是只丢一个空框
+	reason := ""
+	if !protocolSupported {
+		reason = "protocol=" + matrixProto
+	}
 
 	items := make([]gin.H, 0, 4)
 	for idx, u := range inboundUserRecords(config) {
@@ -87,6 +92,13 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		node := formatterNodeForShare(nodeName, cfg, view, client, host, port)
 		text, ok := renderShareSnippet(format, link, node)
 		if !ok {
+			if reason == "" {
+				if r := shareUnsupportedReason(format, node); r != "" {
+					reason = r
+				} else {
+					reason = "protocol=" + matrixProto
+				}
+			}
 			continue
 		}
 		items = append(items, gin.H{
@@ -102,6 +114,9 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 	// 同样按"不支持"返回 —— 前端才能给出明确提示，而不是一个空框。
 	if protocolSupported && len(items) == 0 {
 		protocolSupported = false
+		if reason == "" {
+			reason = "protocol=" + matrixProto
+		}
 	}
 
 	host, port := h.hostForLink(c.Request.Context(), cfg, config, shareDomains)
@@ -113,6 +128,7 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		"enabled":   cfg.Enabled,
 		"format":    format,
 		"supported": protocolSupported,
+		"reason":    reason,
 	})
 }
 
@@ -133,28 +149,15 @@ func mihomoProxySnippet(link string) string {
 	return b.String()
 }
 
-// hostForLink 计算分享链接里的主机名：
-// 启用接入域名时用 resolveHostPort 的结果（与订阅一致）；
-// 未启用时退回节点的公网/内网地址 —— 否则 listen=0.0.0.0 会兜底成 127.0.0.1，
-// 二维码扫出来对客户端毫无意义。
+// hostForLink 计算分享链接里的主机名（与订阅**同一套**逻辑，见 shareAddress）：
+// 接入域名里已选择的域名/IP → 节点公网/内网地址 → 监听地址。
+// 关键点：启用了接入域名但下拉**没选**时不能凭空取一个面板域名（否则 server 与
+// 编辑器里选的东西对不上），也不能让 listen=0.0.0.0 兜底成 127.0.0.1 就完事。
 func (h *PublicHandler) hostForLink(ctx context.Context, cfg *entity.InboundConfig, view map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
-	host, port := resolveHostPort(view, cfg.Listen, cfg.Port, shareDomains)
-	if ad, ok := view["_accessDomain"].(map[string]interface{}); ok {
-		if enabled, _ := ad["enabled"].(bool); enabled {
-			return host, port
-		}
+	if cfg == nil {
+		return "", 0
 	}
-	if h.nodeServerRepo != nil {
-		if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
-			if node.PublicIP != "" {
-				return node.PublicIP, port
-			}
-			if node.InternalIP != "" {
-				return node.InternalIP, port
-			}
-		}
-	}
-	return host, port
+	return h.shareAddress(ctx, *cfg, view, shareDomains)
 }
 
 // inboundUser 一条用户记录 + 对外展示标识。
@@ -224,7 +227,47 @@ func inboundUserRecords(config map[string]interface{}) []inboundUser {
 			add(label, m)
 		}
 	}
+	if len(out) == 0 {
+		// 服务端级别的"单用户"入站：凭证直接写在 settings / 配置顶层，不在
+		// clients[] / accounts[] / users[] 里（xray 的 shadowsocks 单用户
+		// settings.password + settings.method、sing-box 的 ss / hysteria2 单用户
+		// 顶层 password…）。不合成时这类入站在分享/二维码/片段里"一个用户都没有"，
+		// 前端会显示"不支持该协议"，而 mihomo / sing-box / xray 其实都直接支持它。
+		if u, ok := defaultUserRecord(config); ok {
+			add(u.label, u.record)
+		}
+	}
 	return out
+}
+
+// defaultUserRecord 为"单用户入站"合成一条用户记录。
+// label 固定 "default"，与前端 XrayInbounds.getUsers() 的虚拟用户口径一致（email: 'default'），
+// 否则前后端的用户 key 对不上，弹窗里选中用户后拿不到片段。
+func defaultUserRecord(config map[string]interface{}) (inboundUser, bool) {
+	settings := getMap(config, "settings")
+	password := getString(settings, "password", "")
+	if password == "" {
+		password = getString(config, "password", "")
+	}
+	if password != "" {
+		rec := map[string]interface{}{
+			"email":    "default",
+			"password": password,
+		}
+		// ss 的加密方式在 settings.method（链接/片段仍从 settings 取，这里带一份便于节点渲染）
+		if method := getString(settings, "method", ""); method != "" {
+			rec["method"] = method
+		}
+		return inboundUser{label: "default", record: rec}, true
+	}
+	// 无认证的 socks / http（xray 的 settings.auth 缺省或 "noauth"）也能分享出去
+	switch strings.ToLower(getString(config, "protocol", "")) {
+	case "socks", "socks5", "http", "mixed":
+		if auth := strings.ToLower(getString(settings, "auth", "noauth")); auth == "" || auth == "noauth" {
+			return inboundUser{label: "default", record: map[string]interface{}{"email": "default"}}, true
+		}
+	}
+	return inboundUser{}, false
 }
 
 // inboundUserKeys 该用户的所有候选标识（小写）。

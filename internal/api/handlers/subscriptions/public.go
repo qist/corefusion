@@ -366,10 +366,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	case formatter.FormatXrayJSON:
-		allLinks := append(billingLinks, links...)
-		xrayNodes := parseSubscriptionLinksToFormatterNodes(allLinks)
+		// 与 sing-box 一致：直接用**配置派生的节点**，不要从链接反解。
+		// 链接是**有损中间态**：raw 会被写成 tcp（用户明确要求 xray 的 JSON 保持 raw）、
+		// kcp 的 mtu/tti/header/seed（finalmask）、tag 里的空格/中文（会变成 %20 转义）
+		// 都会丢或变形 —— 反解出来的节点既对不上弹窗里的片段，也对不上服务端配置。
+		nodes = append(billingFormatterNodes, nodes...)
 		f := formatter.GetFormatter(formatter.FormatXrayJSON)
-		data, _ = f.Format(xrayNodes)
+		data, _ = f.Format(nodes)
 		contentType = f.ContentType()
 	default:
 		joined := strings.Join(append(billingLinks, links...), "\n")
@@ -447,7 +450,7 @@ func (h *PublicHandler) collectShareLinks(
 				continue
 			}
 
-			host, port := resolveHostPort(config, cfg.Listen, cfg.Port, shareDomains)
+			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
 
 			// Find the specific client's credentials for this subscription
 			settings := getMap(config, "settings")
@@ -628,7 +631,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				continue
 			}
 
-			host, port := resolveHostPort(config, cfg.Listen, cfg.Port, shareDomains)
+			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
 			settings := getMap(config, "settings")
 
 			linkSettings := settings
@@ -683,14 +686,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			if protocol == "hysteria" {
 				protocol = "hysteria2"
 			}
-			transport := getString(ss, "network", "raw")
-			supportedTransports := map[string]bool{"tcp": true, "raw": true, "ws": true, "grpc": true, "xhttp": true, "h2": true, "http": true, "httpupgrade": true}
-			if !supportedTransports[transport] {
-				transport = "tcp"
-			}
-			if transport == "raw" {
-				transport = "tcp"
-			}
+			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
 			node := &formatter.Node{
 				Name:       nodeName,
 				Protocol:   protocol,
@@ -736,7 +732,11 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 					// Deep-copy the config and replace _accessDomain
 					mirrorConfig := deepCopyMap(config)
 					replaceAccessDomainForMirror(mirrorConfig, mirror)
-					mirrorHostResolved, mirrorPort := resolveHostPort(mirrorConfig, cfg.Listen, cfg.Port, shareDomains)
+					mirrorHostResolved, mirrorPort, resolved := resolveAccessDomain(mirrorConfig, cfg.Port, shareDomains)
+					if !resolved {
+						// 镜像的 _accessDomain 没被改写成功（类型不认识等）→ 直接用镜像自己的地址
+						mirrorHostResolved, mirrorPort = mirrorHost, cfg.Port
+					}
 
 					mirrorNodeName := fmt.Sprintf("%s (镜像 %s)", nodeName, mirror.Name)
 					if mirror.Name == "" {
@@ -1063,7 +1063,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				continue
 			}
 
-			host, port := resolveHostPort(config, cfg.Listen, cfg.Port, shareDomains)
+			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
 			settings := getMap(config, "settings")
 			var uuid, password, flow, method string
 
@@ -1105,15 +1105,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				protocol = "hysteria2"
 			}
 			extra := buildExtra(config, ss, cfg.Protocol)
-			transport := getString(ss, "network", "raw")
-			// Filter unsupported transports for mihomo
-			supportedTransports := map[string]bool{"tcp": true, "raw": true, "ws": true, "grpc": true, "xhttp": true, "h2": true, "http": true, "httpupgrade": true}
-			if !supportedTransports[transport] {
-				transport = "tcp"
-			}
-			if transport == "raw" {
-				transport = "tcp"
-			}
+			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
 			node := formatter.Node{
 				Name:       nodeName,
 				Protocol:   protocol,
@@ -1567,13 +1559,26 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 }
 
 func resolveHostPort(config map[string]interface{}, listenHost string, listenPort int, shareDomains []shareDomainEntry) (string, int) {
+	if host, port, ok := resolveAccessDomain(config, listenPort, shareDomains); ok {
+		return host, port
+	}
+	return fallbackHost(listenHost), listenPort
+}
+
+// resolveAccessDomain 解析「用户在接入域名里**明确选择**的域名/IP」。
+//
+// ok=false 的三种情况：未启用 / 选中的类型下面那个下拉**没选**（值为空）/ 类型不认识。
+// 此时调用方必须回退到节点自身的地址（见 PublicHandler.shareAddress），
+// **绝不能再从面板级分享域名列表里猜一个** —— 此前用 pickByType / rand 随机取，
+// 同一个入站每次渲染出来的 server 与 port 都不一样，而且与界面上下拉的选择完全无关
+// （用户报的 "server 不对 / 下拉对应的没有"）。
+func resolveAccessDomain(config map[string]interface{}, listenPort int, shareDomains []shareDomainEntry) (string, int, bool) {
 	ad, ok := config["_accessDomain"].(map[string]interface{})
 	if !ok {
-		return fallbackHost(listenHost), listenPort
+		return "", 0, false
 	}
-	enabled, _ := ad["enabled"].(bool)
-	if !enabled {
-		return fallbackHost(listenHost), listenPort
+	if enabled, _ := ad["enabled"].(bool); !enabled {
+		return "", 0, false
 	}
 
 	adType, _ := ad["type"].(string)
@@ -1581,75 +1586,69 @@ func resolveHostPort(config map[string]interface{}, listenHost string, listenPor
 
 	switch adType {
 	case "direct":
-		if domain, _ := ad["directDomain"].(string); domain != "" {
-			return domain, resolvePort(ad, portMode, listenPort, shareDomains, "direct", domain)
+		domain, _ := ad["directDomain"].(string)
+		if domain == "" {
+			return "", 0, false
 		}
-		if d := pickByType(shareDomains, "direct"); d != nil {
-			return d.Host, resolvePortFromEntry(d, portMode, listenPort)
-		}
+		return domain, resolvePort(ad, portMode, listenPort, shareDomains, "direct", domain), true
 	case "cf_domain":
 		// cf_domain / cf_ip 用的是 CDN 条目自身配置的端口（界面上这两种类型
 		// 没有「端口模式」选项），因此显式传空 portMode —— 否则 direct 类型下
 		// 残留的 "inbound" 选择会串到 CDN 域名上，链接端口与界面预览不一致。
-		if domain, _ := ad["cfDomain"].(string); domain != "" {
-			return domain, resolvePort(ad, "", listenPort, shareDomains, "cf_domain", domain)
+		domain, _ := ad["cfDomain"].(string)
+		if domain == "" {
+			return "", 0, false
 		}
-		if d := pickByType(shareDomains, "cf_domain"); d != nil {
-			return d.Host, resolvePortFromEntry(d, "", listenPort)
-		}
+		return domain, resolvePort(ad, "", listenPort, shareDomains, "cf_domain", domain), true
 	case "cf_ip":
-		if ip, _ := ad["cfIP"].(string); ip != "" {
-			return ip, resolvePort(ad, "", listenPort, shareDomains, "cf_ip", ip)
+		ip, _ := ad["cfIP"].(string)
+		if ip == "" {
+			return "", 0, false
 		}
-		if d := pickByType(shareDomains, "cf_ip"); d != nil {
-			return d.Host, resolvePortFromEntry(d, "", listenPort)
-		}
+		return ip, resolvePort(ad, "", listenPort, shareDomains, "cf_ip", ip), true
 	case "custom":
-		if domain, _ := ad["customDomain"].(string); domain != "" {
-			// custom 类型自己的「端口模式」：inbound = 用入站监听端口（与界面一致），
-			// 否则用自定义端口（默认 443）。此前完全没有读 customPortMode，
-			// 导致界面上选了「使用入站端口」也不生效。
-			if mode, _ := ad["customPortMode"].(string); mode == "inbound" {
-				return domain, listenPort
-			}
-			customPort := 443
-			if p, ok := ad["customPort"].(float64); ok && p > 0 {
-				customPort = int(p)
-			}
-			return domain, customPort
+		domain, _ := ad["customDomain"].(string)
+		if domain == "" {
+			return "", 0, false
 		}
+		// custom 类型自己的「端口模式」：inbound = 用入站监听端口（与界面一致），
+		// 否则用自定义端口（默认 443）。此前完全没有读 customPortMode，
+		// 导致界面上选了「使用入站端口」也不生效。
+		if mode, _ := ad["customPortMode"].(string); mode == "inbound" {
+			return domain, listenPort, true
+		}
+		customPort := 443
+		if p, ok := ad["customPort"].(float64); ok && p > 0 {
+			customPort = int(p)
+		}
+		return domain, customPort, true
 	}
-
-	if len(shareDomains) > 0 {
-		d := shareDomains[rand.Intn(len(shareDomains))]
-		port := d.Ports[rand.Intn(len(d.Ports))]
-		return d.Host, port
-	}
-	return fallbackHost(listenHost), listenPort
+	return "", 0, false
 }
 
-func pickByType(domains []shareDomainEntry, domainType string) *shareDomainEntry {
-	var filtered []shareDomainEntry
-	for _, d := range domains {
-		if d.Type == domainType {
-			filtered = append(filtered, d)
+// shareAddress 计算「发给客户端的地址」：
+//  1. 接入域名里**已明确选择**的域名/IP（resolveAccessDomain）；
+//  2. 否则退回节点自身的公网 / 内网 IP（未启用接入域名的入站本来就走这条）；
+//  3. 都没有才用监听地址兜底。
+//
+// 关键：第 2 步是必需的 —— 启用了接入域名但下拉没选时，以前会从面板级分享域名列表里
+// 随机抓一个（server 与界面选择无关、每次渲染还不同）；现在统一退到节点地址，
+// 结果稳定且至少是能连的地址。
+func (h *PublicHandler) shareAddress(ctx context.Context, cfg entity.InboundConfig, config map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
+	if host, port, ok := resolveAccessDomain(config, cfg.Port, shareDomains); ok {
+		return host, port
+	}
+	if h.nodeServerRepo != nil {
+		if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
+			if node.PublicIP != "" {
+				return node.PublicIP, cfg.Port
+			}
+			if node.InternalIP != "" {
+				return node.InternalIP, cfg.Port
+			}
 		}
 	}
-	if len(filtered) == 0 {
-		return nil
-	}
-	d := filtered[rand.Intn(len(filtered))]
-	return &d
-}
-
-func resolvePortFromEntry(d *shareDomainEntry, portMode string, listenPort int) int {
-	if portMode == "inbound" {
-		return listenPort
-	}
-	if len(d.Ports) > 0 {
-		return d.Ports[rand.Intn(len(d.Ports))]
-	}
-	return d.Port
+	return fallbackHost(cfg.Listen), cfg.Port
 }
 
 func resolvePort(ad map[string]interface{}, portMode string, listenPort int, shareDomains []shareDomainEntry, adType, domain string) int {
@@ -1852,7 +1851,48 @@ func buildRenderedMihomoProxyMaps(items []renderedSubscriptionNode) []map[string
 			result = append(result, converted[0])
 		}
 	}
-	return result
+	return dedupeMihomoProxyNames(result)
+}
+
+// dedupeMihomoProxyNames 保证代理名（mihomo 的 `name`，即"标签"）唯一。
+//
+// mihomo 对重名是**整份拒绝**（实测 1.10：`proxy trojan-worker is the duplicate name` →
+// `configuration file xxx test failed`），不是跳过该条 —— 于是用户导入订阅后"很多节点不显示"
+// 甚至一个都没有。重名来源很常见：内部入站重名、外部节点与订阅节点重名、
+// 同一节点既直连又走镜像/多来源。
+//
+// 命名口径与 sing-box / xray 的出站 tag 完全一致（formatter.uniqueNodeTag）：
+// 重名时追加 " 2"、" 3"…，这样三种格式里同一个节点名字相同，用户对照时不会困惑。
+func dedupeMihomoProxyNames(proxyMaps []map[string]interface{}) []map[string]interface{} {
+	used := make(map[string]int, len(proxyMaps))
+	for _, pm := range proxyMaps {
+		if pm == nil {
+			continue
+		}
+		name, _ := pm["name"].(string)
+		pm["name"] = uniqueMihomoName(name, used)
+	}
+	return proxyMaps
+}
+
+// uniqueMihomoName 与 formatter.uniqueNodeTag 同语义（那边未导出，故在此重复一份）。
+// 注意：生成出来的新名字也要登记，否则"已有节点本身就叫 X 2"时会与新生成的名字再撞一次。
+func uniqueMihomoName(name string, used map[string]int) string {
+	if name == "" {
+		name = "node"
+	}
+	if used[name] == 0 {
+		used[name] = 1
+		return name
+	}
+	for n := used[name] + 1; ; n++ {
+		candidate := fmt.Sprintf("%s %d", name, n)
+		if used[candidate] == 0 {
+			used[name] = n
+			used[candidate] = 1
+			return candidate
+		}
+	}
 }
 
 func parseSubscriptionLinksToFormatterNodes(links []string) []formatter.Node {
@@ -1875,6 +1915,16 @@ func normalizeSubscriptionMihomoProxyMap(link string, proxy map[string]interface
 		return
 	}
 	trimEmptyALPN(proxy)
+
+	// mihomo 的 network 取值里**没有** "tcp"/"raw"（裸 TCP 就该省略这个字段）：
+	// 外部节点带过来的 ProxyMap 可能写着 `network: raw`/`network: tcp`，
+	// 这里直接删掉，避免 YAML 里出现客户端不认识的值。
+	if v, ok := proxy["network"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "tcp", "raw":
+			delete(proxy, "network")
+		}
+	}
 
 	proxyType, _ := proxy["type"].(string)
 	switch proxyType {
@@ -2155,6 +2205,29 @@ func getTLSServerName(ss map[string]interface{}) string {
 
 // buildExtra extracts all mihomo-relevant fields from xray config into Extra map.
 // Only non-empty values are stored. Keys use mihomo YAML field names.
+// normalizeNodeTransport **只做命名归一，绝不降级**：
+//   - 空 → tcp（老数据没写 network）；
+//   - mkcp → kcp（面板内部/编辑器用 "mkcp"，所有客户端格式里的名字都是 "kcp"）；
+//   - 其余原样保留 —— 特别是 **raw 保持 raw**（xray 25+ 的正式名；用户明确要求
+//     xray 的 JSON 里不要换成 tcp）。各格式自己决定怎么呈现：
+//     xray 写 raw + rawSettings；mihomo / sing-box 的 network/transport 里没有
+//     raw/tcp 这个取值，裸 TCP 就不写这个字段（由各 formatter 负责省略）。
+//
+// **绝不能**在这里把"表达不了的传输"（kcp / quic / splithttp …）改成 tcp：
+// 那会漏出一个"传输参数全丢、但看起来能用"的节点（客户端按裸 TCP 连 → 连不上）。
+// 该由各格式自己的支持性判断整条剔除：
+// singboxNodeDropReason / mihomoNodeDropReason / filterRenderedNodesForFormat。
+func normalizeNodeTransport(network string) string {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "":
+		return "tcp"
+	case "mkcp":
+		return "kcp"
+	default:
+		return strings.ToLower(strings.TrimSpace(network))
+	}
+}
+
 func buildExtra(config, ss map[string]interface{}, protocol string) map[string]interface{} {
 	extra := make(map[string]interface{})
 
@@ -2228,6 +2301,28 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 		}
 		network = "tcp"
 	}
+
+	// mKCP：xray 表达得了（mihomo 表达不了，会在片段层被整条剔除）。
+	// XrayFormatter 从 kcp-settings 读 mtu/tti/... 并原样带上 finalmask（Xray 25+ 的
+	// mkcp-legacy header/seed 就在 finalmask.udp 里）——缺了这段，xray 片段就会变成
+	// 一个参数全丢的 network: tcp 节点。
+	if rawNetwork := strings.ToLower(getString(ss, "network", "raw")); rawNetwork == "kcp" || rawNetwork == "mkcp" {
+		if kcp := getMap(ss, "kcpSettings"); kcp != nil {
+			ks := map[string]interface{}{}
+			for _, key := range []string{"mtu", "tti", "uplinkCapacity", "downlinkCapacity", "congestion", "readBufferSize", "writeBufferSize"} {
+				if v, ok := kcp[key]; ok {
+					ks[key] = v
+				}
+			}
+			if len(ks) > 0 {
+				extra["kcp-settings"] = ks
+			}
+		}
+		if fm := getMap(ss, "finalmask"); fm != nil {
+			extra["finalmask"] = fm
+		}
+	}
+
 	switch network {
 	case "ws":
 		ws := getMap(ss, "wsSettings")

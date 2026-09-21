@@ -1,9 +1,63 @@
 package sharelink
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+// xray 25 起 TCP 传输的新名字是 "raw"，但链接里必须写标准值 **"tcp"**：
+// 并非所有客户端都认识 raw（mihomo 的 network 也不认），而两者在服务端等价。
+func TestGenerateLinkNormalizesRawTransportToTCP(t *testing.T) {
+	ss := map[string]interface{}{"network": "raw", "security": "none"}
+
+	vless := Generate(Node{
+		Tag: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		StreamSettings: ss,
+		Settings:       map[string]interface{}{"clients": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"}}},
+	})
+	if !strings.Contains(vless, "type=tcp") || strings.Contains(vless, "type=raw") {
+		t.Errorf("vless 链接应发 type=tcp: %s", vless)
+	}
+
+	trojan := Generate(Node{
+		Tag: "t", Protocol: "trojan", Host: "1.2.3.4", Port: 443,
+		StreamSettings: map[string]interface{}{"network": "raw", "security": "tls"},
+		Settings:       map[string]interface{}{"clients": []interface{}{map[string]interface{}{"password": "pw"}}},
+	})
+	if !strings.Contains(trojan, "type=tcp") || strings.Contains(trojan, "type=raw") {
+		t.Errorf("trojan 链接应发 type=tcp: %s", trojan)
+	}
+
+	// vmess 的传输在 base64(JSON).net 里
+	vmess := Generate(Node{
+		Tag: "m", Protocol: "vmess", Host: "1.2.3.4", Port: 443,
+		StreamSettings: ss,
+		Settings:       map[string]interface{}{"clients": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"}}},
+	})
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(vmess, "vmess://"))
+	if err != nil {
+		t.Fatalf("vmess 链接不是合法 base64: %v", err)
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatalf("vmess 链接 JSON 非法: %v", err)
+	}
+	if obj["net"] != "tcp" {
+		t.Errorf("vmess net = %v, want tcp", obj["net"])
+	}
+
+	// mkcp 仍然写作 kcp
+	kcp := Generate(Node{
+		Tag: "k", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		StreamSettings: map[string]interface{}{"network": "mkcp", "security": "none"},
+		Settings:       map[string]interface{}{"clients": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"}}},
+	})
+	if !strings.Contains(kcp, "type=kcp") {
+		t.Errorf("mkcp 应写作 kcp: %s", kcp)
+	}
+}
 
 // 认证类链接（socks/http）：用户名、密码要**分别**转义，中间的分隔 ':' 不能被编码成 %3A
 // —— 不少客户端按第一个 ':' 切分 userinfo，整体转义后会认证失败。

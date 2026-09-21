@@ -24,6 +24,64 @@ func renderFirstXrayOutbound(t *testing.T, node Node) map[string]interface{} {
 	return cfg.Outbounds[0]
 }
 
+// **传输不许降级**：面板/服务端里存的是 "raw"（xray 25+ 的正式名）时，客户端 JSON
+// 里也必须写 raw —— 不能改写成一个"看起来等价"的别的传输（用户要求"是什么协议就是
+// 什么协议"）。配对的伪装配置键也要跟着用 rawSettings。
+func TestXrayFormatterKeepsRawTransport(t *testing.T) {
+	raw := renderFirstXrayOutbound(t, Node{
+		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111",
+		Transport: "raw",
+		Extra: map[string]interface{}{
+			"http-opts": map[string]interface{}{
+				"path":    []string{"/"},
+				"headers": map[string]interface{}{"Host": []string{"www.a.com"}},
+			},
+		},
+	})
+	ss, _ := raw["streamSettings"].(map[string]interface{})
+	if ss["network"] != "raw" {
+		t.Errorf("network = %v, want raw（不许降级成 tcp）", ss["network"])
+	}
+	if _, ok := ss["rawSettings"]; !ok {
+		t.Errorf("network=raw 时伪装配置应写在 rawSettings 里: %v", ss)
+	}
+	if _, ok := ss["tcpSettings"]; ok {
+		t.Errorf("network=raw 时不该出现 tcpSettings: %v", ss)
+	}
+
+	// 真的是 tcp 的（老配置）照旧写 tcp + tcpSettings
+	tcp := renderFirstXrayOutbound(t, Node{
+		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111",
+		Transport: "tcp",
+		Extra: map[string]interface{}{
+			"http-opts": map[string]interface{}{"path": []string{"/"}},
+		},
+	})
+	ss, _ = tcp["streamSettings"].(map[string]interface{})
+	if ss["network"] != "tcp" {
+		t.Errorf("network = %v, want tcp", ss["network"])
+	}
+	if _, ok := ss["tcpSettings"]; !ok {
+		t.Errorf("network=tcp 应写 tcpSettings: %v", ss)
+	}
+
+	// ws 等真实传输原样保留
+	ws := renderFirstXrayOutbound(t, Node{
+		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111",
+		Transport: "ws", Extra: map[string]interface{}{"ws-opts": map[string]interface{}{"path": "/ws"}},
+	})
+	ss, _ = ws["streamSettings"].(map[string]interface{})
+	if ss["network"] != "ws" {
+		t.Errorf("network = %v, want ws", ss["network"])
+	}
+	if _, ok := ss["wsSettings"]; !ok {
+		t.Errorf("ws 应带 wsSettings: %v", ss)
+	}
+}
+
 // Xray 25+ 要求 VLESS 的每个 user 显式带 encryption（至少 "none"）：
 // 缺了会报 `VLESS users: please add/set "encryption":"none" for every user`，
 // 让**整份**客户端配置加载失败（实测 11/11 份订阅都因此挂掉）。

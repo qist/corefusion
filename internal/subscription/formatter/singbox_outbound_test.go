@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,56 @@ func renderFirstOutbound(t *testing.T, node Node) map[string]interface{} {
 		t.Fatal("no outbounds")
 	}
 	return cfg.Outbounds[0]
+}
+
+// 裸 TCP 不许出现 transport（sing-box 没有 tcp/raw 这个 type，写了直接 FATAL）；
+// 但**裸 TCP + HTTP 伪装**必须写成 transport.type=http —— 以前整段跳过，伪装参数
+// 被丢掉，客户端按裸 TCP 连 → 连不上（服务端在等 HTTP 请求头）。
+func TestSingBoxTransportForBareTCPAndHTTPDisguise(t *testing.T) {
+	// 裸 TCP：不写 transport
+	bare := renderFirstOutbound(t, Node{
+		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111", Transport: "raw",
+	})
+	if tr, ok := bare["transport"]; ok {
+		t.Errorf("裸 TCP 不该有 transport: %v", tr)
+	}
+
+	// HTTP 伪装：必须映射成 transport.type=http（带 path / host / headers）
+	disguised := renderFirstOutbound(t, Node{
+		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111", Transport: "raw",
+		Extra: map[string]interface{}{
+			"http-opts": map[string]interface{}{
+				"path":    []string{"/"},
+				"headers": map[string]interface{}{"Host": []string{"www.baidu.com"}},
+			},
+		},
+	})
+	tr, _ := disguised["transport"].(map[string]interface{})
+	if tr == nil || tr["type"] != "http" {
+		t.Fatalf("HTTP 伪装应写成 transport.type=http, got %v", disguised["transport"])
+	}
+	if tr["path"] != "/" {
+		t.Errorf("path = %v, want /", tr["path"])
+	}
+	if got := fmt.Sprint(tr["host"]); got != "[www.baidu.com]" {
+		t.Errorf("host = %v, want [www.baidu.com]", tr["host"])
+	}
+	if _, ok := tr["headers"]; !ok {
+		t.Errorf("headers 应保留: %v", tr)
+	}
+
+	// 真传输照旧
+	ws := renderFirstOutbound(t, Node{
+		Name: "w", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111", Transport: "ws",
+		Extra: map[string]interface{}{"ws-opts": map[string]interface{}{"path": "/ws"}},
+	})
+	tr, _ = ws["transport"].(map[string]interface{})
+	if tr == nil || tr["type"] != "ws" || tr["path"] != "/ws" {
+		t.Errorf("ws transport 不对: %v", ws["transport"])
+	}
 }
 
 // REALITY 必须写成 tls.reality（public_key / short_id）并强制 uTLS：

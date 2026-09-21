@@ -382,9 +382,9 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 						"public-key": pbk,
 						"short-id":   query.Get("sid"),
 					}
-					if pqv := query.Get("pqv"); pqv != "" {
-						ro["support-x25519mlkem768"] = true
-					}
+					// REALITY 一律保留 MLKEM 密钥共享（原因见下方 vless 分支的说明：
+					// mihomo 默认删掉 MLKEM 段会导致 xray 26 服务端认证失败）
+					ro["support-x25519mlkem768"] = true
 					trojan["reality-opts"] = ro
 				}
 			}
@@ -394,10 +394,15 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				trojan["network"] = network
 			}
 			switch network {
-			case "ws":
+			case "ws", "httpupgrade":
 				headers := make(map[string]any)
 				wsOpts := make(map[string]any)
 				headers["User-Agent"] = randUserAgent()
+				// ⚠ Host 必须带上：服务端限制 Host 的 ws 入站，缺这个头会直接 404
+				// （vless/vmess 分支一直有，trojan 分支漏了 —— e2e 实测 trojan+ws 只有 mihomo 挂）
+				if host := query.Get("host"); host != "" {
+					headers["Host"] = host
+				}
 				path := query.Get("path")
 				// Detect early data in path (e.g. /?ed=2560)
 				if idx := strings.Index(path, "?ed="); idx >= 0 {
@@ -739,10 +744,15 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 			"public-key": realityPublicKey,
 			"short-id":   query.Get("sid"),
 		}
-		// pqv (post-quantum verification) → support-x25519mlkem768 inside reality-opts
-		if pqv := query.Get("pqv"); pqv != "" {
-			ro["support-x25519mlkem768"] = true
-		}
+		// ⚠ mihomo 的 REALITY 必须显式保留 X25519MLKEM768 密钥共享，否则**认证失败**：
+		// mihomo 默认会把 ClientHello 里的 MLKEM 段删掉（component/tls/reality.go 的
+		// BuildRemovedX25519MLKEM768HandshakeState，注释写着 "for X25519MLKEM768 does not work
+		// properly with the old reality server"），而 xray 26 的 REALITY 服务端按带 MLKEM 的
+		// 指纹校验 → 删掉就认证不过。e2e 实测（面板自建 reality 入站）：不加这行 mihomo 报
+		// `REALITY authentication failed`，加上立即可通；xray / sing-box 客户端不受影响。
+		// 代价：对**很老**的 reality 服务端（不支持 MLKEM）可能反而不通 —— 本项目节点跑的是
+		// xray 26.x，以实测为准。
+		ro["support-x25519mlkem768"] = true
 		proxy["reality-opts"] = ro
 	}
 

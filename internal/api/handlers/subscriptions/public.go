@@ -639,6 +639,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			settings := getMap(config, "settings")
 
 			linkSettings := settings
+			credExtra := map[string]interface{}{}
 			var uuid, password, flow string
 			if clientEmail != "" {
 				userClient := findClientByEmail(settings, clientEmail, cfg.Tag)
@@ -668,8 +669,10 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				// No client email → skip nodes requiring authentication (security)
 				continue
 			}
-			// SS-2022 多用户：客户端密码必须是 `服务端密钥:用户密钥`（只给用户密钥服务端会静默丢弃连接）。
-			// 链接的 settings 由 linkSettingsForUser 处理，节点（片段/订阅）用 effectivePassword。
+			// 凭据字段按协议取（hysteria→auth、http/socks→accounts 的 user/pass、snell→顶层 psk）：
+			// 取错字段的节点"看得到、认证过不了"。这里先把用户记录里的凭据规整好，
+			// 再算 SS-2022 的多用户密码（`服务端密钥:用户密钥`）。
+			applyClientCredentials(cfg.Protocol, firstClient(linkSettings), config, &password, credExtra)
 			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
 
 			nodeName := cfg.Remark
@@ -705,7 +708,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				Password:   effectivePassword,
 				Flow:       flow,
 				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
-				Extra:      buildExtra(config, ss, cfg.Protocol),
+				Extra:      buildExtraWith(config, ss, cfg.Protocol, credExtra),
 			}
 			for _, memberID := range memberIDs {
 				item := renderedSubscriptionNode{
@@ -1071,9 +1074,11 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 
 			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
 			settings := getMap(config, "settings")
+			credExtra := map[string]interface{}{}
 			var uuid, password, flow string
 
 			// Find the specific client's credentials for this subscription
+			var credClient map[string]interface{}
 			if clientEmail != "" {
 				userClient := findClientByEmail(settings, clientEmail, cfg.Tag)
 				if userClient == nil {
@@ -1095,12 +1100,12 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 						password = psk
 					}
 				}
+				credClient = userClient
 			} else {
 				// No client email → skip nodes requiring authentication (security)
 				continue
 			}
-			// SS-2022 多用户：客户端密码必须是 `服务端密钥:用户密钥`（只给用户密钥服务端会静默丢弃连接）。
-			// 链接的 settings 由 linkSettingsForUser 处理，节点（片段/订阅）用 effectivePassword。
+			applyClientCredentials(cfg.Protocol, credClient, config, &password, credExtra)
 			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
 
 			ss := getMap(config, "streamSettings")
@@ -1126,7 +1131,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				Password:   effectivePassword,
 				Flow:       flow,
 				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
-				Extra:      extra,
+				Extra:      mergeExtraMaps(extra, credExtra),
 			}
 			nodes = append(nodes, node)
 		}

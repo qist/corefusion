@@ -137,8 +137,18 @@ func generateVmessLink(n Node) string {
 	// Network-specific
 	switch network {
 	case "tcp", "raw":
-		tcp := getMap(ss, "raw")
-		if getString(tcp, "headerType", "") == "http" {
+		tcp := getMap(ss, "rawSettings")
+		if tcp == nil {
+			tcp = getMap(ss, "tcpSettings")
+		}
+		if tcp == nil {
+			tcp = getMap(ss, "raw")
+		}
+		// ⚠ 两种形态都要认：前端表单是 `headerType`，xray 配置是 `header.type`
+		// （只认前者会让"HTTP 伪装的 vmess 入站"生成成普通 TCP 链接 → mihomo 连不上）
+		httpish := getString(tcp, "headerType", "") == "http" ||
+			strings.EqualFold(getString(getMap(tcp, "header"), "type", ""), "http")
+		if httpish {
 			obj["type"] = "http"
 			obj["host"] = getHeaderHost(tcp)
 			obj["path"] = getTCPPath(tcp)
@@ -177,18 +187,27 @@ func generateVmessLink(n Node) string {
 		obj["path"] = path
 		obj["host"] = getWSHost(ws)
 	case "grpc":
-		grpc := getMap(ss, "grpc")
+		grpc := getMap(ss, "grpcSettings")
+		if grpc == nil {
+			grpc = getMap(ss, "grpc")
+		}
 		obj["path"] = getString(grpc, "serviceName", "")
 		obj["authority"] = getString(grpc, "authority", "")
 		if getBool(getMap(grpc, "settings"), "multiMode") {
 			obj["type"] = "multi"
 		}
 	case "httpupgrade":
-		hu := getMap(ss, "httpupgrade")
+		hu := getMap(ss, "httpupgradeSettings")
+		if hu == nil {
+			hu = getMap(ss, "httpupgrade")
+		}
 		obj["path"] = getString(hu, "path", "/")
 		obj["host"] = getString(hu, "host", "")
 	case "xhttp":
-		xhttp := getMap(ss, "xhttp")
+		xhttp := getMap(ss, "xhttpSettings")
+		if xhttp == nil {
+			xhttp = getMap(ss, "xhttp")
+		}
 		obj["path"] = getString(xhttp, "path", "/")
 		obj["host"] = getString(xhttp, "host", "")
 		obj["type"] = getString(xhttp, "mode", "auto")

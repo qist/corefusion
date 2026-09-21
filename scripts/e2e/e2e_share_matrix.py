@@ -40,7 +40,14 @@ MIHOMO_BIN = os.environ.get("E2E_MIHOMO", "/tmp/mihomo-bin")
 TRACE_URL = "https://www.cloudflare.com/cdn-cgi/trace"   # 响应里带 ip= / loc=
 EXPECT_LOC = "HK"
 
-PORT_BASE = 31000
+PORT_BASE = 31100
+# TLS 入站用的证书（面板 data/certs/<domain>/；入站配置里写的是相对 data/runtime 的 ../../../certs/...）
+TLS_SNI = "example.com"
+CERT_FILE = "../../../certs/gg/cert.pem"
+KEY_FILE = "../../../certs/gg/key.pem"
+# REALITY 服务端密钥对（main 里用面板接口生成，避免用例写死）
+REALITY: dict = {}
+
 SOCKS_BASE = 41000
 FORMATS = ["uri", "mihomo", "singbox", "xray"]
 CLIENTS = ["xray", "singbox", "mihomo"]
@@ -49,56 +56,96 @@ CLIENTS = ["xray", "singbox", "mihomo"]
 # 期望说明：expect 里每个 format → "pass" / "skip"。
 #   skip 必须表现为 supported=false 且 reason 非空（驱动器会核对）。
 CASES: list[dict] = [
+    # ══════════ xray 服务端：vless × 全部传输 / 安全形态 ══════════
     dict(id="vless-raw-none", core="xray", protocol="vless", transport="raw", security="none"),
-    dict(id="vless-ws-none", core="xray", protocol="vless", transport="ws", security="none",
-         extra={"path": "/e2ews", "host": "e2e.local"}),
-    dict(id="vless-grpc-none", core="xray", protocol="vless", transport="grpc", security="none",
-         extra={"serviceName": "e2egrpc"}),
+    dict(id="vless-ws-none", core="xray", protocol="vless", transport="ws", security="none"),
+    dict(id="vless-grpc-none", core="xray", protocol="vless", transport="grpc", security="none"),
     dict(id="vless-xhttp-none", core="xray", protocol="vless", transport="xhttp", security="none",
-         extra={"path": "/e2ex", "mode": "auto"}, expect={"singbox": "skip"}),
-    dict(id="vless-httpupgrade-none", core="xray", protocol="vless", transport="httpupgrade", security="none",
-         extra={"path": "/e2ehu", "host": "e2e.local"}),
+         expect={"singbox": "skip"}),
+    dict(id="vless-xhttp-packetup", core="xray", protocol="vless", transport="xhttp", security="none",
+         extra={"mode": "packet-up"}, expect={"singbox": "skip"}),
+    dict(id="vless-httpupgrade-none", core="xray", protocol="vless", transport="httpupgrade", security="none"),
     dict(id="vless-kcp-none", core="xray", protocol="vless", transport="mkcp", security="none",
          expect={"mihomo": "skip", "singbox": "skip"}),
+    dict(id="vless-raw-httpcamouflage", core="xray", protocol="vless", transport="raw", security="none",
+         http_camouflage={"path": ["/"], "host": "www.baidu.com"}),
     dict(id="vless-raw-vlessenc", core="xray", protocol="vless", transport="raw", security="none",
          vless_encryption=True, expect={"singbox": "skip"}),
-    dict(id="vless-ws-httpcamouflage", core="xray", protocol="vless", transport="raw", security="none",
+    dict(id="vless-tls-raw", core="xray", protocol="vless", transport="raw", security="tls"),
+    dict(id="vless-tls-vision", core="xray", protocol="vless", transport="raw", security="tls",
+         flow="xtls-rprx-vision"),
+    dict(id="vless-tls-ws", core="xray", protocol="vless", transport="ws", security="tls"),
+    dict(id="vless-reality-raw", core="xray", protocol="vless", transport="raw", security="reality",
+         client_skip={"singbox": "sing-box 该构建连 xray 26 的 REALITY 一律认证失败（chrome/firefox/safari/randomized 四种 uTLS 指纹都试过；同一服务器 mihomo/xray 正常）"}),
+    # 同一节点上 serverNames 不能重复（面板会报 SERVER_NAMES_CONFLICT），故换一个伪装站点
+    dict(id="vless-reality-vision", core="xray", protocol="vless", transport="raw", security="reality",
+         sni="www.apple.com", flow="xtls-rprx-vision",
+         client_skip={"singbox": "sing-box 该构建连 xray 26 的 REALITY 一律认证失败（chrome/firefox/safari/randomized 四种 uTLS 指纹都试过；同一服务器 mihomo/xray 正常）"}),
+
+    # ══════════ vmess ══════════
+    dict(id="vmess-ws-none", core="xray", protocol="vmess", transport="ws", security="none"),
+    dict(id="vmess-raw-none", core="xray", protocol="vmess", transport="raw", security="none"),
+    dict(id="vmess-raw-httpcamouflage", core="xray", protocol="vmess", transport="raw", security="none",
          http_camouflage={"path": ["/"], "host": "www.baidu.com"}),
-    dict(id="vmess-ws-none", core="xray", protocol="vmess", transport="ws", security="none",
-         extra={"path": "/e2evm", "host": "e2e.local"}),
+    dict(id="vmess-grpc-none", core="xray", protocol="vmess", transport="grpc", security="none"),
+    dict(id="vmess-tls-ws", core="xray", protocol="vmess", transport="ws", security="tls"),
+
+    # ══════════ trojan（带证书的 TLS：mihomo 的 trojan 出站强制 TLS）══════════
+    dict(id="trojan-tls-raw", core="xray", protocol="trojan", transport="raw", security="tls"),
+    dict(id="trojan-tls-ws", core="xray", protocol="trojan", transport="ws", security="tls"),
+    dict(id="trojan-tls-grpc", core="xray", protocol="trojan", transport="grpc", security="tls"),
+
+    # ══════════ shadowsocks：各加密族 ══════════
     dict(id="ss-raw-none", core="xray", protocol="shadowsocks", transport="raw", security="none",
          ss_method="aes-256-gcm"),
-    # ⚠ 面板里 ss2022 的 DB/config protocol 仍写 `shadowsocks`，靠 method 区分（照抄面板自建入站 id=70）；
-    # 写成 `shadowsocks2022` 核心会 `unknown config id: shadowsocks2022` 起不来。
-    # 用**单用户**形态（不带 clients[]）：实测单用户 ss2022 能让三种客户端都连通；
-    # 多用户形态（带 clients[]）在**本环境的核**上握手静默失败（服务端配置与 DB 一致，
-    # 标准客户端 + 另一份 26.1.18 二进制也连不上）→ 属核/部署问题，另行排查，不是分享侧。
+    dict(id="ss-aes128gcm", core="xray", protocol="shadowsocks", transport="raw", security="none",
+         ss_method="aes-128-gcm"),
+    dict(id="ss-chacha20", core="xray", protocol="shadowsocks", transport="raw", security="none",
+         ss_method="chacha20-poly1305"),
     dict(id="ss2022-single-raw-none", core="xray", protocol="shadowsocks", transport="raw", security="none",
          ss_method="2022-blake3-aes-128-gcm"),
-    dict(id="http-raw-none", core="xray", protocol="http", transport="raw", security="none"),
-    dict(id="socks-raw-none", core="xray", protocol="socks", transport="raw", security="none"),
-
-    # ─────────── sing-box 当**服务端核心**（core_type=singbox，入站配置是 sing-box 自己的 JSON 形状）───────────
-    # 此前 sing-box 只作为**客户端**测过（全通）；这一组验证"面板从 sing-box 入站派生的分享产物"
-    # 也能真连（之前只做过 `sing-box check` 配置级校验，没做端到端）。
-    dict(id="sb-vless-raw-none", core="singbox", protocol="vless", transport="raw", security="none"),
-    dict(id="sb-vless-ws-none", core="singbox", protocol="vless", transport="ws", security="none"),
-    dict(id="sb-vless-grpc-none", core="singbox", protocol="vless", transport="grpc", security="none"),
-    dict(id="sb-vmess-ws-none", core="singbox", protocol="vmess", transport="ws", security="none"),
-    dict(id="sb-ss-raw-none", core="singbox", protocol="shadowsocks", transport="raw", security="none",
-         ss_method="aes-256-gcm"),
-
-    # 多用户 ss2022（xray 服务端）：客户端密码必须是 `服务端密钥:用户密钥`，
-    # 只给用户密钥时 xray 服务端会**静默丢弃**连接（表现就是"配置能加载、节点连不上"）。
-    # sing-box 客户端对本项目的 xray 多用户 ss2022 服务端**互不兼容**：实测
-    # `服务端:用户` / 只给用户密钥 / 只给服务端密钥三种形式都连不通（同一入站、同一用户，
-    # xray 与 mihomo 用 `服务端:用户` 都能连通）→ 属该客户端实现的限制，如实标 SKIP。
     dict(id="ss2022-multi-raw-none", core="xray", protocol="shadowsocks", transport="raw", security="none",
          ss_method="2022-blake3-aes-128-gcm", ss_multi=True, port=31030,
          client_skip={"singbox": "sing-box 与该 xray 服务端的多用户 ss2022 不互通（三种密钥形式实测都不通，xray/mihomo 正常）"}),
-    # 说明：**明文 trojan** 的 sing-box 用例已去掉 —— mihomo 的 trojan 出站强制 TLS
-    # （产物里 client-fingerprint/skip-cert-verify 都按 TLS 写），连明文入站必然失败，
-    # 这是"用例本身不成立"，不是产物问题。要覆盖 trojan 需要节点上有可用证书（或 REALITY）。
+
+    # ══════════ http / socks（无认证 + 带认证）══════════
+    dict(id="http-raw-none", core="xray", protocol="http", transport="raw", security="none"),
+    dict(id="http-raw-auth", core="xray", protocol="http", transport="raw", security="none", auth=True),
+    dict(id="socks-raw-none", core="xray", protocol="socks", transport="raw", security="none"),
+    dict(id="socks-raw-auth", core="xray", protocol="socks", transport="raw", security="none", auth=True),
+
+    # ══════════ hysteria（xray 侧，走 TLS 证书）══════════
+    # ⚠ network 必须是 `hysteria`（面板自建入站就是这样；写成 raw 核心会
+    # `failed to build inbound handler for protocol hysteria` 整份起不来）
+    dict(id="hysteria-tls", core="xray", protocol="hysteria", transport="hysteria", security="tls",
+         alpn=["h3"]),
+
+    # ══════════ sing-box 服务端：vless / vmess / trojan ══════════
+    dict(id="sb-vless-raw-none", core="singbox", protocol="vless", transport="raw", security="none"),
+    dict(id="sb-vless-ws-none", core="singbox", protocol="vless", transport="ws", security="none"),
+    dict(id="sb-vless-grpc-none", core="singbox", protocol="vless", transport="grpc", security="none"),
+    dict(id="sb-vless-tls", core="singbox", protocol="vless", transport="raw", security="tls"),
+    dict(id="sb-vmess-ws-none", core="singbox", protocol="vmess", transport="ws", security="none"),
+    dict(id="sb-vmess-raw-none", core="singbox", protocol="vmess", transport="raw", security="none"),
+    dict(id="sb-trojan-tls-ws", core="singbox", protocol="trojan", transport="ws", security="tls"),
+
+    # ══════════ sing-box 服务端：ss / hysteria2 / tuic / anytls / naive / snell / mixed ══════════
+    dict(id="sb-ss-raw-none", core="singbox", protocol="shadowsocks", transport="raw", security="none",
+         ss_method="aes-256-gcm"),
+    dict(id="sb-ss2022-raw", core="singbox", protocol="shadowsocks", transport="raw", security="none",
+         ss_method="2022-blake3-aes-128-gcm"),
+    dict(id="sb-hysteria2", core="singbox", protocol="hysteria2", transport="raw", security="tls"),
+    dict(id="sb-hysteria2-obfs", core="singbox", protocol="hysteria2", transport="raw", security="tls",
+         obfs=True),
+    dict(id="sb-tuic", core="singbox", protocol="tuic", transport="raw", security="tls",
+         expect={"xray": "skip"}),
+    dict(id="sb-anytls", core="singbox", protocol="anytls", transport="raw", security="tls",
+         expect={"xray": "skip"}),
+    dict(id="sb-naive", core="singbox", protocol="naive", transport="raw", security="tls",
+         expect={"uri": "skip", "mihomo": "skip", "singbox": "skip", "xray": "skip"}),
+    dict(id="sb-snell", core="singbox", protocol="snell", transport="raw", security="none",
+         expect={"uri": "skip", "xray": "skip"}),
+    dict(id="sb-mixed", core="singbox", protocol="mixed", transport="raw", security="none"),
 ]
 
 
@@ -145,6 +192,15 @@ def run(cmd: list[str], timeout: int = 20) -> tuple[int, str]:
         return 124, "timeout"
 
 
+def udp_only(case: dict) -> bool:
+    """该用例是否只监听 UDP（没有 TCP 监听）——kcp/quic 的传输，以及 QUIC 系协议
+    （hysteria / hysteria2 / tuic）。用 TCP connect 做"端口是否监听"的预检会把它们误判成
+    "核心起不来"（kcp 与 hysteria 都这么被误判过）。"""
+    if case.get("transport") in ("mkcp", "kcp", "quic", "hysteria"):
+        return True
+    return case.get("protocol") in ("hysteria", "hysteria2", "tuic")
+
+
 def core_service_id(panel: str, token: str, node: int, core_type: str) -> int | None:
     """从 process-status 里取该核心的 service_id（用于重启核心）。"""
     r = api(panel, token, "GET", f"/api/v1/node-servers/{node}/services/process-status")
@@ -186,6 +242,24 @@ def stream_settings(case: dict) -> dict:
         #      所以用例里**不写 finalmask**，只用最小 kcp 形状（两边都实测 Configuration OK）。
         ss["kcpSettings"] = {"mtu": 1350, "tti": 50, "uplinkCapacity": 5, "downlinkCapacity": 20,
                              "congestion": True, "readBufferSize": 2, "writeBufferSize": 2}
+    sec = case.get("security", "none")
+    if sec == "tls":
+        ss["tlsSettings"] = {
+            "serverName": case.get("sni", TLS_SNI),
+            "certificates": [{"certificateFile": CERT_FILE, "keyFile": KEY_FILE}],
+        }
+        if case.get("alpn"):
+            ss["tlsSettings"]["alpn"] = case["alpn"]
+    elif sec == "reality":
+        sni = case.get("sni", "www.amazon.com")
+        ss["realitySettings"] = {
+            "target": sni + ":443",
+            "serverNames": [sni],
+            "privateKey": REALITY.get("privateKey", ""),
+            "shortIds": ["e2e1a2b3"],  # xray 限制 <=8 字节（16 hex），这里用最短形式，避免客户端实现差异
+            # 面板把"客户端要用的公钥"存在 settings[0].password（客户端字段名由此而来）
+            "settings": [{"fingerprint": "chrome", "password": REALITY.get("publicKey", "")}],
+        }
     camo = case.get("http_camouflage")
     if camo and net == "raw":
         ss["rawSettings"] = {"header": {"type": "http", "request": {
@@ -206,6 +280,15 @@ def vless_enc_pair(panel: str, token: str, node: int) -> tuple[str, str]:
     if not auths:
         return "", ""
     return auths[0].get("encryption", ""), auths[0].get("decryption", "")
+
+
+def reality_pair(panel: str, token: str, node: int) -> dict:
+    """让面板生成一对 REALITY 密钥（服务端 privateKey / 客户端 publicKey）。"""
+    r = api(panel, token, "POST", f"/api/v1/node-servers/{node}/binaries/reality-key", {})
+    d = r.get("data") or {}
+    if not d.get("privateKey"):
+        print("⚠ REALITY 密钥生成失败，reality 用例会失败:", r)
+    return {"privateKey": d.get("privateKey", ""), "publicKey": d.get("publicKey", "")}
 
 
 def server_config(case: dict, port: int, client_uuid: str, client_pass: str,
@@ -232,7 +315,8 @@ def server_config(case: dict, port: int, client_uuid: str, client_pass: str,
         dec = ""
     if proto == "vless":
         cfg["settings"] = {
-            "clients": [{"id": client_uuid, "email": "e2e@test.local", "flow": "", "level": 0}],
+            "clients": [{"id": client_uuid, "email": "e2e@test.local",
+                         "flow": case.get("flow", ""), "level": 0}],
             "encryption": enc or "none",
             "decryption": dec or "none",
         }
@@ -256,9 +340,25 @@ def server_config(case: dict, port: int, client_uuid: str, client_pass: str,
         else:
             cfg["settings"] = {"method": method, "password": client_pass, "network": "tcp,udp"}
     elif proto == "http":
-        cfg["settings"] = {"auth": "noauth"}
+        if case.get("auth"):
+            # 带认证：形状照抄面板自建入站（accounts[]，客户端凭据即 user/pass）
+            cfg["settings"] = {"auth": "password",
+                               "accounts": [{"user": "e2e", "pass": client_pass}],
+                               "allowTransparent": True}
+        else:
+            cfg["settings"] = {"auth": "noauth"}
     elif proto == "socks":
-        cfg["settings"] = {"auth": "noauth", "udp": True}
+        if case.get("auth"):
+            cfg["settings"] = {"auth": "password",
+                               "accounts": [{"user": "e2e", "pass": client_pass}], "udp": True}
+        else:
+            cfg["settings"] = {"auth": "noauth", "udp": True}
+    elif proto == "hysteria":
+        # xray 的 hysteria 入站：每个用户一把 auth（客户端凭据），必须配 TLS，
+        # 且 **version 必须是 2**（不写核心报 `failed to build inbound handler for protocol
+        # hysteria > version != 2`，整份配置起不来）
+        cfg["settings"] = {"version": 2,
+                           "clients": [{"auth": client_pass, "email": "e2e@test.local", "level": 0}]}
     elif proto == "trojan":
         cfg["settings"] = {"clients": [{"password": client_pass, "email": "e2e@test.local"}]}
     else:
@@ -267,9 +367,10 @@ def server_config(case: dict, port: int, client_uuid: str, client_pass: str,
 
 
 def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: str) -> dict:
-    """sing-box 入站的 config_json 形状（照抄面板自建入站，如 id=118 vless / id=121 naive）：
-    `type` / `listen` / `listen_port` / `users[]`（vless=uuid、trojan/hysteria2=password）/ `transport`，
+    """sing-box 入站的 config_json 形状（照抄面板自建入站 id=118 vless / 120 hysteria2 /
+    121 naive / 122 anytls / 123 tuic）：`type` / `listen_port` / `users[]` / `transport` / `tls`，
     **不是** xray 的 `settings` + `streamSettings`。"""
+    import base64 as _b64
     proto = case["protocol"]
     transport = case.get("transport", "raw")
     cfg: dict = {
@@ -283,6 +384,7 @@ def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: 
         "_portHop": {"enabled": False, "mode": "preset", "range": "20000-50000", "start": 20000,
                      "end": 50000, "interface": ""},
     }
+    method = case.get("ss_method", "aes-256-gcm")
     if proto == "vless":
         cfg["users"] = [{"name": "e2e@test.local", "uuid": client_uuid}]
     elif proto == "vmess":
@@ -290,8 +392,32 @@ def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: 
     elif proto == "trojan":
         cfg["users"] = [{"name": "e2e@test.local", "password": client_pass}]
     elif proto in ("shadowsocks", "shadowsocks2022"):
-        cfg["method"] = case.get("ss_method", "aes-256-gcm")
-        cfg["password"] = client_pass
+        cfg["method"] = method
+        if method.startswith("2022-blake3"):
+            keylen = 16 if "aes-128-gcm" in method else 32
+            cfg["password"] = _b64.b64encode(os.urandom(keylen)).decode()
+        else:
+            cfg["password"] = client_pass
+    elif proto == "hysteria2":
+        cfg["users"] = [{"name": "e2e@test.local", "password": client_pass}]
+        cfg["bbr_profile"] = "conservative"
+        if case.get("obfs"):
+            cfg["obfs"] = {"type": "salamander", "password": "e2eobfs" + uuid.uuid4().hex[:8]}
+    elif proto == "tuic":
+        cfg["users"] = [{"name": "e2e@test.local", "uuid": client_uuid}]
+        cfg["congestion_control"] = "bbr"
+    elif proto == "anytls":
+        cfg["users"] = [{"name": "e2e@test.local", "password": client_pass}]
+    elif proto == "naive":
+        cfg["users"] = [{"name": "e2e@test.local", "username": "e2euser", "password": client_pass}]
+        cfg["network"] = ["tcp", "udp"]
+        cfg["quic_congestion_control"] = "bbr"
+    elif proto == "snell":
+        cfg["psk"] = "e2esnellpsk" + uuid.uuid4().hex[:8]
+        # 本机 sing-box 只认 version 3（写 4 会 FATAL: unsupported version: 4，整份核心起不来）
+        cfg["version"] = 6
+    elif proto == "mixed":
+        cfg["users"] = [{"name": "e2e@test.local", "username": "e2e", "password": client_pass}]
     else:
         cfg["users"] = [{"name": "e2e@test.local", "uuid": client_uuid, "password": client_pass}]
     if transport == "ws":
@@ -299,6 +425,9 @@ def singbox_server_config(case: dict, port: int, client_uuid: str, client_pass: 
     elif transport == "grpc":
         cfg["transport"] = {"type": "grpc", "service_name": case.get("grpc_service", "e2esb")}
     # raw/tcp：sing-box 的裸 TCP 就是**不写** transport
+    if case.get("security", "none") == "tls":
+        cfg["tls"] = {"enabled": True, "server_name": case.get("sni", TLS_SNI),
+                      "certificate_path": "certs/gg/cert.pem", "key_path": "certs/gg/key.pem"}
     return cfg
 
 
@@ -414,6 +543,8 @@ def main() -> int:
         return 0
 
     vless_enc = vless_enc_pair(args.panel, args.token, args.node) if any(c.get("vless_encryption") for c in cases) else ("", "")
+    if any(c.get("security") == "reality" for c in cases):
+        REALITY.update(reality_pair(args.panel, args.token, args.node))
     run_id = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     outdir = os.path.join(args.outdir, run_id)
     os.makedirs(outdir, exist_ok=True)
@@ -487,7 +618,7 @@ def main() -> int:
         else:
             cfg_id = existing[tag]["id"]
             # 用例表增删会让"按下标算的端口"与已建入站错位 → 复用一律以入站自己的端口为准
-            real_port = existing[tag].get("port")
+            real_port = existing[tag].get("port") or existing[tag].get("listen_port")
             if isinstance(real_port, int) and real_port > 0 and real_port != port:
                 port = real_port
                 row["port"] = port
@@ -508,14 +639,14 @@ def main() -> int:
         row["cfg_id"] = cfg_id
 
         # 重启后核心起来要几秒；复用已有入站时也要给它一次重载机会
-        if case["transport"] in ("mkcp", "kcp", "quic"):
+        if udp_only(case):
             pass
         elif not wait_port(args.node_host, port, 25):
             restart_core(args.panel, args.token, args.node, case["core"])
             wait_port(args.node_host, port, 25)
         # kcp/quic 是 **UDP** 传输：根本没有 TCP 监听，端口预检必须跳过
         # （否则会把能用的节点误判成"端口未监听"——kcp 用例就是这么被误判的）。
-        if case["transport"] in ("mkcp", "kcp", "quic"):
+        if udp_only(case):
             pass
         elif not tcp_open(args.node_host, port):
             row.update(status="FAIL", reason=f"节点端口 {port} 未监听（配置没生效 / 核心起不来）")

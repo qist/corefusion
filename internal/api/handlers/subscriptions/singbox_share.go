@@ -538,6 +538,15 @@ func singboxNodeDropReason(node *formatter.Node) string {
 	if singboxUnsupportedTransports[strings.ToLower(node.Transport)] {
 		return "transport=" + node.Transport
 	}
+	// VLESS 加密（服务端 settings.encryption = mlkem768x25519plus…）：sing-box 至今
+	// **没有** vless 出站的 encryption 字段（1.15.0-alpha 的 VLESSOutboundOptions 里也没有），
+	// 写出来的就是"明文 vless"，而服务端在等加密握手 → 连不上。
+	// 以前这里只补了个不相干的 packet_encoding=xudp，等于发了一个假配置出去。
+	if strings.EqualFold(node.Protocol, "vless") {
+		if enc := strings.TrimSpace(node.Encryption); enc != "" && !strings.EqualFold(enc, "none") {
+			return "vless-encryption"
+		}
+	}
 	// hysteria v1 出站的 up_mbps/down_mbps 是必填（缺了报 "missing upload speed"）
 	if strings.EqualFold(node.Protocol, "hysteria") {
 		if nodeExtraInt(node, "up") <= 0 && nodeExtraInt(node, "down") <= 0 {
@@ -577,6 +586,7 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 	}
 	isSingbox := strings.ToLower(format) == "singbox_json"
 	isMihomo := strings.ToLower(format) == "mihomo_yaml"
+	isXray := strings.ToLower(format) == "xray_json"
 	kept := make([]renderedSubscriptionNode, 0, len(items))
 	dropped := make([]string, 0, 4)
 	for _, item := range items {
@@ -600,6 +610,14 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 			// 外部节点（ProxyMap）是从用户自己的 mihomo 配置原样搬过来的，不动它；
 			// 我们自己从链接渲染出来的节点才做传输体检（kcp 等 mihomo 表达不了）。
 			if reason := mihomoNodeDropReason(item.Node); reason != "" {
+				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
+				continue
+			}
+		}
+		if isXray && item.Node != nil {
+			// xray 26 对"明文 vless/trojan + 公网地址"是**整份拒载**：
+			// 一个这样的节点会让整份 xray 配置加载失败（用户侧表现为"所有节点都没了"）。
+			if reason := xrayNodeDropReason(item.Node); reason != "" {
 				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
 				continue
 			}

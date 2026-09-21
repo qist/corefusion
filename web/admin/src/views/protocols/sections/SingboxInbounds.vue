@@ -351,7 +351,8 @@
       </template>
     </el-dialog>
 
-    <!-- QR Code Dialog（多用户可选；链接优先用后端生成，与订阅完全同源） -->
+    <!-- QR Code Dialog（用户列表与内容全部来自后端 /share-links，与订阅完全同源；
+         前端只渲染二维码与文本） -->
     <el-dialog v-model="qrDlg" :title="t('protoCenter.inbounds.qrCode')" width="400" top="10vh">
       <div v-if="qrUsers.length > 1" style="margin-bottom:12px">
         <el-select v-model="qrSelectedUser" style="width:100%" @change="onQrUserChange">
@@ -368,6 +369,10 @@
         <el-radio-button value="xray">{{ t('protoCenter.inbounds.shareFormatXray') }}</el-radio-button>
       </el-radio-group>
       <div style="text-align:center;padding:20px">
+        <!-- 有内容 / 没内容、为什么没内容，全部由后端决定 -->
+        <div v-if="qrUnsupported" style="margin-bottom:8px;font-size:12px;text-align:left;color:#E6A23C">
+          {{ shareUnsupportedMessage({ reason: qrUnsupportedReason }, qrFormat) }}
+        </div>
         <template v-if="qrFormat === 'uri'">
           <div v-if="qrCodeUrl" style="margin-bottom:16px">
             <img :src="qrCodeUrl" style="max-width:250px" />
@@ -378,13 +383,8 @@
           <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
         </template>
         <template v-else>
-          <div style="margin-bottom:8px;font-size:12px;text-align:left"
-               :style="{ color: qrUnsupported ? '#E6A23C' : '#909399' }">
-            {{ qrUnsupported
-              ? (qrUnsupportedTransport
-                  ? t('protoCenter.inbounds.snippetUnsupportedTransport', { client: qrFormatName, transport: qrUnsupportedTransport })
-                  : t('protoCenter.inbounds.snippetUnsupported', { client: qrFormatName }))
-              : t('protoCenter.inbounds.snippetHint', { client: qrFormatName }) }}
+          <div v-if="!qrUnsupported" style="margin-bottom:8px;font-size:12px;text-align:left;color:#909399">
+            {{ t('protoCenter.inbounds.snippetHint', { client: qrFormatName }) }}
           </div>
           <el-input v-model="qrSnippet" type="textarea" :rows="10" readonly />
         </template>
@@ -455,7 +455,6 @@ import {
   inboundDefaultsForType, INBOUND_TYPES,
   TLS_ENABLED_PROTOCOLS, TRANSPORT_PROTOCOLS, MULTIPLEX_PROTOCOLS, USER_PROTOCOLS,
 } from './singbox/utils/singboxDefaults'
-import { generateShareLink } from './singbox/utils/singboxShareLink'
 import SingboxUsers from './singbox/common/SingboxUsers.vue'
 import SingboxTransport from './singbox/common/SingboxTransport.vue'
 import SingboxTls from './singbox/common/SingboxTls.vue'
@@ -520,22 +519,20 @@ const qrDlg = ref(false)
 const qrLink = ref('')
 const qrCodeUrl = ref('')
 const qrGenerating = ref(false)
-const qrUsers = ref([])          // [{ key, label, raw }]
+// 用户列表由后端给出（后端已过滤暂停用户）：[{ key: '后端 index', label: 'name/username' }]
+const qrUsers = ref([])
 const qrSelectedUser = ref('')
 const qrCurrentIb = ref(null)
-// 后端逐用户生成：uri=分享链接；mihomo/singbox/xray=可直接粘贴的配置片段。
-// 缓存按格式分开：format → { supported, items: [{ keys, text }] }
+// 分享数据**全部来自后端** /share-links（与订阅同源）：uri=分享链接；
+// mihomo/singbox/xray=可直接粘贴的配置片段。前端不再自己生成，也不做兜底。
+// 缓存按格式分开：format → { id, supported, reason, users: [{ key, label }], items: [{ key, label, text }] }
 const qrCache = ref({})
 const qrSnippet = ref('')
 const qrUnsupported = ref(false)
-// 后端给出的不支持原因（如 transport=kcp）：只在"传输不支持"时用于更准确的提示
+// 后端给出的不支持原因（如 transport=kcp / users / protocol=xxx）
 const qrUnsupportedReason = ref('')
-const qrUnsupportedTransport = computed(() => {
-  const r = qrUnsupportedReason.value || ''
-  return r.startsWith('transport=') ? r.slice('transport='.length) : ''
-})
 const qrFormat = ref('uri')      // uri | mihomo | singbox | xray
-const qrFormatName = computed(() => t('protoCenter.inbounds.shareFormat' + qrFormat.value.charAt(0).toUpperCase() + qrFormat.value.slice(1)))
+const qrFormatName = computed(() => shareFormatName(qrFormat.value))
 
 // Reset Traffic Dialog
 const resetDlg = ref(false)
@@ -710,35 +707,47 @@ async function toggleEnabled(row) {
 }
 
 // ==================== Share / QR ====================
+// 链接与片段**只有一处生成**：后端 /share-links（与订阅同源）。前端以前自己也拼一套
+// （singbox/utils/singboxShareLink.js），两套实现必然漂移，还得靠 name/email 做兜底匹配。
+// 现在前端只做两件事：渲染二维码 + 展示后端给的文本。
 
-function buildShareLinkForUser(ib, user) {
-  const parsed = parseInbound(JSON.parse(JSON.stringify(ib)))
-  const hp = getAccessHostPort(parsed)
-  // 节点名口径与后端 /share-links 一致：优先备注（后端用 cfg.Remark），没有才用 tag
-  const remark = ib?.remark || parsed._remark || parsed.tag
-  return generateShareLink(parsed, user || parsed.users?.[0] || {}, hp.host, hp.port, remark)
+// 分享格式 → i18n 里的显示名
+const SHARE_FORMAT_I18N = {
+  uri: 'shareFormatUri',
+  mihomo: 'shareFormatMihomo',
+  singbox: 'shareFormatSingbox',
+  xray: 'shareFormatXray',
+}
+
+function shareFormatName(format) {
+  return t('protoCenter.inbounds.' + (SHARE_FORMAT_I18N[format] || 'shareFormatUri'))
 }
 
 // 后端逐用户生成（与订阅同源）：uri=分享链接，其余=可直接粘贴的配置片段。
+// entry.users 与 format 无关（弹窗的用户选择框直接用它）；items 的 index 指回 users。
 async function loadShareLinks(ib, format = 'uri') {
   const id = inboundKey(ib)
-  if (!id) return
-  const entry = { id, supported: true, items: [], reason: '' }
+  if (!id) return null
+  const entry = { id, supported: true, reason: '', items: [], users: [] }
   try {
     const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`, { params: { format } })
-    // 协议是否受该客户端支持（后端按订阅同一份矩阵判定）
+    // 协议/传输是否受该客户端支持（后端按订阅同一份矩阵判定）
     entry.supported = data?.supported !== false
     entry.reason = data?.reason || ''
-    entry.items = (data?.items || []).map(it => ({
-      keys: (it.keys || [it.user || '']).map(k => String(k || '').trim().toLowerCase()).filter(Boolean),
+    // 用户列表由**后端**给出（后端已过滤暂停用户），前端不再自己枚举用户
+    entry.users = (data?.users || []).map(u => ({ key: String(u.index), label: String(u.label || '') }))
+    entry.items = (data?.items || []).map((it, i) => ({
+      key: it.index === undefined || it.index === null ? `#${i}` : String(it.index),
+      label: String(it.user || ''),
       text: it.text || it.link || '',
     }))
   } catch {
-    entry.supported = true
-    entry.items = []
-    entry.reason = ''
+    // 后端拿不到就**不再本地兜底生成**（另一套实现必然漂移）：如实报错，别装作有内容
+    entry.supported = false
+    entry.reason = 'request-failed'
   }
   qrCache.value = { ...qrCache.value, [format]: entry }
+  return entry
 }
 
 // 入站的唯一标识（缓存归属用它判定）
@@ -755,36 +764,55 @@ function shareEntry(format, ib) {
   return entry
 }
 
-// 该用户的候选标识：后端 label 口径未必等于本地的 name/email，故"任一标识命中即算匹配"。
-function shareUserKeys(user) {
-  const raw = user?.raw || user || {}
-  return [...[user?.name, user?.username, user?.email, user?.id, user?.uuid,
-    raw.name, raw.username, raw.email, raw.id, raw.uuid]
-    .map(v => (v ? String(v).trim().toLowerCase() : ''))
-    .filter(Boolean)]
-}
-
-// 取该用户在某格式下的片段：先按标识匹配；单用户入站再兜底取唯一一条。
-function pickShareEntry(format, ib, user) {
+// 取某用户在某格式下的条目：userKey = 后端 users[].index（跨格式稳定）；
+// 单用户入站再取唯一一条。
+function pickShareEntry(format, ib, userKey) {
   const entry = shareEntry(format, ib)
   if (!entry || !entry.items.length) return null
-  const keys = shareUserKeys(user)
-  const hit = entry.items.find(it => it.keys.some(k => keys.includes(k)))
+  const hit = entry.items.find(it => it.key === userKey)
   if (hit) return hit
   return entry.items.length === 1 ? entry.items[0] : null
 }
 
-// 该用户的分享链接：优先后端（与订阅一致、参数完整），拿不到再回退本地生成
-function linkForUser(ib, user) {
-  const hit = pickShareEntry('uri', ib, user)
-  if (hit && hit.text) return hit.text
-  return buildShareLinkForUser(ib, user)
+// 表格/详情弹窗按**本地用户对象**复制链接时的匹配：后端 label 就是 name|username，
+// 与本地用户字段同源，按 label 对上即可。
+function pickShareEntryByUser(format, ib, user) {
+  const entry = shareEntry(format, ib)
+  if (!entry || !entry.items.length) return null
+  const label = String(user?.name || user?.username || user?.email || '').trim().toLowerCase()
+  const hit = label ? entry.items.find(it => it.label.toLowerCase() === label) : null
+  if (hit) return hit
+  return entry.items.length === 1 ? entry.items[0] : null
+}
+
+// 该用户的分享链接：**只从后端取**（与订阅同源、参数完整）
+function shareUriForUser(ib, user) {
+  return pickShareEntryByUser('uri', ib, user)?.text || ''
+}
+
+// 后端给的"为什么没有内容" → 展示文案。
+// reason: protocol=vless / transport=kcp / plain-vless|plain-trojan / vless-encryption /
+//         users（没有可用用户，含全部已暂停）/ request-failed
+function shareUnsupportedMessage(entry, format) {
+  const reason = entry?.reason || ''
+  if (reason === 'request-failed') return t('protoCenter.inbounds.shareLoadFailed')
+  if (reason === 'users') return t('protoCenter.inbounds.shareNoUsers')
+  const client = shareFormatName(format)
+  if (reason === 'vless-encryption') return t('protoCenter.inbounds.snippetUnsupportedVlessEncryption', { client })
+  if (reason.startsWith('plain-')) {
+    return t('protoCenter.inbounds.snippetUnsupportedPlain', { client, protocol: reason.slice('plain-'.length) })
+  }
+  const transport = reason.startsWith('transport=') ? reason.slice('transport='.length) : ''
+  return transport
+    ? t('protoCenter.inbounds.snippetUnsupportedTransport', { client, transport })
+    : t('protoCenter.inbounds.snippetUnsupported', { client })
 }
 
 async function renderQr(link) {
   qrLink.value = link || ''
   qrCodeUrl.value = ''
-  if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
+  // 没有链接时不再弹 toast —— 原因已经在弹窗里显示（shareUnsupportedMessage）
+  if (!link) return
   qrGenerating.value = true
   try {
     qrCodeUrl.value = await generateQrDataUrl(link)
@@ -796,21 +824,28 @@ async function renderQr(link) {
   }
 }
 
+// 打开分享弹窗：用户列表**完全来自后端**（后端已过滤暂停用户），
+// 前端不再看本地配置自己枚举用户，也不再做标识兜底匹配。
 async function showQr(row) {
-  const users = (row.users || []).filter(u => !u._paused)
-  if (!users.length) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   qrCurrentIb.value = row
-  qrUsers.value = users.map(u => ({
-    key: u.name || u.username || '',
-    raw: u,
-    label: u.name || u.username || '',
-  })).filter(u => u.key)
-  if (!qrUsers.value.length) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
-  qrSelectedUser.value = qrUsers.value[0].key
+  qrUsers.value = []
+  qrSelectedUser.value = ''
   qrFormat.value = 'uri'
+  qrLink.value = ''
+  qrSnippet.value = ''
+  qrCodeUrl.value = ''
+  qrUnsupported.value = false
+  qrUnsupportedReason.value = ''
+  const entry = await loadShareLinks(row, 'uri')
+  if (!entry || !entry.users.length) {
+    // 一条可用数据都没有：把原因说清楚（没有用户 / 全部已暂停 / 请求失败）
+    ElMessage.warning(shareUnsupportedMessage(entry, 'uri'))
+    return
+  }
+  qrUsers.value = entry.users
+  qrSelectedUser.value = qrUsers.value[0].key
   qrDlg.value = true
-  await loadShareLinks(row)
-  await onQrUserChange()
+  await renderCurrentShare()
 }
 
 async function onQrUserChange() {
@@ -824,24 +859,21 @@ function onQrFormatChange() {
 async function renderCurrentShare() {
   const row = qrCurrentIb.value
   if (!row) return
-  const u = qrUsers.value.find(x => x.key === qrSelectedUser.value)
-  if (qrFormat.value === 'uri') {
-    qrSnippet.value = ''
-    qrUnsupported.value = false
-    qrUnsupportedReason.value = ''
-    if (!shareEntry('uri', row)) await loadShareLinks(row, 'uri')
-    await renderQr(linkForUser(row, u?.raw))
-    return
-  }
   const format = qrFormat.value
   // 缓存按「入站 + 格式」判定：换入站后必须重新拉，否则显示的是上一个入站的片段
-  if (!shareEntry(format, row)) await loadShareLinks(row, format)
-  const entry = shareEntry(format, row)
-  qrCodeUrl.value = ''
-  qrLink.value = ''
+  let entry = shareEntry(format, row)
+  if (!entry) entry = await loadShareLinks(row, format)
   qrUnsupported.value = entry?.supported === false
   qrUnsupportedReason.value = entry?.reason || ''
-  qrSnippet.value = pickShareEntry(format, row, u?.raw)?.text || ''
+  const item = pickShareEntry(format, row, qrSelectedUser.value)
+  if (format === 'uri') {
+    qrSnippet.value = ''
+    await renderQr(item?.text || '')
+    return
+  }
+  qrCodeUrl.value = ''
+  qrLink.value = ''
+  qrSnippet.value = item?.text || ''
 }
 
 function copyQrLink() {
@@ -906,9 +938,9 @@ function addUser(ib) {
 }
 
 async function copyShareForUser(ib, user) {
-  // 管理弹窗里点复制时惰性加载后端链接（与订阅同源）
+  // 管理弹窗里点复制时惰性加载后端链接（与订阅同源）；链接只从后端取
   if (!shareEntry('uri', ib)) await loadShareLinks(ib, 'uri')
-  const link = linkForUser(ib, user)
+  const link = shareUriForUser(ib, user)
   if (!link) { ElMessage.warning(t('singbox.inbound.shareNotSupported')); return }
   copyToClipboard(link)
   ElMessage.success(t('singbox.inbound.shareCopied'))
@@ -1145,80 +1177,6 @@ async function loadCFIPEntries() {
     const data = await client.get('/cfip/entries')
     cfIPEntries.value = data?.items || (Array.isArray(data) ? data : [])
   } catch {}
-}
-
-// ==================== Access Host/Port resolution (对齐 xray getAccessHostPort) ====================
-
-function getRandomItem(arr) { return arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : null }
-
-function getRandomDomainPort(domains) {
-  const item = getRandomItem(domains)
-  if (!item) return null
-  const ports = item.ports ? JSON.parse(item.ports) : [443]
-  return { host: item.value, port: getRandomItem(ports) || 443 }
-}
-
-function getRandomIPPort(entries) {
-  const item = getRandomItem(entries)
-  if (!item) return null
-  const ports = item.ports ? JSON.parse(item.ports) : [443]
-  return { host: item.ip, port: getRandomItem(ports) || 443 }
-}
-
-function getAccessHostPort(ib) {
-  if (ib._accessDomainEnabled) {
-    let result = null
-    switch (ib._accessDomainType) {
-      case 'direct':
-        if (ib._directDomain) {
-          const domain = directDomains.value.find(d => d.value === ib._directDomain)
-          if (domain) {
-            if (ib._directPortMode === 'inbound') {
-              result = { host: domain.value, port: ib.listen_port }
-            } else {
-              const ports = domain.ports ? JSON.parse(domain.ports) : [443]
-              result = { host: domain.value, port: getRandomItem(ports) || 443 }
-            }
-          }
-        }
-        // 没选域名时不要从域名池里随机抓一个：分享链接/预览里的 server 必须与下拉的选择一致，
-        // 否则每次渲染出来的地址都不一样（后端同样已修）。落到下面的统一兜底。
-        break
-      case 'cf_domain':
-        if (ib._cfDomain) {
-          const domain = cfDomains.value.find(d => d.value === ib._cfDomain)
-          if (domain) {
-            const ports = domain.ports ? JSON.parse(domain.ports) : [443]
-            result = { host: domain.value, port: getRandomItem(ports) || 443 }
-          }
-        }
-        // 同上：没选 CF 域名就不要随机取一个
-        break
-      case 'cf_ip':
-        if (ib._cfIP) {
-          const entry = cfIPEntries.value.find(e => e.ip === ib._cfIP)
-          if (entry) {
-            const ports = entry.ports ? JSON.parse(entry.ports) : [443]
-            result = { host: entry.ip, port: getRandomItem(ports) || 443 }
-          }
-        }
-        // 同上：没选 CF IP 就不要随机取一个
-        break
-      case 'custom':
-        if (ib._customDomain) {
-          const port = ib._customPortMode === 'inbound' ? ib.listen_port : (ib._accessCustomPort || 443)
-          result = { host: ib._customDomain, port }
-        }
-        break
-    }
-    if (result && result.host) return result
-  }
-  // Default: use server host + inbound port
-  let host = accessHost.value || ib.listen || ''
-  if (!host || host === '0.0.0.0' || host === '::' || host.startsWith('/')) {
-    host = window.location.hostname
-  }
-  return { host, port: ib.listen_port || 443 }
 }
 
 // 该节点上（xray + sing-box）已占用的 Server Names（后端登记，用于跨核心标记与互斥判断）

@@ -63,7 +63,8 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 	}
 
 	items := make([]gin.H, 0, 4)
-	for idx, u := range inboundUserRecords(config) {
+	userRecords := inboundUserRecords(config)
+	for idx, u := range userRecords {
 		view := shareViewForUser(cfg.Tag, config, u)
 		if view == nil {
 			continue
@@ -110,9 +111,23 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		})
 	}
 
-	// 协议在矩阵里、但一条都没渲染出来（如 sing-box 表达不了的 xhttp 传输）时，
-	// 同样按"不支持"返回 —— 前端才能给出明确提示，而不是一个空框。
-	if protocolSupported && len(items) == 0 {
+	// 用户列表与 format **无关**：前端的选择框用它（后端过滤掉已暂停的用户，前端不再
+	// 自己枚举用户、也不再按 email/name 做兜底匹配），items 里的 index 指回这里。
+	users := make([]gin.H, 0, len(userRecords))
+	for idx, u := range userRecords {
+		users = append(users, gin.H{"index": idx, "label": u.label})
+	}
+
+	if len(users) == 0 {
+		// 一个可用用户都没有（没有任何用户记录，或全部已暂停）——原因要说清楚，
+		// 否则前端只能显示"不支持该协议"，把"没有用户"误报成"协议不支持"。
+		protocolSupported = false
+		if reason == "" {
+			reason = "users"
+		}
+	} else if protocolSupported && len(items) == 0 {
+		// 协议在矩阵里、但一条都没渲染出来（如 sing-box 表达不了的 xhttp 传输）时，
+		// 同样按"不支持"返回 —— 前端才能给出明确提示，而不是一个空框。
 		protocolSupported = false
 		if reason == "" {
 			reason = "protocol=" + matrixProto
@@ -122,6 +137,7 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 	host, port := h.hostForLink(c.Request.Context(), cfg, config, shareDomains)
 	response.OK(c, gin.H{
 		"items":     items,
+		"users":     users,
 		"host":      host,
 		"port":      port,
 		"protocol":  cfg.Protocol,
@@ -177,6 +193,13 @@ func inboundUserRecords(config map[string]interface{}) []inboundUser {
 	add := func(label string, rec map[string]interface{}) {
 		key := strings.ToLower(strings.TrimSpace(label))
 		if key == "" || seen[key] {
+			return
+		}
+		// 暂停用户在运行中的核里已经不存在了（coreconfig/prepare.go 会把 _paused 的用户
+		// 从下发的配置里删掉），分享/二维码列出来只会让人以为"这条能用"。
+		// 过滤放在**后端**：前端只管渲染后端给的条目，不再自己枚举用户
+		// （两套口径必然漂移 —— 之前就靠 email/name 做兜底匹配）。
+		if paused, _ := rec["_paused"].(bool); paused {
 			return
 		}
 		seen[key] = true

@@ -172,7 +172,7 @@
     <el-dialog v-model="qrDlg" :title="t('protoCenter.inbounds.qrCode')" width="400" top="10vh">
       <div v-if="qrUsers.length > 1" style="margin-bottom:16px">
         <el-select v-model="qrSelectedUser" style="width:100%" @change="onQrUserChange">
-          <el-option v-for="u in qrUsers" :key="u.email || u.id" :label="u.email || u.id" :value="u.email || u.id" />
+          <el-option v-for="u in qrUsers" :key="u.key" :label="u.label" :value="u.key" />
         </el-select>
       </div>
       <el-radio-group v-model="qrFormat" size="small" style="margin-bottom:12px" @change="onQrFormatChange">
@@ -182,6 +182,10 @@
         <el-radio-button value="xray">{{ t('protoCenter.inbounds.shareFormatXray') }}</el-radio-button>
       </el-radio-group>
       <div style="text-align:center;padding:20px">
+        <!-- 有内容 / 没内容、为什么没内容，全部由后端决定 -->
+        <div v-if="qrUnsupported" style="margin-bottom:8px;font-size:12px;text-align:left;color:#E6A23C">
+          {{ shareUnsupportedMessage({ reason: qrUnsupportedReason }, qrFormat) }}
+        </div>
         <template v-if="qrFormat === 'uri'">
           <div v-if="qrCodeUrl" style="margin-bottom:16px">
             <img :src="qrCodeUrl" style="max-width:250px" />
@@ -192,13 +196,8 @@
           <el-input v-model="qrLink" type="textarea" :rows="3" readonly style="margin-top:12px" />
         </template>
         <template v-else>
-          <div style="margin-bottom:8px;font-size:12px;text-align:left"
-               :style="{ color: qrUnsupported ? '#E6A23C' : '#909399' }">
-            {{ qrUnsupported
-              ? (qrUnsupportedTransport
-                  ? t('protoCenter.inbounds.snippetUnsupportedTransport', { client: qrFormatName, transport: qrUnsupportedTransport })
-                  : t('protoCenter.inbounds.snippetUnsupported', { client: qrFormatName }))
-              : t('protoCenter.inbounds.snippetHint', { client: qrFormatName }) }}
+          <div v-if="!qrUnsupported" style="margin-bottom:8px;font-size:12px;text-align:left;color:#909399">
+            {{ t('protoCenter.inbounds.snippetHint', { client: qrFormatName }) }}
           </div>
           <el-input v-model="qrSnippet" type="textarea" :rows="10" readonly />
         </template>
@@ -1836,21 +1835,18 @@ const detailsInbound = ref(null)
 
 const qrDlg = ref(false)
 const qrLink = ref('')
-// 后端逐用户分享链接（与订阅同源，参数最全）；本地生成器只作兜底
-// 后端逐用户生成：uri=分享链接；mihomo/singbox/xray=可直接粘贴的配置片段。
-// 缓存按格式分开：format → { supported, items: [{ keys, text }] }
+// 分享数据**全部来自后端** /share-links（与订阅同源）：uri=分享链接；
+// mihomo/singbox/xray=可直接粘贴的配置片段。前端不再自己生成，也不做兜底。
+// 缓存按格式分开：format → { id, supported, reason, users: [{ key, label }], items: [{ key, label, text }] }
 const qrCache = ref({})
 const qrSnippet = ref('')
 const qrUnsupported = ref(false)
-// 后端给出的不支持原因（如 transport=kcp）：只在"传输不支持"时用于更准确的提示
+// 后端给出的不支持原因（如 transport=kcp / users / protocol=xxx）
 const qrUnsupportedReason = ref('')
-const qrUnsupportedTransport = computed(() => {
-  const r = qrUnsupportedReason.value || ''
-  return r.startsWith('transport=') ? r.slice('transport='.length) : ''
-})
 const qrFormat = ref('uri')      // uri | mihomo | singbox | xray
-const qrFormatName = computed(() => t('protoCenter.inbounds.shareFormat' + qrFormat.value.charAt(0).toUpperCase() + qrFormat.value.slice(1)))
+const qrFormatName = computed(() => shareFormatName(qrFormat.value))
 const qrCodeUrl = ref('')
+// 用户列表由后端给出（后端已过滤暂停用户）：[{ key: '后端 index', label: 'email/name' }]
 const qrUsers = ref([])
 const qrSelectedUser = ref('')
 const qrCurrentIb = ref(null)
@@ -2201,58 +2197,98 @@ function shareEntry(format, ib) {
   return entry
 }
 
+// ==================== Share / QR ====================
+// 链接与片段**只有一处生成**：后端 /share-links（与订阅同源）。前端以前自己也拼一套，
+// 两套实现必然漂移，还得靠 email/name 做兜底匹配 —— 维护成本高，且会生成"连不上"的配置。
+// 现在前端只做两件事：渲染二维码 + 展示后端给的文本。
+
+// 分享格式 → i18n 里的显示名
+const SHARE_FORMAT_I18N = {
+  uri: 'shareFormatUri',
+  mihomo: 'shareFormatMihomo',
+  singbox: 'shareFormatSingbox',
+  xray: 'shareFormatXray',
+}
+
+function shareFormatName(format) {
+  return t('protoCenter.inbounds.' + (SHARE_FORMAT_I18N[format] || 'shareFormatUri'))
+}
+
 // 后端逐用户生成（与订阅同源）：uri=分享链接，其余=可直接粘贴的配置片段。
+// entry.users 与 format 无关（弹窗的用户选择框直接用它）；items 的 index 指回 users。
 async function loadShareLinks(ib, format = 'uri') {
   const id = inboundKey(ib)
-  if (!id) return
-  const entry = { id, supported: true, items: [], reason: '' }
+  if (!id) return null
+  const entry = { id, supported: true, reason: '', items: [], users: [] }
   try {
     const data = await client.get(`${nodeBase.value}/inbound-configs/${id}/share-links`, { params: { format } })
-    // 协议是否受该客户端支持（后端按订阅同一份矩阵判定）
+    // 协议/传输是否受该客户端支持（后端按订阅同一份矩阵判定）
     entry.supported = data?.supported !== false
     entry.reason = data?.reason || ''
-    entry.items = (data?.items || []).map(it => ({
-      keys: (it.keys || [it.user || '']).map(k => String(k || '').trim().toLowerCase()).filter(Boolean),
+    // 用户列表由**后端**给出（后端已过滤暂停用户），前端不再自己枚举用户
+    entry.users = (data?.users || []).map(u => ({ key: String(u.index), label: String(u.label || '') }))
+    entry.items = (data?.items || []).map((it, i) => ({
+      key: it.index === undefined || it.index === null ? `#${i}` : String(it.index),
+      label: String(it.user || ''),
       text: it.text || it.link || '',
     }))
   } catch {
-    entry.supported = true
-    entry.items = []
-    entry.reason = ''
+    // 后端拿不到就**不再本地兜底生成**（另一套实现必然漂移）：如实报错，别装作有内容
+    entry.supported = false
+    entry.reason = 'request-failed'
   }
   qrCache.value = { ...qrCache.value, [format]: entry }
+  return entry
 }
 
-// 该用户的候选标识：后端 label 口径未必等于本地的 name/email，故"任一标识命中即算匹配"。
-function shareUserKeys(user) {
-  const raw = user?.raw || user || {}
-  return [...[user?.name, user?.username, user?.email, user?.id, user?.uuid,
-    raw.name, raw.username, raw.email, raw.id, raw.uuid]
-    .map(v => (v ? String(v).trim().toLowerCase() : ''))
-    .filter(Boolean)]
-}
-
-// 取该用户在某格式下的片段：先按标识匹配；单用户入站再兜底取唯一一条。
-function pickShareEntry(format, ib, user) {
+// 取某用户在某格式下的条目：userKey = 后端 users[].index（跨格式稳定）；
+// 单用户入站再取唯一一条。
+function pickShareEntry(format, ib, userKey) {
   const entry = shareEntry(format, ib)
   if (!entry || !entry.items.length) return null
-  const keys = shareUserKeys(user)
-  const hit = entry.items.find(it => it.keys.some(k => keys.includes(k)))
+  const hit = entry.items.find(it => it.key === userKey)
   if (hit) return hit
   return entry.items.length === 1 ? entry.items[0] : null
 }
 
-// 该用户的分享链接：优先后端（与订阅一致、参数完整），拿不到再回退本地生成
-function linkForUser(ib, user) {
-  const hit = pickShareEntry('uri', ib, user)
-  if (hit && hit.text) return hit.text
-  return generateShareLink(ib, user)
+// 表格/详情弹窗按**本地用户对象**复制链接时的匹配：后端 label 就是 email（xray）/
+// name|username（sing-box），与本地用户字段同源，按 label 对上即可。
+function pickShareEntryByUser(format, ib, user) {
+  const entry = shareEntry(format, ib)
+  if (!entry || !entry.items.length) return null
+  const label = String(user?.email || user?.name || user?.username || '').trim().toLowerCase()
+  const hit = label ? entry.items.find(it => it.label.toLowerCase() === label) : null
+  if (hit) return hit
+  return entry.items.length === 1 ? entry.items[0] : null
+}
+
+// 该用户的分享链接：**只从后端取**（与订阅同源、参数完整）
+function shareUriForUser(ib, user) {
+  return pickShareEntryByUser('uri', ib, user)?.text || ''
+}
+
+// 后端给的"为什么没有内容" → 展示文案。
+// reason: protocol=vless / transport=kcp / plain-vless|plain-trojan / vless-encryption /
+//         users（没有可用用户，含全部已暂停）/ request-failed
+function shareUnsupportedMessage(entry, format) {
+  const reason = entry?.reason || ''
+  if (reason === 'request-failed') return t('protoCenter.inbounds.shareLoadFailed')
+  if (reason === 'users') return t('protoCenter.inbounds.shareNoUsers')
+  const client = shareFormatName(format)
+  if (reason === 'vless-encryption') return t('protoCenter.inbounds.snippetUnsupportedVlessEncryption', { client })
+  if (reason.startsWith('plain-')) {
+    return t('protoCenter.inbounds.snippetUnsupportedPlain', { client, protocol: reason.slice('plain-'.length) })
+  }
+  const transport = reason.startsWith('transport=') ? reason.slice('transport='.length) : ''
+  return transport
+    ? t('protoCenter.inbounds.snippetUnsupportedTransport', { client, transport })
+    : t('protoCenter.inbounds.snippetUnsupported', { client })
 }
 
 async function copyShareLinkAsync(ib, user) {
   // 惰性加载后端链接（与订阅同源）
   if (!shareEntry('uri', ib)) await loadShareLinks(ib, 'uri')
-  const link = linkForUser(ib, user)
+  const link = shareUriForUser(ib, user)
   if (!link) {
     ElMessage.warning(t('protoCenter.inbounds.shareNotSupported'))
     return
@@ -2260,20 +2296,29 @@ async function copyShareLinkAsync(ib, user) {
   copyToClipboard(link)
 }
 
-function showQrCode(ib) {
+// 打开分享弹窗：用户列表**完全来自后端**（后端已过滤暂停用户），
+// 前端不再看本地配置自己枚举用户，也不再做标识兜底匹配。
+async function showQrCode(ib) {
   qrCurrentIb.value = ib
-  // Filter out paused users
-  qrUsers.value = getUsers(ib).filter(u => !u._paused)
-  // 没有任何可用用户时以前是静默 return（点了按钮什么都不发生，看起来像"不支持"）。
-  // 明确提示一下，与 sing-box 编辑器口径一致。
-  if (qrUsers.value.length === 0) {
-    ElMessage.warning(t('protoCenter.inbounds.shareNotSupported'))
+  qrUsers.value = []
+  qrSelectedUser.value = ''
+  qrFormat.value = 'uri'
+  qrLink.value = ''
+  qrSnippet.value = ''
+  qrCodeUrl.value = ''
+  qrUnsupported.value = false
+  qrUnsupportedReason.value = ''
+  const entry = await loadShareLinks(ib, 'uri')
+  if (!entry || !entry.users.length) {
+    // 一条可用数据都没有：把原因说清楚（没有用户 / 全部已暂停 / 请求失败），
+    // 不要静默 return（点了按钮什么都不发生，看起来像"不支持"）。
+    ElMessage.warning(shareUnsupportedMessage(entry, 'uri'))
     return
   }
-  qrSelectedUser.value = qrUsers.value[0].email || qrUsers.value[0].id
-  qrFormat.value = 'uri'
-  void loadShareLinks(ib, 'uri').then(() => updateQrCode())
+  qrUsers.value = entry.users
+  qrSelectedUser.value = qrUsers.value[0].key
   qrDlg.value = true
+  await updateQrCode()
 }
 
 function onQrUserChange() {
@@ -2287,25 +2332,24 @@ function onQrFormatChange() {
 async function updateQrCode() {
   const ib = qrCurrentIb.value
   if (!ib) return
-  const user = qrUsers.value.find(u => (u.email || u.id) === qrSelectedUser.value)
-  if (!user) return
-  if (qrFormat.value !== 'uri') {
-    const format = qrFormat.value
-    // 缓存按「入站 + 格式」判定：换入站后必须重新拉，否则显示的是上一个入站的片段
-    if (!shareEntry(format, ib)) await loadShareLinks(ib, format)
-    const entry = shareEntry(format, ib)
+  const format = qrFormat.value
+  // 缓存按「入站 + 格式」判定：换入站后必须重新拉，否则显示的是上一个入站的片段
+  let entry = shareEntry(format, ib)
+  if (!entry) entry = await loadShareLinks(ib, format)
+  qrUnsupported.value = entry?.supported === false
+  qrUnsupportedReason.value = entry?.reason || ''
+  const item = pickShareEntry(format, ib, qrSelectedUser.value)
+
+  if (format !== 'uri') {
     qrCodeUrl.value = ''
     qrLink.value = ''
-    qrUnsupported.value = entry?.supported === false
-    qrUnsupportedReason.value = entry?.reason || ''
-    qrSnippet.value = pickShareEntry(format, ib, user)?.text || ''
+    qrSnippet.value = item?.text || ''
     return
   }
   qrSnippet.value = ''
-  qrUnsupported.value = false
-  qrUnsupportedReason.value = ''
-  qrLink.value = linkForUser(ib, user)
+  qrLink.value = item?.text || ''
   qrCodeUrl.value = ''
+  if (!qrLink.value) return
   const token = ++qrGenerationToken
   qrGenerating.value = true
   try {
@@ -2321,732 +2365,6 @@ async function updateQrCode() {
       qrGenerating.value = false
     }
   }
-}
-
-function getRandomItem(arr) {
-  if (!arr || arr.length === 0) return null
-  return arr[Math.floor(Math.random() * arr.length)]
-}
-
-function getRandomDomainPort(domains) {
-  if (!domains || domains.length === 0) return null
-  const item = getRandomItem(domains)
-  if (!item) return null
-  const ports = item.ports ? JSON.parse(item.ports) : [item.port || 443]
-  return { host: item.value, port: getRandomItem(ports) || 443 }
-}
-
-function getRandomIPPort(entries) {
-  if (!entries || entries.length === 0) return null
-  const item = getRandomItem(entries)
-  if (!item) return null
-  const ports = item.ports ? JSON.parse(item.ports) : [443]
-  return { host: item.ip, port: getRandomItem(ports) || 443 }
-}
-
-function getAccessHostPort(ib) {
-  // If access domain is enabled, use configured host/port
-  if (ib._accessDomainEnabled) {
-    let result = null
-
-    switch (ib._accessDomainType) {
-      case 'direct':
-        // Direct: from direct domains pool
-        if (ib._directDomain) {
-          // Use selected domain
-          const domain = directDomains.value.find(d => d.value === ib._directDomain)
-          if (domain) {
-            if (ib._directPortMode === 'inbound') {
-              // Use inbound port
-              result = { host: domain.value, port: ib.port }
-            } else {
-              // Use configured ports
-              const ports = domain.ports ? JSON.parse(domain.ports) : [443]
-              result = { host: domain.value, port: getRandomItem(ports) || 443 }
-            }
-          }
-        }
-        // 没选域名时**不要**从域名池里随机抓一个：那样预览/链接里的 server 与下拉里的
-        // 选择毫无关系（后端原来也是这么干的，已一并修掉）。落到函数末尾的统一兜底。
-        break
-      case 'cf_domain':
-        // CF Domain: random domain + its ports
-        if (ib._cfDomain) {
-          // Use selected domain
-          const domain = cfDomains.value.find(d => d.value === ib._cfDomain)
-          if (domain) {
-            const ports = domain.ports ? JSON.parse(domain.ports) : [443]
-            result = { host: domain.value, port: getRandomItem(ports) || 443 }
-          }
-        }
-        // 同上：没选 CF 域名就不要随机取一个
-        break
-      case 'cf_ip':
-        // CF IP: 用选中的 IP + 它的端口
-        if (ib._cfIP) {
-          // Use selected IP
-          const entry = cfIPEntries.value.find(e => e.ip === ib._cfIP)
-          if (entry) {
-            const ports = entry.ports ? JSON.parse(entry.ports) : [443]
-            result = { host: entry.ip, port: getRandomItem(ports) || 443 }
-          }
-        }
-        // 同上：没选 CF IP 就不要随机取一个
-        break
-      case 'custom':
-        // Custom: use custom domain, port depends on mode
-        if (ib._customDomain) {
-          const port = ib._customPortMode === 'inbound' ? ib.port : (ib._accessCustomPort || 443)
-          result = { host: ib._customDomain, port }
-        }
-        break
-    }
-
-    if (result && result.host) {
-      return result
-    }
-  }
-
-  // Default: use current host + inbound port
-  // If listen is 0.0.0.0, ::, socket, or empty, use current hostname
-  let host = ib.listen || ''
-  if (!host || host === '0.0.0.0' || host === '::' || host === '[::]' || host.startsWith('/') || host.startsWith('./')) {
-    host = window.location.hostname
-  }
-  return {
-    host: host,
-    port: ib.port || 443
-  }
-}
-
-function serializeFinalMask(finalmask) {
-  if (!finalmask || !finalmask._enabled) return ''
-  const data = {}
-  const toPacket = s => { const p = s._packetStr; if (!p) return []; return p.split(',').map(v => { const n = Number(v.trim()); return isNaN(n) ? v.trim() : n }) }
-  const serializeHeaderItem = i => {
-    const item = {}
-    Object.keys(i || {}).forEach(k => { if (!k.startsWith('_') && i[k] !== '' && i[k] !== undefined) item[k] = i[k] })
-    if (Number(i.rand) > 0) delete item.packet
-    else if (i._packetStr) item.packet = toPacket(i)
-    else delete item.packet
-    return item
-  }
-  // TCP mask
-  if (finalmask.tcp && finalmask.tcp.length) {
-    const tcp = finalmask.tcp.filter(e => e.type).map(e => {
-      const settings = { ...e.settings }
-      if (e.type === 'header-custom') {
-        const convertGroup = grp => (grp || []).map(items => (items || []).map(serializeHeaderItem))
-        return { type: e.type, settings: { clients: convertGroup(settings.clients), servers: convertGroup(settings.servers), errors: convertGroup(settings.errors) } }
-      }
-      if (e.type === 'fragment') {
-        if (settings._lengthsStr) settings.lengths = settings._lengthsStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
-        if (settings._delaysStr) settings.delays = settings._delaysStr.split(/[\n,]+/).map(v => v.trim()).filter(Boolean)
-      }
-      // Clean internal fields
-      Object.keys(settings).forEach(k => {
-        if (k.startsWith('_')) delete settings[k]
-      })
-      if (e.type === 'sudoku') {
-        if (e.settings._tableMode === 'multiple') delete settings.customTable
-        else delete settings.customTables
-      }
-      return { type: e.type, settings }
-    })
-    if (tcp.length) data.tcp = tcp
-  }
-  // UDP mask
-  if (finalmask.udp && finalmask.udp.length) {
-    const udp = finalmask.udp.filter(e => e.type).map(e => {
-      const settings = { ...e.settings }
-      if (e.type === 'header-custom') {
-        const convert = arr => (arr || []).map(serializeHeaderItem)
-        return { type: e.type, settings: { client: convert(settings.client), server: convert(settings.server) } }
-      }
-      Object.keys(settings).forEach(k => {
-        if (k.startsWith('_')) delete settings[k]
-      })
-      // Ensure mkcp-legacy always has header field
-      if (e.type === 'mkcp-legacy' && !('header' in settings)) {
-        settings.header = ''
-      }
-      if (e.type === 'sudoku') {
-        if (e.settings._tableMode === 'multiple') delete settings.customTable
-        else delete settings.customTables
-      }
-      return { type: e.type, settings }
-    })
-    if (udp.length) data.udp = udp
-  }
-  // QUIC params
-  if (finalmask.quicParams && finalmask.quicParams.congestion) {
-    const qp = { ...finalmask.quicParams }
-    Object.keys(qp).forEach(k => {
-      if (k.startsWith('_')) delete qp[k]
-    })
-    data.quicParams = qp
-  }
-  return Object.keys(data).length > 0 ? JSON.stringify(data) : ''
-}
-
-// 分享链接里的传输名归一：xray 25 起把 TCP 传输改名为 "raw"，但链接里的标准值是 "tcp"
-// （并非所有客户端都认识 raw；mihomo 的 network 只认 tcp/ws/http/h2/grpc/httpupgrade/xhttp），
-// mKCP 则统一写作 "kcp"。两者在服务端等价，所以对外一律发 tcp。
-function linkTransport(network) {
-  const n = String(network || '').toLowerCase()
-  if (n === '' || n === 'raw' || n === 'tcp') return 'tcp'
-  if (n === 'mkcp') return 'kcp'
-  return n
-}
-
-function generateShareLink(ib, user) {
-  const protocol = ib.protocol || 'vless'
-  const { host, port } = getAccessHostPort(ib)
-  const remark = ib._remark || ib.tag || protocol + '-' + port
-
-  if (protocol === 'vmess') {
-    return generateVmessLink(ib, user, host, port, remark)
-  } else if (protocol === 'vless') {
-    return generateVlessLink(ib, user, host, port, remark)
-  } else if (protocol === 'trojan') {
-    return generateTrojanLink(ib, user, host, port, remark)
-  } else if (protocol === 'shadowsocks') {
-    return generateShadowsocksLink(ib, user, host, port, remark)
-  } else if (protocol === 'hysteria') {
-    return generateHysteriaLink(ib, user, host, port, remark)
-  } else if (protocol === 'socks' || protocol === 'http') {
-    return generateAuthLink(ib, user, host, port, remark)
-  }
-  return ''
-}
-
-// socks / http：口径与后端 sharelink.generateAuthLink 一致 ——
-// 用户名密码分别转义、分隔的 ':' 保持字面量（整体转义会让客户端认证失败），
-// security 必带、sni 有才带。xray 的客户端凭据字段是 user/pass。
-function generateAuthLink(ib, user, host, port, remark) {
-  const scheme = ib.protocol === 'socks' ? 'socks' : 'http'
-  const username = user?.user || user?.username || ''
-  const password = user?.pass || user?.password || ''
-  const userinfo = username ? encodeURIComponent(username) + (password ? ':' + encodeURIComponent(password) : '') + '@' : ''
-  const params = new URLSearchParams()
-  params.set('security', ib.streamSettings?.security || 'none')
-  if (ib.streamSettings?.tls?.serverName) params.set('sni', ib.streamSettings.tls.serverName)
-  return `${scheme}://${userinfo}${formatUrlHost(host)}:${port}?${params.toString().replaceAll('+', '%20')}#${encodeURIComponent(remark)}`
-}
-
-function generateVmessLink(ib, user, host, port, remark) {
-  const network = ib.streamSettings?.network || 'raw'
-  const security = ib.streamSettings?.security || 'none'
-
-  const obj = {
-    v: '2',
-    ps: remark,
-    add: host,
-    port: port,
-    id: user.id || '',
-    aid: user.alterId || 0,
-    scy: user.security || 'auto',
-    net: linkTransport(network),
-    type: 'none',
-    host: '',
-    path: '',
-    tls: security === 'tls' ? 'tls' : '',
-    sni: '',
-    alpn: '',
-    fp: '',
-  }
-
-  // Network-specific params
-  if (network === 'tcp' || network === 'raw') {
-    const tcp = ib.streamSettings?.raw || {}
-    if (tcp.headerType === 'http') {
-      obj.type = 'http'
-      obj.host = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value || ''
-      obj.path = tcp.request?._pathsStr || '/'
-    }
-  } else if (network === 'kcp' || network === 'mkcp') {
-    const kcp = ib.streamSettings?.kcp || {}
-    obj.mtu = kcp.mtu || 1350
-    obj.tti = kcp.tti || 50
-    // Read from FinalMask mkcp-legacy if enabled
-    const finalmask = ib.finalmask || {}
-    if (finalmask._enabled && finalmask.udp?.length) {
-      const mkcpLegacy = finalmask.udp.find(m => m.type === 'mkcp-legacy')
-      if (mkcpLegacy?.settings) {
-        if (mkcpLegacy.settings.header) {
-          obj.headerType = mkcpLegacy.settings.header
-        }
-        if (mkcpLegacy.settings.value) {
-          obj.seed = mkcpLegacy.settings.value
-        }
-      }
-    }
-  } else if (network === 'ws') {
-    const ws = ib.streamSettings?.ws || {}
-    obj.path = ws.path || '/'
-    // Host: use ws.host or first Host header
-    let wsHost = ws.host || ''
-    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
-    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
-    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
-    if (!wsHost && wsHeaderList.length) {
-      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
-      if (hostHeader?.value) wsHost = hostHeader.value
-    }
-    obj.host = wsHost
-  } else if (network === 'grpc') {
-    const grpc = ib.streamSettings?.grpc || {}
-    obj.path = grpc.serviceName || ''
-    obj.authority = grpc.authority || ''
-    if (grpc.settings?.multiMode) obj.type = 'multi'
-  } else if (network === 'httpupgrade') {
-    const hu = ib.streamSettings?.httpupgrade || {}
-    obj.path = hu.path || '/'
-    obj.host = hu.host || ''
-  } else if (network === 'xhttp') {
-    const xhttp = ib.streamSettings?.xhttp || {}
-    obj.path = xhttp.path || '/'
-    obj.host = xhttp.host || ''
-    obj.type = xhttp.mode || 'auto'
-    if (xhttp.extra?.xPaddingBytes) obj.x_padding_bytes = xhttp.extra.xPaddingBytes
-    // xhttp extra
-    const extra = buildXhttpExtra(xhttp)
-    if (extra) obj.extra = extra
-  }
-
-  // TLS params
-  if (security === 'tls') {
-    const tls = ib.streamSettings?.tls || {}
-    obj.tls = 'tls'
-    obj.sni = tls.serverName || ''
-    obj.alpn = (tls._alpn || []).join(',')
-    obj.fp = tls.fingerprint || ''
-    if (tls.echConfigList) obj.ech = tls.echConfigList
-    if (tls._verifyPeerCertByName) obj.vcn = tls._verifyPeerCertByName
-    if (tls._pinnedPeerCertSha256) obj.pcs = tls._pinnedPeerCertSha256
-  }
-
-  // FinalMask
-  const finalmask = ib.finalmask || {}
-  if (finalmask._enabled) {
-    const fmData = serializeFinalMask(finalmask)
-    if (fmData) obj.fm = fmData
-  }
-
-  return 'vmess://' + btoa(JSON.stringify(obj))
-}
-
-function generateVlessLink(ib, user, host, port, remark) {
-  const uuid = user.id || ''
-  const flow = user.flow || ''
-  const encryption = ib.settings?.encryption || 'none'
-  const network = ib.streamSettings?.network || 'raw'
-  const security = ib.streamSettings?.security || 'none'
-
-  const params = new URLSearchParams()
-  params.set('type', linkTransport(network))
-  params.set('encryption', encryption)
-
-  // Network-specific params
-  if (network === 'tcp' || network === 'raw') {
-    const tcp = ib.streamSettings?.raw || {}
-    if (tcp.headerType === 'http') {
-      params.set('headerType', 'http')
-      params.set('path', tcp.request?._pathsStr || '/')
-      const hostHeader = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value
-      if (hostHeader) params.set('host', hostHeader)
-    }
-  } else if (network === 'kcp' || network === 'mkcp') {
-    const kcp = ib.streamSettings?.kcp || {}
-    params.set('mtu', String(kcp.mtu || 1350))
-    params.set('tti', String(kcp.tti || 50))
-    // Read from FinalMask mkcp-legacy if enabled
-    const fm = ib.finalmask || {}
-    if (fm._enabled && fm.udp?.length) {
-      const mkcpLegacy = fm.udp.find(m => m.type === 'mkcp-legacy')
-      if (mkcpLegacy?.settings) {
-        if (mkcpLegacy.settings.header) params.set('headerType', mkcpLegacy.settings.header)
-        if (mkcpLegacy.settings.value) params.set('seed', mkcpLegacy.settings.value)
-      }
-    }
-  } else if (network === 'ws') {
-    const ws = ib.streamSettings?.ws || {}
-    params.set('path', ws.path || '/')
-    // Host: use ws.host or first Host header
-    let wsHost = ws.host || ''
-    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
-    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
-    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
-    if (!wsHost && wsHeaderList.length) {
-      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
-      if (hostHeader?.value) wsHost = hostHeader.value
-    }
-    params.set('host', wsHost)
-  } else if (network === 'grpc') {
-    const grpc = ib.streamSettings?.grpc || {}
-    params.set('serviceName', grpc.serviceName || '')
-    if (grpc.authority) params.set('authority', grpc.authority)
-    if (grpc.settings?.multiMode) params.set('mode', 'multi')
-  } else if (network === 'httpupgrade') {
-    const hu = ib.streamSettings?.httpupgrade || {}
-    params.set('path', hu.path || '/')
-    params.set('host', hu.host || '')
-  } else if (network === 'xhttp') {
-    const xhttp = ib.streamSettings?.xhttp || {}
-    params.set('path', xhttp.path || '/')
-    params.set('host', xhttp.host || '')
-    params.set('mode', xhttp.mode || 'auto')
-    if (xhttp.extra?.xPaddingBytes) params.set('x_padding_bytes', xhttp.extra.xPaddingBytes)
-    // xhttp extra
-    const extra = buildXhttpExtra(xhttp)
-    if (extra) params.set('extra', JSON.stringify(extra))
-  }
-
-  // Security params
-  if (security === 'tls') {
-    params.set('security', 'tls')
-    const tls = ib.streamSettings?.tls || {}
-    if (tls.fingerprint) params.set('fp', tls.fingerprint)
-    if (tls._alpn?.length) params.set('alpn', tls._alpn.join(','))
-    if (tls.serverName) params.set('sni', tls.serverName)
-    if (tls.echConfigList) params.set('ech', tls.echConfigList)
-    if (tls._verifyPeerCertByName) params.set('vcn', tls._verifyPeerCertByName)
-    if (tls._pinnedPeerCertSha256) params.set('pcs', tls._pinnedPeerCertSha256)
-  } else if (security === 'reality') {
-    params.set('security', 'reality')
-    const reality = ib.streamSettings?.reality || {}
-    if (reality._password) params.set('pbk', reality._password)
-    if (reality._fingerprint) params.set('fp', reality._fingerprint)
-    // Random sni from serverNames
-    const sniList = (reality.serverNamesStr || '').split(',').map(s => s.trim()).filter(Boolean)
-    const sni = sniList.length > 0 ? getRandomItem(sniList) : ''
-    if (sni) params.set('sni', sni)
-    // Random sid from shortIds
-    if (reality.shortIdsStr) {
-      const sidList = reality.shortIdsStr.split('\n').map(s => s.trim()).filter(Boolean)
-      const sid = sidList.length > 0 ? getRandomItem(sidList) : ''
-      if (sid) params.set('sid', sid)
-    }
-    if (reality._mldsa65Verify) params.set('pqv', reality._mldsa65Verify)
-    if (reality.spiderX) params.set('spx', reality.spiderX)
-  } else {
-    params.set('security', 'none')
-  }
-
-  // Flow
-  if (flow) params.set('flow', flow)
-
-  // FinalMask
-  const finalmask = ib.finalmask || {}
-  if (finalmask._enabled) {
-    const fmData = serializeFinalMask(finalmask)
-    if (fmData) params.set('fm', fmData)
-  }
-
-  const url = new URL(`vless://${uuid}@${formatUrlHost(host)}:${port}`)
-  for (const [key, value] of params) url.searchParams.set(key, value)
-  url.hash = encodeURIComponent(remark)
-  return url.toString().replaceAll('+', '%20')
-}
-
-function buildXhttpExtra(xhttp) {
-  if (!xhttp) return null
-  const extra = {}
-  if (xhttp.mode) extra.mode = xhttp.mode
-  if (xhttp.xPaddingBytes) extra.xPaddingBytes = xhttp.xPaddingBytes
-  // xPaddingObfsMode sub-fields only when obfs is enabled
-  if (xhttp.extra?.xPaddingObfsMode) {
-    extra.xPaddingObfsMode = true
-    for (const k of ['xPaddingKey', 'xPaddingHeader', 'xPaddingPlacement', 'xPaddingMethod']) {
-      if (xhttp.extra[k]) extra[k] = xhttp.extra[k]
-    }
-  }
-  // String fields - filter out xray core defaults to avoid DPI fingerprint
-  const coreDefaults = { scMaxEachPostBytes: '1000000', scMinPostsIntervalMs: '30', uplinkHTTPMethod: '' }
-  for (const k of ['uplinkHTTPMethod', 'sessionIDPlacement', 'sessionIDKey', 'seqPlacement', 'seqKey', 'uplinkDataPlacement', 'uplinkDataKey', 'scMaxEachPostBytes', 'scMinPostsIntervalMs']) {
-    const v = xhttp.extra?.[k]
-    if (typeof v === 'string' && v.length > 0 && v !== coreDefaults[k]) extra[k] = v
-  }
-  // Headers
-  if (xhttp.extra?._headers?.length) {
-    const headers = {}
-    xhttp.extra._headers.forEach(h => {
-      if (h.key && h.value) headers[h.key] = h.value
-    })
-    if (Object.keys(headers).length) extra.headers = headers
-  }
-  return Object.keys(extra).length > 0 ? extra : null
-}
-
-function generateTrojanLink(ib, user, host, port, remark) {
-  const password = user.password || ''
-  const network = ib.streamSettings?.network || 'raw'
-  const security = ib.streamSettings?.security || 'tls'
-
-  const params = new URLSearchParams()
-  params.set('type', linkTransport(network))
-
-  // Network-specific params
-  if (network === 'tcp' || network === 'raw') {
-    const tcp = ib.streamSettings?.raw || {}
-    if (tcp.headerType === 'http') {
-      params.set('headerType', 'http')
-      params.set('path', tcp.request?._pathsStr || '/')
-      const hostHeader = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value
-      if (hostHeader) params.set('host', hostHeader)
-    }
-  } else if (network === 'kcp' || network === 'mkcp') {
-    const kcp = ib.streamSettings?.kcp || {}
-    params.set('mtu', String(kcp.mtu || 1350))
-    params.set('tti', String(kcp.tti || 50))
-    // Read from FinalMask mkcp-legacy if enabled
-    const fm = ib.finalmask || {}
-    if (fm._enabled && fm.udp?.length) {
-      const mkcpLegacy = fm.udp.find(m => m.type === 'mkcp-legacy')
-      if (mkcpLegacy?.settings) {
-        if (mkcpLegacy.settings.header) params.set('headerType', mkcpLegacy.settings.header)
-        if (mkcpLegacy.settings.value) params.set('seed', mkcpLegacy.settings.value)
-      }
-    }
-  } else if (network === 'ws') {
-    const ws = ib.streamSettings?.ws || {}
-    params.set('path', ws.path || '/')
-    // Host: use ws.host or first Host header
-    let wsHost = ws.host || ''
-    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
-    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
-    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
-    if (!wsHost && wsHeaderList.length) {
-      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
-      if (hostHeader?.value) wsHost = hostHeader.value
-    }
-    params.set('host', wsHost)
-  } else if (network === 'grpc') {
-    const grpc = ib.streamSettings?.grpc || {}
-    params.set('serviceName', grpc.serviceName || '')
-    if (grpc.authority) params.set('authority', grpc.authority)
-    if (grpc.settings?.multiMode) params.set('mode', 'multi')
-  } else if (network === 'httpupgrade') {
-    const hu = ib.streamSettings?.httpupgrade || {}
-    params.set('path', hu.path || '/')
-    params.set('host', hu.host || '')
-  } else if (network === 'xhttp') {
-    const xhttp = ib.streamSettings?.xhttp || {}
-    params.set('path', xhttp.path || '/')
-    params.set('host', xhttp.host || '')
-    params.set('mode', xhttp.mode || 'auto')
-    if (xhttp.extra?.xPaddingBytes) params.set('x_padding_bytes', xhttp.extra.xPaddingBytes)
-    const extra = buildXhttpExtra(xhttp)
-    if (extra) params.set('extra', JSON.stringify(extra))
-  }
-
-  // Security params
-  if (security === 'tls') {
-    params.set('security', 'tls')
-    const tls = ib.streamSettings?.tls || {}
-    if (tls.fingerprint) params.set('fp', tls.fingerprint)
-    if (tls._alpn?.length) params.set('alpn', tls._alpn.join(','))
-    if (tls.serverName) params.set('sni', tls.serverName)
-    if (tls.echConfigList) params.set('ech', tls.echConfigList)
-    if (tls._verifyPeerCertByName) params.set('vcn', tls._verifyPeerCertByName)
-    if (tls._pinnedPeerCertSha256) params.set('pcs', tls._pinnedPeerCertSha256)
-  } else if (security === 'reality') {
-    params.set('security', 'reality')
-    const reality = ib.streamSettings?.reality || {}
-    if (reality._password) params.set('pbk', reality._password)
-    if (reality._fingerprint) params.set('fp', reality._fingerprint)
-    // Random sni from serverNames
-    const sniList = (reality.serverNamesStr || '').split(',').map(s => s.trim()).filter(Boolean)
-    const sni = sniList.length > 0 ? getRandomItem(sniList) : ''
-    if (sni) params.set('sni', sni)
-    // Random sid from shortIds
-    if (reality.shortIdsStr) {
-      const sidList = reality.shortIdsStr.split('\n').map(s => s.trim()).filter(Boolean)
-      const sid = sidList.length > 0 ? getRandomItem(sidList) : ''
-      if (sid) params.set('sid', sid)
-    }
-    if (reality._mldsa65Verify) params.set('pqv', reality._mldsa65Verify)
-    if (reality.spiderX) params.set('spx', reality.spiderX)
-  } else {
-    params.set('security', 'none')
-  }
-
-  // FinalMask
-  const finalmask = ib.finalmask || {}
-  if (finalmask._enabled) {
-    const fmData = serializeFinalMask(finalmask)
-    if (fmData) params.set('fm', fmData)
-  }
-
-  const url = new URL(`trojan://${encodeURIComponent(password)}@${formatUrlHost(host)}:${port}`)
-  for (const [key, value] of params) url.searchParams.set(key, value)
-  url.hash = encodeURIComponent(remark)
-  return url.toString().replaceAll('+', '%20')
-}
-
-function generateShadowsocksLink(ib, user, host, port, remark) {
-  const method = ib.settings?.method || 'aes-256-gcm'
-  const network = ib.streamSettings?.network || 'raw'
-  const security = ib.streamSettings?.security || 'none'
-
-  // Get password based on method type
-  // For multi-user (2022-blake3-aes-*-gcm): use user.password
-  // For single-user: use settings.password
-  const isMultiUser = method === '2022-blake3-aes-256-gcm' || method === '2022-blake3-aes-128-gcm'
-  const password = isMultiUser ? (user.password || '') : (ib.settings?.password || '')
-
-  const params = new URLSearchParams()
-  params.set('type', linkTransport(network))
-
-  // Network-specific params
-  if (network === 'tcp' || network === 'raw') {
-    const tcp = ib.streamSettings?.raw || {}
-    if (tcp.headerType === 'http') {
-      params.set('headerType', 'http')
-      params.set('path', tcp.request?._pathsStr || '/')
-      const hostHeader = tcp.request?._headers?.find(h => h.key.toLowerCase() === 'host')?.value
-      if (hostHeader) params.set('host', hostHeader)
-    }
-  } else if (network === 'kcp' || network === 'mkcp') {
-    const kcp = ib.streamSettings?.kcp || {}
-    params.set('mtu', String(kcp.mtu || 1350))
-    params.set('tti', String(kcp.tti || 50))
-    // Read from FinalMask mkcp-legacy if enabled
-    const fm = ib.finalmask || {}
-    if (fm._enabled && fm.udp?.length) {
-      const mkcpLegacy = fm.udp.find(m => m.type === 'mkcp-legacy')
-      if (mkcpLegacy?.settings) {
-        if (mkcpLegacy.settings.header) params.set('headerType', mkcpLegacy.settings.header)
-        if (mkcpLegacy.settings.value) params.set('seed', mkcpLegacy.settings.value)
-      }
-    }
-  } else if (network === 'ws') {
-    const ws = ib.streamSettings?.ws || {}
-    params.set('path', ws.path || '/')
-    let wsHost = ws.host || ''
-    // 模型是**扁平** `ws._headers`（parseWsSettings 产出、序列化读它）；
-    // 老数据/原始配置可能嵌在 `ws.settings.headers` 里，两种都兼容。
-    const wsHeaderList = Array.isArray(ws._headers) ? ws._headers : (ws.settings?._headers || [])
-    if (!wsHost && wsHeaderList.length) {
-      const hostHeader = wsHeaderList.find(h => h.key?.toLowerCase() === 'host')
-      if (hostHeader?.value) wsHost = hostHeader.value
-    }
-    if (wsHost) params.set('host', wsHost)
-  } else if (network === 'grpc') {
-    const grpc = ib.streamSettings?.grpc || {}
-    params.set('serviceName', grpc.serviceName || '')
-    if (grpc.authority) params.set('authority', grpc.authority)
-    if (grpc.settings?.multiMode) params.set('mode', 'multi')
-  } else if (network === 'httpupgrade') {
-    const hu = ib.streamSettings?.httpupgrade || {}
-    params.set('path', hu.path || '/')
-    if (hu.host) params.set('host', hu.host)
-  } else if (network === 'xhttp') {
-    const xhttp = ib.streamSettings?.xhttp || {}
-    params.set('path', xhttp.path || '/')
-    if (xhttp.host) params.set('host', xhttp.host)
-    params.set('mode', xhttp.mode || 'auto')
-    if (xhttp.extra?.xPaddingBytes) params.set('x_padding_bytes', xhttp.extra.xPaddingBytes)
-    const extra = buildXhttpExtra(xhttp)
-    if (extra) params.set('extra', JSON.stringify(extra))
-  }
-
-  // Security params
-  if (security === 'tls') {
-    params.set('security', 'tls')
-    const tls = ib.streamSettings?.tls || {}
-    if (tls.fingerprint) params.set('fp', tls.fingerprint)
-    if (tls._alpn?.length) params.set('alpn', tls._alpn.join(','))
-    if (tls.serverName) params.set('sni', tls.serverName)
-    if (tls.echConfigList) params.set('ech', tls.echConfigList)
-  }
-
-  // FinalMask
-  const finalmask = ib.finalmask || {}
-  if (finalmask._enabled) {
-    const fmData = serializeFinalMask(finalmask)
-    if (fmData) params.set('fm', fmData)
-  }
-
-  // Build link
-  const isSS2022 = method.startsWith('2022')
-  if (isSS2022) {
-    // SIP022: method:password (not base64)
-    const passwords = [ib.settings?.password]
-    if (isMultiUser && password) passwords.push(password)
-    const userinfo = [method, ...passwords].map(encodeURIComponent).join(':')
-    let link = `ss://${userinfo}@${formatUrlHost(host)}:${port}`
-    const query = params.toString()
-    if (query) link += `?${query}`
-    link += `#${encodeURIComponent(remark)}`
-    return link
-  }
-
-  // Legacy: base64(method:password)
-  const userInfo = btoa(method + ':' + password)
-  let link = `ss://${userInfo}@${formatUrlHost(host)}:${port}`
-  const query = params.toString()
-  if (query) link += `?${query}`
-  link += `#${encodeURIComponent(remark)}`
-  return link
-}
-
-function generateHysteriaLink(ib, user, host, port, remark) {
-  const version = ib.settings?.version || ib.streamSettings?.hysteria?.version || 2
-  const scheme = version === 2 ? 'hysteria2' : 'hysteria'
-  // Hysteria2 auth from user.auth (clients[].auth)
-  const auth = user.auth || ''
-  const params = new URLSearchParams()
-
-  // Security
-  const security = ib.streamSettings?.security || 'tls'
-  if (security === 'tls') {
-    params.set('security', 'tls')
-    const tls = ib.streamSettings?.tls || {}
-    if (tls.fingerprint) params.set('fp', tls.fingerprint)
-    if (tls._alpn?.length) params.set('alpn', tls._alpn.join(','))
-    if (tls.serverName) params.set('sni', tls.serverName)
-    if (tls.echConfigList) params.set('ech', tls.echConfigList)
-    if (tls._verifyPeerCertByName) params.set('vcn', tls._verifyPeerCertByName)
-  }
-
-  // Only process finalmask if enabled
-  if (ib.finalmask?._enabled) {
-    const finalmask = ib.finalmask
-
-    // Salamander obfuscation
-    if (finalmask.udp?.length) {
-      const salamander = finalmask.udp.find(m => m.type === 'salamander')
-      if (salamander?.settings?.password) {
-        params.set('obfs', 'salamander')
-        params.set('obfs-password', salamander.settings.password)
-      }
-    }
-
-    // UDP hop ports
-    if (finalmask.quicParams?._showUdpHop && finalmask.quicParams?.udpHop?.ports) {
-      params.set('mport', finalmask.quicParams.udpHop.ports)
-    }
-
-    // FinalMask data
-    try {
-      const fmData = serializeFinalMask(finalmask)
-      if (fmData) params.set('fm', fmData)
-    } catch (e) {
-      // ignore serialization errors
-    }
-  }
-
-  const encodedAuth = encodeURIComponent(auth)
-  const url = new URL(`${scheme}://${encodedAuth}@${formatUrlHost(host)}:${port}`)
-  for (const [key, value] of params) url.searchParams.set(key, value)
-  url.hash = encodeURIComponent(remark)
-  return url.toString().replaceAll('+', '%20')
-}
-
-function formatUrlHost(address) {
-  const bare = (address || '').replace(/^\[|\]$/g, '')
-  return bare.includes(':') ? `[${bare}]` : bare
 }
 
 function copyQrLink() {

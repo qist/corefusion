@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	realityutil "corefusion/internal/reality"
 )
 
 // xray 25 起 TCP 传输的新名字是 "raw"，但链接里必须写标准值 **"tcp"**：
@@ -191,5 +193,95 @@ func TestGenerateVlessLinkRealityIncludesAlpn(t *testing.T) {
 		if !strings.Contains(link, want) {
 			t.Errorf("reality 链接缺 %s: %s", want, link)
 		}
+	}
+}
+
+// REALITY 在面板里有三种存法，取参必须都能认（认不出就是"整段参数丢失"，
+// 客户端配置退化成普通 TLS → 连不上）。sni/sid 取**第一个**，保证链接/三种片段一致。
+func TestRealityClientParamsShapes(t *testing.T) {
+	shapes := map[string]map[string]interface{}{
+		"扁平(老配置)": {
+			"publicKey":   "PBK",
+			"shortId":     "SID",
+			"fingerprint": "chrome",
+			"serverNames": []interface{}{"sni.example.com"},
+		},
+		"settings[](面板编辑器)": {
+			"privateKey":  "PRIV",
+			"shortIds":    []interface{}{"S1", "S2"},
+			"serverNames": []interface{}{"sni.example.com", "other.example.com"},
+			"settings": []interface{}{map[string]interface{}{
+				"fingerprint": "chrome", "password": "PBK",
+			}},
+		},
+		"下划线(sing-box 反推)": {
+			"_password":   "PBK",
+			"shortIds":    []interface{}{"S1"},
+			"serverNames": []interface{}{"sni.example.com"},
+		},
+	}
+	for label, reality := range shapes {
+		ss := map[string]interface{}{"security": "reality", "realitySettings": reality}
+		got := RealityClientParams(ss)
+		if got.PublicKey != "PBK" {
+			t.Errorf("%s: PublicKey = %q, want PBK", label, got.PublicKey)
+		}
+		if got.ShortID != "SID" && got.ShortID != "S1" {
+			t.Errorf("%s: ShortID = %q, want SID/S1", label, got.ShortID)
+		}
+		if got.ServerName != "sni.example.com" {
+			t.Errorf("%s: ServerName = %q", label, got.ServerName)
+		}
+	}
+	// 指纹：settings[0].fingerprint 与顶层都要认
+	if got := RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
+		"settings": []interface{}{map[string]interface{}{"fingerprint": "safari"}},
+	}}); got.Fingerprint != "safari" {
+		t.Errorf("settings[0].fingerprint 未识别: %+v", got)
+	}
+	if got := RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
+		"fingerprint": "firefox",
+	}}); got.Fingerprint != "firefox" {
+		t.Errorf("顶层 fingerprint 未识别: %+v", got)
+	}
+	// 没有 realitySettings → 全空（不能 panic）
+	if got := RealityClientParams(map[string]interface{}{"security": "tls"}); got != (RealityParams{}) {
+		t.Errorf("非 REALITY 应返回空值: %+v", got)
+	}
+}
+
+// 只存了服务端私钥（面板里很常见：编辑器/老数据没保存 pbk）时必须**推导出公钥**：
+// 客户端没有 pbk 就完全连不上（链接里缺 pbk、xray 片段 publicKey 缺失会被 xray 拒载）。
+func TestRealityClientParamsDerivesPublicKey(t *testing.T) {
+	// xray 的 privateKey 推导（用 reality 包同一实现的已知测试向量校验一致性）
+	const priv = "CAP0iqPwrizd4edy_hLIKtlpA7V9WE2gAU0LxpfeCUY"
+	pbk := realityutil.PublicKeyFromPrivate(priv)
+	if pbk == "" {
+		t.Fatal("私钥推导失败（测试向量不对？）")
+	}
+	got := RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
+		"privateKey":  priv,
+		"serverNames": []interface{}{"www.oracle.com"},
+		"shortIds":    []interface{}{"30b3ee1d"},
+		"settings":    []interface{}{map[string]interface{}{"fingerprint": "chrome"}},
+	}})
+	if got.PublicKey != pbk {
+		t.Errorf("PublicKey = %q, want %q（应由 privateKey 推导）", got.PublicKey, pbk)
+	}
+	// 链接里必须带上 pbk
+	link := Generate(Node{
+		Tag: "n", Protocol: "vless", Host: "www.test.ss", Port: 443,
+		Settings: map[string]interface{}{"clients": []interface{}{map[string]interface{}{"id": "eba0408a-f302-4f10-8e10-c85c0340fbd4"}}},
+		StreamSettings: map[string]interface{}{
+			"security": "reality",
+			"realitySettings": map[string]interface{}{
+				"privateKey":  priv,
+				"serverNames": []interface{}{"www.oracle.com"},
+				"shortIds":    []interface{}{"30b3ee1d"},
+			},
+		},
+	})
+	if !strings.Contains(link, "pbk="+pbk) {
+		t.Errorf("链接缺推导出的 pbk: %s", link)
 	}
 }

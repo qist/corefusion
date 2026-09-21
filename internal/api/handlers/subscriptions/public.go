@@ -635,7 +635,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			settings := getMap(config, "settings")
 
 			linkSettings := settings
-			var uuid, password, flow, method string
+			var uuid, password, flow string
 			if clientEmail != "" {
 				userClient := findClientByEmail(settings, clientEmail, cfg.Tag)
 				if userClient == nil {
@@ -649,7 +649,6 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				uuid, _ = userClient["id"].(string)
 				password, _ = userClient["password"].(string)
 				flow, _ = userClient["flow"].(string)
-				method, _ = userClient["method"].(string)
 				if cfg.Protocol == "hysteria" {
 					if auth, ok := userClient["auth"].(string); ok && auth != "" {
 						password = auth
@@ -698,7 +697,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				UUID:       uuid,
 				Password:   password,
 				Flow:       flow,
-				Encryption: method,
+				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
 				Extra:      buildExtra(config, ss, cfg.Protocol),
 			}
 			for _, memberID := range memberIDs {
@@ -765,7 +764,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 						UUID:       uuid,
 						Password:   password,
 						Flow:       flow,
-						Encryption: method,
+						Encryption: node.Encryption,
 						Extra:      node.Extra,
 					}
 
@@ -1065,7 +1064,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 
 			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
 			settings := getMap(config, "settings")
-			var uuid, password, flow, method string
+			var uuid, password, flow string
 
 			// Find the specific client's credentials for this subscription
 			if clientEmail != "" {
@@ -1077,7 +1076,6 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				uuid, _ = userClient["id"].(string)
 				password, _ = userClient["password"].(string)
 				flow, _ = userClient["flow"].(string)
-				method, _ = userClient["method"].(string)
 				// Hysteria uses "auth" field instead of "password"
 				if cfg.Protocol == "hysteria" {
 					if auth, ok := userClient["auth"].(string); ok && auth != "" {
@@ -1117,7 +1115,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				UUID:       uuid,
 				Password:   password,
 				Flow:       flow,
-				Encryption: method,
+				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
 				Extra:      extra,
 			}
 			nodes = append(nodes, node)
@@ -1440,9 +1438,16 @@ func formatYAMLString(s string) string {
 		return "\"" + s + "\""
 	}
 	// Quote if contains special YAML characters or could be ambiguous
-	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`,?+\\") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") || strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "@") {
+	// 控制字符（\n \t \r …）也必须进引号并用 YAML 转义写法，否则会把值折行/写坏：
+	// 名称类字段虽然已过 SanitizeNodeName，但密码、SNI、路径等值同样会走这里。
+	if strings.ContainsAny(s, ":#{}[]&*!|>'\"@`,?+\\") || strings.ContainsAny(s, "\n\r\t\v\f") ||
+		strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") ||
+		strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "@") {
 		escaped := strings.ReplaceAll(s, "\\", "\\\\")
 		escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+		escaped = strings.ReplaceAll(escaped, "\n", "\\n")
+		escaped = strings.ReplaceAll(escaped, "\r", "\\r")
+		escaped = strings.ReplaceAll(escaped, "\t", "\\t")
 		return "\"" + escaped + "\""
 	}
 	if _, err := strconv.ParseFloat(s, 64); err == nil {
@@ -1878,9 +1883,8 @@ func dedupeMihomoProxyNames(proxyMaps []map[string]interface{}) []map[string]int
 // uniqueMihomoName 与 formatter.uniqueNodeTag 同语义（那边未导出，故在此重复一份）。
 // 注意：生成出来的新名字也要登记，否则"已有节点本身就叫 X 2"时会与新生成的名字再撞一次。
 func uniqueMihomoName(name string, used map[string]int) string {
-	if name == "" {
-		name = "node"
-	}
+	// 与 sing-box / xray 的 tag 用同一套清洗（中文保留，控制字符/超长处理掉）
+	name = formatter.SanitizeNodeName(name)
 	if used[name] == 0 {
 		used[name] = 1
 		return name
@@ -2262,20 +2266,32 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			extra["skip-cert-verify"] = getBool(tls, "allowInsecure")
 		}
 	} else if security == "reality" {
-		reality := getMap(ss, "realitySettings")
-		if reality != nil {
+		// 统一取参（兼容 publicKey/shortId 扁平写法与 xray 25+ 的 settings[0].password 写法）。
+		// 以前只认扁平字段，面板编辑器存的是 settings[] 形态 → REALITY 参数**全丢**，
+		// sing-box 片段退化成 tls.enabled=true、xray 片段退化成 security=tls（普通 TLS 握手），
+		// 客户端永远连不上（用户报的 "json 完全生成错误"）。
+		if reality := getMap(ss, "realitySettings"); reality != nil {
+			rp := sharelink.RealityClientParams(ss)
 			ro := make(map[string]interface{})
-			if pk, ok := reality["publicKey"].(string); ok && pk != "" {
-				ro["public-key"] = pk
+			if rp.PublicKey != "" {
+				ro["public-key"] = rp.PublicKey
 			}
-			if sid, ok := reality["shortId"].(string); ok && sid != "" {
-				ro["short-id"] = sid
+			if rp.ShortID != "" {
+				ro["short-id"] = rp.ShortID
+			}
+			if rp.SpiderX != "" {
+				ro["spider-x"] = rp.SpiderX
+			}
+			// 抗量子校验：mihomo / sing-box 都没有这个字段（xray 有），
+			// 由 XrayFormatter 单独取用，不影响其它格式。
+			if rp.MLDSA65Verify != "" {
+				ro["mldsa65-verify"] = rp.MLDSA65Verify
 			}
 			if len(ro) > 0 {
 				extra["reality-opts"] = ro
 			}
-			if fp, ok := reality["fingerprint"].(string); ok && fp != "" {
-				extra["client-fingerprint"] = fp
+			if rp.Fingerprint != "" {
+				extra["client-fingerprint"] = rp.Fingerprint
 			}
 		}
 	}

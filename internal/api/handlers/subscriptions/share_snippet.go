@@ -2,6 +2,7 @@ package subscriptions
 
 import (
 	"encoding/json"
+	"net"
 	"strings"
 
 	"corefusion/internal/model/entity"
@@ -80,8 +81,32 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 		UUID:       uuid,
 		Password:   getString(client, "password", ""),
 		Flow:       getString(client, "flow", ""),
-		Encryption: getString(settings, "method", ""),
+		Encryption: nodeEncryption(cfg.Protocol, settings),
 		Extra:      buildExtra(view, ss, cfg.Protocol),
+	}
+}
+
+// nodeEncryption 返回客户端配置里该协议的"加密"字段（协议相关，别混用）：
+//
+//   - shadowsocks / 2022 → `settings.method`（mihomo `cipher`、sing-box `method`、xray `method`）；
+//   - vless → `settings.encryption`（**VLESS 加密**，形如
+//     `mlkem768x25519plus.native.0rtt.<key>`）：xray 写进 users[].encryption（同时写 settings.encryption
+//     兼容旧客户端），mihomo 写 `encryption`。**以前这里只读 ss 的 method，于是 vless 节点的加密
+//     一路丢失** —— xray 片段里成了 `encryption: "none"`（服务端在等加密握手，连不上），
+//     还刚好撞上 xray 26 的"明文 vless 不许连公网地址"限制。
+//   - 其它协议（或者值为空/none）→ 空串。
+func nodeEncryption(protocol string, settings map[string]interface{}) string {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "vless":
+		if enc := strings.TrimSpace(getString(settings, "encryption", "")); enc != "" && !strings.EqualFold(enc, "none") {
+			return enc
+		}
+		return ""
+	case "shadowsocks", "shadowsocks2022", "ss":
+		return getString(settings, "method", "")
+	default:
+		// 其它协议没有"加密/method"这个客户端字段：别把 settings 里的杂项当成加密写出去。
+		return ""
 	}
 }
 
@@ -112,10 +137,69 @@ func renderShareSnippet(format, link string, node *formatter.Node) (string, bool
 		}
 		return outboundJSONSnippet(formatter.FormatSingBoxJSON, node)
 	case "xray":
+		// xray 26 起对**明文 vless / trojan** 有硬性限制（见 xrayNodeDropReason）：
+		// 写进去会让客户端**整份配置加载失败**（订阅里就是一个节点废掉整份），
+		// 所以整条剔除并在弹窗里说明原因。
+		if node != nil && xrayNodeDropReason(node) != "" {
+			return "", false
+		}
 		return outboundJSONSnippet(formatter.FormatXrayJSON, node)
 	default:
 		return link, link != ""
 	}
+}
+
+// xrayNodeDropReason 返回"该节点会被 xray 客户端**拒绝加载**"的原因（空串 = 可以生成）。
+//
+// 实测 xray 26.9.9：明文 vless / trojan（没有 TLS/REALITY，vless 也没有 VLESS 加密）时，
+// 只允许连**私有地址（含 localhost）**，公网 IP 与域名一律拒载：
+//
+//	vless without TLS or other encryption is prohibited unless the server address
+//	is a private IP or domain      ← 注意：实测域名同样被拒，报错文案有误导
+//	trojan without TLS is prohibited unless the server address is a private IP...
+//
+// 这类节点一旦写进客户端配置，xray 是**整份拒绝**（不是跳过这一条），
+// 所以必须在生成阶段整条剔除 —— 与 kcp/xhttp 的处理口径一致。
+// 其它协议（vmess/ss/hysteria…）或走 TLS 的节点不受影响。
+func xrayNodeDropReason(node *formatter.Node) string {
+	if node == nil {
+		return ""
+	}
+	proto := strings.ToLower(node.Protocol)
+	if proto != "vless" && proto != "trojan" {
+		return ""
+	}
+	// TLS 与 REALITY 都算"加密"
+	if node.TLS || node.Extra["reality-opts"] != nil {
+		return ""
+	}
+	if proto == "vless" {
+		// VLESS 加密（mlkem768x25519plus…）也算"other encryption"，此时允许公网地址
+		if enc := strings.TrimSpace(node.Encryption); enc != "" && !strings.EqualFold(enc, "none") {
+			return ""
+		}
+	}
+	if isLocalOrPrivateHost(node.Host) {
+		return ""
+	}
+	return "plain-" + proto
+}
+
+// isLocalOrPrivateHost 判断分享地址是否是"明文 vless/trojan 仍然允许"的本地/私有地址。
+// 注意：域名**不算**（xray 实测会拒），所以这里只认 IP 段。
+func isLocalOrPrivateHost(host string) bool {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return false
+	}
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(h, "[]"))
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
 // shareUnsupportedReason 说明"该格式下为什么生不出片段"（供前端把原因显示出来）。
@@ -129,6 +213,8 @@ func shareUnsupportedReason(format string, node *formatter.Node) string {
 		return singboxNodeDropReason(node)
 	case "mihomo":
 		return mihomoNodeDropReason(node)
+	case "xray":
+		return xrayNodeDropReason(node)
 	default:
 		return ""
 	}

@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -79,6 +80,43 @@ func TestXrayFormatterKeepsRawTransport(t *testing.T) {
 	}
 	if _, ok := ss["wsSettings"]; !ok {
 		t.Errorf("ws 应带 wsSettings: %v", ss)
+	}
+}
+
+// 节点名（mihomo 的 name / sing-box、xray 的 tag）是用户随便填的：中文、空格、
+// 引号、括号都要**原样保留**（它就是客户端列表里显示的名字，改 ID 化就没法认了），
+// 但控制字符（换行/制表符）必须清掉 —— 它会随配置写进 YAML/JSON，把文件写坏。
+func TestSanitizeNodeName(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Node-zhhrup", "Node-zhhrup"},
+		{"香港节点 #1 (镜像N3)", "香港节点 #1 (镜像N3)"}, // 中文/井号/括号保留（写出时由各格式转义）
+		{"node\nline2", "node line2"},              // 换行 → 空格
+		{"node\t\ttab", "node tab"},                // 制表符折叠
+		{"  padded  ", "padded"},
+		{"a\x00b", "a b"},             // 控制字符
+		{"", "node"},                  // 空 → 兜底
+		{"   ", "node"},               // 全空白 → 兜底
+		{"\u3000全角空格", "全角空格"},         // 全角空格当空白处理
+		{strings.Repeat("长", 120), strings.Repeat("长", 100)}, // 超长截断
+	}
+	for _, tc := range cases {
+		if got := SanitizeNodeName(tc.in); got != tc.want {
+			t.Errorf("SanitizeNodeName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	// 走 formatter 的 tag 必须用清洗后的名字（JSON 里不该出现裸换行）
+	ob := renderFirstXrayOutbound(t, Node{
+		Name: "ev\nil: \"x\"", Protocol: "trojan", Host: "1.2.3.4", Port: 443, Password: "pw", TLS: true,
+	})
+	if got, _ := ob["tag"].(string); got != `ev il: "x"` {
+		t.Errorf("xray tag = %q, want 清洗后的名字", got)
+	}
+	sb := renderFirstOutbound(t, Node{
+		Name: "ev\nil", Protocol: "trojan", Host: "1.2.3.4", Port: 443, Password: "pw", TLS: true,
+	})
+	if got, _ := sb["tag"].(string); got != "ev il" {
+		t.Errorf("sing-box tag = %q, want 清洗后的名字", got)
 	}
 }
 

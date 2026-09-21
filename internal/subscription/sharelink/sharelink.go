@@ -4,10 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"strconv"
 	"strings"
+
+	realityutil "corefusion/internal/reality"
 )
 
 // Node holds parsed inbound info for share link generation.
@@ -582,6 +583,90 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 	return nil
 }
 
+// RealityParams 是 REALITY 客户端需要的参数（服务端那份 privateKey/target 不在这里）。
+//
+// 字段口径按官方实现 XTLS/REALITY 的客户端配置（README）：
+//
+//	serverName(必填) / password(必填，服务端私钥对应的公钥) / shortId(必填)
+//	fingerprint(选填，默认 chrome) / spiderX(选填) / mldsa65Verify(选填，抗量子校验)
+type RealityParams struct {
+	PublicKey     string // 客户端配置里的 password / publicKey
+	ShortID       string
+	Fingerprint   string
+	ServerName    string
+	SpiderX       string
+	MLDSA65Verify string // 抗量子的额外校验（服务端 mldsa65Seed 对应）
+}
+
+// RealityClientParams 统一从 `streamSettings.realitySettings` 里取客户端参数。
+//
+// 面板里 REALITY 有**三种**存法，缺一种就会"整段 REALITY 参数丢掉"——
+// 生成出去的客户端配置退化成普通 TLS（sing-box 只写 tls.enabled、xray 写 security:tls），
+// 客户端拿去做的是明文 TLS 握手，**永远连不上**（用户报的 "json 完全生成错误"）：
+//
+//	① 扁平（老配置 / 手写）：      publicKey / shortId / fingerprint
+//	② xray 25+ / 面板编辑器：      settings: [{fingerprint, password(=公钥), shortId, serverName, spiderX}]
+//	③ 顶层下划线：                _password（=公钥）、_realityPublicKey（sing-box 编辑器存的）
+//
+// sni/sid 取**第一个**（不再随机挑）：同一个入站的链接、Mihomo、sing-box、Xray
+// 四种产物必须一致，否则用户对照时会以为配置错了（服务端接受 shortIds 里任意一个）。
+func RealityClientParams(ss map[string]interface{}) RealityParams {
+	var out RealityParams
+	reality := getMap(ss, "realitySettings")
+	if reality == nil {
+		return out
+	}
+	var first map[string]interface{}
+	if settings, ok := reality["settings"].([]interface{}); ok && len(settings) > 0 {
+		if s, ok := settings[0].(map[string]interface{}); ok {
+			first = s
+		}
+	}
+	pick := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := reality[k].(string); ok && v != "" {
+				return v
+			}
+			if first != nil {
+				if v, ok := first[k].(string); ok && v != "" {
+					return v
+				}
+			}
+		}
+		return ""
+	}
+	// 公钥：多种命名（password 是 xray 25+ 客户端 settings 里的写法）
+	out.PublicKey = pick("publicKey", "_realityPublicKey", "_password", "password")
+	if out.PublicKey == "" {
+		// ④ 只存了**服务端私钥**（sing-box 的 private_key / xray 的 privateKey）：
+		// x25519 私钥能推导公钥，客户端没有 pbk 就完全连不上（订阅链接里也会缺 pbk）。
+		if priv := pick("privateKey", "private_key"); priv != "" {
+			out.PublicKey = realityutil.PublicKeyFromPrivate(priv)
+		}
+	}
+	out.Fingerprint = getFingerprint(reality)
+	out.SpiderX = pick("spiderX")
+	// 抗量子校验（面板把客户端那份存成 _mldsa65Verify）
+	out.MLDSA65Verify = pick("mldsa65Verify", "_mldsa65Verify")
+	// 短 id：优先标量，其次列表里第一个
+	if sid := pick("shortId"); sid != "" {
+		out.ShortID = sid
+	} else if list := getStringSlice(reality, "shortIds"); len(list) > 0 {
+		out.ShortID = list[0]
+	}
+	// serverName（客户端 SNI）：优先 serverNames[0]，其次 settings[0].serverName
+	if list := getStringSlice(reality, "serverNames"); len(list) > 0 {
+		out.ServerName = list[0]
+	} else if v, ok := reality["serverName"].(string); ok && v != "" {
+		out.ServerName = v
+	} else if first != nil {
+		if v, ok := first["serverName"].(string); ok && v != "" {
+			out.ServerName = v
+		}
+	}
+	return out
+}
+
 func getFingerprint(tls map[string]interface{}) string {
 	if tls == nil {
 		return ""
@@ -838,39 +923,26 @@ func setSecurityParams(params url.Values, ss map[string]interface{}, security st
 				params.Set("alpn", strings.Join(alpn, ","))
 			}
 		}
-		reality := getMap(ss, "realitySettings")
-		// pbk from settings[0].password or _password
-		if pwd, ok := reality["_password"].(string); ok && pwd != "" {
-			params.Set("pbk", pwd)
-		} else if settings, ok := reality["settings"].([]interface{}); ok && len(settings) > 0 {
-			if s, ok := settings[0].(map[string]interface{}); ok {
-				if pwd, ok := s["password"].(string); ok && pwd != "" {
-					params.Set("pbk", pwd)
-				}
-			}
+		// 统一取参（兼容扁平 / settings[] / 下划线 / 只存私钥四种存法），四种产物口径一致
+		rp := RealityClientParams(ss)
+		if rp.PublicKey != "" {
+			params.Set("pbk", rp.PublicKey)
 		}
-		// fp
-		if fp := getFingerprint(reality); fp != "" {
-			params.Set("fp", fp)
+		if rp.Fingerprint != "" {
+			params.Set("fp", rp.Fingerprint)
 		}
-		// sni from serverNames
-		if sniList := getStringSlice(reality, "serverNames"); len(sniList) > 0 {
-			params.Set("sni", sniList[rand.Intn(len(sniList))])
+		if rp.ServerName != "" {
+			params.Set("sni", rp.ServerName)
 		}
-		// sid from shortIds
-		if sidList := getStringSlice(reality, "shortIds"); len(sidList) > 0 {
-			params.Set("sid", sidList[rand.Intn(len(sidList))])
+		if rp.ShortID != "" {
+			params.Set("sid", rp.ShortID)
 		}
-		if spx, ok := reality["spiderX"].(string); ok && spx != "" {
-			params.Set("spx", spx)
+		if rp.SpiderX != "" {
+			params.Set("spx", rp.SpiderX)
 		}
-		// pqv (post-quantum verification) from settings[0].mldsa65Verify
-		if settings, ok := reality["settings"].([]interface{}); ok && len(settings) > 0 {
-			if s, ok := settings[0].(map[string]interface{}); ok {
-				if pqv, ok := s["mldsa65Verify"].(string); ok && pqv != "" {
-					params.Set("pqv", pqv)
-				}
-			}
+		// pqv = post-quantum verification（服务端 mldsa65Seed 对应，选填）
+		if rp.MLDSA65Verify != "" {
+			params.Set("pqv", rp.MLDSA65Verify)
 		}
 	default:
 		params.Set("security", "none")

@@ -155,7 +155,10 @@ func generateVmessLink(n Node) string {
 			obj["seed"] = seed
 		}
 	case "ws":
-		ws := getMap(ss, "ws")
+		ws := getMap(ss, "wsSettings") // xray 入站形态
+		if ws == nil {
+			ws = getMap(ss, "ws") // 前端表单形态
+		}
 		path := getString(ws, "path", "/")
 		// Detect early data in path (?ed=2560), keep path as-is
 		if idx := strings.Index(path, "?ed="); idx >= 0 {
@@ -701,8 +704,11 @@ func getHeaderHost(tcp map[string]interface{}) string {
 	if req == nil {
 		return ""
 	}
-	// xray config format: {"Host": ["www.baidu.com"]}
+	// xray config format: {"Host": ["www.baidu.com"]}（入站里也可能是字符串）
 	if headers, ok := req["headers"].(map[string]interface{}); ok {
+		if h, ok := headers["Host"].(string); ok && h != "" {
+			return h
+		}
 		if hostArr, ok := headers["Host"].([]interface{}); ok && len(hostArr) > 0 {
 			if h, ok := hostArr[0].(string); ok {
 				return h
@@ -761,11 +767,20 @@ func getWSHost(ws map[string]interface{}) string {
 		return h
 	}
 	// xray config format: ws.headers.Host
+	// ⚠ **入站**配置里 headers.Host 是**字符串**（出站/客户端形态才是数组），
+	// 只认数组会让"服务端限制了 Host 的 ws 入站"生成的链接丢掉 host= → mihomo 等
+	// 按链接还原的客户端连不上（服务端返回 404）。
 	if headers, ok := ws["headers"].(map[string]interface{}); ok {
+		if h, ok := headers["Host"].(string); ok && h != "" {
+			return h
+		}
 		if hostArr, ok := headers["Host"].([]interface{}); ok && len(hostArr) > 0 {
 			if h, ok := hostArr[0].(string); ok {
 				return h
 			}
+		}
+		if h, ok := headers["host"].(string); ok && h != "" {
+			return h
 		}
 	}
 	// Frontend format: ws.settings._headers

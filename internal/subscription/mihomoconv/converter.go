@@ -582,6 +582,9 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 					}
 					wsOpts["path"] = path
 				}
+				if network == "httpupgrade" {
+					wsOpts["v2ray-http-upgrade"] = true
+				}
 				wsOpts["headers"] = headers
 				vmess["ws-opts"] = wsOpts
 			case "grpc":
@@ -818,6 +821,9 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		}
 		wsOpts["path"] = path
 		wsOpts["headers"] = headers
+		if network == "httpupgrade" {
+			wsOpts["v2ray-http-upgrade"] = true
+		}
 		// Also check for ed as separate query param
 		if _, exists := wsOpts["max-early-data"]; !exists {
 			if edStr := query.Get("ed"); edStr != "" {

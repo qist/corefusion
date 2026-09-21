@@ -809,6 +809,20 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			}
 			streamSettings["xhttpSettings"] = xhttpSettings
 		}
+		// httpupgrade：以前这里**完全没写** httpupgradeSettings → 客户端按默认 path "/" 连，
+		// 与设了 path/host 的服务端对不上 → 连不上（e2e 矩阵实测 xray 客户端失败）。
+		if huOpts, ok := node.Extra["httpupgrade-opts"].(map[string]interface{}); ok {
+			huSettings := map[string]interface{}{}
+			if path, ok := huOpts["path"].(string); ok && path != "" {
+				huSettings["path"] = path
+			}
+			if host, ok := huOpts["host"].(string); ok && host != "" {
+				huSettings["host"] = host
+			}
+			if len(huSettings) > 0 {
+				streamSettings["httpupgradeSettings"] = huSettings
+			}
+		}
 		if kcpOpts, ok := node.Extra["kcp-settings"].(map[string]interface{}); ok {
 			// 注意：Xray 25+ 已移除 kcpSettings.header / seed（写进客户端配置会直接
 			// "feature mkcp header & seed has been removed"，整份配置加载失败）——

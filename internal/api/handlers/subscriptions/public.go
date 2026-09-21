@@ -469,6 +469,10 @@ func (h *PublicHandler) collectShareLinks(
 				// No client email → skip nodes requiring authentication
 				continue
 			}
+			// ss/ss2022：链接需要 method，多用户 ss2022 的密码必须是 `服务端密钥:用户密钥`。
+			// 上面只挑了 clients/encryption，会把 2022-blake3 写成默认 aes-256-gcm、且密码只有
+			// 用户密钥 → 订阅链接（以及由链接派生的 mihomo 片段）连不上。
+			settings = linkSettingsForUser(config, settings, cfg.Protocol, getString(firstClient(settings), "password", ""))
 
 			nodeName := cfg.Remark
 			if nodeName == "" {
@@ -664,6 +668,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				// No client email → skip nodes requiring authentication (security)
 				continue
 			}
+			// SS-2022 多用户：客户端密码必须是 `服务端密钥:用户密钥`（只给用户密钥服务端会静默丢弃连接）。
+			// 链接的 settings 由 linkSettingsForUser 处理，节点（片段/订阅）用 effectivePassword。
+			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
 
 			nodeName := cfg.Remark
 			if nodeName == "" {
@@ -674,7 +681,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				Protocol:       cfg.Protocol,
 				Host:           host,
 				Port:           port,
-				Settings:       linkSettings,
+				Settings:       linkSettingsForUser(config, linkSettings, cfg.Protocol, password),
 				StreamSettings: getMap(config, "streamSettings"),
 				FinalMask:      finalMaskWithPortHop(config),
 			}
@@ -695,7 +702,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				TLS:        getString(ss, "security", "none") != "none",
 				ServerName: getTLSServerName(ss),
 				UUID:       uuid,
-				Password:   password,
+				Password:   effectivePassword,
 				Flow:       flow,
 				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
 				Extra:      buildExtra(config, ss, cfg.Protocol),
@@ -747,7 +754,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 						Protocol:       cfg.Protocol,
 						Host:           mirrorHostResolved,
 						Port:           mirrorPort,
-						Settings:       linkSettings,
+						Settings:       linkSettingsForUser(mirrorConfig, linkSettings, cfg.Protocol, password),
 						StreamSettings: getMap(mirrorConfig, "streamSettings"),
 						FinalMask:      getFinalMask(mirrorConfig),
 					}
@@ -762,7 +769,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 						TLS:        node.TLS,
 						ServerName: node.ServerName,
 						UUID:       uuid,
-						Password:   password,
+						Password:   effectivePassword,
 						Flow:       flow,
 						Encryption: node.Encryption,
 						Extra:      node.Extra,
@@ -1092,6 +1099,9 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				// No client email → skip nodes requiring authentication (security)
 				continue
 			}
+			// SS-2022 多用户：客户端密码必须是 `服务端密钥:用户密钥`（只给用户密钥服务端会静默丢弃连接）。
+			// 链接的 settings 由 linkSettingsForUser 处理，节点（片段/订阅）用 effectivePassword。
+			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
 
 			ss := getMap(config, "streamSettings")
 			nodeName := cfg.Remark
@@ -1113,7 +1123,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				TLS:        getString(ss, "security", "none") != "none",
 				ServerName: getTLSServerName(ss),
 				UUID:       uuid,
-				Password:   password,
+				Password:   effectivePassword,
 				Flow:       flow,
 				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
 				Extra:      extra,

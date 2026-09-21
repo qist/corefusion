@@ -103,6 +103,76 @@ func TestXrayNodeDropReasonPlainVlessTrojan(t *testing.T) {
 	}
 }
 
+// SS-2022 **多用户**的客户端密码必须是 `服务端密钥:用户密钥`（两段 base64 冒号拼接）。
+// 只给用户密钥时：xray 服务端**静默丢弃**连接（ss 认证失败不回错），客户端表现为"连不上"，
+// 面板自建的多用户 ss2022 入站（如 id=70/71）全都中招。
+// 实测对照：同一个入站同一个用户，冒号形式立即可通；只给用户密钥 / 只给服务端密钥 /
+// 把两段密钥按原始字节拼接再 base64 都不通。
+func TestSS2022MultiUserClientPassword(t *testing.T) {
+	const srv = "qrE42mwHhaa6aa/JPISHIlk+7YP/aIxks/pUHQxwIig="
+	const usr = "kLOV9ua9wx9q0i4o7a3oF/Pl4W5vS2HyfR5RgqR9KNo="
+	cases := []struct {
+		name, method, server, user, want string
+	}{
+		{"多用户 → 服务端:用户", "2022-blake3-aes-256-gcm", srv, usr, srv + ":" + usr},
+		{"单用户（用户密码就是服务端密钥）", "2022-blake3-aes-256-gcm", srv, srv, srv},
+		{"客户端没记密码 → 服务端密钥", "2022-blake3-aes-256-gcm", srv, "", srv},
+		{"老式 ss 原样", "aes-256-gcm", "", usr, usr},
+	}
+	for _, tc := range cases {
+		if got := ss2022UserPassword(tc.method, tc.server, tc.user); got != tc.want {
+			t.Errorf("%s: ss2022UserPassword = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// xray 形态：method 与用户密码在 settings，服务端密钥在 settings.password
+	xrayView := map[string]interface{}{"settings": map[string]interface{}{
+		"method": "2022-blake3-aes-256-gcm", "password": srv,
+		"clients": []interface{}{map[string]interface{}{"password": usr}},
+	}}
+	if got := ss2022ClientPassword(xrayView, "shadowsocks", usr); got != srv+":"+usr {
+		t.Errorf("xray 形态 = %q, want %q", got, srv+":"+usr)
+	}
+	// sing-box 形态：服务端密钥在**顶层** password（settings 里只有 method）
+	sbView := map[string]interface{}{
+		"password": srv,
+		"settings": map[string]interface{}{"method": "2022-blake3-aes-256-gcm"},
+	}
+	if got := ss2022ClientPassword(sbView, "shadowsocks", usr); got != srv+":"+usr {
+		t.Errorf("sing-box 形态 = %q, want %q", got, srv+":"+usr)
+	}
+	// 非 ss 协议不受影响
+	if got := ss2022ClientPassword(map[string]interface{}{"settings": map[string]interface{}{}}, "vless", "pw"); got != "pw" {
+		t.Errorf("非 ss 协议不该改密码, got %q", got)
+	}
+}
+
+// sing-box 入站的 shadowsocks：**method 必须同时写进 `settings.method`**。
+// 链接层（sharelink）从视图顶层取 `method`，而节点层（nodeEncryption → xray/sing-box/mihomo
+// 片段与订阅）读的是 `settings.method` —— 只写顶层会让 sing-box 入站派生的产物**丢 method**：
+// xray 报 `failed to build outbound config`、sing-box 报 `unknown method:`，客户端直接拒载（e2e 实测）。
+func TestSingboxSSViewCarriesMethodIntoSettings(t *testing.T) {
+	config := map[string]interface{}{
+		"type": "shadowsocks", "tag": "sb-ss", "listen": "0.0.0.0", "listen_port": float64(31019),
+		"method": "aes-256-gcm", "password": "server-key",
+		"users": []interface{}{map[string]interface{}{"name": "a@x.com", "password": "user-key"}},
+	}
+	view := singboxViewForUser(config, map[string]interface{}{"name": "a@x.com", "password": "user-key"}, "a@x.com")
+	if view["method"] != "aes-256-gcm" {
+		t.Errorf("视图顶层 method = %v, want aes-256-gcm（链接层要用）", view["method"])
+	}
+	settings, _ := view["settings"].(map[string]interface{})
+	if settings == nil {
+		t.Fatal("视图缺 settings")
+	}
+	if settings["method"] != "aes-256-gcm" {
+		t.Errorf("settings.method = %v, want aes-256-gcm（节点层要用，缺了产物就没 method）", settings["method"])
+	}
+	if got := nodeEncryption("shadowsocks", settings); got != "aes-256-gcm" {
+		t.Errorf("nodeEncryption = %q, want aes-256-gcm", got)
+	}
+}
+
 // 二维码弹窗的"Mihomo 配置"必须与 mihomo 订阅**同源**（同一条 mihomoconv 链路），
 // 否则又会出现"弹窗里能粘、订阅里参数不全"的两套口径。
 func TestMihomoProxySnippetUsesSubscriptionPipeline(t *testing.T) {

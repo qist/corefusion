@@ -212,7 +212,13 @@ func singboxViewForUser(config map[string]interface{}, user map[string]interface
 		"encryption": encryption,
 	}
 	if method, ok := config["method"].(string); ok && method != "" {
-		out["method"] = method // ss：sharelink 从 settings/clients 之外取 method
+		out["method"] = method // ss：sharelink（链接层）从 settings/clients 之外取 method
+		// ⚠ 另一套口径必须一致：节点层（nodeEncryption → xray/sing-box/mihomo 片段与订阅）
+		// 读的是 `settings.method`。只写顶层会让 sing-box 入站派生的 ss 产物**丢 method**，
+		// xray 报 `failed to build outbound`、sing-box 报 `unknown method:` → 连不上（e2e 实测）。
+		if ss, ok := out["settings"].(map[string]interface{}); ok && ss != nil {
+			ss["method"] = method
+		}
 	}
 	out["streamSettings"] = singboxToXrayStreamSettings(config)
 	return out

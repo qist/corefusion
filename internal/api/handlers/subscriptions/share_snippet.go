@@ -79,11 +79,91 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 		TLS:        getString(ss, "security", "none") != "none",
 		ServerName: getTLSServerName(ss),
 		UUID:       uuid,
-		Password:   getString(client, "password", ""),
+		Password:   ss2022ClientPassword(view, cfg.Protocol, getString(client, "password", "")),
 		Flow:       getString(client, "flow", ""),
 		Encryption: nodeEncryption(cfg.Protocol, settings),
 		Extra:      buildExtra(view, ss, cfg.Protocol),
 	}
+}
+
+// ss2022UserPassword 计算 **Shadowsocks-2022 多用户** 客户端该用的密码。
+//
+//   - 老式 ss（aes-256-gcm 等）→ 用户密码原样；
+//   - SS-2022 单用户（用户密码就是服务端密钥）→ 服务端密钥；
+//   - SS-2022 **多用户** → `服务端密钥:用户密钥`（两段 base64 用冒号拼接，SS-2022 的 iPSK 约定）。
+//
+// 只写"用户密钥"的后果（e2e 实测）：xray 服务端**静默丢弃**连接（shadowsocks 认证失败不回错），
+// 表现就是"配置能加载、节点连不上" —— 面板自建的多用户 ss2022 入站（id=70/71）全都中招。
+// 实测对照（同一入站同一用户）：冒号形式**立即可通**；只给用户密钥、只给服务端密钥、
+// 或把两段密钥按原始字节拼接后再 base64 都不通。
+func ss2022UserPassword(method, serverKey, userKey string) string {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(method)), "2022-blake3") {
+		return userKey // 老式 ss：密码就是用户密码
+	}
+	serverKey = strings.TrimSpace(serverKey)
+	userKey = strings.TrimSpace(userKey)
+	if serverKey == "" {
+		return userKey
+	}
+	if userKey == "" || userKey == serverKey {
+		return serverKey // 单用户：服务端密钥即客户端密码
+	}
+	return serverKey + ":" + userKey
+}
+
+// ss2022ClientPassword 从"视图配置"算客户端密码：method 与用户密钥在 settings，
+// 服务端密钥在 settings.password（xray 形态）或顶层 password（sing-box 形态，见 singboxViewForUser）。
+func ss2022ClientPassword(config map[string]interface{}, protocol, userPassword string) string {
+	settings := getMap(config, "settings")
+	method := nodeEncryption(protocol, settings)
+	if !strings.HasPrefix(strings.ToLower(method), "2022-blake3") {
+		return userPassword
+	}
+	serverKey := getString(settings, "password", "")
+	if serverKey == "" {
+		serverKey = getString(config, "password", "")
+	}
+	return ss2022UserPassword(method, serverKey, userPassword)
+}
+
+// linkSettingsForUser 构造交给 `sharelink.Generate` 的 settings：
+//
+//   - ss / ss2022：必须把 **method** 带上（订阅路径的 linkSettings 只挑了 clients/encryption，
+//     会让 2022-blake3 的节点在链接里被写成默认的 aes-256-gcm → 客户端连不上）；
+//     多用户 ss2022 的密码还要是 `服务端密钥:用户密钥`（链接层从 clients[0].password 取密码，
+//     而 mihomo 片段是从**链接**派生的，漏了它 mihomo 也一起连不上）；
+//   - 其它协议：原样返回。
+func linkSettingsForUser(config, settings map[string]interface{}, protocol, userPassword string) map[string]interface{} {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "shadowsocks", "shadowsocks2022", "ss":
+	default:
+		return settings
+	}
+	out := make(map[string]interface{}, len(settings)+2)
+	for k, v := range settings {
+		out[k] = v
+	}
+	if method := nodeEncryption(protocol, getMap(config, "settings")); method != "" {
+		out["method"] = method
+	}
+	pwd := ss2022ClientPassword(config, protocol, userPassword)
+	clients, _ := out["clients"].([]interface{})
+	if len(clients) == 0 {
+		out["password"] = pwd
+		return out
+	}
+	copied := make([]interface{}, len(clients))
+	copy(copied, clients)
+	if first, ok := clients[0].(map[string]interface{}); ok && first != nil {
+		one := make(map[string]interface{}, len(first)+1)
+		for k, v := range first {
+			one[k] = v
+		}
+		one["password"] = pwd
+		copied[0] = one
+	}
+	out["clients"] = copied
+	return out
 }
 
 // nodeEncryption 返回客户端配置里该协议的"加密"字段（协议相关，别混用）：

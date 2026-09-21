@@ -544,6 +544,15 @@ func singboxNodeDropReason(node *formatter.Node) string {
 	if singboxUnsupportedTransports[strings.ToLower(node.Transport)] {
 		return "transport=" + node.Transport
 	}
+	// REALITY 一律不进 sing-box 格式：xray ≥26.9.8 的 REALITY 服务端要求 ClientHello 带
+	// `X25519MLKEM768` key share 且排在 X25519 之前（xtls/reality 提交 8cdf7bf9c7f0）；
+	// sing-box —— **官方构建同样如此**（实测 1.14.1 一致）—— 的 uTLS chrome 指纹不发它，
+	// 且没有任何配置项能绕过 → 服务端静默回落到真实目标，客户端报 `reality verification failed`
+	// （上游 issue SagerNet/sing-box#4520）。发给 sing-box 用户就是"能加载、连不上"的死节点，
+	// 所以整条剔除并说明原因；同一节点在 xray / mihomo 两个格式里照常输出。
+	if _, isReality := node.Extra["reality-opts"].(map[string]interface{}); isReality {
+		return "reality(sing-box#4520: xray≥26.9.8 需 X25519MLKEM768 key share，sing-box 不发也无配置可绕)"
+	}
 	// VLESS 加密（服务端 settings.encryption = mlkem768x25519plus…）：sing-box 至今
 	// **没有** vless 出站的 encryption 字段（1.15.0-alpha 的 VLESSOutboundOptions 里也没有），
 	// 写出来的就是"明文 vless"，而服务端在等加密握手 → 连不上。

@@ -75,6 +75,7 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 	applyClientCredentials(cfg.Protocol, client, view, &password, extra)
 	return &formatter.Node{
 		Name:       name,
+		CoreType:   cfg.CoreType,
 		Protocol:   protocol,
 		Host:       host,
 		Port:       port,

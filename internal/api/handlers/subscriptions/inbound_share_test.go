@@ -245,3 +245,27 @@ func TestClientCredentialsAndSSMethodNormalization(t *testing.T) {
 		t.Errorf("不该改动其它 method: %q", got)
 	}
 }
+
+// REALITY 不能进 sing-box 格式：xray ≥26.9.8 的 REALITY 要求 ClientHello 带 X25519MLKEM768
+// key share（排在 X25519 之前），而 sing-box（含**官方** 1.14.1）的 uTLS chrome 指纹不发它、
+// 也没有配置项可绕 → 服务端静默回落真实目标、客户端报 reality verification failed
+// （上游 issue SagerNet/sing-box#4520）。发给用户就是"能加载、连不上"的死节点。
+// 同一节点在 xray / mihomo 格式里照常输出（那两个客户端没事）。
+func TestSingboxDropsReality(t *testing.T) {
+	reality := &formatter.Node{
+		Name: "n", Protocol: "vless", Transport: "tcp", TLS: true,
+		Extra: map[string]interface{}{
+			"reality-opts": map[string]interface{}{"public-key": "PUB", "short-id": "sid"},
+		},
+	}
+	if got := singboxNodeDropReason(reality); got == "" {
+		t.Error("REALITY 节点应被 sing-box 格式剔除")
+	}
+	plainTLS := &formatter.Node{
+		Name: "n2", Protocol: "vless", Transport: "tcp", TLS: true,
+		Extra: map[string]interface{}{"alpn": []string{"h2"}},
+	}
+	if got := singboxNodeDropReason(plainTLS); got != "" {
+		t.Errorf("普通 TLS 节点不该被剔除, got %q", got)
+	}
+}

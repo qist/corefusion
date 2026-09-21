@@ -138,19 +138,24 @@ func TestRealityParamsFromEditorShape(t *testing.T) {
 		t.Errorf("指纹/SNI 丢了: fp=%v sni=%q", node.Extra["client-fingerprint"], node.ServerName)
 	}
 
-	// sing-box：必须是 tls.reality（public_key / short_id）+ uTLS，不能是普通 TLS
-	sb, ok := renderShareSnippet("singbox", "", node)
-	if !ok {
-		t.Fatal("sing-box 应能产出片段")
+	// sing-box：REALITY **一律剔除**并给原因 —— xray ≥26.9.8 的 REALITY 要求 ClientHello 带
+	// X25519MLKEM768 key share（排在 X25519 之前），sing-box（含官方 1.14.1）的 uTLS chrome
+	// 指纹不发它、也无配置项可绕 → 服务端静默回落真实目标，客户端报 reality verification failed
+	// （上游 issue SagerNet/sing-box#4520）。发出去就是"能加载、连不上"的死节点。
+	if sb, ok := renderShareSnippet("singbox", "", node); ok {
+		t.Fatalf("REALITY 不该产出 sing-box 片段（应为剔除+原因）:\n%s", sb)
 	}
-	for _, want := range []string{`"public_key": "` + pbk + `"`, `"short_id": "6fb5a09e"`, `"fingerprint": "chrome"`, `"reality"`} {
-		if !strings.Contains(sb, want) {
-			t.Errorf("sing-box 片段缺 %s:\n%s", want, sb)
-		}
+	if reason := singboxNodeDropReason(node); !strings.Contains(reason, "reality") || !strings.Contains(reason, "4520") {
+		t.Errorf("剔除原因应指向 #4520，got %q", reason)
 	}
-	// 抗量子校验（mldsa65Verify）只有 xray 有这个字段：sing-box / mihomo 都不写
-	if strings.Contains(sb, "mldsa65") {
-		t.Errorf("sing-box 不该写 mldsa65Verify（它没有这个字段）:\n%s", sb)
+	// xray / mihomo 两个客户端不受影响：照常输出
+	xraySnip, xrayOK := renderShareSnippet("xray", "", node)
+	if !xrayOK || !strings.Contains(xraySnip, `"realitySettings"`) {
+		t.Errorf("xray 片段应保留 REALITY: ok=%v\n%s", xrayOK, xraySnip)
+	}
+	// mihomo 的真实片段由**链接**转换而来（这里没有链接），所以只断言"不该被剔除"
+	if r := mihomoNodeDropReason(node); r != "" {
+		t.Errorf("mihomo 不该剔除 REALITY 节点: %s", r)
 	}
 
 	// xray：必须 security=reality + realitySettings（publicKey/shortId/fingerprint）

@@ -698,6 +698,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
 			node := &formatter.Node{
 				Name:       nodeName,
+				CoreType:   cfg.CoreType,
 				Protocol:   protocol,
 				Host:       host,
 				Port:       port,
@@ -765,6 +766,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 
 					mirrorNode := &formatter.Node{
 						Name:       mirrorNodeName,
+						CoreType:   cfg.CoreType,
 						Protocol:   protocol,
 						Host:       mirrorHostResolved,
 						Port:       mirrorPort,
@@ -1121,6 +1123,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
 			node := formatter.Node{
 				Name:       nodeName,
+				CoreType:   cfg.CoreType,
 				Protocol:   protocol,
 				Host:       host,
 				Port:       port,
@@ -2319,6 +2322,13 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			}
 			if len(ro) > 0 {
 				extra["reality-opts"] = ro
+				// 供 sing-box 格式剔除判定：xray ≥26.9.8 的 REALITY 服务端要求 ClientHello 带
+				// X25519MLKEM768 key share，而 sing-box（含官方构建）的 uTLS chrome 指纹不发它、
+				// 也无法配置绕过（上游 issue SagerNet/sing-box#4520）→ 发给 sing-box 用户就是死节点。
+				// 这里按**配置形状**区分服务端核心：sing-box 入站是 `type` 形状，xray 是 `protocol` 形状。
+				if _, isSingboxInbound := config["type"].(string); !isSingboxInbound {
+					extra["_xray-reality"] = true
+				}
 			}
 			if rp.Fingerprint != "" {
 				extra["client-fingerprint"] = rp.Fingerprint

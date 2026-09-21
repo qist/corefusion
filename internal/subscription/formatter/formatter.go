@@ -178,10 +178,11 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			}
 		}
 
-		// Add VLESS encryption if configured
-		if node.Protocol == "vless" && node.Encryption != "" && node.Encryption != "none" {
-			ob["packet_encoding"] = "xudp" // sing-box uses packet_encoding for VLESS encryption
-		}
+		// VLESS 加密（node.Encryption 形如 mlkem768x25519plus.native.0rtt.xxx）在 sing-box 里
+		// **表达不了**：VLESSOutboundOptions 没有 encryption 字段（1.15.0-alpha 实测），
+		// 所以这里不写任何东西 —— 这类节点会由 singboxNodeDropReason 整条剔除并给前端原因，
+		// 避免发一个"少了加密、看着能用其实连不上"的明文 vless 出去。
+		// （以前这里错误地补了 packet_encoding=xudp，那和 VLESS 加密毫无关系。）
 
 		// REALITY：sing-box 客户端必须写 tls.reality（public_key / short_id），缺了它不会
 		// 报错，而是把 REALITY 当普通 TLS 握手 → 永远连不上（这类节点在面板里很多）。
@@ -453,10 +454,11 @@ func anyToInt(v interface{}) int {
 // 拒绝加载**整个**订阅（多个节点用了同一个备注时很容易踩到）。
 // 生成出来的新名字同样要登记：否则"已有一个节点本身就叫 X 2"时，两个 X 去重后会
 // 与它再撞一次，等于没去重。
+//
+// 名字先过 SanitizeNodeName：节点备注是用户随便填的（可能是中文、带空格/引号，
+// 甚至夹了换行/控制字符），tag 会原样写进客户端配置，必须保证它不会把配置写坏。
 func uniqueNodeTag(name string, used map[string]int) string {
-	if name == "" {
-		name = "node"
-	}
+	name = SanitizeNodeName(name)
 	if used[name] == 0 {
 		used[name] = 1
 		return name
@@ -469,6 +471,45 @@ func uniqueNodeTag(name string, used map[string]int) string {
 			return candidate
 		}
 	}
+}
+
+// SanitizeNodeName 清洗"节点名"（mihomo 的 name / sing-box、xray 的 tag 都用它）。
+//
+// 实测三种客户端都能接受任意 UTF-8（中文、空格、括号、引号、emoji 都没问题，
+// xray 连 tag 里的换行都收），所以**不做 ASCII 化** —— 这个名字就是客户端列表里
+// 显示给用户看的东西，改成 node-1 反而没法认。真正要防的是"把配置写坏"：
+//   - 控制字符（\n \t \r 及 C0/C1）→ 空格：YAML 里会变成折行或注入，JSON 里是无意义字符；
+//   - 连续空白折叠成一个、首尾去空格（客户端列表里也更好看）；
+//   - 过长（>100 字符）截断，避免某些客户端/规则文件对长度敏感；
+//   - 清洗后为空 → "node"。
+func SanitizeNodeName(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	lastSpace := false
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			r = ' '
+		}
+		if r == ' ' || r == '\u3000' {
+			if lastSpace || b.Len() == 0 {
+				continue
+			}
+			lastSpace = true
+			b.WriteRune(' ')
+			continue
+		}
+		lastSpace = false
+		b.WriteRune(r)
+	}
+	out := strings.TrimSpace(b.String())
+	if len([]rune(out)) > 100 {
+		out = string([]rune(out)[:100])
+		out = strings.TrimSpace(out)
+	}
+	if out == "" {
+		return "node"
+	}
+	return out
 }
 
 // buildSingboxTransport builds a sing-box transport object from node transport params.
@@ -676,7 +717,14 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			// 但把 raw 改写成 tcp 属于"改了用户的协议描述"，用户明确要求保持原样。
 			streamSettings["network"] = strings.ToLower(strings.TrimSpace(node.Transport))
 		}
-		if node.TLS || xrayRequireTLS[node.Protocol] {
+		// REALITY 与 TLS 是**互斥**的两种 security：REALITY 的握手参数全在 realitySettings 里，
+		// xray 只看 security 指向的那一段，同时写 tlsSettings 属于自相矛盾（用户明确要求去掉）。
+		// 所以先判断有没有 reality-opts，有就只写 realitySettings。
+		realityOpts, hasReality := node.Extra["reality-opts"].(map[string]interface{})
+		if hasReality && realityOpts == nil {
+			hasReality = false
+		}
+		if !hasReality && (node.TLS || xrayRequireTLS[node.Protocol]) {
 			streamSettings["security"] = "tls"
 			tlsSettings := map[string]interface{}{}
 			if node.ServerName != "" {
@@ -695,7 +743,7 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			streamSettings["tlsSettings"] = tlsSettings
 		}
 		// Reality
-		if ro, ok := node.Extra["reality-opts"].(map[string]interface{}); ok {
+		if hasReality {
 			streamSettings["security"] = "reality"
 			realitySettings := map[string]interface{}{}
 			// 客户端 REALITY 用的是 serverName（**单数**）；serverNames 是**服务端**字段，
@@ -704,11 +752,22 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			if node.ServerName != "" {
 				realitySettings["serverName"] = node.ServerName
 			}
-			if pk, ok := ro["public-key"].(string); ok && pk != "" {
-				realitySettings["publicKey"] = pk
+			if pk, ok := realityOpts["public-key"].(string); ok && pk != "" {
+				// 客户端公钥字段按官方实现（XTLS/REALITY）写 **password**
+				//（"服务端私钥生成的公钥"，客户端当密码用）；不再写 `publicKey`
+				//（那是 xray-core 的别名，用户要求只留官方字段 —— 输入侧两种都认，
+				// 见 sharelink.RealityClientParams）。
+				realitySettings["password"] = pk
 			}
-			if sid, ok := ro["short-id"].(string); ok && sid != "" {
+			if sid, ok := realityOpts["short-id"].(string); ok && sid != "" {
 				realitySettings["shortId"] = sid
+			}
+			if spx, ok := realityOpts["spider-x"].(string); ok && spx != "" {
+				realitySettings["spiderX"] = spx
+			}
+			// 抗量子校验（服务端开了 mldsa65Seed 时才有）：xray 客户端的 mldsa65Verify
+			if pqv, ok := realityOpts["mldsa65-verify"].(string); ok && pqv != "" {
+				realitySettings["mldsa65Verify"] = pqv
 			}
 			if fp := extraFingerprint(node.Extra); fp != "" {
 				realitySettings["fingerprint"] = fp

@@ -9,6 +9,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/sharelink"
+	"gopkg.in/yaml.v3"
 )
 
 func TestNormalizeShareFormat(t *testing.T) {
@@ -75,8 +76,10 @@ func TestMihomoSnippetFromNode(t *testing.T) {
 // sing-box 表达不了的传输（xhttp）必须与订阅一样被判为"不支持"，
 // 否则用户拿到的片段会让客户端拒绝加载整份配置。
 func TestSingboxSnippetDropsUnsupportedTransport(t *testing.T) {
+	// 主机用私有地址：这条测的是"传输支持性"，而公网 IP + 明文 vless
+	// 会被 xray 26 的明文限制整条剔除（见 TestXrayNodeDropReasonPlainVlessTrojan）。
 	node := &formatter.Node{
-		Name: "x1", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		Name: "x1", Protocol: "vless", Host: "127.0.0.1", Port: 443,
 		Transport: "xhttp", UUID: "11111111-1111-1111-1111-111111111111",
 	}
 	if _, ok := renderShareSnippet("singbox", "vless://11111111-1111-1111-1111-111111111111@1.2.3.4:443", node); ok {
@@ -85,6 +88,242 @@ func TestSingboxSnippetDropsUnsupportedTransport(t *testing.T) {
 	// 同一节点在 xray 侧是合法的
 	if _, ok := renderShareSnippet("xray", "", node); !ok {
 		t.Error("xhttp 在 xray 侧应可渲染")
+	}
+}
+
+// REALITY 参数在面板里有三种存法（扁平 / settings[] / 下划线），**任何一种都不能丢**：
+// 丢了以后 sing-box 片段只剩 tls.enabled=true、xray 片段只剩 security:tls，
+// 客户端做的是普通 TLS 握手 → 永远连不上（用户报的 "json 完全生成错误"）。
+//
+// 面板编辑器存的是 settings[] 形态（公钥写在 settings[0].password），以前节点侧只认扁平字段 → 全丢。
+func TestRealityParamsFromEditorShape(t *testing.T) {
+	const pbk = "vMvI99AM1dMKeJ2nK2DlLTtBf26X3uEdyVrnDoQJPV4"
+	cfg := &entity.InboundConfig{Tag: "reality-in", Protocol: "vless", Listen: "0.0.0.0", Port: 34201}
+	config := map[string]interface{}{
+		"streamSettings": map[string]interface{}{
+			"network":  "raw",
+			"security": "reality",
+			"realitySettings": map[string]interface{}{
+				"target":      "www.intel.com:443",
+				"serverNames": []interface{}{"www.intel.com"},
+				"privateKey":  "gPlWleDkps9iQrE-Gxe_hnDSjKXKEin3kmCczYDMKWw",
+				"shortIds":    []interface{}{"6fb5a09e", "a5395d21"},
+				"settings": []interface{}{map[string]interface{}{
+					"fingerprint": "chrome",
+					"password":    pbk, // ← 公钥
+				}},
+			},
+		},
+		"settings": map[string]interface{}{
+			"clients": []interface{}{map[string]interface{}{
+				"email": "4pqd63@xray.com", "id": "0d4fca91-91c2-4cea-88e3-b5183c7d2875",
+			}},
+		},
+	}
+	view := shareViewForUser("reality-in", config, inboundUser{label: "4pqd63@xray.com", record: map[string]interface{}{
+		"email": "4pqd63@xray.com", "id": "0d4fca91-91c2-4cea-88e3-b5183c7d2875",
+	}})
+	ss := getMap(view, "streamSettings")
+	node := formatterNodeForShare("reality-in", cfg, view, firstClient(getMap(view, "settings")), "127.0.0.1", 34201)
+
+	rp := sharelink.RealityClientParams(ss)
+	if rp.PublicKey != pbk || rp.ShortID != "6fb5a09e" || rp.Fingerprint != "chrome" || rp.ServerName != "www.intel.com" {
+		t.Fatalf("RealityClientParams = %+v", rp)
+	}
+	ro, _ := node.Extra["reality-opts"].(map[string]interface{})
+	if ro == nil || ro["public-key"] != pbk || ro["short-id"] != "6fb5a09e" {
+		t.Fatalf("节点缺 reality-opts: %#v", node.Extra)
+	}
+	if node.Extra["client-fingerprint"] != "chrome" || node.ServerName != "www.intel.com" {
+		t.Errorf("指纹/SNI 丢了: fp=%v sni=%q", node.Extra["client-fingerprint"], node.ServerName)
+	}
+
+	// sing-box：必须是 tls.reality（public_key / short_id）+ uTLS，不能是普通 TLS
+	sb, ok := renderShareSnippet("singbox", "", node)
+	if !ok {
+		t.Fatal("sing-box 应能产出片段")
+	}
+	for _, want := range []string{`"public_key": "` + pbk + `"`, `"short_id": "6fb5a09e"`, `"fingerprint": "chrome"`, `"reality"`} {
+		if !strings.Contains(sb, want) {
+			t.Errorf("sing-box 片段缺 %s:\n%s", want, sb)
+		}
+	}
+	// 抗量子校验（mldsa65Verify）只有 xray 有这个字段：sing-box / mihomo 都不写
+	if strings.Contains(sb, "mldsa65") {
+		t.Errorf("sing-box 不该写 mldsa65Verify（它没有这个字段）:\n%s", sb)
+	}
+
+	// xray：必须 security=reality + realitySettings（publicKey/shortId/fingerprint）
+	xr, ok := renderShareSnippet("xray", "", node)
+	if !ok {
+		t.Fatal("xray 应能产出片段")
+	}
+	for _, want := range []string{`"security": "reality"`, `"password": "` + pbk + `"`, `"shortId": "6fb5a09e"`, `"fingerprint": "chrome"`} {
+		if !strings.Contains(xr, want) {
+			t.Errorf("xray 片段缺 %s:\n%s", want, xr)
+		}
+	}
+	// 公钥只写官方字段 password（不再写 xray-core 的别名 publicKey）
+	if strings.Contains(xr, `"publicKey"`) {
+		t.Errorf("xray REALITY 出站不该再写 publicKey 别名:\n%s", xr)
+	}
+	if strings.Contains(xr, `"security": "tls"`) {
+		t.Errorf("xray 片段退化成普通 TLS:\n%s", xr)
+	}
+	// security=reality 时**不能再写 tlsSettings**（xray 只认 security 指向的那一段，
+	// 两个同时出现是自相矛盾；用户明确要求去掉）
+	if strings.Contains(xr, `"tlsSettings"`) {
+		t.Errorf("REALITY 出站不该带 tlsSettings:\n%s", xr)
+	}
+	// 真正的 TLS（非 REALITY）节点照旧要写 tlsSettings
+	tlsNode := &formatter.Node{
+		Name: "t", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111", TLS: true, ServerName: "a.com",
+	}
+	if tlsText, ok := renderShareSnippet("xray", "", tlsNode); !ok || !strings.Contains(tlsText, `"tlsSettings"`) {
+		t.Errorf("普通 TLS 节点应仍带 tlsSettings (ok=%v):\n%s", ok, tlsText)
+	}
+
+	// 链接（mihomo/sing-box/xray/uri 四种产物的参数必须一致）
+	link := sharelink.Generate(sharelink.Node{
+		Tag: "reality-in", Protocol: "vless", Host: "127.0.0.1", Port: 34201,
+		Settings: getMap(view, "settings"), StreamSettings: ss,
+	})
+	for _, want := range []string{"security=reality", "pbk=" + pbk, "sid=6fb5a09e", "sni=www.intel.com", "fp=chrome"} {
+		if !strings.Contains(link, want) {
+			t.Errorf("链接缺 %s:\n%s", want, link)
+		}
+	}
+}
+
+// 节点名可能带中文/空格/引号/换行，mihomo 的 `- name:` 是**手写 YAML**，
+// 必须保证：① 特殊字符被正确引号转义；② 换行/控制字符不会把配置"折"出额外键（YAML 注入）。
+func TestMihomoYAMLNodeNamesAreEscaped(t *testing.T) {
+	names := []string{
+		"Node-zhhrup",
+		"香港节点-01",
+		"node (镜像 N3)",
+		`node "quoted"`,
+		`evil: x`,
+		"node #1",
+		"node\n    type: direct", // 想借换行注入别的键
+		"node\ttab",
+		"",
+	}
+	items := make([]renderedSubscriptionNode, 0, len(names))
+	for _, n := range names {
+		items = append(items, renderedSubscriptionNode{ProxyMap: map[string]interface{}{
+			"name": n, "type": "trojan", "server": "1.2.3.4", "port": 443, "password": "pw",
+		}})
+	}
+	maps := buildRenderedMihomoProxyMaps(items)
+	yamlText := buildMihomoProxiesYAML(maps)
+	if len(maps) != len(names) {
+		t.Fatalf("代理数 = %d, want %d", len(maps), len(names))
+	}
+
+	// 必须能被真正的 YAML 解析器解开，且每个代理只有 name/type/server/port/password
+	var parsed struct {
+		Proxies []map[string]interface{} `yaml:"proxies"`
+	}
+	if err := yaml.Unmarshal([]byte(yamlText), &parsed); err != nil {
+		t.Fatalf("生成的 YAML 解析失败: %v\n%s", err, yamlText)
+	}
+	if len(parsed.Proxies) != len(names) {
+		t.Fatalf("解析出 %d 个代理, want %d\n%s", len(parsed.Proxies), len(names), yamlText)
+	}
+	wantNames := []string{
+		"Node-zhhrup",
+		"香港节点-01",
+		"node (镜像 N3)",
+		"node \"quoted\"",
+		"evil: x",
+		"node #1",
+		"node type: direct",
+		"node tab",
+		"node",
+	}
+	for i, want := range wantNames {
+		got, _ := parsed.Proxies[i]["name"].(string)
+		if got != want {
+			t.Errorf("第 %d 个代理名 = %q, want %q", i, got, want)
+		}
+		if _, injected := parsed.Proxies[i]["type"]; !injected {
+			t.Errorf("第 %d 个代理丢了 type（可能被名字里的换行冲掉）", i)
+		}
+		if got, _ := parsed.Proxies[i]["type"].(string); got != "trojan" {
+			t.Errorf("第 %d 个代理的 type = %q（换行注入？）", i, got)
+		}
+	}
+}
+
+// VLESS 加密（服务端 settings.encryption = mlkem768x25519plus…）必须带到客户端：
+//   - xray：写进 users[].encryption（+ settings.encryption）；少写就是明文 vless，
+//     服务端在等加密握手 → 连不上，而且刚好会撞上"明文 vless 不许连公网地址"的限制；
+//   - mihomo：写 `encryption`；
+//   - sing-box：**没有** vless 出站的 encryption 字段（1.15.0-alpha 实测）→ 整条剔除并说明原因，
+//     不能发一个"看着能用"的明文 vless 出去（用户报的"sing-box 不支持 也显示了"）。
+func TestVlessEncryptionPreservedXrayAndDroppedForSingbox(t *testing.T) {
+	const enc = "mlkem768x25519plus.native.0rtt.z0Kqd4kq3-iwn2Lw0DGw1hAT_voDLIFq-7a5UmUL8AI"
+	cfg := &entity.InboundConfig{Tag: "enc-in", Protocol: "vless", Listen: "0.0.0.0", Port: 29660}
+	config := map[string]interface{}{
+		"streamSettings": map[string]interface{}{"network": "raw", "security": "none"},
+		"settings": map[string]interface{}{
+			"clients":    []interface{}{map[string]interface{}{"email": "a@x", "id": "c74f3777-0af0-4050-92ff-285b388111b0"}},
+			"encryption": enc,
+			"decryption": "mlkem768x25519plus.native.600s.server-key", // 服务端字段，不该进客户端配置
+		},
+	}
+	view := shareViewForUser("enc-in", config, inboundUser{label: "a@x", record: map[string]interface{}{
+		"email": "a@x", "id": "c74f3777-0af0-4050-92ff-285b388111b0",
+	}})
+	node := formatterNodeForShare("enc-in", cfg, view, firstClient(getMap(view, "settings")), "172.18.44.88", 29660)
+	if node.Encryption != enc {
+		t.Fatalf("节点丢了 VLESS 加密: %q", node.Encryption)
+	}
+	// 有 VLESS 加密 → 不属于"明文 vless"，公网/域名地址同样允许
+	if got := xrayNodeDropReason(node); got != "" {
+		t.Errorf("带 VLESS 加密的节点不该被剔除, got %q", got)
+	}
+
+	// xray 片段必须带上（user 上 + settings 上各一份，兼容新旧客户端）
+	text, ok := renderShareSnippet("xray", "", node)
+	if !ok {
+		t.Fatal("xray 应能产出片段")
+	}
+	if !strings.Contains(text, `"encryption": "`+enc+`"`) {
+		t.Errorf("xray 片段没带 VLESS 加密:\n%s", text)
+	}
+	if strings.Contains(text, "server-key") {
+		t.Errorf("服务端 decryption 不该出现在客户端配置里:\n%s", text)
+	}
+
+	// sing-box 表达不了 → 剔除 + 给原因
+	if got := singboxNodeDropReason(node); got != "vless-encryption" {
+		t.Errorf("singboxNodeDropReason = %q, want vless-encryption", got)
+	}
+	if got := shareUnsupportedReason("singbox", node); got != "vless-encryption" {
+		t.Errorf("shareUnsupportedReason(singbox) = %q, want vless-encryption", got)
+	}
+	if snippet, ok := renderShareSnippet("singbox", "", node); ok || snippet != "" {
+		t.Errorf("sing-box 不该产出 VLESS 加密片段, got ok=%v", ok)
+	}
+
+	// mihomo：vless 的片段走链接（mihomoconv），链接里的 encryption 必须落到 YAML
+	link := "vless://c74f3777-0af0-4050-92ff-285b388111b0@172.18.44.88:29660?encryption=" + enc + "&security=none&type=tcp#enc-in"
+	if snippet, ok := renderShareSnippet("mihomo", link, node); !ok || !strings.Contains(snippet, "encryption: "+enc) {
+		t.Errorf("mihomo 片段没带 VLESS 加密 (ok=%v):\n%s", ok, snippet)
+	}
+
+	// nodeEncryption：ss 取 method、vless 取 encryption、none/空 一律空串
+	if got := nodeEncryption("shadowsocks", map[string]interface{}{"method": "aes-256-gcm"}); got != "aes-256-gcm" {
+		t.Errorf("ss encryption = %q, want aes-256-gcm", got)
+	}
+	if got := nodeEncryption("vless", map[string]interface{}{"encryption": "none"}); got != "" {
+		t.Errorf("vless encryption=none 应为空串, got %q", got)
+	}
+	if got := nodeEncryption("trojan", map[string]interface{}{"method": "x"}); got != "" {
+		t.Errorf("trojan 不该有加密字段, got %q", got)
 	}
 }
 
@@ -334,7 +573,9 @@ func TestKcpTransportIsNotDegradedToTCP(t *testing.T) {
 	view := shareViewForUser("kcp-in", config, inboundUser{label: "a@x", record: map[string]interface{}{
 		"email": "a@x", "id": "11111111-1111-1111-1111-111111111111",
 	}})
-	node := formatterNodeForShare("kcp-in", cfg, view, firstClient(getMap(view, "settings")), "1.2.3.4", 54461)
+	// 用私有地址：这条测的是"传输不被降级 / xray 能带全 kcp 参数"，
+	// 公网地址 + 明文 vless 会被 xray 26 的明文限制整条剔除（另一条测试覆盖）。
+	node := formatterNodeForShare("kcp-in", cfg, view, firstClient(getMap(view, "settings")), "127.0.0.1", 54461)
 	if node.Transport != "kcp" {
 		t.Fatalf("transport = %q, want kcp（mkcp 只做命名归一，不能降级成 tcp）", node.Transport)
 	}

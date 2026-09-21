@@ -488,6 +488,10 @@ export default {
       snippetHint: '可直接粘贴到 {client} 配置中的片段',
       snippetUnsupported: '{client} 不支持该协议，无法生成片段',
       snippetUnsupportedTransport: '{client} 不支持 {transport} 传输，已不生成片段（写进去连不上）',
+      shareNoUsers: '该入站没有可分享的用户（可能全部已暂停）',
+      shareLoadFailed: '从后端获取分享数据失败，请重试',
+      snippetUnsupportedPlain: '{client} 不支持"明文 {protocol} 连公网地址"（xray 26 起会整份拒载这类配置），已不生成片段',
+      snippetUnsupportedVlessEncryption: '{client} 不支持 VLESS 加密（encryption），已不生成片段（写进去连不上）',
       qrDataTooLarge: '二维码数据过大，请改用复制链接导入',
       // 流量重置
       resetTraffic: '重置流量',

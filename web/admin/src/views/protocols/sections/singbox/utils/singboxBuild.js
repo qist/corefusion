@@ -322,7 +322,7 @@ export function buildInbound(ib) {
   }
   // Reality 公钥（pbk）：sing-box 入站不接受 public_key 字段（DisallowUnknownFields 会 FATAL），
   // 所以存成顶层 _realityPublicKey —— 顶层 `_` 字段生成核心配置时会被剥离，不会进 sing-box。
-  // 「公钥（客户端）」只读框、前端 singboxShareLink.js 与后端 sharelink/singbox_share.go 都从这里取；
+  // 「公钥（客户端）」只读框与后端 sharelink/singbox_share.go 都从这里取；
   // 缺失时两端都会由 private_key 推导（x25519）。⚠ 以前这行被误写在 parseInbound 里，从未落库，
   // 且会把 parse 从 tls.reality.public_key 读到的旧值覆盖成空串。
   if (out.tls && out.tls.reality && out.tls.reality.enabled) {

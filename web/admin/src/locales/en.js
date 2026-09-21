@@ -488,6 +488,10 @@ export default {
       snippetHint: 'Paste into your {client} config',
       snippetUnsupported: '{client} does not support this protocol',
       snippetUnsupportedTransport: '{client} cannot express the {transport} transport; snippet omitted (it would not connect)',
+      shareNoUsers: 'This inbound has no shareable users (all may be paused)',
+      shareLoadFailed: 'Failed to load share data from the backend, please retry',
+      snippetUnsupportedPlain: '{client} cannot use plain {protocol} to a public address (xray 26+ rejects such configs entirely); snippet omitted',
+      snippetUnsupportedVlessEncryption: '{client} does not support VLESS encryption; snippet omitted (it would not connect)',
       qrDataTooLarge: 'QR code data is too large, please copy the link instead',
       // Traffic reset
       resetTraffic: 'Reset Traffic',

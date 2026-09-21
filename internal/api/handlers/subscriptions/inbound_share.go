@@ -272,6 +272,12 @@ func defaultUserRecord(config map[string]interface{}) (inboundUser, bool) {
 	if password == "" {
 		password = getString(config, "password", "")
 	}
+	// snell：凭据是入站**顶层**的 psk（没有 users[] / clients[]）—— 不认它时 snell 入站在
+	// 分享/二维码/片段里会显示"没有可用用户"（reason=users），而 mihomo / sing-box 其实都能
+	// 直接用 psk 连它。
+	if password == "" && strings.EqualFold(getString(config, "type", ""), "snell") {
+		password = getString(config, "psk", "")
+	}
 	if password != "" {
 		rec := map[string]interface{}{
 			"email":    "default",

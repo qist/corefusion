@@ -390,6 +390,9 @@ func generateTuicLink(n Node) string {
 	}
 	if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
 		params.Set("alpn", strings.Join(alpn, ","))
+	} else {
+		// TUIC 必须 ALPN=h3（规范要求）；链接里补上，客户端才不会协商失败
+		params.Set("alpn", "h3")
 	}
 	if sni := getString(tls, "serverName", ""); sni != "" {
 		params.Set("sni", sni)

@@ -77,7 +77,7 @@ CASES: list[dict] = [
     dict(id="vless-tls-ws", core="xray", protocol="vless", transport="ws", security="tls"),
     # REALITY + gRPC（用户要求补的组合；固定端口避免用例表增删导致端口错位）
     dict(id="vless-reality-grpc", core="xray", protocol="vless", transport="grpc", security="reality",
-         sni="www.microsoft.com", port=31160,
+         sni="www.microsoft.com", port=31260,
          expect={"singbox": "skip"}),
     dict(id="vless-reality-raw", core="xray", protocol="vless", transport="raw", security="reality",
          expect={"singbox": "skip"}),
@@ -132,7 +132,7 @@ CASES: list[dict] = [
     dict(id="sb-vmess-ws-none", core="singbox", protocol="vmess", transport="ws", security="none"),
     dict(id="sb-vmess-raw-none", core="singbox", protocol="vmess", transport="raw", security="none"),
     # 对照用例：两边都是 sing-box（用来区分"sing-box 客户端的 vmess+TLS"问题与"xray 服务端"问题）
-    dict(id="sb-vmess-tls-ws", core="singbox", protocol="vmess", transport="ws", security="tls", port=31150),
+    dict(id="sb-vmess-tls-ws", core="singbox", protocol="vmess", transport="ws", security="tls", port=31250),
     dict(id="sb-trojan-tls-ws", core="singbox", protocol="trojan", transport="ws", security="tls"),
 
     # ══════════ sing-box 服务端：ss / hysteria2 / tuic / anytls / naive / snell / mixed ══════════
@@ -161,7 +161,7 @@ CASES: list[dict] = [
     # 所以 xray / mihomo / sing-box 三种客户端都能连（实测都是 exit ip=203.0.113.48 loc=HK）。
     # 这也是面板**保留**这类节点进 sing-box 格式的依据（见 singboxNodeDropReason）。
     dict(id="sb-vless-reality", core="singbox", protocol="vless", transport="raw", security="reality",
-         sni="www.bing.com", port=31162),
+         sni="www.bing.com", port=31262),
 ]
 
 

@@ -544,14 +544,18 @@ func singboxNodeDropReason(node *formatter.Node) string {
 	if singboxUnsupportedTransports[strings.ToLower(node.Transport)] {
 		return "transport=" + node.Transport
 	}
-	// REALITY 一律不进 sing-box 格式：xray ≥26.9.8 的 REALITY 服务端要求 ClientHello 带
-	// `X25519MLKEM768` key share 且排在 X25519 之前（xtls/reality 提交 8cdf7bf9c7f0）；
-	// sing-box —— **官方构建同样如此**（实测 1.14.1 一致）—— 的 uTLS chrome 指纹不发它，
-	// 且没有任何配置项能绕过 → 服务端静默回落到真实目标，客户端报 `reality verification failed`
-	// （上游 issue SagerNet/sing-box#4520）。发给 sing-box 用户就是"能加载、连不上"的死节点，
-	// 所以整条剔除并说明原因；同一节点在 xray / mihomo 两个格式里照常输出。
-	if _, isReality := node.Extra["reality-opts"].(map[string]interface{}); isReality {
-		return "reality(sing-box#4520: xray≥26.9.8 需 X25519MLKEM768 key share，sing-box 不发也无配置可绕)"
+	// REALITY：**只有 xray 当服务端时**才不能进 sing-box 格式。xray ≥26.9.8 的 REALITY 服务端要求
+	// ClientHello 带 `X25519MLKEM768` key share 且排在 X25519 之前（xtls/reality 提交 8cdf7bf9c7f0）；
+	// sing-box —— **官方构建同样如此**（实测 1.14.1 一致）—— 的 uTLS chrome 指纹不发它，也没有任何
+	// 配置项能绕过 → 服务端静默回落到真实目标，客户端报 `reality verification failed`
+	// （上游 issue SagerNet/sing-box#4520）。
+	// 但**服务端是 sing-box** 时没有这个校验，sing-box 客户端照样能连 → 那种节点必须保留
+	// （它的配置形状是 `type` + `tls.reality`，由 buildExtra 的 `_xray-reality` 标记区分；
+	// 链接反解出来的节点没有 core 信息，只能靠这个标记）。
+	if node.Extra["_xray-reality"] == true || strings.EqualFold(node.CoreType, "xray") {
+		if _, isReality := node.Extra["reality-opts"].(map[string]interface{}); isReality {
+			return "reality(sing-box#4520: xray≥26.9.8 需 X25519MLKEM768 key share，sing-box 不发也无配置可绕)"
+		}
 	}
 	// VLESS 加密（服务端 settings.encryption = mlkem768x25519plus…）：sing-box 至今
 	// **没有** vless 出站的 encryption 字段（1.15.0-alpha 的 VLESSOutboundOptions 里也没有），
@@ -613,6 +617,11 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 		}
 		if proto != "" && !supported[proto] {
 			dropped = append(dropped, fmt.Sprintf("%s(%s)", name, proto))
+			continue
+		}
+		// xray 服务的 REALITY：条目上有明确标记（链接反解出来的节点没有核心信息，只能靠它）
+		if isSingbox && item.XrayReality {
+			dropped = append(dropped, fmt.Sprintf("%s(reality-xray#4520)", name))
 			continue
 		}
 		if isSingbox && item.Node != nil {

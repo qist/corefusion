@@ -252,20 +252,53 @@ func TestClientCredentialsAndSSMethodNormalization(t *testing.T) {
 // （上游 issue SagerNet/sing-box#4520）。发给用户就是"能加载、连不上"的死节点。
 // 同一节点在 xray / mihomo 格式里照常输出（那两个客户端没事）。
 func TestSingboxDropsReality(t *testing.T) {
-	reality := &formatter.Node{
-		Name: "n", Protocol: "vless", Transport: "tcp", TLS: true,
+	// xray 服务端的 REALITY → 必须剔除（上游 SagerNet/sing-box#4520）
+	xrayReality := &formatter.Node{
+		Name: "n", Protocol: "vless", Transport: "tcp", TLS: true, CoreType: "xray",
 		Extra: map[string]interface{}{
 			"reality-opts": map[string]interface{}{"public-key": "PUB", "short-id": "sid"},
 		},
 	}
-	if got := singboxNodeDropReason(reality); got == "" {
-		t.Error("REALITY 节点应被 sing-box 格式剔除")
+	if got := singboxNodeDropReason(xrayReality); got == "" {
+		t.Error("xray 服务端的 REALITY 应被 sing-box 格式剔除")
 	}
+	// sing-box 服务端的 REALITY → **保留**（那边没有 xray ≥26.9.8 的 key-share 校验，客户端能连）
+	// 判据是条目上的 _xray-reality 标记 / CoreType（链接反解出来的节点没有 core 信息）
+	sbReality := &formatter.Node{
+		Name: "n2", Protocol: "vless", Transport: "tcp", TLS: true, CoreType: "singbox",
+		Extra: map[string]interface{}{
+			"reality-opts": map[string]interface{}{"public-key": "PUB", "short-id": "sid"},
+		},
+	}
+	if got := singboxNodeDropReason(sbReality); got != "" {
+		t.Errorf("sing-box 服务端的 REALITY 不该被剔除, got %q", got)
+	}
+	// 普通 TLS 节点不受影响
 	plainTLS := &formatter.Node{
-		Name: "n2", Protocol: "vless", Transport: "tcp", TLS: true,
+		Name: "n3", Protocol: "vless", Transport: "tcp", TLS: true, CoreType: "xray",
 		Extra: map[string]interface{}{"alpn": []string{"h2"}},
 	}
 	if got := singboxNodeDropReason(plainTLS); got != "" {
 		t.Errorf("普通 TLS 节点不该被剔除, got %q", got)
+	}
+}
+
+// flow=xtls-rprx-vision 只在裸 TCP/raw 下合法：带上 grpc/ws 等传输时客户端会硬失败
+// （sing-box: `initialize vision: not a valid supported TLS connection: *v2raygrpclite.GunConn`）
+// 或数据不通（xray + REALITY + gRPC 实测：服务端 accepted 但拿不到数据）。
+func TestFlowForTransport(t *testing.T) {
+	cases := []struct{ flow, transport, want string }{
+		{"xtls-rprx-vision", "raw", "xtls-rprx-vision"},
+		{"xtls-rprx-vision", "tcp", "xtls-rprx-vision"},
+		{"xtls-rprx-vision", "", "xtls-rprx-vision"},
+		{"xtls-rprx-vision", "grpc", ""},
+		{"xtls-rprx-vision", "ws", ""},
+		{"xtls-rprx-vision", "httpupgrade", ""},
+		{"xtls-rprx-vision", "mkcp", ""},
+	}
+	for _, c := range cases {
+		if got := formatter.FlowForTransport(c.flow, c.transport); got != c.want {
+			t.Errorf("FlowForTransport(%q,%q) = %q, want %q", c.flow, c.transport, got, c.want)
+		}
 	}
 }

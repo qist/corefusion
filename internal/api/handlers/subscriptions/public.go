@@ -144,6 +144,10 @@ type renderedSubscriptionNode struct {
 	Link            string
 	Node            *formatter.Node
 	ProxyMap        map[string]interface{}
+	// XrayReality：该条目是"xray 服务的 REALITY"。这种节点发给 sing-box 客户端必然连不上
+	// （上游 SagerNet/sing-box#4520，见 singboxNodeDropReason），订阅里必须整条剔除。
+	// 这里在构造条目时（有 cfg 与 config）就打上，因为后面从链接反解出来的节点**没有**核心信息。
+	XrayReality bool
 }
 
 type billingTemplateConfig struct {
@@ -517,6 +521,34 @@ func renderedFormatterNodes(items []renderedSubscriptionNode) []formatter.Node {
 	return nodes
 }
 
+// isXrayRealityConfig 判断"这个入站是 xray 服务的 REALITY"。
+// xray ≥26.9.8 的 REALITY 服务端要求 ClientHello 带 X25519MLKEM768 key share（且排在 X25519
+// 之前，xtls/reality 提交 8cdf7bf9c7f0）；sing-box（**含官方构建**，实测 1.14.1）的 uTLS chrome
+// 指纹不发它、也没有配置项可绕过 → 服务端静默回落真实目标、客户端报 reality verification failed
+// （上游 issue SagerNet/sing-box#4520）。**服务端是 sing-box** 时没有这个校验、能正常连，
+// 所以只剔除"xray 服务端"这一类。
+// configTransportOf 取入站的传输名：xray 形状在 `streamSettings.network`，
+// sing-box 形状在 `transport.type`（面板两种形状都存）。
+func configTransportOf(config map[string]interface{}) string {
+	if ss := getMap(config, "streamSettings"); ss != nil {
+		if net := getString(ss, "network", ""); net != "" {
+			return net
+		}
+	}
+	if tr := getMap(config, "transport"); tr != nil {
+		return getString(tr, "type", "")
+	}
+	return ""
+}
+
+func isXrayRealityConfig(cfg *entity.InboundConfig, config map[string]interface{}) bool {
+	if cfg == nil || !strings.EqualFold(cfg.CoreType, "xray") {
+		return false
+	}
+	ss := getMap(config, "streamSettings")
+	return strings.EqualFold(getString(ss, "security", ""), "reality")
+}
+
 func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, members []entity.NodeGroupMember, clientEmail string, templates billingTemplateConfig) []renderedSubscriptionNode {
 	var items []renderedSubscriptionNode
 
@@ -654,6 +686,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				uuid, _ = userClient["id"].(string)
 				password, _ = userClient["password"].(string)
 				flow, _ = userClient["flow"].(string)
+				// vision 只在裸 TCP/raw 下合法（见 formatter.FlowForTransport）
+				flow = formatter.FlowForTransport(flow, configTransportOf(config))
 				if cfg.Protocol == "hysteria" {
 					if auth, ok := userClient["auth"].(string); ok && auth != "" {
 						password = auth
@@ -713,6 +747,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			}
 			for _, memberID := range memberIDs {
 				item := renderedSubscriptionNode{
+					XrayReality: isXrayRealityConfig(&cfg, config),
 					MemberID:        memberID,
 					InboundConfigID: cfg.ID,
 					Link:            link,
@@ -782,6 +817,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 
 					for _, memberID := range memberIDs {
 						item := renderedSubscriptionNode{
+							XrayReality: isXrayRealityConfig(&cfg, config),
 							MemberID:        memberID,
 							InboundConfigID: cfg.ID,
 							Link:            mirrorLink,
@@ -832,6 +868,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		}
 		for _, memberID := range memberIDs {
 			item := renderedSubscriptionNode{
+				// 外部节点（用户自带的 ProxyJSON）拿不到服务端核心信息 → 不判
 				MemberID:       memberID,
 				ExternalNodeID: extNode.ID,
 				Link:           link,

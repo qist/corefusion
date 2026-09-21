@@ -617,6 +617,22 @@ type XrayFormatter struct{}
 func (f *XrayFormatter) ContentType() string   { return "application/json" }
 func (f *XrayFormatter) FileExtension() string { return "json" }
 
+// FlowForTransport 返回该传输下**合法**的 flow。
+//
+// `xtls-rprx-vision` 只适用于裸 TCP/raw：vision 直接接管 TCP 字节流，在 ws / grpc / xhttp /
+// httpupgrade / kcp 上不成立。入站里带了 flow、传输却是上面这些时（面板自建入站里确实存在，
+// 例如 REALITY + gRPC 带 vision），把 flow 发进分享产物客户端就废了：
+//   - sing-box：`initialize vision: vision: not a valid supported TLS connection: *v2raygrpclite.GunConn`（硬失败）
+//   - xray：服务端 accepted、但数据不通（实测 REALITY+gRPC 就是这种表现）
+// 所以生成链接 / 出站配置前统一按传输收敛，避免发"能加载、连不上"的东西出去。
+func FlowForTransport(flow, transport string) string {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
+	case "", "tcp", "raw":
+		return flow
+	}
+	return ""
+}
+
 func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 	outbounds := make([]map[string]interface{}, 0, len(nodes)+2)
 	usedTags := make(map[string]int, len(nodes))

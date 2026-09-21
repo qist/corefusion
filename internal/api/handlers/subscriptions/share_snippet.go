@@ -84,7 +84,8 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 		ServerName: getTLSServerName(ss),
 		UUID:       uuid,
 		Password:   ss2022ClientPassword(view, cfg.Protocol, password),
-		Flow:       getString(client, "flow", ""),
+		Flow:       formatter.FlowForTransport(getString(client, "flow", ""),
+			getString(getMap(view, "streamSettings"), "network", "")),
 		Encryption: nodeEncryption(cfg.Protocol, settings),
 		Extra:      extra,
 	}

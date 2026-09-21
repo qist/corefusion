@@ -100,6 +100,11 @@ func generateVlessLink(n Node) string {
 
 	setNetworkParams(params, ss, network)
 	setSecurityParams(params, ss, security)
+	// vision 只在裸 TCP/raw 下合法（ws/grpc/xhttp/kcp 上带 flow，客户端会硬失败或数据不通）。
+	// 这里不引 formatter（会循环依赖），就地做同样的收敛。
+	if network != "" && !strings.EqualFold(network, "tcp") && !strings.EqualFold(network, "raw") {
+		flow = ""
+	}
 	if flow != "" {
 		params.Set("flow", flow)
 	}

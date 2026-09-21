@@ -209,3 +209,39 @@ func TestMihomoProxySnippetUsesSubscriptionPipeline(t *testing.T) {
 		t.Errorf("空链接应返回空片段, got %q", got)
 	}
 }
+
+// 凭据字段按协议取：取错就是"产物里有节点、认证却过不了"。
+//   - hysteria：凭据在 `auth`；
+//   - http/socks：`accounts[]` 的 user+pass —— 用户名必须一起进 Extra（渲染端从这里取），
+//     只带密码时 xray/sing-box 出站的 user 会是空串（mihomo 因为走 Extra 而侥幸正确）；
+//   - snell：psk 在入站顶层；
+//   - ss 的 xray 别名 `chacha20-poly1305` 要归一成客户端认的 `chacha20-ietf-poly1305`。
+func TestClientCredentialsAndSSMethodNormalization(t *testing.T) {
+	pwd := ""
+	extra := map[string]interface{}{}
+	applyClientCredentials("hysteria", map[string]interface{}{"auth": "A1", "password": "P1"}, nil, &pwd, extra)
+	if pwd != "A1" {
+		t.Errorf("hysteria 应取 auth, got %q", pwd)
+	}
+
+	pwd = ""
+	extra = map[string]interface{}{}
+	applyClientCredentials("socks", map[string]interface{}{"user": "u1", "pass": "p1"}, nil, &pwd, extra)
+	if pwd != "p1" || extra["username"] != "u1" {
+		t.Errorf("socks 应取 user/pass: pwd=%q extra=%v", pwd, extra)
+	}
+
+	pwd = ""
+	extra = map[string]interface{}{}
+	applyClientCredentials("snell", map[string]interface{}{"password": "P2"}, map[string]interface{}{"psk": "PSK"}, &pwd, extra)
+	if pwd != "PSK" {
+		t.Errorf("snell 应取顶层 psk, got %q", pwd)
+	}
+
+	if got := normalizeSSMethod("chacha20-poly1305"); got != "chacha20-ietf-poly1305" {
+		t.Errorf("ss 别名归一失败: %q", got)
+	}
+	if got := normalizeSSMethod("aes-256-gcm"); got != "aes-256-gcm" {
+		t.Errorf("不该改动其它 method: %q", got)
+	}
+}

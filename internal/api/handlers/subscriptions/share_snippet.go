@@ -70,6 +70,9 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 	if uuid == "" {
 		uuid = getString(client, "uuid", "")
 	}
+	password := getString(client, "password", "")
+	extra := buildExtra(view, ss, cfg.Protocol)
+	applyClientCredentials(cfg.Protocol, client, view, &password, extra)
 	return &formatter.Node{
 		Name:       name,
 		Protocol:   protocol,
@@ -79,10 +82,76 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 		TLS:        getString(ss, "security", "none") != "none",
 		ServerName: getTLSServerName(ss),
 		UUID:       uuid,
-		Password:   ss2022ClientPassword(view, cfg.Protocol, getString(client, "password", "")),
+		Password:   ss2022ClientPassword(view, cfg.Protocol, password),
 		Flow:       getString(client, "flow", ""),
 		Encryption: nodeEncryption(cfg.Protocol, settings),
-		Extra:      buildExtra(view, ss, cfg.Protocol),
+		Extra:      extra,
+	}
+}
+
+// mergeExtraMaps 合并两个 Extra（后者优先；nil 安全）。
+func mergeExtraMaps(base, over map[string]interface{}) map[string]interface{} {
+	if len(over) == 0 {
+		return base
+	}
+	if base == nil {
+		base = map[string]interface{}{}
+	}
+	for k, v := range over {
+		base[k] = v
+	}
+	return base
+}
+
+// buildExtraWith = buildExtra + 额外键（凭据映射结果等）。
+func buildExtraWith(config, ss map[string]interface{}, protocol string, over map[string]interface{}) map[string]interface{} {
+	return mergeExtraMaps(buildExtra(config, ss, protocol), over)
+}
+
+// normalizeSSMethod 把 xray 的 shadowsocks 别名换成客户端都认的规范名。
+// xray 认 `chacha20-poly1305`，而 mihomo / sing-box 只认 `chacha20-ietf-poly1305`：
+// 写别名会被客户端**拒载**（mihomo `test failed`、sing-box `unknown method: ...`）。
+// 面板自建的 ss 入站里就存在该别名，所以这里统一归一（xray 两个名字都认，改成规范名不影响服务端）。
+func normalizeSSMethod(method string) string {
+	if strings.EqualFold(strings.TrimSpace(method), "chacha20-poly1305") {
+		return "chacha20-ietf-poly1305"
+	}
+	return method
+}
+
+// applyClientCredentials 把"用户记录里按协议命名的凭据"映射到客户端节点上。
+// 取错字段的后果就是"产物里有节点、认证却过不了"：
+//
+//   - hysteria / hysteria2：凭据在 `auth`（不是 password）→ 少了它客户端连不上；
+//   - http / socks / mixed：凭据是 `accounts[]` 的 user+pass —— **用户名必须一起带上**，
+//     只带密码时 xray/sing-box 出站里的 user 是空串，认证必失败（mihomo 片段因为走
+//     Extra 而侥幸正确，掩盖了这个问题）；
+//   - snell：psk 在入站**顶层**（不是每个用户一条）。
+func applyClientCredentials(protocol string, client, view map[string]interface{},
+	password *string, extra map[string]interface{}) {
+	if extra == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "hysteria", "hysteria2":
+		if auth := getString(client, "auth", ""); auth != "" {
+			*password = auth
+		}
+	case "http", "socks", "socks5", "mixed":
+		user := getString(client, "user", "")
+		if user == "" {
+			user = getString(client, "username", "")
+		}
+		if user != "" {
+			extra["username"] = user
+		}
+		if pass := getString(client, "pass", ""); pass != "" {
+			*password = pass
+		}
+	case "snell":
+		if psk := getString(view, "psk", ""); psk != "" {
+			*password = psk
+		}
 	}
 }
 
@@ -183,7 +252,7 @@ func nodeEncryption(protocol string, settings map[string]interface{}) string {
 		}
 		return ""
 	case "shadowsocks", "shadowsocks2022", "ss":
-		return getString(settings, "method", "")
+		return normalizeSSMethod(getString(settings, "method", ""))
 	default:
 		// 其它协议没有"加密/method"这个客户端字段：别把 settings 里的杂项当成加密写出去。
 		return ""

@@ -435,9 +435,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	r := gin.New()
 
 	// Global middleware
-	r.Use(gin.Logger())
+	// 访问日志：gin 默认会把完整 query 写进日志，而管理端鉴权支持 `?token=`（前端下载/日志 SSE 流在用）
+	// → 会把手里的 JWT 明文落到日志文件里。改用带脱敏的 formatter（不改变鉴权行为）。
+	r.Use(gin.LoggerWithFormatter(middleware.AccessLogFormatter))
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
+	// 请求体上限：多数 handler 直接 io.ReadAll，原先没有任何上限（multipart 上传/还原走流式，内部跳过）。
+	r.Use(middleware.BodyLimit(middleware.DefaultMaxBodyBytes))
 	// Note: MaintenanceGuard is NOT mounted on the admin panel engine.
 	// It is only mounted on the subscription and portal engines so that
 	// admins can always access the panel to toggle maintenance on/off.
@@ -2760,7 +2764,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 
 	// Public subscription endpoint — guarded by maintenance mode
-	r.GET("/sub/:token", middleware.MaintenanceGuard(), publicSubH.ServeSubscription)
+	r.GET("/sub/:token", middleware.MaintenanceGuard(), middleware.SubscribeRateLimit(), publicSubH.ServeSubscription)
 
 	// Portal page — served from active custom template (cached)
 	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
@@ -2776,9 +2780,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
 	{
-		clientAuthGroup.POST("/register", clientauthH.Register)
+		clientAuthGroup.POST("/register", middleware.RegisterRateLimit(), clientauthH.Register)
 		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)
-		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
+		clientAuthGroup.POST("/refresh", middleware.RegisterRateLimit(), clientauthH.Refresh)
 
 		// OAuth2 login routes (public — no auth required)
 		oauthSvcInst := oauthService.NewService(systemSettingSvc, repository.NewClientOAuthBindingRepository(database), clientRepo)
@@ -2791,7 +2795,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Public subscription endpoints (for portal) — guarded by maintenance mode
 	// Direct DB read returning a plain array so the portal frontend can consume d.data directly (no pagination wrapper).
 	subendRepoPortal := repository.NewSubscriptionEndpointRepository(database)
-	r.GET("/api/v1/public/subscription-endpoints", middleware.MaintenanceGuard(), func(c *gin.Context) {
+	r.GET("/api/v1/public/subscription-endpoints", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
 		endpoints, err := subendRepoPortal.List(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "LIST_FAILED", err.Error())
@@ -2802,7 +2806,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Public settings (for portal)
 	// v3.4: portalTmplSvc used in public/settings to return latest portal config
-	r.GET("/api/v1/public/settings", middleware.MaintenanceGuard(), func(c *gin.Context) {
+	r.GET("/api/v1/public/settings", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
 		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
 		chatProvider, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.provider")
 		chatSiteID, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.site_id")
@@ -2820,7 +2824,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Public: effective portal runtime config — lean payload served from the
 	// in-memory cache in production (fresh DB read only on cache miss).
-	r.GET("/api/v1/public/portal-config", middleware.MaintenanceGuard(), func(c *gin.Context) {
+	r.GET("/api/v1/public/portal-config", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
 		body, err := portalTmplSvc.GetPublicConfigJSON(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "PORTAL_CONFIG_FAILED", err.Error())
@@ -2830,13 +2834,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	// Public articles (no auth required)
-	r.GET("/api/v1/public/articles", middleware.MaintenanceGuard(), clientExtH.PublicListArticles)
-	r.GET("/api/v1/public/articles/:slug", middleware.MaintenanceGuard(), clientExtH.PublicGetArticle)
+	r.GET("/api/v1/public/articles", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), clientExtH.PublicListArticles)
+	r.GET("/api/v1/public/articles/:slug", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), clientExtH.PublicGetArticle)
 
 	// Public: list enabled client configs (for portal "more subscriptions" dialog)
 	mihomoCfgRepoPublic := repository.NewMihomoConfigRepository(database)
 	subFmtRepoPublic := repository.NewSubscriptionFormatRepository(database)
-	r.GET("/api/v1/public/client-configs", middleware.MaintenanceGuard(), func(c *gin.Context) {
+	r.GET("/api/v1/public/client-configs", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
 		planIDStr := c.Query("plan_id")
 		var planID int64
 		if planIDStr != "" {
@@ -3305,7 +3309,7 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst2, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
 
 	// Subscription at root path - no /sub prefix needed
-	r.GET("/:token", publicSubH.ServeSubscription)
+	r.GET("/:token", middleware.SubscribeRateLimit(), publicSubH.ServeSubscription)
 
 	return r
 }
@@ -3515,9 +3519,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
 	{
-		clientAuthGroup.POST("/register", clientauthH.Register)
+		clientAuthGroup.POST("/register", middleware.RegisterRateLimit(), clientauthH.Register)
 		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)
-		clientAuthGroup.POST("/refresh", clientauthH.Refresh)
+		clientAuthGroup.POST("/refresh", middleware.RegisterRateLimit(), clientauthH.Refresh)
 	}
 
 	// Log manage deps (for client log packaging)

@@ -440,6 +440,13 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			}
 			log.Printf("[Agent] SyncData: generated config from local DB (%d bytes)", len(configData))
 		}
+		// 先判断"写下去是否真的会改变配置" —— 用于 reload_strategy=none 时决定要不要重启核心
+		// （见下面 NONE 分支：变更才重启，避免每次同步都白重启一次 ✗）。
+		configChanged := false
+		if len(configData) > 0 {
+			configChanged = a.procMgr.RuntimeConfigChanged(coreType, configData)
+		}
+
 		if len(configData) > 0 {
 			if err := a.procMgr.WriteRuntimeConfig(coreType, configData); err != nil {
 				resp.Error = fmt.Sprintf("write config: %v", err)
@@ -473,13 +480,20 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 
 		switch strategy {
 		case agentpb.SyncDataRequest_RELOAD_STRATEGY_NONE:
-			// Reload strategy NONE means "don't force a restart if already running".
-			// But if apply_and_start=true and the core is NOT running, we must start it.
-			// This fixes the issue where sync-data with apply_and_start=true but
-			// reload_strategy=NONE (the default) would leave xray stopped after
-			// an Agent restart.
-			if isRunning {
-				log.Printf("[Agent] SyncData: reload_strategy=none, core already running, config written")
+			// ⚠ 语义修正（2026-09-22）：NONE 原本是"只写文件、绝不碰运行中的进程" ✗，
+			// 真机上这会让**配置变更静默不生效**（实测远程节点核心两天没重载，链式配置写了从未加载 ✗）。
+			// 现在改为：**内容真的变了** → 重启核心让它生效 ✓；内容没变 → 不动核心 ✓
+			// （避免定时同步每次都白重启一次 ✗）；核心本来没跑 → 仍然启动 ✓。
+			if isRunning && configChanged {
+				if err := a.procMgr.Restart(ctx, serviceID, coreType); err != nil {
+					resp.Error = fmt.Sprintf("restart core: %v", err)
+					log.Printf("[Agent] SyncData: core restart failed (config changed): %v", err)
+					return resp, nil
+				}
+				resp.CoreRestarted = true
+				log.Printf("[Agent] SyncData: config changed → restarted core to apply it (reload_strategy=none)")
+			} else if isRunning {
+				log.Printf("[Agent] SyncData: reload_strategy=none, core already running, config unchanged")
 			} else {
 				if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
 					resp.Error = fmt.Sprintf("start core: %v", err)

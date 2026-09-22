@@ -27,11 +27,20 @@ type ChainLinkGenerator struct {
 	// inboundRepo：用于"链式出口 = 出口节点已有的入站"这条路径（读取该入站的真实
 	// 协议/端口/传输/安全层/凭据，构造入口侧出站）。由 router 注入，可为 nil（老路径不受影响）。
 	inboundRepo *repository.InboundConfigRepository
+	// extServerRepo：外部出口引用的是 **external_node_servers.id**（外部节点"注册"成的虚拟节点，
+	// 见设计文档 §3.3），协议/地址/凭据在它关联的 `external_nodes` 记录里 → 需要由它跳一跳。
+	// 由 router 注入；为 nil 时退化为"把 ExitExternalID 直接当 external_nodes.id"（兼容旧数据）。
+	extServerRepo *repository.ExternalNodeServerRepository
 }
 
 // SetInboundRepo 注入入站配置仓库（链式出口支持"选现有入站"必需）。
 func (g *ChainLinkGenerator) SetInboundRepo(repo *repository.InboundConfigRepository) {
 	g.inboundRepo = repo
+}
+
+// SetExtServerRepo 注入"外部节点注册表"仓库（external_node_servers）。
+func (g *ChainLinkGenerator) SetExtServerRepo(repo *repository.ExternalNodeServerRepository) {
+	g.extServerRepo = repo
 }
 
 // —— 链式出口的**协议白名单（按入口核心分开）** ——
@@ -642,12 +651,31 @@ func (g *ChainLinkGenerator) entryCoreType(ctx context.Context, entryInboundID i
 }
 
 func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link entity.ChainLink) (ChainEntryOutbound, error) {
-	extNode, err := g.extNodeRepo.GetByID(ctx, link.ExitExternalID)
+	// `ExitExternalID` 指的是 **external_node_servers.id**（用户把某个外部节点注册成一个
+	// "可被选为出口目标"的虚拟节点，见设计文档 §3.3），而协议/地址/凭据都在它关联的
+	// `external_nodes` 记录里 → 必须**再跳一跳**。
+	//
+	// ⚠ 旧实现直接把 ExitExternalID 当 `external_nodes.id` 用 ✗：校验（handler 查
+	//   external_node_servers）与生成（查 external_nodes）看的**不是同一张表** ✗ —— 选中的外部出口
+	//   要么查不到，要么按**另一个节点**生成出站（流量发到错误的服务器 ✗）。真机踩到 ✓。
+	extNodeID := link.ExitExternalID
+	if g.extServerRepo != nil {
+		if srv, serr := g.extServerRepo.GetByID(ctx, link.ExitExternalID); serr == nil && srv != nil {
+			if !srv.Enabled {
+				return ChainEntryOutbound{}, fmt.Errorf("external server %d is disabled", link.ExitExternalID)
+			}
+			if srv.ExternalNodeID > 0 {
+				extNodeID = srv.ExternalNodeID
+			}
+		}
+	}
+	extNode, err := g.extNodeRepo.GetByID(ctx, extNodeID)
 	if err != nil {
-		return ChainEntryOutbound{}, fmt.Errorf("external node %d not found: %w", link.ExitExternalID, err)
+		return ChainEntryOutbound{}, fmt.Errorf(
+			"external exit %d (external node %d) not found: %w", link.ExitExternalID, extNodeID, err)
 	}
 	if !extNode.Enabled {
-		return ChainEntryOutbound{}, fmt.Errorf("external node %d is disabled", link.ExitExternalID)
+		return ChainEntryOutbound{}, fmt.Errorf("external node %d is disabled", extNodeID)
 	}
 
 	var pm map[string]interface{}
@@ -689,8 +717,8 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 	if !ChainSupportedProtocol(g.entryCoreType(ctx, link.EntryInboundID), protocol) {
 		entryCore := g.entryCoreType(ctx, link.EntryInboundID)
 		return ChainEntryOutbound{}, fmt.Errorf(
-			"external node %d protocol %q is not chain-capable for entry core %q (supported: %s)",
-			link.ExitExternalID, protocol, entryCore,
+			"external exit %d (external node %d, protocol %q) is not chain-capable for entry core %q (supported: %s)",
+			link.ExitExternalID, extNodeID, protocol, entryCore,
 			strings.Join(ChainSupportedProtocols(entryCore), "/"))
 	}
 
@@ -699,12 +727,17 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 	users := extractUsersFromProxyMap(pm, protocol)
 
 	settings := buildExternalOutboundSettings(protocol, host, port, users)
-	// hysteria2 的 obfs（salamander）在 sing-box 里是**出站顶层**字段，但链式的中间形状放在
-	// settings.servers[0].obfs（转换器从那里取）→ 这里从外部节点的 ProxyJSON 注入。
 	if (protocol == "hysteria2" || protocol == "hysteria") && settings != nil {
-		if obfs, ok := pm["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
-			if servers, ok := settings["servers"].([]map[string]interface{}); ok && len(servers) > 0 {
+		if servers, ok := settings["servers"].([]map[string]interface{}); ok && len(servers) > 0 {
+			if obfs := mihomoHy2Obfs(pm); len(obfs) > 0 {
 				servers[0]["obfs"] = obfs
+			}
+			// 端口跳跃：mihomo 用 `ports: "40000-50000"`，而 `port` 此时常为 0 ✗；
+			// sing-box 的对应字段是 `server_ports`（区间用冒号）。
+			// 旧实现只读 port → 生成 `server_port: 0` ✗（`sing-box check` **不报错** ✗，
+			// 运行期连不上 —— 又一个静默失效 ✗）。
+			if ranges := mihomoPortRanges(pm); len(ranges) > 0 {
+				servers[0]["serverPorts"] = ranges
 			}
 		}
 	}
@@ -713,8 +746,46 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 		Tag:            tag,
 		Protocol:       protocol,
 		Settings:       settings,
-		StreamSettings: buildStreamFromProxyMap(pm),
+		StreamSettings: buildStreamFromProxyMap(pm, protocol),
 	}, nil
+}
+
+// mihomoHy2Obfs 从 mihomo 的 proxy map 里取 hysteria2 的 obfs 配置。
+//
+// mihomo 的写法是**扁平**的 `obfs: "salamander"` + `obfs-password: "..."` ✗（不是嵌套 map），
+// 而 sing-box 要的是 `obfs: {type, password}`。两种形状都支持 ——
+// 旧实现只找嵌套 map，遇到真实（扁平）形状会**静默丢掉 obfs** ✗：服务端开了 obfs 就连不上 ✗。
+func mihomoHy2Obfs(pm map[string]interface{}) map[string]interface{} {
+	if obfs, ok := pm["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
+		return obfs
+	}
+	typ, _ := pm["obfs"].(string)
+	if typ == "" {
+		return nil
+	}
+	m := map[string]interface{}{"type": typ}
+	if pw, ok := pm["obfs-password"].(string); ok && pw != "" {
+		m["password"] = pw
+	}
+	return m
+}
+
+// mihomoPortRanges 把 mihomo 的 `ports`（形如 "40000-50000,51000"）转成 sing-box 的
+// `server_ports`（区间用冒号，形如 ["40000:50000","51000"]）。
+func mihomoPortRanges(pm map[string]interface{}) []interface{} {
+	raw, _ := pm["ports"].(string)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	out := make([]interface{}, 0, 2)
+	for _, part := range strings.Split(raw, ",") {
+		p := strings.TrimSpace(part)
+		if p == "" {
+			continue
+		}
+		out = append(out, strings.ReplaceAll(p, "-", ":"))
+	}
+	return out
 }
 
 // buildLinkOutboundSettings builds xray outbound settings for a cluster exit.
@@ -928,7 +999,7 @@ func extractUsersFromProxyMap(pm map[string]interface{}, protocol string) []map[
 }
 
 // buildStreamFromProxyMap builds xray streamSettings from a mihomo proxy map.
-func buildStreamFromProxyMap(pm map[string]interface{}) map[string]interface{} {
+func buildStreamFromProxyMap(pm map[string]interface{}, protocol string) map[string]interface{} {
 	transport, _ := pm["network"].(string)
 	if transport == "" {
 		transport = "tcp"
@@ -937,8 +1008,12 @@ func buildStreamFromProxyMap(pm map[string]interface{}) map[string]interface{} {
 		"network": transport,
 	}
 
+	// TLS 判定：**不能只看 `pm["tls"]`** ✗ —— mihomo 的映射里 hysteria2（以及 hysteria/tuic）
+	// **天生 TLS、根本不写 `tls: true`** ✗（真机看到的形状：sni / alpn / client-fingerprint 都在，
+	// 就是没有 tls 键）→ 只看 pm["tls"] 会生成**不带 tls 的出站** → sing-box `FATAL TLS required` ✗。
 	tls, _ := pm["tls"].(bool)
-	if tls {
+	forceTLS := protocol == "hysteria2" || protocol == "hysteria" || protocol == "tuic"
+	if tls || forceTLS {
 		ss["security"] = "tls"
 		if sni, ok := pm["servername"].(string); ok && sni != "" {
 			ss["serverName"] = sni
@@ -951,6 +1026,30 @@ func buildStreamFromProxyMap(pm map[string]interface{}) map[string]interface{} {
 		if fp, ok := pm["client-fingerprint"].(string); ok && fp != "" {
 			ss["fingerprint"] = fp
 		}
+		if skip, ok := pm["skip-cert-verify"].(bool); ok && skip {
+			ss["allowInsecure"] = true
+		}
+	}
+
+	// reality：mihomo 的映射里是 `reality-opts{public-key, short-id}` + `servername`。
+	// ⚠ 旧实现**完全忽略 reality-opts** ✗ → 外部 reality 节点被当成**普通 TLS** 生成 →
+	//   连接当然失败 ✗（`tls: true` 让 security=tls 成立，核心不报错 → 又一个静默失效 ✗）。
+	if ro, ok := pm["reality-opts"].(map[string]interface{}); ok && len(ro) > 0 {
+		ss["security"] = "reality"
+		re := map[string]interface{}{}
+		if v, ok := ro["public-key"].(string); ok && v != "" {
+			re["publicKey"] = v
+		}
+		if v, ok := ro["short-id"].(string); ok && v != "" {
+			re["shortId"] = v
+		}
+		if v := firstString(pm, "servername", "sni"); v != "" {
+			re["serverName"] = v
+		}
+		if fp, ok := pm["client-fingerprint"].(string); ok && fp != "" {
+			re["fingerprint"] = fp
+		}
+		ss["realitySettings"] = re
 	}
 
 	// WS settings

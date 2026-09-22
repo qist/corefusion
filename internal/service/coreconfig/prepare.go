@@ -1701,6 +1701,23 @@ func mergeUnique(a, b []string) []string {
 //	{"tag":"chain-1-2", "type":"vless",
 //	 "server":"1.2.3.4", "server_port":443,
 //	 "uuid":"uuid"}
+//
+// isZeroPort 判断端口值是否为 0/缺失（这类值不能写进 sing-box 的 server_port：
+// 写 0 能过 `check`，但运行期连不上 ✗）。
+func isZeroPort(v interface{}) bool {
+	switch n := v.(type) {
+	case int:
+		return n == 0
+	case int64:
+		return n == 0
+	case float64:
+		return n == 0
+	case nil:
+		return true
+	}
+	return false
+}
+
 func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 	result := make([]interface{}, 0, len(outbounds))
 	for _, ob := range outbounds {
@@ -1750,12 +1767,20 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 				}
 			}
 		case "hysteria2":
-			// 链式中间形状：settings.servers[0] = {address, port, password, obfs?}
-			// （由 agent.buildOutboundFromExitInbound 针对"出口已有 hy2 入站"生成）
+			// 链式中间形状：settings.servers[0] = {address, port, password, obfs?, serverPorts?}
+			// （由 agent.buildOutboundFromExitInbound 针对"出口已有 hy2 入站"生成；
+			//   外部 hy2 节点则由 agent.buildExternalOutbound 生成）
 			if servers, ok := settings["servers"].([]interface{}); ok && len(servers) > 0 {
 				if first, ok := servers[0].(map[string]interface{}); ok {
 					sb["server"] = first["address"]
-					sb["server_port"] = first["port"]
+					// 端口：`serverPorts`（端口跳跃）优先 —— 此时**不要**再写 server_port ✗：
+					// mihomo 的 port 常为 0，写 `server_port: 0` 不会被 `sing-box check` 拦下
+					// （core 不校验端口范围 ✗），但运行期连不上 —— 正是"静默失效"✗。
+					if ports, ok := first["serverPorts"].([]interface{}); ok && len(ports) > 0 {
+						sb["server_ports"] = ports
+					} else if v, ok := first["port"]; ok && !isZeroPort(v) {
+						sb["server_port"] = v
+					}
 					sb["password"] = first["password"]
 					if obfs, ok := first["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
 						sb["obfs"] = obfs
@@ -1825,6 +1850,15 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 				}
 				if sni != "" {
 					tls["server_name"] = sni
+				}
+				// 证书校验：外部节点可能开了 skip-cert-verify（自签证书），
+				// 中间形状写在顶层或 tlsSettings（agent 派生时两边都可能）。
+				if v, ok := ss["allowInsecure"].(bool); ok && v {
+					tls["insecure"] = true
+				} else if ts != nil {
+					if v, ok := ts["allowInsecure"].(bool); ok && v {
+						tls["insecure"] = true
+					}
 				}
 				fp := ""
 				if v, ok := ss["fingerprint"].(string); ok {

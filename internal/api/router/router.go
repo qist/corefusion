@@ -670,6 +670,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	// 链式出口"使用出口节点上已有的入站"这条路径需要读入站配置（协议/端口/传输/凭据）。
 	chainLinkGen.SetInboundRepo(repository.NewInboundConfigRepository(database))
+	// 外部出口引用的是 external_node_servers.id（注册成虚拟节点的外部节点）→
+	// 生成器需要由它跳到 external_nodes 才能拿到协议/地址/凭据（见 buildExternalOutbound）。
+	chainLinkGen.SetExtServerRepo(repository.NewExternalNodeServerRepository(database))
 	configSyncSvc.SetChainLinkProvider(chainLinkGen)
 
 	// 注入 endpoint provider：让 sing-box 的 WireGuard/Tailscale/OpenConnect/OpenVPN

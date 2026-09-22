@@ -3001,6 +3001,8 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     nameHint: 'Leave empty to use the node name',
   },
   chainProxy: {
+    priorityHint: 'Lower priority number wins (1 = highest); exits sharing a priority are load-balanced.',
+    externalUsesOwnProtocol: 'External node: dials with its own protocol',
     legacyRelayInbound: 'Legacy: auto-created relay inbound',
     legacyExitHint: 'The section below is the "legacy mode" (auto-create a relay inbound on the exit node). Since v2.0, prefer picking an existing inbound on the exit node in the create wizard.',
     exitInboundCol: 'Exit inbound',

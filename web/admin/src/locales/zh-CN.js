@@ -2925,6 +2925,8 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     nameHint: '留空则使用外部节点名称',
   },
   chainProxy: {
+    priorityHint: '优先级数字越小越优先（1 最高）；同优先级的多出口会走负载均衡。',
+    externalUsesOwnProtocol: '外部节点：用其自身协议直连',
     legacyRelayInbound: '旧模式：自动创建的 relay 入站',
     legacyExitHint: '下面是「旧模式」（在出口节点上自动创建 relay 中转入站）。v2.0 起推荐直接在"创建链式代理"里选出口节点上「已有的入站」，无需在这里配置。',
     exitInboundCol: '出口入站',

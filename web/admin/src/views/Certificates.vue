@@ -106,6 +106,17 @@
         <el-form-item :label="t('certificate.dualKey')">
           <el-checkbox v-model="issueForm.dual_key">{{ t('certificate.dualKeyHint') }}</el-checkbox>
         </el-form-item>
+        <el-form-item :label="t('certificate.issueLocation')">
+          <el-select v-model="issueForm.issue_node_id" style="width:100%">
+            <el-option :value="0" :label="t('certificate.panelLocal')" />
+            <el-option v-for="n in issueNodes" :key="n.id" :value="n.id"
+                       :label="`${n.name || n.hostname || n.id} (${n.public_ip || n.hostname || ''})`" />
+          </el-select>
+          <div style="color:#909399;font-size:12px;line-height:1.5;margin-top:4px">
+            {{ t('certificate.issueLocationHint') }}
+          </div>
+        </el-form-item>
+
         <el-form-item v-if="issueForm.ca_provider!=='lets_encrypt'" :label="'EAB-KID'">
           <el-input v-model="issueForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />
           <div style="color:#909399;font-size:12px;margin-top:4px">
@@ -331,6 +342,10 @@ const detectingIP = ref(false)
 const issueForm = ref({
   email_id: null,
   ca_provider: 'lets_encrypt',
+  // 签发位置：0 = 面板本机；>0 = 由该节点在**本机**签发 ✓
+  // （面板常在 SNAT 后面，CA 回连不到面板的 80 端口 → 公网证书只能让节点自己签 ✗）
+  issue_node_id: 0,
+  node_webroot: '',
   challenge_type: 'dns-01',
   dns_channel_id: null,
   domains_text: '',
@@ -402,8 +417,9 @@ async function fetchCertificates() {
 }
 
 function showIssueDialog() {
-  issueForm.value = { email_id: null, ca_provider: 'lets_encrypt', cert_target: 'domain', challenge_type: 'dns-01', dns_channel_id: null, domains_text: '', ips_text: '', key_type: 'ecc', key_bits: 256, dual_key: false, eab_key_id: '', eab_mac_key: '', auto_renew: true }
+  issueForm.value = { email_id: null, ca_provider: 'lets_encrypt', cert_target: 'domain', issue_node_id: 0, node_webroot: '', challenge_type: 'dns-01', dns_channel_id: null, domains_text: '', ips_text: '', key_type: 'ecc', key_bits: 256, dual_key: false, eab_key_id: '', eab_mac_key: '', auto_renew: true }
   issueVisible.value = true
+  fetchNodes()
 }
 
 async function handleDetectIP() {
@@ -433,6 +449,23 @@ async function handleIssue() {
       ElMessage.error(t('certificate.wildcardNotAllowed'))
       return
     }
+  }
+
+  // 选节点签发：交给该节点在本机完成 ACME ✓（本地 80 端口检查无意义 ✗）
+  if (issueForm.value.issue_node_id > 0) {
+    issuing.value = true
+    try {
+      await client.post('/certificates/issue-on-node', {
+        node_id: issueForm.value.issue_node_id,
+        domains: isIP ? ips : domains,
+        challenge_type: 'http-01',
+        ca_provider: issueForm.value.ca_provider,
+      })
+      ElMessage.success(t('certificate.nodeIssueSubmitted'))
+      issueVisible.value = false
+      fetchCertificates()
+    } catch (e) { ElMessage.error(t('common.failed')) } finally { issuing.value = false }
+    return
   }
 
   // Check port 80 for HTTP-01
@@ -542,6 +575,16 @@ async function handleMigrate() {
 // --- DNS Channels ---
 async function fetchChannels() { try { channels.value = await client.get('/cert-channels') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchProviders() { try { providerOptions.value = await client.get('/cert-channels/providers') || {} } catch (e) { ElMessage.error(t('common.failed')) } }
+
+// 可选节点：只列非本机 + 在线的节点 ✓（离线节点发不出指令 ✗）
+const issueNodes = ref([])
+async function fetchNodes() {
+  try {
+    const data = await client.get('/node-servers', { params: { limit: 200 } })
+    const items = data.items || data || []
+    issueNodes.value = items.filter(n => !n.is_local && n.agent_status === 'online')
+  } catch (e) { issueNodes.value = [] }
+}
 function showChannelDialog() { channelVisible.value = true; fetchChannels() }
 function showAddChannel() { editingChannel.value = null; channelForm.value = { name: '', provider: 'cloudflare', env_vars: {} }; channelFormVisible.value = true }
 function showEditChannel(row) { editingChannel.value = row; channelForm.value = { name: row.name, provider: row.provider, env_vars: {} }; channelFormVisible.value = true }
@@ -648,5 +691,5 @@ async function handleUpload() {
   } catch (e) { ElMessage.error(t('common.failed')) } finally { uploading.value = false }
 }
 
-onMounted(() => { fetchCertificates(); fetchChannels(); fetchEmails(); fetchProviders() })
+onMounted(() => { fetchCertificates(); fetchChannels(); fetchEmails(); fetchProviders(); fetchNodes() })
 </script>

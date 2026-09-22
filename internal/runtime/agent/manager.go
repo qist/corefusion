@@ -54,6 +54,12 @@ type NodeServerManager struct {
 	onTraffic   chan *TrafficEvent
 	onStatusChg chan *StatusEvent
 
+	// 公网证书（ACME）签发结果的落库出口（由证书服务实现 ✓，可空）
+	publicCertSink PublicCertSink
+
+	// acmeAccounts 用于解析 ACME 账号邮箱（面板已有账号配置 ✓，节点侧无需配置 ✗）
+	acmeAccounts ACMEAccountResolver
+
 	// Phase 6: Metrics collector (optional, injected by router)
 	metricsCollector *MetricsCollector
 
@@ -1155,6 +1161,89 @@ func (m *NodeServerManager) ListOnlineServers() []int64 {
 }
 
 // SendCommand sends a PanelCommand to a specific server via the heartbeat stream.
+// SetPublicCertSink 注入"Agent 签好的公网证书怎么落库"（由证书服务实现 ✓）。
+func (m *NodeServerManager) SetPublicCertSink(s PublicCertSink) {
+	m.publicCertSink = s
+}
+
+// ACMEAccountResolver 解析 ACME 账号邮箱（由面板的 ACME 邮箱服务实现 ✓，避免循环依赖 ✗）。
+type ACMEAccountResolver interface {
+	// ResolveACMEEmail 返回账号邮箱；id<=0 表示"默认账号" ✓。
+	ResolveACMEEmail(ctx context.Context, id int64) (string, error)
+}
+
+// SetACMEAccountResolver 注入 ACME 账号解析器 ✓（邮箱由**面板**提供，节点不配置 ✗）。
+func (m *NodeServerManager) SetACMEAccountResolver(r ACMEAccountResolver) {
+	m.acmeAccounts = r
+}
+
+// IssuePublicCert 让指定节点在**本机**签发公网证书 ✓（面板在 SNAT 后面时这是唯一可行路径 ✗）。
+//
+// 邮箱/CA 由**面板**补齐 ✓（面板本来就有 ACME 账号 ✓）→ 节点侧零配置 ✓。
+func (m *NodeServerManager) IssuePublicCert(ctx context.Context, serverID int64, cmd *agentpb.IssuePublicCertCommand) error {
+	if m.isLocalServer(serverID) {
+		return nil // 面板本机不需要远程签发 ✓
+	}
+	if cmd != nil && strings.TrimSpace(cmd.GetEmail()) == "" && m.acmeAccounts != nil {
+		email, err := m.acmeAccounts.ResolveACMEEmail(ctx, 0)
+		if err != nil || strings.TrimSpace(email) == "" {
+			return fmt.Errorf("no ACME account email on the panel for node %d: %w", serverID, err)
+		}
+		cmd.Email = strings.TrimSpace(email)
+	}
+	if cmd != nil && strings.TrimSpace(cmd.GetCa()) == "" {
+		cmd.Ca = "lets_encrypt" // 面板默认 CA ✓；测试用 staging 时由调用方显式指定 ✓
+	}
+	return m.SendCommand(ctx, serverID, &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_IssuePublicCert{IssuePublicCert: cmd},
+	})
+}
+
+// handlePublicCertIssued 处理 Agent 回传的公网证书（成功给 PEM，失败给 error ✓）。
+func (m *NodeServerManager) handlePublicCertIssued(serverID int64, report *agentpb.AgentReport) {
+	r := report.GetPublicCertIssued()
+	if r == nil {
+		return
+	}
+	if !r.GetSuccess() {
+		log.Printf("[NodeServerManager] server %d public cert issue failed for %v: %s",
+			serverID, r.GetIdentifiers(), r.GetError())
+		return
+	}
+	if m.publicCertSink == nil {
+		log.Printf("[NodeServerManager] server %d returned public cert for %v but no sink is configured ✗",
+			serverID, r.GetIdentifiers())
+		return
+	}
+	res := &PublicCertResult{
+		CertID:       r.GetCertId(),
+		ServerID:     serverID,
+		Identifiers:  r.GetIdentifiers(),
+		Success:      true,
+		CertPEM:      r.GetCertPem(),
+		KeyPEM:       r.GetKeyPem(),
+		FullchainPEM: r.GetFullchainPem(),
+		CA:           r.GetCa(),
+	}
+	if r.GetExpiresAt() > 0 {
+		res.ExpiresAt = time.Unix(r.GetExpiresAt(), 0)
+	}
+	certID, err := m.publicCertSink.StoreAgentIssuedCert(context.Background(), res)
+	if err != nil {
+		log.Printf("[NodeServerManager] store public cert from server %d failed: %v", serverID, err)
+		return
+	}
+	// 绑定：把证书挂到**签发它的节点**上 ✓ —— 这既是"该节点用哪张证书"的事实记录 ✓，
+	// 也是 PublicCertRenewer 找"该让谁续"的依据 ✓（没有绑定就不会自动续 ✗）。
+	if certID > 0 {
+		if aerr := m.serverRepo.UpdateCertificateID(context.Background(), serverID, certID); aerr != nil {
+			log.Printf("[NodeServerManager] associate cert %d with server %d failed: %v", certID, serverID, aerr)
+		}
+	}
+	log.Printf("[NodeServerManager] public cert from server %d stored: %v (id=%d, expires %s)",
+		serverID, res.Identifiers, certID, res.ExpiresAt.Format(time.RFC3339))
+}
+
 func (m *NodeServerManager) SendCommand(ctx context.Context, serverID int64, cmd *agentpb.PanelCommand) error {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
@@ -1637,6 +1726,9 @@ func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServ
 			h.handleTaskResult(ac, report)
 		case agentpb.AgentReport_ONLINE_USERS:
 			h.handleOnlineUsersReport(ac, report)
+		case agentpb.AgentReport_PUBLIC_CERT_ISSUED:
+			// 节点本机签完公网证书 → 面板落盘落库 ✓（含 IP 证书 ✓）
+			h.mgr.handlePublicCertIssued(serverID, report)
 		}
 	}
 }

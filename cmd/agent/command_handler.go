@@ -306,6 +306,17 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			log.Println("[Agent] mTLS certificate renewed successfully")
 		}
 
+	case *agentpb.PanelCommand_IssuePublicCert:
+		// 面板下发：在**本机**签发/续签公网证书（域名或 IP ✓），签完回传 PEM 给面板落库 ✓
+		log.Printf("[Agent] IssuePublicCert received: cert_id=%d identifiers=%v", c.IssuePublicCert.GetCertId(), c.IssuePublicCert.GetIdentifiers())
+		go a.handleIssuePublicCert(c.IssuePublicCert, func(r *agentpb.AgentReport) {
+			a.streamSendMu.Lock()
+			defer a.streamSendMu.Unlock()
+			if err := stream.Send(r); err != nil {
+				log.Printf("[Agent] failed to send public cert report: %v", err)
+			}
+		})
+
 	case *agentpb.PanelCommand_DistributeCert:
 		a.handleDistributeCert(c.DistributeCert)
 

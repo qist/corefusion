@@ -449,7 +449,9 @@ message DeleteGeoRuleResponse {
 // ============================================================
 
 message AgentReport {
-  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; RATE_LIMIT_STATUS = 5; ONLINE_USERS = 6; }
+  enum ReportType { HEARTBEAT = 0; STATUS = 1; TRAFFIC = 2; CRASH = 3; TASK_RESULT = 4; RATE_LIMIT_STATUS = 5; ONLINE_USERS = 6;
+                     // 节点本机签发完公网证书后回传（面板据此落库 ✓）
+                     PUBLIC_CERT_ISSUED = 7; }
   ReportType type = 1;
   int64  server_id = 2;
   int64  timestamp = 3;
@@ -508,6 +510,9 @@ message AgentReport {
 
   // ONLINE_USERS — 在线订阅人上报（实时推送，与限速解耦）
   repeated OnlineUserEntry online_users = 63;
+
+  // PUBLIC_CERT_ISSUED — 节点本机签发完公网证书后回传（面板据此落库 ✓）
+  PublicCertIssuedReport public_cert_issued = 64;
 }
 
 // OnlineSession 描述一个订阅下的单个在线会话（一个 IP + 一个入站 = 一个 session）。
@@ -613,6 +618,11 @@ message PanelCommand {
 
     // --- 节点流量配额指令 ---
     SetEgressInterfaceRequest set_egress_interface = 103;     // 设置出口网卡
+
+    // --- 公网证书（ACME）在**节点本机**签发 ---
+    // 为什么必须由 Agent 做 ✗：面板常在 SNAT 后面（只有出站、没有入站），
+    // CA 无法回调面板的 80 端口做 http-01 验证 ✗；而节点有公网 IP 与 80 入站 ✓。
+    IssuePublicCertCommand issue_public_cert = 40;
   }
 }
 
@@ -1128,4 +1138,37 @@ message UpdateWriterConfigResponse {
 // SetEgressInterfaceRequest — Panel 通知 Agent 应监控哪个出口网卡的流量
 message SetEgressInterfaceRequest {
   string interface_name = 1;  // 出口网卡名称 (如 eth0, ens3)，空=不监控
+}
+
+// ============================================================
+// 公网证书（ACME）节点本机签发
+// ============================================================
+
+// IssuePublicCertCommand — 面板 → Agent：在**节点本机**为这些标识符签发/续签证书。
+// identifiers 可以是域名，也可以是 **IP 字面量**（Let's Encrypt 自 2026-01 起支持 IP 证书 ✓，
+// 但 IP 证书必须是短时证书 → profile 固定为 shortlived ✓）。
+message IssuePublicCertCommand {
+  int64  cert_id       = 1;   // 面板 certificates.id（回传时带上，便于对应 ✓）
+  repeated string identifiers = 2;   // 要签的标识符（域名或 IP ✓）
+  string challenge     = 3;   // http-01（默认）/ dns-01
+  string webroot       = 4;   // http-01 且 80 被 nginx/caddy 占用时：把挑战写进该站点根目录 ✓
+  string email         = 5;   // ACME 账号邮箱
+  string ca            = 6;   // lets_encrypt / lets_encrypt_staging / zerossl / google
+  string profile       = 7;   // ACME profile（IP 证书必须 shortlived ✓）
+  string data_dir      = 8;   // Agent 侧 ACME 数据目录（账号/产物）
+  string dns_provider  = 9;   // dns-01 用
+  map<string, string> dns_env_vars = 10;
+}
+
+// PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。
+message PublicCertIssuedReport {
+  int64  cert_id     = 1;
+  repeated string identifiers = 2;
+  bool   success     = 3;
+  string cert_pem    = 4;
+  string key_pem     = 5;
+  string fullchain_pem = 6;
+  int64  expires_at  = 7;
+  string error       = 8;
+  string ca          = 9;
 }

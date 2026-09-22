@@ -11,10 +11,10 @@ import (
 
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
-	"corefusion/pkg/netutil"
 	"corefusion/internal/service/audit"
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // RateLimitPusher pushes IP association to rate limit agents.
@@ -24,11 +24,11 @@ type RateLimitPusher interface {
 
 // Handler handles client authentication HTTP requests.
 type Handler struct {
-	svc              *clientauth.Service
-	rateLimitPusher  RateLimitPusher
-	nodeServerRepo   *repository.NodeServerRepository
-	clientRepo       *repository.ClientRepository
-	planTmplRepo     *repository.PlanTemplateRepository
+	svc             *clientauth.Service
+	rateLimitPusher RateLimitPusher
+	nodeServerRepo  *repository.NodeServerRepository
+	clientRepo      *repository.ClientRepository
+	planTmplRepo    *repository.PlanTemplateRepository
 }
 
 // NewHandler creates a new client auth handler.
@@ -83,7 +83,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	result, err := h.svc.Login(c.Request.Context(), input)
 	if err != nil {
-		middleware.DefaultClientLoginLimiter().RecordFailure(c.ClientIP())
+		middleware.DefaultClientLoginLimiter().RecordFailure(netutil.GetRealIP(c.Request))
 		audit.Record(audit.Event{
 			Category: "auth", EventType: "client_login", Result: "failure",
 			RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
@@ -92,7 +92,7 @@ func (h *Handler) Login(c *gin.Context) {
 		response.Unauthorized(c, "INVALID_CREDENTIALS", err.Error())
 		return
 	}
-	middleware.DefaultClientLoginLimiter().RecordSuccess(c.ClientIP())
+	middleware.DefaultClientLoginLimiter().RecordSuccess(netutil.GetRealIP(c.Request))
 	audit.Record(audit.Event{
 		Category: "auth", EventType: "client_login", Result: "success",
 		UserID: result.Client.ID, RemoteIP: netutil.GetRealIP(c.Request),

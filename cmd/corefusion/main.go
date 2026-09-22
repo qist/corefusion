@@ -18,11 +18,11 @@ import (
 	"syscall"
 	"time"
 
-	"corefusion/internal/constants"
+	"corefusion/internal/api/handlers/system"
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/router"
-	"corefusion/internal/api/handlers/system"
 	"corefusion/internal/auth/jwt"
+	"corefusion/internal/constants"
 	"corefusion/internal/migration"
 	"corefusion/internal/runtime/agent"
 	"corefusion/internal/runtime/healthcheck"
@@ -30,8 +30,8 @@ import (
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
 	planSvc "corefusion/internal/service/plan"
-	usersync "corefusion/internal/service/usersync"
 	sysService "corefusion/internal/service/system"
+	usersync "corefusion/internal/service/usersync"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
@@ -381,9 +381,20 @@ func runServer(args []string) {
 
 	// Phase 6: Create router
 	router.SetCAService(caService)
-	router.SetProcessManager(processMgr)              // share processMgr with router (HTTP API handlers)
-	router.SetNodeServerManager(nodeMgr)              // share nodeMgr with router (same gRPC server instance)
+	router.SetProcessManager(processMgr) // share processMgr with router (HTTP API handlers)
+	router.SetNodeServerManager(nodeMgr) // share nodeMgr with router (same gRPC server instance)
 	r := router.NewWithFullConfig(db.DB, jwtSecret, settings["web_path"], dataDir, Version, apiPort)
+
+	// ⚠ Gin 默认 `trustedProxies = 0.0.0.0/0`（信任所有代理）→ `c.ClientIP()` 直接采信
+	// `X-Forwarded-For`，可被任意伪造（安全审计 v5 S3）。这里用与 netutil.GetRealIP **同一份**
+	// 配置（panel.trusted_proxies）设置，保证两处口径一致；未配置时传 nil = 只信任直连地址。
+	if proxies := netutil.TrustedProxyStrings(); len(proxies) > 0 {
+		if err := r.SetTrustedProxies(proxies); err != nil {
+			log.Printf("[panel] SetTrustedProxies(%v) failed: %v", proxies, err)
+		}
+	} else if err := r.SetTrustedProxies(nil); err != nil {
+		log.Printf("[panel] SetTrustedProxies(nil) failed: %v", err)
+	}
 
 	// Load maintenance mode from database (survives restarts)
 	system.LoadMaintenanceFromDB(context.Background(), grpcSettingRepo)

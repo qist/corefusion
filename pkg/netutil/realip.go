@@ -23,12 +23,16 @@ var (
 type TrustedProxyConfig struct {
 	cidrs []*net.IPNet
 	ips   []net.IP
+	// raw 保留原始字符串列表：gin 引擎需要用同一份配置调用 SetTrustedProxies，
+	// 否则 `c.ClientIP()` 与 `netutil.GetRealIP()` 会给出**不同**的客户端 IP ✗
+	// （限流键不一致 → 限流形同虚设，安全审计 v5 S3）。
+	raw []string
 }
 
 // NewTrustedProxyConfig 解析 IP/CIDR 字符串列表为可信代理配置。
 // 支持 "1.2.3.4"、"10.0.0.0/8"、"::1"、"fd00::/8" 等格式。
 func NewTrustedProxyConfig(proxies []string) *TrustedProxyConfig {
-	cfg := &TrustedProxyConfig{}
+	cfg := &TrustedProxyConfig{raw: append([]string(nil), proxies...)}
 	for _, p := range proxies {
 		p = strings.TrimSpace(p)
 		if p == "" {
@@ -85,6 +89,17 @@ func SetTrustedProxies(proxies []string) {
 	defer trustedProxyMu.Unlock()
 	trustedProxyCfg = NewTrustedProxyConfig(proxies)
 	log.Printf("[netutil] trusted proxies configured: %d entries", len(proxies))
+}
+
+// TrustedProxyStrings 返回当前可信代理的原始字符串列表（供 gin.SetTrustedProxies 使用，
+// 保证 `c.ClientIP()` 与 GetRealIP 的口径一致）。
+func TrustedProxyStrings() []string {
+	trustedProxyMu.RLock()
+	defer trustedProxyMu.RUnlock()
+	if trustedProxyCfg == nil {
+		return nil
+	}
+	return append([]string(nil), trustedProxyCfg.raw...)
 }
 
 // GetTrustedProxyConfig 返回当前全局可信代理配置（只读）。
@@ -204,10 +219,16 @@ func GetRealIP(r *http.Request) string {
 				return ip
 			}
 		}
-		// 如果全是内网/可信 IP，取第一个（至少有个地址）
+		// 全是内网/可信 IP 时的兜底：**也必须校验**后再用 ✗
+		// 旧实现直接返回第一个非空字符串 ✗ —— 攻击者可以填 `X-Forwarded-For: ; rm -rf` 之类的
+		// 任意文本（只要前面那轮"公网 IP"判断都不通过），该值会流入登录限流键、审计日志，
+		// 甚至被拼进 nft 规则的 argv（安全审计 v5 P-2）。校验不过就回退到直连 IP。
 		for i := 0; i < len(parts); i++ {
 			ip := strings.TrimSpace(parts[i])
-			if ip != "" {
+			if ip == "" {
+				continue
+			}
+			if net.ParseIP(ip) != nil {
 				return ip
 			}
 		}

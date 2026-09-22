@@ -2,6 +2,7 @@ package certificate
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -26,10 +27,10 @@ import (
 
 // Service handles certificate business logic.
 type Service struct {
-	repo          *repository.CertificateRepository
-	dataDir       string
-	acmeEmail     string
-	caProvider    cert.CAProvider
+	repo           *repository.CertificateRepository
+	dataDir        string
+	acmeEmail      string
+	caProvider     cert.CAProvider
 	http01Provider *cert.HTTP01Provider // Custom HTTP-01 provider for Gin integration
 }
 
@@ -71,14 +72,14 @@ func (s *Service) getACMEClient(caProvider cert.CAProvider) *cert.ACMEClient {
 
 // CreateCertificateInput is the input for creating a certificate.
 type CreateCertificateInput struct {
-	Domain       string `json:"domain" binding:"required"`
-	Issuer       string `json:"issuer" binding:"required"`
-	ProviderType string `json:"provider_type" binding:"required"`
-	CertPath     string `json:"cert_path" binding:"required"`
-	KeyPath      string `json:"key_path" binding:"required"`
-	FullchainPath string `json:"fullchain_path"`
-	AutoRenew    bool   `json:"auto_renew"`
-	ExpiresAt    time.Time `json:"expires_at" binding:"required"`
+	Domain        string    `json:"domain" binding:"required"`
+	Issuer        string    `json:"issuer" binding:"required"`
+	ProviderType  string    `json:"provider_type" binding:"required"`
+	CertPath      string    `json:"cert_path" binding:"required"`
+	KeyPath       string    `json:"key_path" binding:"required"`
+	FullchainPath string    `json:"fullchain_path"`
+	AutoRenew     bool      `json:"auto_renew"`
+	ExpiresAt     time.Time `json:"expires_at" binding:"required"`
 }
 
 // Create creates a new certificate record.
@@ -115,10 +116,10 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (*en
 
 // UploadCertificateInput is the input for uploading a certificate.
 type UploadCertificateInput struct {
-	Name      string `json:"name"`           // User-friendly name
-	Domain    string `json:"domain"`         // Primary domain (auto-detected from cert if empty)
-	CertContent  string `json:"cert_content"`
-	KeyContent   string `json:"key_content"`
+	Name        string `json:"name"`   // User-friendly name
+	Domain      string `json:"domain"` // Primary domain (auto-detected from cert if empty)
+	CertContent string `json:"cert_content"`
+	KeyContent  string `json:"key_content"`
 }
 
 // Upload creates a certificate from pasted content or file paths.
@@ -179,20 +180,20 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 	os.Remove(tmpKey)
 
 	cert := &entity.Certificate{
-		Name:          name,
-		Domain:        domain,
-		Domains:       sans,
-		Issuer:        issuer,
-		ProviderType:  "upload",
-		KeyType:       keyType,
-		KeyBits:       keyBits,
-		CertPath:      certPath,
-		KeyPath:       keyPath,
-		CertContent:   input.CertContent,
-		KeyContent:    input.KeyContent,
-		Status:        "active",
-		AutoRenew:     0,
-		ExpiresAt:     expiresAt,
+		Name:         name,
+		Domain:       domain,
+		Domains:      sans,
+		Issuer:       issuer,
+		ProviderType: "upload",
+		KeyType:      keyType,
+		KeyBits:      keyBits,
+		CertPath:     certPath,
+		KeyPath:      keyPath,
+		CertContent:  input.CertContent,
+		KeyContent:   input.KeyContent,
+		Status:       "active",
+		AutoRenew:    0,
+		ExpiresAt:    expiresAt,
 	}
 
 	// If a certificate with the same domain already exists, update it in place
@@ -237,10 +238,26 @@ func parseCertDomainList(certPath string) []string {
 	if err != nil {
 		return nil
 	}
-	if len(x509Cert.DNSNames) > 0 {
-		return x509Cert.DNSNames
+	// DNS SAN + **IP SAN**：IP 证书（RFC 8738）没有 DNSNames，身份全在 IPAddresses 里 ✗
+	// —— 只读 DNSNames 会让 IP 证书的 SAN 列表变成 [""] ✗
+	domains := certSANIdentifiers(x509Cert)
+	if len(domains) > 0 {
+		return domains
 	}
-	return []string{x509Cert.Subject.CommonName}
+	if cn := strings.TrimSpace(x509Cert.Subject.CommonName); cn != "" {
+		return []string{cn}
+	}
+	return nil
+}
+
+// certSANIdentifiers 返回证书的**全部**标识符：DNS SAN 在前、IP SAN 在后 ✓。
+func certSANIdentifiers(c *x509.Certificate) []string {
+	out := make([]string, 0, len(c.DNSNames)+len(c.IPAddresses))
+	out = append(out, c.DNSNames...)
+	for _, ip := range c.IPAddresses {
+		out = append(out, ip.String())
+	}
+	return out
 }
 
 // sanitizeDomain converts a domain to a safe directory name.
@@ -293,18 +310,23 @@ func parseCertDomains(certPath string) string {
 		return ""
 	}
 
-	domains := x509Cert.DNSNames
+	// 同 parseCertDomainList：必须包含 IP SAN ✓，否则 IP 证书会存成 [""] ✗
+	domains := certSANIdentifiers(x509Cert)
 	if len(domains) == 0 {
-		// Fall back to CN
-		domains = []string{x509Cert.Subject.CommonName}
+		if cn := strings.TrimSpace(x509Cert.Subject.CommonName); cn != "" {
+			domains = []string{cn}
+		}
+	}
+	if len(domains) == 0 {
+		return "[]"
 	}
 
-	// Return as JSON array
-	parts := make([]string, len(domains))
-	for i, d := range domains {
-		parts[i] = `"` + d + `"`
+	// 用标准 JSON 编码（域名/文本里出现引号等字符也不会破坏结构 ✓）
+	buf, err := json.Marshal(domains)
+	if err != nil {
+		return "[]"
 	}
-	return "[" + strings.Join(parts, ",") + "]"
+	return string(buf)
 }
 
 // parseCertIssuer parses a PEM certificate file and returns the issuer organization or CN.
@@ -531,11 +553,12 @@ func (s *Service) checkPort80ForHTTP01() error {
 
 // IssueACMEInput is the input for ACME certificate issuance.
 type IssueACMEInput struct {
-	Domains       []string                  `json:"domains" binding:"required"`
-	ChallengeType string                    `json:"challenge_type"` // "http-01" or "dns-01"
-	CAProvider    cert.CAProvider            `json:"ca_provider"`    // "lets_encrypt", "zerossl", "google"
-	DNSProvider   *cert.DNSProviderConfig    `json:"dns_provider,omitempty"`
-	EAB           *cert.EABConfig           `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
+	Domains       []string                `json:"domains" binding:"required"`
+	ChallengeType string                  `json:"challenge_type"`    // "http-01" or "dns-01"
+	CAProvider    cert.CAProvider         `json:"ca_provider"`       // "lets_encrypt" / "lets_encrypt_staging" / "zerossl" / "google"
+	Profile       string                  `json:"profile,omitempty"` // IP 证书需 "shortlived"（会自动补）
+	DNSProvider   *cert.DNSProviderConfig `json:"dns_provider,omitempty"`
+	EAB           *cert.EABConfig         `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
 }
 
 // DNSProviderConfig is a type alias for the cert package type.
@@ -544,10 +567,100 @@ type DNSProviderConfig = cert.DNSProviderConfig
 // DNSProvider is a type alias for the cert package type.
 type DNSProvider = cert.DNSProvider
 
+// IsPubliclyReachableIP 判断该 IP 是否可能被公信 CA 验证（导出给 Agent 侧签发复用 ✓）。
+func IsPubliclyReachableIP(ip net.IP) bool { return ipUsableForPublicCA(ip) }
+
+// DefaultProfileFor 返回该组 SAN 需要的 ACME profile：
+// 只要含 **IP**（公网）就必须 `shortlived` ✓ —— LE 策略要求 IP 证书是短时证书（约 6 天），
+// 不带该 profile 会被 CA 拒绝 ✗。域名返回空串（按 CA 默认 profile）。
+func DefaultProfileFor(domains []string) string {
+	for _, d := range domains {
+		if net.ParseIP(strings.TrimSpace(d)) != nil {
+			return "shortlived"
+		}
+	}
+	return ""
+}
+
+// ipUsableForPublicCA 判断一个 IP 是否可能被公信 CA 验证。
+//
+// ⚠ **公信 CA 可以给公网 IP 签证书** ✓ —— Let's Encrypt 2025-07 签出首张 IP 证书、
+// 2026-01-15 **IP 证书 GA** ✓（策略上必须是短时证书、约 6 天 → 见 Profile=shortlived）。
+// 但**私网/保留地址永远不行** ✗：CA 必须能从公网连到这个 IP 做验证（HTTP-01/TLS-ALPN-01），
+// 10.x / 172.16-31.x / 192.168.x / 127.x / 169.254.x / 100.64/10（CGNAT）/
+// 192.0.2、198.51.100、203.0.113（文档保留）等都到不了 → 提前拒绝并说明原因，
+// 免得一路走到 CA 那里才失败（还消耗速率配额 ✗）。
+func ipUsableForPublicCA(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() ||
+		ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	// CGNAT 100.64.0.0/10
+	if ip4 := ip.To4(); ip4 != nil {
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return false
+		}
+		// 文档保留段（RFC 5737）——测试时会用到，但它们不可能被 CA 验证
+		if (ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 2) ||
+			(ip4[0] == 198 && ip4[1] == 51 && ip4[2] == 100) ||
+			(ip4[0] == 203 && ip4[1] == 0 && ip4[2] == 113) {
+			return false
+		}
+	}
+	// 文档保留段（IPv6 2001:db8::/32）
+	if len(ip) == net.IPv6len && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
+		return false
+	}
+	return true
+}
+
+// ValidateACMEDomains 校验 ACME 申请里的名字，并**提前**拒绝那些注定失败的输入。
+//
+// 结论（用户指正 + 核实）：
+//   - **公网 IP 可以签** ✓（LE IP 证书 2026-01-15 GA，必须短时/`shortlived`）；
+//   - **私网 IP 不行** ✗（没有任何公信 CA 能验证私网地址）→ 那种场景请用面板内置 CA 或改用域名；
+//   - 单标签名字（`localhost`、`node1`）公信 CA 不签 ✗；
+//   - 通配符必须走 DNS-01 ✗（HTTP-01 不做通配符校验）。
+//
+// 以前这里只检查"有没有域名" ✗ → IP 会一路走到 CA 才报一个难懂的错误（还消耗失败配额）。
+func ValidateACMEDomains(domains []string, challengeType string) error {
+	if len(domains) == 0 {
+		return errors.New("at least one domain required")
+	}
+	for _, d := range domains {
+		name := strings.TrimSpace(d)
+		if name == "" {
+			return errors.New("empty domain in request")
+		}
+		if ip := net.ParseIP(name); ip != nil {
+			if !ipUsableForPublicCA(ip) {
+				return fmt.Errorf("IP %s 无法由公信 CA 签发：它是私网/保留地址，CA 不可能从公网连到它做验证 ✗。"+
+					"可行方案：① 用**面板内置 CA** 签（适合内部互信）；② 改用**公网 IP**（LE 自 2026-01-15 起支持 IP 证书，"+
+					"但必须是短时证书）；③ 改用域名 + DNS-01", name)
+			}
+			continue // 公网 IP → 放行 ✓
+		}
+		host := strings.TrimPrefix(name, "*.")
+		if !strings.Contains(host, ".") {
+			return fmt.Errorf("ACME 不能为单标签名字（%s）签发证书：公信 CA 要求可验证的公开域名；"+
+				"内部互信请改用**面板内置 CA**", name)
+		}
+		if strings.HasPrefix(name, "*.") && challengeType != "" && challengeType != "dns-01" {
+			return fmt.Errorf("通配符证书（%s）必须使用 dns-01 挑战（HTTP-01 不支持通配符）", name)
+		}
+	}
+	return nil
+}
+
 // IssueACME issues a new certificate via ACME.
 func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.Certificate, error) {
-	if len(input.Domains) == 0 {
-		return nil, errors.New("at least one domain required")
+	// 提前拦掉注定失败的输入（IP / 单标签名 / 通配符+HTTP-01），并给出可行路线
+	if err := ValidateACMEDomains(input.Domains, input.ChallengeType); err != nil {
+		return nil, err
 	}
 
 	// For HTTP-01 challenges, check port 80 status
@@ -564,11 +677,23 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 
 	acme := s.getACMEClient(caProvider)
 
+	// **IP 证书必须用 shortlived profile** ✓（LE 策略：IP 证书只能是短时证书、约 6 天）。
+	// 用户没显式传就自动补上；同时提示有效期很短、必须能自动续 ✓。
+	profile := strings.TrimSpace(input.Profile)
+	if profile == "" {
+		profile = DefaultProfileFor(input.Domains)
+	}
+	if profile != "" {
+		log.Printf("[cert] IP 证书申请 %s → 使用 profile=shortlived（LE 的 IP 证书有效期约 6 天，务必自动续期）",
+			input.Domains[0])
+	}
+
 	result, err := acme.Issue(ctx, cert.IssueOptions{
 		Domains:       input.Domains,
 		ChallengeType: cert.ChallengeType(input.ChallengeType),
 		DNSProvider:   input.DNSProvider,
 		EAB:           input.EAB,
+		Profile:       profile,
 	})
 	if err != nil {
 		return nil, err

@@ -11,8 +11,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -46,8 +48,11 @@ type CAProvider string
 
 const (
 	CAProviderLetsEncrypt CAProvider = "lets_encrypt"
-	CAProviderZeroSSL     CAProvider = "zerossl"
-	CAProviderGoogle      CAProvider = "google"
+	// CAProviderLetsEncryptStaging 走 LE 的 staging 目录：测试签发时用它，
+	// 避免消耗正式环境的速率/失败配额（证书不被浏览器信任，仅用于验证流程 ✓）。
+	CAProviderLetsEncryptStaging CAProvider = "lets_encrypt_staging"
+	CAProviderZeroSSL            CAProvider = "zerossl"
+	CAProviderGoogle             CAProvider = "google"
 )
 
 // ChallengeType represents the ACME challenge type.
@@ -73,12 +78,14 @@ const (
 
 // ACMEClient handles ACME certificate operations using go-acme/lego.
 type ACMEClient struct {
-	dataDir       string
-	email         string
-	caProvider    CAProvider
-	caURL         string
-	accountDir    string
-	http01Provider *HTTP01Provider // Custom HTTP-01 provider for Gin integration
+	// challengeProvider 是自定义 HTTP-01 挑战提供者（webroot 等）；为空则退回内置 provider ✓
+	challengeProvider challenge.Provider
+	dataDir           string
+	email             string
+	caProvider        CAProvider
+	caURL             string
+	accountDir        string
+	http01Provider    *HTTP01Provider // Custom HTTP-01 provider for Gin integration
 }
 
 // NewACMEClient creates a new ACME client.
@@ -89,6 +96,8 @@ func NewACMEClient(dataDir, email string, caProvider CAProvider) *ACMEClient {
 		caURL = CAZeroSSL
 	case CAProviderGoogle:
 		caURL = CAGooglePublicCA
+	case CAProviderLetsEncryptStaging:
+		caURL = CALetsEncryptStaging
 	case CAProviderLetsEncrypt, "":
 		caURL = CALetsEncrypt
 	}
@@ -110,15 +119,62 @@ func NewACMEClientWithHTTP01(dataDir, email string, caProvider CAProvider, http0
 	return client
 }
 
+// NewACMEClientWithChallenge 用**任意** challenge.Provider 提供 HTTP-01 挑战。
+//
+// 用途（节点侧签发）：节点 80 端口常已被 nginx/caddy 占用 ✗（例如跑着 Harbor），
+// 此时既不能停服务 ✗ 也不该独占 80 ✗ → 用 WebrootProvider 把挑战文件写进现有站点根目录 ✓，
+// 由现有 web 服务器直接提供 ✓（无需重启 ✓）。
+
+func NewACMEClientWithChallenge(dataDir, email string, caProvider CAProvider, provider challenge.Provider) *ACMEClient {
+	client := NewACMEClient(dataDir, email, caProvider)
+	client.challengeProvider = provider
+	return client
+}
+
 // IssueResult contains the result of a certificate issuance.
 type IssueResult struct {
-	CertPath      string
-	KeyPath       string
-	FullchainPath string
-	CertContent   string
-	KeyContent    string
-	ExpiresAt     time.Time
+	CertPath       string
+	KeyPath        string
+	FullchainPath  string
+	CertContent    string
+	KeyContent     string
+	ExpiresAt      time.Time
 	AccountKeyPath string
+}
+
+// CertificateInfo 是证书自检用的摘要信息。
+type CertificateInfo struct {
+	Subject     string
+	Issuer      string
+	DNSNames    []string
+	IPAddresses []string
+	NotBefore   time.Time
+	NotAfter    time.Time
+}
+
+// ParseCertificateInfo 解析 PEM 证书的 subject/issuer/SAN/有效期（Agent 侧自检用 ✓）。
+// 为什么要自检："签出来了" 不等于 "签对了" ✗ —— 必须确认 SAN 里真的有申请的那个 IP/域名 ✓。
+func ParseCertificateInfo(pemBytes []byte) (*CertificateInfo, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found")
+	}
+	c, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse certificate: %w", err)
+	}
+	ips := make([]string, 0, len(c.IPAddresses))
+	for _, ip := range c.IPAddresses {
+		ips = append(ips, ip.String())
+	}
+	return &CertificateInfo{
+		Subject:     c.Subject.String(),
+		Issuer:      c.Issuer.String(),
+		DNSNames:    c.DNSNames,
+		IPAddresses: ips,
+		NotBefore:   c.NotBefore,
+		NotAfter:    c.NotAfter,
+	}, nil
 }
 
 // DNSProviderConfig holds DNS provider credentials.
@@ -129,10 +185,14 @@ type DNSProviderConfig struct {
 
 // IssueOptions contains options for certificate issuance.
 type IssueOptions struct {
-	Domains       []string          `json:"domains"`
-	ChallengeType ChallengeType     `json:"challenge_type"`
+	Domains       []string           `json:"domains"`
+	ChallengeType ChallengeType      `json:"challenge_type"`
 	DNSProvider   *DNSProviderConfig `json:"dns_provider,omitempty"`
-	EAB           *EABConfig        `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
+	EAB           *EABConfig         `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
+	// Profile 是 ACME 的证书 profile（RFC 8555 §7.1.4 扩展）。
+	// **IP 证书必须用 `shortlived`** ✗：Let's Encrypt 从 2026-01-15 起 GA 支持 IP 证书，
+	// 但策略上 IP 证书必须是短时证书（约 6 天）→ 不带该 profile 会被 CA 拒绝。
+	Profile string `json:"profile,omitempty"`
 }
 
 // EABConfig holds External Account Binding credentials.
@@ -160,7 +220,7 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 	}
 
 	// Create lego client
-	client, err := c.createClient(user)
+	client, err := c.createClient(user, hasIPIdentifier(opts.Domains))
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +261,7 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 	certResource, err := client.Certificate.Obtain(certificate.ObtainRequest{
 		Domains: opts.Domains,
 		Bundle:  true,
+		Profile: opts.Profile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("obtain certificate: %w", err)
@@ -247,7 +308,7 @@ func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyP
 		key:   key,
 	}
 
-	client, err := c.createClient(user)
+	client, err := c.createClient(user, hasIPIdentifier(domains))
 	if err != nil {
 		return nil, err
 	}
@@ -289,11 +350,26 @@ func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyP
 	return result, nil
 }
 
+// hasIPIdentifier 判断申请里是否含 IP 标识符（IP 证书与域名证书的 CSR 规则不同 ✓）。
+func hasIPIdentifier(domains []string) bool {
+	for _, d := range domains {
+		if net.ParseIP(strings.TrimSpace(d)) != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // createClient creates a lego client.
-func (c *ACMEClient) createClient(user *ACMEUser) (*lego.Client, error) {
+//
+// disableCommonName=true 时 CSR 里**不写 CommonName** ✓ —— 这是 IP 证书的硬要求：
+// RFC 8738 规定 IP 证书只能靠 **IP SAN** 表达身份；LE 对"CN 是 IP"的 CSR 直接报
+// `badCSR :: CSR contains IP address in Common Name` ✗（真机实测踩到 ✓）。
+func (c *ACMEClient) createClient(user *ACMEUser, disableCommonName bool) (*lego.Client, error) {
 	config := lego.NewConfig(user)
 	config.CADirURL = c.caURL
 	config.Certificate.KeyType = certcrypto.EC256
+	config.Certificate.DisableCommonName = disableCommonName
 
 	client, err := lego.NewClient(config)
 	if err != nil {
@@ -307,7 +383,11 @@ func (c *ACMEClient) createClient(user *ACMEUser) (*lego.Client, error) {
 func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType ChallengeType, dnsConfig *DNSProviderConfig) error {
 	switch challengeType {
 	case ChallengeHTTP01, "":
-		// Use custom HTTP-01 provider that integrates with Gin router if available
+		// 自定义 provider 优先：webroot（把挑战写进现有站点根目录）或 Gin 集成 provider
+		if c.challengeProvider != nil {
+			log.Printf("[ACME] Using custom HTTP-01 provider (webroot)")
+			return client.Challenge.SetHTTP01Provider(c.challengeProvider)
+		}
 		if c.http01Provider != nil {
 			log.Printf("[ACME] Using integrated HTTP-01 provider (serves via existing web server)")
 			return client.Challenge.SetHTTP01Provider(c.http01Provider)
@@ -416,9 +496,9 @@ func (c *ACMEClient) saveAccount(user *ACMEUser) error {
 	}
 
 	accountData := AccountData{
-		Email:   user.Email,
-		CAURL:   c.caURL,
-		KeyPEM:  string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyPEM})),
+		Email:  user.Email,
+		CAURL:  c.caURL,
+		KeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyPEM})),
 	}
 
 	if user.Registration != nil {
@@ -467,15 +547,10 @@ func (c *ACMEClient) saveCertificate(domain string, certResource *certificate.Re
 		return nil, fmt.Errorf("write fullchain: %w", err)
 	}
 
-	if err := os.WriteFile(certPath, certResource.Certificate, 0640); err != nil {
-		return nil, fmt.Errorf("write cert: %w", err)
-	}
-	if err := os.WriteFile(keyPath, certResource.PrivateKey, 0600); err != nil {
-		return nil, fmt.Errorf("write key: %w", err)
-	}
-	if err := os.WriteFile(fullchainPath, certResource.Certificate, 0640); err != nil {
-		return nil, fmt.Errorf("write fullchain: %w", err)
-	}
+	// ⚠ 这里原本还有一段**用相对路径**的重复写入（os.WriteFile(certPath, ...) 没拼 dataDir ✗）：
+	// 在面板里因为进程 CWD 恰好是数据目录而侥幸没事，但只要 CWD 不同（例如 Agent 侧 `cert issue`）
+	// 就会在最后一步报 `write cert: open certs/<domain>/cert.pem: no such file or directory` ✗，
+	// 让**明明已经签发成功的证书**被当成失败（真机在 1.8 上踩到 ✓）。上面的绝对路径写入才是唯一的。
 
 	expiresAt, _ := parseCertExpiry(certResource.Certificate)
 	if expiresAt.IsZero() {
@@ -494,10 +569,10 @@ func (c *ACMEClient) saveCertificate(domain string, certResource *certificate.Re
 
 // AccountData is the persisted ACME account.
 type AccountData struct {
-	Email            string `json:"email"`
-	CAURL            string `json:"ca_url"`
-	KeyPEM           string `json:"key_pem"`
-	RegistrationURI  string `json:"registration_uri"`
+	Email           string `json:"email"`
+	CAURL           string `json:"ca_url"`
+	KeyPEM          string `json:"key_pem"`
+	RegistrationURI string `json:"registration_uri"`
 }
 
 // loadPrivateKey loads an EC private key from PEM.
@@ -533,7 +608,7 @@ type ACMEUser struct {
 
 func (u *ACMEUser) GetEmail() string                        { return u.Email }
 func (u *ACMEUser) GetRegistration() *registration.Resource { return u.Registration }
-func (u *ACMEUser) GetPrivateKey() crypto.PrivateKey         { return u.key }
+func (u *ACMEUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
 
 // GetSupportedProviders returns a list of supported DNS providers with their required env vars.
 func GetSupportedProviders() map[DNSProvider][]string {

@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -391,9 +392,85 @@ func (ca *CertificateAuthority) GetCAKeyForCA(caCert *x509.Certificate) *ecdsa.P
 	return ca.latest().key
 }
 
+// BuildCertSANs 组装证书的 DNS / IP SAN。
+//
+// 为什么需要：节点证书原来是 `DNSNames: []string{hostname}` + **`IPAddresses: []net.IP{}`（空的）** ✗
+// —— 于是"按节点 IP 校验证书"必然失败（TLS 客户端会用**连接地址**做 IP SAN 校验 ✗），
+// 面板自己那份服务证书也只带 127.0.0.1/0.0.0.0，局域网 IP 一个都没有 ✗。
+//
+// 规则：
+//   - hostname 本身是 IP（例如节点把 hostname 写成 `192.168.2.50`）→ 进 IPAddresses；否则进 DNSNames；
+//   - 额外传入的 IP（节点的 `public_ip` / `internal_ip`）合并进 IPAddresses；
+//   - 自动补 `127.0.0.1`（本机自检/回环访问也需要能通过校验）；
+//   - 去重、跳过空值与非法 IP（非法值不会静默变成 DNS SAN ✗）。
+func BuildCertSANs(hostname string, extraIPs ...string) (dnsNames []string, ipAddrs []net.IP) {
+	seenDNS := map[string]bool{}
+	seenIP := map[string]bool{}
+
+	addDNS := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seenDNS[s] {
+			return
+		}
+		seenDNS[s] = true
+		dnsNames = append(dnsNames, s)
+	}
+	addIP := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		ip := net.ParseIP(s)
+		if ip == nil {
+			return
+		}
+		key := ip.String()
+		if seenIP[key] {
+			return
+		}
+		seenIP[key] = true
+		ipAddrs = append(ipAddrs, ip)
+	}
+
+	h := strings.TrimSpace(hostname)
+	if ip := net.ParseIP(h); ip != nil {
+		addIP(h)
+	} else {
+		addDNS(h)
+	}
+	for _, s := range extraIPs {
+		addIP(s)
+	}
+	addIP("127.0.0.1")
+	return dnsNames, ipAddrs
+}
+
+// localIPStrings 返回本机所有非链路本地的 IP（供面板自身证书加 IP SAN，便于按 IP 访问/校验）。
+func localIPStrings() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			continue
+		}
+		out = append(out, ip.String())
+	}
+	return out
+}
+
 // IssueAgentCertificate signs an mTLS client certificate for an Agent using the
 // newest (incoming) CA root. The returned bundle contains all valid CA certs.
-func (ca *CertificateAuthority) IssueAgentCertificate(ctx context.Context, serverID int64, hostname string) (*AgentCertResult, error) {
+func (ca *CertificateAuthority) IssueAgentCertificate(ctx context.Context, serverID int64, hostname string, extraIPs ...string) (*AgentCertResult, error) {
 	latest := ca.latest()
 	if latest == nil {
 		return nil, fmt.Errorf("no CA root available")
@@ -411,6 +488,9 @@ func (ca *CertificateAuthority) IssueAgentCertificate(ctx context.Context, serve
 	}
 	expiresAt := time.Now().Add(AgentCertValidity)
 
+	// 节点 IP 也要进 SAN（"基于节点 IP 的证书签发"）✓ —— 调用方传节点的 public_ip / internal_ip
+	dnsNames, ipAddrs := BuildCertSANs(hostname, extraIPs...)
+
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
@@ -422,8 +502,8 @@ func (ca *CertificateAuthority) IssueAgentCertificate(ctx context.Context, serve
 		NotAfter:    expiresAt,
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		DNSNames:    []string{hostname},
-		IPAddresses: []net.IP{},
+		DNSNames:    dnsNames,
+		IPAddresses: ipAddrs,
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, latest.cert, &agentKey.PublicKey, latest.key)
@@ -473,6 +553,15 @@ func (ca *CertificateAuthority) IssueServerCertificate() (tls.Certificate, error
 
 	expiresAt := time.Now().Add(CAValidity / 2) // 5 years
 
+	// 面板自身的服务证书：把**本机所有 IP** 都放进 SAN ✓ —— 原来只有 127.0.0.1 / 0.0.0.0 ✗，
+	// 于是按局域网 IP 访问面板时证书校验必然失败（Agent 引导期只能靠 ServerName=corefusion-panel
+	// 绕过 ✗）。现在带上本机 IP，按 IP 访问/校验也能通过 ✓。
+	serverDNSNames, serverIPs := BuildCertSANs("corefusion-panel", localIPStrings()...)
+	serverDNSNames = append(serverDNSNames, "localhost")
+	if ip := net.ParseIP("0.0.0.0"); ip != nil {
+		serverIPs = append(serverIPs, ip)
+	}
+
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
@@ -483,8 +572,8 @@ func (ca *CertificateAuthority) IssueServerCertificate() (tls.Certificate, error
 		NotAfter:    expiresAt,
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-		DNSNames:    []string{"corefusion-panel", "localhost"},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
+		DNSNames:    serverDNSNames,
+		IPAddresses: serverIPs,
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, latest.cert, &serverKey.PublicKey, latest.key)

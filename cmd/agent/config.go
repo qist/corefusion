@@ -26,6 +26,12 @@ type AgentConfig struct {
 	} `yaml:"agent"`
 }
 
+// 说明 ✓：Agent **没有** acme 配置段。
+// ACME 账号邮箱、CA、挑战方式这些统统由**面板**在 `IssuePublicCertCommand` 里下发 ✓
+// （面板本来就有 ACME 账号 ✓：`acme_account_configs`，见证书页的"邮箱"下拉 ✓），
+// 挑战路径也由面板自己掌握 ✓（面板生成节点 web 配置时就带 `/.well-known/acme-challenge/` ✓）。
+// 让每个节点各填一份 yaml 属于重复配置 ✗，节点侧应当零配置 ✓。
+
 func loadConfig(path string) (*AgentConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

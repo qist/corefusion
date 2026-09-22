@@ -568,6 +568,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	certSvc.SetHTTP01Provider(http01Provider)
 	// Sync cert content from DB to disk on startup
 	certSvc.SyncCertsToDisk(nil)
+	// 让节点回传的公网证书（Agent 本机 ACME 签的 ✓）落到本服务的落盘/落库逻辑里 ✓
+	if sharedNodeMgr != nil {
+		sharedNodeMgr.SetPublicCertSink(publicCertSinkAdapter{svc: certSvc})
+	}
 	binaryResolver := binariesSvc.NewResolver(dataDir)
 	// 让配置校验跑真实核心二进制（sing-box check / xray -test）：
 	// 面板拼装配置时写入未知字段（如 dns.servers[].address、route 规则的 strategy）
@@ -965,6 +969,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
+	// 证书页"选节点签发"：面板在 SNAT 后面时，公网证书只能由节点在本机签 ✓
+	if sharedNodeMgr != nil {
+		certH.SetNodeIssuer(sharedNodeMgr)
+	}
 	// Reuse processMgr if injected from main.go (shared with LocalAgent),
 	// otherwise create a new one.
 	if processMgr == nil {
@@ -2426,6 +2434,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certsGroup.GET("", certH.List)
 				certsGroup.POST("", certH.Create)
 				certsGroup.POST("/issue", certH.Issue)
+				// 选节点签发：面板在 SNAT 后面时，公网证书只能由节点在本机签 ✓
+				certsGroup.POST("/issue-on-node", certH.IssueOnNode)
 				certsGroup.GET("/detect-ip", certH.DetectIP)
 				certsGroup.GET("/check-port", certH.CheckPort)
 				certsGroup.POST("/upload", certH.Upload)
@@ -3851,4 +3861,53 @@ func (a *wafProxyReloaderAdapter) ReloadProxy(ctx context.Context, proxyType str
 
 func (a *wafProxyReloaderAdapter) SaveAndApply(ctx context.Context, proxyType string) error {
 	return a.mgr.SaveAndApplyProxy(ctx, proxySvc.ProxyType(proxyType))
+}
+
+// publicCertSinkAdapter 把 Agent 回传的公网证书接到证书服务的落盘落库逻辑上 ✓。
+// 放在 router 包是为了避免 runtime/agent ↔ service/certificate 之间的循环依赖 ✗。
+type publicCertSinkAdapter struct {
+	svc *certService.Service
+}
+
+func (a publicCertSinkAdapter) StoreAgentIssuedCert(ctx context.Context, res *agent.PublicCertResult) (int64, error) {
+	if a.svc == nil || res == nil {
+		return 0, nil
+	}
+	c, err := a.svc.StoreAgentIssuedCert(ctx, certService.AgentIssuedCertInput{
+		CertID:       res.CertID,
+		Identifiers:  res.Identifiers,
+		CertPEM:      res.CertPEM,
+		KeyPEM:       res.KeyPEM,
+		FullchainPEM: res.FullchainPEM,
+		ExpiresAt:    res.ExpiresAt,
+		CA:           res.CA,
+	})
+	if err != nil || c == nil {
+		return 0, err
+	}
+	return c.ID, nil
+}
+
+// acmeEmailAdapter 把面板的 ACME 邮箱服务接成"解析邮箱"能力 ✓。
+// 放在 router 包以避免 runtime/agent、api/handlers 与 service 之间的循环依赖 ✗。
+type acmeEmailAdapter struct {
+	svc *certService.ACMEEmailService
+}
+
+func (a acmeEmailAdapter) ResolveACMEEmail(ctx context.Context, id int64) (string, error) {
+	if a.svc == nil {
+		return "", fmt.Errorf("acme email service not available")
+	}
+	if id > 0 {
+		cfg, err := a.svc.GetByID(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return cfg.Email, nil
+	}
+	cfg, err := a.svc.GetDefault(ctx)
+	if err != nil {
+		return "", err
+	}
+	return cfg.Email, nil
 }

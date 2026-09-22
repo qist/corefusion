@@ -130,10 +130,10 @@ func (r *NodeServerRepository) Update(ctx context.Context, server *entity.NodeSe
 // UpdateAgentStatus updates only the agent status and heartbeat.
 func (r *NodeServerRepository) UpdateAgentStatus(ctx context.Context, id int64, status string, version string) error {
 	updates := map[string]interface{}{
-		"agent_status":     status,
-		"agent_version":    version,
+		"agent_status":      status,
+		"agent_version":     version,
 		"last_heartbeat_at": time.Now(),
-		"updated_at":       time.Now(),
+		"updated_at":        time.Now(),
 	}
 	return r.db.WithContext(ctx).Model(&entity.NodeServer{}).
 		Where("id = ?", id).
@@ -156,10 +156,10 @@ func (r *NodeServerRepository) UpdateAgentCert(ctx context.Context, id int64, se
 	return r.db.WithContext(ctx).Model(&entity.NodeServer{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"agent_cert_serial":         serial,
-			"agent_cert_expires_at":     expiresAt,
+			"agent_cert_serial":          serial,
+			"agent_cert_expires_at":      expiresAt,
 			"agent_cert_last_renewed_at": now,
-			"updated_at":                now,
+			"updated_at":                 now,
 		}).Error
 }
 
@@ -205,12 +205,12 @@ func (r *NodeServerRepository) EnsureLocalServer(ctx context.Context, hostname s
 
 	now := time.Now()
 	local := &entity.NodeServer{
-		Name:          "Local (Panel)",
-		Hostname:      hostname,
-		NodeType:      entity.NodeTypeStandalone,
-		AgentStatus:   entity.AgentStatusOnline,
-		AgentPort:     constants.DefaultAgentGRPCPort,
-		IsLocal:       true,
+		Name:           "Local (Panel)",
+		Hostname:       hostname,
+		NodeType:       entity.NodeTypeStandalone,
+		AgentStatus:    entity.AgentStatusOnline,
+		AgentPort:      constants.DefaultAgentGRPCPort,
+		IsLocal:        true,
 		BillingEnabled: true,
 		SupportedCores: `["xray","singbox","hysteria2","tuic"]`,
 		Enabled:        true,
@@ -218,4 +218,12 @@ func (r *NodeServerRepository) EnsureLocalServer(ctx context.Context, hostname s
 		UpdatedAt:      now,
 	}
 	return r.db.WithContext(ctx).Create(local).Error
+}
+
+// ListByCertificateID 返回引用了某张证书的全部节点（"这张证书要发给谁" ✓）。
+// 公网证书的自动续期要靠它找到"该让哪个节点在本机续" ✓（node_servers.certificate_id 是现成绑定 ✓）。
+func (r *NodeServerRepository) ListByCertificateID(ctx context.Context, certID int64) ([]entity.NodeServer, error) {
+	var servers []entity.NodeServer
+	err := r.db.WithContext(ctx).Where("certificate_id = ?", certID).Find(&servers).Error
+	return servers, err
 }

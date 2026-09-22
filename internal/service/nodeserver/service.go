@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"corefusion/internal/constants"
 	"corefusion/internal/api/handlers/services"
+	"corefusion/internal/constants"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/model/vo"
@@ -50,19 +50,19 @@ type Service struct {
 	billingFilter *agent.BillingFilter
 
 	// Phase 4: User sync and traffic collection
-	userSyncSvc   UserSyncServiceInterface
-	trafficStats  TrafficStatsInterface
+	userSyncSvc  UserSyncServiceInterface
+	trafficStats TrafficStatsInterface
 
 	// Phase 5: Health check and dashboard
-	healthChecker HealthCheckerInterface
+	healthChecker  HealthCheckerInterface
 	regionSelector RegionSelectorInterface
 
 	// Phase 6: Advanced features
-	metricsCollector  *agent.MetricsCollector
+	metricsCollector *agent.MetricsCollector
 	speedTestMgr     *agent.SpeedTestManager
-	loadBalancer      *agent.LoadBalancer
-	agentUpdater      *agent.AgentUpdater
-	trafficQuotaSvc   *NodeTrafficQuotaService
+	loadBalancer     *agent.LoadBalancer
+	agentUpdater     *agent.AgentUpdater
+	trafficQuotaSvc  *NodeTrafficQuotaService
 
 	// Supplementary repos
 	auditLogRepo  *repository.NodeAuditLogRepository
@@ -519,9 +519,9 @@ func (s *Service) GenerateBootstrapToken(ctx context.Context, serverID int64) (*
 	}
 
 	return &vo.BootstrapTokenResponse{
-		ServerID:  serverID,
-		Token:     token,
-		ExpiresAt: *server.BootstrapTokenExpiresAt,
+		ServerID:    serverID,
+		Token:       token,
+		ExpiresAt:   *server.BootstrapTokenExpiresAt,
 		Instruction: "Copy this token to the Agent's config. It expires in 24 hours and can only be used once.",
 	}, nil
 }
@@ -569,13 +569,13 @@ func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.Res
 		UpdatedAt:              server.UpdatedAt,
 
 		// 出口网卡流量配额
-		EgressInterface:       server.EgressInterface,
-		TrafficQuotaBytes:     server.TrafficQuotaBytes,
-		TrafficQuotaResetDay:  server.TrafficQuotaResetDay,
-		TrafficSuspended:      server.TrafficSuspended,
-		TrafficSuspendedAt:    server.TrafficSuspendedAt,
-		TrafficUsedBytes:      server.TrafficUsedBytes,
-		TrafficPeriodStart:    server.TrafficPeriodStart,
+		EgressInterface:      server.EgressInterface,
+		TrafficQuotaBytes:    server.TrafficQuotaBytes,
+		TrafficQuotaResetDay: server.TrafficQuotaResetDay,
+		TrafficSuspended:     server.TrafficSuspended,
+		TrafficSuspendedAt:   server.TrafficSuspendedAt,
+		TrafficUsedBytes:     server.TrafficUsedBytes,
+		TrafficPeriodStart:   server.TrafficPeriodStart,
 	}
 
 	if len(resourceUsage) > 0 && resourceUsage[0] != nil {
@@ -1407,28 +1407,28 @@ func (s *Service) ControlMirrorsProxy(ctx context.Context, primaryServerID int64
 
 // InstallBinary installs a core binary on a specific server (local or remote via Agent).
 func (s *Service) InstallBinary(ctx context.Context, serverID int64, coreType, version, downloadURL, assetName string) (interface{}, error) {
-if s.nodeMgr == nil {
-return nil, fmt.Errorf("node manager not initialized")
-}
-result, err := s.nodeMgr.InstallBinary(ctx, serverID, coreType, version, downloadURL, assetName)
-if err == nil {
-// Invalidate cached binary info so next query fetches fresh data
-s.nodeMgr.InvalidateBinaryCache(serverID)
-}
-return result, err
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	result, err := s.nodeMgr.InstallBinary(ctx, serverID, coreType, version, downloadURL, assetName)
+	if err == nil {
+		// Invalidate cached binary info so next query fetches fresh data
+		s.nodeMgr.InvalidateBinaryCache(serverID)
+	}
+	return result, err
 }
 
 // InstallProxy installs a proxy binary (caddy/nginx) on a specific server (local or remote via Agent).
 func (s *Service) InstallProxy(ctx context.Context, serverID int64, proxyType, downloadURL, tagName string) (interface{}, error) {
-if s.nodeMgr == nil {
-return nil, fmt.Errorf("node manager not initialized")
-}
-result, err := s.nodeMgr.InstallProxy(ctx, serverID, proxyType, downloadURL, tagName)
-if err == nil {
-// Invalidate cached binary info so next query fetches fresh data
-s.nodeMgr.InvalidateBinaryCache(serverID)
-}
-return result, err
+	if s.nodeMgr == nil {
+		return nil, fmt.Errorf("node manager not initialized")
+	}
+	result, err := s.nodeMgr.InstallProxy(ctx, serverID, proxyType, downloadURL, tagName)
+	if err == nil {
+		// Invalidate cached binary info so next query fetches fresh data
+		s.nodeMgr.InvalidateBinaryCache(serverID)
+	}
+	return result, err
 }
 
 // GetProxyStatusRemote queries proxy installation status on a specific server.
@@ -1660,8 +1660,8 @@ func (s *Service) ListServerCertificates(ctx context.Context, serverID int64) (i
 
 	// certID -> usage sources
 	type certUsage struct {
-		Cert       entity.Certificate `json:"cert"`
-		Sources    []string           `json:"sources"` // e.g. ["xray:inbound_tag", "caddy:domain", "nginx:domain", "node-level"]
+		Cert    entity.Certificate `json:"cert"`
+		Sources []string           `json:"sources"` // e.g. ["xray:inbound_tag", "caddy:domain", "nginx:domain", "node-level"]
 	}
 	usageMap := make(map[int64]*certUsage)
 
@@ -1779,20 +1779,20 @@ func (s *Service) ListServerCertificates(ctx context.Context, serverID int64) (i
 				cert.CertPath = strings.TrimPrefix(cert.CertPath, "data/")
 				cert.KeyPath = strings.TrimPrefix(cert.KeyPath, "data/")
 				result = append(result, gin.H{
-					"id":           cert.ID,
-					"name":         cert.Name,
-					"domain":       cert.Domain,
-					"domains":      cert.Domains,
-					"issuer":       cert.Issuer,
+					"id":            cert.ID,
+					"name":          cert.Name,
+					"domain":        cert.Domain,
+					"domains":       cert.Domains,
+					"issuer":        cert.Issuer,
 					"provider_type": cert.ProviderType,
-					"key_type":     cert.KeyType,
-					"key_bits":     cert.KeyBits,
-					"cert_path":    cert.CertPath,
-					"key_path":     cert.KeyPath,
-					"status":       cert.Status,
-					"auto_renew":   cert.AutoRenew,
-					"expires_at":   cert.ExpiresAt,
-					"sources":      usage.Sources,
+					"key_type":      cert.KeyType,
+					"key_bits":      cert.KeyBits,
+					"cert_path":     cert.CertPath,
+					"key_path":      cert.KeyPath,
+					"status":        cert.Status,
+					"auto_renew":    cert.AutoRenew,
+					"expires_at":    cert.ExpiresAt,
+					"sources":       usage.Sources,
 				})
 				break
 			}
@@ -2034,10 +2034,10 @@ func (s *Service) GetCAStatus() interface{} {
 	// access them directly (backward compatible).
 	if len(caRoots) > 0 {
 		latest := caRoots[len(caRoots)-1]
-		result["subject"]    = latest.Subject
-		result["serial"]     = latest.SerialNumber
+		result["subject"] = latest.Subject
+		result["serial"] = latest.SerialNumber
 		result["not_before"] = latest.NotBefore
-		result["not_after"]  = latest.NotAfter
+		result["not_after"] = latest.NotAfter
 		result["expires_in"] = latest.ExpiresIn
 	}
 
@@ -2051,13 +2051,13 @@ func (s *Service) ListAgentCerts(ctx context.Context) (interface{}, error) {
 		return nil, err
 	}
 	type agentCertInfo struct {
-		ServerID       int64      `json:"server_id"`
-		ServerName     string     `json:"server_name"`
-		Hostname       string     `json:"hostname"`
-		CertSerial     string     `json:"cert_serial"`
-		ExpiresAt      *time.Time `json:"expires_at"`
-		LastRenewedAt  *time.Time `json:"last_renewed_at"`
-		AgentStatus    string     `json:"agent_status"`
+		ServerID      int64      `json:"server_id"`
+		ServerName    string     `json:"server_name"`
+		Hostname      string     `json:"hostname"`
+		CertSerial    string     `json:"cert_serial"`
+		ExpiresAt     *time.Time `json:"expires_at"`
+		LastRenewedAt *time.Time `json:"last_renewed_at"`
+		AgentStatus   string     `json:"agent_status"`
 	}
 	var certs []agentCertInfo
 	for _, s := range servers {
@@ -2329,9 +2329,9 @@ func (s *Service) GetDegradationStatus(ctx context.Context, serverID int64) (int
 	}
 
 	status := gin.H{
-		"server_id":     serverID,
-		"agent_status":  server.AgentStatus,
-		"is_local":      server.IsLocal,
+		"server_id":    serverID,
+		"agent_status": server.AgentStatus,
+		"is_local":     server.IsLocal,
 	}
 	if s.nodeMgr != nil {
 		status["online"] = s.nodeMgr.IsOnlineForServer(serverID)

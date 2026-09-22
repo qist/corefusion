@@ -287,6 +287,13 @@ func runServer(args []string) {
 	go certRenewer.RunLoop(context.Background())
 	log.Println("Agent certificate auto-renewer started (interval=6h, renew-before=3d)")
 
+	// 公网证书（ACME 签的域名/IP 证书）自动续期 ✓ —— 与上面那条区分开 ✗：
+	// 上面那个续的是 **Agent 的 mTLS 证书**（面板自签 CA ✓），这条续的是**对外的公网证书** ✓。
+	// 由绑定节点的 Agent 在**节点本机**签发（面板在 SNAT 后面时 CA 回连不到面板 ✗）。
+	publicCertRenewer := agent.NewPublicCertRenewer(certRepo, nodeServerRepo, nodeMgr)
+	go publicCertRenewer.RunLoop(context.Background())
+	log.Println("Public certificate auto-renewer started (interval=6h, renew-before=5d, node-side ACME)")
+
 	// Phase 3: Start FailoverManager, MirrorSync, and ChainHealth monitors
 	inboundRepoForPhase3 := repository.NewInboundConfigRepository(db.DB)
 	failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgr)

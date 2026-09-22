@@ -13,8 +13,7 @@ import (
 // traffic billing. Servers with billing_enabled=false (chain_exit, mirror
 // non-primary, backup nodes) are skipped during user sync and traffic collection.
 type BillingFilter struct {
-	serverRepo  *repository.NodeServerRepository
-	exitCfgRepo *repository.ChainExitConfigRepository
+	serverRepo *repository.NodeServerRepository
 	// Cache for performance
 	mu    sync.RWMutex
 	cache map[int64]*entity.NodeServer
@@ -28,14 +27,7 @@ func NewBillingFilter(serverRepo *repository.NodeServerRepository) *BillingFilte
 	}
 }
 
-// SetExitConfigRepo injects the chain exit config repository.
-// This is called after construction when the exit config repo is available.
-func (f *BillingFilter) SetExitConfigRepo(repo *repository.ChainExitConfigRepository) {
-	f.exitCfgRepo = repo
-}
-
 // ShouldSyncUsers returns true if users should be synced to this server.
-// Pure exit nodes (relay_only=true) never receive user sync.
 // Mirror nodes do NOT receive AlterUsers.
 // primary_backup backup: sync users only when it's the active primary (after failover).
 // standalone, sync: always sync users (billing_enabled permitting).
@@ -47,14 +39,6 @@ func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) boo
 
 	if !server.Enabled {
 		return false
-	}
-
-	// Check if this server is a pure exit (relay_only=true)
-	if f.exitCfgRepo != nil {
-		exitCfg, err := f.exitCfgRepo.GetByServerID(ctx, serverID)
-		if err == nil && exitCfg != nil && exitCfg.Enabled && exitCfg.RelayOnly {
-			return false
-		}
 	}
 
 	switch server.NodeType {
@@ -71,9 +55,6 @@ func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) boo
 }
 
 // ShouldCollectTraffic returns true if traffic should be collected from this server.
-// Pure exit nodes (relay_only=true): traffic IS collected — the relay-in
-// inbound has its own user-level stats (email=chain-relay), and this
-// traffic must be visible on the exit node's dashboard.
 // Mirror: collect traffic but merge to primary.
 // primary_backup backup (not active): no traffic collection.
 func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64) bool {
@@ -85,10 +66,6 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 	if !server.Enabled {
 		return false
 	}
-
-	// relay_only exit nodes DO collect traffic — their relay-in inbound
-	// has user-level stats that should be attributed to the exit node.
-	// We deliberately do NOT skip them here.
 
 	switch server.NodeType {
 	case entity.NodeTypePrimaryBackup:
@@ -105,7 +82,6 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 
 // ShouldAppearInSubscription returns true if the server's address should
 // appear in user subscription output.
-// Pure exit nodes (relay_only=true): never appear in subscription.
 func (f *BillingFilter) ShouldAppearInSubscription(ctx context.Context, serverID int64) bool {
 	server, err := f.getServer(ctx, serverID)
 	if err != nil || server == nil {
@@ -114,13 +90,6 @@ func (f *BillingFilter) ShouldAppearInSubscription(ctx context.Context, serverID
 
 	if !server.Enabled {
 		return false
-	}
-
-	if f.exitCfgRepo != nil {
-		exitCfg, err := f.exitCfgRepo.GetByServerID(ctx, serverID)
-		if err == nil && exitCfg != nil && exitCfg.Enabled && exitCfg.RelayOnly {
-			return false
-		}
 	}
 
 	switch server.NodeType {

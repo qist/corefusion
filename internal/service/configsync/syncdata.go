@@ -32,8 +32,6 @@ type RawDataProvider interface {
 
 	// ListChainLinks returns all chain_links records (用于 Agent 本地链式生成).
 	ListChainLinks(ctx context.Context) ([]entity.ChainLink, error)
-	// ListChainExitConfigs returns all chain_exit_configs records.
-	ListChainExitConfigs(ctx context.Context) ([]entity.ChainExitConfig, error)
 	// ListNodeServers returns all enabled node_servers (entry/exit 地址解析).
 	ListNodeServers(ctx context.Context) ([]entity.NodeServer, error)
 	// ListExternalNodes returns all enabled external_nodes (外部出口).
@@ -69,7 +67,6 @@ type RepositoryDataProvider struct {
 	nginxSiteRepo      *repository.NginxSiteRepository
 	systemSettingRepo  *repository.SystemSettingRepository
 	chainLinkRepo      *repository.ChainLinkRepository
-	chainExitRepo      *repository.ChainExitConfigRepository
 	extNodeRepo        *repository.ExternalNodeRepository
 }
 
@@ -115,12 +112,11 @@ func (p *RepositoryDataProvider) WithSystemSettingProvider(systemSettingRepo *re
 	return p
 }
 
-// WithChainRepos injects chain proxy repositories for collecting chain_links,
-// chain_exit_configs, and external_nodes during SyncData. These are used by the
-// Agent's local chain proxy generation (offline fallback).
-func (p *RepositoryDataProvider) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository, chainExitRepo *repository.ChainExitConfigRepository, extNodeRepo *repository.ExternalNodeRepository) *RepositoryDataProvider {
+// WithChainRepos injects chain proxy repositories for collecting chain_links and
+// external_nodes during SyncData. These are used by the Agent's local chain proxy
+// generation (offline fallback).
+func (p *RepositoryDataProvider) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository, extNodeRepo *repository.ExternalNodeRepository) *RepositoryDataProvider {
 	p.chainLinkRepo = chainLinkRepo
-	p.chainExitRepo = chainExitRepo
 	p.extNodeRepo = extNodeRepo
 	return p
 }
@@ -150,13 +146,6 @@ func (p *RepositoryDataProvider) ListChainLinks(ctx context.Context) ([]entity.C
 		return nil, nil
 	}
 	return p.chainLinkRepo.ListAll(ctx)
-}
-
-func (p *RepositoryDataProvider) ListChainExitConfigs(ctx context.Context) ([]entity.ChainExitConfig, error) {
-	if p.chainExitRepo == nil {
-		return nil, nil
-	}
-	return p.chainExitRepo.ListAll(ctx)
 }
 
 func (p *RepositoryDataProvider) ListNodeServers(ctx context.Context) ([]entity.NodeServer, error) {
@@ -454,25 +443,6 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			}
 		}
 		log.Printf("[DataSyncBuilder] server %d: %d chain link entries", serverID, len(chainLinks))
-	}
-	if exitConfigs, err := b.rawProvider.ListChainExitConfigs(ctx); err == nil {
-		req.ChainExitConfigs = make([]*agentpb.ChainExitConfigEntry, len(exitConfigs))
-		for i, c := range exitConfigs {
-			req.ChainExitConfigs[i] = &agentpb.ChainExitConfigEntry{
-				Id:             c.ID,
-				ServerId:       c.ServerID,
-				RelayPort:      int32(c.RelayPort),
-				RelayProtocol:  c.RelayProtocol,
-				RelayTransport: c.RelayTransport,
-				RelaySecurity:  c.RelaySecurity,
-				RelayUuid:      c.RelayUUID,
-				RelayOnly:      c.RelayOnly,
-				Enabled:        c.Enabled,
-				CreatedAt:      c.CreatedAt.Unix(),
-				UpdatedAt:      c.UpdatedAt.Unix(),
-			}
-		}
-		log.Printf("[DataSyncBuilder] server %d: %d chain exit config entries", serverID, len(exitConfigs))
 	}
 	if nodeServers, err := b.rawProvider.ListNodeServers(ctx); err == nil {
 		req.NodeServers = make([]*agentpb.NodeServerEntry, len(nodeServers))

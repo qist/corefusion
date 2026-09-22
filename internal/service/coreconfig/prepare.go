@@ -43,11 +43,6 @@ type ChainLinkProvider interface {
 	// observatory config for load-balanced (multi-exit) entries. Returns nil
 	// slices when no entry uses load balancing. See design doc §6.5 / §6.6.
 	GenerateEntryBalancers(ctx context.Context, serverID int64) (balancers []interface{}, observatory map[string]interface{})
-	// GenerateExitInbound returns the relay-in inbound config map for the
-	// exit side of this server, or nil if not an exit.
-	GenerateExitInbound(ctx context.Context, serverID int64) (map[string]interface{}, error)
-	// IsRelayOnlyServer returns true if the server is a pure exit (no user inbounds).
-	IsRelayOnlyServer(ctx context.Context, serverID int64) bool
 }
 
 // PrepareFullConfigOptions holds the parameters for PrepareFullConfig.
@@ -287,24 +282,6 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 			}
 		}
 
-		// 8c. If this server is a chain exit, add relay-in inbound.
-		exitInbound, err := opts.ChainLinkProvider.GenerateExitInbound(opts.Ctx, opts.ServerID)
-		if err != nil {
-			log.Printf("[PrepareFullConfig] chain exit inbound failed for server %d: %v", opts.ServerID, err)
-		} else if exitInbound != nil {
-			// For sing-box: convert xray-format relay-in inbound to sing-box format
-			if opts.CoreType == "singbox" {
-				exitInbound = convertRelayInboundToSingbox(exitInbound)
-			}
-			existingInbounds, _ := fullConfig["inbounds"].([]interface{})
-			fullConfig["inbounds"] = append(existingInbounds, exitInbound)
-		}
-
-		// 8d. If this server is relay_only, filter out user inbounds
-		// (keep only relay-in and api inbounds).
-		if opts.ChainLinkProvider.IsRelayOnlyServer(opts.Ctx, opts.ServerID) {
-			filterRelayOnlyInbounds(fullConfig)
-		}
 	}
 
 	// 8e. xray：leastPing/leastLoad 的 balancer 没有 observatory 时核心拒绝启动，
@@ -940,30 +917,6 @@ func mergeChainRoutingRules(existing []interface{}, chainRules []interface{}) []
 	result = append(result, chainRules...)
 	result = append(result, existing...)
 	return result
-}
-
-// filterRelayOnlyInbounds removes user inbounds from the config, keeping only
-// relay-in and api inbounds. This is used for pure exit nodes (relay_only=true)
-// that should not accept user connections.
-func filterRelayOnlyInbounds(fullConfig map[string]interface{}) {
-	inbounds, ok := fullConfig["inbounds"].([]interface{})
-	if !ok {
-		return
-	}
-	filtered := make([]interface{}, 0, len(inbounds))
-	for _, ib := range inbounds {
-		ibMap, ok := ib.(map[string]interface{})
-		if !ok {
-			filtered = append(filtered, ib)
-			continue
-		}
-		tag, _ := ibMap["tag"].(string)
-		// Keep only relay-in and api inbounds for pure exit nodes
-		if tag == "relay-in" || tag == "api" {
-			filtered = append(filtered, ib)
-		}
-	}
-	fullConfig["inbounds"] = filtered
 }
 
 // ensureSingboxDefaultOutbounds adds missing direct/block outbounds for sing-box.
@@ -2033,79 +1986,3 @@ func convertChainBalancersToSingbox(balancers []interface{}, chainOutbounds []in
 	return outbounds, tagMap
 }
 
-// convertRelayInboundToSingbox converts xray-format relay-in inbound to sing-box format.
-//
-// xray:  {"tag":"relay-in","protocol":"vless","listen":"0.0.0.0","port":443,
-//
-//	"settings":{"clients":[{"id":"uuid","email":"chain-relay"}]}}
-//
-// sing-box: {"tag":"relay-in","type":"vless","listen":"0.0.0.0","listen_port":443,
-//
-//	"users":[{"name":"chain-relay","uuid":"uuid"}]}
-func convertRelayInboundToSingbox(inbound map[string]interface{}) map[string]interface{} {
-	protocol, _ := inbound["protocol"].(string)
-	tag, _ := inbound["tag"].(string)
-	listen, _ := inbound["listen"].(string)
-	port := inbound["port"]
-
-	sb := map[string]interface{}{
-		"tag":    tag,
-		"type":   protocol,
-		"listen": listen,
-	}
-	if port != nil {
-		sb["listen_port"] = port
-	}
-
-	// Convert settings.clients to users[]
-	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
-		if clients, ok := settings["clients"].([]interface{}); ok {
-			users := make([]interface{}, 0, len(clients))
-			for _, c := range clients {
-				cm, ok := c.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				user := map[string]interface{}{}
-				if email, ok := cm["email"].(string); ok && email != "" {
-					user["name"] = email
-				}
-				if id, ok := cm["id"].(string); ok && id != "" {
-					user["uuid"] = id
-				}
-				if pw, ok := cm["password"].(string); ok && pw != "" {
-					user["password"] = pw
-				}
-				users = append(users, user)
-			}
-			if len(users) > 0 {
-				sb["users"] = users
-			}
-		}
-	}
-
-	// Convert streamSettings if present (for TLS/transport)
-	if ss, ok := inbound["streamSettings"].(map[string]interface{}); ok {
-		security, _ := ss["security"].(string)
-		if security == "tls" {
-			tls := map[string]interface{}{"enabled": true}
-			if sni, ok := ss["serverName"].(string); ok && sni != "" {
-				tls["server_name"] = sni
-			}
-			sb["tls"] = tls
-		}
-		network, _ := ss["network"].(string)
-		if network != "" && network != "tcp" {
-			transport := map[string]interface{}{"type": network}
-			if path, ok := ss["path"].(string); ok {
-				transport["path"] = path
-			}
-			if sn, ok := ss["serviceName"].(string); ok {
-				transport["service_name"] = sn
-			}
-			sb["transport"] = transport
-		}
-	}
-
-	return sb
-}

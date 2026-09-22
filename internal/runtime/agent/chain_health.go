@@ -38,7 +38,6 @@ type ChainHealthMonitor struct {
 	nodeMgr       *NodeServerManager
 	serverRepo    *repository.NodeServerRepository
 	chainLinkRepo *repository.ChainLinkRepository
-	exitCfgRepo   *repository.ChainExitConfigRepository
 	healthStatus  map[int64]*ExitHealthStatus // exit_server_id → status
 	checkInterval time.Duration
 	failThreshold int
@@ -52,13 +51,11 @@ func NewChainHealthMonitor(
 	nodeMgr *NodeServerManager,
 	serverRepo *repository.NodeServerRepository,
 	chainLinkRepo *repository.ChainLinkRepository,
-	exitCfgRepo *repository.ChainExitConfigRepository,
 ) *ChainHealthMonitor {
 	return &ChainHealthMonitor{
 		nodeMgr:        nodeMgr,
 		serverRepo:     serverRepo,
 		chainLinkRepo:  chainLinkRepo,
-		exitCfgRepo:    exitCfgRepo,
 		healthStatus:   make(map[int64]*ExitHealthStatus),
 		checkInterval:  30 * time.Second,
 		failThreshold:  3,
@@ -350,7 +347,6 @@ type ChainHealthMonitorRegistry struct {
 	nodeMgr     *NodeServerManager
 	serverRepo  *repository.NodeServerRepository
 	chainLinkRepo *repository.ChainLinkRepository
-	exitCfgRepo   *repository.ChainExitConfigRepository
 	started     bool
 	cancel      context.CancelFunc
 }
@@ -363,10 +359,9 @@ func NewChainHealthMonitorRegistry(nodeMgr *NodeServerManager, serverRepo *repos
 	}
 }
 
-// WithChainRepos injects the chain link and exit config repositories.
-func (r *ChainHealthMonitorRegistry) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository, exitCfgRepo *repository.ChainExitConfigRepository) *ChainHealthMonitorRegistry {
+// WithChainRepos injects the chain link repository.
+func (r *ChainHealthMonitorRegistry) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository) *ChainHealthMonitorRegistry {
 	r.chainLinkRepo = chainLinkRepo
-	r.exitCfgRepo = exitCfgRepo
 	return r
 }
 
@@ -387,7 +382,7 @@ func (r *ChainHealthMonitorRegistry) StartAll(ctx context.Context) error {
 	monitorCtx, cancel := context.WithCancel(ctx)
 	r.cancel = cancel
 
-	monitor := NewChainHealthMonitor(r.nodeMgr, r.serverRepo, r.chainLinkRepo, r.exitCfgRepo)
+	monitor := NewChainHealthMonitor(r.nodeMgr, r.serverRepo, r.chainLinkRepo)
 	monitor.OnStatusChange(func() {
 		log.Println("[ChainHealthRegistry] exit status changed, config sync will pick up on next cycle")
 	})

@@ -661,11 +661,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	configSyncSvc.SetServerRepo(nodeServerRepoForSync)
 
 	// 注入链式代理生成器到 configsync（设计文档 §6.3 / §13.2）：入口选出口生成的
-	// chain-* outbounds / 路由规则 / balancers / observatory / relay-in 通过
-	// PrepareFullConfig 合并进每个节点（本地 + 远程）的最终 xray 配置。
+	// chain-* outbounds / 路由规则 / balancers / observatory 通过 PrepareFullConfig
+	// 合并进每个节点（本地 + 远程）的最终配置。
 	chainLinkGen := agent.NewChainLinkGenerator(
 		repository.NewChainLinkRepository(database),
-		repository.NewChainExitConfigRepository(database),
 		nodeServerRepoForSync,
 		extNodeRepo,
 	)
@@ -1585,18 +1584,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService)
 
-			// Chain Proxy (chain links, exit configs, external node servers, topology)
+			// Chain Proxy (chain links, external node servers, topology)
 			chainLinkRepo := repository.NewChainLinkRepository(database)
-			chainExitCfgRepo := repository.NewChainExitConfigRepository(database)
 			extNodeServerRepo := repository.NewExternalNodeServerRepository(database)
 			inboundConfigRepo := repository.NewInboundConfigRepository(database)
-			chainLinkH := chainlinkHandler.NewHandler(chainLinkRepo, chainExitCfgRepo, extNodeServerRepo, nodeServerRepo, extNodeRepo, inboundConfigRepo)
+			chainLinkH := chainlinkHandler.NewHandler(chainLinkRepo, extNodeServerRepo, nodeServerRepo, extNodeRepo, inboundConfigRepo)
 			chainLinkH.RegisterRoutes(protected)
 
-			// Inject chain proxy repos into public subscription handler so that
-			// relay_only nodes are filtered from subscription output (§8.1) and
+			// Inject chain proxy repo into public subscription handler so that
 			// external node servers are rendered as virtual entries (§8.2).
-			publicSubH.SetChainProxyRepos(chainExitCfgRepo, extNodeServerRepo)
+			publicSubH.SetChainProxyRepos(extNodeServerRepo)
 
 			// Wire up CRL and CertDistributor if CA is available
 			if caService != nil {
@@ -1694,10 +1691,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					SetNginxSiteRepository(nginxSiteRepoForMirror).
 					SetSettingRepository(systemSettingRepo)
 				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
-				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo).WithChainRepos(chainLinkRepo, chainExitCfgRepo)
+				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo).WithChainRepos(chainLinkRepo)
 				go chainHealthRegistry.StartAll(context.Background())
 				billingFilter := agent.NewBillingFilter(nodeServerRepo)
-				billingFilter.SetExitConfigRepo(chainExitCfgRepo)
 
 				// Inject NodeServerManager as HealthChecker for chain link health API
 				chainLinkH.SetHealthChecker(nodeMgrForPhase3)
@@ -1890,13 +1886,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 						shareDomainRepo,
 					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo).WithChainRepos(
 						repository.NewChainLinkRepository(database),
-						repository.NewChainExitConfigRepository(database),
 						repository.NewExternalNodeRepository(database),
 					),
 				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo).WithChainLinkProvider(
 					agent.NewChainLinkGenerator(
 						repository.NewChainLinkRepository(database),
-						repository.NewChainExitConfigRepository(database),
 						nodeServerRepo,
 						repository.NewExternalNodeRepository(database),
 					),
@@ -2103,7 +2097,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/sync-mirror", nodeServerH.SyncMirror)
 				nodeServersGroup.GET("/:id/mirror-status", nodeServerH.GetMirrorStatus)
 				nodeServersGroup.GET("/:id/chain-config", nodeServerH.GenerateChainConfig)
-				nodeServersGroup.GET("/:id/chain-exit-config", nodeServerH.GenerateChainExitConfig)
 				nodeServersGroup.GET("/:id/chain-health", nodeServerH.GetChainHealthStatus)
 				nodeServersGroup.GET("/billable", nodeServerH.ListBillableServers)
 				nodeServersGroup.POST("/validate-chain-config", nodeServerH.ValidateChainConfig)

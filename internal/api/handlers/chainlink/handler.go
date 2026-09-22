@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
@@ -33,7 +32,6 @@ type ConfigSyncHook interface {
 // Handler handles chain link and chain exit config API requests.
 type Handler struct {
 	linkRepo       *repository.ChainLinkRepository
-	exitCfgRepo    *repository.ChainExitConfigRepository
 	extServerRepo  *repository.ExternalNodeServerRepository
 	serverRepo     *repository.NodeServerRepository
 	extNodeRepo    *repository.ExternalNodeRepository
@@ -45,7 +43,6 @@ type Handler struct {
 // NewHandler creates a new chainlink Handler.
 func NewHandler(
 	linkRepo *repository.ChainLinkRepository,
-	exitCfgRepo *repository.ChainExitConfigRepository,
 	extServerRepo *repository.ExternalNodeServerRepository,
 	serverRepo *repository.NodeServerRepository,
 	extNodeRepo *repository.ExternalNodeRepository,
@@ -53,7 +50,6 @@ func NewHandler(
 ) *Handler {
 	return &Handler{
 		linkRepo:      linkRepo,
-		exitCfgRepo:   exitCfgRepo,
 		extServerRepo: extServerRepo,
 		serverRepo:    serverRepo,
 		extNodeRepo:   extNodeRepo,
@@ -104,12 +100,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.PUT("/links/:id", h.UpdateLink)
 	g.DELETE("/links/:id", h.DeleteLink)
 
-	// Chain exit configs
-	g.GET("/exit-configs", h.ListExitConfigs)
-	g.GET("/exit-configs/:server_id", h.GetExitConfig)
-	g.POST("/exit-configs", h.CreateExitConfig)
-	g.PUT("/exit-configs/:server_id", h.UpdateExitConfig)
-	g.DELETE("/exit-configs/:server_id", h.DeleteExitConfig)
 
 	// External node server registrations
 	g.GET("/external-servers", h.ListExternalServers)
@@ -355,187 +345,6 @@ func (h *Handler) DeleteLink(c *gin.Context) {
 
 // ── Chain Exit Configs ──
 
-func (h *Handler) ListExitConfigs(c *gin.Context) {
-	ctx := c.Request.Context()
-	configs, err := h.exitCfgRepo.ListAll(ctx)
-	if err != nil {
-		response.InternalError(c, "DB_ERROR", err.Error())
-		return
-	}
-	response.OK(c, configs)
-}
-
-func (h *Handler) GetExitConfig(c *gin.Context) {
-	ctx := c.Request.Context()
-	serverID, err := strconv.ParseInt(c.Param("server_id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid server ID")
-		return
-	}
-	cfg, err := h.exitCfgRepo.GetByServerID(ctx, serverID)
-	if err != nil {
-		response.NotFound(c, "NOT_FOUND", "chain exit config not found")
-		return
-	}
-	response.OK(c, cfg)
-}
-
-func (h *Handler) CreateExitConfig(c *gin.Context) {
-	ctx := c.Request.Context()
-	var req struct {
-		ServerID       int64  `json:"server_id" binding:"required"`
-		RelayPort      int    `json:"relay_port"`
-		RelayProtocol  string `json:"relay_protocol"`
-		RelayTransport string `json:"relay_transport"`
-		RelaySecurity  string `json:"relay_security"`
-		RelayUUID      string `json:"relay_uuid"`
-		RelayOnly      bool   `json:"relay_only"`
-		Enabled        *bool  `json:"enabled"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "INVALID_BODY", err.Error())
-		return
-	}
-
-	relayProtocol := req.RelayProtocol
-	if relayProtocol == "" {
-		relayProtocol = "vless"
-	}
-	relayTransport := req.RelayTransport
-	if relayTransport == "" {
-		relayTransport = "tcp"
-	}
-	relaySecurity := req.RelaySecurity
-	if relaySecurity == "" {
-		relaySecurity = "none"
-	}
-	relayUUID := req.RelayUUID
-	if relayUUID == "" {
-		relayUUID = uuid.New().String()
-	}
-	enabled := true
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-
-	cfg := &entity.ChainExitConfig{
-		ServerID:       req.ServerID,
-		RelayPort:      req.RelayPort,
-		RelayProtocol:  relayProtocol,
-		RelayTransport: relayTransport,
-		RelaySecurity:  relaySecurity,
-		RelayUUID:      relayUUID,
-		RelayOnly:      req.RelayOnly,
-		Enabled:        enabled,
-	}
-
-	if err := h.exitCfgRepo.Create(ctx, cfg); err != nil {
-		response.InternalError(c, "CREATE_FAILED", err.Error())
-		return
-	}
-
-	// Trigger config sync for the exit node (it now has a relay-in inbound)
-	if h.configSyncHook != nil {
-		h.configSyncHook.SyncServerConfig(context.Background(), cfg.ServerID, "xray")
-	}
-
-	response.OK(c, cfg)
-}
-
-func (h *Handler) UpdateExitConfig(c *gin.Context) {
-	ctx := c.Request.Context()
-	serverID, err := strconv.ParseInt(c.Param("server_id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid server ID")
-		return
-	}
-	cfg, err := h.exitCfgRepo.GetByServerID(ctx, serverID)
-	if err != nil {
-		response.NotFound(c, "NOT_FOUND", "chain exit config not found")
-		return
-	}
-
-	var req struct {
-		RelayPort      *int    `json:"relay_port"`
-		RelayProtocol  *string `json:"relay_protocol"`
-		RelayTransport *string `json:"relay_transport"`
-		RelaySecurity  *string `json:"relay_security"`
-		RelayOnly      *bool   `json:"relay_only"`
-		Enabled        *bool   `json:"enabled"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "INVALID_BODY", err.Error())
-		return
-	}
-
-	if req.RelayPort != nil {
-		cfg.RelayPort = *req.RelayPort
-	}
-	if req.RelayProtocol != nil {
-		cfg.RelayProtocol = *req.RelayProtocol
-	}
-	if req.RelayTransport != nil {
-		cfg.RelayTransport = *req.RelayTransport
-	}
-	if req.RelaySecurity != nil {
-		cfg.RelaySecurity = *req.RelaySecurity
-	}
-	if req.RelayOnly != nil {
-		cfg.RelayOnly = *req.RelayOnly
-	}
-	if req.Enabled != nil {
-		cfg.Enabled = *req.Enabled
-	}
-
-	if err := h.exitCfgRepo.Update(ctx, cfg); err != nil {
-		response.InternalError(c, "UPDATE_FAILED", err.Error())
-		return
-	}
-
-	// Trigger config sync for the exit node
-	if h.configSyncHook != nil {
-		h.configSyncHook.SyncServerConfig(context.Background(), cfg.ServerID, "xray")
-	}
-
-	response.OK(c, cfg)
-}
-
-func (h *Handler) DeleteExitConfig(c *gin.Context) {
-	ctx := c.Request.Context()
-	serverID, err := strconv.ParseInt(c.Param("server_id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid server ID")
-		return
-	}
-	// Collect entry server IDs from links pointing to this exit
-	entryIDs := make(map[int64]bool)
-	if existingLinks, err := h.linkRepo.ListByExit(ctx, serverID); err == nil {
-		for _, l := range existingLinks {
-			if l.EntryServerID > 0 {
-				entryIDs[l.EntryServerID] = true
-			}
-		}
-	}
-	// Also delete any chain links pointing to this server as exit
-	if err := h.linkRepo.DeleteByExit(ctx, serverID); err != nil {
-		// Log but don't fail — the exit config is the primary target
-		_ = err
-	}
-	if err := h.exitCfgRepo.Delete(ctx, serverID); err != nil {
-		response.InternalError(c, "DELETE_FAILED", err.Error())
-		return
-	}
-	// Trigger config sync for the deleted exit node and all entry nodes
-	// that had links to it (their chain-* outbounds are now gone)
-	if h.configSyncHook != nil {
-		h.configSyncHook.SyncServerConfig(context.Background(), serverID, "xray")
-		for eid := range entryIDs {
-			h.configSyncHook.SyncServerConfig(context.Background(), eid, "xray")
-		}
-	}
-	response.OK(c, gin.H{"message": "deleted"})
-}
-
 // ── External Node Servers ──
 
 func (h *Handler) ListExternalServers(c *gin.Context) {
@@ -622,12 +431,6 @@ func (h *Handler) GetTopology(c *gin.Context) {
 		return
 	}
 
-	exitConfigs, err := h.exitCfgRepo.ListAll(ctx)
-	if err != nil {
-		response.InternalError(c, "DB_ERROR", fmt.Sprintf("list exit configs: %v", err))
-		return
-	}
-
 	extServers, err := h.extServerRepo.ListAll(ctx)
 	if err != nil {
 		response.InternalError(c, "DB_ERROR", fmt.Sprintf("list external servers: %v", err))
@@ -646,18 +449,18 @@ func (h *Handler) GetTopology(c *gin.Context) {
 		Name      string `json:"name"`
 		Type      string `json:"type"` // "server" or "external"
 		Role      string `json:"role"` // "entry", "exit", "entry+exit", "external_entry"
-		RelayOnly bool   `json:"relay_only"`
 	}
 
-	exitCfgMap := make(map[int64]*entity.ChainExitConfig)
-	for i := range exitConfigs {
-		exitCfgMap[exitConfigs[i].ServerID] = &exitConfigs[i]
-	}
-
+	// 入口/出口角色完全由 chain_links 决定（v2.0 起没有 chain_exit_configs 了）：
+	//   入口 = 有链路以它为 entry；出口 = 有链路以它为 exit。
 	entrySet := make(map[int64]bool)
+	exitSet := make(map[int64]bool)
 	for _, l := range links {
 		if l.EntryServerID > 0 {
 			entrySet[l.EntryServerID] = true
+		}
+		if l.IsExitServer() {
+			exitSet[l.ExitServerID] = true
 		}
 	}
 
@@ -665,22 +468,14 @@ func (h *Handler) GetTopology(c *gin.Context) {
 	for _, s := range servers {
 		role := "standalone"
 		isEntry := entrySet[s.ID]
-		exitCfg, isExit := exitCfgMap[s.ID]
-		relayOnly := false
-		if isExit && exitCfg != nil {
-			relayOnly = exitCfg.RelayOnly
-		}
+		isExit := exitSet[s.ID]
 
 		if isEntry && isExit {
 			role = "entry+exit"
 		} else if isEntry {
 			role = "entry"
 		} else if isExit {
-			if relayOnly {
-				role = "exit"
-			} else {
-				role = "exit+entry"
-			}
+			role = "exit"
 		}
 		// Skip standalone nodes that aren't involved in chain proxy
 		if role == "standalone" && !s.Enabled {
@@ -692,28 +487,25 @@ func (h *Handler) GetTopology(c *gin.Context) {
 		}
 
 		nodes = append(nodes, topoNode{
-			ID:        s.ID,
-			Name:      s.Name,
-			Type:      "server",
-			Role:      role,
-			RelayOnly: relayOnly,
+			ID:   s.ID,
+			Name: s.Name,
+			Type: "server",
+			Role: role,
 		})
 	}
 
 	for _, es := range extServers {
 		nodes = append(nodes, topoNode{
-			ID:        es.ID,
-			Name:      es.Name,
-			Type:      "external",
-			Role:      "external_entry",
-			RelayOnly: false,
+			ID:   es.ID,
+			Name: es.Name,
+			Type: "external",
+			Role: "external_entry",
 		})
 	}
 
 	response.OK(c, gin.H{
-		"nodes":        nodes,
-		"links":        links,
-		"exit_configs": exitConfigs,
+		"nodes": nodes,
+		"links": links,
 	})
 }
 
@@ -794,11 +586,11 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 				return
 			}
 		} else {
-			cfg, cerr := h.exitCfgRepo.GetByServerID(ctx, ex.ID)
-			if cerr != nil || cfg == nil || !cfg.Enabled || cfg.RelayPort == 0 {
-				response.BadRequest(c, "EXIT_NOT_CONFIGURED", fmt.Sprintf("exit server %d has no valid chain_exit_config (relay_port must be > 0)", ex.ID))
-				return
-			}
+			// v2.0：集群出口**必须**指定"出口节点上已有的入站"
+			// （旧的 chain_exit_configs / 自动建 relay-in 入站模式已移除）
+			response.BadRequest(c, "EXIT_INBOUND_REQUIRED", fmt.Sprintf(
+				"exit server %d: exit_inbound_id is required (legacy chain_exit_configs mode has been removed)", ex.ID))
+			return
 		}
 	}
 

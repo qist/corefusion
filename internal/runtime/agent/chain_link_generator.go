@@ -18,11 +18,10 @@ import (
 //
 // The new model decouples chain proxy roles from node types:
 // - Any server with chain_links records is an "entry" (its outbound goes to the exit).
-// - Any server with chain_exit_configs is an "exit" (it has a relay-in inbound).
+// - 出口 = 该节点上被 chain_links.exit_inbound_id 引用的**已有入站**（v2.0 起；旧模式已移除）。
 // - A server can be both entry and exit simultaneously.
 type ChainLinkGenerator struct {
 	linkRepo    *repository.ChainLinkRepository
-	exitCfgRepo *repository.ChainExitConfigRepository
 	serverRepo  *repository.NodeServerRepository
 	extNodeRepo *repository.ExternalNodeRepository
 	// inboundRepo：用于"链式出口 = 出口节点已有的入站"这条路径（读取该入站的真实
@@ -98,13 +97,11 @@ func ChainAllSupportedProtocols() []string {
 // NewChainLinkGenerator creates a new ChainLinkGenerator.
 func NewChainLinkGenerator(
 	linkRepo *repository.ChainLinkRepository,
-	exitCfgRepo *repository.ChainExitConfigRepository,
 	serverRepo *repository.NodeServerRepository,
 	extNodeRepo *repository.ExternalNodeRepository,
 ) *ChainLinkGenerator {
 	return &ChainLinkGenerator{
 		linkRepo:    linkRepo,
-		exitCfgRepo: exitCfgRepo,
 		serverRepo:  serverRepo,
 		extNodeRepo: extNodeRepo,
 	}
@@ -275,57 +272,6 @@ func (g *ChainLinkGenerator) exitTagFor(link entity.ChainLink) string {
 		return fmt.Sprintf("chain-%d-ext%d", link.EntryInboundID, link.ExitExternalID)
 	}
 	return fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
-}
-
-// GenerateExitInbound generates the relay inbound for an exit server.
-// Returns nil if the server has no chain_exit_configs or it's disabled.
-func (g *ChainLinkGenerator) GenerateExitInbound(ctx context.Context, serverID int64) (map[string]interface{}, error) {
-	exitCfg, err := g.exitCfgRepo.GetByServerID(ctx, serverID)
-	if err != nil || exitCfg == nil {
-		return nil, nil
-	}
-	if !exitCfg.Enabled || exitCfg.RelayPort == 0 {
-		return nil, nil
-	}
-
-	client := map[string]interface{}{
-		"id":    exitCfg.RelayUUID,
-		"email": "chain-relay",
-	}
-	// xray vless inbound requires "decryption":"none" at both the settings and
-	// each client level, otherwise xray refuses to start.
-	if exitCfg.RelayProtocol == "vless" {
-		client["decryption"] = "none"
-	}
-
-	settings := map[string]interface{}{
-		"clients": []map[string]interface{}{client},
-	}
-	if exitCfg.RelayProtocol == "vless" {
-		settings["decryption"] = "none"
-	}
-
-	inbound := map[string]interface{}{
-		"tag":      "relay-in",
-		"listen":   "0.0.0.0",
-		"port":     exitCfg.RelayPort,
-		"protocol": exitCfg.RelayProtocol,
-		"settings": settings,
-	}
-
-	// If relay_only, the server should not have user inbounds.
-	// The caller (PrepareFullConfig) is responsible for filtering them out.
-	return inbound, nil
-}
-
-// IsRelayOnlyServer returns true if the server is configured as a pure exit
-// (relay_only=true in chain_exit_configs).
-func (g *ChainLinkGenerator) IsRelayOnlyServer(ctx context.Context, serverID int64) bool {
-	exitCfg, err := g.exitCfgRepo.GetByServerID(ctx, serverID)
-	if err != nil || exitCfg == nil {
-		return false
-	}
-	return exitCfg.Enabled && exitCfg.RelayOnly
 }
 
 // HasChainLinks returns true if the server has any active chain_links (is an entry).
@@ -613,65 +559,25 @@ func firstNumber(m map[string]interface{}, keys ...string) float64 {
 	return 0
 }
 
-// buildServerOutbound builds an outbound pointing to a cluster exit server.
-// entry is the entry (source) server, used to pick the optimal exit address
-// (internal IP when both nodes share a private network, otherwise public IP).
 func (g *ChainLinkGenerator) buildServerOutbound(ctx context.Context, link entity.ChainLink, entry *entity.NodeServer) (ChainEntryOutbound, error) {
+	if link.ExitInboundID == 0 {
+		return ChainEntryOutbound{}, fmt.Errorf(
+			"chain link %d: exit_inbound_id is required (legacy chain_exit_configs / relay-in mode has been removed); "+
+				"pick an existing inbound on exit server %d", link.ID, link.ExitServerID)
+	}
 	exitServer, err := g.serverRepo.GetByID(ctx, link.ExitServerID)
+	if err != nil || exitServer == nil {
+		return ChainEntryOutbound{}, fmt.Errorf("exit server %d not found", link.ExitServerID)
+	}
+	outbound, ok, err := g.buildOutboundFromExitInbound(ctx, link, entry, exitServer)
 	if err != nil {
-		return ChainEntryOutbound{}, fmt.Errorf("exit server %d not found: %w", link.ExitServerID, err)
+		return ChainEntryOutbound{}, err
 	}
-
-	// 新路径（推荐）：链式出口 = 出口节点上**已有的入站**，链式这边不创建任何入站。
-	if link.UseExitInbound() {
-		ob, ok, oerr := g.buildOutboundFromExitInbound(ctx, link, entry, exitServer)
-		if oerr != nil {
-			return ChainEntryOutbound{}, oerr
-		}
-		if !ok {
-			return ChainEntryOutbound{}, fmt.Errorf(
-				"exit inbound %d protocol is not chain-capable for this entry core "+
-					"(xray supports vless/vmess/trojan/shadowsocks; hysteria2 仅 sing-box 入口可用)",
-				link.ExitInboundID)
-		}
-		return ob, nil
+	if !ok {
+		return ChainEntryOutbound{}, fmt.Errorf(
+			"chain link %d: exit inbound %d is not usable for this entry core", link.ID, link.ExitInboundID)
 	}
-
-	protocol := "vless"
-	transport := "tcp"
-	security := "none"
-	relayUUID := "chain-relay-uuid"
-	port := 443
-
-	exitCfg, err := g.exitCfgRepo.GetByServerID(ctx, link.ExitServerID)
-	if err == nil && exitCfg != nil {
-		protocol = exitCfg.RelayProtocol
-		transport = exitCfg.RelayTransport
-		security = exitCfg.RelaySecurity
-		relayUUID = exitCfg.RelayUUID
-		if exitCfg.RelayPort > 0 {
-			port = exitCfg.RelayPort
-		}
-	}
-
-	// tag 统一以 chain- 开头：chain-<入口inboundID>-<出口serverID>（见设计文档 §6.1 / §6.1.1）
-	tag := link.ExitTag
-	if tag == "" {
-		tag = fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
-	}
-
-	// 决策点 ①：出口地址内网/公网智能选择（见设计文档 §6.1.1 resolveExitAddress）
-	address := resolveExitAddress(entry, exitServer)
-
-	return ChainEntryOutbound{
-		Tag:      tag,
-		Protocol: protocol,
-		Settings: buildLinkOutboundSettings(protocol, address, port, relayUUID),
-		StreamSettings: map[string]interface{}{
-			"network":  transport,
-			"security": security,
-		},
-	}, nil
+	return outbound, nil
 }
 
 // resolveExitAddress selects the best address for an exit server:

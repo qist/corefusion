@@ -164,7 +164,6 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Chain Proxy (new model: decoupled from node_type)
 		&entity.ChainLink{},
-		&entity.ChainExitConfig{},
 		&entity.ExternalNodeServer{},
 
 		// Node Servers (multi-region architecture)
@@ -306,7 +305,6 @@ func RunDataMigrations(db *gorm.DB) error {
 	seedDefaultLogCleanupRules(db)
 
 	// Migrate legacy chain_entry/chain_exit to new chain_links model
-	MigrateChainProxy(db)
 
 	return nil
 }

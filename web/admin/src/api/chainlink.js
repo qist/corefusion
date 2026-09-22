@@ -28,28 +28,6 @@ export function createChainProxy(data) {
   return client.post('/chain/proxy', data)
 }
 
-// ──────────── Chain Exit Configs ────────────
-
-export function listExitConfigs() {
-  return client.get('/chain/exit-configs')
-}
-
-export function getExitConfig(serverId) {
-  return client.get(`/chain/exit-configs/${serverId}`)
-}
-
-export function createExitConfig(data) {
-  return client.post('/chain/exit-configs', data)
-}
-
-export function updateExitConfig(serverId, data) {
-  return client.put(`/chain/exit-configs/${serverId}`, data)
-}
-
-export function deleteExitConfig(serverId) {
-  return client.delete(`/chain/exit-configs/${serverId}`)
-}
-
 // ──────────── External Node Servers ────────────
 
 export function listExternalServers() {

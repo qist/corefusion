@@ -228,18 +228,9 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 
 		// loadbalance 模式（§6.6）—— 等权多出口，balancer + observatory
 		balTag := fmt.Sprintf("bal-chain-%d", inID)
-		// ⚠ selector 必须用**实际出站 tag**，不能用 `chain-<入站ID>-` 这种自动前缀 ✗：
-		// 一旦某个出口用了自定义 exit_tag（tag 变成 `lb-exit-A` 之类），前缀就圈不到它 →
-		// balancer 无候选 → 运行期静默落到 fallbackTag（direct）→ **流量绕过出口直连出去** ✗
-		// （xray 对"selector 匹配不到任何出站"不会报错，`run -test` 也是 Configuration OK ✗，很隐蔽）
-		selectors := make([]string, 0, len(groupLinks))
-		for _, link := range groupLinks {
-			tag := link.ExitTag
-			if tag == "" {
-				tag = g.exitTagFor(link)
-			}
-			selectors = append(selectors, tag)
-		}
+		// selector 用**实际出站 tag**（自定义 exit_tag 优先）—— 见 chainGroupSelectors 的说明：
+		// 用自动前缀会在自定义 tag 场景下圈不到出口，导致流量静默直连 ✗。
+		selectors := chainGroupSelectors(groupLinks, g.exitTagFor)
 		balancers = append(balancers, ChainBalancer{
 			Tag:         balTag,
 			Selector:    selectors,
@@ -283,6 +274,26 @@ func (g *ChainLinkGenerator) exitTagFor(link entity.ChainLink) string {
 		return fmt.Sprintf("chain-%d-ext%d", link.EntryInboundID, link.ExitExternalID)
 	}
 	return fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
+}
+
+// chainGroupSelectors 返回一组出口在配置里**实际使用的出站 tag** ——
+// balancer.selector 与 observatory.subjectSelector 都必须用它（不能再用自动前缀 ✗）。
+//
+// ⚠ 这里曾经用 `chain-<入口入站ID>-` 这种**自动前缀**：只要某个出口配了自定义 `exit_tag`
+// （出站 tag 变成 `lb-exit-A` 之类），前缀就圈不到它 → balancer 候选为空 →
+// 运行期静默落到 `fallbackTag`（direct）→ **流量绕过出口直连出去** ✗。
+// 而 xray 对"selector 匹配不到任何出站"既不报错、`run -test` 也照样 `Configuration OK` ✗，
+// 只有比对"出口节点的入站计数"才会发现（真机踩过 ✓，见 commit db192ef4）。
+func chainGroupSelectors(links []entity.ChainLink, autoTag func(entity.ChainLink) string) []string {
+	out := make([]string, 0, len(links))
+	for _, link := range links {
+		tag := link.ExitTag
+		if tag == "" {
+			tag = autoTag(link)
+		}
+		out = append(out, tag)
+	}
+	return out
 }
 
 // HasChainLinks returns true if the server has any active chain_links (is an entry).

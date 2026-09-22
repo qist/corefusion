@@ -59,6 +59,50 @@
       </el-form-item>
     </el-form>
 
+    <!-- Rule Sets（route.rule_set 定义；此前面板只能靠 API 手写） -->
+    <el-divider content-position="left">
+      Rule Sets
+      <el-button size="small" type="primary" @click="addRuleSet" style="margin-left:12px">Add Rule Set</el-button>
+    </el-divider>
+    <div v-if="!form.ruleSets.length" class="hint" style="margin-bottom:8px">
+      未定义任何 rule_set。规则里引用 rule_set 前，先在这里定义（remote 从 URL 拉取 / local 读本地文件 / inline 直接写规则）。
+    </div>
+    <div v-for="(rs, ri) in form.ruleSets" :key="'rs' + ri"
+         style="border:1px dashed #dcdfe6;border-radius:6px;padding:10px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <el-select v-model="rs.type" style="width:140px" @change="emit">
+          <el-option label="remote" value="remote" /><el-option label="local" value="local" />
+          <el-option label="inline" value="inline" />
+        </el-select>
+        <el-input v-model="rs.tag" placeholder="tag（规则里用它引用；多个用逗号分隔）" style="flex:1" @change="emit" />
+        <el-select v-model="rs.format" style="width:130px" clearable @change="emit">
+          <el-option label="(默认)" value="" /><el-option label="source" value="source" />
+          <el-option label="binary" value="binary" />
+        </el-select>
+        <el-button size="small" type="danger" text @click="form.ruleSets.splice(ri,1);emit()">X</el-button>
+      </div>
+      <template v-if="rs.type === 'remote'">
+        <el-input v-model="rs.url" placeholder="https://…/geosite-cn.srs" style="margin-top:8px" @change="emit" />
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <el-input v-model="rs.update_interval" placeholder="更新间隔，如 1d" @change="emit" />
+          <el-input v-model="rs.download_detour" placeholder="download_detour（出站 tag）" @change="emit" />
+          <el-input v-model="rs.http_client" placeholder="http_client tag" @change="emit" />
+        </div>
+        <el-input v-model="rs.initial_path" placeholder="initial_path，如 /etc/sing-box/<tag>.srs" style="margin-top:8px" @change="emit" />
+        <div class="hint">initial_path 必须包含 <code>&lt;tag&gt;</code> 占位符（实测否则 FATAL `missing &lt;tag&gt; placeholder in initial_path`），留空则用缓存目录默认值</div>
+      </template>
+      <template v-else-if="rs.type === 'local'">
+        <el-input v-model="rs.path" placeholder="/etc/sing-box/rules.json" style="margin-top:8px" @change="emit" />
+        <div class="hint">本地规则集路径（核心启动时会**读取该文件**：路径不存在会 FATAL）</div>
+      </template>
+      <template v-else>
+        <el-input v-model="rs._rulesJson" type="textarea" :rows="3" style="margin-top:8px"
+          placeholder='[{"domain_suffix": ["a.example"]}]' @change="emit" />
+        <div class="hint">inline 规则数组（JSON）。注意：inline **不支持多 tag**（实测 FATAL `inline rule-set does not support multiple tags`）</div>
+      </template>
+    </div>
+
+
     <!-- Route Rules -->
     <el-divider content-position="left">
       Route Rules
@@ -420,6 +464,7 @@ const form = reactive({
   default_network_strategy: '', default_network_type: [], default_fallback_network_type: [],
   default_fallback_delay: '', default_http_client: '',
   rules: [],
+  ruleSets: [],
 })
 
 const { paged: rulesPaged, page: rulePage, pageSize: ruleSize, total: ruleTotal } = useClientPagination(computed(() => form.rules), { pageKey: 'sbRoutePage', pageSizeKey: 'sbRouteSize' })
@@ -734,6 +779,12 @@ function saveRule() {
   emit()
 }
 
+function addRuleSet() {
+  form.ruleSets.push({ type: 'remote', tag: '', format: '', url: '', path: '', update_interval: '1d',
+    download_detour: '', http_client: '', initial_path: '', _rulesJson: '' })
+  emit()
+}
+
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
 
 async function loadTags() {
@@ -752,6 +803,21 @@ async function loadTags() {
     if (Array.isArray(rs)) ruleSetTags.value = rs.map(r => r?.tag).filter(Boolean)
   } catch {}
 }
+
+  // rule_set 定义（本编辑器可编辑）
+  form.ruleSets = (Array.isArray(props.data?.rule_set) ? props.data.rule_set : []).map(x => {
+    const tags = Array.isArray(x.tag) ? x.tag : (x.tag ? [x.tag] : [])
+    return {
+      type: x.type || 'remote',
+      tag: tags.join(', '),
+      format: x.format || '',
+      url: x.url || '', path: x.path || '',
+      update_interval: x.update_interval || '',
+      download_detour: x.download_detour || '', http_client: x.http_client || '',
+      initial_path: x.initial_path || '',
+      _rulesJson: Array.isArray(x.rules) ? JSON.stringify(x.rules, null, 1) : '',
+    }
+  })
 
 function sync() {
   if (!props.data) return
@@ -801,6 +867,28 @@ function build() {
     if (['final', 'auto_detect_interface', 'default_domain_resolver', 'default_domain_strategy', 'rules'].includes(k)) continue
     out[k] = props.data[k]
   }
+  // rule_set 定义（放在"保留未托管字段"之后，确保以编辑器内容为准）
+  const rss = (form.ruleSets || []).filter(x => (x.tag || '').trim())
+  if (rss.length) {
+    out.rule_set = rss.map(x => {
+      const tags = String(x.tag).split(',').map(s => s.trim()).filter(Boolean)
+      const rs = { type: x.type || 'remote', tag: tags.length > 1 ? tags : tags[0] }
+      if (x.format) rs.format = x.format
+      if (x.type === 'remote') {
+        if (x.url) rs.url = x.url
+        if (x.update_interval) rs.update_interval = x.update_interval
+        if (x.download_detour) rs.download_detour = x.download_detour
+        if (x.http_client) rs.http_client = x.http_client
+        if (x.initial_path) rs.initial_path = x.initial_path
+      } else if (x.type === 'local') {
+        if (x.path) rs.path = x.path
+      } else if (x._rulesJson) {
+        try { rs.rules = JSON.parse(x._rulesJson) } catch (e) { console.warn('inline rules JSON 解析失败，已忽略:', e) }
+      }
+      return rs
+    })
+  }
+
   out.rules = form.rules.map(r => {
     const rule = {}
     if (r.type) rule.type = r.type

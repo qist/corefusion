@@ -161,6 +161,48 @@ sing-box 1.12+ 起，`dial` 字段缺 `domain_resolver`（且没有 `route.defau
 - `services`（含 `oom-killer`：`OOMKillerServiceOptions{memory_limit, safety_margin, min_interval, max_interval}`）
 - `rule_set.initial_path`、naive `udp_over_tcp` 等协议细节
 
+---
+
+## 2.8 按序推进的收尾结果（2026-09-22）
+
+### ② `services`（含 `oom-killer`）——**面板早已支持，无需新 UI**
+`SingboxJsonSection.vue` 的通用 JSON 段落编辑器已支持 `services`（列表模式 + 11 个模板：
+api / ccm / derp / dynamic / hysteria-realm / ocm / **oom-killer** / resolved / ssm-api / usbip-client / usbip-server）。
+本轮只把 `desc` 补上 `oom-killer` 的字段说明（`memory_limit` / `safety_margin`（如 256M）/
+`min_interval` / `max_interval`）—— 这符合项目对低频段落的既有做法（通用 JSON 编辑器 + 模板）。
+
+### ③ `route.rule_set` 定义编辑器（**本轮新增**，这是真正缺的一块）
+此前面板只有"规则的 rule_set **引用**下拉"，**没有任何地方能定义 rule_set**（只能靠 API 手写）。
+现在 `SingboxRoute.vue` 增加了 **Rule Sets** 区（三个面板都已在运行的版本里）：
+- 三种形态：`remote`（url / update_interval / download_detour / http_client / initial_path）、
+  `local`（path）、`inline`（rules JSON）
+- 多 tag 用逗号分隔（**inline 只能单 tag** ✗）
+
+实测约束：
+| 约束 | 报错 |
+|---|---|
+| inline 规则集带多个 tag | `FATAL route.rule_set[2]: inline rule-set does not support multiple tags` |
+| `initial_path` 不含 `<tag>` 占位符 | fork 源码：`E.New("missing <tag> placeholder in initial_path")` |
+| 写 `exclude_sequence` | `FATAL …: unknown field "exclude_sequence"`（**不是合法字段**） |
+| local 规则集的 `path` 必须**真实存在** | `FATAL initialize router: parse rule-set[1]: open …: no such file or directory`（启动时会读文件） |
+
+另核对了"会不会静默丢定义"：`SingboxRoute.vue` 的 `build()` **已经**会把未托管字段原样带回
+（源码注释：*保留未在本编辑器管理的 route 字段（如 rule_set 定义、geo 资源等）*）✓
+→ 之前**没有**静默丢失 ✓；新编辑器把 `rule_set` 也纳入托管（在保留逻辑之后覆盖）✓
+
+### ③ 剩余协议细节 —— 判定**属客户端侧，暂不做**（记档）
+`vmess.global_padding` / `vmess.authenticated_length`、`naive.udp_over_tcp`、`shadowsocks.udp_over_tcp`、
+`tuic.udp_over_stream`、`hysteria2.hop_interval_max / max_packet_size / min_packet_size / disable_chrome_parrot`
+—— 实测这些字段都在**出站（Outbound）**结构体上，**不在服务端入站**上；面板的 `singbox/outbounds/SingboxOb*.vue`
+是"直绑 `model.<json名>`"的薄片段 ✓，但 `singboxBuildOutbound.js` 是**逐字段白名单** ✗
+→ 要加必须同时改"片段 + build"两处。考虑价值（很少用面板编辑客户端出站）与风险，**本轮不做**，记录做法备查。
+
+### ④ xray 侧 B 类 P1/P2 —— 判定**不建议做**（记档）
+P1（xhttp 的 `cwndMultiplier` / `maxSendingWindow` / `sessionIDLength` / `sessionIDTable`、`vmess.experiments`、
+`vless.testpre`、`loader.configKey`、`wireguard.IsClient`）与 P2（finalMask 的 `custom_table(s)` / `u64` /
+`textures*` / `padding_*`、`brutalDisableLossCompensation` 等）都是**客户端调优或核心内部实现细节** ✗，
+暴露出来只会增加误配风险（这类字段配错往往直接让核心起不来），**建议不暴露** ✓。
+
 ## 3. 建议顺序
 
 0. **按 §2.5 修正后的口径做**（服务端可用优先；客户端专属暂缓）

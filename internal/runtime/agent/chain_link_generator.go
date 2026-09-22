@@ -652,12 +652,26 @@ func samePrivateNetwork(entry, exit *entity.NodeServer) bool {
 //
 // 节点直接起不来 ✗）。入口入站自己的 core_type 决定这条链属于哪个核心的配置 ✓。
 func (g *ChainLinkGenerator) filterLinksByEntryCore(ctx context.Context, links []entity.ChainLink, coreType string) []entity.ChainLink {
+	return filterLinksByEntryCore(links, coreType, func(inboundID int64) string {
+		return g.entryCoreType(ctx, inboundID)
+	})
+}
+
+// filterLinksByEntryCore 是上面那个方法的**纯函数内核**（coreOf 给出入口入站所属的核心），
+// 便于单测 —— 这段逻辑对应一个"节点起不来"的真实事故，必须有回归防线：
+//
+// 不过滤的话，一台同时跑 xray 与 sing-box 的机器上，入口是 hysteria2（只有 sing-box 有该出站）
+// 的链会把 **hy2 出站塞进 xray 的配置** → xray 拒绝启动：
+//
+//	failed to build outbound config with tag chain-118-1 >
+//	  failed to load outbound detour config for protocol hysteria2 > unknown config id: hysteria2
+func filterLinksByEntryCore(links []entity.ChainLink, coreType string, coreOf func(int64) string) []entity.ChainLink {
 	if coreType == "" || len(links) == 0 {
 		return links
 	}
 	out := make([]entity.ChainLink, 0, len(links))
 	for _, l := range links {
-		if g.entryCoreType(ctx, l.EntryInboundID) == coreType {
+		if coreOf(l.EntryInboundID) == coreType {
 			out = append(out, l)
 		}
 	}

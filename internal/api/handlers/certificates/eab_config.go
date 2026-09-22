@@ -95,3 +95,25 @@ func (h *EABHandler) Delete(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"deleted": true})
 }
+
+// FetchZeroSSL handles POST /api/v1/eab-configs/fetch-zerossl.
+//
+// 用**邮箱**向 ZeroSSL 自动领取一对 EAB 并存成配置 ✓ ——
+// 和 acme.sh 的机制完全一样 ✓（同一个接口 ✓），之后 ZeroSSL 也能"按 CA 自动关联" ✓ 零手工签发 ✓。
+//
+// ⚠ 等价于用该邮箱在 ZeroSSL 取/建账号 ✓（acme.sh 默认行为 ✓），请用你自己的邮箱 ✓。
+func (h *EABHandler) FetchZeroSSL(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	cfg, err := h.svc.FetchZeroSSLEAB(c.Request.Context(), req.Email)
+	if err != nil {
+		response.BadRequest(c, "ZEROSSL_EAB_FAILED", err.Error())
+		return
+	}
+	response.Created(c, cfg)
+}

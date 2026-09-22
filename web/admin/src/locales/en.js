@@ -1400,6 +1400,11 @@ export default {
     varQuotaState: 'Quota state (normal/near_limit/over_limit etc.)',
   },
   certificate: {
+    eabAutoFetch: 'Auto fetch',
+    eabFetchEmailPlaceholder: 'Your ZeroSSL account email',
+    eabFetchButton: 'Fetch',
+    eabFetchHint: 'ZeroSSL ACME requires EAB, but a pair can be obtained with just an email (same mechanism as acme.sh); fetched values are saved automatically.',
+    eabFetchOK: 'ZeroSSL EAB fetched and saved',
     manageEAB: 'EAB Configs',
     addEAB: 'Add EAB Config',
     eabConfig: 'EAB Config',

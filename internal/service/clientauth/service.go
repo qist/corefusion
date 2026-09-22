@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"corefusion/internal/auth/jwt"
@@ -386,6 +388,9 @@ func (s *Service) ChangePassword(ctx context.Context, clientID int64, oldPwd, ne
 	return s.clientRepo.Update(ctx, client)
 }
 
+// errNotClientToken 表示 token 合法但主体不是客户端（例如管理端用户）。
+var errNotClientToken = errors.New("token subject is not a client")
+
 // ValidateAccessToken validates a JWT token and returns the client ID.
 func (s *Service) ValidateAccessToken(tokenStr string) (int64, error) {
 	claims, err := s.jwt.ValidateTyped(tokenStr, jwt.TokenTypeAccess)
@@ -393,6 +398,27 @@ func (s *Service) ValidateAccessToken(tokenStr string) (int64, error) {
 		return 0, err
 	}
 	// Client IDs are stored as UserID in JWT
+	return claims.UserID, nil
+}
+
+// ValidateClientAccessToken 与 ValidateAccessToken 相同，但**额外要求主体确实是客户端**。
+//
+// ⚠ 客户端与管理端共用同一把 JWT 签名密钥 ✗，因此管理端的 access token 也能通过
+// ValidateAccessToken ✓（只是它的 user_id 会被当成 client_id ✗）→ 结果是管理端 token 可以：
+//   - 调用**所有**客户端受保护接口（审计 v5 S2 修的是**反方向**：客户端 token 进管理端 ✓）；
+//   - 从 `POST /api/v1/client-auth/ticket` 签出"客户端下载票据"（本轮 M10 真机实测：管理端
+//     token 拿到 200 ✗，本应 401）。
+//
+// 客户端 token 的 role 由 generateTokens 固定写成 "client" → 这里硬性要求它 ✓，
+// 于是两类 token 被彻底分开（管理端 token 不再能冒充客户端）。
+func (s *Service) ValidateClientAccessToken(tokenStr string) (int64, error) {
+	claims, err := s.jwt.ValidateTyped(tokenStr, jwt.TokenTypeAccess)
+	if err != nil {
+		return 0, err
+	}
+	if !strings.EqualFold(claims.Role, "client") {
+		return 0, errNotClientToken
+	}
 	return claims.UserID, nil
 }
 

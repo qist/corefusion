@@ -1437,7 +1437,7 @@ async function loadViewerLog() {
   }
 }
 
-function startViewerStream() {
+async function startViewerStream() {
   closeLogStream()
   const type = viewerLogType.value
   if (!type) return
@@ -1461,7 +1461,8 @@ function startViewerStream() {
   }
   const params = {}
   if (logPath) params.log_path = logPath
-  const url = logApi.buildSSEUrl(path, params)
+  const ticket = await logApi.requestTicket('logs')
+  const url = logApi.buildSSEUrl(path, params, ticket)
   eventSource = logApi.createSSE(url)
 
   eventSource.addEventListener('log', (e) => {
@@ -1533,11 +1534,11 @@ async function loadStdoutLog(type) {
   }
 }
 
-function startStdoutStream(type) {
+async function startStdoutStream(type) {
   closeLogStream()
   const url = isCoreType(type)
-    ? logApi.buildCoreStdoutStreamUrl(type, selectedServerId.value)
-    : logApi.buildProxyStdoutStreamUrl(type, selectedServerId.value)
+    ? await logApi.buildCoreStdoutStreamUrl(type, selectedServerId.value)
+    : await logApi.buildProxyStdoutStreamUrl(type, selectedServerId.value)
   eventSource = logApi.createSSE(url)
   eventSource.addEventListener('log', (e) => {
     logLines.value.push(e.data)

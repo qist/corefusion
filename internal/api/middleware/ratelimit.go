@@ -177,16 +177,17 @@ func BodyLimit(maxBytes int64) gin.HandlerFunc {
 // ---------------------------------------------------------------------------
 
 // tokenQueryRe 匹配 URL 里的 token / access_token 查询参数值。
-var tokenQueryRe = regexp.MustCompile(`(?i)([?&](?:token|access_token)=)[^&\s"]*`)
+var tokenQueryRe = regexp.MustCompile(`(?i)([?&](?:token|access_token|ticket|bootstrap_token)=)[^&\s"]*`)
 
 // RedactTokenQuery 把 URL 中的 token 值打码。
 //
-// 为什么需要它：管理端鉴权**故意**支持 `?token=`（前端用它做文件下载与日志 SSE 流 ——
-// 浏览器的 EventSource / 新窗口下载无法自定义 Authorization 头），而 gin 默认访问日志会把
-// 完整 query 写进日志文件 → 一个可用的 JWT 就留在磁盘上了。
-// 这里**不改变**鉴权行为（去了 query 兜底会直接打断日志流与下载），只让日志不再记录明文 token。
+// 为什么需要它：SSE/下载这类场景浏览器无法自定义 Authorization 头，凭证只能进 URL
+// （安全审计 v5 M10 后已改为**一次性短时票据** `?ticket=`，但仍不该把明文写进日志），
+// 而 gin 默认访问日志会把完整 query 写进日志文件。
+// 这里**不改变**鉴权行为，只让日志不再记录明文 token / ticket / bootstrap_token。
 func RedactTokenQuery(s string) string {
-	if !strings.Contains(strings.ToLower(s), "token=") {
+	lower := strings.ToLower(s)
+	if !strings.Contains(lower, "token=") && !strings.Contains(lower, "ticket=") {
 		return s
 	}
 	return tokenQueryRe.ReplaceAllString(s, "${1}***")

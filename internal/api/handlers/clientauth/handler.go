@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/service/audit"
+	"corefusion/internal/service/auth"
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
@@ -311,11 +313,83 @@ func (h *Handler) pushRateLimitOnLogin(clientIP string, clientID int64) {
 	}
 }
 
+// IssueTicket 签发客户端一次性短时票据（安全审计 v5 M10）。
+//
+// POST /api/v1/client-auth/ticket?scope=client_download（需已认证）
+//
+// 供门户里的"下载日志包"（`window.open`，无法自定义请求头）使用：票据 60 秒过期、
+// 一次性、且只能用在客户端日志包下载路径上 ✓。
+func (h *Handler) IssueTicket(c *gin.Context) {
+	store := middleware.TicketStore()
+	if store == nil {
+		response.InternalError(c, "TICKET_NOT_CONFIGURED", "ticket auth not configured")
+		return
+	}
+
+	scope := c.DefaultQuery("scope", auth.TicketScopeClientDownload)
+	if scope != auth.TicketScopeClientDownload {
+		response.BadRequest(c, "INVALID_SCOPE", "unsupported ticket scope")
+		return
+	}
+
+	clientID := c.GetInt64("client_id")
+	if clientID <= 0 {
+		response.Unauthorized(c, "UNAUTHORIZED", "invalid client session")
+		return
+	}
+
+	ticket, expires, err := store.Issue(auth.TicketOptions{
+		Scope:    scope,
+		Kind:     auth.TicketKindClient,
+		ClientID: clientID,
+	})
+	if err != nil {
+		response.InternalError(c, "TICKET_ISSUE_FAILED", "failed to issue ticket")
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	response.OK(c, gin.H{
+		"ticket":     ticket,
+		"expires_in": int(time.Until(expires).Seconds()),
+		"scope":      scope,
+	})
+}
+
 // ClientAuthMiddleware creates a middleware for client JWT authentication.
+//
+// 支持两种凭证（安全审计 v5 M10）：
+//  1. `Authorization: Bearer <access token>` —— 常规请求；
+//  2. `?ticket=<一次性短时票据>` —— **仅**日志包下载这种浏览器无法自定义请求头的场景
+//     （`window.open` 跳转）。作用域与路径都在 middleware 的路径表里限定 ✓。
+//
+// ⚠ 以前客户端下载是直接 `window.open(...?token=<长期 JWT>)` ✗：URL 会残留在访问日志、
+// 浏览器历史、Referer 里，等于把客户端凭证散播出去 ✗；而且客户端中间件**只读 Header** ✗，
+// 所以那个下载入口实际上一直是 401（顺带修好 ✓）。
 func ClientAuthMiddleware(svc *clientauth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			if ticket := c.Query("ticket"); ticket != "" {
+				store := middleware.TicketStore()
+				scope := middleware.TicketScopeForPath(c.Request.URL.Path)
+				if store == nil || scope != auth.TicketScopeClientDownload {
+					c.JSON(http.StatusUnauthorized, gin.H{"code": "TICKET_NOT_ALLOWED",
+						"message": "one-time tickets are not accepted on this endpoint"})
+					c.Abort()
+					return
+				}
+				t, ok := store.Consume(ticket, scope)
+				if !ok || t.Kind != auth.TicketKindClient || t.ClientID <= 0 {
+					c.JSON(http.StatusUnauthorized, gin.H{"code": "TICKET_INVALID",
+						"message": "ticket is invalid, already used or expired; request a new one"})
+					c.Abort()
+					return
+				}
+				c.Set("client_id", t.ClientID)
+				c.Next()
+				return
+			}
 			c.JSON(http.StatusUnauthorized, gin.H{"code": "UNAUTHORIZED", "message": "missing authorization header"})
 			c.Abort()
 			return
@@ -328,7 +402,9 @@ func ClientAuthMiddleware(svc *clientauth.Service) gin.HandlerFunc {
 			return
 		}
 
-		clientID, err := svc.ValidateAccessToken(parts[1])
+		// ⚠ 必须用**严格**校验：客户端与管理端共用签名密钥，普通 ValidateAccessToken 会
+		// 放行管理端 token（其 user_id 被当成 client_id）✗ → 管理端身份就能冒充任意客户端。
+		clientID, err := svc.ValidateClientAccessToken(parts[1])
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"code": "UNAUTHORIZED", "message": "invalid or expired token"})
 			c.Abort()

@@ -4124,7 +4124,16 @@ var showStreamingAccount = function(service) {
     }
 
     var downloadLogPackage = function(id) {
-      window.open('/api/v1/client-auth/logs/packages/' + id + '/download?token=' + encodeURIComponent(token.value), '_blank')
+      // 一次性短时票据（M10）：新窗口带不了 Authorization 头；长期 token 进 URL 会残留在
+      // 日志/历史/Referer 里，而且客户端中间件**只读 Header**，所以以前这个下载一直是 401。
+      fetch('/api/v1/client-auth/ticket?scope=client_download', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token.value }
+      }).then(function(r) { return r.json() }).then(function(d) {
+        var tk = (d && d.data && d.data.ticket) || (d && d.ticket) || ''
+        if (!tk) { ElMessage.error('下载凭证获取失败'); return }
+        window.open('/api/v1/client-auth/logs/packages/' + id + '/download?ticket=' + encodeURIComponent(tk), '_blank')
+      })
     }
 
     var deleteLogPackage = function(id) {

@@ -539,6 +539,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	authSvc := authService.NewService(userRepo, jwtSecret)
 	// 让鉴权中间件能校验令牌版本（登出即吊销旧 token，M8）
 	middleware.SetTokenVersionProvider(userRepo)
+	// 一次性短时票据（M10）：SSE/下载这类无法自定义 Header 的场景用它替代 URL 里的长期 token
+	middleware.InitTicketStore(60 * time.Second)
 	userSvc := userService.NewService(userRepo)
 	nodeSvc := nodeService.NewService(nodeRepo, sharedNodeMgr, subRepo, clientRepo, planTmplRepo)
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
@@ -1227,6 +1229,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 原先注册在公开的 authGroup 里 → handler 拿不到 user_id → 吊销被静默跳过
 			// （实测：登出后旧 token 仍然 200，且库里版本没变）。
 			authSelfGroup.POST("/logout", authH.Logout)
+			// 签发一次性短时票据（M10）：日志 SSE 流与备份下载用它，避免把长期 token 放进 URL
+			authSelfGroup.POST("/ticket", authH.IssueTicket)
 		}
 
 		// Protected routes
@@ -2930,6 +2934,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
 	{
 		clientAuthProtected.GET("/me", clientauthH.GetMe)
+		// 客户端一次性短时票据（M10）：门户"下载日志包"用（window.open 无法带 Header）
+		clientAuthProtected.POST("/ticket", clientauthH.IssueTicket)
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
@@ -3573,6 +3579,8 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	clientAuthProtected.Use(clientauthHandler.ClientAuthMiddleware(clientauthSvcInst))
 	{
 		clientAuthProtected.GET("/me", clientauthH.GetMe)
+		// 客户端一次性短时票据（M10）：门户"下载日志包"用（window.open 无法带 Header）
+		clientAuthProtected.POST("/ticket", clientauthH.IssueTicket)
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)

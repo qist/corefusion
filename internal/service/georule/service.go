@@ -59,11 +59,11 @@ type ReleaseAsset struct {
 // The panel downloads files to data/rules/, then pushes them to all nodes
 // via the DownloadGeoRule command (Agent downloads from panel's HTTP endpoint).
 type Service struct {
-	sourceRepo   *repository.RuleSourceRepository
-	fileRepo     *repository.GeoRuleRepository
-	dataDir      string
-	settingSvc   SettingStore
-	nodeOp       NodeOperator
+	sourceRepo *repository.RuleSourceRepository
+	fileRepo   *repository.GeoRuleRepository
+	dataDir    string
+	settingSvc SettingStore
+	nodeOp     NodeOperator
 	nodeLister NodeLister
 }
 
@@ -260,11 +260,11 @@ func (s *Service) CreateSource(ctx context.Context, serverID int64, name, repoUR
 	// serverID ignored — geo rules are always global
 	src := &entity.RuleSource{
 		ServerID: 0, // global
-		Name:    name,
-		RepoURL: repoURL,
-		Enabled: false,
+		Name:     name,
+		RepoURL:  repoURL,
+		Enabled:  false,
 		SyncCron: syncCron,
-		Status:  "idle",
+		Status:   "idle",
 	}
 	if err := s.sourceRepo.Create(ctx, src); err != nil {
 		return nil, err
@@ -351,7 +351,11 @@ func (s *Service) FetchGitHubReleaseAssets(ctx context.Context, repoURL string) 
 		return nil, "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	// GitHub API 响应加上限：避免异常/恶意响应把内存撑爆 ✗（正常 release JSON 远小于此）
+	body, err := netutil.ReadLimited(resp.Body, netutil.MaxJSONResponseBytes)
+	if err != nil {
+		return nil, "", fmt.Errorf("read response: %w", err)
+	}
 	var release GitHubRelease
 	if err := json.Unmarshal(body, &release); err != nil {
 		return nil, "", fmt.Errorf("parse response: %w", err)
@@ -391,7 +395,11 @@ func (s *Service) FetchReleaseAssets(ctx context.Context, sourceID int64) ([]Rel
 		return nil, "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	// GitHub API 响应加上限：避免异常/恶意响应把内存撑爆 ✗（正常 release JSON 远小于此）
+	body, err := netutil.ReadLimited(resp.Body, netutil.MaxJSONResponseBytes)
+	if err != nil {
+		return nil, "", fmt.Errorf("read response: %w", err)
+	}
 	var release GitHubRelease
 	if err := json.Unmarshal(body, &release); err != nil {
 		return nil, "", fmt.Errorf("parse response: %w", err)
@@ -545,7 +553,8 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 		return nil, err
 	}
 
-	size, err := io.Copy(f, resp.Body)
+	// 规则文件（geosite/geoip）本身较大，但仍设上限：防异常响应把磁盘写满 ✗
+	size, err := netutil.CopyLimited(f, resp.Body, netutil.MaxGeoRuleBytes)
 	f.Close()
 	if err != nil {
 		os.Remove(tmpPath)

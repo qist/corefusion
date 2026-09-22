@@ -98,3 +98,55 @@ func TestSafeFetchMechanicsWithAllowPrivate(t *testing.T) {
 		t.Errorf("非 200 必须报错，得到 %v", err)
 	}
 }
+
+// ReadLimited / CopyLimited：超限必须**报错**，不能静默截断 ✗
+// （截断会让"下载一半的二进制/JSON"被当成完整内容：校验和算错、JSON 报误导性错误）。
+func TestReadLimitedErrorsInsteadOfTruncating(t *testing.T) {
+	cases := []struct {
+		name     string
+		data     string
+		maxBytes int64
+		wantErr  bool
+	}{
+		{"小于上限", "hello", 10, false},
+		{"恰好等于上限", "0123456789", 10, false},
+		{"超过上限 1 字节", "01234567890", 10, true},
+		{"远超上限", strings.Repeat("x", 4096), 1024, true},
+	}
+	for _, tc := range cases {
+		got, err := ReadLimited(strings.NewReader(tc.data), tc.maxBytes)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%s：超限必须报错，却返回了 %d 字节", tc.name, len(got))
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s：不应报错：%v", tc.name, err)
+			continue
+		}
+		if string(got) != tc.data {
+			t.Errorf("%s：内容不符 %q", tc.name, got)
+		}
+	}
+
+	if _, err := ReadLimited(strings.NewReader("x"), 0); err == nil {
+		t.Error("maxBytes<=0 应报错（防止误用成无限制）")
+	}
+}
+
+func TestCopyLimitedErrorsInsteadOfTruncating(t *testing.T) {
+	var buf bytes.Buffer
+	n, err := CopyLimited(&buf, strings.NewReader("hello"), 10)
+	if err != nil || n != 5 || buf.String() != "hello" {
+		t.Fatalf("正常复制失败：n=%d err=%v", n, err)
+	}
+
+	buf.Reset()
+	if _, err := CopyLimited(&buf, strings.NewReader(strings.Repeat("y", 2048)), 1024); err == nil {
+		t.Error("超过上限必须报错（否则会写出一个被截断的坏文件）")
+	}
+	if _, err := CopyLimited(&buf, strings.NewReader("x"), 0); err == nil {
+		t.Error("maxBytes<=0 应报错")
+	}
+}

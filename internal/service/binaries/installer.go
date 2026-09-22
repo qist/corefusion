@@ -21,9 +21,9 @@ import (
 
 // GitHubRelease represents a GitHub release.
 type GitHubRelease struct {
-	TagName    string         `json:"tag_name"`
-	Prerelease bool           `json:"prerelease"`
-	Assets     []GitHubAsset  `json:"assets"`
+	TagName    string        `json:"tag_name"`
+	Prerelease bool          `json:"prerelease"`
+	Assets     []GitHubAsset `json:"assets"`
 }
 
 // GitHubAsset represents a release asset.
@@ -199,7 +199,8 @@ func (i *Installer) ListReleasesGitHubForPlatform(ctx context.Context, coreType,
 	}
 
 	var releases []GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	// GitHub API 响应加上限：避免异常/恶意响应把内存撑爆（正常 JSON 远小于此）
+	if err := json.NewDecoder(io.LimitReader(resp.Body, netutil.MaxJSONResponseBytes)).Decode(&releases); err != nil {
 		return nil, err
 	}
 
@@ -283,7 +284,9 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// 核心二进制会整块读进内存做格式校验 → 必须有上限（正常 Xray/sing-box 约 30~80 MB，
+	// 这里给到 1 GiB 的宽松上限，只为防住异常/恶意响应把它撑爆 ✗）。
+	bodyBytes, err := netutil.ReadLimited(resp.Body, netutil.MaxBinaryBytes)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -302,14 +305,14 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 			binaryName += ".exe"
 		}
 		destPath := filepath.Join(destDir, binaryName)
-			if err := os.WriteFile(destPath, bodyBytes, 0755); err != nil {
-				return err
-			}
-			if err := validateBinary(destPath, coreType); err != nil {
-				os.Remove(destPath)
-				return fmt.Errorf("downloaded file is not a valid binary: %w", err)
-			}
-			return nil
+		if err := os.WriteFile(destPath, bodyBytes, 0755); err != nil {
+			return err
+		}
+		if err := validateBinary(destPath, coreType); err != nil {
+			os.Remove(destPath)
+			return fmt.Errorf("downloaded file is not a valid binary: %w", err)
+		}
+		return nil
 	}
 
 	tr := tar.NewReader(gz)
@@ -641,12 +644,12 @@ func assetMatchesArch(lowerName, archName string) bool {
 		return true
 	}
 	archAliases := map[string][]string{
-		"amd64": {"x86_64", "x86-64"},
-		"arm64": {"aarch64", "arm64-v8a", "armv8"},
-		"arm":   {"armv7", "arm32-v7a", "armhf", "armv7hl"},
-		"386":   {"i386", "i686", "x86"},
-		"mips":  {"mips32"},
-		"mipsle": {"mips32le", "mipsle"},
+		"amd64":    {"x86_64", "x86-64"},
+		"arm64":    {"aarch64", "arm64-v8a", "armv8"},
+		"arm":      {"armv7", "arm32-v7a", "armhf", "armv7hl"},
+		"386":      {"i386", "i686", "x86"},
+		"mips":     {"mips32"},
+		"mipsle":   {"mips32le", "mipsle"},
 		"mips64":   {"mips64"},
 		"mips64le": {"mips64le"},
 	}
@@ -733,7 +736,7 @@ func (i *Installer) ListReleasesForPlatform(ctx context.Context, coreType, osNam
 	}
 
 	var ghReleases []GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&ghReleases); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, netutil.MaxJSONResponseBytes)).Decode(&ghReleases); err != nil {
 		return nil, err
 	}
 

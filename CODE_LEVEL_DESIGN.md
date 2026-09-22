@@ -45,7 +45,7 @@ internal/
       hysteria2/
       tuic/
     listeners/
-  configgen/
+  configgen/   # ⚠ 2026-09-22 已删除（死代码：无任何调用方）
     common/
     validate/
 ```
@@ -56,7 +56,7 @@ internal/
 - `service`：放业务服务和流程编排
 - `store`：放数据库模型与 repository
 - `runtime/adapters`：放运行时核心适配器
-- `configgen/validate`：放协议组合校验器
+- ~~`configgen/validate`：放协议组合校验器~~（已删除，见 `CODE_STRUCTURE_SECURITY.md` §4.7）
 
 ## 2.1 仍需特别关注的遗漏点
 

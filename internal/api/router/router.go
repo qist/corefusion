@@ -2642,6 +2642,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				superAdminSystem.POST("/restart", systemH.Restart)
 				superAdminSystem.POST("/migrate-data", systemH.MigrateData)
 				superAdminSystem.POST("/db-config/migrate", systemH.MigrateDBData)
+				// 一步切换数据库（迁移 + 写 .env + 校验；失败则 .env 不变）
+				superAdminSystem.POST("/db-config/switch", systemH.SwitchDatabase)
 				superAdminSystem.POST("/reality-targets/reset", systemH.ResetRealityTargets)
 				superAdminSystem.POST("/generate-encryption-key", systemH.GenerateEncryptionKey)
 				superAdminSystem.POST("/regenerate-jwt-secret", systemH.RegenerateJWTSecret)

@@ -1395,7 +1395,9 @@ async function handleMigrateDB() {
   await ElMessageBox.confirm(t('settings.db.migrateConfirm'), t('common.confirm'), { type: 'warning' })
   dbMigrating.value = true
   try {
-    const d = await client.post('/system/db-config/migrate', { type: dbForm.value.type, dsn: dbForm.value.dsn, max_open_conns: dbForm.value.max_open_conns, max_idle_conns: dbForm.value.max_idle_conns })
+        // 一步切换：先迁移数据（写不进去会直接失败），成功后才写 .env 并读回校验 ——
+    // 这样不会出现"只保存了配置却没迁移"→ 重启后指向空库的情况。
+    const d = await client.post('/system/db-config/switch', { type: dbForm.value.type, dsn: dbForm.value.dsn, max_open_conns: dbForm.value.max_open_conns, max_idle_conns: dbForm.value.max_idle_conns })
     ElMessage.success(t('settings.db.migrateSuccess') + ' (' + (d.tables_copied || 0) + ' tables, ' + (d.rows_copied || 0) + ' rows)')
   } catch (e) { ElMessage.error(t('common.failed')) } finally { dbMigrating.value = false }
 }

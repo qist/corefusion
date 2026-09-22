@@ -698,27 +698,169 @@ func (s *SettingService) UpdateDBConfig(ctx context.Context, config *DBConfig) e
 	}
 
 	// Resolve DSN: if masked (unchanged by user), keep the existing .env value
-	dsnForEnv := s.resolveDSN(config.DSN)
-	if config.Type == "mysql" && !strings.HasPrefix(dsnForEnv, "mysql://") {
-		dsnForEnv = "mysql://" + dsnForEnv
-	} else if config.Type == "postgres" && !strings.HasPrefix(dsnForEnv, "postgres://") && !strings.HasPrefix(dsnForEnv, "postgresql://") {
-		dsnForEnv = "postgres://" + dsnForEnv
+	dsnForEnv := s.envDSNFor(config)
+
+	// ⚠ 写 .env 之前**先确认连得上** ✗：否则一次手误（端口写错/密码写错）就会把面板
+	// 指到一个连不上的库，重启即失联 ✗。连不上就不动 .env ✓。
+	probe := s.targetConfig(config)
+	probe.MaxOpenConns, probe.MaxIdleConns = 1, 1
+	if err := db.TestConnection(probe); err != nil {
+		return fmt.Errorf("database is not reachable, .env left unchanged: %w", err)
 	}
 
-	// Write CF_DB_DSN to .env
-	if err := saveEnvFile("CF_DB_DSN", dsnForEnv); err != nil {
+	// Write CF_DB_DSN to .env（读回校验：写不进去就回滚旧内容 ✓）
+	if err := saveEnvFileVerified("CF_DB_DSN", dsnForEnv); err != nil {
 		return fmt.Errorf("save .env: %w", err)
 	}
 
-	// Write pool settings to .env
+	// Write pool settings to .env（同样读回校验，不再忽略错误 ✗）
 	if config.MaxOpenConns > 0 {
-		saveEnvFile("CF_DB_MAX_OPEN_CONNS", strconv.Itoa(config.MaxOpenConns))
+		if err := saveEnvFileVerified("CF_DB_MAX_OPEN_CONNS", strconv.Itoa(config.MaxOpenConns)); err != nil {
+			return fmt.Errorf("save pool settings: %w", err)
+		}
 	}
 	if config.MaxIdleConns > 0 {
-		saveEnvFile("CF_DB_MAX_IDLE_CONNS", strconv.Itoa(config.MaxIdleConns))
+		if err := saveEnvFileVerified("CF_DB_MAX_IDLE_CONNS", strconv.Itoa(config.MaxIdleConns)); err != nil {
+			return fmt.Errorf("save pool settings: %w", err)
+		}
 	}
 
 	return nil
+}
+
+// upsertEnvContent 在 .env 内容里 upsert 一个键（保持其它行原样；纯函数，便于测试）。
+func upsertEnvContent(content, key, value string) string {
+	lines := []string{}
+	found := false
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[0]) == key {
+				lines = append(lines, key+"="+value)
+				found = true
+				continue
+			}
+		}
+		lines = append(lines, line)
+	}
+	if !found {
+		lines = append(lines, key+"="+value)
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// saveEnvFileVerified 写 .env 并**读回校验**，失败即回滚（"保证写成功"）。
+//
+// 为什么不能只信 WriteFile 的返回值：写到一半、磁盘满、被截断、写入的是别的路径……
+// 都可能"返回成功但内容不对" ✗。而 .env 是**重启后生效的唯一依据** —— 一旦写坏：
+//   - 写丢了 CF_DB_DSN → 重启后回落到默认 SQLite（看起来"数据全没了"✗）；
+//   - 写丢了 JWT_SECRET → 所有人被登出 ✗。
+//
+// 所以：先备份旧内容 → 写 → 读回比对 → 不一致就回滚旧内容并报错 ✓。
+func saveEnvFileVerified(key, value string) error {
+	oldContent, readErr := os.ReadFile(".env")
+	hadOld := readErr == nil
+
+	if err := saveEnvFile(key, value); err != nil {
+		return fmt.Errorf("write .env: %w", err)
+	}
+
+	// 读回校验（用与启动同一套解析逻辑，避免"写法/读法"不一致 ✗）
+	if got := loadEnvFile()[key]; got != value {
+		if hadOld {
+			if rerr := os.WriteFile(".env", oldContent, 0600); rerr != nil {
+				log.Printf("[setting] CRITICAL: .env verify failed and rollback failed: %v", rerr)
+			} else {
+				log.Printf("[setting] .env verify failed for %s, rolled back to previous content", key)
+			}
+		}
+		return fmt.Errorf("verify .env: %s not persisted (want %q, got %q)", key, value, got)
+	}
+	return nil
+}
+
+// envDSNFor 返回要写进 `CF_DB_DSN` 的值（补齐类型前缀；掩码密码回退到已有值）。
+func (s *SettingService) envDSNFor(config *DBConfig) string {
+	dsn := s.resolveDSN(config.DSN)
+	if config.Type == "mysql" && !strings.HasPrefix(dsn, "mysql://") {
+		dsn = "mysql://" + dsn
+	} else if config.Type == "postgres" && !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+		dsn = "postgres://" + dsn
+	}
+	return dsn
+}
+
+// targetConfig 把前端传来的 DB 配置解析成 db.Config（含类型覆盖与连接池参数）。
+func (s *SettingService) targetConfig(config *DBConfig) db.Config {
+	dstCfg := db.ParseDSN(s.resolveDSN(config.DSN))
+	if config.Type != "" && dstCfg.Type == "sqlite" && config.Type != "sqlite" {
+		dstCfg.Type = config.Type
+	}
+	dstCfg.MaxOpenConns = config.MaxOpenConns
+	dstCfg.MaxIdleConns = config.MaxIdleConns
+	return dstCfg
+}
+
+// SwitchDatabase 把"切换到新数据库"做成一个**有序、可验证**的动作（"保证能写成功"）：
+//
+//	① 先确认**连得上**目标库；
+//	② 再真的把数据写进去（db.MigrateTo 内部已有：写前预检 / 写入失败即失败 / 拷后行数核对）；
+//	③ **最后**才写 `.env`（读回校验，失败回滚）—— 只有这一步成功，"切换"才算成功；
+//	④ 再连一次目标库确认它确实可用。
+//
+// ⚠ 顺序是关键 ✗：旧流程是"保存配置（写 .env）"与"迁移数据"两个独立按钮，用户很容易
+// **只保存不迁移**，或者迁移失败时 `.env` 已经指向了新库 → 重启后面板连上**空库**、
+// 看起来"数据全丢了" ✗。现在只要迁移没成功，`.env` 一个字都不会改 ✓（面板继续用旧库 ✓）。
+func (s *SettingService) SwitchDatabase(ctx context.Context, config *DBConfig) (tablesCopied int, rowsCopied int64, err error) {
+	switch config.Type {
+	case "sqlite", "mysql", "postgres":
+		// ok
+	default:
+		return 0, 0, fmt.Errorf("unsupported database type: %s", config.Type)
+	}
+
+	dstCfg := s.targetConfig(config)
+	dsnForEnv := s.envDSNFor(config)
+
+	// ① 连得上才算候选
+	dstCfg.MaxOpenConns, dstCfg.MaxIdleConns = 1, 1
+	if err := db.TestConnection(dstCfg); err != nil {
+		return 0, 0, fmt.Errorf("target database is not reachable: %w", err)
+	}
+	dstCfg = s.targetConfig(config) // 恢复真实连接池参数
+
+	// ② 数据真的写进去（内部保证：预检 + 写入失败即失败 + 拷后行数核对）
+	tablesCopied, rowsCopied, err = db.MigrateTo(dstCfg)
+	if err != nil {
+		return 0, 0, fmt.Errorf("migrate data: %w", err)
+	}
+
+	// ③ 最后才写 .env（读回校验 + 回滚）
+	if err := saveEnvFileVerified("CF_DB_DSN", dsnForEnv); err != nil {
+		return tablesCopied, rowsCopied, fmt.Errorf("persist CF_DB_DSN: %w", err)
+	}
+	if config.MaxOpenConns > 0 {
+		if err := saveEnvFileVerified("CF_DB_MAX_OPEN_CONNS", strconv.Itoa(config.MaxOpenConns)); err != nil {
+			return tablesCopied, rowsCopied, fmt.Errorf("persist CF_DB_MAX_OPEN_CONNS: %w", err)
+		}
+	}
+	if config.MaxIdleConns > 0 {
+		if err := saveEnvFileVerified("CF_DB_MAX_IDLE_CONNS", strconv.Itoa(config.MaxIdleConns)); err != nil {
+			return tablesCopied, rowsCopied, fmt.Errorf("persist CF_DB_MAX_IDLE_CONNS: %w", err)
+		}
+	}
+
+	// ④ 再连一次，确认新库确实可用（写进去之后仍然连得上）
+	check := s.targetConfig(config)
+	check.MaxOpenConns, check.MaxIdleConns = 1, 1
+	if err := db.TestConnection(check); err != nil {
+		return tablesCopied, rowsCopied, fmt.Errorf("target database unusable after switch: %w", err)
+	}
+
+	log.Printf("[setting] database switched: %d tables / %d rows copied; .env updated (restart to apply)",
+		tablesCopied, rowsCopied)
+	return tablesCopied, rowsCopied, nil
 }
 
 // TestDBConnection tests connectivity to a database using the given config.

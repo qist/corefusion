@@ -596,6 +596,28 @@ func (h *Handler) TestDBConnection(c *gin.Context) {
 	response.OK(c, gin.H{"message": "database connection successful"})
 }
 
+// SwitchDatabase handles POST /api/v1/system/db-config/switch.
+//
+// 一步完成"切换数据库"：连接预检 → 迁移数据（写入保证）→ 写 .env（读回校验 + 回滚）→ 再验连接。
+// 只要中间任何一步失败，`.env` 都不会被改动 ✓（面板继续用旧库，不会出现"数据全丢了" ✗）。
+func (h *Handler) SwitchDatabase(c *gin.Context) {
+	var config system.DBConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	tables, rows, err := h.settingSvc.SwitchDatabase(c.Request.Context(), &config)
+	if err != nil {
+		response.InternalError(c, "SWITCH_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{
+		"message":       "database switched; restart required to apply",
+		"tables_copied": tables,
+		"rows_copied":   rows,
+	})
+}
+
 // MigrateDBData handles POST /api/v1/system/db-config/migrate.
 func (h *Handler) MigrateDBData(c *gin.Context) {
 	var config system.DBConfig

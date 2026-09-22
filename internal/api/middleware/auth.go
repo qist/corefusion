@@ -57,6 +57,19 @@ func AuthRequired() gin.HandlerFunc {
 			return
 		}
 
+		// ⚠ 管理端必须拒绝**非管理端角色**的 token ✗（安全审计 v5 S2）：
+		// Portal 客户端 token 与管理端 token 用**同一把密钥**、结构完全一致，只有 role 不同
+		// （客户端是 "client"）；而大量管理端路由只挂了 AuthRequired、没挂 RequireRole ——
+		// 结果是任一登录的 Portal 用户都能调 `/api/v1/nodes`、`/clients`、`/subscriptions` 等。
+		// 这里按 rbac 的 RankOf 拒绝（未收录的角色返回 0，天然"失败关闭"）：
+		// 不仅是 client，将来任何新 token 类型忘了配角色也不会被放进管理端。
+		if RankOf(claims.Role) <= 0 {
+			response.Forbidden(c, "ROLE_NOT_ALLOWED",
+				"this token is not allowed to access the admin API")
+			c.Abort()
+			return
+		}
+
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
 		c.Set("role", claims.Role)

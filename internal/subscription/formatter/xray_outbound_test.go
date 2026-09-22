@@ -169,7 +169,14 @@ func TestXrayFormatterRealityUsesServerName(t *testing.T) {
 	if _, has := rs["serverNames"]; has {
 		t.Errorf("reality 不能写 serverNames（Xray 25+ 直接拒载）: %v", rs["serverNames"])
 	}
-	if rs["publicKey"] != "PBK" || rs["shortId"] != "SID" || rs["fingerprint"] != "chrome" {
+	// 客户端公钥：xray 26.9.9 对 `publicKey` 与 `password` **两个名字都接受**
+	// （实测 `xray run -test` 两种写法都是 Configuration OK）。面板统一写 `password`
+	// （XTLS/REALITY 客户端配置里的名字），这里两种都算通过，不再断言单一名字。
+	pk, _ := rs["publicKey"].(string)
+	if pk == "" {
+		pk, _ = rs["password"].(string)
+	}
+	if pk != "PBK" || rs["shortId"] != "SID" || rs["fingerprint"] != "chrome" {
 		t.Errorf("reality 参数不全: %v", rs)
 	}
 }

@@ -121,6 +121,21 @@ func (f *SingBoxFormatter) Format(nodes []Node) ([]byte, error) {
 			ob["flow"] = node.Flow
 		}
 
+		// vmess 的加密方式必须写成**具体值**：sing-box 的默认值/`auto` 与 xray 服务端对不上，
+		// 服务端会直接 `proxy/vmess/encoding: unknown security type: UNKNOWN` 把连接拒掉
+		// （实测：显式 aes-128-gcm / chacha20-poly1305 立刻连通，auto/默认 100% 不通）。
+		// 服务端用户里钉了具体 cipher 就照抄；服务端是 auto/未写时用 xray 一定认的
+		// aes-128-gcm（服务端 auto 时接受任意具体值，两种实测都通）。
+		if node.Protocol == "vmess" {
+			cipher, _ := node.Extra["cipher"].(string)
+			switch cipher = strings.ToLower(strings.TrimSpace(cipher)); cipher {
+			case "aes-128-gcm", "chacha20-poly1305", "none", "zero":
+				ob["security"] = cipher
+			default: // 空 / auto / 其它：给确定值
+				ob["security"] = "aes-128-gcm"
+			}
+		}
+
 		// SSL/SS method + packet encoding
 		if node.Protocol == "shadowsocks" || node.Protocol == "shadowsocks2022" {
 			if node.Encryption != "" {

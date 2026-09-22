@@ -354,11 +354,26 @@ func runServer(args []string) {
 	middleware.SetJWT(jwtHandler)
 
 	// Create initial admin
+	//
+	// 安全审计 v5 S4：这里原本写死 "admin"/"admin123" ✗ —— 新部署即存在可预测口令。
+	// 现在：① CF_INITIAL_ADMIN_PASSWORD 可显式指定；② 否则**随机生成并只打印一次**。
+	// ⚠ 已有用户时 CreateInitialAdmin 直接返回"已存在"，**不会**改动现有口令 ✓
+	//   （静默改口令会把现有部署挡在门外）；已有部署里若仍是弱默认口令，仅打印告警（见下）。
 	userRepo := repository.NewUserRepository(db.DB)
 	authSvc := authService.NewService(userRepo, jwtSecret)
-	if err := authSvc.CreateInitialAdmin(context.Background(), "admin", "admin123"); err != nil {
+	initialPw, generated := resolveInitialAdminPassword(os.Getenv)
+	if err := authSvc.CreateInitialAdmin(context.Background(), "admin", initialPw); err != nil {
 		log.Printf("initial admin: %v", err)
+	} else if generated {
+		log.Printf("==================================================================")
+		log.Printf("[startup] 已创建初始管理员 admin，随机口令（**仅显示这一次**，请立即登录并修改）：")
+		log.Printf("[startup]     %s", initialPw)
+		log.Printf("[startup] 如需自定义，可用环境变量 %s 指定。", initialAdminPasswordEnv)
+		log.Printf("==================================================================")
+	} else {
+		log.Printf("[startup] 已创建初始管理员 admin（口令来自 %s）", initialAdminPasswordEnv)
 	}
+	warnIfWeakAdminPassword(context.Background(), userRepo, "admin")
 
 	// Phase 5: Build listen address (from database settings only; PORT env removed)
 	listenAddr := ":8080"

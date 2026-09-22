@@ -238,6 +238,14 @@
             <el-option label="dns" value="dns" />
           </el-select>
         </el-form-item>
+        <el-form-item label="Query DNSSEC">
+          <el-switch v-model="ruleForm._queryDnssec" />
+          <div class="hint">匹配"查询是否请求 DNSSEC"（关 = 不带 DO 位）</div>
+        </el-form-item>
+        <el-form-item label="Query Client Subnet">
+          <el-input v-model="ruleForm._queryClientSubnet" type="textarea" :rows="2" placeholder="1.2.3.0/24" />
+          <div class="hint">匹配查询里的 ECS 客户端子网，每行一条</div>
+        </el-form-item>
         <el-form-item label="Server">
           <el-input v-model="ruleForm.server" placeholder="dns-server tag" />
         </el-form-item>
@@ -253,6 +261,10 @@
             <el-option label="hijack-dns" value="hijack-dns" />
             <el-option label="sniff" value="sniff" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="ruleForm.action === 'route'" label="Speculative">
+          <el-switch v-model="ruleForm.speculative" />
+          <div class="hint">乐观并发：同时向多个 server 发起查询、取最快返回（仅 action=route 有效）</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -336,6 +348,7 @@ const editingRuleIdx = ref(-1)
 const ruleForm = reactive({
   type: '', mode: '', _domain: '', _domainSuffix: '', _domainKeyword: '',
   _ipCIDR: '', _protocol: [], server: '', outbound: '', action: '',
+  _queryDnssec: false, _queryClientSubnet: '', speculative: false,
 })
 
 function showAddServer() {
@@ -434,6 +447,7 @@ function showAddRule() {
   Object.assign(ruleForm, {
     type: '', mode: '', _domain: '', _domainSuffix: '', _domainKeyword: '',
     _ipCIDR: '', _protocol: [], server: '', outbound: '', action: '',
+    _queryDnssec: false, _queryClientSubnet: '', speculative: false,
   })
   ruleDlg.value = true
 }
@@ -445,6 +459,8 @@ function editRule(i) {
     _domain: r._domain || '',
     _domainSuffix: r._domainSuffix || '',
     _domainKeyword: r._domainKeyword || '',
+    _queryDnssec: !!r.query_dnssec,
+    _queryClientSubnet: (r.query_client_subnet || []).join('\n'),
     _ipCIDR: r._ipCIDR || '',
     _protocol: r._protocol || [],
   })
@@ -466,8 +482,12 @@ function saveRule() {
   if (ruleForm.server) rule.server = ruleForm.server
   if (ruleForm.outbound) rule.outbound = ruleForm.outbound
   if (ruleForm.action) rule.action = ruleForm.action
-  if (editingRuleIdx.value >= 0) form.rules[editingRuleIdx.value] = { ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol }
-  else form.rules.push({ ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol })
+  if (ruleForm._queryDnssec) rule.query_dnssec = true
+  const qcs = (ruleForm._queryClientSubnet || '').split('\n').map(x => x.trim()).filter(Boolean)
+  if (qcs.length) rule.query_client_subnet = qcs
+  if (ruleForm.speculative) rule.speculative = true
+  if (editingRuleIdx.value >= 0) form.rules[editingRuleIdx.value] = { ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol, _queryDnssec: ruleForm._queryDnssec, _queryClientSubnet: ruleForm._queryClientSubnet, speculative: ruleForm.speculative }
+  else form.rules.push({ ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol, _queryDnssec: ruleForm._queryDnssec, _queryClientSubnet: ruleForm._queryClientSubnet, speculative: ruleForm.speculative })
   ruleDlg.value = false
   emit()
 }
@@ -600,6 +620,9 @@ function build() {
     if (r.server) rule.server = r.server
     if (r.outbound) rule.outbound = r.outbound
     if (r.action) rule.action = r.action
+    if (r.query_dnssec) rule.query_dnssec = true
+    if (Array.isArray(r.query_client_subnet) && r.query_client_subnet.length) rule.query_client_subnet = [...r.query_client_subnet]
+    if (r.speculative) rule.speculative = true
     return rule
   })
   return out

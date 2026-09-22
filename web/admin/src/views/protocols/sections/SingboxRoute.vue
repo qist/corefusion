@@ -16,6 +16,38 @@
         <el-input v-model="form.default_domain_resolver" placeholder="dns-remote" @change="emit" />
         <div class="hint">Default DNS server tag for domain resolution</div>
       </el-form-item>
+      <el-form-item label="Default Network Strategy">
+        <el-select v-model="form.default_network_strategy" style="width:100%" clearable @change="onNetStrategyChange">
+          <el-option label="(默认)" value="" />
+          <el-option label="hybrid" value="hybrid" />
+          <el-option label="fallback" value="fallback" />
+        </el-select>
+        <div class="hint">
+          多网卡/多网络时的选路策略。实测合法值**只有 hybrid / fallback**（写别的核心会 FATAL
+          `unknown network strategy`）；且必须同时开启上面的 Auto Detect Interface。
+        </div>
+      </el-form-item>
+      <el-form-item label="Default Network Type">
+        <el-select v-model="form.default_network_type" multiple clearable style="width:100%" @change="emit">
+          <el-option label="wifi" value="wifi" /><el-option label="cellular" value="cellular" />
+          <el-option label="ethernet" value="ethernet" /><el-option label="other" value="other" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="Default Fallback Network Type">
+        <el-select v-model="form.default_fallback_network_type" multiple clearable style="width:100%" @change="emit">
+          <el-option label="wifi" value="wifi" /><el-option label="cellular" value="cellular" />
+          <el-option label="ethernet" value="ethernet" /><el-option label="other" value="other" />
+        </el-select>
+        <div class="hint">strategy=fallback 时的退化网络类型</div>
+      </el-form-item>
+      <el-form-item label="Default Fallback Delay">
+        <el-input v-model="form.default_fallback_delay" placeholder="300ms" @change="emit" />
+        <div class="hint">回退等待时长（duration，如 300ms / 1s；非法值核心会拒绝启动）</div>
+      </el-form-item>
+      <el-form-item label="Default HTTP Client">
+        <el-input v-model="form.default_http_client" placeholder="出站 tag" @change="emit" />
+        <div class="hint">内部 HTTP 请求（如规则集下载）默认走哪个出站</div>
+      </el-form-item>
       <el-form-item label="Default Strategy">
         <el-select v-model="form.default_domain_strategy" style="width:100%" clearable @change="emit">
           <el-option label="" value="" />
@@ -215,6 +247,27 @@
             <el-switch v-model="rf._ruleSetIPCIDRMatchSource" />
             <span class="hint-inline">rule_set 中的 ip_cidr 匹配源地址（rule_set_ip_cidr_match_source）</span>
           </el-form-item>
+          <el-form-item label="Clash Mode">
+            <el-select v-model="rf._clashMode" style="width:100%" clearable filterable allow-create @change="emit">
+              <el-option label="(不限)" value="" /><el-option label="rule" value="rule" />
+              <el-option label="global" value="global" /><el-option label="direct" value="direct" />
+            </el-select>
+            <div class="hint">按外部控制器（clash_api）当前模式匹配</div>
+          </el-form-item>
+          <el-form-item label="Interface Address (JSON)">
+            <el-input v-model="rf._interfaceAddressJson" type="textarea" :rows="2"
+              placeholder='{"eth0": ["192.168.1.10/32"]}' @change="emit" />
+            <div class="hint">本地**接口名 → 地址段**映射（JSON，map 形式）；JSON 非法会被忽略</div>
+          </el-form-item>
+          <el-form-item label="Network Interface Address (JSON)">
+            <el-input v-model="rf._networkInterfaceAddressJson" type="textarea" :rows="2"
+              placeholder='{"wifi": ["10.0.0.1/32"]}' @change="emit" />
+            <div class="hint">按**网络类型 → 地址段**匹配（JSON；键是 wifi/cellular/ethernet/other）</div>
+          </el-form-item>
+          <el-form-item label="Default Interface Address">
+            <el-input v-model="rf._defaultInterfaceAddress" type="textarea" :rows="2" placeholder="10.0.0.1/32" @change="emit" />
+            <div class="hint">系统未识别接口时的兜底地址段，每行一条</div>
+          </el-form-item>
 
           <el-form-item label="Invert">
             <el-switch v-model="rf.invert" />
@@ -247,6 +300,23 @@
             <el-option label="resolve" value="resolve" />
           </el-select>
         </el-form-item>
+        <template v-if="rf.action === 'reject'">
+          <el-form-item label="Reject Method">
+            <el-select v-model="rf.rejectMethod" style="width:100%" clearable @change="onRejectMethodChange">
+              <el-option label="default" value="default" />
+              <el-option label="drop" value="drop" />
+              <el-option label="reply" value="reply" />
+            </el-select>
+            <div class="hint">拒绝方式（default=关连接 / drop=直接丢包 / reply=回 ICMP 或 TCP RST）</div>
+          </el-form-item>
+          <el-form-item v-if="rf.rejectMethod !== 'drop'" label="No Drop">
+            <el-switch v-model="rf.noDrop" @change="emit" />
+            <div class="hint">
+              不立刻断开该连接（"静默拦截"体验）；**method=drop 时不能开** ——
+              实测会 FATAL `no_drop is not available in current context`
+            </div>
+          </el-form-item>
+        </template>
         <el-form-item label="Outbound">
           <el-select v-model="rf.outbound" style="width:100%" clearable filterable allow-create>
             <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
@@ -269,6 +339,28 @@
           <el-form-item v-if="rf.tlsFragment || rf.tlsRecordFragment" label="Fragment Fallback Delay">
             <el-input v-model="rf.tlsFragmentFallbackDelay" placeholder="100ms" @change="emit" />
             <div class="hint">分片失败后的回退延迟（duration，如 100ms / 1s；非法值核心会拒绝启动）</div>
+          </el-form-item>
+          <el-form-item label="Network Strategy">
+            <el-select v-model="rf.networkStrategy" style="width:100%" clearable @change="emit">
+              <el-option label="(默认)" value="" /><el-option label="hybrid" value="hybrid" />
+              <el-option label="fallback" value="fallback" />
+            </el-select>
+            <div class="hint">该规则命中的连接用哪种选路策略（只有 hybrid / fallback 合法）</div>
+          </el-form-item>
+          <el-form-item label="Fallback Delay">
+            <el-input-number v-model="rf.fallbackDelay" :min="0" @change="emit" />
+            <div class="hint">回退延迟，单位毫秒（0 = 不写）</div>
+          </el-form-item>
+          <el-form-item label="UDP Disable Domain Unmapping">
+            <el-switch v-model="rf.udpDisableDomainUnmapping" @change="emit" />
+            <div class="hint">关闭 UDP 的域名反查（该字段 1.13 起已从 inbound 迁到规则动作）</div>
+          </el-form-item>
+          <el-form-item label="UDP Connect">
+            <el-switch v-model="rf.udpConnect" @change="emit" />
+          </el-form-item>
+          <el-form-item label="UDP Timeout">
+            <el-input v-model="rf.udpTimeout" placeholder="5m" @change="emit" />
+            <div class="hint">UDP 会话超时（duration；非法值核心会拒绝启动）</div>
           </el-form-item>
           <el-form-item label="TLS Spoof">
             <el-input v-model="rf.tlsSpoof" placeholder="www.bing.com" @change="emit" />
@@ -325,6 +417,8 @@ const emitFn = defineEmits(['update'])
 const form = reactive({
   final: 'direct', auto_detect_interface: true,
   default_domain_resolver: '', default_domain_strategy: '',
+  default_network_strategy: '', default_network_type: [], default_fallback_network_type: [],
+  default_fallback_delay: '', default_http_client: '',
   rules: [],
 })
 
@@ -347,6 +441,9 @@ function blankRule() {
     _process: '', _processPath: '', _processPathRegex: '',
     _ruleSet: [], _ruleSetIPCIDRMatchSource: false,
     _geosite: '', _geoip: '', _sourceGeoip: '',
+    _clashMode: '', _interfaceAddressJson: '', _networkInterfaceAddressJson: '', _defaultInterfaceAddress: '',
+    rejectMethod: '', noDrop: false,
+    udpDisableDomainUnmapping: false, udpConnect: false, udpTimeout: '', networkStrategy: '', fallbackDelay: 0,
     action: '', outbound: '', resolveServer: '', strategy: '',
     tlsFragment: false, tlsRecordFragment: false, tlsFragmentFallbackDelay: '',
     tlsSpoof: '', tlsSpoofMethod: '',
@@ -421,17 +518,15 @@ function editRule(r) {
     tlsFragment: !!r.tls_fragment, tlsRecordFragment: !!r.tls_record_fragment,
     tlsFragmentFallbackDelay: r.tls_fragment_fallback_delay || '',
     tlsSpoof: r.tls_spoof || '', tlsSpoofMethod: r.tls_spoof_method || '',
+    _clashMode: r.clash_mode || '',
+    _interfaceAddressJson: r.interface_address ? JSON.stringify(r.interface_address, null, 2) : '',
+    _networkInterfaceAddressJson: r.network_interface_address ? JSON.stringify(r.network_interface_address, null, 2) : '',
+    _defaultInterfaceAddress: (r.default_interface_address || []).join('\n'),
+    rejectMethod: r.method || '', noDrop: !!r.no_drop,
+    udpDisableDomainUnmapping: !!r.udp_disable_domain_unmapping, udpConnect: !!r.udp_connect,
+    udpTimeout: r.udp_timeout || '', networkStrategy: r.network_strategy || '', fallbackDelay: r.fallback_delay || 0,
   })
   dlg.value = true
-}
-
-// 由 rf 构造 sing-box 规则对象
-// duration 字段（tls_fragment_fallback_delay 等）给非法值会让核心**拒绝启动**
-// （实测：`FATAL decode config: …: time: invalid duration "abc"`）→ 生成前校验，不合法就不写。
-function validDuration(v) {
-  const t = String(v || '').trim()
-  if (!t) return ""
-  return /^(\d+(\.\d+)?(ns|us|ms|s|m|h))+$/.test(t) ? t : ""
 }
 
 // tls_fragment 与 tls_record_fragment **互斥**（实测：核心报 `are mutually exclusive` 并 FATAL）
@@ -442,16 +537,95 @@ function onTlsRecordFragmentChange() { if (rf.tlsRecordFragment) rf.tlsFragment 
 //   - tls_fragment / tls_record_fragment 互斥
 //   - tls_spoof_method 必须伴随 tls_spoof
 //   - fallback delay 必须是合法 duration
-function applyRouteOptions(src, rule) {
-  const rec = !!src.tlsRecordFragment
-  if (src.tlsFragment) rule.tls_fragment = true
-  if (rec) rule.tls_record_fragment = true
-  const ff = validDuration(src.tlsFragmentFallbackDelay)
-  if (ff && (src.tlsFragment || rec)) rule.tls_fragment_fallback_delay = ff
-  if (src.tlsSpoof) {
-    rule.tls_spoof = src.tlsSpoof
-    if (src.tlsSpoofMethod) rule.tls_spoof_method = src.tlsSpoofMethod
+// —— 以下 helper 的每条约束都用 sing-box check 实测过（详见 docs/singbox-field-gap.md）——
+
+// duration 字段给非法值会让核心拒绝启动（如 `time: invalid duration "abc"`）→ 生成前校验
+function validDuration(v) {
+  const t = String(v || '').trim()
+  if (!t) return ""
+  return /^(\d+(\.\d+)?(ns|us|ms|s|m|h))+$/.test(t) ? t : ""
+}
+
+// 约束：default_network_strategy 必须伴随 auto_detect_interface（实测 FATAL）
+function onNetStrategyChange() {
+  if (form.default_network_strategy) form.auto_detect_interface = true
+  emit()
+}
+
+// 约束：reject 的 method=drop 与 no_drop 互斥（实测 `no_drop is not available in current context`）
+function onRejectMethodChange() {
+  if (rf.rejectMethod === 'drop') rf.noDrop = false
+  emit()
+}
+
+// interface_address 是 map（接口名 → 地址段），用 JSON 录入；解析失败就忽略，避免写坏 JSON
+function parseJsonOrNull(v) {
+  const t = String(v || '').trim()
+  if (!t) return null
+  try {
+    const o = JSON.parse(t)
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null
+  } catch (e) {
+    console.warn('interface_address JSON 解析失败，已忽略:', e)
+    return null
   }
+}
+
+// 规则 matcher（表单 → 配置）
+function applyExtraMatchers(rf, rule) {
+  if (rf._clashMode) rule.clash_mode = rf._clashMode
+  const ia = parseJsonOrNull(rf._interfaceAddressJson); if (ia) rule.interface_address = ia
+  const nia = parseJsonOrNull(rf._networkInterfaceAddressJson); if (nia) rule.network_interface_address = nia
+  const dia = (rf._defaultInterfaceAddress || '').split('\n').map(x => x.trim()).filter(Boolean)
+  if (dia.length) rule.default_interface_address = dia
+}
+
+// 规则 matcher（已存规则对象 → 配置：字段是原始 JSON 名）
+function applyExtraMatchersRaw(r, rule) {
+  if (r.clash_mode) rule.clash_mode = r.clash_mode
+  if (r.interface_address) rule.interface_address = r.interface_address
+  if (r.network_interface_address) rule.network_interface_address = r.network_interface_address
+  if (Array.isArray(r.default_interface_address) && r.default_interface_address.length) {
+    rule.default_interface_address = [...r.default_interface_address]
+  }
+}
+
+// reject 动作：method + no_drop（两种命名都兼容）
+function applyRejectOptions(src, rule) {
+  const method = src.rejectMethod || src.method || ""
+  const noDrop = !!(src.noDrop || src.no_drop)
+  if (method) rule.method = method
+  if (noDrop && method !== "drop") rule.no_drop = true
+}
+
+// route-options 动作字段：三条实测约束都在这里守住
+//   - tls_fragment / tls_record_fragment 互斥
+//   - tls_spoof_method 必须伴随 tls_spoof
+//   - fallback delay / udp_timeout 必须是合法 duration
+// 入参可能是表单 rf（camelCase）也可能是**已存规则对象**（原始 JSON 名）→ 两种都读，
+// 否则"由已存规则构造"那条路径上字段会静默丢失（上一轮踩过）。
+function applyRouteOptions(src, rule) {
+  const g = (a, b) => (src[a] !== undefined ? src[a] : src[b])
+  const frag = !!g("tlsFragment", "tls_fragment")
+  const rec = !!g("tlsRecordFragment", "tls_record_fragment")
+  if (frag) rule.tls_fragment = true
+  if (rec) rule.tls_record_fragment = true
+  const ff = validDuration(g("tlsFragmentFallbackDelay", "tls_fragment_fallback_delay"))
+  if (ff && (frag || rec)) rule.tls_fragment_fallback_delay = ff
+  const spoof = g("tlsSpoof", "tls_spoof")
+  if (spoof) {
+    rule.tls_spoof = spoof
+    const sm = g("tlsSpoofMethod", "tls_spoof_method")
+    if (sm) rule.tls_spoof_method = sm
+  }
+  if (g("udpDisableDomainUnmapping", "udp_disable_domain_unmapping")) rule.udp_disable_domain_unmapping = true
+  if (g("udpConnect", "udp_connect")) rule.udp_connect = true
+  const ut = validDuration(g("udpTimeout", "udp_timeout"))
+  if (ut) rule.udp_timeout = ut
+  const ns = g("networkStrategy", "network_strategy")
+  if (ns) rule.network_strategy = ns
+  const fd = g("fallbackDelay", "fallback_delay")
+  if (fd > 0) rule.fallback_delay = Number(fd)
 }
 
 function buildRuleFromForm() {
@@ -533,6 +707,8 @@ function buildRuleFromForm() {
     if (rf.resolveServer) rule.server = rf.resolveServer
     if (rf.strategy) rule.strategy = rf.strategy
   }
+  applyExtraMatchers(rf, rule)
+  if (rf.action === 'reject') applyRejectOptions(rf, rule)
   if (rf.action === 'route-options') applyRouteOptions(rf, rule)
   return rule
 }
@@ -583,6 +759,11 @@ function sync() {
   form.auto_detect_interface = props.data.auto_detect_interface !== false
   form.default_domain_resolver = props.data.default_domain_resolver || ''
   form.default_domain_strategy = props.data.default_domain_strategy || ''
+  form.default_network_strategy = props.data.default_network_strategy || ''
+  form.default_network_type = props.data.default_network_type || []
+  form.default_fallback_network_type = props.data.default_fallback_network_type || []
+  form.default_fallback_delay = props.data.default_fallback_delay || ''
+  form.default_http_client = props.data.default_http_client || ''
   form.rules = (props.data.rules || []).map(r => ({
     ...r,
     _domain: (r.domain || []).join('\n'),
@@ -607,6 +788,11 @@ function build() {
   const out = {
     final: form.final,
     auto_detect_interface: form.auto_detect_interface,
+    default_network_strategy: form.default_network_strategy || undefined,
+    default_network_type: form.default_network_type?.length ? [...form.default_network_type] : undefined,
+    default_fallback_network_type: form.default_fallback_network_type?.length ? [...form.default_fallback_network_type] : undefined,
+    default_fallback_delay: validDuration(form.default_fallback_delay) || undefined,
+    default_http_client: form.default_http_client || undefined,
   }
   if (form.default_domain_resolver) out.default_domain_resolver = form.default_domain_resolver
   if (form.default_domain_strategy) out.default_domain_strategy = form.default_domain_strategy
@@ -660,6 +846,8 @@ function build() {
       if (r.server) rule.server = r.server
       if (r.strategy) rule.strategy = r.strategy
     }
+    applyExtraMatchersRaw(r, rule)
+    if (r.action === 'reject') applyRejectOptions(r, rule)
     if (r.action === 'route-options') applyRouteOptions(r, rule)
     return rule
   })

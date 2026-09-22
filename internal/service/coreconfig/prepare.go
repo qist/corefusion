@@ -1721,6 +1721,19 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 					sb["method"] = first["method"]
 				}
 			}
+		case "hysteria2":
+			// 链式中间形状：settings.servers[0] = {address, port, password, obfs?}
+			// （由 agent.buildOutboundFromExitInbound 针对"出口已有 hy2 入站"生成）
+			if servers, ok := settings["servers"].([]interface{}); ok && len(servers) > 0 {
+				if first, ok := servers[0].(map[string]interface{}); ok {
+					sb["server"] = first["address"]
+					sb["server_port"] = first["port"]
+					sb["password"] = first["password"]
+					if obfs, ok := first["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
+						sb["obfs"] = obfs
+					}
+				}
+			}
 		default:
 			// Fall back: try vnext format
 			if vnext, ok := settings["vnext"].([]interface{}); ok && len(vnext) > 0 {
@@ -1750,11 +1763,51 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 				}
 				sb["transport"] = transport
 			}
-			if security == "tls" {
-				sb["tls"] = map[string]interface{}{"enabled": true}
-				if sni, ok := ss["serverName"].(string); ok && sni != "" {
-					sb["tls"].(map[string]interface{})["server_name"] = sni
+			if security == "tls" || security == "reality" {
+				tls := map[string]interface{}{"enabled": true}
+				// SNI：reality 场景 xray 把它放在 realitySettings.serverName（顶层 serverName 常为空），
+				// 所以先取 realitySettings 再回落到顶层，否则收不到正确 SNI（核心不会报错，
+				// 只会拿服务器地址当 SNI → 连不上真实站点）。
+				var sni string
+				if v, ok := ss["serverName"].(string); ok && v != "" {
+					sni = v
 				}
+				if security == "reality" {
+					if r, ok := ss["realitySettings"].(map[string]interface{}); ok {
+						if v, ok := r["serverName"].(string); ok && v != "" {
+							sni = v
+						}
+					}
+				}
+				if sni != "" {
+					tls["server_name"] = sni
+				}
+				if alpn, ok := ss["alpn"].([]interface{}); ok && len(alpn) > 0 {
+					tls["alpn"] = alpn
+				}
+				if fp, ok := ss["fingerprint"].(string); ok && fp != "" {
+					tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": fp}
+				}
+				if security == "reality" {
+					reality := map[string]interface{}{"enabled": true}
+					if r, ok := ss["realitySettings"].(map[string]interface{}); ok {
+						if v, ok := r["publicKey"].(string); ok && v != "" {
+							reality["public_key"] = v
+						}
+						if v, ok := r["shortId"].(string); ok && v != "" {
+							reality["short_id"] = v
+						}
+						if v, ok := r["fingerprint"].(string); ok && v != "" {
+							tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": v}
+						}
+					}
+					tls["reality"] = reality
+					// reality 客户端**必须**有 uTLS（实测：uTLS is required by reality client）
+					if _, ok := tls["utls"]; !ok {
+						tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": "chrome"}
+					}
+				}
+				sb["tls"] = tls
 			}
 		}
 

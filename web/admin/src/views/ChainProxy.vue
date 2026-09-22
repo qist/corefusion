@@ -229,11 +229,12 @@
         </div>
         <!-- Step 2: choose exits (cluster + external, both multi-select, like Plan/NodeGroup) -->
         <div v-show="wizardStep===1">
-          <el-alert :title="t('chainProxy.multiExitHint')" type="info" :closable="false" style="margin-bottom:12px" />
+          <el-alert :title="t('chainProxy.multiExitHint')" type="info" :closable="false" style="margin-bottom:8px" />
+          <el-alert :title="t('chainProxy.exitInboundHint')" type="warning" :closable="false" style="margin-bottom:12px" />
           <el-row :gutter="16">
             <el-col :span="12">
               <div class="exit-group-title">{{ t('chainProxy.clusterNodes') }}</div>
-              <el-select v-model="wiz.clusterExits" multiple filterable style="width:100%" :placeholder="t('chainProxy.selectExits')">
+              <el-select v-model="wiz.clusterExits" multiple filterable style="width:100%" :placeholder="t('chainProxy.selectExits')" @change="onClusterExitsChange">
                 <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
               </el-select>
             </el-col>
@@ -244,10 +245,27 @@
               </el-select>
             </el-col>
           </el-row>
+          <!-- 每个集群出口：选它上面**已有的入站**（链式不再创建入站，也不再需要 chain_exit_config） -->
+          <div v-if="wiz.clusterExits.length" style="margin-top:14px">
+            <div class="exit-group-title">{{ t('chainProxy.exitInboundTitle') }}</div>
+            <div v-for="eid in wiz.clusterExits" :key="eid"
+                 style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <span style="width:150px;font-size:13px;color:#303133;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                {{ serverName(eid) }}
+              </span>
+              <el-select v-model="wiz.exitInbounds[eid]" filterable size="small" style="width:280px"
+                         :placeholder="t('chainProxy.exitInboundPlaceholder')">
+                <el-option v-for="ib in exitInboundCandidates(eid)" :key="ib.id"
+                           :label="inboundLabel(ib)" :value="ib.id" />
+              </el-select>
+              <span style="font-size:12px;color:#909399;flex:1">{{ exitInboundTip(eid) }}</span>
+            </div>
+          </div>
           <div style="margin-top:10px;font-size:12px;color:#909399">
             {{ t('chainProxy.selectedCount', { n: totalSelectedExits }) }}
             <span v-if="totalSelectedExits>1" style="color:#e6a23c"> · {{ t('chainProxy.willLoadBalance') }}</span>
             <span v-else-if="totalSelectedExits===1" style="color:#67c23a"> · {{ t('chainProxy.willDirect') }}</span>
+            <div style="margin-top:4px" v-if="!exitInboundsReady">{{ t('chainProxy.exitInboundRequired') }}</div>
           </div>
         </div>
         <!-- Step 3: confirm -->
@@ -259,6 +277,9 @@
               {{ totalSelectedExits>1 ? t('chainProxy.loadBalance') : t('chainProxy.direct') }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('chainProxy.exitCount')">{{ totalSelectedExits }}</el-descriptions-item>
+            <el-descriptions-item v-for="eid in wiz.clusterExits" :key="'c'+eid" :label="serverName(eid)">
+              {{ exitInboundText(eid) }}
+            </el-descriptions-item>
           </el-descriptions>
         </div>
       </div>
@@ -414,11 +435,39 @@ const wiz = ref({
   entryInboundId: 0,
   clusterExits: [],
   externalExits: [],
+  // 集群出口 → 选中的"出口节点上已有的入站" id
+  exitInbounds: {},
 })
 const totalSelectedExits = computed(() => wiz.value.clusterExits.length + wiz.value.externalExits.length)
+
+// ⚠ 与后端 `agent.ChainSupportedProtocols(coreType)` 必须保持一致：
+//   实测 xray **没有** hysteria2 出站（`xray run -test` → unknown config id: hysteria2），
+//   所以 hy2 出口只能配给 sing-box 入口。后端也会校验一遍，这里只是让用户选不到非法组合。
+const CHAIN_PROTOCOLS = {
+  xray: ['vless', 'vmess', 'trojan', 'shadowsocks'],
+  singbox: ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2'],
+}
+function normCore(core) {
+  const c = String(core || '').toLowerCase().trim()
+  if (c === 'singbox' || c === 'sing-box' || c === 'sing_box') return 'singbox'
+  return 'xray'
+}
+const entryCore = computed(() => {
+  const ib = inboundConfigs.value.find(x => x.id === wiz.value.entryInboundId)
+  return normCore(ib && ib.core_type)
+})
+const chainAllowedProtocols = computed(() => CHAIN_PROTOCOLS[entryCore.value] || [])
+// 出口节点 → 该节点上的入站候选（按需加载）
+const exitInboundOptions = ref({})
+const exitInboundsReady = computed(() =>
+  wiz.value.clusterExits.every(id => Number(wiz.value.exitInbounds[id]) > 0))
+
 const canNextStep = computed(() => {
   if (wizardStep.value === 0) return wiz.value.entryServerId && wiz.value.entryInboundId
-  if (wizardStep.value === 1) return totalSelectedExits.value > 0
+  if (wizardStep.value === 1) {
+    if (totalSelectedExits.value === 0) return false
+    return exitInboundsReady.value // 每个集群出口都必须选好已有入站
+  }
   return true
 })
 const entryServerName = computed(() => serverName(wiz.value.entryServerId))
@@ -429,7 +478,8 @@ const entryInboundLabel = computed(() => {
 function resetWizard() {
   wizardStep.value = 0
   inboundConfigs.value = []
-  wiz.value = { entryServerId: 0, entryInboundId: 0, clusterExits: [], externalExits: [] }
+  exitInboundOptions.value = {}
+  wiz.value = { entryServerId: 0, entryInboundId: 0, clusterExits: [], externalExits: [], exitInbounds: {} }
 }
 
 // ── Exit Config Dialog ──
@@ -683,6 +733,52 @@ async function onEntryServerChange(serverId) {
   } catch { /* ignore */ }
 }
 
+function inboundLabel(ib) {
+  const port = ib.port ? ` :${ib.port}` : ''
+  return `${ib.tag || ('in-' + ib.id)} · ${ib.protocol || ''}${port}`
+}
+
+// 出口入站候选：只列**启用**且协议在入口核心支持名单里的入站
+function exitInboundCandidates(serverId) {
+  const list = exitInboundOptions.value[serverId] || []
+  return list.filter(ib => ib.enabled !== false
+    && chainAllowedProtocols.value.includes(String(ib.protocol || '').toLowerCase()))
+}
+
+function exitInboundTip(serverId) {
+  const list = exitInboundOptions.value[serverId]
+  if (!list) return t('chainProxy.loading')
+  const cands = exitInboundCandidates(serverId)
+  if (!cands.length) {
+    return t('chainProxy.noExitInbound', { list: chainAllowedProtocols.value.join('/') })
+  }
+  const ib = cands.find(x => x.id === Number(wiz.value.exitInbounds[serverId]))
+  return ib ? '' : t('chainProxy.pickExitInbound')
+}
+
+function exitInboundText(serverId) {
+  const ib = exitInboundCandidates(serverId).find(x => x.id === Number(wiz.value.exitInbounds[serverId]))
+  return ib ? inboundLabel(ib) : '-'
+}
+
+async function loadExitInbounds(serverId) {
+  if (exitInboundOptions.value[serverId]) return
+  try {
+    const data = await getInboundConfigs(serverId)
+    exitInboundOptions.value[serverId] = Array.isArray(data) ? data : (data.inbound_configs || [])
+  } catch {
+    exitInboundOptions.value[serverId] = []
+  }
+}
+
+async function onClusterExitsChange(ids) {
+  // 清掉已取消节点的选择与缓存
+  for (const key of Object.keys(wiz.value.exitInbounds)) {
+    if (!ids.map(Number).includes(Number(key))) delete wiz.value.exitInbounds[key]
+  }
+  for (const id of ids) await loadExitInbounds(id)
+}
+
 function nextWizardStep() {
   if (!canNextStep.value) return
   if (wizardStep.value < 2) wizardStep.value++
@@ -691,7 +787,12 @@ function nextWizardStep() {
 async function createChainProxy() {
   if (!canNextStep.value) return
   const exits = [
-    ...wiz.value.clusterExits.map(id => ({ is_external: false, id })),
+    // 集群出口：带上"该节点上已有的入站"，后端据此推导出站（不再创建 relay 入站）
+    ...wiz.value.clusterExits.map(id => ({
+      is_external: false,
+      id,
+      exit_inbound_id: Number(wiz.value.exitInbounds[id]) || 0,
+    })),
     ...wiz.value.externalExits.map(id => ({ is_external: true, id })),
   ]
   if (exits.length === 0) {
@@ -722,6 +823,9 @@ async function editLink(row) {
     wiz.value.externalExits = [row.exit_external_id]
   } else if (row.exit_server_id) {
     wiz.value.clusterExits = [row.exit_server_id]
+    const eib = row.exit_inbound_id || 0
+    if (eib) wiz.value.exitInbounds[row.exit_server_id] = eib
+    await loadExitInbounds(row.exit_server_id)
   }
   if (wiz.value.entryServerId) {
     try {

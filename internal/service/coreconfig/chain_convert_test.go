@@ -31,6 +31,26 @@ func TestConvertChainOutboundsToSingbox_Hysteria2AndReality(t *testing.T) {
 				},
 			},
 		},
+		// ③ 由**真实 sing-box hy2 入站**（type=hysteria2 + users[].password + obfs + tls{enabled,server_name,alpn}）
+		// 派生出来的中间形状 —— agent 侧安全层探测必须是 TLS（hy2 没有 transport，曾经因此漏掉 tls ✗）
+		map[string]interface{}{
+			"tag":      "chain-118-1",
+			"protocol": "hysteria2",
+			"settings": map[string]interface{}{
+				"servers": []interface{}{
+					map[string]interface{}{
+						"address": "exit.example.com", "port": float64(47180), "password": "m3VBCBsUpHwGlOXc",
+						"obfs": map[string]interface{}{"type": "salamander", "password": "MEcFyeCK2bKnohdNoVBqiwHkgNYGOGQ0"},
+					},
+				},
+			},
+			"streamSettings": map[string]interface{}{
+				"network": "tcp", "security": "tls",
+				// agent 的 applyExitInboundTLS 把 SNI 写在 tlsSettings（老路径写顶层）
+				"tlsSettings": map[string]interface{}{"serverName": "example.com"},
+				"alpn":        []interface{}{"h3"},
+			},
+		},
 		map[string]interface{}{
 			"tag":      "chain-11-23",
 			"protocol": "vless",
@@ -52,11 +72,27 @@ func TestConvertChainOutboundsToSingbox_Hysteria2AndReality(t *testing.T) {
 	}
 
 	out := convertChainOutboundsToSingbox(in)
-	if len(out) != 2 {
-		t.Fatalf("期望 2 条出站，得到 %d", len(out))
+	if len(out) != 3 {
+		t.Fatalf("期望 3 条出站，得到 %d", len(out))
 	}
 
-	hy2, _ := out[0].(map[string]interface{})
+	byTag := map[string]map[string]interface{}{}
+	for _, o := range out {
+		if m, ok := o.(map[string]interface{}); ok {
+			if tg, _ := m["tag"].(string); tg != "" {
+				byTag[tg] = m
+			}
+		}
+	}
+	find := func(tag string) map[string]interface{} {
+		m, ok := byTag[tag]
+		if !ok {
+			t.Fatalf("找不到出站 %s（实际：%v）", tag, byTag)
+		}
+		return m
+	}
+
+	hy2 := find("chain-11-22")
 	if hy2["type"] != "hysteria2" || hy2["server"] != "1.2.3.4" || hy2["password"] != "pw1" {
 		t.Errorf("hy2 出站字段不对: %v", hy2)
 	}
@@ -79,7 +115,7 @@ func TestConvertChainOutboundsToSingbox_Hysteria2AndReality(t *testing.T) {
 		t.Errorf("hy2 obfs 丢失: %v", hy2)
 	}
 
-	vl, _ := out[1].(map[string]interface{})
+	vl := find("chain-11-23")
 	vTls, _ := vl["tls"].(map[string]interface{})
 	if vTls == nil || vTls["server_name"] != "www.bing.com" {
 		t.Errorf("vless 的 tls 丢失: %v", vl)
@@ -89,6 +125,22 @@ func TestConvertChainOutboundsToSingbox_Hysteria2AndReality(t *testing.T) {
 	}
 	if u, _ := vTls["utls"].(map[string]interface{}); u == nil || u["enabled"] != true {
 		t.Errorf("vless reality 缺少 utls: %v", vTls)
+	}
+
+	// ③ 真实 hy2 入站派生：必须带 tls + SNI + alpn（缺 tls → 核心 `FATAL TLS required`）
+	hy2b := find("chain-118-1")
+	if hy2b["type"] != "hysteria2" || hy2b["server_port"] != float64(47180) {
+		t.Errorf("hy2(真实入站)字段不对: %v", hy2b)
+	}
+	bTls, _ := hy2b["tls"].(map[string]interface{})
+	if bTls == nil || bTls["enabled"] != true {
+		t.Fatalf("hy2(真实入站)必须带 tls: %v", hy2b)
+	}
+	if bTls["server_name"] != "example.com" {
+		t.Errorf("hy2(真实入站) SNI 丢失（tlsSettings.serverName 没被读到）: %v", bTls)
+	}
+	if alpn, _ := bTls["alpn"].([]interface{}); len(alpn) != 1 || alpn[0] != "h3" {
+		t.Errorf("hy2(真实入站) alpn 丢失: %v", bTls)
 	}
 
 	// dump 给 `sing-box check` 做真实核心校验

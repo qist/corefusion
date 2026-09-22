@@ -400,18 +400,26 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 		if v := firstString(tr, "type"); v != "" {
 			transport = v
 		}
-		if tlsMap, ok := cfg["tls"].(map[string]interface{}); ok {
-			if rm, ok := tlsMap["reality"].(map[string]interface{}); ok {
-				if b, _ := rm["enabled"].(bool); b {
-					security = "reality"
-				}
-			}
-			if security == "none" {
-				if b, _ := tlsMap["enabled"].(bool); b {
-					security = "tls"
-				}
+	}
+	// ⚠ sing-box 的 TLS/REALITY 判在**入站顶层 `tls`**，与有没有 `transport` 无关。
+	// 这段原来被塞在上面那个 transport 分支里 → **hy2 这类没有 transport 的协议整段被跳过** ✗
+	// → 生成的出站不带 tls → `FATAL TLS required`（起不来）。实测入站 120 复现。
+	if tlsMap, ok := cfg["tls"].(map[string]interface{}); ok {
+		if rm, ok := tlsMap["reality"].(map[string]interface{}); ok {
+			if b, _ := rm["enabled"].(bool); b {
+				security = "reality"
 			}
 		}
+		if security == "none" {
+			if b, _ := tlsMap["enabled"].(bool); b {
+				security = "tls"
+			}
+		}
+	}
+	// hysteria2 是"永远 TLS"的协议：即使入站没写 tls（理论不该发生）出站也必须带 tls，
+	// 否则核心直接 FATAL。这里是最后一道兜底。
+	if security == "none" && strings.EqualFold(protocol, "hysteria2") {
+		security = "tls"
 	}
 
 	// 凭据：从该入站自己的用户里取第一条（vless/vmess→id，trojan/ss→password）
@@ -447,6 +455,18 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 	}
 	if security == "tls" || security == "reality" {
 		applyExitInboundTLS(streamSettings, cfg, security)
+		// alpn 额外带一份到 streamSettings **顶层**（sing-box 转换器从那里读；
+		// hy2 常见是 h3，漏了会导致握手协商不上）。
+		if tlsMap, ok := cfg["tls"].(map[string]interface{}); ok {
+			if alpn, ok := tlsMap["alpn"].([]interface{}); ok && len(alpn) > 0 {
+				streamSettings["alpn"] = alpn
+			}
+		}
+		if ts, ok := cfg["tlsSettings"].(map[string]interface{}); ok {
+			if alpn, ok := ts["alpn"].([]interface{}); ok && len(alpn) > 0 {
+				streamSettings["alpn"] = alpn
+			}
+		}
 	}
 
 	// hysteria2：中间形状直接带上 sing-box 需要的东西（obfs），tls 由 streamSettings 走通用逻辑，

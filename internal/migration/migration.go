@@ -168,6 +168,7 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Node Servers (multi-region architecture)
 		&entity.NodeServer{},
+		&entity.NodeCertificate{}, // 节点 ↔ 证书 多对多 ✓（一个节点可绑多张 ✓）
 
 		// Agent Certificate Revocations (CRL)
 		&entity.AgentCertRevocation{},

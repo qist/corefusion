@@ -60,6 +60,9 @@ type NodeServerManager struct {
 	// acmeAccounts 用于解析 ACME 账号邮箱（面板已有账号配置 ✓，节点侧无需配置 ✗）
 	acmeAccounts ACMEAccountResolver
 
+	// nodeCerts 是"节点↔证书"多对多 ✓（一个节点可绑多张 ✓）
+	nodeCerts *repository.NodeCertificateRepository
+
 	// Phase 6: Metrics collector (optional, injected by router)
 	metricsCollector *MetricsCollector
 
@@ -1181,6 +1184,11 @@ type ACMEAccountResolver interface {
 	ResolveACMEEmail(ctx context.Context, id int64) (string, error)
 }
 
+// SetNodeCertificates 注入"节点↔证书"多对多仓库 ✓。
+func (m *NodeServerManager) SetNodeCertificates(repo *repository.NodeCertificateRepository) {
+	m.nodeCerts = repo
+}
+
 // SetACMEAccountResolver 注入 ACME 账号解析器 ✓（邮箱由**面板**提供，节点不配置 ✗）。
 func (m *NodeServerManager) SetACMEAccountResolver(r ACMEAccountResolver) {
 	m.acmeAccounts = r
@@ -1245,8 +1253,17 @@ func (m *NodeServerManager) handlePublicCertIssued(serverID int64, report *agent
 	// 绑定：把证书挂到**签发它的节点**上 ✓ —— 这既是"该节点用哪张证书"的事实记录 ✓，
 	// 也是 PublicCertRenewer 找"该让谁续"的依据 ✓（没有绑定就不会自动续 ✗）。
 	if certID > 0 {
-		if aerr := m.serverRepo.UpdateCertificateID(context.Background(), serverID, certID); aerr != nil {
-			log.Printf("[NodeServerManager] associate cert %d with server %d failed: %v", certID, serverID, aerr)
+		// 多对多：一个节点可以同时绑定多张证书 ✓（IP 证书 + 域名证书 ✓）
+		if m.nodeCerts != nil {
+			if aerr := m.nodeCerts.Associate(context.Background(), serverID, certID); aerr != nil {
+				log.Printf("[NodeServerManager] associate cert %d with server %d (multi) failed: %v", certID, serverID, aerr)
+			}
+		}
+		// `certificate_id` 作为**主证书**保留 ✓（仅当节点还没有主证书时才写 ✓，避免把别的顶掉 ✗）
+		if srv, gerr := m.serverRepo.GetByID(context.Background(), serverID); gerr == nil && srv != nil && srv.CertificateID == 0 {
+			if aerr := m.serverRepo.UpdateCertificateID(context.Background(), serverID, certID); aerr != nil {
+				log.Printf("[NodeServerManager] set primary cert %d for server %d failed: %v", certID, serverID, aerr)
+			}
 		}
 	}
 	log.Printf("[NodeServerManager] public cert from server %d stored: %v (id=%d, expires %s)",

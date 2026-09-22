@@ -14,7 +14,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/qist/sqlite v1.16.1
-	github.com/xtls/xray-core v1.260327.1-0.20260827223245-c1958dba04ba
+	github.com/xtls/xray-core main
 	golang.org/x/crypto v0.57.0
 	golang.org/x/oauth2 v0.37.0
 	google.golang.org/grpc v1.83.2

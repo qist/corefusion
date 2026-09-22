@@ -1643,7 +1643,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerRepo := repository.NewNodeServerRepository(database)
 			revocationRepo := repository.NewCertRevocationRepository(database)
 			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
-			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService)
+			// 节点↔证书 多对多 ✓（与 main.go 同一个 DB ✓，多实例无妨 ✓）
+			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService).
+				WithNodeCertificates(repository.NewNodeCertificateRepository(database))
 
 			// Chain Proxy (chain links, external node servers, topology)
 			chainLinkRepo := repository.NewChainLinkRepository(database)

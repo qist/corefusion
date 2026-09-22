@@ -19,6 +19,7 @@ import (
 	ratelimit "corefusion/internal/runtime/agent/ratelimit"
 	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
+	"corefusion/internal/util/safepath"
 	"corefusion/pkg/netutil"
 )
 
@@ -119,6 +120,24 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		for _, certEntry := range req.Certificates {
 			if certEntry.CertContent == "" || certEntry.KeyContent == "" {
 				continue
+			}
+			// 面板下发的证书路径由 Agent 以 root 落盘 → 拒绝上跳（绝对路径仍允许：管理员可能
+			// 故意写到 nginx 自己的目录）。见安全审计 v5 H2。
+			if err := safepath.RejectTraversal("cert path", certEntry.CertPath); err != nil {
+				log.Printf("[Agent] SyncProxyConfig: %v", err)
+				continue
+			}
+			if certEntry.KeyPath != "" {
+				if err := safepath.RejectTraversal("key path", certEntry.KeyPath); err != nil {
+					log.Printf("[Agent] SyncProxyConfig: %v", err)
+					continue
+				}
+			}
+			if certEntry.FullchainPath != "" {
+				if err := safepath.RejectTraversal("fullchain path", certEntry.FullchainPath); err != nil {
+					log.Printf("[Agent] SyncProxyConfig: %v", err)
+					continue
+				}
 			}
 			certPath := certEntry.CertPath
 			if !filepath.IsAbs(certPath) {
@@ -852,6 +871,11 @@ func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 	}
 	// Resolve relative paths against the Agent's dataDir so that xray config
 	// references (relative to data/runtime/) resolve to dataDir/certs/...
+	// 路径由面板下发但 Agent 以 root 运行 → 拒绝上跳（管理员配置的绝对路径仍然允许 ✗→✓ 见 safepath）
+	if err := safepath.RejectTraversal("distribute cert target path", cmd.TargetPath); err != nil {
+		log.Printf("[Agent] DistributeCert: %v", err)
+		return
+	}
 	targetPath := cmd.TargetPath
 	if !filepath.IsAbs(targetPath) {
 		targetPath = filepath.Join(a.dataDir, targetPath)
@@ -895,6 +919,11 @@ func (a *AgentApp) handleDownloadGeoRule(ctx context.Context, req *agentpb.Downl
 		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: fmt.Sprintf("create tmp dir: %v", err)}
 	}
 
+	// ⚠ 文件名直接 Join 会逃出 rules/（`../../../../etc/cron.d/x`）✗ —— 同文件里的
+	// handleDeleteGeoRule 本来就有这个校验，这里是遗漏（安全审计 v5 H4）。
+	if err := safepath.CheckName("geo rule file name", req.FileName); err != nil {
+		return &agentpb.DownloadGeoRuleResponse{Success: false, Error: err.Error()}
+	}
 	filePath := filepath.Join(rulesDir, req.FileName)
 	tmpPath := filepath.Join(tmpDir, req.FileName)
 

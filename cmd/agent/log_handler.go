@@ -15,6 +15,7 @@ import (
 	"time"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/util/safepath"
 )
 
 // handleReadLogFile reads the last N lines from a log file on the agent node.
@@ -167,10 +168,10 @@ func (a *AgentApp) handleRotateLog(req *agentpb.RotateLogRequest) *agentpb.Rotat
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &agentpb.RotateLogResponse{
-				Success:       true,
-				RotatedFiles:  0,
-				CleanedFiles:  0,
-				FreedBytes:    0,
+				Success:      true,
+				RotatedFiles: 0,
+				CleanedFiles: 0,
+				FreedBytes:   0,
 			}
 		}
 		return &agentpb.RotateLogResponse{
@@ -181,10 +182,10 @@ func (a *AgentApp) handleRotateLog(req *agentpb.RotateLogRequest) *agentpb.Rotat
 
 	if info.Size() == 0 {
 		return &agentpb.RotateLogResponse{
-			Success:       true,
-			RotatedFiles:  0,
-			CleanedFiles:  0,
-			FreedBytes:    0,
+			Success:      true,
+			RotatedFiles: 0,
+			CleanedFiles: 0,
+			FreedBytes:   0,
 		}
 	}
 
@@ -218,10 +219,10 @@ func (a *AgentApp) handleRotateLog(req *agentpb.RotateLogRequest) *agentpb.Rotat
 	newFile.Close()
 
 	return &agentpb.RotateLogResponse{
-		Success:       true,
-		RotatedFiles:  1,
-		CleanedFiles:  0,
-		FreedBytes:    info.Size(),
+		Success:      true,
+		RotatedFiles: 1,
+		CleanedFiles: 0,
+		FreedBytes:   info.Size(),
 	}
 }
 
@@ -304,9 +305,9 @@ func (a *AgentApp) handlePackageLogs(req *agentpb.PackageLogsRequest) *agentpb.P
 	log.Printf("[Agent] packaged %d lines from %s (%d bytes)", totalLines, req.LogType, info.Size())
 
 	return &agentpb.PackageLogsResponse{
-		Success:      true,
-		PackagePath:  pkgPath,
-		PackageSize:  info.Size(),
+		Success:       true,
+		PackagePath:   pkgPath,
+		PackageSize:   info.Size(),
 		DownloadToken: fmt.Sprintf("pkg_%d", time.Now().Unix()),
 	}
 }
@@ -399,10 +400,18 @@ func (a *AgentApp) getLogMode(logType string) string {
 			return a.deriveCoreLogMode(logType)
 		}
 		var cfg struct {
-			Xray      struct{ Mode string `json:"mode"` } `json:"xray"`
-			Singbox   struct{ Mode string `json:"mode"` } `json:"singbox"`
-			Hysteria2 struct{ Mode string `json:"mode"` } `json:"hysteria2"`
-			Tuic      struct{ Mode string `json:"mode"` } `json:"tuic"`
+			Xray struct {
+				Mode string `json:"mode"`
+			} `json:"xray"`
+			Singbox struct {
+				Mode string `json:"mode"`
+			} `json:"singbox"`
+			Hysteria2 struct {
+				Mode string `json:"mode"`
+			} `json:"hysteria2"`
+			Tuic struct {
+				Mode string `json:"mode"`
+			} `json:"tuic"`
 		}
 		if json.Unmarshal([]byte(v), &cfg) != nil {
 			return "file"
@@ -435,8 +444,12 @@ func (a *AgentApp) getLogMode(logType string) string {
 		return "file"
 	}
 	var cfg struct {
-		Nginx struct{ Mode string `json:"mode"` } `json:"nginx"`
-		Caddy struct{ Mode string `json:"mode"` } `json:"caddy"`
+		Nginx struct {
+			Mode string `json:"mode"`
+		} `json:"nginx"`
+		Caddy struct {
+			Mode string `json:"mode"`
+		} `json:"caddy"`
 	}
 	if json.Unmarshal([]byte(v), &cfg) != nil {
 		return "file"
@@ -653,11 +666,11 @@ func agentFilterLines(lines []string, filterEmails []string, start, end time.Tim
 // ============================================================
 
 var (
-	desensitizeIPv4    = regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
-	desensitizeUUID    = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
-	desensitizeEmail   = regexp.MustCompile(`[\w.-]+@[\w.-]+\.\w+`)
-	desensitizePasswd  = regexp.MustCompile(`(?i)password["\s:=]+["']?[^"'\s,}]+`)
-	desensitizeToken   = regexp.MustCompile(`(?i)token["\s:=]+["']?[^"'\s,}]+`)
+	desensitizeIPv4   = regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
+	desensitizeUUID   = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+	desensitizeEmail  = regexp.MustCompile(`[\w.-]+@[\w.-]+\.\w+`)
+	desensitizePasswd = regexp.MustCompile(`(?i)password["\s:=]+["']?[^"'\s,}]+`)
+	desensitizeToken  = regexp.MustCompile(`(?i)token["\s:=]+["']?[^"'\s,}]+`)
 )
 
 // desensitizingWriter wraps an io.Writer and applies regex substitutions to each line.
@@ -762,7 +775,9 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 	nginxMode := "file"
 	if v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
 		var cfg struct {
-			Nginx struct{ Mode string `json:"mode"` } `json:"nginx"`
+			Nginx struct {
+				Mode string `json:"mode"`
+			} `json:"nginx"`
 		}
 		if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Nginx.Mode != "" {
 			nginxMode = cfg.Nginx.Mode
@@ -824,7 +839,9 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 	caddyMode := "file"
 	if v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
 		var cfg struct {
-			Caddy struct{ Mode string `json:"mode"` } `json:"caddy"`
+			Caddy struct {
+				Mode string `json:"mode"`
+			} `json:"caddy"`
 		}
 		if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
 			caddyMode = cfg.Caddy.Mode
@@ -886,6 +903,13 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 // resolveRelPath resolves a relative path (e.g. "logs/error.log") to an absolute
 // path under the agent's data directory. Absolute paths are returned as-is.
 func (a *AgentApp) resolveRelPath(p string) string {
+	// ⚠ 日志路径也来自面板，而 Agent 以 root 运行：`../../etc/shadow` 会被读回面板 ✗
+	// （安全审计 v5 H3）。这里拒绝上跳 —— 返回空串让后续 ReadFile 失败（fail closed）。
+	// 合法场景不受影响：绝对路径（如 nginx 自己的 /var/log/...）与数据目录下的相对路径都保留。
+	if err := safepath.RejectTraversal("log path", p); err != nil {
+		log.Printf("[Agent] resolveRelPath: %v", err)
+		return ""
+	}
 	if filepath.IsAbs(p) {
 		return p
 	}

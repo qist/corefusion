@@ -35,6 +35,7 @@ import (
 	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 )
 
 // LocalAgent 本地节点适配器。
@@ -196,6 +197,11 @@ func (a *LocalAgent) RestoreFromSnapshot(ctx context.Context) {
 // SyncConfig 写入配置文件到本地 runtime 目录（异步）。
 // 提交到 TaskQueue 执行，通过 TaskResult 回传结果。
 func (a *LocalAgent) SyncConfig(ctx context.Context, coreType string, config []byte, version int64) error {
+	// coreType 会被拼成落盘路径（runtime/<coreType>.jsonc）✗ —— Agent 以 root 运行，
+	// 面板下发的 `../../..` 会逃出数据目录 → 必须只接受"单纯名字"（安全审计 v5 H3/L11）。
+	if err := safepath.CheckName("core type", coreType); err != nil {
+		return err
+	}
 	taskID := GenerateTaskID()
 	// Use content hash for idempotency key so that config changes always get applied.
 	// Using version alone (e.g. sync-config-xray-v0) causes idempotent hits when
@@ -824,6 +830,10 @@ func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
 		return data, p, err
 	case strings.HasPrefix(coreType, "waf_rule:"):
 		ruleName := strings.TrimPrefix(coreType, "waf_rule:")
+		// ⚠ ruleName 直接 Join 会逃出 wafDir（`waf_rule:../../../etc/shadow`）✗ —— 见审计 v5 H3。
+		if err := safepath.CheckName("waf rule name", ruleName); err != nil {
+			return nil, "", err
+		}
 		p := filepath.Join(wafDir, ruleName)
 		data, err := os.ReadFile(p)
 		return data, p, err
@@ -840,6 +850,9 @@ func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
 		return data, p, err
 	case strings.HasPrefix(coreType, "caddy_waf_rule:"):
 		ruleName := strings.TrimPrefix(coreType, "caddy_waf_rule:")
+		if err := safepath.CheckName("caddy waf rule name", ruleName); err != nil {
+			return nil, "", err
+		}
 		p := filepath.Join(wafDir, ruleName)
 		data, err := os.ReadFile(p)
 		return data, p, err
@@ -847,6 +860,9 @@ func (a *LocalAgent) ReadConfigFile(coreType string) ([]byte, string, error) {
 		return a.listWAFRules()
 	}
 	// Default: runtime config file
+	if err := safepath.CheckName("core type", coreType); err != nil {
+		return nil, "", err
+	}
 	configPath := filepath.Join(a.dataDir, "runtime", coreType+".jsonc")
 	data, err := os.ReadFile(configPath)
 	if err != nil {

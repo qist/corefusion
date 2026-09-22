@@ -976,6 +976,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 邮箱/CA 归**面板** ✓（`acme_account_configs` 里的 ACME 账号 ✓）→ 必须接线 ✗，
 	// 否则节点侧签发会因"没有邮箱"而失败 ✓（真机踩到过：面板日志明确写了
 	// `panel did not supply an ACME account email` ✓）。
+	if dnsChannelSvc != nil {
+		// DNS 通道 → dns-01 提供者配置 ✓（凭据在通道里 ✓，签发时按 ID 解析 ✓）
+		certH.SetDNSChannelResolver(dnsChannelAdapter{svc: dnsChannelSvc})
+	}
 	if acmeEmailSvc != nil {
 		certH.SetACMEEmailResolver(acmeEmailAdapter{svc: acmeEmailSvc})
 		if sharedNodeMgr != nil {
@@ -3922,4 +3926,24 @@ func (a acmeEmailAdapter) ResolveACMEEmail(ctx context.Context, id int64) (strin
 		return "", err
 	}
 	return cfg.Email, nil
+}
+
+// dnsChannelAdapter 把面板的 DNS 通道服务接成"解析通道 → 提供者配置"能力 ✓。
+type dnsChannelAdapter struct {
+	svc *certService.DNSChannelService
+}
+
+func (a dnsChannelAdapter) ResolveDNSChannel(ctx context.Context, id int64) (*cert.DNSProviderConfig, error) {
+	if a.svc == nil || id <= 0 {
+		return nil, fmt.Errorf("invalid dns channel id")
+	}
+	ch, err := a.svc.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("dns channel %d not found: %w", id, err)
+	}
+	vars, err := a.svc.GetEnvVars(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("dns channel %d credentials: %w", id, err)
+	}
+	return &cert.DNSProviderConfig{Provider: cert.DNSProvider(ch.Provider), EnvVars: vars}, nil
 }

@@ -14,14 +14,18 @@ import (
 // SupportedDNSProviders returns the supported DNS providers and their required env vars.
 func SupportedDNSProviders() map[string][]string {
 	return map[string][]string{
-		"cloudflare":  {"CLOUDFLARE_EMAIL", "CLOUDFLARE_API_KEY"},
-		"alidns":      {"ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY"},
-		"huawei":      {"HWC_ACCESS_KEY", "HWC_SECRET_KEY", "HWC_REGION", "HWC_PROJECT_ID"},
-		"dnspod":      {"DNSPOD_API_KEY"},
-		"route53":     {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"},
-		"google":      {"GCE_PROJECT", "GCE_SERVICE_ACCOUNT_FILE"},
-		"godaddy":     {"GODADDY_API_KEY", "GODADDY_API_SECRET"},
-		"namecheap":   {"NAMECHEAP_API_USER", "NAMECHEAP_API_KEY"},
+		// 直接按**用户脚本里的写法**给字段 ✓（Cloudflare 文档/脚本就是 `CF_Token` + `CF_Account_ID` ✓）。
+		// 服务端会把这些别名归一成 lego 认的 `CF_DNS_API_TOKEN` ✓（见 runtime/cert/dns_env.go ✓），
+		// 所以标准名（`CF_DNS_API_TOKEN` ✓）与老式全局 Key（`CLOUDFLARE_API_KEY`+`CLOUDFLARE_EMAIL` ✓）
+		// 也都能用 ✓。
+		"cloudflare": {"CF_Token", "CF_Account_ID"},
+		"alidns":     {"ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY"},
+		"huawei":     {"HWC_ACCESS_KEY", "HWC_SECRET_KEY", "HWC_REGION", "HWC_PROJECT_ID"},
+		"dnspod":     {"DNSPOD_API_KEY"},
+		"route53":    {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"},
+		"google":     {"GCE_PROJECT", "GCE_SERVICE_ACCOUNT_FILE"},
+		"godaddy":    {"GODADDY_API_KEY", "GODADDY_API_SECRET"},
+		"namecheap":  {"NAMECHEAP_API_USER", "NAMECHEAP_API_KEY"},
 	}
 }
 
@@ -65,11 +69,11 @@ func (s *DNSChannelService) List(ctx context.Context) ([]map[string]interface{},
 	var result []map[string]interface{}
 	for _, ch := range channels {
 		item := map[string]interface{}{
-			"id":        ch.ID,
-			"name":      ch.Name,
-			"provider":  ch.Provider,
-			"status":    ch.Status,
-			"env_vars":  maskEnvVars(ch.EnvVars),
+			"id":         ch.ID,
+			"name":       ch.Name,
+			"provider":   ch.Provider,
+			"status":     ch.Status,
+			"env_vars":   maskEnvVars(ch.EnvVars),
 			"created_at": ch.CreatedAt,
 			"updated_at": ch.UpdatedAt,
 		}

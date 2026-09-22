@@ -608,6 +608,11 @@ function shortLabel(field) {
   const map = {
     'CLOUDFLARE_EMAIL': 'Email',
     'CLOUDFLARE_API_KEY': 'API Key',
+    // Cloudflare 现在推荐用 API Token ✓（acme.sh 也是这两个参数 ✓）
+    'CF_Token': 'API Token',
+    'CF_Account_ID': 'Account ID',
+    'CF_DNS_API_TOKEN': 'API Token',
+    'CF_ZONE_API_TOKEN': 'Zone Token',
     'ALICLOUD_ACCESS_KEY': 'Access Key',
     'ALICLOUD_SECRET_KEY': 'Secret Key',
     'HWC_ACCESS_KEY': 'Access Key',

@@ -31,6 +31,12 @@ type NodeCertIssuer interface {
 	IsOnlineForServer(serverID int64) bool
 }
 
+// DNSChannelResolver 把"DNS 通道 ID"解析成 dns-01 提供者配置 ✓
+// （由 `certService.DNSChannelService` 实现 ✓）。
+type DNSChannelResolver interface {
+	ResolveDNSChannel(ctx context.Context, id int64) (*cert.DNSProviderConfig, error)
+}
+
 // ACMEEmailResolver 解析 ACME 账号邮箱（由面板的 ACME 邮箱服务实现 ✓）。
 type ACMEEmailResolver interface {
 	ResolveACMEEmail(ctx context.Context, id int64) (string, error)
@@ -41,10 +47,14 @@ type Handler struct {
 	onCertUpdated CertUpdateCallback
 	nodeIssuer    NodeCertIssuer
 	acmeEmails    ACMEEmailResolver
+	dnsChannels   DNSChannelResolver
 }
 
 // SetACMEEmailResolver 注入 ACME 账号解析器 ✓（邮箱归面板 ✓，节点不配置 ✗）。
 func (h *Handler) SetACMEEmailResolver(r ACMEEmailResolver) { h.acmeEmails = r }
+
+// SetDNSChannelResolver 注入 DNS 通道解析器 ✓（凭据存在通道里 ✓，签发时按 ID 取 ✓）。
+func (h *Handler) SetDNSChannelResolver(r DNSChannelResolver) { h.dnsChannels = r }
 
 // SetNodeIssuer 注入"节点本机签发"能力 ✓（面板在 SNAT 后面时，公网证书只能让节点自己签 ✓）。
 func (h *Handler) SetNodeIssuer(i NodeCertIssuer) { h.nodeIssuer = i }
@@ -198,9 +208,10 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		ChallengeType string   `json:"challenge_type"`
 		CAProvider    string   `json:"ca_provider"`
 		Profile       string   `json:"profile"`
-		Webroot       string   `json:"webroot"`  // 留空则由节点按面板生成的 web 配置处理挑战 ✓
-		Email         string   `json:"email"`    // 一般留空：由面板的 ACME 账号解析 ✓
-		EmailID       int64    `json:"email_id"` // 指定用哪个 ACME 账号（0 = 默认 ✓）
+		DNSChannelID  int64    `json:"dns_channel_id"` // dns-01 时用哪个 DNS 通道 ✓
+		Webroot       string   `json:"webroot"`        // 留空则由节点按面板生成的 web 配置处理挑战 ✓
+		Email         string   `json:"email"`          // 一般留空：由面板的 ACME 账号解析 ✓
+		EmailID       int64    `json:"email_id"`       // 指定用哪个 ACME 账号（0 = 默认 ✓）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -279,6 +290,22 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		Webroot:     req.Webroot,
 		Email:       email,
 	}
+	// dns-01：把面板里存的 DNS 通道（提供者 + 凭据 ✓）随指令下发给节点 ✓
+	if strings.EqualFold(strings.TrimSpace(req.ChallengeType), "dns-01") && req.DNSChannelID > 0 {
+		if h.dnsChannels == nil {
+			response.InternalError(c, "NO_DNS_CHANNEL_RESOLVER", "DNS channel resolver is not configured on the panel")
+			return
+		}
+		dnsCfg, derr := h.dnsChannels.ResolveDNSChannel(c.Request.Context(), req.DNSChannelID)
+		if derr != nil {
+			response.BadRequest(c, "DNS_CHANNEL_NOT_FOUND", derr.Error())
+			return
+		}
+		if dnsCfg != nil {
+			cmd.DnsProvider = string(dnsCfg.Provider)
+			cmd.DnsEnvVars = dnsCfg.EnvVars
+		}
+	}
 	if err := h.nodeIssuer.IssuePublicCert(c.Request.Context(), req.NodeID, cmd); err != nil {
 		audit.RecordNodeFromCtx(c, req.NodeID, "cert_issue_on_node", strings.Join(identifiers, ","), false, err.Error())
 		response.InternalError(c, "ISSUE_FAILED", err.Error())
@@ -298,9 +325,13 @@ func (h *Handler) Issue(c *gin.Context) {
 	var req struct {
 		Domains       []string `json:"domains" binding:"required"`
 		ChallengeType string   `json:"challenge_type"`
-		CAProvider    string   `json:"ca_provider"`
-		Profile       string   `json:"profile"`
-		DNSProvider   *struct {
+		// DNSChannelID 是面板里存的"DNS 通道"（提供者 + 凭据 ✓）。
+		// ⚠ 以前这里**完全没解析** ✗：前端一直在传 `dns_channel_id` ✓，后端却把它丢掉 ✗ →
+		// dns-01 走到最后只会报 `dns provider config required` ✗（等于 DNS 通道从来没生效过 ✗）。
+		DNSChannelID int64  `json:"dns_channel_id"`
+		CAProvider   string `json:"ca_provider"`
+		Profile      string `json:"profile"`
+		DNSProvider  *struct {
 			Provider string            `json:"provider"`
 			EnvVars  map[string]string `json:"env_vars"`
 		} `json:"dns_provider,omitempty"`
@@ -326,6 +357,18 @@ func (h *Handler) Issue(c *gin.Context) {
 			Provider: cert.DNSProvider(req.DNSProvider.Provider),
 			EnvVars:  req.DNSProvider.EnvVars,
 		}
+	} else if req.DNSChannelID > 0 {
+		// 用面板里已保存的 DNS 通道 ✓（前端下拉选的就是它 ✓）
+		if h.dnsChannels == nil {
+			response.InternalError(c, "NO_DNS_CHANNEL_RESOLVER", "DNS channel resolver is not configured on the panel")
+			return
+		}
+		dnsCfg, derr := h.dnsChannels.ResolveDNSChannel(c.Request.Context(), req.DNSChannelID)
+		if derr != nil {
+			response.BadRequest(c, "DNS_CHANNEL_NOT_FOUND", derr.Error())
+			return
+		}
+		input.DNSProvider = dnsCfg
 	}
 
 	if req.EAB != nil {

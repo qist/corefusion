@@ -42,7 +42,8 @@ issue 选项：
 
   # 域名 + DNS-01（无需入站）
   corefusion-agent cert issue -san sub.example.com -email admin@example.com \
-      -challenge dns-01 -dns-provider cloudflare -dns-env CF_DNS_API_TOKEN=xxxx
+            -challenge dns-01 -dns-provider cloudflare -dns-env CF_Token=xxxx -dns-env CF_Account_ID=yyyy
+                   （CF_Token / CF_DNS_API_TOKEN / CLOUDFLARE_API_KEY+CLOUDFLARE_EMAIL 都认 ✓）
 `
 
 // runCertSubcommand 处理 `corefusion-agent cert ...`（不需要面板配置 ✓）。

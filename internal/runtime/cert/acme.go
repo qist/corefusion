@@ -414,33 +414,34 @@ func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType Challenge
 
 // createDNSProvider creates a DNS provider based on config.
 func (c *ACMEClient) createDNSProvider(config *DNSProviderConfig) (challenge.Provider, error) {
-	// Set environment variables for the provider
-	for k, v := range config.EnvVars {
-		os.Setenv(k, v)
+	// 先把"用户/脚本里常见的写法"归一到 lego 认的标准名 ✓
+	// （例如 Cloudflare 的 `CF_Token` → `CF_DNS_API_TOKEN` ✓，见 dns_env.go ✓）
+	for k, v := range normalizeDNSEnvVars(config.Provider, config.EnvVars) {
+		if err := os.Setenv(k, v); err != nil {
+			return nil, fmt.Errorf("set dns env %s: %w", k, err)
+		}
 	}
 
+	// ⚠ 关键 ✗：必须用各提供者的 **`NewDNSProvider()`** —— 只有它才会**从环境变量读凭据** ✓；
+	// 而 `NewDefaultConfig()` 只是**构造一个默认结构体**（云flare 等实现里根本不读环境变量 ✗）→
+	// 用它再交给 `NewDNSProviderConfig(cfg)` 会得到"凭据为空"的报错 ✗
+	// （真机现象：填了 `CF_Token` 也报 `invalid credentials: ... must be set` ✗，
+	//   看起来像没填，其实是工厂拿错了构造函数 ✗）。
 	switch config.Provider {
 	case DNSProviderCloudflare:
-		cfg := cloudflare.NewDefaultConfig()
-		return cloudflare.NewDNSProviderConfig(cfg)
+		return cloudflare.NewDNSProvider()
 	case DNSProviderAliDNS:
-		cfg := alidns.NewDefaultConfig()
-		return alidns.NewDNSProviderConfig(cfg)
+		return alidns.NewDNSProvider()
 	case DNSProviderDNSPod:
-		cfg := dnspod.NewDefaultConfig()
-		return dnspod.NewDNSProviderConfig(cfg)
+		return dnspod.NewDNSProvider()
 	case DNSProviderRoute53:
-		cfg := route53.NewDefaultConfig()
-		return route53.NewDNSProviderConfig(cfg)
+		return route53.NewDNSProvider()
 	case DNSProviderGoogle:
-		cfg := gcloud.NewDefaultConfig()
-		return gcloud.NewDNSProviderConfig(cfg)
+		return gcloud.NewDNSProvider()
 	case DNSProviderGoDaddy:
-		cfg := godaddy.NewDefaultConfig()
-		return godaddy.NewDNSProviderConfig(cfg)
+		return godaddy.NewDNSProvider()
 	case DNSProviderNamecheap:
-		cfg := namecheap.NewDefaultConfig()
-		return namecheap.NewDNSProviderConfig(cfg)
+		return namecheap.NewDNSProvider()
 	default:
 		return nil, fmt.Errorf("unsupported dns provider: %s", config.Provider)
 	}
@@ -613,7 +614,10 @@ func (u *ACMEUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
 // GetSupportedProviders returns a list of supported DNS providers with their required env vars.
 func GetSupportedProviders() map[DNSProvider][]string {
 	return map[DNSProvider][]string{
-		DNSProviderCloudflare: {"CLOUDFLARE_EMAIL", "CLOUDFLARE_API_KEY"},
+		// 直接按 acme.sh / Cloudflare 官方脚本的写法给字段 ✓（`CF_Token` + `CF_Account_ID` ✓）。
+		// 服务端会把别名归一成 lego 认的 `CF_DNS_API_TOKEN` ✓（见 dns_env.go ✓）；
+		// 标准名与老式全局 Key（CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL）也都兼容 ✓。
+		DNSProviderCloudflare: {"CF_Token", "CF_Account_ID"},
 		DNSProviderAliDNS:     {"ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY"},
 		DNSProviderDNSPod:     {"DNSPOD_API_KEY"},
 		DNSProviderRoute53:    {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"},

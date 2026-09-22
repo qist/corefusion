@@ -15,16 +15,16 @@ import (
 
 // CaddyManager handles Caddy-specific site management and config generation.
 type CaddyManager struct {
-dataDir      string
-configDir    string
-siteRepo     *repository.CaddySiteRepository
-settingStore SettingStore
-serverID     int64
-isLocal      bool
-// nodeServerRepo is used to detect mirror nodes and resolve their primary
-// server ID for config generation. When set, GenerateConfigForServer checks
-// if the target is a mirror and uses the primary's server_id to query sites.
-nodeServerRepo *repository.NodeServerRepository
+	dataDir      string
+	configDir    string
+	siteRepo     *repository.CaddySiteRepository
+	settingStore SettingStore
+	serverID     int64
+	isLocal      bool
+	// nodeServerRepo is used to detect mirror nodes and resolve their primary
+	// server ID for config generation. When set, GenerateConfigForServer checks
+	// if the target is a mirror and uses the primary's server_id to query sites.
+	nodeServerRepo *repository.NodeServerRepository
 }
 
 // wafBaseDir returns the unified WAF rules directory: dataDir/proxy/waf-rules
@@ -223,15 +223,15 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 	sb.WriteString("{\n")
 	sb.WriteString("\tauto_https off\n")
 
-// CaddyGuard WAF global config — only generated when WAF is enabled for this node.
-// The caddyguardfile adapter injects the Guard handler into every HTTP server.
-// Use relative path so it works on both panel and remote Agents.
-wafEnabled := m.isWAFEnabledForServer(ctx, sourceServerID)
-if wafEnabled {
-	sb.WriteString("\tcaddyguard {\n")
-	sb.WriteString("\t\trule_dir proxy/waf-rules\n")
-	sb.WriteString("\t}\n")
-}
+	// CaddyGuard WAF global config — only generated when WAF is enabled for this node.
+	// The caddyguardfile adapter injects the Guard handler into every HTTP server.
+	// Use relative path so it works on both panel and remote Agents.
+	wafEnabled := m.isWAFEnabledForServer(ctx, sourceServerID)
+	if wafEnabled {
+		sb.WriteString("\tcaddyguard {\n")
+		sb.WriteString("\t\trule_dir proxy/waf-rules\n")
+		sb.WriteString("\t}\n")
+	}
 	// When layer4 SNI is active, listener_wrappers (proxy_protocol + tls)
 	// are needed for the backend HTTPS server to receive real client IP.
 	// We no longer force protocols h1: the real fix for the empty response
@@ -289,7 +289,7 @@ if wafEnabled {
 				matcher = strings.ReplaceAll(matcher, "*", "wildcard")
 				sb.WriteString(fmt.Sprintf("\t\t\t# SNI: %s -> %s\n", domain, target))
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
-sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
+				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
 				if site.ProxyProtocol {
 					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", target))
 					sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
@@ -302,7 +302,7 @@ sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
 			if fallbackTarget == "" {
 				fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
 			}
-sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
+			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t\t\troute {\n")
 			if fallbackPP {
 				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", fallbackTarget))
@@ -378,12 +378,22 @@ sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 
 	if len(httpSites) == 0 && !hasL4 {
 		sb.WriteString(":80 {\n")
+		// 远程节点：签发由**节点上的 Agent 在本机**完成 ✓ → 挑战记录在 Agent 进程内存里，
+		// 面板并不知道 ✗ → 必须直接服务**节点本地的挑战目录** ✓（不能 reverse_proxy 回面板 ✗）。
+		if !m.isLocal {
+			sb.WriteString("\t# ACME HTTP-01 challenge support (node-local, served from disk)\n")
+			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+			sb.WriteString("\thandle @acme {\n")
+			sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
+			sb.WriteString("\t\tfile_server\n")
+			sb.WriteString("\t}\n")
+		}
 		if m.isLocal {
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
-sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-		sb.WriteString("\t}\n")
+			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
+			sb.WriteString("\t}\n")
 		}
 		sb.WriteString("\trespond \"CoreFusion\" 200\n")
 		sb.WriteString("}\n")
@@ -423,13 +433,26 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			}
 		}
 
-		// ACME HTTP-01 challenge support (local node only)
+		// ACME HTTP-01 challenge support
+		//
+		// 分两种 ✗：本机（面板）→ 挑战**代理回面板** ✓（面板驱动签发 ✓）；
+		// 远程节点 → **服务节点本地挑战目录** ✓（签发由节点上的 Agent 做 ✓，面板没有挑战记录 ✗）。
+		// 远程节点：签发由**节点上的 Agent 在本机**完成 ✓ → 挑战记录在 Agent 进程内存里，
+		// 面板并不知道 ✗ → 必须直接服务**节点本地的挑战目录** ✓（不能 reverse_proxy 回面板 ✗）。
+		if !m.isLocal {
+			sb.WriteString("\t# ACME HTTP-01 challenge support (node-local, served from disk)\n")
+			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+			sb.WriteString("\thandle @acme {\n")
+			sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
+			sb.WriteString("\t\tfile_server\n")
+			sb.WriteString("\t}\n")
+		}
 		if m.isLocal {
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
-sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-		sb.WriteString("\t}\n")
+			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
+			sb.WriteString("\t}\n")
 		}
 
 		// Per-site log configuration:
@@ -464,14 +487,14 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			_ = siteHasLog
 		}
 
-	for _, site := range siteList {
-		// Per-site WAF switch: when WafEnabled is explicitly false,
-		// inject `caddyguard waf_enable off` into the site's route block.
-		wafBypass := false
-		if site.WafEnabled != nil && !*site.WafEnabled {
-			wafBypass = true
-		}
-		// Static file server: root + file_server instead of reverse_proxy
+		for _, site := range siteList {
+			// Per-site WAF switch: when WafEnabled is explicitly false,
+			// inject `caddyguard waf_enable off` into the site's route block.
+			wafBypass := false
+			if site.WafEnabled != nil && !*site.WafEnabled {
+				wafBypass = true
+			}
+			// Static file server: root + file_server instead of reverse_proxy
 			if site.Template == "static" {
 				rootDir := strings.TrimSpace(site.Upstream)
 				if rootDir == "" {

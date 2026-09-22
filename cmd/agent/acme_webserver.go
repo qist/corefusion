@@ -80,6 +80,25 @@ func prepareHTTP01(identifiers []string, dataDir, overrideWebroot string) (root 
 		return w, func() {}, nil
 	}
 
+	// ⚠ 第一步永远是**行为探测**（而不是去猜"配置归谁管" ✗）：
+	// 现在的 web 服务器**已经**能把 /.well-known/acme-challenge/ 提供了吗？
+	//   - 面板守护的节点：面板生成的配置里就带了处理 ✓（见 proxy/nginx_config.go|caddy_manager.go ✓）
+	//   - 独立部署的节点：运维可能自己配过 ✓
+	//   - 都没有：探测失败 ✓ → 才轮到我们去动配置 ✓
+	// 这样"面板守护 / 独立部署"两种情况用同一套逻辑就能覆盖 ✓，也不需要给配置加标记 ✗。
+	dir := acmeChallengeDir(dataDir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", func() {}, err
+	}
+	_ = os.Chmod(dir, 0755)
+	_ = os.Chmod(filepath.Dir(dir), 0755)
+	if err := selfCheckChallenge(identifiers, dir); err == nil {
+		log.Printf("[acme] 挑战路径已由现有 web 服务器提供 ✓（无需改动任何配置）")
+		return dir, func() {}, nil
+	} else {
+		log.Printf("[acme] 挑战路径当前不可用 → 自动处理：%v", err)
+	}
+
 	// ① 80 空闲 → 临时起服务 ✓
 	if portIsFree(80) {
 		return "", func() {}, nil
@@ -89,12 +108,6 @@ func prepareHTTP01(identifiers []string, dataDir, overrideWebroot string) (root 
 	server := detectWebServer()
 	switch server {
 	case "caddy":
-		dir := acmeChallengeDir(dataDir)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return "", func() {}, err
-		}
-		_ = os.Chmod(dir, 0755)
-		_ = os.Chmod(filepath.Dir(dir), 0755)
 		undo, err := configureCaddyForACME(dir, identifiers)
 		if err != nil {
 			return "", func() {}, err
@@ -102,14 +115,6 @@ func prepareHTTP01(identifiers []string, dataDir, overrideWebroot string) (root 
 		return dir, undo, nil
 
 	case "nginx":
-		dir := acmeChallengeDir(dataDir)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return "", func() {}, err
-		}
-		// web 服务器以非 root 运行 ✗：目录链必须可穿越 ✓
-		// （显式 chmod ✓，否则会被 umask 削减成 0700 ✗ → 挑战恒为 404 ✗，真机踩过 ✓）
-		_ = os.Chmod(dir, 0755)
-		_ = os.Chmod(filepath.Dir(dir), 0755)
 		undo, err := configureNginxForACME(dir, identifiers)
 		if err != nil {
 			return "", func() {}, err
@@ -187,8 +192,9 @@ func configureNginxForACME(challengeDir string, identifiers []string) (func(), e
 		return noop, fmt.Errorf("nginx reload failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 
-	// 给 nginx 一点时间落地 ✓
-	time.Sleep(300 * time.Millisecond)
+	// 给 nginx 一点时间落地 ✓ —— reload 是异步的 ✓，太短会在自检里误判成"挑战不可用" ✗
+	// （真机实测：实测 300ms 偶尔不够 ✓，2s 稳定 ✓；这里取 1s 折中 ✓）
+	time.Sleep(1 * time.Second)
 
 	// 自检：片段真的被 include 进来了吗？（include 路径不对就白写了 ✗ → 回滚并说明 ✓）
 	if out, err := exec.Command("nginx", "-T").CombinedOutput(); err != nil || !strings.Contains(string(out), strings.TrimSuffix(challengeDir, "/")) {

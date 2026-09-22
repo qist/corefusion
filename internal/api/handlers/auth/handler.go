@@ -2,6 +2,7 @@ package auth
 
 import (
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -107,6 +108,65 @@ func (h *Handler) Logout(c *gin.Context) {
 		}
 	}
 	response.OK(c, gin.H{"message": "logged out"})
+}
+
+type ticketResponse struct {
+	Ticket    string `json:"ticket"`
+	ExpiresIn int    `json:"expires_in"`
+	Scope     string `json:"scope"`
+}
+
+// IssueTicket 签发一张一次性短时票据（安全审计 v5 M10）。
+//
+// POST /api/v1/auth/ticket?scope=logs|backup_download（需已认证，走正常 Bearer 头）
+//
+// 供**无法自定义请求头**的浏览器场景使用：日志 SSE 流（EventSource）与文件下载
+// （window.open）。前端拿到票据后拼 `?ticket=`，票据 60 秒过期且只能用一次 ——
+// 即使 URL 泄漏（日志/历史/Referer），泄漏的也只是一张已作废的票据 ✗。
+func (h *Handler) IssueTicket(c *gin.Context) {
+	store := middleware.TicketStore()
+	if store == nil {
+		response.InternalError(c, "TICKET_NOT_CONFIGURED", "ticket auth not configured")
+		return
+	}
+
+	scope := c.Query("scope")
+	if scope == "" {
+		scope = auth.TicketScopeLogs
+	}
+	switch scope {
+	case auth.TicketScopeLogs, auth.TicketScopeBackupDownload:
+	default:
+		response.BadRequest(c, "INVALID_SCOPE", "unsupported ticket scope")
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+	tv, err := middleware.CurrentTokenVersion(c.Request.Context(), userID)
+	if err != nil {
+		response.Unauthorized(c, "INVALID_TOKEN", "token subject not found")
+		return
+	}
+
+	ticket, expires, err := store.Issue(auth.TicketOptions{
+		Scope:        scope,
+		Kind:         auth.TicketKindAdmin,
+		UserID:       userID,
+		Username:     c.GetString("username"),
+		Role:         c.GetString("role"),
+		TokenVersion: tv,
+	})
+	if err != nil {
+		response.InternalError(c, "TICKET_ISSUE_FAILED", "failed to issue ticket")
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	response.OK(c, ticketResponse{
+		Ticket:    ticket,
+		ExpiresIn: int(time.Until(expires).Seconds()),
+		Scope:     scope,
+	})
 }
 
 // Me handles GET /api/v1/auth/me.

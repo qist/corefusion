@@ -994,9 +994,17 @@ async function handleCreateBackup() {
   try { await client.post('/backups/create', {}); ElMessage.success(t('common.success')); fetchBackups() } catch (e) { ElMessage.error(t('common.failed')) } finally { backupCreating.value = false }
 }
 
-function handleDownload(row) {
-  const token = localStorage.getItem('access_token')
-  window.open(`/api/v1/backups/${row.id}/download?token=${token}`, '_blank')
+async function handleDownload(row) {
+  // 一次性短时票据（M10）：新窗口下载带不了 Authorization 头，但也不该把长期 token 放进 URL ✗。
+  // 票据 60 秒过期、只能用一次、且只能用在下载路径上。
+  try {
+    const res = await client.post('/auth/ticket', null, { params: { scope: 'backup_download' } })
+    const data = res?.data?.data || res?.data || {}
+    if (!data.ticket) throw new Error('no ticket')
+    window.open(`/api/v1/backups/${row.id}/download?ticket=${encodeURIComponent(data.ticket)}`, '_blank')
+  } catch (e) {
+    ElMessage.error(t('common.failed'))
+  }
 }
 
 async function handleRestore(row) {

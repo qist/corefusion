@@ -50,32 +50,32 @@ export function getPolicyLog(id, lines = 500) {
   return client.get(`/log-manage/policies/${id}/log`, { params: { lines } })
 }
 
-export function getCoreStdoutLog(type, lines = 500, serverId = 1) {
-  const token = localStorage.getItem('access_token')
+export async function getCoreStdoutLog(type, lines = 500, serverId = 1) {
+  const ticket = await requestTicket('logs')
   const base = client.defaults.baseURL || '/api/v1'
-  return fetch(`${base}/log-manage/core/${type}/stdout-log?lines=${lines}&server_id=${serverId}&token=${encodeURIComponent(token)}`)
+  return fetch(`${base}/log-manage/core/${type}/stdout-log?lines=${lines}&server_id=${serverId}&ticket=${encodeURIComponent(ticket)}`)
     .then(r => r.json())
     .then(d => d?.data || d)
 }
 
-export function getProxyStdoutLog(type, lines = 500, serverId = 1) {
-  const token = localStorage.getItem('access_token')
+export async function getProxyStdoutLog(type, lines = 500, serverId = 1) {
+  const ticket = await requestTicket('logs')
   const base = client.defaults.baseURL || '/api/v1'
-  return fetch(`${base}/log-manage/proxy/${type}/stdout-log?lines=${lines}&server_id=${serverId}&token=${encodeURIComponent(token)}`)
+  return fetch(`${base}/log-manage/proxy/${type}/stdout-log?lines=${lines}&server_id=${serverId}&ticket=${encodeURIComponent(ticket)}`)
     .then(r => r.json())
     .then(d => d?.data || d)
 }
 
-export function buildCoreStdoutStreamUrl(type, serverId = 1) {
-  const token = localStorage.getItem('access_token')
+export async function buildCoreStdoutStreamUrl(type, serverId = 1) {
+  const ticket = await requestTicket('logs')
   const base = client.defaults.baseURL || '/api/v1'
-  return `${base}/log-manage/core/${type}/stdout-stream?server_id=${serverId}&token=${encodeURIComponent(token)}`
+  return `${base}/log-manage/core/${type}/stdout-stream?server_id=${serverId}&ticket=${encodeURIComponent(ticket)}`
 }
 
-export function buildProxyStdoutStreamUrl(type, serverId = 1) {
-  const token = localStorage.getItem('access_token')
+export async function buildProxyStdoutStreamUrl(type, serverId = 1) {
+  const ticket = await requestTicket('logs')
   const base = client.defaults.baseURL || '/api/v1'
-  return `${base}/log-manage/proxy/${type}/stdout-stream?server_id=${serverId}&token=${encodeURIComponent(token)}`
+  return `${base}/log-manage/proxy/${type}/stdout-stream?server_id=${serverId}&ticket=${encodeURIComponent(ticket)}`
 }
 
 // ──────────── Log Output Config (per-node) ────────────
@@ -174,10 +174,20 @@ export function updateSchedulerConfig(items) {
 
 // ──────────── SSE Stream Helpers ────────────
 
-export function buildSSEUrl(path, params = {}) {
-  const token = localStorage.getItem('access_token')
+// 一次性短时票据（安全审计 v5 M10）。
+//
+// 为什么需要：`EventSource`（日志流）与 `window.open`（下载）**无法自定义请求头**，所以
+// 以前只能把长期 access token 拼进 URL —— 而 URL 会进访问日志、浏览器历史、Referer，
+// 等于把长期凭证散播出去。现在先换一张 60 秒、一次性、限路径的票据，再拼 `?ticket=`。
+export async function requestTicket(scope = 'logs') {
+  const res = await client.post('/auth/ticket', null, { params: { scope } })
+  const data = res?.data?.data || res?.data || {}
+  return data.ticket || ''
+}
+
+export function buildSSEUrl(path, params = {}, ticket = '') {
   const base = client.defaults.baseURL || '/api/v1'
-  const qs = new URLSearchParams({ ...params, token })
+  const qs = new URLSearchParams({ ...params, ticket })
   return `${base}${path}?${qs.toString()}`
 }
 

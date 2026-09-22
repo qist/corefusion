@@ -307,6 +307,12 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		}
 	}
 
+	// 8e. xray：leastPing/leastLoad 的 balancer 没有 observatory 时核心拒绝启动，
+	// 这里兜底补一个（面板的 observatory 段落是可选的，用户很容易漏配）。
+	if opts.CoreType != "singbox" && EnsureBalancerObservatory(fullConfig) {
+		log.Printf("[PrepareFullConfig] server %d: injected observatory for leastPing/leastLoad balancer(s)", opts.ServerID)
+	}
+
 	// 9. Ensure default outbounds exist — safety net so every
 	// node always has direct/block even if missing from DB.
 	EnsureDefaultOutbounds(fullConfig, opts.CoreType)
@@ -344,6 +350,75 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// EnsureBalancerObservatory 兜底：xray 里凡是用 leastPing / leastLoad 策略的 balancer，
+// **必须**存在 observatory（标准或 burst），否则核心启动直接失败：
+//
+//	failed to build routing configuration > balancer strategy leastLoad requires observatory
+//
+// 面板的 balancer 编辑器（XrayRouting.vue）可以只写策略不写 observatory，而 observatory 是**独立的
+// 顶层段落**（XrayBurstObs.vue，可选）→ 用户很容易只配一半，配置"看着没问题、节点起不来" ✗。
+// 这里在生成末尾兜底补一个，subjectSelector 直接取这些 balancer 的 selector（xray 的 selector 是
+// 前缀匹配，语义一致）。已有 observatory/burstObservatory 时**不覆盖**（尊重用户配置 ✓）。
+//
+// 返回是否补了（供调用方打日志）。
+func EnsureBalancerObservatory(fullConfig map[string]interface{}) bool {
+	routing, _ := fullConfig["routing"].(map[string]interface{})
+	if routing == nil {
+		return false
+	}
+	balancers, _ := routing["balancers"].([]interface{})
+	if len(balancers) == 0 {
+		return false
+	}
+	needObservatory := false
+	var selectors []interface{}
+	seen := map[string]bool{}
+	for _, bal := range balancers {
+		bm, ok := bal.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		strategyType := ""
+		switch st := bm["strategy"].(type) {
+		case string:
+			strategyType = st
+		case map[string]interface{}:
+			if v, ok := st["type"].(string); ok {
+				strategyType = v
+			}
+		}
+		if strategyType != "leastPing" && strategyType != "leastLoad" {
+			continue
+		}
+		needObservatory = true
+		if sel, ok := bm["selector"].([]interface{}); ok {
+			for _, tag := range sel {
+				if s, ok := tag.(string); ok && s != "" && !seen[s] {
+					seen[s] = true
+					selectors = append(selectors, s)
+				}
+			}
+		}
+	}
+	if !needObservatory {
+		return false
+	}
+	if _, ok := fullConfig["observatory"]; ok {
+		return false
+	}
+	if _, ok := fullConfig["burstObservatory"]; ok {
+		return false
+	}
+	observatory := map[string]interface{}{
+		"subjectSelector":   selectors,
+		"probeUrl":          "https://www.google.com/generate_204",
+		"probeInterval":     "10s",
+		"enableConcurrency": true,
+	}
+	fullConfig["observatory"] = observatory
+	return true
 }
 
 // EnsureDefaultOutbounds checks that the standard default outbounds exist in

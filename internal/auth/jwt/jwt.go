@@ -27,6 +27,10 @@ type Claims struct {
 	Username  string `json:"username"`
 	Role      string `json:"role"`
 	TokenType string `json:"typ"`
+	// TokenVersion 是签发时的"用户令牌版本"。登出/吊销时服务端把该用户版本 +1，
+	// 旧 token 的 tv 就对不上 → 立即失效（见 middleware.AuthRequired 的校验）。
+	// 历史 token 没有该声明，解出来是 0，与库里默认值 0 一致 → 升级部署不会把大家踢下线。
+	TokenVersion int `json:"tv"`
 	jwt.RegisteredClaims
 }
 
@@ -48,21 +52,32 @@ func New(secret string, accessTTL, refreshTTL time.Duration) *JWT {
 
 // GenerateAccessToken generates an access token.
 func (j *JWT) GenerateAccessToken(userID int64, username, role string) (string, error) {
-	return j.generate(userID, username, role, TokenTypeAccess, j.accessTTL)
+	return j.generate(userID, username, role, 0, TokenTypeAccess, j.accessTTL)
+}
+
+// GenerateAccessTokenWithVersion generates an access token carrying the user's token version.
+func (j *JWT) GenerateAccessTokenWithVersion(userID int64, username, role string, tokenVersion int) (string, error) {
+	return j.generate(userID, username, role, tokenVersion, TokenTypeAccess, j.accessTTL)
 }
 
 // GenerateRefreshToken generates a refresh token.
 func (j *JWT) GenerateRefreshToken(userID int64, username, role string) (string, error) {
-	return j.generate(userID, username, role, TokenTypeRefresh, j.refreshTTL)
+	return j.generate(userID, username, role, 0, TokenTypeRefresh, j.refreshTTL)
 }
 
-func (j *JWT) generate(userID int64, username, role, tokenType string, ttl time.Duration) (string, error) {
+// GenerateRefreshTokenWithVersion generates a refresh token carrying the user's token version.
+func (j *JWT) GenerateRefreshTokenWithVersion(userID int64, username, role string, tokenVersion int) (string, error) {
+	return j.generate(userID, username, role, tokenVersion, TokenTypeRefresh, j.refreshTTL)
+}
+
+func (j *JWT) generate(userID int64, username, role string, tokenVersion int, tokenType string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:    userID,
-		Username:  username,
-		Role:      role,
-		TokenType: tokenType,
+		UserID:       userID,
+		Username:     username,
+		Role:         role,
+		TokenType:    tokenType,
+		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(now),

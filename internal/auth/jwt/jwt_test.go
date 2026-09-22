@@ -61,7 +61,7 @@ func TestTokensValidateForOwnType(t *testing.T) {
 func TestLegacyTokenAcceptedAsAccessOnly(t *testing.T) {
 	j := newTestJWT()
 
-	legacy, err := j.generate(3, "bob", "viewer", "", time.Hour)
+	legacy, err := j.generate(3, "bob", "viewer", 0, "", time.Hour)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}

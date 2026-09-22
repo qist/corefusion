@@ -461,23 +461,6 @@ func (h *Handler) GenerateChainConfig(c *gin.Context) {
 	})
 }
 
-// GenerateChainExitConfig generates relay inbound config for a chain_exit node.
-func (h *Handler) GenerateChainExitConfig(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "INVALID_ID", "invalid server ID")
-		return
-	}
-
-	inbound, err := h.svc.GenerateChainExitConfig(c.Request.Context(), id)
-	if err != nil {
-		response.InternalError(c, "CHAIN_EXIT_CONFIG_FAILED", err.Error())
-		return
-	}
-
-	response.OK(c, gin.H{"inbound": inbound})
-}
-
 // GetChainHealthStatus returns health status of all chain_exit nodes for a chain_entry.
 func (h *Handler) GetChainHealthStatus(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

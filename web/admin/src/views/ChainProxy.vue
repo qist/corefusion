@@ -4,7 +4,6 @@
       <h3 style="margin:0">{{ t('chainProxy.title') }}</h3>
       <div style="display:flex;gap:8px">
         <el-button type="primary" size="small" @click="showLinkDlg">{{ t('chainProxy.addLink') }}</el-button>
-        <el-button size="small" @click="showExitDlg">{{ t('chainProxy.addExit') }}</el-button>
         <el-button size="small" @click="showExtServerDlg">{{ t('chainProxy.registerExternalEntry') }}</el-button>
       </div>
     </div>
@@ -77,12 +76,6 @@
             <el-tag size="small" :type="roleTagType(row.role)">{{ roleLabel(row.role) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('chainProxy.relayOnly')" width="100">
-          <template #default="{row}">
-            <el-tag v-if="row.relay_only" size="small" type="info">{{ t('common.yes') }}</el-tag>
-            <span v-else>—</span>
-          </template>
-        </el-table-column>
       </el-table>
     </el-card>
 
@@ -121,38 +114,6 @@
       </el-table>
     </el-card>
 
-    <!-- Exit Configs（v2.0 起降级为**旧模式**：出口优先用节点上已有的入站） -->
-    <el-card>
-      <template #header>{{ t('chainProxy.exitConfigsTitle') }}</template>
-      <el-alert :title="t('chainProxy.legacyExitHint')" type="info" :closable="false" style="margin-bottom:12px" />
-      <el-table :data="exitConfigs" stripe size="small" v-loading="exitsLoading">
-        <el-table-column prop="server_id" label="ID" width="60" />
-        <el-table-column :label="t('common.name')" width="160">
-          <template #default="{row}">{{ serverName(row.server_id) }}</template>
-        </el-table-column>
-        <el-table-column prop="relay_port" :label="t('chainProxy.relayPort')" width="90" />
-        <el-table-column prop="relay_protocol" :label="t('chainProxy.relayProtocol')" width="100" />
-        <el-table-column prop="relay_transport" :label="t('chainProxy.relayTransport')" width="100" />
-        <el-table-column prop="relay_security" :label="t('chainProxy.relaySecurity')" width="100" />
-        <el-table-column :label="t('chainProxy.relayOnly')" width="90">
-          <template #default="{row}">
-            <el-tag v-if="row.relay_only" size="small" type="info">{{ t('common.yes') }}</el-tag>
-            <span v-else>—</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" width="70">
-          <template #default="{row}">
-            <el-switch v-model="row.enabled" size="small" @change="toggleExit(row)" />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.actions')" width="120">
-          <template #default="{row}">
-            <el-button size="small" text @click="editExit(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" text @click="removeExit(row)">{{ t('common.delete') }}</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
 
     <!-- External Node Servers (§12.3) -->
     <el-card style="margin-top:16px">
@@ -315,53 +276,6 @@
       </template>
     </el-dialog>
 
-    <!-- Exit Config Dialog -->
-    <el-dialog v-model="exitDlg" :title="exitEditing ? t('chainProxy.editExit') : t('chainProxy.addExit')" width="560">
-      <el-form label-width="110px" size="small">
-        <el-form-item :label="t('chainProxy.exitNode')">
-          <el-select v-model="exitForm.server_id" filterable :disabled="exitEditing" style="width:100%">
-            <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.relayPort')">
-          <el-input-number v-model="exitForm.relay_port" :min="1" :max="65535" />
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.relayProtocol')">
-          <el-select v-model="exitForm.relay_protocol" style="width:160px">
-            <el-option label="vless" value="vless" />
-            <el-option label="vmess" value="vmess" />
-            <el-option label="trojan" value="trojan" />
-            <el-option label="shadowsocks" value="shadowsocks" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.relayTransport')">
-          <el-select v-model="exitForm.relay_transport" style="width:160px">
-            <el-option label="tcp" value="tcp" />
-            <el-option label="ws" value="ws" />
-            <el-option label="grpc" value="grpc" />
-            <el-option label="httpupgrade" value="httpupgrade" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.relaySecurity')">
-          <el-select v-model="exitForm.relay_security" style="width:160px">
-            <el-option label="none" value="none" />
-            <el-option label="tls" value="tls" />
-            <el-option label="reality" value="reality" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chainProxy.relayOnly')">
-          <el-switch v-model="exitForm.relay_only" />
-          <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('chainProxy.relayOnlyHint') }}</span>
-        </el-form-item>
-        <el-form-item :label="t('common.status')">
-          <el-switch v-model="exitForm.enabled" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="exitDlg=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="exitSaving" @click="saveExit">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
 
     <!-- External Node Server Registration Dialog (§12.3) -->
     <el-dialog v-model="extServerDlg" :title="t('chainProxy.registerExternalEntry')" width="520">
@@ -436,8 +350,6 @@ const topoLinks = ref([])
 const topoLoading = ref(false)
 const links = ref([])
 const linksLoading = ref(false)
-const exitConfigs = ref([])
-const exitsLoading = ref(false)
 const servers = ref([])
 const externalServers = ref([])
 const externalNodes = ref([]) // available external nodes for registration dropdown
@@ -521,20 +433,6 @@ function resetWizard() {
   exitInboundOptions.value = {}
   wiz.value = { entryServerId: 0, entryInboundId: 0, clusterExits: [], externalExits: [], exitInbounds: {}, exitParams: {} }
 }
-
-// ── Exit Config Dialog ──
-const exitDlg = ref(false)
-const exitEditing = ref(false)
-const exitSaving = ref(false)
-const exitForm = ref({
-  server_id: 0,
-  relay_port: 0,
-  relay_protocol: 'vless',
-  relay_transport: 'tcp',
-  relay_security: 'none',
-  relay_only: false,
-  enabled: true,
-})
 
 // ── External Node Server Registration Dialog (§12.3) ──
 const extServerDlg = ref(false)
@@ -714,7 +612,7 @@ function roleTagType(role) {
 
 // ── Fetch ──
 async function fetchAll() {
-  await Promise.all([fetchTopology(), fetchLinks(), fetchExitConfigs(), fetchServers(), fetchExternalServers(), fetchExternalNodes(), fetchHealth()])
+  await Promise.all([fetchTopology(), fetchLinks(), fetchServers(), fetchExternalServers(), fetchExternalNodes(), fetchHealth()])
 }
 
 async function fetchTopology() {
@@ -731,13 +629,6 @@ async function fetchLinks() {
   try {
     links.value = await chainApi.listLinks()
   } finally { linksLoading.value = false }
-}
-
-async function fetchExitConfigs() {
-  exitsLoading.value = true
-  try {
-    exitConfigs.value = await chainApi.listExitConfigs()
-  } finally { exitsLoading.value = false }
 }
 
 async function fetchServers() {
@@ -954,64 +845,6 @@ async function removeLink(row) {
     await chainApi.deleteLink(row.id)
     ElMessage.success(t('common.success'))
     await fetchLinks()
-    await fetchTopology()
-  } catch { /* cancelled */ }
-}
-
-// ── Exit Config CRUD ──
-function showExitDlg() {
-  exitEditing.value = false
-  exitForm.value = {
-    server_id: 0, relay_port: 0,
-    relay_protocol: 'vless', relay_transport: 'tcp',
-    relay_security: 'none', relay_only: false, enabled: true,
-  }
-  exitDlg.value = true
-}
-
-function editExit(row) {
-  exitEditing.value = true
-  exitForm.value = { ...row }
-  exitDlg.value = true
-}
-
-async function saveExit() {
-  if (!exitForm.value.server_id) {
-    ElMessage.warning(t('chainProxy.selectExit'))
-    return
-  }
-  exitSaving.value = true
-  try {
-    if (exitEditing.value) {
-      const { relay_port, relay_protocol, relay_transport, relay_security, relay_only, enabled } = exitForm.value
-      await chainApi.updateExitConfig(exitForm.value.server_id, {
-        relay_port, relay_protocol, relay_transport, relay_security, relay_only, enabled,
-      })
-    } else {
-      await chainApi.createExitConfig(exitForm.value)
-    }
-    ElMessage.success(t('common.success'))
-    exitDlg.value = false
-    await fetchExitConfigs()
-    await fetchTopology()
-  } catch { /* handled */ } finally { exitSaving.value = false }
-}
-
-async function toggleExit(row) {
-  try {
-    await chainApi.updateExitConfig(row.server_id, { enabled: row.enabled })
-    ElMessage.success(t('common.success'))
-  } catch {
-    row.enabled = !row.enabled
-  }
-}
-
-async function removeExit(row) {
-  try {
-    await ElMessageBox.confirm(t('chainProxy.confirmDeleteExit'), t('common.confirm'), { type: 'warning' })
-    await chainApi.deleteExitConfig(row.server_id)
-    ElMessage.success(t('common.success'))
-    await fetchExitConfigs()
     await fetchTopology()
   } catch { /* cancelled */ }
 }

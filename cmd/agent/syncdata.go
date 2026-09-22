@@ -230,36 +230,6 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			log.Printf("[Agent] upsert chain_link id=%d: %v", entry.Id, result.Error)
 		}
 	}
-
-	// 7. Upsert chain_exit_configs (链式出口配置)
-	for _, entry := range req.ChainExitConfigs {
-		record := entity.ChainExitConfig{
-			ServerID:       entry.ServerId,
-			RelayPort:      int(entry.RelayPort),
-			RelayProtocol:  entry.RelayProtocol,
-			RelayTransport: entry.RelayTransport,
-			RelaySecurity:  entry.RelaySecurity,
-			RelayUUID:      entry.RelayUuid,
-			RelayOnly:      entry.RelayOnly,
-			Enabled:        entry.Enabled,
-		}
-		if entry.CreatedAt > 0 {
-			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
-		}
-		if entry.UpdatedAt > 0 {
-			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
-		}
-		result := database.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "server_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "updated_at"}),
-		}).Select("server_id", "relay_port", "relay_protocol", "relay_transport", "relay_security", "relay_uuid", "relay_only", "enabled", "created_at", "updated_at").Create(&record)
-		if result.Error == nil {
-			resp.ChainExitConfigsApplied++
-		} else {
-			log.Printf("[Agent] upsert chain_exit_config id=%d: %v", entry.Id, result.Error)
-		}
-	}
-
 	// 8. Upsert node_servers (节点地址/内网网段，用于出口地址智能选择，仅非敏感字段)
 	for _, entry := range req.NodeServers {
 		record := entity.NodeServer{
@@ -713,19 +683,6 @@ func pruneStaleRecords(database *gorm.DB, req *agentpb.SyncDataRequest) {
 			log.Printf("[Agent] SyncData: pruned %d stale chain_links", result.RowsAffected)
 		}
 	}
-
-	// --- Prune chain_exit_configs by id (panel sends the full set) ---
-	if len(req.ChainExitConfigs) > 0 {
-		keepIDs := make([]int64, 0, len(req.ChainExitConfigs))
-		for _, e := range req.ChainExitConfigs {
-			keepIDs = append(keepIDs, e.Id)
-		}
-		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.ChainExitConfig{})
-		if result.RowsAffected > 0 {
-			log.Printf("[Agent] SyncData: pruned %d stale chain_exit_configs", result.RowsAffected)
-		}
-	}
-
 	// --- Prune node_servers by id (panel sends the full enabled set) ---
 	if len(req.NodeServers) > 0 {
 		keepIDs := make([]int64, 0, len(req.NodeServers))
@@ -780,15 +737,16 @@ func generateConfigFromLocalDB(ctx context.Context, serverID int64, coreType str
 	// ensuring stats section, applying API inbound/routing, merging enabled
 	// inbounds/outbounds from inbound_configs/outbound_configs tables.
 	//
-	// ChainLinkProvider: read chain_links / chain_exit_configs / node_servers /
-	// external_nodes from the local DB (populated by SyncData) so the generated
-	// config also includes chain outbounds, routing rules, and relay-in inbound.
+	// ChainLinkProvider: read chain_links / node_servers / external_nodes from the
+	// local DB (populated by SyncData) so the generated config also includes chain
+	// outbounds and routing rules.
 	localChainGen := agent.NewChainLinkGenerator(
 		repository.NewChainLinkRepository(db.DB),
-		repository.NewChainExitConfigRepository(db.DB),
 		repository.NewNodeServerRepository(db.DB),
 		repository.NewExternalNodeRepository(db.DB),
 	)
+	// 链式出口"使用出口节点上已有的入站"这条路径需要读入站配置（协议/端口/传输/凭据）
+	localChainGen.SetInboundRepo(repository.NewInboundConfigRepository(db.DB))
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
 		Ctx:               ctx,
 		ServerID:          serverID,

@@ -48,10 +48,8 @@ type PublicHandler struct {
 	rateLimitPusher   RateLimitPusher
 	nodeServerRepo    *repository.NodeServerRepository
 	networkTracker    *traffic.SubscriptionIPTracker
-	// Chain proxy repos for filtering relay_only nodes from subscription
-	// and rendering external node servers (design doc §8.1 / §8.2)
-	chainExitCfgRepo *repository.ChainExitConfigRepository
-	extServerRepo    *repository.ExternalNodeServerRepository
+	// Chain proxy repo for rendering external node servers (design doc §8.2)
+	extServerRepo *repository.ExternalNodeServerRepository
 }
 
 // SetNetworkTracker injects the nftables IP tracker so subscription access records can
@@ -99,10 +97,8 @@ func (h *PublicHandler) SetRateLimitPusher(pusher RateLimitPusher, nodeServerRep
 // for filtering relay_only nodes from subscription output (§8.1) and
 // rendering external node servers as virtual entries (§8.2).
 func (h *PublicHandler) SetChainProxyRepos(
-	chainExitCfgRepo *repository.ChainExitConfigRepository,
 	extServerRepo *repository.ExternalNodeServerRepository,
 ) {
-	h.chainExitCfgRepo = chainExitCfgRepo
 	h.extServerRepo = extServerRepo
 }
 
@@ -560,18 +556,6 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 	// Also build mirror node mapping: primaryServerID → []mirrorNodeServer
 	// This is used for virtual expansion of mirror nodes in subscription output.
 	mirrorMap := make(map[int64][]entity.NodeServer)
-	// Build set of relay_only server IDs — pure exit nodes must not appear
-	// in subscription output (design doc §8.1).
-	relayOnlyServerIDs := make(map[int64]bool)
-	if h.chainExitCfgRepo != nil {
-		if exitCfgs, err := h.chainExitCfgRepo.ListAll(ctx); err == nil {
-			for _, ec := range exitCfgs {
-				if ec.Enabled && ec.RelayOnly {
-					relayOnlyServerIDs[ec.ServerID] = true
-				}
-			}
-		}
-	}
 	if h.nodeServerRepo != nil {
 		if servers, err := h.nodeServerRepo.ListAll(ctx); err == nil {
 			for _, s := range servers {
@@ -636,9 +620,6 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			}
 			// Skip pure exit nodes (relay_only=true) — they must not
 			// appear in subscription output (design doc §8.1).
-			if relayOnlyServerIDs[cfg.ServerID] {
-				continue
-			}
 			memberIDs := inboundMemberIDs[cfg.ID]
 			isBillingSelected := billingInboundSet[cfg.ID]
 			if len(members) > 0 && len(memberIDs) == 0 && !isBillingSelected {

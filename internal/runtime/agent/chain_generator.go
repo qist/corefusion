@@ -118,45 +118,6 @@ func (g *ChainConfigGenerator) GenerateChainEntryOutbounds(ctx context.Context, 
 	return outbounds, routingRules, nil
 }
 
-// GenerateChainExitInbound generates the relay inbound config for a chain_exit node.
-// This inbound accepts connections from chain_entry nodes (not end users).
-func (g *ChainConfigGenerator) GenerateChainExitInbound(ctx context.Context, server *entity.NodeServer) (map[string]interface{}, error) {
-	if server.NodeType != "chain_exit" {
-		return nil, fmt.Errorf("server %d is not a chain_exit", server.ID)
-	}
-
-	cfg, err := ParseChainConfig(server.ChainConfig)
-	if err != nil {
-		return nil, fmt.Errorf("parse chain_config: %w", err)
-	}
-	if cfg == nil {
-		return nil, fmt.Errorf("chain_exit %d has no chain_config", server.ID)
-	}
-
-	relayProtocol := cfg.RelayProtocol
-	if relayProtocol == "" {
-		relayProtocol = "vless"
-	}
-
-	// Build relay inbound — accepts chain_entry connections with a fixed relay UUID
-	inbound := map[string]interface{}{
-		"tag":      "relay-in",
-		"listen":   "0.0.0.0",
-		"port":     cfg.RelayPort,
-		"protocol": relayProtocol,
-		"settings": map[string]interface{}{
-			"clients": []map[string]interface{}{
-				{
-					"id":    "chain-relay-uuid", // Fixed UUID for chain relay (Agent-to-Agent)
-					"email": "chain-relay",
-				},
-			},
-		},
-	}
-
-	return inbound, nil
-}
-
 // MergeChainOutbounds merges chain proxy outbounds into an existing config.
 // This is called when generating the full config for a chain_entry node.
 func MergeChainOutbounds(existingOutbounds []interface{}, chainOutbounds []ChainEntryOutbound) []interface{} {

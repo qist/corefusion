@@ -606,7 +606,6 @@ func allEntityModels() []interface{} {
 		&entity.ExternalNodeSource{},
 		&entity.ExternalNode{},
 		&entity.ChainLink{},
-		&entity.ChainExitConfig{},
 		&entity.ExternalNodeServer{},
 		&entity.NodeServer{},
 		&entity.AgentCertRevocation{},

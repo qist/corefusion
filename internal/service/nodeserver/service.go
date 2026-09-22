@@ -894,18 +894,6 @@ func (s *Service) GenerateChainConfig(ctx context.Context, serverID int64) ([]ag
 	return s.chainGen.GenerateChainEntryOutbounds(ctx, server)
 }
 
-// GenerateChainExitConfig generates the relay inbound config for a chain_exit node.
-func (s *Service) GenerateChainExitConfig(ctx context.Context, serverID int64) (map[string]interface{}, error) {
-	if s.chainGen == nil {
-		return nil, fmt.Errorf("chain config generator not initialized")
-	}
-	server, err := s.repo.GetByID(ctx, serverID)
-	if err != nil {
-		return nil, fmt.Errorf("server not found: %w", err)
-	}
-	return s.chainGen.GenerateChainExitInbound(ctx, server)
-}
-
 // GetChainHealthStatus returns the health status of all chain exit nodes.
 // In the new chain_links model, there is a single global health monitor
 // that checks all exit nodes referenced by chain_links.

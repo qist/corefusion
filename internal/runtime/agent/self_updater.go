@@ -53,23 +53,28 @@ func NewSelfUpdater(dataDir string, settingRepo *repository.SystemSettingReposit
 func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum string) error {
 	log.Printf("[SelfUpdater] starting update: version=%s, url=%s", version, downloadURL)
 
+	// Step 0: 解析期望校验和 —— **全自动**，不需要任何人手工填写 ✗
+	//   ① 面板下发的 checksum 优先（面板扫描二进制时已自动算出 SHA-256）；
+	//   ② 没带就自动去取 `downloadURL + ".sha256"`（与面板侧 fetchAgentChecksum 同一约定）；
+	//   ③ 两者都拿不到 → **拒绝更新**（宁可保持当前版本，也不装一个无法校验的二进制）。
+	expected, err := u.resolveChecksum(downloadURL, checksum)
+	if err != nil {
+		return fmt.Errorf("checksum unavailable, refusing update: %w", err)
+	}
+
 	// Step 1: Download
 	tmpPath, err := u.downloadFile(downloadURL)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
+	defer os.Remove(tmpPath)
 	log.Printf("[SelfUpdater] downloaded to %s", tmpPath)
 
-	// Step 2: Verify checksum
-	if checksum != "" {
-		if err := u.verifyChecksum(tmpPath, checksum); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("checksum verification failed: %w", err)
-		}
-		log.Printf("[SelfUpdater] checksum verified")
-	} else {
-		log.Printf("[SelfUpdater] skipping checksum verification (no checksum provided)")
+	// Step 2: Verify checksum（现在一定校验 ✓）
+	if err := u.verifyChecksum(tmpPath, expected); err != nil {
+		return fmt.Errorf("checksum verification failed: %w", err)
 	}
+	log.Printf("[SelfUpdater] checksum verified (%s…)", expected[:12])
 
 	// Step 3 + 4: Backup and replace
 	if err := u.replaceBinary(tmpPath); err != nil {
@@ -89,46 +94,121 @@ func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum string) error
 // If the URL is a GitHub URL, GitHub acceleration domain and proxy settings
 // are automatically applied from the Agent's local settings.
 func (u *SelfUpdater) downloadFile(downloadURL string) (string, error) {
-	tmpPath := filepath.Join(os.TempDir(), "corefusion-agent-new")
+	// ⚠ 不再用固定的 /tmp/corefusion-agent-new ✗：那是全世界可写的目录 + 可预测文件名，
+	// 本机其他用户可以抢先占位/符号链接攻击。改为在 Agent 自己的数据目录里创建**随机名**临时文件
+	// （目录本身 0750、由 Agent 独占），并立刻收紧到 0600 ✓。
+	tmpFile, err := os.CreateTemp(u.dataDir, "agent-update-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Chmod(0600); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("chmod temp file: %w", err)
+	}
 
-	// Choose HTTP client based on URL source
-	var client *http.Client
+	// Choose HTTP client based on URL source（与取校验和共用同一套选择逻辑）
+	client := u.clientForURL(downloadURL)
 	if netutil.IsGitHubURL(downloadURL) {
-		// Read GitHub acceleration settings from local DB
-		accelDomain := u.getGithubAccelDomain()
-		proxyURL := u.getGithubProxyURL()
-		client = netutil.GitHubHTTPClientWithProxy(10*time.Minute, accelDomain, proxyURL)
 		// Apply acceleration domain rewrite
-		downloadURL = netutil.AccelerateGitHubURL(downloadURL, accelDomain)
-		log.Printf("[SelfUpdater] using GitHub client (accel=%s, proxy=%s)", accelDomain, proxyURL)
-	} else {
-		client = netutil.NewHTTPClient(10 * time.Minute)
+		downloadURL = netutil.AccelerateGitHubURL(downloadURL, u.getGithubAccelDomain())
 	}
 
 	resp, err := client.Get(downloadURL)
 	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		tmpFile.Close()
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	// Write to temp file
-	out, err := os.Create(tmpPath)
-	if err != nil {
-		return "", fmt.Errorf("create temp file: %w", err)
-	}
-
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		tmpFile.Close()
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
-	out.Close()
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
 
 	return tmpPath, nil
+}
+
+// resolveChecksum 解析出"期望的 SHA-256"，全程自动、不需要人工填：
+//  1. 面板下发的 checksum（面板扫描二进制时自动算的）；
+//  2. 否则自动取 `downloadURL + ".sha256"`；
+//  3. 都没有 → 返回错误（调用方据此拒绝更新）。
+func (u *SelfUpdater) resolveChecksum(downloadURL, provided string) (string, error) {
+	if c := normalizeChecksum(provided); c != "" {
+		return c, nil
+	}
+
+	sidecar := downloadURL + ".sha256"
+	client := u.clientForURL(sidecar)
+	resp, err := client.Get(sidecar)
+	if err != nil {
+		return "", fmt.Errorf("fetch %s: %w", sidecar, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch %s: HTTP %d", sidecar, resp.StatusCode)
+	}
+	body, err := netutil.ReadLimited(resp.Body, netutil.MaxChecksumBytes)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", sidecar, err)
+	}
+	c := parseChecksumFile(body)
+	if c == "" {
+		return "", fmt.Errorf("%s does not contain a SHA-256 checksum", sidecar)
+	}
+	log.Printf("[SelfUpdater] checksum auto-resolved from %s", sidecar)
+	return c, nil
+}
+
+// clientForURL 按 URL 来源选客户端（GitHub 走加速/代理设置），下载与取校验和共用。
+func (u *SelfUpdater) clientForURL(rawURL string) *http.Client {
+	if netutil.IsGitHubURL(rawURL) {
+		accelDomain := u.getGithubAccelDomain()
+		proxyURL := u.getGithubProxyURL()
+		log.Printf("[SelfUpdater] using GitHub client (accel=%s, proxy=%s)", accelDomain, proxyURL)
+		return netutil.GitHubHTTPClientWithProxy(10*time.Minute, accelDomain, proxyURL)
+	}
+	return netutil.NewHTTPClient(10 * time.Minute)
+}
+
+// normalizeChecksum 归一化校验和字符串（去 `sha256:` 前缀/空白/大小写）。
+func normalizeChecksum(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(strings.ToLower(s), "sha256:")
+	s = strings.TrimSpace(s)
+	if len(s) != 64 {
+		return ""
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return ""
+		}
+	}
+	return s
+}
+
+// parseChecksumFile 从 `.sha256` 文件内容里取出校验和。
+// 兼容 `sha256sum` 的输出格式（`<hash>  <filename>`）以及只写 hash 的形式。
+func parseChecksumFile(data []byte) string {
+	for _, field := range strings.Fields(string(data)) {
+		if c := normalizeChecksum(field); c != "" {
+			return c
+		}
+	}
+	return ""
 }
 
 // verifyChecksum verifies the SHA-256 checksum of the downloaded file.
@@ -262,11 +342,11 @@ func (u *SelfUpdater) isSystemdManaged() bool {
 // rolls back to the previous version if so.
 //
 // Detection logic:
-// - If a .bak file exists and its modification time is less than 30 seconds ago,
-//   it likely means the new binary crashed immediately after startup.
-//   In this case, roll back to the .bak binary and restart.
-// - If a .bak file exists but is older than 30 seconds, the update was successful.
-//   Delete the .bak file.
+//   - If a .bak file exists and its modification time is less than 30 seconds ago,
+//     it likely means the new binary crashed immediately after startup.
+//     In this case, roll back to the .bak binary and restart.
+//   - If a .bak file exists but is older than 30 seconds, the update was successful.
+//     Delete the .bak file.
 func (u *SelfUpdater) CheckCrashRecovery() {
 	selfPath, err := os.Executable()
 	if err != nil {

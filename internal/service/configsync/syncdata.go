@@ -421,7 +421,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		log.Printf("[DataSyncBuilder] server %d: %d share domain config entries", serverID, len(shareDomainConfigs))
 	}
 
-	// 6. Chain proxy data (chain_links, chain_exit_configs, node_servers, external_nodes).
+	// 6. Chain proxy data (chain_links, node_servers, external_nodes).
 	// These are sent so the Agent can store them locally and regenerate the chain
 	// config offline (fallback when config_content is unavailable).
 	if chainLinks, err := b.rawProvider.ListChainLinks(ctx); err == nil {
@@ -596,7 +596,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	}
 
 	// Log summary
-	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs) + len(req.Certificates) + len(req.ChainLinks) + len(req.ChainExitConfigs) + len(req.NodeServers) + len(req.ExternalNodes)
+	total := len(req.CoreConfigs) + len(req.InboundConfigs) + len(req.OutboundConfigs) + len(req.WarpConfigs) + len(req.ShareDomainConfigs) + len(req.Certificates) + len(req.ChainLinks) + len(req.NodeServers) + len(req.ExternalNodes)
 	hasConfig := len(req.ConfigContent) > 0
 	log.Printf("[DataSyncBuilder] built SyncDataRequest for server %d: %d total entries, config_content=%v, certs=%d", serverID, total, hasConfig, len(req.Certificates))
 
@@ -845,7 +845,6 @@ func MarshalSyncDataRequest(req *agentpb.SyncDataRequest) ([]byte, error) {
 		"warp_configs":         len(req.WarpConfigs),
 		"share_domain_configs": len(req.ShareDomainConfigs),
 		"chain_links":          len(req.ChainLinks),
-		"chain_exit_configs":   len(req.ChainExitConfigs),
 		"node_servers":         len(req.NodeServers),
 		"external_nodes":       len(req.ExternalNodes),
 		"has_config_content":   len(req.ConfigContent) > 0,

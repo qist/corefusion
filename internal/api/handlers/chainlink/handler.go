@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/runtime/agent"
 	"corefusion/internal/store/repository"
 )
 
@@ -30,13 +32,13 @@ type ConfigSyncHook interface {
 
 // Handler handles chain link and chain exit config API requests.
 type Handler struct {
-	linkRepo      *repository.ChainLinkRepository
-	exitCfgRepo   *repository.ChainExitConfigRepository
-	extServerRepo *repository.ExternalNodeServerRepository
-	serverRepo    *repository.NodeServerRepository
-	extNodeRepo   *repository.ExternalNodeRepository
-	inboundRepo   *repository.InboundConfigRepository
-	healthChecker  HealthChecker   // optional, injected via SetHealthChecker
+	linkRepo       *repository.ChainLinkRepository
+	exitCfgRepo    *repository.ChainExitConfigRepository
+	extServerRepo  *repository.ExternalNodeServerRepository
+	serverRepo     *repository.NodeServerRepository
+	extNodeRepo    *repository.ExternalNodeRepository
+	inboundRepo    *repository.InboundConfigRepository
+	healthChecker  HealthChecker  // optional, injected via SetHealthChecker
 	configSyncHook ConfigSyncHook // optional, injected via SetConfigSyncHook
 }
 
@@ -182,6 +184,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		EntryInboundID int64  `json:"entry_inbound_id"`
 		ExitServerID   int64  `json:"exit_server_id"`
 		ExitExternalID int64  `json:"exit_external_id"`
+		ExitInboundID  int64  `json:"exit_inbound_id"`
 		ExitTag        string `json:"exit_tag"`
 		Weight         int    `json:"weight"`
 		Priority       int    `json:"priority"`
@@ -211,11 +214,33 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		priority = 1
 	}
 
+	// 选了"出口已有的入站"就校验一下：入站存在、属于该出口机、协议在本入口核心的支持名单里
+	// （实测 xray 没有 hysteria2 出站，所以 hy2 出口只能配给 sing-box 入口）。
+	if req.ExitInboundID > 0 && req.ExitServerID > 0 {
+		exitIb, ierr := h.inboundRepo.GetByID(ctx, req.ExitInboundID)
+		if ierr != nil || exitIb == nil || exitIb.ServerID != req.ExitServerID {
+			response.BadRequest(c, "EXIT_INBOUND_NOT_FOUND", "exit inbound not found on this exit server")
+			return
+		}
+		entryIb, _ := h.inboundRepo.GetByID(ctx, req.EntryInboundID)
+		entryCore := ""
+		if entryIb != nil {
+			entryCore = entryIb.CoreType
+		}
+		if !agent.ChainSupportedProtocol(entryCore, exitIb.Protocol) {
+			response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+				"exit inbound protocol %q is not chain-capable for entry core %q (supported: %s)",
+				exitIb.Protocol, entryCore, strings.Join(agent.ChainSupportedProtocols(entryCore), "/")))
+			return
+		}
+	}
+
 	link := &entity.ChainLink{
 		EntryServerID:  req.EntryServerID,
 		EntryInboundID: req.EntryInboundID,
 		ExitServerID:   req.ExitServerID,
 		ExitExternalID: req.ExitExternalID,
+		ExitInboundID:  req.ExitInboundID,
 		ExitTag:        req.ExitTag,
 		Weight:         weight,
 		Priority:       priority,
@@ -248,11 +273,12 @@ func (h *Handler) UpdateLink(c *gin.Context) {
 	}
 
 	var req struct {
-		ExitTag   *string `json:"exit_tag"`
-		Weight    *int    `json:"weight"`
-		Priority  *int    `json:"priority"`
-		Enabled   *bool   `json:"enabled"`
-		SortOrder *int    `json:"sort_order"`
+		ExitTag       *string `json:"exit_tag"`
+		Weight        *int    `json:"weight"`
+		Priority      *int    `json:"priority"`
+		Enabled       *bool   `json:"enabled"`
+		SortOrder     *int    `json:"sort_order"`
+		ExitInboundID *int64  `json:"exit_inbound_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
@@ -273,6 +299,27 @@ func (h *Handler) UpdateLink(c *gin.Context) {
 	}
 	if req.SortOrder != nil {
 		link.SortOrder = *req.SortOrder
+	}
+	if req.ExitInboundID != nil {
+		if *req.ExitInboundID > 0 && link.ExitServerID > 0 {
+			exitIb, ierr := h.inboundRepo.GetByID(ctx, *req.ExitInboundID)
+			if ierr != nil || exitIb == nil || exitIb.ServerID != link.ExitServerID {
+				response.BadRequest(c, "EXIT_INBOUND_NOT_FOUND", "exit inbound not found on this exit server")
+				return
+			}
+			entryIb, _ := h.inboundRepo.GetByID(ctx, link.EntryInboundID)
+			entryCore := ""
+			if entryIb != nil {
+				entryCore = entryIb.CoreType
+			}
+			if !agent.ChainSupportedProtocol(entryCore, exitIb.Protocol) {
+				response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+					"exit inbound protocol %q is not chain-capable for entry core %q",
+					exitIb.Protocol, entryCore))
+				return
+			}
+		}
+		link.ExitInboundID = *req.ExitInboundID
 	}
 
 	if err := h.linkRepo.Update(ctx, link); err != nil {
@@ -505,11 +552,11 @@ func (h *Handler) CreateExternalServer(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req struct {
 		ExternalNodeID int64  `json:"external_node_id" binding:"required"`
-		Name          string `json:"name"`
-		Region        string `json:"region"`
-		RegionLabel   string `json:"region_label"`
-		Enabled       *bool  `json:"enabled"`
-		SortOrder     int    `json:"sort_order"`
+		Name           string `json:"name"`
+		Region         string `json:"region"`
+		RegionLabel    string `json:"region_label"`
+		Enabled        *bool  `json:"enabled"`
+		SortOrder      int    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
@@ -595,11 +642,11 @@ func (h *Handler) GetTopology(c *gin.Context) {
 
 	// Build node list
 	type topoNode struct {
-		ID         int64  `json:"id"`
-		Name       string `json:"name"`
-		Type       string `json:"type"` // "server" or "external"
-		Role       string `json:"role"` // "entry", "exit", "entry+exit", "external_entry"
-		RelayOnly  bool   `json:"relay_only"`
+		ID        int64  `json:"id"`
+		Name      string `json:"name"`
+		Type      string `json:"type"` // "server" or "external"
+		Role      string `json:"role"` // "entry", "exit", "entry+exit", "external_entry"
+		RelayOnly bool   `json:"relay_only"`
 	}
 
 	exitCfgMap := make(map[int64]*entity.ChainExitConfig)
@@ -664,8 +711,8 @@ func (h *Handler) GetTopology(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"nodes": nodes,
-		"links": links,
+		"nodes":        nodes,
+		"links":        links,
 		"exit_configs": exitConfigs,
 	})
 }
@@ -674,11 +721,15 @@ func (h *Handler) GetTopology(c *gin.Context) {
 
 // ExitTarget describes a single chosen exit in the create-chain-proxy wizard.
 type ExitTarget struct {
-	IsExternal bool   `json:"is_external"`
-	ID         int64  `json:"id"` // cluster server_id (IsExternal=false) or external node server id (IsExternal=true)
-	Priority   int    `json:"priority"`
-	Weight     int    `json:"weight"`
-	SortOrder  int    `json:"sort_order"`
+	IsExternal bool  `json:"is_external"`
+	ID         int64 `json:"id"` // cluster server_id (IsExternal=false) or external node server id (IsExternal=true)
+	Priority   int   `json:"priority"`
+	Weight     int   `json:"weight"`
+	SortOrder  int   `json:"sort_order"`
+	// ExitInboundID：该出口节点上**已有的入站**（推荐用法）。
+	// >0 时链式这边不创建任何入站，直接把入口的流量交给这个入站；
+	// 不给则退回旧模式（需要该节点配好 chain_exit_configs，由面板自动生成 relay-in 入站）。
+	ExitInboundID int64 `json:"exit_inbound_id"`
 }
 
 // CreateChainProxy handles the create-chain-proxy wizard flow (§5.5):
@@ -721,6 +772,27 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 				response.BadRequest(c, "EXIT_EXT_NOT_FOUND", fmt.Sprintf("external exit %d not found or disabled", ex.ID))
 				return
 			}
+		} else if ex.ExitInboundID > 0 {
+			// 新路径（推荐）：出口用**该节点上已有的入站** —— 链式不创建入站，也不需要 chain_exit_config。
+			// 只校验：入站存在、属于这台出口机、协议在本入口核心的链式支持名单里
+			// （实测：xray 没有 hysteria2 出站 → `unknown config id: hysteria2`，所以 hy2 出口
+			//  只能给 sing-box 入口用）。
+			exitIb, ierr := h.inboundRepo.GetByID(ctx, ex.ExitInboundID)
+			if ierr != nil || exitIb == nil {
+				response.BadRequest(c, "EXIT_INBOUND_NOT_FOUND", fmt.Sprintf("exit inbound %d not found", ex.ExitInboundID))
+				return
+			}
+			if exitIb.ServerID != ex.ID {
+				response.BadRequest(c, "EXIT_INBOUND_MISMATCH", fmt.Sprintf("exit inbound %d does not belong to server %d", ex.ExitInboundID, ex.ID))
+				return
+			}
+			if !agent.ChainSupportedProtocol(inbound.CoreType, exitIb.Protocol) {
+				response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+					"exit inbound %d protocol %q is not chain-capable for entry core %q (supported: %s)",
+					ex.ExitInboundID, exitIb.Protocol, inbound.CoreType,
+					strings.Join(agent.ChainSupportedProtocols(inbound.CoreType), "/")))
+				return
+			}
 		} else {
 			cfg, cerr := h.exitCfgRepo.GetByServerID(ctx, ex.ID)
 			if cerr != nil || cfg == nil || !cfg.Enabled || cfg.RelayPort == 0 {
@@ -756,6 +828,7 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 			link.ExitExternalID = ex.ID
 		} else {
 			link.ExitServerID = ex.ID
+			link.ExitInboundID = ex.ExitInboundID
 		}
 		if err := h.linkRepo.Create(ctx, link); err != nil {
 			response.InternalError(c, "CREATE_LINK_FAILED", err.Error())
@@ -785,11 +858,11 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"message":        "chain proxy created",
-		"strategy":       strategy,
+		"message":          "chain proxy created",
+		"strategy":         strategy,
 		"entry_server_id":  req.EntryServerID,
 		"entry_inbound_id": req.EntryInboundID,
-		"exit_count":     len(req.Exits),
+		"exit_count":       len(req.Exits),
 	})
 }
 

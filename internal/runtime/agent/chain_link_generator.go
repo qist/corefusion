@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
@@ -20,10 +21,78 @@ import (
 // - Any server with chain_exit_configs is an "exit" (it has a relay-in inbound).
 // - A server can be both entry and exit simultaneously.
 type ChainLinkGenerator struct {
-	linkRepo     *repository.ChainLinkRepository
-	exitCfgRepo  *repository.ChainExitConfigRepository
-	serverRepo   *repository.NodeServerRepository
-	extNodeRepo  *repository.ExternalNodeRepository
+	linkRepo    *repository.ChainLinkRepository
+	exitCfgRepo *repository.ChainExitConfigRepository
+	serverRepo  *repository.NodeServerRepository
+	extNodeRepo *repository.ExternalNodeRepository
+	// inboundRepo：用于"链式出口 = 出口节点已有的入站"这条路径（读取该入站的真实
+	// 协议/端口/传输/安全层/凭据，构造入口侧出站）。由 router 注入，可为 nil（老路径不受影响）。
+	inboundRepo *repository.InboundConfigRepository
+}
+
+// SetInboundRepo 注入入站配置仓库（链式出口支持"选现有入站"必需）。
+func (g *ChainLinkGenerator) SetInboundRepo(repo *repository.InboundConfigRepository) {
+	g.inboundRepo = repo
+}
+
+// —— 链式出口的**协议白名单（按入口核心分开）** ——
+//
+// 实测依据（`xray run -test` / `sing-box check`）：
+//   - xray **没有** hysteria2 出站 → `unknown config id: hysteria2` ✗
+//   - sing-box 支持 hysteria2 出站 ✓，但**必须带 tls**（缺了 `FATAL TLS required`），
+//     配 reality 时还必须带 uTLS（缺了 `FATAL uTLS is required by reality client`）
+//
+// 所以"出口入站能用什么协议"由**入口核心**决定：入口是 xray 就不能选 hy2 出口。
+// 其余协议（tuic / anytls / snell / naive / socks / http / wireguard …）两边都还没实现，一律不允许
+// （选了会生成核心不认的出站 → 节点起不来）。
+var chainCoreProtocols = map[string][]string{
+	"xray":    {"vless", "vmess", "trojan", "shadowsocks"},
+	"singbox": {"vless", "vmess", "trojan", "shadowsocks", "hysteria2"},
+}
+
+func normalizeChainCore(coreType string) string {
+	c := strings.ToLower(strings.TrimSpace(coreType))
+	if c == "sing-box" || c == "sing_box" {
+		c = "singbox"
+	}
+	if c == "" {
+		c = "xray"
+	}
+	return c
+}
+
+// ChainSupportedProtocols 返回**指定入口核心**能作为链式出口的协议列表。
+func ChainSupportedProtocols(coreType string) []string {
+	list, ok := chainCoreProtocols[normalizeChainCore(coreType)]
+	if !ok {
+		return []string{}
+	}
+	return append([]string(nil), list...)
+}
+
+// ChainSupportedProtocol 判断某协议能否作为**该入口核心**的链式出口。
+func ChainSupportedProtocol(coreType, protocol string) bool {
+	for _, p := range ChainSupportedProtocols(coreType) {
+		if strings.EqualFold(p, protocol) {
+			return true
+		}
+	}
+	return false
+}
+
+// ChainAllSupportedProtocols 返回所有核心的并集（"出口侧能提供哪些协议"，供前端提示）。
+func ChainAllSupportedProtocols() []string {
+	seen := map[string]bool{}
+	var all []string
+	for _, core := range []string{"xray", "singbox"} {
+		for _, p := range chainCoreProtocols[core] {
+			if !seen[p] {
+				seen[p] = true
+				all = append(all, p)
+			}
+		}
+	}
+	return all
 }
 
 // NewChainLinkGenerator creates a new ChainLinkGenerator.
@@ -265,6 +334,270 @@ func (g *ChainLinkGenerator) HasChainLinks(ctx context.Context, serverID int64) 
 	return err == nil && len(links) > 0
 }
 
+// buildOutboundFromExitInbound 用**出口节点上已有的入站**构造入口侧的链式出站。
+//
+// 与 buildServerOutbound 的旧路径（读 chain_exit_configs 自动建的 relay-in）不同，
+// 这条路径**不改动出口节点任何配置**：端口/协议/传输/安全层/凭据全部从该入站自身读取。
+// 支持面板自建的两种入站形状：
+//
+//	xray    : {protocol, port, settings{clients[], method}, streamSettings{network, security, tlsSettings, realitySettings}}
+//	sing-box: {type, listen_port, users[]/{method,password}, transport{type}, tls{enabled, server_name, reality{...}}}
+//
+// 返回 ok=false 表示该入站的协议不在链式支持名单里（调用方应报错提示，而不是生成坏出站）。
+func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, link entity.ChainLink, entry, exitServer *entity.NodeServer) (ChainEntryOutbound, bool, error) {
+	if g.inboundRepo == nil {
+		return ChainEntryOutbound{}, false, fmt.Errorf("inbound repository not wired")
+	}
+	ib, err := g.inboundRepo.GetByID(ctx, link.ExitInboundID)
+	if err != nil || ib == nil {
+		return ChainEntryOutbound{}, false, fmt.Errorf("exit inbound %d not found: %v", link.ExitInboundID, err)
+	}
+	if ib.ServerID != exitServer.ID {
+		return ChainEntryOutbound{}, false, fmt.Errorf("exit inbound %d does not belong to server %d", ib.ID, exitServer.ID)
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(ib.ConfigJSON), &cfg); err != nil {
+		return ChainEntryOutbound{}, false, fmt.Errorf("parse exit inbound config: %w", err)
+	}
+
+	protocol := strings.ToLower(strings.TrimSpace(ib.Protocol))
+	if protocol == "" {
+		protocol = firstString(cfg, "protocol", "type")
+	}
+	// 入口核心：取**入口入站自己**的 core_type —— 它决定入口侧出站必须是 xray 还是 sing-box 形状
+	// （NodeServer 实体上没有 core_type 字段；同一台机器可以同时跑两个核心的入站）。
+	entryCore := "xray"
+	if eib, eerr := g.inboundRepo.GetByID(ctx, link.EntryInboundID); eerr == nil && eib != nil && eib.CoreType != "" {
+		entryCore = eib.CoreType
+	}
+	// 按**入口核心**判断（hysteria2 只有 sing-box 入口能用 —— xray 没有 hy2 出站，实测
+	// `xray run -test` 报 `unknown config id: hysteria2`）
+	if !ChainSupportedProtocol(entryCore, protocol) {
+		return ChainEntryOutbound{}, false, nil
+	}
+
+	// 端口：xray 用 port，sing-box 用 listen_port；再兜底 DB 列
+	port := int(firstNumber(cfg, "port", "listen_port"))
+	if port == 0 {
+		port = ib.Port
+	}
+	if port == 0 {
+		return ChainEntryOutbound{}, false, fmt.Errorf("exit inbound %d has no usable port", ib.ID)
+	}
+
+	// 传输 / 安全层（两种形状）
+	transport := "tcp"
+	security := "none"
+	if ss, ok := cfg["streamSettings"].(map[string]interface{}); ok { // xray
+		if v := firstString(ss, "network"); v != "" {
+			transport = v
+		}
+		if v := firstString(ss, "security"); v != "" {
+			security = v
+		}
+	} else if tr, ok := cfg["transport"].(map[string]interface{}); ok { // sing-box
+		if v := firstString(tr, "type"); v != "" {
+			transport = v
+		}
+		if tlsMap, ok := cfg["tls"].(map[string]interface{}); ok {
+			if rm, ok := tlsMap["reality"].(map[string]interface{}); ok {
+				if b, _ := rm["enabled"].(bool); b {
+					security = "reality"
+				}
+			}
+			if security == "none" {
+				if b, _ := tlsMap["enabled"].(bool); b {
+					security = "tls"
+				}
+			}
+		}
+	}
+
+	// 凭据：从该入站自己的用户里取第一条（vless/vmess→id，trojan/ss→password）
+	cred := ""
+	method := ""
+	if settings, ok := cfg["settings"].(map[string]interface{}); ok { // xray
+		if clients, ok := settings["clients"].([]interface{}); ok && len(clients) > 0 {
+			if c0, ok := clients[0].(map[string]interface{}); ok {
+				cred = firstString(c0, "id", "password")
+			}
+		}
+		method = firstString(settings, "method")
+	}
+	if cred == "" { // sing-box
+		if users, ok := cfg["users"].([]interface{}); ok && len(users) > 0 {
+			if u0, ok := users[0].(map[string]interface{}); ok {
+				cred = firstString(u0, "uuid", "password")
+			}
+		}
+		if method == "" {
+			method = firstString(cfg, "method")
+		}
+	}
+	if cred == "" {
+		return ChainEntryOutbound{}, false, fmt.Errorf("exit inbound %d has no usable credential (add at least one user)", ib.ID)
+	}
+
+	// 出站的 streamSettings：传输 + 安全层 + TLS/REALITY 细节（老路径只写 network/security，
+	// 用真实入站时必须把 TLS 参数带过去，否则 reality/tls 出口会连不上）
+	streamSettings := map[string]interface{}{
+		"network":  transport,
+		"security": security,
+	}
+	if security == "tls" || security == "reality" {
+		applyExitInboundTLS(streamSettings, cfg, security)
+	}
+
+	// hysteria2：中间形状直接带上 sing-box 需要的东西（obfs），tls 由 streamSettings 走通用逻辑，
+	// 最终由 coreconfig.convertChainOutboundsToSingbox 转成 sing-box 的 hysteria2 出站。
+	if strings.EqualFold(protocol, "hysteria2") {
+		srv := map[string]interface{}{
+			"address":  resolveExitAddress(entry, exitServer),
+			"port":     port,
+			"password": cred,
+		}
+		if obfs, ok := cfg["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
+			srv["obfs"] = obfs
+		}
+		hy2Tag := link.ExitTag
+		if hy2Tag == "" {
+			hy2Tag = fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
+		}
+		return ChainEntryOutbound{
+			Tag:            hy2Tag,
+			Protocol:       protocol,
+			Settings:       map[string]interface{}{"servers": []map[string]interface{}{srv}},
+			StreamSettings: streamSettings,
+		}, true, nil
+	}
+
+	tag := link.ExitTag
+	if tag == "" {
+		tag = fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
+	}
+
+	return ChainEntryOutbound{
+		Tag:            tag,
+		Protocol:       protocol,
+		Settings:       buildLinkOutboundSettingsWithCred(protocol, resolveExitAddress(entry, exitServer), port, cred, method),
+		StreamSettings: streamSettings,
+	}, true, nil
+}
+
+// applyExitInboundTLS 把出口入站的 TLS/REALITY 参数搬到入口侧出站（两种形状都支持）。
+func applyExitInboundTLS(streamSettings map[string]interface{}, cfg map[string]interface{}, security string) {
+	if ss, ok := cfg["streamSettings"].(map[string]interface{}); ok { // xray
+		if security == "reality" {
+			if r, ok := ss["realitySettings"].(map[string]interface{}); ok {
+				rs := map[string]interface{}{}
+				if v := firstString(r, "serverName", "serverNames"); v != "" {
+					rs["serverName"] = v
+				}
+				if v := firstString(r, "publicKey", "password"); v != "" {
+					rs["publicKey"] = v
+				}
+				if v := firstString(r, "shortId"); v != "" {
+					rs["shortId"] = v
+				}
+				if v := firstString(r, "fingerprint"); v != "" {
+					rs["fingerprint"] = v
+				}
+				if settings, ok := r["settings"].([]interface{}); ok && len(settings) > 0 {
+					if s0, ok := settings[0].(map[string]interface{}); ok {
+						if v := firstString(s0, "password"); v != "" {
+							rs["publicKey"] = v
+						}
+						if v := firstString(s0, "fingerprint"); v != "" {
+							rs["fingerprint"] = v
+						}
+					}
+				}
+				streamSettings["realitySettings"] = rs
+				return
+			}
+		}
+		if ts, ok := ss["tlsSettings"].(map[string]interface{}); ok {
+			tl := map[string]interface{}{}
+			if v := firstString(ts, "serverName"); v != "" {
+				tl["serverName"] = v
+			}
+			if fp := firstString(ts, "fingerprint"); fp != "" {
+				tl["fingerprint"] = fp
+			}
+			streamSettings["tlsSettings"] = tl
+			return
+		}
+	}
+	// sing-box 形状
+	if tlsMap, ok := cfg["tls"].(map[string]interface{}); ok {
+		tl := map[string]interface{}{}
+		sni := firstString(tlsMap, "server_name")
+		if sni == "" {
+			if rm, ok := tlsMap["reality"].(map[string]interface{}); ok {
+				if hs, ok := rm["handshake"].(map[string]interface{}); ok {
+					sni = firstString(hs, "server")
+				}
+			}
+		}
+		if sni != "" {
+			tl["serverName"] = sni
+		}
+		if security == "reality" {
+			if rm, ok := tlsMap["reality"].(map[string]interface{}); ok {
+				rs := map[string]interface{}{}
+				if v := firstString(rm, "public_key"); v != "" {
+					rs["publicKey"] = v
+				}
+				if v := firstString(rm, "short_id"); v != "" {
+					rs["shortId"] = v
+				}
+				if v := firstString(tlsMap, "utls"); v == "" {
+					// utls 是对象；这里只关心 fingerprint
+				}
+				streamSettings["realitySettings"] = rs
+			}
+		}
+		streamSettings["tlsSettings"] = tl
+	}
+}
+
+// firstString 从 map 里取第一个非空字符串字段。
+func firstString(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		switch v := m[k].(type) {
+		case string:
+			if v != "" {
+				return v
+			}
+		case []interface{}:
+			if len(v) > 0 {
+				if s, ok := v[0].(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// firstNumber 从 map 里取第一个非零数字字段（JSON 解出来是 float64）。
+func firstNumber(m map[string]interface{}, keys ...string) float64 {
+	for _, k := range keys {
+		switch v := m[k].(type) {
+		case float64:
+			if v != 0 {
+				return v
+			}
+		case int:
+			if v != 0 {
+				return float64(v)
+			}
+		}
+	}
+	return 0
+}
+
 // buildServerOutbound builds an outbound pointing to a cluster exit server.
 // entry is the entry (source) server, used to pick the optimal exit address
 // (internal IP when both nodes share a private network, otherwise public IP).
@@ -272,6 +605,21 @@ func (g *ChainLinkGenerator) buildServerOutbound(ctx context.Context, link entit
 	exitServer, err := g.serverRepo.GetByID(ctx, link.ExitServerID)
 	if err != nil {
 		return ChainEntryOutbound{}, fmt.Errorf("exit server %d not found: %w", link.ExitServerID, err)
+	}
+
+	// 新路径（推荐）：链式出口 = 出口节点上**已有的入站**，链式这边不创建任何入站。
+	if link.UseExitInbound() {
+		ob, ok, oerr := g.buildOutboundFromExitInbound(ctx, link, entry, exitServer)
+		if oerr != nil {
+			return ChainEntryOutbound{}, oerr
+		}
+		if !ok {
+			return ChainEntryOutbound{}, fmt.Errorf(
+				"exit inbound %d protocol is not chain-capable for this entry core "+
+					"(xray supports vless/vmess/trojan/shadowsocks; hysteria2 仅 sing-box 入口可用)",
+				link.ExitInboundID)
+		}
+		return ob, nil
 	}
 
 	protocol := "vless"
@@ -315,6 +663,7 @@ func (g *ChainLinkGenerator) buildServerOutbound(ctx context.Context, link entit
 //   - if both entry and exit are in the same private network (same region and
 //     the exit exposes an InternalIP), use InternalIP to save public bandwidth;
 //   - otherwise use PublicIP, falling back to Hostname.
+//
 // External nodes carry their own address (from ProxyJSON) and do not use this.
 func resolveExitAddress(entry, exit *entity.NodeServer) string {
 	if exit.InternalIP != "" && samePrivateNetwork(entry, exit) {
@@ -380,15 +729,23 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 	users := extractUsersFromProxyMap(pm, protocol)
 
 	return ChainEntryOutbound{
-		Tag:      tag,
-		Protocol: protocol,
-		Settings: buildExternalOutboundSettings(protocol, host, port, users),
+		Tag:            tag,
+		Protocol:       protocol,
+		Settings:       buildExternalOutboundSettings(protocol, host, port, users),
 		StreamSettings: buildStreamFromProxyMap(pm),
 	}, nil
 }
 
 // buildLinkOutboundSettings builds xray outbound settings for a cluster exit.
+// buildLinkOutboundSettings 兼容旧调用：把 relayUUID 当凭据。
 func buildLinkOutboundSettings(protocol, address string, port int, relayUUID string) map[string]interface{} {
+	return buildLinkOutboundSettingsWithCred(protocol, address, port, relayUUID, "")
+}
+
+// buildLinkOutboundSettingsWithCred 与上面相同，但可指定 shadowsocks 的 method
+// （用"出口已有入站"时必须用它自己的 method —— 旧实现写死 chacha20-ietf-poly1305，
+// 遇到 2022-blake3-* 之类会构造出连不上的出站）。
+func buildLinkOutboundSettingsWithCred(protocol, address string, port int, cred, method string) map[string]interface{} {
 	switch protocol {
 	case "vless", "vmess":
 		return map[string]interface{}{
@@ -398,7 +755,7 @@ func buildLinkOutboundSettings(protocol, address string, port int, relayUUID str
 					"port":    port,
 					"users": []map[string]interface{}{
 						{
-							"id":         relayUUID,
+							"id":         cred,
 							"email":      "chain-relay",
 							"encryption": "none",
 						},
@@ -412,18 +769,21 @@ func buildLinkOutboundSettings(protocol, address string, port int, relayUUID str
 				{
 					"address":  address,
 					"port":     port,
-					"password": relayUUID,
+					"password": cred,
 				},
 			},
 		}
 	case "shadowsocks":
+		if method == "" {
+			method = "chacha20-ietf-poly1305"
+		}
 		return map[string]interface{}{
 			"servers": []map[string]interface{}{
 				{
 					"address":  address,
 					"port":     port,
-					"method":   "chacha20-ietf-poly1305",
-					"password": relayUUID,
+					"method":   method,
+					"password": cred,
 				},
 			},
 		}
@@ -434,7 +794,7 @@ func buildLinkOutboundSettings(protocol, address string, port int, relayUUID str
 					"address": address,
 					"port":    port,
 					"users": []map[string]interface{}{
-						{"id": relayUUID, "email": "chain-relay"},
+						{"id": cred, "email": "chain-relay"},
 					},
 				},
 			},

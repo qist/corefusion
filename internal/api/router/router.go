@@ -537,6 +537,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Initialize services
 	authSvc := authService.NewService(userRepo, jwtSecret)
+	// 让鉴权中间件能校验令牌版本（登出即吊销旧 token，M8）
+	middleware.SetTokenVersionProvider(userRepo)
 	userSvc := userService.NewService(userRepo)
 	nodeSvc := nodeService.NewService(nodeRepo, sharedNodeMgr, subRepo, clientRepo, planTmplRepo)
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
@@ -1213,7 +1215,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		{
 			authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
 			authGroup.POST("/refresh", authH.Refresh)
-			authGroup.POST("/logout", authH.Logout)
 		}
 
 		// Auth (authenticated): operates on the calling user.
@@ -1222,6 +1223,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		{
 			authSelfGroup.GET("/me", authH.Me)
 			authSelfGroup.POST("/change-password", authH.ChangePassword)
+			// 登出必须**已认证** ✗：它要按"当前用户"吊销令牌（bump token_version）。
+			// 原先注册在公开的 authGroup 里 → handler 拿不到 user_id → 吊销被静默跳过
+			// （实测：登出后旧 token 仍然 200，且库里版本没变）。
+			authSelfGroup.POST("/logout", authH.Logout)
 		}
 
 		// Protected routes

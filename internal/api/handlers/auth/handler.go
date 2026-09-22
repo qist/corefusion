@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/middleware"
@@ -92,8 +94,18 @@ func (h *Handler) Refresh(c *gin.Context) {
 }
 
 // Logout handles POST /api/v1/auth/logout.
+//
+// 会把该账号的令牌版本 +1 → **此前签发的所有 token（含 refresh）立即失效**。
+// 也就是说登出等于"登出所有设备"；这是"token 被窃取后能作废"的最小实现（审计 v5 M8）。
 func (h *Handler) Logout(c *gin.Context) {
-	// TODO: implement token blacklisting
+	userID := c.GetInt64("user_id")
+	if userID > 0 {
+		if err := h.authSvc.Logout(c.Request.Context(), userID); err != nil {
+			log.Printf("[auth] logout: revoke tokens for user %d failed: %v", userID, err)
+			response.InternalError(c, "LOGOUT_FAILED", "failed to revoke tokens")
+			return
+		}
+	}
 	response.OK(c, gin.H{"message": "logged out"})
 }
 

@@ -45,12 +45,12 @@ func (s *Service) Login(ctx context.Context, username, passwordStr string) (acce
 		return "", "", nil, ErrInvalidCredentials
 	}
 
-	accessToken, err = s.jwt.GenerateAccessToken(user.ID, user.Username, user.Role)
+	accessToken, err = s.jwt.GenerateAccessTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
 	if err != nil {
 		return "", "", nil, err
 	}
 
-	refreshToken, err = s.jwt.GenerateRefreshToken(user.ID, user.Username, user.Role)
+	refreshToken, err = s.jwt.GenerateRefreshTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -74,17 +74,37 @@ func (s *Service) RefreshToken(ctx context.Context, refreshTokenStr string) (acc
 		return "", "", ErrUserDisabled
 	}
 
-	accessToken, err = s.jwt.GenerateAccessToken(user.ID, user.Username, user.Role)
+	// 版本必须一致 ✗：否则"登出后拿旧 refresh token 继续续签"这条通道仍然通着。
+	if user.TokenVersion != claims.TokenVersion {
+		return "", "", ErrTokenRevoked
+	}
+
+	accessToken, err = s.jwt.GenerateAccessTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
 	if err != nil {
 		return "", "", err
 	}
 
-	refreshToken, err = s.jwt.GenerateRefreshToken(user.ID, user.Username, user.Role)
+	refreshToken, err = s.jwt.GenerateRefreshTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
 	if err != nil {
 		return "", "", err
 	}
 
 	return accessToken, refreshToken, nil
+}
+
+// ErrTokenRevoked 表示该 token 已被吊销（登出/踢下线后旧 token 的表现）。
+var ErrTokenRevoked = errors.New("token revoked")
+
+// Logout 吊销该用户**所有**已签发的 token（把令牌版本 +1）。
+//
+// 语义说明：JWT 无状态，"只登出当前这一台设备"需要按 token 记录 jti（额外存储）；
+// 这里选择"登出即吊销该账号全部会话" —— 这是能真正解决"token 被窃取后无法作废"的最小方案，
+// 也正好满足"把人踢下线"的需求。前端丢弃本地 token 的行为不变。
+func (s *Service) Logout(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return ErrInvalidCredentials
+	}
+	return s.userRepo.BumpTokenVersion(ctx, userID)
 }
 
 // ValidateToken validates an access token and returns the claims.

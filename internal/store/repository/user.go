@@ -62,3 +62,24 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 func (r *UserRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.User{}, id).Error
 }
+
+// GetTokenVersion 读取用户的当前令牌版本（供鉴权中间件校验）。
+func (r *UserRepository) GetTokenVersion(ctx context.Context, userID int64) (int, error) {
+	var v int
+	err := r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", userID).
+		Select("token_version").
+		Scan(&v).Error
+	if err != nil {
+		return 0, err
+	}
+	return v, nil
+}
+
+// BumpTokenVersion 把用户的令牌版本 +1 —— 这是"立即吊销该用户所有已签发 token"的手段
+// （登出 / 踢下线时调用）。用 SQL 自增避免并发覆盖。
+func (r *UserRepository) BumpTokenVersion(ctx context.Context, userID int64) error {
+	return r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", userID).
+		UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+}

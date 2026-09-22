@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,19 @@ import (
 )
 
 var jwtHandler *jwt.JWT
+
+// TokenVersionProvider 提供"用户当前的令牌版本"，用于让**登出/踢下线立即生效**
+// （JWT 本身无状态，只靠过期时间的话，被窃取的 token 在有效期内一直可用 —— 审计 v5 M8）。
+type TokenVersionProvider interface {
+	GetTokenVersion(ctx context.Context, userID int64) (int, error)
+}
+
+var tokenVersionProvider TokenVersionProvider
+
+// SetTokenVersionProvider 注入令牌版本来源（router 装配时调用）。
+func SetTokenVersionProvider(p TokenVersionProvider) {
+	tokenVersionProvider = p
+}
 
 // SetJWT sets the JWT handler for the auth middleware.
 func SetJWT(j *jwt.JWT) {
@@ -68,6 +82,23 @@ func AuthRequired() gin.HandlerFunc {
 				"this token is not allowed to access the admin API")
 			c.Abort()
 			return
+		}
+
+		// 令牌版本校验：登出/踢下线后版本 +1，旧 token 立刻失效 ✗ 否则"登出"只是前端丢 token，
+		// 被窃取的 token 在有效期内（access 24h / refresh 7d）仍然可用（审计 v5 M8）。
+		if tokenVersionProvider != nil {
+			tv, terr := tokenVersionProvider.GetTokenVersion(c.Request.Context(), claims.UserID)
+			if terr != nil {
+				response.Unauthorized(c, "INVALID_TOKEN", "token subject not found")
+				c.Abort()
+				return
+			}
+			if tv != claims.TokenVersion {
+				response.Unauthorized(c, "TOKEN_REVOKED",
+					"token has been revoked; please sign in again")
+				c.Abort()
+				return
+			}
 		}
 
 		c.Set("user_id", claims.UserID)

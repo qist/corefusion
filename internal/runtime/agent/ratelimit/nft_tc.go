@@ -19,25 +19,34 @@ import (
 //   - nft 在 prerouting 阶段根据 source IP 打 mark
 type NftTcBackend struct {
 	mu          sync.Mutex
-	iface       string           // 主网卡（如 eth0）
-	ifbDevice   string           // IFB 设备名（如 ifb0）
-	initialized bool             // 是否已初始化
-	available   Availability     // 可用性缓存
+	iface       string       // 主网卡（如 eth0）
+	ifbDevice   string       // IFB 设备名（如 ifb0）
+	initialized bool         // 是否已初始化
+	available   Availability // 可用性缓存
+
+	// ifbSrcPrefs 记录"客户端 IP → ifb 上按源 IP 分流的 u32 filter pref"。
+	// 上传限速不能用 fw mark（见 addIfbSrcFilter 注释），只能按源 IP 分流；删除时要按 pref
+	// 精确删掉，所以在这里记账（仅内存；重启后 Init 会清空再由 restoreIPEntries 重建）。
+	ifbSrcPrefs map[string]uint32
+	nextIfbPref uint32
 }
 
 const (
 	nftTable        = "corefusion_ratelimit"
-	nftChain        = "prerouting"       // mark 链（priority mangle = -150）
-	nftConnChain    = "connlimit_chain"  // connlimit 链（priority -155，在 mark 链之前）
-	nftBlockChain   = "blocked_chain"    // 设备阻断链（priority -160，在 connlimit 链之前）
-	defaultClassID  = 9999  // 默认 class（无限速）
-	defaultRateMbps = 10000 // 默认速率 10Gbps（实际不限）
+	nftChain        = "prerouting"      // 上行 mark 链（priority mangle = -150）
+	nftPostChain    = "postrouting"     // 下行 mark 链：按 daddr 给"发给客户端的包"打标
+	nftConnChain    = "connlimit_chain" // connlimit 链（priority -155，在 mark 链之前）
+	nftBlockChain   = "blocked_chain"   // 设备阻断链（priority -160，在 connlimit 链之前）
+	ifbSrcPrefBase  = 100               // ifb 上 u32 源 IP filter 的 pref 起点（避开 fw filter 的 49152）
+	defaultClassID  = 9999              // 默认 class（无限速）
+	defaultRateMbps = 10000             // 默认速率 10Gbps（实际不限）
 )
 
 // NewNftTcBackend 创建一个新的 nft+tc 限速后端。
 func NewNftTcBackend() *NftTcBackend {
 	return &NftTcBackend{
-		ifbDevice: "ifb0",
+		ifbDevice:   "ifb0",
+		ifbSrcPrefs: map[string]uint32{},
 		available: Availability{
 			NftAvailable: isCommandAvailable("nft"),
 			TcAvailable:  isCommandAvailable("tc"),
@@ -85,6 +94,14 @@ func (b *NftTcBackend) Init(ctx context.Context, iface string) error {
 		}
 	}
 
+	// 清掉上一次运行遗留的 tc filter：ifb 源 IP filter 的 pref 只存在内存（b.ifbSrcPrefs），
+	// 重启后无从对应，只能整组删除；随后 restoreIPEntries 会按当前 IP 重新 ApplyRule。
+	runCmd("tc", "filter", "del", "dev", b.iface, "parent", "1:")
+	if b.available.IfbAvailable {
+		runCmd("tc", "filter", "del", "dev", b.ifbDevice, "parent", "2:")
+	}
+	b.ifbSrcPrefs = map[string]uint32{}
+
 	b.initialized = true
 	log.Printf("[NftTcBackend] initialized on iface=%s ifb=%s", b.iface, b.ifbDevice)
 	return nil
@@ -126,6 +143,14 @@ func (b *NftTcBackend) ApplyRule(ctx context.Context, ip string, mark uint32, ra
 		if err := b.addTcClass(b.ifbDevice, 2, mark, rate.MaxUpMbps); err != nil {
 			log.Printf("[NftTcBackend] add upload class failed: %v", err)
 		}
+		// ⚠ 上传限速**必须按源 IP 分流**，不能只靠 fw mark：mark 是 nft prerouting 设的，
+		// 而 ingress 流量在 **tc ingress** 阶段就被 mirred 重定向到 ifb 了（早于 prerouting）→
+		// 到 ifb 时 mark 还是 0，fw filter 永远匹配不上（实测：只有 fw filter 时 ifb 限速类
+		// Sent 0 bytes、流量全进默认类；换成 u32 源 IP 后上传立刻被限到设定值）。
+		if err := b.addIfbSrcFilter(ip, mark); err != nil {
+			log.Printf("[NftTcBackend] add upload src filter for %s failed: %v", ip, err)
+		}
+		// 保留 fw filter 作兜底（某些内核路径下 mark 可能随 skb 带过去），不影响结果。
 		if err := b.addTcFilter(b.ifbDevice, 2, mark); err != nil {
 			log.Printf("[NftTcBackend] add upload filter failed: %v", err)
 		}
@@ -178,8 +203,9 @@ func (b *NftTcBackend) RemoveRule(ctx context.Context, ip string, mark uint32) e
 	b.deleteTcClass(b.iface, 1, mark)
 	b.deleteTcFilter(b.iface, 1, mark)
 
-	// 3. 删除 ifb 上传 class + filter
+	// 3. 删除 ifb 上传 class + filter（含按源 IP 的 u32 filter）
 	if b.available.IfbAvailable {
+		b.deleteIfbSrcFilter(ip)
 		b.deleteTcClass(b.ifbDevice, 2, mark)
 		b.deleteTcFilter(b.ifbDevice, 2, mark)
 	}
@@ -324,6 +350,14 @@ func (b *NftTcBackend) initNftTable() error {
 	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftConnChain, connChainDef); err != nil {
 		log.Printf("[NftTcBackend] nft connlimit chain create note: %v (may already exist)", err)
 	}
+	// 创建 postrouting 链：给**下行**方向打标。
+	// 客户端"下载"的报文源地址是**节点自身**（不是客户端），prerouting 里按 saddr 匹配不到 →
+	// 必须在 postrouting 按 daddr 再打一次标，eth0 egress 的 htb 才能分流。
+	// 实测：不加这条链，下载完全不受限（eth0 限速类 Sent 0 bytes）。
+	postChainDef := "{ type filter hook postrouting priority mangle ; policy accept ; }"
+	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftPostChain, postChainDef); err != nil {
+		log.Printf("[NftTcBackend] nft postrouting chain create note: %v (may already exist)", err)
+	}
 	// 创建 blocked 链：priority -160（在 connlimit 链之前执行，阻断的包直接丢弃）
 	blockChainDef := "{ type filter hook prerouting priority -160 ; policy accept ; }"
 	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftBlockChain, blockChainDef); err != nil {
@@ -334,13 +368,26 @@ func (b *NftTcBackend) initNftTable() error {
 
 func (b *NftTcBackend) addNftMarkRule(ip string, mark uint32) error {
 	markHex := fmt.Sprintf("0x%x", mark)
-	// ip saddr <ip> counter meta mark set <mark> accept
-	return runCmd("nft", "add", "rule", "inet", nftTable, nftChain,
-		"ip", "saddr", ip, "counter", "meta", "mark", "set", markHex, "accept")
+	// 幂等：先删掉该 IP 已有的 mark 规则再添加（否则重复 ApplyRule 会累积重复规则，
+	// 而 deleteNftRuleByIP 每次只删一条，删不干净）。
+	b.deleteNftMarkRule(ip)
+	// 上行方向（客户端 → 节点）：prerouting 按源地址打标（connlimit / blocked 链也依赖这个 mark）
+	if err := runCmd("nft", "add", "rule", "inet", nftTable, nftChain,
+		"ip", "saddr", ip, "counter", "meta", "mark", "set", markHex, "accept"); err != nil {
+		return err
+	}
+	// 下行方向（节点 → 客户端）：客户端下载的报文**源地址是节点自己**，prerouting 的 saddr
+	// 规则匹配不到 → 在 postrouting 按目的地址补一条，eth0 egress 的 htb 才限得住下载。
+	if err := runCmd("nft", "add", "rule", "inet", nftTable, nftPostChain,
+		"ip", "daddr", ip, "counter", "meta", "mark", "set", markHex, "accept"); err != nil {
+		log.Printf("[NftTcBackend] add postrouting mark rule for %s failed: %v", ip, err)
+	}
+	return nil
 }
 
 func (b *NftTcBackend) deleteNftMarkRule(ip string) {
 	b.deleteNftRuleByIP(nftChain, ip)
+	b.deleteNftRuleByIP(nftPostChain, ip)
 }
 
 // addNftConnLimitRule 在 connlimit 链中添加并发连接限制规则。
@@ -348,8 +395,8 @@ func (b *NftTcBackend) deleteNftMarkRule(ip string) {
 //
 //	nft add rule inet corefusion_ratelimit connlimit_chain \
 //	    ip saddr <ip> ct state new connlimit count <N> over counter drop
-//
 func (b *NftTcBackend) addNftConnLimitRule(ip string, connLimit int32) error {
+	b.deleteNftConnLimitRule(ip) // 幂等：避免重复规则累积
 	return runCmd("nft", "add", "rule", "inet", nftTable, nftConnChain,
 		"ip", "saddr", ip,
 		"ct", "state", "new",
@@ -365,8 +412,8 @@ func (b *NftTcBackend) deleteNftConnLimitRule(ip string) {
 //
 //	nft add rule inet corefusion_ratelimit blocked_chain \
 //	    ip saddr <ip> counter drop
-//
 func (b *NftTcBackend) addNftBlockRule(ip string) error {
+	b.deleteNftBlockRule(ip) // 幂等：避免重复规则累积
 	return runCmd("nft", "add", "rule", "inet", nftTable, nftBlockChain,
 		"ip", "saddr", ip, "counter", "drop")
 }
@@ -381,6 +428,8 @@ func (b *NftTcBackend) deleteNftRuleByIP(chain, ip string) {
 	if err != nil {
 		return
 	}
+	// 注意：要把**所有**匹配该 IP 的规则都删掉（历史实现只删第一条就 return，
+	// 重复规则会残留下来继续生效）。
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.Contains(line, ip) {
 			continue
@@ -391,7 +440,6 @@ func (b *NftTcBackend) deleteNftRuleByIP(chain, ip string) {
 		}
 		handleStr := strings.TrimSpace(line[handleIdx+7:])
 		runCmd("nft", "delete", "rule", "inet", nftTable, chain, "handle", handleStr)
-		return
 	}
 }
 
@@ -424,7 +472,10 @@ func (b *NftTcBackend) addTcClass(dev string, parentHandle uint32, classID uint3
 	rateStr := fmt.Sprintf("%dmbit", rateMbps)
 	ceilStr := rateStr // ceil = rate（不允许突发超过限速值）
 
-	return runCmd("tc", "class", "add", "dev", dev, "parent", parentStr,
+	// 用 replace 而不是 add：类已存在时 add 会报 `RTNETLINK answers: File exists` →
+	// 整个 ApplyRule 失败（实测：agent 重启后按持久化的 IP 恢复规则时 0/1 恢复成功；
+	// 生产上"给已有限速的订阅重新下发"同样会失败）。replace = 不存在则建、存在则改，幂等。
+	return runCmd("tc", "class", "replace", "dev", dev, "parent", parentStr,
 		"classid", classStr, "htb", "rate", rateStr, "ceil", ceilStr)
 }
 
@@ -453,8 +504,37 @@ func (b *NftTcBackend) addTcFilter(dev string, parentHandle uint32, mark uint32)
 	flowID := fmt.Sprintf("%d:%d", parentHandle, mark)
 	parentStr := fmt.Sprintf("%d:", parentHandle)
 
-	return runCmd("tc", "filter", "add", "dev", dev, "parent", parentStr,
+	// 同样用 replace：fw filter 的 handle 就是 mark，天然唯一 → 重复下发不会报 File exists。
+	return runCmd("tc", "filter", "replace", "dev", dev, "parent", parentStr,
 		"protocol", "ip", "handle", markHex, "fw", "flowid", flowID)
+}
+
+// addIfbSrcFilter 在 ifb 上按**源 IP** 把该客户端的上传流量分流到对应 class。
+//
+// 为什么不用 fw mark：mark 在 nft prerouting 阶段设置，而到达网卡的流量在 **tc ingress**
+// 阶段就被 mirred 重定向到 ifb 了（早于 netfilter prerouting）→ ifb 上的 fw filter 看到的
+// mark 永远是 0。所以只能 u32 直接匹配源 IP（实测唯一可行的做法）。
+func (b *NftTcBackend) addIfbSrcFilter(ip string, mark uint32) error {
+	pref, ok := b.ifbSrcPrefs[ip]
+	if !ok {
+		pref = ifbSrcPrefBase + b.nextIfbPref
+		b.nextIfbPref++
+		b.ifbSrcPrefs[ip] = pref
+	}
+	return runCmd("tc", "filter", "replace", "dev", b.ifbDevice, "parent", "2:",
+		"protocol", "ip", "pref", strconv.FormatUint(uint64(pref), 10),
+		"u32", "match", "ip", "src", ip+"/32", "flowid", fmt.Sprintf("2:%d", mark))
+}
+
+// deleteIfbSrcFilter 删除某个 IP 的 ifb 源 IP 分流 filter（按记账的 pref 精确删除）。
+func (b *NftTcBackend) deleteIfbSrcFilter(ip string) {
+	pref, ok := b.ifbSrcPrefs[ip]
+	if !ok {
+		return
+	}
+	runCmd("tc", "filter", "del", "dev", b.ifbDevice, "parent", "2:",
+		"protocol", "ip", "pref", strconv.FormatUint(uint64(pref), 10))
+	delete(b.ifbSrcPrefs, ip)
 }
 
 func (b *NftTcBackend) deleteTcFilter(dev string, parentHandle uint32, mark uint32) {

@@ -1,4 +1,4 @@
-# sing-box 字段级差异清单（基准：本项目的 cf fork，`/opt/sing-box` branch `testing`）
+# sing-box 字段级差异清单（基准：官方仓库 `SagerNet/sing-box`，`/opt/sing-box` branch `testing`）
 
 > 目的：找出"sing-box 支持、但面板配不出来"的字段，作为补齐 UI 的依据。
 > 与 `docs/xray-field-gap.md` 同方法，结论也共享一个关键前提（见 §1）。
@@ -7,8 +7,8 @@
 
 | 项 | 说明 |
 |---|---|
-| 基准源码 | `/opt/sing-box`（本项目的 cf fork，branch `testing`，`4566ef089 Bump version`） |
-| 字段抽取 | `option/*.go` 全部带 json tag 的字段：**约 1015 个**（含 fork 自己新增的 TLS spoof / finalMask 等） |
+| 基准源码 | `/opt/sing-box`（**官方** `github.com/SagerNet/sing-box`，branch `testing`，`4566ef089 Bump version`）|
+| 字段抽取 | `option/*.go` 全部带 json tag 的字段：**约 1015 个**（含上游的 TLS spoof / finalMask 等） |
 | 面板侧来源 | **只统计 sing-box 编辑器**（`views/protocols/sections/Singbox*.vue` + `sections/singbox/{common,inbounds,outbounds}/**`），避免被 Xray 编辑器误判为"已有" |
 | 后端 | `internal/**` 全部 Go 代码 |
 | 比对方式 | 字段名矩阵 + 关键项人工核对 |
@@ -30,10 +30,10 @@
 
 | 字段 | 位置 | 为什么重要 |
 |---|---|---|
-| `spoof` `spoof_method` | `tls`（inbound / outbound） | **本 fork 的招牌特性（TLS spoof）**，编辑器里居然没有入口 ✗ |
+| `spoof` `spoof_method` | `tls`（inbound / outbound） | **上游自带**的 TLS spoof（见 §3 注：**不是 fork 特性，早先写错了**），编辑器里没有入口 ✗ |
 | `record_fragment` `fragment_fallback_delay` | `tls` | TLS 记录分片，抗特征常用 |
 | `tls_fragment` `tls_record_fragment` `tls_fragment_fallback_delay` | 路由规则动作 | 1.12+ 把分片移到 route action，与上面两个是两条实现路径 |
-| `tls_spoof` `tls_spoof_method` | 路由规则动作 | fork 特性的 action 形式 |
+| `tls_spoof` `tls_spoof_method` | 路由规则动作 | 同一特性的 action 形式（上游自带）|
 | `package_name` `package_name_regex` | 路由规则 / DNS 规则 / rule_set | **Android 客户端分流的核心手段** |
 | `source_mac_address` `wifi_ssid` `wifi_bssid` | 路由规则 / DNS 规则 | 局域网按设备/SSID 分流（家用路由场景常用） |
 | `network_type` `network_is_expensive` `network_is_constrained` | 路由规则 / DNS 规则 / outbound | 按网络类型（wifi/蜂窝/计费网）分流 |
@@ -182,7 +182,7 @@ api / ccm / derp / dynamic / hysteria-realm / ocm / **oom-killer** / resolved / 
 | 约束 | 报错 |
 |---|---|
 | inline 规则集带多个 tag | `FATAL route.rule_set[2]: inline rule-set does not support multiple tags` |
-| `initial_path` 不含 `<tag>` 占位符 | fork 源码：`E.New("missing <tag> placeholder in initial_path")` |
+| `initial_path` 不含 `<tag>` 占位符 | 源码：`E.New("missing <tag> placeholder in initial_path")` |
 | 写 `exclude_sequence` | `FATAL …: unknown field "exclude_sequence"`（**不是合法字段**） |
 | local 规则集的 `path` 必须**真实存在** | `FATAL initialize router: parse rule-set[1]: open …: no such file or directory`（启动时会读文件） |
 
@@ -206,9 +206,12 @@ P1（xhttp 的 `cwndMultiplier` / `maxSendingWindow` / `sessionIDLength` / `sess
 ## 3. 建议顺序
 
 0. **按 §2.5 修正后的口径做**（服务端可用优先；客户端专属暂缓）
-1. ~~**补 P0 里"fork 招牌 + 高价值"的前 6 行**~~：`tls.spoof/spoof_method`、`tls.record_fragment`、
-   路由动作的 `tls_fragment`/`tls_record_fragment`/`tls_spoof` —— 这是本 fork 相对上游的核心差异，
-   面板不给入口等于这个特性用不起来
+1. ~~**补 P0 里"高价值"的前 6 行**~~：`tls.spoof/spoof_method`、`tls.record_fragment`、
+   路由动作的 `tls_fragment`/`tls_record_fragment`/`tls_spoof` ——
+   **更正（2026-09-22 核实）**：这些**不是 fork 特性，而是上游 SagerNet/sing-box 自带**的字段
+   （`/opt/sing-box` 的 remote 就是 `github.com/SagerNet/sing-box`，`option/tls.go`、
+   `option/rule_action.go` 里都在）——之前写成"本 fork 相对上游的差异"是**过时说法**，已更正；
+   面板不给入口 = 上游特性用不起来（结论不变）。
 2. 补**路由/DNS 规则**那一批（`package_name`、`source_mac_address`、`wifi_*`、`network_type`、
    `source_hostname`、`clash_mode`）+ **DNS 应答匹配**（`match_response`/`response_*`）
 3. 补 `dns.optimistic`/`cache_capacity` 与 `experimental.cache_file` 的 store 系列

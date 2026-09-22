@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/pkg/netutil"
 )
 
 const (
@@ -135,7 +136,10 @@ func DefaultLoginLimiter() *LoginLimiter {
 // too many times. Mount it on the login route only.
 func LoginRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := c.ClientIP()
+		// ⚠ 不能用 `c.ClientIP()` ✗：Gin 默认信任所有代理（trustedProxies 为 0.0.0.0/0），
+		// 调用方每次换一个 `X-Forwarded-For` 就能换掉限流键 → 口令爆破无实际限制
+		// （安全审计 v5 S3）。GetRealIP 只在"直连方是可信代理"时才采信 XFF。
+		key := netutil.GetRealIP(c.Request)
 		if allowed, retryAfter := defaultLoginLimiter.Allowed(key); !allowed {
 			response.TooManyRequests(c, "TOO_MANY_ATTEMPTS",
 				"too many failed login attempts, retry in "+retryAfter.Round(time.Second).String())
@@ -155,8 +159,8 @@ func LoginRateLimit() gin.HandlerFunc {
 
 const (
 	clientLoginMaxFailures   = 10
-	clientLoginLockout        = 30 * time.Minute
-	clientLoginFailureWindow  = 30 * time.Minute
+	clientLoginLockout       = 30 * time.Minute
+	clientLoginFailureWindow = 30 * time.Minute
 )
 
 type clientLoginLimiterType struct {
@@ -249,7 +253,8 @@ func DefaultClientLoginLimiter() *clientLoginLimiterType {
 // recently failed too many times. More lenient than admin limiter.
 func ClientLoginRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := c.ClientIP()
+		// 同上：必须与 GetRealIP 口径一致，否则限流键可被 XFF 伪造绕过。
+		key := netutil.GetRealIP(c.Request)
 		if allowed, retryAfter := defaultClientLoginLimiter.Allowed(key); !allowed {
 			response.TooManyRequests(c, "TOO_MANY_ATTEMPTS",
 				"too many failed login attempts, retry in "+retryAfter.Round(time.Second).String())

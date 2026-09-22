@@ -34,12 +34,12 @@ type Handler struct {
 	chargeSiteRepo  *repository.ChargeSiteRepository
 	chargeOrderRepo *repository.ChargeOrderRepository
 	chargeCardRepo  *repository.ChargeCardRepository
-	balanceRepo    *repository.ClientBalanceRepository
+	balanceRepo     *repository.ClientBalanceRepository
 	balanceTxRepo   *repository.BalanceTransactionRepository
-	clientRepo     *repository.ClientRepository
-	userRepo       *repository.UserRepository // v3.3: 用于查询代理员信息
+	clientRepo      *repository.ClientRepository
+	userRepo        *repository.UserRepository // v3.3: 用于查询代理员信息
 	planRefunder    PlanRefunder               // 退款时回退套餐时间 + 移除节点账号
-	db             *gorm.DB
+	db              *gorm.DB
 }
 
 // NewHandler creates a new charge admin handler.
@@ -144,10 +144,10 @@ func (h *Handler) CreateSite(c *gin.Context) {
 	h.maskSiteSecret(&site)
 	// v3.3: 创建时返回明文密钥（仅此一次），供管理员复制给支付平台
 	response.Created(c, gin.H{
-		"site":                 site,
-		"plaintext_secret":     plaintextSecret,
-		"secret_shown_once":    true,
-		"secret_message":       "请立即复制此密钥到支付平台配置，此密钥仅显示一次",
+		"site":              site,
+		"plaintext_secret":  plaintextSecret,
+		"secret_shown_once": true,
+		"secret_message":    "请立即复制此密钥到支付平台配置，此密钥仅显示一次",
 	})
 }
 
@@ -255,7 +255,7 @@ func (h *Handler) GenerateVerifyFile(c *gin.Context) {
 	}
 
 	// Extract domain for DNS TXT record name
-txtDomain := extractDomain(site.SiteURL)
+	txtDomain := extractDomain(site.SiteURL)
 
 	response.OK(c, gin.H{
 		"verify_token":         site.VerifyToken,
@@ -305,7 +305,11 @@ func (h *Handler) VerifyDomainHTTP(c *gin.Context) {
 		}
 	}
 
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+	// 上面的 DNS 预检只是第一道；真正的防线在**拨号层**（安全审计 v5 S5）：
+	// 旧实现用普通 client，会**跟随 302** → "公网域名跳转到 169.254.169.254" 可绕过预检；
+	// 而且先 LookupIP 再请求存在 DNS 重绑定 TOCTOU。安全客户端在每次建连时校验真实 IP，
+	// 且不跟随重定向。
+	httpClient := netutil.NewSafeHTTPClient(10*time.Second, false)
 	resp, err := httpClient.Get(verifyURL)
 	if err != nil {
 		response.BadRequest(c, "VERIFY_FAILED", fmt.Sprintf("无法访问验证文件: %v", err))
@@ -395,29 +399,29 @@ func (h *Handler) GetSiteIntegrationDoc(c *gin.Context) {
 	callbackURL := fmt.Sprintf("/api/v1/charge/callback/%d", site.ID)
 
 	doc := gin.H{
-		"site_id":               site.ID,
-		"site_name":             site.Name,
-		"site_url":              site.SiteURL,
-		"callback_url":          callbackURL,
-		"callback_secret_set":   site.EncryptedSecret != "",
-		"verified":              site.Verified,
-		"verified_method":       site.VerifiedMethod,
-		"verified_at":           site.VerifiedAt,
-		"verify_expire_at":      site.VerifyExpireAt,
-		"domain":                site.Domain,
-		"verify_token":          site.VerifyToken,
-		"currency":              site.Currency,
-		"supported_methods":     site.SupportedMethods,
-		"signature_algorithm":   "HMAC-SHA256",
-		"signature_fields":      []string{"amount", "body_hash", "currency", "nonce", "site_trade_no", "timestamp", "trade_no", "version"},
-		"signature_version":     "v1",
-		"body_hash_algorithm":   "SHA-256(raw_body) hex-encoded",
-		"body_hash_note":        "body_hash and version are auto-included by CoreFusion server; do not send them in the request body but include them in signature payload",
-		"timestamp_tolerance":   300,
-		"nonce_required":        true,
-		"amount_unit":           "cents (分)",
-		"ip_whitelist":          site.CallbackWhitelist,
-		"response_format":       `{"success": true, "message": "ok"}`,
+		"site_id":             site.ID,
+		"site_name":           site.Name,
+		"site_url":            site.SiteURL,
+		"callback_url":        callbackURL,
+		"callback_secret_set": site.EncryptedSecret != "",
+		"verified":            site.Verified,
+		"verified_method":     site.VerifiedMethod,
+		"verified_at":         site.VerifiedAt,
+		"verify_expire_at":    site.VerifyExpireAt,
+		"domain":              site.Domain,
+		"verify_token":        site.VerifyToken,
+		"currency":            site.Currency,
+		"supported_methods":   site.SupportedMethods,
+		"signature_algorithm": "HMAC-SHA256",
+		"signature_fields":    []string{"amount", "body_hash", "currency", "nonce", "site_trade_no", "timestamp", "trade_no", "version"},
+		"signature_version":   "v1",
+		"body_hash_algorithm": "SHA-256(raw_body) hex-encoded",
+		"body_hash_note":      "body_hash and version are auto-included by CoreFusion server; do not send them in the request body but include them in signature payload",
+		"timestamp_tolerance": 300,
+		"nonce_required":      true,
+		"amount_unit":         "cents (分)",
+		"ip_whitelist":        site.CallbackWhitelist,
+		"response_format":     `{"success": true, "message": "ok"}`,
 		"example_callback": gin.H{
 			"trade_no":      "CF20250717120000-xxx",
 			"site_trade_no": "SITE_12345",
@@ -529,13 +533,13 @@ func (h *Handler) RefundOrder(c *gin.Context) {
 		bal, err := h.balanceRepo.AddBalance(c.Request.Context(), order.ClientID, order.Amount)
 		if err == nil {
 			txRecord := &entity.BalanceTransaction{
-				ClientID:      order.ClientID,
-				Type:          entity.BalanceTxTypeRefund,
-				Amount:        order.Amount,
-				BalanceBefore: bal.Balance - order.Amount,
-				BalanceAfter:  bal.Balance,
+				ClientID:             order.ClientID,
+				Type:                 entity.BalanceTxTypeRefund,
+				Amount:               order.Amount,
+				BalanceBefore:        bal.Balance - order.Amount,
+				BalanceAfter:         bal.Balance,
 				RelatedChargeOrderID: &order.ID,
-				Remark:        remark,
+				Remark:               remark,
 			}
 			h.balanceTxRepo.Create(c.Request.Context(), txRecord)
 		}
@@ -587,14 +591,14 @@ func (h *Handler) ListCards(c *gin.Context) {
 // v3.3: 移除 max_uses — 充值卡一次性使用
 type CreateCardInput struct {
 	CardType       string     `json:"card_type" binding:"required"`
-	Value          int64      `json:"value"`                               // 金额(最小单位)或 plan_variant_id
-	Currency       string     `json:"currency"`                            // 货币类型
-	PlanVariantID  *int64     `json:"plan_variant_id"`                    // 套餐型时绑定的规格ID
+	Value          int64      `json:"value"`           // 金额(最小单位)或 plan_variant_id
+	Currency       string     `json:"currency"`        // 货币类型
+	PlanVariantID  *int64     `json:"plan_variant_id"` // 套餐型时绑定的规格ID
 	ExpiresAt      *time.Time `json:"expires_at"`
 	BatchID        string     `json:"batch_id"`
 	Remark         string     `json:"remark"`
 	CardCodeFormat string     `json:"card_code_format"`
-	AgentID        *int64     `json:"agent_id"`                           // 代理员/推广员管理员ID，为空表示官方
+	AgentID        *int64     `json:"agent_id"` // 代理员/推广员管理员ID，为空表示官方
 }
 
 // CreateCard handles POST /api/v1/charge-cards.
@@ -643,7 +647,7 @@ func (h *Handler) CreateCard(c *gin.Context) {
 	}
 	// v3.3: 返回明文卡号（仅此一次），列表中会脱敏
 	response.Created(c, gin.H{
-		"card":               card,
+		"card":                card,
 		"plaintext_card_code": card.CardCode,
 		"secret_shown_once":   true,
 	})
@@ -653,15 +657,15 @@ func (h *Handler) CreateCard(c *gin.Context) {
 // v3.3: 移除 max_uses — 充值卡一次性使用
 type BatchCreateCardsInput struct {
 	CardType       string  `json:"card_type" binding:"required"`
-	Value          int64   `json:"value"`                               // 金额(最小单位)或 plan_variant_id
-	Currency       string  `json:"currency"`                            // 货币类型
-	PlanVariantID  *int64  `json:"plan_variant_id"`                    // 套餐型时绑定的规格ID
+	Value          int64   `json:"value"`           // 金额(最小单位)或 plan_variant_id
+	Currency       string  `json:"currency"`        // 货币类型
+	PlanVariantID  *int64  `json:"plan_variant_id"` // 套餐型时绑定的规格ID
 	Count          int     `json:"count" binding:"required,min=1,max=1000"`
 	ExpiresAt      *string `json:"expires_at"`
 	BatchID        string  `json:"batch_id"`
 	Remark         string  `json:"remark"`
 	CardCodeFormat string  `json:"card_code_format"`
-	AgentID        *int64  `json:"agent_id"`                           // 代理员/推广员管理员ID，为空表示官方
+	AgentID        *int64  `json:"agent_id"` // 代理员/推广员管理员ID，为空表示官方
 }
 
 // BatchCreateCards handles POST /api/v1/charge-cards/batch.
@@ -950,8 +954,9 @@ func (h *Handler) ListBalanceTransactionsAdmin(c *gin.Context) {
 // If format is empty, uses the default format: CF-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX.
 // Custom format uses {N} placeholders where N is the number of hex chars per segment.
 // Examples: "{8}-{8}-{8}-{8}" -> XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX
-//           "{32}"             -> 32 hex chars without separator
-//           "CF-{8}-{8}"       -> CF-XXXXXXXX-XXXXXXXX
+//
+//	"{32}"             -> 32 hex chars without separator
+//	"CF-{8}-{8}"       -> CF-XXXXXXXX-XXXXXXXX
 func GenerateCardCode(format ...string) string {
 	fmtStr := "CF-{8}-{8}-{8}-{8}" // default
 	if len(format) > 0 && format[0] != "" {
@@ -1075,7 +1080,7 @@ func (h *Handler) maskSiteSecret(site *entity.ChargeSite) {
 		plain = site.CallbackSecret
 	}
 	site.CallbackSecret = crypto.MaskSecret(plain)
-	site.EncryptedSecret = "" // Never expose encrypted_secret to frontend
+	site.EncryptedSecret = ""     // Never expose encrypted_secret to frontend
 	site.EncryptedSecretPrev = "" // Never expose to frontend
 }
 

@@ -1,17 +1,21 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 
 	"corefusion/internal/model/entity"
+	"corefusion/pkg/netutil"
+
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/mihomoconv"
 )
@@ -352,15 +356,17 @@ func normalizeProxyMap(pm map[string]interface{}) map[string]interface{} {
 
 func parseToProxyMaps(sourceType, sourceData, sourceURL string) ([]map[string]interface{}, error) {
 	if sourceType == "url" && sourceURL != "" {
-		resp, err := http.Get(sourceURL)
+		// ⚠ 这是**用户提供的 URL**，必须按不可信输入处理（安全审计 v5 S1）：
+		// 旧实现 `http.Get` 无超时、**跟随重定向**、完全不校验内网地址 → 可被用来读云元数据
+		// （169.254.169.254）或内网服务，而且抓到的内容会被解析后**回显给调用方**。
+		// 另外旧实现只调了一次 `Body.Read` ✗ —— 单次 Read 可能只返回部分内容，
+		// 订阅稍大就会被静默截断；改成有上限的完整读取，顺带修掉这个截断问题。
+		body, err := netutil.SafeFetchGET(context.Background(), sourceURL, 20*time.Second,
+			netutil.DefaultSafeFetchMaxBytes)
 		if err != nil {
 			return nil, fmt.Errorf("fetch url: %w", err)
 		}
-		defer resp.Body.Close()
-		buf := make([]byte, 1<<20)
-		n, _ := resp.Body.Read(buf)
-		sourceData = string(buf[:n])
-		sourceData = strings.TrimSpace(sourceData)
+		sourceData = strings.TrimSpace(string(body))
 		if strings.HasPrefix(sourceData, "{") || strings.HasPrefix(sourceData, "[") {
 			sourceType = "json"
 		} else if strings.HasPrefix(sourceData, "proxies:") || strings.HasPrefix(sourceData, "- name:") {

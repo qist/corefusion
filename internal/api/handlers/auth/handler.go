@@ -7,6 +7,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/service/audit"
 	"corefusion/internal/service/auth"
+	"corefusion/pkg/netutil"
 )
 
 // Handler handles auth HTTP requests.
@@ -39,7 +40,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	accessToken, refreshToken, user, err := h.authSvc.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
-		middleware.DefaultLoginLimiter().RecordFailure(c.ClientIP())
+		middleware.DefaultLoginLimiter().RecordFailure(netutil.GetRealIP(c.Request))
 		audit.Record(audit.Event{
 			Category: "auth", EventType: "admin_login", Result: "failure",
 			RemoteIP: c.ClientIP(), Reason: err.Error(),
@@ -48,7 +49,7 @@ func (h *Handler) Login(c *gin.Context) {
 		response.Unauthorized(c, "INVALID_CREDENTIALS", err.Error())
 		return
 	}
-	middleware.DefaultLoginLimiter().RecordSuccess(c.ClientIP())
+	middleware.DefaultLoginLimiter().RecordSuccess(netutil.GetRealIP(c.Request))
 	audit.Record(audit.Event{
 		Category: "auth", EventType: "admin_login", Result: "success",
 		UserID: user.ID, RemoteIP: c.ClientIP(),

@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
+
 	"log"
 	"net/http"
 	"os"
@@ -56,11 +56,11 @@ type SourceFileMapping struct {
 // used as the full download address (no concatenation).
 // For backward compatibility, if FileMappings is empty, defaultRuleFiles are used.
 type GitHubSourceConfig struct {
-	URL           string              `json:"url"`
-	FileMappings  []SourceFileMapping `json:"file_mappings"`
-	Files         string              `json:"files"`        // deprecated: comma-separated list, kept for backward compat
-	SyncCron      string              `json:"sync_cron"`
-	Enabled       bool                `json:"enabled"`
+	URL          string              `json:"url"`
+	FileMappings []SourceFileMapping `json:"file_mappings"`
+	Files        string              `json:"files"` // deprecated: comma-separated list, kept for backward compat
+	SyncCron     string              `json:"sync_cron"`
+	Enabled      bool                `json:"enabled"`
 }
 
 // Service manages WAF rules stored in the database.
@@ -88,10 +88,10 @@ func NewService(
 ) *Service {
 	return &Service{
 		ruleRepo:   ruleRepo,
-		cfgRepo:     cfgRepo,
-		domainRepo:  domainRepo,
-		dataDir:     dataDir,
-		settingSvc:  settingSvc,
+		cfgRepo:    cfgRepo,
+		domainRepo: domainRepo,
+		dataDir:    dataDir,
+		settingSvc: settingSvc,
 	}
 }
 
@@ -212,15 +212,15 @@ func (s *Service) DeleteRule(ctx context.Context, name string) error {
 // It includes the source indicator so the UI can show whether a rule
 // comes from global, node, or merged (append).
 type MergedRule struct {
-	Name         string `json:"name"`
-	MergeMode    string `json:"merge_mode"`            // append | replace (from node rule, or global if no node rule)
-	Content      string `json:"content"`               // merged content (what actually lands on disk)
+	Name          string `json:"name"`
+	MergeMode     string `json:"merge_mode"`               // append | replace (from node rule, or global if no node rule)
+	Content       string `json:"content"`                  // merged content (what actually lands on disk)
 	GlobalContent string `json:"global_content,omitempty"` // global part (only when source=merged)
-	NodeContent  string `json:"node_content,omitempty"`    // node-only part (only when source=merged)
-	Hash         string `json:"hash"`                    // hash of merged content
-	Source       string `json:"source"`                  // "global" | "node" | "merged"
-	Enabled      bool   `json:"enabled"`
-	UpdatedAt    string `json:"updated_at"`              // latest update time
+	NodeContent   string `json:"node_content,omitempty"`   // node-only part (only when source=merged)
+	Hash          string `json:"hash"`                     // hash of merged content
+	Source        string `json:"source"`                   // "global" | "node" | "merged"
+	Enabled       bool   `json:"enabled"`
+	UpdatedAt     string `json:"updated_at"` // latest update time
 }
 
 // ListNodeRules returns merged rules (global + node override) for a specific server.
@@ -352,6 +352,7 @@ func (s *Service) DeleteDomainRule(ctx context.Context, name string, serverID in
 // Takes the global+node merged result and applies domain-level overrides:
 //   - append: domain content appended to merged result
 //   - replace: domain content replaces merged result entirely
+//
 // Returns the final merged content for each rule file.
 func (s *Service) mergeDomainRules(ctx context.Context, baseMerged map[string]string, serverID int64, domain string) map[string]string {
 	result := make(map[string]string, len(baseMerged))
@@ -1074,13 +1075,13 @@ func (s *Service) buildDomainJSON(ctx context.Context, serverID int64) (string, 
 
 // CollectAllFiles collects all WAF files from DB for syncing to a node.
 // Includes:
-// 1. Merged global+node .rule files
-// 2. config.json (Caddy WAF config, per-node)
-// 3. config.lua (Nginx WAF config, per-node)
-// 4. domain.json (domain-level WAF config, per-node)
-// 5. Domain-specific .rule files (domains/{domain}/*.rule)
-//    — built from DB, not disk: for each domain with waf_enable=on,
-//      push the merged rule content so remote Agents get their own copy.
+//  1. Merged global+node .rule files
+//  2. config.json (Caddy WAF config, per-node)
+//  3. config.lua (Nginx WAF config, per-node)
+//  4. domain.json (domain-level WAF config, per-node)
+//  5. Domain-specific .rule files (domains/{domain}/*.rule)
+//     — built from DB, not disk: for each domain with waf_enable=on,
+//     push the merged rule content so remote Agents get their own copy.
 func (s *Service) CollectAllFiles(ctx context.Context, serverID int64) ([]*WAFFile, error) {
 	return s.CollectAllFilesForProxyTypes(ctx, serverID, []string{"nginx", "caddy"})
 }
@@ -1280,8 +1281,6 @@ func (s *Service) SaveGitHubSource(ctx context.Context, cfg *GitHubSourceConfig)
 // If a mapping's URL is non-empty, it is used directly (no concatenation).
 // If a mapping's URL is empty, the file is downloaded from sourceURL + "/" + Name.
 func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL, files string, fileMappings []SourceFileMapping) error {
-	client := s.githubHTTPClient(ctx, 60*time.Second)
-
 	if sourceURL == "" {
 		// Try reading user-saved config as fallback
 		source, _ := s.GetGitHubSource(ctx)
@@ -1355,16 +1354,12 @@ func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL, files
 		}
 		// else: rawURL is the full address provided by the user — use as-is
 
-		req, _ := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
-		resp, err := client.Do(req)
+		// 下载源 URL 可由用户/管理员配置 → 按不可信处理（安全审计 v5 S1 同一类）。
+		// 旧实现用普通 client（跟随重定向、不校验内网），且下载内容会**下发到所有节点**，
+		// 一旦被指向内网/元数据服务即为 SSRF + 规则投毒。
+		body, err := netutil.SafeFetchGET(ctx, rawURL, 60*time.Second, 4<<20)
 		if err != nil {
 			log.Printf("[WAF] failed to download %s from %s: %v", item.name, rawURL, err)
-			continue
-		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Printf("[WAF] failed to read %s: %v", item.name, err)
 			continue
 		}
 

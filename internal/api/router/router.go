@@ -1221,20 +1221,27 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 
 		// Protected routes
+		//
+		// ⚠ `Use()` 必须在**任何路由注册之前**调用 —— Gin 在注册时就把当时的 handler 链快照进去了
+		// （`combineHandlers(group.Handlers, handlers)`），之后再 `Use` 对已注册路由**无效** ✗。
+		// 这里原本把 `Use(AuthRequired())` 写在 9 条 WAF 路由**之后**，导致它们**完全没有鉴权**：
+		// 实测不带任何凭据 `GET /api/v1/waf/rules` 返回 200 与规则内容 ✗（安全审计 v5 C1）。
 		protected := v1.Group("")
-
-		// WAF Rule Library (global, not per-node)
-		protected.GET("/waf/rules", wafH.ListRules)
-		protected.GET("/waf/rules/:name", wafH.GetRule)
-		protected.PUT("/waf/rules/:name", wafH.SaveRule)
-		protected.DELETE("/waf/rules/:name", wafH.DeleteRule)
-		protected.POST("/waf/sync-github", wafH.SyncFromGitHub)
-		protected.POST("/waf/sync-all", wafH.SyncAll)
-		protected.GET("/waf/github-source", wafH.GetGitHubSource)
-		protected.PUT("/waf/github-source", wafH.SaveGitHubSource)
-		protected.POST("/waf/push-all", wafH.PushToAllNodes)
 		protected.Use(middleware.AuthRequired())
 		{
+			// WAF Rule Library（全局配置，会下发到所有节点）
+			//   读：任意已登录用户；写 / 同步 / 下发：管理员（与 charge-sites 等全局配置一致）
+			wafWrite := middleware.RequireRole(domainuser.RoleAdmin)
+			protected.GET("/waf/rules", wafH.ListRules)
+			protected.GET("/waf/rules/:name", wafH.GetRule)
+			protected.PUT("/waf/rules/:name", wafWrite, wafH.SaveRule)
+			protected.DELETE("/waf/rules/:name", wafWrite, wafH.DeleteRule)
+			protected.POST("/waf/sync-github", wafWrite, wafH.SyncFromGitHub)
+			protected.POST("/waf/sync-all", wafWrite, wafH.SyncAll)
+			protected.GET("/waf/github-source", wafH.GetGitHubSource)
+			protected.PUT("/waf/github-source", wafWrite, wafH.SaveGitHubSource)
+			protected.POST("/waf/push-all", wafWrite, wafH.PushToAllNodes)
+
 			// Users: administrator account management is super_admin only,
 			// otherwise any authenticated principal could mint itself a
 			// super_admin account. Listing stays at admin level.

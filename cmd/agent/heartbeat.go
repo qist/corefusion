@@ -59,12 +59,7 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 		return nil, fmt.Errorf("failed to parse CA cert")
 	}
 
-	tlsConfig := &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		RootCAs:            caPool,
-		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, // Panel cert CN is hostname, relax for development
-	}
+	tlsConfig := buildPanelTLSConfig(cert, caPool)
 
 	addr := fmt.Sprintf("%s:%d", a.cfg.Panel.Host, a.cfg.Panel.GRPCPort)
 	// grpc.NewClient（非阻塞，Dial 的推荐替代）。创建时不拨号，需显式等待 Ready。
@@ -88,6 +83,28 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 		return nil, fmt.Errorf("dial panel: %w", err)
 	}
 	return conn, nil
+}
+
+// panelCertServerName 是面板 gRPC 服务端证书的名字：`IssueServerCertificate`
+// （internal/runtime/agent/ca.go）把它同时写进 CommonName 与 DNSNames。
+// 面板证书在**内存里签发、不落盘**，而 Agent 连的地址通常是 IP 或任意主机名 →
+// 必须显式指定 ServerName，否则标准校验无法通过。
+const panelCertServerName = "corefusion-panel"
+
+// buildPanelTLSConfig 组装「Agent → 面板」的 mTLS 客户端配置。
+//
+// ⚠ 这里**绝不能**用 `InsecureSkipVerify: true` ✗：Agent 不校验对端身份时，任何能 MITM 的人
+// （DNS 劫持 / ARP 欺骗 / 内网中间人）都能用一张自签证书冒充面板，而面板可以指挥 Agent
+// 以 **root** 写任意路径、执行命令（见 `docs/design/security-audit-v5.md` C2）——
+// 相当于把整条控制面交出去。`RootCAs` 本来就已由 bootstrap 落盘的 CA 建好，
+// 这里改成正常校验 + 显式 ServerName 即可，不需要任何"开发用"放松。
+func buildPanelTLSConfig(cert tls.Certificate, caPool *x509.CertPool) *tls.Config {
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caPool,
+		MinVersion:   tls.VersionTLS13,
+		ServerName:   panelCertServerName,
+	}
 }
 
 // connectAndStream opens a heartbeat stream with the Panel and runs the
@@ -207,41 +224,41 @@ func (a *AgentApp) sendHeartbeat(stream agentpb.HeartbeatService_StreamClient) e
 	a.streamSendMu.Lock()
 	defer a.streamSendMu.Unlock()
 	return stream.Send(&agentpb.AgentReport{
-		Type:            agentpb.AgentReport_HEARTBEAT,
-		ServerId:        a.cfg.Panel.ServerID,
-		Timestamp:       time.Now().Unix(),
-		AgentVersion:    constants.Version,
+		Type:         agentpb.AgentReport_HEARTBEAT,
+		ServerId:     a.cfg.Panel.ServerID,
+		Timestamp:    time.Now().Unix(),
+		AgentVersion: constants.Version,
 
 		// CPU
-		CpuUsage:   m.CPUUsage,
-		CpuCores:   int32(m.CPUCores),
+		CpuUsage: m.CPUUsage,
+		CpuCores: int32(m.CPUCores),
 
 		// Memory
-		MemTotalBytes:   m.MemTotalBytes,
-		MemUsageBytes:   m.MemUsedBytes,
-		MemUsage:        m.MemUsage,
+		MemTotalBytes: m.MemTotalBytes,
+		MemUsageBytes: m.MemUsedBytes,
+		MemUsage:      m.MemUsage,
 
 		// Swap
-		SwapTotalBytes:  m.SwapTotalBytes,
-		SwapUsedBytes:   m.SwapUsedBytes,
-		SwapUsage:       m.SwapUsage,
+		SwapTotalBytes: m.SwapTotalBytes,
+		SwapUsedBytes:  m.SwapUsedBytes,
+		SwapUsage:      m.SwapUsage,
 
 		// Disk
-		DiskTotalBytes:  m.DiskTotalBytes,
-		DiskUsageBytes:  m.DiskUsedBytes,
-		DiskUsage:       m.DiskUsage,
+		DiskTotalBytes: m.DiskTotalBytes,
+		DiskUsageBytes: m.DiskUsedBytes,
+		DiskUsage:      m.DiskUsage,
 
 		// Disk I/O rate
 		DiskReadBytesSec:  m.DiskReadBytesSec,
 		DiskWriteBytesSec: m.DiskWriteBytesSec,
 
 		// Network counters
-		NetRxBytes:      m.NetRxBytesTotal,
-		NetTxBytes:      m.NetTxBytesTotal,
+		NetRxBytes: m.NetRxBytesTotal,
+		NetTxBytes: m.NetTxBytesTotal,
 
 		// Network rate
-		NetRxBytesSec:   m.NetRxBytesSec,
-		NetTxBytesSec:   m.NetTxBytesSec,
+		NetRxBytesSec: m.NetRxBytesSec,
+		NetTxBytesSec: m.NetTxBytesSec,
 
 		// System
 		Os:             runtime.GOOS,
@@ -254,8 +271,8 @@ func (a *AgentApp) sendHeartbeat(stream agentpb.HeartbeatService_StreamClient) e
 
 		// Egress interface traffic (出口网卡累计流量，用于月度配额)
 		EgressInterface: m.EgressInterface,
-		EgressRxBytes:  m.EgressRxBytes,
-		EgressTxBytes:  m.EgressTxBytes,
+		EgressRxBytes:   m.EgressRxBytes,
+		EgressTxBytes:   m.EgressTxBytes,
 	})
 }
 

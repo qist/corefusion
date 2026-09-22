@@ -291,6 +291,7 @@ func runServer(args []string) {
 	// 上面那个续的是 **Agent 的 mTLS 证书**（面板自签 CA ✓），这条续的是**对外的公网证书** ✓。
 	// 由绑定节点的 Agent 在**节点本机**签发（面板在 SNAT 后面时 CA 回连不到面板 ✗）。
 	publicCertRenewer := agent.NewPublicCertRenewer(certRepo, nodeServerRepo, nodeMgr)
+	nodeMgr.WithPublicCertRenewer(publicCertRenewer)
 	go publicCertRenewer.RunLoop(context.Background())
 	log.Println("Public certificate auto-renewer started (interval=6h, renew-before=5d, node-side ACME)")
 

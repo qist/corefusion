@@ -50,3 +50,34 @@ func TestInstallScriptWithoutCAStillGenerates(t *testing.T) {
 		t.Error("config 权限收紧与 CA 无关，必须始终生效")
 	}
 }
+
+// 回归：安装脚本写出的 config.yaml 必须是**合法 YAML** ✓。
+// 真机上踩到过：`data_dir` 前面多了 2 个空格 ✗ → Agent 一启动就
+// `parse config: yaml: line 13: mapping values are not allowed in this context` ✗ 起不来 ✓。
+func TestInstallScriptConfigYAMLIndent(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 8080).
+		WithBootstrapToken("tok").
+		WithServerID(19).
+		Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 取 cat > "$CONFIG_FILE" << EOF ... EOF 之间的内容 ✓
+	start := strings.Index(script, `cat > "$CONFIG_FILE" << EOF`)
+	if start < 0 {
+		t.Fatal("脚本里找不到写 config 的片段")
+	}
+	body := script[start:]
+	if end := strings.Index(body, "\nEOF"); end > 0 {
+		body = body[:end]
+	}
+	// 顶层键下的子键必须是 2 空格缩进 ✓；出现 4 空格说明写歪了 ✗
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "    data_dir:") || strings.HasPrefix(line, "    log_level:") {
+			t.Fatalf("config.yaml 缩进过深（应为 2 空格）: %q", line)
+		}
+	}
+	if !strings.Contains(body, "\n  data_dir: ") {
+		t.Fatalf("config.yaml 缺少正确缩进的 data_dir：\n%s", body)
+	}
+}

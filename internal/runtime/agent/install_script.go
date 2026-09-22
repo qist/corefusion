@@ -215,7 +215,7 @@ bootstrap:
 
 agent:
   log_level: info
-    data_dir: "$INSTALL_DIR/data"
+  data_dir: "$INSTALL_DIR/data"
 EOF
 # config.yaml 里有 bootstrap token → 收紧到 0600（默认 umask 会给出 0644，其他本地用户可读 ✗）
 chmod 600 "$CONFIG_FILE"

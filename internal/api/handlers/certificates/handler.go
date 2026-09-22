@@ -252,13 +252,22 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 	// 邮箱来自**面板的 ACME 账号** ✓（用户选了就用选的，没选用默认 ✓）——
 	// 节点侧不需要任何 acme 配置 ✗。
 	email := strings.TrimSpace(req.Email)
-	if email == "" && h.acmeEmails != nil {
+	if email == "" {
+		if h.acmeEmails == nil {
+			// 快速失败 ✓：否则会发出"没有邮箱"的指令 ✗，只在节点侧报错 ✗（真机踩过 ✓）
+			response.InternalError(c, "NO_ACME_RESOLVER", "ACME account resolver is not configured on the panel")
+			return
+		}
 		resolved, rerr := h.acmeEmails.ResolveACMEEmail(c.Request.Context(), req.EmailID)
 		if rerr != nil {
 			response.BadRequest(c, "NO_ACME_ACCOUNT", "no ACME account available: "+rerr.Error())
 			return
 		}
 		email = resolved
+	}
+	if strings.TrimSpace(email) == "" {
+		response.BadRequest(c, "NO_ACME_ACCOUNT", "no ACME account email available on the panel")
+		return
 	}
 
 	cmd := &agentpb.IssuePublicCertCommand{

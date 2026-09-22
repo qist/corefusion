@@ -973,6 +973,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if sharedNodeMgr != nil {
 		certH.SetNodeIssuer(sharedNodeMgr)
 	}
+	// 邮箱/CA 归**面板** ✓（`acme_account_configs` 里的 ACME 账号 ✓）→ 必须接线 ✗，
+	// 否则节点侧签发会因"没有邮箱"而失败 ✓（真机踩到过：面板日志明确写了
+	// `panel did not supply an ACME account email` ✓）。
+	if acmeEmailSvc != nil {
+		certH.SetACMEEmailResolver(acmeEmailAdapter{svc: acmeEmailSvc})
+		if sharedNodeMgr != nil {
+			// 自动续期走的是 manager 的 IssuePublicCert ✓，同样要能解析默认账号邮箱 ✓
+			sharedNodeMgr.SetACMEAccountResolver(acmeEmailAdapter{svc: acmeEmailSvc})
+		}
+	}
 	// Reuse processMgr if injected from main.go (shared with LocalAgent),
 	// otherwise create a new one.
 	if processMgr == nil {

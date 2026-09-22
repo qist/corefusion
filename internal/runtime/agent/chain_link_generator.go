@@ -767,10 +767,21 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 	// We extract the user info from the proxy map instead of using a relay UUID.
 	users := extractUsersFromProxyMap(pm, protocol)
 
+	settings := buildExternalOutboundSettings(protocol, host, port, users)
+	// hysteria2 的 obfs（salamander）在 sing-box 里是**出站顶层**字段，但链式的中间形状放在
+	// settings.servers[0].obfs（转换器从那里取）→ 这里从外部节点的 ProxyJSON 注入。
+	if (protocol == "hysteria2" || protocol == "hysteria") && settings != nil {
+		if obfs, ok := pm["obfs"].(map[string]interface{}); ok && len(obfs) > 0 {
+			if servers, ok := settings["servers"].([]map[string]interface{}); ok && len(servers) > 0 {
+				servers[0]["obfs"] = obfs
+			}
+		}
+	}
+
 	return ChainEntryOutbound{
 		Tag:            tag,
 		Protocol:       protocol,
-		Settings:       buildExternalOutboundSettings(protocol, host, port, users),
+		Settings:       settings,
 		StreamSettings: buildStreamFromProxyMap(pm),
 	}, nil
 }
@@ -875,6 +886,25 @@ func buildExternalOutboundSettings(protocol, address string, port int, users []m
 				},
 			},
 		}
+	case "hysteria2", "hysteria":
+		// 中间形状：settings.servers[0] = {address, port, password}（obfs 由 buildExternalOutbound 注入），
+		// 最终由 coreconfig.convertChainOutboundsToSingbox 转成 sing-box 的 hy2 出站。
+		// 注意 xray 没有 hy2 出站 → 这条路只在入口核心是 sing-box 时可达（调用方已按核心校验）。
+		password := ""
+		if len(users) > 0 {
+			if p, ok := users[0]["password"].(string); ok {
+				password = p
+			}
+		}
+		return map[string]interface{}{
+			"servers": []map[string]interface{}{
+				{
+					"address":  address,
+					"port":     port,
+					"password": password,
+				},
+			},
+		}
 	case "shadowsocks":
 		method := "chacha20-ietf-poly1305"
 		password := ""
@@ -912,6 +942,10 @@ func buildExternalOutboundSettings(protocol, address string, port int, users []m
 // extractUsersFromProxyMap extracts user credentials from a mihomo proxy map.
 func extractUsersFromProxyMap(pm map[string]interface{}, protocol string) []map[string]interface{} {
 	switch protocol {
+	case "hysteria2", "hysteria":
+		// 外部 hy2 节点：ProxyJSON 里就是 password（部分来源写作 auth / auth_str）
+		password := firstString(pm, "password", "auth", "auth_str")
+		return []map[string]interface{}{{"password": password}}
 	case "vless":
 		uuid, _ := pm["uuid"].(string)
 		flow, _ := pm["flow"].(string)

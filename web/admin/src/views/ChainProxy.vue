@@ -252,21 +252,36 @@
               </el-select>
             </el-col>
           </el-row>
-          <!-- 每个集群出口：选它上面**已有的入站**（链式不再创建入站，也不再需要 chain_exit_config） -->
-          <div v-if="wiz.clusterExits.length" style="margin-top:14px">
+          <!-- 每个出口一行：集群出口选它上面**已有的入站**；再统一设置优先级/权重/序号 -->
+          <div v-if="totalSelectedExits" style="margin-top:14px">
             <div class="exit-group-title">{{ t('chainProxy.exitInboundTitle') }}</div>
-            <div v-for="eid in wiz.clusterExits" :key="eid"
-                 style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-              <span style="width:150px;font-size:13px;color:#303133;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                {{ serverName(eid) }}
+            <div v-for="row in exitRows" :key="row.key"
+                 style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="width:130px;font-size:13px;color:#303133;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                {{ row.isExternal ? extServerName(row.id) : serverName(row.id) }}
+                <el-tag v-if="row.isExternal" size="small" type="warning" style="margin-left:4px">ext</el-tag>
               </span>
-              <el-select v-model="wiz.exitInbounds[eid]" filterable size="small" style="width:280px"
+              <el-select v-if="!row.isExternal" v-model="wiz.exitInbounds[row.id]" filterable size="small" style="width:250px"
                          :placeholder="t('chainProxy.exitInboundPlaceholder')">
-                <el-option v-for="ib in exitInboundCandidates(eid)" :key="ib.id"
+                <el-option v-for="ib in exitInboundCandidates(row.id)" :key="ib.id"
                            :label="inboundLabel(ib)" :value="ib.id" />
               </el-select>
-              <span style="font-size:12px;color:#909399;flex:1">{{ exitInboundTip(eid) }}</span>
+              <span v-else style="width:250px;font-size:12px;color:#909399">{{ t('chainProxy.externalUsesOwnProtocol') }}</span>
+              <span style="font-size:12px;color:#909399">
+                {{ t('chainProxy.priority') }}
+                <el-input-number v-model="paramOf(row).priority" :min="1" :max="99" size="small" controls-position="right" style="width:80px" />
+              </span>
+              <span style="font-size:12px;color:#909399">
+                {{ t('chainProxy.weight') }}
+                <el-input-number v-model="paramOf(row).weight" :min="1" :max="1000" size="small" controls-position="right" style="width:90px" />
+              </span>
+              <span style="font-size:12px;color:#909399">
+                {{ t('chainProxy.sortOrder') }}
+                <el-input-number v-model="paramOf(row).sort_order" :min="0" :max="999" size="small" controls-position="right" style="width:80px" />
+              </span>
+              <span style="font-size:12px;color:#909399;flex:1">{{ row.isExternal ? '' : exitInboundTip(row.id) }}</span>
             </div>
+            <div style="font-size:12px;color:#909399">{{ t('chainProxy.priorityHint') }}</div>
           </div>
           <div style="margin-top:10px;font-size:12px;color:#909399">
             {{ t('chainProxy.selectedCount', { n: totalSelectedExits }) }}
@@ -446,8 +461,24 @@ const wiz = ref({
   externalExits: [],
   // 集群出口 → 选中的"出口节点上已有的入站" id
   exitInbounds: {},
+  // 出口（集群/外部）→ 路由参数。key 形如 c<serverId> / e<externalId>（两类 id 可能撞号，所以加前缀）
+  exitParams: {},
 })
 const totalSelectedExits = computed(() => wiz.value.clusterExits.length + wiz.value.externalExits.length)
+// 出口行：集群 + 外部统一成一行（外部节点用其自身协议，不需要选入站）
+const exitRows = computed(() => [
+  ...wiz.value.clusterExits.map((id, i) => ({ key: `c${id}`, id, isExternal: false, index: i })),
+  ...wiz.value.externalExits.map((id, i) => ({ key: `e${id}`, id, isExternal: true, index: wiz.value.clusterExits.length + i })),
+])
+// 路由参数默认值：priority 按选择顺序（与后端 "priority=0 → i+1" 的语义一致 ✓）
+function exitParam(key, index) {
+  if (!wiz.value.exitParams[key]) {
+    wiz.value.exitParams[key] = { priority: index + 1, weight: 100, sort_order: index }
+  }
+  return wiz.value.exitParams[key]
+}
+// 模板里取参数（缺省时自动补默认值，避免首次渲染读到 undefined）
+function paramOf(row) { return exitParam(row.key, row.index) }
 
 // ⚠ 与后端 `agent.ChainSupportedProtocols(coreType)` 必须保持一致：
 //   实测 xray **没有** hysteria2 出站（`xray run -test` → unknown config id: hysteria2），
@@ -488,7 +519,7 @@ function resetWizard() {
   wizardStep.value = 0
   inboundConfigs.value = []
   exitInboundOptions.value = {}
-  wiz.value = { entryServerId: 0, entryInboundId: 0, clusterExits: [], externalExits: [], exitInbounds: {} }
+  wiz.value = { entryServerId: 0, entryInboundId: 0, clusterExits: [], externalExits: [], exitInbounds: {}, exitParams: {} }
 }
 
 // ── Exit Config Dialog ──
@@ -808,6 +839,14 @@ async function saveLinkEdit() {
   const payload = {
     exit_inbound_id: Number(wiz.value.exitInbounds[exitId]) || 0,
   }
+  // 编辑态同样要保存优先级/权重/序号 —— 否则在对话框里改了这三项会"看起来生效、实际没保存" ✗
+  const row = exitRows.value[0]
+  if (row) {
+    const prm = paramOf(row)
+    payload.priority = Number(prm.priority) || 1
+    payload.weight = Number(prm.weight) || 100
+    payload.sort_order = Number(prm.sort_order) || 0
+  }
   linkSaving.value = true
   try {
     await chainApi.updateLink(linkEditingId.value, payload)
@@ -835,15 +874,19 @@ async function loadExitInboundsForLinks(rows) {
 
 async function createChainProxy() {
   if (!canNextStep.value) return
-  const exits = [
-    // 集群出口：带上"该节点上已有的入站"，后端据此推导出站（不再创建 relay 入站）
-    ...wiz.value.clusterExits.map(id => ({
-      is_external: false,
-      id,
-      exit_inbound_id: Number(wiz.value.exitInbounds[id]) || 0,
-    })),
-    ...wiz.value.externalExits.map(id => ({ is_external: true, id })),
-  ]
+  // 每个出口带上自己的优先级/权重/序号（后端 CreateChainProxy 逐条落库，priority=0 时按顺序兜底）
+  const withParams = (row, i) => {
+    const p = exitParam(row.key, i)
+    return {
+      is_external: row.isExternal,
+      id: row.id,
+      priority: Number(p.priority) || i + 1,
+      weight: Number(p.weight) || 100,
+      sort_order: Number(p.sort_order) || 0,
+      ...(row.isExternal ? {} : { exit_inbound_id: Number(wiz.value.exitInbounds[row.id]) || 0 }),
+    }
+  }
+  const exits = exitRows.value.map((row, i) => withParams(row, i))
   if (exits.length === 0) {
     ElMessage.warning(t('chainProxy.selectExit'))
     return
@@ -871,10 +914,20 @@ async function editLink(row) {
   wiz.value.entryInboundId = row.entry_inbound_id || row.entryInboundId || 0
   if (row.exit_external_id) {
     wiz.value.externalExits = [row.exit_external_id]
+    wiz.value.exitParams[`e${row.exit_external_id}`] = {
+      priority: row.priority || 1,
+      weight: row.weight || 100,
+      sort_order: row.sort_order || 0,
+    }
   } else if (row.exit_server_id) {
     wiz.value.clusterExits = [row.exit_server_id]
     const eib = row.exit_inbound_id || 0
     if (eib) wiz.value.exitInbounds[row.exit_server_id] = eib
+    wiz.value.exitParams[`c${row.exit_server_id}`] = {
+      priority: row.priority || 1,
+      weight: row.weight || 100,
+      sort_order: row.sort_order || 0,
+    }
     await loadExitInbounds(row.exit_server_id)
   }
   if (wiz.value.entryServerId) {

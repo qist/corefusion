@@ -99,6 +99,126 @@ func TestConvertChainOutboundsToSingbox_Hysteria2KeepsServerPort(t *testing.T) {
 	}
 }
 
+// 外部 gRPC 出口：`grpcSettings.serviceName` 必须转成 sing-box 的 `transport.service_name`。
+// 旧实现只读顶层 `ss["serviceName"]` ✗ → 服务名被静默丢掉 → 对不上服务端 → 连不上，
+// 而 `sing-box check` 照样通过（该字段可选）✗。
+func TestConvertChainOutboundsToSingbox_ExternalGRPCServiceName(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag":      "chain-4-ext3",
+			"protocol": "vless",
+			"settings": map[string]interface{}{
+				"vnext": []interface{}{
+					map[string]interface{}{
+						"address": "exit.example.com", "port": 443,
+						"users": []interface{}{map[string]interface{}{"id": "uuid-1", "encryption": "none"}},
+					},
+				},
+			},
+			"streamSettings": map[string]interface{}{
+				"network":      "grpc",
+				"security":     "reality",
+				"serverName":   "nuvexo.com",
+				"fingerprint":  "chrome",
+				"grpcSettings": map[string]interface{}{"serviceName": "s7cKJaIE095Mtd3B0EpH0JXy31YR6GHF"},
+				"realitySettings": map[string]interface{}{
+					"publicKey": "PUBKEY", "shortId": "03e822599b2634",
+					"serverName": "nuvexo.com", "fingerprint": "chrome",
+				},
+			},
+		},
+	}
+	ob, _ := convertChainOutboundsToSingbox(in)[0].(map[string]interface{})
+	tr, _ := ob["transport"].(map[string]interface{})
+	if tr == nil || tr["type"] != "grpc" {
+		t.Fatalf("transport 不对：%v", ob["transport"])
+	}
+	if tr["service_name"] != "s7cKJaIE095Mtd3B0EpH0JXy31YR6GHF" {
+		t.Errorf("gRPC 服务名丢了（对不上服务端就连不上）：%v", tr)
+	}
+	tls, _ := ob["tls"].(map[string]interface{})
+	if tls == nil || tls["server_name"] != "nuvexo.com" {
+		t.Errorf("reality 的 SNI 丢了：%v", ob["tls"])
+	}
+	re, _ := tls["reality"].(map[string]interface{})
+	if re == nil || re["public_key"] != "PUBKEY" || re["short_id"] != "03e822599b2634" {
+		t.Errorf("reality 参数丢了：%v", tls["reality"])
+	}
+	if utls, _ := tls["utls"].(map[string]interface{}); utls == nil || utls["fingerprint"] != "chrome" {
+		t.Errorf("reality 必须有 uTLS：%v", tls)
+	}
+}
+
+// 外部 ws 出口：`wsSettings.path` 与 `wsSettings.headers.Host` 必须转过来
+// （旧实现只读顶层 path ✗ → ws 落到默认路径 → 连不上）。
+func TestConvertChainOutboundsToSingbox_ExternalWSPathAndHost(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag":      "chain-118-ext2",
+			"protocol": "vless",
+			"settings": map[string]interface{}{
+				"vnext": []interface{}{
+					map[string]interface{}{
+						"address": "dns.example.com", "port": 443,
+						"users": []interface{}{map[string]interface{}{"id": "uuid-2", "encryption": "none"}},
+					},
+				},
+			},
+			"streamSettings": map[string]interface{}{
+				"network":    "ws",
+				"security":   "tls",
+				"serverName": "maimai.example.com",
+				"wsSettings": map[string]interface{}{
+					"path":    "/?ed=2560",
+					"headers": map[string]interface{}{"Host": "maimai.example.com"},
+				},
+			},
+		},
+	}
+	ob, _ := convertChainOutboundsToSingbox(in)[0].(map[string]interface{})
+	tr, _ := ob["transport"].(map[string]interface{})
+	if tr == nil || tr["type"] != "ws" {
+		t.Fatalf("transport 不对：%v", ob["transport"])
+	}
+	if tr["path"] != "/?ed=2560" {
+		t.Errorf("ws path 丢了：%v", tr)
+	}
+	// ⚠ sing-box 的 ws transport 没有 `host` 字段（写了核心直接 FATAL）→ 必须进 headers.Host
+	if hdrs, _ := tr["headers"].(map[string]interface{}); hdrs == nil || hdrs["Host"] != "maimai.example.com" {
+		t.Errorf("ws Host 丢了（须写进 headers.Host，不能写顶层 host）：%v", tr)
+	}
+	if _, bad := tr["host"]; bad {
+		t.Errorf("不能写 transport.host —— sing-box 会报 unknown field 并拒绝启动：%v", tr)
+	}
+}
+
+// 顶层写法仍要兼容（少数派生路径写在顶层）。
+func TestConvertChainOutboundsToSingbox_TopLevelTransportFallback(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag":      "chain-1-2",
+			"protocol": "vless",
+			"settings": map[string]interface{}{
+				"vnext": []interface{}{
+					map[string]interface{}{
+						"address": "a.example.com", "port": 443,
+						"users": []interface{}{map[string]interface{}{"id": "uuid-3", "encryption": "none"}},
+					},
+				},
+			},
+			"streamSettings": map[string]interface{}{
+				"network": "ws", "security": "none",
+				"path": "/legacy", "serviceName": "svc-legacy",
+			},
+		},
+	}
+	ob, _ := convertChainOutboundsToSingbox(in)[0].(map[string]interface{})
+	tr, _ := ob["transport"].(map[string]interface{})
+	if tr == nil || tr["path"] != "/legacy" || tr["service_name"] != "svc-legacy" {
+		t.Errorf("顶层回落失效：%v", ob["transport"])
+	}
+}
+
 // port 为 0 且没有 serverPorts（异常数据）→ 不写 server_port: 0。
 func TestConvertChainOutboundsToSingbox_Hysteria2OmitsZeroPort(t *testing.T) {
 	in := []interface{}{

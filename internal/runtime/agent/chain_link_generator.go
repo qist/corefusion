@@ -126,11 +126,12 @@ func NewChainLinkGenerator(
 //   - a single exit  → one field rule (inboundTag → chain-* outboundTag)
 //   - multiple exits with same priority → loadbalance (balancer + observatory)
 //   - multiple exits with different priorities → failover (多条独立 field 规则, 按 priority 排序)
-func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, serverID int64) ([]ChainEntryOutbound, []ChainRoutingRule, []ChainBalancer, *ChainObservatory, error) {
+func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, serverID int64, coreType string) ([]ChainEntryOutbound, []ChainRoutingRule, []ChainBalancer, *ChainObservatory, error) {
 	links, err := g.linkRepo.ListByEntry(ctx, serverID, 0)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("list chain links: %w", err)
 	}
+	links = g.filterLinksByEntryCore(ctx, links, coreType)
 	if len(links) == 0 {
 		return nil, nil, nil, nil, nil
 	}
@@ -640,6 +641,29 @@ func samePrivateNetwork(entry, exit *entity.NodeServer) bool {
 // buildExternalOutbound builds an outbound pointing to an external node.
 // entryCoreType 取"入口入站自己"的核心类型 —— 它决定入口侧出站必须是 xray 还是 sing-box 形状。
 // （entity.NodeServer 上没有 core_type 字段；同一台机器可以同时跑两个核心的入站。）
+// filterLinksByEntryCore 只保留"入口入站属于 coreType 这个核心"的链。
+//
+// ⚠ 链式出站是**按节点**生成的，而一台机器可以同时跑 xray 与 sing-box ✗ —— 不过滤的话，
+// 某个入口是 hysteria2（**只有 sing-box 有 hy2 出站**）时，**xray 的配置里也会多出一条
+// hysteria2 出站** → xray 拒绝启动（实测：
+//
+//	failed to build outbound config with tag chain-118-1 >
+//	  failed to load outbound detour config for protocol hysteria2 > unknown config id: hysteria2
+//
+// 节点直接起不来 ✗）。入口入站自己的 core_type 决定这条链属于哪个核心的配置 ✓。
+func (g *ChainLinkGenerator) filterLinksByEntryCore(ctx context.Context, links []entity.ChainLink, coreType string) []entity.ChainLink {
+	if coreType == "" || len(links) == 0 {
+		return links
+	}
+	out := make([]entity.ChainLink, 0, len(links))
+	for _, l := range links {
+		if g.entryCoreType(ctx, l.EntryInboundID) == coreType {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func (g *ChainLinkGenerator) entryCoreType(ctx context.Context, entryInboundID int64) string {
 	if g.inboundRepo == nil || entryInboundID == 0 {
 		return "xray"
@@ -1129,8 +1153,8 @@ func MergeChainLinkRoutingRules(existingRules []interface{}, chainRules []ChainR
 // It wraps generateEntryOutboundsTyped, converting the typed results to []interface{}.
 // Balancers and observatory (multi-exit load balancing, see design doc §6.6) are
 // returned separately via GenerateEntryBalancers.
-func (g *ChainLinkGenerator) GenerateEntryOutbounds(ctx context.Context, serverID int64) ([]interface{}, []interface{}, error) {
-	outbounds, rules, _, _, err := g.generateEntryOutboundsTyped(ctx, serverID)
+func (g *ChainLinkGenerator) GenerateEntryOutbounds(ctx context.Context, serverID int64, coreType string) ([]interface{}, []interface{}, error) {
+	outbounds, rules, _, _, err := g.generateEntryOutboundsTyped(ctx, serverID, coreType)
 	if err != nil || (len(outbounds) == 0 && len(rules) == 0) {
 		return nil, nil, err
 	}
@@ -1155,8 +1179,8 @@ func (g *ChainLinkGenerator) GenerateEntryOutbounds(ctx context.Context, serverI
 // It returns the routing.balancers[] entries and the root observatory config
 // for load-balanced (multi-exit) entries. Returns nil slices when no entry uses
 // load balancing. See design doc §6.5 / §6.6.
-func (g *ChainLinkGenerator) GenerateEntryBalancers(ctx context.Context, serverID int64) (balancers []interface{}, observatory map[string]interface{}) {
-	_, _, bals, obs, err := g.generateEntryOutboundsTyped(ctx, serverID)
+func (g *ChainLinkGenerator) GenerateEntryBalancers(ctx context.Context, serverID int64, coreType string) (balancers []interface{}, observatory map[string]interface{}) {
+	_, _, bals, obs, err := g.generateEntryOutboundsTyped(ctx, serverID, coreType)
 	if err != nil || len(bals) == 0 {
 		return nil, nil
 	}

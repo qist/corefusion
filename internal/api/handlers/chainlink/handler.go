@@ -610,7 +610,9 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 	}
 
 	// 3. clear-then-insert (SyncFromEntry, §5.4/§5.5)
-	if err := h.linkRepo.DeleteByEntry(ctx, req.EntryServerID); err != nil {
+	// ⚠ 清除粒度是"入口 server + 入口 inbound"，**不是**整台 server ✗ ——
+	// 同机多入口各自一组出口（按入口隔离），只按 server 清会把别的入口的链一起清掉 ✗。
+	if err := h.linkRepo.DeleteByEntryInbound(ctx, req.EntryServerID, req.EntryInboundID); err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}

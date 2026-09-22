@@ -87,9 +87,17 @@ func (r *ChainLinkRepository) Delete(ctx context.Context, id int64) error {
 }
 
 // DeleteByEntry deletes all chain links for an entry server.
-func (r *ChainLinkRepository) DeleteByEntry(ctx context.Context, serverID int64) error {
+// DeleteByEntryInbound 清掉某个"入口入口（server + inbound）"下的全部链。
+//
+// ⚠ 粒度必须到 **inbound**，不能只按 server ✗：同一台机器可以有多个入口入站，每个入站有自己
+// 的一组出口（设计文档 §1183 "按入口隔离"）。只按 server 清的话，给入站 A 建链会**静默清掉**
+// 入站 B 的链 → B 的流量落到 `route.final` 直连出去 ✗（真机踩到：本机 xray 入口 4 的链在给
+// sing-box 入口 118 建链时消失 ✓）。读取侧的 ListByEntry 也是按 server + inbound 查询的，保持一致。
+// `entry_inbound_id = 0` 是历史数据（早期没有入口入站概念），一并纳入清除。
+func (r *ChainLinkRepository) DeleteByEntryInbound(ctx context.Context, serverID int64, inboundID int64) error {
 	return r.db.WithContext(ctx).
 		Where("entry_server_id = ?", serverID).
+		Where("entry_inbound_id = 0 OR entry_inbound_id = ?", inboundID).
 		Delete(&entity.ChainLink{}).Error
 }
 

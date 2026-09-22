@@ -90,6 +90,10 @@ exit inbound 120 protocol "hysteria2" is not chain-capable for entry core "xray"
 | 10 | 外部 hy2 的**端口跳跃**失效 | mihomo 用 `ports: "40000-50000"` 且 `port=0`，旧实现只读 `port` → 生成 `server_port: 0`（`check` 不报错 ✗、运行期连不上 ✗） | 真机产物为 `"server_ports":["40000:50000"]` 且**无** `server_port` | 本次 |
 | 11 | 外部 **reality** 节点退化成普通 TLS → 连不上 | `reality-opts` 被完全忽略 | 单测断言 `security=reality` + `realitySettings{publicKey,shortId,serverName,fingerprint}` | 本次 |
 | 12 | 入口 xray + 外部 hy2 **被 API 接受并落库**（只有生成器报错） | 外部出口分支**只有存在性校验**，没有协议校验 | 修复后 API 返回 `EXIT_PROTOCOL_UNSUPPORTED`（带外部节点协议与支持名单） | 本次 |
+| 13 | sing-box 入口链到 **gRPC / ws** 出口时，**服务名 / 路径被静默丢掉** | xray 把它们放在**嵌套**位置（`grpcSettings.serviceName` / `wsSettings.path`），转换器只读顶层 ✗（两个字段都可选 → `check` 照样通过 ✗） | gRPC 出口产物含 `"service_name"`、ws 出口含 `"path"`+`"headers":{"Host":…}` | 本次 |
+| 14 | 修 #13 时先写成 `transport.host` → **核心起不来** | sing-box 的 ws transport **没有 `host` 字段** | `FATAL decode config: outbounds[6].transport.host: json: unknown field "host"` → 改 `headers.Host` 后通过 ✓ | 本次 |
+| 15 | **节点起不来**：一台机器同时跑两个核心时，sing-box 专用协议（hy2）的出站被塞进 **xray** 配置 | 链式出站**按节点**生成，没有按"入口入站的核心"过滤 ✗ | 修复前 xray：`failed to build outbound config with tag chain-118-1 > … unknown config id: hysteria2` ✗；修复后 xray 只含 `chain-4-2(vless)`、sing-box 只含 `chain-118-1(hysteria2)`，`xray run -test` → `Configuration OK.` ✓ | 本次 |
+| 16 | 同机多入口时，给入口 A 建链会**静默清掉入口 B 的链**（B 的流量回落 `route.final` 直连 ✗） | 建链前的清理按 `entry_server_id` 整台服务器清 ✗，而设计是"**按入口隔离**"（§1183），读取侧 `ListByEntry` 也是按 server+inbound | 修复后同机 xray 入站 4 与 sing-box 入站 118 的链**共存**（DB 里两条 ✓） | 本次 |
 
 > 其中 #4 与 #5 是**上一轮"端到端通过"结论的错误来源**：当时看到的出口 IP 其实是入口节点自己的
 > 公网 IP（同机房节点的出口 IP 完全相同 ✗），流量实际是**直连**出去的。
@@ -129,6 +133,16 @@ exit inbound 120 protocol "hysteria2" is not chain-capable for entry core "xray"
   节点13 出口入站计数:   0 →  9383     ✓
 出口 IP: 58.63.60.98 (CN)    vs    面板宿主直连 23.254.233.185 (US)   ✓
 ```
+
+**外部 reality / gRPC 出口**：本机 xray 入口 4 + 外部 `vless-reality-grpc` 节点（`external_nodes.id=5`）→
+xray 产物含 `"security":"reality"` + `"realitySettings":{"publicKey","shortId","serverName":"nuvexo.com",
+"fingerprint"}` + `"grpcSettings":{"serviceName":…}` → **`xray run -test` → `Configuration OK.`** ✓；
+同一条出口给 sing-box 入口用时 → `"tls":{"reality":{"public_key","short_id"},"server_name":"nuvexo.com",
+"utls":{…}}` + `"transport":{"type":"grpc","service_name":…}` → `sing-box check` 通过 ✓。
+
+**按核心隔离**：本机同时跑 xray 与 sing-box，链分别指向 vless（入口 xray 入站 4）与 **hy2**（入口 sing-box
+入站 118）→ `xray.jsonc` 只含 `chain-4-2(vless)`、`singbox.jsonc` 只含 `chain-118-1(hysteria2)` ✓，
+两个核心都能通过真实核心校验 ✓（修复前 xray 会因 hy2 出站直接起不来 ✗）。
 
 **外部出口（经 `external_node_servers` 注册）**：把外部 hy2 节点（`external_nodes.id=3`）注册后选为
 sing-box 入口的出口 →

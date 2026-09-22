@@ -5,6 +5,7 @@
       <div>
         <el-button @click="showEmailDialog">{{ t('certificate.manageEmails') }}</el-button>
         <el-button @click="showChannelDialog">{{ t('certificate.manageChannels') }}</el-button>
+        <el-button @click="showEABDialog">{{ t('certificate.manageEAB') }}</el-button>
         <el-button @click="showUploadDialog">{{ t('certificate.upload') }}</el-button>
         <el-button type="primary" @click="showIssueDialog">{{ t('certificate.issue') }}</el-button>
       </div>
@@ -117,16 +118,21 @@
           </div>
         </el-form-item>
 
-        <el-form-item v-if="issueForm.ca_provider!=='lets_encrypt'" :label="'EAB-KID'">
-          <el-input v-model="issueForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />
-          <div style="color:#909399;font-size:12px;margin-top:4px">
+        <!-- EAB（外部账号绑定）：**只选关联** ✓ —— 在"EAB 配置"里统一维护 ✓
+             （Google Public CA / ZeroSSL 必填 ✗，不用每次在这里手填 ✗） -->
+        <el-form-item v-if="issueForm.ca_provider!=='lets_encrypt'" :label="t('certificate.eabConfig')">
+          <el-select v-model="issueForm.eab_config_id" clearable style="width:100%"
+                     :placeholder="t('certificate.eabSelectPlaceholder')">
+            <el-option v-for="e in eabConfigs" :key="e.id"
+                       :label="`${e.name} (${e.ca_provider || '-'}${e.has_mac_key ? '' : t('certificate.eabIncomplete')})`"
+                       :value="e.id" />
+          </el-select>
+          <div style="color:#909399;font-size:12px;line-height:1.5;margin-top:4px">
             {{ issueForm.ca_provider === 'zerossl'
               ? t('certificate.eabOptionalHint')
               : t('certificate.eabRequiredHint') }}
+            {{ t('certificate.eabManageHint') }}
           </div>
-        </el-form-item>
-        <el-form-item v-if="issueForm.ca_provider!=='lets_encrypt'" :label="'EAB-HMAC-Key'">
-          <el-input v-model="issueForm.eab_mac_key" :placeholder="t('certificate.eabMACKeyPlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('certificate.autoRenew')">
           <el-switch v-model="issueForm.auto_renew" />
@@ -135,6 +141,65 @@
       <template #footer>
         <el-button @click="issueVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="issuing" @click="handleIssue">{{ t('certificate.issue') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- EAB Config Management Dialog -->
+    <!-- EAB 独立配置 ✓：和 DNS 通道一样集中维护 ✓，签发时只选关联 ✓ -->
+    <el-dialog v-model="eabVisible" :title="t('certificate.manageEAB')" width="760">
+      <div style="margin-bottom:16px">
+        <el-button type="primary" size="small" @click="showAddEAB">{{ t('certificate.addEAB') }}</el-button>
+        <span style="margin-left:12px;color:#909399;font-size:12px">{{ t('certificate.eabWhyHint') }}</span>
+      </div>
+      <el-table :data="eabConfigs" stripe>
+        <el-table-column prop="name" :label="t('common.name')" width="180" />
+        <el-table-column :label="t('certificate.caProvider')" width="150">
+          <template #default="{row}"><el-tag size="small">{{ row.ca_provider || '-' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="eab_key_id" label="EAB-KID" min-width="200" show-overflow-tooltip />
+        <el-table-column :label="'EAB-HMAC-Key'" width="140">
+          <template #default="{row}">
+            <el-tag size="small" :type="row.has_mac_key ? 'success' : 'danger'">
+              {{ row.has_mac_key ? t('certificate.eabSet') : t('certificate.eabUnset') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="150">
+          <template #default="{row}">
+            <el-button size="small" @click="showEditEAB(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="handleDeleteEAB(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- Add/Edit EAB Dialog -->
+    <el-dialog v-model="eabFormVisible" :title="editingEAB ? t('common.edit') : t('certificate.addEAB')" width="620">
+      <el-form :model="eabForm" label-width="140px">
+        <el-form-item :label="t('common.name')">
+          <el-input v-model="eabForm.name" :placeholder="t('certificate.eabNamePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('certificate.caProvider')">
+          <el-select v-model="eabForm.ca_provider" style="width:100%">
+            <el-option label="Google Public CA" value="google" />
+            <el-option label="ZeroSSL" value="zerossl" />
+            <el-option label="Let's Encrypt（不需要 EAB）" value="lets_encrypt" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="EAB-KID">
+          <el-input v-model="eabForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />
+        </el-form-item>
+        <el-form-item label="EAB-HMAC-Key">
+          <el-input v-model="eabForm.eab_mac_key" type="password" show-password
+                    :placeholder="editingEAB && editingEAB.has_mac_key ? t('certificate.eabKeepHint') : ''" />
+          <div style="font-size:11px;color:#909399;line-height:1.5;margin-top:4px">
+            {{ t('certificate.eabKeepHint') }}
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="eabFormVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="eabSaving" @click="handleSaveEAB">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -417,9 +482,10 @@ async function fetchCertificates() {
 }
 
 function showIssueDialog() {
-  issueForm.value = { email_id: null, ca_provider: 'lets_encrypt', cert_target: 'domain', issue_node_id: 0, node_webroot: '', challenge_type: 'dns-01', dns_channel_id: null, domains_text: '', ips_text: '', key_type: 'ecc', key_bits: 256, dual_key: false, eab_key_id: '', eab_mac_key: '', auto_renew: true }
+  issueForm.value = { email_id: null, ca_provider: 'lets_encrypt', cert_target: 'domain', issue_node_id: 0, node_webroot: '', challenge_type: 'dns-01', dns_channel_id: null, domains_text: '', ips_text: '', key_type: 'ecc', key_bits: 256, dual_key: false, eab_config_id: null, auto_renew: true }
   issueVisible.value = true
   fetchNodes()
+  fetchEABs()   // EAB 是独立配置 ✓ → 拉列表供"只选关联" ✓
 }
 
 async function handleDetectIP() {
@@ -492,8 +558,7 @@ async function handleIssue() {
     key_bits: issueForm.value.key_bits,
     dns_channel_id: isIP ? 0 : (issueForm.value.dns_channel_id || 0),
     email_id: issueForm.value.email_id || 0,
-    eab_key_id: issueForm.value.eab_key_id,
-    eab_mac_key: issueForm.value.eab_mac_key,
+    eab_config_id: issueForm.value.eab_config_id || 0,
     auto_renew: issueForm.value.auto_renew
   }
   issuing.value = true
@@ -586,6 +651,42 @@ async function fetchNodes() {
   } catch (e) { issueNodes.value = [] }
 }
 function showChannelDialog() { channelVisible.value = true; fetchChannels() }
+
+// ── EAB 独立配置（像 DNS 通道一样集中管理 ✓，签发时只选关联 ✓）──────────
+const eabVisible = ref(false)
+const eabFormVisible = ref(false)
+const eabSaving = ref(false)
+const editingEAB = ref(null)
+const eabConfigs = ref([])
+const eabForm = ref({ name: '', ca_provider: 'google', eab_key_id: '', eab_mac_key: '' })
+
+async function fetchEABs() {
+  try { eabConfigs.value = await client.get('/eab-configs') || [] } catch (e) { ElMessage.error(t('common.failed')) }
+}
+function showEABDialog() { eabVisible.value = true; fetchEABs() }
+function showAddEAB() {
+  editingEAB.value = null
+  eabForm.value = { name: '', ca_provider: 'google', eab_key_id: '', eab_mac_key: '' }
+  eabFormVisible.value = true
+}
+function showEditEAB(row) {
+  editingEAB.value = row
+  // ⚠ HMAC-Key 后端不回传（密钥不外泄 ✓）→ 留空即"保持原值" ✓
+  eabForm.value = { name: row.name, ca_provider: row.ca_provider || 'google', eab_key_id: row.eab_key_id || '', eab_mac_key: '' }
+  eabFormVisible.value = true
+}
+async function handleSaveEAB() {
+  eabSaving.value = true
+  try {
+    if (editingEAB.value) { await client.put(`/eab-configs/${editingEAB.value.id}`, eabForm.value) }
+    else { await client.post('/eab-configs', eabForm.value) }
+    ElMessage.success(t('common.success')); eabFormVisible.value = false; fetchEABs()
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { eabSaving.value = false }
+}
+async function handleDeleteEAB(row) {
+  await ElMessageBox.confirm(t('certificate.deleteEABConfirm', { name: row.name }), t('common.confirm'))
+  await client.delete(`/eab-configs/${row.id}`); ElMessage.success(t('common.success')); fetchEABs()
+}
 function showAddChannel() { editingChannel.value = null; channelForm.value = { name: '', provider: 'cloudflare', env_vars: {} }; channelFormVisible.value = true }
 function showEditChannel(row) { editingChannel.value = row; channelForm.value = { name: row.name, provider: row.provider, env_vars: {} }; channelFormVisible.value = true }
 function onProviderChange() { channelForm.value.env_vars = {} }
@@ -645,8 +746,16 @@ async function handleDeleteChannel(row) { await ElMessageBox.confirm(t('certific
 // --- Emails ---
 async function fetchEmails() { try { emails.value = await client.get('/acme-accounts') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 function showEmailDialog() { emailVisible.value = true; fetchEmails() }
-function showAddEmail() { editingEmail.value = null; emailForm.value = { email: '', is_default: false }; emailFormVisible.value = true }
-function showEditEmail(row) { editingEmail.value = row; emailForm.value = { email: row.email, is_default: row.is_default }; emailFormVisible.value = true }
+function showAddEmail() {
+  editingEmail.value = null
+  emailForm.value = { email: '', is_default: false }
+  emailFormVisible.value = true
+}
+function showEditEmail(row) {
+  editingEmail.value = row
+  emailForm.value = { email: row.email, is_default: row.is_default }
+  emailFormVisible.value = true
+}
 async function handleSaveEmail() {
   emailSaving.value = true
   try {

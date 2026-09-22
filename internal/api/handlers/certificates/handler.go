@@ -37,9 +37,34 @@ type DNSChannelResolver interface {
 	ResolveDNSChannel(ctx context.Context, id int64) (*cert.DNSProviderConfig, error)
 }
 
-// ACMEEmailResolver 解析 ACME 账号邮箱（由面板的 ACME 邮箱服务实现 ✓）。
+// ACMEAccountInfo 是"签发时从所选账号取用的信息" ✓。
+// CA/EAB 存在账号里 ✓ → 签发时自动带上 ✓，用户不用每次手填 ✗。
+type ACMEAccountInfo struct {
+	Email      string
+	CAProvider string
+	EABKeyID   string
+	EABMACKey  string
+}
+
+// EABConfigInfo 是从**独立** EAB 配置里取到的内容 ✓。
+type EABConfigInfo struct {
+	Name       string
+	CAProvider string
+	KeyID      string
+	MACKey     string
+}
+
+// EABConfigResolver 解析**独立**的 EAB 配置 ✓（和 DNS 通道一样的独立配置项 ✓）——
+// 签发时只选关联 ✓，不用手填 EAB-KID / EAB-HMAC-Key ✗。
+type EABConfigResolver interface {
+	ResolveEABConfig(ctx context.Context, id int64) (*EABConfigInfo, error)
+}
+
+// ACMEEmailResolver 解析 ACME 账号（由面板的 ACME 邮箱/账号服务实现 ✓）。
 type ACMEEmailResolver interface {
 	ResolveACMEEmail(ctx context.Context, id int64) (string, error)
+	// ResolveACMEAccount 返回账号的邮箱 + CA + EAB ✓（id<=0 表示默认账号 ✓）。
+	ResolveACMEAccount(ctx context.Context, id int64) (ACMEAccountInfo, error)
 }
 
 type Handler struct {
@@ -48,10 +73,14 @@ type Handler struct {
 	nodeIssuer    NodeCertIssuer
 	acmeEmails    ACMEEmailResolver
 	dnsChannels   DNSChannelResolver
+	eabConfigs    EABConfigResolver
 }
 
 // SetACMEEmailResolver 注入 ACME 账号解析器 ✓（邮箱归面板 ✓，节点不配置 ✗）。
 func (h *Handler) SetACMEEmailResolver(r ACMEEmailResolver) { h.acmeEmails = r }
+
+// SetEABConfigResolver 注入"独立 EAB 配置"的解析能力 ✓。
+func (h *Handler) SetEABConfigResolver(r EABConfigResolver) { h.eabConfigs = r }
 
 // SetDNSChannelResolver 注入 DNS 通道解析器 ✓（凭据存在通道里 ✓，签发时按 ID 取 ✓）。
 func (h *Handler) SetDNSChannelResolver(r DNSChannelResolver) { h.dnsChannels = r }
@@ -212,6 +241,10 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		Webroot       string   `json:"webroot"`        // 留空则由节点按面板生成的 web 配置处理挑战 ✓
 		Email         string   `json:"email"`          // 一般留空：由面板的 ACME 账号解析 ✓
 		EmailID       int64    `json:"email_id"`       // 指定用哪个 ACME 账号（0 = 默认 ✓）
+		// ⚠ 前端一直发的是**扁平**的这两个字段 ✓，而后端此前只认 `eab:{key_id,mac_key}` ✗
+		// → 手填的 EAB 根本传不进来 ✗（Google / ZeroSSL 必填 EAB ✗ → 直接签不了 ✗）。
+		EABKeyID  string `json:"eab_key_id"`
+		EABMACKey string `json:"eab_mac_key"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -260,32 +293,47 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		return
 	}
 
-	// 邮箱来自**面板的 ACME 账号** ✓（用户选了就用选的，没选用默认 ✓）——
+	// 邮箱/CA/EAB 都来自**面板的 ACME 账号** ✓（用户选了就用选的，没选用默认 ✓）——
 	// 节点侧不需要任何 acme 配置 ✗。
 	email := strings.TrimSpace(req.Email)
-	if email == "" {
+	caProvider := strings.TrimSpace(req.CAProvider)
+	eabKID := strings.TrimSpace(req.EABKeyID)
+	eabMAC := strings.TrimSpace(req.EABMACKey)
+	if h.acmeEmails != nil && (email == "" || caProvider == "" || eabMAC == "") {
+		// 账号里存过 EAB（ZeroSSL / Google ✓）→ 自动补上 ✓，用户不用每次手填 ✗
+		if info, rerr := h.acmeEmails.ResolveACMEAccount(c.Request.Context(), req.EmailID); rerr == nil {
+			if email == "" {
+				email = strings.TrimSpace(info.Email)
+			}
+			if caProvider == "" {
+				caProvider = strings.TrimSpace(info.CAProvider)
+			}
+			if eabKID == "" {
+				eabKID = strings.TrimSpace(info.EABKeyID)
+			}
+			if eabMAC == "" {
+				eabMAC = strings.TrimSpace(info.EABMACKey)
+			}
+		}
+	}
+	if strings.TrimSpace(email) == "" {
 		if h.acmeEmails == nil {
-			// 快速失败 ✓：否则会发出"没有邮箱"的指令 ✗，只在节点侧报错 ✗（真机踩过 ✓）
+			// 快速失败 ✓：否则签发的指令会缺邮箱 ✗，只在节点侧报错 ✗（真机踩过 ✓）
 			response.InternalError(c, "NO_ACME_RESOLVER", "ACME account resolver is not configured on the panel")
 			return
 		}
-		resolved, rerr := h.acmeEmails.ResolveACMEEmail(c.Request.Context(), req.EmailID)
-		if rerr != nil {
-			response.BadRequest(c, "NO_ACME_ACCOUNT", "no ACME account available: "+rerr.Error())
-			return
-		}
-		email = resolved
-	}
-	if strings.TrimSpace(email) == "" {
 		response.BadRequest(c, "NO_ACME_ACCOUNT", "no ACME account email available on the panel")
 		return
 	}
 
+	if strings.TrimSpace(caProvider) == "" {
+		caProvider = strings.TrimSpace(req.CAProvider)
+	}
 	cmd := &agentpb.IssuePublicCertCommand{
 		CertId:      req.CertID,
 		Identifiers: identifiers,
 		Challenge:   req.ChallengeType,
-		Ca:          req.CAProvider,
+		Ca:          caProvider,
 		Profile:     req.Profile,
 		Webroot:     req.Webroot,
 		Email:       email,
@@ -339,18 +387,94 @@ func (h *Handler) Issue(c *gin.Context) {
 			KeyID  string `json:"key_id"`
 			MACKey string `json:"mac_key"`
 		} `json:"eab,omitempty"`
+		// ⚠ 前端实际发的是**扁平**字段 ✓，此前后端只认 `eab:{key_id,mac_key}` ✗
+		// → 手填的 EAB 根本进不来 ✗（Google / ZeroSSL 必填 EAB ✗ → 直接签不了 ✗）。
+		EABKeyID  string `json:"eab_key_id"`
+		EABMACKey string `json:"eab_mac_key"`
+		// EmailID 指定用哪个 ACME 账号（0 = 默认 ✓）→ 账号里存的 CA/EAB 自动生效 ✓
+		EmailID int64 `json:"email_id"`
+		// EABConfigID 指定用哪份**独立 EAB 配置** ✓（Google / ZeroSSL 用 ✓）——
+		// 签发弹窗里**只选关联** ✓，不用手填 EAB-KID / EAB-HMAC-Key ✗。
+		EABConfigID int64 `json:"eab_config_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
 
+	// 账号里存过 EAB（ZeroSSL / Google ✓）→ 自动补上 ✓，用户不用每次手填 ✗
+	caProvider := strings.TrimSpace(req.CAProvider)
+	eabKID := strings.TrimSpace(req.EABKeyID)
+	eabMAC := strings.TrimSpace(req.EABMACKey)
+
+	// ① 独立 EAB 配置（推荐用法 ✓：签发时只选一下 ✓）
+	if req.EABConfigID > 0 {
+		if h.eabConfigs == nil {
+			response.InternalError(c, "NO_EAB_RESOLVER", "EAB config resolver is not configured on the panel")
+			return
+		}
+		eb, eerr := h.eabConfigs.ResolveEABConfig(c.Request.Context(), req.EABConfigID)
+		if eerr != nil || eb == nil {
+			msg := "eab config not found"
+			if eerr != nil {
+				msg = eerr.Error()
+			}
+			response.BadRequest(c, "EAB_CONFIG_NOT_FOUND", msg)
+			return
+		}
+		if strings.TrimSpace(eb.CAProvider) != "" {
+			caProvider = strings.TrimSpace(eb.CAProvider)
+		}
+		if strings.TrimSpace(eb.KeyID) == "" || strings.TrimSpace(eb.MACKey) == "" {
+			response.BadRequest(c, "EAB_CONFIG_INCOMPLETE",
+				"EAB config '"+eb.Name+"' is missing eab_key_id or eab_mac_key")
+			return
+		}
+		eabKID = strings.TrimSpace(eb.KeyID)
+		eabMAC = strings.TrimSpace(eb.MACKey)
+	}
+	if caProvider == "" || eabMAC == "" {
+		if h.acmeEmails == nil {
+			// 用户明确选了账号却拿不到 → **必须报错** ✗（静默忽略会让"选了 Google 却按 LE 签"这种事发生 ✓）
+			if req.EmailID > 0 {
+				response.InternalError(c, "NO_ACME_RESOLVER", "ACME account resolver is not configured on the panel")
+				return
+			}
+		} else {
+			info, rerr := h.acmeEmails.ResolveACMEAccount(c.Request.Context(), req.EmailID)
+			if rerr != nil || (info.CAProvider == "" && info.Email == "" && info.EABMACKey == "") {
+				// 选了具体账号但解析不到 → 报错 ✓（否则会悄悄用默认 CA 去签 ✗）
+				if req.EmailID > 0 {
+					msg := "acme account not found"
+					if rerr != nil {
+						msg = rerr.Error()
+					}
+					response.BadRequest(c, "ACME_ACCOUNT_NOT_FOUND", msg)
+					return
+				}
+			} else {
+				if caProvider == "" {
+					caProvider = strings.TrimSpace(info.CAProvider)
+				}
+				if eabKID == "" {
+					eabKID = strings.TrimSpace(info.EABKeyID)
+				}
+				if eabMAC == "" {
+					eabMAC = strings.TrimSpace(info.EABMACKey)
+				}
+			}
+		}
+	}
+
 	input := certService.IssueACMEInput{
 		Domains:       req.Domains,
 		ChallengeType: req.ChallengeType,
-		CAProvider:    cert.CAProvider(req.CAProvider),
+		CAProvider:    cert.CAProvider(caProvider),
 		Profile:       req.Profile,
 	}
+	// 诊断：一眼看出本次用了哪个 CA / 有没有 EAB ✓（排查"选了 Google 却按 LE 签" ✗）
+	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d",
+		req.Domains, req.ChallengeType, caProvider, eabKID != "" && eabMAC != "", req.EABConfigID, req.EmailID)
 
 	if req.DNSProvider != nil {
 		input.DNSProvider = &cert.DNSProviderConfig{
@@ -371,7 +495,10 @@ func (h *Handler) Issue(c *gin.Context) {
 		input.DNSProvider = dnsCfg
 	}
 
-	if req.EAB != nil {
+	// 优先级：请求里显式给的 ✓/嵌套 ✓ > 账号里存的 ✓（上面的合并已经把账号值并进来了 ✓）
+	if eabKID != "" || eabMAC != "" {
+		input.EAB = &cert.EABConfig{KeyID: eabKID, MACKey: eabMAC}
+	} else if req.EAB != nil {
 		input.EAB = &cert.EABConfig{
 			KeyID:  req.EAB.KeyID,
 			MACKey: req.EAB.MACKey,

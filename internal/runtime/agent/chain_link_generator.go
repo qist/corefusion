@@ -458,7 +458,10 @@ func applyExitInboundTLS(streamSettings map[string]interface{}, cfg map[string]i
 				if v := firstString(r, "publicKey", "password"); v != "" {
 					rs["publicKey"] = v
 				}
-				if v := firstString(r, "shortId"); v != "" {
+				// ⚠ 服务端（入站）里这个字段是**数组** `shortIds`，客户端是单值 `shortId` ✗ ——
+				// 只查 shortId 会导致生成的出站**不带 shortId**，而服务端的 shortIds 又不含空串时，
+				// REALITY 握手只能靠服务端"容忍空 shortId"侥幸通过（实测能通，但很脆 ✗）。
+				if v := firstString(r, "shortId", "shortIds"); v != "" {
 					rs["shortId"] = v
 				}
 				if v := firstString(r, "fingerprint"); v != "" {

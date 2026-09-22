@@ -214,3 +214,35 @@ func TestSingBoxFormatterTolerantALPNAndFingerprint(t *testing.T) {
 		t.Fatalf("client-fingerprint 未映射成 utls.fingerprint: %v", tls["utls"])
 	}
 }
+
+// sing-box 的 vmess 出站必须显式写 security（具体加密方式）：
+// sing-box 的默认值/auto 与 xray 服务端对不上，服务端会
+// `proxy/vmess/encoding: unknown security type: UNKNOWN` 直接拒掉连接
+// （e2e 实测：同样一条 vmess+ws+TLS 节点，加 security=aes-128-gcm 立刻通，auto/默认不通）。
+func TestSingboxVmessSecurity(t *testing.T) {
+	cases := []struct{ cipher, want string }{
+		{"", "aes-128-gcm"},              // 服务端未写（auto）→ 给确定值
+		{"auto", "aes-128-gcm"},          // 同上
+		{"chacha20-poly1305", "chacha20-poly1305"}, // 服务端钉了具体值 → 照抄
+		{"aes-128-gcm", "aes-128-gcm"},
+		{"none", "none"},
+	}
+	for _, c := range cases {
+		n := Node{Name: "n", Protocol: "vmess", Host: "1.2.3.4", Port: 443,
+			UUID: "11111111-1111-1111-1111-111111111111",
+			Extra: map[string]interface{}{"cipher": c.cipher}}
+		out, err := (&SingBoxFormatter{}).Format([]Node{n})
+		if err != nil {
+			t.Fatalf("format: %v", err)
+		}
+		var d struct {
+			Outbounds []map[string]interface{} `json:"outbounds"`
+		}
+		if err := json.Unmarshal(out, &d); err != nil || len(d.Outbounds) == 0 {
+			t.Fatalf("unmarshal: %v %s", err, out)
+		}
+		if got, _ := d.Outbounds[0]["security"].(string); got != c.want {
+			t.Errorf("cipher=%q → security=%q, want %q", c.cipher, got, c.want)
+		}
+	}
+}

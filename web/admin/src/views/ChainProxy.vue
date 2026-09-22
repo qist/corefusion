@@ -173,6 +173,7 @@
 
     <!-- Create Chain Proxy Wizard Dialog (see design doc §12.2) -->
     <el-dialog v-model="linkDlg" :title="t('chainProxy.createWizard')" width="680">
+      <el-alert v-if="linkEditing" :title="t('chainProxy.editModeHint')" type="info" :closable="false" style="margin-bottom:12px" />
       <el-steps :active="wizardStep" finish-status="success" align-center>
         <el-step :title="t('chainProxy.stepEntry')" />
         <el-step :title="t('chainProxy.stepExits')" />
@@ -240,6 +241,8 @@
                 {{ t('chainProxy.sortOrder') }}
                 <el-input-number v-model="paramOf(row).sort_order" :min="0" :max="999" size="small" controls-position="right" style="width:80px" />
               </span>
+              <el-input v-model="paramOf(row).exit_tag" size="small" style="width:150px"
+                        :placeholder="t('chainProxy.exitTagPlaceholder')" clearable />
               <span style="font-size:12px;color:#909399;flex:1">{{ row.isExternal ? '' : exitInboundTip(row.id) }}</span>
             </div>
             <div style="font-size:12px;color:#909399">{{ t('chainProxy.priorityHint') }}</div>
@@ -307,7 +310,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -385,7 +388,7 @@ const exitRows = computed(() => [
 // 路由参数默认值：priority 按选择顺序（与后端 "priority=0 → i+1" 的语义一致 ✓）
 function exitParam(key, index) {
   if (!wiz.value.exitParams[key]) {
-    wiz.value.exitParams[key] = { priority: index + 1, weight: 100, sort_order: index }
+    wiz.value.exitParams[key] = { priority: index + 1, weight: 100, sort_order: index, exit_tag: '' }
   }
   return wiz.value.exitParams[key]
 }
@@ -737,6 +740,7 @@ async function saveLinkEdit() {
     payload.priority = Number(prm.priority) || 1
     payload.weight = Number(prm.weight) || 100
     payload.sort_order = Number(prm.sort_order) || 0
+    if (prm.exit_tag) payload.exit_tag = prm.exit_tag
   }
   linkSaving.value = true
   try {
@@ -774,6 +778,7 @@ async function createChainProxy() {
       priority: Number(p.priority) || i + 1,
       weight: Number(p.weight) || 100,
       sort_order: Number(p.sort_order) || 0,
+      ...(p.exit_tag ? { exit_tag: p.exit_tag } : {}),
       ...(row.isExternal ? {} : { exit_inbound_id: Number(wiz.value.exitInbounds[row.id]) || 0 }),
     }
   }
@@ -809,6 +814,7 @@ async function editLink(row) {
       priority: row.priority || 1,
       weight: row.weight || 100,
       sort_order: row.sort_order || 0,
+      exit_tag: row.exit_tag || '',
     }
   } else if (row.exit_server_id) {
     wiz.value.clusterExits = [row.exit_server_id]
@@ -818,6 +824,7 @@ async function editLink(row) {
       priority: row.priority || 1,
       weight: row.weight || 100,
       sort_order: row.sort_order || 0,
+      exit_tag: row.exit_tag || '',
     }
     await loadExitInbounds(row.exit_server_id)
   }
@@ -890,5 +897,33 @@ async function removeExtServer(row) {
   } catch { /* cancelled */ }
 }
 
-onMounted(fetchAll)
+// ── 自动刷新（拓扑 / 链路 / 健康状态每 30 秒拉一次）──
+// 弹窗打开或页面在后台时跳过，避免正在编辑时列表在背后跳动。
+const AUTO_REFRESH_MS = 30000
+let autoRefreshTimer = 0
+
+async function autoRefreshTick() {
+  if (linkDlg.value || extServerDlg.value) return
+  if (typeof document !== 'undefined' && document.hidden) return
+  await Promise.all([fetchTopology(), fetchLinks(), fetchHealth()])
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh()
+  autoRefreshTimer = window.setInterval(autoRefreshTick, AUTO_REFRESH_MS)
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = 0
+  }
+}
+
+onUnmounted(stopAutoRefresh)
+
+onMounted(() => {
+  fetchAll()
+  startAutoRefresh()
+})
 </script>

@@ -3001,6 +3001,8 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     nameHint: 'Leave empty to use the node name',
   },
   chainProxy: {
+    editModeHint: 'Edit mode: you can change the exit inbound and priority/weight/sort-order/exit tag. To switch exit node, delete and recreate the link.',
+    exitTagPlaceholder: 'Empty = auto chain-<entryInbound>-<exit>',
     legacyRelayInbound: 'Legacy: auto-created relay inbound',
     exitNode: 'Exit Node',
     priorityHint: 'Lower priority number wins (1 = highest); exits sharing a priority are load-balanced.',

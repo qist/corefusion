@@ -2925,6 +2925,8 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     nameHint: '留空则使用外部节点名称',
   },
   chainProxy: {
+    editModeHint: '编辑模式：可改「出口入站」与优先级/权重/序号/出站 tag；要更换出口节点请删除后重建。',
+    exitTagPlaceholder: '留空自动生成 chain-<入口入站>-<出口>',
     legacyRelayInbound: '旧模式：自动创建的 relay 入站',
     exitNode: '出口节点',
     priorityHint: '优先级数字越小越优先（1 最高）；同优先级的多出口会走负载均衡。',

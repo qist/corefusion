@@ -282,7 +282,7 @@ func (g *ChainLinkGenerator) HasChainLinks(ctx context.Context, serverID int64) 
 
 // buildOutboundFromExitInbound 用**出口节点上已有的入站**构造入口侧的链式出站。
 //
-// 与 buildServerOutbound 的旧路径（读 chain_exit_configs 自动建的 relay-in）不同，
+// 与 v1 的旧模式（读 chain_exit_configs 自动建的 relay-in，已移除）不同，
 // 这条路径**不改动出口节点任何配置**：端口/协议/传输/安全层/凭据全部从该入站自身读取。
 // 支持面板自建的两种入站形状：
 //

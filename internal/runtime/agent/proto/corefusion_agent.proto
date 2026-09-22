@@ -792,11 +792,12 @@ message SyncDataRequest {
   ReloadStrategy reload_strategy = 24;
 
   // --- 链式代理（chain proxy）数据同步 ---
-  // 入口/出口节点的 chain_links、chain_exit_configs、node_servers、external_nodes
-  // 表数据。Agent 落库后，即使面板不可达也能从本地 DB 重新生成链式配置
-  // （而非仅依赖面板下发的 config_content）。
+  // 入口/出口节点的 chain_links、node_servers、external_nodes 表数据。Agent 落库后，
+  // 即使面板不可达也能从本地 DB 重新生成链式配置（而非仅依赖面板下发的 config_content）。
+  // 字段 26 原为 chain_exit_configs（旧链式出口模式，已随 v2.0 移除）。
+  reserved 26;
+  reserved "chain_exit_configs";
   repeated ChainLinkEntry chain_links = 25;
-  repeated ChainExitConfigEntry chain_exit_configs = 26;
   repeated NodeServerEntry node_servers = 27;
   repeated ExternalNodeEntry external_nodes = 28;
 }
@@ -815,21 +816,6 @@ message ChainLinkEntry {
   int32  sort_order = 10;
   int64  created_at = 11;
   int64  updated_at = 12;
-}
-
-// ChainExitConfigEntry 表示一条 chain_exit_configs 记录（出口节点的 relay 配置）。
-message ChainExitConfigEntry {
-  int64  id = 1;
-  int64  server_id = 2;
-  int32  relay_port = 3;
-  string relay_protocol = 4;
-  string relay_transport = 5;
-  string relay_security = 6;
-  string relay_uuid = 7;
-  bool   relay_only = 8;
-  bool   enabled = 9;
-  int64  created_at = 10;
-  int64  updated_at = 11;
 }
 
 // NodeServerEntry 表示一条 node_servers 记录的（非敏感）字段。
@@ -968,7 +954,8 @@ message SyncDataResponse {
   int32  warp_configs_applied = 6;
   int32  share_domain_configs_applied = 7;
   int32  chain_links_applied = 11;
-  int32  chain_exit_configs_applied = 12;
+  reserved 12;  // 原 chain_exit_configs_applied（旧模式已移除）
+  reserved "chain_exit_configs_applied";
   int32  node_servers_applied = 13;
   int32  external_nodes_applied = 14;
   bool   config_generated = 8;

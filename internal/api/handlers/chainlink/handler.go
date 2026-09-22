@@ -23,7 +23,7 @@ type HealthChecker interface {
 
 // ConfigSyncHook triggers config regeneration and push to remote nodes.
 // Implemented by *configSyncHookAdapter in router.go.
-// When chain_links or chain_exit_configs change, the handler calls this
+// When chain_links change, the handler calls this
 // to ensure the new topology takes effect immediately (design doc §13.2).
 type ConfigSyncHook interface {
 	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
@@ -63,7 +63,7 @@ func (h *Handler) SetHealthChecker(hc HealthChecker) {
 }
 
 // SetConfigSyncHook injects a config sync hook (typically *configSyncHookAdapter).
-// When set, chain_links / chain_exit_configs mutations automatically trigger
+// When set, chain_links mutations automatically trigger
 // config regeneration and push to affected remote nodes (design doc §13.2).
 func (h *Handler) SetConfigSyncHook(hook ConfigSyncHook) {
 	h.configSyncHook = hook
@@ -520,13 +520,13 @@ type ExitTarget struct {
 	SortOrder  int   `json:"sort_order"`
 	// ExitInboundID：该出口节点上**已有的入站**（推荐用法）。
 	// >0 时链式这边不创建任何入站，直接把入口的流量交给这个入站；
-	// 不给则退回旧模式（需要该节点配好 chain_exit_configs，由面板自动生成 relay-in 入站）。
+	// cluster 出口必须指定"出口节点上已有的入站"（exit_inbound_id）。
 	ExitInboundID int64 `json:"exit_inbound_id"`
 }
 
 // CreateChainProxy handles the create-chain-proxy wizard flow (§5.5):
 //  1. validate entry server + entry inbound exist;
-//  2. validate every chosen exit has a configured chain_exit_config (cluster) or is an enabled external node;
+//  2. validate every cluster exit has an existing inbound (exit_inbound_id) and every external exit is enabled;
 //  3. SyncFromEntry: clear-then-insert chain_links for this entry;
 //  4. multi-exit (≥2) auto-selects load balancing strategy (§6.6); single exit → direct.
 //
@@ -565,7 +565,7 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 				return
 			}
 		} else if ex.ExitInboundID > 0 {
-			// 新路径（推荐）：出口用**该节点上已有的入站** —— 链式不创建入站，也不需要 chain_exit_config。
+			// 出口用**该节点上已有的入站** —— 链式不创建任何入站。
 			// 只校验：入站存在、属于这台出口机、协议在本入口核心的链式支持名单里
 			// （实测：xray 没有 hysteria2 出站 → `unknown config id: hysteria2`，所以 hy2 出口
 			//  只能给 sing-box 入口用）。

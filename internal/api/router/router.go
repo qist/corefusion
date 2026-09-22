@@ -2053,7 +2053,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			// Inject config sync hook into chainlink handler so that
-			// chain_links / chain_exit_configs mutations automatically
+			// chain_links mutations automatically
 			// trigger config regeneration and push to affected nodes
 			// (design doc §13.2).
 			chainSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, nodeServerSvc: nodeServerSvcInst}

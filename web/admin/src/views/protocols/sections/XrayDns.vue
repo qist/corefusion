@@ -114,6 +114,10 @@
             <el-input v-model="ruleForm._expectedIPsStr" type="textarea" :rows="2" placeholder="geoip:cn" />
             <div class="hint">{{ t('protoCenter.dns.expectedIPsHint') }}</div>
           </el-form-item>
+          <el-form-item label="Expect IPs">
+            <el-input v-model="ruleForm._expectIPsStr" type="textarea" :rows="2" placeholder="geoip:cn" />
+            <div class="hint">匹配该域名的 DNS 查询：只接受解析结果落在这些 IP/geoip 里的应答（与 expectedIPs 是两个独立字段）</div>
+          </el-form-item>
           <el-form-item :label="t('protoCenter.dns.unexpectedIPs')">
             <el-input v-model="ruleForm._unexpectedIPsStr" type="textarea" :rows="2" placeholder="geoip:cloudflare" />
             <div class="hint">{{ t('protoCenter.dns.unexpectedIPsHint') }}</div>
@@ -177,7 +181,7 @@ const ruleDialogVisible = ref(false)
 const editingRuleIndex = ref(-1)
 const ruleForm = reactive({
   address: '', _domainsStr: '', queryStrategy: '',
-  _expectedIPsStr: '', _unexpectedIPsStr: '',
+  _expectedIPsStr: '', _unexpectedIPsStr: '', _expectIPsStr: '',
   clientIP: '', port: 0, timeoutMs: 0, tag: '',
   skipFallback: false, finalQuery: false, disableCache: false,
   enabled: true,
@@ -187,7 +191,7 @@ function showAddRule() {
   editingRuleIndex.value = -1
   Object.assign(ruleForm, {
     address: '', _domainsStr: '', queryStrategy: '',
-    _expectedIPsStr: '', _unexpectedIPsStr: '',
+    _expectedIPsStr: '', _unexpectedIPsStr: '', _expectIPsStr: '',
     clientIP: '', port: 0, timeoutMs: 0, tag: '',
     skipFallback: false, finalQuery: false, disableCache: false, enabled: true,
   })
@@ -197,7 +201,7 @@ function showAddRule() {
 function editRule(i) {
   editingRuleIndex.value = i
   const s = form.ruleServers[i]
-  Object.assign(ruleForm, { ...s, _domainsStr: (s.domains || []).join('\n'), _expectedIPsStr: (s.expectedIPs || []).join('\n'), _unexpectedIPsStr: (s.unexpectedIPs || []).join('\n') })
+  Object.assign(ruleForm, { ...s, _domainsStr: (s.domains || []).join('\n'), _expectedIPsStr: (s.expectedIPs || []).join('\n'), _expectIPsStr: (s.expectIPs || []).join('\n'), _unexpectedIPsStr: (s.unexpectedIPs || []).join('\n') })
   ruleDialogVisible.value = true
 }
 
@@ -209,6 +213,7 @@ function saveRule() {
     queryStrategy: ruleForm.queryStrategy || '',
     expectedIPs: ruleForm._expectedIPsStr ? ruleForm._expectedIPsStr.split('\n').map(d => d.trim()).filter(Boolean) : [],
     unexpectedIPs: ruleForm._unexpectedIPsStr ? ruleForm._unexpectedIPsStr.split('\n').map(d => d.trim()).filter(Boolean) : [],
+    expectIPs: ruleForm._expectIPsStr ? ruleForm._expectIPsStr.split('\n').map(d => d.trim()).filter(Boolean) : [],
     clientIP: ruleForm.clientIP || '',
     port: ruleForm.port || 0,
     timeoutMs: ruleForm.timeoutMs || 0,
@@ -231,6 +236,7 @@ function buildRuleServer(s) {
   if (s.domains && s.domains.length) obj.domains = s.domains
   if (s.queryStrategy) obj.queryStrategy = s.queryStrategy
   if (s.expectedIPs && s.expectedIPs.length) obj.expectedIPs = s.expectedIPs
+  if (s.expectIPs && s.expectIPs.length) obj.expectIPs = s.expectIPs
   if (s.unexpectedIPs && s.unexpectedIPs.length) obj.unexpectedIPs = s.unexpectedIPs
   if (s.clientIP) obj.clientIP = s.clientIP
   if (s.port) obj.port = s.port

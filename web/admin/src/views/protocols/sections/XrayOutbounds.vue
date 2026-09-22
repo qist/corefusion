@@ -46,6 +46,31 @@
                 <el-option label="WireGuard" value="wireguard" />
               </el-select>
             </el-form-item>
+            <!-- 出站顶层字段（OutboundDetourConfig）——之前面板完全缺这四项 -->
+            <el-form-item label="Send Through">
+              <el-input v-model="rf._sendThrough" placeholder="0.0.0.0 / :: / 指定源地址" @change="emit" />
+              <div class="hint">出站连接的源地址；多线多 IP 机器、链式代理常用</div>
+            </el-form-item>
+            <el-form-item label="Target Strategy">
+              <el-select v-model="rf._targetStrategy" style="width:100%" clearable @change="emit">
+                <el-option label="(默认)" value="" /><el-option label="AsIs" value="AsIs" />
+                <el-option label="UseIP" value="UseIP" /><el-option label="UseIPv4" value="UseIPv4" />
+                <el-option label="UseIPv6" value="UseIPv6" /><el-option label="ForceIP" value="ForceIP" />
+                <el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
+              </el-select>
+              <div class="hint">出站级目标地址解析策略（与 freedom 的 domainStrategy 是两个不同字段）</div>
+            </el-form-item>
+            <el-form-item label="XUDP Concurrency">
+              <el-input-number v-model="rf._xudpConcurrency" :min="0" :max="1024" @change="emit" />
+              <div class="hint">UDP over TCP（XUDP）单连接内的并发上限，0 = 用默认</div>
+            </el-form-item>
+            <el-form-item label="XUDP Proxy UDP443">
+              <el-select v-model="rf._xudpProxyUDP443" style="width:100%" clearable @change="emit">
+                <el-option label="(默认)" value="" /><el-option label="reject" value="reject" />
+                <el-option label="allow" value="allow" /><el-option label="skip" value="skip" />
+              </el-select>
+              <div class="hint">443 端口的 UDP 是否走代理：reject / allow / skip</div>
+            </el-form-item>
             <template v-if="rf.protocol === 'freedom'">
               <el-form-item :label="t('protoCenter.outbounds.advancedSettings')">
                 <el-switch v-model="rf._freedomAdvanced" />
@@ -57,6 +82,22 @@
                     <el-option label="UseIPv4" value="UseIPv4" /><el-option label="UseIPv6" value="UseIPv6" />
                     <el-option label="ForceIP" value="ForceIP" /><el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
                   </el-select>
+                </el-form-item>
+                <el-form-item label="Target Strategy">
+                  <el-select v-model="rf._freedomTargetStrategy" style="width:100%" clearable @change="emit">
+                    <el-option label="(默认)" value="" /><el-option label="AsIs" value="AsIs" />
+                    <el-option label="UseIP" value="UseIP" /><el-option label="UseIPv4" value="UseIPv4" />
+                    <el-option label="UseIPv6" value="UseIPv6" /><el-option label="ForceIP" value="ForceIP" />
+                    <el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
+                  </el-select>
+                  <div class="hint">freedom 的 targetStrategy（优先于 domainStrategy 决定解析方式）</div>
+                </el-form-item>
+                <el-form-item label="IPs Blocked（已废弃）">
+                  <el-input v-model="rf._freedomIpsBlocked" type="textarea" :rows="2" placeholder="10.0.0.0/8" @change="emit" />
+                  <div class="hint">
+                    该字段已被 Xray 废弃：v26 起会告警并迁移到 <b>finalRules</b>（下面那个），建议直接用 Final Rules；
+                    这里保留仅为兼容旧配置的来回编辑。
+                  </div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.outbounds.redirect')">
                   <el-input v-model="rf._freedomRedirect" :placeholder="t('protoCenter.outbounds.freedomRedirectHint')" @change="emit" />
@@ -146,6 +187,10 @@
                   <el-select v-model="rf._blackholeResponse" style="width:100%">
                     <el-option label="none" value="none" /><el-option label="http" value="http" />
                   </el-select>
+                </el-form-item>
+                <el-form-item label="Custom Response Data">
+                  <el-input v-model="rf._blackholeCustomData" placeholder="自定义响应内容（探测对抗）" @change="emit" />
+                  <div class="hint">type=http 时返回的响应体内容（可用 \r\n 等转义）</div>
                 </el-form-item>
               </template>
             </template>
@@ -679,6 +724,10 @@
               <el-form-item :label="t('protoCenter.sockopt.tcpWindowClamp')"><el-input-number v-model="rf._sockoptTcpWindowClamp" :min="0" @change="emit" /></el-form-item>
               <el-form-item label="TCP MPTCP"><el-switch v-model="rf._sockoptTcpMptcp" @change="emit" /></el-form-item>
               <el-form-item label="Accept Proxy Protocol"><el-switch v-model="rf._sockoptAcceptProxyProtocol" @change="emit" /></el-form-item>
+              <el-form-item label="Penetrate">
+                <el-switch v-model="rf._sockoptPenetrate" @change="emit" />
+                <div class="hint">用入站连接的原目标地址直连发送（出站专用，常见于透明代理/中转）</div>
+              </el-form-item>
               <el-form-item :label="t('protoCenter.sockopt.dialerProxy')">
                 <el-input v-model="rf._sockoptDialerProxy" @change="emit" />
               </el-form-item>
@@ -1084,6 +1133,9 @@ function getDefaultOutbound() {
     tag: '', protocol: 'freedom',
     _server: '', _port: 443, _uuid: '', _flow: '', _security: 'auto', _password: '', _username: '', _email: genEmail(), _level: 0, _ssMethod: '2022-blake3-aes-256-gcm', _vlessEncryption: 'none', _vlessReverseEnabled: false, _vlessReverseTag: '', _vlessReverseSniffing: false, _vlessReverseSniffingOverride: ['http', 'tls', 'quic'], _vlessReverseSniffingMetadata: false, _vlessReverseSniffingRouteOnly: false, _vlessReverseSniffingDomainsExcluded: '', _vlessReverseSniffingIpsExcluded: '',
     _freedomAdvanced: false, _domainStrategy: 'AsIs', _freedomRedirect: '', _freedomUserLevel: 0, _freedomProxyProtocol: 0,
+    _freedomTargetStrategy: '', _freedomIpsBlocked: '',
+    _sendThrough: '', _targetStrategy: '', _xudpConcurrency: 0, _xudpProxyUDP443: '',
+    _blackholeCustomData: '', _sockoptPenetrate: false,
     _freedomFragmentEnabled: false, _freedomFragmentPackets: 'tlshello', _freedomFragmentLength: '100-200', _freedomFragmentInterval: '10-20',
     _freedomNoisesEnabled: false, _freedomNoises: [{ type: 'rand', packet: '100', delay: '10-20' }],
     _freedomFinalRulesEnabled: false, _freedomFinalRules: [],
@@ -1144,6 +1196,8 @@ function parseOutbound(ob) {
   var peers = (ob.settings && ob.settings.peers) || []
   return {
     tag: ob.tag || '', protocol: ob.protocol || 'freedom',
+    _sendThrough: ob.sendThrough || '', _targetStrategy: ob.targetStrategy || '',
+    _xudpConcurrency: ob.xudpConcurrency || 0, _xudpProxyUDP443: ob.xudpProxyUDP443 || '',
     _server: vnext.address || srv.address || (ob.settings && ob.settings.address) || '',
     _port: vnext.port || srv.port || (ob.settings && ob.settings.port) || 443,
     _uuid: user0.id || '',
@@ -1165,6 +1219,8 @@ function parseOutbound(ob) {
     _ssMethod: (ob.settings && ob.settings.method) || '2022-blake3-aes-256-gcm',
     _freedomAdvanced: !!(ob.settings && (ob.settings.domainStrategy || ob.settings.redirect || ob.settings.fragment || ob.settings.noises || ob.settings.finalRules)),
     _domainStrategy: (ob.settings && ob.settings.domainStrategy) || 'AsIs',
+    _freedomTargetStrategy: (ob.settings && ob.settings.targetStrategy) || '',
+    _freedomIpsBlocked: (ob.settings && ob.settings.ipsBlocked) ? ob.settings.ipsBlocked.join('\n') : '',
     _freedomRedirect: (ob.settings && ob.settings.redirect) || '',
     _freedomUserLevel: (ob.settings && ob.settings.userLevel) || 0,
     _freedomProxyProtocol: (ob.settings && ob.settings.proxyProtocol) || 0,
@@ -1180,6 +1236,7 @@ function parseOutbound(ob) {
       _ipStr: (r.ip || []).join(', '), blockDelay: r.blockDelay || '',
     })) : [],
     _blackholeAdvanced: !!(ob.settings && ob.settings.response && ob.settings.response.type && ob.settings.response.type !== 'none'),
+    _blackholeCustomData: (ob.settings && ob.settings.response && ob.settings.response.customResponseData) || '',
     _blackholeResponse: (ob.settings && ob.settings.response && ob.settings.response.type) || 'none',
     _dnsRewriteNetwork: (ob.settings && ob.settings.rewriteNetwork) || '',
     _dnsRewriteAddress: (ob.settings && ob.settings.rewriteAddress) || '',
@@ -1204,6 +1261,7 @@ function parseOutbound(ob) {
     _kcpWriteBufferSize: (ss.kcpSettings && ss.kcpSettings.writeBufferSize) || 2,
     _sockoptEnabled: !!(ss.sockopt && Object.keys(ss.sockopt).length),
     _sockoptMark: (ss.sockopt && ss.sockopt.mark) || 0,
+    _sockoptPenetrate: !!(ss.sockopt && ss.sockopt.penetrate),
     _sockoptTcpFastOpen: !!(ss.sockopt && ss.sockopt.tcpFastOpen),
     _sockoptTproxy: (ss.sockopt && ss.sockopt.tproxy) || 'off',
     _sockoptDomainStrategy: (ss.sockopt && ss.sockopt.domainStrategy) || '',
@@ -1355,6 +1413,11 @@ function parseOutbound(ob) {
 
 function buildOutbound(ob) {
   const result = { tag: ob.tag, protocol: ob.protocol, settings: {}, streamSettings: {} }
+  // 出站顶层字段（OutboundDetourConfig）：面板此前完全没有这几项
+  if (ob._sendThrough) result.sendThrough = ob._sendThrough
+  if (ob._targetStrategy) result.targetStrategy = ob._targetStrategy
+  if (ob._xudpConcurrency) result.xudpConcurrency = Number(ob._xudpConcurrency)
+  if (ob._xudpProxyUDP443) result.xudpProxyUDP443 = ob._xudpProxyUDP443
   if (['vmess', 'vless'].includes(ob.protocol)) {
     const user = ob.protocol === 'vmess'
       ? { id: ob._uuid, alterId: 0, security: ob._security || 'auto' }
@@ -1425,6 +1488,11 @@ function buildOutbound(ob) {
     if (ob._freedomAdvanced) {
       result.settings = {}
       result.settings.domainStrategy = ob._domainStrategy || 'AsIs'
+      if (ob._freedomTargetStrategy) result.settings.targetStrategy = ob._freedomTargetStrategy
+      if (ob._freedomIpsBlocked) {
+        const ips = ob._freedomIpsBlocked.split('\n').map(s => s.trim()).filter(Boolean)
+        if (ips.length) result.settings.ipsBlocked = ips
+      }
       if (ob._freedomRedirect) result.settings.redirect = ob._freedomRedirect
       result.settings.userLevel = ob._freedomUserLevel || 0
       if (ob._freedomProxyProtocol) result.settings.proxyProtocol = ob._freedomProxyProtocol
@@ -1458,6 +1526,7 @@ function buildOutbound(ob) {
   } else if (ob.protocol === 'blackhole') {
     if (ob._blackholeAdvanced && ob._blackholeResponse !== 'none') {
       result.settings = { response: { type: ob._blackholeResponse } }
+      if (ob._blackholeCustomData) result.settings.response.customResponseData = ob._blackholeCustomData
     } else {
       result.settings = { response: { type: 'none' } }
     }
@@ -1695,6 +1764,7 @@ function buildStreamSettings(ob) {
   if (ob._sockoptEnabled) {
     const sk = {}
     if (ob._sockoptMark) sk.mark = ob._sockoptMark
+    if (ob._sockoptPenetrate) sk.penetrate = true
     if (ob._sockoptTcpFastOpen) sk.tcpFastOpen = true
     if (ob._sockoptTproxy && ob._sockoptTproxy !== 'off') sk.tproxy = ob._sockoptTproxy
     if (ob._sockoptDomainStrategy) sk.domainStrategy = sk._sockoptDomainStrategy

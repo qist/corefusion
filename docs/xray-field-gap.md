@@ -166,7 +166,9 @@ grep -rn "configgen" --include=*.go .                    → 空
 grep -rln "xPaddingKey\|uplinkDataKey" /opt/corefusion --include=*.go
   → 只有 internal/subscription/sharelink/sharelink.go 与 internal/subscription/mihomoconv/converter.go
 ```
-即：**没有任何"用 Go struct 重建 xray 配置"的生成器** ✗ → §1 的 A 类 12 项在现网路径上**一项都不会丢**。
+即：**当前仓库里没有任何"用 Go struct 重建 xray 配置"的生成器** ✗。
+承 §5.4：`internal/configgen/*` 作为**死代码**已于 `cc9e89d1` **删除**（8 文件 / 2475 行，无调用方），
+§5.5 的"删除 or 保留"决策项也随之关闭。→ §1 的 A 类 12 项在现网路径上**一项都不会丢** ✓。
 
 **真正要守的第二条路径是 P3（客户端分享链接的白名单）**，逐项核对结果：
 
@@ -187,6 +189,7 @@ grep -rln "xPaddingKey\|uplinkDataKey" /opt/corefusion --include=*.go
 
 ### 5.5 待办
 
-- **决策项**：`internal/configgen/*` 这套死代码 —— 删除，还是保留待接线？（约 2~3k 行）
+- ~~**决策项**：`internal/configgen/*` 这套死代码 —— 删除，还是保留待接线？（约 2~3k 行）~~
+  **已关闭**：2026-09-22 已按"删除"处理（`cc9e89d1`），需要时可从 git 历史恢复。
 - B 类 P1/P2（11 + 13 项）：按需补充；finalMask 内部字段建议**不暴露**
 - sing-box 侧同类清单已单独产出：`docs/singbox-field-gap.md`

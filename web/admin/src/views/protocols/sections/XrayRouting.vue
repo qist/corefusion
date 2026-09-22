@@ -117,6 +117,16 @@
         <el-form-item :label="t('protoCenter.routing.localIP')"><el-select v-model="rf._localIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="192.168.0.0/16" value="192.168.0.0/16" /><el-option label="10.0.0.0/8" value="10.0.0.0/8" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.routing.inboundTag')"><el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option v-for="tag in activeInboundTags" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.routing.process')"><el-select v-model="rf._process" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="curl" value="curl" /><el-option label="wget" value="wget" /><el-option label="self/" value="self/" /><el-option label="xray/" value="xray/" /></el-select></el-form-item>
+        <el-form-item label="Local OS">
+          <el-select v-model="rf._localOS" multiple filterable allow-create default-first-option placeholder="linux / windows / darwin ..." style="width:100%">
+            <el-option label="linux" value="linux" /><el-option label="windows" value="windows" />
+            <el-option label="darwin (macOS)" value="darwin" /><el-option label="android" value="android" />
+            <el-option label="freebsd" value="freebsd" /><el-option label="openbsd" value="openbsd" />
+            <el-option label="netbsd" value="netbsd" /><el-option label="dragonfly" value="dragonfly" />
+            <el-option label="solaris" value="solaris" />
+          </el-select>
+          <div class="hint">按**运行核心的机器**的操作系统分流（= Go 的 GOOS，大小写不敏感）；匹配到多个时命中任意一个即可</div>
+        </el-form-item>
         <el-form-item :label="t('protoCenter.routing.user')"><el-select v-model="rf._user" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option v-for="tag in userTags" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.routing.vlessRoute')"><el-input v-model="rf._vlessRoute" placeholder="53,443,1000-2000" /></el-form-item>
         <el-form-item :label="t('protoCenter.routing.attrs')">
@@ -193,6 +203,14 @@
           <el-form-item :label="t('protoCenter.routing.baselines')">
             <el-input v-model="bf._baselinesStr" placeholder="1s, 2s" />
             <div class="hint">{{ t('protoCenter.routing.baselinesHint') }}</div>
+          </el-form-item>
+          <el-form-item label="Costs (JSON)">
+            <el-input v-model="bf._costsJson" type="textarea" :rows="4"
+              placeholder='[{"match": "tag:out-1", "value": 1.0}, {"regexp": true, "match": "^hk-", "value": 0.5}]' />
+            <div class="hint">
+              leastLoad 的权重表，数组元素：<b>match</b>（出站 tag 或正则）+ <b>value</b>（float，越小越优先）+
+              可选 <b>regexp:true</b>（把 match 当正则）。留空则不写该字段。
+            </div>
           </el-form-item>
         </template>
       </el-form>
@@ -278,7 +296,7 @@ const dlg = ref(false)
 const editIdx = ref(-1)
 const balDlg = ref(false)
 const balIdx = ref(-1)
-const bf = reactive({ tag: '', selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '' })
+const bf = reactive({ tag: '', selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '', _costsJson: '' })
 const rf = reactive({
   ruleTag: '',
   _domain: [], _ip: [], _port: '', _sourcePort: '', _localPort: '',
@@ -298,7 +316,7 @@ function resetForm() {
     _domain: [], _ip: [], _port: '', _sourcePort: '', _localPort: '',
     _network: '', _protocol: [], _sourceIP: [], _localIP: [],
     _inboundTag: [],
-    _process: [], _user: [],
+    _process: [], _user: [], _localOS: [], _localOS: [],
     _attrs: [], _vlessRoute: '',
     _webhookUrl: '', _webhookDedup: 0, _webhookHeaders: [],
     outboundTag: 'direct', _actionInboundTag: [], balancerTag: '',
@@ -320,7 +338,7 @@ function editRule(r) {
     _network: r.network || '', _protocol: r.protocol || [],
     _sourceIP: r.sourceIP || r.source || [], _localIP: r.localIP || [],
     _inboundTag: r.inboundTag || [],
-    _process: r.process || [], _user: r.user || [],
+    _process: r.process || [], _user: r.user || [], _localOS: r.localOS || [],
     _attrs: attrs, _vlessRoute: r.vlessRoute || '',
     _webhookUrl: r.webhook ? r.webhook.url || '' : '',
     _webhookDedup: r.webhook ? r.webhook.deduplication || 0 : 0,
@@ -346,6 +364,7 @@ function saveRule() {
   if (rf._localIP.length) rule.localIP = [...rf._localIP]
   if (rf._inboundTag.length) rule.inboundTag = [...rf._inboundTag]
   if (rf._process.length) rule.process = [...rf._process]
+  if (rf._localOS && rf._localOS.length) rule.localOS = [...rf._localOS]
   if (rf._user.length) rule.user = [...rf._user]
   if (rf._attrs.length) {
     const attrs = {}; rf._attrs.forEach(a => { if (a.key) attrs[a.key] = a.value })
@@ -365,12 +384,12 @@ function saveRule() {
 
 function showAddBalancer() {
   balIdx.value = -1
-  Object.assign(bf, { tag: 'balancer-' + Math.random().toString(36).substring(2, 6), selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '' })
+  Object.assign(bf, { tag: 'balancer-' + Math.random().toString(36).substring(2, 6), selectorArr: [], fallbackTag: '', strategyType: 'random', _expected: 0, _maxRTT: '', _tolerance: 0, _baselinesStr: '', _costsJson: '' })
   balDlg.value = true
 }
 function editBalancer(b) {
   balIdx.value = form.balancers.indexOf(b); const s = b.settings || {}
-  Object.assign(bf, { tag: b.tag, selectorArr: [...(b.selectorArr || [])], fallbackTag: b.fallbackTag || '', strategyType: b.strategyType, _expected: s.expected || 0, _maxRTT: s.maxRTT || '', _tolerance: s.tolerance || 0, _baselinesStr: (s.baselines || []).join(', ') })
+  Object.assign(bf, { tag: b.tag, selectorArr: [...(b.selectorArr || [])], fallbackTag: b.fallbackTag || '', strategyType: b.strategyType, _expected: s.expected || 0, _maxRTT: s.maxRTT || '', _tolerance: s.tolerance || 0, _baselinesStr: (s.baselines || []).join(', '), _costsJson: (s.costs && s.costs.length) ? JSON.stringify(s.costs, null, 2) : '' })
   balDlg.value = true
 }
 function saveBalancer() {
@@ -382,6 +401,12 @@ function saveBalancer() {
   if (bf.strategyType === 'leastLoad') {
     const s = {}; if (bf._expected) s.expected = bf._expected; if (bf._maxRTT) s.maxRTT = bf._maxRTT
     if (bf._tolerance) s.tolerance = bf._tolerance; if (bf._baselinesStr) s.baselines = bf._baselinesStr.split(',').map(x => x.trim()).filter(Boolean)
+    if (bf._costsJson) {
+      try {
+        const costs = JSON.parse(bf._costsJson)
+        if (Array.isArray(costs) && costs.length) s.costs = costs
+      } catch (e) { console.warn('costs JSON 解析失败，已忽略:', e) }
+    }
     if (Object.keys(s).length) bal.settings = s
   }
   if (balIdx.value >= 0) form.balancers[balIdx.value] = bal; else form.balancers.push(bal)

@@ -331,6 +331,14 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	EnsureOnlineStatsPolicy(fullConfig, opts.CoreType)
 
 	// 12. Marshal to JSON
+	// 兜底：leastLoad / leastPing 策略依赖根 observatory，缺了它 xray **启动就失败**
+	// （实测 `failed to create server > core: not all dependencies are resolved`）。
+	// 这两个策略在面板路由编辑器里可选，而 observatory 是 xray 配置的**顶层**键（不在 routing 内），
+	// 编辑器产出不到 → 这里按 balancer 的 selector 统一补。
+	if opts.CoreType != "singbox" {
+		ensureObservatoryForLeastLoad(fullConfig)
+	}
+
 	data, err := json.MarshalIndent(fullConfig, "", "  ")
 	if err != nil {
 		return nil, err
@@ -341,9 +349,80 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 // EnsureDefaultOutbounds checks that the standard default outbounds exist in
 // the final config. For xray, these are "direct" (freedom) and "blocked"
 // (blackhole). For singbox, these are "direct", "block", and "dns-out".
+// ensureObservatoryForLeastLoad 为使用 leastLoad / leastPing 策略的 balancer 补一个根 observatory。
+//
+// 为什么必须有：xray 的 leastLoad/leastPing 策略要读 observatory 的健康度数据，缺了它核心
+// **启动即失败**（实测报错 `failed to create server > core: not all dependencies are resolved`）。
+// 面板路由编辑器允许选这两种策略，但 observatory 是 xray 配置的顶层键、不在 routing 里，
+// 编辑器产出不到 → 就在这里兜底：把这些 balancer 的 selector 并进 observatory.subjectSelector。
+// 若已存在 observatory / burstObservatory（例如链式负载均衡注入的那份）**只合并不覆盖**，
+// 避免把已有的探测配置冲掉。
+func ensureObservatoryForLeastLoad(fullConfig map[string]interface{}) {
+	routing, _ := fullConfig["routing"].(map[string]interface{})
+	if routing == nil {
+		return
+	}
+	balancers, _ := routing["balancers"].([]interface{})
+	var selectors []string
+	seen := map[string]bool{}
+	for _, b := range balancers {
+		bm, ok := b.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		strategy, _ := bm["strategy"].(map[string]interface{})
+		typ, _ := strategy["type"].(string)
+		if !strings.EqualFold(typ, "leastLoad") && !strings.EqualFold(typ, "leastPing") {
+			continue
+		}
+		sels, _ := bm["selector"].([]interface{})
+		for _, s := range sels {
+			str, ok := s.(string)
+			if ok && str != "" && !seen[str] {
+				seen[str] = true
+				selectors = append(selectors, str)
+			}
+		}
+	}
+	if len(selectors) == 0 {
+		return
+	}
+	// 已有 observatory / burstObservatory → 只合并 subjectSelector
+	for _, key := range []string{"observatory", "burstObservatory"} {
+		if obs, ok := fullConfig[key].(map[string]interface{}); ok {
+			existing, _ := obs["subjectSelector"].([]interface{})
+			for _, s := range selectors {
+				has := false
+				for _, e := range existing {
+					if es, _ := e.(string); es == s {
+						has = true
+						break
+					}
+				}
+				if !has {
+					existing = append(existing, s)
+				}
+			}
+			obs["subjectSelector"] = existing
+			return
+		}
+	}
+	selAny := make([]interface{}, 0, len(selectors))
+	for _, v := range selectors {
+		selAny = append(selAny, v)
+	}
+	fullConfig["observatory"] = map[string]interface{}{
+		"subjectSelector":   selAny,
+		"probeURL":          "https://connectivitycheck.gstatic.com/generate_204",
+		"probeInterval":     "30s",
+		"enableConcurrency": true,
+	}
+}
+
 // If they are missing, they are appended. This guarantees that
 // every node — local or remote — always has these essential outbounds,
 // even if the outbound_configs table doesn't have them for that server.
+
 func EnsureDefaultOutbounds(fullConfig map[string]interface{}, coreType string) {
 	switch coreType {
 	case "xray":

@@ -1177,7 +1177,7 @@ function getDefaultOutbound() {
     _finalmaskShowUdpHop: false, _finalmaskUdpHopPorts: '', _finalmaskUdpHopInterval: '',
     _finalmaskMaxIdleTimeout: '', _finalmaskKeepAlivePeriod: '', _finalmaskDisablePathMTUDiscovery: false, _finalmaskMaxIncomingStreams: '',
     _finalmaskInitStreamWindow: '', _finalmaskMaxStreamWindow: '', _finalmaskInitConnWindow: '', _finalmaskMaxConnWindow: '',
-    _wgSecretKey: '', _wgPublicKey: '', _wgAddressIPv4: '', _wgAddressIPv6: '', _wgMtu: 1280, _wgWorkers: 2, _wgReservedStr: '', _wgNoKernelTun: false, _wgDomainStrategy: 'ForceIP',
+    _wgSecretKey: '', _wgPublicKey: '', _wgAddressIPv4: '', _wgAddressIPv6: '', _wgMtu: 1280, _wgWorkers: 2, _wgReservedStr: '', _wgNoKernelTun: false, _wgDomainStrategy: 'ForceIP', _wgRemoteDNS: '',
     _wgPeers: [],
     _enabled: true,
   }
@@ -1397,6 +1397,7 @@ function parseOutbound(ob) {
     _wgAddressIPv6: Array.isArray(ob.settings && ob.settings.address) ? ob.settings.address.filter(a => a.includes(':')).join(', ') : '',
     _wgMtu: (ob.settings && ob.settings.mtu) || 1280,
     _wgDomainStrategy: (ob.settings && ob.settings.domainStrategy) || 'ForceIP',
+    _wgRemoteDNS: ((ob.settings && ob.settings.remoteDNS) || []).join(', '),
     _wgWorkers: (ob.settings && ob.settings.workers) || 0,
     _wgReservedStr: ((ob.settings && ob.settings.reserved) || []).join(', '),
     _wgNoKernelTun: (ob.settings && ob.settings.noKernelTun) || false,
@@ -1474,6 +1475,7 @@ function buildOutbound(ob) {
     result.settings.address = addresses
     result.settings.mtu = ob._wgMtu || 1280
     if (ob._wgDomainStrategy && ob._wgDomainStrategy !== 'ForceIP') result.settings.domainStrategy = ob._wgDomainStrategy
+    if (ob._wgRemoteDNS) result.settings.remoteDNS = ob._wgRemoteDNS.split(',').map(s => s.trim()).filter(Boolean)
     if (ob._wgWorkers) result.settings.workers = ob._wgWorkers
     if (ob._wgReservedStr) result.settings.reserved = ob._wgReservedStr.split(',').map(function(s) { return parseInt(s.trim()) })
     result.settings.noKernelTun = ob._wgNoKernelTun || false

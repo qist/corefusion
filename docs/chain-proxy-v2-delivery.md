@@ -173,17 +173,24 @@ sing-box 入口的出口 →
 # 1) 单元测试（含真机踩过的坑的回归防线）
 go test ./internal/runtime/agent/ ./internal/service/coreconfig/ ./internal/subscription/sharelink/
 
-# 2) 用**真实核心**校验生成的配置（关键：比单测更硬的证据）
+# 2) 配置体检：把 data/runtime/ 下的配置交给**真实核心** dry-run（一键，推荐先跑这个）
+python3 scripts/check_configs.py
+#    对每个 <core>.jsonc 跑对应核心的 dry-run，并列出该配置里的链式出站清单
+#    （便于一眼看出"某条链的出站跑到了另一个核心的配置里"）
+#    退出码：有 FAIL → 1；hysteria2/tuic 无 dry-run 能力 → SKIP（带原因）
+python3 scripts/check_configs.py --runtime-dir data/xxx --data-dir data   # 校验副本/临时目录
+
+# 3) 手动逐核心校验（与体检脚本等价的原始命令）
 cd data && ../data/binaries/active/singbox/singbox-linux-amd64 check -c runtime/singbox.jsonc
 cd /opt/corefusion && ./data/binaries/active/xray/xray-linux-amd64 run -test -c data/runtime/xray.jsonc
 #   ⚠ xray 的资源目录要用 -c 同目录或设 XRAY_LOCATION_ASSET=…/rules，否则会因 geosite 路径报错
 
-# 3) 判断"流量真的走了出口" —— 只看出口节点的入站计数（0 值会被省略）
+# 4) 判断"流量真的走了出口" —— 只看出口节点的入站计数（0 值会被省略）
 ssh <exit-node> 'X=/opt/corefusion-agent/data/binaries/active/xray/xray-linux-amd64; \
   $X api statsquery --server=127.0.0.1:10085 -pattern "inbound-vless-<port>"'
 #   ✗ 不要用出口 IP 归属地判断：同机房/同 NAT 的节点出口 IP 可能完全相同
 
-# 4) i18n 守卫（有缺失或两语言包不对称会以退出码 1 失败）
+# 5) i18n 守卫（有缺失或两语言包不对称会以退出码 1 失败）
 cd web/admin && npm run i18n:audit
 ```
 

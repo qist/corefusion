@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"mime"
@@ -210,8 +212,22 @@ func (a *binaryListerAdapter) ListReleasesForPlatform(ctx context.Context, coreT
 }
 
 // New creates a new Gin engine with all routes registered.
+//
+// ⚠ 这里以前硬编码 `"corefusion-dev-secret"` ✗（安全审计 v5 P-3）：知道这个字符串的人就能
+// 伪造出能通过鉴权的管理端 token（JWT 用的是对称密钥 ✗）。生产路径（`cmd/corefusion`）会显式
+// 传入 `JWT_SECRET`，但**库代码不该带一个全世界都知道的默认密钥** ✗ → 改成每次随机生成：
+// 进程重启即失效（正好适合测试/临时场景），且**随机源失败就 panic**（失败关闭，不退回可猜值 ✗）。
 func New(database *gorm.DB) *gin.Engine {
-	return NewWithSecret(database, "corefusion-dev-secret")
+	return NewWithSecret(database, RandomEphemeralSecret())
+}
+
+// RandomEphemeralSecret 生成一次性随机 JWT 密钥（32 字节 → 64 hex）。
+func RandomEphemeralSecret() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		panic("corefusion: cannot generate JWT secret: " + err.Error())
+	}
+	return hex.EncodeToString(buf)
 }
 
 // NewWithSecret creates a new Gin engine with a custom JWT secret.

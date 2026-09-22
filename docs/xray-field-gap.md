@@ -131,8 +131,23 @@
   selector 并进 `observatory.subjectSelector`；已存在 observatory/burstObservatory 时**只合并不覆盖**，
   避免冲掉链式负载均衡注入的探测配置。单测 `TestEnsureObservatoryForLeastLoad` 覆盖三种情况。
 
-### 5.4 待办
+### 5.4 ⚠ A 类的结论需要更正：那条路径**不可达**（死代码）
 
-- A 类 12 项：把 `internal/configgen/xray/generator.go` 从强类型改 map 透传
+进一步核查发现：**`internal/configgen/*`（xray / singbox / mihomo / tuic / hysteria2 五个生成器 +
+`common/interfaces.go` + `validate/`）在整个仓库里没有任何调用方** ——
+`grep -rn "configgen" --include=*.go .`（排除该目录自身）返回空，Go 编译器也不会放过未使用的 import，
+所以它确实是**死代码**。
+
+结论修正：§1 的 **A 类（12 项）在现网路径上不可达** ✗ —— 真正跑的只有
+`prepare.go` 的 map 透传（面板自建入站/出站/路由）与前端编辑器的显式构造。
+另外实测确认：**真配置里不会漏出 `_` 前缀键**（面板本机与节点两侧检查均为 0 个，
+`_alpn` 这类有默认值的字段每个 TLS 入站都在走，所以这条检查是有效的）。
+
+对这份清单的影响：**A 类不必"修"**，需要决策的是这套死代码本身（删除 / 或将来真的有"从统一模型
+生成配置"的需求时再接线）。B 类（编辑器 UI 缺字段）才是真实缺口，P0 12 项已补完。
+
+### 5.5 待办
+
+- **决策项**：`internal/configgen/*` 这套死代码 —— 删除，还是保留待接线？（约 2~3k 行）
 - B 类 P1/P2（11 + 13 项）：按需补充；finalMask 内部字段建议**不暴露**
-- sing-box 侧同类清单（`/opt/sing-box` 是 fork 源码，按结构体字段比更准）
+- sing-box 侧同类清单已单独产出：`docs/singbox-field-gap.md`

@@ -85,6 +85,14 @@ export function buildOutbound(ob) {
       if (ob._tlsClientCertPath) tls.client_certificate_path = ob._tlsClientCertPath
       if (ob._tlsClientKeyPath) tls.client_key_path = ob._tlsClientKeyPath
     }
+    // 本 fork 的 TLS spoof / 记录分片（客户端侧特性）
+    if (ob._tlsSpoof) {
+      tls.spoof = ob._tlsSpoof
+      // 源码约束：spoof_method requires spoof（common/tlsspoof/spoof.go），所以只在有 spoof 时才写
+      if (ob._tlsSpoofMethod) tls.spoof_method = ob._tlsSpoofMethod
+    }
+    if (ob._tlsRecordFragment) tls.record_fragment = true
+    if (ob._tlsFragmentFallbackDelay) tls.fragment_fallback_delay = ob._tlsFragmentFallbackDelay
     out.tls = tls
   }
   if (ob._transportType) {
@@ -138,6 +146,10 @@ export function parseOutbound(ob) {
   o._tlsServerName = ob.tls?.server_name || ''
   o._tlsAlpn = ob.tls?.alpn || []
   o._tlsInsecure = ob.tls?.insecure || false
+  o._tlsSpoof = ob.tls?.spoof || ''
+  o._tlsSpoofMethod = ob.tls?.spoof_method || ''
+  o._tlsRecordFragment = !!ob.tls?.record_fragment
+  o._tlsFragmentFallbackDelay = ob.tls?.fragment_fallback_delay || ''
   o._tlsFingerprint = ob.tls?.utls?.fingerprint || ''
   o._tlsEchConfig = ob.tls?.ech_config || ''
   o._tlsClientCertPath = ob.tls?.client_certificate_path || ''
@@ -207,6 +219,7 @@ export function outboundDefaultsForType(type) {
     method: '', up: '', down: '', 'up_mbps': '', 'down_mbps': '', congestion_control: 'bbr',
     _outboundsStr: '', default: '', url: '', interval: '', tolerance: 0, interrupt_exist_connections: false,
     _tlsEnabled: false, _tlsServerName: '', _tlsAlpn: [], _tlsInsecure: false,
+    _tlsSpoof: '', _tlsSpoofMethod: '', _tlsRecordFragment: false, _tlsFragmentFallbackDelay: '',
     _tlsFingerprint: '', _tlsEchConfig: '', _tlsClientCertPath: '', _tlsClientKeyPath: '',
     _transportType: '', _transportPath: '/', _transportHost: '', _transportServiceName: '',
     _transportMaxEarlyData: 0, _transportEarlyDataHeader: '', _transportIdleTimeout: '', _transportPingTimeout: '',

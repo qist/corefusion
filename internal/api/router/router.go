@@ -2487,6 +2487,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			{
 				eabConfigsGroup.GET("", certEABH.List)
 				eabConfigsGroup.POST("", certEABH.Create)
+				// ZeroSSL 用**邮箱自动领取 EAB** ✓（同 acme.sh 的机制 ✓）→ 之后自动关联 ✓
+				eabConfigsGroup.POST("/fetch-zerossl", certEABH.FetchZeroSSL)
 				eabConfigsGroup.PUT("/:id", certEABH.Update)
 				eabConfigsGroup.DELETE("/:id", certEABH.Delete)
 			}

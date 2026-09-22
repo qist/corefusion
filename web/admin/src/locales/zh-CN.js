@@ -1403,6 +1403,11 @@ export default {
     varQuotaState: '配额状态（normal/near_limit/over_limit 等）',
   },
   certificate: {
+    eabAutoFetch: '自动领取',
+    eabFetchEmailPlaceholder: '你的 ZeroSSL 账号邮箱',
+    eabFetchButton: '自动领取',
+    eabFetchHint: 'ZeroSSL 的 ACME 强制要求 EAB，但可用邮箱直接换一对（与 acme.sh 机制一致）；领取后自动填入并保存。',
+    eabFetchOK: '已领取并保存 ZeroSSL 的 EAB',
     manageEAB: 'EAB 配置',
     addEAB: '新增 EAB 配置',
     eabConfig: 'EAB 配置',

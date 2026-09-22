@@ -186,6 +186,18 @@
             <el-option label="Let's Encrypt（不需要 EAB）" value="lets_encrypt" />
           </el-select>
         </el-form-item>
+        <!-- ZeroSSL：给它一个邮箱就能自动领一对 EAB ✓（和 acme.sh 的机制完全一致 ✓） -->
+        <el-form-item v-if="eabForm.ca_provider==='zerossl'" :label="t('certificate.eabAutoFetch')">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="zerosslEmail" :placeholder="t('certificate.eabFetchEmailPlaceholder')" />
+            <el-button type="primary" :loading="eabFetching" @click="handleFetchZeroSSL">
+              {{ t('certificate.eabFetchButton') }}
+            </el-button>
+          </div>
+          <div style="font-size:11px;color:#909399;line-height:1.5;margin-top:4px">
+            {{ t('certificate.eabFetchHint') }}
+          </div>
+        </el-form-item>
         <el-form-item label="EAB-KID">
           <el-input v-model="eabForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />
         </el-form-item>
@@ -659,6 +671,26 @@ const eabSaving = ref(false)
 const editingEAB = ref(null)
 const eabConfigs = ref([])
 const eabForm = ref({ name: '', ca_provider: 'google', eab_key_id: '', eab_mac_key: '' })
+const zerosslEmail = ref('')
+const eabFetching = ref(false)
+
+// ZeroSSL：用邮箱自动领 EAB ✓（面板侧调 ZeroSSL 的 REST API ✓，与 acme.sh 同一机制 ✓）
+async function handleFetchZeroSSL() {
+  if (!zerosslEmail.value) { ElMessage.warning(t('certificate.eabFetchEmailPlaceholder')); return }
+  eabFetching.value = true
+  try {
+    const cfg = await client.post('/eab-configs/fetch-zerossl', { email: zerosslEmail.value })
+    if (cfg) {
+      eabForm.value.eab_key_id = cfg.eab_key_id || ''
+      eabForm.value.ca_provider = 'zerossl'
+      if (!eabForm.value.name) { eabForm.value.name = cfg.name || '' }
+      ElMessage.success(t('certificate.eabFetchOK'))
+    }
+    fetchEABs()
+  } catch (e) {
+    ElMessage.error(t('common.failed'))
+  } finally { eabFetching.value = false }
+}
 
 async function fetchEABs() {
   try { eabConfigs.value = await client.get('/eab-configs') || [] } catch (e) { ElMessage.error(t('common.failed')) }

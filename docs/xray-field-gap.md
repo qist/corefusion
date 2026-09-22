@@ -18,16 +18,28 @@
   `port`/`protocol`（xray）/ `listen_port`/`type`（sing-box）、删除**以 `_` 开头的编辑器辅助字段**
   （`_realityPublicKey`、`_utlsFingerprint`、`_accessDomain*`、`_portHop*` …）、去掉 clients 里的 `name`。
   → **不会丢真配置字段** ✓
-- **P2 强类型生成器**：`internal/configgen/xray/generator.go` 用 **Go struct** 构造配置
-  （`InboundSettings{Clients,UDP,Auth,Password,Email,Encryption,Decryption,Method,Network}`、
-  `StreamSettings` 只建模 `Network/Security/TLS/Reality/WS/GRPC/HTTP` 的基础字段、
-  `Sniffing{Enabled,DestOverride}`）→ **没建模的字段静默消失** ✗。服务配置、客户端配置走这条。
+- ~~**P2 强类型生成器**：`internal/configgen/xray/generator.go` 用 Go struct 构造配置 → 没建模的字段静默消失 ✗~~
+  **⚠ 本条已作废（2026-09-22 复核）**：这个路径**在当前仓库里不存在** ✗ ——
+  `find . -type d -name "*configgen*"` 无结果、`grep -rn "configgen" --include=*.go .` 返回空，
+  `internal/` 下也没有任何用 Go struct 重建 xray 配置的生成器。原结论建立在一个**误记的文件路径**上 ✗。
+- **P3 客户端配置 / 分享链接**（真正存在的第二条路径）：`internal/subscription/sharelink/sharelink.go`
+  以**白名单**方式把 `streamSettings` 拷进分享链接（`setNetworkParams` / `securityParams` /
+  `buildXhttpExtra` …），字段不在白名单里就**发不出去** ✗（服务端仍走 P1 的 map 透传 ✓）。
+  见 §5.6 的核实结果：**xhttp 的 11 个进阶字段全在白名单里** ✓，并已加回归测试钉住 ✓。
 
 ---
 
-## 1. A 类：P2 路径会丢的字段（P1 不受影响）
+## 1. ~~A 类：P2 路径会丢的字段（P1 不受影响）~~
 
-> 判定 = 前端编辑器**能产生**、但后端强类型 struct / 生成逻辑里**完全没有**。
+> **⚠ 整节作废（2026-09-22 复核）**：所谓"P2 强类型生成器"**不存在**（见 §0 与 §5.6）✗，
+> 所以下面这 12 项**没有任何一项**在现网路径上丢失：
+> - xhttp 的 11 项（`xPadding*` × 4 / `seq*` × 2 / `sessionID*` × 2 / `uplink*` × 3）在客户端
+>   分享链接白名单 `buildXhttpExtra` 里**全都有** ✓（服务端走 map 透传 ✓）→ 已加回归测试 ✓
+> - `proxySettings`（顶层 Config）与 `idKey`（JSONConfigLoader）是 xray **服务端顶层 / 多配置加载器**
+>   的设置，**本来就不属于分享链接**（也不由面板下发）→ 不算缺陷 ✓
+> - `policy.statsUserOnline` / `finalMask.profiles`：前者面板用自己的在线统计、后者属 finalMask 内部档位
+>
+> 下表仅作**历史记录**保留（判定口径 = 前端能产生、但当时的"强类型 struct"里没有）。
 
 | 字段 | 所在 | 影响 |
 |---|---|---|
@@ -39,9 +51,8 @@
 | `proxySettings` | 顶层 Config | 全局代理设置（下发/更新用的代理） |
 | `idKey` | JSONConfigLoader | 多配置加载标识 |
 
-**修法（二选一）**：
-1. 扩展 `configgen/xray` 的 struct（覆盖到 httpupgrade/xhttp/sockopt/mux 等），或
-2. 把 P2 路径改成 **map 透传 + 只做必要归一化**（与 P1 一致），一次性消灭这类缺口。
+~~**修法（二选一）**：1. 扩展 `configgen/xray` 的 struct；2. 把 P2 路径改成 map 透传。~~
+**→ 两条都无需执行**：P2 路径不存在；真正需要守的是 **P3 白名单**（见 §5.6，已加回归测试 ✓）。
 
 ---
 
@@ -89,7 +100,7 @@
 ## 4. 建议顺序
 
 1. 先补 **P0 15 项** 的 UI（`XrayInbounds.vue` / `XrayOutbounds.vue`：freedom 出站、dns、sockopt、blackhole、router）
-2. 把 `configgen/xray/generator.go` 改成 **map 透传 + 白名单归一化**，消灭 A 类
+2. ~~把 `configgen/xray/generator.go` 改成 map 透传，消灭 A 类~~（**已作废**：该路径不存在，见 §5.6）
 3. 再做 **sing-box 侧** 的同类清单（`/opt/sing-box` 是 fork 源码，按结构体字段比更准）
 
 ---
@@ -145,6 +156,34 @@
 
 对这份清单的影响：**A 类不必"修"**，需要决策的是这套死代码本身（删除 / 或将来真的有"从统一模型
 生成配置"的需求时再接线）。B 类（编辑器 UI 缺字段）才是真实缺口，P0 12 项已补完。
+
+### 5.6 复核：A 类整体不成立；客户端白名单已覆盖并加了回归测试（2026-09-22）
+
+**核实过程（可复现）**
+```
+find . -type d -name "*configgen*"                      → 无结果（该目录不存在 ✗）
+grep -rn "configgen" --include=*.go .                    → 空
+grep -rln "xPaddingKey\|uplinkDataKey" /opt/corefusion --include=*.go
+  → 只有 internal/subscription/sharelink/sharelink.go 与 internal/subscription/mihomoconv/converter.go
+```
+即：**没有任何"用 Go struct 重建 xray 配置"的生成器** ✗ → §1 的 A 类 12 项在现网路径上**一项都不会丢**。
+
+**真正要守的第二条路径是 P3（客户端分享链接的白名单）**，逐项核对结果：
+
+| 字段 | 白名单里？ |
+|---|---|
+| `xPaddingKey` `xPaddingHeader` `xPaddingMethod` `xPaddingPlacement` `xPaddingBytes` `xPaddingObfsMode` | ✓ 全有 |
+| `seqKey` `seqPlacement` `sessionIDKey` `sessionIDPlacement` `sessionKey` `sessionPlacement` | ✓ 全有 |
+| `uplinkDataKey` `uplinkDataPlacement` `uplinkChunkSize` `uplinkHttpMethod` | ✓ 全有 |
+| `proxySettings` / `loader.idKey` | 不需要（xray 服务端顶层 / 加载器配置，不属分享链接）|
+
+**结论**：目前**没有已知的静默丢字段** ✓。白名单是手工维护的，所以补了回归防线
+`internal/subscription/sharelink/xhttp_extra_test.go`：
+- `TestBuildXhttpExtraKeepsAdvancedFields`：14 个 xhttp 进阶字段逐个断言出现在 `extra` 里；
+- `TestXhttpExtraReachesShareLink`：端到端解析生成出来的分享链接，断言 `extra` 查询参数里含这些字段
+  （顺带钉住一个**重命名**：`uplinkHttpMethod` → `uplinkHTTPMethod`，与 xray 的 JSON tag 对齐）。
+
+**将来若 xray 新增字段**：白名单不会自动跟上 ✗ —— 加字段时同步更新上面这个测试即可（测试会先失败，避免又静默丢掉）。
 
 ### 5.5 待办
 

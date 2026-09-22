@@ -404,8 +404,17 @@ func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType Challenge
 		if err != nil {
 			return err
 		}
-		return client.Challenge.SetDNS01Provider(provider,
-			dns01.CondOption(true, dns01.CondOption(true, dns01.CondOption(true, nil))))
+		// ⚠ 这里原本传的是 `dns01.CondOption(true, dns01.CondOption(true, dns01.CondOption(true, nil)))` ✗：
+		// 最里层就是 **nil** ✗ → lego 在 `dns01.NewChallenge` 里执行 `opt(chlg)` 时**空指针 panic** ✗
+		// → **dns-01 从来就没能工作过** ✗（真机踩到 ✓：请求 500、日志停在 dns_challenge.go:66 ✓）。
+		opts := []dns01.ChallengeOption{
+			// Cloudflare 写入 TXT 后，权威 NS 常常还没刷新 ✓ → 不强制"权威 NS 一致" ✗，
+			// 但仍按下面的超时等递归解析器看到记录 ✓（否则很容易卡死在传播检查里 ✗）。
+			dns01.DisableAuthoritativeNssPropagationRequirement(),
+			// 最多等 2 分钟；到点即使没查到也继续提交挑战 ✓（CA 侧还会再等一轮 ✓）。
+			dns01.PropagationWait(2*time.Minute, true),
+		}
+		return client.Challenge.SetDNS01Provider(provider, opts...)
 
 	default:
 		return fmt.Errorf("unsupported challenge type: %s", challengeType)

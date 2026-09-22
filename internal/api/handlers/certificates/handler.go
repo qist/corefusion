@@ -402,6 +402,19 @@ func (h *Handler) Issue(c *gin.Context) {
 		return
 	}
 
+	// ACME 账号邮箱：Google Public CA **必须有联系邮箱** ✗（真机报 `Accounts must have at least one contact.` ✓），
+	// LE 也建议带上 ✓。选了账号就用选的，否则用面板里的**默认账号** ✓。
+	email := ""
+	if h.acmeEmails != nil {
+		if info, rerr := h.acmeEmails.ResolveACMEAccount(c.Request.Context(), req.EmailID); rerr == nil {
+			email = strings.TrimSpace(info.Email)
+		}
+	}
+	if email == "" && req.EmailID > 0 {
+		response.BadRequest(c, "ACME_ACCOUNT_NOT_FOUND", "the selected ACME account has no email")
+		return
+	}
+
 	// 账号里存过 EAB（ZeroSSL / Google ✓）→ 自动补上 ✓，用户不用每次手填 ✗
 	caProvider := strings.TrimSpace(req.CAProvider)
 	eabKID := strings.TrimSpace(req.EABKeyID)
@@ -472,9 +485,10 @@ func (h *Handler) Issue(c *gin.Context) {
 		CAProvider:    cert.CAProvider(caProvider),
 		Profile:       req.Profile,
 	}
-	// 诊断：一眼看出本次用了哪个 CA / 有没有 EAB ✓（排查"选了 Google 却按 LE 签" ✗）
-	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d",
-		req.Domains, req.ChallengeType, caProvider, eabKID != "" && eabMAC != "", req.EABConfigID, req.EmailID)
+	// 诊断：一眼看出本次用了哪个 CA / 有没有 EAB / 用哪个邮箱 ✓
+	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d email=%q",
+		req.Domains, req.ChallengeType, caProvider, eabKID != "" && eabMAC != "", req.EABConfigID, req.EmailID, email)
+	input.Email = email
 
 	if req.DNSProvider != nil {
 		input.DNSProvider = &cert.DNSProviderConfig{

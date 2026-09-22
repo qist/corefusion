@@ -617,6 +617,7 @@ func allEntityModels() []interface{} {
 		&entity.CaddySite{},
 		&entity.NginxSite{},
 		&entity.DNSChannel{},
+		&entity.EABConfig{},
 		&entity.ACMEAccountConfig{},
 		&entity.CARoot{},
 		&entity.LogRotationPolicy{},

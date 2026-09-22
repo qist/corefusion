@@ -64,6 +64,7 @@ import (
 	"corefusion/internal/app/embed"
 	"corefusion/internal/coredata"
 	domainuser "corefusion/internal/domain/user"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/runtime/cert"
@@ -487,6 +488,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	guardianRepo := repository.NewProcessGuardianRepository(database)
 	crashLogRepo := repository.NewCrashLogRepository(database)
 	dnsChannelRepo := repository.NewDNSChannelRepository(database)
+	// EAB 独立配置（Google / ZeroSSL 必填 ✓）：和 DNS 通道一样单独管理 ✓
+	eabConfigRepo := repository.NewEABConfigRepository(database)
 	acmeAccountRepo := repository.NewACMEAccountConfigRepository(database)
 	systemSettingRepo := repository.NewSystemSettingRepository(database)
 	notifTmplRepo := repository.NewNotificationTemplateRepository(database)
@@ -618,6 +621,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	rateLimitConfigRepo := repository.NewRateLimitConfigRepository(database)
 	rateLimitSvcInst := rateLimitSvc.NewService(rateLimitConfigRepo)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
+	eabConfigSvc := certService.NewEABConfigService(eabConfigRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)
 	notifier := systemSvc.NewNotifier(systemSettingSvc)
 	backupSvcInst := backupService.NewService(backupRepo, dataDir, database)
@@ -980,6 +984,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// DNS 通道 → dns-01 提供者配置 ✓（凭据在通道里 ✓，签发时按 ID 解析 ✓）
 		certH.SetDNSChannelResolver(dnsChannelAdapter{svc: dnsChannelSvc})
 	}
+	if eabConfigSvc != nil {
+		// EAB 独立配置 → 签发时按 eab_config_id 解析出 CA + EAB ✓（不用手填 ✗）
+		certH.SetEABConfigResolver(eabConfigAdapter{svc: eabConfigSvc})
+	}
 	if acmeEmailSvc != nil {
 		certH.SetACMEEmailResolver(acmeEmailAdapter{svc: acmeEmailSvc})
 		if sharedNodeMgr != nil {
@@ -1044,6 +1052,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	rateLimitH := rateLimitHandler.NewHandler(rateLimitSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
+	certEABH := certsHandler.NewEABHandler(eabConfigSvc)
 	certEmailH := certsHandler.NewEmailHandler(acmeEmailSvc)
 	logManageH := logManageHandler.NewHandler(logManageSvc)
 	// Create log cleanup service for DB table cleanup rules
@@ -2469,6 +2478,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certChannelsGroup.GET("/providers", certChannelH.Providers)
 				certChannelsGroup.PUT("/:id", certChannelH.Update)
 				certChannelsGroup.DELETE("/:id", certChannelH.Delete)
+			}
+
+			// EAB 配置 — admin only.
+			// EAB（外部账号绑定）独立管理 ✓：Google Public CA / ZeroSSL 必填 ✓，
+			// 签发时只选关联 ✓（不用每次手填 EAB-KID / EAB-HMAC-Key ✗）。
+			eabConfigsGroup := protected.Group("/eab-configs").Use(middleware.RequireRole(domainuser.RoleAdmin))
+			{
+				eabConfigsGroup.GET("", certEABH.List)
+				eabConfigsGroup.POST("", certEABH.Create)
+				eabConfigsGroup.PUT("/:id", certEABH.Update)
+				eabConfigsGroup.DELETE("/:id", certEABH.Delete)
 			}
 
 			// ACME Accounts — admin only.
@@ -3910,6 +3930,31 @@ type acmeEmailAdapter struct {
 	svc *certService.ACMEEmailService
 }
 
+// ResolveACMEAccount 返回账号的邮箱 + CA + EAB ✓（签发时自动带上 ✓，不用手填 ✗）。
+func (a acmeEmailAdapter) ResolveACMEAccount(ctx context.Context, id int64) (certsHandler.ACMEAccountInfo, error) {
+	if a.svc == nil {
+		return certsHandler.ACMEAccountInfo{}, fmt.Errorf("acme account service not available")
+	}
+	var (
+		cfg *entity.ACMEAccountConfig
+		err error
+	)
+	if id > 0 {
+		cfg, err = a.svc.GetByID(ctx, id)
+	} else {
+		cfg, err = a.svc.GetDefault(ctx)
+	}
+	if err != nil || cfg == nil {
+		return certsHandler.ACMEAccountInfo{}, err
+	}
+	return certsHandler.ACMEAccountInfo{
+		Email:      cfg.Email,
+		CAProvider: cfg.CAProvider,
+		EABKeyID:   cfg.EABKeyID,
+		EABMACKey:  cfg.EABMACKey,
+	}, nil
+}
+
 func (a acmeEmailAdapter) ResolveACMEEmail(ctx context.Context, id int64) (string, error) {
 	if a.svc == nil {
 		return "", fmt.Errorf("acme email service not available")
@@ -3929,6 +3974,27 @@ func (a acmeEmailAdapter) ResolveACMEEmail(ctx context.Context, id int64) (strin
 }
 
 // dnsChannelAdapter 把面板的 DNS 通道服务接成"解析通道 → 提供者配置"能力 ✓。
+// eabConfigAdapter 把面板的 EAB 独立配置服务接成"按 ID 解析 CA + EAB"能力 ✓。
+type eabConfigAdapter struct {
+	svc *certService.EABConfigService
+}
+
+func (a eabConfigAdapter) ResolveEABConfig(ctx context.Context, id int64) (*certsHandler.EABConfigInfo, error) {
+	if a.svc == nil {
+		return nil, fmt.Errorf("eab config service not available")
+	}
+	cfg, err := a.svc.GetByID(ctx, id)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+	return &certsHandler.EABConfigInfo{
+		Name:       cfg.Name,
+		CAProvider: cfg.CAProvider,
+		KeyID:      cfg.KeyID,
+		MACKey:     cfg.MACKey,
+	}, nil
+}
+
 type dnsChannelAdapter struct {
 	svc *certService.DNSChannelService
 }

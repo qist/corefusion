@@ -1768,25 +1768,45 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 				// SNI：reality 场景 xray 把它放在 realitySettings.serverName（顶层 serverName 常为空），
 				// 所以先取 realitySettings 再回落到顶层，否则收不到正确 SNI（核心不会报错，
 				// 只会拿服务器地址当 SNI → 连不上真实站点）。
+				// SNI 可能出现在三处：streamSettings.serverName（老路径）/ tlsSettings.serverName
+				// （agent 从真实入站派生时写的）/ realitySettings.serverName（reality 入站）。
 				var sni string
+				ts, _ := ss["tlsSettings"].(map[string]interface{})
 				if v, ok := ss["serverName"].(string); ok && v != "" {
 					sni = v
 				}
-				if security == "reality" {
-					if r, ok := ss["realitySettings"].(map[string]interface{}); ok {
-						if v, ok := r["serverName"].(string); ok && v != "" {
-							sni = v
-						}
+				if sni == "" && ts != nil {
+					if v, ok := ts["serverName"].(string); ok && v != "" {
+						sni = v
+					}
+				}
+				if r, ok := ss["realitySettings"].(map[string]interface{}); ok {
+					if v, ok := r["serverName"].(string); ok && v != "" {
+						sni = v
 					}
 				}
 				if sni != "" {
 					tls["server_name"] = sni
 				}
+				fp := ""
+				if v, ok := ss["fingerprint"].(string); ok {
+					fp = v
+				}
+				if fp == "" && ts != nil {
+					if v, ok := ts["fingerprint"].(string); ok {
+						fp = v
+					}
+				}
+				if fp != "" {
+					tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": fp}
+				}
+				// alpn：顶层优先，其次 tlsSettings（agent 派生时写在顶层，这里都兼容）
 				if alpn, ok := ss["alpn"].([]interface{}); ok && len(alpn) > 0 {
 					tls["alpn"] = alpn
-				}
-				if fp, ok := ss["fingerprint"].(string); ok && fp != "" {
-					tls["utls"] = map[string]interface{}{"enabled": true, "fingerprint": fp}
+				} else if ts != nil {
+					if alpn, ok := ts["alpn"].([]interface{}); ok && len(alpn) > 0 {
+						tls["alpn"] = alpn
+					}
 				}
 				if security == "reality" {
 					reality := map[string]interface{}{"enabled": true}

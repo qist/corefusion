@@ -217,7 +217,10 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
 			clientEmail = cl.Email
 			if clientEmail != "" {
-				profileTitle = clientEmail
+				// ⚠ 不要把邮箱原样写进响应头 ✗（安全审计 v5 P-6）：Profile-Title 会显示在客户端、
+				// 也会被中间代理/CDN 记录下来，等于把订阅者邮箱（PII）四处散播；而且邮箱可能含
+				// 非 ASCII 或 CR/LF → 头注入/非法头 ✗。改为脱敏 + 强制可打印 ASCII。
+				profileTitle = maskEmailForHeader(clientEmail)
 			}
 
 			// Check client status first (client may be suspended while subscription is still active)
@@ -728,7 +731,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			}
 			for _, memberID := range memberIDs {
 				item := renderedSubscriptionNode{
-					XrayReality: isXrayRealityConfig(&cfg, config),
+					XrayReality:     isXrayRealityConfig(&cfg, config),
 					MemberID:        memberID,
 					InboundConfigID: cfg.ID,
 					Link:            link,
@@ -798,7 +801,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 
 					for _, memberID := range memberIDs {
 						item := renderedSubscriptionNode{
-							XrayReality: isXrayRealityConfig(&cfg, config),
+							XrayReality:     isXrayRealityConfig(&cfg, config),
 							MemberID:        memberID,
 							InboundConfigID: cfg.ID,
 							Link:            mirrorLink,
@@ -3148,6 +3151,46 @@ var messages = map[string]map[string]string{
 		"expired":   "Подписка истекла - Продлите подписку",
 		"inactive":  "Подписка не активна",
 	},
+}
+
+// maskEmailForHeader 把邮箱脱敏成可安全写进 HTTP 头的形式。
+//
+// 例：alice@example.com → a****@example.com
+//   - 本地部分只保留首字符，其余打码（不泄漏完整邮箱）；
+//   - 域名保留（客户端里仍能认出是哪个订阅）；
+//   - 只保留可打印 ASCII（非 ASCII/控制字符一律替换成 `*`）→ 避免 CRLF 头注入与非法头。
+func maskEmailForHeader(email string) string {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return ""
+	}
+	at := strings.LastIndex(email, "@")
+	local, domain := email, ""
+	if at > 0 {
+		local, domain = email[:at], email[at:]
+	}
+
+	var b strings.Builder
+	for i, r := range local {
+		if r < 0x21 || r > 0x7e {
+			b.WriteByte('*')
+			continue
+		}
+		if i == 0 {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('*')
+	}
+	out := b.String()
+	for _, r := range domain {
+		if r < 0x21 || r > 0x7e {
+			out += "*"
+			continue
+		}
+		out += string(r)
+	}
+	return out
 }
 
 // detectLanguage detects language from Accept-Language header.

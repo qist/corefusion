@@ -139,7 +139,15 @@ func saveEnvValue(key, value string) {
 		lines = append(lines, key+"="+value)
 	}
 
-	os.WriteFile(".env", []byte(strings.Join(lines, "\n")+"\n"), 0644)
+	// .env 里可能含 JWT_SECRET / CF_SECRET_ENCRYPTION_KEY 等密钥 → 权限收到 0600 ✓
+	// （安全审计 v5 P-4）。注意 WriteFile 对**已存在**的文件不会改权限 ✗ → 显式 Chmod 一次。
+	envPath := ".env"
+	if err := os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
+		log.Printf("[startup] warning: write %s failed: %v", envPath, err)
+	}
+	if err := os.Chmod(envPath, 0600); err != nil {
+		log.Printf("[startup] warning: chmod %s failed: %v", envPath, err)
+	}
 }
 
 func runServer(args []string) {

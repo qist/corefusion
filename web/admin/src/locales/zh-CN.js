@@ -1,5 +1,10 @@
 export default {
   common: {
+    next: '下一步',
+    prev: '上一步',
+    host: '主机',
+    saved: '已保存',
+    deleteConfirm: '确定要删除吗？',
     appName: 'CoreFusion',
     all: '全部',
     confirm: '确认',
@@ -412,6 +417,7 @@ export default {
       chainBalancers: '链式负载均衡器',
     },
     inbounds: {
+      shareNotSupported: '该入站暂不支持生成分享链接',
       title: '入站列表',
       savedToDb: '入口已保存到数据库',
       deletedFromDb: '入口已从数据库删除',
@@ -847,6 +853,8 @@ export default {
       download: '下载',
     },
     tls: {
+      pinnedPeerCertSha256Placeholder: 'Base64(SHA256)，每行一个',
+      verifyPeerCertByNamePlaceholder: '例如 example.com',
       serverName: 'Server Name',
       verifyPeerCertByName: 'Verify Peer Cert By Name',
       verifyPeerCertByNameHint: '覆盖证书验证用的 SNI，支持逗号分隔多域名',
@@ -1713,7 +1721,18 @@ export default {
       restarting: '正在重启...',
     },
   },
+  traffic_history: {
+    title: '流量历史',
+    empty: '暂无数据',
+    error: '加载失败',
+    loading: '加载中…',
+  },
   proxy: {
+    logOutputMode: '日志输出方式',
+    syncAllNodes: '同步全部节点',
+    wafDomainRuleEdit: '编辑域名规则',
+    wafGlobalRuleRef: '引用全局 WAF 规则',
+    wafRuleStoreHint: '规则保存在规则库中，可被多个站点引用',
     title: '代理管理',
     control: '代理控制',
     syncConfig: '同步配置',
@@ -4820,6 +4839,7 @@ ctx.moduleTitle           — 当前模块标题`,
       realityOnly: 'Reality 仅支持 TCP / HTTP / WebSocket / HTTPUpgrade / gRPC，当前传输不兼容',
     },
     tls: {
+      utlsFingerprintHint: '客户端的 uTLS 指纹，需与服务端要求一致',
       security: '安全',
       none: 'none',
       standardTls: 'tls',
@@ -5207,6 +5227,8 @@ ctx.moduleTitle           — 当前模块标题`,
         },
         // OpenConnect 专属
         oc: {
+          serverConfig: '服务端配置',
+          advancedOptions: '高级选项',
           server: '服务器地址',
           serverPlaceholder: 'vpn.example.com',
           username: '用户名',
@@ -5270,6 +5292,9 @@ ctx.moduleTitle           — 当前模块标题`,
         },
         // OpenVPN 通用
         ovpn: {
+          address: '地址',
+          advancedOptions: '高级选项',
+          routeSettings: '路由设置',
           server: '服务器地址',
           serverPlaceholder: 'vpn.example.com',
           serverPort: '服务器端口',

@@ -91,3 +91,48 @@
 1. 先补 **P0 15 项** 的 UI（`XrayInbounds.vue` / `XrayOutbounds.vue`：freedom 出站、dns、sockopt、blackhole、router）
 2. 把 `configgen/xray/generator.go` 改成 **map 透传 + 白名单归一化**，消灭 A 类
 3. 再做 **sing-box 侧** 的同类清单（`/opt/sing-box` 是 fork 源码，按结构体字段比更准）
+
+---
+
+## 5. 状态更新（2026-09-22 实施后）
+
+### 5.1 P0 已全部补齐（12 项，全部经 `xray run -test` 校验为 `Configuration OK`）
+
+| 字段 | 位置 | 备注 |
+|---|---|---|
+| `sendThrough` / `targetStrategy` / `xudpConcurrency` / `xudpProxyUDP443` | 出站顶层（`XrayOutbounds.vue` 基础 tab） | 面板此前**完全没有**这四项 |
+| `targetStrategy` / `ipsBlocked` | freedom 出站 | `ipsBlocked` 见 5.2 |
+| `customResponseData` | blackhole 出站 | type=http 时的响应体 |
+| `penetrate` | sockopt（出站） | 用入站原目标地址直连发送 |
+| `expectIPs` | DNS nameserver | 与已有 `expectedIPs` 是**两个**独立字段 |
+| `localOS` | 路由规则 | 匹配运行核心机器的 `runtime.GOOS`（大小写不敏感） |
+| `costs` | leastLoad 策略 | 元素 `{match, value, regexp}`，JSON 录入 |
+| `echSockopt` | TLS（入站） | JSON，ECH 连接套用的 socket 选项 |
+| `remoteDNS` | wireguard 出站 | 隧道内 DNS |
+
+### 5.2 实施时发现：清单本身有 4 处判断需要修正
+
+- ✗ **`fakedns.fakeDNSInUse` 不是配置字段** —— 是 `fakedns.go` 里的局部变量，删掉。
+- ⚠ **`freedom.ipsBlocked` 已被 Xray 废弃** —— `xray run -test` 告警：`The feature "ipsBlocked" has
+  been removed and migrated to "finalRules"`。而面板**已有 Final Rules 编辑器** → UI 标注"已废弃"并
+  指向 finalRules，保留读写仅为旧配置来回编辑（否则编辑一次就把用户的配置抹掉）。
+- `freedom.applyTo` 属于 **`noise`**（只接受 ip/ipv4/ipv6）→ 降级 P1。
+- `dns_proxy.blockTypes` / `nonIPQuery` 源码标注 `todo: remove legacy` → 降级 P2。
+- 附带确认：outbound 级 `targetStrategy` 会被 xray 自动迁移到 `sockopt.domainStrategy`（告警说明）。
+
+### 5.3 顺带发现的**真 bug**（已修）：leastLoad / leastPing 缺根 observatory → 核心启动失败
+
+- 实测：只写 `strategy.type = leastLoad` 的 balancer、不写顶层 observatory →
+  `failed to create server > core: not all dependencies are resolved`（补上 observatory 后 `Configuration OK`）。
+- 面板路由编辑器**允许**选这两种策略，却从不生成 observatory（它是 xray **顶层**键、不在 routing 里，
+  编辑器产出不到）→ 用户一选 leastLoad/leastPing，**节点直接起不来**。
+- 原有 observatory 注入只存在于**链式负载均衡**分支（`prepare.go` 的 `if len(chainRules) > 0` 内）。
+- 修法：后端兜底 `ensureObservatoryForLeastLoad`（`json.Marshal` 之前调用）——把这些 balancer 的
+  selector 并进 `observatory.subjectSelector`；已存在 observatory/burstObservatory 时**只合并不覆盖**，
+  避免冲掉链式负载均衡注入的探测配置。单测 `TestEnsureObservatoryForLeastLoad` 覆盖三种情况。
+
+### 5.4 待办
+
+- A 类 12 项：把 `internal/configgen/xray/generator.go` 从强类型改 map 透传
+- B 类 P1/P2（11 + 13 项）：按需补充；finalMask 内部字段建议**不暴露**
+- sing-box 侧同类清单（`/opt/sing-box` 是 fork 源码，按结构体字段比更准）

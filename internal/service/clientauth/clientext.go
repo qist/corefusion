@@ -56,12 +56,12 @@ func (s *ReferralService) GetOrCreateCode(ctx context.Context, clientID int64) (
 
 type ReferralStats struct {
 	TotalInvited        int64 `json:"total_invited"`
-	TotalPaid          int64 `json:"total_paid"`
-	TotalCommission    int64 `json:"total_commission"`
+	TotalPaid           int64 `json:"total_paid"`
+	TotalCommission     int64 `json:"total_commission"`
 	AvailableCommission int64 `json:"available_commission"`
-	PendingCommission  int64 `json:"pending_commission"`
-	CommissionRate     int   `json:"commission_rate"`
-	MinWithdrawAmount  int64 `json:"min_withdraw_amount"`
+	PendingCommission   int64 `json:"pending_commission"`
+	CommissionRate      int   `json:"commission_rate"`
+	MinWithdrawAmount   int64 `json:"min_withdraw_amount"`
 }
 
 func (s *ReferralService) GetStats(ctx context.Context, clientID int64) (*ReferralStats, error) {
@@ -667,7 +667,8 @@ func (s *IPWhitelistService) AutoAddIP(ctx context.Context, clientID int64, ip s
 }
 
 func (s *IPWhitelistService) RemoveIP(ctx context.Context, clientID, entryID int64) error {
-	return s.ipRepo.DeleteByID(ctx, entryID)
+	// 带归属校验：只能删自己的白名单条目（安全审计 v5 M1 —— 原实现忽略 clientID ✗）
+	return s.ipRepo.DeleteByIDForClient(ctx, entryID, clientID)
 }
 
 // ============================================================

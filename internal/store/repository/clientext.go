@@ -444,8 +444,22 @@ func (r *IPWhitelistEntryRepository) Create(ctx context.Context, item *entity.IP
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
-func (r *IPWhitelistEntryRepository) DeleteByID(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.IPWhitelistEntry{}, id).Error
+// DeleteByIDForClient 删除某客户**自己**的白名单条目。
+//
+// ⚠ 必须带上 client_id ✗：只按主键删的话，任何已登录客户端只要遍历 id 就能删掉**别人**的
+// 白名单条目（越权破坏他人的访问控制），安全审计 v5 M1。
+func (r *IPWhitelistEntryRepository) DeleteByIDForClient(ctx context.Context, id, clientID int64) error {
+	res := r.db.WithContext(ctx).
+		Where("id = ? AND client_id = ?", id, clientID).
+		Delete(&entity.IPWhitelistEntry{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		// 不存在、或不属于该客户 —— 一律当"找不到"，不泄露他人条目是否存在
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *IPWhitelistEntryRepository) GetByClientAndIP(ctx context.Context, clientID int64, ip string) (*entity.IPWhitelistEntry, error) {

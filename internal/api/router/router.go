@@ -1206,6 +1206,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	portalTmplSvc := portalSvc.NewService(repository.NewPortalTemplateRepository(database))
 	portalTmplSvc.WithSettingStore(systemSettingSvc)
 	portalTmplSvc.SeedBuiltInTemplate(context.Background())
+	// 给库里已有的门户模板打 M7 安全补丁（用户内容不再执行 HTML）——全自动、幂等
+	if perr := portalTmplSvc.EnsureSecurityPatches(context.Background()); perr != nil {
+		log.Printf("[router] portal security patch skipped: %v", perr)
+	}
 
 	// API v1
 	v1 := r.Group("/api/v1")
@@ -2783,6 +2787,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
 		html := portalTmplSvc.RenderPage(c.Request.Context())
+		// 门户页面的安全响应头（自动；只设不影响自定义 HTML/JS/CDN 的那几条）
+		for k, v := range portalSvc.SecurityHeaders() {
+			c.Header(k, v)
+		}
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
 
@@ -3401,6 +3409,10 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	portalTmplRepo := repository.NewPortalTemplateRepository(database)
 	portalTmplSvc := portalSvc.NewService(portalTmplRepo)
 	portalTmplSvc.SeedBuiltInTemplate(context.Background())
+	// 给库里已有的门户模板打 M7 安全补丁（用户内容不再执行 HTML）——全自动、幂等
+	if perr := portalTmplSvc.EnsureSecurityPatches(context.Background()); perr != nil {
+		log.Printf("[router] portal security patch skipped: %v", perr)
+	}
 
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
 	portalTmplSvc.WithSettingStore(systemSettingSvc)
@@ -3505,6 +3517,10 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// Root path serves the portal page (cached)
 	r.GET("/", func(c *gin.Context) {
 		html := portalTmplSvc.RenderPage(c.Request.Context())
+		// 门户页面的安全响应头（自动；只设不影响自定义 HTML/JS/CDN 的那几条）
+		for k, v := range portalSvc.SecurityHeaders() {
+			c.Header(k, v)
+		}
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
 

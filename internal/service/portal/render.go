@@ -15,6 +15,24 @@ import (
 // /api/v1/public/portal-config, so builder changes render straight from the
 // database. The assembled shell is static for a given template version, which
 // is what allows the render cache to serve it without any re-rendering work.
+// SecurityHeaders 返回门户页面的**安全响应头**（自动应用，不需要任何人工配置）。
+//
+// 只设不影响自定义的几条：
+//   - object-src 'none'：禁掉 object/embed 这类老式注入载体；
+//   - base-uri 'self'：防止注入 base 改写所有相对链接（钓鱼/劫持资源）；
+//   - frame-ancestors 'self'：防点击劫持；
+//   - nosniff + Referrer-Policy：阻止内容嗅探、少泄漏来源。
+//
+// **不设** default-src / script-src：门户允许管理员自定义 HTML/JS 且用了 CDN，
+// 收紧脚本源会直接打断自定义功能（那属于后台特权内容，不在本项防护范围内）。
+func SecurityHeaders() map[string]string {
+	return map[string]string{
+		"Content-Security-Policy": "object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "same-origin",
+	}
+}
+
 func renderPortalHTML(htmlContent, cssContent, jsContent, configStr string, cfg RenderConfig) string {
 	// configStr is intentionally unused: the structured config reaches the
 	// page through the runtime config endpoint (with an initial snapshot

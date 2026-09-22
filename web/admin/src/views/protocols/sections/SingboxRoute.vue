@@ -253,6 +253,39 @@
           </el-select>
           <div class="hint">Outbound tag for matched traffic</div>
         </el-form-item>
+        <!-- route-options 动作用的字段（与 action 同级写在 rule 顶层） -->
+        <template v-if="rf.action === 'route-options'">
+          <el-form-item label="TLS Fragment">
+            <el-switch v-model="rf.tlsFragment" @change="onTlsFragmentChange" />
+            <div class="hint">
+              对命中流量做 TLS 分片（抗特征）；与下面的 Record Fragment <b>互斥</b>
+              —— 同时给核心会拒绝启动（实测 `tls_fragment and tls_record_fragment are mutually exclusive`）
+            </div>
+          </el-form-item>
+          <el-form-item label="TLS Record Fragment">
+            <el-switch v-model="rf.tlsRecordFragment" @change="onTlsRecordFragmentChange" />
+            <div class="hint">按 TLS 记录分片；与上面的 TLS Fragment 互斥</div>
+          </el-form-item>
+          <el-form-item v-if="rf.tlsFragment || rf.tlsRecordFragment" label="Fragment Fallback Delay">
+            <el-input v-model="rf.tlsFragmentFallbackDelay" placeholder="100ms" @change="emit" />
+            <div class="hint">分片失败后的回退延迟（duration，如 100ms / 1s；非法值核心会拒绝启动）</div>
+          </el-form-item>
+          <el-form-item label="TLS Spoof">
+            <el-input v-model="rf.tlsSpoof" placeholder="www.bing.com" @change="emit" />
+            <div class="hint">本 fork 的 TLS spoof 的 route-options 形式（伪装目标，域名或 IP）；留空不启用</div>
+          </el-form-item>
+          <el-form-item v-if="rf.tlsSpoof" label="TLS Spoof Method">
+            <el-select v-model="rf.tlsSpoofMethod" style="width:100%" clearable @change="emit">
+              <el-option label="(默认)" value="" />
+              <el-option label="wrong-sequence" value="wrong-sequence" />
+              <el-option label="wrong-checksum" value="wrong-checksum" />
+              <el-option label="wrong-ack" value="wrong-ack" />
+              <el-option label="wrong-md5" value="wrong-md5" />
+              <el-option label="wrong-timestamp" value="wrong-timestamp" />
+            </el-select>
+            <div class="hint">必须配合上面的 TLS Spoof（实测：单独给会 FATAL `spoof_method requires spoof`）</div>
+          </el-form-item>
+        </template>
         <!-- 规则级 strategy / domain_resolver 都不是 sing-box 字段；
              action=resolve 时对应字段是 server + strategy -->
         <template v-if="rf.action === 'resolve'">
@@ -315,6 +348,8 @@ function blankRule() {
     _ruleSet: [], _ruleSetIPCIDRMatchSource: false,
     _geosite: '', _geoip: '', _sourceGeoip: '',
     action: '', outbound: '', resolveServer: '', strategy: '',
+    tlsFragment: false, tlsRecordFragment: false, tlsFragmentFallbackDelay: '',
+    tlsSpoof: '', tlsSpoofMethod: '',
   }
 }
 
@@ -383,11 +418,42 @@ function editRule(r) {
     action: r.action || '', outbound: r.outbound || '',
     resolveServer: r.server || r.domain_resolver || '',
     strategy: r.strategy || '',
+    tlsFragment: !!r.tls_fragment, tlsRecordFragment: !!r.tls_record_fragment,
+    tlsFragmentFallbackDelay: r.tls_fragment_fallback_delay || '',
+    tlsSpoof: r.tls_spoof || '', tlsSpoofMethod: r.tls_spoof_method || '',
   })
   dlg.value = true
 }
 
 // 由 rf 构造 sing-box 规则对象
+// duration 字段（tls_fragment_fallback_delay 等）给非法值会让核心**拒绝启动**
+// （实测：`FATAL decode config: …: time: invalid duration "abc"`）→ 生成前校验，不合法就不写。
+function validDuration(v) {
+  const t = String(v || '').trim()
+  if (!t) return ""
+  return /^(\d+(\.\d+)?(ns|us|ms|s|m|h))+$/.test(t) ? t : ""
+}
+
+// tls_fragment 与 tls_record_fragment **互斥**（实测：核心报 `are mutually exclusive` 并 FATAL）
+function onTlsFragmentChange() { if (rf.tlsFragment) rf.tlsRecordFragment = false }
+function onTlsRecordFragmentChange() { if (rf.tlsRecordFragment) rf.tlsFragment = false }
+
+// route-options 动作的字段：三个实测约束都在这里守住
+//   - tls_fragment / tls_record_fragment 互斥
+//   - tls_spoof_method 必须伴随 tls_spoof
+//   - fallback delay 必须是合法 duration
+function applyRouteOptions(src, rule) {
+  const rec = !!src.tlsRecordFragment
+  if (src.tlsFragment) rule.tls_fragment = true
+  if (rec) rule.tls_record_fragment = true
+  const ff = validDuration(src.tlsFragmentFallbackDelay)
+  if (ff && (src.tlsFragment || rec)) rule.tls_fragment_fallback_delay = ff
+  if (src.tlsSpoof) {
+    rule.tls_spoof = src.tlsSpoof
+    if (src.tlsSpoofMethod) rule.tls_spoof_method = src.tlsSpoofMethod
+  }
+}
+
 function buildRuleFromForm() {
   const rule = {}
   if (rf.type) rule.type = rf.type
@@ -467,6 +533,7 @@ function buildRuleFromForm() {
     if (rf.resolveServer) rule.server = rf.resolveServer
     if (rf.strategy) rule.strategy = rf.strategy
   }
+  if (rf.action === 'route-options') applyRouteOptions(rf, rule)
   return rule
 }
 
@@ -593,6 +660,7 @@ function build() {
       if (r.server) rule.server = r.server
       if (r.strategy) rule.strategy = r.strategy
     }
+    if (r.action === 'route-options') applyRouteOptions(r, rule)
     return rule
   })
   return out

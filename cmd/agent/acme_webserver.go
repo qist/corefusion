@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -51,9 +56,14 @@ func portIsFree(port int) bool {
 }
 
 // detectWebServer 探测占用 80 的 web 服务器类型 ✓（只认我们**会改**的两种 ✓）。
+//
+// ⚠ 不能用 `pgrep -x`（要求进程名**完全相等** ✗）：实际部署里 caddy 的进程名常是
+// `caddy-linux-amd64` ✗、nginx 也可能带后缀 ✗ → 精确匹配会**探测不到** ✗（真机踩到 ✓）。
+// 这里用锚定前缀的正则 ✓（既避免误伤 nginx-exporter 之类 ✗，又能认出带后缀的 ✓）。
 func detectWebServer() string {
 	for _, name := range []string{"nginx", "caddy"} {
-		if out, err := exec.Command("pgrep", "-x", name).Output(); err == nil && strings.TrimSpace(string(out)) != "" {
+		out, err := exec.Command("pgrep", "^"+name).Output()
+		if err == nil && strings.TrimSpace(string(out)) != "" {
 			return name
 		}
 	}
@@ -78,6 +88,19 @@ func prepareHTTP01(identifiers []string, dataDir, overrideWebroot string) (root 
 	// ② 80 被占用 → 自动配置现有 web 服务器 ✓
 	server := detectWebServer()
 	switch server {
+	case "caddy":
+		dir := acmeChallengeDir(dataDir)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", func() {}, err
+		}
+		_ = os.Chmod(dir, 0755)
+		_ = os.Chmod(filepath.Dir(dir), 0755)
+		undo, err := configureCaddyForACME(dir, identifiers)
+		if err != nil {
+			return "", func() {}, err
+		}
+		return dir, undo, nil
+
 	case "nginx":
 		dir := acmeChallengeDir(dataDir)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -100,7 +123,7 @@ func prepareHTTP01(identifiers []string, dataDir, overrideWebroot string) (root 
 				"(停止占用 80 的服务，或显式指定 webroot)")
 		}
 		return "", noop, fmt.Errorf("port 80 is in use by %s; automatic configuration for it is not supported yet "+
-			"(停止占用 80 的服务，或显式指定 webroot)", server)
+			"(目前支持 nginx 与 caddy ✓；其它服务请停止它，或显式指定 webroot)", server)
 	}
 }
 
@@ -234,4 +257,177 @@ func readFileIfExists(path string) ([]byte, bool) {
 		return nil, false
 	}
 	return b, true
+}
+
+// ─────────────────────────── Caddy ───────────────────────────
+//
+// 为什么不改 Caddyfile ✗：Caddyfile **没有**"往已有站点里插一个 location"的机制 ✗，
+// 另加一个同址站点块会直接报 ambiguous site definition ✗。而 Caddy 自带 **admin API**
+// （默认 localhost:2019 ✓）→ 往现有 server 的 routes 里**插一条只匹配挑战路径的路由** ✓
+// 既精确又不打扰既有站点 ✓；回滚就用"整份配置还原" ✓（最可靠 ✓）。
+
+// caddyAdminAddr 返回 admin API 地址（可用 COREFUSION_CADDY_ADMIN 覆盖 ✓）。
+func caddyAdminAddr() string {
+	if v := strings.TrimSpace(os.Getenv("COREFUSION_CADDY_ADMIN")); v != "" {
+		return strings.TrimSuffix(v, "/")
+	}
+	return "http://localhost:2019"
+}
+
+// caddyChallengeRouteJSON 生成"只处理 ACME 挑战"的路由 ✓。
+// file_server 的 root = 挑战目录 ✓ → URI /.well-known/acme-challenge/<token>
+// 正好映射到 <root>/.well-known/acme-challenge/<token> ✓（与 WebrootProvider 的写入位置一致 ✓）。
+func caddyChallengeRouteJSON(challengeDir string) string {
+	route := map[string]any{
+		"match":    []any{map[string]any{"path": []string{"/.well-known/acme-challenge/*"}}},
+		"handle":   []any{map[string]any{"handler": "file_server", "root": challengeDir}},
+		"terminal": true,
+	}
+	b, _ := json.Marshal(route)
+	return string(b)
+}
+
+// caddyPickServer80 从 /config/apps/http/servers/ 的 JSON 里挑出监听 80 的 server 名 ✓。
+func caddyPickServer80(body []byte) (string, error) {
+	var servers map[string]struct {
+		Listen []string `json:"listen"`
+	}
+	if err := json.Unmarshal(body, &servers); err != nil {
+		return "", fmt.Errorf("parse caddy servers: %w", err)
+	}
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, l := range servers[name].Listen {
+			// 可能是 ":80" / "0.0.0.0:80" / "[::]:80" ✓ 统一按"以 :80 结尾"判断 ✓
+			if strings.HasSuffix(l, ":80") {
+				return name, nil
+			}
+		}
+	}
+	if len(names) > 0 {
+		return names[0], nil // 没有显式 80 时退而取第一个 ✓（真机验证过 ✓）
+	}
+	return "", fmt.Errorf("no http server found in caddy config")
+}
+
+func caddyDo(method, url string, payload []byte) ([]byte, error) {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("caddy admin %s %s → HTTP %d: %s", method, url, resp.StatusCode, strings.TrimSpace(string(out)))
+	}
+	return out, nil
+}
+
+// configureCaddyForACME 通过 admin API 插入挑战路由 ✓；失败/用完都会把配置**完整还原** ✓。
+func configureCaddyForACME(challengeDir string, identifiers []string) (func(), error) {
+	admin := caddyAdminAddr()
+	servers, err := caddyDo(http.MethodGet, admin+"/config/apps/http/servers/", nil)
+	if err != nil {
+		return func() {}, fmt.Errorf("caddy admin API unreachable (%s): %w", admin, err)
+	}
+	server, err := caddyPickServer80(servers)
+	if err != nil {
+		return func() {}, err
+	}
+	// 保存**整份**配置用于回滚 ✓（比"删掉刚才那条"更不易出错 ✓）
+	// 保存**整份**配置 ✓（还原时用 /load = 整体替换 ✓；注意 POST /config/ 只是**合并** ✗，不够可靠 ✗）
+	saved, err := caddyDo(http.MethodGet, admin+"/config/", nil)
+	if err != nil {
+		return func() {}, fmt.Errorf("snapshot caddy config: %w", err)
+	}
+
+	routesURL := fmt.Sprintf("%s/config/apps/http/servers/%s/routes", admin, url.PathEscape(server))
+
+	// 先取出原有路由 ✓（可能为 null，要当空数组处理 ✓）
+	rawRoutes, err := caddyDo(http.MethodGet, routesURL, nil)
+	if err != nil {
+		return func() {}, err
+	}
+	existing := []json.RawMessage{}
+	if trimmed := bytes.TrimSpace(rawRoutes); len(trimmed) > 0 && string(trimmed) != "null" {
+		if uerr := json.Unmarshal(trimmed, &existing); uerr != nil {
+			return func() {}, fmt.Errorf("parse caddy routes: %w", uerr)
+		}
+	}
+
+	// ⚠ 为什么不用 `?@index=0` ✗：**实测该参数被 Caddy 忽略** ✗，新路由会被**追加到末尾** ✗，
+	// 于是永远轮不到它（前面的 catch-all 路由 terminal ✓ 会把挑战请求吞掉 ✗ → 403/404 ✗）。
+	// 可靠做法：**清空该 server 的 routes 再按"我的路由在前、原有路由依次在后"重建** ✓。
+	// 整个重建在毫秒级完成 ✓，且任一步失败都会用 /load 把**整份配置**还原 ✓。
+	mine := json.RawMessage(caddyChallengeRouteJSON(challengeDir))
+	restore := func() {
+		if _, rerr := caddyDo(http.MethodPost, admin+"/load", saved); rerr != nil {
+			log.Printf("[acme] restore caddy config failed: %v", rerr)
+		}
+	}
+	if _, err := caddyDo(http.MethodDelete, routesURL, nil); err != nil {
+		restore()
+		return func() {}, fmt.Errorf("clear caddy routes: %w", err)
+	}
+	// ⚠ 必须一次 POST **整个数组** ✗：清空之后该路径上是"设置值"语义 ✓，
+	// 只 POST 一个对象会被当成 RouteList 反序列化 → Caddy 报 500 ✗（真机踩到 ✓）。
+	rebuilt := make([]json.RawMessage, 0, len(existing)+1)
+	rebuilt = append(rebuilt, mine)
+	rebuilt = append(rebuilt, existing...)
+	payload, merr := json.Marshal(rebuilt)
+	if merr != nil {
+		restore()
+		return func() {}, fmt.Errorf("encode caddy routes: %w", merr)
+	}
+	if _, err := caddyDo(http.MethodPost, routesURL, payload); err != nil {
+		restore()
+		return func() {}, fmt.Errorf("rebuild caddy routes: %w", err)
+	}
+
+	// 回读确认挑战路由确实在**第一位** ✓（否则前面的路由会把它挡住 ✗）
+	if check, cerr := caddyDo(http.MethodGet, routesURL, nil); cerr == nil {
+		var got []struct {
+			Match []struct {
+				Path []string `json:"path"`
+			} `json:"match"`
+		}
+		if json.Unmarshal(check, &got) == nil {
+			ok := false
+			if len(got) > 0 {
+				for _, mm := range got[0].Match {
+					for _, p := range mm.Path {
+						if p == "/.well-known/acme-challenge/*" {
+							ok = true
+						}
+					}
+				}
+			}
+			if !ok {
+				restore()
+				return func() {}, fmt.Errorf("caddy challenge route is not the first route after rebuild ✗")
+			}
+		}
+	}
+
+	// 开签前自检 ✓（和 nginx 路径同一套 ✓）
+	if err := selfCheckChallenge(identifiers, challengeDir); err != nil {
+		restore()
+		return func() {}, err
+	}
+	return restore, nil
 }

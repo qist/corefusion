@@ -26,11 +26,11 @@ type stubChainLinkProvider struct {
 	relayOnly      bool
 }
 
-func (s *stubChainLinkProvider) GenerateEntryOutbounds(ctx context.Context, serverID int64) ([]interface{}, []interface{}, error) {
+func (s *stubChainLinkProvider) GenerateEntryOutbounds(ctx context.Context, serverID int64, coreType string) ([]interface{}, []interface{}, error) {
 	return s.entryOutbounds, s.entryRules, nil
 }
 
-func (s *stubChainLinkProvider) GenerateEntryBalancers(ctx context.Context, serverID int64) ([]interface{}, map[string]interface{}) {
+func (s *stubChainLinkProvider) GenerateEntryBalancers(ctx context.Context, serverID int64, coreType string) ([]interface{}, map[string]interface{}) {
 	return s.entryBalancers, nil
 }
 

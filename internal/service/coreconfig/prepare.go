@@ -38,11 +38,13 @@ type EndpointConfigProvider interface {
 type ChainLinkProvider interface {
 	// GenerateEntryOutbounds returns chain proxy outbounds and routing rules
 	// for the entry side of this server.
-	GenerateEntryOutbounds(ctx context.Context, serverID int64) (outbounds []interface{}, routingRules []interface{}, err error)
+	// coreType 用于过滤：只输出"入口入站属于该核心"的链（一台机器可同时跑 xray 与 sing-box，
+	// 而 hysteria2 之类只有 sing-box 有出站 —— 混在一起会让 xray 拒绝启动）。
+	GenerateEntryOutbounds(ctx context.Context, serverID int64, coreType string) (outbounds []interface{}, routingRules []interface{}, err error)
 	// GenerateEntryBalancers returns routing.balancers[] entries and the root
 	// observatory config for load-balanced (multi-exit) entries. Returns nil
 	// slices when no entry uses load balancing. See design doc §6.5 / §6.6.
-	GenerateEntryBalancers(ctx context.Context, serverID int64) (balancers []interface{}, observatory map[string]interface{})
+	GenerateEntryBalancers(ctx context.Context, serverID int64, coreType string) (balancers []interface{}, observatory map[string]interface{})
 }
 
 // PrepareFullConfigOptions holds the parameters for PrepareFullConfig.
@@ -214,7 +216,7 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 
 	// 8b. If ChainLinkProvider is set, merge chain link outbounds and routing rules.
 	if opts.ChainLinkProvider != nil {
-		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, opts.ServerID)
+		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, opts.ServerID, opts.CoreType)
 		if err != nil {
 			log.Printf("[PrepareFullConfig] chain link outbounds failed for server %d: %v", opts.ServerID, err)
 		} else {
@@ -229,7 +231,7 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				// outbound，结果是入口入站没有任何规则命中 → 流量落到 route.final(direct)
 				// 直连，多出口链路静默失效（等于流量泄漏）。
 				balancerTagMap := map[string]string{}
-				if chainBalancers, _ := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID); len(chainBalancers) > 0 {
+				if chainBalancers, _ := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID, opts.CoreType); len(chainBalancers) > 0 {
 					sbBalancerOutbounds, balancerTagMap = convertChainBalancersToSingbox(chainBalancers, chainOutbounds)
 				}
 				chainRules = convertChainRulesToSingbox(chainRules, balancerTagMap)
@@ -258,7 +260,7 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				// 多出口负载均衡（设计文档 §6.6）：合并 balancers 与根 observatory
 				// sing-box 不使用 balancers/observatory（用 selector/urltest outbound 代替）
 				if opts.CoreType != "singbox" {
-					chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID)
+					chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID, opts.CoreType)
 					if len(chainBalancers) > 0 {
 						existingBal, _ := routing["balancers"].([]interface{})
 						routing["balancers"] = append(existingBal, chainBalancers...)
@@ -1818,11 +1820,59 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 				// xray 的 xhttp 在 sing-box 里没有对应传输 ✗ —— 不生成非法字段，交由上层核心能力矩阵拦截
 			default:
 				transport := map[string]interface{}{"type": network}
-				if path, ok := ss["path"].(string); ok {
+				// ⚠ 传输细节在 xray 里是**嵌套**的 ✗，顶层通常没有：
+				//   ws          → wsSettings.path / wsSettings.headers.Host
+				//   grpc        → grpcSettings.serviceName
+				//   httpupgrade → httpupgradeSettings.path
+				// 旧实现只读顶层 `ss["path"]` / `ss["serviceName"]` ✗ → ws 的 path、gRPC 的
+				// serviceName 会被**静默丢掉** ✗：gRPC 对不上服务名、ws 落到默认路径 → 连不上，
+				// 而 `sing-box check` 照样通过（这两个字段都可选）✗。真机撞到 ✓。
+				// → 先读嵌套、再回落到顶层（顶层是少数派生路径写的，保持兼容）。
+				path := ""
+				if ws, ok := ss["wsSettings"].(map[string]interface{}); ok {
+					if v, ok := ws["path"].(string); ok {
+						path = v
+					}
+				}
+				if path == "" {
+					if hu, ok := ss["httpupgradeSettings"].(map[string]interface{}); ok {
+						if v, ok := hu["path"].(string); ok {
+							path = v
+						}
+					}
+				}
+				if path == "" {
+					if v, ok := ss["path"].(string); ok {
+						path = v
+					}
+				}
+				if path != "" {
 					transport["path"] = path
 				}
-				if sn, ok := ss["serviceName"].(string); ok {
+				sn := ""
+				if grpc, ok := ss["grpcSettings"].(map[string]interface{}); ok {
+					if v, ok := grpc["serviceName"].(string); ok {
+						sn = v
+					}
+				}
+				if sn == "" {
+					if v, ok := ss["serviceName"].(string); ok {
+						sn = v
+					}
+				}
+				if sn != "" {
 					transport["service_name"] = sn
+				}
+				// ws 的 Host：xray 放在 wsSettings.headers.Host。
+				// ⚠ sing-box 的 ws transport **没有 `host` 字段** ✗（实测：写顶层 host →
+				//   `FATAL decode config: outbounds[N].transport.host: json: unknown field "host"`，
+				//   节点直接起不来）→ 必须写进 `headers.Host` ✓（已用真实核心验证）。
+				if ws, ok := ss["wsSettings"].(map[string]interface{}); ok {
+					if hdrs, ok := ws["headers"].(map[string]interface{}); ok {
+						if h, ok := hdrs["Host"].(string); ok && h != "" {
+							transport["headers"] = map[string]interface{}{"Host": h}
+						}
+					}
 				}
 				sb["transport"] = transport
 			}

@@ -241,7 +241,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <div class="ticket-msgs">
           <div v-for="msg in ticketDetail.messages" :key="msg.id" class="ticket-msg" :class="'msg-' + msg.sender_type">
             <span class="ticket-msg-sender">{{ msg.sender_type === 'client' ? t('ticket.sender_me') : t('ticket.sender_staff') }}</span>
-            <div class="ticket-msg-content" v-html="renderMd(msg.content)"></div>
+                        <div class="ticket-msg-content" v-html="renderMdUntrusted(msg.content)"></div>
             <span class="logpkg-time">{{ formatDate(msg.created_at) }}</span>
           </div>
         </div>
@@ -3376,9 +3376,24 @@ var showPromoInput = ref(false) // promo code fold
     var portalModules = ref([])
     var portalNavItems = ref([])
     // Markdown renderer (using marked.js loaded from CDN)
-    var renderMd = function(md) {
+        var renderMd = function(md) {
       if (!md) return ''
       try { return marked.parse(md, { breaks: true, gfm: true }) } catch(e) { return md }
+    }
+    // 用户提交的内容（工单消息等）不能直接交给 marked + v-html：
+    // marked 默认放行原始 HTML，而门户是 v-html 渲染，所以客户在工单里写 script 或
+    // img onerror 就能在**客服/管理员的浏览器**里执行（跨角色存储型 XSS，审计 v5 M7）。
+    // 这里先做 HTML 转义再走 markdown：Markdown 语法照常生效，标签只当文本显示。
+    // 管理员自撰内容（公告/文章/freeform 模块）仍用 renderMd —— 那属于后台特权内容。
+    var escapeHtmlForMd = function(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    }
+    var renderMdUntrusted = function(md) {
+      if (!md) return ''
+      var safe = escapeHtmlForMd(md)
+      try { return marked.parse(safe, { breaks: true, gfm: true }) } catch(e) { return safe }
     }
     if (typeof PORTAL_CONFIG !== 'undefined') {
       if (Array.isArray(PORTAL_CONFIG.modules)) {
@@ -4910,7 +4925,7 @@ if (initHasNodeList) fetchNodes()
           },
           // Utilities
           formatBytes: formatBytes, formatDate: formatDate, formatDateTime: formatDateTime,
-          formatMoney: formatMoney, copyText: copyText, elMessage: ElMessage, renderMd: renderMd,
+          formatMoney: formatMoney, copyText: copyText, elMessage: ElMessage, renderMd: renderMd, renderMdUntrusted: renderMdUntrusted,
           // Navigation
           goToPage: goToPage,
           activeTab: activeTab,
@@ -5060,7 +5075,7 @@ return {
       toggleTheme: toggleTheme,
       // Navigation & modules
       currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
-      renderMd: renderMd, moduleComponents: moduleComponents,
+      renderMd: renderMd, renderMdUntrusted: renderMdUntrusted, moduleComponents: moduleComponents,
       // Shared dialogs
       showNodeQRDialog: showNodeQRDialog, nodeQRContainer: nodeQRContainer,
       showNodeDetailDialog: showNodeDetailDialog, currentNodeDetail: currentNodeDetail,

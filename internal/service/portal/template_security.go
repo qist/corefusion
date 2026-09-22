@@ -1,0 +1,116 @@
+package portal
+
+import (
+	"context"
+	"log"
+	"strings"
+)
+
+// renderMdUntrustedJS 是"用户内容渲染器"的 JS 片段（先 HTML 转义、再走 marked）。
+//
+// ⚠ 片段里**不能出现反引号** —— 同一段代码还要插进 defaultPortalJS（Go 原始字符串）✗。
+const renderMdUntrustedJS = `
+    // 用户提交的内容（工单消息等）不能直接交给 marked + v-html：
+    // marked 默认放行原始 HTML，而门户是 v-html 渲染，所以客户在工单里写 script 或
+    // img onerror 就能在客服/管理员的浏览器里执行（跨角色存储型 XSS，审计 v5 M7）。
+    // 这里先做 HTML 转义再走 markdown：Markdown 语法照常生效，标签只当文本显示。
+    // 管理员自撰内容（公告/文章/freeform 模块）仍用 renderMd —— 那属于后台特权内容。
+    var escapeHtmlForMd = function(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    }
+    var renderMdUntrusted = function(md) {
+      if (!md) return ''
+      var safe = escapeHtmlForMd(md)
+      try { return marked.parse(safe, { breaks: true, gfm: true }) } catch(e) { return safe }
+    }
+`
+
+const (
+	// 工单消息是**用户可提交**内容 → 必须用不可信渲染器
+	oldTicketRender = `v-html="renderMd(msg.content)"`
+	newTicketRender = `v-html="renderMdUntrusted(msg.content)"`
+
+	renderMdAnchor   = `var renderMd = function(md) {`
+	rendererPresence = `var renderMdUntrusted = function(md) {`
+)
+
+// PatchTemplateSecurity 对**存量门户模板**做幂等的安全补丁（安全审计 v5 M7）。
+//
+// 为什么需要：门户模板存在数据库里、可在后台编辑，所以只改默认模板**到不了**已部署的门户
+// （真机验证：默认模板已修，库里那份仍旧写 renderMd(msg.content) ✗）。做法刻意保守：
+//   - 只做**精确片段替换**，命中才改；其它内容一字不动（绝不覆盖管理员的定制 ✗）；
+//   - 幂等：已打过补丁的模板第二次调用返回 changed=false；
+//   - 渲染器插到 `var renderMd = function...` 这个函数的**右花括号之后**（按花括号配对定位 ✓
+//     —— 插在函数体内会让它变成局部变量，门户里就取不到了 ✗）。
+func PatchTemplateSecurity(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+
+	if strings.Contains(newHTML, oldTicketRender) {
+		newHTML = strings.ReplaceAll(newHTML, oldTicketRender, newTicketRender)
+		changed = true
+	}
+
+	if !strings.Contains(newJS, rendererPresence) {
+		if patched, ok := insertAfterFunction(newJS, renderMdAnchor, renderMdUntrustedJS); ok {
+			newJS = patched
+			changed = true
+		}
+	}
+
+	return newHTML, newJS, changed
+}
+
+// insertAfterFunction 在 anchor 所指函数（按花括号配对找到其结束的 `}`）所在行的行尾之后
+// 插入 snippet。找不到 anchor 或花括号不配对时返回 ok=false（保持原样 ✗）。
+func insertAfterFunction(js, anchor, snippet string) (string, bool) {
+	idx := strings.Index(js, anchor)
+	if idx < 0 {
+		return js, false
+	}
+	depth := 0
+	started := false
+	for i := idx; i < len(js); i++ {
+		switch js[i] {
+		case '{':
+			depth++
+			started = true
+		case '}':
+			depth--
+			if started && depth == 0 {
+				if nl := strings.Index(js[i:], "\n"); nl >= 0 {
+					at := i + nl
+					return js[:at] + "\n" + snippet + js[at:], true
+				}
+				return js + "\n" + snippet, true
+			}
+		}
+	}
+	return js, false
+}
+
+// EnsureSecurityPatches 给"当前生效的门户模板"打安全补丁（进程启动时调用一次）。
+//
+// 全程自动：不需要管理员做任何操作；只在命中旧写法时改写，并把结果落库 + 清渲染缓存。
+func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	tmpl, err := s.repo.GetActive(ctx)
+	if err != nil || tmpl == nil {
+		return nil
+	}
+	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
+	if !changed {
+		return nil
+	}
+	tmpl.HTMLContent = newHTML
+	tmpl.JSContent = newJS
+	if err := s.repo.Update(ctx, tmpl); err != nil {
+		return err
+	}
+	s.InvalidateCache()
+	log.Printf("[portal] security patch applied to template %d (M7: 用户内容不再执行 HTML)", tmpl.ID)
+	return nil
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -236,12 +237,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*entity.Portal
 		}
 		configStr = cleaned
 	}
+	// 新建模板同样过一遍安全补丁（M7）：用户内容（工单消息）不允许直接执行 HTML。
+	// 幂等 —— 已经是安全写法时原样保留，不会改动管理员的定制。
+	safeHTML, safeJS, _ := PatchTemplateSecurity(input.HTMLContent, input.JSContent)
 	tmpl := &entity.PortalTemplate{
 		Name:        input.Name,
 		Description: input.Description,
-		HTMLContent: input.HTMLContent,
+		HTMLContent: safeHTML,
 		CSSContent:  input.CSSContent,
-		JSContent:   input.JSContent,
+		JSContent:   safeJS,
 		Config:      configStr,
 		IsActive:    false,
 		IsBuiltIn:   false,
@@ -284,6 +288,13 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 		tmpl.Config = cleaned
 	}
 	tmpl.UpdatedAt = time.Now()
+
+	// 保存时再兜一次（M7）：哪怕管理员从旧备份粘回旧写法，也不会把 XSS 带回来。
+	if safeHTML, safeJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent); changed {
+		tmpl.HTMLContent = safeHTML
+		tmpl.JSContent = safeJS
+		log.Printf("[portal] security patch applied on save (M7: 用户内容不再执行 HTML)")
+	}
 
 	if err := s.repo.Update(ctx, tmpl); err != nil {
 		return nil, err

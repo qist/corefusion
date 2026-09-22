@@ -566,6 +566,19 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 				response.BadRequest(c, "EXIT_EXT_NOT_FOUND", fmt.Sprintf("external exit %d not found or disabled", ex.ID))
 				return
 			}
+			// 外部出口的协议也要在**入口核心**的支持名单里（与集群出口同一套规则）。
+			// 协议在它关联的 external_node 上 → 需要再跳一跳。
+			// ⚠ 这里此前**没有**协议校验 ✗：入口 xray + 外部 hy2 会被 API 接受并落库，只有生成器
+			//   才报错 → 用户看到"创建成功"，DB 里却留下一条永远生成不出配置的链接 ✗。
+			if extNode, nerr := h.extNodeRepo.GetByID(ctx, extSrv.ExternalNodeID); nerr == nil && extNode != nil {
+				if !agent.ChainSupportedProtocol(inbound.CoreType, extNode.Protocol) {
+					response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+						"external exit %d protocol %q is not chain-capable for entry core %q (supported: %s)",
+						ex.ID, extNode.Protocol, inbound.CoreType,
+						strings.Join(agent.ChainSupportedProtocols(inbound.CoreType), "/")))
+					return
+				}
+			}
 		} else if ex.ExitInboundID > 0 {
 			// 出口用**该节点上已有的入站** —— 链式不创建任何入站。
 			// 只校验：入站存在、属于这台出口机、协议在本入口核心的链式支持名单里

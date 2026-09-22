@@ -84,6 +84,12 @@ exit inbound 120 protocol "hysteria2" is not chain-capable for entry core "xray"
 | 4 | 自定义 `exit_tag` 后，**流量静默绕过出口直连** ✗ | balancer `selector` 用自动前缀 `chain-<入站ID>-`，自定义 tag 时**圈不到任何出站** → 运行期落到 `fallbackTag: direct` | 真机 `selector` 变为 `["lb-exit-A","lb-exit-B"]`；回归测试 `chain_selector_test.go` | `db192ef4` |
 | 5 | sing-box 入口节点**核心起不来** | 传输名 `raw`（xray 对 TCP 的新叫法）被**直接透传**给 sing-box → `unknown transport type: raw` | 修复后本机配置 `sing-box check` 通过 | `db192ef4` |
 | 6 | 改了链式配置**不生效**（节点核心从不重载） | `reload_strategy=None` 的语义是"只写文件、不碰进程"，而所有节点都是 None → 配置变更静默无效 | Agent 日志 `config changed → restarted core to apply it`；核心启动时间随变更刷新 | `3664ccd0` |
+| 7 | **外部出口整条路径不可用**：向导能选、API 能过，但生成的是**另一个节点**的配置（或直接查不到） | 出口引用的是 `external_node_servers.id`，生成器却把它当 `external_nodes.id` 用 → **少了一跳**。之所以长期没被发现：既有的那条注册记录 `id=1 → external_node_id=1` **两个 id 恰好相等**，按旧逻辑查 `external_nodes.id=1` 也"碰巧对" | 真机：注册 `external_node_id=3`（hy2）→ 生成的出站 `server` 是 hy2 节点的地址（修复前会取到 id=2 的 vless 节点）| 本次 |
+| 8 | 外部 hy2 出站**不带 `tls`** → 节点起不来 | mihomo 的 hy2 映射**没有 `tls` 键**（hy2 天生 TLS，mihomo 不写），而 `buildStreamFromProxyMap` 只看 `pm["tls"]` → `security` 为空 | 面板产物 `sing-box check` 通过；把它去掉 `tls` 后 → `FATAL initialize outbound[6]: TLS required` | 本次 |
+| 9 | 外部 hy2 的 **obfs 被静默丢弃** | mihomo 写的是**扁平**的 `obfs: "salamander"` + `obfs-password`，旧实现只找嵌套 map | 真机产物含 `"obfs":{"type":"salamander","password":…}` | 本次 |
+| 10 | 外部 hy2 的**端口跳跃**失效 | mihomo 用 `ports: "40000-50000"` 且 `port=0`，旧实现只读 `port` → 生成 `server_port: 0`（`check` 不报错 ✗、运行期连不上 ✗） | 真机产物为 `"server_ports":["40000:50000"]` 且**无** `server_port` | 本次 |
+| 11 | 外部 **reality** 节点退化成普通 TLS → 连不上 | `reality-opts` 被完全忽略 | 单测断言 `security=reality` + `realitySettings{publicKey,shortId,serverName,fingerprint}` | 本次 |
+| 12 | 入口 xray + 外部 hy2 **被 API 接受并落库**（只有生成器报错） | 外部出口分支**只有存在性校验**，没有协议校验 | 修复后 API 返回 `EXIT_PROTOCOL_UNSUPPORTED`（带外部节点协议与支持名单） | 本次 |
 
 > 其中 #4 与 #5 是**上一轮"端到端通过"结论的错误来源**：当时看到的出口 IP 其实是入口节点自己的
 > 公网 IP（同机房节点的出口 IP 完全相同 ✗），流量实际是**直连**出去的。
@@ -123,6 +129,20 @@ exit inbound 120 protocol "hysteria2" is not chain-capable for entry core "xray"
   节点13 出口入站计数:   0 →  9383     ✓
 出口 IP: 58.63.60.98 (CN)    vs    面板宿主直连 23.254.233.185 (US)   ✓
 ```
+
+**外部出口（经 `external_node_servers` 注册）**：把外部 hy2 节点（`external_nodes.id=3`）注册后选为
+sing-box 入口的出口 →
+
+```json
+{"tag":"chain-118-ext2","type":"hysteria2","server":"rem5ogoe5m.swsixtwo.top",
+ "server_ports":["40000:50000"],
+ "password":"fdcfb24d-…",
+ "obfs":{"type":"salamander","password":"mrMdT3L9AH2VVwPI"},
+ "tls":{"enabled":true,"server_name":"rem5ogoe5m.swsixtwo.top","alpn":["h3"],
+        "utls":{"enabled":true,"fingerprint":"chrome"}}}
+```
+→ `sing-box check` **通过** ✓；反例（xray 入口 + 同一个外部 hy2 出口）→
+`EXIT_PROTOCOL_UNSUPPORTED` ✓
 
 其它已验证：
 
@@ -164,7 +184,7 @@ cd web/admin && npm run i18n:audit
 |---|---|---|
 | xray 侧 P1（11 项）/ P2（13 项） | 进阶调优 / finalMask 内部实现细节 | **不建议暴露** —— 配错往往让核心起不来 |
 | sing-box 侧剩余项 | 见 `docs/singbox-field-gap.md` §3，多为客户端专属 | 按清单按需补 |
-| 外部节点出口的支持面 | 已支持 hy2（代码 + 单测就位）；缺一台 hy2 外部节点做真机验证 | 有环境时补验 |
+| 外部节点出口的支持面 | **已真机验证**：hy2（含端口跳跃 / obfs / tls）✓、reality 参数派生 ✓；vless/vmess/trojan 本来就走通 | 已闭环 |
 | 测试环境 | 面板宿主机上有历史遗留进程（用户自己的 `server3.json` 等），且核心为 file mode（访问日志不更新） | 数据面验证建议用"核心由面板管理、且节点已升级新 Agent"的组合 |
 
 ---

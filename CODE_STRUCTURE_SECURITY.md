@@ -125,7 +125,7 @@ project/
       dto/
       vo/
 
-    configgen/
+    configgen/   # ⚠ 已删除（死代码，见 §4.7）
       common/
       xray/
       singbox/
@@ -363,9 +363,16 @@ project/
 - 所有 SQL 或 ORM 操作集中在此处
 - 不允许在 handler 和 runtime 中直接操作数据库
 
-### 4.7 `internal/configgen`
+### 4.7 `internal/configgen`（已删除）
 
-用途：
+> ⚠ **2026-09-22：本目录已作为死代码删除。**
+> `internal/configgen/*`（xray / singbox / mihomo / tuic / hysteria2 五个生成器 + `common/interfaces.go`
+> + `validate/`，共 8 个文件 / 2475 行）在删除前经全仓库核查**没有任何调用方**
+> （`grep -rn "configgen" --include=*.go .` 排除自身后为空，Go 也不会放过未使用的 import）。
+> 面板实际路径是 `internal/service/coreconfig/prepare.go` 的 **map 原样透传** + 前端编辑器构造。
+> 若将来确实要做"从统一模型生成配置"，需要重新接线（代码可从 git 历史恢复）。
+
+用途（历史）：
 
 - 统一模型到不同核心配置的渲染
 - 多核心配置导入与转换

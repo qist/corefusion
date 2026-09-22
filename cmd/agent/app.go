@@ -234,6 +234,10 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 		rateLimitMgr:       rateLimitMgr,
 	}
 
+	// 面板开启/更新限速（配置级 apply，不带 IP）时，由 Agent 侧落库并初始化 nft/tc 后端。
+	// 以前这条路径被判成 AssociateIP(ip="") → Manager 未 Init → 面板开限速在节点上不生效。
+	app.localAgent.WithRateLimitInitFunc(app.initRateLimitOnDemand)
+
 	return app, nil
 }
 
@@ -442,33 +446,69 @@ func (a *AgentApp) initRateLimitFromDB(ctx context.Context) {
 		return
 	}
 
-	// Determine interface: explicit config > auto-detect
+	if err := a.initRateLimitWith(ctx, config); err != nil {
+		log.Printf("[Agent] rate limit init failed: %v", err)
+	}
+}
+
+// initRateLimitOnDemand 是"面板下发配置级 apply（不带 IP）"时的入口 —— 即**面板开启/更新限速**、
+// 或 agent 重连补推配置时。以前这条路径在 LocalAgent 里被当成 AssociateIP(ip="") 处理，而
+// Manager 只在 agent 启动时 Init 过 → 面板里开了限速，节点上 nft/tc/IFB 什么都没建
+// （实测 192.168.2.50：journal 只有 `TASK_FAILED err=rate limit manager not initialized`）。
+// 现在：把手上的配置落库（本地没有行就按面板的值建一条，iface 交给自动探测）后再初始化后端。
+func (a *AgentApp) initRateLimitOnDemand(ctx context.Context, maxDown, maxUp int32) error {
+	if a.database == nil {
+		return fmt.Errorf("agent database not ready")
+	}
+	serverID := a.cfg.Panel.ServerID
+	var config entity.RateLimitConfig
+	if err := a.database.WithContext(ctx).Where("server_id = ?", serverID).First(&config).Error; err != nil {
+		config = entity.RateLimitConfig{
+			ServerID: serverID, IfbDevice: "ifb0",
+			IdleTTLSeconds: 3600, CleanupInterval: 300, BackendType: "nft_tc",
+		}
+	}
+	config.Enabled = true
+	if maxDown > 0 {
+		config.DefaultMaxDownMbps = maxDown
+	}
+	if maxUp > 0 {
+		config.DefaultMaxUpMbps = maxUp
+	}
+	config.UpdatedAt = time.Now()
+	if err := a.database.WithContext(ctx).Save(&config).Error; err != nil {
+		return fmt.Errorf("persist rate limit config: %w", err)
+	}
+	return a.initRateLimitWith(ctx, config)
+}
+
+// initRateLimitWith 按给定配置初始化（或重建）限速后端：nft 表 + tc htb(egress) + IFB(ingress)。
+// Manager.Init 幂等（同 iface 重复调用直接返回），所以面板反复改配置也安全。
+func (a *AgentApp) initRateLimitWith(ctx context.Context, config entity.RateLimitConfig) error {
 	iface := config.Iface
 	if iface == "" {
 		iface = detectDefaultInterface()
 	}
 	if iface == "" {
-		log.Printf("[Agent] rate limit: no network interface found, skipping init")
-		return
+		return fmt.Errorf("rate limit: no network interface found")
 	}
 
-	// Update the manager's interface
+	// 面板下发的 iface 要落到本地配置，重启后也能直接复用
+	if config.Iface != iface {
+		config.Iface = iface
+		_ = a.database.WithContext(ctx).Save(&config).Error
+	}
+
 	a.rateLimitMgr = ratelimit.NewManager(iface)
 	a.localAgent.WithRateLimitManager(a.rateLimitMgr)
-
-	// Inject persistence callbacks so IP mappings survive Agent restarts
 	a.rateLimitMgr.WithPersistFunc(a.persistIPEntry, a.removeIPEntry)
 
-	// Initialize the nft + tc backend
 	if err := a.rateLimitMgr.Init(ctx); err != nil {
-		log.Printf("[Agent] rate limit init failed on iface=%s: %v", iface, err)
-		return
+		return fmt.Errorf("init nft/tc backend on iface=%s: %w", iface, err)
 	}
 
-	// Restore previously persisted IP entries from local DB
 	a.restoreIPEntries(ctx)
 
-	// Start cleanup loop if TTL configured
 	if config.IdleTTLSeconds > 0 && config.CleanupInterval > 0 {
 		a.rateLimitMgr.WithCleanupTTL(time.Duration(config.IdleTTLSeconds) * time.Second)
 		a.rateLimitMgr.StartCleanupLoop(time.Duration(config.CleanupInterval) * time.Second)
@@ -476,9 +516,8 @@ func (a *AgentApp) initRateLimitFromDB(ctx context.Context) {
 
 	log.Printf("[Agent] rate limit initialized: iface=%s, default=↓%dMbps/↑%dMbps, cleanup_ttl=%ds",
 		iface, config.DefaultMaxDownMbps, config.DefaultMaxUpMbps, config.IdleTTLSeconds)
-
-	// Start online stats poller for P1 trigger source
 	a.startOnlineStatsPoller(ctx)
+	return nil
 }
 
 // startOnlineStatsPoller starts the online stats poller that queries the xray

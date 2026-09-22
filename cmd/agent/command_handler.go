@@ -393,27 +393,27 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		m := getSystemMetrics()
 		resp := &agentpb.GetMetricsResponse{
 			Points: []*agentpb.MetricPoint{{
-				Timestamp:        time.Now().Unix(),
-				CpuUsage:         m.CPUUsage,
-				CpuCores:         int32(m.CPUCores),
-				MemUsageBytes:    m.MemUsedBytes,
-				MemTotalBytes:    m.MemTotalBytes,
-				MemUsage:         m.MemUsage,
-				SwapTotalBytes:   m.SwapTotalBytes,
-				SwapUsedBytes:    m.SwapUsedBytes,
-				SwapUsage:        m.SwapUsage,
-				DiskUsageBytes:   m.DiskUsedBytes,
-				DiskTotalBytes:   m.DiskTotalBytes,
-				DiskUsage:        m.DiskUsage,
+				Timestamp:         time.Now().Unix(),
+				CpuUsage:          m.CPUUsage,
+				CpuCores:          int32(m.CPUCores),
+				MemUsageBytes:     m.MemUsedBytes,
+				MemTotalBytes:     m.MemTotalBytes,
+				MemUsage:          m.MemUsage,
+				SwapTotalBytes:    m.SwapTotalBytes,
+				SwapUsedBytes:     m.SwapUsedBytes,
+				SwapUsage:         m.SwapUsage,
+				DiskUsageBytes:    m.DiskUsedBytes,
+				DiskTotalBytes:    m.DiskTotalBytes,
+				DiskUsage:         m.DiskUsage,
 				DiskReadBytesSec:  m.DiskReadBytesSec,
 				DiskWriteBytesSec: m.DiskWriteBytesSec,
-				NetRxBytes:       m.NetRxBytesTotal,
-				NetTxBytes:       m.NetTxBytesTotal,
-				NetRxBytesSec:    m.NetRxBytesSec,
-				NetTxBytesSec:    m.NetTxBytesSec,
-				Load_1M:          m.Load1m,
-				TcpConnections:   int32(m.TCPConnections),
-				UptimeSeconds:    m.UptimeSeconds,
+				NetRxBytes:        m.NetRxBytesTotal,
+				NetTxBytes:        m.NetTxBytesTotal,
+				NetRxBytesSec:     m.NetRxBytesSec,
+				NetTxBytesSec:     m.NetTxBytesSec,
+				Load_1M:           m.Load1m,
+				TcpConnections:    int32(m.TCPConnections),
+				UptimeSeconds:     m.UptimeSeconds,
 			}},
 		}
 		sendSyncResult("get_metrics", resp, nil)
@@ -529,12 +529,12 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 					} `json:"caddy"`
 				}
 				if err := json.Unmarshal([]byte(req.ProxyLogConfig), &proxyCfg); err == nil {
-				if err := a.logMgr.StartWriterManaged("nginx", proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed); err != nil {
-					log.Printf("[Agent] failed to start nginx writer: %v", err)
-				}
-				if err := a.logMgr.StartWriterManaged("caddy", proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed); err != nil {
-					log.Printf("[Agent] failed to start caddy writer: %v", err)
-				}
+					if err := a.logMgr.StartWriterManaged("nginx", proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed); err != nil {
+						log.Printf("[Agent] failed to start nginx writer: %v", err)
+					}
+					if err := a.logMgr.StartWriterManaged("caddy", proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed); err != nil {
+						log.Printf("[Agent] failed to start caddy writer: %v", err)
+					}
 				}
 			}
 			// Parse core config and start/stop writers for xray/singbox/hysteria2/tuic
@@ -558,18 +558,18 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 					} `json:"tuic"`
 				}
 				if err := json.Unmarshal([]byte(req.CoreLogConfig), &coreCfg); err == nil {
-				if err := a.logMgr.StartWriterManaged("xray", coreCfg.Xray.Mode, coreCfg.Xray.Managed); err != nil {
-					log.Printf("[Agent] failed to start xray writer: %v", err)
-				}
-				if err := a.logMgr.StartWriterManaged("singbox", coreCfg.Singbox.Mode, coreCfg.Singbox.Managed); err != nil {
-					log.Printf("[Agent] failed to start singbox writer: %v", err)
-				}
-				if err := a.logMgr.StartWriterManaged("hysteria2", coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed); err != nil {
-					log.Printf("[Agent] failed to start hysteria2 writer: %v", err)
-				}
-				if err := a.logMgr.StartWriterManaged("tuic", coreCfg.Tuic.Mode, coreCfg.Tuic.Managed); err != nil {
-					log.Printf("[Agent] failed to start tuic writer: %v", err)
-				}
+					if err := a.logMgr.StartWriterManaged("xray", coreCfg.Xray.Mode, coreCfg.Xray.Managed); err != nil {
+						log.Printf("[Agent] failed to start xray writer: %v", err)
+					}
+					if err := a.logMgr.StartWriterManaged("singbox", coreCfg.Singbox.Mode, coreCfg.Singbox.Managed); err != nil {
+						log.Printf("[Agent] failed to start singbox writer: %v", err)
+					}
+					if err := a.logMgr.StartWriterManaged("hysteria2", coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed); err != nil {
+						log.Printf("[Agent] failed to start hysteria2 writer: %v", err)
+					}
+					if err := a.logMgr.StartWriterManaged("tuic", coreCfg.Tuic.Mode, coreCfg.Tuic.Managed); err != nil {
+						log.Printf("[Agent] failed to start tuic writer: %v", err)
+					}
 				}
 			}
 			log.Printf("[Agent] log writers refreshed after SyncLogConfig")
@@ -725,6 +725,19 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_ApplyLimits:
 		req := c.ApplyLimits
+		// 配置级 apply（不带 IP）= 面板开启/更新限速、或 Agent 重连时补推配置。
+		// 这条**必须**走 LocalAgent.ApplyLimits → AgentApp.initRateLimitOnDemand：
+		// 落库 + 初始化 nft/tc 后端。以前这里不分青红皂白直接 mgr.AssociateIP(ip="")，
+		// 而 Manager 只在 Agent 启动时 Init 过 → 面板开了限速，节点上 nft/tc/IFB 一个都没建
+		// （实测 192.168.2.50：journal 只有 `TASK_FAILED err=rate limit manager not initialized`）。
+		if req.Action == "apply" && req.Ip == "" {
+			submitAsyncTask("apply_limits",
+				fmt.Sprintf("apply_limits:config:%d", a.cfg.Panel.ServerID),
+				func(ctx context.Context) (interface{}, error) {
+					return nil, a.localAgent.ApplyLimits(ctx, req)
+				})
+			break
+		}
 		mgr := a.localAgent.GetRateLimitManager()
 		if mgr == nil {
 			// Fallback: old LimitApplier path
@@ -766,9 +779,9 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 					return nil, fmt.Errorf("unknown action: %s", req.Action)
 				}
 				return map[string]interface{}{
-					"action":           req.Action,
-					"ip":               req.Ip,
-					"subscription_id":  req.SubscriptionId,
+					"action":          req.Action,
+					"ip":              req.Ip,
+					"subscription_id": req.SubscriptionId,
 				}, nil
 			})
 

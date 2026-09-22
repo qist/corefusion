@@ -129,6 +129,38 @@ ACME 自动化（`acme.go` 10 项 + `tls_acme.go` 13 项，面板有独立的证
 本轮把 `applyRouteOptions` / `applyRejectOptions` 都改成**双命名兼容**（`src[a] !== undefined ? src[a] : src[b]`），
 并新增 `applyExtraMatchersRaw()` 处理同一问题。
 
+---
+
+## 2.7 DNS 应答匹配（已实现，2026-09-22）
+
+sing-box 的 DNS **应答匹配**（按解析结果而不是按查询分流）需要两个东西配合，现已全部做进 `SingboxDns.vue`：
+
+1. **`action: "evaluate"` 动作规则**（新增到动作下拉）：`server` + 可选 `tag` + `speculative` + `timeout`
+2. **应答匹配块**：`match_response` + `response_rcode` + `response_answer` / `response_ns` / `response_extra` + `ip_accept_any`
+   （开启后 `ip_cidr` / `ip_private` / `ip_accept_any` / `response_*` 都变成**按应答**匹配）
+
+### 实测约束（三条都会让核心**拒绝启动**）
+
+| 约束 | 报错 |
+|---|---|
+| `match_response` 与 `evaluate` 的 **tag 配对**：evaluate **带 tag** → `match_response` 必须写**同一 tag 字符串**；evaluate **不带 tag** → 只能写 `true` | `FATAL …: response-based matching requires a preceding evaluate action without `tag`; use `match_response` with an evaluate tag to reference a tagged result` |
+| `response_answer` / `response_ns` / `response_extra` 是**字符串列表**，每项必须是 **zone 格式的完整 RR**（只写 IP 会报错） | `FATAL …: response_answer: … dns: not a TTL: "1.2.3.4"` |
+| `response_rcode` 是**枚举**（NOERROR / NXDOMAIN / SERVFAIL / REFUSED / FORMERR / NOTIMP） | `FATAL …: unknown rcode: BOGUS` |
+
+UI 据此做了：tag 输入框（留空即写 `true`）、rcode 用**下拉**（避免自由输入写出非法值）、
+RR 文本框带 zone 格式示例与提示。
+
+### 顺带发现（**不是 bug**，面板已覆盖）
+sing-box 1.12+ 起，`dial` 字段缺 `domain_resolver`（且没有 `route.default_domain_resolver`）是
+**FATAL**（`missing route.default_domain_resolver or domain_resolver in dial fields …`，
+需 `ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true` 才能继续）。
+面板侧**已有兜底**：`internal/service/coreconfig/prepare.go` 会按需自动补 `route.default_domain_resolver`
+（源码注释里就写了这条 FATAL 文案），所以用户不受影响 ✓。
+
+### 仍未做
+- `services`（含 `oom-killer`：`OOMKillerServiceOptions{memory_limit, safety_margin, min_interval, max_interval}`）
+- `rule_set.initial_path`、naive `udp_over_tcp` 等协议细节
+
 ## 3. 建议顺序
 
 0. **按 §2.5 修正后的口径做**（服务端可用优先；客户端专属暂缓）

@@ -228,10 +228,21 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 
 		// loadbalance 模式（§6.6）—— 等权多出口，balancer + observatory
 		balTag := fmt.Sprintf("bal-chain-%d", inID)
-		prefix := fmt.Sprintf("chain-%d-", inID) // selector 前缀，自动圈定本入口全部出口
+		// ⚠ selector 必须用**实际出站 tag**，不能用 `chain-<入站ID>-` 这种自动前缀 ✗：
+		// 一旦某个出口用了自定义 exit_tag（tag 变成 `lb-exit-A` 之类），前缀就圈不到它 →
+		// balancer 无候选 → 运行期静默落到 fallbackTag（direct）→ **流量绕过出口直连出去** ✗
+		// （xray 对"selector 匹配不到任何出站"不会报错，`run -test` 也是 Configuration OK ✗，很隐蔽）
+		selectors := make([]string, 0, len(groupLinks))
+		for _, link := range groupLinks {
+			tag := link.ExitTag
+			if tag == "" {
+				tag = g.exitTagFor(link)
+			}
+			selectors = append(selectors, tag)
+		}
 		balancers = append(balancers, ChainBalancer{
 			Tag:         balTag,
-			Selector:    []string{prefix},
+			Selector:    selectors,
 			FallbackTag: "direct",
 			Strategy:    map[string]interface{}{"type": "leastPing"},
 		})
@@ -246,7 +257,7 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 		// 依据 xray 官方文档：burstObservatory 使用嵌套 pingConfig 结构
 		if observatory == nil {
 			observatory = &ChainObservatory{
-				SubjectSelector: []string{prefix},
+				SubjectSelector: append([]string(nil), selectors...),
 				PingConfig: &ChainPingConfig{
 					// burstObservatory 参数（§6.6.5）：interval=1m, sampling=10
 					// 探测周期 10 分钟，特征弱，适合入口节点
@@ -258,8 +269,8 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 				},
 			}
 		} else {
-			// 多个负载均衡入口时，把所有前缀合并进同一个 observatory 的 subjectSelector
-			observatory.SubjectSelector = append(observatory.SubjectSelector, prefix)
+			// 多个负载均衡入口时，把所有出口 tag 合并进同一个 observatory 的 subjectSelector
+			observatory.SubjectSelector = append(observatory.SubjectSelector, selectors...)
 		}
 	}
 

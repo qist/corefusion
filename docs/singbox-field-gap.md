@@ -69,9 +69,38 @@ ACME 自动化（`acme.go` 10 项 + `tls_acme.go` 13 项，面板有独立的证
 `origin_ca.go` / `ccm.go` / `ocm.go`（Cloudflare Origin CA 与 OCM，属于专用场景）、
 `bridge_name`、`$schema`（仅编辑器用）
 
+## 2.5 ⚠ 优先级修正：区分"服务端可用"与"客户端专属"
+
+编写 §2 时按"用户会不会用到"排的序，但实施前发现一个更重要的口径问题：
+
+**面板的路由/DNS 规则编辑器编辑的是"节点（服务端）"的 sing-box 配置**，
+因此下面这批 **客户端专属匹配** 在服务端**没有意义**，应从 P0 降级（只有将来做"客户端配置生成"才需要）：
+
+`package_name` `package_name_regex`（Android）、`wifi_ssid` `wifi_bssid`、`network_is_expensive`
+`network_is_constrained`、`source_hostname`（服务端反解极少用）、`preferred_by`、
+`process_path` 类（服务端进程匹配意义有限）
+
+**服务端真正有价值的**（重排后的 P0）：
+
+| 字段 | 位置 | 价值 |
+|---|---|---|
+| `optimistic` `cache_capacity` | `dns` | **服务端 DNS 缓存**优化与容量（延迟敏感场景常用） |
+| `store_dns` `store_mode` `store_rdrc` `rdrc_timeout` `flush_interval` | `experimental.cache_file` | 缓存持久化（重启不掉缓存） |
+| `udp_disable_domain_unmapping` | inbound / route action | UDP 域名反查行为（很多场景要关） |
+| `interface_address` `default_interface_address` `network_interface_address` `default_network_strategy` `default_network_type` `default_fallback_delay` `default_fallback_network_type` | `route` / rule | 多网卡/多出口的服务端分流 |
+| `rule_set_ipcidr_match_source` | rule / rule_set | 规则集按**源地址**匹配（服务端分流常用） |
+| `tls_fragment` `tls_record_fragment` `tls_fragment_fallback_delay` `tls_spoof` `tls_spoof_method` | 路由**动作** | 与 `tls.*` 是两条实现路径，服务端分流时也能用 |
+| `no_drop` `speculative` `rewrite_ttl` `fallback_delay` | 路由动作 / outbound | 服务端行为微调 |
+| `memory_limit` `oom_killer` 系列 `gc_percent` `max_stack` `max_threads` `panic_on_fault` `trace_back` | `debug` | 服务端资源与崩溃行为 |
+| `clash_mode` | rule / rule_dns | 与外部控制器（clash API）配合 |
+
+客户端专属的那批（`package_name` / `wifi_*` / `network_is_*` / `source_hostname`）建议**先不做**，
+除非要做"给最终用户生成客户端配置"的功能。
+
 ## 3. 建议顺序
 
-1. **补 P0 里"fork 招牌 + 高价值"的前 6 行**：`tls.spoof/spoof_method`、`tls.record_fragment`、
+0. **按 §2.5 修正后的口径做**（服务端可用优先；客户端专属暂缓）
+1. ~~**补 P0 里"fork 招牌 + 高价值"的前 6 行**~~：`tls.spoof/spoof_method`、`tls.record_fragment`、
    路由动作的 `tls_fragment`/`tls_record_fragment`/`tls_spoof` —— 这是本 fork 相对上游的核心差异，
    面板不给入口等于这个特性用不起来
 2. 补**路由/DNS 规则**那一批（`package_name`、`source_mac_address`、`wifi_*`、`network_type`、

@@ -27,6 +27,18 @@
           <el-switch v-model="form.disable_expire" @change="emit" />
           <div class="hint">Disable cache expiration</div>
         </el-form-item>
+        <el-form-item label="Cache Capacity">
+          <el-input-number v-model="form.cache_capacity" :min="0" @change="emit" />
+          <div class="hint">DNS 缓存条目上限（0 = 用核心默认）</div>
+        </el-form-item>
+        <el-form-item label="Optimistic">
+          <el-switch v-model="form.optimistic_enabled" @change="emit" />
+          <div class="hint">乐观缓存：过期条目先返回、同时后台刷新（明显降延迟；代价是可能短暂返回陈旧记录）</div>
+        </el-form-item>
+        <el-form-item v-if="form.optimistic_enabled" label="Optimistic Timeout">
+          <el-input v-model="form.optimistic_timeout" placeholder="3s" @change="emit" />
+          <div class="hint">后台刷新的等待上限；留空则按核心的简写形式写 <code>optimistic: true</code></div>
+        </el-form-item>
         <el-form-item label="Reverse Mapping">
           <el-switch v-model="form.reverse_mapping" @change="emit" />
           <div class="hint">Store reverse DNS mapping for IPs</div>
@@ -259,6 +271,7 @@ const enabled = ref(true)
 const form = reactive({
   strategy: '', disable_cache: false, disable_expire: false,
   reverse_mapping: false,
+  cache_capacity: 0, optimistic_enabled: false, optimistic_timeout: '',
   client_subnet: '', final: '',
   servers: [], rules: [],
 })
@@ -502,6 +515,11 @@ function sync() {
   form.strategy = props.data.strategy || ''
   form.disable_cache = props.data.disable_cache || false
   form.disable_expire = props.data.disable_expire || false
+  form.cache_capacity = props.data.cache_capacity || 0
+  // optimistic 有两种合法写法：简写 true，或 { enabled, timeout }（见 option/dns.go 的 MarshalJSON）
+  const opt = props.data.optimistic
+  form.optimistic_enabled = opt === true || !!(opt && typeof opt === 'object' && opt.enabled)
+  form.optimistic_timeout = (opt && typeof opt === 'object' && opt.timeout) || ''
   form.reverse_mapping = props.data.reverse_mapping || false
   form.client_subnet = props.data.client_subnet || ''
   form.final = props.data.final || ''
@@ -539,6 +557,11 @@ function build() {
     strategy: form.strategy || undefined,
     disable_cache: form.disable_cache || undefined,
     disable_expire: form.disable_expire || undefined,
+    cache_capacity: form.cache_capacity || undefined,
+    // 与核心的 MarshalJSON 保持一致：只开 enabled 时写简写 true，带 timeout 才写对象
+    optimistic: form.optimistic_enabled
+      ? (form.optimistic_timeout ? { enabled: true, timeout: form.optimistic_timeout } : true)
+      : undefined,
     reverse_mapping: form.reverse_mapping || undefined,
     client_subnet: form.client_subnet || undefined,
     final: form.final || undefined,

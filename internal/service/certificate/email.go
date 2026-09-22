@@ -66,8 +66,12 @@ func (s *ACMEEmailService) List(ctx context.Context) ([]entity.ACMEAccountConfig
 }
 
 // normalizeCAProvider 归一 CA 名称 ✓（空 → lets_encrypt ✓，保证写库不为空 ✓）。
+//
+// ⚠ 必须**统一小写** ✗：EAB 的"按 CA 自动关联"是拿归一化后的值做比较 ✓，
+// 若这里只去空格 ✗，那么 `"Google"` 与 `"google"` 就匹配不上 ✗
+// （单测 `TestEABConfigGetByCA` 真机抓到过 ✓）。
 func normalizeCAProvider(p string) string {
-	p = strings.TrimSpace(p)
+	p = strings.ToLower(strings.TrimSpace(p))
 	if p == "" {
 		return "lets_encrypt"
 	}

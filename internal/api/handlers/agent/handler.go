@@ -176,6 +176,8 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 		WithGRPCPort(grpcPort).
 		WithTLS(panelTLS).
 		WithBootstrapToken(token).
+		// 面板 CA 自动随脚本下发 → Agent 引导阶段即可校验面板身份（无需任何人工填写）
+		WithCACertPEM(h.tokenMgr.CACertPEM()).
 		WithServerID(serverID).
 		WithGitHubURL("https://github.com/qist/corefusion/releases/download")
 

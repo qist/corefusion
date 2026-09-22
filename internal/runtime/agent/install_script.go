@@ -12,33 +12,42 @@ import (
 // The script downloads the Agent (panel-first, GitHub fallback), configures it
 // with the panel address and bootstrap token, then starts the service.
 type AgentInstallScript struct {
-	panelHost       string
-	panelPort       int
-	panelScheme     string // "http" or "https"
-	panelGRPCPort   int
-	panelTLS        bool
-	bootstrapToken  string
-	serverID        int64
-	agentVersion    string
-	githubURL       string // GitHub Releases base URL (fallback)
+	panelHost      string
+	panelPort      int
+	panelScheme    string // "http" or "https"
+	panelGRPCPort  int
+	panelTLS       bool
+	bootstrapToken string
+	caCertPEM      []byte // 面板 CA 证书（公开信息）—— 让 Agent 引导阶段就能校验面板身份
+	serverID       int64
+	agentVersion   string
+	githubURL      string // GitHub Releases base URL (fallback)
 }
 
 // NewAgentInstallScript creates a new AgentInstallScript generator.
 func NewAgentInstallScript(panelHost string, panelPort int) *AgentInstallScript {
 	return &AgentInstallScript{
-		panelHost:       panelHost,
-		panelPort:       panelPort,
-		panelScheme:     "http",
-		panelGRPCPort:   constants.DefaultAgentGRPCPort,
-		panelTLS:        false,
-		agentVersion:    "latest",
-		githubURL:       "https://github.com/qist/corefusion/releases/download",
+		panelHost:     panelHost,
+		panelPort:     panelPort,
+		panelScheme:   "http",
+		panelGRPCPort: constants.DefaultAgentGRPCPort,
+		panelTLS:      false,
+		agentVersion:  "latest",
+		githubURL:     "https://github.com/qist/corefusion/releases/download",
 	}
 }
 
 // WithBootstrapToken sets the bootstrap token.
 func (s *AgentInstallScript) WithBootstrapToken(token string) *AgentInstallScript {
 	s.bootstrapToken = token
+	return s
+}
+
+// WithCACertPEM 设置随脚本一起下发的面板 CA 证书（PEM）。
+// 有了它，Agent 在**引导阶段**（还没有自己的证书时）就能对面板做正常的 TLS 校验，
+// 而不是像以前那样 `InsecureSkipVerify: true` ✗（见安全审计 v5 M6）。
+func (s *AgentInstallScript) WithCACertPEM(pemBytes []byte) *AgentInstallScript {
+	s.caCertPEM = pemBytes
 	return s
 }
 
@@ -88,15 +97,16 @@ func (s *AgentInstallScript) WithDownloadURL(url string) *AgentInstallScript {
 func (s *AgentInstallScript) Generate() (string, error) {
 	var sb strings.Builder
 	err := installScriptTmpl.Execute(&sb, map[string]interface{}{
-	"PanelHost":       s.panelHost,
-	"PanelPort":       s.panelPort,
-	"PanelScheme":     s.panelScheme,
-	"PanelGRPCPort":   s.panelGRPCPort,
-	"PanelTLS":        s.panelTLS,
-	"BootstrapToken":  s.bootstrapToken,
-	"ServerID":        s.serverID,
-		"AgentVersion":    s.agentVersion,
-		"GitHubURL":       s.githubURL,
+		"PanelHost":      s.panelHost,
+		"PanelPort":      s.panelPort,
+		"PanelScheme":    s.panelScheme,
+		"PanelGRPCPort":  s.panelGRPCPort,
+		"PanelTLS":       s.panelTLS,
+		"BootstrapToken": s.bootstrapToken,
+		"CACertPEM":      string(s.caCertPEM),
+		"ServerID":       s.serverID,
+		"AgentVersion":   s.agentVersion,
+		"GitHubURL":      s.githubURL,
 	})
 	if err != nil {
 		return "", fmt.Errorf("generate install script: %w", err)
@@ -184,6 +194,14 @@ chmod +x "$INSTALL_DIR/corefusion-agent"
 
 # Generate config
 echo -e "${YELLOW}Writing config...${NC}"
+PANEL_CA_PEM='{{.CACertPEM}}'
+if [ -n "$PANEL_CA_PEM" ] && [ "$PANEL_CA_PEM" != "''" ]; then
+  mkdir -p "$INSTALL_DIR/certs"
+  printf '%s\n' "$PANEL_CA_PEM" > "$INSTALL_DIR/certs/ca-cert.pem"
+  chmod 644 "$INSTALL_DIR/certs/ca-cert.pem"
+  echo -e "${GREEN}面板 CA 证书已就位（Agent 引导阶段将校验证书链）${NC}"
+fi
+
 cat > "$CONFIG_FILE" << EOF
 panel:
   host: "$PANEL_HOST"
@@ -197,8 +215,11 @@ bootstrap:
 
 agent:
   log_level: info
-  data_dir: "$INSTALL_DIR/data"
+    data_dir: "$INSTALL_DIR/data"
 EOF
+# config.yaml 里有 bootstrap token → 收紧到 0600（默认 umask 会给出 0644，其他本地用户可读 ✗）
+chmod 600 "$CONFIG_FILE"
+
 
 # Create systemd service
 echo -e "${YELLOW}Creating systemd service...${NC}"

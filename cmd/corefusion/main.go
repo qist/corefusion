@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -78,7 +79,30 @@ Commands:
 // It also populates os.Environ so that code using os.Getenv (e.g.
 // CF_SECRET_ENCRYPTION_KEY, JWT_SECRET, CF_TRUSTED_PROXIES) can read values
 // from .env. Existing system environment variables are NOT overwritten.
+// hardenDotEnvPermissions 确保 `.env` 只有属主可读（安全审计 v5 P-4：它含 JWT_SECRET 等密钥）。
+//
+// 放在 loadEnv 里是有意的：进程有多个启动入口（server / agent 等）都会先 loadEnv ✓，
+// 挂在读取处能保证**每条启动路径**都收紧一次，不依赖谁记得调用 ✗。只在权限**过宽**时才 chmod ✗，
+// 并用 sync.Once 避免重复系统调用。
+func hardenDotEnvPermissions() {
+	info, err := os.Stat(".env")
+	if err != nil {
+		return
+	}
+	if info.Mode().Perm()&0077 == 0 {
+		return // 已只有属主可访问
+	}
+	if err := os.Chmod(".env", 0600); err != nil {
+		log.Printf("[startup] warning: chmod .env failed: %v", err)
+		return
+	}
+	log.Println("[startup] hardened .env permissions to 0600 (file contains secrets)")
+}
+
+var dotEnvHardened sync.Once
+
 func loadEnv() map[string]string {
+	dotEnvHardened.Do(hardenDotEnvPermissions)
 	env := make(map[string]string)
 	f, err := os.Open(".env")
 	if err != nil {

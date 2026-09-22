@@ -101,7 +101,7 @@
 
 1. 先补 **P0 15 项** 的 UI（`XrayInbounds.vue` / `XrayOutbounds.vue`：freedom 出站、dns、sockopt、blackhole、router）
 2. ~~把 `configgen/xray/generator.go` 改成 map 透传，消灭 A 类~~（**已作废**：该路径不存在，见 §5.6）
-3. 再做 **sing-box 侧** 的同类清单（`/opt/sing-box` 是 fork 源码，按结构体字段比更准）
+3. 再做 **sing-box 侧** 的同类清单（`/opt/sing-box` 是**官方 SagerNet 仓库**源码，按结构体字段比更准）
 
 ---
 

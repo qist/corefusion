@@ -48,3 +48,40 @@ func TestExtractUsersFromProxyMapHysteria2(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyExitInboundTLSRealityServerShape 覆盖**服务端形状**的 reality 入站：
+// 服务端用 `serverNames`/`shortIds`（**数组**）+ `settings[0].password`（= 客户端要的 publicKey），
+// 而客户端字段是单值的 serverName/shortId/publicKey —— 之前只查 shortId，
+// 导致生成的出站不带 shortId（靠服务端容忍空 shortId 才能通，很脆）。
+func TestApplyExitInboundTLSRealityServerShape(t *testing.T) {
+	cfg := map[string]interface{}{
+		"streamSettings": map[string]interface{}{
+			"network":  "raw",
+			"security": "reality",
+			"realitySettings": map[string]interface{}{
+				"privateKey":  "server-private-key",
+				"serverNames": []interface{}{"www.amd.com"},
+				"shortIds":    []interface{}{"28da759cb18a710e", "f13375d9"},
+				"settings":    []interface{}{map[string]interface{}{"fingerprint": "chrome", "password": "PUBKEY_VALUE"}},
+			},
+		},
+	}
+	ss := map[string]interface{}{}
+	applyExitInboundTLS(ss, cfg, "reality")
+	rs, _ := ss["realitySettings"].(map[string]interface{})
+	if rs == nil {
+		t.Fatalf("realitySettings 未生成: %#v", ss)
+	}
+	if rs["publicKey"] != "PUBKEY_VALUE" {
+		t.Errorf("publicKey 应取服务端 settings[0].password，得到 %v", rs["publicKey"])
+	}
+	if rs["serverName"] != "www.amd.com" {
+		t.Errorf("serverName 应取 serverNames[0]，得到 %v", rs["serverName"])
+	}
+	if rs["shortId"] != "28da759cb18a710e" {
+		t.Errorf("shortId 应取服务端 shortIds[0]，得到 %v（缺了会靠服务端容忍空 shortId）", rs["shortId"])
+	}
+	if rs["fingerprint"] != "chrome" {
+		t.Errorf("fingerprint 丢失: %v", rs["fingerprint"])
+	}
+}

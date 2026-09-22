@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/peer"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
@@ -32,12 +34,12 @@ import (
 //     reuses the existing process.Manager + healthcheck.Guardian.
 //   - For remote servers: sends gRPC commands to the remote Agent binary.
 type NodeServerManager struct {
-	mu          sync.RWMutex
-	connections map[int64]*AgentConnection // server_id → connection
-	serverRepo  *repository.NodeServerRepository
-	ca          *CertificateAuthority
-	crl         *CertRevocationList // optional CRL for cert revocation checks
-	localAgent  *LocalAgent          // local node adapter (wraps process.Manager)
+	mu           sync.RWMutex
+	connections  map[int64]*AgentConnection // server_id → connection
+	serverRepo   *repository.NodeServerRepository
+	ca           *CertificateAuthority
+	crl          *CertRevocationList // optional CRL for cert revocation checks
+	localAgent   *LocalAgent         // local node adapter (wraps process.Manager)
 	settingStore NodeSettingStore    // optional, for GitHub accel/proxy settings
 
 	// Cached local server ID — loaded once at startup to avoid DB queries
@@ -127,9 +129,9 @@ func (m *NodeServerManager) githubAccelConfig() (accelDomain, proxyURL string) {
 		return "", ""
 	}
 	var cfg struct {
-		Enabled bool   `json:"enabled"`
+		Enabled  bool   `json:"enabled"`
 		ProxyURL string `json:"proxy_url"`
-		Domains []struct {
+		Domains  []struct {
 			URL     string `json:"url"`
 			Enabled bool   `json:"enabled"`
 		} `json:"domains"`
@@ -270,9 +272,9 @@ func (m *NodeServerManager) IsLocalServer(serverID int64) bool {
 
 // AgentConnection represents an active connection to a remote Agent.
 type AgentConnection struct {
-	mu          sync.Mutex
-	ServerID    int64
-	Hostname    string
+	mu       sync.Mutex
+	ServerID int64
+	Hostname string
 
 	// agentVersion is the version reported by the Agent in its last heartbeat.
 	// Tracked to detect version changes (e.g. after a self-update).
@@ -290,8 +292,8 @@ type AgentConnection struct {
 	statusReported bool // true after first STATUS report received
 
 	// Cached binary info from last ListBinaries query
-	cachedBinaries     []*agentpb.BinaryInfo
-	cachedBinariesAt   time.Time
+	cachedBinaries   []*agentpb.BinaryInfo
+	cachedBinariesAt time.Time
 
 	// Cached OS/arch/distro from heartbeat (for asset filtering)
 	cachedOS     string
@@ -344,13 +346,13 @@ type StatusEvent struct {
 // NewNodeServerManager creates a new NodeServerManager.
 func NewNodeServerManager(serverRepo *repository.NodeServerRepository, ca *CertificateAuthority) *NodeServerManager {
 	return &NodeServerManager{
-		connections: make(map[int64]*AgentConnection),
-		serverRepo:  serverRepo,
-		ca:          ca,
+		connections:  make(map[int64]*AgentConnection),
+		serverRepo:   serverRepo,
+		ca:           ca,
 		onTraffic:    make(chan *TrafficEvent, 1024),
 		onStatusChg:  make(chan *StatusEvent, 256),
 		pendingTasks: make(map[string]chan *agentpb.TaskResult),
-		onlineStore: NewNodeOnlineStore(60),
+		onlineStore:  NewNodeOnlineStore(60),
 	}
 }
 
@@ -470,7 +472,7 @@ func (m *NodeServerManager) AlterUsers(ctx context.Context, serverID int64, req 
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-	return m.localAgent.AlterUsers(ctx, req)
+		return m.localAgent.AlterUsers(ctx, req)
 	}
 	return m.AlterUsersOnServer(ctx, serverID, req)
 }
@@ -483,7 +485,7 @@ func (m *NodeServerManager) ApplyLimits(ctx context.Context, serverID int64, req
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
 		}
-	return m.localAgent.ApplyLimits(ctx, req)
+		return m.localAgent.ApplyLimits(ctx, req)
 	}
 	return m.ApplyLimitsOnServer(ctx, serverID, req)
 }
@@ -669,25 +671,25 @@ func (m *NodeServerManager) SyncProxyConfigFromPrimary(ctx context.Context, mirr
 // For local servers, delegates to LocalAgent → proxy.Manager.StartProxy/StopProxy/etc.
 // For remote servers, sends control command via the heartbeat stream.
 func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error {
-if m.isLocalServer(serverID) {
-if m.localAgent == nil {
-return fmt.Errorf("local agent not configured")
-}
-return m.localAgent.ControlProxy(ctx, proxyType, action)
-}
-// Remote: send via heartbeat stream
-cmd := &agentpb.PanelCommand{
-Command: &agentpb.PanelCommand_ControlProxy{
-ControlProxy: &agentpb.ControlProxyRequest{
-ProxyType: proxyType,
-Action:    action,
-},
-},
-}
-if err := m.SendCommand(ctx, serverID, cmd); err != nil {
-return fmt.Errorf("send ControlProxy command to server %d: %w", serverID, err)
-}
-return nil
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.ControlProxy(ctx, proxyType, action)
+	}
+	// Remote: send via heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		Command: &agentpb.PanelCommand_ControlProxy{
+			ControlProxy: &agentpb.ControlProxyRequest{
+				ProxyType: proxyType,
+				Action:    action,
+			},
+		},
+	}
+	if err := m.SendCommand(ctx, serverID, cmd); err != nil {
+		return fmt.Errorf("send ControlProxy command to server %d: %w", serverID, err)
+	}
+	return nil
 }
 
 // GetProxyGuardianSettingsForServer reads persisted proxy guardian settings from
@@ -1594,6 +1596,17 @@ func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServ
 	}
 
 	serverID := firstReport.ServerId
+
+	// ⚠ 上报的 server_id **来自消息本身** ✗ —— 必须先与对端证书里的身份对齐：
+	// 任一已合法登记的 Agent（持有效客户端证书）只要在首条心跳里填**别人的** server_id，
+	// 就能接管那个节点的控制通道（接收发给它的命令、伪造其状态/流量/在线用户上报），
+	// 破坏多节点隔离（安全审计 v5 M3）。证书签发时已把身份写进 OU（`server-<id>`，
+	// 见 ca.go 的 IssueAgentCertificate），且面板 gRPC 是 RequireAndVerifyClientCert，
+	// 因此这里可以严格比对（不会误伤任何合法节点）。
+	if err := verifyPeerServerID(stream.Context(), serverID); err != nil {
+		return err
+	}
+
 	ac := h.mgr.registerConnection(serverID, firstReport.AgentVersion, stream)
 
 	// Handle first heartbeat
@@ -2299,6 +2312,64 @@ func (m *NodeServerManager) UpdateWriterConfigOnServer(ctx context.Context, serv
 	}
 	if result.Status == agentpb.TaskStatus_TASK_FAILED {
 		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+// agentCertOUPrefix 是 Agent 证书里标识身份的 OU 前缀（见 ca.go IssueAgentCertificate）。
+const agentCertOUPrefix = "server-"
+
+// certServerID 从证书 Subject 的 OU 里解析 Agent 身份（`server-<id>`）。
+func certServerID(cert *x509.Certificate) (int64, bool) {
+	if cert == nil {
+		return 0, false
+	}
+	for _, ou := range cert.Subject.OrganizationalUnit {
+		if !strings.HasPrefix(ou, agentCertOUPrefix) {
+			continue
+		}
+		id, err := strconv.ParseInt(strings.TrimPrefix(ou, agentCertOUPrefix), 10, 64)
+		if err == nil && id > 0 {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// peerServerID 从 gRPC 对端**已校验**的证书链中取出 Agent 身份。
+func peerServerID(ctx context.Context) (int64, bool) {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.AuthInfo == nil {
+		return 0, false
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok {
+		return 0, false
+	}
+	for _, chain := range tlsInfo.State.VerifiedChains {
+		if len(chain) == 0 {
+			continue
+		}
+		if id, ok := certServerID(chain[0]); ok {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// verifyPeerServerID 强制"证书身份 == 上报的 server_id"，不一致直接拒绝建流。
+//
+// 面板 gRPC 配置为 `RequireAndVerifyClientCert`，证书链一定存在；取不到身份说明部署异常，
+// 这里**失败关闭** —— 宁可拒绝建流，也不能让未知身份的连接接管某个节点。
+func verifyPeerServerID(ctx context.Context, claimed int64) error {
+	id, ok := peerServerID(ctx)
+	if !ok {
+		return fmt.Errorf("cannot determine agent identity from client certificate "+
+			"(reported server_id=%d) — refusing to register connection", claimed)
+	}
+	if id != claimed {
+		return fmt.Errorf("agent certificate identifies server %d but reported server_id %d — refusing "+
+			"(a node must not be able to impersonate another)", id, claimed)
 	}
 	return nil
 }

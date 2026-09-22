@@ -22,13 +22,13 @@ type SettingStore interface {
 
 // Service handles client authentication and self-service operations.
 type Service struct {
-	clientRepo   *repository.ClientRepository
-	tmplRepo     *repository.PlanTemplateRepository
-	subRepo      *repository.SubscriptionRepository
-	balanceRepo  *repository.ClientBalanceRepository
-	referralSvc  *ReferralService // P1: 邀请码注册绑定
-	settingSvc   SettingStore
-	jwt          *jwt.JWT
+	clientRepo      *repository.ClientRepository
+	tmplRepo        *repository.PlanTemplateRepository
+	subRepo         *repository.SubscriptionRepository
+	balanceRepo     *repository.ClientBalanceRepository
+	referralSvc     *ReferralService // P1: 邀请码注册绑定
+	settingSvc      SettingStore
+	jwt             *jwt.JWT
 	trafficQuotaSvc *nodeserver.NodeTrafficQuotaService
 }
 
@@ -145,8 +145,8 @@ type LoginInput struct {
 
 // TokenResponse is the response for login/register.
 type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken  string      `json:"access_token"`
+	RefreshToken string      `json:"refresh_token"`
 	Client       *ClientInfo `json:"client"`
 }
 
@@ -171,10 +171,10 @@ type ClientInfo struct {
 	CreatedAt       time.Time  `json:"created_at"`
 
 	// P0-5: Extended fields
-	Balance         int64      `json:"balance"`            // 余额（分）
-	QuotaResetCycle string     `json:"quota_reset_cycle"`   // 流量重置周期
-	QuotaResetDay   *int       `json:"quota_reset_day"`     // 流量重置日
-	NextResetAt     *time.Time `json:"next_reset_at"`       // 下次重置时间
+	Balance         int64      `json:"balance"`           // 余额（分）
+	QuotaResetCycle string     `json:"quota_reset_cycle"` // 流量重置周期
+	QuotaResetDay   *int       `json:"quota_reset_day"`   // 流量重置日
+	NextResetAt     *time.Time `json:"next_reset_at"`     // 下次重置时间
 }
 
 // Register creates a new client account.
@@ -228,7 +228,24 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*TokenResponse, 
 		return nil, fmt.Errorf("invalid email or password")
 	}
 
+	// ⚠ 账号被管理员停用后不允许再登录 ✗：旧实现只比密码，被停用的客户端照样能拿到 token
+	// 并访问 /api/v1/client-auth/*（自助解封、工单、资料…）→ 封禁策略形同虚设（安全审计 v5 M2）。
+	if err := ensureClientActive(client); err != nil {
+		return nil, err
+	}
+
 	return s.generateTokens(client)
+}
+
+// ensureClientActive 拒绝非 active 状态的客户端（停用或其它未知状态一律拒绝，失败关闭）。
+func ensureClientActive(client *entity.Client) error {
+	if client == nil {
+		return fmt.Errorf("client not found")
+	}
+	if client.Status != "active" {
+		return fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
+	}
+	return nil
 }
 
 // GetMe returns the client's account info.
@@ -391,6 +408,11 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 		return nil, fmt.Errorf("client not found")
 	}
 
+	// 与登录同样校验状态 ✗：否则"登录被拦、但刷新通道还能一直续签"（旧 token 有效期内可无限续命）
+	if err := ensureClientActive(client); err != nil {
+		return nil, err
+	}
+
 	return s.generateTokens(client)
 }
 
@@ -420,4 +442,3 @@ func generateToken(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
-

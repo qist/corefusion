@@ -59,15 +59,21 @@ func (s *Service) GetHTTP01Provider() *cert.HTTP01Provider {
 }
 
 // getACMEClient returns an ACME client for the given CA provider.
-func (s *Service) getACMEClient(caProvider cert.CAProvider) *cert.ACMEClient {
+//
+// email 非空时优先用它 ✓（面板的 ACME 账号配置 ✓）；为空则退回服务级默认 ✓。
+func (s *Service) getACMEClient(caProvider cert.CAProvider, email ...string) *cert.ACMEClient {
 	if caProvider == "" {
 		caProvider = s.caProvider
 	}
+	useEmail := s.acmeEmail
+	if len(email) > 0 && strings.TrimSpace(email[0]) != "" {
+		useEmail = strings.TrimSpace(email[0])
+	}
 	// Use custom HTTP-01 provider if available for Gin router integration
 	if s.http01Provider != nil {
-		return cert.NewACMEClientWithHTTP01(s.dataDir, s.acmeEmail, caProvider, s.http01Provider)
+		return cert.NewACMEClientWithHTTP01(s.dataDir, useEmail, caProvider, s.http01Provider)
 	}
-	return cert.NewACMEClient(s.dataDir, s.acmeEmail, caProvider)
+	return cert.NewACMEClient(s.dataDir, useEmail, caProvider)
 }
 
 // CreateCertificateInput is the input for creating a certificate.
@@ -559,6 +565,10 @@ type IssueACMEInput struct {
 	Profile       string                  `json:"profile,omitempty"` // IP 证书需 "shortlived"（会自动补）
 	DNSProvider   *cert.DNSProviderConfig `json:"dns_provider,omitempty"`
 	EAB           *cert.EABConfig         `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
+	// Email 是本次签发使用的 ACME 账号邮箱 ✓ ——
+	// ⚠ Google Public CA **必须有联系邮箱** ✗（真机报 `Accounts must have at least one contact.` ✓），
+	// 而面板构造服务时邮箱是空的 ✗ → 必须由调用方（面板账号配置）传进来 ✓。
+	Email string `json:"email,omitempty"`
 }
 
 // DNSProviderConfig is a type alias for the cert package type.
@@ -675,7 +685,7 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 		caProvider = s.caProvider
 	}
 
-	acme := s.getACMEClient(caProvider)
+	acme := s.getACMEClient(caProvider, input.Email)
 
 	// **IP 证书必须用 shortlived profile** ✓（LE 策略：IP 证书只能是短时证书、约 6 天）。
 	// 用户没显式传就自动补上；同时提示有效期很短、必须能自动续 ✓。
@@ -704,10 +714,22 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 		issuerName = "lets_encrypt"
 	}
 
+	// ⚠ 这里原本只填了 Domain/Issuer/路径 ✗ → Name/Domains/KeyType/KeyBits 全是空 ✗
+	// → 证书列表里"名字空白、域名空白、密钥类型空白" ✗（真机签发后一眼就能看到 ✗）。
+	// 这些都能从**刚签出来的证书本身**解析出来 ✓（和上传路径同一套解析 ✓）。
+	certRefPath := filepath.Join(s.dataDir, result.CertPath)
+	keyRefPath := filepath.Join(s.dataDir, result.KeyPath)
+	sansJSON := parseCertDomains(certRefPath)
+	keyType, keyBits, _ := detectKeyType(keyRefPath)
+
 	certRecord := &entity.Certificate{
+		Name:          input.Domains[0],
 		Domain:        input.Domains[0],
+		Domains:       sansJSON,
 		Issuer:        issuerName,
 		ProviderType:  "acme",
+		KeyType:       keyType,
+		KeyBits:       keyBits,
 		CertPath:      result.CertPath,
 		KeyPath:       result.KeyPath,
 		FullchainPath: result.FullchainPath,
@@ -723,6 +745,13 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	// (certs/<domain>/cert.pem), so all existing config references remain valid.
 	now := time.Now()
 	if existing, err := s.repo.GetByDomain(ctx, input.Domains[0]); err == nil {
+		// 续期/重签也把元数据补齐 ✓（名字为空时补上 ✓，已有的名字不覆盖 ✓）
+		if strings.TrimSpace(existing.Name) == "" {
+			existing.Name = input.Domains[0]
+		}
+		existing.Domains = sansJSON
+		existing.KeyType = keyType
+		existing.KeyBits = keyBits
 		existing.Issuer = issuerName
 		existing.ProviderType = "acme"
 		existing.CertPath = result.CertPath

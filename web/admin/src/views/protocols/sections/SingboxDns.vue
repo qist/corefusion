@@ -260,12 +260,61 @@
             <el-option label="reject" value="reject" />
             <el-option label="hijack-dns" value="hijack-dns" />
             <el-option label="sniff" value="sniff" />
+            <el-option label="evaluate" value="evaluate" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="ruleForm.action === 'route'" label="Speculative">
+        <el-form-item v-if="ruleForm.action === 'route' || ruleForm.action === 'evaluate'" label="Speculative">
           <el-switch v-model="ruleForm.speculative" />
           <div class="hint">乐观并发：同时向多个 server 发起查询、取最快返回（仅 action=route 有效）</div>
         </el-form-item>
+        <el-form-item v-if="ruleForm.action === 'evaluate'" label="Evaluate Tag">
+          <el-input v-model="ruleForm.evaluateTag" placeholder="ev" />
+          <div class="hint">
+            evaluate 的 tag。**配对规则（实测）**：evaluate 带 tag → 下面的 match_response 必须写同一个 tag；
+            evaluate 不带 tag → match_response 只能写 true。配错核心 FATAL。
+          </div>
+        </el-form-item>
+        <el-form-item v-if="ruleForm.action === 'evaluate'" label="Evaluate Timeout">
+          <el-input v-model="ruleForm.evaluateTimeout" placeholder="5s" />
+        </el-form-item>
+        <el-form-item label="Match Response">
+          <el-switch v-model="ruleForm.matchResponse" />
+          <div class="hint">
+            匹配**上一次 evaluate 的结果**（而不是查询本身）。必须先有一条 action=evaluate 的规则，
+            否则核心 FATAL：`response-based matching requires a preceding evaluate action`。
+            开启后 ip_cidr / ip_is_private / ip_accept_any / response_* 都变成**按应答**匹配。
+          </div>
+        </el-form-item>
+        <template v-if="ruleForm.matchResponse">
+          <el-form-item label="Response Tag">
+            <el-input v-model="ruleForm.matchResponseTag" placeholder="留空 = 匹配最近一次不带 tag 的 evaluate（写 true）" />
+          </el-form-item>
+          <el-form-item label="Response RCode">
+            <el-select v-model="ruleForm.responseRcode" style="width:100%" clearable>
+              <el-option label="(不限)" value="" /><el-option label="NOERROR" value="NOERROR" />
+              <el-option label="NXDOMAIN" value="NXDOMAIN" /><el-option label="SERVFAIL" value="SERVFAIL" />
+              <el-option label="REFUSED" value="REFUSED" /><el-option label="FORMERR" value="FORMERR" />
+              <el-option label="NOTIMP" value="NOTIMP" />
+            </el-select>
+            <div class="hint">非法 rcode 核心会 FATAL（`unknown rcode`），所以这里用下拉而不是自由输入</div>
+          </el-form-item>
+          <el-form-item label="IP Accept Any">
+            <el-switch v-model="ruleForm.ipAcceptAny" />
+            <div class="hint">应答里出现任意 IP 就算命中（去广告/黑洞场景常用）</div>
+          </el-form-item>
+          <el-form-item label="Response Answer">
+            <el-input v-model="ruleForm._responseAnswer" type="textarea" :rows="2" placeholder="a.example. 300 IN A 1.2.3.4" />
+            <div class="hint">按**应答记录**匹配，每行一条 **zone 格式完整 RR**（只写 IP 会报 `not a TTL`）</div>
+          </el-form-item>
+          <el-form-item label="Response NS">
+            <el-input v-model="ruleForm._responseNs" type="textarea" :rows="2" placeholder="a.example. 300 IN NS ns.example." />
+            <div class="hint">同上，匹配 NS 记录</div>
+          </el-form-item>
+          <el-form-item label="Response Extra">
+            <el-input v-model="ruleForm._responseExtra" type="textarea" :rows="2" placeholder="a.example. 300 IN A 1.2.3.4" />
+            <div class="hint">同上，匹配 additional 段记录</div>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="ruleDlg=false">Cancel</el-button>
@@ -345,10 +394,20 @@ const currentTypeHint = computed(() => TYPE_HINTS[srvForm.type] || '')
 
 const ruleDlg = ref(false)
 const editingRuleIdx = ref(-1)
+// duration 字段给非法值会让核心拒绝启动（如 `time: invalid duration "abc"`）→ 生成前校验
+function validDuration(v) {
+  const t = String(v || '').trim()
+  if (!t) return ""
+  return /^(\d+(\.\d+)?(ns|us|ms|s|m|h))+$/.test(t) ? t : ""
+}
+
+
 const ruleForm = reactive({
   type: '', mode: '', _domain: '', _domainSuffix: '', _domainKeyword: '',
   _ipCIDR: '', _protocol: [], server: '', outbound: '', action: '',
   _queryDnssec: false, _queryClientSubnet: '', speculative: false,
+  evaluateTag: '', evaluateTimeout: '', matchResponse: false, matchResponseTag: '',
+  responseRcode: '', ipAcceptAny: false, _responseAnswer: '', _responseNs: '', _responseExtra: '',
 })
 
 function showAddServer() {
@@ -448,6 +507,8 @@ function showAddRule() {
     type: '', mode: '', _domain: '', _domainSuffix: '', _domainKeyword: '',
     _ipCIDR: '', _protocol: [], server: '', outbound: '', action: '',
     _queryDnssec: false, _queryClientSubnet: '', speculative: false,
+    evaluateTag: '', evaluateTimeout: '', matchResponse: false, matchResponseTag: '',
+    responseRcode: '', ipAcceptAny: false, _responseAnswer: '', _responseNs: '', _responseExtra: '',
   })
   ruleDlg.value = true
 }
@@ -461,6 +522,13 @@ function editRule(i) {
     _domainKeyword: r._domainKeyword || '',
     _queryDnssec: !!r.query_dnssec,
     _queryClientSubnet: (r.query_client_subnet || []).join('\n'),
+    evaluateTag: r.tag || '', evaluateTimeout: r.timeout || '',
+    matchResponse: !!r.match_response,
+    matchResponseTag: (typeof r.match_response === 'string' ? r.match_response : ''),
+    responseRcode: r.response_rcode || '', ipAcceptAny: !!r.ip_accept_any,
+    _responseAnswer: (r.response_answer || []).join('\n'),
+    _responseNs: (r.response_ns || []).join('\n'),
+    _responseExtra: (r.response_extra || []).join('\n'),
     _ipCIDR: r._ipCIDR || '',
     _protocol: r._protocol || [],
   })
@@ -486,8 +554,23 @@ function saveRule() {
   const qcs = (ruleForm._queryClientSubnet || '').split('\n').map(x => x.trim()).filter(Boolean)
   if (qcs.length) rule.query_client_subnet = qcs
   if (ruleForm.speculative) rule.speculative = true
-  if (editingRuleIdx.value >= 0) form.rules[editingRuleIdx.value] = { ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol, _queryDnssec: ruleForm._queryDnssec, _queryClientSubnet: ruleForm._queryClientSubnet, speculative: ruleForm.speculative }
-  else form.rules.push({ ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol, _queryDnssec: ruleForm._queryDnssec, _queryClientSubnet: ruleForm._queryClientSubnet, speculative: ruleForm.speculative })
+  if (ruleForm.action === 'evaluate') {
+    if (ruleForm.evaluateTag) rule.tag = ruleForm.evaluateTag
+    const et = validDuration(ruleForm.evaluateTimeout)
+    if (et) rule.timeout = et
+  }
+  // 配对规则：evaluate 带 tag → 这里写 tag 字符串；不带 tag → 只能写 true（实测配错 FATAL）
+  if (ruleForm.matchResponse) rule.match_response = ruleForm.matchResponseTag ? ruleForm.matchResponseTag : true
+  if (ruleForm.responseRcode) rule.response_rcode = ruleForm.responseRcode
+  if (ruleForm.ipAcceptAny) rule.ip_accept_any = true
+  const rans = (ruleForm._responseAnswer || '').split('\n').map(x => x.trim()).filter(Boolean)
+  if (rans.length) rule.response_answer = rans
+  const rns = (ruleForm._responseNs || '').split('\n').map(x => x.trim()).filter(Boolean)
+  if (rns.length) rule.response_ns = rns
+  const rex = (ruleForm._responseExtra || '').split('\n').map(x => x.trim()).filter(Boolean)
+  if (rex.length) rule.response_extra = rex
+  if (editingRuleIdx.value >= 0) form.rules[editingRuleIdx.value] = { ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol, _queryDnssec: ruleForm._queryDnssec, _queryClientSubnet: ruleForm._queryClientSubnet, speculative: ruleForm.speculative, evaluateTag: ruleForm.evaluateTag, evaluateTimeout: ruleForm.evaluateTimeout, matchResponse: ruleForm.matchResponse, matchResponseTag: ruleForm.matchResponseTag, responseRcode: ruleForm.responseRcode, ipAcceptAny: ruleForm.ipAcceptAny, _responseAnswer: ruleForm._responseAnswer, _responseNs: ruleForm._responseNs, _responseExtra: ruleForm._responseExtra }
+  else form.rules.push({ ...rule, _domain: ruleForm._domain, _domainSuffix: ruleForm._domainSuffix, _domainKeyword: ruleForm._domainKeyword, _ipCIDR: ruleForm._ipCIDR, _protocol: ruleForm._protocol, _queryDnssec: ruleForm._queryDnssec, _queryClientSubnet: ruleForm._queryClientSubnet, speculative: ruleForm.speculative, evaluateTag: ruleForm.evaluateTag, evaluateTimeout: ruleForm.evaluateTimeout, matchResponse: ruleForm.matchResponse, matchResponseTag: ruleForm.matchResponseTag, responseRcode: ruleForm.responseRcode, ipAcceptAny: ruleForm.ipAcceptAny, _responseAnswer: ruleForm._responseAnswer, _responseNs: ruleForm._responseNs, _responseExtra: ruleForm._responseExtra })
   ruleDlg.value = false
   emit()
 }
@@ -623,6 +706,18 @@ function build() {
     if (r.query_dnssec) rule.query_dnssec = true
     if (Array.isArray(r.query_client_subnet) && r.query_client_subnet.length) rule.query_client_subnet = [...r.query_client_subnet]
     if (r.speculative) rule.speculative = true
+    if (r.tag) rule.tag = r.tag
+    const et2 = validDuration(r.timeout)
+    if (et2) rule.timeout = et2
+    if (r.matchResponse) rule.match_response = r.matchResponseTag ? r.matchResponseTag : true
+    if (r.responseRcode) rule.response_rcode = r.responseRcode
+    if (r.ipAcceptAny) rule.ip_accept_any = true
+    const ra2 = (r._responseAnswer || '').split('\n').map(x => x.trim()).filter(Boolean)
+    if (ra2.length) rule.response_answer = ra2
+    const rn2 = (r._responseNs || '').split('\n').map(x => x.trim()).filter(Boolean)
+    if (rn2.length) rule.response_ns = rn2
+    const re2 = (r._responseExtra || '').split('\n').map(x => x.trim()).filter(Boolean)
+    if (re2.length) rule.response_extra = re2
     return rule
   })
   return out

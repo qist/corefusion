@@ -411,8 +411,17 @@ func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType Challenge
 			// Cloudflare 写入 TXT 后，权威 NS 常常还没刷新 ✓ → 不强制"权威 NS 一致" ✗，
 			// 但仍按下面的超时等递归解析器看到记录 ✓（否则很容易卡死在传播检查里 ✗）。
 			dns01.DisableAuthoritativeNssPropagationRequirement(),
-			// 最多等 2 分钟；到点即使没查到也继续提交挑战 ✓（CA 侧还会再等一轮 ✓）。
-			dns01.PropagationWait(2*time.Minute, true),
+			// ⚠ 默认会用**本机/内网 DNS**（真机看到 192.168.2.84:53 ✗）→ Cloudflare 明明已写入 ✓，
+			// 内网解析器却要 2 分钟才刷新 ✗ → 每个域名都白等 2 分钟 ✗。
+			// 直接查公共解析器 ✓ → 等待从"分钟级"降到"秒级" ✓。
+			dns01.AddRecursiveNameservers([]string{"1.1.1.1:53", "8.8.8.8:53"}),
+			// 明确要求"**递归解析器**能看到记录"✓ —— 否则下面那条 DisableAuthoritative… 一开，
+			// 两道检查就都不做了 ✗ → lego 会**立刻**说"就绪" ✗ → CA 去查时记录还没发布 ✗
+			// （真机踩到：`No TXT record found at _acme-challenge.…` 403 ✗）。
+			dns01.RecursiveNSsPropagationRequirement(),
+			// ⚠ PropagationWait 的语义是"**先无条件睡 wait**，再检查"✗，不是"最多等 wait" ✗
+			// （真机实测：写 2m 就每个域名都慢 2 分钟 ✗）。给 Cloudflare **30 秒**发布 + 真检查 ✓：
+			// 又稳（不会太早放行 ✗）又快（原来是 2 分钟 ✗）。
 		}
 		return client.Challenge.SetDNS01Provider(provider, opts...)
 

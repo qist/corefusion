@@ -51,6 +51,23 @@ func (r *ClientRepository) GetByID(ctx context.Context, id int64) (*entity.Clien
 	return &client, err
 }
 
+// GetTokenVersion 读取客户端当前令牌版本（供鉴权中间件与刷新校验）。
+func (r *ClientRepository) GetTokenVersion(ctx context.Context, clientID int64) (int, error) {
+	var v int
+	err := r.db.WithContext(ctx).Model(&entity.Client{}).
+		Where("id = ?", clientID).
+		Select("COALESCE(token_version, 0)").
+		Scan(&v).Error
+	return v, err
+}
+
+// BumpTokenVersion 把客户端令牌版本 +1 → 此前签发的所有 token 立即失效（登出/踢下线）。
+func (r *ClientRepository) BumpTokenVersion(ctx context.Context, clientID int64) error {
+	return r.db.WithContext(ctx).Model(&entity.Client{}).
+		Where("id = ?", clientID).
+		UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+}
+
 func (r *ClientRepository) GetByEmail(ctx context.Context, email string) (*entity.Client, error) {
 	var client entity.Client
 	err := r.db.WithContext(ctx).Where("email = ?", email).First(&client).Error

@@ -27,6 +27,39 @@ const renderMdUntrustedJS = `
     }
 `
 
+// 旧/新 doLogout：旧实现只清前端本地存储 ✗（服务端仍认那个 token，被窃取后有效期内照样可用），
+// 新实现先调 `/api/v1/client-auth/logout` 让服务端把令牌版本 +1（此前签发的所有 token 立即失效）✓。
+//
+// 同样要处理**存量模板**：门户模板存在数据库里 ✗（真机验证过：改默认模板到不了已部署门户），
+// 所以这里做一次精确片段替换，幂等、且不动管理员的其它定制。
+const (
+	oldLogoutSnippet = `    var doLogout = function() {
+      token.value = ''
+      refreshToken.value = ''
+      localStorage.removeItem('client_token')
+      localStorage.removeItem('client_refresh_token')
+      client.value = {}
+    }`
+
+	newLogoutSnippet = `    var doLogout = function() {
+      var done = function() {
+        token.value = ''
+        refreshToken.value = ''
+        localStorage.removeItem('client_token')
+        localStorage.removeItem('client_refresh_token')
+        client.value = {}
+      }
+      var tk = token.value
+      if (!tk) { done(); return }
+      // 先在服务端吊销（令牌版本 +1 → 该客户端此前签发的所有 token 立即失效）。
+      // 旧实现只清本地存储，服务端仍旧认那个 token（被窃取后有效期内还能用）。
+      fetch('/api/v1/client-auth/logout', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + tk }
+      }).then(function() { done() }).catch(function() { done() })
+    }`
+)
+
 const (
 	// 工单消息是**用户可提交**内容 → 必须用不可信渲染器
 	oldTicketRender = `v-html="renderMd(msg.content)"`
@@ -57,6 +90,12 @@ func PatchTemplateSecurity(htmlContent, jsContent string) (newHTML, newJS string
 			newJS = patched
 			changed = true
 		}
+	}
+
+	// 登出：只清本地存储 → 先在服务端吊销（令牌版本 +1）✓
+	if strings.Contains(newJS, oldLogoutSnippet) {
+		newJS = strings.Replace(newJS, oldLogoutSnippet, newLogoutSnippet, 1)
+		changed = true
 	}
 
 	return newHTML, newJS, changed

@@ -313,6 +313,25 @@ func (h *Handler) pushRateLimitOnLogin(clientIP string, clientID int64) {
 	}
 }
 
+// Logout 让当前客户端的全部 token 立即失效（令牌版本 +1）。
+//
+// POST /api/v1/client-auth/logout（需已认证）
+// ⚠ 客户端侧以前**没有**吊销机制 ✗：门户"退出登录"只清前端本地存储，服务端照旧认那个 token
+// （被窃取的 access/refresh 在有效期内仍可用）——审计 v5 M8 只补了管理端，本轮补客户端侧。
+func (h *Handler) Logout(c *gin.Context) {
+	clientID := c.GetInt64("client_id")
+	if clientID <= 0 {
+		response.Unauthorized(c, "UNAUTHORIZED", "invalid client session")
+		return
+	}
+	if err := h.svc.Logout(c.Request.Context(), clientID); err != nil {
+		response.InternalError(c, "LOGOUT_FAILED", "failed to revoke tokens")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.OK(c, gin.H{"message": "logged out"})
+}
+
 // IssueTicket 签发客户端一次性短时票据（安全审计 v5 M10）。
 //
 // POST /api/v1/client-auth/ticket?scope=client_download（需已认证）

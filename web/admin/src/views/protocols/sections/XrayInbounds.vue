@@ -573,6 +573,14 @@
                   <el-input v-model="rf.streamSettings.tls.echConfigList" type="textarea" :rows="2" @change="emit" />
                   <div class="hint">{{ t('protoCenter.tls.echConfigListHint') }}</div>
                 </el-form-item>
+                <el-form-item label="ECH Sockopt (JSON)">
+                  <el-input v-model="rf.streamSettings.tls._echSockoptStr" type="textarea" :rows="3"
+                    placeholder='{"interfaceName": "eth0", "mark": 255, "tcpFastOpen": true}' @change="emit" />
+                  <div class="hint">
+                    ECH 连接套用 socket 选项（JSON，与 streamSettings.sockopt 同结构，如 interfaceName / mark /
+                    tcpFastOpen / domainStrategy 等）；留空则不写。
+                  </div>
+                </el-form-item>
               </el-form>
             </template>
 
@@ -2822,7 +2830,7 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
@@ -3291,6 +3299,7 @@ function parseTlsSettings(tls) {
     serverName: tls.serverName || '', _alpn: tls.alpn || [],
     minVersion: tls.minVersion || '', maxVersion: tls.maxVersion || '',
     _cipherSuites: tls.cipherSuites ? tls.cipherSuites.split(':') : [], _curves: tls.curvePreferences || [],
+    _echSockoptStr: tls.echSockopt ? JSON.stringify(tls.echSockopt, null, 2) : '',
     rejectUnknownSni: tls.rejectUnknownSni || false, disableSystemRoot: tls.disableSystemRoot || false,
     enableSessionResumption: tls.enableSessionResumption || false, masterKeyLog: tls.masterKeyLog || '',
     fingerprint: clientSettings.fingerprint || '',
@@ -4062,6 +4071,12 @@ function buildInbound(ib, isApiCall = false) {
       if (tls.minVersion) tlsSettings.minVersion = tls.minVersion
       if (tls.maxVersion) tlsSettings.maxVersion = tls.maxVersion
       if (tls._cipherSuites && tls._cipherSuites.length) tlsSettings.cipherSuites = tls._cipherSuites.join(':')
+      if (tls._echSockoptStr) {
+        try {
+          const es = JSON.parse(tls._echSockoptStr)
+          if (es && typeof es === 'object' && Object.keys(es).length) tlsSettings.echSockopt = es
+        } catch (e) { console.warn('echSockopt JSON 解析失败，已忽略:', e) }
+      }
       if (tls._curves && tls._curves.length) tlsSettings.curvePreferences = tls._curves
       if (tls.rejectUnknownSni) tlsSettings.rejectUnknownSni = true
       if (tls.disableSystemRoot) tlsSettings.disableSystemRoot = true

@@ -100,7 +100,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.PUT("/links/:id", h.UpdateLink)
 	g.DELETE("/links/:id", h.DeleteLink)
 
-
 	// External node server registrations
 	g.GET("/external-servers", h.ListExternalServers)
 	g.POST("/external-servers", h.CreateExternalServer)
@@ -445,10 +444,10 @@ func (h *Handler) GetTopology(c *gin.Context) {
 
 	// Build node list
 	type topoNode struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		Type      string `json:"type"` // "server" or "external"
-		Role      string `json:"role"` // "entry", "exit", "entry+exit", "external_entry"
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+		Type string `json:"type"` // "server" or "external"
+		Role string `json:"role"` // "entry", "exit", "entry+exit", "external_entry"
 	}
 
 	// 入口/出口角色完全由 chain_links 决定（v2.0 起没有 chain_exit_configs 了）：
@@ -522,6 +521,9 @@ type ExitTarget struct {
 	// >0 时链式这边不创建任何入站，直接把入口的流量交给这个入站；
 	// cluster 出口必须指定"出口节点上已有的入站"（exit_inbound_id）。
 	ExitInboundID int64 `json:"exit_inbound_id"`
+	// ExitTag：出站 tag 自定义名（留空则自动生成 chain-<入口入站ID>-<出口ID>）。
+	// tag 会出现在节点配置与路由规则里，便于人工排查。
+	ExitTag string `json:"exit_tag"`
 }
 
 // CreateChainProxy handles the create-chain-proxy wizard flow (§5.5):
@@ -613,6 +615,7 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 			EntryInboundID: req.EntryInboundID,
 			Priority:       priority,
 			Weight:         weight,
+			ExitTag:        ex.ExitTag,
 			SortOrder:      ex.SortOrder,
 			Enabled:        true,
 		}

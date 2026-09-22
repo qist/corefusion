@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -105,33 +106,33 @@ type SubscriptionBillingTemplateConfig struct {
 // SchedulerConfig contains configurable intervals for background scheduled tasks.
 // All intervals are in minutes. A value of 0 means "use default".
 type SchedulerConfig struct {
-	LogCleanupInterval      int `json:"log_cleanup_interval"`       // DB log cleanup check interval (default: 360 = 6h)
-	ClientLogCleanupInterval int `json:"client_log_cleanup_interval"` // Expired client log package cleanup interval (default: 10 = 10m)
-	WAFLogCleanupInterval   int `json:"waf_log_cleanup_interval"`   // WAF log file cleanup interval (default: 1440 = 24h)
-	WAFLogRetainDays        int `json:"waf_log_retain_days"`        // WAF log retain days (default: 30)
-	BackupCheckInterval     int `json:"backup_check_interval"`      // Backup scheduler check interval (default: 1 = 1m)
-	CallbackRetryInterval   int `json:"callback_retry_interval"`   // Charge callback retry interval (default: 1 = 1m)
+	LogCleanupInterval         int `json:"log_cleanup_interval"`         // DB log cleanup check interval (default: 360 = 6h)
+	ClientLogCleanupInterval   int `json:"client_log_cleanup_interval"`  // Expired client log package cleanup interval (default: 10 = 10m)
+	WAFLogCleanupInterval      int `json:"waf_log_cleanup_interval"`     // WAF log file cleanup interval (default: 1440 = 24h)
+	WAFLogRetainDays           int `json:"waf_log_retain_days"`          // WAF log retain days (default: 30)
+	BackupCheckInterval        int `json:"backup_check_interval"`        // Backup scheduler check interval (default: 1 = 1m)
+	CallbackRetryInterval      int `json:"callback_retry_interval"`      // Charge callback retry interval (default: 1 = 1m)
 	ProcessingRecoveryInterval int `json:"processing_recovery_interval"` // Stuck processing recovery interval (default: 1 = 1m)
-	OrderCleanupInterval   int `json:"order_cleanup_interval"`     // Expired order cleanup interval (default: 5 = 5m)
-	TrialScanInterval      int `json:"trial_scan_interval"`       // Trial expiry scan interval (default: 60 = 1h)
-	DowngradeScanInterval  int `json:"downgrade_scan_interval"`    // Pending downgrade scan interval (default: 5 = 5m)
-	CFIPCheckInterval      int `json:"cfip_check_interval"`       // CFIP source fetch check interval (default: 5 = 5m)
+	OrderCleanupInterval       int `json:"order_cleanup_interval"`       // Expired order cleanup interval (default: 5 = 5m)
+	TrialScanInterval          int `json:"trial_scan_interval"`          // Trial expiry scan interval (default: 60 = 1h)
+	DowngradeScanInterval      int `json:"downgrade_scan_interval"`      // Pending downgrade scan interval (default: 5 = 5m)
+	CFIPCheckInterval          int `json:"cfip_check_interval"`          // CFIP source fetch check interval (default: 5 = 5m)
 }
 
 // DefaultSchedulerConfig returns default scheduler configuration.
 func DefaultSchedulerConfig() *SchedulerConfig {
 	return &SchedulerConfig{
-		LogCleanupInterval:          360,
-		ClientLogCleanupInterval:    10,
-		WAFLogCleanupInterval:       1440,
-		WAFLogRetainDays:            30,
-		BackupCheckInterval:         1,
-		CallbackRetryInterval:       1,
+		LogCleanupInterval:         360,
+		ClientLogCleanupInterval:   10,
+		WAFLogCleanupInterval:      1440,
+		WAFLogRetainDays:           30,
+		BackupCheckInterval:        1,
+		CallbackRetryInterval:      1,
 		ProcessingRecoveryInterval: 1,
-		OrderCleanupInterval:        5,
-		TrialScanInterval:           60,
-		DowngradeScanInterval:       5,
-		CFIPCheckInterval:           5,
+		OrderCleanupInterval:       5,
+		TrialScanInterval:          60,
+		DowngradeScanInterval:      5,
+		CFIPCheckInterval:          5,
 	}
 }
 
@@ -159,17 +160,17 @@ func (s *SettingService) GetSchedulerConfig(ctx context.Context) (*SchedulerConf
 // UpdateSchedulerConfig saves scheduler configuration to database.
 func (s *SettingService) UpdateSchedulerConfig(ctx context.Context, config *SchedulerConfig) error {
 	settings := map[string]string{
-		"scheduler.log_cleanup_interval":          strconv.Itoa(config.LogCleanupInterval),
-		"scheduler.client_log_cleanup_interval":    strconv.Itoa(config.ClientLogCleanupInterval),
-		"scheduler.waf_log_cleanup_interval":       strconv.Itoa(config.WAFLogCleanupInterval),
-		"scheduler.waf_log_retain_days":             strconv.Itoa(config.WAFLogRetainDays),
-		"scheduler.backup_check_interval":          strconv.Itoa(config.BackupCheckInterval),
-		"scheduler.callback_retry_interval":        strconv.Itoa(config.CallbackRetryInterval),
-		"scheduler.processing_recovery_interval":    strconv.Itoa(config.ProcessingRecoveryInterval),
-		"scheduler.order_cleanup_interval":         strconv.Itoa(config.OrderCleanupInterval),
-		"scheduler.trial_scan_interval":            strconv.Itoa(config.TrialScanInterval),
-		"scheduler.downgrade_scan_interval":        strconv.Itoa(config.DowngradeScanInterval),
-		"scheduler.cfip_check_interval":             strconv.Itoa(config.CFIPCheckInterval),
+		"scheduler.log_cleanup_interval":         strconv.Itoa(config.LogCleanupInterval),
+		"scheduler.client_log_cleanup_interval":  strconv.Itoa(config.ClientLogCleanupInterval),
+		"scheduler.waf_log_cleanup_interval":     strconv.Itoa(config.WAFLogCleanupInterval),
+		"scheduler.waf_log_retain_days":          strconv.Itoa(config.WAFLogRetainDays),
+		"scheduler.backup_check_interval":        strconv.Itoa(config.BackupCheckInterval),
+		"scheduler.callback_retry_interval":      strconv.Itoa(config.CallbackRetryInterval),
+		"scheduler.processing_recovery_interval": strconv.Itoa(config.ProcessingRecoveryInterval),
+		"scheduler.order_cleanup_interval":       strconv.Itoa(config.OrderCleanupInterval),
+		"scheduler.trial_scan_interval":          strconv.Itoa(config.TrialScanInterval),
+		"scheduler.downgrade_scan_interval":      strconv.Itoa(config.DowngradeScanInterval),
+		"scheduler.cfip_check_interval":          strconv.Itoa(config.CFIPCheckInterval),
 	}
 	for key, value := range settings {
 		if err := s.repo.Set(ctx, key, value); err != nil {
@@ -277,12 +278,12 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.tls_key_path":         config.TLSKeyPath,
 		"panel.mtls_enabled":         fmt.Sprintf("%v", config.MTLSEnabled),
 		"panel.mtls_ca_path":         config.MTLSCAPath,
-		"panel.agent_grpc_port":       config.AgentGRPCPort,
+		"panel.agent_grpc_port":      config.AgentGRPCPort,
 		"panel.web_path":             config.WebPath,
 		"panel.timezone":             config.Timezone,
 		"panel.data_dir":             config.DataDir,
 		"panel.trusted_proxies":      config.TrustedProxies,
-		"panel.profile_web_page_url":  config.ProfileWebPageUrl,
+		"panel.profile_web_page_url": config.ProfileWebPageUrl,
 		"panel.mode":                 config.Mode,
 	}
 
@@ -469,7 +470,7 @@ func (s *SettingService) GetSubscriptionBillingTemplateConfig(ctx context.Contex
 func (s *SettingService) UpdateSubscriptionBillingTemplateConfig(ctx context.Context, config *SubscriptionBillingTemplateConfig) error {
 	settings := map[string]string{
 		"subscription.billing_template.default_used":      config.DefaultUsedTemplate,
-	"subscription.billing_template.default_remaining": config.DefaultRemainingTemplate,
+		"subscription.billing_template.default_remaining": config.DefaultRemainingTemplate,
 		"subscription.billing_template.default_reset":     config.DefaultResetTemplate,
 		"subscription.billing_template.default_expiry":    config.DefaultExpiryTemplate,
 	}
@@ -594,13 +595,13 @@ func (s *SettingService) MigrateDataToDir(oldDir, newDir string) error {
 // DBConfig contains database connection configuration.
 // Read from .env file only. Changes take effect on next panel restart.
 type DBConfig struct {
-	Type          string `json:"type"`             // sqlite | mysql | postgres
-	DSN           string `json:"dsn"`              // Connection string (passwords masked on GET)
-	MaxOpenConns  int    `json:"max_open_conns"`   // Pool: max open connections (MySQL/PostgreSQL)
-	MaxIdleConns  int    `json:"max_idle_conns"`   // Pool: max idle connections (MySQL/PostgreSQL)
-	CurrentType   string `json:"current_type"`     // Read-only: type currently in use
-	EffectiveDSN  string `json:"effective_dsn"`    // Read-only: DSN currently in use (masked)
-	RestartNeeded bool   `json:"restart_needed"`   // Read-only: true if config changed since startup
+	Type          string `json:"type"`           // sqlite | mysql | postgres
+	DSN           string `json:"dsn"`            // Connection string (passwords masked on GET)
+	MaxOpenConns  int    `json:"max_open_conns"` // Pool: max open connections (MySQL/PostgreSQL)
+	MaxIdleConns  int    `json:"max_idle_conns"` // Pool: max idle connections (MySQL/PostgreSQL)
+	CurrentType   string `json:"current_type"`   // Read-only: type currently in use
+	EffectiveDSN  string `json:"effective_dsn"`  // Read-only: DSN currently in use (masked)
+	RestartNeeded bool   `json:"restart_needed"` // Read-only: true if config changed since startup
 }
 
 // GetDBConfig reads database configuration from the .env file.
@@ -859,7 +860,16 @@ func saveEnvFile(key, value string) error {
 		lines = append(lines, key+"="+value)
 	}
 
-	return os.WriteFile(".env", []byte(strings.Join(lines, "\n")+"\n"), 0644)
+	// ⚠ .env 里可能有 **数据库密码**（CF_DB_DSN）/ JWT_SECRET 等 → 权限必须 0600 ✓
+	// （安全审计 v5 P-4）。WriteFile 对**已存在**的文件不改权限 ✗ → 显式 Chmod 一次。
+	envPath := ".env"
+	if err := os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(envPath, 0600); err != nil {
+		log.Printf("[setting] warning: chmod .env failed: %v", err)
+	}
+	return nil
 }
 
 // GetByKey retrieves a setting value by key (implements proxy.SettingStore).
@@ -920,12 +930,12 @@ func (s *SettingService) GenerateAndSaveEncryptionKey() (string, error) {
 		return "", err
 	}
 	key := hex.EncodeToString(b)
-	
+
 	// Save to .env file
 	if err := saveEnvFile("CF_SECRET_ENCRYPTION_KEY", key); err != nil {
 		return "", err
 	}
-	
+
 	return key, nil
 }
 

@@ -346,6 +346,15 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 	}
 	log.Println("migrate: target database schema created")
 
+	// ⚠ **写入预检**（"迁移必须能写进去"）：AutoMigrate 成功 ≠ 后续还能写 ✗ ——
+	// 目标库可能是只读账号/只读挂载/磁盘满/处于 recovery，而旧实现遇到写失败只打 warning
+	// 就继续 ✗ → 迁移"成功"返回却**丢数据** ✗（静默数据丢失）。这里先真写一次探针，
+	// 写不进去就直接失败 ✓。
+	if err := verifyTargetWritable(dstDB); err != nil {
+		return 0, 0, fmt.Errorf("target database is not writable: %w", err)
+	}
+	log.Println("migrate: target database write check passed")
+
 	// Step 2: Get list of tables from current (source) database
 	srcType, _ := StartupConfig()
 	tableNames, err := listTables(DB, srcType)
@@ -362,8 +371,8 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 		// Read all rows from current (source) table
 		var rows []map[string]interface{}
 		if err := DB.Table(table).Find(&rows).Error; err != nil {
-			log.Printf("migrate: skip table %s (read error): %v", table, err)
-			continue
+			// 读不出来**不能**当"这张表没数据"跳过 ✗ —— 那等于静默漏迁一整张表 ✗
+			return 0, 0, fmt.Errorf("read source table %s: %w", table, err)
 		}
 		if len(rows) == 0 {
 			log.Printf("migrate: skip table %s (empty)", table)
@@ -404,44 +413,44 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 					}
 					// Coerce int64 (0/1) from MySQL tinyint into native bool for
 					// the target (PostgreSQL driver rejects int64 for bool columns).
-				if _, isBool := boolCols[k]; isBool {
-					switch v := rows[i][k].(type) {
-					case bool:
-						// already bool, keep
-					case int64:
-						rows[i][k] = v != 0
-					case int:
-						rows[i][k] = v != 0
-					case int32:
-						rows[i][k] = v != 0
-					case int16:
-						rows[i][k] = v != 0
-					case int8:
-						rows[i][k] = v != 0
-					case uint64:
-						rows[i][k] = v != 0
-					case uint:
-						rows[i][k] = v != 0
-					case uint32:
-						rows[i][k] = v != 0
-					case uint16:
-						rows[i][k] = v != 0
-					case uint8:
-						rows[i][k] = v != 0
-					case float64:
-						rows[i][k] = v != 0
-					case float32:
-						rows[i][k] = v != 0
-					case string:
-						// MySQL tinyint may be returned as "0"/"1" []byte or string
-						rows[i][k] = v == "1" || v == "true" || v == "t"
-					case []byte:
-						rows[i][k] = string(v) == "1" || string(v) == "true" || string(v) == "t"
-					default:
-						// Fallback: treat zero/nil as false
-						rows[i][k] = false
+					if _, isBool := boolCols[k]; isBool {
+						switch v := rows[i][k].(type) {
+						case bool:
+							// already bool, keep
+						case int64:
+							rows[i][k] = v != 0
+						case int:
+							rows[i][k] = v != 0
+						case int32:
+							rows[i][k] = v != 0
+						case int16:
+							rows[i][k] = v != 0
+						case int8:
+							rows[i][k] = v != 0
+						case uint64:
+							rows[i][k] = v != 0
+						case uint:
+							rows[i][k] = v != 0
+						case uint32:
+							rows[i][k] = v != 0
+						case uint16:
+							rows[i][k] = v != 0
+						case uint8:
+							rows[i][k] = v != 0
+						case float64:
+							rows[i][k] = v != 0
+						case float32:
+							rows[i][k] = v != 0
+						case string:
+							// MySQL tinyint may be returned as "0"/"1" []byte or string
+							rows[i][k] = v == "1" || v == "true" || v == "t"
+						case []byte:
+							rows[i][k] = string(v) == "1" || string(v) == "true" || string(v) == "t"
+						default:
+							// Fallback: treat zero/nil as false
+							rows[i][k] = false
+						}
 					}
-				}
 				}
 				// gorm expects a gorm.DeletedAt key for soft-delete columns;
 				// when absent it is fine to drop.
@@ -449,12 +458,12 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 			}
 		}
 
-		// Clear target table data
+		// Clear target table data：清不掉就**必须失败** ✗（否则新旧数据混在一起 ✗）
 		if err := dstDB.Exec(fmt.Sprintf("DELETE FROM %s", table)).Error; err != nil {
-			log.Printf("migrate: warning: could not clear target table %s: %v", table, err)
+			return 0, 0, fmt.Errorf("clear target table %s: %w", table, err)
 		}
 
-		// Batch insert into target
+		// Batch insert into target（批量失败退化为逐行；**任何一行写不进去即失败** ✗）
 		batchSize := 500
 		for i := 0; i < len(rows); i += batchSize {
 			end := i + batchSize
@@ -462,22 +471,64 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 				end = len(rows)
 			}
 			if err := dstDB.Table(table).Create(rows[i:end]).Error; err != nil {
-				log.Printf("migrate: warning: batch insert into %s failed: %v", table, err)
-				// Try row-by-row as fallback
-				for _, row := range rows[i:end] {
-					if err := dstDB.Table(table).Create(row).Error; err != nil {
-						log.Printf("migrate: warning: row insert into %s failed: %v", table, err)
+				log.Printf("migrate: batch insert into %s failed (%v), retrying row by row...", table, err)
+				for idx, row := range rows[i:end] {
+					if rerr := dstDB.Table(table).Create(row).Error; rerr != nil {
+						return 0, 0, fmt.Errorf("insert into %s failed at row %d: %w", table, i+idx, rerr)
 					}
 				}
 			}
 		}
 
+		// 拷后核对：目标行数必须等于源行数 ✓ —— 这是"确实写进去了"的最终判据。
+		var targetCount int64
+		if err := dstDB.Table(table).Count(&targetCount).Error; err != nil {
+			return 0, 0, fmt.Errorf("count target table %s: %w", table, err)
+		}
+		if targetCount != int64(len(rows)) {
+			return 0, 0, fmt.Errorf("table %s row mismatch after copy: source=%d target=%d",
+				table, len(rows), targetCount)
+		}
+
 		tablesCopied++
 		rowsCopied += int64(len(rows))
-		log.Printf("migrate: copied table %s (%d rows)", table, len(rows))
+		log.Printf("migrate: copied table %s (%d rows, verified)", table, len(rows))
 	}
 
 	return tablesCopied, rowsCopied, nil
+}
+
+// migrateProbeTable 是写入预检用的探针表名。
+// 用 `_cf_` 前缀是刻意的：拷贝循环本来就会跳过 `_cf_` 前缀的表 ✓，所以探针表不会被当成业务表拷走 ✗。
+const migrateProbeTable = "_cf_migration_probe"
+
+// verifyTargetWritable 真实写一次探针，确认目标库**确实可写**。
+//
+// 覆盖 AutoMigrate 之后的写入路径：建表 → 插行 → 读回校验 → 删表。
+// 任一步失败即返回错误（调用方据此直接中止迁移 ✗）。列类型用 INTEGER/TEXT，三种方言都接受 ✓。
+func verifyTargetWritable(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("target database handle is nil")
+	}
+	drop := func() { _ = db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", migrateProbeTable)).Error }
+	drop()
+
+	if err := db.Exec(fmt.Sprintf("CREATE TABLE %s (id INTEGER, note TEXT)", migrateProbeTable)).Error; err != nil {
+		return fmt.Errorf("create probe table: %w", err)
+	}
+	defer drop()
+
+	if err := db.Exec(fmt.Sprintf("INSERT INTO %s (id, note) VALUES (?, ?)", migrateProbeTable), 1, "probe").Error; err != nil {
+		return fmt.Errorf("insert probe row: %w", err)
+	}
+	var got int64
+	if err := db.Raw(fmt.Sprintf("SELECT COUNT(*) FROM %s", migrateProbeTable)).Scan(&got).Error; err != nil {
+		return fmt.Errorf("read back probe table: %w", err)
+	}
+	if got != 1 {
+		return fmt.Errorf("probe row not persisted (count=%d)", got)
+	}
+	return nil
 }
 
 // runAutoMigrate runs the same AutoMigrate logic as the main application on a given DB.
@@ -671,6 +722,15 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 	}
 	log.Println("migrate: target database schema created")
 
+	// ⚠ **写入预检**（"迁移必须能写进去"）：AutoMigrate 成功 ≠ 后续还能写 ✗ ——
+	// 目标库可能是只读账号/只读挂载/磁盘满/处于 recovery，而旧实现遇到写失败只打 warning
+	// 就继续 ✗ → 迁移"成功"返回却**丢数据** ✗（静默数据丢失）。这里先真写一次探针，
+	// 写不进去就直接失败 ✓。
+	if err := verifyTargetWritable(dstDB); err != nil {
+		return 0, 0, fmt.Errorf("target database is not writable: %w", err)
+	}
+	log.Println("migrate: target database write check passed")
+
 	// Step 2: Get list of tables from source SQLite database
 	tableNames, err := listTables(srcDB, DBTypeSQLite)
 	if err != nil {
@@ -685,8 +745,8 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 
 		var rows []map[string]interface{}
 		if err := srcDB.Table(table).Find(&rows).Error; err != nil {
-			log.Printf("migrate: skip table %s (read error): %v", table, err)
-			continue
+			// 同 MigrateTo：读不出来就失败，不能当"空表"跳过 ✗
+			return 0, 0, fmt.Errorf("read source table %s: %w", table, err)
 		}
 		if len(rows) == 0 {
 			log.Printf("migrate: skip table %s (empty)", table)
@@ -737,16 +797,15 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 			}
 		}
 
-		// Clear target table
+		// Clear target table：清不掉就**必须失败** ✗（旧实现是 continue → 静默漏一整张表 ✗）
 		if err := dstDB.Exec("TRUNCATE TABLE " + table).Error; err != nil {
 			// TRUNCATE may fail (e.g. foreign key constraints), try DELETE
 			if err := dstDB.Exec("DELETE FROM " + table).Error; err != nil {
-				log.Printf("migrate: skip table %s (clear error): %v", table, err)
-				continue
+				return 0, 0, fmt.Errorf("clear target table %s: %w", table, err)
 			}
 		}
 
-		// Batch insert (clear target table first to avoid conflicts)
+		// Batch insert：**任何一批写不进去即失败** ✗（旧实现只记 log 继续 → 数据缺口 ✗）
 		batchSize := 500
 		for i := 0; i < len(rows); i += batchSize {
 			end := i + batchSize
@@ -754,13 +813,23 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 				end = len(rows)
 			}
 			if err := dstDB.Table(table).Create(rows[i:end]).Error; err != nil {
-				log.Printf("migrate: error inserting batch into %s (offset %d): %v", table, i, err)
-				// continue instead of break — don't let one bad batch skip the rest
+				return 0, 0, fmt.Errorf("insert into %s failed at offset %d: %w", table, i, err)
 			}
 		}
+
+		// 拷后核对：目标行数必须等于源行数 ✓
+		var targetCount int64
+		if err := dstDB.Table(table).Count(&targetCount).Error; err != nil {
+			return 0, 0, fmt.Errorf("count target table %s: %w", table, err)
+		}
+		if targetCount != int64(len(rows)) {
+			return 0, 0, fmt.Errorf("table %s row mismatch after copy: source=%d target=%d",
+				table, len(rows), targetCount)
+		}
+
 		tablesCopied++
 		rowsCopied += int64(len(rows))
-		log.Printf("migrate: copied %d rows from %s", len(rows), table)
+		log.Printf("migrate: copied %d rows from %s (verified)", len(rows), table)
 	}
 
 	return tablesCopied, rowsCopied, nil

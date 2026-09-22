@@ -153,3 +153,56 @@ func TestConvertChainOutboundsToSingbox_Hysteria2AndReality(t *testing.T) {
 		t.Logf("dump 失败（不影响断言）: %v", err)
 	}
 }
+
+// TestConvertChainOutboundsToSingbox_TransportNames 传输名映射：
+// xray 的 `raw`（= TCP 的新叫法）**不能**透传成 sing-box 的 transport.type ✗ ——
+// 透传会让核心拒绝启动：`FATAL ... unknown transport type: raw`（真机 E2E 撞到过）。
+// TCP 在 sing-box 里就是"没有 transport"字段；ws 这类才写 transport。
+func TestConvertChainOutboundsToSingbox_TransportNames(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag": "t-raw", "protocol": "vless",
+			"settings": map[string]interface{}{"vnext": []interface{}{
+				map[string]interface{}{"address": "1.2.3.4", "port": float64(443),
+					"users": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111", "encryption": "none"}}},
+			}},
+			"streamSettings": map[string]interface{}{"network": "raw", "security": "none"},
+		},
+		map[string]interface{}{
+			"tag": "t-tcp", "protocol": "vless",
+			"settings": map[string]interface{}{"vnext": []interface{}{
+				map[string]interface{}{"address": "1.2.3.5", "port": float64(443),
+					"users": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111", "encryption": "none"}}},
+			}},
+			"streamSettings": map[string]interface{}{"network": "tcp", "security": "none"},
+		},
+		map[string]interface{}{
+			"tag": "t-ws", "protocol": "vless",
+			"settings": map[string]interface{}{"vnext": []interface{}{
+				map[string]interface{}{"address": "1.2.3.6", "port": float64(443),
+					"users": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111", "encryption": "none"}}},
+			}},
+			"streamSettings": map[string]interface{}{"network": "ws", "security": "none", "path": "/ws"},
+		},
+	}
+	out := convertChainOutboundsToSingbox(in)
+	if len(out) != 3 {
+		t.Fatalf("期望 3 条出站，得到 %d", len(out))
+	}
+	for _, o := range out {
+		m, _ := o.(map[string]interface{})
+		tag, _ := m["tag"].(string)
+		tr, has := m["transport"]
+		switch tag {
+		case "t-raw", "t-tcp":
+			if has {
+				t.Errorf("%s: TCP/raw 不应有 transport（sing-box 无 raw 类型），得到 %#v", tag, tr)
+			}
+		case "t-ws":
+			tm, _ := tr.(map[string]interface{})
+			if !has || tm == nil || tm["type"] != "ws" || tm["path"] != "/ws" {
+				t.Errorf("t-ws: transport 应为 {type:ws,path:/ws}，得到 %#v", tr)
+			}
+		}
+	}
+}

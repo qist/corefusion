@@ -1781,7 +1781,17 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 		if ss, ok := m["streamSettings"].(map[string]interface{}); ok {
 			network, _ := ss["network"].(string)
 			security, _ := ss["security"].(string)
-			if network != "" && network != "tcp" {
+			// ⚠ 传输名**不能直接透传** ✗：`raw` 是 xray 对 TCP 的新叫法，sing-box 里没有这个类型，
+			// 透传会导致核心拒绝启动：
+			//   FATAL decode config at runtime/singbox.jsonc: outbounds[N].transport: unknown transport type: raw
+			// （真机 E2E 撞到：面板给 xray 入站默认写 network=raw，而 sing-box 入口链到这种出口就会炸 ✗）
+			// → TCP 在 sing-box 里就是"没有 transport"，不写这个字段；其余按 sing-box 的类型名映射。
+			switch network {
+			case "", "tcp", "raw":
+				// 不写 transport（即 TCP）
+			case "splithttp", "xhttp":
+				// xray 的 xhttp 在 sing-box 里没有对应传输 ✗ —— 不生成非法字段，交由上层核心能力矩阵拦截
+			default:
 				transport := map[string]interface{}{"type": network}
 				if path, ok := ss["path"].(string); ok {
 					transport["path"] = path
@@ -1985,4 +1995,3 @@ func convertChainBalancersToSingbox(balancers []interface{}, chainOutbounds []in
 	}
 	return outbounds, tagMap
 }
-

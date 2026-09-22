@@ -1,5 +1,10 @@
 export default {
   common: {
+    next: 'Next',
+    prev: 'Back',
+    host: 'Host',
+    saved: 'Saved',
+    deleteConfirm: 'Delete this item?',
     appName: 'CoreFusion',
     all: 'All',
     confirm: 'Confirm',
@@ -412,6 +417,7 @@ export default {
       chainBalancers: 'Chain Balancers',
     },
     inbounds: {
+      shareNotSupported: 'Share link is not supported for this inbound',
       title: 'Inbound List',
       savedToDb: 'Inbound has been saved to the database',
       deletedFromDb: 'Inbound has been deleted from the database',
@@ -847,6 +853,10 @@ export default {
       download: 'Download',
     },
     tls: {
+      pinnedPeerCertSha256Placeholder: 'Base64(SHA256), one per line',
+      verifyPeerCertByNamePlaceholder: 'e.g. example.com',
+      utlsFingerprint: 'uTLS fingerprint',
+      utlsFingerprintHint: 'Client uTLS fingerprint; must match what the server expects',
       serverName: 'Server Name',
       verifyPeerCertByName: 'Verify Peer Cert By Name',
       verifyPeerCertByNameHint: 'Override SNI for certificate validation, comma-separated',
@@ -1706,7 +1716,18 @@ export default {
       restarting: 'Restarting...',
     },
   },
+  traffic_history: {
+    title: 'Traffic history',
+    empty: 'No data',
+    error: 'Failed to load',
+    loading: 'Loading…',
+  },
   proxy: {
+    logOutputMode: 'Log output mode',
+    syncAllNodes: 'Sync all nodes',
+    wafDomainRuleEdit: 'Edit domain rule',
+    wafGlobalRuleRef: 'Reference global WAF rule',
+    wafRuleStoreHint: 'Rules are kept in the rule store and can be referenced by multiple sites',
     title: 'Proxy Management',
     control: 'Proxy Control',
     syncConfig: 'Sync Config',
@@ -5275,6 +5296,8 @@ ctx.moduleTitle           — Current module title`,
         },
         // OpenConnect-specific
         oc: {
+          serverConfig: 'Server config',
+          advancedOptions: 'Advanced options',
           server: 'Server Address',
           serverPlaceholder: 'vpn.example.com',
           username: 'Username',
@@ -5338,6 +5361,9 @@ ctx.moduleTitle           — Current module title`,
         },
         // OpenVPN-specific
         ovpn: {
+          address: 'Address',
+          advancedOptions: 'Advanced options',
+          routeSettings: 'Route settings',
           server: 'Server Address',
           serverPlaceholder: 'vpn.example.com',
           serverPort: 'Server Port',

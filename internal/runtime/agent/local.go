@@ -48,21 +48,27 @@ import (
 // 实际执行在 TaskQueue 的 Worker 中进行。
 // 结果通过 TaskResultCallback 回传（stream 或本地 channel）。
 type LocalAgent struct {
-	dataDir       string
-	db            *gorm.DB
-	serverID      int64
-	procMgr       *process.Manager
-	proxyMgr      ProxyManager      // 代理进程管理器（Caddy/Nginx）
-	svcRepo       *repository.ServiceRepository
-	userOp        CoreUserOperator  // 可选：用户热更新操作器
-	limitOp       LimitApplier      // 可选：限速操作器
-	binaryInst    BinaryInstaller   // 可选：核心二进制安装器
-	statsAddr     string             // xray gRPC API 地址
-	singboxStatsAddr string          // sing-box V2Ray API 地址 (experimental.v2ray_api.listen)
-	taskQueue     *TaskQueue         // 异步任务队列
+	dataDir          string
+	db               *gorm.DB
+	serverID         int64
+	procMgr          *process.Manager
+	proxyMgr         ProxyManager // 代理进程管理器（Caddy/Nginx）
+	svcRepo          *repository.ServiceRepository
+	userOp           CoreUserOperator // 可选：用户热更新操作器
+	limitOp          LimitApplier     // 可选：限速操作器
+	binaryInst       BinaryInstaller  // 可选：核心二进制安装器
+	statsAddr        string           // xray gRPC API 地址
+	singboxStatsAddr string           // sing-box V2Ray API 地址 (experimental.v2ray_api.listen)
+	taskQueue        *TaskQueue       // 异步任务队列
 
 	// 限速管理器（nft + tc）
 	rateLimitMgr *ratelimit.Manager
+
+	// rateLimitInit 是"配置级 apply"（面板开启/更新限速、agent 重连补推）时用来
+	// **落库 + 初始化 nft/tc 后端** 的回调。以前这条路径直接走 AssociateIP(ip="")，
+	// 而 Manager 只在 agent 启动时 Init 过 → 面板里开限速在节点上什么都不建
+	// （实测 192.168.2.50：journal 只有 `TASK_FAILED err=rate limit manager not initialized`）。
+	rateLimitInit func(ctx context.Context, maxDown, maxUp int32) error
 
 	// Persistent xray gRPC connection (lazy-initialized, reused across AlterUsers calls)
 	xrayConn   *grpc.ClientConn
@@ -134,6 +140,12 @@ func (a *LocalAgent) WithRateLimitManager(mgr *ratelimit.Manager) *LocalAgent {
 	return a
 }
 
+// WithRateLimitInitFunc 注入"配置级 apply 时初始化限速后端"的回调（见 rateLimitInit 字段）。
+func (a *LocalAgent) WithRateLimitInitFunc(fn func(ctx context.Context, maxDown, maxUp int32) error) *LocalAgent {
+	a.rateLimitInit = fn
+	return a
+}
+
 // WithDB injects the agent's local database for config snapshot persistence.
 func (a *LocalAgent) WithDB(db *gorm.DB) *LocalAgent {
 	a.db = db
@@ -192,23 +204,23 @@ func (a *LocalAgent) SyncConfig(ctx context.Context, coreType string, config []b
 
 	a.taskQueue.Submit(taskID, "sync_config", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
-		if err := a.procMgr.WriteRuntimeConfig(coreType, config); err != nil {
-			return nil, fmt.Errorf("write config: %w", err)
-		}
-		// Persist a local config snapshot so the node can self-heal when the
-		// panel is unreachable on restart.
-		if a.db != nil {
-			if err := a.db.Create(&entity.ConfigSnapshot{
-				ServerID:  a.serverID,
-				CoreType:  coreType,
-				Version:   version,
-				Config:    string(config),
-				CreatedAt: time.Now(),
-			}).Error; err != nil {
-				log.Printf("[LocalAgent] save config snapshot %s failed: %v", coreType, err)
+			if err := a.procMgr.WriteRuntimeConfig(coreType, config); err != nil {
+				return nil, fmt.Errorf("write config: %w", err)
 			}
-		}
-		log.Printf("[LocalAgent] config synced: %s (version=%d, %d bytes)", coreType, version, len(config))
+			// Persist a local config snapshot so the node can self-heal when the
+			// panel is unreachable on restart.
+			if a.db != nil {
+				if err := a.db.Create(&entity.ConfigSnapshot{
+					ServerID:  a.serverID,
+					CoreType:  coreType,
+					Version:   version,
+					Config:    string(config),
+					CreatedAt: time.Now(),
+				}).Error; err != nil {
+					log.Printf("[LocalAgent] save config snapshot %s failed: %v", coreType, err)
+				}
+			}
+			log.Printf("[LocalAgent] config synced: %s (version=%d, %d bytes)", coreType, version, len(config))
 			return map[string]interface{}{"core_type": coreType, "version": version}, nil
 		},
 		nil, // callback set by caller if needed
@@ -382,6 +394,16 @@ func (a *LocalAgent) AssociateIP(ctx context.Context, req *agentpb.AssociateIPRe
 
 // applyLimitsViaManager 使用 ratelimit.Manager 执行限速操作。
 func (a *LocalAgent) applyLimitsViaManager(ctx context.Context, req *agentpb.ApplyLimitsRequest) error {
+	// 配置级 apply（不带 IP）：面板开启/更新限速、或 agent 重连补推时走这里。
+	// 语义是"初始化/更新后端配置"，**不是**给某个 IP 套规则 —— 以前传空 IP 进 Manager.AssociateIP
+	// 会直接报 `rate limit manager not initialized`，导致面板开了限速而节点上 nft/tc/IFB 全无。
+	if req.Action == "apply" && req.Ip == "" {
+		if a.rateLimitInit == nil {
+			return fmt.Errorf("rate limit init callback not configured")
+		}
+		return a.rateLimitInit(ctx, req.MaxDownMbps, req.MaxUpMbps)
+	}
+
 	if a.rateLimitMgr == nil {
 		return fmt.Errorf("rate limit manager not configured")
 	}
@@ -426,8 +448,8 @@ func (a *LocalAgent) GetStatus(ctx context.Context) (*agentpb.GetStatusResponse,
 	cores := make([]*agentpb.CoreStatus, 0, len(allProcs))
 	for _, p := range allProcs {
 		cores = append(cores, &agentpb.CoreStatus{
-			CoreType:       p.CoreType,
-			State:          p.State,
+			CoreType:      p.CoreType,
+			State:         p.State,
 			Pid:           int32(p.PID),
 			UptimeSeconds: p.Uptime,
 			CpuUsage:      p.CPU,

@@ -46,7 +46,19 @@ type ACMEAccountInfo struct {
 	EABMACKey  string
 }
 
-// EABConfigInfo 是从**独立** EAB 配置里取到的内容 ✓。
+// caNeedsEAB 判断某个 CA 是否**强制要求** EAB ✓ —— Google Public CA ✓、ZeroSSL ✓
+// （真机验证过：ZeroSSL 报 externalAccountRequired ✓、Google 报 Accounts must have at least one contact ✓）。
+// Let's Encrypt **不需要** EAB ✓（传了也无害 ✓）。
+func caNeedsEAB(caProvider string) bool {
+	switch strings.ToLower(strings.TrimSpace(caProvider)) {
+	case "google", "zerossl":
+		return true
+	default:
+		return false
+	}
+}
+
+// EABConfigInfo 是"从独立 EAB 配置里取到的内容" ✓。
 type EABConfigInfo struct {
 	Name       string
 	CAProvider string
@@ -58,6 +70,9 @@ type EABConfigInfo struct {
 // 签发时只选关联 ✓，不用手填 EAB-KID / EAB-HMAC-Key ✗。
 type EABConfigResolver interface {
 	ResolveEABConfig(ctx context.Context, id int64) (*EABConfigInfo, error)
+	// ResolveEABConfigForCA 按 CA **自动关联**一份 EAB ✓（Google / ZeroSSL 用 ✓）。
+	// 返回 (nil, nil) 表示该 CA 没配过 EAB ✓（不当作错误 ✗，由调用方决定怎么提示 ✓）。
+	ResolveEABConfigForCA(ctx context.Context, caProvider string) (*EABConfigInfo, error)
 }
 
 // ACMEEmailResolver 解析 ACME 账号（由面板的 ACME 邮箱/账号服务实现 ✓）。
@@ -477,6 +492,32 @@ func (h *Handler) Issue(c *gin.Context) {
 				}
 			}
 		}
+	}
+
+	// ③ **自动关联** ✓：CA 需要 EAB（Google / ZeroSSL ✓）而上面都没拿到 EAB 时 ✓，
+	// 面板自动按 CA 挑一份已配置的 EAB ✓ —— 用户只需选 CA ✓，不用再管 EAB ✗。
+	if eabMAC == "" && caNeedsEAB(caProvider) {
+		if h.eabConfigs == nil {
+			response.InternalError(c, "NO_EAB_RESOLVER", "EAB config resolver is not configured on the panel")
+			return
+		}
+		cfg, aerr := h.eabConfigs.ResolveEABConfigForCA(c.Request.Context(), caProvider)
+		if aerr != nil {
+			response.InternalError(c, "EAB_LOOKUP_FAILED", aerr.Error())
+			return
+		}
+		if cfg == nil {
+			// 说清楚怎么办 ✓（否则只会看到 CA 那边一句 externalAccountRequired ✗ 很难排查 ✗）
+			response.BadRequest(c, "EAB_CONFIG_REQUIRED",
+				"CA '"+caProvider+"' requires EAB; please add one under EAB Configs first")
+			return
+		}
+		if strings.TrimSpace(cfg.CAProvider) != "" {
+			caProvider = strings.TrimSpace(cfg.CAProvider)
+		}
+		eabKID = strings.TrimSpace(cfg.KeyID)
+		eabMAC = strings.TrimSpace(cfg.MACKey)
+		log.Printf("[cert] EAB auto-associated by CA: ca=%q eab_config=%q kid=%s", caProvider, cfg.Name, eabKID)
 	}
 
 	input := certService.IssueACMEInput{

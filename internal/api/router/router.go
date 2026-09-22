@@ -3979,6 +3979,23 @@ type eabConfigAdapter struct {
 	svc *certService.EABConfigService
 }
 
+// ResolveEABConfigForCA 按 CA 自动关联一份 EAB ✓（找不到返回 nil,nil ✓）。
+func (a eabConfigAdapter) ResolveEABConfigForCA(ctx context.Context, caProvider string) (*certsHandler.EABConfigInfo, error) {
+	if a.svc == nil {
+		return nil, nil
+	}
+	cfg, err := a.svc.GetByCA(ctx, caProvider)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+	return &certsHandler.EABConfigInfo{
+		Name:       cfg.Name,
+		CAProvider: cfg.CAProvider,
+		KeyID:      cfg.KeyID,
+		MACKey:     cfg.MACKey,
+	}, nil
+}
+
 func (a eabConfigAdapter) ResolveEABConfig(ctx context.Context, id int64) (*certsHandler.EABConfigInfo, error) {
 	if a.svc == nil {
 		return nil, fmt.Errorf("eab config service not available")

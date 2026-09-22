@@ -20,6 +20,14 @@ type BootstrapTokenManager struct {
 	caService  *CertificateAuthority
 }
 
+// CACertPEM 返回面板 CA 证书（供安装脚本自动下发给 Agent）。
+func (m *BootstrapTokenManager) CACertPEM() []byte {
+	if m == nil || m.caService == nil {
+		return nil
+	}
+	return m.caService.GetCACertPEM()
+}
+
 // NewBootstrapTokenManager creates a new BootstrapTokenManager.
 func NewBootstrapTokenManager(serverRepo *repository.NodeServerRepository, ca *CertificateAuthority) *BootstrapTokenManager {
 	return &BootstrapTokenManager{

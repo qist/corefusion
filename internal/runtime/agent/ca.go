@@ -5,9 +5,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -310,20 +312,32 @@ func (ca *CertificateAuthority) ClientCAPool() *x509.CertPool {
 
 // GetCACertPEM returns the CA root certificate bundle PEM (Agents need this to
 // verify the panel).
+// CAFingerprint 返回当前 CA 证书的 SHA-256 指纹（hex）。安装脚本会把它随 CA 证书一起
+// 下发给 Agent，Agent 引导阶段据此**真正校验面板身份** —— 全程自动，不需要任何人手工填。
+func (ca *CertificateAuthority) CAFingerprint() string {
+	pemBytes := ca.GetCACertPEM()
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return ""
+	}
+	sum := sha256.Sum256(block.Bytes)
+	return hex.EncodeToString(sum[:])
+}
+
 func (ca *CertificateAuthority) GetCACertPEM() []byte {
 	return ca.GetCABundlePEM()
 }
 
 // CAStatus describes a single CA root for observability/ops.
 type CAStatus struct {
-	Subject     string    `json:"subject"`
-	NotBefore   time.Time `json:"not_before"`
-	NotAfter    time.Time `json:"not_after"`
-	ExpiresIn   string    `json:"expires_in"`   // human-readable remaining validity
-	IsOutgoing  bool      `json:"is_outgoing"`  // soonest-expiring (being replaced) during rotation
-	IsIncoming  bool      `json:"is_incoming"`  // newest CA (signs new certificates)
-	InOverlap   bool      `json:"in_overlap"`   // within CAOverlapWindow of expiry
-	SerialNumber string   `json:"serial_number"`
+	Subject      string    `json:"subject"`
+	NotBefore    time.Time `json:"not_before"`
+	NotAfter     time.Time `json:"not_after"`
+	ExpiresIn    string    `json:"expires_in"`  // human-readable remaining validity
+	IsOutgoing   bool      `json:"is_outgoing"` // soonest-expiring (being replaced) during rotation
+	IsIncoming   bool      `json:"is_incoming"` // newest CA (signs new certificates)
+	InOverlap    bool      `json:"in_overlap"`  // within CAOverlapWindow of expiry
+	SerialNumber string    `json:"serial_number"`
 }
 
 // ListCAStatus returns the status of all loaded (valid) CA roots, soonest-
@@ -333,13 +347,13 @@ func (ca *CertificateAuthority) ListCAStatus() []CAStatus {
 	for i, e := range ca.entries {
 		remaining := time.Until(e.cert.NotAfter)
 		st := CAStatus{
-			Subject:     e.cert.Subject.CommonName,
-			NotBefore:   e.cert.NotBefore,
-			NotAfter:    e.cert.NotAfter,
-			ExpiresIn:   remaining.Round(time.Hour).String(),
-			IsOutgoing:  i == 0 && len(ca.entries) > 1,
-			IsIncoming:  i == len(ca.entries)-1,
-			InOverlap:   remaining <= CAOverlapWindow,
+			Subject:      e.cert.Subject.CommonName,
+			NotBefore:    e.cert.NotBefore,
+			NotAfter:     e.cert.NotAfter,
+			ExpiresIn:    remaining.Round(time.Hour).String(),
+			IsOutgoing:   i == 0 && len(ca.entries) > 1,
+			IsIncoming:   i == len(ca.entries)-1,
+			InOverlap:    remaining <= CAOverlapWindow,
 			SerialNumber: e.cert.SerialNumber.String(),
 		}
 		out = append(out, st)

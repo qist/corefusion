@@ -791,7 +791,11 @@ func (h *Handler) fetchAgentChecksum(downloadURL string) string {
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
-	data, _ := io.ReadAll(resp.Body)
+	// .sha256 只有几十字节 → 加上限；超限按"拿不到校验和"处理（调用方已有兜底）
+	data, err := netutil.ReadLimited(resp.Body, netutil.MaxChecksumBytes)
+	if err != nil {
+		return ""
+	}
 	parts := strings.Fields(string(data))
 	if len(parts) > 0 {
 		return parts[0]

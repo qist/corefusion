@@ -82,6 +82,39 @@ func NewSafeHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	}
 }
 
+// ReadLimited 读取 r 的全部内容，但**最多 maxBytes**，超出即报错。
+//
+// ⚠ 不要用 `io.LimitReader` 静默截断 ✗ —— 那会让"下载到一半的二进制/JSON"被当成完整内容使用
+// （二进制校验和会算错、JSON 解析会给出误导性错误）。这里明确报错。
+func ReadLimited(r io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("ReadLimited: maxBytes must be > 0")
+	}
+	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("response exceeds %d bytes", maxBytes)
+	}
+	return data, nil
+}
+
+// CopyLimited 把 src 复制到 dst，最多 maxBytes，超出即报错（用于"落盘 + 期望知道实际大小"的场景）。
+func CopyLimited(dst io.Writer, src io.Reader, maxBytes int64) (int64, error) {
+	if maxBytes <= 0 {
+		return 0, fmt.Errorf("CopyLimited: maxBytes must be > 0")
+	}
+	n, err := io.Copy(dst, io.LimitReader(src, maxBytes+1))
+	if err != nil {
+		return n, err
+	}
+	if n > maxBytes {
+		return n, fmt.Errorf("response exceeds %d bytes", maxBytes)
+	}
+	return n, nil
+}
+
 // SafeFetchGET 抓取一个用户可控的 URL：限制协议、禁止跳转、拒绝内网地址、限制响应体大小。
 //
 // 返回的 error 在"地址被拒"时可用 errors.Is(err, ErrBlockedAddress) 判定。
@@ -123,13 +156,17 @@ func safeFetchGETWithClient(ctx context.Context, client *http.Client, rawURL str
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
-	// 多读 1 字节用于判断"是否超限"，避免把超大响应读进内存。
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("response exceeds %d bytes", maxBytes)
-	}
-	return data, nil
+	return ReadLimited(resp.Body, maxBytes)
 }
+
+// 各类响应的大小上限。取值都留了充足余量（远大于正常情况），只为拦住异常/恶意响应把内存或磁盘撑爆。
+const (
+	// MaxJSONResponseBytes：GitHub API 之类的 JSON 响应上限。
+	MaxJSONResponseBytes int64 = 8 << 20 // 8 MiB
+	// MaxChecksumBytes：`.sha256` 校验和文件上限。
+	MaxChecksumBytes int64 = 64 << 10 // 64 KiB
+	// MaxBinaryBytes：核心/Agent 二进制上限（整块读进内存做格式校验时使用）。
+	MaxBinaryBytes int64 = 1 << 30 // 1 GiB
+	// MaxGeoRuleBytes：geo 规则文件落盘上限。
+	MaxGeoRuleBytes int64 = 1 << 30 // 1 GiB
+)

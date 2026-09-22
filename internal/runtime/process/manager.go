@@ -1,6 +1,7 @@
 package process
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -150,6 +151,24 @@ func NewManager(dataDir string, svcRepo *repository.ServiceRepository, guardRepo
 // under data/runtime/<coreType>.jsonc. It uses a mutex to prevent concurrent
 // writes from configsync.Service and LocalAgent.SyncConfig, which both write
 // to the same path.
+// RuntimeConfigPath 返回某核心运行时配置的落盘路径。
+func (m *Manager) RuntimeConfigPath(coreType string) string {
+	return filepath.Join(m.dataDir, "runtime", coreType+".jsonc")
+}
+
+// RuntimeConfigChanged 判断把 data 写下去是否会**真的改变**磁盘上的配置。
+//
+// 用途：SyncData 的 reload_strategy=none 原本是"只写文件、不碰运行中的进程" ✗ ——
+// 真机上这会让**配置变更静默不生效**（远程节点核心两天没重载、链式配置写了从未加载 ✗）。
+// 用这个判断把语义修正为"**内容变了就重启**"，既保证变更生效 ✓，又避免每次同步都白重启 ✗。
+func (m *Manager) RuntimeConfigChanged(coreType string, data []byte) bool {
+	old, err := os.ReadFile(m.RuntimeConfigPath(coreType))
+	if err != nil {
+		return true // 还没有旧配置 → 视为变更
+	}
+	return !bytes.Equal(bytes.TrimSpace(old), bytes.TrimSpace(data))
+}
+
 func (m *Manager) WriteRuntimeConfig(coreType string, data []byte) error {
 	m.configMu.Lock()
 	defer m.configMu.Unlock()

@@ -97,6 +97,38 @@ ACME 自动化（`acme.go` 10 项 + `tls_acme.go` 13 项，面板有独立的证
 客户端专属的那批（`package_name` / `wifi_*` / `network_is_*` / `source_hostname`）建议**先不做**，
 除非要做"给最终用户生成客户端配置"的功能。
 
+---
+
+## 2.6 实施结果与本轮实测到的**硬约束**（2026-09-22）
+
+### 已完成（全部经 `sing-box check` 实证）
+
+| 区域 | 字段 | 实测约束（配错会让核心**拒绝启动**） |
+|---|---|---|
+| route 顶层 | `default_network_strategy` | 合法值**只有 `hybrid` / `fallback`**（写别的报 `unknown network strategy`）；**必须同时开 `auto_detect_interface`**（否则 `auto_detect_interface is required by default_network_strategy`） |
+| route 顶层 | `default_network_type` / `default_fallback_network_type` | 取值 `wifi` / `cellular` / `ethernet` / `other` |
+| route 顶层 | `default_fallback_delay` | duration，非法值 FATAL |
+| route 顶层 | `default_http_client` | 出站 tag |
+| 规则 matcher | `clash_mode` / `interface_address` / `network_interface_address` / `default_interface_address` | `interface_address` 是 **map**（接口名 → 地址段）；这几个是**规则级 matcher**，放进 `route-options` 动作会报 `empty route option action` |
+| route-options | `udp_disable_domain_unmapping` / `udp_connect` / `udp_timeout` / `network_strategy` / `fallback_delay` | 同 `network_strategy` 取值限制；`udp_timeout` 是 duration |
+| reject 动作 | `method`（default/drop/reply）+ `no_drop` | **`method=drop` 时不能带 `no_drop`**（`no_drop is not available in current context`） |
+| DNS 规则 | `query_dnssec` / `query_client_subnet` / 动作 `speculative` | 均可用 ✓ |
+
+### 实测后判定**不适用**的（从缺口里移除）
+
+| 项 | 实测结论 |
+|---|---|
+| `debug.*`（`memory_limit` / `oom_killer` / `gc_percent` / `max_stack` / `max_threads` / `panic_on_fault` / `trace_back`） | **sing-box 根配置里没有 `debug` 字段**（`FATAL decode config: debug: json: unknown field "debug"`）→ 这个结构体不在配置面上，界面**不需要**暴露 |
+| `inbound.udp_disable_domain_unmapping` / `inbound.proxy_protocol_accept_no_header` | `FATAL …: legacy inbound fields are deprecated in 1.11.0 and removed in 1.13.0` → **已移到规则动作**（本轮的 route-options 里已提供） |
+| `oom_killer` 的 4 个子项 | 它属于 **`services`**（`OOMKillerServiceOptions`，根配置的 `services[]`），不是 `debug` 的子项 → 属"服务"这一块能力，另立需求 |
+| DNS 应答匹配（`match_response` + `response_rcode` / `response_answer` / `response_ns` / `response_extra` / `ip_accept_any`） | `FATAL validate dns rule[1]: response-based matching requires a preceding evaluate action` → 需要**先有一条 `evaluate` 动作规则**才能用，是个独立特性（本轮未做，已在清单里保留） |
+
+### 顺带修掉的一个 bug（上一轮引入）
+`SingboxRoute.vue` 的第二个构建站点（由**已存规则对象**构造，字段是原始 JSON 名）里
+`applyRouteOptions()` 只认 camelCase → 那条路径上 `tls_fragment` / `tls_spoof` 等**根本没写出去**。
+本轮把 `applyRouteOptions` / `applyRejectOptions` 都改成**双命名兼容**（`src[a] !== undefined ? src[a] : src[b]`），
+并新增 `applyExtraMatchersRaw()` 处理同一问题。
+
 ## 3. 建议顺序
 
 0. **按 §2.5 修正后的口径做**（服务端可用优先；客户端专属暂缓）

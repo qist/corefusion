@@ -12,6 +12,11 @@ import (
 	"corefusion/internal/model/entity"
 )
 
+// nodeACMEChallengeDir 是**节点上** ACME 挑战文件的落盘目录 ✓。
+// 必须与 Agent 侧保持一致 ✗（cmd/agent/acme_webserver.go 的 acmeChallengeDir ✓），
+// 且**不能在 /tmp** ✗ —— nginx 服务单元常带 PrivateTmp=yes ✗，放 /tmp 会恒 404 ✗（真机踩过 ✓）。
+const nodeACMEChallengeDir = "/var/lib/corefusion-agent/acme-challenge"
+
 // ensureSymlink creates a symlink, removing existing file/symlink first.
 func ensureSymlink(path, target string) {
 	os.Remove(path)
@@ -151,8 +156,8 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	// without lua_package_path the Lua VM cannot locate modules and nginx may
 	// fail to start when any lua_* directive is encountered.
 	// Always emit these unconditionally.
-sb.WriteString("    lua_package_path \"proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;\";\n")
-sb.WriteString("    lua_code_cache on;\n")
+	sb.WriteString("    lua_package_path \"proxy/lua/?.lua;proxy/lua/?/init.lua;proxy/lua/waf/?.lua;;\";\n")
+	sb.WriteString("    lua_code_cache on;\n")
 
 	// WAF directives (only when WAF is enabled)
 	if s.WAFEnabled {
@@ -162,7 +167,6 @@ sb.WriteString("    lua_code_cache on;\n")
 		sb.WriteString("    init_by_lua_file proxy/lua/waf/init.lua;\n")
 		sb.WriteString("    access_by_lua_file proxy/lua/waf/access.lua;\n")
 	}
-
 
 	// Maps
 	sb.WriteString("    map $http_x_forwarded_for $clientRealIp {\n")
@@ -490,7 +494,7 @@ sb.WriteString("    lua_code_cache on;\n")
 			if hasTLS {
 				listenPort = "443"
 			} else {
-			listenPort = "80"
+				listenPort = "80"
 			}
 		}
 
@@ -607,7 +611,19 @@ sb.WriteString("    lua_code_cache on;\n")
 			}
 		}
 
-		// ACME HTTP-01 challenge support (local node only)
+		// ACME HTTP-01 challenge support
+		//
+		// 分两种，必须区分 ✗：
+		//   - **本机（面板）**：面板自己驱动签发 ✓ → 挑战**代理回面板** ✓（面板内存里就有挑战记录 ✓）；
+		//   - **远程节点**：签发是**节点上的 Agent 在本机做**的 ✓ → 它的挑战记录在 Agent 进程内存里，
+		//     面板并不知道 ✗ → 所以**不能代理回面板** ✗，必须直接服务**节点本地的挑战目录** ✓
+		//     （Agent 会把挑战文件写在那里 ✓，见 cmd/agent/acme_webserver.go ✓）。
+		if !m.isLocal {
+			sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
+			sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
+			sb.WriteString(fmt.Sprintf("            alias %s/.well-known/acme-challenge/;\n", nodeACMEChallengeDir))
+			sb.WriteString("        }\n")
+		}
 		if m.isLocal {
 			panelAddr := m.panelAddr(ctx)
 			sb.WriteString("        # ACME HTTP-01 challenge support\n")
@@ -672,33 +688,33 @@ sb.WriteString("    lua_code_cache on;\n")
 			sb.WriteString(fmt.Sprintf("        location %s {\n", path))
 			sb.WriteString(wafBypass)
 
-		switch site.Template {
-		case "static":
-			rootDir := strings.TrimSpace(site.Upstream)
-			if rootDir == "" {
-				rootDir = "/var/www"
-			}
-			sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
-			sb.WriteString("            index index.html index.htm;\n")
-			sb.WriteString("            try_files $uri $uri/ =404;\n")
-		case "websocket", "xhttp", "httpupgrade":
-			// If backend_path is root ("/"), add trailing slash to strip the location prefix
-			// If backend_path has a specific path, no trailing slash to preserve the full URI
-			if backendPath == "/" {
-				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s/;\n", upstreamKey))
-			} else {
-				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s;\n", upstreamKey))
-			}
-			sb.WriteString("            proxy_http_version 1.1;\n")
-			sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
-			sb.WriteString("            proxy_set_header Connection $connection_upgrade;\n")
-			sb.WriteString("            proxy_set_header Host $host;\n")
-			sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
-			sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-			sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-			sb.WriteString("            proxy_set_header X-NginX-Proxy true;\n")
-			sb.WriteString("            proxy_ssl_session_reuse off;\n")
-			sb.WriteString("            proxy_redirect off;\n")
+			switch site.Template {
+			case "static":
+				rootDir := strings.TrimSpace(site.Upstream)
+				if rootDir == "" {
+					rootDir = "/var/www"
+				}
+				sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
+				sb.WriteString("            index index.html index.htm;\n")
+				sb.WriteString("            try_files $uri $uri/ =404;\n")
+			case "websocket", "xhttp", "httpupgrade":
+				// If backend_path is root ("/"), add trailing slash to strip the location prefix
+				// If backend_path has a specific path, no trailing slash to preserve the full URI
+				if backendPath == "/" {
+					sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s/;\n", upstreamKey))
+				} else {
+					sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s;\n", upstreamKey))
+				}
+				sb.WriteString("            proxy_http_version 1.1;\n")
+				sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
+				sb.WriteString("            proxy_set_header Connection $connection_upgrade;\n")
+				sb.WriteString("            proxy_set_header Host $host;\n")
+				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
+				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+				sb.WriteString("            proxy_set_header X-NginX-Proxy true;\n")
+				sb.WriteString("            proxy_ssl_session_reuse off;\n")
+				sb.WriteString("            proxy_redirect off;\n")
 			default:
 				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s;\n", upstreamKey))
 				sb.WriteString("            proxy_http_version 1.1;\n")
@@ -736,10 +752,10 @@ sb.WriteString("    lua_code_cache on;\n")
 		}
 		sb.WriteString(fmt.Sprintf("    # Reality :%s\n", port))
 		sb.WriteString("    server {\n")
-        sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
-        if rs.EnableIpv6 {
-            sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
-        }
+		sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
+		if rs.EnableIpv6 {
+			sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
+		}
 		sb.WriteString("        http2 on;\n")
 		if rs.Domain == "" {
 			sb.WriteString("        server_name _;\n")

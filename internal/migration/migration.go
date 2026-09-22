@@ -306,7 +306,33 @@ func RunDataMigrations(db *gorm.DB) error {
 
 	// Migrate legacy chain_entry/chain_exit to new chain_links model
 
+	// v2.0：链式出口改为"使用出口节点上已有的入站"，旧模式（chain_exit_configs）已彻底移除 →
+	// 该表不再被任何代码使用，直接删除（幂等；删前打印行数留底）。
+	dropLegacyChainExitConfigs(db)
+
 	return nil
+}
+
+// dropLegacyChainExitConfigs 删除链式旧模式遗留的 `chain_exit_configs` 表。
+//
+// 背景：v2.0 起链式出口一律使用"出口节点上已有的入站"（chain_links.exit_inbound_id），
+// 旧的 chain_exit_configs（自动创建 relay 中转入口）连同实体/仓库/接口一起删除了
+// （见 17bb1493、ed20abd1）。表留着只会让人误会它还在生效 → 这里直接 drop。
+//
+// 幂等：先判 HasTable ✓，表不存在时什么都不做 ✓。
+func dropLegacyChainExitConfigs(db *gorm.DB) {
+	if !db.Migrator().HasTable("chain_exit_configs") {
+		return
+	}
+	var rows int64
+	if err := db.Table("chain_exit_configs").Count(&rows).Error; err == nil {
+		log.Printf("[migration] dropping legacy chain_exit_configs table (%d rows, mode removed in chain v2.0)", rows)
+	} else {
+		log.Printf("[migration] dropping legacy chain_exit_configs table (mode removed in chain v2.0)")
+	}
+	if err := db.Migrator().DropTable("chain_exit_configs"); err != nil {
+		log.Printf("[migration] drop chain_exit_configs failed: %v", err)
+	}
 }
 
 // migrateUniqueIndexes drops legacy single-column unique indexes and
@@ -402,8 +428,8 @@ func recreateIndex(db *gorm.DB, table, indexName, createSQL string) {
 // migrateChargeCardEncryption v3.3: 迁移 charge_cards 从明文 card_code 到加密存储。
 // 旧表有 card_code 明文列，新 schema 用 card_code_hash (SHA-256) + card_code_encrypted (AES-256-GCM)。
 // 迁移步骤：
-//   1. AutoMigrate 已添加新列 (card_code_hash, card_code_encrypted, created_by_admin_id, created_by_admin_name)
-//   2. 对已有行：card_code → hash + encrypt，然后删除旧 card_code 列
+//  1. AutoMigrate 已添加新列 (card_code_hash, card_code_encrypted, created_by_admin_id, created_by_admin_name)
+//  2. 对已有行：card_code → hash + encrypt，然后删除旧 card_code 列
 func migrateChargeCardEncryption(db *gorm.DB) {
 	// 检查是否有旧的 card_code 明文列(兼容 SQLite: 用 Migrator().HasColumn,
 	// 而非 information_schema.columns,后者在 SQLite 上不存在)。
@@ -608,19 +634,19 @@ func migratePlansToTemplates(db *gorm.DB) {
 	hasPlanNodesTable := db.Migrator().HasTable("plan_nodes")
 
 	type legacyPlan struct {
-		ID                       int64              `gorm:"column:id"`
-		Name                     string             `gorm:"column:name"`
-		Description              string             `gorm:"column:description"`
-		QuotaBytes               int64              `gorm:"column:quota_bytes"`
-		Duration                 int                `gorm:"column:duration"`
-		Enabled                  bool               `gorm:"column:enabled"`
-		SortOrder                int                `gorm:"column:sort_order"`
-		BillingUsedTemplate      string             `gorm:"column:billing_used_template"`
-		BillingRemainingTemplate string             `gorm:"column:billing_remaining_template"`
-		BillingResetTemplate     string             `gorm:"column:billing_reset_template"`
-		BillingExpiryTemplate    string             `gorm:"column:billing_expiry_template"`
-		BillingInboundConfigIDs  entity.Int64List   `gorm:"column:billing_inbound_config_ids"`
-		BillingExternalNodeIDs   entity.Int64List   `gorm:"column:billing_external_node_ids"`
+		ID                       int64            `gorm:"column:id"`
+		Name                     string           `gorm:"column:name"`
+		Description              string           `gorm:"column:description"`
+		QuotaBytes               int64            `gorm:"column:quota_bytes"`
+		Duration                 int              `gorm:"column:duration"`
+		Enabled                  bool             `gorm:"column:enabled"`
+		SortOrder                int              `gorm:"column:sort_order"`
+		BillingUsedTemplate      string           `gorm:"column:billing_used_template"`
+		BillingRemainingTemplate string           `gorm:"column:billing_remaining_template"`
+		BillingResetTemplate     string           `gorm:"column:billing_reset_template"`
+		BillingExpiryTemplate    string           `gorm:"column:billing_expiry_template"`
+		BillingInboundConfigIDs  entity.Int64List `gorm:"column:billing_inbound_config_ids"`
+		BillingExternalNodeIDs   entity.Int64List `gorm:"column:billing_external_node_ids"`
 	}
 
 	var plans []legacyPlan
@@ -681,21 +707,21 @@ func migratePlansToTemplates(db *gorm.DB) {
 
 		// Create plan template
 		tmpl := &entity.PlanTemplate{
-			Name:                       plan.Name,
-			Description:                plan.Description,
-			Category:                   entity.PlanCategoryStandard,
-			NodeGroupIDs:               entity.Int64List{nodeGroup.ID},
-			DefaultQuotaBytes:          plan.QuotaBytes,
-			DefaultQuotaResetCycle:     "none",
-			SuspendOnQuotaExhausted:    1,
-			BillingUsedTemplate:        plan.BillingUsedTemplate,
-			BillingRemainingTemplate:   plan.BillingRemainingTemplate,
-			BillingResetTemplate:       plan.BillingResetTemplate,
-			BillingExpiryTemplate:      plan.BillingExpiryTemplate,
-			SortOrder:                  plan.SortOrder,
-			Enabled:                    plan.Enabled,
-			CreatedAt:                  now,
-			UpdatedAt:                  now,
+			Name:                     plan.Name,
+			Description:              plan.Description,
+			Category:                 entity.PlanCategoryStandard,
+			NodeGroupIDs:             entity.Int64List{nodeGroup.ID},
+			DefaultQuotaBytes:        plan.QuotaBytes,
+			DefaultQuotaResetCycle:   "none",
+			SuspendOnQuotaExhausted:  1,
+			BillingUsedTemplate:      plan.BillingUsedTemplate,
+			BillingRemainingTemplate: plan.BillingRemainingTemplate,
+			BillingResetTemplate:     plan.BillingResetTemplate,
+			BillingExpiryTemplate:    plan.BillingExpiryTemplate,
+			SortOrder:                plan.SortOrder,
+			Enabled:                  plan.Enabled,
+			CreatedAt:                now,
+			UpdatedAt:                now,
 		}
 		if err := db.Create(tmpl).Error; err != nil {
 			log.Printf("WARNING: create plan template for plan %d: %v", plan.ID, err)

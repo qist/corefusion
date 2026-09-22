@@ -2,6 +2,7 @@ package main
 
 import (
 	"corefusion/internal/model/entity"
+	"log"
 
 	"gorm.io/gorm"
 )
@@ -13,7 +14,7 @@ import (
 func migrateAgentTables(database *gorm.DB) error {
 	// Only migrate the tables needed by the Agent, not the full Panel schema.
 	// We use AutoMigrate with a subset of entities.
-	return database.AutoMigrate(
+	if err := database.AutoMigrate(
 		// Process management tables
 		&entity.InboundService{},
 		&entity.ProcessGuardian{},
@@ -38,5 +39,16 @@ func migrateAgentTables(database *gorm.DB) error {
 		&entity.LogRotationJob{},
 		// Config snapshot table (data localization: restore last known config on startup)
 		&entity.ConfigSnapshot{},
-	)
+	); err != nil {
+		return err
+	}
+	// v2.0：链式旧模式的 chain_exit_configs 表已废弃（不再被任何代码使用）→ 幂等删除
+	if database.Migrator().HasTable("chain_exit_configs") {
+		if err := database.Migrator().DropTable("chain_exit_configs"); err != nil {
+			log.Printf("[migrate] drop legacy chain_exit_configs failed: %v", err)
+		} else {
+			log.Printf("[migrate] dropped legacy chain_exit_configs table (chain v2.0)")
+		}
+	}
+	return nil
 }

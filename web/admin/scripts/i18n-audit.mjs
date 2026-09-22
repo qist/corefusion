@@ -1,8 +1,12 @@
 // i18n 审计：把前端所有 t('x.y') 用到的键 与 zh-CN / en 两个语言包比对
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
 
-const SRC = '/opt/corefusion/web/admin/src'
+// ⚠ 不能写死绝对路径 ✗（原来写的是 '/opt/corefusion/web/admin/src'）：换目录/在别处跑时会
+// 审计错误的位置，甚至"审了个不存在但恰好有旧文件"的树 → 给出**假通过** ✗。
+// 从脚本自身位置推导：<web/admin>/scripts/i18n-audit.mjs → <web/admin>/src
+const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src')
 
 function flatten(obj, prefix = '', out = new Set()) {
   for (const [k, v] of Object.entries(obj || {})) {

@@ -391,6 +391,9 @@ func (s *Service) ChangePassword(ctx context.Context, clientID int64, oldPwd, ne
 // errNotClientToken 表示 token 合法但主体不是客户端（例如管理端用户）。
 var errNotClientToken = errors.New("token subject is not a client")
 
+// errClientTokenRevoked 表示 token 已被登出/踢下线吊销（令牌版本不匹配）。
+var errClientTokenRevoked = errors.New("client token has been revoked; please sign in again")
+
 // ValidateAccessToken validates a JWT token and returns the client ID.
 func (s *Service) ValidateAccessToken(tokenStr string) (int64, error) {
 	claims, err := s.jwt.ValidateTyped(tokenStr, jwt.TokenTypeAccess)
@@ -419,7 +422,27 @@ func (s *Service) ValidateClientAccessToken(tokenStr string) (int64, error) {
 	if !strings.EqualFold(claims.Role, "client") {
 		return 0, errNotClientToken
 	}
+	// 令牌版本校验：登出/踢下线后（版本 +1）旧 token 立即失效 ✗→✓
+	if s.clientRepo != nil {
+		tv, verr := s.clientRepo.GetTokenVersion(context.Background(), claims.UserID)
+		if verr != nil {
+			return 0, verr
+		}
+		if tv != claims.TokenVersion {
+			return 0, errClientTokenRevoked
+		}
+	}
 	return claims.UserID, nil
+}
+
+// Logout 让该客户端此前签发的**所有** token（含 refresh）立即失效（版本 +1）。
+//
+// 与"只清前端本地存储"的区别：后者对服务端无效 ✗ —— 被窃取的 access/refresh 在有效期内仍可用。
+func (s *Service) Logout(ctx context.Context, clientID int64) error {
+	if clientID <= 0 {
+		return fmt.Errorf("invalid client id")
+	}
+	return s.clientRepo.BumpTokenVersion(ctx, clientID)
 }
 
 // RefreshToken validates a refresh token and issues a new token pair.
@@ -439,16 +462,23 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 		return nil, err
 	}
 
+	// ⚠ 还要校验令牌版本 ✗：否则"登出后拿旧 refresh 继续续签"仍然通（管理端 M8 已经踩过这个洞）
+	if client.TokenVersion != claims.TokenVersion {
+		return nil, errClientTokenRevoked
+	}
+
 	return s.generateTokens(client)
 }
 
 func (s *Service) generateTokens(client *entity.Client) (*TokenResponse, error) {
-	accessToken, err := s.jwt.GenerateAccessToken(client.ID, client.Email, "client")
+	// 带上 token_version：登出/踢下线后版本 +1 → 旧 token 立即失效（审计 v5 M8 的机制，
+	// 本轮把它补到客户端侧；以前客户端登出只清前端本地存储，服务端仍认旧 token ✗）。
+	accessToken, err := s.jwt.GenerateAccessTokenWithVersion(client.ID, client.Email, "client", client.TokenVersion)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.jwt.GenerateRefreshToken(client.ID, client.Email, "client")
+	refreshToken, err := s.jwt.GenerateRefreshTokenWithVersion(client.ID, client.Email, "client", client.TokenVersion)
 	if err != nil {
 		return nil, err
 	}

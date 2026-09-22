@@ -103,3 +103,43 @@ func TestRendererSnippetHasNoBacktick(t *testing.T) {
 		t.Error("默认门户 JS 也应内置 renderMdUntrusted（新装门户直接安全）")
 	}
 }
+
+// 客户端登出也必须对**存量模板**生效：旧 doLogout 只清本地存储（服务端仍认旧 token ✗），
+// 补丁要把它换成"先调 /client-auth/logout 吊销（令牌版本 +1）"。
+func TestPatchTemplateSecurityUpgradesLogout(t *testing.T) {
+	js := `var ref = Vue.ref
+    var doLogout = function() {
+      token.value = ''
+      refreshToken.value = ''
+      localStorage.removeItem('client_token')
+      localStorage.removeItem('client_refresh_token')
+      client.value = {}
+    }
+var other = 1
+`
+	_, newJS, changed := PatchTemplateSecurity("", js)
+	if !changed {
+		t.Fatal("含旧 doLogout 的模板应被判定为需要修改")
+	}
+	if !strings.Contains(newJS, "/api/v1/client-auth/logout") {
+		t.Error("登出应先在服务端吊销（否则旧实现只清本地存储、服务端照旧认 token）")
+	}
+	if !strings.Contains(newJS, "Authorization") {
+		t.Error("吊销请求要带 Authorization 头")
+	}
+	if !strings.Contains(newJS, "localStorage.removeItem('client_token')") {
+		t.Error("本地清理仍要保留（否则前端状态残留）")
+	}
+	if !strings.Contains(newJS, "var other = 1") {
+		t.Error("其它代码不得被改动")
+	}
+
+	// 幂等：再跑一次不应再改
+	_, again, changed2 := PatchTemplateSecurity("", newJS)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if again != newJS {
+		t.Error("第二次调用不应改动内容")
+	}
+}

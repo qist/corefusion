@@ -2962,6 +2962,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		clientAuthProtected.GET("/me", clientauthH.GetMe)
 		// 客户端一次性短时票据（M10）：门户"下载日志包"用（window.open 无法带 Header）
 		clientAuthProtected.POST("/ticket", clientauthH.IssueTicket)
+		// 客户端登出：令牌版本 +1 → 此前签发的所有 token（含 refresh）立即失效
+		clientAuthProtected.POST("/logout", clientauthH.Logout)
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)
@@ -3615,6 +3617,8 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		clientAuthProtected.GET("/me", clientauthH.GetMe)
 		// 客户端一次性短时票据（M10）：门户"下载日志包"用（window.open 无法带 Header）
 		clientAuthProtected.POST("/ticket", clientauthH.IssueTicket)
+		// 客户端登出：令牌版本 +1 → 此前签发的所有 token（含 refresh）立即失效
+		clientAuthProtected.POST("/logout", clientauthH.Logout)
 		clientAuthProtected.POST("/rotate-token", clientauthH.RotateToken)
 		clientAuthProtected.PUT("/settings", clientauthH.UpdateSettings)
 		clientAuthProtected.POST("/change-password", clientauthH.ChangePassword)

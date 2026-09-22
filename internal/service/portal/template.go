@@ -3787,12 +3787,22 @@ var showPromoInput = ref(false) // promo code fold
         })
     }
 
-    var doLogout = function() {
-      token.value = ''
-      refreshToken.value = ''
-      localStorage.removeItem('client_token')
-      localStorage.removeItem('client_refresh_token')
-      client.value = {}
+        var doLogout = function() {
+      var done = function() {
+        token.value = ''
+        refreshToken.value = ''
+        localStorage.removeItem('client_token')
+        localStorage.removeItem('client_refresh_token')
+        client.value = {}
+      }
+      var tk = token.value
+      if (!tk) { done(); return }
+      // 先在**服务端**吊销（令牌版本 +1 → 该客户端此前签发的所有 token 立即失效）。
+      // 旧实现只清本地存储，服务端仍旧认那个 token（被窃取后有效期内还能用）。
+      fetch('/api/v1/client-auth/logout', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + tk }
+      }).then(function() { done() }).catch(function() { done() })
     }
 
     var handleLogin = function() {

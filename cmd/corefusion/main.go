@@ -220,6 +220,8 @@ func runServer(args []string) {
 
 	// Initialize NodeServer repository
 	nodeServerRepo := repository.NewNodeServerRepository(db.DB)
+	// 节点 ↔ 证书 **多对多** ✓（一个节点可绑多张：IP 证书 + 域名证书 ✓）
+	nodeCertRepo := repository.NewNodeCertificateRepository(db.DB)
 
 	// Ensure local server record exists
 	if err := nodeServerRepo.EnsureLocalServer(context.Background(), "local-panel"); err != nil {
@@ -237,6 +239,7 @@ func runServer(args []string) {
 
 	// Initialize NodeServerManager (gRPC server for Agent connections)
 	nodeMgr := agent.NewNodeServerManager(nodeServerRepo, caService)
+	nodeMgr.SetNodeCertificates(nodeCertRepo)
 
 	// Cache the local server ID to avoid DB queries on every NodeOperator method call.
 	nodeMgr.InitLocalServerID(context.Background())
@@ -290,7 +293,14 @@ func runServer(args []string) {
 	// 公网证书（ACME 签的域名/IP 证书）自动续期 ✓ —— 与上面那条区分开 ✗：
 	// 上面那个续的是 **Agent 的 mTLS 证书**（面板自签 CA ✓），这条续的是**对外的公网证书** ✓。
 	// 由绑定节点的 Agent 在**节点本机**签发（面板在 SNAT 后面时 CA 回连不到面板 ✗）。
-	publicCertRenewer := agent.NewPublicCertRenewer(certRepo, nodeServerRepo, nodeMgr)
+	// 把历史上的单值 `node_servers.certificate_id` 搬进多对多表 ✓（幂等 ✓，每次启动都可跑 ✓）
+	if n, merr := nodeCertRepo.MigrateLegacyCertificateID(context.Background()); merr != nil {
+		log.Printf("[Panel] migrate legacy node certificates failed: %v", merr)
+	} else if n > 0 {
+		log.Printf("[Panel] migrated %d legacy node↔certificate bindings into node_certificates", n)
+	}
+	publicCertRenewer := agent.NewPublicCertRenewer(certRepo, nodeServerRepo, nodeMgr).
+		WithNodeCertificates(nodeCertRepo)
 	nodeMgr.WithPublicCertRenewer(publicCertRenewer)
 	go publicCertRenewer.RunLoop(context.Background())
 	log.Println("Public certificate auto-renewer started (interval=6h, renew-before=5d, node-side ACME)")

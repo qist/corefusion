@@ -30,10 +30,25 @@ func setupRenewerDB(t *testing.T) (*repository.CertificateRepository, *repositor
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&entity.Certificate{}, &entity.NodeServer{}); err != nil {
+	if err := db.AutoMigrate(&entity.Certificate{}, &entity.NodeServer{}, &entity.NodeCertificate{}); err != nil {
 		t.Fatal(err)
 	}
 	return repository.NewCertificateRepository(db), repository.NewNodeServerRepository(db)
+}
+
+// setupNodeCertRepo 单独建一个带多对多仓库的环境 ✓。
+func setupNodeCertRepo(t *testing.T) (*repository.CertificateRepository, *repository.NodeServerRepository, *repository.NodeCertificateRepository) {
+	t.Helper()
+	db, err := gorm.Open(sqlitedrv.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.Certificate{}, &entity.NodeServer{}, &entity.NodeCertificate{}); err != nil {
+		t.Fatal(err)
+	}
+	return repository.NewCertificateRepository(db),
+		repository.NewNodeServerRepository(db),
+		repository.NewNodeCertificateRepository(db)
 }
 
 func seedCert(t *testing.T, repo *repository.CertificateRepository, domains string, autoRenew int, expiresIn time.Duration) *entity.Certificate {
@@ -194,5 +209,117 @@ func TestRenewThresholdAppliesPerCertType(t *testing.T) {
 	}
 	if got[domFar.ID] {
 		t.Fatalf("域名证书剩 30 天不该续（阈值 20 天）")
+	}
+}
+
+// 一个节点绑定**两张**证书 → 续期时必须两张都下发 ✓（这正是"支持多证书"的核心 ✓）。
+func TestPublicCertRenewerRenewsAllBoundCerts(t *testing.T) {
+	certRepo, serverRepo, nodeCertRepo := setupNodeCertRepo(t)
+
+	// 一张 IP 证书（3 天阈值）+ 一张域名证书（20 天阈值）✓，都进入续期窗口 ✓
+	ipCert := seedCert(t, certRepo, `["203.0.113.48"]`, 1, 2*24*time.Hour)
+	domCert := seedCert(t, certRepo, `["multi.example.com"]`, 1, 10*24*time.Hour)
+
+	srv := &entity.NodeServer{Name: "n-multi"}
+	if err := serverRepo.Create(context.Background(), srv); err != nil {
+		t.Fatal(err)
+	}
+	// **两张都绑到同一个节点** ✓
+	for _, id := range []int64{ipCert.ID, domCert.ID} {
+		if err := nodeCertRepo.Associate(context.Background(), srv.ID, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 主证书字段仍只放一张 ✓（兼容既有逻辑 ✓）
+	if err := serverRepo.UpdateCertificateID(context.Background(), srv.ID, ipCert.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	f := &fakeIssuer{}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f).WithNodeCertificates(nodeCertRepo)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]bool{}
+	for _, c := range f.got {
+		got[c.GetCertId()] = true
+	}
+	if !got[ipCert.ID] || !got[domCert.ID] {
+		t.Fatalf("两张绑定证书都该被续 ✓；实际下发 %v（IP=%d 域名=%d）", got, ipCert.ID, domCert.ID)
+	}
+}
+
+// 多对多仓库：绑定幂等 ✓、精确解除 ✓、反向查询 ✓
+func TestNodeCertificateRepositoryBehavior(t *testing.T) {
+	_, serverRepo, nodeCertRepo := setupNodeCertRepo(t)
+	ctx := context.Background()
+
+	srv := &entity.NodeServer{Name: "n1"}
+	if err := serverRepo.Create(ctx, srv); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{3, 4, 5} {
+		if err := nodeCertRepo.Associate(ctx, srv.ID, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 幂等 ✓
+	if err := nodeCertRepo.Associate(ctx, srv.ID, 4); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := nodeCertRepo.ListCertificateIDsByNode(ctx, srv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("应绑定 3 张（去重后），实际 %v", ids)
+	}
+	// 反向：这张证书被谁绑着 ✓
+	nodes, err := nodeCertRepo.ListNodeIDsByCertificate(ctx, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0] != srv.ID {
+		t.Fatalf("证书 4 应绑定到节点 %d，实际 %v", srv.ID, nodes)
+	}
+	// 精确解除 ✓（只解这一张 ✓）
+	if err := nodeCertRepo.Dissociate(ctx, srv.ID, 4); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ = nodeCertRepo.ListCertificateIDsByNode(ctx, srv.ID)
+	if len(ids) != 2 {
+		t.Fatalf("解除一张后应剩 2 张，实际 %v", ids)
+	}
+	if nodes, _ = nodeCertRepo.ListNodeIDsByCertificate(ctx, 4); len(nodes) != 0 {
+		t.Fatalf("证书 4 应已无绑定，实际 %v", nodes)
+	}
+}
+
+// 历史单值迁移 ✓：node_servers.certificate_id → 多对多表，且幂等 ✓
+func TestMigrateLegacyCertificateID(t *testing.T) {
+	_, serverRepo, nodeCertRepo := setupNodeCertRepo(t)
+	ctx := context.Background()
+
+	srv := &entity.NodeServer{Name: "legacy"}
+	if err := serverRepo.Create(ctx, srv); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverRepo.UpdateCertificateID(ctx, srv.ID, 3); err != nil {
+		t.Fatal(err)
+	}
+	n, err := nodeCertRepo.MigrateLegacyCertificateID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("应迁移 1 条，实际 %d", n)
+	}
+	// 再跑一次不应重复 ✓
+	if n, err = nodeCertRepo.MigrateLegacyCertificateID(ctx); err != nil || n != 0 {
+		t.Fatalf("迁移必须幂等：n=%d err=%v", n, err)
+	}
+	ids, _ := nodeCertRepo.ListCertificateIDsByNode(ctx, srv.ID)
+	if len(ids) != 1 || ids[0] != 3 {
+		t.Fatalf("迁移结果不对：%v", ids)
 	}
 }

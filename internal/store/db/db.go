@@ -659,6 +659,7 @@ func allEntityModels() []interface{} {
 		&entity.ChainLink{},
 		&entity.ExternalNodeServer{},
 		&entity.NodeServer{},
+		&entity.NodeCertificate{}, // 节点 ↔ 证书 多对多 ✓（一个节点可绑多张 ✓）
 		&entity.AgentCertRevocation{},
 		&entity.ServerMetric{},
 		&entity.SpeedTestRecord{},

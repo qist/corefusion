@@ -1062,8 +1062,8 @@ func (h *Handler) DissociateCertificate(c *gin.Context) {
 		response.BadRequest(c, "INVALID_CERT_ID", "invalid certificate ID")
 		return
 	}
-	_ = cid // we just clear the association regardless of cid
-	if err := h.svc.DissociateCertificate(c.Request.Context(), id); err != nil {
+	// 多对多 ✓：按 URL 里的证书 ID **精确**解除这一张 ✓（不再清空全部 ✗）
+	if err := h.svc.DissociateCertificate(c.Request.Context(), id, cid); err != nil {
 		h.auditLog(c, id, "dissociate_cert", "", false, err.Error())
 		response.InternalError(c, "DISSOCIATE_FAILED", err.Error())
 		return

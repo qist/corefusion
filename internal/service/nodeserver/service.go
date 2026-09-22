@@ -43,6 +43,7 @@ type Service struct {
 	crl           *agent.CertRevocationList
 	certDistrib   *agent.CertDistributor
 	nodeMgr       *agent.NodeServerManager
+	nodeCerts     *repository.NodeCertificateRepository // 节点↔证书 多对多 ✓
 	failoverMgr   *agent.FailoverManager
 	mirrorSync    *agent.MirrorSyncManager
 	chainGen      *agent.ChainConfigGenerator
@@ -1673,9 +1674,19 @@ func (s *Service) ListServerCertificates(ctx context.Context, serverID int64) (i
 		}
 	}
 
-	// 1. Node-level certificate (node_servers.certificate_id)
+	// 1. Node-level certificate (node_servers.certificate_id —— 主证书 ✓)
 	if server.CertificateID > 0 {
 		addSource(server.CertificateID, "node-level")
+	}
+	// 1b. **全部**绑定证书（多对多 ✓）：一个节点可以同时用 IP 证书 + 域名证书 ✓
+	if s.nodeCerts != nil {
+		if ids, lerr := s.nodeCerts.ListCertificateIDsByNode(ctx, serverID); lerr == nil {
+			for _, id := range ids {
+				if id != server.CertificateID {
+					addSource(id, "node-level")
+				}
+			}
+		}
 	}
 
 	// 2. Scan inbound configs for certificateFile references
@@ -1814,13 +1825,57 @@ func normalizeCertPathLocal(path string) string {
 }
 
 // AssociateCertificate associates a TLS certificate with a server.
-func (s *Service) AssociateCertificate(ctx context.Context, serverID, certID int64) error {
-	return s.repo.UpdateCertificateID(ctx, serverID, certID)
+// WithNodeCertificates 注入"节点↔证书"多对多仓库 ✓。
+func (s *Service) WithNodeCertificates(r *repository.NodeCertificateRepository) *Service {
+	s.nodeCerts = r
+	return s
 }
 
-// DissociateCertificate removes the TLS certificate association from a server.
-func (s *Service) DissociateCertificate(ctx context.Context, serverID int64) error {
-	return s.repo.UpdateCertificateID(ctx, serverID, 0)
+// AssociateCertificate 给节点**新增**一张证书（多对多 ✓，可重复调用 ✓，重复绑不会报错 ✓）。
+//
+// `node_servers.certificate_id` 仍然维护为**主证书** ✓：仅在该节点还没有主证书时写入 ✓，
+// 这样既兼容既有的代理/分发逻辑 ✓，又不会因为新绑一张就把老的顶掉 ✗。
+func (s *Service) AssociateCertificate(ctx context.Context, serverID, certID int64) error {
+	if certID <= 0 {
+		return nil
+	}
+	if s.nodeCerts != nil {
+		if err := s.nodeCerts.Associate(ctx, serverID, certID); err != nil {
+			return err
+		}
+	}
+	server, err := s.repo.GetByID(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if server.CertificateID == 0 {
+		return s.repo.UpdateCertificateID(ctx, serverID, certID)
+	}
+	return nil
+}
+
+// DissociateCertificate 解除节点的证书绑定 ✓（多对多：传具体证书 ID 时只解这一张 ✓，传 0 时清空 ✓）。
+func (s *Service) DissociateCertificate(ctx context.Context, serverID, certID int64) error {
+	if s.nodeCerts != nil {
+		if err := s.nodeCerts.Dissociate(ctx, serverID, certID); err != nil {
+			return err
+		}
+	}
+	server, err := s.repo.GetByID(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if certID > 0 && server.CertificateID != certID {
+		return nil // 解的不是主证书 → 主证书字段不用动 ✓
+	}
+	// 主证书被解掉 → 选一张还在的顶上 ✓（没有就清 0 ✓）
+	next := int64(0)
+	if s.nodeCerts != nil {
+		if ids, lerr := s.nodeCerts.ListCertificateIDsByNode(ctx, serverID); lerr == nil && len(ids) > 0 {
+			next = ids[0]
+		}
+	}
+	return s.repo.UpdateCertificateID(ctx, serverID, next)
 }
 
 // MigrateCertificate migrates all references from oldCertID to newCertID.

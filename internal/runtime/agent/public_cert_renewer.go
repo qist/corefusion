@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
@@ -45,8 +46,10 @@ func renewThresholdFor(identifiers []string) time.Duration {
 }
 
 type PublicCertRenewer struct {
-	certRepo    *repository.CertificateRepository
-	serverRepo  *repository.NodeServerRepository
+	certRepo   *repository.CertificateRepository
+	serverRepo *repository.NodeServerRepository
+	// nodeCerts 是"节点↔证书"多对多 ✓（一个节点可绑多张 ✓，都要能续 ✓）
+	nodeCerts   *repository.NodeCertificateRepository
 	issuer      PublicCertIssuer
 	interval    time.Duration
 	renewBefore time.Duration // >0 时**同时覆盖**两类阈值（测试/自定义用 ✓）
@@ -87,6 +90,35 @@ func NewPublicCertRenewer(certRepo *repository.CertificateRepository, serverRepo
 		// renewBefore 留 0 = **按类型自动判定** ✓（IP=3 天、域名=20 天 ✓）；
 		// 查询窗口由 window() 取两者较大的那个 ✓。
 	}
+}
+
+// WithNodeCertificates 注入多对多仓库 ✓（缺失时退回历史的单值字段 ✓）。
+func (r *PublicCertRenewer) WithNodeCertificates(repo *repository.NodeCertificateRepository) *PublicCertRenewer {
+	r.nodeCerts = repo
+	return r
+}
+
+// nodesForCertificate 返回"绑定了这张证书的全部节点" ✓。
+//
+// 优先用多对多表 ✓（一个节点多张证书 ✓ / 一张证书多个节点 ✓）；
+// 表里没有（历史数据还没迁过来 ✓）才退回 `node_servers.certificate_id` 单值查询 ✓。
+func (r *PublicCertRenewer) nodesForCertificate(ctx context.Context, certID int64) ([]entity.NodeServer, error) {
+	if r.nodeCerts != nil {
+		ids, err := r.nodeCerts.ListNodeIDsByCertificate(ctx, certID)
+		if err == nil && len(ids) > 0 {
+			out := make([]entity.NodeServer, 0, len(ids))
+			for _, id := range ids {
+				srv, gerr := r.serverRepo.GetByID(ctx, id)
+				if gerr == nil && srv != nil {
+					out = append(out, *srv)
+				}
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
+		}
+	}
+	return r.serverRepo.ListByCertificateID(ctx, certID)
 }
 
 // WithInterval 设置检查间隔（测试/自定义用 ✓）。
@@ -168,7 +200,7 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 		if c.ExpiresAt.After(now.Add(threshold)) {
 			continue // 还早，不用续 ✓
 		}
-		servers, err := r.serverRepo.ListByCertificateID(ctx, c.ID)
+		servers, err := r.nodesForCertificate(ctx, c.ID)
 		if err != nil {
 			log.Printf("[PublicCertRenewer] list servers for cert %d: %v", c.ID, err)
 			continue
@@ -244,7 +276,7 @@ func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID in
 		if c.ExpiresAt.After(now.Add(r.thresholdFor(identifiers))) {
 			continue // 还早 ✓
 		}
-		servers, serr := r.serverRepo.ListByCertificateID(ctx, c.ID)
+		servers, serr := r.nodesForCertificate(ctx, c.ID)
 		if serr != nil {
 			continue
 		}

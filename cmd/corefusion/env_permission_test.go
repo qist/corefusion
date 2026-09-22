@@ -56,3 +56,47 @@ func TestSaveEnvValueUses0600AndFixesExistingFile(t *testing.T) {
 	}
 	_ = filepath.Join(dir, ".env")
 }
+
+// 启动时会自动把"已存在但权限过宽"的 .env 收紧到 0600（老部署升级路径）。
+func TestHardenDotEnvPermissions(t *testing.T) {
+	dir := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(wd)
+
+	// 0644 的老文件 → 收紧到 0600
+	if err := os.WriteFile(".env", []byte("JWT_SECRET=x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	hardenDotEnvPermissions()
+	info, err := os.Stat(".env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("过宽的 .env 应收紧到 0600，实际 %v", info.Mode().Perm())
+	}
+	// 内容不能被改动（只改权限）
+	data, _ := os.ReadFile(".env")
+	if string(data) != "JWT_SECRET=x\n" {
+		t.Errorf("只应改权限、不动内容：%q", data)
+	}
+
+	// 已经是 0600 → 保持不变；没有 .env 时也不应报错
+	if err := os.Chmod(".env", 0600); err != nil {
+		t.Fatal(err)
+	}
+	hardenDotEnvPermissions()
+	if info, _ = os.Stat(".env"); info.Mode().Perm() != 0600 {
+		t.Errorf("已是 0600 不应被改动，实际 %v", info.Mode().Perm())
+	}
+	if err := os.Remove(".env"); err != nil {
+		t.Fatal(err)
+	}
+	hardenDotEnvPermissions() // 不应 panic / 报错
+}

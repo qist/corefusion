@@ -216,3 +216,50 @@ func certIdentifiers(domains, domain string) []string {
 	}
 	return out
 }
+
+// RenewCertsForServer 在 **Agent 重连**时补做一次续期检查 ✓。
+//
+// 为什么需要它 ✗：RunLoop 在面板启动时会**立即**检查一次 ✓，而那一刻各 Agent 的 gRPC 流
+// 通常还没建立 ✗ → 指令发不出去（`server N not connected` ✗），然后就得等下一个周期（6h ✗）。
+// 真机踩到过：改了证书有效期想验证续期，重启面板后一直没动静 ✓ —— 正是这个原因 ✓。
+func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID int64) {
+	if r == nil || r.issuer == nil || serverID <= 0 {
+		return
+	}
+	certs, err := r.certRepo.FindExpiringSoon(ctx, r.window())
+	if err != nil {
+		log.Printf("[PublicCertRenewer] on-reconnect list: %v", err)
+		return
+	}
+	now := time.Now()
+	for i := range certs {
+		c := &certs[i]
+		if c.AutoRenew == 0 {
+			continue
+		}
+		identifiers := certIdentifiers(c.Domains, c.Domain)
+		if len(identifiers) == 0 {
+			continue
+		}
+		if c.ExpiresAt.After(now.Add(r.thresholdFor(identifiers))) {
+			continue // 还早 ✓
+		}
+		servers, serr := r.serverRepo.ListByCertificateID(ctx, c.ID)
+		if serr != nil {
+			continue
+		}
+		for _, srv := range servers {
+			if srv.ID != serverID || srv.IsLocal {
+				continue
+			}
+			log.Printf("[PublicCertRenewer] (on-reconnect) cert %d (%v) expiring %s → server %d",
+				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339), srv.ID)
+			if err := r.issuer.IssuePublicCert(ctx, srv.ID, &agentpb.IssuePublicCertCommand{
+				CertId:      c.ID,
+				Identifiers: identifiers,
+			}); err != nil {
+				log.Printf("[PublicCertRenewer] (on-reconnect) cert %d → server %d failed: %v", c.ID, srv.ID, err)
+			}
+		}
+	}
+}

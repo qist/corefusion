@@ -84,6 +84,9 @@ type NodeServerManager struct {
 
 	// Cert renewer: checks and renews Agent certs on reconnect
 	certRenewer *CertRenewer
+	// publicCertRenewer 负责**公网证书**（ACME 签的域名/IP 证书 ✓）的自动续期 ✓；
+	// 与上面 certRenewer（Agent 的 mTLS 证书 ✓）是两件事 ✗。
+	publicCertRenewer *PublicCertRenewer
 
 	// Agent updater: tracks pending Agent binary updates and verifies
 	// version on reconnect. Set via SetAgentUpdater.
@@ -365,6 +368,12 @@ func NewNodeServerManager(serverRepo *repository.NodeServerRepository, ca *Certi
 // WithCRL sets the CRL for certificate revocation checking.
 func (m *NodeServerManager) WithCRL(crl *CertRevocationList) *NodeServerManager {
 	m.crl = crl
+	return m
+}
+
+// WithPublicCertRenewer 注入公网证书续期器 ✓（用于 Agent 重连时补做续期检查 ✓）。
+func (m *NodeServerManager) WithPublicCertRenewer(r *PublicCertRenewer) *NodeServerManager {
+	m.publicCertRenewer = r
 	return m
 }
 
@@ -1597,6 +1606,10 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 		//    even if it was offline during the periodic renewal check.
 		if m.certRenewer != nil && serverID != m.localServerID {
 			m.certRenewer.RenewServerCertIfNeeded(context.Background(), serverID)
+		}
+		// 公网证书同理 ✓：面板刚启动那次周期检查往往赶在 Agent 连上之前 ✗（真机踩到 ✓）
+		if m.publicCertRenewer != nil && serverID != m.localServerID {
+			m.publicCertRenewer.RenewCertsForServer(context.Background(), serverID)
 		}
 
 		// 4. Push rate limit config if rate limiting is enabled for this server.

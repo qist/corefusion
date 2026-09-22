@@ -365,12 +365,7 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 	if protocol == "" {
 		protocol = firstString(cfg, "protocol", "type")
 	}
-	// 入口核心：取**入口入站自己**的 core_type —— 它决定入口侧出站必须是 xray 还是 sing-box 形状
-	// （NodeServer 实体上没有 core_type 字段；同一台机器可以同时跑两个核心的入站）。
-	entryCore := "xray"
-	if eib, eerr := g.inboundRepo.GetByID(ctx, link.EntryInboundID); eerr == nil && eib != nil && eib.CoreType != "" {
-		entryCore = eib.CoreType
-	}
+	entryCore := g.entryCoreType(ctx, link.EntryInboundID)
 	// 按**入口核心**判断（hysteria2 只有 sing-box 入口能用 —— xray 没有 hy2 出站，实测
 	// `xray run -test` 报 `unknown config id: hysteria2`）
 	if !ChainSupportedProtocol(entryCore, protocol) {
@@ -703,6 +698,18 @@ func samePrivateNetwork(entry, exit *entity.NodeServer) bool {
 }
 
 // buildExternalOutbound builds an outbound pointing to an external node.
+// entryCoreType 取"入口入站自己"的核心类型 —— 它决定入口侧出站必须是 xray 还是 sing-box 形状。
+// （entity.NodeServer 上没有 core_type 字段；同一台机器可以同时跑两个核心的入站。）
+func (g *ChainLinkGenerator) entryCoreType(ctx context.Context, entryInboundID int64) string {
+	if g.inboundRepo == nil || entryInboundID == 0 {
+		return "xray"
+	}
+	if ib, err := g.inboundRepo.GetByID(ctx, entryInboundID); err == nil && ib != nil && ib.CoreType != "" {
+		return ib.CoreType
+	}
+	return "xray"
+}
+
 func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link entity.ChainLink) (ChainEntryOutbound, error) {
 	extNode, err := g.extNodeRepo.GetByID(ctx, link.ExitExternalID)
 	if err != nil {
@@ -742,6 +749,18 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 		if v, ok := pm["port"].(float64); ok {
 			port = int(v)
 		}
+	}
+
+	// 按**入口核心**校验协议（与集群出口同一套规则，`ChainSupportedProtocols`）。
+	// ⚠ 这里此前**完全没有校验** ✗：外部节点若是 hysteria2 / tuic / anytls 之类，
+	//    buildExternalOutboundSettings 会落到 default 分支生成一个**空 settings** 的出站，
+	//    结果入口节点核心直接起不来（配置"看着没问题"）。改成显式报错，日志里能直接看到原因。
+	if !ChainSupportedProtocol(g.entryCoreType(ctx, link.EntryInboundID), protocol) {
+		entryCore := g.entryCoreType(ctx, link.EntryInboundID)
+		return ChainEntryOutbound{}, fmt.Errorf(
+			"external node %d protocol %q is not chain-capable for entry core %q (supported: %s)",
+			link.ExitExternalID, protocol, entryCore,
+			strings.Join(ChainSupportedProtocols(entryCore), "/"))
 	}
 
 	// For external nodes, the ProxyJSON already contains full credentials (uuid, password, etc.)

@@ -97,6 +97,12 @@
         <el-table-column :label="t('chainProxy.exitNode')" width="160">
           <template #default="{row}">{{ exitName(row) }}</template>
         </el-table-column>
+        <el-table-column :label="t('chainProxy.exitInboundCol')" width="200">
+          <template #default="{row}">
+            <span v-if="row.exit_external_id">—</span>
+            <span v-else>{{ linkExitInboundLabel(row) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="exit_tag" :label="t('chainProxy.exitTag')" width="120" />
         <el-table-column prop="priority" :label="t('chainProxy.priority')" width="80" />
         <el-table-column prop="weight" :label="t('chainProxy.weight')" width="80" />
@@ -115,9 +121,10 @@
       </el-table>
     </el-card>
 
-    <!-- Exit Configs -->
+    <!-- Exit Configs（v2.0 起降级为**旧模式**：出口优先用节点上已有的入站） -->
     <el-card>
       <template #header>{{ t('chainProxy.exitConfigsTitle') }}</template>
+      <el-alert :title="t('chainProxy.legacyExitHint')" type="info" :closable="false" style="margin-bottom:12px" />
       <el-table :data="exitConfigs" stripe size="small" v-loading="exitsLoading">
         <el-table-column prop="server_id" label="ID" width="60" />
         <el-table-column :label="t('common.name')" width="160">
@@ -174,7 +181,7 @@
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>{{ t('chainProxy.healthStatus') }}</span>
-          <el-button text size="small" @click="fetchHealth" :icon="Refresh">Refresh</el-button>
+          <el-button text size="small" @click="fetchHealth" :icon="Refresh">{{ t('common.refresh') }}</el-button>
         </div>
       </template>
       <el-table :data="healthData" stripe size="small" v-loading="healthLoading">
@@ -287,7 +294,9 @@
         <el-button @click="linkDlg=false">{{ t('common.cancel') }}</el-button>
         <el-button v-if="wizardStep>0" @click="wizardStep--">{{ t('common.prev') }}</el-button>
         <el-button v-if="wizardStep<2" type="primary" @click="nextWizardStep" :disabled="!canNextStep">{{ t('common.next') }}</el-button>
-        <el-button v-else type="primary" :loading="linkSaving" @click="createChainProxy">{{ t('common.create') }}</el-button>
+        <el-button v-else type="primary" :loading="linkSaving" @click="linkEditing ? saveLinkEdit() : createChainProxy()">
+          {{ linkEditing ? t('common.save') : t('common.create') }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -369,7 +378,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -717,8 +726,14 @@ async function fetchExternalNodes() {
 }
 
 // ── Link CRUD ──
+const linkEditingId = ref(0)
+
+// 链接列表变化时，按需把出口节点的入站列表拉进来（链接表要显示"出口入站"列）
+watch(links, rows => { loadExitInboundsForLinks(rows) })
+
 function showLinkDlg() {
   linkEditing.value = false
+  linkEditingId.value = 0
   resetWizard()
   linkDlg.value = true
 }
@@ -784,6 +799,40 @@ function nextWizardStep() {
   if (wizardStep.value < 2) wizardStep.value++
 }
 
+// 编辑已有链路：v2.0 下可改的是"出口入站"（节点不支持改，改节点等于重建链路）。
+// 之前这里**没有分支** ✗ —— 点"编辑"再点保存会去调用 createChainProxy，
+// 而它是"先清后建"，等于把该入口的所有链路删掉重建（丢 weight/priority/sort_order 与链路 id）。
+async function saveLinkEdit() {
+  if (!linkEditingId.value) return
+  const exitId = wiz.value.clusterExits[0]
+  const payload = {
+    exit_inbound_id: Number(wiz.value.exitInbounds[exitId]) || 0,
+  }
+  linkSaving.value = true
+  try {
+    await chainApi.updateLink(linkEditingId.value, payload)
+    ElMessage.success(t('common.success'))
+    linkDlg.value = false
+    await fetchLinks()
+    await fetchTopology()
+  } catch { /* error handled by interceptor */ } finally { linkSaving.value = false }
+}
+
+// 链接列表里显示每条链路用的是哪个出口入站（需要按需加载出口节点的入站列表）
+function linkExitInboundLabel(row) {
+  const id = row.exit_inbound_id || 0
+  if (!id) return t('chainProxy.legacyRelayInbound')
+  const list = exitInboundOptions.value[row.exit_server_id] || []
+  const ib = list.find(x => x.id === Number(id))
+  return ib ? inboundLabel(ib) : `#${id}`
+}
+
+async function loadExitInboundsForLinks(rows) {
+  for (const row of rows || []) {
+    if (row.exit_server_id && !row.exit_external_id) await loadExitInbounds(row.exit_server_id)
+  }
+}
+
 async function createChainProxy() {
   if (!canNextStep.value) return
   const exits = [
@@ -816,6 +865,7 @@ async function createChainProxy() {
 
 async function editLink(row) {
   linkEditing.value = true
+  linkEditingId.value = row.id || 0
   resetWizard()
   wiz.value.entryServerId = row.entry_server_id
   wiz.value.entryInboundId = row.entry_inbound_id || row.entryInboundId || 0

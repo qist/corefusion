@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	subdomain "corefusion/internal/domain/subscription"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
@@ -207,6 +208,11 @@ func (s *Service) Create(ctx context.Context, input CreateSubscriptionInput) (*e
 	if bindMode == "" {
 		bindMode = "none"
 	}
+	// ⚠ 未实现的模式**拒绝落库** ✗：存进去不会带来任何保护，却会让人误以为受保护
+	// （安全审计 v5 待决项：`SecurityMode`/`BindMode` 从未被校验过）。
+	if err := subdomain.ValidateSecurityFields(securityMode, bindMode); err != nil {
+		return nil, err
+	}
 	quotaResetCycle := input.QuotaResetCycle
 	if quotaResetCycle == "" {
 		quotaResetCycle = "none"
@@ -270,6 +276,10 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateSubscription
 	}
 	if input.BindMode != nil {
 		sub.BindMode = *input.BindMode
+	}
+	// 同样拒绝未实现的模式 ✗（否则 PUT 能把订阅改成"看起来更安全"的状态）
+	if err := subdomain.ValidateSecurityFields(sub.SecurityMode, sub.BindMode); err != nil {
+		return nil, err
 	}
 	if input.QuotaBytes != nil {
 		sub.QuotaBytes = *input.QuotaBytes

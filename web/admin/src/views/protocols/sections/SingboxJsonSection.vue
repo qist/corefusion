@@ -57,7 +57,7 @@ const emitFn = defineEmits(['update'])
 const REGISTRY = {
   services: {
     mode: 'list',
-    desc: 'sing-box 顶层 services 段（与 inbounds/outbounds 并列）。服务端常用：hysteria-realm（P2P 中继）、usbip-server（共享 USB 设备）、ssm-api、api、ccm/ocm/derp/resolved。',
+    desc: 'sing-box 顶层 services 段（与 inbounds/outbounds 并列）。服务端常用：hysteria-realm（P2P 中继）、usbip-server（共享 USB 设备）、ssm-api、api、ccm/ocm/derp/resolved；oom-killer 用于内存超限时自动重启核心，可填 memory_limit / safety_margin（如 256M）、min_interval / max_interval（duration）。',
     docUrl: 'https://sing-box.sagernet.org/configuration/service/',
     types: ['api', 'ccm', 'derp', 'dynamic', 'hysteria-realm', 'ocm', 'oom-killer', 'resolved', 'ssm-api', 'usbip-client', 'usbip-server'],
     // 注意：listen_port 留空（listenPort: true 标记），创建时用后端 free-port 填入，

@@ -1158,6 +1158,12 @@ message IssuePublicCertCommand {
   string data_dir      = 8;   // Agent 侧 ACME 数据目录（账号/产物）
   string dns_provider  = 9;   // dns-01 用
   map<string, string> dns_env_vars = 10;
+  // ── 外部账号绑定（EAB）：Google Public CA / ZeroSSL 注册 ACME 账号必填 ✗ ──
+  // 面板按 CA 自动关联后下发 ✓（节点侧零配置 ✓）。⚠ 只在"注册"时用一次 ✗：
+  // 注册成功后 EAB 即失效 ✗（Google 还是 7 天一次性 ✗）→
+  // 所以**账号必须落盘** ✓（见 data_dir ✓），否则续期会反复要新 EAB ✗。
+  string eab_key_id     = 11;
+  string eab_mac_key    = 12;
 }
 
 // PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。

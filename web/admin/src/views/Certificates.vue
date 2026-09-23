@@ -198,6 +198,32 @@
             {{ t('certificate.eabFetchHint') }}
           </div>
         </el-form-item>
+        <!-- Google：**必须 GCP 授权**才能申请 EAB ✗（不像 ZeroSSL 能用邮箱换 ✓）
+             填一次服务账号 JSON → 以后（EAB 7 天过期后）面板可自动再申请 ✓ -->
+        <template v-if="eabForm.ca_provider==='google'">
+          <el-form-item :label="t('certificate.googleProjectID')">
+            <el-input v-model="googleProjectID" :placeholder="t('certificate.googleProjectIDPlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="t('certificate.googleSA')">
+            <el-input v-model="googleSAJSON" type="textarea" :rows="4"
+                      :placeholder="t('certificate.googleSAPlaceholder')" />
+            <div style="font-size:11px;color:#909399;line-height:1.5;margin-top:4px">
+              {{ t('certificate.googleSAHint') }}
+            </div>
+          </el-form-item>
+          <el-form-item :label="t('certificate.googleAccessToken')">
+            <el-input v-model="googleAccessToken" :placeholder="t('certificate.googleAccessTokenPlaceholder')" />
+            <div style="font-size:11px;color:#909399;line-height:1.5;margin-top:4px">
+              {{ t('certificate.googleAccessTokenHint') }}
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="eabFetching" @click="handleFetchGoogle">
+              {{ t('certificate.googleFetchButton') }}
+            </el-button>
+            <span style="margin-left:8px;color:#909399;font-size:12px">{{ t('certificate.googleFetchHint') }}</span>
+          </el-form-item>
+        </template>
         <el-form-item label="EAB-KID">
           <el-input v-model="eabForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />
         </el-form-item>
@@ -673,6 +699,35 @@ const eabConfigs = ref([])
 const eabForm = ref({ name: '', ca_provider: 'google', eab_key_id: '', eab_mac_key: '' })
 const zerosslEmail = ref('')
 const eabFetching = ref(false)
+// Google：GCP 授权（二选一 ✓）
+const googleProjectID = ref('')
+const googleSAJSON = ref('')
+const googleAccessToken = ref('')
+
+// Google：用 GCP 授权创建一对 EAB ✓（必须授权 ✓，邮箱换不到 ✗）
+async function handleFetchGoogle() {
+  if (!googleProjectID.value) { ElMessage.warning(t('certificate.googleProjectID')); return }
+  if (!googleSAJSON.value && !googleAccessToken.value) {
+    ElMessage.warning(t('certificate.googleNeedAuth')); return
+  }
+  eabFetching.value = true
+  try {
+    const cfg = await client.post('/eab-configs/fetch-google', {
+      project_id: googleProjectID.value,
+      service_account_json: googleSAJSON.value,
+      access_token: googleAccessToken.value
+    })
+    if (cfg) {
+      eabForm.value.eab_key_id = cfg.eab_key_id || ''
+      eabForm.value.ca_provider = 'google'
+      if (!eabForm.value.name) { eabForm.value.name = cfg.name || '' }
+      ElMessage.success(t('certificate.googleFetchOK'))
+    }
+    fetchEABs()
+  } catch (e) {
+    ElMessage.error(t('common.failed'))
+  } finally { eabFetching.value = false }
+}
 
 // ZeroSSL：用邮箱自动领 EAB ✓（面板侧调 ZeroSSL 的 REST API ✓，与 acme.sh 同一机制 ✓）
 async function handleFetchZeroSSL() {

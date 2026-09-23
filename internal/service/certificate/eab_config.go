@@ -24,6 +24,9 @@ type EABConfigInput struct {
 	CAProvider string
 	KeyID      string
 	MACKey     string
+	// 用 GCP 授权自动申请 Google EAB 时才有 ✓
+	GoogleProjectID string
+	GoogleSAJSON    string
 }
 
 func (s *EABConfigService) GetByID(ctx context.Context, id int64) (*entity.EABConfig, error) {
@@ -37,6 +40,7 @@ func (s *EABConfigService) List(ctx context.Context) ([]entity.EABConfig, error)
 	}
 	for i := range list {
 		list[i].HasMACKey = strings.TrimSpace(list[i].MACKey) != ""
+		list[i].HasGoogleSA = strings.TrimSpace(list[i].GoogleSAJSON) != ""
 	}
 	return list, nil
 }
@@ -69,11 +73,13 @@ func (s *EABConfigService) Create(ctx context.Context, in EABConfigInput) (*enti
 		return nil, errors.New("name is required")
 	}
 	cfg := &entity.EABConfig{
-		Name:       strings.TrimSpace(in.Name),
-		CAProvider: normalizeCAProvider(in.CAProvider),
-		KeyID:      strings.TrimSpace(in.KeyID),
-		MACKey:     strings.TrimSpace(in.MACKey),
-		Status:     "active",
+		Name:            strings.TrimSpace(in.Name),
+		CAProvider:      normalizeCAProvider(in.CAProvider),
+		KeyID:           strings.TrimSpace(in.KeyID),
+		MACKey:          strings.TrimSpace(in.MACKey),
+		GoogleProjectID: strings.TrimSpace(in.GoogleProjectID),
+		GoogleSAJSON:    strings.TrimSpace(in.GoogleSAJSON),
+		Status:          "active",
 	}
 	if err := s.repo.Create(ctx, cfg); err != nil {
 		return nil, err
@@ -97,6 +103,13 @@ func (s *EABConfigService) Update(ctx context.Context, id int64, in EABConfigInp
 	// ⚠ HMAC-Key 留空 = **保持原值** ✓（前端拿不到密钥 ✗，编辑时没重填不该被清掉 ✗）
 	if strings.TrimSpace(in.MACKey) != "" {
 		cfg.MACKey = strings.TrimSpace(in.MACKey)
+	}
+	if strings.TrimSpace(in.GoogleProjectID) != "" {
+		cfg.GoogleProjectID = strings.TrimSpace(in.GoogleProjectID)
+	}
+	// 服务账号 JSON 同理：留空 = 保持原值 ✓（前端也拿不到它 ✗）
+	if strings.TrimSpace(in.GoogleSAJSON) != "" {
+		cfg.GoogleSAJSON = strings.TrimSpace(in.GoogleSAJSON)
 	}
 	if err := s.repo.Update(ctx, cfg); err != nil {
 		return nil, err

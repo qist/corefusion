@@ -8286,17 +8286,23 @@ func (x *SetEgressInterfaceRequest) GetInterfaceName() string {
 // identifiers 可以是域名，也可以是 **IP 字面量**（Let's Encrypt 自 2026-01 起支持 IP 证书 ✓，
 // 但 IP 证书必须是短时证书 → profile 固定为 shortlived ✓）。
 type IssuePublicCertCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CertId        int64                  `protobuf:"varint,1,opt,name=cert_id,json=certId,proto3" json:"cert_id,omitempty"`               // 面板 certificates.id（回传时带上，便于对应 ✓）
-	Identifiers   []string               `protobuf:"bytes,2,rep,name=identifiers,proto3" json:"identifiers,omitempty"`                    // 要签的标识符（域名或 IP ✓）
-	Challenge     string                 `protobuf:"bytes,3,opt,name=challenge,proto3" json:"challenge,omitempty"`                        // http-01（默认）/ dns-01
-	Webroot       string                 `protobuf:"bytes,4,opt,name=webroot,proto3" json:"webroot,omitempty"`                            // http-01 且 80 被 nginx/caddy 占用时：把挑战写进该站点根目录 ✓
-	Email         string                 `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`                                // ACME 账号邮箱
-	Ca            string                 `protobuf:"bytes,6,opt,name=ca,proto3" json:"ca,omitempty"`                                      // lets_encrypt / lets_encrypt_staging / zerossl / google
-	Profile       string                 `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`                            // ACME profile（IP 证书必须 shortlived ✓）
-	DataDir       string                 `protobuf:"bytes,8,opt,name=data_dir,json=dataDir,proto3" json:"data_dir,omitempty"`             // Agent 侧 ACME 数据目录（账号/产物）
-	DnsProvider   string                 `protobuf:"bytes,9,opt,name=dns_provider,json=dnsProvider,proto3" json:"dns_provider,omitempty"` // dns-01 用
-	DnsEnvVars    map[string]string      `protobuf:"bytes,10,rep,name=dns_env_vars,json=dnsEnvVars,proto3" json:"dns_env_vars,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	CertId      int64                  `protobuf:"varint,1,opt,name=cert_id,json=certId,proto3" json:"cert_id,omitempty"`               // 面板 certificates.id（回传时带上，便于对应 ✓）
+	Identifiers []string               `protobuf:"bytes,2,rep,name=identifiers,proto3" json:"identifiers,omitempty"`                    // 要签的标识符（域名或 IP ✓）
+	Challenge   string                 `protobuf:"bytes,3,opt,name=challenge,proto3" json:"challenge,omitempty"`                        // http-01（默认）/ dns-01
+	Webroot     string                 `protobuf:"bytes,4,opt,name=webroot,proto3" json:"webroot,omitempty"`                            // http-01 且 80 被 nginx/caddy 占用时：把挑战写进该站点根目录 ✓
+	Email       string                 `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`                                // ACME 账号邮箱
+	Ca          string                 `protobuf:"bytes,6,opt,name=ca,proto3" json:"ca,omitempty"`                                      // lets_encrypt / lets_encrypt_staging / zerossl / google
+	Profile     string                 `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`                            // ACME profile（IP 证书必须 shortlived ✓）
+	DataDir     string                 `protobuf:"bytes,8,opt,name=data_dir,json=dataDir,proto3" json:"data_dir,omitempty"`             // Agent 侧 ACME 数据目录（账号/产物）
+	DnsProvider string                 `protobuf:"bytes,9,opt,name=dns_provider,json=dnsProvider,proto3" json:"dns_provider,omitempty"` // dns-01 用
+	DnsEnvVars  map[string]string      `protobuf:"bytes,10,rep,name=dns_env_vars,json=dnsEnvVars,proto3" json:"dns_env_vars,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// ── 外部账号绑定（EAB）：Google Public CA / ZeroSSL 注册 ACME 账号必填 ✗ ──
+	// 面板按 CA 自动关联后下发 ✓（节点侧零配置 ✓）。⚠ 只在"注册"时用一次 ✗：
+	// 注册成功后 EAB 即失效 ✗（Google 还是 7 天一次性 ✗）→
+	// 所以**账号必须落盘** ✓（见 data_dir ✓），否则续期会反复要新 EAB ✗。
+	EabKeyId      string `protobuf:"bytes,11,opt,name=eab_key_id,json=eabKeyId,proto3" json:"eab_key_id,omitempty"`
+	EabMacKey     string `protobuf:"bytes,12,opt,name=eab_mac_key,json=eabMacKey,proto3" json:"eab_mac_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8399,6 +8405,20 @@ func (x *IssuePublicCertCommand) GetDnsEnvVars() map[string]string {
 		return x.DnsEnvVars
 	}
 	return nil
+}
+
+func (x *IssuePublicCertCommand) GetEabKeyId() string {
+	if x != nil {
+		return x.EabKeyId
+	}
+	return ""
+}
+
+func (x *IssuePublicCertCommand) GetEabMacKey() string {
+	if x != nil {
+		return x.EabMacKey
+	}
+	return ""
 }
 
 // PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。
@@ -9305,7 +9325,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"B\n" +
 	"\x19SetEgressInterfaceRequest\x12%\n" +
-	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\"\xa7\x03\n" +
+	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\"\xe5\x03\n" +
 	"\x16IssuePublicCertCommand\x12\x17\n" +
 	"\acert_id\x18\x01 \x01(\x03R\x06certId\x12 \n" +
 	"\videntifiers\x18\x02 \x03(\tR\videntifiers\x12\x1c\n" +
@@ -9318,7 +9338,10 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\fdns_provider\x18\t \x01(\tR\vdnsProvider\x12]\n" +
 	"\fdns_env_vars\x18\n" +
 	" \x03(\v2;.corefusion.agent.v1.IssuePublicCertCommand.DnsEnvVarsEntryR\n" +
-	"dnsEnvVars\x1a=\n" +
+	"dnsEnvVars\x12\x1c\n" +
+	"\n" +
+	"eab_key_id\x18\v \x01(\tR\beabKeyId\x12\x1e\n" +
+	"\veab_mac_key\x18\f \x01(\tR\teabMacKey\x1a=\n" +
 	"\x0fDnsEnvVarsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8b\x02\n" +

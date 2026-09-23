@@ -73,6 +73,15 @@ type EABConfigResolver interface {
 	// ResolveEABConfigForCA 按 CA **自动关联**一份 EAB ✓（Google / ZeroSSL 用 ✓）。
 	// 返回 (nil, nil) 表示该 CA 没配过 EAB ✓（不当作错误 ✗，由调用方决定怎么提示 ✓）。
 	ResolveEABConfigForCA(ctx context.Context, caProvider string) (*EABConfigInfo, error)
+	// FetchZeroSSLEAB 用邮箱向 ZeroSSL 自动领取 EAB ✓ —— 首次申请即"自动注册" ✓
+	//（ZeroSSL 强制要求 EAB ✗，但它的 REST API 允许用邮箱直接换一对 ✓，acme.sh 同机制 ✓）
+	FetchZeroSSLEAB(ctx context.Context, email string) (*EABConfigInfo, error)
+	// FetchGoogleEAB 用 **GCP 授权**创建一对 Google EAB ✓ ——
+	// ⚠ Google 不像 ZeroSSL 能用邮箱换 ✗，**必须授权** ✓（服务账号 JSON 或临时 access token ✓）。
+	FetchGoogleEAB(ctx context.Context, projectID, serviceAccountJSON, accessToken string) (*EABConfigInfo, error)
+	// EnsureGoogleEAB 保证 Google 有一份**可用** EAB ✓：缺/过期就用存过的服务账号**现场再申请一把** ✓
+	//（Google 的 EAB 是 7 天 + 一次性 ✗，这条让"首次申请即自动注册"在 Google 上也能成立 ✓）。
+	EnsureGoogleEAB(ctx context.Context) (*EABConfigInfo, bool, error)
 }
 
 // ACMEEmailResolver 解析 ACME 账号（由面板的 ACME 邮箱/账号服务实现 ✓）。
@@ -505,6 +514,27 @@ func (h *Handler) Issue(c *gin.Context) {
 		if aerr != nil {
 			response.InternalError(c, "EAB_LOOKUP_FAILED", aerr.Error())
 			return
+		}
+		if cfg == nil && strings.EqualFold(strings.TrimSpace(caProvider), "google") {
+			// Google：EAB 是 7 天 + 一次性 ✗ → 缺了就用**存过的 GCP 服务账号**现场再申请一把 ✓
+			log.Printf("[cert] no usable Google EAB → trying GCP service account to create one")
+			if made, fresh, gerr := h.eabConfigs.EnsureGoogleEAB(c.Request.Context()); gerr == nil && made != nil {
+				if fresh {
+					log.Printf("[cert] Google EAB auto-created via GCP: kid=%s", made.KeyID)
+				}
+				cfg = made
+			} else if gerr != nil {
+				log.Printf("[cert] auto-create Google EAB failed: %v", gerr)
+			}
+		}
+		if cfg == nil && strings.EqualFold(strings.TrimSpace(caProvider), "zerossl") && strings.Contains(email, "@") {
+			// ZeroSSL：没配过就**用邮箱自动领一对** ✓（同 acme.sh ✓）→ 首次申请即自动注册 ✓
+			log.Printf("[cert] no ZeroSSL EAB configured → auto-fetching one for %s", email)
+			if fetched, ferr := h.eabConfigs.FetchZeroSSLEAB(c.Request.Context(), email); ferr == nil && fetched != nil {
+				cfg = fetched
+			} else if ferr != nil {
+				log.Printf("[cert] auto-fetch ZeroSSL EAB failed: %v", ferr)
+			}
 		}
 		if cfg == nil {
 			// 说清楚怎么办 ✓（否则只会看到 CA 那边一句 externalAccountRequired ✗ 很难排查 ✗）

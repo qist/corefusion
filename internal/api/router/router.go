@@ -988,6 +988,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// EAB 独立配置 → 签发时按 eab_config_id 解析出 CA + EAB ✓（不用手填 ✗）
 		certH.SetEABConfigResolver(eabConfigAdapter{svc: eabConfigSvc})
 	}
+	// 面板本机的 ACME 默认邮箱 ✓ —— 否则注册时"没有联系邮箱" ✗（Google 直接拒 ✓）
+	if acmeEmailSvc != nil {
+		if def, derr := acmeEmailSvc.GetDefault(context.Background()); derr == nil && def != nil {
+			certSvc.SetDefaultACMEEmail(def.Email)
+			log.Printf("[router] panel ACME default email = %s", def.Email)
+		}
+	}
+	// 节点续期也要能"首次自动注册" ✓ → 把 CA → (邮箱, EAB) 的能力注入给节点管理器 ✓
+	if sharedNodeMgr != nil {
+		sharedNodeMgr.SetPublicCertIssuanceEnv(publicCertEnvAdapter{acmeSvc: acmeEmailSvc, eabSvc: eabConfigSvc})
+	}
 	if acmeEmailSvc != nil {
 		certH.SetACMEEmailResolver(acmeEmailAdapter{svc: acmeEmailSvc})
 		if sharedNodeMgr != nil {
@@ -2489,6 +2500,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				eabConfigsGroup.POST("", certEABH.Create)
 				// ZeroSSL 用**邮箱自动领取 EAB** ✓（同 acme.sh 的机制 ✓）→ 之后自动关联 ✓
 				eabConfigsGroup.POST("/fetch-zerossl", certEABH.FetchZeroSSL)
+				// Google：用 GCP 授权（服务账号 JSON / 临时 token）自动创建 EAB ✓
+				eabConfigsGroup.POST("/fetch-google", certEABH.FetchGoogle)
 				eabConfigsGroup.PUT("/:id", certEABH.Update)
 				eabConfigsGroup.DELETE("/:id", certEABH.Delete)
 			}
@@ -3976,6 +3989,30 @@ func (a acmeEmailAdapter) ResolveACMEEmail(ctx context.Context, id int64) (strin
 }
 
 // dnsChannelAdapter 把面板的 DNS 通道服务接成"解析通道 → 提供者配置"能力 ✓。
+// publicCertEnvAdapter 给"节点续期"准备注册上下文 ✓：
+// 邮箱取面板的默认 ACME 账号 ✓，EAB 按 CA 自动关联 ✓（与签发路径同一套规则 ✓）。
+type publicCertEnvAdapter struct {
+	acmeSvc *certService.ACMEEmailService
+	eabSvc  *certService.EABConfigService
+}
+
+func (a publicCertEnvAdapter) IssuanceContextFor(ctx context.Context, caProvider string) (string, string, string) {
+	email := ""
+	if a.acmeSvc != nil {
+		if def, err := a.acmeSvc.GetDefault(ctx); err == nil && def != nil {
+			email = strings.TrimSpace(def.Email)
+		}
+	}
+	if a.eabSvc == nil || strings.TrimSpace(caProvider) == "" {
+		return email, "", ""
+	}
+	cfg, err := a.eabSvc.GetByCA(ctx, caProvider)
+	if err != nil || cfg == nil {
+		return email, "", ""
+	}
+	return email, strings.TrimSpace(cfg.KeyID), strings.TrimSpace(cfg.MACKey)
+}
+
 // eabConfigAdapter 把面板的 EAB 独立配置服务接成"按 ID 解析 CA + EAB"能力 ✓。
 type eabConfigAdapter struct {
 	svc *certService.EABConfigService
@@ -3987,6 +4024,51 @@ func (a eabConfigAdapter) ResolveEABConfigForCA(ctx context.Context, caProvider 
 		return nil, nil
 	}
 	cfg, err := a.svc.GetByCA(ctx, caProvider)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+	return &certsHandler.EABConfigInfo{
+		Name:       cfg.Name,
+		CAProvider: cfg.CAProvider,
+		KeyID:      cfg.KeyID,
+		MACKey:     cfg.MACKey,
+	}, nil
+}
+
+// FetchGoogleEAB 用 GCP 授权创建一对 Google EAB ✓（必须授权 ✓，邮箱换不到 ✗）。
+func (a eabConfigAdapter) FetchGoogleEAB(ctx context.Context, projectID, serviceAccountJSON, accessToken string) (*certsHandler.EABConfigInfo, error) {
+	if a.svc == nil {
+		return nil, fmt.Errorf("eab config service not available")
+	}
+	cfg, err := a.svc.FetchGoogleEAB(ctx, projectID, serviceAccountJSON, accessToken)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+	return &certsHandler.EABConfigInfo{
+		Name: cfg.Name, CAProvider: cfg.CAProvider, KeyID: cfg.KeyID, MACKey: cfg.MACKey,
+	}, nil
+}
+
+// EnsureGoogleEAB 保证 Google 有一份可用 EAB ✓（缺了就用存过的服务账号现场再申请 ✓）。
+func (a eabConfigAdapter) EnsureGoogleEAB(ctx context.Context) (*certsHandler.EABConfigInfo, bool, error) {
+	if a.svc == nil {
+		return nil, false, nil
+	}
+	cfg, fresh, err := a.svc.EnsureGoogleEAB(ctx)
+	if err != nil || cfg == nil {
+		return nil, false, err
+	}
+	return &certsHandler.EABConfigInfo{
+		Name: cfg.Name, CAProvider: cfg.CAProvider, KeyID: cfg.KeyID, MACKey: cfg.MACKey,
+	}, fresh, nil
+}
+
+// FetchZeroSSLEAB 用邮箱向 ZeroSSL 自动领 EAB ✓（首次申请即自动注册 ✓）。
+func (a eabConfigAdapter) FetchZeroSSLEAB(ctx context.Context, email string) (*certsHandler.EABConfigInfo, error) {
+	if a.svc == nil {
+		return nil, fmt.Errorf("eab config service not available")
+	}
+	cfg, err := a.svc.FetchZeroSSLEAB(ctx, email)
 	if err != nil || cfg == nil {
 		return nil, err
 	}

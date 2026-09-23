@@ -163,7 +163,10 @@ func (h *Handler) List(c *gin.Context) {
 		q.Limit = 20
 	}
 
-	certs, total, err := h.certSvc.List(c.Request.Context(), q.Limit, q.Offset)
+	// 默认**不展示 IP 证书** ✓（用户口径 ✓：IP 证书是节点自己的事 ✓）；
+	// `?include_ip=1` 可看全部 ✓（排查/运维用 ✓）。库里照样留着 ✓（入库是有意的 ✓）。
+	includeIP := c.Query("include_ip") == "1" || strings.EqualFold(c.Query("include_ip"), "true")
+	certs, total, err := h.certSvc.ListForPanel(c.Request.Context(), q.Limit, q.Offset, includeIP)
 	if err != nil {
 		response.InternalError(c, "LIST_CERTIFICATES_FAILED", err.Error())
 		return

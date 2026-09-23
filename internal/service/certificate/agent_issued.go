@@ -2,8 +2,10 @@ package certificate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,19 +106,20 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		name = domain
 	}
 
-	// ⚠ 这里以前还会 `MkdirAll(data/certs/<name>)` 建目录 ✗（为写文件做准备 ✓）——
-	// 现在面板**不落地任何证书文件** ✗，建空目录只会让人误以为"面板上有这份证书" ✗ → 去掉 ✓。
-	// ── 面板**不落地**这张证书 ✗（架构口径 ✓：面板只管触发 ✓，证书由节点持有并由节点自己续 ✓）──
-	// 以前的实现是：把 PEM/私钥**写进面板的 `data/certs/`** ✗、**再整份存进数据库** ✗ ——
-	// 于是"任何一个节点签的每一张证书都会落到面板" ✓（用户口径：面板并没用到这些证书 ✗）。
-	// 现在这里**只保留元数据** ✓（上面的 tmp 文件仅用于解析 ✓ 用完即删 ✓）：
-	//   · 路径字段保留为**节点侧引用** ✓（用于"这张证书被谁用了"的匹配 ✓）；
-	//   · `CertContent/KeyContent` **一律留空** ✗ → 接口返回 `has_content=false` ✓。
 	certRel := filepath.Join("certs", sanitizeDomain(name), "cert.pem")
 	keyRel := filepath.Join("certs", sanitizeDomain(name), "key.pem")
-	// fullchain 的路径同样只作为**节点侧引用** ✓（面板不写文件 ✗，见上）
 	fullchainRel := filepath.Join("certs", sanitizeDomain(name), "fullchain.pem")
 
+	// ── 全部证书（**含 IP 证书**）都在库里存一份**完整副本** ✓ ────────────────────
+	// 用户口径 ✓：**入库是刻意的** ✓ —— "有人把证书文件删了，库里还完整有一份" ✓，
+	// 下载/分发/配置同步也一律**从这一份出** ✓（不再依赖任何磁盘副本 ✓）。
+	//
+	// ⚠ 那"IP 证书不同步到面板"体现在哪 ✗：**视图层** ✓ —— 面板列表默认**不展示** IP 证书
+	//（`certificate.go` 的 `ListForPanel` ✓），因为 IP 证书是节点自己的事 ✓，
+	// 摆在证书清单里只会让人误以为是"面板在管它" ✗。**库里留着** ✓ 是为了可追溯与兜底恢复 ✓。
+	//
+	// ⚠ 唯一的减法：**不往面板磁盘写证书文件** ✗（以前会写 `data/certs/<域名>/*.pem` ✗）——
+	// 磁盘副本只会多一处需要同步的状态 ✗（真机上也确实出现过"文件在、库为空"的不一致 ✗）。
 	if existing == nil {
 		existing = &entity.Certificate{
 			Name:          name,
@@ -130,8 +133,8 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 			CertPath:      certRel,
 			KeyPath:       keyRel,
 			FullchainPath: fullchainRel,
-			CertContent:   "",
-			KeyContent:    "",
+			CertContent:   in.CertPEM,
+			KeyContent:    in.KeyPEM,
 			Status:        "active",
 			AutoRenew:     1,
 			ExpiresAt:     expiresAt,
@@ -154,8 +157,8 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	existing.CertPath = certRel
 	existing.KeyPath = keyRel
 	existing.FullchainPath = fullchainRel
-	existing.CertContent = ""
-	existing.KeyContent = ""
+	existing.CertContent = in.CertPEM
+	existing.KeyContent = in.KeyPEM
 	existing.Status = "active"
 	existing.AutoRenew = 1
 	existing.ExpiresAt = expiresAt
@@ -165,4 +168,50 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		return nil, err
 	}
 	return existing, nil
+}
+
+// isIPOnlyCertificate 判断"这是不是一张**只包含 IP** 的证书" ✓。
+//
+// 用途：**面板列表默认不展示**这类证书 ✓（IP 证书是节点自己的事 ✓），
+// 但**库里照样保留** ✓（用户口径：入库是刻意的 ✓ —— 有人删了证书文件，库里还完整有一份 ✓）。
+//
+// 判据 ✓：所有标识符（证书 SAN 为准 ✓，兜底用上报的 identifiers ✓）**都是 IP** 且至少有一个 ✓。
+// 混入域名（例如一张证书同时签了 IP + 域名 ✗）**不算** ✗ —— 那种证书面板是要管的 ✓
+// （配置引用它 ✓、分发它 ✓），不能因为带了个 IP 就整张丢掉 ✗。
+func isIPOnlyCertificate(domain, domainsJSON string, identifiers []string) bool {
+	ids := parseDomainsJSON(domainsJSON)
+	if len(ids) == 0 {
+		ids = identifiers
+	}
+	if len(ids) == 0 && strings.TrimSpace(domain) != "" {
+		ids = []string{domain}
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	for _, id := range ids {
+		if net.ParseIP(strings.TrimSpace(id)) == nil {
+			return false
+		}
+	}
+	return true
+}
+
+// parseDomainsJSON 解析证书表里的 `domains`（JSON 数组字符串 ✓）；解析不了就返回空 ✓。
+func parseDomainsJSON(domainsJSON string) []string {
+	s := strings.TrimSpace(domainsJSON)
+	if s == "" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil
+	}
+	res := make([]string, 0, len(out))
+	for _, v := range out {
+		if v = strings.TrimSpace(v); v != "" {
+			res = append(res, v)
+		}
+	}
+	return res
 }

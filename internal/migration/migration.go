@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
 )
@@ -292,6 +293,9 @@ func RunDataMigrations(db *gorm.DB) error {
 	// v3.3: Add agent_id column to charge_cards for agent/sales tracking
 	migrateChargeCardAgentColumn(db)
 
+	// v3.4：把历史上以「可逆形式」落库的客户端密码重新 bcrypt（详见函数注释）
+	migrateClientPasswordHashes(db)
+
 	// Seed default outbounds if none exist
 	seedDefaultOutbounds(db)
 
@@ -311,6 +315,91 @@ func RunDataMigrations(db *gorm.DB) error {
 	dropLegacyChainExitConfigs(db)
 
 	return nil
+}
+
+// migrateClientPasswordHashes 把历史上以可恢复形式落库的客户端密码重新哈希成 bcrypt。
+//
+// 背景：客户端密码曾有两种非 bcrypt 形式落库：
+//
+//  1. 32 位 hex 盐 + ":" + 明文密码（早期 hashClientPassword 在 bcrypt 失败时的 fallback）；
+//  2. 纯明文（更早的路径）。
+//
+// 后果有两条：
+//
+//  1. 密码可逆 —— 任何能读到 clients 表的人都直接拿到客户的门户密码；
+//  2. 门户登录只走 bcrypt（clientauth/service.go 的 password.Check），这些账号永远登不上。
+//
+// 做法：把可恢复的原文取出来重新 bcrypt 落库。幂等 —— bcrypt 行以 $2 开头，
+// 用 password NOT LIKE '$2%' 在 SQL 里排除，正常库上每次启动只是一次空查询。
+// 无法处理的行（原文为空、或原文自身超过 72 字节）只记日志、保持原样，绝不写坏数据。
+func migrateClientPasswordHashes(db *gorm.DB) {
+	if !db.Migrator().HasTable("clients") {
+		return
+	}
+
+	type legacyClient struct {
+		ID       int64  `gorm:"column:id"`
+		Password string `gorm:"column:password"`
+	}
+	var rows []legacyClient
+	if err := db.Table("clients").
+		Select("id, password").
+		Where("password IS NOT NULL AND password <> '' AND password NOT LIKE ?", "$2%").
+		Find(&rows).Error; err != nil {
+		log.Printf("[migration] WARNING: scanning legacy client passwords failed: %v", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	log.Printf("[migration] clients: found %d non-bcrypt password(s), re-hashing", len(rows))
+	fixed, skipped := 0, 0
+	for _, row := range rows {
+		plain := legacyPasswordPlaintext(row.Password)
+		if plain == "" {
+			skipped++
+			continue
+		}
+		hashed, err := password.Hash(plain)
+		if err != nil {
+			log.Printf("[migration] WARNING: client %d password cannot be re-hashed (%v); left as-is", row.ID, err)
+			skipped++
+			continue
+		}
+		if err := db.Exec("UPDATE clients SET password = ? WHERE id = ?", hashed, row.ID).Error; err != nil {
+			log.Printf("[migration] WARNING: updating client %d password failed: %v", row.ID, err)
+			skipped++
+			continue
+		}
+		fixed++
+	}
+	log.Printf("[migration] clients: re-hashed %d legacy password(s), skipped %d", fixed, skipped)
+}
+
+// legacyPasswordPlaintext 从历史存储格式里取出原文：
+//   - 32 位 hex 盐 + ":" + 明文（早期 fallback）→ 取冒号后的部分；
+//   - 其他非 bcrypt 值（纯明文）→ 原样返回。
+//
+// 只识别已知的盐格式，其余按纯明文处理：即使判断错了，结果也不会比现状更差 ——
+// 这些值本来就已经不可能通过 bcrypt 校验（等于账号本来也登不上）。
+func legacyPasswordPlaintext(stored string) string {
+	if i := strings.Index(stored, ":"); i == 32 && isHexString(stored[:i]) {
+		return stored[i+1:]
+	}
+	return stored
+}
+
+func isHexString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // dropLegacyChainExitConfigs 删除链式旧模式遗留的 `chain_exit_configs` 表。

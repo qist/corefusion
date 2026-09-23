@@ -74,7 +74,7 @@ func (s *Service) GetClient(ctx context.Context, id int64) (*entity.Client, erro
 
 type CreateClientInput struct {
 	Email            string  `json:"email" binding:"required"`
-	Password         string  `json:"password"`
+	Password         string  `json:"password" binding:"omitempty,max=72"`
 	PlanID           int64   `json:"plan_id" binding:"required"`
 	PlanVariantID    int64   `json:"plan_variant_id"`
 	QuotaBytes       int64   `json:"quota_bytes"`
@@ -120,10 +120,15 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 	// Create client
 	// ⚠ 密码必须**哈希后**落库 ✗：客户端登录走 password.Check(input.Password, client.Password) ✓，
 	// 而这里原本直接落**明文** ✗ → 通过管理接口建出来的客户端**永远登录不上** ✗（端到端测试踩到 ✓）。
-	// 同文件的 UpdateClient 已用 hashClientPassword ✓，Create 这条路径漏了 ✓。
+	// 同文件的 UpdateClient 也已改为同样处理 ✓。
+	// 哈希失败（例如超过 bcrypt 的 72 字节上限）必须**报错拒绝** ✗，绝不退化成明文/可逆存储。
 	pwdHash := ""
 	if input.Password != "" {
-		pwdHash = hashClientPassword(input.Password)
+		h, err := hashClientPassword(input.Password)
+		if err != nil {
+			return nil, fmt.Errorf("hash client password: %w", err)
+		}
+		pwdHash = h
 	}
 	client := &entity.Client{
 		Email:            input.Email,
@@ -344,7 +349,7 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 
 // UpdateClient updates client fields.
 func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
-	Password         *string `json:"password"`
+	Password         *string `json:"password" binding:"omitempty,max=72"`
 	PlanID           *int64  `json:"plan_id"`
 	PlanVariantID    *int64  `json:"plan_variant_id"`
 	QuotaBytes       *int64  `json:"quota_bytes"`
@@ -359,7 +364,11 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 		return nil, err
 	}
 	if input.Password != nil {
-		client.Password = hashClientPassword(*input.Password)
+		h, err := hashClientPassword(*input.Password)
+		if err != nil {
+			return nil, fmt.Errorf("hash client password: %w", err)
+		}
+		client.Password = h
 	}
 	if input.QuotaBytes != nil {
 		client.QuotaBytes = *input.QuotaBytes
@@ -593,16 +602,12 @@ func generateUUID() string {
 }
 
 // hashClientPassword hashes a password using bcrypt.
-func hashClientPassword(pwd string) string {
-	hashed, err := password.Hash(pwd)
-	if err != nil {
-		// Fallback to simple hash if bcrypt fails
-		b := make([]byte, 16)
-		rand.Read(b)
-		salt := hex.EncodeToString(b)
-		return salt + ":" + pwd
-	}
-	return hashed
+//
+// 绝不"降级"：早期版本在 bcrypt 失败时退化成 `salt + ":" + 明文密码` 落库 ✗，
+// 后果是①密码可逆（拿到库文件即得客户门户密码）②门户登录只认 bcrypt → 账号永远登不上 ✗。
+// 现在一律把错误交给调用方去拒绝请求。
+func hashClientPassword(pwd string) (string, error) {
+	return password.Hash(pwd)
 }
 
 // userExistsInConfig checks if a user with the given email already exists

@@ -116,6 +116,38 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 		}
 	}
 
+	// 3. 激活后有效天数（`activated_at` + `max_active_days`）。
+	//
+	// 这两个字段原来只是"被存下来、从没被读过"✗ —— `ListExpired` 只按 `expires_at` 判过期，
+	// 所以「客户首次连上后 N 天到期」这个能力是**空的**：管理员填了天数，什么都不会发生。
+	// 起算点是首次成功访问订阅的时间（见 ServeSubscription 里的 MarkActivatedIfUnset）。
+	//
+	// ⚠ 不要把日期加法写进 SQL：本项目同时支持 SQLite/MySQL/PostgreSQL，三者日期函数
+	// 互不兼容（datetime(x,'+N days') / DATE_ADD / interval），写死任一种都会在另一种上报错。
+	windowed, err := s.repo.ListActiveWithActivationWindow(ctx, 5000)
+	if err != nil {
+		return err
+	}
+	for i := range windowed {
+		sub := &windowed[i]
+		if sub.ActivatedAt == nil || sub.MaxActiveDays == nil || *sub.MaxActiveDays <= 0 {
+			continue
+		}
+		deadline := sub.ActivatedAt.Add(time.Duration(*sub.MaxActiveDays) * 24 * time.Hour)
+		if !now.After(deadline) {
+			continue
+		}
+		sub.Status = "expired"
+		sub.QuotaState = "expired_days"
+		if err := s.repo.Update(ctx, sub); err != nil {
+			log.Printf("[quota-enforce] expire subscription %d by activation window failed: %v", sub.ID, err)
+			continue
+		}
+		if sub.ClientID != 0 {
+			s.blockClient(ctx, sub.ClientID)
+		}
+	}
+
 	return nil
 }
 

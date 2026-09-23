@@ -262,8 +262,10 @@ func (h *Handler) ListNodeRules(c *gin.Context) {
 	}
 	rules, err := h.svc.ListNodeRules(c.Request.Context(), serverID)
 	if err != nil {
-		response.OK(c, []interface{}{})
-		return
+	// ⚠ 原来这里返回 200 + 空数组 ✗：把"查询失败"伪装成"没有规则"，
+	// 前端/管理员完全无感（WAF 规则看着像被清空了，却一条报错都没有）。
+	response.InternalError(c, "LIST_FAILED", err.Error())
+	return
 	}
 	response.OK(c, rules)
 }
@@ -653,8 +655,9 @@ func (h *Handler) SetWAFStatus(c *gin.Context) {
 func (h *Handler) ListDomainRuleDirs(c *gin.Context) {
 	dirs, err := h.svc.ListDomainRuleDirs()
 	if err != nil {
-		response.OK(c, []string{})
-		return
+	// 同上：错误不再伪装成 200 空列表 ✓
+	response.InternalError(c, "LIST_FAILED", err.Error())
+	return
 	}
 	response.OK(c, dirs)
 }

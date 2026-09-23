@@ -326,6 +326,19 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 		}
 	}
 
+	// 订阅是该客户端的**凭据** ✗ 原来删除客户端完全不管订阅：`subscriptions` 行会变成孤儿，
+	// 而下发路径 `GET /sub/:token` 只按 token 查、**不校验客户端是否存在** →
+	// "已删除客户端"的订阅链接**依然能拉到配置** ✗（等于删除没生效）。
+	// 因此先吊销它的全部订阅（status=revoked → 下发直接 403），再删客户端。
+	// 用"吊销"而不是"删除"：订阅行保留下来，访问日志 / 轮换记录仍能对上，便于审计。
+	if s.subRepo != nil {
+		if n, err := s.subRepo.RevokeByClientID(ctx, id, time.Now()); err != nil {
+			log.Printf("[client] revoke subscriptions of client %d failed: %v", id, err)
+		} else if n > 0 {
+			log.Printf("[client] revoked %d subscription(s) of deleted client %d", n, id)
+		}
+	}
+
 	return s.clientRepo.Delete(ctx, id)
 }
 

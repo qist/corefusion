@@ -1825,6 +1825,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				chainGen := agent.NewChainConfigGenerator(nodeServerRepo)
 				chainHealthRegistry := agent.NewChainHealthMonitorRegistry(nodeMgrForPhase3, nodeServerRepo).WithChainRepos(chainLinkRepo)
 				go chainHealthRegistry.StartAll(context.Background())
+
+				// WAF 镜像周期性对账 ✓（兜底：事件驱动 fanout 在"镜像恰好离线"时会漏掉 ✗，
+				// 镜像恢复在线后由这里自动补上 ✓；内容没变不会白重启代理 ✓）。
+				go wafH.RunMirrorReconcileLoop(context.Background(), 10*time.Minute,
+					func(id int64) bool { return nodeMgrForPhase3.IsOnline(id) })
 				billingFilter := agent.NewBillingFilter(nodeServerRepo)
 
 				// Inject NodeServerManager as HealthChecker for chain link health API

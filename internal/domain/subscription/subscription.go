@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -67,6 +68,13 @@ const (
 // BindModeNone 是唯一已实现的绑定模式（订阅 token 不做 IP/设备绑定校验）。
 const BindModeNone = "none"
 
+// ErrUnsupportedOption 表示"该订阅选项在当前版本里根本没有执行点"，因此**拒绝写入**（fail-closed）。
+//
+// 它是**调用方的输入错误**（应回 HTTP 400 ✓），不是服务端故障 ✗ ——
+// handler 必须用 errors.Is 判断后回 400；否则会被包成 500，让人误以为面板坏了、
+// 也不会让调用方意识到"是自己传了一个未实现的选项"。
+var ErrUnsupportedOption = errors.New("unsupported subscription option")
+
 // ValidateSecurityFields 校验订阅的 security_mode / bind_mode 是否**已实现**。
 //
 // 返回错误即表示"这个模式我们其实没有执行" ✗ —— 落库只会让使用者误以为受保护。
@@ -76,18 +84,39 @@ func ValidateSecurityFields(securityMode, bindMode string) error {
 	case "", SecurityModeTokenOnly:
 		// ok
 	case SecurityModeTokenWithExpiry, SecurityModeTokenWithSignature, SecurityModeTokenWithBinding:
-		return fmt.Errorf("security_mode %q is not implemented yet; only %q is supported",
-			securityMode, SecurityModeTokenOnly)
+		return fmt.Errorf("%w: security_mode %q is not implemented yet; only %q is supported",
+			ErrUnsupportedOption, securityMode, SecurityModeTokenOnly)
 	default:
-		return fmt.Errorf("unknown security_mode %q", securityMode)
+		return fmt.Errorf("%w: unknown security_mode %q", ErrUnsupportedOption, securityMode)
 	}
 
 	switch bindMode {
 	case "", BindModeNone:
 		// ok
 	default:
-		return fmt.Errorf("bind_mode %q is not implemented yet; only %q is supported",
-			bindMode, BindModeNone)
+		return fmt.Errorf("%w: bind_mode %q is not implemented yet; only %q is supported",
+			ErrUnsupportedOption, bindMode, BindModeNone)
+	}
+	return nil
+}
+
+// ValidateActivationWindow 校验"激活后有效天数"（`max_active_days`）—— **该能力已决议不做**。
+//
+// 背景（2026-09-23 决议）：订阅有效期的**唯一事实来源是套餐那边的 `expires_at`** ✗ ——
+// 购买、续费、升级、试用（`plan/trial.go`）、卡密兑换（`GiftCardCode`）、手工建客户端，
+// 全部由套餐变体的 `duration_days`（默认 30）或表单到期日决定 ✓。
+//
+// `activated_at` + `max_active_days` 是设计文档里的**第二条时间轴**（"首次使用起算"），
+// 但代码里从来没有入口：套餐流转不写、前端不暴露、业务不读（实测全库 0 条数据 ✓）。
+// 也就是"声明了却不生效"的半套功能 —— 保留只会制造虚假预期（管理员以为设了天数会生效，
+// 实际什么都不会发生），排障时还多一个要同时核对的到期来源。
+//
+// 因此与 `security_mode` 同样处理：**写入即拒绝**（fail-closed）✓ ——
+// 将来真要做这条时间轴时，应先在**卡密兑换 / 套餐变体**上设计出真正的入口
+// （那时它才有明确语义），再来放开这里。库列保留不删（避免迁移风险）。
+func ValidateActivationWindow(maxActiveDays *int) error {
+	if maxActiveDays != nil && *maxActiveDays != 0 {
+		return fmt.Errorf("%w: max_active_days is not supported: subscription expiry is driven by the plan's expires_at (variant duration_days); this field has no effect, so it is rejected instead of silently stored", ErrUnsupportedOption)
 	}
 	return nil
 }

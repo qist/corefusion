@@ -1,11 +1,13 @@
 package subscriptions
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	subDomain "corefusion/internal/domain/subscription"
 	"corefusion/internal/model/dto"
 	subService "corefusion/internal/service/subscription"
 )
@@ -81,6 +83,12 @@ func (h *Handler) Create(c *gin.Context) {
 
 	sub, err := h.subSvc.Create(c.Request.Context(), input)
 	if err != nil {
+		// "选项未实现"（security_mode / max_active_days 等）是**输入错误 → 400** ✗
+		// 不能回 500：那会让调用方以为面板故障，而看不出是自己传了未实现的选项。
+		if errors.Is(err, subDomain.ErrUnsupportedOption) {
+			response.BadRequest(c, "UNSUPPORTED_OPTION", err.Error())
+			return
+		}
 		response.InternalError(c, "CREATE_SUBSCRIPTION_FAILED", err.Error())
 		return
 	}
@@ -132,6 +140,11 @@ func (h *Handler) Update(c *gin.Context) {
 
 	sub, err := h.subSvc.Update(c.Request.Context(), id, input)
 	if err != nil {
+		// 同上：未实现的选项属于调用方输入错误 → 400（不是 500）
+		if errors.Is(err, subDomain.ErrUnsupportedOption) {
+			response.BadRequest(c, "UNSUPPORTED_OPTION", err.Error())
+			return
+		}
 		response.InternalError(c, "UPDATE_SUBSCRIPTION_FAILED", err.Error())
 		return
 	}

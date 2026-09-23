@@ -173,8 +173,12 @@ CREATE TABLE subscriptions (
 - `signature`：固定签名，可选
 - `bind_mode`：绑定方式
 - `bind_value`：绑定值，例如设备标识或来源信息
-- `activated_at`：首次成功代理认证时间，用于计算“激活后有效天数”
-- `max_active_days`：激活后有效天数
+- `activated_at`：~~首次成功代理认证时间~~ **暂缓（2026-09-23 决议不做）**
+- `max_active_days`：~~激活后有效天数~~ **暂缓（不实现）** —— 订阅有效期的**唯一来源是套餐**：
+  `plan_variant.duration_days`（购买/续费/升级/试用/卡密兑换）或客户端表单里的到期日 → `expires_at`。
+  "首次使用起算"这条时间轴没有入口，保留只会造成两个到期来源的困惑；因此字段的写入会被 API 拒绝
+  （fail-closed，与 `security_mode` 同样处理），库列保留仅为兼容。将来若要在**卡密兑换**上支持
+  "兑换后先不起算、首次使用才起算"，应在那条流程里新设计入口，而不是靠这个孤立字段。
 - `revoked_at`：吊销时间
 - `quota_bytes`：当前周期总配额，`0` 表示不限量
 - `used_bytes_cache`：当前周期已用流量缓存值，真实来源仍以流量账本聚合为准

@@ -429,3 +429,86 @@ func TestNormalizeCertCA(t *testing.T) {
 		}
 	}
 }
+
+// 用户口径：谁签发谁续期 ✓ —— 一张证书即使被多个节点"使用"，也只问它的签发节点 ✓
+func TestIssuerNodesFilter(t *testing.T) {
+	all := []entity.NodeServer{{ID: 1, Name: "user-a"}, {ID: 19, Name: "issuer"}, {ID: 30, Name: "user-b"}}
+
+	got := issuerNodes(all, 19)
+	if len(got) != 1 || got[0].ID != 19 {
+		t.Fatalf("指定签发节点时应只留它 ✓，实际 %+v", got)
+	}
+	// issuerNodeID=0（面板本机签的 ✓）→ 原样返回 ✓（行为不变 ✓）
+	if got := issuerNodes(all, 0); len(got) != 3 {
+		t.Fatalf("0 应原样返回 ✓，实际 %d", len(got))
+	}
+	// 签发节点已不在绑定列表（被删/解绑 ✓）→ 原样返回兜底 ✓
+	if got := issuerNodes(all, 99); len(got) != 3 {
+		t.Fatalf("找不到签发节点时应兜底返回全部 ✓，实际 %d", len(got))
+	}
+	if got := issuerNodes(nil, 19); len(got) != 0 {
+		t.Fatalf("空列表应原样返回 ✓")
+	}
+}
+
+// 端到端：证书带 IssuerNodeID 时，续期只下发到该节点 ✓（避免多个使用节点重复签发 ✗）
+func TestRenewOnlyAsksIssuerNode(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	c := seedCert(t, certRepo, `["issuer-only.example.com"]`, 1, 2*24*time.Hour)
+	// ⚠ 先建节点、拿到**真实自增 ID** ✓ —— 内存库里 ID 从 1 开始 ✗，
+	// 不能拿"名字里的数字"当 ID 用 ✗（我第一版就这么写错、导致断言失败 ✓）。
+	issuerNode := &entity.NodeServer{Name: "issuer-1.8", CertificateID: c.ID}
+	if err := serverRepo.Create(context.Background(), issuerNode); err != nil {
+		t.Fatal(err)
+	}
+	otherNode := &entity.NodeServer{Name: "user-other", CertificateID: c.ID}
+	if err := serverRepo.Create(context.Background(), otherNode); err != nil {
+		t.Fatal(err)
+	}
+	if issuerNode.ID == otherNode.ID {
+		t.Fatalf("测试前置不成立：两个节点 ID 相同")
+	}
+
+	// 把"签发节点"设为其中之一 ✓
+	c.IssuerNodeID = issuerNode.ID
+	if err := certRepo.Update(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	// 先确认真的落库了 ✓
+	if back, gerr := certRepo.GetByID(context.Background(), c.ID); gerr != nil || back.IssuerNodeID != issuerNode.ID {
+		t.Fatalf("IssuerNodeID 未落库：%+v (%v)", back, gerr)
+	}
+
+	f := &fakeIssuer{envEmail: "a@b.com"}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.got) != 1 {
+		t.Fatalf("只该下发 1 条（给签发节点 ✓），实际 %d", len(f.got))
+	}
+	if f.which[0] != c.IssuerNodeID {
+		t.Fatalf("应下发给签发节点 %d，实际 %d", c.IssuerNodeID, f.which[0])
+	}
+}
+
+// 兜底 ✓：签发节点已不在绑定列表（被删/被解绑 ✓）→ 仍然让绑定它的节点续 ✓（不会因为过滤而彻底不续 ✗）
+func TestRenewFallsBackWhenIssuerMissing(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	c := seedCert(t, certRepo, `["issuer-gone.example.com"]`, 1, 2*24*time.Hour)
+	if err := serverRepo.Create(context.Background(), &entity.NodeServer{Name: "only-user", CertificateID: c.ID}); err != nil {
+		t.Fatal(err)
+	}
+	c.IssuerNodeID = 999999 // 不存在 ✓
+	if err := certRepo.Update(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeIssuer{envEmail: "a@b.com"}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.got) != 1 {
+		t.Fatalf("签发节点缺失时应兜底给绑定节点 ✓，实际下发 %d 条", len(f.got))
+	}
+}

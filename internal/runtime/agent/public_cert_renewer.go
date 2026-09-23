@@ -130,6 +130,25 @@ func (r *PublicCertRenewer) nodesForCertificate(ctx context.Context, certID int6
 	return r.serverRepo.ListByCertificateID(ctx, certID)
 }
 
+// issuerNodes 只保留"**签发该证书的那个节点**" ✓ —— 用户口径：谁签发谁续期 ✓。
+//
+// 为什么必须限定 ✗：一张证书可能被多个节点"使用"（node_certificates 是多对多 ✓），
+// 若对它们逐个下发续期指令，会**重复签发** ✗；对 Google/ZeroSSL 还会**重复消耗
+// 一次性 EAB** ✗（真机已能看出这个风险 ✓）。
+//
+// issuerNodeID<=0（面板本机签的 ✓）或该节点已不在绑定列表里 ✓ → 原样返回 ✓（由其它绑定节点兜底 ✓）。
+func issuerNodes(servers []entity.NodeServer, issuerNodeID int64) []entity.NodeServer {
+	if issuerNodeID <= 0 {
+		return servers
+	}
+	for _, s := range servers {
+		if s.ID == issuerNodeID {
+			return []entity.NodeServer{s}
+		}
+	}
+	return servers
+}
+
 // WithInterval 设置检查间隔（测试/自定义用 ✓）。
 func (r *PublicCertRenewer) WithInterval(d time.Duration) *PublicCertRenewer {
 	if d > 0 {
@@ -237,6 +256,8 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 			continue // 还早，不用续 ✓
 		}
 		servers, err := r.nodesForCertificate(ctx, c.ID)
+		// ⚠ 只让**签发节点**续期 ✓（避免多个"使用节点"重复签发、重复消耗一次性 EAB ✗）
+		servers = issuerNodes(servers, c.IssuerNodeID)
 		if err != nil {
 			log.Printf("[PublicCertRenewer] list servers for cert %d: %v", c.ID, err)
 			continue
@@ -313,6 +334,8 @@ func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID in
 		if serr != nil {
 			continue
 		}
+		// ⚠ 同上：只让**签发节点**续期 ✓
+		servers = issuerNodes(servers, c.IssuerNodeID)
 		for _, srv := range servers {
 			if srv.ID != serverID || srv.IsLocal {
 				continue

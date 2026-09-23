@@ -1695,6 +1695,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				// Wire cert update callback: when a certificate is updated/renewed
 				// in the certificate center, automatically distribute to all nodes.
+				// 把"节点回传落库"这条路也接上分发 ✓（原来只有面板侧更新才会分发 ✗）
+				autoDistributeCertFn = func(ctx context.Context, certID int64) {
+					if derr := nodeServerSvcInst.DistributeCertificateToAll(ctx, certID); derr != nil {
+						log.Printf("[router] auto-distribute cert %d after node report: %v", certID, derr)
+					} else {
+						log.Printf("[router] auto-distributed cert %d (node-reported) to using nodes", certID)
+					}
+				}
+
 				certH.OnCertUpdated(func(ctx context.Context, certID int64) {
 					if err := nodeServerSvcInst.DistributeCertificateToAll(ctx, certID); err != nil {
 						log.Printf("[router] auto-distribute cert %d after update: %v", certID, err)
@@ -3914,6 +3923,12 @@ func (a *wafProxyReloaderAdapter) SaveAndApply(ctx context.Context, proxyType st
 	return a.mgr.SaveAndApplyProxy(ctx, proxySvc.ProxyType(proxyType))
 }
 
+// autoDistributeCertFn 在"节点签好的证书落库"之后，把最新证书**同步给使用它的节点** ✓。
+//
+// ⚠ 用包级函数变量而不是结构体字段 ✗：适配器是以**值**传给 manager 的 ✓，
+// 之后再改副本无效 ✗；函数变量在调用时读取 ✓，因此可以后置注入 ✓。
+var autoDistributeCertFn func(ctx context.Context, certID int64)
+
 // publicCertSinkAdapter 把 Agent 回传的公网证书接到证书服务的落盘落库逻辑上 ✓。
 // 放在 router 包是为了避免 runtime/agent ↔ service/certificate 之间的循环依赖 ✗。
 type publicCertSinkAdapter struct {
@@ -3932,9 +3947,14 @@ func (a publicCertSinkAdapter) StoreAgentIssuedCert(ctx context.Context, res *ag
 		FullchainPEM: res.FullchainPEM,
 		ExpiresAt:    res.ExpiresAt,
 		CA:           res.CA,
+		ServerID:     res.ServerID,
 	})
 	if err != nil || c == nil {
 		return 0, err
+	}
+	// 落库成功后**自动分发**给使用该证书的其它节点 ✓（异步 ✓，不拖慢节点回传 ✓）
+	if autoDistributeCertFn != nil {
+		go autoDistributeCertFn(context.Background(), c.ID)
 	}
 	return c.ID, nil
 }

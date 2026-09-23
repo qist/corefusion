@@ -3260,20 +3260,41 @@ async function loadCertList() {
     const res = await client.get('/certificates', { params: { limit: 100 } })
     const items = (res && res.items) || (res && res.data && res.data.items) || (Array.isArray(res) ? res : [])
     certList.value = items
-    // Match cert ID for existing configs so select shows the name
-    form.value.forEach(ib => {
-      const tls = ib.streamSettings && ib.streamSettings.tls
-      if (!tls || tls._certId) return
-      const certFile = tls._certificateFile || ''
-      if (!certFile) return
-      const matchPath = certFile.replace(/^(\.\.\/)+/, '')
-      const found = items.find(c => c.cert_path === matchPath || c.fullchain_path === matchPath)
-      if (found) {
-        tls._certId = found.id
-        tls._certName = found.name + ' (' + found.domain + ')'
-      }
-    })
+    matchCertIds()
   } catch (e) { console.error('loadCertList failed:', e) }
+}
+
+// matchCertIds 把"已保存的证书文件路径"反查回**证书中心里的那张证书** ✓，
+// 让"选择证书"下拉在**编辑时**能回显出证书名 ✓。
+//
+// ⚠ 原实现有两个坑 ✗（真机上就是因此"编辑时看不到绑定的证书" ✗）：
+//   ① `loadCertList()` 与 `loadInbounds()` 在 onMounted 里**并发赛跑** ✗ ——
+//      证书列表先回来时 `form.value` 还是空的 ✗ → 匹配循环空转 ✓ → `_certId` 始终为 '' ✗；
+//   ② 用"去掉前导 ../ 之后**严格相等**" ✗ —— 而路径可能已被加工成绝对路径（`dataDir + '/' + …` ✓）
+//      或 `../../../certs/…` ✓ → 严格相等匹配不上 ✗。
+// 现在：抽成函数 ✓ 在"证书列表回来"和"inbound 加载完"**两处**都调用 ✓（与顺序无关 ✓），
+// 并用**双向 includes** 比较（sing-box 侧就是这么做的 ✓，所以它没这个问题 ✓）。
+function stripCertPrefix(p) {
+  return String(p || '').replace(/^(\.\.\/)+/, '').replace(/^\/+/, '')
+}
+
+function matchCertIds() {
+  if (!Array.isArray(form.value) || !certList.value.length) return
+  form.value.forEach(ib => {
+    const tls = ib.streamSettings && ib.streamSettings.tls
+    if (!tls || tls._certId) return
+    const raw = tls._certificateFile || (tls.certificates && tls.certificates[0] && tls.certificates[0].certificateFile) || ''
+    if (!raw) return
+    const target = stripCertPrefix(raw)
+    const found = certList.value.find(c => [c.cert_path, c.fullchain_path].filter(Boolean).some(p => {
+      const cp = stripCertPrefix(p)
+      return cp && (target.includes(cp) || cp.includes(target))
+    }))
+    if (found) {
+      tls._certId = found.id
+      tls._certName = found.name + ' (' + found.domain + ')'
+    }
+  })
 }
 
 function onRawHeaderChange(val) {
@@ -4851,7 +4872,9 @@ async function loadInbounds() {
 function emit() { /* no longer needed, saves directly to API */ }
 
 onMounted(() => {
-  loadInbounds(); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
+  // ⚠ 这两件事都会让 `form.value` / `certList` 就绪 ✓，而它们是并发的 ✗ ——
+  // 谁先回来都要能正确回显 ✓，所以两边完成后都调一次 matchCertIds() ✓（幂等 ✓）。
+  loadInbounds().then(() => matchCertIds()); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
   prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
   loadServerNameUsage() // 该节点已占用的 Server Names（含另一核心），用于标记与互斥
   loadPortHopRules() // 该节点已用的端口跳跃段，用于标记冲突段

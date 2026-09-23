@@ -284,8 +284,9 @@ else
 fi
 
 # ==================== 场景 3：订单过期 =======================================
-step "【订单过期】TTL 数据 + 过期后回调是否仍严格对账"
-note "产品决策：过期不强制（expires_at 目前不参与判定）—— 迟到回调照常入账，避免用户已付款却丢单"
+step "【订单过期】过期即关闭：不能再支付、不能再入账"
+note "产品决策（已确认）：过期订单直接关闭 —— TTL 一到就标注 expired，之后的回调一律拒收"
+note "后台清理器（每 5 分钟，CleanupExpiredOrders→MarkExpired）兜底标注；回调里做同一口径的即时拦截"
 E_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
 E_TRADE="$(jget "$E_ORDER" "data.trade_no")"
 if [[ -z "$E_TRADE" ]]; then
@@ -298,14 +299,17 @@ else
   E_BAL0="$(balance)"
   E_URL="$(make_callback --trade-no "$E_TRADE" --site-id "$SITE_ID" --secret "$SITE_SECRET" --amount "$AMOUNT_FEN")"
   E_CODE="$(curl -s -o "$TMP/e.out" -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
-  if [[ "$E_CODE" == "200" ]]; then
-    ok "过期订单 + 数据对上的回调 → HTTP 200 ✓（按决策：照常入账）"
-    E_DELTA=$(( $(balance) - E_BAL0 ))
-    [[ "$E_DELTA" == "$AMOUNT_FEN" ]] && ok "过期订单按订单金额精确入账 ✓（+$E_DELTA 分）" \
-      || bad "过期订单入账金额不对 ✗ got=$E_DELTA want=$AMOUNT_FEN"
-  else
-    bad "过期订单的正确回调被拒 ✗ HTTP $E_CODE（与「过期不强制」的决策不符）$(head -c 140 "$TMP/e.out")"
-  fi
+  [[ "$E_CODE" == "400" ]] && ok "过期订单的回调被拒 → HTTP 400 ✓（不能再支付/入账 ✓）" \
+    || bad "过期订单的回调没被拒 ✗ HTTP $E_CODE $(head -c 140 "$TMP/e.out")"
+  E_ST="$(sqlq "select status from charge_orders where trade_no='$E_TRADE';")"
+  [[ "$E_ST" == "expired" ]] && ok "订单已被关闭：status = expired ✓" \
+    || bad "订单状态 = $E_ST ✗（期望 expired ✓ —— 过期即关闭）"
+  [[ "$(balance)" == "$E_BAL0" ]] && ok "余额未被改动 ✓（$E_BAL0，过期不入账 ✓）" \
+    || bad "过期订单竟然改动了余额 ✗ $E_BAL0 → $(balance)"
+  # 再过一次（幂等）：仍是 expired、仍拒绝、余额仍不变 ✓
+  E_CODE2="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json" \
+    2>/dev/null || true)"
+  info "重复投递同一回调：HTTP ${E_CODE2:-?}（过期后一律拒绝 ✓）"
   # 过期订单 + 金额不符 → 必须被拒 ✓（"过期"不是放水，数据仍要严格对上 ✓）
   E2_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
   E2_TRADE="$(jget "$E2_ORDER" "data.trade_no")"

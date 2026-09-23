@@ -1,6 +1,6 @@
 # 开发代码目录结构与安全建议
 
-> **实现状态（2026-08-01 修订）**：**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离、高危操作权限点（后端）、页面级/按钮级权限（前端）、管理端 mTLS 均已落地**（详见第 8 章、第 15 章）。仍未实现：2FA/TOTP、CLI 恢复命令。其中 **Token 撤销与强制下线经评估不作为本阶段必要项**——当前 Refresh Token 有效期较短（7d）且已与 Access Token 分离、登录失败已限流，Token 撤销（Redis 黑名单 / 用户级 Token 版本号）的边际收益有限；如需支持管理员强制下线可后续追加，`POST /auth/logout` 当前仍为空实现（前端丢弃 Token 即可）。**CSRF 防护明确不实现**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，不适用。敏感字段加密（如充值卡号 AES-256-GCM）已落地。详见 `UNIMPLEMENTED_FEATURES.md` P3 安全能力项。
+> **实现状态（2026-09-23 复核）**：**RBAC 接口级权限校验、登录失败限流、Access/Refresh Token 分离、高危操作权限点（后端）、页面级/按钮级权限（前端）、管理端 mTLS 均已落地**（详见第 8 章、第 15 章）。仍未实现：2FA/TOTP、CLI 恢复命令。其中 **Token 撤销与强制下线经评估不作为本阶段必要项**——当前 Refresh Token 有效期较短（7d）且已与 Access Token 分离、登录失败已限流，Token 撤销（Redis 黑名单 / 用户级 Token 版本号）的边际收益有限；如需支持管理员强制下线可后续追加，`POST /auth/logout` **已实现**（`handlers/auth/handler.go` 调 `authSvc.Logout`，按用户吊销其全部令牌）。**CSRF 防护明确不实现**——系统使用 Bearer Token 鉴权、无 Cookie 会话，CSRF 无攻击面，不适用。敏感字段加密（如充值卡号 AES-256-GCM）已落地。详见 `UNIMPLEMENTED_FEATURES.md` P3 安全能力项。
 
 ## 1. 文档目标
 

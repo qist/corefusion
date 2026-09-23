@@ -1,9 +1,11 @@
 # 代码级设计文档
 
-> **实现状态（2026-07-30 修订）**：第 6-8 章（多核心流量采集适配器、配额拒绝连接状态机、服务端 IP 限速与黑名单）与现行实现存在差异：
+> **实现状态（2026-09-23 复核）**：第 6-8 章（多核心流量采集适配器、配额拒绝连接状态机、服务端 IP 限速与黑名单）与现行实现存在差异：
 > - 流量采集：原设计的 `multi_collector/aggregator`（`service/traffic/aggregator.go`）因与 `TrafficEventConsumer` 争用同一 channel 导致约 50% 远程流量丢失，已在 `main.go` 注释停用；现行实现走 `service/trafficsync` + `traffic_consumer.go` → `inboundconfig.UpdateTraffic` → `subscriptions.*_bytes_cache`，非 xray 协议改用网络层计费（nftables 按 IP 计数 / 节点出口网卡计数器）。
 > - 配额执行：实际由 `service/ratelimit`（nftables + tc）落地，`quota.Enforcer` / `quota.Service` 当前无调用方（死代码）。
 > - IP 限速/黑名单：`access.Service` 底层组件已实现但未接线，管理面 API 为 placeholder。
+> - **（2026-09-23 复核）**：`internal/configgen/` 与 multi_collector/aggregator 相关文件**已删除**，
+>   现行实现为 `service/coreconfig` + `service/trafficsync`；`quota.Enforcer` 至今仍是死代码（全仓 0 调用）。
 > 详见 `UNIMPLEMENTED_FEATURES.md` 第 2、3 章。
 
 ## 1. 目标

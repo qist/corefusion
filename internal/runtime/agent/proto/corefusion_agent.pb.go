@@ -8301,8 +8301,15 @@ type IssuePublicCertCommand struct {
 	// 面板按 CA 自动关联后下发 ✓（节点侧零配置 ✓）。⚠ 只在"注册"时用一次 ✗：
 	// 注册成功后 EAB 即失效 ✗（Google 还是 7 天一次性 ✗）→
 	// 所以**账号必须落盘** ✓（见 data_dir ✓），否则续期会反复要新 EAB ✗。
-	EabKeyId      string `protobuf:"bytes,11,opt,name=eab_key_id,json=eabKeyId,proto3" json:"eab_key_id,omitempty"`
-	EabMacKey     string `protobuf:"bytes,12,opt,name=eab_mac_key,json=eabMacKey,proto3" json:"eab_mac_key,omitempty"`
+	EabKeyId  string `protobuf:"bytes,11,opt,name=eab_key_id,json=eabKeyId,proto3" json:"eab_key_id,omitempty"`
+	EabMacKey string `protobuf:"bytes,12,opt,name=eab_mac_key,json=eabMacKey,proto3" json:"eab_mac_key,omitempty"`
+	// ── 密钥类型（2026-09-23 补 ✓）：原来这两个字段**根本不存在** ✗ ──
+	// 不带 → 节点侧 resolveKeyType("",0) 回退 **EC256** ✗
+	// → 面板记录是 rsa 的证书，在节点上怎么续都只能签出 EC 证书 ✗（真机踩到 ✓）。
+	// key_type 取值：ecc / rsa（面板侧 NormalizeKeyType 已归一 ✓）；
+	// key_bits：ecc→256|384、rsa→2048|3072|4096|8192（0 = 用该类型默认 ✓）。
+	KeyType       string `protobuf:"bytes,13,opt,name=key_type,json=keyType,proto3" json:"key_type,omitempty"`
+	KeyBits       int32  `protobuf:"varint,14,opt,name=key_bits,json=keyBits,proto3" json:"key_bits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8419,6 +8426,20 @@ func (x *IssuePublicCertCommand) GetEabMacKey() string {
 		return x.EabMacKey
 	}
 	return ""
+}
+
+func (x *IssuePublicCertCommand) GetKeyType() string {
+	if x != nil {
+		return x.KeyType
+	}
+	return ""
+}
+
+func (x *IssuePublicCertCommand) GetKeyBits() int32 {
+	if x != nil {
+		return x.KeyBits
+	}
+	return 0
 }
 
 // PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。
@@ -9325,7 +9346,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"B\n" +
 	"\x19SetEgressInterfaceRequest\x12%\n" +
-	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\"\xe5\x03\n" +
+	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\"\x9b\x04\n" +
 	"\x16IssuePublicCertCommand\x12\x17\n" +
 	"\acert_id\x18\x01 \x01(\x03R\x06certId\x12 \n" +
 	"\videntifiers\x18\x02 \x03(\tR\videntifiers\x12\x1c\n" +
@@ -9341,7 +9362,9 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"dnsEnvVars\x12\x1c\n" +
 	"\n" +
 	"eab_key_id\x18\v \x01(\tR\beabKeyId\x12\x1e\n" +
-	"\veab_mac_key\x18\f \x01(\tR\teabMacKey\x1a=\n" +
+	"\veab_mac_key\x18\f \x01(\tR\teabMacKey\x12\x19\n" +
+	"\bkey_type\x18\r \x01(\tR\akeyType\x12\x19\n" +
+	"\bkey_bits\x18\x0e \x01(\x05R\akeyBits\x1a=\n" +
 	"\x0fDnsEnvVarsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8b\x02\n" +

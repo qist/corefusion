@@ -65,7 +65,11 @@ func TestCertMetaRoundTrip(t *testing.T) {
 		Challenge:   "dns-01",
 		DNSProvider: "cloudflare",
 		DNSEnvVars:  map[string]string{"CF_Token": "secret"},
-		IssuedAt:    time.Now().Add(-time.Hour).Truncate(time.Second),
+		// ⚠ 密钥规格必须一起落盘 ✗：节点自续期是"照 meta 重签一遍" ✓，
+		// 不记住就退回 EC256 ✗ → 每次自续都悄悄换掉 rsa ✗。
+		KeyType:  "rsa",
+		KeyBits:  4096,
+		IssuedAt: time.Now().Add(-time.Hour).Truncate(time.Second),
 	}
 	if err := writeCertMeta(dir, "a.com", m); err != nil {
 		t.Fatal(err)
@@ -76,6 +80,9 @@ func TestCertMetaRoundTrip(t *testing.T) {
 	}
 	if got.CertID != 7 || got.CA != "lets_encrypt" || got.DNSEnvVars["CF_Token"] != "secret" {
 		t.Fatalf("读回内容不符：%+v", got)
+	}
+	if got.KeyType != "rsa" || got.KeyBits != 4096 {
+		t.Fatalf("密钥规格必须能原样读回 ✗（否则自续期会退回 EC256 ✗）：%+v", got)
 	}
 	// 权限必须是 0600 ✓（里面有 DNS 凭据 ✗）
 	st, serr := os.Stat(certMetaPath(dir, "a.com"))
@@ -111,12 +118,54 @@ func TestListLocalCertDirs(t *testing.T) {
 	mk("b.com", true)
 	mk("a.com", true)
 	mk("halfway", false) // 没签完的目录 ✓ 跳过 ✓
+	// ⚠ RSA 证书在**类型子目录**里 ✗：`certs/<name>/rsa/cert.pem` ✓
+	// 只认顶层 cert.pem 的话 RSA 证书**永远发现不了** ✗ → 永不自续 ✗。
+	rsaDir := filepath.Join(dir, "certs", "rsa.com", "rsa")
+	if err := os.MkdirAll(rsaDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rsaDir, "cert.pem"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	names, err := listLocalCertDirs(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(names) != 2 || names[0] != "a.com" || names[1] != "b.com" {
-		t.Fatalf("应只列出签好的目录且有序 ✓，实际 %v", names)
+	if len(names) != 3 || names[0] != "a.com" || names[1] != "b.com" || names[2] != "rsa.com" {
+		t.Fatalf("应列出签好的目录（含 RSA 的类型子目录 ✓）且有序 ✓，实际 %v", names)
+	}
+}
+
+// 证书名要从 `CertRelPaths` 的路径里正确取出 ✓（`certs/<name>/...` ✓）——
+// ⚠ RSA 是 `certs/<name>/rsa/cert.pem` ✗：用 base(dir) 会得到 "rsa" ✗
+// → meta 落到 `certs/rsa/meta.json` ✗（与 certMetaPath 不一致 ✗ → 自续期失效 ✗）。
+func TestCertNameFromRelPath(t *testing.T) {
+	for _, c := range []struct {
+		rel, want string
+	}{
+		{"certs/a.com/cert.pem", "a.com"},
+		{"certs/a.com/rsa/cert.pem", "a.com"},
+		{"certs/ip-103_119_132_48/cert.pem", "ip-103_119_132_48"},
+		{"certs/panel.example.com/rsa/fullchain.pem", "panel.example.com"},
+	} {
+		if got := certNameFromRelPath(c.rel); got != c.want {
+			t.Fatalf("certNameFromRelPath(%q) = %q，应为 %q ✗", c.rel, got, c.want)
+		}
+	}
+	// 与 certMetaPath 必须**指向同一张证书** ✓（这是自续期能找到它的前提 ✗）
+	dir := "/tmp/acme"
+	if got, want := certMetaPath(dir, certNameFromRelPath("certs/a.com/rsa/cert.pem")),
+		filepath.Join(dir, "certs", "a.com", "meta.json"); got != want {
+		t.Fatalf("RSA 证书的 meta 路径错位 ✗：%s ≠ %s", got, want)
+	}
+	// localCertPathFor 必须按类型分层 ✓（RSA 在类型子目录 ✓）
+	if got, want := localCertPathFor(dir, "a.com", "rsa"),
+		filepath.Join(dir, "certs", "a.com", "rsa", "cert.pem"); got != want {
+		t.Fatalf("RSA 证书文件路径应为 %s ✗，实际 %s", want, got)
+	}
+	if got, want := localCertPathFor(dir, "a.com", "ecc"),
+		filepath.Join(dir, "certs", "a.com", "cert.pem"); got != want {
+		t.Fatalf("ECC 证书文件路径应为 %s ✗，实际 %s", want, got)
 	}
 }
 
@@ -153,6 +202,14 @@ func TestIssueParamsFromMeta(t *testing.T) {
 	}
 	if p.CertID != 3 || p.CA != "google" || p.DNSEnvVars["CF_Token"] != "t" {
 		t.Fatalf("参数还原不对 ✓：%+v", p)
+	}
+	// ⚠ 密钥规格也要还原 ✗：不带就退回 EC256 ✗ → 自续期把 rsa 换成 EC ✗
+	if p.KeyType != "" || p.KeyBits != 0 {
+		t.Fatalf("老 meta（无 key_type/key_bits ✓）应还原为空/0 ✓ = 历史默认 EC256 ✓：%+v", p)
+	}
+	m.KeyType, m.KeyBits = "rsa", 4096
+	if p2 := m.issueParams(app, "/tmp/acme"); p2.KeyType != "rsa" || p2.KeyBits != 4096 {
+		t.Fatalf("meta 里的密钥规格必须原样带回 ✗（否则自续期换钥匙类型 ✗）：%+v", p2)
 	}
 	if p.EABKeyID != "" || p.EABMACKey != "" {
 		t.Fatalf("续期**不该**带 EAB ✗（账号已在节点本地 ✓）：%+v", p)

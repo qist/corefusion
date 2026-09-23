@@ -58,6 +58,29 @@ func caNeedsEAB(caProvider string) bool {
 	}
 }
 
+// resolveIssueKeyType 决定下发给节点的**密钥规格** ✓（key_type + key_bits ✓）。
+//
+// 优先级：**请求显式指定 > 库记录兜底 > 空**（空/0 = 让节点用历史默认 EC256 ✓）。
+//
+// ⚠ 库记录兜底是关键 ✗：续签已有证书时前端往往不传密钥类型 ✓，
+// 若直接留空 → 节点侧 `resolveKeyType("",0)` 回退 **EC256** ✗
+// → 库里登记 `rsa/4096` 的证书被"续"成 EC 证书 ✗
+// （真机现象：记录写 rsa、落地文件却是 `EC PRIVATE KEY` ✓）。
+func resolveIssueKeyType(reqType string, reqBits int, dbType string, dbBits int) (string, int) {
+	keyType := strings.TrimSpace(reqType)
+	if keyType == "" {
+		keyType = strings.TrimSpace(dbType)
+	}
+	keyBits := reqBits
+	if keyBits <= 0 {
+		keyBits = dbBits
+	}
+	if keyBits < 0 {
+		keyBits = 0 // 防御：库里脏数据不该变成负数下发 ✗
+	}
+	return keyType, keyBits
+}
+
 // EABConfigInfo 是"从独立 EAB 配置里取到的内容" ✓。
 type EABConfigInfo struct {
 	Name       string
@@ -282,6 +305,10 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		// → 手填的 EAB 根本传不进来 ✗（Google / ZeroSSL 必填 EAB ✗ → 直接签不了 ✗）。
 		EABKeyID  string `json:"eab_key_id"`
 		EABMACKey string `json:"eab_mac_key"`
+		// ⚠ 密钥类型必须能传 ✗：面板记录里选了 rsa/4096 ✓，指令里不带的话节点只能签出 EC256 ✗
+		// （真机现象：记录 rsa、落地却是 `EC PRIVATE KEY` ✓）。留空则用 cert_id 对应记录的 ✓。
+		KeyType string `json:"key_type"`
+		KeyBits int    `json:"key_bits"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -298,25 +325,38 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 			identifiers = append(identifiers, d)
 		}
 	}
-	// 续签已有证书：标识符从库里取 ✓（避免前端重复填、也避免填错 ✗）
-	if len(identifiers) == 0 && req.CertID > 0 {
+	// 续签已有证书：标识符 + **密钥类型**都从库里取 ✓（避免前端重复填、也避免填错/丢参数 ✗）
+	//
+	// ⚠ 密钥类型必须兜底 ✗：前端不传、指令里也没有 → 节点侧退回 EC256 ✗，
+	// 于是"库里 rsa 的证书被续成 EC 证书" ✗（真机踩到 ✓）。
+	// 所以这里**只要带 cert_id 就读库**（即使 domains 已显式给了 ✓）。
+	var existingKeyType string
+	var existingKeyBits int
+	if req.CertID > 0 {
 		existing, err := h.certSvc.GetByID(c.Request.Context(), req.CertID)
-		if err != nil {
-			response.BadRequest(c, "CERT_NOT_FOUND", "certificate not found")
-			return
-		}
-		if existing.Domains != "" {
-			var arr []string
-			if json.Unmarshal([]byte(existing.Domains), &arr) == nil {
-				for _, d := range arr {
-					if d = strings.TrimSpace(d); d != "" {
-						identifiers = append(identifiers, d)
+		if err != nil || existing == nil {
+			// 显式给了 domains（新签发场景 ✓）就容错 ✓；没给则必须报错 ✗（与原来口径一致 ✓）
+			if len(identifiers) == 0 {
+				response.BadRequest(c, "CERT_NOT_FOUND", "certificate not found")
+				return
+			}
+		} else {
+			existingKeyType, existingKeyBits = existing.KeyType, existing.KeyBits
+			if len(identifiers) == 0 {
+				if existing.Domains != "" {
+					var arr []string
+					if json.Unmarshal([]byte(existing.Domains), &arr) == nil {
+						for _, d := range arr {
+							if d = strings.TrimSpace(d); d != "" {
+								identifiers = append(identifiers, d)
+							}
+						}
 					}
 				}
+				if len(identifiers) == 0 && strings.TrimSpace(existing.Domain) != "" {
+					identifiers = append(identifiers, strings.TrimSpace(existing.Domain))
+				}
 			}
-		}
-		if len(identifiers) == 0 && strings.TrimSpace(existing.Domain) != "" {
-			identifiers = append(identifiers, strings.TrimSpace(existing.Domain))
 		}
 	}
 	if len(identifiers) == 0 {
@@ -397,6 +437,10 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		}
 	}
 
+	// 密钥类型：请求里显式指定的优先 ✓，否则用**库记录**兜底 ✓；
+	// 两个都为空 → 保持空串 ✓，节点侧回退历史默认 EC256 ✓（与"不指定"的旧行为一致 ✓）。
+	keyType, keyBits := resolveIssueKeyType(req.KeyType, req.KeyBits, existingKeyType, existingKeyBits)
+
 	cmd := &agentpb.IssuePublicCertCommand{
 		CertId:      req.CertID,
 		Identifiers: identifiers,
@@ -408,8 +452,12 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		// ⚠ 这两行原来漏了 ✗ → 节点侧拿不到 EAB → Google/ZeroSSL 首次注册必失败 ✗
 		EabKeyId:  eabKID,
 		EabMacKey: eabMAC,
+		// ⚠ 这两行原来**根本没有** ✗ → 节点只能签 EC256 ✗（见请求结构体上的注释 ✓）
+		KeyType: keyType,
+		KeyBits: int32(keyBits),
 	}
-	log.Printf("[cert] issue-on-node: node=%d ca=%q eab=%v email=%q", req.NodeID, caProvider, eabKID != "" && eabMAC != "", email)
+	log.Printf("[cert] issue-on-node: node=%d ca=%q eab=%v email=%q key_type=%q key_bits=%d",
+		req.NodeID, caProvider, eabKID != "" && eabMAC != "", email, keyType, keyBits)
 	// dns-01：把面板里存的 DNS 通道（提供者 + 凭据 ✓）随指令下发给节点 ✓
 	if strings.EqualFold(strings.TrimSpace(req.ChallengeType), "dns-01") && req.DNSChannelID > 0 {
 		if h.dnsChannels == nil {

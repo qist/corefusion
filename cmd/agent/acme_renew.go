@@ -91,7 +91,9 @@ func (a *AgentApp) renewDueCertsOnce(ctx context.Context) []*agentpb.PublicCertI
 			continue // 无 meta = 不归节点自管 ✓（例如面板下发的 ✓）
 		}
 
-		certPath := filepath.Join(dataDir, "certs", name, "cert.pem")
+		// ⚠ 按 meta 里的**密钥类型**定位 ✗：RSA 在 `certs/<name>/rsa/cert.pem` ✓，
+		// 写死 `certs/<name>/cert.pem` 会读不到 ✗ → RSA 证书在节点侧永不自续 ✗。
+		certPath := localCertPathFor(dataDir, name, meta.KeyType)
 		pemBytes, rerr := os.ReadFile(certPath)
 		if rerr != nil {
 			log.Printf("[Agent] cert self-renew: read %s failed: %v", certPath, rerr)

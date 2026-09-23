@@ -1,11 +1,13 @@
 package client
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/auth/password"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/service/client"
 )
@@ -65,6 +67,11 @@ func (h *Handler) CreateClient(c *gin.Context) {
 	}
 	cl, err := h.svc.CreateClient(c.Request.Context(), input)
 	if err != nil {
+		// 密码超过 bcrypt 的 72 字节上限属于调用方传参问题 → 400，不要伪装成面板故障 ✗
+		if errors.Is(err, password.ErrPasswordTooLong) {
+			response.BadRequest(c, "PASSWORD_TOO_LONG", err.Error())
+			return
+		}
 		response.InternalError(c, "CREATE_CLIENT_FAILED", err.Error())
 		return
 	}
@@ -78,7 +85,7 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 		return
 	}
 	var input struct {
-		Password        *string `json:"password"`
+		Password        *string `json:"password" binding:"omitempty,max=72"`
 		PlanID          *int64  `json:"plan_id"`
 		PlanVariantID   *int64  `json:"plan_variant_id"`
 		QuotaBytes        *int64  `json:"quota_bytes"`
@@ -94,6 +101,10 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 	}
 	cl, err := h.svc.UpdateClient(c.Request.Context(), id, input)
 	if err != nil {
+		if errors.Is(err, password.ErrPasswordTooLong) {
+			response.BadRequest(c, "PASSWORD_TOO_LONG", err.Error())
+			return
+		}
 		response.InternalError(c, "UPDATE_CLIENT_FAILED", err.Error())
 		return
 	}

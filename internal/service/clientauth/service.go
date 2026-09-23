@@ -135,7 +135,7 @@ func (s *Service) GetTrafficHistory(ctx context.Context, clientID int64, months 
 // RegisterInput is the input for client registration.
 type RegisterInput struct {
 	Email        string `json:"email" binding:"required,email"`
-	Password     string `json:"password" binding:"required,min=6"`
+	Password     string `json:"password" binding:"required,min=6,max=72"`
 	ReferralCode string `json:"referral_code"` // P1: 邀请码（可选）
 }
 

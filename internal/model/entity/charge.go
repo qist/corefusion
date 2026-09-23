@@ -8,30 +8,30 @@ import "time"
 
 // ChargeSite represents a configured third-party payment site.
 type ChargeSite struct {
-	ID                int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name              string    `gorm:"size:100;not null" json:"name"`
-	SiteURL           string    `gorm:"size:500;not null" json:"site_url"`
-	Domain            string    `gorm:"size:255" json:"domain"`
-	APIKey            string    `gorm:"size:255" json:"api_key"`
-	CallbackSecret    string    `gorm:"size:255" json:"callback_secret"`         // 明文（仅内存中使用，写库前加密）
-	EncryptedSecret   string    `gorm:"type:longtext" json:"encrypted_secret"`       // AES-256-GCM 加密后的当前密钥（兼容旧逻辑，新逻辑用 charge_site_secrets 表）
-	EncryptedSecretPrev string  `gorm:"type:longtext" json:"encrypted_secret_prev"`  // 兼容旧逻辑
-	SecretVersion     int       `gorm:"not null;default:1" json:"secret_version"` // 当前密钥版本号
-	CallbackWhitelist string    `gorm:"size:1000" json:"callback_whitelist"`     // JSON array of allowed IPs/CIDRs（P2 辅助）
-	SupportedMethods  string    `gorm:"type:longtext" json:"supported_methods"`      // JSON array
-	Currency          string    `gorm:"size:16;not null;default:CNY" json:"currency"`
-	IconURL           string    `gorm:"size:500" json:"icon_url"`
-	Enabled           bool      `gorm:"not null;default:true" json:"enabled"`
-	SortOrder         int       `gorm:"not null;default:0" json:"sort_order"`
-	VerifyToken       string    `gorm:"size:64" json:"verify_token"`
-	VerifyContent     string    `gorm:"size:128" json:"verify_content"`
-	Verified          bool      `gorm:"not null;default:false" json:"verified"`
-	VerifiedMethod    string    `gorm:"size:16" json:"verified_method"`
-	VerifiedAt        *time.Time `gorm:"index" json:"verified_at"`
-	VerifyExpireAt    *time.Time `gorm:"index" json:"verify_expire_at"`
-	ConfigJSON        string    `gorm:"type:longtext" json:"config_json"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                  int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name                string     `gorm:"size:100;not null" json:"name"`
+	SiteURL             string     `gorm:"size:500;not null" json:"site_url"`
+	Domain              string     `gorm:"size:255" json:"domain"`
+	APIKey              string     `gorm:"size:255" json:"api_key"`
+	CallbackSecret      string     `gorm:"size:255" json:"callback_secret"`            // 明文（仅内存中使用，写库前加密）
+	EncryptedSecret     string     `gorm:"type:longtext" json:"encrypted_secret"`      // AES-256-GCM 加密后的当前密钥（兼容旧逻辑，新逻辑用 charge_site_secrets 表）
+	EncryptedSecretPrev string     `gorm:"type:longtext" json:"encrypted_secret_prev"` // 兼容旧逻辑
+	SecretVersion       int        `gorm:"not null;default:1" json:"secret_version"`   // 当前密钥版本号
+	CallbackWhitelist   string     `gorm:"size:1000" json:"callback_whitelist"`        // JSON array of allowed IPs/CIDRs（P2 辅助）
+	SupportedMethods    string     `gorm:"type:longtext" json:"supported_methods"`     // JSON array
+	Currency            string     `gorm:"size:16;not null;default:CNY" json:"currency"`
+	IconURL             string     `gorm:"size:500" json:"icon_url"`
+	Enabled             bool       `gorm:"not null;default:true" json:"enabled"`
+	SortOrder           int        `gorm:"not null;default:0" json:"sort_order"`
+	VerifyToken         string     `gorm:"size:64" json:"verify_token"`
+	VerifyContent       string     `gorm:"size:128" json:"verify_content"`
+	Verified            bool       `gorm:"not null;default:false" json:"verified"`
+	VerifiedMethod      string     `gorm:"size:16" json:"verified_method"`
+	VerifiedAt          *time.Time `gorm:"index" json:"verified_at"`
+	VerifyExpireAt      *time.Time `gorm:"index" json:"verify_expire_at"`
+	ConfigJSON          string     `gorm:"type:longtext" json:"config_json"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 func (ChargeSite) TableName() string { return "charge_sites" }
@@ -53,7 +53,7 @@ type ChargeSiteSecret struct {
 	ID              int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	SiteID          int64      `gorm:"not null;index:idx_site_version,unique,priority:1" json:"site_id"`
 	Version         int        `gorm:"not null;index:idx_site_version,unique,priority:2" json:"version"` // (site_id, version) 联合唯一
-	EncryptedSecret string     `gorm:"type:longtext;not null" json:"encrypted_secret"`                       // AES-256-GCM 加密
+	EncryptedSecret string     `gorm:"type:longtext;not null" json:"encrypted_secret"`                   // AES-256-GCM 加密
 	Status          string     `gorm:"size:16;not null;default:active;index" json:"status"`              // active / legacy / expired
 	CreatedAt       time.Time  `json:"created_at"`
 	ExpiredAt       *time.Time `gorm:"index" json:"expired_at"` // 过期时间（legacy → expired 的自动转换）
@@ -94,8 +94,11 @@ const (
 
 // chargeOrderTransitions defines the allowed state machine transitions.
 var chargeOrderTransitions = map[string]map[string]bool{
-	ChargeStatusCreated:    {ChargeStatusPending: true},
-	ChargeStatusPending:    {ChargeStatusProcessing: true, ChargeStatusFailed: true, ChargeStatusExpired: true},
+	ChargeStatusCreated: {ChargeStatusPending: true},
+	// 注意：支付网关回调是"一次性终态" —— 站点回调会**直接**把 pending 的订单结算成
+	// paid/failed，中间不会经过 processing（那只是面板内部协调用的中间态）。
+	// 所以 pending → paid 必须在这里正式合法，否则回调永远被判非法、订单永远到不了账。
+	ChargeStatusPending:    {ChargeStatusProcessing: true, ChargeStatusPaid: true, ChargeStatusFailed: true, ChargeStatusExpired: true},
 	ChargeStatusProcessing: {ChargeStatusPaid: true, ChargeStatusFailed: true},
 	ChargeStatusPaid:       {ChargeStatusRefunded: true},
 	ChargeStatusFailed:     {ChargeStatusPending: true}, // 允许重新支付
@@ -141,8 +144,8 @@ type ChargeOrder struct {
 	ProcessingAt   *time.Time `gorm:"index" json:"processing_at"` // 进入 processing 状态的时间，用于超时恢复
 	ExpiresAt      *time.Time `json:"expires_at"`
 	CallbackRaw    string     `gorm:"type:longtext" json:"callback_raw"`
-	CallbackCount  int        `gorm:"not null;default:0" json:"callback_count"`     // v3.2: 回调次数（异常频率检测）
-	LastCallbackAt *time.Time `gorm:"index" json:"last_callback_at"`                // v3.2: 最后回调时间
+	CallbackCount  int        `gorm:"not null;default:0" json:"callback_count"` // v3.2: 回调次数（异常频率检测）
+	LastCallbackAt *time.Time `gorm:"index" json:"last_callback_at"`            // v3.2: 最后回调时间
 	ChargeCardID   *int64     `json:"charge_card_id"`
 	Remark         string     `gorm:"size:500" json:"remark"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -169,26 +172,26 @@ const (
 )
 
 type ChargeCard struct {
-	ID                int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	CardCode          string     `gorm:"-" json:"card_code"`                                          // 明文，仅内存中使用（从 CardCodeEncrypted 解密填充）
-	CardCodeHash      string     `gorm:"size:64;index;not null;default:''" json:"-"`                       // SHA-256 hash，用于快速查找（不返回前端）
-	CardCodeEncrypted string     `gorm:"type:longtext" json:"-"`                                          // AES-256-GCM 加密存储（不返回前端）
-	CardCodeMasked    string     `gorm:"-" json:"card_code_masked"`                                  // 脱敏卡号（列表展示用）
-	CardType          string     `gorm:"size:32;not null" json:"card_type"`
-	Value             int64      `gorm:"not null;default:0" json:"value"`
-	Currency          string     `gorm:"size:16;not null;default:CNY" json:"currency"`
-	MaxUses           int        `gorm:"not null;default:1" json:"-"`                                // v3.3: 废弃，固定为1（保留字段兼容旧DB）
-	UsedCount         int        `gorm:"not null;default:0" json:"used_count"`                       // v3.3: 0=未使用，1=已使用
-	ExpiresAt         *time.Time `json:"expires_at"`
-	Status            string     `gorm:"size:32;not null;default:active" json:"status"`
-	BatchID           string     `gorm:"size:64" json:"batch_id"`
-	Remark            string     `gorm:"size:500" json:"remark"`
-	CreatedByAdminID  int64      `gorm:"not null;default:0;index" json:"created_by_admin"`           // 创建者管理员ID（关联 users 表）
-	CreatedByAdminName string    `gorm:"size:64;not null;default:''" json:"created_by_admin_name"`   // 创建者用户名（冗余，便于展示）
-	AgentID           *int64     `gorm:"index" json:"agent_id"`                                      // 代理员/推广员管理员ID（关联 users 表），为空表示官方
-	AgentName         string     `gorm:"size:64" json:"agent_name"`                                  // 代理员用户名（冗余，便于展示）
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID                 int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	CardCode           string     `gorm:"-" json:"card_code"`                         // 明文，仅内存中使用（从 CardCodeEncrypted 解密填充）
+	CardCodeHash       string     `gorm:"size:64;index;not null;default:''" json:"-"` // SHA-256 hash，用于快速查找（不返回前端）
+	CardCodeEncrypted  string     `gorm:"type:longtext" json:"-"`                     // AES-256-GCM 加密存储（不返回前端）
+	CardCodeMasked     string     `gorm:"-" json:"card_code_masked"`                  // 脱敏卡号（列表展示用）
+	CardType           string     `gorm:"size:32;not null" json:"card_type"`
+	Value              int64      `gorm:"not null;default:0" json:"value"`
+	Currency           string     `gorm:"size:16;not null;default:CNY" json:"currency"`
+	MaxUses            int        `gorm:"not null;default:1" json:"-"`          // v3.3: 废弃，固定为1（保留字段兼容旧DB）
+	UsedCount          int        `gorm:"not null;default:0" json:"used_count"` // v3.3: 0=未使用，1=已使用
+	ExpiresAt          *time.Time `json:"expires_at"`
+	Status             string     `gorm:"size:32;not null;default:active" json:"status"`
+	BatchID            string     `gorm:"size:64" json:"batch_id"`
+	Remark             string     `gorm:"size:500" json:"remark"`
+	CreatedByAdminID   int64      `gorm:"not null;default:0;index" json:"created_by_admin"`         // 创建者管理员ID（关联 users 表）
+	CreatedByAdminName string     `gorm:"size:64;not null;default:''" json:"created_by_admin_name"` // 创建者用户名（冗余，便于展示）
+	AgentID            *int64     `gorm:"index" json:"agent_id"`                                    // 代理员/推广员管理员ID（关联 users 表），为空表示官方
+	AgentName          string     `gorm:"size:64" json:"agent_name"`                                // 代理员用户名（冗余，便于展示）
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 func (ChargeCard) TableName() string { return "charge_cards" }
@@ -221,17 +224,17 @@ const (
 )
 
 type BalanceTransaction struct {
-	ID                    int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	ClientID              int64     `gorm:"not null;index" json:"client_id"`
-	Type                  string    `gorm:"size:32;not null;uniqueIndex:idx_balance_tx_order_type,priority:1" json:"type"`
-	Amount                int64     `gorm:"not null;default:0" json:"amount"`
-	BalanceBefore         int64     `gorm:"not null;default:0" json:"balance_before"`
-	BalanceAfter          int64     `gorm:"not null;default:0" json:"balance_after"`
-	Currency              string    `gorm:"size:16;not null;default:CNY" json:"currency"`
-	RelatedChargeOrderID  *int64    `gorm:"uniqueIndex:idx_balance_tx_order_type,priority:2" json:"related_charge_order_id"`
-	RelatedPlanOrderID    *int64    `json:"related_plan_order_id"`
-	Remark                string    `gorm:"size:500" json:"remark"`
-	CreatedAt             time.Time `json:"created_at"`
+	ID                   int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	ClientID             int64     `gorm:"not null;index" json:"client_id"`
+	Type                 string    `gorm:"size:32;not null;uniqueIndex:idx_balance_tx_order_type,priority:1" json:"type"`
+	Amount               int64     `gorm:"not null;default:0" json:"amount"`
+	BalanceBefore        int64     `gorm:"not null;default:0" json:"balance_before"`
+	BalanceAfter         int64     `gorm:"not null;default:0" json:"balance_after"`
+	Currency             string    `gorm:"size:16;not null;default:CNY" json:"currency"`
+	RelatedChargeOrderID *int64    `gorm:"uniqueIndex:idx_balance_tx_order_type,priority:2" json:"related_charge_order_id"`
+	RelatedPlanOrderID   *int64    `json:"related_plan_order_id"`
+	Remark               string    `gorm:"size:500" json:"remark"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 func (BalanceTransaction) TableName() string { return "balance_transactions" }
@@ -244,12 +247,12 @@ func (BalanceTransaction) TableName() string { return "balance_transactions" }
 // CallbackNonce records a used nonce to prevent replay attacks.
 // Unique constraint on (site_id, nonce) — different sites may generate the same nonce.
 type CallbackNonce struct {
-	ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Nonce      string    `gorm:"size:64;uniqueIndex:idx_site_nonce,priority:2;not null" json:"nonce"`
-	SiteID     int64     `gorm:"uniqueIndex:idx_site_nonce,priority:1;not null" json:"site_id"`
-	TradeNo    string    `gorm:"size:64;not null" json:"trade_no"`
-	SignValid  bool      `gorm:"not null;default:false" json:"sign_valid"` // v3.2: 签名是否通过
-	CreatedAt  time.Time `gorm:"index:idx_nonce_created" json:"created_at"`
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Nonce     string    `gorm:"size:64;uniqueIndex:idx_site_nonce,priority:2;not null" json:"nonce"`
+	SiteID    int64     `gorm:"uniqueIndex:idx_site_nonce,priority:1;not null" json:"site_id"`
+	TradeNo   string    `gorm:"size:64;not null" json:"trade_no"`
+	SignValid bool      `gorm:"not null;default:false" json:"sign_valid"` // v3.2: 签名是否通过
+	CreatedAt time.Time `gorm:"index:idx_nonce_created" json:"created_at"`
 }
 
 func (CallbackNonce) TableName() string { return "callback_nonces" }
@@ -289,21 +292,21 @@ const (
 )
 
 type ChargeCallbackRetry struct {
-	ID            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	SiteID        int64      `gorm:"not null;index" json:"site_id"`
-	RequestID     string     `gorm:"size:64" json:"request_id"`
-	TradeNo       string     `gorm:"size:64;index" json:"trade_no"`
-	RemoteIP      string     `gorm:"size:64" json:"remote_ip"`
-	PayloadHash   string     `gorm:"size:64" json:"payload_hash"`
-	ErrorCode     string     `gorm:"size:64" json:"error_code"`
-	ErrorMessage  string     `gorm:"size:500" json:"error_message"`
-	Retryable     bool       `gorm:"not null;default:true" json:"retryable"`
-	RetryCount    int        `gorm:"not null;default:0" json:"retry_count"`
-	MaxRetries    int        `gorm:"not null;default:5" json:"max_retries"`
-	Status        string     `gorm:"size:32;not null;default:pending;index" json:"status"`
-	NextRetryAt   *time.Time `gorm:"index" json:"next_retry_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID           int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SiteID       int64      `gorm:"not null;index" json:"site_id"`
+	RequestID    string     `gorm:"size:64" json:"request_id"`
+	TradeNo      string     `gorm:"size:64;index" json:"trade_no"`
+	RemoteIP     string     `gorm:"size:64" json:"remote_ip"`
+	PayloadHash  string     `gorm:"size:64" json:"payload_hash"`
+	ErrorCode    string     `gorm:"size:64" json:"error_code"`
+	ErrorMessage string     `gorm:"size:500" json:"error_message"`
+	Retryable    bool       `gorm:"not null;default:true" json:"retryable"`
+	RetryCount   int        `gorm:"not null;default:0" json:"retry_count"`
+	MaxRetries   int        `gorm:"not null;default:5" json:"max_retries"`
+	Status       string     `gorm:"size:32;not null;default:pending;index" json:"status"`
+	NextRetryAt  *time.Time `gorm:"index" json:"next_retry_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 func (ChargeCallbackRetry) TableName() string { return "charge_callback_retries" }
@@ -330,21 +333,21 @@ const (
 	ChargeSecEventIPChanged        = "ip_changed"
 	ChargeSecEventCallbackFlood    = "callback_flood"
 	ChargeSecEventRecoveryStuck    = "recovery_stuck"
-	ChargeSecEventInvalidStatus    = "invalid_status"      // 回调状态值未知
-	ChargeSecEventTransactionError = "transaction_error"   // 事务执行失败
+	ChargeSecEventInvalidStatus    = "invalid_status"    // 回调状态值未知
+	ChargeSecEventTransactionError = "transaction_error" // 事务执行失败
 )
 
 // ChargeSecurityEvent records a security-relevant event in the charge flow.
 type ChargeSecurityEvent struct {
-	ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	SiteID     int64     `gorm:"not null;index" json:"site_id"`
-	TradeNo    string    `gorm:"size:64;index" json:"trade_no"`
-	RequestID  string    `gorm:"size:64" json:"request_id"`
-	EventType  string    `gorm:"size:32;not null;index" json:"event_type"`
-	Severity   string    `gorm:"size:16;not null;default:medium" json:"severity"`
-	RemoteIP   string    `gorm:"size:64" json:"remote_ip"`
-	Detail     string    `gorm:"type:longtext" json:"detail"`
-	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	SiteID    int64     `gorm:"not null;index" json:"site_id"`
+	TradeNo   string    `gorm:"size:64;index" json:"trade_no"`
+	RequestID string    `gorm:"size:64" json:"request_id"`
+	EventType string    `gorm:"size:32;not null;index" json:"event_type"`
+	Severity  string    `gorm:"size:16;not null;default:medium" json:"severity"`
+	RemoteIP  string    `gorm:"size:64" json:"remote_ip"`
+	Detail    string    `gorm:"type:longtext" json:"detail"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
 }
 
 func (ChargeSecurityEvent) TableName() string { return "charge_security_events" }

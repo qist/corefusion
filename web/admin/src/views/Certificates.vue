@@ -117,17 +117,29 @@
           </div>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('certificate.ipsHint') }}</div>
         </el-form-item>
-        <el-form-item :label="t('certificate.keyType')">
-          <el-select v-model="issueForm.key_type" style="width:50%" @change="onKeyTypeChange">
-            <el-option label="ECC" value="ecc" />
-            <el-option label="RSA" value="rsa" />
-          </el-select>
-          <el-select v-model="issueForm.key_bits" style="width:50%">
-            <el-option v-for="b in keyBitsOptions" :key="b" :label="b" :value="b" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('certificate.dualKey')">
-          <el-checkbox v-model="issueForm.dual_key">{{ t('certificate.dualKeyHint') }}</el-checkbox>
+        <!-- 密钥规格：**每张一行** ✓（类型 + 长度各自可选 ✓）
+             ⚠ 以前只有一组"类型+长度" ✗，"同时签发"时第二张靠**翻转类型**、长度**硬编码 2048/256** ✗
+             → 表达不了"ECC384 + RSA4096"这种组合，确实不合理 ✓。 -->
+        <el-form-item :label="t('certificate.keySpecs')">
+          <div v-for="(spec, i) in issueForm.key_specs" :key="i"
+               style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <el-select v-model="spec.key_type" style="width:120px"
+                       :disabled="issueForm.issue_node_id > 0" @change="onSpecTypeChange(spec)">
+              <el-option label="ECC" value="ecc" />
+              <el-option label="RSA" value="rsa" />
+            </el-select>
+            <el-select v-model="spec.key_bits" style="width:130px" :disabled="issueForm.issue_node_id > 0">
+              <el-option v-for="b in bitsOptionsFor(spec.key_type)" :key="b" :label="b" :value="b" />
+            </el-select>
+            <el-button v-if="issueForm.key_specs.length > 1" link type="danger" @click="removeKeySpec(i)">✕</el-button>
+          </div>
+          <el-button v-if="canAddSpec" link type="primary" @click="addComplementSpec">
+            ＋ {{ t('certificate.addKeySpec') }}
+          </el-button>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('certificate.keySpecHint') }}</div>
+          <div v-if="issueForm.issue_node_id > 0" style="font-size:11px;color:#e6a23c;margin-top:2px">
+            {{ t('certificate.nodeIssueOneKey') }}
+          </div>
         </el-form-item>
         <el-form-item :label="t('certificate.issueLocation')">
           <el-select v-model="issueForm.issue_node_id" style="width:100%">
@@ -484,9 +496,9 @@ const issueForm = ref({
   dns_channel_id: null,
   domains_text: '',
   ips_text: '',
-  key_type: 'ecc',
-  key_bits: 256,
-  dual_key: false,
+  // 密钥规格列表 ✓：每张证书一行（类型 + 长度 ✓）。
+  // 记录身份是 (域名, 密钥类型) ✓ → 同类型只能一张 ✓（见 canAddSpec / 提交前校验 ✓）
+  key_specs: [{ key_type: 'ecc', key_bits: 256 }],
   eab_key_id: '',
   eab_mac_key: '',
   auto_renew: true
@@ -509,12 +521,48 @@ const emailSaving = ref(false)
 const editingEmail = ref(null)
 const emailForm = ref({ email: '', ca_provider: 'lets_encrypt', eab_key_id: '', eab_mac_key: '', is_default: false })
 
-const keyBitsOptions = computed(() => {
-  // 与后端 cert.resolveKeyType 的映射保持一致 ✓（ecc: 256/384/521 ✓；rsa: 2048/3072/4096/8192 ✓）
-  // ⚠ lego 只支持 EC256/EC384 ✗（没有 EC521 ✓）→ 不提供 521，避免"选了不生效" ✗
-  if (issueForm.value.key_type === 'ecc') return [384, 256]
-  return [8192, 4096, 3072, 2048]
+// bitsOptionsFor 返回某密钥类型的可选长度 ✓（与后端 cert.resolveKeyType 的映射严格一致 ✓）。
+// ⚠ lego 只支持 EC256/EC384 ✗（**没有 EC521** ✓）→ 不提供 521，避免"选了不生效" ✗。
+function bitsOptionsFor(keyType) {
+  return keyType === 'rsa' ? [8192, 4096, 3072, 2048] : [384, 256]
+}
+
+// defaultBitsFor：切换类型时给一个合理默认 ✓
+function defaultBitsFor(keyType) {
+  return keyType === 'rsa' ? 2048 : 256
+}
+
+// onSpecTypeChange：切换某一行的类型 → 重置该行的长度（避免 ecc↔rsa 之间留下非法组合 ✗）
+function onSpecTypeChange(spec) {
+  const opts = bitsOptionsFor(spec.key_type)
+  if (!opts.includes(spec.key_bits)) spec.key_bits = defaultBitsFor(spec.key_type)
+}
+
+// canAddSpec：还能不能再加一张 ✓ ——
+// ① 记录身份是 (域名, 密钥类型) ✓ → 两种类型各一张即可 ✓；② 节点侧签发暂不支持指定类型 ✗ → 只允许一张 ✓。
+const canAddSpec = computed(() => {
+  if (issueForm.value.issue_node_id > 0) return false
+  const specs = issueForm.value.key_specs || []
+  if (specs.length >= 2) return false
+  const types = new Set(specs.map(s => s.key_type))
+  return types.size < 2
 })
+
+// addComplementSpec：加上"另一种类型"那一行 ✓（默认长度按类型给 ✓）
+function addComplementSpec() {
+  const specs = issueForm.value.key_specs || []
+  const used = new Set(specs.map(s => s.key_type))
+  const next = used.has('ecc') ? 'rsa' : 'ecc'
+  specs.push({ key_type: next, key_bits: defaultBitsFor(next) })
+  issueForm.value.key_specs = specs
+}
+
+function removeKeySpec(i) {
+  const specs = issueForm.value.key_specs || []
+  if (specs.length <= 1) return
+  specs.splice(i, 1)
+  issueForm.value.key_specs = specs
+}
 
 const currentProviderFields = computed(() => {
   return providerOptions.value[channelForm.value.provider] || []
@@ -553,7 +601,7 @@ async function fetchCertificates() {
 }
 
 function showIssueDialog() {
-  issueForm.value = { email_id: null, ca_provider: 'lets_encrypt', cert_target: 'domain', issue_node_id: 0, node_webroot: '', challenge_type: 'dns-01', dns_channel_id: null, domains_text: '', ips_text: '', key_type: 'ecc', key_bits: 256, dual_key: false, eab_config_id: null, auto_renew: true }
+  issueForm.value = { email_id: null, ca_provider: 'lets_encrypt', cert_target: 'domain', issue_node_id: 0, node_webroot: '', challenge_type: 'dns-01', dns_channel_id: null, domains_text: '', ips_text: '', key_specs: [{ key_type: 'ecc', key_bits: 256 }], eab_config_id: null, auto_renew: true }
   issueVisible.value = true
   fetchNodes()
   fetchEABs()   // EAB 是独立配置 ✓ → 拉列表供"只选关联" ✓
@@ -620,33 +668,51 @@ async function handleIssue() {
       // Port check failed, continue anyway
     }
   }
-  const payload = {
+  // 逐张签发 ✓：每张用**它自己那行**的类型与长度 ✓（后端记录身份 = (域名, 密钥类型) ✓）
+  const specs = (issueForm.value.key_specs || []).filter(s => s && s.key_type && s.key_bits)
+  if (specs.length === 0) {
+    ElMessage.warning(t('certificate.keySpecsRequired'))
+    return
+  }
+  const seen = new Set()
+  for (const s of specs) {
+    if (seen.has(s.key_type)) {
+      // 同类型两张 = 第二条请求会把第一条**就地更新**掉 ✗ → 前端直接拦住，别让用户以为签了两张 ✗
+      ElMessage.error(t('certificate.dupKeyType'))
+      return
+    }
+    seen.add(s.key_type)
+  }
+  const base = {
     domains,
     ips,
     ca_provider: issueForm.value.ca_provider,
     challenge_type: isIP ? 'http-01' : issueForm.value.challenge_type,
-    key_type: issueForm.value.key_type,
-    key_bits: issueForm.value.key_bits,
     dns_channel_id: isIP ? 0 : (issueForm.value.dns_channel_id || 0),
     email_id: issueForm.value.email_id || 0,
     eab_config_id: issueForm.value.eab_config_id || 0,
     auto_renew: issueForm.value.auto_renew
   }
   issuing.value = true
+  const okList = []
+  const failList = []
   try {
-    await client.post('/certificates/issue', payload)
-    ElMessage.success(t('common.success'))
-    issueVisible.value = false
-    fetchCertificates()
-    if (issueForm.value.dual_key) {
-      // 第二张用**另一种**密钥类型 ✓；位数取该类型的合理默认（以前硬编码 2048/256 ✗，
-      // 会无视用户选的 4096 之类 ✓）
-      const flipEccToRsa = payload.key_type === 'ecc'
-      const p2 = { ...payload, key_type: flipEccToRsa ? 'rsa' : 'ecc', key_bits: flipEccToRsa ? 2048 : 256 }
-      await client.post('/certificates/issue', p2)
+    for (const s of specs) {
+      const label = `${s.key_type.toUpperCase()} ${s.key_bits}`
+      try {
+        // suppressErrorMessage：逐张自己汇总报错 ✓，避免弹两次 ✗
+        await client.post('/certificates/issue', { ...base, key_type: s.key_type, key_bits: s.key_bits },
+                          { suppressErrorMessage: true })
+        okList.push(label)
+      } catch (e) {
+        failList.push(`${label}：${e?.message || t('common.failed')}`)
+      }
       fetchCertificates()
     }
-  } catch (e) { ElMessage.error(t('common.failed')) } finally { issuing.value = false }
+    if (okList.length) ElMessage.success(t('certificate.issuedN', { n: okList.length }) + '：' + okList.join('、'))
+    if (failList.length) ElMessage.error(t('certificate.someFailed', { list: failList.join('；') }))
+    if (failList.length === 0) issueVisible.value = false
+  } finally { issuing.value = false }
 }
 
 async function handleRenew(row) {
@@ -829,9 +895,7 @@ function showAddChannel() { editingChannel.value = null; channelForm.value = { n
 function showEditChannel(row) { editingChannel.value = row; channelForm.value = { name: row.name, provider: row.provider, env_vars: {} }; channelFormVisible.value = true }
 function onProviderChange() { channelForm.value.env_vars = {} }
 
-function onKeyTypeChange(val) {
-  issueForm.value.key_bits = val === 'ecc' ? 384 : 8192
-}
+// （原 onKeyTypeChange 已被 onSpecTypeChange 取代 ✓：每行独立选择类型与长度 ✓）
 
 function onCertTargetChange(val) {
   if (val === 'ip') {

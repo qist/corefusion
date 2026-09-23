@@ -132,26 +132,35 @@ func (m *NginxManager) deleteByTemplate(ctx context.Context, template string) (i
 	return count, nil
 }
 
-// BatchUpdatePorts updates HTTPS site listen ports and proxy_protocol.
 func (m *NginxManager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
 	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
-	defaultHttpsPort := m.getDefaultHttpsPort(ctx)
 	count := 0
 	for _, site := range sites {
-		if site.Template == "l4" || site.Template == "sni" {
+		// l4/sni/**reality** 这些模板本来就不监听 443 ✓（Reality 固定用 9443 之类 ✓），
+		// 一起改会把站点直接搞坏 ✗（用户报的 bug ✓）
+		if site.Template == "l4" || site.Template == "sni" || site.Template == "reality" {
 			continue
 		}
 		if site.CertPath == "" {
 			continue
 		}
 		if enable {
+			// **只迁移当前监听公网 443 的站点** ✓：
+			// 原来只看"有证书" ✗ → Reality（有证书却监听 9443 ✓）也被改成 8443 ✗；自定义端口（2053 等）同样不该动 ✓
+			if site.ListenPort != publicHTTPSPort {
+				continue
+			}
 			site.ListenPort = port
 			site.ProxyProtocol = true
 		} else {
-			site.ListenPort = defaultHttpsPort
+			// 回滚只动**当初被迁移的那批**（现在正监听迁移端口 ✓），别的站点一律不碰 ✓
+			if site.ListenPort != port {
+				continue
+			}
+			site.ListenPort = publicHTTPSPort
 			site.ProxyProtocol = false
 		}
 		if err := m.siteRepo.Update(ctx, &site); err != nil {
@@ -192,7 +201,6 @@ func (m *NginxManager) SaveAndApply(ctx context.Context) (string, error) {
 	}
 	return config, nil
 }
-
 
 // --- NginxSettings ---
 
@@ -330,5 +338,3 @@ func (m *NginxManager) wafRuleDir() string {
 func (m *NginxManager) wafConfigPath() string {
 	return filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
 }
-
-

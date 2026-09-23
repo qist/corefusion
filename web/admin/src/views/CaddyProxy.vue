@@ -784,6 +784,47 @@ function inboundLabel(ib) {
 function parseInboundConfig(item) {
   let cfg = {}
   try { cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {}) } catch {}
+  // ⚠ sing-box 入站的结构与 xray **完全不同** ✗（真机库里核对过 ✓）：
+  //   sing-box: {type, tag, listen, listen_port, tls:{enabled,server_name,…}, transport:{type,path}}
+  //   xray    : {streamSettings:{network,security,wsSettings,…}}
+  // 以前这里只认 xray ✗ → 而且列表接口写死 core_type=xray ✗ → "xray 能一键导入、sing-box 不行" ✓。
+  // 这里统一归一化成同一套内部字段（_network/_security/_wsPath/… ✓），后续逻辑无需分支 ✓。
+  if (!cfg.streamSettings && (cfg.type || cfg.listen_port !== undefined)) {
+    const tr = cfg.transport || {}
+    const tls = cfg.tls || {}
+    const tType = (tr.type || '').toLowerCase()
+    let net = tType === 'ws' ? 'ws' : tType === 'grpc' ? 'grpc' : tType === 'http' ? 'http' : (tType || 'tcp')
+    // ⚠ UDP 协议（hysteria2 / tuic / wireguard ✓）**不能**做 HTTP 层转发 ✗ ——
+    // 复用既有过滤规则的口径 ✓（它按 `_network` 排除 hysteria/kcp ✓）→ 这里标成 `hysteria` ✓
+    // 就会被 `filteredInbounds` 正确排除 ✓，不会在"一键导入"下拉里出现无意义的选项 ✓。
+    if (['hysteria', 'hysteria2', 'tuic', 'wireguard', 'shadowtls'].includes(String(cfg.type || '').toLowerCase())) {
+      net = 'hysteria'
+    }
+    const sNames = []
+    if (tls.enabled && tls.server_name) sNames.push(tls.server_name)
+    const sListen = cfg.listen || item.listen || ''
+    return {
+      id: item.id,
+      tag: item.tag,
+      protocol: item.protocol,
+      remark: item.remark,
+      _core: 'singbox',
+      listen: sListen,
+      port: cfg.listen_port || item.port || 0,
+      _network: net,
+      _security: tls.enabled ? 'tls' : 'none',
+      _isSocket: String(sListen).startsWith('/'),
+      _socketPath: String(sListen).startsWith('/') ? String(sListen).split(',')[0] : '',
+      _wsPath: tr.path || '',
+      _grpcService: tr.service_name || tr.serviceName || '',
+      _xhttpPath: '',
+      _httpupgradePath: '',
+      _serverNames: sNames,
+      _remark: item.remark || item.tag,
+      _certFile: tls.certificate_path || '',
+      _keyFile: tls.key_path || '',
+    }
+  }
   const ss = cfg.streamSettings || {}
   const listen = cfg.listen || item.listen
   const isSocket = listen.startsWith('/')
@@ -823,9 +864,15 @@ function parseInboundConfig(item) {
   }
 }
 async function fetchInbounds() {
+  // ⚠ 以前只取 xray ✗ → sing-box 的入站根本不在下拉里 ✓（"xray 能一键导入、sing-box 不行" ✓）。
+  // 现在两种内核都取 ✓ 并合并 ✓（各自的 config 结构由 parseInboundConfig 归一化 ✓）。
   try {
-    const data = await client.get(`${apiBase.value}/inbound-configs`, { params: { core_type: 'xray' } })
-    inbounds.value = (data || []).map(parseInboundConfig)
+    const [xr, sb] = await Promise.all([
+      client.get(`${apiBase.value}/inbound-configs`, { params: { core_type: 'xray' } }).catch(() => []),
+      client.get(`${apiBase.value}/inbound-configs`, { params: { core_type: 'singbox' } }).catch(() => []),
+    ])
+    const mark = (arr, core) => (arr || []).map(it => ({ ...parseInboundConfig(it), _core: it.core_type || core }))
+    inbounds.value = [...mark(xr, 'xray'), ...mark(sb, 'singbox')]
   } catch { inbounds.value = [] }
 }
 function onInboundSelect(id) {

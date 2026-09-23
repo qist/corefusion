@@ -1751,8 +1751,6 @@ export default {
       migrateSuccess: '数据迁移完成！重启面板后生效。',
     },
     proxy: {
-    upstreamTls: '回源使用 TLS',
-    upstreamTlsHint: '打开后回源走 TLS：grpc 用 grpcs://、http/ws 用 https://。入站自带 TLS（xray security=tls / sing-box tls.enabled）时必须打开，否则连不上。',
       title: '代理管理',
       notInstalled: '未安装',
       version: '版本',
@@ -1778,6 +1776,8 @@ export default {
     loading: '加载中…',
   },
   proxy: {
+    upstreamTls: '回源使用 TLS',
+    upstreamTlsHint: '打开后回源走 TLS：grpc 用 grpcs://、http/ws 用 https://。入站自带 TLS（xray security=tls / sing-box tls.enabled）时必须打开，否则连不上。',
     logOutputMode: '日志输出方式',
     syncAllNodes: '同步全部节点',
     wafDomainRuleEdit: '编辑域名规则',

@@ -6,6 +6,8 @@ import (
 
 	"gorm.io/gorm"
 
+	certpkg "corefusion/internal/runtime/cert"
+
 	"corefusion/internal/model/entity"
 )
 
@@ -38,6 +40,21 @@ func (r *CertificateRepository) GetByID(ctx context.Context, id int64) (*entity.
 func (r *CertificateRepository) GetByDomain(ctx context.Context, domain string) (*entity.Certificate, error) {
 	var cert entity.Certificate
 	err := r.db.WithContext(ctx).Where("domain = ?", domain).First(&cert).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cert, nil
+}
+
+// GetByDomainAndKeyType 按 (域名, 密钥类型) 取证书。
+//
+// ⚠ 存在的理由 ✗：`GetByDomain` 只按域名取**第一条** ✓，于是"同域同时签 ECC + RSA"
+// 时第二个请求会命中第一条并把它**改写** ✗ → 最后只剩一份 ✓（真机现象 ✓）。
+// 记录的身份应当是 (domain, key_type) ✓ —— 这样两种密钥类型各自一条 ✓。
+func (r *CertificateRepository) GetByDomainAndKeyType(ctx context.Context, domain, keyType string) (*entity.Certificate, error) {
+	var cert entity.Certificate
+	kt := certpkg.NormalizeKeyType(keyType)
+	err := r.db.WithContext(ctx).Where("domain = ? AND key_type = ?", domain, kt).First(&cert).Error
 	if err != nil {
 		return nil, err
 	}

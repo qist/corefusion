@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -193,6 +194,12 @@ type IssueOptions struct {
 	// **IP 证书必须用 `shortlived`** ✗：Let's Encrypt 从 2026-01-15 起 GA 支持 IP 证书，
 	// 但策略上 IP 证书必须是短时证书（约 6 天）→ 不带该 profile 会被 CA 拒绝。
 	Profile string `json:"profile,omitempty"`
+	// KeyType / KeyBits 决定**签出来的私钥类型** ✓（ecc / rsa + 位数 ✓）。
+	// ⚠ 以前这两个参数**根本没传到这里** ✗，createClient 里写死 EC256 ✗
+	// → 用户选 ECC384 / RSA 签出来全是 ECC256 ✗（真机现象 ✓）。
+	// 空值或非法值 → 回退 EC256（保持历史默认行为 ✓）。
+	KeyType string `json:"key_type,omitempty"`
+	KeyBits int    `json:"key_bits,omitempty"`
 }
 
 // EABConfig holds External Account Binding credentials.
@@ -200,6 +207,107 @@ type IssueOptions struct {
 type EABConfig struct {
 	KeyID  string `json:"key_id"`  // EAB key ID
 	MACKey string `json:"mac_key"` // EAB MAC key (base64url encoded)
+}
+
+// 面板侧统一的密钥类型取值（前端也发这两个 ✓）。
+const (
+	KeyTypeECC = "ecc"
+	KeyTypeRSA = "rsa"
+)
+
+// NormalizeKeyType 把自由文本归一为 ecc / rsa（空 → ecc = 历史默认 ✓）。
+func NormalizeKeyType(keyType string) string {
+	switch strings.ToLower(strings.TrimSpace(keyType)) {
+	case KeyTypeRSA, "rsa2048", "rsa3072", "rsa4096", "rsa8192":
+		return KeyTypeRSA
+	default:
+		return KeyTypeECC
+	}
+}
+
+// CertRelPaths 返回某名称在**指定密钥类型**下的相对路径（相对 dataDir ✓）。
+//
+// 布局约定（必须写死在这里 ✗，否则各处会各写一套 ✓）：
+//   - ecc → certs/<name>/cert.pem | key.pem | fullchain.pem   ← **历史布局，保持不变**
+//     （已有站点配置/内核配置都引用它 ✓，改了等于把所有引用打断 ✗）
+//   - 其他 → certs/<name>/<keytype>/...                        ← RSA 等放子目录
+//
+// ✗ 为什么必须分开：两种类型的文件名完全相同 ✗ → 同域同时签发 ECC 与 RSA 会
+// **互相覆盖** ✗ —— 这正是"同时选 ECC+RSA 只留一份"的磁盘侧原因 ✓。
+func CertRelPaths(name, keyType string) (certRel, keyRel, fullchainRel string) {
+	dir := name
+	if kt := NormalizeKeyType(keyType); kt != KeyTypeECC {
+		dir = filepath.Join(dir, kt)
+	}
+	return filepath.Join("certs", dir, "cert.pem"),
+		filepath.Join("certs", dir, "key.pem"),
+		filepath.Join("certs", dir, "fullchain.pem")
+}
+
+// resolveKeyType 把面板的 (key_type, key_bits) 映射成 lego 的密钥类型 ✓。
+// 位数为 0 或非法 → 用该类型的默认（ecc→256、rsa→2048 ✓）。
+func resolveKeyType(keyType string, keyBits int) certcrypto.KeyType {
+	if NormalizeKeyType(keyType) == KeyTypeRSA {
+		switch keyBits {
+		case 3072:
+			return certcrypto.RSA3072
+		case 4096:
+			return certcrypto.RSA4096
+		case 8192:
+			return certcrypto.RSA8192
+		default:
+			return certcrypto.RSA2048
+		}
+	}
+	switch keyBits {
+	case 384:
+		return certcrypto.EC384
+	case 0, 256:
+		return certcrypto.EC256
+	default:
+		// ⚠ lego 只支持 EC256 / EC384 ✗（**没有 EC521** ✓）→ 不支持的位数退回 256，
+		// 并且**明确告警** ✗（UI 里也不再提供 521 ✓，避免"选了不生效" ✓）。
+		log.Printf("[ACME] WARNING: unsupported ecc key bits %d (lego supports 256/384); falling back to EC256", keyBits)
+		return certcrypto.EC256
+	}
+}
+
+// keyTypeOfKey 从已解析的私钥反推密钥类型（续期时用 ✓ —— 续期复用原私钥 ✓，
+// 但日志/参数要如实反映它 ✓）。
+func keyTypeOfKey(key crypto.PrivateKey) certcrypto.KeyType {
+	switch k := key.(type) {
+	case *rsa.PrivateKey:
+		switch k.N.BitLen() {
+		case 3072:
+			return certcrypto.RSA3072
+		case 4096:
+			return certcrypto.RSA4096
+		case 8192:
+			return certcrypto.RSA8192
+		default:
+			return certcrypto.RSA2048
+		}
+	case *ecdsa.PrivateKey:
+		switch k.Curve.Params().BitSize {
+		case 384:
+			return certcrypto.EC384
+		default:
+			return certcrypto.EC256
+		}
+	}
+	return certcrypto.EC256
+}
+
+// parsePrivateKey 解析 PEM 里的私钥：EC / PKCS#8 / PKCS#1 都认 ✓。
+// ⚠ 以前只调用 x509.ParseECPrivateKey ✗ → **RSA 证书续期必然失败** ✗。
+func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
+	if k, err := x509.ParseECPrivateKey(der); err == nil {
+		return k, nil
+	}
+	if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		return k, nil
+	}
+	return x509.ParsePKCS1PrivateKey(der)
 }
 
 // Issue issues a new certificate.
@@ -219,8 +327,11 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 		return nil, fmt.Errorf("load account: %w", err)
 	}
 
-	// Create lego client
-	client, err := c.createClient(user, hasIPIdentifier(opts.Domains))
+	// Create lego client —— ✅ 这里以前写死 EC256 ✗，用户的 key_type/key_bits 完全没生效 ✗
+	keyType := resolveKeyType(opts.KeyType, opts.KeyBits)
+	log.Printf("[ACME] issuing %v: key_type=%s bits=%d → lego %s",
+		opts.Domains, NormalizeKeyType(opts.KeyType), opts.KeyBits, keyType)
+	client, err := c.createClient(user, hasIPIdentifier(opts.Domains), keyType)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +379,7 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 	}
 
 	// Save certificate
-	result, err := c.saveCertificate(opts.Domains[0], certResource)
+	result, err := c.saveCertificate(opts.Domains[0], opts.KeyType, certResource)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +391,7 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 }
 
 // Renew renews an existing certificate.
-func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyPath string, dnsProvider *DNSProviderConfig) (*IssueResult, error) {
+func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyPath, keyType string, dnsProvider *DNSProviderConfig) (*IssueResult, error) {
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
 		return nil, fmt.Errorf("read cert: %w", err)
@@ -297,7 +408,8 @@ func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyP
 		return nil, fmt.Errorf("invalid key PEM")
 	}
 
-	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	// ⚠ 以前只认 EC ✗（x509.ParseECPrivateKey）→ RSA 证书续期必失败 ✗（真机踩点 ✓）
+	key, err := parsePrivateKey(keyBlock.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("parse key: %w", err)
 	}
@@ -308,7 +420,7 @@ func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyP
 		key:   key,
 	}
 
-	client, err := c.createClient(user, hasIPIdentifier(domains))
+	client, err := c.createClient(user, hasIPIdentifier(domains), keyTypeOfKey(key))
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +451,7 @@ func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyP
 		return nil, fmt.Errorf("renew: %w", err)
 	}
 
-	result, err := c.saveCertificate(domains[0], certResource)
+	result, err := c.saveCertificate(domains[0], keyType, certResource)
 	if err != nil {
 		return nil, err
 	}
@@ -365,10 +477,10 @@ func hasIPIdentifier(domains []string) bool {
 // disableCommonName=true 时 CSR 里**不写 CommonName** ✓ —— 这是 IP 证书的硬要求：
 // RFC 8738 规定 IP 证书只能靠 **IP SAN** 表达身份；LE 对"CN 是 IP"的 CSR 直接报
 // `badCSR :: CSR contains IP address in Common Name` ✗（真机实测踩到 ✓）。
-func (c *ACMEClient) createClient(user *ACMEUser, disableCommonName bool) (*lego.Client, error) {
+func (c *ACMEClient) createClient(user *ACMEUser, disableCommonName bool, keyType certcrypto.KeyType) (*lego.Client, error) {
 	config := lego.NewConfig(user)
 	config.CADirURL = c.caURL
-	config.Certificate.KeyType = certcrypto.EC256
+	config.Certificate.KeyType = keyType
 	config.Certificate.DisableCommonName = disableCommonName
 
 	client, err := lego.NewClient(config)
@@ -551,16 +663,14 @@ func (c *ACMEClient) accountPath() string {
 
 // saveCertificate saves a certificate resource to disk.
 // Paths are stored relative to dataDir for portability.
-func (c *ACMEClient) saveCertificate(domain string, certResource *certificate.Resource) (*IssueResult, error) {
-	certDir := filepath.Join(c.dataDir, "certs", domain)
+func (c *ACMEClient) saveCertificate(domain, keyType string, certResource *certificate.Resource) (*IssueResult, error) {
+	// ✅ 路径按密钥类型分开：ecc 用历史布局 ✓，rsa 落到 certs/<domain>/rsa/ ✓
+	// （以前两种类型同名同目录 → 互相覆盖 ✗）
+	certPath, keyPath, fullchainPath := CertRelPaths(domain, keyType)
+	certDir := filepath.Join(c.dataDir, filepath.Dir(certPath))
 	if err := os.MkdirAll(certDir, 0750); err != nil {
 		return nil, fmt.Errorf("create cert dir: %w", err)
 	}
-
-	// Store relative paths for portability
-	certPath := filepath.Join("certs", domain, "cert.pem")
-	keyPath := filepath.Join("certs", domain, "key.pem")
-	fullchainPath := filepath.Join("certs", domain, "fullchain.pem")
 
 	// Write files using full paths
 	if err := os.WriteFile(filepath.Join(c.dataDir, certPath), certResource.Certificate, 0640); err != nil {

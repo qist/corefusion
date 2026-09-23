@@ -3957,7 +3957,9 @@ func (a publicCertSinkAdapter) StoreAgentIssuedCert(ctx context.Context, res *ag
 		return 0, err
 	}
 	// 落库成功后**自动分发**给使用该证书的其它节点 ✓（异步 ✓，不拖慢节点回传 ✓）
-	if autoDistributeCertFn != nil {
+	// 只有**面板持有 PEM** 的证书才自动分发 ✓ —— 节点上报的证书按新口径只留元数据 ✗，
+	// 分发守卫会拒绝 ✓，没必要白跑一趟 ✓（也就不会在日志里刷无意义的失败 ✗）。
+	if autoDistributeCertFn != nil && strings.TrimSpace(c.CertContent) != "" {
 		go autoDistributeCertFn(context.Background(), c.ID)
 	}
 	return c.ID, nil

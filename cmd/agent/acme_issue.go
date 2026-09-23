@@ -31,6 +31,8 @@ type acmeIssueParams struct {
 	// EAB：Google / ZeroSSL **注册 ACME 账号时必填** ✗（面板按 CA 自动关联后下发 ✓）。
 	EABKeyID  string
 	EABMACKey string
+	// CertID 是面板侧的证书 id ✓（仅用于上报/对账 ✓；节点自续时从 meta 读回 ✓）。
+	CertID int64
 }
 
 // defaultAgentACMECertDir 是节点侧 ACME 数据目录的**固定绝对默认值** ✓。
@@ -167,6 +169,40 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 	fullchain := certPEM
 	if b, ferr := os.ReadFile(joinPath(dataDir, result.FullchainPath)); ferr == nil && len(b) > 0 {
 		fullchain = b
+	}
+
+	// ── 落一份 meta ✓：这张证书从此**归节点自管**（自续期靠它 ✓）──────────────
+	// ⚠ 这份文件就是"所有权"的分界线 ✓：面板 `cert_distributor` 推下来的证书**不会有 meta** ✗，
+	// 于是自续期**不会**去动它们 ✓（那种证书归面板管 ✓，节点擅自续会绕开面板口径 ✗）。
+	// 所以 meta 的存在本身就是"面板只管触发、节点持有并自续"这条架构的落点 ✓。
+	certName := filepath.Base(filepath.Dir(result.CertPath))
+	meta := &certMeta{
+		CertID:      p.CertID,
+		Identifiers: domains,
+		Email:       email,
+		CA:          string(provider),
+		Challenge:   challenge,
+		Profile:     prof,
+		Webroot:     strings.TrimSpace(p.Webroot),
+		DNSProvider: strings.TrimSpace(p.DNSProvider),
+		DNSEnvVars:  p.DNSEnvVars,
+		IssuedAt:    time.Now(),
+	}
+	// 续期要保留首次的签发时间与面板 id ✓（覆盖成"这次"会让历史信息丢失 ✗）
+	if prev, perr := readCertMeta(dataDir, certName); perr == nil && prev != nil {
+		if !prev.IssuedAt.IsZero() {
+			meta.IssuedAt = prev.IssuedAt
+		}
+		if meta.CertID == 0 {
+			meta.CertID = prev.CertID
+		}
+		meta.LastRenewAt = time.Now()
+	}
+	if merr := writeCertMeta(dataDir, certName, meta); merr != nil {
+		// meta 写不进去只影响"以后能不能自续" ✓，**不影响本次签发成功** ✓ → 记日志不返回错误 ✓
+		log.Printf("[acme] 写入自续期元数据失败（本次签发不受影响，但该证书将无法自续）: %v", merr)
+	} else {
+		log.Printf("[acme] 已记录自续期元数据：%s（节点持有 ✓，到期前自动续 ✓）", certMetaPath(dataDir, certName))
 	}
 
 	return &issuedCert{

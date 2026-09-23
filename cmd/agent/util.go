@@ -86,7 +86,7 @@ func generateDefaultConfig(coreType string, dataDir string) map[string]interface
 			"log": map[string]interface{}{
 				"level": "info",
 			},
-			"listen":  ":0",
+			"listen": ":0",
 			"masquerade": map[string]interface{}{
 				"type": "404",
 			},

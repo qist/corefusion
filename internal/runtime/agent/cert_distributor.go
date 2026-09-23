@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,12 @@ func (d *CertDistributor) DistributeToServer(ctx context.Context, serverID int64
 	cert, err := d.certRepo.GetByID(ctx, certID)
 	if err != nil {
 		return fmt.Errorf("certificate not found: %w", err)
+	}
+
+	// ⚠ 面板不持有 PEM 的证书**不能分发** ✗（节点上报的证书按当前口径面板只留元数据 ✓）。
+	// 少了这道守卫会把**空内容**推给节点 ✓ → 节点上正在用的证书文件被覆盖成空 ✗ → TLS 直接断 ✗。
+	if strings.TrimSpace(cert.CertContent) == "" || strings.TrimSpace(cert.KeyContent) == "" {
+		return fmt.Errorf("证书 %d 的面板副本没有 PEM（按当前口径由节点持有 ✓），无法分发：请在该节点上取件，或改用面板签发/上传的证书", certID)
 	}
 
 	// Determine save path on Agent side — use the same relative path structure

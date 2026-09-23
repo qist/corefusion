@@ -45,8 +45,8 @@ type SystemMetrics struct {
 
 	// Egress interface traffic (出口网卡累计流量，用于月度配额)
 	EgressInterface string // 出口网卡名称
-	EgressRxBytes   int64 // 出口网卡累计接收字节
-	EgressTxBytes   int64 // 出口网卡累计发送字节
+	EgressRxBytes   int64  // 出口网卡累计接收字节
+	EgressTxBytes   int64  // 出口网卡累计发送字节
 
 	// System
 	Hostname       string  // System hostname
@@ -56,8 +56,8 @@ type SystemMetrics struct {
 	TCPConnections int     // Number of TCP ESTABLISHED connections
 
 	// Timestamps for rate calculation
-	lastNetStats   *netCounter
-	lastDiskStats  *diskCounter
+	lastNetStats  *netCounter
+	lastDiskStats *diskCounter
 }
 
 // egressInterface holds the configured egress interface name for traffic quota monitoring.
@@ -83,7 +83,7 @@ type netCounter struct {
 type diskCounter struct {
 	readSectors  int64
 	writeSectors int64
-	timestamp   time.Time
+	timestamp    time.Time
 }
 
 // getSystemMetrics collects comprehensive system metrics.
@@ -343,7 +343,7 @@ func (m *SystemMetrics) readDiskIOCounters() {
 
 		// This is a primary disk — use its stats
 		readSec, _ := strconv.ParseInt(fields[5], 10, 64)  // sectors read
-		writeSec, _ := strconv.ParseInt(fields[9], 10, 64)  // sectors written
+		writeSec, _ := strconv.ParseInt(fields[9], 10, 64) // sectors written
 		readSectors += readSec
 		writeSectors += writeSec
 	}

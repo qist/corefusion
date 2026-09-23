@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -195,6 +196,12 @@ func (s *EABConfigService) FetchGoogleEAB(ctx context.Context, projectID, servic
 	}
 	parsed, perr := parseGoogleEABResponse(body)
 	if perr != nil {
+		// ⚠ 申请失败也**先把服务账号存下来** ✗→✓：否则用户填的内容白丢 ✗（真机反馈过 ✓），
+		// 而且修好 IAM 后还能"自动再申请"，不用重新粘一遍 ✓。
+		if _, serr := s.saveGoogleAuth(ctx, projectID, serviceAccountJSON); serr != nil {
+			return nil, fmt.Errorf("%v（另外：保存服务账号失败 %v）", perr, serr)
+		}
+		log.Printf("[EAB] Google EAB create failed, but service account saved for retry: %v", perr)
 		return nil, perr
 	}
 
@@ -229,6 +236,74 @@ func (s *EABConfigService) FetchGoogleEAB(ctx context.Context, projectID, servic
 		GoogleProjectID: projectID,
 		GoogleSAJSON:    strings.TrimSpace(serviceAccountJSON),
 	})
+}
+
+// saveGoogleAuth 把 GCP 授权信息（项目 ID + 服务账号 JSON）落到一份 Google 配置里 ✓。
+// 没有则新建一份（名称固定 ✓），有则就地更新 ✓；**不动已有的 KID/MAC** ✓。
+func (s *EABConfigService) saveGoogleAuth(ctx context.Context, projectID, saJSON string) (*entity.EABConfig, error) {
+	projectID = strings.TrimSpace(projectID)
+	saJSON = strings.TrimSpace(saJSON)
+	if projectID == "" && saJSON == "" {
+		return nil, nil
+	}
+	name := "Google Public CA - " + projectID
+	if projectID == "" {
+		name = "Google Public CA"
+	}
+	list, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		if strings.EqualFold(normalizeCAProvider(list[i].CAProvider), "google") &&
+			(strings.EqualFold(strings.TrimSpace(list[i].Name), name) || strings.TrimSpace(list[i].GoogleSAJSON) != "") {
+			cfg := list[i]
+			if projectID != "" {
+				cfg.GoogleProjectID = projectID
+			}
+			if saJSON != "" {
+				cfg.GoogleSAJSON = saJSON
+			}
+			if err := s.repo.Update(ctx, &cfg); err != nil {
+				return nil, err
+			}
+			return &cfg, nil
+		}
+	}
+	return s.Create(ctx, EABConfigInput{Name: name, CAProvider: "google", GoogleProjectID: projectID, GoogleSAJSON: saJSON})
+}
+
+// StoredGoogleAuth 返回已保存的 GCP 授权（项目 ID + 服务账号 JSON）✓。
+// 没有就返回空串 ✓。用于"用户已经存过一次 → 之后不用再粘" ✓。
+func (s *EABConfigService) StoredGoogleAuth(ctx context.Context) (projectID, saJSON string) {
+	list, err := s.repo.List(ctx)
+	if err != nil {
+		return "", ""
+	}
+	for i := range list {
+		if !strings.EqualFold(normalizeCAProvider(list[i].CAProvider), "google") {
+			continue
+		}
+		sa := strings.TrimSpace(list[i].GoogleSAJSON)
+		if sa == "" {
+			continue
+		}
+		return strings.TrimSpace(list[i].GoogleProjectID), sa
+	}
+	return "", ""
+}
+
+// MintGoogleEAB 用**已存的服务账号**申请一把**全新的** Google EAB ✓（并就地更新配置 ✓）。
+//
+// 为什么要"强制新的" ✗：Google 的 EAB **一次性** ✓ —— 已经用来注册过账号的那把**已作废** ✗。
+// 而"某个节点第一次签发"必须要一把**没用过的** ✓（例如 1.8 这种从没注册过账号的机器 ✓），
+// 所以节点侧签发时不能直接复用库里那把 ✗。
+func (s *EABConfigService) MintGoogleEAB(ctx context.Context) (*entity.EABConfig, error) {
+	projectID, saJSON := s.StoredGoogleAuth(ctx)
+	if projectID == "" || saJSON == "" {
+		return nil, fmt.Errorf("no stored GCP service account (set it in the Google EAB config first)")
+	}
+	return s.FetchGoogleEAB(ctx, projectID, saJSON, "")
 }
 
 // EnsureGoogleEAB 保证"Google 有一份**可直接用**的 EAB" ✓ ——

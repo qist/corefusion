@@ -700,6 +700,8 @@ const eabSaving = ref(false)
 const editingEAB = ref(null)
 const eabConfigs = ref([])
 const eabForm = ref({ name: '', ca_provider: 'google', eab_key_id: '', eab_mac_key: '' })
+// 说明：项目 ID / 服务账号与 googleProjectID/googleSAJSON 两个 ref 绑定，
+// 提交时（handleSaveEAB）再合并进 payload ✓ —— 这样「保存」也不会丢 ✓。
 const zerosslEmail = ref('')
 const eabFetching = ref(false)
 // Google：GCP 授权（二选一 ✓）
@@ -757,19 +759,32 @@ function showEABDialog() { eabVisible.value = true; fetchEABs() }
 function showAddEAB() {
   editingEAB.value = null
   eabForm.value = { name: '', ca_provider: 'google', eab_key_id: '', eab_mac_key: '' }
+  googleProjectID.value = ''
+  googleSAJSON.value = ''
+  googleAccessToken.value = ''
   eabFormVisible.value = true
 }
 function showEditEAB(row) {
   editingEAB.value = row
-  // ⚠ HMAC-Key 后端不回传（密钥不外泄 ✓）→ 留空即"保持原值" ✓
+  // ⚠ HMAC-Key 与服务账号都不回传（密钥不外泄 ✓）→ 留空即"保持原值" ✓
   eabForm.value = { name: row.name, ca_provider: row.ca_provider || 'google', eab_key_id: row.eab_key_id || '', eab_mac_key: '' }
+  googleProjectID.value = row.google_project_id || ''
+  googleSAJSON.value = ''   // 已存过时，留空即保持原值 ✓
+  googleAccessToken.value = ''
   eabFormVisible.value = true
 }
 async function handleSaveEAB() {
   eabSaving.value = true
   try {
-    if (editingEAB.value) { await client.put(`/eab-configs/${editingEAB.value.id}`, eabForm.value) }
-    else { await client.post('/eab-configs', eabForm.value) }
+    // ⚠ 必须把 GCP 两项也提交 ✗ —— 之前只提交名称/CA/KID/MAC ✗，
+    // 用户在弹窗里填了服务账号、看着有、一保存就丢 ✗（真机反馈 ✓）。
+    const payload = { ...eabForm.value }
+    if (eabForm.value.ca_provider === 'google') {
+      payload.google_project_id = googleProjectID.value
+      payload.google_service_account_json = googleSAJSON.value
+    }
+    if (editingEAB.value) { await client.put(`/eab-configs/${editingEAB.value.id}`, payload) }
+    else { await client.post('/eab-configs', payload) }
     ElMessage.success(t('common.success')); eabFormVisible.value = false; fetchEABs()
   } catch (e) { ElMessage.error(t('common.failed')) } finally { eabSaving.value = false }
 }

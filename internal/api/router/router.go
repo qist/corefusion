@@ -4003,10 +4003,36 @@ func (a publicCertEnvAdapter) IssuanceContextFor(ctx context.Context, caProvider
 			email = strings.TrimSpace(def.Email)
 		}
 	}
-	if a.eabSvc == nil || strings.TrimSpace(caProvider) == "" {
+	ca := strings.ToLower(strings.TrimSpace(caProvider))
+	if a.eabSvc == nil || ca == "" {
 		return email, "", ""
 	}
-	cfg, err := a.eabSvc.GetByCA(ctx, caProvider)
+
+	// ⚠ 节点侧必须带"**没用过的**"EAB ✗ ——
+	// 目标节点可能是**从没注册过账号**的机器（例如 1.8 ✗），它第一次签发要真的去注册 ✓，
+	// 而库里那把很可能**已经用来注册过别的账号、按 Google 的规则已作废** ✗。
+	// 所以这里按 CA **现场申请一把新的** ✓（Google 用已存服务账号 ✓、ZeroSSL 用邮箱换 ✓）；
+	// 拿不到新的（没授权/没邮箱）再退回库里那把 ✓（对已有账号的节点，反正也不会用 EAB ✓）。
+	switch ca {
+	case "google":
+		if cfg, err := a.eabSvc.MintGoogleEAB(ctx); err == nil && cfg != nil && cfg.KeyID != "" {
+			log.Printf("[router] node issuance: minted fresh Google EAB kid=%s", cfg.KeyID)
+			return email, cfg.KeyID, cfg.MACKey
+		} else if err != nil {
+			log.Printf("[router] node issuance: mint Google EAB failed (%v), falling back to stored one", err)
+		}
+	case "zerossl":
+		if strings.Contains(email, "@") {
+			if cfg, err := a.eabSvc.FetchZeroSSLEAB(ctx, email); err == nil && cfg != nil && cfg.KeyID != "" {
+				log.Printf("[router] node issuance: fetched fresh ZeroSSL EAB kid=%s", cfg.KeyID)
+				return email, cfg.KeyID, cfg.MACKey
+			} else if err != nil {
+				log.Printf("[router] node issuance: fetch ZeroSSL EAB failed (%v), falling back to stored one", err)
+			}
+		}
+	}
+
+	cfg, err := a.eabSvc.GetByCA(ctx, ca)
 	if err != nil || cfg == nil {
 		return email, "", ""
 	}
@@ -4041,6 +4067,20 @@ func (a eabConfigAdapter) FetchGoogleEAB(ctx context.Context, projectID, service
 		return nil, fmt.Errorf("eab config service not available")
 	}
 	cfg, err := a.svc.FetchGoogleEAB(ctx, projectID, serviceAccountJSON, accessToken)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+	return &certsHandler.EABConfigInfo{
+		Name: cfg.Name, CAProvider: cfg.CAProvider, KeyID: cfg.KeyID, MACKey: cfg.MACKey,
+	}, nil
+}
+
+// MintGoogleEAB 强制用已存服务账号申请一把全新的 Google EAB ✓（给节点首次注册用 ✓）。
+func (a eabConfigAdapter) MintGoogleEAB(ctx context.Context) (*certsHandler.EABConfigInfo, error) {
+	if a.svc == nil {
+		return nil, fmt.Errorf("eab config service not available")
+	}
+	cfg, err := a.svc.MintGoogleEAB(ctx)
 	if err != nil || cfg == nil {
 		return nil, err
 	}

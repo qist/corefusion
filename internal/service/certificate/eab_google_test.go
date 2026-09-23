@@ -167,3 +167,89 @@ func TestNormalizeServiceAccountJSONEmpty(t *testing.T) {
 		t.Fatal("空必须报错 ✗")
 	}
 }
+
+// 申请失败时也要**把服务账号存下来** ✓（否则用户填的白丢 ✗，且修好 IAM 后无法"自动再申请" ✗）
+func TestSaveGoogleAuthOnFailurePath(t *testing.T) {
+	svc := setupEABSvc(t)
+	ctx := context.Background()
+
+	// ① 有同名 Google 行 → 就地补上项目 ID / 服务账号 ✓，且不动已有 KID/MAC ✓
+	existing, err := svc.Create(ctx, EABConfigInput{
+		Name: "Google Public CA - proj-x", CAProvider: "google", KeyID: "k-old", MACKey: "m-old",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := svc.saveGoogleAuth(ctx, "proj-x", `{"type":"service_account","client_email":"a@b.iam"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg == nil || cfg.GoogleProjectID != "proj-x" || cfg.GoogleSAJSON == "" {
+		t.Fatalf("应存下项目 ID 与服务账号 ✓：%+v", cfg)
+	}
+	if cfg.ID != existing.ID || cfg.KeyID != "k-old" || cfg.MACKey != "m-old" {
+		t.Fatalf("不该动已有 KID/MAC ✓：%+v", cfg)
+	}
+
+	// ② 只有一份"没名字对上、但已存过服务账号"的 Google 行 → 也认它 ✓
+	svc2 := setupEABSvc(t)
+	if _, err := svc2.Create(ctx, EABConfigInput{
+		Name: "随便起的名字", CAProvider: "google", KeyID: "k2", MACKey: "m2", GoogleSAJSON: `{"a":1}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc2.saveGoogleAuth(ctx, "proj-y", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.GoogleProjectID != "proj-y" {
+		t.Fatalf("应更新那份已存过服务账号的配置 ✓：%+v", got)
+	}
+
+	// ③ 完全没有 → 新建一份 ✓
+	svc3 := setupEABSvc(t)
+	made, err := svc3.saveGoogleAuth(ctx, "proj-z", `{"type":"service_account"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made == nil || made.CAProvider != "google" || made.GoogleProjectID != "proj-z" {
+		t.Fatalf("应新建一份 Google 配置 ✓：%+v", made)
+	}
+	if made.Name != "Google Public CA - proj-z" {
+		t.Fatalf("名称约定不符：%s", made.Name)
+	}
+
+	// ④ 两者都空 → 不做事 ✓（返回 nil,nil ✓）
+	if c, err := svc3.saveGoogleAuth(ctx, "", ""); err != nil || c != nil {
+		t.Fatalf("空输入应直接返回 ✓：%+v %v", c, err)
+	}
+}
+
+// 保存路径（Create/Update 的入参）必须能存下 GCP 两字段 ✓ —— 这正是用户"填了却丢了"的根因 ✗
+func TestEABConfigInputCarriesGoogleAuth(t *testing.T) {
+	svc := setupEABSvc(t)
+	ctx := context.Background()
+	c, err := svc.Create(ctx, EABConfigInput{
+		Name: "g-save", CAProvider: "google", KeyID: "k", MACKey: "m",
+		GoogleProjectID: "proj-1", GoogleSAJSON: `{"type":"service_account"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.GoogleProjectID != "proj-1" || c.GoogleSAJSON == "" || !c.HasGoogleSA {
+		t.Fatalf("Create 应存下 GCP 授权 ✓：%+v", c)
+	}
+	upd, err := svc.Update(ctx, c.ID, EABConfigInput{
+		Name: "g-save", CAProvider: "google", KeyID: "k", MACKey: "",
+		GoogleProjectID: "proj-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.GoogleProjectID != "proj-2" {
+		t.Fatalf("Update 应更新项目 ID ✓：%+v", upd)
+	}
+	if upd.GoogleSAJSON == "" {
+		t.Fatalf("Update 留空服务账号时应保持原值 ✓：%+v", upd)
+	}
+}

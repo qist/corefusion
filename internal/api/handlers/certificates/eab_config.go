@@ -2,6 +2,7 @@ package certificates
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -40,6 +41,10 @@ func (h *EABHandler) Create(c *gin.Context) {
 		CAProvider string `json:"ca_provider"`
 		KeyID      string `json:"eab_key_id"`
 		MACKey     string `json:"eab_mac_key"`
+		// ⚠ 「保存」也必须能存下这两项 ✗ —— 之前只有"自动申请 EAB"那条路用到它们 ✗，
+		// 结果用户在弹窗里填了、看着有、一保存就丢 ✗（用户真机反馈"我确实添加了 JSON ✓" ✓）。
+		GoogleProjectID string `json:"google_project_id"`
+		GoogleSAJSON    string `json:"google_service_account_json"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -47,6 +52,7 @@ func (h *EABHandler) Create(c *gin.Context) {
 	}
 	cfg, err := h.svc.Create(c.Request.Context(), certService.EABConfigInput{
 		Name: req.Name, CAProvider: req.CAProvider, KeyID: req.KeyID, MACKey: req.MACKey,
+		GoogleProjectID: req.GoogleProjectID, GoogleSAJSON: req.GoogleSAJSON,
 	})
 	if err != nil {
 		response.BadRequest(c, "CREATE_FAILED", err.Error())
@@ -67,6 +73,9 @@ func (h *EABHandler) Update(c *gin.Context) {
 		CAProvider string `json:"ca_provider"`
 		KeyID      string `json:"eab_key_id"`
 		MACKey     string `json:"eab_mac_key"`
+		// 同 Create ✓：保存时也要能存下 GCP 授权信息 ✓
+		GoogleProjectID string `json:"google_project_id"`
+		GoogleSAJSON    string `json:"google_service_account_json"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -74,6 +83,7 @@ func (h *EABHandler) Update(c *gin.Context) {
 	}
 	cfg, err := h.svc.Update(c.Request.Context(), id, certService.EABConfigInput{
 		Name: req.Name, CAProvider: req.CAProvider, KeyID: req.KeyID, MACKey: req.MACKey,
+		GoogleProjectID: req.GoogleProjectID, GoogleSAJSON: req.GoogleSAJSON,
 	})
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
@@ -132,7 +142,8 @@ func (h *EABHandler) FetchZeroSSL(c *gin.Context) {
 // 但注册出的 ACME 账号**不过期** ✓ → 续期不需要 EAB ✓。
 func (h *EABHandler) FetchGoogle(c *gin.Context) {
 	var req struct {
-		ProjectID          string `json:"project_id" binding:"required"`
+		ProjectID string `json:"project_id"`
+		// ⚠ 两项都可留空 ✓：留空就用**配置里已存过的**服务账号 ✓（用户存一次之后不用再粘 ✗）
 		ServiceAccountJSON string `json:"service_account_json"`
 		AccessToken        string `json:"access_token"`
 	}
@@ -141,8 +152,20 @@ func (h *EABHandler) FetchGoogle(c *gin.Context) {
 		return
 	}
 	if req.ServiceAccountJSON == "" && req.AccessToken == "" {
-		response.BadRequest(c, "GOOGLE_AUTH_REQUIRED",
-			"provide either service_account_json (recommended) or access_token")
+		// 回落到已存的服务账号 ✓
+		storedProject, storedSA := h.svc.StoredGoogleAuth(c.Request.Context())
+		if storedSA == "" {
+			response.BadRequest(c, "GOOGLE_AUTH_REQUIRED",
+				"provide a service account key file or an access token (or save one in this EAB config first)")
+			return
+		}
+		req.ServiceAccountJSON = storedSA
+		if strings.TrimSpace(req.ProjectID) == "" {
+			req.ProjectID = storedProject
+		}
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		response.BadRequest(c, "GOOGLE_PROJECT_REQUIRED", "project id is required")
 		return
 	}
 	cfg, err := h.svc.FetchGoogleEAB(c.Request.Context(), req.ProjectID, req.ServiceAccountJSON, req.AccessToken)

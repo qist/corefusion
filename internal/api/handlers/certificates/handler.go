@@ -82,6 +82,9 @@ type EABConfigResolver interface {
 	// EnsureGoogleEAB 保证 Google 有一份**可用** EAB ✓：缺/过期就用存过的服务账号**现场再申请一把** ✓
 	//（Google 的 EAB 是 7 天 + 一次性 ✗，这条让"首次申请即自动注册"在 Google 上也能成立 ✓）。
 	EnsureGoogleEAB(ctx context.Context) (*EABConfigInfo, bool, error)
+	// MintGoogleEAB **强制**用已存服务账号申请一把**全新**的 Google EAB ✓ ——
+	// 给"节点首次注册"用 ✓：Google 的 EAB 一次性 ✓，库里那把多半已被注册用掉、已作废 ✗。
+	MintGoogleEAB(ctx context.Context) (*EABConfigInfo, error)
 }
 
 // ACMEEmailResolver 解析 ACME 账号（由面板的 ACME 邮箱/账号服务实现 ✓）。
@@ -353,6 +356,37 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 	if strings.TrimSpace(caProvider) == "" {
 		caProvider = strings.TrimSpace(req.CAProvider)
 	}
+	// ⚠ 必须把 EAB 一起下发 ✗ —— 目标节点可能是**从没注册过账号**的机器（例如 1.8 ✓），
+	// 它第一次签发要真的去注册 ✓，而 Google/ZeroSSL 注册**必须要 EAB** ✗。
+	// 库里那把很可能已被别的账号用掉（Google 的 EAB 是一次性 ✗）→ **现场申请一把新的** ✓。
+	if eabMAC == "" && caNeedsEAB(caProvider) && h.eabConfigs != nil {
+		switch strings.ToLower(strings.TrimSpace(caProvider)) {
+		case "google":
+			if minted, merr := h.eabConfigs.MintGoogleEAB(c.Request.Context()); merr == nil && minted != nil && minted.KeyID != "" {
+				eabKID, eabMAC = minted.KeyID, minted.MACKey
+				log.Printf("[cert] node issuance: minted fresh Google EAB kid=%s for node %d", eabKID, req.NodeID)
+			} else if merr != nil {
+				log.Printf("[cert] node issuance: mint Google EAB failed: %v", merr)
+			}
+		case "zerossl":
+			if strings.Contains(email, "@") {
+				if fetched, ferr := h.eabConfigs.FetchZeroSSLEAB(c.Request.Context(), email); ferr == nil && fetched != nil && fetched.KeyID != "" {
+					eabKID, eabMAC = fetched.KeyID, fetched.MACKey
+					log.Printf("[cert] node issuance: fetched fresh ZeroSSL EAB kid=%s for node %d", eabKID, req.NodeID)
+				} else if ferr != nil {
+					log.Printf("[cert] node issuance: fetch ZeroSSL EAB failed: %v", ferr)
+				}
+			}
+		}
+		if eabKID == "" || eabMAC == "" {
+			// 现场申请不到（没授权/没邮箱 ✓）→ 用库里那把兜底 ✓（对已有账号的节点本来就够用 ✓）
+			if cfg, cerr := h.eabConfigs.ResolveEABConfigForCA(c.Request.Context(), caProvider); cerr == nil && cfg != nil {
+				eabKID, eabMAC = cfg.KeyID, cfg.MACKey
+				log.Printf("[cert] node issuance: using stored %s EAB kid=%s", caProvider, eabKID)
+			}
+		}
+	}
+
 	cmd := &agentpb.IssuePublicCertCommand{
 		CertId:      req.CertID,
 		Identifiers: identifiers,
@@ -361,7 +395,11 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		Profile:     req.Profile,
 		Webroot:     req.Webroot,
 		Email:       email,
+		// ⚠ 这两行原来漏了 ✗ → 节点侧拿不到 EAB → Google/ZeroSSL 首次注册必失败 ✗
+		EabKeyId:  eabKID,
+		EabMacKey: eabMAC,
 	}
+	log.Printf("[cert] issue-on-node: node=%d ca=%q eab=%v email=%q", req.NodeID, caProvider, eabKID != "" && eabMAC != "", email)
 	// dns-01：把面板里存的 DNS 通道（提供者 + 凭据 ✓）随指令下发给节点 ✓
 	if strings.EqualFold(strings.TrimSpace(req.ChallengeType), "dns-01") && req.DNSChannelID > 0 {
 		if h.dnsChannels == nil {

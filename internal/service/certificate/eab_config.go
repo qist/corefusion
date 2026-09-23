@@ -85,6 +85,7 @@ func (s *EABConfigService) Create(ctx context.Context, in EABConfigInput) (*enti
 		return nil, err
 	}
 	cfg.HasMACKey = cfg.MACKey != ""
+	cfg.HasGoogleSA = strings.TrimSpace(cfg.GoogleSAJSON) != ""
 	return cfg, nil
 }
 
@@ -115,6 +116,7 @@ func (s *EABConfigService) Update(ctx context.Context, id int64, in EABConfigInp
 		return nil, err
 	}
 	cfg.HasMACKey = cfg.MACKey != ""
+	cfg.HasGoogleSA = strings.TrimSpace(cfg.GoogleSAJSON) != ""
 	return cfg, nil
 }
 

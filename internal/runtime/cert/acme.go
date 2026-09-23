@@ -420,8 +420,15 @@ func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType Challenge
 			// （真机踩到：`No TXT record found at _acme-challenge.…` 403 ✗）。
 			dns01.RecursiveNSsPropagationRequirement(),
 			// ⚠ PropagationWait 的语义是"**先无条件睡 wait**，再检查"✗，不是"最多等 wait" ✗
-			// （真机实测：写 2m 就每个域名都慢 2 分钟 ✗）。给 Cloudflare **30 秒**发布 + 真检查 ✓：
-			// 又稳（不会太早放行 ✗）又快（原来是 2 分钟 ✗）。
+			// （真机实测：写 2m 就每个域名都慢 2 分钟 ✗，不是"最多等 2 分钟" ✗）。
+			//
+			// ⚠⚠ 第二个参数必须是 **true（睡够就直接放行、不做本地校验）** ✗：
+			//   目标机器（节点/内网）**常常连不到公共解析器** ✗ —— 1.8 实测卡在
+			//   `Waiting for DNS record propagation` 100+ 秒 ✗，而记录其实早就发布了 ✓;
+			//   本地校验不过 ≠ 记录没发布 ✗，只会白白拖死签发 ✗。
+			//   Cloudflare 是**秒级**发布 ✓ → 睡 45 秒足够 ✓，之后交给 **CA 自己的解析器**验证 ✓
+			//   （它一定能看到 ✓）→ 面板本机与各节点都不再依赖本机 DNS ✓。
+			dns01.PropagationWait(45*time.Second, true),
 		}
 		return client.Challenge.SetDNS01Provider(provider, opts...)
 

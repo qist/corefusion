@@ -66,8 +66,8 @@ type CommerceService struct {
 	balanceRepo     *repository.ClientBalanceRepository
 	balanceTxRepo   *repository.BalanceTransactionRepository
 	referralSvc     *ReferralService // P1: 首次付费返利触发
-userSyncer      UserSyncer       // 退款过期后从节点移除用户凭证
-accountSyncer   AccountSyncer    // 套餐激活后同步创建入站用户账号
+	userSyncer      UserSyncer       // 退款过期后从节点移除用户凭证
+	accountSyncer   AccountSyncer    // 套餐激活后同步创建入站用户账号
 	settingSvc      SettingStore
 	jwtSecret       string
 }
@@ -154,9 +154,9 @@ type PlanNodeInfo struct {
 // PlanListItem is a simplified plan template for client display.
 type PlanListItem struct {
 	ID          int64             `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Category    string             `json:"category"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Category    string            `json:"category"`
 	SortOrder   int               `json:"sort_order"`
 	Variants    []PlanVariantItem `json:"variants"`
 	Nodes       []PlanNodeInfo    `json:"nodes"`
@@ -182,11 +182,11 @@ type PlanVariantItem struct {
 // PlanDetailItem is a detailed plan template for client display.
 type PlanDetailItem struct {
 	PlanListItem
-	DeviceLimit     int     `json:"device_limit"`
-	SpeedLimitMbps  int     `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps int   `json:"speed_limit_up_mbps"`
-	ConcurrentLimit int     `json:"concurrent_limit"`
-	NodeGroupIDs    []int64 `json:"node_group_ids"`
+	DeviceLimit      int     `json:"device_limit"`
+	SpeedLimitMbps   int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit  int     `json:"concurrent_limit"`
+	NodeGroupIDs     []int64 `json:"node_group_ids"`
 }
 
 // ListPlans returns all enabled plan templates with their variants (excludes traffic_pack).
@@ -364,7 +364,7 @@ func (s *CommerceService) GetPlan(ctx context.Context, planID int64) (*PlanDetai
 		},
 		DeviceLimit: tmpl.DeviceLimit, SpeedLimitMbps: tmpl.SpeedLimitMbps,
 		SpeedLimitUpMbps: tmpl.SpeedLimitUpMbps,
-		ConcurrentLimit: tmpl.ConcurrentLimit, NodeGroupIDs: nodeGroupIDs,
+		ConcurrentLimit:  tmpl.ConcurrentLimit, NodeGroupIDs: nodeGroupIDs,
 	}, nil
 }
 
@@ -670,7 +670,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 				result := tx.Model(&entity.ClientBalance{}).
 					Where("client_id = ? AND balance >= ?", clientID, paidAmount).
 					Updates(map[string]interface{}{
-						"balance":   gorm.Expr("balance - ?", paidAmount),
+						"balance":    gorm.Expr("balance - ?", paidAmount),
 						"updated_at": now,
 					})
 				if result.Error != nil {
@@ -867,18 +867,18 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 				return fmt.Errorf("gift card has already been used")
 			}
 			// Create ChargeOrder for tracking — inherit currency from the card
-				chargeOrder := &entity.ChargeOrder{
-					ClientID:      clientID,
-					TradeNo:       generateTradeNo(),
-					Source:        entity.ChargeSourceCard,
-					Amount:        0,
-					Currency:      card.Currency,
-					PlanVariantID: &input.VariantID,
-					OrderType:     entity.ChargeOrderTypePurchase,
-					Status:        entity.ChargeStatusPaid,
-					ChargeCardID:  &card.ID,
-					PaidAt:        &now,
-				}
+			chargeOrder := &entity.ChargeOrder{
+				ClientID:      clientID,
+				TradeNo:       generateTradeNo(),
+				Source:        entity.ChargeSourceCard,
+				Amount:        0,
+				Currency:      card.Currency,
+				PlanVariantID: &input.VariantID,
+				OrderType:     entity.ChargeOrderTypePurchase,
+				Status:        entity.ChargeStatusPaid,
+				ChargeCardID:  &card.ID,
+				PaidAt:        &now,
+			}
 			if err := tx.Create(chargeOrder).Error; err != nil {
 				return err
 			}
@@ -1048,8 +1048,11 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
-	payloadHash := sha256Hex(rawBody)
-	bodyHash := payloadHash
+	payloadHash := sha256Hex(rawBody) // 事件/重试记录沿用"完整 body"的哈希 ✓（存储语义不变 ✓）
+	// body_hash 两个候选 ✓：见 callbackBodyHashCandidates 的说明 ——
+	// 官方文档要求"先算 body_hash、再把 sign 放进 body" ✓，而旧实现对**含 sign 的完整 body**
+	// 取哈希 ✗ → 循环依赖 ✗ → 按文档接入的充值站点必然验签失败 ✗（回调恒 400 ✓）。
+	bodyHash, bodyHashFull := callbackBodyHashCandidates(rawBody)
 
 	// v3.2: event 改为异步写入，不阻塞账务
 	recordEvent := func(result, errorCode, errMsg string, signValid bool, secretVer int, ipMatchRule string) {
@@ -1154,7 +1157,11 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	usedSecretVer := 0
 	signValid := false
 	for _, entry := range secrets {
-		if s.verifyChargeCallback(input, bodyHash, entry.secret) {
+		// 两个 body_hash 候选都试 ✓：bodyHash=去掉 sign 后算的（文档口径 ✓）、
+		// bodyHashFull=完整 body（旧行为 ✓）。安全性不变 ✓（伪造仍需密钥 ✓，
+		// body_hash 只约束整体完整性，status/paid_* 本来就不参与签名载荷 ✓）。
+		if s.verifyChargeCallback(input, bodyHash, entry.secret) ||
+			s.verifyChargeCallback(input, bodyHashFull, entry.secret) {
 			signValid = true
 			usedSecretVer = entry.version
 			break
@@ -1237,8 +1244,14 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	if input.Status == entity.CallbackStatusFailed {
 		targetStatus = entity.ChargeStatusFailed
 	}
-	if !entity.CanChargeOrderTransition(order.Status, targetStatus) {
-		log.Printf("[callback] request_id=%s invalid_transition from=%s to=%s", requestID, order.Status, targetStatus)
+	// NOTE: cannot use the generic state machine here.
+	// State machine is pending -> processing -> paid, while a payment-gateway callback
+	// settles the order in ONE step, so pending -> paid would be rejected and the order
+	// would NEVER be credited (real-device symptom: 400 "order status is pending, cannot
+	// process callback"). Keep the criterion identical to the crediting transaction below:
+	// only pending / processing are acceptable.
+	if order.Status != entity.ChargeStatusPending && order.Status != entity.ChargeStatusProcessing {
+		log.Printf("[callback] request_id=%s invalid_order_status=%s target=%s", requestID, order.Status, targetStatus)
 		recordEvent("error", "INVALID_STATUS_TRANSITION", fmt.Sprintf("order status is %s", order.Status), signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order status is %s, cannot process callback", order.Status)
 	}
@@ -1350,11 +1363,11 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		})
 		if err != nil {
 			log.Printf("[callback] request_id=%s order=%s transaction_error=%v", requestID, input.TradeNo, err)
-		recordEvent("error", "CALLBACK_FAILED", err.Error(), signValid, usedSecretVer, ipMatchRule)
-		s.enqueueCallbackRetry(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, "CALLBACK_FAILED", err.Error(), true)
-		raiseSecEvent(entity.ChargeSecEventTransactionError, entity.ChargeSecSeverityHigh, input.TradeNo,
-			fmt.Sprintf("callback transaction failed: %v", err))
-		return err
+			recordEvent("error", "CALLBACK_FAILED", err.Error(), signValid, usedSecretVer, ipMatchRule)
+			s.enqueueCallbackRetry(ctx, siteID, requestID, input.TradeNo, remoteIP, payloadHash, "CALLBACK_FAILED", err.Error(), true)
+			raiseSecEvent(entity.ChargeSecEventTransactionError, entity.ChargeSecSeverityHigh, input.TradeNo,
+				fmt.Sprintf("callback transaction failed: %v", err))
+			return err
 		}
 		log.Printf("[callback] request_id=%s order=%s amount=%d status=paid success", requestID, input.TradeNo, order.Amount)
 		recordEvent("success", "", "", signValid, usedSecretVer, ipMatchRule)
@@ -1437,6 +1450,101 @@ func (s *CommerceService) loadActiveSecrets(ctx context.Context, siteID int64) (
 		}
 	}
 	return result, nil
+}
+
+// callbackBodyHashCandidates 返回回调 body_hash 的两个可接受取值 ✓。
+//
+// 背景（真机排查确认的契约 bug ✗）：官方对接文档 CHARGE_SITE_ACCESS_GUIDE.md 第 1 步要求
+//
+//	body_hash = SHA256(原始请求体字节)   ← 此刻 body 里**还没有** sign
+//	sign 是第 4 步才 `body["sign"] = sign` 追加进去的
+//
+// 而 sign 的签名载荷里**包含** body_hash → "先有 sign 才能算 hash、先有 hash 才能算 sign" ✗
+// 是循环的 ✓ → 只能按文档"先算 body_hash、后放 sign"实现 ✓。
+// 旧实现却对**收到的完整 body（含 sign）**取哈希 ✗ → 与文档不符 →
+// 任何规范实现的充值站点都验签失败 ✗（现象：回调恒 400 INVALID_SIGNATURE ✓）。
+//
+// 现在返回两个候选，任一匹配即通过 ✓：
+//
+//	stripped：把顶层 sign 成员从原始字节中剔除后的 sha256 ✓（符合文档 ✓）
+//	full    ：完整原始字节的 sha256 ✓（兼容旧行为 ✓）
+//
+// 安全性不受影响 ✓：伪造签名仍需回调密钥 ✓；body_hash 只约束整体完整性 ✓
+// （status / paid_* 等字段本来就不参与签名载荷 ✓）。
+func callbackBodyHashCandidates(raw []byte) (stripped, full string) {
+	full = sha256Hex(raw)
+	stripped = full
+	if withoutSign, ok := stripTopLevelSignMember(raw); ok {
+		stripped = sha256Hex(withoutSign)
+	}
+	return stripped, full
+}
+
+// stripTopLevelSignMember 从原始 JSON 对象里剔除顶层 "sign" 成员（连同分隔逗号 ✓），
+// 使 sha256(结果) 与文档里"加 sign 之前的 body 字节"完全一致 ✓。
+//
+// 用 json.Decoder 的 InputOffset() 精确定位字节区间 ✓（encoding/json 官方 API ✓），
+// 因此不依赖 key 顺序与值类型 ✓（客户端按任意顺序写都能正确还原 ✓）。
+// 返回 ok=false 表示 body 不是 JSON 对象或没有 sign 成员 ✓。
+func stripTopLevelSignMember(raw []byte) ([]byte, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil, false
+	}
+	for dec.More() {
+		keyStart := dec.InputOffset() // key 之前的位置（前一个 token 之后 ✓，可能含空白 ✓）
+		kt, err := dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		key, _ := kt.(string)
+		if _, err := dec.Token(); err != nil { // 跳过值 ✓
+			return nil, false
+		}
+		valEnd := dec.InputOffset()
+		if key != "sign" {
+			continue
+		}
+		// 起始：优先吃掉"前置逗号"（正常中间成员 ✓）；若 sign 是第一个成员 ✓
+		// 则保留 `{`、从 key 前开始删 ✓ 并改为吃掉"后置逗号" ✓ ——
+		// ⚠ 两个逗号只能吃一个 ✗，否则会把前后两个成员粘在一起 ✗。
+		removeStart := keyStart
+		var removeEnd = valEnd
+		found := false
+		// ⚠ 必须从 keyStart **本身**开始往回找 ✗：
+		// json.Decoder.InputOffset() 返回的是"上一个 token **结束之后**"的偏移 ✓，
+		// 也就是**正好落在分隔逗号上** ✓ —— 从 keyStart-1 开始就会多退一位 ✗，
+		// 把前一个成员一起圈进删除区间 ✗（真机表现：body_hash 永远对不上 → 回调恒 400 ✗，
+		// 这个坑是单测 TestStripTopLevelSignMember 抓出来的 ✓）。
+		for i := int(keyStart); i >= 0; i-- {
+			if raw[i] == ',' {
+				removeStart = int64(i)
+				found = true
+				break
+			}
+			if raw[i] == '{' {
+				break
+			}
+		}
+		if !found {
+			// sign 是第一个成员 ✓ → 吃掉它后面的逗号 ✓
+			for i := int(valEnd); i < len(raw); i++ {
+				if raw[i] == ',' {
+					removeEnd = int64(i) + 1
+					break
+				}
+				if raw[i] == '}' || raw[i] == ']' {
+					break
+				}
+			}
+		}
+		out := make([]byte, 0, len(raw))
+		out = append(out, raw[:removeStart]...)
+		out = append(out, raw[removeEnd:]...)
+		return out, true
+	}
+	return nil, false
 }
 
 // sha256Hex returns the hex-encoded SHA-256 hash of data.

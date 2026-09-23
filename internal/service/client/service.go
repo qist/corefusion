@@ -32,12 +32,12 @@ type TrafficResetHook interface {
 
 // Service handles client business logic.
 type Service struct {
-	clientRepo   *repository.ClientRepository
-	planSvc      *plan.Service
-	subRepo      *repository.SubscriptionRepository
-	inboundRepo  *repository.InboundConfigRepository
-	userManager  InboundUserManager
-	trafficHook  TrafficResetHook
+	clientRepo  *repository.ClientRepository
+	planSvc     *plan.Service
+	subRepo     *repository.SubscriptionRepository
+	inboundRepo *repository.InboundConfigRepository
+	userManager InboundUserManager
+	trafficHook TrafficResetHook
 }
 
 // NewService creates a new client service.
@@ -73,16 +73,16 @@ func (s *Service) GetClient(ctx context.Context, id int64) (*entity.Client, erro
 }
 
 type CreateClientInput struct {
-	Email           string  `json:"email" binding:"required"`
-	Password        string  `json:"password"`
-	PlanID          int64   `json:"plan_id" binding:"required"`
-	PlanVariantID   int64   `json:"plan_variant_id"`
-	QuotaBytes        int64   `json:"quota_bytes"`
-	SpeedLimitMbps    int     `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps  int     `json:"speed_limit_up_mbps"`
-	ConcurrentLimit   int     `json:"concurrent_limit"`
-	ExpiresAt       *string `json:"expires_at"`
-	Remark          string  `json:"remark"`
+	Email            string  `json:"email" binding:"required"`
+	Password         string  `json:"password"`
+	PlanID           int64   `json:"plan_id" binding:"required"`
+	PlanVariantID    int64   `json:"plan_variant_id"`
+	QuotaBytes       int64   `json:"quota_bytes"`
+	SpeedLimitMbps   int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit  int     `json:"concurrent_limit"`
+	ExpiresAt        *string `json:"expires_at"`
+	Remark           string  `json:"remark"`
 }
 
 // CreateClient creates a client, generates accounts for all accessible inbounds, and creates a subscription.
@@ -118,18 +118,25 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 	}
 
 	// Create client
+	// ⚠ 密码必须**哈希后**落库 ✗：客户端登录走 password.Check(input.Password, client.Password) ✓，
+	// 而这里原本直接落**明文** ✗ → 通过管理接口建出来的客户端**永远登录不上** ✗（端到端测试踩到 ✓）。
+	// 同文件的 UpdateClient 已用 hashClientPassword ✓，Create 这条路径漏了 ✓。
+	pwdHash := ""
+	if input.Password != "" {
+		pwdHash = hashClientPassword(input.Password)
+	}
 	client := &entity.Client{
-		Email:           input.Email,
-		Password:        input.Password,
-		PlanID:          input.PlanID,
-		PlanVariantID:   input.PlanVariantID,
-		Status:          "active",
-		QuotaBytes:        quota,
-		SpeedLimitMbps:    input.SpeedLimitMbps,
+		Email:            input.Email,
+		Password:         pwdHash,
+		PlanID:           input.PlanID,
+		PlanVariantID:    input.PlanVariantID,
+		Status:           "active",
+		QuotaBytes:       quota,
+		SpeedLimitMbps:   input.SpeedLimitMbps,
 		SpeedLimitUpMbps: input.SpeedLimitUpMbps,
-		ConcurrentLimit:   input.ConcurrentLimit,
-		ExpiresAt:       expiresAt,
-		Remark:          input.Remark,
+		ConcurrentLimit:  input.ConcurrentLimit,
+		ExpiresAt:        expiresAt,
+		Remark:           input.Remark,
 	}
 	if err := s.clientRepo.Create(ctx, client); err != nil {
 		return nil, err
@@ -324,15 +331,15 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 
 // UpdateClient updates client fields.
 func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
-	Password        *string `json:"password"`
-	PlanID          *int64  `json:"plan_id"`
-	PlanVariantID   *int64  `json:"plan_variant_id"`
-	QuotaBytes        *int64  `json:"quota_bytes"`
-	SpeedLimitMbps    *int    `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps  *int    `json:"speed_limit_up_mbps"`
-	ConcurrentLimit   *int    `json:"concurrent_limit"`
-	ExpiresAt       *string `json:"expires_at"`
-	Remark          *string `json:"remark"`
+	Password         *string `json:"password"`
+	PlanID           *int64  `json:"plan_id"`
+	PlanVariantID    *int64  `json:"plan_variant_id"`
+	QuotaBytes       *int64  `json:"quota_bytes"`
+	SpeedLimitMbps   *int    `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps *int    `json:"speed_limit_up_mbps"`
+	ConcurrentLimit  *int    `json:"concurrent_limit"`
+	ExpiresAt        *string `json:"expires_at"`
+	Remark           *string `json:"remark"`
 }) (*entity.Client, error) {
 	client, err := s.clientRepo.GetByID(ctx, id)
 	if err != nil {

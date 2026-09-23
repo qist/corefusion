@@ -50,6 +50,30 @@ func (m *NginxManager) resolveSourceServerID(ctx context.Context, serverID int64
 // If the target server is a mirror node, sites and settings are fetched from
 // the primary server's data (partner_server_id). This ensures mirrors get the
 // same nginx.conf as the primary without needing separate DB records.
+// isLocalTarget 判断「**这份配置要落到哪个节点**」是不是本机（面板）✓。
+//
+// ⚠ 不能用 m.isLocal ✗：它是**每请求被改写**的共享状态 ✓（handlers 的 applyServerID 会按
+// URL 里的 node id 调 SetIsLocal ✓），本机请求与远程请求**交错**时会被别的请求改掉 ✗
+// → 拿它决定"要不要校验证书文件在不在本地"会时好时坏 ✗
+//
+//	（实测踩到 ✓：对 node 1 生成配置时 m.isLocal 被别的请求置为 false ✗，
+//	 文件校验没生效 ✗，缺文件的证书照样写进配置 ✗）。
+//
+// 这里改为**按本次调用的 serverID 参数**判断 ✓，与共享状态无关 ✓。
+func (m *NginxManager) isLocalTarget(ctx context.Context, serverID int64) bool {
+	if serverID == 1 { // NodeServer 表里 id=1 就是 "Local (Panel)" ✓
+		return true
+	}
+	if m.nodeServerRepo == nil {
+		return false
+	}
+	srv, err := m.nodeServerRepo.GetByID(ctx, serverID)
+	if err != nil || srv == nil {
+		return false
+	}
+	return srv.IsLocal
+}
+
 func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int64) (string, error) {
 	// Determine the source server ID for site/settings queries.
 	// For mirror nodes, use the primary's server_id.
@@ -552,7 +576,12 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if tlsSite != nil && tlsSite.DualCert != nil {
 				dual = *tlsSite.DualCert
 			}
-			for _, cp := range collectCertPairs(ctx, m.certRepo, domain, tlsCert, tlsKey, dual) {
+			var checker certPairChecker
+			// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）
+			if m.isLocalTarget(ctx, serverID) {
+				checker = localCertPairChecker(m.dataDir)
+			}
+			for _, cp := range collectCertPairs(ctx, m.certRepo, domain, tlsCert, tlsKey, dual, checker) {
 				sb.WriteString(fmt.Sprintf("        ssl_certificate ../%s;\n", stripDataDirPrefix(cp.Cert, m.dataDir)))
 				sb.WriteString(fmt.Sprintf("        ssl_certificate_key ../%s;\n", stripDataDirPrefix(cp.Key, m.dataDir)))
 			}

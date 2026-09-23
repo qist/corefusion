@@ -67,6 +67,9 @@ var ticketRouteScopes = []struct {
 	{"/log-manage/", "/stdout-log", authsvc.TicketScopeLogs},
 	{"/log-manage/", "/stdout-stream", authsvc.TicketScopeLogs},
 	{"/backups/", "/download", authsvc.TicketScopeBackupDownload},
+	// 证书下载 ✓：/api/v1/certificates/<id>/download 与 /api/v1/certificates/export ✓
+	{"/certificates/", "/download", authsvc.TicketScopeCertDownload},
+	{"/certificates/", "/export", authsvc.TicketScopeCertDownload},
 	{"/client-auth/logs/", "/download", authsvc.TicketScopeClientDownload},
 }
 

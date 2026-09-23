@@ -2484,6 +2484,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certsGroup.GET("/detect-ip", certH.DetectIP)
 				certsGroup.GET("/check-port", certH.CheckPort)
 				certsGroup.POST("/upload", certH.Upload)
+				// 证书下载 / 打包下载 ✓ —— 浏览器无法自定义请求头 ✗，走一次性票据
+				// （scope=cert_download ✓，见 middleware 的 ticketRouteScopes ✓）
+				certsGroup.GET("/export", certH.Export)
+				certsGroup.GET("/:id/download", certH.Download)
 				certsGroup.GET("/:id", certH.GetByID)
 				certsGroup.PUT("/:id", certH.Update)
 				certsGroup.DELETE("/:id", certH.Delete)

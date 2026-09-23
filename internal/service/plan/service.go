@@ -1230,10 +1230,22 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 		go s.userSyncer.SyncUserToServers(context.Background(), clientID, "update")
 	}
 
-	// Atomically increment promo usage (fails silently if limit reached between validate and increment)
+	// 促销码使用次数 +1（并发兜底）。这里必须**留下日志** ✗ 原来写的是 `_, _ = ...`：
+	// 把"是否达到上限"和 error 一起丢掉 → 促销码被超用（折扣照给、计数没涨）或计数
+	// 更新失败时，日志里没有任何痕迹，事后既发现不了、也无法对账。
 	if promoID != nil {
-		if promo, _ := s.promoRepo.GetByID(ctx, *promoID); promo != nil {
-			_, _ = s.promoRepo.TryIncrementUsedCount(ctx, *promoID, promo.MaxUses)
+		if promo, perr := s.promoRepo.GetByID(ctx, *promoID); perr != nil {
+			log.Printf("[promo] load promotion %d for usage increment failed: %v", *promoID, perr)
+		} else if promo != nil {
+			ok, ierr := s.promoRepo.TryIncrementUsedCount(ctx, *promoID, promo.MaxUses)
+			switch {
+			case ierr != nil:
+				log.Printf("[promo] increment used_count of promotion %d failed: %v", *promoID, ierr)
+			case !ok:
+				// 订单已成交、折扣已算进金额 ✗ 无法回退 → 记录以便发现"实际使用数超过上限"。
+				log.Printf("[promo] promotion %d already reached max_uses=%d; order %d still received the discount",
+					*promoID, promo.MaxUses, order.ID)
+			}
 		}
 	}
 
@@ -1373,9 +1385,22 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		go s.userSyncer.SyncUserToServers(context.Background(), clientID, "update")
 	}
 
+	// 促销码使用次数 +1（并发兜底）。这里必须**留下日志** ✗ 原来写的是 `_, _ = ...`：
+	// 把"是否达到上限"和 error 一起丢掉 → 促销码被超用（折扣照给、计数没涨）或计数
+	// 更新失败时，日志里没有任何痕迹，事后既发现不了、也无法对账。
 	if promoID != nil {
-		if promo, _ := s.promoRepo.GetByID(ctx, *promoID); promo != nil {
-			_, _ = s.promoRepo.TryIncrementUsedCount(ctx, *promoID, promo.MaxUses)
+		if promo, perr := s.promoRepo.GetByID(ctx, *promoID); perr != nil {
+			log.Printf("[promo] load promotion %d for usage increment failed: %v", *promoID, perr)
+		} else if promo != nil {
+			ok, ierr := s.promoRepo.TryIncrementUsedCount(ctx, *promoID, promo.MaxUses)
+			switch {
+			case ierr != nil:
+				log.Printf("[promo] increment used_count of promotion %d failed: %v", *promoID, ierr)
+			case !ok:
+				// 订单已成交、折扣已算进金额 ✗ 无法回退 → 记录以便发现"实际使用数超过上限"。
+				log.Printf("[promo] promotion %d already reached max_uses=%d; order %d still received the discount",
+					*promoID, promo.MaxUses, order.ID)
+			}
 		}
 	}
 

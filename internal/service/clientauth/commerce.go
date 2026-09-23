@@ -2129,8 +2129,10 @@ func (s *CommerceService) StartCleanupScheduler(interval time.Duration) chan str
 			case <-ticker.C:
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				if err := s.CleanupExpiredOrders(ctx); err != nil {
-					// Log but don't crash
-					_ = err
+					// 清理失败不会让面板崩溃，但**必须留下日志** ✗ 原来写的是 `_ = err`：
+					// 注释说 "Log but don't crash"，实际既没日志、也把错误丢了 ——
+					// 清理不成功时，超时未支付的订单会一直挂在"待支付"，日志里却一条痕迹都没有。
+					log.Printf("[charge-cleanup] cleanup expired orders failed: %v", err)
 				}
 				cancel()
 			}

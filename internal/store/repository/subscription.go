@@ -85,6 +85,22 @@ func (r *SubscriptionRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.Subscription{}, id).Error
 }
 
+// RevokeByClientID 吊销某个客户端的**全部订阅**，返回受影响行数。
+//
+// 为什么必须有它 ✗：删除客户端时原来**完全不管订阅** → `subscriptions` 行变成孤儿，
+// 而下发路径 `GET /sub/:token` 只按 token 查、**不校验客户端是否存在** →
+// "已删除客户端"的订阅链接**依然能拉到配置** ✗（等于删除没生效）。
+//
+// 语义与单个 Revoke 保持一致（`status=revoked` + `revoked_at`）：订阅立刻从 active
+// 变为非 active，下发时直接 403；同时保留行，便于审计与对账（访问日志仍能对上）。
+func (r *SubscriptionRepository) RevokeByClientID(ctx context.Context, clientID int64, now time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Model(&entity.Subscription{}).
+		Where("client_id = ? AND status <> ?", clientID, "revoked").
+		Updates(map[string]interface{}{"status": "revoked", "revoked_at": now})
+	return res.RowsAffected, res.Error
+}
+
 // UpdateAccessStats updates the access stats for a subscription.
 func (r *SubscriptionRepository) UpdateAccessStats(ctx context.Context, id int64, ip, userAgent string) error {
 	return r.db.WithContext(ctx).Model(&entity.Subscription{}).Where("id = ?", id).Updates(map[string]interface{}{
@@ -150,6 +166,39 @@ func (r *SubscriptionRepository) ListExpired(ctx context.Context, now time.Time,
 		Limit(limit).
 		Find(&subs).Error
 	return subs, err
+}
+
+// ListActiveWithActivationWindow 返回**已激活、且配置了"激活后有效天数"**的活跃订阅。
+//
+// 为什么不把日期加法写进 SQL ✗：本项目同时支持 SQLite / MySQL / PostgreSQL，
+// 三者日期函数互不兼容（`datetime(x,'+N days')` / `DATE_ADD` / `interval`），
+// 写死任何一种都会在另一种上直接报错 → 取回内存用 Go 比较最稳（满足条件的行很少）。
+func (r *SubscriptionRepository) ListActiveWithActivationWindow(ctx context.Context, limit int) ([]entity.Subscription, error) {
+	if limit <= 0 || limit > 10000 {
+		limit = 5000
+	}
+	var subs []entity.Subscription
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND activated_at IS NOT NULL AND max_active_days IS NOT NULL AND max_active_days > 0", "active").
+		Limit(limit).
+		Find(&subs).Error
+	return subs, err
+}
+
+// MarkActivatedIfUnset 原子地把 `activated_at` 写成"首次成功访问"的时间，**仅当它仍为 NULL 时**。
+//
+// 这是"激活后有效天数"（`max_active_days`）的起算点：一旦落库就不再改动，
+// 因此重复访问、多设备导入、多节点取订阅**都不会延长**有效期 ✓。
+// 返回本次是否真的写入（false = 已被并发的另一次访问写过）。
+func (r *SubscriptionRepository) MarkActivatedIfUnset(ctx context.Context, id int64, now time.Time) (bool, error) {
+	res := r.db.WithContext(ctx).
+		Model(&entity.Subscription{}).
+		Where("id = ? AND activated_at IS NULL", id).
+		UpdateColumn("activated_at", now)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // AddUsedBytes atomically increments the subscription traffic cache. Used by the

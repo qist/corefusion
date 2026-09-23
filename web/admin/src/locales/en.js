@@ -1746,6 +1746,8 @@ export default {
       migrateSuccess: 'Data migration completed! Restart required to apply.',
     },
     proxy: {
+    upstreamTls: 'Upstream TLS',
+    upstreamTlsHint: 'When on, the upstream hop uses TLS: grpc uses grpcs://, http/ws uses https://. Required when the inbound terminates TLS itself (xray security=tls / sing-box tls.enabled).',
       title: 'Proxy Management',
       notInstalled: 'Not Installed',
       version: 'Version',

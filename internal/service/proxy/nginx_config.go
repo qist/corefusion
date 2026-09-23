@@ -657,6 +657,19 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			}
 
 			// gRPC uses a different location block syntax
+			// 回源（nginx → 本地内核）是否走 TLS ✓：由站点 upstream_tls 决定 ✓
+			grpcScheme := "grpc"
+			upstreamScheme := "http"
+			if site.UpstreamTLS {
+				grpcScheme = "grpcs"
+				upstreamScheme = "https"
+			}
+			// 回源 SNI ✓：优先 sni_target ✓，否则退回域名 ✓
+			upstreamSNI := strings.TrimSpace(site.SNITarget)
+			if upstreamSNI == "" {
+				upstreamSNI = strings.TrimSpace(site.Domain)
+			}
+
 			if site.Template == "grpc" {
 				sb.WriteString(fmt.Sprintf("        location %s {\n", path))
 				sb.WriteString(wafBypass)
@@ -668,7 +681,16 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("            grpc_set_header X-Real-IP $clientRealIp;\n")
 				sb.WriteString("            grpc_read_timeout 1h;\n")
 				sb.WriteString("            grpc_send_timeout 1h;\n")
-				sb.WriteString(fmt.Sprintf("            grpc_pass grpc://backend_%s;\n", upstreamKey))
+				// ⚠ 原来写死 `grpc://`（h2c 明文）✗：入站自带 TLS 时必须用 `grpcs://` ✗，
+				// 并补 SNI 与"不校验回源证书"（回源是本机内核 ✓，多为自签/内部签发 ✓）。
+				if site.UpstreamTLS {
+					if upstreamSNI != "" {
+						sb.WriteString("            grpc_ssl_server_name on;\n")
+						sb.WriteString(fmt.Sprintf("            grpc_ssl_name %s;\n", upstreamSNI))
+					}
+					sb.WriteString("            grpc_ssl_verify off;\n")
+				}
+				sb.WriteString(fmt.Sprintf("            grpc_pass %s://backend_%s;\n", grpcScheme, upstreamKey))
 				// Location-level directives
 				if site.LocationConfig != "" {
 					for _, line := range strings.Split(strings.TrimSpace(site.LocationConfig), "\n") {
@@ -701,9 +723,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				// If backend_path is root ("/"), add trailing slash to strip the location prefix
 				// If backend_path has a specific path, no trailing slash to preserve the full URI
 				if backendPath == "/" {
-					sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s/;\n", upstreamKey))
+					sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s/;\n", upstreamScheme, upstreamKey))
 				} else {
-					sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s;\n", upstreamKey))
+					sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
 				}
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
@@ -713,12 +735,18 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
 				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
 				sb.WriteString("            proxy_set_header X-NginX-Proxy true;\n")
+				if site.UpstreamTLS {
+					writeProxySSLUpstream(&sb, upstreamSNI)
+				}
 				sb.WriteString("            proxy_ssl_session_reuse off;\n")
 				sb.WriteString("            proxy_redirect off;\n")
 			default:
-				sb.WriteString(fmt.Sprintf("            proxy_pass http://backend_%s;\n", upstreamKey))
+				sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Accept-Encoding \"\";\n")
+				if site.UpstreamTLS {
+					writeProxySSLUpstream(&sb, upstreamSNI)
+				}
 				sb.WriteString("            proxy_set_header Host $host;\n")
 				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
 				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
@@ -1038,4 +1066,16 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	}
 
 	return sb.String(), nil
+}
+
+// writeProxySSLUpstream 回源走 TLS 时补 SNI 与"不校验回源证书" ✓（http/https 转发用 ✓）。
+//
+// 回源对象是本机内核（127.0.0.1）✓，证书多为自签/内部签发 ✓ → 默认不校验链 ✓；
+// 需要强校验时，用站点的 LocationConfig 追加 `proxy_ssl_verify on;` 覆盖 ✓。
+func writeProxySSLUpstream(sb *strings.Builder, sni string) {
+	if sni != "" {
+		sb.WriteString("            proxy_ssl_server_name on;\n")
+		sb.WriteString(fmt.Sprintf("            proxy_ssl_name %s;\n", sni))
+	}
+	sb.WriteString("            proxy_ssl_verify off;\n")
 }

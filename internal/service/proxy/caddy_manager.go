@@ -562,7 +562,11 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			for _, up := range strings.Split(site.Upstream, ",") {
 				up = strings.TrimSpace(up)
 				if up != "" {
-					sb.WriteString(fmt.Sprintf("\t\tto %s\n", up))
+					toUpstream := up
+					if site.UpstreamTLS && site.Template != "grpc" && !strings.Contains(toUpstream, "://") {
+						toUpstream = "https://" + toUpstream
+					}
+					sb.WriteString(fmt.Sprintf("\t\tto %s\n", toUpstream))
 				}
 			}
 			// Load balancing policy
@@ -676,7 +680,20 @@ func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	case "grpc":
 		sb.WriteString("\t\ttransport http {\n")
-		sb.WriteString("\t\t\tversions h2c\n")
+		if site.UpstreamTLS {
+			// 回源走 TLS ✓（入站自带 TLS 时必须 ✗，否则 grpc 握手失败 ✓）
+			sb.WriteString("\t\t\ttls\n")
+			sni := strings.TrimSpace(site.SNITarget)
+			if sni == "" {
+				sni = strings.TrimSpace(site.Domain)
+			}
+			if sni != "" {
+				sb.WriteString("\t\t\ttls_server_name " + sni + "\n")
+			}
+			sb.WriteString("\t\t\ttls_insecure_skip_verify\n")
+		} else {
+			sb.WriteString("\t\t\tversions h2c\n")
+		}
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")

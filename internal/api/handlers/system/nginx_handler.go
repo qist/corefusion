@@ -1,13 +1,11 @@
 package system
 
 import (
-	"strconv"
-
-	"github.com/gin-gonic/gin"
-
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/proxy"
+	"github.com/gin-gonic/gin"
+	"strconv"
 )
 
 // NginxHandler handles Nginx-specific HTTP requests.
@@ -39,15 +37,14 @@ func (h *NginxHandler) applyServerID(c *gin.Context) (int64, bool) {
 	if sid == 0 {
 		sid = localServerID
 	}
-h.nginxMgr.SetServerID(sid)
-h.proxyMgr.SetServerID(sid)
-h.nginxMgr.SetIsLocal(isLocal)
-h.proxyMgr.SetIsLocal(isLocal)
-return sid, isLocal
+	h.nginxMgr.SetServerID(sid)
+	h.proxyMgr.SetServerID(sid)
+	h.nginxMgr.SetIsLocal(isLocal)
+	h.proxyMgr.SetIsLocal(isLocal)
+	return sid, isLocal
 }
 
 // --- Site Management ---
-
 func (h *NginxHandler) ListSites(c *gin.Context) {
 	h.applyServerID(c)
 	sites, err := h.nginxMgr.ListSites(c.Request.Context())
@@ -60,7 +57,6 @@ func (h *NginxHandler) ListSites(c *gin.Context) {
 	}
 	response.OK(c, sites)
 }
-
 func (h *NginxHandler) CreateSite(c *gin.Context) {
 	h.applyServerID(c)
 	var req struct {
@@ -76,6 +72,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		LocationConfig  string `json:"location_config"`
 		L4Protocol      string `json:"l4_protocol"`
 		SNITarget       string `json:"sni_target"`
+		UpstreamTLS     bool   `json:"upstream_tls"`
 		LocalPort       string `json:"local_port"`
 		ProxyProtocol   bool   `json:"proxy_protocol"`
 		EnableHttp2     bool   `json:"enable_http2"`
@@ -107,6 +104,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		LocationConfig:  req.LocationConfig,
 		L4Protocol:      req.L4Protocol,
 		SNITarget:       req.SNITarget,
+		UpstreamTLS:     req.UpstreamTLS,
 		LocalPort:       req.LocalPort,
 		ProxyProtocol:   req.ProxyProtocol,
 		EnableHttp2:     req.EnableHttp2,
@@ -128,7 +126,6 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 	}
 	response.Created(c, site)
 }
-
 func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
@@ -154,6 +151,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		LocationConfig  *string `json:"location_config"`
 		L4Protocol      *string `json:"l4_protocol"`
 		SNITarget       *string `json:"sni_target"`
+		UpstreamTLS     *bool   `json:"upstream_tls"`
 		LocalPort       *string `json:"local_port"`
 		ProxyProtocol   *bool   `json:"proxy_protocol"`
 		Enabled         *bool   `json:"enabled"`
@@ -165,7 +163,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		SslProtocols    *string `json:"ssl_protocols"`
 		SslCiphers      *string `json:"ssl_ciphers"`
 		SslEcdhCurve    *string `json:"ssl_ecdh_curve"`
-		WafEnabled      *bool  `json:"waf_enabled"`
+		WafEnabled      *bool   `json:"waf_enabled"`
 		IsPanel         *bool   `json:"is_panel"`
 		Priority        *int    `json:"priority"`
 	}
@@ -173,39 +171,94 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if req.Domain != nil { existing.Domain = *req.Domain }
-	if req.Upstream != nil { existing.Upstream = *req.Upstream }
-	if req.Template != nil { existing.Template = *req.Template }
-	if req.Path != nil { existing.Path = *req.Path }
-	if req.ListenPort != nil { existing.ListenPort = *req.ListenPort }
-	if req.ListenSocket != nil { existing.ListenSocket = *req.ListenSocket }
-	if req.CertPath != nil { existing.CertPath = *req.CertPath }
-	if req.KeyPath != nil { existing.KeyPath = *req.KeyPath }
-	if req.ServerConfig != nil { existing.ServerConfig = *req.ServerConfig }
-	if req.LocationConfig != nil { existing.LocationConfig = *req.LocationConfig }
-	if req.L4Protocol != nil { existing.L4Protocol = *req.L4Protocol }
-	if req.SNITarget != nil { existing.SNITarget = *req.SNITarget }
-	if req.LocalPort != nil { existing.LocalPort = *req.LocalPort }
-	if req.ProxyProtocol != nil { existing.ProxyProtocol = *req.ProxyProtocol }
-	if req.Enabled != nil { existing.Enabled = *req.Enabled }
-	if req.EnableHttp2 != nil { existing.EnableHttp2 = *req.EnableHttp2 }
-	if req.EnableIpv6 != nil { existing.EnableIpv6 = *req.EnableIpv6 }
-	if req.EnableQuic != nil { existing.EnableQuic = *req.EnableQuic }
-	if req.EnableEarlyData != nil { existing.EnableEarlyData = *req.EnableEarlyData }
-	if req.EnableStapling != nil { existing.EnableStapling = *req.EnableStapling }
-	if req.SslProtocols != nil { existing.SslProtocols = *req.SslProtocols }
-	if req.SslCiphers != nil { existing.SslCiphers = *req.SslCiphers }
-	if req.SslEcdhCurve != nil { existing.SslEcdhCurve = *req.SslEcdhCurve }
-	if req.WafEnabled != nil { existing.WafEnabled = req.WafEnabled }
-	if req.IsPanel != nil { existing.IsPanel = *req.IsPanel }
-	if req.Priority != nil { existing.Priority = *req.Priority }
+	if req.Domain != nil {
+		existing.Domain = *req.Domain
+	}
+	if req.Upstream != nil {
+		existing.Upstream = *req.Upstream
+	}
+	if req.Template != nil {
+		existing.Template = *req.Template
+	}
+	if req.Path != nil {
+		existing.Path = *req.Path
+	}
+	if req.ListenPort != nil {
+		existing.ListenPort = *req.ListenPort
+	}
+	if req.ListenSocket != nil {
+		existing.ListenSocket = *req.ListenSocket
+	}
+	if req.CertPath != nil {
+		existing.CertPath = *req.CertPath
+	}
+	if req.KeyPath != nil {
+		existing.KeyPath = *req.KeyPath
+	}
+	if req.ServerConfig != nil {
+		existing.ServerConfig = *req.ServerConfig
+	}
+	if req.LocationConfig != nil {
+		existing.LocationConfig = *req.LocationConfig
+	}
+	if req.L4Protocol != nil {
+		existing.L4Protocol = *req.L4Protocol
+	}
+	if req.SNITarget != nil {
+		existing.SNITarget = *req.SNITarget
+	}
+	// 回源 TLS ✓（grpc_pass grpc:// ↔ grpcs:// ✓）：显式传了才改 ✓，避免把已有设置冲掉 ✗
+	if req.UpstreamTLS != nil {
+		existing.UpstreamTLS = *req.UpstreamTLS
+	}
+	if req.LocalPort != nil {
+		existing.LocalPort = *req.LocalPort
+	}
+	if req.ProxyProtocol != nil {
+		existing.ProxyProtocol = *req.ProxyProtocol
+	}
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	if req.EnableHttp2 != nil {
+		existing.EnableHttp2 = *req.EnableHttp2
+	}
+	if req.EnableIpv6 != nil {
+		existing.EnableIpv6 = *req.EnableIpv6
+	}
+	if req.EnableQuic != nil {
+		existing.EnableQuic = *req.EnableQuic
+	}
+	if req.EnableEarlyData != nil {
+		existing.EnableEarlyData = *req.EnableEarlyData
+	}
+	if req.EnableStapling != nil {
+		existing.EnableStapling = *req.EnableStapling
+	}
+	if req.SslProtocols != nil {
+		existing.SslProtocols = *req.SslProtocols
+	}
+	if req.SslCiphers != nil {
+		existing.SslCiphers = *req.SslCiphers
+	}
+	if req.SslEcdhCurve != nil {
+		existing.SslEcdhCurve = *req.SslEcdhCurve
+	}
+	if req.WafEnabled != nil {
+		existing.WafEnabled = req.WafEnabled
+	}
+	if req.IsPanel != nil {
+		existing.IsPanel = *req.IsPanel
+	}
+	if req.Priority != nil {
+		existing.Priority = *req.Priority
+	}
 	if err := h.nginxMgr.UpdateSite(c.Request.Context(), existing); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
 	response.OK(c, existing)
 }
-
 func (h *NginxHandler) DeleteSite(c *gin.Context) {
 	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
@@ -221,7 +274,6 @@ func (h *NginxHandler) DeleteSite(c *gin.Context) {
 }
 
 // --- Config ---
-
 func (h *NginxHandler) GenerateConfig(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
 	config, err := h.nginxMgr.GenerateConfig(c.Request.Context())
@@ -243,7 +295,6 @@ func (h *NginxHandler) GenerateConfig(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"config": config})
 }
-
 func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
 	config, err := h.nginxMgr.SaveAndApply(c.Request.Context())
@@ -266,7 +317,6 @@ func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 }
 
 // --- Settings ---
-
 func (h *NginxHandler) GetSettings(c *gin.Context) {
 	h.applyServerID(c)
 	settings, err := h.nginxMgr.GetNginxSettings(c.Request.Context())
@@ -276,7 +326,6 @@ func (h *NginxHandler) GetSettings(c *gin.Context) {
 	}
 	response.OK(c, settings)
 }
-
 func (h *NginxHandler) SaveSettings(c *gin.Context) {
 	h.applyServerID(c)
 	var settings proxy.NginxSettings
@@ -292,7 +341,6 @@ func (h *NginxHandler) SaveSettings(c *gin.Context) {
 }
 
 // --- SNI ---
-
 func (h *NginxHandler) ToggleSNI(c *gin.Context) {
 	serverID, _ := h.applyServerID(c)
 	var req struct {
@@ -313,7 +361,6 @@ func (h *NginxHandler) ToggleSNI(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"updated": count})
 }
-
 func (h *NginxHandler) DeleteAllSNI(c *gin.Context) {
 	h.applyServerID(c)
 	count, err := h.nginxMgr.DeleteAllSNI(c.Request.Context())
@@ -323,7 +370,6 @@ func (h *NginxHandler) DeleteAllSNI(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"deleted": count})
 }
-
 func (h *NginxHandler) BatchUpdatePorts(c *gin.Context) {
 	serverID, _ := h.applyServerID(c)
 	var req struct {
@@ -347,7 +393,6 @@ func (h *NginxHandler) BatchUpdatePorts(c *gin.Context) {
 }
 
 // --- L4 ---
-
 func (h *NginxHandler) DeleteAllL4(c *gin.Context) {
 	h.applyServerID(c)
 	count, err := h.nginxMgr.DeleteAllL4(c.Request.Context())

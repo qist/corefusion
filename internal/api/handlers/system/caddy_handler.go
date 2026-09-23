@@ -1,13 +1,11 @@
 package system
 
 import (
-	"strconv"
-
-	"github.com/gin-gonic/gin"
-
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/proxy"
+	"github.com/gin-gonic/gin"
+	"strconv"
 )
 
 // CaddyHandler handles Caddy-specific HTTP requests.
@@ -47,7 +45,6 @@ func (h *CaddyHandler) applyServerID(c *gin.Context) (int64, bool) {
 }
 
 // --- Site Management ---
-
 func (h *CaddyHandler) ListSites(c *gin.Context) {
 	h.applyServerID(c)
 	sites, err := h.caddyMgr.ListSites(c.Request.Context())
@@ -60,29 +57,29 @@ func (h *CaddyHandler) ListSites(c *gin.Context) {
 	}
 	response.OK(c, sites)
 }
-
 func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	h.applyServerID(c)
 	var req struct {
-		Domain          string `json:"domain" binding:"required"`
-		Upstream         string `json:"upstream"`
-		Template         string `json:"template"`
-		Path             string `json:"path"`
-		CertPath         string `json:"cert_path"`
-		KeyPath          string `json:"key_path"`
-		ProxyConfig      string `json:"proxy_config"`
-		CustomConfig     string `json:"custom_config"`
-		WafEnabled      *bool   `json:"waf_enabled"`
-		LbPolicy         string `json:"lb_policy"`
-		LogEnabled       bool   `json:"log_enabled"`
-		LogPath          string `json:"log_path"`
-		LogFormat        string `json:"log_format"`
-		L4Protocol       string `json:"l4_protocol"`
-		SNITarget        string `json:"sni_target"`
-		LocalPort        string `json:"local_port"`
-		ProxyProtocol    bool   `json:"proxy_protocol"`
-		IsPanel          bool   `json:"is_panel"`
-		Priority         int    `json:"priority"`
+		Domain        string `json:"domain" binding:"required"`
+		Upstream      string `json:"upstream"`
+		Template      string `json:"template"`
+		Path          string `json:"path"`
+		CertPath      string `json:"cert_path"`
+		KeyPath       string `json:"key_path"`
+		ProxyConfig   string `json:"proxy_config"`
+		CustomConfig  string `json:"custom_config"`
+		WafEnabled    *bool  `json:"waf_enabled"`
+		LbPolicy      string `json:"lb_policy"`
+		LogEnabled    bool   `json:"log_enabled"`
+		LogPath       string `json:"log_path"`
+		LogFormat     string `json:"log_format"`
+		L4Protocol    string `json:"l4_protocol"`
+		SNITarget     string `json:"sni_target"`
+		UpstreamTLS   bool   `json:"upstream_tls"`
+		LocalPort     string `json:"local_port"`
+		ProxyProtocol bool   `json:"proxy_protocol"`
+		IsPanel       bool   `json:"is_panel"`
+		Priority      int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -98,28 +95,28 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 			logPath = "logs/" + logPath + ".log"
 		}
 	}
-
 	site := &entity.CaddySite{
-		Domain:          req.Domain,
-		Upstream:         req.Upstream,
-		Template:        req.Template,
-		Path:             req.Path,
-		CertPath:         req.CertPath,
-		KeyPath:          req.KeyPath,
-		ProxyConfig:     req.ProxyConfig,
-		CustomConfig:    req.CustomConfig,
-		WafEnabled:     req.WafEnabled,
-		LbPolicy:        req.LbPolicy,
-		LogEnabled:       req.LogEnabled,
-		LogPath:         logPath,
-		LogFormat:       req.LogFormat,
-		L4Protocol:      req.L4Protocol,
-		SNITarget:       req.SNITarget,
-		LocalPort:       req.LocalPort,
-		ProxyProtocol:   req.ProxyProtocol,
-		Enabled:         true,
-		IsPanel:         req.IsPanel,
-		Priority:        req.Priority,
+		Domain:        req.Domain,
+		Upstream:      req.Upstream,
+		Template:      req.Template,
+		Path:          req.Path,
+		CertPath:      req.CertPath,
+		KeyPath:       req.KeyPath,
+		ProxyConfig:   req.ProxyConfig,
+		CustomConfig:  req.CustomConfig,
+		WafEnabled:    req.WafEnabled,
+		LbPolicy:      req.LbPolicy,
+		LogEnabled:    req.LogEnabled,
+		LogPath:       logPath,
+		LogFormat:     req.LogFormat,
+		L4Protocol:    req.L4Protocol,
+		SNITarget:     req.SNITarget,
+		UpstreamTLS:   req.UpstreamTLS,
+		LocalPort:     req.LocalPort,
+		ProxyProtocol: req.ProxyProtocol,
+		Enabled:       true,
+		IsPanel:       req.IsPanel,
+		Priority:      req.Priority,
 	}
 	if err := h.caddyMgr.CreateSite(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -127,7 +124,6 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	}
 	response.Created(c, site)
 }
-
 func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
@@ -141,42 +137,65 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Domain          *string `json:"domain"`
-		Upstream        *string `json:"upstream"`
-		Template        *string `json:"template"`
-		Path            *string `json:"path"`
-		CertPath        *string `json:"cert_path"`
-		KeyPath         *string `json:"key_path"`
-		ProxyConfig     *string `json:"proxy_config"`
-		CustomConfig    *string `json:"custom_config"`
-		WafEnabled     *bool   `json:"waf_enabled"`
-		LbPolicy        *string `json:"lb_policy"`
-		LogEnabled      *bool   `json:"log_enabled"`
-		LogPath         *string `json:"log_path"`
-		LogFormat       *string `json:"log_format"`
-		L4Protocol      *string `json:"l4_protocol"`
-		SNITarget       *string `json:"sni_target"`
-		LocalPort       *string `json:"local_port"`
-		ProxyProtocol   *bool   `json:"proxy_protocol"`
-		Enabled         *bool   `json:"enabled"`
-		IsPanel         *bool   `json:"is_panel"`
-		Priority        *int    `json:"priority"`
+		Domain        *string `json:"domain"`
+		Upstream      *string `json:"upstream"`
+		Template      *string `json:"template"`
+		Path          *string `json:"path"`
+		CertPath      *string `json:"cert_path"`
+		KeyPath       *string `json:"key_path"`
+		ProxyConfig   *string `json:"proxy_config"`
+		CustomConfig  *string `json:"custom_config"`
+		WafEnabled    *bool   `json:"waf_enabled"`
+		LbPolicy      *string `json:"lb_policy"`
+		LogEnabled    *bool   `json:"log_enabled"`
+		LogPath       *string `json:"log_path"`
+		LogFormat     *string `json:"log_format"`
+		L4Protocol    *string `json:"l4_protocol"`
+		SNITarget     *string `json:"sni_target"`
+		UpstreamTLS   *bool   `json:"upstream_tls"`
+		LocalPort     *string `json:"local_port"`
+		ProxyProtocol *bool   `json:"proxy_protocol"`
+		Enabled       *bool   `json:"enabled"`
+		IsPanel       *bool   `json:"is_panel"`
+		Priority      *int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if req.Domain != nil { existing.Domain = *req.Domain }
-	if req.Upstream != nil { existing.Upstream = *req.Upstream }
-	if req.Template != nil { existing.Template = *req.Template }
-	if req.Path != nil { existing.Path = *req.Path }
-	if req.CertPath != nil { existing.CertPath = *req.CertPath }
-	if req.KeyPath != nil { existing.KeyPath = *req.KeyPath }
-	if req.ProxyConfig != nil { existing.ProxyConfig = *req.ProxyConfig }
-	if req.CustomConfig != nil { existing.CustomConfig = *req.CustomConfig }
-		if req.WafEnabled != nil { existing.WafEnabled = req.WafEnabled }
-	if req.LbPolicy != nil { existing.LbPolicy = *req.LbPolicy }
-	if req.LogEnabled != nil { existing.LogEnabled = *req.LogEnabled }
+	if req.Domain != nil {
+		existing.Domain = *req.Domain
+	}
+	if req.Upstream != nil {
+		existing.Upstream = *req.Upstream
+	}
+	if req.Template != nil {
+		existing.Template = *req.Template
+	}
+	if req.Path != nil {
+		existing.Path = *req.Path
+	}
+	if req.CertPath != nil {
+		existing.CertPath = *req.CertPath
+	}
+	if req.KeyPath != nil {
+		existing.KeyPath = *req.KeyPath
+	}
+	if req.ProxyConfig != nil {
+		existing.ProxyConfig = *req.ProxyConfig
+	}
+	if req.CustomConfig != nil {
+		existing.CustomConfig = *req.CustomConfig
+	}
+	if req.WafEnabled != nil {
+		existing.WafEnabled = req.WafEnabled
+	}
+	if req.LbPolicy != nil {
+		existing.LbPolicy = *req.LbPolicy
+	}
+	if req.LogEnabled != nil {
+		existing.LogEnabled = *req.LogEnabled
+	}
 	if req.LogPath != nil {
 		existing.LogPath = *req.LogPath
 	} else if req.Domain != nil && existing.LogPath == "" && existing.LogEnabled {
@@ -188,21 +207,40 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 			existing.LogPath = "logs/" + lp + ".log"
 		}
 	}
-	if req.LogFormat != nil { existing.LogFormat = *req.LogFormat }
-	if req.L4Protocol != nil { existing.L4Protocol = *req.L4Protocol }
-	if req.SNITarget != nil { existing.SNITarget = *req.SNITarget }
-	if req.LocalPort != nil { existing.LocalPort = *req.LocalPort }
-	if req.ProxyProtocol != nil { existing.ProxyProtocol = *req.ProxyProtocol }
-	if req.Enabled != nil { existing.Enabled = *req.Enabled }
-	if req.IsPanel != nil { existing.IsPanel = *req.IsPanel }
-	if req.Priority != nil { existing.Priority = *req.Priority }
+	if req.LogFormat != nil {
+		existing.LogFormat = *req.LogFormat
+	}
+	if req.L4Protocol != nil {
+		existing.L4Protocol = *req.L4Protocol
+	}
+	if req.SNITarget != nil {
+		existing.SNITarget = *req.SNITarget
+	}
+	// 回源 TLS ✓（grpc_pass grpc:// ↔ grpcs:// ✓）：显式传了才改 ✓，避免把已有设置冲掉 ✗
+	if req.UpstreamTLS != nil {
+		existing.UpstreamTLS = *req.UpstreamTLS
+	}
+	if req.LocalPort != nil {
+		existing.LocalPort = *req.LocalPort
+	}
+	if req.ProxyProtocol != nil {
+		existing.ProxyProtocol = *req.ProxyProtocol
+	}
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	if req.IsPanel != nil {
+		existing.IsPanel = *req.IsPanel
+	}
+	if req.Priority != nil {
+		existing.Priority = *req.Priority
+	}
 	if err := h.caddyMgr.UpdateSite(c.Request.Context(), existing); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
 	response.OK(c, existing)
 }
-
 func (h *CaddyHandler) DeleteSite(c *gin.Context) {
 	h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
@@ -218,7 +256,6 @@ func (h *CaddyHandler) DeleteSite(c *gin.Context) {
 }
 
 // --- Config ---
-
 func (h *CaddyHandler) GenerateConfig(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
 	config, err := h.caddyMgr.GenerateConfig(c.Request.Context())
@@ -242,7 +279,6 @@ func (h *CaddyHandler) GenerateConfig(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"config": config})
 }
-
 func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
 	config, err := h.caddyMgr.SaveAndApply(c.Request.Context())
@@ -265,7 +301,6 @@ func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 }
 
 // --- SNI ---
-
 func (h *CaddyHandler) GetSNISettings(c *gin.Context) {
 	h.applyServerID(c)
 	settings, err := h.caddyMgr.GetSNISettings(c.Request.Context())
@@ -275,7 +310,6 @@ func (h *CaddyHandler) GetSNISettings(c *gin.Context) {
 	}
 	response.OK(c, settings)
 }
-
 func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
 	serverID, _ := h.applyServerID(c)
 	var settings proxy.SNISettings
@@ -293,7 +327,6 @@ func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
 	}
 	response.OK(c, settings)
 }
-
 func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
 	serverID, _ := h.applyServerID(c)
 	var req struct {
@@ -314,7 +347,6 @@ func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"updated": count})
 }
-
 func (h *CaddyHandler) DeleteAllSNI(c *gin.Context) {
 	h.applyServerID(c)
 	count, err := h.caddyMgr.DeleteAllSNI(c.Request.Context())
@@ -324,7 +356,6 @@ func (h *CaddyHandler) DeleteAllSNI(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"deleted": count})
 }
-
 func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
 	serverID, _ := h.applyServerID(c)
 	var req struct {
@@ -366,7 +397,6 @@ func (h *CaddyHandler) BatchUpdateLogEnabled(c *gin.Context) {
 }
 
 // --- L4 ---
-
 func (h *CaddyHandler) DeleteAllL4(c *gin.Context) {
 	h.applyServerID(c)
 	count, err := h.caddyMgr.DeleteAllL4(c.Request.Context())
@@ -376,5 +406,3 @@ func (h *CaddyHandler) DeleteAllL4(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"deleted": count})
 }
-
-

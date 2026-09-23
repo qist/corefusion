@@ -1,16 +1,14 @@
 package system
 
 import (
+	"corefusion/internal/api/response"
+	"corefusion/internal/model/entity"
+	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/proxy"
+	"github.com/gin-gonic/gin"
 	"runtime"
 	"strconv"
 	"strings"
-
-	"github.com/gin-gonic/gin"
-
-	"corefusion/internal/api/response"
-	"corefusion/internal/model/entity"
-	"corefusion/internal/service/proxy"
-	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
 // ProxyHandler handles proxy management HTTP requests.
@@ -89,10 +87,10 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 	nginxGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyNginx)
 	caddyGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyCaddy)
 	response.OK(c, gin.H{
-		"active_proxy": active,
-		"nginx":        nginx,
-		"caddy":        caddy,
-		"panel_port":   panelPort,
+		"active_proxy":   active,
+		"nginx":          nginx,
+		"caddy":          caddy,
+		"panel_port":     panelPort,
 		"nginx_guardian": nginxGuardian,
 		"caddy_guardian": caddyGuardian,
 	})
@@ -130,7 +128,6 @@ func (h *ProxyHandler) ListReleases(c *gin.Context) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported proxy type")
 		return
 	}
-
 	// Determine target server platform for asset filtering
 	serverID, isLocal := h.applyServerID(c)
 	var osName, archName string
@@ -141,7 +138,6 @@ func (h *ProxyHandler) ListReleases(c *gin.Context) {
 		osName, archName = h.nodeOp.GetServerPlatform(c.Request.Context(), serverID)
 		distro = h.nodeOp.GetServerDistro(c.Request.Context(), serverID)
 	}
-
 	var releases interface{}
 	var err error
 	if proxyType == "nginx" {
@@ -174,9 +170,7 @@ func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-
 	serverID, isLocal := h.applyServerID(c)
-
 	// Remote node: delegate via gRPC to the Agent
 	if !isLocal && h.nodeOp != nil {
 		result, err := h.nodeOp.InstallProxy(c.Request.Context(), serverID, req.Type, req.DownloadURL, req.TagName)
@@ -187,17 +181,14 @@ func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 		response.OK(c, result)
 		return
 	}
-
 	// Local node: download the asset
 	proxyType := proxy.ProxyType(req.Type)
 	wasRunning := h.proxyMgr.DetectProxy(proxyType).Status == "running"
-
 	path, err := h.proxyMgr.DownloadAsset(c.Request.Context(), req.DownloadURL, req.Type)
 	if err != nil {
 		response.InternalError(c, "DOWNLOAD_FAILED", err.Error())
 		return
 	}
-
 	// If proxy was running, restart it to pick up the new binary
 	if wasRunning {
 		if err := h.proxyMgr.RestartProxy(c.Request.Context(), proxyType); err != nil {
@@ -205,7 +196,6 @@ func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 			return
 		}
 	}
-
 	response.OK(c, gin.H{"path": path, "version": req.TagName, "type": req.Type, "restarted": wasRunning})
 }
 
@@ -318,7 +308,6 @@ func (h *ProxyHandler) Reload(c *gin.Context) {
 }
 
 // --- Site Management ---
-
 // ListSites handles GET /api/v1/node-servers/:id/proxy/sites.
 func (h *ProxyHandler) ListSites(c *gin.Context) {
 	h.applyServerID(c)
@@ -344,33 +333,34 @@ func (h *ProxyHandler) ListSites(c *gin.Context) {
 func (h *ProxyHandler) CreateSite(c *gin.Context) {
 	h.applyServerID(c)
 	var req struct {
-		ProxyType     string `json:"proxy_type"`
-		Domain        string `json:"domain" binding:"required"`
-		Upstream      string `json:"upstream"`
-		Template      string `json:"template"`
-		Path          string `json:"path"`
-		ListenPort    string `json:"listen_port"`
-		ListenSocket  string `json:"listen_socket"`
-		CertPath      string `json:"cert_path"`
-		KeyPath       string `json:"key_path"`
-		CustomConfig  string `json:"custom_config"`
-		ServerConfig  string `json:"server_config"`
+		ProxyType      string `json:"proxy_type"`
+		Domain         string `json:"domain" binding:"required"`
+		Upstream       string `json:"upstream"`
+		Template       string `json:"template"`
+		Path           string `json:"path"`
+		ListenPort     string `json:"listen_port"`
+		ListenSocket   string `json:"listen_socket"`
+		CertPath       string `json:"cert_path"`
+		KeyPath        string `json:"key_path"`
+		CustomConfig   string `json:"custom_config"`
+		ServerConfig   string `json:"server_config"`
 		LocationConfig string `json:"location_config"`
-		L4Protocol    string `json:"l4_protocol"`
-		SNITarget     string `json:"sni_target"`
-		LocalPort     string `json:"local_port"`
-		ProxyProtocol bool   `json:"proxy_protocol"`
-		IsPanel       bool   `json:"is_panel"`
-		Priority      int    `json:"priority"`
+		L4Protocol     string `json:"l4_protocol"`
+		SNITarget      string `json:"sni_target"`
+		UpstreamTLS    bool   `json:"upstream_tls"`
+		LocalPort      string `json:"local_port"`
+		ProxyProtocol  bool   `json:"proxy_protocol"`
+		IsPanel        bool   `json:"is_panel"`
+		Priority       int    `json:"priority"`
 		// TLS options
-		EnableHttp2    bool   `json:"enable_http2"`
-		EnableIpv6     bool   `json:"enable_ipv6"`
-		EnableQuic     bool   `json:"enable_quic"`
-		EnableEarlyData bool  `json:"enable_early_data"`
-		EnableStapling bool   `json:"enable_stapling"`
-		SslProtocols   string `json:"ssl_protocols"`
-		SslCiphers     string `json:"ssl_ciphers"`
-		SslEcdhCurve   string `json:"ssl_ecdh_curve"`
+		EnableHttp2     bool   `json:"enable_http2"`
+		EnableIpv6      bool   `json:"enable_ipv6"`
+		EnableQuic      bool   `json:"enable_quic"`
+		EnableEarlyData bool   `json:"enable_early_data"`
+		EnableStapling  bool   `json:"enable_stapling"`
+		SslProtocols    string `json:"ssl_protocols"`
+		SslCiphers      string `json:"ssl_ciphers"`
+		SslEcdhCurve    string `json:"ssl_ecdh_curve"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -381,33 +371,34 @@ func (h *ProxyHandler) CreateSite(c *gin.Context) {
 		proxyType = "caddy"
 	}
 	site := &entity.ProxySite{
-		ProxyType:     proxyType,
-		Domain:        req.Domain,
-		Upstream:      req.Upstream,
-		Template:      req.Template,
-		Path:          req.Path,
-		ListenPort:    req.ListenPort,
-		ListenSocket:  req.ListenSocket,
-		CertPath:      req.CertPath,
-		EnableHttp2:   req.EnableHttp2,
-		EnableIpv6:   req.EnableIpv6,
-		EnableQuic:    req.EnableQuic,
+		ProxyType:       proxyType,
+		Domain:          req.Domain,
+		Upstream:        req.Upstream,
+		Template:        req.Template,
+		Path:            req.Path,
+		ListenPort:      req.ListenPort,
+		ListenSocket:    req.ListenSocket,
+		CertPath:        req.CertPath,
+		EnableHttp2:     req.EnableHttp2,
+		EnableIpv6:      req.EnableIpv6,
+		EnableQuic:      req.EnableQuic,
 		EnableEarlyData: req.EnableEarlyData,
-		EnableStapling: req.EnableStapling,
-		SslProtocols:  req.SslProtocols,
-		SslCiphers:    req.SslCiphers,
-		SslEcdhCurve:  req.SslEcdhCurve,
-		KeyPath:       req.KeyPath,
-		CustomConfig:   req.CustomConfig,
-		ServerConfig:   req.ServerConfig,
-		LocationConfig: req.LocationConfig,
-		L4Protocol:     req.L4Protocol,
-		SNITarget:     req.SNITarget,
-		LocalPort:     req.LocalPort,
-		ProxyProtocol: req.ProxyProtocol,
-		Enabled:       true,
-		IsPanel:       req.IsPanel,
-		Priority:      req.Priority,
+		EnableStapling:  req.EnableStapling,
+		SslProtocols:    req.SslProtocols,
+		SslCiphers:      req.SslCiphers,
+		SslEcdhCurve:    req.SslEcdhCurve,
+		KeyPath:         req.KeyPath,
+		CustomConfig:    req.CustomConfig,
+		ServerConfig:    req.ServerConfig,
+		LocationConfig:  req.LocationConfig,
+		L4Protocol:      req.L4Protocol,
+		SNITarget:       req.SNITarget,
+		UpstreamTLS:     req.UpstreamTLS,
+		LocalPort:       req.LocalPort,
+		ProxyProtocol:   req.ProxyProtocol,
+		Enabled:         true,
+		IsPanel:         req.IsPanel,
+		Priority:        req.Priority,
 	}
 	if err := h.proxyMgr.CreateSite(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -425,46 +416,45 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Domain        string  `json:"domain"`
-		Upstream      string  `json:"upstream"`
-		Template      string  `json:"template"`
-		Path          string  `json:"path"`
-		ListenPort    string  `json:"listen_port"`
-		ListenSocket  string  `json:"listen_socket"`
-		CertPath      *string `json:"cert_path"`
-		KeyPath       *string `json:"key_path"`
+		Domain         string  `json:"domain"`
+		Upstream       string  `json:"upstream"`
+		Template       string  `json:"template"`
+		Path           string  `json:"path"`
+		ListenPort     string  `json:"listen_port"`
+		ListenSocket   string  `json:"listen_socket"`
+		CertPath       *string `json:"cert_path"`
+		KeyPath        *string `json:"key_path"`
 		CustomConfig   *string `json:"custom_config"`
 		ServerConfig   *string `json:"server_config"`
 		LocationConfig *string `json:"location_config"`
 		L4Protocol     string  `json:"l4_protocol"`
-		SNITarget     string  `json:"sni_target"`
-		LocalPort     string  `json:"local_port"`
-		ProxyProtocol *bool   `json:"proxy_protocol"`
-		Enabled       *bool   `json:"enabled"`
-		IsPanel       *bool   `json:"is_panel"`
-		Priority      *int    `json:"priority"`
+		SNITarget      string  `json:"sni_target"`
+		UpstreamTLS    *bool   `json:"upstream_tls"`
+		LocalPort      string  `json:"local_port"`
+		ProxyProtocol  *bool   `json:"proxy_protocol"`
+		Enabled        *bool   `json:"enabled"`
+		IsPanel        *bool   `json:"is_panel"`
+		Priority       *int    `json:"priority"`
 		// TLS options
-		EnableHttp2    *bool   `json:"enable_http2"`
-		EnableIpv6     *bool   `json:"enable_ipv6"`
-		EnableQuic     *bool   `json:"enable_quic"`
+		EnableHttp2     *bool  `json:"enable_http2"`
+		EnableIpv6      *bool  `json:"enable_ipv6"`
+		EnableQuic      *bool  `json:"enable_quic"`
 		EnableEarlyData *bool  `json:"enable_early_data"`
-		EnableStapling *bool   `json:"enable_stapling"`
-		SslProtocols   string  `json:"ssl_protocols"`
-		SslCiphers     string  `json:"ssl_ciphers"`
-		SslEcdhCurve   string  `json:"ssl_ecdh_curve"`
+		EnableStapling  *bool  `json:"enable_stapling"`
+		SslProtocols    string `json:"ssl_protocols"`
+		SslCiphers      string `json:"ssl_ciphers"`
+		SslEcdhCurve    string `json:"ssl_ecdh_curve"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-
 	// Get existing site
 	existing, err := h.proxyMgr.GetSite(c.Request.Context(), id)
 	if err != nil {
 		response.NotFound(c, "NOT_FOUND", "site not found")
 		return
 	}
-
 	// Update fields
 	if req.Domain != "" {
 		existing.Domain = req.Domain
@@ -504,6 +494,10 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.SNITarget != "" {
 		existing.SNITarget = req.SNITarget
+	}
+	// 回源 TLS ✓（grpc_pass grpc:// ↔ grpcs:// ✓）：显式传了才改 ✓
+	if req.UpstreamTLS != nil {
+		existing.UpstreamTLS = *req.UpstreamTLS
 	}
 	if req.LocalPort != "" {
 		existing.LocalPort = req.LocalPort
@@ -545,7 +539,6 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 	if req.SslEcdhCurve != "" {
 		existing.SslEcdhCurve = req.SslEcdhCurve
 	}
-
 	if err := h.proxyMgr.UpdateSite(c.Request.Context(), existing); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -580,7 +573,6 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-
 	proxyType := proxy.ProxyType(req.Type)
 	var config string
 	var genErr error
@@ -597,7 +589,6 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 		response.InternalError(c, "GENERATE_FAILED", genErr.Error())
 		return
 	}
-
 	if isLocal {
 		h.proxyMgr.WriteConfigFile(proxyType, config)
 		// Push config to mirror nodes so they get the updated config file.
@@ -617,14 +608,12 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 func (h *ProxyHandler) GetConfig(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
 	proxyType := proxy.ProxyType(c.Query("type"))
-
 	if isLocal {
 		// For local nodes, read the actual config file on disk.
 		config, _ := h.proxyMgr.ReadConfigFile(proxyType)
 		response.OK(c, gin.H{"config": config, "path": h.proxyMgr.GetConfigPath(proxyType)})
 		return
 	}
-
 	// For remote nodes, generate config from the database (filtered by server_id).
 	var config string
 	var genErr error
@@ -655,15 +644,12 @@ func (h *ProxyHandler) UpdateConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-
 	proxyType := proxy.ProxyType(req.Type)
-
 	// Validate config
 	if err := h.proxyMgr.ValidateConfig(proxyType, req.Config); err != nil {
 		response.OK(c, gin.H{"error": err.Error()})
 		return
 	}
-
 	// Save / sync config
 	if isLocal {
 		if err := h.proxyMgr.WriteConfigFile(proxyType, req.Config); err != nil {
@@ -702,7 +688,6 @@ func (h *ProxyHandler) UpdateConfig(c *gin.Context) {
 		response.OK(c, gin.H{"message": "config synced and reloaded"})
 		return
 	}
-
 	response.OK(c, gin.H{"message": "config saved"})
 }
 
@@ -900,9 +885,7 @@ func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-
 	serverID, isLocal := h.applyServerID(c)
-
 	// For remote nodes, delegate via NodeOperator
 	if !isLocal && h.nodeOp != nil {
 		if err := h.nodeOp.UpdateProxyGuardian(c.Request.Context(), serverID, string(proxyType), req.AutoStart, req.AutoRestart, req.MaxRestarts); err != nil {
@@ -912,7 +895,6 @@ func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 		response.OK(c, gin.H{"controlled": true})
 		return
 	}
-
 	// Local: read current persisted settings
 	ctx := c.Request.Context()
 	autoStart, autoRestart, maxRestarts := h.proxyMgr.GetProxyGuardianSettings(ctx, proxyType)
@@ -925,19 +907,16 @@ func (h *ProxyHandler) UpdateGuardian(c *gin.Context) {
 	if req.MaxRestarts != nil && *req.MaxRestarts > 0 {
 		maxRestarts = *req.MaxRestarts
 	}
-
 	// Persist to DB (works even when proxy is stopped)
 	if err := h.proxyMgr.SetProxyGuardianSettings(ctx, proxyType, autoStart, autoRestart, maxRestarts); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
-
 	// Also update in-memory guardian if running
 	if g, ok := h.proxyMgr.GetGuardian(proxyType); ok {
 		g.SetMaxRestarts(maxRestarts)
 		g.SetAutoRestart(autoRestart)
 	}
-
 	response.OK(c, gin.H{
 		"auto_start":   autoStart,
 		"auto_restart": autoRestart,

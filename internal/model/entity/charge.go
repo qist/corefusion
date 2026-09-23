@@ -249,12 +249,16 @@ func (BalanceTransaction) TableName() string { return "balance_transactions" }
 // CallbackNonce records a used nonce to prevent replay attacks.
 // Unique constraint on (site_id, nonce) — different sites may generate the same nonce.
 type CallbackNonce struct {
-	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Nonce     string    `gorm:"size:64;uniqueIndex:idx_site_nonce,priority:2;not null" json:"nonce"`
-	SiteID    int64     `gorm:"uniqueIndex:idx_site_nonce,priority:1;not null" json:"site_id"`
-	TradeNo   string    `gorm:"size:64;not null" json:"trade_no"`
-	SignValid bool      `gorm:"not null;default:false" json:"sign_valid"` // v3.2: 签名是否通过
-	CreatedAt time.Time `gorm:"index:idx_nonce_created" json:"created_at"`
+	ID        int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	Nonce     string `gorm:"size:64;uniqueIndex:idx_site_nonce,priority:2;not null" json:"nonce"`
+	SiteID    int64  `gorm:"uniqueIndex:idx_site_nonce,priority:1;not null" json:"site_id"`
+	TradeNo   string `gorm:"size:64;not null" json:"trade_no"`
+	SignValid bool   `gorm:"not null;default:false" json:"sign_valid"` // v3.2: 签名是否通过
+	// PayloadHash 是本次回调原始 body 的 sha256 ✓：用来区分"网关重试"与"真重放" ✓ ——
+	// 同 nonce + **同载荷** = 网关重试（幂等放行 ✓，入账侧本身也幂等 ✓）；
+	// 同 nonce + **不同载荷** = 真重放（拒绝 ✓）。
+	PayloadHash string    `gorm:"size:64" json:"payload_hash"`
+	CreatedAt   time.Time `gorm:"index:idx_nonce_created" json:"created_at"`
 }
 
 func (CallbackNonce) TableName() string { return "callback_nonces" }

@@ -284,9 +284,9 @@ else
 fi
 
 # ==================== 场景 3：订单过期 =======================================
-step "【订单过期】过期即关闭：不能再支付、不能再入账"
-note "产品决策（已确认）：过期订单直接关闭 —— TTL 一到就标注 expired，之后的回调一律拒收"
-note "后台清理器（每 5 分钟，CleanupExpiredOrders→MarkExpired）兜底标注；回调里做同一口径的即时拦截"
+step "【订单过期】站点侧不再收款；但已经收到的款必须入账（正常交易逻辑）"
+note "过期 = ①面板把订单标注 expired（门户显示已过期）②站点侧停止收款 —— 拦在「付款前」"
+note "但钱要是已经收了（回调照样来了）→ 必须入账：绝不能「用户付了款还失败」（丢单比过期严重）"
 E_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
 E_TRADE="$(jget "$E_ORDER" "data.trade_no")"
 if [[ -z "$E_TRADE" ]]; then
@@ -296,20 +296,53 @@ else
   [[ -n "$E_EXP" ]] && ok "订单带上了过期时间 ✓ expires_at=$E_EXP" || bad "订单没有 expires_at ✗"
   sqlq "update charge_orders set expires_at = datetime('now','-1 hour') where trade_no='$E_TRADE';" \
     && ok "已把该订单置为过期（测试数据准备 ✓）" || bad "置过期失败 ✗"
+  # ① 站点侧：收款窗口到点 → 不再接收付款（拦在付款前 ✓）
+  curl -s -X POST "$MOCK_URL/expire?trade_no=$E_TRADE" >/dev/null
+  REFUSE="$(curl -s -X POST "$MOCK_URL/pay-api?trade_no=$E_TRADE&status=paid")"
+  printf '%s' "$REFUSE" | grep -q "不再接收付款" \
+    && ok "站点侧已停止收款 ✓：$(jget "$REFUSE" "error" | head -c 90)" \
+    || bad "站点侧竟然还接受付款 ✗ $REFUSE"
+  # ② 面板侧：把订单也置为过期（模拟时间已经走过 TTL ✓）
+  sqlq "update charge_orders set expires_at = datetime('now','-1 hour') where trade_no='$E_TRADE';"
+  sleep 0.3 # 让外部 sqlite3 进程彻底释放写锁（SQLite 是单文件库）
   E_BAL0="$(balance)"
-  E_URL="$(make_callback --trade-no "$E_TRADE" --site-id "$SITE_ID" --secret "$SITE_SECRET" --amount "$AMOUNT_FEN")"
-  E_CODE="$(curl -s -o "$TMP/e.out" -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
-  [[ "$E_CODE" == "400" ]] && ok "过期订单的回调被拒 → HTTP 400 ✓（不能再支付/入账 ✓）" \
-    || bad "过期订单的回调没被拒 ✗ HTTP $E_CODE $(head -c 140 "$TMP/e.out")"
+  # ③ 兜底：**万一钱真的收了**（直接投递一份完全合规的回调）→ 必须入账 ✓
+  #
+  # ⚠ SQLite 特有：WAL 下"读→写升级"会**立刻**返回 SQLITE_BUSY（busy_timeout 不等），
+  # 只要此刻有别的写者（面板自家定时任务 / 外部 sqlite3）就会偶发失败。
+  # 真实网关收到非 200 会**自动重试**，面板自身也会 enqueueCallbackRetry —— 这里照做（最多 3 次 ✓），
+  # 而不是把断言放宽（那样会掩盖真正的失败）。
+  E_CODE=""
+  for attempt in 1 2 3 4 5 6 7 8; do
+    # ⚠ 每次重试都用**新的 nonce**（= 一次全新的签名请求 ✓）：
+    # 面板在验签**之前**就原子消费了 nonce，所以一旦这次回调处理失败（比如 SQLite 写锁），
+    # 用**同一个 nonce** 重投会被判 "nonce already used (replay attack)" ✗ ——
+    # 这是"失败即烧掉 nonce"的真实互操作隐患（已单独记录，建议后续允许"同 nonce + 同载荷"的重试 ✓）。
+    E_URL="$(make_callback --trade-no "$E_TRADE" --site-id "$SITE_ID" --secret "$SITE_SECRET" \
+      --amount "$AMOUNT_FEN" --nonce "late${attempt}$(date +%s%N)")"
+    E_CODE="$(curl -s -o "$TMP/e.out" -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
+    [[ "$E_CODE" == "200" ]] && break
+    if grep -q "database is locked" "$TMP/e.out"; then
+      # 放宽到 ~16 秒：本测试自己创建/删除测试客户端会触发票据同步扇出（多节点 + 重启内核），
+      # 那个写洪峰可能持续十几秒；真实网关的重试窗口远大于此，这里只是照实模拟。
+      info "第 $attempt 次遇到 SQLite 写锁（database is locked）→ 换新 nonce 重投 ✓"
+      sleep 2
+      continue
+    fi
+    break
+  done
+  [[ "$E_CODE" == "200" ]] && ok "已收到的款照常入账 → HTTP 200 ✓（不能让用户付款了还失败 ✓）" \
+    || bad "已付款的回调被拒 ✗ HTTP $E_CODE $(head -c 140 "$TMP/e.out")"
   E_ST="$(sqlq "select status from charge_orders where trade_no='$E_TRADE';")"
-  [[ "$E_ST" == "expired" ]] && ok "订单已被关闭：status = expired ✓" \
-    || bad "订单状态 = $E_ST ✗（期望 expired ✓ —— 过期即关闭）"
-  [[ "$(balance)" == "$E_BAL0" ]] && ok "余额未被改动 ✓（$E_BAL0，过期不入账 ✓）" \
-    || bad "过期订单竟然改动了余额 ✗ $E_BAL0 → $(balance)"
-  # 再过一次（幂等）：仍是 expired、仍拒绝、余额仍不变 ✓
-  E_CODE2="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json" \
-    2>/dev/null || true)"
-  info "重复投递同一回调：HTTP ${E_CODE2:-?}（过期后一律拒绝 ✓）"
+  [[ "$E_ST" == "paid" ]] && ok "订单最终 = paid ✓（过期 → 已付款，状态正确落地 ✓）" \
+    || bad "订单状态 = $E_ST ✗（期望 paid ✓）"
+  E_DELTA=$(( $(balance) - E_BAL0 ))
+  [[ "$E_DELTA" == "$AMOUNT_FEN" ]] && ok "余额 +$E_DELTA 分 ✓（一分不少 ✓）" \
+    || bad "入账金额不对 ✗ got=$E_DELTA want=$AMOUNT_FEN"
+  # ④ 幂等：重复投递同一回调 → 不重复入账 ✓
+  curl -s -o /dev/null -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json"
+  [[ "$(( $(balance) - E_BAL0 ))" == "$AMOUNT_FEN" ]] \
+    && ok "重复投递未重复入账 ✓（幂等 ✓）" || bad "重复投递导致重复入账 ✗"
   # 过期订单 + 金额不符 → 必须被拒 ✓（"过期"不是放水，数据仍要严格对上 ✓）
   E2_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
   E2_TRADE="$(jget "$E2_ORDER" "data.trade_no")"

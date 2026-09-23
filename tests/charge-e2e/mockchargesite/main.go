@@ -4,18 +4,17 @@
 // ⚠ 它是**独立测试模块**（同目录有独立 go.mod ✓）✗：
 // 不参与产品构建 ✓、产品代码里没有任何"为测试开的口子" ✓。
 //
-// 它在链路里的角色 = 面板眼中的"第三方充值站点" ✓：
+// 它模拟真实网关的三件事 ✓：
 //
 //	① 面板下单  →  POST {本服务}/api/create-order            （面板调用 ✓）
 //	② 用户支付  →  GET  {本服务}/pay?trade_no=...             （假收银台页面 ✓）
 //	③ 回调入账  →  POST {面板}/api/v1/charge/callback/{site_id}（本服务调用 ✓，带 HMAC 签名 ✓）
 //
 // ⚠ 金额单位是 **分**（整数 ✓）：面板出站发 `amount`（分 ✓）+ `amount_yuan`（仅展示 ✓），
-// 回调必须回传 `amount`（分 ✓）。原来出站发元、回调按 int64 元解析 ✗ →
-// 9.90 元这种套餐价根本没法回传 ✗ → 套餐充值永远到不了账 ✗。
+// 回调必须回传 `amount`（分 ✓）。
 //
-// 为什么用 Go 写 ✓：面板的签名基于 Go 的 `json.Marshal`（map 按 key 字典序、紧凑、
-// 浮点用最短表示 ✓）。换别的语言，数字格式与转义规则会不同 ✗ → 签名对不上 ✗。
+// ⚠ 收款有效期（-order-ttl ✓，默认 15 分钟 ✓）：真实网关的付款页会过期 ✓，
+// 过期后**不再接收付款** ✓ —— 本服务用 `/expire?trade_no=`（测试开关 ✓）模拟这一刻 ✓。
 //
 // 用法：
 //
@@ -46,17 +45,18 @@ import (
 // order 是本服务记录的一笔"待支付订单" ✓（面板下单时带过来的信息 ✓）。
 type order struct {
 	TradeNo     string    `json:"trade_no"`
-	SiteID      string    `json:"site_id"`    // 从 notify_url 里解析出来 ✓
-	NotifyURL   string    `json:"notify_url"` // 面板要求回调的地址 ✓
+	SiteID      string    `json:"site_id"`      // 从 notify_url 里解析出来 ✓
+	NotifyURL   string    `json:"notify_url"`   // 面板要求回调的地址 ✓
 	AmountCents int64     `json:"amount_cents"` // ⚠ 单位：分（与面板一致 ✓）
 	Currency    string    `json:"currency"`
 	Subject     string    `json:"subject"`
 	ClientEmail string    `json:"client_email"`
 	PanelSign   string    `json:"panel_sign"`
-	SignOK      *bool     `json:"sign_ok"` // nil = 未校验（没配 -apikey ✓）
-	Status      string    `json:"status"`  // pending / paid / failed
+	SignOK      *bool     `json:"sign_ok"`
+	Status      string    `json:"status"` // pending / paid / failed / expired
 	SiteTradeNo string    `json:"site_trade_no"`
 	CreatedAt   time.Time `json:"created_at"`
+	ExpiresAt   time.Time `json:"expires_at"` // 本服务的收款有效期 ✓（过期即不再接收付款 ✓）
 	PaidAt      string    `json:"paid_at,omitempty"`
 	LastResult  string    `json:"last_result"`
 	LastCode    int       `json:"last_code"`
@@ -67,6 +67,9 @@ type order struct {
 // Yuan 只用于页面展示 ✓。
 func (o *order) Yuan() string { return fmt.Sprintf("%.2f", float64(o.AmountCents)/100) }
 
+// Expired 判断本服务的收款窗口是否已过 ✓。
+func (o *order) Expired() bool { return !o.ExpiresAt.IsZero() && time.Now().After(o.ExpiresAt) }
+
 type server struct {
 	mu       sync.Mutex
 	orders   map[string]*order
@@ -75,6 +78,7 @@ type server struct {
 	apiKey   string
 	autopay  bool
 	public   string
+	orderTTL time.Duration
 }
 
 func main() {
@@ -84,12 +88,13 @@ func main() {
 	apiKey := flag.String("apikey", "", "可选：校验面板下单签名用的 APIKey")
 	autopay := flag.Bool("autopay", false, "打开收银台即自动支付")
 	public := flag.String("public", "", "可选：payment_url 的外网前缀")
+	ttl := flag.Duration("order-ttl", 15*time.Minute, "收款有效期（过期后不再接收付款）")
 	flag.Parse()
 
 	s := &server{
 		orders: map[string]*order{}, secrets: map[string]string{},
 		fallback: *secret, apiKey: *apiKey, autopay: *autopay,
-		public: strings.TrimRight(*public, "/"),
+		public: strings.TrimRight(*public, "/"), orderTTL: *ttl,
 	}
 	for _, part := range strings.Split(*sites, ",") {
 		part = strings.TrimSpace(part)
@@ -107,13 +112,14 @@ func main() {
 	mux.HandleFunc("/api/create-order", s.handleCreateOrder)
 	mux.HandleFunc("/pay", s.handlePayPage)
 	mux.HandleFunc("/pay-api", s.handlePayAPI)
+	mux.HandleFunc("/expire", s.handleExpire) // 测试开关：立刻把订单置为"收款窗口已过"
 	mux.HandleFunc("/orders", s.handleOrders)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
 
 	if s.fallback == "" && len(s.secrets) == 0 {
 		log.Printf("⚠ 没配 -secret/-sites → 支付时会因为没有回调密钥而失败 ✗")
 	}
-	log.Printf("模拟充值站点已启动 ✓ 监听 %s（订单页 http://%s/orders ✓）", *addr, *addr)
+	log.Printf("模拟充值站点已启动 ✓ 监听 %s（收款有效期 %s ✓；订单页 http://%s/orders ✓）", *addr, *ttl, *addr)
 	log.Fatal(http.ListenAndServe(*addr, mux))
 }
 
@@ -137,8 +143,7 @@ func (s *server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "trade_no required"})
 		return
 	}
-	// ⚠ amount 是「分」（整数 ✓）。兜底：万一是元（浮点 ✓）且带小数，按分处理会失真 ✗，
-	// 所以这里明确只认整数分 ✓；字段缺失就报错 ✓（别静默按 0 处理 ✗）。
+	// ⚠ amount 是「分」（整数 ✓）：非整数一律报错，不静默取整 ✗
 	cents, ok := jsonInt64(payload["amount"])
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -156,7 +161,7 @@ func (s *server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		Subject: subject, ClientEmail: clientEmail, PanelSign: panelSign,
 		SiteID: siteIDFromNotifyURL(notifyURL), Status: "pending",
 		SiteTradeNo: "MOCK" + strconv.FormatInt(time.Now().UnixNano()%1e9, 10),
-		CreatedAt:   time.Now(),
+		CreatedAt:   time.Now(), ExpiresAt: time.Now().Add(s.orderTTL),
 	}
 	if s.apiKey != "" {
 		ok := verifyPanelSign(payload, s.apiKey)
@@ -170,10 +175,11 @@ func (s *server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	s.orders[tradeNo] = o
 	s.mu.Unlock()
 
-	log.Printf("① 面板下单 ✓ trade_no=%s amount=%d 分（%s 元）%s notify=%s",
-		tradeNo, cents, o.Yuan(), currency, notifyURL)
+	log.Printf("① 面板下单 ✓ trade_no=%s amount=%d 分（%s 元）%s 收款有效期至 %s",
+		tradeNo, cents, o.Yuan(), currency, o.ExpiresAt.Format("15:04:05"))
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "payment_url": s.payURL(r, tradeNo), "expires_in": 1800, "error": "",
+		"ok": true, "payment_url": s.payURL(r, tradeNo),
+		"expires_in": int(s.orderTTL.Seconds()), "error": "",
 	})
 }
 
@@ -242,7 +248,29 @@ func (s *server) handlePayPage(w http.ResponseWriter, r *http.Request) {
 		O       *order
 		Autopay bool
 		Secret  bool
-	}{o, s.autopay, s.secretFor(o.SiteID) != ""})
+		Expired bool
+	}{o, s.autopay, s.secretFor(o.SiteID) != "", o.Expired()})
+}
+
+// handleExpire 是**测试开关** ✓：立刻把某笔订单的收款窗口置为已过 ✓，
+// 用来验证"过期后站点侧不再接收付款" ✓（真实网关是靠它自己的 TTL ✓）。
+func (s *server) handleExpire(w http.ResponseWriter, r *http.Request) {
+	tradeNo := r.URL.Query().Get("trade_no")
+	s.mu.Lock()
+	o := s.orders[tradeNo]
+	if o != nil {
+		o.ExpiresAt = time.Now().Add(-time.Minute)
+		if o.Status == "pending" {
+			o.Status = "expired"
+		}
+	}
+	s.mu.Unlock()
+	if o == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "order not found"})
+		return
+	}
+	log.Printf("② 测试开关：订单收款窗口已置为过期 ✓ trade_no=%s", tradeNo)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "trade_no": tradeNo, "expires_at": o.ExpiresAt})
 }
 
 func (s *server) handlePayAPI(w http.ResponseWriter, r *http.Request) {
@@ -269,6 +297,10 @@ func (s *server) pay(tradeNo, status string) (int, string, error) {
 	s.mu.Unlock()
 	if o == nil {
 		return 0, "", fmt.Errorf("订单不存在：%s", tradeNo)
+	}
+	// ⚠ 收款窗口已过 → **不再接收付款** ✓（真实网关同样会关掉付款页 ✓）
+	if o.Expired() {
+		return 0, "", fmt.Errorf("订单已过期，不再接收付款 ✗（expires_at=%s）", o.ExpiresAt.Format(time.RFC3339))
 	}
 	secret := s.secretFor(o.SiteID)
 	if secret == "" {
@@ -424,13 +456,14 @@ const payPageHTML = `<!doctype html>
     <tr><td>订单号</td><td><code>{{.O.TradeNo}}</code></td></tr>
     <tr><td>金额</td><td><b>{{.O.Yuan}} {{.O.Currency}}</b> <span style="color:#999">（{{.O.AmountCents}} 分）</span></td></tr>
     <tr><td>商品</td><td>{{.O.Subject}}</td></tr>
+    <tr><td>收款有效期</td><td>{{.O.ExpiresAt.Format "2006-01-02 15:04:05"}} {{if .Expired}}<b style="color:#c00">（已过期，不再接收付款）</b>{{end}}</td></tr>
     <tr><td>站点 ID</td><td><code>{{.O.SiteID}}</code></td></tr>
     <tr><td>回调地址</td><td><code>{{.O.NotifyURL}}</code></td></tr>
   </table>
   {{if not .Secret}}<p style="color:#c00">⚠ 本服务未配置该站点的回调密钥 → 支付必然失败 ✗（用 -secret cs_xxx ✓）</p>{{end}}
   <div style="margin-top:20px">
-    <button class="pay" onclick="doPay('paid')">支付成功</button>
-    <button class="fail" onclick="doPay('failed')">支付失败</button>
+    <button class="pay" onclick="doPay('paid')" {{if .Expired}}disabled{{end}}>支付成功</button>
+    <button class="fail" onclick="doPay('failed')" {{if .Expired}}disabled{{end}}>支付失败</button>
   </div>
   <div class="res" id="res"></div>
 </div>
@@ -440,9 +473,9 @@ async function doPay(status){
   const j = await r.json();
   const el = document.getElementById('res');
   el.style.display = 'block';
-  el.textContent = (j.ok ? '✓ 面板回调已受理\n' : '✗ 回调失败\n') + JSON.stringify(j, null, 2);
+  el.textContent = (j.ok ? '✓ 面板回调已受理\n' : '✗ 未受理\n') + JSON.stringify(j, null, 2);
 }
-{{if .Autopay}}window.addEventListener('load', () => doPay('paid'));{{end}}
+{{if and .Autopay (not .Expired)}}window.addEventListener('load', () => doPay('paid'));{{end}}
 </script>
 </body></html>`
 
@@ -457,11 +490,12 @@ const ordersPageHTML = `<!doctype html>
  code{font-size:12px;word-break:break-all}
 </style></head><body>
 <h1>模拟充值站点 · 订单列表（共 {{len .}} 笔）</h1>
-<table><tr><th>订单号</th><th>金额</th><th>状态</th><th>面板回调</th><th>操作</th></tr>
+<table><tr><th>订单号</th><th>金额</th><th>状态</th><th>收款有效期</th><th>面板回调</th><th>操作</th></tr>
 {{range .}}<tr>
   <td><code>{{.TradeNo}}</code></td>
   <td>{{.Yuan}} {{.Currency}}</td>
   <td>{{.Status}}</td>
+  <td>{{.ExpiresAt.Format "15:04:05"}}</td>
   <td>{{if .LastCode}}HTTP {{.LastCode}}<br><code>{{.LastResult}}</code>{{else}}—{{end}}</td>
   <td><a href="/pay?trade_no={{.TradeNo}}">去支付</a></td>
 </tr>{{end}}</table>

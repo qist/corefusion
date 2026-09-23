@@ -1844,7 +1844,9 @@ function showAddSite(template) {
   const defaultPort = settings.value.default_http_port
   const isReality = template === 'reality'
 siteForm.value = {
-domain: '', upstreams: [''], path: '', backend_path: '', template,
+// Reality 是 TLS 透传（由内核的 Reality 处理证书 ✓）✗ 不需要域名 ✗ →
+  // 留空会让人以为要填 ✓，默认给 127.0.0.1 当占位 ✓（只作标识 ✓，不参与分流 ✓）
+  domain: isReality ? '127.0.0.1' : '', upstreams: [''], path: '', backend_path: '', template,
     listen_port: isReality ? '9443' : (template === 'l4' ? '443' : defaultPort), listen_socket: '',
     use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
     custom_config: '', server_config: '', location_config: '',
@@ -1868,6 +1870,8 @@ function onTemplateChange(newTemplate) {
     siteForm.value.proxy_protocol = true
     siteForm.value.waf_enabled = false
     siteForm.value.listen_port = '9443'
+    // Reality 不需要域名 ✓ → 空着就给个占位 ✓（与新建时一致 ✓）
+    if (!siteForm.value.domain) siteForm.value.domain = '127.0.0.1'
     siteForm.value.ssl_protocols = 'TLSv1.2 TLSv1.3'
   } else {
     if (!siteForm.value.cert_path) {
@@ -1875,6 +1879,8 @@ function onTemplateChange(newTemplate) {
     }
     siteForm.value.proxy_protocol = false
     siteForm.value.waf_enabled = !wafDisabledTemplates.includes(newTemplate)
+    // 从 Reality 切走时，把占位域名一起还原 ✓（避免留下莫名的 127.0.0.1 ✓）
+    if (siteForm.value.domain === '127.0.0.1') siteForm.value.domain = ''
     // Reset listen_port for non-reality if it was 9443
     if (siteForm.value.listen_port === '9443') {
       siteForm.value.listen_port = newTemplate === 'l4' ? '443' : (settings.value.default_http_port || '80')

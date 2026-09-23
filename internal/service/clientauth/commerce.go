@@ -1244,14 +1244,12 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	if input.Status == entity.CallbackStatusFailed {
 		targetStatus = entity.ChargeStatusFailed
 	}
-	// NOTE: cannot use the generic state machine here.
-	// State machine is pending -> processing -> paid, while a payment-gateway callback
-	// settles the order in ONE step, so pending -> paid would be rejected and the order
-	// would NEVER be credited (real-device symptom: 400 "order status is pending, cannot
-	// process callback"). Keep the criterion identical to the crediting transaction below:
-	// only pending / processing are acceptable.
-	if order.Status != entity.ChargeStatusPending && order.Status != entity.ChargeStatusProcessing {
-		log.Printf("[callback] request_id=%s invalid_order_status=%s target=%s", requestID, order.Status, targetStatus)
+	// 订单状态闸门：直接用状态机（单一口径）。
+	// 支付网关回调是一次性终态 —— pending → paid/failed 在 chargeOrderTransitions 里
+	// 已正式合法，processing → paid/failed 亦然；其余状态（created/expired/refunded）
+	// 一律拒绝。这里曾因为状态机不允许 pending → paid 而恒判非法、订单永远到不了账。
+	if !entity.CanChargeOrderTransition(order.Status, targetStatus) {
+		log.Printf("[callback] request_id=%s invalid_transition from=%s to=%s", requestID, order.Status, targetStatus)
 		recordEvent("error", "INVALID_STATUS_TRANSITION", fmt.Sprintf("order status is %s", order.Status), signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order status is %s, cannot process callback", order.Status)
 	}

@@ -54,11 +54,11 @@ func parseGoogleEABResponse(body []byte) (*googleEABResponse, error) {
 		hint := ""
 		switch r.Error.Status {
 		case "PERMISSION_DENIED":
-			hint = "（需要给服务账号 roles/publicca.externalAccountKeyCreator ✓）"
+			hint = "（需要给服务账号 roles/publicca.externalAccountKeyCreator）"
 		case "SERVICE_DISABLED":
-			hint = "（需要先启用 publicca.googleapis.com ✓）"
+			hint = "（需要先启用 publicca.googleapis.com）"
 		case "NOT_FOUND":
-			hint = "（项目 ID 是否正确 ✓）"
+			hint = "（请核对项目 ID）"
 		}
 		return &r, fmt.Errorf("Google Public CA rejected: %s (code %d, %s)%s",
 			r.Error.Message, r.Error.Code, r.Error.Status, hint)
@@ -69,15 +69,77 @@ func parseGoogleEABResponse(body []byte) (*googleEABResponse, error) {
 	return &r, nil
 }
 
+// ErrGoogleNeedServiceAccountJSON 是"给错了凭据类型"的统一提示 ✓。
+//
+// ⚠ 这里最容易搞混的两种东西 ✗：
+//   - **API Key**（`AIza…` 那串 ✓）：只是"公开标识" ✗，**不带身份** ✗ →
+//     调 Public CA 的 externalAccountKeys.create 需要 IAM 权限 ✓，所以它**没用** ✗；
+//   - **服务账号密钥**（GCP 后台"密钥 → 创建新密钥 → JSON"下载的**整个文件** ✓）：
+//     它**本身就是"一把 key"** ✓（内含 client_email + private_key ✓）——
+//     只是以 JSON 文件形式交付 ✓，面板拿它签 JWT 换 OAuth2 token ✓，再调 API ✓。
+//
+// 不想给这个文件也有两条路 ✓：① 用临时 access token（约 1 小时 ✓，不落库 ✓）；
+// ② 干脆别用这里 —— 本地 `gcloud publicca external-account-keys create` 一次 ✓，
+//
+//	把打印出来的 keyId / b64MacKey **手填**到 EAB 配置的 EAB-KID / EAB-HMAC-Key ✓
+//	（代价：Google 的 EAB 是 7 天 + 一次性 ✗ → 过期了要再点一次 ✓）。
+const ErrGoogleNeedServiceAccountJSON = "这不是服务账号密钥 JSON。需要的是 GCP 里下载的那个密钥文件的完整内容" +
+	"（JSON 文本，含 client_email / private_key）；API Key（AIza…）在这里没用。" +
+	"若不想给文件：可改用临时 access token，或直接手填 EAB-KID / EAB-HMAC-Key。"
+
+// normalizeServiceAccountJSON 容错 ✓：允许只粘"最小字段集"，
+// 自动补上 oauth2 需要的 type / token_uri ✓（省得因为少两行就报错 ✓）。
+func normalizeServiceAccountJSON(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("请提供服务账号密钥文件内容，或临时 access token")
+	}
+	// 一眼看出不是 JSON：多半粘成了 API Key / 只粘了一行 ✓
+	if !strings.HasPrefix(raw, "{") {
+		if strings.HasPrefix(raw, "AIza") {
+			return "", fmt.Errorf("这看起来是 Google API Key，不是服务账号密钥：%s", ErrGoogleNeedServiceAccountJSON)
+		}
+		return "", fmt.Errorf("服务账号密钥必须是那个密钥文件的完整内容（JSON 对象）：%s", ErrGoogleNeedServiceAccountJSON)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return "", fmt.Errorf("服务账号密钥不是合法 JSON（%v）：%s", err, ErrGoogleNeedServiceAccountJSON)
+	}
+	str := func(k string) string {
+		if v, ok := m[k].(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return ""
+	}
+	if str("client_email") == "" && str("private_key") == "" {
+		// authorized_user（gcloud 用户凭据 ✓）是另一套字段 ✓，交给 oauth2 自己判 ✓
+		if str("type") != "authorized_user" {
+			return "", fmt.Errorf("缺少 client_email / private_key：%s", ErrGoogleNeedServiceAccountJSON)
+		}
+	}
+	if str("type") == "" {
+		m["type"] = "service_account" // 最小集合时补上 ✓
+	}
+	if str("token_uri") == "" {
+		m["token_uri"] = "https://oauth2.googleapis.com/token"
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // googleAccessToken 用服务账号 JSON 换 access token ✓（authorized_user 类型也支持 ✓）。
 func googleAccessToken(ctx context.Context, saJSON string) (string, error) {
-	saJSON = strings.TrimSpace(saJSON)
-	if saJSON == "" {
-		return "", fmt.Errorf("service account JSON is required")
-	}
-	creds, err := google.CredentialsFromJSON(ctx, []byte(saJSON), googleCloudPlatformScope)
+	normalized, err := normalizeServiceAccountJSON(saJSON)
 	if err != nil {
-		return "", fmt.Errorf("invalid service account JSON: %w", err)
+		return "", err
+	}
+	creds, err := google.CredentialsFromJSON(ctx, []byte(normalized), googleCloudPlatformScope)
+	if err != nil {
+		return "", fmt.Errorf("这份服务账号密钥用不了（%v）：%s", err, ErrGoogleNeedServiceAccountJSON)
 	}
 	tok, err := creds.TokenSource.Token()
 	if err != nil {

@@ -85,6 +85,30 @@ gcloud publicca external-account-keys create
 # 返回 keyId / b64MacKey，对应 ACME 的 --eab-kid / --eab-hmac-key
 ```
 
+## 4.5 为什么是 JSON，而不是"一条 key"？
+
+这是最常被问的点，先把两种"key"分开：
+
+| 你可能以为要的 | 实际要的 |
+|---|---|
+| **API Key**（`AIza…` 那串） | ❌ **没用** —— API Key 只是"公开标识"，**不携带身份**；而创建 EAB 需要 **IAM 权限**，必须用能证明身份的凭据 |
+| —— | ✅ **服务账号密钥**：GCP「IAM → 服务账号 → 密钥 → 创建新密钥 → **JSON**」下载的那个**文件** |
+
+要点：**那个 JSON 文件本身就是"一把 key"** —— 只是 GCP 把"账号标识（`client_email`）+ 私钥（`private_key`）"
+打包成一个文件交付。面板拿它签 JWT → 换 OAuth2 access token → 再调 Public CA API。
+所以"粘 JSON"≠ 要填很多东西，**粘整个文件内容即可**（面板也会自动补齐 `type` / `token_uri` 这类可省字段）。
+
+**真正的 EAB 才是两条字符串**（`EAB-KID` + `EAB-HMAC-Key`），那是**申请的结果**，面板自动填好，不用手抄。
+
+### 不想给这个文件？还有两条路
+
+| 方式 | 怎么用 | 代价 |
+|---|---|---|
+| **临时 Access Token** | `gcloud auth print-access-token` → 粘到「临时 Access Token」 | 约 1 小时有效、**不落库** → 只适合临时验证，不能自动再申请 |
+| **纯手填 KID/HMAC** | 本地 `gcloud publicca external-account-keys create` → 把 `keyId` / `b64MacKey` 填进「EAB-KID / EAB-HMAC-Key」 | 不用给任何凭据 ✓；但 Google 的 EAB 是 **7 天 + 一次性** → 过期要再点一次 |
+
+> 面板推荐"服务账号 JSON"，唯一原因是：**EAB 7 天会过期**，存了服务账号才能**自动再申请**，不必人工回来点。
+
 ## 5. 自动注册与续期的关系（重点）
 
 ```

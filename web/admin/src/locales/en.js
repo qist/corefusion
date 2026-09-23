@@ -1402,9 +1402,9 @@ export default {
   certificate: {
     googleProjectID: 'GCP Project ID',
     googleProjectIDPlaceholder: 'e.g. my-project-123456',
-    googleSA: 'Service account JSON',
-    googleSAPlaceholder: 'Paste the service account key JSON (recommended, reusable)',
-    googleSAHint: 'The service account needs roles/publicca.externalAccountKeyCreator and the project must enable publicca.googleapis.com. Never returned to the UI.',
+    googleSA: 'Service account key file',
+    googleSAPlaceholder: 'Paste the ENTIRE downloaded xxx.json (that file itself is the key, just delivered as JSON)',
+    googleSAHint: 'Note: this is NOT an API key (AIza… will not work). Use the file from GCP IAM -> Service accounts -> Keys -> Create new key -> JSON. Needs roles/publicca.externalAccountKeyCreator and publicca.googleapis.com enabled. Never returned to the UI. Alternatives: a temporary access token, or fill KID/HMAC manually (from gcloud).',
     googleAccessToken: 'or temporary access token',
     googleAccessTokenPlaceholder: 'output of gcloud auth print-access-token (~1h, not saved)',
     googleAccessTokenHint: 'Use this for a quick one-off; it replaces the service account JSON.',

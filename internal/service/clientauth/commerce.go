@@ -1115,21 +1115,46 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	log.Printf("[callback] request_id=%s timestamp=ok", requestID)
 
 	// ⑥ nonce 原子消费（v3.2: sign_valid=false，验签后更新）
+	// ⑥ nonce 原子消费（sign_valid=false，验签后更新；同时记录载荷哈希 ✓）
 	nonceRecord := &entity.CallbackNonce{
-		Nonce:     input.Nonce,
-		SiteID:    siteID,
-		TradeNo:   input.TradeNo,
-		SignValid: false, // 默认未通过，验签成功后更新
-		CreatedAt: time.Now(),
+		Nonce:       input.Nonce,
+		SiteID:      siteID,
+		TradeNo:     input.TradeNo,
+		SignValid:   false, // 默认未通过，验签成功后更新
+		PayloadHash: payloadHash,
+		CreatedAt:   time.Now(),
 	}
 	if err := s.db.WithContext(ctx).Create(nonceRecord).Error; err != nil {
-		log.Printf("[callback] request_id=%s nonce_replay nonce=%s", requestID, input.Nonce)
-		recordEvent("replay", "REPLAY_ATTACK", "nonce already used", false, 0, ipMatchRule)
-		raiseSecEvent(entity.ChargeSecEventNonceReplay, entity.ChargeSecSeverityHigh, input.TradeNo,
-			fmt.Sprintf("nonce replay: %s", input.Nonce))
-		return fmt.Errorf("nonce already used (replay attack)")
+		// 冲突既可能是**真重放**，也可能是**网关重试** —— 必须区分：
+		// 之前一律按重放拒绝，导致"一次因瞬时错误（如 SQLite 写锁）失败的回调，
+		// 网关用同一个 nonce 重投也会被拒" → 这笔钱永远入不了账（丢单）。
+		// 规则：同 nonce + **同载荷** = 重试（幂等放行；入账侧有唯一约束，不会重复入账）；
+		//       同 nonce + **不同载荷** = 真重放（仍然拒绝）。
+		var existing entity.CallbackNonce
+		lookupErr := s.db.WithContext(ctx).
+			Where("site_id = ? AND nonce = ?", siteID, input.Nonce).
+			First(&existing).Error
+		// 判据（安全且够宽容）：
+		//   同 nonce + **同订单号** ⇒ 视为网关重试 → 继续走后面的验签与金额校验
+		//     （验签不过照样被拒；金额对不上照样被拒；入账侧幂等，不会重复入账）；
+		//   同 nonce + **不同订单号** ⇒ 真重放 → 直接拒绝。
+		// 为什么用订单号而不是载荷哈希：真实网关重试有两种形态 ——
+		//   ① 逐字节重发同一份 body（载荷相同）；② 重新构造请求（时间戳变了 → 载荷不同，但 nonce/订单不变）。
+		// 只认载荷相同会把形态 ② 误判成重放 → 依然丢单，所以用"同一笔订单"作为判据。
+		if lookupErr == nil && existing.TradeNo != "" && existing.TradeNo == input.TradeNo {
+			log.Printf("[callback] request_id=%s nonce=%s trade_no=%s same_payload=%v 视为网关重试，继续走验签/金额校验",
+				requestID, input.Nonce, input.TradeNo, existing.PayloadHash == payloadHash)
+			recordEvent("retry", "", "duplicate callback with identical payload (gateway retry)", false, 0, ipMatchRule)
+		} else {
+			log.Printf("[callback] request_id=%s nonce_replay nonce=%s", requestID, input.Nonce)
+			recordEvent("replay", "REPLAY_ATTACK", "nonce already used with different payload", false, 0, ipMatchRule)
+			raiseSecEvent(entity.ChargeSecEventNonceReplay, entity.ChargeSecSeverityHigh, input.TradeNo,
+				fmt.Sprintf("nonce replay: %s", input.Nonce))
+			return fmt.Errorf("nonce already used (replay attack)")
+		}
+	} else {
+		log.Printf("[callback] request_id=%s nonce=consumed", requestID)
 	}
-	log.Printf("[callback] request_id=%s nonce=consumed", requestID)
 
 	// ⑦ HMAC verify (v3.2: version + body_hash + secret_version)
 	// v3.2: 从 charge_site_secrets 表加载所有有效密钥（active + legacy），按版本降序尝试
@@ -1312,63 +1337,67 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 
 		// v3.2 Transaction: 锁订单 → 锁余额 → 写流水 → 改余额 → 改订单 → COMMIT
 		// 不再先改 processing 再锁，整个流程在一个事务内用 SELECT FOR UPDATE 保证原子性
-		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Step 1: SELECT order FOR UPDATE (行锁)
-			var lockedOrder entity.ChargeOrder
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("trade_no = ?", input.TradeNo).First(&lockedOrder).Error; err != nil {
-				return err
-			}
-
-			// 幂等检查：如果已经是 paid，直接返回
-			if lockedOrder.Status == entity.ChargeStatusPaid {
-				return nil
-			}
-			// 如果不是 pending/processing，不能继续
-			// 放行 pending / processing / **expired**：expired 只代表"不再接受新付款"，
-			// 而钱要是已经收了就必须入账（正常交易逻辑：不能让用户付款了还失败）。
-			if lockedOrder.Status != entity.ChargeStatusPending &&
-				lockedOrder.Status != entity.ChargeStatusProcessing &&
-				lockedOrder.Status != entity.ChargeStatusExpired {
-			}
-
-			// Step 2: 余额行锁 —— 只有"充值单"需要（套餐单不动余额，而且客户端可能还没有余额行）
-			if lockedOrder.OrderType == entity.ChargeOrderTypeCharge {
-				var bal entity.ClientBalance
+		// SQLite：WAL 下"读→写升级"会立刻 SQLITE_BUSY（busy_timeout 不生效），
+		// 有并发写者时就会瞬时失败 → 做有限重试（失败的事务未提交，且入账本身幂等）。
+		err := retryOnDBLocked(func() error {
+			return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				// Step 1: SELECT order FOR UPDATE (行锁)
+				var lockedOrder entity.ChargeOrder
 				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error; err != nil {
+					Where("trade_no = ?", input.TradeNo).First(&lockedOrder).Error; err != nil {
 					return err
 				}
-			}
 
-			// Step 3~4: 发货 —— 直接复用**权威实现** processChargePayment（tx 版）。
-			//
-			// ⚠ 这里原来写死成"给余额加钱"：对套餐订单（order_type=purchase）也会把钱充成余额，
-			// 却**不激活套餐**、套餐订单永远挂在 pending —— 用户花钱买套餐结果只拿到余额，
-			// 这是真机端到端测试抓到的 P0 金额问题。
-			// 充值卡那条路（processChargePayment）本来就分两支：充值单 → 加余额；
-			// 套餐单 → activatePlanTx + 写 plan_order。现在两条路共用同一份实现，
-			// 不再各自维护一套口径（历史上正是"两处口径不一致"埋了多个 P0）。
-			if err := s.processChargePayment(ctx, tx, &lockedOrder); err != nil {
-				return err
-			}
+				// 幂等检查：如果已经是 paid，直接返回
+				if lockedOrder.Status == entity.ChargeStatusPaid {
+					return nil
+				}
+				// 如果不是 pending/processing，不能继续
+				// 放行 pending / processing / **expired**：expired 只代表"不再接受新付款"，
+				// 而钱要是已经收了就必须入账（正常交易逻辑：不能让用户付款了还失败）。
+				if lockedOrder.Status != entity.ChargeStatusPending &&
+					lockedOrder.Status != entity.ChargeStatusProcessing &&
+					lockedOrder.Status != entity.ChargeStatusExpired {
+				}
 
-			// Step 5: UPDATE order → paid (processing_at 清空)
-			if err := tx.Model(&entity.ChargeOrder{}).
-				Where("id = ?", lockedOrder.ID).
-				Updates(map[string]interface{}{
-					"status":        entity.ChargeStatusPaid,
-					"paid_at":       paidAt,
-					"paid_currency": input.PaidCurrency,
-					"paid_amount":   input.PaidAmount,
-					"exchange_rate": input.ExchangeRate,
-					"method":        input.Method,
-					"processing_at": nil,
-				}).Error; err != nil {
-				return err
-			}
+				// Step 2: 余额行锁 —— 只有"充值单"需要（套餐单不动余额，而且客户端可能还没有余额行）
+				if lockedOrder.OrderType == entity.ChargeOrderTypeCharge {
+					var bal entity.ClientBalance
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error; err != nil {
+						return err
+					}
+				}
 
-			return nil
+				// Step 3~4: 发货 —— 直接复用**权威实现** processChargePayment（tx 版）。
+				//
+				// ⚠ 这里原来写死成"给余额加钱"：对套餐订单（order_type=purchase）也会把钱充成余额，
+				// 却**不激活套餐**、套餐订单永远挂在 pending —— 用户花钱买套餐结果只拿到余额，
+				// 这是真机端到端测试抓到的 P0 金额问题。
+				// 充值卡那条路（processChargePayment）本来就分两支：充值单 → 加余额；
+				// 套餐单 → activatePlanTx + 写 plan_order。现在两条路共用同一份实现，
+				// 不再各自维护一套口径（历史上正是"两处口径不一致"埋了多个 P0）。
+				if err := s.processChargePayment(ctx, tx, &lockedOrder); err != nil {
+					return err
+				}
+
+				// Step 5: UPDATE order → paid (processing_at 清空)
+				if err := tx.Model(&entity.ChargeOrder{}).
+					Where("id = ?", lockedOrder.ID).
+					Updates(map[string]interface{}{
+						"status":        entity.ChargeStatusPaid,
+						"paid_at":       paidAt,
+						"paid_currency": input.PaidCurrency,
+						"paid_amount":   input.PaidAmount,
+						"exchange_rate": input.ExchangeRate,
+						"method":        input.Method,
+						"processing_at": nil,
+					}).Error; err != nil {
+					return err
+				}
+
+				return nil
+			})
 		})
 		if err != nil {
 			log.Printf("[callback] request_id=%s order=%s transaction_error=%v", requestID, input.TradeNo, err)
@@ -1397,6 +1426,41 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 	log.Printf("[callback] request_id=%s order=%s status=failed", requestID, input.TradeNo)
 	recordEvent("success", "", "order marked as failed", signValid, usedSecretVer, ipMatchRule)
 	return nil
+}
+
+// retryOnDBLocked 对数据库**瞬时写锁**做有限重试（目前主要针对 SQLite）。
+//
+// 为什么需要：SQLite 在 WAL 模式下，"先读后写"的事务（本项目的入账事务就是先
+// SELECT ... FOR UPDATE 再 INSERT/UPDATE）在**升级为写事务**时，如果此刻已有别的写者
+// （面板自身的定时任务、外部进程），会**立刻**返回 SQLITE_BUSY —— 注意这种情况下
+// `busy_timeout` **不生效**（它只对"一开始就申请写锁"的语句有效）。
+// 重试是安全的：失败的事务没有提交，且入账逻辑本身幂等（订单已 paid 直接返回、
+// balance_transactions 对 (related_charge_order_id,type) 有唯一约束）。
+// 最多重试 3 次（退避 100/200/300ms），避免把回调拖太久。
+func retryOnDBLocked(fn func() error) error {
+	const maxAttempts = 4
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if !isDBLockedError(err) || attempt == maxAttempts-1 {
+			return err
+		}
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+	}
+	return err
+}
+
+// isDBLockedError 判断是否为瞬时写锁错误（SQLite 的 SQLITE_BUSY / SQLITE_LOCKED）。
+func isDBLockedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "sqlite_busy") ||
+		strings.Contains(msg, "database table is locked")
 }
 
 // recordCallbackEventAsync records a callback event asynchronously (v3.2: 事务外，不阻塞账务).

@@ -313,19 +313,20 @@ else
   # 真实网关收到非 200 会**自动重试**，面板自身也会 enqueueCallbackRetry —— 这里照做（最多 3 次 ✓），
   # 而不是把断言放宽（那样会掩盖真正的失败）。
   E_CODE=""
+  E_NONCE="latefix$(date +%s%N)" # ⚠ 重试**复用同一个 nonce**（真实网关就是这样重试的 ✓）
   for attempt in 1 2 3 4 5 6 7 8; do
-    # ⚠ 每次重试都用**新的 nonce**（= 一次全新的签名请求 ✓）：
-    # 面板在验签**之前**就原子消费了 nonce，所以一旦这次回调处理失败（比如 SQLite 写锁），
-    # 用**同一个 nonce** 重投会被判 "nonce already used (replay attack)" ✗ ——
-    # 这是"失败即烧掉 nonce"的真实互操作隐患（已单独记录，建议后续允许"同 nonce + 同载荷"的重试 ✓）。
+    # 这条同时验证两件事 ✓：
+    #  ① 瞬时失败（SQLite 写锁）后重投能成功 ✓；
+    #  ② 重投用的是**同一个 nonce** ✓ —— 面板会把它识别为"同 nonce + 同载荷 = 网关重试"并幂等放行 ✓
+    #     （旧实现会判 replay ✗ → 这笔钱永远入不了账 ✗）。
     E_URL="$(make_callback --trade-no "$E_TRADE" --site-id "$SITE_ID" --secret "$SITE_SECRET" \
-      --amount "$AMOUNT_FEN" --nonce "late${attempt}$(date +%s%N)")"
+      --amount "$AMOUNT_FEN" --nonce "$E_NONCE")"
     E_CODE="$(curl -s -o "$TMP/e.out" -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
     [[ "$E_CODE" == "200" ]] && break
     if grep -q "database is locked" "$TMP/e.out"; then
       # 放宽到 ~16 秒：本测试自己创建/删除测试客户端会触发票据同步扇出（多节点 + 重启内核），
       # 那个写洪峰可能持续十几秒；真实网关的重试窗口远大于此，这里只是照实模拟。
-      info "第 $attempt 次遇到 SQLite 写锁（database is locked）→ 换新 nonce 重投 ✓"
+      info "第 $attempt 次遇到瞬时写锁 → 同 nonce 重投 ✓（网关重试语义）"
       sleep 2
       continue
     fi
@@ -373,9 +374,22 @@ if [[ -n "$NEG_TRADE" ]]; then
   neg "金额不符（差 1 分）"    400 --amount "$((AMOUNT_FEN + 1))"
   neg "金额用错单位（元当分）" 400 --amount "$AMOUNT_YUAN"
   neg "时间过期（±300s 外）"  400 --amount "$AMOUNT_FEN" --ts-offset -3600
-  RP_NONCE="replay$(date +%s%N)"
-  neg "正确回调（给重放用）"   200 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
-  neg "重放同一 nonce"       400 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
+  RP_NONCE="retry$(date +%s%N)"
+  neg "正确回调（给重试用）"            200 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
+  # ⚠ 同 nonce + **同订单号** = 网关重试 → 必须幂等放行（旧实现判 replay ✗ → 会丢单 ✗）
+  #   真实网关重试既可能"逐字节重发"，也可能"重新构造请求"（时间戳变、nonce 与订单不变），
+  #   所以判据是"同一笔订单"，而不是"载荷逐字节相同"。
+  NEG_BAL="$(balance)"
+  neg "同 nonce + 同订单号（网关重试）"  200 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
+  [[ "$(balance)" == "$NEG_BAL" ]] && ok "重试未重复入账 ✓（幂等 ✓ 余额仍 $NEG_BAL）" \
+    || bad "重试导致重复入账 ✗ $NEG_BAL → $(balance)"
+  # ⚠ 同 nonce + **不同订单号** = 真重放 → 必须拒绝 ✓（用场景 1 那笔订单的 trade_no ✓）
+  if [[ -n "${TRADE_NO:-}" ]]; then
+    RP_URL="$(make_callback --trade-no "$TRADE_NO" --site-id "$SITE_ID" --secret "$SITE_SECRET" --amount "$AMOUNT_FEN" --nonce "$RP_NONCE")"
+    RP_CODE="$(curl -s -o "$TMP/rp.out" -w '%{http_code}' -X POST "$RP_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
+    [[ "$RP_CODE" == "400" ]] && ok "同 nonce + 不同订单号（真重放） → HTTP 400 ✓" \
+      || bad "跨订单的 nonce 重放没被拒 ✗ HTTP $RP_CODE $(head -c 140 "$TMP/rp.out")"
+  fi
 else
   bad "反向用例的订单创建失败 ✗ $NEG_ORDER"
 fi

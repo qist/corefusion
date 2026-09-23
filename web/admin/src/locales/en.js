@@ -2230,6 +2230,8 @@ wafAutoSyncDesc: 'Automatically sync from source on schedule, then push to all n
     selectCert: 'Select Certificate',
     certPath: 'Certificate Path',
     keyPath: 'Private Key Path',
+    dualCert: 'Dual certificate',
+    dualCertHint: 'When the domain has both ECC and RSA certificates, both are served by default (chosen by client capability). Turn off to use only the one selected above.',
     certSettings: 'Certificate Settings',
     siteGenerated: 'Site config added',
     siteSaved: 'Site saved, config applied',

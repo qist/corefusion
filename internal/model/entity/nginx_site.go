@@ -4,16 +4,19 @@ import "time"
 
 // NginxSite is the GORM model for the nginx_sites table.
 type NginxSite struct {
-	ID             int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID       int64  `json:"server_id" gorm:"not null;default:1;index"`
-	Domain         string `json:"domain" gorm:"size:255;not null"`
-	Upstream       string `json:"upstream" gorm:"size:255;not null"`
-	Template       string `json:"template" gorm:"size:32"`
-	Path           string `json:"path" gorm:"size:255"`
-	BackendPath    string `json:"backend_path" gorm:"size:255"`
-	ListenPort     string `json:"listen_port" gorm:"size:16"`
-	ListenSocket   string `json:"listen_socket" gorm:"size:255"`
-	CertPath       string `json:"cert_path" gorm:"size:512"`
+	ID           int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID     int64  `json:"server_id" gorm:"not null;default:1;index"`
+	Domain       string `json:"domain" gorm:"size:255;not null"`
+	Upstream     string `json:"upstream" gorm:"size:255;not null"`
+	Template     string `json:"template" gorm:"size:32"`
+	Path         string `json:"path" gorm:"size:255"`
+	BackendPath  string `json:"backend_path" gorm:"size:255"`
+	ListenPort   string `json:"listen_port" gorm:"size:16"`
+	ListenSocket string `json:"listen_socket" gorm:"size:255"`
+	CertPath     string `json:"cert_path" gorm:"size:512"`
+	// DualCert：同 CaddySite.DualCert ✓ —— nil=true=挂同域名的多张证书（ECC+RSA ✓），
+	// false=只用本站点自己那对 ✓。
+	DualCert       *bool  `json:"dual_cert" gorm:"default:true"`
 	KeyPath        string `json:"key_path" gorm:"size:512"`
 	ServerConfig   string `json:"server_config" gorm:"type:longtext"`
 	LocationConfig string `json:"location_config" gorm:"type:longtext"`

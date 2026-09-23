@@ -35,7 +35,9 @@ type ProxySite struct {
 	ProxyProtocol bool   `json:"proxy_protocol" gorm:"not null;default:false"`
 	Enabled       bool   `json:"enabled" gorm:"not null;default:true"`
 	IsPanel       bool   `json:"is_panel" gorm:"not null;default:false"`
-	Priority      int    `json:"priority" gorm:"not null;default:100"`
+	// DualCert：同 CaddySite.DualCert ✓ —— 是否挂同域名的多张证书（ECC+RSA）；nil=是。
+	DualCert *bool `json:"dual_cert" gorm:"default:true"`
+	Priority int   `json:"priority" gorm:"not null;default:100"`
 
 	// TLS options (Nginx)
 	EnableHttp2     bool   `json:"enable_http2" gorm:"not null;default:true"`

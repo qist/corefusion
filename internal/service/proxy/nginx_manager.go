@@ -17,6 +17,9 @@ type NginxManager struct {
 	dataDir      string
 	configDir    string
 	siteRepo     *repository.NginxSiteRepository
+	// certRepo 用于把同域名的**多张**证书一起挂到站点上 ✓（ECC + RSA 双证书 ✓）。
+	// 允许为 nil ✓（未注入时只用站点自配的那组 ✓）。
+	certRepo *repository.CertificateRepository
 	settingStore SettingStore
 	serverID     int64
 	isLocal      bool
@@ -31,6 +34,11 @@ func (m *NginxManager) SetServerID(id int64) { m.serverID = id }
 
 // SetIsLocal sets whether this manager is operating on the local node.
 func (m *NginxManager) SetIsLocal(v bool) { m.isLocal = v }
+
+// SetCertificateRepo 注入证书仓储 ✓（用于生成"双证书"配置 ✓）。
+func (m *NginxManager) SetCertificateRepo(repo *repository.CertificateRepository) {
+	m.certRepo = repo
+}
 
 // SetNodeServerRepo sets the node server repository for mirror node detection.
 // When set, GenerateConfigForServer will check if the target is a mirror node

@@ -10,25 +10,18 @@
 //	② 用户支付  →  GET  {本服务}/pay?trade_no=...             （假收银台页面 ✓）
 //	③ 回调入账  →  POST {面板}/api/v1/charge/callback/{site_id}（本服务调用 ✓，带 HMAC 签名 ✓）
 //
+// ⚠ 金额单位是 **分**（整数 ✓）：面板出站发 `amount`（分 ✓）+ `amount_yuan`（仅展示 ✓），
+// 回调必须回传 `amount`（分 ✓）。原来出站发元、回调按 int64 元解析 ✗ →
+// 9.90 元这种套餐价根本没法回传 ✗ → 套餐充值永远到不了账 ✗。
+//
 // 为什么用 Go 写 ✓：面板的签名基于 Go 的 `json.Marshal`（map 按 key 字典序、紧凑、
-// 浮点用最短表示 ✓）。换别的语言，`100` 会变成 `100.0` ✗、`<`/`&` 的转义规则也不同 ✗ → 签名对不上 ✗。
+// 浮点用最短表示 ✓）。换别的语言，数字格式与转义规则会不同 ✗ → 签名对不上 ✗。
 //
 // 用法：
 //
-//	# 1. 面板里建一个充值站点，SiteURL 填 http://127.0.0.1:9099 ✓，复制它的回调密钥 ✓
-//	# 2. 启动本服务：
 //	cd tests/charge-e2e/mockchargesite && go run . -addr 127.0.0.1:9099 -secret cs_xxxx
-//	# 3. 打开 http://127.0.0.1:9099/orders 看订单 ✓，点"去支付"即是真实回调 ✓
-//	#    （或全自动：bash tests/charge-e2e/run.sh ✓）
-//
-// 参数：
-//
-//	-addr     监听地址（默认 127.0.0.1:9099 ✓ 只本机 ✓）
-//	-secret   回调密钥（面板建站时返回的 plaintext_secret ✓），单站点时用它 ✓
-//	-sites    多站点密钥，格式 "3=cs_aaa,5=cs_bbb"（优先于 -secret ✓）
-//	-apikey   可选：面板站点里填的 APIKey ✓；给了就校验面板下单请求的签名 ✓
-//	-autopay  打开收银台页面即自动支付 ✓（脚本化测试更省事 ✓）
-//	-public   可选：payment_url 的外网前缀，如 http://1.2.3.4:9099 ✓
+//	# 打开 http://127.0.0.1:9099/orders 看订单 ✓，点"去支付"即是真实回调 ✓
+//	# 或全自动：bash tests/charge-e2e/run.sh
 package main
 
 import (
@@ -53,32 +46,35 @@ import (
 // order 是本服务记录的一笔"待支付订单" ✓（面板下单时带过来的信息 ✓）。
 type order struct {
 	TradeNo     string    `json:"trade_no"`
-	SiteID      string    `json:"site_id"`     // 从 notify_url 里解析出来 ✓
-	NotifyURL   string    `json:"notify_url"`  // 面板要求回调的地址 ✓
-	Amount      float64   `json:"amount"`      // ⚠ 单位是"元"（面板出站就是这么发的 ✓）
+	SiteID      string    `json:"site_id"`    // 从 notify_url 里解析出来 ✓
+	NotifyURL   string    `json:"notify_url"` // 面板要求回调的地址 ✓
+	AmountCents int64     `json:"amount_cents"` // ⚠ 单位：分（与面板一致 ✓）
 	Currency    string    `json:"currency"`
 	Subject     string    `json:"subject"`
 	ClientEmail string    `json:"client_email"`
-	PanelSign   string    `json:"panel_sign"`  // 面板下单时的签名（展示/可选校验 ✓）
-	SignOK      *bool     `json:"sign_ok"`     // nil = 未校验（没配 -apikey ✓）
-	Status      string    `json:"status"`      // pending / paid / failed
+	PanelSign   string    `json:"panel_sign"`
+	SignOK      *bool     `json:"sign_ok"` // nil = 未校验（没配 -apikey ✓）
+	Status      string    `json:"status"`  // pending / paid / failed
 	SiteTradeNo string    `json:"site_trade_no"`
 	CreatedAt   time.Time `json:"created_at"`
 	PaidAt      string    `json:"paid_at,omitempty"`
-	LastResult  string    `json:"last_result"` // 面板回调的原始响应 ✓
+	LastResult  string    `json:"last_result"`
 	LastCode    int       `json:"last_code"`
-	BodyHash    string    `json:"body_hash,omitempty"` // 便于排查验签问题 ✓
+	BodyHash    string    `json:"body_hash,omitempty"`
 	Sign        string    `json:"sign,omitempty"`
 }
+
+// Yuan 只用于页面展示 ✓。
+func (o *order) Yuan() string { return fmt.Sprintf("%.2f", float64(o.AmountCents)/100) }
 
 type server struct {
 	mu       sync.Mutex
 	orders   map[string]*order
 	secrets  map[string]string // site_id -> callback secret ✓
-	fallback string            // 没配 -sites 时的默认密钥 ✓
+	fallback string
 	apiKey   string
 	autopay  bool
-	public   string // 可选：payment_url 里用的外网前缀 ✓
+	public   string
 }
 
 func main() {
@@ -91,12 +87,9 @@ func main() {
 	flag.Parse()
 
 	s := &server{
-		orders:   map[string]*order{},
-		secrets:  map[string]string{},
-		fallback: *secret,
-		apiKey:   *apiKey,
-		autopay:  *autopay,
-		public:   strings.TrimRight(*public, "/"),
+		orders: map[string]*order{}, secrets: map[string]string{},
+		fallback: *secret, apiKey: *apiKey, autopay: *autopay,
+		public: strings.TrimRight(*public, "/"),
 	}
 	for _, part := range strings.Split(*sites, ",") {
 		part = strings.TrimSpace(part)
@@ -144,7 +137,14 @@ func (s *server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "trade_no required"})
 		return
 	}
-	amount, _ := payload["amount"].(float64) // ⚠ 单位：元 ✓
+	// ⚠ amount 是「分」（整数 ✓）。兜底：万一是元（浮点 ✓）且带小数，按分处理会失真 ✗，
+	// 所以这里明确只认整数分 ✓；字段缺失就报错 ✓（别静默按 0 处理 ✗）。
+	cents, ok := jsonInt64(payload["amount"])
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"ok": false, "error": fmt.Sprintf("amount 必须是整数「分」✗（收到 %v）", payload["amount"])})
+		return
+	}
 	currency, _ := payload["currency"].(string)
 	subject, _ := payload["subject"].(string)
 	clientEmail, _ := payload["client_email"].(string)
@@ -152,7 +152,7 @@ func (s *server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	panelSign, _ := payload["sign"].(string)
 
 	o := &order{
-		TradeNo: tradeNo, NotifyURL: notifyURL, Amount: amount, Currency: currency,
+		TradeNo: tradeNo, NotifyURL: notifyURL, AmountCents: cents, Currency: currency,
 		Subject: subject, ClientEmail: clientEmail, PanelSign: panelSign,
 		SiteID: siteIDFromNotifyURL(notifyURL), Status: "pending",
 		SiteTradeNo: "MOCK" + strconv.FormatInt(time.Now().UnixNano()%1e9, 10),
@@ -170,13 +170,29 @@ func (s *server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	s.orders[tradeNo] = o
 	s.mu.Unlock()
 
-	log.Printf("① 面板下单 ✓ trade_no=%s amount=%.2f %s notify=%s", tradeNo, amount, currency, notifyURL)
+	log.Printf("① 面板下单 ✓ trade_no=%s amount=%d 分（%s 元）%s notify=%s",
+		tradeNo, cents, o.Yuan(), currency, notifyURL)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":          true,
-		"payment_url": s.payURL(r, tradeNo),
-		"expires_in":  1800,
-		"error":       "",
+		"ok": true, "payment_url": s.payURL(r, tradeNo), "expires_in": 1800, "error": "",
 	})
+}
+
+// jsonInt64 把 JSON 数字安全地取成 int64 ✓（浮点带小数一律判非法 ✓）。
+func jsonInt64(v any) (int64, bool) {
+	switch t := v.(type) {
+	case float64:
+		if t != float64(int64(t)) {
+			return 0, false
+		}
+		return int64(t), true
+	case json.Number:
+		n, err := t.Int64()
+		return n, err == nil
+	case string:
+		n, err := strconv.ParseInt(t, 10, 64)
+		return n, err == nil
+	}
+	return 0, false
 }
 
 // verifyPanelSign 复刻面板出站签名 ✓：删掉 sign 后 json.Marshal（map 字典序 ✓）再 HMAC-SHA256 ✓。
@@ -263,17 +279,17 @@ func (s *server) pay(tradeNo, status string) (int, string, error) {
 	nonce := newNonce()
 	ts := time.Now().Unix()
 
-	// 回调 body：amount 用**元**的整数 ✓（面板按 input.Amount*100 与订单的"分"比对 ✓）
+	// 回调 body：amount 用 **分**（int64 ✓，与面板订单同一个单位 ✓）
 	body := map[string]any{
 		"trade_no":      o.TradeNo,
 		"site_trade_no": o.SiteTradeNo,
 		"status":        status, // paid / failed（不进签名载荷 ✓）
-		"amount":        int64(o.Amount),
+		"amount":        o.AmountCents,
 		"currency":      o.Currency,
 		"timestamp":     ts,
 		"nonce":         nonce,
 		"paid_currency": o.Currency,
-		"paid_amount":   int64(o.Amount),
+		"paid_amount":   o.AmountCents,
 		"method":        "alipay",
 		"exchange_rate": 1.0,
 		"paid_at":       paidAt,
@@ -288,7 +304,7 @@ func (s *server) pay(tradeNo, status string) (int, string, error) {
 
 	// 第 2~4 步：8 字段载荷（字典序 ✓）→ HMAC-SHA256(回调密钥) ✓
 	sigPayload := map[string]any{
-		"amount":        int64(o.Amount),
+		"amount":        o.AmountCents,
 		"body_hash":     bodyHash,
 		"currency":      o.Currency,
 		"nonce":         nonce,
@@ -327,7 +343,8 @@ func (s *server) pay(tradeNo, status string) (int, string, error) {
 	o.Sign = sign
 	s.mu.Unlock()
 
-	log.Printf("③ 回调面板 ✓ trade_no=%s status=%s → HTTP %d %s", o.TradeNo, status, resp.StatusCode, strings.TrimSpace(string(respBody)))
+	log.Printf("③ 回调面板 ✓ trade_no=%s status=%s amount=%d 分 → HTTP %d %s",
+		o.TradeNo, status, o.AmountCents, resp.StatusCode, strings.TrimSpace(string(respBody)))
 	return resp.StatusCode, string(respBody), nil
 }
 
@@ -405,7 +422,7 @@ const payPageHTML = `<!doctype html>
   <h1>模拟充值站点 · 收银台</h1>
   <table>
     <tr><td>订单号</td><td><code>{{.O.TradeNo}}</code></td></tr>
-    <tr><td>金额</td><td><b>{{printf "%.2f" .O.Amount}} {{.O.Currency}}</b></td></tr>
+    <tr><td>金额</td><td><b>{{.O.Yuan}} {{.O.Currency}}</b> <span style="color:#999">（{{.O.AmountCents}} 分）</span></td></tr>
     <tr><td>商品</td><td>{{.O.Subject}}</td></tr>
     <tr><td>站点 ID</td><td><code>{{.O.SiteID}}</code></td></tr>
     <tr><td>回调地址</td><td><code>{{.O.NotifyURL}}</code></td></tr>
@@ -443,7 +460,7 @@ const ordersPageHTML = `<!doctype html>
 <table><tr><th>订单号</th><th>金额</th><th>状态</th><th>面板回调</th><th>操作</th></tr>
 {{range .}}<tr>
   <td><code>{{.TradeNo}}</code></td>
-  <td>{{printf "%.2f" .Amount}} {{.Currency}}</td>
+  <td>{{.Yuan}} {{.Currency}}</td>
   <td>{{.Status}}</td>
   <td>{{if .LastCode}}HTTP {{.LastCode}}<br><code>{{.LastResult}}</code>{{else}}—{{end}}</td>
   <td><a href="/pay?trade_no={{.TradeNo}}">去支付</a></td>

@@ -1256,7 +1256,9 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 
 	// ⑪ amount + currency lock check (v3.2: 币种锁定)
 	// 充值站点 amount 单位为元，内部 order.Amount 单位为分，需要统一后比较
-	callbackAmountCents := input.Amount * 100
+	// 回调 amount 单位是 **分**（int64）✓，与 order.Amount 同单位 → 直接比较 ✓。
+	// 原来按「元」换算（input.Amount*100）✗ → 9.90 元的套餐永远对不上 ✗。
+	callbackAmountCents := input.Amount
 	if callbackAmountCents != order.Amount {
 		log.Printf("[callback] request_id=%s amount_mismatch callback=%d(yuan) order=%d(cents)", requestID, input.Amount, order.Amount)
 		recordEvent("amount_error", "AMOUNT_MISMATCH", fmt.Sprintf("callback=%d(yuan) order=%d(cents)", input.Amount, order.Amount), signValid, usedSecretVer, ipMatchRule)
@@ -1311,34 +1313,24 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 				return fmt.Errorf("order status is %s, cannot process", lockedOrder.Status)
 			}
 
-			// Step 2: SELECT balance FOR UPDATE (行锁)
-			var bal entity.ClientBalance
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error; err != nil {
-				return err
-			}
-			balanceBefore := bal.Balance
-			balanceAfter := balanceBefore + lockedOrder.Amount // v3.2: 只认 order.amount
-
-			// Step 3: INSERT ledger (先记流水)
-			txRecord := &entity.BalanceTransaction{
-				ClientID:             lockedOrder.ClientID,
-				Type:                 entity.BalanceTxTypeCharge,
-				Amount:               lockedOrder.Amount,
-				BalanceBefore:        balanceBefore,
-				BalanceAfter:         balanceAfter,
-				Currency:             bal.Currency,
-				RelatedChargeOrderID: &lockedOrder.ID,
-				Remark:               fmt.Sprintf("charge:%s", input.TradeNo),
-			}
-			if err := tx.Create(txRecord).Error; err != nil {
-				return err
+			// Step 2: 余额行锁 —— 只有"充值单"需要（套餐单不动余额，而且客户端可能还没有余额行）
+			if lockedOrder.OrderType == entity.ChargeOrderTypeCharge {
+				var bal entity.ClientBalance
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error; err != nil {
+					return err
+				}
 			}
 
-			// Step 4: UPDATE balance
-			if err := tx.Model(&entity.ClientBalance{}).
-				Where("client_id = ?", lockedOrder.ClientID).
-				Update("balance", balanceAfter).Error; err != nil {
+			// Step 3~4: 发货 —— 直接复用**权威实现** processChargePayment（tx 版）。
+			//
+			// ⚠ 这里原来写死成"给余额加钱"：对套餐订单（order_type=purchase）也会把钱充成余额，
+			// 却**不激活套餐**、套餐订单永远挂在 pending —— 用户花钱买套餐结果只拿到余额，
+			// 这是真机端到端测试抓到的 P0 金额问题。
+			// 充值卡那条路（processChargePayment）本来就分两支：充值单 → 加余额；
+			// 套餐单 → activatePlanTx + 写 plan_order。现在两条路共用同一份实现，
+			// 不再各自维护一套口径（历史上正是"两处口径不一致"埋了多个 P0）。
+			if err := s.processChargePayment(ctx, tx, &lockedOrder); err != nil {
 				return err
 			}
 
@@ -2156,6 +2148,20 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 			if err := tx.Create(planOrder).Error; err != nil {
 				return err
 			}
+			// 把"下单时创建的那条 pending 套餐订单"一起收尾。
+			// 否则用户在「我的订单」里会一直看到"待支付"，而钱其实早就付了。
+			// 作用域限定 同一客户 + 同一目标变体，避免误伤其它未支付的订单。
+			finish := tx.Model(&entity.PlanOrder{}).
+				Where("client_id = ? AND status = ?", order.ClientID, entity.OrderStatusPending)
+			if order.PlanVariantID != nil {
+				finish = finish.Where("to_variant_id = ?", *order.PlanVariantID)
+			}
+			if err := finish.Updates(map[string]interface{}{
+				"status":      entity.OrderStatusCompleted,
+				"paid_amount": order.Amount,
+			}).Error; err != nil {
+				return err
+			}
 			// 记录余额消费流水（三方充值/充值卡购买套餐）
 			if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
 				remark := "在线支付购买套餐"
@@ -2562,8 +2568,12 @@ func (s *CommerceService) requestChargeSitePayment(ctx context.Context, site *en
 	returnURL := externalURL + "/p?tab=subscription"
 	notifyURL := externalURL + "/api/v1/charge/callback/" + strconv.FormatInt(site.ID, 10)
 
+	// 金额单位统一为 **分**（与官方对接文档 CHARGE_SITE_ACCESS_GUIDE.md 一致）。
+	// 原来这里发的是「元」（float）→ 站点回传时也只能给元 ✗，而回调侧按 int64 元解析 ✗ →
+	// 像 9.90 元这种套餐价根本没法回传（回 9.9 解析失败 ✗、回 9 金额不符 ✗）→ 套餐充值永远到不了账 ✗。
+	// amount = 分（权威字段 ✓）；amount_yuan 仅供收银台展示 ✓。
 	payload := map[string]interface{}{
-		"trade_no": order.TradeNo, "amount": order.Amount / 100.0, "currency": order.Currency,
+		"trade_no": order.TradeNo, "amount": order.Amount, "amount_yuan": float64(order.Amount) / 100.0, "currency": order.Currency,
 		"subject": "CoreFusion 充值", "notify_url": notifyURL,
 		"return_url": returnURL, "client_email": maskEmail(client.Email),
 		"timestamp": time.Now().Unix(),

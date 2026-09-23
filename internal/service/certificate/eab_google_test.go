@@ -121,3 +121,49 @@ func TestEABConfigNeverLeaksGoogleSA(t *testing.T) {
 		t.Fatalf("DB 里应保留服务账号（供自动再申请 ✓）")
 	}
 }
+
+// 容错：只粘"最小字段集"时自动补 type / token_uri ✓（少两行不该报错 ✗）
+func TestNormalizeServiceAccountJSONMinimal(t *testing.T) {
+	raw := `{"client_email":"a@b.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n"}`
+	out, err := normalizeServiceAccountJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"type":"service_account"`) || !strings.Contains(out, "oauth2.googleapis.com/token") {
+		t.Fatalf("应自动补 type/token_uri ✓：%s", out)
+	}
+}
+
+// 粘成 API Key ✓ → 必须说清"这是 API Key，没用"，并给出替代路径 ✓
+func TestNormalizeServiceAccountJSONRejectsAPIKey(t *testing.T) {
+	_, err := normalizeServiceAccountJSON("AIzaSyD-abcdefghijklmnop")
+	if err == nil {
+		t.Fatal("API Key 必须被拒绝 ✗")
+	}
+	if !strings.Contains(err.Error(), "API Key") || !strings.Contains(err.Error(), "EAB-KID") {
+		t.Fatalf("提示应讲清它是 API Key 并给出替代方案 ✓：%v", err)
+	}
+}
+
+// 完整 JSON 但缺 client_email/private_key ✓ → 提示要的是密钥文件 ✓
+func TestNormalizeServiceAccountJSONMissingFields(t *testing.T) {
+	_, err := normalizeServiceAccountJSON(`{"type":"service_account","project_id":"p"}`)
+	if err == nil || !strings.Contains(err.Error(), "client_email") {
+		t.Fatalf("应指出缺 client_email / private_key ✓：%v", err)
+	}
+}
+
+// 非 JSON（比如只粘了一行 / 粘了文件路径 ✓）→ 明确提示要"整个文件内容" ✓
+func TestNormalizeServiceAccountJSONNotJSON(t *testing.T) {
+	_, err := normalizeServiceAccountJSON("/root/corefusion-eab.json")
+	if err == nil || !strings.Contains(err.Error(), "完整内容") {
+		t.Fatalf("应提示要给整个文件内容：%v", err)
+	}
+}
+
+// 空 ✓
+func TestNormalizeServiceAccountJSONEmpty(t *testing.T) {
+	if _, err := normalizeServiceAccountJSON("   "); err == nil {
+		t.Fatal("空必须报错 ✗")
+	}
+}

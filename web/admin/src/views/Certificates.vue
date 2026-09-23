@@ -205,7 +205,7 @@
             <el-input v-model="googleProjectID" :placeholder="t('certificate.googleProjectIDPlaceholder')" />
           </el-form-item>
           <el-form-item :label="t('certificate.googleSA')">
-            <el-input v-model="googleSAJSON" type="textarea" :rows="4"
+            <el-input v-model="googleSAJSON" type="textarea" :rows="5"
                       :placeholder="t('certificate.googleSAPlaceholder')" />
             <div style="font-size:11px;color:#909399;line-height:1.5;margin-top:4px">
               {{ t('certificate.googleSAHint') }}

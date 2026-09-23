@@ -1405,9 +1405,9 @@ export default {
   certificate: {
     googleProjectID: 'GCP 项目 ID',
     googleProjectIDPlaceholder: '例如 my-project-123456',
-    googleSA: '服务账号 JSON',
-    googleSAPlaceholder: '把服务账号密钥 JSON 整个粘进来（推荐，可长期复用）',
-    googleSAHint: '需要该服务账号具备 roles/publicca.externalAccountKeyCreator，且项目已启用 publicca.googleapis.com。不会展示回前端。',
+    googleSA: '服务账号密钥文件',
+    googleSAPlaceholder: '把下载到的 xxx.json 的【全部内容】粘进来（这个文件本身就是那把 key，只是以 JSON 形式给出）',
+    googleSAHint: '注意：不是 API Key（AIza… 那种在这里没用）。要的是 GCP「IAM → 服务账号 → 密钥 → 创建新密钥 → JSON」下载的文件内容；该服务账号需具备 roles/publicca.externalAccountKeyCreator，项目需启用 publicca.googleapis.com。不会回显到前端。不想给文件也可以：① 改用临时 Access Token；② 直接手填下面的 EAB-KID / EAB-HMAC-Key（用 gcloud 生成一次）。',
     googleAccessToken: '或临时 Access Token',
     googleAccessTokenPlaceholder: 'gcloud auth print-access-token 的结果（约 1 小时有效，不会保存）',
     googleAccessTokenHint: '只想快速试一次时用这个；填了它就不用服务账号 JSON。',

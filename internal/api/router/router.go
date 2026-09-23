@@ -3320,16 +3320,6 @@ func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH 
 
 }
 
-// placeholder returns a handler that returns 501 Not Implemented.
-func placeholder(name string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(501, gin.H{
-			"code":    "NOT_IMPLEMENTED",
-			"message": name + " not yet implemented",
-		})
-	}
-}
-
 // isSPARoute checks if a path matches a known SPA route.
 // Supports both exact matches and dynamic sub-routes (e.g. /node-servers/1/detail).
 func isSPARoute(path string) bool {

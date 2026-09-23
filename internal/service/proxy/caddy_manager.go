@@ -812,7 +812,8 @@ func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, port string, enable
 	}
 	count := 0
 	for _, site := range sites {
-		if site.Template == "l4" || site.Template == "sni" {
+		// l4/sni/**Reality** 这些模板本来就不监听 443 ✓（Reality 固定用 9443 之类 ✓），一起改会把站点搞坏 ✗
+		if site.Template == "l4" || site.Template == "sni" || site.Template == "reality" {
 			continue
 		}
 		if site.CertPath == "" {
@@ -825,11 +826,12 @@ func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, port string, enable
 			}
 			site.Domain = domain + ":" + port
 		} else {
-			if idx := strings.LastIndex(domain, ":"); idx > 0 {
-				site.Domain = domain[:idx]
-			} else {
+			// 回滚只去掉**正是这次迁移加上的**后缀 ✓（原来无脑去掉最后一个 `:xx` ✗ 会改坏 `:9443` 之类 ✗）
+			suffix := ":" + port
+			if !strings.HasSuffix(domain, suffix) {
 				continue
 			}
+			site.Domain = strings.TrimSuffix(domain, suffix)
 		}
 		if err := m.siteRepo.Update(ctx, &site); err != nil {
 			continue

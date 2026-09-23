@@ -2554,26 +2554,28 @@ func (m *Manager) SaveSNISettings(ctx context.Context, settings *SNISettings) er
 // Caddy: adds/removes :port suffix on domain (e.g. example.com -> example.com:8443).
 // Nginx: only changes listen_port, domain stays unchanged.
 // Only affects sites with TLS (cert_path set) — port 80 HTTP sites are untouched.
+// publicHTTPSPort 是**公网 HTTPS 的入口端口** ✓ —— 一键迁移只针对监听它的站点 ✓。
+//
+// ⚠ 不能用设置里的 `default_https_port` 当判断依据 ✗：前端点「一键迁移」会**先把它改成**
+// 迁移目标端口（如 8443 ✓）再调本接口 ✓ → 那时它已不是"源端口" ✗，结果"一个站点都迁不动" ✗
+// （真机实测踩到 ✓：443 的站点没被迁移 ✓、日志却是 updated:1 ✗）。所以这里用字面 443 ✓。
+const publicHTTPSPort = "443"
+
+// BatchUpdatePorts updates HTTPS site listen ports and proxy_protocol.
+//
+// 迁移（enable=true）**只针对当前监听公网 443 的站点** ✓；l4/sni/reality 与自定义端口的站点一律不动 ✓。
+// 回滚（enable=false）只还原"当前正监听迁移端口"的那批 ✓。
 func (m *Manager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
 	sites, err := m.siteRepo.List(ctx, m.serverID)
 	if err != nil {
 		return 0, err
 	}
-	// Read default HTTPS port from nginx settings
-	defaultHttpsPort := "443"
-	if m.settingStore != nil {
-		if v, err := m.settingStore.GetByKey(ctx, "proxy.nginx_settings"); err == nil && v != "" {
-			var s NginxSettings
-			if json.Unmarshal([]byte(v), &s) == nil && s.DefaultHttpsPort != "" {
-				defaultHttpsPort = s.DefaultHttpsPort
-			}
-		}
-	}
 
 	count := 0
 	for _, site := range sites {
-		// Skip L4/SNI sites
-		if site.Template == "l4" || site.Template == "sni" {
+		// l4/sni/**Reality** 这些模板本来就不监听 443 ✓（Reality 固定用 9443 之类 ✓），
+		// 一起改会把站点直接搞坏 ✗（用户报的 bug ✓）。
+		if site.Template == "l4" || site.Template == "sni" || site.Template == "reality" {
 			continue
 		}
 		// Only migrate HTTPS sites (have TLS cert), skip plain HTTP
@@ -2584,26 +2586,38 @@ func (m *Manager) BatchUpdatePorts(ctx context.Context, port string, enable bool
 		if site.ProxyType == "nginx" {
 			// Nginx: change listen_port and proxy_protocol
 			if enable {
+				// **只迁移当前监听公网 443 的站点** ✓：原来只判断"有证书" ✗ →
+				// Reality（有证书却监听 9443 ✓）、自定义端口（2053 等 ✓）都会被误改 ✗。
+				if site.ListenPort != publicHTTPSPort {
+					continue
+				}
 				site.ListenPort = port
 				site.ProxyProtocol = true
 			} else {
-				site.ListenPort = defaultHttpsPort
+				// 回滚只还原当初被迁移的（现在正监听迁移端口 ✓），别的站点不碰 ✓
+				if site.ListenPort != port {
+					continue
+				}
+				site.ListenPort = publicHTTPSPort
 				site.ProxyProtocol = false
 			}
 		} else {
 			// Caddy: add/remove :port suffix on domain
 			domain := site.Domain
 			if enable {
+				// 带 `:端口` 的说明不是 443 ✓（Reality 的 `:9443` 等 ✓）→ 跳过 ✓
 				if strings.Contains(domain, ":") {
 					continue
 				}
 				site.Domain = domain + ":" + port
 			} else {
-				if idx := strings.LastIndex(domain, ":"); idx > 0 {
-					site.Domain = domain[:idx]
-				} else {
+				// 回滚只去掉**正是这次迁移加上的**后缀 ✓
+				//（原来无脑去掉最后一个 `:xx` ✗ → 会把 `:9443` 这类站点改坏 ✗）
+				suffix := ":" + port
+				if !strings.HasSuffix(domain, suffix) {
 					continue
 				}
+				site.Domain = strings.TrimSuffix(domain, suffix)
 			}
 		}
 

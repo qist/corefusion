@@ -40,6 +40,13 @@ type Handler struct {
 	geoRuleSvc        *geoRuleSvc.Service
 }
 
+// LandLocalCertFilesFn 由 router 注入 ✓：把"**关联到本机节点**的证书"落地到面板磁盘 ✓。
+//
+// 为什么用注入 ✗：nodeserver 这层拿不到证书服务 ✓（避免 import 环 ✓），
+// 沿用本仓库既有的做法 ✓（同 `autoDistributeCertFn` ✓）。
+// 语义 ✓：**面板自身也是一个节点** ✓ —— 关联到它的证书才写文件 ✓（跟 Agent 一样 ✓）。
+var LandLocalCertFilesFn func(ctx context.Context, certID int64) error
+
 // NewHandler creates a new node server handler.
 func NewHandler(svc *nodeserverSvc.Service) *Handler {
 	return &Handler{svc: svc}
@@ -1031,6 +1038,16 @@ func (h *Handler) AssociateCertificate(c *gin.Context) {
 		h.auditLog(c, id, "associate_cert", fmt.Sprintf("cert %d", cid), false, err.Error())
 		response.InternalError(c, "ASSOCIATE_FAILED", err.Error())
 		return
+	}
+
+	// 面板本身也是一个节点 ✓ —— **关联到本机**的证书就把它**落地成文件** ✓（跟 Agent 一样 ✓）；
+	// 只被远端节点使用的证书**不落地** ✗（库里那份完整副本就够了 ✓）。
+	if h.svc.IsLocalServer(c.Request.Context(), id) && LandLocalCertFilesFn != nil {
+		if lerr := LandLocalCertFilesFn(c.Request.Context(), cid); lerr != nil {
+			log.Printf("[nodeserver] 证书 %d 落地到面板本机失败：%v", cid, lerr)
+		} else {
+			log.Printf("[nodeserver] 证书 %d 已落地到面板本机（本机节点 %d ✓）", cid, id)
+		}
 	}
 
 	h.auditLog(c, id, "associate_cert", fmt.Sprintf("associated certificate %d", cid), true, "")

@@ -7,13 +7,17 @@
         <el-button @click="showChannelDialog">{{ t('certificate.manageChannels') }}</el-button>
         <el-button @click="showEABDialog">{{ t('certificate.manageEAB') }}</el-button>
         <el-button @click="showUploadDialog">{{ t('certificate.upload') }}</el-button>
+        <el-button :disabled="!selectedCerts.length" :loading="downloadingBatch" @click="downloadBatch">
+          {{ t('certificate.batchDownload') }}<span v-if="selectedCerts.length">（{{ selectedCerts.length }}）</span>
+        </el-button>
         <el-button type="primary" @click="showIssueDialog">{{ t('certificate.issue') }}</el-button>
       </div>
     </div>
 
     <!-- Certificate List -->
     <el-card>
-      <el-table :data="certificates" v-loading="loading" stripe>
+      <el-table :data="certificates" v-loading="loading" stripe @selection-change="onCertSelectionChange">
+        <el-table-column type="selection" width="46" />
         <el-table-column prop="name" :label="t('certificate.certName')" width="160" />
         <el-table-column :label="t('certificate.domain')" min-width="300">
           <template #default="{row}">
@@ -40,8 +44,20 @@
         <el-table-column :label="t('certificate.expiresAt')" width="180">
           <template #default="{row}">{{ formatDate(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="340">
+        <el-table-column :label="t('common.actions')" width="430">
           <template #default="{row}">
+            <!-- 下载：浏览器无法自定义请求头 ✗ → 先换一次性票据再拼 ?ticket= ✓（scope=cert_download ✓）-->
+            <el-dropdown size="small" trigger="click" style="margin-right:8px" @command="(f) => downloadCert(row, f)">
+              <el-button size="small" plain>{{ t('certificate.download') }}</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="zip">{{ t('certificate.downloadZip') }}</el-dropdown-item>
+                  <el-dropdown-item command="cert">{{ t('certificate.downloadCertOnly') }}</el-dropdown-item>
+                  <el-dropdown-item command="fullchain">{{ t('certificate.downloadFullchain') }}</el-dropdown-item>
+                  <el-dropdown-item command="key">{{ t('certificate.downloadKey') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button size="small" type="primary" plain :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
             <el-button size="small" type="warning" plain @click="showMigrateDialog(row)">{{ t('certificate.migrate') }}</el-button>
             <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
@@ -431,11 +447,18 @@ import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../composables/useQueryState'
 import PaginationBar from '../components/PaginationBar.vue'
 import client from '../api/client'
+import { requestTicket } from '../api/logManage'
 
 const { t } = useI18n()
 
 // Certificates
 const certificates = ref([])
+// 下载相关：多选 + 批量打包 ✓
+const selectedCerts = ref([])
+const downloadingBatch = ref(false)
+function onCertSelectionChange(rows) {
+  selectedCerts.value = rows || []
+}
 const loading = ref(false)
 const page = useQueryState('certPage', 1, { type: 'number' })
 const pageSize = useQueryState('certPageSize', 20, { type: 'number' })
@@ -911,4 +934,40 @@ async function handleUpload() {
 }
 
 onMounted(() => { fetchCertificates(); fetchChannels(); fetchEmails(); fetchProviders(); fetchNodes() })
+
+// openWithTicket 用"一次性票据"打开下载 ✓。
+//
+// 为什么必须这样 ✗：浏览器下载（window.open / <a download>）**无法自定义请求头** ✗，
+// 以前只能把长期 token 拼进 URL ✓（会进访问日志/浏览器历史 ✓）。现在先换一张 60 秒、
+// 一次性、且**只对证书下载路径生效**的票据 ✓（后端口径见 middleware.ticketRouteScopes ✓）。
+async function openWithTicket(path) {
+  const ticket = await requestTicket('cert_download')
+  if (!ticket) { ElMessage.error(t('common.failed')); return }
+  const base = client.defaults.baseURL || '/api/v1'
+  const url = `${base}${path}${path.includes('?') ? '&' : '?'}ticket=${encodeURIComponent(ticket)}`
+  window.open(url, '_blank')
+}
+
+// 单个证书：zip（打包 ✓，默认）/ cert（仅叶 ✓）/ fullchain（叶+链 ✓）/ key（私钥 ✓）
+function downloadCert(row, format) {
+  openWithTicket(`/certificates/${row.id}/download?format=${format}`)
+    .catch(() => ElMessage.error(t('common.failed')))
+}
+
+// 批量打包：每张一个目录 ✓（根目录附清单 README ✓）
+async function downloadBatch() {
+  if (!selectedCerts.value.length) {
+    ElMessage.warning(t('certificate.selectFirst'))
+    return
+  }
+  downloadingBatch.value = true
+  try {
+    const ids = selectedCerts.value.map(r => r.id).join(',')
+    await openWithTicket(`/certificates/export?ids=${ids}`)
+  } catch (e) {
+    ElMessage.error(t('common.failed'))
+  } finally {
+    downloadingBatch.value = false
+  }
+}
 </script>

@@ -135,7 +135,7 @@ func (h *Handler) IssueTicket(c *gin.Context) {
 		scope = auth.TicketScopeLogs
 	}
 	switch scope {
-	case auth.TicketScopeLogs, auth.TicketScopeBackupDownload:
+	case auth.TicketScopeLogs, auth.TicketScopeBackupDownload, auth.TicketScopeCertDownload:
 	default:
 		response.BadRequest(c, "INVALID_SCOPE", "unsupported ticket scope")
 		return

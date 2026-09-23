@@ -14,6 +14,7 @@ const (
 	TicketScopeLogs           = "logs"            // 管理端：核心/代理日志（含 SSE 流）
 	TicketScopeBackupDownload = "backup_download" // 管理端：备份文件下载
 	TicketScopeClientDownload = "client_download" // 客户端：日志包下载
+	TicketScopeCertDownload   = "cert_download"   // 管理端：证书下载 / 打包下载 ✓
 )
 
 // 票据主体类型。

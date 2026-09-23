@@ -116,24 +116,36 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	if err := os.WriteFile(filepath.Join(s.dataDir, keyRel), []byte(in.KeyPEM), 0600); err != nil {
 		return nil, err
 	}
+	// ⚠ 节点签出来的证书原本**只有 cert.pem** ✗（真机：那几张记录的 fullchain_path 是空的 ✓），
+	// 而磁盘上按惯例应当有 fullchain.pem ✓ —— 补上 ✓：优先用回传的 FullchainPEM ✓，
+	// 没有就用 CertPEM ✓（ACME 返回的本身就含中间链 ✓，详见 pemutil.go 的说明 ✓）。
+	fullchainPEM := strings.TrimSpace(in.FullchainPEM)
+	if fullchainPEM == "" {
+		fullchainPEM = in.CertPEM
+	}
+	fullchainRel := filepath.Join("certs", sanitizeDomain(name), "fullchain.pem")
+	if err := os.WriteFile(filepath.Join(s.dataDir, fullchainRel), []byte(fullchainPEM), 0600); err != nil {
+		return nil, err
+	}
 
 	if existing == nil {
 		existing = &entity.Certificate{
-			Name:         name,
-			Domain:       domain,
-			Domains:      sans,
-			Issuer:       issuer,
-			IssuerNodeID: in.ServerID,
-			ProviderType: "acme",
-			KeyType:      keyType,
-			KeyBits:      keyBits,
-			CertPath:     certRel,
-			KeyPath:      keyRel,
-			CertContent:  in.CertPEM,
-			KeyContent:   in.KeyPEM,
-			Status:       "active",
-			AutoRenew:    1,
-			ExpiresAt:    expiresAt,
+			Name:          name,
+			Domain:        domain,
+			Domains:       sans,
+			Issuer:        issuer,
+			IssuerNodeID:  in.ServerID,
+			ProviderType:  "acme",
+			KeyType:       keyType,
+			KeyBits:       keyBits,
+			CertPath:      certRel,
+			KeyPath:       keyRel,
+			FullchainPath: fullchainRel,
+			CertContent:   in.CertPEM,
+			KeyContent:    in.KeyPEM,
+			Status:        "active",
+			AutoRenew:     1,
+			ExpiresAt:     expiresAt,
 		}
 		if err := s.repo.Create(ctx, existing); err != nil {
 			return nil, err
@@ -152,6 +164,7 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	existing.KeyBits = keyBits
 	existing.CertPath = certRel
 	existing.KeyPath = keyRel
+	existing.FullchainPath = fullchainRel
 	existing.CertContent = in.CertPEM
 	existing.KeyContent = in.KeyPEM
 	existing.Status = "active"

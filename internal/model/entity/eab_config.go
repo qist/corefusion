@@ -19,10 +19,17 @@ type EABConfig struct {
 	// MACKey 即 EAB-HMAC-Key ✓ —— 是**密钥** ✗ → `json:"-"` 永不外泄 ✓（前端只看 has_mac_key ✓）
 	MACKey string `json:"-" gorm:"size:1024"`
 	// HasMACKey 只用于回给前端"这份配置填过 HMAC-Key 没有" ✓（不落库 ✓）
-	HasMACKey bool      `json:"has_mac_key" gorm:"-"`
-	Status    string    `json:"status" gorm:"size:32;not null;default:'active'"`
-	CreatedAt time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
+	HasMACKey bool `json:"has_mac_key" gorm:"-"`
+	// ── 下面两项只在"用 GCP 授权自动申请 Google EAB"时才有 ✓ ──
+	GoogleProjectID string `json:"google_project_id" gorm:"size:128"`
+	// GoogleSAJSON：服务账号 JSON ✓ —— **是凭据** ✗ → `json:"-"` 永不外泄 ✓。
+	// 存它是为了 EAB 过期（Google 是 7 天 + 一次性 ✗）后能**自动再申请一把** ✓。
+	GoogleSAJSON string `json:"-" gorm:"type:text"`
+	// HasGoogleSA 只回给前端"存过服务账号没有" ✓（不落库 ✓）
+	HasGoogleSA bool      `json:"has_google_sa" gorm:"-"`
+	Status      string    `json:"status" gorm:"size:32;not null;default:'active'"`
+	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (EABConfig) TableName() string { return "eab_configs" }

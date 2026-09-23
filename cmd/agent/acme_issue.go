@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,7 +28,15 @@ type acmeIssueParams struct {
 	DNSProvider string            // dns-01 用
 	DNSEnvVars  map[string]string // dns-01 凭据
 	Timeout     time.Duration     // 整体超时（0 = 5 分钟）
+	// EAB：Google / ZeroSSL **注册 ACME 账号时必填** ✗（面板按 CA 自动关联后下发 ✓）。
+	EABKeyID  string
+	EABMACKey string
 }
+
+// defaultAgentACMECertDir 是节点侧 ACME 数据目录的**固定绝对默认值** ✓。
+// 里面存的是 ACME **账号**（每 CA 一份 `<ca>.json` ✓）+ 产物 ✓ ——
+// 账号身份文件丢了就得重新注册 ✗（Google 要新 EAB ✗），所以路径必须稳定 ✓。
+const defaultAgentACMECertDir = "/var/lib/corefusion-agent/acme"
 
 // issuedCert 是一次成功签发的结果 ✓。
 type issuedCert struct {
@@ -80,13 +89,27 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 
 	dataDir := strings.TrimSpace(p.DataDir)
 	if dataDir == "" {
-		dataDir = "./acme-certs"
+		dataDir = defaultAgentACMECertDir
+	}
+	// ⚠⚠ 必须**固定成绝对路径** ✗：相对路径（原来的 "./acme-certs" ✗）会随进程 CWD 漂移 ✗
+	// → ACME **账号文件找不到** ✗ → 每次都重新注册 ✗ → Google 那种"7 天一次性"的 EAB
+	// 会被反复消耗、必然失败 ✗（用户问到过这个隐患 ✓）。绝对路径 + MkdirAll 才能"注册一次、长期续期" ✓。
+	if abs, aerr := filepath.Abs(dataDir); aerr == nil {
+		dataDir = abs
+	}
+	if merr := os.MkdirAll(dataDir, 0o750); merr != nil {
+		return nil, fmt.Errorf("create acme data dir %s: %w", dataDir, merr)
 	}
 
 	opts := cert.IssueOptions{
 		Domains:       domains,
 		ChallengeType: cert.ChallengeType(challenge),
 		Profile:       prof,
+	}
+	// 首次申请即"自动注册"✓：把面板下发的 EAB 交给 lego ✓（账号已在本地时它不会再用 EAB ✓）
+	if strings.TrimSpace(p.EABKeyID) != "" && strings.TrimSpace(p.EABMACKey) != "" {
+		opts.EAB = &cert.EABConfig{KeyID: strings.TrimSpace(p.EABKeyID), MACKey: strings.TrimSpace(p.EABMACKey)}
+		log.Printf("[acme] 携带 EAB（仅注册用 ✓）kid=%s", strings.TrimSpace(p.EABKeyID))
 	}
 
 	var client *cert.ACMEClient
@@ -127,7 +150,7 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	log.Printf("[acme] 开始签发：SAN=%v challenge=%s ca=%s profile=%q", domains, challenge, provider, prof)
+	log.Printf("[acme] 开始签发：SAN=%v challenge=%s ca=%s profile=%q data_dir=%s（账号会落在这里 ✓）", domains, challenge, provider, prof, dataDir)
 	result, err := client.Issue(ctx, opts)
 	if err != nil {
 		return nil, err

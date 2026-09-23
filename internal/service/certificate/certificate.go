@@ -58,6 +58,15 @@ func (s *Service) GetHTTP01Provider() *cert.HTTP01Provider {
 	return s.http01Provider
 }
 
+// SetDefaultACMEEmail 设置面板本机的默认 ACME 账号邮箱 ✓ ——
+// ⚠ 不设的话注册时"没有联系邮箱" ✗：Let's Encrypt 能忍 ✓，**Google 直接拒** ✗
+// （`Accounts must have at least one contact.` ✓，真机踩到 ✓）。续期路径也吃这一份 ✓。
+func (s *Service) SetDefaultACMEEmail(email string) {
+	if strings.TrimSpace(email) != "" {
+		s.acmeEmail = strings.TrimSpace(email)
+	}
+}
+
 // getACMEClient returns an ACME client for the given CA provider.
 //
 // email 非空时优先用它 ✓（面板的 ACME 账号配置 ✓）；为空则退回服务级默认 ✓。

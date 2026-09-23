@@ -90,6 +90,8 @@ type NodeServerManager struct {
 	// publicCertRenewer 负责**公网证书**（ACME 签的域名/IP 证书 ✓）的自动续期 ✓；
 	// 与上面 certRenewer（Agent 的 mTLS 证书 ✓）是两件事 ✗。
 	publicCertRenewer *PublicCertRenewer
+	// publicCertEnv 给"节点续期"补注册上下文（邮箱 + 按 CA 的 EAB ✓）
+	publicCertEnv PublicCertIssuanceEnv
 
 	// Agent updater: tracks pending Agent binary updates and verifies
 	// version on reconnect. Set via SetAgentUpdater.
@@ -1173,6 +1175,20 @@ func (m *NodeServerManager) ListOnlineServers() []int64 {
 }
 
 // SendCommand sends a PanelCommand to a specific server via the heartbeat stream.
+// SetPublicCertIssuanceEnv 注入"续期时按 CA 取邮箱/EAB"的能力 ✓
+// （由 router 用 ACME 账号服务 + EAB 配置服务接起来 ✓，避免本包反向依赖 service ✗）。
+func (m *NodeServerManager) SetPublicCertIssuanceEnv(e PublicCertIssuanceEnv) {
+	m.publicCertEnv = e
+}
+
+// IssuanceContextFor 实现 PublicCertIssuer ✓（续期器据此补齐注册上下文 ✓）。
+func (m *NodeServerManager) IssuanceContextFor(ctx context.Context, caProvider string) (string, string, string) {
+	if m == nil || m.publicCertEnv == nil {
+		return "", "", ""
+	}
+	return m.publicCertEnv.IssuanceContextFor(ctx, caProvider)
+}
+
 // SetPublicCertSink 注入"Agent 签好的公网证书怎么落库"（由证书服务实现 ✓）。
 func (m *NodeServerManager) SetPublicCertSink(s PublicCertSink) {
 	m.publicCertSink = s

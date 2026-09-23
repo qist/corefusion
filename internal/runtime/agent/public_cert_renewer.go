@@ -57,6 +57,10 @@ type PublicCertRenewer struct {
 
 // PublicCertIssuer 是"把签发指令下发给节点"的能力（由 NodeServerManager 实现 ✓）。
 type PublicCertIssuer interface {
+	// IssuanceContextFor 返回"给这个 CA 签发/续期时所需的注册上下文"（邮箱 + EAB ✓）。
+	// ⚠ 续期也必须带上这些 ✗：否则节点会用**自己的默认 CA**去签 ✗（真机审计发现过 ✓），
+	// 而且 Google/ZeroSSL 首次注册需要 EAB ✗。返回空串表示没有 ✓（尽力而为 ✓）。
+	IssuanceContextFor(ctx context.Context, caProvider string) (email, eabKID, eabMAC string)
 	IssuePublicCert(ctx context.Context, serverID int64, cmd *agentpb.IssuePublicCertCommand) error
 }
 
@@ -76,6 +80,11 @@ type PublicCertResult struct {
 
 // PublicCertSink 由面板的证书服务实现：把 Agent 签好的证书落盘落库 ✓，
 // 并返回面板侧的证书 ID（调用方据此把证书绑定到签发它的节点 ✓ → 自动续期才有目标 ✓）。
+// PublicCertIssuanceEnv 由面板注入：按 CA 给出邮箱与 EAB ✓（与"签发时按 CA 自动关联"同源 ✓）。
+type PublicCertIssuanceEnv interface {
+	IssuanceContextFor(ctx context.Context, caProvider string) (email, eabKID, eabMAC string)
+}
+
 type PublicCertSink interface {
 	StoreAgentIssuedCert(ctx context.Context, res *PublicCertResult) (int64, error)
 }
@@ -176,6 +185,33 @@ func (r *PublicCertRenewer) thresholdFor(identifiers []string) time.Duration {
 	return renewThresholdFor(identifiers)
 }
 
+// buildIssueCommand 组装"让节点去签发/续期"的指令 ✓。
+//
+// ⚠ 必须带上 CA / 邮箱 / EAB ✗ —— 原来只带 CertId + Identifiers ✗，导致三个真问题 ✓：
+//
+//	① 不带 CA：节点会用**自己的默认 CA（Let's Encrypt）**去续签 ✗ → 签发者被悄悄换掉 ✗
+//	   （Google 的证书续成 LE 的 ✗，审计时发现 ✓）；
+//	② 不带邮箱：Google 注册直接拒 ✗（`Accounts must have at least one contact.` ✓）；
+//	③ 不带 EAB：Google / ZeroSSL 在节点上**首次注册就会失败** ✗。
+//
+// 带上之后：节点**第一次申请即自动注册** ✓，账号落在节点固定目录 ✓，
+// 之后续期只用账号密钥 ✓ —— **再也不会消耗新 EAB** ✓（正是要的效果 ✓）。
+func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64, issuer string, identifiers []string) *agentpb.IssuePublicCertCommand {
+	ca := normalizeCertCA(issuer)
+	email, eabKID, eabMAC := "", "", ""
+	if r.issuer != nil {
+		email, eabKID, eabMAC = r.issuer.IssuanceContextFor(ctx, ca)
+	}
+	return &agentpb.IssuePublicCertCommand{
+		CertId:      certID,
+		Identifiers: identifiers,
+		Ca:          ca,
+		Email:       email,
+		EabKeyId:    eabKID,
+		EabMacKey:   eabMAC,
+	}
+}
+
 // checkAndRenew 找出"快到期 + 开了自动续期"的证书，交给绑定节点的 Agent 在本机续 ✓。
 func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 	if r.issuer == nil {
@@ -213,10 +249,7 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 			if srv.IsLocal {
 				continue // 面板本机不需要远程签发 ✓
 			}
-			cmd := &agentpb.IssuePublicCertCommand{
-				CertId:      c.ID,
-				Identifiers: identifiers,
-			}
+			cmd := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers)
 			if err := r.issuer.IssuePublicCert(ctx, srv.ID, cmd); err != nil {
 				log.Printf("[PublicCertRenewer] cert %d (%v) → server %d: issue command failed: %v",
 					c.ID, identifiers, srv.ID, err)
@@ -286,12 +319,38 @@ func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID in
 			}
 			log.Printf("[PublicCertRenewer] (on-reconnect) cert %d (%v) expiring %s → server %d",
 				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339), srv.ID)
-			if err := r.issuer.IssuePublicCert(ctx, srv.ID, &agentpb.IssuePublicCertCommand{
-				CertId:      c.ID,
-				Identifiers: identifiers,
-			}); err != nil {
+			if err := r.issuer.IssuePublicCert(ctx, srv.ID,
+				r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers)); err != nil {
 				log.Printf("[PublicCertRenewer] (on-reconnect) cert %d → server %d failed: %v", c.ID, srv.ID, err)
 			}
 		}
+	}
+}
+
+// normalizeCertCA 把面板库里存的 issuer 归一成 CAProvider 取值 ✓。
+//
+// 库里历史数据格式不一 ✗：ACME 签发存的是 `lets_encrypt` / `google` / `zerossl` ✓，
+// 早期上传的存的是 `Let's Encrypt` ✗ → 这里统一成小写下划线形式 ✓。
+// 认不出来的返回空串 ✓ —— 此时**不强行下发 CA** ✗（宁可让节点用默认值 ✓，
+// 也不能把 Google 的证书错续成 LE ✗），同时打日志提醒 ✓。
+func normalizeCertCA(issuer string) string {
+	v := strings.ToLower(strings.TrimSpace(issuer))
+	v = strings.ReplaceAll(v, "'", "")
+	v = strings.ReplaceAll(v, " ", "_")
+	switch {
+	case v == "":
+		return ""
+	case strings.Contains(v, "lets_encrypt") || strings.Contains(v, "letsencrypt"):
+		if strings.Contains(v, "staging") {
+			return "lets_encrypt_staging"
+		}
+		return "lets_encrypt"
+	case strings.Contains(v, "zerossl"):
+		return "zerossl"
+	case strings.Contains(v, "google"):
+		return "google"
+	default:
+		log.Printf("[PublicCertRenewer] 无法从 issuer=%q 判断 CA ✗ → 不下发 CA（节点用自己的默认值 ✓）", issuer)
+		return ""
 	}
 }

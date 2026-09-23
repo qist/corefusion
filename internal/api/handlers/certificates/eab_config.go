@@ -117,3 +117,38 @@ func (h *EABHandler) FetchZeroSSL(c *gin.Context) {
 	}
 	response.Created(c, cfg)
 }
+
+// FetchGoogle handles POST /api/v1/eab-configs/fetch-google.
+//
+// 用 **GCP 授权**创建一对 Google Public CA 的 EAB 并存下来 ✓ ——
+// 这是"Google 自动申请 EAB"的正规做法 ✓：Google **不像 ZeroSSL 能用邮箱换** ✗，
+// **必须先有 GCP 授权** ✓（服务账号 JSON ✓ 或临时 access token ✓）。
+//
+// 前置条件（详见 docs/cert-google-eab.md ✓）：
+//  1. 启用 Public CA API：`gcloud services enable publicca.googleapis.com` ✓
+//  2. 授权角色：`roles/publicca.externalAccountKeyCreator` ✓
+//
+// ⚠ 记得官方规则 ✓：EAB **7 天内必须用掉 + 只能注册一个账号** ✗；
+// 但注册出的 ACME 账号**不过期** ✓ → 续期不需要 EAB ✓。
+func (h *EABHandler) FetchGoogle(c *gin.Context) {
+	var req struct {
+		ProjectID          string `json:"project_id" binding:"required"`
+		ServiceAccountJSON string `json:"service_account_json"`
+		AccessToken        string `json:"access_token"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if req.ServiceAccountJSON == "" && req.AccessToken == "" {
+		response.BadRequest(c, "GOOGLE_AUTH_REQUIRED",
+			"provide either service_account_json (recommended) or access_token")
+		return
+	}
+	cfg, err := h.svc.FetchGoogleEAB(c.Request.Context(), req.ProjectID, req.ServiceAccountJSON, req.AccessToken)
+	if err != nil {
+		response.BadRequest(c, "GOOGLE_EAB_FAILED", err.Error())
+		return
+	}
+	response.Created(c, cfg)
+}

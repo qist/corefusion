@@ -14,8 +14,18 @@ import (
 )
 
 type fakeIssuer struct {
-	got   []*agentpb.IssuePublicCertCommand
-	which []int64
+	got      []*agentpb.IssuePublicCertCommand
+	which    []int64
+	envEmail string
+	envErr   bool
+}
+
+// 续期时面板要按 CA 给出邮箱与 EAB ✓（真实实现由 router 的 publicCertEnvAdapter 提供 ✓）
+func (f *fakeIssuer) IssuanceContextFor(ctx context.Context, caProvider string) (string, string, string) {
+	if f.envErr {
+		return "", "", ""
+	}
+	return f.envEmail, "kid-" + caProvider, "mac-" + caProvider
 }
 
 func (f *fakeIssuer) IssuePublicCert(ctx context.Context, serverID int64, cmd *agentpb.IssuePublicCertCommand) error {
@@ -321,5 +331,101 @@ func TestMigrateLegacyCertificateID(t *testing.T) {
 	ids, _ := nodeCertRepo.ListCertificateIDsByNode(ctx, srv.ID)
 	if len(ids) != 1 || ids[0] != 3 {
 		t.Fatalf("迁移结果不对：%v", ids)
+	}
+}
+
+// 核心回归 ✓：续期指令**必须**自带 CA / 邮箱 / EAB ✗ ——
+// 不带 CA → 节点用默认 CA（LE）续签 ✗（签发者被悄悄换掉 ✗）；
+// 不带邮箱 → Google 注册被拒 ✗；不带 EAB → Google/ZeroSSL 首次注册失败 ✗。
+func TestRenewCommandCarriesCAEmailEAB(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	for _, c := range []struct {
+		domains string
+		issuer  string
+		wantCA  string
+	}{
+		{`["a.example.com"]`, "google", "google"},
+		{`["b.example.com"]`, "zerossl", "zerossl"},
+		{`["c.example.com"]`, "lets_encrypt", "lets_encrypt"},
+		{`["d.example.com"]`, "Let's Encrypt", "lets_encrypt"}, // 历史格式也要归一 ✓
+	} {
+		cert := seedCert(t, certRepo, c.domains, 1, 2*24*time.Hour)
+		cert.Issuer = c.issuer
+		if err := certRepo.Update(context.Background(), cert); err != nil {
+			t.Fatal(err)
+		}
+		if err := serverRepo.Create(context.Background(), &entity.NodeServer{Name: "n-" + c.wantCA, CertificateID: cert.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f := &fakeIssuer{envEmail: "test@example.com"}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.got) != 4 {
+		t.Fatalf("应下发 4 条续期指令，实际 %d", len(f.got))
+	}
+	for _, cmd := range f.got {
+		if cmd.GetCa() == "" {
+			t.Fatalf("指令必须带 CA ✗（否则节点会用自己的默认 CA 续签 ✗）：%+v", cmd)
+		}
+		if cmd.GetEmail() != "test@example.com" {
+			t.Fatalf("指令必须带邮箱 ✗（Google 注册要求 contact ✗）：%+v", cmd)
+		}
+		if cmd.GetEabKeyId() != "kid-"+cmd.GetCa() || cmd.GetEabMacKey() != "mac-"+cmd.GetCa() {
+			t.Fatalf("指令必须带**按 CA 自动关联**的 EAB ✗：ca=%s kid=%s", cmd.GetCa(), cmd.GetEabKeyId())
+		}
+	}
+	// 顺带验 CA 归一 ✓（Let's Encrypt → lets_encrypt ✓）
+	seen := map[string]bool{}
+	for _, cmd := range f.got {
+		seen[cmd.GetCa()] = true
+	}
+	for _, want := range []string{"google", "zerossl", "lets_encrypt"} {
+		if !seen[want] {
+			t.Fatalf("缺少 ca=%s（归一化有问题 ✗）：%v", want, seen)
+		}
+	}
+}
+
+// 没有环境时的兜底：不 panic ✓、字段为空 ✓（宁可不带，也不能假造 ✗）
+func TestRenewCommandWithoutEnv(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	c := seedCert(t, certRepo, `["e.example.com"]`, 1, 2*24*time.Hour)
+	c.Issuer = "google"
+	_ = certRepo.Update(context.Background(), c)
+	_ = serverRepo.Create(context.Background(), &entity.NodeServer{Name: "n-nil", CertificateID: c.ID})
+
+	f := &fakeIssuer{envErr: true}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.got) != 1 {
+		t.Fatalf("仍应下发 1 条，实际 %d", len(f.got))
+	}
+	if f.got[0].GetCa() != "google" {
+		t.Fatalf("CA 仍应带上（来自证书 issuer ✓）：%s", f.got[0].GetCa())
+	}
+	if f.got[0].GetEabKeyId() != "" {
+		t.Fatalf("没有环境时不该假造 EAB ✗：%s", f.got[0].GetEabKeyId())
+	}
+}
+
+// normalizeCertCA 归一化 ✓
+func TestNormalizeCertCA(t *testing.T) {
+	cases := map[string]string{
+		"google": "google", "Google": "google", "zerossl": "zerossl",
+		"lets_encrypt": "lets_encrypt", "Let's Encrypt": "lets_encrypt",
+		"Let's Encrypt Staging": "lets_encrypt_staging",
+		"lets_encrypt_staging":  "lets_encrypt_staging",
+		"":                      "", "weird-ca": "",
+	}
+	for in, want := range cases {
+		if got := normalizeCertCA(in); got != want {
+			t.Fatalf("normalizeCertCA(%q)=%q 期望 %q", in, got, want)
+		}
 	}
 }

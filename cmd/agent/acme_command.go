@@ -40,7 +40,10 @@ func (a *AgentApp) handleIssuePublicCert(cmd *agentpb.IssuePublicCertCommand, se
 		DataDir:     dataDir,
 		DNSProvider: cmd.DnsProvider,
 		DNSEnvVars:  cmd.DnsEnvVars,
-		Timeout:     5 * time.Minute,
+		// 面板按 CA 自动关联好的 EAB ✓ → 节点"首次申请即自动注册" ✓
+		EABKeyID:  strings.TrimSpace(cmd.GetEabKeyId()),
+		EABMACKey: strings.TrimSpace(cmd.GetEabMacKey()),
+		Timeout:   5 * time.Minute,
 	}
 	if params.Email == "" {
 		// 面板必须在指令里带上邮箱（来自面板的 ACME 账号 ✓）——没有就不能签 ✗

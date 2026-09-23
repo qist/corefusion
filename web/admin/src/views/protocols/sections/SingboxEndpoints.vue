@@ -629,6 +629,13 @@
 
         <!-- ========== Key Tab - WireGuard only ========== -->
         <el-tab-pane v-if="rf.type === 'wireguard'" :label="t('singbox.protocol.endpoint.tabs.key')" name="key">
+        <!-- ⚠ 2026-09-23：WARP 一键导入（与 xray 出站页同一套 /warp API ✓）。
+             原先只有 xray 出站页能注册 WARP ✗ → sing-box 用户配 WARP 得手抄五个字段 ✗。 -->
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+          <el-button size="small" type="primary" @click="importWarp">
+            ⚡ {{ t('protoCenter.outbounds.warpImport') || 'WARP' }}
+          </el-button>
+        </div>
           <el-form label-width="150px" label-position="left">
             <el-form-item :label="t('singbox.protocol.wireguard.privateKey')">
               <div style="display:flex;gap:8px;flex:1">
@@ -890,6 +897,54 @@ async function showAdd() {
     } catch (e) {
       console.error('Generate WG keypair failed:', e)
     }
+  }
+}
+
+// importWarp：从已注册的 WARP 凭据一键填充 WireGuard 端点 ✓
+//
+// 与 xray 出站页的 importWarp **同源**（同一套 /warp API：先查 status，未注册则 register ✓），
+// 差别只在字段名 —— sing-box 的 wireguard 在 `endpoints` 里，peer 用 address/port ✓，
+// 且 WARP 必需的 `reserved` 要写成 "148, 154, 190"（构建器会 split 后再 parseInt ✓）。
+async function importWarp() {
+  try {
+    const warpBase = `/node-servers/${props.serverId}/warp`
+    let status
+    try { status = await client.get(`${warpBase}/status`, { params: { core_type: 'singbox' } }) } catch { status = null }
+    if (!status || !status.registered) {
+      ElMessage.info(t('protoCenter.outbounds.warpRegistering'))
+      status = await client.post(`${warpBase}/register`, { core_type: 'singbox' })
+      if (!status || !status.registered) {
+        ElMessage.error(t('protoCenter.outbounds.warpRegisterFailed'))
+        return
+      }
+    }
+    rf.tag = 'warp-' + Math.random().toString(36).substring(2, 6)
+    rf.mtu = 1280
+    rf.private_key = status.private_key || ''
+    const addrs = []
+    if (status.address_ipv4) addrs.push(status.address_ipv4 + '/32')
+    if (status.address_ipv6) addrs.push(status.address_ipv6 + '/128')
+    rf.address = addrs
+    rf._addressStr = addrs.join(', ')
+    // reserved："[148,154,190]" → "148, 154, 190"
+    let reserved = status.reserved || ''
+    if (reserved.startsWith('[')) {
+      try { reserved = JSON.parse(reserved).join(', ') } catch {}
+    }
+    const endpoint = status.endpoint || 'engage.cloudflareclient.com:2408'
+    const ci = endpoint.lastIndexOf(':')
+    rf.peers = [{
+      public_key: status.public_key || '',
+      address: ci > 0 ? endpoint.slice(0, ci) : endpoint,
+      port: ci > 0 ? (parseInt(endpoint.slice(ci + 1), 10) || 0) : 0,
+      pre_shared_key: '',
+      persistent_keepalive_interval: 30,
+      _allowedIPsStr: '0.0.0.0/0, ::/0',
+      reserved,
+    }]
+    ElMessage.success(t('protoCenter.outbounds.warpImportSuccess'))
+  } catch (e) {
+    ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e))
   }
 }
 

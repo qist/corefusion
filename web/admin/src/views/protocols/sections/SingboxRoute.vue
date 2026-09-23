@@ -788,11 +788,23 @@ function addRuleSet() {
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
 
 async function loadTags() {
+  let obTags = []
   try {
     const res = await client.get(`/node-servers/${props.serverId}/outbound-configs`, { params: { core_type: props.coreType || 'singbox' } })
     const obs = (res || []).filter(o => o?.enabled !== false)
-    outboundTags.value = [...new Set(['direct', 'block', ...obs.map(o => o.tag).filter(Boolean)])]
+    obTags = obs.map(o => o.tag).filter(Boolean)
   } catch {}
+  // ⚠ 2026-09-23 修复：sing-box 的 **endpoints**（WireGuard/Tailscale/OpenConnect/OpenVPN）
+  // 也是可以用作"出口"的（`route.final` / 规则里的 outbound 都能指向端点 tag ✓，
+  // 已实测：把 final 设为 wireguard 端点 tag 后生成配置确实是 `"final": "<端点tag>"` ✓）。
+  // 但这里原来**只列 outbounds 的 tag** ✗ → 于是 WARP/WireGuard 端口点选不上 ✗
+  // → 实际表现就是"WARP 配好了却用不到" ✗。这里把 endpoints 的 tag 一并纳入 ✓。
+  try {
+    const eps = await client.get(`/node-servers/${props.serverId}/endpoint-configs`, { params: { core_type: props.coreType || 'singbox' } })
+    const list = Array.isArray(eps) ? eps : (eps?.items || [])
+    obTags = obTags.concat(list.filter(e => e?.enabled !== false).map(e => e.tag).filter(Boolean))
+  } catch {}
+  outboundTags.value = [...new Set(['direct', 'block', ...obTags])]
   try {
     const ibs = await client.get(`/node-servers/${props.serverId}/inbound-configs`, { params: { core_type: props.coreType || 'singbox' } })
     inboundTags.value = (ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean)

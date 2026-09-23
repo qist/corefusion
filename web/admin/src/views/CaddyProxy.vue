@@ -541,6 +541,10 @@
           </div>
           <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') }}</el-button>
         </el-form-item>
+          <el-form-item :label="t('proxy.upstreamTls')">
+            <el-switch v-model="siteForm.upstream_tls" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.upstreamTlsHint') }}</div>
+          </el-form-item>
         <el-form-item v-if="siteForm.template==='portal_forward'" :label="t('proxy.portalForwardHint')">
           <span style="font-size:12px;color:#909399">{{ t('proxy.portalForwardDesc') }}</span>
         </el-form-item>
@@ -880,7 +884,8 @@ function onInboundSelect(id) {
   const ib = inbounds.value.find(i => i.id === id)
   if (!ib) return
   // Auto-fill upstream
-  const upstream = ib._isSocket ? `unix/${ib._socketPath}` : `127.0.0.1:${ib.port}`
+  const upstream = ib._isSocket ? `unix/${ib._socketPath
+}` : `127.0.0.1:${ib.port}`
   siteForm.value.upstreams = [upstream]
   // Auto-fill path (location) and backend_path (what the backend expects)
   const tpl = siteForm.value.template
@@ -906,6 +911,10 @@ function onInboundSelect(id) {
   if (tpl === 'sni') {
     siteForm.value.sni_target = upstream
   }
+  // 入站自带 TLS（xray security=tls / sing-box tls.enabled=true）时，**回源必须走 TLS** ✓
+  // （否则 grpc_pass grpc:// 与核心握手失败 ✗）—— 「一键导入」自动帮你勾上 ✓
+  if (ib && ib._security === 'tls') siteForm.value.upstream_tls = true
+
 }
 
 // Releases
@@ -920,7 +929,9 @@ const downloadProgress = ref('')
 const siteDialogVisible = ref(false)
 const siteDialogTitle = ref('')
 const siteSaving = ref(false)
-const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', waf_enabled: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form' })
+const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', waf_enabled: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
+  upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
+})
 
 // Panel port
 const panelPort = ref('8080')

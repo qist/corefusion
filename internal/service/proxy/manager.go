@@ -153,12 +153,12 @@ func (m *Manager) getNginxAccessLogPath() string {
 
 // GetLogBroker returns the log broker for a proxy type, or nil if not running.
 func (m *Manager) GetLogBroker(proxyType ProxyType) *LogBroker {
-m.mu.Lock()
-defer m.mu.Unlock()
-if m.logBrokers == nil {
-return nil
-}
-return m.logBrokers[proxyType]
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.logBrokers == nil {
+		return nil
+	}
+	return m.logBrokers[proxyType]
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -387,7 +387,9 @@ func (m *Manager) getVersion(path string) string {
 //
 // In systemd service environments, caddy may also emit JSON log warnings on
 // stderr (zerolog format), e.g.:
-//   {"level":"warn","ts":...,"msg":"unable to determine directory ..."}
+//
+//	{"level":"warn","ts":...,"msg":"unable to determine directory ..."}
+//
 // These lines must be skipped to find the actual version line.
 func parseProxyVersion(raw string) string {
 	raw = strings.TrimSpace(raw)
@@ -643,20 +645,20 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 				sb.WriteString(fmt.Sprintf("\t\t\t# SNI: %s -> %s\n", domain, target))
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
 				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
-			if site.ProxyProtocol {
-				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", target))
-				sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
-				sb.WriteString("\t\t\t\t}\n")
-			} else {
-				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
-			}
-			sb.WriteString("\t\t\t}\n")
+				if site.ProxyProtocol {
+					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", target))
+					sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
+					sb.WriteString("\t\t\t\t}\n")
+				} else {
+					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
+				}
+				sb.WriteString("\t\t\t}\n")
 			}
 			// Fallback route at the end - no SNI matcher, catches all unmatched
 			if fallbackTarget == "" {
 				fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
 			}
-sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
+			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t\t\troute {\n")
 			if fallbackPP {
 				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", fallbackTarget))
@@ -678,8 +680,8 @@ sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
-sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-		sb.WriteString("\t}\n")
+			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
+			sb.WriteString("\t}\n")
 		}
 		sb.WriteString("\trespond \"CoreFusion\" 200\n")
 		sb.WriteString("}\n")
@@ -725,8 +727,8 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
-sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-		sb.WriteString("\t}\n")
+			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
+			sb.WriteString("\t}\n")
 		}
 
 		// Path-based routing
@@ -746,15 +748,21 @@ sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 				}
 				continue
 			}
+			// 回源 TLS 时给上游加 `https://` ✓（Caddy 见此前缀即启用 TLS ✓）；
+			// grpc 走 proxyHeaders 的 transport 控制 ✓ 不加前缀 ✗。
+			caddyUpstream := site.Upstream
+			if site.UpstreamTLS && site.Template != "grpc" && !strings.Contains(caddyUpstream, "://") {
+				caddyUpstream = "https://" + caddyUpstream
+			}
 			if site.Path == "" || site.Path == "/" {
-				sb.WriteString(fmt.Sprintf("\treverse_proxy %s {\n", site.Upstream))
+				sb.WriteString(fmt.Sprintf("\treverse_proxy %s {\n", caddyUpstream))
 				sb.WriteString(m.proxyHeaders(&site))
 				sb.WriteString("\t}\n")
 			} else {
 				sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
 				sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
 				sb.WriteString("\t}\n")
-				sb.WriteString(fmt.Sprintf("\treverse_proxy @%s %s {\n", pathToMatcher(site.Path), site.Upstream))
+				sb.WriteString(fmt.Sprintf("\treverse_proxy @%s %s {\n", pathToMatcher(site.Path), caddyUpstream))
 				sb.WriteString(m.proxyHeaders(&site))
 				sb.WriteString("\t}\n")
 			}
@@ -828,7 +836,21 @@ func (m *Manager) proxyHeaders(site *entity.ProxySite) string {
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	case "grpc":
 		sb.WriteString("\t\ttransport http {\n")
-		sb.WriteString("\t\t\tversions h2c\n")
+		if site.UpstreamTLS {
+			// 回源走 TLS ✓（Caddy 的 transport http 默认含 h2 ✓，适合 grpc over TLS ✓）
+			sb.WriteString("\t\t\ttls\n")
+			sni := strings.TrimSpace(site.SNITarget)
+			if sni == "" {
+				sni = strings.TrimSpace(site.Domain)
+			}
+			if sni != "" {
+				sb.WriteString("\t\t\ttls_server_name " + sni + "\n")
+			}
+			// 回源是本机内核 ✓，证书多为自签/内部签发 ✓ → 默认跳过链校验 ✓
+			sb.WriteString("\t\t\ttls_insecure_skip_verify\n")
+		} else {
+			sb.WriteString("\t\t\tversions h2c\n")
+		}
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
@@ -960,7 +982,6 @@ func (m *Manager) SaveAndApplyProxy(ctx context.Context, proxyType ProxyType) er
 	}
 	return fmt.Errorf("unsupported proxy type: %s", proxyType)
 }
-
 
 // InstallProxy installs a proxy using system package manager or download.
 func (m *Manager) InstallProxy(ctx context.Context, proxyType ProxyType) error {
@@ -1338,11 +1359,11 @@ func (m *Manager) startProxyInternal(ctx context.Context, proxyType ProxyType) e
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = m.dataDir
 
-// Create log broker for real-time viewing
-broker := NewLogBroker()
-m.mu.Lock()
-m.logBrokers[proxyType] = broker
-m.mu.Unlock()
+	// Create log broker for real-time viewing
+	broker := NewLogBroker()
+	m.mu.Lock()
+	m.logBrokers[proxyType] = broker
+	m.mu.Unlock()
 
 	// Check log output mode
 	logMode := "file"
@@ -1482,14 +1503,14 @@ func (m *Manager) StopProxy(ctx context.Context, proxyType ProxyType) error {
 // StopProxyForShutdown stops a proxy without marking as manually stopped.
 // Used when the panel exits so proxy can auto-start on next panel start.
 func (m *Manager) StopProxyForShutdown(ctx context.Context, proxyType ProxyType) error {
-// Stop guardian
-m.mu.Lock()
-if g, ok := m.guardians[proxyType]; ok {
-g.Stop()
-delete(m.guardians, proxyType)
-}
-m.mu.Unlock()
-return m.killProxyProcess(proxyType)
+	// Stop guardian
+	m.mu.Lock()
+	if g, ok := m.guardians[proxyType]; ok {
+		g.Stop()
+		delete(m.guardians, proxyType)
+	}
+	m.mu.Unlock()
+	return m.killProxyProcess(proxyType)
 }
 
 // killProxyProcess stops the proxy process. If a tracked PID is available
@@ -1589,10 +1610,10 @@ func (m *Manager) GetGuardianStatus(proxyType ProxyType) map[string]interface{} 
 
 // GetGuardian returns the guardian for a proxy type.
 func (m *Manager) GetGuardian(proxyType ProxyType) (*healthcheck.Guardian, bool) {
-m.mu.Lock()
-defer m.mu.Unlock()
-g, ok := m.guardians[proxyType]
-return g, ok
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g, ok := m.guardians[proxyType]
+	return g, ok
 }
 
 // GetProxyGuardianSettings reads guardian settings (auto_start, auto_restart,
@@ -2424,7 +2445,6 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 	}
 	return fmt.Errorf("unsupported proxy type")
 }
-
 
 // patchWAFConfig rewrites the WAF config.lua with paths matching this installation.
 // Uses relative paths (relative to the nginx working directory = dataDir) so the

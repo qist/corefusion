@@ -891,23 +891,55 @@ func (a *AgentApp) handleDistributeCert(cmd *agentpb.DistributeCertCommand) {
 	if !filepath.IsAbs(targetPath) {
 		targetPath = filepath.Join(a.dataDir, targetPath)
 	}
-	dir := filepath.Dir(targetPath)
-	os.MkdirAll(dir, 0750)
-
-	// Write cert.pem
-	if err := os.WriteFile(targetPath, cmd.CertPem, 0640); err != nil {
-		log.Printf("[Agent] distribute cert write error: %v", err)
-		return
+	// ⚠ `TargetPath` 的语义是"**这张证书的目录**"（面板发的是 `certs/<域名>` ✓）。
+	// 以前这里把它当成"证书文件路径" ✗ → 把 PEM 写成了一个**名为域名的文件** ✗、
+	// 并把 `key.pem` 写到**上一级**（`certs/key.pem` ✗）→ 内核按
+	// `certs/<域名>/fullchain.pem` 去读就报 **`not a directory`** ✗ ——
+	// 真机上 192.168.2.180 的 sing-box / nginx 起不来就是这个原因 ✓
+	//（节点 `certs/` 根目录那些游离的 `key.pem`/`fullchain.pem` 也是它的产物 ✓）。
+	//
+	// 兼容 ✓：若 TargetPath 以 `.pem` 结尾（老面板按"文件路径"下发 ✓），仍按文件写 ✓。
+	if strings.HasSuffix(strings.ToLower(targetPath), ".pem") {
+		dir := filepath.Dir(targetPath)
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			log.Printf("[Agent] distribute cert mkdir error: %v", err)
+			return
+		}
+		if err := os.WriteFile(targetPath, cmd.CertPem, 0640); err != nil {
+			log.Printf("[Agent] distribute cert write error: %v", err)
+			return
+		}
+		os.WriteFile(filepath.Join(dir, "key.pem"), cmd.KeyPem, 0600)
+		if len(cmd.FullchainPem) > 0 {
+			os.WriteFile(filepath.Join(dir, "fullchain.pem"), cmd.FullchainPem, 0640)
+		}
+		log.Printf("[Agent] certificate %s distributed to %s (file mode)", cmd.CertName, targetPath)
+	} else {
+		// **自愈** ✓：老版本误写成的"同名文件"会挡住建目录 ✗ → 先删掉它 ✓，
+		// 这样升级后**无需人工清理**，下次分发就把正确的目录结构建起来 ✓。
+		if st, serr := os.Stat(targetPath); serr == nil && !st.IsDir() {
+			if rerr := os.Remove(targetPath); rerr != nil {
+				log.Printf("[Agent] DistributeCert: 删除旧版误写的同名文件失败（%s）：%v", targetPath, rerr)
+				return
+			}
+			log.Printf("[Agent] DistributeCert: 已移除旧版误写成的同名文件 %s（它本应是目录 ✓）", targetPath)
+		}
+		if err := os.MkdirAll(targetPath, 0750); err != nil {
+			log.Printf("[Agent] distribute cert mkdir error: %v", err)
+			return
+		}
+		chain := cmd.FullchainPem
+		if len(chain) == 0 {
+			chain = cmd.CertPem // 没给 fullchain 时退回证书本身 ✓（它本身就含链 ✓）
+		}
+		if err := os.WriteFile(filepath.Join(targetPath, "cert.pem"), cmd.CertPem, 0640); err != nil {
+			log.Printf("[Agent] distribute cert write error: %v", err)
+			return
+		}
+		os.WriteFile(filepath.Join(targetPath, "key.pem"), cmd.KeyPem, 0600)
+		os.WriteFile(filepath.Join(targetPath, "fullchain.pem"), chain, 0640)
+		log.Printf("[Agent] certificate %s distributed to %s ✓（cert.pem/key.pem/fullchain.pem ✓）", cmd.CertName, targetPath)
 	}
-	// Write key alongside (same dir, key.pem)
-	keyPath := filepath.Join(dir, "key.pem")
-	os.WriteFile(keyPath, cmd.KeyPem, 0600)
-	if len(cmd.FullchainPem) > 0 {
-		fullchainPath := filepath.Join(dir, "fullchain.pem")
-		os.WriteFile(fullchainPath, cmd.FullchainPem, 0640)
-	}
-
-	log.Printf("[Agent] certificate %s distributed to %s", cmd.CertName, dir)
 
 	if cmd.ReloadCore {
 		log.Printf("[Agent] reload core requested after cert distribution")

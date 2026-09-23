@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"corefusion/internal/model/entity"
+	secretcrypto "corefusion/internal/security/crypto"
 	"corefusion/internal/store/repository"
 )
 
@@ -40,9 +41,10 @@ func NewDNSChannelService(repo *repository.DNSChannelRepository) *DNSChannelServ
 }
 
 func (s *DNSChannelService) Create(ctx context.Context, name, provider string, envVars map[string]string) (*entity.DNSChannel, error) {
-	// Encode env vars to base64
-	envJSON, _ := json.Marshal(envVars)
-	encoded := base64.StdEncoding.EncodeToString(envJSON)
+	encoded, err := encodeEnvVars(envVars)
+	if err != nil {
+		return nil, err
+	}
 
 	ch := &entity.DNSChannel{
 		Name:     name,
@@ -88,11 +90,41 @@ func (s *DNSChannelService) Update(ctx context.Context, id int64, name, provider
 		return nil, err
 	}
 	ch.Name = name
+	providerChanged := provider != "" && provider != ch.Provider
 	ch.Provider = provider
-	if envVars != nil {
-		envJSON, _ := json.Marshal(envVars)
-		ch.EnvVars = base64.StdEncoding.EncodeToString(envJSON)
+
+	// ⚠ 前端编辑渠道时**不回填凭据**（列表接口只回掩码 ✓，见 maskEnvVars ✓），
+	// 于是"只改名字"的提交会带着空 env_vars 进来 ✗ —— 旧实现 `envVars != nil` 判定
+	// 对空 map 也成立 → 会把已配好的凭据**静默清空** ✗（改名即失效 ✗）。故：
+	//   ① 空提交（且 provider 没换）→ 凭据原样保留 ✓；
+	//   ② 非空提交 → 只覆盖"真正填了值的键" ✓，留空的键保留旧值 ✓；
+	//   ③ 换了 provider → 旧凭据字段对不上，不合并（避免残留无用键 ✓）。
+	switch {
+	case len(envVars) > 0:
+		merged := envVars
+		if !providerChanged {
+			if old, derr := decodeEnvVars(ch.EnvVars); derr == nil {
+				merged = make(map[string]string, len(old)+len(envVars))
+				for k, v := range old {
+					merged[k] = v
+				}
+				for k, v := range envVars {
+					if strings.TrimSpace(v) == "" {
+						continue // 留空 = 不改这一项 ✓
+					}
+					merged[k] = v
+				}
+			}
+		}
+		encoded, eerr := encodeEnvVars(merged)
+		if eerr != nil {
+			return nil, eerr
+		}
+		ch.EnvVars = encoded
+	case providerChanged:
+		ch.EnvVars = ""
 	}
+
 	if err := s.repo.Update(ctx, ch); err != nil {
 		return nil, err
 	}
@@ -117,11 +149,41 @@ func (s *DNSChannelService) GetEnvVarsRaw(encoded string) (map[string]string, er
 	return decodeEnvVars(encoded)
 }
 
+// encodeEnvVars 把凭据 map 编码成**加密串**再落库 ✓。
+//
+// 格式：`enc:<base64 nonce>:<base64 ciphertext>`（明文是 base64(JSON) ✓），
+// 由 `internal/security/crypto` 的 AES-256-GCM 提供 ✓ —— 与**充值卡**（charge 模块 ✓）、
+// CA 私钥共用同一把密钥 ✓（`CF_SECRET_ENCRYPTION_KEY`，未设置时按 hostname 派生 ✓）。
+//
+// 为什么必须先 base64 再加密 ✗：JSON 里有换行/引号的字段（GCP 的 service account JSON ✓）
+// 直接进 `enc:` 串没问题 ✓，但 base64 让"旧格式"与"新格式"在**同一列**里同构 ✓，
+// 解码侧只需一次 `DecryptSecret` 就能同时吃下新旧两种数据 ✓（见 decodeEnvVars ✓）。
+func encodeEnvVars(vars map[string]string) (string, error) {
+	envJSON, err := json.Marshal(vars)
+	if err != nil {
+		return "", fmt.Errorf("encode env vars: %w", err)
+	}
+	enc, err := secretcrypto.EncryptSecret(base64.StdEncoding.EncodeToString(envJSON))
+	if err != nil {
+		return "", fmt.Errorf("encrypt env vars: %w", err)
+	}
+	return enc, nil
+}
+
+// decodeEnvVars 解出凭据 map ✓。
+//
+// 向后兼容 ✗：历史数据是**裸 base64(JSON)**（无 `enc:` 前缀 ✓）——
+// `DecryptSecret` 对不带前缀的输入**原样返回** ✓，所以老渠道不用迁移就能继续用 ✓，
+// 在被 Update 一次之后会自动换成加密格式 ✓。
 func decodeEnvVars(encoded string) (map[string]string, error) {
 	if encoded == "" {
 		return nil, fmt.Errorf("no env vars configured")
 	}
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	plain, err := secretcrypto.DecryptSecret(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt env vars: %w", err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(plain)
 	if err != nil {
 		return nil, fmt.Errorf("decode env vars: %w", err)
 	}

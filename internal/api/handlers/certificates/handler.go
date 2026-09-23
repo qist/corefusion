@@ -142,6 +142,13 @@ func stripDataPrefix(certs []entity.Certificate) {
 	for i := range certs {
 		certs[i].CertPath = strings.TrimPrefix(certs[i].CertPath, "data/")
 		certs[i].KeyPath = strings.TrimPrefix(certs[i].KeyPath, "data/")
+		certs[i].HasContent = strings.TrimSpace(certs[i].CertContent) != "" &&
+			strings.TrimSpace(certs[i].KeyContent) != ""
+		// ⚠ 接口出参里**必须清掉 PEM/私钥** ✗：以前列表/详情会把 `key_content`（私钥！✗）
+		// 原样回给前端 ✓ —— 前端从来不用它 ✓（只在**上传表单**里由用户填 ✓），
+		// 需要内容的操作（下载）在**服务端**读库 ✓。所以清空是净收益 ✓。
+		certs[i].CertContent = ""
+		certs[i].KeyContent = ""
 	}
 }
 

@@ -1400,6 +1400,8 @@ export default {
     varQuotaState: 'Quota state (normal/near_limit/over_limit etc.)',
   },
   certificate: {
+    nodeHeld: 'On node',
+    nodeHeldHint: 'This certificate is held by the node that issued it (panel keeps metadata only); get it from that node',
     download: 'Download',
     downloadZip: 'Zip (cert / fullchain / privkey)',
     downloadCertOnly: 'Leaf only (cert.pem)',

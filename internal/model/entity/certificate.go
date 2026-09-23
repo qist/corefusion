@@ -17,7 +17,14 @@ type Certificate struct {
 	FullchainPath string `json:"fullchain_path" gorm:"size:512"`
 	CertContent   string `json:"cert_content" gorm:"type:longtext"`
 	KeyContent    string `json:"key_content" gorm:"type:longtext"`
-	Status        string `json:"status" gorm:"size:32;not null"`
+	// HasContent 只在**接口返回**里用 ✓（`gorm:"-"` 不入库 ✓）：面板是否**持有**这张证书的 PEM/私钥 ✓。
+	//
+	// 架构口径（用户口径 ✓）：**面板只管触发 ✓，证书由节点持有并由节点自己续 ✓，面板不落地 ✗**。
+	// 所以节点上报的证书在面板上**只有元数据** ✓（域名/IP、签发者、到期、绑定节点、节点侧路径 ✓）
+	// → `has_content=false` ✓：下载/分发这类需要 PEM 的操作要在界面上**明确说明** ✗，
+	// 而不是让用户看到一个笼统的"操作失败" ✗。
+	HasContent bool   `json:"has_content" gorm:"-"`
+	Status     string `json:"status" gorm:"size:32;not null"`
 	// ⚠ 不要加 `default:1` ✗：GORM 对"带 default 的字段"会**跳过零值** ✗ →
 	// 代码里显式设成 0（例如上传的证书不该被自动续期）会被 DB 默认值改回 1 ✗
 	// （真机实测：上传路径设 0，库里却是 1 ✗）。去掉 default 后零值能正常写入 ✓。

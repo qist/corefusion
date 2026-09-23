@@ -154,6 +154,13 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 	a.lastRecvTime = time.Now()
 	a.lastRecvMu.Unlock()
 	watchdogTicker := time.NewTicker(15 * time.Second)
+
+	// ── 节点自续期 ✓（面板只管触发 ✓、证书由节点持有并由节点自己续 ✓）──────────
+	// ⚠ 决不能在下面的 select 里同步跑 ✗：一次 ACME 签发常要 1~2 分钟 ✓，
+	// 会把这期间的心跳饿死 ✗ → 面板把节点判成离线 ✗。
+	// 所以独立 goroutine 干活 ✓，结果通过 channel 回到这里发 ✓（沿用 stream ✓）。
+	certRenewReports := make(chan *agentpb.PublicCertIssuedReport, 8)
+	go a.runCertRenewLoop(ctx, certRenewReports)
 	defer watchdogTicker.Stop()
 
 	// Receive loop (Panel commands via stream)
@@ -181,6 +188,15 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-recvErr:
 			return err
+		case rep := <-certRenewReports:
+			// 自续期结果上报 ✓：面板据此刷新**元数据**（到期时间/签发者 ✓），
+			// 不再把 PEM/私钥落到面板 ✗（面板不持有节点证书 ✓）。
+			a.streamSendMu.Lock()
+			serr := stream.Send(a.publicCertReport(rep))
+			a.streamSendMu.Unlock()
+			if serr != nil {
+				return fmt.Errorf("cert renew report: %w", serr)
+			}
 		case <-watchdogTicker.C:
 			// Check if we haven't heard from the panel in too long.
 			a.lastRecvMu.RLock()

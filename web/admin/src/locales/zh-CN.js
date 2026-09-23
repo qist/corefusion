@@ -1403,6 +1403,8 @@ export default {
     varQuotaState: '配额状态（normal/near_limit/over_limit 等）',
   },
   certificate: {
+    nodeHeld: '节点持有',
+    nodeHeldHint: '该证书由签发它的节点持有（面板只保存元数据），请到该节点上取件',
     download: '下载',
     downloadZip: '打包下载（cert / fullchain / privkey）',
     downloadCertOnly: '仅叶证书 cert.pem',

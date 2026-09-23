@@ -18,7 +18,13 @@
     <el-card>
       <el-table :data="certificates" v-loading="loading" stripe @selection-change="onCertSelectionChange">
         <el-table-column type="selection" width="46" />
-        <el-table-column prop="name" :label="t('certificate.certName')" width="160" />
+        <el-table-column prop="name" :label="t('certificate.certName')" width="200">
+          <template #default="{row}">
+            {{ row.name }}
+            <!-- 面板只留元数据 ✓：证书本体在节点上 ✓（用户口径：面板不管这些证书 ✓） -->
+            <el-tag v-if="row.has_content === false" size="small" type="info" style="margin-left:4px">{{ t('certificate.nodeHeld') }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('certificate.domain')" min-width="300">
           <template #default="{row}">
             <div v-if="row.domains" style="display:flex;flex-wrap:wrap;gap:2px">
@@ -48,7 +54,7 @@
           <template #default="{row}">
             <!-- 下载：浏览器无法自定义请求头 ✗ → 先换一次性票据再拼 ?ticket= ✓（scope=cert_download ✓）-->
             <el-dropdown size="small" trigger="click" style="margin-right:8px" @command="(f) => downloadCert(row, f)">
-              <el-button size="small" plain>{{ t('certificate.download') }}</el-button>
+              <el-button size="small" plain :disabled="row.has_content === false">{{ t('certificate.download') }}</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="zip">{{ t('certificate.downloadZip') }}</el-dropdown-item>
@@ -58,7 +64,7 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button size="small" type="primary" plain :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
+            <el-button size="small" type="primary" plain :disabled="row.has_content === false" :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
             <el-button size="small" type="warning" plain @click="showMigrateDialog(row)">{{ t('certificate.migrate') }}</el-button>
             <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
             <el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
@@ -985,6 +991,11 @@ function certFileName(row, format) {
 
 // 单个证书：zip（打包 ✓）/ cert（仅叶 ✓）/ fullchain（叶+链 ✓）/ key（私钥 ✓）
 function downloadCert(row, format) {
+  // 面板只保存元数据 ✓（证书本体由节点持有 ✓）→ **明确说明** ✗，而不是笼统的"操作失败" ✗
+  if (row.has_content === false) {
+    ElMessage.warning(t('certificate.nodeHeldHint'))
+    return
+  }
   downloadBlob(`/certificates/${row.id}/download`, { format }, certFileName(row, format))
 }
 

@@ -44,6 +44,8 @@ func (a *AgentApp) handleIssuePublicCert(cmd *agentpb.IssuePublicCertCommand, se
 		EABKeyID:  strings.TrimSpace(cmd.GetEabKeyId()),
 		EABMACKey: strings.TrimSpace(cmd.GetEabMacKey()),
 		Timeout:   5 * time.Minute,
+		// 记下面板侧的 id ✓（后续自续期上报时带上 ✓ → 面板能对上同一条记录 ✓）
+		CertID: cmd.CertId,
 	}
 	if params.Email == "" {
 		// 面板必须在指令里带上邮箱（来自面板的 ACME 账号 ✓）——没有就不能签 ✗

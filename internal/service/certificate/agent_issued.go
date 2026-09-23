@@ -104,29 +104,18 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		name = domain
 	}
 
-	certDir := filepath.Join(s.dataDir, "certs", sanitizeDomain(name))
-	if err := os.MkdirAll(certDir, 0750); err != nil {
-		return nil, err
-	}
+	// ⚠ 这里以前还会 `MkdirAll(data/certs/<name>)` 建目录 ✗（为写文件做准备 ✓）——
+	// 现在面板**不落地任何证书文件** ✗，建空目录只会让人误以为"面板上有这份证书" ✗ → 去掉 ✓。
+	// ── 面板**不落地**这张证书 ✗（架构口径 ✓：面板只管触发 ✓，证书由节点持有并由节点自己续 ✓）──
+	// 以前的实现是：把 PEM/私钥**写进面板的 `data/certs/`** ✗、**再整份存进数据库** ✗ ——
+	// 于是"任何一个节点签的每一张证书都会落到面板" ✓（用户口径：面板并没用到这些证书 ✗）。
+	// 现在这里**只保留元数据** ✓（上面的 tmp 文件仅用于解析 ✓ 用完即删 ✓）：
+	//   · 路径字段保留为**节点侧引用** ✓（用于"这张证书被谁用了"的匹配 ✓）；
+	//   · `CertContent/KeyContent` **一律留空** ✗ → 接口返回 `has_content=false` ✓。
 	certRel := filepath.Join("certs", sanitizeDomain(name), "cert.pem")
 	keyRel := filepath.Join("certs", sanitizeDomain(name), "key.pem")
-	if err := os.WriteFile(filepath.Join(s.dataDir, certRel), []byte(in.CertPEM), 0600); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(s.dataDir, keyRel), []byte(in.KeyPEM), 0600); err != nil {
-		return nil, err
-	}
-	// ⚠ 节点签出来的证书原本**只有 cert.pem** ✗（真机：那几张记录的 fullchain_path 是空的 ✓），
-	// 而磁盘上按惯例应当有 fullchain.pem ✓ —— 补上 ✓：优先用回传的 FullchainPEM ✓，
-	// 没有就用 CertPEM ✓（ACME 返回的本身就含中间链 ✓，详见 pemutil.go 的说明 ✓）。
-	fullchainPEM := strings.TrimSpace(in.FullchainPEM)
-	if fullchainPEM == "" {
-		fullchainPEM = in.CertPEM
-	}
+	// fullchain 的路径同样只作为**节点侧引用** ✓（面板不写文件 ✗，见上）
 	fullchainRel := filepath.Join("certs", sanitizeDomain(name), "fullchain.pem")
-	if err := os.WriteFile(filepath.Join(s.dataDir, fullchainRel), []byte(fullchainPEM), 0600); err != nil {
-		return nil, err
-	}
 
 	if existing == nil {
 		existing = &entity.Certificate{
@@ -141,8 +130,8 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 			CertPath:      certRel,
 			KeyPath:       keyRel,
 			FullchainPath: fullchainRel,
-			CertContent:   in.CertPEM,
-			KeyContent:    in.KeyPEM,
+			CertContent:   "",
+			KeyContent:    "",
 			Status:        "active",
 			AutoRenew:     1,
 			ExpiresAt:     expiresAt,
@@ -165,8 +154,8 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	existing.CertPath = certRel
 	existing.KeyPath = keyRel
 	existing.FullchainPath = fullchainRel
-	existing.CertContent = in.CertPEM
-	existing.KeyContent = in.KeyPEM
+	existing.CertContent = ""
+	existing.KeyContent = ""
 	existing.Status = "active"
 	existing.AutoRenew = 1
 	existing.ExpiresAt = expiresAt

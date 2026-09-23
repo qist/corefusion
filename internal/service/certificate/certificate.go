@@ -478,6 +478,34 @@ func (s *Service) LandCertificateFiles(ctx context.Context, certID int64) (*enti
 	return c, nil
 }
 
+// SyncLocalCopyIfLanded 在证书内容变化后（**续期/重报** ✓）刷新**面板本机**那份副本 ✓。
+//
+// 为什么必须有它 ✗（真机验证"续期后内核是否用上新证书"时抓到的缺口 ✓）：
+// 远端节点在续期后会收到 `auto-SyncData`（里面带证书内容 ✓）→ 文件被刷新 ✓；
+// 而**面板本机**没有 sync ✗ → `data/certs/<域名>/` 那份**停在旧证书** ✗
+// → 本机内核（caddy / nginx / xray）继续吐**旧证书** ✗ —— 从外面看就是"续期了但没生效" ✗。
+//
+// 设计上刻意保守 ✓：**只有本机已经落地过**（说明本机节点确实在用这张 ✓）才刷新 ✓，
+// 从不主动为本机新建副本 ✗（否则等于把所有证书又都落一份到面板 ✗，违背既定口径 ✓）。
+func (s *Service) SyncLocalCopyIfLanded(ctx context.Context, certID int64) error {
+	c, err := s.repo.GetByID(ctx, certID)
+	if err != nil || c == nil {
+		return err
+	}
+	if strings.TrimSpace(string(c.Domain)) == "" {
+		return nil
+	}
+	local := filepath.Join(s.dataDir, "certs", string(c.Domain), "cert.pem")
+	if _, serr := os.Stat(local); serr != nil {
+		return nil // 本机没这份 → 不动 ✓
+	}
+	if _, lerr := s.LandCertificateFiles(ctx, certID); lerr != nil {
+		return lerr
+	}
+	log.Printf("[cert] 已把证书 %d 的本机副本刷新为最新（本机节点在用这张证书 ✓）", certID)
+	return nil
+}
+
 // withTrailingNewline 保证文件以换行结尾 ✓（PEM 常规 ✓，也避免有些解析器抱怨 ✓）。
 func withTrailingNewline(s string) string {
 	if strings.HasSuffix(s, "\n") {

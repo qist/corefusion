@@ -546,8 +546,16 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			} else {
 				sb.WriteString(fmt.Sprintf("        server_name %s;\n", domain))
 			}
-			sb.WriteString(fmt.Sprintf("        ssl_certificate ../%s;\n", stripDataDirPrefix(tlsCert, m.dataDir)))
-			sb.WriteString(fmt.Sprintf("        ssl_certificate_key ../%s;\n", stripDataDirPrefix(tlsKey, m.dataDir)))
+			// ✅ 双证书 ✓：nginx 允许在同一个 server 块里写**多组** ssl_certificate ✓，
+			// 它会按客户端支持能力自动挑 ECC / RSA ✓（以前只写一组 ✗ → 另一张白签 ✗）。
+			dual := true // 缺省开 ✓
+			if tlsSite != nil && tlsSite.DualCert != nil {
+				dual = *tlsSite.DualCert
+			}
+			for _, cp := range collectCertPairs(ctx, m.certRepo, domain, tlsCert, tlsKey, dual) {
+				sb.WriteString(fmt.Sprintf("        ssl_certificate ../%s;\n", stripDataDirPrefix(cp.Cert, m.dataDir)))
+				sb.WriteString(fmt.Sprintf("        ssl_certificate_key ../%s;\n", stripDataDirPrefix(cp.Key, m.dataDir)))
+			}
 			sb.WriteString(fmt.Sprintf("        ssl_protocols %s;\n", sslProtocols))
 			if sslCiphers != "" {
 				sb.WriteString(fmt.Sprintf("        ssl_ciphers %s;\n", sslCiphers))

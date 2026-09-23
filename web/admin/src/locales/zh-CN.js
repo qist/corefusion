@@ -1820,6 +1820,8 @@ export default {
     selectCert: '选择证书',
     certPath: '证书路径',
     keyPath: '私钥路径',
+    dualCert: '双证书',
+    dualCertHint: '同域名的证书里若同时有 ECC 与 RSA，默认两张都挂（由客户端能力自动选择）；关掉则只用上面选中的这张。',
     certSettings: '证书配置',
     siteGenerated: '站点配置已添加',
     siteSaved: '站点已保存，配置已生效',

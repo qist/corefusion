@@ -237,7 +237,7 @@
           <el-form label-width="120px">
             <el-form-item :label="t('nodeServer.selectCert')">
               <el-select v-model="certBindId" style="width:100%" :placeholder="t('nodeServer.selectCertPlaceholder')" filterable>
-                <el-option v-for="c in allCerts" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
+                <el-option v-for="c in allCerts" :key="c.id" :label="`${c.domain} (${(c.key_type||'').toUpperCase()}${c.key_bits?' '+c.key_bits:''} · ${c.issuer})`" :value="c.id" />
               </el-select>
             </el-form-item>
           </el-form>

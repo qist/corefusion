@@ -61,6 +61,23 @@ func (r *CertificateRepository) GetByDomainAndKeyType(ctx context.Context, domai
 	return &cert, nil
 }
 
+// ListByDomain 列出某域名的**所有** active 证书（每种密钥类型一条 ✓）。
+//
+// 用途 ✓：代理（Caddy / nginx）生成站点配置时要把同域名的**多张**证书一起挂上 ✓
+// （ECC + RSA ✓，由客户端能力自动挑 ✓）—— 以前只取第一条 ✗，
+// 于是"同时签发"两张都签出来了、站点却只挂一张 ✗。
+func (r *CertificateRepository) ListByDomain(ctx context.Context, domain string) ([]entity.Certificate, error) {
+	var certs []entity.Certificate
+	err := r.db.WithContext(ctx).
+		Where("domain = ? AND status = ?", domain, "active").
+		Order("key_type").
+		Find(&certs).Error
+	if err != nil {
+		return nil, err
+	}
+	return certs, nil
+}
+
 // List retrieves all certificates with pagination.
 func (r *CertificateRepository) List(ctx context.Context, limit, offset int) ([]entity.Certificate, int64, error) {
 	var certs []entity.Certificate

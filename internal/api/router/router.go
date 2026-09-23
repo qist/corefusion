@@ -660,6 +660,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	proxyMgr.SetCrashLogRepo(repository.NewCrashLogRepository(database))
 	caddyMgr := proxySvc.NewCaddyManager(dataDir, caddySiteRepo, systemSettingRepo)
 	nginxMgr := proxySvc.NewNginxManager(dataDir, nginxSiteRepo, systemSettingRepo)
+	// 双证书 ✓：生成器要按域名收集同域名的多张证书（ECC + RSA ✓）
+	caddyMgr.SetCertificateRepo(certRepo)
+	nginxMgr.SetCertificateRepo(certRepo)
 
 	// Set server_id = 1 (local node) for per-node site filtering.
 	// All proxy/caddy/nginx site queries filter by server_id to ensure

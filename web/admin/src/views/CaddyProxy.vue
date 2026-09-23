@@ -627,9 +627,14 @@
         </el-form-item>
         <template v-if="siteForm.use_cert">
           <el-divider content-position="left">{{ t('proxy.certSettings') }}</el-divider>
+          <!-- 双证书：同域名签了 ECC + RSA 时，是否把两张都挂到本站点 ✓ -->
+          <el-form-item :label="t('proxy.dualCert')">
+            <el-switch v-model="siteForm.dual_cert" />
+            <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('proxy.dualCertHint') }}</span>
+          </el-form-item>
           <el-form-item :label="t('proxy.selectCert')">
             <el-select v-model="siteForm.cert_id" style="width:100%" clearable @change="onSiteCertSelect" :placeholder="t('proxy.selectCert')">
-              <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
+              <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${(c.key_type||'').toUpperCase()}${c.key_bits?' '+c.key_bits:''} · ${c.issuer})`" :value="c.id" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('proxy.certPath')">
@@ -929,7 +934,7 @@ const downloadProgress = ref('')
 const siteDialogVisible = ref(false)
 const siteDialogTitle = ref('')
 const siteSaving = ref(false)
-const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', custom_config: '', waf_enabled: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
+const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
 })
 
@@ -1213,7 +1218,7 @@ function showAddSite(template) {
   const isReality = template === 'reality'
 siteForm.value = {
 domain: isReality ? ':9443' : '', upstreams: isReality ? [''] : [''], path: '', backend_path: '', template,
-    use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
+    use_cert: isReality, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
 proxy_config: '', custom_config: '', waf_enabled: !wafDisabledTemplates.includes(template), lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',
 l4_protocol: 'tcp', sni_target: '',
@@ -1251,7 +1256,7 @@ function showPanelProxy() {
   siteDialogTitle.value = t('proxy.proxyPanel')
   siteForm.value = {
     domain: ':80', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'http',
-    use_cert: false, cert_id: null, cert_path: '', key_path: '',
+    use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
 proxy_config: '', custom_config: '', waf_enabled: true, lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',
 l4_protocol: 'tcp', sni_target: '',
@@ -1312,6 +1317,7 @@ template: row.template,
     proxy_config: row.proxy_config,
     custom_config: row.custom_config,
 waf_enabled: row.waf_enabled !== false,
+      dual_cert: row.dual_cert !== false,
     lb_policy: row.lb_policy,
     log_enabled: row.log_enabled || false,
     log_path: row.log_path,
@@ -1453,6 +1459,7 @@ path: siteForm.value.path,
 backend_path: siteForm.value.backend_path,
 template: siteForm.value.template,
       cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
+      dual_cert: siteForm.value.dual_cert !== false,
       key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
       proxy_config: siteForm.value.proxy_config,
       custom_config: siteForm.value.custom_config,

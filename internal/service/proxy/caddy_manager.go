@@ -15,9 +15,12 @@ import (
 
 // CaddyManager handles Caddy-specific site management and config generation.
 type CaddyManager struct {
-	dataDir      string
-	configDir    string
-	siteRepo     *repository.CaddySiteRepository
+	dataDir   string
+	configDir string
+	siteRepo  *repository.CaddySiteRepository
+	// certRepo 用于把同域名的**多张**证书一起挂到站点上 ✓（ECC + RSA 双证书 ✓）。
+	// 允许为 nil ✓（未注入时退化为"只用站点自配的那组" ✓）。
+	certRepo     *repository.CertificateRepository
 	settingStore SettingStore
 	serverID     int64
 	isLocal      bool
@@ -42,6 +45,11 @@ func (m *CaddyManager) SetServerID(id int64) { m.serverID = id }
 
 // SetIsLocal sets whether this manager is operating on the local node.
 func (m *CaddyManager) SetIsLocal(v bool) { m.isLocal = v }
+
+// SetCertificateRepo 注入证书仓储 ✓（用于生成"双证书"配置 ✓）。
+func (m *CaddyManager) SetCertificateRepo(repo *repository.CertificateRepository) {
+	m.certRepo = repo
+}
 
 // SetNodeServerRepo sets the node server repository for mirror node detection.
 // When set, GenerateConfigForServer will check if the target is a mirror node
@@ -426,11 +434,31 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		sb.WriteString(fmt.Sprintf("# %s\n", domain))
 		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
 
+		// ✅ 双证书 ✓：把同域名的多张证书（ECC + RSA ✓）写进**同一条** tls 指令 ✓，
+		// Caddy 会按客户端支持能力自动挑一组 ✓。
+		// ⚠ 以前取到第一条带证书的站点就 break ✗ → 另一张虽然签出来了却**白签** ✗。
+		pc, pk := "", ""
+		dual := true // 缺省开 ✓（entity 的 nil 语义 = true ✓）
 		for _, site := range siteList {
 			if site.CertPath != "" && site.KeyPath != "" {
-				sb.WriteString(fmt.Sprintf("\ttls %s %s\n", m.resolvePath(site.CertPath), m.resolvePath(site.KeyPath)))
+				pc, pk = site.CertPath, site.KeyPath
+				if site.DualCert != nil {
+					dual = *site.DualCert
+				}
 				break
 			}
+		}
+		// 双证书写法（caddy v2.11 实测确认 ✓，**两种错写法都别再试** ✗）：
+		//   ✗ `tls a b c d`（4 个参数）→ adapt 报 `wrong argument count` ✗
+		//   ✗ `tls { load a b }`        → load 只认**目录** ✓（源码 builtins.go:255
+		//      把参数全塞进 folderLoader ✓），且目录方式要求"证书+私钥打包在同一 .pem" ✓
+		//      → 我们的 cert.pem/key.pem 是分开的 ✗，provision 报
+		//      `unable to open root directory ...cert.pem: not a directory` ✗
+		//   ✓ **每张证书写一条 `tls <cert> <key>`** ✓ —— tls 指令在该块内可重复 ✓，
+		//      两对都会进 tls app 的 `load_files`（全局累加 ✓），Caddy 按
+		//      SNI + 客户端能力自动挑 ✓（`caddy validate` = adapt+provision 实测通过 ✓）。
+		for _, p := range collectCertPairs(ctx, m.certRepo, domain, pc, pk, dual) {
+			sb.WriteString("\ttls " + m.resolvePath(p.Cert) + " " + m.resolvePath(p.Key) + "\n")
 		}
 
 		// ACME HTTP-01 challenge support

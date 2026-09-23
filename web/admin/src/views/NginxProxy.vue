@@ -852,9 +852,14 @@
           <el-switch v-model="siteForm.use_cert" :disabled="siteForm.template==='reality'" @change="onToggleCert" />
           <span v-if="siteForm.template==='reality'" style="font-size:12px;color:#909399;margin-left:8px">{{ t('common.required') }}</span>
         </el-form-item>
+        <!-- 双证书：同域名签了 ECC + RSA 时，是否把两张都挂到本站点 ✓ -->
+        <el-form-item v-if="siteForm.use_cert" :label="t('proxy.dualCert')">
+          <el-switch v-model="siteForm.dual_cert" />
+          <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('proxy.dualCertHint') }}</span>
+        </el-form-item>
         <el-form-item v-if="siteForm.use_cert" :label="t('proxy.selectCert')">
           <el-select v-model="siteForm.cert_id" style="width:100%" clearable @change="onSiteCertSelect" :placeholder="t('proxy.selectCert')">
-            <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${c.issuer})`" :value="c.id" />
+            <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${(c.key_type||'').toUpperCase()}${c.key_bits?' '+c.key_bits:''} · ${c.issuer})`" :value="c.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.use_cert" :label="t('proxy.certPath')">
@@ -1525,7 +1530,7 @@ const siteSaving = ref(false)
 const siteForm = ref({
   domain: '', upstreams: [''], path: '', backend_path: '', template: 'http',
   listen_port: '80', listen_socket: '',
-  use_cert: false, cert_id: null, cert_path: '', key_path: '',
+  use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
   custom_config: '', server_config: '', location_config: '',
   l4_protocol: 'tcp', sni_target: '', local_port: '8443',
   proxy_protocol: false, is_panel: false,
@@ -1895,7 +1900,7 @@ function showPanelProxy() {
   siteForm.value = {
     domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'http',
     listen_port: defaultPort, listen_socket: '',
-    use_cert: false, cert_id: null, cert_path: '', key_path: '',
+    use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: false, is_panel: true,
@@ -1962,6 +1967,7 @@ function editSite(row) {
     ssl_ciphers: row.ssl_ciphers,
     ssl_ecdh_curve: row.ssl_ecdh_curve,
     waf_enabled: row.waf_enabled !== false,
+      dual_cert: row.dual_cert !== false,
     editMode: 'form',
     inbound_id: null
   }
@@ -2115,6 +2121,7 @@ template: siteForm.value.template,
       listen_port: siteForm.value.listen_port,
       listen_socket: siteForm.value.listen_socket,
       cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
+      dual_cert: siteForm.value.dual_cert !== false,
       key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
       server_config: siteForm.value.server_config,
       location_config: siteForm.value.location_config,

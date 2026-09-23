@@ -85,6 +85,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		SslEcdhCurve    string `json:"ssl_ecdh_curve"`
 		WafEnabled      *bool  `json:"waf_enabled"`
 		IsPanel         bool   `json:"is_panel"`
+		DualCert        *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
 		Priority        int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -118,6 +119,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		WafEnabled:      req.WafEnabled,
 		Enabled:         true,
 		IsPanel:         req.IsPanel,
+		DualCert:        req.DualCert,
 		Priority:        req.Priority,
 	}
 	if err := h.nginxMgr.CreateSite(c.Request.Context(), site); err != nil {
@@ -165,6 +167,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		SslEcdhCurve    *string `json:"ssl_ecdh_curve"`
 		WafEnabled      *bool   `json:"waf_enabled"`
 		IsPanel         *bool   `json:"is_panel"`
+		DualCert        *bool   `json:"dual_cert"`
 		Priority        *int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -249,6 +252,9 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.IsPanel != nil {
 		existing.IsPanel = *req.IsPanel
+	}
+	if req.DualCert != nil {
+		existing.DualCert = req.DualCert
 	}
 	if req.Priority != nil {
 		existing.Priority = *req.Priority

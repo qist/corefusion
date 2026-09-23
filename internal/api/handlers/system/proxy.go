@@ -351,6 +351,7 @@ func (h *ProxyHandler) CreateSite(c *gin.Context) {
 		LocalPort      string `json:"local_port"`
 		ProxyProtocol  bool   `json:"proxy_protocol"`
 		IsPanel        bool   `json:"is_panel"`
+		DualCert       *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
 		Priority       int    `json:"priority"`
 		// TLS options
 		EnableHttp2     bool   `json:"enable_http2"`
@@ -398,6 +399,7 @@ func (h *ProxyHandler) CreateSite(c *gin.Context) {
 		ProxyProtocol:   req.ProxyProtocol,
 		Enabled:         true,
 		IsPanel:         req.IsPanel,
+		DualCert:        req.DualCert,
 		Priority:        req.Priority,
 	}
 	if err := h.proxyMgr.CreateSite(c.Request.Context(), site); err != nil {
@@ -434,6 +436,7 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 		ProxyProtocol  *bool   `json:"proxy_protocol"`
 		Enabled        *bool   `json:"enabled"`
 		IsPanel        *bool   `json:"is_panel"`
+		DualCert       *bool   `json:"dual_cert"`
 		Priority       *int    `json:"priority"`
 		// TLS options
 		EnableHttp2     *bool  `json:"enable_http2"`
@@ -510,6 +513,9 @@ func (h *ProxyHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.IsPanel != nil {
 		existing.IsPanel = *req.IsPanel
+	}
+	if req.DualCert != nil {
+		existing.DualCert = req.DualCert
 	}
 	if req.Priority != nil {
 		existing.Priority = *req.Priority

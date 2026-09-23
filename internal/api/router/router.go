@@ -2087,6 +2087,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			nodeServerH := nodeServerHandler.NewHandler(nodeServerSvcInst)
+			// 面板本机 = 一个节点 ✓：**关联到它的证书**要落地成文件 ✓（跟 Agent 一样 ✓），
+			// 其它证书只留库里那一份 ✓（用户口径：存数据库就是了 ✓）。
+			nodeServerHandler.LandLocalCertFilesFn = func(ctx context.Context, certID int64) error {
+				_, lerr := certSvc.LandCertificateFiles(ctx, certID)
+				return lerr
+			}
 			nodeServerH.SetCoreConfigService(coreConfigSvc)
 			nodeServerH.SetInboundConfigService(inboundConfigSvc)
 			nodeServerH.SetOutboundConfigService(outboundConfigSvc)

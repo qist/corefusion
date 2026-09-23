@@ -419,53 +419,67 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]entity.Certifi
 	return s.repo.List(ctx, limit, offset)
 }
 
-// panelCertListCap 是"面板列表一次最多捞多少行" ✓ —— 证书表量级很小 ✓（几十~几百 ✓），
-// 为的是能**在内存里过滤掉 IP 证书后仍然给出准确的分页与总数** ✓。
-const panelCertListCap = 2000
-
-// ListForPanel 是**面板证书列表接口**专用的列表 ✓：默认**不展示 IP 证书** ✗。
+// LandCertificateFiles 把库里那份证书**落地**到面板本机磁盘 ✓
+// （`cert.pem` / `key.pem` / `fullchain.pem` ✓）。
 //
-// 为什么要这样 ✗（用户口径 ✓）："IP 证书不需要同步到面板 [的证书清单]" ✓ ——
-// IP 证书是节点自己的事 ✓，摆在清单里会让人误以为"面板在管它" ✗。
-// ⚠ 但**数据库里照样留着** ✓：入库是刻意的 ✓（有人把证书文件删了，库里还完整有一份 ✓），
-// 续期器也仍然能按它去触发节点续期 ✓。所以这里是**视图层过滤** ✗，不是数据层删除 ✓。
+// 用户口径 ✓：**"面板本身也可以理解成一个节点"** ✓ ——
+// **"面板关联哪个证书，就落地哪个证书"** ✓（跟节点一样 ✓）。
+// 所以只有被**关联到本机节点（Local (Panel)）**的证书才写文件 ✓；
+// 只被远端节点使用的证书**不落地** ✗ —— 库里那份完整副本就够了 ✓，
+// 磁盘副本只会多一处需要同步的状态 ✗（真机上出现过"文件在、库为空"的不一致 ✗）。
 //
-// 为什么在内存里过滤 ✗：SQLite 里没法"判断某个域名是不是 IP" ✗；证书表很小 ✓，
-// 过滤后**重算 total** ✓ → 分页是准的 ✓（不会出现"总数 16、翻页却少两行"✗）。
-// includeIP=true 时返回全部 ✓（保留给排查/运维用 ✓）。
-func (s *Service) ListForPanel(ctx context.Context, limit, offset int, includeIP bool) ([]entity.Certificate, int64, error) {
-	if includeIP {
-		return s.repo.List(ctx, limit, offset)
-	}
-	all, _, err := s.repo.List(ctx, panelCertListCap, 0)
+// 内容一律取自**库里的权威副本** ✓（"有人把证书文件删了，库里还完整有一份" ✓
+// → 于是任何时候都能按需**重新落地** ✓）。
+func (s *Service) LandCertificateFiles(ctx context.Context, certID int64) (*entity.Certificate, error) {
+	c, err := s.repo.GetByID(ctx, certID)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	visible := make([]entity.Certificate, 0, len(all))
-	hidden := 0
-	for i := range all {
-		if isIPOnlyCertificate(all[i].Domain, all[i].Domains, nil) {
-			hidden++
-			continue
-		}
-		visible = append(visible, all[i])
+	if c == nil {
+		return nil, fmt.Errorf("certificate %d not found", certID)
 	}
-	if hidden > 0 {
-		// 只打一次聚合日志 ✓（别每条证书刷一行 ✗）
-		log.Printf("[cert] 面板列表隐藏了 %d 张 IP 证书（节点本地证书，库里仍保留 ✓）", hidden)
+	if strings.TrimSpace(c.CertContent) == "" || strings.TrimSpace(c.KeyContent) == "" {
+		return nil, fmt.Errorf("证书 %d 在库里没有内容，无法落地（先让它签发或上报一次即可 ✓）", certID)
 	}
-	total := int64(len(visible))
-	if offset < 0 {
-		offset = 0
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		name = c.Domain
 	}
-	if offset >= len(visible) {
-		return []entity.Certificate{}, total, nil
+	relDir := filepath.Join("certs", sanitizeDomain(name))
+	certRel := filepath.Join(relDir, "cert.pem")
+	keyRel := filepath.Join(relDir, "key.pem")
+	chainRel := filepath.Join(relDir, "fullchain.pem")
+	if merr := os.MkdirAll(filepath.Join(s.dataDir, relDir), 0750); merr != nil {
+		return nil, merr
 	}
-	end := offset + limit
-	if limit <= 0 || end > len(visible) {
-		end = len(visible)
+	// 权限与签发路径保持一致 ✓：证书 0640（可能被非 root 的服务读 ✓）、私钥 0600 ✓
+	if werr := os.WriteFile(filepath.Join(s.dataDir, certRel), []byte(withTrailingNewline(c.CertContent)), 0640); werr != nil {
+		return nil, werr
 	}
-	return visible[offset:end], total, nil
+	if werr := os.WriteFile(filepath.Join(s.dataDir, keyRel), []byte(withTrailingNewline(c.KeyContent)), 0600); werr != nil {
+		return nil, werr
+	}
+	// fullchain：库里存的本来就是"叶 + 中间链" ✓（见 runtime/cert/pemutil.go 的说明 ✓）
+	if werr := os.WriteFile(filepath.Join(s.dataDir, chainRel), []byte(withTrailingNewline(c.CertContent)), 0640); werr != nil {
+		return nil, werr
+	}
+	c.CertPath = certRel
+	c.KeyPath = keyRel
+	c.FullchainPath = chainRel
+	if uerr := s.repo.Update(ctx, c); uerr != nil {
+		return nil, uerr
+	}
+	log.Printf("[cert] 证书 %d（%s）已落地到面板本机 %s ✓（面板自身也是一个节点 ✓，只有关联到它的证书才落地 ✓）",
+		c.ID, name, relDir)
+	return c, nil
+}
+
+// withTrailingNewline 保证文件以换行结尾 ✓（PEM 常规 ✓，也避免有些解析器抱怨 ✓）。
+func withTrailingNewline(s string) string {
+	if strings.HasSuffix(s, "\n") {
+		return s
+	}
+	return s + "\n"
 }
 
 // UpdateCertificateInput is the input for updating a certificate.

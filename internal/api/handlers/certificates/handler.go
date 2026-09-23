@@ -163,10 +163,10 @@ func (h *Handler) List(c *gin.Context) {
 		q.Limit = 20
 	}
 
-	// 默认**不展示 IP 证书** ✓（用户口径 ✓：IP 证书是节点自己的事 ✓）；
-	// `?include_ip=1` 可看全部 ✓（排查/运维用 ✓）。库里照样留着 ✓（入库是有意的 ✓）。
-	includeIP := c.Query("include_ip") == "1" || strings.EqualFold(c.Query("include_ip"), "true")
-	certs, total, err := h.certSvc.ListForPanel(c.Request.Context(), q.Limit, q.Offset, includeIP)
+	// ⚠ 面板 Web **全部显示** ✓（用户口径 ✓："面板当然要全部显示" ✓）——
+	// **不隐藏**任何证书 ✗（哪怕它是只有 IP 的证书 ✓）。
+	// "不落地"这个词指的是**不写磁盘文件** ✗，不是"不入库"✗、更不是"不显示"✗。
+	certs, total, err := h.certSvc.List(c.Request.Context(), q.Limit, q.Offset)
 	if err != nil {
 		response.InternalError(c, "LIST_CERTIFICATES_FAILED", err.Error())
 		return

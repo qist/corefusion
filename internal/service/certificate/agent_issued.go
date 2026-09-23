@@ -2,10 +2,8 @@ package certificate
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,50 +166,4 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		return nil, err
 	}
 	return existing, nil
-}
-
-// isIPOnlyCertificate 判断"这是不是一张**只包含 IP** 的证书" ✓。
-//
-// 用途：**面板列表默认不展示**这类证书 ✓（IP 证书是节点自己的事 ✓），
-// 但**库里照样保留** ✓（用户口径：入库是刻意的 ✓ —— 有人删了证书文件，库里还完整有一份 ✓）。
-//
-// 判据 ✓：所有标识符（证书 SAN 为准 ✓，兜底用上报的 identifiers ✓）**都是 IP** 且至少有一个 ✓。
-// 混入域名（例如一张证书同时签了 IP + 域名 ✗）**不算** ✗ —— 那种证书面板是要管的 ✓
-// （配置引用它 ✓、分发它 ✓），不能因为带了个 IP 就整张丢掉 ✗。
-func isIPOnlyCertificate(domain, domainsJSON string, identifiers []string) bool {
-	ids := parseDomainsJSON(domainsJSON)
-	if len(ids) == 0 {
-		ids = identifiers
-	}
-	if len(ids) == 0 && strings.TrimSpace(domain) != "" {
-		ids = []string{domain}
-	}
-	if len(ids) == 0 {
-		return false
-	}
-	for _, id := range ids {
-		if net.ParseIP(strings.TrimSpace(id)) == nil {
-			return false
-		}
-	}
-	return true
-}
-
-// parseDomainsJSON 解析证书表里的 `domains`（JSON 数组字符串 ✓）；解析不了就返回空 ✓。
-func parseDomainsJSON(domainsJSON string) []string {
-	s := strings.TrimSpace(domainsJSON)
-	if s == "" {
-		return nil
-	}
-	var out []string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil
-	}
-	res := make([]string, 0, len(out))
-	for _, v := range out {
-		if v = strings.TrimSpace(v); v != "" {
-			res = append(res, v)
-		}
-	}
-	return res
 }

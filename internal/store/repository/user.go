@@ -76,6 +76,16 @@ func (r *UserRepository) GetTokenVersion(ctx context.Context, userID int64) (int
 	return v, nil
 }
 
+// UpdatePasswordHash 只更新口令哈希，不触碰其它字段。
+//
+// 用 UpdateColumn 而非 Save：Save 会把内存里的**旧** token_version 一并写回，
+// 可能覆盖掉期间别人 bump 出的新版本 —— 那会让已吊销的 token 重新生效 ✗。
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, userID int64, hash string) error {
+	return r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", userID).
+		UpdateColumn("password_hash", hash).Error
+}
+
 // BumpTokenVersion 把用户的令牌版本 +1 —— 这是"立即吊销该用户所有已签发 token"的手段
 // （登出 / 踢下线时调用）。用 SQL 自增避免并发覆盖。
 func (r *UserRepository) BumpTokenVersion(ctx context.Context, userID int64) error {

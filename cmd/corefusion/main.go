@@ -50,6 +50,8 @@ func main() {
 		runServer(os.Args[2:])
 	case "migrate":
 		runMigrate(os.Args[2:])
+	case "admin":
+		runAdmin(os.Args[2:])
 	case "version":
 		fmt.Printf("corefusion %s\n", Version)
 	case "help", "--help", "-h":
@@ -68,6 +70,7 @@ Usage:
   corefusion <command> [options]
 
 Commands:
+  admin     Offline admin commands (reset-password / list) — use when you cannot sign in
   migrate   Run database migrations
   version   Print version
   help      Show this help

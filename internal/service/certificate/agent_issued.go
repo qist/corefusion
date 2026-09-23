@@ -104,9 +104,14 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		name = domain
 	}
 
-	certRel := filepath.Join("certs", sanitizeDomain(name), "cert.pem")
-	keyRel := filepath.Join("certs", sanitizeDomain(name), "key.pem")
-	fullchainRel := filepath.Join("certs", sanitizeDomain(name), "fullchain.pem")
+	// ⚠ 目录名必须与 **`cert_distributor` 分发到的位置一致** ✗：它写的是 `certs/<Domain>/` ✓
+	// （真机核对 ✓：节点上是 `certs/node-owner.example.com/` ✓）。
+	// 以前这里用"消毒后的 name" ✗ → 记录里是 `certs/acme-node-owner_example_com/` ✗
+	// → 界面上"选证书"填出来的路径 ✗ 与内核实际拿到的文件位置 ✗ **对不上** ✗
+	//（真机搭建 caddy 站点时踩到：文件在、路径不对、内核只能用兜底证书 ✗）。
+	certRel := filepath.Join("certs", string(domain), "cert.pem")
+	keyRel := filepath.Join("certs", string(domain), "key.pem")
+	fullchainRel := filepath.Join("certs", string(domain), "fullchain.pem")
 
 	// ── 全部证书（**含 IP 证书**）都在库里存一份**完整副本** ✓ ────────────────────
 	// 用户口径 ✓：**入库是刻意的** ✓ —— "有人把证书文件删了，库里还完整有一份" ✓，

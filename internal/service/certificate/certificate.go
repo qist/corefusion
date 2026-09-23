@@ -445,7 +445,11 @@ func (s *Service) LandCertificateFiles(ctx context.Context, certID int64) (*enti
 	if name == "" {
 		name = c.Domain
 	}
-	relDir := filepath.Join("certs", sanitizeDomain(name))
+	// ⚠ 目录名必须与 **`cert_distributor` 的分发路径一致** ✗ —— 它写的是 `certs/<Domain>/` ✓
+	// （真机核对过：节点上是 `certs/node-owner.example.com/` ✓）。这里原来用"消毒后的 name" ✗
+	// → 面板落地到 `certs/acme-node-owner_example_com/` ✗，而配置里引用的是 `certs/<域名>/` ✗
+	// → **文件在、路径不对 → 内核拿不到证书** ✗（真机搭建测试时踩到 ✓）。
+	relDir := filepath.Join("certs", string(c.Domain))
 	certRel := filepath.Join(relDir, "cert.pem")
 	keyRel := filepath.Join(relDir, "key.pem")
 	chainRel := filepath.Join(relDir, "fullchain.pem")

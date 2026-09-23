@@ -52,8 +52,10 @@ export function clearPrevSiteSecret(id) {
 
 // ──────────── Callback Logs (回调日志) ────────────
 
+// ⚠ 路径修正（2026-09-23）：后端 v3.1 已把回调日志改名为 /charge-callback-events，
+// 前端还留在旧路径 /charge-callback-logs → 调用必然 404 ✗。
 export function listCallbackLogs(params = {}) {
-  return client.get('/charge-callback-logs', { params })
+  return client.get('/charge-callback-events', { params })
 }
 
 // ──────────── Callback Retries (回调重试) ────────────

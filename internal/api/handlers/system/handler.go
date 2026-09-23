@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -457,7 +458,16 @@ func (h *Handler) BatchUpdateSettings(c *gin.Context) {
 	response.OK(c, gin.H{"message": "settings updated"})
 }
 
-// --- Existing stubs ---
+// --- 面板自更新 / 首次启动向导：**未实现**，统一返回 501 ---
+//
+// 2026-09-23 体检发现：这几个 handler 原来返回的是"假成功 / 空数组"✗ ——
+//   ListReleases / ListUpdateJobs → 恒返回 []（调用方会以为"没有可用版本"，
+//   实际是功能没做 ✗）；SystemUpdate / SystemRollback / FinishBootstrap → 恒返回成功 ✗（更误导）。
+// 前端目前**没有任何地方调用这些端点**（已全量确认 ✓），所以改成诚实的 501 不影响界面 ✓；
+// 将来真做面板自更新时，把这里替换成实现即可（路由不用动 ✓）。
+func notImplemented(c *gin.Context, what string) {
+	response.Error(c, http.StatusNotImplemented, "NOT_IMPLEMENTED", what+" is not implemented")
+}
 
 func (h *Handler) GetBootstrapState(c *gin.Context) {
 	var count int64
@@ -465,24 +475,31 @@ func (h *Handler) GetBootstrapState(c *gin.Context) {
 	response.OK(c, gin.H{"initialized": count > 0})
 }
 
+// FinishBootstrap 是"首次启动向导完成"的钩子 ✗ 原来直接回 `{"message":"bootstrap completed"}`
+// 的**假成功**——什么都没做却告诉调用方已完成。首次启动初始化（见
+// docs/design/first-boot-initialization.md）整体未实现 → 改为 501 ✓。
 func (h *Handler) FinishBootstrap(c *gin.Context) {
-	response.OK(c, gin.H{"message": "bootstrap completed"})
+	notImplemented(c, "first-boot initialization")
 }
 
+// ListReleases 原来恒返回空数组 ✗（会被读成"没有可用版本"，实际是功能未实现）→ 501 ✓。
 func (h *Handler) ListReleases(c *gin.Context) {
-	response.OK(c, []interface{}{})
+	notImplemented(c, "panel releases listing")
 }
 
+// SystemUpdate 原来回 200 + code=NOT_IMPLEMENTED ✗（HTTP 语义上算成功）→ 真 501 ✓。
 func (h *Handler) SystemUpdate(c *gin.Context) {
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED", "message": "system update not yet implemented"})
+	notImplemented(c, "panel self-update")
 }
 
+// SystemRollback 同上 → 501 ✓。
 func (h *Handler) SystemRollback(c *gin.Context) {
-	response.OK(c, gin.H{"code": "NOT_IMPLEMENTED", "message": "system rollback not yet implemented"})
+	notImplemented(c, "panel self-rollback")
 }
 
+// ListUpdateJobs 原来恒返回空数组 ✗ → 501 ✓。
 func (h *Handler) ListUpdateJobs(c *gin.Context) {
-	response.OK(c, []interface{}{})
+	notImplemented(c, "panel update jobs listing")
 }
 
 const realityTargetsKey = "reality.targets"

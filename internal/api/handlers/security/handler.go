@@ -1,7 +1,9 @@
 package security
 
 import (
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -204,4 +206,107 @@ func (h *Handler) ResolveAlert(c *gin.Context) {
 	alert.Status = "resolved"
 	alert.ResolvedAt = &now
 	response.OK(c, alert)
+}
+
+
+// ── 2026-09-23 补齐：前端在调、后端却不存在的两个接口 ──────────────────
+//
+// 背景（代码完成度体检）：`web/admin/src/api/security.js` 与 `Security.vue` 一直在调
+//   GET  /security/audit-events/export   （导出 CSV，responseType: blob）
+//   POST /security/alerts/resolve        （全部标记已解决）
+// 但 router.go 里**只有** `/audit-events` 和 `/alerts/:id/resolve` ✗ → 界面上点"导出"和
+// "全部已解决"永远 404 ✓。这里是补上后端实现（不改前端：前端那套调用方式本身是合理的）。
+
+// ExportAuditEvents handles GET /api/v1/security/audit-events/export.
+//
+// 过滤条件与 ListAuditEvents **完全一致**（同一套 query 参数），但导出就是全量，
+// 所以不分页；只设一个上限，避免一次导出把内存/响应体撑爆。
+func (h *Handler) ExportAuditEvents(c *gin.Context) {
+	tx := h.db.Model(&entity.SecurityAuditEvent{})
+	if v := c.Query("category"); v != "" {
+		tx = tx.Where("category = ?", v)
+	}
+	if v := c.Query("event_type"); v != "" {
+		tx = tx.Where("event_type = ?", v)
+	}
+	if v := c.Query("result"); v != "" {
+		tx = tx.Where("result = ?", v)
+	}
+	if v := c.Query("remote_ip"); v != "" {
+		tx = tx.Where("remote_ip = ?", v)
+	}
+
+	// 前端会传 limit=100000；这里夹到 50000，避免一次导出拖垮面板。
+	const maxExportRows = 50000
+	limit := maxExportRows
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < maxExportRows {
+			limit = n
+		}
+	}
+
+	var events []entity.SecurityAuditEvent
+	if err := tx.Order("id DESC").Limit(limit).Find(&events).Error; err != nil {
+		response.InternalError(c, "QUERY_FAILED", err.Error())
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition",
+		`attachment; filename="audit-events-`+time.Now().Format("20060102-150405")+`.csv"`)
+
+	var b strings.Builder
+	// ⚠ BOM（"\ufeff"）：没有它 Excel 打开中文（reason / metadata 里常有中文）会乱码 ✗
+	b.WriteString("\ufeff")
+	b.WriteString("id,created_at,category,event_type,result,remote_ip,reason,metadata_json\n")
+	for i := range events {
+		e := &events[i]
+		fields := []string{
+			strconv.FormatInt(e.ID, 10),
+			e.CreatedAt.Format(time.RFC3339),
+			e.Category,
+			e.EventType,
+			e.Result,
+			e.RemoteIP,
+			e.Reason,
+			e.MetadataJSON,
+		}
+		for j, v := range fields {
+			if j > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(csvField(v))
+		}
+		b.WriteString("\n")
+	}
+	c.String(http.StatusOK, b.String())
+}
+
+// csvField 按 RFC 4180 转义：含逗号/引号/换行时整体加双引号，并把内部 `"` 变成 `""` ✓
+// （审计事件里的 reason / metadata 经常带逗号和引号，不转义会把 CSV 列错位 ✗）
+func csvField(s string) string {
+	if !strings.ContainsAny(s, ",\"\n\r") {
+		return s
+	}
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+// ResolveAllAlerts handles POST /api/v1/security/alerts/resolve.
+//
+// 把**所有尚未解决**的告警一次性标记为 resolved，返回处理条数。
+// 注意：只更新 `status <> 'resolved'` 的行（不是全表 UPDATE），否则已解决的告警会被
+// 重新写一遍 resolved_at，把人工处理时间冲掉 ✗。
+func (h *Handler) ResolveAllAlerts(c *gin.Context) {
+	now := time.Now()
+	res := h.db.Model(&entity.SecurityAlert{}).
+		Where("status IS NULL OR status <> ?", "resolved").
+		Updates(map[string]interface{}{
+			"status":      "resolved",
+			"resolved_at": now,
+		})
+	if res.Error != nil {
+		response.InternalError(c, "UPDATE_FAILED", res.Error.Error())
+		return
+	}
+	response.OK(c, gin.H{"success": true, "resolved": res.RowsAffected})
 }

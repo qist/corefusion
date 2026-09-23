@@ -119,9 +119,9 @@ export function getChainConfig(id) {
   return client.get(`/node-servers/${id}/chain-config`)
 }
 
-export function getChainExitConfig(id) {
-  return client.get(`/node-servers/${id}/chain-exit-config`)
-}
+// ✗ 已删除 getChainExitConfig：它请求的 /chain-exit-config 后端从来没有这个路由
+// （chain-proxy v2 已不再创建独立的出口配置，`chain_exit_configs` 表也已 drop），
+// 且全仓没有任何视图调用它 —— 属于指向已废弃概念的死包装（2026-09-23 体检清理）。
 
 export function getChainHealth(id) {
   return client.get(`/node-servers/${id}/chain-health`)

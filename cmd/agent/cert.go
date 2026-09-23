@@ -33,7 +33,11 @@ issue 选项：
   -dns-provider   dns-01 用：cloudflare|alidns|dnspod|route53|google|godaddy|namecheap
   -dns-env        dns-01 用：KEY=VALUE，可重复（如 -dns-env CF_DNS_API_TOKEN=xxx）
   -profile        ACME profile；**IP 证书会自动用 shortlived**（LE 策略要求短时证书，约 6 天）
+  -key-type       ecc（默认）| rsa：**私钥类型**（面板记录里选了 rsa 就必须带 rsa，
+                  否则节点会签出 EC 证书、与库记录对不上）
+  -key-bits       ecc→256|384，rsa→2048|3072|4096|8192（默认按类型取：ecc 256 / rsa 2048）
   -data-dir       产物目录（默认 ./acme-certs）→ 证书落在 <dir>/certs/<第一个SAN>/
+                  （rsa 等多层类型的是 <dir>/certs/<第一个SAN>/rsa/）
   -timeout        整体超时（默认 5m）
 
 示例：
@@ -87,6 +91,9 @@ func runCertIssue(args []string) int {
 		webroot     = fs.String("webroot", "", "http-01 用：把挑战文件写进该 webroot（80 被 nginx/caddy 占用时用）")
 		dataDir     = fs.String("data-dir", "./acme-certs", "产物目录")
 		timeout     = fs.Duration("timeout", 5*time.Minute, "整体超时")
+		// ⚠ 以前**没有**这两个开关 ✗ → 手工在节点上签发只能签出 EC256 ✗（面板记录里选了 rsa 也对不上 ✗）。
+		keyType = fs.String("key-type", "", "密钥类型：ecc | rsa（空 = ecc，历史默认）")
+		keyBits = fs.Int("key-bits", 0, "密钥位数：ecc→256|384，rsa→2048|3072|4096|8192（0 = 该类型默认）")
 	)
 	var dnsEnv repeatedFlag
 	fs.Var(&dnsEnv, "dns-env", "dns-01 的凭据：KEY=VALUE（可重复）")
@@ -125,6 +132,8 @@ func runCertIssue(args []string) int {
 		DNSProvider: *dnsProvider,
 		DNSEnvVars:  dnsEnvMap(dnsEnv),
 		Timeout:     timeoutDur,
+		KeyType:     *keyType,
+		KeyBits:     *keyBits,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "✗ 签发失败：%v\n", err)

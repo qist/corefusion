@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"corefusion/internal/runtime/cert"
 )
 
 // certMetaFile 是"这张证书当初是怎么签出来的"落盘文件名 ✓（0600 ✓ 含 DNS 凭据 ✓）。
@@ -35,13 +37,47 @@ type certMeta struct {
 	DNSProvider string            `json:"dns_provider,omitempty"`
 	DNSEnvVars  map[string]string `json:"dns_env_vars,omitempty"`
 
+	// KeyType / KeyBits 是**这张证书的密钥规格** ✓（ecc|rsa + 位数 ✓）。
+	// ⚠ 节点自续期=照这套参数重签一遍 ✗ → 不记住就会从 rsa 退回 EC256 ✗
+	// （续期顺手把密钥类型换掉 ✗，真机就是"记录 rsa、文件却是 EC"的来源之一 ✓）。
+	// 老 meta 没有这两个字段 → 反序列化为空 ✓ = 历史默认 EC256 ✓，兼容 ✓。
+	KeyType string `json:"key_type,omitempty"`
+	KeyBits int    `json:"key_bits,omitempty"`
+
 	IssuedAt    time.Time `json:"issued_at,omitempty"`
 	LastRenewAt time.Time `json:"last_renew_at,omitempty"`
 }
 
 // certMetaPath 返回某张证书的 meta 路径 ✓。
+//
+// ⚠ meta **永远**在 `certs/<name>/meta.json` ✓（不进类型子目录 ✓）——
+// 它是"这张证书归节点自管"的标记 ✓，与密钥类型无关 ✓；
+// 证书文件本身才按类型分层 ✓（见 cert.LocalCertRelPath ✓）。
 func certMetaPath(dataDir, name string) string {
 	return filepath.Join(dataDir, "certs", name, certMetaFile)
+}
+
+// certNameFromRelPath 从 `CertRelPaths` 给出的相对路径里取出**证书名** ✓。
+//
+// 布局（写死在 `cert.CertRelPaths` ✓）：
+//
+//	ecc  → certs/<name>/cert.pem
+//	其他 → certs/<name>/<keytype>/cert.pem      ← 例如 rsa
+//
+// ⚠ 不能直接用 `filepath.Base(filepath.Dir(rel))` ✗：RSA 时那会得到 "rsa" ✗
+// → meta 落到 `certs/rsa/meta.json` ✗（与 certMetaPath 不一致 ✗ → 自续期失效 ✗）。
+func certNameFromRelPath(rel string) string {
+	parts := strings.Split(filepath.ToSlash(filepath.Dir(rel)), "/")
+	if len(parts) >= 2 && parts[0] == "certs" {
+		return parts[1]
+	}
+	return filepath.Base(filepath.Dir(rel))
+}
+
+// localCertPathFor 返回本机某张证书**按密钥类型**定位的 cert.pem 绝对路径 ✓。
+func localCertPathFor(dataDir, name, keyType string) string {
+	certRel, _, _ := cert.CertRelPaths(name, keyType)
+	return filepath.Join(dataDir, certRel)
 }
 
 // writeCertMeta 原子写入 meta ✓（先写临时文件再 rename ✓，避免半截文件 ✗）。
@@ -76,6 +112,9 @@ func readCertMeta(dataDir, name string) (*certMeta, error) {
 }
 
 // listLocalCertDirs 列出本机 ACME 目录下已签发的证书目录名 ✓（`<dataDir>/certs/<name>/` ✓）。
+//
+// ⚠ 必须同时认**类型子目录** ✗：RSA 证书在 `certs/<name>/rsa/cert.pem` ✓，
+// 只找 `certs/<name>/cert.pem` 的话 RSA 证书**永远发现不了** ✗ → 永不自续 ✗。
 func listLocalCertDirs(dataDir string) ([]string, error) {
 	root := filepath.Join(dataDir, "certs")
 	entries, err := os.ReadDir(root)
@@ -91,7 +130,10 @@ func listLocalCertDirs(dataDir string) ([]string, error) {
 			continue
 		}
 		if _, serr := os.Stat(filepath.Join(root, e.Name(), "cert.pem")); serr != nil {
-			continue // 没有 cert.pem 的目录跳过 ✓
+			// 顶层没有 cert.pem：再看类型子目录（RSA ✓）；都没有才跳过 ✓
+			if _, rerr := os.Stat(localCertPathFor(dataDir, e.Name(), cert.KeyTypeRSA)); rerr != nil {
+				continue
+			}
 		}
 		out = append(out, e.Name())
 	}
@@ -123,6 +165,11 @@ func (m *certMeta) issueParams(a *AgentApp, dataDir string) acmeIssueParams {
 		DNSProvider: strings.TrimSpace(m.DNSProvider),
 		DNSEnvVars:  env,
 		CertID:      m.CertID,
+		// ⚠ 钥匙类型也要原样带回去 ✗：不带就退回 EC256 ✗
+		// → 每次自续期都**悄悄把 rsa 证书换成 EC** ✗（真机就是"记录 rsa、文件是 EC" ✓）。
+		// 老 meta 里没有这两项 → 空/0 ✓ = 历史默认 EC256 ✓，行为与升级前一致 ✓。
+		KeyType: strings.TrimSpace(m.KeyType),
+		KeyBits: m.KeyBits,
 		// ⚠ 刻意**不带 EAB** ✗：账号早已在节点本地注册好 ✓（`<dataDir>/accounts/<ca>.json` ✓），
 		// 续期只用账号密钥 ✓ → 再也不会消耗新的 EAB ✓（Google 的 EAB 是有限/易变的 ✓）。
 		Timeout: 5 * time.Minute,

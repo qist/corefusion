@@ -414,6 +414,52 @@ func TestRenewCommandWithoutEnv(t *testing.T) {
 	}
 }
 
+// 核心回归 ✓：续期指令**必须带密钥类型** ✗ —— 不带的话节点侧
+// `resolveKeyType("",0)` 会回退 **EC256** ✗ → 库里登记 `key_type=rsa/key_bits=4096`
+// 的证书，续期后**变成 EC 证书** ✗（真机现象：记录 rsa、文件却是 `EC PRIVATE KEY` ✓）。
+func TestRenewCommandCarriesKeyType(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	for _, c := range []struct {
+		keyType string
+		keyBits int
+	}{
+		{"rsa", 4096},
+		{"ecc", 256},
+	} {
+		cert := seedCert(t, certRepo, `["`+c.keyType+`.example.com"]`, 1, 2*24*time.Hour)
+		cert.Issuer = "lets_encrypt"
+		// ⚠ 密钥规格以**库记录**为准 ✗（面板/表单选的 ✓）→ 必须原样下发 ✗
+		cert.KeyType, cert.KeyBits = c.keyType, c.keyBits
+		if err := certRepo.Update(context.Background(), cert); err != nil {
+			t.Fatal(err)
+		}
+		if err := serverRepo.Create(context.Background(), &entity.NodeServer{
+			Name: "n-" + c.keyType, CertificateID: cert.ID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f := &fakeIssuer{envEmail: "test@example.com"}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.got) != 2 {
+		t.Fatalf("应下发 2 条续期指令，实际 %d", len(f.got))
+	}
+	got := map[string]int{}
+	for _, cmd := range f.got {
+		got[cmd.GetKeyType()] = int(cmd.GetKeyBits())
+	}
+	if got["rsa"] != 4096 {
+		t.Fatalf("rsa 证书的续期指令必须带 key_type=rsa + key_bits=4096 ✗（否则节点会签出 EC ✗）：%v", got)
+	}
+	if got["ecc"] != 256 {
+		t.Fatalf("ecc 证书的续期指令必须带 key_type=ecc + key_bits=256 ✗：%v", got)
+	}
+}
+
 // normalizeCertCA 归一化 ✓
 func TestNormalizeCertCA(t *testing.T) {
 	cases := map[string]string{

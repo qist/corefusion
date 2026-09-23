@@ -211,11 +211,14 @@ func (r *PublicCertRenewer) thresholdFor(identifiers []string) time.Duration {
 //	① 不带 CA：节点会用**自己的默认 CA（Let's Encrypt）**去续签 ✗ → 签发者被悄悄换掉 ✗
 //	   （Google 的证书续成 LE 的 ✗，审计时发现 ✓）；
 //	② 不带邮箱：Google 注册直接拒 ✗（`Accounts must have at least one contact.` ✓）；
-//	③ 不带 EAB：Google / ZeroSSL 在节点上**首次注册就会失败** ✗。
+//	③ 不带 EAB：Google / ZeroSSL 在节点上**首次注册就会失败** ✗；
+//	④ 不带密钥类型 ✗：节点侧 `resolveKeyType("",0)` 回退 **EC256** ✗
+//	   → 库里登记 `key_type=rsa` 的证书，续期**永远只能续出 EC 证书** ✗
+//	   （真机现象：记录 rsa、文件却是 `EC PRIVATE KEY` ✓）。
 //
 // 带上之后：节点**第一次申请即自动注册** ✓，账号落在节点固定目录 ✓，
 // 之后续期只用账号密钥 ✓ —— **再也不会消耗新 EAB** ✓（正是要的效果 ✓）。
-func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64, issuer string, identifiers []string) *agentpb.IssuePublicCertCommand {
+func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64, issuer string, identifiers []string, keyType string, keyBits int) *agentpb.IssuePublicCertCommand {
 	ca := normalizeCertCA(issuer)
 	email, eabKID, eabMAC := "", "", ""
 	if r.issuer != nil {
@@ -228,6 +231,9 @@ func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64,
 		Email:       email,
 		EabKeyId:    eabKID,
 		EabMacKey:   eabMAC,
+		// ⚠ 密钥类型必须随指令下发 ✗：节点侧拿不到就退回 EC256 ✗（见上方 ④ ✓）。
+		KeyType: keyType,
+		KeyBits: int32(keyBits),
 	}
 }
 
@@ -270,15 +276,16 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 			if srv.IsLocal {
 				continue // 面板本机不需要远程签发 ✓
 			}
-			cmd := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers)
+			cmd := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits)
 			if err := r.issuer.IssuePublicCert(ctx, srv.ID, cmd); err != nil {
 				log.Printf("[PublicCertRenewer] cert %d (%v) → server %d: issue command failed: %v",
 					c.ID, identifiers, srv.ID, err)
 				continue
 			}
-			log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s (剩 %s，阈值 %s) → asked server %d (%s) to renew on-node",
+			log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s (剩 %s，阈值 %s) → asked server %d (%s) to renew on-node (key=%s/%d)",
 				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339),
-				time.Until(c.ExpiresAt).Truncate(time.Hour), threshold, srv.ID, srv.Name)
+				time.Until(c.ExpiresAt).Truncate(time.Hour), threshold, srv.ID, srv.Name,
+				c.KeyType, c.KeyBits)
 		}
 	}
 	return nil
@@ -343,7 +350,7 @@ func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID in
 			log.Printf("[PublicCertRenewer] (on-reconnect) cert %d (%v) expiring %s → server %d",
 				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339), srv.ID)
 			if err := r.issuer.IssuePublicCert(ctx, srv.ID,
-				r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers)); err != nil {
+				r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits)); err != nil {
 				log.Printf("[PublicCertRenewer] (on-reconnect) cert %d → server %d failed: %v", c.ID, srv.ID, err)
 			}
 		}

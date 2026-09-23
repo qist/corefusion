@@ -44,6 +44,10 @@ func (a *AgentApp) handleIssuePublicCert(cmd *agentpb.IssuePublicCertCommand, se
 		EABKeyID:  strings.TrimSpace(cmd.GetEabKeyId()),
 		EABMACKey: strings.TrimSpace(cmd.GetEabMacKey()),
 		Timeout:   5 * time.Minute,
+		// ⚠ 密钥类型来自面板指令 ✗（原来指令里没有这俩字段 ✗ → 一律 EC256 ✗）：
+		// 面板按库记录/表单下发 ✓，节点照做 ✓ → 库里 rsa 的证书在节点上也真的签出 rsa ✓。
+		KeyType: strings.TrimSpace(cmd.GetKeyType()),
+		KeyBits: int(cmd.GetKeyBits()),
 		// 记下面板侧的 id ✓（后续自续期上报时带上 ✓ → 面板能对上同一条记录 ✓）
 		CertID: cmd.CertId,
 	}

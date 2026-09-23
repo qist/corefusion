@@ -1164,6 +1164,13 @@ message IssuePublicCertCommand {
   // 所以**账号必须落盘** ✓（见 data_dir ✓），否则续期会反复要新 EAB ✗。
   string eab_key_id     = 11;
   string eab_mac_key    = 12;
+  // ── 密钥类型（2026-09-23 补 ✓）：原来这两个字段**根本不存在** ✗ ──
+  // 不带 → 节点侧 resolveKeyType("",0) 回退 **EC256** ✗
+  // → 面板记录是 rsa 的证书，在节点上怎么续都只能签出 EC 证书 ✗（真机踩到 ✓）。
+  // key_type 取值：ecc / rsa（面板侧 NormalizeKeyType 已归一 ✓）；
+  // key_bits：ecc→256|384、rsa→2048|3072|4096|8192（0 = 用该类型默认 ✓）。
+  string key_type       = 13;
+  int32  key_bits       = 14;
 }
 
 // PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。

@@ -33,6 +33,11 @@ type acmeIssueParams struct {
 	EABMACKey string
 	// CertID 是面板侧的证书 id ✓（仅用于上报/对账 ✓；节点自续时从 meta 读回 ✓）。
 	CertID int64
+	// KeyType / KeyBits 决定**签出来的私钥类型** ✓（ecc|rsa + 位数 ✓）。
+	// ⚠ 原来这里**没有这两个字段** ✗ → 节点侧永远走 EC256 ✗
+	// （面板记录 rsa 也白搭 ✓）。空/0 = 历史默认（EC256 ✓）。
+	KeyType string
+	KeyBits int
 }
 
 // defaultAgentACMECertDir 是节点侧 ACME 数据目录的**固定绝对默认值** ✓。
@@ -107,6 +112,9 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 		Domains:       domains,
 		ChallengeType: cert.ChallengeType(challenge),
 		Profile:       prof,
+		// ⚠ 必须传下去 ✗（原来这里也不带 ✗）→ 不带就由 createClient 回退 EC256 ✗
+		KeyType: strings.TrimSpace(p.KeyType),
+		KeyBits: p.KeyBits,
 	}
 	// 首次申请即"自动注册"✓：把面板下发的 EAB 交给 lego ✓（账号已在本地时它不会再用 EAB ✓）
 	if strings.TrimSpace(p.EABKeyID) != "" && strings.TrimSpace(p.EABMACKey) != "" {
@@ -152,7 +160,8 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	log.Printf("[acme] 开始签发：SAN=%v challenge=%s ca=%s profile=%q data_dir=%s（账号会落在这里 ✓）", domains, challenge, provider, prof, dataDir)
+	log.Printf("[acme] 开始签发：SAN=%v challenge=%s ca=%s profile=%q key=%s/%d data_dir=%s（账号会落在这里 ✓）",
+		domains, challenge, provider, prof, cert.NormalizeKeyType(p.KeyType), p.KeyBits, dataDir)
 	result, err := client.Issue(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -175,7 +184,9 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 	// ⚠ 这份文件就是"所有权"的分界线 ✓：面板 `cert_distributor` 推下来的证书**不会有 meta** ✗，
 	// 于是自续期**不会**去动它们 ✓（那种证书归面板管 ✓，节点擅自续会绕开面板口径 ✗）。
 	// 所以 meta 的存在本身就是"面板只管触发、节点持有并自续"这条架构的落点 ✓。
-	certName := filepath.Base(filepath.Dir(result.CertPath))
+	// ⚠ 不能再用 `filepath.Base(filepath.Dir(...))` ✗：RSA 落在 `certs/<name>/rsa/cert.pem` ✓，
+	// 取出来会是 "rsa" ✗ → meta 写到 `certs/rsa/meta.json` ✗（自续期再也找不到它 ✗）。
+	certName := certNameFromRelPath(result.CertPath)
 	meta := &certMeta{
 		CertID:      p.CertID,
 		Identifiers: domains,
@@ -186,7 +197,11 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 		Webroot:     strings.TrimSpace(p.Webroot),
 		DNSProvider: strings.TrimSpace(p.DNSProvider),
 		DNSEnvVars:  p.DNSEnvVars,
-		IssuedAt:    time.Now(),
+		// ⚠ 密钥类型也要记住 ✗：节点自续期是"照 meta 重签一遍" ✓，
+		// 不记住就退回 EC256 ✗ → 等于换了一种密钥 ✗（每次自续都换密钥 ✗）。
+		KeyType:  cert.NormalizeKeyType(p.KeyType),
+		KeyBits:  p.KeyBits,
+		IssuedAt: time.Now(),
 	}
 	// 续期要保留首次的签发时间与面板 id ✓（覆盖成"这次"会让历史信息丢失 ✗）
 	if prev, perr := readCertMeta(dataDir, certName); perr == nil && prev != nil {

@@ -5,15 +5,14 @@
 # ⚠ 纯测试资产：产品代码里没有任何"为测试开的口子"；mockchargesite 是独立 go.mod 模块，
 #   不参与产品构建（go list ./... 里看不到它）。
 #
-# 覆盖四条真实链路（全部走真实 API，不做任何"模拟代码"）：
-#   [余额充值] 客户端下单 → 面板调模拟站点拿 payment_url → 支付 → 回调 → 余额到账 + 流水
-#   [套餐充值] pay_method=charge_site 买套餐 → 支付 → 回调 → 套餐真正生效（激活/续期）
-#   [订单过期] 订单 TTL 数据 + 过期后回调的行为（数据是否仍然严格对上）
-#   [反向用例] 错签名 / 金额不符 / 时间过期 / 重放同一 nonce —— 都应被拒（400）
+# 覆盖（全部走真实 API，不做任何"模拟代码"）：
+#   [直接充值] 两笔：整元 + 非整元(9.90 元) —— 金额单位是否统一的关键证据，要求分毫不差
+#   [套餐购买] 两条：renew（已有套餐续期）+ new（首次购买）—— 要求套餐真的生效、余额不被改动
+#   [订单过期] TTL 数据 + 过期后回调是否仍严格对账（按产品决策：过期不强制）
+#   [反向用例] 错签名 / 金额不符 / 错单位 / 时间过期 / 重放同一 nonce —— 都应被拒（400）
 #
 # 用法：
 #   bash tests/charge-e2e/run.sh
-#   PANEL_URL=http://127.0.0.1:8080 bash tests/charge-e2e/run.sh
 #   KEEP=1 bash tests/charge-e2e/run.sh      # 跑完保留模拟站点，方便手动点收银台
 #
 # 环境变量：PANEL_URL / CF_DB / MOCK_PORT / ADMIN_USER / ADMIN_PASS / AMOUNT_YUAN / KEEP
@@ -29,6 +28,7 @@ ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 AMOUNT_YUAN="${AMOUNT_YUAN:-1}"
 AMOUNT_FEN=$((AMOUNT_YUAN * 100))
+ODD_FEN=990 # 9.90 元：非整元，专门用来验金额单位
 KEEP="${KEEP:-}"
 
 TMP="$(mktemp -d)"
@@ -48,10 +48,9 @@ step() { STEP=$((STEP + 1)); printf '\n\033[1;36m[%d] %s\033[0m\n' "$STEP" "$1";
 ok()   { PASS=$((PASS + 1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf '  \033[31m✗ %s\033[0m\n' "$1"; }
 info() { printf '    %s\n' "$1"; }
-warn() { printf '    \033[33m⚠ %s\033[0m\n' "$1"; }
+note() { printf '    \033[33m· %s\033[0m\n' "$1"; }
 
 cleanup() {
-  # 中途失败也要清干净：测试站点/客户端统一在退出钩子里删。
   if [[ -n "$TOKEN" ]]; then
     [[ -n "$SITE_ID" ]]   && curl -s -X DELETE "$PANEL/api/v1/charge-sites/$SITE_ID" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1
     [[ -n "$CLIENT_ID" ]] && curl -s -X DELETE "$PANEL/api/v1/clients/$CLIENT_ID" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1
@@ -82,6 +81,7 @@ print(d if not isinstance(d, (dict, list)) else json.dumps(d, ensure_ascii=False
 ' "$2"
 }
 sqlq() { sqlite3 "$DB" "$1"; }
+yuan() { printf '%d.%02d' $(($1 / 100)) $(($1 % 100)); }
 
 # --------------------------------------------------------------- preflight ---
 step "预检"
@@ -92,7 +92,6 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' "$PANEL/" || true)"
 [[ "$CODE" == "200" ]] && ok "面板可达 ✓ $PANEL" || { bad "面板不可达（HTTP $CODE）→ 先启动面板"; exit 1; }
 [[ -f "$DB" ]] && ok "数据库可读 ✓ $DB" || { bad "找不到数据库 $DB（用 CF_DB 指定）"; exit 1; }
 
-# ------------------------------------------------------------ 管理员登录 -----
 step "管理员登录"
 LOGIN="$(curl -s -X POST "$PANEL/api/v1/auth/login" -H 'Content-Type: application/json' \
   -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}")"
@@ -107,7 +106,6 @@ api() {
   fi
 }
 
-# ------------------------------------------------------------ 建充值站点 -----
 step "创建充值站点（SiteURL 指向模拟站点）"
 SITE_BODY="$(cat <<JSON
 {"name":"mock-e2e-$(date +%s)","site_url":"$MOCK_URL","callback_secret":"$SITE_SECRET",
@@ -123,11 +121,9 @@ ok "站点已创建 ✓ id=$SITE_ID"
 [[ "$RET_SECRET" == "$SITE_SECRET" ]] && ok "回调密钥一致 ✓" || bad "回调密钥不一致 ✗（回显=$RET_SECRET）"
 
 step "把站点置为已验证（测试快路径）"
-# 正式流程走域名验证；本地模拟站点没有公网域名 → 直接改库最省事
 sqlq "update charge_sites set verified=1, verify_expire_at=datetime('now','+365 days') where id=$SITE_ID;" \
   && ok "verified=1 ✓" || bad "置 verified 失败"
 
-# --------------------------------------------------------- 启动模拟站点 -----
 step "启动模拟充值站点（独立测试模块 ✓）"
 ( cd "$HERE/mockchargesite" && go build -o "$TMP/mockchargesite" . ) 2>"$TMP/build.log" \
   || { bad "编译模拟站点失败 ✗"; cat "$TMP/build.log"; exit 1; }
@@ -158,7 +154,7 @@ a = p.parse_args()
 
 ts = int(time.time()) + a.ts_offset
 nonce = a.nonce or hashlib.sha256(("%s%d" % (a.trade_no, ts)).encode()).hexdigest()[:32]
-amount = int(a.amount)  # ⚠ 分（int64）—— 面板按同单位直接比较
+amount = int(a.amount)
 
 body = {
     "trade_no": a.trade_no, "site_trade_no": a.site_trade_no, "status": a.status,
@@ -183,7 +179,6 @@ print("%s/api/v1/charge/callback/%s" % (a.panel.rstrip("/"), a.site_id))
 EOF_PY
 make_callback() { python3 "$TMP/sign.py" "$@" --out "$TMP/cb.json" --panel "$PANEL"; }
 
-# ------------------------------------------------------------ 准备客户端 -----
 step "准备测试客户端并登录"
 PLAN_ID="$(sqlq "select id from plan_templates order by id limit 1;")"
 CLIENT_RESP="$(api POST /api/v1/clients "{\"email\":\"$CLIENT_EMAIL\",\"password\":\"Passw0rd!23\",\"plan_id\":${PLAN_ID:-1}}")"
@@ -202,86 +197,95 @@ capi() {
     curl -s -X "$m" "$PANEL$p" -H "Authorization: Bearer $CLIENT_TOKEN"
   fi
 }
+balance() { jget "$(capi GET /api/v1/client-auth/balance)" "data.balance"; }
 
-# ============================ 场景 1：余额充值 ===============================
-step "【余额充值】下单 → 面板调模拟站点 → 支付 → 到账"
-BAL_BEFORE="$(jget "$(capi GET /api/v1/client-auth/balance)" "data.balance")"
-info "下单前余额：$BAL_BEFORE"
-ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
-TRADE_NO="$(jget "$ORDER" "data.trade_no")"
-PAY_URL="$(jget "$ORDER" "data.payment_url")"
-[[ -z "$TRADE_NO" ]] && { bad "下单失败：$ORDER"; exit 1; }
-ok "下单成功 ✓ trade_no=$TRADE_NO"
-[[ -n "$PAY_URL" && "$PAY_URL" == "$MOCK_URL/"* ]] && ok "payment_url 指向模拟站点 ✓" \
-  || bad "payment_url 不对 ✗ $PAY_URL（期望以 $MOCK_URL/ 开头）"
-[[ "$(sqlq "select count(*) from charge_orders where trade_no='$TRADE_NO';")" == "1" ]] \
-  && ok "订单已入库 ✓" || bad "订单未入库 ✗"
-
-PAY_RESP="$(curl -s -X POST "$MOCK_URL/pay-api?trade_no=$TRADE_NO&status=paid")"
-[[ "$(jget "$PAY_RESP" "panel_code")" == "200" ]] && ok "回调被受理 ✓ $(jget "$PAY_RESP" "panel_body" | head -c 120)" \
-  || { bad "回调失败 ✗ $PAY_RESP"; tail -6 "$TMP/mock.log" | sed 's/^/      /'; }
-BAL_AFTER="$(jget "$(capi GET /api/v1/client-auth/balance)" "data.balance")"
-if [[ -n "$BAL_BEFORE" && -n "$BAL_AFTER" ]]; then
+# ==================== 场景 1：直接充值（余额充值）============================
+step "【直接充值】整元 + 非整元各一笔（金额单位是否统一的关键证据）"
+for SPEC in "整元($(yuan $AMOUNT_FEN)):$AMOUNT_FEN" "非整元($(yuan $ODD_FEN)):$ODD_FEN"; do
+  LABEL="${SPEC%%:*}"; FEN="${SPEC##*:}"
+  BAL_BEFORE="$(balance)"
+  ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$FEN}")"
+  TRADE_NO="$(jget "$ORDER" "data.trade_no")"
+  PAY_URL="$(jget "$ORDER" "data.payment_url")"
+  if [[ -z "$TRADE_NO" ]]; then bad "[$LABEL] 下单失败：$ORDER"; continue; fi
+  ok "[$LABEL] 下单成功 ✓ trade_no=$TRADE_NO"
+  [[ -n "$PAY_URL" && "$PAY_URL" == "$MOCK_URL/"* ]] && ok "[$LABEL] payment_url 指向模拟站点 ✓" \
+    || bad "[$LABEL] payment_url 不对 ✗ $PAY_URL"
+  O_AMT="$(sqlq "select amount from charge_orders where trade_no='$TRADE_NO';")"
+  [[ "$O_AMT" == "$FEN" ]] && ok "[$LABEL] 订单金额 = $O_AMT 分 ✓" \
+    || bad "[$LABEL] 订单金额 = $O_AMT ✗（期望 $FEN 分）"
+  PAY_RESP="$(curl -s -X POST "$MOCK_URL/pay-api?trade_no=$TRADE_NO&status=paid")"
+  [[ "$(jget "$PAY_RESP" "panel_code")" == "200" ]] && ok "[$LABEL] 回调被受理 ✓" \
+    || { bad "[$LABEL] 回调失败 ✗ $PAY_RESP"; tail -6 "$TMP/mock.log" | sed 's/^/      /'; }
+  BAL_AFTER="$(balance)"
   DELTA=$((BAL_AFTER - BAL_BEFORE))
-  [[ "$DELTA" == "$AMOUNT_FEN" ]] && ok "余额 +$DELTA 分 ✓（期望 $AMOUNT_FEN）" || bad "余额变化不对 ✗ got=$DELTA"
-fi
-printf '%s' "$(capi GET /api/v1/client-auth/balance/transactions)" | grep -q '"charge"' \
-  && ok "流水出现 charge ✓" || bad "没看到 charge 流水 ✗"
-[[ "$(sqlq "select status from charge_orders where trade_no='$TRADE_NO';")" == "paid" ]] \
-  && ok "订单状态 = paid ✓" || bad "订单状态不对 ✗"
+  [[ "$DELTA" == "$FEN" ]] && ok "[$LABEL] 余额 +$DELTA 分 ✓（分毫不差）" \
+    || bad "[$LABEL] 余额变化 ✗ got=$DELTA want=$FEN"
+  L_AMT="$(sqlq "select coalesce(sum(amount),0) from balance_transactions where related_charge_order_id=(select id from charge_orders where trade_no='$TRADE_NO') and type='charge';")"
+  [[ "$L_AMT" == "$FEN" ]] && ok "[$LABEL] 流水金额 = $L_AMT 分 ✓" \
+    || bad "[$LABEL] 流水金额 = $L_AMT ✗（期望 $FEN 分）"
+  [[ "$(sqlq "select status from charge_orders where trade_no='$TRADE_NO';")" == "paid" ]] \
+    && ok "[$LABEL] 充订单 = paid ✓" || bad "[$LABEL] 充订单状态不对 ✗"
+done
 
-# ============================ 场景 2：套餐充值 ==============================
-step "【套餐充值】pay_method=charge_site 买套餐 → 支付 → 套餐生效"
+# ==================== 场景 2：套餐购买（两条：renew / new）==================
+step "【套餐购买】两条都要测：renew（续期）+ new（首次购买）"
 VAR_ROW="$(sqlq "select id||'|'||price||'|'||duration_days||'|'||name from plan_variants where enabled=1 order by id limit 1;")"
 VARIANT_ID="${VAR_ROW%%|*}"; REST="${VAR_ROW#*|}"; VAR_PRICE="${REST%%|*}"; REST="${REST#*|}"; VAR_DAYS="${REST%%|*}"; VAR_NAME="${REST#*|}"
 if [[ -z "$VARIANT_ID" || -z "$VAR_PRICE" ]]; then
   bad "找不到可用套餐变体 ✗（plan_variants 为空）"
 else
-  info "套餐：id=$VARIANT_ID $VAR_NAME 价格=$VAR_PRICE 分（$((VAR_PRICE / 100)).$((VAR_PRICE % 100)) 元）时长=${VAR_DAYS}天"
-  BAL_P1="$(jget "$(capi GET /api/v1/client-auth/balance)" "data.balance")"
-  EXP_BEFORE="$(sqlq "select coalesce(expires_at,'') from clients where email='$CLIENT_EMAIL';")"
-  # ⚠ 用 renew 而不是 new：测试客户端创建时就带了 plan_id（CreateClient 要求 plan_id ✓），
-  # 所以它"已有套餐" ✓ → 用 new 会被合理拒绝（"you already have an active plan"）✓。
-  P_ORDER="$(capi POST /api/v1/client-auth/orders \
-    "{\"variant_id\":$VARIANT_ID,\"order_type\":\"renew\",\"pay_method\":\"charge_site\",\"charge_site_id\":$SITE_ID}")"
-  P_TRADE="$(jget "$P_ORDER" "data.trade_no")"
-  P_URL="$(jget "$P_ORDER" "data.payment_url")"
-  if [[ -z "$P_TRADE" ]]; then
-    bad "套餐下单失败 ✗ $P_ORDER"
-  else
-    ok "套餐下单成功 ✓ trade_no=$P_TRADE"
-    P_AMT="$(sqlq "select amount from charge_orders where trade_no='$P_TRADE';")"
-    P_TYPE="$(sqlq "select order_type from charge_orders where trade_no='$P_TRADE';")"
-    [[ "$P_AMT" == "$VAR_PRICE" ]] && ok "订单金额 = 套餐价 $P_AMT 分 ✓（金额单位一致）" \
-      || bad "订单金额不对 ✗ got=$P_AMT want=$VAR_PRICE"
-    [[ "$P_TYPE" == "purchase" ]] && ok "order_type = purchase ✓" || bad "order_type = $P_TYPE ✗"
-    [[ -n "$P_URL" && "$P_URL" == "$MOCK_URL/"* ]] && ok "payment_url 指向模拟站点 ✓" \
-      || bad "payment_url 不对 ✗ $P_URL"
-    P_PAY="$(curl -s -X POST "$MOCK_URL/pay-api?trade_no=$P_TRADE&status=paid")"
-    [[ "$(jget "$P_PAY" "panel_code")" == "200" ]] && ok "套餐回调被受理 ✓ $(jget "$P_PAY" "panel_body" | head -c 100)" \
-      || { bad "套餐回调失败 ✗ $P_PAY"; tail -6 "$TMP/mock.log" | sed 's/^/      /'; }
-    # 套餐是否真的生效 ✓
-    CL_VARIANT="$(sqlq "select coalesce(plan_variant_id,0) from clients where email='$CLIENT_EMAIL';")"
-    [[ "$CL_VARIANT" == "$VARIANT_ID" ]] && ok "客户端套餐已切换为该变体 ✓（plan_variant_id=$CL_VARIANT）" \
-      || bad "套餐未生效 ✗ plan_variant_id=$CL_VARIANT（期望 $VARIANT_ID）"
-    P_STATUS="$(sqlq "select coalesce(max(status),'') from plan_orders where client_id=$CLIENT_ID;")"
-    [[ -n "$P_STATUS" && "$P_STATUS" != "pending" ]] && ok "套餐订单状态 = $P_STATUS ✓（不是 pending ✓）" \
-      || bad "套餐订单状态异常 ✗ '$P_STATUS'"
-    [[ "$(sqlq "select status from charge_orders where trade_no='$P_TRADE';")" == "paid" ]] \
-      && ok "套餐的充订单 = paid ✓" || bad "套餐的充订单状态不对 ✗"
-    BAL_P2="$(jget "$(capi GET /api/v1/client-auth/balance)" "data.balance")"
-    [[ "$BAL_P1" == "$BAL_P2" ]] && ok "余额未被套餐购买改动 ✓（$BAL_P1）" \
-      || info "余额变化：$BAL_P1 → $BAL_P2（若套餐走余额则属预期，请留意）"
-    # 续期是否真的生效：客户有效期必须发生变化 ✓（这是"套餐充值成功"最硬的证据 ✓）
-    EXP_AFTER="$(sqlq "select coalesce(expires_at,'') from clients where email='$CLIENT_EMAIL';")"
-    info "客户有效期：${EXP_BEFORE:-<空>} → ${EXP_AFTER:-<空>}"
-    [[ -n "$EXP_AFTER" && "$EXP_AFTER" != "$EXP_BEFORE" ]] \
-      && ok "续期生效 ✓（有效期已顺延）" || bad "有效期没变化 ✗（$EXP_AFTER）"
-  fi
+  note "套餐：id=$VARIANT_ID $VAR_NAME 价格=$(yuan "$VAR_PRICE") 元（$VAR_PRICE 分）时长=${VAR_DAYS} 天"
+
+  buy_plan() { # buy_plan <renew|new> <标签>
+    local OTYPE="$1" LABEL="$2"
+    local bal_before exp_before order trade url pay amt
+    bal_before="$(balance)"
+    exp_before="$(sqlq "select coalesce(expires_at,'') from clients where email='$CLIENT_EMAIL';")"
+    order="$(capi POST /api/v1/client-auth/orders \
+      "{\"variant_id\":$VARIANT_ID,\"order_type\":\"$OTYPE\",\"pay_method\":\"charge_site\",\"charge_site_id\":$SITE_ID}")"
+    trade="$(jget "$order" "data.trade_no")"
+    url="$(jget "$order" "data.payment_url")"
+    if [[ -z "$trade" ]]; then bad "[$LABEL] 套餐下单失败 ✗ $(printf '%s' "$order" | head -c 140)"; return; fi
+    ok "[$LABEL] 套餐下单成功 ✓ trade_no=$trade"
+    amt="$(sqlq "select amount from charge_orders where trade_no='$trade';")"
+    [[ "$amt" == "$VAR_PRICE" ]] && ok "[$LABEL] 订单金额 = 套餐价 $amt 分 ✓" \
+      || bad "[$LABEL] 订单金额 = $amt ✗（期望 $VAR_PRICE）"
+    [[ "$(sqlq "select order_type from charge_orders where trade_no='$trade';")" == "purchase" ]] \
+      && ok "[$LABEL] order_type = purchase ✓" || bad "[$LABEL] order_type 不对 ✗"
+    [[ -n "$url" && "$url" == "$MOCK_URL/"* ]] && ok "[$LABEL] payment_url 指向模拟站点 ✓" \
+      || bad "[$LABEL] payment_url 不对 ✗ $url"
+    pay="$(curl -s -X POST "$MOCK_URL/pay-api?trade_no=$trade&status=paid")"
+    [[ "$(jget "$pay" "panel_code")" == "200" ]] && ok "[$LABEL] 套餐回调被受理 ✓" \
+      || { bad "[$LABEL] 套餐回调失败 ✗ $pay"; tail -6 "$TMP/mock.log" | sed 's/^/      /'; }
+    # —— 套餐真的生效（最硬的证据）——
+    [[ "$(sqlq "select coalesce(plan_variant_id,0) from clients where email='$CLIENT_EMAIL';")" == "$VARIANT_ID" ]] \
+      && ok "[$LABEL] 客户端套餐 = 该变体 ✓" || bad "[$LABEL] 套餐未生效 ✗"
+    [[ "$(sqlq "select coalesce(status,'') from plan_orders where client_id=$CLIENT_ID order by id desc limit 1;")" == "completed" ]] \
+      && ok "[$LABEL] 套餐订单 = completed ✓（不是 pending）" || bad "[$LABEL] 套餐订单状态不对 ✗"
+    [[ "$(sqlq "select status from charge_orders where trade_no='$trade';")" == "paid" ]] \
+      && ok "[$LABEL] 充订单 = paid ✓" || bad "[$LABEL] 充订单状态不对 ✗"
+    [[ "$(balance)" == "$bal_before" ]] && ok "[$LABEL] 余额未被改动 ✓（$bal_before）" \
+      || bad "[$LABEL] 余额被改动了 ✗ $bal_before → $(balance)"
+    local exp_after; exp_after="$(sqlq "select coalesce(expires_at,'') from clients where email='$CLIENT_EMAIL';")"
+    note "[$LABEL] 有效期：${exp_before:-<空>} → ${exp_after:-<空>}"
+    [[ -n "$exp_after" && "$exp_after" != "$exp_before" ]] \
+      && ok "[$LABEL] 有效期已生效/顺延 ✓" || bad "[$LABEL] 有效期没变化 ✗"
+    # 非整元套餐价（9.90）能对上，就说明金额单位统一了
+    [[ "$VAR_PRICE" != "$(($VAR_PRICE / 100 * 100))" ]] \
+      && note "[$LABEL] 这条是非整元价（$(yuan "$VAR_PRICE") 元）→ 金额单位必须按「分」才可能对上 ✓"
+  }
+
+  buy_plan renew "续期"
+  # 首次购买（new）：清空客户当前套餐 —— 纯测试数据准备，制造"没有在效套餐"的前置状态
+  sqlq "update clients set plan_id=0, plan_variant_id=0, expires_at=NULL where email='$CLIENT_EMAIL';" \
+    && note "已清空该测试客户端的当前套餐（为 new 用例准备 ✓）"
+  buy_plan new "首次购买"
 fi
 
-# ============================ 场景 3：订单过期 ==============================
+# ==================== 场景 3：订单过期 =======================================
 step "【订单过期】TTL 数据 + 过期后回调是否仍严格对账"
+note "产品决策：过期不强制（expires_at 目前不参与判定）—— 迟到回调照常入账，避免用户已付款却丢单"
 E_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
 E_TRADE="$(jget "$E_ORDER" "data.trade_no")"
 if [[ -z "$E_TRADE" ]]; then
@@ -289,36 +293,32 @@ if [[ -z "$E_TRADE" ]]; then
 else
   E_EXP="$(sqlq "select coalesce(expires_at,'') from charge_orders where trade_no='$E_TRADE';")"
   [[ -n "$E_EXP" ]] && ok "订单带上了过期时间 ✓ expires_at=$E_EXP" || bad "订单没有 expires_at ✗"
-  # —— 把它"变老"（纯测试数据准备：本地不可能真等 15 分钟，TTL 目前写死 15min）——
   sqlq "update charge_orders set expires_at = datetime('now','-1 hour') where trade_no='$E_TRADE';" \
     && ok "已把该订单置为过期（测试数据准备 ✓）" || bad "置过期失败 ✗"
-  info "过期后 expires_at = $(sqlq "select coalesce(expires_at,'') from charge_orders where trade_no='$E_TRADE';")"
-  # 过期订单 + **数据完全对上**的回调 →
+  E_BAL0="$(balance)"
   E_URL="$(make_callback --trade-no "$E_TRADE" --site-id "$SITE_ID" --secret "$SITE_SECRET" --amount "$AMOUNT_FEN")"
   E_CODE="$(curl -s -o "$TMP/e.out" -w '%{http_code}' -X POST "$E_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
   if [[ "$E_CODE" == "200" ]]; then
-    ok "过期订单的正确回调仍被受理（HTTP 200 ✓）"
-    E_BAL="$(jget "$(capi GET /api/v1/client-auth/balance)" "data.balance")"
-    ok "过期订单按订单金额精确入账 ✓（余额=$E_BAL）"
-    warn "当前实现**不强制订单过期**：charge_orders.expires_at 全程没人读 → 迟到回调照样入账"
-    warn "若希望"过期后拒收"，需要加判定；但注意"用户已付款却被拒"会造成丢单 ✗，建议做成可配置"
+    ok "过期订单 + 数据对上的回调 → HTTP 200 ✓（按决策：照常入账）"
+    E_DELTA=$(( $(balance) - E_BAL0 ))
+    [[ "$E_DELTA" == "$AMOUNT_FEN" ]] && ok "过期订单按订单金额精确入账 ✓（+$E_DELTA 分）" \
+      || bad "过期订单入账金额不对 ✗ got=$E_DELTA want=$AMOUNT_FEN"
   else
-    info "过期订单的正确回调被拒：HTTP $E_CODE $(head -c 140 "$TMP/e.out")"
-    warn "请确认这是期望行为：用户已付款却入不了账会造成丢单 ✗"
+    bad "过期订单的正确回调被拒 ✗ HTTP $E_CODE（与「过期不强制」的决策不符）$(head -c 140 "$TMP/e.out")"
   fi
-  # 过期订单 + **金额不符** 的回调 → 必须被拒 ✓
+  # 过期订单 + 金额不符 → 必须被拒 ✓（"过期"不是放水，数据仍要严格对上 ✓）
   E2_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
   E2_TRADE="$(jget "$E2_ORDER" "data.trade_no")"
   if [[ -n "$E2_TRADE" ]]; then
     sqlq "update charge_orders set expires_at = datetime('now','-1 hour') where trade_no='$E2_TRADE';"
     W_URL="$(make_callback --trade-no "$E2_TRADE" --site-id "$SITE_ID" --secret "$SITE_SECRET" --amount "$((AMOUNT_FEN + 1))")"
     W_CODE="$(curl -s -o "$TMP/w.out" -w '%{http_code}' -X POST "$W_URL" -H 'Content-Type: application/json' --data-binary @"$TMP/cb.json")"
-    [[ "$W_CODE" == "400" ]] && ok "过期订单 + 金额差 1 分 → HTTP 400 ✓（金额必须严格对上）" \
+    [[ "$W_CODE" == "400" ]] && ok "过期订单 + 差 1 分 → HTTP 400 ✓（金额必须严格对上）" \
       || bad "过期订单的金额不符回调没被拒 ✗ HTTP $W_CODE $(head -c 140 "$TMP/w.out")"
   fi
 fi
 
-# ---------------------------------------------------------- 反向用例 --------
+# ==================== 场景 4：反向用例 ======================================
 step "【反向用例】都应被拒"
 neg() {
   local name="$1" want="$2"; shift 2
@@ -332,18 +332,17 @@ neg() {
 NEG_ORDER="$(capi POST /api/v1/client-auth/charge/create "{\"site_id\":$SITE_ID,\"amount\":$AMOUNT_FEN}")"
 NEG_TRADE="$(jget "$NEG_ORDER" "data.trade_no")"
 if [[ -n "$NEG_TRADE" ]]; then
-  neg "错误签名"            400 --amount "$AMOUNT_FEN" --break-sign
-  neg "金额不符（差 1 分）"   400 --amount "$((AMOUNT_FEN + 1))"
-  neg "金额不符（错单位）"    400 --amount "$AMOUNT_YUAN"   # 元当分用 → 必须被拒
-  neg "时间过期（±300s 外）" 400 --amount "$AMOUNT_FEN" --ts-offset -3600
+  neg "错误签名"             400 --amount "$AMOUNT_FEN" --break-sign
+  neg "金额不符（差 1 分）"    400 --amount "$((AMOUNT_FEN + 1))"
+  neg "金额用错单位（元当分）" 400 --amount "$AMOUNT_YUAN"
+  neg "时间过期（±300s 外）"  400 --amount "$AMOUNT_FEN" --ts-offset -3600
   RP_NONCE="replay$(date +%s%N)"
-  neg "正确回调（给重放用）"  200 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
-  neg "重放同一 nonce"      400 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
+  neg "正确回调（给重放用）"   200 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
+  neg "重放同一 nonce"       400 --amount "$AMOUNT_FEN" --nonce "$RP_NONCE"
 else
   bad "反向用例的订单创建失败 ✗ $NEG_ORDER"
 fi
 
-# ------------------------------------------------------------ 清理 ----------
 step "清理"
 ok "测试站点与测试客户端由退出钩子统一删除 ✓（site=$SITE_ID client=$CLIENT_ID）"
 if [[ -z "$KEEP" ]]; then info "模拟站点已停止 ✓（KEEP=1 可保留）"; else info "模拟站点保留在 $MOCK_URL ✓（收银台 $MOCK_URL/orders）"; fi

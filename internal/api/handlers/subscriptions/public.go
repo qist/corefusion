@@ -258,19 +258,6 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
-	// 激活记录 ✗ `activated_at` 以前**从来没被写过**（死字段）：它是「激活后有效天数」
-	// （`max_active_days`）的起算点 —— 在**首次成功访问**时落一次，之后再不改动，
-	// 所以重复访问 / 多设备导入 / 多节点拉取**都不会延长**有效期 ✓。
-	// 仅当"配置了该策略且尚未激活"时才写，避免给没有该策略的订阅留一个无意义的时间戳。
-	if sub.MaxActiveDays != nil && *sub.MaxActiveDays > 0 && sub.ActivatedAt == nil {
-		now := time.Now()
-		if ok, err := h.subRepo.MarkActivatedIfUnset(ctx, sub.ID, now); err != nil {
-			log.Printf("sub: mark activated_at for subscription %d failed: %v", sub.ID, err)
-		} else if ok {
-			sub.ActivatedAt = &now
-		}
-	}
-
 	shareDomains := h.loadShareDomains(ctx)
 
 	// Format output - query param ?format= overrides subscription default

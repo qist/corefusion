@@ -168,39 +168,6 @@ func (r *SubscriptionRepository) ListExpired(ctx context.Context, now time.Time,
 	return subs, err
 }
 
-// ListActiveWithActivationWindow 返回**已激活、且配置了"激活后有效天数"**的活跃订阅。
-//
-// 为什么不把日期加法写进 SQL ✗：本项目同时支持 SQLite / MySQL / PostgreSQL，
-// 三者日期函数互不兼容（`datetime(x,'+N days')` / `DATE_ADD` / `interval`），
-// 写死任何一种都会在另一种上直接报错 → 取回内存用 Go 比较最稳（满足条件的行很少）。
-func (r *SubscriptionRepository) ListActiveWithActivationWindow(ctx context.Context, limit int) ([]entity.Subscription, error) {
-	if limit <= 0 || limit > 10000 {
-		limit = 5000
-	}
-	var subs []entity.Subscription
-	err := r.db.WithContext(ctx).
-		Where("status = ? AND activated_at IS NOT NULL AND max_active_days IS NOT NULL AND max_active_days > 0", "active").
-		Limit(limit).
-		Find(&subs).Error
-	return subs, err
-}
-
-// MarkActivatedIfUnset 原子地把 `activated_at` 写成"首次成功访问"的时间，**仅当它仍为 NULL 时**。
-//
-// 这是"激活后有效天数"（`max_active_days`）的起算点：一旦落库就不再改动，
-// 因此重复访问、多设备导入、多节点取订阅**都不会延长**有效期 ✓。
-// 返回本次是否真的写入（false = 已被并发的另一次访问写过）。
-func (r *SubscriptionRepository) MarkActivatedIfUnset(ctx context.Context, id int64, now time.Time) (bool, error) {
-	res := r.db.WithContext(ctx).
-		Model(&entity.Subscription{}).
-		Where("id = ? AND activated_at IS NULL", id).
-		UpdateColumn("activated_at", now)
-	if res.Error != nil {
-		return false, res.Error
-	}
-	return res.RowsAffected > 0, nil
-}
-
 // AddUsedBytes atomically increments the subscription traffic cache. Used by the
 // network-layer (nftables) accounting bridge for subscriptions whose traffic is NOT
 // already counted by xray itself. nftables reports total (up+down) bytes, so only the

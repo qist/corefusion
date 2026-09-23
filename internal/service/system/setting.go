@@ -51,6 +51,11 @@ type PanelConfig struct {
 	TrustedProxies      string `json:"trusted_proxies"`
 	ProfileWebPageUrl   string `json:"profile_web_page_url"`
 	Mode                string `json:"mode"` // "full" (default) or "management_only"
+	// ExportMaxRows 是**单次数据导出（CSV）的行数上限** ✓。
+	// 原来这个上限在各导出 handler 里**各写各的** ✗（审计导出 5 万、充值卡导出 10 万），
+	// 想调大小只能改代码重编译；现在做成设置项，设置页可直接改 ✓。
+	// 非法/越界的值会被 NormalizeExportMaxRows 夹回合法范围 ✓，0 表示用默认值 ✓。
+	ExportMaxRows int `json:"export_max_rows"`
 }
 
 // GitHubDomain represents a single GitHub acceleration domain.
@@ -181,6 +186,28 @@ func (s *SettingService) UpdateSchedulerConfig(ctx context.Context, config *Sche
 }
 
 // DefaultPanelConfig returns default panel configuration.
+// 导出上限的默认值与合法范围 ✓。上限存在是为了**防止一次导出把面板拖垮** ✗：
+// 全表导出会一次性把几万行读进内存并生成响应体，行数失控时面板会 OOM。
+const (
+	DefaultExportMaxRows = 50000
+	MinExportMaxRows     = 1000
+	MaxExportMaxRows     = 2000000
+)
+
+// NormalizeExportMaxRows 把任意输入夹到合法范围 ✓：<=0 视为"未设置"→ 用默认值 ✓。
+func NormalizeExportMaxRows(n int) int {
+	if n <= 0 {
+		return DefaultExportMaxRows
+	}
+	if n < MinExportMaxRows {
+		return MinExportMaxRows
+	}
+	if n > MaxExportMaxRows {
+		return MaxExportMaxRows
+	}
+	return n
+}
+
 func DefaultPanelConfig() *PanelConfig {
 	return &PanelConfig{
 		ListenAddr:       "0.0.0.0",
@@ -192,6 +219,7 @@ func DefaultPanelConfig() *PanelConfig {
 		WebPath:          "/",
 		Timezone:         "Asia/Shanghai",
 		DataDir:          "data",
+		ExportMaxRows:    DefaultExportMaxRows,
 	}
 }
 
@@ -261,6 +289,11 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	setIfExist(settings, "panel.trusted_proxies", &config.TrustedProxies)
 	setIfExist(settings, "panel.profile_web_page_url", &config.ProfileWebPageUrl)
 	setIfExist(settings, "panel.mode", &config.Mode)
+	if v, ok := settings["panel.export_max_rows"]; ok && v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			config.ExportMaxRows = NormalizeExportMaxRows(n)
+		}
+	}
 
 	return config, nil
 }
@@ -285,6 +318,9 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.trusted_proxies":      config.TrustedProxies,
 		"panel.profile_web_page_url": config.ProfileWebPageUrl,
 		"panel.mode":                 config.Mode,
+		// 导出上限：越界/非法一律先夹到合法范围再落库 ✓
+		//（各导出 handler 拿到的值随时可用，不用再各自校验 ✓）
+		"panel.export_max_rows": strconv.Itoa(NormalizeExportMaxRows(config.ExportMaxRows)),
 	}
 
 	// Read old data_dir BEFORE updating database

@@ -110,6 +110,16 @@ export function exportCardsCSV(params = {}) {
   return client.get('/charge-cards/export-csv', { params, responseType: 'blob' })
 }
 
+// 2026-09-23: 导出充值订单 CSV（原来只有列表 ✗）
+export function exportOrdersCSV(params = {}) {
+  return client.get('/charge-orders/export-csv', { params, responseType: 'blob' })
+}
+
+// 2026-09-23: 导出余额流水 CSV（原来只能在弹窗里逐个客户端看 ✗）
+export function exportBalanceTransactionsCSV(params = {}) {
+  return client.get('/client-balances/transactions/export-csv', { params, responseType: 'blob' })
+}
+
 // ──────────── Users (管理员用户) ────────────
 
 export function listUsers(params = {}) {

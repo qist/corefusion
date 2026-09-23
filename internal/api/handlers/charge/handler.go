@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"corefusion/internal/api/handlers/exportutil"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
@@ -801,7 +802,9 @@ func (h *Handler) ExportCardsCSV(c *gin.Context) {
 		}
 	}
 
-	cards, _, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, agentID, 100000, 0)
+	// 上限原来写死 100000 ✗ → 改为设置项（设置页 → 面板设置 → 导出上限）✓
+	exportLimit := exportutil.MaxRows(c.Request.Context(), h.db)
+	cards, _, err := h.chargeCardRepo.ListAll(c.Request.Context(), status, cardType, agentID, exportLimit, 0)
 	if err != nil {
 		response.InternalError(c, "EXPORT_FAILED", err.Error())
 		return
@@ -862,12 +865,10 @@ func (h *Handler) ExportCardsCSV(c *gin.Context) {
 	c.String(http.StatusOK, sb.String())
 }
 
-// csvEscape wraps a string in double quotes for CSV safety.
+// csvEscape 保留原名以免大范围改动 ✓，实现委托给共用转义（RFC 4180 ✓）。
+// ⚠ 别再各写一份 ✗：转义规则一旦不一致，导出的 CSV 就会在 Excel 里列错位 ✓。
 func csvEscape(s string) string {
-	if strings.ContainsAny(s, ",\"\n\r") {
-		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
-	}
-	return s
+	return exportutil.Escape(s)
 }
 
 // boolStr returns "是" or "否" for CSV export.
@@ -1265,4 +1266,142 @@ func (h *Handler) ClearPrevSecret(c *gin.Context) {
 	site.EncryptedSecretPrev = ""
 	h.chargeSiteRepo.Update(c.Request.Context(), site)
 	response.OK(c, gin.H{"message": "legacy secrets expired"})
+}
+
+
+// ============================================================
+// CSV Exports（2026-09-23 补齐）
+// ============================================================
+//
+// 背景（代码完成度体检）：充值数据里**只有充值卡能导出**（v3.3 ✓），
+// 而**充值订单**与**余额流水**只有列表、没有导出 ✗ —— 这两样恰恰是财务对账
+// 和排查"钱去哪了"最常用的数据。这里各补一个导出端点。
+// 行数上限统一走设置项 panel.export_max_rows ✓（与其它导出一致 ✓）。
+
+// ExportOrdersCSV handles GET /api/v1/charge-orders/export-csv.
+//
+// 筛选与 ListOrders 一致（status ✓）。金额按**最小货币单位**导出（与充值卡导出一致 ✓），
+// 表头里写明单位，避免财务误读 ✗。
+func (h *Handler) ExportOrdersCSV(c *gin.Context) {
+	ctx := c.Request.Context()
+	limit := exportutil.Limit(c, exportutil.MaxRows(ctx, h.db))
+
+	var orders []entity.ChargeOrder
+	q := h.db.WithContext(ctx).Model(&entity.ChargeOrder{})
+	if status := c.Query("status"); status != "" {
+		q = q.Where("status = ?", status)
+	}
+	// 导出按**时间正序**：财务对着表格从上往下核对，倒序会很难读 ✓
+	if err := q.Order("created_at ASC").Limit(limit).Find(&orders).Error; err != nil {
+		response.InternalError(c, "EXPORT_FAILED", err.Error())
+		return
+	}
+
+	c.Header("Content-Disposition",
+		`attachment; filename="charge-orders-`+exportutil.Timestamp()+`.csv"`)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+
+	var sb strings.Builder
+	sb.WriteString(exportutil.BOM)
+	sb.WriteString("ID,交易号,站点ID,站点交易号,客户端ID,客户端邮箱,订单类型,金额(最小单位),币种,实付金额(最小单位),实付币种,汇率,支付方式,状态,创建时间,支付时间,备注\n")
+	for i := range orders {
+		o := &orders[i]
+		email := ""
+		if cli, err := h.clientRepo.GetByID(ctx, o.ClientID); err == nil {
+			email = cli.Email
+		}
+		siteID := ""
+		if o.SiteID != nil {
+			siteID = strconv.FormatInt(*o.SiteID, 10)
+		}
+		paidAt := ""
+		if o.PaidAt != nil {
+			paidAt = o.PaidAt.Format("2006-01-02 15:04:05")
+		}
+		cols := []string{
+			strconv.FormatInt(o.ID, 10),
+			exportutil.Escape(o.TradeNo),
+			siteID,
+			exportutil.Escape(o.SiteTradeNo),
+			strconv.FormatInt(o.ClientID, 10),
+			exportutil.Escape(email),
+			exportutil.Escape(o.OrderType),
+			strconv.FormatInt(o.Amount, 10),
+			o.Currency,
+			strconv.FormatInt(o.PaidAmount, 10),
+			o.PaidCurrency,
+			strconv.FormatFloat(o.ExchangeRate, 'f', -1, 64),
+			exportutil.Escape(o.Method),
+			o.Status,
+			o.CreatedAt.Format("2006-01-02 15:04:05"),
+			paidAt,
+			exportutil.Escape(o.Remark),
+		}
+		sb.WriteString(strings.Join(cols, ",") + "\n")
+	}
+	c.String(http.StatusOK, sb.String())
+}
+
+// ExportBalanceTransactionsCSV handles GET /api/v1/client-balances/transactions/export-csv.
+//
+// 余额流水原来只能在"余额管理 → 某客户端的流水弹窗"里逐个看 ✗，无法整体导出对账 ✓。
+// 筛选与 ListBalanceTransactionsAdmin 一致（client_id / type ✓）。
+func (h *Handler) ExportBalanceTransactionsCSV(c *gin.Context) {
+	ctx := c.Request.Context()
+	limit := exportutil.Limit(c, exportutil.MaxRows(ctx, h.db))
+
+	var txs []entity.BalanceTransaction
+	q := h.db.WithContext(ctx).Model(&entity.BalanceTransaction{})
+	if clientIDStr := c.Query("client_id"); clientIDStr != "" {
+		if clientID, err := strconv.ParseInt(clientIDStr, 10, 64); err == nil {
+			q = q.Where("client_id = ?", clientID)
+		}
+	}
+	if txType := c.Query("type"); txType != "" {
+		q = q.Where("type = ?", txType)
+	}
+	// 同样按时间正序 ✓（对账要从早往晚看余额变化 ✓）
+	if err := q.Order("created_at ASC").Limit(limit).Find(&txs).Error; err != nil {
+		response.InternalError(c, "EXPORT_FAILED", err.Error())
+		return
+	}
+
+	c.Header("Content-Disposition",
+		`attachment; filename="balance-transactions-`+exportutil.Timestamp()+`.csv"`)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+
+	var sb strings.Builder
+	sb.WriteString(exportutil.BOM)
+	sb.WriteString("ID,客户端ID,客户端邮箱,类型,金额(最小单位),变动前(最小单位),变动后(最小单位),币种,关联充值订单ID,关联套餐订单ID,备注,时间\n")
+	for i := range txs {
+		tx := &txs[i]
+		email := ""
+		if cli, err := h.clientRepo.GetByID(ctx, tx.ClientID); err == nil {
+			email = cli.Email
+		}
+		relatedCharge := ""
+		if tx.RelatedChargeOrderID != nil {
+			relatedCharge = strconv.FormatInt(*tx.RelatedChargeOrderID, 10)
+		}
+		relatedPlan := ""
+		if tx.RelatedPlanOrderID != nil {
+			relatedPlan = strconv.FormatInt(*tx.RelatedPlanOrderID, 10)
+		}
+		cols := []string{
+			strconv.FormatInt(tx.ID, 10),
+			strconv.FormatInt(tx.ClientID, 10),
+			exportutil.Escape(email),
+			exportutil.Escape(tx.Type),
+			strconv.FormatInt(tx.Amount, 10),
+			strconv.FormatInt(tx.BalanceBefore, 10),
+			strconv.FormatInt(tx.BalanceAfter, 10),
+			tx.Currency,
+			relatedCharge,
+			relatedPlan,
+			exportutil.Escape(tx.Remark),
+			tx.CreatedAt.Format("2006-01-02 15:04:05"),
+		}
+		sb.WriteString(strings.Join(cols, ",") + "\n")
+	}
+	c.String(http.StatusOK, sb.String())
 }

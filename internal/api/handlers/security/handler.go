@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"corefusion/internal/api/handlers/exportutil"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
@@ -236,14 +237,9 @@ func (h *Handler) ExportAuditEvents(c *gin.Context) {
 		tx = tx.Where("remote_ip = ?", v)
 	}
 
-	// 前端会传 limit=100000；这里夹到 50000，避免一次导出拖垮面板。
-	const maxExportRows = 50000
-	limit := maxExportRows
-	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < maxExportRows {
-			limit = n
-		}
-	}
+	// 上限走**设置项**（设置页 → 面板设置 → 导出上限）✓，原来是写死的 50000 ✗。
+	// 前端可能传更大的 limit，但这里绝不越过配置上限 ✓。
+	limit := exportutil.Limit(c, exportutil.MaxRows(c.Request.Context(), h.db))
 
 	var events []entity.SecurityAuditEvent
 	if err := tx.Order("id DESC").Limit(limit).Find(&events).Error; err != nil {
@@ -256,8 +252,8 @@ func (h *Handler) ExportAuditEvents(c *gin.Context) {
 		`attachment; filename="audit-events-`+time.Now().Format("20060102-150405")+`.csv"`)
 
 	var b strings.Builder
-	// ⚠ BOM（"\ufeff"）：没有它 Excel 打开中文（reason / metadata 里常有中文）会乱码 ✗
-	b.WriteString("\ufeff")
+	// ⚠ BOM：没有它 Excel 打开中文（reason / metadata 里常有中文）会乱码 ✗
+	b.WriteString(exportutil.BOM)
 	b.WriteString("id,created_at,category,event_type,result,remote_ip,reason,metadata_json\n")
 	for i := range events {
 		e := &events[i]
@@ -275,20 +271,11 @@ func (h *Handler) ExportAuditEvents(c *gin.Context) {
 			if j > 0 {
 				b.WriteString(",")
 			}
-			b.WriteString(csvField(v))
+			b.WriteString(exportutil.Escape(v))
 		}
 		b.WriteString("\n")
 	}
 	c.String(http.StatusOK, b.String())
-}
-
-// csvField 按 RFC 4180 转义：含逗号/引号/换行时整体加双引号，并把内部 `"` 变成 `""` ✓
-// （审计事件里的 reason / metadata 经常带逗号和引号，不转义会把 CSV 列错位 ✗）
-func csvField(s string) string {
-	if !strings.ContainsAny(s, ",\"\n\r") {
-		return s
-	}
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // ResolveAllAlerts handles POST /api/v1/security/alerts/resolve.

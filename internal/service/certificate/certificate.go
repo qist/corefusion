@@ -184,11 +184,9 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 	}
 
 	// Save to final directory using name as key (unique per cert)
-	certDir := filepath.Join(s.dataDir, "certs", sanitizeDomain(name))
-	os.MkdirAll(certDir, 0750)
-	// Store relative paths for portability
-	certPath := filepath.Join("certs", sanitizeDomain(name), "cert.pem")
-	keyPath := filepath.Join("certs", sanitizeDomain(name), "key.pem")
+	// ✅ 按**密钥类型**分目录：否则同名上传 RSA + ECC 会互相覆盖 ✗
+	certPath, keyPath, _ := cert.CertRelPaths(sanitizeDomain(name), keyType)
+	os.MkdirAll(filepath.Join(s.dataDir, filepath.Dir(certPath)), 0750)
 	os.WriteFile(filepath.Join(s.dataDir, certPath), []byte(input.CertContent), 0600)
 	os.WriteFile(filepath.Join(s.dataDir, keyPath), []byte(input.KeyContent), 0600)
 	os.Remove(tmpCert)
@@ -213,7 +211,7 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 
 	// If a certificate with the same domain already exists, update it in place
 	// so that existing config references pick up the new content automatically.
-	if existing, err := s.repo.GetByDomain(ctx, domain); err == nil {
+	if existing, err := s.repo.GetByDomainAndKeyType(ctx, domain, keyType); err == nil {
 		existing.Name = name
 		existing.Domains = sans
 		existing.Issuer = issuer
@@ -449,7 +447,7 @@ func (s *Service) LandCertificateFiles(ctx context.Context, certID int64) (*enti
 	// （真机核对过：节点上是 `certs/node-owner.example.com/` ✓）。这里原来用"消毒后的 name" ✗
 	// → 面板落地到 `certs/acme-node-owner_example_com/` ✗，而配置里引用的是 `certs/<域名>/` ✗
 	// → **文件在、路径不对 → 内核拿不到证书** ✗（真机搭建测试时踩到 ✓）。
-	relDir := filepath.Join("certs", string(c.Domain))
+	relDir := certDirRel(c) // ✅ 按密钥类型分目录 ✓
 	certRel := filepath.Join(relDir, "cert.pem")
 	keyRel := filepath.Join(relDir, "key.pem")
 	chainRel := filepath.Join(relDir, "fullchain.pem")
@@ -495,7 +493,7 @@ func (s *Service) SyncLocalCopyIfLanded(ctx context.Context, certID int64) error
 	if strings.TrimSpace(string(c.Domain)) == "" {
 		return nil
 	}
-	local := filepath.Join(s.dataDir, "certs", string(c.Domain), "cert.pem")
+	local := filepath.Join(s.dataDir, certDirRel(c), "cert.pem")
 	if _, serr := os.Stat(local); serr != nil {
 		return nil // 本机没这份 → 不动 ✓
 	}
@@ -504,6 +502,16 @@ func (s *Service) SyncLocalCopyIfLanded(ctx context.Context, certID int64) error
 	}
 	log.Printf("[cert] 已把证书 %d 的本机副本刷新为最新（本机节点在用这张证书 ✓）", certID)
 	return nil
+}
+
+// certDirRel 返回某证书在磁盘上的**相对目录**（按密钥类型 ✓）。
+//
+// ✗ 为什么需要它：这里以前按域名重算路径 ✗ —— 同域同时签 ECC/RSA 时，
+// 这个"落地/刷新本机副本"的动作会把 RSA 记录**又写回 ECC 的旧目录** ✗，
+// 等于"分别存储"被抹平 ✗（真机 E2E 抓到的 ✓）。统一走 cert.CertRelPaths ✓。
+func certDirRel(c *entity.Certificate) string {
+	certRel, _, _ := cert.CertRelPaths(string(c.Domain), c.KeyType)
+	return filepath.Dir(certRel)
 }
 
 // withTrailingNewline 保证文件以换行结尾 ✓（PEM 常规 ✓，也避免有些解析器抱怨 ✓）。
@@ -663,7 +671,11 @@ func (s *Service) checkPort80ForHTTP01() error {
 
 // IssueACMEInput is the input for ACME certificate issuance.
 type IssueACMEInput struct {
-	Domains       []string                `json:"domains" binding:"required"`
+	Domains []string `json:"domains" binding:"required"`
+	// KeyType / KeyBits：用户选的密钥类型 ✓（ecc/rsa + 位数 ✓）。
+	// ⚠ 以前**入参里根本没有** ✗ → 前端传了也被丢掉 ✗ → 签出来永远是 ECC256 ✗。
+	KeyType       string                  `json:"key_type"`
+	KeyBits       int                     `json:"key_bits"`
 	ChallengeType string                  `json:"challenge_type"`    // "http-01" or "dns-01"
 	CAProvider    cert.CAProvider         `json:"ca_provider"`       // "lets_encrypt" / "lets_encrypt_staging" / "zerossl" / "google"
 	Profile       string                  `json:"profile,omitempty"` // IP 证书需 "shortlived"（会自动补）
@@ -808,6 +820,9 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 		DNSProvider:   input.DNSProvider,
 		EAB:           input.EAB,
 		Profile:       profile,
+		// ✅ 根因修复 ✓：用户选的密钥类型（ecc/rsa + 位数）真正传下去 ✗→✓
+		KeyType: cert.NormalizeKeyType(input.KeyType),
+		KeyBits: input.KeyBits,
 	})
 	if err != nil {
 		return nil, err
@@ -848,7 +863,8 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	// rather than creating a duplicate record. The file paths are the same
 	// (certs/<domain>/cert.pem), so all existing config references remain valid.
 	now := time.Now()
-	if existing, err := s.repo.GetByDomain(ctx, input.Domains[0]); err == nil {
+	// ✅ 身份是 (域名, 密钥类型) ✓：同域再签 RSA 时**新建**一条 ✓ 而不是改写 ECC 那条 ✗
+	if existing, err := s.repo.GetByDomainAndKeyType(ctx, input.Domains[0], keyType); err == nil {
 		// 续期/重签也把元数据补齐 ✓（名字为空时补上 ✓，已有的名字不覆盖 ✓）
 		if strings.TrimSpace(existing.Name) == "" {
 			existing.Name = input.Domains[0]
@@ -893,7 +909,7 @@ func (s *Service) RenewACME(ctx context.Context, id int64, dnsProvider *cert.DNS
 	acme := s.getACMEClient(caProvider)
 
 	domains := []string{certRecord.Domain}
-	result, err := acme.Renew(ctx, domains, certRecord.CertPath, certRecord.KeyPath, dnsProvider)
+	result, err := acme.Renew(ctx, domains, certRecord.CertPath, certRecord.KeyPath, certRecord.KeyType, dnsProvider)
 	if err != nil {
 		return nil, err
 	}

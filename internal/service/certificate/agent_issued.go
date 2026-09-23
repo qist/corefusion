@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	cert "corefusion/internal/runtime/cert"
 )
 
 // AgentIssuedCertInput 是"节点本机 ACME 签发完成"后回传的入库输入 ✓。
@@ -109,9 +110,8 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	// 以前这里用"消毒后的 name" ✗ → 记录里是 `certs/acme-node-owner_example_com/` ✗
 	// → 界面上"选证书"填出来的路径 ✗ 与内核实际拿到的文件位置 ✗ **对不上** ✗
 	//（真机搭建 caddy 站点时踩到：文件在、路径不对、内核只能用兜底证书 ✗）。
-	certRel := filepath.Join("certs", string(domain), "cert.pem")
-	keyRel := filepath.Join("certs", string(domain), "key.pem")
-	fullchainRel := filepath.Join("certs", string(domain), "fullchain.pem")
+	// ✅ 与面板签发同一套规则 ✓（cert.CertRelPaths ✓）：ecc 走历史目录 ✓，rsa 走子目录 ✓
+	certRel, keyRel, fullchainRel := cert.CertRelPaths(string(domain), keyType)
 
 	// ── 全部证书（**含 IP 证书**）都在库里存一份**完整副本** ✓ ────────────────────
 	// 用户口径 ✓：**入库是刻意的** ✓ —— "有人把证书文件删了，库里还完整有一份" ✓，

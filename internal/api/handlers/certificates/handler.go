@@ -468,6 +468,9 @@ func (h *Handler) Issue(c *gin.Context) {
 		// EABConfigID 指定用哪份**独立 EAB 配置** ✓（Google / ZeroSSL 用 ✓）——
 		// 签发弹窗里**只选关联** ✓，不用手填 EAB-KID / EAB-HMAC-Key ✗。
 		EABConfigID int64 `json:"eab_config_id"`
+		// ✅ 前端一直在传这两个 ✓，后端以前**根本没解析** ✗ → 选 ECC384/RSA 全无效 ✗
+		KeyType string `json:"key_type"`
+		KeyBits int    `json:"key_bits"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -603,6 +606,8 @@ func (h *Handler) Issue(c *gin.Context) {
 		ChallengeType: req.ChallengeType,
 		CAProvider:    cert.CAProvider(caProvider),
 		Profile:       req.Profile,
+		KeyType:       req.KeyType,
+		KeyBits:       req.KeyBits,
 	}
 	// 诊断：一眼看出本次用了哪个 CA / 有没有 EAB / 用哪个邮箱 ✓
 	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d email=%q",

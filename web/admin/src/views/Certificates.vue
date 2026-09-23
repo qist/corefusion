@@ -510,8 +510,10 @@ const editingEmail = ref(null)
 const emailForm = ref({ email: '', ca_provider: 'lets_encrypt', eab_key_id: '', eab_mac_key: '', is_default: false })
 
 const keyBitsOptions = computed(() => {
+  // 与后端 cert.resolveKeyType 的映射保持一致 ✓（ecc: 256/384/521 ✓；rsa: 2048/3072/4096/8192 ✓）
+  // ⚠ lego 只支持 EC256/EC384 ✗（没有 EC521 ✓）→ 不提供 521，避免"选了不生效" ✗
   if (issueForm.value.key_type === 'ecc') return [384, 256]
-  return [8192, 4096, 2048]
+  return [8192, 4096, 3072, 2048]
 })
 
 const currentProviderFields = computed(() => {
@@ -637,7 +639,10 @@ async function handleIssue() {
     issueVisible.value = false
     fetchCertificates()
     if (issueForm.value.dual_key) {
-      const p2 = { ...payload, key_type: payload.key_type === 'ecc' ? 'rsa' : 'ecc', key_bits: payload.key_type === 'ecc' ? 2048 : 256 }
+      // 第二张用**另一种**密钥类型 ✓；位数取该类型的合理默认（以前硬编码 2048/256 ✗，
+      // 会无视用户选的 4096 之类 ✓）
+      const flipEccToRsa = payload.key_type === 'ecc'
+      const p2 = { ...payload, key_type: flipEccToRsa ? 'rsa' : 'ecc', key_bits: flipEccToRsa ? 2048 : 256 }
       await client.post('/certificates/issue', p2)
       fetchCertificates()
     }

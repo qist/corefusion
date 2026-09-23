@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
+
+	certpkg "corefusion/internal/runtime/cert"
 	"sync"
 	"time"
 
@@ -68,7 +71,9 @@ func (d *CertDistributor) DistributeToServer(ctx context.Context, serverID int64
 	// The Agent's dataDir is /opt/corefusion-agent/data, and xray configs use
 	// relative paths like "../../../certs/gg/cert.pem" (relative to data/runtime/).
 	// So we write to dataDir/certs/<domain>/cert.pem etc.
-	certDir := fmt.Sprintf("certs/%s", cert.Domain)
+	// ✅ 与面板同一套路径规则 ✓（否则 RSA 证书会被分发到 ECC 的目录里 ✗）
+	certRel, _, _ := certpkg.CertRelPaths(cert.Domain, cert.KeyType)
+	certDir := filepath.Dir(certRel)
 
 	// Fullchain content: use cert content as fallback (fullchain is usually
 	// the same as cert for most setups; if separate fullchain content exists

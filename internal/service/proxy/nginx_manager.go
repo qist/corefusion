@@ -171,21 +171,6 @@ func (m *NginxManager) BatchUpdatePorts(ctx context.Context, port string, enable
 	return count, nil
 }
 
-func (m *NginxManager) getDefaultHttpsPort(ctx context.Context) string {
-	if m.settingStore == nil {
-		return "443"
-	}
-	v, err := m.settingStore.GetByKey(ctx, "proxy.nginx_settings")
-	if err != nil || v == "" {
-		return "443"
-	}
-	var s NginxSettings
-	if json.Unmarshal([]byte(v), &s) == nil && s.DefaultHttpsPort != "" {
-		return s.DefaultHttpsPort
-	}
-	return "443"
-}
-
 // --- Config Generation ---
 
 // SaveAndApply generates nginx config and writes to disk.

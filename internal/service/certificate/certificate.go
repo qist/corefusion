@@ -419,6 +419,55 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]entity.Certifi
 	return s.repo.List(ctx, limit, offset)
 }
 
+// panelCertListCap 是"面板列表一次最多捞多少行" ✓ —— 证书表量级很小 ✓（几十~几百 ✓），
+// 为的是能**在内存里过滤掉 IP 证书后仍然给出准确的分页与总数** ✓。
+const panelCertListCap = 2000
+
+// ListForPanel 是**面板证书列表接口**专用的列表 ✓：默认**不展示 IP 证书** ✗。
+//
+// 为什么要这样 ✗（用户口径 ✓）："IP 证书不需要同步到面板 [的证书清单]" ✓ ——
+// IP 证书是节点自己的事 ✓，摆在清单里会让人误以为"面板在管它" ✗。
+// ⚠ 但**数据库里照样留着** ✓：入库是刻意的 ✓（有人把证书文件删了，库里还完整有一份 ✓），
+// 续期器也仍然能按它去触发节点续期 ✓。所以这里是**视图层过滤** ✗，不是数据层删除 ✓。
+//
+// 为什么在内存里过滤 ✗：SQLite 里没法"判断某个域名是不是 IP" ✗；证书表很小 ✓，
+// 过滤后**重算 total** ✓ → 分页是准的 ✓（不会出现"总数 16、翻页却少两行"✗）。
+// includeIP=true 时返回全部 ✓（保留给排查/运维用 ✓）。
+func (s *Service) ListForPanel(ctx context.Context, limit, offset int, includeIP bool) ([]entity.Certificate, int64, error) {
+	if includeIP {
+		return s.repo.List(ctx, limit, offset)
+	}
+	all, _, err := s.repo.List(ctx, panelCertListCap, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	visible := make([]entity.Certificate, 0, len(all))
+	hidden := 0
+	for i := range all {
+		if isIPOnlyCertificate(all[i].Domain, all[i].Domains, nil) {
+			hidden++
+			continue
+		}
+		visible = append(visible, all[i])
+	}
+	if hidden > 0 {
+		// 只打一次聚合日志 ✓（别每条证书刷一行 ✗）
+		log.Printf("[cert] 面板列表隐藏了 %d 张 IP 证书（节点本地证书，库里仍保留 ✓）", hidden)
+	}
+	total := int64(len(visible))
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(visible) {
+		return []entity.Certificate{}, total, nil
+	}
+	end := offset + limit
+	if limit <= 0 || end > len(visible) {
+		end = len(visible)
+	}
+	return visible[offset:end], total, nil
+}
+
 // UpdateCertificateInput is the input for updating a certificate.
 type UpdateCertificateInput struct {
 	Domain        *string    `json:"domain"`

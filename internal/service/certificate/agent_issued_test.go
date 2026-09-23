@@ -69,8 +69,11 @@ func newAgentIssuedSvc(t *testing.T, dataDir string) *Service {
 	return NewService(repository.NewCertificateRepository(db), dataDir, "", "")
 }
 
-// 核心口径 ✓：**面板只留元数据** —— 节点上报的证书不落 PEM/私钥、不写文件 ✗。
-func TestStoreAgentIssuedCertKeepsMetadataOnly(t *testing.T) {
+// 核心口径 ✓：**完整数据入库**（库里存一份完整副本 ✓，下载/分发都从这一份出 ✓）+ **不写磁盘文件** ✗。
+//
+// 用户口径原话 ✓："证书是存数据库的，完整的数据，下载就是从库里出" ✓；
+// "存数据库的目的就是**有人删除证书**[文件]了，库里还完整有一份" ✓。
+func TestStoreAgentIssuedCertStoresFullDataInDB(t *testing.T) {
 	dataDir := t.TempDir()
 	svc := newAgentIssuedSvc(t, dataDir)
 	certPEM, keyPEM := makeAgentCert(t, []string{"203.0.113.48"}, 6)
@@ -95,11 +98,12 @@ func TestStoreAgentIssuedCertKeepsMetadataOnly(t *testing.T) {
 	if got.ExpiresAt.IsZero() || got.KeyType == "" {
 		t.Fatalf("到期时间/密钥类型应解析出来 ✓：%+v", got)
 	}
-	// ② **不持有 PEM/私钥** ✓（这是本轮的口径 ✓）
-	if got.CertContent != "" || got.KeyContent != "" {
-		t.Fatalf("面板不该存 PEM/私钥 ✗：cert=%d 字节 key=%d 字节", len(got.CertContent), len(got.KeyContent))
+	// ② **完整数据入库** ✓（库里就是权威副本 ✓ → 下载直接从库里出 ✓）
+	if got.CertContent != certPEM || got.KeyContent != keyPEM {
+		t.Fatalf("库里应存**完整** PEM/私钥 ✓：cert=%d/%d key=%d/%d",
+			len(got.CertContent), len(certPEM), len(got.KeyContent), len(keyPEM))
 	}
-	// ③ **不写文件** ✓（以前会往 data/certs/ 写 cert/key/fullchain ✗）
+	// ③ **不写磁盘文件** ✗（"不落地"指的是这个 ✓：磁盘副本只会多一处要同步的状态 ✗）
 	if _, serr := os.Stat(filepath.Join(dataDir, "certs")); serr == nil {
 		t.Fatalf("面板不该写 %s/certs ✗", dataDir)
 	}
@@ -109,8 +113,8 @@ func TestStoreAgentIssuedCertKeepsMetadataOnly(t *testing.T) {
 	}
 }
 
-// 续期/重报：要把**以前落地面板**的 PEM/私钥清掉 ✓（存量随上报自然收敛 ✓）
-func TestStoreAgentIssuedCertClearsOldContent(t *testing.T) {
+// 续期/重报：库里的副本要**刷新成最新** ✓（这正是"库里有一份完整数据"的意义 ✓）
+func TestStoreAgentIssuedCertRefreshesContent(t *testing.T) {
 	dataDir := t.TempDir()
 	svc := newAgentIssuedSvc(t, dataDir)
 	ctx := context.Background()
@@ -143,15 +147,71 @@ func TestStoreAgentIssuedCertClearsOldContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.CertContent != "" || got.KeyContent != "" {
-		t.Fatalf("重报后应清空面板侧的 PEM/私钥 ✗：%+v", got)
+	if got.CertContent != certPEM || got.KeyContent != keyPEM {
+		t.Fatalf("重报后库里的副本应是**最新**内容 ✓：cert=%d 期望 %d", len(got.CertContent), len(certPEM))
 	}
 	// 从库里再读一次确认是真落库了 ✓（不是内存对象 ✓）
 	again, rerr := svc.repo.GetByID(ctx, got.ID)
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
-	if again.CertContent != "" || again.KeyContent != "" {
-		t.Fatalf("库里仍留着 PEM/私钥 ✗")
+	if again.CertContent != certPEM {
+		t.Fatalf("库里没有刷新成最新内容 ✗：%d 期望 %d", len(again.CertContent), len(certPEM))
+	}
+	if again.CertContent == "-----BEGIN CERTIFICATE-----\nOLD\n-----END CERTIFICATE-----\n" {
+		t.Fatalf("库里还是历史遗留的旧内容 ✗")
+	}
+}
+
+// 面板列表默认**不展示 IP 证书** ✓（用户口径 ✓：IP 证书是节点自己的事 ✓），
+// 但**库里保留** ✓（入库是刻意的 ✓ → 有人删了证书文件，库里还完整有一份 ✓），
+// 且 `includeIP=true` 时能看全部 ✓（排查/运维 ✓）。
+func TestListForPanelHidesIPCertificates(t *testing.T) {
+	dataDir := t.TempDir()
+	svc := newAgentIssuedSvc(t, dataDir)
+	ctx := context.Background()
+
+	// 一张域名证书（应可见 ✓）
+	domCert, domKey := makeAgentCert(t, []string{"a.example.com"}, 90)
+	if _, err := svc.StoreAgentIssuedCert(ctx, AgentIssuedCertInput{
+		Identifiers: []string{"a.example.com"}, CertPEM: domCert, KeyPEM: domKey, CA: "lets_encrypt", ServerID: 19,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 一张 IP 证书（应被列表隐藏 ✗，但库里要有 ✓）
+	ipCert, ipKey := makeAgentCert(t, []string{"203.0.113.48"}, 6)
+	ipRec, err := svc.StoreAgentIssuedCert(ctx, AgentIssuedCertInput{
+		Identifiers: []string{"203.0.113.48"}, CertPEM: ipCert, KeyPEM: ipKey, CA: "lets_encrypt", ServerID: 19,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ipRec == nil || ipRec.CertContent == "" {
+		t.Fatalf("IP 证书也应当**入库** ✓（库里留一份完整副本 ✓）")
+	}
+
+	visible, total, err := svc.ListForPanel(ctx, 20, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(visible) != 1 || visible[0].Domain != "a.example.com" {
+		t.Fatalf("IP 证书应被隐藏 ✓：total=%d rows=%v", total, visible)
+	}
+	all, allTotal, err := svc.ListForPanel(ctx, 20, 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allTotal != 2 || len(all) != 2 {
+		t.Fatalf("includeIP=true 时应看到全部 ✓：total=%d rows=%d", allTotal, len(all))
+	}
+	// 混合证书（IP + 域名）**不算** IP 证书 ✗（面板要管它 ✓）
+	if isIPOnlyCertificate("1.2.3.4", `["1.2.3.4","a.com"]`, nil) {
+		t.Fatalf("同时含域名时不该被当成 IP 证书 ✗")
+	}
+	if !isIPOnlyCertificate("1.2.3.4", `["1.2.3.4"]`, nil) {
+		t.Fatalf("只含 IP 时应判定为 IP 证书 ✓")
+	}
+	if !isIPOnlyCertificate("1.2.3.4", "", []string{"1.2.3.4"}) {
+		t.Fatalf("domains 为空时应回退用 identifiers 判定 ✓")
 	}
 }

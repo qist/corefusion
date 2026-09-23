@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -713,6 +714,75 @@ func (h *Handler) landAndSync(ctx context.Context, serverID int64) error {
 	h.fanOutMirrorSync(ctx, serverID)
 
 	return nil
+}
+
+// ReconcileMirror 对**单个镜像**做一次 WAF 对账：把主节点的规则推过去并 reload ✓。
+//
+// 走的路径与事件驱动的 fanOutMirrorSync **完全一致**（pushToRemote + reloadRemoteProxies ✓，
+// 且 SyncToNode 内部对镜像会取主节点的规则 ✓），区别只是由定时循环兜底触发 ✓。
+func (h *Handler) ReconcileMirror(ctx context.Context, mirrorServerID int64) error {
+	if err := h.pushToRemote(ctx, mirrorServerID); err != nil {
+		return err
+	}
+	h.reloadRemoteProxies(ctx, mirrorServerID)
+	return nil
+}
+
+// RunMirrorReconcileLoop 周期性对所有镜像做 WAF 对账 ✓（启动即先跑一次 ✓）。
+//
+// ⚠ 为什么必须有它 ✗：主节点改 WAF 时会 fanOutMirrorSync 推给镜像 ✓，但**若那一刻镜像离线**，
+// 推送只在日志里留一行错误 ✓ —— **不重试、也没有定时兜底** ✗ → 该镜像会一直用旧规则，
+// 直到下次有人再推一次 WAF（这就是"跨区 / 镜像 WAF 不一致"的成因 ✓）。
+// 对照：inbound 有 MirrorSyncManager.RunLoop（每 10 分钟）兜底 ✓，WAF 原先什么都没有 ✓。
+//
+// isOnline 为 nil 时不做在线过滤（离线节点推送失败会被记进日志 ✓）。
+// ⚠ 幂等 ✓：内容没变时 Agent 侧不会白重启代理 ✓（这是可以每 10 分钟跑的前提 ✓）。
+func (h *Handler) RunMirrorReconcileLoop(ctx context.Context, interval time.Duration, isOnline func(int64) bool) {
+	if interval <= 0 {
+		interval = 10 * time.Minute
+	}
+
+	reconcile := func() {
+		ids, err := h.svc.ListMirrorServerIDs(ctx)
+		if err != nil {
+			log.Printf("[WAF] mirror reconcile: list mirrors failed: %v", err)
+			return
+		}
+		if len(ids) == 0 {
+			return
+		}
+		ok, skipped, failed := 0, 0, 0
+		for _, id := range ids {
+			if isOnline != nil && !isOnline(id) {
+				skipped++
+				continue
+			}
+			if err := h.ReconcileMirror(ctx, id); err != nil {
+				failed++
+				log.Printf("[WAF] mirror reconcile: mirror %d failed: %v", id, err)
+				continue
+			}
+			ok++
+		}
+		log.Printf("[WAF] mirror reconcile: %d mirror(s) — ok=%d skipped(offline)=%d failed=%d",
+			len(ids), ok, skipped, failed)
+	}
+
+	// 启动即跑一次 ✓：与仓库里其它循环（quota enforcer / cert renewer / mirror sync）一致 ✓，
+	// 也保证"面板重启后能立刻补上离线期间漏掉的 WAF" ✓。
+	reconcile()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[WAF] mirror reconcile loop stopped")
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
 }
 
 // fanOutMirrorSync finds all mirror nodes that reference serverID as their

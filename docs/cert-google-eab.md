@@ -155,6 +155,39 @@ gcloud publicca external-account-keys create
 
 > 面板推荐"服务账号 JSON"，唯一原因是：**EAB 7 天会过期**，存了服务账号才能**自动再申请**，不必人工回来点。
 
+## 4.6 FAQ：能不能用 API Key？
+
+**不能。** 这不是"我们的实现选择"，而是 **Google 明确拒绝** —— 实测（两种写法结果一致）：
+
+```bash
+# ① 查询参数写法
+curl -X POST "https://publicca.googleapis.com/v1/projects/<ID>/locations/global/externalAccountKeys?key=AIza..." -d '{}'
+# ② 官方文档推荐的 x-goog-api-key 头写法
+curl -X POST "https://publicca.googleapis.com/v1/projects/<ID>/locations/global/externalAccountKeys" \
+     -H "x-goog-api-key: AIza..." -d '{}'
+```
+
+两者都返回：
+
+```json
+{"error":{"code":401,"status":"UNAUTHENTICATED",
+  "message":"API keys are not supported by this API. Expected OAuth2 access token
+             or other authentication credentials that assert a principal."}}
+```
+
+对照：换成**（假的）OAuth Bearer** 时报的是
+`Request had invalid authentication credentials. Expected OAuth 2 access token...` ——
+说明 OAuth 这条它会去认、而 **API Key 直接被拒** ✗。
+
+**为什么**：创建 EAB 是**管理类操作**，要判"你是谁、有没有 `roles/publicca.externalAccountKeyCreator`" ✗
+—— API Key 只是"哪个项目/哪个应用的标识" ✓，**不表达主体身份** ✓。
+（《管理 API 密钥的最佳实践》那篇文档讲的是"API Key 怎么用才安全"，它建议管理类场景改用
+**IAM + 短时服务账号凭证** ✓ —— 与本页做法一致 ✓。）
+
+**所以只有三条路** ✓（见 §3）：服务账号 JSON ✓ / 临时 access token ✓ /
+或者**根本不用凭据** —— 在 Cloud Shell 里 `gcloud publicca external-account-keys create` ✓
+把 `keyId` / `b64MacKey` 手填进面板 ✓（**卡在 GCP IAM 的话就走这条** ✓）。
+
 ## 5. 自动注册与续期的关系（重点）
 
 ```

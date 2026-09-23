@@ -1400,6 +1400,7 @@ export default {
     varQuotaState: 'Quota state (normal/near_limit/over_limit etc.)',
   },
   certificate: {
+    googleEasiestHint: 'Cannot find the GCP entry? Easiest: open Cloud Shell (console.cloud.google.com/cloudshell) -> run "gcloud services enable publicca.googleapis.com", then "gcloud publicca external-account-keys create" -> paste keyId / b64MacKey into EAB-KID / EAB-HMAC-Key below. Create a service account only if you want automatic re-creation later. See docs/cert-google-eab.md.',
     googleProjectID: 'GCP Project ID',
     googleProjectIDPlaceholder: 'e.g. my-project-123456',
     googleSA: 'Service account key file',

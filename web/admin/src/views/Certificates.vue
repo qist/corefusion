@@ -223,6 +223,9 @@
             </el-button>
             <span style="margin-left:8px;color:#909399;font-size:12px">{{ t('certificate.googleFetchHint') }}</span>
           </el-form-item>
+          <div style="font-size:11px;color:#909399;line-height:1.6;margin-bottom:12px">
+            {{ t('certificate.googleEasiestHint') }}
+          </div>
         </template>
         <el-form-item label="EAB-KID">
           <el-input v-model="eabForm.eab_key_id" :placeholder="t('certificate.eabKeyIDPlaceholder')" />

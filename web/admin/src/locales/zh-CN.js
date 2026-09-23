@@ -1403,6 +1403,7 @@ export default {
     varQuotaState: '配额状态（normal/near_limit/over_limit 等）',
   },
   certificate: {
+    googleEasiestHint: '找不到 GCP 入口？最省事的做法：打开 Cloud Shell（console.cloud.google.com/cloudshell，gcloud 已登录）→ 执行 gcloud services enable publicca.googleapis.com，再执行 gcloud publicca external-account-keys create → 把打印出的 keyId / b64MacKey 直接手填到下面的 EAB-KID / EAB-HMAC-Key 即可。要"以后自动再申请"再按文档创建服务账号。详见 docs/cert-google-eab.md。',
     googleProjectID: 'GCP 项目 ID',
     googleProjectIDPlaceholder: '例如 my-project-123456',
     googleSA: '服务账号密钥文件',

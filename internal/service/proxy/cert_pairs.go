@@ -3,10 +3,43 @@ package proxy
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"corefusion/internal/store/repository"
 )
+
+// certPairChecker 判断一组证书文件**此刻在本地是否真的可用** ✓（nil = 不检查 ✓）。
+type certPairChecker func(cert, key string) bool
+
+// localCertPairChecker 造一个"本地文件存在性"检查器 ✓（路径相对 dataDir ✓，绝对路径直接用 ✓）。
+//
+// ⚠ 只在为**本地**服务器生成配置时使用 ✗：
+//   - Caddy 加载配置时，`tls` 指向的文件**读不到**会让**整个配置加载失败** ✗✗
+//     （实测 `caddy validate` 报 `unable to open ...` exit=1 ✓）—— 不只是少一张证书 ✗，
+//     而是整个代理停在旧配置上 ✗。所以库里"状态是 active 但文件已被删/搬走"的脏记录
+//     绝不能写进配置 ✗。
+//   - 远程节点的证书文件由分发器同步 ✓，在面板侧 stat 必然报缺失 ✗ → 会把好证书误删 ✗✗
+//     因此远程**刻意不检查** ✓（信任库状态 ✓）。
+func localCertPairChecker(dataDir string) certPairChecker {
+	return func(cert, key string) bool {
+		for _, p := range []string{cert, key} {
+			if strings.TrimSpace(p) == "" {
+				return false
+			}
+			abs := p
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(dataDir, abs)
+			}
+			fi, err := os.Stat(abs)
+			if err != nil || fi.IsDir() {
+				return false
+			}
+		}
+		return true
+	}
+}
 
 // certPair 是代理要用的一组「证书 + 私钥」（路径相对 dataDir ✓）。
 type certPair struct {
@@ -35,7 +68,7 @@ const maxCertPairs = 2
 // dualEnabled 是**站点级开关** ✓（caddy_sites/nginx_sites 的 dual_cert ✓，nil 视为 true ✓）：
 // 显式关掉时**只挂站点自己那对** ✓。
 func collectCertPairs(ctx context.Context, certRepo *repository.CertificateRepository,
-	domain, siteCert, siteKey string, dualEnabled bool) []certPair {
+	domain, siteCert, siteKey string, dualEnabled bool, checker certPairChecker) []certPair {
 	pairs := make([]certPair, 0, maxCertPairs)
 	seen := make(map[string]bool)
 	add := func(cert, key string) {
@@ -51,7 +84,14 @@ func collectCertPairs(ctx context.Context, certRepo *repository.CertificateRepos
 		pairs = append(pairs, certPair{Cert: cert, Key: key})
 	}
 
-	add(siteCert, siteKey)
+	// ⚠ 站点自配的那组**也要检查** ✗：它的文件不在时，写进配置**同样**会让整个代理配置
+	// 加载失败 ✗✗（实测 `caddy validate` exit=1 ✓）→ 跳过它，让下面按域名补的其他证书顶上 ✓
+	// （站点至少还有一张能用 ✓；实在没有才退化成没有 tls ✓）。
+	if checker != nil && !checker(siteCert, siteKey) && strings.TrimSpace(siteCert) != "" {
+		log.Printf("[proxy] WARNING: 站点自配的证书文件不在本地，**已跳过**（写进配置会让整个代理加载失败 ✗）：%s", siteCert)
+	} else {
+		add(siteCert, siteKey)
+	}
 	// ⚠ 护栏 ✗：站点自己**没配证书**（例如纯 HTTP 的 `example.com:80` ✓）时不做
 	// "按域名补证书" ✓ —— 否则会凭空给纯 HTTP 站点加上 tls 指令 ✗。
 	if strings.TrimSpace(siteCert) == "" {
@@ -68,7 +108,13 @@ func collectCertPairs(ctx context.Context, certRepo *repository.CertificateRepos
 		return pairs
 	}
 	for i := range certs {
-		add(certs[i].CertPath, certs[i].KeyPath)
+		c, k := certs[i].CertPath, certs[i].KeyPath
+		if checker != nil && !checker(c, k) {
+			// 跳过比"写进配置让整体加载失败"好得多 ✓（站点还能用剩下那张 ✓）
+			log.Printf("[proxy] WARNING: %s 的证书文件不在本地，**已跳过**（写进配置会让整个代理加载失败 ✗）：%s", host, c)
+			continue
+		}
+		add(c, k)
 	}
 	if len(pairs) > 1 {
 		names := make([]string, 0, len(pairs))

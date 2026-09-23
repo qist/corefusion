@@ -130,6 +130,30 @@ func (m *CaddyManager) resolveSourceServerID(ctx context.Context, serverID int64
 	return serverID, false
 }
 
+// isLocalTarget 判断「**这份配置要落到哪个节点**」是不是本机（面板）✓。
+//
+// ⚠ 不能用 m.isLocal ✗：它是**每请求被改写**的共享状态 ✓（handlers 的 applyServerID 会按
+// URL 里的 node id 调 SetIsLocal ✓），本机请求与远程请求**交错**时会被别的请求改掉 ✗
+// → 拿它决定"要不要校验证书文件在不在本地"会时好时坏 ✗
+//
+//	（实测踩到 ✓：对 node 1 生成配置时 m.isLocal 被别的请求置为 false ✗，
+//	 文件校验没生效 ✗，缺文件的证书照样写进配置 ✗）。
+//
+// 这里改为**按本次调用的 serverID 参数**判断 ✓，与共享状态无关 ✓。
+func (m *CaddyManager) isLocalTarget(ctx context.Context, serverID int64) bool {
+	if serverID == 1 { // NodeServer 表里 id=1 就是 "Local (Panel)" ✓
+		return true
+	}
+	if m.nodeServerRepo == nil {
+		return false
+	}
+	srv, err := m.nodeServerRepo.GetByID(ctx, serverID)
+	if err != nil || srv == nil {
+		return false
+	}
+	return srv.IsLocal
+}
+
 // GenerateConfigForServer assembles the full Caddyfile from all enabled sites for a specific server.
 // If the target server is a mirror node, sites and settings are fetched from
 // the primary server's data (partner_server_id). This ensures mirrors get the
@@ -457,7 +481,12 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		//   ✓ **每张证书写一条 `tls <cert> <key>`** ✓ —— tls 指令在该块内可重复 ✓，
 		//      两对都会进 tls app 的 `load_files`（全局累加 ✓），Caddy 按
 		//      SNI + 客户端能力自动挑 ✓（`caddy validate` = adapt+provision 实测通过 ✓）。
-		for _, p := range collectCertPairs(ctx, m.certRepo, domain, pc, pk, dual) {
+		var checker certPairChecker
+		// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）
+		if m.isLocalTarget(ctx, serverID) {
+			checker = localCertPairChecker(m.dataDir)
+		}
+		for _, p := range collectCertPairs(ctx, m.certRepo, domain, pc, pk, dual, checker) {
 			sb.WriteString("\ttls " + m.resolvePath(p.Cert) + " " + m.resolvePath(p.Key) + "\n")
 		}
 

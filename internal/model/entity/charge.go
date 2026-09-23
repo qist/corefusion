@@ -102,8 +102,10 @@ var chargeOrderTransitions = map[string]map[string]bool{
 	ChargeStatusProcessing: {ChargeStatusPaid: true, ChargeStatusFailed: true},
 	ChargeStatusPaid:       {ChargeStatusRefunded: true},
 	ChargeStatusFailed:     {ChargeStatusPending: true}, // 允许重新支付
-	ChargeStatusExpired:    {},                          // 终态
-	ChargeStatusRefunded:   {},                          // 终态
+	// 已过期只是"不再接受**新**付款"，但**已经发生的付款必须履行** ——
+	// 所以允许 expired → paid/failed：迟到到账照常入账，避免"用户付了钱却拿不到货"。
+	ChargeStatusExpired:  {ChargeStatusPaid: true, ChargeStatusFailed: true},
+	ChargeStatusRefunded: {}, // 终态
 }
 
 // CanChargeOrderTransition checks whether a status transition is allowed.

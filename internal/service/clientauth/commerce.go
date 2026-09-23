@@ -1197,25 +1197,21 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		recordEvent("error", "ORDER_NOT_BELONG", "order does not belong to this site", signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order does not belong to this site")
 	}
-	// ⑨.5 过期订单**即时关闭**：TTL 一到就不再接受任何支付结果。
+	// ⑨.5 过期订单：只**记录**这笔"迟到到账"，不改变订单状态（它马上就会被入账成 paid）。
 	//
-	// 后台清理器（CleanupExpiredOrders → repo.MarkExpired，默认每 5 分钟）会兜底标记，
-	// 但那个最长 5 分钟的窗口里，迟到的回调仍会被当成正常支付入账 ——
-	// 用户明确要求：过期订单不能再支付、要关闭。
-	// 这里的判定条件与 repo.MarkExpired **完全一致**
-	//（status=pending && expires_at 非空 && expires_at < now），避免两处口径不一致。
-	// 状态机里 expired 是终态 → 标记之后即使再来回调也会被状态闸门拒掉。
+	// 「不再接收付款」在面板侧靠两点实现，都拦在**付款前**：
+	//   ① 订单被标注 expired（后台清理器 CleanupExpiredOrders → repo.MarkExpired，默认每 5 分钟；
+	//      门户查 GetChargeStatus 就能显示"已过期"，不会让用户再发起这笔付款）；
+	//   ② 站点侧自己的收款 TTL（真实网关会关掉付款页）。
+	// 而**已经收到的钱必须入账** —— 正常交易逻辑：绝不能"用户付了款还失败"，丢单比过期严重得多。
+	//
+	// ⚠ 这里刻意**不**再写数据库（原先会先 Update 成 expired 再继续入账）：
+	//   那会在入账事务前多插一次写事务，SQLite 下极易撞上 "database is locked"
+	//   （真机端到端测试就是这样失败的），而且该状态立刻被 paid 覆盖、毫无意义。
+	// 判定条件与 repo.MarkExpired 完全一致（status=pending && expires_at 非空 && expires_at < now）。
 	if order.Status == entity.ChargeStatusPending && order.ExpiresAt != nil && order.ExpiresAt.Before(time.Now()) {
-		if err := s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
-			Where("id = ? AND status = ?", order.ID, entity.ChargeStatusPending).
-			Update("status", entity.ChargeStatusExpired).Error; err != nil {
-			log.Printf("[callback] request_id=%s order=%s expire_mark_failed=%v", requestID, input.TradeNo, err)
-		}
-		log.Printf("[callback] request_id=%s order=%s status=expired ttl_passed rejected", requestID, input.TradeNo)
-		recordEvent("error", "ORDER_EXPIRED", "order expired before callback", signValid, usedSecretVer, ipMatchRule)
-		raiseSecEvent(entity.ChargeSecEventInvalidStatus, entity.ChargeSecSeverityMedium, input.TradeNo,
-			fmt.Sprintf("expired order callback rejected, remote_ip=%s", remoteIP))
-		return fmt.Errorf("order expired")
+		log.Printf("[callback] request_id=%s order=%s late_settlement=1 订单已过收款有效期但收到有效付款，照常入账", requestID, input.TradeNo)
+		recordEvent("success", "", "late settlement: expired order paid, credited anyway", signValid, usedSecretVer, ipMatchRule)
 	}
 
 	// v3.2: 更新 callback_count / last_callback_at（异常频率检测）
@@ -1329,8 +1325,11 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 				return nil
 			}
 			// 如果不是 pending/processing，不能继续
-			if lockedOrder.Status != entity.ChargeStatusPending && lockedOrder.Status != entity.ChargeStatusProcessing {
-				return fmt.Errorf("order status is %s, cannot process", lockedOrder.Status)
+			// 放行 pending / processing / **expired**：expired 只代表"不再接受新付款"，
+			// 而钱要是已经收了就必须入账（正常交易逻辑：不能让用户付款了还失败）。
+			if lockedOrder.Status != entity.ChargeStatusPending &&
+				lockedOrder.Status != entity.ChargeStatusProcessing &&
+				lockedOrder.Status != entity.ChargeStatusExpired {
 			}
 
 			// Step 2: 余额行锁 —— 只有"充值单"需要（套餐单不动余额，而且客户端可能还没有余额行）

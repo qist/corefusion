@@ -1197,6 +1197,26 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		recordEvent("error", "ORDER_NOT_BELONG", "order does not belong to this site", signValid, usedSecretVer, ipMatchRule)
 		return fmt.Errorf("order does not belong to this site")
 	}
+	// ⑨.5 过期订单**即时关闭**：TTL 一到就不再接受任何支付结果。
+	//
+	// 后台清理器（CleanupExpiredOrders → repo.MarkExpired，默认每 5 分钟）会兜底标记，
+	// 但那个最长 5 分钟的窗口里，迟到的回调仍会被当成正常支付入账 ——
+	// 用户明确要求：过期订单不能再支付、要关闭。
+	// 这里的判定条件与 repo.MarkExpired **完全一致**
+	//（status=pending && expires_at 非空 && expires_at < now），避免两处口径不一致。
+	// 状态机里 expired 是终态 → 标记之后即使再来回调也会被状态闸门拒掉。
+	if order.Status == entity.ChargeStatusPending && order.ExpiresAt != nil && order.ExpiresAt.Before(time.Now()) {
+		if err := s.db.WithContext(ctx).Model(&entity.ChargeOrder{}).
+			Where("id = ? AND status = ?", order.ID, entity.ChargeStatusPending).
+			Update("status", entity.ChargeStatusExpired).Error; err != nil {
+			log.Printf("[callback] request_id=%s order=%s expire_mark_failed=%v", requestID, input.TradeNo, err)
+		}
+		log.Printf("[callback] request_id=%s order=%s status=expired ttl_passed rejected", requestID, input.TradeNo)
+		recordEvent("error", "ORDER_EXPIRED", "order expired before callback", signValid, usedSecretVer, ipMatchRule)
+		raiseSecEvent(entity.ChargeSecEventInvalidStatus, entity.ChargeSecSeverityMedium, input.TradeNo,
+			fmt.Sprintf("expired order callback rejected, remote_ip=%s", remoteIP))
+		return fmt.Errorf("order expired")
+	}
 
 	// v3.2: 更新 callback_count / last_callback_at（异常频率检测）
 	callbackNow := time.Now()

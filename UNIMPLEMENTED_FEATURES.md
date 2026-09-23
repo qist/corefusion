@@ -63,7 +63,7 @@
 
 | # | 项 | 现状 |
 |---|---|---|
-| 2.5 | 镜像同步（`docs/design/mirror-sync-redesign.md`） | 文档为"讨论稿 v3"，自列 10 个已确认缺陷（DB 克隆一致性、inbound 变更不触发 mirror、`SyncData` 后 xray 不重载等）。**本版未逐条核实**，需要时单独排查。 |
+| 2.5 | 镜像同步（`docs/design/mirror-sync-redesign.md`） | **讨论稿的 10 个问题已逐条核实**（2026-09-23）：**已修 6 个** —— 1（不再克隆 `-mirror` tag，改为生成时现取主节点）、3（用户 fanout 改为主节点 tag 直调 xray API）、4（WAF 有 `fanOutMirrorSync` **且本轮补上了周期性对账**，见第三章 I）、8（Agent 写盘后按内容变化重启核心）、9（去掉 `serverID > 1` 限制）、10（用户增删走 fanOut）。**仍存在 2 个非缺陷** —— 6（SyncData 仍全量推送，性能问题）、7（镜像用主节点证书）→ **7 实为"设计上不适用"**：镜像生成站点时 `resolveSourceServerID` 会解析成主节点（`nginx_config.go` / `caddy_manager.go`），即镜像**必然与主节点同域名**，证书自然一致；只有人为给镜像配不同域名才会出现，而这并非受支持的用法。5（镜像订阅地址）暂未见错误，但订阅产物未实测。 |
 | 2.6 | 两张空表仍留在现有库 | `routing_regions`、`server_share_profiles` 已从 AutoMigrate 摘除（新装库不再创建），但**现有库中的空表未删**——删表属破坏性操作，需要时再确认。 |
 
 ---
@@ -80,6 +80,7 @@
 | F | **导出上限可配置**：原来写死（审计 5 万、充值卡 10 万）→ 新增设置项 `panel.export_max_rows`（默认 50000，范围 1000~2000000，越界自动夹取），并抽出共用包 `internal/api/handlers/exportutil`（上限/转义/BOM/时间戳）。 | `2b6e813f` |
 | G | **补充值订单 / 余额流水 CSV 导出**（原来只有列表，对账最需要）。 | `2b6e813f` |
 | H | **死代码 / 空 schema**：删除零调用的 `router.placeholder`；`routing_regions`、`server_share_profiles` 从 AutoMigrate 摘除并注明"保留未接线"。 | `aeaa8c72` |
+| I | **WAF 与镜像补上周期性对账**：原先事件驱动 fanout 在"镜像恰好离线"时只留一行日志、不重试也无兜底 → 该镜像会永久用旧规则（"跨区 WAF 不一致"的成因）。新增 `ListMirrorServerIDs` + `ReconcileMirror`（复用同一条推送路径） + `RunMirrorReconcileLoop`（每 10 分钟、启动即跑一次、离线跳过）。 | `43f37e26` |
 
 ---
 

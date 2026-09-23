@@ -90,7 +90,10 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	// Trigger config sync to the target server asynchronously
-	if h.syncHook != nil && serverID > 1 {
+	// ⚠ 2026-09-23：去掉 `serverID > 1` —— 原来在**本地节点（serverID=1）**改端点
+	// 不会触发同步 ✗，端点只躺在 endpoint_configs 表里、运行时不生效，
+	// 表现为"加了 WireGuard/WARP 端点却看不到" ✗（与 inbound 那次修复同一个毛病）。
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, req.CoreType)
 	}
 
@@ -126,7 +129,10 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	// Trigger config sync to the target server asynchronously
-	if h.syncHook != nil && serverID > 1 {
+	// ⚠ 2026-09-23：去掉 `serverID > 1` —— 原来在**本地节点（serverID=1）**改端点
+	// 不会触发同步 ✗，端点只躺在 endpoint_configs 表里、运行时不生效，
+	// 表现为"加了 WireGuard/WARP 端点却看不到" ✗（与 inbound 那次修复同一个毛病）。
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, "singbox")
 	}
 
@@ -150,7 +156,10 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	// Trigger config sync to the target server asynchronously
-	if h.syncHook != nil && serverID > 1 {
+	// ⚠ 2026-09-23：去掉 `serverID > 1` —— 原来在**本地节点（serverID=1）**改端点
+	// 不会触发同步 ✗，端点只躺在 endpoint_configs 表里、运行时不生效，
+	// 表现为"加了 WireGuard/WARP 端点却看不到" ✗（与 inbound 那次修复同一个毛病）。
+	if h.syncHook != nil {
 		go h.syncHook.SyncServerConfig(context.Background(), serverID, "singbox")
 	}
 

@@ -13,8 +13,8 @@ import (
 // LogCleanupService periodically removes old log/event records from the database
 // to prevent unbounded growth. Cleanup rules are configurable via the log_cleanup_rules table.
 type LogCleanupService struct {
-	db        *gorm.DB
-	interval  time.Duration // how often to run scheduled cleanup
+	db       *gorm.DB
+	interval time.Duration // how often to run scheduled cleanup
 }
 
 // NewLogCleanupService creates a new log cleanup service.
@@ -124,6 +124,13 @@ func (s *LogCleanupService) cleanupTable(rule entity.LogCleanupRule) int64 {
 	table := rule.Table
 
 	// Special handling for tables with non-standard time columns or conditions
+	// ⚠ 表不存在就直接跳过 ✗ —— 有些清理规则是给**节点本地库**用的
+	//（例如 config_snapshots 只存在于 Agent 的 DB ✓），面板里没有这张表 ✓，
+	// 原来会一直刷 `no such table: config_snapshots` ✗（真机日志噪音 ✓）。
+	if !s.db.Migrator().HasTable(table) {
+		return 0
+	}
+
 	switch table {
 	case "traffic_sessions":
 		// Closed sessions older than retention + stale open sessions (>24h)

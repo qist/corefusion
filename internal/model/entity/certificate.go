@@ -21,7 +21,15 @@ type Certificate struct {
 	// ⚠ 不要加 `default:1` ✗：GORM 对"带 default 的字段"会**跳过零值** ✗ →
 	// 代码里显式设成 0（例如上传的证书不该被自动续期）会被 DB 默认值改回 1 ✗
 	// （真机实测：上传路径设 0，库里却是 1 ✗）。去掉 default 后零值能正常写入 ✓。
-	AutoRenew     int        `json:"auto_renew" gorm:"not null"`
+	AutoRenew int `json:"auto_renew" gorm:"not null"`
+	// IssuerNodeID 是"**签发这张证书的节点**" ✓（0 = 面板本机签的 ✓）。
+	//
+	// 用户口径 ✓：**谁签发，就由谁续期** ✓；别的节点只是"**使用**"这张证书 ✓
+	// （它们通过 node_certificates 关联 ✓，证书更新后由分发逻辑自动同步最新件 ✓）。
+	// 之前续期会把"所有绑定节点"都问一遍 ✗ → 重复签发 + 重复消耗一次性 EAB ✗。
+	//
+	// ⚠ 不加 `not null` ✗（给已有表加 NOT NULL 列会被 SQLite 拒绝、导致面板起不来 ✓）。
+	IssuerNodeID  int64      `json:"issuer_node_id" gorm:"index"`
 	ExpiresAt     time.Time  `json:"expires_at" gorm:"not null"`
 	LastRenewedAt *time.Time `json:"last_renewed_at"`
 	CreatedAt     time.Time  `json:"created_at" gorm:"not null"`

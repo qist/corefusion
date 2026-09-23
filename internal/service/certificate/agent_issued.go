@@ -21,6 +21,8 @@ type AgentIssuedCertInput struct {
 	FullchainPEM string
 	ExpiresAt    time.Time
 	CA           string
+	// ServerID 是"回传这张证书的节点" ✓ = 签发节点 ✓（写进 IssuerNodeID ✓）
+	ServerID int64
 }
 
 // StoreAgentIssuedCert 把 Agent 在**节点本机**签好的公网证书落盘 + 落库 ✓。
@@ -97,7 +99,9 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		domain = "unknown"
 	}
 	if name == "" {
-		name = "acme-" + domain
+		// 名字直接用标识符 ✓（原来是 "acme-"+domain ✗，列表里会莫名多个前缀 ✓，
+		// 与面板本机签出来的那批（名字=域名 ✓）不一致 ✓）
+		name = domain
 	}
 
 	certDir := filepath.Join(s.dataDir, "certs", sanitizeDomain(name))
@@ -119,6 +123,7 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 			Domain:       domain,
 			Domains:      sans,
 			Issuer:       issuer,
+			IssuerNodeID: in.ServerID,
 			ProviderType: "acme",
 			KeyType:      keyType,
 			KeyBits:      keyBits,
@@ -139,6 +144,9 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	existing.Name = name
 	existing.Domains = sans
 	existing.Issuer = issuer
+	if in.ServerID > 0 {
+		existing.IssuerNodeID = in.ServerID
+	}
 	existing.ProviderType = "acme"
 	existing.KeyType = keyType
 	existing.KeyBits = keyBits

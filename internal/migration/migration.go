@@ -290,6 +290,16 @@ func RunDataMigrations(db *gorm.DB) error {
 	// v3.3: Migrate charge_cards from plaintext card_code to encrypted storage
 	migrateChargeCardEncryption(db)
 
+	// v3.5：DNS 渠道凭据（Cloudflare token / 谷歌 GCP service account JSON 等）
+	// 从明文 base64 迁移到 AES-256-GCM 加密存储（与充值卡同一把密钥 ✓）
+	migrateDNSChannelEncryption(db)
+
+	// v3.5：EAB 凭据（EAB-HMAC-Key / GCP 服务账号 JSON）从明文迁移到加密存储
+	migrateEABConfigEncryption(db)
+
+	// v3.5：ACME 账号绑定的 EAB-HMAC-Key 同样从明文迁移到加密存储
+	migrateACMEAccountConfigEncryption(db)
+
 	// v3.3: Add agent_id column to charge_cards for agent/sales tracking
 	migrateChargeCardAgentColumn(db)
 
@@ -558,6 +568,164 @@ func migrateChargeCardEncryption(db *gorm.DB) {
 	// This replaces the GORM-managed uniqueIndex tag which fails when multiple rows have empty hash
 	recreateIndex(db, "charge_cards", "idx_charge_cards_card_code_hash",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_charge_cards_card_code_hash ON charge_cards(card_code_hash) WHERE card_code_hash != ''")
+}
+
+// migrateDNSChannelEncryption v3.5：把 DNS 渠道凭据从**裸 base64(JSON)** 迁移到
+// AES-256-GCM 加密存储 ✓（与充值卡 / CA 私钥共用同一把密钥 ✓，见 internal/security/crypto ✓）。
+//
+// 为什么只做"再加密一层" ✗：历史行里存的就是 `base64({"CF_Token":"..."})` ✓ ——
+// 明文可逆 ✗（`base64 -d` 就能拿到 token ✗）。加密后的读路径是
+// `DecryptSecret → base64 decode → JSON` ✓（见 service/certificate/channel.go ✓），
+// 所以这里把**整个旧串**当作待解密的明文原样包一层即可 ✓，语义不变 ✓。
+//
+// 幂等 ✓：只处理**不带 `enc:` 前缀**的行 ✓（历史 base64 不含冒号前缀 ✓），
+// 迁完再跑命中 0 行 ✓。已部署实例重启一次即完成 ✓，不迁移也能读 ✓（读路径兼容旧格式 ✓）。
+func migrateDNSChannelEncryption(db *gorm.DB) {
+	if !db.Migrator().HasTable("dns_channels") {
+		return
+	}
+
+	type dnsChannelRow struct {
+		ID      int64  `gorm:"column:id"`
+		EnvVars string `gorm:"column:env_vars"`
+	}
+	var rows []dnsChannelRow
+	if err := db.Table("dns_channels").
+		Where("env_vars IS NOT NULL AND env_vars != '' AND env_vars NOT LIKE 'enc:%'").
+		Find(&rows).Error; err != nil {
+		log.Printf("[migration] dns_channels: 查询待加密凭据失败：%v", err)
+		return
+	}
+	if len(rows) == 0 {
+		return // 已迁移过（或本来就没有渠道）✓
+	}
+
+	log.Printf("[migration] dns_channels: 待加密凭据 %d 条", len(rows))
+	migrated := 0
+	for _, r := range rows {
+		enc, err := encryptPlainSecret(r.EnvVars)
+		if err != nil {
+			log.Printf("[migration] WARNING: dns_channels %d 凭据加密失败：%v", r.ID, err)
+			continue
+		}
+		if err := db.Exec("UPDATE dns_channels SET env_vars = ? WHERE id = ?", enc, r.ID).Error; err != nil {
+			log.Printf("[migration] WARNING: dns_channels %d 凭据回写失败：%v", r.ID, err)
+			continue
+		}
+		migrated++
+	}
+	log.Printf("[migration] dns_channels: 已加密 %d/%d 条凭据", migrated, len(rows))
+}
+
+// migrateEABConfigEncryption v3.5：把 EAB 凭据（`mac_key` = EAB-HMAC-Key ✓、
+// `google_sa_json` = GCP 服务账号密钥 JSON ✓）从明文迁移到 AES-256-GCM 加密存储 ✓
+//（与充值卡 / DNS 渠道凭据 **同一把密钥** ✓，见 internal/security/crypto ✓）。
+//
+// 为什么这两项必须加密 ✗：它们都能直接换到 CA 侧的身份 ✗ ——
+//   - `mac_key`：拿去就能注册 Google / ZeroSSL 的 ACME 账号 ✓；
+//   - `google_sa_json`：内含 `private_key` ✓ → 可以以该服务账号身份调 GCP 接口 ✓
+//     （申请 EAB、乃至这个项目下它能碰到的任何 API ✗）。
+// 而它们原先在库里是**明文** ✗（`sqlite3` 一条 select 就能看到私钥 ✗）。
+//
+// 幂等 ✓：只处理不以 `enc:` 开头的非空值 ✓ —— mac_key 是 base64url（无冒号 ✓）、
+// 服务账号 JSON 以 `{` 开头 ✓，都不会被误判成已加密 ✓。
+func migrateEABConfigEncryption(db *gorm.DB) {
+	if !db.Migrator().HasTable("eab_configs") {
+		return
+	}
+
+	type eabRow struct {
+		ID           int64  `gorm:"column:id"`
+		MACKey       string `gorm:"column:mac_key"`
+		GoogleSAJSON string `gorm:"column:google_sa_json"`
+	}
+	var rows []eabRow
+	if err := db.Table("eab_configs").
+		Where("(mac_key IS NOT NULL AND mac_key != '' AND mac_key NOT LIKE 'enc:%')" +
+			" OR (google_sa_json IS NOT NULL AND google_sa_json != '' AND google_sa_json NOT LIKE 'enc:%')").
+		Find(&rows).Error; err != nil {
+		log.Printf("[migration] eab_configs: 查询待加密凭据失败：%v", err)
+		return
+	}
+	if len(rows) == 0 {
+		return // 已迁移过 ✓
+	}
+
+	log.Printf("[migration] eab_configs: 待加密凭据 %d 条", len(rows))
+	migrated := 0
+	for _, r := range rows {
+		mac, err := encryptPlainSecret(r.MACKey)
+		if err != nil {
+			log.Printf("[migration] WARNING: eab_configs %d mac_key 加密失败：%v", r.ID, err)
+			continue
+		}
+		sa, err := encryptPlainSecret(r.GoogleSAJSON)
+		if err != nil {
+			log.Printf("[migration] WARNING: eab_configs %d google_sa_json 加密失败：%v", r.ID, err)
+			continue
+		}
+		// 两个字段一起回写 ✓：避免"mac_key 已加密、sa_json 还是明文"的半迁移状态 ✗（再跑一次也能补上 ✓）。
+		if err := db.Exec("UPDATE eab_configs SET mac_key = ?, google_sa_json = ? WHERE id = ?", mac, sa, r.ID).Error; err != nil {
+			log.Printf("[migration] WARNING: eab_configs %d 凭据回写失败：%v", r.ID, err)
+			continue
+		}
+		migrated++
+	}
+	log.Printf("[migration] eab_configs: 已加密 %d/%d 条凭据", migrated, len(rows))
+}
+
+// migrateACMEAccountConfigEncryption v3.5：把 ACME 账号绑定用的 EAB-HMAC-Key
+//（`acme_account_configs.eabmac_key` ✓）从明文迁移到 AES-256-GCM 加密存储 ✓。
+//
+// 为什么单独写 ✗（和 `eab_configs` 的迁移不合并 ✓）：
+// `eab_configs` 是"EAB 凭据**主存储**" ✓（面板拿它去 CA 申请 EAB ✓），
+// 这里是"某个账号**绑定**的那对 KID/MAC" ✓（签发时按所选账号自动带上 ✓）——
+// 两张表各有独立的写入路径 ✓，混在一个循环里只会让幂等判断更难写对 ✗。
+//
+// 幂等 ✓：只挑不以 `enc:` 开头的非空值 ✓（EAB MAC 是 base64url ✓ 不含冒号 ✓ 不会被误判 ✓）。
+func migrateACMEAccountConfigEncryption(db *gorm.DB) {
+	if !db.Migrator().HasTable("acme_account_configs") {
+		return
+	}
+
+	type row struct {
+		ID        int64  `gorm:"column:id"`
+		EABMACKey string `gorm:"column:eabmac_key"`
+	}
+	var rows []row
+	if err := db.Table("acme_account_configs").
+		Where("eabmac_key IS NOT NULL AND eabmac_key != '' AND eabmac_key NOT LIKE 'enc:%'").
+		Find(&rows).Error; err != nil {
+		log.Printf("[migration] acme_account_configs: 查询待加密 EAB MAC 失败：%v", err)
+		return
+	}
+	if len(rows) == 0 {
+		return // 没有明文或已迁移过 ✓
+	}
+
+	log.Printf("[migration] acme_account_configs: 待加密 EAB MAC %d 条", len(rows))
+	migrated := 0
+	for _, r := range rows {
+		enc, err := encryptPlainSecret(r.EABMACKey)
+		if err != nil {
+			log.Printf("[migration] WARNING: acme_account_configs %d EAB MAC 加密失败：%v", r.ID, err)
+			continue
+		}
+		if err := db.Exec("UPDATE acme_account_configs SET eabmac_key = ? WHERE id = ?", enc, r.ID).Error; err != nil {
+			log.Printf("[migration] WARNING: acme_account_configs %d 回写失败：%v", r.ID, err)
+			continue
+		}
+		migrated++
+	}
+	log.Printf("[migration] acme_account_configs: 已加密 %d/%d 条 EAB MAC", migrated, len(rows))
+}
+
+// encryptPlainSecret 加密一个"确定是明文"的值 ✓：空值保持空 ✓、已加密的原样返回 ✓（幂等 ✓）。
+func encryptPlainSecret(s string) (string, error) {
+	if strings.TrimSpace(s) == "" || crypto.IsEncrypted(s) {
+		return s, nil
+	}
+	return crypto.EncryptSecret(s)
 }
 
 // migrateChargeCardAgentColumn v3.3: 添加 agent_id 和 agent_name 列到 charge_cards 表

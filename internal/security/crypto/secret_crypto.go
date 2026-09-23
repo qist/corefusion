@@ -73,6 +73,18 @@ func generateDefaultKey() []byte {
 	return h[:]
 }
 
+// secretPrefix 是密文的固定前缀 ✓ —— EncryptSecret 产出它 ✓、DecryptSecret 靠它区分"已加密/未加密" ✓。
+const secretPrefix = "enc:"
+
+// IsEncrypted 判断一个值是否**已经是** EncryptSecret 的产物 ✓。
+//
+// 用途：避免把密文**再包一层** ✗ —— 双层密文解一次仍是密文 ✗，
+// 现象是"凭据明明存进去了、用的时候却说无效" ✗，排查成本极高 ✗。
+// 典型场景：从库里读出的行未经解密就被回写 ✓ → 写路径动手前应先问一句 ✓。
+func IsEncrypted(s string) bool {
+	return strings.HasPrefix(s, secretPrefix)
+}
+
 // EncryptSecret encrypts a plaintext secret using AES-256-GCM.
 // Returns a string in the format: "enc:<base64_nonce>:<base64_ciphertext>"
 func EncryptSecret(plaintext string) (string, error) {
@@ -101,7 +113,7 @@ func EncryptSecret(plaintext string) (string, error) {
 	}
 
 	ciphertext := gcm.Seal(nil, nonce, []byte(plaintext), nil)
-	return fmt.Sprintf("enc:%s:%s",
+	return fmt.Sprintf("%s%s:%s", secretPrefix,
 		base64.StdEncoding.EncodeToString(nonce),
 		base64.StdEncoding.EncodeToString(ciphertext),
 	), nil
@@ -115,7 +127,7 @@ func DecryptSecret(encrypted string) (string, error) {
 	}
 
 	// Backward compatibility: if not encrypted, return as-is
-	if !strings.HasPrefix(encrypted, "enc:") {
+	if !IsEncrypted(encrypted) {
 		return encrypted, nil
 	}
 

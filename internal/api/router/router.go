@@ -1550,6 +1550,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			chargeOrderGroup := protected.Group("/charge-orders").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				chargeOrderGroup.GET("", chargeAdminH.ListOrders)
+				// 导出充值订单 CSV（原来只有列表 ✗）；与 /:id 同级 static+param 共存（gin 支持 ✓）
+				chargeOrderGroup.GET("/export-csv", chargeAdminH.ExportOrdersCSV)
 				chargeOrderGroup.GET("/:id", chargeAdminH.GetOrder)
 				chargeOrderGroup.POST("/:id/refund", chargeAdminH.RefundOrder)
 			}
@@ -1567,6 +1569,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			{
 				clientBalanceGroup.GET("", chargeAdminH.ListBalances)
 				clientBalanceGroup.GET("/transactions", chargeAdminH.ListBalanceTransactionsAdmin)
+				// 导出余额流水 CSV（原来只能在弹窗里逐个客户端看 ✗）
+				clientBalanceGroup.GET("/transactions/export-csv", chargeAdminH.ExportBalanceTransactionsCSV)
 			}
 
 			// Callback events (v3.1: merged logs into events) & retry management

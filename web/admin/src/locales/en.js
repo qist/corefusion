@@ -1649,6 +1649,8 @@ export default {
       subPortHint: 'Dedicated port: domain:port/Token direct access; Leave empty or 0: share main port, path is /sub/Token',
       profileWebPageUrl: 'Subscription Portal URL',
       profileWebPageUrlHint: 'Profile-Web-Page-Url header value. Leave empty to auto-derive from request host (port stripped).',
+      exportMaxRows: 'Export row limit',
+      exportMaxRowsHint: 'Max rows per CSV export (1000 - 2000000); out-of-range values are clamped. Too small may truncate the export, too large may slow the panel down.',
       registrationEnabled: 'Open Registration',
       registrationHint: 'When enabled, users can register via Portal page',
       mode: 'Panel Mode',

@@ -1654,6 +1654,8 @@ export default {
       subPortHint: '独立端口：域名:端口/Token 直接访问；留空或0：共用主端口，路径为 /sub/Token',
       profileWebPageUrl: '订阅 Portal URL',
       profileWebPageUrlHint: 'Profile-Web-Page-Url 头部地址，留空则自动从请求域名推导（剥离端口）',
+      exportMaxRows: '导出上限（行）',
+      exportMaxRowsHint: 'CSV 导出的单次最大行数，范围 1000 ~ 2000000，越界会被自动夹取。太小可能导不全，太大可能拖慢面板。',
       registrationEnabled: '开放注册',
       registrationHint: '开启后用户可通过 Portal 页面自主注册账号',
       mode: '面板模式',

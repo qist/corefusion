@@ -57,6 +57,7 @@
               <el-option :label="t('charge.statusExpired')" value="expired" />
             </el-select>
             <el-button size="small" @click="fetchOrders">{{ t('common.search') }}</el-button>
+            <el-button type="info" size="small" @click="doExportOrdersCSV">📥 {{ t('charge.exportCSV') }}</el-button>
           </div>
         </div>
         <el-table :data="orders" v-loading="ordersLoading" stripe size="small">
@@ -191,6 +192,7 @@
       <el-tab-pane :label="t('charge.balancesTab')" name="balances">
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
           <h3 style="margin:0">{{ t('charge.balancesTab') }}</h3>
+          <el-button type="info" size="small" @click="doExportBalanceTxCSV">📥 {{ t('charge.exportCSV') }}</el-button>
         </div>
         <el-table :data="balances" v-loading="balancesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
@@ -1071,6 +1073,41 @@ async function doExportCSV() {
   } catch (e) {
     if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
   }
+}
+
+// ── 2026-09-23：订单 / 余额流水导出（原来只有列表，无法整体导出对账 ✗）──
+async function doExportOrdersCSV() {
+  try {
+    const params = {}
+    if (orderStatusFilter.value) params.status = orderStatusFilter.value
+    const blob = await chargeApi.exportOrdersCSV(params)
+    downloadBlob(blob, `charge-orders-${new Date().toISOString().substring(0, 10)}.csv`)
+    ElMessage.success(t('charge.csvExportSuccess'))
+  } catch (e) {
+    if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
+  }
+}
+
+async function doExportBalanceTxCSV() {
+  try {
+    const blob = await chargeApi.exportBalanceTransactionsCSV({})
+    downloadBlob(blob, `balance-transactions-${new Date().toISOString().substring(0, 10)}.csv`)
+    ElMessage.success(t('charge.csvExportSuccess'))
+  } catch (e) {
+    if (e?.response?.data?.message) ElMessage.error(e.response.data.message)
+  }
+}
+
+// downloadBlob 统一走一处，避免每次都抄一遍 createObjectURL 样板 ✓
+function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(new Blob([blob]))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
 }
 
 // ──────── Client Balances ────────

@@ -248,6 +248,28 @@ var processMgr *process.Manager
 // proxyMgr is the global proxy manager for graceful shutdown.
 var proxyMgr *proxySvc.Manager
 
+// reloadLocalProxiesAfterCertRefresh 让**面板本机**的代理重新加载证书 ✓。
+//
+// ⚠ 为什么必须**重启**而不是 reload ✗（真机实测 ✓）：caddy 会把证书**缓存在内存**里 ✓，
+// 即使配置文件 reload 了、磁盘上的证书文件已经是新的 ✗，握手吐出来的**还是旧证书** ✗
+// （实测：文件序列号已是 066C6B84… ✓ 而 caddy 仍吐 0596B774… ✗）。重启进程才会重新读文件 ✓。
+//
+// 代价 ✓：本机 caddy/nginx 会**短暂中断**（1~2 秒 ✓）—— 只在"本机在用的证书被续期"时发生 ✓
+// （每张证书 ~60 天一次 ✓），可以接受 ✓。
+func reloadLocalProxiesAfterCertRefresh(certID int64) {
+	if proxyMgr == nil {
+		return
+	}
+	ctx := context.Background()
+	for _, pt := range []proxySvc.ProxyType{proxySvc.ProxyCaddy, proxySvc.ProxyNginx} {
+		if rerr := proxyMgr.RestartProxy(ctx, pt); rerr != nil {
+			log.Printf("[cert] 证书 %d 刷新后重启本机代理 %s 失败：%v", certID, pt, rerr)
+		} else {
+			log.Printf("[cert] 证书 %d 刷新后已重启本机代理 %s（让它重新加载证书 ✓）", certID, pt)
+		}
+	}
+}
+
 // caService is the global CA service for Agent mTLS certificate management.
 var caService *agent.CertificateAuthority
 
@@ -1709,6 +1731,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 						log.Printf("[router] auto-distribute cert %d after update: %v", certID, err)
 					} else {
 						log.Printf("[router] auto-distributed cert %d to all associated nodes", certID)
+						// 面板本机那份副本同样要刷新 + 重启本机代理 ✓（否则本机内核一直吐旧证书 ✗）
+						if certSvc != nil {
+							go func(id int64) {
+								if lerr := certSvc.SyncLocalCopyIfLanded(context.Background(), id); lerr != nil {
+									log.Printf("[cert] 刷新本机证书副本失败（cert %d）：%v", id, lerr)
+									return
+								}
+								reloadLocalProxiesAfterCertRefresh(id)
+							}(certID)
+						}
 					}
 				})
 
@@ -3967,6 +3999,17 @@ func (a publicCertSinkAdapter) StoreAgentIssuedCert(ctx context.Context, res *ag
 	// 分发守卫会拒绝 ✓，没必要白跑一趟 ✓（也就不会在日志里刷无意义的失败 ✗）。
 	if autoDistributeCertFn != nil && strings.TrimSpace(c.CertContent) != "" {
 		go autoDistributeCertFn(context.Background(), c.ID)
+	}
+	// 续期/重报后还要刷新**面板本机**的副本 ✓（本机没有 sync ✗，不刷新的话本机内核会一直吐旧证书 ✗），
+	// 并在刷新成功后**重启本机代理** ✓（caddy 缓存证书 ✗，只 reload 不生效 ✓）。
+	if a.svc != nil {
+		go func(id int64) {
+			if lerr := a.svc.SyncLocalCopyIfLanded(context.Background(), id); lerr != nil {
+				log.Printf("[cert] 刷新本机证书副本失败（cert %d）：%v", id, lerr)
+				return
+			}
+			reloadLocalProxiesAfterCertRefresh(id)
+		}(c.ID)
 	}
 	return c.ID, nil
 }

@@ -181,8 +181,12 @@ export function updateSchedulerConfig(items) {
 // 等于把长期凭证散播出去。现在先换一张 60 秒、一次性、限路径的票据，再拼 `?ticket=`。
 export async function requestTicket(scope = 'logs') {
   const res = await client.post('/auth/ticket', null, { params: { scope } })
-  const data = res?.data?.data || res?.data || {}
-  return data.ticket || ''
+  // ⚠ 响应拦截器是 `response.data?.data ?? response.data` —— 它**已经剥掉一层** ✓，
+  // 所以这里的 `res` 就是 `{ ticket, expires_in, scope }` ✓。
+  // 原来按 `res.data.data.ticket` 取 ✗ → **永远是空串** ✗ → 票据被静默丢弃 ✗
+  //（真机表现：票据接口 200 ✓ 但下载/日志流请求**根本没发出** ✗ → 前端只弹"操作失败" ✗）。
+  // 两种层级都兼容 ✓，以后改拦截器也不会再踩 ✓。
+  return res?.ticket || res?.data?.ticket || ''
 }
 
 export function buildSSEUrl(path, params = {}, ticket = '') {

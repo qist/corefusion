@@ -447,7 +447,6 @@ import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../composables/useQueryState'
 import PaginationBar from '../components/PaginationBar.vue'
 import client from '../api/client'
-import { requestTicket } from '../api/logManage'
 
 const { t } = useI18n()
 
@@ -935,39 +934,69 @@ async function handleUpload() {
 
 onMounted(() => { fetchCertificates(); fetchChannels(); fetchEmails(); fetchProviders(); fetchNodes() })
 
-// openWithTicket 用"一次性票据"打开下载 ✓。
+// downloadBlob 用**已认证的 axios** 取二进制并触发浏览器下载 ✓。
 //
-// 为什么必须这样 ✗：浏览器下载（window.open / <a download>）**无法自定义请求头** ✗，
-// 以前只能把长期 token 拼进 URL ✓（会进访问日志/浏览器历史 ✓）。现在先换一张 60 秒、
-// 一次性、且**只对证书下载路径生效**的票据 ✓（后端口径见 middleware.ticketRouteScopes ✓）。
-async function openWithTicket(path) {
-  const ticket = await requestTicket('cert_download')
-  if (!ticket) { ElMessage.error(t('common.failed')); return }
-  const base = client.defaults.baseURL || '/api/v1'
-  const url = `${base}${path}${path.includes('?') ? '&' : '?'}ticket=${encodeURIComponent(ticket)}`
-  window.open(url, '_blank')
+// ⚠ 刻意**不用** `window.open` + 一次性票据 ✗：`window.open` 在 `await` 之后
+// 已经不算"用户手势" ✗ → 会被浏览器**弹窗拦截** ✗，请求根本发不出去 ✓。
+// 真机证据：票据接口 200 ✓ 而后续下载请求 **0 次** ✗（加上票据取空的 bug ✗，
+// 前端只会笼统地弹"操作失败" ✗，真实原因只能翻服务端日志 ✗）。
+// 走 axios 三个好处 ✓：① 一定带鉴权 ✓；② 显示**真实错误信息** ✓；③ 不被弹窗拦截 ✓。
+async function downloadBlob(path, params, filename) {
+  try {
+    const res = await client.get(path, {
+      params,
+      responseType: 'blob',
+      suppressErrorMessage: true, // 错误响应体是 blob ✓，自己解析后给真实原因 ✓
+    })
+    // 拦截器已把响应剥了一层 ✓ → 这里拿到的就是 Blob ✓
+    const blob = res instanceof Blob ? res : new Blob([res])
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+    return true
+  } catch (e) {
+    let msg = t('common.failed')
+    const body = e?.response?.data
+    try {
+      if (body instanceof Blob) {
+        const j = JSON.parse(await body.text())
+        msg = j?.message || msg
+      } else if (body && typeof body === 'object') {
+        msg = body.message || msg
+      }
+    } catch (_) { /* 解析不了就用默认文案 ✓ */ }
+    ElMessage.error(msg)
+    return false
+  }
 }
 
-// 单个证书：zip（打包 ✓，默认）/ cert（仅叶 ✓）/ fullchain（叶+链 ✓）/ key（私钥 ✓）
+// 文件名与服务端保持一致 ✓（服务端另有 Content-Disposition ✓）
+function certFileName(row, format) {
+  const base = String(row.name || row.domain || 'certificate').replace(/[^A-Za-z0-9._-]/g, '_')
+  if (format === 'zip') return base + '.zip'
+  if (format === 'key') return base + '.key'
+  return base + '.pem'
+}
+
+// 单个证书：zip（打包 ✓）/ cert（仅叶 ✓）/ fullchain（叶+链 ✓）/ key（私钥 ✓）
 function downloadCert(row, format) {
-  openWithTicket(`/certificates/${row.id}/download?format=${format}`)
-    .catch(() => ElMessage.error(t('common.failed')))
+  downloadBlob(`/certificates/${row.id}/download`, { format }, certFileName(row, format))
 }
 
-// 批量打包：每张一个目录 ✓（根目录附清单 README ✓）
-async function downloadBatch() {
+// 批量打包：每张一个目录 + 根清单 README ✓
+function downloadBatch() {
   if (!selectedCerts.value.length) {
     ElMessage.warning(t('certificate.selectFirst'))
     return
   }
   downloadingBatch.value = true
-  try {
-    const ids = selectedCerts.value.map(r => r.id).join(',')
-    await openWithTicket(`/certificates/export?ids=${ids}`)
-  } catch (e) {
-    ElMessage.error(t('common.failed'))
-  } finally {
-    downloadingBatch.value = false
-  }
+  const ids = selectedCerts.value.map(r => r.id).join(',')
+  downloadBlob('/certificates/export', { ids }, `certificates-${Date.now()}.zip`)
+    .finally(() => { downloadingBatch.value = false })
 }
 </script>

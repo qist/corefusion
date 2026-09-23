@@ -72,6 +72,12 @@ type SubscriptionRotation struct {
 
 func (SubscriptionRotation) TableName() string { return "subscription_rotations" }
 
+// ⚠ 保留但**未接线**（2026-09-23 完成度体检）：
+// 全仓只有 AutoMigrate 登记过它，没有任何仓储 / 服务 / handler 读写（实测表内 0 行）。
+// 已从 AutoMigrate 摘除 —— 免得新装的库凭空多出一张没人用的空表 ✗。
+// 它描述的是「发布 / 撤销 / 版本历史 / 预览 / 二维码 / 导出」这类更高层的节点分享能力
+//（已实现的 share-domains 是它的简化版）；结构体保留供将来参照，接线前先确认产品需要。
+//
 // ServerShareProfile is the GORM model for server share profiles.
 type ServerShareProfile struct {
 	ID int64 `json:"id" gorm:"primaryKey;autoIncrement"`

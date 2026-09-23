@@ -41,7 +41,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.Subscription{},
 		&entity.SubscriptionAccessLog{},
 		&entity.SubscriptionRotation{},
-		&entity.ServerShareProfile{},
 
 		// Certificates
 		&entity.Certificate{},
@@ -76,7 +75,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.UpdateJob{},
 
 		// Routing
-		&entity.RoutingRegion{},
 
 		// Geo Rules
 		&entity.RuleSource{},

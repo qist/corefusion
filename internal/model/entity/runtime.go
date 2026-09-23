@@ -167,6 +167,12 @@ type UpdateJob struct {
 
 func (UpdateJob) TableName() string { return "update_jobs" }
 
+// ⚠ 保留但**未接线**（2026-09-23 完成度体检）：
+// 全仓只有 AutoMigrate 登记过它，没有任何仓储 / 服务 / handler 读写（实测表内 0 行）。
+// 已从 AutoMigrate 摘除 —— 免得新装的库凭空多出一张没人用的空表 ✗。
+// 结构体保留：将来若真要做「路由区域 CRUD」，有个现成 schema 可参照；
+// 接线前请先确认产品确实需要它（它与已实现的 geo-rules / region_selector 用途不同）。
+//
 // RoutingRegion is the GORM model for routing regions.
 type RoutingRegion struct {
 	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`

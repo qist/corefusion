@@ -3,6 +3,7 @@ package certificates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -701,6 +702,13 @@ func (h *Handler) Issue(c *gin.Context) {
 	cert, err := h.certSvc.IssueACME(c.Request.Context(), input)
 	if err != nil {
 		audit.RecordNodeFromCtx(c, 0, "cert_issue", strings.Join(req.Domains, ","), false, err.Error())
+		// "同一张证书已经有一次签发在跑" ✓ 不是服务端故障 ✗ → 409 ✓：
+		// 签发已被刻意脱离请求上下文 ✓（见 detachedCertOpContext ✓），上一次可能仍在后台跑 ✓，
+		// 这里如实告诉调用方"稍后看结果" ✓，而不是让两个签发同时写同一份文件 ✗。
+		if errors.Is(err, certService.ErrCertOpInProgress) {
+			response.Conflict(c, "ISSUE_IN_PROGRESS", err.Error())
+			return
+		}
 		response.InternalError(c, "ISSUE_FAILED", err.Error())
 		return
 	}
@@ -764,6 +772,11 @@ func (h *Handler) Renew(c *gin.Context) {
 	cert, err := h.certSvc.RenewACME(c.Request.Context(), id, in)
 	if err != nil {
 		audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("cert %d", id), false, err.Error())
+		// 同上 ✓：续期同样在后台保证跑完 ✓ → 并发的第二次直接 409 ✓（见 handler 里 Issue 的注释 ✓）。
+		if errors.Is(err, certService.ErrCertOpInProgress) {
+			response.Conflict(c, "RENEW_IN_PROGRESS", err.Error())
+			return
+		}
 		response.InternalError(c, "RENEW_FAILED", err.Error())
 		return
 	}

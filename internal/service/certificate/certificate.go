@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"crypto/ecdsa"
@@ -38,6 +39,56 @@ type Service struct {
 	// 前端点"续期"（不带任何参数 ✓）时，创建时选的 DNS 通道**凭空消失** ✗。
 	// 续期的口径是"创建时选什么就用什么" ✓ → 服务必须能自己找到它 ✓（可选注入 ✓）。
 	dnsResolver DNSChannelResolver
+
+	// opMu / opsInFlight 让"同一张证书的签发/续期"串行化 ✓（见 beginCertOp ✓）。
+	opMu        sync.Mutex
+	opsInFlight map[string]bool
+}
+
+// ErrCertOpInProgress 表示"同一张证书已经有一次签发/续期在跑" ✓（调用方映射成 409 ✓）。
+var ErrCertOpInProgress = errors.New("该证书正在签发/续期中，请等它跑完（上一次操作仍在后台进行）")
+
+// beginCertOp 给一次签发/续期"上锁" ✓，返回释放函数 ✓；已有同名操作在跑时返回 ok=false ✓。
+//
+// Why: 签发/续期被**故意脱离了请求上下文**（见 detachedCertOpContext ✓）→
+// 客户端断开后任务仍在跑 ✓（这正是要的 ✓），于是"用户看界面没反应又点一次" ✗ /
+// "自动续期与手动续期撞上" ✗ 都会变成**同一张证书两个续期并发** ✗ →
+// 两边各自写证书文件 + 各自 Update 同一行 ✗ → 落库的 cert_content 与磁盘/最终证书可能对不上 ✗，
+// 还白白消耗 CA 配额 ✗。
+//
+// 口径 ✓：把第二次**直接拒掉** ✓（不做排队 ✓）—— 续期是幂等动作 ✓，
+// "正在跑，稍后看结果"比"排队再签一张"更好解释 ✓，也不会把 CA 配额翻倍 ✗。
+func (s *Service) beginCertOp(key string) (func(), bool) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	if s.opsInFlight == nil {
+		s.opsInFlight = make(map[string]bool, 4)
+	}
+	if s.opsInFlight[key] {
+		return nil, false
+	}
+	s.opsInFlight[key] = true
+	return func() {
+		s.opMu.Lock()
+		delete(s.opsInFlight, key)
+		s.opMu.Unlock()
+	}, true
+}
+
+// detachedCertOpContext 把请求上下文换成"**保留值、去掉取消**"的上下文 ✓（自带超时兜底 ✓）。
+//
+// Why: dns-01 要等 DNS 传播 ✓（真机实测一次 60s 上下 ✓，慢的时候到 2 分钟 ✓），
+// 前端/反代常常在这之前就断开 ✗ → `c.Request.Context()` 被取消 ✗ →
+// **证书其实已经签出来了** ✓（日志里已有 `Server responded with a certificate` ✓、磁盘也有产物 ✓），
+// 唯独紧接着的**落库**那一步被取消打断 ✗ → 接口 500、库里**没有这张证书** ✗ ——
+// 真机 2026-09-23 就踩到过（遗留 `data/certs/*.e2e923.example.com/` 这种"有文件、库里没有"的无主目录 ✓）。
+//
+// 口径 ✓：**一旦开始签发/续期，就保证把它跑完并落库** ✓ —— 客户端断不断开都一样 ✓
+// （DB 是唯一权威 ✓；磁盘产物绝不能变成"没人认领"的孤儿 ✗）。
+// 不变的东西 ✗：调用方仍然拿不到结果 ✓（断开的连接不会复活 ✓），只是**结果一定进库** ✓。
+func detachedCertOpContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	// 15 分钟只是"别无限跑"的兜底 ✓：dns-01 + CA 侧队列的极端情况也够用 ✓。
+	return context.WithTimeout(context.WithoutCancel(ctx), 15*time.Minute)
 }
 
 // DNSChannelResolver 把"面板里的 DNS 通道 ID"解析成 dns-01 凭据 ✓。
@@ -807,6 +858,23 @@ func ValidateACMEDomains(domains []string, challengeType string) error {
 
 // IssueACME issues a new certificate via ACME.
 func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.Certificate, error) {
+	// ⚠ 顺序很重要 ✓：**先**把上下文换成"不受断开影响"的 ✓（见 detachedCertOpContext ✓）——
+	// 证书一旦签出来就必须落库 ✓，否则又是一份"有文件、库里没有"的孤儿 ✗。
+	ctx, cancel := detachedCertOpContext(ctx)
+	defer cancel()
+
+	// 同一张证书（域名 + 密钥类型 ✓，与库里的身份口径一致 ✓）不允许两个签发并发 ✓
+	//（并发签发会各自写同一份文件 + 各自落库 ✗）。
+	firstDomain := ""
+	if len(input.Domains) > 0 {
+		firstDomain = strings.ToLower(strings.TrimSpace(input.Domains[0]))
+	}
+	if done, ok := s.beginCertOp("issue:" + firstDomain + ":" + cert.NormalizeKeyType(input.KeyType)); ok {
+		defer done()
+	} else {
+		return nil, ErrCertOpInProgress
+	}
+
 	// 挑战方式**先归一化** ✓：空 = http-01（历史默认 ✓）→ 校验/下发/落库都用同一个值 ✓，
 	// 免得出现"库里记空、实际走 http-01"这种对不上的状态 ✓（续期要靠它还原 ✓）。
 	challengeType := NormalizeChallengeType(input.ChallengeType)
@@ -955,6 +1023,16 @@ type RenewACMEInput struct {
 //   - CA / profile / 密钥类型：按库里记录与现有私钥还原 ✓；
 //   - ✗ **绝不静默降级**：dns-01 拿不到凭据就明确报错 ✓，不再偷偷换成 http-01 ✗。
 func (s *Service) RenewACME(ctx context.Context, id int64, in RenewACMEInput) (*entity.Certificate, error) {
+	// ⚠ 与 IssueACME 同一口径 ✓：**开跑就保证跑完并落库** ✓（客户端断开不再打断落库 ✗→✓），
+	// 同时同一张证书不允许两个续期并发 ✓（否则两边都写文件、都 Update 同一行 ✗）。
+	ctx, cancel := detachedCertOpContext(ctx)
+	defer cancel()
+	if done, ok := s.beginCertOp(fmt.Sprintf("renew:%d", id)); ok {
+		defer done()
+	} else {
+		return nil, ErrCertOpInProgress
+	}
+
 	certRecord, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err

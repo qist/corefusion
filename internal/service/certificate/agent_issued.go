@@ -44,6 +44,13 @@ type AgentIssuedCertInput struct {
 // 与 Upload 的区别 ✓：来源是节点自动签发（provider_type=acme ✓、auto_renew=1 ✓、
 // 保留原证书的 name/id ✓），因此续期后**配置引用不会被换掉** ✓。
 func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertInput) (*entity.Certificate, error) {
+	// 节点回传的是"已经签好的成品" ✓ → 落库这一步**同样不能被连接断开打断** ✓：
+	// 节点上报走的是长连接/流 ✓，流一断请求上下文就取消 ✗ → 库里少这一行 ✗
+	//（面板还以为节点的证书是旧的那张 ✗ → 过期判定/续期全都基于错的日期 ✗）。
+	// 交付口径与面板本机签发一致 ✓：**证书一定要进库** ✓（见 detachedCertOpContext ✓）。
+	ctx, cancel := detachedCertOpContext(ctx)
+	defer cancel()
+
 	if strings.TrimSpace(in.CertPEM) == "" || strings.TrimSpace(in.KeyPEM) == "" {
 		return nil, errors.New("cert and key content are required")
 	}

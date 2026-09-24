@@ -390,14 +390,46 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 	return result, nil
 }
 
+// RenewOptions 是"续期"的参数 ✓ —— 与 IssueOptions 对称 ✓。
+//
+// ⚠ 为什么必须**显式**给 ChallengeType ✗：以前续期是**靠猜**的 ✗ ——
+// `dnsProvider == nil` 就当作 http-01 ✓。于是"创建时选的 dns-01"连同
+// "创建时选的那条 DNS 通道凭据"在续期时被静默丢掉 ✗（通配符直接签不出来 ✗，
+// 普通域名则被悄悄换了验证方式 ✗）。
+// 现在由调用方**如实传入** ✓；传不出来就明确报错 ✓，绝不降级 ✗。
+//
+// ⚠ 为什么不给 KeyType ✗：续期**复用现有私钥** ✓，落盘目录必须与私钥的真实类型一致 ✗
+// —— 库里的 key_type 一旦脏（例如实际是 RSA 却写着 ecc ✓），按库值走会写到另一个目录 ✗，
+// 把同域的那份证书覆盖掉 ✗（双证书场景 ✓）。所以这里**按私钥反推** ✓。
+type RenewOptions struct {
+	Domains       []string
+	CertPath      string
+	KeyPath       string
+	ChallengeType ChallengeType
+	// Profile 必须与**创建时**一致 ✓（IP 证书 = shortlived ✓）✗：
+	// 不带 profile 去续 IP 证书会被 Let's Encrypt 拒 ✓。
+	Profile     string
+	EAB         *EABConfig
+	DNSProvider *DNSProviderConfig
+}
+
 // Renew renews an existing certificate.
-func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyPath, keyType string, dnsProvider *DNSProviderConfig) (*IssueResult, error) {
-	certPEM, err := os.ReadFile(certPath)
+//
+// 域名不是"调用方随便给的" ✗：lego 会从**现有证书的 SAN** 里取 ✓
+// （所以 SAN 不会在续期时被丢掉 ✓）；opts.Domains 用来判断"是否含 IP"（CSR 规则不同 ✓，
+// 并决定 DisableCommonName ✓）与决定落盘目录 ✓，
+// 因此 **opts.Domains[0] 必须是主域名** ✗（与签发时保持一致 ✓）。
+func (c *ACMEClient) Renew(ctx context.Context, opts RenewOptions) (*IssueResult, error) {
+	if len(opts.Domains) == 0 {
+		return nil, fmt.Errorf("at least one domain required")
+	}
+
+	certPEM, err := os.ReadFile(opts.CertPath)
 	if err != nil {
 		return nil, fmt.Errorf("read cert: %w", err)
 	}
 
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := os.ReadFile(opts.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("read key: %w", err)
 	}
@@ -414,52 +446,94 @@ func (c *ACMEClient) Renew(ctx context.Context, domains []string, certPath, keyP
 		return nil, fmt.Errorf("parse key: %w", err)
 	}
 
-	// Create user with existing key
-	user := &ACMEUser{
-		Email: c.email,
-		key:   key,
+	// 挑战方式：**如实使用**调用方给的值 ✓（空 → http-01 ✓，与历史默认一致 ✓）
+	challengeType := opts.ChallengeType
+	if challengeType == "" {
+		challengeType = ChallengeHTTP01
+	}
+	if challengeType == ChallengeDNS01 && opts.DNSProvider == nil {
+		// ✗ 绝不静默降级成 http-01：那等于把"创建时选的 dns-01"偷偷换掉 ✓
+		return nil, fmt.Errorf("dns-01 challenge requires a DNS provider config (DNS 通道凭据缺失，无法续期)")
 	}
 
-	client, err := c.createClient(user, hasIPIdentifier(domains), keyTypeOfKey(key))
+	// ⚠ 账号密钥必须是**账号自己的**（从账号库读 ✓），绝不能用证书私钥顶替 ✗ ——
+	// 真机实测（2026-09-24，证书 id=20 续期 ✓）：
+	//   拿证书私钥当账号密钥 → 用它注册出一个**新账号** ✓ → 而 CSR 又用**同一把**私钥 ✓
+	//   → LE 在 finalize 直接拒 ✓：`malformed :: certificate public key must be different than account key` ✗；
+	//   更糟的是注册成功后的 `saveAccount` 会把 `data/acme/accounts/<ca>.json` **覆盖成该证书的私钥** ✗
+	//   （账号身份被换掉 ✗，且每次续期都会重新注册一个账号 ✗ —— 真机已复现并留证 ✓）。
+	// 证书私钥只应该出现在 CSR 里 ✓（见下面 `certificate.Resource{PrivateKey: keyPEM}` ✓）。
+	user, err := c.loadOrCreateAccount()
+	if err != nil {
+		return nil, fmt.Errorf("load account: %w", err)
+	}
+
+	client, err := c.createClient(user, hasIPIdentifier(opts.Domains), keyTypeOfKey(key))
 	if err != nil {
 		return nil, err
 	}
 
 	// Setup challenge
-	challengeType := ChallengeHTTP01
-	if dnsProvider != nil {
-		challengeType = ChallengeDNS01
-	}
-	if err := c.setupChallenge(client, challengeType, dnsProvider); err != nil {
+	if err := c.setupChallenge(client, challengeType, opts.DNSProvider); err != nil {
 		return nil, err
 	}
 
-	// Register
-	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
-	if err != nil {
-		return nil, fmt.Errorf("register: %w", err)
+	// Register if needed（与 Issue 同口径 ✓）：
+	// 账号已存在（有 registration URI ✓）→ **不重复注册** ✓（真机噪声少、也不会误耗 EAB ✓）；
+	// 需要首次注册时**必须带上 EAB** ✗ —— Google / ZeroSSL 首次注册强制要求 ✗。
+	if user.Registration == nil {
+		var reg *registration.Resource
+		var regErr error
+		if opts.EAB != nil && opts.EAB.KeyID != "" {
+			reg, regErr = client.Registration.RegisterWithExternalAccountBinding(
+				registration.RegisterEABOptions{
+					TermsOfServiceAgreed: true,
+					Kid:                  opts.EAB.KeyID,
+					HmacEncoded:          opts.EAB.MACKey,
+				})
+		} else {
+			reg, regErr = client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+		}
+		if regErr != nil {
+			return nil, fmt.Errorf("register: %w", regErr)
+		}
+		user.Registration = reg
+		c.saveAccount(user)
 	}
-	user.Registration = reg
 
 	// Renew
-	certResource, err := client.Certificate.Renew(certificate.Resource{
-		Domain:      domains[0],
+	// ⚠ 必须用 RenewWithOptions ✗：`Renew(...)` **传不了 Profile** ✓，
+	// 而 IP 证书必须 `shortlived` ✓（不带 profile 续 IP 证书会被 LE 拒 ✓）。
+	certResource, err := client.Certificate.RenewWithOptions(certificate.Resource{
+		Domain:      opts.Domains[0],
 		Certificate: certPEM,
 		PrivateKey:  keyPEM,
-	}, true, false, "")
+	}, &certificate.RenewOptions{
+		Bundle:  true,
+		Profile: opts.Profile,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("renew: %w", err)
 	}
 
-	result, err := c.saveCertificate(domains[0], keyType, certResource)
+	result, err := c.saveCertificate(opts.Domains[0], panelKeyTypeOfKey(key), certResource)
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("[ACME] certificate renewed for %v, expires at %s",
-		domains, result.ExpiresAt.Format(time.RFC3339))
+	log.Printf("[ACME] certificate renewed for %v via %s (challenge=%s), expires at %s",
+		opts.Domains, c.caProvider, challengeType, result.ExpiresAt.Format(time.RFC3339))
 
 	return result, nil
+}
+
+// panelKeyTypeOfKey 从**已解析的私钥**反推面板口径的密钥类型 ✓（ecc / rsa ✓）——
+// 续期落盘目录以它为准 ✓（理由见 RenewOptions 的注释 ✓）。
+func panelKeyTypeOfKey(key crypto.PrivateKey) string {
+	if _, ok := key.(*rsa.PrivateKey); ok {
+		return KeyTypeRSA
+	}
+	return KeyTypeECC
 }
 
 // hasIPIdentifier 判断申请里是否含 IP 标识符（IP 证书与域名证书的 CSR 规则不同 ✓）。

@@ -1006,8 +1006,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 否则节点侧签发会因"没有邮箱"而失败 ✓（真机踩到过：面板日志明确写了
 	// `panel did not supply an ACME account email` ✓）。
 	if dnsChannelSvc != nil {
-		// DNS 通道 → dns-01 提供者配置 ✓（凭据在通道里 ✓，签发时按 ID 解析 ✓）
-		certH.SetDNSChannelResolver(dnsChannelAdapter{svc: dnsChannelSvc})
+		// DNS 通道 → dns-01 提供者配置 ✓（凭据在通道里 ✓，按 ID 解析 ✓）
+		certH.SetDNSChannelResolver(dnsChannelSvc)
+		// ⚠ 同一个解析器也必须给**证书服务** ✗：续期时服务要按库里记的 `dns_channel_id`
+		// **自己**还原凭据 ✓（前端续期不带任何参数 ✓）。
+		// 只接给 handler 的话，续期就还是拿不到 DNS 凭据 → 又退化成 http-01 ✗（真机 bug ✓）。
+		certSvc.SetDNSChannelResolver(dnsChannelSvc)
 	}
 	if eabConfigSvc != nil {
 		// EAB 独立配置 → 签发时按 eab_config_id 解析出 CA + EAB ✓（不用手填 ✗）
@@ -3997,6 +4001,10 @@ func (a publicCertSinkAdapter) StoreAgentIssuedCert(ctx context.Context, res *ag
 		ExpiresAt:    res.ExpiresAt,
 		CA:           res.CA,
 		ServerID:     res.ServerID,
+		// 挑战方式 + 面板 DNS 通道 id：节点回传的实际值 ✓ → 落库 = "创建时的选择" ✓
+		//（续期时原样复用 ✓，见 certificates.challenge_type/dns_channel_id 的注释 ✓）
+		ChallengeType: res.Challenge,
+		DNSChannelID:  res.DNSChannelID,
 	})
 	if err != nil || c == nil {
 		return 0, err
@@ -4070,7 +4078,6 @@ func (a acmeEmailAdapter) ResolveACMEEmail(ctx context.Context, id int64) (strin
 	return cfg.Email, nil
 }
 
-// dnsChannelAdapter 把面板的 DNS 通道服务接成"解析通道 → 提供者配置"能力 ✓。
 // publicCertEnvAdapter 给"节点续期"准备注册上下文 ✓：
 // 邮箱取面板的默认 ACME 账号 ✓，EAB 按 CA 自动关联 ✓（与签发路径同一套规则 ✓）。
 type publicCertEnvAdapter struct {
@@ -4218,21 +4225,3 @@ func (a eabConfigAdapter) ResolveEABConfig(ctx context.Context, id int64) (*cert
 	}, nil
 }
 
-type dnsChannelAdapter struct {
-	svc *certService.DNSChannelService
-}
-
-func (a dnsChannelAdapter) ResolveDNSChannel(ctx context.Context, id int64) (*cert.DNSProviderConfig, error) {
-	if a.svc == nil || id <= 0 {
-		return nil, fmt.Errorf("invalid dns channel id")
-	}
-	ch, err := a.svc.GetByID(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("dns channel %d not found: %w", id, err)
-	}
-	vars, err := a.svc.GetEnvVars(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("dns channel %d credentials: %w", id, err)
-	}
-	return &cert.DNSProviderConfig{Provider: cert.DNSProvider(ch.Provider), EnvVars: vars}, nil
-}

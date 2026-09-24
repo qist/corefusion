@@ -32,6 +32,20 @@ type Service struct {
 	acmeEmail      string
 	caProvider     cert.CAProvider
 	http01Provider *cert.HTTP01Provider // Custom HTTP-01 provider for Gin integration
+	// dnsResolver 让服务**自己**能把"库里记的 dns_channel_id"解析成凭据 ✓。
+	//
+	// ⚠ 以前凭据的获取完全推给调用方 ✗（签发接口自己解析 ✓、续期接口却什么都不传 ✗）→
+	// 前端点"续期"（不带任何参数 ✓）时，创建时选的 DNS 通道**凭空消失** ✗。
+	// 续期的口径是"创建时选什么就用什么" ✓ → 服务必须能自己找到它 ✓（可选注入 ✓）。
+	dnsResolver DNSChannelResolver
+}
+
+// DNSChannelResolver 把"面板里的 DNS 通道 ID"解析成 dns-01 凭据 ✓。
+//
+// 放在这里（而不是直接依赖 `*DNSChannelService` ✓）有两个原因 ✓：
+// 一是服务层只需要这一个能力 ✓；二是便于测试注入假实现 ✓（不碰数据库 ✓）。
+type DNSChannelResolver interface {
+	ResolveDNSChannel(ctx context.Context, id int64) (*cert.DNSProviderConfig, error)
 }
 
 // NewService creates a new certificate service.
@@ -43,6 +57,9 @@ func NewService(repo *repository.CertificateRepository, dataDir, acmeEmail strin
 		caProvider: caProvider,
 	}
 }
+
+// SetDNSChannelResolver 注入 DNS 通道解析器 ✓（续期按库里的 dns_channel_id 还原凭据 ✓，可选 ✓）。
+func (s *Service) SetDNSChannelResolver(r DNSChannelResolver) { s.dnsResolver = r }
 
 // SetHTTP01Provider sets the custom HTTP-01 provider for ACME challenges.
 // This should be called before issuing certificates to enable Gin router integration.
@@ -674,13 +691,19 @@ type IssueACMEInput struct {
 	Domains []string `json:"domains" binding:"required"`
 	// KeyType / KeyBits：用户选的密钥类型 ✓（ecc/rsa + 位数 ✓）。
 	// ⚠ 以前**入参里根本没有** ✗ → 前端传了也被丢掉 ✗ → 签出来永远是 ECC256 ✗。
-	KeyType       string                  `json:"key_type"`
-	KeyBits       int                     `json:"key_bits"`
-	ChallengeType string                  `json:"challenge_type"`    // "http-01" or "dns-01"
-	CAProvider    cert.CAProvider         `json:"ca_provider"`       // "lets_encrypt" / "lets_encrypt_staging" / "zerossl" / "google"
-	Profile       string                  `json:"profile,omitempty"` // IP 证书需 "shortlived"（会自动补）
-	DNSProvider   *cert.DNSProviderConfig `json:"dns_provider,omitempty"`
-	EAB           *cert.EABConfig         `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
+	KeyType       string `json:"key_type"`
+	KeyBits       int    `json:"key_bits"`
+	ChallengeType string `json:"challenge_type"` // "http-01" or "dns-01"
+	// DNSChannelID 是本次签发选用的**面板 DNS 通道** ID ✓（凭据仍在 handler 里解析成 DNSProvider ✓）。
+	//
+	// ⚠ 它的**唯一作用是把选择记下来** ✗：续期要按"创建时选的那条通道"走 ✓，
+	// 而服务层拿到的是解析后的凭据（DNSProvider ✓）、**认不出是哪条通道** ✗ →
+	// 必须由调用方把 ID 一起带进来 ✓，随证书落库 ✓（真机 bug：续期时选择丢失 ✓）。
+	DNSChannelID int64                   `json:"dns_channel_id"`
+	CAProvider   cert.CAProvider         `json:"ca_provider"`       // "lets_encrypt" / "lets_encrypt_staging" / "zerossl" / "google"
+	Profile      string                  `json:"profile,omitempty"` // IP 证书需 "shortlived"（会自动补）
+	DNSProvider  *cert.DNSProviderConfig `json:"dns_provider,omitempty"`
+	EAB          *cert.EABConfig         `json:"eab,omitempty"` // Required for ZeroSSL and Google CA
 	// Email 是本次签发使用的 ACME 账号邮箱 ✓ ——
 	// ⚠ Google Public CA **必须有联系邮箱** ✗（真机报 `Accounts must have at least one contact.` ✓），
 	// 而面板构造服务时邮箱是空的 ✗ → 必须由调用方（面板账号配置）传进来 ✓。
@@ -784,13 +807,17 @@ func ValidateACMEDomains(domains []string, challengeType string) error {
 
 // IssueACME issues a new certificate via ACME.
 func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.Certificate, error) {
+	// 挑战方式**先归一化** ✓：空 = http-01（历史默认 ✓）→ 校验/下发/落库都用同一个值 ✓，
+	// 免得出现"库里记空、实际走 http-01"这种对不上的状态 ✓（续期要靠它还原 ✓）。
+	challengeType := NormalizeChallengeType(input.ChallengeType)
+
 	// 提前拦掉注定失败的输入（IP / 单标签名 / 通配符+HTTP-01），并给出可行路线
-	if err := ValidateACMEDomains(input.Domains, input.ChallengeType); err != nil {
+	if err := ValidateACMEDomains(input.Domains, challengeType); err != nil {
 		return nil, err
 	}
 
 	// For HTTP-01 challenges, check port 80 status
-	if input.ChallengeType == "" || input.ChallengeType == string(cert.ChallengeHTTP01) {
+	if challengeType == string(cert.ChallengeHTTP01) {
 		if err := s.checkPort80ForHTTP01(); err != nil {
 			return nil, err
 		}
@@ -816,7 +843,7 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 
 	result, err := acme.Issue(ctx, cert.IssueOptions{
 		Domains:       input.Domains,
-		ChallengeType: cert.ChallengeType(input.ChallengeType),
+		ChallengeType: cert.ChallengeType(challengeType),
 		DNSProvider:   input.DNSProvider,
 		EAB:           input.EAB,
 		Profile:       profile,
@@ -842,13 +869,17 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	keyType, keyBits, _ := detectKeyType(keyRefPath)
 
 	certRecord := &entity.Certificate{
-		Name:          input.Domains[0],
-		Domain:        input.Domains[0],
-		Domains:       sansJSON,
-		Issuer:        issuerName,
-		ProviderType:  "acme",
-		KeyType:       keyType,
-		KeyBits:       keyBits,
+		Name:         input.Domains[0],
+		Domain:       input.Domains[0],
+		Domains:      sansJSON,
+		Issuer:       issuerName,
+		ProviderType: "acme",
+		KeyType:      keyType,
+		KeyBits:      keyBits,
+		// ✅ 把"创建时的选择"记下来 ✓：续期就按它走 ✓（前端续期不带任何参数 ✓，
+		// 全靠这两个字段还原 ✓，真机 bug 的根因 ✓）。
+		ChallengeType: challengeType,
+		DNSChannelID:  input.DNSChannelID,
 		CertPath:      result.CertPath,
 		KeyPath:       result.KeyPath,
 		FullchainPath: result.FullchainPath,
@@ -872,6 +903,9 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 		existing.Domains = sansJSON
 		existing.KeyType = keyType
 		existing.KeyBits = keyBits
+		// 重签/补签也要把"本次的选择"更新掉 ✓（与库里的旧值不一致时以本次为准 ✓）
+		existing.ChallengeType = challengeType
+		existing.DNSChannelID = input.DNSChannelID
 		existing.Issuer = issuerName
 		existing.ProviderType = "acme"
 		existing.CertPath = result.CertPath
@@ -897,19 +931,95 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	return certRecord, nil
 }
 
+// RenewACMEInput 描述一次续期请求 ✓。
+//
+// 决议口径（用户口径 ✓）：**创建时选了什么，续期就用什么** ✓。
+// 所以这里每个字段都**可以留空** ✓ —— 留空 = "沿用签发时落库的选择" ✓，
+// 只有显式传值才算覆盖 ✓（前端续期按钮不带任何参数 ✓ → 完全按库里的选择续 ✓）。
+type RenewACMEInput struct {
+	ChallengeType string
+	DNSChannelID  int64
+	DNSProvider   *cert.DNSProviderConfig
+	// Email 是本次续期使用的 ACME 账号邮箱 ✓（留空 = 服务级默认 ✓）；
+	// 走到"需要首次注册"时它是必需的 ✗（Google 会拒无联系邮箱的账号 ✓）。
+	Email string
+	// EAB 只在**首次注册**时用得上 ✓（Google / ZeroSSL 注册强制要求 ✓）。
+	EAB *cert.EABConfig
+}
+
 // RenewACME renews a certificate via ACME.
-func (s *Service) RenewACME(ctx context.Context, id int64, dnsProvider *cert.DNSProviderConfig) (*entity.Certificate, error) {
+//
+// 关键口径（本次修复 ✓）：**创建时选什么，续期就用什么** ✓
+//   - 挑战方式：请求显式给 ✓ > 签发时落库的 challenge_type ✓ > 兜底（含通配符 → dns-01 ✓，其余 → http-01 ✓）；
+//   - DNS 凭据：请求显式给 ✓ > 落库的 dns_channel_id（**服务自己现场解析** ✓）；
+//   - CA / profile / 密钥类型：按库里记录与现有私钥还原 ✓；
+//   - ✗ **绝不静默降级**：dns-01 拿不到凭据就明确报错 ✓，不再偷偷换成 http-01 ✗。
+func (s *Service) RenewACME(ctx context.Context, id int64, in RenewACMEInput) (*entity.Certificate, error) {
 	certRecord, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use the same CA provider as the original issuance
-	caProvider := cert.CAProvider(certRecord.Issuer)
-	acme := s.getACMEClient(caProvider)
+	// 标识符（含 SAN ✓）：必须按**同一组名字**续 ✓，主域名排第一位 ✓
+	//（落盘目录以 domains[0] 为准 ✓，顺序变了就会写到别的目录去 ✗）。
+	identifiers := primaryFirst(certRecord.Domain, certIdentifiersFromJSON(certRecord.Domains))
 
-	domains := []string{certRecord.Domain}
-	result, err := acme.Renew(ctx, domains, certRecord.CertPath, certRecord.KeyPath, certRecord.KeyType, dnsProvider)
+	// ① 挑战方式：显式 > 落库 > 兜底
+	challengeType := ""
+	switch {
+	case strings.TrimSpace(in.ChallengeType) != "":
+		challengeType = NormalizeChallengeType(in.ChallengeType)
+	case strings.TrimSpace(certRecord.ChallengeType) != "":
+		challengeType = NormalizeChallengeType(certRecord.ChallengeType)
+	default:
+		// 历史数据（这两个字段上线前签的证书 ✓）没有记录 ✗ → 只能按证书内容兜底 ✓：
+		// 含通配符 → 只能是 dns-01 ✓；其余按历史行为 http-01 ✓。
+		challengeType = string(cert.ChallengeHTTP01)
+		if hasWildcardIdentifier(identifiers) {
+			challengeType = string(cert.ChallengeDNS01)
+		}
+		log.Printf("[cert] renew %d: 库里没有挑战方式记录（历史数据）→ 按证书内容兜底为 %s", id, challengeType)
+	}
+
+	// ② DNS 凭据：显式 > 落库的通道 ID（现场解析 ✓，全程不打印凭据 ✓）
+	dnsProvider := in.DNSProvider
+	channelID := in.DNSChannelID
+	if channelID <= 0 {
+		channelID = certRecord.DNSChannelID
+	}
+	if dnsProvider == nil && channelID > 0 {
+		if s.dnsResolver == nil {
+			return nil, fmt.Errorf("DNS 通道解析器未注入，无法还原 dns-01 凭据（dns_channel_id=%d）", channelID)
+		}
+		cfg, derr := s.dnsResolver.ResolveDNSChannel(ctx, channelID)
+		if derr != nil {
+			return nil, fmt.Errorf("解析 DNS 通道 %d 失败: %w", channelID, derr)
+		}
+		dnsProvider = cfg
+	}
+
+	// ③ ✗ 绝不静默降级：创建时选了 dns-01，续期就必须走 dns-01 ✓
+	if challengeType == string(cert.ChallengeDNS01) && dnsProvider == nil {
+		return nil, fmt.Errorf("这张证书是按 dns-01 签发/记录的，但拿不到 DNS 通道凭据（dns_channel_id=%d）—— "+
+			"请在续期时指定 dns_channel_id，或先补上对应 DNS 通道；为避免偷偷换成 http-01，本次续期已终止", channelID)
+	}
+
+	// CA 与创建时一致 ✓（issuer 里存的就是当时的 CA ✓）
+	caProvider := cert.CAProvider(certRecord.Issuer)
+	acme := s.getACMEClient(caProvider, in.Email)
+
+	result, err := acme.Renew(ctx, cert.RenewOptions{
+		Domains: identifiers,
+		// ⚠ 库里存的是**相对路径** ✗ → 必须拼上 dataDir ✓ ——
+		// 否则能不能读到文件取决于进程 CWD ✓（面板恰好总在 /opt/corefusion 跑 ✓，属于侥幸 ✓）。
+		CertPath:      filepath.Join(s.dataDir, certRecord.CertPath),
+		KeyPath:       filepath.Join(s.dataDir, certRecord.KeyPath),
+		ChallengeType: cert.ChallengeType(challengeType),
+		// profile 按标识符重算 ✓（IP 证书 = shortlived ✓，与创建时同一套规则 ✓）
+		Profile:     DefaultProfileFor(identifiers),
+		EAB:         in.EAB,
+		DNSProvider: dnsProvider,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -922,12 +1032,84 @@ func (s *Service) RenewACME(ctx context.Context, id int64, dnsProvider *cert.DNS
 	certRecord.KeyContent = result.KeyContent
 	certRecord.ExpiresAt = result.ExpiresAt
 	certRecord.LastRenewedAt = &now
+	// 把**本次实际使用的选择**写回去 ✓：下次续期继续沿用 ✓，顺带把历史数据补全 ✓。
+	certRecord.ChallengeType = challengeType
+	if channelID > 0 {
+		certRecord.DNSChannelID = channelID
+	}
 
 	if err := s.repo.Update(ctx, certRecord); err != nil {
 		return nil, err
 	}
 
+	log.Printf("[cert] renewed cert %d (%s): ca=%s challenge=%s dns_channel=%d identifiers=%v",
+		certRecord.ID, certRecord.Domain, caProvider, challengeType, certRecord.DNSChannelID, identifiers)
+
 	return certRecord, nil
+}
+
+// NormalizeChallengeType 归一化挑战方式 ✓：`dns-01` 认几种写法 ✓，
+// 其余（含空 ✓）一律按 `http-01` ✓ —— 与"挑战方式为空时默认 http-01"的历史行为一致 ✓。
+func NormalizeChallengeType(ch string) string {
+	switch strings.ToLower(strings.TrimSpace(ch)) {
+	case "dns-01", "dns01", "dns":
+		return string(cert.ChallengeDNS01)
+	default:
+		return string(cert.ChallengeHTTP01)
+	}
+}
+
+// certIdentifiersFromJSON 把库里 `certificates.domains`（标准 JSON 数组 ✓）解析成标识符列表 ✓。
+// 解析不出来（空串 / `[]` / 脏数据 ✓）→ 返回空列表 ✓，由调用方退回主域名 ✓。
+// ⚠ 与 `certSANIdentifiers(cert *x509.Certificate)`（从证书里解析 ✓）是两回事，别混用 ✗。
+func certIdentifiersFromJSON(domains string) []string {
+	if strings.TrimSpace(domains) == "" {
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal([]byte(domains), &arr); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, d := range arr {
+		if d = strings.TrimSpace(d); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// primaryFirst 把主域名放到第一位 ✓（去重、忽略空值 ✓）。
+//
+// ⚠ 顺序为什么重要 ✗：续期落盘路径以 `domains[0]` 为准 ✓（`certs/<domains[0]>/…` ✓），
+// 顺序变了就会写到另一个目录 ✗ → 原路径上的证书不会被更新 ✗（等于"续了但没生效" ✓）。
+func primaryFirst(primary string, identifiers []string) []string {
+	primary = strings.TrimSpace(primary)
+	out := make([]string, 0, len(identifiers)+1)
+	seen := make(map[string]bool, len(identifiers)+1)
+	if primary != "" {
+		out = append(out, primary)
+		seen[primary] = true
+	}
+	for _, id := range identifiers {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		out = append(out, id)
+		seen[id] = true
+	}
+	return out
+}
+
+// hasWildcardIdentifier 判断标识符里是否含通配符 ✓（含 → 只可能走 dns-01 ✓）。
+func hasWildcardIdentifier(identifiers []string) bool {
+	for _, id := range identifiers {
+		if strings.HasPrefix(strings.TrimSpace(id), "*.") {
+			return true
+		}
+	}
+	return false
 }
 
 // DetectPublicIP detects the public IPv4 and IPv6 addresses of the server.

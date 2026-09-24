@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,18 @@ type AgentIssuedCertInput struct {
 	CA           string
 	// ServerID 是"回传这张证书的节点" ✓ = 签发节点 ✓（写进 IssuerNodeID ✓）
 	ServerID int64
+	// ChallengeType / DNSChannelID 是"节点**实际用的**挑战方式 + 面板那条 DNS 通道的 id" ✓
+	//（节点在回传里原样带回 ✓）。
+	//
+	// ⚠ 为什么必须落库 ✗：以前这两个值**根本不存** ✗ → 节点本机签出来的证书在面板里
+	// "不知道自己是怎么签的" ✗ → 自动续期只能按"含通配符 → dns-01 / 否则 http-01"猜 ✗
+	//（dns-01 的证书还会因为 `dns_channel_id=0` 而**直接跳过续期** ✗）。
+	// 现在落库即"创建时的选择" ✓ → 续期原样复用 ✓（用户口径 ✓）。
+	//
+	// ⚠ 老 Agent 不带这两个字段 → 空/0 ✗：此时**不写**（保持空 ✓ → 由续期侧按通配符兜底 ✓），
+	// 绝不能把空归一成 `http-01` ✗ —— 那会让通配符证书被误判成 http-01（必失败 ✗）。
+	ChallengeType string
+	DNSChannelID  int64
 }
 
 // StoreAgentIssuedCert 把 Agent 在**节点本机**签好的公网证书落盘 + 落库 ✓。
@@ -105,6 +118,13 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 		name = domain
 	}
 
+	// ── 挑战方式 + DNS 通道：**节点回传什么就记什么** ✓（节点说的是它实际用的 ✓）──────────
+	// ⚠ 回传为空（老 Agent ✗）→ 保持空 ✓，**不要**归一成 http-01 ✗（见输入结构体的注释 ✓）。
+	reportedChallenge := ""
+	if strings.TrimSpace(in.ChallengeType) != "" {
+		reportedChallenge = NormalizeChallengeType(in.ChallengeType)
+	}
+
 	// ⚠ 目录名必须与 **`cert_distributor` 分发到的位置一致** ✗：它写的是 `certs/<Domain>/` ✓
 	// （真机核对 ✓：节点上是 `certs/node-owner.example.com/` ✓）。
 	// 以前这里用"消毒后的 name" ✗ → 记录里是 `certs/acme-node-owner_example_com/` ✗
@@ -133,6 +153,9 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 			ProviderType:  "acme",
 			KeyType:       keyType,
 			KeyBits:       keyBits,
+			// 创建（首次入库）就把"这张证书是怎么签的"记下来 ✓ → 续期原样复用 ✓
+			ChallengeType: reportedChallenge,
+			DNSChannelID:  in.DNSChannelID,
 			CertPath:      certRel,
 			KeyPath:       keyRel,
 			FullchainPath: fullchainRel,
@@ -157,6 +180,18 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	existing.ProviderType = "acme"
 	existing.KeyType = keyType
 	existing.KeyBits = keyBits
+	// ── 挑战方式 / DNS 通道：**只补空、不覆盖** ✓ ──────────────────────────────
+	// 库里非空 = 用户创建时选的 ✓（权威 ✓）；节点回传的一致就不动 ✓、
+	// 不一致说明两边认知有出入 → **以库里的选择为准** ✗ 但打日志（不静默 ✗）。
+	if existing.ChallengeType == "" && reportedChallenge != "" {
+		existing.ChallengeType = reportedChallenge
+	} else if existing.ChallengeType != "" && reportedChallenge != "" && existing.ChallengeType != reportedChallenge {
+		log.Printf("[cert] agent-issued cert %d: 库里 challenge_type=%s，节点回传 %s ✗ → 以库里（创建时的选择）为准 ✓",
+			existing.ID, existing.ChallengeType, reportedChallenge)
+	}
+	if existing.DNSChannelID <= 0 && in.DNSChannelID > 0 {
+		existing.DNSChannelID = in.DNSChannelID
+	}
 	existing.CertPath = certRel
 	existing.KeyPath = keyRel
 	existing.FullchainPath = fullchainRel

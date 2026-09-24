@@ -8308,8 +8308,14 @@ type IssuePublicCertCommand struct {
 	// → 面板记录是 rsa 的证书，在节点上怎么续都只能签出 EC 证书 ✗（真机踩到 ✓）。
 	// key_type 取值：ecc / rsa（面板侧 NormalizeKeyType 已归一 ✓）；
 	// key_bits：ecc→256|384、rsa→2048|3072|4096|8192（0 = 用该类型默认 ✓）。
-	KeyType       string `protobuf:"bytes,13,opt,name=key_type,json=keyType,proto3" json:"key_type,omitempty"`
-	KeyBits       int32  `protobuf:"varint,14,opt,name=key_bits,json=keyBits,proto3" json:"key_bits,omitempty"`
+	KeyType string `protobuf:"bytes,13,opt,name=key_type,json=keyType,proto3" json:"key_type,omitempty"`
+	KeyBits int32  `protobuf:"varint,14,opt,name=key_bits,json=keyBits,proto3" json:"key_bits,omitempty"`
+	// ── dns_channel_id（2026-09-23 补 ✓）：面板 certificates.dns_channel_id ✓ ──
+	// ⚠ 为什么必须下发 ✗：节点侧只知道 provider + 凭据（够签 ✓）✗，
+	// 但**回传/续期上报时要把"创建时选的是哪条通道"带回面板** ✗ ——
+	// 不回传 → 面板落库的证书 `dns_channel_id = 0` ✗ → 自动续期按 dns-01 找不到通道 ✗
+	// → 只能**跳过续期**（不会偷偷降级 ✓，但也永远续不了 ✗）。
+	DnsChannelId  int64 `protobuf:"varint,15,opt,name=dns_channel_id,json=dnsChannelId,proto3" json:"dns_channel_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8442,18 +8448,33 @@ func (x *IssuePublicCertCommand) GetKeyBits() int32 {
 	return 0
 }
 
+func (x *IssuePublicCertCommand) GetDnsChannelId() int64 {
+	if x != nil {
+		return x.DnsChannelId
+	}
+	return 0
+}
+
 // PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。
 type PublicCertIssuedReport struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CertId        int64                  `protobuf:"varint,1,opt,name=cert_id,json=certId,proto3" json:"cert_id,omitempty"`
-	Identifiers   []string               `protobuf:"bytes,2,rep,name=identifiers,proto3" json:"identifiers,omitempty"`
-	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
-	CertPem       string                 `protobuf:"bytes,4,opt,name=cert_pem,json=certPem,proto3" json:"cert_pem,omitempty"`
-	KeyPem        string                 `protobuf:"bytes,5,opt,name=key_pem,json=keyPem,proto3" json:"key_pem,omitempty"`
-	FullchainPem  string                 `protobuf:"bytes,6,opt,name=fullchain_pem,json=fullchainPem,proto3" json:"fullchain_pem,omitempty"`
-	ExpiresAt     int64                  `protobuf:"varint,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	Error         string                 `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
-	Ca            string                 `protobuf:"bytes,9,opt,name=ca,proto3" json:"ca,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	CertId       int64                  `protobuf:"varint,1,opt,name=cert_id,json=certId,proto3" json:"cert_id,omitempty"`
+	Identifiers  []string               `protobuf:"bytes,2,rep,name=identifiers,proto3" json:"identifiers,omitempty"`
+	Success      bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	CertPem      string                 `protobuf:"bytes,4,opt,name=cert_pem,json=certPem,proto3" json:"cert_pem,omitempty"`
+	KeyPem       string                 `protobuf:"bytes,5,opt,name=key_pem,json=keyPem,proto3" json:"key_pem,omitempty"`
+	FullchainPem string                 `protobuf:"bytes,6,opt,name=fullchain_pem,json=fullchainPem,proto3" json:"fullchain_pem,omitempty"`
+	ExpiresAt    int64                  `protobuf:"varint,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Error        string                 `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
+	Ca           string                 `protobuf:"bytes,9,opt,name=ca,proto3" json:"ca,omitempty"`
+	// ── 挑战方式与 DNS 通道（2026-09-23 补 ✓）──
+	// ⚠ 为什么必须回传 ✗：面板此前只按"有没有 dnsProvider"猜挑战方式 ✗
+	// （见 certificates.challenge_type 的注释 ✓）→
+	// 节点本机签出来的证书**落库时不知道自己是 dns-01 还是 http-01** ✗
+	// → 之后每次续期都只能靠"含通配符"兜底 ✗（真机现象：dns-01 的证书续期被跳过 ✓）。
+	// 现在节点把**自己实际用的**挑战方式原样带回来 ✓ → 面板落库即"创建时的选择" ✓。
+	Challenge     string `protobuf:"bytes,10,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	DnsChannelId  int64  `protobuf:"varint,11,opt,name=dns_channel_id,json=dnsChannelId,proto3" json:"dns_channel_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8549,6 +8570,20 @@ func (x *PublicCertIssuedReport) GetCa() string {
 		return x.Ca
 	}
 	return ""
+}
+
+func (x *PublicCertIssuedReport) GetChallenge() string {
+	if x != nil {
+		return x.Challenge
+	}
+	return ""
+}
+
+func (x *PublicCertIssuedReport) GetDnsChannelId() int64 {
+	if x != nil {
+		return x.DnsChannelId
+	}
+	return 0
 }
 
 var File_corefusion_agent_proto protoreflect.FileDescriptor
@@ -9346,7 +9381,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"B\n" +
 	"\x19SetEgressInterfaceRequest\x12%\n" +
-	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\"\x9b\x04\n" +
+	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\"\xc1\x04\n" +
 	"\x16IssuePublicCertCommand\x12\x17\n" +
 	"\acert_id\x18\x01 \x01(\x03R\x06certId\x12 \n" +
 	"\videntifiers\x18\x02 \x03(\tR\videntifiers\x12\x1c\n" +
@@ -9364,10 +9399,11 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"eab_key_id\x18\v \x01(\tR\beabKeyId\x12\x1e\n" +
 	"\veab_mac_key\x18\f \x01(\tR\teabMacKey\x12\x19\n" +
 	"\bkey_type\x18\r \x01(\tR\akeyType\x12\x19\n" +
-	"\bkey_bits\x18\x0e \x01(\x05R\akeyBits\x1a=\n" +
+	"\bkey_bits\x18\x0e \x01(\x05R\akeyBits\x12$\n" +
+	"\x0edns_channel_id\x18\x0f \x01(\x03R\fdnsChannelId\x1a=\n" +
 	"\x0fDnsEnvVarsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8b\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcf\x02\n" +
 	"\x16PublicCertIssuedReport\x12\x17\n" +
 	"\acert_id\x18\x01 \x01(\x03R\x06certId\x12 \n" +
 	"\videntifiers\x18\x02 \x03(\tR\videntifiers\x12\x18\n" +
@@ -9378,7 +9414,10 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\a \x01(\x03R\texpiresAt\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\x12\x0e\n" +
-	"\x02ca\x18\t \x01(\tR\x02ca*d\n" +
+	"\x02ca\x18\t \x01(\tR\x02ca\x12\x1c\n" +
+	"\tchallenge\x18\n" +
+	" \x01(\tR\tchallenge\x12$\n" +
+	"\x0edns_channel_id\x18\v \x01(\x03R\fdnsChannelId*d\n" +
 	"\n" +
 	"TaskStatus\x12\x10\n" +
 	"\fTASK_UNKNOWN\x10\x00\x12\x0f\n" +

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"corefusion/internal/model/entity"
+	cert "corefusion/internal/runtime/cert"
 	secretcrypto "corefusion/internal/security/crypto"
 	"corefusion/internal/store/repository"
 )
@@ -145,6 +146,26 @@ func (s *DNSChannelService) GetEnvVars(ctx context.Context, id int64) (map[strin
 }
 
 // GetEnvVarsRaw returns the raw decoded env vars string.
+// ResolveDNSChannel 按通道 ID 解析成 dns-01 提供者配置 ✓（**凭据在这一步被解密** ✗→✓，调用方不得打印 ✗）。
+//
+// ⚠ 这是**唯一**的一条解析路径 ✗：签发 / 手动续期 / 自动续期都走它 ✓。
+// 以前各调用方自己解析、甚至干脆不解析 ✗（真机 bug 的成因 ✓）→
+// 口径一散就会出现"签发时按 dns-01、续期时退化成 http-01"的错位 ✗。
+func (s *DNSChannelService) ResolveDNSChannel(ctx context.Context, id int64) (*cert.DNSProviderConfig, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid dns channel id: %d", id)
+	}
+	ch, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("dns channel %d not found: %w", id, err)
+	}
+	vars, err := s.GetEnvVars(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("dns channel %d credentials: %w", id, err)
+	}
+	return &cert.DNSProviderConfig{Provider: cert.DNSProvider(ch.Provider), EnvVars: vars}, nil
+}
+
 func (s *DNSChannelService) GetEnvVarsRaw(encoded string) (map[string]string, error) {
 	return decodeEnvVars(encoded)
 }

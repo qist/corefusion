@@ -1171,6 +1171,12 @@ message IssuePublicCertCommand {
   // key_bits：ecc→256|384、rsa→2048|3072|4096|8192（0 = 用该类型默认 ✓）。
   string key_type       = 13;
   int32  key_bits       = 14;
+  // ── dns_channel_id（2026-09-23 补 ✓）：面板 certificates.dns_channel_id ✓ ──
+  // ⚠ 为什么必须下发 ✗：节点侧只知道 provider + 凭据（够签 ✓）✗，
+  // 但**回传/续期上报时要把"创建时选的是哪条通道"带回面板** ✗ ——
+  // 不回传 → 面板落库的证书 `dns_channel_id = 0` ✗ → 自动续期按 dns-01 找不到通道 ✗
+  // → 只能**跳过续期**（不会偷偷降级 ✓，但也永远续不了 ✗）。
+  int64  dns_channel_id = 15;
 }
 
 // PublicCertIssuedReport — Agent → 面板：签发结果（成功给 PEM，失败给 error ✓）。
@@ -1184,4 +1190,12 @@ message PublicCertIssuedReport {
   int64  expires_at  = 7;
   string error       = 8;
   string ca          = 9;
+  // ── 挑战方式与 DNS 通道（2026-09-23 补 ✓）──
+  // ⚠ 为什么必须回传 ✗：面板此前只按"有没有 dnsProvider"猜挑战方式 ✗
+  //（见 certificates.challenge_type 的注释 ✓）→
+  // 节点本机签出来的证书**落库时不知道自己是 dns-01 还是 http-01** ✗
+  // → 之后每次续期都只能靠"含通配符"兜底 ✗（真机现象：dns-01 的证书续期被跳过 ✓）。
+  // 现在节点把**自己实际用的**挑战方式原样带回来 ✓ → 面板落库即"创建时的选择" ✓。
+  string challenge     = 10;
+  int64  dns_channel_id = 11;
 }

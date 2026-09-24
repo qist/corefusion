@@ -636,16 +636,50 @@ async function handleIssue() {
     }
   }
 
+  // 逐张签发 ✓：每张用**它自己那行**的类型与长度 ✓（后端记录身份 = (域名, 密钥类型) ✓）
+  // 放在两条签发路径（面板本机 ✓ / 选定节点 ✓）之前：校验是共用的 ✓，别各写一份 ✗
+  const specs = (issueForm.value.key_specs || []).filter(s => s && s.key_type && s.key_bits)
+  if (specs.length === 0) {
+    ElMessage.warning(t('certificate.keySpecsRequired'))
+    return
+  }
+  const seen = new Set()
+  for (const s of specs) {
+    if (seen.has(s.key_type)) {
+      // 同类型两张 = 第二条请求会把第一条**就地更新**掉 ✗ → 前端直接拦住，别让用户以为签了两张 ✗
+      ElMessage.error(t('certificate.dupKeyType'))
+      return
+    }
+    seen.add(s.key_type)
+  }
+
   // 选节点签发：交给该节点在本机完成 ACME ✓（本地 80 端口检查无意义 ✗）
+  //
+  // ⚠ 这里以前把挑战方式**写死成 http-01** ✗，通道 id / 密钥类型 / ACME 账号一概不带 ✗ →
+  //   "创建时选了什么"在节点签发这条路上被整片丢掉 ✗：
+  //   ① 表单里选 dns-01（或通配符 ✓ 只能 dns-01 ✓）→ 实际按 http-01 去签 ✗（通配符直接失败 ✗）；
+  //   ② 节点只签出 EC256 ✗（库里 rsa 的选择对不上 ✗）；
+  //   ③ 面板落库的证书 `challenge_type`/`dns_channel_id` 全空 ✗ → 之后自动续期只能靠猜 ✗
+  //      （dns-01 的证书因为找不到通道会**永远跳过续期** ✗）。
+  //   现在**原样带上创建时的选择** ✓（与面板本机签发同一套参数 ✓），两条路径口径一致 ✓。
   if (issueForm.value.issue_node_id > 0) {
     issuing.value = true
     try {
-      await client.post('/certificates/issue-on-node', {
-        node_id: issueForm.value.issue_node_id,
-        domains: isIP ? ips : domains,
-        challenge_type: 'http-01',
-        ca_provider: issueForm.value.ca_provider,
-      })
+      for (const s of specs) {
+        await client.post('/certificates/issue-on-node', {
+          node_id: issueForm.value.issue_node_id,
+          domains: isIP ? ips : domains,
+          // 创建时选什么就用什么 ✓（IP 证书只支持 http-01 ✓，见上方 challengeType ✓）
+          challenge_type: challengeType,
+          dns_channel_id: isIP ? 0 : (issueForm.value.dns_channel_id || 0),
+          ca_provider: issueForm.value.ca_provider,
+          // 账号/密钥类型都要带上 ✓：不带 → 节点用默认账号 ✗、签出 EC256 与库记录对不上 ✗
+          email_id: issueForm.value.email_id || 0,
+          key_type: s.key_type,
+          key_bits: s.key_bits,
+          webroot: issueForm.value.node_webroot || '',
+        }, { suppressErrorMessage: true })
+      }
       ElMessage.success(t('certificate.nodeIssueSubmitted'))
       issueVisible.value = false
       fetchCertificates()
@@ -667,21 +701,6 @@ async function handleIssue() {
     } catch (e) {
       // Port check failed, continue anyway
     }
-  }
-  // 逐张签发 ✓：每张用**它自己那行**的类型与长度 ✓（后端记录身份 = (域名, 密钥类型) ✓）
-  const specs = (issueForm.value.key_specs || []).filter(s => s && s.key_type && s.key_bits)
-  if (specs.length === 0) {
-    ElMessage.warning(t('certificate.keySpecsRequired'))
-    return
-  }
-  const seen = new Set()
-  for (const s of specs) {
-    if (seen.has(s.key_type)) {
-      // 同类型两张 = 第二条请求会把第一条**就地更新**掉 ✗ → 前端直接拦住，别让用户以为签了两张 ✗
-      ElMessage.error(t('certificate.dupKeyType'))
-      return
-    }
-    seen.add(s.key_type)
   }
   const base = {
     domains,

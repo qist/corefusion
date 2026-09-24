@@ -40,9 +40,16 @@ client.interceptors.response.use(
     if (error.response) {
       const { status, data } = error.response
       if (status === 401) {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        window.location.href = basePath + '/login'
+        // 登录流程（含 Passkey / 2FA 第二步）的 401 是**业务结果**（密码错 /
+        // 动态码错 / 票据过期），由 Login.vue 自行处理 —— 强制整页跳转会丢掉
+        // 已输入的密码与尚未消费的登录票据。其余接口的 401 才是会话失效。
+        const reqUrl = error.config?.url || ''
+        const isAuthFlow = reqUrl.includes('/auth/login') || reqUrl.includes('/auth/passkey/login') || reqUrl.includes('/auth/2fa/')
+        if (!isAuthFlow) {
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          window.location.href = basePath + '/login'
+        }
       } else if (status === 503 && data?.code === 'MAINTENANCE_MODE') {
         // Maintenance mode — redirect to maintenance page if not already there
         if (!window.location.pathname.endsWith('/maintenance')) {

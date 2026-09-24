@@ -25,6 +25,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="password">{{ t('auth.changePassword') }}</el-dropdown-item>
+              <el-dropdown-item command="twofa">{{ twofaStatus.enabled ? t('auth.twofaDisableMenu') : t('auth.twofaEnableMenu') }}</el-dropdown-item>
               <el-dropdown-item command="passkey">{{ t('auth.passkeyManage') }}</el-dropdown-item>
               <el-dropdown-item command="logout" divided>{{ t('auth.logout') }}</el-dropdown-item>
             </el-dropdown-menu>
@@ -74,17 +75,98 @@
       </el-button>
     </template>
   </el-dialog>
+
+  <!-- 2FA（双步验证）管理 Dialog -->
+  <el-dialog v-model="twofaVisible" :title="t('auth.twofaManage')" width="520">
+    <!-- 已启用：状态 -->
+    <template v-if="twofaStatus.enabled">
+      <el-alert :title="t('auth.twofaEnabledStatus')" type="success" :closable="false" show-icon style="margin-bottom:14px" />
+      <div style="font-size:13px;color:#666;margin-bottom:6px">
+        {{ t('auth.twofaRecoveryLeft') }}：<b>{{ twofaStatus.recovery_codes }}</b>
+      </div>
+      <div style="font-size:12px;color:#909399;line-height:1.6">{{ t('auth.twofaEnabledHint') }}</div>
+    </template>
+
+    <!-- 未启用：绑定向导步骤 1：说明 + 当前密码确认 -->
+    <template v-else-if="twofaStep === 'intro'">
+      <div style="font-size:13px;color:#666;line-height:1.7;margin-bottom:14px">{{ t('auth.twofaIntro') }}</div>
+      <el-form label-position="top">
+        <el-form-item :label="t('auth.currentPassword')">
+          <el-input v-model="twofaPassword" type="password" show-password @keyup.enter="twofaStartSetup" />
+        </el-form-item>
+      </el-form>
+    </template>
+
+    <!-- 步骤 2：扫码 + 输入动态码验证启用 -->
+    <template v-else-if="twofaStep === 'scan'">
+      <div style="text-align:center">
+        <img v-if="twofaQrUrl" :src="twofaQrUrl" alt="TOTP QR" style="width:200px;height:200px" />
+      </div>
+      <div style="text-align:center;font-size:12px;color:#909399;margin:8px 0">
+        {{ t('auth.twofaScanHint') }}
+      </div>
+      <el-form label-position="top">
+        <el-form-item :label="t('auth.twofaManualKey')">
+          <el-input :model-value="twofaSecret" readonly>
+            <template #append><el-button link @click="copyTwofaSecret">{{ t('common.copy') }}</el-button></template>
+          </el-input>
+        </el-form-item>
+        <el-form-item :label="t('auth.twofaCodeLabel')">
+          <el-input v-model="twofaCode" maxlength="6" placeholder="123456" @keyup.enter="twofaEnable" />
+        </el-form-item>
+      </el-form>
+    </template>
+
+    <!-- 步骤 3：恢复码展示（必须保存） -->
+    <template v-else-if="twofaStep === 'recovery'">
+      <el-alert :title="t('auth.twofaSaveHint')" type="warning" :closable="false" show-icon style="margin-bottom:12px" />
+      <div style="background:#f7f8fa;border-radius:6px;padding:14px;font-family:monospace;font-size:14px;line-height:2;display:grid;grid-template-columns:1fr 1fr;gap:2px 20px">
+        <span v-for="(code, i) in twofaRecovery" :key="i">{{ code }}</span>
+      </div>
+      <div style="font-size:12px;color:#909399;margin-top:10px">{{ t('auth.twofaRecoveryLostHint') }}</div>
+      <div style="text-align:center;margin-top:14px">
+        <el-button type="primary" plain :loading="twofaBusy" @click="downloadRecoveryCodes">{{ t('auth.twofaDownload') }}</el-button>
+      </div>
+    </template>
+
+    <!-- footer：按状态渲染不同按钮 -->
+    <template #footer>
+      <template v-if="twofaStatus.enabled">
+        <el-button @click="twofaRegenerate">{{ t('auth.twofaRegenerate') }}</el-button>
+        <el-button type="danger" plain @click="twofaDisable">{{ t('auth.twofaDisable') }}</el-button>
+      </template>
+      <template v-else-if="twofaStep === 'intro'">
+        <el-button @click="twofaVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="twofaBusy" :disabled="!twofaPassword" @click="twofaStartSetup">{{ t('common.next') }}</el-button>
+      </template>
+      <template v-else-if="twofaStep === 'scan'">
+        <el-button @click="twofaStep='intro'">{{ t('common.back') }}</el-button>
+        <el-button type="primary" :loading="twofaBusy" :disabled="twofaCode.length !== 6" @click="twofaEnable">{{ t('auth.twofaVerify') }}</el-button>
+      </template>
+      <template v-else-if="twofaStep === 'recovery'">
+        <el-button type="primary" @click="twofaVisible=false; loadTwofaStatus()">{{ t('auth.twofaSaved') }}</el-button>
+      </template>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { setLocale, availableLocales } from '../locales'
 import { hasRole } from '../utils/permission'
+import QRCode from 'qrcode'
 import { getPasskeyStatus, listPasskeys, deletePasskey, passkeyRegisterBegin, passkeyRegisterFinish } from '../api/passkey'
+import {
+  twofaStatus as apiTwofaStatus,
+  twofaSetup as apiTwofaSetup,
+  twofaEnable as apiTwofaEnable,
+  twofaDisable as apiTwofaDisable,
+  twofaRegenerateRecovery as apiTwofaRegenerate,
+} from '../api/twofa'
 import { createCredential, hasWebAuthn } from '../utils/webauthn'
 
 const { t, locale } = useI18n()
@@ -96,6 +178,9 @@ const currentLocaleName = computed(() => {
   const found = availableLocales.find(l => l.code === locale.value)
   return found ? `${found.flag} ${found.name}` : locale.value
 })
+
+// 挂载时预取 2FA 状态，供下拉菜单动态显示「开启/关闭 2FA」。
+onMounted(() => { loadTwofaStatus() })
 
 // `role` is the minimum role required to see the menu entry (fail-closed:
 // entries without a role default to admin so ordinary operators/viewers don't
@@ -136,6 +221,128 @@ const passkeyVisible = ref(false)
 const passkeyList = ref([])
 const passkeyPageAvailable = ref(false)
 const passkeyRegistering = ref(false)
+
+// 2FA（双步验证）管理状态
+const twofaVisible = ref(false)
+const twofaStatus = ref({ enabled: false, recovery_codes: 0 })
+const twofaStep = ref('intro') // intro → scan → recovery（绑定向导步骤）
+const twofaPassword = ref('')
+const twofaSecret = ref('')
+const twofaOtpauth = ref('')
+const twofaQrUrl = ref('')
+const twofaCode = ref('')
+const twofaRecovery = ref([])
+const twofaBusy = ref(false)
+
+async function openTwofaDialog() {
+  twofaVisible.value = true
+  twofaStep.value = 'intro'
+  twofaPassword.value = ''
+  twofaSecret.value = ''
+  twofaOtpauth.value = ''
+  twofaQrUrl.value = ''
+  twofaCode.value = ''
+  twofaRecovery.value = []
+  await loadTwofaStatus()
+}
+
+async function loadTwofaStatus() {
+  try {
+    twofaStatus.value = await apiTwofaStatus()
+  } catch (e) { twofaStatus.value = { enabled: false, recovery_codes: 0 } }
+}
+
+async function twofaStartSetup() {
+  twofaBusy.value = true
+  try {
+    const res = await apiTwofaSetup(twofaPassword.value)
+    twofaSecret.value = res.secret
+    twofaOtpauth.value = res.otpauth_url
+    twofaQrUrl.value = await QRCode.toDataURL(res.otpauth_url, { width: 200, margin: 1 })
+    twofaStep.value = 'scan'
+  } catch (e) { ElMessage.error(t('auth.twofaSetupFailed')) }
+  finally { twofaBusy.value = false }
+}
+
+async function twofaEnable() {
+  twofaBusy.value = true
+  try {
+    const res = await apiTwofaEnable(twofaCode.value.trim())
+    twofaRecovery.value = res.recovery_codes || []
+    // 保持 twofaStatus.enabled=false，让模板命中 recovery 分支展示恢复码。
+    // 用户点「我已保存」关闭时会重新 loadTwofaStatus（届时显示已启用）。
+    twofaStep.value = 'recovery'
+  } catch (e) { ElMessage.error(t('auth.twofaVerifyFailed')) }
+  finally { twofaBusy.value = false }
+}
+
+async function twofaRegenerate() {
+  let value
+  try {
+    const r = await ElMessageBox.prompt(t('auth.twofaRegenerateHint'), t('auth.twofaManage'), {
+      inputPlaceholder: t('auth.twofaPlaceholder'),
+      inputValidator: (v) => (v && v.trim().length === 6) ? true : t('auth.twofaRequired'),
+    })
+    value = r.value
+  } catch (e) { return }
+  try {
+    const res = await apiTwofaRegenerate(value.trim())
+    twofaRecovery.value = res.recovery_codes || []
+    twofaStep.value = 'recovery'
+  } catch (e) { ElMessage.error(t('auth.twofaVerifyFailed')) }
+}
+
+async function twofaDisable() {
+  let value
+  try {
+    const r = await ElMessageBox.prompt(t('auth.twofaDisableHint'), t('auth.twofaManage'), {
+      inputPlaceholder: t('auth.twofaPlaceholder'),
+      inputValidator: (v) => (v && v.trim().length === 6) ? true : t('auth.twofaRequired'),
+    })
+    value = r.value
+  } catch (e) { return }
+  try {
+    await apiTwofaDisable(value.trim())
+    ElMessage.success(t('auth.twofaDisabled'))
+    twofaVisible.value = false
+    await loadTwofaStatus()
+  } catch (e) { ElMessage.error(t('auth.twofaVerifyFailed')) }
+}
+
+async function copyTwofaSecret() {
+  try {
+    await navigator.clipboard.writeText(twofaSecret.value)
+    ElMessage.success(t('common.copySuccess'))
+  } catch (e) { ElMessage.warning(twofaSecret.value) }
+}
+
+// 下载恢复码为本地 txt 文件（对齐 GitHub 的 github-recovery-codes.txt 体验），
+// 避免手动复制遗漏。文件只在恢复码生成（启用 / 重新生成）时可用。
+function downloadRecoveryCodes() {
+  const codes = twofaRecovery.value
+  if (!codes || codes.length === 0) return
+  const lines = [
+    'CoreFusion - 双步验证恢复码',
+    '账号: ' + (authStore.username || ''),
+    '生成时间: ' + new Date().toLocaleString(),
+    '',
+    '每个恢复码只能使用一次，请妥善保存（建议离线保管）。',
+    '使用方式: 登录页输入用户名后，直接粘贴恢复码即可登录。',
+    '',
+    ...codes,
+    '',
+  ]
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'corefusion-recovery-codes.txt'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success(t('auth.twofaDownloaded'))
+}
 
 function formatTime(v) {
   if (!v) return '-'
@@ -196,6 +403,8 @@ function handleCommand(cmd) {
     pwdVisible.value = true
   } else if (cmd === 'passkey') {
     openPasskeyDialog()
+  } else if (cmd === 'twofa') {
+    openTwofaDialog()
   }
 }
 

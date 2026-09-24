@@ -17,8 +17,13 @@ type User struct {
 	// 对同一用户**全局稳定**（所有 RP ID 共用），用于 Passkey discoverable 登录时
 	// 由认证器返回的 userHandle 反查用户。首次注册 Passkey 时懒生成。
 	WebAuthnHandle string    `json:"webauthn_handle,omitempty" gorm:"size:128;index"`
-	CreatedAt      time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt      time.Time `json:"updated_at" gorm:"not null"`
+	// TOTPSecret：2FA（TOTP）密钥，AES-256-GCM 加密落库（crypto.EncryptSecret 的 "enc:" 格式）。
+	// 绝不通过 API 输出；绑定流程只在生成后一次性下发 otpauth URI。
+	TOTPSecret string `json:"-" gorm:"size:512"`
+	// TOTPEnabled：是否已启用 2FA。启用后密码登录需额外验证 TOTP 动态码或恢复码。
+	TOTPEnabled bool      `json:"totp_enabled" gorm:"not null;default:false"`
+	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (User) TableName() string { return "users" }

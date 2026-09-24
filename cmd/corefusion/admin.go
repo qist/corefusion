@@ -52,15 +52,24 @@ Usage:
       吊销指定账号的一把（-id）或全部（--all）Passkey —— 找回通道：
       怀疑设备丢失 / 凭证泄漏时，离线即可把该死设备踢出登录名单。
 
+  corefusion admin 2fa list [-u <用户名>]
+      查看指定账号的 2FA 状态（是否启用 / 密钥 / 剩余恢复码）。
+
+  corefusion admin 2fa reset -u <用户名>
+      关闭指定账号的 2FA（清空密钥与恢复码）并吊销其全部会话 —— 找回通道：
+      丢了认证器和恢复码时，离线即可解除锁定（之后重新绑定即可）。
+
 Examples:
   corefusion admin reset-password
   corefusion admin reset-password -u admin
   corefusion admin reset-password -u ops -p 'my-strong-passphrase'
   corefusion admin passkey list -u admin
   corefusion admin passkey revoke -u admin --all
+  corefusion admin 2fa list -u admin
+  corefusion admin 2fa reset -u admin
 
 说明：面板运行中也可以执行，改动立即生效（无需重启）。
-'passkey list/revoke' 需要面板至少成功启动过一次（自动迁移建表）。
+'passkey' / '2fa' 子命令需要面板至少成功启动过一次（自动迁移建表）。
 `)
 }
 
@@ -105,6 +114,8 @@ func runAdmin(args []string) {
 		adminResetPassword(args[1:])
 	case "passkey":
 		adminPasskey(args[1:])
+	case "2fa", "twofa":
+		admin2FA(args[1:])
 	case "list", "ls":
 		adminList(args[1:])
 	case "help", "--help", "-h":
@@ -301,6 +312,70 @@ func adminPasskey(args []string) {
 		fmt.Printf("✓ 已吊销账号 %q 的 Passkey id=%d，该设备立即无法再用它登录。\n", user.Username, id)
 	default:
 		fmt.Fprintf(os.Stderr, "✗ 未知子命令：%s（支持 list / revoke）\n", sub)
+		os.Exit(2)
+	}
+}
+
+// admin2FA 是 `corefusion admin 2fa` 子命令（2FA 离线管理 / 找回通道）。
+//
+// 与 2FA 功能配套：唯一的超级管理员一旦丢了认证器且恢复码也不可用，会被**永久锁在门外**，
+// 这里提供与登录链路相互独立的恢复路径 —— 只读/写数据库，不启动 HTTP 服务。
+//   - list [-u <用户名>]：查看 2FA 启用状态、密钥是否有值、剩余未使用恢复码数量
+//   - reset -u <用户名>：关闭 2FA、清空密钥与恢复码、吊销全部会话（token_version +1）
+func admin2FA(args []string) {
+	fs := flag.NewFlagSet("admin 2fa", flag.ExitOnError)
+	username := fs.String("u", "admin", "用户名")
+	_ = fs.Parse(args)
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "✗ 缺少子命令：list 或 reset\n")
+		os.Exit(2)
+	}
+	sub := fs.Arg(0)
+
+	userRepo, _, cleanup := openAdminRepos()
+	defer cleanup()
+	recoveryRepo := repository.NewRecoveryCodeRepository(db.DB)
+	ctx := context.Background()
+
+	user, err := userRepo.GetByUsername(ctx, *username)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "✗ 找不到用户 %q。\n", *username)
+		os.Exit(1)
+	}
+
+	switch sub {
+	case "list":
+		unused, err := recoveryRepo.CountUnused(ctx, user.ID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "✗ 读取恢复码数量失败：%v\n", err)
+			os.Exit(1)
+		}
+		state := "未启用"
+		if user.TOTPEnabled {
+			state = "已启用"
+		}
+		secretState := "无"
+		if user.TOTPSecret != "" {
+			secretState = "已保存（加密存储）"
+		}
+		fmt.Printf("账号 %q（id=%d）：2FA 状态=%s，密钥=%s，未使用恢复码=%d\n",
+			user.Username, user.ID, state, secretState, unused)
+	case "reset":
+		if err := userRepo.ClearTOTP(ctx, user.ID); err != nil {
+			fmt.Fprintf(os.Stderr, "✗ 关闭 2FA 失败：%v\n", err)
+			os.Exit(1)
+		}
+		if err := recoveryRepo.DeleteByUser(ctx, user.ID); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ 清除恢复码失败：%v\n", err)
+		}
+		// 吊销全部会话：被锁门的人拿到新口令/新 2FA 前，旧 token 一律失效。
+		if err := userRepo.BumpTokenVersion(ctx, user.ID); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ 吊销会话失败：%v\n", err)
+		}
+		fmt.Printf("✓ 已关闭账号 %q 的 2FA（密钥与恢复码已清空），并吊销其全部会话。\n", user.Username)
+		fmt.Println("  该账号之后可用密码直接登录；如需 2FA，登录后在「双步验证」中重新绑定。")
+	default:
+		fmt.Fprintf(os.Stderr, "✗ 未知子命令：%s（支持 list / reset）\n", sub)
 		os.Exit(2)
 	}
 }

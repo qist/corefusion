@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jlaffaye/ftp v0.2.4
+	github.com/pquerna/otp v1.5.0
 	github.com/qist/sqlite v1.16.1
 	github.com/xtls/xray-core v1.260327.1-0.20260920225103-d562d8947d31
 	golang.org/x/crypto v0.57.0
@@ -54,6 +55,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.50.0 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
+	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect

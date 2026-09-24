@@ -112,3 +112,23 @@ func (r *UserRepository) GetUserByWebAuthnHandle(ctx context.Context, handle str
 	}
 	return &user, nil
 }
+
+// SetTOTP 写入 2FA 开关与加密密钥（用 UpdateColumn 避免覆盖并发 bump 的 token_version）。
+func (r *UserRepository) SetTOTP(ctx context.Context, userID int64, enabled bool, encryptedSecret string) error {
+	return r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]any{
+			"totp_enabled": enabled,
+			"totp_secret":  encryptedSecret,
+		}).Error
+}
+
+// ClearTOTP 清除用户的 2FA（关闭时调用；同时用作 admin 2fa reset 的恢复路径）。
+func (r *UserRepository) ClearTOTP(ctx context.Context, userID int64) error {
+	return r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]any{
+			"totp_enabled": false,
+			"totp_secret":  "",
+		}).Error
+}

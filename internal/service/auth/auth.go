@@ -32,13 +32,9 @@ func NewService(userRepo *repository.UserRepository, jwtSecret string) *Service 
 
 // Login authenticates a user and returns tokens.
 func (s *Service) Login(ctx context.Context, username, passwordStr string) (accessToken, refreshToken string, user *entity.User, err error) {
-	user, err = s.userRepo.GetByUsername(ctx, username)
+	user, err = s.GetActiveUserByUsername(ctx, username)
 	if err != nil {
-		return "", "", nil, ErrInvalidCredentials
-	}
-
-	if user.Status != 1 {
-		return "", "", nil, ErrUserDisabled
+		return "", "", nil, err
 	}
 
 	if !password.Check(passwordStr, user.PasswordHash) {
@@ -51,6 +47,19 @@ func (s *Service) Login(ctx context.Context, username, passwordStr string) (acce
 	}
 
 	return accessToken, refreshToken, user, nil
+}
+
+// GetActiveUserByUsername 按用户名返回处于启用状态的用户，供各登录入口共用。
+// 不存在 / 已禁用统一返回 ErrInvalidCredentials（不暴露账号存在性）。
+func (s *Service) GetActiveUserByUsername(ctx context.Context, username string) (*entity.User, error) {
+	user, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil || user == nil {
+		return nil, ErrInvalidCredentials
+	}
+	if user.Status != 1 {
+		return nil, ErrUserDisabled
+	}
+	return user, nil
 }
 
 // IssueTokens 为已通过身份验证的用户签发 access/refresh token 对。
@@ -131,6 +140,11 @@ func (s *Service) ValidateToken(tokenStr string) (*jwt.Claims, error) {
 // GetByID retrieves a user by ID.
 func (s *Service) GetByID(ctx context.Context, userID int64) (*entity.User, error) {
 	return s.userRepo.GetByID(ctx, userID)
+}
+
+// SetTOTPSecret 加密保存用户的 TOTP 密钥（2FA setup 步骤；尚未启用）。
+func (s *Service) SetTOTPSecret(ctx context.Context, userID int64, encryptedSecret string) error {
+	return s.userRepo.SetTOTP(ctx, userID, false, encryptedSecret)
 }
 
 // ChangePassword changes a user's password.

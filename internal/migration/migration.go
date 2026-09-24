@@ -19,6 +19,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// User & Auth
 		&entity.User{},
 		&entity.WebAuthnCredential{},
+		&entity.RecoveryCode{},
 
 		// Nodes
 		&entity.Node{},

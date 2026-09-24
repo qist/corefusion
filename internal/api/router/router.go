@@ -55,6 +55,7 @@ import (
 	subsHandler "corefusion/internal/api/handlers/subscriptions"
 	systemHandler "corefusion/internal/api/handlers/system"
 	trafficHandler "corefusion/internal/api/handlers/traffic"
+	twofaHandler "corefusion/internal/api/handlers/twofa"
 	usersHandler "corefusion/internal/api/handlers/users"
 	wafHandler "corefusion/internal/api/handlers/waf"
 	warpHandler "corefusion/internal/api/handlers/warp"
@@ -107,6 +108,7 @@ planSvc "corefusion/internal/service/plan"
 	systemSvc "corefusion/internal/service/system"
 	trafficSvc "corefusion/internal/service/traffic"
 	trafficsyncSvc "corefusion/internal/service/trafficsync"
+	twofaSvc "corefusion/internal/service/twofa"
 	userService "corefusion/internal/service/user"
 	wafSvc "corefusion/internal/service/waf"
 	warpSvc "corefusion/internal/service/warp"
@@ -896,7 +898,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	geoRuleScheduler.Start()
 
 	// Initialize handlers
-	authH := authHandler.NewHandler(authSvc)
+	// 2FA（TOTP）服务：登录两步验证 + 绑定/关闭/恢复码管理。
+	twoFASvc := twofaSvc.NewService(userRepo, repository.NewRecoveryCodeRepository(database), "CoreFusion Panel")
+	authH := authHandler.NewHandler(authSvc, twoFASvc)
+	twofaH := twofaHandler.NewHandler(twoFASvc, authSvc)
 	// Passkey（WebAuthn 通行密钥）：注册/登录/白名单管理。
 	// RP 显示名用面板品牌名，浏览器授权弹窗展示给用户。
 	passkeyH := passkeyHandler.NewHandler(
@@ -1318,15 +1323,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// user_id read from the context is silently 0.
 		authGroup := v1.Group("/auth")
 		{
-			authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
-			authGroup.POST("/refresh", authH.Refresh)
-			// Passkey（无密码登录）：
-			//   - status：前端据此显示/隐藏登录按钮（未认证阶段只认白名单已有条目）；
-			//   - login/begin + login/finish：discoverable 登录仪式。
-			// ⚠ 这些接口**不**放在 AuthRequired 后面 —— passkey 本身就是登录入口。
-			authGroup.GET("/passkey/status", passkeyH.Status)
-			authGroup.POST("/passkey/login/begin", passkeyH.LoginBegin)
-			authGroup.POST("/passkey/login/finish", passkeyH.LoginFinish)
+		authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
+		authGroup.POST("/refresh", authH.Refresh)
+		// 2FA 第二步：密码通过后凭一次性登录票据验证 TOTP/恢复码换取 token。
+		// ⚠ 与密码登录同享登录限流：动态码也是可爆破对象。
+		authGroup.POST("/login/2fa", middleware.LoginRateLimit(), twofaH.Login2FA)
+		// 登录页查询指定用户名是否已启用 2FA（公开）——据此把输入框切换为
+		// "密码"或"动态码/恢复码"。只返回 enabled 布尔，不泄露账号存在性。
+		authGroup.GET("/login/2fa-status", authH.Login2FAStatus)
+		// Passkey（无密码登录）：
+		//   - status：前端据此显示/隐藏登录按钮（未认证阶段只认白名单已有条目）；
+		//   - login/begin + login/finish：discoverable 登录仪式。
+		// ⚠ 这些接口**不**放在 AuthRequired 后面 —— passkey 本身就是登录入口。
+		authGroup.GET("/passkey/status", passkeyH.Status)
+		authGroup.POST("/passkey/login/begin", passkeyH.LoginBegin)
+		authGroup.POST("/passkey/login/finish", passkeyH.LoginFinish)
 		}
 
 		// Auth (authenticated): operates on the calling user.
@@ -1341,6 +1352,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			authSelfGroup.POST("/logout", authH.Logout)
 			// 签发一次性短时票据（M10）：日志 SSE 流与备份下载用它，避免把长期 token 放进 URL
 			authSelfGroup.POST("/ticket", authH.IssueTicket)
+			// 2FA 管理：绑定/启用/关闭/恢复码/状态（已登录用户管理自己）
+			authSelfGroup.GET("/2fa/status", twofaH.Status)
+			authSelfGroup.POST("/2fa/setup", twofaH.Setup)
+			authSelfGroup.POST("/2fa/enable", twofaH.Enable)
+			authSelfGroup.POST("/2fa/disable", twofaH.Disable)
+			authSelfGroup.POST("/2fa/recovery-codes", twofaH.RegenerateRecovery)
 			// Passkey 管理（已登录用户管理自己的凭证）
 			authSelfGroup.POST("/passkey/register/begin", passkeyH.RegisterBegin)
 			authSelfGroup.POST("/passkey/register/finish", passkeyH.RegisterFinish)

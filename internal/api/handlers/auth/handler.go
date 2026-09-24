@@ -2,30 +2,38 @@ package auth
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
+	"corefusion/internal/auth/password"
 	"corefusion/internal/service/audit"
 	"corefusion/internal/service/auth"
+	"corefusion/internal/service/twofa"
 	"corefusion/pkg/netutil"
 )
 
 // Handler handles auth HTTP requests.
 type Handler struct {
-	authSvc *auth.Service
+	authSvc  *auth.Service
+	twoFASvc *twofa.Service
 }
 
 // NewHandler creates a new auth handler.
-func NewHandler(authSvc *auth.Service) *Handler {
-	return &Handler{authSvc: authSvc}
+func NewHandler(authSvc *auth.Service, twoFASvc *twofa.Service) *Handler {
+	return &Handler{authSvc: authSvc, twoFASvc: twoFASvc}
 }
 
+// loginRequest 统一一步登录：`code` 既可以是静态密码（未启用 2FA），
+// 也可以是 TOTP 动态码 / 恢复码（已启用 2FA）—— 由后端按用户状态识别。
+// `password` 字段保留是为了兼容旧调用方（与 code 等价）。
 type loginRequest struct {
 	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Code     string `json:"code"`
+	Password string `json:"password"` // 兼容旧客户端：与 code 等价
 }
 
 type loginResponse struct {
@@ -33,30 +41,70 @@ type loginResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// Login handles POST /api/v1/auth/login.
+// loginFailed 统一处理登录失败：计入限流、记审计、返回 401。
+func (h *Handler) loginFailed(c *gin.Context, username, reason string) {
+	middleware.DefaultLoginLimiter().RecordFailure(netutil.GetRealIP(c.Request))
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "admin_login", Result: "failure",
+		RemoteIP: c.ClientIP(), Reason: reason,
+		Metadata: map[string]any{"username": username},
+	})
+	response.Unauthorized(c, "INVALID_CREDENTIALS", "invalid username or credential")
+}
+
+// Login handles POST /api/v1/auth/login（一步登录）。
+//
+// 逻辑：按用户名查用户后自动识别凭据类型——
+//   - 用户已启用 2FA：`code` 必须是 TOTP 动态码 / 恢复码（静态密码不再作为登录凭据）；
+//   - 用户未启用 2FA：`code` 是静态密码。
 func (h *Handler) Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-
-	accessToken, refreshToken, user, err := h.authSvc.Login(c.Request.Context(), req.Username, req.Password)
-	if err != nil {
-		middleware.DefaultLoginLimiter().RecordFailure(netutil.GetRealIP(c.Request))
-		audit.Record(audit.Event{
-			Category: "auth", EventType: "admin_login", Result: "failure",
-			RemoteIP: c.ClientIP(), Reason: err.Error(),
-			Metadata: map[string]any{"username": req.Username},
-		})
-		response.Unauthorized(c, "INVALID_CREDENTIALS", err.Error())
+	code := req.Code
+	if code == "" {
+		code = req.Password // 兼容旧客户端
+	}
+	if strings.TrimSpace(code) == "" {
+		response.BadRequest(c, "INVALID_REQUEST", "username and credential are required")
 		return
 	}
+	ctx := c.Request.Context()
+
+	user, err := h.authSvc.GetActiveUserByUsername(ctx, req.Username)
+	if err != nil {
+		h.loginFailed(c, req.Username, err.Error())
+		return
+	}
+
+	if user.TOTPEnabled {
+		// 2FA 用户：只验证 TOTP 动态码 / 恢复码，忽略静态密码。
+		if verr := h.twoFASvc.VerifyLoginCode(ctx, user, code); verr != nil {
+			h.loginFailed(c, req.Username, "2FA: "+verr.Error())
+			return
+		}
+	} else if !password.Check(code, user.PasswordHash) {
+		h.loginFailed(c, req.Username, auth.ErrInvalidCredentials.Error())
+		return
+	}
+
+	accessToken, refreshToken, err := h.authSvc.IssueTokens(ctx, user)
+	if err != nil {
+		response.InternalError(c, "TOKEN_ISSUE_FAILED", err.Error())
+		return
+	}
+
 	middleware.DefaultLoginLimiter().RecordSuccess(netutil.GetRealIP(c.Request))
+	via := "password"
+	if user.TOTPEnabled {
+		via = "totp"
+	}
 	audit.Record(audit.Event{
 		Category: "auth", EventType: "admin_login", Result: "success",
 		UserID: user.ID, RemoteIP: c.ClientIP(),
-		Metadata: map[string]any{"username": user.Username},
+		Metadata: map[string]any{"username": user.Username, "via": via},
 	})
 
 	response.OK(c, gin.H{
@@ -68,6 +116,22 @@ func (h *Handler) Login(c *gin.Context) {
 			"role":     user.Role,
 		},
 	})
+}
+
+// Login2FAStatus handles GET /api/v1/auth/login/2fa-status?username=xxx（公开）。
+// 登录页据此把输入框切换为"密码"或"动态码/恢复码"模式。
+// 用户不存在 / 任何异常均返回 enabled=false（不区分），避免用户名枚举。
+func (h *Handler) Login2FAStatus(c *gin.Context) {
+	username := strings.TrimSpace(c.Query("username"))
+	if username == "" {
+		response.BadRequest(c, "INVALID_REQUEST", "username is required")
+		return
+	}
+	enabled := false
+	if user, err := h.authSvc.GetActiveUserByUsername(c.Request.Context(), username); err == nil {
+		enabled = user.TOTPEnabled
+	}
+	response.OK(c, gin.H{"enabled": enabled})
 }
 
 type refreshRequest struct {

@@ -25,8 +25,10 @@ export const useAuthStore = defineStore('auth', {
       return res
     },
 
-    async login(username, password) {
-      const res = await client.post('/auth/login', { username, password })
+    // login 一步完成：后端按用户状态自动识别凭据类型——
+    // 已启用 2FA → code 为 TOTP 动态码/恢复码；未启用 → code 为静态密码。
+    async login(username, credential) {
+      const res = await client.post('/auth/login', { username, code: credential })
       return this.setTokens(res)
     },
 

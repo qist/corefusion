@@ -262,10 +262,14 @@ func reloadLocalProxiesAfterCertRefresh(certID int64) {
 	}
 	ctx := context.Background()
 	for _, pt := range []proxySvc.ProxyType{proxySvc.ProxyCaddy, proxySvc.ProxyNginx} {
+		// 「该不该重启」统一由 RestartProxy 自己判断（未安装 / 未在运行 / 用户手动停掉 → no-op），
+		// 这里不再复述同一判断，避免同一口径散落两处后各自漂移。
 		if rerr := proxyMgr.RestartProxy(ctx, pt); rerr != nil {
 			log.Printf("[cert] 证书 %d 刷新后重启本机代理 %s 失败：%v", certID, pt, rerr)
 		} else {
-			log.Printf("[cert] 证书 %d 刷新后已重启本机代理 %s（让它重新加载证书 ✓）", certID, pt)
+			// 注意：跳过（no-op）也是 nil，所以这行只说"请求已处理"，
+			// 实际重启与否、以及跳过原因由 RestartProxy 自己记日志，别在这里把跳过说成重启。
+			log.Printf("[cert] 证书 %d 刷新：本机代理 %s 重启请求已处理（实际动作见 proxy 日志）", certID, pt)
 		}
 	}
 }

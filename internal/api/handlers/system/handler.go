@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -191,6 +192,9 @@ func (h *Handler) GetNotificationConfig(c *gin.Context) {
 	if config.SMTPPass != "" {
 		config.SMTPPass = "********"
 	}
+	if config.TelegramBotToken != "" {
+		config.TelegramBotToken = "********"
+	}
 	response.OK(c, config)
 }
 
@@ -207,6 +211,12 @@ func (h *Handler) UpdateNotificationConfig(c *gin.Context) {
 			config.SMTPPass = existing.SMTPPass
 		}
 	}
+	if config.TelegramBotToken == "********" {
+		existing, _ := h.settingSvc.GetNotificationConfig(c.Request.Context())
+		if existing != nil {
+			config.TelegramBotToken = existing.TelegramBotToken
+		}
+	}
 	if err := h.settingSvc.UpdateNotificationConfig(c.Request.Context(), &config); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -221,6 +231,12 @@ func (h *Handler) TestSMTP(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	if config.SMTPPass == "********" {
+		existing, _ := h.settingSvc.GetNotificationConfig(c.Request.Context())
+		if existing != nil {
+			config.SMTPPass = existing.SMTPPass
+		}
+	}
 	if err := h.settingSvc.TestSMTP(c.Request.Context(), &config); err != nil {
 		response.InternalError(c, "SMTP_TEST_FAILED", err.Error())
 		return
@@ -234,6 +250,12 @@ func (h *Handler) TestTelegram(c *gin.Context) {
 	if err := c.ShouldBindJSON(&config); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
+	}
+	if config.TelegramBotToken == "********" {
+		existing, _ := h.settingSvc.GetNotificationConfig(c.Request.Context())
+		if existing != nil {
+			config.TelegramBotToken = existing.TelegramBotToken
+		}
 	}
 	if err := h.settingSvc.TestTelegram(c.Request.Context(), &config); err != nil {
 		response.InternalError(c, "TELEGRAM_TEST_FAILED", err.Error())
@@ -431,6 +453,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	}
 	items := make([]gin.H, 0, len(settings))
 	for k, v := range settings {
+		// 敏感键（OAuth client secret）对外脱敏，写回时以 ******** 哨兵保留原值。
+		if strings.HasSuffix(k, "_client_secret") && v != "" {
+			v = "********"
+		}
 		items = append(items, gin.H{"key": k, "value": v})
 	}
 	response.OK(c, gin.H{"items": items})
@@ -450,6 +476,13 @@ func (h *Handler) BatchUpdateSettings(c *gin.Context) {
 		return
 	}
 	for _, item := range body.Items {
+		// 敏感键的 ******** 哨兵 = 保留库中原值（前端脱敏回填时保存会带它）
+		if item.Value == "********" && (strings.HasSuffix(item.Key, "_client_secret") || item.Key == "notify.telegram_bot_token" || item.Key == "notify.smtp_pass") {
+			existing, err := h.settingSvc.GetByKey(c.Request.Context(), item.Key)
+			if err == nil {
+				item.Value = existing
+			}
+		}
 		if err := h.settingSvc.SetByKey(c.Request.Context(), item.Key, item.Value); err != nil {
 			response.InternalError(c, "SET_FAILED", err.Error())
 			return

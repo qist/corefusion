@@ -51,6 +51,11 @@ type PanelConfig struct {
 	TrustedProxies      string `json:"trusted_proxies"`
 	ProfileWebPageUrl   string `json:"profile_web_page_url"`
 	Mode                string `json:"mode"` // "full" (default) or "management_only"
+	// PasskeyRPIDs 是 Passkey（WebAuthn）允许的 RP ID 白名单，逗号分隔。
+	// WebAuthn 的 RP ID 必须是可注册域名（IP 不行，localhost 例外），且凭证绑定 RP ID。
+	// 命中规则：请求 Host == 条目 或为其子域（host == rp || HasSuffix(host, "."+rp)）。
+	// 登录（未认证）阶段只认白名单已有条目，防止伪造 Host 拿数据；密码登录永远兜底。
+	PasskeyRPIDs string `json:"passkey_rp_ids"`
 	// ExportMaxRows 是**单次数据导出（CSV）的行数上限** ✓。
 	// 原来这个上限在各导出 handler 里**各写各的** ✗（审计导出 5 万、充值卡导出 10 万），
 	// 想调大小只能改代码重编译；现在做成设置项，设置页可直接改 ✓。
@@ -289,6 +294,7 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	setIfExist(settings, "panel.trusted_proxies", &config.TrustedProxies)
 	setIfExist(settings, "panel.profile_web_page_url", &config.ProfileWebPageUrl)
 	setIfExist(settings, "panel.mode", &config.Mode)
+	setIfExist(settings, "panel.passkey_rp_ids", &config.PasskeyRPIDs)
 	if v, ok := settings["panel.export_max_rows"]; ok && v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			config.ExportMaxRows = NormalizeExportMaxRows(n)
@@ -318,6 +324,7 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.trusted_proxies":      config.TrustedProxies,
 		"panel.profile_web_page_url": config.ProfileWebPageUrl,
 		"panel.mode":                 config.Mode,
+		"panel.passkey_rp_ids":       config.PasskeyRPIDs,
 		// 导出上限：越界/非法一律先夹到合法范围再落库 ✓
 		//（各导出 handler 拿到的值随时可用，不用再各自校验 ✓）
 		"panel.export_max_rows": strconv.Itoa(NormalizeExportMaxRows(config.ExportMaxRows)),

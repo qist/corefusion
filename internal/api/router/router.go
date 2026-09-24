@@ -42,6 +42,7 @@ import (
 	nodeServerHandler "corefusion/internal/api/handlers/nodeserver"
 	oauthHandler "corefusion/internal/api/handlers/oauth"
 	outboundconfigHandler "corefusion/internal/api/handlers/outboundconfig"
+	passkeyHandler "corefusion/internal/api/handlers/passkey"
 	planHandler "corefusion/internal/api/handlers/plan"
 	portalHandler "corefusion/internal/api/handlers/portal"
 	rateLimitHandler "corefusion/internal/api/handlers/ratelimit"
@@ -89,9 +90,10 @@ import (
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
-	oauthService "corefusion/internal/service/oauth"
-	outboundconfigSvc "corefusion/internal/service/outboundconfig"
-	planSvc "corefusion/internal/service/plan"
+oauthService "corefusion/internal/service/oauth"
+outboundconfigSvc "corefusion/internal/service/outboundconfig"
+passkeySvc "corefusion/internal/service/passkey"
+planSvc "corefusion/internal/service/plan"
 	portalSvc "corefusion/internal/service/portal"
 	proxySvc "corefusion/internal/service/proxy"
 	rateLimitSvc "corefusion/internal/service/ratelimit"
@@ -895,6 +897,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Initialize handlers
 	authH := authHandler.NewHandler(authSvc)
+	// Passkey（WebAuthn 通行密钥）：注册/登录/白名单管理。
+	// RP 显示名用面板品牌名，浏览器授权弹窗展示给用户。
+	passkeyH := passkeyHandler.NewHandler(
+		passkeySvc.NewService(userRepo, repository.NewWebAuthnCredentialRepository(database), systemSettingRepo, "CoreFusion Panel"),
+		authSvc,
+	)
 	userH := usersHandler.NewHandler(userSvc)
 	nodeH := nodesHandler.NewHandler(nodeSvc)
 	coreConfigH := coreconfigHandler.NewHandler(coreConfigSvc)
@@ -1312,6 +1320,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		{
 			authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
 			authGroup.POST("/refresh", authH.Refresh)
+			// Passkey（无密码登录）：
+			//   - status：前端据此显示/隐藏登录按钮（未认证阶段只认白名单已有条目）；
+			//   - login/begin + login/finish：discoverable 登录仪式。
+			// ⚠ 这些接口**不**放在 AuthRequired 后面 —— passkey 本身就是登录入口。
+			authGroup.GET("/passkey/status", passkeyH.Status)
+			authGroup.POST("/passkey/login/begin", passkeyH.LoginBegin)
+			authGroup.POST("/passkey/login/finish", passkeyH.LoginFinish)
 		}
 
 		// Auth (authenticated): operates on the calling user.
@@ -1326,6 +1341,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			authSelfGroup.POST("/logout", authH.Logout)
 			// 签发一次性短时票据（M10）：日志 SSE 流与备份下载用它，避免把长期 token 放进 URL
 			authSelfGroup.POST("/ticket", authH.IssueTicket)
+			// Passkey 管理（已登录用户管理自己的凭证）
+			authSelfGroup.POST("/passkey/register/begin", passkeyH.RegisterBegin)
+			authSelfGroup.POST("/passkey/register/finish", passkeyH.RegisterFinish)
+			authSelfGroup.GET("/passkey/credentials", passkeyH.ListCredentials)
+			authSelfGroup.DELETE("/passkey/credentials/:id", passkeyH.DeleteCredential)
+			// RP ID 白名单管理（管理员）：设置页"把当前访问域名加入白名单"按钮
+			passkeyAdmin := middleware.RequireRole(domainuser.RoleAdmin)
+			authSelfGroup.GET("/passkey/rpids", passkeyAdmin, passkeyH.ListRPIDs)
+			authSelfGroup.POST("/passkey/rpids", passkeyAdmin, passkeyH.UpdateRPIDs)
 		}
 
 		// Protected routes

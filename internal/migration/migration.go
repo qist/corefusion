@@ -18,6 +18,7 @@ func AutoMigrate(db *gorm.DB) error {
 	models := []interface{}{
 		// User & Auth
 		&entity.User{},
+		&entity.WebAuthnCredential{},
 
 		// Nodes
 		&entity.Node{},

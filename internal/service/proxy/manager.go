@@ -1724,6 +1724,29 @@ func (m *Manager) IsManuallyStopped(ctx context.Context, proxyType ProxyType) bo
 // in a goroutine. This avoids blocking the caller for 3+ seconds and aligns
 // with process.Manager.Restart() which is also async.
 func (m *Manager) RestartProxy(ctx context.Context, proxyType ProxyType) error {
+	// 「不该重启的就不重启」——重启的前提是：装着、本来就在跑、且用户没有手动停掉它。
+	// 不满足就直接 no-op 返回：不 kill、不启动，尤其**不动 manually_stopped**。
+	//   ① 没在跑的核心去「重启」只会被 startProxyInternal 的端口冲突守卫拒绝
+	//      （nginx/caddy 共用 80/443），落一条假失败日志 —— 历史上每次证书落库都报一次；
+	//   ② 手动停掉的核心是用户的显式状态，自动路径（证书刷新 / 日志模式切换 / 版本更新）
+	//      不得把它复活，更不能把 manually_stopped 清成 false 等于撤销用户的停止操作。
+	// 口径与 ReloadProxy 的既有判断一致（未运行则跳过）。
+	// 注：auto_start 只管「开机是否拉起」（见 AutoStartManaged），不作为重启门槛 ——
+	// 正在跑的核心必须能被重启，否则证书轮换后它会一直用旧证书。
+	if m.IsManuallyStopped(ctx, proxyType) {
+		log.Printf("proxy %s: manually stopped by user, skipping restart", proxyType)
+		return nil
+	}
+	info := m.DetectProxy(proxyType)
+	if !info.Installed {
+		log.Printf("proxy %s: not installed, skipping restart", proxyType)
+		return nil
+	}
+	if info.Status != "running" {
+		log.Printf("proxy %s: not running (status=%s), skipping restart", proxyType, info.Status)
+		return nil
+	}
+
 	// Stop guardian to prevent auto-restart during restart sequence
 	m.mu.Lock()
 	if g, ok := m.guardians[proxyType]; ok {

@@ -455,6 +455,10 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		// ⚠ 这两行原来**根本没有** ✗ → 节点只能签 EC256 ✗（见请求结构体上的注释 ✓）
 		KeyType: keyType,
 		KeyBits: int32(keyBits),
+		// ⚠ 面板通道 id 必须随指令下发 ✗：节点签发用不到 ✓，
+		// 但**回传时要原样带回** ✓ → 面板落库才能记住"创建时选的是哪条通道" ✓
+		//（不然 dns_channel_id 永远是 0 ✗ → 自动续期按 dns-01 找不到通道 → 跳过 ✗）。
+		DnsChannelId: req.DNSChannelID,
 	}
 	log.Printf("[cert] issue-on-node: node=%d ca=%q eab=%v email=%q key_type=%q key_bits=%d",
 		req.NodeID, caProvider, eabKID != "" && eabMAC != "", email, keyType, keyBits)
@@ -656,6 +660,9 @@ func (h *Handler) Issue(c *gin.Context) {
 		Profile:       req.Profile,
 		KeyType:       req.KeyType,
 		KeyBits:       req.KeyBits,
+		// ⚠ 必须把**选了哪条 DNS 通道**一起落库 ✗：续期要按"创建时的选择"走 ✓，
+		// 而服务层只拿到解析后的凭据、认不出是哪条通道 ✗（真机 bug：续期时选择丢失 ✓）。
+		DNSChannelID: req.DNSChannelID,
 	}
 	// 诊断：一眼看出本次用了哪个 CA / 有没有 EAB / 用哪个邮箱 ✓
 	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d email=%q",
@@ -708,6 +715,14 @@ func (h *Handler) Issue(c *gin.Context) {
 }
 
 // Renew handles POST /api/v1/certificates/:id/renew.
+//
+// 口径（用户口径 ✓）：**创建时选了什么，续期就用什么** ✓。
+// 所以 body **可以完全不传** ✓ —— 挑战方式、DNS 通道、CA、profile 一律用签发时落库的值还原 ✓。
+//
+// ⚠ 以前这里不带任何参数就是致命伤 ✗：服务层只把 body 里的 dns_provider 往下传 ✗，
+// 前端续期按钮又什么都不传 ✗ → 创建时选的 dns-01 + DNS 通道在续期时**凭空消失** ✗，
+// 退化成 http-01 ✗（通配符直接失败 ✓，普通域名被偷偷换了验证方式 ✓）。
+// 现在 body 里传的字段一律视为**显式覆盖** ✓，不传则沿用库里记录 ✓。
 func (h *Handler) Renew(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -715,24 +730,38 @@ func (h *Handler) Renew(c *gin.Context) {
 		return
 	}
 
-	// DNS provider config is optional, passed when using DNS-01 challenge
+	// 全部字段可选 ✓（不带 body 也能续 ✓）
 	var req struct {
-		DNSProvider *struct {
+		ChallengeType string `json:"challenge_type"`
+		DNSChannelID  int64  `json:"dns_channel_id"`
+		DNSProvider   *struct {
 			Provider string            `json:"provider"`
 			EnvVars  map[string]string `json:"env_vars"`
 		} `json:"dns_provider,omitempty"`
 	}
 	c.ShouldBindJSON(&req)
 
-	var dnsConfig *cert.DNSProviderConfig
+	in := certService.RenewACMEInput{
+		ChallengeType: req.ChallengeType,
+		DNSChannelID:  req.DNSChannelID,
+	}
 	if req.DNSProvider != nil {
-		dnsConfig = &cert.DNSProviderConfig{
+		in.DNSProvider = &cert.DNSProviderConfig{
 			Provider: cert.DNSProvider(req.DNSProvider.Provider),
 			EnvVars:  req.DNSProvider.EnvVars,
 		}
 	}
 
-	cert, err := h.certSvc.RenewACME(c.Request.Context(), id, dnsConfig)
+	// 邮箱 / EAB：与签发**同源** ✓（只读，不现场申请 ✗，理由见 resolveRenewalAuth 注释 ✓）
+	if rec, gerr := h.certSvc.GetByID(c.Request.Context(), id); gerr == nil && rec != nil {
+		in.Email, in.EAB = h.resolveRenewalAuth(c.Request.Context(), rec.Issuer)
+	}
+
+	// 诊断：一眼看出本次按什么方式续 ✓（不含任何凭据 ✓）
+	log.Printf("[cert] renew request: id=%d challenge=%q dns_channel_id=%d dns_provider_given=%v eab=%v email=%q",
+		id, in.ChallengeType, in.DNSChannelID, in.DNSProvider != nil, in.EAB != nil, in.Email)
+
+	cert, err := h.certSvc.RenewACME(c.Request.Context(), id, in)
 	if err != nil {
 		audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("cert %d", id), false, err.Error())
 		response.InternalError(c, "RENEW_FAILED", err.Error())
@@ -742,8 +771,46 @@ func (h *Handler) Renew(c *gin.Context) {
 	audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("renewed cert %d: %s", id, cert.Domain), true, "")
 
 	h.fireCertUpdated(id)
-	log.Printf("[certificates] cert %d renewed, triggering distribution to nodes", id)
+	log.Printf("[certificates] cert %d renewed (challenge=%s dns_channel=%d), triggering distribution to nodes",
+		id, cert.ChallengeType, cert.DNSChannelID)
 	response.OK(c, cert)
+}
+
+// resolveRenewalAuth 返回续期应使用的 ACME 邮箱与 EAB ✓ —— 口径与签发一致 ✓。
+//
+// ⚠ 这里**故意只读、不现场申请** EAB ✗：
+// Google 的 EAB 是"7 天 + 一次性" ✓，若每次续期都去 mint 一把 → 白白消耗配额 ✗，
+// 还有可能把正在用的那把挤作废 ✗。首次注册确实需要 EAB ✓，
+// 但那种场景（面板本机没有该 CA 的账号 ✓）应该走"重新签发"或先配好账号 ✗，不该由续期默默代劳 ✗。
+//
+// 因此取用顺序（都不产生副作用 ✓）：
+//  1. 默认账号里 CA 对得上的 EAB ✓；
+//  2. 按 CA 关联的 EAB 配置 ✓（`acme_account_configs` / `eab_configs` ✓）。
+//
+// 取不到就返回 nil ✓：已有账号的续期根本用不到 EAB ✓（注册会被跳过 ✓），
+// 真需要首次注册时 CA 会明确报错 ✓（比静默换个验证方式好得多 ✓）。
+func (h *Handler) resolveRenewalAuth(ctx context.Context, caProvider string) (string, *cert.EABConfig) {
+	var email string
+	var eab *cert.EABConfig
+
+	if h.acmeEmails != nil {
+		if info, err := h.acmeEmails.ResolveACMEAccount(ctx, 0); err == nil {
+			email = strings.TrimSpace(info.Email)
+			if caNeedsEAB(caProvider) &&
+				info.EABKeyID != "" &&
+				strings.EqualFold(strings.TrimSpace(info.CAProvider), strings.TrimSpace(caProvider)) {
+				eab = &cert.EABConfig{KeyID: info.EABKeyID, MACKey: info.EABMACKey}
+			}
+		}
+	}
+	if eab != nil || !caNeedsEAB(caProvider) || h.eabConfigs == nil {
+		return email, eab
+	}
+
+	if cfg, err := h.eabConfigs.ResolveEABConfigForCA(ctx, caProvider); err == nil && cfg != nil && cfg.KeyID != "" {
+		eab = &cert.EABConfig{KeyID: cfg.KeyID, MACKey: cfg.MACKey}
+	}
+	return email, eab
 }
 
 // FindExpiringSoon returns certificates expiring within 30 days.

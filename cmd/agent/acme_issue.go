@@ -33,6 +33,9 @@ type acmeIssueParams struct {
 	EABMACKey string
 	// CertID 是面板侧的证书 id ✓（仅用于上报/对账 ✓；节点自续时从 meta 读回 ✓）。
 	CertID int64
+	// DNSChannelID 是**面板侧那条 DNS 通道的 id** ✓（节点签发不用 ✓，
+	// 只在回传/落 meta 时原样带回 ✓ → 面板据此记住"创建时选的是哪条通道" ✓）。
+	DNSChannelID int64
 	// KeyType / KeyBits 决定**签出来的私钥类型** ✓（ecc|rsa + 位数 ✓）。
 	// ⚠ 原来这里**没有这两个字段** ✗ → 节点侧永远走 EC256 ✗
 	// （面板记录 rsa 也白搭 ✓）。空/0 = 历史默认（EC256 ✓）。
@@ -197,6 +200,8 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 		Webroot:     strings.TrimSpace(p.Webroot),
 		DNSProvider: strings.TrimSpace(p.DNSProvider),
 		DNSEnvVars:  p.DNSEnvVars,
+		// 面板通道 id 一起记下 ✓ → 自续期上报时带回 ✓（面板落库要保持"创建时的选择" ✓）
+		DNSChannelID: p.DNSChannelID,
 		// ⚠ 密钥类型也要记住 ✗：节点自续期是"照 meta 重签一遍" ✓，
 		// 不记住就退回 EC256 ✗ → 等于换了一种密钥 ✗（每次自续都换密钥 ✗）。
 		KeyType:  cert.NormalizeKeyType(p.KeyType),

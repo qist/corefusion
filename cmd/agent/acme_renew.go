@@ -127,6 +127,9 @@ func (a *AgentApp) renewDueCertsOnce(ctx context.Context) []*agentpb.PublicCertI
 				Identifiers: ids,
 				Success:     false,
 				Error:       ierr.Error(),
+				// 失败也要带挑战方式 ✓：面板据此知道"这条记录该按什么续" ✓
+				Challenge:    meta.Challenge,
+				DnsChannelId: meta.DNSChannelID,
 			})
 			continue
 		}
@@ -141,6 +144,9 @@ func (a *AgentApp) renewDueCertsOnce(ctx context.Context) []*agentpb.PublicCertI
 			FullchainPem: issued.FullchainPEM,
 			ExpiresAt:    issued.Result.ExpiresAt.Unix(),
 			Ca:           meta.CA,
+			// 同上：挑战方式 + 面板通道 id 原样带回 ✓（面板落库保持"创建时的选择" ✓）
+			Challenge:    meta.Challenge,
+			DnsChannelId: meta.DNSChannelID,
 		})
 	}
 	return reports

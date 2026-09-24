@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	certpkg "corefusion/internal/runtime/cert"
 	"corefusion/internal/store/repository"
 )
 
@@ -457,6 +459,142 @@ func TestRenewCommandCarriesKeyType(t *testing.T) {
 	}
 	if got["ecc"] != 256 {
 		t.Fatalf("ecc 证书的续期指令必须带 key_type=ecc + key_bits=256 ✗：%v", got)
+	}
+}
+
+// fakeDNSResolver 按 id 返回 dns-01 凭据 ✓（真实实现是面板的 DNS 通道服务 ✓）
+type fakeDNSResolver struct {
+	asked []int64
+	cfg   *certpkg.DNSProviderConfig
+	err   error
+}
+
+func (f *fakeDNSResolver) ResolveDNSChannel(_ context.Context, id int64) (*certpkg.DNSProviderConfig, error) {
+	f.asked = append(f.asked, id)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.cfg, nil
+}
+
+// 核心回归 ✓：**创建时选什么挑战方式，续期就用什么** ✗ ——
+// 这是用户的原始要求 ✓（"创建的时候选择什么就应该用什么续期" ✓）。
+//
+// ⚠ 以前这里**根本不带 Challenge** ✗ → 节点侧 `firstNonEmpty(cmd.Challenge,"http-01")` 一律 http-01 ✗
+// → 创建时选的 dns-01 在自动续期里整片丢失 ✗（通配符证书根本续不出来 ✗）。
+// 同时也必须把**面板那条通道的 id**带上 ✓：节点回传证书时要靠它让面板记住"创建时选了哪条通道" ✓
+//（不带 → 面板落库 dns_channel_id=0 ✗ → 下一轮续期直接跳过 ✗）。
+func TestRenewCommandCarriesChallengeAndDNSChannel(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+
+	// ① dns-01 + 通道 7：指令必须带 challenge=dns-01 + 通道 id + **凭据** ✓
+	dnsCert := seedCert(t, certRepo, `["dns.example.com"]`, 1, 2*24*time.Hour)
+	dnsCert.Issuer = "lets_encrypt"
+	dnsCert.ChallengeType, dnsCert.DNSChannelID = "dns-01", 7
+	if err := certRepo.Update(context.Background(), dnsCert); err != nil {
+		t.Fatal(err)
+	}
+	_ = serverRepo.Create(context.Background(), &entity.NodeServer{Name: "n-dns", CertificateID: dnsCert.ID})
+
+	// ② http-01：不能因为"没有 dnsProvider"就被猜成别的 ✓
+	httpCert := seedCert(t, certRepo, `["http.example.com"]`, 1, 2*24*time.Hour)
+	httpCert.Issuer, httpCert.ChallengeType = "lets_encrypt", "http-01"
+	if err := certRepo.Update(context.Background(), httpCert); err != nil {
+		t.Fatal(err)
+	}
+	_ = serverRepo.Create(context.Background(), &entity.NodeServer{Name: "n-http", CertificateID: httpCert.ID})
+
+	// ③ 历史数据（挑战方式上线前签的 ✓）：库里是空的 ✗ → 按通配符兜底 dns-01 ✓
+	legacy := seedCert(t, certRepo, `["*.example.com","example.com"]`, 1, 2*24*time.Hour)
+	legacy.Issuer, legacy.DNSChannelID = "lets_encrypt", 7
+	if err := certRepo.Update(context.Background(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	_ = serverRepo.Create(context.Background(), &entity.NodeServer{Name: "n-legacy", CertificateID: legacy.ID})
+
+	resolver := &fakeDNSResolver{cfg: &certpkg.DNSProviderConfig{
+		Provider: "cloudflare",
+		EnvVars:  map[string]string{"CF_DNS_API_TOKEN": "tok"},
+	}}
+	f := &fakeIssuer{envEmail: "test@example.com"}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f).WithDNSChannelResolver(resolver)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.got) != 3 {
+		t.Fatalf("应下发 3 条续期指令，实际 %d", len(f.got))
+	}
+
+	byCertID := map[int64]*agentpb.IssuePublicCertCommand{}
+	for _, cmd := range f.got {
+		byCertID[cmd.GetCertId()] = cmd
+	}
+
+	dnsCmd := byCertID[dnsCert.ID]
+	if dnsCmd == nil {
+		t.Fatal("dns-01 的证书没有下发续期指令 ✗")
+	}
+	if got := dnsCmd.GetChallenge(); got != "dns-01" {
+		t.Fatalf("续期**必须沿用创建时选的挑战方式** ✗：期望 dns-01，实际 %q", got)
+	}
+	if got := dnsCmd.GetDnsChannelId(); got != 7 {
+		t.Fatalf("必须带上面板通道 id ✗（否则节点回传后面板 dns_channel_id 仍是 0 ✗）：实际 %d", got)
+	}
+	if dnsCmd.GetDnsProvider() != "cloudflare" || dnsCmd.GetDnsEnvVars()["CF_DNS_API_TOKEN"] != "tok" {
+		t.Fatalf("dns-01 必须把**创建时选的那条通道**的凭据一起下发 ✗：%+v", dnsCmd)
+	}
+	// 两张 dns-01 都按**同一个通道 id=7** 解析 ✓（http-01 那张一次都不该解析 ✓）
+	if len(resolver.asked) != 2 {
+		t.Fatalf("应解析 2 次（两张 dns-01 ✓），实际 %v", resolver.asked)
+	}
+	for _, id := range resolver.asked {
+		if id != 7 {
+			t.Fatalf("必须按库里的通道 id 解析 ✗（不能另取一个 ✓）：%v", resolver.asked)
+		}
+	}
+
+	if got := byCertID[httpCert.ID].GetChallenge(); got != "http-01" {
+		t.Fatalf("http-01 的证书应沿用 http-01 ✗：实际 %q", got)
+	}
+	if got := byCertID[legacy.ID].GetChallenge(); got != "dns-01" {
+		t.Fatalf("历史数据（无记录 ✗）+ 通配符 → 必须兜底 dns-01 ✓（http-01 根本签不了通配符 ✗）：实际 %q", got)
+	}
+}
+
+// 反例 ✓：库记录是 dns-01 但**通道丢了 / 解析不出来** → 必须**明确报错跳过** ✗，
+// 绝不能"没有 dnsProvider 就退回 http-01" ✗（那等于偷偷把用户的 dns-01 改掉 ✗）。
+func TestRenewDNSFailsWhenChannelUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		channelID int64
+		resolver  DNSChannelResolver
+	}{
+		{"库里没有通道 id", 0, &fakeDNSResolver{cfg: &certpkg.DNSProviderConfig{Provider: "cloudflare"}}},
+		{"解析器没注入", 7, nil},
+		{"解析失败", 7, &fakeDNSResolver{err: errors.New("通道不存在")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			certRepo, serverRepo := setupRenewerDB(t)
+			c := seedCert(t, certRepo, `["*.dns.example.com","dns.example.com"]`, 1, 2*24*time.Hour)
+			c.Issuer, c.ChallengeType, c.DNSChannelID = "lets_encrypt", "dns-01", tc.channelID
+			if err := certRepo.Update(context.Background(), c); err != nil {
+				t.Fatal(err)
+			}
+			_ = serverRepo.Create(context.Background(), &entity.NodeServer{Name: "n", CertificateID: c.ID})
+
+			f := &fakeIssuer{envEmail: "test@example.com"}
+			r := NewPublicCertRenewer(certRepo, serverRepo, f)
+			if tc.resolver != nil {
+				r = r.WithDNSChannelResolver(tc.resolver)
+			}
+			// 调度本身不该崩 ✓（单张失败只跳过 ✓，不能拖垮整轮 ✓）
+			if err := r.checkAndRenew(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.got) != 0 {
+				t.Fatalf("拿不到 dns-01 凭据时必须**跳过** ✗（不能降级成 http-01 ✗）：%+v", f.got[0])
+			}
+		})
 	}
 }
 

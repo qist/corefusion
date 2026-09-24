@@ -37,6 +37,13 @@ type certMeta struct {
 	DNSProvider string            `json:"dns_provider,omitempty"`
 	DNSEnvVars  map[string]string `json:"dns_env_vars,omitempty"`
 
+	// DNSChannelID 是**面板侧那条 DNS 通道的 id** ✓（`certificates.dns_channel_id` ✓）。
+	// ⚠ 节点签发本身用不到它 ✗（凭据已在 DNSProvider/DNSEnvVars ✓），
+	// 但**上报时必须原样带回面板** ✗：不回传 → 面板落库的证书 `dns_channel_id = 0` ✗
+	// → 面板自动续期按 dns-01 找不到通道 → 只能**跳过续期**（不降级，但也永远不续 ✗）。
+	// 老 meta 没有这个字段 → 反序列化为 0 ✓ = 历史数据 ✓（面板按通配符兜底 ✓）。
+	DNSChannelID int64 `json:"dns_channel_id,omitempty"`
+
 	// KeyType / KeyBits 是**这张证书的密钥规格** ✓（ecc|rsa + 位数 ✓）。
 	// ⚠ 节点自续期=照这套参数重签一遍 ✗ → 不记住就会从 rsa 退回 EC256 ✗
 	// （续期顺手把密钥类型换掉 ✗，真机就是"记录 rsa、文件却是 EC"的来源之一 ✓）。
@@ -165,6 +172,8 @@ func (m *certMeta) issueParams(a *AgentApp, dataDir string) acmeIssueParams {
 		DNSProvider: strings.TrimSpace(m.DNSProvider),
 		DNSEnvVars:  env,
 		CertID:      m.CertID,
+		// 面板通道 id：节点签发不用它 ✓，但上报时要原样带回 ✓（见 certMeta.DNSChannelID ✓）
+		DNSChannelID: m.DNSChannelID,
 		// ⚠ 钥匙类型也要原样带回去 ✗：不带就退回 EC256 ✗
 		// → 每次自续期都**悄悄把 rsa 证书换成 EC** ✗（真机就是"记录 rsa、文件是 EC" ✓）。
 		// 老 meta 里没有这两项 → 空/0 ✓ = 历史默认 EC256 ✓，行为与升级前一致 ✓。

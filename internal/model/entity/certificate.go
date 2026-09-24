@@ -4,14 +4,27 @@ import "time"
 
 // Certificate is the GORM model for the certificates table.
 type Certificate struct {
-	ID            int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name          string `json:"name" gorm:"size:255;not null"`
-	Domain        string `json:"domain" gorm:"size:255;not null"`
-	Domains       string `json:"domains" gorm:"type:longtext"`
-	Issuer        string `json:"issuer" gorm:"size:128;not null"`
-	ProviderType  string `json:"provider_type" gorm:"size:32;not null"`
-	KeyType       string `json:"key_type" gorm:"size:16"`
-	KeyBits       int    `json:"key_bits"`
+	ID           int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name         string `json:"name" gorm:"size:255;not null"`
+	Domain       string `json:"domain" gorm:"size:255;not null"`
+	Domains      string `json:"domains" gorm:"type:longtext"`
+	Issuer       string `json:"issuer" gorm:"size:128;not null"`
+	ProviderType string `json:"provider_type" gorm:"size:32;not null"`
+	KeyType      string `json:"key_type" gorm:"size:16"`
+	KeyBits      int    `json:"key_bits"`
+	// ChallengeType / DNSChannelID 记录"这张证书当初是**用什么方式**签出来的" ✓ ——
+	// 值：`http-01` / `dns-01` ✓；DNSChannelID 是面板里那条 DNS 通道的 ID ✓（http-01 时为 0 ✓）。
+	//
+	// ⚠ 为什么必须存 ✗：续期的口径是**创建时选什么就用什么** ✓，而这两个字段以前**根本没落库** ✗ →
+	// 续期时无从还原 ✓，runtime 层只能"见 dnsProvider 为空就当 http-01" ✗ →
+	// 创建时选的 dns-01（以及那条 DNS 通道的凭据）在续期时**凭空消失** ✗
+	// （真机现象：通配符证书续期直接失败、普通证书被静默换了验证方式 ✓）。
+	//
+	// ⚠ 两列都**可空** ✗：给已有表加 NOT NULL 会被 SQLite 拒绝、导致面板起不来 ✓
+	// （同 IssuerNodeID 的注释 ✓）。空值 = 历史数据 ✓：续期时按
+	// "含通配符 → dns-01（且必须有通道）/ 其余 → http-01"兜底 ✓（见 service.RenewACME ✓）。
+	ChallengeType string `json:"challenge_type" gorm:"size:16"`
+	DNSChannelID  int64  `json:"dns_channel_id"`
 	CertPath      string `json:"cert_path" gorm:"size:512;not null"`
 	KeyPath       string `json:"key_path" gorm:"size:512;not null"`
 	FullchainPath string `json:"fullchain_path" gorm:"size:512"`

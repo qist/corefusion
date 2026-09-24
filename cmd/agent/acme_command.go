@@ -50,6 +50,10 @@ func (a *AgentApp) handleIssuePublicCert(cmd *agentpb.IssuePublicCertCommand, se
 		KeyBits: int(cmd.GetKeyBits()),
 		// 记下面板侧的 id ✓（后续自续期上报时带上 ✓ → 面板能对上同一条记录 ✓）
 		CertID: cmd.CertId,
+		// ⚠ 面板那条 DNS 通道的 id 也要记下 ✗：节点签发用不到它 ✓（凭据已随指令下发 ✓），
+		// 但**回传时必须原样带回面板** ✓ —— 否则面板落库的证书 dns_channel_id=0 ✗
+		// → 以后自动续期按 dns-01 找不到通道 → 只能跳过续期 ✗（见 certMeta.DNSChannelID ✓）。
+		DNSChannelID: cmd.GetDnsChannelId(),
 	}
 	if params.Email == "" {
 		// 面板必须在指令里带上邮箱（来自面板的 ACME 账号 ✓）——没有就不能签 ✗
@@ -72,6 +76,10 @@ func (a *AgentApp) handleIssuePublicCert(cmd *agentpb.IssuePublicCertCommand, se
 	report.FullchainPem = issued.FullchainPEM
 	report.ExpiresAt = issued.Result.ExpiresAt.Unix()
 	report.Ca = string(params.CA)
+	// ⚠ 回传"实际用的挑战方式 + 通道" ✗：面板落库时就靠它记住**创建时的选择** ✓，
+	// 否则面板只能按"含不含通配符"猜 ✗ → 以后续期会丢（见 certificates.challenge_type ✓）。
+	report.Challenge = params.Challenge
+	report.DnsChannelId = params.DNSChannelID
 	log.Printf("[Agent] public cert issued for %v (expires %s), reporting to panel",
 		cmd.Identifiers, issued.Result.ExpiresAt.Format(time.RFC3339))
 	send(a.publicCertReport(report))

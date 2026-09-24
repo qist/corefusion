@@ -69,7 +69,10 @@ func TestCertMetaRoundTrip(t *testing.T) {
 		// 不记住就退回 EC256 ✗ → 每次自续都悄悄换掉 rsa ✗。
 		KeyType:  "rsa",
 		KeyBits:  4096,
-		IssuedAt: time.Now().Add(-time.Hour).Truncate(time.Second),
+		// ⚠ 面板那条 DNS 通道的 id 也要落盘 ✗：自续期上报时得把它原样带回面板 ✓，
+		// 不然面板里的证书 `dns_channel_id` 永远是 0 ✗ → 续期找不到通道 → 跳过 ✗。
+		DNSChannelID: 7,
+		IssuedAt:     time.Now().Add(-time.Hour).Truncate(time.Second),
 	}
 	if err := writeCertMeta(dir, "a.com", m); err != nil {
 		t.Fatal(err)
@@ -83,6 +86,9 @@ func TestCertMetaRoundTrip(t *testing.T) {
 	}
 	if got.KeyType != "rsa" || got.KeyBits != 4096 {
 		t.Fatalf("密钥规格必须能原样读回 ✗（否则自续期会退回 EC256 ✗）：%+v", got)
+	}
+	if got.DNSChannelID != 7 {
+		t.Fatalf("面板通道 id 必须能原样读回 ✗（上报时要带回面板 ✓）：%+v", got)
 	}
 	// 权限必须是 0600 ✓（里面有 DNS 凭据 ✗）
 	st, serr := os.Stat(certMetaPath(dir, "a.com"))
@@ -195,8 +201,14 @@ func TestIssueParamsFromMeta(t *testing.T) {
 		Challenge:   "dns-01",
 		DNSProvider: "cloudflare",
 		DNSEnvVars:  map[string]string{"CF_Token": "t"},
+		// ⚠ 面板通道 id 必须跟着走 ✗：节点签发用不到 ✓（凭据已在上面 ✓），
+		// 但**上报时要带回面板** ✓（面板靠它记住"创建时选的是哪条通道" ✓）。
+		DNSChannelID: 7,
 	}
 	p := m.issueParams(app, "/tmp/acme")
+	if p.DNSChannelID != 7 {
+		t.Fatalf("面板通道 id 必须原样带回 ✓（上报要用 ✓）：%+v", p)
+	}
 	if len(p.Identifiers) != 2 || p.Identifiers[0] != "1.2.3.4" {
 		t.Fatalf("标识符应去空白 ✓：%v", p.Identifiers)
 	}

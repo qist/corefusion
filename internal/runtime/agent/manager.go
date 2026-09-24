@@ -1257,6 +1257,9 @@ func (m *NodeServerManager) handlePublicCertIssued(serverID int64, report *agent
 		KeyPEM:       r.GetKeyPem(),
 		FullchainPEM: r.GetFullchainPem(),
 		CA:           r.GetCa(),
+		// 挑战方式 + 面板通道 id：节点原样带回 ✓ → 落库保持"创建时的选择" ✓
+		Challenge:    r.GetChallenge(),
+		DNSChannelID: r.GetDnsChannelId(),
 	}
 	if r.GetExpiresAt() > 0 {
 		res.ExpiresAt = time.Unix(r.GetExpiresAt(), 0)

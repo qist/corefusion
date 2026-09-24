@@ -30,6 +30,7 @@ import (
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
+	certService "corefusion/internal/service/certificate"
 	planSvc "corefusion/internal/service/plan"
 	sysService "corefusion/internal/service/system"
 	usersync "corefusion/internal/service/usersync"
@@ -303,7 +304,11 @@ func runServer(args []string) {
 		log.Printf("[Panel] migrated %d legacy node↔certificate bindings into node_certificates", n)
 	}
 	publicCertRenewer := agent.NewPublicCertRenewer(certRepo, nodeServerRepo, nodeMgr).
-		WithNodeCertificates(nodeCertRepo)
+		WithNodeCertificates(nodeCertRepo).
+		// ⚠ 必须把 DNS 通道解析器交给**自动续期** ✗：不开这个口子，
+		// 创建时选的 dns-01 在自动续期里会丢掉 ✗（节点侧默认 http-01 ✓ → 通配符证书续不出来 ✓）。
+		// 用同一个通道服务（无状态 ✓，只包一层 repo ✓），保证与签发走**同一条解析路径** ✓。
+		WithDNSChannelResolver(certService.NewDNSChannelService(repository.NewDNSChannelRepository(db.DB)))
 	nodeMgr.WithPublicCertRenewer(publicCertRenewer)
 	go publicCertRenewer.RunLoop(context.Background())
 	log.Println("Public certificate auto-renewer started (interval=6h, renew-before=5d, node-side ACME)")

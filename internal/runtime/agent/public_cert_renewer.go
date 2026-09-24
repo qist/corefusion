@@ -3,12 +3,14 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"strings"
 	"time"
 
 	"corefusion/internal/model/entity"
+	certpkg "corefusion/internal/runtime/cert"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
@@ -53,6 +55,25 @@ type PublicCertRenewer struct {
 	issuer      PublicCertIssuer
 	interval    time.Duration
 	renewBefore time.Duration // >0 时**同时覆盖**两类阈值（测试/自定义用 ✓）
+	// dnsResolver 把库里的 `certificates.dns_channel_id` 解析成 dns-01 凭据 ✓（可选注入 ✓）。
+	//
+	// ⚠ 节点侧自动续期也必须"按创建时的选择" ✗：不下发 Challenge 时，
+	// 节点侧 `firstNonEmpty(cmd.Challenge, "http-01")` 一律按 http-01 走 ✗
+	// → 创建时选的 dns-01 在自动续期里同样丢失 ✗（通配符证书直接续不出来 ✓）。
+	dnsResolver DNSChannelResolver
+}
+
+// DNSChannelResolver 是"按面板 DNS 通道 ID 取 dns-01 凭据"的能力 ✓
+//（由面板的 DNS 通道服务实现 ✓）—— 与证书服务用的是同一个接口口径 ✓。
+type DNSChannelResolver interface {
+	ResolveDNSChannel(ctx context.Context, id int64) (*certpkg.DNSProviderConfig, error)
+}
+
+// WithDNSChannelResolver 注入 DNS 通道解析器 ✓（不注入也能跑 ✓ —— 但 dns-01 的证书会被**明确跳过** ✗，
+// 不会偷偷换成 http-01 ✓）。
+func (r *PublicCertRenewer) WithDNSChannelResolver(resolver DNSChannelResolver) *PublicCertRenewer {
+	r.dnsResolver = resolver
+	return r
 }
 
 // PublicCertIssuer 是"把签发指令下发给节点"的能力（由 NodeServerManager 实现 ✓）。
@@ -76,6 +97,11 @@ type PublicCertResult struct {
 	ExpiresAt    time.Time
 	CA           string
 	Error        string
+	// Challenge / DNSChannelID 是"节点**实际用的**挑战方式与面板通道 id" ✓
+	// （节点把下发的值原样带回 ✓）→ 面板落库时记下 ✓ = 续期时"创建时选什么就用什么" ✓。
+	// 老 Agent 不带这两个字段 → 空/0 ✓，落库时按"库里已有的值优先"处理 ✓（不清空已有记录 ✓）。
+	Challenge    string
+	DNSChannelID int64
 }
 
 // PublicCertSink 由面板的证书服务实现：把 Agent 签好的证书落盘落库 ✓，
@@ -218,13 +244,28 @@ func (r *PublicCertRenewer) thresholdFor(identifiers []string) time.Duration {
 //
 // 带上之后：节点**第一次申请即自动注册** ✓，账号落在节点固定目录 ✓，
 // 之后续期只用账号密钥 ✓ —— **再也不会消耗新 EAB** ✓（正是要的效果 ✓）。
-func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64, issuer string, identifiers []string, keyType string, keyBits int) *agentpb.IssuePublicCertCommand {
+func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64, issuer string, identifiers []string, keyType string, keyBits int, challengeType string, dnsChannelID int64) (*agentpb.IssuePublicCertCommand, error) {
 	ca := normalizeCertCA(issuer)
 	email, eabKID, eabMAC := "", "", ""
 	if r.issuer != nil {
 		email, eabKID, eabMAC = r.issuer.IssuanceContextFor(ctx, ca)
 	}
-	return &agentpb.IssuePublicCertCommand{
+
+	// ── 挑战方式：**按创建时的选择** ✓ ──
+	// ⚠ 原来这里**根本不带 Challenge** ✗（那个字段只有"面板选节点签发"那条路在用 ✗）→
+	// 节点侧 `firstNonEmpty(cmd.Challenge, "http-01")` 一律走 http-01 ✗ →
+	// 创建时选的 dns-01 在自动续期里**同样丢失** ✗（与面板本机那条路径是同一类 bug ✓）。
+	challenge := strings.TrimSpace(challengeType)
+	if challenge == "" {
+		// 历史数据（挑战方式上线前签的 ✓）没有记录 ✗ → 按标识符兜底 ✓：
+		// 含通配符 → 只可能 dns-01 ✓（HTTP-01 不支持通配符 ✗）；其余按历史行为 http-01 ✓。
+		challenge = "http-01"
+		if hasWildcardIdentifier(identifiers) {
+			challenge = "dns-01"
+		}
+	}
+
+	cmd := &agentpb.IssuePublicCertCommand{
 		CertId:      certID,
 		Identifiers: identifiers,
 		Ca:          ca,
@@ -234,7 +275,60 @@ func (r *PublicCertRenewer) buildIssueCommand(ctx context.Context, certID int64,
 		// ⚠ 密钥类型必须随指令下发 ✗：节点侧拿不到就退回 EC256 ✗（见上方 ④ ✓）。
 		KeyType: keyType,
 		KeyBits: int32(keyBits),
+		// 挑战方式 + profile：与创建时**同一套规则** ✓
+		//（IP 证书必须 shortlived ✓，不带 profile 续 IP 证书会被 LE 拒 ✓）
+		Challenge: challenge,
+		Profile:   profileForIdentifiers(identifiers),
+		// ⚠ 面板那条 DNS 通道的 id 也要下发 ✗：节点签发**用不到**它 ✓（凭据就在下面 ✓），
+		// 但节点回传证书时要把它带回来 ✓ → 面板落库保持"创建时选的是哪条通道" ✓
+		//（不回传 → dns_channel_id 一直是 0 ✗ → 之后自动续期直接跳过 ✗）。
+		DnsChannelId: dnsChannelID,
 	}
+
+	// dns-01：把**创建时选的那条 DNS 通道**的凭据一起下发 ✓（节点侧零配置 ✓，路径与签发一致 ✓）
+	if challenge == "dns-01" {
+		if dnsChannelID <= 0 {
+			return nil, fmt.Errorf("证书是按 dns-01 签发/记录的，但库里没有 DNS 通道（dns_channel_id=%d）", dnsChannelID)
+		}
+		if r.dnsResolver == nil {
+			return nil, fmt.Errorf("DNS 通道解析器未注入，无法还原 dns-01 凭据（dns_channel_id=%d）", dnsChannelID)
+		}
+		cfg, err := r.dnsResolver.ResolveDNSChannel(ctx, dnsChannelID)
+		if err != nil {
+			return nil, fmt.Errorf("解析 DNS 通道 %d 失败: %w", dnsChannelID, err)
+		}
+		if cfg == nil || strings.TrimSpace(string(cfg.Provider)) == "" {
+			return nil, fmt.Errorf("DNS 通道 %d 没有可用的 provider", dnsChannelID)
+		}
+		cmd.DnsProvider = string(cfg.Provider)
+		cmd.DnsEnvVars = cfg.EnvVars
+	}
+
+	return cmd, nil
+}
+
+// profileForIdentifiers 取 ACME profile ✓：含 IP 的证书必须 `shortlived` ✓（否则 LE 直接拒 ✓），
+// 纯域名证书返回空串 ✓（不传 profile ✓）。
+//
+// ⚠ 与 `service/certificate.DefaultProfileFor` 是**同一套规则** ✓：
+// 这里没有直接复用是因为 agent 包不该反向依赖 service 包 ✗（保持调用方向单一 ✓）。
+func profileForIdentifiers(identifiers []string) string {
+	for _, id := range identifiers {
+		if net.ParseIP(strings.TrimSpace(id)) != nil {
+			return "shortlived"
+		}
+	}
+	return ""
+}
+
+// hasWildcardIdentifier 判断标识符里是否含通配符 ✓（含 → 只可能走 dns-01 ✓）。
+func hasWildcardIdentifier(identifiers []string) bool {
+	for _, id := range identifiers {
+		if strings.HasPrefix(strings.TrimSpace(id), "*.") {
+			return true
+		}
+	}
+	return false
 }
 
 // checkAndRenew 找出"快到期 + 开了自动续期"的证书，交给绑定节点的 Agent 在本机续 ✓。
@@ -276,16 +370,21 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 			if srv.IsLocal {
 				continue // 面板本机不需要远程签发 ✓
 			}
-			cmd := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits)
+			cmd, cerr := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits, c.ChallengeType, c.DNSChannelID)
+			if cerr != nil {
+				// ✗ 不静默换成 http-01 ✓：原样报出来、本轮跳过 ✓（下次修好通道/记录后自动恢复 ✓）
+				log.Printf("[PublicCertRenewer] cert %d (%v) skip renew: %v", c.ID, identifiers, cerr)
+				continue
+			}
 			if err := r.issuer.IssuePublicCert(ctx, srv.ID, cmd); err != nil {
 				log.Printf("[PublicCertRenewer] cert %d (%v) → server %d: issue command failed: %v",
 					c.ID, identifiers, srv.ID, err)
 				continue
 			}
-			log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s (剩 %s，阈值 %s) → asked server %d (%s) to renew on-node (key=%s/%d)",
+			log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s (剩 %s，阈值 %s) → asked server %d (%s) to renew on-node (key=%s/%d challenge=%s dns_channel=%d)",
 				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339),
 				time.Until(c.ExpiresAt).Truncate(time.Hour), threshold, srv.ID, srv.Name,
-				c.KeyType, c.KeyBits)
+				c.KeyType, c.KeyBits, cmd.Challenge, c.DNSChannelID)
 		}
 	}
 	return nil
@@ -349,8 +448,12 @@ func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID in
 			}
 			log.Printf("[PublicCertRenewer] (on-reconnect) cert %d (%v) expiring %s → server %d",
 				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339), srv.ID)
-			if err := r.issuer.IssuePublicCert(ctx, srv.ID,
-				r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits)); err != nil {
+			cmd, cerr := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits, c.ChallengeType, c.DNSChannelID)
+			if cerr != nil {
+				log.Printf("[PublicCertRenewer] (on-reconnect) cert %d (%v) skip renew: %v", c.ID, identifiers, cerr)
+				continue
+			}
+			if err := r.issuer.IssuePublicCert(ctx, srv.ID, cmd); err != nil {
 				log.Printf("[PublicCertRenewer] (on-reconnect) cert %d → server %d failed: %v", c.ID, srv.ID, err)
 			}
 		}

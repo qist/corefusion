@@ -611,6 +611,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 在 sing-box 上会直接 FATAL，纯 JSON 语法检查发现不了。
 	coreConfigSvc.SetBinaryValidator(binariesSvc.NewValidator(binaryResolver))
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
+// 存量明文敏感配置（SMTP 密码 / Telegram token / OAuth secret）统一 AES-256-GCM 加密落库，幂等
+if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
+	log.Printf("[router] encrypt existing secrets skipped: %v", serr)
+}
 
 	// ── Start background schedulers with configurable intervals ──
 	// All intervals are read from system_settings (scheduler.* prefix).
@@ -3602,8 +3606,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		log.Printf("[router] portal security patch skipped: %v", perr)
 	}
 
-	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
-	portalTmplSvc.WithSettingStore(systemSettingSvc)
+systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
+portalTmplSvc.WithSettingStore(systemSettingSvc)
+// 存量明文敏感配置统一加密落库（幂等，主面板引擎已执行过则这里直接跳过）
+if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
+	log.Printf("[router] portal: encrypt existing secrets skipped: %v", serr)
+}
 
 	// Client auth handler
 	clientRepo := repository.NewClientRepository(database)

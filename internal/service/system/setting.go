@@ -16,6 +16,7 @@ import (
 
 	"corefusion/internal/constants"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 )
@@ -24,6 +25,59 @@ import (
 type SettingService struct {
 	repo     *repository.SystemSettingRepository
 	tmplRepo *repository.NotificationTemplateRepository
+}
+
+// sensitiveSettingKeys 是需要 AES-256-GCM 加密落库的敏感配置键。
+// 与充值卡密钥 / TOTP secret 共用同一套 crypto（CF_SECRET_ENCRYPTION_KEY）。
+// 命中这些键的值在写库前 EncryptSecret、读出后 DecryptSecret；
+// 其它键（域名、开关、端口等）保持明文。
+var sensitiveSettingKeys = map[string]bool{
+	"notify.telegram_bot_token":  true,
+	"notify.smtp_pass":           true,
+	"oauth.github_client_secret": true,
+	"oauth.google_client_secret": true,
+}
+
+// isSensitiveSetting 判断键是否需要在写库时加密。
+func isSensitiveSetting(key string) bool { return sensitiveSettingKeys[key] }
+
+// encryptSensitiveValue 写库前加密敏感值（空值 / 已加密值原样返回，防重复加密）。
+func encryptSensitiveValue(key, value string) (string, error) {
+	if !isSensitiveSetting(key) || value == "" || crypto.IsEncrypted(value) {
+		return value, nil
+	}
+	return crypto.EncryptSecret(value)
+}
+
+// decryptSensitiveValue 读出后解密敏感值（对存量明文向后兼容：非 enc: 前缀原样返回）。
+func decryptSensitiveValue(key, value string) string {
+	if !isSensitiveSetting(key) || value == "" || !crypto.IsEncrypted(value) {
+		return value
+	}
+	plain, err := crypto.DecryptSecret(value)
+	if err != nil {
+		return value // 解密失败保留原值，避免破坏存量数据
+	}
+	return plain
+}
+
+// EncryptExistingSecrets 把存量明文敏感配置加密落库（幂等，启动时调用）。
+// 只在"历史上明文存储"的键上生效：已加密 / 空值跳过。
+func (s *SettingService) EncryptExistingSecrets(ctx context.Context) error {
+	for key := range sensitiveSettingKeys {
+		v, err := s.repo.GetByKey(ctx, key)
+		if err != nil || v == "" || crypto.IsEncrypted(v) {
+			continue
+		}
+		enc, err := crypto.EncryptSecret(v)
+		if err != nil {
+			return fmt.Errorf("encrypt %s: %w", key, err)
+		}
+		if err := s.repo.Set(ctx, key, enc); err != nil {
+			return fmt.Errorf("save %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // NewSettingService creates a new setting service.
@@ -421,8 +475,10 @@ func copyDir(src, dst string) error {
 }
 
 // GetNotificationConfig retrieves notification configuration from database.
+// 注意：必须走 s.GetByPrefix（内含敏感键解密），否则 SMTP 密码/Telegram token
+// 会以密文返回到 handler，导致 ******** 保留逻辑把密文原样回写（密文永不变）。
 func (s *SettingService) GetNotificationConfig(ctx context.Context) (*NotificationConfig, error) {
-	settings, err := s.repo.GetByPrefix(ctx, "notify.")
+	settings, err := s.GetByPrefix(ctx, "notify.")
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +523,7 @@ func (s *SettingService) UpdateNotificationConfig(ctx context.Context, config *N
 	}
 
 	for key, value := range settings {
-		if err := s.repo.Set(ctx, key, value); err != nil {
+		if err := s.Set(ctx, key, value); err != nil {
 			return err
 		}
 	}
@@ -1059,22 +1115,38 @@ func saveEnvFile(key, value string) error {
 
 // GetByKey retrieves a setting value by key (implements proxy.SettingStore).
 func (s *SettingService) GetByKey(ctx context.Context, key string) (string, error) {
-	return s.repo.GetByKey(ctx, key)
+	v, err := s.repo.GetByKey(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	return decryptSensitiveValue(key, v), nil
 }
 
 // GetByPrefix retrieves all settings with a given key prefix.
 func (s *SettingService) GetByPrefix(ctx context.Context, prefix string) (map[string]string, error) {
-	return s.repo.GetByPrefix(ctx, prefix)
+	values, err := s.repo.GetByPrefix(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range values {
+		values[k] = decryptSensitiveValue(k, v)
+	}
+	return values, nil
 }
 
 // Set saves a setting value by key (implements proxy.SettingStore).
+// 敏感键在写库前自动加密。
 func (s *SettingService) Set(ctx context.Context, key, value string) error {
-	return s.repo.Set(ctx, key, value)
+	enc, err := encryptSensitiveValue(key, value)
+	if err != nil {
+		return err
+	}
+	return s.repo.Set(ctx, key, enc)
 }
 
 // SetByKey saves a setting value by key (implements portal.SettingStore).
 func (s *SettingService) SetByKey(ctx context.Context, key, value string) error {
-	return s.repo.Set(ctx, key, value)
+	return s.Set(ctx, key, value)
 }
 
 // Delete deletes a setting by key.

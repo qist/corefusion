@@ -45,17 +45,33 @@ func (s *Service) Login(ctx context.Context, username, passwordStr string) (acce
 		return "", "", nil, ErrInvalidCredentials
 	}
 
-	accessToken, err = s.jwt.GenerateAccessTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
-	if err != nil {
-		return "", "", nil, err
-	}
-
-	refreshToken, err = s.jwt.GenerateRefreshTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
+	accessToken, refreshToken, err = s.IssueTokens(ctx, user)
 	if err != nil {
 		return "", "", nil, err
 	}
 
 	return accessToken, refreshToken, user, nil
+}
+
+// IssueTokens 为已通过身份验证的用户签发 access/refresh token 对。
+// 供 Passkey 等非口令登录途径复用 —— 保证所有登录入口走同一套 token 生成逻辑
+// （含 token_version，登出/踢下线时版本 +1 即可吊销全部入口签发的 token）。
+func (s *Service) IssueTokens(ctx context.Context, user *entity.User) (accessToken, refreshToken string, err error) {
+	if user == nil || user.Status != 1 {
+		return "", "", ErrUserDisabled
+	}
+
+	accessToken, err = s.jwt.GenerateAccessTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
+	if err != nil {
+		return "", "", err
+	}
+
+	refreshToken, err = s.jwt.GenerateRefreshTokenWithVersion(user.ID, user.Username, user.Role, user.TokenVersion)
+	if err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 // RefreshToken validates a refresh token and returns new tokens.

@@ -48,6 +48,16 @@
               <el-input-number v-model="panelForm.export_max_rows" :min="1000" :max="2000000" :step="1000" />
               <div class="hint">{{ t('settings.panel.exportMaxRowsHint') }}</div>
             </el-form-item>
+            <el-form-item :label="t('settings.panel.passkeyRPIDs')">
+              <el-input v-model="panelForm.passkey_rp_ids" placeholder="panel.example.com,localhost" />
+              <div class="hint">{{ t('settings.panel.passkeyRPIDsHint') }}</div>
+              <el-button size="small" style="margin-top:6px" :loading="rpIDAdding" @click="addCurrentDomain">
+                {{ t('settings.panel.passkeyAddCurrent') }}
+              </el-button>
+              <div style="font-size:11px;color:#999;margin-top:4px">
+                {{ t('settings.panel.passkeyAddCurrentHint') }}
+              </div>
+            </el-form-item>
             <el-form-item :label="t('settings.panel.mode')">
               <el-radio-group v-model="panelForm.mode">
                 <el-radio value="full">{{ t('settings.panel.modeFull') }}</el-radio>
@@ -812,7 +822,7 @@ const currencyForm = ref({ default_currency: 'CNY' })
 const currencySaving = ref(false)
 
 // Panel config
-const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', trusted_proxies: '', profile_web_page_url: '', mode: 'full', export_max_rows: 50000 })
+const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', trusted_proxies: '', profile_web_page_url: '', mode: 'full', export_max_rows: 50000, passkey_rp_ids: '' })
 const envForm = ref({ safe_paths: 'data' })
 const envSaving = ref(false)
 const panelPort = computed({ get: () => parseInt(panelForm.value.listen_port) || 8080, set: (v) => { panelForm.value.listen_port = String(v) } })
@@ -820,6 +830,7 @@ const subPort = computed({ get: () => parseInt(panelForm.value.subscription_port
 const agentGRPCPort = computed({ get: () => parseInt(panelForm.value.agent_grpc_port) || 18443, set: (v) => { panelForm.value.agent_grpc_port = String(v) } })
 const panelSaving = ref(false)
 const migrating = ref(false)
+const rpIDAdding = ref(false)
 const certificates = ref([])
 
 // Notification
@@ -940,6 +951,19 @@ async function handleMTLSUpload(file) {
 }
 
 async function savePanelConfig() { panelSaving.value = true; try { await client.put('/system/panel-config', panelForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { panelSaving.value = false } }
+
+// 「把当前访问域名加入 Passkey 白名单」：管理员确认一次，而非每次请求自动信任。
+// 走专用 API（幂等），随后刷新配置回显。
+async function addCurrentDomain() {
+  const host = window.location.hostname
+  if (!host) { ElMessage.error(t('common.failed')); return }
+  rpIDAdding.value = true
+  try {
+    const res = await import('../api/passkey').then(m => m.updateRPID('add', host))
+    panelForm.value.passkey_rp_ids = (res?.rpids || panelForm.value.passkey_rp_ids.split(',').filter(Boolean)).join(',')
+    ElMessage.success(t('settings.panel.passkeyAddCurrentDone'))
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { rpIDAdding.value = false }
+}
 
 async function handleMigrateData() {
   await ElMessageBox.confirm(t('settings.panel.migrateConfirm', { dir: envForm.value.safe_paths }), t('common.confirm'), { type: 'warning' })

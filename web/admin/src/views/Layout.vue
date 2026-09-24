@@ -25,6 +25,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="password">{{ t('auth.changePassword') }}</el-dropdown-item>
+              <el-dropdown-item command="passkey">{{ t('auth.passkeyManage') }}</el-dropdown-item>
               <el-dropdown-item command="logout" divided>{{ t('auth.logout') }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -49,16 +50,42 @@
       <el-button type="primary" :loading="pwdSaving" @click="handleChangePassword">{{ t('common.save') }}</el-button>
     </template>
   </el-dialog>
+
+  <!-- Passkey Management Dialog -->
+  <el-dialog v-model="passkeyVisible" :title="t('auth.passkeyManage')" width="600">
+    <div v-if="!passkeyPageAvailable" style="color:#e6a23c;font-size:13px;line-height:1.6;margin-bottom:12px">
+      {{ t('auth.passkeyUnavailableHint') }}
+    </div>
+    <el-table :data="passkeyList" style="width:100%" :empty-text="t('auth.passkeyEmpty')">
+      <el-table-column :label="t('common.name')" prop="name" />
+      <el-table-column :label="t('auth.passkeyRp')" prop="rpid" width="180" />
+      <el-table-column :label="t('auth.passkeyAddedAt')" width="180">
+        <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+      </el-table-column>
+      <el-table-column :label="t('common.action')" width="90">
+        <template #default="{ row }">
+          <el-button link type="danger" @click="handleDeletePasskey(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button :loading="passkeyRegistering" :disabled="!passkeyPageAvailable" @click="handleAddPasskey">
+        {{ t('auth.passkeyRegister') }}
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { setLocale, availableLocales } from '../locales'
 import { hasRole } from '../utils/permission'
+import { getPasskeyStatus, listPasskeys, deletePasskey, passkeyRegisterBegin, passkeyRegisterFinish } from '../api/passkey'
+import { createCredential, hasWebAuthn } from '../utils/webauthn'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -104,6 +131,61 @@ const pwdVisible = ref(false)
 const pwdSaving = ref(false)
 const pwdForm = ref({ old_password: '', new_password: '' })
 
+// Passkey 管理状态
+const passkeyVisible = ref(false)
+const passkeyList = ref([])
+const passkeyPageAvailable = ref(false)
+const passkeyRegistering = ref(false)
+
+function formatTime(v) {
+  if (!v) return '-'
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString()
+}
+
+async function openPasskeyDialog() {
+  passkeyVisible.value = true
+  passkeyPageAvailable.value = hasWebAuthn()
+  try {
+    const status = await getPasskeyStatus()
+    passkeyPageAvailable.value = passkeyPageAvailable.value && !!status.available
+  } catch (e) { passkeyPageAvailable.value = false }
+  await loadPasskeys()
+}
+
+async function loadPasskeys() {
+  try {
+    passkeyList.value = await listPasskeys()
+  } catch (e) { passkeyList.value = [] }
+}
+
+async function handleAddPasskey() {
+  if (!passkeyPageAvailable.value) return
+  passkeyRegistering.value = true
+  try {
+    const begin = await passkeyRegisterBegin('')
+    const response = await createCredential(begin.options)
+    const res = await passkeyRegisterFinish(begin.session_token, response, '')
+    passkeyList.value = res.credentials || []
+    ElMessage.success(t('auth.passkeyRegistered'))
+  } catch (e) {
+    // 用户取消认证器弹窗属正常交互，不弹错误
+    if (e?.name === 'NotAllowedError' || e?.code === 20) return
+    ElMessage.error(t('auth.passkeyRegisterFailed'))
+  } finally { passkeyRegistering.value = false }
+}
+
+async function handleDeletePasskey(row) {
+  try {
+    await ElMessageBox.confirm(t('auth.passkeyDeleteConfirm'), t('common.tip'), { type: 'warning' })
+  } catch (e) { return }
+  try {
+    await deletePasskey(row.id)
+    await loadPasskeys()
+    ElMessage.success(t('common.deleteSuccess'))
+  } catch (e) { ElMessage.error(t('common.failed')) }
+}
+
 function changeLocale(code) { setLocale(code) }
 function handleCommand(cmd) {
   if (cmd === 'logout') {
@@ -112,6 +194,8 @@ function handleCommand(cmd) {
   } else if (cmd === 'password') {
     pwdForm.value = { old_password: '', new_password: '' }
     pwdVisible.value = true
+  } else if (cmd === 'passkey') {
+    openPasskeyDialog()
   }
 }
 

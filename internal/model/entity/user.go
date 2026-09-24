@@ -11,10 +11,14 @@ type User struct {
 	Role         string `json:"role" gorm:"size:32;not null;default:viewer"`
 	// TokenVersion：登出/吊销时 +1，使此前签发的所有 token 立即失效（见 middleware.AuthRequired）。
 	// 默认 0，历史 token 缺该声明时也是 0 → 升级不踢人。
-	TokenVersion int       `json:"token_version" gorm:"not null;default:0"`
-	Status       int       `json:"status" gorm:"not null;default:1"`
-	CreatedAt    time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt    time.Time `json:"updated_at" gorm:"not null"`
+	TokenVersion int    `json:"token_version" gorm:"not null;default:0"`
+	Status       int    `json:"status" gorm:"not null;default:1"`
+	// WebAuthnHandle：该用户的 WebAuthn User Handle（base64url，随机 32 字节）。
+	// 对同一用户**全局稳定**（所有 RP ID 共用），用于 Passkey discoverable 登录时
+	// 由认证器返回的 userHandle 反查用户。首次注册 Passkey 时懒生成。
+	WebAuthnHandle string    `json:"webauthn_handle,omitempty" gorm:"size:128;index"`
+	CreatedAt      time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (User) TableName() string { return "users" }

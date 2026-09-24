@@ -93,3 +93,22 @@ func (r *UserRepository) BumpTokenVersion(ctx context.Context, userID int64) err
 		Where("id = ?", userID).
 		UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
 }
+
+// SetWebAuthnHandle 写入（或懒生成后写入）用户的 WebAuthn User Handle。
+// 用 UpdateColumn 而非 Save：避免把内存里的旧 token_version 写回覆盖并发 bump 的版本。
+// ⚠ 列名是 GORM 驼峰命名策略生成的 web_authn_handle（WebAuthn → web_authn）。
+func (r *UserRepository) SetWebAuthnHandle(ctx context.Context, userID int64, handle string) error {
+	return r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", userID).
+		UpdateColumn("web_authn_handle", handle).Error
+}
+
+// GetUserByWebAuthnHandle 按 WebAuthn User Handle 反查用户（Passkey discoverable 登录用）。
+func (r *UserRepository) GetUserByWebAuthnHandle(ctx context.Context, handle string) (*entity.User, error) {
+	var user entity.User
+	err := r.db.WithContext(ctx).Where("web_authn_handle = ?", handle).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}

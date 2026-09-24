@@ -15,14 +15,19 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
-    async login(username, password) {
-      const res = await client.post('/auth/login', { username, password })
+    // setTokens 保存登录凭证（密码 / Passkey / 其它入口通用）。
+    setTokens(res) {
       this.accessToken = res.access_token
       this.refreshToken = res.refresh_token
       this.user = res.user
       localStorage.setItem('access_token', res.access_token)
       localStorage.setItem('refresh_token', res.refresh_token)
       return res
+    },
+
+    async login(username, password) {
+      const res = await client.post('/auth/login', { username, password })
+      return this.setTokens(res)
     },
 
     async fetchMe() {

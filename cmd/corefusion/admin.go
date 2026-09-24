@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"corefusion/internal/auth/password"
@@ -44,17 +45,27 @@ Usage:
   corefusion admin list
       列出账号（角色 / 状态 / 是否已设置口令 / 令牌版本），用于确认用户名。
 
+  corefusion admin passkey list [-u <用户名>]
+      列出指定账号已注册的 Passkey（通行密钥）凭证。
+
+  corefusion admin passkey revoke -u <用户名> [-id <凭证ID>|--all]
+      吊销指定账号的一把（-id）或全部（--all）Passkey —— 找回通道：
+      怀疑设备丢失 / 凭证泄漏时，离线即可把该死设备踢出登录名单。
+
 Examples:
   corefusion admin reset-password
   corefusion admin reset-password -u admin
   corefusion admin reset-password -u ops -p 'my-strong-passphrase'
+  corefusion admin passkey list -u admin
+  corefusion admin passkey revoke -u admin --all
 
 说明：面板运行中也可以执行，改动立即生效（无需重启）。
+'passkey list/revoke' 需要面板至少成功启动过一次（自动迁移建表）。
 `)
 }
 
-// openAdminRepos 打开数据库并返回用户仓储与清理函数（不启动服务、不做迁移）。
-func openAdminRepos() (*repository.UserRepository, func()) {
+// openAdminRepos 打开数据库并返回用户/凭证仓储与清理函数（不启动服务、不做迁移）。
+func openAdminRepos() (*repository.UserRepository, *repository.WebAuthnCredentialRepository, func()) {
 	env := loadEnv()
 	dataDir := env["SAFE_PATHS"]
 	if dataDir == "" {
@@ -80,7 +91,7 @@ func openAdminRepos() (*repository.UserRepository, func()) {
 		fmt.Fprintf(os.Stderr, "✗ 无法打开数据库：%v\n", err)
 		os.Exit(1)
 	}
-	return repository.NewUserRepository(db.DB), func() { db.Close() }
+	return repository.NewUserRepository(db.DB), repository.NewWebAuthnCredentialRepository(db.DB), func() { db.Close() }
 }
 
 // runAdmin 是 `corefusion admin <subcommand>` 的入口。
@@ -92,6 +103,8 @@ func runAdmin(args []string) {
 	switch args[0] {
 	case "reset-password":
 		adminResetPassword(args[1:])
+	case "passkey":
+		adminPasskey(args[1:])
 	case "list", "ls":
 		adminList(args[1:])
 	case "help", "--help", "-h":
@@ -114,7 +127,7 @@ func adminResetPassword(args []string) {
 	fs.StringVar(&newPwd, "password", "", "新口令（等价于 -p）")
 	_ = fs.Parse(args) // ExitOnError：解析失败会自行退出
 
-	repo, cleanup := openAdminRepos()
+	repo, _, cleanup := openAdminRepos()
 	defer cleanup()
 	ctx := context.Background()
 
@@ -177,7 +190,7 @@ func adminResetPassword(args []string) {
 
 // adminList 列出账号，便于确认用户名（改口令失败时最常用）。
 func adminList(args []string) {
-	repo, cleanup := openAdminRepos()
+	repo, _, cleanup := openAdminRepos()
 	defer cleanup()
 
 	users, total, err := repo.List(context.Background(), 100, 0)
@@ -198,5 +211,96 @@ func adminList(args []string) {
 			status += "（停用）"
 		}
 		fmt.Printf("  %-5d %-24s %-14s %-6s %-12s %d\n", u.ID, u.Username, u.Role, status, pwdState, u.TokenVersion)
+	}
+}
+
+// adminPasskey 是 `corefusion admin passkey` 子命令（Passkey 离线管理 / 找回通道）。
+//
+// 与 Passkey 功能配套：设备丢失或凭证泄漏时，管理员无需登录面板即可把该死凭证吊销。
+// 只读/写数据库，不启动 HTTP 服务（与 reset-password 相同的恢复通道约束）。
+func adminPasskey(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "✗ 缺少子命令：list 或 revoke\n")
+		os.Exit(2)
+	}
+
+	fs := flag.NewFlagSet("admin passkey", flag.ExitOnError)
+	username := "admin"
+	fs.StringVar(&username, "u", "admin", "目标用户名")
+	fs.StringVar(&username, "username", "admin", "目标用户名（等价于 -u）")
+	credentialID := ""
+	fs.StringVar(&credentialID, "id", "", "要吊销的凭证 ID（revoke 用）；省略则需 --all")
+	all := fs.Bool("all", false, "吊销该用户全部 Passkey（revoke 用）")
+	_ = fs.Parse(args) // ExitOnError：解析失败会自行退出
+
+	repo, credRepo, cleanup := openAdminRepos()
+	defer cleanup()
+	ctx := context.Background()
+
+	user, err := repo.GetByUsername(ctx, strings.TrimSpace(username))
+	if err != nil || user == nil {
+		fmt.Fprintf(os.Stderr, "✗ 找不到用户 %q。\n", username)
+		os.Exit(1)
+	}
+
+	sub := strings.TrimSpace(args[0])
+	switch sub {
+	case "list":
+		creds, err := credRepo.ListByUser(ctx, user.ID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "✗ 读取 Passkey 失败：%v\n", err)
+			fmt.Fprintln(os.Stderr, "  若表不存在，说明该版本面板尚未成功启动过自动迁移，请先启动一次面板。")
+			os.Exit(1)
+		}
+		fmt.Printf("账号 %q（id=%d）共 %d 把 Passkey：\n\n", user.Username, user.ID, len(creds))
+		if len(creds) == 0 {
+			fmt.Println("  （没有注册任何 Passkey）")
+			return
+		}
+		fmt.Printf("  %-8s %-24s %-22s %-16s %s\n", "ID", "名称", "绑定域名", "添加时间", "凭证ID(前16位)")
+		for i := range creds {
+			c := creds[i]
+			short := c.CredentialID
+			if len(short) > 16 {
+				short = short[:16]
+			}
+			fmt.Printf("  %-8d %-24s %-22s %-16s %s\n", c.ID, c.Name, c.RPID, c.CreatedAt.Format("2006-01-02 15:04"), short)
+		}
+	case "revoke":
+		if !*all && credentialID == "" {
+			fmt.Fprintln(os.Stderr, "✗ revoke 需要 -id <凭证ID> 或 --all 二选一。")
+			os.Exit(2)
+		}
+		if *all {
+			creds, err := credRepo.ListByUser(ctx, user.ID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ 读取 Passkey 失败：%v\n", err)
+				os.Exit(1)
+			}
+			for i := range creds {
+				if err := credRepo.Delete(ctx, creds[i].ID, user.ID); err != nil {
+					fmt.Fprintf(os.Stderr, "⚠ 删除凭证 id=%d 失败：%v\n", creds[i].ID, err)
+				}
+			}
+			fmt.Printf("✓ 已吊销账号 %q 的全部 %d 把 Passkey。\n", user.Username, len(creds))
+			return
+		}
+		id, perr := strconv.ParseInt(credentialID, 10, 64)
+		if perr != nil {
+			fmt.Fprintf(os.Stderr, "✗ 凭证 ID 必须是数字：%q\n", credentialID)
+			os.Exit(2)
+		}
+		if _, gerr := credRepo.GetByID(ctx, id, user.ID); gerr != nil {
+			fmt.Fprintf(os.Stderr, "✗ 找不到该用户的凭证 id=%d。\n", id)
+			os.Exit(1)
+		}
+		if err := credRepo.Delete(ctx, id, user.ID); err != nil {
+			fmt.Fprintf(os.Stderr, "✗ 吊销失败：%v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ 已吊销账号 %q 的 Passkey id=%d，该设备立即无法再用它登录。\n", user.Username, id)
+	default:
+		fmt.Fprintf(os.Stderr, "✗ 未知子命令：%s（支持 list / revoke）\n", sub)
+		os.Exit(2)
 	}
 }

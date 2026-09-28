@@ -168,6 +168,31 @@
           </el-form>
         </el-card>
 
+        <!-- Monitor Settings（监控类通知的频率/阈值，实时生效） -->
+        <el-card style="margin-bottom:20px">
+          <template #header><span>{{ t('settings.monitor.title') }}</span></template>
+          <el-form label-width="160px" style="max-width:600px">
+            <el-form-item :label="t('settings.monitor.nodeInterval')">
+              <el-input-number v-model="monitorForm.node_interval_seconds" :min="30" :max="3600" />
+              <span style="margin-left:8px;font-size:12px;color:#999">{{ t('settings.monitor.seconds') }}</span>
+              <div class="hint">{{ t('settings.monitor.nodeIntervalHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('settings.monitor.offlineTimeout')">
+              <el-input-number v-model="monitorForm.node_offline_timeout_seconds" :min="30" :max="1800" />
+              <span style="margin-left:8px;font-size:12px;color:#999">{{ t('settings.monitor.seconds') }}</span>
+              <div class="hint">{{ t('settings.monitor.offlineTimeoutHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('settings.monitor.quotaThreshold')">
+              <el-input-number v-model="monitorForm.traffic_quota_threshold_percent" :min="0" :max="100" />
+              <span style="margin-left:8px;font-size:12px;color:#999">%</span>
+              <div class="hint">{{ t('settings.monitor.quotaThresholdHint') }}</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="monitorSaving" @click="saveMonitorConfig">{{ t('common.save') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
         <el-card>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <span style="font-weight:500">{{ t('settings.templates.title') }}</span>
@@ -193,19 +218,101 @@
             <el-table-column label="Enabled" width="80">
               <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled ? 'ON' : 'OFF' }}</el-tag></template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="180">
+            <el-table-column :label="t('common.actions')" width="220">
               <template #default="{row}">
                 <el-button size="small" @click="showEditTemplate(row)">{{ t('common.edit') }}</el-button>
                 <el-button size="small" type="success" plain @click="handleSendTemplate(row)" :title="t('settings.templates.sendHint')">{{ t('settings.templates.send') }}</el-button>
+                <el-button v-if="row.audience === 'subscriber'" size="small" type="warning" plain @click="showBroadcastDialog(row)" :title="t('settings.templates.broadcastHint')">{{ t('settings.templates.broadcast') }}</el-button>
                 <el-button size="small" type="danger" @click="handleDeleteTemplate(row)">{{ t('common.delete') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
         </el-card>
 
-        <!-- Template Variables Doc Dialog -->
-        <el-dialog v-model="varsDocVisible" :title="t('settings.templates.varsDoc')" width="720">
-          <div class="template-vars-doc" v-html="varsDocHtml" />
+        <!-- Template Variables Doc Dialog（纯 HTML + i18n，避免 markdown 渲染依赖） -->
+        <el-dialog v-model="varsDocVisible" :title="t('settings.templates.varsDoc')" width="760">
+          <div class="template-vars-doc">
+            <h3>{{ t('settings.templates.doc.genericTitle') }}</h3>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{time}</code></td><td>{{ t('settings.templates.doc.genericTime') }}</td><td>2026-09-28 14:30:00</td></tr>
+                <tr><td><code>{user}</code></td><td>{{ t('settings.templates.doc.genericUser') }}</td><td>user@example.com</td></tr>
+                <tr><td><code>{message}</code></td><td>{{ t('settings.templates.doc.genericMessage') }}</td><td>—</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.expireTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.expireDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{user}</code></td><td>{{ t('settings.templates.doc.expireUser') }}</td><td>user@example.com</td></tr>
+                <tr><td><code>{expire_date}</code></td><td>{{ t('settings.templates.doc.expireDate') }}</td><td>2026-10-05 09:00</td></tr>
+                <tr><td><code>{days}</code></td><td>{{ t('settings.templates.doc.expireDays') }}</td><td>7</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.balanceTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.balanceDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{user}</code></td><td>{{ t('settings.templates.doc.balanceUser') }}</td><td>user@example.com</td></tr>
+                <tr><td><code>{balance}</code></td><td>{{ t('settings.templates.doc.balanceValue') }}</td><td>0.85</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.opsTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.opsDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{node}</code></td><td>{{ t('settings.templates.doc.opsNode') }}</td><td>node-01</td></tr>
+                <tr><td><code>{backup_file}</code></td><td>{{ t('settings.templates.doc.opsBackupFile') }}</td><td>corefusion-20260101-0900.tar.gz</td></tr>
+                <tr><td><code>{size}</code></td><td>{{ t('settings.templates.doc.opsSize') }}</td><td>128MB</td></tr>
+                <tr><td><code>{domain}</code></td><td>{{ t('settings.templates.doc.opsDomain') }}</td><td>example.com</td></tr>
+                <tr><td><code>{expire_date}</code> / <code>{days}</code></td><td>{{ t('settings.templates.doc.opsExpire') }}</td><td>2026-10-12 / 14</td></tr>
+                <tr><td><code>{count}</code></td><td>{{ t('settings.templates.doc.opsCount') }}</td><td>3</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.quotaTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.quotaDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{node}</code></td><td>{{ t('settings.templates.doc.quotaNode') }}</td><td>node-01</td></tr>
+                <tr><td><code>{used}</code> / <code>{quota}</code></td><td>{{ t('settings.templates.doc.quotaUsed') }}</td><td>80.00 / 100.00</td></tr>
+                <tr><td><code>{percent}</code></td><td>{{ t('settings.templates.doc.quotaPercent') }}</td><td>80</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.rulesTitle') }}</h3>
+            <ul>
+              <li>{{ t('settings.templates.doc.ruleExpire') }}</li>
+              <li>{{ t('settings.templates.doc.ruleBalance') }}</li>
+              <li>{{ t('settings.templates.doc.ruleNodeMonitor') }}</li>
+              <li>{{ t('settings.templates.doc.ruleQuota') }}</li>
+              <li>{{ t('settings.templates.doc.ruleDedup') }}</li>
+              <li>{{ t('settings.templates.doc.ruleSilent') }}</li>
+            </ul>
+          </div>
+        </el-dialog>
+
+        <!-- Broadcast Dialog（订阅者模板群发：营销/召回，可选范围含禁用账号） -->
+        <el-dialog v-model="broadcastDialogVisible" :title="t('settings.templates.broadcast')" width="480">
+          <p style="margin:0 0 12px;font-size:13px">{{ t('settings.templates.broadcastHint') }}</p>
+          <el-radio-group v-model="broadcastScope">
+            <el-radio value="active">{{ t('settings.templates.broadcastScopeActive') }}</el-radio>
+            <el-radio value="all">{{ t('settings.templates.broadcastScopeAll') }}</el-radio>
+            <el-radio value="suspended">{{ t('settings.templates.broadcastScopeSuspended') }}</el-radio>
+          </el-radio-group>
+          <div style="font-size:11px;color:#999;margin-top:8px">{{ t('settings.templates.broadcastScopeHint') }}</div>
+          <template #footer>
+            <el-button @click="broadcastDialogVisible=false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" :loading="broadcasting" @click="handleBroadcastConfirm">{{ t('settings.templates.broadcast') }}</el-button>
+          </template>
         </el-dialog>
 
         <div style="margin-top:20px;text-align:right">
@@ -775,7 +882,7 @@
       <el-form :model="tmplForm" label-width="100px">
         <el-form-item v-if="!editingTmpl" :label="t('settings.templates.preset')">
           <el-select v-model="selectedPreset" :placeholder="t('settings.templates.presetPlaceholder')" style="width:100%" @change="applyPreset">
-            <el-option v-for="p in templatePresets" :key="p.key" :label="`${p.name}（${p.type === 'telegram' ? 'Telegram' : 'Email'}）`" :value="p.key" />
+            <el-option v-for="p in templatePresets" :key="p.key" :label="`${t('settings.templates.presets.' + p.key + '.label')}（${p.type === 'telegram' ? 'Telegram' : 'Email'}）`" :value="p.key" />
           </el-select>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.templates.presetHint') }}</div>
         </el-form-item>
@@ -815,7 +922,7 @@
         <el-form-item label="Content">
           <el-input v-model="tmplForm.content" type="textarea" :rows="6" :placeholder="t('settings.supportVars')" />
         </el-form-item>
-        <el-form-item label="Cron">
+        <el-form-item v-if="!isMonitorTemplate" label="Cron">
           <el-select v-model="tmplForm.cron" filterable allow-create style="width:100%">
             <el-option :label="t('settings.cron.manual')" value="" />
             <el-option :label="t('settings.cron.hourly')" value="0 * * * *" />
@@ -823,6 +930,9 @@
             <el-option :label="t('settings.cron.daily21')" value="0 21 * * *" />
             <el-option :label="t('settings.cron.monday9')" value="0 9 * * 1" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-else :label="t('settings.cron.label')">
+          <div class="hint" style="margin-top:6px">{{ t('settings.templates.monitorCronHint') }}</div>
         </el-form-item>
         <el-form-item label="Enabled"><el-switch v-model="tmplForm.enabled" /></el-form-item>
       </el-form>
@@ -861,8 +971,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import client from '../api/client'
 import { CURRENCIES as currencyList } from '../utils/currency'
 import { useQueryState } from '../composables/useQueryState'
@@ -1082,64 +1190,40 @@ function onAudienceChange(a) {
 
 // ---- 预设通知模板库 ----
 // {key} 占位符与后端 notifier 渲染逻辑一致；业务事件通过 NotifyTemplate(name, vars) /
-// NotifyClientEvent(eventKey, ...) 发送，因此 name/event_key 是业务接入用的查找键，请勿随意改名。
+// NotifyClientEvent(eventKey, ...) 发送。⚠ 模板 name 是后端查找键（node_monitor.go /
+// traffic_quota.go 固定引用中文名），applyPreset 时始终写入业务键，不做 i18n 改写；
+// i18n 只负责下拉展示名（presets.<key>.label）与预填的 subject/content 文案。
 const templatePresets = [
-  {
-    key: 'node_down', name: '节点离线告警', type: 'telegram', audience: 'admin', cron: '',
-    content: '🚨 节点离线告警\n\n节点：{node}\n时间：{time}\n\n节点已失去连接，请尽快检查！'
-  },
-  {
-    key: 'node_recovered', name: '节点恢复通知', type: 'telegram', audience: 'admin', cron: '',
-    content: '✅ 节点已恢复\n\n节点：{node}\n时间：{time}\n\n节点已重新上线，服务恢复正常。'
-  },
-  {
-    key: 'backup_daily', name: '每日备份报告', type: 'telegram', audience: 'admin', cron: '0 9 * * *',
-    content: '📦 每日备份报告\n\n时间：{time}\n备份文件：{backup_file}\n大小：{size}\n状态：备份成功 ✅'
-  },
-  {
-    key: 'backup_failed', name: '备份失败告警', type: 'telegram', audience: 'admin', cron: '',
-    content: '❌ 备份失败告警\n\n时间：{time}\n备份文件：{backup_file}\n\n备份任务执行失败，请检查备份配置与存储空间！'
-  },
-  {
-    key: 'cert_expire', name: '证书到期提醒（管理员）', type: 'email', audience: 'admin', cron: '0 9 * * *',
-    subject: '证书到期提醒：{domain}',
-    content: '证书到期提醒\n\n域名：{domain}\n到期日期：{expire_date}\n剩余天数：{days} 天\n\n请及时续期证书，避免服务中断。'
-  },
-  {
-    key: 'sys_announce', name: '系统维护公告', type: 'telegram', audience: 'admin', cron: '',
-    content: '📢 系统维护公告\n\n{message}\n\n时间：{time}\n\n维护期间服务可能出现短暂中断，感谢您的理解与支持。'
-  },
-  {
-    key: 'user_register', name: '新用户注册通知', type: 'telegram', audience: 'admin', cron: '',
-    content: '👤 新用户注册\n\n用户：{user}\n时间：{time}\n\n有新用户注册加入！'
-  },
-  {
-    key: 'node_quota', name: '节点流量配额告警', type: 'telegram', audience: 'admin', cron: '',
-    content: '📊 节点流量配额告警\n\n节点：{node}\n已用：{used} GB / 配额：{quota} GB（{percent}%）\n时间：{time}\n\n月流量已达到告警阈值，请关注节点用量！'
-  },
-  // ---- 订阅者（发给客户本人邮箱）----
-  {
-    key: 'sub_expire', name: '订阅到期提醒（发给客户）', type: 'email', audience: 'subscriber', eventKey: 'subscription_expire', cron: '',
-    subject: '您的订阅即将到期',
-    content: '尊敬的用户：\n\n您的订阅将于 {expire_date} 到期（剩余 {days} 天）。\n\n为避免服务中断，请及时到个人中心续费。\n\n—— CoreFusion'
-  },
-  {
-    key: 'balance_low_sub', name: '余额不足提醒（发给客户）', type: 'email', audience: 'subscriber', eventKey: 'balance_low', cron: '',
-    subject: '账户余额不足提醒',
-    content: '尊敬的用户：\n\n您的账户余额为 {balance} 元，已低于提醒阈值。\n\n余额不足可能影响服务使用，请及时充值。\n\n—— CoreFusion'
-  },
+  { key: 'node_down', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'node_recovered', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'backup_daily', type: 'telegram', audience: 'admin', cron: '0 9 * * *' },
+  { key: 'backup_failed', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'cert_expire', type: 'email', audience: 'admin', cron: '0 9 * * *' },
+  { key: 'sys_announce', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'user_register', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'node_quota', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'sub_expire', type: 'email', audience: 'subscriber', eventKey: 'subscription_expire', cron: '' },
+  { key: 'balance_low_sub', type: 'email', audience: 'subscriber', eventKey: 'balance_low', cron: '' },
 ]
 const selectedPreset = ref('')
+
+// 监控类模板：由节点健康监控/流量配额检查自动触发，Cron 不适用（频率在「监控设置」里配置）
+const monitorTemplateNames = ['节点离线告警', '节点恢复通知', '节点流量配额告警']
+const isMonitorTemplate = computed(() =>
+  (selectedPreset.value && ['node_down', 'node_recovered', 'node_quota'].includes(selectedPreset.value)) ||
+  monitorTemplateNames.includes(tmplForm.value.name)
+)
 
 function applyPreset(key) {
   const p = templatePresets.find(x => x.key === key)
   if (!p) return
-  tmplForm.value.name = p.name
+  const base = `settings.templates.presets.${p.key}`
+  tmplForm.value.name = t(`${base}.name`)   // 业务查找键：各语言下保持一致（见 locales 内固定中文名）
   tmplForm.value.type = p.type
   tmplForm.value.audience = p.audience
   tmplForm.value.event_key = p.eventKey || ''
-  tmplForm.value.subject = p.subject || ''
-  tmplForm.value.content = p.content
+  tmplForm.value.subject = t(`${base}.subject`)
+  tmplForm.value.content = t(`${base}.content`)
   tmplForm.value.cron = p.cron || ''
   tmplForm.value.enabled = false
   if (p.type === 'telegram') tmplRecipients.value = []
@@ -1153,82 +1237,63 @@ async function handleSendTemplate(row) {
   } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) }
 }
 
-// ---- 模板变量说明（运维点击弹窗查看；同文档在仓库 docs/notification-templates.md）----
-const templateVarsDoc = `## 模板变量说明
+// 订阅者模板群发（营销/召回类）：选择收件人范围后后台异步发送
+const broadcastDialogVisible = ref(false)
+const broadcastTemplate = ref(null)
+const broadcastScope = ref('active')
+const broadcasting = ref(false)
 
-模板使用 **{变量名}** 占位符，发送时自动替换为实际值。
+function showBroadcastDialog(row) {
+  broadcastTemplate.value = row
+  broadcastScope.value = 'active'
+  broadcastDialogVisible.value = true
+}
 
-### 通用变量（所有模板可用）
+async function handleBroadcastConfirm() {
+  if (!broadcastTemplate.value) return
+  broadcasting.value = true
+  try {
+    const d = await client.post(`/system/notification-templates/${broadcastTemplate.value.id}/broadcast`, { scope: broadcastScope.value })
+    broadcastDialogVisible.value = false
+    ElMessage.success(t('settings.templates.broadcastStarted', { count: d?.recipients ?? 0 }))
+  } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) } finally { broadcasting.value = false }
+}
 
-| 变量 | 说明 | 示例值 |
-|---|---|---|
-| {time} | 发送时间 | 2026-09-28 14:30:00 |
-| {user} | 客户邮箱（订阅者模板） | user@example.com |
-| {message} | 通知正文内容 | —— |
-
-### 订阅到期提醒（自动触发）
-
-发给 7 天内到期的有效订阅客户：
-
-| 变量 | 说明 | 示例值 |
-|---|---|---|
-| {user} | 客户邮箱 | user@example.com |
-| {expire_date} | 订阅到期时间 | 2026-10-05 09:00 |
-| {days} | 剩余天数 | 7 |
-
-### 余额不足提醒（自动触发）
-
-发给余额低于阈值的客户：
-
-| 变量 | 说明 | 示例值 |
-|---|---|---|
-| {user} | 客户邮箱 | user@example.com |
-| {balance} | 当前余额（元） | 0.85 |
-
-### 运维模板测试变量
-
-管理员模板点「发送」测试时填充：
-
-| 变量 | 说明 | 示例值 |
-|---|---|---|
-| {node} | 节点名称 | node-01 |
-| {backup_file} | 备份文件名 | corefusion-20260101-0900.tar.gz |
-| {size} | 文件大小 | 128MB |
-| {domain} | 域名 | example.com |
-| {expire_date} / {days} | 到期日期 / 剩余天数 | 2026-10-12 / 14 |
-| {count} | 数量 | 3 |
-
-## 自动触发规则
-
-- 面板启动 30 秒后首次扫描，之后**每天 09:05** 执行
-- **订阅到期**：7 天内到期的有效订阅
-- **余额不足**：余额 ≤ 阈值（设置键 \`notify.balance_threshold\`，单位**分**，默认 100 = 1.00 元）
-- **防重复**：同一客户、同一事件每天最多发送一条
-
-## 节点健康监控（有问题才发，正常静默）
-
-- **频率**：每轮间隔由设置键 \`monitor.node_interval_seconds\` 控制（秒，默认 60，最小 30），改后下一轮生效
-- **离线判定**：Agent 状态非 online，或心跳超时（\`monitor.node_offline_timeout_seconds\`，默认 120 秒）
-- **只报变化**：节点状态从在线 → 离线时发「节点离线告警」；离线 → 在线时发「节点恢复通知」；**状态未变化的轮次全部静默跳过**，不会重复轰炸
-- **静默开关**：把对应模板停用（Enabled=OFF）即只监控不发消息
-- 可用变量：{node}（节点名）、{time}（时间）
-
-## 节点月流量配额告警（自动）
-
-- **触发**：节点月流量达到配额阈值时发「节点流量配额告警」；超过 100% 触发挂起时再发一条超限告警
-- **阈值**：设置键 \`monitor.traffic_quota_threshold_percent\`（百分比，默认 80，设 0 关闭）
-- **去重**：每账期每节点最多一条（账期按节点的流量重置日计算）
-- 可用变量：{node}（节点名）、{used}（已用 GB）、{quota}（配额 GB）、{percent}（百分比）、{time}
-
-## 受众说明
-
-- **面板使用者**：发到管理员 Telegram / 邮箱（运维通知）
-- **订阅者（客户）**：发到客户本人邮箱（仅支持邮件，邮件渠道需先配置并启用）
-`
-
+// ---- 模板变量说明：纯 HTML + i18n 弹窗（见 template 段 doc.* 文案；仓库同文档 docs/notification-templates.md）----
 const varsDocVisible = ref(false)
-const varsDocHtml = computed(() => DOMPurify.sanitize(marked.parse(templateVarsDoc)))
 function showVarsDoc() { varsDocVisible.value = true }
+
+// ---- 监控设置（节点监控频率/心跳超时/流量配额阈值；保存即时生效，无需重启）----
+const monitorForm = ref({ node_interval_seconds: 60, node_offline_timeout_seconds: 120, traffic_quota_threshold_percent: 80 })
+const monitorSaving = ref(false)
+
+async function fetchMonitorConfig() {
+  try {
+    const d = await client.get('/system/settings', { params: { prefix: 'monitor' }, suppressErrorMessage: true })
+    if (d?.items) {
+      for (const item of d.items) {
+        const n = parseInt(item.value)
+        if (item.key === 'monitor.node_interval_seconds' && n >= 30) monitorForm.value.node_interval_seconds = n
+        if (item.key === 'monitor.node_offline_timeout_seconds' && n >= 30) monitorForm.value.node_offline_timeout_seconds = n
+        if (item.key === 'monitor.traffic_quota_threshold_percent' && n >= 0) monitorForm.value.traffic_quota_threshold_percent = n
+      }
+    }
+  } catch (e) { /* 首次无配置用默认值 */ }
+}
+
+async function saveMonitorConfig() {
+  monitorSaving.value = true
+  try {
+    await client.put('/system/settings/batch', {
+      items: [
+        { key: 'monitor.node_interval_seconds', value: String(monitorForm.value.node_interval_seconds) },
+        { key: 'monitor.node_offline_timeout_seconds', value: String(monitorForm.value.node_offline_timeout_seconds) },
+        { key: 'monitor.traffic_quota_threshold_percent', value: String(monitorForm.value.traffic_quota_threshold_percent) },
+      ]
+    })
+    ElMessage.success(t('settings.monitor.saved'))
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { monitorSaving.value = false }
+}
 
 async function handleSaveTemplate() {
   try {
@@ -1683,7 +1748,7 @@ function handleSaveDomain() {
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
-onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
+onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
 </script>
 
 <style scoped>

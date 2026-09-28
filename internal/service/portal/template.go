@@ -67,6 +67,12 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </button>
             </div>
           </div>
+          <!-- 合规文档链接 ✓（点击打开条款内容/外链 ✓；门户设置里配置后显示 ✓） -->
+          <div class="auth-legal" v-if="hasLegalLinks">
+            <a v-if="privacyUrl || privacyContent" href="javascript:void(0)" @click="openLegal('privacy')">{{ t('legal.privacy') }}</a>
+            <span v-if="(privacyUrl || privacyContent) && (termsUrl || termsContent)" class="auth-legal-sep">·</span>
+            <a v-if="termsUrl || termsContent" href="javascript:void(0)" @click="openLegal('terms')">{{ t('legal.terms') }}</a>
+          </div>
         </div>
       </div>
     </div>
@@ -211,6 +217,11 @@ const defaultPortalHTML = `<!DOCTYPE html>
         </div>
       </template>
     </el-dialog>
+
+<!-- 合规文档弹窗（隐私政策 / 服务条款 ✓：登录卡片链接点击打开 ✓） -->
+<el-dialog v-model="legalDialogVisible" :title="legalDialogTitle" width="560px" align-center append-to-body>
+  <div class="md-render" style="max-height:60vh;overflow-y:auto" v-html="legalDialogHtml"></div>
+</el-dialog>
 
 <!-- Node QR Code Dialog -->
 <el-dialog v-model="showNodeQRDialog" :title="t('node.qr_code')" width="440px" align-center>
@@ -1054,6 +1065,12 @@ body {
 .oauth-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--glass-bg); cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text-primary); transition: all 0.2s; }
 .oauth-btn:hover { border-color: var(--accent); background: var(--accent-light); }
 .oauth-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+/* 合规文档链接（Google 验证要求登录页可见 ✓） */
+.auth-legal { margin-top: 14px; font-size: 12px; color: var(--text-muted); }
+.auth-legal a { color: var(--text-secondary); text-decoration: none; }
+.auth-legal a:hover { color: var(--accent); text-decoration: underline; }
+.auth-legal-sep { margin: 0 8px; }
 
 .btn-block {
   width: 100%;
@@ -3262,6 +3279,12 @@ var announcementPopupVisible = ref(false)
 var activeAnnouncement = ref(null)
     var logoUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.logo_url) || '')
     var siteName = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.site_name) || 'CoreFusion')
+    // 合规文档链接 ✓（Google OAuth 验证要求登录页可见隐私政策/服务条款链接 ✓）
+    var privacyUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.privacy_policy_url) || '')
+    var termsUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.terms_of_service_url) || '')
+    // 合规文档内容 ✓（点击链接弹窗展示 markdown ✓；URL 优先 ✓）
+    var privacyContent = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.privacy_policy_content) || '')
+    var termsContent = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.terms_of_service_content) || '')
     var isDark = ref(localStorage.getItem('portal_theme') === 'dark' || (!localStorage.getItem('portal_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
 
     // Latest effective portal config — refreshed on every hot fetch from the DB.
@@ -3473,6 +3496,14 @@ var showPromoInput = ref(false) // promo code fold
         oauthProviders: oauthProviders,
         isOAuthEnabled: isOAuthEnabled,
         oauthLogin: oauthLogin,
+
+        // 合规文档链接 ✓（Google 验证要求登录页展示隐私政策/服务条款链接 ✓）
+        privacyUrl: privacyUrl,
+        termsUrl: termsUrl,
+        privacyContent: privacyContent,
+        termsContent: termsContent,
+        openLegal: openLegal,
+        hasLegalLinks: hasLegalLinks,
 
         // Config data
         data: region.data || {},
@@ -3880,6 +3911,25 @@ var showPromoInput = ref(false) // promo code fold
     var oauthLogin = function(provider) {
       window.location.href = '/api/v1/client-auth/oauth/' + provider
     }
+
+    // ── 合规文档弹窗 ✓（登录卡片"隐私政策/服务条款"点击打开 ✓，与常规站点一致 ✓）──
+    // 展示优先级：配了 URL → 新标签打开外链 ✓；配了内容 → 弹窗渲染 markdown ✓。
+    var legalDialogVisible = ref(false)
+    var legalDialogTitle = ref('')
+    var legalDialogHtml = ref('')
+    var openLegal = function(type) {
+      var url = type === 'privacy' ? privacyUrl.value : termsUrl.value
+      if (url) { window.open(url, '_blank', 'noopener'); return }
+      var content = type === 'privacy' ? privacyContent.value : termsContent.value
+      if (!content) return
+      legalDialogTitle.value = t(type === 'privacy' ? 'legal.privacy' : 'legal.terms')
+      legalDialogHtml.value = renderMd(content)
+      legalDialogVisible.value = true
+    }
+    // 登录卡片链接是否显示 ✓：URL 或内容任一配置 ✓
+    var hasLegalLinks = computed(function() {
+      return !!(privacyUrl.value || privacyContent.value || termsUrl.value || termsContent.value)
+    })
     // 兜底：回调以 /p?access_token=... 方式回来时（无 opener 的整页跳转 ✓）直接收 token ✓
     var handleOAuthCallback = function() {
       var params = new URLSearchParams(window.location.search)
@@ -4816,6 +4866,10 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
         try { document.title = cfg.site_name } catch(e) {}
       }
       if (cfg.logo_url !== undefined) logoUrl.value = cfg.logo_url
+      if (cfg.privacy_policy_url !== undefined) privacyUrl.value = cfg.privacy_policy_url
+      if (cfg.terms_of_service_url !== undefined) termsUrl.value = cfg.terms_of_service_url
+      if (cfg.privacy_policy_content !== undefined) privacyContent.value = cfg.privacy_policy_content
+      if (cfg.terms_of_service_content !== undefined) termsContent.value = cfg.terms_of_service_content
       if (cfg.registration_enabled !== undefined) registrationEnabled.value = !!cfg.registration_enabled
       if (Array.isArray(cfg.modules)) {
         portalModules.value = cfg.modules.filter(function(m) { return m.visible !== false })
@@ -5168,6 +5222,12 @@ return {
       toggleTheme: toggleTheme,
       // OAuth（第三方登录 ✓：登录页按启用 provider 显隐按钮 ✓）
       oauthProviders: oauthProviders, isOAuthEnabled: isOAuthEnabled, oauthLogin: oauthLogin,
+      // 合规文档链接 ✓（Google 验证要求登录页展示 ✓）
+      privacyUrl: privacyUrl, termsUrl: termsUrl,
+      // 合规文档弹窗 ✓（点击链接打开条款内容 ✓）
+      openLegal: openLegal, legalDialogVisible: legalDialogVisible,
+      legalDialogTitle: legalDialogTitle, legalDialogHtml: legalDialogHtml,
+      hasLegalLinks: hasLegalLinks,
       // Navigation & modules
       currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
       renderMd: renderMd, renderMdUntrusted: renderMdUntrusted, moduleComponents: moduleComponents,

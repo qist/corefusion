@@ -8,6 +8,12 @@
           <el-form-item :label="t('portal.openRegistration')"><el-switch v-model="ed.registrationEnabled" @change="ed.onCodeChange" /></el-form-item>
           <el-form-item :label="t('portal.portalPath')"><el-input value="/p" disabled /></el-form-item>
           <el-form-item :label="t('portal.portalPort')"><el-input v-model="ed.portalPort" :placeholder="t('portal.portalPortPlaceholder')" @input="ed.onCodeChange" /></el-form-item>
+          <el-divider content-position="left">{{ t('portal.legalDocsTab') }}</el-divider>
+          <el-form-item :label="t('portal.privacyPolicyUrl')"><el-input v-model="ed.config.privacy_policy_url" placeholder="https://..." @input="ed.onCodeChange" /></el-form-item>
+          <el-form-item :label="t('portal.privacyPolicyContent')"><el-input v-model="ed.config.privacy_policy_content" type="textarea" :rows="4" :placeholder="t('portal.legalContentPlaceholder')" @input="ed.onCodeChange" /></el-form-item>
+          <el-form-item :label="t('portal.termsUrl')"><el-input v-model="ed.config.terms_of_service_url" placeholder="https://..." @input="ed.onCodeChange" /></el-form-item>
+          <el-form-item :label="t('portal.termsContent')"><el-input v-model="ed.config.terms_of_service_content" type="textarea" :rows="4" :placeholder="t('portal.legalContentPlaceholder')" @input="ed.onCodeChange" /></el-form-item>
+          <div style="font-size:11px;color:#909399;margin:-8px 0 8px 140px">{{ t('portal.legalDocsHint') }}</div>
         </el-form>
       </el-tab-pane>
       <el-tab-pane :label="t('portal.appearanceTab')" name="appearance">
@@ -24,8 +30,13 @@
       </el-tab-pane>
       <el-tab-pane :label="t('portal.apiRefTab')" name="api">
         <div class="api-ref-container">
-          <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+          <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px">
             <span style="font-size: 13px">{{ t('portal.apiRefHint') }}</span>
+          </el-alert>
+          <el-alert type="success" :closable="false" show-icon style="margin-bottom: 16px">
+            <span style="font-size: 13px">{{ t('portal.apiFullRef') }}
+              <a href="https://github.com/qist/corefusion/blob/main/docs/portal-api.md" target="_blank" rel="noopener" style="color:#409eff">docs/portal-api.md</a>
+            </span>
           </el-alert>
           <el-collapse v-model="ed.activeApiNames" class="api-collapse">
             <el-collapse-item v-for="(group, gi) in ed.apiGroups" :key="gi" :name="gi" :title="group.title">

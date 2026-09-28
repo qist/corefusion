@@ -227,6 +227,9 @@ const defaultLangZhCNJSON = `{
   "announcement.popup_title": "公告",
   "announcement.got_it": "我知道了",
 
+  "legal.privacy": "隐私政策",
+  "legal.terms": "服务条款",
+
   "referral.title": "推广邀请",
   "referral.description": "邀请好友注册并消费，即可获得返利佣金。",
   "referral.copy_link": "复制邀请链接",
@@ -730,6 +733,9 @@ const defaultLangENJSON = `{
   "announcement.title": "Announcements",
   "announcement.popup_title": "Announcement",
   "announcement.got_it": "Got it",
+
+  "legal.privacy": "Privacy Policy",
+  "legal.terms": "Terms of Service",
 
   "referral.title": "Referral Program",
   "referral.description": "Invite friends to register and purchase to earn commission.",

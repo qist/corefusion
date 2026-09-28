@@ -126,6 +126,12 @@ type UpdateInput struct {
 	Theme      *PortalThemeConfig `json:"theme"`
 	Lang       json.RawMessage    `json:"lang"`
 	Regions    json.RawMessage    `json:"regions"`
+	// 合规文档链接 ✓（登录页展示 ✓；nil = 不修改 ✓）
+	PrivacyPolicyURL  *string `json:"privacy_policy_url"`
+	TermsOfServiceURL *string `json:"terms_of_service_url"`
+	// 合规文档内容 ✓（nil = 不修改 ✓；空串 = 清除 ✓）
+	PrivacyPolicyContent  *string `json:"privacy_policy_content"`
+	TermsOfServiceContent *string `json:"terms_of_service_content"`
 }
 
 // PortalSiteConfig is the response for the active portal site.
@@ -152,6 +158,12 @@ type PortalSiteConfig struct {
 	Modules             []ModuleItem     `json:"modules"`
 	Lang                json.RawMessage  `json:"lang"`
 	Regions             json.RawMessage  `json:"regions"`
+	// 合规文档链接 ✓（登录页展示 ✓；编辑器"基础设置"里配置 ✓）
+	PrivacyPolicyURL  string `json:"privacy_policy_url"`
+	TermsOfServiceURL string `json:"terms_of_service_url"`
+	// 合规文档内容 ✓（点击链接弹窗展示 ✓）
+	PrivacyPolicyContent  string `json:"privacy_policy_content"`
+	TermsOfServiceContent string `json:"terms_of_service_content"`
 }
 
 // parseConfigToSiteConfig parses the config JSON string and populates the
@@ -174,8 +186,23 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 		"text_color":            &cfg.TextColor,
 		"accent_color":          &cfg.AccentColor,
 		"font_family":           &cfg.FontFamily,
+		"privacy_policy_url":    &cfg.PrivacyPolicyURL,
+		"terms_of_service_url":  &cfg.TermsOfServiceURL,
+	}
+	// 合规文档内容 ✓（长文本单独解析 ✓，同 stringFields 口径 ✓）
+	contentFields := map[string]*string{
+		"privacy_policy_content":   &cfg.PrivacyPolicyContent,
+		"terms_of_service_content": &cfg.TermsOfServiceContent,
 	}
 	for key, ptr := range stringFields {
+		if v, ok := stored[key]; ok {
+			var s string
+			if json.Unmarshal(v, &s) == nil {
+				*ptr = s
+			}
+		}
+	}
+	for key, ptr := range contentFields {
 		if v, ok := stored[key]; ok {
 			var s string
 			if json.Unmarshal(v, &s) == nil {
@@ -392,7 +419,10 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 	}
 
 	// Build the config JSON from the existing config + structured inputs
-	if input.Config != nil || len(input.Navigation) > 0 || len(input.Modules) > 0 || input.Theme != nil || len(input.Regions) > 0 {
+	if input.Config != nil || len(input.Navigation) > 0 || len(input.Modules) > 0 || input.Theme != nil || len(input.Regions) > 0 ||
+		len(input.Lang) > 0 ||
+		input.PrivacyPolicyURL != nil || input.TermsOfServiceURL != nil ||
+		input.PrivacyPolicyContent != nil || input.TermsOfServiceContent != nil {
 		// Start from existing config or fresh map
 		configMap := make(map[string]interface{})
 		if tmpl.Config != "" {
@@ -439,6 +469,20 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 
 		// Ensure editor version is set
 		configMap["portal_editor_version"] = 1
+
+		// 合规文档链接 ✓（nil = 不修改 ✓；空串 = 清除 ✓）
+		if input.PrivacyPolicyURL != nil {
+			configMap["privacy_policy_url"] = *input.PrivacyPolicyURL
+		}
+		if input.TermsOfServiceURL != nil {
+			configMap["terms_of_service_url"] = *input.TermsOfServiceURL
+		}
+		if input.PrivacyPolicyContent != nil {
+			configMap["privacy_policy_content"] = *input.PrivacyPolicyContent
+		}
+		if input.TermsOfServiceContent != nil {
+			configMap["terms_of_service_content"] = *input.TermsOfServiceContent
+		}
 
 		// Serialize back to JSON string
 		mergedConfig, marshalErr := json.Marshal(configMap)
@@ -529,23 +573,31 @@ type RenderConfig struct {
 	Modules             json.RawMessage `json:"modules,omitempty"`
 	Lang                json.RawMessage `json:"lang,omitempty"`
 	Regions             json.RawMessage `json:"regions,omitempty"`
+	// 合规文档链接 ✓（Google OAuth 验证要求登录页展示隐私政策/服务条款链接 ✓；空 = 不显示 ✓）
+	PrivacyPolicyURL  string `json:"privacy_policy_url,omitempty"`
+	TermsOfServiceURL string `json:"terms_of_service_url,omitempty"`
+	// 合规文档**内容** ✓（登录卡片点击链接 → 弹窗展示 markdown 内容 ✓；URL 与内容二选一 ✓，URL 优先 ✓）
+	PrivacyPolicyContent  string `json:"privacy_policy_content,omitempty"`
+	TermsOfServiceContent string `json:"terms_of_service_content,omitempty"`
 }
 
 // DefaultRenderConfig returns default render configuration.
 func DefaultRenderConfig() RenderConfig {
 	return RenderConfig{
-		SiteName:            "CoreFusion",
-		PrimaryColor:        "#667eea",
-		BackgroundColor:     "#f0f2f5",
-		CardBackgroundColor: "#ffffff",
-		TextColor:           "#303133",
-		AccentColor:         "#67c23a",
-		FontFamily:          "system-ui, -apple-system, sans-serif",
-		PortalEditorVersion: 1,
-		Navigation:          json.RawMessage(defaultNavigationJSON),
-		Modules:             json.RawMessage(defaultModulesJSON),
-		Lang:                json.RawMessage(defaultMultiLangJSON),
-		Regions:             json.RawMessage(defaultRegionsJSON),
+		SiteName:              "CoreFusion",
+		PrimaryColor:          "#667eea",
+		BackgroundColor:       "#f0f2f5",
+		CardBackgroundColor:   "#ffffff",
+		TextColor:             "#303133",
+		AccentColor:           "#67c23a",
+		FontFamily:            "system-ui, -apple-system, sans-serif",
+		PrivacyPolicyContent:  defaultPrivacyPolicyContent,
+		TermsOfServiceContent: defaultTermsOfServiceContent,
+		PortalEditorVersion:   1,
+		Navigation:            json.RawMessage(defaultNavigationJSON),
+		Modules:               json.RawMessage(defaultModulesJSON),
+		Lang:                  json.RawMessage(defaultMultiLangJSON),
+		Regions:               json.RawMessage(defaultRegionsJSON),
 	}
 }
 
@@ -667,6 +719,31 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 				var n int
 				if json.Unmarshal(v, &n) == nil && n > 0 {
 					cfg.PortalEditorVersion = n
+				}
+			}
+			// 合规文档链接 ✓（登录页展示 ✓）
+			if v, ok := stored["privacy_policy_url"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil {
+					cfg.PrivacyPolicyURL = s
+				}
+			}
+			if v, ok := stored["terms_of_service_url"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil {
+					cfg.TermsOfServiceURL = s
+				}
+			}
+			if v, ok := stored["privacy_policy_content"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil {
+					cfg.PrivacyPolicyContent = s
+				}
+			}
+			if v, ok := stored["terms_of_service_content"]; ok {
+				var s string
+				if json.Unmarshal(v, &s) == nil {
+					cfg.TermsOfServiceContent = s
 				}
 			}
 			// Pass through lang (i18n multi-language pack)

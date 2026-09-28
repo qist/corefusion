@@ -410,6 +410,27 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	relBinPath, _ := filepath.Rel(m.dataDir, binaryPath)
 	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
 
+	// Kill orphan processes left over from a previous panel run BEFORE starting.
+	// When the panel itself is killed (e.g. kill -9 during deploy), its core
+	// children survive as orphans (own process group). A fresh panel's
+	// m.processes map is empty, so the normal PID-based kill path never sees
+	// them — the new process would then die on "bind: address already in use"
+	// while the orphan keeps serving the OLD config ("new process crashed,
+	// old process never closed"). Match orphans by command line: same binary
+	// basename + same runtime config path.
+	//
+	// ⚠ We are holding m.mu (write) here until Start returns — the orphan scan
+	// itself must NOT touch m.mu (a RLock under a held Lock deadlocks forever;
+	// that deadlock is exactly what froze Reconcile and kept cores down).
+	// Collect the managed-PID set inside the lock and pass it by value.
+	managedPids := make(map[int]bool, len(m.processes))
+	for _, p := range m.processes {
+		if p.pid > 0 {
+			managedPids[p.pid] = true
+		}
+	}
+	m.killOrphanProcesses(managedPids, relBinPath, relConfigPath)
+
 	// Ensure geo files are accessible from the panel's lookup paths.
 	rulesDir := filepath.Join(m.dataDir, "rules")
 	if _, err := os.Stat(rulesDir); err == nil {
@@ -1286,6 +1307,60 @@ func symlinkGeoFiles(rulesDir string) {
 			if err := os.Symlink(src, dst); err != nil {
 				log.Printf("symlinkGeoFiles: create %s -> %s failed: %v", dst, src, err)
 			}
+		}
+	}
+}
+
+// killOrphanProcesses kills leftover core processes (same binary + same runtime
+// config on the command line) that are NOT tracked in m.processes — typically
+// children of a previous panel run that was killed. Orphans hold the ports the
+// new process needs, so they must die before cmd.Start(); SIGTERM first, then
+// SIGKILL after a short grace period. The caller passes the managed-PID set
+// (collected under m.mu) and this function must NOT touch m.mu — it runs while
+// Start holds the write lock, and an RLock here would deadlock forever.
+// Best effort: scan errors are logged and ignored.
+func (m *Manager) killOrphanProcesses(managed map[int]bool, relBinPath, relConfigPath string) {
+	wantBin := filepath.Base(relBinPath)
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid <= 0 || pid == os.Getpid() || managed[pid] {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(strings.ReplaceAll(string(raw), "\x00", " "))
+		if len(fields) == 0 || filepath.Base(fields[0]) != wantBin {
+			continue
+		}
+		// The command line stores the config as a dataDir-relative path
+		// (e.g. runtime/singbox.jsonc) — match that exact argument.
+		hasCfg := false
+		for _, f := range fields {
+			if f == relConfigPath {
+				hasCfg = true
+				break
+			}
+		}
+		if !hasCfg {
+			continue
+		}
+		log.Printf("kill orphan %s process: pid=%d (leftover from previous panel run)", wantBin, pid)
+		killProcess(pid)
+		deadline := time.Now().Add(3 * time.Second)
+		for isProcessAlive(pid) && time.Now().Before(deadline) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if isProcessAlive(pid) {
+			forceKillProcess(pid)
 		}
 	}
 }

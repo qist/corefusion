@@ -730,6 +730,9 @@ var sampleTemplateVars = map[string]string{
 	"size":        "128MB",
 	"count":       "3",
 	"message":     "This is a test message from CoreFusion",
+	"core":        "xray",
+	"restarts":    "1",
+	"max":         "5",
 }
 
 // SendTemplateTest 用示例变量实际发送一次模板通知（不要求模板处于启用状态），

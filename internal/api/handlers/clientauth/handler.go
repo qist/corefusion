@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/service/audit"
 	"corefusion/internal/service/auth"
 	"corefusion/internal/service/clientauth"
+	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
@@ -71,6 +72,12 @@ func (h *Handler) Register(c *gin.Context) {
 	// Get client info
 	clientInfo, _ := h.svc.GetMe(c.Request.Context(), result.Client.ID)
 	result.Client = clientInfo
+
+	// 新用户注册通知：admin 模板「新用户注册通知」未启用时静默跳过（异步发送不阻塞注册响应）
+	go systemSvc.NotifyTemplate(context.Background(), "新用户注册通知", map[string]string{
+		"user": input.Email,
+		"time": time.Now().Format("2006-01-02 15:04:05"),
+	})
 
 	response.Created(c, result)
 }

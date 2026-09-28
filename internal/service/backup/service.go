@@ -23,6 +23,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
+	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 
@@ -2507,12 +2508,44 @@ func (s *BackupScheduler) checkAndRun() {
 	}
 }
 
+// notifyBackupResult 把定时备份结果接到通知模板：失败发「备份失败告警」，成功发「每日备份报告」。
+// 模板未创建/未启用时 NotifyTemplate 静默跳过（只备份不发通知）。
+func notifyBackupResult(name, filePath string, err error) {
+	ctx := context.Background()
+	if err != nil {
+		vars := map[string]string{
+			"backup_file": name,
+			"message":     err.Error(),
+			"time":        time.Now().Format("2006-01-02 15:04:05"),
+		}
+		if nerr := systemSvc.NotifyTemplate(ctx, "备份失败告警", vars); nerr != nil {
+			log.Printf("[BackupScheduler] send backup_failed notify failed: %v", nerr)
+		}
+		return
+	}
+	size := ""
+	if filePath != "" {
+		if info, serr := os.Stat(filePath); serr == nil {
+			size = fmt.Sprintf("%.2f MB", float64(info.Size())/1024/1024)
+		}
+	}
+	vars := map[string]string{
+		"backup_file": name,
+		"size":        size,
+		"time":        time.Now().Format("2006-01-02 15:04:05"),
+	}
+	if nerr := systemSvc.NotifyTemplate(ctx, "每日备份报告", vars); nerr != nil {
+		log.Printf("[BackupScheduler] send backup_daily notify failed: %v", nerr)
+	}
+}
+
 func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.BackupSchedule) {
 	// Create backup
 	name := fmt.Sprintf("scheduled_%s_%s", sched.Name, time.Now().Format("20060102_150405"))
 	rec, err := s.svc.CreateBackup(ctx, name, "scheduled")
 	if err != nil {
 		log.Printf("[BackupScheduler] Create backup error: %v", err)
+		notifyBackupResult(name, "", fmt.Errorf("创建备份失败: %v", err))
 		return
 	}
 
@@ -2521,11 +2554,13 @@ func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.
 		storage, err := s.svc.GetStorage(ctx, *sched.StorageID)
 		if err != nil {
 			log.Printf("[BackupScheduler] Get storage error: %v", err)
+			notifyBackupResult(name, "", fmt.Errorf("获取存储配置失败: %v", err))
 			return
 		}
 
 		if err := s.uploadToStorage(ctx, rec.ID, storage); err != nil {
 			log.Printf("[BackupScheduler] Upload to %s error: %v", storage.Type, err)
+			notifyBackupResult(name, rec.FilePath, fmt.Errorf("上传到 %s 存储失败: %v", storage.Type, err))
 			return
 		}
 		log.Printf("[BackupScheduler] Uploaded to %s storage: %s", storage.Type, storage.Name)
@@ -2539,6 +2574,9 @@ func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.
 			}
 		}
 	}
+
+	// 成功通知：模板「每日备份报告」未启用时 NotifyTemplate 静默跳过
+	notifyBackupResult(name, rec.FilePath, nil)
 
 	// Update last run time
 	sched.LastRunAt = time.Now()

@@ -116,8 +116,10 @@ func (n *Notifier) SendNotification(ctx context.Context, message string) error {
 // SendTemplateNotification sends a notification using a template.
 func (n *Notifier) SendTemplateNotification(ctx context.Context, tmpl *entity.NotificationTemplate, vars map[string]string) error {
 	content := tmpl.Content
+	subject := tmpl.Subject
 	for k, v := range vars {
 		content = strings.ReplaceAll(content, "{"+k+"}", v)
+		subject = strings.ReplaceAll(subject, "{"+k+"}", v) // 标题同样渲染变量
 	}
 
 	if tmpl.Type == "telegram" {
@@ -125,7 +127,6 @@ func (n *Notifier) SendTemplateNotification(ctx context.Context, tmpl *entity.No
 		return n.SendTelegram(ctx, content)
 	}
 	if tmpl.Type == "email" {
-		subject := tmpl.Subject
 		if subject == "" {
 			subject = "CoreFusion Notification"
 		}

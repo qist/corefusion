@@ -362,6 +362,21 @@ func (h *Handler) CreateTemplate(c *gin.Context) {
 	response.Created(c, tmpl)
 }
 
+// SendTemplateTest handles POST /api/v1/system/notification-templates/:id/send.
+// 用示例变量实际发送一次模板通知，验证模板内容与渠道连通性。
+func (h *Handler) SendTemplateTest(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	if err := h.settingSvc.SendTemplateTest(c.Request.Context(), id); err != nil {
+		response.InternalError(c, "SEND_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "template notification sent"})
+}
+
 // UpdateTemplate handles PUT /api/v1/system/notification-templates/:id.
 func (h *Handler) UpdateTemplate(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

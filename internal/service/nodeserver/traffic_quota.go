@@ -15,8 +15,44 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 )
+
+// 流量配额告警：监控类通知（有问题才发，每账期每节点最多一条）
+const (
+	// monitor.traffic_quota_threshold_percent：月流量达到配额该百分比时告警（默认 80，0 = 关闭）
+	QuotaThresholdSetting = "monitor.traffic_quota_threshold_percent"
+	// 预设模板名（与门户预设库对应；未启用时 NotifyTemplate 静默跳过）
+	tmplNameQuotaThreshold = "节点流量配额告警"
+)
+
+// notifyQuotaEvent 发送流量配额告警（每账期去重：以账期起始日作为去重日的键）。
+func (s *NodeTrafficQuotaService) notifyQuotaEvent(ctx context.Context, server *entity.NodeServer, eventKey string, periodStart time.Time, percent int) {
+	day := periodStart.Format("2006-01-02")
+	var count int64
+	s.db.Model(&entity.NotificationSendLog{}).
+		Where("event_key = ? AND client_key = ? AND day = ?", eventKey, server.Name, day).
+		Count(&count)
+	if count > 0 {
+		return // 本账期已告警过 —— 静默跳过
+	}
+	vars := map[string]string{
+		"node":    server.Name,
+		"used":    fmt.Sprintf("%.2f", float64(server.TrafficUsedBytes)/1e9),
+		"quota":   fmt.Sprintf("%.2f", float64(server.TrafficQuotaBytes)/1e9),
+		"percent": fmt.Sprintf("%d", percent),
+		"time":    time.Now().Format("2006-01-02 15:04:05"),
+	}
+	if err := systemSvc.NotifyTemplate(ctx, tmplNameQuotaThreshold, vars); err != nil {
+		log.Printf("[TrafficQuota] quota alert for %s failed: %v", server.Name, err)
+		return
+	}
+	s.db.Create(&entity.NotificationSendLog{
+		EventKey: eventKey, ClientKey: server.Name, Day: day, CreatedAt: time.Now(),
+	})
+	log.Printf("[TrafficQuota] quota alert sent for %s (%s, %d%%)", server.Name, eventKey, percent)
+}
 
 // TrafficIfaceXrayUser is the interface name used for xray core user traffic
 // records in node_traffic_usage. This separates xray user traffic from old
@@ -282,7 +318,28 @@ func (s *NodeTrafficQuotaService) checkAllQuotas(ctx context.Context) {
 			// Do NOT auto-resume; admin must explicitly resume
 			// Exception: if a new billing period started, the reset handler above will re-enable
 		}
+
+		// ── 阈值告警（监控类通知：达到阈值发一条，每账期每节点最多一次，其余轮次静默）──
+		if !server.TrafficSuspended && server.TrafficQuotaBytes > 0 {
+			thresholdPct := s.quotaThresholdPercent()
+			if thresholdPct > 0 && server.TrafficUsedBytes >= server.TrafficQuotaBytes*int64(thresholdPct)/100 {
+				s.notifyQuotaEvent(ctx, &server, "traffic_quota_threshold", periodStart, thresholdPct)
+			}
+		}
 	}
+}
+
+// quotaThresholdPercent 读取告警阈值百分比（默认 80；设为 0 关闭阈值告警）。
+// 直接读 system_settings，避免为单一设置引入 service 依赖。
+func (s *NodeTrafficQuotaService) quotaThresholdPercent() int {
+	pct := 80
+	var val string
+	if err := s.db.Table("system_settings").Select("value").Where("`key` = ?", QuotaThresholdSetting).Scan(&val).Error; err == nil && val != "" {
+		if n, perr := strconv.Atoi(val); perr == nil && n >= 0 && n <= 100 {
+			pct = n
+		}
+	}
+	return pct
 }
 
 // resetPeriod resets the billing period for a server.
@@ -335,6 +392,10 @@ func (s *NodeTrafficQuotaService) resetPeriod(ctx context.Context, server *entit
 func (s *NodeTrafficQuotaService) suspendNode(ctx context.Context, server *entity.NodeServer) {
 	log.Printf("[TrafficQuota] SUSPENDING server %d (%s) — traffic quota exceeded: used=%d quota=%d",
 		server.ID, server.Name, server.TrafficUsedBytes, server.TrafficQuotaBytes)
+
+	// 超限告警（每账期一次；100% 超过任何阈值，单独事件键）
+	periodStart := s.computePeriodStart(time.Now(), server.TrafficQuotaResetDay)
+	s.notifyQuotaEvent(ctx, server, "traffic_quota_exceeded", periodStart, 100)
 
 	now := time.Now()
 

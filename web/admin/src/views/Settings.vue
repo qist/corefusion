@@ -171,26 +171,42 @@
         <el-card>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <span style="font-weight:500">{{ t('settings.templates.title') }}</span>
-            <el-button type="primary" size="small" @click="showAddTemplate">{{ t('settings.templates.add') }}</el-button>
+            <div style="display:flex;gap:8px">
+              <el-button size="small" link type="primary" @click="showVarsDoc">{{ t('settings.templates.varsDoc') }}</el-button>
+              <el-button type="primary" size="small" @click="showAddTemplate">{{ t('settings.templates.add') }}</el-button>
+            </div>
           </div>
           <el-table :data="templates" stripe>
             <el-table-column prop="name" :label="t('common.name')" width="150" />
             <el-table-column prop="type" label="Type" width="80">
               <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
             </el-table-column>
+            <el-table-column :label="t('settings.templates.audience')" width="90">
+              <template #default="{row}">
+                <el-tag size="small" :type="row.audience === 'subscriber' ? 'warning' : 'info'">
+                  {{ row.audience === 'subscriber' ? t('settings.templates.audienceSubscriber') : t('settings.templates.audienceAdmin') }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="subject" label="Subject" width="150" />
             <el-table-column prop="cron" label="Cron" width="120" />
             <el-table-column label="Enabled" width="80">
               <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled ? 'ON' : 'OFF' }}</el-tag></template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="120">
+            <el-table-column :label="t('common.actions')" width="180">
               <template #default="{row}">
                 <el-button size="small" @click="showEditTemplate(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="success" plain @click="handleSendTemplate(row)" :title="t('settings.templates.sendHint')">{{ t('settings.templates.send') }}</el-button>
                 <el-button size="small" type="danger" @click="handleDeleteTemplate(row)">{{ t('common.delete') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
         </el-card>
+
+        <!-- Template Variables Doc Dialog -->
+        <el-dialog v-model="varsDocVisible" :title="t('settings.templates.varsDoc')" width="720">
+          <div class="template-vars-doc" v-html="varsDocHtml" />
+        </el-dialog>
 
         <div style="margin-top:20px;text-align:right">
           <el-button type="primary" :loading="notifySaving" @click="saveNotifyConfig">{{ t('common.save') }}</el-button>
@@ -757,14 +773,34 @@
     <!-- Template Dialog -->
     <el-dialog v-model="tmplDialogVisible" :title="editingTmpl ? t('common.edit') : t('settings.templates.add')" width="600">
       <el-form :model="tmplForm" label-width="100px">
+        <el-form-item v-if="!editingTmpl" :label="t('settings.templates.preset')">
+          <el-select v-model="selectedPreset" :placeholder="t('settings.templates.presetPlaceholder')" style="width:100%" @change="applyPreset">
+            <el-option v-for="p in templatePresets" :key="p.key" :label="`${p.name}（${p.type === 'telegram' ? 'Telegram' : 'Email'}）`" :value="p.key" />
+          </el-select>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.templates.presetHint') }}</div>
+        </el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="tmplForm.name" /></el-form-item>
-        <el-form-item label="Type">
+        <el-form-item :label="t('settings.templates.audience')">
+          <el-radio-group v-model="tmplForm.audience" @change="onAudienceChange">
+            <el-radio value="admin">{{ t('settings.templates.audienceAdmin') }}</el-radio>
+            <el-radio value="subscriber">{{ t('settings.templates.audienceSubscriber') }}</el-radio>
+          </el-radio-group>
+          <div style="font-size:11px;color:#999;margin-top:4px;width:100%">{{ t('settings.templates.audienceHint') }}</div>
+        </el-form-item>
+        <el-form-item v-if="tmplForm.audience !== 'subscriber'" label="Type">
           <el-select v-model="tmplForm.type" style="width:100%">
             <el-option label="Telegram" value="telegram" />
             <el-option label="Email" value="email" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="tmplForm.type==='email'" :label="t('settings.templates.recipients')">
+        <el-form-item v-if="tmplForm.audience === 'subscriber'" :label="t('settings.templates.eventKey')">
+          <el-select v-model="tmplForm.event_key" filterable allow-create clearable style="width:100%" :placeholder="t('settings.templates.eventKeyPlaceholder')">
+            <el-option label="订阅到期提醒（subscription_expire）" value="subscription_expire" />
+            <el-option label="余额不足提醒（balance_low）" value="balance_low" />
+          </el-select>
+          <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.templates.eventKeyHint') }}</div>
+        </el-form-item>
+        <el-form-item v-if="tmplForm.type==='email' && tmplForm.audience !== 'subscriber'" :label="t('settings.templates.recipients')">
           <el-select v-model="tmplRecipients" multiple filterable allow-create style="width:100%" placeholder="user@example.com">
             <el-option-group :label="t('settings.templates.userEmails')">
               <el-option v-for="u in userEmails" :key="'u'+u.id" :label="u.email" :value="u.email" />
@@ -825,6 +861,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import client from '../api/client'
 import { CURRENCIES as currencyList } from '../utils/currency'
 import { useQueryState } from '../composables/useQueryState'
@@ -875,7 +913,7 @@ const editingStorage = ref(null)
 const storageForm = ref({ name: '', type: 's3', config: {}, enabled: false })
 const tmplDialogVisible = ref(false)
 const editingTmpl = ref(null)
-const tmplForm = ref({ name: '', type: 'telegram', recipients: '', subject: '', content: '', cron: '', enabled: false })
+const tmplForm = ref({ name: '', type: 'telegram', audience: 'admin', event_key: '', recipients: '', subject: '', content: '', cron: '', enabled: false })
 const tmplRecipients = ref([])
 
 // GitHub acceleration
@@ -1025,16 +1063,173 @@ async function fetchChatId() {
 
 function showAddTemplate() {
   editingTmpl.value = null
-  tmplForm.value = { name: '', type: 'telegram', recipients: '', subject: '', content: '', cron: '', enabled: false }
+  tmplForm.value = { name: '', type: 'telegram', audience: 'admin', event_key: '', recipients: '', subject: '', content: '', cron: '', enabled: false }
   tmplRecipients.value = []
+  selectedPreset.value = ''
   tmplDialogVisible.value = true
 }
 function showEditTemplate(row) {
   editingTmpl.value = row
-  tmplForm.value = { ...row }
+  tmplForm.value = { audience: 'admin', event_key: '', ...row }
   tmplRecipients.value = row.recipients ? row.recipients.split(',').map(s => s.trim()).filter(Boolean) : []
+  selectedPreset.value = ''
   tmplDialogVisible.value = true
 }
+// 受众切换：订阅者通知只走 email（发给客户本人邮箱，无 Telegram 会话）
+function onAudienceChange(a) {
+  if (a === 'subscriber') tmplForm.value.type = 'email'
+}
+
+// ---- 预设通知模板库 ----
+// {key} 占位符与后端 notifier 渲染逻辑一致；业务事件通过 NotifyTemplate(name, vars) /
+// NotifyClientEvent(eventKey, ...) 发送，因此 name/event_key 是业务接入用的查找键，请勿随意改名。
+const templatePresets = [
+  {
+    key: 'node_down', name: '节点离线告警', type: 'telegram', audience: 'admin', cron: '',
+    content: '🚨 节点离线告警\n\n节点：{node}\n时间：{time}\n\n节点已失去连接，请尽快检查！'
+  },
+  {
+    key: 'node_recovered', name: '节点恢复通知', type: 'telegram', audience: 'admin', cron: '',
+    content: '✅ 节点已恢复\n\n节点：{node}\n时间：{time}\n\n节点已重新上线，服务恢复正常。'
+  },
+  {
+    key: 'backup_daily', name: '每日备份报告', type: 'telegram', audience: 'admin', cron: '0 9 * * *',
+    content: '📦 每日备份报告\n\n时间：{time}\n备份文件：{backup_file}\n大小：{size}\n状态：备份成功 ✅'
+  },
+  {
+    key: 'backup_failed', name: '备份失败告警', type: 'telegram', audience: 'admin', cron: '',
+    content: '❌ 备份失败告警\n\n时间：{time}\n备份文件：{backup_file}\n\n备份任务执行失败，请检查备份配置与存储空间！'
+  },
+  {
+    key: 'cert_expire', name: '证书到期提醒（管理员）', type: 'email', audience: 'admin', cron: '0 9 * * *',
+    subject: '证书到期提醒：{domain}',
+    content: '证书到期提醒\n\n域名：{domain}\n到期日期：{expire_date}\n剩余天数：{days} 天\n\n请及时续期证书，避免服务中断。'
+  },
+  {
+    key: 'sys_announce', name: '系统维护公告', type: 'telegram', audience: 'admin', cron: '',
+    content: '📢 系统维护公告\n\n{message}\n\n时间：{time}\n\n维护期间服务可能出现短暂中断，感谢您的理解与支持。'
+  },
+  {
+    key: 'user_register', name: '新用户注册通知', type: 'telegram', audience: 'admin', cron: '',
+    content: '👤 新用户注册\n\n用户：{user}\n时间：{time}\n\n有新用户注册加入！'
+  },
+  {
+    key: 'node_quota', name: '节点流量配额告警', type: 'telegram', audience: 'admin', cron: '',
+    content: '📊 节点流量配额告警\n\n节点：{node}\n已用：{used} GB / 配额：{quota} GB（{percent}%）\n时间：{time}\n\n月流量已达到告警阈值，请关注节点用量！'
+  },
+  // ---- 订阅者（发给客户本人邮箱）----
+  {
+    key: 'sub_expire', name: '订阅到期提醒（发给客户）', type: 'email', audience: 'subscriber', eventKey: 'subscription_expire', cron: '',
+    subject: '您的订阅即将到期',
+    content: '尊敬的用户：\n\n您的订阅将于 {expire_date} 到期（剩余 {days} 天）。\n\n为避免服务中断，请及时到个人中心续费。\n\n—— CoreFusion'
+  },
+  {
+    key: 'balance_low_sub', name: '余额不足提醒（发给客户）', type: 'email', audience: 'subscriber', eventKey: 'balance_low', cron: '',
+    subject: '账户余额不足提醒',
+    content: '尊敬的用户：\n\n您的账户余额为 {balance} 元，已低于提醒阈值。\n\n余额不足可能影响服务使用，请及时充值。\n\n—— CoreFusion'
+  },
+]
+const selectedPreset = ref('')
+
+function applyPreset(key) {
+  const p = templatePresets.find(x => x.key === key)
+  if (!p) return
+  tmplForm.value.name = p.name
+  tmplForm.value.type = p.type
+  tmplForm.value.audience = p.audience
+  tmplForm.value.event_key = p.eventKey || ''
+  tmplForm.value.subject = p.subject || ''
+  tmplForm.value.content = p.content
+  tmplForm.value.cron = p.cron || ''
+  tmplForm.value.enabled = false
+  if (p.type === 'telegram') tmplRecipients.value = []
+}
+
+// 实际发送一次模板通知（示例变量填充），验证内容与渠道连通性
+async function handleSendTemplate(row) {
+  try {
+    await client.post(`/system/notification-templates/${row.id}/send`)
+    ElMessage.success(t('settings.templates.sendSuccess'))
+  } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) }
+}
+
+// ---- 模板变量说明（运维点击弹窗查看；同文档在仓库 docs/notification-templates.md）----
+const templateVarsDoc = `## 模板变量说明
+
+模板使用 **{变量名}** 占位符，发送时自动替换为实际值。
+
+### 通用变量（所有模板可用）
+
+| 变量 | 说明 | 示例值 |
+|---|---|---|
+| {time} | 发送时间 | 2026-09-28 14:30:00 |
+| {user} | 客户邮箱（订阅者模板） | user@example.com |
+| {message} | 通知正文内容 | —— |
+
+### 订阅到期提醒（自动触发）
+
+发给 7 天内到期的有效订阅客户：
+
+| 变量 | 说明 | 示例值 |
+|---|---|---|
+| {user} | 客户邮箱 | user@example.com |
+| {expire_date} | 订阅到期时间 | 2026-10-05 09:00 |
+| {days} | 剩余天数 | 7 |
+
+### 余额不足提醒（自动触发）
+
+发给余额低于阈值的客户：
+
+| 变量 | 说明 | 示例值 |
+|---|---|---|
+| {user} | 客户邮箱 | user@example.com |
+| {balance} | 当前余额（元） | 0.85 |
+
+### 运维模板测试变量
+
+管理员模板点「发送」测试时填充：
+
+| 变量 | 说明 | 示例值 |
+|---|---|---|
+| {node} | 节点名称 | node-01 |
+| {backup_file} | 备份文件名 | corefusion-20260101-0900.tar.gz |
+| {size} | 文件大小 | 128MB |
+| {domain} | 域名 | example.com |
+| {expire_date} / {days} | 到期日期 / 剩余天数 | 2026-10-12 / 14 |
+| {count} | 数量 | 3 |
+
+## 自动触发规则
+
+- 面板启动 30 秒后首次扫描，之后**每天 09:05** 执行
+- **订阅到期**：7 天内到期的有效订阅
+- **余额不足**：余额 ≤ 阈值（设置键 \`notify.balance_threshold\`，单位**分**，默认 100 = 1.00 元）
+- **防重复**：同一客户、同一事件每天最多发送一条
+
+## 节点健康监控（有问题才发，正常静默）
+
+- **频率**：每轮间隔由设置键 \`monitor.node_interval_seconds\` 控制（秒，默认 60，最小 30），改后下一轮生效
+- **离线判定**：Agent 状态非 online，或心跳超时（\`monitor.node_offline_timeout_seconds\`，默认 120 秒）
+- **只报变化**：节点状态从在线 → 离线时发「节点离线告警」；离线 → 在线时发「节点恢复通知」；**状态未变化的轮次全部静默跳过**，不会重复轰炸
+- **静默开关**：把对应模板停用（Enabled=OFF）即只监控不发消息
+- 可用变量：{node}（节点名）、{time}（时间）
+
+## 节点月流量配额告警（自动）
+
+- **触发**：节点月流量达到配额阈值时发「节点流量配额告警」；超过 100% 触发挂起时再发一条超限告警
+- **阈值**：设置键 \`monitor.traffic_quota_threshold_percent\`（百分比，默认 80，设 0 关闭）
+- **去重**：每账期每节点最多一条（账期按节点的流量重置日计算）
+- 可用变量：{node}（节点名）、{used}（已用 GB）、{quota}（配额 GB）、{percent}（百分比）、{time}
+
+## 受众说明
+
+- **面板使用者**：发到管理员 Telegram / 邮箱（运维通知）
+- **订阅者（客户）**：发到客户本人邮箱（仅支持邮件，邮件渠道需先配置并启用）
+`
+
+const varsDocVisible = ref(false)
+const varsDocHtml = computed(() => DOMPurify.sanitize(marked.parse(templateVarsDoc)))
+function showVarsDoc() { varsDocVisible.value = true }
+
 async function handleSaveTemplate() {
   try {
     const payload = { ...tmplForm.value, recipients: tmplRecipients.value.join(',') }
@@ -1490,3 +1685,15 @@ function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
 
 onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
 </script>
+
+<style scoped>
+.template-vars-doc { font-size: 13px; line-height: 1.7; color: #303133; }
+.template-vars-doc h2 { font-size: 16px; margin: 14px 0 8px; }
+.template-vars-doc h3 { font-size: 14px; margin: 12px 0 6px; }
+.template-vars-doc p { margin: 6px 0; }
+.template-vars-doc ul { padding-left: 18px; margin: 6px 0; }
+.template-vars-doc table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.template-vars-doc th, .template-vars-doc td { border: 1px solid #dcdfe6; padding: 5px 10px; text-align: left; font-size: 12px; }
+.template-vars-doc th { background: #f5f7fa; font-weight: 600; }
+.template-vars-doc code { background: #f5f7fa; border-radius: 3px; padding: 1px 5px; font-size: 12px; color: #c7254e; }
+</style>

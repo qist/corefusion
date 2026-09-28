@@ -112,6 +112,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// System Settings
 		&entity.SystemSetting{},
 		&entity.NotificationTemplate{},
+		&entity.NotificationSendLog{},
 
 		// Backups
 		&entity.BackupRecord{},

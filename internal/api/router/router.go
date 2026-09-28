@@ -2946,6 +2946,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				geoRuleGlobalGroup.DELETE("/sources/:sourceId", geoRuleH.DeleteSource)
 				geoRuleGlobalGroup.GET("/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
 				geoRuleGlobalGroup.POST("/sources/:sourceId/select", geoRuleH.SelectFiles)
+				geoRuleGlobalGroup.POST("/sources/:sourceId/files", geoRuleH.AddFile)
 				geoRuleGlobalGroup.POST("/sources/:sourceId/sync", geoRuleH.SyncSource)
 				geoRuleGlobalGroup.PUT("/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
 				geoRuleGlobalGroup.POST("/sync-all", geoRuleH.SyncAll)

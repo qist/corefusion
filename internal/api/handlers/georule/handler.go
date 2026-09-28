@@ -163,6 +163,27 @@ func (h *Handler) SelectFiles(c *gin.Context) {
 	response.OK(c, gin.H{"message": "selected"})
 }
 
+// AddFile handles POST /api/v1/geo-rules/sources/:sourceId/files.
+// 手动向源添加一个任意 URL 的规则文件（典型：sing-box .srs 分支 raw URL），
+// 添加后异步下载到面板 data/rules/ 并推送所有节点。
+func (h *Handler) AddFile(c *gin.Context) {
+	id := parseIntParam(c, "sourceId")
+	var req struct {
+		Name string `json:"name" binding:"required"`
+		URL  string `json:"url" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	rule, err := h.svc.AddFile(c.Request.Context(), id, req.Name, req.URL)
+	if err != nil {
+		response.InternalError(c, "ADD_FILE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, rule)
+}
+
 // SyncSource handles POST /api/v1/geo-rules/sources/:sourceId/sync.
 func (h *Handler) SyncSource(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")

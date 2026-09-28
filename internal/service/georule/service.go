@@ -418,6 +418,69 @@ func (s *Service) FetchReleaseAssets(ctx context.Context, sourceID int64) ([]Rel
 
 // --- Select Files to Sync ---
 
+// AddFile 手动向 source 添加一个规则文件（任意 URL），用于 GitHub release 之外的
+// 场景 —— 典型如 sing-box 的 .srs 规则集：它们发布在 sing-geoip/sing-geosite 的
+// rule-set 分支（raw URL），不在 release 资产里，SelectFiles 的 release 勾选拿不到。
+//
+// 添加后立即异步下载到面板 data/rules/ 并推送所有节点；后续 SyncSource 时
+// AutoSync=true 的文件会随源一起重新下载（直连 URL 模式每次全量重下，
+// repo 模式下未出现在 release 资产里的手动文件同样会被 Download 刷新），
+// Agent 端按文件 SHA-256 去重（SyncToNode），内容没变不会重复下载。
+//
+// 文件名必须安全（纯文件名，白名单字符），因为它最终用于
+// filepath.Join(rulesDir, fileName) 落盘与 ServeFileContent 回源 —— 手动 URL 的
+// FileName 是用户可控输入，不能像 release 资产名那样默认可信。
+func (s *Service) AddFile(ctx context.Context, sourceID int64, name, url string) (*entity.GeoRuleFile, error) {
+	if _, err := s.sourceRepo.GetByID(ctx, sourceID); err != nil {
+		return nil, fmt.Errorf("source not found: %d", sourceID)
+	}
+
+	name = strings.TrimSpace(name)
+	url = strings.TrimSpace(url)
+	if name == "" || url == "" {
+		return nil, fmt.Errorf("文件名与下载 URL 均不能为空")
+	}
+	// 禁止路径穿越：只接受纯文件名（不允许 / \ ..）
+	if name != filepath.Base(name) || name == "." || name == ".." ||
+		strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("非法文件名 %q：只能是纯文件名（如 geosite-cn.srs）", name)
+	}
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return nil, fmt.Errorf("下载 URL 必须以 http:// 或 https:// 开头")
+	}
+
+	if existing, _ := s.fileRepo.GetBySourceAndName(ctx, sourceID, name); existing != nil {
+		return nil, fmt.Errorf("文件 %s 已存在于该源中", name)
+	}
+
+	rule := &entity.GeoRuleFile{
+		ServerID:    0, // global
+		SourceID:    sourceID,
+		Name:        name,
+		FileName:    name,
+		DownloadURL: url,
+		AutoSync:    true,
+		Status:      "pending",
+	}
+	if err := s.fileRepo.Create(ctx, rule); err != nil {
+		return nil, err
+	}
+
+	// 异步下载 + 推送所有节点（与 SelectFiles 的行为一致）
+	go func(r *entity.GeoRuleFile) {
+		if _, err := s.downloadLocal(context.Background(), r); err != nil {
+			log.Printf("[georule] download manually added file %s failed: %v", r.FileName, err)
+			return
+		}
+		log.Printf("[georule] downloaded manually added file %s, pushing to all nodes", r.FileName)
+		if err := s.SyncToAllNodes(context.Background()); err != nil {
+			log.Printf("[georule] auto-push after manual add failed: %v", err)
+		}
+	}(rule)
+
+	return rule, nil
+}
+
 func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []string) error {
 	src, err := s.sourceRepo.GetByID(ctx, sourceID)
 	if err != nil {

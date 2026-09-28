@@ -39,6 +39,7 @@
     <!-- Selected Files -->
     <div style="display:flex;justify-content:space-between;margin-bottom:16px">
       <h3>{{ t('service.rules.selectedFiles') }}</h3>
+      <el-button type="primary" plain @click="showAddFile">{{ t('service.rules.addFile') }}</el-button>
     </div>
     <el-card>
       <el-table :data="files" v-loading="filesLoading" stripe>
@@ -124,6 +125,28 @@
       <template #footer>
         <el-button @click="assetsDialogVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="selectSaving" @click="handleConfirmSelect">{{ t('service.rules.addSelected') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Add File Dialog（手动添加任意 URL 规则文件，如 sing-box .srs 分支 raw 文件） -->
+    <el-dialog v-model="addFileDialogVisible" :title="t('service.rules.addFile')" width="600">
+      <el-form :model="addFileForm" label-width="110px">
+        <el-form-item :label="t('service.rules.source')">
+          <el-select v-model="addFileForm.source_id" style="width:100%">
+            <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('service.rules.fileName')">
+          <el-input v-model="addFileForm.name" :placeholder="t('service.rules.fileNamePlaceholder')" />
+        </el-form-item>
+        <el-form-item label="URL">
+          <el-input v-model="addFileForm.url" type="textarea" :rows="2" :placeholder="t('service.rules.fileUrlPlaceholder')" />
+        </el-form-item>
+        <div style="font-size:12px;color:#999;margin-top:-6px">{{ t('service.rules.addFileHint') }}</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="addFileDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="addFileSaving" @click="handleSaveFile">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -369,6 +392,30 @@ async function handleConfirmSelect() {
     assetsDialogVisible.value = false
     fetchFiles()
   } finally { selectSaving.value = false }
+}
+
+// --- Add File（手动添加任意 URL 规则文件，如 sing-box .srs） ---
+const addFileDialogVisible = ref(false)
+const addFileSaving = ref(false)
+const addFileForm = ref({ source_id: null, name: '', url: '' })
+
+function showAddFile() {
+  addFileForm.value = { source_id: sources.value[0]?.id ?? null, name: '', url: '' }
+  addFileDialogVisible.value = true
+}
+
+async function handleSaveFile() {
+  if (!addFileForm.value.source_id) return
+  addFileSaving.value = true
+  try {
+    await client.post(`/geo-rules/sources/${addFileForm.value.source_id}/files`, {
+      name: addFileForm.value.name.trim(),
+      url: addFileForm.value.url.trim()
+    })
+    ElMessage.success(t('service.rules.addFileStarted'))
+    addFileDialogVisible.value = false
+    fetchFiles()
+  } catch (e) { ElMessage.error(e?.response?.data?.message || t('common.failed')) } finally { addFileSaving.value = false }
 }
 
 // --- Files ---

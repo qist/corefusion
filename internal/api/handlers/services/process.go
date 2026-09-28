@@ -12,6 +12,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/store/repository"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -46,6 +47,7 @@ type ProcessHandler struct {
 	crashRepo    *repository.CrashLogRepository
 	dataDir      string
 	nodeOperator NodeOperator
+	panelMode    func() string // 返回 "full" / "management_only"（实时读，nil 视为 full）
 }
 
 // NewProcessHandler creates a new process handler.
@@ -61,6 +63,23 @@ func NewProcessHandler(processMgr *process.Manager, svcRepo *repository.ServiceR
 // SetNodeOperator sets the node operator for remote core control.
 func (h *ProcessHandler) SetNodeOperator(op NodeOperator) {
 	h.nodeOperator = op
+}
+
+// SetPanelModeFunc 注入面板模式读取函数（"full" / "management_only"）。
+// 纯管理模式下本地核心的 start/restart 会被拦截（设计 §4.4：面板不运行核心进程）。
+func (h *ProcessHandler) SetPanelModeFunc(fn func() string) {
+	h.panelMode = fn
+}
+
+// localManagementOnly 判断该服务是否属于本地节点、且面板处于纯管理模式。
+func (h *ProcessHandler) localManagementOnly(ctx context.Context, serverID int64) bool {
+	if h.panelMode == nil || h.panelMode() != "management_only" {
+		return false
+	}
+	if h.nodeOperator == nil {
+		return serverID == 1
+	}
+	return h.nodeOperator.IsLocalServer(ctx, serverID)
 }
 
 // Start handles POST /api/v1/node-servers/:id/services/:serviceId/start.
@@ -87,6 +106,12 @@ func (h *ProcessHandler) Start(c *gin.Context) {
 			return
 		}
 		response.OK(c, gin.H{"service_id": serviceID, "status": "running"})
+		return
+	}
+
+	// 纯管理模式：本地核心进程由面板托管启动被禁止（远程节点不受影响）
+	if h.localManagementOnly(c.Request.Context(), svc.ServerID) {
+		response.Forbidden(c, "PANEL_MANAGEMENT_ONLY", "panel is in management-only mode, local core processes are disabled")
 		return
 	}
 
@@ -165,6 +190,12 @@ func (h *ProcessHandler) Restart(c *gin.Context) {
 			}
 		}(svc.ServerID, svc.CoreType)
 		response.OK(c, gin.H{"service_id": serviceID, "status": "restarting", "async": true})
+		return
+	}
+
+	// 纯管理模式：本地核心进程由面板托管重启被禁止（远程节点不受影响）
+	if h.localManagementOnly(c.Request.Context(), svc.ServerID) {
+		response.Forbidden(c, "PANEL_MANAGEMENT_ONLY", "panel is in management-only mode, local core processes are disabled")
 		return
 	}
 

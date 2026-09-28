@@ -3282,6 +3282,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			restoreFirewallRules(context.Background(), inboundConfigRepo)
 		}()
 	}
+	// 进程控制 API 需要实时感知面板模式（保存设置后无需重启即可拦截本地核心 start/restart）
+	processH.SetPanelModeFunc(func() string {
+		m, _ := systemSettingSvc.GetByKey(context.Background(), "panel.mode")
+		return m
+	})
 
 	// Set callback to restart proxy when log output mode is switched
 	// Restart is needed because stdout mode requires re-attaching the process's stdout to LogBroker
@@ -3322,7 +3327,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	go func() {
-		proxyMgr.AutoStartManaged()
+		// 纯管理模式：面板只做管理分发，不自动启动本机代理进程（设计 §4.4）
+		if panelMode == "management_only" {
+			log.Println("[Panel] MANAGEMENT_ONLY mode — local proxy (caddy/nginx) auto-start skipped")
+		} else {
+			proxyMgr.AutoStartManaged()
+		}
 		// Start auto-writers after proxy is started (broker is available)
 		logManageSvc.StartAutoWriters()
 	}()

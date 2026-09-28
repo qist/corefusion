@@ -463,6 +463,12 @@
       <!-- OAuth Config -->
       <el-tab-pane :label="t('settings.oauth.tab')" name="oauth">
         <el-card>
+          <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
+            <span style="font-size:12px">
+              Google 正式授权需要：公共可访问的隐私权政策 + 服务条款链接（门户编辑器"设置 → 合规文档"配置内容，登录页自动展示）。
+              详见 <a :href="googleVerifyDocURL" target="_blank" rel="noopener" style="color:#409eff">docs/oauth-google-verification.md</a>
+            </span>
+          </el-alert>
           <el-form :model="oauthForm" label-width="160px" style="max-width:600px">
             <el-form-item :label="t('settings.oauth.callbackDomain')">
               <el-input v-model="oauthForm.callback_domain" :placeholder="t('settings.oauth.callbackDomainPlaceholder')" clearable />
@@ -923,6 +929,7 @@ const oauthCallbackBase = computed(() => {
 })
 const githubCallbackURL = computed(() => oauthCallbackBase.value + '/api/v1/client-auth/oauth/github/callback')
 const googleCallbackURL = computed(() => oauthCallbackBase.value + '/api/v1/client-auth/oauth/google/callback')
+const googleVerifyDocURL = 'https://github.com/qist/corefusion/blob/main/docs/oauth-google-verification.md'
 
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 

@@ -44,6 +44,8 @@ export function usePortalEditor() {
     site_name: 'CoreFusion', logo_url: '', primary_color: '#667eea', background_color: '#f0f2f5',
     card_background_color: '#ffffff', text_color: '#303133', accent_color: '#67c23a',
     font_family: 'system-ui, -apple-system, sans-serif',
+    // 合规文档链接 ✓（Google OAuth 验证要求登录页展示 ✓）
+    privacy_policy_url: '', terms_of_service_url: '',
   })
 
   const navigation = ref([])
@@ -352,6 +354,8 @@ export function usePortalEditor() {
     config.text_color = d.text_color || '#303133'
     config.accent_color = d.accent_color || '#67c23a'
     config.font_family = d.font_family || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    config.privacy_policy_url = d.privacy_policy_url || ''
+    config.terms_of_service_url = d.terms_of_service_url || ''
 
     // Config string is only a fallback source for legacy payloads
     let cfgObj = null
@@ -427,6 +431,11 @@ export function usePortalEditor() {
         lang: Object.keys(langPack.value.locales).length > 0 ? langPack.value : undefined,
         registration_enabled: registrationEnabled.value,
         portal_port: portalPort.value,
+        // 合规文档链接/内容 ✓（登录卡片展示 ✓）
+        privacy_policy_url: config.privacy_policy_url || '',
+        terms_of_service_url: config.terms_of_service_url || '',
+        privacy_policy_content: config.privacy_policy_content || '',
+        terms_of_service_content: config.terms_of_service_content || '',
         regions: Object.keys(regions.value).length > 0 ? regions.value : undefined,
       }
       const res = await updateActivePortal(data)

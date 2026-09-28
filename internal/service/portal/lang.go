@@ -1014,6 +1014,8 @@ const defaultLangJSON = defaultLangZhCNJSON
 
 // defaultMultiLangJSON is the default multi-language configuration.
 // It wraps all locale packs into a structured object:
-//   { "default": "zh-CN", "locales": { "zh-CN": {...}, "en": {...} } }
+//
+//	{ "default": "zh-CN", "locales": { "zh-CN": {...}, "en": {...} } }
+//
 // The admin backend can edit/add/remove locales via the "文案" tab.
 const defaultMultiLangJSON = `{"default":"zh-CN","locales":{"zh-CN":` + defaultLangZhCNJSON + `,"en":` + defaultLangENJSON + `}}`

@@ -112,7 +112,7 @@ func (r *WafRuleRepository) Upsert(ctx context.Context, rule *entity.WafRule) er
 		rule.RuleScope = "global"
 	}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "name"}, {Name: "rule_scope"}, {Name: "server_id"}, {Name: "domain"}},
+		Columns:   []clause.Column{{Name: "name"}, {Name: "rule_scope"}, {Name: "server_id"}, {Name: "domain"}},
 		DoUpdates: clause.AssignmentColumns([]string{"content", "hash", "merge_mode", "enabled", "updated_at"}),
 	}).Create(rule).Error
 }

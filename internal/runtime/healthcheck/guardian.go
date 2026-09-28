@@ -60,8 +60,8 @@ func DefaultConfig(name string, serviceID int64) Config {
 		Name:               name,
 		ServiceID:          serviceID,
 		MaxRestarts:        5,
-		RestartWindowSec:   600,  // 10 minutes
-		StableThresholdSec: 300,  // 5 minutes
+		RestartWindowSec:   600, // 10 minutes
+		StableThresholdSec: 300, // 5 minutes
 		CheckInterval:      30 * time.Second,
 		FailThreshold:      2,
 	}

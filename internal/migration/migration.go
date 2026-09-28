@@ -621,12 +621,13 @@ func migrateDNSChannelEncryption(db *gorm.DB) {
 
 // migrateEABConfigEncryption v3.5：把 EAB 凭据（`mac_key` = EAB-HMAC-Key ✓、
 // `google_sa_json` = GCP 服务账号密钥 JSON ✓）从明文迁移到 AES-256-GCM 加密存储 ✓
-//（与充值卡 / DNS 渠道凭据 **同一把密钥** ✓，见 internal/security/crypto ✓）。
+// （与充值卡 / DNS 渠道凭据 **同一把密钥** ✓，见 internal/security/crypto ✓）。
 //
 // 为什么这两项必须加密 ✗：它们都能直接换到 CA 侧的身份 ✗ ——
 //   - `mac_key`：拿去就能注册 Google / ZeroSSL 的 ACME 账号 ✓；
 //   - `google_sa_json`：内含 `private_key` ✓ → 可以以该服务账号身份调 GCP 接口 ✓
 //     （申请 EAB、乃至这个项目下它能碰到的任何 API ✗）。
+//
 // 而它们原先在库里是**明文** ✗（`sqlite3` 一条 select 就能看到私钥 ✗）。
 //
 // 幂等 ✓：只处理不以 `enc:` 开头的非空值 ✓ —— mac_key 是 base64url（无冒号 ✓）、
@@ -677,7 +678,7 @@ func migrateEABConfigEncryption(db *gorm.DB) {
 }
 
 // migrateACMEAccountConfigEncryption v3.5：把 ACME 账号绑定用的 EAB-HMAC-Key
-//（`acme_account_configs.eabmac_key` ✓）从明文迁移到 AES-256-GCM 加密存储 ✓。
+// （`acme_account_configs.eabmac_key` ✓）从明文迁移到 AES-256-GCM 加密存储 ✓。
 //
 // 为什么单独写 ✗（和 `eab_configs` 的迁移不合并 ✓）：
 // `eab_configs` 是"EAB 凭据**主存储**" ✓（面板拿它去 CA 申请 EAB ✓），

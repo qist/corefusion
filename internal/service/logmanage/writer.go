@@ -24,7 +24,7 @@ type LogWriter struct {
 	compress   bool
 	maxSizeMB  int
 	active     bool
-	paused     bool     // true = subscription active but not writing
+	paused     bool // true = subscription active but not writing
 	stopCh     chan struct{}
 	ticker     *time.Ticker
 	logFile    *os.File // open file for writing in stdout mode

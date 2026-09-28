@@ -13,11 +13,11 @@ import (
 // 它提供高层 API，由 LocalAgent 调用。
 //
 // 使用流程：
-//   1. NewManager() 创建
-//   2. Init(iface) 初始化基础设施
-//   3. AssociateIP() / ApplyLimits() 执行限速操作
-//   4. StartCleanupLoop() 启动过期清理
-//   5. Close() 清理
+//  1. NewManager() 创建
+//  2. Init(iface) 初始化基础设施
+//  3. AssociateIP() / ApplyLimits() 执行限速操作
+//  4. StartCleanupLoop() 启动过期清理
+//  5. Close() 清理
 type Manager struct {
 	registry *MarkRegistry
 	backend  RateLimitBackend
@@ -39,9 +39,9 @@ type Manager struct {
 // NewManager 创建一个新的限速管理器。
 func NewManager(iface string) *Manager {
 	return &Manager{
-		registry:  NewMarkRegistry(),
-		backend:   NewNftTcBackend(),
-		iface:     iface,
+		registry:   NewMarkRegistry(),
+		backend:    NewNftTcBackend(),
+		iface:      iface,
 		cleanupTTL: 0, // 默认不自动清理
 	}
 }
@@ -302,8 +302,8 @@ func (m *Manager) GetStatus(subID int64) []RateLimitEntry {
 			IP:             entry.IP,
 			Mark:           entry.Mark,
 			MaxDownMbps:    maxDown,
-			MaxUpMbps:     maxUp,
-			LastSeen:      entry.LastSeen.Unix(),
+			MaxUpMbps:      maxUp,
+			LastSeen:       entry.LastSeen.Unix(),
 		})
 	}
 	return result
@@ -453,7 +453,7 @@ type RateLimitEntry struct {
 	IP             string
 	Mark           uint32
 	MaxDownMbps    int32
-	MaxUpMbps     int32
+	MaxUpMbps      int32
 	DownlinkBytes  int64
 	UplinkBytes    int64
 	LastSeen       int64

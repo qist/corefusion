@@ -104,9 +104,9 @@ func (r *SubscriptionRepository) RevokeByClientID(ctx context.Context, clientID 
 // UpdateAccessStats updates the access stats for a subscription.
 func (r *SubscriptionRepository) UpdateAccessStats(ctx context.Context, id int64, ip, userAgent string) error {
 	return r.db.WithContext(ctx).Model(&entity.Subscription{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"last_access_at": gorm.Expr("CURRENT_TIMESTAMP"),
-		"access_count":   gorm.Expr("access_count + 1"),
-		"last_ip":        ip,
+		"last_access_at":  gorm.Expr("CURRENT_TIMESTAMP"),
+		"access_count":    gorm.Expr("access_count + 1"),
+		"last_ip":         ip,
 		"last_user_agent": userAgent,
 	}).Error
 }

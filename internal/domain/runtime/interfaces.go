@@ -32,26 +32,26 @@ type ProcessCapability struct {
 
 // ProcessStatusResult is the current process status.
 type ProcessStatusResult struct {
-	ServiceID      int64
-	State          string
-	PID            int
-	UptimeSeconds  int64
-	CrashCount     int
-	LastCrashAt    *time.Time
-	LastExitCode   int
+	ServiceID     int64
+	State         string
+	PID           int
+	UptimeSeconds int64
+	CrashCount    int
+	LastCrashAt   *time.Time
+	LastExitCode  int
 }
 
 // GuardianConfig configures the process guardian.
 type GuardianConfig struct {
-	MaxRestartAttempts int
-	RestartWindow      time.Duration
-	StableThreshold    time.Duration
+	MaxRestartAttempts  int
+	RestartWindow       time.Duration
+	StableThreshold     time.Duration
 	LongStableThreshold time.Duration
-	BaseBackoff        time.Duration
-	MaxBackoff         time.Duration
-	MaxStdoutLines     int
-	MaxStderrLines     int
-	CrashLogRetention  int
+	BaseBackoff         time.Duration
+	MaxBackoff          time.Duration
+	MaxStdoutLines      int
+	MaxStderrLines      int
+	CrashLogRetention   int
 }
 
 // DefaultGuardianConfig returns the default guardian config.
@@ -90,29 +90,29 @@ type SingleNodeApplyInput struct {
 
 // RuntimeDryRunResult is the result of a dry run.
 type RuntimeDryRunResult struct {
-	OK              bool
+	OK               bool
 	SnapshotRequired bool
-	AffectedTargets []RuntimeTarget
-	PortConflicts   []string
-	MissingCerts    []int64
-	ReloadPlan      []RuntimeTarget
+	AffectedTargets  []RuntimeTarget
+	PortConflicts    []string
+	MissingCerts     []int64
+	ReloadPlan       []RuntimeTarget
 }
 
 // RuntimeApplyJob represents a runtime apply job.
 type RuntimeApplyJob struct {
-	ID                int64
-	TriggerSource     string
-	Reason            string
-	OperationKind     string
-	State             string
-	SnapshotID        *int64
+	ID                 int64
+	TriggerSource      string
+	Reason             string
+	OperationKind      string
+	State              string
+	SnapshotID         *int64
 	OriginalSnapshotID *int64
-	TargetCount       int
-	SuccessCount      int
-	FailedCount       int
-	ErrorMessage      string
-	StartedAt         *time.Time
-	FinishedAt        *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	TargetCount        int
+	SuccessCount       int
+	FailedCount        int
+	ErrorMessage       string
+	StartedAt          *time.Time
+	FinishedAt         *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }

@@ -4,17 +4,17 @@ import "time"
 
 // RuleSource is the GORM model for the rule_sources table.
 type RuleSource struct {
-	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID     int64     `json:"server_id" gorm:"not null;default:0;index"` // 0=global, shared by all nodes
-	Name         string    `json:"name" gorm:"size:128;not null"`
-	RepoURL      string    `json:"repo_url" gorm:"size:512;not null"` // e.g. "Loyalsoldier/v2ray-rules-dat"
-	Enabled      bool      `json:"enabled" gorm:"not null;default:false"`
-	SyncCron     string    `json:"sync_cron" gorm:"size:64"`          // e.g. "0 3 * * *" (daily 3am)
-	LastSyncAt   time.Time `json:"last_sync_at"`
-	LastSyncTag  string    `json:"last_sync_tag" gorm:"size:128"`     // last release tag
-	Status       string    `json:"status" gorm:"size:32;not null;default:'idle'"`
-	CreatedAt    time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt    time.Time `json:"updated_at" gorm:"not null"`
+	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID    int64     `json:"server_id" gorm:"not null;default:0;index"` // 0=global, shared by all nodes
+	Name        string    `json:"name" gorm:"size:128;not null"`
+	RepoURL     string    `json:"repo_url" gorm:"size:512;not null"` // e.g. "Loyalsoldier/v2ray-rules-dat"
+	Enabled     bool      `json:"enabled" gorm:"not null;default:false"`
+	SyncCron    string    `json:"sync_cron" gorm:"size:64"` // e.g. "0 3 * * *" (daily 3am)
+	LastSyncAt  time.Time `json:"last_sync_at"`
+	LastSyncTag string    `json:"last_sync_tag" gorm:"size:128"` // last release tag
+	Status      string    `json:"status" gorm:"size:32;not null;default:'idle'"`
+	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (RuleSource) TableName() string { return "rule_sources" }

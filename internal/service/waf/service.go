@@ -115,7 +115,7 @@ func (s *Service) SetNodeServerRepo(repo *repository.NodeServerRepository) {
 // ListMirrorServerIDs 返回**所有镜像节点**的 ID，供周期性 WAF 对账使用 ✓。
 //
 // 为什么需要它 ✗：事件驱动的 fanOutMirrorSync 在"镜像恰好离线"时会漏掉 ✗
-//（推送失败只留一行日志、不重试），需要有个能批量兜底的入口 ✓。
+// （推送失败只留一行日志、不重试），需要有个能批量兜底的入口 ✓。
 // 只返回配置了 partner_server_id 的镜像（没有主节点的镜像无法解析规则来源 ✓）。
 func (s *Service) ListMirrorServerIDs(ctx context.Context) ([]int64, error) {
 	if s.nodeServerRepo == nil {

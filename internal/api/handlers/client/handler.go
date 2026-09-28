@@ -85,15 +85,15 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 		return
 	}
 	var input struct {
-		Password        *string `json:"password" binding:"omitempty,max=72"`
-		PlanID          *int64  `json:"plan_id"`
-		PlanVariantID   *int64  `json:"plan_variant_id"`
-		QuotaBytes        *int64  `json:"quota_bytes"`
-		SpeedLimitMbps    *int    `json:"speed_limit_mbps"`
-		SpeedLimitUpMbps  *int    `json:"speed_limit_up_mbps"`
-		ConcurrentLimit   *int    `json:"concurrent_limit"`
-		ExpiresAt       *string `json:"expires_at"`
-		Remark          *string `json:"remark"`
+		Password         *string `json:"password" binding:"omitempty,max=72"`
+		PlanID           *int64  `json:"plan_id"`
+		PlanVariantID    *int64  `json:"plan_variant_id"`
+		QuotaBytes       *int64  `json:"quota_bytes"`
+		SpeedLimitMbps   *int    `json:"speed_limit_mbps"`
+		SpeedLimitUpMbps *int    `json:"speed_limit_up_mbps"`
+		ConcurrentLimit  *int    `json:"concurrent_limit"`
+		ExpiresAt        *string `json:"expires_at"`
+		Remark           *string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

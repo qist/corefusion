@@ -14,14 +14,14 @@ type SubscriptionFormat struct {
 	IsDefault   bool      `gorm:"default:false" json:"is_default"`
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
-	PlanIDs     Int64List `gorm:"type:longtext;serializer:json" json:"plan_ids"`  // Bound plan IDs; empty = universal (visible to all)
+	PlanIDs     Int64List `gorm:"type:longtext;serializer:json" json:"plan_ids"` // Bound plan IDs; empty = universal (visible to all)
 	// Mihomo/Clash specific config sections (JSON)
-	ListenersJSON      string `gorm:"type:longtext" json:"listeners_json"`
-	ProxyGroupsJSON    string `gorm:"type:longtext" json:"proxy_groups_json"`
-	RuleProvidersJSON  string `gorm:"type:longtext" json:"rule_providers_json"`
-	ProxyProvidersJSON string `gorm:"type:longtext" json:"proxy_providers_json"`
-	DNSJSON            string `gorm:"type:longtext" json:"dns_json"`
-	GeneralJSON        string `gorm:"type:longtext" json:"general_json"`
+	ListenersJSON      string    `gorm:"type:longtext" json:"listeners_json"`
+	ProxyGroupsJSON    string    `gorm:"type:longtext" json:"proxy_groups_json"`
+	RuleProvidersJSON  string    `gorm:"type:longtext" json:"rule_providers_json"`
+	ProxyProvidersJSON string    `gorm:"type:longtext" json:"proxy_providers_json"`
+	DNSJSON            string    `gorm:"type:longtext" json:"dns_json"`
+	GeneralJSON        string    `gorm:"type:longtext" json:"general_json"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
@@ -30,15 +30,15 @@ func (SubscriptionFormat) TableName() string { return "subscription_formats" }
 
 // SubscriptionRule represents a routing rule for a subscription format.
 type SubscriptionRule struct {
-	ID           int64  `gorm:"primaryKey;autoIncrement" json:"id"`
-	FormatID     int64  `gorm:"index;not null" json:"format_id"`
-	RuleType     string `gorm:"size:50;not null" json:"rule_type"`
-	MatchValue   string `gorm:"size:500;not null" json:"match_value"`
-	OutboundTag  string `gorm:"size:100;not null" json:"outbound_tag"`
-	RuleProvider string `gorm:"size:100" json:"rule_provider"` // Reference to rule-provider name
-	RuleAction   string `gorm:"size:200" json:"rule_action"`   // Extra params: no-resolve etc.
-	Priority     int    `gorm:"default:0" json:"priority"`
-	Enabled      bool   `gorm:"default:true" json:"enabled"`
+	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	FormatID     int64     `gorm:"index;not null" json:"format_id"`
+	RuleType     string    `gorm:"size:50;not null" json:"rule_type"`
+	MatchValue   string    `gorm:"size:500;not null" json:"match_value"`
+	OutboundTag  string    `gorm:"size:100;not null" json:"outbound_tag"`
+	RuleProvider string    `gorm:"size:100" json:"rule_provider"` // Reference to rule-provider name
+	RuleAction   string    `gorm:"size:200" json:"rule_action"`   // Extra params: no-resolve etc.
+	Priority     int       `gorm:"default:0" json:"priority"`
+	Enabled      bool      `gorm:"default:true" json:"enabled"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

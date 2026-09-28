@@ -45,16 +45,16 @@ func (h *Handler) ListQuotas(c *gin.Context) {
 		s := &servers[i]
 		hasQuota := s.EgressInterface != "" && s.TrafficQuotaBytes > 0
 		items = append(items, gin.H{
-			"server_id":     s.ID,
-			"name":          s.Name,
-			"region":        s.Region,
-			"egress_iface":  s.EgressInterface,
-			"has_quota":     hasQuota,
-			"quota_bytes":   s.TrafficQuotaBytes,
-			"reset_day":     s.TrafficQuotaResetDay,
-			"used_bytes":    s.TrafficUsedBytes,
-			"period_start":  s.TrafficPeriodStart,
-			"suspended":     s.TrafficSuspended,
+			"server_id":    s.ID,
+			"name":         s.Name,
+			"region":       s.Region,
+			"egress_iface": s.EgressInterface,
+			"has_quota":    hasQuota,
+			"quota_bytes":  s.TrafficQuotaBytes,
+			"reset_day":    s.TrafficQuotaResetDay,
+			"used_bytes":   s.TrafficUsedBytes,
+			"period_start": s.TrafficPeriodStart,
+			"suspended":    s.TrafficSuspended,
 		})
 	}
 	response.OK(c, items)
@@ -88,7 +88,7 @@ func (h *Handler) GetQuotaUsage(c *gin.Context) {
 	used := usage.TotalBytes
 	quota := usage.QuotaBytes
 	response.OK(c, gin.H{
-		"server_id":   usage.ServerID,
+		"server_id":    usage.ServerID,
 		"period_start": usage.PeriodStart,
 		"period_end":   usage.PeriodEnd,
 		"rx_bytes":     usage.RxBytes,

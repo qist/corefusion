@@ -61,13 +61,13 @@ func (h *Handler) Overview(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"node_count":          nodeCount,
-		"service_count":       serviceCount,
+		"node_count":                nodeCount,
+		"service_count":             serviceCount,
 		"active_subscription_count": subCount,
-		"active_cert_count":   certCount,
-		"expiring_cert_count": expiringCertCount,
-		"expiring_certs":      expiringCertList,
-		"quota_warning_count": quotaWarningCount,
+		"active_cert_count":         certCount,
+		"expiring_cert_count":       expiringCertCount,
+		"expiring_certs":            expiringCertList,
+		"quota_warning_count":       quotaWarningCount,
 	})
 }
 
@@ -123,5 +123,3 @@ func (h *Handler) CertMetrics(c *gin.Context) {
 		"expiring": expiring,
 	})
 }
-
-

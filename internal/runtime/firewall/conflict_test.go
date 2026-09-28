@@ -7,9 +7,9 @@ import (
 
 func TestParsePortRange(t *testing.T) {
 	cases := []struct {
-		in       string
-		lo, hi   int
-		ok       bool
+		in     string
+		lo, hi int
+		ok     bool
 	}{
 		{"20000-50000", 20000, 50000, true},
 		{"443", 443, 443, true},

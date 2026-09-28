@@ -8,19 +8,19 @@ import (
 
 // TrafficDeltaEvent represents a traffic increment event from a core collector.
 type TrafficDeltaEvent struct {
-	SessionID      string              `json:"session_id"`
-	UserID         int64               `json:"user_id"`
-	SubscriptionID int64               `json:"subscription_id"`
-	ServiceID      int64               `json:"service_id"`
-	EndpointID     int64               `json:"endpoint_id"`
-	CoreType       domain.CoreType     `json:"core_type"`
-	Protocol       domain.ProtocolType `json:"protocol"`
-	UplinkBytes    int64               `json:"uplink_bytes"`
-	DownlinkBytes  int64               `json:"downlink_bytes"`
-	BillingBytes   int64               `json:"billing_bytes"`
-	Sequence       int64               `json:"seq"`
-	SourceCollector string             `json:"source_collector"`
-	CollectedAt    time.Time           `json:"collected_at"`
+	SessionID       string              `json:"session_id"`
+	UserID          int64               `json:"user_id"`
+	SubscriptionID  int64               `json:"subscription_id"`
+	ServiceID       int64               `json:"service_id"`
+	EndpointID      int64               `json:"endpoint_id"`
+	CoreType        domain.CoreType     `json:"core_type"`
+	Protocol        domain.ProtocolType `json:"protocol"`
+	UplinkBytes     int64               `json:"uplink_bytes"`
+	DownlinkBytes   int64               `json:"downlink_bytes"`
+	BillingBytes    int64               `json:"billing_bytes"`
+	Sequence        int64               `json:"seq"`
+	SourceCollector string              `json:"source_collector"`
+	CollectedAt     time.Time           `json:"collected_at"`
 }
 
 // RawCollectorEvent is the raw event from a core collector, format varies by core.
@@ -44,15 +44,15 @@ type TrafficOwnership struct {
 
 // QuotaSnapshot represents the current quota state for a subject.
 type QuotaSnapshot struct {
-	SubjectType string          `json:"subject_type"`
-	SubjectID   int64           `json:"subject_id"`
-	UsedBytes   int64           `json:"used_bytes"`
-	QuotaBytes  int64           `json:"quota_bytes"`
-	GraceBytes  int64           `json:"grace_bytes"`
-	UsageRatio  float64         `json:"usage_ratio"`
-	RejectMode  string          `json:"reject_mode"`
+	SubjectType string            `json:"subject_type"`
+	SubjectID   int64             `json:"subject_id"`
+	UsedBytes   int64             `json:"used_bytes"`
+	QuotaBytes  int64             `json:"quota_bytes"`
+	GraceBytes  int64             `json:"grace_bytes"`
+	UsageRatio  float64           `json:"usage_ratio"`
+	RejectMode  string            `json:"reject_mode"`
 	State       domain.QuotaState `json:"state"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // AccessContext represents the context for a connection access check.
@@ -86,14 +86,14 @@ type CoreCrashLog struct {
 
 // ProcessStatus represents the current status of a core process.
 type ProcessStatus struct {
-	ServiceID           int64      `json:"service_id"`
-	State               string     `json:"state"`
-	PID                 int        `json:"pid"`
-	UptimeSeconds       int64      `json:"uptime_seconds"`
-	CrashCount          int        `json:"crash_count"`
-	MaxRestartAttempts  int        `json:"max_restart_attempts"`
-	NextRestartAt       *time.Time `json:"next_restart_at,omitempty"`
-	LastCrashAt         *time.Time `json:"last_crash_at,omitempty"`
-	LastExitCode        int        `json:"last_exit_code"`
-	AutoRestartEnabled  bool       `json:"auto_restart_enabled"`
+	ServiceID          int64      `json:"service_id"`
+	State              string     `json:"state"`
+	PID                int        `json:"pid"`
+	UptimeSeconds      int64      `json:"uptime_seconds"`
+	CrashCount         int        `json:"crash_count"`
+	MaxRestartAttempts int        `json:"max_restart_attempts"`
+	NextRestartAt      *time.Time `json:"next_restart_at,omitempty"`
+	LastCrashAt        *time.Time `json:"last_crash_at,omitempty"`
+	LastExitCode       int        `json:"last_exit_code"`
+	AutoRestartEnabled bool       `json:"auto_restart_enabled"`
 }

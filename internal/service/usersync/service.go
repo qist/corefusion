@@ -32,11 +32,11 @@ type UserSyncService struct {
 
 // retryEntry represents a pending user sync operation for an offline server.
 type retryEntry struct {
-	ClientID    int64
-	ServerID    int64
-	Action      string // add, remove, update
-	QueuedAt    time.Time
-	RetryCount  int
+	ClientID   int64
+	ServerID   int64
+	Action     string // add, remove, update
+	QueuedAt   time.Time
+	RetryCount int
 }
 
 // NewUserSyncService creates a new UserSyncService.

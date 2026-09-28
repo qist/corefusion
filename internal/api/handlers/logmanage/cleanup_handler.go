@@ -20,7 +20,7 @@ type SettingStore interface {
 // CleanupHandler handles database log cleanup rule management.
 // It is registered alongside the main logmanage handler.
 type CleanupHandler struct {
-	cleanupSvc  CleanupService
+	cleanupSvc   CleanupService
 	settingStore SettingStore
 }
 
@@ -130,32 +130,32 @@ func (h *CleanupHandler) CleanupTable(c *gin.Context) {
 
 // defaultSchedulerIntervals maps setting keys to default values (in minutes).
 var defaultSchedulerIntervals = map[string]int{
-	"scheduler.log_cleanup_interval":           360,  // 6h
-	"scheduler.client_log_cleanup_interval":     10,  // 10m
-	"scheduler.waf_log_cleanup_interval":        1440, // 24h
-	"scheduler.waf_log_retain_days":             30,
-	"scheduler.backup_check_interval":           1,
-	"scheduler.callback_retry_interval":         1,
-	"scheduler.processing_recovery_interval":    1,
-	"scheduler.order_cleanup_interval":          5,
-	"scheduler.trial_scan_interval":              60,  // 1h
-	"scheduler.downgrade_scan_interval":         5,
-	"scheduler.cfip_check_interval":              5,
+	"scheduler.log_cleanup_interval":         360,  // 6h
+	"scheduler.client_log_cleanup_interval":  10,   // 10m
+	"scheduler.waf_log_cleanup_interval":     1440, // 24h
+	"scheduler.waf_log_retain_days":          30,
+	"scheduler.backup_check_interval":        1,
+	"scheduler.callback_retry_interval":      1,
+	"scheduler.processing_recovery_interval": 1,
+	"scheduler.order_cleanup_interval":       5,
+	"scheduler.trial_scan_interval":          60, // 1h
+	"scheduler.downgrade_scan_interval":      5,
+	"scheduler.cfip_check_interval":          5,
 }
 
 // schedulerLabels maps setting keys to human-readable labels.
 var schedulerLabels = map[string]string{
-	"scheduler.log_cleanup_interval":           "DB Log Cleanup Check Interval",
-	"scheduler.client_log_cleanup_interval":     "Client Log Package Cleanup Interval",
-	"scheduler.waf_log_cleanup_interval":        "WAF Log File Cleanup Interval",
-	"scheduler.waf_log_retain_days":             "WAF Log Retain Days",
-	"scheduler.backup_check_interval":           "Backup Scheduler Check Interval",
-	"scheduler.callback_retry_interval":         "Callback Retry Interval",
-	"scheduler.processing_recovery_interval":    "Processing Recovery Interval",
-	"scheduler.order_cleanup_interval":          "Expired Order Cleanup Interval",
-	"scheduler.trial_scan_interval":              "Trial Expiry Scan Interval",
-	"scheduler.downgrade_scan_interval":         "Downgrade Scan Interval",
-	"scheduler.cfip_check_interval":              "CFIP Source Fetch Interval",
+	"scheduler.log_cleanup_interval":         "DB Log Cleanup Check Interval",
+	"scheduler.client_log_cleanup_interval":  "Client Log Package Cleanup Interval",
+	"scheduler.waf_log_cleanup_interval":     "WAF Log File Cleanup Interval",
+	"scheduler.waf_log_retain_days":          "WAF Log Retain Days",
+	"scheduler.backup_check_interval":        "Backup Scheduler Check Interval",
+	"scheduler.callback_retry_interval":      "Callback Retry Interval",
+	"scheduler.processing_recovery_interval": "Processing Recovery Interval",
+	"scheduler.order_cleanup_interval":       "Expired Order Cleanup Interval",
+	"scheduler.trial_scan_interval":          "Trial Expiry Scan Interval",
+	"scheduler.downgrade_scan_interval":      "Downgrade Scan Interval",
+	"scheduler.cfip_check_interval":          "CFIP Source Fetch Interval",
 }
 
 // GetSchedulerConfig handles GET /log-manage/scheduler-config.
@@ -172,10 +172,10 @@ func (h *CleanupHandler) GetSchedulerConfig(c *gin.Context) {
 	}
 
 	type SchedulerItem struct {
-		Key      string `json:"key"`
-		Label    string `json:"label"`
-		Value    int    `json:"value"`
-		Default  int    `json:"default"`
+		Key     string `json:"key"`
+		Label   string `json:"label"`
+		Value   int    `json:"value"`
+		Default int    `json:"default"`
 	}
 
 	items := make([]SchedulerItem, 0, len(defaultSchedulerIntervals))

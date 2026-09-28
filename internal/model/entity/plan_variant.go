@@ -34,10 +34,10 @@ type PlanVariant struct {
 	Description     string    `gorm:"size:500" json:"description"`
 	BillingCycle    string    `gorm:"size:32;not null;default:monthly" json:"billing_cycle"`
 	DurationDays    int       `gorm:"not null;default:30" json:"duration_days"`
-	Price           int64     `gorm:"not null;default:0" json:"price"`           // in cents
-	OriginalPrice   int64     `gorm:"not null;default:0" json:"original_price"`  // in cents
+	Price           int64     `gorm:"not null;default:0" json:"price"`          // in cents
+	OriginalPrice   int64     `gorm:"not null;default:0" json:"original_price"` // in cents
 	Currency        string    `gorm:"size:8;not null;default:CNY" json:"currency"`
-	QuotaBytes      int64     `gorm:"not null;default:0" json:"quota_bytes"`     // 0 = inherit template
+	QuotaBytes      int64     `gorm:"not null;default:0" json:"quota_bytes"` // 0 = inherit template
 	QuotaResetCycle string    `gorm:"size:32;not null;default:''" json:"quota_reset_cycle"`
 	QuotaResetDay   *int      `json:"quota_reset_day"`
 	ExpiryMode      string    `gorm:"size:32;not null;default:align_with_plan" json:"expiry_mode"` // traffic pack: align_with_plan/extend_plan

@@ -15,10 +15,10 @@ import (
 // LoadBalancer provides weight-based node selection for subscription delivery.
 //
 // 选择策略：
-//   1. 优先级排序：在线 > 离线，低延迟 > 高延迟，高权重 > 低权重
-//   2. 权重分配：按权重比例分配用户到不同节点
-//   3. 区域感知：优先选择用户 GeoIP 匹配的区域
-//   4. 故障排除：自动排除离线或测速失败的节点
+//  1. 优先级排序：在线 > 离线，低延迟 > 高延迟，高权重 > 低权重
+//  2. 权重分配：按权重比例分配用户到不同节点
+//  3. 区域感知：优先选择用户 GeoIP 匹配的区域
+//  4. 故障排除：自动排除离线或测速失败的节点
 //
 // 与 SpeedTestManager 协同工作：测速结果影响排序权重。
 type LoadBalancer struct {
@@ -28,11 +28,11 @@ type LoadBalancer struct {
 	speedTest  *SpeedTestManager
 
 	// 配置
-	strategy            LBStrategy
-	maxNodesPerSub      int           // 每个订阅最多返回的节点数
-	latencyThreshold    int32         // 延迟阈值（ms），超过则降权
-	failurePenalty      float64       // 测速失败的惩罚权重（0-1）
-	regionBonus         float64       // 同区域加分权重
+	strategy         LBStrategy
+	maxNodesPerSub   int     // 每个订阅最多返回的节点数
+	latencyThreshold int32   // 延迟阈值（ms），超过则降权
+	failurePenalty   float64 // 测速失败的惩罚权重（0-1）
+	regionBonus      float64 // 同区域加分权重
 }
 
 // LBStrategy defines the load balancing strategy.
@@ -51,16 +51,16 @@ const (
 
 // NodeCandidate represents a selectable node for load balancing.
 type NodeCandidate struct {
-	ServerID    int64
-	Hostname    string
-	Region      string
-	NodeType    string
-	Weight      int     // 原始权重（来自数据库或配置）
-	Score       float64 // 计算后的综合得分
-	LatencyMs   int32   // 最新延迟
-	IsOnline    bool
-	BandwidthMbps int   // 带宽上限
-	IsLocal     bool
+	ServerID      int64
+	Hostname      string
+	Region        string
+	NodeType      string
+	Weight        int     // 原始权重（来自数据库或配置）
+	Score         float64 // 计算后的综合得分
+	LatencyMs     int32   // 最新延迟
+	IsOnline      bool
+	BandwidthMbps int // 带宽上限
+	IsLocal       bool
 }
 
 // NewLoadBalancer creates a new LoadBalancer.

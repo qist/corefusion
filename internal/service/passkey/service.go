@@ -225,9 +225,9 @@ type webUser struct {
 	creds []webauthn.Credential
 }
 
-func (u *webUser) WebAuthnID() []byte               { return u.id }
-func (u *webUser) WebAuthnName() string             { return u.name }
-func (u *webUser) WebAuthnDisplayName() string      { return u.name }
+func (u *webUser) WebAuthnID() []byte                         { return u.id }
+func (u *webUser) WebAuthnName() string                       { return u.name }
+func (u *webUser) WebAuthnDisplayName() string                { return u.name }
 func (u *webUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
 // loadWebUser 加载用户的凭证适配列表。
@@ -302,7 +302,7 @@ func (s *Service) newWebAuthn(rpid, origin string) (*webauthn.WebAuthn, error) {
 		RPID:          rpid,
 		RPOrigins:     []string{origin},
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
-			ResidentKey:     protocol.ResidentKeyRequirementRequired, // 强制 discoverable → 支持无用户名登录
+			ResidentKey:      protocol.ResidentKeyRequirementRequired, // 强制 discoverable → 支持无用户名登录
 			UserVerification: protocol.VerificationPreferred,
 		},
 		Timeouts: webauthn.TimeoutsConfig{

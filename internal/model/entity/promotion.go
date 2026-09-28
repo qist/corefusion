@@ -4,8 +4,8 @@ import "time"
 
 // Discount type constants.
 const (
-	DiscountTypePercentage   = "percentage"
-	DiscountTypeFixedAmount  = "fixed_amount"
+	DiscountTypePercentage  = "percentage"
+	DiscountTypeFixedAmount = "fixed_amount"
 )
 
 // Promotion scope constants.

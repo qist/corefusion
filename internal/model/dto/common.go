@@ -10,13 +10,13 @@ type APIResponse struct {
 
 // APIError is the standard error response.
 type APIError struct {
-	Code                string `json:"code"`
-	Message             string `json:"message"`
-	RequestID           string `json:"request_id"`
-	CanRetry            bool   `json:"can_retry"`
-	RequiresAction      bool   `json:"requires_action"`
+	Code                 string `json:"code"`
+	Message              string `json:"message"`
+	RequestID            string `json:"request_id"`
+	CanRetry             bool   `json:"can_retry"`
+	RequiresAction       bool   `json:"requires_action"`
 	RequiresActionReason string `json:"requires_action_reason,omitempty"`
-	Detail              any    `json:"detail,omitempty"`
+	Detail               any    `json:"detail,omitempty"`
 }
 
 // Paginated is a paginated list response.
@@ -29,7 +29,7 @@ type Paginated[T any] struct {
 
 // ListQuery is the common list query parameters.
 type ListQuery struct {
-	Limit  int    `form:"limit,default=20"`
-	Offset int    `form:"offset,default=0"`
+	Limit   int    `form:"limit,default=20"`
+	Offset  int    `form:"offset,default=0"`
 	Keyword string `form:"keyword"`
 }

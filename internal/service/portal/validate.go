@@ -19,18 +19,18 @@ var allowedModuleTypes = map[string]bool{
 	"traffic_ring":        true,
 	"traffic_history":     true,
 	"subscription_detail": true,
-	"security_settings":  true,
+	"security_settings":   true,
 	"log_packages":        true,
 	"freeform":            true, // 自由模块：HTML+CSS+JS，不清洗
 	// Commercial modules (P0-P2)
-	"plan_list":         true,
-	"order_create":      true,
-	"charge_panel":      true,
-	"balance_display":   true,
-	"referral":          true,
-	"ticket_list":       true,
-	"article_list":      true,
-	"shared_accounts":   true,
+	"plan_list":       true,
+	"order_create":    true,
+	"charge_panel":    true,
+	"balance_display": true,
+	"referral":        true,
+	"ticket_list":     true,
+	"article_list":    true,
+	"shared_accounts": true,
 	// New modules
 	"client_download":   true,
 	"streaming_status":  true,
@@ -41,12 +41,12 @@ var allowedModuleTypes = map[string]bool{
 }
 
 const (
-	maxModules        = 20  // maximum number of modules allowed
-	maxNavigation     = 10  // maximum number of navigation items allowed
-	maxConfigSize     = 300 * 1024 // 300KB max config JSON size (increased for freeform)
-	maxHTMLContent    = 50000      // max characters for HTML/Markdown content in a single module
-	maxFreeformContent = 200000    // max characters for freeform html/css/js content per field
-	maxCardsPerModule = 6          // max feature cards per module
+	maxModules         = 20         // maximum number of modules allowed
+	maxNavigation      = 10         // maximum number of navigation items allowed
+	maxConfigSize      = 300 * 1024 // 300KB max config JSON size (increased for freeform)
+	maxHTMLContent     = 50000      // max characters for HTML/Markdown content in a single module
+	maxFreeformContent = 200000     // max characters for freeform html/css/js content per field
+	maxCardsPerModule  = 6          // max feature cards per module
 )
 
 // dangerousScriptRe matches script tags and event handler attributes.
@@ -493,8 +493,8 @@ func validateLang(langRaw json.RawMessage) (json.RawMessage, error) {
 
 	// Try to parse as the new multi-language format
 	var multiLang struct {
-		Default  string                          `json:"default"`
-		Locales  map[string]json.RawMessage      `json:"locales"`
+		Default string                     `json:"default"`
+		Locales map[string]json.RawMessage `json:"locales"`
 	}
 	if err := json.Unmarshal(langRaw, &multiLang); err == nil && multiLang.Locales != nil {
 		// New multi-language format

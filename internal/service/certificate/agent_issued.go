@@ -152,14 +152,14 @@ func (s *Service) StoreAgentIssuedCert(ctx context.Context, in AgentIssuedCertIn
 	// 磁盘副本只会多一处需要同步的状态 ✗（真机上也确实出现过"文件在、库为空"的不一致 ✗）。
 	if existing == nil {
 		existing = &entity.Certificate{
-			Name:          name,
-			Domain:        domain,
-			Domains:       sans,
-			Issuer:        issuer,
-			IssuerNodeID:  in.ServerID,
-			ProviderType:  "acme",
-			KeyType:       keyType,
-			KeyBits:       keyBits,
+			Name:         name,
+			Domain:       domain,
+			Domains:      sans,
+			Issuer:       issuer,
+			IssuerNodeID: in.ServerID,
+			ProviderType: "acme",
+			KeyType:      keyType,
+			KeyBits:      keyBits,
 			// 创建（首次入库）就把"这张证书是怎么签的"记下来 ✓ → 续期原样复用 ✓
 			ChallengeType: reportedChallenge,
 			DNSChannelID:  in.DNSChannelID,

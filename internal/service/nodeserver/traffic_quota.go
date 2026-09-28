@@ -12,9 +12,9 @@ import (
 
 	"gorm.io/gorm"
 
-	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
 
@@ -200,16 +200,16 @@ func (s *NodeTrafficQuotaService) addTrafficDelta(serverID int64, iface string, 
 	if result.Error == gorm.ErrRecordNotFound {
 		// Create new period record
 		usage = &entity.NodeTrafficUsage{
-			ServerID:   serverID,
-			Interface:  iface,
+			ServerID:    serverID,
+			Interface:   iface,
 			PeriodStart: periodStart,
 			PeriodEnd:   periodEnd,
-			RxBytes:    dRx,
-			TxBytes:    dTx,
-			TotalBytes: dRx + dTx,
-			QuotaBytes: server.TrafficQuotaBytes,
-			CreatedAt:  now,
-			UpdatedAt:  now,
+			RxBytes:     dRx,
+			TxBytes:     dTx,
+			TotalBytes:  dRx + dTx,
+			QuotaBytes:  server.TrafficQuotaBytes,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		}
 		if err := s.db.Create(usage).Error; err != nil {
 			log.Printf("[TrafficQuota] failed to create usage record for server %d: %v", serverID, err)
@@ -300,23 +300,23 @@ func (s *NodeTrafficQuotaService) resetPeriod(ctx context.Context, server *entit
 	// Create reset log
 	if server.TrafficPeriodStart != nil {
 		s.db.Create(&entity.TrafficQuotaResetLog{
-			SubjectType:           "node_server",
-			SubjectID:             server.ID,
-			ResetCycle:            "monthly",
-			PeriodStart:           *server.TrafficPeriodStart,
-			PeriodEnd:             periodEnd,
+			SubjectType:            "node_server",
+			SubjectID:              server.ID,
+			ResetCycle:             "monthly",
+			PeriodStart:            *server.TrafficPeriodStart,
+			PeriodEnd:              periodEnd,
 			BilledBytesBeforeReset: server.TrafficUsedBytes,
-			TriggerSource:         "auto_periodic",
-			CreatedAt:             now,
+			TriggerSource:          "auto_periodic",
+			CreatedAt:              now,
 		})
 	}
 
 	// Reset the server's traffic counters
 	s.db.Model(&entity.NodeServer{}).Where("id = ?", server.ID).Updates(map[string]interface{}{
-		"traffic_used_bytes":    0,
-		"traffic_period_start":  periodStart,
-		"traffic_suspended":     false,
-		"traffic_suspended_at":  nil,
+		"traffic_used_bytes":   0,
+		"traffic_period_start": periodStart,
+		"traffic_suspended":    false,
+		"traffic_suspended_at": nil,
 	})
 
 	// If the node was suspended, re-enable it and start cores

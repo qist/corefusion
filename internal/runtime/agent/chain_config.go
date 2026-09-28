@@ -25,9 +25,9 @@ import (
 //	{"entry_server_ids": [3, 4], "listen_only": true, "relay_port": 443, "relay_protocol": "vless"}
 type ChainConfig struct {
 	// ── chain_entry fields ──
-	Exits           []ChainExitSpec  `json:"exits,omitempty"`
-	HealthCheck     *ChainHealthCheck `json:"health_check,omitempty"`
-	FailoverStrategy string           `json:"failover_strategy,omitempty"` // priority | weighted | round_robin
+	Exits            []ChainExitSpec   `json:"exits,omitempty"`
+	HealthCheck      *ChainHealthCheck `json:"health_check,omitempty"`
+	FailoverStrategy string            `json:"failover_strategy,omitempty"` // priority | weighted | round_robin
 
 	// ── chain_exit fields ──
 	EntryServerIDs []int64 `json:"entry_server_ids,omitempty"`
@@ -40,17 +40,17 @@ type ChainConfig struct {
 type ChainExitSpec struct {
 	ExitServerID int64  `json:"exit_server_id"`
 	OutboundTag  string `json:"outbound_tag"`
-	Protocol     string `json:"protocol"`   // vless, vmess, trojan, shadowsocks
-	Transport    string `json:"transport"`  // tcp, ws, grpc, http
-	Security     string `json:"security"`   // tls, reality, none
-	Weight       int    `json:"weight"`     // for weighted strategy
-	Priority     int    `json:"priority"`   // 1 = highest
+	Protocol     string `json:"protocol"`  // vless, vmess, trojan, shadowsocks
+	Transport    string `json:"transport"` // tcp, ws, grpc, http
+	Security     string `json:"security"`  // tls, reality, none
+	Weight       int    `json:"weight"`    // for weighted strategy
+	Priority     int    `json:"priority"`  // 1 = highest
 }
 
 // ChainHealthCheck defines health check parameters for chain_exit monitoring.
 type ChainHealthCheck struct {
-	IntervalSec  int `json:"interval_sec"`
-	TimeoutSec   int `json:"timeout_sec"`
+	IntervalSec   int `json:"interval_sec"`
+	TimeoutSec    int `json:"timeout_sec"`
 	FailThreshold int `json:"fail_threshold"`
 }
 

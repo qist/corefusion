@@ -50,23 +50,23 @@ func (h *Handler) List(c *gin.Context) {
 			token = token[:8] + "***"
 		}
 		items[i] = gin.H{
-			"id":              s.ID,
-			"client_id":       s.ClientID,
-			"format":          s.Format,
-			"token_masked":    token,
-			"status":          s.Status,
-			"security_mode":   s.SecurityMode,
-			"quota_bytes":     s.QuotaBytes,
-			"used_bytes_cache": s.UsedBytesCache,
-			"upload_bytes_cache": s.UploadBytesCache,
+			"id":                   s.ID,
+			"client_id":            s.ClientID,
+			"format":               s.Format,
+			"token_masked":         token,
+			"status":               s.Status,
+			"security_mode":        s.SecurityMode,
+			"quota_bytes":          s.QuotaBytes,
+			"used_bytes_cache":     s.UsedBytesCache,
+			"upload_bytes_cache":   s.UploadBytesCache,
 			"download_bytes_cache": s.DownloadBytesCache,
-			"quota_state":     s.QuotaState,
-			"billing_node_ids": s.BillingNodeIDs,
-			"access_count":    s.AccessCount,
-			"last_access_at":  s.LastAccessAt,
-			"expires_at":      s.ExpiresAt,
-			"created_at":      s.CreatedAt,
-			"updated_at":      s.UpdatedAt,
+			"quota_state":          s.QuotaState,
+			"billing_node_ids":     s.BillingNodeIDs,
+			"access_count":         s.AccessCount,
+			"last_access_at":       s.LastAccessAt,
+			"expires_at":           s.ExpiresAt,
+			"created_at":           s.CreatedAt,
+			"updated_at":           s.UpdatedAt,
 		}
 	}
 
@@ -94,16 +94,16 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	response.Created(c, gin.H{
-		"id":           sub.ID,
-		"client_id":    sub.ClientID,
-		"format":       sub.Format,
-		"token":        sub.Token,
-		"status":       sub.Status,
-		"security_mode": sub.SecurityMode,
-		"quota_bytes":  sub.QuotaBytes,
+		"id":               sub.ID,
+		"client_id":        sub.ClientID,
+		"format":           sub.Format,
+		"token":            sub.Token,
+		"status":           sub.Status,
+		"security_mode":    sub.SecurityMode,
+		"quota_bytes":      sub.QuotaBytes,
 		"billing_node_ids": sub.BillingNodeIDs,
-		"expires_at":   sub.ExpiresAt,
-		"created_at":   sub.CreatedAt,
+		"expires_at":       sub.ExpiresAt,
+		"created_at":       sub.CreatedAt,
 	})
 }
 
@@ -232,8 +232,8 @@ func (h *Handler) Restore(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"id":         sub.ID,
-		"status":     sub.Status,
+		"id":          sub.ID,
+		"status":      sub.Status,
 		"quota_state": sub.QuotaState,
 	})
 }
@@ -273,12 +273,12 @@ func (h *Handler) ResetUsage(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"id":              sub.ID,
-		"used_bytes_cache": sub.UsedBytesCache,
-		"upload_bytes_cache": sub.UploadBytesCache,
+		"id":                   sub.ID,
+		"used_bytes_cache":     sub.UsedBytesCache,
+		"upload_bytes_cache":   sub.UploadBytesCache,
 		"download_bytes_cache": sub.DownloadBytesCache,
-		"quota_state":     sub.QuotaState,
-		"last_reset_at":   sub.LastResetAt,
+		"quota_state":          sub.QuotaState,
+		"last_reset_at":        sub.LastResetAt,
 	})
 }
 

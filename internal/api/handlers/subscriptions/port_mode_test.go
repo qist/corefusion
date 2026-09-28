@@ -72,9 +72,10 @@ func TestShareAddressFallsBackToListenAddress(t *testing.T) {
 
 // 「链接用哪个端口」必须与界面上选择的端口模式一致。
 // 界面（xray / sing-box 一致）：
-//   direct  → 端口模式：使用配置端口(域名里配的) / 使用入站端口
-//   cf_domain / cf_ip → 没有端口模式选项，用 CDN 条目的端口
-//   custom  → 端口模式：使用自定义端口 / 使用入站端口
+//
+//	direct  → 端口模式：使用配置端口(域名里配的) / 使用入站端口
+//	cf_domain / cf_ip → 没有端口模式选项，用 CDN 条目的端口
+//	custom  → 端口模式：使用自定义端口 / 使用入站端口
 func TestResolveHostPortHonorsPortMode(t *testing.T) {
 	const listenPort = 20001
 	domains := []shareDomainEntry{

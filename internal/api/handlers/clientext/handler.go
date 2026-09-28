@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"corefusion/internal/api/handlers/subscriptions"
-	"gorm.io/gorm"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // PublicSubHandler is the interface satisfied by subscriptions.PublicHandler.
@@ -24,20 +24,20 @@ type PublicSubHandler interface {
 
 // Handler holds all new P1-P3 service references.
 type Handler struct {
-	referralSvc      *clientauth.ReferralService
-	ticketSvc        *clientauth.TicketService
-	giftSvc          *clientauth.GiftService
-	articleSvc       *clientauth.ArticleService
-	sharedAcctSvc    *clientauth.SharedAccountService
-	ipWhitelistSvc   *clientauth.IPWhitelistService
-	selfUnbanSvc     *clientauth.SelfUnbanService
-	subResetSvc      *clientauth.SubscriptionResetService
-	clientRepo       *repository.ClientRepository
-	oAuthRepo        *repository.ClientOAuthBindingRepository
-	subRepo          *repository.SubscriptionRepository
-	subEndpointRepo  *repository.SubscriptionEndpointRepository
-	publicSubH       PublicSubHandler
-	db               *gorm.DB
+	referralSvc     *clientauth.ReferralService
+	ticketSvc       *clientauth.TicketService
+	giftSvc         *clientauth.GiftService
+	articleSvc      *clientauth.ArticleService
+	sharedAcctSvc   *clientauth.SharedAccountService
+	ipWhitelistSvc  *clientauth.IPWhitelistService
+	selfUnbanSvc    *clientauth.SelfUnbanService
+	subResetSvc     *clientauth.SubscriptionResetService
+	clientRepo      *repository.ClientRepository
+	oAuthRepo       *repository.ClientOAuthBindingRepository
+	subRepo         *repository.SubscriptionRepository
+	subEndpointRepo *repository.SubscriptionEndpointRepository
+	publicSubH      PublicSubHandler
+	db              *gorm.DB
 }
 
 // NewHandler creates a new Handler.
@@ -617,10 +617,10 @@ func (h *Handler) AdminCreateGift(c *gin.Context) {
 
 func (h *Handler) AdminCreateGiftBatch(c *gin.Context) {
 	var body struct {
-		ClientIDs []int64  `json:"client_ids" binding:"required"`
-		Type      string   `json:"type" binding:"required"`
-		Source    string   `json:"source" binding:"required"`
-		Value    int64    `json:"value" binding:"required"`
+		ClientIDs []int64 `json:"client_ids" binding:"required"`
+		Type      string  `json:"type" binding:"required"`
+		Source    string  `json:"source" binding:"required"`
+		Value     int64   `json:"value" binding:"required"`
 		ExpiresAt string  `json:"expires_at"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -681,8 +681,8 @@ func (h *Handler) AdminGetReferralConfig(c *gin.Context) {
 // AdminSetReferralConfig handles PUT /api/v1/referral/config (admin: set referral settings).
 func (h *Handler) AdminSetReferralConfig(c *gin.Context) {
 	var body struct {
-		CommissionRate     *int   `json:"commission_rate"`
-		MinWithdrawAmount  *int64 `json:"min_withdraw_amount"`
+		CommissionRate    *int   `json:"commission_rate"`
+		MinWithdrawAmount *int64 `json:"min_withdraw_amount"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1000,8 +1000,8 @@ func (h *Handler) CheckTime(c *gin.Context) {
 		diff = serverTime - clientTimestamp
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"server_time": serverTime,
-		"client_ip":   netutil.GetRealIP(c.Request),
+		"server_time":  serverTime,
+		"client_ip":    netutil.GetRealIP(c.Request),
 		"diff_seconds": diff,
 	})
 }
@@ -1025,13 +1025,13 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		bindings, _ = h.oAuthRepo.ListByClientID(c.Request.Context(), clientID)
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"id":         client.ID,
-		"email":      client.Email,
-		"nickname":   client.Nickname,
-		"qq":         client.QQ,
-		"wechat":     client.Wechat,
-		"status":     client.Status,
-		"created_at": client.CreatedAt,
+		"id":             client.ID,
+		"email":          client.Email,
+		"nickname":       client.Nickname,
+		"qq":             client.QQ,
+		"wechat":         client.Wechat,
+		"status":         client.Status,
+		"created_at":     client.CreatedAt,
 		"oauth_bindings": bindings,
 	})
 }
@@ -1091,12 +1091,12 @@ func (h *Handler) GetConnectionInfo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"protocol":       protocol,
-		"transport":      transport,
-		"tls":            tls,
-		"device_limit":   client.DeviceLimit,
-		"speed_limit":    client.SpeedLimitMbps,
-		"concurrent":     client.ConcurrentLimit,
+		"protocol":     protocol,
+		"transport":    transport,
+		"tls":          tls,
+		"device_limit": client.DeviceLimit,
+		"speed_limit":  client.SpeedLimitMbps,
+		"concurrent":   client.ConcurrentLimit,
 	})
 }
 
@@ -1303,10 +1303,10 @@ func (h *Handler) ApplySharedAccount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"id":                account.ID,
-		"name":              account.Name,
-		"type":              account.Type,
-		"credentials_enc":   account.CredentialsEnc,
-		"message":           "account applied successfully",
+		"id":              account.ID,
+		"name":            account.Name,
+		"type":            account.Type,
+		"credentials_enc": account.CredentialsEnc,
+		"message":         "account applied successfully",
 	})
 }

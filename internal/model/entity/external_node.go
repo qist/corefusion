@@ -20,9 +20,9 @@ func (ExternalNodeSource) TableName() string { return "external_node_sources" }
 // ExternalNode represents a single external proxy node.
 type ExternalNode struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	SourceID   int64     `json:"source_id" gorm:"not null"`   // FK to external_node_sources
+	SourceID   int64     `json:"source_id" gorm:"not null"` // FK to external_node_sources
 	Name       string    `json:"name" gorm:"not null"`
-	Protocol   string    `json:"protocol"`                     // vless, vmess, trojan, etc.
+	Protocol   string    `json:"protocol"` // vless, vmess, trojan, etc.
 	Host       string    `json:"host"`
 	Port       int       `json:"port"`
 	Transport  string    `json:"transport"`

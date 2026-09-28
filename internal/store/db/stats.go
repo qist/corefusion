@@ -18,7 +18,7 @@ import (
 // of the underlying database engine. Only the field matching the current
 // engine is populated; the rest remain nil.
 type DBStatsResponse struct {
-	Engine   string       `json:"engine"`   // "sqlite" | "mysql" | "postgres"
+	Engine   string       `json:"engine"` // "sqlite" | "mysql" | "postgres"
 	SQLite   *SQLiteStats `json:"sqlite,omitempty"`
 	MySQL    *MySQLStats  `json:"mysql,omitempty"`
 	Postgres *PGStats     `json:"postgres,omitempty"`
@@ -29,9 +29,9 @@ type DBStatsResponse struct {
 // across all engines. Engine-specific details are in the respective
 // *Stats structs.
 type DBInfo struct {
-	Engine         string `json:"engine"`           // "sqlite" | "mysql" | "postgres"`
-	Version        string `json:"version"`          // engine version string
-	DatabaseSize   int64  `json:"database_size"`    // database size in bytes (best-effort)
+	Engine           string `json:"engine"`            // "sqlite" | "mysql" | "postgres"`
+	Version          string `json:"version"`           // engine version string
+	DatabaseSize     int64  `json:"database_size"`     // database size in bytes (best-effort)
 	ConnectionString string `json:"connection_string"` // sanitized DSN (password masked)
 }
 
@@ -44,12 +44,12 @@ type DBInfo struct {
 // sqlite3_db_status C API.
 type SQLiteStats struct {
 	// Cache statistics (page cache)
-	CacheUsedBytes   int     `json:"cache_used_bytes"`   // Memory used by the page cache
-	CacheHitCount    int     `json:"cache_hit_count"`    // Page cache hits (cumulative)
-	CacheMissCount   int     `json:"cache_miss_count"`   // Page cache misses (cumulative)
-	CacheWriteCount  int     `json:"cache_write_count"`  // Page cache writes (cumulative)
-	CacheSpillCount  int     `json:"cache_spill_count"`  // Cache spills to disk (cumulative)
-	CacheHitRatio    float64 `json:"cache_hit_ratio"`    // hit / (hit + miss), 0-1
+	CacheUsedBytes  int     `json:"cache_used_bytes"`  // Memory used by the page cache
+	CacheHitCount   int     `json:"cache_hit_count"`   // Page cache hits (cumulative)
+	CacheMissCount  int     `json:"cache_miss_count"`  // Page cache misses (cumulative)
+	CacheWriteCount int     `json:"cache_write_count"` // Page cache writes (cumulative)
+	CacheSpillCount int     `json:"cache_spill_count"` // Cache spills to disk (cumulative)
+	CacheHitRatio   float64 `json:"cache_hit_ratio"`   // hit / (hit + miss), 0-1
 
 	// Memory statistics
 	SchemaUsedBytes int `json:"schema_used_bytes"` // Memory used by the schema (tables, indexes, etc.)
@@ -185,26 +185,38 @@ func GetSQLiteStats() (*SQLiteStats, error) {
 	// Map numeric PRAGMA values to human-readable strings
 	mapSync := func(v string) string {
 		switch v {
-		case "0": return "OFF"
-		case "1": return "NORMAL"
-		case "2": return "FULL"
-		case "3": return "EXTRA"
-		default: return v
+		case "0":
+			return "OFF"
+		case "1":
+			return "NORMAL"
+		case "2":
+			return "FULL"
+		case "3":
+			return "EXTRA"
+		default:
+			return v
 		}
 	}
 	mapOnOff := func(v string) string {
 		switch v {
-		case "0": return "OFF"
-		case "1": return "ON"
-		default: return v
+		case "0":
+			return "OFF"
+		case "1":
+			return "ON"
+		default:
+			return v
 		}
 	}
 	mapTempStore := func(v string) string {
 		switch v {
-		case "0": return "DEFAULT"
-		case "1": return "FILE"
-		case "2": return "MEMORY"
-		default: return v
+		case "0":
+			return "DEFAULT"
+		case "1":
+			return "FILE"
+		case "2":
+			return "MEMORY"
+		default:
+			return v
 		}
 	}
 
@@ -234,35 +246,35 @@ type MySQLStats struct {
 	Idle               int `json:"idle"`                 // Idle connections
 
 	// MySQL global status variables
-	ThreadsConnected   int   `json:"threads_connected"`   // Threads currently connected
-	ThreadsRunning     int   `json:"threads_running"`     // Threads currently running
-	ThreadsCreated     int64 `json:"threads_created"`     // Threads created since startup
-	ThreadsCached      int   `json:"threads_cached"`      // Threads in the thread cache
-	AbortedConnects    int64 `json:"aborted_connects"`    // Failed connection attempts
-	Connections        int64 `json:"connections"`         // Total connection attempts (cumulative)
+	ThreadsConnected   int   `json:"threads_connected"`    // Threads currently connected
+	ThreadsRunning     int   `json:"threads_running"`      // Threads currently running
+	ThreadsCreated     int64 `json:"threads_created"`      // Threads created since startup
+	ThreadsCached      int   `json:"threads_cached"`       // Threads in the thread cache
+	AbortedConnects    int64 `json:"aborted_connects"`     // Failed connection attempts
+	Connections        int64 `json:"connections"`          // Total connection attempts (cumulative)
 	MaxUsedConnections int   `json:"max_used_connections"` // Maximum simultaneously used connections
 
 	// Query statistics
-	Queries         int64 `json:"queries"`          // Total queries (cumulative)
-	Questions       int64 `json:"questions"`         // Total questions asked by clients (cumulative)
-	SlowQueries     int64 `json:"slow_queries"`      // Queries longer than long_query_time
-	ComSelect       int64 `json:"com_select"`        // SELECT statements
-	ComInsert       int64 `json:"com_insert"`        // INSERT statements
-	ComUpdate       int64 `json:"com_update"`        // UPDATE statements
-	ComDelete       int64 `json:"com_delete"`        // DELETE statements
-	ComCommit        int64 `json:"com_commit"`       // COMMIT statements
-	ComRollback     int64 `json:"com_rollback"`      // ROLLBACK statements
+	Queries     int64 `json:"queries"`      // Total queries (cumulative)
+	Questions   int64 `json:"questions"`    // Total questions asked by clients (cumulative)
+	SlowQueries int64 `json:"slow_queries"` // Queries longer than long_query_time
+	ComSelect   int64 `json:"com_select"`   // SELECT statements
+	ComInsert   int64 `json:"com_insert"`   // INSERT statements
+	ComUpdate   int64 `json:"com_update"`   // UPDATE statements
+	ComDelete   int64 `json:"com_delete"`   // DELETE statements
+	ComCommit   int64 `json:"com_commit"`   // COMMIT statements
+	ComRollback int64 `json:"com_rollback"` // ROLLBACK statements
 
 	// Buffer pool (InnoDB)
-	BufferPoolSize      int64 `json:"buffer_pool_size"`      // Total buffer pool size in bytes
-	BufferPoolUsed      int64 `json:"buffer_pool_used"`      // Used buffer pool in bytes
-	BufferPoolFree      int64 `json:"buffer_pool_free"`      // Free buffer pool in bytes
-	BufferPoolHitRate   float64 `json:"buffer_pool_hit_rate"`  // Hit ratio (0-1)
-	BufferPoolReadReqs  int64 `json:"buffer_pool_read_requests"` // Read requests (cumulative)
-	BufferPoolReads     int64 `json:"buffer_pool_reads"`      // Physical reads (cumulative)
+	BufferPoolSize     int64   `json:"buffer_pool_size"`          // Total buffer pool size in bytes
+	BufferPoolUsed     int64   `json:"buffer_pool_used"`          // Used buffer pool in bytes
+	BufferPoolFree     int64   `json:"buffer_pool_free"`          // Free buffer pool in bytes
+	BufferPoolHitRate  float64 `json:"buffer_pool_hit_rate"`      // Hit ratio (0-1)
+	BufferPoolReadReqs int64   `json:"buffer_pool_read_requests"` // Read requests (cumulative)
+	BufferPoolReads    int64   `json:"buffer_pool_reads"`         // Physical reads (cumulative)
 
 	// Temporary objects
-	CreatedTmpTables   int64 `json:"created_tmp_tables"`    // In-memory temp tables created
+	CreatedTmpTables     int64 `json:"created_tmp_tables"`      // In-memory temp tables created
 	CreatedTmpDiskTables int64 `json:"created_tmp_disk_tables"` // On-disk temp tables created
 
 	// Key cache (MyISAM, reported for completeness)
@@ -454,38 +466,38 @@ type PGStats struct {
 	Idle               int `json:"idle"`
 
 	// Server-level connection stats
-	TotalConnections   int `json:"total_connections"`   // Total active connections to the server
-	ActiveConnections  int `json:"active_connections"`  // Connections in active state
-	IdleConnections    int `json:"idle_connections"`    // Connections in idle state
-	IdleInTxn          int `json:"idle_in_txn"`         // Connections idle in transaction
-	MaxConnections     int64 `json:"max_connections"`   // Server max_connections setting
+	TotalConnections  int   `json:"total_connections"`  // Total active connections to the server
+	ActiveConnections int   `json:"active_connections"` // Connections in active state
+	IdleConnections   int   `json:"idle_connections"`   // Connections in idle state
+	IdleInTxn         int   `json:"idle_in_txn"`        // Connections idle in transaction
+	MaxConnections    int64 `json:"max_connections"`    // Server max_connections setting
 
 	// Database-level stats (from pg_stat_database)
-	NumCommit          int64 `json:"num_commit"`          // Committed transactions
-	NumRollback        int64 `json:"num_rollback"`        // Rolled back transactions
-	BlksRead           int64 `json:"blks_read"`           // Disk blocks read
-	BlksHit            int64 `json:"blks_hit"`            // Buffer hits
-	BlksHitRatio       float64 `json:"blks_hit_ratio"`    // Hit ratio (0-1)
-	TuplesReturned     int64 `json:"tuples_returned"`     // Tuples returned by queries
-	TuplesFetched      int64 `json:"tuples_fetched"`      // Tuples fetched by queries
-	TuplesInserted     int64 `json:"tuples_inserted"`     // Tuples inserted
-	TuplesUpdated      int64 `json:"tuples_updated"`      // Tuples updated
-	TuplesDeleted      int64 `json:"tuples_deleted"`      // Tuples deleted
-	TuplesConflict     int64 `json:"tuples_conflict"`     // Tuples conflicted
-	TempFiles          int64 `json:"temp_files"`          // Temporary files created
-	TempBytes          int64 `json:"temp_bytes"`          // Bytes written to temp files
-	Deadlocks          int64 `json:"deadlocks"`           // Detected deadlocks
-	StatsReset         string `json:"stats_reset"`        // Last stats reset timestamp
+	NumCommit      int64   `json:"num_commit"`      // Committed transactions
+	NumRollback    int64   `json:"num_rollback"`    // Rolled back transactions
+	BlksRead       int64   `json:"blks_read"`       // Disk blocks read
+	BlksHit        int64   `json:"blks_hit"`        // Buffer hits
+	BlksHitRatio   float64 `json:"blks_hit_ratio"`  // Hit ratio (0-1)
+	TuplesReturned int64   `json:"tuples_returned"` // Tuples returned by queries
+	TuplesFetched  int64   `json:"tuples_fetched"`  // Tuples fetched by queries
+	TuplesInserted int64   `json:"tuples_inserted"` // Tuples inserted
+	TuplesUpdated  int64   `json:"tuples_updated"`  // Tuples updated
+	TuplesDeleted  int64   `json:"tuples_deleted"`  // Tuples deleted
+	TuplesConflict int64   `json:"tuples_conflict"` // Tuples conflicted
+	TempFiles      int64   `json:"temp_files"`      // Temporary files created
+	TempBytes      int64   `json:"temp_bytes"`      // Bytes written to temp files
+	Deadlocks      int64   `json:"deadlocks"`       // Detected deadlocks
+	StatsReset     string  `json:"stats_reset"`     // Last stats reset timestamp
 
 	// Cache (shared_buffers)
 	SharedBuffersSize  int64 `json:"shared_buffers_size"`  // shared_buffers in bytes
 	EffectiveCacheSize int64 `json:"effective_cache_size"` // effective_cache_size in bytes
 
 	// Database size
-	DatabaseSize       int64 `json:"database_size"`        // Database size in bytes
+	DatabaseSize int64 `json:"database_size"` // Database size in bytes
 
 	// Server version
-	ServerVersion      string `json:"server_version"`      // PostgreSQL version string
+	ServerVersion string `json:"server_version"` // PostgreSQL version string
 }
 
 // GetPostgresStats returns runtime statistics for a PostgreSQL database.
@@ -550,13 +562,13 @@ func GetPostgresStats() (*PGStats, error) {
 
 	// Database-level stats from pg_stat_database
 	var (
-		numCommit, numRollback     int64
-		blksRead, blksHit          int64
-		tuplesReturned, tuplesFetched int64
+		numCommit, numRollback                                       int64
+		blksRead, blksHit                                            int64
+		tuplesReturned, tuplesFetched                                int64
 		tuplesInserted, tuplesUpdated, tuplesDeleted, tuplesConflict int64
-		tempFiles, tempBytes       int64
-		deadlocks                  int64
-		statsReset                 sql.NullString
+		tempFiles, tempBytes                                         int64
+		deadlocks                                                    int64
+		statsReset                                                   sql.NullString
 	)
 	err = sqlDB.QueryRow(`
 		SELECT

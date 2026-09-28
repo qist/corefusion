@@ -233,22 +233,22 @@ func (s *Service) GetAllOnlineSummary() *OnlineSummaryResponse {
 
 // GlobalOnlineUser 是全局在线用户视图中的一行（一个订阅在某节点上的在线聚合）。
 type GlobalOnlineUser struct {
-	ServerID           int64                      `json:"server_id"`
-	NodeName           string                     `json:"node_name"`
-	SubscriptionID     int64                      `json:"subscription_id"`
-	Email              string                     `json:"email"`
-	ClientName         string                     `json:"client_name"`
-	PlanName           string                     `json:"plan_name"`
-	SpeedLimitDownMbps int32                      `json:"speed_limit_down_mbps"`
-	SpeedLimitUpMbps   int32                      `json:"speed_limit_up_mbps"`
-	FirstSeen          int64                      `json:"first_seen"`
-	LastSeen           int64                      `json:"last_seen"`
-	DownlinkRate       int64                      `json:"downlink_rate"`
-	UplinkRate         int64                      `json:"uplink_rate"`
-	DownlinkBytes      int64                      `json:"downlink_bytes"`
-	UplinkBytes        int64                      `json:"uplink_bytes"`
-	SessionCount       int                        `json:"session_count"`
-	Sessions           []*agentpb.OnlineSession   `json:"sessions"`
+	ServerID           int64                    `json:"server_id"`
+	NodeName           string                   `json:"node_name"`
+	SubscriptionID     int64                    `json:"subscription_id"`
+	Email              string                   `json:"email"`
+	ClientName         string                   `json:"client_name"`
+	PlanName           string                   `json:"plan_name"`
+	SpeedLimitDownMbps int32                    `json:"speed_limit_down_mbps"`
+	SpeedLimitUpMbps   int32                    `json:"speed_limit_up_mbps"`
+	FirstSeen          int64                    `json:"first_seen"`
+	LastSeen           int64                    `json:"last_seen"`
+	DownlinkRate       int64                    `json:"downlink_rate"`
+	UplinkRate         int64                    `json:"uplink_rate"`
+	DownlinkBytes      int64                    `json:"downlink_bytes"`
+	UplinkBytes        int64                    `json:"uplink_bytes"`
+	SessionCount       int                      `json:"session_count"`
+	Sessions           []*agentpb.OnlineSession `json:"sessions"`
 }
 
 // GlobalOnlineFilter 是全局在线用户查询的过滤条件（服务端分页与筛选）。

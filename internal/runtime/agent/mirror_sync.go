@@ -190,10 +190,10 @@ func (m *MirrorSyncManager) GetMirrorStatus(ctx context.Context, mirrorID int64)
 	}
 
 	status := &MirrorStatus{
-		MirrorID:  mirrorID,
+		MirrorID:   mirrorID,
 		MirrorName: mirror.Name,
-		PrimaryID: mirror.PartnerServerID,
-		Online:    m.nodeMgr.IsOnline(mirrorID),
+		PrimaryID:  mirror.PartnerServerID,
+		Online:     m.nodeMgr.IsOnline(mirrorID),
 	}
 
 	if mirror.PartnerServerID > 0 {

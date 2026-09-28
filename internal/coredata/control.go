@@ -26,9 +26,9 @@ type CoreControl interface {
 
 // ControlProvider 组合本地/远程两种后端，按 serverID 路由。
 type ControlProvider struct {
-	isLocal     func(serverID int64) bool
-	addr        AddrResolver
-	remote      RemoteCaller
+	isLocal func(serverID int64) bool
+	addr    AddrResolver
+	remote  RemoteCaller
 }
 
 // ControlOptions 构造 ControlProvider 所需依赖。

@@ -31,7 +31,7 @@ func renderFirstXrayOutbound(t *testing.T, node Node) map[string]interface{} {
 func TestXrayFormatterKeepsRawTransport(t *testing.T) {
 	raw := renderFirstXrayOutbound(t, Node{
 		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
-		UUID: "11111111-1111-1111-1111-111111111111",
+		UUID:      "11111111-1111-1111-1111-111111111111",
 		Transport: "raw",
 		Extra: map[string]interface{}{
 			"http-opts": map[string]interface{}{
@@ -54,7 +54,7 @@ func TestXrayFormatterKeepsRawTransport(t *testing.T) {
 	// 真的是 tcp 的（老配置）照旧写 tcp + tcpSettings
 	tcp := renderFirstXrayOutbound(t, Node{
 		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
-		UUID: "11111111-1111-1111-1111-111111111111",
+		UUID:      "11111111-1111-1111-1111-111111111111",
 		Transport: "tcp",
 		Extra: map[string]interface{}{
 			"http-opts": map[string]interface{}{"path": []string{"/"}},
@@ -71,7 +71,7 @@ func TestXrayFormatterKeepsRawTransport(t *testing.T) {
 	// ws 等真实传输原样保留
 	ws := renderFirstXrayOutbound(t, Node{
 		Name: "v", Protocol: "vless", Host: "1.2.3.4", Port: 443,
-		UUID: "11111111-1111-1111-1111-111111111111",
+		UUID:      "11111111-1111-1111-1111-111111111111",
 		Transport: "ws", Extra: map[string]interface{}{"ws-opts": map[string]interface{}{"path": "/ws"}},
 	})
 	ss, _ = ws["streamSettings"].(map[string]interface{})
@@ -90,13 +90,13 @@ func TestSanitizeNodeName(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"Node-zhhrup", "Node-zhhrup"},
 		{"香港节点 #1 (镜像N3)", "香港节点 #1 (镜像N3)"}, // 中文/井号/括号保留（写出时由各格式转义）
-		{"node\nline2", "node line2"},              // 换行 → 空格
-		{"node\t\ttab", "node tab"},                // 制表符折叠
+		{"node\nline2", "node line2"},        // 换行 → 空格
+		{"node\t\ttab", "node tab"},          // 制表符折叠
 		{"  padded  ", "padded"},
-		{"a\x00b", "a b"},             // 控制字符
-		{"", "node"},                  // 空 → 兜底
-		{"   ", "node"},               // 全空白 → 兜底
-		{"\u3000全角空格", "全角空格"},         // 全角空格当空白处理
+		{"a\x00b", "a b"},                                    // 控制字符
+		{"", "node"},                                         // 空 → 兜底
+		{"   ", "node"},                                      // 全空白 → 兜底
+		{"\u3000全角空格", "全角空格"},                               // 全角空格当空白处理
 		{strings.Repeat("长", 120), strings.Repeat("长", 100)}, // 超长截断
 	}
 	for _, tc := range cases {

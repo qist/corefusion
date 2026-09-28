@@ -13,13 +13,13 @@ type ChainLink struct {
 	ExitServerID   int64 `json:"exit_server_id" gorm:"not null;default:0;index"`
 	// ExitInboundID：链式出口使用**出口节点上已有的入站**（>0 时用它，不再自动创建 relay-in 入站）。
 	// 与 ExitServerID 搭配：ExitInboundID 必须属于 ExitServerID 那台机器。
-	ExitInboundID  int64 `json:"exit_inbound_id" gorm:"not null;default:0;index"`
-	ExitExternalID int64 `json:"exit_external_id" gorm:"not null;default:0;index"`
-	ExitTag        string `json:"exit_tag" gorm:"size:128;not null;default:''"`
-	Weight         int    `json:"weight" gorm:"not null;default:100"`
-	Priority       int    `json:"priority" gorm:"not null;default:1"`
-	Enabled        bool   `json:"enabled" gorm:"not null;default:true"`
-	SortOrder      int    `json:"sort_order" gorm:"not null;default:0"`
+	ExitInboundID  int64     `json:"exit_inbound_id" gorm:"not null;default:0;index"`
+	ExitExternalID int64     `json:"exit_external_id" gorm:"not null;default:0;index"`
+	ExitTag        string    `json:"exit_tag" gorm:"size:128;not null;default:''"`
+	Weight         int       `json:"weight" gorm:"not null;default:100"`
+	Priority       int       `json:"priority" gorm:"not null;default:1"`
+	Enabled        bool      `json:"enabled" gorm:"not null;default:true"`
+	SortOrder      int       `json:"sort_order" gorm:"not null;default:0"`
 	CreatedAt      time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"not null"`
 }

@@ -524,7 +524,7 @@ func (h *Handler) StartWriter(c *gin.Context) {
 		response.BadRequest(c, "INVALID_MODE", "mode must be stdout or file")
 		return
 	}
- serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
 	if serverID <= 0 {
 		serverID = 1
 	}
@@ -553,7 +553,7 @@ func (h *Handler) StopWriter(c *gin.Context) {
 		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
 		return
 	}
- serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
 	if serverID <= 0 {
 		serverID = 1
 	}
@@ -587,7 +587,7 @@ func (h *Handler) UpdateWriterConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
- serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
+	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
 	if serverID <= 0 {
 		serverID = 1
 	}

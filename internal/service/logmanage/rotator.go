@@ -199,16 +199,16 @@ func (s *Service) cleanExpired(policy *entity.LogRotationPolicy) (int, int64, er
 		}
 
 		if fileDate.Before(cutoff) {
-		 fullPath := filepath.Join(dir, name)
-		 info, err := entry.Info()
-		 if err == nil {
-			 freed += info.Size()
-		 }
-		 if err := os.Remove(fullPath); err != nil {
-			 log.Printf("logmanage: failed to delete %s: %v", fullPath, err)
-			 continue
-		 }
-		 cleaned++
+			fullPath := filepath.Join(dir, name)
+			info, err := entry.Info()
+			if err == nil {
+				freed += info.Size()
+			}
+			if err := os.Remove(fullPath); err != nil {
+				log.Printf("logmanage: failed to delete %s: %v", fullPath, err)
+				continue
+			}
+			cleaned++
 		}
 	}
 

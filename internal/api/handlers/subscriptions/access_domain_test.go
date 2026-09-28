@@ -6,9 +6,9 @@ import "testing"
 // _accessDomain 对象，否则订阅里拿不到域名/端口 —— 客户端访问不了。
 func TestEnsureAccessDomainFromFlatFields(t *testing.T) {
 	cfg := map[string]interface{}{
-		"type":                "vless",
-		"tag":                 "sb-flat",
-		"listen_port":         float64(12345),
+		"type":                 "vless",
+		"tag":                  "sb-flat",
+		"listen_port":          float64(12345),
 		"_accessDomainEnabled": true,
 		"_accessDomainType":    "direct",
 		"_directDomain":        "sub.test.com",

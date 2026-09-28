@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/process"
 	"corefusion/internal/store/repository"
+	"github.com/gin-gonic/gin"
 )
 
 // NodeOperator defines the interface for controlling cores on remote nodes.
@@ -24,11 +24,11 @@ type NodeOperator interface {
 
 // CoreStateInfo represents a core's state on a remote node.
 type CoreStateInfo struct {
-	State          string
-	PID            int32
-	UptimeSeconds  int64
-	CpuUsage       float64
-	MemUsageBytes  int64
+	State         string
+	PID           int32
+	UptimeSeconds int64
+	CpuUsage      float64
+	MemUsageBytes int64
 }
 
 // BinaryInfoItem represents an installed binary on a remote node.
@@ -301,11 +301,11 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 
 	// Build core state lookup from remote state or local processMgr
 	type coreStateInfo struct {
-		state string
-		pid   int
+		state  string
+		pid    int
 		uptime int64
-		cpu   float64
-		mem   int64
+		cpu    float64
+		mem    int64
 	}
 	coreStateMap := make(map[string]*coreStateInfo)
 	if isRemote && remoteCoreStates != nil {
@@ -336,7 +336,7 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 			"core_type":         svc.CoreType,
 			"protocol":          svc.Protocol,
 			"listen_host":       svc.ListenHost,
-			"listen_port":      svc.ListenPort,
+			"listen_port":       svc.ListenPort,
 			"state":             "stopped",
 			"pid":               0,
 			"uptime":            0,
@@ -388,9 +388,9 @@ func (h *ProcessHandler) UpdateGuardian(c *gin.Context) {
 	}
 
 	var req struct {
-		AutoStart     *bool `json:"auto_start"`
-		AutoRestart   *bool `json:"auto_restart"`
-		MaxRestarts   int   `json:"max_restart_count"`
+		AutoStart   *bool `json:"auto_start"`
+		AutoRestart *bool `json:"auto_restart"`
+		MaxRestarts int   `json:"max_restart_count"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

@@ -47,16 +47,16 @@ type ServerLister interface {
 // VerifyNodeResult is a single node's live verification state, used by the
 // runtime UI to show the multi-node verification surface before/after an apply.
 type VerifyNodeResult struct {
-	ServerID   int64             `json:"server_id"`
-	Name       string            `json:"name"`
-	Hostname   string            `json:"hostname"`
-	Region     string            `json:"region"`
-	IsLocal    bool              `json:"is_local"`
-	AgentStatus string           `json:"agent_status"`
-	Online     bool              `json:"online"`
-	VerifyOk   bool              `json:"verify_ok"`
-	Reason     string            `json:"reason"`
-	Cores      []VerifyCoreState `json:"cores"`
+	ServerID    int64             `json:"server_id"`
+	Name        string            `json:"name"`
+	Hostname    string            `json:"hostname"`
+	Region      string            `json:"region"`
+	IsLocal     bool              `json:"is_local"`
+	AgentStatus string            `json:"agent_status"`
+	Online      bool              `json:"online"`
+	VerifyOk    bool              `json:"verify_ok"`
+	Reason      string            `json:"reason"`
+	Cores       []VerifyCoreState `json:"cores"`
 }
 
 // VerifyCoreState is the live state of one core on a node.
@@ -348,16 +348,16 @@ func (s *Service) newJob(ctx context.Context, operationKind, triggerSource, reas
 	now := time.Now()
 	idsJSON, _ := json.Marshal(serverIDs)
 	job := &entity.RuntimeApplyJob{
-		TriggerSource:      triggerSource,
-		Reason:             reason,
-		OperationKind:      operationKind,
-		Status:             "running",
-		Phase:              "start",
-		SnapshotID:         snapshotID,
+		TriggerSource:       triggerSource,
+		Reason:              reason,
+		OperationKind:       operationKind,
+		Status:              "running",
+		Phase:               "start",
+		SnapshotID:          snapshotID,
 		TargetServerIDsJSON: string(idsJSON),
-		TargetCount:        1, // corrected by runVerification once nodes are enumerated
-		StartedAt:          &now,
-		CreatedAt:          now,
+		TargetCount:         1, // corrected by runVerification once nodes are enumerated
+		StartedAt:           &now,
+		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
 	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
@@ -680,7 +680,7 @@ func (s *Service) ListJobs(ctx context.Context, limit, offset int) ([]entity.Run
 
 // JobDetail bundles a job with its targets and events.
 type JobDetail struct {
-	Job     entity.RuntimeApplyJob        `json:"job"`
+	Job     entity.RuntimeApplyJob         `json:"job"`
 	Targets []entity.RuntimeApplyJobTarget `json:"targets"`
 	Events  []entity.RuntimeApplyJobEvent  `json:"events"`
 }
@@ -723,10 +723,10 @@ func (s *Service) Overview(ctx context.Context) (map[string]interface{}, error) 
 	hasJob := s.db.WithContext(ctx).Order("id DESC").First(&lastJob).Error == nil
 
 	out := map[string]interface{}{
-		"snapshot_count":  snapCount,
-		"job_count":       jobCount,
-		"jobs_by_status":  statusMap,
-		"last_sync":       s.syncer.LastSync(),
+		"snapshot_count": snapCount,
+		"job_count":      jobCount,
+		"jobs_by_status": statusMap,
+		"last_sync":      s.syncer.LastSync(),
 	}
 	if hasSnap {
 		out["last_snapshot"] = lastSnap

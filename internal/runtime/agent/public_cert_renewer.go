@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
-	certpkg "corefusion/internal/runtime/cert"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	certpkg "corefusion/internal/runtime/cert"
 	"corefusion/internal/store/repository"
 )
 
@@ -64,7 +64,7 @@ type PublicCertRenewer struct {
 }
 
 // DNSChannelResolver 是"按面板 DNS 通道 ID 取 dns-01 凭据"的能力 ✓
-//（由面板的 DNS 通道服务实现 ✓）—— 与证书服务用的是同一个接口口径 ✓。
+// （由面板的 DNS 通道服务实现 ✓）—— 与证书服务用的是同一个接口口径 ✓。
 type DNSChannelResolver interface {
 	ResolveDNSChannel(ctx context.Context, id int64) (*certpkg.DNSProviderConfig, error)
 }

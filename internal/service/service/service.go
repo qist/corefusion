@@ -10,7 +10,7 @@ import (
 
 // Service handles inbound service business logic.
 type Service struct {
-	repo       *repository.ServiceRepository
+	repo         *repository.ServiceRepository
 	endpointRepo *repository.EndpointRepository
 }
 

@@ -58,14 +58,14 @@ type SystemStats struct {
 	DiskUsage float64 `json:"disk_usage"`
 
 	// System
-	Hostname  string  `json:"hostname"`
-	OS        string  `json:"os"`
-	Arch      string  `json:"arch"`
-	Uptime    int64   `json:"uptime"`     // system uptime in seconds
-	PanelUptime int64 `json:"panel_uptime"` // panel uptime in seconds
-	LoadAvg1  float64 `json:"load_avg_1"`
-	LoadAvg5  float64 `json:"load_avg_5"`
-	LoadAvg15 float64 `json:"load_avg_15"`
+	Hostname    string  `json:"hostname"`
+	OS          string  `json:"os"`
+	Arch        string  `json:"arch"`
+	Uptime      int64   `json:"uptime"`       // system uptime in seconds
+	PanelUptime int64   `json:"panel_uptime"` // panel uptime in seconds
+	LoadAvg1    float64 `json:"load_avg_1"`
+	LoadAvg5    float64 `json:"load_avg_5"`
+	LoadAvg15   float64 `json:"load_avg_15"`
 
 	// Network
 	TCPConnections int   `json:"tcp_connections"`
@@ -133,24 +133,24 @@ func (s *StatsService) GetStats() *SystemStats {
 func (s *StatsService) CollectServerMetric(serverID int64) *entity.ServerMetric {
 	st := s.GetStats()
 	return &entity.ServerMetric{
-		ServerID:        serverID,
-		CPUUsage:        st.CPUUsage,
-		CPUCores:        st.CPUCores,
-		MemUsageBytes:   st.MemUsed,
-		MemTotalBytes:   st.MemTotal,
-		MemUsage:        st.MemUsage,
-		SwapTotalBytes:  st.SwapTotal,
-		SwapUsedBytes:   st.SwapUsed,
-		SwapUsage:       st.SwapUsage,
-		DiskUsageBytes:  st.DiskUsed,
-		DiskTotalBytes:  st.DiskTotal,
-		DiskUsage:       st.DiskUsage,
-		Load1m:          st.LoadAvg1,
-		TCPConnections:  st.TCPConnections,
-		UptimeSeconds:   st.Uptime,
-		Hostname:        st.Hostname,
-		NetRxBytes:      st.NetBytesRecv,
-		NetTxBytes:      st.NetBytesSent,
+		ServerID:       serverID,
+		CPUUsage:       st.CPUUsage,
+		CPUCores:       st.CPUCores,
+		MemUsageBytes:  st.MemUsed,
+		MemTotalBytes:  st.MemTotal,
+		MemUsage:       st.MemUsage,
+		SwapTotalBytes: st.SwapTotal,
+		SwapUsedBytes:  st.SwapUsed,
+		SwapUsage:      st.SwapUsage,
+		DiskUsageBytes: st.DiskUsed,
+		DiskTotalBytes: st.DiskTotal,
+		DiskUsage:      st.DiskUsage,
+		Load1m:         st.LoadAvg1,
+		TCPConnections: st.TCPConnections,
+		UptimeSeconds:  st.Uptime,
+		Hostname:       st.Hostname,
+		NetRxBytes:     st.NetBytesRecv,
+		NetTxBytes:     st.NetBytesSent,
 	}
 }
 

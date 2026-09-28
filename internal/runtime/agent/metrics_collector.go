@@ -9,17 +9,17 @@ import (
 
 	"gorm.io/gorm"
 
-	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/model/entity"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
 
 // MetricsCollector collects and stores server resource metrics for monitoring charts.
 //
 // 数据来源：
-//   1. Agent 心跳上报（AgentReport 中的 CPU、内存、磁盘、网络指标）
-//   2. gRPC GetStatus 主动查询（补充心跳间隙）
-//   3. gRPC GetMetrics 查询历史指标（Agent 侧缓存的高频数据点）
+//  1. Agent 心跳上报（AgentReport 中的 CPU、内存、磁盘、网络指标）
+//  2. gRPC GetStatus 主动查询（补充心跳间隙）
+//  3. gRPC GetMetrics 查询历史指标（Agent 侧缓存的高频数据点）
 //
 // 存储策略：
 //   - 高频数据（10s 间隔）保留 1 小时
@@ -75,13 +75,13 @@ type trafficCounter struct {
 // NewMetricsCollector creates a new MetricsCollector.
 func NewMetricsCollector(db *gorm.DB, serverRepo *repository.NodeServerRepository, nodeMgr *NodeServerManager) *MetricsCollector {
 	return &MetricsCollector{
-		db:              db,
-		serverRepo:      serverRepo,
-		nodeMgr:         nodeMgr,
-		collectInterval: 30 * time.Second,
-		retentionShort:  1 * time.Hour,
-		retentionMedium: 7 * 24 * time.Hour,
-		retentionLong:   90 * 24 * time.Hour,
+		db:               db,
+		serverRepo:       serverRepo,
+		nodeMgr:          nodeMgr,
+		collectInterval:  30 * time.Second,
+		retentionShort:   1 * time.Hour,
+		retentionMedium:  7 * 24 * time.Hour,
+		retentionLong:    90 * 24 * time.Hour,
 		lastNetStats:     make(map[int64]*netCounter),
 		lastTrafficStats: make(map[int64]*trafficCounter),
 	}
@@ -101,34 +101,34 @@ func (mc *MetricsCollector) CollectFromHeartbeat(serverID int64, report *agentpb
 
 	now := time.Now()
 	metric := &entity.ServerMetric{
-		ServerID:         serverID,
-		CPUUsage:         report.CpuUsage,
-		CPUCores:         int(report.CpuCores),
-		MemUsageBytes:    report.MemUsageBytes,
-		MemTotalBytes:    report.MemTotalBytes,
-		MemUsage:         report.MemUsage,
-		SwapTotalBytes:   report.SwapTotalBytes,
-		SwapUsedBytes:    report.SwapUsedBytes,
-		SwapUsage:        report.SwapUsage,
-		DiskUsageBytes:   report.DiskUsageBytes,
-		DiskTotalBytes:   report.DiskTotalBytes,
-		DiskUsage:        report.DiskUsage,
+		ServerID:          serverID,
+		CPUUsage:          report.CpuUsage,
+		CPUCores:          int(report.CpuCores),
+		MemUsageBytes:     report.MemUsageBytes,
+		MemTotalBytes:     report.MemTotalBytes,
+		MemUsage:          report.MemUsage,
+		SwapTotalBytes:    report.SwapTotalBytes,
+		SwapUsedBytes:     report.SwapUsedBytes,
+		SwapUsage:         report.SwapUsage,
+		DiskUsageBytes:    report.DiskUsageBytes,
+		DiskTotalBytes:    report.DiskTotalBytes,
+		DiskUsage:         report.DiskUsage,
 		DiskReadBytesSec:  report.DiskReadBytesSec,
 		DiskWriteBytesSec: report.DiskWriteBytesSec,
-		Load1m:           report.Load_1M,
+		Load1m:            report.Load_1M,
 		TCPConnections:    int(report.TcpConnections),
 		UptimeSeconds:     report.UptimeSeconds,
-		TrafficUplink:    report.RateLimitTotalUplink,
-		TrafficDownlink:  report.RateLimitTotalDownlink,
-		AgentVersion:     report.AgentVersion,
-		Hostname:         report.Hostname,
+		TrafficUplink:     report.RateLimitTotalUplink,
+		TrafficDownlink:   report.RateLimitTotalDownlink,
+		AgentVersion:      report.AgentVersion,
+		Hostname:          report.Hostname,
 
 		// Egress interface traffic (出口网卡累计流量)
 		EgressInterface: report.EgressInterface,
 		EgressRxBytes:   report.EgressRxBytes,
 		EgressTxBytes:   report.EgressTxBytes,
 
-		CreatedAt:        now,
+		CreatedAt: now,
 	}
 
 	// Use Agent-reported network rates if available (field 80/81),
@@ -432,10 +432,10 @@ func (mc *MetricsCollector) GetAggregatedMetrics(ctx context.Context) (map[int64
 
 		if len(metrics) == 0 {
 			result[server.ID] = &ServerMetricSummary{
-				ServerID:  server.ID,
-				Name:      server.Name,
-				Region:    server.Region,
-				Online:    mc.nodeMgr.IsOnlineForServer(server.ID),
+				ServerID: server.ID,
+				Name:     server.Name,
+				Region:   server.Region,
+				Online:   mc.nodeMgr.IsOnlineForServer(server.ID),
 			}
 			continue
 		}
@@ -449,32 +449,32 @@ func (mc *MetricsCollector) GetAggregatedMetrics(ctx context.Context) (map[int64
 		}
 
 		result[server.ID] = &ServerMetricSummary{
-			ServerID:         server.ID,
-			Name:             server.Name,
-			Region:           server.Region,
-			Online:           mc.nodeMgr.IsOnlineForServer(server.ID),
-			CPUUsage:         cpuSum / float64(len(metrics)),
-			CPUCores:         latest.CPUCores,
-			MemUsageBytes:    latest.MemUsageBytes,
-			MemTotalBytes:    latest.MemTotalBytes,
-			MemUsage:         latest.MemUsage,
-			SwapTotalBytes:   latest.SwapTotalBytes,
-			SwapUsedBytes:    latest.SwapUsedBytes,
-			SwapUsage:        latest.SwapUsage,
-			DiskUsageBytes:   latest.DiskUsageBytes,
-			DiskTotalBytes:   latest.DiskTotalBytes,
-			DiskUsage:        latest.DiskUsage,
-			DiskReadBytesSec: latest.DiskReadBytesSec,
+			ServerID:          server.ID,
+			Name:              server.Name,
+			Region:            server.Region,
+			Online:            mc.nodeMgr.IsOnlineForServer(server.ID),
+			CPUUsage:          cpuSum / float64(len(metrics)),
+			CPUCores:          latest.CPUCores,
+			MemUsageBytes:     latest.MemUsageBytes,
+			MemTotalBytes:     latest.MemTotalBytes,
+			MemUsage:          latest.MemUsage,
+			SwapTotalBytes:    latest.SwapTotalBytes,
+			SwapUsedBytes:     latest.SwapUsedBytes,
+			SwapUsage:         latest.SwapUsage,
+			DiskUsageBytes:    latest.DiskUsageBytes,
+			DiskTotalBytes:    latest.DiskTotalBytes,
+			DiskUsage:         latest.DiskUsage,
+			DiskReadBytesSec:  latest.DiskReadBytesSec,
 			DiskWriteBytesSec: latest.DiskWriteBytesSec,
-			NetRxBytes:       latest.NetRxBytes,
-			NetTxBytes:       latest.NetTxBytes,
-			TCPConnections:   latest.TCPConnections,
-			Load1m:           latest.Load1m,
-			UptimeSeconds:    latest.UptimeSeconds,
-			Hostname:         latest.Hostname,
-			TrafficUplink:    latest.TrafficUplink,
-			TrafficDownlink:  latest.TrafficDownlink,
-			LastUpdated:      latest.CreatedAt,
+			NetRxBytes:        latest.NetRxBytes,
+			NetTxBytes:        latest.NetTxBytes,
+			TCPConnections:    latest.TCPConnections,
+			Load1m:            latest.Load1m,
+			UptimeSeconds:     latest.UptimeSeconds,
+			Hostname:          latest.Hostname,
+			TrafficUplink:     latest.TrafficUplink,
+			TrafficDownlink:   latest.TrafficDownlink,
+			LastUpdated:       latest.CreatedAt,
 		}
 	}
 
@@ -622,43 +622,43 @@ func averageMetrics(metrics []entity.ServerMetric) entity.ServerMetric {
 
 // ServerMetricSummary is an aggregated view of a server's current metrics.
 type ServerMetricSummary struct {
-	ServerID        int64     `json:"server_id"`
-	Name            string    `json:"name"`
-	Region          string    `json:"region"`
-	Online          bool      `json:"online"`
+	ServerID int64  `json:"server_id"`
+	Name     string `json:"name"`
+	Region   string `json:"region"`
+	Online   bool   `json:"online"`
 
 	// CPU
-	CPUUsage        float64   `json:"cpu_usage"`
-	CPUCores        int       `json:"cpu_cores"`
+	CPUUsage float64 `json:"cpu_usage"`
+	CPUCores int     `json:"cpu_cores"`
 
 	// Memory
-	MemUsageBytes   int64     `json:"mem_usage_bytes"`
-	MemTotalBytes   int64     `json:"mem_total_bytes"`
-	MemUsage        float64   `json:"mem_usage"`
+	MemUsageBytes int64   `json:"mem_usage_bytes"`
+	MemTotalBytes int64   `json:"mem_total_bytes"`
+	MemUsage      float64 `json:"mem_usage"`
 
 	// Swap
-	SwapTotalBytes  int64     `json:"swap_total_bytes"`
-	SwapUsedBytes   int64     `json:"swap_used_bytes"`
-	SwapUsage       float64   `json:"swap_usage"`
+	SwapTotalBytes int64   `json:"swap_total_bytes"`
+	SwapUsedBytes  int64   `json:"swap_used_bytes"`
+	SwapUsage      float64 `json:"swap_usage"`
 
 	// Disk
-	DiskUsageBytes  int64     `json:"disk_usage_bytes"`
-	DiskTotalBytes  int64     `json:"disk_total_bytes"`
-	DiskUsage       float64   `json:"disk_usage"`
+	DiskUsageBytes int64   `json:"disk_usage_bytes"`
+	DiskTotalBytes int64   `json:"disk_total_bytes"`
+	DiskUsage      float64 `json:"disk_usage"`
 
 	// Disk I/O
-	DiskReadBytesSec  int64   `json:"disk_read_bytes_sec"`
-	DiskWriteBytesSec int64   `json:"disk_write_bytes_sec"`
+	DiskReadBytesSec  int64 `json:"disk_read_bytes_sec"`
+	DiskWriteBytesSec int64 `json:"disk_write_bytes_sec"`
 
 	// Network
-	NetRxBytes      int64     `json:"net_rx_bytes"`
-	NetTxBytes      int64     `json:"net_tx_bytes"`
+	NetRxBytes int64 `json:"net_rx_bytes"`
+	NetTxBytes int64 `json:"net_tx_bytes"`
 
 	// System
-	TCPConnections  int       `json:"tcp_connections"`
-	Load1m          float64   `json:"load_1m"`
-	UptimeSeconds   int64     `json:"uptime_seconds"`
-	Hostname        string    `json:"hostname"`
+	TCPConnections int     `json:"tcp_connections"`
+	Load1m         float64 `json:"load_1m"`
+	UptimeSeconds  int64   `json:"uptime_seconds"`
+	Hostname       string  `json:"hostname"`
 
 	// Traffic
 	TrafficUplink   int64     `json:"traffic_uplink"`

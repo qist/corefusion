@@ -12,8 +12,8 @@ import (
 
 // PortHopConfig holds the parsed port hopping configuration from an inbound's config_json.
 type PortHopConfig struct {
-	Enabled   bool
-	PortRange string
+	Enabled    bool
+	PortRange  string
 	TargetPort int
 	Interface  string
 }
@@ -195,8 +195,9 @@ func checkRuleExists(useNft bool, portRange string, targetPort int, iface string
 // the given port range, target port, and interface.
 //
 // nft actual output format:
-//   iifname "eth0" udp dport 40000-50000 counter packets 0 bytes 0 redirect to :51071 handle 42
-//   udp dport 20000-30000 counter packets 0 bytes 0 redirect to :51072 handle 43
+//
+//	iifname "eth0" udp dport 40000-50000 counter packets 0 bytes 0 redirect to :51071 handle 42
+//	udp dport 20000-30000 counter packets 0 bytes 0 redirect to :51072 handle 43
 //
 // We match by key fields (not full string) because counter stats vary dynamically.
 func nftRuleMatches(line, portRange string, targetPort int, iface string) bool {

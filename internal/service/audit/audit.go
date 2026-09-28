@@ -97,14 +97,14 @@ func truncate(s string, n int) string {
 // These are written to the node_audit_logs table and displayed in the
 // Node Servers → Audit tab in the admin UI.
 type NodeEvent struct {
-	ServerID int64  // 0 = global/not node-specific
-	AdminID  int64  // 0 = system/unknown
-	Action   string // e.g. create, update, delete, control_core, save_protocol
-	Detail   string
-	SourceIP string
+	ServerID  int64  // 0 = global/not node-specific
+	AdminID   int64  // 0 = system/unknown
+	Action    string // e.g. create, update, delete, control_core, save_protocol
+	Detail    string
+	SourceIP  string
 	UserAgent string
-	Success  bool
-	ErrMsg   string
+	Success   bool
+	ErrMsg    string
 }
 
 // RecordNode writes a node audit log entry asynchronously. Never blocks, never fails the caller.

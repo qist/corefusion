@@ -9,21 +9,21 @@ import (
 
 // ProxyGuardian monitors a proxy process and handles auto-restart with backoff.
 type ProxyGuardian struct {
-	mu                sync.Mutex
-	proxyType         ProxyType
-	pid               int
-	state             string // "running", "stopped", "crashed"
-	startedAt         time.Time
-	lastCrashAt       time.Time
-	lastExitCode      int
-	currentRestarts   int
-	maxRestarts       int
-	restartWindowSec  int
+	mu                 sync.Mutex
+	proxyType          ProxyType
+	pid                int
+	state              string // "running", "stopped", "crashed"
+	startedAt          time.Time
+	lastCrashAt        time.Time
+	lastExitCode       int
+	currentRestarts    int
+	maxRestarts        int
+	restartWindowSec   int
 	stableThresholdSec int
-	windowStartAt     time.Time
-	manuallyStopped   bool
-	stopCh            chan struct{}
-	manager           *Manager
+	windowStartAt      time.Time
+	manuallyStopped    bool
+	stopCh             chan struct{}
+	manager            *Manager
 }
 
 // NewProxyGuardian creates a new proxy guardian.
@@ -32,8 +32,8 @@ func NewProxyGuardian(proxyType ProxyType, manager *Manager) *ProxyGuardian {
 		proxyType:          proxyType,
 		state:              "stopped",
 		maxRestarts:        5,
-		restartWindowSec:   600,  // 10 minutes
-		stableThresholdSec: 300,  // 5 minutes
+		restartWindowSec:   600, // 10 minutes
+		stableThresholdSec: 300, // 5 minutes
 		stopCh:             make(chan struct{}),
 		manager:            manager,
 	}
@@ -89,14 +89,14 @@ func (g *ProxyGuardian) Status() map[string]interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return map[string]interface{}{
-		"proxy_type":     string(g.proxyType),
-		"state":          g.state,
-		"pid":            g.pid,
-		"started_at":     g.startedAt,
-		"last_crash_at":  g.lastCrashAt,
-		"last_exit_code": g.lastExitCode,
+		"proxy_type":       string(g.proxyType),
+		"state":            g.state,
+		"pid":              g.pid,
+		"started_at":       g.startedAt,
+		"last_crash_at":    g.lastCrashAt,
+		"last_exit_code":   g.lastExitCode,
 		"current_restarts": g.currentRestarts,
-		"max_restarts":   g.maxRestarts,
+		"max_restarts":     g.maxRestarts,
 		"manually_stopped": g.manuallyStopped,
 	}
 }

@@ -15,7 +15,7 @@ type WebAuthnCredential struct {
 	UserID         int64      `json:"user_id" gorm:"not null;index:idx_webauthn_user_rpid"`
 	RPID           string     `json:"rpid" gorm:"size:512;not null;index:idx_webauthn_user_rpid;uniqueIndex:idx_webauthn_kid"`
 	CredentialID   string     `json:"credential_id" gorm:"size:1024;not null;uniqueIndex:idx_webauthn_kid"` // base64url(rawID)
-	CredentialJSON string     `json:"-" gorm:"type:text;not null"`                                            // 完整 webauthn.Credential 序列化
+	CredentialJSON string     `json:"-" gorm:"type:text;not null"`                                          // 完整 webauthn.Credential 序列化
 	SignCount      uint32     `json:"sign_count" gorm:"not null;default:0"`
 	Transport      string     `json:"transport" gorm:"size:256"` // 逗号分隔的认证器传输类型
 	Attachment     string     `json:"attachment" gorm:"size:64"` // platform / cross-platform

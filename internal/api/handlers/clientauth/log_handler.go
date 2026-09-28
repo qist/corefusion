@@ -80,14 +80,14 @@ func (h *LogHandler) GetLogPackage(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"id":             pkg.ID,
-		"status":         pkg.Status,
-		"hours":          pkg.Hours,
-		"file_size":      pkg.FileSize,
-		"error":          pkg.Error,
-		"expires_at":     pkg.ExpiresAt,
-		"created_at":     pkg.CreatedAt,
-		"updated_at":     pkg.UpdatedAt,
+		"id":         pkg.ID,
+		"status":     pkg.Status,
+		"hours":      pkg.Hours,
+		"file_size":  pkg.FileSize,
+		"error":      pkg.Error,
+		"expires_at": pkg.ExpiresAt,
+		"created_at": pkg.CreatedAt,
+		"updated_at": pkg.UpdatedAt,
 	})
 }
 
@@ -200,8 +200,8 @@ func (h *LogHandler) LogPackageHealthCheck(c *gin.Context) {
 
 	response.OK(c, gin.H{
 		"max_hours":       logmanage.MaxClientLogHours,
-		"log_types":      logmanage.AllLogTypes(),
-		"expiry_min":     60,
+		"log_types":       logmanage.AllLogTypes(),
+		"expiry_min":      60,
 		"has_entry_nodes": h.logSvc.HasEntryNodes(c.Request.Context(), clientID),
 	})
 }

@@ -10,19 +10,19 @@ import (
 
 // Service handles mihomo configuration business logic.
 type Service struct {
-	configRepo    *repository.MihomoConfigRepository
-	generalRepo   *repository.MihomoGeneralRepository
-	dnsRepo       *repository.MihomoDNSRepository
-	hostRepo      *repository.MihomoHostRepository
-	tunnelRepo    *repository.MihomoTunnelRepository
-	snifferRepo   *repository.MihomoSnifferRepository
-	extCtrlRepo   *repository.MihomoExternalControllerRepository
-	tlsRepo       *repository.MihomoTLSRepository
-	tunRepo       *repository.MihomoTunRepository
-	proxyGroupRepo *repository.MihomoProxyGroupRepository
+	configRepo       *repository.MihomoConfigRepository
+	generalRepo      *repository.MihomoGeneralRepository
+	dnsRepo          *repository.MihomoDNSRepository
+	hostRepo         *repository.MihomoHostRepository
+	tunnelRepo       *repository.MihomoTunnelRepository
+	snifferRepo      *repository.MihomoSnifferRepository
+	extCtrlRepo      *repository.MihomoExternalControllerRepository
+	tlsRepo          *repository.MihomoTLSRepository
+	tunRepo          *repository.MihomoTunRepository
+	proxyGroupRepo   *repository.MihomoProxyGroupRepository
 	ruleProviderRepo *repository.MihomoRuleProviderRepository
-	ruleRepo      *repository.MihomoRuleRepository
-	outboundRepo  *repository.MihomoSpecialOutboundRepository
+	ruleRepo         *repository.MihomoRuleRepository
+	outboundRepo     *repository.MihomoSpecialOutboundRepository
 }
 
 // NewService creates a new mihomo service.
@@ -230,23 +230,23 @@ func (s *Service) ListProxyGroups(ctx context.Context, configID int64) ([]entity
 }
 
 type CreateProxyGroupInput struct {
-	Name           string  `json:"name" binding:"required"`
-	Type           string  `json:"type"`
-	Proxies        string  `json:"proxies"`
-	Hidden         bool    `json:"hidden"`
-	URL            string  `json:"url"`
-	Interval       int     `json:"interval"`
-	Lazy           bool    `json:"lazy"`
-	Timeout        int     `json:"timeout"`
-	MaxFailedTimes int     `json:"max_failed_times"`
-	EmptyFallback  string  `json:"empty_fallback"`
-	DisableUDP     bool    `json:"disable_udp"`
-	Filter         string  `json:"filter"`
-	ExcludeFilter  string  `json:"exclude_filter"`
-	ExcludeType    string  `json:"exclude_type"`
-	IncludeAll     bool    `json:"include_all"`
-	InterfaceName  string  `json:"interface_name"`
-	RoutingMark    int     `json:"routing_mark"`
+	Name           string `json:"name" binding:"required"`
+	Type           string `json:"type"`
+	Proxies        string `json:"proxies"`
+	Hidden         bool   `json:"hidden"`
+	URL            string `json:"url"`
+	Interval       int    `json:"interval"`
+	Lazy           bool   `json:"lazy"`
+	Timeout        int    `json:"timeout"`
+	MaxFailedTimes int    `json:"max_failed_times"`
+	EmptyFallback  string `json:"empty_fallback"`
+	DisableUDP     bool   `json:"disable_udp"`
+	Filter         string `json:"filter"`
+	ExcludeFilter  string `json:"exclude_filter"`
+	ExcludeType    string `json:"exclude_type"`
+	IncludeAll     bool   `json:"include_all"`
+	InterfaceName  string `json:"interface_name"`
+	RoutingMark    int    `json:"routing_mark"`
 }
 
 func (s *Service) CreateProxyGroup(ctx context.Context, configID int64, input CreateProxyGroupInput) (*entity.MihomoProxyGroup, error) {

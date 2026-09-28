@@ -15,7 +15,7 @@ import (
 // AccessHandler exposes the service-level access-control management API
 // (access policies + IP bans) backed by the access control service.
 type AccessHandler struct {
-	db       *gorm.DB
+	db        *gorm.DB
 	accessSvc *access.Service
 }
 
@@ -72,15 +72,15 @@ func (h *AccessHandler) UpdatePolicy(c *gin.Context) {
 		return
 	}
 	if err := h.db.Model(&p).Updates(map[string]interface{}{
-		"policy_scope":               in.PolicyScope,
-		"mode":                       in.Mode,
-		"ip_cidr":                    in.IPCIDR,
+		"policy_scope":                in.PolicyScope,
+		"mode":                        in.Mode,
+		"ip_cidr":                     in.IPCIDR,
 		"max_new_connections_per_min": in.MaxNewConnectionsPerMin,
 		"max_concurrent_connections":  in.MaxConcurrentConnections,
 		"ban_duration_seconds":        in.BanDurationSeconds,
 		"auto_ban_enabled":            in.AutoBanEnabled,
-		"status":                     in.Status,
-		"updated_at":                 time.Now(),
+		"status":                      in.Status,
+		"updated_at":                  time.Now(),
 	}).Error; err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return

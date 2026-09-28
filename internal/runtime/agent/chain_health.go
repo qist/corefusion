@@ -15,17 +15,17 @@ type ExitHealthStatus struct {
 	ServerID    int64         `json:"server_id"`
 	Online      bool          `json:"online"`
 	Latency     time.Duration `json:"latency_ms"`
-	LastCheckAt time.Time    `json:"last_check_at"`
+	LastCheckAt time.Time     `json:"last_check_at"`
 	ConsecFail  int           `json:"consec_fail"`
 	Health      string        `json:"health"` // healthy | degraded | down
 }
 
 // EntryHealthStatus represents the health of a chain entry node and all its exits.
 type EntryHealthStatus struct {
-	EntryServerID  int64               `json:"entry_server_id"`
-	EntryInboundID int64               `json:"entry_inbound_id"`
+	EntryServerID  int64              `json:"entry_server_id"`
+	EntryInboundID int64              `json:"entry_inbound_id"`
 	Online         bool               `json:"online"`
-	Exits          []ExitHealthStatus  `json:"exits"`
+	Exits          []ExitHealthStatus `json:"exits"`
 	HealthyExits   int                `json:"healthy_exits"`
 	TotalExits     int                `json:"total_exits"`
 	LastCheckAt    time.Time          `json:"last_check_at"`
@@ -53,12 +53,12 @@ func NewChainHealthMonitor(
 	chainLinkRepo *repository.ChainLinkRepository,
 ) *ChainHealthMonitor {
 	return &ChainHealthMonitor{
-		nodeMgr:        nodeMgr,
-		serverRepo:     serverRepo,
-		chainLinkRepo:  chainLinkRepo,
-		healthStatus:   make(map[int64]*ExitHealthStatus),
-		checkInterval:  30 * time.Second,
-		failThreshold:  3,
+		nodeMgr:       nodeMgr,
+		serverRepo:    serverRepo,
+		chainLinkRepo: chainLinkRepo,
+		healthStatus:  make(map[int64]*ExitHealthStatus),
+		checkInterval: 30 * time.Second,
+		failThreshold: 3,
 	}
 }
 
@@ -228,7 +228,7 @@ func (m *ChainHealthMonitor) GetEntryHealthStatus(ctx context.Context, entryServ
 		EntryServerID:  entryServerID,
 		EntryInboundID: entryInboundID,
 		Online:         m.nodeMgr.IsOnline(entryServerID),
-		LastCheckAt:   time.Now(),
+		LastCheckAt:    time.Now(),
 	}
 
 	m.mu.RLock()
@@ -296,7 +296,7 @@ func (m *ChainHealthMonitor) GetAllEntriesHealthStatus(ctx context.Context) []En
 			EntryServerID:  key.ServerID,
 			EntryInboundID: key.InboundID,
 			Online:         m.nodeMgr.IsOnline(key.ServerID),
-			LastCheckAt:   time.Now(),
+			LastCheckAt:    time.Now(),
 		}
 
 		m.mu.RLock()
@@ -342,13 +342,13 @@ func (m *ChainHealthMonitor) GetAllEntriesHealthStatus(ctx context.Context) []En
 // In the new model there is a single monitor that checks all exit nodes
 // referenced by chain_links (instead of per-entry monitors in the old model).
 type ChainHealthMonitorRegistry struct {
-	mu          sync.RWMutex
-	monitor     *ChainHealthMonitor
-	nodeMgr     *NodeServerManager
-	serverRepo  *repository.NodeServerRepository
+	mu            sync.RWMutex
+	monitor       *ChainHealthMonitor
+	nodeMgr       *NodeServerManager
+	serverRepo    *repository.NodeServerRepository
 	chainLinkRepo *repository.ChainLinkRepository
-	started     bool
-	cancel      context.CancelFunc
+	started       bool
+	cancel        context.CancelFunc
 }
 
 // NewChainHealthMonitorRegistry creates a new registry.

@@ -17,7 +17,7 @@ type NodeGroup struct {
 	Description   string    `gorm:"size:500" json:"description"`
 	Region        string    `gorm:"size:32" json:"region"`
 	Tier          string    `gorm:"size:32;not null;default:standard" json:"tier"` // standard/premium/exclusive
-	ClientVisible bool      `gorm:"not null;default:true" json:"client_visible"`    // 是否对客户端可见
+	ClientVisible bool      `gorm:"not null;default:true" json:"client_visible"`   // 是否对客户端可见
 	SortOrder     int       `gorm:"not null;default:0" json:"sort_order"`
 	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt     time.Time `json:"created_at"`

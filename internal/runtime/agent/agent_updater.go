@@ -59,11 +59,11 @@ type AgentUpdater struct {
 
 // AgentBinaryInfo 记录单个平台的 Agent 二进制信息。
 type AgentBinaryInfo struct {
-	OS           string // e.g. "linux", "darwin", "windows"
-	Arch         string // e.g. "amd64", "arm64"
-	Checksum     string // SHA-256 校验和
-	DownloadURL  string // 下载 URL（完整或相对路径）
-	BinaryPath   string // 本地文件绝对路径
+	OS          string // e.g. "linux", "darwin", "windows"
+	Arch        string // e.g. "amd64", "arm64"
+	Checksum    string // SHA-256 校验和
+	DownloadURL string // 下载 URL（完整或相对路径）
+	BinaryPath  string // 本地文件绝对路径
 }
 
 // UpdateTask 跟踪单个服务器的 Agent 更新进度。

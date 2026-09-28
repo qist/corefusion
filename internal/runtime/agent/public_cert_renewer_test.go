@@ -483,7 +483,7 @@ func (f *fakeDNSResolver) ResolveDNSChannel(_ context.Context, id int64) (*certp
 // ⚠ 以前这里**根本不带 Challenge** ✗ → 节点侧 `firstNonEmpty(cmd.Challenge,"http-01")` 一律 http-01 ✗
 // → 创建时选的 dns-01 在自动续期里整片丢失 ✗（通配符证书根本续不出来 ✗）。
 // 同时也必须把**面板那条通道的 id**带上 ✓：节点回传证书时要靠它让面板记住"创建时选了哪条通道" ✓
-//（不带 → 面板落库 dns_channel_id=0 ✗ → 下一轮续期直接跳过 ✗）。
+// （不带 → 面板落库 dns_channel_id=0 ✗ → 下一轮续期直接跳过 ✗）。
 func TestRenewCommandCarriesChallengeAndDNSChannel(t *testing.T) {
 	certRepo, serverRepo := setupRenewerDB(t)
 

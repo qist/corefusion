@@ -1705,8 +1705,8 @@ func restorePostgres(ctx context.Context, dsn, content string) error {
 func splitSQLStatements(sql string) []string {
 	var stmts []string
 	var buf strings.Builder
-	inSingle := false   // inside '...'
-	inDouble := false   // inside "..."
+	inSingle := false // inside '...'
+	inDouble := false // inside "..."
 	inLineComment := false
 	inBlockComment := false
 

@@ -27,7 +27,7 @@ type NodeServerCreate struct {
 	// 出口网卡流量配额
 	EgressInterface      string `json:"egress_interface"`
 	TrafficQuotaBytes    int64  `json:"traffic_quota_bytes"`
-	TrafficQuotaResetDay int   `json:"traffic_quota_reset_day"`
+	TrafficQuotaResetDay int    `json:"traffic_quota_reset_day"`
 }
 
 // NodeServerUpdate is the request body for updating a node server.

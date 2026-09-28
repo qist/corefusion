@@ -36,20 +36,20 @@ type SettingStore interface {
 
 // Service handles plan template, variant, node group, promotion, and order business logic.
 type Service struct {
-	db             *gorm.DB
-	tmplRepo       *repository.PlanTemplateRepository
-	variantRepo    *repository.PlanVariantRepository
-	groupRepo      *repository.NodeGroupRepository
-	memberRepo     *repository.NodeGroupMemberRepository
-	promoRepo      *repository.PromotionRepository
-	orderRepo      *repository.PlanOrderRepository
-	clientRepo     *repository.ClientRepository
-	inboundRepo    *repository.InboundConfigRepository
-	extNodeRepo    *repository.ExternalNodeRepository
-	accountSyncer  AccountSyncer
-	subRepo        *repository.SubscriptionRepository
-	userSyncer     UserSyncer
-	settingStore   SettingStore
+	db            *gorm.DB
+	tmplRepo      *repository.PlanTemplateRepository
+	variantRepo   *repository.PlanVariantRepository
+	groupRepo     *repository.NodeGroupRepository
+	memberRepo    *repository.NodeGroupMemberRepository
+	promoRepo     *repository.PromotionRepository
+	orderRepo     *repository.PlanOrderRepository
+	clientRepo    *repository.ClientRepository
+	inboundRepo   *repository.InboundConfigRepository
+	extNodeRepo   *repository.ExternalNodeRepository
+	accountSyncer AccountSyncer
+	subRepo       *repository.SubscriptionRepository
+	userSyncer    UserSyncer
+	settingStore  SettingStore
 }
 
 // SetAccountSyncer injects the account syncer (client.Service).
@@ -147,28 +147,28 @@ func (s *Service) GetTemplate(ctx context.Context, id int64) (*entity.PlanTempla
 
 // CreateTemplateInput is the input for creating a plan template.
 type CreateTemplateInput struct {
-	Name                      string   `json:"name" binding:"required"`
-	Description               string   `json:"description"`
-	Category                  string   `json:"category"`
-	NodeGroupIDs              []int64  `json:"node_group_ids"`
-	DeviceLimit               int      `json:"device_limit"`
-	SpeedLimitMbps            int      `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps          int      `json:"speed_limit_up_mbps"`
-	ConcurrentLimit           int      `json:"concurrent_limit"`
-	DefaultQuotaBytes         int64    `json:"default_quota_bytes"`
-	DefaultQuotaResetCycle    string   `json:"default_quota_reset_cycle"`
-	DefaultQuotaResetDay      *int     `json:"default_quota_reset_day"`
-	SuspendOnQuotaExhausted   *int     `json:"suspend_on_quota_exhausted"`
-	IsTrial                   bool     `json:"is_trial"`
-	TrialDurationHours        int      `json:"trial_duration_hours"`
-	BillingUsedTemplate       string   `json:"billing_used_template"`
-	BillingRemainingTemplate  string   `json:"billing_remaining_template"`
-	BillingResetTemplate      string   `json:"billing_reset_template"`
-	BillingExpiryTemplate     string   `json:"billing_expiry_template"`
-	BillingNodeIDs            []int64 `json:"billing_node_ids"`
-	SortOrder                 int      `json:"sort_order"`
-	Enabled                   *bool    `json:"enabled"`
-	Metadata                  string   `json:"metadata"`
+	Name                     string  `json:"name" binding:"required"`
+	Description              string  `json:"description"`
+	Category                 string  `json:"category"`
+	NodeGroupIDs             []int64 `json:"node_group_ids"`
+	DeviceLimit              int     `json:"device_limit"`
+	SpeedLimitMbps           int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps         int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit          int     `json:"concurrent_limit"`
+	DefaultQuotaBytes        int64   `json:"default_quota_bytes"`
+	DefaultQuotaResetCycle   string  `json:"default_quota_reset_cycle"`
+	DefaultQuotaResetDay     *int    `json:"default_quota_reset_day"`
+	SuspendOnQuotaExhausted  *int    `json:"suspend_on_quota_exhausted"`
+	IsTrial                  bool    `json:"is_trial"`
+	TrialDurationHours       int     `json:"trial_duration_hours"`
+	BillingUsedTemplate      string  `json:"billing_used_template"`
+	BillingRemainingTemplate string  `json:"billing_remaining_template"`
+	BillingResetTemplate     string  `json:"billing_reset_template"`
+	BillingExpiryTemplate    string  `json:"billing_expiry_template"`
+	BillingNodeIDs           []int64 `json:"billing_node_ids"`
+	SortOrder                int     `json:"sort_order"`
+	Enabled                  *bool   `json:"enabled"`
+	Metadata                 string  `json:"metadata"`
 }
 
 // CreateTemplate creates a new plan template.
@@ -193,30 +193,30 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 
 	now := time.Now()
 	tmpl := &entity.PlanTemplate{
-		Name:                       input.Name,
-		Description:                input.Description,
-		Category:                   category,
-		NodeGroupIDs:               entity.Int64List(input.NodeGroupIDs),
-		DeviceLimit:                input.DeviceLimit,
-		SpeedLimitMbps:             input.SpeedLimitMbps,
-		SpeedLimitUpMbps:           input.SpeedLimitUpMbps,
-		ConcurrentLimit:            input.ConcurrentLimit,
-		DefaultQuotaBytes:          input.DefaultQuotaBytes,
-		DefaultQuotaResetCycle:     input.DefaultQuotaResetCycle,
-		DefaultQuotaResetDay:       input.DefaultQuotaResetDay,
-		SuspendOnQuotaExhausted:    suspendVal,
+		Name:                     input.Name,
+		Description:              input.Description,
+		Category:                 category,
+		NodeGroupIDs:             entity.Int64List(input.NodeGroupIDs),
+		DeviceLimit:              input.DeviceLimit,
+		SpeedLimitMbps:           input.SpeedLimitMbps,
+		SpeedLimitUpMbps:         input.SpeedLimitUpMbps,
+		ConcurrentLimit:          input.ConcurrentLimit,
+		DefaultQuotaBytes:        input.DefaultQuotaBytes,
+		DefaultQuotaResetCycle:   input.DefaultQuotaResetCycle,
+		DefaultQuotaResetDay:     input.DefaultQuotaResetDay,
+		SuspendOnQuotaExhausted:  suspendVal,
 		IsTrial:                  input.IsTrial,
 		TrialDurationHours:       input.TrialDurationHours,
 		BillingUsedTemplate:      input.BillingUsedTemplate,
-		BillingRemainingTemplate:   input.BillingRemainingTemplate,
-		BillingResetTemplate:       input.BillingResetTemplate,
-		BillingExpiryTemplate:      input.BillingExpiryTemplate,
-		BillingNodeIDs:             entity.Int64List(input.BillingNodeIDs),
-		SortOrder:                  input.SortOrder,
-		Enabled:                    enabled,
-		Metadata:                   input.Metadata,
-		CreatedAt:                  now,
-		UpdatedAt:                  now,
+		BillingRemainingTemplate: input.BillingRemainingTemplate,
+		BillingResetTemplate:     input.BillingResetTemplate,
+		BillingExpiryTemplate:    input.BillingExpiryTemplate,
+		BillingNodeIDs:           entity.Int64List(input.BillingNodeIDs),
+		SortOrder:                input.SortOrder,
+		Enabled:                  enabled,
+		Metadata:                 input.Metadata,
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 	if err := s.tmplRepo.Create(ctx, tmpl); err != nil {
 		return nil, fmt.Errorf("create template: %w", err)
@@ -226,28 +226,28 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 
 // UpdateTemplateInput is the input for updating a plan template.
 type UpdateTemplateInput struct {
-	Name                      *string  `json:"name"`
-	Description               *string  `json:"description"`
-	Category                  *string  `json:"category"`
-	NodeGroupIDs              *[]int64 `json:"node_group_ids"`
-	DeviceLimit               *int     `json:"device_limit"`
-	SpeedLimitMbps            *int     `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps          *int     `json:"speed_limit_up_mbps"`
-	ConcurrentLimit           *int     `json:"concurrent_limit"`
-	DefaultQuotaBytes         *int64   `json:"default_quota_bytes"`
-	DefaultQuotaResetCycle    *string  `json:"default_quota_reset_cycle"`
-	DefaultQuotaResetDay      *int     `json:"default_quota_reset_day"`
-	SuspendOnQuotaExhausted   *int     `json:"suspend_on_quota_exhausted"`
-	IsTrial                   *bool    `json:"is_trial"`
-	TrialDurationHours        *int     `json:"trial_duration_hours"`
-	BillingUsedTemplate       *string  `json:"billing_used_template"`
-	BillingRemainingTemplate  *string  `json:"billing_remaining_template"`
-	BillingResetTemplate      *string  `json:"billing_reset_template"`
-	BillingExpiryTemplate     *string  `json:"billing_expiry_template"`
-	BillingNodeIDs            *[]int64 `json:"billing_node_ids"`
-	SortOrder                 *int     `json:"sort_order"`
-	Enabled                   *bool    `json:"enabled"`
-	Metadata                  *string  `json:"metadata"`
+	Name                     *string  `json:"name"`
+	Description              *string  `json:"description"`
+	Category                 *string  `json:"category"`
+	NodeGroupIDs             *[]int64 `json:"node_group_ids"`
+	DeviceLimit              *int     `json:"device_limit"`
+	SpeedLimitMbps           *int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps         *int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit          *int     `json:"concurrent_limit"`
+	DefaultQuotaBytes        *int64   `json:"default_quota_bytes"`
+	DefaultQuotaResetCycle   *string  `json:"default_quota_reset_cycle"`
+	DefaultQuotaResetDay     *int     `json:"default_quota_reset_day"`
+	SuspendOnQuotaExhausted  *int     `json:"suspend_on_quota_exhausted"`
+	IsTrial                  *bool    `json:"is_trial"`
+	TrialDurationHours       *int     `json:"trial_duration_hours"`
+	BillingUsedTemplate      *string  `json:"billing_used_template"`
+	BillingRemainingTemplate *string  `json:"billing_remaining_template"`
+	BillingResetTemplate     *string  `json:"billing_reset_template"`
+	BillingExpiryTemplate    *string  `json:"billing_expiry_template"`
+	BillingNodeIDs           *[]int64 `json:"billing_node_ids"`
+	SortOrder                *int     `json:"sort_order"`
+	Enabled                  *bool    `json:"enabled"`
+	Metadata                 *string  `json:"metadata"`
 }
 
 // UpdateTemplate updates a plan template.
@@ -902,19 +902,19 @@ func (s *Service) ListPromotions(ctx context.Context, limit, offset int) ([]enti
 
 // CreatePromotionInput is the input for creating a promotion.
 type CreatePromotionInput struct {
-	Code              string   `json:"code" binding:"required"`
-	Name              string   `json:"name" binding:"required"`
-	Description       string   `json:"description"`
-	DiscountType      string   `json:"discount_type"`
-	DiscountValue     int64    `json:"discount_value"`
-	MaxDiscountAmount int64    `json:"max_discount_amount"`
-	ApplicableScope   string   `json:"applicable_scope"`
-	ApplicableIDs     []int64  `json:"applicable_ids"`
-	MaxUses           int      `json:"max_uses"`
-	MaxUsesPerUser    int      `json:"max_uses_per_user"`
+	Code              string     `json:"code" binding:"required"`
+	Name              string     `json:"name" binding:"required"`
+	Description       string     `json:"description"`
+	DiscountType      string     `json:"discount_type"`
+	DiscountValue     int64      `json:"discount_value"`
+	MaxDiscountAmount int64      `json:"max_discount_amount"`
+	ApplicableScope   string     `json:"applicable_scope"`
+	ApplicableIDs     []int64    `json:"applicable_ids"`
+	MaxUses           int        `json:"max_uses"`
+	MaxUsesPerUser    int        `json:"max_uses_per_user"`
 	StartsAt          *time.Time `json:"starts_at"`
 	EndsAt            *time.Time `json:"ends_at"`
-	Enabled           *bool    `json:"enabled"`
+	Enabled           *bool      `json:"enabled"`
 }
 
 // CreatePromotion creates a new promotion.
@@ -1027,14 +1027,14 @@ func (s *Service) DeletePromotion(ctx context.Context, id int64) error {
 
 // ValidatePromotionResult is the result of validating a promotion code.
 type ValidatePromotionResult struct {
-	Valid         bool   `json:"valid"`
-	DiscountType  string `json:"discount_type"`
-	DiscountValue int64  `json:"discount_value"`
-	OriginalAmount int64 `json:"original_amount"`
-	DiscountAmount int64 `json:"discount_amount"`
-	PaidAmount    int64  `json:"paid_amount"`
-	RemainingUses int    `json:"remaining_uses"`
-	ErrorMessage  string `json:"error_message,omitempty"`
+	Valid          bool   `json:"valid"`
+	DiscountType   string `json:"discount_type"`
+	DiscountValue  int64  `json:"discount_value"`
+	OriginalAmount int64  `json:"original_amount"`
+	DiscountAmount int64  `json:"discount_amount"`
+	PaidAmount     int64  `json:"paid_amount"`
+	RemainingUses  int    `json:"remaining_uses"`
+	ErrorMessage   string `json:"error_message,omitempty"`
 }
 
 // ValidatePromotion validates a promotion code against a variant and returns the discount.
@@ -1131,16 +1131,16 @@ type RenewInput struct {
 
 // RenewResult is the result of a renewal operation.
 type RenewResult struct {
-	OrderID        int64      `json:"order_id"`
-	OrderType      string     `json:"order_type"`
-	VariantID      int64      `json:"variant_id"`
-	VariantName    string     `json:"variant_name"`
-	OriginalAmount int64      `json:"original_amount"`
-	DiscountAmount int64      `json:"discount_amount"`
-	PaidAmount     int64      `json:"paid_amount"`
-	PromotionCode  string     `json:"promotion_code"`
-	EffectiveFrom  time.Time  `json:"effective_from"`
-	EffectiveTo    *time.Time `json:"effective_to"`
+	OrderID         int64      `json:"order_id"`
+	OrderType       string     `json:"order_type"`
+	VariantID       int64      `json:"variant_id"`
+	VariantName     string     `json:"variant_name"`
+	OriginalAmount  int64      `json:"original_amount"`
+	DiscountAmount  int64      `json:"discount_amount"`
+	PaidAmount      int64      `json:"paid_amount"`
+	PromotionCode   string     `json:"promotion_code"`
+	EffectiveFrom   time.Time  `json:"effective_from"`
+	EffectiveTo     *time.Time `json:"effective_to"`
 	ClientExpiresAt *time.Time `json:"client_expires_at"`
 }
 
@@ -1250,16 +1250,16 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 	}
 
 	return &RenewResult{
-		OrderID:        order.ID,
-		OrderType:      order.OrderType,
-		VariantID:      input.VariantID,
-		VariantName:    variant.Name,
-		OriginalAmount: originalAmount,
-		DiscountAmount: discountAmount,
-		PaidAmount:     paidAmount,
-		PromotionCode:  promoCode,
-		EffectiveFrom:  now,
-		EffectiveTo:    &newExpiry,
+		OrderID:         order.ID,
+		OrderType:       order.OrderType,
+		VariantID:       input.VariantID,
+		VariantName:     variant.Name,
+		OriginalAmount:  originalAmount,
+		DiscountAmount:  discountAmount,
+		PaidAmount:      paidAmount,
+		PromotionCode:   promoCode,
+		EffectiveFrom:   now,
+		EffectiveTo:     &newExpiry,
 		ClientExpiresAt: &newExpiry,
 	}, nil
 }
@@ -1405,16 +1405,16 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 	}
 
 	return &RenewResult{
-		OrderID:        order.ID,
-		OrderType:      order.OrderType,
-		VariantID:      input.VariantID,
-		VariantName:    variant.Name,
-		OriginalAmount: originalAmount,
-		DiscountAmount: discountAmount,
-		PaidAmount:     paidAmount,
-		PromotionCode:  promoCode,
-		EffectiveFrom:  now,
-		EffectiveTo:    &newExpiry,
+		OrderID:         order.ID,
+		OrderType:       order.OrderType,
+		VariantID:       input.VariantID,
+		VariantName:     variant.Name,
+		OriginalAmount:  originalAmount,
+		DiscountAmount:  discountAmount,
+		PaidAmount:      paidAmount,
+		PromotionCode:   promoCode,
+		EffectiveFrom:   now,
+		EffectiveTo:     &newExpiry,
 		ClientExpiresAt: &newExpiry,
 	}, nil
 }
@@ -1746,10 +1746,10 @@ func (s *Service) ListAllInboundsWithServer(ctx context.Context) ([]InboundWithS
 // for billing node selection in the UI.
 type BillingNodeOption struct {
 	MemberID     int64  `json:"member_id"`
-	Type         string `json:"type"`          // "inbound" or "external"
+	Type         string `json:"type"` // "inbound" or "external"
 	ServerID     int64  `json:"server_id"`
-	ServerName   string `json:"server_name"`   // host node name
-	NodeName     string `json:"node_name"`     // inbound remark/tag or external node name
+	ServerName   string `json:"server_name"` // host node name
+	NodeName     string `json:"node_name"`   // inbound remark/tag or external node name
 	Protocol     string `json:"protocol"`
 	Port         int    `json:"port"`
 	DisplayLabel string `json:"display_label"` // "主机节点 - 入口/节点名称 (protocol:port)"

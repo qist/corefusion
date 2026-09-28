@@ -93,7 +93,7 @@ func (r *ACMEAccountConfigRepository) Delete(ctx context.Context, id int64) erro
 }
 
 // encryptACMESecrets 返回**密文版副本** ✓ —— 不改写调用方实体 ✗
-//（service 会把刚 Create/Update 的 cfg 直接回给前端，改成密文就穿帮了 ✗）。
+// （service 会把刚 Create/Update 的 cfg 直接回给前端，改成密文就穿帮了 ✗）。
 func encryptACMESecrets(cfg *entity.ACMEAccountConfig) (*entity.ACMEAccountConfig, error) {
 	out := *cfg
 	mac, err := encryptCredential(out.EABMACKey)

@@ -55,9 +55,9 @@ func getServerRecoverMode(server *entity.NodeServer) RecoverMode {
 // processes are all down. When the primary recovers, the behavior depends
 // on the server's RecoverMode setting (per-pair configuration).
 type FailoverManager struct {
-	serverRepo    *repository.NodeServerRepository
-	nodeMgr       *NodeServerManager
-	checkInterval time.Duration
+	serverRepo        *repository.NodeServerRepository
+	nodeMgr           *NodeServerManager
+	checkInterval     time.Duration
 	offlineThreshold  time.Duration // how long before triggering failover
 	recoverGrace      time.Duration // how long the original primary must be stable before switching back
 	coreDownThreshold time.Duration // how long all cores must be down before triggering failover (even if Agent is online)

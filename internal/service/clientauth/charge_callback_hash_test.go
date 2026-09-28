@@ -32,7 +32,7 @@ func mkCallbackBody() map[string]any {
 //
 // ⚠ 这里曾有一个真实 bug ✗：剥 sign 时从 `InputOffset()-1` 往回找分隔逗号 ✗，
 // 而 `json.Decoder.InputOffset()` 返回的是"上一个 token **结束之后**"的偏移 ✓
-//（正好落在分隔逗号上 ✓）→ 多退一位 → 把**前一个成员一起删掉** ✗。
+// （正好落在分隔逗号上 ✓）→ 多退一位 → 把**前一个成员一起删掉** ✗。
 // 该 bug 就是被本测试的第一条断言抓出来的 ✓。
 func TestStripTopLevelSignMember(t *testing.T) {
 	body := mkCallbackBody()

@@ -13,8 +13,8 @@ import (
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
-	"corefusion/internal/store/db"
 	backupSvc "corefusion/internal/service/backup"
+	"corefusion/internal/store/db"
 )
 
 // Handler handles backup HTTP requests.
@@ -41,8 +41,8 @@ func (h *Handler) ListDBBackups(c *gin.Context) {
 		info, err := os.Stat(f)
 		if err == nil {
 			items = append(items, gin.H{
-				"filename":  filepath.Base(f),
-				"size":      info.Size(),
+				"filename":   filepath.Base(f),
+				"size":       info.Size(),
 				"created_at": info.ModTime(),
 			})
 		}
@@ -74,9 +74,9 @@ func (h *Handler) CreateDBBackup(c *gin.Context) {
 
 	info, _ := os.Stat(backupPath)
 	response.Created(c, gin.H{
-		"filename":  filename,
-		"path":      backupPath,
-		"size":      info.Size(),
+		"filename":   filename,
+		"path":       backupPath,
+		"size":       info.Size(),
 		"created_at": time.Now(),
 	})
 }

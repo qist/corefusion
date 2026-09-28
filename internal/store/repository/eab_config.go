@@ -87,7 +87,7 @@ func (r *EABConfigRepository) Delete(ctx context.Context, id int64) error {
 // encryptEABSecrets 返回**密文版副本** ✓ —— 绝不改写调用方实体 ✗。
 //
 // 为什么必须是副本 ✗：`MintGoogleEAB` 保存完会**立刻**把同一份 cfg 交给 ACME 注册
-//（`router.go` 里直接取 `cfg.KeyID, cfg.MACKey` 下发 ✓）——
+// （`router.go` 里直接取 `cfg.KeyID, cfg.MACKey` 下发 ✓）——
 // 若就地改写入参，调用方拿到的就是密文 ✗ → 注册端只会说"EAB 无效" ✗，很难联想到加密 ✗。
 func encryptEABSecrets(cfg *entity.EABConfig) (*entity.EABConfig, error) {
 	out := *cfg // 全是值类型字段 ✓ 浅拷贝足够 ✓
@@ -119,7 +119,7 @@ func encryptCredential(s string) (string, error) {
 // decryptEABSecrets 就地把密文换回明文 ✓（读路径 ✓）。
 //
 // 解不开时**原样返回**并打日志 ✓：宁可让调用方拿到一个"明显不对劲的值"
-//（注册时报 EAB 无效 ✓，日志里能查到原因 ✓），也不要把证书页整个打成 500 ✗。
+// （注册时报 EAB 无效 ✓，日志里能查到原因 ✓），也不要把证书页整个打成 500 ✗。
 func decryptEABSecrets(cfg *entity.EABConfig) {
 	cfg.MACKey = decryptCredential("mac_key", cfg.ID, cfg.MACKey)
 	cfg.GoogleSAJSON = decryptCredential("google_sa_json", cfg.ID, cfg.GoogleSAJSON)

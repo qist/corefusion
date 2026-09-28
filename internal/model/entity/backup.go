@@ -18,16 +18,16 @@ func (BackupRecord) TableName() string { return "backup_records" }
 
 // BackupSchedule is the GORM model for the backup_schedules table.
 type BackupSchedule struct {
-	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name       string    `json:"name" gorm:"size:128;not null"`
-	Cron       string    `json:"cron" gorm:"size:64;not null"`
-	StorageID             *int64    `json:"storage_id"`                                          // Optional: remote storage ID
-	RetainDays            int       `json:"retain_days" gorm:"not null;default:30"`
-	DeleteLocalAfterUpload bool     `json:"delete_local_after_upload" gorm:"not null;default:false"` // Delete local backup after successful remote upload
-	Enabled    bool      `json:"enabled" gorm:"not null;default:true"`
-	LastRunAt  time.Time `json:"last_run_at"`
-	CreatedAt  time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"not null"`
+	ID                     int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name                   string    `json:"name" gorm:"size:128;not null"`
+	Cron                   string    `json:"cron" gorm:"size:64;not null"`
+	StorageID              *int64    `json:"storage_id"` // Optional: remote storage ID
+	RetainDays             int       `json:"retain_days" gorm:"not null;default:30"`
+	DeleteLocalAfterUpload bool      `json:"delete_local_after_upload" gorm:"not null;default:false"` // Delete local backup after successful remote upload
+	Enabled                bool      `json:"enabled" gorm:"not null;default:true"`
+	LastRunAt              time.Time `json:"last_run_at"`
+	CreatedAt              time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (BackupSchedule) TableName() string { return "backup_schedules" }
@@ -37,7 +37,7 @@ type BackupStorage struct {
 	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name      string    `json:"name" gorm:"size:128;not null"`
 	Type      string    `json:"type" gorm:"size:32;not null"` // local, s3, webdav, ftp
-	Config    string    `json:"config" gorm:"type:longtext"`      // JSON config
+	Config    string    `json:"config" gorm:"type:longtext"`  // JSON config
 	Enabled   bool      `json:"enabled" gorm:"not null;default:false"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`

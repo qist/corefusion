@@ -17,9 +17,9 @@ import (
 // 线程安全：所有方法均可并发调用。
 type MarkRegistry struct {
 	mu        sync.RWMutex
-	ipToMark  map[string]*MarkEntry  // key: "1.2.3.4" → mark entry
-	subToMark map[int64]uint32       // key: subscriptionID → mark value
-	subToRate map[int64]*RateConfig  // key: subscriptionID → 限速配置
+	ipToMark  map[string]*MarkEntry // key: "1.2.3.4" → mark entry
+	subToMark map[int64]uint32      // key: subscriptionID → mark value
+	subToRate map[int64]*RateConfig // key: subscriptionID → 限速配置
 }
 
 // MarkEntry 记录一个 IP 的完整归属信息。

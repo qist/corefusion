@@ -14,12 +14,12 @@ import (
 
 // NginxManager handles Nginx-specific site management and config generation.
 type NginxManager struct {
-	dataDir      string
-	configDir    string
-	siteRepo     *repository.NginxSiteRepository
+	dataDir   string
+	configDir string
+	siteRepo  *repository.NginxSiteRepository
 	// certRepo 用于把同域名的**多张**证书一起挂到站点上 ✓（ECC + RSA 双证书 ✓）。
 	// 允许为 nil ✓（未注入时只用站点自配的那组 ✓）。
-	certRepo *repository.CertificateRepository
+	certRepo     *repository.CertificateRepository
 	settingStore SettingStore
 	serverID     int64
 	isLocal      bool

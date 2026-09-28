@@ -4,21 +4,21 @@ import "time"
 
 // NodeServerResponse is the API response for a node server.
 type NodeServerResponse struct {
-	ID                int64      `json:"id"`
-	Name              string     `json:"name"`
-	Hostname          string     `json:"hostname"`
-	Region            string     `json:"region"`
-	RegionLabel       string     `json:"region_label"`
-	NodeType          string     `json:"node_type"`
-	PartnerServerID   int64  `json:"partner_server_id"`
-	FailoverRole      string `json:"failover_role"`
-	FailoverPriority  int    `json:"failover_priority"`
-	RecoverMode       string `json:"recover_mode"`
-	ChainConfig       string `json:"chain_config,omitempty"`
-	AgentPort         int        `json:"agent_port"`
-	AgentStatus       string     `json:"agent_status"`
-	AgentVersion      string     `json:"agent_version"`
-	LastHeartbeatAt   *time.Time `json:"last_heartbeat_at"`
+	ID               int64      `json:"id"`
+	Name             string     `json:"name"`
+	Hostname         string     `json:"hostname"`
+	Region           string     `json:"region"`
+	RegionLabel      string     `json:"region_label"`
+	NodeType         string     `json:"node_type"`
+	PartnerServerID  int64      `json:"partner_server_id"`
+	FailoverRole     string     `json:"failover_role"`
+	FailoverPriority int        `json:"failover_priority"`
+	RecoverMode      string     `json:"recover_mode"`
+	ChainConfig      string     `json:"chain_config,omitempty"`
+	AgentPort        int        `json:"agent_port"`
+	AgentStatus      string     `json:"agent_status"`
+	AgentVersion     string     `json:"agent_version"`
+	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at"`
 
 	// Bootstrap status (never expose the token itself)
 	BootstrapRequired    bool       `json:"bootstrap_required"`
@@ -32,27 +32,27 @@ type NodeServerResponse struct {
 	// Certificate association
 	CertificateID int64 `json:"certificate_id"`
 
-	IsLocal        bool   `json:"is_local"`
-	SupportedCores string `json:"supported_cores"`
-	MaxInbounds    int    `json:"max_inbounds"`
-	PublicIP       string `json:"public_ip"`
-	InternalIP     string `json:"internal_ip"`
-	BandwidthMbps  int    `json:"bandwidth_mbps"`
-	BillingEnabled bool   `json:"billing_enabled"`
-	Metadata       string `json:"metadata,omitempty"`
-	SortOrder      int    `json:"sort_order"`
-	Enabled        bool   `json:"enabled"`
+	IsLocal        bool      `json:"is_local"`
+	SupportedCores string    `json:"supported_cores"`
+	MaxInbounds    int       `json:"max_inbounds"`
+	PublicIP       string    `json:"public_ip"`
+	InternalIP     string    `json:"internal_ip"`
+	BandwidthMbps  int       `json:"bandwidth_mbps"`
+	BillingEnabled bool      `json:"billing_enabled"`
+	Metadata       string    `json:"metadata,omitempty"`
+	SortOrder      int       `json:"sort_order"`
+	Enabled        bool      `json:"enabled"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 
 	// ── 出口网卡流量配额 ──
-	EgressInterface     string     `json:"egress_interface"`
-	TrafficQuotaBytes   int64      `json:"traffic_quota_bytes"`
-	TrafficQuotaResetDay int      `json:"traffic_quota_reset_day"`
-	TrafficSuspended    bool      `json:"traffic_suspended"`
-	TrafficSuspendedAt  *time.Time `json:"traffic_suspended_at,omitempty"`
-	TrafficUsedBytes    int64      `json:"traffic_used_bytes"`
-	TrafficPeriodStart  *time.Time `json:"traffic_period_start,omitempty"`
+	EgressInterface      string     `json:"egress_interface"`
+	TrafficQuotaBytes    int64      `json:"traffic_quota_bytes"`
+	TrafficQuotaResetDay int        `json:"traffic_quota_reset_day"`
+	TrafficSuspended     bool       `json:"traffic_suspended"`
+	TrafficSuspendedAt   *time.Time `json:"traffic_suspended_at,omitempty"`
+	TrafficUsedBytes     int64      `json:"traffic_used_bytes"`
+	TrafficPeriodStart   *time.Time `json:"traffic_period_start,omitempty"`
 
 	// Resource usage — populated from the latest server_metric
 	ResourceUsage *ResourceUsage `json:"resource_usage,omitempty"`
@@ -93,15 +93,15 @@ type ResourceUsage struct {
 	UptimeSeconds  int64   `json:"uptime_seconds"`
 
 	// Traffic
-	TrafficUplink   int64     `json:"traffic_uplink"`
-	TrafficDownlink int64     `json:"traffic_downlink"`
+	TrafficUplink   int64 `json:"traffic_uplink"`
+	TrafficDownlink int64 `json:"traffic_downlink"`
 
 	// Egress interface (出口网卡累计流量)
 	EgressInterface string `json:"egress_interface"`
 	EgressRxBytes   int64  `json:"egress_rx_bytes"`
 	EgressTxBytes   int64  `json:"egress_tx_bytes"`
 
-	LastUpdated     time.Time `json:"last_updated"`
+	LastUpdated time.Time `json:"last_updated"`
 }
 
 // BootstrapTokenResponse is returned when generating a bootstrap token.
@@ -110,7 +110,7 @@ type BootstrapTokenResponse struct {
 	ServerID    int64     `json:"server_id"`
 	Token       string    `json:"token"`
 	ExpiresAt   time.Time `json:"expires_at"`
-	Instruction string   `json:"instruction"`
+	Instruction string    `json:"instruction"`
 }
 
 // CreateServerResponse is returned when creating a node server.

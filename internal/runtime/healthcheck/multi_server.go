@@ -23,14 +23,14 @@ type ServerStatusChecker interface {
 // It updates the agent_status in the database and triggers alerts when servers go offline.
 // Local servers are skipped — they are monitored by the existing Guardian.
 type MultiServerHealthChecker struct {
-	serverMgr    ServerStatusChecker
-	serverRepo   *repository.NodeServerRepository
-	alertHandler AlertHandler
+	serverMgr     ServerStatusChecker
+	serverRepo    *repository.NodeServerRepository
+	alertHandler  AlertHandler
 	checkInterval time.Duration
 
 	// Track previous states for online→offline detection
-	mu             sync.RWMutex
-	prevStates     map[int64]string // server_id → last known status
+	mu         sync.RWMutex
+	prevStates map[int64]string // server_id → last known status
 }
 
 // AlertHandler is a callback for alert events (webhook, email, Telegram, etc.)
@@ -185,7 +185,7 @@ func (c *MultiServerHealthChecker) GetServerStatusSummary(ctx context.Context) (
 	}
 
 	summary := &StatusSummary{
-		Total:   len(servers),
+		Total:    len(servers),
 		ByStatus: make(map[string]int),
 		ByType:   make(map[string]int),
 		ByRegion: make(map[string]int),
@@ -204,14 +204,14 @@ func (c *MultiServerHealthChecker) GetServerStatusSummary(ctx context.Context) (
 		summary.ByRegion[s.Region]++
 
 		info := ServerHealthInfo{
-			ID:         s.ID,
-			Name:       s.Name,
-			Hostname:   s.Hostname,
-			Region:     s.Region,
-			NodeType:   s.NodeType,
-			Status:     status,
-			Online:     status == entity.AgentStatusOnline,
-			IsLocal:    s.IsLocal,
+			ID:             s.ID,
+			Name:           s.Name,
+			Hostname:       s.Hostname,
+			Region:         s.Region,
+			NodeType:       s.NodeType,
+			Status:         status,
+			Online:         status == entity.AgentStatusOnline,
+			IsLocal:        s.IsLocal,
 			BillingEnabled: s.BillingEnabled,
 		}
 
@@ -231,26 +231,26 @@ func (c *MultiServerHealthChecker) GetServerStatusSummary(ctx context.Context) (
 
 // StatusSummary represents an aggregate health summary of all servers.
 type StatusSummary struct {
-	Total    int               `json:"total"`
-	Online   int               `json:"online"`
-	Offline  int               `json:"offline"`
-	Degraded int               `json:"degraded"`
-	ByStatus map[string]int    `json:"by_status"`
-	ByType   map[string]int    `json:"by_type"`
-	ByRegion map[string]int    `json:"by_region"`
+	Total    int                `json:"total"`
+	Online   int                `json:"online"`
+	Offline  int                `json:"offline"`
+	Degraded int                `json:"degraded"`
+	ByStatus map[string]int     `json:"by_status"`
+	ByType   map[string]int     `json:"by_type"`
+	ByRegion map[string]int     `json:"by_region"`
 	Servers  []ServerHealthInfo `json:"servers"`
 }
 
 // ServerHealthInfo represents the health info of a single server.
 type ServerHealthInfo struct {
-	ID              int64         `json:"id"`
-	Name            string        `json:"name"`
-	Hostname        string        `json:"hostname"`
-	Region          string        `json:"region"`
-	NodeType        string        `json:"node_type"`
-	Status          string        `json:"status"`
-	Online          bool          `json:"online"`
-	IsLocal         bool          `json:"is_local"`
-	BillingEnabled  bool          `json:"billing_enabled"`
+	ID               int64         `json:"id"`
+	Name             string        `json:"name"`
+	Hostname         string        `json:"hostname"`
+	Region           string        `json:"region"`
+	NodeType         string        `json:"node_type"`
+	Status           string        `json:"status"`
+	Online           bool          `json:"online"`
+	IsLocal          bool          `json:"is_local"`
+	BillingEnabled   bool          `json:"billing_enabled"`
 	LastHeartbeatAge time.Duration `json:"last_heartbeat_age_seconds"`
 }

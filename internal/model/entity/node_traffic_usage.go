@@ -5,9 +5,9 @@ import "time"
 // NodeTrafficUsage records monthly traffic usage per node for quota tracking.
 // Each row represents one billing period for a specific server.
 type NodeTrafficUsage struct {
-	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID  int64    `json:"server_id" gorm:"not null;uniqueIndex:idx_node_traffic_period"`
-	Interface string   `json:"interface" gorm:"size:64;not null;default:''"`
+	ID        int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID  int64  `json:"server_id" gorm:"not null;uniqueIndex:idx_node_traffic_period"`
+	Interface string `json:"interface" gorm:"size:64;not null;default:''"`
 
 	// 结算周期
 	PeriodStart time.Time `json:"period_start" gorm:"not null;uniqueIndex:idx_node_traffic_period"`

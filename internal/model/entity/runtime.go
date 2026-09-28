@@ -4,39 +4,39 @@ import "time"
 
 // RuntimeSnapshot is the GORM model for runtime config snapshots.
 type RuntimeSnapshot struct {
-	ID              int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	SnapshotType    string    `json:"snapshot_type" gorm:"size:32;not null"`
-	TriggerSource   string    `json:"trigger_source" gorm:"size:32"`
-	Reason          string    `json:"reason" gorm:"type:longtext"`
-	TargetServerIDsJSON string `json:"target_server_ids_json" gorm:"type:longtext"` // intended target nodes (empty = all)
-	ConfigJSON      string    `json:"config_json" gorm:"type:longtext"`
-	FilePathsJSON   string    `json:"file_paths_json" gorm:"type:longtext"`
-	ChecksumSHA256  string    `json:"checksum_sha256" gorm:"size:64"`
-	CreatedAt       time.Time `json:"created_at" gorm:"not null"`
+	ID                  int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	SnapshotType        string    `json:"snapshot_type" gorm:"size:32;not null"`
+	TriggerSource       string    `json:"trigger_source" gorm:"size:32"`
+	Reason              string    `json:"reason" gorm:"type:longtext"`
+	TargetServerIDsJSON string    `json:"target_server_ids_json" gorm:"type:longtext"` // intended target nodes (empty = all)
+	ConfigJSON          string    `json:"config_json" gorm:"type:longtext"`
+	FilePathsJSON       string    `json:"file_paths_json" gorm:"type:longtext"`
+	ChecksumSHA256      string    `json:"checksum_sha256" gorm:"size:64"`
+	CreatedAt           time.Time `json:"created_at" gorm:"not null"`
 }
 
 func (RuntimeSnapshot) TableName() string { return "runtime_snapshots" }
 
 // RuntimeApplyJob is the GORM model for runtime apply jobs.
 type RuntimeApplyJob struct {
-	ID                int64      `json:"id" gorm:"primaryKey;autoIncrement"`
-	TriggerSource     string     `json:"trigger_source" gorm:"size:32;index;not null"`
-	Reason            string     `json:"reason" gorm:"type:longtext"`
-	OperationKind     string     `json:"operation_kind" gorm:"size:32;not null;default:apply"`
-	Status            string     `json:"status" gorm:"size:32;index;not null"`
-	Phase             string     `json:"phase" gorm:"size:64"`
-	SnapshotID        *int64     `json:"snapshot_id"`
-	OriginalSnapshotID *int64   `json:"original_snapshot_id"`
-	TargetCount       int        `json:"target_count" gorm:"not null;default:0"`
-	SuccessCount      int        `json:"success_count" gorm:"not null;default:0"`
-	FailedCount       int        `json:"failed_count" gorm:"not null;default:0"`
-	VerifyStatus      string     `json:"verify_status" gorm:"size:32;not null;default:''"` // pending|verifying|ok|partial|failed|skipped
-	TargetServerIDsJSON string   `json:"target_server_ids_json" gorm:"type:longtext"`           // selected target nodes (empty = all)
-	ErrorMessage      string     `json:"error_message" gorm:"type:longtext"`
-	StartedAt         *time.Time `json:"started_at"`
-	FinishedAt        *time.Time `json:"finished_at"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"not null"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"not null"`
+	ID                  int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	TriggerSource       string     `json:"trigger_source" gorm:"size:32;index;not null"`
+	Reason              string     `json:"reason" gorm:"type:longtext"`
+	OperationKind       string     `json:"operation_kind" gorm:"size:32;not null;default:apply"`
+	Status              string     `json:"status" gorm:"size:32;index;not null"`
+	Phase               string     `json:"phase" gorm:"size:64"`
+	SnapshotID          *int64     `json:"snapshot_id"`
+	OriginalSnapshotID  *int64     `json:"original_snapshot_id"`
+	TargetCount         int        `json:"target_count" gorm:"not null;default:0"`
+	SuccessCount        int        `json:"success_count" gorm:"not null;default:0"`
+	FailedCount         int        `json:"failed_count" gorm:"not null;default:0"`
+	VerifyStatus        string     `json:"verify_status" gorm:"size:32;not null;default:''"` // pending|verifying|ok|partial|failed|skipped
+	TargetServerIDsJSON string     `json:"target_server_ids_json" gorm:"type:longtext"`      // selected target nodes (empty = all)
+	ErrorMessage        string     `json:"error_message" gorm:"type:longtext"`
+	StartedAt           *time.Time `json:"started_at"`
+	FinishedAt          *time.Time `json:"finished_at"`
+	CreatedAt           time.Time  `json:"created_at" gorm:"not null"`
+	UpdatedAt           time.Time  `json:"updated_at" gorm:"not null"`
 }
 
 func (RuntimeApplyJob) TableName() string { return "runtime_apply_jobs" }
@@ -79,15 +79,15 @@ func (RuntimeApplyJobEvent) TableName() string { return "runtime_apply_job_event
 
 // ReverseProxyInstance is the GORM model for reverse proxy instances.
 type ReverseProxyInstance struct {
-	ID            int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name          string    `json:"name" gorm:"size:128;not null"`
-	ProxyType     string    `json:"proxy_type" gorm:"size:32;not null"`
-	ConfigPath    string    `json:"config_path" gorm:"size:512"`
-	ListenAddr    string    `json:"listen_addr" gorm:"size:255"`
-	Status        string    `json:"status" gorm:"size:32;not null;default:stopped"`
-	LastReloadAt  *time.Time `json:"last_renewed_at"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"not null"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"not null"`
+	ID           int64      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name         string     `json:"name" gorm:"size:128;not null"`
+	ProxyType    string     `json:"proxy_type" gorm:"size:32;not null"`
+	ConfigPath   string     `json:"config_path" gorm:"size:512"`
+	ListenAddr   string     `json:"listen_addr" gorm:"size:255"`
+	Status       string     `json:"status" gorm:"size:32;not null;default:stopped"`
+	LastReloadAt *time.Time `json:"last_renewed_at"`
+	CreatedAt    time.Time  `json:"created_at" gorm:"not null"`
+	UpdatedAt    time.Time  `json:"updated_at" gorm:"not null"`
 }
 
 func (ReverseProxyInstance) TableName() string { return "reverse_proxy_instances" }
@@ -129,19 +129,19 @@ func (BackupCleanupJob) TableName() string { return "backup_cleanup_jobs" }
 
 // BinaryRelease is the GORM model for binary releases.
 type BinaryRelease struct {
-	ID              int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ComponentName   string    `json:"component_name" gorm:"size:64;not null"`
-	ComponentType   string    `json:"component_type" gorm:"size:32;not null"`
-	Version         string    `json:"version" gorm:"size:64;not null"`
-	OS              string    `json:"os" gorm:"size:16;not null"`
-	Arch            string    `json:"arch" gorm:"size:16;not null"`
-	DownloadURL     string    `json:"download_url" gorm:"size:512;not null"`
-	Checksum        string    `json:"checksum" gorm:"size:128"`
-	Signature       string    `json:"signature" gorm:"size:512"`
-	ReleaseChannel  string    `json:"release_channel" gorm:"size:32;not null;default:stable"`
-	MinUpgradeable  string    `json:"min_upgradeable" gorm:"size:64"`
-	Notes           string    `json:"notes" gorm:"type:longtext"`
-	CreatedAt       time.Time `json:"created_at" gorm:"not null"`
+	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ComponentName  string    `json:"component_name" gorm:"size:64;not null"`
+	ComponentType  string    `json:"component_type" gorm:"size:32;not null"`
+	Version        string    `json:"version" gorm:"size:64;not null"`
+	OS             string    `json:"os" gorm:"size:16;not null"`
+	Arch           string    `json:"arch" gorm:"size:16;not null"`
+	DownloadURL    string    `json:"download_url" gorm:"size:512;not null"`
+	Checksum       string    `json:"checksum" gorm:"size:128"`
+	Signature      string    `json:"signature" gorm:"size:512"`
+	ReleaseChannel string    `json:"release_channel" gorm:"size:32;not null;default:stable"`
+	MinUpgradeable string    `json:"min_upgradeable" gorm:"size:64"`
+	Notes          string    `json:"notes" gorm:"type:longtext"`
+	CreatedAt      time.Time `json:"created_at" gorm:"not null"`
 }
 
 func (BinaryRelease) TableName() string { return "binary_releases" }

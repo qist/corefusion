@@ -46,20 +46,20 @@ const (
 // Withdraw type constants.
 const (
 	WithdrawTypeBalance = "balance"
-	WithdrawTypeUSDT   = "usdt"
+	WithdrawTypeUSDT    = "usdt"
 )
 
 type ReferralWithdrawal struct {
-	ID             int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ClientID       int64      `gorm:"not null;index" json:"client_id"`
-	Amount         int64      `gorm:"not null" json:"amount"` // 分
-	WithdrawType   string     `gorm:"size:32;not null;default:balance" json:"withdraw_type"`
-	WalletAddress  string     `gorm:"size:255" json:"wallet_address"`
-	Status         string     `gorm:"size:32;not null;default:pending" json:"status"`
-	ProcessedAt    *time.Time `json:"processed_at"`
-	ProcessRemark  string     `gorm:"size:500" json:"process_remark"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ClientID      int64      `gorm:"not null;index" json:"client_id"`
+	Amount        int64      `gorm:"not null" json:"amount"` // 分
+	WithdrawType  string     `gorm:"size:32;not null;default:balance" json:"withdraw_type"`
+	WalletAddress string     `gorm:"size:255" json:"wallet_address"`
+	Status        string     `gorm:"size:32;not null;default:pending" json:"status"`
+	ProcessedAt   *time.Time `json:"processed_at"`
+	ProcessRemark string     `gorm:"size:500" json:"process_remark"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 func (ReferralWithdrawal) TableName() string { return "referral_withdrawals" }
@@ -92,15 +92,15 @@ const (
 )
 
 type Ticket struct {
-	ID             int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ClientID       int64      `gorm:"not null;index" json:"client_id"`
-	Subject        string     `gorm:"size:255;not null" json:"subject"`
-	Category       string     `gorm:"size:32;not null;default:other" json:"category"`
-	Priority       string     `gorm:"size:32;not null;default:normal" json:"priority"`
-	Status         string     `gorm:"size:32;not null;default:open" json:"status"`
-	AssignedAdminID *int64     `json:"assigned_admin_id"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	ClientID        int64     `gorm:"not null;index" json:"client_id"`
+	Subject         string    `gorm:"size:255;not null" json:"subject"`
+	Category        string    `gorm:"size:32;not null;default:other" json:"category"`
+	Priority        string    `gorm:"size:32;not null;default:normal" json:"priority"`
+	Status          string    `gorm:"size:32;not null;default:open" json:"status"`
+	AssignedAdminID *int64    `json:"assigned_admin_id"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func (Ticket) TableName() string { return "tickets" }
@@ -149,15 +149,15 @@ const (
 )
 
 type ClientGift struct {
-	ID         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ClientID   int64      `gorm:"not null;index" json:"client_id"`
-	Type       string     `gorm:"size:32;not null" json:"type"`    // days/traffic
-	Value      int64      `gorm:"not null" json:"value"`           // 天数 或 字节数
-	Source     string     `gorm:"size:64;not null" json:"source"` // 来源
-	Status     string     `gorm:"size:32;not null;default:available" json:"status"`
-	ExpiresAt  *time.Time `json:"expires_at"`
-	ClaimedAt  *time.Time `json:"claimed_at"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID        int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ClientID  int64      `gorm:"not null;index" json:"client_id"`
+	Type      string     `gorm:"size:32;not null" json:"type"`   // days/traffic
+	Value     int64      `gorm:"not null" json:"value"`          // 天数 或 字节数
+	Source    string     `gorm:"size:64;not null" json:"source"` // 来源
+	Status    string     `gorm:"size:32;not null;default:available" json:"status"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	ClaimedAt *time.Time `json:"claimed_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 func (ClientGift) TableName() string { return "client_gifts" }
@@ -210,7 +210,7 @@ func (Article) TableName() string { return "articles" }
 const (
 	SharedAccountTypeAppleID = "apple_id"
 	SharedAccountTypeNetflix = "netflix"
-	SharedAccountTypeOther  = "other"
+	SharedAccountTypeOther   = "other"
 )
 
 type SharedAccount struct {
@@ -218,7 +218,7 @@ type SharedAccount struct {
 	Name            string    `gorm:"size:255;not null" json:"name"`
 	Type            string    `gorm:"size:32;not null;default:other" json:"type"`
 	IconURL         string    `gorm:"size:500" json:"icon_url"`
-	Credentials     string    `gorm:"type:longtext;not null" json:"-"`    // encrypted, never JSON exposed
+	Credentials     string    `gorm:"type:longtext;not null" json:"-"` // encrypted, never JSON exposed
 	CredentialsEnc  string    `gorm:"type:longtext;not null" json:"credentials_enc"`
 	MinPlanCategory string    `gorm:"size:32" json:"min_plan_category"` // minimum plan category to view
 	SortOrder       int       `gorm:"not null;default:0" json:"sort_order"`
@@ -238,12 +238,12 @@ const (
 )
 
 type SharedAccountRepairLog struct {
-	ID            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	AccountID     int64      `gorm:"not null;index" json:"account_id"`
-	ClientID      int64      `gorm:"not null;index" json:"client_id"`
-	Status        string     `gorm:"size:32;not null;default:pending" json:"status"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID          int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	AccountID   int64      `gorm:"not null;index" json:"account_id"`
+	ClientID    int64      `gorm:"not null;index" json:"client_id"`
+	Status      string     `gorm:"size:32;not null;default:pending" json:"status"`
+	CompletedAt *time.Time `json:"completed_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 func (SharedAccountRepairLog) TableName() string { return "shared_account_repair_logs" }

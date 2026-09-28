@@ -1,11 +1,11 @@
 package inboundconfig
 
 import (
-	"strings"
 	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -155,7 +155,7 @@ func (h *Handler) Create(c *gin.Context) {
 		Port       int             `json:"port"`
 		ConfigJSON json.RawMessage `json:"config_json"`
 		// 用指针区分"没传 enabled"与"传了 false"：全量覆盖语义下，漏传会把入站意外禁用。
-		Enabled    bool            `json:"enabled"`
+		Enabled bool `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -201,7 +201,7 @@ func (h *Handler) Update(c *gin.Context) {
 		Port       int             `json:"port"`
 		ConfigJSON json.RawMessage `json:"config_json"`
 		// 用指针区分"没传 enabled"与"传了 false"：全量覆盖语义下漏传会把入站意外禁用。
-		Enabled    *bool           `json:"enabled"`
+		Enabled *bool `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

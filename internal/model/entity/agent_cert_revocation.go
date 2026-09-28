@@ -4,9 +4,9 @@ import "time"
 
 // CertRevocationReason constants.
 const (
-	RevocationReasonCompromised   = "compromised"    // 证书泄露
+	RevocationReasonCompromised    = "compromised"    // 证书泄露
 	RevocationReasonDecommissioned = "decommissioned" // 服务器下线
-	RevocationReasonReplaced      = "replaced"        // 证书被新证书替换
+	RevocationReasonReplaced       = "replaced"       // 证书被新证书替换
 )
 
 // AgentCertRevocation records a revoked Agent mTLS certificate.

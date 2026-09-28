@@ -50,9 +50,9 @@ type SpeedTestResult struct {
 // NewSpeedTestManager creates a new SpeedTestManager.
 func NewSpeedTestManager(serverRepo *repository.NodeServerRepository, nodeMgr *NodeServerManager) *SpeedTestManager {
 	return &SpeedTestManager{
-		serverRepo: serverRepo,
-		nodeMgr:    nodeMgr,
-		results:    make(map[int64]*SpeedTestResult),
+		serverRepo:    serverRepo,
+		nodeMgr:       nodeMgr,
+		results:       make(map[int64]*SpeedTestResult),
 		interval:      5 * time.Minute,
 		timeout:       5 * time.Second,
 		samples:       3,

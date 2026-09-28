@@ -209,7 +209,6 @@ func (h *Handler) ResolveAlert(c *gin.Context) {
 	response.OK(c, alert)
 }
 
-
 // ── 2026-09-23 补齐：前端在调、后端却不存在的两个接口 ──────────────────
 //
 // 背景（代码完成度体检）：`web/admin/src/api/security.js` 与 `Security.vue` 一直在调

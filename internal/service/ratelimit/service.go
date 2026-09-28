@@ -6,16 +6,16 @@ import (
 	"log"
 	"time"
 
-	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
 
 // Service handles rate limit configuration business logic.
 type Service struct {
-	repo    *repository.RateLimitConfigRepository
-	nodeOp  NodeOperator
+	repo   *repository.RateLimitConfigRepository
+	nodeOp NodeOperator
 }
 
 // NodeOperator is a minimal interface for sending commands to nodes.
@@ -42,14 +42,14 @@ func (s *Service) GetConfig(ctx context.Context, serverID int64) (*dto.RateLimit
 	if err != nil {
 		// No config found — return default
 		return &dto.RateLimitConfigVO{
-			ServerID:          serverID,
-			Enabled:           false,
-			Iface:             "",
-			IfbDevice:         "ifb0",
+			ServerID:           serverID,
+			Enabled:            false,
+			Iface:              "",
+			IfbDevice:          "ifb0",
 			DefaultMaxDownMbps: 0,
-			DefaultMaxUpMbps:  0,
-			IdleTTLSeconds:    3600,
-			CleanupInterval:   300,
+			DefaultMaxUpMbps:   0,
+			IdleTTLSeconds:     3600,
+			CleanupInterval:    300,
 			BackendType:        "nft_tc",
 		}, nil
 	}
@@ -62,17 +62,17 @@ func (s *Service) UpdateConfig(ctx context.Context, serverID int64, req *dto.Rat
 	if err != nil {
 		// Create new config
 		config = &entity.RateLimitConfig{
-			ServerID:          serverID,
-			Enabled:           false,
-			Iface:             "",
-			IfbDevice:         "ifb0",
+			ServerID:           serverID,
+			Enabled:            false,
+			Iface:              "",
+			IfbDevice:          "ifb0",
 			DefaultMaxDownMbps: 0,
-			DefaultMaxUpMbps:  0,
-			IdleTTLSeconds:    3600,
-			CleanupInterval:   300,
-			BackendType:       "nft_tc",
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+			DefaultMaxUpMbps:   0,
+			IdleTTLSeconds:     3600,
+			CleanupInterval:    300,
+			BackendType:        "nft_tc",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
 		}
 	}
 
@@ -250,7 +250,7 @@ func (s *Service) RemoveSubscriptionOnAllNodes(ctx context.Context, subID int64)
 		}
 		req := &agentpb.ApplyLimitsRequest{
 			Action:         "remove_subscription",
-			SubscriptionId:  subID,
+			SubscriptionId: subID,
 		}
 		if err := s.nodeOp.ApplyLimits(ctx, server.ID, req); err != nil {
 			log.Printf("[RateLimitService] remove subscription %d from server %d failed: %v", subID, server.ID, err)

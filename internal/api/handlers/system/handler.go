@@ -494,8 +494,10 @@ func (h *Handler) BatchUpdateSettings(c *gin.Context) {
 // --- 面板自更新 / 首次启动向导：**未实现**，统一返回 501 ---
 //
 // 2026-09-23 体检发现：这几个 handler 原来返回的是"假成功 / 空数组"✗ ——
-//   ListReleases / ListUpdateJobs → 恒返回 []（调用方会以为"没有可用版本"，
-//   实际是功能没做 ✗）；SystemUpdate / SystemRollback / FinishBootstrap → 恒返回成功 ✗（更误导）。
+//
+//	ListReleases / ListUpdateJobs → 恒返回 []（调用方会以为"没有可用版本"，
+//	实际是功能没做 ✗）；SystemUpdate / SystemRollback / FinishBootstrap → 恒返回成功 ✗（更误导）。
+//
 // 前端目前**没有任何地方调用这些端点**（已全量确认 ✓），所以改成诚实的 501 不影响界面 ✓；
 // 将来真做面板自更新时，把这里替换成实现即可（路由不用动 ✓）。
 func notImplemented(c *gin.Context, what string) {

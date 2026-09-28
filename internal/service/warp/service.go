@@ -68,14 +68,14 @@ type WarpStatus struct {
 
 // WarpConfigItem is a list item for WARP configs.
 type WarpConfigItem struct {
-	ID            int64  `json:"id"`
-	CoreType      string `json:"core_type"`
-	Remark        string `json:"remark"`
-	Status        string `json:"status"`
-	DeviceID      string `json:"device_id"`
-	AddressIPv4   string `json:"address_ipv4"`
-	AddressIPv6   string `json:"address_ipv6"`
-	Endpoint      string `json:"endpoint"`
+	ID             int64  `json:"id"`
+	CoreType       string `json:"core_type"`
+	Remark         string `json:"remark"`
+	Status         string `json:"status"`
+	DeviceID       string `json:"device_id"`
+	AddressIPv4    string `json:"address_ipv4"`
+	AddressIPv6    string `json:"address_ipv6"`
+	Endpoint       string `json:"endpoint"`
 	RegistrationAt string `json:"registration_at"`
 }
 

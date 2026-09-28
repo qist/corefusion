@@ -55,10 +55,10 @@ type taskEntry struct {
 // TaskQueue 管理异步任务的提交、执行和状态查询。
 type TaskQueue struct {
 	mu      sync.RWMutex
-	tasks   map[string]*taskEntry           // taskID → entry
-	byKey   map[string]*taskEntry            // idempotencyKey → entry（幂等去重）
-	queue   chan *taskEntry                   // 工作队列
-	workers int                               // Worker 数量
+	tasks   map[string]*taskEntry // taskID → entry
+	byKey   map[string]*taskEntry // idempotencyKey → entry（幂等去重）
+	queue   chan *taskEntry       // 工作队列
+	workers int                   // Worker 数量
 	wg      sync.WaitGroup
 	stopCh  chan struct{}
 }
@@ -211,7 +211,7 @@ func (tq *TaskQueue) executeTask(entry *taskEntry) {
 		CreatedAt:      entry.CreatedAt,
 		FinishedAt:     entry.FinishedAt,
 		TaskType:       entry.Type,
-		DetailJson:      entry.DetailJSON,
+		DetailJson:     entry.DetailJSON,
 	}
 	callback := entry.ResultCallback
 	tq.mu.Unlock()

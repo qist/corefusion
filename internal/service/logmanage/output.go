@@ -15,8 +15,8 @@ type LogOutputConfig struct {
 
 // ProxyLogMode defines how a proxy's logs are handled.
 type ProxyLogMode struct {
-	Mode      string `json:"mode"`       // "file" (proxy writes to file), "stdout" (proxy writes to stdout)
-	Managed   bool   `json:"managed"`    // true = log management center captures stdout to file
+	Mode        string `json:"mode"`         // "file" (proxy writes to file), "stdout" (proxy writes to stdout)
+	Managed     bool   `json:"managed"`      // true = log management center captures stdout to file
 	CapturePath string `json:"capture_path"` // file path where captured stdout is written (e.g. "logs/nginx-stdout.log")
 }
 
@@ -220,7 +220,7 @@ type CoreLogOutputConfig struct {
 type CoreLogMode struct {
 	Mode        string `json:"mode"`         // "file", "stdout", "off"
 	Managed     bool   `json:"managed"`      // true = log management center captures stdout to file
-	CapturePath string `json:"capture_path"`  // file path where captured stdout is written
+	CapturePath string `json:"capture_path"` // file path where captured stdout is written
 }
 
 // Default core capture paths.

@@ -29,8 +29,8 @@ type NodeOperator interface {
 
 // Handler handles unified WAF HTTP requests (both global rules and per-node configs).
 type Handler struct {
-	svc     *waf.Service
-	nodeOp  NodeOperator
+	svc      *waf.Service
+	nodeOp   NodeOperator
 	proxyMgr ProxyReloader
 }
 
@@ -263,10 +263,10 @@ func (h *Handler) ListNodeRules(c *gin.Context) {
 	}
 	rules, err := h.svc.ListNodeRules(c.Request.Context(), serverID)
 	if err != nil {
-	// ⚠ 原来这里返回 200 + 空数组 ✗：把"查询失败"伪装成"没有规则"，
-	// 前端/管理员完全无感（WAF 规则看着像被清空了，却一条报错都没有）。
-	response.InternalError(c, "LIST_FAILED", err.Error())
-	return
+		// ⚠ 原来这里返回 200 + 空数组 ✗：把"查询失败"伪装成"没有规则"，
+		// 前端/管理员完全无感（WAF 规则看着像被清空了，却一条报错都没有）。
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
 	}
 	response.OK(c, rules)
 }
@@ -656,9 +656,9 @@ func (h *Handler) SetWAFStatus(c *gin.Context) {
 func (h *Handler) ListDomainRuleDirs(c *gin.Context) {
 	dirs, err := h.svc.ListDomainRuleDirs()
 	if err != nil {
-	// 同上：错误不再伪装成 200 空列表 ✓
-	response.InternalError(c, "LIST_FAILED", err.Error())
-	return
+		// 同上：错误不再伪装成 200 空列表 ✓
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
 	}
 	response.OK(c, dirs)
 }
@@ -677,8 +677,8 @@ func (h *Handler) GetDomainRuleFile(c *gin.Context) {
 	globalContent, domainContent, mergeMode, _ := h.svc.GetDomainRuleWithGlobal(c.Request.Context(), domain, name, serverID)
 	response.OK(c, gin.H{
 		"name":            name,
-		"content":         domainContent,  // domain-specific content (editable)
-		"global_content":  globalContent,  // global rule content (read-only reference)
+		"content":         domainContent, // domain-specific content (editable)
+		"global_content":  globalContent, // global rule content (read-only reference)
 		"has_domain_file": domainContent != "",
 		"merge_mode":      mergeMode,
 	})

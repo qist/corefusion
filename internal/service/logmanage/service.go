@@ -69,7 +69,7 @@ type LogBrokerWrapper struct {
 	SubscribeFn func() (<-chan string, func())
 }
 
-func (w *LogBrokerWrapper) Snapshot() []string        { return w.SnapshotFn() }
+func (w *LogBrokerWrapper) Snapshot() []string                 { return w.SnapshotFn() }
 func (w *LogBrokerWrapper) Subscribe() (<-chan string, func()) { return w.SubscribeFn() }
 
 // CoreLogBrokerProvider provides access to core process log brokers.
@@ -96,7 +96,7 @@ type Service struct {
 	configGetter  CoreConfigSectionGetter
 	writers       map[string]*LogWriter
 	onModeSwitch  func(proxyType string) // callback when output mode is switched
-	clientLogDeps *ClientLogDeps          // optional: for client log packaging
+	clientLogDeps *ClientLogDeps         // optional: for client log packaging
 }
 
 // NewService creates a new log management service.

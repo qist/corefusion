@@ -221,15 +221,15 @@ func TestSingBoxFormatterTolerantALPNAndFingerprint(t *testing.T) {
 // （e2e 实测：同样一条 vmess+ws+TLS 节点，加 security=aes-128-gcm 立刻通，auto/默认不通）。
 func TestSingboxVmessSecurity(t *testing.T) {
 	cases := []struct{ cipher, want string }{
-		{"", "aes-128-gcm"},              // 服务端未写（auto）→ 给确定值
-		{"auto", "aes-128-gcm"},          // 同上
+		{"", "aes-128-gcm"},                        // 服务端未写（auto）→ 给确定值
+		{"auto", "aes-128-gcm"},                    // 同上
 		{"chacha20-poly1305", "chacha20-poly1305"}, // 服务端钉了具体值 → 照抄
 		{"aes-128-gcm", "aes-128-gcm"},
 		{"none", "none"},
 	}
 	for _, c := range cases {
 		n := Node{Name: "n", Protocol: "vmess", Host: "1.2.3.4", Port: 443,
-			UUID: "11111111-1111-1111-1111-111111111111",
+			UUID:  "11111111-1111-1111-1111-111111111111",
 			Extra: map[string]interface{}{"cipher": c.cipher}}
 		out, err := (&SingBoxFormatter{}).Format([]Node{n})
 		if err != nil {

@@ -11,12 +11,12 @@ type User struct {
 	Role         string `json:"role" gorm:"size:32;not null;default:viewer"`
 	// TokenVersion：登出/吊销时 +1，使此前签发的所有 token 立即失效（见 middleware.AuthRequired）。
 	// 默认 0，历史 token 缺该声明时也是 0 → 升级不踢人。
-	TokenVersion int    `json:"token_version" gorm:"not null;default:0"`
-	Status       int    `json:"status" gorm:"not null;default:1"`
+	TokenVersion int `json:"token_version" gorm:"not null;default:0"`
+	Status       int `json:"status" gorm:"not null;default:1"`
 	// WebAuthnHandle：该用户的 WebAuthn User Handle（base64url，随机 32 字节）。
 	// 对同一用户**全局稳定**（所有 RP ID 共用），用于 Passkey discoverable 登录时
 	// 由认证器返回的 userHandle 反查用户。首次注册 Passkey 时懒生成。
-	WebAuthnHandle string    `json:"webauthn_handle,omitempty" gorm:"size:128;index"`
+	WebAuthnHandle string `json:"webauthn_handle,omitempty" gorm:"size:128;index"`
 	// TOTPSecret：2FA（TOTP）密钥，AES-256-GCM 加密落库（crypto.EncryptSecret 的 "enc:" 格式）。
 	// 绝不通过 API 输出；绑定流程只在生成后一次性下发 otpauth URI。
 	TOTPSecret string `json:"-" gorm:"size:512"`

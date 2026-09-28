@@ -24,9 +24,9 @@ func NewChainConfigGenerator(serverRepo *repository.NodeServerRepository) *Chain
 
 // ChainEntryOutbound represents an outbound config entry pointing to a chain_exit.
 type ChainEntryOutbound struct {
-	Tag           string                 `json:"tag"`
-	Protocol      string                 `json:"protocol"`
-	Settings      map[string]interface{} `json:"settings"`
+	Tag            string                 `json:"tag"`
+	Protocol       string                 `json:"protocol"`
+	Settings       map[string]interface{} `json:"settings"`
 	StreamSettings map[string]interface{} `json:"streamSettings,omitempty"`
 }
 
@@ -52,8 +52,9 @@ type ChainBalancer struct {
 // load-balanced entry node (see design doc §6.6.5). subjectSelector uses the
 // "chain-<inboundID>-" prefix so only this entry's exits are probed.
 // 支持两种形态：
-//   1. 标准 observatory（PingConfig==nil）→ {subjectSelector, probeUrl, probeInterval, enableConcurrency}
-//   2. burstObservatory（PingConfig!=nil）→ {subjectSelector, pingConfig:{destination, interval, sampling, timeout, httpMethod}}
+//  1. 标准 observatory（PingConfig==nil）→ {subjectSelector, probeUrl, probeInterval, enableConcurrency}
+//  2. burstObservatory（PingConfig!=nil）→ {subjectSelector, pingConfig:{destination, interval, sampling, timeout, httpMethod}}
+//
 // 依据 xray 官方文档：https://xtls.github.io/config/observatory.html
 type ChainObservatory struct {
 	SubjectSelector   []string         `json:"subjectSelector"`
@@ -101,9 +102,9 @@ func (g *ChainConfigGenerator) GenerateChainEntryOutbounds(ctx context.Context, 
 
 		// Build outbound settings based on protocol
 		outbound := ChainEntryOutbound{
-			Tag:      exit.OutboundTag,
-			Protocol: exit.Protocol,
-			Settings: buildOutboundSettings(exit, exitServer),
+			Tag:            exit.OutboundTag,
+			Protocol:       exit.Protocol,
+			Settings:       buildOutboundSettings(exit, exitServer),
 			StreamSettings: buildStreamSettings(exit),
 		}
 		outbounds = append(outbounds, outbound)

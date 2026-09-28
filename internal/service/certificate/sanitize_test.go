@@ -13,10 +13,10 @@ func TestSanitizeDomain(t *testing.T) {
 	}{
 		{"example.com", false},
 		{"*.example.com", false},
-		{"../../../etc/passwd", true},  // critical: path traversal must be neutralized
-		{"..\\..\\windows", true},      // windows-style traversal must be neutralized
+		{"../../../etc/passwd", true}, // critical: path traversal must be neutralized
+		{"..\\..\\windows", true},     // windows-style traversal must be neutralized
 		{"normal-domain.com", false},
-		{"a/b/c", true},                // path separators must be removed
+		{"a/b/c", true}, // path separators must be removed
 		{"..", true},
 		{".", true},
 		{"", true},

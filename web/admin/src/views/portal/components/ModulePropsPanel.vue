@@ -229,6 +229,13 @@
           <el-form-item :label="t('portal.columns')"><el-input-number v-model="ed.selectedModule.data.columns" :min="1" :max="4" /></el-form-item>
         </template>
 
+        <!-- Account Info Properties -->
+        <template v-if="ed.selectedModule.type === 'account_info'">
+          <el-form-item :label="t('portal.columns')"><el-input-number v-model="ed.selectedModule.data.columns" :min="1" :max="2" /></el-form-item>
+          <el-form-item :label="t('portal.showBalanceRow')"><el-switch v-model="ed.selectedModule.data.show_balance" /></el-form-item>
+          <el-form-item :label="t('portal.showChargeBtn')"><el-switch v-model="ed.selectedModule.data.show_charge_btn" /></el-form-item>
+        </template>
+
         <!-- Order Create Properties -->
         <template v-if="ed.selectedModule.type === 'order_create'">
           <el-form-item :label="t('portal.description')"><el-input v-model="ed.selectedModule.data.description" type="textarea" :rows="2" /></el-form-item>
@@ -308,6 +315,7 @@ const TYPES_WITH_PROPS = [
   'subscription', 'custom_html', 'subscription_detail', 'security_settings',
   'log_packages', 'plan_list', 'order_create', 'charge_panel', 'balance_display',
   'referral', 'ticket_list', 'article_list', 'shared_accounts', 'freeform',
+  'account_info',
 ]
 
 const hasPropsForm = computed(() => {

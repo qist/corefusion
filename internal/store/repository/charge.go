@@ -281,6 +281,16 @@ func (r *ClientBalanceRepository) Update(ctx context.Context, item *entity.Clien
 	return r.db.WithContext(ctx).Save(item).Error
 }
 
+// DeleteBalanceByClientID 删除客户的余额记录 ✓。
+//
+// ⚠ 必须**随客户删除级联调用** ✗：否则删号后余额行变孤儿 ✓，等新注册客户
+// 撞上同一个 ID 时会把测试余额"继承"过去 ✗（真机现象：新 OAuth 账号自带 74.50 ✓）。
+// ⚠ 方法名刻意与流水仓储区分 ✓（两个仓储被同一适配器嵌入时方法集不能撞名 ✗）。
+func (r *ClientBalanceRepository) DeleteBalanceByClientID(ctx context.Context, clientID int64) error {
+	return r.db.WithContext(ctx).Where("client_id = ?", clientID).
+		Delete(&entity.ClientBalance{}).Error
+}
+
 // ============================================================
 // BalanceTransactionRepository
 // ============================================================
@@ -295,6 +305,12 @@ func NewBalanceTransactionRepository(db *gorm.DB) *BalanceTransactionRepository 
 
 func (r *BalanceTransactionRepository) Create(ctx context.Context, item *entity.BalanceTransaction) error {
 	return r.db.WithContext(ctx).Create(item).Error
+}
+
+// DeleteTxnsByClientID 删除客户的**全部余额流水** ✓（随客户删除级联调用 ✓，防孤儿数据 ✗）。
+func (r *BalanceTransactionRepository) DeleteTxnsByClientID(ctx context.Context, clientID int64) error {
+	return r.db.WithContext(ctx).Where("client_id = ?", clientID).
+		Delete(&entity.BalanceTransaction{}).Error
 }
 
 func (r *BalanceTransactionRepository) ListByClientID(ctx context.Context, clientID int64, txType string, limit, offset int) ([]entity.BalanceTransaction, int64, error) {

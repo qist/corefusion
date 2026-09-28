@@ -105,6 +105,7 @@ func (s *Service) getGoogleConfig(ctx context.Context, redirectURL string) *oaut
 //  1. The _enabled setting is "true"
 //  2. The client_id is non-empty
 //  3. The client_secret is non-empty
+//
 // This prevents showing OAuth buttons that would fail on click.
 func (s *Service) IsProviderEnabled(ctx context.Context, provider string) bool {
 	enabled, _ := s.settingSvc.GetByKey(ctx, "oauth."+provider+"_enabled")
@@ -133,6 +134,23 @@ func (s *Service) GetAuthURL(ctx context.Context, provider, redirectURL, state s
 	}
 
 	return config.AuthCodeURL(state, oauth2.AccessTypeOffline), nil
+}
+
+// ClientTokenVersion 返回客户**当前**的令牌版本 ✓。
+//
+// ⚠ OAuth 回调签发 JWT 必须带对版本 ✗：不带（tv=0）而客户的 token_version 又是 1 时 ✗
+// → /me 校验 `tv != DB` 直接 401 ✗ → 门户"显示登录成功却被弹回登录页" ✗
+// （clients 列默认值是历史 schema 的 1 ✓，新号一样中招 ✓）。
+// 查不到/出错返回 0 ✓（与历史行为一致 ✓，不让登录因此中断 ✓）。
+func (s *Service) ClientTokenVersion(ctx context.Context, clientID int64) int {
+	if clientID <= 0 {
+		return 0
+	}
+	tv, err := s.clientRepo.GetTokenVersion(ctx, clientID)
+	if err != nil {
+		return 0
+	}
+	return tv
 }
 
 // HandleCallback exchanges the OAuth2 code for user info and performs login/register.
@@ -199,8 +217,11 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 	}
 
 	// Check if email already taken
-	existingClient, _ := s.clientRepo.GetByEmail(ctx, email)
-	if existingClient != nil {
+	// ⚠ GetByEmail 查无此人时返回 (零值对象, ErrRecordNotFound) ✗ —— 错误**绝不能吞** ✗：
+	// 只判 `!= nil` 会把"没找到"当成"找到 ID=0 的客户" ✗ → 绑定挂到 client_id=0 ✗、
+	// 给 client 0 签 JWT ✗（真机现象：回调 200 但登录是坏的，绑定表 client_id 全是 0 ✓）。
+	existingClient, err := s.clientRepo.GetByEmail(ctx, email)
+	if err == nil && existingClient != nil && existingClient.ID > 0 {
 		// Email exists — bind OAuth to existing account
 		binding := &entity.ClientOAuthBinding{
 			ClientID:       existingClient.ID,
@@ -342,9 +363,9 @@ func (s *Service) fetchGitHubPrimaryEmail(ctx context.Context, client *http.Clie
 	}
 
 	var emails []struct {
-		Email     string `json:"email"`
-		Primary   bool   `json:"primary"`
-		Verified  bool   `json:"verified"`
+		Email      string `json:"email"`
+		Primary    bool   `json:"primary"`
+		Verified   bool   `json:"verified"`
 		Visibility string `json:"visibility"`
 	}
 	if err := json.Unmarshal(body, &emails); err != nil {
@@ -406,14 +427,14 @@ func (s *Service) fetchGoogleUserInfo(ctx context.Context, config *oauth2.Config
 	}
 
 	var gUser struct {
-		Sub           string `json:"sub"`             // Unique identifier (subject)
-		Email         string `json:"email"`           // Email address
-		EmailVerified bool   `json:"email_verified"`  // Whether email is verified
-		Name          string `json:"name"`            // Full name
-		GivenName     string `json:"given_name"`      // First name
-		FamilyName    string `json:"family_name"`     // Last name
-		Picture       string `json:"picture"`         // Profile picture URL
-		Locale        string `json:"locale"`          // Locale
+		Sub           string `json:"sub"`            // Unique identifier (subject)
+		Email         string `json:"email"`          // Email address
+		EmailVerified bool   `json:"email_verified"` // Whether email is verified
+		Name          string `json:"name"`           // Full name
+		GivenName     string `json:"given_name"`     // First name
+		FamilyName    string `json:"family_name"`    // Last name
+		Picture       string `json:"picture"`        // Profile picture URL
+		Locale        string `json:"locale"`         // Locale
 	}
 	if err := json.Unmarshal(body, &gUser); err != nil {
 		return nil, err

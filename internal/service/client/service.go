@@ -38,7 +38,18 @@ type Service struct {
 	inboundRepo *repository.InboundConfigRepository
 	userManager InboundUserManager
 	trafficHook TrafficResetHook
+	// balanceCleaner 是"删除客户时级联清理余额/流水"的能力 ✓（可选注入 ✓）。
+	balanceCleaner BalanceCleaner
 }
+
+// BalanceCleaner 是"按客户 ID 清理余额与余额流水"的能力 ✓（由余额/流水仓储实现 ✓）。
+type BalanceCleaner interface {
+	DeleteBalanceByClientID(ctx context.Context, clientID int64) error
+	DeleteTxnsByClientID(ctx context.Context, clientID int64) error
+}
+
+// SetBalanceCleaner 注入余额级联清理能力 ✓。
+func (s *Service) SetBalanceCleaner(c BalanceCleaner) { s.balanceCleaner = c }
 
 // NewService creates a new client service.
 func NewService(
@@ -341,6 +352,18 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 			log.Printf("[client] revoke subscriptions of client %d failed: %v", id, err)
 		} else if n > 0 {
 			log.Printf("[client] revoked %d subscription(s) of deleted client %d", n, id)
+		}
+	}
+
+	// ⚠ 余额与流水必须**级联删除** ✗：否则删号后余额行变孤儿 ✗，
+	// 新注册客户撞上同一个 ID 时会把旧余额"继承"过去 ✗
+	// （真机现象：新 OAuth 账号自带 74.50 测试余额 ✓ —— 真金白银的串号风险 ✓）。
+	if s.balanceCleaner != nil {
+		if err := s.balanceCleaner.DeleteTxnsByClientID(ctx, id); err != nil {
+			log.Printf("[client] delete balance txns of client %d failed: %v", id, err)
+		}
+		if err := s.balanceCleaner.DeleteBalanceByClientID(ctx, id); err != nil {
+			log.Printf("[client] delete balance of client %d failed: %v", id, err)
 		}
 	}
 

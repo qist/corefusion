@@ -118,6 +118,11 @@ type ACMEEmailResolver interface {
 	ResolveACMEAccount(ctx context.Context, id int64) (ACMEAccountInfo, error)
 }
 
+// NodeNameResolver 按 ID 取**节点名** ✓（展示"签发节点"用 ✓，由 NodeServerRepository 实现 ✓）。
+type NodeNameResolver interface {
+	GetByID(ctx context.Context, id int64) (*entity.NodeServer, error)
+}
+
 type Handler struct {
 	certSvc       *certService.Service
 	onCertUpdated CertUpdateCallback
@@ -125,6 +130,7 @@ type Handler struct {
 	acmeEmails    ACMEEmailResolver
 	dnsChannels   DNSChannelResolver
 	eabConfigs    EABConfigResolver
+	nodeNames     NodeNameResolver
 }
 
 // SetACMEEmailResolver 注入 ACME 账号解析器 ✓（邮箱归面板 ✓，节点不配置 ✗）。
@@ -138,6 +144,40 @@ func (h *Handler) SetDNSChannelResolver(r DNSChannelResolver) { h.dnsChannels = 
 
 // SetNodeIssuer 注入"节点本机签发"能力 ✓（面板在 SNAT 后面时，公网证书只能让节点自己签 ✓）。
 func (h *Handler) SetNodeIssuer(i NodeCertIssuer) { h.nodeIssuer = i }
+
+// SetNodeNameResolver 注入"按 ID 取节点名"的能力 ✓（列表里显示"签发节点"用 ✓）。
+func (h *Handler) SetNodeNameResolver(r NodeNameResolver) { h.nodeNames = r }
+
+// fillIssuerNodeNames 批量把 IssuerNodeID 翻译成**节点名** ✓（issuer_node_name 出参 ✓）。
+//
+// ⚠ 库里只有 `issuer_node_id` ✗，前端拿到的却是一个光秃秃的数字 ✗ ——
+// 用户根本看不出"哪张证书是哪个节点签的" ✗ → 这里统一补上名字 ✓。
+// `id<=0` = 面板本机签的 ✓ → 留空 ✓（前端显示"面板本机" ✓）。
+// 节点已删除 → 名字留空 ✓（前端回退显示 `#id` ✓），不让整个列表失败 ✓。
+func (h *Handler) fillIssuerNodeNames(ctx context.Context, certs []entity.Certificate) {
+	if h.nodeNames == nil {
+		return
+	}
+	cache := map[int64]string{}
+	for i := range certs {
+		id := certs[i].IssuerNodeID
+		if id <= 0 {
+			continue
+		}
+		name, ok := cache[id]
+		if !ok {
+			srv, err := h.nodeNames.GetByID(ctx, id)
+			if err != nil || srv == nil {
+				log.Printf("[certificates] resolve issuer node name for %d failed: %v", id, err)
+				name = ""
+			} else {
+				name = srv.Name
+			}
+			cache[id] = name
+		}
+		certs[i].IssuerNodeName = name
+	}
+}
 
 // NewHandler creates a new certificate handler.
 func NewHandler(certSvc *certService.Service) *Handler {
@@ -197,6 +237,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 
 	stripDataPrefix(certs)
+	h.fillIssuerNodeNames(c.Request.Context(), certs)
 	response.Paginated(c, certs, total, q.Limit, q.Offset)
 }
 
@@ -235,6 +276,7 @@ func (h *Handler) GetByID(c *gin.Context) {
 	}
 
 	stripDataPrefix([]entity.Certificate{*cert})
+	h.fillIssuerNodeNames(c.Request.Context(), []entity.Certificate{*cert})
 	response.OK(c, cert)
 }
 

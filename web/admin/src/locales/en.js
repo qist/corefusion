@@ -1539,6 +1539,8 @@ export default {
     dualKey: 'Dual Issue',
     dualKeyHint: 'Generate both RSA and ECC certificates',
     issuer: 'Issuer',
+    issuerNode: 'Issued By',
+    panelLocal: 'Panel (local)',
     providerType: 'Source',
     certPath: 'Cert Path',
     keyPath: 'Key Path',

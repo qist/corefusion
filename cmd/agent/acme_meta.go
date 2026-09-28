@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,9 +11,10 @@ import (
 	"time"
 
 	"corefusion/internal/runtime/cert"
+	"corefusion/internal/security/crypto"
 )
 
-// certMetaFile 是"这张证书当初是怎么签出来的"落盘文件名 ✓（0600 ✓ 含 DNS 凭据 ✓）。
+// certMetaFile 是"这张证书当初是怎么签出来的"落盘文件名 ✓（0600 ✓ DNS 凭据 AES-256-GCM 加密 ✓）。
 const certMetaFile = "meta.json"
 
 // certMeta 记录**自续期所需的全部参数** ✓。
@@ -33,7 +35,12 @@ type certMeta struct {
 	Profile     string   `json:"profile,omitempty"`
 	Webroot     string   `json:"webroot,omitempty"`
 	// DNS 凭据只在 dns-01 时有 ✓（wildcard 必须 dns-01 ✓）——
-	// 节点要能自己续 ✓ 就必须留着 ✓（文件权限 0600 ✓、绝不写日志 ✓）。
+	// 节点要能自己续 ✓ 就必须留着 ✓。落盘时**值经 AES-256-GCM 加密** ✓（`enc:` 前缀 ✓，
+	// 与面板侧 DNS 通道/EAB/ACME 账号同口径 ✓），文件权限 0600 ✓、绝不写日志 ✓。
+	// ⚠ 加密密钥在节点本地派生（CF_SECRET_ENCRYPTION_KEY 或主机名兜底 ✓），
+	// 所以**续期完全不依赖面板在线** ✓（面板挂了节点照样自续 ✓）；
+	// 防的是备份/磁盘镜像/误 cat 这类"整目录泄露" ✓，防不了已获 root 的攻击者 ✓。
+	// ⚠ 换主机名/换机器会解不开 → 证书退化为"无法自续" ✓（续期循环会记日志 ✓，现有证书不受影响 ✓）。
 	DNSProvider string            `json:"dns_provider,omitempty"`
 	DNSEnvVars  map[string]string `json:"dns_env_vars,omitempty"`
 
@@ -87,13 +94,48 @@ func localCertPathFor(dataDir, name, keyType string) string {
 	return filepath.Join(dataDir, certRel)
 }
 
+// encryptDNSecrets 返回一份**加密后**的 dns_env_vars 副本 ✓。
+//
+// ⚠ 幂等 ✓：已经是 `enc:` 前缀的值**不再包一层** ✓（双层密文解一次还是密文 ✗，
+// 与 crypto.IsEncrypted 的设计口径一致 ✓）——老明文 meta 就地自愈重写时靠这一点 ✓。
+// 不改传入的 map ✓（调用方后续还要用明文值 ✓）。
+func encryptDNSecrets(env map[string]string) (map[string]string, error) {
+	if len(env) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		if v == "" {
+			out[k] = v
+			continue
+		}
+		if crypto.IsEncrypted(v) {
+			out[k] = v
+			continue
+		}
+		enc, err := crypto.EncryptSecret(v)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt dns credential %s: %w", k, err)
+		}
+		out[k] = enc
+	}
+	return out, nil
+}
+
 // writeCertMeta 原子写入 meta ✓（先写临时文件再 rename ✓，避免半截文件 ✗）。
+// DNS 凭据值**加密后**才落盘 ✓（密钥节点本地派生 ✓，续期不依赖面板 ✓）。
 func writeCertMeta(dataDir, name string, m *certMeta) error {
 	dir := filepath.Dir(certMetaPath(dataDir, name))
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(m, "", "  ")
+	stored := *m
+	encEnv, err := encryptDNSecrets(m.DNSEnvVars)
+	if err != nil {
+		return err
+	}
+	stored.DNSEnvVars = encEnv
+	data, err := json.MarshalIndent(&stored, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -106,6 +148,10 @@ func writeCertMeta(dataDir, name string, m *certMeta) error {
 
 // readCertMeta 读回 meta ✓；**不存在 = 这张证书不归节点自管** ✓（例如面板推下来的 ✓）
 // → 调用方应当跳过 ✓（返回 os.ErrNotExist ✓ 便于区分"读坏了"和"没有" ✓）。
+//
+// DNS 凭据值解密后返回 ✓（`enc:` 前缀才解 ✓，老明文 meta 原样透传 ✓ = 向后兼容 ✓）。
+// ⚠ 自愈：读到**明文凭据**（升级前落盘的老 meta ✓）会**就地重写成密文** ✓
+// （下一次 6h 自续检查扫到即洗掉 ✓，无需人工迁移 ✓）。
 func readCertMeta(dataDir, name string) (*certMeta, error) {
 	data, err := os.ReadFile(certMetaPath(dataDir, name))
 	if err != nil {
@@ -114,6 +160,33 @@ func readCertMeta(dataDir, name string) (*certMeta, error) {
 	var m certMeta
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", certMetaPath(dataDir, name), err)
+	}
+	if len(m.DNSEnvVars) > 0 {
+		needsHeal := false
+		for _, v := range m.DNSEnvVars {
+			if v != "" && !crypto.IsEncrypted(v) {
+				needsHeal = true
+				break
+			}
+		}
+		if needsHeal {
+			if werr := writeCertMeta(dataDir, name, &m); werr != nil {
+				// 自愈失败不影响本次读取 ✓（凭据已解密可用 ✓；下一轮再试 ✓）
+				log.Printf("[acme] 就地加密 %s 的 DNS 凭据失败（下轮重试）: %v", certMetaPath(dataDir, name), werr)
+			} else {
+				log.Printf("[acme] 已就地加密 %s 的 DNS 凭据（老明文 meta 自愈 ✓）", certMetaPath(dataDir, name))
+			}
+		}
+		for k, v := range m.DNSEnvVars {
+			plain, derr := crypto.DecryptSecret(v)
+			if derr != nil {
+				// 解不开 = 密钥变了（换主机名/换机器 ✗）→ 这张证书无法自续 ✓，明说 ✓
+				log.Printf("[acme] 解密 %s 的 DNS 凭据 %s 失败（密钥不匹配？该证书将无法自续）: %v",
+					certMetaPath(dataDir, name), k, derr)
+				return nil, fmt.Errorf("decrypt dns credential %s: %w", k, derr)
+			}
+			m.DNSEnvVars[k] = plain
+		}
 	}
 	return &m, nil
 }

@@ -1019,6 +1019,8 @@ if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr !
 
 	mihomoH := mihomoHandler.NewHandler(mihomoSvcInst)
 	certH := certsHandler.NewHandler(certSvc)
+	// 证书列表展示"签发节点" ✓：把 issuer_node_id 翻译成节点名 ✓（光秃秃的数字看不出是谁签的 ✗）
+	certH.SetNodeNameResolver(repository.NewNodeServerRepository(database))
 	// 证书页"选节点签发"：面板在 SNAT 后面时，公网证书只能由节点在本机签 ✓
 	if sharedNodeMgr != nil {
 		certH.SetNodeIssuer(sharedNodeMgr)

@@ -42,6 +42,15 @@
           </template>
         </el-table-column>
         <el-table-column prop="issuer" :label="t('certificate.issuer')" width="120" />
+        <!-- 签发节点 ✓：谁签发谁续期 ✓（0 = 面板本机；>0 = 该节点在本机签的 ✓） -->
+        <el-table-column :label="t('certificate.issuerNode')" width="150">
+          <template #default="{row}">
+            <el-tag v-if="row.issuer_node_id > 0" size="small" effect="plain" :type="row.issuer_node_name ? 'primary' : 'info'">
+              {{ row.issuer_node_name || ('#' + row.issuer_node_id) }}
+            </el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">{{ t('certificate.panelLocal') }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('common.status')" width="80">
           <template #default="{row}">
             <el-tag :type="row.status==='active'?'success':'danger'" size="small">{{ row.status }}</el-tag>

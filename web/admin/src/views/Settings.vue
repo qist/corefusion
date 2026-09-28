@@ -300,18 +300,30 @@
           </div>
         </el-dialog>
 
-        <!-- Broadcast Dialog（订阅者模板群发：营销/召回，可选范围含禁用账号） -->
-        <el-dialog v-model="broadcastDialogVisible" :title="t('settings.templates.broadcast')" width="480">
+        <!-- Broadcast Dialog（订阅者模板群发：营销/召回，可选范围或手动勾选客户） -->
+        <el-dialog v-model="broadcastDialogVisible" :title="t('settings.templates.broadcast')" width="520" @open="fetchBroadcastClients">
           <p style="margin:0 0 12px;font-size:13px">{{ t('settings.templates.broadcastHint') }}</p>
-          <el-radio-group v-model="broadcastScope">
-            <el-radio value="active">{{ t('settings.templates.broadcastScopeActive') }}</el-radio>
-            <el-radio value="all">{{ t('settings.templates.broadcastScopeAll') }}</el-radio>
-            <el-radio value="suspended">{{ t('settings.templates.broadcastScopeSuspended') }}</el-radio>
+          <el-radio-group v-model="broadcastMode" style="margin-bottom:12px">
+            <el-radio value="scope">{{ t('settings.templates.broadcastByScope') }}</el-radio>
+            <el-radio value="pick">{{ t('settings.templates.broadcastByPick') }}</el-radio>
           </el-radio-group>
-          <div style="font-size:11px;color:#999;margin-top:8px">{{ t('settings.templates.broadcastScopeHint') }}</div>
+          <div v-if="broadcastMode === 'scope'">
+            <el-radio-group v-model="broadcastScope">
+              <el-radio value="active">{{ t('settings.templates.broadcastScopeActive') }}</el-radio>
+              <el-radio value="all">{{ t('settings.templates.broadcastScopeAll') }}</el-radio>
+              <el-radio value="suspended">{{ t('settings.templates.broadcastScopeSuspended') }}</el-radio>
+            </el-radio-group>
+            <div style="font-size:11px;color:#999;margin-top:8px">{{ t('settings.templates.broadcastScopeHint') }}</div>
+          </div>
+          <div v-else>
+            <el-select v-model="broadcastEmails" multiple filterable style="width:100%" :loading="broadcastClientsLoading" :placeholder="t('settings.templates.broadcastPickPlaceholder')">
+              <el-option v-for="c in broadcastClients" :key="c" :label="c" :value="c" />
+            </el-select>
+            <div style="font-size:11px;color:#999;margin-top:8px">{{ t('settings.templates.broadcastPickHint') }}</div>
+          </div>
           <template #footer>
             <el-button @click="broadcastDialogVisible=false">{{ t('common.cancel') }}</el-button>
-            <el-button type="primary" :loading="broadcasting" @click="handleBroadcastConfirm">{{ t('settings.templates.broadcast') }}</el-button>
+            <el-button type="primary" :loading="broadcasting" :disabled="broadcastMode === 'pick' && broadcastEmails.length === 0" @click="handleBroadcastConfirm">{{ t('settings.templates.broadcast') }}</el-button>
           </template>
         </el-dialog>
 
@@ -922,17 +934,10 @@
         <el-form-item label="Content">
           <el-input v-model="tmplForm.content" type="textarea" :rows="6" :placeholder="t('settings.supportVars')" />
         </el-form-item>
-        <el-form-item v-if="!isMonitorTemplate" label="Cron">
-          <el-select v-model="tmplForm.cron" filterable allow-create style="width:100%">
-            <el-option :label="t('settings.cron.manual')" value="" />
-            <el-option :label="t('settings.cron.hourly')" value="0 * * * *" />
-            <el-option :label="t('settings.cron.daily9')" value="0 9 * * *" />
-            <el-option :label="t('settings.cron.daily21')" value="0 21 * * *" />
-            <el-option :label="t('settings.cron.monday9')" value="0 9 * * 1" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-else :label="t('settings.cron.label')">
-          <div class="hint" style="margin-top:6px">{{ t('settings.templates.monitorCronHint') }}</div>
+        <el-form-item :label="t('settings.cron.label')">
+          <div class="hint" style="margin-top:6px">
+            {{ isMonitorTemplate ? t('settings.templates.monitorCronHint') : (tmplForm.audience === 'subscriber' ? t('settings.templates.cronHintSubscriber') : t('settings.templates.cronHintAdmin')) }}
+          </div>
         </el-form-item>
         <el-form-item label="Enabled"><el-switch v-model="tmplForm.enabled" /></el-form-item>
       </el-form>
@@ -1237,23 +1242,41 @@ async function handleSendTemplate(row) {
   } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) }
 }
 
-// 订阅者模板群发（营销/召回类）：选择收件人范围后后台异步发送
+// 订阅者模板群发（营销/召回类）：按范围或手动勾选客户，后台异步发送
 const broadcastDialogVisible = ref(false)
 const broadcastTemplate = ref(null)
+const broadcastMode = ref('scope')
 const broadcastScope = ref('active')
+const broadcastEmails = ref([])
+const broadcastClients = ref([])
+const broadcastClientsLoading = ref(false)
 const broadcasting = ref(false)
 
 function showBroadcastDialog(row) {
   broadcastTemplate.value = row
+  broadcastMode.value = 'scope'
   broadcastScope.value = 'active'
+  broadcastEmails.value = []
   broadcastDialogVisible.value = true
+}
+
+async function fetchBroadcastClients() {
+  if (broadcastClients.value.length > 0) return
+  broadcastClientsLoading.value = true
+  try {
+    const d = await client.get('/clients', { params: { limit: 1000 }, suppressErrorMessage: true })
+    broadcastClients.value = (d?.items || d || []).map(c => c.email).filter(Boolean)
+  } catch (e) { /* 打开对话框时静默失败，可重开 */ } finally { broadcastClientsLoading.value = false }
 }
 
 async function handleBroadcastConfirm() {
   if (!broadcastTemplate.value) return
   broadcasting.value = true
   try {
-    const d = await client.post(`/system/notification-templates/${broadcastTemplate.value.id}/broadcast`, { scope: broadcastScope.value })
+    const payload = broadcastMode.value === 'pick'
+      ? { emails: broadcastEmails.value }
+      : { scope: broadcastScope.value }
+    const d = await client.post(`/system/notification-templates/${broadcastTemplate.value.id}/broadcast`, payload)
     broadcastDialogVisible.value = false
     ElMessage.success(t('settings.templates.broadcastStarted', { count: d?.recipients ?? 0 }))
   } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) } finally { broadcasting.value = false }

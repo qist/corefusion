@@ -239,13 +239,13 @@ func NotifyClientEvent(ctx context.Context, db *gorm.DB, settingSvc *SettingServ
 // ---- 手动群发（营销/召回类）----
 
 // BroadcastSubscriberTemplate 向一批客户群发订阅者模板（管理员手动触发，如广告/召回邮件）。
-// scope 决定收件人范围：
+// 显式 emails 优先（手动勾选客户）；否则按 scope 决定收件人范围：
 //   - "active":    仅正常账号（自动提醒类默认范围）
 //   - "all":       全部账号（含禁用 —— 广告类营销可发）
 //   - "suspended": 仅禁用账号（召回）
 //
 // 发送在后台 goroutine 中逐个执行（{user} 替换为客户邮箱），返回预计发送人数。
-func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *gorm.DB, id int64, scope string) (int, error) {
+func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *gorm.DB, id int64, scope string, emails []string) (int, error) {
 	tmpl, err := s.tmplRepo.GetByID(ctx, id)
 	if err != nil {
 		return 0, err
@@ -257,22 +257,29 @@ func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *go
 		return 0, fmt.Errorf("仅订阅者邮件模板支持群发")
 	}
 
-	query := db.Model(&entity.Client{})
-	switch scope {
-	case "all":
-		// 全部账号（含禁用/过期 —— 广告类营销可发）
-	case "suspended":
-		query = query.Where("status <> ?", "active")
-	default:
-		scope = "active"
-		query = query.Where("status = ?", "active")
-	}
-	var clients []entity.Client
-	if err := query.Select("email").Find(&clients).Error; err != nil {
-		return 0, err
+	var targets []entity.Client
+	if len(emails) > 0 {
+		// 手动勾选的客户：按邮箱查询（校验存在）
+		if err := db.Select("email").Where("email IN ?", emails).Find(&targets).Error; err != nil {
+			return 0, err
+		}
+	} else {
+		query := db.Model(&entity.Client{})
+		switch scope {
+		case "all":
+			// 全部账号（含禁用/过期 —— 广告类营销可发）
+		case "suspended":
+			query = query.Where("status <> ?", "active")
+		default:
+			scope = "active"
+			query = query.Where("status = ?", "active")
+		}
+		if err := query.Select("email").Find(&targets).Error; err != nil {
+			return 0, err
+		}
 	}
 
-	count := len(clients)
+	count := len(targets)
 	if count == 0 {
 		return 0, nil
 	}
@@ -283,7 +290,7 @@ func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *go
 	go func() {
 		bgCtx := context.Background()
 		sent, failed := 0, 0
-		for _, c := range clients {
+		for _, c := range targets {
 			if c.Email == "" {
 				continue
 			}

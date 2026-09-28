@@ -2810,6 +2810,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
+				systemGroup.POST("/notification-templates/:id/send", systemH.SendTemplateTest)
 				systemGroup.PUT("/notification-templates/:id", systemH.UpdateTemplate)
 				systemGroup.DELETE("/notification-templates/:id", systemH.DeleteTemplate)
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
@@ -3341,6 +3342,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Start config sync service (periodically syncs DB configs to disk)
 	configSyncSvc.Start()
+
+	// 订阅者通知扫描（订阅到期/余额不足，发给客户本人邮箱；与面板使用者通知分离）
+	go systemSvc.StartSubscriberNotifyLoop(context.Background(), database, systemSettingSvc)
+
+	// 节点健康监控（按频率检查心跳，状态变化才发告警，正常静默跳过）
+	go systemSvc.StartNodeHealthMonitor(context.Background(), database, systemSettingSvc)
 
 	// Start traffic sync service (periodically syncs local traffic stats to DB)
 	trafficSyncSvc.Start()

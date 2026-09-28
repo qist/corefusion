@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"corefusion/internal/constants"
 	"corefusion/internal/model/entity"
@@ -714,6 +715,42 @@ func (s *SettingService) GetTelegramChatID(ctx context.Context, botToken string)
 }
 
 // --- Notification Templates ---
+
+// sampleTemplateVars 是模板测试发送时填充的示例变量，
+// 与业务事件约定常用 key；模板内容中出现的 {key} 会被替换为示例值。
+var sampleTemplateVars = map[string]string{
+	"node":        "node-01",
+	"time":        time.Now().Format("2006-01-02 15:04:05"),
+	"domain":      "example.com",
+	"expire_date": time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
+	"days":        "14",
+	"balance":     "5.00",
+	"user":        "user@example.com",
+	"backup_file": "corefusion-20260101-0900.tar.gz",
+	"size":        "128MB",
+	"count":       "3",
+	"message":     "This is a test message from CoreFusion",
+}
+
+// SendTemplateTest 用示例变量实际发送一次模板通知（不要求模板处于启用状态），
+// 用于验证模板内容与通知渠道（Telegram/SMTP）连通性。
+// subscriber 模板的演示邮件发到管理员发件人邮箱（发给真实客户请用业务事件触发）。
+func (s *SettingService) SendTemplateTest(ctx context.Context, id int64) error {
+	tmpl, err := s.tmplRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if tmpl == nil {
+		return fmt.Errorf("template %d not found", id)
+	}
+	if defaultNotifier == nil {
+		return fmt.Errorf("通知渠道未配置（请先启用并保存 Telegram 或 SMTP）")
+	}
+	if tmpl.Audience == entity.TemplateAudienceSubscriber {
+		return s.SendSubscriberTemplateTest(ctx, tmpl)
+	}
+	return defaultNotifier.SendTemplateNotification(ctx, tmpl, sampleTemplateVars)
+}
 
 func (s *SettingService) ListTemplates(ctx context.Context) ([]entity.NotificationTemplate, error) {
 	return s.tmplRepo.List(ctx)

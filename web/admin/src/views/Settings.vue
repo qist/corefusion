@@ -464,6 +464,10 @@
       <el-tab-pane :label="t('settings.oauth.tab')" name="oauth">
         <el-card>
           <el-form :model="oauthForm" label-width="160px" style="max-width:600px">
+            <el-form-item :label="t('settings.oauth.callbackDomain')">
+              <el-input v-model="oauthForm.callback_domain" :placeholder="t('settings.oauth.callbackDomainPlaceholder')" clearable />
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.oauth.callbackDomainHint') }}</div>
+            </el-form-item>
             <el-divider content-position="left">GitHub OAuth</el-divider>
             <el-form-item :label="t('settings.oauth.enableGithub')">
               <el-switch v-model="oauthForm.github_enabled" />
@@ -881,7 +885,7 @@ const jwtSecretStatus = ref({ configured: false, preview: '' })
 const regeneratingJwt = ref(false)
 
 // OAuth config
-const oauthForm = ref({ github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
+const oauthForm = ref({ callback_domain: '', github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
 const oauthSaving = ref(false)
 
 // Database config
@@ -909,15 +913,16 @@ watch(() => dbForm.value.type, (newType) => {
   }
 })
 
-// OAuth callback URLs (computed from current location)
-const githubCallbackURL = computed(() => {
-  const base = window.location.origin
-  return base + '/api/v1/client-auth/oauth/github/callback'
+// OAuth callback URLs（提示用 ✓：后端 redirect_uri 按"发起登录的域名"动态拼 ✓）
+// ⚠ OAuth 登录发生在**门户域名**时，要注册的是门户域名的回调 ✗ →
+//   用 callback_domain 覆盖显示 ✓（空 = 当前面板地址 ✓）。
+const oauthCallbackBase = computed(() => {
+  let d = (oauthForm.value.callback_domain || '').trim()
+  if (d && !/^https?:\/\//i.test(d)) d = 'https://' + d
+  return d || window.location.origin
 })
-const googleCallbackURL = computed(() => {
-  const base = window.location.origin
-  return base + '/api/v1/client-auth/oauth/google/callback'
-})
+const githubCallbackURL = computed(() => oauthCallbackBase.value + '/api/v1/client-auth/oauth/github/callback')
+const googleCallbackURL = computed(() => oauthCallbackBase.value + '/api/v1/client-auth/oauth/google/callback')
 
 const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
 
@@ -1339,6 +1344,7 @@ async function fetchOAuthConfig() {
     const d = await client.get('/system/settings', { params: { prefix: 'oauth' } })
     if (d && d.items) {
       for (const item of d.items) {
+        if (item.key === 'oauth.callback_domain') oauthForm.value.callback_domain = item.value || ''
         if (item.key === 'oauth.github_enabled') oauthForm.value.github_enabled = item.value === 'true'
         if (item.key === 'oauth.github_client_id') oauthForm.value.github_client_id = item.value
         if (item.key === 'oauth.github_client_secret') oauthForm.value.github_client_secret = item.value
@@ -1354,6 +1360,7 @@ async function saveOAuthConfig() {
   try {
     await client.put('/system/settings/batch', {
       items: [
+        { key: 'oauth.callback_domain', value: oauthForm.value.callback_domain || '' },
         { key: 'oauth.github_enabled', value: String(oauthForm.value.github_enabled) },
         { key: 'oauth.github_client_id', value: oauthForm.value.github_client_id },
         { key: 'oauth.github_client_secret', value: oauthForm.value.github_client_secret },

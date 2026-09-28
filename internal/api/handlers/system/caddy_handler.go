@@ -4,8 +4,9 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/proxy"
-	"github.com/gin-gonic/gin"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
 // CaddyHandler handles Caddy-specific HTTP requests.
@@ -69,6 +70,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		ProxyConfig   string `json:"proxy_config"`
 		CustomConfig  string `json:"custom_config"`
 		WafEnabled    *bool  `json:"waf_enabled"`
+		RedirectHTTPS *bool  `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
 		LbPolicy      string `json:"lb_policy"`
 		LogEnabled    bool   `json:"log_enabled"`
 		LogPath       string `json:"log_path"`
@@ -106,6 +108,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		ProxyConfig:   req.ProxyConfig,
 		CustomConfig:  req.CustomConfig,
 		WafEnabled:    req.WafEnabled,
+		RedirectHTTPS: req.RedirectHTTPS,
 		LbPolicy:      req.LbPolicy,
 		LogEnabled:    req.LogEnabled,
 		LogPath:       logPath,
@@ -148,6 +151,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		ProxyConfig   *string `json:"proxy_config"`
 		CustomConfig  *string `json:"custom_config"`
 		WafEnabled    *bool   `json:"waf_enabled"`
+		RedirectHTTPS *bool   `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
 		LbPolicy      *string `json:"lb_policy"`
 		LogEnabled    *bool   `json:"log_enabled"`
 		LogPath       *string `json:"log_path"`
@@ -192,6 +196,9 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.WafEnabled != nil {
 		existing.WafEnabled = req.WafEnabled
+	}
+	if req.RedirectHTTPS != nil {
+		existing.RedirectHTTPS = req.RedirectHTTPS
 	}
 	if req.LbPolicy != nil {
 		existing.LbPolicy = *req.LbPolicy

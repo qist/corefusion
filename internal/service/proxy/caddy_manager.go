@@ -193,6 +193,8 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		} else {
 			// portal_forward: only valid on the panel node (isLocal). Remote
 			// nodes have no panel process, so skip generating it for them.
+			// ⚠ 有独立门户端口 → 转发到该端口（整域名直通 ✓）；
+			//   没有端口 → 转发到**面板主端口**并走 /p 路径 ✓（portalAddr 兜底 ✓）。
 			if site.Template == "portal_forward" {
 				if !m.isLocal {
 					continue
@@ -210,17 +212,19 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 					if portalPort == "" || portalPort == "0" {
 						site.Path = "/p"
 					}
-				} else if site.Template == "subscription_forward" {
-					// subscription_forward: only valid on the panel node (isLocal).
-					// Subscription URLs are served by the panel process on its
-					// main port under the /sub path.
-					if !m.isLocal {
-						continue
-					}
-					site.Upstream = m.panelAddr(ctx)
-					if site.Path == "" {
-						site.Path = "/sub"
-					}
+				}
+			} else if site.Template == "subscription_forward" {
+				// subscription_forward: only valid on the panel node (isLocal).
+				// Subscription URLs are served by the panel process on its
+				// main port under the /sub path.
+				// ⚠ 这个分支必须挂在**模板判断**这一层 ✗：以前误挂在 portal_forward 内部的
+				//   `if site.Path == ""` 上 ✗ → 永远走不到（死代码 ✗ → upstream/path 不注入 ✗）。
+				if !m.isLocal {
+					continue
+				}
+				site.Upstream = m.panelAddr(ctx)
+				if site.Path == "" {
+					site.Path = "/sub"
 				}
 			}
 			httpSites = append(httpSites, site)
@@ -438,6 +442,18 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		domainSites[site.Domain] = append(domainSites[site.Domain], site)
 	}
 
+	// 80 端口是否开启 ✓：存在绑定 :80 的**启用**站点 ✓
+	//（domain=":80" ✓ / 以 ":80" 结尾 ✓ / 非证书站点未写端口（自动落 :80 ✓））。
+	// 没开 80 就**不生成** HTTP→HTTPS 跳转 ✓（跳转块抢不到 :80、跳了也白跳 ✗）。
+	port80Open := false
+	for _, s := range httpSites {
+		if s.Domain == ":80" || strings.HasSuffix(s.Domain, ":80") ||
+			(s.CertPath == "" && s.KeyPath == "" && !strings.Contains(s.Domain, ":")) {
+			port80Open = true
+			break
+		}
+	}
+
 	for domain, siteList := range domainSites {
 		// Check if this domain has TLS certificates
 		hasCert := false
@@ -446,6 +462,41 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				hasCert = true
 				break
 			}
+		}
+		// HTTP → HTTPS 自动跳转 ✓ —— 三个条件**同时满足**才生成 ✓：
+		//   ① 域名有 TLS 证书（HTTPS 站点 ✓）；② 节点开了 80 端口 ✓；③ 站点开关打开 ✓（nil=开 ✓）。
+		// ⚠ 全局 `auto_https off` ✓ → Caddy 不会自动生成跳转 ✗，不手动生成的话
+		//   http://域名 会掉进 :80 兜底块被送到面板 ✗（真机现象：看到管理端登录页 ✗）。
+		// ⚠ ACME HTTP-01 挑战必须留在 :80 ✓（CA 只走明文 80 验证 ✓），其余请求 302 到 https ✓。
+		// ⚠ 跳转目标域名原样保留端口 ✓（如 domain=p.xxx.top:8443 → https://p.xxx.top:8443{uri} ✓）。
+		redirectEnabled := false
+		for _, s := range siteList {
+			if s.RedirectHTTPS == nil || *s.RedirectHTTPS {
+				redirectEnabled = true
+				break
+			}
+		}
+		if hasCert && port80Open && redirectEnabled && !strings.HasSuffix(domain, ":80") {
+			host := domain
+			if h, _, ok := strings.Cut(domain, ":"); ok {
+				host = h
+			}
+			sb.WriteString("# HTTP → HTTPS redirect (auto_https is off — generated manually)\n")
+			sb.WriteString(fmt.Sprintf("http://%s {\n", host))
+			if !m.isLocal {
+				sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+				sb.WriteString("\thandle @acme {\n")
+				sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
+				sb.WriteString("\t\tfile_server\n")
+				sb.WriteString("\t}\n")
+			} else {
+				sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
+				sb.WriteString("\thandle @acme {\n")
+				sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
+				sb.WriteString("\t}\n")
+			}
+			sb.WriteString(fmt.Sprintf("\tredir https://%s{uri} 302\n", domain))
+			sb.WriteString("}\n\n")
 		}
 		// When layer4 is active, non-TLS sites must use :80 to avoid
 		// conflicting with layer4's :443 listener (SO_REUSEPORT causes

@@ -1641,6 +1641,7 @@ export default {
     enableGoogle: 'Enable Google OAuth',
     },
     cron: {
+      label: 'Trigger',
       daily3: 'Daily 3:00',
       daily0: 'Daily 0:00',
       weeklySun3: 'Weekly Sun 3:00',
@@ -1765,16 +1766,35 @@ trustedProxies: 'Trusted Proxies',
       test: 'Test Send',
       testSuccess: 'Test message sent successfully',
     },
+    monitor: {
+      title: 'Monitor Settings',
+      nodeInterval: 'Node Monitor Interval',
+      nodeIntervalHint: 'How often node health is checked; alerts only on state change, silent when healthy. Takes effect immediately after save',
+      offlineTimeout: 'Heartbeat Timeout',
+      offlineTimeoutHint: 'A node is considered offline when no heartbeat is received within this period',
+      quotaThreshold: 'Traffic Quota Alert Threshold',
+      quotaThresholdHint: 'Alert when monthly traffic reaches this percentage of quota (one alert per node per billing period); set 0 to disable',
+      seconds: 's',
+      saved: 'Monitor settings saved, effective immediately',
+    },
     templates: {
       title: 'Notification Templates',
       add: 'Add Template',
       varsDoc: 'Variables Guide',
       preset: 'Fill from Preset',
       presetPlaceholder: 'Pick a preset template to fill in quickly',
-      presetHint: 'Name/type/content are auto-filled and editable; {key} placeholders are replaced with real values on send',
+      presetHint: "Auto-fills name/type/content, editable after; {'{'}key{'}'} placeholders are replaced with real values on send",
       send: 'Send',
       sendHint: 'Send once with sample variables to verify the template content and channel',
       sendSuccess: 'Template notification sent, please check',
+      broadcast: 'Broadcast',
+      broadcastHint: "Send this email template to a batch of clients (marketing / win-back). Runs in background; {'{'}user{'}'} is replaced with each client email.",
+      broadcastScopeActive: 'Active only',
+      broadcastScopeAll: 'All accounts (incl. disabled)',
+      broadcastScopeSuspended: 'Disabled only',
+      broadcastScopeHint: 'Automatic reminders (balance/expiry) always target active accounts only; marketing may target all accounts',
+      broadcastStarted: 'Broadcast started: {count} recipients. Check panel logs for results',
+      monitorCronHint: 'Triggered automatically by node health monitoring / traffic quota checks (alerts on state change only, silent when healthy) — no Cron needed. Adjust frequency and thresholds in Monitor Settings above; changes take effect immediately.',
       audience: 'Audience',
       audienceAdmin: 'Panel Admins',
       audienceSubscriber: 'Subscribers',
@@ -1782,6 +1802,70 @@ trustedProxies: 'Trusted Proxies',
       eventKey: 'Auto Trigger Event',
       eventKeyPlaceholder: 'Pick an event to enable daily automatic delivery',
       eventKeyHint: 'Subscription expiry: daily scan of subscriptions expiring within 7 days; Low balance: daily scan of clients below threshold (configure notify.balance_threshold, in cents)',
+      presets: {
+        // ⚠ {xxx} in content/subject are template placeholders — escape with {'{'}xxx{'}'} for vue-i18n;
+        // name is the backend lookup key (referenced by node_monitor.go / traffic_quota.go), not translated.
+        node_down: {
+          label: 'Node Offline Alert',
+          name: '节点离线告警',
+          subject: '',
+          content: "🚨 Node Offline Alert\n\nNode: {'{'}node{'}'}\nTime: {'{'}time{'}'}\n\nThe node lost connection, please check it ASAP!"
+        },
+        node_recovered: {
+          label: 'Node Recovered',
+          name: '节点恢复通知',
+          subject: '',
+          content: "✅ Node Recovered\n\nNode: {'{'}node{'}'}\nTime: {'{'}time{'}'}\n\nThe node is back online, service restored."
+        },
+        backup_daily: {
+          label: 'Daily Backup Report',
+          name: '每日备份报告',
+          subject: '',
+          content: "📦 Daily Backup Report\n\nTime: {'{'}time{'}'}\nFile: {'{'}backup_file{'}'}\nSize: {'{'}size{'}'}\nStatus: Success ✅"
+        },
+        backup_failed: {
+          label: 'Backup Failed Alert',
+          name: '备份失败告警',
+          subject: '',
+          content: "❌ Backup Failed\n\nTime: {'{'}time{'}'}\nFile: {'{'}backup_file{'}'}\n\nThe backup task failed. Please check backup config and storage!"
+        },
+        cert_expire: {
+          label: 'Certificate Expiry (Admin)',
+          name: '证书到期提醒',
+          subject: "Certificate expiring: {'{'}domain{'}'}",
+          content: "Certificate Expiry Notice\n\nDomain: {'{'}domain{'}'}\nExpires on: {'{'}expire_date{'}'}\nDays left: {'{'}days{'}'}\n\nPlease renew the certificate in time to avoid service interruption."
+        },
+        sys_announce: {
+          label: 'Maintenance Notice',
+          name: '系统维护公告',
+          subject: '',
+          content: "📢 Maintenance Notice\n\n{'{'}message{'}'}\n\nTime: {'{'}time{'}'}\n\nService may be briefly interrupted during maintenance. Thank you for your understanding."
+        },
+        user_register: {
+          label: 'New User Registered',
+          name: '新用户注册通知',
+          subject: '',
+          content: "👤 New User Registered\n\nUser: {'{'}user{'}'}\nTime: {'{'}time{'}'}\n\nA new user has joined!"
+        },
+        node_quota: {
+          label: 'Traffic Quota Alert',
+          name: '节点流量配额告警',
+          subject: '',
+          content: "📊 Traffic Quota Alert\n\nNode: {'{'}node{'}'}\nUsed: {'{'}used{'}'} GB / Quota: {'{'}quota{'}'} GB ({'{'}percent{'}'})\nTime: {'{'}time{'}'}\n\nMonthly traffic reached the alert threshold. Please watch this node!"
+        },
+        sub_expire: {
+          label: 'Subscription Expiry (to Client)',
+          name: '订阅到期提醒',
+          subject: 'Your subscription is expiring soon',
+          content: "Dear user,\n\nYour subscription will expire on {'{'}expire_date{'}'} ({'{'}days{'}'} days left).\n\nTo avoid service interruption, please renew at the profile center.\n\n— CoreFusion"
+        },
+        balance_low_sub: {
+          label: 'Low Balance (to Client)',
+          name: '余额不足提醒',
+          subject: 'Low balance notice',
+          content: "Dear user,\n\nYour balance is {'{'}balance{'}'} CNY, below the alert threshold.\n\nA low balance may affect your service. Please top up in time.\n\n— CoreFusion"
+        }
+      },
       recipients: 'Recipients',
       recipientsHint: 'Enter multiple emails, press Enter to add',
       userEmails: 'User Emails',

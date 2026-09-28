@@ -1646,6 +1646,7 @@ export default {
     enableGoogle: '启用 Google OAuth',
     },
     cron: {
+      label: '触发方式',
       daily3: '每天 3:00',
       daily0: '每天 0:00',
       weeklySun3: '每周日 3:00',
@@ -1770,16 +1771,35 @@ trustedProxies: '可信代理',
       test: '测试发送',
       testSuccess: '测试消息发送成功',
     },
+    monitor: {
+      title: '监控设置',
+      nodeInterval: '节点监控间隔',
+      nodeIntervalHint: '节点健康监控的检查频率；状态变化才发告警，正常静默。保存即时生效',
+      offlineTimeout: '心跳超时阈值',
+      offlineTimeoutHint: '超过该时长未收到节点心跳即判定离线',
+      quotaThreshold: '流量配额告警阈值',
+      quotaThresholdHint: '节点月流量达到配额该百分比时告警（每账期每节点一条）；设 0 关闭',
+      seconds: '秒',
+      saved: '监控设置已保存，即时生效',
+    },
     templates: {
       title: '通知模板',
       add: '添加模板',
       varsDoc: '变量说明',
       preset: '从预设填充',
       presetPlaceholder: '选择一个预设模板快速填入',
-      presetHint: '选择后自动填充名称/类型/内容，可再按需修改；{key} 占位符发送时会被实际值替换',
+      presetHint: "选择后自动填充名称/类型/内容，可再按需修改；{'{'}key{'}'} 占位符发送时会被实际值替换",
       send: '发送',
       sendHint: '用示例变量实际发送一次，验证模板内容与渠道连通性',
       sendSuccess: '模板通知已发送，请查收',
+      broadcast: '群发',
+      broadcastHint: "向客户群发此邮件模板（营销/召回类）。发送在后台执行，{'{'}user{'}'} 将替换为各客户邮箱。",
+      broadcastScopeActive: '仅正常账号',
+      broadcastScopeAll: '全部账号（含禁用）',
+      broadcastScopeSuspended: '仅禁用账号',
+      broadcastScopeHint: '自动提醒（余额/到期）始终只判断正常账号；广告召回类可选全部账号',
+      broadcastStarted: '群发已开始，预计发送 {count} 人，结果见面板日志',
+      monitorCronHint: '该模板由节点健康监控 / 流量配额检查自动触发（状态变化才发，正常静默），无需配置 Cron；监控频率与阈值在上方「监控设置」里调整，保存即时生效',
       audience: '通知受众',
       audienceAdmin: '面板使用者',
       audienceSubscriber: '订阅者（客户）',
@@ -1787,6 +1807,70 @@ trustedProxies: '可信代理',
       eventKey: '自动触发事件',
       eventKeyPlaceholder: '选择事件后每日自动扫描发送',
       eventKeyHint: '订阅到期：每日扫描 7 天内到期的订阅；余额不足：每日扫描余额低于阈值的客户（阈值可在设置 notify.balance_threshold 配置，单位分）',
+      presets: {
+        // ⚠ content/subject 中的 {xxx} 是模板占位符字面量，vue-i18n 需用 {'{'}xxx{'}'} 转义；
+        // name 为后端查找键（node_monitor.go / traffic_quota.go 固定引用），不做翻译。
+        node_down: {
+          label: '节点离线告警',
+          name: '节点离线告警',
+          subject: '',
+          content: "🚨 节点离线告警\n\n节点：{'{'}node{'}'}\n时间：{'{'}time{'}'}\n\n节点已失去连接，请尽快检查！"
+        },
+        node_recovered: {
+          label: '节点恢复通知',
+          name: '节点恢复通知',
+          subject: '',
+          content: "✅ 节点已恢复\n\n节点：{'{'}node{'}'}\n时间：{'{'}time{'}'}\n\n节点已重新上线，服务恢复正常。"
+        },
+        backup_daily: {
+          label: '每日备份报告',
+          name: '每日备份报告',
+          subject: '',
+          content: "📦 每日备份报告\n\n时间：{'{'}time{'}'}\n备份文件：{'{'}backup_file{'}'}\n大小：{'{'}size{'}'}\n状态：备份成功 ✅"
+        },
+        backup_failed: {
+          label: '备份失败告警',
+          name: '备份失败告警',
+          subject: '',
+          content: "❌ 备份失败告警\n\n时间：{'{'}time{'}'}\n备份文件：{'{'}backup_file{'}'}\n\n备份任务执行失败，请检查备份配置与存储空间！"
+        },
+        cert_expire: {
+          label: '证书到期提醒（管理员）',
+          name: '证书到期提醒',
+          subject: "证书到期提醒：{'{'}domain{'}'}",
+          content: "证书到期提醒\n\n域名：{'{'}domain{'}'}\n到期日期：{'{'}expire_date{'}'}\n剩余天数：{'{'}days{'}'} 天\n\n请及时续期证书，避免服务中断。"
+        },
+        sys_announce: {
+          label: '系统维护公告',
+          name: '系统维护公告',
+          subject: '',
+          content: "📢 系统维护公告\n\n{'{'}message{'}'}\n\n时间：{'{'}time{'}'}\n\n维护期间服务可能出现短暂中断，感谢您的理解与支持。"
+        },
+        user_register: {
+          label: '新用户注册通知',
+          name: '新用户注册通知',
+          subject: '',
+          content: "👤 新用户注册\n\n用户：{'{'}user{'}'}\n时间：{'{'}time{'}'}\n\n有新用户注册加入！"
+        },
+        node_quota: {
+          label: '节点流量配额告警',
+          name: '节点流量配额告警',
+          subject: '',
+          content: "📊 节点流量配额告警\n\n节点：{'{'}node{'}'}\n已用：{'{'}used{'}'} GB / 配额：{'{'}quota{'}'} GB（{'{'}percent{'}'}%）\n时间：{'{'}time{'}'}\n\n月流量已达到告警阈值，请关注节点用量！"
+        },
+        sub_expire: {
+          label: '订阅到期提醒（发给客户）',
+          name: '订阅到期提醒',
+          subject: '您的订阅即将到期',
+          content: "尊敬的用户：\n\n您的订阅将于 {'{'}expire_date{'}'} 到期（剩余 {'{'}days{'}'} 天）。\n\n为避免服务中断，请及时到个人中心续费。\n\n—— CoreFusion"
+        },
+        balance_low_sub: {
+          label: '余额不足提醒（发给客户）',
+          name: '余额不足提醒',
+          subject: '账户余额不足提醒',
+          content: "尊敬的用户：\n\n您的账户余额为 {'{'}balance{'}'} 元，已低于提醒阈值。\n\n余额不足可能影响服务使用，请及时充值。\n\n—— CoreFusion"
+        }
+      },
       recipients: '收件人',
       recipientsHint: '可输入多个邮箱，回车添加',
       userEmails: '用户邮箱',

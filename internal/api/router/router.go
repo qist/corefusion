@@ -2811,6 +2811,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
 				systemGroup.POST("/notification-templates/:id/send", systemH.SendTemplateTest)
+				systemGroup.POST("/notification-templates/:id/broadcast", systemH.BroadcastTemplate)
 				systemGroup.PUT("/notification-templates/:id", systemH.UpdateTemplate)
 				systemGroup.DELETE("/notification-templates/:id", systemH.DeleteTemplate)
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)

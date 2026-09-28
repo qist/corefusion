@@ -235,3 +235,68 @@ func NotifyClientEvent(ctx context.Context, db *gorm.DB, settingSvc *SettingServ
 		log.Printf("[subscriber-notify] event %s to %s failed: %v", eventKey, clientEmail, err)
 	}
 }
+
+// ---- 手动群发（营销/召回类）----
+
+// BroadcastSubscriberTemplate 向一批客户群发订阅者模板（管理员手动触发，如广告/召回邮件）。
+// scope 决定收件人范围：
+//   - "active":    仅正常账号（自动提醒类默认范围）
+//   - "all":       全部账号（含禁用 —— 广告类营销可发）
+//   - "suspended": 仅禁用账号（召回）
+//
+// 发送在后台 goroutine 中逐个执行（{user} 替换为客户邮箱），返回预计发送人数。
+func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *gorm.DB, id int64, scope string) (int, error) {
+	tmpl, err := s.tmplRepo.GetByID(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	if tmpl == nil {
+		return 0, fmt.Errorf("template %d not found", id)
+	}
+	if tmpl.Audience != entity.TemplateAudienceSubscriber || tmpl.Type != "email" {
+		return 0, fmt.Errorf("仅订阅者邮件模板支持群发")
+	}
+
+	query := db.Model(&entity.Client{})
+	switch scope {
+	case "all":
+		// 全部账号（含禁用/过期 —— 广告类营销可发）
+	case "suspended":
+		query = query.Where("status <> ?", "active")
+	default:
+		scope = "active"
+		query = query.Where("status = ?", "active")
+	}
+	var clients []entity.Client
+	if err := query.Select("email").Find(&clients).Error; err != nil {
+		return 0, err
+	}
+
+	count := len(clients)
+	if count == 0 {
+		return 0, nil
+	}
+	if defaultNotifier == nil {
+		return 0, fmt.Errorf("SMTP 未配置，无法群发")
+	}
+
+	go func() {
+		bgCtx := context.Background()
+		sent, failed := 0, 0
+		for _, c := range clients {
+			if c.Email == "" {
+				continue
+			}
+			vars := map[string]string{"user": c.Email, "time": time.Now().Format("2006-01-02 15:04:05")}
+			if err := s.SendSubscriberTemplate(bgCtx, tmpl, c.Email, vars); err != nil {
+				failed++
+				log.Printf("[subscriber-notify] broadcast to %s failed: %v", c.Email, err)
+				continue
+			}
+			sent++
+			time.Sleep(100 * time.Millisecond) // 轻微限速，避免 SMTP 触发频率限制
+		}
+		log.Printf("[subscriber-notify] broadcast done: template=%q scope=%s sent=%d failed=%d", tmpl.Name, scope, sent, failed)
+	}()
+	return count, nil
+}

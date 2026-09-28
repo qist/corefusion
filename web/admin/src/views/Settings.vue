@@ -962,7 +962,16 @@ async function handleMTLSUpload(file) {
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
-async function savePanelConfig() { panelSaving.value = true; try { await client.put('/system/panel-config', panelForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { panelSaving.value = false } }
+async function savePanelConfig() {
+  const prevMode = panelForm.value.mode
+  panelSaving.value = true
+  try {
+    await client.put('/system/panel-config', panelForm.value)
+    ElMessage.success(t('common.success'))
+    // 面板模式只在启动时读取，变更需重启面板生效（设计 §4.4）
+    if (panelForm.value.mode !== prevMode) ElMessage.warning(t('settings.panel.modeRestartHint'), { duration: 6000 })
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { panelSaving.value = false }
+}
 
 // 「把当前访问域名加入 Passkey 白名单」：管理员确认一次，而非每次请求自动信任。
 // 走专用 API（幂等），随后刷新配置回显。

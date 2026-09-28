@@ -1,5 +1,7 @@
 <template>
   <div style="padding:20px">
+    <!-- 纯管理模式提示：本地节点不运行核心进程 -->
+    <el-alert v-if="managementOnly" type="warning" :title="t('nodeServer.managementOnlyNotice')" :closable="false" show-icon style="margin-bottom:16px" />
     <!-- Core Process Table -->
     <h3 style="margin-bottom:16px">{{ t('service.tabs.process') }}</h3>
     <el-table :data="processes" v-loading="loading" stripe size="small" style="margin-bottom:24px">
@@ -51,10 +53,10 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="180">
         <template #default="{row}">
-          <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleStart(row)" :loading="row._loading">{{ t('service.start') }}</el-button>
+          <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleStart(row)" :disabled="managementOnly" :loading="row._loading">{{ t('service.start') }}</el-button>
           <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
           <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
-          <el-button size="small" @click="handleRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown'">{{ t('service.restart') }}</el-button>
+          <el-button size="small" @click="handleRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || managementOnly">{{ t('service.restart') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -438,15 +440,28 @@ function stopTimer() {
 }
 
 watch(() => props.serverId, () => {
+  managementOnly.value = false
   fetchData()
   loadProxyStatuses()
+  loadPanelMode()
 })
 
 onMounted(() => {
   fetchData()
   loadProxyStatuses()
   startTimer()
+  loadPanelMode()
 })
+
+// 面板纯管理模式：本地节点（server_id=1）核心/代理控制禁用（面板不运行本地核心进程）
+const managementOnly = ref(false)
+async function loadPanelMode() {
+  if (props.serverId !== 1) return
+  try {
+    const d = await client.get('/system/panel-config', { suppressErrorMessage: true })
+    managementOnly.value = d?.mode === 'management_only'
+  } catch (e) { /* 读不到就按默认完整模式处理 */ }
+}
 
 onUnmounted(() => {
   stopTimer()

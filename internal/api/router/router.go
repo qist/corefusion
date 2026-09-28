@@ -3755,6 +3755,17 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		clientAuthGroup.POST("/register", middleware.RegisterRateLimit(), clientauthH.Register)
 		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)
 		clientAuthGroup.POST("/refresh", middleware.RegisterRateLimit(), clientauthH.Refresh)
+
+		// OAuth2 登录路由（独立门户端口引擎也要有 ✓）：
+		// 独立域名访问门户时 redirect_uri 按请求 Host 动态拼 ✓ → 在 GitHub/Google 后台
+		// 注册"该域名"的回调即可 ✓（不必是面板域名 ✓）。
+		// ⚠ 登录成功跳回的是**根路径 /** ✓（本引擎门户不挂在 /p ✓）→ SetPortalBasePath("/") ✓。
+		oauthSvcPortal := oauthService.NewService(systemSettingSvc, repository.NewClientOAuthBindingRepository(database), clientRepo)
+		oauthHPortal := oauthHandler.NewHandler(oauthSvcPortal, os.Getenv("JWT_SECRET"))
+		oauthHPortal.SetPortalBasePath("/")
+		clientAuthGroup.GET("/oauth/providers", oauthHPortal.ProvidersStatus)
+		clientAuthGroup.GET("/oauth/:provider", oauthHPortal.Authorize)
+		clientAuthGroup.GET("/oauth/:provider/callback", oauthHPortal.Callback)
 	}
 
 	// Log manage deps (for client log packaging)

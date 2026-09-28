@@ -905,6 +905,10 @@
             </el-select>
           </el-form-item>
         </template>
+        <el-form-item :label="t('proxy.redirectHttps')">
+          <el-switch v-model="siteForm.redirect_https" />
+          <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectHttpsHint') }}</div>
+        </el-form-item>
         <el-divider content-position="left">WAF</el-divider>
         <el-form-item :label="t('proxy.wafEnabled')">
           <el-switch v-model="siteForm.waf_enabled" :active-value="true" :inactive-value="false" />
@@ -1537,7 +1541,7 @@ const siteForm = ref({
   enable_http2: true, enable_ipv6: false, enable_quic: false,
   enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-  waf_enabled: true,
+  waf_enabled: true, redirect_https: true,
   editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
 })
@@ -1967,6 +1971,7 @@ function editSite(row) {
     ssl_ciphers: row.ssl_ciphers,
     ssl_ecdh_curve: row.ssl_ecdh_curve,
     waf_enabled: row.waf_enabled !== false,
+      redirect_https: row.redirect_https !== false,
       dual_cert: row.dual_cert !== false,
     editMode: 'form',
     inbound_id: null
@@ -2139,7 +2144,8 @@ template: siteForm.value.template,
       ssl_protocols: siteForm.value.ssl_protocols,
       ssl_ciphers: siteForm.value.ssl_ciphers,
       ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve,
-      waf_enabled: siteForm.value.waf_enabled !== false
+      waf_enabled: siteForm.value.waf_enabled !== false,
+      redirect_https: siteForm.value.redirect_https !== false
     }
     if (siteForm.value.id) {
       await client.put(`${nginxApi.value}/sites/${siteForm.value.id}`, payload)

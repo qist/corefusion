@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,9 @@ type Handler struct {
 	// In-memory state store (for single-instance; use Redis for multi-instance)
 	stateStore   map[string]stateEntry
 	stateStoreMu sync.RWMutex
+	// portalPath 是登录成功后跳回的**门户页面路径** ✓：主面板引擎上门户挂在 /p ✓，
+	// 独立门户端口引擎（NewPortalEngine）挂在根路径 / ✓ → 用 SetPortalBasePath 配置 ✓。
+	portalPath string
 }
 
 // NewHandler creates a new OAuth handler.
@@ -35,10 +39,25 @@ func NewHandler(oauthSvc *oauthSvc.Service, jwtSecret string) *Handler {
 		oauthSvc:   oauthSvc,
 		jwt:        jwt.New(jwtSecret, 24*time.Hour, 7*24*time.Hour),
 		stateStore: make(map[string]stateEntry),
+		portalPath: "/p", // 主面板引擎的默认挂载点 ✓
 	}
 	// Start cleanup goroutine for expired states
 	go h.cleanupStates()
 	return h
+}
+
+// SetPortalBasePath 设置登录成功后跳回的门户页面路径 ✓（独立门户端口引擎传 "/" ✓）。
+// ⚠ "/" 是**合法值** ✗：先 Trim 再判空会把 "/" 削成空串而误拒 ✗
+// （真机现象：门户引擎回调仍跳 /p → 门户域名下 /p 是 404 ✗）。
+func (h *Handler) SetPortalBasePath(p string) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return
+	}
+	if p = strings.TrimSuffix(p, "/"); p == "" {
+		p = "/"
+	}
+	h.portalPath = p
 }
 
 // cleanupStates removes expired state entries periodically.
@@ -171,13 +190,14 @@ func (h *Handler) Callback(c *gin.Context) {
 		return
 	}
 
-	// ── 统一**整页跳回门户** ✓（/p 的 onMounted 会收 URL 里的 token 并进入登录态 ✓）──
+	// ── 统一**整页跳回门户** ✓（门户 onMounted 会收 URL 里的 token 并进入登录态 ✓）──
 	// ⚠ 不走 window.opener / postMessage 分支 ✗：门户标签可能本身是被别的页面打开的
 	// （例如管理端预览、外链 _blank）✗ → opener 残留时 token 会 postMessage 给
 	// **不监听的页面** 然后 window.close() ✗ → 标签直接关闭、登录凭空丢失 ✗
 	// （真机现象：客户账号创建了、门户标签却关了 ✓）。
-	// 门户侧登录按钮是整页跳转发起的 ✓ → 回调用 302 跳回 /p 是同一语义 ✓。
-	c.Redirect(http.StatusFound, "/p?access_token="+url.QueryEscape(accessToken)+
+	// 门户侧登录按钮是整页跳转发起的 ✓ → 回调用 302 跳回门户是同一语义 ✓。
+	// ⚠ 跳回路径按**引擎**配置 ✓：主面板引擎 → /p ✓；独立门户端口引擎 → / ✓。
+	c.Redirect(http.StatusFound, h.portalPath+"?access_token="+url.QueryEscape(accessToken)+
 		"&refresh_token="+url.QueryEscape(refreshToken))
 }
 

@@ -477,7 +477,67 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		domainSites[site.Domain] = append(domainSites[site.Domain], site)
 	}
 
+	// 80 端口是否开启 ✓：存在 listen 80 的**启用**站点 ✓
+	//（ListenPort="80" ✓ / 非证书站点未写端口（默认 80 ✓））。
+	// 没开 80 就**不生成** HTTP→HTTPS 跳转 ✓（跳转 server 抢不到 :80、跳了也白跳 ✗）。
+	port80Open := false
+	for _, s := range httpSites {
+		p := s.ListenPort
+		if p == "" && s.CertPath == "" && s.KeyPath == "" && s.ListenSocket == "" {
+			p = "80"
+		}
+		if p == "80" {
+			port80Open = true
+			break
+		}
+	}
+
 	for domain, siteList := range domainSites {
+		// HTTP → HTTPS 自动跳转 ✓ —— 三个条件**同时满足**才生成 ✓：
+		//   ① 域名组有 TLS 证书 ✓；② 节点开了 80 端口 ✓；③ 站点开关打开 ✓（nil=开 ✓）。
+		// 生成独立的 `server { listen 80; ... }` 块 ✓：ACME 挑战留在 :80 ✓，其余 301 到 https ✓。
+		grpHasTLS := false
+		redirectEnabled := false
+		tlsPort := "443"
+		for _, s := range siteList {
+			if s.CertPath != "" && s.KeyPath != "" {
+				grpHasTLS = true
+				if s.ListenPort != "" && s.ListenPort != "80" {
+					tlsPort = s.ListenPort
+				}
+			}
+			if s.RedirectHTTPS == nil || *s.RedirectHTTPS {
+				redirectEnabled = true
+			}
+		}
+		if grpHasTLS && port80Open && redirectEnabled && domain != "" {
+			target := "https://" + domain
+			if tlsPort != "443" {
+				target = fmt.Sprintf("https://%s:%s", domain, tlsPort)
+			}
+			sb.WriteString("    # HTTP → HTTPS redirect (auto-generated; per-site switch)\n")
+			sb.WriteString("    server {\n")
+			sb.WriteString("        listen 80;\n")
+			sb.WriteString(fmt.Sprintf("        server_name %s;\n", domain))
+			if !m.isLocal {
+				sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
+				sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
+				sb.WriteString(fmt.Sprintf("            alias %s/.well-known/acme-challenge/;\n", nodeACMEChallengeDir))
+				sb.WriteString("        }\n")
+			} else {
+				sb.WriteString("        # ACME HTTP-01 challenge support\n")
+				sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
+				sb.WriteString(fmt.Sprintf("            proxy_pass http://%s;\n", m.panelAddr(ctx)))
+				sb.WriteString("            proxy_set_header Host $host;\n")
+				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
+				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+				sb.WriteString("        }\n")
+			}
+			sb.WriteString(fmt.Sprintf("        return 301 %s$request_uri;\n", target))
+			sb.WriteString("    }\n\n")
+		}
+
 		sb.WriteString(fmt.Sprintf("    # %s\n", domain))
 		sb.WriteString("    server {\n")
 

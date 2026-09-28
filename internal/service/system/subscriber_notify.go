@@ -294,7 +294,14 @@ func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *go
 			if c.Email == "" {
 				continue
 			}
-			vars := map[string]string{"user": c.Email, "time": time.Now().Format("2006-01-02 15:04:05")}
+			// 群发场景补全示例变量（expire_date/days/balance 等），避免模板占位符原样发出；
+			// user/time 为每客户真实值。
+			vars := make(map[string]string, len(sampleTemplateVars)+2)
+			for k, v := range sampleTemplateVars {
+				vars[k] = v
+			}
+			vars["user"] = c.Email
+			vars["time"] = time.Now().Format("2006-01-02 15:04:05")
 			if err := s.SendSubscriberTemplate(bgCtx, tmpl, c.Email, vars); err != nil {
 				failed++
 				log.Printf("[subscriber-notify] broadcast to %s failed: %v", c.Email, err)

@@ -4,10 +4,13 @@
     <el-divider content-position="left">Global Settings</el-divider>
     <el-form label-width="160px" label-position="left">
       <el-form-item label="Final Outbound">
-        <el-select v-model="form.final" style="width:100%" filterable allow-create @change="emit">
+        <el-select v-model="form.final" style="width:100%" filterable allow-create clearable @change="emit">
           <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
         </el-select>
-        <div class="hint">Default outbound when no rule matches</div>
+        <div class="hint">
+          未命中任何规则的流量走该出站。**留空 = 使用出站列表第一个**（与 xray 的默认出站语义一致）；
+          想让代理出口兜底：选出口节点 tag，或清空后把非直连出站在「出站」列表里上移到第一位。
+        </div>
       </el-form-item>
       <el-form-item label="Auto Detect Interface">
         <el-switch v-model="form.auto_detect_interface" @change="emit" />
@@ -92,8 +95,16 @@
         <div class="hint">initial_path 必须包含 <code>&lt;tag&gt;</code> 占位符（实测否则 FATAL `missing &lt;tag&gt; placeholder in initial_path`），留空则用缓存目录默认值</div>
       </template>
       <template v-else-if="rs.type === 'local'">
-        <el-input v-model="rs.path" placeholder="/etc/sing-box/rules.json" style="margin-top:8px" @change="emit" />
-        <div class="hint">本地规则集路径（核心启动时会**读取该文件**：路径不存在会 FATAL）</div>
+        <el-select v-model="rs.path" filterable allow-create default-first-option
+          placeholder="从规则库选择，或手动输入路径" style="width:100%;margin-top:8px" @change="onLocalPathChange(rs)">
+          <el-option v-for="f in geoRuleFiles" :key="f.id" :value="`rules/${f.file_name}`"
+            :label="`rules/${f.file_name}（${formatSize(f.file_size)}）`" />
+        </el-select>
+        <div class="hint">
+          下拉选项来自「规则文件管理」已下载到 <code>data/rules</code> 的文件（面板与节点同路径，相对工作目录解析）；
+          也可手动输入路径（核心启动时**读取该文件**：路径不存在会 FATAL）。
+          选 <code>.srs</code> 自动带 format=binary、<code>.json</code> 自动带 source。
+        </div>
       </template>
       <template v-else>
         <el-input v-model="rs._rulesJson" type="textarea" :rows="3" style="margin-top:8px"
@@ -283,7 +294,7 @@
 
           <el-form-item label="Rule Set">
             <el-select v-model="rf._ruleSet" multiple filterable allow-create default-first-option
-              placeholder="rule_set tag（需在 outbound/route 的 rule_set 中定义）" style="width:100%">
+              placeholder="选择上方 Rule Sets 已定义的 tag（也可手填）" style="width:100%">
               <el-option v-for="rs in ruleSetTags" :key="rs" :label="rs" :value="rs" />
             </el-select>
           </el-form-item>
@@ -455,7 +466,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
-const props = defineProps({ data: Object, coreType: String, serverId: Number })
+const props = defineProps({ data: Object, coreType: String, serverId: Number, fullConfig: Object })
 const emitFn = defineEmits(['update'])
 
 const form = reactive({
@@ -470,7 +481,19 @@ const form = reactive({
 const { paged: rulesPaged, page: rulePage, pageSize: ruleSize, total: ruleTotal } = useClientPagination(computed(() => form.rules), { pageKey: 'sbRoutePage', pageSizeKey: 'sbRouteSize' })
 const outboundTags = ref(['direct', 'block'])
 const inboundTags = ref([])
-const ruleSetTags = ref([])
+
+// Route Rules 里可引用的 rule_set tag —— 实时取自 Rule Sets 编辑区的当前定义
+//（含"刚加还没保存"的），不再只在页面加载时从 props.data 读一次（否则新定义的
+// rule_set 在规则编辑对话框里选不到）；多 tag 定义（逗号分隔）逐一展平并去重。
+const ruleSetTags = computed(() => {
+  const tags = []
+  const push = (t) => { t = String(t || '').trim(); if (t && !tags.includes(t)) tags.push(t) }
+  for (const rs of form.ruleSets) commas(rs.tag).forEach(push)
+  for (const rs of (props.data?.rule_set || [])) {
+    (Array.isArray(rs?.tag) ? rs.tag : [rs?.tag]).forEach(push)
+  }
+  return tags
+})
 
 const dlg = ref(false)
 const editIdx = ref(-1)
@@ -785,35 +808,67 @@ function addRuleSet() {
   emit()
 }
 
+// ── 规则库联动：local rule_set 从「规则文件管理」已下载的文件中下拉选择 ──
+// geo 规则文件是全局的（面板下载后推送所有节点 data/rules/），所以选项对所有节点一致；
+// path 写相对工作目录的 `rules/<文件名>`（sing-box 进程工作目录 = 各自 data 目录）。
+const geoRuleFiles = ref([])
+
+async function loadGeoRuleFiles() {
+  try {
+    const res = await client.get('/geo-rules/files')
+    geoRuleFiles.value = (res || []).filter(f => f.status === 'available' && f.file_name)
+  } catch {}
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '?'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / 1048576).toFixed(1) + ' MB'
+}
+
+function onLocalPathChange(rs) {
+  // 按扩展名自动补 format（仅当未显式指定时，不覆盖用户已选值）：
+  // .srs = sing-box 二进制 rule-set（binary）；.json = source 格式
+  if (!rs.format) {
+    if (String(rs.path || '').endsWith('.srs')) rs.format = 'binary'
+    else if (String(rs.path || '').endsWith('.json')) rs.format = 'source'
+  }
+  emit()
+}
+
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
 
 async function loadTags() {
   let obTags = []
+  // 出站/端点 tag 首选**同一份配置文档**里的 outbounds / endpoints 段 ——
+  // 协议中心的 Outbounds / Endpoints section 直接编辑的就是这两段，
+  // 之前只查独立的 outbound-configs/endpoint-configs API（另一套存储），
+  // 导致「Route Rules 的 Outbound 下拉看不到已创建的出站」。
+  const docObs = props.fullConfig?.outbounds
+  if (Array.isArray(docObs)) obTags = obTags.concat(docObs.map(o => o?.tag).filter(Boolean))
+  const docEps = props.fullConfig?.endpoints
+  if (Array.isArray(docEps)) obTags = obTags.concat(docEps.map(e => e?.tag).filter(Boolean))
+  // API 结果作为补充（历史数据/独立存储），合并去重
   try {
     const res = await client.get(`/node-servers/${props.serverId}/outbound-configs`, { params: { core_type: props.coreType || 'singbox' } })
     const obs = (res || []).filter(o => o?.enabled !== false)
-    obTags = obs.map(o => o.tag).filter(Boolean)
+    obTags = obTags.concat(obs.map(o => o.tag).filter(Boolean))
   } catch {}
-  // ⚠ 2026-09-23 修复：sing-box 的 **endpoints**（WireGuard/Tailscale/OpenConnect/OpenVPN）
-  // 也是可以用作"出口"的（`route.final` / 规则里的 outbound 都能指向端点 tag ✓，
-  // 已实测：把 final 设为 wireguard 端点 tag 后生成配置确实是 `"final": "<端点tag>"` ✓）。
-  // 但这里原来**只列 outbounds 的 tag** ✗ → 于是 WARP/WireGuard 端口点选不上 ✗
-  // → 实际表现就是"WARP 配好了却用不到" ✗。这里把 endpoints 的 tag 一并纳入 ✓。
   try {
     const eps = await client.get(`/node-servers/${props.serverId}/endpoint-configs`, { params: { core_type: props.coreType || 'singbox' } })
     const list = Array.isArray(eps) ? eps : (eps?.items || [])
     obTags = obTags.concat(list.filter(e => e?.enabled !== false).map(e => e.tag).filter(Boolean))
   } catch {}
   outboundTags.value = [...new Set(['direct', 'block', ...obTags])]
+  // 入站 tag 同理：先取配置文档的 inbounds 段，API 结果补充合并
+  let ibTags = []
+  const docIbs = props.fullConfig?.inbounds
+  if (Array.isArray(docIbs)) ibTags = ibTags.concat(docIbs.map(i => i?.tag).filter(Boolean))
   try {
     const ibs = await client.get(`/node-servers/${props.serverId}/inbound-configs`, { params: { core_type: props.coreType || 'singbox' } })
-    inboundTags.value = (ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean)
+    ibTags = ibTags.concat((ibs || []).filter(i => i?.enabled !== false).map(i => i.tag).filter(Boolean))
   } catch {}
-  // route.rule_set 的 tag 来自段落自身定义（本编辑器暂不管理定义，仅允许手填/自动补全）
-  try {
-    const rs = props.data?.rule_set
-    if (Array.isArray(rs)) ruleSetTags.value = rs.map(r => r?.tag).filter(Boolean)
-  } catch {}
+  inboundTags.value = [...new Set(ibTags)]
 }
 
   // rule_set 定义（本编辑器可编辑）
@@ -833,7 +888,7 @@ async function loadTags() {
 
 function sync() {
   if (!props.data) return
-  form.final = props.data.final || 'direct'
+  form.final = props.data.final === '' ? '' : (props.data.final || 'direct')
   form.auto_detect_interface = props.data.auto_detect_interface !== false
   form.default_domain_resolver = props.data.default_domain_resolver || ''
   form.default_domain_strategy = props.data.default_domain_strategy || ''
@@ -864,7 +919,8 @@ function sync() {
 
 function build() {
   const out = {
-    final: form.final,
+    // final 留空 = 字段整个省略 → sing-box 未命中规则时回落出站列表第一个（与 xray 默认语义一致）
+    final: form.final || undefined,
     auto_detect_interface: form.auto_detect_interface,
     default_network_strategy: form.default_network_strategy || undefined,
     default_network_type: form.default_network_type?.length ? [...form.default_network_type] : undefined,
@@ -955,7 +1011,7 @@ function build() {
 }
 
 function emit() { emitFn('update', build()) }
-onMounted(function() { sync(); loadTags() })
+onMounted(function() { sync(); loadTags(); loadGeoRuleFiles() })
 </script>
 <style scoped>
 .rule-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }

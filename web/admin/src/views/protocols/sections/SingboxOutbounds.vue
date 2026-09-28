@@ -2,28 +2,27 @@
   <div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <span style="font-size:15px;font-weight:600">{{ t('singbox.outbound.title') }}</span>
-      <el-button size="small" type="primary" @click="showAdd">{{ t('singbox.outbound.add') }}</el-button>
+      <div>
+        <!-- ↑↓/删除只改本地暂存，点这里才落库并同步到节点 -->
+        <el-button type="success" :loading="savingOrder" @click="persistOrder">{{ t('common.save') }}</el-button>
+        <el-button size="small" type="primary" @click="showAdd">{{ t('singbox.outbound.add') }}</el-button>
+      </div>
     </div>
 
     <el-table :data="obPaged" stripe style="width:100%" size="small">
       <el-table-column label="#" width="50" align="right">
         <template #default="{ $index }"><span style="font-size:11px;opacity:0.6">{{ (obPage - 1) * obSize + $index + 1 }}</span></template>
       </el-table-column>
-      <el-table-column :label="t('singbox.outbound.actions')" width="70" align="center">
-        <template #default="{ row }">
-          <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row)">
-            <el-icon style="font-size:18px;cursor:pointer"><MoreFilled /></el-icon>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="edit"><el-icon><Edit /></el-icon> {{ t('common.edit') }}</el-dropdown-item>
-                <el-dropdown-item command="up"><el-icon><Top /></el-icon> {{ t('common.moveUp') }}</el-dropdown-item>
-                <el-dropdown-item command="down"><el-icon><Bottom /></el-icon> {{ t('common.moveDown') }}</el-dropdown-item>
-                <el-dropdown-item command="delete" divided>
-                  <span style="color:#f56c6c"><el-icon><Delete /></el-icon> {{ t('common.delete') }}</span>
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+      <el-table-column :label="t('singbox.outbound.actions')" width="210" align="center">
+        <template #default="{ row, $index }">
+          <!-- 对齐 xray 出站列表：↑↓ 独立文字按钮直接可见（顺序 = 配置文件顺序，
+               第一个出站是 route.final 留空时的兜底出口） -->
+          <el-button size="small" text :disabled="(obPage - 1) * obSize + $index === 0"
+            @click="handleAction('up', row)">↑</el-button>
+          <el-button size="small" text :disabled="(obPage - 1) * obSize + $index === form.length - 1"
+            @click="handleAction('down', row)">↓</el-button>
+          <el-button size="small" text type="primary" @click="handleAction('edit', row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" text type="danger" @click="handleAction('delete', row)">{{ t('common.delete') }}</el-button>
         </template>
       </el-table-column>
       <el-table-column :label="t('singbox.outbound.tag')" min-width="120" show-overflow-tooltip>
@@ -99,8 +98,8 @@
 <script setup>
 import { computed, ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import { MoreFilled, Edit, Delete, Top, Bottom } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -133,7 +132,7 @@ import SingboxObGroup from './singbox/outbounds/SingboxObGroup.vue'
 import SingboxObSimple from './singbox/outbounds/SingboxObSimple.vue'
 
 const { t } = useI18n()
-const props = defineProps({ data: Array })
+const props = defineProps({ data: Array, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
 const form = reactive([])
 const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(computed(() => form), { pageKey: 'sbObPage', pageSizeKey: 'sbObSize' })
@@ -212,9 +211,42 @@ function save() {
   dlg.value = false
   ElMessage.success(t('singbox.outbound.saved'))
 }
+// 「保存」按钮：把当前出站列表（含 ↑↓ 排序、增删改的暂存结果）一次性落库。
+// 之前 ↑↓ 自动保存过一版，用户反馈不要动一下就触发同步 —— 改为显式手动保存。
+const savingOrder = ref(false)
+async function persistOrder() {
+  if (savingOrder.value) return
+  savingOrder.value = true
+  try {
+    await client.put(`/node-servers/${props.serverId}/protocols/${props.coreType || 'singbox'}/section/outbounds`, form.map(buildOutbound))
+    // sing-box 没有 xray 那样的出站 gRPC 热更，配置落库+同步文件后必须重启核心才生效；
+    // 核心未运行时跳过（下次启动自然用新配置）
+    let restarted = false
+    try {
+      const st = await client.get(`/node-servers/${props.serverId}/status`)
+      const core = (st?.cores || []).find(x => x.core_type === (props.coreType || 'singbox'))
+      if (core?.state === 'running') {
+        await client.post(`/node-servers/${props.serverId}/control`, { core_type: props.coreType || 'singbox', action: 'restart' })
+        restarted = true
+      }
+    } catch {}
+    ElMessage.success(restarted ? t('singbox.outbound.savedRestarted') : t('singbox.outbound.saved'))
+  } catch (e) {
+    // 透出真实错误（网络/权限/参数），不要笼统的"操作失败"——曾经 PUT 根本没到后端却只报失败
+    console.error('[outbounds] persist failed:', e)
+    ElMessage.error(e?.response?.data?.message || e?.message || t('common.failed'))
+    sync() // 失败回滚 UI
+  } finally { savingOrder.value = false }
+}
+
 function handleAction(cmd, row) {
   if (cmd === 'edit') showEdit(row)
-  else if (cmd === 'delete') { const i = form.indexOf(row); form.splice(i, 1); emit() }
+  else if (cmd === 'delete') {
+    ElMessageBox.confirm(t('singbox.outbound.deleteConfirm', { tag: row.tag || row.type }), t('common.confirm'), { type: 'warning' })
+      .then(() => { const i = form.indexOf(row); form.splice(i, 1); emit() })
+      .catch(() => {})
+  }
+  // ↑↓ 只交换本地数组并 emit 暂存，点上方「保存」才落库同步
   else if (cmd === 'up') { const i = form.indexOf(row); if (i > 0) { [form[i-1], form[i]] = [form[i], form[i-1]]; emit() } }
   else if (cmd === 'down') { const i = form.indexOf(row); if (i < form.length - 1) { [form[i+1], form[i]] = [form[i], form[i+1]]; emit() } }
 }

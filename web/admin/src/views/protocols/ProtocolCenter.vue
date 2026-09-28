@@ -86,6 +86,7 @@
             :core-type="selectedCore"
             :server-id="serverId"
             :section-key="activeSection"
+            :full-config="fullConfig"
             @update="onUpdate"
           />
           <!-- Fallback JSON -->

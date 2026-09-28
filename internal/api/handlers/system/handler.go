@@ -264,6 +264,30 @@ func (h *Handler) TestTelegram(c *gin.Context) {
 	response.OK(c, gin.H{"message": "test message sent"})
 }
 
+// GetTelegramChatID handles POST /api/v1/system/telegram-chat-id.
+// 用户给 bot 发一条消息后调用，自动发现 chat id（token 掩码自动还原）。
+func (h *Handler) GetTelegramChatID(c *gin.Context) {
+	var req struct {
+		TelegramBotToken string `json:"telegram_bot_token"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if req.TelegramBotToken == "********" {
+		existing, _ := h.settingSvc.GetNotificationConfig(c.Request.Context())
+		if existing != nil {
+			req.TelegramBotToken = existing.TelegramBotToken
+		}
+	}
+	chatID, err := h.settingSvc.GetTelegramChatID(c.Request.Context(), req.TelegramBotToken)
+	if err != nil {
+		response.InternalError(c, "TELEGRAM_CHAT_ID_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"chat_id": chatID})
+}
+
 // --- GitHub Config ---
 
 // GetGitHubConfig handles GET /api/v1/system/github-config.

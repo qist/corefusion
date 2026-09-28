@@ -650,9 +650,67 @@ func (s *SettingService) TestTelegram(ctx context.Context, config *NotificationC
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("telegram API returned %d", resp.StatusCode)
+		// 响应体里带具体原因（如 "Bad Request: chat not found"），一并透出
+		var tgErr struct {
+			Description string `json:"description"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&tgErr)
+		switch {
+		case resp.StatusCode == 401 || resp.StatusCode == 404:
+			return fmt.Errorf("telegram API returned %d: bot token 无效或不完整（正确格式：123456789:AAHxxx...，需包含冒号前的数字 ID）", resp.StatusCode)
+		case resp.StatusCode == 400 && strings.Contains(tgErr.Description, "chat not found"):
+			return fmt.Errorf("telegram API 400: chat not found —— Chat ID 无效或 bot 还没和这个会话对话过；请给 bot 发一条消息后点「自动获取」")
+		case tgErr.Description != "":
+			return fmt.Errorf("telegram API %d: %s", resp.StatusCode, tgErr.Description)
+		default:
+			return fmt.Errorf("telegram API returned %d", resp.StatusCode)
+		}
 	}
 	return nil
+}
+
+// GetTelegramChatID 通过 getUpdates 自动发现 chat id：
+// 用户给 bot 发一条消息（/start 任意内容均可）后调用，取最近一条会话的 chat.id。
+// token 支持 ******** 哨兵（由 handler 还原为真实值）。
+func (s *SettingService) GetTelegramChatID(ctx context.Context, botToken string) (string, error) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates", botToken)
+	client := &http.Client{}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		OK     bool `json:"ok"`
+		Result []struct {
+			Message struct {
+				Chat struct {
+					ID int64 `json:"id"`
+				} `json:"chat"`
+			} `json:"message"`
+		} `json:"result"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("解析响应失败: %w", err)
+	}
+	if !body.OK {
+		if resp.StatusCode == 401 || resp.StatusCode == 404 {
+			return "", fmt.Errorf("bot token 无效或不完整（正确格式：123456789:AAHxxx...）")
+		}
+		return "", fmt.Errorf("telegram API: %s", body.Description)
+	}
+	for i := len(body.Result) - 1; i >= 0; i-- {
+		if id := body.Result[i].Message.Chat.ID; id != 0 {
+			return fmt.Sprintf("%d", id), nil
+		}
+	}
+	return "", fmt.Errorf("未发现消息，请先在 Telegram 里给你的 bot 发送一条消息（如 /start）后再点获取")
 }
 
 // --- Notification Templates ---

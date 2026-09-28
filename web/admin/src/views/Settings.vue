@@ -114,10 +114,15 @@
               <el-switch v-model="notifyForm.telegram_enabled" />
             </el-form-item>
             <el-form-item v-if="notifyForm.telegram_enabled" :label="t('settings.telegram.botToken')">
-              <el-input v-model="notifyForm.telegram_bot_token" type="password" show-password placeholder="123456:ABC-DEF..." />
+              <el-input v-model="notifyForm.telegram_bot_token" type="password" show-password placeholder="完整格式：123456789:AAHxxx...（含冒号前的数字 ID）" />
+              <div class="hint">{{ t('settings.telegram.botTokenHint') }}</div>
             </el-form-item>
             <el-form-item v-if="notifyForm.telegram_enabled" :label="t('settings.telegram.chatId')">
-              <el-input v-model="notifyForm.telegram_chat_id" placeholder="-1001234567890" />
+              <div style="display:flex;gap:8px;width:100%">
+                <el-input v-model="notifyForm.telegram_chat_id" placeholder="-1001234567890" />
+                <el-button :loading="chatIdFetching" @click="fetchChatId">{{ t('settings.telegram.fetchChatId') }}</el-button>
+              </div>
+              <div class="hint">{{ t('settings.telegram.chatIdHint') }}</div>
             </el-form-item>
             <el-form-item v-if="notifyForm.telegram_enabled">
               <el-button :loading="tgTesting" @click="testTelegram">{{ t('settings.telegram.test') }}</el-button>
@@ -848,6 +853,7 @@ const notifyForm = ref({ telegram_enabled: false, telegram_bot_token: '', telegr
 const notifySaving = ref(false)
 const smtpTesting = ref(false)
 const tgTesting = ref(false)
+const chatIdFetching = ref(false)
 const restarting = ref(false)
 
 // Templates
@@ -997,9 +1003,25 @@ async function handleMigrateData() {
     setTimeout(() => { window.location.reload() }, 3000)
   } catch (e) { ElMessage.error(t('common.failed')) } finally { migrating.value = false }
 }
-async function saveNotifyConfig() { notifySaving.value = true; try { await client.put('/system/notification-config', notifyForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { notifySaving.value = false } }
-async function testSMTP() { smtpTesting.value = true; try { await client.post('/system/test-smtp', notifyForm.value); ElMessage.success(t('settings.smtp.testSuccess')) } catch (e) { ElMessage.error(t('common.failed')) } finally { smtpTesting.value = false } }
-async function testTelegram() { tgTesting.value = true; try { await client.post('/system/test-telegram', notifyForm.value); ElMessage.success(t('settings.telegram.testSuccess')) } catch (e) { ElMessage.error(t('common.failed')) } finally { tgTesting.value = false } }
+async function saveNotifyConfig() {
+  notifySaving.value = true
+  try {
+    await client.put('/system/notification-config', notifyForm.value)
+    ElMessage.success(t('common.success'))
+    // 保存后立即回读：密钥字段以掩码 ******** 回显，前端不再持有明文（掩码回传时后端自动还原旧值）
+    await fetchNotifyConfig()
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { notifySaving.value = false }
+}
+async function testSMTP() { smtpTesting.value = true; try { await client.post('/system/test-smtp', notifyForm.value); ElMessage.success(t('settings.smtp.testSuccess')) } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) } finally { smtpTesting.value = false } }
+async function testTelegram() { tgTesting.value = true; try { await client.post('/system/test-telegram', notifyForm.value); ElMessage.success(t('settings.telegram.testSuccess')) } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) } finally { tgTesting.value = false } }
+// 自动获取 Chat ID：用户给 bot 发一条消息后点此按钮
+async function fetchChatId() {
+  chatIdFetching.value = true
+  try {
+    const d = await client.post('/system/telegram-chat-id', { telegram_bot_token: notifyForm.value.telegram_bot_token })
+    if (d?.chat_id) { notifyForm.value.telegram_chat_id = d.chat_id; ElMessage.success(t('settings.telegram.fetchChatIdSuccess', { id: d.chat_id })) }
+  } catch (e) { ElMessage({ type: 'error', message: e?.response?.data?.message || t('common.failed'), duration: 8000 }) } finally { chatIdFetching.value = false }
+}
 
 function showAddTemplate() {
   editingTmpl.value = null
@@ -1386,6 +1408,8 @@ async function saveOAuthConfig() {
       ]
     })
     ElMessage.success(t('common.success'))
+    // 保存后回读：secret 以掩码 ******** 回显，前端不残留明文
+    await fetchOAuthConfig()
   } catch (e) { ElMessage.error(t('common.failed')) } finally { oauthSaving.value = false }
 }
 

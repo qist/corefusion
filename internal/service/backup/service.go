@@ -22,6 +22,7 @@ import (
 	"corefusion/internal/api/middleware"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 
@@ -986,15 +987,158 @@ func (s *Service) DeleteSchedule(ctx context.Context, id int64) error {
 
 // --- Storage ---
 
+// storageSecretFields 是存储 config JSON 中需要加密落库的密钥字段
+// （S3 secret_key / WebDAV、FTP password），与 system_settings 敏感键共用
+// 同一套 AES-256-GCM crypto（CF_SECRET_ENCRYPTION_KEY）。
+var storageSecretFields = []string{"secret_key", "password"}
+
+// maskStorageConfig 把 config JSON 中的密钥字段替换为 ********（返回前端展示用）。
+// 存量明文在读取时顺带加密回写（懒迁移，幂等）。
+func (s *Service) maskStorageConfig(ctx context.Context, st *entity.BackupStorage) {
+	if st.Config == "" {
+		return
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(st.Config), &m); err != nil {
+		return
+	}
+	migrated := false
+	for _, f := range storageSecretFields {
+		raw, ok := m[f].(string)
+		if !ok || raw == "" {
+			continue
+		}
+		if crypto.IsEncrypted(raw) {
+			// 加密存储 → 掩码返回（解密失败保留原样，避免破坏数据）
+			if _, err := crypto.DecryptSecret(raw); err == nil {
+				m[f] = "********"
+			}
+			continue
+		}
+		// 存量明文 → 就地加密回写（幂等迁移）
+		if enc, err := crypto.EncryptSecret(raw); err == nil {
+			m[f] = enc
+			migrated = true
+		}
+	}
+	if migrated {
+		if out, err := json.Marshal(m); err == nil {
+			persisted := *st
+			persisted.Config = string(out)
+			_ = s.repo.UpdateStorage(ctx, &persisted)
+		}
+	}
+	// 返回给前端的统一打掩码
+	for _, f := range storageSecretFields {
+		if raw, ok := m[f].(string); ok && raw != "" {
+			m[f] = "********"
+		}
+	}
+	if out, err := json.Marshal(m); err == nil {
+		st.Config = string(out)
+	}
+}
+
+// encryptStorageConfig 落库前加密 config JSON 中的密钥字段（空值/已加密原样保留）。
+func encryptStorageConfig(cfgJSON string) string {
+	if cfgJSON == "" {
+		return cfgJSON
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(cfgJSON), &m); err != nil {
+		return cfgJSON
+	}
+	for _, f := range storageSecretFields {
+		raw, ok := m[f].(string)
+		if !ok || raw == "" || crypto.IsEncrypted(raw) {
+			continue
+		}
+		if enc, err := crypto.EncryptSecret(raw); err == nil {
+			m[f] = enc
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return cfgJSON
+	}
+	return string(out)
+}
+
+// decryptStorageConfig 把 config JSON 中 enc: 前缀的密钥字段解密为明文
+// （供执行路径使用；非加密值原样返回，兼容存量明文）。
+func decryptStorageConfig(cfgJSON string) string {
+	if cfgJSON == "" {
+		return cfgJSON
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(cfgJSON), &m); err != nil {
+		return cfgJSON
+	}
+	for _, f := range storageSecretFields {
+		raw, ok := m[f].(string)
+		if !ok || raw == "" || !crypto.IsEncrypted(raw) {
+			continue
+		}
+		if plain, err := crypto.DecryptSecret(raw); err == nil {
+			m[f] = plain
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return cfgJSON
+	}
+	return string(out)
+}
+
 func (s *Service) ListStorages(ctx context.Context) ([]entity.BackupStorage, error) {
-	return s.repo.ListStorages(ctx)
+	storages, err := s.repo.ListStorages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 密钥字段对外脱敏（********）；存量明文顺带加密回写
+	for i := range storages {
+		s.maskStorageConfig(ctx, &storages[i])
+	}
+	return storages, nil
 }
 
 func (s *Service) CreateStorage(ctx context.Context, storage *entity.BackupStorage) error {
+	storage.Config = encryptStorageConfig(storage.Config)
 	return s.repo.CreateStorage(ctx, storage)
 }
 
 func (s *Service) UpdateStorage(ctx context.Context, storage *entity.BackupStorage) error {
+	// 掩码哨兵：******** = 保留库中原值（前端脱敏回填后保存会带它）
+	if storage.Config != "" {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(storage.Config), &m); err == nil {
+			masked := false
+			for _, f := range storageSecretFields {
+				if v, ok := m[f].(string); ok && v == "********" {
+					masked = true
+				}
+			}
+			if masked {
+				old, err := s.repo.GetStorageByID(ctx, storage.ID)
+				if err == nil && old != nil {
+					var om map[string]interface{}
+					if json.Unmarshal([]byte(old.Config), &om) == nil {
+						for _, f := range storageSecretFields {
+							if v, ok := m[f].(string); !ok || v == "" || v == "********" {
+								if ov, ok2 := om[f].(string); ok2 {
+									m[f] = ov
+								}
+							}
+						}
+						if out, err := json.Marshal(m); err == nil {
+							storage.Config = string(out)
+						}
+					}
+				}
+			}
+		}
+	}
+	storage.Config = encryptStorageConfig(storage.Config)
 	return s.repo.UpdateStorage(ctx, storage)
 }
 
@@ -1194,11 +1338,12 @@ func (s *Service) UploadToFTP(ctx context.Context, backupID int64, config FTPCon
 }
 
 // ParseStorageConfig parses storage config JSON.
+// 密钥字段（secret_key/password）先解密（enc: 前缀），兼容存量明文。
 func ParseStorageConfig(configJSON string, target interface{}) error {
 	if configJSON == "" {
 		return nil
 	}
-	return json.Unmarshal([]byte(configJSON), target)
+	return json.Unmarshal([]byte(decryptStorageConfig(configJSON)), target)
 }
 
 // (createTarGz and extraTarEntry removed — backups are now database-only via

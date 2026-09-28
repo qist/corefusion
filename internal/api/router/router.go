@@ -2793,6 +2793,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.PUT("/panel-config", systemH.UpdatePanelConfig)
 				systemGroup.GET("/notification-config", systemH.GetNotificationConfig)
 				systemGroup.PUT("/notification-config", systemH.UpdateNotificationConfig)
+				systemGroup.POST("/telegram-chat-id", systemH.GetTelegramChatID)
 				systemGroup.POST("/test-smtp", systemH.TestSMTP)
 				systemGroup.POST("/test-telegram", systemH.TestTelegram)
 				systemGroup.POST("/upload-mtls-ca", systemH.UploadMTLSCA)

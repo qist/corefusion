@@ -49,11 +49,14 @@ type Certificate struct {
 	// 之前续期会把"所有绑定节点"都问一遍 ✗ → 重复签发 + 重复消耗一次性 EAB ✗。
 	//
 	// ⚠ 不加 `not null` ✗（给已有表加 NOT NULL 列会被 SQLite 拒绝、导致面板起不来 ✓）。
-	IssuerNodeID  int64      `json:"issuer_node_id" gorm:"index"`
-	ExpiresAt     time.Time  `json:"expires_at" gorm:"not null"`
-	LastRenewedAt *time.Time `json:"last_renewed_at"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"not null"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"not null"`
+	IssuerNodeID int64 `json:"issuer_node_id" gorm:"index"`
+	// IssuerNodeName 是**接口出参**里"签发节点"的名字 ✓（`gorm:"-"` 不入库 ✓，展示用 ✓）。
+	// 由 handler 按上面的 IssuerNodeID 现查现填 ✓；0（面板本机）/节点已删除 → 留空 ✓。
+	IssuerNodeName string     `json:"issuer_node_name,omitempty" gorm:"-"`
+	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
+	LastRenewedAt  *time.Time `json:"last_renewed_at"`
+	CreatedAt      time.Time  `json:"created_at" gorm:"not null"`
+	UpdatedAt      time.Time  `json:"updated_at" gorm:"not null"`
 }
 
 func (Certificate) TableName() string { return "certificates" }

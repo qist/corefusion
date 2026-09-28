@@ -1542,6 +1542,8 @@ export default {
     dualKey: '同时签发',
     dualKeyHint: '同时生成 RSA 和 ECC 两套证书',
     issuer: '签发者',
+    issuerNode: '签发节点',
+    panelLocal: '面板本机',
     providerType: '来源',
     certPath: '证书路径',
     keyPath: '私钥路径',

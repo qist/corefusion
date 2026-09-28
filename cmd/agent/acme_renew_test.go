@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,8 +68,8 @@ func TestCertMetaRoundTrip(t *testing.T) {
 		DNSEnvVars:  map[string]string{"CF_Token": "secret"},
 		// ⚠ 密钥规格必须一起落盘 ✗：节点自续期是"照 meta 重签一遍" ✓，
 		// 不记住就退回 EC256 ✗ → 每次自续都悄悄换掉 rsa ✗。
-		KeyType:  "rsa",
-		KeyBits:  4096,
+		KeyType: "rsa",
+		KeyBits: 4096,
 		// ⚠ 面板那条 DNS 通道的 id 也要落盘 ✗：自续期上报时得把它原样带回面板 ✓，
 		// 不然面板里的证书 `dns_channel_id` 永远是 0 ✗ → 续期找不到通道 → 跳过 ✗。
 		DNSChannelID: 7,
@@ -230,5 +231,91 @@ func TestIssueParamsFromMeta(t *testing.T) {
 	p.DNSEnvVars["CF_Token"] = "changed"
 	if m.DNSEnvVars["CF_Token"] != "t" {
 		t.Fatalf("map 应做拷贝 ✓")
+	}
+}
+
+// DNS 凭据必须**密文**落盘 ✓（meta.json 里不允许出现明文 token ✗）；
+// 读回时解密还原 ✓——节点自续期要拿明文去答 DNS 挑战 ✓，全程不依赖面板在线 ✓。
+func TestCertMetaDNSSecretsEncryptedAtRest(t *testing.T) {
+	dir := t.TempDir()
+	m := &certMeta{
+		Identifiers: []string{"a.com"},
+		Email:       "x@y.z",
+		CA:          "lets_encrypt",
+		Challenge:   "dns-01",
+		DNSProvider: "cloudflare",
+		DNSEnvVars:  map[string]string{"CF_Token": "super-secret-token", "CF_Account_ID": "acc-id-1"},
+	}
+	if err := writeCertMeta(dir, "a.com", m); err != nil {
+		t.Fatal(err)
+	}
+	// 落盘内容必须是密文 ✓：明文值不允许出现 ✓、必须是 enc: 密文 ✓
+	raw, rerr := os.ReadFile(certMetaPath(dir, "a.com"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if strings.Contains(string(raw), "super-secret-token") {
+		t.Fatalf("DNS 凭据明文落盘 ✗（正是要堵的洞 ✗）：\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "enc:") {
+		t.Fatalf("DNS 凭据应为 enc: 密文 ✓：\n%s", raw)
+	}
+	// 读回必须还原明文 ✓
+	got, err := readCertMeta(dir, "a.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DNSEnvVars["CF_Token"] != "super-secret-token" || got.DNSEnvVars["CF_Account_ID"] != "acc-id-1" {
+		t.Fatalf("解密读回不符 ✗：%v", got.DNSEnvVars)
+	}
+	// 写路径不得改动调用方内存里的 meta ✓（调用方后续还要用明文值 ✓）
+	if m.DNSEnvVars["CF_Token"] != "super-secret-token" {
+		t.Fatalf("writeCertMeta 不应改动传入的 meta ✓")
+	}
+	// 再次写入（值已是明文原样）不得双层加密 ✗ → 读回仍是明文 ✓
+	if err := writeCertMeta(dir, "a.com", got); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := readCertMeta(dir, "a.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.DNSEnvVars["CF_Token"] != "super-secret-token" {
+		t.Fatalf("重复写读后解密不符 ✗（疑似双层加密 ✗）：%v", got2.DNSEnvVars)
+	}
+}
+
+// 老明文 meta（升级前落盘 ✓）→ 读回**就地自愈加密** ✓，且明文值照常可用 ✓（向后兼容 ✓）
+func TestCertMetaLegacyPlaintextSelfHeal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "certs", "a.com"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"identifiers":["a.com"],"email":"x@y.z","challenge":"dns-01","dns_provider":"cloudflare","dns_env_vars":{"CF_Token":"legacy-plain-token"}}`
+	if err := os.WriteFile(certMetaPath(dir, "a.com"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readCertMeta(dir, "a.com") // 读这一次就应触发自愈 ✓
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DNSEnvVars["CF_Token"] != "legacy-plain-token" {
+		t.Fatalf("老明文 meta 读回应透传可用 ✓：%v", got.DNSEnvVars)
+	}
+	// 文件已被就地重写成密文 ✓
+	raw, rerr := os.ReadFile(certMetaPath(dir, "a.com"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if strings.Contains(string(raw), "legacy-plain-token") || !strings.Contains(string(raw), "enc:") {
+		t.Fatalf("老 meta 未被自愈加密 ✗：\n%s", raw)
+	}
+	// 自愈后再读：已是密文 → 正常解密 ✓（幂等 ✓，不能越包越厚 ✗）
+	got2, err := readCertMeta(dir, "a.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.DNSEnvVars["CF_Token"] != "legacy-plain-token" {
+		t.Fatalf("自愈后二次读回不符 ✗：%v", got2.DNSEnvVars)
 	}
 }
